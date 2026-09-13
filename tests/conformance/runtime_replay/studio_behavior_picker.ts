@@ -56,7 +56,7 @@ export async function revealLensOccurrence(test: StudioFixture, view: BehaviorLe
 		await test.click(graph.actionBar.items[1].bounds);
 		const inspector = (test.ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
 		const index = inspector.model.rows.findIndex(row => {
-			const source = row.element.stateSelection;
+			const source = row.element.source?.stateSelection;
 			return source !== undefined && source.kind === 'node' && source.rowKey === key;
 		});
 		check(inspector.visible && index >= 0, 'FSM navigation: owning state exposes the exact authored field');

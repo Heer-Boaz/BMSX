@@ -107,6 +107,7 @@ export class RuntimeIdeState {
 		this.editor.updateViewport(viewport);
 		runtime.onStateRestored = () => {
 			// A restored heap is a new inspection context, not the previous stop.
+			this.luaTooling.suspendedGuest.invalidate();
 			resetRuntimeDebuggerExecution(this.debugger);
 			clearFaultSnapshot(this.fault);
 			this.fault.supervisorFaultSequence = runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE);

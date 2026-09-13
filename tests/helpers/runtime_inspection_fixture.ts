@@ -20,13 +20,14 @@ local function configure<init>()
 	})
 end
 configure()
-inspection_first = component.new({ parent = { world = { gameplay_time_ms = 100 } } })
+effects.register_effect('ungranted', { period_ms = 777 })
+inspection_first = component.new({ parent = { id = 'first_actor', world = { gameplay_time_ms = 100 } } })
 inspection_first.id = 'inspection.first'
 registry:register(inspection_first)
 registry:index(inspection_first, component)
 inspection_first:grant_effect('pulse')
 inspection_first:activate('pulse')
-inspection_second = component.new({ parent = { world = { gameplay_time_ms = 200 } } })
+inspection_second = component.new({ parent = { id = 'second_actor', world = { gameplay_time_ms = 200 } } })
 inspection_second.id = 'inspection.second'
 registry:register(inspection_second)
 registry:index(inspection_second, component)

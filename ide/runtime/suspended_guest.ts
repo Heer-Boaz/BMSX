@@ -18,6 +18,7 @@ import {
 	ValueTag,
 } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 
 export type SuspendedGuestValue = Value;
 
@@ -56,6 +57,7 @@ export class SuspendedGuestSession {
 	private readonly previewParts = new ScratchBuffer<string[]>(() => []);
 	private readonly previewVisited = new Set<number>();
 	private readonly indexKey: StringId;
+	private readonly invalidationListeners = new Set<() => void>();
 
 	public constructor(private readonly runtime: Runtime) {
 		this.cpu = runtime.machine.cpu;
@@ -71,11 +73,22 @@ export class SuspendedGuestSession {
 		return this.cpu.getSystemGlobalByKey(this.stringPool.find(name)!);
 	}
 
+	/** UI borrowers end before execution and when restore replaces the inspected heap. */
+	public onDidInvalidate(listener: () => void): () => void {
+		this.invalidationListeners.add(listener);
+		return () => this.invalidationListeners.delete(listener);
+	}
+
+	public invalidate(): void {
+		for (const listener of this.invalidationListeners) listener();
+	}
+
 	/** The borrowed result view is invalidated by subsequent CPU execution, call entry, reset, or state restore. */
 	public callClosure(
 		value: SuspendedGuestValue,
 		args: ReadonlyArray<SuspendedGuestValue> = EMPTY_CALL_ARGS,
 	): ReadonlyArray<SuspendedGuestValue> {
+		this.invalidate();
 		return this.runtime.callClosure(value as Closure, args);
 	}
 
@@ -100,6 +113,15 @@ export class SuspendedGuestSession {
 
 	public formatValue(value: SuspendedGuestValue): string {
 		return valueToString(value, this.stringPool);
+	}
+
+	/** A closure has no birth socket. Linked source follows the current instruction bus. */
+	public linkedFunctionLocation(value: SuspendedGuestValue): { domain: ExecutionDomainId; address: number } | undefined {
+		if (valueTag(value) !== ValueTag.Closure) return undefined;
+		const address = (value as Closure).functionAddress;
+		const domain = this.runtime.machine.executionAddressSpace.domainIdOnBus(address, this.cpu.readExecutionBusSignals());
+		if (domain === null) return undefined;
+		return { domain, address };
 	}
 
 	public readStringMember(
@@ -137,6 +159,13 @@ export class SuspendedGuestSession {
 			current = this.readStringMember(current, parts[index]);
 		}
 		return { kind: 'value', value: current };
+	}
+
+	/** Stored entries only: numeric/boolean/reference keys are not stringified into lookup keys. */
+	public visitTableEntries(value: SuspendedGuestValue, visitor: (key: SuspendedGuestValue, value: SuspendedGuestValue) => void): void {
+		(value as Table).forEachStoredEntry((keyTag, keyScalar, keyReference, tag, scalar, reference) => {
+			visitor(materializeValue(keyTag, keyScalar, keyReference), materializeValue(tag, scalar, reference));
+		});
 	}
 
 	public visitTableStringMembers(

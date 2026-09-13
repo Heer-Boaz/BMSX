@@ -7,6 +7,7 @@ import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { check, codePositionBounds, type StudioFixture } from './studio_fixture';
 import * as constants from '../../../ide/common/constants';
 import { resolveThemeTokenColor } from '../../../ide/theme/tokens';
+import { openRuntimeEffectInspector, openRuntimeEffectPicker, testRuntimeEffectSource } from './studio_actioneffect_runtime';
 
 /** Borrowed values are consumed by the existing hover, not a parallel test inspector. */
 export async function runStudioRuntimeInspection(test: StudioFixture) {
@@ -47,6 +48,8 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	inspect('inspection_other.cooldown_until_ms', 207);
 	check(guest.readStringMember(guest.global('inspection_effect'), 'definition')
 		=== guest.readStringMember(guest.global('inspection_other'), 'definition'), 'inspection: two instances share the actual definition');
+	await testRuntimeEffectSource(test);
+	const initialInspector = await openRuntimeEffectInspector(test, 'second', 20);
 
 	const library = runtimeLuaSourceRegistry(ide.sources, 0)!.module2lua['cartlib/actioneffects/actioneffect_component'];
 	const rebindLine = library.src.split('\n').findIndex(line => line.includes('effect.definition = definition')) + 1;
@@ -54,13 +57,20 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	const media = ide.sources.currentBlua32Media;
 	await runPaletteCommand('Run: Hot Resume');
 	await until(() => ide.debugger.stopped && ide.editor.isActive && guest.global('inspection_init_count') === 2, 'inspection: unchanged init stops inside first component rebind');
+	check(!initialInspector.visible, 'inspection: execution ends the previous instance inspection');
 	check(ide.sources.currentBlua32Media === media, 'inspection: no-change init is not a new source installation');
+	check(harness.getActiveCodeContext()!.model.resource.path === library.source_path
+		&& harness.getActiveCodeContext()!.executionStopRow === rebindLine - 1,
+		'inspection: debugger awaits source attachment before placing the stop marker, even when a lens was active');
 	inspect('inspection_effect.definition.period_ms', 20);
 	inspect('inspection_other.definition.period_ms', 20);
+	await openRuntimeEffectInspector(test, 'first', 20);
 	await press('F5');
 	await until(() => ide.debugger.stopped && ide.editor.isActive, 'inspection: second component rebind stops');
 	inspect('inspection_effect.definition.period_ms', 30);
 	inspect('inspection_other.definition.period_ms', 20);
+	await openRuntimeEffectInspector(test, 'first', 30);
+	await openRuntimeEffectInspector(test, 'second', 20);
 	harness.toggleLuaBreakpoint(library.source_path, rebindLine);
 	await press('F5');
 	await until(() => !runtime.completionCallPending() && !ide.debugger.plans.controlActive, 'inspection: rebind completes');
@@ -85,6 +95,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 		'inspection: failed compilation leaves the installed definition untouched');
 	model.undo();
 	inspect('inspection_effect.definition.period_ms', 30);
+	await openRuntimeEffectInspector(test, 'first', 30);
 
 	model.pushEditOperations([{ offset: period + 2, deleteLength: 2, text: '12' }]);
 	await runPaletteCommand('Run: Hot Resume');
@@ -99,6 +110,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	inspect('inspection_other.definition.period_ms', 48);
 	inspect('inspection_effect.cooldown_until_ms', 107);
 	inspect('inspection_effect.active_count', 1);
+	await openRuntimeEffectInspector(test, 'first', 48);
 
 	await runMenuCommand('pause');
 	await until(() => history.latestCycles > history.earliestCycles + runtime.timing.cpuHz * 2 && tasks.ready, 'inspection: continuous history contains multiple checkpoints');
@@ -106,19 +118,29 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	await runMenuCommand('pause');
 	const latestTick = guest.global('inspection_tick') as number;
 	inspect('inspection_tick', latestTick);
+	const rewindInspector = await openRuntimeEffectInspector(test, 'second', 48);
 	rewind.seekTo(history.earliestCycles);
 	await settle();
+	check(!rewindInspector.visible, 'inspection: restore ends the previous instance projection');
 	check(hoverState.tooltip === null, 'inspection: restore ends the old hover lifetime');
 	const restoredTick = guest.global('inspection_tick') as number;
 	check(restoredTick < latestTick, 'inspection: rewind selected an older heap');
 	inspect('inspection_tick', restoredTick);
 	inspect('inspection_effect.definition.period_ms', 48);
 	check(guest.global('inspection_callback_count') === 0, 'inspection: readback never invoked a callback');
+	await openRuntimeEffectInspector(test, 'first', 48);
+	await openRuntimeEffectPicker(test);
+	rewind.seekTo(history.latestCycles); await settle();
+	check(!ide.editor.quickInput.visible, 'inspection: restore invalidates the borrowed instance choices');
+	rewind.seekTo(history.earliestCycles); await settle();
+	inspect('inspection_effect.definition.period_ms', 48);
 	await frame();
 	const expression = 'inspection_effect.definition.period_ms';
 	const lines = model.buffer.getText().split('\n');
 	const row = lines.findIndex(line => line.includes(expression));
 	const column = lines[row].indexOf(expression) + expression.length - 1;
+	await ide.editor.navigation.focusChunkSource(model.resource, { row, startColumn: column, endColumn: column });
+	await frame();
 	const position = cycles(), version = model.version;
 	for (const theme of ['dark', 'light']) {
 		test.setKey('AltLeft', false);

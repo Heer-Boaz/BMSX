@@ -1,4 +1,5 @@
 import { cartridgeSlots } from '../helpers/cartridge';
+import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -459,6 +460,8 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	const selectedClosureResultName = cpu.stringPool.intern(CART_CLOSURE_RESULT_GLOBAL_NAME);
 	assert.equal(cpu.activeCartridgeSlot(), 0);
 	const slot0Closure = cpu.getGlobalByKey(selectedClosureName) as Closure;
+	const guest = new SuspendedGuestSession(runtime);
+	assert.deepEqual(guest.linkedFunctionLocation(slot0Closure), { domain: 0, address: slot0Closure.functionAddress });
 	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), 111);
 	const savedClosureName = cpu.stringPool.intern('saved_closure');
 	const closureTableName = cpu.stringPool.intern('closure_table');
@@ -468,8 +471,10 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	cpu.setGlobalByKey(closureTableName, ValueTag.Table, NaN, closureTable);
 
 	runtime.machine.memory.writeMappedU32LE(IO_CART_SELECT, 1);
+	assert.equal(guest.linkedFunctionLocation(slot0Closure)!.domain, 0, 'data selection is not the current instruction bus');
 	cpu.requestNonMaskableInterrupt();
 	assert.equal(cpu.enterPendingInterrupt(), true);
+	assert.equal(guest.linkedFunctionLocation(slot0Closure)!.domain, 0, 'entering a system exception frame does not replace the EXEC latch');
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	assert.equal(cpu.activeCartridgeSlot(), 1);
 	const slot1Closure = cpu.getGlobalByKey(selectedClosureName) as Closure;
@@ -493,6 +498,7 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	);
 	assert.ok(sourceRangeAfterBusSelection);
 	assert.equal(sourceRangeAfterBusSelection.path, 'slot1.lua');
+	assert.equal(guest.linkedFunctionLocation(slot0Closure)!.domain, 1, 'the same physical closure now calls into the EXEC-latched slot 1');
 
 		const saveBytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	cpu.requestNonMaskableInterrupt();
@@ -515,6 +521,7 @@ test('guest cartridge selection and EXEC-latched closures survive the runtime sa
 	assert.equal(restoredTable.get(restoredClosure), 77);
 	assert.equal(cpu.activeCartridgeSlot(), 1);
 	assert.equal(cpu.getGlobalByKey(selectedClosureResultName), 222);
+	assert.equal(guest.linkedFunctionLocation(restoredClosure)!.domain, 1, 'wire restore supplies the instruction bus for callback source');
 });
 
 test('distinct non-static closures remain distinct table keys through the runtime save-state wire format', () => {

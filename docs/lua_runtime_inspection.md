@@ -2,8 +2,10 @@
 
 Datum: 2026-09-13. Vergelijkingsbasis: `36e9a1ca2`.
 **Gebouwd:** de bestaande hover en runtime-memberaanvulling lezen geschreven
-bindings uit de werkelijke guest. Dit is de leesbasis voor D2, geen nieuwe
-Behavior Lens-runtimeweergave of geladen-definitiecatalogus.
+bindings uit de werkelijke guest. Dit is de leesbasis voor D2. De afzonderlijke
+[ActionEffect-instance-inspectie](actioneffect_runtime_inspection.md) consumeert
+nu dezelfde guest-owner in de Behavior Lens; een volledige definitiecatalogus
+blijft open.
 
 ## Professionele referenties en afbakening
 
@@ -77,6 +79,14 @@ faultsnapshot. De bestaande view-deactivation en `Runtime.onStateRestored`
 beëindigen de query. Geen per-feature stopcounter, heapcopy of retained gast-
 tabellen. De verwijderde native-membercache heeft ook geen clear-facade meer
 op `CartEditor`, AEM-installatie of Hot Resume nodig.
+
+De vervolgreader consumeert ook compiler-owned module-exportslots en kan
+opgeslagen tabelentries bezoeken zonder numerieke/referencekeys naar strings
+om te zetten. Een gekoppelde callbackbron komt uit het werkelijke closureadres
+**plus de actuele CPU execution-busmapping**, niet uit een scan van beide carts
+of hun source-id. De gedeelde read-session beëindigt kortlevende UI-borrowers bij
+editor-deactivation, expliciete guestcalls en restore. Zie het vervolgcontract
+voor de kleine gespiegelde read-only CPU-accessor, concrete kosten en tests.
 
 ## Compiler-, formaat- en TS/C++-contract
 

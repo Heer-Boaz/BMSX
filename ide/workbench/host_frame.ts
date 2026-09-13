@@ -198,7 +198,8 @@ export function runWorkbenchHostFrame(
 		}
 		if (ide.debugger.stopPresentationPending) {
 			activateEditor(ide.editor, ide.sources, ide.overlayRenderer, runtime, audioOutput);
-			presentRuntimeDebuggerStop(ide.editor, ide.debugger);
+			void presentRuntimeDebuggerStop(ide.editor, ide.debugger)
+				.catch(error => workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error));
 		}
 		const runtimeReady = ide.runtimeTasks.ready && !ide.fault.hostFrameFailed && !session.rewind.active;
 		let action: HostFrameAction;
@@ -296,7 +297,8 @@ export function runWorkbenchHostFrame(
 							runtime,
 							audioOutput,
 						);
-						presentRuntimeDebuggerStop(ide.editor, ide.debugger);
+						void presentRuntimeDebuggerStop(ide.editor, ide.debugger)
+							.catch(error => workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error));
 					}
 				}
 				action = HostFrameAction.PresentPending;

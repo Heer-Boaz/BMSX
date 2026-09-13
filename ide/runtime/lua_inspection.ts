@@ -1,4 +1,5 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import { blua32InlineCallSitesAtPc, blua32SourceRangeAtPc, blua32LocalSlotLiveAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
@@ -8,10 +9,10 @@ import { findLuaSemanticOccurrenceAt } from '../../toolchain/ts/lua/semantic/pos
 import { findLuaLexicalBindingAt } from '../../toolchain/ts/lua/semantic/scope_query';
 import { compareSourcePosition, sourcePositionInRange } from '../../toolchain/ts/lua/semantic/source_range';
 import { sourceRangesEqual, type SourceRange } from '../../toolchain/ts/lua/source_range';
-import { SYSTEM_RESOURCE_DOMAIN, type ResourceDomain } from '../common/resource';
+import { SYSTEM_RESOURCE_DOMAIN, type ResourceDomain, type ResourceIdentity } from '../common/resource';
 import type { RuntimeFaultState } from './fault_state';
 import { Blua32GlobalRegisterFile, resolveRuntimeLuaSource, type RuntimeSourceState } from './sources';
-import type { SuspendedGuestRead, SuspendedGuestSession } from './suspended_guest';
+import type { SuspendedGuestRead, SuspendedGuestSession, SuspendedGuestValue } from './suspended_guest';
 
 export type RuntimeLuaInspectionValue = SuspendedGuestRead | {
 	readonly kind: 'unavailable';
@@ -21,6 +22,41 @@ export type RuntimeLuaInspectionValue = SuspendedGuestRead | {
 const SOURCE_CHANGED: RuntimeLuaInspectionValue = { kind: 'unavailable', reason: 'source_changed' };
 const NOT_LOADED: RuntimeLuaInspectionValue = { kind: 'unavailable', reason: 'not_loaded' };
 const NOT_IN_SCOPE: RuntimeLuaInspectionValue = { kind: 'unavailable', reason: 'not_in_scope' };
+
+/** The compiler owns export-slot names; an installed slot is not evidence that its initializer ran. */
+export function readRuntimeLuaModuleExport(
+	sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, modulePath: string,
+): RuntimeLuaInspectionValue {
+	const image = domain === SYSTEM_RESOURCE_DOMAIN ? sources.currentBlua32Media.system : sources.currentBlua32Media.cartridgeSlots[domain];
+	if (image === null) return NOT_LOADED;
+	const name = buildModuleExportSlotName(modulePath, []);
+	const registerFile = image.globalRegisterFileByName.get(name);
+	if (registerFile === undefined) return NOT_LOADED;
+	return { kind: 'value', value: registerFile === Blua32GlobalRegisterFile.System ? guest.systemGlobal(name) : guest.global(name) };
+}
+
+export type RuntimeLuaFunctionSource = {
+	readonly resource: ResourceIdentity;
+	readonly range: SourceRange;
+	readonly installedSource: string;
+};
+
+/** A closure's current mapped call target, never its presumed allocation/registration site. */
+export function runtimeLuaFunctionSource(sources: RuntimeSourceState, guest: SuspendedGuestSession, value: SuspendedGuestValue): RuntimeLuaFunctionSource | undefined {
+	const location = guest.linkedFunctionLocation(value);
+	if (location === undefined) return undefined;
+	const { domain, address } = location;
+	const image = blua32ToolingImageForDomain(sources.currentBlua32Media, domain);
+	if (image === null || image.symbols === null) return undefined;
+	const index = blua32FunctionIndexAtAddress(image.layout, address);
+	if (index < 0) return undefined;
+	const definition = image.symbols.metadata.functionDefinitions[index];
+	if (definition === null) return undefined;
+	const record = resolveRuntimeLuaSource(sources, { domain, path: definition.path })!.record;
+	const installed = domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemInstalledBlua32Sources : sources.cartridgeSlots[domain]!.installedBlua32Sources;
+	return { resource: { domain, path: record.source_path }, range: { ...definition, path: record.source_path },
+		installedSource: installed.get(record.module_path)! };
+}
 
 /** Read a written binding from its installed debug location; never evaluate Lua or infer a value. */
 export function readRuntimeLuaValue(

@@ -1,15 +1,15 @@
+import { ACTION_EFFECT_FIELDS, type EffectPropertyGroup } from './action_effect_fields';
 import { LuaSyntaxKind, type LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import { readLuaExpressionPreview, readLuaSourceLinePreview } from '../../../language/lua/source_edits';
 import { uppercaseOutsideStrings } from '../../../common/text';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
 import { createWorkbenchPropertyTree, type WorkbenchPropertyElement, type WorkbenchPropertyTree } from '../../ui/property_tree';
 import { createWorkbenchActionBar, type WorkbenchActionBarState } from '../../ui/action_bar';
-import type { ActionEffectSourceDefinition, ActionEffectSourceRequirementName, ActionEffectSourceValueName } from './action_effect_model';
+import type { ActionEffectSourceDefinition } from './action_effect_model';
 import type { BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorLensViewState } from './view_model';
 import type { BehaviorSourceArrayEntry } from './source';
 
-type EffectPropertyGroup = 'grant' | 'requirements' | 'cooldown' | 'periodic' | 'execution' | 'unresolved';
 const GROUPS: Readonly<Record<EffectPropertyGroup, { label: string; description: string }>> = {
 	grant: { label: 'GRANT', description: 'INITIAL COOLDOWN STARTS WHEN THIS EFFECT IS GRANTED. REBIND DOES NOT APPLY IT AGAIN.' },
 	requirements: { label: 'TRIGGER REQUIREMENTS', description: 'CHECKED BY TRIGGER AFTER COOLDOWN, NOT BY PERIODIC EXECUTION. VALUES BELOW ARE AUTHORED LUA.' },
@@ -21,21 +21,6 @@ const GROUPS: Readonly<Record<EffectPropertyGroup, { label: string; description:
 const GROUP_ORDER = Object.keys(GROUPS) as EffectPropertyGroup[];
 const UNKNOWN_FIELD = { group: 'unresolved' as const, label: 'UNRESOLVED FIELD', description: GROUPS.unresolved.description };
 
-/** Editor display metadata only; this is not an executable phase table. */
-const FIELDS: Readonly<Record<ActionEffectSourceValueName | ActionEffectSourceRequirementName, { group: EffectPropertyGroup; label: string; description: string }>> = {
-	initial_cooldown_ms: { group: 'grant', label: 'INITIAL COOLDOWN', description: 'initial_cooldown_ms: DURATION APPLIED ON GRANT, NOT ON REBIND.' },
-	required_tags: { group: 'requirements', label: 'REQUIRED TAGS', description: 'required_tags: ALL MUST BE PRESENT FOR TRIGGER ADMISSION.' },
-	blocked_tags: { group: 'requirements', label: 'BLOCKED TAGS', description: 'blocked_tags: NONE MAY BE PRESENT FOR TRIGGER ADMISSION.' },
-	required_state_paths: { group: 'requirements', label: 'REQUIRED STATES', description: 'required_state_paths: ALL BOUND PATHS MUST MATCH FOR TRIGGER ADMISSION.' },
-	blocked_state_paths: { group: 'requirements', label: 'BLOCKED STATES', description: 'blocked_state_paths: NO BOUND PATH MAY MATCH FOR TRIGGER ADMISSION.' },
-	can_trigger: { group: 'requirements', label: 'CUSTOM GATE', description: 'can_trigger: CALLED AFTER TAG/STATE REQUIREMENTS. ITS RESULT IS NOT EVALUATED BY THIS VIEW.' },
-	cooldown_ms: { group: 'cooldown', label: 'DURATION', description: 'cooldown_ms: AUTHORED DURATION; calculate_cooldown_ms REPLACES IT WHEN THAT CALLBACK IS PRESENT.' },
-	calculate_cooldown_ms: { group: 'cooldown', label: 'CALCULATION', description: 'calculate_cooldown_ms: REPLACES THE STATIC DURATION, EVEN WHEN IT RETURNS NIL. NO HOST CALCULATION.' },
-	defer_cooldown_commit: { group: 'cooldown', label: 'DEFER COMMIT', description: 'defer_cooldown_commit: WHEN TRUTHY, TRIGGER RETAINS ITS DURATION UNTIL EXPLICIT COMMIT. NO COMPLETION EDGE IS INFERRED.' },
-	period_ms: { group: 'periodic', label: 'PERIOD', description: 'period_ms: RETAINED ACTIVE EFFECTS EXECUTE WHEN DUE, WITHOUT TRIGGER GATES OR COOLDOWN CHECKS.' },
-	handler: { group: 'execution', label: 'HANDLER', description: 'handler: NON-NIL RETURNS REPLACE EVENT/PAYLOAD. FALSE EVENT SUPPRESSES EMIT; NIL RETAINS THE CONFIGURED EVENT.' },
-	event: { group: 'execution', label: 'OUTPUT EVENT', description: 'event: AN OUTPUT, NOT AN INPUT TRIGGER. THE HANDLER MAY REPLACE OR SUPPRESS IT.' },
-};
 
 export type EffectPropertyWrite = { readonly field: LuaTableField; readonly sourceSelection: 'field' | 'value' };
 export type EffectPropertyElement = WorkbenchPropertyElement & (
@@ -89,7 +74,7 @@ export function projectActionEffectProperties(
 		return node;
 	}
 	for (const field of definition.body.fields) {
-		const metadata = field.kind === 'unknown' ? UNKNOWN_FIELD : FIELDS[field.name];
+		const metadata = field.kind === 'unknown' ? UNKNOWN_FIELD : ACTION_EFFECT_FIELDS.get(field.name)!;
 		let group = groups.get(metadata.group);
 		if (group === undefined) {
 			group = appendWorkbenchTreeNode(tree, null, { kind: 'group', group: metadata.group, ...GROUPS[metadata.group],

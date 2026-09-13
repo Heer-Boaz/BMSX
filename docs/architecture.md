@@ -1460,15 +1460,26 @@ The supported authoring norm is cartlib's existing declarative Lua, not a
 promise to reverse arbitrary programs into uniquely editable graphs. Authored
 source, an actually loaded definition and an executing instance are distinct
 inspection subjects. The [definition-inspection design](behavior_definition_inspection_design.md)
-studies the latter two without replacing Lua persistence or exposing evaluator
-internals as an authoring format. This is a design boundary, not a claim that
-loaded-definition discovery or BT debug correspondence is implemented.
+keeps the latter two separate without replacing Lua persistence or exposing
+evaluator internals as an authoring format. The full definition catalog and BT
+debug correspondence remain open.
 
 The existing hover/member inspection now uses [written bindings and installed
 debug locations](lua_runtime_inspection.md), not same-name guesses or a second
 Lua interpreter. It reads actual ActionEffect instance/definition values through
 the generic guest representation. This is a read path, not an actor catalog or
 a claim that a heap value uniquely identifies its authored source.
+
+The [ActionEffect Live picker](actioneffect_runtime_inspection.md) now selects
+actual grants through the existing cartlib component type index. The shared
+property inspector shows instance state and the current definition without
+executing callbacks or changing source. Borrowed table choices expire on
+execution/deactivation and restore; paint consumes retained strings. A callback
+Source link follows its raw function address through the current CPU execution
+bus and requires matching installed source bytes. The mirrored read-only
+`CPU.readExecutionBusSignals()` exposes that existing mapping; closures do not
+gain socket ownership. Callback identity is not definition allocation origin,
+and scalar values acquire no inferred authoring target.
 
 Multi-resource source operations use the shared resource history described in
 [`editor_workspace_history.md`](editor_workspace_history.md). Rename is its

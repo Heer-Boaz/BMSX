@@ -24,7 +24,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	const picker = ide.editor.quickInput;
 	const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
 	const detail = sequence.details.find(item => item.label === 'num_loops')!;
-	const detailIndex = inspector.model.rows.findIndex(row => row.element.range === detail.range);
+	const detailIndex = inspector.model.rows.findIndex(row => row.element.source?.range === detail.range);
 	check(inspector.visible && !picker.visible && detailIndex >= 0,
 		'BT controls: full inspector includes decorator policy without a source-choice popup');
 	for (let index = 0; index < detailIndex; index += 1) await press('ArrowDown');
@@ -99,9 +99,9 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	check(choice.lines.find(line => line.startsWith('CHOICE')) === 'CHOICE  W=WEIGHTS.RETREAT', 'BT controls: the second choice keeps its authored weight expression');
 	await click(graph.actionBar.items.find(item => item.command === 'behaviorLens.details')!.bounds);
 	const weight = choice.details.find(item => item.label === 'weight')!;
-	check(inspector.model.rows.filter(row => row.element.range === weight.range).length === 1,
+	check(inspector.model.rows.filter(row => row.element.source?.range === weight.range).length === 1,
 		'BT controls: choice weight has one source property, not a duplicated summary');
-	const weightIndex = inspector.model.rows.findIndex(row => row.element.range === weight.range);
+	const weightIndex = inspector.model.rows.findIndex(row => row.element.source?.range === weight.range);
 	for (let index = 0; index < weightIndex; index += 1) await press('ArrowDown');
 	await press('Enter');
 	check(activeCodeEditor.view.cursorRow === weight.range.start.line - 1 && activeCodeEditor.view.cursorColumn === weight.range.start.column - 1,

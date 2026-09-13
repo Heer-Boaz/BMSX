@@ -118,6 +118,10 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			isEnabled: () => this.input.view.selection !== null && !this.sourceEditReview.visible && !this.inspector.visible,
 			run: () => this.openDetails(),
 		});
+		this.focusTarget.registerCommand('behaviorLens.inspectRuntimeEffect', {
+			isEnabled: () => this.input.view.presentation.kind === 'properties' && !this.sourceEditReview.visible,
+			run: () => { this.focus(); this.controller.inspectRuntimeEffect(this.input, this.inspector); },
+		});
 		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('contextMenu', {
 			isEnabled: () => !this.sourceEditReview.visible && !this.inspector.visible,
 			run: () => this.openKeyboardContextMenu(),
@@ -300,7 +304,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		const selected = input.view.source.nodesByRowKey.get(input.view.selection!.rowKey)!;
 		const lifetime = this.inspector.show({ title: selected.label,
 			items: buildBehaviorInspection(input.view),
-			canOpenSource: item => item.range !== undefined,
+			canOpenSource: item => this.controller.canOpenInspectionSource(item),
 			openSource: item => this.controller.openInspectionSource(input, item),
 		});
 		lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.inspector.hide()) });

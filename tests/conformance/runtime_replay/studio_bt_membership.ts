@@ -100,7 +100,7 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	await runPaletteCommand('Behavior Lens: Open Source Details');
 	const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
 	const weight = choice.details.find(detail => detail.label === 'weight')!;
-	const detailIndex = inspector.model.rows.findIndex(row => row.element.range === weight.range);
+	const detailIndex = inspector.model.rows.findIndex(row => row.element.source?.range === weight.range);
 	check(inspector.visible && detailIndex >= 0, 'BT membership: known weight remains inspectable');
 	for (let index = 0; index < detailIndex; index += 1) await press('ArrowDown');
 	await press('Enter');

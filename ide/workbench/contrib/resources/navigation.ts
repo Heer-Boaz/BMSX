@@ -38,16 +38,9 @@ export class EditorNavigationController {
 		releaseResourcePanelFocus(this.resourcePanel);
 	}
 
-	public focusChunkSource(identity: ResourceIdentity, selection?: EditorTextSelection): void {
+	public focusChunkSource(identity: ResourceIdentity, selection?: EditorTextSelection): Promise<void> {
 		prepareEditorForSourceFocus();
-		if (!identity.path) {
-			return;
-		}
-		const resource = resolveRuntimeResource(this.sources, identity);
-		if (!resource) {
-			return;
-		}
-		void this.openResource(resource, selection);
+		return this.openResource(resolveRuntimeResource(this.sources, identity)!, selection);
 	}
 
 	public focusChunkSourceForContext(

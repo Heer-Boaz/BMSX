@@ -42,6 +42,10 @@ import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense
 import { beginBehaviorTreeDrag, type BehaviorTreeTransferDrop } from './behavior_tree_drag';
 import type { WorkbenchGraphDragSession } from '../../ui/graph/drag';
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
+import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
+import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
+import type { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
+import { inspectActionEffectInstance, readActionEffectInstances } from './action_effect_runtime';
 
 const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 	action_effect: 'ACTIONEFFECTS',
@@ -59,6 +63,7 @@ export class BehaviorLensController {
 		private readonly quickInput: QuickInputController,
 		private readonly registrations: BehaviorRegistrationIndex,
 		private readonly createGraphLayoutEngine: GraphLayoutEngineFactory,
+		private readonly guest: SuspendedGuestSession,
 	) { this.documents = new BehaviorSourceDocuments(sources); }
 
 	public open(kind: BehaviorKind | null = null, options: EditorOpenOptions = {}): void {
@@ -141,18 +146,48 @@ export class BehaviorLensController {
 		else this.openSelectedSource(input.view);
 	}
 
+	public inspectRuntimeEffect(input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
+		const choices = readActionEffectInstances(this.sources, this.guest, input.view.resource.domain);
+		this.quickInput.pick('GRANTED ACTIONEFFECTS', choices.available ? 'Choose a granted instance, not a source registration' : 'Runtime exports unavailable or not initialized',
+			(_origin, lifetime) => {
+				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+				return new TextQuickPickProvider(choices.items);
+			}, choice => {
+				const lifetime = inspector.show({ title: `LIVE EFFECT / ${choice.label}`,
+					items: inspectActionEffectInstance(this.sources, this.guest, choice),
+					canOpenSource: item => this.canOpenInspectionSource(item),
+					openSource: item => this.openInspectionSource(input, item),
+				});
+				lifetime.add({ dispose: this.guest.onDidInvalidate(() => inspector.hide()) });
+			});
+	}
+
+	public canOpenInspectionSource(detail: BehaviorInspectionProperty): boolean {
+		const source = detail.source;
+		if (source === undefined) return false;
+		if (source.installedSource === undefined) return true;
+		const model = editorTextModelService.get(source.resource);
+		// The suspended lifetime ends before installation. Reuse the working-copy
+		// owner's versioned correspondence, rather than compare whole files on paint.
+		if (model !== undefined) return getTextFileRuntimeSourceStatus(this.sources, model) === 'applied';
+		return resourceSourceForChunk(this.sources, resolveRuntimeResource(this.sources, source.resource)!) === source.installedSource;
+	}
+
 	public openInspectionSource(input: BehaviorLensInput, detail: BehaviorInspectionProperty): void {
 		const view = input.view;
-		if (detail.stateSelection !== undefined) {
-			view.selection = detail.stateSelection.kind === 'node' ? detail.stateSelection
-				: selectStateMachineSource(detail.stateSelection, view.source.models);
+		const source = detail.source!;
+		if (source.stateSelection !== undefined) {
+			view.selection = source.stateSelection.kind === 'node' ? source.stateSelection
+				: selectStateMachineSource(source.stateSelection, view.source.models);
 			if (view.presentation.kind === 'state-graph') {
 				const viewport = view.presentation.viewport;
 				viewport.selection = stateGraphSelection(viewport.model, view.selection);
 			}
 			finishBehaviorLensNavigation(view);
 		}
-		this.openWrittenSource(input, detail.range!);
+		this.navigation.focusChunkSourceForContext(source.resource.domain, source.resource.path, {
+			row: source.range.start.line - 1, startColumn: source.range.start.column - 1, endColumn: source.range.start.column - 1,
+		});
 	}
 
 	public openWrittenSource(input: BehaviorLensInput, range: LuaSourceRange): void {

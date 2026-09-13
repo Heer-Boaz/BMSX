@@ -319,6 +319,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.quickInput,
 			behaviorRegistrations,
 			createGraphLayoutEngine,
+			luaTooling.suspendedGuest,
 		);
 		this.scenarioLab = new ScenarioLabController(
 			this,
@@ -445,6 +446,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public deactivate(): void {
+		this.luaTooling.suspendedGuest.invalidate();
 		pointerHover.clear();
 		const wasActive = this.isActive;
 		this.editorPanes.clearEditor();
@@ -646,8 +648,9 @@ export class RuntimeCartEditor implements CartEditor {
 		if (!editorRuntimeState.active) {
 			this.activate();
 		}
-		this.navigation.focusChunkSource(resource);
-		this.showRuntimeError(line, column, message, details, resource.path);
+		void this.navigation.focusChunkSource(resource)
+			.then(() => this.showRuntimeError(line, column, message, details, resource.path))
+			.catch(error => showEditorMessage(`Failed to open runtime source: ${String(error)}`, constants.COLOR_STATUS_ERROR, 4.0));
 	}
 
 	public showRuntimeError(line: number, column: number, message: string, details?: RuntimeErrorDetails, path: string = ''): void {

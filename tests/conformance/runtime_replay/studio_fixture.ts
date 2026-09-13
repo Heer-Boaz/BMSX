@@ -50,7 +50,7 @@ export function codePositionBounds(row: number, column: number) {
 }
 
 /** Actual Studio composition; backend selection belongs to the test project. */
-export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GPUBackend) {
+export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GPUBackend, capture?: (name: string) => Promise<void>) {
 	const bios = new Uint8Array(await (await fetch('/bios.rom')).arrayBuffer());
 	const cart = new Uint8Array(await (await fetch('/cart.rom')).arrayBuffer());
 	const clock = new VirtualHeadlessClock();
@@ -189,7 +189,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	};
 	audio.bootstrap();
 	return { runtime, ide, execution, rewind, tasks, history, harness, guest, clock, input, clipboard, observations,
-		frame, until, setKey, setPointerButton, press, movePointer, click, clickTab, runMenuCommand, runPaletteCommand, settle, cycles, title };
+		frame, until, setKey, setPointerButton, press, movePointer, click, clickTab, runMenuCommand, runPaletteCommand, settle, cycles, title, capture };
 }
 
 export type StudioFixture = Awaited<ReturnType<typeof createStudioFixture>>;

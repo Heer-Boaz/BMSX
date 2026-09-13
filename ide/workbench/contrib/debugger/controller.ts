@@ -140,10 +140,10 @@ export function restoreBreakpointsFromPayload(
 	}
 }
 
-export function presentRuntimeDebuggerStop(
+export async function presentRuntimeDebuggerStop(
 	editor: CartEditor,
 	state: RuntimeDebuggerState,
-): void {
+): Promise<void> {
 	state.stopPresentationPending = false;
 	const image = blua32ToolingImageForDomain(
 		state.sources.currentBlua32Media,
@@ -158,7 +158,7 @@ export function presentRuntimeDebuggerStop(
 		domain: state.stopDomain,
 		path: range.path,
 	})!;
-	focusExecutionStop(editor, {
+	await focusExecutionStop(editor, {
 		domain: source.domain,
 		path: source.record.source_path,
 	}, range.start.line, range.start.column);

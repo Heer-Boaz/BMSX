@@ -88,6 +88,23 @@ reflection. Formatted hover lifetime also includes cycles and installed media,
 not just a possibly repeated PC. See [Lua runtime inspection](../docs/lua_runtime_inspection.md)
 for the compiler/C++ symbol contract, actual ActionEffect readback and limits.
 
+The ActionEffect lens's `Live` action selects a real grant from cartlib's existing
+component type index. Its property inspector displays that instance and its
+current `effect.definition`, never an inferred match to the open source
+registration. Only the picker temporarily borrows tables; projected inspector
+rows retain strings and navigation metadata. `SuspendedGuestSession` ends these
+lifetimes on deactivation, an explicit guest call or restore. It adds no guest
+registry, tick hook, per-frame query or runtime mutation.
+
+Callback source uses the actual closure address and CPU instruction-bus mapping;
+the two sockets can contain different functions at the same address. It describes
+the current call target, not allocation origin. The current text must match the
+installed callback bytes before Source can use that range. Scalar definition
+values acquire no inferred write target. See
+[ActionEffect runtime inspection](../docs/actioneffect_runtime_inspection.md).
+Debugger and fault source navigation await resource/editor attachment before
+placing cursor/stop adornments; the host-frame path itself remains synchronous.
+
 The production examples, combined browser-Studio proof and remaining authoring
 scope are in [`docs/studio_development_workflows.md`](../docs/studio_development_workflows.md).
 

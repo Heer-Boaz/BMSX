@@ -58,12 +58,17 @@ for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 		const pageErrors = [];
 		page.on('pageerror', error => { pageErrors.push(error); console.error(error); });
 		page.on('console', message => console.log(`[browser:${message.type()}] ${message.text()}`));
+		if (screenshot) await page.exposeFunction('captureStudioCheckpoint', async checkpoint => {
+			const { dir, name, ext } = parse(screenshot);
+			await page.screenshot({ path: join(dir, `${name}-${backend}-${checkpoint}${ext}`) });
+		});
 		await page.goto(address);
-		let result = await page.evaluate(async ({ studio, session, backend, scenario }) => {
+		let result = await page.evaluate(async ({ studio, session, backend, scenario, capture }) => {
 			const test = await import('/test.js');
-			return session ? test.studioSessionBackends[backend](document.querySelector('canvas')) : studio ? test.studioBackends[backend](document.querySelector('canvas'), scenario)
+			return session ? test.studioSessionBackends[backend](document.querySelector('canvas')) : studio ? test.studioBackends[backend](document.querySelector('canvas'), scenario,
+				capture ? globalThis.captureStudioCheckpoint : undefined)
 				: test.runBrowserRewindConformance(document.querySelector('canvas'));
-		}, { studio, session, backend, scenario });
+		}, { studio, session, backend, scenario, capture: screenshot !== undefined });
 		if (session) {
 			// A real page navigation fires pagehide; the next import has no old JS models,
 			// inputs, subscriptions, semantic cache, run state or layout workers.

@@ -219,6 +219,7 @@ public:
 	void clearExecutionEnvironment();
 	bool isCartridgeExecutionActive() const { return m_activeExecutionImage->executionDomainId >= 0; }
 	ExecutionDomainId activeCartridgeSlot() const { return m_activeExecutionImage->executionDomainId; }
+	MappedBusSignals readExecutionBusSignals() const { return m_executionBusSignals; }
 	StringPool& stringPool() { return m_stringPool; }
 	const StringPool& stringPool() const { return m_stringPool; }
 	LuaHeap& luaHeap() { return m_luaHeap; }

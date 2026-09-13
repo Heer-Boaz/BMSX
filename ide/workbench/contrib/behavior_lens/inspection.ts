@@ -1,4 +1,5 @@
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
+import type { ResourceIdentity } from '../../../common/resource';
 import { uppercaseOutsideStrings } from '../../../common/text';
 import { readLuaSourceRange } from '../../../language/lua/source_edits';
 import type { InspectedProperty } from '../../ui/property_inspector/model';
@@ -7,8 +8,13 @@ import { buildStateMachineDetails, type StateMachineDetail } from './state_machi
 import { stateMachineSourceRange } from './state_machine_selection';
 
 export type BehaviorInspectionProperty = InspectedProperty & {
-	readonly range: LuaSourceRange | undefined;
-	readonly stateSelection: StateMachineDetail['source'] | undefined;
+	readonly source?: {
+		readonly resource: ResourceIdentity;
+		readonly range: LuaSourceRange;
+		readonly stateSelection?: StateMachineDetail['source'];
+		/** Only actual loaded callbacks require correspondence with installed bytes. */
+		readonly installedSource?: string;
+	};
 };
 
 /** Source-owned excerpts of this document generation, not the active code tab or a runtime DTO. */
@@ -19,7 +25,7 @@ export function buildBehaviorInspection(view: BehaviorLensViewState): readonly B
 		const location = `${range.path}:${range.start.line}:${range.start.column}`;
 		result.push({ label: uppercaseOutsideStrings(label), value: uppercaseOutsideStrings(readLuaSourceRange(view.source.models.get(range.path)!.buffer, range)),
 			description: description.length === 0 ? location : `${location}\n${uppercaseOutsideStrings(description)}`,
-			warning: false, range, stateSelection });
+			warning: false, source: { resource: { domain: view.resource.domain, path: range.path }, range, stateSelection } });
 	}
 	if (selected.behaviorKind === 'state_machine') {
 		for (const detail of buildStateMachineDetails(view)) {
@@ -36,7 +42,7 @@ export function buildBehaviorInspection(view: BehaviorLensViewState): readonly B
 			if (entry.owner !== selected.rowKey || entry.field !== null) continue;
 			result.push({ label: 'INITIAL ENTRY', value: 'NO EXPLICIT INITIAL FIELD',
 				description: 'THE RUNTIME CHOOSES ITS DEFAULT INITIAL CHILD. NO AUTHORED ENTRY TARGET OR SOURCE FIELD IS INVENTED.',
-				warning: false, range: undefined, stateSelection: undefined });
+				warning: false });
 		}
 		const body = view.stateMachines.bodies.get(selected.rowKey);
 		if (body !== undefined && body !== null && body.states !== null && body.states.source.resolution !== 'complete') {
@@ -56,6 +62,6 @@ export function buildBehaviorInspection(view: BehaviorLensViewState): readonly B
 	result.push({ label: 'SOURCE ANALYSIS', value: uppercaseOutsideStrings(selected.detail),
 		description: selected.resolution === 'complete' ? 'RECOGNIZED AUTHORED SOURCE. NO RUNTIME EXECUTION IS INFERRED.'
 			: `SOURCE IS ${selected.resolution.toUpperCase()}. DYNAMIC VALUES AND UNPROVEN RELATIONS ARE NOT EVALUATED OR DRAWN.`,
-		warning: selected.resolution !== 'complete', range: undefined, stateSelection: undefined });
+		warning: selected.resolution !== 'complete' });
 	return result;
 }

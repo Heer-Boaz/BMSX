@@ -1,8 +1,8 @@
 # Declaratieve behavior-authoring en inspectie van geladen definities
 
 Datum: 2026-09-13. Live baseline: `c30009e07`.
-**Status: D1-history/composite broninputs en de generieke D2-leesbasis gebouwd;
-geen geladen-definitiecatalogus of runtimeweergave in Behavior Lens.**
+**Status: D1-history/composite broninputs, de generieke D2-leesbasis en gerichte
+ActionEffect-instance-inspectie gebouwd; geen volledige definitiecatalogus.**
 
 Dit document verwerkt de bijgestelde productgrens: cartlib ondersteunt al een
 declaratieve manier van programmeren; die is de norm voor visuele authoring.
@@ -301,13 +301,18 @@ Dezelfde levensduur moet bij selectie, pause/continue, Hot Resume en restore
 werken. Pas daarna de geladen FSM-hiërarchie en catalogusownership uitbreiden.
 
 **Implementatiestatus:** [de generieke Lua-inspectiegrens](lua_runtime_inspection.md)
-is gebouwd in de bestaande hover/memberreader. Een onafhankelijke Studio-proef
-leest echte ActionEffect-definities en instancevelden, inclusief midden-in-rebind,
+en [gerichte ActionEffect-instance-inspectie](actioneffect_runtime_inspection.md)
+zijn gebouwd. `Live` gebruikt de bestaande registry-type-index en gedeelde
+kiezer/property inspector. De geselecteerde instance en haar geladen definitie
+blijven gescheiden van de open authored registratie, ook bij dezelfde effect-id.
+Een onafhankelijke Studio-proef bedient de echte UI tijdens midden-in-rebind,
 no-change `<init>`, gewijzigde installatie, compilefout en rewind. De compiler
-en TS/C++-symbolowners leveren daarvoor geldige lokale debuglocaties; geen
-interpreterfallback of extra cartlib-state. D2 blijft open voor de gerichte
-selectie/presentatie en bewezen definitie-sourcecorrespondentie. Een gewone
-hover is geen algemene actor-/definitiecatalogus.
+en TS/C++-symbolowners leveren geldige debuglocaties; callback-Source volgt het
+actuele instruction-bus-calltarget en vereist overeenkomende bronbytes.
+Geen interpreterfallback, extra cartlib-state of bronwriteclaim. D2 blijft open
+voor een catalogus inclusief ongebruikte definities, algemene actorselectie en
+definitie-allocation-/registratiecorrespondentie. Een callbackbron bewijst niet
+waar de omvattende definitietabel is gemaakt.
 
 **Gate:** read-only inspectie zonder callbacks/guestmutatie; registratie zonder
 actor niet verwarren met een lege definitie; no-change `<init>`, compilefout,

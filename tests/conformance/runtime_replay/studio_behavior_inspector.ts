@@ -60,7 +60,7 @@ export async function testStudioBehaviorInspector(test: StudioFixture): Promise<
 	await runPaletteCommand('Behavior Lens: Open Source Details');
 	for (let n = 0; n < targetIndex; n += 1) await press('ArrowDown');
 	await click(inspector.actionBar.items[0].bounds, 30);
-	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.view.cursorRow === property.element.range!.start.line - 1
+	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.view.cursorRow === property.element.source!.range.start.line - 1
 		&& model.version === version && cycles() === position, 'inspection: held Source opens the property, never inserts text or runs the guest');
 	await press('AltLeft', 'ArrowLeft');
 	check(getActiveTab() === lens && viewport.model === geometry, 'inspection: ordinary navigation Back restores the retained diagram');

@@ -30,9 +30,9 @@ import {
 	type RuntimeResource,
 } from '../../ide/common/resource';
 import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
-import { readRuntimeLuaValue } from '../../ide/runtime/lua_inspection';
+import { readRuntimeLuaValue, readRuntimeLuaModuleExport, runtimeLuaFunctionSource } from '../../ide/runtime/lua_inspection';
 import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
-import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
+import { SuspendedGuestSession, SuspendedGuestValueKind } from '../../ide/runtime/suspended_guest';
 import {
 	createBlua32SystemSourceImage,
 	type RuntimeSourceState,
@@ -511,6 +511,39 @@ return read_shadow()
 });
 
 for (const optLevel of [0, 3] as const) {
+	test(`suspended inspection reads stored key kinds and actual callback source at O${optLevel}`, () => {
+		const source = `callback = function() return 7 end
+entries = { [1] = 'numeric', ['1'] = 'string', [true] = 'boolean', [callback] = 'function' }
+halt_until_irq`;
+		const { runtime, bridge } = createIntellisenseRuntime(source, optLevel);
+		const cpu = runtime.machine.cpu, guest = bridge.suspendedGuest;
+		cpu.reset();
+		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		const bytes = cpu.luaHeap.usedBytes(), depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
+		const callback = guest.global('callback');
+		const location = runtimeLuaFunctionSource(bridge.sources, guest, callback)!;
+		assert.deepEqual(location.resource, { domain: SYSTEM_RESOURCE_DOMAIN, path: 'cart.lua' });
+		assert.deepEqual(location.range.start, { line: 1, column: 12 });
+		assert.equal(location.installedSource, source);
+		const entries = new Map<SuspendedGuestValueKind, string>();
+		guest.visitTableEntries(guest.global('entries'), (key, value) => {
+			entries.set(guest.kind(key), guest.formatValue(value));
+		});
+		assert.deepEqual(entries, new Map([
+			[SuspendedGuestValueKind.Number, 'numeric'], [SuspendedGuestValueKind.String, 'string'],
+			[SuspendedGuestValueKind.Boolean, 'boolean'], [SuspendedGuestValueKind.Function, 'function'],
+		]));
+		assert.equal(runtimeLuaFunctionSource(bridge.sources, guest, guest.global('entries')), undefined);
+		assert.equal(runtimeLuaFunctionSource(bridge.sources, guest, null), undefined);
+		assert.deepEqual(readRuntimeLuaModuleExport(bridge.sources, guest, SYSTEM_RESOURCE_DOMAIN, 'not_loaded'),
+			{ kind: 'unavailable', reason: 'not_loaded' });
+		assert.deepEqual(readRuntimeLuaModuleExport(bridge.sources, guest, 1, 'not_loaded'),
+			{ kind: 'unavailable', reason: 'not_loaded' });
+		assert.equal(cpu.luaHeap.usedBytes(), bytes);
+		assert.equal(cpu.getFrameDepth(), depth);
+		assert.equal(cpu.readFramePc(depth - 1), pc);
+	});
+
 	test(`suspended inspection distinguishes a nil member from an unreadable path at O${optLevel}`, () => {
 		const source = 'input_value = {}\nlocal target = input_value\nhalt_until_irq\nreturn target.missing.value';
 		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
@@ -650,6 +683,20 @@ return pending
 		assert.deepEqual(result, { kind: 'unavailable', reason: 'not_in_scope' });
 	});
 }
+
+test('suspended inspection borrowers release on invalidation and before an explicit guest call', () => {
+	const { runtime, bridge } = createIntellisenseRuntime('callback = function() return 7 end\nhalt_until_irq');
+	runtime.machine.cpu.reset();
+	assert.equal(runtime.machine.cpu.runUntilDepth(0, 100), RunResult.Halted);
+	const guest = bridge.suspendedGuest, events: string[] = [];
+	const releaseFirst = guest.onDidInvalidate(() => { events.push('first'); releaseFirst(); });
+	const releaseSecond = guest.onDidInvalidate(() => { events.push('second'); releaseSecond(); });
+	guest.invalidate(); guest.invalidate();
+	assert.deepEqual(events, ['first', 'second']);
+	const releaseThird = guest.onDidInvalidate(() => { events.push('call'); releaseThird(); });
+	guest.callClosure(guest.global('callback'));
+	assert.deepEqual(events, ['first', 'second', 'call']);
+});
 
 test('suspended inspection requires installed source correspondence, and regains it after Undo', async () => {
 	const source = 'local target = 42\nhalt_until_irq\nreturn target';

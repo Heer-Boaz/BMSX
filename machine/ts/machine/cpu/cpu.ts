@@ -1470,6 +1470,10 @@ export class CPU implements MappedPageInvalidator {
 		return this.activeExecutionImage.executionDomainId;
 	}
 
+	public readExecutionBusSignals(): MappedBusSignals {
+		return this.executionBusSignals;
+	}
+
 	private executeFunctionAddress(functionAddress: number): void {
 		if (!this.readFunctionRecordOnBus(
 			this.activeExecutionImage,

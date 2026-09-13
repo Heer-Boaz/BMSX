@@ -97,7 +97,7 @@ test('binding and callback markers use their own resource, buffer and UTF-16 coo
 test('inspection reads foreign evidence without opening a code tab or dirtying either working copy', t => {
 	const f = fixture(); t.after(() => f.dispose()); f.chooseReturn();
 	const items = buildBehaviorInspection(f.view);
-	const returned = items.find(item => item.range?.path === 'provider.lua')!;
+	const returned = items.find(item => item.source?.range.path === 'provider.lua')!;
 	assert.equal(returned.value, "RETURN '../active'");
 	assert.ok(returned.description.startsWith('provider.lua:3:2'));
 	assert.equal(f.main.version, 1); assert.equal(f.provider.version, 1);

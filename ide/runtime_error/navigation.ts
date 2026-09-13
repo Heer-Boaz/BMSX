@@ -135,24 +135,16 @@ export function clearExecutionStopHighlights(): void {
 	}
 }
 
-export function focusExecutionStop(
+export async function focusExecutionStop(
 	editor: CartEditor,
 	resource: ResourceIdentity,
 	line: number,
 	column: number,
-): void {
-	const navigationCheckpoint = beginNavigationCapture();
-	editor.navigation.focusChunkSource(resource);
+): Promise<void> {
 	const row = line - 1;
+	await editor.navigation.focusChunkSource(resource, { row, startColumn: column - 1, endColumn: column - 1 });
 	setExecutionStopHighlightForCurrentContext(row);
-	activeCodeEditor.view.selectionAnchor = null;
-	editorPointerState.pointerSelecting = false;
-	editorCaretState.cursorRevealSuspended = false;
-	editorViewState.scrollbarController.cancel();
-	setCursorPosition(row, column - 1);
 	centerCursorVertically();
-	resetBlink();
-	completeNavigation(navigationCheckpoint);
 }
 
 export function syncRuntimeErrorOverlayFromContext(context: CodeTabContext): void {
@@ -181,12 +173,12 @@ export function showLuaErrorOverlay(
 	return true;
 }
 
-export function navigateToRuntimeErrorFrameTarget(
+export async function navigateToRuntimeErrorFrameTarget(
 	editor: CartEditor,
 	frame: SourceStackTraceFrame,
-): void {
+): Promise<void> {
 	try {
-		editor.navigation.focusChunkSource(frame.resource);
+		await editor.navigation.focusChunkSource(frame.resource);
 	} catch (error) {
 		showEditorMessage(
 			`Failed to open runtime path: ${extractErrorMessage(error)}`,
