@@ -152,3 +152,33 @@ een pending source-opening. Geen gesimuleerde resolver in die browserproef.
 Er is geen nieuwe guest-tick-instrumentatie, rendererimplementatie of C++-
 machinewijziging toegevoegd om deze twee IDE-fouten te herstellen. Deze review
 is geen universele foutloosheidsgarantie of vervanging van de nog open productgates.
+
+## A03 — Onnodige schemaversie voor eigen debugdata
+
+**Correctie na gebruikersreview:** de symbolcodec schreef een versienummer en
+weigerde ieder ander nummer. Dat was geen backwards-compatibilityreader:
+[Lua `checkHeader`](https://github.com/lua/lua/blob/v5.4.8/lundump.c#L274-L288)
+doet eveneens een exacte versiecheck zonder een oud formaat te lezen. Zo'n
+extern chunkcontract rechtvaardigt echter geen afzonderlijke schemaversie voor
+BMSX-eigen toolingdata waarvan writer en reader samen veranderen.
+
+De constante, het veld en de check zijn verwijderd uit de TS-/C++-symbolowner,
+linker en fixtures. Beide codecs schrijven/lezen dezelfde actuele structuur;
+geen migratie, vervangende fingerprint of compatibilityreader. De bestaande
+`staticLayoutToken` blijft statische layoutidentiteit voor Hot Resume, geen
+metadataversie. De representatietabel en callsites zijn vóór de diff
+vastgelegd: alleen linker, ROM-builder, tooling-media-admission en symboltools;
+geen gewijzigde CPU-dispatch, cartlib-tick, MMIO, GC of renderer-callsite.
+
+De bestaande TS-/C++-codecsuites controleren nu dat de payload geen schemaversie
+bevat, naast hun bestaande metadata-roundtripbewijs. Beide assertions faalden
+vóór de verwijdering en slagen erna. Debug-ROMs en sidecars worden bij
+formaatwijzigingen opnieuw gebouwd, niet door een reader gerepareerd.
+
+**Validatie:** rompacker **124/124**, Lua **1809 geslaagd / 1 bestaande skip**,
+native **31/31**. Een opnieuw gelinkte TS → C++ → TS-proef op vers gebouwde
+BIOS-/Nemesis-symbolen behoudt alle metadata zonder versieveld: 4004/12172 locals
+en 18067/37491 wordintervallen. De echte Studio-inspectie inclusief Save/Reboot,
+Hot Resume, binding-stops en rewind slaagt op **software, WebGL2 en WebGPU**.
+IDE-/rompackertypechecks, browserproductbuild, parity, strikte boundaries
+(**0 issues**), indentation en diffcheck slagen. Geen nieuwe performanceclaim.

@@ -7,7 +7,6 @@ import type { SourceRange } from '../lua/source_range';
 import type { TraceStatementSelection } from '../lua/compiler/trace_statement';
 
 export const BLUA32_SYMBOLS_IMAGE_ID = '__blua32_symbols__';
-export const BLUA32_SYMBOLS_VERSION = 8;
 
 export type Blua32StaticLayoutToken = {
 	lo: number;
@@ -83,7 +82,6 @@ export type Blua32DebugMetadata = {
 };
 
 export type Blua32SymbolsImage = {
-	version: number;
 	imageAddress: number;
 	functionAddresses: number[];
 	moduleFunctions: Blua32ModuleFunction[];
@@ -98,11 +96,7 @@ export function encodeBlua32SymbolsImage(symbols: Blua32SymbolsImage): Uint8Arra
 }
 
 export function decodeBlua32SymbolsImage(bytes: Uint8Array): Blua32SymbolsImage {
-	const symbols = decodeBinary(bytes) as Blua32SymbolsImage;
-	if (symbols.version !== BLUA32_SYMBOLS_VERSION) {
-		throw new Error('BLua32 symbols version is unsupported.');
-	}
-	return symbols;
+	return decodeBinary(bytes) as Blua32SymbolsImage;
 }
 
 export function blua32SourceRangeAtPc(

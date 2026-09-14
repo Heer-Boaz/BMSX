@@ -100,7 +100,7 @@ voor de kleine gespiegelde read-only CPU-accessor, concrete kosten en tests.
 | Wordinterval | `ProgramWordRange { start, end }` in compiler `word_range.ts` | Dezelfde velden in tooling `word_range.h`, `i32` |
 | Local metadata | `LocatedLocalSlotDebug` / `Blua32LocalSlotDebug.liveWordRanges` | `Blua32LocalSlotDebug.liveWordRanges` |
 | PC-query | `blua32LocalSlotLiveAtPc(slot, codeAddress, pc)` | Dezelfde naam, argumenten en binaire zoekberekening |
-| Symbolen | Versie 7, bestaande binary-codec | Versie 7, bestaande binary-codec |
+| Symbolen | Actuele structuur, bestaande binary-codec, geen schemaversie | Dezelfde structuur en codec |
 
 Intervallen zijn halfopen, relatief aan het begin van de definitieve functie,
 in instructiewoorden. WIDE-prefix en opcode behoren tot hetzelfde bereik.
@@ -119,8 +119,8 @@ query. CPU dispatch, MMIO, scheduler, GC, cartlib-register/rebind/tick, snapshot
 en renderers hebben **geen nieuwe callsite**. De C++-wijziging zit in bestaande
 tooling, niet in een native Studio- of gameplayprotocol.
 
-Debug-ROMs/sidecars moeten opnieuw worden gebouwd; de format-owner accepteert
-geen oudere symbolenversie. Geen migratie of compatibility reader.
+Debug-ROMs/sidecars moeten na formaatwijzigingen opnieuw worden gebouwd; writer
+en reader veranderen samen. Geen schemaversie, migratie of compatibility reader.
 
 ## Bewijs en kosten
 

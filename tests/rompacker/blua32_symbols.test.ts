@@ -4,7 +4,6 @@ import { test } from 'node:test';
 
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import {
-	BLUA32_SYMBOLS_VERSION,
 	blua32InlineCallSitesAtPc,
 	blua32LocalSlotLiveAtPc,
 	decodeBlua32SymbolsImage,
@@ -28,7 +27,6 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 		{ calleeFunctionId: 'inner', callRange: innerCallRange },
 	];
 	const symbols: Blua32SymbolsImage = {
-		version: BLUA32_SYMBOLS_VERSION,
 		imageAddress: 0x1000,
 		functionAddresses: [],
 		moduleFunctions: [],
@@ -61,6 +59,7 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 	};
 
 	const decoded = decodeBlua32SymbolsImage(encodeBlua32SymbolsImage(symbols));
+	assert.equal(Object.hasOwn(decoded, 'version'), false, 'symbols carry the current structure without a schema version');
 	assert.deepEqual(decoded.metadata.traceStatements, ['fixture.compile', 'fixture.bind']);
 	assert.deepEqual(decoded.metadata.preloadModules, ['fixture/observer']);
 	for (const traceStatements of ['erase', 'emit', []] as const) {
@@ -90,8 +89,4 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 		},
 	};
 	assert.deepEqual(decodeBlua32SymbolsImage(encodeBlua32SymbolsImage(removed)), removed);
-	assert.throws(
-		() => decodeBlua32SymbolsImage(encodeBlua32SymbolsImage({ ...symbols, version: BLUA32_SYMBOLS_VERSION - 1 })),
-		/BLua32 symbols version is unsupported/,
-	);
 });

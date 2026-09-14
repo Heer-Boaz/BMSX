@@ -65,7 +65,6 @@ import {
 	type Blua32ImageLayout,
 } from './blua32_image';
 import {
-	BLUA32_SYMBOLS_VERSION,
 	type Blua32CapturedLocalDebug,
 	type Blua32DebugMetadata,
 	type Blua32InlineCallSite,
@@ -1079,7 +1078,6 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		upvalueBindingsByFunction,
 	};
 	const symbols: Blua32SymbolsImage = {
-		version: BLUA32_SYMBOLS_VERSION,
 		imageAddress: input.loadAddress,
 		functionAddresses,
 		moduleFunctions,

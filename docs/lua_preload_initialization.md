@@ -44,7 +44,7 @@ gelezen; BMSX neemt hun ownergrens over, niet hun dynamic loader of native ABI.
 | `preloadModules` | `readonly string[]` | `vector<string>` met dezelfde naam | Alleen compiler-startupplanning en toolingmetadata. |
 | Compilatie | Bestaande `FunctionBuilder.markStaticModulePath`, `compileStartup`, `compileBlua32TraceStatement` | Geen C++ broncompiler | Bestaande CALL/CLOSURE/GET/SET; geen nieuwe opcode. |
 | Hot Resume | `buildBlua32Media` leest geïnstalleerde metadata | Geen host-Lua-hercompiler in libretro | Geen nieuwe guestcall of herinitialisatie. |
-| Symbols | `Blua32DebugMetadata`, linker, symbols versie 8 | Gespiegelde metadata/codec, versie 8 | Koude toolinglaag; geen header-, MMIO- of deviceveld. |
+| Symbols | `Blua32DebugMetadata`, linker, actuele symbolstructuur zonder schemaversie | Dezelfde metadata/codec | Koude toolinglaag; geen header-, MMIO- of deviceveld. |
 | Hot paths | CPU-dispatch, BT-evaluate, services, FSM/AE-ticks | Dezelfde ongewijzigde datapaden | Geen nieuwe callsite of werk per tick. |
 
 De gekozen modules moeten echte bronmodules van de build zijn. Het algemene

@@ -65,7 +65,6 @@ std::vector<u8> makeMinimalDiagnosticBootRom(RomImageDomain domain) {
 	}
 	const Blua32TestRom executable = encodeBlua32TestRom(domain, image);
 	Blua32SymbolsImage symbols;
-	symbols.version = BLUA32_SYMBOLS_VERSION;
 	symbols.imageAddress = (domain == RomImageDomain::System ? SYSTEM_ROM_BASE : CART_ROM_BASE)
 		+ BLUA32_TEST_IMAGE_OFFSET;
 	symbols.functionAddresses = executable.functionAddresses;

@@ -17,7 +17,6 @@
 namespace bmsx {
 
 constexpr const char* BLUA32_SYMBOLS_IMAGE_ID = "__blua32_symbols__";
-constexpr u32 BLUA32_SYMBOLS_VERSION = 8u;
 
 struct Blua32InlineCallSite {
 	std::string calleeFunctionId;
@@ -92,7 +91,6 @@ struct Blua32InitParticipant {
 };
 
 struct Blua32SymbolsImage {
-	u32 version = 0;
 	u32 imageAddress = 0;
 	std::vector<u32> functionAddresses;
 	std::vector<Blua32ModuleFunction> moduleFunctions;

@@ -1,4 +1,5 @@
 #include "common/endian.h"
+#include "common/serializer/binencoder.h"
 #include "spec/blua32/image_format.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/bmsx/memory_map.h"
@@ -34,7 +35,6 @@ int main() {
 		{"inner", innerCallRange},
 	};
 	bmsx::Blua32SymbolsImage symbols;
-	symbols.version = bmsx::BLUA32_SYMBOLS_VERSION;
 	symbols.metadata.functionIds = {"entry"};
 	symbols.metadata.traceStatements = std::vector<std::string>{"fixture.compile", "fixture.bind"};
 	symbols.metadata.preloadModules = {"fixture/observer"};
@@ -58,6 +58,10 @@ int main() {
 	symbols.metadata.upvalueBindingsByFunction = {{0u}};
 
 	const std::vector<bmsx::u8> encodedSymbols = bmsx::encodeBlua32SymbolsImage(symbols);
+	const bmsx::BinValue symbolsPayload = bmsx::decodeBinary(encodedSymbols.data(), encodedSymbols.size());
+	if (symbolsPayload.asObject().contains("version")) {
+		throw std::runtime_error("BLua32 symbols must not carry a schema version");
+	}
 	const bmsx::Blua32SymbolsImage decodedSymbols = bmsx::decodeBlua32SymbolsImage(encodedSymbols);
 	if (decodedSymbols.metadata.traceStatements != symbols.metadata.traceStatements
 		|| decodedSymbols.metadata.preloadModules != symbols.metadata.preloadModules) {
@@ -96,8 +100,7 @@ int main() {
 		|| decodedSymbols.metadata.upvalueBindingsByFunction != std::vector<std::vector<bmsx::u32>>{{0u}}) {
 		throw std::runtime_error("BLua32 captured-local provenance did not round-trip");
 	}
-	if (decodedSymbols.version != bmsx::BLUA32_SYMBOLS_VERSION
-		|| bmsx::blua32FunctionDisplayNameById(decodedSymbols, "entry") != "entryDisplay"
+	if (bmsx::blua32FunctionDisplayNameById(decodedSymbols, "entry") != "entryDisplay"
 		|| decodedSymbols.metadata.debugRanges.size() != 2u
 		|| decodedSymbols.metadata.debugInlineCallSiteChains.size() != 2u
 		|| !decodedSymbols.metadata.debugInlineCallSiteChains[0].empty()

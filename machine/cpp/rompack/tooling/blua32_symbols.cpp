@@ -395,10 +395,6 @@ auto encodeMetadata(const Blua32DebugMetadata& metadata) -> BinValue {
 auto decodeBlua32SymbolsImage(std::span<const u8> bytes) -> Blua32SymbolsImage {
 	const BinValue root = decodeBinary(bytes.data(), bytes.size());
 	Blua32SymbolsImage symbols;
-	symbols.version = static_cast<u32>(root.require("version").toNumber());
-	if (symbols.version != BLUA32_SYMBOLS_VERSION) {
-		throw BMSX_RUNTIME_ERROR("BLua32 symbols version is unsupported.");
-	}
 	symbols.imageAddress = static_cast<u32>(root.require("imageAddress").toNumber());
 	symbols.functionAddresses = decodeU32Array(root.require("functionAddresses"));
 	for (const BinValue& value : root.require("moduleFunctions").asArray()) {
@@ -444,7 +440,6 @@ auto encodeBlua32SymbolsImage(const Blua32SymbolsImage& symbols) -> std::vector<
 	staticLayoutToken["lo"] = BinValue(static_cast<i64>(symbols.staticLayoutToken.lo));
 	staticLayoutToken["hi"] = BinValue(static_cast<i64>(symbols.staticLayoutToken.hi));
 	BinObject root;
-	root["version"] = BinValue(static_cast<i64>(symbols.version));
 	root["imageAddress"] = BinValue(static_cast<i64>(symbols.imageAddress));
 	root["functionAddresses"] = encodeU32Array(symbols.functionAddresses);
 	root["moduleFunctions"] = BinValue(std::move(moduleFunctions));

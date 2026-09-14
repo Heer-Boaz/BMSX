@@ -1871,15 +1871,16 @@ receiver kind and current declaration; each function's
 `upvalueBindingsByFunction` references that table by index. Nested captures
 retain the ultimate defining local. `functionDefinitions` associates emitted
 functions with their current syntax, independently of their durable function id.
-TS and C++ tooling share version-7 symbols and the numeric capture-kind enum.
+TS and C++ tooling share the current symbols structure and numeric capture-kind enum.
 Local slots also carry finalized, half-open live word ranges, separate from
 their lexical/inline scopes. The compiler produces those locations from the
 existing liveness analysis; missing optimized locations are unavailable rather
 than stale register values. Source inspection chooses the innermost active
 invocation owning the written binding before testing location availability;
 an unavailable local never redirects to an older recursive invocation. Captured
-fault frames follow the same rule. Debug ROMs and sidecars must be rebuilt for this
-format; there is no older-format reader.
+fault frames follow the same rule. Symbols are internal generated tooling data,
+without a schema-version field, version gate or older-format reader. Writers and
+readers change together; debug ROMs and sidecars must be rebuilt after format changes.
 Physical upvalue descriptors, closure cells and instructions are unchanged.
 
 Explicit live compilation matches lexical tokens and binder-scope ancestry,

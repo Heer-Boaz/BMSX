@@ -45,10 +45,10 @@ is not the desired BMSX semantics and is not an escape route around cell identit
 | Physical function record | `UpvalueDesc { inStack, index }` | Existing upvalue words | Creation route through the current parent's register or closure slot. |
 | CPU | Existing cells and function-record addresses | Same physical representation | No source identities, padding, new flags, cell traversal or migration. |
 
-Debug-symbol version **6** is mirrored without a legacy reader. The redundant
-capture debug-visibility `scope` is removed: actual immutable binder scopes,
-not debugger visibility ranges, now establish lexical correspondence. Normal
-local-debug slots retain their visibility ranges.
+Debug symbols share one current mirrored structure without a schema version or
+legacy reader. The redundant capture debug-visibility `scope` is removed:
+actual immutable binder scopes, not debugger visibility ranges, now establish
+lexical correspondence. Normal local-debug slots retain their visibility ranges.
 
 ## Source matching and allocation
 
