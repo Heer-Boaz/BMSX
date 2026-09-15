@@ -21,6 +21,7 @@ import { captureGxGpuVramSnapshot, executeGxGpuSoftwareVramCommands } from '../b
 import { GxGpuSoftwareState } from '../backend/software/gx_gpu_state';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
 import type { HeadlessHost2DContext } from './host_2d';
+import { blitOpaquePixels } from '../shared/software_pixels';
 import { IDENTITY_HOST_OVERLAY_TRANSFORM } from '../host_overlay/transform';
 import { HostOverlayClipState } from '../host_overlay/clip';
 
@@ -135,6 +136,9 @@ export class HeadlessGPUBackend implements GPUBackend {
 	};
 	private presentedFrameCount = 0;
 	public readonly hostOverlayContext: HeadlessHost2DContext = {
+		framePixels: new Uint8Array(0),
+		frameWidth: 0,
+		frameHeight: 0,
 		transform: IDENTITY_HOST_OVERLAY_TRANSFORM,
 		target: this.framebufferPixels,
 		width: 0,
@@ -259,22 +263,8 @@ export class HeadlessGPUBackend implements GPUBackend {
 			for (let index = 0; index < target.length; index += 1) target[index] |= 0xff000000;
 			return;
 		}
-		// SDL's nearest surface scaler: sample pixel centres, retain integer steps.
-		const sourceStepX = Math.trunc((source.width * 0x10000) / width);
-		const sourceStepY = Math.trunc((source.height * 0x10000) / height);
-		let sourceY = sourceStepY >>> 1;
-		for (let y = 0; y < height; y += 1) {
-			const sourceRow = (sourceY >>> 16) * source.width;
-			const targetRow = y * width;
-			let sourceX = sourceStepX >>> 1;
-			for (let x = 0; x < width; x += 1) {
-				const offset = (sourceRow + (sourceX >>> 16)) * 4;
-				target[targetRow + x] = sourcePixels[offset] | (sourcePixels[offset + 1] << 8)
-					| (sourcePixels[offset + 2] << 16) | 0xff000000;
-				sourceX += sourceStepX;
-			}
-			sourceY += sourceStepY;
-		}
+		blitOpaquePixels(sourcePixels, source.width, source.height, this.framebufferPixels, width,
+			0, 0, width, height, 0, 0, width, height);
 	}
 
 	setActiveTexture(unit: number): void {

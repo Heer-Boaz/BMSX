@@ -1,5 +1,6 @@
 @group(0) @binding(1) var host_atlas: texture_2d<f32>;
 @group(0) @binding(2) var host_sampler: sampler;
+@group(1) @binding(0) var frame_texture: texture_2d<f32>;
 
 struct FragmentInput {
 	@location(0) texcoord: vec2<f32>,
@@ -10,8 +11,11 @@ struct FragmentInput {
 @fragment
 fn main(input: FragmentInput) -> @location(0) vec4<f32> {
 	var texel = vec4<f32>(1.0);
-	if (input.texture_kind != 0u) {
+	if (input.texture_kind == 1u) {
 		texel = textureSampleLevel(host_atlas, host_sampler, input.texcoord, 0.0);
+	}
+	if (input.texture_kind == 2u) {
+		texel = vec4<f32>(textureSampleLevel(frame_texture, host_sampler, input.texcoord, 0.0).rgb, 1.0);
 	}
 	return texel * input.color;
 }

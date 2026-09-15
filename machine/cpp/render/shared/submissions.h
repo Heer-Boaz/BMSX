@@ -74,6 +74,11 @@ struct HostImageRenderSubmission {
 	Layer2D layer = Layer2D::World;
 };
 
+// The completed native frame, resolved by the render graph at execution time.
+struct HostFrameRenderSubmission {
+	RenderRectBounds area;
+};
+
 // Polygon render (outline)
 struct PolyRenderSubmission {
 	std::vector<f32> points;

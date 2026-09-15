@@ -132,13 +132,23 @@ test('held presentation retains native pixels across host resizing and overlay c
 	const nativePixels = new Uint8Array(4 * 3 * 4);
 	backend.readTextureRegion(source, nativePixels, 4, 3, 0, 0, RGBA8_LINEAR_TEXTURE_PARAMS);
 	assert.deepEqual(Array.from(new Uint32Array(nativePixels.buffer)), expected, 'overlay and partial GX output do not contaminate history');
+	renderer.beginFrame(presenter);
+	renderer.fillRect(0, 0, 8, 6, 0, 0xffffffff, LAYER_2D_IDE);
+	renderer.pushClipRect(3, 2, 6, 4);
+	renderer.drawFrame(2, 1, 6, 4);
+	renderer.popClipRect();
+	renderer.endFrame();
+	presenter.present(output, 0, 0);
+	for (let y = 0; y < 6; y += 1) for (let x = 0; x < 8; x += 1) {
+		assert.equal(backend.framebufferWords[y * 8 + x], x >= 3 && x < 6 && y >= 2 && y < 4 ? 0xff332211 : 0xffffffff);
+	}
 	presenter.useScanoutRenderTargetSize();
 	presenter.present(output, 0, 0);
 	assert.deepEqual(Array.from(backend.framebufferWords), expected, 'closing the IDE re-presents the same native frame');
 	presenter.configurePresentation('completed', true);
 	presenter.present(output, 0, 0);
 	assert.ok(backend.framebufferWords.every(pixel => pixel === 0xff665544), 'a completed frame replaces history');
-	assert.equal(presentedFrames, 4, 'one publication per completed host frame');
+	assert.equal(presentedFrames, 5, 'one publication per completed host frame');
 	presenter.dispose();
 });
 

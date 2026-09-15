@@ -164,6 +164,22 @@ try {
 			}
 			await page.evaluate(() => window.fixture.healthy());
 		}
+		await page.evaluate(() => window.fixture.renderGameFrame(false));
+		const nativeFrame = PNG.sync.read(await target.screenshot());
+		assert.deepEqual(await target.evaluate(canvas => [canvas.width, canvas.height]), [16, 12]);
+		assert.ok(new Set(nativeFrame.data).size > 8, 'native VRAM fixture has an asymmetric image');
+		await page.evaluate(() => window.fixture.renderGameFrame(true));
+		const embedded = PNG.sync.read(await target.screenshot({ path: join(artifacts, `frame-${backend}.png`) }));
+		assert.equal(embedded.width, 384); assert.equal(embedded.height, 288);
+		for (let y = 0; y < embedded.height; y += 1) for (let x = 0; x < embedded.width; x += 1) {
+			const inside = x >= 80 && x < 170 && y >= 64 && y < 132;
+			for (let channel = 0; channel < 3; channel += 1) {
+				const sourceX = Math.trunc((Math.trunc((x - 64) / 8) + 0.5) * nativeFrame.width / 16);
+				const sourceY = Math.trunc((Math.trunc((y - 48) / 8) + 0.5) * nativeFrame.height / 12);
+				const expected = inside ? nativeFrame.data[(sourceY * nativeFrame.width + sourceX) * 4 + channel] : 17;
+				assert.equal(embedded.data[(y * embedded.width + x) * 4 + channel], expected, `${backend} frame at ${x},${y}:${channel}`);
+			}
+		}
 		await page.close();
 		console.log(`GRAPH-VIEWPORT:${backend}:PASS (${info.primitives.length} pixel-crop oracles; target resize; physical input/pane lifecycle)`);
 	}

@@ -508,21 +508,8 @@ void SoftwareBackend::presentTexture(TextureHandle texture) {
 		return;
 	}
 
-	const u32 sourceStepX = (static_cast<u32>(source.width) << 16u) / static_cast<u32>(m_width);
-	const u32 sourceStepY = (static_cast<u32>(source.height) << 16u) / static_cast<u32>(m_height);
-	// SDL's nearest surface scaler samples pixel centres.
-	u32 sourceY = sourceStepY >> 1u;
-	for (i32 y = 0; y < m_height; y += 1) {
-		const u32* sourceRow = sourcePixels
-			+ static_cast<size_t>(sourceY >> 16u) * static_cast<size_t>(source.width);
-		u32* targetRow = m_framebuffer + static_cast<size_t>(y) * static_cast<size_t>(targetPixelsPerRow);
-		u32 sourceX = sourceStepX >> 1u;
-		for (i32 x = 0; x < m_width; x += 1) {
-			targetRow[x] = sourceRow[sourceX >> 16u] | 0xff000000u;
-			sourceX += sourceStepX;
-		}
-		sourceY += sourceStepY;
-	}
+	blitOpaquePixels(sourcePixels, source.width, source.height, m_framebuffer, targetPixelsPerRow,
+		0, 0, m_width, m_height, 0, 0, m_width, m_height);
 }
 
 } // namespace bmsx

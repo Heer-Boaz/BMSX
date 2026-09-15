@@ -106,6 +106,7 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram, frameUnifor
 	backend.bindArrayBuffer(null);
 	backend.useProgram(program);
 	gl.uniform1i(gl.getUniformLocation(program, 'u_texture0'), HOST_OVERLAY_TEXTURE_UNIT);
+	gl.uniform1i(gl.getUniformLocation(program, 'u_frame'), HOST_OVERLAY_TEXTURE_UNIT + 1);
 
 	return {
 		gl,
@@ -143,6 +144,8 @@ function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passSta
 	backend.setAlphaBlended2DState(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 	backend.setActiveTexture(HOST_OVERLAY_TEXTURE_UNIT);
 	backend.bindTexture2D(state.hostAtlasTexture);
+	backend.setActiveTexture(HOST_OVERLAY_TEXTURE_UNIT + 1);
+	backend.bindTexture2D(passState.frameTexture as WebGLTexture);
 	backend.bindVertexArray(state.vao);
 }
 

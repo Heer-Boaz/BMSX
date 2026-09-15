@@ -42,6 +42,9 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 export function drawHeadlessHostMenuLayer(backend: HeadlessGPUBackend, frame: HostMenuPipelineState): void {
 	backend.activateDefaultRenderTarget();
 	beginHeadlessHost2D(backend.hostOverlayContext, backend.framebufferPixels, backend.framebufferWidth, backend.framebufferHeight);
+	backend.hostOverlayContext.framePixels = backend.getTexturePixels(frame.frameTexture);
+	backend.hostOverlayContext.frameWidth = frame.frameWidth;
+	backend.hostOverlayContext.frameHeight = frame.frameHeight;
 	for (let index = 0; index < frame.commandCount; index += 1) {
 		renderHeadlessHost2DEntry(backend.hostOverlayContext, frame.commandKinds[index], frame.commandRefs[index]);
 	}
@@ -50,6 +53,9 @@ export function drawHeadlessHostMenuLayer(backend: HeadlessGPUBackend, frame: Ho
 export function drawHeadlessHostOverlayFrame(backend: HeadlessGPUBackend, frame: HostOverlayPipelineState): void {
 	backend.activateDefaultRenderTarget();
 	beginHeadlessHost2D(backend.hostOverlayContext, backend.framebufferPixels, backend.framebufferWidth, backend.framebufferHeight);
+	backend.hostOverlayContext.framePixels = backend.getTexturePixels(frame.frameTexture);
+	backend.hostOverlayContext.frameWidth = frame.frameWidth;
+	backend.hostOverlayContext.frameHeight = frame.frameHeight;
 	for (let index = 0; index < frame.commandCount; index += 1) {
 		renderHeadlessHost2DEntry(backend.hostOverlayContext, frame.commandKinds[index], frame.commandRefs[index]);
 	}

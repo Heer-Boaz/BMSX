@@ -109,6 +109,22 @@ int main() {
 				require(clipped[static_cast<size_t>(y * 64 + x)] == (inside ? 0xffffffff : 0), "logical clip must map to the physical target");
 			}
 		}
+		// Framebuffer textures have OpenGL's lower-left origin; UI coordinates do not.
+		const u8 framePixels[]{0, 0, 255, 255, 255, 255, 255, 255, 255, 0, 0, 255, 0, 255, 0, 255};
+		state.frameTexture = backend.createTexture(framePixels, 2, 2, RGBA8_LINEAR_TEXTURE_PARAMS);
+		state.overlayWidth = 64; state.overlayHeight = 48;
+		const HostFrameRenderSubmission frame{{8, 4, 40, 36, 0}};
+		beginHostOverlayGLES2(backend, pipeline, state);
+		glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT);
+		renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Frame, {.frame = &frame});
+		glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, reference.data());
+		endHostOverlayGLES2(backend, pipeline);
+		require(reference[(47 - 8) * 64 + 12] == 0xff0000ff && reference[(47 - 8) * 64 + 28] == 0xff00ff00,
+			"embedded frame top row is not vertically flipped");
+		require(reference[(47 - 24) * 64 + 12] == 0xffff0000 && reference[(47 - 24) * 64 + 28] == 0xffffffff,
+			"embedded frame bottom row and nearest scaling");
+		require(glGetError() == GL_NO_ERROR, "embedded frame graphics error");
+		backend.destroyTexture(state.frameTexture);
 		shutdownHostOverlayGLES2(backend, pipeline);
 		backend.onContextDestroy();
 	}

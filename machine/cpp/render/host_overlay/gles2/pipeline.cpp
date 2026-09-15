@@ -242,6 +242,7 @@ void shutdownHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& 
 }
 
 void beginHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, const Host2DPipelineState& state) {
+	pipeline.frameTexture = state.frameTexture;
 	pipeline.transform = IDENTITY_HOST_OVERLAY_TRANSFORM;
 	backend.setRenderTarget(backend.backbuffer(), state.width, state.height);
 	glViewport(0, 0, state.width, state.height);
@@ -269,6 +270,15 @@ void renderHost2DEntryGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pi
 		case Host2DKind::Img: {
 			const auto& command = *ref.img;
 			drawHostAtlasImageGLES2(backend, pipeline, command.imgid, command.pos.x, command.pos.y, command.scale.x, command.scale.y, command.flip, command.colorize);
+			return;
+		}
+		case Host2DKind::Frame: {
+			const auto& area = ref.frame->area;
+			const auto& transform = pipeline.transform;
+			drawQuadGLES2(backend, pipeline, pipeline.frameTexture,
+				area.left * transform.scale + transform.offsetX, area.top * transform.scale + transform.offsetY,
+				(area.right - area.left) * transform.scale, (area.bottom - area.top) * transform.scale,
+				0, 1, 1, 0, 0xffffffffu);
 			return;
 		}
 		case Host2DKind::Rect: drawRectGLES2(backend, pipeline, *ref.rect); return;

@@ -1038,6 +1038,9 @@ Background history tasks defer call admission without disabling the control.
 Target/program replacement, lost interaction and failed/discarded evaluations
 revoke pending requests; they never roll back an already executed sample.
 Editor-pane replacement also revokes evaluations still awaiting CPU admission.
+Actor Lab embeds the completed native game image beside these controls, at the
+ordinary host display aspect. A seek changes guest state; drawing a new world
+image remains guest work, not an implicit host-side scene renderer.
 
 The Run menu exposes one checked Pause toggle, without a gameplay keyboard
 binding. Toggling it off explicitly takes over a reviewed position and releases
@@ -5051,6 +5054,11 @@ compose host chrome after the retained game image, never into its history.
 Interlaced field storage follows native scanout geometry, not window/IDE size.
 This source/destination split follows [MAME's screen textures and render targets](https://github.com/mamedev/mame/blob/master/src/emu/render.cpp).
 See [ownership and renderer evidence](host_presentation_sizing.md).
+`Host2DKind.Frame` draws the completed native presentation texture into a host
+rectangle, with the same clip/transform scopes. The rendergraph resolves the
+current history texture at execution; UI commands never retain GPU handles.
+Like [Godot's viewport texture composition](https://github.com/godotengine/godot/blob/4.5/scene/gui/subviewport_container.cpp),
+this neither reads pixels back to the host nor renders a second scene.
 `Host2DKind.Clip`
 is an ordered half-open, top-left-origin logical-pixel rectangle in that same
 lane. The producer intersects nested clips and retains each published rect

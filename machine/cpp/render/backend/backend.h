@@ -291,6 +291,7 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	HostOverlayClipState hostOverlayClip;
 	HostOverlayTransform hostOverlayTransform;
+	const SoftwareTexture* hostOverlayFrame = nullptr;
 	void setPixel(i32 x, i32 y, u32 color);
 	void drawLine(i32 x0, i32 y0, i32 x1, i32 y1, u32 color);
 	void fillRect(i32 x, i32 y, i32 w, i32 h, u32 color);

@@ -28,6 +28,9 @@ import { WorkbenchGraphPointerResult } from '../../../ide/workbench/ui/graph/con
 import { createGraphFixturePanes } from './pane';
 import { hostOverlayPrimitives } from '../../helpers/host_overlay_primitives';
 import { graphConnectionFixture } from '../../helpers/graph_connection_fixture';
+import { gxGpuPcrtcRegisterAddress, GX_GPU_PCRTC_DISPFB1_LOW, GX_GPU_PCRTC_DISPFB1_HIGH,
+	GX_GPU_PCRTC_DISPLAY1_LOW, GX_GPU_PCRTC_DISPLAY1_HIGH, GX_GPU_PCRTC_PMODE_LOW } from '../../../machine/ts/spec/gx/pcrtc';
+import { GX_GPU_PSMGX16 } from '../../../machine/ts/machine/devices/gx/gpu_local_memory';
 export { exerciseCompoundGraph } from './compound';
 export { exerciseGraphLayoutLifetime, exerciseGraphWorkerFailures } from './lifetime';
 export { exerciseGraphConnections } from './connections';
@@ -185,6 +188,33 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 			check(state.overlayWidth === width && state.overlayHeight === height, 'commands retain the frame logical space');
 		},
 		primitives: hostOverlayPrimitives.map(([name]) => name),
+		renderGameFrame(embedded: boolean) {
+			canvas.width = embedded ? WIDTH : 16;
+			canvas.height = embedded ? HEIGHT : 12;
+			if (!embedded) {
+				// Scan out an asymmetric region of real power-on VRAM; no cart or screenshot upload.
+				for (const [register, word] of [
+					[GX_GPU_PCRTC_DISPFB1_LOW, (16 << 9) | (GX_GPU_PSMGX16 << 15)],
+					[GX_GPU_PCRTC_DISPFB1_HIGH, 0], [GX_GPU_PCRTC_DISPLAY1_LOW, 3 << 23],
+					[GX_GPU_PCRTC_DISPLAY1_HIGH, 63 | (11 << 12)], [GX_GPU_PCRTC_PMODE_LOW, 1],
+				]) machine.memory.writeMappedU32LE(gxGpuPcrtcRegisterAddress(register), word);
+				machine.gxGpu.presentReadyFrameOnVblankEdge();
+				presenter.setScanoutSize(16, 12);
+				presenter.configurePresentation('completed', true);
+			} else {
+				presenter.setFixedRenderTargetSize(WIDTH, HEIGHT);
+				presenter.configurePresentation('partial', false);
+				renderer.beginFrame(presenter);
+				renderer.fillRect(0, 0, WIDTH, HEIGHT, 0, 0xff111111, LAYER_2D_IDE);
+				renderer.pushClipRect(80, 64, 170, 132);
+				renderer.drawFrame(64, 48, 192, 144);
+				renderer.popClipRect();
+				renderer.endFrame();
+			}
+			presenter.present(machine.gxGpu.readDeviceOutput(), 0, 0.02);
+			publish();
+			healthy();
+		},
 		clip,
 		renderPrimitive(index: number, clipped: boolean) {
 			const [, kind, command] = hostOverlayPrimitives[index];

@@ -1,4 +1,5 @@
 import type { HostMenuPipelineState, HostOverlayPipelineState, RenderGraphPassContext } from '../backend/backend';
+import { presentedHistoryTexture } from '../post/crt/state';
 
 const EMPTY_HOST_2D_KINDS = [];
 const EMPTY_HOST_2D_REFS = [];
@@ -11,6 +12,9 @@ export function createHostOverlayState(): HostOverlayPipelineState {
 		overlayHeight: 0,
 		time: 0,
 		delta: 0,
+		frameTexture: null,
+		frameWidth: 0,
+		frameHeight: 0,
 		commandKinds: EMPTY_HOST_2D_KINDS,
 		commandRefs: EMPTY_HOST_2D_REFS,
 		commandCount: 0,
@@ -22,6 +26,9 @@ export function writeHostOverlayState(ctx: RenderGraphPassContext, state: HostOv
 	const frame = presenter.hostOverlayQueue.consumeOverlayFrame();
 	state.width = presenter.canvasSize.x;
 	state.height = presenter.canvasSize.y;
+	state.frameTexture = presentedHistoryTexture(ctx);
+	state.frameWidth = presenter.offscreenCanvasSize.x;
+	state.frameHeight = presenter.offscreenCanvasSize.y;
 	state.overlayWidth = frame.logicalWidth;
 	state.overlayHeight = frame.logicalHeight;
 	state.time = ctx.time;
@@ -39,6 +46,9 @@ export function createHostMenuState(): HostMenuPipelineState {
 		overlayHeight: 0,
 		time: 0,
 		delta: 0,
+		frameTexture: null,
+		frameWidth: 0,
+		frameHeight: 0,
 		commandKinds: EMPTY_HOST_2D_KINDS,
 		commandRefs: EMPTY_HOST_2D_REFS,
 		commandCount: 0,
@@ -50,6 +60,9 @@ export function writeHostMenuState(ctx: RenderGraphPassContext, state: HostMenuP
 	const frame = presenter.hostOverlayQueue.consumeHostMenuFrame();
 	state.width = presenter.canvasSize.x;
 	state.height = presenter.canvasSize.y;
+	state.frameTexture = presentedHistoryTexture(ctx);
+	state.frameWidth = presenter.offscreenCanvasSize.x;
+	state.frameHeight = presenter.offscreenCanvasSize.y;
 	state.overlayWidth = presenter.viewportSize.x;
 	state.overlayHeight = presenter.viewportSize.y;
 	state.time = ctx.time;

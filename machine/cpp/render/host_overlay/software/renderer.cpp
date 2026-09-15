@@ -8,6 +8,17 @@
 namespace bmsx {
 namespace {
 
+void drawFrameSoftware(SoftwareBackend& backend, const HostFrameRenderSubmission& command) {
+	const auto& source = *backend.hostOverlayFrame;
+	const auto& area = command.area;
+	const auto& transform = backend.hostOverlayTransform;
+	const auto& clip = backend.hostOverlayClip;
+	blitOpaquePixels(source.data.data(), source.width, source.height, backend.framebuffer(), backend.pitch() / static_cast<i32>(sizeof(u32)),
+		static_cast<i32>(area.left * transform.scale + transform.offsetX), static_cast<i32>(area.top * transform.scale + transform.offsetY),
+		static_cast<i32>(area.right * transform.scale + transform.offsetX), static_cast<i32>(area.bottom * transform.scale + transform.offsetY),
+		clip.left, clip.top, clip.right, clip.bottom);
+}
+
 
 void drawRectSoftware(SoftwareBackend& backend, const RectRenderSubmission& command) {
 	const auto& transform = backend.hostOverlayTransform;
@@ -202,7 +213,7 @@ void drawGlyphsSoftware(SoftwareBackend& backend, const GlyphRenderSubmission& c
 } // namespace
 
 void beginHostOverlaySoftware(SoftwareBackend& backend, const Host2DPipelineState& state) {
-	(void)state;
+	backend.hostOverlayFrame = static_cast<const SoftwareTexture*>(state.frameTexture);
 	backend.hostOverlayTransform = IDENTITY_HOST_OVERLAY_TRANSFORM;
 	backend.hostOverlayClip.reset(backend.width(), backend.height(), backend.width(), backend.height());
 }
@@ -212,6 +223,7 @@ void renderHost2DEntrySoftware(SoftwareBackend& backend, Host2DKind kind, Host2D
 		case Host2DKind::Transform: backend.hostOverlayTransform = *ref.transform; return;
 		case Host2DKind::Clip: backend.hostOverlayClip.set(*ref.clip); return;
 		case Host2DKind::Img: drawImageSoftware(backend, *ref.img); return;
+		case Host2DKind::Frame: drawFrameSoftware(backend, *ref.frame); return;
 		case Host2DKind::Rect: drawRectSoftware(backend, *ref.rect); return;
 		case Host2DKind::Poly: drawPolySoftware(backend, *ref.poly); return;
 		case Host2DKind::Glyphs: drawGlyphsSoftware(backend, *ref.glyphs); return;

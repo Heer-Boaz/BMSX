@@ -14,6 +14,7 @@ import {
 	RectRenderKind,
 	type GlyphRenderSubmission,
 	type HostImageRenderSubmission,
+	type HostFrameRenderSubmission,
 	type PolyRenderSubmission,
 	type RectRenderSubmission,
 	type color,
@@ -23,6 +24,7 @@ export const HOST_OVERLAY_INSTANCE_FLOATS = 14;
 export const HOST_OVERLAY_INSTANCE_FLOAT_BYTES = HOST_OVERLAY_INSTANCE_FLOATS * Float32Array.BYTES_PER_ELEMENT;
 export const HOST_OVERLAY_TEXTURE_SOLID = 0;
 export const HOST_OVERLAY_TEXTURE_ATLAS = 1;
+export const HOST_OVERLAY_TEXTURE_FRAME = 2;
 
 const INITIAL_INSTANCE_CAPACITY = 4096;
 const HOST_ATLAS_U_SCALE = 1 / HOST_SYSTEM_ATLAS.width;
@@ -69,6 +71,9 @@ export class HostOverlayQuadStream {
 				return;
 			case Host2DKind.Img:
 				this.appendImage(command as HostImageRenderSubmission);
+				return;
+			case Host2DKind.Frame:
+				this.appendFrame(command as HostFrameRenderSubmission);
 				return;
 			case Host2DKind.Glyphs:
 				this.appendGlyphRun(command as GlyphRenderSubmission);
@@ -174,6 +179,14 @@ export class HostOverlayQuadStream {
 		this.appendFillRect(left, bottom - 1, right, bottom, command.color);
 		this.appendFillRect(left, top, left + 1, bottom, command.color);
 		this.appendFillRect(right - 1, top, right, bottom, command.color);
+	}
+
+	private appendFrame(command: HostFrameRenderSubmission): void {
+		const { area } = command;
+		const { scale, offsetX, offsetY } = this.transform;
+		this.appendQuad(area.left * scale + offsetX, area.top * scale + offsetY,
+			(area.right - area.left) * scale, 0, 0, (area.bottom - area.top) * scale,
+			0, 0, 1, 1, HOST_OVERLAY_TEXTURE_FRAME, 0xffffffff);
 	}
 
 	private appendImage(command: HostImageRenderSubmission): void {

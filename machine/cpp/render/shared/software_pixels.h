@@ -1,8 +1,32 @@
 #pragma once
 
 #include "common/primitives.h"
+#include <algorithm>
 
 namespace bmsx {
+
+// Opaque nearest sampling at pixel centres. Clipping never changes the source mapping.
+inline void blitOpaquePixels(const u32* source, i32 sourceWidth, i32 sourceHeight,
+	u32* target, i32 targetStride, i32 left, i32 top, i32 right, i32 bottom,
+	i32 clipLeft, i32 clipTop, i32 clipRight, i32 clipBottom) {
+	const i32 startX = std::max(left, clipLeft), startY = std::max(top, clipTop);
+	const i32 endX = std::min(right, clipRight), endY = std::min(bottom, clipBottom);
+	if (startX >= endX || startY >= endY) return;
+	const u32 sourceStepX = (static_cast<u32>(sourceWidth) << 16u) / static_cast<u32>(right - left);
+	const u32 sourceStepY = (static_cast<u32>(sourceHeight) << 16u) / static_cast<u32>(bottom - top);
+	u32 sourceY = (sourceStepY >> 1u) + static_cast<u32>(startY - top) * sourceStepY;
+	for (i32 y = startY; y < endY; y += 1) {
+		const u32 sourceRow = (sourceY >> 16u) * static_cast<u32>(sourceWidth);
+		i32 offset = y * targetStride + startX;
+		u32 sourceX = (sourceStepX >> 1u) + static_cast<u32>(startX - left) * sourceStepX;
+		for (i32 x = startX; x < endX; x += 1) {
+			target[offset] = source[sourceRow + (sourceX >> 16u)] | 0xff000000u;
+			offset += 1;
+			sourceX += sourceStepX;
+		}
+		sourceY += sourceStepY;
+	}
+}
 
 inline u32 packSoftwareArgb(u8 r, u8 g, u8 b, u8 a) {
 	return (static_cast<u32>(a) << 24u)

@@ -10,6 +10,7 @@ import {
 import type {
 	GlyphRenderSubmission,
 	HostImageRenderSubmission,
+	HostFrameRenderSubmission,
 	PolyRenderSubmission,
 	RectRenderSubmission,
 	color,
@@ -19,6 +20,7 @@ import { blendPixel } from './pixel_ops';
 import type { FontGlyph } from '../shared/bitmap_font';
 import type { HostOverlayClipRect, HostOverlayClipState } from '../host_overlay/clip';
 import { IDENTITY_HOST_OVERLAY_TRANSFORM, type HostOverlayTransform } from '../host_overlay/transform';
+import { blitOpaquePixels } from '../shared/software_pixels';
 
 export type HeadlessHost2DContext = {
 	target: Uint8Array;
@@ -29,6 +31,9 @@ export type HeadlessHost2DContext = {
 	lineHeight: number;
 	clip: HostOverlayClipState;
 	transform: Readonly<HostOverlayTransform>;
+	framePixels: Uint8Array;
+	frameWidth: number;
+	frameHeight: number;
 };
 
 export function beginHeadlessHost2D(context: HeadlessHost2DContext, target: Uint8Array, width: number, height: number): void {
@@ -55,10 +60,23 @@ export function renderHeadlessHost2DEntry(context: HeadlessHost2DContext, kind: 
 		case Host2DKind.Img:
 			drawImage(context, item as HostImageRenderSubmission);
 			return;
+		case Host2DKind.Frame:
+			drawFrame(context, item as HostFrameRenderSubmission);
+			return;
 		case Host2DKind.Poly:
 			drawPoly(context, item as PolyRenderSubmission);
 			return;
 	}
+}
+
+function drawFrame(context: HeadlessHost2DContext, command: HostFrameRenderSubmission): void {
+	const { area } = command;
+	const { scale, offsetX, offsetY } = context.transform;
+	const clip = context.clip;
+	blitOpaquePixels(context.framePixels, context.frameWidth, context.frameHeight, context.target, context.width,
+		Math.trunc(area.left * scale + offsetX), Math.trunc(area.top * scale + offsetY),
+		Math.trunc(area.right * scale + offsetX), Math.trunc(area.bottom * scale + offsetY),
+		clip.left, clip.top, clip.right, clip.bottom);
 }
 
 function drawRect(context: HeadlessHost2DContext, command: RectRenderSubmission): void {

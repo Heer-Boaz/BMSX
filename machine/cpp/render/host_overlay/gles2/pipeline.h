@@ -26,6 +26,7 @@ struct HostOverlayGLES2State {
 	GLuint vbo = 0;
 	TextureHandle whiteTexture = nullptr;
 	TextureHandle hostAtlasTexture = nullptr;
+	TextureHandle frameTexture = nullptr;
 };
 
 void bootstrapHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline);

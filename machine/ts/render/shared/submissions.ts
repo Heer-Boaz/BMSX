@@ -59,6 +59,11 @@ export type HostImageRenderSubmission = ImageRenderSubmissionBase & {
 	imgid: string;
 };
 
+/** The completed native frame, resolved by the render graph at execution time. */
+export type HostFrameRenderSubmission = {
+	area: RenderRectBounds;
+};
+
 export type PolyRenderSubmission = {
 	points: Polygon;
 	z: number;

@@ -293,6 +293,9 @@ export type Host2DPipelineState = {
 	overlayHeight: number;
 	time: number;
 	delta: number;
+	frameTexture: TextureHandle;
+	frameWidth: number;
+	frameHeight: number;
 };
 
 export type HostOverlayPipelineState = Host2DPipelineState & {

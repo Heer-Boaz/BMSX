@@ -1,4 +1,5 @@
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
+import { GX_GPU_DISPLAY_ASPECT_WIDTH, GX_GPU_DISPLAY_ASPECT_HEIGHT } from '../../../../machine/ts/spec/bmsx/model';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
@@ -72,7 +73,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		const { layout, outline } = input;
 		if (this.timelineVisible) input.timelineLayout.update(input.timeline, layout);
 		if (contentsChanged || layoutChanged || timelineChanged) {
-			this.updateScrollRange();
+			this.updateContentLayout();
 			layoutWorkbenchActionBar(input.actionBar, layout.right - 4, layout.top, layout.top + layout.rowHeight + 4, measureText);
 			for (const row of outline.rows) row.element.displayLabel = truncateTextToWidth(row.element.label,
 				outline.layout.contentRight - outline.layout.contentLeft - (row.depth + 2) * outline.layout.indentWidth - 4);
@@ -98,14 +99,28 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			if (!shouldRepeatKeyFromPlayer(key, input)) continue;
 			consumeIdeKey(key, input);
 			navigateWorkbenchTree(this.input.outline, command);
-			this.updateScrollRange();
+			this.updateContentLayout();
 			return;
 		}
 		if (isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); this.commands.execute('actorLab.details'); }
 	}
-	private updateScrollRange(): void {
+	private updateContentLayout(): void {
 		const { layout } = this.input;
-		this.input.outline.updateLayout(4, layout.top + layout.rowHeight + 7, layout.right, layout.bottom - (this.input.timeline.visible ? this.input.timelineLayout.height : 0),
+		const top = layout.top + layout.rowHeight + 7;
+		const bottom = layout.bottom - (this.input.timeline.visible ? this.input.timelineLayout.height : 0);
+		const divider = Math.trunc(layout.right * 0.4);
+		const previewLeft = divider + 6;
+		const previewTop = top + layout.rowHeight + 4;
+		const availableWidth = Math.max(0, layout.right - 4 - previewLeft);
+		const availableHeight = Math.max(0, bottom - 4 - previewTop);
+		// Match the ordinary host display aspect, including non-square native scanout pixels.
+		const scale = Math.trunc(Math.min(availableWidth / GX_GPU_DISPLAY_ASPECT_WIDTH, availableHeight / GX_GPU_DISPLAY_ASPECT_HEIGHT));
+		const width = GX_GPU_DISPLAY_ASPECT_WIDTH * scale, height = GX_GPU_DISPLAY_ASPECT_HEIGHT * scale;
+		const bounds = this.input.previewBounds;
+		bounds.left = previewLeft + Math.trunc((availableWidth - width) / 2);
+		bounds.top = previewTop + Math.trunc((availableHeight - height) / 2);
+		bounds.right = bounds.left + width; bounds.bottom = bounds.top + height;
+		this.input.outline.updateLayout(4, top, divider, bottom,
 			layout.rowHeight + 4, editorViewState.font.advance(' ') * 2);
 	}
 	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
@@ -125,7 +140,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			} else if (workbenchTreeTwistieContainsPosition(this.input.outline, index, snapshot.viewportX)) {
 				const node = this.input.outline.rows[index];
 				setWorkbenchTreeCollapsed(this.input.outline, index, !node.collapsed);
-				this.updateScrollRange();
+				this.updateContentLayout();
 			}
 		}
 		return true;

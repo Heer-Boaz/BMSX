@@ -44,6 +44,10 @@ export class OverlayApi {
 		this.renderer.strokeRect(x0, y0, x1, y1, z, resolveThemeTokenColor(colorindex), LAYER_2D_IDE);
 	}
 
+	public drawFrame(left: number, top: number, right: number, bottom: number): void {
+		this.renderer.drawFrame(left, top, right, bottom);
+	}
+
 	public blit_colorized(imgid: string, x: number, y: number, z: number, colorize: color): void {
 		this.renderer.spriteColorized(imgid, x, y, z, colorize, LAYER_2D_IDE);
 	}

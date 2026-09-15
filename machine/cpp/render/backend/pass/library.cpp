@@ -57,14 +57,6 @@ TextureHandle currentFrameSourceTexture(const RenderPassDef::RenderGraphPassCont
 		: ctx.getTexture(RenderPassDef::RenderGraphSlot::FrameColor);
 }
 
-TextureHandle presentedHistoryTexture(const RenderPassDef::RenderGraphPassContext& ctx) {
-	const VideoPresenter& presenter = *ctx.presenter;
-	const u8 historyIndex = presenter.commitPresentationFrame
-		? presenter.presentationHistoryDestinationIndex()
-		: presenter.presentationHistorySourceIndex;
-	return ctx.getTexture(presentationHistorySlot(historyIndex));
-}
-
 void writeAutoPresentPipelineState(
 	const RenderPassDef::RenderGraphPassContext& ctx,
 	RenderPassStateStorage& state
@@ -150,6 +142,14 @@ void writeDeviceQuantizePipelineState(
 }
 
 } // namespace
+
+TextureHandle presentedHistoryTexture(const RenderPassDef::RenderGraphPassContext& ctx) {
+	const VideoPresenter& presenter = *ctx.presenter;
+	const u8 historyIndex = presenter.commitPresentationFrame
+		? presenter.presentationHistoryDestinationIndex()
+		: presenter.presentationHistorySourceIndex;
+	return ctx.getTexture(presentationHistorySlot(historyIndex));
+}
 
 
 bool shouldUpdatePresentationHistoryA(VideoPresenter* presenter, void*) {

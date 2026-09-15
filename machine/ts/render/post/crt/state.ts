@@ -36,7 +36,8 @@ function presentationHistorySlot(index: 0 | 1): 'frame_history_a' | 'frame_histo
 	return index === 0 ? 'frame_history_a' : 'frame_history_b';
 }
 
-function presentedHistoryTexture(ctx: RenderGraphPassContext, presenter: VideoPresenter) {
+export function presentedHistoryTexture(ctx: RenderGraphPassContext) {
+	const presenter = ctx.presenter;
 	const historyIndex = presenter.commitPresentationFrame ? presenter.presentationHistoryDestinationIndex : presenter.presentationHistorySourceIndex;
 	return ctx.getTex(presentationHistorySlot(historyIndex));
 }
@@ -74,7 +75,7 @@ export function writePresentPassState(ctx: RenderGraphPassContext, state: Presen
 	state.height = presenter.canvasSize.y;
 	state.srcWidth = presenter.offscreenCanvasSize.x;
 	state.srcHeight = presenter.offscreenCanvasSize.y;
-	state.colorTex = presentedHistoryTexture(ctx, presenter);
+	state.colorTex = presentedHistoryTexture(ctx);
 }
 
 export function createCrtPassState(): CRTPipelineState {
@@ -110,7 +111,7 @@ export function writeCrtPassState(ctx: RenderGraphPassContext, state: CRTPipelin
 	state.srcWidth = presenter.offscreenCanvasSize.x;
 	state.srcHeight = presenter.offscreenCanvasSize.y;
 	state.time = ctx.time;
-	state.colorTex = presentedHistoryTexture(ctx, presenter);
+	state.colorTex = presentedHistoryTexture(ctx);
 	const options = state.options;
 	options.applyNoise = applyCrt && presenter.enable_noise;
 	if (options.applyNoise) {

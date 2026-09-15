@@ -7,6 +7,7 @@ import type { WorkbenchTreeNode } from '../../ui/tree_view';
 import type { ResourceDomain } from '../../../common/resource';
 import { ActorTimelineTransport } from './timeline';
 import { ActorTimelineLayout } from './timeline_layout';
+import { create_rect_bounds } from '../../../../machine/ts/common/rect';
 
 /** View state only. Borrowed rows are released before guest execution. */
 export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'> {
@@ -20,6 +21,7 @@ export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'>
 	public readonly outline = new ScrollableWorkbenchTree<ActorNode>();
 	public readonly timeline = new ActorTimelineTransport();
 	public readonly timelineLayout = new ActorTimelineLayout();
+	public readonly previewBounds = create_rect_bounds();
 	public readonly actionBar = createWorkbenchActionBar('actorLab.title');
 	public readonly layout: FullWidthWorkbenchLayout = {
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,

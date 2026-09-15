@@ -14,6 +14,9 @@ void writeHostOverlayPassState(
 	const HostOverlayFrame frame = presenter.hostOverlayQueue.consumeOverlayFrame();
 	state.width = static_cast<i32>(presenter.canvasSize.x);
 	state.height = static_cast<i32>(presenter.canvasSize.y);
+	state.frameTexture = presentedHistoryTexture(ctx);
+	state.frameWidth = static_cast<i32>(presenter.offscreenCanvasSize.x);
+	state.frameHeight = static_cast<i32>(presenter.offscreenCanvasSize.y);
 	state.overlayWidth = frame.logicalWidth;
 	state.overlayHeight = frame.logicalHeight;
 	state.commandKinds = frame.commandKinds;
@@ -29,6 +32,9 @@ void writeHostMenuPassState(
 	VideoPresenter& presenter = *ctx.presenter;
 	state.width = static_cast<i32>(presenter.canvasSize.x);
 	state.height = static_cast<i32>(presenter.canvasSize.y);
+	state.frameTexture = presentedHistoryTexture(ctx);
+	state.frameWidth = static_cast<i32>(presenter.offscreenCanvasSize.x);
+	state.frameHeight = static_cast<i32>(presenter.offscreenCanvasSize.y);
 	state.overlayWidth = static_cast<i32>(presenter.viewportSize.x);
 	state.overlayHeight = static_cast<i32>(presenter.viewportSize.y);
 	const HostMenuFrame frame = presenter.hostOverlayQueue.consumeHostMenuFrame();

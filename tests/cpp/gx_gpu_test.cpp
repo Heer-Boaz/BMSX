@@ -12,6 +12,7 @@
 #include "render/backend/backend.h"
 #include "render/backend/pass/library.h"
 #include "render/video_presenter.h"
+#include "render/shared/submissions.h"
 #include "render/backend/software/gx_gpu.h"
 #include "render/backend/software/gx_gpu_scanout.h"
 #include "render/backend/software/gx_gpu_state.h"
@@ -3325,6 +3326,16 @@ void testNativePresentationRetainsHistoryAcrossHostResizing() {
 	require(registry.getStateRef<bmsx::PresentPipelineState>("present").colorTex == source, "host resize retains history texture identity");
 	std::fill_n(software.framebuffer(), 8 * 6, 0xffffffff);
 	require(std::all_of(source->data.begin(), source->data.end(), [](auto pixel) { return pixel == 0xff112233; }), "host drawing and partial output do not change history");
+	const bmsx::RectRenderSubmission background{bmsx::RectRenderKind::Fill, {0, 0, 8, 6, 0}, 0xffffffff, bmsx::Layer2D::IDE};
+	const bmsx::HostFrameRenderSubmission image{{2, 1, 6, 4, 0}};
+	const bmsx::HostOverlayClipRect clip{3, 2, 6, 4};
+	const bmsx::Host2DKind kinds[]{bmsx::Host2DKind::Rect, bmsx::Host2DKind::Clip, bmsx::Host2DKind::Frame};
+	const bmsx::Host2DRef refs[]{{.rect = &background}, {.clip = &clip}, {.frame = &image}};
+	presenter.hostOverlayQueue.publishOverlayFrame({8, 6, kinds, refs, 3});
+	presenter.present(frame.output, 0, 0);
+	for (int y = 0; y < 6; ++y) for (int x = 0; x < 8; ++x) {
+		require(software.framebuffer()[y * 8 + x] == (x >= 3 && x < 6 && y >= 2 && y < 4 ? 0xff112233u : 0xffffffffu), "embedded frame samples native history through the host clip");
+	}
 	presenter.useScanoutRenderTargetSize();
 	presenter.present(frame.output, 0, 0);
 	require(std::all_of(software.framebuffer(), software.framebuffer() + 12, [](auto pixel) { return pixel == 0xff112233; }), "return from host surface re-presents retained game pixels");

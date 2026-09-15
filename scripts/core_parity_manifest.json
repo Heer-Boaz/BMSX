@@ -119,6 +119,11 @@
 			"pattern": "machine/ts/machine/cpu/value_slots.ts",
 			"category": "cpu_interpreter_exception",
 			"reason": "ts_soa_register_storage_cpp_uses_qnan_boxed_value_words_directly"
+		},
+		{
+			"pattern": "machine/ts/render/shared/software_pixels.ts",
+			"category": "host",
+			"reason": "software_frame_blit_mirrored_by_cpp_shared_software_pixels"
 		}
 	],
 	"cpp_patterns": [

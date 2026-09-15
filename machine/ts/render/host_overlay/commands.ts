@@ -1,6 +1,7 @@
 import type {
 	GlyphRenderSubmission,
 	HostImageRenderSubmission,
+	HostFrameRenderSubmission,
 	PolyRenderSubmission,
 	RectRenderSubmission,
 } from '../shared/submissions';
@@ -14,10 +15,12 @@ export const enum Host2DKind {
 	Glyphs,
 	Clip,
 	Transform,
+	Frame,
 }
 
 export type Host2DRef =
 	| HostImageRenderSubmission
+	| HostFrameRenderSubmission
 	| PolyRenderSubmission
 	| RectRenderSubmission
 	| GlyphRenderSubmission

@@ -6,6 +6,7 @@ import {
 	RectRenderKind,
 	type GlyphRenderSubmission,
 	type HostImageRenderSubmission,
+	type HostFrameRenderSubmission,
 	type PolyRenderSubmission,
 	type RectRenderSubmission,
 	type color,
@@ -22,6 +23,7 @@ type OverlayCommandBuffer = {
 	frame: HostOverlayFrame;
 	rectPool: RectRenderSubmission[];
 	imagePool: HostImageRenderSubmission[];
+	framePool: HostFrameRenderSubmission[];
 	itemPool: GlyphRenderSubmission[];
 	polyPool: PolyRenderSubmission[];
 	clipPool: HostOverlayClipRect[];
@@ -33,6 +35,7 @@ type OverlayCommandBuffer = {
 	transformDepth: number;
 	rectCount: number;
 	imageCount: number;
+	frameCount: number;
 	itemCount: number;
 	polyCount: number;
 	clipCount: number;
@@ -94,6 +97,7 @@ function createOverlayCommandBuffer(): OverlayCommandBuffer {
 		},
 		rectPool: [],
 		imagePool: [],
+		framePool: [],
 		itemPool: [],
 		polyPool: [],
 		clipPool: [],
@@ -105,6 +109,7 @@ function createOverlayCommandBuffer(): OverlayCommandBuffer {
 		transformDepth: 1,
 		rectCount: 0,
 		imageCount: 0,
+		frameCount: 0,
 		itemCount: 0,
 		polyCount: 0,
 		clipCount: 0,
@@ -152,6 +157,7 @@ export class OverlayRenderer {
 		buffer.commandCount = 0;
 		buffer.rectCount = 0;
 		buffer.imageCount = 0;
+		buffer.frameCount = 0;
 		buffer.itemCount = 0;
 		buffer.polyCount = 0;
 		buffer.clipCount = 0;
@@ -214,6 +220,19 @@ export class OverlayRenderer {
 		const buffer = this.activeBuffer;
 		buffer.transformDepth -= 1;
 		this.queueCommand(Host2DKind.Transform, buffer.transformStack[buffer.transformDepth - 1]);
+	}
+
+	public drawFrame(left: number, top: number, right: number, bottom: number): void {
+		const buffer = this.activeBuffer;
+		let submission = buffer.framePool[buffer.frameCount];
+		if (submission === undefined) {
+			submission = { area: { left: 0, top: 0, right: 0, bottom: 0, z: 0 } };
+			buffer.framePool.push(submission);
+		}
+		buffer.frameCount += 1;
+		const area = submission.area;
+		area.left = left; area.top = top; area.right = right; area.bottom = bottom;
+		this.queueCommand(Host2DKind.Frame, submission);
 	}
 
 	/** Translates a retained route into the published buffer, never mutating the source geometry. */

@@ -86,6 +86,9 @@ struct Host2DPipelineState {
 	i32 overlayHeight = 0;
 	f64 time = 0.0;
 	f64 delta = 0.0;
+	TextureHandle frameTexture = nullptr;
+	i32 frameWidth = 0;
+	i32 frameHeight = 0;
 };
 
 struct HostOverlayPipelineState : Host2DPipelineState {
@@ -307,6 +310,8 @@ private:
 	std::unordered_map<std::string, RegisteredPassRec> m_registered;
 	std::unordered_map<std::string, bool> m_passEnabled;
 };
+
+TextureHandle presentedHistoryTexture(const RenderPassDef::RenderGraphPassContext& ctx);
 
 } // namespace bmsx
 

@@ -24,6 +24,7 @@ import fragmentShaderCode from './shaders/host_overlay.frag.wgsl';
 type HostOverlayRuntime = {
 	pipeline: GPURenderPipeline;
 	bindGroup: GPUBindGroup;
+	frameBindGroups: WeakMap<GPUTexture, GPUBindGroup>;
 	uniformBuffer: GPUBuffer;
 	instanceFloatBuffer: GPUBuffer;
 	instanceTextureKindBuffer: GPUBuffer;
@@ -66,7 +67,9 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 	});
 	const pipeline = device.createRenderPipeline({
 		label: 'webgpu_host_overlay',
-		layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+		layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout, device.createBindGroupLayout({
+			entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }],
+		})] }),
 		vertex: {
 			module: device.createShaderModule({ code: vertexShaderCode, label: 'webgpu_host_overlay_vs' }),
 			entryPoint: 'main',
@@ -127,6 +130,7 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 	return {
 		pipeline,
 		bindGroup,
+		frameBindGroups: new WeakMap(),
 		uniformBuffer,
 		instanceFloatBuffer: createInstanceFloatBuffer(device, stream),
 		instanceTextureKindBuffer: createInstanceTextureKindBuffer(device, stream),
@@ -160,6 +164,15 @@ function renderStream(backend: WebGPUBackend, runtime: HostOverlayRuntime, state
 	}
 	const device = backend.device;
 	prepareInstanceBuffers(device, runtime);
+	const frameTexture = state.frameTexture as GPUTexture;
+	let frameBindGroup = runtime.frameBindGroups.get(frameTexture);
+	if (frameBindGroup === undefined) {
+		frameBindGroup = device.createBindGroup({
+			layout: runtime.pipeline.getBindGroupLayout(1),
+			entries: [{ binding: 0, resource: frameTexture.createView() }],
+		});
+		runtime.frameBindGroups.set(frameTexture, frameBindGroup);
+	}
 	const uniformScratch = runtime.uniformScratch;
 	uniformScratch[0] = state.overlayWidth;
 	uniformScratch[1] = state.overlayHeight;
@@ -174,6 +187,7 @@ function renderStream(backend: WebGPUBackend, runtime: HostOverlayRuntime, state
 	const pass = backend.beginRenderPass(runtime.passDesc) as WebGPUPassEncoder;
 	pass.encoder.setPipeline(runtime.pipeline);
 	pass.encoder.setBindGroup(0, runtime.bindGroup);
+	pass.encoder.setBindGroup(1, frameBindGroup);
 	pass.encoder.setVertexBuffer(0, runtime.instanceFloatBuffer);
 	pass.encoder.setVertexBuffer(1, runtime.instanceTextureKindBuffer);
 	const clip = runtime.clip;
