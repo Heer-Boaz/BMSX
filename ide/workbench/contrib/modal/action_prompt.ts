@@ -12,7 +12,8 @@ import type { PlayerInput } from '../../../../hosts/common/input/player';
 import { writeCenteredDialogBounds } from '../../../editor/render/dialog_layout';
 import { api } from '../../../runtime/overlay_api';
 import { editorViewState } from '../../../editor/ui/view/state';
-import type { ActionPromptAction, PointerSnapshot } from '../../../common/models';
+import type { PointerSnapshot } from '../../../common/models';
+import type { EditorActionRequest } from '../../../commands/action_request';
 import type { FontVariant } from '../../../../machine/ts/render/shared/bmsx_font';
 import type { CartEditor } from '../../../cart_editor';
 import type { EditorTextModel } from '../../../editor/model/text_model';
@@ -25,7 +26,7 @@ type ActionPromptLayout = {
 };
 
 type ActionPromptState = {
-	action: ActionPromptAction;
+	request: EditorActionRequest;
 	workingCopies: readonly EditorTextModel[];
 	layout: ActionPromptLayout;
 };
@@ -71,6 +72,12 @@ const REBOOT_PROMPT_TEXT: ActionPromptText = {
 	secondaryLabel: 'REBOOT WITHOUT SAVING',
 };
 
+const RUN_PROMPT_TEXT: ActionPromptText = {
+	messageLines: ['UNSAVED CHANGES DETECTED.', 'SAVE CHANGES BEFORE RUNNING?'],
+	primaryLabel: 'SAVE & RUN',
+	secondaryLabel: 'RUN WITHOUT SAVING',
+};
+
 const CLOSE_PROMPT_TEXT: ActionPromptText = {
 	messageLines: CLOSE_MESSAGE_LINES,
 	primaryLabel: 'SAVE & HIDE',
@@ -84,13 +91,13 @@ export const actionPromptState: ActionPromptUiState = {
 	prompt: null,
 };
 
-let actionPromptLayoutAction: ActionPromptAction = null;
+let actionPromptLayoutAction: EditorActionRequest['action'] = null;
 let actionPromptLayoutViewportWidth = -1;
 let actionPromptLayoutViewportHeight = -1;
 let actionPromptLayoutLineHeight = -1;
 let actionPromptLayoutFontVariant: FontVariant = null;
 
-function isActionPromptLayoutCurrent(action: ActionPromptAction): boolean {
+function isActionPromptLayoutCurrent(action: EditorActionRequest['action']): boolean {
 	return actionPromptLayoutAction === action
 		&& actionPromptLayoutViewportWidth === editorViewState.viewportWidth
 		&& actionPromptLayoutViewportHeight === editorViewState.viewportHeight
@@ -98,7 +105,7 @@ function isActionPromptLayoutCurrent(action: ActionPromptAction): boolean {
 		&& actionPromptLayoutFontVariant === editorViewState.fontVariant;
 }
 
-function markActionPromptLayoutCurrent(action: ActionPromptAction): void {
+function markActionPromptLayoutCurrent(action: EditorActionRequest['action']): void {
 	actionPromptLayoutAction = action;
 	actionPromptLayoutViewportWidth = editorViewState.viewportWidth;
 	actionPromptLayoutViewportHeight = editorViewState.viewportHeight;
@@ -121,10 +128,10 @@ export function hasActionPrompt(): boolean {
 }
 
 export function showActionPrompt(
-	action: ActionPromptAction,
+	request: EditorActionRequest,
 	workingCopies: readonly EditorTextModel[],
 ): void {
-	actionPromptState.prompt = { action, workingCopies, layout: actionPromptLayout };
+	actionPromptState.prompt = { request, workingCopies, layout: actionPromptLayout };
 	actionPromptLayoutAction = null;
 	updateActionPromptLayout();
 }
@@ -134,12 +141,14 @@ export function closeActionPrompt(): void {
 	actionPromptLayoutAction = null;
 }
 
-export function getActionPromptText(action: ActionPromptAction): ActionPromptText {
+export function getActionPromptText(action: EditorActionRequest['action']): ActionPromptText {
 	switch (action) {
 		case 'hot-resume':
 			return HOT_RESUME_PROMPT_TEXT;
 		case 'reboot':
 			return REBOOT_PROMPT_TEXT;
+		case 'run':
+			return RUN_PROMPT_TEXT;
 		case 'theme-toggle':
 		case 'close':
 			return CLOSE_PROMPT_TEXT;
@@ -151,11 +160,11 @@ export function updateActionPromptLayout(): void {
 	if (!prompt) {
 		return;
 	}
-	if (isActionPromptLayoutCurrent(prompt.action)) {
+	if (isActionPromptLayoutCurrent(prompt.request.action)) {
 		return;
 	}
 	const layout = prompt.layout;
-	const { messageLines, primaryLabel, secondaryLabel } = getActionPromptText(prompt.action);
+	const { messageLines, primaryLabel, secondaryLabel } = getActionPromptText(prompt.request.action);
 	let maxMessageWidth = 0;
 	for (let i = 0; i < messageLines.length; i += 1) {
 		const width = measureText(messageLines[i]);
@@ -183,7 +192,7 @@ export function updateActionPromptLayout(): void {
 	write_rect_bounds(layout.continue, buttonX, buttonY, buttonX + secondaryWidth, buttonY + buttonHeight);
 	buttonX = layout.continue.right + buttonSpacing;
 	write_rect_bounds(layout.cancel, buttonX, buttonY, buttonX + cancelWidth, buttonY + buttonHeight);
-	markActionPromptLayoutCurrent(prompt.action);
+	markActionPromptLayoutCurrent(prompt.request.action);
 }
 
 export function findActionPromptChoiceAt(x: number, y: number): ActionPromptChoice | null {
@@ -217,7 +226,7 @@ async function handleActionPromptSelection(
 		return;
 	}
 	if (await editor.commands.executeConfirmedAction(
-		prompt.action,
+		prompt.request,
 		prompt.workingCopies,
 		choice === 'save-continue',
 	)) {
@@ -261,7 +270,7 @@ export function drawActionPromptOverlay(): void {
 		return;
 	}
 	api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, 0, constants.ACTION_OVERLAY_COLOR);
-	const { messageLines, primaryLabel, secondaryLabel } = getActionPromptText(prompt.action);
+	const { messageLines, primaryLabel, secondaryLabel } = getActionPromptText(prompt.request.action);
 	updateActionPromptLayout();
 	const layout = prompt.layout;
 

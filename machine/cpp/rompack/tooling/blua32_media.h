@@ -7,6 +7,7 @@
 
 #include <array>
 #include <optional>
+#include <string_view>
 
 namespace bmsx {
 
@@ -31,5 +32,10 @@ auto blua32ToolingImageForDomain(
 	const Blua32ToolingMedia& media,
 	ExecutionDomainId executionDomainId
 ) -> const Blua32ToolingImage*;
+
+auto blua32StartupSourcePath(
+	const Blua32ToolingImage* image,
+	u32 startupFunctionAddress
+) -> std::optional<std::string_view>;
 
 } // namespace bmsx

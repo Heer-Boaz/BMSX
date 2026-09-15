@@ -107,6 +107,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'separator' },
 		{ type: 'command', command: 'hot-resume' },
 		{ type: 'command', command: 'reboot' },
+		{ type: 'command', command: 'runCurrentFile' },
+		{ type: 'command', command: 'runProject' },
 	],
 	'menubar.view': [
 		{ type: 'command', command: 'commandPalette' },

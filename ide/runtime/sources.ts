@@ -21,6 +21,7 @@ import {
 } from '../common/resource';
 import {
 	loadBlua32ToolingImage,
+	blua32StartupSourcePath,
 	type Blua32ToolingImage,
 } from '../../toolchain/ts/rompack/blua32_media';
 import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
@@ -159,7 +160,9 @@ export function createRuntimeSourceState(
 	cartridgeLayers: readonly [RomToolingLayer<'cart'> | null, RomToolingLayer<'cart'> | null],
 ): RuntimeSourceState {
 	const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, bytes: systemLayer.bytes }]);
-	const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, 'system');
+	const systemImage = loadBlua32ToolingImage(systemLayer, SYSTEM_ROM_BASE);
+	const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, 'system',
+		blua32StartupSourcePath(systemImage, systemLayer.header.blua32StartupFunctionAddress));
 	const cartridgeSlots: [RuntimeCartridgeSourceState | null, RuntimeCartridgeSourceState | null] = [null, null];
 	const cartridgeToolingImages: [Blua32SourceImage | null, Blua32SourceImage | null] = [null, null];
 	for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
@@ -173,7 +176,9 @@ export function createRuntimeSourceState(
 		];
 		const activeRomSource = new RomSourceStack(activeSourceLayers);
 		const cartRomSource = new RomSourceStack([{ id: cartLayer.id, index: cartLayer.index, bytes: cartLayer.bytes }]);
-		const cartLuaSources = buildLuaSources(cartRomSource, activeRomSource, cartLayer.index, 'cart');
+		const image = loadBlua32ToolingImage(cartLayer, CART_ROM_BASE);
+		const cartLuaSources = buildLuaSources(cartRomSource, activeRomSource, cartLayer.index, 'cart',
+			blua32StartupSourcePath(image, cartLayer.header.blua32StartupFunctionAddress));
 		cartridgeSlots[slot] = {
 			domain: slot,
 			rom: cartLayer,
@@ -184,12 +189,10 @@ export function createRuntimeSourceState(
 			installedBlua32Sources: indexInstalledBlua32Sources(cartLuaSources),
 			dataResources: [],
 		};
-		const image = loadBlua32ToolingImage(cartLayer, CART_ROM_BASE);
 		cartridgeToolingImages[slot] = image
 			? createBlua32SourceImage(image.layout, image.symbols)
 			: null;
 	}
-	const systemImage = loadBlua32ToolingImage(systemLayer, SYSTEM_ROM_BASE);
 	const state: RuntimeSourceState = {
 		systemRom: systemLayer,
 		cartridgeSlots,

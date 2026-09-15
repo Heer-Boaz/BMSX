@@ -118,7 +118,7 @@ test('a workbench action prompt retains the exact dirty working-copy batch', (t)
 	t.after(closeActionPrompt);
 	configureFontVariant(actionTestClock, DEFAULT_FONT_VARIANT, 'aem');
 
-	showActionPrompt('hot-resume', workingCopies);
+	showActionPrompt({ action: 'hot-resume' }, workingCopies);
 	assert.strictEqual(actionPromptState.prompt!.workingCopies, workingCopies);
 	assert.strictEqual(actionPromptState.prompt!.workingCopies[0], model);
 });

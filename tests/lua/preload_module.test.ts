@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { Table } from '../../machine/ts/machine/cpu/table';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_graph';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
@@ -30,6 +31,14 @@ const entrySource = `local game<const> = require('game')
 local first<const> = require('first')
 local function refresh<init>() game.calls = game.calls * 10 + 4 end
 return game.order, game.calls, first == game`;
+
+test('program roots retain dependency closure and preloads, not unrelated workspace programs', () => {
+	const entry = parseLuaChunk('return 1', 'experiment');
+	const selected = selectLuaProgramModules(entry, modules, ['second', 'second']);
+	assert.deepEqual(selected.map(module => module.path), ['common', 'second']);
+	assert.throws(() => selectLuaProgramModules(entry, modules, ['missing']), /root 'missing'.*not available/);
+	assert.throws(() => selectLuaProgramModules(entry, modules, ['experiment']), /root 'experiment'.*not available/);
+});
 
 for (const optLevel of [0, 3] as const) test(`preloads use the existing dependency/startup/init owners (O${optLevel})`, () => {
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(entrySource, 'entry'), modules, {

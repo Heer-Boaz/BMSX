@@ -3,11 +3,10 @@ import type { Input } from '../../../../hosts/common/input/manager';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import { LuaError } from '../../../../toolchain/ts/lua/errors';
 import { buildScenarioCartridge, type BuiltScenarioCartridge } from '../../../../toolchain/ts/rompack/scenario_cartridge';
-import type { LuaInterpreter } from '../../../language/lua/interpreter/interpreter';
+import { LuaInterpreter } from '../../../language/lua/interpreter/interpreter';
 import {
 	bootInstalledBlua32Media,
 	installBlua32Media,
-	prepareBlua32MediaBoot,
 } from '../../../runtime/lua_pipeline';
 import { buildScenarioRunMedia } from './media_build';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
@@ -288,12 +287,7 @@ export class ScenarioRunService {
 			this.cancelDuringBuild(session);
 			return;
 		}
-		this.startItem(session, scenario, prepareBlua32MediaBoot(
-			this.sources,
-			this.luaTooling,
-			this.runtime,
-			false,
-		));
+		this.startItem(session, scenario, new LuaInterpreter(this.luaTooling.luaJsBridge));
 	}
 
 	private startItem(session: ScenarioMediaSession, scenario: BuiltScenarioCartridge, interpreter: LuaInterpreter): void {
@@ -385,12 +379,7 @@ export class ScenarioRunService {
 			session.canonicalRom,
 		);
 		this.sources.currentBlua32Media = session.canonicalSourceMedia;
-		this.bootMedia(prepareBlua32MediaBoot(
-			this.sources,
-			this.luaTooling,
-			this.runtime,
-			false,
-		));
+		this.bootMedia(new LuaInterpreter(this.luaTooling.luaJsBridge));
 	}
 
 	private bootMedia(interpreter: LuaInterpreter): void {

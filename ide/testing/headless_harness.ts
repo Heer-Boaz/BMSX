@@ -170,7 +170,7 @@ export function createHeadlessIdeHarness(
 			toggleBreakpoint(ide.debugger, resource, line);
 		},
 		isDebuggerStopped: () => ide.debugger.stopped,
-		reboot: () => rebootPreparedRuntime(
+		reboot: async () => { await rebootPreparedRuntime(
 			ide.sources,
 			ide.fault,
 			ide.luaTooling,
@@ -181,7 +181,7 @@ export function createHeadlessIdeHarness(
 			audioOutput,
 			storage,
 			captureLuaTextModelSources(ide.sources),
-		),
+		); },
 		executeCommand: command => ide.editor.commands.execute(command),
 		openLuaSource: (path: string) => {
 			activateEditor(

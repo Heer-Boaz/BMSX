@@ -34,6 +34,8 @@ export type EditorWorkspaceCommandId =
 	| 'createResource'
 	| 'hot-resume'
 	| 'reboot'
+	| 'runCurrentFile'
+	| 'runProject'
 	| 'save'
 	| 'theme-toggle';
 

@@ -115,7 +115,7 @@ test('buildLuaSources registers real Lua assets in one pass', () => {
 		sys: 'return 3',
 	});
 
-	const registry = buildLuaSources(cartSource, activeSource, makeIndex([cartEntry]), 'cart');
+	const registry = buildLuaSources(cartSource, activeSource, makeIndex([cartEntry]), 'cart', 'cart');
 	const record = registry.path2lua['cart.lua'];
 
 	assert.equal(registry.can_boot_from_source, true);
@@ -158,7 +158,7 @@ test('buildLuaSources retains source-only Lua without admitting it to the progra
 		__test_source__: '__bmsx_host_test = {}',
 	});
 
-	const registry = buildLuaSources(source, source, makeIndex([entry, testSource]), 'cart');
+	const registry = buildLuaSources(source, source, makeIndex([entry, testSource]), 'cart', 'cart');
 	const retained = registry.path2lua['tests/carts/test/cart_assert.lua'];
 
 	assert.equal(registry.can_boot_from_source, true);
@@ -172,7 +172,7 @@ test('buildLuaSources retains source-only Lua without admitting it to the progra
 test('release BLua32 images do not synthesize editable Lua source records', () => {
 	const imageEntry: RomAsset = { resid: BLUA32_IMAGE_ID, type: 'code', payload_id: 'system' };
 	const source = new TestRomSource([imageEntry], {});
-	const registry = buildLuaSources(source, source, makeIndex([imageEntry]), 'system');
+	const registry = buildLuaSources(source, source, makeIndex([imageEntry]), 'system', undefined);
 
 	assert.equal(registry.can_boot_from_source, false);
 	assert.deepEqual(registry.records, []);
@@ -184,7 +184,7 @@ test('system source registry retains the BLua32 compile-time firmware module', (
 	const source = new TestRomSource([entry], {
 		boot: 'module<entry>\nreturn require(\'bmsx/blua32\').instruction_bytes',
 	});
-	const registry = buildLuaSources(source, source, makeIndex([entry]), 'system');
+	const registry = buildLuaSources(source, source, makeIndex([entry]), 'system', 'boot');
 	const firmware = registry.module2lua[BLUA32_FIRMWARE_MODULE_PATH];
 
 	assert.equal(firmware.source_path, BLUA32_FIRMWARE_SOURCE_PATH);

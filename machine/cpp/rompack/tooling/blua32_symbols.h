@@ -107,7 +107,7 @@ auto blua32SourceRangeAtPc(
 	const Blua32SymbolsImage& symbols,
 	u32 textAddress,
 	u32 pc
-) -> std::optional<SourceRange>;
+) -> const std::optional<SourceRange>&;
 auto blua32InlineCallSitesAtPc(
 	const Blua32SymbolsImage& symbols,
 	u32 textAddress,

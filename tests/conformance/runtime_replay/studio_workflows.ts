@@ -128,7 +128,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await press('KeyQ');
 	const pendingQuery = editorSearchState.field.text;
 	await press('ControlLeft', 'ShiftLeft', 'KeyS');
-	check(actionPromptState.prompt?.action === 'hot-resume', 'real command opens dirty-source prompt');
+	check(actionPromptState.prompt?.request.action === 'hot-resume', 'real command opens dirty-source prompt');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === firstInstalledSource && editorSearchState.field.text === pendingQuery,
 		'focus: modal keyboard scope blocks both document and field history');

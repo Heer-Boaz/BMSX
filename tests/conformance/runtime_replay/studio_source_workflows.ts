@@ -162,7 +162,7 @@ export async function testCapturedSourceReboot(test: StudioFixture): Promise<voi
 		'W04: source undo reaches the actual reboot revision');
 	await until(() => !editorFeedbackState.message.visible, 'W04: installed-source status is visible after transient feedback');
 	await test.runPaletteCommand('Run: Reboot');
-	check(actionPromptState.prompt?.action === 'reboot', 'palette: actual Reboot admits the ordinary dirty-source prompt');
+	check(actionPromptState.prompt?.request.action === 'reboot', 'palette: actual Reboot admits the ordinary dirty-source prompt');
 	await press('Enter');
 	await until(() => ide.runtimeTasks.ready && actionPromptState.prompt === null, 'palette: Save and Reboot completes the real command');
 	check(!ide.editor.isActive && model.lastSavedSource === captured, 'palette: Reboot persisted the exact accepted source and returned to gameplay');

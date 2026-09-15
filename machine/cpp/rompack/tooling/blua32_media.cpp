@@ -51,4 +51,13 @@ auto blua32ToolingImageForDomain(
 	return image ? &*image : nullptr;
 }
 
+auto blua32StartupSourcePath(
+	const Blua32ToolingImage* image,
+	u32 startupFunctionAddress
+) -> std::optional<std::string_view> {
+	if (image == nullptr || !image->symbols) return std::nullopt;
+	const auto& fn = image->layout.functions[blua32FunctionIndexAtAddress(image->layout, startupFunctionAddress)];
+	return blua32SourceRangeAtPc(*image->symbols, image->layout.header.textAddress, fn.codeAddress)->path;
+}
+
 } // namespace bmsx

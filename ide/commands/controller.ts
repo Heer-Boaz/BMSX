@@ -10,7 +10,7 @@ import type { LogOutput } from '../../hosts/common/log';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import type { CartEditor } from '../cart_editor';
 import type { EditorCommandId } from '../common/commands';
-import type { ActionPromptAction } from '../common/models';
+import type { EditorActionRequest } from './action_request';
 import { renameController } from '../workbench/contrib/code_editor/rename/controller';
 import { activeCodeEditor } from '../editor/ui/code_editor_state';
 import { executeEditorSearchCommand, isEditorSearchCommand } from './search';
@@ -25,7 +25,8 @@ import { performEditorAction } from './actions';
 import { TextEditorInput } from '../workbench/common/editor_input';
 import { saveTextFileWorkingCopy } from '../workbench/services/working_copy/text_file_save';
 import type { EditorTextModel } from '../editor/model/text_model';
-import type { RuntimeSourceState } from '../runtime/sources';
+import { resolveRuntimeLuaSource, type RuntimeSourceState } from '../runtime/sources';
+import type { ScenarioRunService } from '../workbench/contrib/scenario_lab/run_service';
 import type { RuntimeFaultState } from '../runtime/fault_state';
 import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
@@ -43,7 +44,7 @@ import { inputFocus, type InputFocusTarget } from '../input/focus';
 // model selection, prompts or asynchronous source capture (Godot EditorData).
 const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'navigateBack', 'navigateForward',
-	'save', 'hot-resume', 'reboot', 'scenarioLab.run', 'scenarioLab.rerun',
+	'save', 'hot-resume', 'reboot', 'runCurrentFile', 'runProject', 'scenarioLab.run', 'scenarioLab.rerun',
 	'sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown',
 	'behaviorLens.moveChildEarlier', 'behaviorLens.moveChildLater', 'behaviorLens.removeChild', 'behaviorLens.duplicateChild',
 	'behaviorLens.setInitialState', 'behaviorLens.editProperty',
@@ -69,6 +70,7 @@ export class IdeCommandController {
 		private readonly storage: KeyValueStorage,
 		private readonly clock: HostClock,
 		private readonly logOutput: LogOutput,
+		private readonly scenarioRuns: ScenarioRunService,
 	) {
 	}
 
@@ -192,7 +194,7 @@ export class IdeCommandController {
 	}
 
 	public async executeConfirmedAction(
-		action: ActionPromptAction,
+		request: EditorActionRequest,
 		workingCopies: readonly EditorTextModel[],
 		saveBeforeAction: boolean,
 	): Promise<boolean> {
@@ -227,13 +229,22 @@ export class IdeCommandController {
 			this.audioOutput,
 			this.storage,
 			this.logOutput,
-			action,
+			request,
 		);
 	}
 
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target): boolean {
 		const context = focus?.commandContext;
 		switch (command) {
+			case 'runCurrentFile': {
+				const resource = getActiveTab().resource;
+				if (!this.runtimeTasks.ready || this.scenarioRuns.active || !resource || resource.domain === -1) return false;
+				const source = resolveRuntimeLuaSource(this.sources, resource);
+				return source !== null && source.record.program_module && !source.record.generated;
+			}
+			case 'runProject':
+				return this.runtimeTasks.ready && !this.scenarioRuns.active
+					&& this.sources.cartridgeSlots.some(cart => cart?.luaSources.can_boot_from_source);
 			case 'keepEditor':
 				return editorTabGroup.previewTab !== null && editorTabGroup.previewTab === editorTabGroup.activeTab;
 			case 'navigateBack':

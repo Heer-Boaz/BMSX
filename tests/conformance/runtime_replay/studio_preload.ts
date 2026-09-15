@@ -64,7 +64,7 @@ export async function runStudioPreload(test: StudioFixture) {
 	recorded('sequence');
 	model.undo();
 	await runPaletteCommand('Run: Hot Resume');
-	check(actionPromptState.prompt?.action === 'hot-resume', 'preload: changed source goes through Save/Hot Resume');
+	check(actionPromptState.prompt?.request.action === 'hot-resume', 'preload: changed source goes through Save/Hot Resume');
 	await press('Enter');
 	await until(() => tasks.ready && registrations() === 3 && !runtime.completionCallPending(), 'preload: changed module installed and rebound');
 	await press('ControlRight', 'ShiftRight'); await runMenuCommand('pause');
@@ -77,7 +77,7 @@ export async function runStudioPreload(test: StudioFixture) {
 	// Changed source forces the boot rebuild path, not merely reuse of existing code.
 	harness.openLuaSource('game.lua'); await press('ControlLeft', 'KeyZ');
 	await runPaletteCommand('Run: Reboot');
-	check(actionPromptState.prompt?.action === 'reboot', 'preload: source Undo requires Save/Reboot');
+	check(actionPromptState.prompt?.request.action === 'reboot', 'preload: source Undo requires Save/Reboot');
 	await press('Enter');
 	await until(() => tasks.ready && cycles() > runtime.timing.cpuHz * 13, 'preload: reboot completes');
 	await press('ControlRight', 'ShiftRight'); await runMenuCommand('pause');

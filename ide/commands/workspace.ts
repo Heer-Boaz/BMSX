@@ -20,12 +20,17 @@ import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import type { RuntimeDebuggerState } from '../runtime/debugger_state';
+import type { EditorActionRequest } from './action_request';
+import { CARTRIDGE_RESOURCE_DOMAINS } from '../common/resource';
+import { TextQuickPickProvider } from '../workbench/services/quick_input/text_provider';
 
 export function isEditorWorkspaceCommand(command: EditorCommandId): command is EditorWorkspaceCommandId {
 	switch (command) {
 		case 'createResource':
 		case 'hot-resume':
 		case 'reboot':
+		case 'runCurrentFile':
+		case 'runProject':
 		case 'save':
 		case 'theme-toggle':
 			return true;
@@ -73,47 +78,39 @@ export function executeEditorWorkspaceCommand(
 			return;
 		}
 		case 'hot-resume':
-		case 'reboot': {
-			const dirtyWorkingCopies = editorTextModelService.dirtyWorkingCopies;
-			if (dirtyWorkingCopies.length !== 0) {
-				showActionPrompt(command, dirtyWorkingCopies);
+		case 'reboot':
+		case 'runCurrentFile':
+		case 'runProject':
+		case 'theme-toggle': {
+			const requestAction = (request: EditorActionRequest): void => {
+				const dirtyWorkingCopies = editorTextModelService.dirtyWorkingCopies;
+				if (request.action !== 'theme-toggle' && dirtyWorkingCopies.length !== 0) {
+					showActionPrompt(request, dirtyWorkingCopies);
+					return;
+				}
+				performEditorAction(editor, sources, fault, luaTooling, debuggerState,
+					input, runtimeTasks, execution, overlayRenderer, runtime, audioOutput,
+					storage, logOutput, request);
+			};
+			if (command === 'runCurrentFile' || command === 'runProject') {
+				const resource = getActiveTab().resource;
+				if (resource && resource.domain !== -1
+					&& (command === 'runCurrentFile' || sources.cartridgeSlots[resource.domain]!.luaSources.can_boot_from_source)) {
+					requestAction({ action: 'run', entry: command === 'runCurrentFile'
+						? { domain: resource.domain, sourcePath: resource.path }
+						: { domain: resource.domain } });
+					return;
+				}
+				const projects = CARTRIDGE_RESOURCE_DOMAINS
+					.filter(domain => sources.cartridgeSlots[domain]?.luaSources.can_boot_from_source)
+					.map(domain => ({ domain, label: sources.cartridgeSlots[domain]!.projectRootPath,
+						description: `CART ${domain}`, detail: '' }));
+				editor.quickInput.pick('RUN PROJECT', 'Choose project', () => new TextQuickPickProvider(projects),
+					project => requestAction({ action: 'run', entry: { domain: project.domain } }));
 				return;
 			}
-			performEditorAction(
-				editor,
-				sources,
-				fault,
-				luaTooling,
-				debuggerState,
-				input,
-				runtimeTasks,
-				execution,
-				overlayRenderer,
-				runtime,
-				audioOutput,
-				storage,
-				logOutput,
-				command,
-			);
+			requestAction({ action: command });
 			return;
 		}
-		case 'theme-toggle':
-			performEditorAction(
-				editor,
-				sources,
-				fault,
-				luaTooling,
-				debuggerState,
-				input,
-				runtimeTasks,
-				execution,
-				overlayRenderer,
-				runtime,
-				audioOutput,
-				storage,
-				logOutput,
-				command,
-			);
-			return;
 	}
 }

@@ -54,7 +54,7 @@ function executeWorkbenchHostMenuAction(
 			}
 			const sourceSnapshots = captureLuaTextModelSources(ide.sources);
 			ide.runtimeTasks.schedule(async () => {
-				await rebootPreparedRuntime(
+				const booted = await rebootPreparedRuntime(
 					ide.sources,
 					ide.fault,
 					ide.luaTooling,
@@ -66,7 +66,7 @@ function executeWorkbenchHostMenuAction(
 					ide.storage,
 					sourceSnapshots,
 				);
-				screen.reset(presenter, runtime);
+				if (booted) screen.reset(presenter, runtime);
 			}, (error) => {
 				workbenchMode.surfaceHostFrameError(
 					ide,

@@ -8,11 +8,11 @@ import type { Input } from '../../hosts/common/input/manager';
 import { LogLevel, type LogOutput } from '../../hosts/common/log';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import { buildBlua32Revision, hotResume, type BuiltBlua32Revision } from '../runtime/hot_resume';
-import { blua32MediaRequiresRebuild } from '../runtime/lua_pipeline';
+import { blua32MediaRequiresRebuild, type Blua32CartridgeEntry } from '../runtime/lua_pipeline';
 import { deactivateEditor } from '../workbench/overlay_modes';
 import { handleLuaError } from '../workbench/runtime_errors';
 import { rebootPreparedRuntime } from '../workbench/blua32_boot';
-import type { ActionPromptAction } from '../common/models';
+import type { EditorActionRequest } from './action_request';
 import * as constants from '../common/constants';
 import { setEditorCaseInsensitivity } from '../editor/render/text_renderer';
 import { editorViewState } from '../editor/ui/view/state';
@@ -41,9 +41,9 @@ export function performEditorAction(
 	audioOutput: HostAudioOutput,
 	storage: KeyValueStorage,
 	logOutput: LogOutput,
-	action: ActionPromptAction,
+	request: EditorActionRequest,
 ): boolean {
-	switch (action) {
+	switch (request.action) {
 		case 'hot-resume':
 			performHotResume(
 				editor,
@@ -62,6 +62,7 @@ export function performEditorAction(
 			);
 			return true;
 		case 'reboot':
+		case 'run':
 			return performReboot(
 				editor,
 				sources,
@@ -75,6 +76,7 @@ export function performEditorAction(
 				audioOutput,
 				storage,
 				logOutput,
+				request.action === 'run' ? request.entry : undefined,
 			);
 		case 'close':
 			deactivateEditor(editor, overlayRenderer, audioOutput);
@@ -157,13 +159,13 @@ export function performReboot(
 	audioOutput: HostAudioOutput,
 	storage: KeyValueStorage,
 	logOutput: LogOutput,
+	entry?: Blua32CartridgeEntry,
 ): boolean {
-	deactivateEditor(editor, overlayRenderer, audioOutput);
 	const sourceSnapshots = captureLuaTextModelSources(sources);
 	persistWorkspaceSessionLocally();
 	runtimeTasks.schedule(async () => {
 		console.info('[IDE] Performing cold reboot through bootrom');
-		await rebootPreparedRuntime(
+		const booted = await rebootPreparedRuntime(
 			sources,
 			fault,
 			luaTooling,
@@ -174,8 +176,9 @@ export function performReboot(
 			audioOutput,
 			storage,
 			sourceSnapshots,
+			entry,
 		);
-		execution.requestExecution(true);
+		if (booted) execution.requestExecution(true);
 	}, (error) => {
 		handleLuaError(
 			logOutput,

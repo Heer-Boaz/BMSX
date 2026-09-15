@@ -191,8 +191,6 @@ export type LineJumpState = {
 	value: string;
 };
 
-export type ActionPromptAction = 'hot-resume' | 'reboot' | 'close' | 'theme-toggle';
-
 export type EditorContextTokenKind = 'identifier' | 'keyword' | 'number' | 'string' | 'operator';
 
 export type EditorContextToken = {

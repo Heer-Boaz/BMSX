@@ -6,6 +6,7 @@ import { parseLuaChunk } from '../lua/analysis/parse';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../lua/compiler';
 import type { ProgramObjectImage } from '../lua/compiler/program_object';
 import { resolveLuaEntryModuleIndex } from '../lua/entry_module';
+import { selectLuaProgramModules } from '../lua/compiler/module_graph';
 import type { LuaChunk } from '../lua/syntax/ast';
 import { toLuaModulePath } from '../lua/module_path';
 import type {
@@ -133,6 +134,7 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 	}
 	const entryIndex = resolveLuaEntryModuleIndex(modules);
 	let entry = modules[entryIndex];
+	const entryOrigin = entry.chunk.range;
 	if (options.entryComposition !== undefined) {
 		const composition = options.entryComposition;
 		if (modulePaths.has(composition.sourceMap.generatedPath)) {
@@ -192,9 +194,12 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		modules[index] = modules[index + 1];
 	}
 	modules.length -= 1;
+	const programModules = selectLuaProgramModules(entry.chunk, modules,
+		[...(options.preloadModules ?? []), ...options.generatedLuaModules.map(module => module.path)]);
 
 	if (options.domain === 'cart') {
-		const compiled = compileLuaChunkToProgram(entry.chunk, modules, {
+		const compiled = compileLuaChunkToProgram(entry.chunk, programModules, {
+			entryOrigin,
 			optLevel: options.optLevel,
 			entrySource: entry.source,
 			entrySourceMap: entry.sourceMap,
@@ -216,7 +221,8 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 			diagnosticSources,
 		};
 	}
-	const compiled = compileLuaChunkToProgram(entry.chunk, modules, {
+	const compiled = compileLuaChunkToProgram(entry.chunk, programModules, {
+		entryOrigin,
 		optLevel: options.optLevel,
 		entrySource: entry.source,
 		entrySourceMap: entry.sourceMap,

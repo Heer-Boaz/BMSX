@@ -58,3 +58,24 @@ export function collectLuaModuleDependencyClosure(
 	}
 	return queuedModules;
 }
+
+/** A workspace can contain several programs; only the selected roots form this executable. */
+export function selectLuaProgramModules<T extends { path: string; chunk: LuaChunk }>(
+	entry: LuaChunk,
+	modules: readonly T[],
+	moduleRoots: readonly string[],
+): T[] {
+	const byPath = new Map(modules.map(module => [module.path, module]));
+	const paths = new Set(byPath.keys());
+	const roots = [entry];
+	for (const path of moduleRoots) {
+		const module = byPath.get(path);
+		if (module === undefined) {
+			throw new Error(`Program module root '${path}' is not available as a dependency of entry '${entry.range.path}'.`);
+		}
+		roots.push(module.chunk);
+	}
+	const included = new Set(collectLuaModuleDependencyClosure(roots, paths, path => byPath.get(path)!.chunk));
+	for (const path of moduleRoots) included.add(path);
+	return modules.filter(module => included.has(module.path));
+}

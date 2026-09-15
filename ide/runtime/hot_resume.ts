@@ -217,7 +217,7 @@ export function buildBlua32Revision(
 		sourceEditDomains: (rebuildSystem ? executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID) : 0)
 			| (rebuildCartridgeSlots[0] ? executionDomainBit(0) : 0)
 			| (rebuildCartridgeSlots[1] ? executionDomainBit(1) : 0),
-		mediaInstallation: layoutBlua32MediaInstallation(sources, rebuilt, assetEdits),
+		mediaInstallation: layoutBlua32MediaInstallation(sources, rebuilt),
 		revisions,
 	};
 }

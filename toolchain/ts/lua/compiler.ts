@@ -266,6 +266,8 @@ type CompileOptionsBase = {
 	optLevel?: OptimizationLevel;
 	entrySource?: string;
 	entrySourceMap?: LuaSourceMap;
+	/** Authored entry location when a build composes an executable wrapper around it. */
+	entryOrigin?: LuaSourceRange;
 	traceStatements?: TraceStatementSelection;
 	/** Initialize these source modules and their dependencies before entry dependencies. */
 	preloadModules?: readonly string[];
@@ -6185,7 +6187,10 @@ function compileStartupProto(
 	const protoId = buildStartupProtoId(moduleId);
 	const functionDisplayName = 'startup';
 	const builder = new FunctionBuilder(program, null, { moduleId, protoId, functionDisplayName, semantics, frontend });
-	builder.compileStartup(range, sectionInitProtoIndex, entryProtoIndex, clearBootPrimitives);
+	// The generated reset thunk belongs to the entry location, not a body range
+	// that can cross several authored/generated sources in a composed program.
+	const entryLocation = { path: range.path, start: range.start, end: range.start };
+	builder.compileStartup(entryLocation, sectionInitProtoIndex, entryProtoIndex, clearBootPrimitives);
 	const code = builder.getCode();
 	const ranges = builder.getRanges();
 	const constRelocs = builder.getConstRelocs();
@@ -6532,7 +6537,7 @@ export function compileLuaChunkToProgram(
 	startupProtoIndex = compileStartupProto(
 		programBuilder,
 		moduleId,
-		chunk.range,
+		options.entryOrigin ?? chunk.range,
 		entrySemantics,
 		frontend,
 		sectionInitProtoIndex,

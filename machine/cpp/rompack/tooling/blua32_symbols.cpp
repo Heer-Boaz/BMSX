@@ -466,7 +466,7 @@ auto blua32SourceRangeAtPc(
 	const Blua32SymbolsImage& symbols,
 	u32 textAddress,
 	u32 pc
-) -> std::optional<SourceRange> {
+) -> const std::optional<SourceRange>& {
 	const size_t wordIndex = static_cast<size_t>((pc - textAddress) / INSTRUCTION_BYTES);
 	return symbols.metadata.debugRanges[wordIndex];
 }

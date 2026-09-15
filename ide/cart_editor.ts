@@ -272,6 +272,7 @@ export class RuntimeCartEditor implements CartEditor {
 			storage,
 			clock,
 			logOutput,
+			scenarioRuns,
 		);
 		this.completion = new EditorCompletionController(luaTooling, fault, runtime);
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);

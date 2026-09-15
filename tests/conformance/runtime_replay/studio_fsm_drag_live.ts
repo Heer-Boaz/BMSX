@@ -32,7 +32,7 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	main.pushEditOperations([{ offset: 0, deleteLength: main.buffer.length, text: cartSource }]);
 	if (imported) model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 	await runPaletteCommand('Run: Reboot');
-	check(actionPromptState.prompt?.action === 'reboot', 'FSM drag: ordinary source Save/Reboot admission');
+	check(actionPromptState.prompt?.request.action === 'reboot', 'FSM drag: ordinary source Save/Reboot admission');
 	await press('Enter');
 	await until(() => tasks.ready && guest.global('fsm_drag_init_count') === 1 && !runtime.completionCallPending(), 'FSM drag: authored fixture boots normally');
 	await press('ControlRight', 'ShiftRight'); await runMenuCommand('pause');
@@ -150,7 +150,7 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	check(model.buffer.getText() === changed && viewport.selection?.kind === 'edge' && viewport.selection.link.target.source.label === 'other',
 		'FSM drag: graph palette Redo restores source and selection');
 	await runPaletteCommand('Run: Hot Resume');
-	check(actionPromptState.prompt?.action === 'hot-resume', 'FSM drag: source edit uses ordinary Save/Hot Resume');
+	check(actionPromptState.prompt?.request.action === 'hot-resume', 'FSM drag: source edit uses ordinary Save/Hot Resume');
 	await press('Enter');
 	await until(() => tasks.ready && !runtime.completionCallPending() && guest.global('fsm_drag_init_count') === 2, 'FSM drag: Hot Resume installs authored revision');
 	check(model.lastSavedSource === changed && getTextFileRuntimeSourceStatus(ide.sources, model) === 'applied', 'FSM drag: saved and installed source match');

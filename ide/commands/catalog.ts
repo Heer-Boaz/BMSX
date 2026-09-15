@@ -66,6 +66,8 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	filter: { category: 'File', title: 'All Resources', activeTitle: 'Lua Files Only' },
 	wrap: { category: 'View', title: 'Word Wrap' },
 	'hot-resume': { category: 'Run', title: 'Hot Resume' },
+	runCurrentFile: { category: 'Run', title: 'Run Current Lua File' },
+	runProject: { category: 'Run', title: 'Run Project' },
 	reboot: { category: 'Run', title: 'Reboot' },
 	save: { category: 'File', title: 'Save' },
 	'theme-toggle': { category: 'Preferences', title: 'Toggle Theme' },

@@ -158,7 +158,7 @@ test('scenario cartridge packages authored test source without making it a start
 
 		const layer = { id: 'cart' as const, index, bytes: enhanced };
 		const romSource = new RomSourceStack([layer]);
-		const registry = buildLuaSources(romSource, romSource, index, 'cart');
+		const registry = buildLuaSources(romSource, romSource, index, 'cart', 'entry');
 		const testRecord = registry.path2lua[SCENARIO_FIXTURE_TEST_SOURCE_PATH];
 		assert.equal(testRecord.program_module, false);
 		assert.equal(testRecord.src, testSource);

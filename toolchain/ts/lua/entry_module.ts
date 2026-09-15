@@ -6,7 +6,13 @@ export type LuaEntryModuleCandidate = {
 
 export function resolveLuaEntryModuleIndex(
 	modules: ReadonlyArray<LuaEntryModuleCandidate>,
+	entryModulePath?: string,
 ): number {
+	if (entryModulePath !== undefined) {
+		const index = modules.findIndex(module => module.chunk.range.path === entryModulePath);
+		if (index < 0) throw new Error(`BLua entry module '${entryModulePath}' is not in the program.`);
+		return index;
+	}
 	let entryIndex = -1;
 	for (let index = 0; index < modules.length; index += 1) {
 		if (!modules[index].chunk.entryModule) {

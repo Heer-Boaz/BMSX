@@ -18,7 +18,7 @@ export async function runStudioBtReparentLive(test: StudioFixture) {
 	const model = harness.getActiveEditorDocument().model;
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_REPARENT_LIVE_SOURCE }]);
 	await runPaletteCommand('Run: Reboot');
-	check(actionPromptState.prompt?.action === 'reboot', 'BT live: fixture uses ordinary Save/Reboot admission');
+	check(actionPromptState.prompt?.request.action === 'reboot', 'BT live: fixture uses ordinary Save/Reboot admission');
 	await press('Enter');
 	await until(() => tasks.ready && guest.global('bt_live_init_count') === 1 && !runtime.completionCallPending(), 'BT live: authored fixture boots');
 	const actor = guest.global('bt_live_target'), tree = guest.global('bt_live_tree');

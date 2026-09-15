@@ -1159,16 +1159,23 @@ identity. It emits a tooling-owned BLua32 object with relocations. The ROM
 packer resolves those relocations at the actual physical `SYSTEM_ROM` or
 `CART_ROM` addresses and emits the final bytes; neither runtime owns a linker.
 
-One source chunk in each system or cartridge program declares
-`module<entry>`. The compiler requires exactly one such root and synthesizes the
-section initializer and reset trampoline around that chunk. The linker resolves
+The default project entry is the unique source chunk declaring `module<entry>`.
+Tooling may explicitly select another Lua source as a cartridge entry, without
+editing that declaration. Program assembly selects that root's import closure,
+explicit preloads and generated modules; unrelated workspace programs are not
+executable participants. The compiler synthesizes the section initializer and
+reset trampoline around the selected chunk. The linker resolves
 the resulting reset proto to the physical startup address stored in the ROM
 header. `entry_path`, `rom_name`, and browser `short_name` are therefore not
-executable ROM-manifest fields: the first is derived by tooling from
-`module<entry>`, the second is a build-output identity, and the third belongs
+executable ROM-manifest fields: the first is derived by tooling from the
+selected entry, the second is a build-output identity, and the third belongs
 to browser-product packaging. The serialized cart manifest keeps
 author/cart facts such as its title and physical card-component construction;
-it does not select executable source.
+it does not select executable source. Studio's Run Current Lua File and Run
+Project use this build/admission path, not a guest call. Reboot and Hot Resume
+retain the installed entry. Build rejection precedes reset or media mutation.
+Source revisions publish matching text and parsed Lua assets in the same ROM
+as their executable and diagnostics, including newly authored files.
 
 The packer emits one immutable prefix: ordinary asset payload spans, per-entry
 metadata, and the manifest. It derives final TOC records from that layout

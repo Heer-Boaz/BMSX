@@ -47,6 +47,7 @@ export type RomAssetEdit = readonly [
 export type Blua32PublicAssetChanges = {
 	assetEdits?: ReadonlyArray<RomAssetEdit>;
 	assetAdditions?: ReadonlyArray<RomAsset>;
+	assetReplacements?: ReadonlyMap<AssetId, RomAsset>;
 };
 
 export function layoutBlua32PublicAssets(
@@ -84,7 +85,8 @@ export function layoutBlua32PublicAssets(
 			}
 		}
 		const isEdited = assetEdit !== undefined;
-		const movePayloads = isEdited
+		const replacement = changes?.assetReplacements?.get(entry.resid);
+		const movePayloads = isEdited || replacement !== undefined
 			|| (layer.id === 'cart' && (
 				(entry.start != null && entry.start >= imageOffset)
 				|| (entry.compiled_start != null && entry.compiled_start >= imageOffset)
@@ -109,7 +111,7 @@ export function layoutBlua32PublicAssets(
 			}
 			continue;
 		}
-		const source: RomAsset = {
+		const source: RomAsset = replacement === undefined ? {
 			...entry,
 			buffer: entry.start == null
 				? undefined
@@ -123,7 +125,7 @@ export function layoutBlua32PublicAssets(
 			collision_bin_buffer: entry.collision_bin_start == null
 				? undefined
 				: layer.bytes.subarray(entry.collision_bin_start, entry.collision_bin_end!),
-		};
+		} : { ...replacement };
 		if (isEdited) {
 			source.buffer = assetEdit[2];
 			editedAssetCount += 1;
@@ -143,10 +145,8 @@ export function layoutBlua32PublicAssets(
 	for (let index = 0; index < layout.entries.length; index += 1) {
 		const entryIndex = relocatedEntryIndices[index];
 		const relocated = layout.entries[index];
-		if (layer.id !== 'system') {
-			relocated.metabuffer_start = entries[entryIndex].metabuffer_start;
-			relocated.metabuffer_end = entries[entryIndex].metabuffer_end;
-		}
+		relocated.metabuffer_start = entries[entryIndex].metabuffer_start;
+		relocated.metabuffer_end = entries[entryIndex].metabuffer_end;
 		entries[entryIndex] = relocated;
 	}
 	if (assetEdits !== undefined && editedAssetCount !== assetEdits.length) {
@@ -211,18 +211,11 @@ export function buildBlua32Tail(
 		if (header.metadataLength !== 0) {
 			metadataOffset = toolingOffset;
 			const metadataDelta = metadataOffset - header.metadataOffset;
-			let installedIndex = 0;
 			for (let index = 0; index < entries.length; index += 1) {
 				const entry = entries[index];
-				while (layer.index.entries[installedIndex].type !== entry.type
-					|| layer.index.entries[installedIndex].resid !== entry.resid) {
-					installedIndex += 1;
-				}
-				const installed = layer.index.entries[installedIndex];
-				installedIndex += 1;
-				if (installed.metabuffer_start != null) {
-					entry.metabuffer_start = installed.metabuffer_start + metadataDelta;
-					entry.metabuffer_end = installed.metabuffer_end! + metadataDelta;
+				if (entry.metabuffer_start != null) {
+					entry.metabuffer_start += metadataDelta;
+					entry.metabuffer_end! += metadataDelta;
 				}
 			}
 			toolingOffset = alignRomAssetOffset(metadataOffset + header.metadataLength);

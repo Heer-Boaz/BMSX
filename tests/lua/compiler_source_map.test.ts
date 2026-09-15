@@ -4,6 +4,8 @@ import { test } from 'node:test';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { composeLuaSource } from '../../toolchain/ts/lua/compiler/source_map';
+import { resolveLuaEntryModuleIndex } from '../../toolchain/ts/lua/entry_module';
+import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 
 const ENTRY_PATH = 'entry';
 const GENERATED_PATH = 'bmsx/test_harness';
@@ -116,4 +118,25 @@ test('source composition maps disjoint whole-line fragments to one complete auth
 	);
 	assert.deepEqual(mapped.sourceMap.lines[2], { sourceIndex: 1, sourceLine: 2 });
 	assert.equal(mapped.sourceMap.sources[1].source, entrySource);
+	for (const optLevel of [0, 3] as const) {
+		const compiled = compileLuaChunkToProgram(parseLuaChunk(mapped.source, GENERATED_PATH).chunk!, [], {
+			entrySource: mapped.source, entrySourceMap: mapped.sourceMap, optLevel,
+			entryOrigin: parseLuaChunk(entrySource, ENTRY_PATH).chunk!.range,
+		});
+		const startup = compiled.program.protos[compiled.startupProtoIndex];
+		assert.deepEqual(compiled.metadata.debugRanges[startup.entryPC / INSTRUCTION_BYTES], {
+			path: ENTRY_PATH, start: { line: 2, column: 1 }, end: { line: 2, column: 1 },
+		});
+	}
+});
+
+test('explicit program entry selects a module without rewriting the project entry declaration', () => {
+	const modules = [
+		{ chunk: parseLuaChunk('module<entry>\nreturn 1', 'game').chunk! },
+		{ chunk: parseLuaChunk('return 2', 'experiments/actor').chunk! },
+	];
+	assert.equal(resolveLuaEntryModuleIndex(modules), 0);
+	assert.equal(resolveLuaEntryModuleIndex(modules, 'experiments/actor'), 1);
+	assert.equal(resolveLuaEntryModuleIndex(modules), 0);
+	assert.throws(() => resolveLuaEntryModuleIndex(modules, 'missing'), /not in the program/);
 });

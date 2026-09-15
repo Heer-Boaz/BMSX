@@ -6,7 +6,10 @@ import { clearFaultSnapshot } from '../runtime/fault_state';
 import {
 	blua32MediaRequiresRebuild,
 	bootInstalledBlua32Media,
+	installBlua32Media,
 	prepareBlua32MediaBoot,
+	type Blua32CartridgeEntry,
+	type PreparedBlua32Boot,
 } from '../runtime/lua_pipeline';
 import { enterSystemSources } from '../runtime/sources';
 import type { RuntimeIdeState } from './state';
@@ -45,29 +48,6 @@ export function startPreparedRuntime(
 	);
 }
 
-async function prepareRebootToBootRom(
-	sources: RuntimeSourceState,
-	fault: RuntimeFaultState,
-	editor: CartEditor,
-	overlayRenderer: OverlayRenderer,
-	audioOutput: HostAudioOutput,
-	storage: KeyValueStorage,
-	sourceSnapshots: ReadonlyArray<LuaTextModelSourceSnapshot>,
-): Promise<boolean> {
-	clearFaultSnapshot(fault);
-	clearExecutionStopHighlights();
-	deactivateEditor(editor, overlayRenderer, audioOutput);
-	editor.clearRuntimeErrorOverlay();
-	await applyAllWorkspaceSourceOverrides(
-		storage,
-		sources,
-		workspaceDirtyRecords,
-	);
-	applyLuaTextModelSources(sources, sourceSnapshots);
-	enterSystemSources(sources);
-	return blua32MediaRequiresRebuild(sources);
-}
-
 export async function rebootPreparedRuntime(
 	sources: RuntimeSourceState,
 	fault: RuntimeFaultState,
@@ -79,27 +59,33 @@ export async function rebootPreparedRuntime(
 	audioOutput: HostAudioOutput,
 	storage: KeyValueStorage,
 	sourceSnapshots: ReadonlyArray<LuaTextModelSourceSnapshot>,
-): Promise<void> {
+	entry?: Blua32CartridgeEntry,
+): Promise<boolean> {
+	let prepared: PreparedBlua32Boot;
+	try {
+		await applyAllWorkspaceSourceOverrides(storage, sources, workspaceDirtyRecords);
+		applyLuaTextModelSources(sources, sourceSnapshots);
+		prepared = prepareBlua32MediaBoot(sources, luaTooling, runtime,
+			blua32MediaRequiresRebuild(sources), entry);
+	} catch (error) {
+		// Build rejection is not a guest fault: keep the installed execution,
+		// debugger stop and editor available so the source can be corrected.
+		console.error(error);
+		editor.handleRuntimeTaskError(error, 'Build failed');
+		return false;
+	}
+	clearFaultSnapshot(fault);
+	clearExecutionStopHighlights();
 	discardRuntimeDebuggerPlans(debuggerState);
-	const rebuildBlua32Media = await prepareRebootToBootRom(
-		sources,
-		fault,
-		editor,
-		overlayRenderer,
-		audioOutput,
-		storage,
-		sourceSnapshots,
-	);
-	const interpreter = prepareBlua32MediaBoot(
-		sources,
-		luaTooling,
-		runtime,
-		rebuildBlua32Media,
-	);
-	bootInstalledBlua32Media(fault, luaTooling, runtime, interpreter);
+	deactivateEditor(editor, overlayRenderer, audioOutput);
+	editor.clearRuntimeErrorOverlay();
+	if (prepared.installation !== null) installBlua32Media(sources, runtime, prepared.installation);
+	enterSystemSources(sources);
+	bootInstalledBlua32Media(fault, luaTooling, runtime, prepared.interpreter);
 	audioOutput.muteSystem(false);
 	resetRuntimeDebuggerExecution(debuggerState);
 	audioOutput.restart(runtime.timing.ufpsScaled);
+	return true;
 }
 
 function bootPreparedBlua32Media(
@@ -115,13 +101,14 @@ function bootPreparedBlua32Media(
 	try {
 		clearFaultSnapshot(fault);
 		editor.clearRuntimeErrorOverlay();
-		const interpreter = prepareBlua32MediaBoot(
+		const prepared = prepareBlua32MediaBoot(
 			sources,
 			luaTooling,
 			runtime,
 			rebuildBlua32Media,
 		);
-		bootInstalledBlua32Media(fault, luaTooling, runtime, interpreter);
+		if (prepared.installation !== null) installBlua32Media(sources, runtime, prepared.installation);
+		bootInstalledBlua32Media(fault, luaTooling, runtime, prepared.interpreter);
 		resetRuntimeDebuggerExecution(debuggerState);
 	} catch (error) {
 		handleLuaError(

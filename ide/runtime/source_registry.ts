@@ -27,9 +27,6 @@ import {
 	collectRomAssetSymbols,
 } from '../../toolchain/ts/rompack/asset_symbols';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
-import { resolveLuaEntryModuleIndex } from '../../toolchain/ts/lua/entry_module';
-import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
-import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
 
 export type LuaSourceRecord = RomLuaAsset & {
 	base_src: string;
@@ -86,6 +83,7 @@ export function buildLuaSources(
 	romSource: RawRomSource,
 	index: CartridgeIndex,
 	payloadId: RomImageDomain,
+	entrySourcePath: string | undefined,
 ): LuaSourceRegistry {
 	const registry: LuaSourceRegistry = {
 		records: [],
@@ -98,7 +96,6 @@ export function buildLuaSources(
 	};
 
 	let programSourceCount = 0;
-	const entryCandidates: Array<{ record: LuaSourceRecord; chunk: LuaChunk }> = [];
 	for (const entry of romSource.list('lua') as PackedLuaSourceAsset[]) {
 		if (entry.payload_id !== payloadId) {
 			continue;
@@ -116,15 +113,11 @@ export function buildLuaSources(
 		registerLuaSourceRecord(registry, luaRecord);
 		if (luaRecord.program_module) {
 			programSourceCount += 1;
-			entryCandidates.push({
-				record: luaRecord,
-				chunk: parseLuaChunk(src, entry.source_path).chunk!,
-			});
 		}
 	}
 	registry.can_boot_from_source = programSourceCount > 0;
 	if (programSourceCount > 0) {
-		registry.entrySourcePath = entryCandidates[resolveLuaEntryModuleIndex(entryCandidates)].record.source_path;
+		registry.entrySourcePath = registry.module2lua[toLuaModulePath(entrySourcePath!)].source_path;
 		const assetEntries: RomAsset[] = [];
 		const entries = romSource.list();
 		for (let index = 0; index < entries.length; index += 1) {

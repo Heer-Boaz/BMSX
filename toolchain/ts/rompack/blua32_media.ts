@@ -1,10 +1,12 @@
 import {
 	decodeBlua32RomImage,
+	blua32FunctionIndexAtAddress,
 	type Blua32ImageLayout,
 } from './blua32_image';
 import {
 	BLUA32_SYMBOLS_IMAGE_ID,
 	decodeBlua32SymbolsImage,
+	blua32SourceRangeAtPc,
 	type Blua32SymbolsImage,
 } from './blua32_symbols';
 import type { ExecutionDomainId } from '../../../machine/ts/spec/blua32/execution_domain';
@@ -45,6 +47,16 @@ export function loadBlua32ToolingImage(
 		}
 	}
 	return { layout, symbols };
+}
+
+/** The reset thunk carries the selected entry chunk's source range, including in derived builds. */
+export function blua32StartupSourcePath(
+	image: Blua32ToolingImage | null,
+	startupFunctionAddress: number,
+): string | undefined {
+	if (image === null || image.symbols === null) return undefined;
+	const fn = image.layout.functions[blua32FunctionIndexAtAddress(image.layout, startupFunctionAddress)];
+	return blua32SourceRangeAtPc(image.symbols, image.layout.header.textAddress, fn.codeAddress)!.path;
 }
 
 export function blua32ToolingImageForDomain(

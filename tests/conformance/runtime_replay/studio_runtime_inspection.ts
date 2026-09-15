@@ -34,7 +34,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	harness.toggleLuaBreakpoint(model.resource.path, beforeRegistration);
 	harness.toggleLuaBreakpoint(model.resource.path, beforeInstances);
 	await runPaletteCommand('Run: Reboot');
-	check(actionPromptState.prompt?.action === 'reboot', 'inspection: independent fixture uses actual Save/Reboot');
+	check(actionPromptState.prompt?.request.action === 'reboot', 'inspection: independent fixture uses actual Save/Reboot');
 	await press('Enter');
 	await until(() => tasks.ready && ide.debugger.stopped && ide.editor.isActive, 'inspection: recursive callback stops before its inner return');
 	check(harness.getActiveCodeContext()!.model === callbacks
@@ -183,7 +183,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\nlocal broken = )\n' }]);
 	const beforeFailure = cycles();
 	await runPaletteCommand('Run: Hot Resume');
-	check(actionPromptState.prompt?.action === 'hot-resume', 'inspection: invalid source uses ordinary compilation gate');
+	check(actionPromptState.prompt?.request.action === 'hot-resume', 'inspection: invalid source uses ordinary compilation gate');
 	await press('Enter');
 	await until(() => tasks.ready, 'inspection: compile rejection completes');
 	check(cycles() === beforeFailure && guest.global('inspection_init_count') === 2 && ide.sources.currentBlua32Media === media,
@@ -195,7 +195,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 
 	model.pushEditOperations([{ offset: period + 2, deleteLength: 2, text: '12' }]);
 	await runPaletteCommand('Run: Hot Resume');
-	check(actionPromptState.prompt?.action === 'hot-resume', 'inspection: changed definition uses Save/Hot Resume');
+	check(actionPromptState.prompt?.request.action === 'hot-resume', 'inspection: changed definition uses Save/Hot Resume');
 	await press('Enter');
 	await until(() => tasks.ready && guest.global('inspection_init_count') === 3 && !runtime.completionCallPending(),
 		'inspection: changed source installs and rebinds both instances');
