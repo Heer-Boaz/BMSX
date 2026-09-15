@@ -495,6 +495,10 @@ Current artifact roles:
   Studio-tooling executable. Timelines, screenshots, scenario tests, IDE tests,
   and source-aware profiling live here rather than in the ordinary headless
   player.
+  Its explicit `--control` mode also supports a persistent, normally paced
+  user-I/O session, optionally composing Studio over a real disk workspace.
+  The control channel exposes input/clipboard/presented images, not IDE commands
+  or machine inspection. See [interactive host control](interactive_host_control.md).
 
 The shared player lifecycle and frame loop are owned by `hosts/common/`. The
 browser and Node player entrypoints import that lifecycle directly. Studio owns

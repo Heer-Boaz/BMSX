@@ -1,6 +1,6 @@
 import { resetBlink } from '../editor/render/caret';
 import type { CartEditor } from '../cart_editor';
-import type { Clipboard } from '../common/clipboard';
+import type { Clipboard } from '../../hosts/common/clipboard';
 import type { HostClock } from '../../hosts/common/clock';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import type { RuntimeSourceState } from '../runtime/sources';

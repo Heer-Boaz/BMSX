@@ -7,7 +7,7 @@ import { createResourceState } from '../../../workbench/contrib/resources/widget
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { CartEditor } from '../../../cart_editor';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { Clipboard } from '../../../common/clipboard';
+import type { Clipboard } from '../../../../hosts/common/clipboard';
 import type { HostClock } from '../../../../hosts/common/clock';
 import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 

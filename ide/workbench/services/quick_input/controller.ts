@@ -3,7 +3,7 @@ import { PointerButton } from '../../../input/pointer/buttons';
 import { pointerCapture, type PointerCaptureTarget } from '../../../input/pointer/capture';
 import { create_rect_bounds, point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { Clipboard } from '../../../common/clipboard';
+import type { Clipboard } from '../../../../hosts/common/clipboard';
 import { DisposableStore } from '../../../common/lifecycle';
 import type { PointerSnapshot } from '../../../common/models';
 import * as constants from '../../../common/constants';

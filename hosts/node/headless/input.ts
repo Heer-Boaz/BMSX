@@ -10,6 +10,7 @@ export class HeadlessInputHub implements InputSource, InputEventWriter {
 	private sink: InputEventSink;
 	private readonly deviceList: InputDevice[] = [
 		{ id: 'keyboard:0', kind: 'keyboard' },
+		{ id: 'pointer:0', kind: 'pointer' },
 		{ id: 'virtual:0', kind: 'virtual' },
 	];
 

@@ -6,11 +6,12 @@ import { KeyModifier } from '../../hosts/common/input/player';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { Input } from '../../hosts/common/input/manager';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type { Clipboard } from '../common/clipboard';
+import type { Clipboard } from '../../hosts/common/clipboard';
 import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
 import type { MicrotaskQueue } from '../common/microtask_queue';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
+import type { WorkspaceRecordProvider } from '../workspace/record_provider';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { EditorDisplay, Viewport } from '../common/viewport';
 import * as constants from '../common/constants';
@@ -53,6 +54,7 @@ export async function initializeIdeFeatures(
 	execution: HostExecutionControl,
 	rewind: HostRewind,
 	storage: KeyValueStorage,
+	workspaceFiles: WorkspaceRecordProvider,
 	clock: HostClock,
 	clipboard: Clipboard,
 	microtasks: MicrotaskQueue,
@@ -72,6 +74,7 @@ export async function initializeIdeFeatures(
 			clock,
 			cartridge ? cartridge.projectRootPath : sources.systemProjectRootPath,
 			sources,
+			workspaceFiles,
 		);
 	} else {
 		await shutdownWorkspaceStorage();

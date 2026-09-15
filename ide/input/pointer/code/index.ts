@@ -14,7 +14,7 @@ import { editorPointerState } from '../state';
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
-import type { Clipboard } from '../../../common/clipboard';
+import type { Clipboard } from '../../../../hosts/common/clipboard';
 
 export function handleCodeAreaPointerInput(
 	editor: CartEditor,

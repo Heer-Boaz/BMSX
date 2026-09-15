@@ -1,4 +1,4 @@
-import type { Clipboard } from '../common/clipboard';
+import type { Clipboard } from '../../common/clipboard';
 
 export class HeadlessClipboard implements Clipboard {
 	public text = '';

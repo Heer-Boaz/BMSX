@@ -77,7 +77,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const menu = new HostOverlayMenu(presenter, runtime, input, rewind, execution);
 	const clipboard = new BrowserClipboard();
 	const ide = await prepareWorkbenchRuntime(bios, [cart, null], runtime, presenter, display, input,
-		audio, tasks, execution, rewind, menu, localStorage, clock, clipboard, new IdeMicrotaskQueue(), log, 0.3, () => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')));
+		audio, tasks, execution, rewind, menu, localStorage, new HttpWorkspaceRecordProvider(), clock, clipboard, new IdeMicrotaskQueue(), log, 0.3, () => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')));
 	const output = new SystemOutputLog();
 	const harness = createHeadlessIdeHarness(ide, runtime, input, audio, localStorage, log);
 	const history = runtime.history;
@@ -208,3 +208,4 @@ export async function createStudioLuaSource(test: StudioFixture, path: string, s
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 	return model;
 }
+import { HttpWorkspaceRecordProvider } from '../../../ide/browser/workspace_records';

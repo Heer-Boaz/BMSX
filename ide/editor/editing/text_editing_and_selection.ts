@@ -36,7 +36,7 @@ import {
 	setSingleCursorSelectionAnchor,
 } from './cursor/state';
 import { findWordBoundsInLine, findWordLeftOffset, findWordRightOffset } from './cursor/words';
-import type { Clipboard } from '../../common/clipboard';
+import type { Clipboard } from '../../../hosts/common/clipboard';
 import { writeClipboard } from '../../input/clipboard';
 
 const tmpPosition: MutableTextPosition = { row: 0, column: 0 };

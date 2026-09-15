@@ -1,4 +1,4 @@
-import type { Clipboard as IdeClipboard } from '../common/clipboard';
+import type { Clipboard as IdeClipboard } from '../../hosts/common/clipboard';
 
 export class BrowserClipboard implements IdeClipboard {
 	public text = '';

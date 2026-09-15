@@ -3,7 +3,7 @@ import { applyLineJump, closeLineJump, openLineJump } from '../../../workbench/c
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../keyboard/key_input';
 import { lineJumpState } from '../../../workbench/contrib/code_editor/find/widget_state';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { Clipboard } from '../../../common/clipboard';
+import type { Clipboard } from '../../../../hosts/common/clipboard';
 
 export function handleLineJumpInput(playerInput: PlayerInput, clipboard: Clipboard): void {
 	const shiftDown = isShiftDown(playerInput);

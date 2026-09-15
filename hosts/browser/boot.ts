@@ -3,6 +3,7 @@ import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { decodeRomToc } from '../../machine/ts/rompack/toc';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { Input } from '../common/input/manager';
+import { HOST_SUPERVISOR_KEY_CODE } from '../common/input/shortcuts';
 import { WorkerStreamingAudioSink } from './worker_audio';
 import { BrowserInputHub } from './input';
 import { ConsoleLogOutput } from '../common/log';
@@ -18,7 +19,6 @@ import type { GPUBackend } from '../../machine/ts/render/backend/backend';
 const audioState: BootAudioState = {
 	sndcontext: null,
 };
-const supervisorRequestKeyCode = 'ScrollLock';
 
 let bootAnimationComplete = false;
 let startingGamepadIndex = -1;
@@ -69,7 +69,7 @@ export async function prepareBrowserStartup(
 		gamescreen,
 		clock,
 		onscreenGamepad,
-		supervisorRequestKeyCode,
+		HOST_SUPERVISOR_KEY_CODE,
 	);
 	const input = new Input(
 		clock,

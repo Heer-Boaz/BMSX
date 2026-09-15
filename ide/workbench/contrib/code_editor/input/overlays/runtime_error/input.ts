@@ -12,7 +12,7 @@ import {
 	updateRuntimeErrorOverlayPointerHover,
 } from '../../../../../../editor/contrib/runtime_error/pointer';
 import type { CartEditor } from '../../../../../../cart_editor';
-import type { Clipboard } from '../../../../../../common/clipboard';
+import type { Clipboard } from '../../../../../../../hosts/common/clipboard';
 
 export function processRuntimeErrorOverlayPointer(
 	clipboard: Clipboard,

@@ -20,14 +20,15 @@ import { Input } from '../../../hosts/common/input/manager';
 import { ConsoleLogOutput } from '../../../hosts/common/log';
 import type { LogOutput } from '../../../hosts/common/log';
 import { DiscardingAudioSink } from '../../../hosts/node/common/discarding_audio';
-import { VirtualHeadlessClock } from '../../../hosts/node/headless/clock';
+import { RealtimeHeadlessClock, VirtualHeadlessClock } from '../../../hosts/node/headless/clock';
 import {
 	HEADLESS_DEFAULT_FRAME_INTERVAL_MS,
 	UnpacedHeadlessFrameLoop,
+	RealtimeHeadlessFrameLoop,
 } from '../../../hosts/node/headless/frame_loop';
-import { HeadlessClipboard } from '../../../ide/testing/clipboard';
+import { HeadlessClipboard } from '../../../hosts/node/headless/clipboard';
 import { HeadlessInputHub } from '../../../hosts/node/headless/input';
-import { MemoryStorage } from '../../../ide/testing/memory_storage';
+import { MemoryStorage } from '../../../ide/workspace/memory_storage';
 import {
 	persistWorkspaceSessionLocally,
 	shutdownWorkspaceStorage,
@@ -64,7 +65,7 @@ import {
 	NODE_TOOLING_HELP,
 	parseNodeToolingOptions,
 } from './node_tooling_options';
-import { installNodeWorkspaceBridge } from './node_workspace_bridge';
+import { DiskWorkspaceRecordProvider } from '../../../ide/node/workspace_records';
 import { RecordingLogOutput } from '../../../ide/testing/recording_log_output';
 import { createRuntimeSourceState } from '../../../ide/runtime/sources';
 import { buildScenarioCartridge } from '../../../toolchain/ts/rompack/scenario_cartridge';
@@ -73,6 +74,11 @@ import { ScenarioResultService } from '../../../ide/testing/scenario/result_serv
 import { ScenarioExecutionService } from '../../../ide/testing/scenario/execution_service';
 import { createRuntimeFaultState } from '../../../ide/runtime/fault_state';
 import { runHeadlessScenarioFrame } from './hostrunner/scenario_host_frame';
+import { RemoteInput } from '../../../hosts/common/input/remote';
+import { HostControlServer } from '../../../hosts/node/control/server';
+import { HostControlSession } from '../../../hosts/node/control/session';
+import type { HostClock } from '../../../hosts/common/clock';
+import type { FrameLoop } from '../../../hosts/common/frame_loop';
 
 declare const BMSX_BOOTROM_DEBUG: boolean;
 
@@ -114,8 +120,16 @@ async function main(): Promise<void> {
 		slot0Rom = scenario.layer.bytes;
 	}
 
-	const clock = new VirtualHeadlessClock();
-	const frames = new UnpacedHeadlessFrameLoop(clock, options.frameIntervalMs);
+	let clock: HostClock;
+	let frames: FrameLoop;
+	if (options.mode.kind === 'control') {
+		clock = new RealtimeHeadlessClock();
+		frames = new RealtimeHeadlessFrameLoop(clock, options.frameIntervalMs);
+	} else {
+		const virtualClock = new VirtualHeadlessClock();
+		clock = virtualClock;
+		frames = new UnpacedHeadlessFrameLoop(virtualClock, options.frameIntervalMs);
+	}
 	const inputHub = new HeadlessInputHub();
 	const input = new Input(
 		clock,
@@ -193,7 +207,7 @@ async function main(): Promise<void> {
 		});
 		console.log('[bootrom:headless] Fantasy CPU profiler enabled.');
 	}
-	if (options.mode.kind !== 'ide-test') {
+	if (options.mode.kind !== 'ide-test' && !(options.mode.kind === 'control' && options.mode.workspaceRoot !== undefined)) {
 		runtime.resetForSystemBoot();
 		runtime.boot();
 		systemOutput.flush(runtime, logOutput);
@@ -202,10 +216,58 @@ async function main(): Promise<void> {
 
 	try {
 		switch (options.mode.kind) {
+		case 'control': {
+			const clipboard = new HeadlessClipboard();
+			const workspaceRoot = options.mode.workspaceRoot;
+			const ide = workspaceRoot === undefined ? undefined : await prepareWorkbenchRuntime(
+				systemRom, [slot0Rom, slot1Rom], runtime, presenter, videoOutput, input, audioOutput,
+				runtimeTasks, execution, rewind, hostOverlayMenu,
+				new MemoryStorage(), new DiskWorkspaceRecordProvider(workspaceRoot), clock,
+				clipboard, new IdeMicrotaskQueue(), logOutput, RESOURCE_PANEL_DEFAULT_RATIO,
+				() => new NodeGraphLayoutEngine(new Worker(path.join(__dirname, 'graph-layout.node-worker.cjs'))),
+			);
+			if (ide) {
+				systemOutput.flush(runtime, logOutput);
+				audioOutput.bootstrap();
+			}
+			const captureDirectory = path.resolve('.bmsx/control/screenshots', String(process.pid));
+			await fs.mkdir(captureDirectory, { recursive: true });
+			const control = new HostControlSession(new RemoteInput(inputHub, clock), videoBackend, captureDirectory, ide ? clipboard : undefined);
+			const finished = Promise.withResolvers<void>();
+			const server = new HostControlServer(request => control.execute(request), () => control.disconnect(), finished.resolve);
+			const port = await server.listen(options.mode.port);
+			console.log(JSON.stringify({ hostControl: { port, studio: !!ide, captureDirectory } }));
+			process.once('SIGINT', finished.resolve);
+			process.once('SIGTERM', finished.resolve);
+			const timer = options.ttlMs > 0 ? clock.scheduleOnce(options.ttlMs, () => finished.resolve()) : undefined;
+			runtime.frameScheduler.clearQueuedTime();
+			const loop = frames.start(currentTime => {
+				try {
+					const result = ide
+						? runWorkbenchHostFrame(frameSession, runtime, presenter, input, audioOutput, systemOutput, logOutput, ide, presentation, hostOverlayMenu, currentTime)
+						: runHostFrame(frameSession, runtime, presenter, input, audioOutput, systemOutput, logOutput, presentation, hostOverlayMenu, currentTime);
+					control.afterFrame();
+					if (result === HostFrameRunResult.ExitRequested) finished.resolve();
+				} catch (error) {
+					finished.reject(error);
+				}
+			});
+			try {
+				await finished.promise;
+			} finally {
+				loop.stop();
+				timer?.cancel();
+				process.removeListener('SIGINT', finished.resolve);
+				process.removeListener('SIGTERM', finished.resolve);
+				control.dispose();
+				await server.close();
+				if (ide) await shutdownWorkspaceStorage();
+			}
+			return;
+		}
 		case 'ide-test': {
 				const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'bmsx-ide-test-'));
 				try {
-					installNodeWorkspaceBridge(workspaceRoot);
 					const microtasks = new IdeMicrotaskQueue();
 					const storage = new MemoryStorage();
 					const capture = new HeadlessCaptureCoordinator(
@@ -229,6 +291,7 @@ async function main(): Promise<void> {
 						rewind,
 						hostOverlayMenu,
 						storage,
+						new DiskWorkspaceRecordProvider(workspaceRoot),
 						clock,
 						new HeadlessClipboard(),
 						microtasks,

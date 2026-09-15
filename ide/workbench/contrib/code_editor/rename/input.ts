@@ -3,7 +3,7 @@ import { isKeyJustPressed } from '../../../../input/keyboard/key_input';
 import type { RenameController } from './controller';
 import type { CrossFileRenameManager } from './operations';
 import type { PlayerInput } from '../../../../../hosts/common/input/player';
-import type { Clipboard } from '../../../../common/clipboard';
+import type { Clipboard } from '../../../../../hosts/common/clipboard';
 
 export function handleRenameControllerInput(
 	playerInput: PlayerInput,

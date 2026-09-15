@@ -1,5 +1,6 @@
 import type { HostClock, TimerHandle } from '../../../hosts/common/clock';
 import type { KeyValueStorage } from '../../workspace/key_value_storage';
+import type { WorkspaceRecordProvider } from '../../workspace/record_provider';
 import { clearWorkspaceSourceCaches } from '../../workspace/cache';
 import {
 	buildWorkspaceDirtyEntryPath,
@@ -115,6 +116,7 @@ export async function initializeWorkspaceStorage(
 	workspaceClock: HostClock,
 	projectRootPath: string,
 	runtimeSources: RuntimeSourceState,
+	workspaceFiles: WorkspaceRecordProvider,
 ): Promise<WorkspaceAutosavePayload | null> {
 	await shutdownWorkspaceStorage();
 	storage = workspaceStorage;
@@ -124,6 +126,7 @@ export async function initializeWorkspaceStorage(
 		storage,
 		clock,
 		projectRootPath,
+		workspaceFiles,
 	);
 	const statePath = joinWorkspacePaths(
 		projectRootPath,

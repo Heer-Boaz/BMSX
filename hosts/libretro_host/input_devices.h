@@ -20,3 +20,8 @@ void input_devices_close(void);
 void input_devices_poll(void);
 int16_t input_devices_state(unsigned port, unsigned device, unsigned index, unsigned id);
 bool input_devices_quit_requested(void);
+
+void input_devices_remote_pointer(int x, int y);
+void input_devices_remote_button(unsigned button, bool down);
+void input_devices_remote_wheel(int delta_y);
+void input_devices_remote_release(void);

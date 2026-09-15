@@ -4,7 +4,7 @@ import { INTEGER_INPUT_FORMAT, parseIntegerInput } from '../../ide/editor/ui/inl
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { insertValue, selectAll } from '../../ide/editor/ui/inline/text_field';
 import { inputFocus } from '../../ide/input/focus';
-import { HeadlessClipboard } from '../../ide/testing/clipboard';
+import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import { editorFeedbackState } from '../../ide/common/feedback_state';
 
 test('integer control admits decimal signed words at the human-input boundary, not expressions', () => {

@@ -64,6 +64,22 @@ typedef struct InputDevice {
 	uint16_t pad_state;
 } InputDevice;
 
+typedef struct RemotePointer {
+	bool active;
+	int x;
+	int y;
+	int pending_x;
+	int pending_y;
+	int pending_wheel;
+	int delta_x;
+	int delta_y;
+	int wheel;
+	uint8_t buttons;
+	int16_t pointer_x;
+	int16_t pointer_y;
+	bool inside;
+} RemotePointer;
+
 typedef struct InputDevices {
 	BmsxInputDriverKind driver;
 	const BmsxVideoSurface* surface;
@@ -81,6 +97,7 @@ typedef struct InputDevices {
 	int16_t pointer_x;
 	int16_t pointer_y;
 	bool pointer_inside_game_viewport;
+	RemotePointer remote;
 	uint64_t exit_combo_start_milliseconds;
 	bool quit_requested;
 #ifdef BMSX_LIBRETRO_HOST_SDL
@@ -795,10 +812,44 @@ void input_devices_poll(void) {
 #ifdef BMSX_LIBRETRO_HOST_SDL
 	if (g_input_devices.driver == BMSX_INPUT_DRIVER_SDL) {
 		poll_sdl_devices();
-		return;
-	}
+	} else
 #endif
-	poll_evdev_devices();
+	{
+		poll_evdev_devices();
+	}
+	RemotePointer* remote = &g_input_devices.remote;
+	remote->delta_x = remote->pending_x;
+	remote->delta_y = remote->pending_y;
+	remote->wheel = remote->pending_wheel;
+	remote->pending_x = remote->pending_y = remote->pending_wheel = 0;
+	if (remote->active) {
+		video_presenter_map_surface_point(remote->x, remote->y,
+			&remote->pointer_x, &remote->pointer_y, &remote->inside);
+	}
+}
+
+void input_devices_remote_pointer(int x, int y) {
+	RemotePointer* remote = &g_input_devices.remote;
+	remote->pending_x += x - remote->x;
+	remote->pending_y += y - remote->y;
+	remote->x = x;
+	remote->y = y;
+	remote->active = true;
+}
+
+void input_devices_remote_button(unsigned button, bool down) {
+	RemotePointer* remote = &g_input_devices.remote;
+	const uint8_t mask = (uint8_t)(1u << button);
+	if (down) remote->buttons |= mask;
+	else remote->buttons &= (uint8_t)~mask;
+}
+
+void input_devices_remote_wheel(int delta_y) {
+	g_input_devices.remote.pending_wheel += delta_y;
+}
+
+void input_devices_remote_release(void) {
+	g_input_devices.remote = (RemotePointer){0};
 }
 
 int16_t input_devices_state(
@@ -815,42 +866,41 @@ int16_t input_devices_state(
 		return (input->pad_state & (uint16_t)(1u << id)) ? 1 : 0;
 	}
 	if (device == RETRO_DEVICE_MOUSE) {
+		const uint8_t buttons = input->mouse_buttons | input->remote.buttons;
+		const int wheel = input->mouse_wheel_y + input->remote.wheel;
 		switch (id) {
 			case kRetroMouseIdX:
-				return (int16_t)input->mouse_delta_x;
+				return (int16_t)(input->mouse_delta_x + input->remote.delta_x);
 			case kRetroMouseIdY:
-				return (int16_t)input->mouse_delta_y;
+				return (int16_t)(input->mouse_delta_y + input->remote.delta_y);
 			case kRetroMouseIdLeft:
-				return (input->mouse_buttons & kMouseButtonPrimary) ? 1 : 0;
+				return (buttons & kMouseButtonPrimary) ? 1 : 0;
 			case kRetroMouseIdRight:
-				return (input->mouse_buttons & kMouseButtonSecondary) ? 1 : 0;
+				return (buttons & kMouseButtonSecondary) ? 1 : 0;
 			case kRetroMouseIdWheelUp:
-				return input->mouse_wheel_y < 0
-					? (int16_t)-input->mouse_wheel_y
-					: 0;
+				return wheel < 0 ? (int16_t)-wheel : 0;
 			case kRetroMouseIdWheelDown:
-				return input->mouse_wheel_y > 0
-					? (int16_t)input->mouse_wheel_y
-					: 0;
+				return wheel > 0 ? (int16_t)wheel : 0;
 			case kRetroMouseIdMiddle:
-				return (input->mouse_buttons & kMouseButtonAux) ? 1 : 0;
+				return (buttons & kMouseButtonAux) ? 1 : 0;
 			case kRetroMouseIdButton4:
-				return (input->mouse_buttons & kMouseButtonBack) ? 1 : 0;
+				return (buttons & kMouseButtonBack) ? 1 : 0;
 			case kRetroMouseIdButton5:
-				return (input->mouse_buttons & kMouseButtonForward) ? 1 : 0;
+				return (buttons & kMouseButtonForward) ? 1 : 0;
 			default:
 				return 0;
 		}
 	}
 	if (device == RETRO_DEVICE_POINTER) {
+		const RemotePointer* remote = &input->remote;
 		switch (id) {
 			case kRetroPointerIdX:
-				return input->pointer_x;
+				return remote->active ? remote->pointer_x : input->pointer_x;
 			case kRetroPointerIdY:
-				return input->pointer_y;
+				return remote->active ? remote->pointer_y : input->pointer_y;
 			case kRetroPointerIdPressed:
-				return input->pointer_inside_game_viewport &&
-					(input->mouse_buttons & kMouseButtonPrimary)
+				return (remote->active ? remote->inside : input->pointer_inside_game_viewport) &&
+					((input->mouse_buttons | remote->buttons) & kMouseButtonPrimary)
 					? 1
 					: 0;
 			default:

@@ -5,7 +5,7 @@ import { SceneEditorNavigationSelection } from './navigation_selection';
 import { PointerButton } from '../../../input/pointer/buttons';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { Clipboard } from '../../../common/clipboard';
+import type { Clipboard } from '../../../../hosts/common/clipboard';
 import type { PointerSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
 import type { RuntimeSourceState } from '../../../runtime/sources';

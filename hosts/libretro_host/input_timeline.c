@@ -677,7 +677,7 @@ static bool parse_timeline_entry(JsonCursor* cursor, uint64_t frame_usec, uint64
 	uint64_t repeats = 1;
 	enum retro_key event_key = RETROK_UNKNOWN;
 	if (event_entry.code[0]) {
-		event_key = keyboard_input_key_from_timeline_code(event_entry.code);
+		event_key = keyboard_input_key_from_code(event_entry.code);
 		if (event_key == RETROK_UNKNOWN) {
 			timeline_parse_errorf(cursor, "entry %zu uses unsupported keyboard code '%s'", index, event_entry.code);
 			return false;

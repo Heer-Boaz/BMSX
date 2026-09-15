@@ -17,7 +17,7 @@ import { validateRenameIdentifier } from './validation';
 import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 import type { CrossFileRenameManager } from './operations';
 import type { PlayerInput } from '../../../../../hosts/common/input/player';
-import type { Clipboard } from '../../../../common/clipboard';
+import type { Clipboard } from '../../../../../hosts/common/clipboard';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
 
 export type RenameStartOptions = ReferenceLookupOptions;

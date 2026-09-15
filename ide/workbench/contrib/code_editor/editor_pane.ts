@@ -5,7 +5,7 @@ import { handleEditorScrollbarPointer } from '../../../input/pointer/scrollbar';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { CartEditor } from '../../../cart_editor';
-import type { Clipboard } from '../../../common/clipboard';
+import type { Clipboard } from '../../../../hosts/common/clipboard';
 import * as constants from '../../../common/constants';
 import type { PointerSnapshot } from '../../../common/models';
 import { showEditorMessage } from '../../../common/feedback_state';

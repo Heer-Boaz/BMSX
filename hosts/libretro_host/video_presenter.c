@@ -8,6 +8,7 @@
 #include <time.h>
 
 #include "host_fatal.h"
+#include "host_control.h"
 #include "input_timeline.h"
 #include "screenshot.h"
 #include "software_frame_blitter.h"
@@ -1093,15 +1094,11 @@ static uint8_t* capture_pixels(size_t required_bytes) {
 static void capture_software_frame(void) {
 	VideoPresenter* presenter = &g_presenter;
 	uint64_t capture_frame;
-	if (!input_timeline_consume_presented_capture(&capture_frame)) {
+	const bool controlled = host_control_capture_pending();
+	if (!controlled && !input_timeline_consume_presented_capture(&capture_frame)) {
 		return;
 	}
 	BmsxVideoSurface* surface = presenter->surface;
-	fprintf(stderr,
-			"[SCREENSHOT] Capturing frame %llu (%dx%d)\n",
-			(unsigned long long)capture_frame,
-			surface->width,
-			surface->height);
 	const size_t pixel_count =
 			(size_t)surface->width * (size_t)surface->height;
 	uint8_t* pixels = capture_pixels(pixel_count * 4u);
@@ -1113,33 +1110,31 @@ static void capture_software_frame(void) {
 				surface->width);
 	}
 	char filename[128];
-	snprintf(
-			filename,
-			sizeof(filename),
-			"frame_%05llu.png",
-			(unsigned long long)capture_frame);
-	if (!screenshot_save_png(
-			filename,
+	if (!controlled) snprintf(filename, sizeof(filename), "frame_%05llu.png", (unsigned long long)capture_frame);
+	const char* capture_filename = controlled ? host_control_capture_filename() : filename;
+	const bool saved = screenshot_save_png(
+			capture_filename,
 			(uint32_t)surface->width,
 			(uint32_t)surface->height,
-			pixels)) {
-		host_fatal("Screenshot save failed: %s", filename);
-	}
+			pixels);
+	if (controlled) host_control_capture_complete(surface->width, surface->height, saved);
+	else if (!saved) host_fatal("Screenshot save failed: %s", filename);
 }
 
 static void capture_hardware_frame(unsigned width, unsigned height) {
 	VideoPresenter* presenter = &g_presenter;
 	uint64_t capture_frame;
-	if (!input_timeline_consume_presented_capture(&capture_frame)) {
+	const bool controlled = host_control_capture_pending();
+	if (!controlled && !input_timeline_consume_presented_capture(&capture_frame)) {
 		return;
 	}
-	fprintf(stderr,
-			"[SCREENSHOT] Capturing frame %llu (%ux%u)\n",
-			(unsigned long long)capture_frame,
-			width,
-			height);
+	if (controlled) {
+		// Interactive coordinates refer to the final host surface, including letterboxing.
+		width = (unsigned)presenter->surface->width;
+		height = (unsigned)presenter->surface->height;
+	}
 	uint8_t* pixels = capture_pixels((size_t)width * (size_t)height * 4u);
-	glBindFramebuffer_ptr(GL_FRAMEBUFFER, presenter->hw_framebuffer);
+	glBindFramebuffer_ptr(GL_FRAMEBUFFER, controlled ? 0 : presenter->hw_framebuffer);
 	glReadPixels_ptr(
 			0,
 			0,
@@ -1149,14 +1144,11 @@ static void capture_hardware_frame(unsigned width, unsigned height) {
 			GL_UNSIGNED_BYTE,
 			pixels);
 	char filename[128];
-	snprintf(
-			filename,
-			sizeof(filename),
-			"frame_%05llu.png",
-			(unsigned long long)capture_frame);
-	if (!screenshot_save_png(filename, width, height, pixels)) {
-		host_fatal("Screenshot save failed: %s", filename);
-	}
+	if (!controlled) snprintf(filename, sizeof(filename), "frame_%05llu.png", (unsigned long long)capture_frame);
+	const char* capture_filename = controlled ? host_control_capture_filename() : filename;
+	const bool saved = screenshot_save_png(capture_filename, width, height, pixels);
+	if (controlled) host_control_capture_complete(width, height, saved);
+	else if (!saved) host_fatal("Screenshot save failed: %s", filename);
 	glBindFramebuffer_ptr(GL_FRAMEBUFFER, 0);
 }
 

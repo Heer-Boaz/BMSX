@@ -18,7 +18,7 @@ import {
 import { findWordBoundsInLine, findWordLeftOffset, findWordRightOffset } from '../../editing/cursor/words';
 import { editorRuntimeState } from '../../common/runtime_state';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { Clipboard } from '../../../common/clipboard';
+import type { Clipboard } from '../../../../hosts/common/clipboard';
 import { writeClipboard } from '../../../input/clipboard';
 import { showEditorMessage } from '../../../common/feedback_state';
 

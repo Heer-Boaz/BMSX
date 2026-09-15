@@ -18,6 +18,7 @@
 #include "frame_pacer.h"
 #include "frame_timing.h"
 #include "host_fatal.h"
+#include "host_control.h"
 #include "input_devices.h"
 #include "input_timeline.h"
 #include "video_context.h"
@@ -76,8 +77,8 @@ static uint64_t monotonic_ns(void) {
 static void usage(const char* argv0) {
 	fprintf(stderr,
 			"Usage:\n"
-			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n"
-			"  %s --core ./libretro_bmsx.so GAME.rom [--slot1 AUX.rom] [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n",
+			"  %s --core ./libretro_bmsx.so --no-game [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n"
+			"  %s --core ./libretro_bmsx.so GAME.rom [--slot1 AUX.rom] [--backend software|gles2] [--video fb|sdl] [--hidden-window] [--system-dir PATH] [--save-dir PATH] [--rom-folder FOLDER] [--control PORT | --input-timeline FILE] [--paced-timeline] [--auto-timeline] [--no-audio] [--max-frames N] [--timing-report] [--timing-warmup N] [--crt-postprocessing on|off] [--crt-noise on|off] [--dither off|rgb565|msx10]\n",
 			argv0, argv0);
 	exit(2);
 }
@@ -116,6 +117,8 @@ int main(int argc, char** argv) {
 	const char* crt_noise = NULL;
 	const char* dither = NULL;
 	bool use_input_timeline = false;
+	bool use_control = false;
+	uint16_t control_port = 0;
 	bool paced_timeline = false;
 	bool auto_timeline = false;
 	bool audio_disabled = false;
@@ -216,6 +219,18 @@ int main(int argc, char** argv) {
 			input_timeline = required_arg(argc, argv, &i);
 			continue;
 		}
+		if (strcmp(argv[i], "--control") == 0) {
+			const char* text = required_arg(argc, argv, &i);
+			char* end;
+			errno = 0;
+			const unsigned long port = strtoul(text, &end, 10);
+			if (errno != 0 || end == text || *end != '\0' || port > 65535) {
+				host_fatal("--control expects a TCP port (0 selects a free port)");
+			}
+			use_control = true;
+			control_port = (uint16_t)port;
+			continue;
+		}
 		if (strcmp(argv[i], "--paced-timeline") == 0) {
 			paced_timeline = true;
 			continue;
@@ -235,6 +250,9 @@ int main(int argc, char** argv) {
 	}
 	if (no_game && slot1_path) {
 		usage(argv[0]);
+	}
+	if (use_control && (use_input_timeline || auto_timeline || paced_timeline)) {
+		host_fatal("--control and input timelines are separate input modes");
 	}
 	if (strcmp(backend, "software") != 0 && strcmp(backend, "gles2") != 0) {
 		host_fatal("Invalid --backend %s (expected software|gles2)", backend);
@@ -342,6 +360,7 @@ int main(int argc, char** argv) {
 				session.execution_domain.read_active_domain_id);
 	}
 	const bool unpaced_timeline = input_timeline_is_active() && !paced_timeline;
+	if (use_control) host_control_open(control_port);
 	BmsxFramePacer frame_pacer;
 	bmsx_frame_pacer_init(
 			&frame_pacer,
@@ -352,6 +371,7 @@ int main(int argc, char** argv) {
 	while (!g_signal_quit_requested &&
 			!session.shutdown_requested &&
 			!runloop_quit_requested &&
+			!host_control_quit_requested() &&
 			!input_devices_quit_requested()) {
 		uint64_t now_ns = monotonic_ns();
 		if (!unpaced_timeline && now_ns < frame_pacer.next_deadline_ns) {
@@ -377,10 +397,12 @@ int main(int argc, char** argv) {
 			session.frame_time.callback(frame_time_usec);
 		}
 		input_timeline_dispatch_before_run();
+		if (use_control) host_control_poll();
 		video_presenter_begin_frame(drop_video);
 		const uint64_t run_start_ns = frame_timing.record_frame ? monotonic_ns() : 0u;
 		core->retro_run();
 		const bool presented_frame = video_presenter_end_frame();
+		if (use_control) host_control_after_frame(presented_frame);
 		const uint64_t run_end_ns = frame_timing.record_frame ? monotonic_ns() : 0u;
 		if (frame_timing.record_frame) {
 			if (profile_gx_upload) {
@@ -432,6 +454,7 @@ int main(int argc, char** argv) {
 	}
 
 	input_timeline_shutdown();
+	if (use_control) host_control_close();
 	input_devices_close();
 	video_presenter_destroy_core_context();
 	core->retro_unload_game();

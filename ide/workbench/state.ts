@@ -7,7 +7,7 @@ import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { Input } from '../../hosts/common/input/manager';
-import type { Clipboard } from '../common/clipboard';
+import type { Clipboard } from '../../hosts/common/clipboard';
 import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
 import type { MicrotaskQueue } from '../common/microtask_queue';

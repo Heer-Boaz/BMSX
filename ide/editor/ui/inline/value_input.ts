@@ -1,4 +1,4 @@
-import type { Clipboard } from '../../../common/clipboard';
+import type { Clipboard } from '../../../../hosts/common/clipboard';
 import * as constants from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { InlineInputOptions } from '../../../common/models';

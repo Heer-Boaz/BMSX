@@ -43,7 +43,7 @@ import type { WorkbenchGraphDragSource } from '../../ui/graph/drag';
 import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
 import { buildBehaviorInspection, type BehaviorInspectionProperty } from './inspection';
-import type { Clipboard } from '../../../common/clipboard';
+import type { Clipboard } from '../../../../hosts/common/clipboard';
 import { ActionEffectPropertyEdit, selectedActionEffectProperty } from './action_effect_edit';
 
 export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<BehaviorLensInput> {

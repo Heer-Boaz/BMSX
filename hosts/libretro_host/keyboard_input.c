@@ -16,6 +16,7 @@
 	X(KEY_F10, SDL_SCANCODE_F10, "F10", RETROK_F10) \
 	X(KEY_F11, SDL_SCANCODE_F11, "F11", RETROK_F11) \
 	X(KEY_F12, SDL_SCANCODE_F12, "F12", RETROK_F12) \
+	X(KEY_SCROLLLOCK, SDL_SCANCODE_SCROLLLOCK, "ScrollLock", RETROK_SCROLLOCK) \
 	X(KEY_UP, SDL_SCANCODE_UP, "ArrowUp", RETROK_UP) \
 	X(KEY_DOWN, SDL_SCANCODE_DOWN, "ArrowDown", RETROK_DOWN) \
 	X(KEY_LEFT, SDL_SCANCODE_LEFT, "ArrowLeft", RETROK_LEFT) \
@@ -102,16 +103,16 @@ static const enum retro_key kSdlKeyMap[SDL_NUM_SCANCODES] = {
 #undef KEYBOARD_INPUT_SDL_KEY
 #endif
 
-typedef struct TimelineKeyMapping {
+typedef struct PhysicalKeyMapping {
 	const char* code;
 	enum retro_key key;
-} TimelineKeyMapping;
+} PhysicalKeyMapping;
 
-#define KEYBOARD_INPUT_TIMELINE_KEY(evdev, sdl, text, retro) { text, retro },
-static const TimelineKeyMapping kTimelineKeyMap[] = {
-	KEYBOARD_INPUT_MAPPINGS(KEYBOARD_INPUT_TIMELINE_KEY)
+#define KEYBOARD_INPUT_PHYSICAL_KEY(evdev, sdl, text, retro) { text, retro },
+static const PhysicalKeyMapping kPhysicalKeyMap[] = {
+	KEYBOARD_INPUT_MAPPINGS(KEYBOARD_INPUT_PHYSICAL_KEY)
 };
-#undef KEYBOARD_INPUT_TIMELINE_KEY
+#undef KEYBOARD_INPUT_PHYSICAL_KEY
 #undef KEYBOARD_INPUT_MAPPINGS
 
 enum {
@@ -140,6 +141,7 @@ void keyboard_input_post(unsigned source, enum retro_key key, bool down) {
 	if (down) {
 		*source_word |= mask;
 		g_key_source_count[key] += 1u;
+		if (key == RETROK_SCROLLOCK) return;
 		if (g_key_source_count[key] == 1u) {
 			g_keyboard_callback.callback(true, (unsigned)key, 0, RETROKMOD_NONE);
 		}
@@ -147,6 +149,7 @@ void keyboard_input_post(unsigned source, enum retro_key key, bool down) {
 	}
 	*source_word &= ~mask;
 	g_key_source_count[key] -= 1u;
+	if (key == RETROK_SCROLLOCK) return;
 	if (g_key_source_count[key] == 0u) {
 		g_keyboard_callback.callback(false, (unsigned)key, 0, RETROKMOD_NONE);
 	}
@@ -162,6 +165,10 @@ void keyboard_input_release_source(unsigned source) {
 	}
 }
 
+bool RETRO_CALLCONV keyboard_input_supervisor_request_line(void) {
+	return g_key_source_count[RETROK_SCROLLOCK] != 0;
+}
+
 enum retro_key keyboard_input_key_from_evdev(uint16_t code) {
 	if (code > KEY_MAX) {
 		return RETROK_UNKNOWN;
@@ -175,10 +182,10 @@ enum retro_key keyboard_input_key_from_sdl(SDL_Scancode scancode) {
 }
 #endif
 
-enum retro_key keyboard_input_key_from_timeline_code(const char* code) {
-	for (size_t index = 0; index < sizeof(kTimelineKeyMap) / sizeof(kTimelineKeyMap[0]); index += 1u) {
-		if (strcmp(kTimelineKeyMap[index].code, code) == 0) {
-			return kTimelineKeyMap[index].key;
+enum retro_key keyboard_input_key_from_code(const char* code) {
+	for (size_t index = 0; index < sizeof(kPhysicalKeyMap) / sizeof(kPhysicalKeyMap[0]); index += 1u) {
+		if (strcmp(kPhysicalKeyMap[index].code, code) == 0) {
+			return kPhysicalKeyMap[index].key;
 		}
 	}
 	return RETROK_UNKNOWN;

@@ -21,7 +21,7 @@ import { ACTIONEFFECT_PARTIAL_SOURCE, ACTIONEFFECT_SOURCE } from '../helpers/act
 import { ActionEffectPropertyEdit, selectedActionEffectProperty } from '../../ide/workbench/contrib/behavior_lens/action_effect_edit';
 import { inputFocus } from '../../ide/input/focus';
 import { insertValue, selectAll } from '../../ide/editor/ui/inline/text_field';
-import { HeadlessClipboard } from '../../ide/testing/clipboard';
+import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 
 function fixture(source = ACTIONEFFECT_SOURCE, chosen = 0, imports: Readonly<Record<string, string>> = {}) {
 	editorViewState.font = new EditorFont('tiny');

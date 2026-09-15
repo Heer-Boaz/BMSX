@@ -1,6 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { PNG } from 'pngjs';
+import { encodeScreenshotPng } from '../../../hosts/node/headless/screenshot';
 
 import {
 	HeadlessGPUBackend,
@@ -35,22 +35,6 @@ interface PendingHeadlessFrameCapture {
 
 function sleep(ms: number): Promise<void> {
 	return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function encodePng(width: number, height: number, pixels: Uint8Array): Buffer {
-	const expectedByteLength = width * height * 4;
-	if (pixels.byteLength !== expectedByteLength) {
-		throw new Error(`[headless:capture] Pixel byte length mismatch (${pixels.byteLength} != ${expectedByteLength}).`);
-	}
-	const png = new PNG({ width, height });
-	const output = png.data;
-	for (let offset = 0; offset < expectedByteLength; offset += 4) {
-		output[offset] = pixels[offset];
-		output[offset + 1] = pixels[offset + 1];
-		output[offset + 2] = pixels[offset + 2];
-		output[offset + 3] = 255;
-	}
-	return PNG.sync.write(png);
 }
 
 export function deriveHeadlessCaptureOutputDir(sourcePath: string): string {
@@ -110,7 +94,7 @@ export class HeadlessCaptureCoordinator {
 		}
 		this.capturedFrames.add(outputFrameIndex);
 		const pixels = this.backend.borrowPresentedPixels();
-		const png = encodePng(frame.width, frame.height, pixels);
+		const png = encodeScreenshotPng(frame.width, frame.height, pixels);
 		const filename = this.buildFilename(outputFrameIndex);
 		const outputPath = path.join(this.outputDir, filename);
 		const writePromise = (async () => {

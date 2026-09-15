@@ -9,6 +9,7 @@ export const HOST_TERMINAL_BUTTON: BGamepadButton = 'lb';
 export const HOST_IDE_BUTTON: BGamepadButton = 'rb';
 export const HOST_MENU_BUTTON: BGamepadButton = 'start';
 export const HOST_ON_SCREEN_KEYBOARD_BUTTON: BGamepadButton = 'x';
+export const HOST_SUPERVISOR_KEY_CODE = 'ScrollLock';
 
 const enum ControlSource {
 	Keyboard = 1,

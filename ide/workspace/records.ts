@@ -1,21 +1,18 @@
 import type { HostClock } from '../../hosts/common/clock';
 import type { KeyValueStorage } from './key_value_storage';
 import { joinWorkspacePaths } from './path';
+import type { WorkspaceRecord, WorkspaceRecordProvider } from './record_provider';
+export type { WorkspaceRecord } from './record_provider';
 
-export const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
 export const WORKSPACE_STORAGE_PREFIX = 'bmsx.workspace.records';
 export const WORKSPACE_METADATA_DIR = '.bmsx';
 export const WORKSPACE_DIRTY_DIR = 'dirty';
 export const WORKSPACE_STATE_FILE = 'session.json';
 export const WORKSPACE_MARKER_FILE = '~workspace';
 
-export type WorkspaceRecord = {
-	contents: string;
-	updatedAt: number;
-};
-
-export const workspaceRecordState = {
+export const workspaceRecordState: { connected: boolean; provider: WorkspaceRecordProvider } = {
 	connected: false,
+	provider: null,
 };
 
 let lastWorkspaceRecordTimestamp = 0;
@@ -172,18 +169,8 @@ export async function readWorkspaceRecordVersion(
 
 export function readRemoteWorkspaceRecord(relativePath: string): Promise<WorkspaceRecord | null> {
 	return enqueueRemoteWorkspaceOperation(relativePath, async () => {
-		const response = await fetch(`${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(relativePath)}`, {
-			method: 'GET',
-			cache: 'no-store',
-		});
-		if (response.status === 404) {
-			return null;
-		}
-		if (!response.ok) {
-			throw new Error(await workspaceResponseError('read', relativePath, response));
-		}
-		const record = await response.json() as WorkspaceRecord;
-		if (record.updatedAt > lastWorkspaceRecordTimestamp) {
+		const record = await workspaceRecordState.provider.read(relativePath);
+		if (record && record.updatedAt > lastWorkspaceRecordTimestamp) {
 			lastWorkspaceRecordTimestamp = record.updatedAt;
 		}
 		return record;
@@ -194,38 +181,20 @@ export function writeRemoteWorkspaceRecord(
 	relativePath: string,
 	record: WorkspaceRecord,
 ): Promise<void> {
-	return enqueueRemoteWorkspaceOperation(relativePath, async () => {
-		const response = await fetch(WORKSPACE_FILE_ENDPOINT, {
-			method: 'PUT',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				path: relativePath,
-				contents: record.contents,
-				updatedAt: record.updatedAt,
-			}),
-		});
-		if (!response.ok) {
-			throw new Error(await workspaceResponseError('write', relativePath, response));
-		}
-	});
+	return enqueueRemoteWorkspaceOperation(relativePath, () => workspaceRecordState.provider.write(relativePath, record));
 }
 
 export function deleteRemoteWorkspaceRecord(relativePath: string): Promise<void> {
-	return enqueueRemoteWorkspaceOperation(relativePath, async () => {
-		const response = await fetch(`${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(relativePath)}`, {
-			method: 'DELETE',
-		});
-		if (!response.ok && response.status !== 404) {
-			throw new Error(await workspaceResponseError('delete', relativePath, response));
-		}
-	});
+	return enqueueRemoteWorkspaceOperation(relativePath, () => workspaceRecordState.provider.delete(relativePath));
 }
 
 export async function openWorkspaceRecords(
 	storage: KeyValueStorage,
 	clock: HostClock,
 	projectRootPath: string,
+	provider: WorkspaceRecordProvider,
 ): Promise<void> {
+	workspaceRecordState.provider = provider;
 	const markerPath = joinWorkspacePaths(
 		projectRootPath,
 		WORKSPACE_METADATA_DIR,
@@ -323,13 +292,4 @@ export function workspaceRecordsEqual(
 			&& right !== null
 			&& left.updatedAt === right.updatedAt
 			&& left.contents === right.contents);
-}
-
-async function workspaceResponseError(
-	operation: string,
-	relativePath: string,
-	response: Response,
-): Promise<string> {
-	const detail = await response.text();
-	return `[WorkspaceStorage] Failed to ${operation} file '${relativePath}': ${detail}`;
 }

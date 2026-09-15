@@ -1,4 +1,4 @@
-import type { KeyValueStorage } from '../workspace/key_value_storage';
+import type { KeyValueStorage } from './key_value_storage';
 
 export class MemoryStorage implements KeyValueStorage {
 	private readonly store = new Map<string, string>();

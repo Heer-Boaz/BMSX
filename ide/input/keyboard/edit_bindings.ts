@@ -7,7 +7,7 @@ import * as TextEditing from '../../editor/editing/text_editing_and_selection';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 import { editorSearchState } from '../../workbench/contrib/code_editor/find/widget_state';
 import type { PlayerInput } from '../../../hosts/common/input/player';
-import type { Clipboard } from '../../common/clipboard';
+import type { Clipboard } from '../../../hosts/common/clipboard';
 
 export function handleSearchNavigationKeybinding(playerInput: PlayerInput): boolean {
 	if (editorSearchState.query.length === 0 || !isKeyJustPressed('F3', playerInput)) {

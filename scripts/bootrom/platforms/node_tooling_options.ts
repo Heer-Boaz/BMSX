@@ -9,6 +9,7 @@ export type NodeToolingMode =
 	| { kind: 'plain' }
 	| { kind: 'timeline'; path: string }
 	| { kind: 'host-test'; path: string }
+	| { kind: 'control'; port: number; workspaceRoot?: string }
 	| { kind: 'ide-test'; path: string };
 
 export interface NodeToolingOptions {
@@ -41,6 +42,8 @@ Options:
   --input-timeline <file>    Schedule a JSON input/capture timeline.
   --test <file>              Run a packaged scenario test.
   --ide-test <file>          Run a host-side Studio test.
+  --control <port>           Live host control on loopback TCP (0 chooses a port).
+  --studio-workspace <dir>   Run Studio with real workspace files; requires --control.
   --cpu-profile              Profile fantasy-CPU instructions.
   --help, -h                 Show this help.`;
 
@@ -59,11 +62,24 @@ export function parseNodeToolingOptions(
 	let mode: NodeToolingMode = { kind: 'plain' };
 	let cpuProfile = false;
 	let help = false;
+	let workspaceRoot: string | undefined;
 
 	let index = 0;
 	while (index < argv.length) {
 		const argument = argv[index];
 		switch (argument) {
+			case '--control': {
+				if (mode.kind !== 'plain') throw new Error('Only one tooling mode may be selected.');
+				const port = Number(requiredNodeOptionValue(argv, index, argument));
+				if (!(port >= 0 && port <= 65535 && port % 1 === 0)) throw new Error('Invalid TCP port.');
+				mode = { kind: 'control', port };
+				index += 2;
+				continue;
+			}
+			case '--studio-workspace':
+				workspaceRoot = path.resolve(requiredNodeOptionValue(argv, index, argument));
+				index += 2;
+				continue;
 			case '--rom':
 			case '--slot0':
 			case '-r':
@@ -151,8 +167,12 @@ export function parseNodeToolingOptions(
 	if (help) {
 		return { kind: 'help' };
 	}
-	if (cpuProfile && (mode.kind === 'host-test' || mode.kind === 'ide-test')) {
-		throw new Error('--cpu-profile cannot be combined with --test or --ide-test.');
+	if (workspaceRoot !== undefined) {
+		if (mode.kind !== 'control') throw new Error('--studio-workspace requires --control.');
+		mode.workspaceRoot = workspaceRoot;
+	}
+	if (cpuProfile && (mode.kind === 'host-test' || mode.kind === 'ide-test' || mode.kind === 'control')) {
+		throw new Error('--cpu-profile cannot be combined with --test, --ide-test or --control.');
 	}
 
 	let resolvedRomPath: string;
@@ -173,7 +193,7 @@ export function parseNodeToolingOptions(
 			path.dirname(resolvedRomPath),
 			debug ? 'bmsx-bios.debug.rom' : 'bmsx-bios.rom',
 		);
-	if (!ttlMs) {
+	if (!ttlMs && mode.kind !== 'control') {
 		ttlMs = mode.kind === 'plain' ? 1_000 : 60_000;
 	}
 

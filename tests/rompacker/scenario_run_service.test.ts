@@ -17,7 +17,7 @@ import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { createRuntimeSourceState } from '../../ide/runtime/sources';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
-import { MemoryStorage } from '../../ide/testing/memory_storage';
+import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import { ScenarioRunService } from '../../ide/workbench/contrib/scenario_lab/run_service';
 import { ScenarioTestCollection } from '../../ide/testing/scenario/test_collection';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';

@@ -514,6 +514,8 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 		${BMSX_LIBRETRO_HOST_DIR}/frame_pacer.c
 		${BMSX_LIBRETRO_HOST_DIR}/frame_timing.c
 		${BMSX_LIBRETRO_HOST_DIR}/host_fatal.c
+		${BMSX_LIBRETRO_HOST_DIR}/host_control.c
+		${BMSX_LIBRETRO_HOST_DIR}/control_transport.c
 		${BMSX_LIBRETRO_HOST_DIR}/input_devices.c
 		${BMSX_LIBRETRO_HOST_DIR}/input_timeline.c
 		${BMSX_LIBRETRO_HOST_DIR}/keyboard_input.c
@@ -521,11 +523,13 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 		${BMSX_LIBRETRO_HOST_DIR}/software_frame_blitter.c
 		${BMSX_LIBRETRO_HOST_DIR}/video_context.c
 		${BMSX_LIBRETRO_HOST_DIR}/video_presenter.c
+		${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/cjson/cJSON.c
 	)
 
 	target_link_libraries(bmsx_libretro_host PRIVATE dl rt pthread m ZLIB::ZLIB)
 	target_include_directories(bmsx_libretro_host PRIVATE
 		${BMSX_LIBRETRO_DIR}
+		${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/cjson
 	)
 
 	if(NOT CMAKE_CROSSCOMPILING)

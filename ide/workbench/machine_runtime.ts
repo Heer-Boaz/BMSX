@@ -9,9 +9,10 @@ import type { RuntimeIdeState } from './state';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { startPreparedRuntime } from './blua32_boot';
 import * as workbenchMode from './mode';
-import type { Clipboard } from '../common/clipboard';
+import type { Clipboard } from '../../hosts/common/clipboard';
 import type { MicrotaskQueue } from '../common/microtask_queue';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
+import type { WorkspaceRecordProvider } from '../workspace/record_provider';
 import type { EditorDisplay } from '../common/viewport';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
@@ -33,6 +34,7 @@ export async function prepareWorkbenchRuntime(
 	rewind: HostRewind,
 	hostMenu: HostOverlayMenu,
 	storage: KeyValueStorage,
+	workspaceFiles: WorkspaceRecordProvider,
 	clock: HostClock,
 	clipboard: Clipboard,
 	microtasks: MicrotaskQueue,
@@ -59,6 +61,7 @@ export async function prepareWorkbenchRuntime(
 		execution,
 		rewind,
 		storage,
+		workspaceFiles,
 		clock,
 		clipboard,
 		microtasks,

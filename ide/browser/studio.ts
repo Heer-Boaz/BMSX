@@ -8,6 +8,7 @@ import {
 	showBrowserBootError,
 } from '../../hosts/browser/boot';
 import { BrowserClipboard } from './clipboard';
+import { HttpWorkspaceRecordProvider } from './workspace_records';
 import { IdeMicrotaskQueue } from '../common/microtask_queue';
 import { prepareWorkbenchRuntime } from '../workbench/machine_runtime';
 import { bindBrowserFullscreenShortcut } from '../../hosts/browser/fullscreen';
@@ -85,6 +86,7 @@ async function startBrowserStudio(): Promise<void> {
 			rewind,
 			hostOverlayMenu,
 			window.localStorage,
+			new HttpWorkspaceRecordProvider(),
 			options.clock,
 			new BrowserClipboard(),
 			new IdeMicrotaskQueue(),
