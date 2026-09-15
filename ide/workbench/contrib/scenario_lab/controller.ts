@@ -3,7 +3,7 @@ import { createBehaviorQuickPickItem } from '../behavior_lens/quick_access';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { HostAudioOutput } from '../../../../hosts/common/audio_output';
-import type { HostExecutionControl } from '../../../../hosts/common/execution_control';
+import { HostPauseReason, type HostExecutionControl } from '../../../../hosts/common/execution_control';
 import type { PointerSnapshot } from '../../../common/models';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { CartEditor } from '../../../cart_editor';
@@ -238,6 +238,7 @@ export class ScenarioLabController {
 	private handleMediaSessionChange(event: ScenarioMediaSessionEvent): void {
 		const view = this.view!;
 		if (event.type === 'started') {
+			this.execution.setPauseReason(HostPauseReason.AwaitingLaunch, false);
 			this.execution.requestExecution(true);
 			return;
 		}

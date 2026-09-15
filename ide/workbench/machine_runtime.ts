@@ -1,7 +1,7 @@
 import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
-import { updateGamePipelineExts } from './overlay_modes';
+import { activateEditor, updateGamePipelineExts } from './overlay_modes';
 import type { HostRewind } from '../../hosts/common/rewind';
-import type { HostExecutionControl } from '../../hosts/common/execution_control';
+import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
 import type { HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { createRuntimeSourceState } from '../runtime/sources';
@@ -75,6 +75,9 @@ export async function prepareWorkbenchRuntime(
 		if (active) hostMenu.dismiss();
 		updateGamePipelineExts(ide.editor, ide.overlayRenderer, audioOutput);
 	});
-	startPreparedRuntime(ide, runtime, logOutput);
+	execution.setPauseReason(HostPauseReason.AwaitingLaunch, true);
+	if (!startPreparedRuntime(ide, runtime)) {
+		activateEditor(ide.editor, sources, ide.overlayRenderer, runtime, audioOutput);
+	}
 	return ide;
 }

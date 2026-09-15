@@ -179,6 +179,7 @@ export function createHeadlessIdeHarness(
 			ide.overlayRenderer,
 			runtime,
 			audioOutput,
+			ide.execution,
 			storage,
 			captureLuaTextModelSources(ide.sources),
 		); },

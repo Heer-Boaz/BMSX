@@ -1,6 +1,6 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import type { LogOutput } from '../../hosts/common/log';
+import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import { clearFaultSnapshot } from '../runtime/fault_state';
 import {
@@ -26,26 +26,35 @@ import type { OverlayRenderer } from '../runtime/overlay_renderer';
 import { applyAllWorkspaceSourceOverrides, applyLuaTextModelSources } from '../workspace/workspace';
 import { workspaceDirtyRecords } from './workspace/state';
 import { deactivateEditor } from './overlay_modes';
-import { handleLuaError } from './runtime_errors';
 import { clearExecutionStopHighlights } from '../runtime_error/navigation';
 import type { LuaTextModelSourceSnapshot } from './services/working_copy/lua_sources';
 
 export function startPreparedRuntime(
 	state: RuntimeIdeState,
 	runtime: Runtime,
-	logOutput: LogOutput,
-): void {
+): boolean {
+	// Initialize real reset registers before the workbench can inspect the CPU.
+	// The host holds execution until the startup build succeeds; no old program
+	// is executed when workspace source is rejected.
 	enterSystemSources(state.sources);
-	bootPreparedBlua32Media(
-		state.sources,
-		state.fault,
-		state.luaTooling,
-		state.debugger,
-		state.editor,
-		runtime,
-		logOutput,
-		blua32MediaRequiresRebuild(state.sources),
-	);
+	bootInstalledBlua32Media(state.fault, state.luaTooling, runtime, state.luaTooling.luaInterpreter);
+	if (blua32MediaRequiresRebuild(state.sources)) {
+		let prepared: PreparedBlua32Boot;
+		try {
+			prepared = prepareBlua32MediaBoot(state.sources, state.luaTooling, runtime, true);
+		} catch (error) {
+			console.error(error);
+			state.editor.handleRuntimeTaskError(error, 'Build failed');
+			return false;
+		}
+		if (prepared.installation !== null) installBlua32Media(state.sources, runtime, prepared.installation);
+		bootInstalledBlua32Media(state.fault, state.luaTooling, runtime, prepared.interpreter);
+	}
+	clearFaultSnapshot(state.fault);
+	state.editor.clearRuntimeErrorOverlay();
+	resetRuntimeDebuggerExecution(state.debugger);
+	state.execution.setPauseReason(HostPauseReason.AwaitingLaunch, false);
+	return true;
 }
 
 export async function rebootPreparedRuntime(
@@ -57,12 +66,20 @@ export async function rebootPreparedRuntime(
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 	audioOutput: HostAudioOutput,
+	execution: HostExecutionControl,
 	storage: KeyValueStorage,
 	sourceSnapshots: ReadonlyArray<LuaTextModelSourceSnapshot>,
 	entry?: Blua32CartridgeEntry,
 ): Promise<boolean> {
 	let prepared: PreparedBlua32Boot;
 	try {
+		if (entry?.domain === 1) {
+			const first = sources.cartridgeSlots[0];
+			if (first !== null && first.rom.header.blua32ImageOffset !== 0
+				&& first.rom.header.blua32StartupFunctionAddress !== 0) {
+				throw new Error('CART 1 cannot launch: BIOS boots CART 0 first.');
+			}
+		}
 		await applyAllWorkspaceSourceOverrides(storage, sources, workspaceDirtyRecords);
 		applyLuaTextModelSources(sources, sourceSnapshots);
 		prepared = prepareBlua32MediaBoot(sources, luaTooling, runtime,
@@ -74,6 +91,7 @@ export async function rebootPreparedRuntime(
 		editor.handleRuntimeTaskError(error, 'Build failed');
 		return false;
 	}
+	console.info('[IDE] Performing cold reboot through bootrom');
 	clearFaultSnapshot(fault);
 	clearExecutionStopHighlights();
 	discardRuntimeDebuggerPlans(debuggerState);
@@ -82,43 +100,9 @@ export async function rebootPreparedRuntime(
 	if (prepared.installation !== null) installBlua32Media(sources, runtime, prepared.installation);
 	enterSystemSources(sources);
 	bootInstalledBlua32Media(fault, luaTooling, runtime, prepared.interpreter);
+	execution.setPauseReason(HostPauseReason.AwaitingLaunch, false);
 	audioOutput.muteSystem(false);
 	resetRuntimeDebuggerExecution(debuggerState);
 	audioOutput.restart(runtime.timing.ufpsScaled);
 	return true;
-}
-
-function bootPreparedBlua32Media(
-	sources: RuntimeSourceState,
-	fault: RuntimeFaultState,
-	luaTooling: RuntimeLuaTooling,
-	debuggerState: RuntimeDebuggerState,
-	editor: CartEditor,
-	runtime: Runtime,
-	logOutput: LogOutput,
-	rebuildBlua32Media: boolean,
-): void {
-	try {
-		clearFaultSnapshot(fault);
-		editor.clearRuntimeErrorOverlay();
-		const prepared = prepareBlua32MediaBoot(
-			sources,
-			luaTooling,
-			runtime,
-			rebuildBlua32Media,
-		);
-		if (prepared.installation !== null) installBlua32Media(sources, runtime, prepared.installation);
-		bootInstalledBlua32Media(fault, luaTooling, runtime, prepared.interpreter);
-		resetRuntimeDebuggerExecution(debuggerState);
-	} catch (error) {
-		handleLuaError(
-			logOutput,
-			fault,
-			sources,
-			runtime,
-			luaTooling.suspendedGuest,
-			error,
-		);
-		throw new Error(`failed to boot runtime: ${error}`);
-	}
 }

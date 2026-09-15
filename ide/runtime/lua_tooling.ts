@@ -1,7 +1,7 @@
 import { ScratchBuffer } from '../../machine/ts/common/scratchbuffer';
 import { LuaHandlerCache, isLuaHandlerFunction } from '../language/lua/interpreter/handler_cache';
 import { convertToError, LuaValue, LuaTable, isLuaTable, createLuaTable, LuaNativeValue, isLuaFunctionValue, isPlainObject, isHostCallable, resolveNativeTypeName, LuaFunctionValue } from '../language/lua/interpreter/value';
-import type { LuaInterpreter } from '../language/lua/interpreter/interpreter';
+import { LuaInterpreter } from '../language/lua/interpreter/interpreter';
 import type { LuaInteropAdapter, LuaMarshalContext } from '../language/lua/interpreter/interop';
 import type { SuspendedGuestSession } from './suspended_guest';
 import type { RuntimeSourceState } from './sources';
@@ -14,13 +14,14 @@ export class RuntimeLuaTooling {
 		(error, meta) => this.handleLuaHandlerError(error, meta),
 	);
 	public readonly luaJsBridge: LuaJsBridge;
-	public luaInterpreter!: LuaInterpreter;
+	public luaInterpreter: LuaInterpreter;
 
 	constructor(
 		public readonly sources: RuntimeSourceState,
 		public readonly suspendedGuest: SuspendedGuestSession,
 	) {
 		this.luaJsBridge = new LuaJsBridge(this);
+		this.luaInterpreter = new LuaInterpreter(this.luaJsBridge);
 	}
 
 	private callLuaFunctionPrepared(fn: LuaFunctionValue, luaArgs: ReadonlyArray<LuaValue>): unknown[] {

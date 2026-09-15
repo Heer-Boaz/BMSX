@@ -236,6 +236,8 @@ export class IdeCommandController {
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target): boolean {
 		const context = focus?.commandContext;
 		switch (command) {
+			case 'hot-resume':
+				return !this.execution.launchPending;
 			case 'runCurrentFile': {
 				const resource = getActiveTab().resource;
 				if (!this.runtimeTasks.ready || this.scenarioRuns.active || !resource || resource.domain === -1) return false;

@@ -1,4 +1,4 @@
-import { HostExecutionControl } from '../../hosts/common/execution_control';
+import { HostExecutionControl, HostPauseReason } from '../../hosts/common/execution_control';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { HostRewind } from '../../hosts/common/rewind';
 import assert from 'node:assert/strict';
@@ -44,6 +44,20 @@ function createInput(): { input: Input; setTime(time: number): void } {
 		setTime: time => { currentTime = time; },
 	};
 }
+
+test('a pending launch holds execution independently of user pause and stepping', () => {
+	const execution = new HostExecutionControl({ mutePause() {} } as HostAudioOutput);
+	execution.setPauseReason(HostPauseReason.AwaitingLaunch, true);
+	execution.requestExecution(true);
+	assert.equal(execution.launchPending, true);
+	assert.equal(execution.executionBlocked(), true);
+	assert.equal(execution.executionBlocked(true), true);
+	execution.setPauseReason(HostPauseReason.Requested, true);
+	execution.setPauseReason(HostPauseReason.AwaitingLaunch, false);
+	assert.equal(execution.userPaused, true);
+	assert.equal(execution.executionBlocked(), true);
+	assert.equal(execution.executionBlocked(true), false);
+});
 
 function createGamepadInput(clock: HostClock): { input: Input; gamepad: GamepadDevice } {
 	const gamepad: GamepadDevice = {

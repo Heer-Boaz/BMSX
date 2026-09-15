@@ -1,6 +1,6 @@
 import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
 import type { HostRewind } from '../../hosts/common/rewind';
-import type { HostExecutionControl } from '../../hosts/common/execution_control';
+import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
 import type { EditorDisplay, Viewport } from '../common/viewport';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
@@ -106,6 +106,7 @@ export class RuntimeIdeState {
 		this.overlayRenderer.setViewportSize(viewport);
 		this.editor.updateViewport(viewport);
 		runtime.onStateRestored = () => {
+			this.execution.setPauseReason(HostPauseReason.AwaitingLaunch, false);
 			// A restored heap is a new inspection context, not the previous stop.
 			this.luaTooling.suspendedGuest.invalidate();
 			resetRuntimeDebuggerExecution(this.debugger);

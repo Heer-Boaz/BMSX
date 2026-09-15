@@ -63,6 +63,7 @@ function executeWorkbenchHostMenuAction(
 					ide.overlayRenderer,
 					runtime,
 					audioOutput,
+					ide.execution,
 					ide.storage,
 					sourceSnapshots,
 				);

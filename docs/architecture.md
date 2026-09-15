@@ -1172,8 +1172,12 @@ selected entry, the second is a build-output identity, and the third belongs
 to browser-product packaging. The serialized cart manifest keeps
 author/cart facts such as its title and physical card-component construction;
 it does not select executable source. Studio's Run Current Lua File and Run
-Project use this build/admission path, not a guest call. Reboot and Hot Resume
-retain the installed entry. Build rejection precedes reset or media mutation.
+Project use this build/admission path, not a guest call. An explicit launch retains
+the BIOS first-bootable-socket policy: it must not claim
+to start socket 1 when socket 0 boots first. Reboot and Hot Resume
+retain the installed entry. A rejected build leaves an existing execution untouched.
+Cold startup initializes real reset registers but holds the host execution clock
+until launch succeeds; a source error leaves the workbench available for repair.
 Source revisions publish matching text and parsed Lua assets in the same ROM
 as their executable and diagnostics, including newly authored files.
 

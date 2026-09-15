@@ -164,7 +164,6 @@ export function performReboot(
 	const sourceSnapshots = captureLuaTextModelSources(sources);
 	persistWorkspaceSessionLocally();
 	runtimeTasks.schedule(async () => {
-		console.info('[IDE] Performing cold reboot through bootrom');
 		const booted = await rebootPreparedRuntime(
 			sources,
 			fault,
@@ -174,6 +173,7 @@ export function performReboot(
 			overlayRenderer,
 			runtime,
 			audioOutput,
+			execution,
 			storage,
 			sourceSnapshots,
 			entry,

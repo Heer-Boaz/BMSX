@@ -4,6 +4,7 @@ export const enum HostPauseReason {
 	Requested = 1 << 0,
 	VibrationInitialization = 1 << 1,
 	Fullscreen = 1 << 2,
+	AwaitingLaunch = 1 << 3,
 }
 
 /** Execution policy, independent of frame pacing, presentation and focused views. */
@@ -16,6 +17,7 @@ export class HostExecutionControl {
 
 	public get paused(): boolean { return this.pauseReasons !== 0; }
 	public get userPaused(): boolean { return (this.pauseReasons & HostPauseReason.Requested) !== 0; }
+	public get launchPending(): boolean { return (this.pauseReasons & HostPauseReason.AwaitingLaunch) !== 0; }
 	public get vibrationInitializationActive(): boolean {
 		return (this.pauseReasons & HostPauseReason.VibrationInitialization) !== 0;
 	}
