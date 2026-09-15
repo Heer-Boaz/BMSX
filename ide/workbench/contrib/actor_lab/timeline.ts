@@ -79,7 +79,10 @@ export class ActorTimelineTransport {
 		this.pending = undefined; this.inFlight = true;
 		execute(() => {
 			if (this.generation !== generation) return;
-			const receiver = node!.receiver!;
+			const receiver = node!.receiver;
+			if (receiver === null) return;
+			const program = guest.readStringMember(node!.value!, 'program') as Table;
+			if (program.hashId !== this.programHashId) return;
 			const key = node!.key;
 			return { domain, closure: guest.readStringMember(receiver, 'scrub_time') as Closure, args: () => [receiver, key, time] };
 		}, completed => {

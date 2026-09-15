@@ -8,7 +8,7 @@ import type { Table } from '../../../../machine/ts/machine/cpu/table';
 import { valueString, type Value } from '../../../../machine/ts/machine/cpu/value';
 import { readRuntimeLuaModuleCapture, readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
 import { prepareLuaArguments, prepareLuaLiteral, type PreparedLuaLiteral } from '../../../runtime/lua_literal';
-import type { RuntimeGuestCallExecutor, RuntimeGuestCallObserver } from '../../../runtime/guest_call';
+import type { RuntimeGuestCallExecutor, RuntimeGuestCallObserver, RuntimeGuestCallRequest } from '../../../runtime/guest_call';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { EditorPanes } from '../../services/editor/editor_panes';
@@ -36,7 +36,17 @@ export class ActorLabController {
 	public readonly execute: RuntimeGuestCallExecutor = (prepare, observer) => {
 		// Pane replacement releases its borrowed rows while GPU admission may still await.
 		const generation = this.panes.openGeneration;
-		this.schedule(() => this.panes.openGeneration === generation ? prepare() : undefined, observer);
+		const input = this.current!;
+		const domain = input.domain, actorHashId = input.actorHashId;
+		this.schedule({
+			isCurrent: () => this.panes.openGeneration === generation && input.domain === domain && input.actorHashId === actorHashId,
+			prepare: () => {
+				// Completing an interrupted IRQ also ends the previous heap borrow.
+				this.refresh(input);
+				if (input.actorHashId !== actorHashId) return;
+				return prepare();
+			},
+		}, observer);
 	};
 	public constructor(
 		private readonly sources: RuntimeSourceState,
@@ -45,7 +55,7 @@ export class ActorLabController {
 		private readonly quickInput: QuickInputController,
 		private readonly panes: EditorPanes,
 		private readonly navigation: EditorNavigationController,
-		private readonly schedule: RuntimeGuestCallExecutor,
+		private readonly schedule: (request: RuntimeGuestCallRequest, observer?: RuntimeGuestCallObserver) => void,
 		private readonly tasks: RuntimeTaskQueue,
 		public readonly canInteract: () => boolean,
 		public readonly execution: HostExecutionControl,
@@ -142,7 +152,8 @@ export class ActorLabController {
 			}, method => {
 				const lifetime = this.quickInput.input(`${node.label}:${method.label}(...)`, 'Lua arguments, excluding self; empty means no arguments', '',
 					async text => prepareLuaArguments(text), literals => this.execute(() => {
-						const receiver = node.value!;
+						const receiver = node.value;
+						if (receiver === null) return; // Target was removed while the request awaited admission.
 						return { domain: input.domain, closure: this.guest.readStringMember(receiver, method.label) as Closure,
 							args: () => {
 								const args: Value[] = [receiver];
@@ -166,7 +177,8 @@ export class ActorLabController {
 	}
 	private invoke(input: ActorLabInput, node: ActorNode, operation: ActorOperation, literals?: readonly PreparedLuaLiteral[]): void {
 		this.execute(() => {
-			const receiver = node.receiver!;
+			const receiver = node.receiver;
+			if (receiver === null) return;
 			const key = node.key;
 			return { domain: input.domain, closure: this.guest.readStringMember(receiver, operation.method) as Closure,
 				args: () => {

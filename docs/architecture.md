@@ -1020,7 +1020,11 @@ Function evaluations run with the workbench visible, unlike foreground Hot
 Resume recovery. Their control-plan owner retains explicit running/suspended
 intent; Run > Pause/Continue Lua Call suspends the real call stack without
 unwinding mutations. Popups temporarily hold execution, and a retained faulted
-call requires recovery. Like stepping, evaluation retains but bypasses requested
+call requires recovery. An active IRQ/exception first executes its own return;
+the caller's instruction stays parked. Call preparation then reacquires current
+guest values through GPU-synchronized mutation admission. Request lifetime is
+separate from borrowed values, so pane/target replacement can revoke the call
+without restoring CPU state. Like stepping, evaluation retains but bypasses requested
 pause; independent initialization/fullscreen/launch holds still apply. This follows
 the separation between asynchronous debugger evaluation and editor presentation
 in [VS Code](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/debugModel.ts)

@@ -319,7 +319,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.sceneEditor = new SceneEditorController(this.sources, this.editorPanes, this.navigation);
 		this.actorLab = new ActorLabController(sources, luaTooling.suspendedGuest, runtime.machine.cpu,
 			this.quickInput, this.editorPanes, this.navigation,
-			(prepare, observer) => { void scheduleRuntimeGuestCall(runtime, luaTooling.suspendedGuest, debuggerState, runtimeTasks, prepare,
+			(request, observer) => { void scheduleRuntimeGuestCall(runtime, luaTooling.suspendedGuest, debuggerState, runtimeTasks, request,
 				() => { execution.requestExecution(false); },
 				completed => {
 					this.actorLab.didFinishCall(completed, observer);

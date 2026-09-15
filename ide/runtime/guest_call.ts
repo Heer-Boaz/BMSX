@@ -17,6 +17,11 @@ export type RuntimeGuestCall = {
 export type RuntimeGuestCallObserver = (completed: boolean, values: readonly Value[]) => void;
 /** A requester can revoke a queued evaluation before it enters the CPU. */
 export type RuntimeGuestCallExecutor = (prepare: () => RuntimeGuestCall | undefined, observer?: RuntimeGuestCallObserver) => void;
+export type RuntimeGuestCallRequest = {
+	/** Request lifetime is independent of any suspended-heap borrow. */
+	readonly isCurrent: () => boolean;
+	readonly prepare: () => RuntimeGuestCall | undefined;
+};
 
 /** A debugger function evaluation, executed by the ordinary scheduled CPU. */
 export class RuntimeGuestCallPlan implements RuntimeDebuggerControlPlan {
@@ -48,20 +53,39 @@ export class RuntimeGuestCallPlan implements RuntimeDebuggerControlPlan {
 /** Prepare against the current suspended heap, never a popup's expired borrow. */
 export function scheduleRuntimeGuestCall(
 	runtime: Runtime, guest: SuspendedGuestSession, debuggerState: RuntimeDebuggerState, tasks: RuntimeTaskQueue,
-	prepare: () => RuntimeGuestCall | undefined,
+	request: RuntimeGuestCallRequest,
 	started: () => void,
 	finished: (completed: boolean) => void,
 	failed: (error: unknown) => void,
 ): Promise<void> {
-	return tasks.schedule(() => {
-		const call = prepare();
-		if (call === undefined) { finished(false); return; }
+	const admitCall = (): boolean => {
+		const call = request.isCurrent() ? request.prepare() : undefined;
+		if (call === undefined) { finished(false); return false; }
 		guest.invalidate();
 		runtime.history.stop();
 		const cpu = runtime.machine.cpu;
 		const returnDepth = cpu.getFrameDepth();
 		cpu.beginCompletionClosureInExecutionDomain(call.domain, call.closure, call.args());
 		pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, returnDepth, finished), 'workbench');
+		return true;
+	};
+	return tasks.schedule(() => {
+		const returnDepth = runtime.machine.cpu.readExceptionReturnFrameDepth();
+		if (returnDepth === -1) {
+			if (admitCall()) started();
+			return;
+		}
+		if (!request.isCurrent()) { finished(false); return; }
+		// Evaluation is ordinary guest work. Let the active exception return via
+		// its own RFE first; never copy Status/EPC or inject a call under its mask.
+		guest.invalidate();
+		runtime.history.stop();
+		pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, returnDepth, completed => {
+			if (!completed) { finished(false); return; }
+			// IRQ execution may have submitted GPU work and invalidated UI borrows.
+			// Re-enter mutation admission, then resolve the actual call afresh.
+			void tasks.schedule(() => { admitCall(); }, failed);
+		}), 'workbench');
 		started();
 	}, failed);
 }

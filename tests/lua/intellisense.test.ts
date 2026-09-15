@@ -240,6 +240,15 @@ end
 	transport.executePending(node, -1, guest, true, prepare => { queued = prepare; });
 	transport.clear();
 	assert.equal(queued!(), undefined, 'replacement before CPU admission revokes the queued evaluation');
+	update(); transport.request(900);
+	transport.executePending(node, -1, guest, true, prepare => { queued = prepare; });
+	node.receiver = null;
+	assert.equal(queued!(), undefined, 'an IRQ may have removed the selected component before admission');
+	node.receiver = component;
+	const previousProgram = guest.readStringMember(target, 'program');
+	target.setStringKey(cpu.stringPool.find('program')!, component);
+	assert.equal(queued!(), undefined, 'program replacement during IRQ return must not apply an old seek');
+	target.setStringKey(cpu.stringPool.find('program')!, previousProgram);
 });
 
 function runtimeWithPausedCpuLocal(source: string) {

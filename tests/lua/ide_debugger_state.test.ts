@@ -17,12 +17,15 @@ import {
 } from '../../ide/runtime/source_registry';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/spec/blua32/cop0';
+import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
+import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import type { Table } from '../../machine/ts/machine/cpu/table';
 import type { Value } from '../../machine/ts/machine/cpu/value';
 import { RuntimeGuestCallPlan, scheduleRuntimeGuestCall } from '../../ide/runtime/guest_call';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
-import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
+import { RuntimeTaskKind, RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -95,11 +98,91 @@ test('a revoked evaluation never enters the CPU after asynchronous GPU admission
 		{ backend: { finishGxGpuReadbacks: () => readback.promise } } as VideoPresenter);
 	let current = true, cancelled = false;
 	const pending = scheduleRuntimeGuestCall(runtime, guest, state, tasks,
-		() => current ? { domain: -1, closure: values[0] as Closure, args: () => [] } : undefined,
+		{ isCurrent: () => current, prepare: () => ({ domain: -1, closure: values[0] as Closure, args: () => [] }) },
 		() => assert.fail('cancelled evaluation started'), completed => { assert.equal(completed, false); cancelled = true; }, assert.fail);
 	current = false; readback.resolve(); await pending;
 	assert.equal(cancelled, true); assert.equal(state.plans.controlActive, false);
 	assert.equal(cpu.getFrameDepth(), depth);
+});
+
+for (const optLevel of [0, 3] as const) for (const cancel of [false, true]) test(`evaluation ${cancel ? 'cancels' : 'admits fresh arguments'} after the physical IRQ return (O${optLevel})`, async () => {
+	const irqCount = DYNAMIC_RAM_BASE, gameCount = irqCount + 4;
+	const { runtime, state } = createDebuggerHarness(`
+function irq()
+	mem[${IO_IRQ_ACK}] = ${IRQ_VBLANK}
+	mem[${irqCount}] = mem[${irqCount}] + 1
+end
+function exception() end
+operation = function(first)
+	while mem[${irqCount}] == first do halt_until_irq end
+	return first, mem[${irqCount}]
+end
+mem[${irqCount}] = 0
+mem[${gameCount}] = 0
+mem[${IO_IRQ_MASK}] = ${IRQ_VBLANK}
+cop0.status = ${CPU_STATUS_CART_ENTRY}
+while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
+`, optLevel);
+	const { cpu, memory, irqController } = runtime.machine;
+	cpu.reset(); cpu.runUntilDepth(0, 1000);
+	const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1), gameBefore = memory.readMappedU32LE(gameCount);
+	irqController.raise(IRQ_VBLANK);
+	assert.equal(cpu.enterPendingInterrupt(), true);
+	cpu.requestNonMaskableInterrupt();
+	assert.equal(cpu.enterPendingInterrupt(), true);
+	const irqDepth = cpu.getFrameDepth();
+	const guest = new SuspendedGuestSession(runtime);
+	let prepared = 0, started = 0, readbacks = 0;
+	let completed: boolean | undefined;
+	let current = true;
+	const result: Value[] = [];
+	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as HostAudioOutput,
+		{ backend: { finishGxGpuReadbacks: async () => { readbacks++; } } } as VideoPresenter);
+	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
+		isCurrent: () => current,
+		prepare: () => {
+			prepared++;
+			assert.equal(cpu.isUserMode(), true);
+			assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
+			const first = memory.readMappedU32LE(irqCount);
+			assert.equal(first, 1, 'resolve arguments after the handler, not before it');
+			return { domain: -1, closure: guest.global('operation') as Closure, args: () => [first] };
+		},
+	}, () => { started++; }, value => { completed = value; if (value) cpu.readCompletionValues(result); }, assert.fail);
+	assert.equal(prepared, 0);
+	assert.equal(cpu.getFrameDepth(), irqDepth, 'do not push a completion call above the IRQ');
+	state.plans.setControlSuspended(true);
+	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
+	assert.equal(memory.readMappedU32LE(irqCount), 0);
+	state.plans.setControlSuspended(false);
+	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.equal(cpu.readFramePc(depth - 1), pc);
+	state.plans.didExecute();
+	if (cancel) current = false;
+	await tasks.schedule(() => {}, assert.fail, RuntimeTaskKind.History);
+	assert.equal(readbacks, 2, 'IRQ-submitted GPU work precedes call admission');
+	if (cancel) {
+		assert.equal(prepared, 0); assert.equal(started, 1);
+		assert.equal(completed, false); assert.equal(state.plans.mutationActive, false);
+		assert.equal(cpu.getFrameDepth(), depth); assert.equal(cpu.readFramePc(depth - 1), pc);
+		assert.equal(memory.readMappedU32LE(gameCount), gameBefore);
+		return;
+	}
+	assert.equal(prepared, 1); assert.equal(started, 1);
+	cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET);
+	assert.equal(cpu.isHaltedUntilIrq(), true, 'the operation can wait for its own interrupt');
+	assert.equal(completed, undefined);
+	irqController.raise(IRQ_VBLANK);
+	assert.equal(cpu.enterPendingInterrupt(), true);
+	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
+	state.plans.didExecute();
+	assert.deepEqual(result, [1, 2]);
+	assert.equal(completed, true);
+	assert.equal(state.plans.mutationActive, false);
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.equal(cpu.readFramePc(depth - 1), pc, 'no ordinary game instruction runs between the IRQ and evaluation');
+	assert.equal(memory.readMappedU32LE(gameCount), gameBefore);
 });
 
 for (const optLevel of [0, 3] as const) test(`workbench evaluation pauses the actual call without undoing mutations (O${optLevel})`, () => {
