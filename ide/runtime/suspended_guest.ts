@@ -178,6 +178,7 @@ export class SuspendedGuestSession {
 		value: SuspendedGuestValue,
 		visitor: SuspendedGuestTableMemberVisitor,
 	): void {
+		const seen = new Set<StringId>();
 		const visitEntry = (
 			keyTag: ValueTag,
 			keyScalar: number,
@@ -186,7 +187,10 @@ export class SuspendedGuestSession {
 			entryScalar: number,
 			entryReference: ValueReference,
 		): void => {
-			if (keyTag === ValueTag.String) {
+			if (keyTag === ValueTag.String && !seen.has(keyScalar)) {
+				// Lua lookup stops at the first stored value, including false and
+				// non-callable shadows. Consumers filter the resolved members only.
+				seen.add(keyScalar);
 				visitor(
 					this.stringPool.toString(keyScalar),
 					materializeValue(entryTag, entryScalar, entryReference),

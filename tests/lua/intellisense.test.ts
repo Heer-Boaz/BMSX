@@ -1,3 +1,5 @@
+import { readActorMethods } from '../../ide/workbench/contrib/actor_lab/methods';
+import type { Table } from '../../machine/ts/machine/cpu/table';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -579,6 +581,38 @@ halt_until_irq`;
 		assert.equal(cpu.luaHeap.usedBytes(), bytes);
 		assert.equal(cpu.getFrameDepth(), depth);
 		assert.equal(cpu.readFramePc(depth - 1), pc);
+	});
+
+	test(`actor method choices follow Lua shadowing without evaluating guest code at O${optLevel}`, () => {
+		const source = `require('test_boot')
+ancestor = {}
+function ancestor:inherited(value) self.value = self.value + value; return self.value end
+function ancestor:overridden() return 1 end
+function ancestor:masked() return 2 end
+local derived = setmetatable({}, { __index = ancestor })
+function derived:overridden() return 3 end
+subject = setmetatable({ value = 10, masked = false, native = setmetatable }, { __index = derived })
+function subject:own() return self.value end
+index_calls = 0
+dynamic = setmetatable({}, { __index = function() index_calls = index_calls + 1; return ancestor.inherited end })
+halt_until_irq`;
+		const { runtime, bridge } = createIntellisenseRuntime(source, optLevel, { test_boot: 'setmetatable = __bmsx_setmetatable' });
+		const cpu = runtime.machine.cpu, guest = bridge.suspendedGuest;
+		cpu.reset();
+		cpu.installBootPrimitives();
+		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		const subject = guest.global('subject') as Table;
+		const bytes = cpu.luaHeap.usedBytes(), depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
+		const methods = readActorMethods(bridge.sources, guest, subject);
+		assert.deepEqual(methods.map(method => method.label), ['inherited', 'overridden', 'own']);
+		assert.equal(methods[1].detail, 'cart.lua:7');
+		assert.deepEqual(readActorMethods(bridge.sources, guest, guest.global('dynamic') as Table), []);
+		assert.equal(guest.global('index_calls'), 0);
+		assert.equal(cpu.luaHeap.usedBytes(), bytes);
+		assert.equal(cpu.readFramePc(depth - 1), pc);
+		cpu.beginCompletionCall(guest.readStringMember(subject, 'inherited') as Closure, [subject, 5]);
+		assert.equal(cpu.runUntilDepth(depth, 1000), RunResult.Halted);
+		assert.equal(guest.readStringMember(subject, 'value'), 15, 'the receiver is the instance, not its prototype');
 	});
 
 	test(`suspended inspection distinguishes a nil member from an unreadable path at O${optLevel}`, () => {

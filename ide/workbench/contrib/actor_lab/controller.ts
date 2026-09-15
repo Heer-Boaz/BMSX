@@ -20,6 +20,7 @@ import type { EditorNavigationController } from '../resources/navigation';
 import type { BehaviorInspectionProperty } from '../behavior_lens/inspection';
 import { canOpenBehaviorInspectionSource } from '../behavior_lens/inspection_source';
 import { inspectActorNode } from './inspection';
+import { readActorMethods } from './methods';
 import { ActorLabInput } from './editor_input';
 import { ActorProjection, findRuntimeActor, readActorChoices, runtimeWorld, type ActorNode } from './runtime';
 
@@ -118,6 +119,28 @@ export class ActorLabController {
 						async text => prepareLuaArguments(text), literals => this.invoke(input, node, operation, literals));
 					lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 				} else this.invoke(input, node, operation);
+			});
+	}
+
+	public callMethod(input: ActorLabInput): void {
+		input.running = false;
+		const node = this.selected(input)!;
+		this.quickInput.pick(`CALL / ${node.label}`, 'Stored Lua functions; selected instance is passed as self',
+			(_origin, lifetime) => {
+				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+				return new TextQuickPickProvider(readActorMethods(this.sources, this.guest, node.value!));
+			}, method => {
+				const lifetime = this.quickInput.input(`${node.label}:${method.label}(...)`, 'Lua arguments, excluding self; empty means no arguments', '',
+					async text => prepareLuaArguments(text), literals => this.execute(() => {
+						const receiver = node.value!;
+						return { domain: input.domain, closure: this.guest.readStringMember(receiver, method.label) as Closure,
+							args: () => {
+								const args: Value[] = [receiver];
+								for (const literal of literals) args.push(literal(this.cpu));
+								return args;
+							} };
+					}));
+				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 			});
 	}
 

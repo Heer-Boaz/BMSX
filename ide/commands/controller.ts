@@ -107,6 +107,7 @@ export class IdeCommandController {
 			case 'actorLab.spawn':
 			case 'actorLab.emit':
 			case 'actorLab.actions':
+			case 'actorLab.call':
 			case 'actorLab.details':
 			case 'behaviorLens.details':
 			case 'behaviorLens.inspectRuntimeEffect':
@@ -277,6 +278,7 @@ export class IdeCommandController {
 			case 'actorLab.spawn':
 			case 'actorLab.emit':
 			case 'actorLab.actions':
+			case 'actorLab.call':
 			case 'actorLab.details':
 			case 'behaviorLens.details':
 			case 'behaviorLens.inspectRuntimeEffect':

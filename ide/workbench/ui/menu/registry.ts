@@ -48,6 +48,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'actorLab.context': [
 		{ type: 'command', command: 'actorLab.details' },
 		{ type: 'command', command: 'actorLab.actions' },
+		{ type: 'command', command: 'actorLab.call' },
 	],
 	'actorLab.title': [
 		{ type: 'command', command: 'actorLab.playback' },
@@ -55,6 +56,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'actorLab.spawn' },
 		{ type: 'command', command: 'actorLab.emit' },
 		{ type: 'command', command: 'actorLab.actions' },
+		{ type: 'command', command: 'actorLab.call' },
 		{ type: 'command', command: 'actorLab.details' },
 	],
 	'propertyInspector.title': [{ type: 'command', command: 'propertyInspector.source' }, { type: 'command', command: 'propertyInspector.close' }],

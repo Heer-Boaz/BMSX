@@ -53,6 +53,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'actorLab.spawn': { category: 'Actor Lab', title: 'Spawn Registered Prefab', shortTitle: 'Spawn' },
 	'actorLab.emit': { category: 'Actor Lab', title: 'Emit Event', shortTitle: 'Event' },
 	'actorLab.actions': { category: 'Actor Lab', title: 'Instance Actions', shortTitle: 'Actions' },
+	'actorLab.call': { category: 'Actor Lab', title: 'Call Lua Method', shortTitle: 'Call' },
 	'actorLab.details': { category: 'Actor Lab', title: 'Inspect Instance', shortTitle: 'Details' },
 	'sceneEditor.source': { category: 'Scene Editor', title: 'Open Source', shortTitle: 'Source' },
 	'behaviorLens.details': { category: 'Behavior Lens', title: 'Open Source Details', shortTitle: 'Details' },

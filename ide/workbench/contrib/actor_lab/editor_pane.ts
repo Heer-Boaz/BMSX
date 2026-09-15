@@ -41,6 +41,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.focusTarget.registerCommand('actorLab.spawn', { isEnabled: controller.canExecute, run: () => controller.spawn(this.input) });
 		this.focusTarget.registerCommand('actorLab.emit', { isEnabled: () => controller.canExecute() && this.input.actorHashId !== 0, run: () => controller.emitEvent(this.input) });
 		this.focusTarget.registerCommand('actorLab.actions', { isEnabled: () => controller.canExecute() && controller.hasActions(this.input), run: () => controller.actions(this.input) });
+		this.focusTarget.registerCommand('actorLab.call', { isEnabled: () => controller.canExecute() && controller.selected(this.input) !== undefined, run: () => controller.callMethod(this.input) });
 		this.focusTarget.registerCommand('actorLab.details', { isEnabled: () => controller.selected(this.input) !== undefined, run: () => controller.inspect(this.input, this.inspector) });
 	}
 	public override get suspendsRuntime(): boolean { return !this.input.running; }

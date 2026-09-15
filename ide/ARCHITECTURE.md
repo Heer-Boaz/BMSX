@@ -1536,5 +1536,9 @@ effect instances, emit actor events with literal payloads, and invoke their
 ordinary methods. Live playback releases the workbench host hold, not a cartlib
 clock. Selection survives normal execution by guest identity, not borrowed
 Table handles. Callback Source uses the existing installed-source correspondence.
+Call lists stored Lua functions with normal table inheritance/shadowing, passes
+the selected instance as `self`, and accepts a literal argument list. Discovery
+does not evaluate functional `__index` or allocate guest values; argument values
+are materialized only at the existing scheduled-call admission boundary.
 References: [Godot runtime inspection and suspension](https://github.com/godotengine/godot/blob/4.5/scene/debugger/scene_debugger.cpp)
 and [LLDB scheduled function evaluation](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/lldb/source/Target/ThreadPlanCallFunction.cpp).
