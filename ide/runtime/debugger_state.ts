@@ -16,6 +16,7 @@ import type { Blua32SourceMedia } from './sources';
 import {
 	RuntimeDebuggerPlanManager,
 	type RuntimeDebuggerControlPlan,
+	type RuntimeDebuggerExecutionContext,
 } from './debugger_plans';
 
 type RuntimeBreakpointLines = [
@@ -289,7 +290,7 @@ export function resumeRuntimeDebugger(
 }
 
 export function runtimeDebuggerExecutionRequested(state: RuntimeDebuggerState): boolean {
-	return state.stepMode !== RuntimeDebuggerStepMode.None || state.plans.controlActive;
+	return state.stepMode !== RuntimeDebuggerStepMode.None || state.plans.controlExecutionRequested;
 }
 
 export function resetRuntimeDebuggerExecution(state: RuntimeDebuggerState): void {
@@ -309,6 +310,7 @@ export function discardRuntimeDebuggerPlans(state: RuntimeDebuggerState): void {
 export function pushRuntimeDebuggerControlPlan(
 	state: RuntimeDebuggerState,
 	plan: RuntimeDebuggerControlPlan,
+	context: RuntimeDebuggerExecutionContext = 'game',
 ): void {
 	if (state.stopped) {
 		resumeRuntimeDebugger(state, RuntimeDebuggerResumeMode.Continue);
@@ -316,7 +318,7 @@ export function pushRuntimeDebuggerControlPlan(
 		state.stopPresentationPending = false;
 		state.stepMode = RuntimeDebuggerStepMode.None;
 	}
-	state.plans.pushControlPlan(plan);
+	state.plans.pushControlPlan(plan, context);
 	updateExecutionHookBinding(state);
 }
 

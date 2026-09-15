@@ -129,6 +129,10 @@ export class IdeCommandController {
 			case 'behaviorLens.setInitialState':
 				inputFocus.executeCommand(command);
 				return;
+			case 'debugEvaluation':
+				this.debuggerState.plans.setControlSuspended(!this.debuggerState.plans.controlSuspended);
+				if (!this.debuggerState.plans.controlSuspended) this.execution.requestExecution(false);
+				return;
 			case 'pause':
 				if (this.execution.userPaused) {
 					if (this.rewind.active) this.rewind.resumeHere();
@@ -301,6 +305,8 @@ export class IdeCommandController {
 				const implementation = context?.getCommand(command);
 				return implementation !== undefined && implementation.isEnabled();
 			}
+			case 'debugEvaluation':
+				return this.runtimeTasks.ready && this.debuggerState.plans.workbenchControlActive && this.fault.faultSnapshot === null;
 			case 'pause':
 				return !this.execution.userPaused || this.runtimeTasks.ready;
 			case 'scenarioLab.run':
@@ -356,6 +362,8 @@ export class IdeCommandController {
 
 	public isActive(command: EditorCommandId): boolean {
 		switch (command) {
+			case 'debugEvaluation':
+				return this.debuggerState.plans.controlSuspended;
 			case 'pause':
 				return this.execution.userPaused;
 			case 'resources':

@@ -56,7 +56,7 @@ export function scheduleRuntimeGuestCall(
 		const cpu = runtime.machine.cpu;
 		const returnDepth = cpu.getFrameDepth();
 		cpu.beginCompletionClosureInExecutionDomain(call.domain, call.closure, call.args());
-		pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, returnDepth, finished));
+		pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, returnDepth, finished), 'workbench');
 		started();
 	}, failed);
 }

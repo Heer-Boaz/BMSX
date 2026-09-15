@@ -1016,6 +1016,15 @@ notifications revoke identities from the replaced heap. Guest method evaluation
 uses the scheduled debugger completion plan, not synchronous host Lua RPC.
 Completion roots have no guest CALL site in the suspended frame below them.
 Actor operations modify the running instance, never its source working copy.
+Function evaluations run with the workbench visible, unlike foreground Hot
+Resume recovery. Their control-plan owner retains explicit running/suspended
+intent; Run > Pause/Continue Lua Call suspends the real call stack without
+unwinding mutations. Popups temporarily hold execution, and a retained faulted
+call requires recovery. Ordinary host pause reasons still apply. This follows
+the separation between asynchronous debugger evaluation and editor presentation
+in [VS Code](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/debugModel.ts)
+and [LLDB's function-call plans](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/lldb/source/Target/ThreadPlanCallFunction.cpp),
+not LLDB's register-checkpoint restoration.
 
 The Run menu exposes one checked Pause toggle, without a gameplay keyboard
 binding. Toggling it off explicitly takes over a reviewed position and releases

@@ -6,6 +6,8 @@ import {
 	createRuntimeDebuggerState,
 	rebuildRuntimeBreakpointPcs,
 	resumeRuntimeDebugger,
+	pushRuntimeDebuggerControlPlan,
+	runtimeDebuggerExecutionRequested,
 	RuntimeDebuggerResumeMode,
 	type RuntimeDebuggerState,
 } from '../../ide/runtime/debugger_state';
@@ -15,6 +17,10 @@ import {
 } from '../../ide/runtime/source_registry';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import type { Table } from '../../machine/ts/machine/cpu/table';
+import type { Value } from '../../machine/ts/machine/cpu/value';
+import { RuntimeGuestCallPlan } from '../../ide/runtime/guest_call';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import { compileLuaSource } from './cpu_test_harness';
@@ -72,6 +78,46 @@ function createDebuggerHarness(source: string, optLevel: 0 | 3): DebuggerHarness
 		state: createRuntimeDebuggerState(runtime, sources),
 	};
 }
+
+for (const optLevel of [0, 3] as const) test(`workbench evaluation pauses the actual call without undoing mutations (O${optLevel})`, () => {
+	const harness = createDebuggerHarness(`
+local actor = { value = 0 }
+local function advance(self, limit)
+	while self.value < limit do self.value = self.value + 1 end
+	return self.value
+end
+return actor, advance
+`, optLevel);
+	const { runtime, state } = harness;
+	const cpu = runtime.machine.cpu;
+	cpu.reset();
+	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Halted);
+	const values: Value[] = [];
+	cpu.readCompletionValues(values);
+	const actor = values[0] as Table;
+	const closure = values[1] as Closure;
+	const key = cpu.stringPool.find('value')!;
+	const depth = cpu.getFrameDepth();
+	let completed = false;
+	cpu.beginCompletionClosureInExecutionDomain(-1, closure, [actor, 100]);
+	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, depth, value => { completed = value; }), 'workbench');
+	cpu.runUntilDepth(depth, 80);
+	const partial = actor.getStringKey(key) as number;
+	assert.ok(partial > 0 && partial < 100);
+	state.plans.setControlSuspended(true);
+	assert.equal(runtimeDebuggerExecutionRequested(state), false);
+	assert.equal(cpu.runUntilDepth(depth, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
+	assert.equal(actor.getStringKey(key), partial);
+	assert.equal(cpu.getFrameDepth(), depth + 1);
+	state.plans.setControlSuspended(false);
+	assert.equal(runtimeDebuggerExecutionRequested(state), true);
+	cpu.runUntilDepth(depth, DEBUG_RUN_CYCLE_BUDGET);
+	state.plans.didExecute();
+	assert.equal(completed, true);
+	assert.equal(state.plans.mutationActive, false);
+	assert.equal(actor.getStringKey(key), 100);
+	assert.equal(cpu.getFrameDepth(), depth);
+});
 
 function stoppedSourceLine(harness: DebuggerHarness): number {
 	const result = harness.runtime.machine.cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET);

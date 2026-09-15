@@ -115,6 +115,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	],
 	'menubar.run': [
 		{ type: 'command', command: 'pause' },
+		{ type: 'command', command: 'debugEvaluation' },
 		{ type: 'command', command: 'debugContinue' },
 		{ type: 'command', command: 'debugStepOver' },
 		{ type: 'command', command: 'debugStepInto' },

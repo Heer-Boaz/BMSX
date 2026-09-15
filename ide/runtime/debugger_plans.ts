@@ -9,6 +9,9 @@ export const enum RuntimeDebuggerPlanResult {
 	Complete,
 }
 
+/** Evaluation can run behind workbench controls; recovery resumes the game. */
+export type RuntimeDebuggerExecutionContext = 'game' | 'workbench';
+
 export interface RuntimeDebuggerControlPlan {
 	readonly executionDomainMask: ExecutionDomainMask;
 	readonly preMaskableInterruptDomainMask: ExecutionDomainMask;
@@ -45,11 +48,21 @@ class RuntimeDebuggerCompletionBatchRecord implements RuntimeDebuggerCompletionB
 
 export class RuntimeDebuggerPlanManager {
 	private controlPlan: RuntimeDebuggerControlPlan | null = null;
+	private controlContext: RuntimeDebuggerExecutionContext = 'game';
+	private suspended = false;
 	private readonly completionBatches: RuntimeDebuggerCompletionBatchRecord[] = [];
 
 	public get controlActive(): boolean {
 		return this.controlPlan !== null;
 	}
+
+	public get controlSuspended(): boolean { return this.controlActive && this.suspended; }
+	public get controlExecutionRequested(): boolean { return this.controlActive && !this.suspended; }
+	public get workbenchControlActive(): boolean { return this.controlActive && this.controlContext === 'workbench'; }
+	public get workbenchExecutionRequested(): boolean { return this.workbenchControlActive && !this.suspended; }
+
+	/** Suspension retains the call stack and all mutations; it does not cancel/unwind. */
+	public setControlSuspended(suspended: boolean): void { this.suspended = suspended; }
 
 	/** Tool-driven execution is not a replayable interval of ordinary guest input. */
 	public get mutationActive(): boolean {
@@ -64,15 +77,17 @@ export class RuntimeDebuggerPlanManager {
 		return this.controlPlan === null ? 0 : this.controlPlan.preMaskableInterruptDomainMask;
 	}
 
-	public pushControlPlan(plan: RuntimeDebuggerControlPlan): void {
+	public pushControlPlan(plan: RuntimeDebuggerControlPlan, context: RuntimeDebuggerExecutionContext = 'game'): void {
 		if (this.controlPlan !== null) {
 			this.controlPlan.discard();
 		}
 		this.controlPlan = plan;
+		this.controlContext = context;
+		this.suspended = false;
 	}
 
 	public shouldStop(executionDomainId: ExecutionDomainId, pc: number): boolean {
-		return this.controlPlan!.shouldStop(executionDomainId, pc);
+		return this.suspended || this.controlPlan!.shouldStop(executionDomainId, pc);
 	}
 
 	public willExecute(): boolean {
@@ -101,6 +116,7 @@ export class RuntimeDebuggerPlanManager {
 			this.controlPlan = null;
 			return true;
 		}
+		this.suspended = true;
 		return executionDomainMask !== this.executionDomainMask
 			|| preMaskableInterruptDomainMask !== this.preMaskableInterruptDomainMask;
 	}

@@ -42,6 +42,7 @@ export type EditorWorkspaceCommandId =
 
 export type EditorDebugCommandId =
 	| 'pause'
+	| 'debugEvaluation'
 	| 'debugContinue'
 	| 'debugStepInto'
 	| 'debugStepOut'

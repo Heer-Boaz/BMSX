@@ -201,7 +201,8 @@ export function runWorkbenchHostFrame(
 			void presentRuntimeDebuggerStop(ide.editor, ide.debugger)
 				.catch(error => workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error));
 		}
-		const runtimeReady = ide.runtimeTasks.ready && !ide.fault.hostFrameFailed && !session.rewind.active;
+		const runtimeReady = ide.runtimeTasks.ready && !ide.fault.hostFrameFailed && !session.rewind.active
+			&& !ide.debugger.plans.controlSuspended;
 		session.execution.setPauseReason(HostPauseReason.Workbench, ide.editor.executionSuspended);
 		audioOutput.muteUi(ide.editor.executionSuspended);
 		let action: HostFrameAction;

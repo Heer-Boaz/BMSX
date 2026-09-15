@@ -80,6 +80,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	save: { category: 'File', title: 'Save' },
 	'theme-toggle': { category: 'Preferences', title: 'Toggle Theme' },
 	debugContinue: { category: 'Debug', title: 'Continue' },
+	debugEvaluation: { category: 'Debug', title: 'Pause Lua Call', activeTitle: 'Continue Lua Call' },
 	pause: { category: 'Run', title: 'Pause', activeTitle: 'Resume' },
 	debugStepInto: { category: 'Debug', title: 'Step Into' },
 	debugStepOut: { category: 'Debug', title: 'Step Out' },

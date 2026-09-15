@@ -11,11 +11,13 @@ import type { RuntimeFaultState } from '../../runtime/fault_state';
 import type { EditorPane } from '../services/editor/editor_pane';
 import type { EditorInput } from '../ui/tab/model';
 import { buildStatusLeftInfo } from './status_bar_info';
+import type { RuntimeDebuggerPlanManager } from '../../runtime/debugger_plans';
 
 export function renderStatusBar(
 	resourcePanel: ResourcePanelController,
 	fault: RuntimeFaultState,
 	editorPane: EditorPane<EditorInput>,
+	plans: RuntimeDebuggerPlanManager,
 ): void {
 	const runtimeFaulted = !!fault.faultSnapshot;
 	const statusTop = editorViewState.viewportHeight - statusAreaHeight();
@@ -30,6 +32,10 @@ export function renderStatusBar(
 		api.fill_rect(0, statusTop, editorViewState.viewportWidth, accentBottom, 0, constants.COLOR_STATUS_WARNING);
 	}
 	const statusTextColor = runtimeFaulted ? constants.COLOR_STATUS_ALERT : constants.COLOR_STATUS_TEXT;
+	if (!runtimeFaulted && plans.workbenchControlActive) {
+		drawEditorText(editorViewState.font, plans.controlSuspended ? 'LUA CALL PAUSED' : 'LUA CALL RUNNING', 4, statusTop + 2, 0, statusTextColor);
+		return;
+	}
 
 	if (editorFeedbackState.message.visible) {
 		const lines = getStatusMessageLines();

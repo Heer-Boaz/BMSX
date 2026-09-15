@@ -1,7 +1,6 @@
 import { ActorLabController } from './workbench/contrib/actor_lab/controller';
 import { ActorLabEditorPane } from './workbench/contrib/actor_lab/editor_pane';
 import { scheduleRuntimeGuestCall } from './runtime/guest_call';
-import { activateEditor, deactivateEditor } from './workbench/overlay_modes';
 import type { EditorInputSerializers } from './workbench/services/editor/editor_serialization';
 import { CodeEditorInputSerializer } from './workbench/contrib/code_editor/editor_serializer';
 import { BehaviorLensInputSerializer } from './workbench/contrib/behavior_lens/editor_serializer';
@@ -178,7 +177,8 @@ export type CartEditor = {
 export class RuntimeCartEditor implements CartEditor {
 	private readonly activeListeners = new Set<(active: boolean) => void>();
 	public get executionSuspended(): boolean {
-		return this.isActive && (this.quickInput.visible || this.contextMenu.visible || this.editorPanes.activePane?.suspendsRuntime !== false);
+		return this.isActive && (this.quickInput.visible || this.contextMenu.visible
+			|| !this.debuggerState.plans.workbenchExecutionRequested && this.editorPanes.activePane?.suspendsRuntime !== false);
 	}
 	public readonly isAvailable: boolean;
 	public readonly completion: EditorCompletionController;
@@ -320,9 +320,8 @@ export class RuntimeCartEditor implements CartEditor {
 		this.actorLab = new ActorLabController(sources, luaTooling.suspendedGuest, runtime.machine.cpu,
 			this.quickInput, this.editorPanes, this.navigation,
 			(prepare, didComplete) => { void scheduleRuntimeGuestCall(runtime, luaTooling.suspendedGuest, debuggerState, runtimeTasks, prepare,
-				() => { execution.requestExecution(false); deactivateEditor(this, overlayRenderer, audioOutput); },
+				() => { execution.requestExecution(false); },
 				completed => {
-					activateEditor(this, sources, runtime, audioOutput);
 					if (completed) this.actorLab.didCompleteCall(didComplete);
 				},
 				error => this.handleRuntimeTaskError(error, 'Actor operation failed')); },
@@ -573,7 +572,7 @@ export class RuntimeCartEditor implements CartEditor {
 		drawResourcePanel(this.resourcePanel);
 		this.editorPanes.activePane.draw();
 		drawProblemsPanel();
-		renderStatusBar(this.resourcePanel, this.fault, this.editorPanes.activePane);
+		renderStatusBar(this.resourcePanel, this.fault, this.editorPanes.activePane, this.debuggerState.plans);
 		renderTopBarDropdown(this.chromeRenderContext);
 		drawContextMenu(this.contextMenu);
 		this.quickInput.draw();

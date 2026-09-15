@@ -36,6 +36,49 @@ function controlPlan(
 	};
 }
 
+test('workbench evaluation suspension retains its plan and mutation ownership', () => {
+	const events: string[] = [];
+	const plans = new RuntimeDebuggerPlanManager();
+	plans.pushControlPlan(controlPlan(events, 'call', RuntimeDebuggerPlanResult.Active), 'workbench');
+	assert.equal(plans.workbenchControlActive, true);
+	assert.equal(plans.workbenchExecutionRequested, true);
+	plans.setControlSuspended(true);
+	assert.equal(plans.controlSuspended, true);
+	assert.equal(plans.controlExecutionRequested, false);
+	assert.equal(plans.workbenchExecutionRequested, false);
+	assert.equal(plans.mutationActive, true);
+	assert.equal(plans.shouldStop(0, 44), true);
+	assert.deepEqual(events, [], 'pausing does not discard or unwind the operation');
+	plans.setControlSuspended(false);
+	assert.equal(plans.shouldStop(0, 44), false);
+	assert.equal(plans.workbenchExecutionRequested, true);
+	plans.discardAll();
+	assert.equal(plans.workbenchControlActive, false);
+	assert.equal(plans.controlSuspended, false);
+	assert.equal(plans.controlExecutionRequested, false);
+	assert.deepEqual(events, ['call:discard']);
+
+	plans.pushControlPlan(controlPlan(events, 'recovery', RuntimeDebuggerPlanResult.Complete));
+	assert.equal(plans.controlExecutionRequested, true);
+	assert.equal(plans.workbenchExecutionRequested, false, 'recovery keeps the ordinary foreground execution policy');
+	plans.didExecute();
+	assert.equal(plans.controlExecutionRequested, false);
+});
+
+test('a faulted retained evaluation requires explicit recovery rather than running behind the editor', () => {
+	const plans = new RuntimeDebuggerPlanManager();
+	const plan = controlPlan([], 'call', RuntimeDebuggerPlanResult.Active);
+	plan.didFault = () => RuntimeDebuggerPlanResult.Active;
+	plans.pushControlPlan(plan, 'workbench');
+	plans.didFault();
+	assert.equal(plans.controlSuspended, true);
+	assert.equal(plans.workbenchExecutionRequested, false);
+	assert.equal(plans.mutationActive, true);
+	plans.pushControlPlan(controlPlan([], 'recovery', RuntimeDebuggerPlanResult.Complete));
+	assert.equal(plans.controlSuspended, false);
+	assert.equal(plans.controlExecutionRequested, true);
+});
+
 test('runtime debugger control plans own replacement, execution, and fault lifecycles', () => {
 	const events: string[] = [];
 	const plans = new RuntimeDebuggerPlanManager();
