@@ -10,6 +10,7 @@ import { linkSystemBlua32Image, type LinkedSystemBlua32Image } from '../../toolc
 import { buildBlua32ExecutionRevision } from '../../toolchain/ts/rompack/blua32_revision';
 import { SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { createTestSystemCpu, linkTestSystemBlua32, writeTestBlua32Rom } from '../helpers/blua32';
@@ -37,6 +38,41 @@ function prove(previous: ReturnType<typeof compile>, fresh: ReturnType<typeof co
 	return buildBlua32ExecutionRevision(previous.linked.layout, previous.linked.symbols,
 		previous.sources, fresh.linked, fresh.sources, fresh.correspondence);
 }
+
+for (const optLevel of [0, 3] as const) test(`Hot Resume initializes new module dependencies once without replacing existing exports (O${optLevel})`, () => {
+	const before = `local world<const> = require('world')
+local function read() return world end
+local function init<init>() hook_trace = load_trace end
+return read, world`;
+	const worldModule = { path: 'world', source: 'load_trace = 1\nreturn { actor = {} }' };
+	const initial = compile(before, undefined, optLevel, [worldModule]);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const [read, world] = materializeCpuCompletionValues(cpu);
+	const fresh = compile(before.replace('local function read() return world',
+		"local added<const> = require('added')\nlocal function read() return added.world"), initial, optLevel, [
+		worldModule,
+		{ path: 'added', source: `local world<const> = require('world')
+require('nil_export')
+require('false_export')
+load_trace = load_trace * 10 + 4
+return { world = world }` },
+		{ path: 'nil_export', source: 'load_trace = load_trace * 10 + 2\nreturn nil' },
+		{ path: 'false_export', source: 'load_trace = load_trace * 10 + 3\nreturn false' },
+	]);
+	prove(initial, fresh);
+	memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
+	cpu.replaceExecutionImage(executionAddressSpace.resolveSystemDomain());
+	for (let run = 0; run < 2; run += 1) {
+		cpu.beginCompletionCallInExecutionDomain(SYSTEM_EXECUTION_DOMAIN_ID, fresh.linked.symbols.initFunctionAddress);
+		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('load_trace')), 1234);
+		assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('hook_trace')), 1234);
+		cpu.beginCompletionCall(read as Closure);
+		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		assert.equal(materializeCpuCompletionValues(cpu)[0], world);
+	}
+});
 
 for (const optLevel of [0, 3] as const) test(`live callback can acquire an immutable import without acquiring a cell (O${optLevel})`, () => {
 	const modules = [{ path: 'library', source: 'return { value = 41 }' }];
@@ -301,6 +337,57 @@ return read()`;
 	cpu.setExecutionHook(null, 0, 0);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [42]);
+});
+
+for (const optLevel of [0, 3] as const) test(`paused calls survive adding imports used only by callbacks (O${optLevel})`, () => {
+	const modules = [{ path: 'first', source: 'return { value = 7 }' }, { path: 'second', source: 'return { value = 42 }' }];
+	const before = `local first<const> = require('first')
+local function checkpoint() return 0 end
+function update() return first.value end
+checkpoint()
+return update()`;
+	const initial = compile(before, undefined, optLevel, modules);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
+	const checkpointIndex = initial.linked.symbols.metadata.functionIds.findIndex(id => id.endsWith('/local:checkpoint'));
+	const startupIndex = initial.linked.symbols.metadata.functionIds.findIndex(id => id.endsWith('/startup'));
+	assert.ok(initial.linked.symbols.metadata.resumePointsByFunction[startupIndex].some(point => point.resumeId === 'startup.entry.return'));
+	cpu.setExecutionHook((_domain, pc) => pc === initial.linked.layout.functions[checkpointIndex].codeAddress,
+		executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID), 0);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.ExecutionStopped);
+	const after = before.replace('local function checkpoint', "local second<const> = require('second')\nlocal function checkpoint")
+		.replace('return first.value', 'return second.value');
+	const fresh = compile(after, initial, optLevel, modules);
+	const revision = prove(initial, fresh);
+	const relocation = buildHotResumeRelocation(cpu, [{ previousImage: initial.linked.layout, freshImage: fresh.linked.layout, revision }, null, null], cpu.getFrameDepth());
+	memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
+	cpu.replaceExecutionImage(executionAddressSpace.resolveSystemDomain());
+	applyHotResumeRelocation(cpu, relocation);
+	cpu.setExecutionHook(null, 0, 0);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [42]);
+});
+
+test('an unchanged suspended call maps between separate edits, but not after a live register moves', () => {
+	const before = `local state = 3
+local function checkpoint() return 0 end
+print(1)
+checkpoint()
+print(2)
+return state`;
+	const initial = compile(before, undefined, 0);
+	const point = initial.linked.symbols.metadata.resumePointsByFunction[
+		initial.linked.symbols.metadata.functionIds.findIndex(id => id.endsWith('/entry'))
+	].find(point => point.range.start.line === 5)!;
+	const index = initial.linked.layout.functions[
+		initial.linked.symbols.metadata.functionIds.findIndex(id => id.endsWith('/entry'))
+	].codeAddress + point.wordOffset * INSTRUCTION_BYTES - initial.linked.layout.header.textAddress;
+	const edited = compile(before.replace('print(1)', 'print(10)').replace('print(2)', 'print(20)'), initial, 0);
+	// The active statement itself changed here, so it has no exact source identity.
+	assert.equal(prove(initial, edited).pcAddresses[index / INSTRUCTION_BYTES], -1);
+	const around = compile(before.replace('print(1)', 'print(10)').replace('return state', 'print(30)\nreturn state'), initial, 0);
+	assert.notEqual(prove(initial, around).pcAddresses[index / INSTRUCTION_BYTES], -1);
+	const moved = compile(before.replace('local state', 'local added = 8\nlocal state'), initial, 0);
+	assert.equal(prove(initial, moved).pcAddresses[index / INSTRUCTION_BYTES], -1);
 });
 
 test('new anonymous closures do not steal the reserved identity at an earlier source position', () => {

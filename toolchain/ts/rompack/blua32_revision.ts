@@ -12,115 +12,19 @@ import type {
 import { INSTRUCTION_BYTES, readInstructionWord } from '../../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
-	compareSourcePosition,
 	sourcePositionInRange,
 	sourceRangeKey,
 } from '../lua/semantic/source_range';
-import type { SourcePosition, SourceRange } from '../lua/source_range';
+import type { SourceRange } from '../lua/source_range';
 import type { LinkedBlua32Image } from './blua32_linker';
 import { resolveInlineLocalContextRange } from '../lua/compiler/inline_debug';
 
-type PreparedSourceRevision = {
-	oldChangeStart: SourcePosition;
-	oldSuffixStart: SourcePosition;
-	newSuffixStart: SourcePosition;
-};
-
-function sourcePositionAtOffset(source: string, offset: number): SourcePosition {
-	let line = 1;
-	let column = 1;
-	for (let index = 0; index < offset; index += 1) {
-		if (source.charCodeAt(index) === 10) {
-			line += 1;
-			column = 1;
-		} else {
-			column += 1;
-		}
-	}
-	return { line, column };
-}
-
-function prepareSourceRevisions(
-	previousSources: ReadonlyMap<string, string>,
-	sources: ReadonlyMap<string, string>,
-): ReadonlyMap<string, PreparedSourceRevision> {
-	const prepared = new Map<string, PreparedSourceRevision>();
-	for (const [path, source] of sources) {
-		const previousSource = previousSources.get(path);
-		if (previousSource === undefined || previousSource === source) {
-			continue;
-		}
-		let prefix = 0;
-		while (prefix < previousSource.length
-			&& prefix < source.length
-			&& previousSource.charCodeAt(prefix) === source.charCodeAt(prefix)) {
-			prefix += 1;
-		}
-		let suffix = 0;
-		while (previousSource.length - suffix > prefix
-			&& source.length - suffix > prefix
-			&& previousSource.charCodeAt(previousSource.length - suffix - 1)
-				=== source.charCodeAt(source.length - suffix - 1)) {
-			suffix += 1;
-		}
-		prepared.set(path, {
-			oldChangeStart: sourcePositionAtOffset(previousSource, prefix),
-			oldSuffixStart: sourcePositionAtOffset(previousSource, previousSource.length - suffix),
-			newSuffixStart: sourcePositionAtOffset(source, source.length - suffix),
-		});
-	}
-	return prepared;
-}
-
-function translateSuffixPosition(position: SourcePosition, revision: PreparedSourceRevision): SourcePosition {
-	if (position.line === revision.oldSuffixStart.line) {
-		return {
-			line: revision.newSuffixStart.line,
-			column: revision.newSuffixStart.column + position.column - revision.oldSuffixStart.column,
-		};
-	}
-	return {
-		line: revision.newSuffixStart.line + position.line - revision.oldSuffixStart.line,
-		column: position.column,
-	};
-}
-
-function translateSourceRange(
-	range: SourceRange,
-	revisions: ReadonlyMap<string, PreparedSourceRevision>,
-): SourceRange | null {
-	const revision = revisions.get(range.path);
-	if (revision === undefined) {
-		return range;
-	}
-	if (compareSourcePosition(
-		range.end.line,
-		range.end.column,
-		revision.oldChangeStart.line,
-		revision.oldChangeStart.column,
-	) < 0) {
-		return range;
-	}
-	if (compareSourcePosition(
-		range.start.line,
-		range.start.column,
-		revision.oldSuffixStart.line,
-		revision.oldSuffixStart.column,
-	) >= 0) {
-		return {
-			path: range.path,
-			start: translateSuffixPosition(range.start, revision),
-			end: translateSuffixPosition(range.end, revision),
-		};
-	}
-	return null;
-}
-
 function resumePointShapeMatches(previous: Blua32ResumePoint, fresh: Blua32ResumePoint): boolean {
+	// Definitions are future writes, not state carried into the continuation.
+	// Only live input registers and their lexical owners must already agree.
 	return previous.op === fresh.op
 		&& numberArraysEqual(previous.liveRegisters, fresh.liveRegisters)
-		&& numberArraysEqual(previous.uses, fresh.uses)
-		&& numberArraysEqual(previous.defs, fresh.defs);
+		&& numberArraysEqual(previous.uses, fresh.uses);
 }
 
 function resumePointLocationKey(
@@ -138,7 +42,7 @@ function resumePointLocationKey(
 
 function translateInlineCallSites(
 	inlineCallSites: ReadonlyArray<Blua32InlineCallSite>,
-	revisions: ReadonlyMap<string, PreparedSourceRevision>,
+	correspondence: LuaSourceCorrespondence,
 ): ReadonlyArray<Blua32InlineCallSite> | null {
 	if (inlineCallSites.length === 0) {
 		return inlineCallSites;
@@ -146,8 +50,8 @@ function translateInlineCallSites(
 	const translated = new Array<Blua32InlineCallSite>(inlineCallSites.length);
 	for (let index = 0; index < inlineCallSites.length; index += 1) {
 		const callSite = inlineCallSites[index];
-		const callRange = translateSourceRange(callSite.callRange, revisions);
-		if (callRange === null) {
+		const callRange = correspondence.unchangedRange(callSite.callRange);
+		if (callRange === undefined) {
 			return null;
 		}
 		translated[index] = {
@@ -173,6 +77,8 @@ function activeLocalLayoutMatches(
 	freshRange: SourceRange,
 	previousInlineCallSites: ReadonlyArray<Blua32InlineCallSite>,
 	freshInlineCallSites: ReadonlyArray<Blua32InlineCallSite>,
+	liveRegisters: readonly number[],
+	correspondence: LuaSourceCorrespondence,
 ): boolean {
 	let previousIndex = 0;
 	let freshIndex = 0;
@@ -184,7 +90,7 @@ function activeLocalLayoutMatches(
 				previousRange,
 				previousInlineCallSites,
 			);
-			if (contextRange !== null
+			if (liveRegisters.includes(slot.registerIndex) && contextRange !== null
 				&& slot.scope.path === contextRange.path
 				&& sourcePositionInRange(
 					contextRange.start.line,
@@ -202,7 +108,7 @@ function activeLocalLayoutMatches(
 				freshRange,
 				freshInlineCallSites,
 			);
-			if (contextRange !== null
+			if (liveRegisters.includes(slot.registerIndex) && contextRange !== null
 				&& slot.scope.path === contextRange.path
 				&& sourcePositionInRange(
 					contextRange.start.line,
@@ -218,7 +124,11 @@ function activeLocalLayoutMatches(
 		}
 		const previousSlot = previousSlots[previousIndex];
 		const freshSlot = freshSlots[freshIndex];
-		if (previousSlot.name !== freshSlot.name || previousSlot.registerIndex !== freshSlot.registerIndex) {
+		// An implicit receiver's definition is its function, not a named declaration.
+		const definition = correspondence.declaration(previousSlot.definition)
+			?? correspondence.functionRange(previousSlot.definition);
+		if (previousSlot.name !== freshSlot.name || previousSlot.registerIndex !== freshSlot.registerIndex
+			|| definition === undefined || !sourceRangesEqual(definition, freshSlot.definition)) {
 			return false;
 		}
 		previousIndex += 1;
@@ -288,14 +198,14 @@ function mapChangedFunctionProgramCounters(
 	freshImage: Blua32ImageLayout,
 	freshSymbols: Blua32SymbolsImage,
 	freshFunctionIndex: number,
-	sourceRevisions: ReadonlyMap<string, PreparedSourceRevision>,
+	correspondence: LuaSourceCorrespondence,
 ): void {
 	const freshPointsByLocation = new Map<string, Blua32ResumePoint>();
 	const freshPoints = freshSymbols.metadata.resumePointsByFunction[freshFunctionIndex];
 	for (let index = 0; index < freshPoints.length; index += 1) {
 		const point = freshPoints[index];
 		freshPointsByLocation.set(
-			resumePointLocationKey(point.range, point.inlineCallSites),
+			point.resumeId ?? resumePointLocationKey(point.range, point.inlineCallSites),
 			point,
 		);
 	}
@@ -305,19 +215,19 @@ function mapChangedFunctionProgramCounters(
 	const previousPoints = previousSymbols.metadata.resumePointsByFunction[previousFunctionIndex];
 	for (let index = 0; index < previousPoints.length; index += 1) {
 		const previousPoint = previousPoints[index];
-		const freshRange = translateSourceRange(previousPoint.range, sourceRevisions);
-		if (freshRange === null) {
+		const freshRange = previousPoint.resumeId === undefined ? correspondence.unchangedRange(previousPoint.range) : previousPoint.range;
+		if (freshRange === undefined) {
 			continue;
 		}
 		const freshInlineCallSites = translateInlineCallSites(
 			previousPoint.inlineCallSites,
-			sourceRevisions,
+			correspondence,
 		);
 		if (freshInlineCallSites === null) {
 			continue;
 		}
 		const freshPoint = freshPointsByLocation.get(
-			resumePointLocationKey(freshRange, freshInlineCallSites),
+			previousPoint.resumeId ?? resumePointLocationKey(freshRange, freshInlineCallSites),
 		);
 		if (freshPoint === undefined
 			|| !resumePointShapeMatches(previousPoint, freshPoint)
@@ -328,6 +238,8 @@ function mapChangedFunctionProgramCounters(
 				freshPoint.range,
 				previousPoint.inlineCallSites,
 				freshPoint.inlineCallSites,
+				freshPoint.liveRegisters,
+				correspondence,
 			)) {
 			continue;
 		}
@@ -372,6 +284,11 @@ export function relocatedInstructionPc(
 	pc: number,
 ): number {
 	const previousWordIndex = (pc - previousImage.header.textAddress) / INSTRUCTION_BYTES;
+	// The last-executed CALL is diagnostic state at the callee's entry. Its
+	// identity is the return continuation, not a second resumable instruction.
+	if (((readInstructionWord(previousImage.textBytes, previousWordIndex) >>> 18) & 0x3f) === OpCode.CALL) {
+		return relocatedCallSitePc(revision, previousImage, pc);
+	}
 	const previousInstructionPc = previousWordIndex > 0
 		&& ((readInstructionWord(previousImage.textBytes, previousWordIndex - 1) >>> 18) & 0x3f) === OpCode.WIDE
 		? pc - INSTRUCTION_BYTES
@@ -406,7 +323,6 @@ export function buildBlua32ExecutionRevision(
 	const functionAddresses = new Uint32Array(previousImage.functions.length);
 	const pcAddresses = new Int32Array(previousImage.header.textByteCount / INSTRUCTION_BYTES);
 	pcAddresses.fill(-1);
-	const sourceRevisions = prepareSourceRevisions(previousSources, sources);
 
 	for (let previousIndex = 0; previousIndex < previousSymbols.metadata.functionIds.length; previousIndex += 1) {
 		const functionId = previousSymbols.metadata.functionIds[previousIndex];
@@ -445,7 +361,7 @@ export function buildBlua32ExecutionRevision(
 				linked.layout,
 				linked.symbols,
 				freshIndex,
-				sourceRevisions,
+				correspondence,
 			);
 		}
 	}

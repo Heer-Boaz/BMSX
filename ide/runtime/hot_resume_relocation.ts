@@ -47,7 +47,7 @@ export function buildHotResumeRelocation(
 	const frameCallSiteBase = frameCount * FRAME_EXECUTION_WORDS;
 	const latchBase = frameCallSiteBase + frameCount * FRAME_CALL_SITE_WORDS;
 	const relocation = new Uint32Array(latchBase + LATCH_WORDS);
-	let unmappedCount = 0;
+	const unmappedWords: string[] = [];
 
 	for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
 		const executionDomain = cpu.readFrameExecutionDomain(frameIndex);
@@ -66,7 +66,7 @@ export function buildHotResumeRelocation(
 			cpu.readFramePc(frameIndex),
 		);
 		if (functionAddress === 0 || pc < 0) {
-			unmappedCount += 1;
+			unmappedWords.push(`frame ${frameIndex} continuation 0x${cpu.readFramePc(frameIndex).toString(16)}`);
 			continue;
 		}
 		const writeOffset = frameIndex * FRAME_EXECUTION_WORDS;
@@ -77,6 +77,8 @@ export function buildHotResumeRelocation(
 	}
 
 	for (let childFrameIndex = 1; childFrameIndex < frameCount; childFrameIndex += 1) {
+		// External completion roots have no guest CALL in the frame below them.
+		if (cpu.readFrameReturnsToCompletionLatch(childFrameIndex)) continue;
 		const parentExecutionDomain = cpu.readFrameExecutionDomain(childFrameIndex - 1);
 		const target = revisions[parentExecutionDomain + 1];
 		if (target === null) {
@@ -87,7 +89,7 @@ export function buildHotResumeRelocation(
 			? relocatedContinuationPc(target.revision, target.previousImage, rawPc)
 			: relocatedCallSitePc(target.revision, target.previousImage, rawPc);
 		if (pc < 0) {
-			unmappedCount += 1;
+			unmappedWords.push(`frame ${childFrameIndex} call site 0x${rawPc.toString(16)}`);
 			continue;
 		}
 		const writeOffset = frameCallSiteBase + childFrameIndex * FRAME_CALL_SITE_WORDS;
@@ -113,7 +115,7 @@ export function buildHotResumeRelocation(
 				cpu.readEpcWord(),
 			);
 			if (pc < 0) {
-				unmappedCount += 1;
+				unmappedWords.push(`exception EPC 0x${cpu.readEpcWord().toString(16)}`);
 			} else {
 				relocation[latchBase + EPC_WRITE] = 1;
 				relocation[latchBase + EPC_WORD] = pc;
@@ -141,7 +143,7 @@ export function buildHotResumeRelocation(
 					cpu.readNmiReturnEpcWord(),
 				);
 				if (pc < 0) {
-					unmappedCount += 1;
+					unmappedWords.push(`NMI return EPC 0x${cpu.readNmiReturnEpcWord().toString(16)}`);
 				} else {
 					relocation[latchBase + NMI_RETURN_EPC_WRITE] = 1;
 					relocation[latchBase + NMI_RETURN_EPC_WORD] = pc;
@@ -159,16 +161,16 @@ export function buildHotResumeRelocation(
 			cpu.lastPc,
 		);
 		if (pc < 0) {
-			unmappedCount += 1;
+			unmappedWords.push(`last instruction 0x${cpu.lastPc.toString(16)}`);
 		} else {
 			relocation[latchBase + LAST_PC_WRITE] = 1;
 			relocation[latchBase + LAST_PC_WORD] = pc;
 		}
 	}
 
-	if (unmappedCount > 0) {
+	if (unmappedWords.length > 0) {
 		throw new Error(
-			`Hot Resume could not map ${unmappedCount} execution word(s) to the rebuilt program.`,
+			`Hot Resume could not map: ${unmappedWords.join('; ')}.`,
 		);
 	}
 	return relocation;
@@ -211,6 +213,8 @@ export function applyHotResumeRelocation(cpu: CPU, relocation: Uint32Array): voi
 	}
 
 	for (let childFrameIndex = 1; childFrameIndex < frameCount; childFrameIndex += 1) {
+		// External completion roots have no guest CALL in the frame below them.
+		if (cpu.readFrameReturnsToCompletionLatch(childFrameIndex)) continue;
 		const readOffset = frameCallSiteBase + childFrameIndex * FRAME_CALL_SITE_WORDS;
 		if (relocation[readOffset + FRAME_CALL_SITE_WRITE] !== 0) {
 			cpu.writeFrameCallSitePc(

@@ -1855,11 +1855,15 @@ not statically required by the program cannot declare one.
 At each declaration, the compiler creates the ordinary local closure and also
 retains that closure in a compiler-owned hidden global slot. System-program
 slots use the system registerfile; cartridge slots use the cartridge's ordinary
-global registerfile. The compiler emits one zero-upvalue tooling function that
-loads and calls all retained closures in static dependency order and then
-lexical declaration order. The private tooling-symbol image publishes its raw
+global registerfile. Startup and the zero-upvalue tooling function first run
+the dependency-ordered module loader. Its hidden global flag is published only
+after a module returns successfully, independently of its export value. Reload
+therefore initializes newly required modules without replacing existing module
+tables; load status is ordinary saved guest state. The tooling function then
+calls retained annotated closures in dependency and lexical declaration order.
+The private tooling-symbol image publishes its raw
 function-record address and the ordered annotated-function identities. A
-program without annotations publishes address zero and emits no tooling
+program without annotations or runtime modules publishes address zero and emits no tooling
 function. Neither the ROM header nor the CPU, execution address space, runtime
 save-state, firmware, nor ordinary cold startup contains an init-vector field
 or reload behavior.
@@ -1916,6 +1920,11 @@ See [capture identity](lua_capture_identity_design.md) for production references
 limits and the actual Studio/CPU validation.
 
 The tooling sidecar maps only compatible sequence points into the revised text.
+Authored continuations use the same token/declaration correspondence as capture
+identity, not a single changed prefix/suffix. Live input registers retain their
+lexical owners; dead locals and future writes do not constrain continuation.
+The generated startup return has a compiler-owned resume identity and register
+ABI. A last-executed `CALL` is relocated through its return continuation.
 Closure addresses do not move and the CPU does not traverse or rewrite the Lua
 heap. Before the ROM owner installs any rebuilt bytes, IDE tooling walks the
 suspended CPU through scalar physical-state primitives and proves a complete

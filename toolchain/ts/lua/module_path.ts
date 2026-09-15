@@ -35,6 +35,9 @@ export function toLuaModulePath(sourcePath: string): string {
 export const buildModuleExportPathKey = (path: ReadonlyArray<string>): string =>
 	path.join('.');
 
+/** Loader state is independent of a module's exported value (including nil/false). */
+export const buildModuleInitializedSlotName = (modulePath: string): string => `@module-initialized:${modulePath}`;
+
 export const appendModuleExportPathKey = (base: string, key: string): string =>
 	base.length === 0 ? key : `${base}.${key}`;
 

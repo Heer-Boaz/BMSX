@@ -46,7 +46,8 @@ int main() {
 		{2, innerCallRange, inlineCallSites},
 	}};
 	symbols.metadata.resumePointsByFunction = {{
-		{3, innerCallRange, bmsx::OpCode::MOV, {0, 1}, {0}, {1}, inlineCallSites},
+		{3, innerCallRange, bmsx::OpCode::MOV, {0, 1}, {0}, {1}, inlineCallSites, std::nullopt},
+		{4, innerCallRange, bmsx::OpCode::RET, {0}, {0}, {}, {}, "startup.entry.return"},
 	}};
 	symbols.metadata.localSlotsByFunction = {{
 		{"value", 1, innerCallRange, outerCallRange, inlineCallSites, {{2, 4}, {6, 8}}},
@@ -63,6 +64,10 @@ int main() {
 		throw std::runtime_error("BLua32 symbols must not carry a schema version");
 	}
 	const bmsx::Blua32SymbolsImage decodedSymbols = bmsx::decodeBlua32SymbolsImage(encodedSymbols);
+	if (decodedSymbols.metadata.resumePointsByFunction[0][0].resumeId.has_value()
+		|| decodedSymbols.metadata.resumePointsByFunction[0][1].resumeId != "startup.entry.return") {
+		throw std::runtime_error("BLua32 generated continuation identity did not round-trip");
+	}
 	if (decodedSymbols.metadata.traceStatements != symbols.metadata.traceStatements
 		|| decodedSymbols.metadata.preloadModules != symbols.metadata.preloadModules) {
 		throw std::runtime_error("BLua32 compilation configuration did not round-trip");

@@ -174,7 +174,7 @@ auto encodeStatementPoint(const Blua32StatementPoint& point) -> BinValue {
 }
 
 auto decodeResumePoint(const BinValue& value) -> Blua32ResumePoint {
-	return Blua32ResumePoint{
+	Blua32ResumePoint point{
 		value.require("wordOffset").toI32(),
 		decodeSourceRange(value.require("range")),
 		static_cast<OpCode>(value.require("op").toI32()),
@@ -182,7 +182,12 @@ auto decodeResumePoint(const BinValue& value) -> Blua32ResumePoint {
 		decodeI32Array(value.require("uses")),
 		decodeI32Array(value.require("defs")),
 		decodeInlineCallSites(value.require("inlineCallSites")),
+		std::nullopt,
 	};
+	const auto& fields = value.asObject();
+	const auto id = fields.find("resumeId");
+	if (id != fields.end()) point.resumeId = id->second.asString();
+	return point;
 }
 
 auto encodeResumePoint(const Blua32ResumePoint& point) -> BinValue {
@@ -194,6 +199,7 @@ auto encodeResumePoint(const Blua32ResumePoint& point) -> BinValue {
 	value["uses"] = encodeI32Array(point.uses);
 	value["defs"] = encodeI32Array(point.defs);
 	value["inlineCallSites"] = encodeInlineCallSites(point.inlineCallSites);
+	if (point.resumeId) value["resumeId"] = BinValue(*point.resumeId);
 	return BinValue(std::move(value));
 }
 

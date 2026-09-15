@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import {
 	blua32InlineCallSitesAtPc,
 	blua32LocalSlotLiveAtPc,
@@ -46,7 +47,10 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 			debugInlineCallSiteChains: [[], inlineCallSites],
 			debugInlineCallSiteChainIds: [1, 0],
 			statementPointsByFunction: [],
-			resumePointsByFunction: [],
+			resumePointsByFunction: [[
+				{ wordOffset: 3, range: innerCallRange, op: OpCode.MOV, liveRegisters: [0, 1], uses: [0], defs: [1], inlineCallSites },
+				{ wordOffset: 4, range: innerCallRange, op: OpCode.RET, liveRegisters: [0], uses: [0], defs: [], inlineCallSites: [], resumeId: 'startup.entry.return' },
+			]],
 			localSlotsByFunction: [[{ name: 'value', registerIndex: 1, definition: innerCallRange,
 				scope: outerCallRange, inlineCallSites, liveWordRanges: [{ start: 2, end: 4 }, { start: 6, end: 8 }] }]],
 			capturedLocals: [{
@@ -67,6 +71,7 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 		assert.deepEqual(decodeBlua32SymbolsImage(encodeBlua32SymbolsImage({ ...symbols, metadata })).metadata, metadata);
 	}
 	assert.deepEqual(decoded.metadata.localSlotsByFunction, symbols.metadata.localSlotsByFunction);
+	assert.deepEqual(decoded.metadata.resumePointsByFunction, symbols.metadata.resumePointsByFunction);
 	const slot = decoded.metadata.localSlotsByFunction[0][0];
 	for (let word = 0; word <= 9; word += 1) {
 		assert.equal(blua32LocalSlotLiveAtPc(slot, 0x2000, 0x2000 + word * INSTRUCTION_BYTES),

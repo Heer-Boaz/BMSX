@@ -47,6 +47,7 @@ export type Blua32CapturedLocalDebug = {
 };
 
 export type Blua32ResumePoint = {
+	resumeId?: string;
 	wordOffset: number;
 	range: SourceRange;
 	op: OpCode;

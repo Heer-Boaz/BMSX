@@ -77,7 +77,7 @@ import {
 	type ProgramModule,
 } from './compiler/passes/module_contract';
 import { extractAssignmentPath } from './compiler/passes/expression_paths';
-import { appendModuleExportPathKey } from './module_path';
+import { appendModuleExportPathKey, buildModuleInitializedSlotName } from './module_path';
 import { collectStaticStorageDeclarations, type StaticStorageDeclaration } from './compiler/passes/static_storage';
 import { collectStaticFunctionExports } from './compiler/passes/static_functions';
 import { validateInitParticipantPlacement } from './compiler/passes/init_participants';
@@ -660,7 +660,7 @@ class ProgramBuilder {
 		return { system: false, slot: this.resolveGlobalSlot(name) };
 	}
 
-	public resolveModuleExportAccess(slotName: string): { system: boolean; slot: number } {
+	public resolveModuleStorageAccess(slotName: string): { system: boolean; slot: number } {
 		return this.programDomain === 'system'
 			? { system: true, slot: this.resolveSystemGlobalSlot(slotName) }
 			: { system: false, slot: this.resolveGlobalSlot(slotName) };
@@ -936,7 +936,7 @@ class ProgramBuilder {
 
 	public recordModuleExportSlot(path: string, exportPathKey: string, slotName: string): void {
 		this.recordModuleExport(path, exportPathKey, slotName);
-		this.resolveModuleExportAccess(slotName);
+		this.resolveModuleStorageAccess(slotName);
 	}
 
 	public hasModuleExportPathContract(path: string, exportPathKey: string): boolean {
@@ -1603,16 +1603,7 @@ class FunctionBuilder {
 			const callReg = this.allocTemp();
 			this.emitABx(OpCode.CLOSURE, callReg, sectionInitProtoIndex);
 			this.emitABC(OpCode.CALL, callReg, encodeFixedCallArgCount(0), 0);
-			for (let index = 0; index < this.program.staticModulePaths.length; index += 1) {
-				const path = this.program.staticModulePaths[index];
-				const functionIndex = this.program.moduleProtoIndex(path);
-				if (functionIndex === undefined) {
-					this.emitABx(OpCode.LOADK, callReg, 0, { kind: 'module_init', symbol: path });
-				} else {
-					this.emitABx(OpCode.CLOSURE, callReg, functionIndex);
-				}
-				this.emitABC(OpCode.CALL, callReg, encodeFixedCallArgCount(0), 0);
-			}
+			this.emitStaticModuleInitializers(callReg);
 			if (clearBootPrimitives) {
 				this.emitABC(OpCode.KNIL, callReg, 0, 0);
 				for (let index = 0; index < SYSTEM_ROM_BOOT_PRIMITIVE_NAMES.length; index += 1) {
@@ -1626,6 +1617,9 @@ class FunctionBuilder {
 			this.emitABx(OpCode.CLOSURE, callReg, entryProtoIndex);
 			this.emitABC(OpCode.CALL, callReg, encodeFixedCallArgCount(0), 0);
 			this.emitABC(OpCode.RET, callReg, 0, 0);
+			const entryReturn = this.code[this.code.length - 1];
+			entryReturn.resumeRange = { ...range };
+			entryReturn.resumeId = 'startup.entry.return';
 		});
 		this.finalizeLabels();
 	}
@@ -1636,6 +1630,7 @@ class FunctionBuilder {
 	): void {
 		this.withRange(range, () => {
 			const callReg = this.allocTemp();
+			this.emitStaticModuleInitializers(callReg);
 			for (let index = 0; index < participants.length; index += 1) {
 				const participant = participants[index];
 				this.emitABx(
@@ -1648,6 +1643,26 @@ class FunctionBuilder {
 			this.emitABC(OpCode.RET, callReg, 0, 0);
 		});
 		this.finalizeLabels();
+	}
+
+	/** Startup and reload share the guest-owned, dependency-ordered module loader. */
+	private emitStaticModuleInitializers(callReg: number): void {
+		for (const path of this.program.staticModulePaths) {
+			const access = this.program.resolveModuleStorageAccess(buildModuleInitializedSlotName(path));
+			this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, callReg, access.slot);
+			const skip = this.emitJumpPlaceholder(OpCode.JMPIF, callReg);
+			const functionIndex = this.program.moduleProtoIndex(path);
+			if (functionIndex === undefined) {
+				this.emitABx(OpCode.LOADK, callReg, 0, { kind: 'module_init', symbol: path });
+			} else {
+				this.emitABx(OpCode.CLOSURE, callReg, functionIndex);
+			}
+			this.emitABC(OpCode.CALL, callReg, encodeFixedCallArgCount(0), 0);
+			// Publish only after a successful return, independently of the export.
+			this.emitABC(OpCode.KTRUE, callReg, 0, 0);
+			this.emitABx(access.system ? OpCode.SETSYS : OpCode.SETGL, callReg, access.slot);
+			this.patchJump(skip, this.code.length);
+		}
 	}
 
 	public compileInterruptEntry(range: LuaSourceRange): void {
@@ -2982,12 +2997,12 @@ class FunctionBuilder {
 	}
 
 	private emitModuleSlotRelocLoad(slotName: string, target: number): void {
-		const access = this.program.resolveModuleExportAccess(slotName);
+		const access = this.program.resolveModuleStorageAccess(slotName);
 		this.emitABx(access.system ? OpCode.GETSYS : OpCode.GETGL, target, access.slot);
 	}
 
 	private emitModuleExportStore(slotName: string, valueReg: number): void {
-		const access = this.program.resolveModuleExportAccess(slotName);
+		const access = this.program.resolveModuleStorageAccess(slotName);
 		this.emitABx(access.system ? OpCode.SETSYS : OpCode.SETGL, valueReg, access.slot);
 	}
 
@@ -6538,7 +6553,7 @@ export function compileLuaChunkToProgram(
 		}
 	}
 	const initParticipants = programBuilder.orderedInitParticipants(moduleId);
-	if (initParticipants.length !== 0) {
+	if (initParticipants.length !== 0 || programBuilder.staticModulePaths.length !== 0) {
 		initProtoIndex = compileInitProto(
 			programBuilder,
 			moduleId,

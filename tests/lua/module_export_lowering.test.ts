@@ -33,10 +33,12 @@ function disassembleCompiledFunctions(compiled: CompiledSystemProgram): string {
 	const image = linkTestSystemBlua32(compiled);
 	const functionAddresses: number[] = [];
 	for (let functionIndex = 0; functionIndex < image.symbols.functionAddresses.length; functionIndex += 1) {
-		if (functionIndex !== compiled.startupProtoIndex
-			&& functionIndex !== compiled.sectionInitProtoIndex
-			&& functionIndex !== compiled.irqProtoIndex
-			&& functionIndex !== compiled.exceptionProtoIndex) {
+		const protoIndex = compiled.metadata.protoIds.indexOf(image.symbols.metadata.functionIds[functionIndex]);
+		if (protoIndex !== compiled.startupProtoIndex
+			&& protoIndex !== compiled.sectionInitProtoIndex
+			&& protoIndex !== compiled.initProtoIndex
+			&& protoIndex !== compiled.irqProtoIndex
+			&& protoIndex !== compiled.exceptionProtoIndex) {
 			functionAddresses.push(image.symbols.functionAddresses[functionIndex]);
 		}
 	}

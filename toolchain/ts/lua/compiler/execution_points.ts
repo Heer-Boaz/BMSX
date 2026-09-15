@@ -17,12 +17,13 @@ import {
 	type ClosureUpvalueResolver,
 } from './optimizer/liveness';
 
-function collectNamedLiveRegisters(
+function collectResumeLiveRegisters(
 	live: Uint8Array,
 	named: Uint8Array,
 	localSlots: ReadonlyArray<LocalSlotDebug>,
 	currentRange: SourceRange,
 	currentInlineCallSites: ReadonlyArray<InlineCallSite>,
+	generated: boolean,
 ): number[] | null {
 	named.fill(0);
 	for (let index = 0; index < localSlots.length; index += 1) {
@@ -43,7 +44,7 @@ function collectNamedLiveRegisters(
 		if (live[register] === 0) {
 			continue;
 		}
-		if (named[register] === 0) {
+		if (!generated && named[register] === 0) {
 			return null;
 		}
 		registers.push(register);
@@ -128,17 +129,21 @@ export function buildProgramDebugPoints(
 		const instruction = instructions[instructionIndex];
 		const range = instruction.resumeRange!;
 		const inlineCallSites = instruction.inlineCallSites ?? ROOT_INLINE_CALL_SITES;
-		const liveRegisters = collectNamedLiveRegisters(
+		// Generated continuation roles own their temporary-register ABI. Authored
+		// points can retain only registers with a provable lexical identity.
+		const liveRegisters = collectResumeLiveRegisters(
 			liveByCandidate[candidateIndex],
 			named,
 			localSlots,
 			range,
 			inlineCallSites,
+			instruction.resumeId !== undefined,
 		);
 		if (liveRegisters === null) {
 			continue;
 		}
 		points.push({
+			resumeId: instruction.resumeId,
 			wordOffset: instructionWordOffsets[instructionIndex],
 			range,
 			op: instruction.op,

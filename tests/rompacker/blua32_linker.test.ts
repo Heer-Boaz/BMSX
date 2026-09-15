@@ -772,9 +772,9 @@ test('BLua32 hot revision relocates the latched opcode word across WIDE encoding
 	const revision = buildBlua32ExecutionRevision(
 		previous.layout,
 		previous.symbols,
-		NO_SOURCES,
+		new Map([['entry', 'return']]),
 		fresh,
-		NO_SOURCES,
+		new Map([['entry', 'return']]),
 	);
 
 	assert.equal(
@@ -828,9 +828,9 @@ test('BLua32 hot revision translates unchanged suffix sequence points into chang
 	const revision = buildBlua32ExecutionRevision(
 		previous.layout,
 		previous.symbols,
-		new Map([['entry', 'first\nresume\n']]),
+		new Map([['entry', 'first()\nresume()\n']]),
 		linked,
-		new Map([['entry', 'first\ninserted\nresume\n']]),
+		new Map([['entry', 'first()\ninserted()\nresume()\n']]),
 	);
 
 	assert.equal(revision.pcAddresses[0], linked.layout.functions[0].codeAddress);
@@ -977,9 +977,9 @@ test('BLua32 hot revision leaves a sequence point crossing an edit unmapped', ()
 	const revision = buildBlua32ExecutionRevision(
 		previous.layout,
 		previous.symbols,
-		new Map([['entry', 'start\nbody\nend']]),
+		new Map([['entry', 'do\nbody()\nend']]),
 		linked,
-		new Map([['entry', 'start\ninserted\nbody\nend']]),
+		new Map([['entry', 'do\ninserted()\nbody()\nend']]),
 	);
 
 	assert.equal(revision.pcAddresses[0], -1);

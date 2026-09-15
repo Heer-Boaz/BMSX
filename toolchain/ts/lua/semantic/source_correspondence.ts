@@ -95,20 +95,38 @@ class FileCorrespondence {
 	private mapRange(range: SourceRange, enclosing: boolean): SourceRange | undefined {
 		const start = this.tokenAt(range.start);
 		const end = this.tokenAt(range.end);
-		if (start < 0 || end < 0 || this.tokens[start] < 0 || this.tokens[end] < 0) return undefined;
+		if (start < 0 || end < 0 || this.tokens[start] < 0) return undefined;
+		let targetEnd = this.tokens[end];
 		if (!enclosing) {
+			// Compare the exact syntax span from its matched opening. Global LCS
+			// ties may assign its closing ')' to a later inserted statement.
+			targetEnd = this.tokens[start] + end - start;
+			if (targetEnd >= this.newTokens.length) return undefined;
 			for (let index = start; index <= end; index += 1) {
-				if (this.tokens[index] !== this.tokens[start] + index - start) return undefined;
+				const oldToken = this.oldTokens[index];
+				const newToken = this.newTokens[this.tokens[start] + index - start];
+				if (oldToken.type !== newToken.type || oldToken.lexeme !== newToken.lexeme) return undefined;
 			}
 		}
+		if (targetEnd < 0) return undefined;
 		const startToken = this.newTokens[this.tokens[start]];
-		const endToken = this.newTokens[this.tokens[end]];
+		const endToken = this.newTokens[targetEnd];
 		return {
 			path: range.path,
-			start: { line: startToken.line, column: startToken.column },
-			end: { line: endToken.endLine, column: endToken.endColumn },
+			start: {
+				line: startToken.line + range.start.line - this.oldTokens[start].line,
+				column: range.start.line === this.oldTokens[start].line
+					? startToken.column + range.start.column - this.oldTokens[start].column : range.start.column,
+			},
+			end: {
+				line: endToken.line + range.end.line - this.oldTokens[end].line,
+				column: range.end.line === this.oldTokens[end].line
+					? endToken.column + range.end.column - this.oldTokens[end].column : range.end.column,
+			},
 		};
 	}
+
+	public unchangedRange(range: SourceRange): SourceRange | undefined { return this.mapRange(range, false); }
 
 	public declaration(range: SourceRange): SourceRange | undefined {
 		const oldIndex = this.oldDeclarations.get(sourceRangeKey(range));
@@ -155,6 +173,12 @@ export class LuaSourceCorrespondence {
 	public declaration(range: SourceRange): SourceRange | undefined {
 		if (!this.previous.has(range.path) || !this.current.has(range.path)) return undefined;
 		return this.previous.get(range.path) === this.current.get(range.path) ? range : this.file(range.path).declaration(range);
+	}
+
+	/** Exact token spans, including zero-width generated source locations. */
+	public unchangedRange(range: SourceRange): SourceRange | undefined {
+		if (!this.previous.has(range.path) || !this.current.has(range.path)) return undefined;
+		return this.previous.get(range.path) === this.current.get(range.path) ? range : this.file(range.path).unchangedRange(range);
 	}
 
 	public functionRange(range: SourceRange): SourceRange | undefined {

@@ -57,6 +57,8 @@ export type Instruction = {
 		| { kind: 'bios_function'; importIndex: number };
 	statementRange?: SourceRange;
 	resumeRange?: SourceRange;
+	/** Stable continuation role for compiler-generated code without authored statements. */
+	resumeId?: string;
 	inlineCallSites?: ReadonlyArray<InlineCallSite>;
 };
 

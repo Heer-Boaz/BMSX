@@ -24,6 +24,7 @@ export const cloneInstruction = (instruction: Instruction): Instruction => ({
 	symbolicReloc: instruction.symbolicReloc,
 	statementRange: instruction.statementRange,
 	resumeRange: instruction.resumeRange,
+	resumeId: instruction.resumeId,
 	inlineCallSites: instruction.inlineCallSites,
 });
 

@@ -71,6 +71,15 @@ test('declarations survive separate edits and CRLF/comment shifts without name l
 	}
 });
 
+test('unchanged resume spans between separate edits retain exact token positions', () => {
+	const before = 'local before = 1\ncheckpoint()\nlocal after = 2';
+	const after = '-- heading\n' + before.replace('= 1', '= 10').replace('= 2', '= 20');
+	const { match, old, fresh } = compare(before, after);
+	assert.deepEqual(match.unchangedRange(old.chunk.body[1].range), fresh.chunk.body[1].range);
+	const point = { path: PATH, start: { line: 2, column: 4 }, end: { line: 2, column: 4 } };
+	assert.deepEqual(match.unchangedRange(point), { path: PATH, start: { line: 3, column: 4 }, end: { line: 3, column: 4 } });
+});
+
 test('moving a declaration into a new scope cannot reuse the old captured local', () => {
 	const { match, old } = compare('local value = 1\nprint(value)', 'do\nlocal value = 1\nprint(value)\nend');
 	assert.equal(match.declaration(old.decls[0].range), undefined);

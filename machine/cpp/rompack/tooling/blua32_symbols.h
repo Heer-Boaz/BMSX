@@ -47,6 +47,7 @@ struct Blua32ResumePoint {
 	std::vector<i32> uses;
 	std::vector<i32> defs;
 	std::vector<Blua32InlineCallSite> inlineCallSites;
+	std::optional<std::string> resumeId;
 };
 
 struct Blua32StatementPoint {

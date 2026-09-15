@@ -29,6 +29,7 @@ export type InlineCallSite = {
 };
 
 export type ProgramResumePoint = {
+	resumeId?: string;
 	wordOffset: number;
 	range: SourceRange;
 	op: OpCode;
