@@ -5,7 +5,8 @@ import { ALL_EXECUTION_DOMAINS_MASK, type ExecutionDomainId } from '../../machin
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { RuntimeDebuggerPlanResult, type RuntimeDebuggerControlPlan } from './debugger_plans';
 import { pushRuntimeDebuggerControlPlan, type RuntimeDebuggerState } from './debugger_state';
-import type { SuspendedGuestSession } from './suspended_guest';
+import type { RuntimeFunctionLocation, SuspendedGuestSession } from './suspended_guest';
+import { runtimeFunctionReturnTarget, runtimeReturnTargetReached, type RuntimeReturnTarget } from './function_return';
 
 export type RuntimeGuestCall = {
 	readonly domain: ExecutionDomainId;
@@ -20,6 +21,8 @@ export type RuntimeGuestCallExecutor = (prepare: () => RuntimeGuestCall | undefi
 export type RuntimeGuestCallRequest = {
 	/** Request lifetime is independent of any suspended-heap borrow. */
 	readonly isCurrent: () => boolean;
+	/** Finish an existing non-reentrant operation before resolving the evaluation. */
+	readonly waitForReturn?: () => RuntimeFunctionLocation | undefined;
 	readonly prepare: () => RuntimeGuestCall | undefined;
 };
 
@@ -30,11 +33,11 @@ export class RuntimeGuestCallPlan implements RuntimeDebuggerControlPlan {
 
 	public constructor(
 		private readonly runtime: Runtime,
-		private readonly returnDepth: number,
+		private readonly target: RuntimeReturnTarget,
 		private readonly finish: (completed: boolean) => void,
 	) {}
 
-	public shouldStop(): boolean { return this.runtime.machine.cpu.getFrameDepth() === this.returnDepth; }
+	public shouldStop(): boolean { return runtimeReturnTargetReached(this.runtime.machine.cpu, this.target); }
 	public willExecute(): void {}
 	public didExecute(): RuntimeDebuggerPlanResult {
 		if (!this.shouldStop()) return RuntimeDebuggerPlanResult.Active;
@@ -58,34 +61,39 @@ export function scheduleRuntimeGuestCall(
 	finished: (completed: boolean) => void,
 	failed: (error: unknown) => void,
 ): Promise<void> {
-	const admitCall = (): boolean => {
-		const call = request.isCurrent() ? request.prepare() : undefined;
+	const admitCall = (checkFunctionReturn: boolean): boolean => {
+		if (!request.isCurrent()) { finished(false); return false; }
+		const cpu = runtime.machine.cpu;
+		const exceptionDepth = cpu.readExceptionReturnFrameDepth();
+		let target: RuntimeReturnTarget | undefined;
+		if (exceptionDepth !== -1) target = { frameDepth: exceptionDepth };
+		else if (checkFunctionReturn) {
+			const location = request.waitForReturn?.();
+			if (location !== undefined) target = runtimeFunctionReturnTarget(cpu, debuggerState.sources, location);
+		}
+		if (target !== undefined) {
+			guest.invalidate();
+			runtime.history.stop();
+			pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, target, completed => {
+				if (!completed) { finished(false); return; }
+				// The returning function may have submitted GPU work and changed the
+				// inspected heap. Re-enter admission, then resolve the call afresh.
+				// An adjacent inline call can begin at the return PC. It has not
+				// executed: do not chase subsequent invocations around a game loop.
+				void tasks.schedule(() => { admitCall(exceptionDepth !== -1 && checkFunctionReturn); }, failed);
+			}), 'workbench');
+			return true;
+		}
+		const call = request.prepare();
 		if (call === undefined) { finished(false); return false; }
 		guest.invalidate();
 		runtime.history.stop();
-		const cpu = runtime.machine.cpu;
-		const returnDepth = cpu.getFrameDepth();
+		const returnTarget = { frameDepth: cpu.getFrameDepth() };
 		cpu.beginCompletionClosureInExecutionDomain(call.domain, call.closure, call.args());
-		pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, returnDepth, finished), 'workbench');
+		pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, returnTarget, finished), 'workbench');
 		return true;
 	};
 	return tasks.schedule(() => {
-		const returnDepth = runtime.machine.cpu.readExceptionReturnFrameDepth();
-		if (returnDepth === -1) {
-			if (admitCall()) started();
-			return;
-		}
-		if (!request.isCurrent()) { finished(false); return; }
-		// Evaluation is ordinary guest work. Let the active exception return via
-		// its own RFE first; never copy Status/EPC or inject a call under its mask.
-		guest.invalidate();
-		runtime.history.stop();
-		pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, returnDepth, completed => {
-			if (!completed) { finished(false); return; }
-			// IRQ execution may have submitted GPU work and invalidated UI borrows.
-			// Re-enter mutation admission, then resolve the actual call afresh.
-			void tasks.schedule(() => { admitCall(); }, failed);
-		}), 'workbench');
-		started();
+		if (admitCall(true)) started();
 	}, failed);
 }

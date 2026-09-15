@@ -77,12 +77,12 @@ export function createRuntimeDebuggerState(
 ): RuntimeDebuggerState {
 	let state: RuntimeDebuggerState;
 	const executionHook: ExecutionHook = (executionDomainId, pc) => {
-		if (state.plans.controlActive) {
-			return state.plans.shouldStop(executionDomainId, pc);
-		}
-		if (state.stopped) {
+		const controlActive = state.plans.controlActive;
+		if (controlActive ? state.plans.shouldStop(executionDomainId, pc) : state.stopped) {
 			return true;
 		}
+		// A control plan can execute (and return from) the resumed frame too.
+		// Consume suppression at its first actual instruction, not only on Continue.
 		const suppressionCount = state.resumeSuppressionFrameDepths.length;
 		if (suppressionCount !== 0
 			&& state.resumeSuppressionFrameDepths[suppressionCount - 1]
@@ -91,6 +91,7 @@ export function createRuntimeDebuggerState(
 			updateExecutionHookBinding(state);
 			return false;
 		}
+		if (controlActive) return false;
 		const domainIndex = executionDomainId + 1;
 		let stopReason: RuntimeDebuggerStopReason;
 		let stopInlineDepth: number;

@@ -24,6 +24,7 @@ import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import type { Table } from '../../machine/ts/machine/cpu/table';
 import type { Value } from '../../machine/ts/machine/cpu/value';
 import { RuntimeGuestCallPlan, scheduleRuntimeGuestCall } from '../../ide/runtime/guest_call';
+import { runtimeFunctionReturnTarget, runtimeReturnTargetReached } from '../../ide/runtime/function_return';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { RuntimeTaskKind, RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
@@ -206,7 +207,7 @@ return actor, advance
 	const depth = cpu.getFrameDepth();
 	let completed = false;
 	cpu.beginCompletionClosureInExecutionDomain(-1, closure, [actor, 100]);
-	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, depth, value => { completed = value; }), 'workbench');
+	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, { frameDepth: depth }, value => { completed = value; }), 'workbench');
 	cpu.runUntilDepth(depth, 80);
 	const partial = actor.getStringKey(key) as number;
 	assert.ok(partial > 0 && partial < 100);
@@ -223,6 +224,100 @@ return actor, advance
 	assert.equal(state.plans.mutationActive, false);
 	assert.equal(actor.getStringKey(key), 100);
 	assert.equal(cpu.getFrameDepth(), depth);
+});
+
+for (const optLevel of [0, 3] as const) test(`evaluation finishes a non-reentrant logical frame, not its next invocation (O${optLevel})`, async () => {
+	const source = `
+function irq() mem[${IO_IRQ_ACK}] = ${IRQ_VBLANK} end
+shared = { active = false, passes = 0, ordinary = 0 }
+local leaf<const> = function()
+	shared.phase = 1
+	shared.phase = 2
+end
+local render<const> = function()
+	shared.active = true
+	leaf()
+	shared.passes = shared.passes + 1
+	shared.active = false
+end
+render_function = render
+operation = function()
+	return shared.active, shared.passes, shared.phase, shared.ordinary
+end
+mem[${IO_IRQ_MASK}] = ${IRQ_VBLANK}
+cop0.status = ${CPU_STATUS_CART_ENTRY}
+while true do
+	render()
+	render()
+	shared.ordinary = shared.ordinary + 1
+end
+`;
+	const harness = createDebuggerHarness(source, optLevel);
+	const { runtime, state } = harness;
+	const { cpu, irqController } = runtime.machine;
+	const line = source.split('\n').findIndex(line => line.includes('shared.phase = 2')) + 1;
+	startAtBreakpoint(harness, line);
+	assert.equal(stoppedSourceLine(harness), line);
+	const guest = new SuspendedGuestSession(runtime);
+	const location = guest.linkedFunctionLocation(guest.global('render_function'))!;
+	const target = runtimeFunctionReturnTarget(cpu, state.sources, location)!;
+	assert.equal(target.inline !== undefined, optLevel === 3, 'exercise actual compiled inline frames');
+	assert.equal(runtimeReturnTargetReached(cpu, target), false);
+	irqController.raise(IRQ_VBLANK);
+	assert.equal(cpu.enterPendingInterrupt(), true);
+	let prepared = 0, started = 0, finished = 0, readbacks = 0;
+	const values: Value[] = [];
+	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as HostAudioOutput,
+		{ backend: { finishGxGpuReadbacks: async () => { readbacks++; } } } as VideoPresenter);
+	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
+		isCurrent: () => true,
+		waitForReturn: () => location,
+		prepare: () => {
+			prepared++;
+			assert.equal(runtimeReturnTargetReached(cpu, target), true);
+			return { domain: -1, closure: guest.global('operation') as Closure, args: () => [] };
+		},
+	}, () => { started++; }, completed => { assert.equal(completed, true); finished++; cpu.readCompletionValues(values); }, assert.fail);
+	for (let phase = 0; phase < 2; phase++) {
+		assert.equal(prepared, 0);
+		assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
+		state.plans.didExecute();
+		await tasks.schedule(() => {}, assert.fail, RuntimeTaskKind.History);
+	}
+	assert.equal(prepared, 1); assert.equal(started, 1); assert.equal(readbacks, 3);
+	const depth = cpu.getFrameDepth() - 1, pc = cpu.readFramePc(depth - 1);
+	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
+	state.plans.didExecute();
+	assert.equal(finished, 1); assert.deepEqual(values, [false, 1, 2, 0]);
+	assert.equal(cpu.getFrameDepth(), depth); assert.equal(cpu.readFramePc(depth - 1), pc);
+});
+
+for (const optLevel of [0, 3] as const) test(`function-return admission waits for the outer recursive invocation (O${optLevel})`, () => {
+	const source = `
+passes = 0
+local recurse
+recurse = function(depth)
+	if depth > 0 then recurse(depth - 1) end
+	passes = passes + 1
+end
+render_function = recurse
+recurse(2)
+passes = 100
+`;
+	const harness = createDebuggerHarness(source, optLevel);
+	const { runtime, state } = harness, cpu = runtime.machine.cpu;
+	const line = source.split('\n').findIndex(line => line.includes('passes = passes + 1')) + 1;
+	startAtBreakpoint(harness, line);
+	assert.equal(stoppedSourceLine(harness), line);
+	const guest = new SuspendedGuestSession(runtime);
+	const target = runtimeFunctionReturnTarget(cpu, state.sources, guest.linkedFunctionLocation(guest.global('render_function'))!)!;
+	assert.ok(cpu.getFrameDepth() > target.frameDepth + 1);
+	let finished = false;
+	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, target, completed => { finished = completed; }), 'workbench');
+	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
+	state.plans.didExecute();
+	assert.equal(finished, true); assert.equal(guest.global('passes'), 3);
+	assert.equal(runtimeFunctionReturnTarget(cpu, state.sources, guest.linkedFunctionLocation(guest.global('render_function'))!), undefined);
 });
 
 function stoppedSourceLine(harness: DebuggerHarness): number {

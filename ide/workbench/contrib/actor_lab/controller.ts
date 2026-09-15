@@ -40,6 +40,11 @@ export class ActorLabController {
 		const domain = input.domain, actorHashId = input.actorHashId;
 		this.schedule({
 			isCurrent: () => this.panes.openGeneration === generation && input.domain === domain && input.actorHashId === actorHashId,
+			waitForReturn: () => {
+				const world = runtimeWorld(this.sources, this.guest, domain);
+				if (world === undefined) return;
+				return this.guest.linkedFunctionLocation(this.guest.readStringMember(world, 'render'));
+			},
 			prepare: () => {
 				// Completing an interrupted IRQ also ends the previous heap borrow.
 				this.refresh(input);

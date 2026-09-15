@@ -1030,6 +1030,13 @@ the separation between asynchronous debugger evaluation and editor presentation
 in [VS Code](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/debugModel.ts)
 and [LLDB's function-call plans](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/lldb/source/Target/ThreadPlanCallFunction.cpp),
 not LLDB's register-checkpoint restoration.
+An evaluation may also require an active non-reentrant function to return first.
+The debugger follows its outermost physical or compiler-recorded inline invocation,
+as in [LLDB's step-out plans](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/lldb/source/Target/ThreadPlanStepOut.cpp),
+and stops before the caller's next instruction. Inline call-site identity distinguishes
+adjacent invocations. Actor Lab supplies the actual world renderer for this constraint;
+the generic debugger knows no cartlib names. Finishing that render precedes fresh
+argument resolution, not a recursive call over its shared command buffer.
 
 Actor Lab's live timeline slider calls the selected component's `scrub_time`;
 cartlib owns sampling and scrub-event policy. It does not advance a world clock,

@@ -21,6 +21,7 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 
 export type SuspendedGuestValue = Value;
+export type RuntimeFunctionLocation = { readonly domain: ExecutionDomainId; readonly address: number };
 export type GuestInvalidationReason = 'execution' | 'heap-replaced';
 
 export type SuspendedGuestRead = {
@@ -117,7 +118,7 @@ export class SuspendedGuestSession {
 	}
 
 	/** A closure has no birth socket. Linked source follows the current instruction bus. */
-	public linkedFunctionLocation(value: SuspendedGuestValue): { domain: ExecutionDomainId; address: number } | undefined {
+	public linkedFunctionLocation(value: SuspendedGuestValue): RuntimeFunctionLocation | undefined {
 		if (valueTag(value) !== ValueTag.Closure) return undefined;
 		const address = (value as Closure).functionAddress;
 		const domain = this.runtime.machine.executionAddressSpace.domainIdOnBus(address, this.cpu.readExecutionBusSignals());
