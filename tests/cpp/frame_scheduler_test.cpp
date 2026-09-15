@@ -13,6 +13,10 @@
 #include "spec/gx/gp0.h"
 #include "support/boot_rom_fixture.h"
 #include "support/cartridge_fixture.h"
+#include "support/blua32_test_rom.h"
+#include "spec/blua32/builtin.h"
+#include "spec/blua32/instruction_format.h"
+#include "spec/blua32/opcode.h"
 
 #include <algorithm>
 #include <array>
@@ -75,6 +79,38 @@ struct TickRuntimeFixture {
 		runtime.boot();
 	}
 };
+
+void testBusyCpuBudgetAtVblank() {
+	bmsx::test::Blua32TestImage image;
+	image.text.resize(bmsx::INSTRUCTION_BYTES);
+	bmsx::writeInstruction(image.text, 0, static_cast<bmsx::u8>(bmsx::OpCode::JMP), 0, 63, 63, 255);
+	image.functions.push_back({.firstWord = 0, .wordCount = 1});
+	for (const auto& primitive : bmsx::LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	const auto system = bmsx::test::encodeBlua32TestRom(bmsx::RomImageDomain::System, image);
+	TickInputSource input;
+	bmsx::Runtime runtime({system.bytes, bmsx::test::cartridgeSlots(), bmsx::PSX_MACHINE_SPEC}, input);
+	runtime.boot();
+	auto& scheduler = runtime.frameScheduler;
+	require(scheduler.runToNextLogicalTick(runtime), "busy execution reaches VBlank");
+	require(scheduler.lastTickBudgetGranted - scheduler.lastTickCpuUsedCycles == scheduler.lastTickBudgetRemaining,
+		"VBlank reads the consumed CPU budget before carrying the remainder");
+	require(scheduler.lastTickCpuUsedCycles == runtime.machine.scheduler.nowCycles(), "busy CPU cycles match machine time");
+	require(scheduler.captureState().carriedCycleBudget == scheduler.lastTickBudgetRemaining, "only unspent cycles carry");
+
+	const auto before = runtime.machine.scheduler.nowCycles();
+	const auto carry = scheduler.lastTickBudgetRemaining;
+	scheduler.run(runtime, 40.0);
+	require(runtime.machine.scheduler.nowCycles() - before == carry + 40 * runtime.timing.cpuCyclesPerMillisecond,
+		"busy execution consumes exactly its host grant across VBlank edges");
+	require(runtime.frameLoop.frameState.cycleBudgetRemaining == 0, "the grant is consumed");
+	const auto pausedAt = runtime.machine.scheduler.nowCycles();
+	scheduler.run(runtime, 0.0);
+	require(runtime.machine.scheduler.nowCycles() == pausedAt, "a busy loop cannot invent a new host grant");
+	scheduler.stepInstruction(runtime, 1.0);
+	const auto& frame = runtime.frameLoop.frameState;
+	require(frame.cycleBudgetGranted - frame.activeCpuUsedCycles == frame.cycleBudgetRemaining,
+		"instruction stepping updates the same budget owner");
+}
 
 void testBoundedLogicalTickRetainsCycleCarry() {
 	TickRuntimeFixture fixture;
@@ -700,6 +736,7 @@ void testHistoryAwaitingBackendCompletion() {
 } // namespace
 
 int main() {
+	testBusyCpuBudgetAtVblank();
 	testBoundedLogicalTickRetainsCycleCarry();
 	testBoundedLogicalTickResumesBackendFenceWithoutAnotherGrant();
 	testScheduledBoundedTickRetainsPartialMachineProgress();

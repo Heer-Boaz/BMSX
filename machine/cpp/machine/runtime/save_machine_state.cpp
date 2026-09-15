@@ -14,7 +14,6 @@ RuntimeSaveMachineState captureRuntimeSaveMachineState(Runtime& runtime, Runtime
 }
 
 void applyRuntimeSaveMachineState(Runtime& runtime, const RuntimeSaveMachineState& state) {
-	runtime.cpuExecution.reset();
 	runtime.frameScheduler.reset();
 	runtime.frameLoop.reset();
 	runtime.machine.scheduler.reset();

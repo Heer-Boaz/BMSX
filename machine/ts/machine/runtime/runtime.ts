@@ -53,7 +53,6 @@ export class Runtime {
 	}
 
 	public resetForSystemBoot(): void {
-		this.cpuExecution.reset();
 		this.frameLoop.resetFrameState();
 		this.pendingCall = null;
 		this.completionValues.length = 0;

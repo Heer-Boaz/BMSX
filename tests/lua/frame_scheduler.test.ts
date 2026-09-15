@@ -100,6 +100,38 @@ function createTickRuntime(input = new TickInputSource(), slots: CartridgeSocket
 	return { input, runtime };
 }
 
+test('busy CPU execution publishes consumed cycles before VBlank carries the remaining grant', () => {
+	const code = new Uint8Array(INSTRUCTION_BYTES);
+	writeInstruction(code, 0, OpCode.JMP, 0, 63, 63, 255);
+	const system = linkRawTestSystemBlua32({
+		text: code, functions: [{ firstWord: 0, wordCount: 1 }],
+		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
+		startupFunctionIndex: 0, irqFunctionIndex: 0, exceptionFunctionIndex: 0,
+	});
+	const runtime = new Runtime({
+		systemRomBytes: system.romBytes, cartridgeSlots: cartridgeSlots(), machineModel: PSX_MACHINE_SPEC,
+	}, new TickInputSource());
+	runtime.boot();
+	const scheduler = runtime.frameScheduler;
+	assert.equal(scheduler.runToNextLogicalTick(), true);
+	assert.equal(scheduler.lastTickBudgetGranted - scheduler.lastTickCpuUsedCycles, scheduler.lastTickBudgetRemaining);
+	assert.equal(scheduler.lastTickCpuUsedCycles, runtime.machine.scheduler.nowCycles);
+	assert.equal(scheduler.captureState().carriedCycleBudget, scheduler.lastTickBudgetRemaining);
+
+	const before = runtime.machine.scheduler.nowCycles;
+	const carry = scheduler.lastTickBudgetRemaining;
+	scheduler.run(40);
+	assert.equal(runtime.machine.scheduler.nowCycles - before, carry + 40 * runtime.timing.cpuCyclesPerMillisecond);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetRemaining, 0);
+	const pausedAt = runtime.machine.scheduler.nowCycles;
+	scheduler.run(0);
+	assert.equal(runtime.machine.scheduler.nowCycles, pausedAt, 'a busy loop cannot invent a new host grant');
+
+	scheduler.stepInstruction(1);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted - runtime.frameLoop.frameState.activeCpuUsedCycles,
+		runtime.frameLoop.frameState.cycleBudgetRemaining, 'instruction stepping updates the same budget owner');
+});
+
 test('runtime checkpoint storage reuses owner buffers without consuming independent snapshots', () => {
 	const { runtime } = createTickRuntime(new TickInputSource(), [
 		{ rom: null, ramByteCount: 12, mailboxPresent: true },

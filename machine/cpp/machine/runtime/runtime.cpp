@@ -97,7 +97,6 @@ void Runtime::suspendExecution() {
 }
 
 void Runtime::resetForSystemBoot() {
-	cpuExecution.reset();
 	frameLoop.resetFrameState(*this);
 	m_pendingCall = PendingCall::None;
 	machine.cpu.clearExecutionEnvironment();

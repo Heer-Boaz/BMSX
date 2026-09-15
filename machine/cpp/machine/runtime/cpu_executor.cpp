@@ -9,16 +9,10 @@
 
 namespace bmsx {
 
-void CpuExecutionState::reset() {
-	m_sliceCycleBudgetRemaining = 0;
-	m_instructionRunActive = false;
-}
-
 bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) {
 	auto& cpu = runtime.machine.cpu;
 	auto& gxGpu = runtime.machine.gxGpu;
 	auto& system = runtime.machine.systemController;
-	i64& cycleBudgetRemaining = frameState.cycleBudgetRemaining;
 	bool tickCompleted = runDueRuntimeTimers(runtime);
 	if (gxGpu.backendServiceBlocksMachine()) {
 		return tickCompleted;
@@ -37,7 +31,7 @@ bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) 
 		if (tickCompleted) {
 			return true;
 		}
-		if (cycleBudgetRemaining > 0) {
+		if (frameState.cycleBudgetRemaining > 0) {
 			const i64 nextDeadline = scheduler.nextDeadline();
 			if (nextDeadline == std::numeric_limits<i64>::max()) {
 				// Parked with no interrupt scheduled to wake the CPU: yield without
@@ -54,11 +48,10 @@ bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) 
 				}
 				continue;
 			}
-			i64 idleBudget = cyclesToTarget < cycleBudgetRemaining ? cyclesToTarget : cycleBudgetRemaining;
+			i64 idleBudget = cyclesToTarget < frameState.cycleBudgetRemaining ? cyclesToTarget : frameState.cycleBudgetRemaining;
 			if (idleBudget > MAX_CPU_SLICE_CYCLES) idleBudget = MAX_CPU_SLICE_CYCLES;
 			const int idleCycles = static_cast<int>(idleBudget);
-			cycleBudgetRemaining -= idleCycles;
-			frameState.cycleBudgetRemaining = cycleBudgetRemaining;
+			frameState.cycleBudgetRemaining -= idleCycles;
 			tickCompleted = advanceRuntimeTime(runtime, idleCycles);
 			if (gxGpu.backendServiceBlocksMachine()) {
 				return tickCompleted;
@@ -72,8 +65,6 @@ bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) 
 CpuExecutionResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState& frameState) {
 	CpuExecutionResult result = CpuExecutionResult::Yielded;
 	auto& cpu = runtime.machine.cpu;
-	m_instructionRunActive = false;
-	m_sliceCycleBudgetRemaining = frameState.cycleBudgetRemaining;
 	bool running = true;
 	while (running) {
 		switch (runSlice(runtime, frameState, MAX_CPU_SLICE_CYCLES)) {
@@ -102,31 +93,11 @@ CpuExecutionResult CpuExecutionState::runWithBudget(Runtime& runtime, FrameState
 				continue;
 		}
 	}
-	frameState.cycleBudgetRemaining = m_sliceCycleBudgetRemaining;
 	return result;
 }
 
 InstructionStepResult CpuExecutionState::runInstruction(Runtime& runtime, FrameState& frameState) {
-	if (!m_instructionRunActive) {
-		m_sliceCycleBudgetRemaining = frameState.cycleBudgetRemaining;
-		m_instructionRunActive = true;
-	}
 	const CpuSliceResult result = runSlice(runtime, frameState, 1);
-	auto& cpu = runtime.machine.cpu;
-	const bool runCompleted = result == CpuSliceResult::Advanced
-		|| result == CpuSliceResult::Blocked
-		|| result == CpuSliceResult::Halted
-		|| result == CpuSliceResult::ExecutionStopped
-		|| (result == CpuSliceResult::InstructionHalted && !cpu.isMemoryWriteBlocked())
-		|| m_sliceCycleBudgetRemaining <= 0
-		|| runtime.vblank.tickCompleted()
-		|| runtime.machine.gxGpu.backendServiceBlocksMachine()
-		|| runtime.machine.systemController.cpuHeld()
-		|| cpu.isHaltedUntilIrq();
-	if (runCompleted) {
-		frameState.cycleBudgetRemaining = m_sliceCycleBudgetRemaining;
-		m_instructionRunActive = false;
-	}
 	switch (result) {
 		case CpuSliceResult::Advanced:
 			return InstructionStepResult::Advanced;
@@ -149,7 +120,6 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	auto& machine = runtime.machine;
 	auto& cpu = machine.cpu;
 	auto& scheduler = machine.scheduler;
-	m_instructionRunActive = false;
 	runDueRuntimeTimers(runtime);
 	while (cpu.getFrameDepth() > targetDepth) {
 		if (machine.gxGpu.backendServiceBlocksMachine()
@@ -256,10 +226,9 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 	auto& machine = runtime.machine;
 	auto& scheduler = machine.scheduler;
 	auto& cpu = machine.cpu;
-	i64 remaining = m_sliceCycleBudgetRemaining;
 	bool advanced = scheduler.hasDueTimer();
 	bool tickCompleted = runDueRuntimeTimers(runtime);
-	while (remaining > 0
+	while (frameState.cycleBudgetRemaining > 0
 		&& !tickCompleted
 		&& !machine.gxGpu.backendServiceBlocksMachine()
 		&& !machine.systemController.cpuHeld()) {
@@ -273,18 +242,18 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 			}
 			// Device-ready edges release blocked MMIO stores. Advance to scheduled
 			// hardware events here; never poll readiness or retry the instruction.
-			i64 waitBudget = deadlineBudget < remaining ? deadlineBudget : remaining;
+			i64 waitBudget = deadlineBudget < frameState.cycleBudgetRemaining ? deadlineBudget : frameState.cycleBudgetRemaining;
 			if (waitBudget > MAX_CPU_SLICE_CYCLES) waitBudget = MAX_CPU_SLICE_CYCLES;
 			const int waitCycles = static_cast<int>(waitBudget);
-			remaining -= waitCycles;
+			frameState.cycleBudgetRemaining -= waitCycles;
 			frameState.activeCpuUsedCycles += waitCycles;
 			advanced = true;
 			tickCompleted = advanceRuntimeTime(runtime, waitCycles);
 			continue;
 		}
-		int sliceBudget = static_cast<int>(remaining > maximumCpuCycles
+		int sliceBudget = static_cast<int>(frameState.cycleBudgetRemaining > maximumCpuCycles
 			? maximumCpuCycles
-			: remaining);
+			: frameState.cycleBudgetRemaining);
 		const i64 nextDeadline = scheduler.nextDeadline();
 		if (nextDeadline != std::numeric_limits<i64>::max()) {
 			const i64 deadlineBudget = nextDeadline - scheduler.nowCycles();
@@ -300,18 +269,17 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 		const RunResult result = scheduler.runCpuSlice(0, sliceBudget);
 		const int consumed = sliceBudget - cpu.instructionBudgetRemaining;
 		if (consumed > 0) {
-			remaining -= consumed;
+			// Device timers publish this frame's remainder at the VBlank edge.
+			frameState.cycleBudgetRemaining -= consumed;
 			frameState.activeCpuUsedCycles += consumed;
 			advanced = true;
 			tickCompleted = advanceRuntimeTime(runtime, consumed);
 		}
 		if (result == RunResult::ExecutionStopped) {
-			m_sliceCycleBudgetRemaining = remaining;
 			return CpuSliceResult::ExecutionStopped;
 		}
 		if (cpu.isMemoryWriteBlocked()) {
 			if (consumed > 0) {
-				m_sliceCycleBudgetRemaining = remaining;
 				return result == RunResult::Halted
 					? CpuSliceResult::InstructionHalted
 					: CpuSliceResult::InstructionYielded;
@@ -319,18 +287,15 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 			continue;
 		}
 		if (consumed > 0) {
-			m_sliceCycleBudgetRemaining = remaining;
 			return result == RunResult::Halted
 				? CpuSliceResult::InstructionHalted
 				: CpuSliceResult::InstructionYielded;
 		}
 		if (cpu.isHaltedUntilIrq() || result == RunResult::Halted) {
-			m_sliceCycleBudgetRemaining = remaining;
 			return advanced ? CpuSliceResult::Advanced : CpuSliceResult::Halted;
 		}
 		throw BMSX_RUNTIME_ERROR("CPU yielded without consuming cycles.");
 	}
-	m_sliceCycleBudgetRemaining = remaining;
 	return advanced ? CpuSliceResult::Advanced : CpuSliceResult::Blocked;
 }
 

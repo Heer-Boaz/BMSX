@@ -25,7 +25,6 @@ enum class CpuSuspendedRunResult {
 
 class CpuExecutionState {
 public:
-	void reset();
 	bool runStoppedCpu(Runtime& runtime, FrameState& frameState);
 	CpuExecutionResult runWithBudget(Runtime& runtime, FrameState& frameState);
 	InstructionStepResult runInstruction(Runtime& runtime, FrameState& frameState);
@@ -46,8 +45,6 @@ private:
 		FrameState& frameState,
 		int maximumCpuCycles
 	);
-	i64 m_sliceCycleBudgetRemaining = 0;
-	bool m_instructionRunActive = false;
 };
 
 bool advanceRuntimeTime(Runtime& runtime, int cycles);
