@@ -194,8 +194,11 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		modules[index] = modules[index + 1];
 	}
 	modules.length -= 1;
-	const programModules = selectLuaProgramModules(entry.chunk, modules,
-		[...(options.preloadModules ?? []), ...options.generatedLuaModules.map(module => module.path)]);
+	const moduleRoots = [...(options.preloadModules ?? []), ...options.generatedLuaModules.map(module => module.path)];
+	if (options.domain === 'system') {
+		for (const exported of options.biosExports) moduleRoots.push(exported.path);
+	}
+	const programModules = selectLuaProgramModules(entry.chunk, modules, moduleRoots);
 
 	if (options.domain === 'cart') {
 		const compiled = compileLuaChunkToProgram(entry.chunk, programModules, {

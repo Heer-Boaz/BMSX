@@ -14,6 +14,59 @@ import { GX_REGISTER_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_registe
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import { SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
 import { buildRomBlua32Tail, compileLuaChunkBuffer } from '../../scripts/rompacker/rombuilder';
+import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { createTestBlua32PairCpu, writeTestBlua32Rom } from '../helpers/blua32';
+import { materializeCpuCompletionValues, parseLuaChunk } from '../lua/cpu_test_harness';
+
+for (const optLevel of [0, 3] as const) {
+	test(`public BIOS exports root their module dependencies without an entry require (O${optLevel})`, () => {
+		const systemSources = [
+			['entry', `module<entry>
+cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]`],
+			['public', `module<const>
+local delta<const> = require('dependency')
+return function(value) return value + delta.amount end`],
+			['dependency', 'module<const>\nreturn { amount = 7 }'],
+			['unused', 'module<const>\nreturn function() return 999 end'],
+		];
+		const system = buildBlua32Image({
+			luaModules: systemSources.map(([path, source]) => ({
+				path, displayPath: `${path}.lua`, source, chunk: parseLuaChunk(source, path),
+			})),
+			generatedLuaModules: [],
+			loadAddress: SYSTEM_ROM_BASE + 0x100,
+			ramByteCount: PSX_MACHINE_SPEC.ramBytes,
+			optLevel,
+			traceStatements: 'erase',
+			domain: 'system',
+			biosExports: [{ path: 'public', exportPathKey: '' }],
+		});
+		assert.ok(!system.object.sections.rodata.moduleExports.some(entry => entry.path === 'unused'));
+		const cartSource = `module<entry>
+local operation<const> = require('public')
+return operation(35)`;
+		const cart = buildBlua32Image({
+			luaModules: [{ path: 'entry', displayPath: 'entry.lua', source: cartSource, chunk: parseLuaChunk(cartSource, 'entry') }],
+			generatedLuaModules: [],
+			loadAddress: CART_ROM_BASE + 0x100,
+			ramByteCount: PSX_MACHINE_SPEC.ramBytes,
+			optLevel,
+			traceStatements: 'erase',
+			domain: 'cart',
+			biosImports: system.linked.biosImports,
+		});
+		const { cpu } = createTestBlua32PairCpu({
+			systemRomBytes: writeTestBlua32Rom(system.linked),
+			cartRomBytes: writeTestBlua32Rom(cart.linked),
+		});
+		assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [42]);
+	});
+}
 
 test('BLua32 image rejects a cart Lua module that collides with generated asset symbols', () => {
 	const entrySource = 'module<entry>\nreturn true';
