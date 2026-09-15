@@ -18,9 +18,11 @@ import { compileLuaSource, materializeCpuCompletionValues, parseLuaChunk } from 
 const PATH = 'retention.lua';
 const ADDRESS = SYSTEM_ROM_BASE + 0x100;
 
-function compile(source: string, baseline?: { source: string; linked: LinkedSystemBlua32Image }, optLevel: 0 | 3 = 3) {
-	const correspondence = new LuaSourceCorrespondence(new Map(baseline ? [[PATH, baseline.source]] : []), new Map([[PATH, source]]));
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, PATH), [], {
+function compile(source: string, baseline?: { sources: ReadonlyMap<string, string>; linked: LinkedSystemBlua32Image }, optLevel: 0 | 3 = 3,
+	modules: readonly { path: string; source: string }[] = []) {
+	const sources = new Map([[PATH, source], ...modules.map(module => [module.path, module.source] as const)]);
+	const correspondence = new LuaSourceCorrespondence(baseline ? baseline.sources : new Map(), sources);
+	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, PATH), modules.map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path) })), {
 		entrySource: source, programDomain: 'system', optLevel,
 		captureLayout: baseline ? new LuaCaptureLayout(baseline.linked.symbols.metadata, correspondence) : undefined,
 	});
@@ -28,13 +30,37 @@ function compile(source: string, baseline?: { source: string; linked: LinkedSyst
 		encodeCompiledProgramObject(compiled), compiled.metadata, ADDRESS, PSX_MACHINE_SPEC.ramBytes, [],
 		baseline ? { image: baseline.linked.layout, symbols: baseline.linked.symbols, captureSources: correspondence } : undefined,
 	);
-	return { source, compiled, linked, correspondence };
+	return { source, sources, compiled, linked, correspondence };
 }
 
 function prove(previous: ReturnType<typeof compile>, fresh: ReturnType<typeof compile>) {
 	return buildBlua32ExecutionRevision(previous.linked.layout, previous.linked.symbols,
-		new Map([[PATH, previous.source]]), fresh.linked, new Map([[PATH, fresh.source]]), fresh.correspondence);
+		previous.sources, fresh.linked, fresh.sources, fresh.correspondence);
 }
+
+for (const optLevel of [0, 3] as const) test(`live callback can acquire an immutable import without acquiring a cell (O${optLevel})`, () => {
+	const modules = [{ path: 'library', source: 'return { value = 41 }' }];
+	const before = `local library<const> = require('library')
+local alias<const> = library
+local function read() return 7 end
+return read, library`;
+	const initial = compile(before, undefined, optLevel, modules);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const [read, library] = materializeCpuCompletionValues(cpu);
+	let previous = initial;
+	for (const body of ['alias', 'library', '7', 'alias']) {
+		const fresh = compile(before.replace('return 7 end', `return ${body} end`), previous, optLevel, modules);
+		prove(previous, fresh);
+		assert.deepEqual(names(fresh, '/local:read'), []);
+		memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
+		cpu.replaceExecutionImage(executionAddressSpace.resolveSystemDomain());
+		cpu.beginCompletionCall(read as Closure);
+		assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+		assert.equal(materializeCpuCompletionValues(cpu)[0], body === '7' ? 7 : library);
+		previous = fresh;
+	}
+});
 
 function names(revision: ReturnType<typeof compile>, suffix: string) {
 	const metadata = revision.linked.symbols.metadata;

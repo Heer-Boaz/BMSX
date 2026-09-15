@@ -149,6 +149,17 @@ sample. They are not whole-build peak memory, native tooling memory, or a
 
 ## Remaining boundaries
 
+Immutable `require` roots (and their const aliases) now lower nested reads to
+the existing module export slot instead of an importing-local cell. Mutable
+aliases, member snapshots and a module's unpublished own root remain locals.
+This follows the compiler-owned import binding used by
+[Luau](https://github.com/luau-lang/luau/blob/master/Compiler/src/Compiler.cpp),
+without adding an opcode. A callback may therefore start using an imported
+component during Hot Resume without changing its closure layout. O0/O3 tests
+retain and repeatedly invoke the original closure; the real Studio actor
+experiment also accepted that edit through Save & Hot Resume. This does not
+synthesize genuinely new captured locals.
+
 - New cells and deleted/reparented defining locals are not synthesized. Unmatched
   declaration renames or source-function syntax still reject; this is not a
   universal Edit and Continue implementation.

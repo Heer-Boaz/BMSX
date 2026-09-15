@@ -2820,6 +2820,13 @@ class FunctionBuilder {
 		if (binding && this.moduleBindingOwnsCompileTimeLocal(binding)) {
 			return binding;
 		}
+		if (binding && binding.exportDepth === 0) {
+			if (expression.kind === LuaSyntaxKind.CallExpression) return binding;
+			if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+				const reference = getResolvedIdentifierReference(this.semantics, expression as LuaIdentifierExpression);
+				if (this.resolveReferenceVisibleBinding(reference)?.moduleBinding === binding) return binding;
+			}
+		}
 	}
 
 	private failStaticFunctionExportRuntimeValue(symbol: string): never {
@@ -2941,6 +2948,13 @@ class FunctionBuilder {
 			if (localReg !== target) {
 				this.emitABC(OpCode.MOV, target, localReg, 0);
 			}
+			return;
+		}
+		// A const import names the module's single published root. Nested readers
+		// use that storage, not a captured copy of the importing local register.
+		// Const member snapshots and mutable aliases still use ordinary cells.
+		if (binding?.moduleBinding?.kind === 'source' && binding.moduleBinding.exportDepth === 0) {
+			this.compileRequireExpression(binding.moduleBinding, target, 1);
 			return;
 		}
 		const upvalue = this.resolveReferenceUpvalue(reference);

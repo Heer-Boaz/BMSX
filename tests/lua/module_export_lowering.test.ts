@@ -256,6 +256,24 @@ test('cartlib easing calls through its live runtime table', () => {
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [0.5]);
 });
 
+for (const optLevel of [0, 3] as const) test(`immutable imports do not turn local snapshots into live bindings (O${optLevel})`, () => {
+	const moduleSource = `local api = { value = 10 }
+function api.before_publication()
+	local snapshot<const> = api
+	return function() return snapshot end
+end
+api.early = api.before_publication()()
+return api`;
+	const { compiled } = compileWithModule(`local api<const> = require('api')
+local snapshot<const> = api.value
+local mutable = api
+local function read() return snapshot, mutable.value, api.value, api == api.early end
+api.value = 20
+mutable = { value = 30 }
+return read()`, 'api', moduleSource, [], optLevel);
+	assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [10, 30, 20, true]);
+});
+
 test('dynamic module data reads observe table mutations at every optimization level', () => {
 	const moduleSource = [
 		'local api<const> = { value = 0 }',
