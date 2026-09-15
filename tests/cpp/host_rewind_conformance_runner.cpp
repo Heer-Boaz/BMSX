@@ -106,7 +106,12 @@ int main(int argc, char** argv) {
 			input.poll(static_cast<i32>(presenter.viewportSize.x), static_cast<i32>(presenter.viewportSize.y), (totalTime + delta) * 1000.0);
 			runLibretroFrame(runtime, input, menu, rewind, presentation, presenter, totalTime, delta);
 			audio.setEmulationFrameTimeSec(delta);
-			audio.setMuted(runtime.machine.audioController, rewind.audioMuted() || (runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_ACTIVE) != 0u);
+			const auto menuExecution = menu.executionMode();
+			audio.setMuted(runtime.machine.audioController,
+				menuExecution == HostMenuExecution::Paused
+				|| (menuExecution == HostMenuExecution::Rewind && !rewind.playing())
+				|| rewind.audioMuted()
+				|| (runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_ACTIVE) != 0u);
 			audio.collectFrame(runtime.machine.audioController);
 			audioFrames += audio.frameCount();
 			for (size_t index = 0; index < audio.frameCount() * 2; ++index) audible |= audio.data()[index] != 0;

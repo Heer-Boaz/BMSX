@@ -1670,7 +1670,10 @@ void retro_run(void) {
 	}
 	bmsx::flushLibretroSystemOutput(runtime, logging);
 	sync_runtime_timing(runtime);
-	const bool audioMuted = g_rewind->audioMuted() || (
+	const bmsx::HostMenuExecution menuExecution = g_overlay_menu->executionMode();
+	const bool audioMuted = menuExecution == bmsx::HostMenuExecution::Paused
+		|| (menuExecution == bmsx::HostMenuExecution::Rewind && !g_rewind->playing())
+		|| g_rewind->audioMuted() || (
 		runtime.machine.memory.readIoU32(bmsx::IO_SYS_STATUS)
 		& bmsx::SYS_STATUS_SUPERVISOR_ACTIVE
 	) != 0u;

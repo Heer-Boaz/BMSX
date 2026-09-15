@@ -36,12 +36,17 @@ LibretroFrameResult runLibretroFrame(
 		case HostMenuInput::Active:
 			break;
 	}
-	const bool hostMenuActive = hostMenuInput == HostMenuInput::Active;
+	const HostMenuExecution menuExecution = overlayMenu.executionMode();
+	const bool menuPaused = menuExecution == HostMenuExecution::Paused;
 
 	presentation.clearPresentation();
-	rewind.service(true);
-	rewind.runPlayback(hostDeltaMs);
-	if (runtime.isDrawPending() && !hostMenuActive && !rewind.active) {
+	// Select execution before any service that can restore or advance the machine.
+	// Host input, menu drawing and wall time keep running while guest time is held.
+	if (!menuPaused) {
+		rewind.service(true);
+		rewind.runPlayback(hostDeltaMs);
+	}
+	if (runtime.isDrawPending() && menuExecution == HostMenuExecution::Live && !rewind.active) {
 		const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 		runtime.frameScheduler.run(runtime, hostDeltaMs);
 		GxGpu& gxGpu = runtime.machine.gxGpu;
@@ -54,7 +59,7 @@ LibretroFrameResult runLibretroFrame(
 			runtime.frameScheduler.run(runtime, 0.0);
 		}
 		presentation.syncAfterRuntimeUpdate(runtime, previousTickSequence);
-	} else if (runtime.isDrawPending()) {
+	} else {
 		runtime.frameScheduler.clearQueuedTime();
 	}
 	if (overlayMenu.queueFrameOverlayCommands(
@@ -73,7 +78,7 @@ LibretroFrameResult runLibretroFrame(
 		deltaTime,
 		false
 	);
-	if (runtime.history.checkpointPending) rewind.service(true);
+	if (!menuPaused && runtime.history.checkpointPending) rewind.service(true);
 	return presented ? LibretroFrameResult::Presented : LibretroFrameResult::NotPresented;
 }
 

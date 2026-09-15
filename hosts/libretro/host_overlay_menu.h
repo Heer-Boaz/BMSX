@@ -25,6 +25,13 @@ enum class HostMenuInput : u8 {
 	ExitGame,
 };
 
+// Derived from the current page; guest execution state never owns UI pause.
+enum class HostMenuExecution : u8 {
+	Live,
+	Paused,
+	Rewind,
+};
+
 class HostOverlayMenu {
 	enum class Page : u8 {
 		Closed,
@@ -41,6 +48,7 @@ public:
 	void queueRenderCommands(Runtime& runtime, VideoPresenter& presenter, HostRewind& rewind);
 	bool queueFrameOverlayCommands(Runtime& runtime, VideoPresenter& presenter, HostRewind& rewind, f64 hostFps);
 	bool active() const { return m_page != Page::Closed; }
+	HostMenuExecution executionMode() const;
 
 private:
 	static constexpr i32 OptionCount = 15;

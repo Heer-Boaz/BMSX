@@ -293,6 +293,12 @@ void HostOverlayMenu::queueCommand(Host2DKind kind, Host2DRef ref) {
 	m_commandCount += 1;
 }
 
+HostMenuExecution HostOverlayMenu::executionMode() const {
+	return m_page == Page::Options ? HostMenuExecution::Paused
+		: m_page == Page::Rewind ? HostMenuExecution::Rewind
+		: HostMenuExecution::Live;
+}
+
 HostMenuInput HostOverlayMenu::tickInput(Runtime& runtime, LibretroInput& input, VideoPresenter& presenter, HostRewind& rewind, f64 currentTimeMs) {
 	if (input.hostShortcutJustPressed(InputControllerGamepadButtonBit::X)) {
 		transitionTo(m_page == Page::Keyboard ? Page::Closed : Page::Keyboard, input, rewind);
