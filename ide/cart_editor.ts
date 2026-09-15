@@ -98,8 +98,6 @@ import { BreakpointController } from './workbench/contrib/debugger/controller';
 import { closeBlockingWorkbenchModal, drawBlockingWorkbenchModal, handleBlockingWorkbenchModalInput, hasBlockingWorkbenchModal } from './workbench/contrib/modal/blocking_modal';
 import { drawProblemsPanel, problemsPanel } from './workbench/contrib/problems/panel/controller';
 import { ResourcePanelController } from './workbench/contrib/resources/panel/controller';
-import { applyCreateResourceFieldText, closeCreateResourcePrompt } from './workbench/contrib/resources/create/index';
-import { createResourceState } from './workbench/contrib/resources/widget_state';
 import { IdeCommandController } from './commands/controller';
 import { initializeNavigationState } from './navigation/navigation_history';
 import { EditorNavigationController } from './workbench/contrib/resources/navigation';
@@ -198,7 +196,6 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly presenter: VideoPresenter;
 	private readonly display: EditorDisplay;
 	private readonly input: Input;
-	private readonly storage: KeyValueStorage;
 	private readonly clock: HostClock;
 	private readonly clipboard: Clipboard;
 	private readonly sources: RuntimeSourceState;
@@ -251,7 +248,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.presenter = presenter;
 		this.display = display;
 		this.input = input;
-		this.storage = storage;
 		this.clock = clock;
 		this.clipboard = clipboard;
 		this.sources = sources;
@@ -344,7 +340,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.crossFileRename = new CrossFileRenameManager(this.sources);
 		this.search = new EditorSearchController(this.sources, renameController);
 		this.unbindQuickInputFields = bindQuickInputFields(
-			this, this.sources, this.clipboard, this.storage, this.clock,
+			this, this.sources, this.clipboard,
 		);
 		this.unbindProblemsPanel = problemsPanel.focusTarget.bindKeyboard(
 			input => problemsPanel.handleKeyboard(input, this.editorPanes),
@@ -468,7 +464,6 @@ export class RuntimeCartEditor implements CartEditor {
 		lineJumpState.field.focusTarget.release();
 		lineJumpState.visible = false;
 		closeBlockingWorkbenchModal();
-		closeCreateResourcePrompt(false);
 		this.resourcePanel.hide();
 		editorChromeState.resourcePanelResizing = false;
 		cancelSearchJob();
@@ -611,12 +606,6 @@ export class RuntimeCartEditor implements CartEditor {
 		lineJumpState.field.focusTarget.release();
 		lineJumpState.visible = false;
 		applyLineJumpFieldText('', true);
-		createResourceState.field.focusTarget.release();
-		createResourceState.visible = false;
-		applyCreateResourceFieldText('', true);
-		createResourceState.error = null;
-		createResourceState.working = false;
-		createResourceState.field.readOnly = false;
 		closeBlockingWorkbenchModal();
 		this.resourcePanel.hide();
 		editorChromeState.resourcePanelResizing = false;
@@ -751,7 +740,6 @@ export class RuntimeCartEditor implements CartEditor {
 		resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
 		applySearchFieldText(editorSearchState.query, true);
 		applyLineJumpFieldText(lineJumpState.value, true);
-		applyCreateResourceFieldText(createResourceState.path, true);
 		this.completion.closeSession();
 		this.completion.enterCommitsCompletion = false;
 		problemsPanel.setDiagnostics(editorDiagnosticsState.diagnostics);

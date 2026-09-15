@@ -314,7 +314,6 @@ export class IdeCommandController {
 				return getActiveTab().kind === 'behavior_lens';
 			case 'rename':
 				return isActiveLuaCodeTab() && !activeCodeEditor.model.readOnly;
-			case 'createResource':
 			case 'findGlobal':
 			case 'findLocal':
 			case 'lineJump':

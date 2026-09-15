@@ -7,51 +7,12 @@ import { applyResourceViewerScroll, resolveResourceViewerLayout } from '../contr
 import type { ResourceViewerState } from '../contrib/resources/model';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { api } from '../../runtime/overlay_api';
-import { measureText, writeWrappedOverlayLine } from '../../editor/common/text/layout';
 import * as constants from '../../common/constants';
 import { resolveThemeTokenColor } from '../../theme/tokens';
-import { renderErrorOverlayText } from '../../editor/render/error_overlay';
 import { drawRectOutlineColor } from '../../editor/render/caret';
-import { writeCenteredDialogBounds } from '../../editor/render/dialog_layout';
 import { editorViewState } from '../../editor/ui/view/state';
 
 const resourceViewerVerticalTrack: RectBounds = create_rect_bounds();
-const createResourceErrorDialogBounds: RectBounds = create_rect_bounds();
-const createResourceErrorLines: string[] = [];
-let createResourceErrorCachedMessage = '';
-let createResourceErrorCachedWrapWidth = -1;
-
-function resolveCreateResourceErrorLines(message: string, wrapWidth: number): string[] {
-	if (message === createResourceErrorCachedMessage && wrapWidth === createResourceErrorCachedWrapWidth) {
-		return createResourceErrorLines;
-	}
-	createResourceErrorCachedMessage = message;
-	createResourceErrorCachedWrapWidth = wrapWidth;
-	createResourceErrorLines.length = 0;
-	let lineStart = 0;
-	for (let index = 0; index <= message.length; index += 1) {
-		if (index !== message.length && message.charCodeAt(index) !== 10) {
-			continue;
-		}
-		let lineEnd = index;
-		if (lineEnd > lineStart && message.charCodeAt(lineEnd - 1) === 13) {
-			lineEnd -= 1;
-		}
-		while (lineStart < lineEnd && message.charCodeAt(lineStart) <= 32) {
-			lineStart += 1;
-		}
-		while (lineEnd > lineStart && message.charCodeAt(lineEnd - 1) <= 32) {
-			lineEnd -= 1;
-		}
-		writeWrappedOverlayLine(createResourceErrorLines, message.slice(lineStart, lineEnd), wrapWidth);
-		lineStart = index + 1;
-	}
-	if (createResourceErrorLines.length === 0) {
-		createResourceErrorLines.push('');
-	}
-	return createResourceErrorLines;
-}
-
 export function renderResourcePanel(controller: ResourcePanelController): void {
 	if (!controller.visible) {
 		return;
@@ -207,38 +168,4 @@ export function drawResourceViewer(viewer: ResourceViewerState): void {
 }
 export function drawResourcePanel(controller: ResourcePanelController): void {
 	controller.draw();
-}
-
-export function drawCreateResourceErrorDialog(message: string): void {
-	const viewportDialogMaxWidth = editorViewState.viewportWidth - 16;
-	const maxDialogWidth = viewportDialogMaxWidth < 360 ? viewportDialogMaxWidth : 360;
-	const requestedWrapWidth = maxDialogWidth - (constants.ERROR_OVERLAY_PADDING_X * 2 + 12);
-	const wrapWidth = requestedWrapWidth > editorViewState.charAdvance ? requestedWrapWidth : editorViewState.charAdvance;
-	const lines = resolveCreateResourceErrorLines(message, wrapWidth);
-	let contentWidth = 0;
-	for (let i = 0; i < lines.length; i += 1) {
-		const lineWidth = measureText(lines[i]);
-		if (lineWidth > contentWidth) {
-			contentWidth = lineWidth;
-		}
-	}
-	const requestedDialogWidth = contentWidth + constants.ERROR_OVERLAY_PADDING_X * 2 + 12;
-	const minDialogWidth = requestedDialogWidth > 180 ? requestedDialogWidth : 180;
-	const dialogWidth = viewportDialogMaxWidth < minDialogWidth ? viewportDialogMaxWidth : minDialogWidth;
-	const viewportDialogMaxHeight = editorViewState.viewportHeight - 16;
-	const requestedDialogHeight = lines.length * editorViewState.lineHeight + constants.ERROR_OVERLAY_PADDING_Y * 2 + 16;
-	const dialogHeight = viewportDialogMaxHeight < requestedDialogHeight ? viewportDialogMaxHeight : requestedDialogHeight;
-	writeCenteredDialogBounds(createResourceErrorDialogBounds, dialogWidth, dialogHeight, 8);
-	api.fill_rect(createResourceErrorDialogBounds.left, createResourceErrorDialogBounds.top, createResourceErrorDialogBounds.right, createResourceErrorDialogBounds.bottom, 0, constants.COLOR_STATUS_BACKGROUND);
-	api.blit_rect(createResourceErrorDialogBounds.left, createResourceErrorDialogBounds.top, createResourceErrorDialogBounds.right, createResourceErrorDialogBounds.bottom, 0, constants.COLOR_CREATE_RESOURCE_ERROR);
-	const dialogPaddingX = constants.ERROR_OVERLAY_PADDING_X + 6;
-	const dialogPaddingY = constants.ERROR_OVERLAY_PADDING_Y + 6;
-	renderErrorOverlayText(
-		editorViewState.font,
-		lines,
-		createResourceErrorDialogBounds.left + dialogPaddingX,
-		createResourceErrorDialogBounds.top + dialogPaddingY,
-		editorViewState.lineHeight,
-		constants.COLOR_STATUS_TEXT
-	);
 }

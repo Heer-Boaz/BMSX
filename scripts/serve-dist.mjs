@@ -107,11 +107,27 @@ async function handleLuaApi(req, res, url) {
 	if (req.method === 'OPTIONS') {
 		res.writeHead(204, {
 			'Access-Control-Allow-Methods': 'GET,PUT,DELETE,OPTIONS',
-			'Access-Control-Allow-Headers': 'Content-Type',
+			'Access-Control-Allow-Headers': 'Content-Type,If-None-Match',
 		}).end();
 		return true;
 	}
 	if (req.method === 'GET') {
+		const directoryPath = url.searchParams.get('directory');
+		if (directoryPath !== null) {
+			let entries;
+			try {
+				entries = await readdir(resolveWorkspacePath(directoryPath), { withFileTypes: true });
+			} catch (error) {
+				if (error.code !== 'ENOENT') throw error;
+				res.writeHead(404).end();
+				return true;
+			}
+			res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(entries.map(entry => ({
+				name: entry.name, type: entry.isDirectory() ? 'directory'
+					: entry.isFile() ? 'file' : entry.isSymbolicLink() ? 'symbolic-link' : 'other',
+			}))));
+			return true;
+		}
 		const targetPath = url.searchParams.get('path');
 		if (!targetPath) {
 			res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Missing "path" query parameter.' }));
@@ -145,7 +161,15 @@ async function handleLuaApi(req, res, url) {
 		const payload = JSON.parse(await readRequestBody(req));
 		const absolutePath = resolveWorkspacePath(payload.path);
 		await mkdir(path.dirname(absolutePath), { recursive: true });
-		await writeFile(absolutePath, payload.contents, 'utf8');
+		try {
+			await writeFile(absolutePath, payload.contents, {
+				encoding: 'utf8', flag: req.headers['if-none-match'] === '*' ? 'wx' : 'w',
+			});
+		} catch (error) {
+			if (error.code !== 'EEXIST') throw error;
+			res.writeHead(412, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: `File already exists: ${payload.path}` }));
+			return true;
+		}
 		const modifiedSeconds = payload.updatedAt / 1000;
 		await utimes(absolutePath, modifiedSeconds, modifiedSeconds);
 		res.writeHead(204).end();

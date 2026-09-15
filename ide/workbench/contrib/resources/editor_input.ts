@@ -1,5 +1,5 @@
 import { ReadonlyEditorInput } from '../../common/editor_input';
-import { resourceIdentityKey } from '../../../common/resource';
+import { resourceIdentityKey, type ResourceIdentity } from '../../../common/resource';
 import type { ResourceViewerTabId } from '../../ui/tab/id';
 import type { ResourceViewerContent, ResourceViewerState } from './model';
 import type { ResourceEditorIdentity } from '../../common/editor_input';
@@ -10,6 +10,7 @@ export const WORKBENCH_RESOURCE_VIEWER_ID = 'workbench.editor.resourceViewer';
 /** Retained input for one read-only resource projection. */
 export class ResourceViewerInput extends ReadonlyEditorInput<ResourceViewerTabId, 'resource_view'> {
 	public readonly view: ResourceViewerState;
+	public get resource(): ResourceIdentity { return this.view.content.resource; }
 
 	public constructor(content: ResourceViewerContent) {
 		super(

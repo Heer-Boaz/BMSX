@@ -3,7 +3,6 @@ import { focusRuntimeErrorOverlay } from '../runtime_error/navigation';
 import { buildResourceQuickPickItems } from '../workbench/contrib/resources/quick_access';
 import { FileQuickPickProvider } from '../workbench/contrib/resources/quick_pick_provider';
 import { openLineJump } from '../workbench/contrib/code_editor/find/line_jump';
-import { openCreateResourcePrompt } from '../workbench/contrib/resources/create/index';
 import { openReferenceSearch } from '../workbench/contrib/code_editor/references/quick_access';
 import { openRenamePrompt } from '../workbench/contrib/code_editor/rename/prompt';
 import { openSymbolSearch } from '../workbench/contrib/code_editor/symbols/quick_access';
@@ -20,7 +19,6 @@ export function isEditorSearchCommand(command: EditorCommandId): command is Edit
 		case 'symbolSearchGlobal':
 		case 'resourceSearch':
 		case 'runtimeErrorFocus':
-		case 'createResource':
 		case 'findGlobal':
 		case 'findLocal':
 		case 'lineJump':
@@ -55,9 +53,6 @@ export function executeEditorSearchCommand(
 			return;
 		case 'runtimeErrorFocus':
 			focusRuntimeErrorOverlay(editor.editorPanes);
-			return;
-		case 'createResource':
-			openCreateResourcePrompt(sources, editor.resourcePanel);
 			return;
 		case 'findGlobal':
 			editor.search.openSearch(true, 'global');

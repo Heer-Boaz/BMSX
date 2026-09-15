@@ -539,11 +539,6 @@ export let HOVER_TOOLTIP_BORDER: number;
 export let HOVER_TOOLTIP_TEXT: number;
 export const HOVER_TOOLTIP_MAX_VISIBLE_LINES = 10;
 export const LINE_JUMP_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
-export let COLOR_CREATE_RESOURCE_BACKGROUND: number;
-export let COLOR_CREATE_RESOURCE_TEXT: number;
-export let COLOR_CREATE_RESOURCE_PLACEHOLDER: number;
-export let COLOR_CREATE_RESOURCE_OUTLINE: number;
-export let COLOR_CREATE_RESOURCE_ERROR: number;
 export let COLOR_SERVER_STATUS_CONNECTED: number;
 export let COLOR_SERVER_STATUS_DISCONNECTED: number;
 export let COLOR_HEADER_BUTTON_BACKGROUND: number;
@@ -599,8 +594,6 @@ export let COLOR_PARAMETER_HINT_BACKGROUND: number;
 export let COLOR_PARAMETER_HINT_BORDER: number;
 export let COLOR_PARAMETER_HINT_TEXT: number;
 export let COLOR_PARAMETER_HINT_ACTIVE: number;
-export const CREATE_RESOURCE_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
-export const CREATE_RESOURCE_MAX_PATH_LENGTH = 1024;
 
 export function setIdeThemeVariant(variant: string): void {
 	activeThemeVariant = variant;
@@ -689,11 +682,6 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	HOVER_TOOLTIP_BACKGROUND = theme.overlays.hover.background;
 	HOVER_TOOLTIP_BORDER = theme.overlays.hover.border;
 	HOVER_TOOLTIP_TEXT = theme.overlays.hover.text;
-	COLOR_CREATE_RESOURCE_BACKGROUND = search.background;
-	COLOR_CREATE_RESOURCE_TEXT = search.text;
-	COLOR_CREATE_RESOURCE_PLACEHOLDER = search.placeholder;
-	COLOR_CREATE_RESOURCE_OUTLINE = search.outline;
-	COLOR_CREATE_RESOURCE_ERROR = theme.status.warning;
 	COLOR_SERVER_STATUS_CONNECTED = theme.server_status.connected;
 	COLOR_SERVER_STATUS_DISCONNECTED = theme.server_status.disconnected;
 	COLOR_HEADER_BUTTON_BACKGROUND = headerButtons.background;

@@ -7,7 +7,6 @@ import { resetBlink } from '../../../../editor/render/caret';
 import { revealCursor } from '../../../../editor/ui/view/caret/caret';
 import { editorCaretState } from '../../../../editor/ui/view/caret/state';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
-import { createResourceState } from '../../resources/widget_state';
 import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 
 export function openRenamePrompt(bridge: RuntimeLuaTooling, rename: RenameController): void {
@@ -17,7 +16,6 @@ export function openRenamePrompt(bridge: RuntimeLuaTooling, rename: RenameContro
 	}
 	closeSearch(false, true);
 	closeLineJump(false);
-	createResourceState.field.focusTarget.release();
 	const context = getActiveCodeTabContext();
 	switch (context.model.mode) {
 		case 'lua':

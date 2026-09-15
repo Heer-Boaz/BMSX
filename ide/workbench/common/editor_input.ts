@@ -53,6 +53,8 @@ export abstract class AbstractEditorInput<
 	}
 
 	public abstract isDirty(): boolean;
+	/** Primary file identity for workspace commands; tool panes may have no file. */
+	public abstract get resource(): ResourceIdentity | undefined;
 
 	/** Input resources end at close, not when its reusable pane is detached. */
 	public dispose(): void {
@@ -77,6 +79,7 @@ export abstract class ReadonlyEditorInput<
 export abstract class TextEditorInput<TId extends string, TKind extends string> extends AbstractEditorInput<TId, TKind> {
 	/** Primary source identity for opening other views; not every command's write target. */
 	public abstract get workingCopy(): EditorTextModel;
+	public get resource(): ResourceIdentity { return this.workingCopy.resource; }
 	public abstract get readOnly(): boolean;
 	/** Invoked by resource commands, not by rendering or source discovery. */
 	public abstract getWorkingCopies(): readonly EditorTextModel[];

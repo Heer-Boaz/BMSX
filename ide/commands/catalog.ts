@@ -29,7 +29,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	symbolSearchGlobal: { category: 'Go', title: 'Go to Symbol in Workspace' },
 	resourceSearch: { category: 'Go', title: 'Go to File' },
 	runtimeErrorFocus: { category: 'Go', title: 'Go to Runtime Error' },
-	createResource: { category: 'File', title: 'New Resource' },
+	createResource: { category: 'File', title: 'New Lua File' },
 	findGlobal: { category: 'Search', title: 'Find in Workspace' },
 	findLocal: { category: 'Search', title: 'Find' },
 	lineJump: { category: 'Go', title: 'Go to Line' },

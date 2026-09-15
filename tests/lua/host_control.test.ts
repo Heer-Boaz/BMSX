@@ -34,7 +34,7 @@ test('disk workspace transport persists contents and record timestamps without r
 	const fetch = globalThis.fetch;
 	const provider = new DiskWorkspaceRecordProvider(root);
 	const record = { contents: 'return { name = "actor" }\n', updatedAt: 1712345678901 };
-	await provider.write('source/actor.lua', record);
+	await provider.write('source/actor.lua', record, true);
 	assert.equal(globalThis.fetch, fetch);
 	assert.deepEqual(await new DiskWorkspaceRecordProvider(root).read('source/actor.lua'), record);
 	await provider.delete('source/actor.lua');
@@ -48,4 +48,17 @@ test('live control has no test TTL and Studio uses an explicit workspace', () =>
 	assert.equal(command.options.ttlMs, 0);
 	assert.deepEqual(command.options.mode, { kind: 'control', port: 0, workspaceRoot: process.cwd() });
 	assert.throws(() => parseNodeToolingOptions(['--studio-workspace', '.', 'game'], true, 20), /requires --control/);
+});
+
+test('filesystem-exclusive creation admits one concurrent writer and never overwrites the winner', async t => {
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bmsx-create-'));
+	t.after(() => fs.rm(root, { recursive: true }));
+	const provider = new DiskWorkspaceRecordProvider(root);
+	const records = [{ contents: 'first', updatedAt: 1000 }, { contents: 'second', updatedAt: 2000 }];
+	const attempts = await Promise.allSettled(records.map(record => provider.write('src/actor.lua', record, false)));
+	assert.equal(attempts.filter(result => result.status === 'fulfilled').length, 1);
+	const winner = attempts.findIndex(result => result.status === 'fulfilled');
+	assert.deepEqual(await provider.read('src/actor.lua'), records[winner]);
+	await assert.rejects(provider.write('src/actor.lua', records[1 - winner], false), /File already exists/);
+	assert.deepEqual(await provider.read('src/actor.lua'), records[winner]);
 });

@@ -4807,6 +4807,10 @@ directly from its source record. Source installation and activation publish the
 retained Lua and active-domain catalogs. Listing and lookup code does not copy
 resource metadata into descriptor DTOs. Workspace resource identity persists only
 `(domain, path)` and resolves it through `RuntimeSourceState`. Local workspace
+Lua files are discovered before restoring views, using the ROM packer's source
+membership rules; the ROM is not the workspace file catalog. New-file creation
+admits an exclusive filesystem write before publishing its domain-owned source.
+Local workspace
 files have one owner representation, `{ contents, updatedAt }`; autosave,
 explicit source saves, cold-boot source arbitration, and the local transport
 all consume that same record. Each dirty source record is stored under the

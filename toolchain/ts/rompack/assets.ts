@@ -10,6 +10,11 @@ import type { CartManifest } from '../../../machine/ts/rompack/manifest';
 
 export type AudioType = 'sfx' | 'music' | 'ui';
 
+/** Source filename stem to the ROM packer's logical asset id. */
+export function assetIdFromSourceName(name: string): AssetId {
+	return name.replace(/\s+/g, '').toLowerCase();
+}
+
 export interface AudioMeta {
 	audiotype: AudioType;
 	priority: number;

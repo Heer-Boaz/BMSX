@@ -3,7 +3,6 @@ import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { getCodeAreaBounds } from '../../../ide/editor/ui/view/view';
 import { inputFocus } from '../../../ide/input/focus';
 import { editorSearchState, lineJumpState } from '../../../ide/workbench/contrib/code_editor/find/widget_state';
-import { createResourceState } from '../../../ide/workbench/contrib/resources/widget_state';
 import { renameController } from '../../../ide/workbench/contrib/code_editor/rename/controller';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/top_bar/menu';
@@ -88,7 +87,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 		{ keys: ['ControlLeft', 'KeyL'], field: lineJumpState.field, value: () => lineJumpState.value },
 		{ keys: ['ControlLeft', 'ShiftLeft', 'KeyO'], field: ide.editor.quickInput.field, value: () => ide.editor.quickInput.field.text },
 		{ keys: ['ControlLeft', 'Comma'], field: ide.editor.quickInput.field, value: () => ide.editor.quickInput.field.text },
-		{ keys: ['ControlLeft', 'KeyN'], field: createResourceState.field, value: () => createResourceState.path },
+		{ keys: ['ControlLeft', 'KeyN'], field: ide.editor.quickInput.field, value: () => ide.editor.quickInput.field.text },
 	]) {
 		await press(...prompt.keys);
 		check(prompt.field.focusTarget.hasFocus, `focus: ${prompt.keys.join('+')} binds the concrete prompt target`);

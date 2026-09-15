@@ -181,7 +181,18 @@ export function writeRemoteWorkspaceRecord(
 	relativePath: string,
 	record: WorkspaceRecord,
 ): Promise<void> {
-	return enqueueRemoteWorkspaceOperation(relativePath, () => workspaceRecordState.provider.write(relativePath, record));
+	return enqueueRemoteWorkspaceOperation(relativePath, () => workspaceRecordState.provider.write(relativePath, record, true));
+}
+
+/** Publish a new source only after the filesystem has admitted its name. */
+export async function createWorkspaceFile(
+	storage: KeyValueStorage,
+	projectRootPath: string,
+	relativePath: string,
+	record: WorkspaceRecord,
+): Promise<void> {
+	await enqueueRemoteWorkspaceOperation(relativePath, () => workspaceRecordState.provider.write(relativePath, record, false));
+	writeLocalWorkspaceRecord(storage, projectRootPath, relativePath, record);
 }
 
 export function deleteRemoteWorkspaceRecord(relativePath: string): Promise<void> {

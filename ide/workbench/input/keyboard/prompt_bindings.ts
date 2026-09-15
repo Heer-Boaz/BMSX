@@ -6,15 +6,6 @@ import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isS
 import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 
-function handleCreateResourceBinding(playerInput: PlayerInput, editor: CartEditor): boolean {
-	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !isKeyJustPressed('KeyN', playerInput)) {
-		return false;
-	}
-	consumeIdeKey('KeyN', playerInput);
-	editor.commands.execute('createResource');
-	return true;
-}
-
 function handleGlobalFindBinding(playerInput: PlayerInput, editor: CartEditor): boolean {
 	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !isShiftDown(playerInput) || isAltDown(playerInput) || !isKeyJustPressed('KeyF', playerInput)) {
 		return false;
@@ -70,8 +61,7 @@ function handleLineJumpBinding(playerInput: PlayerInput, editor: CartEditor): bo
 }
 
 export function handleEditorPromptBindings(playerInput: PlayerInput, editor: CartEditor): boolean {
-	return handleCreateResourceBinding(playerInput, editor)
-		|| handleGlobalFindBinding(playerInput, editor)
+	return handleGlobalFindBinding(playerInput, editor)
 		|| handleLocalFindBinding(playerInput, editor)
 		|| handleDefinitionAndReferenceBinding(playerInput, editor)
 		|| handleSelectAllBinding(playerInput)

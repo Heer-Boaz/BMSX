@@ -82,6 +82,8 @@ import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import {
+	discoverWorkspaceLuaSources,
+	createLuaResource,
 	applyAllWorkspaceSourceOverrides,
 	applyLuaTextModelSources,
 	saveLuaResourceSource,
@@ -209,6 +211,17 @@ class MockWorkspaceServer {
 	async fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
 		const method = init?.method || 'GET';
 		const url = new URL(String(input), 'http://workspace.local');
+		const directory = url.searchParams.get('directory');
+		if (directory !== null) {
+			const entries = new Map<string, 'file' | 'directory'>();
+			for (const path of this.files.keys()) {
+				if (!path.startsWith(`${directory}/`)) continue;
+				const tail = path.slice(directory.length + 1);
+				const slash = tail.indexOf('/');
+				entries.set(slash < 0 ? tail : tail.slice(0, slash), slash < 0 ? 'file' : 'directory');
+			}
+			return new Response(JSON.stringify([...entries].map(([name, type]) => ({ name, type }))));
+		}
 		let path = url.searchParams.get('path');
 		let record: WorkspaceRecord = null;
 		if (method === 'PUT') {
@@ -255,6 +268,7 @@ class MockWorkspaceServer {
 					}
 				}
 			if (blocked) await blocked;
+			if (new Headers(init?.headers).get('If-None-Match') === '*' && this.files.has(path!)) return new Response(null, { status: 412 });
 			this.files.set(path!, record!);
 			return new Response(null, { status: 204 });
 		}
@@ -554,6 +568,17 @@ test('canonical source cache keys identical resource paths by physical project p
 	const requestedPaths: string[] = [];
 	globalThis.fetch = async (input: RequestInfo | URL) => {
 		const url = new URL(String(input), 'http://workspace.local');
+		const directory = url.searchParams.get('directory');
+		if (directory !== null) {
+			const entries = new Map<string, 'file' | 'directory'>();
+			for (const path of this.files.keys()) {
+				if (!path.startsWith(`${directory}/`)) continue;
+				const tail = path.slice(directory.length + 1);
+				const slash = tail.indexOf('/');
+				entries.set(slash < 0 ? tail : tail.slice(0, slash), slash < 0 ? 'file' : 'directory');
+			}
+			return new Response(JSON.stringify([...entries].map(([name, type]) => ({ name, type }))));
+		}
 		requestedPaths.push(url.searchParams.get('path')!);
 		return new Response(JSON.stringify({ contents: 'return "slot 1"', updatedAt: 1 }), {
 			status: 200,
@@ -1893,4 +1918,55 @@ test('built-in resolution admits source without opening tabs or stealing the pre
 	assert.equal(editorTabGroup.activeTab, viewer);
 	assert.equal(editorTabGroup.tabs.length, 3);
 	assert.equal(await resolveTextFileModel(storage, sources, aem), first.workingCopy);
+});
+
+test('new Lua files belong to their explicit project and are published only after exclusive creation', async t => {
+	const storage = new MockStorage();
+	const { clock, server } = installWorkspaceServer(t, storage);
+	const system = sourceRegistry('-- BIOS', 'machine/bios');
+	const first = sourceRegistry('-- cart A', 'carts/first');
+	const second = sourceRegistry('-- cart B', 'carts/second');
+	const sources = createTestRuntimeSourceState(system, [first, second], -1);
+	const request = { domain: 1 as const, relativePath: 'experiments/actor.lua', contents: 'return {}' };
+	const path = 'carts/second/experiments/actor.lua';
+	server.files.set(path, { contents: '-- existing unregistered file', updatedAt: 10 });
+	const revision = second.revision;
+	await assert.rejects(createLuaResource(storage, clock, sources, request), /File already exists/);
+	assert.equal(second.revision, revision);
+	assert.equal(readLocalWorkspaceRecord(storage, second.projectRootPath, path), null);
+	assert.equal(server.files.get(path)!.contents, '-- existing unregistered file');
+	server.files.delete(path);
+	const resource = await createLuaResource(storage, clock, sources, request);
+	assert.equal(resource.domain, 1, 'BIOS execution does not select the new file owner');
+	assert.equal(resource.path, path);
+	assert.equal(second.module2lua['experiments/actor'].src, 'return {}');
+	assert.equal(first.records.length, 1);
+	assert.equal(system.records.length, 1);
+	assert.deepEqual(server.requests.map(request => request.method), ['PUT', 'PUT'], 'exclusive create does not race a separate existence probe');
+	await assert.rejects(createLuaResource(storage, clock, sources, request), /Lua module already exists/);
+	for (const relativePath of ['../outside.lua', '/absolute.lua', 'actor.txt', 'bmsx/assets.lua', 'test/ignored.lua', 'other/actor.lua']) {
+		await assert.rejects(createLuaResource(storage, clock, sources, { ...request, relativePath }));
+	}
+});
+
+
+test('workspace opening discovers saved Lua files without depending on open-tab metadata or ROM membership', async t => {
+	const storage = new MockStorage();
+	const { server } = installWorkspaceServer(t, storage);
+	workspaceRecordState.connected = true;
+	server.files.set('carts/project/experiments/actor.lua', { contents: 'return { enabled = true }', updatedAt: 20 });
+	server.files.set('carts/project/.bmsx/dirty/old.lua', { contents: '-- not a source', updatedAt: 20 });
+	server.files.set('carts/project/test/fixture.lua', { contents: '-- excluded by source rules', updatedAt: 20 });
+	const registry = sourceRegistry('-- cart', 'carts/project');
+	const sources = createTestRuntimeSourceState(sourceRegistry('-- BIOS', 'machine/bios'), [registry, null], 0);
+	await discoverWorkspaceLuaSources(storage, sources);
+	const resource = resolveRuntimeResource(sources, { domain: 0, path: 'carts/project/experiments/actor.lua' })!;
+	assert.equal(resource.source.type, 'lua');
+	assert.equal(registry.module2lua['experiments/actor'].src, 'return { enabled = true }');
+	assert.equal(registry.module2lua['experiments/actor'].program_module, true);
+	assert.equal(registry.records.length, 2);
+	assert.equal(sources.cartridgeBlua32MediaDirty[0], true);
+	const revision = registry.revision;
+	await discoverWorkspaceLuaSources(storage, sources);
+	assert.equal(registry.revision, revision, 'existing packaged and admitted files are not re-registered');
 });

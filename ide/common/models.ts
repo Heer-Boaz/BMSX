@@ -191,15 +191,6 @@ export type LineJumpState = {
 	value: string;
 };
 
-export type CreateResourceState = {
-	field: TextField;
-	visible: boolean;
-	path: string;
-	error: string;
-	working: boolean;
-	lastDirectory: string;
-};
-
 export type ActionPromptAction = 'hot-resume' | 'reboot' | 'close' | 'theme-toggle';
 
 export type EditorContextTokenKind = 'identifier' | 'keyword' | 'number' | 'string' | 'operator';

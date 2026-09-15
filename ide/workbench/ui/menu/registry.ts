@@ -89,6 +89,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'sourceEditReview.discard' },
 	],
 	'menubar.file': [
+		{ type: 'command', command: 'createResource' },
 		{ type: 'command', command: 'save' },
 		{ type: 'command', command: 'resources' },
 		{ type: 'command', command: 'keepEditor' },

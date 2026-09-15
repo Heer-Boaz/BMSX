@@ -356,3 +356,72 @@ test('picker uses the actual tiny font and draws only a bounded span of an unbou
 		assert.equal(selectedLabels, 3, 'primary label, description and detail all use selected foreground');
 	}
 });
+
+test('input boxes share focus and text history without filtering a hidden picker', async t => {
+	const input = createPicker(t);
+	const origin = inputFocus.createTarget(); origin.focus();
+	t.mock.method(input.model, 'filter', () => assert.fail('an input box has no pick provider'));
+	let accepted = '';
+	input.input('NEW FILE', 'Path', 'src/', async value => value, value => {
+		assert.equal(input.visible, false);
+		assert.equal(inputFocus.target, origin);
+		accepted = value;
+	});
+	assert.equal(input.inputBox, true);
+	insertValue(input.field, 'actor.lua');
+	inputFocus.executeCommand('undo');
+	assert.equal(input.field.text, 'src/');
+	inputFocus.executeCommand('redo');
+	input.update();
+	assert.equal(input.layout.bounds.bottom, input.layout.field.bottom + 8, 'no empty result list');
+	t.mock.method(editorViewState.font, 'advance', () => assert.fail('idle input measurement'));
+	for (let frame = 0; frame < 1000; frame += 1) input.update();
+	await input.accept();
+	assert.equal(accepted, 'src/actor.lua');
+	assert.equal(input.field.readOnly, false);
+});
+
+test('input submission shows failure in place, releases busy state and accepts a corrected value', async t => {
+	const input = createPicker(t);
+	let calls = 0, accepted = '';
+	const submission = Promise.withResolvers<string>();
+	input.input('NEW FILE', 'Path', 'exists.lua', value => {
+		calls += 1;
+		return calls === 1 ? submission.promise : Promise.resolve(value);
+	}, value => { accepted = value; });
+	const pending = input.accept();
+	await input.accept();
+	assert.equal(calls, 1, 'held Enter cannot submit twice');
+	assert.equal(input.field.readOnly, true);
+	submission.reject(new Error('File already exists'));
+	await pending;
+	assert.equal(input.visible, true);
+	assert.equal(input.field.readOnly, false);
+	assert.equal(input.message, 'File already exists');
+	input.update();
+	assert.deepEqual(input.layout.messageLines, ['File already exists']);
+	selectAll(input.field); insertValue(input.field, 'new.lua');
+	assert.equal(input.message, '');
+	await input.accept();
+	assert.equal(accepted, 'new.lua');
+});
+
+test('late input completion never closes a replacement, steals focus or navigates after cancellation', async t => {
+	const input = createPicker(t);
+	for (const outcome of ['resolve', 'reject'] as const) {
+		const submission = Promise.withResolvers<void>();
+		input.input('OLD', 'Path', '', () => submission.promise, () => assert.fail('cancelled input navigated'));
+		const pending = input.accept();
+		input.hide();
+		input.pick('NEW', 'Filter', () => new TextQuickPickProvider(items), () => {});
+		if (outcome === 'resolve') submission.resolve();
+		else submission.reject(new Error('late error'));
+		await pending;
+		assert.equal(input.visible, true);
+		assert.equal(input.inputBox, false);
+		assert.equal(input.title, 'NEW');
+		assert.equal(input.message, '');
+		assert.equal(input.field.readOnly, false);
+		assert.equal(inputFocus.target, input.field.focusTarget);
+	}
+});

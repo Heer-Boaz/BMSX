@@ -1,6 +1,7 @@
 // @ts-ignore
 import type { Stats } from 'fs';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
+import { assetIdFromSourceName } from '../../toolchain/ts/rompack/assets';
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
 import type { Polygon, RectBounds } from '../../machine/ts/common/rect';
 import type { vec2arr } from '../../machine/ts/common/vector';
@@ -483,7 +484,7 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 	const parsed = parse(filepath);
 	const stats: Stats = statSync(filepath);
 	const rawName = parsed.name;
-	const normalizedName = rawName.replace(/\s+/g, '').toLowerCase();
+	const normalizedName = assetIdFromSourceName(rawName);
 	let name = normalizedName;
 	const ext = parsed.ext.toLowerCase();
 	let type: resourcetype;

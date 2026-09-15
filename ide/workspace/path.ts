@@ -34,3 +34,25 @@ export function resolveWorkspacePath(path: string, projectRootPath: string | nul
 	}
 	return joinWorkspacePaths(projectRootPath, path);
 }
+
+/** User-entered path relative to a workspace folder, never outside that folder. */
+export function normalizeRelativeWorkspacePath(input: string): string {
+	const path = input.replace(/\\/g, '/');
+	if (path.startsWith('/') || /^[A-Za-z]:/.test(path)) {
+		throw new Error('Enter a path relative to the project folder.');
+	}
+	if (path.length === 0 || path.endsWith('/')) throw new Error('Enter a file name.');
+	const segments: string[] = [];
+	for (const segment of path.split('/')) {
+		if (segment === '' || segment === '.') continue;
+		if (segment === '..') {
+			if (segments.length === 0) throw new Error('The file must be inside the project folder.');
+			segments.pop();
+		} else {
+			if (/[<>:"|?*\x00-\x1f]/.test(segment)) throw new Error(`Invalid file name: ${segment}`);
+			segments.push(segment);
+		}
+	}
+	if (segments.length === 0) throw new Error('Enter a file name.');
+	return segments.join('/');
+}

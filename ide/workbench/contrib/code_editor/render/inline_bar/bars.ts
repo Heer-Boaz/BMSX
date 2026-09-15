@@ -1,12 +1,10 @@
 import * as constants from '../../../../../common/constants';
 import { api } from '../../../../../runtime/overlay_api';
 import { drawEditorText } from '../../../../../editor/render/text_renderer';
-import { drawCreateResourceErrorDialog } from '../../../../render/resource_panel';
 import { activeSearchMatchCount, getVisibleSearchResultEntries } from '../../find/search';
 import { editorViewState } from '../../../../../editor/ui/view/state';
 import { editorSearchState, lineJumpState } from '../../find/widget_state';
 import {
-	getCreateResourceBarBounds,
 	getLineJumpBarBounds,
 	getRenameBarBounds,
 	getSearchBarBounds,
@@ -16,7 +14,6 @@ import {
 import { measureText } from '../../../../../editor/common/text/layout';
 import { renderInlineBarField, renderInlineBarFrame } from './common';
 import { renameController } from '../../rename/controller';
-import { createResourceState } from '../../../resources/widget_state';
 
 type InlineSearchResultEntry = {
 	primary: string;
@@ -39,37 +36,6 @@ const drawSearchResultRow = (entry: InlineSearchResultEntry, rowTop: number): vo
 		drawEditorText(editorViewState.font, entry.secondary, paddingX, secondaryY, 0, constants.COLOR_SEARCH_SECONDARY_TEXT);
 	}
 };
-
-export function renderCreateResourceBar(): void {
-	const bounds = getCreateResourceBarBounds();
-	if (!bounds) return;
-	renderInlineBarFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_CREATE_RESOURCE_BACKGROUND, constants.COLOR_CREATE_RESOURCE_OUTLINE);
-
-	const fieldState = renderInlineBarField(
-		createResourceState.field,
-		'NEW FILE:',
-		4,
-		bounds.top + constants.CREATE_RESOURCE_BAR_MARGIN_Y,
-		createResourceState.field.focusTarget.hasFocus,
-		createResourceState.field.focusTarget.hasFocus,
-		constants.COLOR_CREATE_RESOURCE_TEXT,
-		'ENTER LUA PATH',
-		constants.COLOR_CREATE_RESOURCE_PLACEHOLDER,
-		editorViewState.spaceAdvance,
-	);
-
-	// Status or error overlay on the right
-	if (createResourceState.working) {
-		const status = 'CREATING...';
-		const statusWidth = measureText(status);
-		const fieldRight = fieldState.textX + fieldState.displayWidth + editorViewState.spaceAdvance;
-		const statusRightX = bounds.right - statusWidth - 4;
-		const statusX = fieldRight > statusRightX ? fieldRight : statusRightX;
-		drawEditorText(editorViewState.font, status, statusX, bounds.top + constants.CREATE_RESOURCE_BAR_MARGIN_Y, 0, constants.COLOR_CREATE_RESOURCE_TEXT);
-	} else if (createResourceState.error && createResourceState.error.length > 0) {
-		drawCreateResourceErrorDialog(createResourceState.error);
-	}
-}
 
 export function renderSearchBar(): void {
 	const bounds = getSearchBarBounds();

@@ -18,13 +18,13 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { ScrollbarPointerControl } from '../../ui/scrollbar_pointer';
 import { QuickPickModel, type QuickPickRenderRow } from './model';
 import type { QuickPickItem, QuickPickMatch, QuickPickProvider } from './provider';
-import { drawQuickPick, layoutQuickPick } from './render';
+import { drawQuickInput, layoutQuickInput } from './render';
 
-type QuickPickSession = {
-	readonly accept: (itemIndex: number) => void;
+type QuickInputSession = {
 	readonly returnFocus: InputFocusTarget | null;
 	readonly disposables: DisposableStore;
-};
+} & ({ readonly kind: 'pick'; readonly accept: (itemIndex: number) => void }
+	| { readonly kind: 'input'; readonly accept: () => Promise<void> });
 
 /** One transient workbench surface, independent of editor panes and their documents. */
 export class QuickInputController implements PointerCaptureTarget {
@@ -37,13 +37,15 @@ export class QuickInputController implements PointerCaptureTarget {
 		width: -1, height: -1, headerHeight: -1, font: null as object | null,
 		projectionRevision: -1, textRevision: 0, preparedStart: -1, preparedEnd: -1,
 		renderRows: [] as QuickPickRenderRow[],
+		messageLines: [] as string[],
 	};
 	public title = '';
 	public placeholder = '';
 	public titleText = '';
 	public placeholderText = '';
+	public message = '';
 	public labelsDirty = true;
-	private session: QuickPickSession | null = null;
+	private session: QuickInputSession | null = null;
 	private readonly scrollbarPointer = new ScrollbarPointerControl(pointerCapture, this.pointerScope);
 	private pressedRow: QuickPickMatch | undefined;
 	private pointerRevision = 0;
@@ -58,13 +60,15 @@ export class QuickInputController implements PointerCaptureTarget {
 		this.field.onDidChangeText(() => {
 			this.cancelPointer();
 			this.scrollbarPointer.cancelPointer();
-			this.model.filter(this.field.text);
+			if (this.session?.kind === 'pick') this.model.filter(this.field.text);
+			else { this.message = ''; this.labelsDirty = true; }
 			resetBlink();
 		});
 		this.field.focusTarget.onDidBlur(() => { this.hide(false); });
 	}
 
 	public get visible(): boolean { return this.session !== null; }
+	public get inputBox(): boolean { return this.session?.kind === 'input'; }
 
 	public pick<T extends QuickPickItem>(
 		title: string,
@@ -80,7 +84,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		this.field.focusTarget.focus();
 		const disposables = new DisposableStore();
 		const provider = provide(returnFocus, disposables);
-		this.session = { returnFocus, disposables, accept: index => accept(provider.items[index]) };
+		this.session = { kind: 'pick', returnFocus, disposables, accept: index => accept(provider.items[index]) };
 		this.title = title;
 		this.placeholder = placeholder;
 		this.model.setInput(provider);
@@ -88,6 +92,51 @@ export class QuickInputController implements PointerCaptureTarget {
 		setFieldText(this.field, '', true);
 		this.model.filter('');
 		this.scrollbarPointer.setInput(this.model.viewport.scrollbar);
+		this.update();
+		resetBlink();
+	}
+
+	/** Submission owns its operation; this surface owns feedback and focus lifetime. */
+	public input<T>(
+		title: string,
+		placeholder: string,
+		value: string,
+		submit: (value: string) => Promise<T>,
+		accept: (result: T) => void,
+	): void {
+		this.hide();
+		pointerCapture.cancel();
+		const returnFocus = inputFocus.target;
+		this.field.focusTarget.focus();
+		const session: QuickInputSession = {
+			kind: 'input', returnFocus, disposables: new DisposableStore(),
+			accept: async () => {
+				if (this.field.readOnly) return; // One outstanding submission per input session.
+				this.field.readOnly = true;
+				this.message = 'WORKING...';
+				this.labelsDirty = true;
+				let result: T;
+				try { result = await submit(this.field.text); }
+				catch (error) {
+					if (this.session === session) {
+						this.field.readOnly = false;
+						this.message = error instanceof Error ? error.message : String(error);
+						this.labelsDirty = true;
+					}
+					return;
+				}
+				// Cancelling/replacing the UI does not undo a completed operation or
+				// allow its late completion to navigate away from the new focus owner.
+				if (this.session !== session) return;
+				this.hide();
+				accept(result);
+			},
+		};
+		this.session = session;
+		this.title = title;
+		this.placeholder = placeholder;
+		this.labelsDirty = true;
+		setFieldText(this.field, value, true);
 		this.update();
 		resetBlink();
 	}
@@ -102,30 +151,34 @@ export class QuickInputController implements PointerCaptureTarget {
 		session.disposables.dispose();
 		this.model.clearInput();
 		this.layout.renderRows.length = 0;
+		this.message = '';
+		this.field.readOnly = false;
 		this.field.pointerSelecting = false;
 		if (restoreFocus) inputFocus.setTarget(session.returnFocus);
 		else this.field.focusTarget.release();
 	}
 
-	public accept(): void {
+	public accept(): void | Promise<void> {
+		const session = this.session!;
+		if (session.kind === 'input') return session.accept();
 		const list = this.model.list;
 		if (list.selectionIndex === -1) return; // A real user choice is required.
 		const index = list.rows[list.selectionIndex].itemIndex;
-		const accept = this.session!.accept;
+		const accept = session.accept;
 		this.hide();
 		accept(index);
 	}
 
 	public update(): void {
 		if (!this.visible) return;
-		layoutQuickPick(this);
-		this.scrollbarPointer.update();
+		layoutQuickInput(this);
+		if (!this.inputBox) this.scrollbarPointer.update();
 		if (this.pressedRow !== undefined && this.pointerRevision !== this.model.viewport.revision) this.cancelPointer();
 		this.textViewport.update(this.field, this.layout.field.right - this.layout.field.left - 6,
 			editorViewState.inlineFieldMetricsRef, editorViewState.font);
 	}
 
-	public draw(): void { if (this.visible) drawQuickPick(this); }
+	public draw(): void { if (this.visible) drawQuickInput(this); }
 
 	private moveSelection(delta: number): void {
 		const list = this.model.list;
@@ -143,7 +196,11 @@ export class QuickInputController implements PointerCaptureTarget {
 		if (isKeyJustPressed('Enter', input) || isKeyJustPressed('NumpadEnter', input)) {
 			consumeIdeKey('Enter', input);
 			consumeIdeKey('NumpadEnter', input);
-			this.accept();
+			void this.accept();
+			return;
+		}
+		if (this.inputBox) {
+			applyInlineFieldEditing(input, this.clipboard, this.field, INPUT_OPTIONS);
 			return;
 		}
 		if (isCtrlDown(input) && (isKeyJustPressed('Home', input) || isKeyJustPressed('End', input))) {
@@ -171,7 +228,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		this.update();
 		if (!snapshot.valid || !snapshot.insideViewport) { pointerHover.release(this); return; }
 		this.model.list.hoverIndex = -1;
-		if (this.scrollbarPointer.handlePointer(snapshot)) { pointerHover.release(this); return; }
+		if (!this.inputBox && this.scrollbarPointer.handlePointer(snapshot)) { pointerHover.release(this); return; }
 		if (this.field.pointerSelecting || point_in_rect(snapshot.viewportX, snapshot.viewportY, this.layout.field)) {
 			this.pointer.textLeft = this.layout.field.left + 3 - this.textViewport.offset;
 			this.pointer.pointerX = snapshot.viewportX;
@@ -180,7 +237,7 @@ export class QuickInputController implements PointerCaptureTarget {
 			if (applyInlineFieldPointer(this.field, this.pointer).requestBlinkReset) resetBlink();
 			return;
 		}
-		const index = this.model.rowIndexAtPosition(snapshot.viewportX, snapshot.viewportY);
+		const index = this.inputBox ? -1 : this.model.rowIndexAtPosition(snapshot.viewportX, snapshot.viewportY);
 		if (index >= 0) pointerHover.visit(this);
 		else pointerHover.release(this);
 		this.model.list.hoverIndex = index;
@@ -197,6 +254,7 @@ export class QuickInputController implements PointerCaptureTarget {
 	}
 
 	public handleWheel(delta: number): void {
+		if (this.inputBox) return;
 		this.cancelPointer();
 		this.scrollbarPointer.cancelPointer();
 		const view = this.model.viewport;

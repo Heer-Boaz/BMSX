@@ -1,5 +1,6 @@
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import { getActiveTab } from '../workbench/ui/tabs';
+import { openCreateResourcePrompt } from '../workbench/contrib/resources/create/index';
 import { showActionPrompt } from '../workbench/contrib/modal/action_prompt';
 import { TextEditorInput } from '../workbench/common/editor_input';
 import { saveTextFileWorkingCopy } from '../workbench/services/working_copy/text_file_save';
@@ -22,6 +23,7 @@ import type { RuntimeDebuggerState } from '../runtime/debugger_state';
 
 export function isEditorWorkspaceCommand(command: EditorCommandId): command is EditorWorkspaceCommandId {
 	switch (command) {
+		case 'createResource':
 		case 'hot-resume':
 		case 'reboot':
 		case 'save':
@@ -50,6 +52,9 @@ export function executeEditorWorkspaceCommand(
 	command: EditorWorkspaceCommandId,
 ): void {
 	switch (command) {
+		case 'createResource':
+			openCreateResourcePrompt(editor, sources, storage, clock);
+			return;
 		case 'save': {
 			const activeInput = getActiveTab();
 			if (activeInput instanceof TextEditorInput) for (const model of activeInput.getWorkingCopies()) {

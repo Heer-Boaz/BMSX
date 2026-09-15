@@ -33,6 +33,7 @@ import {
 } from './workspace/storage';
 import {
 	applyAllWorkspaceSourceOverrides,
+	discoverWorkspaceLuaSources,
 } from '../workspace/workspace';
 import {
 	workspaceDirtyRecords,
@@ -76,6 +77,7 @@ export async function initializeIdeFeatures(
 			sources,
 			workspaceFiles,
 		);
+		await discoverWorkspaceLuaSources(storage, sources);
 	} else {
 		await shutdownWorkspaceStorage();
 	}

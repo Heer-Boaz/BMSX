@@ -4,7 +4,6 @@ export type EditorSearchCommandId =
 	| 'symbolSearchGlobal'
 	| 'resourceSearch'
 	| 'runtimeErrorFocus'
-	| 'createResource'
 	| 'findGlobal'
 	| 'findLocal'
 	| 'lineJump'
@@ -32,6 +31,7 @@ export type EditorViewCommandId =
 	| 'wrap';
 
 export type EditorWorkspaceCommandId =
+	| 'createResource'
 	| 'hot-resume'
 	| 'reboot'
 	| 'save'
