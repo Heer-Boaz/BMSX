@@ -76,6 +76,7 @@
 		"run:libretro-host:wsl:sdl": "./build-libretro-host-wsl/bmsx_libretro_host --core ./dist/libretro_bmsx.so --system-dir ./dist --video sdl --backend gles2",
 		"run:libretro-host:wsl:fb": "./build-libretro-host-wsl/bmsx_libretro_host --core ./dist/libretro_bmsx.so --system-dir ./dist --video fb --backend software",
 		"clean:dist": "node scripts/clean-dist.mjs",
+		"clean:workspace-state": "node scripts/clean-workspace-state.mjs",
 		"fix:indent": "node scripts/fix-ts-indentation-safe.js",
 		"check:indent": "node scripts/fix-ts-indentation-safe.js --check",
 		"check:deps": "npm exec --yes --package=depcheck -- depcheck",

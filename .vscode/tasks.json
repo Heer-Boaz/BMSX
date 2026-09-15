@@ -162,6 +162,31 @@
 			}
 		},
 		{
+			"label": "CLEAN: workspace state (.bmsx)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"clean:workspace-state"
+			],
+			"problemMatcher": [],
+			"group": "build",
+			"icon": {
+				"id": "trash",
+				"color": "terminal.ansiYellow"
+			},
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "MAINTENANCE"
+			}
+		},
+		{
 			"label": "GAME ROMPACK BUILD",
 			"type": "shell",
 			"command": "npm",
