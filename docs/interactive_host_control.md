@@ -24,9 +24,20 @@ continues without requests. There is no implicit test timeout.
 
 ## JSON lines
 
-The client adds numeric request IDs. Replies are `{id,result}` or `{id,error}`;
-requests execute in order. Press and release are separate requests so both edges
-reach the UI. Pointer coordinates refer to captured host-surface pixels.
+The client adds numeric request IDs. Requests execute in order; successful
+actions print `{id,result}` and errors abort the rest of that JSON line. Pointer
+coordinates refer to captured host-surface pixels. A line can contain one action
+or an array. Client gestures expand into the same wire requests on either host;
+press, motion and release acknowledgements preserve their host-frame boundaries.
+
+| client `execute` | fields |
+| --- | --- |
+| `press` | physical `keys`, e.g. `ControlLeft+KeyS`; releases the chord after its press frame |
+| `click` | `x`, `y`, optional `button` (default `primary`) |
+| `drag` | `path`: `[[x,y], ...]`, optional `button`; one host frame per point |
+| `paste` | `text`; sets clipboard, then presses Ctrl+V (does not select or edit directly) |
+
+Low-level wire requests remain available for holds across decisions:
 
 | `execute` | fields | result |
 | --- | --- | --- |
@@ -40,14 +51,14 @@ Keys use DOM physical codes. Buttons: `primary`, `secondary`, `aux`, `back`,
 `forward`; positive wheel is down. Select+RB opens Studio:
 
 ```json
-{"execute":"input","events":[{"type":"key","code":"ControlRight","down":true},{"type":"key","code":"ShiftRight","down":true}]}
-{"execute":"input","events":[{"type":"key","code":"ShiftRight","down":false},{"type":"key","code":"ControlRight","down":false}]}
-{"execute":"capture"}
+[{"execute":"press","keys":"ControlRight+ShiftRight"},{"execute":"capture"}]
 ```
 
 Captures show normal game/IDE/menu pixels. Input acknowledgement does not imply
 that asynchronous editor queries have finished. Clipboard-set does not edit a
-document: use the normal Paste shortcut.
+document: use the normal Paste shortcut. For an automation PTY, use
+`stty -icanon -echo; node scripts/host_control.mjs PORT` so the terminal driver
+does not truncate long JSON lines; ordinary piped stdin needs no terminal setup.
 
 ## Owners and references
 
