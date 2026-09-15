@@ -30,7 +30,6 @@ import {
 } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import type { Blua32SymbolsImage } from '../../toolchain/ts/rompack/blua32_symbols';
 
-const SYSTEM_PROJECT_ROOT_PATH = 'machine/bios';
 
 export const enum Blua32GlobalRegisterFile {
 	Global = 1,
@@ -161,7 +160,6 @@ export function createRuntimeSourceState(
 ): RuntimeSourceState {
 	const systemSource = new RomSourceStack([{ id: systemLayer.id, index: systemLayer.index, bytes: systemLayer.bytes }]);
 	const systemLuaSources = buildLuaSources(systemSource, systemSource, systemLayer.index, 'system');
-	const systemProjectRootPath = systemLuaSources.projectRootPath || SYSTEM_PROJECT_ROOT_PATH;
 	const cartridgeSlots: [RuntimeCartridgeSourceState | null, RuntimeCartridgeSourceState | null] = [null, null];
 	const cartridgeToolingImages: [Blua32SourceImage | null, Blua32SourceImage | null] = [null, null];
 	for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
@@ -205,7 +203,7 @@ export function createRuntimeSourceState(
 		luaResources: [],
 		systemDataResources: [],
 		activeResources: [],
-		systemProjectRootPath,
+		systemProjectRootPath: systemLuaSources.projectRootPath,
 		activeCartridgeSlot: SYSTEM_RESOURCE_DOMAIN,
 		realtimeCompileOptLevel: 3,
 		systemBlua32MediaDirty: false,

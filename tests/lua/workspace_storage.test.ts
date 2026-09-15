@@ -1938,7 +1938,8 @@ test('new Lua files belong to their explicit project and are published only afte
 	server.files.delete(path);
 	const resource = await createLuaResource(storage, clock, sources, request);
 	assert.equal(resource.domain, 1, 'BIOS execution does not select the new file owner');
-	assert.equal(resource.path, path);
+	assert.equal(resource.path, 'experiments/actor.lua');
+	assert.equal(second.module2lua['experiments/actor'].normalized_source_path, path);
 	assert.equal(second.module2lua['experiments/actor'].src, 'return {}');
 	assert.equal(first.records.length, 1);
 	assert.equal(system.records.length, 1);
@@ -1960,7 +1961,7 @@ test('workspace opening discovers saved Lua files without depending on open-tab 
 	const registry = sourceRegistry('-- cart', 'carts/project');
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- BIOS', 'machine/bios'), [registry, null], 0);
 	await discoverWorkspaceLuaSources(storage, sources);
-	const resource = resolveRuntimeResource(sources, { domain: 0, path: 'carts/project/experiments/actor.lua' })!;
+	const resource = resolveRuntimeResource(sources, { domain: 0, path: 'experiments/actor.lua' })!;
 	assert.equal(resource.source.type, 'lua');
 	assert.equal(registry.module2lua['experiments/actor'].src, 'return { enabled = true }');
 	assert.equal(registry.module2lua['experiments/actor'].program_module, true);

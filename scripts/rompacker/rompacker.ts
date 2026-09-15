@@ -469,7 +469,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		domain: 'system',
 	});
 	await runBIOSStep(TASK.BIOS_FINALIZE, () => finalizeRompack(BIOSRomName, {
-		projectRootPath: '',
+		projectRootPath: BIOSVirtualRoot,
 		debug,
 		blua32: BIOSBlua32,
 		layout: BIOSLayout,

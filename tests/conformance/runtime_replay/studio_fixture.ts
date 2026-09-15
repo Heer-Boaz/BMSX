@@ -1,5 +1,5 @@
 import { HttpWorkspaceRecordProvider } from '../../../ide/browser/workspace_records';
-import { resolveWorkspacePath, stripProjectRootPrefix } from '../../../ide/workspace/path';
+import { stripProjectRootPrefix } from '../../../ide/workspace/path';
 import { runtimeSourceProjectRootPath } from '../../../ide/runtime/sources';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { getCodeAreaBounds, resolveTextPositionBounds } from '../../../ide/editor/ui/view/view';
@@ -208,7 +208,7 @@ export async function createStudioLuaSource(test: StudioFixture, path: string, s
 	await test.press('Enter');
 	await test.until(() => !test.ide.editor.quickInput.visible, `New File creates ${path}`);
 	const model = test.harness.getActiveEditorDocument().model;
-	check(model.resource.path === resolveWorkspacePath(path, root), 'New File opens its actual working copy');
+	check(model.resource.path === stripProjectRootPrefix(path, root), 'New File opens its actual working copy');
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 	return model;
 }

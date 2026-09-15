@@ -373,10 +373,10 @@ export async function buildCartridgeToolingLayer(image: CartridgePackage): Promi
 }
 
 export async function buildSystemToolingLayer(image: RomImage): Promise<RomToolingLayer<'system'>> {
-	const { entries } = await loadRomAssetListFromHeader(image.bytes, image.header, 'system');
+	const { entries, projectRootPath } = await loadRomAssetListFromHeader(image.bytes, image.header, 'system');
 	const index: CartridgeIndex = {
 		entries,
-		projectRootPath: '',
+		projectRootPath,
 		cart_manifest: null,
 	};
 	const source = new RomSourceStack([{ id: 'system', index, bytes: image.bytes }]);
