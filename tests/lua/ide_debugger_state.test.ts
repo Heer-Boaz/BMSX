@@ -20,7 +20,11 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import type { Table } from '../../machine/ts/machine/cpu/table';
 import type { Value } from '../../machine/ts/machine/cpu/value';
-import { RuntimeGuestCallPlan } from '../../ide/runtime/guest_call';
+import { RuntimeGuestCallPlan, scheduleRuntimeGuestCall } from '../../ide/runtime/guest_call';
+import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
+import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
+import type { HostAudioOutput } from '../../hosts/common/audio_output';
+import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import { compileLuaSource } from './cpu_test_harness';
@@ -78,6 +82,25 @@ function createDebuggerHarness(source: string, optLevel: 0 | 3): DebuggerHarness
 		state: createRuntimeDebuggerState(runtime, sources),
 	};
 }
+
+test('a revoked evaluation never enters the CPU after asynchronous GPU admission', async () => {
+	const { runtime, state } = createDebuggerHarness('return function() return 42 end', 0);
+	const cpu = runtime.machine.cpu;
+	cpu.reset(); cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET);
+	const values: Value[] = []; cpu.readCompletionValues(values);
+	const depth = cpu.getFrameDepth(), guest = new SuspendedGuestSession(runtime);
+	guest.onDidInvalidate(() => assert.fail('a cancelled evaluation cannot invalidate the guest'));
+	const readback = Promise.withResolvers<void>();
+	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as HostAudioOutput,
+		{ backend: { finishGxGpuReadbacks: () => readback.promise } } as VideoPresenter);
+	let current = true, cancelled = false;
+	const pending = scheduleRuntimeGuestCall(runtime, guest, state, tasks,
+		() => current ? { domain: -1, closure: values[0] as Closure, args: () => [] } : undefined,
+		() => assert.fail('cancelled evaluation started'), completed => { assert.equal(completed, false); cancelled = true; }, assert.fail);
+	current = false; readback.resolve(); await pending;
+	assert.equal(cancelled, true); assert.equal(state.plans.controlActive, false);
+	assert.equal(cpu.getFrameDepth(), depth);
+});
 
 for (const optLevel of [0, 3] as const) test(`workbench evaluation pauses the actual call without undoing mutations (O${optLevel})`, () => {
 	const harness = createDebuggerHarness(`

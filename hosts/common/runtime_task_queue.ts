@@ -6,7 +6,7 @@ export const enum RuntimeTaskKind { Mutation, History }
 export class RuntimeTaskQueue {
 	private tail = Promise.resolve();
 	private pending = 0;
-	private mutedPending = 0;
+	private mutationPending = 0;
 	private failed = false;
 
 	public constructor(
@@ -19,6 +19,11 @@ export class RuntimeTaskQueue {
 		return this.pending === 0 && !this.failed;
 	}
 
+	/** Background history work defers CPU admission, not the user's next edit intent. */
+	public get mutationReady(): boolean {
+		return this.mutationPending === 0 && !this.failed;
+	}
+
 	public schedule(
 		task: () => void | Promise<void>,
 		onError: (error: unknown) => void,
@@ -29,7 +34,7 @@ export class RuntimeTaskQueue {
 			this.failed = false;
 		}
 		if (muteAudio) {
-			this.mutedPending += 1;
+			this.mutationPending += 1;
 			this.audioOutput.muteRuntimeTask(true);
 		}
 		this.pending += 1;
@@ -45,8 +50,8 @@ export class RuntimeTaskQueue {
 				onError(error);
 			} finally {
 				this.pending -= 1;
-				if (muteAudio) this.mutedPending -= 1;
-				if (!this.failed && this.mutedPending === 0) {
+				if (muteAudio) this.mutationPending -= 1;
+				if (!this.failed && this.mutationPending === 0) {
 					this.audioOutput.muteRuntimeTask(false);
 				}
 			}

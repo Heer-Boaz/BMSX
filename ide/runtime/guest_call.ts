@@ -14,6 +14,10 @@ export type RuntimeGuestCall = {
 	readonly args: () => readonly Value[];
 };
 
+export type RuntimeGuestCallObserver = (completed: boolean, values: readonly Value[]) => void;
+/** A requester can revoke a queued evaluation before it enters the CPU. */
+export type RuntimeGuestCallExecutor = (prepare: () => RuntimeGuestCall | undefined, observer?: RuntimeGuestCallObserver) => void;
+
 /** A debugger function evaluation, executed by the ordinary scheduled CPU. */
 export class RuntimeGuestCallPlan implements RuntimeDebuggerControlPlan {
 	public readonly executionDomainMask = ALL_EXECUTION_DOMAINS_MASK;
@@ -38,19 +42,20 @@ export class RuntimeGuestCallPlan implements RuntimeDebuggerControlPlan {
 		this.finish(false);
 		return RuntimeDebuggerPlanResult.Active;
 	}
-	public discard(): void {}
+	public discard(): void { this.finish(false); }
 }
 
 /** Prepare against the current suspended heap, never a popup's expired borrow. */
 export function scheduleRuntimeGuestCall(
 	runtime: Runtime, guest: SuspendedGuestSession, debuggerState: RuntimeDebuggerState, tasks: RuntimeTaskQueue,
-	prepare: () => RuntimeGuestCall,
+	prepare: () => RuntimeGuestCall | undefined,
 	started: () => void,
 	finished: (completed: boolean) => void,
 	failed: (error: unknown) => void,
 ): Promise<void> {
 	return tasks.schedule(() => {
 		const call = prepare();
+		if (call === undefined) { finished(false); return; }
 		guest.invalidate();
 		runtime.history.stop();
 		const cpu = runtime.machine.cpu;

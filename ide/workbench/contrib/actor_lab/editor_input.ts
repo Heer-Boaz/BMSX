@@ -5,6 +5,8 @@ import { ScrollableWorkbenchTree } from '../../ui/scrollable_tree';
 import type { ActorNode } from './runtime';
 import type { WorkbenchTreeNode } from '../../ui/tree_view';
 import type { ResourceDomain } from '../../../common/resource';
+import { ActorTimelineTransport } from './timeline';
+import { ActorTimelineLayout } from './timeline_layout';
 
 /** View state only. Borrowed rows are released before guest execution. */
 export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'> {
@@ -16,6 +18,8 @@ export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'>
 	public dirty = true;
 	public status = 'CHOOSE A RUNNING ACTOR';
 	public readonly outline = new ScrollableWorkbenchTree<ActorNode>();
+	public readonly timeline = new ActorTimelineTransport();
+	public readonly timelineLayout = new ActorTimelineLayout();
 	public readonly actionBar = createWorkbenchActionBar('actorLab.title');
 	public readonly layout: FullWidthWorkbenchLayout = {
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
@@ -27,6 +31,7 @@ export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'>
 		if (selected !== undefined) this.selectionHashId = selected.element.hashId;
 		releaseActorBorrows(this.outline.roots);
 		if (heapReplaced) {
+			this.timeline.clear();
 			this.actorHashId = 0; this.selectionHashId = 0; this.running = false;
 			this.outline.roots.length = 0; this.outline.rows.length = 0; this.outline.selectionIndex = -1;
 		}

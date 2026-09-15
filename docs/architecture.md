@@ -1020,11 +1020,24 @@ Function evaluations run with the workbench visible, unlike foreground Hot
 Resume recovery. Their control-plan owner retains explicit running/suspended
 intent; Run > Pause/Continue Lua Call suspends the real call stack without
 unwinding mutations. Popups temporarily hold execution, and a retained faulted
-call requires recovery. Ordinary host pause reasons still apply. This follows
+call requires recovery. Like stepping, evaluation retains but bypasses requested
+pause; independent initialization/fullscreen/launch holds still apply. This follows
 the separation between asynchronous debugger evaluation and editor presentation
 in [VS Code](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/debugModel.ts)
 and [LLDB's function-call plans](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/lldb/source/Target/ThreadPlanCallFunction.cpp),
 not LLDB's register-checkpoint restoration.
+
+Actor Lab's live timeline slider calls the selected component's `scrub_time`;
+cartlib owns sampling and scrub-event policy. It does not advance a world clock,
+rewrite source or reconstruct authored curves from compiled playback data.
+Like [Godot's animation seek control](https://github.com/godotengine/godot/blob/4.5/editor/animation/animation_player_editor_plugin.cpp),
+the control requests a destination and displays runtime readback. Only the latest
+pending destination survives an active evaluation, following
+[VS Code's Throttler](https://github.com/microsoft/vscode/blob/main/src/vs/base/common/async.ts).
+Background history tasks defer call admission without disabling the control.
+Target/program replacement, lost interaction and failed/discarded evaluations
+revoke pending requests; they never roll back an already executed sample.
+Editor-pane replacement also revokes evaluations still awaiting CPU admission.
 
 The Run menu exposes one checked Pause toggle, without a gameplay keyboard
 binding. Toggling it off explicitly takes over a reviewed position and releases

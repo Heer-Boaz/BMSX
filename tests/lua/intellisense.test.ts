@@ -1,4 +1,7 @@
 import { readActorMethods } from '../../ide/workbench/contrib/actor_lab/methods';
+import { ActorTimelineTransport } from '../../ide/workbench/contrib/actor_lab/timeline';
+import type { ActorNode } from '../../ide/workbench/contrib/actor_lab/runtime';
+import type { RuntimeGuestCall, RuntimeGuestCallObserver } from '../../ide/runtime/guest_call';
 import type { Table } from '../../machine/ts/machine/cpu/table';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -178,6 +181,66 @@ function createIntellisenseRuntime(source: string, optLevel: 0 | 3 = 0, modules:
 		analysis: buildLuaSemanticWorkspaceSnapshot([{ path: sourcePath, source }]).getFileData(sourcePath)!,
 	};
 }
+
+test('live timeline transport coalesces requests, reads guest results and revokes expired requests', () => {
+	const { runtime, bridge } = createIntellisenseRuntime(`
+target = { position_ms = 0, program = { duration_ms = 1000 } }
+component = {}
+function component:scrub_time(key, time)
+	target.position_ms = time
+	target.sample = time * 2
+	return target
+end
+`);
+	const cpu = runtime.machine.cpu, guest = bridge.suspendedGuest;
+	cpu.reset(); cpu.runUntilDepth(0, 100_000);
+	const target = guest.global('target') as Table, component = guest.global('component') as Table;
+	const node: ActorNode = { kind: 'timeline', hashId: target.hashId, label: 'test', displayLabel: 'test',
+		value: target, receiver: component, component, key: null, active: false, stateKeys: [] };
+	const transport = new ActorTimelineTransport();
+	let call: RuntimeGuestCall | undefined, observer: RuntimeGuestCallObserver | undefined;
+	const applied: number[] = [];
+	let checkpointPending = false;
+	const update = () => {
+		transport.refresh(node, false, guest, true, call === undefined);
+		transport.executePending(node, -1, guest, !checkpointPending && call === undefined, (prepare, finished) => {
+			assert.equal(call, undefined, 'one admitted evaluation, not an input queue');
+			call = prepare(); observer = finished;
+		});
+	};
+	const complete = (success: boolean) => {
+		const values = [];
+		if (success) {
+			const args = call!.args(); applied.push(args[2] as number);
+			guest.invalidate(); cpu.beginCompletionClosureInExecutionDomain(call!.domain, call!.closure, args);
+			cpu.runUntilDepth(0, 100_000); cpu.readCompletionValues(values);
+		}
+		call = undefined; observer!(success, values);
+	};
+	update(); transport.request(100); update();
+	transport.request(200); update(); transport.request(300); update();
+	complete(true); checkpointPending = true; update();
+	assert.equal(transport.slider.enabled, true, 'background checkpoint must not cancel focus or the drag');
+	assert.equal(call, undefined, 'execution still waits for the checkpoint');
+	checkpointPending = false; update(); complete(true); update();
+	assert.deepEqual(applied, [100, 300]);
+	assert.equal(transport.positionLabel, '300 MS');
+	assert.equal(transport.slider.value, 300);
+	assert.equal(guest.readStringMember(target, 'sample'), 600);
+	transport.request(400); update(); transport.request(500); complete(false); update();
+	assert.equal(call, undefined, 'fault/discard must not continue a queued scrub');
+	transport.request(600); update();
+	const expired = observer!;
+	transport.clear(); call = undefined; update(); transport.request(700); update();
+	expired(false); complete(true); update();
+	assert.equal(transport.slider.value, 700, 'an expired call cannot clear a newer target session');
+	assert.equal(guest.readStringMember(target, 'sample'), 1400);
+	let queued: () => RuntimeGuestCall | undefined;
+	transport.request(800);
+	transport.executePending(node, -1, guest, true, prepare => { queued = prepare; });
+	transport.clear();
+	assert.equal(queued!(), undefined, 'replacement before CPU admission revokes the queued evaluation');
+});
 
 function runtimeWithPausedCpuLocal(source: string) {
 	const harness = createIntellisenseRuntime(source);

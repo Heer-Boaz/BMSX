@@ -319,13 +319,14 @@ export class RuntimeCartEditor implements CartEditor {
 		this.sceneEditor = new SceneEditorController(this.sources, this.editorPanes, this.navigation);
 		this.actorLab = new ActorLabController(sources, luaTooling.suspendedGuest, runtime.machine.cpu,
 			this.quickInput, this.editorPanes, this.navigation,
-			(prepare, didComplete) => { void scheduleRuntimeGuestCall(runtime, luaTooling.suspendedGuest, debuggerState, runtimeTasks, prepare,
+			(prepare, observer) => { void scheduleRuntimeGuestCall(runtime, luaTooling.suspendedGuest, debuggerState, runtimeTasks, prepare,
 				() => { execution.requestExecution(false); },
 				completed => {
-					if (completed) this.actorLab.didCompleteCall(didComplete);
+					this.actorLab.didFinishCall(completed, observer);
 				},
-				error => this.handleRuntimeTaskError(error, 'Actor operation failed')); },
-			() => runtimeTasks.ready && !execution.launchPending && !scenarioRuns.active && !debuggerState.plans.mutationActive && !rewind.active,
+				error => { this.actorLab.didFinishCall(false, observer); this.handleRuntimeTaskError(error, 'Actor operation failed'); }); },
+			runtimeTasks,
+			() => runtimeTasks.mutationReady && !execution.launchPending && !scenarioRuns.active && !debuggerState.plans.mutationActive && !rewind.active,
 			execution);
 
 		const behaviorRegistrations = new BehaviorRegistrationIndex(this.sources);

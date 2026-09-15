@@ -4,8 +4,9 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { api } from '../../../runtime/overlay_api';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import type { ActorLabInput } from './editor_input';
+import { drawWorkbenchSlider } from '../../render/slider';
 
-export function drawActorLab(input: ActorLabInput, commands: EditorCommandEnablement, playing: boolean): void {
+export function drawActorLab(input: ActorLabInput, commands: EditorCommandEnablement, playing: boolean, sliderFocused: boolean): void {
 	const { layout, outline } = input;
 	const font = editorViewState.font.renderFont();
 	const color = colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
@@ -28,5 +29,15 @@ export function drawActorLab(input: ActorLabInput, commands: EditorCommandEnable
 	if (outline.rows.length === 0) api.blit_text_inline_with_font(input.status, 4, tree.contentTop + 3, 0, color, font);
 	api.popClipRect();
 	outline.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
+	const timeline = input.timeline;
+	if (timeline.visible) {
+		const { top, label, positionLeft, durationLeft, endLabelTop } = input.timelineLayout;
+		api.fill_rect(0, top, layout.right, top + 1, 0, colors.SCROLLBAR_THUMB_COLOR);
+		api.blit_text_inline_with_font(label, 4, top + 4, 0, color, font);
+		api.blit_text_inline_with_font(timeline.positionLabel, positionLeft, top + 4, 0, color, font);
+		drawWorkbenchSlider(timeline.slider, sliderFocused);
+		api.blit_text_inline_with_font('0 MS', 4, endLabelTop, 0, color, font);
+		api.blit_text_inline_with_font(timeline.durationLabel, durationLeft, endLabelTop, 0, color, font);
+	}
 	api.popClipRect();
 }

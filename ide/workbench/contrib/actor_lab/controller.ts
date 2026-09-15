@@ -1,4 +1,5 @@
 import type { HostExecutionControl } from '../../../../hosts/common/execution_control';
+import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
 import { COLOR_STATUS_TEXT } from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { CPU } from '../../../../machine/ts/machine/cpu/cpu';
@@ -7,7 +8,7 @@ import type { Table } from '../../../../machine/ts/machine/cpu/table';
 import { valueString, type Value } from '../../../../machine/ts/machine/cpu/value';
 import { readRuntimeLuaModuleCapture, readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
 import { prepareLuaArguments, prepareLuaLiteral, type PreparedLuaLiteral } from '../../../runtime/lua_literal';
-import type { RuntimeGuestCall } from '../../../runtime/guest_call';
+import type { RuntimeGuestCallExecutor, RuntimeGuestCallObserver } from '../../../runtime/guest_call';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { EditorPanes } from '../../services/editor/editor_panes';
@@ -31,6 +32,12 @@ export class ActorLabController {
 	private current: ActorLabInput | undefined;
 	private projection: ActorProjection;
 	private readonly completionValues: Value[] = [];
+	public readonly canExecute = () => this.tasks.ready && this.canInteract();
+	public readonly execute: RuntimeGuestCallExecutor = (prepare, observer) => {
+		// Pane replacement releases its borrowed rows while GPU admission may still await.
+		const generation = this.panes.openGeneration;
+		this.schedule(() => this.panes.openGeneration === generation ? prepare() : undefined, observer);
+	};
 	public constructor(
 		private readonly sources: RuntimeSourceState,
 		public readonly guest: SuspendedGuestSession,
@@ -38,8 +45,9 @@ export class ActorLabController {
 		private readonly quickInput: QuickInputController,
 		private readonly panes: EditorPanes,
 		private readonly navigation: EditorNavigationController,
-		private readonly execute: (prepare: () => RuntimeGuestCall, completed?: (values: readonly Value[]) => void) => void,
-		public readonly canExecute: () => boolean,
+		private readonly schedule: RuntimeGuestCallExecutor,
+		private readonly tasks: RuntimeTaskQueue,
+		public readonly canInteract: () => boolean,
 		public readonly execution: HostExecutionControl,
 	) {
 		guest.onDidInvalidate(reason => this.current?.invalidate(reason === 'heap-replaced'));
@@ -78,13 +86,15 @@ export class ActorLabController {
 		if (input.running) this.execution.requestExecution(true);
 	}
 
-	public didCompleteCall(completed?: (values: readonly Value[]) => void): void {
-		this.cpu.readCompletionValues(this.completionValues);
-		completed?.(this.completionValues);
-		const message = this.completionValues.length === 0 ? 'Actor operation completed.'
-			: `Result: ${this.completionValues.map(value => this.guest.previewValue(value, 1, 4)).join(', ')}`;
+	public didFinishCall(completed: boolean, observer?: RuntimeGuestCallObserver): void {
+		if (completed) this.cpu.readCompletionValues(this.completionValues);
+		if (observer !== undefined) observer(completed, this.completionValues);
+		else if (completed) {
+			const message = this.completionValues.length === 0 ? 'Actor operation completed.'
+				: `Result: ${this.completionValues.map(value => this.guest.previewValue(value, 1, 4)).join(', ')}`;
+			showEditorMessage(message, COLOR_STATUS_TEXT, 4);
+		}
 		this.completionValues.length = 0;
-		showEditorMessage(message, COLOR_STATUS_TEXT, 4);
 	}
 
 	public selected(input: ActorLabInput): ActorNode | undefined { return input.outline.rows[input.outline.selectionIndex]?.element; }
@@ -206,7 +216,8 @@ export class ActorLabController {
 					const world = runtimeWorld(this.sources, this.guest, input.domain)!;
 					return { domain: input.domain, closure: this.guest.readStringMember(world, 'spawn') as Closure,
 						args: () => [world, choice.id, options(this.cpu)] };
-				}, values => {
+				}, (completed, values) => {
+					if (!completed) return;
 					input.actorHashId = (values[0] as Table).hashId;
 					input.selectionHashId = input.actorHashId;
 					input.dirty = true;

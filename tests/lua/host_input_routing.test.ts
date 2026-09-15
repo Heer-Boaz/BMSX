@@ -1,6 +1,7 @@
 import { HostExecutionControl, HostPauseReason } from '../../hosts/common/execution_control';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { HostRewind } from '../../hosts/common/rewind';
+import { RuntimeTaskKind, RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -57,6 +58,22 @@ test('a pending launch holds execution independently of user pause and stepping'
 	assert.equal(execution.userPaused, true);
 	assert.equal(execution.executionBlocked(), true);
 	assert.equal(execution.executionBlocked(true), false);
+});
+
+test('background history defers CPU admission without disabling edit intent', async () => {
+	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as HostAudioOutput,
+		{ backend: { async finishGxGpuReadbacks() {} } } as VideoPresenter);
+	const checkpoint = Promise.withResolvers<void>();
+	const history = tasks.schedule(() => checkpoint.promise, assert.fail, RuntimeTaskKind.History);
+	assert.equal(tasks.ready, false);
+	assert.equal(tasks.mutationReady, true);
+	const mutation = tasks.schedule(() => {}, assert.fail);
+	assert.equal(tasks.mutationReady, false);
+	checkpoint.resolve(); await history; await mutation;
+	assert.equal(tasks.ready, true); assert.equal(tasks.mutationReady, true);
+	const failed = new Error('task failed');
+	await tasks.schedule(() => { throw failed; }, error => assert.equal(error, failed));
+	assert.equal(tasks.ready, false); assert.equal(tasks.mutationReady, false);
 });
 
 function createGamepadInput(clock: HostClock): { input: Input; gamepad: GamepadDevice } {
