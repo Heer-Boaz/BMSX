@@ -6,13 +6,11 @@ import type { CPU } from '../../machine/ts/machine/cpu/cpu';
 import {
 	relocatedCallSitePc,
 	relocatedContinuationPc,
-	relocatedInstructionPc,
 	type Blua32ExecutionImageRevision,
 } from '../../toolchain/ts/rompack/blua32_revision';
 
 export type HotResumeRevision = {
 	readonly previousImage: Blua32ImageLayout;
-	readonly freshImage: Blua32ImageLayout;
 	readonly revision: Blua32ExecutionImageRevision;
 };
 
@@ -35,9 +33,7 @@ const EPC_WRITE = 0;
 const EPC_WORD = 1;
 const NMI_RETURN_EPC_WRITE = 2;
 const NMI_RETURN_EPC_WORD = 3;
-const LAST_PC_WRITE = 4;
-const LAST_PC_WORD = 5;
-const LATCH_WORDS = 6;
+const LATCH_WORDS = 4;
 
 export function buildHotResumeRelocation(
 	cpu: CPU,
@@ -152,21 +148,9 @@ export function buildHotResumeRelocation(
 		}
 	}
 
-	const lastPcTarget = revisions[cpu.readLastExecutionDomain() + 1];
-	if (lastPcTarget !== null) {
-		const pc = relocatedInstructionPc(
-			lastPcTarget.revision,
-			lastPcTarget.previousImage,
-			lastPcTarget.freshImage,
-			cpu.lastPc,
-		);
-		if (pc < 0) {
-			unmappedWords.push(`last instruction 0x${cpu.lastPc.toString(16)}`);
-		} else {
-			relocation[latchBase + LAST_PC_WRITE] = 1;
-			relocation[latchBase + LAST_PC_WORD] = pc;
-		}
-	}
+	// lastPc/lastExecutionDomain describe a past fetch, not a continuation.
+	// In particular, a completed debugger call has no retained frame to resume.
+	// ROM replacement must not rewrite that history or require it to be resumable.
 
 	if (unmappedWords.length > 0) {
 		throw new Error(
@@ -228,8 +212,5 @@ export function applyHotResumeRelocation(cpu: CPU, relocation: Uint32Array): voi
 	}
 	if (relocation[latchBase + NMI_RETURN_EPC_WRITE] !== 0) {
 		cpu.writeNmiReturnEpcWord(relocation[latchBase + NMI_RETURN_EPC_WORD]);
-	}
-	if (relocation[latchBase + LAST_PC_WRITE] !== 0) {
-		cpu.lastPc = relocation[latchBase + LAST_PC_WORD];
 	}
 }

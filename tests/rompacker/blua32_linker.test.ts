@@ -41,7 +41,7 @@ import {
 } from '../../toolchain/ts/rompack/blua32_linker';
 import {
 	buildBlua32ExecutionRevision,
-	relocatedInstructionPc,
+	relocatedContinuationPc,
 } from '../../toolchain/ts/rompack/blua32_revision';
 import { parseLuaChunk } from '../lua/cpu_test_harness';
 import { LuaBinaryOperator } from '../../toolchain/ts/lua/syntax/ast';
@@ -720,7 +720,7 @@ test('BLua32 hot revision maps unchanged physical function code one word at a ti
 	]);
 });
 
-test('BLua32 hot revision relocates the latched opcode word across WIDE encoding changes', () => {
+test('BLua32 hot revision relocates a continuation at its WIDE prefix, not its opcode suffix', () => {
 	const range: SourceRange = {
 		path: 'entry',
 		start: { line: 1, column: 1 },
@@ -778,11 +778,10 @@ test('BLua32 hot revision relocates the latched opcode word across WIDE encoding
 	);
 
 	assert.equal(
-		relocatedInstructionPc(
+		relocatedContinuationPc(
 			revision,
 			previous.layout,
-			fresh.layout,
-			previous.layout.functions[0].codeAddress + INSTRUCTION_BYTES,
+			previous.layout.functions[0].codeAddress,
 		),
 		fresh.layout.functions[0].codeAddress,
 	);

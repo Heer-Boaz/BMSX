@@ -39,6 +39,31 @@ function prove(previous: ReturnType<typeof compile>, fresh: ReturnType<typeof co
 		previous.sources, fresh.linked, fresh.sources, fresh.correspondence);
 }
 
+for (const optLevel of [0, 3] as const) test(`a completed debugger call does not turn its retired instruction into a live continuation (O${optLevel})`, () => {
+	const before = `function evaluate(value) return value + 7 end
+halt_until_irq
+return 42`;
+	const initial = compile(before, undefined, optLevel);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const depth = cpu.getFrameDepth();
+	cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.intern('evaluate')) as Closure, [1]);
+	assert.equal(cpu.runUntilDepth(depth, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [8]);
+	const fresh = compile(before.replace('value + 7', 'value * 2 + 9'), initial, optLevel);
+	const revision = prove(initial, fresh);
+	const lastPc = cpu.lastPc;
+	const relocation = buildHotResumeRelocation(cpu, [{ previousImage: initial.linked.layout, revision }, null, null], depth);
+	memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
+	cpu.replaceExecutionImage(executionAddressSpace.resolveSystemDomain());
+	applyHotResumeRelocation(cpu, relocation);
+	assert.equal(cpu.lastPc, lastPc, 'ROM replacement is not an instruction fetch');
+	assert.equal(cpu.getFrameDepth(), depth);
+	cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.intern('evaluate')) as Closure, [1]);
+	assert.equal(cpu.runUntilDepth(depth, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [11]);
+});
+
 for (const optLevel of [0, 3] as const) test(`Hot Resume initializes new module dependencies once without replacing existing exports (O${optLevel})`, () => {
 	const before = `local world<const> = require('world')
 local function read() return world end
@@ -330,7 +355,7 @@ return read()`;
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.ExecutionStopped);
 	const fresh = compile(before.replace('return extra, state', 'return state'), initial, 0);
 	const revision = prove(initial, fresh);
-	const relocation = buildHotResumeRelocation(cpu, [{ previousImage: initial.linked.layout, freshImage: fresh.linked.layout, revision }, null, null], cpu.getFrameDepth());
+	const relocation = buildHotResumeRelocation(cpu, [{ previousImage: initial.linked.layout, revision }, null, null], cpu.getFrameDepth());
 	memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
 	cpu.replaceExecutionImage(executionAddressSpace.resolveSystemDomain());
 	applyHotResumeRelocation(cpu, relocation);
@@ -358,7 +383,7 @@ return update()`;
 		.replace('return first.value', 'return second.value');
 	const fresh = compile(after, initial, optLevel, modules);
 	const revision = prove(initial, fresh);
-	const relocation = buildHotResumeRelocation(cpu, [{ previousImage: initial.linked.layout, freshImage: fresh.linked.layout, revision }, null, null], cpu.getFrameDepth());
+	const relocation = buildHotResumeRelocation(cpu, [{ previousImage: initial.linked.layout, revision }, null, null], cpu.getFrameDepth());
 	memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
 	cpu.replaceExecutionImage(executionAddressSpace.resolveSystemDomain());
 	applyHotResumeRelocation(cpu, relocation);

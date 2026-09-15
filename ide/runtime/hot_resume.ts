@@ -180,7 +180,6 @@ export function buildBlua32Revision(
 	if (rebuilt.system !== null) {
 		revisions[0] = {
 			previousImage: rebuilt.system.previousImage,
-			freshImage: rebuilt.system.linked.layout,
 			revision: buildBlua32ExecutionRevision(
 				rebuilt.system.previousImage,
 				rebuilt.system.previousSymbols,
@@ -199,7 +198,6 @@ export function buildBlua32Revision(
 		const cartridge = sources.cartridgeSlots[slot]!;
 		revisions[slot + 1] = {
 			previousImage: image.previousImage,
-			freshImage: image.linked.layout,
 			revision: buildBlua32ExecutionRevision(
 				image.previousImage,
 				image.previousSymbols,

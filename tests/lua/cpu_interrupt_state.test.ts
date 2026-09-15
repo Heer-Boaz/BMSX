@@ -154,7 +154,6 @@ function identityHotResumeRevision(image: Blua32ImageLayout): HotResumeRevision 
 	}
 	return {
 		previousImage: image,
-		freshImage: image,
 		revision: { functionAddresses, pcAddresses },
 	};
 }
@@ -1386,13 +1385,15 @@ wait()
 	assert.equal(cpu.readFrameUpvalue(frameIndex, 0), 42);
 });
 
-test('Hot Resume updates the physical last-PC latch', () => {
+test('Hot Resume leaves the physical last-fetch latches untouched', () => {
 	const { cpu } = makeHaltCpu();
 	const lastWordIndex = (
 		cpu.lastPc - HALT_TEST_IMAGES.cartImage.header.textAddress
 	) / INSTRUCTION_BYTES;
 	const target = identityHotResumeRevision(HALT_TEST_IMAGES.cartImage);
-	const relocatedPc = cpu.lastPc + INSTRUCTION_BYTES;
+	const lastPc = cpu.lastPc;
+	const lastDomain = cpu.readLastExecutionDomain();
+	const relocatedPc = lastPc + INSTRUCTION_BYTES;
 	target.revision.pcAddresses[lastWordIndex] = relocatedPc;
 
 	applyHotResumeRelocation(
@@ -1403,7 +1404,8 @@ test('Hot Resume updates the physical last-PC latch', () => {
 			null,
 		], cpu.getFrameDepth()),
 	);
-	assert.equal(cpu.lastPc, relocatedPc);
+	assert.equal(cpu.lastPc, lastPc);
+	assert.equal(cpu.readLastExecutionDomain(), lastDomain);
 });
 
 test('BLua32 branches fetch adjacent mapped instructions without function-range gates', () => {

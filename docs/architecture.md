@@ -1934,13 +1934,19 @@ Authored continuations use the same token/declaration correspondence as capture
 identity, not a single changed prefix/suffix. Live input registers retain their
 lexical owners; dead locals and future writes do not constrain continuation.
 The generated startup return has a compiler-owned resume identity and register
-ABI. A last-executed `CALL` is relocated through its return continuation.
+ABI. A live child-frame `CALL` site is relocated through its return continuation.
 Closure addresses do not move and the CPU does not traverse or rewrite the Lua
 heap. Before the ROM owner installs any rebuilt bytes, IDE tooling walks the
 suspended CPU through scalar physical-state primitives and proves a complete
 relocation for every active frame function address and continuation PC, every
 child-frame callsite in its parent execution domain, the active exception
-`EPC`, a nested NMI return `EPC`, and the latched instruction domain/PC pair.
+`EPC`, and a nested NMI return `EPC`. The last-fetched domain/PC latches are
+historical CPU trace words, not execution continuations. They remain untouched;
+in particular a completed debugger evaluation must not constrain the next edit.
+Fault snapshots retain their original tooling image; successful Hot Resume
+clears them before executing revised code. This separates active statements
+([Roslyn](https://github.com/dotnet/roslyn/blob/main/src/Features/Core/Portable/EditAndContinue/AbstractEditAndContinueAnalyzer.cs))
+from the CPU's previous-fetch state, rather than guessing a replacement PC.
 A missing map rejects the edit before any Hot Resume media or CPU state write.
 That check is not evidence that the edit is semantically incompatible. Missing
 compiler metadata for otherwise continuable code is a producer defect, not a
