@@ -735,8 +735,23 @@ void testHistoryAwaitingBackendCompletion() {
 
 } // namespace
 
+void testRuntimeResetNotification() {
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	int resets = 0;
+	runtime.onStateReset = [&]() {
+		++resets;
+		require(runtime.machine.cpu.getFrameDepth() == 1u, "notification follows replacement of execution state");
+	};
+	runtime.rebootSystem();
+	require(resets == 1, "reboot notifies once");
+	runtime.boot();
+	require(resets == 2, "boot notifies once");
+}
+
 int main() {
 	testBusyCpuBudgetAtVblank();
+	testRuntimeResetNotification();
 	testBoundedLogicalTickRetainsCycleCarry();
 	testBoundedLogicalTickResumesBackendFenceWithoutAnotherGrant();
 	testScheduledBoundedTickRetainsPartialMachineProgress();

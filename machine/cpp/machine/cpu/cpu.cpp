@@ -1089,17 +1089,25 @@ void CPU::beginCompletionCallInExecutionDomain(
 	ExecutionDomainId executionDomainId,
 	u32 functionAddress
 ) {
+	beginCompletionClosureInExecutionDomain(executionDomainId, *staticClosureAtAddress(functionAddress));
+}
+
+void CPU::beginCompletionClosureInExecutionDomain(
+	ExecutionDomainId executionDomainId,
+	Closure& closure,
+	BuiltinArgsView args
+) {
 	m_completionValues.clear();
 	m_yieldRequested = false;
 	readFunctionRecord(
 		*executionImageForDomain(executionDomainId),
-		functionAddress,
+		closure.functionAddress,
 		executionBusSignalsForDomain(executionDomainId)
 	);
 	pushLatchedFrame(
-		staticClosureAtAddress(functionAddress),
-		nullptr,
-		0,
+		&closure,
+		args.data(),
+		args.size(),
 		0,
 		0,
 		true

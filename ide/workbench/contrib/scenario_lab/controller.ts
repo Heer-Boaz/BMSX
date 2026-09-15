@@ -254,7 +254,6 @@ export class ScenarioLabController {
 		activateEditor(
 			this.editor,
 			this.sources,
-			this.overlayRenderer,
 			this.runtime,
 			this.audioOutput,
 		);
@@ -269,7 +268,6 @@ export class ScenarioLabController {
 		activateEditor(
 			this.editor,
 			this.sources,
-			this.overlayRenderer,
 			this.runtime,
 			this.audioOutput,
 		);

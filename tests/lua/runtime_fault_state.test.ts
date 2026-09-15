@@ -34,7 +34,12 @@ import {
 
 test('fault snapshots retain mapped runtime functions as instruction frames', () => {
 	const sourcePath = 'runtime_fault_state.lua';
-	const source = 'halt_until_irq';
+	const source = 'halt_until_irq()';
+	const sourceRange = {
+		path: 'runtime_fault_state',
+		start: { line: 1, column: 1 },
+		end: { line: 1, column: source.length + 1 },
+	};
 	const linkedCode = new Uint8Array(3 * INSTRUCTION_BYTES);
 	writeInstruction(linkedCode, 0, OpCode.HALT, 0, 0, 0, 0);
 	writeInstruction(linkedCode, 1, OpCode.HALT, 0, 0, 0, 0);
@@ -47,15 +52,7 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 			{ firstWord: 2, wordCount: 1, maxStack: 1 },
 		],
 		functionIds: ['startup', 'source_target', 'exception'],
-		debugRanges: [
-			null,
-			{
-				path: 'runtime_fault_state',
-				start: { line: 1, column: 1 },
-				end: { line: 1, column: source.length },
-			},
-			null,
-		],
+		debugRanges: [sourceRange, sourceRange, null],
 		startupFunctionIndex: 0,
 		irqFunctionIndex: 2,
 		exceptionFunctionIndex: 2,
@@ -171,4 +168,13 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 	assert.equal(mixedFault.lastLuaCallStack[1].instructionAddress, codeAddress);
 	assert.deepEqual(mixedFault.faultSnapshot.resource, { domain: -1, path: sourcePath });
 	assert.match(messages.join('\n'), /workspace\/runtime_fault_state\.lua:1:1/);
+
+	const suspendedPc = cpu.readFramePc(1);
+	cpu.beginCompletionCallInExecutionDomain(-1, image.symbols.functionAddresses[0]);
+	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	const evaluationFault = createRuntimeFaultState();
+	handleLuaError(logOutput, evaluationFault, sources, runtime, new SuspendedGuestSession(runtime), new Error('evaluation fault'));
+	assert.equal(evaluationFault.lastCpuFaultSnapshot.length, 3);
+	assert.equal(evaluationFault.lastCpuFaultSnapshot[1].tracePc, suspendedPc,
+		'a debugger completion root does not create a guest CALL site in the suspended frame');
 });

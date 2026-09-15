@@ -40,9 +40,7 @@ import {
 } from './workspace/state';
 import { handleLuaError } from './runtime_errors';
 import {
-	editorBlocksRuntimePipeline,
 	toggleEditor,
-	updateGamePipelineExts,
 } from './overlay_modes';
 
 export async function initializeIdeFeatures(
@@ -106,7 +104,7 @@ export async function initializeIdeFeatures(
 		createGraphLayoutEngine,
 	);
 	seedDefaultLuaBuiltins();
-	updateGamePipelineExts(state.editor, state.overlayRenderer, audioOutput);
+	audioOutput.muteUi(state.editor.executionSuspended);
 	if (!editorAvailable) {
 		disposeShortcutHandlers(state);
 		return state;
@@ -161,7 +159,7 @@ export function disposeShortcutHandlers(state: RuntimeIdeState): void {
 }
 
 export function tickIdeInput(state: RuntimeIdeState, input: Input): void {
-	if (!editorBlocksRuntimePipeline(state.editor) || !state.editor.isActive) {
+	if (!state.editor.isActive) {
 		return;
 	}
 	const pollFrame = input.getPlayerInput(1).pollFrame;
@@ -191,7 +189,7 @@ export function surfaceHostFrameError(
 }
 
 export function tickIDE(state: RuntimeIdeState, deltaSeconds: number): void {
-	if (!editorBlocksRuntimePipeline(state.editor) || !state.editor.isActive) {
+	if (!state.editor.isActive) {
 		return;
 	}
 	if (state.overlayRenderer.drawFramePending) {
@@ -205,7 +203,7 @@ export function tickIDEDraw(
 	state: RuntimeIdeState,
 	presenter: VideoPresenter,
 ): void {
-	if (!editorBlocksRuntimePipeline(state.editor) || !state.editor.isActive) {
+	if (!state.editor.isActive) {
 		return;
 	}
 	try {

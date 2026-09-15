@@ -5,26 +5,6 @@ import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
 
-export function editorBlocksRuntimePipeline(editor: CartEditor): boolean {
-	return editor.blocksRuntimePipeline;
-}
-
-export function isManagedOverlayEditorActive(editor: CartEditor): boolean {
-	if (!editor.blocksRuntimePipeline) {
-		return false;
-	}
-	return editor.isActive;
-}
-
-export function updateGamePipelineExts(
-	editor: CartEditor,
-	overlayRenderer: OverlayRenderer,
-	audioOutput: HostAudioOutput,
-): void {
-	const overlayActive = editor.blocksRuntimePipeline && overlayRenderer.active;
-	audioOutput.muteUi(overlayActive);
-}
-
 export function toggleEditor(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
@@ -36,13 +16,12 @@ export function toggleEditor(
 		deactivateEditor(editor, overlayRenderer, audioOutput);
 		return;
 	}
-	activateEditor(editor, sources, overlayRenderer, runtime, audioOutput);
+	activateEditor(editor, sources, runtime, audioOutput);
 }
 
 export function activateEditor(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
-	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 	audioOutput: HostAudioOutput,
 ): void {
@@ -55,7 +34,7 @@ export function activateEditor(
 	if (!editor.isActive) {
 		editor.activate();
 	}
-	updateGamePipelineExts(editor, overlayRenderer, audioOutput);
+	audioOutput.muteUi(editor.executionSuspended);
 }
 
 export function deactivateEditor(
@@ -67,5 +46,5 @@ export function deactivateEditor(
 		editor.deactivate();
 	}
 	overlayRenderer.abandonFrame();
-	updateGamePipelineExts(editor, overlayRenderer, audioOutput);
+	audioOutput.muteUi(editor.executionSuspended);
 }

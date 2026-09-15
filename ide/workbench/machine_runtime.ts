@@ -1,5 +1,5 @@
 import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
-import { activateEditor, updateGamePipelineExts } from './overlay_modes';
+import { activateEditor } from './overlay_modes';
 import type { HostRewind } from '../../hosts/common/rewind';
 import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
 import type { HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
@@ -73,11 +73,13 @@ export async function prepareWorkbenchRuntime(
 	);
 	ide.editor.onDidChangeActive(active => {
 		if (active) hostMenu.dismiss();
-		updateGamePipelineExts(ide.editor, ide.overlayRenderer, audioOutput);
+		execution.setPauseReason(HostPauseReason.Workbench, ide.editor.executionSuspended);
+		input.setGuestInputCaptured(active);
+		audioOutput.muteUi(ide.editor.executionSuspended);
 	});
 	execution.setPauseReason(HostPauseReason.AwaitingLaunch, true);
 	if (!startPreparedRuntime(ide, runtime)) {
-		activateEditor(ide.editor, sources, ide.overlayRenderer, runtime, audioOutput);
+		activateEditor(ide.editor, sources, runtime, audioOutput);
 	}
 	return ide;
 }

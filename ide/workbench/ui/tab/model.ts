@@ -4,12 +4,14 @@ import type { ResourceViewerInput } from '../../contrib/resources/editor_input';
 import type { ScenarioLabInput } from '../../contrib/scenario_lab/editor_input';
 import type { SceneEditorInput } from '../../contrib/scene_editor/editor_input';
 import type { EditorTabId } from './id';
+import type { ActorLabInput } from '../../contrib/actor_lab/editor_input';
 
 export type EditorInput =
 	| CodeEditorInput
 	| ResourceViewerInput
 	| BehaviorLensInput
 	| ScenarioLabInput
+	| ActorLabInput
 	| SceneEditorInput;
 
 export type EditorInputKind = EditorInput['kind'];

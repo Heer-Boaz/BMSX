@@ -337,3 +337,28 @@ test('input-controller playback replaces normal ICU samples but not supervisor s
 	);
 	input.dispose();
 });
+
+test('workbench capture separates gameplay samples from host and supervisor input', () => {
+	const device: GamepadDevice = { ...gamepad(0), supportsVibration: true };
+	const input = new Input({ now: () => 0 } as HostClock, { devices: () => [device], subscribe: () => () => {} }, 0);
+	const snapshot = createInputControllerSnapshot();
+	input.inputButton('keyboard:0', 'KeyA', true, 1, 1, 1);
+	input.inputButton(device.id, 'a', true, 1, 1, 2);
+	input.pollInput();
+	input.setGuestInputCaptured(true);
+	snapshot.keyWords.fill(0xffffffff);
+	snapshot.pointerButtons = 7;
+	snapshot.pointerXQ16 = 65536;
+	for (const pad of snapshot.pads) { pad.buttons = 0xffff; pad.axesQ16.fill(65536); }
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
+	const neutral = createInputControllerSnapshot();
+	neutral.rumbleSupportMask = 1;
+	assert.deepEqual(snapshot, neutral, 'capture neutralizes actions without disconnecting the controller');
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Supervisor);
+	const usage = hidKeyUsageForCode('KeyA');
+	assert.notEqual(snapshot.keyWords[usage >>> 5] & (1 << (usage & 31)), 0);
+	input.setGuestInputCaptured(false);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
+	assert.notEqual(snapshot.keyWords[usage >>> 5] & (1 << (usage & 31)), 0);
+	input.dispose();
+});

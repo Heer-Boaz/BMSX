@@ -19,6 +19,7 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 		case 'behaviorLens.behaviorTrees':
 		case 'scenarioLab':
 		case 'sceneEditor':
+		case 'actorLab':
 		case 'sceneEditor.source':
 		case 'behaviorLens.source':
 		case 'filter':
@@ -31,6 +32,7 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 
 export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSourceState, command: EditorViewCommandId): void {
 	switch (command) {
+		case 'actorLab': editor.actorLab.open(); return;
 		case 'resources':
 			editor.resourcePanel.togglePanel();
 			return;

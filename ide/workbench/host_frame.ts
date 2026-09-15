@@ -1,3 +1,4 @@
+import { HostPauseReason } from '../../hosts/common/execution_control';
 import { captureLuaTextModelSources } from './services/working_copy/lua_sources';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import {
@@ -85,10 +86,8 @@ function executeWorkbenchHostMenuAction(
 function runWorkbenchOverlay(
 	ide: RuntimeIdeState,
 	screen: RenderPresentationState,
-	runtime: Runtime,
 	hostDeltaMs: number,
 ): void {
-	runtime.frameScheduler.clearQueuedTime();
 	workbenchMode.tickIDE(ide, hostDeltaMs / 1000);
 	screen.requestHeldPresentation();
 }
@@ -135,7 +134,7 @@ function presentWorkbenchError(
 	if (!ide.overlayRenderer.active) {
 		return;
 	}
-	runWorkbenchOverlay(ide, screen, runtime, hostDeltaMs);
+	runWorkbenchOverlay(ide, screen, hostDeltaMs);
 	presentWorkbenchFrame(
 		session,
 		runtime,
@@ -198,116 +197,114 @@ export function runWorkbenchHostFrame(
 			session.syncMachineOutput(runtime, input, audioOutput);
 		}
 		if (ide.debugger.stopPresentationPending) {
-			activateEditor(ide.editor, ide.sources, ide.overlayRenderer, runtime, audioOutput);
+			activateEditor(ide.editor, ide.sources, runtime, audioOutput);
 			void presentRuntimeDebuggerStop(ide.editor, ide.debugger)
 				.catch(error => workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error));
 		}
 		const runtimeReady = ide.runtimeTasks.ready && !ide.fault.hostFrameFailed && !session.rewind.active;
+		session.execution.setPauseReason(HostPauseReason.Workbench, ide.editor.executionSuspended);
+		audioOutput.muteUi(ide.editor.executionSuspended);
 		let action: HostFrameAction;
-		if (
-			hostMenuInput !== HostMenuInput.Active
-			&& ide.overlayRenderer.active
-		) {
-			runWorkbenchOverlay(ide, screen, runtime, hostDeltaMs);
-			ide.microtasks.flush();
-			action = HostFrameAction.PresentPending;
-		} else {
-			const machineWillAdvance = (
-				hostMenuInput === HostMenuInput.Inactive
-				&& !session.execution.executionBlocked(runtimeDebuggerExecutionRequested(ide.debugger))
-				&& runtimeReady
-			);
-			action = prepareHostUpdate(
-				session,
-				runtime,
-				runtimeReady,
-				hostMenuInput,
-				runtimeDebuggerExecutionRequested(ide.debugger),
-			);
-			if (action === HostFrameAction.Execute) {
-				const scenarioExecution = ide.scenarioRuns.execution;
-				if (scenarioExecution.active) {
-					scenarioGuestFrame = true;
-					const previousTickSequence = runtime.frameScheduler.lastTickSequence;
-					let scheduledDeltaMs = session.execution.consumeElapsedTime(hostDeltaMs);
-					let machineAdvanced = false;
-					while (scenarioExecution.active && scenarioExecution.prepareLogicalTick()) {
-						const completed = advanceHostScheduledLogicalTick(
-							runtime,
-							presenter,
-							scheduledDeltaMs,
-						);
-						machineAdvanced = true;
-						scenarioExecution.didRunLogicalTick(completed);
-						scheduledDeltaMs = 0;
-						if (!completed) {
-							break;
-						}
-					}
-					if (machineAdvanced) {
-						syncAfterRuntimeUpdate(
-							session,
-							runtime,
-							input,
-							audioOutput,
-							screen,
-							previousTickSequence,
-						);
-					}
-				} else {
-					if (ide.debugger.plans.controlActive) {
-						willExecuteRuntimeDebuggerPlan(ide.debugger);
-					}
-					executeHostUpdate(
-						session,
+		const machineWillAdvance = (
+			hostMenuInput === HostMenuInput.Inactive
+			&& !session.execution.executionBlocked(runtimeDebuggerExecutionRequested(ide.debugger))
+			&& runtimeReady
+		);
+		action = prepareHostUpdate(
+			session,
+			runtime,
+			runtimeReady,
+			hostMenuInput,
+			runtimeDebuggerExecutionRequested(ide.debugger),
+		);
+		if (action === HostFrameAction.Execute) {
+			const scenarioExecution = ide.scenarioRuns.execution;
+			if (scenarioExecution.active) {
+				scenarioGuestFrame = true;
+				const previousTickSequence = runtime.frameScheduler.lastTickSequence;
+				let scheduledDeltaMs = session.execution.consumeElapsedTime(hostDeltaMs);
+				let machineAdvanced = false;
+				while (scenarioExecution.active && scenarioExecution.prepareLogicalTick()) {
+					const completed = advanceHostScheduledLogicalTick(
 						runtime,
 						presenter,
+						scheduledDeltaMs,
+					);
+					machineAdvanced = true;
+					scenarioExecution.didRunLogicalTick(completed);
+					scheduledDeltaMs = 0;
+					if (!completed) {
+						break;
+					}
+				}
+				if (machineAdvanced) {
+					syncAfterRuntimeUpdate(
+						session,
+						runtime,
 						input,
 						audioOutput,
 						screen,
-						hostDeltaMs,
+						previousTickSequence,
 					);
 				}
-				systemOutput.flush(runtime, logOutput);
-				systemOutputDrained = true;
-				if (!scenarioGuestFrame) {
-					const supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
-						IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
-					);
-					if (supervisorFaultSequence !== ide.fault.supervisorFaultSequence) {
-						if (ide.debugger.plans.controlActive) {
-							didFaultRuntimeDebuggerPlan(ide.debugger);
-						}
-						ide.fault.supervisorFaultSequence = supervisorFaultSequence;
-						handleSupervisorFault(
-							logOutput,
-							ide.fault,
-							ide.sources,
-							runtime,
-							ide.luaTooling.suspendedGuest,
-						);
-					} else if (ide.debugger.plans.controlActive) {
-						didExecuteRuntimeDebuggerPlan(ide.debugger);
-					}
-					ide.debugger.plans.pruneCompletedCompletionBatches();
-					if (ide.debugger.stopPresentationPending) {
-						activateEditor(
-							ide.editor,
-							ide.sources,
-							ide.overlayRenderer,
-							runtime,
-							audioOutput,
-						);
-						void presentRuntimeDebuggerStop(ide.editor, ide.debugger)
-							.catch(error => workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error));
-					}
+			} else {
+				if (ide.debugger.plans.controlActive) {
+					willExecuteRuntimeDebuggerPlan(ide.debugger);
 				}
-				action = HostFrameAction.PresentPending;
+				if (ide.editor.isActive) ide.luaTooling.suspendedGuest.invalidate();
+				executeHostUpdate(
+					session,
+					runtime,
+					presenter,
+					input,
+					audioOutput,
+					screen,
+					hostDeltaMs,
+				);
 			}
+			systemOutput.flush(runtime, logOutput);
+			systemOutputDrained = true;
+			if (!scenarioGuestFrame) {
+				const supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
+					IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
+				);
+				if (supervisorFaultSequence !== ide.fault.supervisorFaultSequence) {
+					ide.fault.supervisorFaultSequence = supervisorFaultSequence;
+					handleSupervisorFault(
+						logOutput,
+						ide.fault,
+						ide.sources,
+						runtime,
+						ide.luaTooling.suspendedGuest,
+					);
+					if (ide.debugger.plans.controlActive) {
+						didFaultRuntimeDebuggerPlan(ide.debugger);
+					}
+				} else if (ide.debugger.plans.controlActive) {
+					didExecuteRuntimeDebuggerPlan(ide.debugger);
+				}
+				ide.debugger.plans.pruneCompletedCompletionBatches();
+				if (ide.debugger.stopPresentationPending) {
+					activateEditor(
+						ide.editor,
+						ide.sources,
+						runtime,
+						audioOutput,
+					);
+					void presentRuntimeDebuggerStop(ide.editor, ide.debugger)
+						.catch(error => workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error));
+				}
+			}
+			action = HostFrameAction.PresentPending;
+		}
+		ide.microtasks.flush();
+		if (machineWillAdvance) {
+			syncRuntimeSourceActivity(ide.sources, runtime.machine.cpu.activeCartridgeSlot());
+		}
+		if (hostMenuInput !== HostMenuInput.Active && ide.overlayRenderer.active) {
+			runWorkbenchOverlay(ide, screen, hostDeltaMs);
 			ide.microtasks.flush();
-			if (machineWillAdvance) {
-				syncRuntimeSourceActivity(ide.sources, runtime.machine.cpu.activeCartridgeSlot());
-			}
+			action = HostFrameAction.PresentPending;
 		}
 		const previousPresentation = presenter.presentationSequence;
 		if (hostOverlayMenu.queueFrameOverlayCommands(session.hostFps)

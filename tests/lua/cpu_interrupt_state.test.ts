@@ -821,6 +821,24 @@ test('exception return depth names the outer continuation across a nested NMI', 
 	assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 });
 
+test('explicit-domain completion retains dynamic captures and accepts arguments above a parked cart', () => {
+	const { cpu } = makeCompiledCartCpu(CART_LAUNCHER_SYSTEM_LUA_SOURCE, `
+local amount = 7
+operation = function(value) amount = amount + value; return amount end
+while true do end
+`);
+	assert.equal(cpu.runUntilDepth(0, 2000), RunResult.Yielded);
+	const baseDepth = cpu.getFrameDepth();
+	const pc = cpu.readFramePc(baseDepth - 1);
+	const closure = cpu.getGlobalByKey(cpu.stringPool.find('operation')!) as Closure;
+	for (const [argument, expected] of [[3, 10], [5, 15]]) {
+		cpu.beginCompletionClosureInExecutionDomain(0, closure, [argument]);
+		assert.equal(cpu.runUntilDepth(baseDepth, 2000), RunResult.Halted);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [expected]);
+		assert.equal(cpu.readFramePc(baseDepth - 1), pc);
+	}
+});
+
 test('suspended completion execution runs above a parked frame and re-exposes the latent HALT latch', () => {
 	const { cpu, irqController } = makeHaltCpu();
 	const runtime = makeRuntime(cpu, irqController);
@@ -1304,6 +1322,20 @@ halt_until_irq
 		], cpu.getFrameDepth()),
 	);
 	assert.equal(cpu.readNmiReturnEpcWord(), nmiReturnEpcWord);
+});
+
+test('Hot Resume does not invent a guest call site beneath an external completion root', () => {
+	const { cpu } = makeHaltCpu();
+	const baseDepth = cpu.getFrameDepth();
+	cpu.beginCompletionCallInExecutionDomain(-1, HALT_TEST_IMAGES.systemSymbols.functionAddresses[1]);
+	const callSiteWord = cpu.readFrameCallSitePc(baseDepth);
+	const relocation = buildHotResumeRelocation(cpu, [
+		identityHotResumeRevision(HALT_TEST_IMAGES.systemImage),
+		identityHotResumeRevision(HALT_TEST_IMAGES.cartImage), null,
+	], cpu.getFrameDepth());
+	applyHotResumeRelocation(cpu, relocation);
+	assert.equal(cpu.readFrameCallSitePc(baseDepth), callSiteWord, 'the unused raw word is not interpreted as a parent CALL');
+	assert.equal(cpu.readFrameReturnsToCompletionLatch(baseDepth), true);
 });
 
 test('Hot Resume rejects an unmapped continuation before any physical state write', () => {

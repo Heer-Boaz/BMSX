@@ -1,0 +1,42 @@
+import { ReadonlyEditorInput } from '../../common/editor_input';
+import type { FullWidthWorkbenchLayout } from '../../common/layout';
+import { createWorkbenchActionBar } from '../../ui/action_bar';
+import { ScrollableWorkbenchTree } from '../../ui/scrollable_tree';
+import type { ActorNode } from './runtime';
+import type { WorkbenchTreeNode } from '../../ui/tree_view';
+import type { ResourceDomain } from '../../../common/resource';
+
+/** View state only. Borrowed rows are released before guest execution. */
+export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'> {
+	public get resource(): undefined { return undefined; }
+	public domain: ResourceDomain = 0;
+	public actorHashId = 0;
+	public running = false;
+	public selectionHashId = 0;
+	public dirty = true;
+	public status = 'CHOOSE A RUNNING ACTOR';
+	public readonly outline = new ScrollableWorkbenchTree<ActorNode>();
+	public readonly actionBar = createWorkbenchActionBar('actorLab.title');
+	public readonly layout: FullWidthWorkbenchLayout = {
+		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
+		viewportWidth: -1, viewportHeight: -1, codeAreaTop: -1, codeAreaBottom: -1,
+	};
+	public constructor() { super('actor-lab', 'actor_lab', 'ACTOR LAB', true); }
+	public invalidate(heapReplaced: boolean): void {
+		const selected = this.outline.rows[this.outline.selectionIndex];
+		if (selected !== undefined) this.selectionHashId = selected.element.hashId;
+		releaseActorBorrows(this.outline.roots);
+		if (heapReplaced) {
+			this.actorHashId = 0; this.selectionHashId = 0; this.running = false;
+			this.outline.roots.length = 0; this.outline.rows.length = 0; this.outline.selectionIndex = -1;
+		}
+		this.dirty = true;
+	}
+}
+
+function releaseActorBorrows(nodes: readonly WorkbenchTreeNode<ActorNode>[]): void {
+	for (const node of nodes) {
+		node.element.value = null; node.element.receiver = null; node.element.component = null; node.element.key = null;
+		releaseActorBorrows(node.children);
+	}
+}

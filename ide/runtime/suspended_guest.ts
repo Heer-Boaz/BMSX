@@ -21,6 +21,7 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 
 export type SuspendedGuestValue = Value;
+export type GuestInvalidationReason = 'execution' | 'heap-replaced';
 
 export type SuspendedGuestRead = {
 	readonly kind: 'value';
@@ -57,7 +58,7 @@ export class SuspendedGuestSession {
 	private readonly previewParts = new ScratchBuffer<string[]>(() => []);
 	private readonly previewVisited = new Set<number>();
 	private readonly indexKey: StringId;
-	private readonly invalidationListeners = new Set<() => void>();
+	private readonly invalidationListeners = new Set<(reason: GuestInvalidationReason) => void>();
 
 	public constructor(private readonly runtime: Runtime) {
 		this.cpu = runtime.machine.cpu;
@@ -74,13 +75,13 @@ export class SuspendedGuestSession {
 	}
 
 	/** UI borrowers end before execution and when restore replaces the inspected heap. */
-	public onDidInvalidate(listener: () => void): () => void {
+	public onDidInvalidate(listener: (reason: GuestInvalidationReason) => void): () => void {
 		this.invalidationListeners.add(listener);
 		return () => this.invalidationListeners.delete(listener);
 	}
 
-	public invalidate(): void {
-		for (const listener of this.invalidationListeners) listener();
+	public invalidate(reason: GuestInvalidationReason = 'execution'): void {
+		for (const listener of this.invalidationListeners) listener(reason);
 	}
 
 	/** The borrowed result view is invalidated by subsequent CPU execution, call entry, reset, or state restore. */

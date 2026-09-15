@@ -43,7 +43,7 @@ import { beginBehaviorTreeDrag, type BehaviorTreeTransferDrop } from './behavior
 import type { WorkbenchGraphDragSession } from '../../ui/graph/drag';
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
-import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
+import { canOpenBehaviorInspectionSource } from './inspection_source';
 import type { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import { inspectActionEffectDefinition, inspectActionEffectInstance, readActionEffectInstances } from './action_effect_runtime';
 import { inspectStateMachineDefinition, inspectStateMachineState, readStateMachineDefinitionStates, readStateMachineInstances, readStateMachineStates } from './state_machine_runtime';
@@ -158,7 +158,7 @@ export class BehaviorLensController {
 			}, choice => {
 				const lifetime = inspector.show({ title: `LIVE EFFECT / ${choice.label}`,
 					items: inspectActionEffectInstance(this.sources, this.guest, choice),
-					canOpenSource: item => this.canOpenInspectionSource(item),
+					canOpenSource: item => canOpenBehaviorInspectionSource(this.sources, item),
 					openSource: item => this.openInspectionSource(input, item),
 				});
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => inspector.hide()) });
@@ -178,7 +178,7 @@ export class BehaviorLensController {
 				}, state => {
 					const lifetime = inspector.show({ title: `LIVE FSM / ${state.label}`,
 						items: inspectStateMachineState(this.sources, this.guest, machine, state),
-						canOpenSource: item => this.canOpenInspectionSource(item),
+						canOpenSource: item => canOpenBehaviorInspectionSource(this.sources, item),
 						openSource: item => this.openInspectionSource(input, item),
 					});
 					lifetime.add({ dispose: this.guest.onDidInvalidate(() => inspector.hide()) });
@@ -194,7 +194,7 @@ export class BehaviorLensController {
 			}, choice => {
 				const lifetime = inspector.show({ title: `LIVE BT / ${choice.label}`,
 					items: inspectBehaviorTreeInstance(this.sources, this.guest, choice),
-					canOpenSource: item => this.canOpenInspectionSource(item),
+					canOpenSource: item => canOpenBehaviorInspectionSource(this.sources, item),
 					openSource: item => this.openInspectionSource(input, item),
 				});
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => inspector.hide()) });
@@ -209,7 +209,7 @@ export class BehaviorLensController {
 			const lifetime = inspector.show({ title: `REGISTERED ${isStateMachine ? 'FSM' : 'EFFECT'} / ${choice.label}`,
 				items: isStateMachine ? inspectStateMachineDefinition(this.sources, this.guest, choice.definition)
 					: inspectActionEffectDefinition(this.sources, this.guest, choice.definition, choice.label),
-				canOpenSource: item => this.canOpenInspectionSource(item),
+				canOpenSource: item => canOpenBehaviorInspectionSource(this.sources, item),
 				openSource: item => this.openInspectionSource(input, item),
 			});
 			lifetime.add({ dispose: this.guest.onDidInvalidate(() => inspector.hide()) });
@@ -229,16 +229,6 @@ export class BehaviorLensController {
 			});
 	}
 
-	public canOpenInspectionSource(detail: BehaviorInspectionProperty): boolean {
-		const source = detail.source;
-		if (source === undefined) return false;
-		if (source.installedSource === undefined) return true;
-		const model = editorTextModelService.get(source.resource);
-		// The suspended lifetime ends before installation. Reuse the working-copy
-		// owner's versioned correspondence, rather than compare whole files on paint.
-		if (model !== undefined) return getTextFileRuntimeSourceStatus(this.sources, model) === 'applied';
-		return resourceSourceForChunk(this.sources, resolveRuntimeResource(this.sources, source.resource)!) === source.installedSource;
-	}
 
 	public openInspectionSource(input: BehaviorLensInput, detail: BehaviorInspectionProperty): void {
 		const view = input.view;

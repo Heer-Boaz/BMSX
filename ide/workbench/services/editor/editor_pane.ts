@@ -6,6 +6,9 @@ import type { EditorInput } from '../../ui/tab/model';
 
 /** Retained workbench control for one editor-input kind. */
 export abstract class EditorPane<TInput extends EditorInput> {
+	/** Most panes borrow suspended state; a live tool explicitly releases this hold. */
+	public get suspendsRuntime(): boolean { return true; }
+
 	/** Optional selection capability; editors without one still have an input identity. */
 	public getSelection?(): EditorPaneSelection;
 	private inputValue: TInput | null = null;

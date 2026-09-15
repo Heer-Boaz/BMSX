@@ -141,7 +141,8 @@ export function readRuntimeLuaValue(
 			? blua32FunctionIndexAtAddress(image.layout, cpu.readFrameFunctionAddress(frameIndex)) : captured.functionIndex;
 		if (functionIndex < 0) continue;
 		const pc = captured !== undefined ? captured.tracePc
-			: frameIndex + 1 < depth ? cpu.readFrameCallSitePc(frameIndex + 1) : cpu.readFramePc(frameIndex);
+			: frameIndex + 1 < depth && !cpu.readFrameReturnsToCompletionLatch(frameIndex + 1)
+				? cpu.readFrameCallSitePc(frameIndex + 1) : cpu.readFramePc(frameIndex);
 		const symbols = image.symbols;
 		const range = blua32SourceRangeAtPc(symbols, image.layout.header.textAddress, pc);
 		const inlineSites = blua32InlineCallSitesAtPc(symbols, image.layout.header.textAddress, pc);

@@ -1,3 +1,7 @@
+import { ActorLabController } from './workbench/contrib/actor_lab/controller';
+import { ActorLabEditorPane } from './workbench/contrib/actor_lab/editor_pane';
+import { scheduleRuntimeGuestCall } from './runtime/guest_call';
+import { activateEditor, deactivateEditor } from './workbench/overlay_modes';
 import type { EditorInputSerializers } from './workbench/services/editor/editor_serialization';
 import { CodeEditorInputSerializer } from './workbench/contrib/code_editor/editor_serializer';
 import { BehaviorLensInputSerializer } from './workbench/contrib/behavior_lens/editor_serializer';
@@ -133,7 +137,7 @@ const EDITOR_TARGET_WIDTH = 384;
 const EDITOR_TARGET_HEIGHT = 288;
 
 export type CartEditor = {
-	readonly blocksRuntimePipeline: true;
+	readonly executionSuspended: boolean;
 	readonly isAvailable: boolean;
 	readonly completion: EditorCompletionController;
 	readonly resourcePanel: ResourcePanelController;
@@ -145,6 +149,7 @@ export type CartEditor = {
 	readonly editorInputSerializers: EditorInputSerializers;
 	readonly navigation: EditorNavigationController;
 	readonly sceneEditor: SceneEditorController;
+	readonly actorLab: ActorLabController;
 	readonly quickInput: QuickInputController;
 	readonly contextMenu: ContextMenuController;
 	readonly behaviorLens: BehaviorLensController;
@@ -172,7 +177,9 @@ export type CartEditor = {
 
 export class RuntimeCartEditor implements CartEditor {
 	private readonly activeListeners = new Set<(active: boolean) => void>();
-	public readonly blocksRuntimePipeline = true;
+	public get executionSuspended(): boolean {
+		return this.isActive && (this.quickInput.visible || this.contextMenu.visible || this.editorPanes.activePane?.suspendsRuntime !== false);
+	}
 	public readonly isAvailable: boolean;
 	public readonly completion: EditorCompletionController;
 	public readonly resourcePanel: ResourcePanelController;
@@ -183,6 +190,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly editorPanes: EditorPanes;
 	public readonly navigation: EditorNavigationController;
 	public readonly sceneEditor: SceneEditorController;
+	public readonly actorLab: ActorLabController;
 	public readonly quickInput: QuickInputController;
 	public readonly contextMenu: ContextMenuController;
 	public readonly behaviorLens: BehaviorLensController;
@@ -294,6 +302,7 @@ export class RuntimeCartEditor implements CartEditor {
 			),
 			resource_view: () => new ResourceViewerEditorPane(),
 			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu, this.clipboard),
+			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.actorLab, this.commands, this.contextMenu),
 			scene_editor: () => new SceneEditorPane(this.resourcePanel, this.sceneEditor, this.commands, this.sources, this.clipboard),
 			scenario_lab: () => new ScenarioLabEditorPane(
 				this.resourcePanel,
@@ -308,6 +317,18 @@ export class RuntimeCartEditor implements CartEditor {
 			this.editorPanes,
 		);
 		this.sceneEditor = new SceneEditorController(this.sources, this.editorPanes, this.navigation);
+		this.actorLab = new ActorLabController(sources, luaTooling.suspendedGuest, runtime.machine.cpu,
+			this.quickInput, this.editorPanes, this.navigation,
+			(prepare, didComplete) => { void scheduleRuntimeGuestCall(runtime, luaTooling.suspendedGuest, debuggerState, runtimeTasks, prepare,
+				() => { execution.requestExecution(false); deactivateEditor(this, overlayRenderer, audioOutput); },
+				completed => {
+					activateEditor(this, sources, runtime, audioOutput);
+					if (completed) this.actorLab.didCompleteCall(didComplete);
+				},
+				error => this.handleRuntimeTaskError(error, 'Actor operation failed')); },
+			() => runtimeTasks.ready && !execution.launchPending && !scenarioRuns.active && !debuggerState.plans.mutationActive && !rewind.active,
+			execution);
+
 		const behaviorRegistrations = new BehaviorRegistrationIndex(this.sources);
 		this.behaviorLens = new BehaviorLensController(
 			this.sources,
@@ -332,6 +353,7 @@ export class RuntimeCartEditor implements CartEditor {
 			audioOutput,
 		);
 		this.editorInputSerializers = {
+			actor_lab: { serialize: () => '', deserialize: () => this.actorLab.resolveInput() },
 			code_editor: new CodeEditorInputSerializer(storage, sources),
 			behavior_lens: new BehaviorLensInputSerializer(storage, sources, this.behaviorLens),
 			scene_editor: new SceneEditorInputSerializer(storage, sources, this.sceneEditor),

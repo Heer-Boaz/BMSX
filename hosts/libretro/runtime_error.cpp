@@ -155,7 +155,7 @@ void reportLibretroRuntimeError(
 		const u32 functionIndex =
 			blua32FunctionIndexAtAddress(frameImage, functionAddress);
 		const Blua32FunctionRecord& function = frameImage.functions[functionIndex];
-		const u32 pc = frameIndex + 1 < frameDepth
+		const u32 pc = frameIndex + 1 < frameDepth && !cpu.readFrameReturnsToCompletionLatch(frameIndex + 1)
 			? cpu.readFrameCallSitePc(frameIndex + 1)
 			: executionDomainId == frameDomainId
 				&& cpu.lastPc >= function.codeAddress

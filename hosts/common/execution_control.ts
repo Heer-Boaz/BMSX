@@ -5,6 +5,7 @@ export const enum HostPauseReason {
 	VibrationInitialization = 1 << 1,
 	Fullscreen = 1 << 2,
 	AwaitingLaunch = 1 << 3,
+	Workbench = 1 << 4,
 }
 
 /** Execution policy, independent of frame pacing, presentation and focused views. */

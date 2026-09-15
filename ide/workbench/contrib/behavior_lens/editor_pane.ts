@@ -317,7 +317,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		const selected = input.view.source.nodesByRowKey.get(input.view.selection!.rowKey)!;
 		const lifetime = this.inspector.show({ title: selected.label,
 			items: buildBehaviorInspection(input.view),
-			canOpenSource: item => this.controller.canOpenInspectionSource(item),
+			canOpenSource: item => item.source !== undefined,
 			openSource: item => this.controller.openInspectionSource(input, item),
 		});
 		lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.inspector.hide()) });

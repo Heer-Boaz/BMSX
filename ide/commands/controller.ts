@@ -102,6 +102,12 @@ export class IdeCommandController {
 			case 'graph.zoomIn':
 			case 'graph.zoomOut':
 			case 'graph.resetZoom':
+			case 'actorLab.playback':
+			case 'actorLab.select':
+			case 'actorLab.spawn':
+			case 'actorLab.emit':
+			case 'actorLab.actions':
+			case 'actorLab.details':
 			case 'behaviorLens.details':
 			case 'behaviorLens.inspectRuntimeEffect':
 			case 'behaviorLens.inspectRuntimeStateMachine':
@@ -266,6 +272,12 @@ export class IdeCommandController {
 			case 'graph.zoomIn':
 			case 'graph.zoomOut':
 			case 'graph.resetZoom':
+			case 'actorLab.playback':
+			case 'actorLab.select':
+			case 'actorLab.spawn':
+			case 'actorLab.emit':
+			case 'actorLab.actions':
+			case 'actorLab.details':
 			case 'behaviorLens.details':
 			case 'behaviorLens.inspectRuntimeEffect':
 			case 'behaviorLens.inspectRuntimeStateMachine':

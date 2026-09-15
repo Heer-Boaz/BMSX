@@ -1526,3 +1526,15 @@ and its weighted/contextual keybinding resolver:
 - <https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/platform/actions/common/actions.ts#L679-L779>
 - <https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/platform/keybinding/common/keybindingsRegistry.ts#L62-L68>
 - <https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/platform/keybinding/common/keybindingResolver.ts#L320-L395>
+
+### Actor experiments
+
+Actor Lab is a workbench pane over actual cartlib world/component membership.
+Lua remains authored truth; Run Current Lua File supplies an ordinary temporary
+entry point. The pane can spawn registered prefabs, inspect their FSM/BT/timeline/
+effect instances, emit actor events with literal payloads, and invoke their
+ordinary methods. Live playback releases the workbench host hold, not a cartlib
+clock. Selection survives normal execution by guest identity, not borrowed
+Table handles. Callback Source uses the existing installed-source correspondence.
+References: [Godot runtime inspection and suspension](https://github.com/godotengine/godot/blob/4.5/scene/debugger/scene_debugger.cpp)
+and [LLDB scheduled function evaluation](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/lldb/source/Target/ThreadPlanCallFunction.cpp).

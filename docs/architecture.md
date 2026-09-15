@@ -1007,6 +1007,16 @@ editor feature nor the keyboard page implements rewind cleanup. Boundary
 audits distinguish these execution services from host presentation and product
 composition instead of admitting all host imports into IDE features.
 
+Workbench suspension is a host pause reason, not an OverlayRenderer execution
+branch. Editor panes normally hold it; Actor Lab can explicitly release it
+while remaining visible. Normal ICU samples exclude workbench input; supervisor
+sampling stays physical. Actor Lab borrows actual world/component instances
+between CPU slices and retains only display identity across them. Reset/restore
+notifications revoke identities from the replaced heap. Guest method evaluation
+uses the scheduled debugger completion plan, not synchronous host Lua RPC.
+Completion roots have no guest CALL site in the suspended frame below them.
+Actor operations modify the running instance, never its source working copy.
+
 The Run menu exposes one checked Pause toggle, without a gameplay keyboard
 binding. Toggling it off explicitly takes over a reviewed position and releases
 only requested pause. It returns focus to the game unless an actual debugger

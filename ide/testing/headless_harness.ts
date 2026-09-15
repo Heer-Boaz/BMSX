@@ -188,7 +188,6 @@ export function createHeadlessIdeHarness(
 			activateEditor(
 				ide.editor,
 				ide.sources,
-				ide.overlayRenderer,
 				runtime,
 				audioOutput,
 			);

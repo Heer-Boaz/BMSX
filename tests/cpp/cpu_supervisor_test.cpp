@@ -1079,6 +1079,40 @@ void testExceptionReturnDepthNamesOuterContinuationAcrossNestedNmi() {
 	require(machine.cpu.readExceptionReturnFrameDepth() == -1, "completed exception roots are no longer present");
 }
 
+void testExplicitDomainClosureArguments() {
+	bmsx::test::Blua32TestImage image;
+	image.text.resize(9u * bmsx::INSTRUCTION_BYTES);
+	std::span<bmsx::u8> code(image.text);
+	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 0, 0, 0);
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::WIDE), 0, 0, 0);
+	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::CLOSURE), 1, 0, 0);
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::RET), 1, 1, 0);
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::GETUP), 1, 0, 0);
+	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::ADD), 0, 0, 1);
+	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::SETUP), 0, 0, 0);
+	bmsx::writeInstruction(code, 7, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	bmsx::writeInstruction(code, 8, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
+	image.functions = {
+		{.firstWord = 0u, .wordCount = 4u, .maxStack = 2u},
+		{.firstWord = 4u, .wordCount = 4u, .numParams = 1u, .maxStack = 2u, .staticClosure = false, .upvalues = {{true, 0u}}},
+		{.firstWord = 8u, .wordCount = 1u},
+	};
+	image.constants = {7.0};
+	image.irqFunctionIndex = 2u;
+	image.exceptionFunctionIndex = 2u;
+	image.closureRelocations = {{2u, bmsx::test::blua32TestFunctionAddress(bmsx::RomImageDomain::System, 1u)}};
+	CpuTestMachine machine(std::move(image));
+	auto& cpu = machine.cpu;
+	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "capture factory returns");
+	auto* closure = bmsx::asClosure(cpu.readCompletionValues()[0]);
+	for (const auto [argument, expected] : {std::pair{3.0, 10.0}, std::pair{5.0, 15.0}}) {
+		const std::array args{bmsx::valueNumber(argument)};
+		cpu.beginCompletionClosureInExecutionDomain(bmsx::SYSTEM_EXECUTION_DOMAIN_ID, *closure, {args.data(), args.size()});
+		require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "explicit-domain call returns");
+		require(bmsx::asNumber(cpu.readCompletionValues()[0]) == expected, "arguments update the original capture");
+	}
+}
+
 void testSuspendedCompletionExecutionRunsAboveParkedFrame() {
 	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
 	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
@@ -1519,6 +1553,7 @@ int main() {
 	testInstrumentedMaskableInterruptFenceDoesNotDelayPendingNmi();
 	testExceptionReturnDepthNamesOuterContinuationAcrossNestedNmi();
 	testSuspendedCompletionExecutionRunsAboveParkedFrame();
+	testExplicitDomainClosureArguments();
 	testRfeResumesAtAnyMappedInstructionAddress();
 	testMappedBusErrorsEnterTheSystemExceptionVector();
 	testInstructionFetchExceptionsEnterTheSystemVector();

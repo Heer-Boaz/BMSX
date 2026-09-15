@@ -25,6 +25,7 @@ export type EditorViewCommandId =
 	| 'behaviorLens.behaviorTrees'
 	| 'scenarioLab'
 	| 'sceneEditor'
+	| 'actorLab'
 	| 'sceneEditor.source'
 	| 'behaviorLens.source'
 	| 'filter'
@@ -52,6 +53,7 @@ export type EditorScenarioLabCommandId =
 	| 'scenarioLab.cancel';
 
 export type EditorCommandId =
+	| 'actorLab.playback' | 'actorLab.select' | 'actorLab.spawn' | 'actorLab.emit' | 'actorLab.actions' | 'actorLab.details'
 	| 'scenarioLab.details'
 	| 'graph.zoomIn'
 	| 'graph.zoomOut'

@@ -144,6 +144,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 
 	private readonly unsubscribeHostInput: () => void;
 	private readonly pendingVibrationDevices: GamepadDevice[] = [];
+	private guestInputCaptured = false;
 	private inputControllerPlayback: InputControllerPlayback | null = null;
 	public resetInput(deviceId?: string): void {
 		if (deviceId !== undefined) {
@@ -537,6 +538,9 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		return device.vibrationInitialization;
 	}
 
+	/** Workbench input remains physical for the host/supervisor, but not gameplay. */
+	public setGuestInputCaptured(captured: boolean): void { this.guestInputCaptured = captured; }
+
 	public sampleInputControllerSnapshot(
 		snapshot: InputControllerSnapshot,
 		context: InputControllerSampleContext,
@@ -546,17 +550,21 @@ export class Input implements InputControllerInputSource, InputEventSink {
 			this.inputControllerPlayback.writeInputControllerSnapshot(snapshot);
 			return;
 		}
-		this.sampleInputControllerKeyWords(snapshot.keyWords);
+		const captured = context === InputControllerSampleContext.Normal && this.guestInputCaptured;
+		if (captured) snapshot.keyWords.fill(0);
+		else this.sampleInputControllerKeyWords(snapshot.keyWords);
 		snapshot.pointerButtons = 0;
 		snapshot.pointerXQ16 = 0;
 		snapshot.pointerYQ16 = 0;
 		snapshot.pointerWheelQ16 = 0;
 		snapshot.rumbleSupportMask = 0;
-		for (let i = 0; i < this.inputControllerPointerHandlers.length; i += 1) {
-			this.inputControllerPointerHandlers[i].writeInputControllerPointerSnapshot(snapshot);
+		if (!captured) {
+			for (let i = 0; i < this.inputControllerPointerHandlers.length; i += 1) {
+				this.inputControllerPointerHandlers[i].writeInputControllerPointerSnapshot(snapshot);
+			}
 		}
 		for (let pad = 0; pad < INPUT_CONTROLLER_PAD_COUNT; pad += 1) {
-			this.samplePadSnapshot(pad, snapshot);
+			this.samplePadSnapshot(pad, snapshot, captured);
 		}
 	}
 
@@ -575,7 +583,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		this.keyboardInput.writeInputControllerKeyWords(keyWords);
 	}
 
-	private samplePadSnapshot(pad: number, snapshot: InputControllerSnapshot): void {
+	private samplePadSnapshot(pad: number, snapshot: InputControllerSnapshot, captured: boolean): void {
 		const padSnapshot = snapshot.pads[pad];
 		padSnapshot.buttons = 0;
 		for (let axis = 0; axis < INPUT_CONTROLLER_PAD_AXIS_COUNT; axis += 1) {
@@ -586,6 +594,8 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		if (handler.supportsVibrationEffect) {
 			snapshot.rumbleSupportMask = (snapshot.rumbleSupportMask | (1 << pad)) >>> 0;
 		}
+		// UI focus captures player actions, not the connected device's capabilities.
+		if (captured) return;
 		const remap = this.gamepadPortRemaps[pad];
 		if (remap.isIdentity) {
 			handler.writeInputControllerPadSnapshot(padSnapshot);

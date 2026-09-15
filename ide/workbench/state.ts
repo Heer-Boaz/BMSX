@@ -108,7 +108,7 @@ export class RuntimeIdeState {
 		runtime.onStateRestored = () => {
 			this.execution.setPauseReason(HostPauseReason.AwaitingLaunch, false);
 			// A restored heap is a new inspection context, not the previous stop.
-			this.luaTooling.suspendedGuest.invalidate();
+			this.luaTooling.suspendedGuest.invalidate('heap-replaced');
 			resetRuntimeDebuggerExecution(this.debugger);
 			clearFaultSnapshot(this.fault);
 			this.fault.supervisorFaultSequence = runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE);
@@ -117,6 +117,7 @@ export class RuntimeIdeState {
 			clearHoverTooltip();
 			syncRuntimeSourceActivity(this.sources, runtime.machine.cpu.activeCartridgeSlot());
 		};
+		runtime.onStateReset = runtime.onStateRestored;
 	}
 }
 

@@ -1509,16 +1509,24 @@ export class CPU implements MappedPageInvalidator {
 		executionDomainId: ExecutionDomainId,
 		functionAddress: number,
 	): void {
+		this.beginCompletionClosureInExecutionDomain(executionDomainId, this.staticClosureAtAddress(functionAddress));
+	}
+
+	public beginCompletionClosureInExecutionDomain(
+		executionDomainId: ExecutionDomainId,
+		closure: Closure,
+		args: ReadonlyArray<Value> = EMPTY_CALL_ARGS,
+	): void {
 		this.clearCompletionValues();
 		this.yieldRequested = false;
 		this.readFunctionRecord(
 			this.executionImageForDomain(executionDomainId)!,
-			functionAddress,
+			closure.functionAddress,
 			CPU.executionBusSignalsForDomain(executionDomainId),
 		);
 		this.pushLatchedFrame(
-			this.staticClosureAtAddress(functionAddress),
-			EMPTY_CALL_ARGS,
+			closure,
+			args,
 			0,
 			0,
 			true,

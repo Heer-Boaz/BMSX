@@ -6,9 +6,9 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.run'
 	| 'menubar.view';
 
-export type WorkbenchContextMenuId = 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
+export type WorkbenchContextMenuId = 'actorLab.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'actorLab.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -22,6 +22,7 @@ export type WorkbenchMenuSeparator = {
 export type WorkbenchMenuItem = WorkbenchMenuCommandItem | WorkbenchMenuSeparator;
 
 type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly WorkbenchMenuItem[]> & {
+	readonly 'actorLab.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'propertyInspector.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'sourceEditReview.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'menubar.file': readonly WorkbenchMenuItem[];
@@ -44,6 +45,18 @@ const GRAPH_ZOOM_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
 
 /** Immutable built-in menu contributions; renderers only project these items. */
 export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
+	'actorLab.context': [
+		{ type: 'command', command: 'actorLab.details' },
+		{ type: 'command', command: 'actorLab.actions' },
+	],
+	'actorLab.title': [
+		{ type: 'command', command: 'actorLab.playback' },
+		{ type: 'command', command: 'actorLab.select' },
+		{ type: 'command', command: 'actorLab.spawn' },
+		{ type: 'command', command: 'actorLab.emit' },
+		{ type: 'command', command: 'actorLab.actions' },
+		{ type: 'command', command: 'actorLab.details' },
+	],
 	'propertyInspector.title': [{ type: 'command', command: 'propertyInspector.source' }, { type: 'command', command: 'propertyInspector.close' }],
 	'code.context': [{ type: 'command', command: 'undo' }, { type: 'command', command: 'redo' }],
 	'code.symbol.context': [
@@ -113,6 +126,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'menubar.view': [
 		{ type: 'command', command: 'commandPalette' },
 		{ type: 'separator' },
+		{ type: 'command', command: 'actorLab' },
 		{ type: 'command', command: 'sceneEditor' },
 		{ type: 'command', command: 'behaviorLens' },
 		{ type: 'command', command: 'scenarioLab' },

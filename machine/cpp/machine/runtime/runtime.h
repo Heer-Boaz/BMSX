@@ -88,6 +88,7 @@ public:
 	RuntimeHistory history;
 	// Host/tooling observers discard borrowed inspection state after a restore.
 	std::function<void()> onStateRestored;
+	std::function<void()> onStateReset;
 private:
 	enum class PendingCall {
 		None,

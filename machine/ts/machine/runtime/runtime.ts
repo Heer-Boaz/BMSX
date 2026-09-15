@@ -40,6 +40,7 @@ export class Runtime {
 	public readonly history: RuntimeHistory;
 	/** Host/tooling observers must discard borrowed inspection state after a restore. */
 	public onStateRestored: (() => void) | null = null;
+	public onStateReset: (() => void) | null = null;
 	private readonly completionValues: Value[] = [];
 
 	public resetHardwareState(): void {
@@ -83,6 +84,7 @@ export class Runtime {
 
 	private finishSystemBoot(): void {
 		this.pendingCall = 'entry';
+		this.onStateReset?.();
 	}
 
 	/** The borrowed result view is invalidated by subsequent CPU execution, call entry, reset, or state restore. */

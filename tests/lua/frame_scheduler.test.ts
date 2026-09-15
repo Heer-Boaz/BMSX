@@ -625,3 +625,17 @@ test('normal host execution still consumes one delta through the existing schedu
 		exactHostGrant - wholeHostGrant,
 	);
 });
+
+
+test('runtime reset notifies host inspectors after replacing execution state', () => {
+	const { runtime } = createTickRuntime();
+	let resets = 0;
+	runtime.onStateReset = () => {
+		resets += 1;
+		assert.equal(runtime.machine.cpu.getFrameDepth(), 1);
+	};
+	runtime.rebootSystem();
+	assert.equal(resets, 1);
+	runtime.boot();
+	assert.equal(resets, 2);
+});

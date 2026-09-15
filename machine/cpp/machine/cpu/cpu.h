@@ -240,6 +240,11 @@ public:
 		ExecutionDomainId executionDomainId,
 		u32 functionAddress
 	);
+	void beginCompletionClosureInExecutionDomain(
+		ExecutionDomainId executionDomainId,
+		Closure& closure,
+		BuiltinArgsView args = {}
+	);
 	// Move an evicted snapshot here to reuse its storage without copying it.
 	CpuRuntimeState captureRuntimeState(CpuSnapshot snapshot = {}) const;
 	void restoreRuntimeState(const CpuRuntimeState& state);

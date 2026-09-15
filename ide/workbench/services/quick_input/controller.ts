@@ -103,7 +103,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		value: string,
 		submit: (value: string) => Promise<T>,
 		accept: (result: T) => void,
-	): void {
+	): DisposableStore {
 		this.hide();
 		pointerCapture.cancel();
 		const returnFocus = inputFocus.target;
@@ -139,6 +139,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		setFieldText(this.field, value, true);
 		this.update();
 		resetBlink();
+		return session.disposables;
 	}
 
 	public hide(restoreFocus = true): void {

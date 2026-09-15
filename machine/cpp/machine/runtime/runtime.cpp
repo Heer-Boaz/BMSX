@@ -81,6 +81,7 @@ void Runtime::boot() {
 
 void Runtime::finishSystemBoot() {
 	m_pendingCall = PendingCall::Entry;
+	if (onStateReset) onStateReset();
 }
 
 void Runtime::rebootSystem() {

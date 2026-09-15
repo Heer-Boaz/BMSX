@@ -1,3 +1,4 @@
+import { ScrollableWorkbenchTree } from '../../ide/workbench/ui/scrollable_tree';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { layoutWorkbenchList, workbenchListRowIndexAtPosition } from '../../ide/workbench/ui/list_view';
@@ -150,4 +151,24 @@ test('tree twisties use retained depth geometry and never claim leaf or label cl
 	assert.equal(workbenchTreeTwistieContainsPosition(state, 1, 20), false);
 	assert.equal(workbenchTreeTwistieContainsPosition(state, 2, 20), false);
 	assert.equal(workbenchListRowIndexAtPosition(state, 14, 51), -1);
+});
+
+
+test('scrollable trees share row navigation and thumb position, including an empty view', () => {
+	const state = new ScrollableWorkbenchTree<string>();
+	state.updateLayout(0, 0, 100, 50, 10, 8);
+	assert.equal(state.scrollbar.isVisible(), false);
+	const root = appendWorkbenchTreeNode(state, null, 'root');
+	for (let i = 0; i < 20; i += 1) appendWorkbenchTreeNode(state, root, `child ${i}`);
+	rebuildWorkbenchTreeRows(state, root);
+	state.updateLayout(0, 0, 100, 50, 10, 8);
+	navigateWorkbenchTree(state, 'end');
+	assert.equal(state.scroll, 16);
+	assert.equal(state.scrollbar.getScroll(), 16);
+	state.scrollbar.setScroll(8);
+	assert.equal(workbenchListRowIndexAtPosition(state, 12, 2), 8);
+	setWorkbenchTreeCollapsed(state, 0, true);
+	state.updateLayout(0, 0, 100, 50, 10, 8);
+	assert.equal(state.scroll, 0);
+	assert.equal(state.scrollbar.isVisible(), false);
 });

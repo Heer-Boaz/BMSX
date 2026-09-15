@@ -245,7 +245,7 @@ function captureRuntimeCpuFaultFrames(
 			functionIndex,
 			codeAddress,
 			codeByteCount,
-			tracePc: frameIndex + 1 < frameDepth
+			tracePc: frameIndex + 1 < frameDepth && !cpu.readFrameReturnsToCompletionLatch(frameIndex + 1)
 				? cpu.readFrameCallSitePc(frameIndex + 1)
 				: lastExecutionDomainId === executionDomainId
 					&& lastPc >= codeAddress
