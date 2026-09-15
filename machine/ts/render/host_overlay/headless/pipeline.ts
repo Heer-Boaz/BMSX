@@ -7,9 +7,9 @@ export function registerHostOverlayPass_Headless(registry: RenderPassLibrary): v
 	registry.register({
 		id: 'host_overlay',
 		name: 'HeadlessHostOverlay',
-		stateOnly: true,
+		present: true,
 		initialState: createHostOverlayState(),
-		graph: { writes: ['frame_color'], writeState: writeHostOverlayState },
+		graph: { writeState: writeHostOverlayState },
 		shouldExecute: presenter => presenter.hostOverlayQueue.hasPendingOverlayFrame(),
 		exec: (backend, _fbo, state) => {
 			drawHeadlessHostOverlayFrame(backend as HeadlessGPUBackend, state);
@@ -21,9 +21,9 @@ export function registerHostMenuPass_Headless(registry: RenderPassLibrary): void
 	registry.register({
 		id: 'host_menu',
 		name: 'HeadlessHostMenu',
-		stateOnly: true,
+		present: true,
 		initialState: createHostMenuState(),
-		graph: { writes: ['frame_color'], writeState: writeHostMenuState },
+		graph: { writeState: writeHostMenuState },
 		shouldExecute: presenter => presenter.hostOverlayQueue.hasPendingHostMenuFrame(),
 		exec: (backend, _fbo, state) => {
 			drawHeadlessHostMenuLayer(backend as HeadlessGPUBackend, state);

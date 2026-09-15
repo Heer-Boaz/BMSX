@@ -370,6 +370,12 @@ void scanoutInterlacedVram(
 	const GxGpuPcrtcScanout& scanout,
 	u64 vramReplacementSerial
 ) {
+	if (state.width != software.interlacedWidth || state.height != software.interlacedHeight) {
+		software.interlacedPixels.resize(static_cast<size_t>(state.width) * static_cast<size_t>(state.height));
+		software.interlacedWidth = state.width;
+		software.interlacedHeight = state.height;
+		software.interlacedValid = false;
+	}
 	const bool geometryChanged = !software.interlacedValid
 		|| software.interlacedVramReplacementSerial != vramReplacementSerial;
 	const size_t pixelCount = static_cast<size_t>(state.width) * static_cast<size_t>(state.height);

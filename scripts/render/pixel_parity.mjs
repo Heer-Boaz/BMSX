@@ -9,8 +9,13 @@ import { PNG } from 'pngjs';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '../..');
 const cartName = process.argv[2] || 'renderhwtest';
+const debug = process.argv.includes('--debug');
+const suffix = debug ? '.debug' : '';
+const systemRomPath = path.join(repoRoot, 'dist', `bmsx-bios${suffix}.rom`);
+const cartridgePath = path.join(repoRoot, 'dist', `${cartName}${suffix}.rom`);
 const sourceTimeline = path.join(repoRoot, 'tests/carts', cartName, `${cartName}_demo.json`);
 const workRoot = await fsp.mkdtemp(path.join(os.tmpdir(), `bmsx-${cartName}-pixel-parity-`));
+const systemDirectory = path.join(workRoot, 'system');
 const referenceRoot = path.join(workRoot, 'ts-software');
 const cppSoftwareRoot = path.join(workRoot, 'cpp-software');
 const cppGles2Root = path.join(workRoot, 'cpp-gles2');
@@ -22,6 +27,9 @@ const runTimeoutMs = 120000;
 await fsp.mkdir(referenceRoot, { recursive: true });
 await fsp.mkdir(cppSoftwareRoot, { recursive: true });
 await fsp.mkdir(cppGles2Root, { recursive: true });
+await fsp.mkdir(systemDirectory);
+// Libretro's system-directory ABI names the installed BIOS independently of build mode.
+await fsp.copyFile(systemRomPath, path.join(systemDirectory, 'bmsx-bios.rom'));
 await fsp.copyFile(sourceTimeline, referenceTimeline);
 await fsp.copyFile(sourceTimeline, cppSoftwareTimeline);
 await fsp.copyFile(sourceTimeline, cppGles2Timeline);
@@ -110,18 +118,19 @@ function assertSamePixels(name, referencePng, candidatePng, candidateLabel) {
 }
 
 try {
+	console.log(`[pixel-parity] media: ${debug ? 'debug' : 'release'}`);
 	runCapture('TS software', 'node', [
-		'dist/host_headless_tooling.js',
-		'--system-rom', 'dist/bmsx-bios.rom',
+		`dist/host_headless_tooling${suffix}.js`,
+		'--system-rom', systemRomPath,
 		'--input-timeline', referenceTimeline,
 		cartName,
 	], {}, path.join(workRoot, 'ts-software.log'));
 	runCapture('C++ software', './build-libretro-host-wsl/bmsx_libretro_host', [
 		'--core', './dist/libretro_bmsx.so',
-		`./dist/${cartName}.rom`,
+		cartridgePath,
 		'--video', 'sdl',
 		'--backend', 'software',
-		'--system-dir', './dist',
+		'--system-dir', systemDirectory,
 		'--no-audio',
 		'--input-timeline', cppSoftwareTimeline,
 		'--crt-postprocessing', 'off',
@@ -129,11 +138,11 @@ try {
 	], { SDL_VIDEODRIVER: 'dummy', SDL_AUDIODRIVER: 'dummy' }, path.join(workRoot, 'cpp-software.log'));
 	runCapture('C++ GLES2', './build-libretro-host-wsl/bmsx_libretro_host', [
 		'--core', './dist/libretro_bmsx.so',
-		`./dist/${cartName}.rom`,
+		cartridgePath,
 		'--video', 'sdl',
 		'--backend', 'gles2',
 		'--hidden-window',
-		'--system-dir', './dist',
+		'--system-dir', systemDirectory,
 		'--no-audio',
 		'--input-timeline', cppGles2Timeline,
 		'--crt-postprocessing', 'off',

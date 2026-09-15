@@ -20,8 +20,8 @@ export function createHostOverlayState(): HostOverlayPipelineState {
 export function writeHostOverlayState(ctx: RenderGraphPassContext, state: HostOverlayPipelineState): void {
 	const presenter = ctx.presenter;
 	const frame = presenter.hostOverlayQueue.consumeOverlayFrame();
-	state.width = presenter.offscreenCanvasSize.x;
-	state.height = presenter.offscreenCanvasSize.y;
+	state.width = presenter.canvasSize.x;
+	state.height = presenter.canvasSize.y;
 	state.overlayWidth = frame.logicalWidth;
 	state.overlayHeight = frame.logicalHeight;
 	state.time = ctx.time;
@@ -48,8 +48,8 @@ export function createHostMenuState(): HostMenuPipelineState {
 export function writeHostMenuState(ctx: RenderGraphPassContext, state: HostMenuPipelineState): void {
 	const presenter = ctx.presenter;
 	const frame = presenter.hostOverlayQueue.consumeHostMenuFrame();
-	state.width = presenter.offscreenCanvasSize.x;
-	state.height = presenter.offscreenCanvasSize.y;
+	state.width = presenter.canvasSize.x;
+	state.height = presenter.canvasSize.y;
 	state.overlayWidth = presenter.viewportSize.x;
 	state.overlayHeight = presenter.viewportSize.y;
 	state.time = ctx.time;

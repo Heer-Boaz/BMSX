@@ -4,6 +4,7 @@ import {
 	type BackendCaps,
 	type HeadlessBufferHandle,
 	type HeadlessTextureHandle,
+	type HeadlessRenderTargetHandle,
 	type TextureHandle,
 	type RenderPassDesc,
 	type PassEncoder,
@@ -14,7 +15,7 @@ import {
 import type { TextureParams } from '../backend/texture_params';
 import { createSolidRgba8Pixels } from '../shared/solid_pixels';
 import type { RenderPassLibrary } from '../backend/pass/library';
-import { registerHeadlessPasses, registerHeadlessPresentPass } from './passes';
+import { registerHeadlessPasses } from './passes';
 import { registerHostOverlayPass_Headless, registerHostMenuPass_Headless } from '../host_overlay/headless/pipeline';
 import { captureGxGpuVramSnapshot, executeGxGpuSoftwareVramCommands } from '../backend/software/gx_gpu';
 import { GxGpuSoftwareState } from '../backend/software/gx_gpu_state';
@@ -122,6 +123,10 @@ export class HeadlessGPUBackend implements GPUBackend {
 	public framebufferWords = new Uint32Array(0);
 	public framebufferWidth = 0;
 	public framebufferHeight = 0;
+	private defaultFramebufferPixels = this.framebufferPixels;
+	private defaultFramebufferWords = this.framebufferWords;
+	private defaultWidth = 0;
+	private defaultHeight = 0;
 	private readonly presentedFrameListeners: HeadlessPresentedFrameListener[] = [];
 	private readonly presentedFrame: HeadlessPresentedFrame = {
 		frameIndex: 0,
@@ -152,35 +157,41 @@ export class HeadlessGPUBackend implements GPUBackend {
 
 	resizePresentationTarget(width: number, height: number): void {
 		const byteLength = width * height * 4;
-		if (this.framebufferPixels.byteLength !== byteLength) {
+		if (this.defaultFramebufferPixels.byteLength !== byteLength) {
 			const buffer = new ArrayBuffer(byteLength);
-			this.framebufferPixels = new Uint8Array(buffer);
-			this.framebufferWords = new Uint32Array(buffer);
+			this.defaultFramebufferPixels = new Uint8Array(buffer);
+			this.defaultFramebufferWords = new Uint32Array(buffer);
 		}
-		this.framebufferWidth = width;
-		this.framebufferHeight = height;
-		if (width === this.gxGpuSoftware.interlacedWidth
-			&& height === this.gxGpuSoftware.interlacedHeight) {
-			return;
-		}
-		this.gxGpuSoftware.interlacedPixels = new Uint32Array(width * height);
-		this.gxGpuSoftware.interlacedWidth = width;
-		this.gxGpuSoftware.interlacedHeight = height;
-		this.gxGpuSoftware.interlacedValid = false;
+		this.defaultWidth = width;
+		this.defaultHeight = height;
+		this.activateDefaultRenderTarget();
+	}
+
+	activateRenderTarget(target: HeadlessRenderTargetHandle): void {
+		this.framebufferPixels = target.colorPixels!;
+		this.framebufferWords = target.colorWords!;
+		this.framebufferWidth = target.size.x;
+		this.framebufferHeight = target.size.y;
+	}
+
+	activateDefaultRenderTarget(): void {
+		this.framebufferPixels = this.defaultFramebufferPixels;
+		this.framebufferWords = this.defaultFramebufferWords;
+		this.framebufferWidth = this.defaultWidth;
+		this.framebufferHeight = this.defaultHeight;
 	}
 
 	registerBuiltinPasses(registry: RenderPassLibrary): void {
 		registerHeadlessPasses(registry);
 		registerHostOverlayPass_Headless(registry);
 		registerHostMenuPass_Headless(registry);
-		registerHeadlessPresentPass(registry);
 	}
 
 	public publishPresentation(): void {
 		const frame = this.presentedFrame;
 		frame.frameIndex = this.presentedFrameCount;
-		frame.width = this.framebufferWidth;
-		frame.height = this.framebufferHeight;
+		frame.width = this.defaultWidth;
+		frame.height = this.defaultHeight;
 		this.presentedFrameCount += 1;
 		for (let index = this.presentedFrameListeners.length - 1; index >= 0; index -= 1) {
 			this.presentedFrameListeners[index](frame);
@@ -188,7 +199,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	public borrowPresentedPixels(): Uint8Array {
-		return this.framebufferPixels;
+		return this.defaultFramebufferPixels;
 	}
 
 	public addPresentedFrameListener(listener: HeadlessPresentedFrameListener): void {
@@ -231,6 +242,39 @@ export class HeadlessGPUBackend implements GPUBackend {
 
 	private texturePixels(record: HeadlessTextureRecord): Uint8Array {
 		return record.pixels!;
+	}
+
+	getTexturePixels(handle: TextureHandle): Uint8Array {
+		return this.getTextureRecord(handle).pixels!;
+	}
+
+	presentTexture(handle: TextureHandle): void {
+		const source = this.getTextureRecord(handle);
+		const sourcePixels = source.pixels!;
+		const width = this.framebufferWidth;
+		const height = this.framebufferHeight;
+		const target = this.framebufferWords;
+		if (source.width === width && source.height === height) {
+			this.framebufferPixels.set(sourcePixels);
+			for (let index = 0; index < target.length; index += 1) target[index] |= 0xff000000;
+			return;
+		}
+		// SDL's nearest surface scaler: sample pixel centres, retain integer steps.
+		const sourceStepX = Math.trunc((source.width * 0x10000) / width);
+		const sourceStepY = Math.trunc((source.height * 0x10000) / height);
+		let sourceY = sourceStepY >>> 1;
+		for (let y = 0; y < height; y += 1) {
+			const sourceRow = (sourceY >>> 16) * source.width;
+			const targetRow = y * width;
+			let sourceX = sourceStepX >>> 1;
+			for (let x = 0; x < width; x += 1) {
+				const offset = (sourceRow + (sourceX >>> 16)) * 4;
+				target[targetRow + x] = sourcePixels[offset] | (sourcePixels[offset + 1] << 8)
+					| (sourcePixels[offset + 2] << 16) | 0xff000000;
+				sourceX += sourceStepX;
+			}
+			sourceY += sourceStepY;
+		}
 	}
 
 	setActiveTexture(unit: number): void {
@@ -377,11 +421,13 @@ export class HeadlessGPUBackend implements GPUBackend {
 		return handle;
 	}
 
-	createRenderTarget(color?: TextureHandle, depth?: TextureHandle): { size: { x: number; y: number }; colors: TextureHandle[]; depth?: TextureHandle } {
+	createRenderTarget(color?: TextureHandle, depth?: TextureHandle): HeadlessRenderTargetHandle {
 		const colors = color ? [color] : [];
 		if (color) {
 			const c = this.getTextureRecord(color);
-			return { size: { x: c.width, y: c.height }, colors, depth };
+			const colorPixels = c.pixels!;
+			const colorWords = new Uint32Array(colorPixels.buffer, colorPixels.byteOffset, colorPixels.byteLength / 4);
+			return { size: { x: c.width, y: c.height }, colors, depth, colorPixels, colorWords };
 		}
 		if (depth) {
 			const d = this.getTextureRecord(depth);
@@ -520,6 +566,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	}
 
 	endFrame(): void {
+		this.publishPresentation();
 	}
 
 	getFrameStats(): typeof this.frameStats {

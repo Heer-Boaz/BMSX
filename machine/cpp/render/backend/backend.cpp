@@ -179,14 +179,6 @@ void SoftwareBackend::resizePresentationTarget(i32 width, i32 height) {
 	m_default_width = width;
 	m_default_height = height;
 	m_default_pitch = m_presentation_target.m_pitch;
-	if (width != m_gx_gpu_software.interlacedWidth
-		|| height != m_gx_gpu_software.interlacedHeight) {
-		m_gx_gpu_software.interlacedPixels.resize(
-			static_cast<size_t>(width) * static_cast<size_t>(height));
-		m_gx_gpu_software.interlacedWidth = width;
-		m_gx_gpu_software.interlacedHeight = height;
-		m_gx_gpu_software.interlacedValid = false;
-	}
 	applyFramebufferTarget(
 		m_default_framebuffer,
 		m_default_width,
@@ -518,12 +510,13 @@ void SoftwareBackend::presentTexture(TextureHandle texture) {
 
 	const u32 sourceStepX = (static_cast<u32>(source.width) << 16u) / static_cast<u32>(m_width);
 	const u32 sourceStepY = (static_cast<u32>(source.height) << 16u) / static_cast<u32>(m_height);
-	u32 sourceY = 0u;
+	// SDL's nearest surface scaler samples pixel centres.
+	u32 sourceY = sourceStepY >> 1u;
 	for (i32 y = 0; y < m_height; y += 1) {
 		const u32* sourceRow = sourcePixels
 			+ static_cast<size_t>(sourceY >> 16u) * static_cast<size_t>(source.width);
 		u32* targetRow = m_framebuffer + static_cast<size_t>(y) * static_cast<size_t>(targetPixelsPerRow);
-		u32 sourceX = 0u;
+		u32 sourceX = sourceStepX >> 1u;
 		for (i32 x = 0; x < m_width; x += 1) {
 			targetRow[x] = sourceRow[sourceX >> 16u] | 0xff000000u;
 			sourceX += sourceStepX;

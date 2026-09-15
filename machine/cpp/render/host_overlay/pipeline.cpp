@@ -12,8 +12,8 @@ void writeHostOverlayPassState(
 	state.time = ctx.time;
 	state.delta = ctx.delta;
 	const HostOverlayFrame frame = presenter.hostOverlayQueue.consumeOverlayFrame();
-	state.width = static_cast<i32>(presenter.offscreenCanvasSize.x);
-	state.height = static_cast<i32>(presenter.offscreenCanvasSize.y);
+	state.width = static_cast<i32>(presenter.canvasSize.x);
+	state.height = static_cast<i32>(presenter.canvasSize.y);
 	state.overlayWidth = frame.logicalWidth;
 	state.overlayHeight = frame.logicalHeight;
 	state.commandKinds = frame.commandKinds;
@@ -27,8 +27,8 @@ void writeHostMenuPassState(
 ) {
 	HostMenuPipelineState& state = stateStorage.hostMenu;
 	VideoPresenter& presenter = *ctx.presenter;
-	state.width = static_cast<i32>(presenter.offscreenCanvasSize.x);
-	state.height = static_cast<i32>(presenter.offscreenCanvasSize.y);
+	state.width = static_cast<i32>(presenter.canvasSize.x);
+	state.height = static_cast<i32>(presenter.canvasSize.y);
 	state.overlayWidth = static_cast<i32>(presenter.viewportSize.x);
 	state.overlayHeight = static_cast<i32>(presenter.viewportSize.y);
 	const HostMenuFrame frame = presenter.hostOverlayQueue.consumeHostMenuFrame();

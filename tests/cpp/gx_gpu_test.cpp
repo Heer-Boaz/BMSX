@@ -11,6 +11,7 @@
 #include "machine/scheduler/device.h"
 #include "render/backend/backend.h"
 #include "render/backend/pass/library.h"
+#include "render/video_presenter.h"
 #include "render/backend/software/gx_gpu.h"
 #include "render/backend/software/gx_gpu_scanout.h"
 #include "render/backend/software/gx_gpu_state.h"
@@ -3293,6 +3294,45 @@ void testSoftwarePresentationCopiesRgbAsOpaquePixels() {
 	backend.destroyTexture(texture);
 }
 
+void testNativePresentationRetainsHistoryAcrossHostResizing() {
+	class Output final : public bmsx::VideoOutput {
+		void setDisplaySize(bmsx::i32, bmsx::i32) override {}
+	} video;
+	bmsx::GxGpuCommandBuffer commands(commandBufferDmaHarness.dma);
+	commands.reset();
+	SoftwareFrameHarness frame(commands, commands.readback);
+	frame.pcrtcWords[bmsx::GX_GPU_PCRTC_PMODE_LOW] = 0;
+	frame.pcrtcWords[bmsx::GX_GPU_PCRTC_BGCOLOR_LOW] = 0x00332211;
+	frame.pcrtcScanout.update(frame.pcrtcWords, frame.pcrtcTiming);
+	auto backend = std::make_unique<bmsx::SoftwareBackend>(4, 3, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	backend->resizePresentationTarget(4, 3);
+	auto& software = *backend;
+	bmsx::VideoPresenter presenter(video, std::move(backend), 4, 3);
+	auto passes = std::make_unique<bmsx::RenderPassLibrary>(&presenter.backend(), &presenter);
+	auto& registry = *passes;
+	presenter.installRenderPipeline(std::move(passes));
+	presenter.crt_postprocessing_enabled = false;
+	presenter.configurePresentation(bmsx::VideoPresenter::PresentationMode::Completed, true);
+	presenter.present(frame.output, 0, 0);
+	const auto* source = static_cast<bmsx::SoftwareTexture*>(registry.getStateRef<bmsx::PresentPipelineState>("present").colorTex);
+	require(source->width == 4 && source->height == 3, "history uses native dimensions");
+	require(std::all_of(source->data.begin(), source->data.end(), [](auto pixel) { return pixel == 0xff112233; }), "history contains native scanout");
+	presenter.setFixedRenderTargetSize(8, 6);
+	frame.pcrtcWords[bmsx::GX_GPU_PCRTC_BGCOLOR_LOW] = 0x00665544;
+	frame.pcrtcScanout.update(frame.pcrtcWords, frame.pcrtcTiming);
+	presenter.configurePresentation(bmsx::VideoPresenter::PresentationMode::Partial, false);
+	presenter.present(frame.output, 0, 0);
+	require(registry.getStateRef<bmsx::PresentPipelineState>("present").colorTex == source, "host resize retains history texture identity");
+	std::fill_n(software.framebuffer(), 8 * 6, 0xffffffff);
+	require(std::all_of(source->data.begin(), source->data.end(), [](auto pixel) { return pixel == 0xff112233; }), "host drawing and partial output do not change history");
+	presenter.useScanoutRenderTargetSize();
+	presenter.present(frame.output, 0, 0);
+	require(std::all_of(software.framebuffer(), software.framebuffer() + 12, [](auto pixel) { return pixel == 0xff112233; }), "return from host surface re-presents retained game pixels");
+	presenter.configurePresentation(bmsx::VideoPresenter::PresentationMode::Completed, true);
+	presenter.present(frame.output, 0, 0);
+	require(std::all_of(software.framebuffer(), software.framebuffer() + 12, [](auto pixel) { return pixel == 0xff445566; }), "completed output replaces history");
+}
+
 void testSoftwareScanoutUsesNativeOutputDimensions() {
 	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 256u * 212u);
 	bmsx::SoftwareBackend backend(256, 192, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
@@ -4689,6 +4729,7 @@ int main() {
 	testSoftwareFillBypassesDrawingAreaAndMaskBitDrawingState();
 	testSoftwareScanoutConsumesTransfersAndFill();
 	testSoftwarePresentationCopiesRgbAsOpaquePixels();
+	testNativePresentationRetainsHistoryAcrossHostResizing();
 	testSoftwareScanoutUsesNativeOutputDimensions();
 	testSoftwarePcrtcComposesSourceAlphaTerminalCellsOverRetainedCircuitTwoPixels();
 	testPcrtcProjectsDisplaySignalsAndSamplesMagnifiedSource();

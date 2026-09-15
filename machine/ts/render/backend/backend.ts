@@ -71,6 +71,8 @@ export type HeadlessRenderTargetHandle = {
 	size: vec2;
 	colors: TextureHandle[];
 	depth?: TextureHandle;
+	colorPixels?: Uint8Array;
+	colorWords?: Uint32Array;
 };
 export type WebGPURenderTargetHandle = {
 	color?: TextureHandle;
@@ -275,7 +277,6 @@ export interface RenderPassStateRegistry {
 	['present']: PresentPipelineState;
 	['crt']: CRTPipelineState;
 	['frame_resolve']: never;
-	['headless_present']: never;
 }
 export type RenderPassStateId = keyof RenderPassStateRegistry;
 

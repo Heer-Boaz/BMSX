@@ -51,6 +51,12 @@ function scanoutInterlacedVram(
 	scanout: GxGpuPcrtcScanout,
 	vramReplacementSerial: bigint,
 ): void {
+	if (state.width !== software.interlacedWidth || state.height !== software.interlacedHeight) {
+		software.interlacedPixels = new Uint32Array(state.width * state.height);
+		software.interlacedWidth = state.width;
+		software.interlacedHeight = state.height;
+		software.interlacedValid = false;
+	}
 	const geometryChanged = !software.interlacedValid
 		|| software.interlacedVramReplacementSerial !== vramReplacementSerial;
 	if (geometryChanged) {

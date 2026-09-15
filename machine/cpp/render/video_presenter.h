@@ -50,7 +50,7 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	Vec2 viewportSize;       // Host presentation size, independent of machine scanout.
 	Vec2 canvasSize;         // The backing buffer size
-	Vec2 offscreenCanvasSize;// Offscreen render target size
+	Vec2 offscreenCanvasSize;// Native PCRTC source size, independent of the host surface.
 
 	void setScanoutSize(i32 width, i32 height);
 	void setFixedRenderTargetSize(i32 width, i32 height);
@@ -127,8 +127,6 @@ private:
 	std::unique_ptr<RenderGraphRuntime> m_renderGraph;
 	DeviceQuantizeMode m_deviceQuantizeMode = DeviceQuantizeMode::None;
 	u64 m_deviceQuantizeConfigurationRevision = 0u;
-	i32 scanoutWidth;
-	i32 scanoutHeight;
 	bool fixedRenderTargetSize = false;
 
 	// Frame timing

@@ -1,6 +1,7 @@
 # Scanoutmaat en host-presentatiemaat
 
-Datum: 2026-09-13. Vergelijkingsbasis: `b2a1f85a7`.
+Oorspronkelijke maatcorrectie: 2026-09-13 (`b2a1f85a7`). Native-bronretentie
+aangescherpt op 2026-09-15; onderstaande oorspronkelijke bewijsbundel is historisch.
 
 ## Reproductie en oorzaak
 
@@ -28,15 +29,17 @@ presenter hebben verschillende afmetingen. Geen font-, atlas- of sourcefout.
 **BMSX-afleiding:** het product blijft zijn bestaande lage renderresoluties
 gebruiken. Geen HiDPI-rewrite of nieuwe windowmanager. De presenter bewaart apart
 de actuele scanoutmaat en de keuze om een vaste hostmaat te gebruiken. Eén owner
-past backend, video-output en rendergraph aan wanneer de gekozen maat verandert.
+past backend en video-output aan wanneer de hostmaat verandert. De rendergraph
+volgt uitsluitend de native scanoutmaat, zoals [MAME][mame] een schermtexture onderscheidt
+van het uiteindelijke renderdoel.
 
 ## Owners en representatie
 
 | Gegeven | TypeScript | C++ |
 | --- | --- | --- |
-| Actuele machine-outputmaat | `scanoutWidth`, `scanoutHeight`: number | dezelfde namen: i32 |
+| Actuele machine-outputmaat | `offscreenCanvasSize`: vec2 | dezelfde naam: Vec2 |
 | Host kiest vaste maat | `fixedRenderTargetSize`: boolean | dezelfde naam: bool |
-| Gekozen doelmaat | bestaande `viewportSize`, `canvasSize`, `offscreenCanvasSize` | bestaande Vec2-velden |
+| Gekozen hostdoelmaat | bestaande `viewportSize`, `canvasSize` | bestaande Vec2-velden |
 
 - `setScanoutSize` ontvangt de laatste outputmaat, ook wanneer de host een vaste
   maat gebruikt. PCRTC-revision, restore en reset blijven bij hun bestaande
@@ -45,8 +48,10 @@ past backend, video-output en rendergraph aan wanneer de gekozen maat verandert.
   de sizing-keuze: zij is niet langer afhankelijk van latere scanoutwijzigingen.
 - `useScanoutRenderTargetSize` volgt weer de **laatste** scanoutmaat. Het bewaart
   of herstelt geen vroegere maat. `CartEditor` heeft geen baseline-capture meer.
-- De feitelijke `setRenderTargetSize` is private. De bestaande gelijkheidscheck
-  voorkomt onnodig targetallocatie, hostlayout en graph-rebuild.
+- De feitelijke `setRenderTargetSize` is private. De gelijkheidscheck voorkomt
+  onnodige hosttargetallocatie en hostlayout. `setScanoutSize` herbouwt uitsluitend
+  bij gewijzigde native afmetingen de graph. Host-resizing bewaart beide
+  history-textures, inclusief hun actuele inhoud en selectie.
   De bestaande editor-activatietransitie begrenst ook layoutwerk; opnieuw een
   fout tonen in een al actieve IDE neemt het renderdoel niet opnieuw in bezit.
 
@@ -54,7 +59,7 @@ Callsites vóór de diff: TS `RenderPresentationState.presentFrame/reset`, C++
 `RenderPresentationState.render/reset`, libretro `sync_current_av_info`, IDE
 `enterRenderTargets/leaveRenderTargets`, en de bestaande graph-resizeproef.
 Geen nieuwe CPU-, cartlib-, MMIO-, save-state- of glyph-datapathcallsite.
-Drie scalarvelden per presenter; geen per-frame object, herstelcallback of
+Eén policyveld per presenter; geen per-frame object, herstelcallback of
 render-backend-specifieke oplossing. De ongeobserveerde game blijft de scanout
 volgen. Software en accelerated backends krijgen dezelfde gekozen doelmaat.
 
@@ -88,8 +93,21 @@ door het gedeelde harnas met de echte presenter.
 Dit sluit de genoemde Studio-restorefout, niet alle mogelijke rendercombinaties.
 De software-overlay consumeert nog 1:1-logische pixels; willekeurige publicaties
 met een andere logical/targetverhouding zijn een afzonderlijke parity-gate. De
-Studio kiest hier bewust dezelfde 384×288-layout en doelmaat.
+Studio kiest hier bewust dezelfde 384×288-layout en hostdoelmaat.
+
+De native-broncorrectie gebruikt in TS-software dezelfde graph-targets en
+history-passes als C++ in plaats van direct GX/quantize in de hostbuffer te
+tekenen. Headless publiceert de hostbuffer na alle passes in `endFrame`, niet als
+een graph-pass die slechts van de vroegere `frame_color` afhankelijk is.
+Typed-array framebuffer-views worden bij targetcreatie vastgelegd, niet
+per frame aangemaakt. Host-resizing raakt ook de interlace-history niet meer.
+De nearest-presentatie volgt [SDL's pixelcentrum-sampling][sdl]; software-CRT in TS
+wordt hiermee niet toegevoegd. De bestaande TS/C++ presentatieproeven toetsen
+nu ook native pixelretentie, targetidentiteit en held/partial versus committed
+frames, zonder afhankelijkheid van een spelcart.
 
 [duckstation]: https://github.com/stenzek/duckstation/blob/master/src/util/imgui_manager.cpp
 [opengl]: https://github.com/ocornut/imgui/blob/v1.92.3/backends/imgui_impl_opengl3.cpp
 [webgpu]: https://github.com/ocornut/imgui/blob/v1.92.3/backends/imgui_impl_wgpu.cpp
+[mame]: https://github.com/mamedev/mame/blob/master/src/emu/render.cpp
+[sdl]: https://github.com/libsdl-org/SDL/blob/main/src/video/SDL_stretch.c

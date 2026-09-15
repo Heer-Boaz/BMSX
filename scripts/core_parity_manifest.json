@@ -56,6 +56,11 @@
 			"reason": "host_crt_present_state_mirrored_by_cpp_render_backend_pass_library"
 		},
 		{
+			"pattern": "machine/ts/render/post/crt/headless/pipeline.ts",
+			"category": "host",
+			"reason": "headless_presentation_history_peer_of_cpp_software_backend"
+		},
+		{
 			"pattern": "machine/ts/render/post/crt/webgl/pipeline.ts",
 			"category": "host",
 			"reason": "webgl_crt_postprocess_peer_of_cpp_gles2_backend"

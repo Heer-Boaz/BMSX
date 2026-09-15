@@ -5043,7 +5043,14 @@ selects a host surface; `useScanoutRenderTargetSize` follows the latest output
 again. IDE activation requests its fixed 384x288 target. Restore/reset cannot
 resize that surface behind the layout, and deactivation does not restore a stale
 captured size. Only the presenter changes backend targets, video-output size and
-the rendergraph. See [ownership and renderer evidence](host_presentation_sizing.md).
+the rendergraph. `offscreenCanvasSize` is the native PCRTC source size;
+`canvasSize`/`viewportSize` are the host destination. Changing only the host
+destination retains native render targets and presentation history. Only a
+native size change rebuilds those targets. Software, WebGL2/GLES2 and WebGPU
+compose host chrome after the retained game image, never into its history.
+Interlaced field storage follows native scanout geometry, not window/IDE size.
+This source/destination split follows [MAME's screen textures and render targets](https://github.com/mamedev/mame/blob/master/src/emu/render.cpp).
+See [ownership and renderer evidence](host_presentation_sizing.md).
 `Host2DKind.Clip`
 is an ordered half-open, top-left-origin logical-pixel rectangle in that same
 lane. The producer intersects nested clips and retains each published rect

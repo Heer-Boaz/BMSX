@@ -19,6 +19,7 @@ export class VideoPresenter {
 	public canvasSize: vec2;
 	public readonly nativeCtx: BackendContext;
 	public readonly backend: GPUBackend;
+	/** Native PCRTC source size, independent of the host presentation surface. */
 	public offscreenCanvasSize: vec2;
 	public textures: { [k: string]: TextureHandle } = {};
 	public readonly hostOverlayQueue = new HostOverlayQueue();
@@ -46,8 +47,6 @@ export class VideoPresenter {
 	private readonly frame: FrameData = { frameIndex: 0, time: 0, delta: 0 };
 	private _deviceQuantizeMode = DeviceQuantizeMode.None;
 	private _deviceQuantizeConfigurationRevision = 0;
-	private scanoutWidth: number;
-	private scanoutHeight: number;
 	private fixedRenderTargetSize = false;
 
 	constructor(private readonly output: VideoOutput, backend: GPUBackend, viewportWidth: number, viewportHeight: number) {
@@ -56,8 +55,6 @@ export class VideoPresenter {
 		this.viewportSize = { x: viewportWidth, y: viewportHeight };
 		this.canvasSize = { x: viewportWidth, y: viewportHeight };
 		this.offscreenCanvasSize = { x: viewportWidth, y: viewportHeight };
-		this.scanoutWidth = viewportWidth;
-		this.scanoutHeight = viewportHeight;
 	}
 
 	public get deviceQuantizeMode(): DeviceQuantizeMode {
@@ -97,9 +94,11 @@ export class VideoPresenter {
 
 	/** Machine output can change while a host surface owns the presentation size. */
 	public setScanoutSize(width: number, height: number): void {
-		this.scanoutWidth = width;
-		this.scanoutHeight = height;
 		if (!this.fixedRenderTargetSize) this.setRenderTargetSize(width, height);
+		if (this.offscreenCanvasSize.x === width && this.offscreenCanvasSize.y === height) return;
+		this.offscreenCanvasSize.x = width;
+		this.offscreenCanvasSize.y = height;
+		this.rebuildGraph();
 	}
 
 	public setFixedRenderTargetSize(width: number, height: number): void {
@@ -109,7 +108,7 @@ export class VideoPresenter {
 
 	public useScanoutRenderTargetSize(): void {
 		this.fixedRenderTargetSize = false;
-		this.setRenderTargetSize(this.scanoutWidth, this.scanoutHeight);
+		this.setRenderTargetSize(this.offscreenCanvasSize.x, this.offscreenCanvasSize.y);
 	}
 
 	private setRenderTargetSize(width: number, height: number): void {
@@ -120,11 +119,8 @@ export class VideoPresenter {
 		this.viewportSize.y = height;
 		this.canvasSize.x = width;
 		this.canvasSize.y = height;
-		this.offscreenCanvasSize.x = width;
-		this.offscreenCanvasSize.y = height;
 		this.backend.resizePresentationTarget(width, height);
 		this.output.setDisplaySize(width, height);
-		this.rebuildGraph();
 	}
 
 	public mapDisplayPointToViewport(screenX: number, screenY: number, target: vec2): boolean {

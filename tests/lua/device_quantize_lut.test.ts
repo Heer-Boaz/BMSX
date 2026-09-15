@@ -43,7 +43,7 @@ test('headless device quantize indexes Bayer rows from the logical top', () => {
 		pixels[offset + 3] = 0;
 	}
 
-	applyHeadlessDeviceQuantize(pixels, 4, 4, DEVICE_QUANTIZE_LUTS[DeviceQuantizeMode.Msx10Rgb343 - DeviceQuantizeMode.Rgb565]);
+	applyHeadlessDeviceQuantize(pixels, pixels, 4, 4, DEVICE_QUANTIZE_LUTS[DeviceQuantizeMode.Msx10Rgb343 - DeviceQuantizeMode.Rgb565]);
 
 	const red = new Uint8Array(16);
 	for (let index = 0; index < red.length; index += 1) red[index] = pixels[index * 4];
