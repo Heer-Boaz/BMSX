@@ -16,6 +16,7 @@ const NODE_OPTION_VALUES_PATH = 'scripts/bootrom/platforms/node_option_values.ts
 const NODE_TOOLING_ENTRY_PATH = 'scripts/bootrom/platforms/node_tooling_entry.ts';
 const NODE_PLAYER_SOURCE_ROOTS = [
 	'hosts/node',
+	'hosts/common',
 	'machine/ts',
 	'runtime',
 	NODE_PLAYER_ENTRY_PATH,
@@ -25,6 +26,7 @@ const NODE_PLAYER_SOURCE_ROOTS = [
 ] as const;
 const NODE_TOOLING_SOURCE_ROOTS = [
 	'hosts/node',
+	'hosts/common',
 	'ide',
 	'package-lock.json',
 	'machine/ts',

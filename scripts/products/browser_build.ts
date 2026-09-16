@@ -13,12 +13,14 @@ const MACHINE_RUNTIME_SOURCE_ROOTS = [
 ] as const;
 const BROWSER_PLAYER_SOURCE_ROOTS = [
 	'hosts/browser',
+	'hosts/common',
 	'machine/ts',
 	'runtime',
 	'scripts/products/browser_build.ts',
 ] as const;
 const BROWSER_STUDIO_SOURCE_ROOTS = [
 	'hosts/browser',
+	'hosts/common',
 	'ide',
 	'machine/ts',
 	'runtime',
