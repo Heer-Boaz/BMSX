@@ -11,6 +11,7 @@ import {
 	WORKSPACE_METADATA_DIR,
 	WORKSPACE_STATE_FILE,
 	closeWorkspaceRecords,
+	createWorkspaceRecord,
 	deleteLocalWorkspaceRecord,
 	deleteRemoteWorkspaceRecord,
 	disconnectWorkspaceRecords,
@@ -129,6 +130,23 @@ function readWorkspaceAutosavePayload(record: WorkspaceRecord): WorkspaceAutosav
 	return isWorkspaceAutosavePayload(parsed) ? parsed : null;
 }
 
+function loadWorkspaceDirtyRecords(
+	storage: KeyValueStorage,
+	runtimeSources: RuntimeSourceState,
+	payload: WorkspaceAutosavePayload,
+): Promise<Array<readonly [string, WorkspaceRecord]>> {
+	return Promise.all(payload.dirtyFiles.map(entry => {
+		const projectRootPath = runtimeSourceProjectRootPath(runtimeSources, entry.domain);
+		const dirtyPath = buildWorkspaceDirtyEntryPath(projectRootPath, entry.domain, entry.path);
+		return readWorkspaceRecordVersion(
+			storage,
+			projectRootPath,
+			buildWorkspaceDirtyRecordPath(dirtyPath, entry.updatedAt),
+			entry.updatedAt,
+		).then(record => [dirtyPath, record] as const);
+	}));
+}
+
 export async function initializeWorkspaceStorage(
 	workspaceStorage: KeyValueStorage,
 	workspaceClock: HostClock,
@@ -187,39 +205,36 @@ export async function initializeWorkspaceStorage(
 		}
 		remoteRecord = null;
 	}
-	const record = selectNewestWorkspaceRecord(localRecord, remoteRecord);
+	let record = selectNewestWorkspaceRecord(localRecord, remoteRecord);
 	let payload = record === null
 		? null
 		: record === remoteRecord ? remotePayload : localPayload;
+	let loadedRecords = payload
+		? await loadWorkspaceDirtyRecords(storage, runtimeSources, payload)
+		: [];
+	if (record === remoteRecord && localRecord && loadedRecords.some(([, dirtyRecord]) => !dirtyRecord)) {
+		// A manifest only commits a generation once all its referenced text is present.
+		// Do not retire the local generation for an incomplete remote publication.
+		logOutput.log(
+			LogLevel.Warn,
+			`[WorkspaceStorage] Remote session '${statePath}' is incomplete; retaining the local session and its unsaved changes.`,
+		);
+		record = localRecord;
+		payload = localPayload;
+		loadedRecords = await loadWorkspaceDirtyRecords(storage, runtimeSources, payload);
+	}
 	const replacedLocalPayload = record === remoteRecord && localRecord
 		? localPayload
 		: null;
 	const generationDirtyRecords = new Map<string, WorkspaceRecord>();
 	if (payload) {
-		const loads = new Array<Promise<readonly [string, WorkspaceRecord]>>(payload.dirtyFiles.length);
-		for (let index = 0; index < payload.dirtyFiles.length; index += 1) {
-			const entry = payload.dirtyFiles[index];
-			const dirtyProjectRootPath = runtimeSourceProjectRootPath(runtimeSources, entry.domain);
-			const dirtyPath = buildWorkspaceDirtyEntryPath(
-				dirtyProjectRootPath,
-				entry.domain,
-				entry.path,
-			);
-			loads[index] = readWorkspaceRecordVersion(
-				storage,
-				dirtyProjectRootPath,
-				buildWorkspaceDirtyRecordPath(dirtyPath, entry.updatedAt),
-				entry.updatedAt,
-			).then(dirtyRecord => [dirtyPath, dirtyRecord] as const);
-		}
-		const loadedRecords = await Promise.all(loads);
 		const retainedDirtyFiles: PersistedDirtyEntry[] = [];
 		for (let index = 0; index < loadedRecords.length; index += 1) {
 			const [dirtyPath, dirtyRecord] = loadedRecords[index];
 			if (!dirtyRecord) {
 				logOutput.log(
 					LogLevel.Warn,
-					`[WorkspaceStorage] Unsaved changes for '${dirtyPath}' are not stored alongside this session and stay out of the restored editor; their record is left in storage for recovery.`,
+					`[WorkspaceStorage] Removing the session reference to missing unsaved changes for '${dirtyPath}'.`,
 				);
 				continue;
 			}
@@ -228,6 +243,8 @@ export async function initializeWorkspaceStorage(
 		}
 		if (retainedDirtyFiles.length !== payload.dirtyFiles.length) {
 			payload = { ...payload, dirtyFiles: retainedDirtyFiles };
+			record = createWorkspaceRecord(clock, JSON.stringify(payload));
+			writeLocalWorkspaceRecord(storage, projectRootPath, statePath, record);
 		}
 	}
 	const obsoleteLocalDirtyRecords: Array<readonly [string, string]> = [];

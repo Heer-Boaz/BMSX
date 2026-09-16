@@ -795,7 +795,7 @@ test('workspace state selects the newest exact local or remote record', async (t
 	);
 });
 
-test('remote manifest adoption survives a missing referenced record and retires the replaced local generation', async (t) => {
+test('an incomplete remote generation cannot retire readable local unsaved changes', async (t) => {
 	const storage = new MockStorage();
 	const { server } = installWorkspaceServer(t, storage);
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', TEST_DOMAIN, 'entry.lua');
@@ -825,14 +825,17 @@ test('remote manifest adoption survives a missing referenced record and retires 
 	);
 
 	const adopted = await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources, workspaceFiles, testLogOutput);
-	assert.deepEqual(adopted!.dirtyFiles, []);
-	assert.equal(
+	assert.deepEqual(adopted, localPayload);
+	assert.deepEqual(readLocalWorkspaceRecord(storage, 'offline-cart', statePath), localStateRecord);
+	assert.equal(workspaceDirtyRecords.get(dirtyPath)!.contents, '-- local dirty');
+	assert.equal(workspaceState.remoteRevision, -1);
+	assert.deepEqual(
 		readLocalWorkspaceRecord(
 			storage,
 			'offline-cart',
 			buildWorkspaceDirtyRecordPath(dirtyPath, 10),
 		),
-		null,
+		{ contents: '-- local dirty', updatedAt: 10 },
 	);
 
 	const remoteDirtyPath = buildWorkspaceDirtyRecordPath(dirtyPath, 30);
@@ -855,15 +858,15 @@ test('remote manifest adoption survives a missing referenced record and retires 
 	);
 });
 
-test('malformed BMSX-owned workspace records read as absent instead of failing the open', () => {
+test('malformed BMSX-owned workspace records are deleted without failing the open', () => {
 	const storage = new MockStorage();
 	const key = buildWorkspaceStorageKey('offline-cart', 'src/foo.lua');
 	storage.setItem(key, '{broken');
 	assert.equal(readLocalWorkspaceRecord(storage, 'offline-cart', 'src/foo.lua'), null);
-	assert.equal(storage.getItem(key), '{broken');
+	assert.equal(storage.getItem(key), null);
 });
 
-test('raw session JSON under a workspace record key is ignored without legacy interpretation', async (t) => {
+test('raw session JSON under a workspace record key is deleted without legacy interpretation', async (t) => {
 	const storage = new MockStorage();
 	installOfflineWorkspace(t, storage);
 	const statePath = workspaceStatePath('offline-cart');
@@ -878,7 +881,7 @@ test('raw session JSON under a workspace record key is ignored without legacy in
 		await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources, workspaceFiles, testLogOutput),
 		null,
 	);
-	assert.notEqual(storage.getItem(key), null);
+	assert.equal(storage.getItem(key), null);
 });
 
 test('a session record from an incompatible payload shape is discarded instead of failing the open', async (t) => {
@@ -1003,6 +1006,16 @@ test('manifest dirty timestamp skips an uncommitted record generation without fa
 	const restored = await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources, workspaceFiles, testLogOutput);
 	assert.deepEqual(restored!.dirtyFiles, []);
 	assert.equal(readLocalWorkspaceRecord(storage, 'offline-cart', uncommittedPath)!.updatedAt, 81);
+	const repairedRecord = readLocalWorkspaceRecord(storage, 'offline-cart', workspaceStatePath('offline-cart'))!;
+	assert.deepEqual(JSON.parse(repairedRecord.contents), restored);
+	assert.deepEqual(workspaceState.localGeneration!.stateRecord, repairedRecord);
+	assert.ok(repairedRecord.updatedAt > 90);
+	const warnings = testLogOutput.messages.length;
+	assert.deepEqual(
+		await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources, workspaceFiles, testLogOutput),
+		restored,
+	);
+	assert.equal(testLogOutput.messages.length, warnings);
 });
 
 test('manifest dirty entry rejected by newer ROM is not hydrated', async (t) => {

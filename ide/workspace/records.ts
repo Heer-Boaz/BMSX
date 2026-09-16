@@ -67,11 +67,8 @@ export function readLocalWorkspaceRecord(
 	}
 	const record = parseWorkspaceRecord(raw);
 	if (!record) {
-		// Opening a cart must never fail on cached state, so an unreadable record reads as
-		// absent. It is left in storage rather than removed: this reader also serves dirty
-		// records, which hold the only copy of text the user typed. Callers that know a
-		// record is regenerable delete it by path instead.
-		console.warn(`[WorkspaceStorage] Ignoring unreadable workspace record '${relativePath}'.`);
+		console.warn(`[WorkspaceStorage] Deleting unreadable workspace record '${relativePath}'.`);
+		deleteLocalWorkspaceRecord(storage, projectRootPath, relativePath);
 		return null;
 	}
 	if (record.updatedAt > lastWorkspaceRecordTimestamp) {

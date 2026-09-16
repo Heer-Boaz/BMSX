@@ -4904,8 +4904,12 @@ records are present; only then are records belonging exclusively to the
 replaced local generation removed. A dirty record rejected by source
 arbitration is not hydrated and is removed by the next session commit. The
 current session schema has no version field or migration path. Missing storage
-is absence; malformed BMSX-owned records and session entries whose dirty
-timestamp is absent fail without deletion or repair.
+is absence; malformed or incompatible BMSX-owned records are deleted at the
+persistence boundary without aborting workbench startup. An incomplete remote
+generation cannot replace an existing local session. Missing dirty-record
+references in the restored session are removed and the repaired manifest is
+committed locally before remote replication. Readable dirty records remain
+subject to the same generation and source-arbitration rules.
 
 The workbench session and dirty working-copy backups are separate. The editor
 group serializes its ordered input envelopes and active/preview indices;
