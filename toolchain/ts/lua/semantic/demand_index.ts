@@ -630,6 +630,12 @@ export class SemanticDemandIndex {
 					this.parameterDependencyTerms.push(summary.aliases[aliasIndex].source);
 				}
 			}
+			// A callback selected by lookup(parameter) still depends on that
+			// parameter. This only schedules the call; resolution owns its effects.
+			for (const call of this.resultCallsForTerm(term)) {
+				this.parameterDependencyTerms.push(call.callee);
+				for (const argument of call.arguments) this.parameterDependencyTerms.push(argument);
+			}
 		}
 		this.parameterDependencyTerms.length = 0;
 		return false;

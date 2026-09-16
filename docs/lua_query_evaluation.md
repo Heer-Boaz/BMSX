@@ -195,3 +195,20 @@ timings use esbuild bundles rather than tsx startup. Artifacts and scripts:
   deliberately contains source diagnostics. This proves existing workflow
   regressions, not new graph UX, B04 completeness or low-end-host latency.
 - `git diff --check`: passed.
+
+## Callback parameters returned by another call
+
+The dependency index follows a result's producing call when deciding whether
+a callback depends on a function parameter. For example, `local callback =
+select_action(action); callback(target)` retains the dependency on `action`
+through `select_action`'s arguments and callee. The previous traversal stopped
+at that result, so the selected callback's writes could disappear from member
+navigation and completion.
+
+This uses the existing result-call index and parameter-dependency worklist.
+It selects candidate work only: ordinary callee resolution and instantiation
+still own the callback's actual argument bindings and effects. It adds no
+runtime work or global same-name callback rule. The public frontend regression
+also checks that an unrelated writer does not contribute members. Broader
+prototype-registration and shared-key completion remain separate problems;
+this correction does not establish complete factory inference.

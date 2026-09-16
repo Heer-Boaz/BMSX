@@ -503,6 +503,28 @@ test('LuaSemanticFrontend enumerates members through modules, nested values, eff
 	);
 });
 
+test('LuaSemanticFrontend follows a callback parameter returned by another function', () => {
+	const source = `local function selected(value) return value end
+local function dispatch(action, target)
+	local callback = selected(action)
+	callback(target)
+end
+local function initialize(value) value.ready = { answer = 42 } end
+local function unrelated(value) value.other = true end
+local object = {}
+dispatch(initialize, object)
+return object.ready.answer`;
+	const frontend = buildLuaSemanticFrontend([{ path: 'callback.lua', source }]);
+	const file = frontend.getFile('callback.lua');
+	const position = findPosition(source, 'return object.ready.answer', 'answer');
+	const navigation = firstNavigationTarget(file, position.line, position.column);
+	assert.ok(navigation);
+	assert.equal(navigation.range.start.line, 6);
+	const receiver = file.findMemberCompletionContextAt(position.line, 'return object.'.length + 1);
+	assert.ok(receiver);
+	assert.deepEqual(file.getMemberCompletionDeclarations(receiver).map(member => member.name), ['ready']);
+});
+
 test('LuaSemanticFrontend retains repeat locals through the until condition', () => {
 	const source = [
 		'repeat',
