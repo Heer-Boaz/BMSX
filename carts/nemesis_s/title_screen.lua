@@ -116,9 +116,6 @@ function title_screen:enter_idle()
 	self:release_presentation()
 	self.presentation = scene_library.instantiate(title_scene.id)
 	self.selected_player_count = 1
-	-- FSM scopes bind timelines before entering_state. Start sampling only
-	-- after this entry has constructed the scene those tracks address.
-	self.timelines:play(idle_timeline_id)
 end
 
 function title_screen:toggle_player_count()
@@ -143,7 +140,6 @@ end
 function title_screen:begin_flight()
 	self:release_presentation()
 	self.presentation = scene_library.instantiate(hangar_scene.id)
-	self.timelines:play(hangar_timeline_id)
 end
 
 function title_screen:begin_ignition()
@@ -213,7 +209,7 @@ local define_fsm<const> = function()
 								},
 							},
 						},
-						autoplay = false,
+						autoplay = true,
 						stop_on_exit = true,
 					},
 				},
@@ -278,7 +274,7 @@ local define_fsm<const> = function()
 										},
 									},
 								},
-								autoplay = false,
+								autoplay = true,
 								stop_on_exit = true,
 							},
 						},

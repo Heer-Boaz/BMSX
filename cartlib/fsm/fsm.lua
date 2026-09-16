@@ -92,8 +92,9 @@
 --    When a state with substates is entered (either on transition or on
 --    machine start), the runtime calls enter_initial_substate_chain() which
 --    recursively enters the active child tree: the current main child plus
---    any concurrent siblings.  It activates timelines and calls
---    entering_state before descending into each active child.  This ensures
+--    any concurrent siblings. Completion bindings are installed before entry;
+--    entering_state constructs its targets before autoplay samples them.
+--    Both finish before descending into each active child. This ensures
 --    that entering a compound state like /shrine always also enters
 --    /shrine/entering, and that concurrent regions are initialized before the
 --    first update/draw.
@@ -793,14 +794,16 @@ function state:deactivate_actioneffects()
 	self.actioneffects_active = false
 end
 
-function state:activate_timelines()
-	local bindings<const> = self.timeline_bindings
-	if not bindings then
-		return
-	end
+function state:bind_timelines(bindings)
 	for i = 1, #bindings do
 		local binding<const> = bindings[i]
 		self.target.timelines:bind_finished(binding.id, binding.on_finished, binding)
+	end
+end
+
+function state:play_timelines(bindings)
+	for i = 1, #bindings do
+		local binding<const> = bindings[i]
 		if binding.autoplay then
 			self.target.timelines:play(binding.id, binding.play_options)
 		end
@@ -830,12 +833,18 @@ end
 
 function state:enter_child_state(child)
 	local child_def<const> = child.definition
+	local timelines<const> = child.timeline_bindings
 	child:activate_actioneffects()
-	child:activate_timelines()
+	if timelines then
+		child:bind_timelines(timelines)
+	end
 	local enter_child<const> = child_def.entering_state
 	local next_state
 	if enter_child then
 		next_state = enter_child(self.target, child)
+	end
+	if timelines then
+		child:play_timelines(timelines)
 	end
 	child:transition_to_next_state_if_provided(next_state)
 end
@@ -843,7 +852,11 @@ end
 function state:start()
 	self:enter_critical_section()
 	self:activate_actioneffects()
-	self:activate_timelines()
+	local timelines<const> = self.timeline_bindings
+	if timelines then
+		self:bind_timelines(timelines)
+		self:play_timelines(timelines)
+	end
 	self:enter_initial_substate_chain()
 	local queue_published<const> = self:leave_critical_section()
 	if not queue_published then
@@ -926,7 +939,7 @@ end
 -- Compiled path requests are queued at the root before reaching this method;
 -- guards are evaluated here before changing the active child.
 -- Sequence: exit current state → release scoped work → push history →
--- set new current_id → activate scoped work → call entering_state →
+-- set new current_id → bind scoped work → entering_state → autoplay →
 -- if entered state has substates, reset_submachine + enter_initial_substate_chain.
 function state:transition_to_state(state_id)
 	if self.current_id == state_id then
@@ -952,14 +965,7 @@ function state:transition_to_state(state_id)
 	local cur_def<const> = cur.definition
 	cur:add_active_subtree_tags()
 
-	cur:activate_actioneffects()
-	cur:activate_timelines()
-	local enter_handler<const> = cur_def.entering_state
-	local next_state
-	if enter_handler then
-		next_state = enter_handler(self.target, cur)
-	end
-	cur:transition_to_next_state_if_provided(next_state)
+	self:enter_child_state(cur)
 
 	if cur_def.initial then
 		cur:remove_active_subtree_tags()

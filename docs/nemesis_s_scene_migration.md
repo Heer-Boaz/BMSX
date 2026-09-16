@@ -32,10 +32,18 @@ selector and cover visuals; the lift adds offsets from 0 to -56 to the ship's
 spawn y. Editing the ship from y=129 to y=125 consequently changes its ignition
 position from 73 to 69. Background tracks use the scene's two image options.
 
-The existing FSM binds scoped timelines before its entry callback. The two
-scene-creating entries explicitly start their timelines after construction.
-Their scope still owns stopping and completion callbacks. This avoids sampling
-unconstructed members without changing the FSM contract or adding hot guards.
+FSM entry installs completion bindings, runs `entering_state`, then starts
+autoplay before entering child states. Title and hangar use that ordinary
+lifecycle; they no longer disable autoplay and manually restart it to avoid
+sampling unconstructed members. Explicit playback with runtime parameters
+continues to use the completion binding installed before entry. State exit
+owns stopping and unbinding playback.
+
+This ordering follows the entry-actions-before-invoked-work sequence in
+[XState `enterStates`](https://github.com/statelyai/xstate/blob/main/packages/core/src/stateUtils.ts).
+The generic regression covers initial entry, reentry, compound/concurrent
+states, manual playback completion and teardown. The existing allocation/cycle
+budget for 10,000 transitions remains enforced.
 
 ## Lifetime and cost
 
