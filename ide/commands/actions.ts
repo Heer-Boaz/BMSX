@@ -127,7 +127,7 @@ export function performHotResume(
 			handleHotResumeError(error);
 			return;
 		}
-		hotResume(
+		const accepted = hotResume(
 			sources,
 			luaTooling,
 			fault,
@@ -141,8 +141,10 @@ export function performHotResume(
 				showEditorMessage('Hot Resume: code applied', constants.COLOR_STATUS_TEXT, 2.0);
 			},
 		);
-		execution.requestExecution(true);
-		deactivateEditor(editor, overlayRenderer, audioOutput);
+		if (accepted) {
+			execution.requestExecution(true);
+			deactivateEditor(editor, overlayRenderer, audioOutput);
+		}
 	}, handleHotResumeError);
 }
 

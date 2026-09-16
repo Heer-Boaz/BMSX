@@ -8,7 +8,7 @@ product work, not reasons to bypass the UI.
 ## Run
 
 ```sh
-npm run build:product:node-headless-tooling -- --debug --force
+npm run build:product:node-headless-tooling -- --debug
 node dist/host_headless_tooling.debug.js --control 0 --studio-workspace "$PWD" nemesis_s
 # Native frontend (no TypeScript Studio):
 build-libretro-host-wsl/bmsx_libretro_host --core build-libretro-wsl/libretro_bmsx.so \
@@ -59,6 +59,18 @@ that asynchronous editor queries have finished. Clipboard-set does not edit a
 document: use the normal Paste shortcut. For an automation PTY, use
 `stty -icanon -echo; node scripts/host_control.mjs PORT` so the terminal driver
 does not truncate long JSON lines; ordinary piped stdin needs no terminal setup.
+
+## Authoring regression
+
+`npm run test:ide-authoring` builds the required artifacts incrementally and runs
+Studio in an isolated workspace. The test uses this same client for all edits:
+Ctrl+comma opens files, Ctrl+N creates Lua files, clipboard paste changes source,
+and the Command Palette starts a program, applies Hot Resume and reboots it.
+It checks saved files, actual rendered colors and guest output through new module
+imports, BIOS source edits, Undo/Redo, syntax-error repair and rejected
+live-continuation changes.
+It has no editor-model, command-service or machine-state mutation API. Screenshots
+remain under the reported `.bmsx/control/screenshots/` directory.
 
 ## Owners and references
 

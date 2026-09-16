@@ -1465,6 +1465,12 @@ module paths are BIOS-owned and a cartridge may not redefine them. The linker
 resolves only the public import library and never searches system debug symbols
 or BIOS source modules.
 
+Both offline ROM builds and IDE source rebuilds retain every declared public
+BIOS module and its dependency closure as program roots, including routines
+used only by cartridges. These roots do not become startup preloads. This is
+the same reachability rule used for externally visible symbols in
+[LLVM LLD](https://github.com/llvm/llvm-project/blob/main/lld/ELF/MarkLive.cpp).
+
 ROM asset symbols are a compile/link contract, not a runtime registry. The
 rompack owner emits the generated const module `bmsx/assets`; the compiler
 recognises that module as compile-time only. Stable immutable-prefix exports
@@ -2005,6 +2011,14 @@ succeeds does the generic CPU unwind primitive discard the selected root and
 all frames above it and clear the completion-value latch. Guest writes already
 performed by those calls remain live and are not rolled back. The CPU does not
 store a batch, source revision, or Hot Resume classification.
+
+An unmappable live continuation is an authoring rejection before installation,
+just like a rejected source build. It leaves the installed program runnable and
+does not latch a failure in the runtime mutation queue. The workbench remains
+available for correction; deferred proof runs at the actual supervisor-return
+boundary and reports rejection there. Exceptions after installation begins still
+fault the mutation queue. This separates preparation from commit, as in
+[Roslyn's Edit and Continue session](https://github.com/dotnet/roslyn/blob/main/src/Features/Core/Portable/EditAndContinue/DebuggingSession.cs).
 
 After that proof, the ROM owner installs the rebuilt physical media. IDE
 tooling reads CPU-owned execution-domain residency before asking the

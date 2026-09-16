@@ -246,6 +246,7 @@ export function installBlua32Revision(
 	applyHotResumeRelocation(cpu, relocation);
 }
 
+/** Returns whether installation completed or a supervisor-return plan was admitted. */
 export function hotResume(
 	sources: RuntimeSourceState,
 	luaTooling: RuntimeLuaTooling,
@@ -255,9 +256,9 @@ export function hotResume(
 	runtimeTasks: RuntimeTaskQueue,
 	runtime: Runtime,
 	built: BuiltBlua32Revision | null,
-	onDeferredError: (error: unknown) => void,
+	onError: (error: unknown) => void,
 	installationCompleted: (() => void) | null,
-): void {
+): boolean {
 	try {
 		const sourceEditDomains = built === null ? 0 : built.sourceEditDomains;
 		const rebuildSystem = (sourceEditDomains & executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID)) !== 0;
@@ -349,7 +350,21 @@ export function hotResume(
 			initCalls,
 			failedCompletionFrameIndex,
 		};
-		const installation = (): void => {
+		const installation = (): boolean => {
+			const retainedFrameCount = prepared.failedCompletionFrameIndex >= 0
+				? prepared.failedCompletionFrameIndex
+				: cpu.getFrameDepth();
+			let relocation: Uint32Array | null;
+			try {
+				relocation = prepared.built === null
+					? null
+					: buildHotResumeRelocation(cpu, prepared.built.revisions, retainedFrameCount);
+			} catch (error) {
+				// Unsupported live edits reject before any media/CPU write. They
+				// must not fault the mutation queue or stop the installed program.
+				onError(error);
+				return false;
+			}
 			applyPreparedHotResume(
 				sources,
 				luaTooling,
@@ -357,10 +372,12 @@ export function hotResume(
 				debuggerState,
 				runtime,
 				prepared,
+				relocation,
 			);
 			if (installationCompleted !== null) {
 				installationCompleted();
 			}
+			return true;
 		};
 		if (deferUntilUserExecution) {
 			const targetFrameIndex = userFrameDepth - 1;
@@ -378,12 +395,12 @@ export function hotResume(
 					cpu.readFramePc(targetFrameIndex),
 					supervisorActive,
 					installation,
-					onDeferredError,
+					onError,
 				),
 			);
-			return;
+			return true;
 		}
-		installation();
+		return installation();
 	} catch (error) {
 		throw convertToError(error);
 	}
@@ -396,14 +413,9 @@ function applyPreparedHotResume(
 	debuggerState: RuntimeDebuggerState,
 	runtime: Runtime,
 	prepared: PreparedHotResume,
+	relocation: Uint32Array | null,
 ): void {
 	const cpu = runtime.machine.cpu;
-	const retainedFrameCount = prepared.failedCompletionFrameIndex >= 0
-		? prepared.failedCompletionFrameIndex
-		: cpu.getFrameDepth();
-	const relocation = prepared.built === null
-		? null
-		: buildHotResumeRelocation(cpu, prepared.built.revisions, retainedFrameCount);
 	// Preparation (including relocation rejection) leaves history untouched.
 	// A no-source-change resume still mutates the heap through its init calls.
 	if (prepared.built === null) runtime.history.stop();

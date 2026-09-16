@@ -170,7 +170,7 @@ function prepareRegistryProgramSources(
 	assetModulePath: string,
 	assetModule: RomAssetSymbolModule,
 	entrySourcePath: string | undefined,
-	preloadModules: readonly string[],
+	moduleRoots: readonly string[],
 ): {
 	entry: ProgramSourceModule;
 	modules: ProgramSourceModule[];
@@ -205,7 +205,7 @@ function prepareRegistryProgramSources(
 	return {
 		entry: programSources.entry,
 		modules: selectLuaProgramModules(programSources.entry.chunk, modules,
-			[...preloadModules, ...registry.records.filter(record => record.generated).map(record => record.module_path)]),
+			[...moduleRoots, ...registry.records.filter(record => record.generated).map(record => record.module_path)]),
 		sources: compiledSources,
 		diagnosticSources,
 		entrySourcePath: programSources.entry.sourcePath,
@@ -305,7 +305,8 @@ export function buildBlua32Media(
 				imageOffset,
 			),
 			systemRegistry.entrySourcePath,
-			installedSystem.symbols!.metadata.preloadModules,
+			// Public routines are roots even when only a cartridge calls them.
+			[...installedSystem.symbols!.metadata.preloadModules, ...BIOS_FUNCTION_EXPORTS.map(exported => exported.path)],
 		);
 		const sourceCorrespondence = new LuaSourceCorrespondence(sources.systemInstalledBlua32Sources, programSources.sources);
 		const compiledSystem = compileLuaChunkToProgram(
