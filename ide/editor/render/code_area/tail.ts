@@ -93,7 +93,7 @@ export function finalizeCodeAreaRender(
 		drawCursor(cursorInfo, viewport.textLeft, cursorActive);
 	}
 	completion.popupBounds = drawCompletionPopup(completion.session, cursorInfo, editorViewState.lineHeight, viewport, completion.popupBoundsScratch);
-	drawParameterHintOverlay(completion.hint, cursorInfo, editorViewState.lineHeight, viewport);
+	drawParameterHintOverlay(completion.hint, cursorInfo, editorViewState.lineHeight, viewport, completion.popupBounds);
 	if (editorViewState.codeVerticalScrollbarVisible) {
 		editorViewState.scrollbars.codeVertical.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 	}

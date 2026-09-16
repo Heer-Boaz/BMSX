@@ -274,21 +274,24 @@ export function wrapTextDynamic(
 	return lines;
 }
 
-export function isLuaCommentContext(
+export const enum LuaTextContext { Code, String, Comment }
+
+export function getLuaTextContext(
 	buffer: LuaCommentTextBuffer,
 	targetRow: number,
 	targetColumn: number
-): boolean {
+): LuaTextContext {
 	const lineCount = buffer.getLineCount();
 	if (targetRow < 0 || targetRow >= lineCount) {
-		return false;
+		return LuaTextContext.Code;
 	}
 	const cache = getLuaCommentContextCache(buffer);
 	ensureLuaCommentStateUpTo(buffer, cache, targetRow);
 	const line = buffer.getLineContent(targetRow);
 	const state = scanLuaLineMode(line, cache.modeState[targetRow], cache.levelState[targetRow], targetColumn, true);
 	const mode = stateMode(state);
-	return mode === MODE_LONG_COMMENT;
+	return mode === MODE_LONG_COMMENT ? LuaTextContext.Comment
+		: mode === MODE_NORMAL ? LuaTextContext.Code : LuaTextContext.String;
 }
 
 class LuaCommentContextCache {

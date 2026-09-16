@@ -126,12 +126,14 @@ export type LuaSemanticFrontendFile = {
 	getReference(identifier: LuaIdentifierExpression): LuaBoundReference | undefined;
 	getVisibleDeclarationsAt(line: number, column: number): readonly Decl[];
 	findMemberCompletionContextAt(line: number, memberStartColumn: number): LuaMemberCompletionContext | null;
+	findModuleCompletionRangeAt(line: number, column: number): LuaSourceRange | null;
 	getMemberCompletionDeclarations(context: LuaMemberCompletionContext): readonly Decl[];
 	findNavigationAt(line: number, column: number): LuaSemanticNavigationQuery | null;
 };
 
 export type LuaSemanticFrontend = {
 	snapshot: LuaSemanticWorkspaceSnapshot;
+	readonly moduleTargetsByAlias: ReadonlyMap<string, string>;
 	getFile(path: string): LuaSemanticFrontendFile;
 	findSymbolsByPosition(path: string, line: number, column: number): LuaSemanticPositionSymbols | null;
 	findReferencesByPosition(path: string, line: number, column: number): LuaSemanticReferenceQuery | null;
@@ -170,7 +172,7 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 	private readonly extraGlobalNames: readonly string[] | undefined;
 	private readonly globalSymbols: readonly LuaSymbolEntry[];
 	private readonly knownGlobalNames: ReadonlySet<string>;
-	private readonly moduleTargetsByAlias: ReadonlyMap<string, string>;
+	public readonly moduleTargetsByAlias: ReadonlyMap<string, string>;
 	private readonly files: Map<string, LuaSemanticFrontendFile> = new Map();
 
 	constructor(snapshot: LuaSemanticWorkspaceSnapshot, options: LuaSemanticFrontendOptions) {
@@ -445,6 +447,10 @@ function createBoundFile(
 		// disable-next-line single_line_method_pattern -- the bound frontend resolves retained semantic receivers against its immutable workspace snapshot.
 		getMemberCompletionDeclarations(context: LuaMemberCompletionContext): readonly Decl[] {
 			return snapshot.symbolResolver.getMembers(context.receiver);
+		},
+		findModuleCompletionRangeAt(line: number, column: number): LuaSourceRange | null {
+			const reference = findOrderedSourceRangeEntryAtPosition(source.moduleReferences, line, column);
+			return reference === undefined ? null : reference.range;
 		},
 		findNavigationAt(line: number, column: number): LuaSemanticNavigationQuery | null {
 			const symbols = findPositionSymbols(source, snapshot, line, column);

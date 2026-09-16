@@ -1,10 +1,12 @@
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { LuaLexer } from '../../../../toolchain/ts/lua/syntax/lexer';
+import type { SourceRange } from '../../../../toolchain/ts/lua/source_range';
 import type { LuaCompletionItem, LuaCompletionKind } from '../../../common/models';
 
 const COMPLETION_KIND_PRIORITY: Record<LuaCompletionKind, number> = {
 	local: 90,
 	member: 80,
+	module: 80,
 	global: 70,
 	native_method: 50,
 	native_property: 50,
@@ -27,6 +29,22 @@ export function resolveCompletionWordRange(line: string, column: number): Comple
 	while (end < line.length && LuaLexer.isIdentifierPart(line.charAt(end))) end += 1;
 	return {
 		prefix: line.slice(start, safeColumn),
+		replaceFromColumn: start,
+		replaceToColumn: end,
+		replacementText: line.slice(start, end),
+	};
+}
+
+/** Replace the module path inside its delimiters, including any suffix after the caret. */
+export function resolveModuleCompletionRange(line: string, column: number, range: SourceRange): CompletionWordRange | null {
+	if (range.start.line !== range.end.line) return null;
+	const open = range.start.column - 1;
+	const delimiterLength = line.charAt(open) === '[' ? line.indexOf('[', open + 1) - open + 1 : 1;
+	const start = open + delimiterLength;
+	const end = range.end.column - delimiterLength;
+	if (column < start || column > end) return null;
+	return {
+		prefix: line.slice(start, column),
 		replaceFromColumn: start,
 		replaceToColumn: end,
 		replacementText: line.slice(start, end),

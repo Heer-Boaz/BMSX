@@ -22,10 +22,10 @@ import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../../toolch
 import { resourceIdentityKey } from '../../../../common/resource';
 import * as constants from '../../../../common/constants';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../../input/keyboard/key_input';
-import { isLuaCommentContext } from '../../../../common/text';
+import { getLuaTextContext, LuaTextContext } from '../../../../common/text';
 import { point_in_rect } from '../../../../../machine/ts/common/rect';
 import { LuaLexer } from '../../../../../toolchain/ts/lua/syntax/lexer';
-import { buildCanonicalCompletionItems, filterCompletionItems, resolveCompletionWordRange } from '../../../../editor/contrib/suggest/completion_model';
+import { buildCanonicalCompletionItems, filterCompletionItems, resolveCompletionWordRange, resolveModuleCompletionRange } from '../../../../editor/contrib/suggest/completion_model';
 import { buildEditorSemanticFrontend } from '../../../../editor/contrib/intellisense/frontend';
 import { assignRowColumn } from '../../../../common/state';
 import * as TextEditing from '../../../../editor/editing/text_editing_and_selection';
@@ -44,10 +44,11 @@ import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../../runtime/fault_state';
 
 type LocalCompletionCacheEntry = {
-	parsedVersion: number;
+	snapshotRevision: symbol;
 	path: string;
 	file: LuaSemanticFrontendFile;
 	analysis: FileSemanticData;
+	moduleTargets: ReadonlyMap<string, string>;
 };
 
 const KEYWORD_COMPLETION_ITEMS: LuaCompletionItem[] = getKeywordCompletions();
@@ -454,13 +455,18 @@ export class CompletionController {
 		const row = clamp(cursor.row, 0, lineCount - 1);
 		const line = buffer.getLineContent(row);
 		const column = clamp(cursor.column, 0, line.length);
+		const textContext = getLuaTextContext(buffer, row, column);
+		if (textContext === LuaTextContext.Comment) return null;
+		if (textContext === LuaTextContext.String) {
+			const moduleRange = this.ensureLocalCompletionCache().file.findModuleCompletionRangeAt(row + 1, column + 1);
+			if (moduleRange === null) return null;
+			const range = resolveModuleCompletionRange(line, column, moduleRange);
+			return range === null ? null : { kind: 'module', row, ...range };
+		}
 		const wordRange = resolveCompletionWordRange(line, column);
 		const prefix = wordRange.prefix;
 		const replaceFromColumn = wordRange.replaceFromColumn;
 		const replaceToColumn = wordRange.replaceToColumn;
-		if (isLuaCommentContext(buffer, row, replaceFromColumn)) {
-			return null;
-		}
 		let operatorEndColumn = replaceFromColumn - 1;
 		while (operatorEndColumn >= 0 && LuaLexer.isWhitespace(line.charAt(operatorEndColumn))) {
 			operatorEndColumn -= 1;
@@ -516,6 +522,13 @@ export class CompletionController {
 	}
 
 	private collectCompletionItems(context: CompletionContext): LuaCompletionItem[] {
+		if (context.kind === 'module') {
+			const items: LuaCompletionItem[] = [];
+			for (const [name, path] of this.ensureLocalCompletionCache().moduleTargets) {
+				items.push({ label: name, insertText: name, sortKey: name, kind: 'module', detail: path });
+			}
+			return buildCanonicalCompletionItems(items);
+		}
 		if (context.kind === 'member') {
 			const semanticItems = this.getSemanticMemberCompletionItems(context);
 			const namePath = context.member.namePath;
@@ -591,22 +604,22 @@ export class CompletionController {
 	private ensureLocalCompletionCache(): LocalCompletionCacheEntry {
 		const key = resourceIdentityKey(activeCodeEditor.model.resource);
 		const path = this.getActivePath();
-		const currentVersion = this.getTextVersion();
-		const cached = this.localCompletionCache.get(key);
-		if (cached && cached.path === path && cached.parsedVersion === currentVersion) {
-			return cached;
-		}
 		const frontend = buildEditorSemanticFrontend(
 			this.bridge,
 			activeCodeEditor.model.resource,
 			this.getBuffer(),
 		);
+		const cached = this.localCompletionCache.get(key);
+		if (cached && cached.path === path && cached.snapshotRevision === frontend.snapshot.revision) {
+			return cached;
+		}
 		const file = frontend.getFile(path);
 		const updated: LocalCompletionCacheEntry = {
-			parsedVersion: currentVersion,
+			snapshotRevision: frontend.snapshot.revision,
 			path,
 			file,
 			analysis: frontend.snapshot.getFileData(path)!,
+			moduleTargets: frontend.moduleTargetsByAlias,
 		};
 		this.localCompletionCache.set(key, updated);
 		return updated;
@@ -752,6 +765,7 @@ export class CompletionController {
 		if (!edit || edit.kind === 'delete') return null;
 		if (edit.text.length === 0) return null;
 		const lastChar = edit.text.charAt(edit.text.length - 1);
+		if (context.kind === 'module') return lastChar === '/' || lastChar === "'" || lastChar === '"' ? 'punctuation' : 'typing';
 		if (context.kind === 'member') {
 			if (lastChar === '.'
 				|| lastChar === ':'
@@ -920,6 +934,9 @@ export class CompletionController {
 
 	private completionContextsCompatible(expected: CompletionContext, actual: CompletionContext): boolean {
 		if (expected.kind !== actual.kind) return false;
+		if (expected.kind === 'module' && actual.kind === 'module') {
+			return expected.row === actual.row && expected.replaceFromColumn === actual.replaceFromColumn;
+		}
 		if (expected.kind === 'member' && actual.kind === 'member') {
 			if (expected.member.operator !== actual.member.operator) return false;
 			if (expected.member.receiverKey !== actual.member.receiverKey) return false;

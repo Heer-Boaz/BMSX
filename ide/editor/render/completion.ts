@@ -195,6 +195,7 @@ function drawParameterHintOverlayCore(
 	measure: CompletionTextMeasure,
 	measureRange: TextRangeMeasure,
 	draw: CompletionTextDraw,
+	completionBounds: CompletionPopupBounds | null,
 ): void {
 	if (!hint || !cursorInfo) return;
 	const maxAllowedWidth = bounds.codeRight - bounds.textLeft;
@@ -213,6 +214,17 @@ function drawParameterHintOverlayCore(
 	if (popupTop < bounds.codeTop) {
 		popupTop = cursorInfo.y + cursorInfo.height + 2;
 		if (popupTop + popupHeight > bounds.codeBottom) popupTop = Math.max(bounds.codeTop, bounds.codeBottom - popupHeight);
+	}
+	if (completionBounds !== null
+		&& popupTop < completionBounds.bottom && popupTop + popupHeight > completionBounds.top
+		&& popupLeft < completionBounds.right && popupLeft + popupWidth > completionBounds.left) {
+		if (completionBounds.bottom + 2 + popupHeight <= bounds.codeBottom) {
+			popupTop = completionBounds.bottom + 2;
+		} else if (completionBounds.top - 2 - popupHeight >= bounds.codeTop) {
+			popupTop = completionBounds.top - 2 - popupHeight;
+		} else {
+			return; // Keep the actionable list visible when both popups cannot fit.
+		}
 	}
 	const popupRight = popupLeft + popupWidth;
 	const popupBottom = popupTop + popupHeight;
@@ -335,6 +347,7 @@ export function drawParameterHintOverlay(
 	cursorInfo: CursorScreenInfo | null,
 	lineHeight: number,
 	bounds: CompletionRenderBounds,
+	completionBounds: CompletionPopupBounds | null = null,
 ): void {
 	drawParameterHintOverlayCore(
 		hint,
@@ -344,6 +357,7 @@ export function drawParameterHintOverlay(
 		measureText,
 		measureTextRange,
 		drawCompletionText,
+		completionBounds,
 	);
 }
 
@@ -355,6 +369,7 @@ export function drawParameterHintOverlayWithRenderer(
 	measure: CompletionTextMeasure,
 	measureRange: TextRangeMeasure,
 	draw: CompletionTextDraw,
+	completionBounds: CompletionPopupBounds | null = null,
 ): void {
-	drawParameterHintOverlayCore(hint, cursorInfo, lineHeight, bounds, measure, measureRange, draw);
+	drawParameterHintOverlayCore(hint, cursorInfo, lineHeight, bounds, measure, measureRange, draw, completionBounds);
 }

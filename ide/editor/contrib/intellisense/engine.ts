@@ -22,7 +22,7 @@ import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain'
 import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import { getOrCreateSemanticProject } from './semantic/workspace/state';
 import { semanticSymbolKindToLuaSymbolKind } from '../../../../toolchain/ts/lua/semantic/common';
-import { isLuaCommentContext } from '../../../common/text';
+import { getLuaTextContext, LuaTextContext } from '../../../common/text';
 import type { EditorContextToken, LuaCompletionItem } from '../../../common/models';
 import type { CodeEditorContext } from '../../ui/code_editor_state';
 import {
@@ -98,7 +98,7 @@ function extractIdentifierExpression(buffer: TextBuffer, row: number, column: nu
 	}
 	const line = buffer.getLineContent(row);
 	const safeColumn = clamp(column, 0, line.length);
-	if (isLuaCommentContext(buffer, row, safeColumn)) {
+	if (getLuaTextContext(buffer, row, safeColumn) === LuaTextContext.Comment) {
 		return null;
 	}
 	if (line.length === 0) {
@@ -349,7 +349,7 @@ export function resolveContextMenuToken(row: number, column: number, path: strin
 		return null;
 	}
 	const safeColumn = clamp(column, 0, line.length);
-	if (isLuaCommentContext(buffer, row, safeColumn)) {
+	if (getLuaTextContext(buffer, row, safeColumn) === LuaTextContext.Comment) {
 		return null;
 	}
 	const expression = extractIdentifierExpression(buffer, row, safeColumn, path);

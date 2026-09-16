@@ -64,6 +64,7 @@ export type LuaCompletionKind =
 	| 'local'
 	| 'global'
 	| 'builtin'
+	| 'module'
 	| 'native_method'
 	| 'native_property'
 	| 'member';
@@ -80,6 +81,13 @@ export type LuaCompletionItem = {
 export type CompletionTrigger = 'manual' | 'typing' | 'punctuation';
 
 export type CompletionContext =
+	| {
+		kind: 'module';
+		prefix: string;
+		row: number;
+		replaceFromColumn: number;
+		replaceToColumn: number;
+	}
 	| {
 		kind: 'global';
 		prefix: string;
