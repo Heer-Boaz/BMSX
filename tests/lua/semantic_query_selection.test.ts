@@ -5,7 +5,25 @@ import { SemanticEffectIndex } from '../../toolchain/ts/lua/semantic/effect_inde
 import { FunctionSummaryStore, type FunctionSummaryID, type SemanticNameID } from '../../toolchain/ts/lua/semantic/function_summary';
 import { WorkspaceValueIdentityIndex } from '../../toolchain/ts/lua/semantic/identity';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
-import { declarationValueSource } from '../../toolchain/ts/lua/semantic/value_graph';
+import { declarationValueSource, literalValueSource } from '../../toolchain/ts/lua/semantic/value_graph';
+import { LuaSemanticQueryStore } from '../../toolchain/ts/lua/semantic/query_store';
+
+for (const receiver of [false, true]) test(`scalar field values cannot select unrelated storage: receiver=${receiver}`, () => {
+	const file = buildLuaFileSemanticData(`local object = {}
+${receiver ? 'function object:initialize()' : ''}
+${receiver ? 'self' : 'object'}.callback = nil
+${receiver ? 'self' : 'object'}.enabled = false
+${receiver ? 'self' : 'object'}.count = 0
+${receiver ? 'self' : 'object'}.label = ''
+${receiver ? 'end' : ''}`, 'scalars.lua');
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const demand = new SemanticDemandIndex([file], summaries);
+	for (const literal of [{ kind: 'nil', value: null }, { kind: 'boolean', value: false },
+		{ kind: 'number', value: 0 }, { kind: 'string', value: '' }] as const) {
+		const term = summaries.terms.compileSource(literalValueSource(literal));
+		assert.deepEqual(demand.relatedTerms(term), [], 'an equal scalar is not a storage alias');
+	}
+});
 
 test('effect selection follows reverse candidate edges to a fixed point, including cycles and unnamed bodies', () => {
 	const functionNames: SemanticNameID[] = [];
@@ -52,11 +70,16 @@ last:missing()
 	const demand = new SemanticDemandIndex([file], summaries);
 	assert.equal(terms.retainedMember(middle, run), undefined, 'selection is not a producer of storage paths');
 	const target = file.decls.find(entry => entry.name === 'run')!.id;
-	assert.deepEqual(demand.directTargets(file.callValues[0]), [target]);
-	assert.deepEqual(demand.directTargets(file.callValues[1]), [target]);
+	assert.deepEqual(demand.directTargets(file.callValues[0]), [], 'an alias candidate is not a bound direct target');
+	assert.deepEqual(demand.directTargets(file.callValues[1]), []);
 	assert.deepEqual(demand.directTargets(file.callValues[2]), []);
 	assert.deepEqual(demand.directTargets(file.callValues[3]), []);
 	assert.equal(demand.staticCalleeEvaluations, 2, 'positive and negative queries are keyed by callee, not callsite');
+	const query = new LuaSemanticQueryStore([file], new Map());
+	assert.deepEqual(query.callee(file.callValues[0]).map(fact => fact.calleeFn), [target]);
+	assert.deepEqual(query.callee(file.callValues[1]).map(fact => fact.calleeFn), [target]);
+	assert.deepEqual(query.callee(file.callValues[2]), []);
+	assert.deepEqual(query.callee(file.callValues[3]), []);
 });
 
 test('effect body slicing is demanded once per body, not for every candidate', () => {

@@ -41,6 +41,7 @@ export class SemanticDemandIndex {
 	private readonly receiverWritersByName: Map<SemanticNameID, FunctionSummaryID[]> = new Map();
 	private readonly candidateCallsByName: Map<SemanticNameID, SummaryCall[]> = new Map();
 	private readonly directTargetsByCall: Map<CallValueEntry, SymbolID[]> = new Map();
+	private readonly candidateTargetsByCall: Map<CallValueEntry, readonly SymbolID[]> = new Map();
 	private readonly referencesByCall: Map<CallValueEntry, Ref> = new Map();
 	private readonly callsBySite: Map<CallValueEntry, SummaryCall> = new Map();
 	private readonly dependentSummariesByTerm: FunctionSummaryID[][] = [];
@@ -233,12 +234,12 @@ export class SemanticDemandIndex {
 			}
 		}
 		for (let callIndex = 0; callIndex < topLevelCalls.length; callIndex += 1) {
-			this.retainStaticCallTargets(topLevelCalls[callIndex]);
+			this.retainCandidateTargets(topLevelCalls[callIndex]);
 		}
 		for (let summaryIndex = 0; summaryIndex < functionSummaries.length; summaryIndex += 1) {
 			const calls = functionSummaries[summaryIndex].calls;
 			for (let callIndex = 0; callIndex < calls.length; callIndex += 1) {
-				this.retainStaticCallTargets(calls[callIndex]);
+				this.retainCandidateTargets(calls[callIndex]);
 			}
 		}
 		this.aliases = aliases;
@@ -300,6 +301,7 @@ export class SemanticDemandIndex {
 		return this.candidateCallsByName.get(name) || EMPTY_CALLS;
 	}
 
+	/** Lexically bound targets only; selection candidates must pass value resolution. */
 	public directTargets(call: CallValueEntry): readonly SymbolID[] {
 		return this.directTargetsByCall.get(call) || EMPTY_SYMBOLS;
 	}
@@ -339,7 +341,7 @@ export class SemanticDemandIndex {
 			for (const call of summary.calls) {
 				for (let argument = 0; argument < call.arguments.length; argument += 1) {
 					if (!this.dependsOnParameter(summary, call.arguments[argument], current, false)) continue;
-					for (const target of this.directTargets(call.site)) {
+					for (const target of this.candidateTargets(call.site)) {
 						for (const callee of this.summaries.summaryIdsForDeclaration(target)) {
 							const formal = this.summaries.get(callee).parameters[argument];
 							if (formal !== undefined) pending.push(formal);
@@ -349,7 +351,7 @@ export class SemanticDemandIndex {
 						const formal = this.summaries.get(callee).parameters[argument];
 						if (formal !== undefined) pending.push(formal);
 					}
-					if (terms.kind(call.callee) === TermKind.Member && this.callRequiresCandidateSelection(call)) {
+					if (terms.kind(call.callee) === TermKind.Member && this.callRequiresNamedSelection(call)) {
 						for (const callee of this.effectIndex.candidates(terms.operand(call.callee) as SemanticNameID)) {
 							const formal = this.summaries.get(callee).parameters[argument];
 							if (formal !== undefined) pending.push(formal);
@@ -511,8 +513,8 @@ export class SemanticDemandIndex {
 					writers.push(summary.id);
 				}
 				this.connectTerms(
-					this.summaries.projectExternalTerm(write.value),
 					this.summaries.terms.member(summary.receiverProjection, write.name),
+					this.summaries.projectExternalTerm(write.value),
 				);
 			}
 		}
@@ -527,11 +529,12 @@ export class SemanticDemandIndex {
 		}
 		writes.push(write);
 		this.connectTerms(
-			write.value,
 			this.summaries.terms.member(write.base, write.name),
+			write.value,
 		);
 	}
 
+	/** Assignment order: storage on the left, its value on the right. */
 	private connectTerms(left: TermID, right: TermID, bidirectional = true): void {
 		// Unknown has no producer; concrete scalar values can select keyed calls
 		// in the forward direction, but do not make their storage owners aliases.
@@ -682,13 +685,13 @@ export class SemanticDemandIndex {
 			const summary = summaries[summaryIndex];
 			for (const write of summary.writes) index.addWriter(write.name, summary.id);
 			for (const call of summary.calls) {
-				const direct = this.directTargets(call.site);
-				for (const target of direct) {
+				const candidates = this.candidateTargets(call.site);
+				for (const target of candidates) {
 					for (const callee of this.summaries.summaryIdsForDeclaration(target)) index.addCaller(callee, summary.id);
 				}
 				const exact = this.summaries.summaryIdsForTerm(call.callee);
 				for (const callee of exact) index.addCaller(callee, summary.id);
-				if (direct.length === 0 && exact.length === 0
+				if (candidates.length === 0 && exact.length === 0
 					&& this.summaries.terms.kind(call.callee) === TermKind.Member) {
 					index.addNamedCaller(this.summaries.terms.operand(call.callee) as SemanticNameID, summary.id);
 				}
@@ -701,9 +704,9 @@ export class SemanticDemandIndex {
 		call: SummaryCall,
 		relevantSummaries: readonly boolean[],
 	): boolean {
-		const directTargets = this.directTargets(call.site);
-		for (let targetIndex = 0; targetIndex < directTargets.length; targetIndex += 1) {
-			const targetSummaries = this.summaries.summaryIdsForDeclaration(directTargets[targetIndex]);
+		const candidates = this.candidateTargets(call.site);
+		for (let targetIndex = 0; targetIndex < candidates.length; targetIndex += 1) {
+			const targetSummaries = this.summaries.summaryIdsForDeclaration(candidates[targetIndex]);
 			for (let summaryIndex = 0; summaryIndex < targetSummaries.length; summaryIndex += 1) {
 				if (relevantSummaries[targetSummaries[summaryIndex]]) {
 					return true;
@@ -719,8 +722,8 @@ export class SemanticDemandIndex {
 		return false;
 	}
 
-	private callRequiresCandidateSelection(call: SummaryCall): boolean {
-		return this.directTargets(call.site).length === 0
+	private callRequiresNamedSelection(call: SummaryCall): boolean {
+		return this.candidateTargets(call.site).length === 0
 			&& this.summaries.summaryIdsForTerm(call.callee).length === 0;
 	}
 
@@ -809,9 +812,9 @@ export class SemanticDemandIndex {
 	}
 
 	private callTargetsParameterForwardingSummary(call: SummaryCall): boolean {
-		const directTargets = this.directTargets(call.site);
-		for (let targetIndex = 0; targetIndex < directTargets.length; targetIndex += 1) {
-			const targetSummaries = this.summaries.summaryIdsForDeclaration(directTargets[targetIndex]);
+		const candidates = this.candidateTargets(call.site);
+		for (let targetIndex = 0; targetIndex < candidates.length; targetIndex += 1) {
+			const targetSummaries = this.summaries.summaryIdsForDeclaration(candidates[targetIndex]);
 			for (let summaryIndex = 0; summaryIndex < targetSummaries.length; summaryIndex += 1) {
 				if (this.parameterForwardingSummaries[targetSummaries[summaryIndex]]) {
 					return true;
@@ -866,12 +869,12 @@ export class SemanticDemandIndex {
 					&& (this.callTargetsRelevantSummary(call, relevantSummaries)
 						|| this.callTargetsParameterForwardingSummary(call)
 						|| candidateName !== undefined
-							&& this.callRequiresCandidateSelection(call)
+							&& this.callRequiresNamedSelection(call)
 							&& relevantFunctionNames[candidateName]);
 				const escaping = includeEscaping
 					&& (this.callTargetsRelevantSummary(call, this.queryIndependentSummaries)
 						|| candidateName !== undefined
-							&& this.callRequiresCandidateSelection(call)
+							&& this.callRequiresNamedSelection(call)
 							&& this.queryIndependentFunctionNames[candidateName]
 						|| this.callTargetsParameterForwardingSummary(call)
 						|| !this.isReceiverCall(call)
@@ -958,16 +961,28 @@ export class SemanticDemandIndex {
 		}
 	}
 
-	private retainStaticCallTargets(call: SummaryCall): void {
-		let targets = this.staticTargetsByTerm[call.callee];
-		if (targets === undefined) {
-			targets = this.collectStaticCallTargets(call.callee);
-			this.staticTargetsByTerm[call.callee] = targets;
-		}
-		for (let index = 0; index < targets.length; index += 1) this.appendDirectTarget(call.site, targets[index]);
+	/** Candidate reachability is never evidence for a call application. */
+	private candidateTargets(call: CallValueEntry): readonly SymbolID[] {
+		return this.candidateTargetsByCall.get(call) || this.directTargets(call);
 	}
 
-	private collectStaticCallTargets(callee: TermID): readonly SymbolID[] {
+	private retainCandidateTargets(call: SummaryCall): void {
+		let targets = this.staticTargetsByTerm[call.callee];
+		if (targets === undefined) {
+			targets = this.collectCandidateTargets(call.callee);
+			this.staticTargetsByTerm[call.callee] = targets;
+		}
+		const direct = this.directTargets(call.site);
+		let candidates: SymbolID[] | undefined;
+		for (const target of targets) {
+			if ((candidates || direct).includes(target)) continue;
+			if (candidates === undefined) candidates = direct.slice();
+			candidates.push(target);
+		}
+		if (candidates !== undefined) this.candidateTargetsByCall.set(call.site, candidates);
+	}
+
+	private collectCandidateTargets(callee: TermID): readonly SymbolID[] {
 		this.staticCalleeQueries += 1;
 		const targets: SymbolID[] = [];
 		this.staticCalleeGeneration += 1;

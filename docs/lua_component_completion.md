@@ -3,6 +3,10 @@
 2026-09-16. This repairs the shared Lua query owner used by Studio completion
 and navigation. It does not change cart APIs or guest execution.
 
+The later [production comparison and dependency-scope investigation](lua_completion_analysis.md)
+records a further repair to candidate/callee ownership, with updated measurements.
+The measurements below describe the earlier `bff12a1dc` baseline.
+
 ## Failure and design references
 
 Completion on `self:get_component(Component)` could return the actor's methods

@@ -28,6 +28,40 @@ function callQueries(source: string, extraFiles: readonly FileSemanticData[] = [
 	return { file, summaries, demand, worklist, instantiation, graph, members };
 }
 
+test('a shared callable storage location does not add callees to its input functions', () => {
+	const { file, demand, graph, summaries } = callQueries(`local function first() return {} end
+local function second() return {} end
+local selected = first
+selected = second
+first()
+selected()`);
+	const names = (index: number) => graph.callee(demand.topLevelCalls[index].site)
+		.map(fact => file.decls.find(declaration => declaration.id === fact.calleeFn)!.name).sort();
+	assert.deepEqual(names(0), ['first']);
+	const first = summaries.list().find(summary => summary.source.declaration === file.decls.find(declaration => declaration.name === 'first')!.id)!;
+	for (const context of graph.callContexts(demand.topLevelCalls[0].site)) {
+		assert.deepEqual(context.applications.map(application => application.callee), [first.id], 'candidate selection cannot add an application to this site');
+	}
+	assert.deepEqual(names(1), ['first', 'second']);
+});
+
+test('a nil-initialized forward declaration does not acquire unrelated receiver callbacks', () => {
+	const { file, demand, graph, summaries, instantiation } = callQueries(`local execute
+execute = function() return {} end
+local renderer = {}
+function renderer:initialize()
+	self.callback = nil
+	self.callback = renderer.draw
+end
+function renderer:draw() return {} end
+execute()`);
+	const names = graph.callee(demand.topLevelCalls[0].site)
+		.map(fact => file.decls.find(declaration => declaration.id === fact.calleeFn)!.name);
+	assert.deepEqual(names, ['execute']);
+	const draw = summaries.list().find(summary => summary.source.declaration === file.decls.find(declaration => declaration.name === 'draw')!.id)!;
+	assert.equal(instantiation.frames.first(draw.id), 0, 'the unrelated renderer body must stay inactive');
+});
+
 test('every navigation callsite retains its original binder call, including anonymous and computed callees', () => {
 	const { file } = callQueries(`local function consume(value) return value end
 local api = { run = consume }
