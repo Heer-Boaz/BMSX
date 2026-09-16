@@ -1,10 +1,11 @@
-local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local atlas<const> = require('cartlib/gx/atlas')
 local prefab<const> = require('cartlib/world/prefab')
-local sprite_component<const> = require('cartlib/component/sprite_component')
-local sprite_object<const> = require('cartlib/sprite')
+local scene_library<const> = require('cartlib/world/scene_library')
+local world_object<const> = require('cartlib/world/world_object')
+local title_scene<const> = require('scenes/title')
+local hangar_scene<const> = require('scenes/hangar')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
@@ -25,9 +26,7 @@ local burst_ramp_timeline_id<const> = 'nemesis_s.title_screen.burst_ramp'
 local burst_hold_timeline_id<const> = 'nemesis_s.title_screen.burst_hold'
 local burst_cooldown_timeline_id<const> = 'nemesis_s.title_screen.burst_cooldown'
 local departure_blackout_timeline_id<const> = 'nemesis_s.title_screen.departure_blackout'
-local metalion_start_x<const> = 48
-local metalion_start_y<const> = 129
-local metalion_end_y<const> = 73
+local metalion_lift_end<const> = -56
 local selection_flash_cycles<const> = 10
 local hangar_blackout_duration_frames<const> = 8
 local hangar_duration_frames<const> = 194
@@ -42,21 +41,21 @@ local ship_images<const> = {
 	[3] = 'title_startup_metalion_burst_3',
 }
 local ship_position_keys<const> = {
-	{ frame = 0, value = 129 },
-	{ frame = 4, value = 121 },
-	{ frame = 13, value = 113 },
-	{ frame = 22, value = 105 },
-	{ frame = 31, value = 97 },
-	{ frame = 40, value = 89 },
-	{ frame = 49, value = 81 },
+	{ frame = 0, value = 0 },
+	{ frame = 4, value = -8 },
+	{ frame = 13, value = -16 },
+	{ frame = 22, value = -24 },
+	{ frame = 31, value = -32 },
+	{ frame = 40, value = -40 },
+	{ frame = 49, value = -48 },
 }
 local selection_flash_frames<const> = timeline.build_frame_sequence({
 	{
-		value = { selection_hider = { visible = true } },
+		value = { presentation = { selection_cover = { visible = true } } },
 		hold = 4,
 	},
 	{
-		value = { selection_hider = { visible = false } },
+		value = { presentation = { selection_cover = { visible = false } } },
 		hold = 4,
 	},
 })
@@ -91,50 +90,44 @@ local hangar_background_keys<const> = {
 	{ frame = 187, value = 1 },
 }
 
-local draw_selection_hider<const> = function(component, draw)
-	local owner<const> = component.parent
-	draw:rect(104, owner.selector.offset_y, 168, owner.selector.offset_y + 8, 0xff000000)
-end
-
-local apply_title_background<const> = function(target, frame)
-	target:set_imgid(frame == 1 and 'title_screen_1' or 'title_screen_2')
-end
-
-local apply_hangar_background<const> = function(target, frame)
-	target:set_imgid(frame == 1 and 'title_hangar_1' or 'title_hangar_2')
+local apply_background<const> = function(target, frame)
+	local background<const> = target.presentation.background
+	background:set_imgid(frame == 1 and background.imgid or background.alternate_imgid)
 end
 
 local apply_burst_frame<const> = function(target, frame)
-	target.burst_ship:set_imgid(ship_images[frame])
+	target.presentation.ship.burst:set_imgid(ship_images[frame])
 end
 
-local apply_ship_position<const> = function(target, y)
-	target.normal_ship.offset_y = y
-	target.burst_ship.offset_y = y
+local apply_ship_position<const> = function(target, offset_y)
+	local ship<const> = target.presentation.ship
+	ship.y = ship.start_y + offset_y
+end
+
+function title_screen:release_presentation()
+	if self.presentation then
+		scene_library.dispose(self.presentation)
+		self.presentation = nil
+	end
 end
 
 function title_screen:enter_idle()
 	atlas.load('title')
-	self.visible = true
+	self:release_presentation()
+	self.presentation = scene_library.instantiate(title_scene.id)
 	self.selected_player_count = 1
-	self:set_imgid('title_screen_1')
-	self.selector.offset_y = 136
-	self.selector.visible = true
-	self.selection_hider.visible = false
-	self.normal_ship.visible = false
-	self.hangar_bottom_hider.visible = false
-	self.burst_ship.visible = false
+	-- FSM scopes bind timelines before entering_state. Start sampling only
+	-- after this entry has constructed the scene those tracks address.
+	self.timelines:play(idle_timeline_id)
 end
 
 function title_screen:toggle_player_count()
-	if self.selected_player_count == 1 then
-		self.selected_player_count = 2
-		self.selector.offset_y = 152
-	else
-		self.selected_player_count = 1
-		self.selector.offset_y = 136
-	end
-	self.selector.visible = true
+	self.selected_player_count = self.selected_player_count == 1 and 2 or 1
+	local offset_y<const> = (self.selected_player_count - 1) * 16
+	local members<const> = self.presentation
+	members.selector.sprite_component.offset_y = offset_y
+	members.selection_cover.visual.offset_y = offset_y
+	members.selector.visible = true
 	self.timelines:play(idle_timeline_id, {
 		rewind = true,
 		snap_to_start = true,
@@ -143,40 +136,27 @@ end
 
 function title_screen:begin_selection_flash()
 	self.events:emit('title_start')
-	self.selector.visible = true
-	self.selection_hider.visible = true
+	self.presentation.selector.visible = true
+	self.presentation.selection_cover.visible = true
 end
 
 function title_screen:begin_flight()
-	self.visible = true
-	self:set_imgid('title_hangar_1')
-	self.selector.visible = false
-	self.selection_hider.visible = false
-	self.normal_ship.offset_x = metalion_start_x
-	self.normal_ship.offset_y = metalion_start_y
-	self.normal_ship:set_imgid(ship_images[0])
-	self.normal_ship.visible = true
-	self.hangar_bottom_hider.visible = true
-	self.burst_ship.offset_x = metalion_start_x
-	self.burst_ship.offset_y = metalion_start_y
-	self.burst_ship.visible = false
+	self:release_presentation()
+	self.presentation = scene_library.instantiate(hangar_scene.id)
+	self.timelines:play(hangar_timeline_id)
 end
 
 function title_screen:begin_ignition()
-	self.normal_ship.offset_y = metalion_end_y
-	self.burst_ship.offset_y = metalion_end_y
-	self.burst_ship.visible = true
+	apply_ship_position(self, metalion_lift_end)
+	self.presentation.ship.burst.visible = true
 end
 
 function title_screen:begin_full_burst()
-	self.normal_ship.visible = false
-	self.hangar_bottom_hider.visible = false
-	self.burst_ship.visible = true
-	self.burst_ship:set_imgid(ship_images[3])
-end
-
-function title_screen:begin_blackout()
-	self.visible = false
+	local members<const> = self.presentation
+	members.ship.sprite_component.visible = false
+	members.foreground.visible = false
+	members.ship.burst.visible = true
+	members.ship.burst:set_imgid(ship_images[3])
 end
 
 local finish_title<const> = function(self)
@@ -186,57 +166,9 @@ local finish_title<const> = function(self)
 	return '/hidden'
 end
 
-function title_screen:ctor()
-	local selector<const> = sprite_component.new({
-		id_local = 'selector',
-		imgid = 'title_selector',
-		offset_x = 80,
-		offset_y = 136,
-		offset_z = 1,
-	})
-	self:add_component(selector)
-	self.selector = selector
-
-	local selection_hider<const> = custom_visual_component.new({
-		id_local = 'selection_hider',
-		offset_z = 2,
-		draw = draw_selection_hider,
-	})
-	selection_hider.visible = false
-	self:add_component(selection_hider)
-	self.selection_hider = selection_hider
-
-	local normal_ship<const> = sprite_component.new({
-		id_local = 'normal_ship',
-		imgid = ship_images[0],
-		offset_x = metalion_start_x,
-		offset_y = metalion_start_y,
-		offset_z = 3,
-	})
-	normal_ship.visible = false
-	self:add_component(normal_ship)
-	self.normal_ship = normal_ship
-
-	local hangar_bottom_hider<const> = sprite_component.new({
-		id_local = 'hangar_bottom_hider',
-		imgid = 'title_hangar_bottom_hider',
-		offset_y = 128,
-		offset_z = 4,
-	})
-	hangar_bottom_hider.visible = false
-	self:add_component(hangar_bottom_hider)
-	self.hangar_bottom_hider = hangar_bottom_hider
-
-	local burst_ship<const> = sprite_component.new({
-		id_local = 'burst_ship',
-		imgid = ship_images[0],
-		offset_x = metalion_start_x,
-		offset_y = metalion_end_y,
-		offset_z = 5,
-	})
-	burst_ship.visible = false
-	self:add_component(burst_ship)
-	self.burst_ship = burst_ship
+function title_screen:ondespawn()
+	self:release_presentation()
+	world_object.ondespawn(self)
 end
 
 local define_fsm<const> = function()
@@ -249,7 +181,7 @@ local define_fsm<const> = function()
 			},
 		},
 		states = {
-			hidden = {},
+			hidden = { entering_state = title_screen.release_presentation },
 			idle = {
 				entering_state = title_screen.enter_idle,
 				timelines = {
@@ -262,7 +194,7 @@ local define_fsm<const> = function()
 								{
 									kind = 'value',
 									interpolation = 'step',
-									apply = apply_title_background,
+									apply = apply_background,
 									keys = {
 										{ frame = 0, value = 1 },
 										{ frame = 8, value = 2 },
@@ -273,7 +205,7 @@ local define_fsm<const> = function()
 								{
 									kind = 'value',
 									interpolation = 'step',
-									path = { 'selector', 'visible' },
+									path = { 'presentation', 'selector', 'visible' },
 									keys = {
 										{ frame = 0, value = true },
 										{ frame = 12, value = false },
@@ -281,7 +213,7 @@ local define_fsm<const> = function()
 								},
 							},
 						},
-						autoplay = true,
+						autoplay = false,
 						stop_on_exit = true,
 					},
 				},
@@ -317,7 +249,7 @@ local define_fsm<const> = function()
 						},
 					},
 					hangar_blackout = {
-						entering_state = title_screen.begin_blackout,
+						entering_state = title_screen.release_presentation,
 						timelines = {
 							[hangar_blackout_timeline_id] = {
 								def = {
@@ -341,12 +273,12 @@ local define_fsm<const> = function()
 										{
 											kind = 'value',
 											interpolation = 'step',
-											apply = apply_hangar_background,
+											apply = apply_background,
 											keys = hangar_background_keys,
 										},
 									},
 								},
-								autoplay = true,
+								autoplay = false,
 								stop_on_exit = true,
 							},
 						},
@@ -435,7 +367,7 @@ local define_fsm<const> = function()
 						},
 					},
 					blackout = {
-						entering_state = title_screen.begin_blackout,
+						entering_state = title_screen.release_presentation,
 						timelines = {
 							[departure_blackout_timeline_id] = {
 								def = {
@@ -458,14 +390,13 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = title_definition_id,
 		class = title_screen,
-		base = sprite_object,
+		base = world_object,
 		components = {
 			timeline_component.new,
 			fsm_component.factory({ title_fsm_id }),
 		},
 		defaults = {
 			player_index = 1,
-			imgid = 'title_screen_1',
 			selected_player_count = 1,
 		},
 	})

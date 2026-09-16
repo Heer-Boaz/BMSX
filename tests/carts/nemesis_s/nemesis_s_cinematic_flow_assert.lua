@@ -113,59 +113,67 @@ function __bmsx_host_test.setup()
 	assert(world.active_space_id == 'title', 'title did not own the active presentation space')
 
 	local title<const> = registry:get('nemesis_s.title_screen')
-	assert(title.sprite_component.imgid == 'title_screen_1' and title.selector.offset_y == 136,
+	local menu<const> = title.presentation
+	assert(menu.background.sprite_component.imgid == 'title_screen_1' and (menu.selector.y + menu.selector.sprite_component.offset_y) == 136,
 		'title did not enter its authored idle presentation')
 	title.timelines:advance_to('nemesis_s.title_screen.idle', 8)
-	assert(title.sprite_component.imgid == 'title_screen_2',
+	assert(title.presentation.background.sprite_component.imgid == 'title_screen_2',
 		'title logo did not enter its four-VBlank palette phase')
 	title.timelines:advance_to('nemesis_s.title_screen.idle', 12)
-	assert(title.sprite_component.imgid == 'title_screen_1' and not title.selector.visible,
+	assert(title.presentation.background.sprite_component.imgid == 'title_screen_1' and not menu.selector.visible,
 		'title idle presentation did not retain the ROM 8/4 and 12/12 cadences')
 	title:toggle_player_count()
-	assert(title.selected_player_count == 2 and title.selector.offset_y == 152
-		and title.selector.visible,
+	assert(title.selected_player_count == 2 and (menu.selector.y + menu.selector.sprite_component.offset_y) == 152
+		and menu.selector.visible,
 		'title selector did not retain the two-player selection')
 	title.state_machines:transition_to('/startup/confirmation')
 	title.timelines:advance_to('nemesis_s.title_screen.confirmation', 4)
-	assert(not title.selection_hider.visible,
+	assert(not menu.selection_cover.visible,
 		'selection confirmation did not alternate after four VBlanks')
 	title.state_machines:transition_to('/startup/hangar_blackout')
-	assert(not title.visible, 'hangar transition did not begin on the ROM black frame')
+	assert(title.presentation == nil and registry:get(menu.background.id) == nil
+		and registry:get(menu.selector.id) == nil and registry:get(menu.selection_cover.id) == nil,
+		'hangar blackout did not dispose the title scene through World')
 	title.state_machines:transition_to('/startup/flight/lift')
+	local hangar<const> = title.presentation
+	local ship<const> = hangar.ship
 	title.timelines:advance_to('nemesis_s.title_screen.lift', 4)
-	assert(title.normal_ship.offset_y == 121 and title.burst_ship.offset_y == 121,
+	assert(ship.y == 121,
 		'Metalion lift did not retain the first ROM position boundary')
 	title.timelines:advance_to('nemesis_s.title_screen.hangar', 4)
-	assert(title.sprite_component.imgid == 'title_hangar_2',
+	assert(title.presentation.background.sprite_component.imgid == 'title_hangar_2',
 		'hangar lights did not retain the first observed ROM boundary')
 	title.timelines:advance_to('nemesis_s.title_screen.lift', 49)
-	assert(title.normal_ship.offset_y == 81 and title.burst_ship.offset_y == 81,
+	assert(ship.y == 81,
 		'Metalion lift did not retain its final visible ROM step')
 	title.state_machines:transition_to('/startup/flight/ignition')
-	assert(title.normal_ship.offset_y == 73 and title.burst_ship.offset_y == 73,
+	assert(ship.y == 73,
 		'Metalion ignition did not enter at the hangar endpoint')
 	title.timelines:advance_to('nemesis_s.title_screen.ignition', 0)
-	assert(title.burst_ship.imgid == 'title_startup_metalion_burst_1',
+	assert(ship.burst.imgid == 'title_startup_metalion_burst_1',
 		'Metalion startup flicker did not begin on the burst frame')
 	title.timelines:advance_to('nemesis_s.title_screen.ignition', 2)
-	assert(title.burst_ship.imgid == 'title_startup_metalion',
+	assert(ship.burst.imgid == 'title_startup_metalion',
 		'Metalion ignition did not alternate after two VBlanks')
 	title.state_machines:transition_to('/startup/flight/burst_ramp')
 	title.timelines:advance_to('nemesis_s.title_screen.burst_ramp', 8)
-	assert(title.burst_ship.imgid == 'title_startup_metalion_burst_2',
+	assert(ship.burst.imgid == 'title_startup_metalion_burst_2',
 		'Metalion burst ramp did not retain its third four-VBlank pose')
 	title.state_machines:transition_to('/startup/flight/burst_hold')
-	assert(title.burst_ship.imgid == 'title_startup_metalion_burst_3',
+	assert(ship.burst.imgid == 'title_startup_metalion_burst_3'
+		and not ship.sprite_component.visible and not hangar.foreground.visible,
 		'Metalion startup did not reach full burst')
 	title.state_machines:transition_to('/startup/flight/burst_cooldown')
 	title.timelines:advance_to('nemesis_s.title_screen.burst_cooldown', 0)
-	assert(title.burst_ship.imgid == 'title_startup_metalion_burst_2',
+	assert(ship.burst.imgid == 'title_startup_metalion_burst_2',
 		'Metalion cooldown did not begin on its second burst image')
 	title.timelines:advance_to('nemesis_s.title_screen.burst_cooldown', 8)
-	assert(title.burst_ship.imgid == 'title_startup_metalion_burst_1',
+	assert(ship.burst.imgid == 'title_startup_metalion_burst_1',
 		'Metalion cooldown did not enter its final seven-VBlank pose')
 	title.state_machines:transition_to('/startup/blackout')
-	assert(not title.visible, 'title blackout kept presentation sprites visible')
+	assert(title.presentation == nil and registry:get(ship.id) == nil
+		and registry:get(hangar.foreground.id) == nil and registry:get(hangar.background.id) == nil,
+		'departure blackout retained hangar scene objects')
 	title.events:emit('title_screen_done', { player_count = 2 })
 	assert(director.state_machines:matches_state(test.game_start_state),
 		'title completion did not enter the retained game-start wait')
@@ -279,6 +287,8 @@ function __bmsx_host_test.update()
 		assert(read_music_source() == end_demo_music_source,
 			'title entry stopped the non-looping XNA end-demo music')
 		local title<const> = registry:get('nemesis_s.title_screen')
+		assert(title.presentation.selector.y == 136 and title.selected_player_count == 1,
+			'returning from gameplay did not create a fresh title scene')
 		title.events:emit('title_screen_done', { player_count = 1 })
 		assert(not director.metalion_cheat_active,
 			'new-run admission retained the completed run Metalion state')

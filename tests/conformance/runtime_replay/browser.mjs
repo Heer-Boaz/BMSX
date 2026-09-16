@@ -14,11 +14,12 @@ const preload = process.argv[2] === '--studio-preload';
 const inspection = process.argv[2] === '--studio-runtime-inspection';
 const reparent = process.argv[2] === '--studio-bt-reparent';
 const session = process.argv[2] === '--studio-session';
-const scenario = preload ? { kind: 'preload' } : inspection ? { kind: 'runtime-inspection' } : navigation !== null ? { kind: 'navigation', cart: navigation } : fsm !== null ? { kind: `fsm-${fsm}` } : reparent ? { kind: 'bt-reparent' } : { kind: 'workflows' };
-const studio = preload || inspection || session || process.argv[2] === '--studio' || navigation !== null || fsm !== null || reparent;
-const studioLabel = preload ? 'STUDIO-PRELOAD' : inspection ? 'STUDIO-RUNTIME-INSPECTION' : session ? 'STUDIO-SESSION' : reparent ? 'STUDIO-BT-REPARENT' : fsm !== null ? `STUDIO-FSM-${fsm.toUpperCase()}` : navigation === null ? 'STUDIO-WORKFLOWS' : 'STUDIO-NAVIGATION';
+const nemesisScenes = process.argv[2] === '--studio-nemesis-scenes';
+const scenario = nemesisScenes ? { kind: 'nemesis-scenes' } : preload ? { kind: 'preload' } : inspection ? { kind: 'runtime-inspection' } : navigation !== null ? { kind: 'navigation', cart: navigation } : fsm !== null ? { kind: `fsm-${fsm}` } : reparent ? { kind: 'bt-reparent' } : { kind: 'workflows' };
+const studio = nemesisScenes || preload || inspection || session || process.argv[2] === '--studio' || navigation !== null || fsm !== null || reparent;
+const studioLabel = nemesisScenes ? 'STUDIO-NEMESIS-SCENES' : preload ? 'STUDIO-PRELOAD' : inspection ? 'STUDIO-RUNTIME-INSPECTION' : session ? 'STUDIO-SESSION' : reparent ? 'STUDIO-BT-REPARENT' : fsm !== null ? `STUDIO-FSM-${fsm.toUpperCase()}` : navigation === null ? 'STUDIO-WORKFLOWS' : 'STUDIO-NAVIGATION';
 const [bios, cart, screenshot] = process.argv.slice(navigation !== null ? 4 : studio ? 3 : 2);
-if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio | --studio-preload | --studio-runtime-inspection | --studio-session | --studio-fsm-initial | --studio-fsm-retarget | --studio-fsm-retarget-imported | --studio-bt-reparent | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
+if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio | --studio-nemesis-scenes | --studio-preload | --studio-runtime-inspection | --studio-session | --studio-fsm-initial | --studio-fsm-retarget | --studio-fsm-retarget-imported | --studio-bt-reparent | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
 let inspectionPixels;
 for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 	const directory = await mkdtemp(join(tmpdir(), `bmsx-${backend}-rewind-`));
@@ -134,6 +135,12 @@ for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 			}
 			const savedScene = await readFile(join(directory, 'carts/nemesis_s/scenes/root.lua'), 'utf8');
 			if (!savedScene.includes('( --[[source-owned anchor]]\n\t\t\t\t\t17)')) throw new Error('Scene Editor did not persist the accepted position and original trivia');
+		}
+		if (nemesisScenes) {
+			const title = await readFile(join(directory, 'carts/nemesis_s/scenes/title.lua'), 'utf8');
+			const hangar = await readFile(join(directory, 'carts/nemesis_s/scenes/hangar.lua'), 'utf8');
+			assert.ok(title.includes('pos = { x = 88, y = 136, z = 1 }'), 'workspace persisted the selector edit');
+			assert.ok(hangar.includes('pos = { x = 56, y = 125, z = 3 }'), 'workspace persisted both ship edits');
 		}
 		console.log(JSON.stringify({ backend, ...result }));
 		console.log(studio ? `${studioLabel}:${backend}:PASS` : 'RUNTIME-WEBGPU-REWIND:PASS');

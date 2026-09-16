@@ -22,4 +22,12 @@ function scene_library.instantiate(id)
 	return members
 end
 
+-- The cart owns the returned group; World owns removal, including pending
+-- admissions and component/event teardown at its existing structural barrier.
+function scene_library.dispose(members)
+	for _, object in pairs(members) do
+		world:mark_for_disposal(object)
+	end
+end
+
 return scene_library

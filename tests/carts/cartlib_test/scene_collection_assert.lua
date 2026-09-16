@@ -106,6 +106,16 @@ function __bmsx_host_test.setup()
 	assert(first_left.authored_value == 'left.1'
 		and first_left.x == 11 and first_left.y == 12 and first_left.z == 13,
 		're-registration mutated an existing scene instance')
+	scene_library.dispose(first)
+	assert(registry:get(first_left.id) == nil and registry:get(first_right.id) == nil
+		and registry:get(second.left.id) == second.left
+		and registry:get(replacement.left.id) == replacement.left,
+		'disposing a scene affected another instance or retained its own members')
+	world:clear()
+	scene_library.dispose(second)
+	scene_library.dispose(replacement)
+	assert(second.left.world == nil and replacement.left.world == nil,
+		'group cleanup after World clear repeated object teardown')
 end
 
 function __bmsx_host_test.update()

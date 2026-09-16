@@ -1,5 +1,6 @@
 import { runStudioRuntimeInspection } from './studio_runtime_inspection';
 import { runStudioPreload } from './studio_preload';
+import { runStudioNemesisScenes } from './studio_nemesis_scenes';
 import { runStudioBtReparentLive } from './studio_bt_reparent_live';
 import { runStudioFsmDragLive } from './studio_fsm_drag_live';
 import { runStudioFsmInitialLive } from './studio_fsm_initial_live';
@@ -16,12 +17,13 @@ import { testStudioPointerCapture } from './studio_pointer_capture';
 import { testStudioSceneViewport } from './studio_scene_viewport';
 import type { StudioFixture } from './studio_fixture';
 
-export type StudioScenario = { kind: 'workflows' | 'fsm-initial' | 'fsm-retarget' | 'fsm-retarget-imported' | 'bt-reparent' | 'runtime-inspection' | 'preload' }
+export type StudioScenario = { kind: 'workflows' | 'fsm-initial' | 'fsm-retarget' | 'fsm-retarget-imported' | 'bt-reparent' | 'runtime-inspection' | 'preload' | 'nemesis-scenes' }
 	| { kind: 'navigation'; cart: NavigationCart };
 
 /** One scenario composition for every renderer project; backend checks remain in their project. */
 export function runStudioScenario(test: StudioFixture, scenario: StudioScenario) {
 	switch (scenario.kind) {
+		case 'nemesis-scenes': return runStudioNemesisScenes(test);
 		case 'workflows': return runStudioWorkflows(test);
 		case 'runtime-inspection': return runStudioRuntimeInspection(test);
 		case 'preload': return runStudioPreload(test);
