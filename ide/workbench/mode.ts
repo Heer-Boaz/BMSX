@@ -74,6 +74,7 @@ export async function initializeIdeFeatures(
 			cartridge ? cartridge.projectRootPath : sources.systemProjectRootPath,
 			sources,
 			workspaceFiles,
+			logOutput,
 		);
 		await discoverWorkspaceLuaSources(storage, sources);
 	} else {

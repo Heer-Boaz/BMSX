@@ -40,6 +40,22 @@ export function createWorkspaceRecord(clock: HostClock, contents: string): Works
 	};
 }
 
+function parseWorkspaceRecord(raw: string): WorkspaceRecord {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(raw);
+	} catch {
+		return null;
+	}
+	if (typeof parsed !== 'object' || parsed === null) {
+		return null;
+	}
+	const record = parsed as Partial<WorkspaceRecord>;
+	return typeof record.contents === 'string' && typeof record.updatedAt === 'number'
+		? record as WorkspaceRecord
+		: null;
+}
+
 export function readLocalWorkspaceRecord(
 	storage: KeyValueStorage,
 	projectRootPath: string,
@@ -49,7 +65,15 @@ export function readLocalWorkspaceRecord(
 	if (raw === null) {
 		return null;
 	}
-	const record = JSON.parse(raw) as WorkspaceRecord;
+	const record = parseWorkspaceRecord(raw);
+	if (!record) {
+		// Opening a cart must never fail on cached state, so an unreadable record reads as
+		// absent. It is left in storage rather than removed: this reader also serves dirty
+		// records, which hold the only copy of text the user typed. Callers that know a
+		// record is regenerable delete it by path instead.
+		console.warn(`[WorkspaceStorage] Ignoring unreadable workspace record '${relativePath}'.`);
+		return null;
+	}
 	if (record.updatedAt > lastWorkspaceRecordTimestamp) {
 		lastWorkspaceRecordTimestamp = record.updatedAt;
 	}

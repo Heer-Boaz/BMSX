@@ -1,4 +1,5 @@
 import type { HostClock, TimerHandle } from '../../../hosts/common/clock';
+import { LogLevel, type LogOutput } from '../../../hosts/common/log';
 import type { KeyValueStorage } from '../../workspace/key_value_storage';
 import type { WorkspaceRecordProvider } from '../../workspace/record_provider';
 import { clearWorkspaceSourceCaches } from '../../workspace/cache';
@@ -11,6 +12,7 @@ import {
 	WORKSPACE_STATE_FILE,
 	closeWorkspaceRecords,
 	deleteLocalWorkspaceRecord,
+	deleteRemoteWorkspaceRecord,
 	disconnectWorkspaceRecords,
 	openWorkspaceRecords,
 	readLocalWorkspaceRecord,
@@ -41,6 +43,8 @@ import {
 import type { RuntimeBreakpointState } from '../../runtime/debugger_state';
 import {
 	WorkspaceAutosaveChange,
+	isWorkspaceAutosavePayload,
+	type PersistedDirtyEntry,
 	type WorkspaceAutosavePayload,
 } from './models';
 import { editorTabGroup } from '../ui/tab/group_model';
@@ -111,12 +115,27 @@ export async function shutdownWorkspaceStorage(): Promise<void> {
 	}
 }
 
+/** Returns the record's payload, or null when it is corrupt or written by an incompatible payload shape. */
+function readWorkspaceAutosavePayload(record: WorkspaceRecord): WorkspaceAutosavePayload | null {
+	if (!record) {
+		return null;
+	}
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(record.contents);
+	} catch {
+		return null;
+	}
+	return isWorkspaceAutosavePayload(parsed) ? parsed : null;
+}
+
 export async function initializeWorkspaceStorage(
 	workspaceStorage: KeyValueStorage,
 	workspaceClock: HostClock,
 	projectRootPath: string,
 	runtimeSources: RuntimeSourceState,
 	workspaceFiles: WorkspaceRecordProvider,
+	logOutput: LogOutput,
 ): Promise<WorkspaceAutosavePayload | null> {
 	await shutdownWorkspaceStorage();
 	storage = workspaceStorage;
@@ -133,11 +152,20 @@ export async function initializeWorkspaceStorage(
 		WORKSPACE_METADATA_DIR,
 		WORKSPACE_STATE_FILE,
 	);
-	const localRecord = readLocalWorkspaceRecord(
+	let localRecord = readLocalWorkspaceRecord(
 		storage,
 		projectRootPath,
 		statePath,
 	);
+	const localPayload = readWorkspaceAutosavePayload(localRecord);
+	if (localRecord && !localPayload) {
+		logOutput.log(
+			LogLevel.Warn,
+			`[WorkspaceStorage] Discarding unusable local session record '${statePath}'; starting from an empty editor session.`,
+		);
+		deleteLocalWorkspaceRecord(storage, projectRootPath, statePath);
+		localRecord = null;
+	}
 	let remoteRecord: WorkspaceRecord = null;
 	if (workspaceRecordState.connected) {
 		try {
@@ -146,10 +174,25 @@ export async function initializeWorkspaceStorage(
 			disconnectWorkspaceRecords(error);
 		}
 	}
+	const remotePayload = readWorkspaceAutosavePayload(remoteRecord);
+	if (remoteRecord && !remotePayload) {
+		logOutput.log(
+			LogLevel.Warn,
+			`[WorkspaceStorage] Discarding unusable remote session record '${statePath}'; starting from an empty editor session.`,
+		);
+		try {
+			await deleteRemoteWorkspaceRecord(statePath);
+		} catch (error) {
+			disconnectWorkspaceRecords(error);
+		}
+		remoteRecord = null;
+	}
 	const record = selectNewestWorkspaceRecord(localRecord, remoteRecord);
-	const payload = record ? JSON.parse(record.contents) as WorkspaceAutosavePayload : null;
+	let payload = record === null
+		? null
+		: record === remoteRecord ? remotePayload : localPayload;
 	const replacedLocalPayload = record === remoteRecord && localRecord
-		? JSON.parse(localRecord.contents) as WorkspaceAutosavePayload
+		? localPayload
 		: null;
 	const generationDirtyRecords = new Map<string, WorkspaceRecord>();
 	if (payload) {
@@ -167,17 +210,24 @@ export async function initializeWorkspaceStorage(
 				dirtyProjectRootPath,
 				buildWorkspaceDirtyRecordPath(dirtyPath, entry.updatedAt),
 				entry.updatedAt,
-			).then(dirtyRecord => {
-				if (!dirtyRecord) {
-					throw new Error(`Persisted dirty file '${dirtyPath}' does not match the workspace session.`);
-				}
-				return [dirtyPath, dirtyRecord] as const;
-			});
+			).then(dirtyRecord => [dirtyPath, dirtyRecord] as const);
 		}
 		const loadedRecords = await Promise.all(loads);
+		const retainedDirtyFiles: PersistedDirtyEntry[] = [];
 		for (let index = 0; index < loadedRecords.length; index += 1) {
 			const [dirtyPath, dirtyRecord] = loadedRecords[index];
+			if (!dirtyRecord) {
+				logOutput.log(
+					LogLevel.Warn,
+					`[WorkspaceStorage] Unsaved changes for '${dirtyPath}' are not stored alongside this session and stay out of the restored editor; their record is left in storage for recovery.`,
+				);
+				continue;
+			}
 			generationDirtyRecords.set(dirtyPath, dirtyRecord);
+			retainedDirtyFiles.push(payload.dirtyFiles[index]);
+		}
+		if (retainedDirtyFiles.length !== payload.dirtyFiles.length) {
+			payload = { ...payload, dirtyFiles: retainedDirtyFiles };
 		}
 	}
 	const obsoleteLocalDirtyRecords: Array<readonly [string, string]> = [];
@@ -223,7 +273,7 @@ export async function initializeWorkspaceStorage(
 	workspaceState.remotePayload = remoteRecord
 		? workspaceRecordsEqual(record, remoteRecord)
 			? payload
-			: JSON.parse(remoteRecord.contents) as WorkspaceAutosavePayload
+			: remotePayload
 		: null;
 	workspaceState.remoteDirtyRecords = remoteRecord
 		&& workspaceRecordsEqual(record, remoteRecord)
