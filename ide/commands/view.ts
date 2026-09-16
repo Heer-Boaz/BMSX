@@ -6,6 +6,7 @@ import type { RuntimeSourceState } from '../runtime/sources';
 import { openSourceView } from '../workbench/contrib/source_views/quick_access';
 import { hasSceneSourceDefinitions } from '../workbench/contrib/scene_editor/source';
 import { editorTabGroup } from '../workbench/ui/tab/group_model';
+import { openGameView } from '../workbench/contrib/game_view/editor_input';
 
 export function isEditorViewCommand(command: EditorCommandId): command is EditorViewCommandId {
 	switch (command) {
@@ -20,6 +21,7 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 		case 'scenarioLab':
 		case 'sceneEditor':
 		case 'actorLab':
+		case 'gameView':
 		case 'sceneEditor.source':
 		case 'behaviorLens.source':
 		case 'filter':
@@ -33,6 +35,7 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSourceState, command: EditorViewCommandId): void {
 	switch (command) {
 		case 'actorLab': editor.actorLab.open(); return;
+		case 'gameView': openGameView(editor.editorPanes); return;
 		case 'resources':
 			editor.resourcePanel.togglePanel();
 			return;

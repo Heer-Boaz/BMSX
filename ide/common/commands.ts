@@ -15,6 +15,7 @@ export type EditorSymbolNavigationCommandId =
 	| 'callHierarchy';
 
 export type EditorViewCommandId =
+	| 'gameView'
 	| 'resources'
 	| 'problems'
 	| 'behaviorLens'
@@ -42,6 +43,8 @@ export type EditorWorkspaceCommandId =
 
 export type EditorDebugCommandId =
 	| 'pause'
+	| 'stepFrame'
+	| 'stepFrameBack'
 	| 'debugEvaluation'
 	| 'debugContinue'
 	| 'debugStepInto'
@@ -54,6 +57,7 @@ export type EditorScenarioLabCommandId =
 	| 'scenarioLab.cancel';
 
 export type EditorCommandId =
+	| 'gameView.playback'
 	| 'actorLab.playback' | 'actorLab.select' | 'actorLab.spawn' | 'actorLab.emit' | 'actorLab.actions' | 'actorLab.call' | 'actorLab.details'
 	| 'scenarioLab.details'
 	| 'graph.zoomIn'

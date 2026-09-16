@@ -12,6 +12,7 @@ export const enum HostPauseReason {
 export class HostExecutionControl {
 	private pauseReasons = 0;
 	private elapsedTimeResetPending = false;
+	private pendingFrameStep = false;
 	private readonly executionListeners = new Set<() => void>();
 
 	public constructor(private readonly audioOutput: HostAudioOutput) {}
@@ -19,12 +20,15 @@ export class HostExecutionControl {
 	public get paused(): boolean { return this.pauseReasons !== 0; }
 	public get userPaused(): boolean { return (this.pauseReasons & HostPauseReason.Requested) !== 0; }
 	public get launchPending(): boolean { return (this.pauseReasons & HostPauseReason.AwaitingLaunch) !== 0; }
+	public get frameStepPending(): boolean { return this.pendingFrameStep; }
 	public get vibrationInitializationActive(): boolean {
 		return (this.pauseReasons & HostPauseReason.VibrationInitialization) !== 0;
 	}
 
 	public executionBlocked(explicitStep = false): boolean {
-		return (this.pauseReasons & (explicitStep ? ~HostPauseReason.Requested : -1)) !== 0;
+		let ignored = explicitStep ? HostPauseReason.Requested : 0;
+		if (this.pendingFrameStep) ignored |= HostPauseReason.Requested | HostPauseReason.Workbench;
+		return (this.pauseReasons & ~ignored) !== 0;
 	}
 
 	public consumeElapsedTime(hostDeltaMs: number): number {
@@ -34,6 +38,7 @@ export class HostExecutionControl {
 	}
 
 	public setPauseReason(reason: HostPauseReason, active: boolean): void {
+		if (reason === HostPauseReason.Requested && !active) this.pendingFrameStep = false;
 		const next = active ? this.pauseReasons | reason : this.pauseReasons & ~reason;
 		if (next === this.pauseReasons) return;
 		this.pauseReasons = next;
@@ -43,9 +48,21 @@ export class HostExecutionControl {
 
 	/** Explicit Continue/Step, not a view transition. A step retains requested pause. */
 	public requestExecution(continueRunning: boolean): void {
+		this.pendingFrameStep = false;
 		if (continueRunning) this.setPauseReason(HostPauseReason.Requested, false);
 		this.elapsedTimeResetPending = true;
 		for (const listener of this.executionListeners) listener();
+	}
+
+	/** Advance to the next video boundary, retaining pause while inspecting the result. */
+	public requestFrameStep(): void {
+		this.setPauseReason(HostPauseReason.Requested, true);
+		this.requestExecution(false);
+		this.pendingFrameStep = true;
+	}
+
+	public finishFrameStep(): void {
+		this.pendingFrameStep = false;
 	}
 
 	public onWillExecute(listener: () => void): () => void {

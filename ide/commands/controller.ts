@@ -1,4 +1,5 @@
 import { navigationState } from '../navigation/navigation_history';
+import { openGameView } from '../workbench/contrib/game_view/editor_input';
 import { editorTabGroup } from '../workbench/ui/tab/group_model';
 import type { HostRewind } from '../../hosts/common/rewind';
 import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
@@ -143,6 +144,28 @@ export class IdeCommandController {
 				} else {
 					if (this.rewind.active) this.rewind.pauseSeek();
 					this.execution.setPauseReason(HostPauseReason.Requested, true);
+				}
+				return;
+			case 'gameView.playback':
+				if (this.rewind.active && this.rewind.positionCycles < this.runtime.history.latestCycles) {
+					this.rewind.togglePlayback();
+					this.execution.setPauseReason(HostPauseReason.Requested, !this.rewind.playing);
+				} else if (this.rewind.active || this.execution.userPaused) {
+					if (this.rewind.active) this.rewind.resumeHere();
+					this.execution.requestExecution(true);
+				}
+				else this.execution.setPauseReason(HostPauseReason.Requested, true);
+				return;
+			case 'stepFrame':
+			case 'stepFrameBack':
+				openGameView(this.editor.editorPanes);
+				this.execution.setPauseReason(HostPauseReason.Requested, true);
+				if (command === 'stepFrameBack') this.rewind.stepFrame(-1);
+				else if (this.rewind.active && this.rewind.frameStepCycles(1) > this.rewind.positionCycles) {
+					this.rewind.stepFrame(1);
+				} else {
+					if (this.rewind.active) this.rewind.resumeHere();
+					this.execution.requestFrameStep();
 				}
 				return;
 			case 'scenarioLab.run':
@@ -309,6 +332,14 @@ export class IdeCommandController {
 				return this.runtimeTasks.ready && this.debuggerState.plans.workbenchControlActive && this.fault.faultSnapshot === null;
 			case 'pause':
 				return !this.execution.userPaused || this.runtimeTasks.ready;
+			case 'stepFrame':
+			case 'stepFrameBack':
+			case 'gameView.playback':
+				return this.runtimeTasks.ready && !this.execution.frameStepPending
+					&& !this.fault.hostFrameFailed && this.fault.faultSnapshot === null
+					&& !this.debuggerState.stopped && !this.debuggerState.plans.controlActive
+					&& !this.scenarioRuns.active && !this.rewind.seeking
+					&& (command !== 'stepFrameBack' || this.rewind.available && this.rewind.frameStepCycles(-1) < this.rewind.positionCycles);
 			case 'scenarioLab.run':
 			case 'scenarioLab.rerun':
 			case 'scenarioLab.cancel':
@@ -340,6 +371,7 @@ export class IdeCommandController {
 			case 'behaviorLens.stateMachines':
 			case 'behaviorLens.behaviorTrees':
 			case 'sceneEditor':
+			case 'gameView':
 				return true;
 			case 'sceneEditor.source':
 				return getActiveTab().kind === 'scene_editor';

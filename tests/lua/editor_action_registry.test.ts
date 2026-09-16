@@ -102,6 +102,20 @@ test('named workbench menu materializes one retained generic action bar', () => 
 	assert.equal(actionBar.items[0].bounds.bottom, 20);
 });
 
+test('game frame controls share commands and use distinct non-repeating Studio keybindings', () => {
+	const commands = enabledCommands('stepFrame', 'stepFrameBack');
+	assert.equal(resolveEditorCommandKeybinding('F7', KeyModifier.none, commands)?.command, 'stepFrame');
+	assert.equal(resolveEditorCommandKeybinding('F7', KeyModifier.shift, commands)?.command, 'stepFrameBack');
+	assert.notEqual(resolveEditorCommandKeybinding('F7', KeyModifier.none, commands)?.repeat, true);
+	assert.notEqual(resolveEditorCommandKeybinding('F7', KeyModifier.shift, commands)?.repeat, true);
+	assert.equal(resolveEditorCommandKeybinding('F7', KeyModifier.ctrl, commands), null);
+	const actions = createWorkbenchActionBar('gameView.title').items;
+	assert.deepEqual(actions.map(action => action.command), ['stepFrameBack', 'gameView.playback', 'stepFrame']);
+	for (const command of ['stepFrameBack', 'stepFrame'] as const) {
+		assert.ok(WORKBENCH_MENUS['menubar.run'].some(item => item.type === 'command' && item.command === command));
+	}
+});
+
 test('a workbench action prompt retains the exact dirty working-copy batch', (t) => {
 	const resource: RuntimeResource = {
 		domain: 0,

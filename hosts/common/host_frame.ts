@@ -208,6 +208,13 @@ export function executeHostUpdate(
 	screen: RenderPresentationState,
 	hostDeltaMs: number,
 ): void {
+	if (session.execution.frameStepPending) {
+		session.execution.consumeElapsedTime(0);
+		if (executeHostLogicalTick(session, runtime, presenter, input, audioOutput, screen)) {
+			session.execution.finishFrameStep();
+		}
+		return;
+	}
 	const previousTickSequence = runtime.frameScheduler.lastTickSequence;
 	runtime.frameScheduler.run(session.execution.consumeElapsedTime(hostDeltaMs));
 	const gxGpu = runtime.machine.gxGpu;

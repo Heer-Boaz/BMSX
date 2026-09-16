@@ -202,6 +202,7 @@ export function runWorkbenchHostFrame(
 			}
 		}
 		if (ide.debugger.stopPresentationPending) {
+			session.execution.finishFrameStep();
 			activateEditor(ide.editor, ide.sources, runtime, audioOutput);
 			void presentRuntimeDebuggerStop(ide.editor, ide.debugger)
 				.catch(error => workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error));
@@ -275,6 +276,7 @@ export function runWorkbenchHostFrame(
 					IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
 				);
 				if (supervisorFaultSequence !== ide.fault.supervisorFaultSequence) {
+					session.execution.finishFrameStep();
 					ide.fault.supervisorFaultSequence = supervisorFaultSequence;
 					handleSupervisorFault(
 						logOutput,
@@ -291,6 +293,7 @@ export function runWorkbenchHostFrame(
 				}
 				ide.debugger.plans.pruneCompletedCompletionBatches();
 				if (ide.debugger.stopPresentationPending) {
+					session.execution.finishFrameStep();
 					activateEditor(
 						ide.editor,
 						ide.sources,
@@ -335,6 +338,7 @@ export function runWorkbenchHostFrame(
 			session.rewind.service(!ide.scenarioRuns.active && !ide.debugger.plans.mutationActive);
 		}
 	} catch (error) {
+		session.execution.finishFrameStep();
 		workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error);
 		presentWorkbenchError(
 			session,

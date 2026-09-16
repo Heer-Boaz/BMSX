@@ -8,7 +8,7 @@ export type WorkbenchDropdownMenuId =
 
 export type WorkbenchContextMenuId = 'actorLab.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'actorLab.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'gameView.title' | 'actorLab.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -22,6 +22,7 @@ export type WorkbenchMenuSeparator = {
 export type WorkbenchMenuItem = WorkbenchMenuCommandItem | WorkbenchMenuSeparator;
 
 type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly WorkbenchMenuItem[]> & {
+	readonly 'gameView.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'actorLab.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'propertyInspector.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'sourceEditReview.title': readonly WorkbenchMenuCommandItem[];
@@ -45,6 +46,11 @@ const GRAPH_ZOOM_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
 
 /** Immutable built-in menu contributions; renderers only project these items. */
 export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
+	'gameView.title': [
+		{ type: 'command', command: 'stepFrameBack' },
+		{ type: 'command', command: 'gameView.playback' },
+		{ type: 'command', command: 'stepFrame' },
+	],
 	'actorLab.context': [
 		{ type: 'command', command: 'actorLab.details' },
 		{ type: 'command', command: 'actorLab.actions' },
@@ -115,6 +121,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	],
 	'menubar.run': [
 		{ type: 'command', command: 'pause' },
+		{ type: 'command', command: 'stepFrameBack' },
+		{ type: 'command', command: 'stepFrame' },
 		{ type: 'command', command: 'debugEvaluation' },
 		{ type: 'command', command: 'debugContinue' },
 		{ type: 'command', command: 'debugStepOver' },
@@ -129,6 +137,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'menubar.view': [
 		{ type: 'command', command: 'commandPalette' },
 		{ type: 'separator' },
+		{ type: 'command', command: 'gameView' },
 		{ type: 'command', command: 'actorLab' },
 		{ type: 'command', command: 'sceneEditor' },
 		{ type: 'command', command: 'behaviorLens' },

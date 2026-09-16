@@ -1,4 +1,6 @@
 import { ActorLabController } from './workbench/contrib/actor_lab/controller';
+import { GameViewInput } from './workbench/contrib/game_view/editor_input';
+import { GameViewEditorPane } from './workbench/contrib/game_view/editor_pane';
 import { ActorLabEditorPane } from './workbench/contrib/actor_lab/editor_pane';
 import { scheduleRuntimeGuestCall } from './runtime/guest_call';
 import type { EditorInputSerializers } from './workbench/services/editor/editor_serialization';
@@ -303,6 +305,7 @@ export class RuntimeCartEditor implements CartEditor {
 			resource_view: () => new ResourceViewerEditorPane(),
 			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu, this.clipboard),
 			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.actorLab, this.commands, this.contextMenu),
+			game_view: () => new GameViewEditorPane(this.resourcePanel, this.commands, runtime, execution, rewind),
 			scene_editor: () => new SceneEditorPane(this.resourcePanel, this.sceneEditor, this.commands, this.sources, this.clipboard),
 			scenario_lab: () => new ScenarioLabEditorPane(
 				this.resourcePanel,
@@ -354,6 +357,7 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		this.editorInputSerializers = {
 			actor_lab: { serialize: () => '', deserialize: () => this.actorLab.resolveInput() },
+			game_view: { serialize: () => '', deserialize: () => new GameViewInput() },
 			code_editor: new CodeEditorInputSerializer(storage, sources),
 			behavior_lens: new BehaviorLensInputSerializer(storage, sources, this.behaviorLens),
 			scene_editor: new SceneEditorInputSerializer(storage, sources, this.sceneEditor),

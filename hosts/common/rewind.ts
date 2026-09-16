@@ -7,7 +7,7 @@ import { LogLevel, type LogOutput } from './log';
 import type { RenderPresentationState } from './presentation_state';
 import { RuntimeTaskKind, type RuntimeTaskQueue } from './runtime_task_queue';
 
-const enum RewindRequest { None, Seek, Resume, Pause, Play }
+const enum RewindRequest { None, Seek, Resume, Pause, Play, Step }
 const REPLAY_CYCLE_GRANT = 16384;
 const REPLAY_WORK_MS = 8;
 
@@ -21,6 +21,7 @@ export class HostRewind {
 	private playbackActive = false;
 	private playbackTimeResetPending = false;
 	private presentationPending = false;
+	private stepTargetTick = 0;
 	private readonly options: HistoryOptions;
 
 	public constructor(
@@ -35,12 +36,38 @@ export class HostRewind {
 	}
 
 	public get available(): boolean { return this.runtime.history.checkpointCount !== 0; }
-	public get seeking(): boolean { return this.request === RewindRequest.Seek || (this.request !== RewindRequest.Pause && !this.playbackActive && this.runtime.history.mode === HistoryMode.Replaying); }
+	public get seeking(): boolean { return this.request === RewindRequest.Seek || this.request === RewindRequest.Step || (this.request !== RewindRequest.Pause && !this.playbackActive && this.runtime.history.mode === HistoryMode.Replaying); }
 	public get playing(): boolean { return this.request !== RewindRequest.Pause && (this.playbackActive || this.request === RewindRequest.Play || this.afterSeek === RewindRequest.Play); }
 	public get audioMuted(): boolean { return this.active && !this.playbackActive; }
 	public get positionCycles(): number {
 		if (this.playbackActive) return this.runtime.machine.scheduler.currentNowCycles();
 		return this.active ? this.requestedCycles : this.runtime.history.latestCycles;
+	}
+
+	/** Adjacent recorded video boundary, never an estimate from nominal frame time. */
+	public frameStepCycles(direction: -1 | 1): number {
+		const history = this.runtime.history;
+		const journal = history.inputJournal;
+		const sequence = journal.endAt(this.positionCycles) + (direction < 0 ? -2 : 0);
+		if (sequence < journal.firstSequence) return history.earliestCycles;
+		if (sequence >= journal.endSequence) return history.latestCycles;
+		return journal.cycleAt(sequence);
+	}
+
+	public stepFrame(direction: -1 | 1): void {
+		const cycles = this.frameStepCycles(direction);
+		if (direction < 0) this.seekTo(cycles);
+		else {
+			// Continue retained input from the current reviewed frame. Restoring the
+			// same checkpoint for every forward click would replay seconds of work.
+			this.requestedCycles = cycles;
+			this.request = RewindRequest.Step;
+			this.afterSeek = RewindRequest.None;
+			this.playbackActive = false;
+			this.presentationPending = false;
+			this.stopped = false;
+			this.audioOutput.muteRewind(true);
+		}
 	}
 
 	public stepCheckpoint(direction: number): void {
@@ -66,6 +93,7 @@ export class HostRewind {
 		this.afterSeek = RewindRequest.None;
 		this.playbackActive = false;
 		this.presentationPending = false;
+		this.stepTargetTick = 0;
 		this.active = true;
 		this.stopped = false;
 		this.audioOutput.muteRewind(true);
@@ -128,6 +156,7 @@ export class HostRewind {
 			this.afterSeek = RewindRequest.None;
 			this.playbackActive = false;
 			this.presentationPending = false;
+			this.stepTargetTick = 0;
 			this.stopped = false;
 			this.audioOutput.muteRewind(false);
 			return;
@@ -138,6 +167,7 @@ export class HostRewind {
 			this.afterSeek = RewindRequest.None;
 			this.playbackActive = false;
 			this.presentationPending = false;
+			this.stepTargetTick = 0;
 			this.stopped = false;
 			this.audioOutput.muteRewind(false);
 			history.start(this.options);
@@ -154,6 +184,7 @@ export class HostRewind {
 				return;
 			case RewindRequest.Resume:
 				this.request = RewindRequest.None;
+				this.stepTargetTick = 0;
 				if (history.mode !== HistoryMode.Recording) history.resumeRecording();
 				this.active = false;
 				this.afterSeek = RewindRequest.None;
@@ -162,6 +193,7 @@ export class HostRewind {
 				break;
 			case RewindRequest.Play:
 				this.request = RewindRequest.None;
+				this.stepTargetTick = 0;
 				history.beginPlayback();
 				this.playbackActive = history.mode === HistoryMode.Replaying;
 				this.playbackTimeResetPending = true;
@@ -169,8 +201,14 @@ export class HostRewind {
 				this.stopped = false;
 				this.audioOutput.muteRewind(this.audioMuted);
 				return;
+			case RewindRequest.Step:
+				this.request = RewindRequest.None;
+				this.stepTargetTick = runtime.frameScheduler.lastTickSequence + 1;
+				history.beginPlayback();
+				break;
 			case RewindRequest.Pause:
 				this.request = RewindRequest.None;
+				this.stepTargetTick = 0;
 				if (history.mode === HistoryMode.Recording) {
 					this.active = false;
 				} else {
@@ -195,16 +233,23 @@ export class HostRewind {
 			const previousTick = runtime.frameScheduler.lastTickSequence;
 			const deadline = performance.now() + REPLAY_WORK_MS;
 			while (history.mode === HistoryMode.Replaying) {
-				const result = history.advanceSeek(REPLAY_CYCLE_GRANT);
+				let result = history.advanceSeek(REPLAY_CYCLE_GRANT);
 				while (gpu.backendServicePending()) {
 					if (gpu.backendCommandDrainPending()) this.presenter.backend.executeGxGpuCommandDrain(gpu);
 					else this.presenter.backend.executeGxGpuReadback(gpu);
+				}
+				if (this.stepTargetTick !== 0 && runtime.frameScheduler.lastTickSequence === this.stepTargetTick) {
+					history.cancelSeek();
+					history.targetCycles = this.requestedCycles;
+					this.stepTargetTick = 0;
+					result = HistorySeekResult.Complete;
 				}
 				if (result === HistorySeekResult.Stopped) {
 					history.cancelSeek();
 					history.targetCycles = runtime.machine.scheduler.currentNowCycles();
 					this.requestedCycles = history.targetCycles;
 					this.stopped = true;
+					this.stepTargetTick = 0;
 					this.afterSeek = RewindRequest.None;
 				}
 				if (result === HistorySeekResult.Complete || result === HistorySeekResult.Stopped) this.presentationPending = true;

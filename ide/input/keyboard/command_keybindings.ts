@@ -60,6 +60,8 @@ const workbenchContribKeybindings: readonly EditorCommandKeybinding[] = [
 	{ code: 'KeyD', command: 'behaviorLens.duplicateChild', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: () => inputFocus.getCommand('behaviorLens.duplicateChild') !== undefined },
 	{ code: 'Delete', command: 'behaviorLens.removeChild', modifiers: NO_MODIFIERS, when: () => inputFocus.getCommand('behaviorLens.removeChild') !== undefined },
 	{ code: 'F5', command: 'debugContinue', modifiers: NO_MODIFIERS },
+	{ code: 'F7', command: 'stepFrame', modifiers: NO_MODIFIERS },
+	{ code: 'F7', command: 'stepFrameBack', modifiers: { required: KeyModifier.shift, forbidden: PRIMARY_ALT_MODIFIERS } },
 	{ code: 'F10', command: 'debugStepOver', modifiers: NO_MODIFIERS },
 	{ code: 'F11', command: 'debugStepInto', modifiers: NO_MODIFIERS },
 	{ code: 'F11', command: 'debugStepOut', modifiers: { required: KeyModifier.shift, forbidden: PRIMARY_ALT_MODIFIERS } },

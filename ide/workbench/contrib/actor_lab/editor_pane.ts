@@ -1,5 +1,5 @@
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
-import { GX_GPU_DISPLAY_ASPECT_WIDTH, GX_GPU_DISPLAY_ASPECT_HEIGHT } from '../../../../machine/ts/spec/bmsx/model';
+import { layoutGameFrame } from '../../common/game_frame';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
@@ -111,15 +111,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		const divider = Math.trunc(layout.right * 0.4);
 		const previewLeft = divider + 6;
 		const previewTop = top + layout.rowHeight + 4;
-		const availableWidth = Math.max(0, layout.right - 4 - previewLeft);
-		const availableHeight = Math.max(0, bottom - 4 - previewTop);
-		// Match the ordinary host display aspect, including non-square native scanout pixels.
-		const scale = Math.trunc(Math.min(availableWidth / GX_GPU_DISPLAY_ASPECT_WIDTH, availableHeight / GX_GPU_DISPLAY_ASPECT_HEIGHT));
-		const width = GX_GPU_DISPLAY_ASPECT_WIDTH * scale, height = GX_GPU_DISPLAY_ASPECT_HEIGHT * scale;
-		const bounds = this.input.previewBounds;
-		bounds.left = previewLeft + Math.trunc((availableWidth - width) / 2);
-		bounds.top = previewTop + Math.trunc((availableHeight - height) / 2);
-		bounds.right = bounds.left + width; bounds.bottom = bounds.top + height;
+		layoutGameFrame(this.input.previewBounds, previewLeft, previewTop, layout.right - 4, bottom - 4);
 		this.input.outline.updateLayout(4, top, divider, bottom,
 			layout.rowHeight + 4, editorViewState.font.advance(' ') * 2);
 	}

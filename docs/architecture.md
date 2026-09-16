@@ -1066,6 +1066,25 @@ requested pause but not under fullscreen/initialization reasons. The first
 actual execution consumes the elapsed-time reset, including commands arriving
 after host input polling, so paused wall time cannot become catch-up work.
 These are host/tooling policies, not guest gameplay-clock changes or pause MMIO.
+Run > Previous Frame (Shift+F7) and Next Frame (F7) open the Game view, which
+shows native scanout with adjacent backward/play-pause/forward controls and a
+frame counter. Commands and toolbar share the same execution/rewind owners;
+ordinary guest keyboard input is unchanged outside Studio. This follows the
+visible paused viewport in [Unreal PIE](https://dev.epicgames.com/documentation/en-us/unreal-engine/playing-and-simulating-in-unreal-engine)
+and the paired frame advance/rewind controls in [BizHawk](https://github.com/TASEmulators/BizHawk/blob/master/src/BizHawk.Client.EmuHawk/tools/TAStudio/PlaybackBox.cs).
+At the live end, advancing requests one physical video boundary through the
+existing `executeHostLogicalTick` path.
+Like [MAME's pause single-step](https://github.com/mamedev/mame/blob/master/src/frontend/mame/ui/ui.cpp),
+the request retains user pause after advancing; it does not sleep for a nominal
+frame duration or call a cart update function. Fullscreen, initialization and
+launch blockers still apply. GPU admission may span host iterations without
+advancing a second logical tick. Debugger stops and faults cancel the pending
+step. Backward stepping seeks the previous recorded PCRTC boundary through
+`HostRewind`. Forward review continues recorded input by one boundary without
+restoring the checkpoint again or discarding the retained future. Play in the
+Game view replays retained input while reviewing; Run > Resume still explicitly
+takes live control. The Game view uses the same native scanout drawing and
+pixel-aspect layout as Actor Lab, with no second renderer or game-state cache.
 Libretro's ordinary pause remains frontend-owned by withholding `retro_run`.
 
 Source/build rejection occurs before machine mutation and does not latch the
