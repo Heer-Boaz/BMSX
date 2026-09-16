@@ -6,14 +6,14 @@ import { renderWorkbenchActionBar } from '../../render/action_bar';
 import type { ActorLabInput } from './editor_input';
 import { drawWorkbenchSlider } from '../../render/slider';
 
-export function drawActorLab(input: ActorLabInput, commands: EditorCommandEnablement, playing: boolean, sliderFocused: boolean): void {
+export function drawActorLab(input: ActorLabInput, commands: EditorCommandEnablement, playbackState: string, sliderFocused: boolean): void {
 	const { layout, outline } = input;
 	const font = editorViewState.font.renderFont();
 	const color = colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
 	api.pushClipRect(layout.left, layout.top, layout.right, layout.bottom);
 	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 	renderWorkbenchActionBar(input.actionBar, commands, font);
-	api.blit_text_inline_with_font(playing ? 'LIVE' : 'PAUSED', 4, layout.top + 2, 0, color, font);
+	api.blit_text_inline_with_font(playbackState, 4, layout.top + 2, 0, color, font);
 	const tree = outline.layout;
 	api.pushClipRect(tree.contentLeft, tree.contentTop, tree.contentRight, tree.contentBottom);
 	for (let visible = 0; visible < tree.visibleRowCount && outline.scroll + visible < outline.rows.length; visible += 1) {

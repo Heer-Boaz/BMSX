@@ -43,7 +43,10 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.focusTarget.next = this.actions.focusTarget;
 		this.actions.focusTarget.previous = this.focusTarget;
 		this.timelineSlider.focusTarget.previous = this.actions.focusTarget;
-		this.focusTarget.registerCommand('actorLab.playback', { isEnabled: controller.canExecute, run: () => controller.togglePlayback(this.input) });
+		this.focusTarget.registerCommand('actorLab.playback', {
+			isEnabled: () => commands.isEnabled('gameView.playback'),
+			run: () => { this.input.running = commands.toggleGamePlayback(); },
+		});
 		this.focusTarget.registerCommand('actorLab.select', { isEnabled: () => true, run: () => controller.selectActor(this.input) });
 		this.focusTarget.registerCommand('actorLab.spawn', { isEnabled: controller.canExecute, run: () => controller.spawn(this.input) });
 		this.focusTarget.registerCommand('actorLab.emit', { isEnabled: () => controller.canExecute() && this.input.actorHashId !== 0, run: () => controller.emitEvent(this.input) });
@@ -92,7 +95,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		if (this.inspector.visible) {
 			this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, this.input.layout);
 			drawWorkbenchPropertyInspector(this.inspector);
-		} else drawActorLab(this.input, this.commands, !this.controller.execution.paused, this.timelineSlider.focusTarget.hasFocus);
+		} else drawActorLab(this.input, this.commands, this.commands.gamePlaybackState, this.timelineSlider.focusTarget.hasFocus);
 	}
 	public handleKeyboard(input: PlayerInput): void {
 		for (const [key, command] of NAVIGATION) {

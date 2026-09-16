@@ -305,7 +305,7 @@ export class RuntimeCartEditor implements CartEditor {
 			resource_view: () => new ResourceViewerEditorPane(),
 			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu, this.clipboard),
 			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.actorLab, this.commands, this.contextMenu),
-			game_view: () => new GameViewEditorPane(this.resourcePanel, this.commands, runtime, execution, rewind),
+			game_view: () => new GameViewEditorPane(this.resourcePanel, this.commands, runtime),
 			scene_editor: () => new SceneEditorPane(this.resourcePanel, this.sceneEditor, this.commands, this.sources, this.clipboard),
 			scenario_lab: () => new ScenarioLabEditorPane(
 				this.resourcePanel,
@@ -329,8 +329,7 @@ export class RuntimeCartEditor implements CartEditor {
 				},
 				error => { this.actorLab.didFinishCall(false, observer); this.handleRuntimeTaskError(error, 'Actor operation failed'); }); },
 			runtimeTasks,
-			() => runtimeTasks.mutationReady && !execution.launchPending && !scenarioRuns.active && !debuggerState.plans.mutationActive && !rewind.active,
-			execution);
+			() => runtimeTasks.mutationReady && !execution.launchPending && !scenarioRuns.active && !debuggerState.plans.mutationActive && !rewind.active);
 
 		const behaviorRegistrations = new BehaviorRegistrationIndex(this.sources);
 		this.behaviorLens = new BehaviorLensController(

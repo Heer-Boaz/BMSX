@@ -1,5 +1,3 @@
-import type { HostExecutionControl } from '../../../../hosts/common/execution_control';
-import type { HostRewind } from '../../../../hosts/common/rewind';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { PointerSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
@@ -25,7 +23,7 @@ export class GameViewEditorPane extends FullWidthWorkbenchEditorPane<GameViewInp
 	private shownFrame = -1;
 	private frameLabel = '';
 	public constructor(resourcePanel: ResourcePanelController, private readonly commands: IdeCommandController,
-		private readonly runtime: Runtime, private readonly execution: HostExecutionControl, private readonly rewind: HostRewind) {
+		private readonly runtime: Runtime) {
 		super(resourcePanel);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		this.focusTarget.next = this.actions.focusTarget;
@@ -54,7 +52,7 @@ export class GameViewEditorPane extends FullWidthWorkbenchEditorPane<GameViewInp
 		const font = editorViewState.font.renderFont();
 		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 		renderWorkbenchActionBar(actionBar, this.commands, font);
-		api.blit_text_inline_with_font(this.rewind.seeking ? 'SEEKING' : this.execution.userPaused || this.rewind.active && !this.rewind.playing ? 'PAUSED' : this.rewind.active ? 'REPLAY' : 'LIVE',
+		api.blit_text_inline_with_font(this.commands.gamePlaybackState,
 			4, layout.top + 2, 0, colors.COLOR_STATUS_TEXT, font);
 		api.drawFrame(bounds.left, bounds.top, bounds.right, bounds.bottom);
 	}

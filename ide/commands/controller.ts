@@ -75,6 +75,28 @@ export class IdeCommandController {
 	) {
 	}
 
+	public get gamePlaybackState(): 'SEEKING' | 'PAUSED' | 'REPLAY' | 'LIVE' {
+		if (this.rewind.seeking) return 'SEEKING';
+		if (this.execution.paused || this.rewind.active && !this.rewind.playing) return 'PAUSED';
+		return this.rewind.active ? 'REPLAY' : 'LIVE';
+	}
+
+	/** Shared transport for game previews; reviewing keeps the recorded future. */
+	public toggleGamePlayback(): boolean {
+		const playing = this.gamePlaybackState === 'PAUSED';
+		if (!playing) {
+			if (this.rewind.active) this.rewind.pauseSeek();
+			this.execution.setPauseReason(HostPauseReason.Requested, true);
+		} else if (this.rewind.active && this.rewind.positionCycles < this.runtime.history.latestCycles) {
+			if (!this.rewind.playing) this.rewind.togglePlayback();
+			this.execution.setPauseReason(HostPauseReason.Requested, false);
+		} else {
+			if (this.rewind.active) this.rewind.resumeHere();
+			this.execution.requestExecution(true);
+		}
+		return playing;
+	}
+
 	public execute(command: EditorCommandId): void {
 		const edit = inputFocus.target?.commandContext.edit;
 		if (SOURCE_COMMANDS.has(command) && edit !== undefined && !edit.commit()) return;
@@ -147,14 +169,7 @@ export class IdeCommandController {
 				}
 				return;
 			case 'gameView.playback':
-				if (this.rewind.active && this.rewind.positionCycles < this.runtime.history.latestCycles) {
-					this.rewind.togglePlayback();
-					this.execution.setPauseReason(HostPauseReason.Requested, !this.rewind.playing);
-				} else if (this.rewind.active || this.execution.userPaused) {
-					if (this.rewind.active) this.rewind.resumeHere();
-					this.execution.requestExecution(true);
-				}
-				else this.execution.setPauseReason(HostPauseReason.Requested, true);
+				this.toggleGamePlayback();
 				return;
 			case 'stepFrame':
 			case 'stepFrameBack':

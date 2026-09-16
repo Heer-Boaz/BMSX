@@ -1,4 +1,3 @@
-import type { HostExecutionControl } from '../../../../hosts/common/execution_control';
 import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
 import { COLOR_STATUS_TEXT } from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
@@ -63,7 +62,6 @@ export class ActorLabController {
 		private readonly schedule: (request: RuntimeGuestCallRequest, observer?: RuntimeGuestCallObserver) => void,
 		private readonly tasks: RuntimeTaskQueue,
 		public readonly canInteract: () => boolean,
-		public readonly execution: HostExecutionControl,
 	) {
 		guest.onDidInvalidate(reason => this.current?.invalidate(reason === 'heap-replaced'));
 	}
@@ -96,11 +94,6 @@ export class ActorLabController {
 				return new TextQuickPickProvider(readActorChoices(this.sources, this.guest));
 			}, choice => { input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = 0; input.dirty = true; });
 	}
-	public togglePlayback(input: ActorLabInput): void {
-		input.running = !input.running;
-		if (input.running) this.execution.requestExecution(true);
-	}
-
 	public didFinishCall(completed: boolean, observer?: RuntimeGuestCallObserver): void {
 		if (completed) this.cpu.readCompletionValues(this.completionValues);
 		if (observer !== undefined) observer(completed, this.completionValues);

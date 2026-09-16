@@ -1082,8 +1082,12 @@ advancing a second logical tick. Debugger stops and faults cancel the pending
 step. Backward stepping seeks the previous recorded PCRTC boundary through
 `HostRewind`. Forward review continues recorded input by one boundary without
 restoring the checkpoint again or discarding the retained future. Play in the
-Game view replays retained input while reviewing; Run > Resume still explicitly
-takes live control. The Game view uses the same native scanout drawing and
+Game view and Actor Lab replay retained input while reviewing through the same
+IDE transport command owner; Run > Resume still explicitly takes live control.
+Playback availability follows execution state, independently of Actor Lab's
+mutation admission, which stays blocked during history review. Both previews
+show the shared live/replay/paused/seeking state, including pause at the end of
+retained history. The Game view uses the same native scanout drawing and
 pixel-aspect layout as Actor Lab, with no second renderer or game-state cache.
 Libretro's ordinary pause remains frontend-owned by withholding `retro_run`.
 
