@@ -10,6 +10,10 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 class LifecycleBackend extends HeadlessGPUBackend {
 	readonly destroyedPipelines: RenderPassInstanceHandle[] = [];
 
+	override registerBuiltinPasses(_registry: RenderPassLibrary): void {
+		// This fixture registers its own pipeline owner and borrower.
+	}
+
 	override destroyRenderPassInstance(pipeline: RenderPassInstanceHandle): void {
 		this.destroyedPipelines.push(pipeline);
 	}
