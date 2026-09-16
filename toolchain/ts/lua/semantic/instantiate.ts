@@ -259,10 +259,9 @@ export class SemanticInstantiationQuery {
 	private readonly effectNameList: SemanticNameID[] = [];
 	private readonly demandedValues: boolean[] = [];
 	private readonly frameArguments: TermID[] = [];
-	private readonly prototypeOwnerQueue: TermID[] = [];
-	private readonly prototypeTargetQueue: TermID[] = [];
-	private prototypeQueueHead = 0;
-	private propagatingPrototypes = false;
+	private readonly associationOwnerQueue: TermID[] = [];
+	private readonly associationTargetQueue: TermID[] = [];
+	private associationQueueHead = 0;
 
 	constructor(
 		private readonly summaries: FunctionSummaryStore,
@@ -611,10 +610,10 @@ export class SemanticInstantiationQuery {
 				this.addValue(alias.target, alias.source);
 				break;
 			case 'metatable':
-				this.metatables.add(alias.target, alias.source);
+				this.addAssociation(this.metatables, alias.target, alias.source);
 				break;
 			case 'prototype':
-				this.addPrototype(alias.target, alias.source);
+				this.addAssociation(this.prototypes, alias.target, alias.source);
 				break;
 		}
 	}
@@ -630,44 +629,40 @@ export class SemanticInstantiationQuery {
 		if (!this.summaries.terms.hasLocationIdentity(target) || target === source || !this.values.add(target, source)) {
 			return;
 		}
-		for (let link = this.prototypes.first(target); link !== 0; link = this.prototypes.next(link)) {
-			this.addPrototype(source, this.prototypes.target(link));
+		this.propagateAssociationValue(this.prototypes, target, source);
+		this.propagateAssociationValue(this.metatables, target, source);
+	}
+
+	private propagateAssociationValue(relation: BidirectionalTermRelation, target: TermID, source: TermID): void {
+		for (let link = relation.first(target); link !== 0; link = relation.next(link)) {
+			this.addAssociation(relation, source, relation.target(link));
 		}
-		for (
-			let link = this.prototypes.firstReverse(target);
-			link !== 0;
-			link = this.prototypes.nextReverse(link)
-		) {
-			this.addPrototype(this.prototypes.owner(link), source);
+		for (let link = relation.firstReverse(target); link !== 0; link = relation.nextReverse(link)) {
+			this.addAssociation(relation, relation.owner(link), source);
 		}
 	}
 
-	private addPrototype(owner: TermID, target: TermID): void {
-		this.prototypeOwnerQueue.push(owner);
-		this.prototypeTargetQueue.push(target);
-		if (this.propagatingPrototypes) {
-			return;
-		}
-		this.propagatingPrototypes = true;
-		while (this.prototypeQueueHead < this.prototypeOwnerQueue.length) {
-			const retainedOwner = this.prototypeOwnerQueue[this.prototypeQueueHead];
-			const retainedTarget = this.prototypeTargetQueue[this.prototypeQueueHead];
-			this.prototypeQueueHead += 1;
-			if (!this.summaries.terms.hasLocationIdentity(retainedOwner) || !this.prototypes.add(retainedOwner, retainedTarget)) {
+	private addAssociation(relation: BidirectionalTermRelation, owner: TermID, target: TermID): void {
+		this.associationOwnerQueue.push(owner);
+		this.associationTargetQueue.push(target);
+		while (this.associationQueueHead < this.associationOwnerQueue.length) {
+			const retainedOwner = this.associationOwnerQueue[this.associationQueueHead];
+			const retainedTarget = this.associationTargetQueue[this.associationQueueHead];
+			this.associationQueueHead += 1;
+			if (!this.summaries.terms.hasLocationIdentity(retainedOwner) || !relation.add(retainedOwner, retainedTarget)) {
 				continue;
 			}
 			for (let link = this.values.first(retainedOwner); link !== 0; link = this.values.next(link)) {
-				this.prototypeOwnerQueue.push(this.values.target(link));
-				this.prototypeTargetQueue.push(retainedTarget);
+				this.associationOwnerQueue.push(this.values.target(link));
+				this.associationTargetQueue.push(retainedTarget);
 			}
 			for (let link = this.values.first(retainedTarget); link !== 0; link = this.values.next(link)) {
-				this.prototypeOwnerQueue.push(retainedOwner);
-				this.prototypeTargetQueue.push(this.values.target(link));
+				this.associationOwnerQueue.push(retainedOwner);
+				this.associationTargetQueue.push(this.values.target(link));
 			}
 		}
-		this.prototypeOwnerQueue.length = 0;
-		this.prototypeTargetQueue.length = 0;
-		this.prototypeQueueHead = 0;
-		this.propagatingPrototypes = false;
+		this.associationOwnerQueue.length = 0;
+		this.associationTargetQueue.length = 0;
+		this.associationQueueHead = 0;
 	}
 }

@@ -1,5 +1,6 @@
 import type { FileSemanticData, SymbolID } from './model';
 import { LuaCompletion } from '../analysis/completion';
+import { computeAssignmentValues } from './assignment_values';
 import { WorkspaceValueIdentityIndex, type SemanticRootID } from './identity';
 import { SemanticDependencyIndex, SemanticDependencyPairIndex, SemanticQueryDependencies } from './query_dependencies';
 import {
@@ -108,6 +109,7 @@ export class SemanticTermStore {
 	private readonly nonSelectiveRootTerms: boolean[] = [];
 	private readonly stringLiteralTerms: boolean[] = [];
 	private readonly numericLiteralTerms: boolean[] = [];
+	private readonly localValueOrigins: boolean[] = [];
 	private readonly identityKinds: TermIdentityKind[] = [];
 	private readonly parameterTerms: TermID[][] = [];
 	private readonly localTerms: TermID[][] = [];
@@ -480,13 +482,23 @@ export class SemanticTermStore {
 		return this.numericLiteralTerms[term];
 	}
 
+	/** Stable allocations, literals and abstract values, excluding mutable storage/read paths. */
+	public isValueOrigin(term: TermID): boolean {
+		const kind = this.kinds[term];
+		if (kind === TermKind.Root) return this.isUnknown(term) || this.identities.isValueRoot(this.left[term] as SemanticRootID);
+		if (kind === TermKind.ContextRoot) return this.isValueOrigin(this.left[term] as TermID);
+		return kind === TermKind.Instance || kind === TermKind.Local && this.localValueOrigins[term];
+	}
+
 	private compileRoot(root: SemanticValueRoot): TermID {
 		const rawRoot = this.identities.rawRootId(root);
 		const retained = this.compiledRoots[rawRoot];
 		if (retained !== undefined) return retained;
 		const localOwner = this.localOwnerByRoot.get(rawRoot);
 		if (localOwner) {
-			return this.compiledRoots[rawRoot] = this.local(localOwner.summary, localOwner.index);
+			const term = this.local(localOwner.summary, localOwner.index);
+			this.localValueOrigins[term] = this.identities.isValueRoot(rawRoot);
+			return this.compiledRoots[rawRoot] = term;
 		}
 		const parameterOwner = this.parameterOwnerByRoot.get(rawRoot);
 		if (parameterOwner) {
@@ -627,11 +639,18 @@ export class FunctionSummaryStore {
 			parameterOwnerByRoot,
 			localOwnerByRoot,
 		);
+		const capturedWrites = new Set<SymbolID>();
+		for (const [writer, values] of valuesByFlow) {
+			for (const value of values) {
+				const owner = localOwnerByRoot.get(identities.rawRootId({ kind: 'declaration', declId: value.declId }));
+				if (owner !== undefined && owner.summary !== this.summaryIdByFlow.get(writer)) capturedWrites.add(value.declId);
+			}
+		}
 
 		for (let flowIndex = 0; flowIndex < flows.length; flowIndex += 1) {
 			const flow = flows[flowIndex];
 			const id = (flowIndex + 1) as FunctionSummaryID;
-			const summary = this.buildSummary(id, flow, valuesByFlow.get(flow)!);
+			const summary = this.buildSummary(id, flow, valuesByFlow.get(flow)!, capturedWrites);
 			this.summaries[id] = summary;
 			this.appendSummary(this.summaryIdsByFunctionTerm, summary.functionValue, id);
 			if (flow.declaration !== undefined) {
@@ -715,7 +734,9 @@ export class FunctionSummaryStore {
 		id: FunctionSummaryID,
 		flow: FunctionValueFlowEntry,
 		declarationValues: readonly DeclarationValueEntry[],
+		capturedWrites: ReadonlySet<SymbolID>,
 	): FunctionSummary {
+		const assignmentValues = computeAssignmentValues(flow, declarationValues, capturedWrites);
 		const writesByDeclaration = new Map<SymbolID, DeclarationValueEntry[]>();
 		for (let valueIndex = 0; valueIndex < declarationValues.length; valueIndex += 1) {
 			const entry = declarationValues[valueIndex];
@@ -745,7 +766,7 @@ export class FunctionSummaryStore {
 				writes.push({
 					base: this.terms.compileSource(member.owner),
 					name: this.terms.nameId(member.name),
-					value: this.terms.compileSource(source.source),
+					value: this.terms.compileSource(assignmentValues.get(source) || source.source),
 					declaration: member.declId,
 					source,
 				});
@@ -766,7 +787,7 @@ export class FunctionSummaryStore {
 			const target = this.terms.compileSource(declarationValueSource(declId));
 			const firstAlias = aliases.length;
 			for (const source of sources) {
-				const value = this.terms.compileSource(source.source);
+				const value = this.terms.compileSource(assignmentValues.get(source) || source.source);
 				let retained = false;
 				for (let index = firstAlias; index < aliases.length; index += 1) {
 					if (aliases[index].source === value) { retained = true; break; }
@@ -778,7 +799,7 @@ export class FunctionSummaryStore {
 			const assignment = flow.assignments[assignmentIndex];
 			aliases.push({
 				target: this.terms.compileSource(assignment.target),
-				source: this.terms.compileSource(assignment.source),
+				source: this.terms.compileSource(assignmentValues.get(assignment) || assignment.source),
 				relation: assignment.relation,
 			});
 		}

@@ -4,6 +4,7 @@ import type {
 	SemanticLiteralValue,
 	WorkspaceValueFactsInput,
 } from './value_graph';
+import { LuaSyntaxKind } from '../syntax/ast';
 
 declare const semanticRootBrand: unique symbol;
 
@@ -22,6 +23,7 @@ export class WorkspaceValueIdentityIndex {
 	private readonly identityParents: number[] = [0];
 	private readonly identityRanks: number[] = [0];
 	private readonly literalRoots: boolean[] = [false];
+	private readonly valueRoots: boolean[] = [false];
 
 	constructor(input: WorkspaceValueFactsInput) {
 		for (let fileIndex = 0; fileIndex < input.files.length; fileIndex += 1) {
@@ -66,6 +68,10 @@ export class WorkspaceValueIdentityIndex {
 		return this.literalRoots[root];
 	}
 
+	public isValueRoot(root: SemanticRootID): boolean {
+		return this.valueRoots[root];
+	}
+
 	private union(left: SemanticValueRoot, right: SemanticValueRoot): void {
 		let leftId = this.find(this.identityId(left));
 		let rightId = this.find(this.identityId(right));
@@ -81,6 +87,7 @@ export class WorkspaceValueIdentityIndex {
 		}
 		this.identityParents[rightId] = leftId;
 		this.literalRoots[leftId] = this.literalRoots[leftId] || this.literalRoots[rightId];
+		this.valueRoots[leftId] = this.valueRoots[leftId] || this.valueRoots[rightId];
 		if (leftRank === rightRank) {
 			this.identityRanks[leftId] = leftRank + 1;
 		}
@@ -123,6 +130,8 @@ export class WorkspaceValueIdentityIndex {
 		}
 		const identity = this.createIdentity();
 		this.literalRoots[identity] = root.kind === 'literal';
+		this.valueRoots[identity] = root.kind === 'literal' || root.kind === 'owned'
+			&& (root.syntax.kind === LuaSyntaxKind.TableConstructorExpression || root.syntax.kind === LuaSyntaxKind.FunctionExpression);
 		identities.set(key, identity);
 		return identity;
 	}
@@ -132,6 +141,7 @@ export class WorkspaceValueIdentityIndex {
 		this.identityParents.push(identity);
 		this.identityRanks.push(0);
 		this.literalRoots.push(false);
+		this.valueRoots.push(false);
 		return identity;
 	}
 

@@ -4848,6 +4848,17 @@ table references do not authorize reverse-storage expansion of a key into
 unbounded equivalent access paths. See [indexed-access ownership and its
 Studio regression](lua_index_key_resolution.md).
 
+Completion discovers candidate names from the queried receiver's storage and
+prototypes, then resolves their write witnesses in one demand batch. It does not
+enumerate every spelling in the workspace. Matched indexed storage is retained
+separately from its stored values; reading that address never re-evaluates its
+key as another value-producing query. Key-producing actual arguments retain
+separate value contexts at indexed writes. Function-summary stores use the
+reaching local assignment within a basic block; calls, joins and captured
+mutations retain conservative may-values. Binder facts and source occurrences
+remain immutable. See [component completion](lua_component_completion.md) for
+the production references, regressions and remaining latency boundary.
+
 Snapshot-local queries share one dependency/evaluation owner. Fact indices
 publish their own row changes; consumers retain empty and cyclic answers with
 their dependencies. A refreshed child result is consumed after evaluation,

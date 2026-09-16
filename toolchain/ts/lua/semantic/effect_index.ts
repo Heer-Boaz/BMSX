@@ -1,5 +1,7 @@
 import type { FunctionSummaryID, SemanticNameID } from './function_summary';
 
+const EMPTY_SUMMARIES: readonly FunctionSummaryID[] = [];
+
 export type EffectRelevance = {
 	readonly summaries: readonly boolean[];
 	readonly names: readonly boolean[];
@@ -10,8 +12,17 @@ export class SemanticEffectIndex {
 	private readonly writers = new Map<SemanticNameID, FunctionSummaryID[]>();
 	private readonly callers: FunctionSummaryID[][] = [];
 	private readonly namedCallers = new Map<SemanticNameID, FunctionSummaryID[]>();
+	private readonly summariesByName: FunctionSummaryID[][] = [];
 
-	constructor(private readonly functionNames: readonly (SemanticNameID | undefined)[]) {}
+	constructor(private readonly functionNames: readonly (SemanticNameID | undefined)[]) {
+		for (let id = 0; id < functionNames.length; id += 1) {
+			const name = functionNames[id];
+			if (name === undefined) continue;
+			let summaries = this.summariesByName[name];
+			if (!summaries) this.summariesByName[name] = summaries = [];
+			summaries.push(id as FunctionSummaryID);
+		}
+	}
 
 	public addWriter(name: SemanticNameID, summary: FunctionSummaryID): void {
 		let writers = this.writers.get(name);
@@ -38,6 +49,10 @@ export class SemanticEffectIndex {
 			this.namedCallers.set(name, callers);
 		}
 		if (!callers.includes(caller)) callers.push(caller);
+	}
+
+	public candidates(name: SemanticNameID): readonly FunctionSummaryID[] {
+		return this.summariesByName[name] || EMPTY_SUMMARIES;
 	}
 
 	public select(name: SemanticNameID): EffectRelevance {

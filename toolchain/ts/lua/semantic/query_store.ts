@@ -56,6 +56,8 @@ export class LuaSemanticQueryStore {
 	private readonly allMemberResults: SemanticQueryResults<SymbolID>;
 	private readonly functionResults: SemanticQueryResults<SymbolID>;
 	private memberQueryCount = 0;
+	private readonly memberNames: SemanticNameID[] = [];
+	private readonly memberDeclarations: SymbolID[] = [];
 
 	constructor(
 		files: readonly FileSemanticData[],
@@ -125,12 +127,24 @@ export class LuaSemanticQueryStore {
 	public allMembers(source: SemanticValueSource): readonly SymbolID[] {
 		const term = this.summaries.terms.compileSource(source);
 		if (this.allMemberResults.isCurrent(term)) return this.allMemberResults.values(term);
-		const names = this.demand.names();
+		this.instantiation.demandTermEffects(term);
+		const owner = this.summaries.terms.summaryOwner(term);
+		if (owner !== undefined) this.calls.querySummary(owner);
 		for (;;) {
+			this.calls.activate(term);
+			this.calls.solve();
 			this.allMemberResults.begin(term);
 			const values = this.allMemberResults.buffer(0);
+			const names = this.memberNames;
+			this.members.candidateNames(source, this.demand, names);
+			for (const name of names) {
+				this.instantiation.projectName(name);
+				this.instantiation.demandEffectName(name);
+			}
+			this.calls.solve();
 			for (let nameIndex = 0; nameIndex < names.length; nameIndex += 1) {
-				const members = this.member(source, this.summaries.terms.name(names[nameIndex]));
+				const members = this.memberDeclarations;
+				this.members.resolveMembers(source, names[nameIndex], members);
 				for (let memberIndex = 0; memberIndex < members.length; memberIndex += 1) {
 					if (!values.includes(members[memberIndex])) values.push(members[memberIndex]);
 				}

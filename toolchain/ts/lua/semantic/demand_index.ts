@@ -27,6 +27,8 @@ const EMPTY_SYMBOLS: readonly SymbolID[] = [];
 const EMPTY_CALLS: readonly SummaryCall[] = [];
 const EMPTY_SUMMARIES: readonly FunctionSummaryID[] = [];
 const EMPTY_TERMS: readonly TermID[] = [];
+const EMPTY_NAMES: readonly SemanticNameID[] = [];
+const EMPTY_RELEVANCE: readonly boolean[] = [];
 
 // The demand index only selects retained facts. It never instantiates a call or
 // publishes a function effect; those transitions belong to the query engine.
@@ -34,31 +36,37 @@ export class SemanticDemandIndex {
 	public readonly aliases: readonly SummaryAlias[];
 	public readonly topLevelCalls: readonly SummaryCall[];
 	private readonly staticWritesByName: Map<SemanticNameID, SummaryWrite[]> = new Map();
+	private readonly memberNamesByBase: SemanticNameID[][] = [];
+	private readonly memberNamesByParameter: SemanticNameID[][] = [];
 	private readonly receiverWritersByName: Map<SemanticNameID, FunctionSummaryID[]> = new Map();
 	private readonly candidateCallsByName: Map<SemanticNameID, SummaryCall[]> = new Map();
 	private readonly directTargetsByCall: Map<CallValueEntry, SymbolID[]> = new Map();
 	private readonly referencesByCall: Map<CallValueEntry, Ref> = new Map();
 	private readonly callsBySite: Map<CallValueEntry, SummaryCall> = new Map();
 	private readonly dependentSummariesByTerm: FunctionSummaryID[][] = [];
+	private readonly indexedWritersByAnchor: FunctionSummaryID[][] = [];
 	private readonly dependentCallsByTerm: FunctionCall[][] = [];
 	private readonly calleeCallsByTerm: SummaryCall[][] = [];
 	private readonly topLevelCallsByAnchor: SummaryCall[][] = [];
 	private readonly topLevelResultCallsByTerm: SummaryCall[][] = [];
 	private readonly resultCallsByTerm: FunctionCall[][] = [];
 	private readonly relatedTermsByTerm: TermID[][] = [];
+	private readonly identifiersByTerm: (readonly TermID[] | undefined)[] = [];
+	private readonly identifierTerms: TermID[] = [];
+	private readonly identifierSeen: number[] = [];
+	private identifierGeneration = 0;
 	private readonly indexedSummaryTerms: number[] = [];
 	private readonly indexedDependentCallTerms: number[] = [];
 	private readonly indexedCallAnchors: number[] = [];
 	private summaryAnchorGeneration = 0;
 	private dependentCallGeneration = 0;
 	private callAnchorGeneration = 0;
-	private readonly memberNames: SemanticNameID[] = [];
-	private readonly retainedMemberNames: Set<SemanticNameID> = new Set();
 	private readonly functionNameBySummary: (SemanticNameID | undefined)[] = [];
 	private readonly parameterForwardingSummaries: boolean[] = [];
 	private readonly queryIndependentSummaries: boolean[] = [];
 	private readonly queryIndependentFunctionNames: boolean[] = [];
 	private readonly callsByEffectName: (EffectCallSelection | undefined)[] = [];
+	private readonly forwardingCallsBySummary: (readonly SummaryCall[] | undefined)[] = [];
 	private effectIndex: SemanticEffectIndex | undefined;
 	private readonly returnCallsBySummary: (readonly SummaryCall[] | undefined)[] = [];
 	private readonly compositionCallsBySummary: (readonly SummaryCall[] | undefined)[] = [];
@@ -69,6 +77,7 @@ export class SemanticDemandIndex {
 	private readonly selectedCallIndices: boolean[] = [];
 	private readonly parameterDependencyTerms: TermID[] = [];
 	private readonly parameterDependencySeen: number[] = [];
+	private readonly keyedParametersBySummary: (readonly number[] | undefined)[] = [];
 	private readonly staticCalleeTerms: TermID[] = [];
 	private readonly staticCalleeSeen: number[] = [];
 	private readonly staticReceiverTerms: TermID[] = [];
@@ -185,9 +194,19 @@ export class SemanticDemandIndex {
 				? undefined
 				: functionNamesByDeclaration.get(declaration);
 			this.indexSummaryDependencies(summary);
+			for (const alias of summary.aliases) {
+				if (summaries.terms.kind(alias.target) !== TermKind.Index) continue;
+				const anchor = summaries.terms.anchor(alias.target);
+				if (summaries.terms.kind(anchor) !== TermKind.Root || !summaries.terms.isIndexableAnchor(anchor)) continue;
+				let writers = this.indexedWritersByAnchor[anchor];
+				if (!writers) this.indexedWritersByAnchor[anchor] = writers = [];
+				if (writers[writers.length - 1] !== summary.id) writers.push(summary.id);
+			}
 			this.indexProjectedReceiverWrites(summary);
 			for (let writeIndex = 0; writeIndex < summary.writes.length; writeIndex += 1) {
-				this.retainMemberName(summary.writes[writeIndex].name);
+				const write = summary.writes[writeIndex];
+				this.indexMemberName(write.base, write.name);
+				this.indexMemberName(summaries.projectExternalTerm(write.base), write.name);
 			}
 			for (let callIndex = 0; callIndex < summary.calls.length; callIndex += 1) {
 				const call = summary.calls[callIndex];
@@ -224,6 +243,47 @@ export class SemanticDemandIndex {
 		}
 		this.aliases = aliases;
 		this.topLevelCalls = topLevelCalls;
+		// All module aliases are known now, including constants declared in a
+		// different file. Index the value of a key rather than its local spelling.
+		for (const call of topLevelCalls) this.indexCallIdentifiers(call, this.topLevelCallsByAnchor);
+		for (const summary of functionSummaries) {
+			for (const call of summary.calls) this.indexCallIdentifiers(call, this.dependentCallsByTerm);
+		}
+	}
+
+	public stringIdentifiers(term: TermID): readonly TermID[] {
+		if (this.summaries.terms.kind(term) !== TermKind.Root) return EMPTY_TERMS;
+		const retained = this.identifiersByTerm[term];
+		if (retained !== undefined) return retained;
+		const identifiers: TermID[] = [];
+		const generation = ++this.identifierGeneration;
+		const pending = this.identifierTerms;
+		pending.length = 1;
+		pending[0] = term;
+		for (let head = 0; head < pending.length; head += 1) {
+			const current = pending[head];
+			if (this.identifierSeen[current] === generation) continue;
+			this.identifierSeen[current] = generation;
+			if (this.summaries.terms.isStringLiteralAnchor(current)) identifiers.push(current);
+			for (const related of this.relatedTerms(current)) {
+				if (this.summaries.terms.kind(related) === TermKind.Root) pending.push(related);
+			}
+		}
+		this.identifiersByTerm[term] = identifiers;
+		return identifiers;
+	}
+
+	private indexCallIdentifiers<T extends SummaryCall>(call: T, index: T[][]): void {
+		for (const argument of call.arguments) {
+			for (const identifier of this.stringIdentifiers(argument)) {
+				let calls = index[identifier];
+				if (calls === undefined) {
+					calls = [];
+					index[identifier] = calls;
+				}
+				if (!calls.includes(call)) calls.push(call);
+			}
+		}
 	}
 
 	/** Module-owned writes only. Inferred receiver shapes are not module effects. */
@@ -252,8 +312,60 @@ export class SemanticDemandIndex {
 		return this.callsBySite.get(site) as SummaryCall;
 	}
 
-	public names(): readonly SemanticNameID[] {
-		return this.memberNames;
+	public memberNamesForBase(base: TermID): readonly SemanticNameID[] {
+		if (this.summaries.terms.kind(base) === TermKind.Parameter) {
+			return this.namesForParameter(base);
+		}
+		return this.memberNamesByBase[base] || EMPTY_NAMES;
+	}
+
+	/** Candidate names follow direct aliases and calls; child fields are separate receivers. */
+	private namesForParameter(parameter: TermID): readonly SemanticNameID[] {
+		const retained = this.memberNamesByParameter[parameter];
+		if (retained !== undefined) return retained;
+		if (!this.effectIndex) this.effectIndex = this.buildEffectIndex();
+		const names: SemanticNameID[] = [];
+		const pending = [parameter];
+		const seen: boolean[] = [];
+		const terms = this.summaries.terms;
+		for (let head = 0; head < pending.length; head += 1) {
+			const current = pending[head];
+			if (seen[current]) continue;
+			seen[current] = true;
+			const summary = this.summaries.get(terms.summaryOwner(current)!);
+			for (const write of summary.writes) {
+				if (!names.includes(write.name) && this.dependsOnParameter(summary, write.base, current, false)) names.push(write.name);
+			}
+			for (const call of summary.calls) {
+				for (let argument = 0; argument < call.arguments.length; argument += 1) {
+					if (!this.dependsOnParameter(summary, call.arguments[argument], current, false)) continue;
+					for (const target of this.directTargets(call.site)) {
+						for (const callee of this.summaries.summaryIdsForDeclaration(target)) {
+							const formal = this.summaries.get(callee).parameters[argument];
+							if (formal !== undefined) pending.push(formal);
+						}
+					}
+					for (const callee of this.summaries.summaryIdsForTerm(call.callee)) {
+						const formal = this.summaries.get(callee).parameters[argument];
+						if (formal !== undefined) pending.push(formal);
+					}
+					if (terms.kind(call.callee) === TermKind.Member && this.callRequiresCandidateSelection(call)) {
+						for (const callee of this.effectIndex.candidates(terms.operand(call.callee) as SemanticNameID)) {
+							const formal = this.summaries.get(callee).parameters[argument];
+							if (formal !== undefined) pending.push(formal);
+						}
+					}
+				}
+			}
+		}
+		this.memberNamesByParameter[parameter] = names;
+		return names;
+	}
+
+	private indexMemberName(base: TermID, name: SemanticNameID): void {
+		let names = this.memberNamesByBase[base];
+		if (!names) this.memberNamesByBase[base] = names = [];
+		if (!names.includes(name)) names.push(name);
 	}
 
 	public calleeCallsForTerm(term: TermID): readonly SummaryCall[] {
@@ -262,6 +374,10 @@ export class SemanticDemandIndex {
 
 	public dependentSummariesForTerm(term: TermID): readonly FunctionSummaryID[] {
 		return this.dependentSummariesByTerm[term] || EMPTY_SUMMARIES;
+	}
+
+	public indexedWriters(term: TermID): readonly FunctionSummaryID[] {
+		return this.indexedWritersByAnchor[this.summaries.terms.anchor(term)] || EMPTY_SUMMARIES;
 	}
 
 	public dependentCallsForTerm(term: TermID): readonly FunctionCall[] {
@@ -339,6 +455,17 @@ export class SemanticDemandIndex {
 			selection = { ...relevance, calls: [] };
 			this.callsByEffectName[name] = selection;
 		}
+		if (!selection.summaries[summary]) {
+			// No path in the candidate graph writes this name. Callback forwarding
+			// is name-independent and its dependency slice is shared across queries.
+			let forwarding = this.forwardingCallsBySummary[summary];
+			if (forwarding === undefined) {
+				this.selectedEffectBodies += 1;
+				forwarding = this.selectDependencyCalls(this.summaries.get(summary), EMPTY_RELEVANCE, EMPTY_RELEVANCE);
+				this.forwardingCallsBySummary[summary] = forwarding;
+			}
+			return forwarding;
+		}
 		let calls = selection.calls[summary];
 		if (calls === undefined) {
 			this.selectedEffectBodies += 1;
@@ -392,6 +519,7 @@ export class SemanticDemandIndex {
 	}
 
 	private appendStaticWrite(write: SummaryWrite): void {
+		this.indexMemberName(write.base, write.name);
 		let writes = this.staticWritesByName.get(write.name);
 		if (!writes) {
 			writes = [];
@@ -402,7 +530,6 @@ export class SemanticDemandIndex {
 			write.value,
 			this.summaries.terms.member(write.base, write.name),
 		);
-		this.retainMemberName(write.name);
 	}
 
 	private connectTerms(left: TermID, right: TermID, bidirectional = true): void {
@@ -429,14 +556,6 @@ export class SemanticDemandIndex {
 				rightTerms.push(left);
 			}
 		}
-	}
-
-	private retainMemberName(name: SemanticNameID): void {
-		if (this.retainedMemberNames.has(name)) {
-			return;
-		}
-		this.retainedMemberNames.add(name);
-		this.memberNames.push(name);
 	}
 
 	private indexCall(call: SummaryCall): void {
@@ -472,6 +591,9 @@ export class SemanticDemandIndex {
 		for (let returnIndex = 0; returnIndex < summary.returns.length; returnIndex += 1) {
 			this.indexSummaryDependency(summary.id, summary.returns[returnIndex]);
 		}
+		for (const call of summary.calls) {
+			for (const argument of call.arguments) this.indexSummaryDependency(summary.id, argument);
+		}
 	}
 
 	private indexSummaryDependency(summary: FunctionSummaryID, term: TermID): void {
@@ -488,6 +610,7 @@ export class SemanticDemandIndex {
 			this.dependentSummariesByTerm[term] = summaries;
 		}
 		summaries.push(summary);
+		if (anchor !== term) this.indexSummaryDependency(summary, anchor);
 	}
 
 	private indexDependentCall(call: FunctionCall): void {
@@ -566,8 +689,7 @@ export class SemanticDemandIndex {
 				const exact = this.summaries.summaryIdsForTerm(call.callee);
 				for (const callee of exact) index.addCaller(callee, summary.id);
 				if (direct.length === 0 && exact.length === 0
-					&& this.summaries.terms.kind(call.callee) === TermKind.Member
-					&& this.dependsOnParameter(summary, call.callee)) {
+					&& this.summaries.terms.kind(call.callee) === TermKind.Member) {
 					index.addNamedCaller(this.summaries.terms.operand(call.callee) as SemanticNameID, summary.id);
 				}
 			}
@@ -602,7 +724,27 @@ export class SemanticDemandIndex {
 			&& this.summaries.summaryIdsForTerm(call.callee).length === 0;
 	}
 
-	private dependsOnParameter(summary: FunctionSummary, value: TermID): boolean {
+	/** Indexed storage must keep the value used to derive its key in one call context. */
+	public keyedParameters(summaryId: FunctionSummaryID): readonly number[] {
+		const retained = this.keyedParametersBySummary[summaryId];
+		if (retained !== undefined) return retained;
+		const summary = this.summaries.get(summaryId);
+		const parameters: number[] = [];
+		const terms = this.summaries.terms;
+		for (let index = 0; index < summary.parameters.length; index += 1) {
+			for (const alias of summary.aliases) {
+				if (terms.kind(alias.target) === TermKind.Index
+					&& this.dependsOnParameter(summary, terms.operand(alias.target) as TermID, summary.parameters[index])) {
+					parameters.push(index);
+					break;
+				}
+			}
+		}
+		this.keyedParametersBySummary[summaryId] = parameters;
+		return parameters;
+	}
+
+	private dependsOnParameter(summary: FunctionSummary, value: TermID, parameter?: TermID, throughAccess = true): boolean {
 		this.parameterDependencyGeneration += 1;
 		this.parameterDependencyTerms.length = 1;
 		this.parameterDependencyTerms[0] = value;
@@ -615,11 +757,11 @@ export class SemanticDemandIndex {
 			}
 			this.parameterDependencySeen[term] = this.parameterDependencyGeneration;
 			const kind = this.summaries.terms.kind(term);
-			if (kind === TermKind.Parameter) {
+			if (kind === TermKind.Parameter && (parameter === undefined || term === parameter)) {
 				this.parameterDependencyTerms.length = 0;
 				return true;
 			}
-			if (kind === TermKind.ContextRoot || kind >= TermKind.Member) {
+			if (kind === TermKind.ContextRoot || throughAccess && kind >= TermKind.Member) {
 				this.parameterDependencyTerms.push(this.summaries.terms.base(term));
 				if (kind === TermKind.Index) {
 					this.parameterDependencyTerms.push(this.summaries.terms.operand(term) as TermID);

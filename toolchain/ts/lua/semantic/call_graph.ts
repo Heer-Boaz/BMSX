@@ -77,6 +77,9 @@ export class SemanticCallGraph {
 	private readonly callableSummaries: FunctionSummaryID[] = [];
 	private readonly callableDeclarations: (SymbolID | undefined)[] = [];
 	private readonly callableTerms: TermID[] = [];
+	private readonly argumentValues: (readonly TermID[])[] = [];
+	private readonly argumentIndices: number[] = [];
+	private readonly contextArguments: TermID[] = [];
 	private readonly producerTerms: TermID[] = [];
 	private readonly producerSeen: number[] = [];
 	private readonly activatedProducerTerms: boolean[] = [];
@@ -86,6 +89,7 @@ export class SemanticCallGraph {
 	private readonly identifierSeen: number[] = [];
 	private readonly valueProducerTerms: TermID[] = [];
 	private readonly valueProducerSeen: number[] = [];
+	private readonly valueProducerQueries: SemanticQueryEvaluation;
 	private readonly activatedFrames: boolean[] = [];
 	private readonly queriedCallsBySummary: SummaryCall[][] = [];
 	private readonly queriedSummaryCallers: boolean[] = [];
@@ -106,6 +110,7 @@ export class SemanticCallGraph {
 	) {
 		this.contextResults = new SemanticQueryResults(summaries.terms.dependencies);
 		this.callerContextQueries = new SemanticQueryEvaluation(summaries.terms.dependencies);
+		this.valueProducerQueries = new SemanticQueryEvaluation(summaries.terms.dependencies);
 		this.callableUses = new SemanticCallableUseQuery(summaries, demand, instantiation);
 		this.incomingFactDependencies = new SemanticDependencyIndex(summaries.terms.dependencies);
 		for (let callIndex = 0; callIndex < demand.topLevelCalls.length; callIndex += 1) {
@@ -253,6 +258,7 @@ export class SemanticCallGraph {
 		// A nested body also needs its lexical owner's incoming contexts.
 		if (retained.lexicalOwner !== undefined) this.compose(retained.lexicalOwner);
 		if (retained.receiverProjection !== undefined) {
+			this.activateDependencies(this.summaries.terms.anchor(retained.receiverProjection));
 			this.queueProducerTerm(retained.receiverProjection);
 		} else {
 			this.activateCallers(retained.functionValue);
@@ -401,21 +407,52 @@ export class SemanticCallGraph {
 					&& this.demand.propagatesComposition(compositionOwner, call, summary)) {
 				this.instantiation.compose(summary);
 			}
-			const frame = this.instantiation.instantiate(
-				call.site,
-				summary,
-				this.instantiation.closureForCallable(this.callableTerms[callableIndex]),
-				callerFrame,
-				inputs.arguments,
-				result,
-			);
-			const application = context.addApplication(summary, this.callableTerms[callableIndex], frame);
-			if (application !== undefined && this.incomingApplicationIndex !== undefined) this.indexIncoming(context, application);
-			this.activateFrameIdentifiers(summary, frame);
-			const queriedCalls = this.queriedCallsBySummary[summary];
-			if (queriedCalls) {
-				for (let callIndex = 0; callIndex < queriedCalls.length; callIndex += 1) {
-					this.worklist.enqueue(queriedCalls[callIndex], frame);
+			// Keep each key-producing actual value with its own context. A merged
+			// mutable argument would publish every value into every keyed bucket.
+			// Other arguments retain the existing symbolic callsite representation.
+			const parameters = this.demand.keyedParameters(summary);
+			this.contextArguments.length = inputs.arguments.length;
+			for (let index = 0; index < inputs.arguments.length; index += 1) this.contextArguments[index] = inputs.arguments[index];
+			let ready = true;
+			for (const index of parameters) {
+				const argument = index < inputs.arguments.length ? inputs.arguments[index] : this.summaries.terms.unknown();
+				const values = this.members.origins(argument);
+				this.argumentValues[index] = values;
+				this.argumentIndices[index] = 0;
+				if (values.length === 0) {
+					ready = false;
+					break;
+				}
+				this.contextArguments[index] = values[0];
+			}
+			while (ready) {
+				const frame = this.instantiation.instantiate(
+					call.site,
+					summary,
+					this.instantiation.closureForCallable(this.callableTerms[callableIndex]),
+					callerFrame,
+					this.contextArguments,
+					result,
+				);
+				const application = context.addApplication(summary, this.callableTerms[callableIndex], frame);
+				if (application !== undefined && this.incomingApplicationIndex !== undefined) this.indexIncoming(context, application);
+				this.activateFrameIdentifiers(summary, frame);
+				const queriedCalls = this.queriedCallsBySummary[summary];
+				if (queriedCalls) {
+					for (let callIndex = 0; callIndex < queriedCalls.length; callIndex += 1) {
+						this.worklist.enqueue(queriedCalls[callIndex], frame);
+					}
+				}
+				ready = false;
+				for (const index of parameters) {
+					const next = ++this.argumentIndices[index];
+					if (next < this.argumentValues[index].length) {
+						this.contextArguments[index] = this.argumentValues[index][next];
+						ready = true;
+						break;
+					}
+					this.argumentIndices[index] = 0;
+					this.contextArguments[index] = this.argumentValues[index][0];
 				}
 			}
 		}
@@ -433,17 +470,7 @@ export class SemanticCallGraph {
 		const summary = this.summaries.get(summaryId);
 		for (let aliasIndex = 0; aliasIndex < summary.aliases.length; aliasIndex += 1) {
 			const source = this.instantiation.contextualize(summary.aliases[aliasIndex].source, frame);
-			const anchor = this.summaries.terms.anchor(source);
-			let stringIdentifier = this.summaries.terms.isStringLiteralAnchor(anchor);
-			const related = this.demand.relatedTerms(source);
-			for (let relatedIndex = 0; relatedIndex < related.length && !stringIdentifier; relatedIndex += 1) {
-				stringIdentifier = this.summaries.terms.isStringLiteralAnchor(
-					this.summaries.terms.anchor(related[relatedIndex]),
-				);
-			}
-			if (stringIdentifier) {
-				this.activateIdentifierUses(source);
-			}
+			if (this.demand.stringIdentifiers(source).length !== 0) this.activateIdentifierUses(source);
 		}
 	}
 
@@ -585,6 +612,10 @@ export class SemanticCallGraph {
 	}
 
 	private activateValueProducers(term: TermID): void {
+		// Calls often share the same dependency chain. Reuse its activation until
+		// a value row changes, subscribing callers through the usual query owner.
+		if (this.valueProducerQueries.isCurrent(term)) return;
+		this.valueProducerQueries.begin(term);
 		this.valueProducerGeneration += 1;
 		this.valueProducerTerms.length = 1;
 		this.valueProducerTerms[0] = term;
@@ -597,6 +628,11 @@ export class SemanticCallGraph {
 			}
 			this.valueProducerSeen[current] = this.valueProducerGeneration;
 			const kind = this.summaries.terms.kind(current);
+			if (kind === TermKind.Index) {
+				for (const summary of this.demand.indexedWriters(current)) {
+					this.activateCallers(this.summaries.get(summary).functionValue);
+				}
+			}
 			if (kind >= TermKind.Member) {
 				this.valueProducerTerms.push(this.summaries.terms.base(current));
 			}
@@ -614,6 +650,7 @@ export class SemanticCallGraph {
 			}
 		}
 		this.valueProducerTerms.length = 0;
+		this.valueProducerQueries.end(term);
 	}
 
 	private queueReverseProducerTerms(
