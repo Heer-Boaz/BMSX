@@ -6,7 +6,8 @@ gx_display.reset_256x192()
 local input<const> = require('cartlib/input/input')
 input.add_player(1)
 input.push_context(1, 'pietious', {
-	confirm = { 'KeyX', 'AltRight', 'Space' },
+	start = { 'Enter', 'AltRight' },
+	confirm = { 'KeyX', 'Enter', 'AltRight', 'Space' },
 	pause = { 'F2' },
 }, {
 	confirm = { 'a', 'start', 'touch' },
