@@ -4,7 +4,7 @@ import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { HostAudioOutput } from './audio_output';
 import type { VibrationInitialization } from './input/contracts';
 import type { Input } from './input/manager';
-import { HostMenuInput, type HostOverlayMenu } from './host_overlay_menu';
+import { HostMenuExecution, HostMenuInput, type HostOverlayMenu } from './host_overlay_menu';
 import { LogLevel, type LogOutput } from './log';
 import type { RenderPresentationState } from './presentation_state';
 import type { SystemOutputLog } from './system_output_log';
@@ -320,6 +320,9 @@ export function runHostFrame(
 		currentTime,
 	);
 	const hostMenuInput = hostOverlayMenu.tickInput();
+	const menuExecution = hostOverlayMenu.executionMode;
+	const menuPaused = menuExecution === HostMenuExecution.Paused;
+	audioOutput.muteMenu(menuPaused || (menuExecution === HostMenuExecution.Rewind && !session.rewind.playing));
 	if (hostMenuInput === HostMenuInput.ExitGame) {
 		return HostFrameRunResult.ExitRequested;
 	}
@@ -337,10 +340,12 @@ export function runHostFrame(
 		return HostFrameRunResult.Continue;
 	}
 	screen.clearPresentation();
-	session.rewind.service(true);
-	if (session.rewind.playing && !session.execution.executionBlocked()) {
-		session.rewind.runPlayback(session.execution.consumeElapsedTime(hostDeltaMs));
-		session.syncMachineOutput(runtime, input, audioOutput);
+	if (!menuPaused) {
+		session.rewind.service(true);
+		if (session.rewind.playing && !session.execution.executionBlocked()) {
+			session.rewind.runPlayback(session.execution.consumeElapsedTime(hostDeltaMs));
+			session.syncMachineOutput(runtime, input, audioOutput);
+		}
 	}
 	let action = prepareHostUpdate(
 		session,
@@ -372,6 +377,6 @@ export function runHostFrame(
 		hostDeltaMs,
 	);
 	systemOutput.flush(runtime, logOutput);
-	if (runtime.history.checkpointPending && session.rewind.tasks.ready) session.rewind.service(true);
+	if (!menuPaused && runtime.history.checkpointPending && session.rewind.tasks.ready) session.rewind.service(true);
 	return HostFrameRunResult.Continue;
 }

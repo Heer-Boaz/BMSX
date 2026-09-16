@@ -51,6 +51,12 @@ export const enum HostMenuInput {
 	ExitGame,
 }
 
+export const enum HostMenuExecution {
+	Live,
+	Paused,
+	Rewind,
+}
+
 type HostMenuActionOption = {
 	readonly kind: 'action';
 	readonly label: string;
@@ -442,6 +448,12 @@ export class HostOverlayMenu {
 			this.usagePercents[index] = { x: USAGE_BAR_X + USAGE_BAR_WIDTH + 1, y: rowY + 1, z: USAGE_Z + 3, items: '', item_start: 0, item_end: 0, font: null, color: COLOR_USAGE_TEXT, has_background_color: false, background_color: 0xff000000, layer: LAYER_2D_IDE };
 			this.usagePercentCode[index] = -1;
 		}
+	}
+
+	public get executionMode(): HostMenuExecution {
+		return this.page === HostOverlayPage.Options || this.page === HostOverlayPage.GamepadRemap
+			? HostMenuExecution.Paused
+			: this.page === HostOverlayPage.Rewind ? HostMenuExecution.Rewind : HostMenuExecution.Live;
 	}
 
 	public tickInput(): HostMenuInput {

@@ -13,7 +13,7 @@ import {
 	presentHostPresentation,
 	syncAfterRuntimeUpdate,
 } from '../../hosts/common/host_frame';
-import { HostMenuInput, type HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
+import { HostMenuExecution, HostMenuInput, type HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import type { Input } from '../../hosts/common/input/manager';
 import type { LogOutput } from '../../hosts/common/log';
 import type { RenderPresentationState } from '../../hosts/common/presentation_state';
@@ -171,6 +171,9 @@ export function runWorkbenchHostFrame(
 			currentTime,
 		);
 		const hostMenuInput = hostOverlayMenu.tickInput();
+		const menuExecution = hostOverlayMenu.executionMode;
+		const menuPaused = menuExecution === HostMenuExecution.Paused;
+		audioOutput.muteMenu(menuPaused || (menuExecution === HostMenuExecution.Rewind && !session.rewind.playing));
 		if (hostMenuInput === HostMenuInput.ExitGame) {
 			return HostFrameRunResult.ExitRequested;
 		}
@@ -191,10 +194,12 @@ export function runWorkbenchHostFrame(
 		}
 
 		screen.clearPresentation();
-		session.rewind.service(!ide.scenarioRuns.active && !ide.debugger.plans.mutationActive);
-		if (session.rewind.playing && !session.execution.executionBlocked() && !ide.fault.hostFrameFailed) {
-			session.rewind.runPlayback(session.execution.consumeElapsedTime(hostDeltaMs));
-			session.syncMachineOutput(runtime, input, audioOutput);
+		if (!menuPaused) {
+			session.rewind.service(!ide.scenarioRuns.active && !ide.debugger.plans.mutationActive);
+			if (session.rewind.playing && !session.execution.executionBlocked() && !ide.fault.hostFrameFailed) {
+				session.rewind.runPlayback(session.execution.consumeElapsedTime(hostDeltaMs));
+				session.syncMachineOutput(runtime, input, audioOutput);
+			}
 		}
 		if (ide.debugger.stopPresentationPending) {
 			activateEditor(ide.editor, ide.sources, runtime, audioOutput);
@@ -326,7 +331,7 @@ export function runWorkbenchHostFrame(
 				presenter.presentationSequence !== previousPresentation,
 			);
 		}
-		if (runtime.history.checkpointPending && ide.runtimeTasks.ready) {
+		if (!menuPaused && runtime.history.checkpointPending && ide.runtimeTasks.ready) {
 			session.rewind.service(!ide.scenarioRuns.active && !ide.debugger.plans.mutationActive);
 		}
 	} catch (error) {

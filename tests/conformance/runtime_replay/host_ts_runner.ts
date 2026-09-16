@@ -154,8 +154,27 @@ async function main(): Promise<void> {
 			data: Buffer.from(backend.borrowPresentedPixels()),
 		} as PNG));
 	};
+	const assertOptionsPause = async () => {
+		await press('select', 'start');
+		assert.equal(puller, null, 'quick menu suspends the audio transport');
+		const pausedState = captureRuntimeSaveState(runtime);
+		const pausedAudio = audioFrames;
+		const pausedCaptures = vramCaptures;
+		for (let index = 0; index < 10; index += 1) await frame();
+		assert.deepEqual(captureRuntimeSaveState(runtime), pausedState, 'quick menu holds the complete machine state');
+		assert.equal(audioFrames, pausedAudio, 'quick menu does not consume queued guest audio');
+		assert.equal(vramCaptures, pausedCaptures, 'quick menu does not service history checkpoints');
+		execution.setPauseReason(HostPauseReason.Fullscreen, true);
+		await press('b');
+		assert.equal(puller, null, 'closing the menu retains an independent host mute');
+		execution.setPauseReason(HostPauseReason.Fullscreen, false);
+		await frame();
+		await settle();
+		assert.notEqual(puller, null, 'live audio reconnects after all pause owners release it');
+	};
 	runtime.boot();
 	audioOutput.bootstrap();
+	await assertOptionsPause();
 	for (let count = 0; count < 1100; count += 1) await frame();
 	assert.equal(history.checkpointCount, 2, 'continuous history uses the common two-slot policy');
 	assert.equal(history.inputJournal.storageBytes, 1024 * 176);
@@ -163,6 +182,7 @@ async function main(): Promise<void> {
 	assert.equal(runtime.machine.cpu.activeCartridgeSlot(), 0);
 	assert.ok(audible && audioFrames > 48000, 'ordinary gameplay produces real audio');
 	snapshot('live');
+	await assertOptionsPause();
 	await openRewind();
 	const latest = history.latestCycles;
 	const oldest = history.earliestCycles;

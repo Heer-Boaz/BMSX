@@ -5106,17 +5106,17 @@ caches and intermediate pixel copies are not part of this host-resource
 boundary. This atlas remains a host presentation resource, not cart ROM, GX
 local memory or an IMGDEC stream.
 
-Libretro quick-menu pause is host execution policy, independent of the guest's
+Quick-menu pause is host execution policy, independent of the guest's
 firmware, cartridge and supervisor state. SELECT+START opens/closes the menu;
-START alone remains guest input. `HostOverlayMenu::executionMode()` derives
-the policy from its current page: options hold the machine, the virtual
+START alone remains guest input. `HostOverlayMenu` derives `HostMenuExecution`
+from its current page in both hosts: options and controller remapping hold the machine, the virtual
 keyboard allows live execution, and the rewind page delegates explicit
 seek/playback to `HostRewind`. There is no second retained pause flag in the
 CPU, runtime, audio voices or save state.
 
-`runLibretroFrame()` decides this policy after polling host input and before
+`runHostFrame()`, `runWorkbenchHostFrame()` and `runLibretroFrame()` decide this policy after polling host input and before
 rewind service, backend execution or the live scheduler. While options are
-open, it discards queued host time and only presents the retained scanout plus
+open, the host discards queued host time and only presents the retained scanout plus
 host UI. Closing the menu continues from the same machine state, with the
 ordinary next frame grant. `retro_run()` uses the same page policy when
 collecting audio: the existing output resampler/backlog reset and frontend
@@ -5124,6 +5124,9 @@ transport-suspension callback run on transitions, with no silent batches or
 voice recreation. Rewind playback remains audible; a stopped rewind page is
 silent, including before its first seek. Menu reboot/exit remain explicit
 actions at this outer frame boundary.
+TypeScript applies the same policy through `HostAudioOutput.muteMenu()`. Its
+transport mute composes with workbench, explicit pause and runtime-task mutes,
+so dismissing the menu cannot resume audio held by another owner.
 
 The reference is MAME's
 [`running_machine::run()`](https://github.com/mamedev/mame/blob/master/src/emu/machine.cpp),
@@ -5133,17 +5136,19 @@ which control output muting independently of sound-device state.
 
 | Responsibility | TypeScript owner/representation | C++ libretro owner/representation |
 | --- | --- | --- |
-| Modal UI | `HostOverlayMenu` page enum, `HostMenuInput` actions | `HostOverlayMenu` page enum; derived `HostMenuExecution` |
-| Frame execution | `prepareHostUpdate` and `HostExecutionControl` host reason bits | `runLibretroFrame`, page policy plus `HostRewind` state |
+| Modal UI | `HostOverlayMenu` page enum; derived `HostMenuExecution` | Same page-derived execution policy |
+| Frame execution | `runHostFrame` / `runWorkbenchHostFrame`, page policy plus `HostExecutionControl` reason bits | `runLibretroFrame`, page policy plus `HostRewind` state |
 | Machine time | `FrameSchedulerState` / device scheduler cycles | Same machine scheduler representation; no UI state |
 | Retained scanout | `RenderPresentationState`, completed presentation without commit | Same presentation mode, without retiring another guest frame |
 | Audio transport | `HostAudioOutput` mute reasons and sink suspend | `LibretroAudioOutput::setMuted/collectFrame`, frontend suspend callback |
 
 The C++ hot-path callsites are `retro_run()` input polling, `runLibretroFrame()`
 menu dispatch and scheduler/rewind admission, `RenderPresentationState::render()`
-and `retro_run()` audio collection/publication. The policy adds no allocations
-or per-instruction/device checks. TypeScript's independent workbench/debugger
-pause reasons remain host-owned; this libretro change does not alter them.
+and `retro_run()` audio collection/publication. The TypeScript counterparts are
+`runHostFrame()` / `runWorkbenchHostFrame()` menu and rewind admission,
+`prepareHostUpdate()` / `executeHostUpdate()` scheduler admission, and
+`presentHostPresentation()` audio pumping. The policy adds no allocations or
+per-instruction/device checks. Workbench/debugger pause reasons remain host-owned.
 
 An executing libretro `retro_run()` grants one machine-timed frame. Frontend
 wall time is not fed back into the machine scheduler. A direct host may skip an
