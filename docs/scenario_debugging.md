@@ -86,6 +86,16 @@ reported as a passing broad regression suite.
 
 The 2024 investigation is separate: screenshots and physical keyboard/pointer
 actions in the actual product, without application-state evaluation, clipboard
-injection or external Lua-file edits. The repaired runner reaches the real
-`Accept did not open the first question` assertion; reaching that assertion alone
-does not establish that the navigation scenario passes.
+injection or external Lua-file edits. A breakpoint in `begin_quiz`, runtime
+hovers and the retained assertion stack established that the test checked the
+navigation state too early after its two-tick input pulses. The test
+now holds each key until it observes that state, then releases it explicitly.
+It keeps the question-index and portrait assertions and the runner's existing
+deadline; no additional timing delay or cart change was introduced.
+
+The complete navigation sequence passed through both Debug and Run in Studio:
+intro -> question 1 -> intro -> question 1 -> last question -> conclusion -> last
+question, including after a full page reload. The test was edited with keyboard
+input and saved through Studio; repository diff inspection was used afterwards
+to review the saved changes. The UI action log and screenshots are retained in
+`.bmsx/authoring/2024-studio-only/`; `ui-449.png` shows the run after reloading.
