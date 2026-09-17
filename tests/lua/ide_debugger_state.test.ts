@@ -18,6 +18,7 @@ import {
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/spec/blua32/cop0';
+import { BLUA32_FUNCTION_RECORD_SIZE, BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET } from '../../machine/ts/spec/blua32/image_format';
 import { IO_IRQ_ACK, IO_IRQ_MASK, IRQ_VBLANK } from '../../machine/ts/spec/bmsx/io';
 import { DYNAMIC_RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
@@ -241,6 +242,7 @@ local render<const> = function()
 	shared.active = false
 end
 render_function = render
+leaf_function = leaf
 operation = function()
 	return shared.active, shared.passes, shared.phase, shared.ordinary
 end
@@ -271,7 +273,7 @@ end
 		{ backend: { finishGxGpuReadbacks: async () => { readbacks++; } } } as VideoPresenter);
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
 		isCurrent: () => true,
-		waitForReturn: () => location,
+		waitForReturn: () => [guest.linkedFunctionLocation(guest.global('leaf_function'))!, location],
 		prepare: () => {
 			prepared++;
 			assert.equal(runtimeReturnTargetReached(cpu, target), true);
@@ -290,6 +292,63 @@ end
 	state.plans.didExecute();
 	assert.equal(finished, 1); assert.deepEqual(values, [false, 1, 2, 0]);
 	assert.equal(cpu.getFrameDepth(), depth); assert.equal(cpu.readFramePc(depth - 1), pc);
+});
+
+for (const optLevel of [0, 3] as const) test(`evaluation finishes a RAM function without requiring linked source (O${optLevel})`, async () => {
+	const functionAddress = DYNAMIC_RAM_BASE + 0x1000, codeAddress = functionAddress + 0x100;
+	const { runtime, state } = createDebuggerHarness(`
+passes = 0
+ram_body = function() passes = passes + 1 end
+operation = function() return passes end
+return function()
+	ram_function = blua32.closure(${functionAddress})
+	ram_function()
+	passes = 100
+end
+`, optLevel);
+	const { cpu, memory } = runtime.machine;
+	cpu.reset();
+	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Halted);
+	const values: Value[] = []; cpu.readCompletionValues(values);
+	const driver = values[0] as Closure;
+	const guest = new SuspendedGuestSession(runtime);
+	const source = guest.linkedFunctionLocation(guest.global('ram_body'))!.address;
+	const record = new Uint8Array(BLUA32_FUNCTION_RECORD_SIZE);
+	memory.readBytesInto(source, record, record.length);
+	const code = new Uint8Array(memory.readMappedU32LE(source + BLUA32_FUNCTION_CODE_BYTE_COUNT_OFFSET));
+	memory.readBytesInto(memory.readMappedU32LE(source + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET), code, code.length);
+	memory.writeBytes(functionAddress, record);
+	memory.writeMappedU32LE(functionAddress + BLUA32_FUNCTION_CODE_ADDRESS_OFFSET, codeAddress);
+	memory.writeBytes(codeAddress, code);
+	cpu.beginCompletionCall(driver);
+	for (let step = 0; step < 100 && cpu.readFrameFunctionAddress(cpu.getFrameDepth() - 1) !== functionAddress; step++) {
+		cpu.runUntilDepth(0, 1);
+	}
+	assert.equal(cpu.readFrameFunctionAddress(cpu.getFrameDepth() - 1), functionAddress);
+	assert.equal(guest.global('passes'), 0);
+	const location = guest.functionLocation(guest.global('ram_function'))!;
+	assert.deepEqual(location, { domain: null, address: functionAddress });
+	assert.equal(guest.linkedFunctionLocation(guest.global('ram_function')), undefined);
+	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
+		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
+	let prepared = false, finished = false;
+	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
+		isCurrent: () => true, waitForReturn: () => [location],
+		prepare: () => {
+			prepared = true;
+			assert.equal(guest.global('passes'), 1, 'finish RAM code before admitting the evaluation');
+			return { domain: -1, closure: guest.global('operation') as Closure, args: () => [] };
+		},
+	}, () => {}, completed => { finished = completed; cpu.readCompletionValues(values); }, assert.fail);
+	assert.equal(prepared, false);
+	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
+	state.plans.didExecute();
+	await tasks.schedule(() => {}, assert.fail, RuntimeTaskKind.History);
+	assert.equal(prepared, true);
+	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
+	state.plans.didExecute();
+	assert.equal(finished, true); assert.deepEqual(values, [1]);
+	assert.equal(guest.global('passes'), 1, 'the outer caller must remain suspended');
 });
 
 for (const optLevel of [0, 3] as const) test(`function-return admission waits for the outer recursive invocation (O${optLevel})`, () => {

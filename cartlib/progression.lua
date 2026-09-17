@@ -348,6 +348,7 @@ end
 
 -- An omitted state creates a fresh session for the existing one-owner case.
 function progression.mount(ctx, program, state)
+	assert(state == nil or state.program == program.state_program, 'progression state belongs to another program; rebind it explicitly')
 	progression.unmount(ctx)
 
 	local rt<const> = {
@@ -363,6 +364,32 @@ function progression.mount(ctx, program, state)
 		add_runtime_subscription(rt, program.event_names[i])
 	end
 	return rt
+end
+
+-- Cold program replacement, outside event dispatch. Like blackboard:rebind,
+-- remap dense storage by authored identity, never by yesterday's slot order.
+-- Removed keys/rule ids are forgotten; a rename starts with fresh state. A
+-- retained apply_once id keeps its receipt even if the rule's code changed.
+function progression.rebind(ctx, program)
+	local state<const> = runtime_by_ctx[ctx].state
+	local old_slots<const> = state.program.key2idx
+	local values<const> = {}
+	for key, slot in pairs(program.state_program.key2idx) do
+		local previous_slot<const> = old_slots[key]
+		if previous_slot ~= nil then values[slot] = state.values[previous_slot] end
+	end
+	local apply_done<const> = {}
+	for _, rules in pairs(program.rules_by_event) do
+		for i = 1, #rules do
+			local rule<const> = rules[i]
+			if rule.apply_once then apply_done[rule.id] = state.apply_done[rule.id] end
+		end
+	end
+	state.program = program.state_program
+	state.values = values
+	state.apply_done = apply_done
+	state.revision = state.revision + 1
+	progression.mount(ctx, program, state)
 end
 
 -- progression.unmount(ctx): detaches the progression runtime for ctx.

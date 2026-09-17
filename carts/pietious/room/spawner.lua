@@ -40,7 +40,7 @@ local sync_item<const> = function(room, def)
 	local castle<const> = room.castle
 	local player<const> = room.player
 	local picked<const> = progression.get(castle, 'item_picked_' .. def.member_id)
-	local matches_conditions<const> = progression.matches(castle, castle._scene_filters[def])
+	local matches_conditions<const> = progression.matches(castle, castle.level.filters[def])
 	local already_owned<const> = player.status.inventory_items[def.options.item_type]
 	local should_spawn<const> = not picked and matches_conditions and not already_owned
 	local existing<const> = room.scene.members[def.member_id]
@@ -68,7 +68,7 @@ local spawn_enemies<const> = function(room)
 	for i = 1, #room.enemies do
 		local def<const> = room.enemies[i]
 		local defeated<const> = def.retain_defeat_in_region and progression.get(castle, def.member_id)
-		local matches_conditions<const> = progression.matches(castle, castle._scene_filters[def])
+		local matches_conditions<const> = progression.matches(castle, castle.level.filters[def])
 		local should_spawn<const> = not defeated and matches_conditions
 		if should_spawn then
 			local instance<const> = spawn_member(room, def)
@@ -89,7 +89,7 @@ local rebuild_wall_instances<const> = function(room)
 	local wall_count = 0
 	for i = 1, #wall_defs do
 		local def<const> = wall_defs[i]
-		if progression.matches(room.castle, room.castle._scene_filters[def]) then
+		if progression.matches(room.castle, room.castle.level.filters[def]) then
 			local wall<const> = room.scene.members[def.member_id]
 			if wall ~= nil then
 				wall_count = wall_count + 1
@@ -111,7 +111,7 @@ function room_spawner.reconcile_condition(room, condition, source_id)
 		if def.member_id ~= source_id then
 			local existing<const> = room.scene.members[def.member_id]
 			local defeated<const> = def.retain_defeat_in_region and progression.get(castle, def.member_id)
-			local should_spawn<const> = not defeated and progression.matches(castle, castle._scene_filters[def])
+			local should_spawn<const> = not defeated and progression.matches(castle, castle.level.filters[def])
 			if should_spawn then
 				if existing == nil then
 					spawn_member(room, def)

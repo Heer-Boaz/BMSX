@@ -20,15 +20,15 @@ export type RuntimeReturnTarget = {
 export function runtimeFunctionReturnTarget(
 	cpu: CPU, sources: RuntimeSourceState, location: RuntimeFunctionLocation,
 ): RuntimeReturnTarget | undefined {
-	const image = blua32ToolingImageForDomain(sources.currentBlua32Media, location.domain)!;
-	const functionIndex = blua32FunctionIndexAtAddress(image.layout, location.address);
+	const image = location.domain === null ? undefined : blua32ToolingImageForDomain(sources.currentBlua32Media, location.domain)!;
+	const functionIndex = image === undefined ? -1 : blua32FunctionIndexAtAddress(image.layout, location.address);
 	const depth = cpu.getFrameDepth();
 	for (let frameIndex = 0; frameIndex < depth; frameIndex += 1) {
-		if (cpu.readFrameExecutionDomain(frameIndex) !== location.domain) continue;
+		if (location.domain !== null && cpu.readFrameExecutionDomain(frameIndex) !== location.domain) continue;
 		const address = cpu.readFrameFunctionAddress(frameIndex);
 		if (address === location.address) return { frameDepth: frameIndex };
 		// Runtime-compiled closures have no inline occurrences in the installed image.
-		if (functionIndex < 0 || blua32FunctionIndexAtAddress(image.layout, address) < 0) continue;
+		if (image === undefined || functionIndex < 0 || blua32FunctionIndexAtAddress(image.layout, address) < 0) continue;
 		const pc = frameIndex + 1 < depth && !cpu.readFrameReturnsToCompletionLatch(frameIndex + 1)
 			? cpu.readFrameCallSitePc(frameIndex + 1) : cpu.readFramePc(frameIndex);
 		const symbols = image.symbols!;

@@ -181,6 +181,17 @@ function director:enter_pause()
 	self.events:emit('pause_entered')
 end
 
+-- Available as a normal Lua method in Studio's Actor Lab. Transition/modal
+-- continuations still own the old room, so only the settled room mode admits
+-- this operation. A host pause does not change that game state.
+function director:reload_room()
+	if self.state_machines:get_machine('director').current_id ~= 'room' then
+		return 'Return to room gameplay before reloading its scene.'
+	end
+	self.castle:reload_current_room()
+	return 'Room reloaded; game progress and player position retained.'
+end
+
 function director:leave_pause()
 	world:set_gameplay_clock_running(true)
 	self.player:finish_pause_presentation()

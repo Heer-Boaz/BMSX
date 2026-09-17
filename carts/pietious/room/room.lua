@@ -3,7 +3,6 @@ local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
 local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
 require('constants')
-local castle_map<const> = require('castle/map')
 local timeline<const> = require('cartlib/timeline/timeline')
 local tile_layer_component<const> = require('cartlib/component/tile_layer_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
@@ -855,7 +854,7 @@ function room_object:ctor()
 end
 
 function room_object:onspawn()
-	apply_room_template(self, castle_map.room_templates[self.room_number])
+	apply_room_template(self, self.template)
 	self:rebuild_room_tiles()
 end
 

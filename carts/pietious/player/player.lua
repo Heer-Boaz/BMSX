@@ -83,7 +83,6 @@ local velocity<const> = require('cartlib/velocity')
 local clamp<const> = require('cartlib/util/clamp')
 local abs<const> = math.abs
 require('constants')
-local castle_map<const> = require('castle/map')
 local actioneffects<const> = require('cartlib/actioneffects')
 local actioneffect_component<const> = require('cartlib/actioneffects/actioneffect_component')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
@@ -2931,7 +2930,7 @@ local define_player_fsm<const> = function()
 					},
 					on_finished = function(self)
 						self.director:queue_world_banner_transition(
-							castle_map.world_transitions[self.enter_leave_world_target].world_number
+							self.castle.level.map.world_transitions[self.enter_leave_world_target].world_number
 						)
 						return '/waiting_world_banner'
 					end,

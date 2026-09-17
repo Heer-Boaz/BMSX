@@ -2,6 +2,7 @@ require('constants')
 local scene_library<const> = require('cartlib/world/scene_library')
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
+local shallow_copy<const> = require('cartlib/util/shallow_copy')
 
 local castle_map<const> = {}
 local room_scenes<const> = {
@@ -279,23 +280,24 @@ local load_room_templates<const> = function()
 			room_links = room_links,
 			edge_gates = build_edge_gates(map_rows, room_links),
 			scene_id = room_scene.id,
+			scene_definition = scene_library.definition(room_scene.id),
 			enemies = {}, condition_dependencies = {}, wall_enemies = {},
 			rocks = {}, inventory_rocks = {}, items = {}, lithographs = {},
 			shrines = {}, world_entrances = {}, draaideuren = {},
 		}
-		index_members(template, scene_library.definition(room_scene.id).objects)
+		index_members(template, template.scene_definition.objects)
 		templates[room_number] = template
 	end
 
 	return templates, condition_reveal_events
 end
 
-local attach_world_transition_metadata<const> = function(room_templates)
+local attach_world_transition_metadata<const> = function(room_templates, transitions)
 	for _, template in pairs(room_templates) do
 		local world_entrances<const> = template.world_entrances
 		for i = 1, #world_entrances do
 			local world_entrance<const> = world_entrances[i]
-			local spec<const> = world_transition_specs[world_entrance.options.target]
+			local spec<const> = transitions[world_entrance.options.target]
 			spec.castle_room_number = template.room_number
 			spec.castle_spawn_x = world_entrance.options.pos.x + world_entrance_trigger_x_offset
 			spec.castle_spawn_y = world_entrance.options.pos.y + world_entrance_trigger_y_offset
@@ -305,15 +307,20 @@ end
 
 castle_map.start_room_number = start_room_number
 function castle_map.initialize()
-	castle_map.room_templates, castle_map.condition_reveal_events = load_room_templates()
-	attach_world_transition_metadata(castle_map.room_templates)
+	local rooms<const>, condition_reveal_events<const> = load_room_templates()
+	local transitions<const> = {}
+	local transitions_by_number<const> = {}
+	for target, authored in pairs(world_transition_specs) do
+		local spec<const> = shallow_copy(authored)
+		transitions[target] = spec
+		transitions_by_number[spec.world_number] = spec
+	end
+	attach_world_transition_metadata(rooms, transitions)
+	castle_map.definition = {
+		rooms = rooms, condition_reveal_events = condition_reveal_events,
+		world_transitions = transitions, world_transitions_by_number = transitions_by_number,
+	}
 end
 castle_map.elevator_routes = build_elevator_routes()
-castle_map.world_transitions = world_transition_specs
-castle_map.world_transitions_by_number = {}
-
-for _, spec in pairs(world_transition_specs) do
-	castle_map.world_transitions_by_number[spec.world_number] = spec
-end
 
 return castle_map

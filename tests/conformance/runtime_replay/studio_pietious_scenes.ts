@@ -2,9 +2,10 @@ import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path
 import { openScene, editPosition, editOption, focusOption, typeSourceText } from './studio_scene_authoring';
 import { selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
+import { testPietiousRoomReload } from './studio_pietious_room_reload';
 
-/** Placement changes enter the game only through visible editing, Save and
- * Reboot. Registry reads observe the resulting objects without mutating them. */
+/** Visible editing, Save/Reboot and Hot Resume with explicit room recreation.
+ * Registry reads observe the resulting objects without mutating them. */
 export async function runStudioPietiousScenes(test: StudioFixture) {
 	const { guest, runtime, press, until, runMenuCommand } = test;
 	const registered = (id: string) => {
@@ -98,6 +99,7 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	// update/render pair and its scanout before capturing the game view.
 	for (let frame = 0; frame < 4; frame += 1) await test.frame();
 	await test.capture?.('room');
+	await testPietiousRoomReload(test, () => registered('c'), roomMember);
 	await act('ShiftLeft', () => space() === 'item', 'ordinary inventory input opens the composed screen');
 	const halo = registered('inventory.halo');
 	check(guest.readStringMember(halo, 'x') === 136 && guest.readStringMember(halo, 'visible') === true,
@@ -112,7 +114,7 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	await runMenuCommand('pause');
 	const reopened = await openScene(test, 'rooms/room_002', 5);
 	await selectMember(test, reopened, 3);
-	check(reopened.properties[0].value === 112, 'saved room placement survives gameplay and reopening');
+	check(reopened.properties[0].value === 120, 'refreshed room placement survives gameplay and reopening');
 	console.info('STUDIO: Pietious named-member reorder, option/position authoring, save, reboot, walking and Enter/halo PASS');
-	return { hostFrames: test.observations.hostFrames, logoX: 48, rockX: 112, playerX: 168, haloX: 136 };
+	return { hostFrames: test.observations.hostFrames, logoX: 48, rockX: 120, playerX: 168, haloX: 136 };
 }

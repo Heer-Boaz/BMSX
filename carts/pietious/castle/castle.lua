@@ -2,7 +2,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
-local scene_library<const> = require('cartlib/world/scene_library')
+local scene<const> = require('cartlib/world/scene')
 require('constants')
 local castle_map<const> = require('castle/map')
 local progression<const> = require('cartlib/progression')
@@ -33,8 +33,8 @@ local set_tag_flag<const> = function(owner, tag, enabled)
 	owner:remove_tag(tag)
 end
 
-local append_condition_reveal<const> = function(commands, condition)
-	local event_name<const> = castle_map.condition_reveal_events[condition]
+local append_condition_reveal<const> = function(map, commands, condition)
+	local event_name<const> = map.condition_reveal_events[condition]
 	if event_name ~= nil then
 		commands[#commands + 1] = {
 			op = 'emit_event',
@@ -43,7 +43,7 @@ local append_condition_reveal<const> = function(commands, condition)
 	end
 end
 
-local build_progression_program<const> = function()
+local build_progression_program<const> = function(map)
 	local rules<const> = {}
 	local filters<const> = {}
 	local filter_targets<const> = {}
@@ -58,7 +58,7 @@ local build_progression_program<const> = function()
 	}
 	local persistent_item_ids<const> = {}
 
-	for _, room_template in pairs(castle_map.room_templates) do
+	for _, room_template in pairs(map.rooms) do
 		local room_number<const> = room_template.room_number
 		local enemies<const> = room_template.enemies
 		for i = 1, #enemies do
@@ -101,7 +101,7 @@ local build_progression_program<const> = function()
 						condition = destroyed_condition,
 					},
 				}
-				append_condition_reveal(apply, destroyed_condition)
+				append_condition_reveal(map, apply, destroyed_condition)
 				rules[#rules + 1] = {
 					id = 'condition.' .. enemy_def.member_id,
 					on = 'damage.resolved',
@@ -162,7 +162,7 @@ local build_progression_program<const> = function()
 	end
 
 	local stairs_apply<const> = {}
-	append_condition_reveal(stairs_apply, 'r109.stairs')
+	append_condition_reveal(map, stairs_apply, 'r109.stairs')
 	rules[#rules + 1] = {
 		id = 'room.region_enter.progression_reset',
 		on = 'room.region_enter',
@@ -221,7 +221,7 @@ local build_progression_program<const> = function()
 			condition = 'r106.wall',
 		},
 	}
-	append_condition_reveal(world1_wall_apply, 'r106.wall')
+	append_condition_reveal(map, world1_wall_apply, 'r106.wall')
 	rules[#rules + 1] = {
 		id = 'r106.wall.set',
 		on = 'damage.resolved',
@@ -365,12 +365,12 @@ function castle:refresh_current_room_customizations()
 	if seal ~= nil then
 		if self:has_tag(castle_tags.seal_broken) then
 			if world_boss_defeated then
-				has_active_seal = progression.matches(self, self._scene_filters[seal])
+				has_active_seal = progression.matches(self, self.level.filters[seal])
 			else
 				has_active_seal = false
 			end
 		else
-			has_active_seal = progression.matches(self, self._scene_filters[seal])
+			has_active_seal = progression.matches(self, self.level.filters[seal])
 		end
 	end
 	set_tag_flag(self, castle_tags.seal_active, has_active_seal)
@@ -490,7 +490,7 @@ function castle:begin_death_restart()
 		switch.spawn_y = room.player.status.spawn_y
 		switch.spawn_facing = 1
 	else
-		local transition<const> = castle_map.world_transitions_by_number[world_number]
+		local transition<const> = self.level.map.world_transitions_by_number[world_number]
 		switch = create_room_switch(from_room_number, transition.world_room_number, 'death')
 		switch.map_id = world_number
 		switch.map_x = transition.world_map_x
@@ -544,10 +544,11 @@ function castle:activate_current_room_daemon_fight()
 end
 
 function castle:ctor()
+	self.level = castle.level
 	self.elevators = {}
 	self.room_enter_pending = false
 	self:reset_room_encounter_tags()
-	progression.mount(self, castle._progression_program, self.session.progression)
+	progression.mount(self, self.level.program, self.session.progression)
 end
 
 function castle:unbind()
@@ -595,7 +596,7 @@ end
 
 function castle:commit_room_switch(switch, map_id, map_x, map_y, emit_room_enter_now)
 	local room<const> = self.room
-	local previous_world_number<const> = castle_map.room_templates[switch.from_room_number].world_number
+	local previous_world_number<const> = self.level.map.rooms[switch.from_room_number].world_number
 	self.current_room_number = switch.to_room_number
 	room.map_id = map_id
 	room.map_x = map_x
@@ -622,15 +623,40 @@ function castle:load_room(room_number)
 	if previous ~= nil then
 		previous.scene:dispose()
 	end
-	local template<const> = castle_map.room_templates[room_number]
-	local instance<const> = scene_library.create(template.scene_id)
+	local template<const> = self.level.map.rooms[room_number]
+	local instance<const> = scene.new(template.scene_definition)
 	local room<const> = instance:spawn('room', {
 		space_id = 'main', castle = self, player = self.player,
-		room_number = room_number, progress = self.session.rooms[template.scene_id],
+		template = template, progress = self.session.rooms[template.scene_id],
 	})
 	self.room = room
 	self.player.room = room
 	return room
+end
+
+-- Recreate transient room actors against the current game session. This is
+-- also callable by gameplay; Studio invokes the same cart-owned operation.
+function castle:reload_current_room()
+	self.room.scene:dispose(function(self)
+		local previous<const> = self.room
+		-- The outgoing group has finished teardown before its rules/subscriptions
+		-- change. Keep a complete map/program/filter revision together.
+		self.level = castle.level
+		progression.rebind(self, self.level.program)
+		self.session:rebind_rooms(self.level.map.rooms)
+		self.room = nil
+		local room<const> = self:load_room(self.current_room_number)
+		room.map_id = previous.map_id
+		room.map_x = previous.map_x
+		room.map_y = previous.map_y
+		room.last_room_switch = previous.last_room_switch
+		self:reset_room_encounter_tags()
+		self:refresh_current_room_customizations()
+		room_spawner.populate(room)
+		-- Reapply room-entry rules (e.g. opened stairs), without a region reset or
+		-- moving the travelling player. Music already belongs to this room.
+		self.events:emit('room.enter', self:create_room_enter_payload(true))
+	end, self)
 end
 
 function castle:initialize(initial_room_number, emit_room_enter_now)
@@ -690,7 +716,7 @@ function castle:switch_room(direction, player_top, player_bottom)
 end
 
 function castle:enter_world(target)
-	local transition<const> = castle_map.world_transitions[target]
+	local transition<const> = self.level.map.world_transitions[target]
 	local from_room_number<const> = self.current_room_number
 	local switch<const> = create_room_switch(from_room_number, transition.world_room_number, 'down')
 	switch.world_number = transition.world_number
@@ -717,7 +743,7 @@ function castle:leave_world_to_castle(emit_room_enter_now)
 	local world_number<const> = room.world_number
 	local from_room_number<const> = self.current_room_number
 
-	local transition<const> = castle_map.world_transitions_by_number[world_number]
+	local transition<const> = self.level.map.world_transitions_by_number[world_number]
 
 	self.session:clear_region_drops()
 	room = self:load_room(transition.castle_room_number)
@@ -835,7 +861,9 @@ local define_castle_fsm<const> = function()
 end
 
 local register_castle_definition<const> = function()
-	castle._progression_program, castle._scene_filters = build_progression_program()
+	local map<const> = castle_map.definition
+	local program<const>, filters<const> = build_progression_program(map)
+	castle.level = { map = map, program = program, filters = filters }
 	prefab.define({
 		def_id = 'castle',
 		class = castle,

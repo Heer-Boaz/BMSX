@@ -346,7 +346,7 @@ export class IdeCommandController {
 			case 'debugEvaluation':
 				return this.runtimeTasks.ready && this.debuggerState.plans.workbenchControlActive && this.fault.faultSnapshot === null;
 			case 'pause':
-				return !this.execution.userPaused || this.runtimeTasks.ready;
+				return !this.execution.userPaused || this.runtimeTasks.mutationReady;
 			case 'stepFrame':
 			case 'stepFrameBack':
 			case 'gameView.playback':

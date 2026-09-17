@@ -25,7 +25,7 @@ local destroy_enemy<const> = function(enemy)
 end
 
 local emit_condition_source_destroyed<const> = function(castle, room_number, condition)
-	local enemies<const> = castle_map.room_templates[room_number].enemies
+	local enemies<const> = castle_map.definition.rooms[room_number].enemies
 	for i = 1, #enemies do
 		local enemy<const> = enemies[i]
 		if enemy.destroyed_condition == condition then

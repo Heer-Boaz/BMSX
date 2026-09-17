@@ -22,7 +22,7 @@ export type RuntimeGuestCallRequest = {
 	/** Request lifetime is independent of any suspended-heap borrow. */
 	readonly isCurrent: () => boolean;
 	/** Finish an existing non-reentrant operation before resolving the evaluation. */
-	readonly waitForReturn?: () => RuntimeFunctionLocation | undefined;
+	readonly waitForReturn?: () => readonly RuntimeFunctionLocation[];
 	readonly prepare: () => RuntimeGuestCall | undefined;
 };
 
@@ -68,8 +68,12 @@ export function scheduleRuntimeGuestCall(
 		let target: RuntimeReturnTarget | undefined;
 		if (exceptionDepth !== -1) target = { frameDepth: exceptionDepth };
 		else if (checkFunctionReturn) {
-			const location = request.waitForReturn?.();
-			if (location !== undefined) target = runtimeFunctionReturnTarget(cpu, debuggerState.sources, location);
+			const locations = request.waitForReturn?.();
+			if (locations !== undefined) for (const location of locations) {
+				const candidate = runtimeFunctionReturnTarget(cpu, debuggerState.sources, location);
+				if (candidate !== undefined && (target === undefined || candidate.frameDepth < target.frameDepth
+					|| candidate.frameDepth === target.frameDepth && (candidate.inline?.depth ?? 0) < (target.inline?.depth ?? 0))) target = candidate;
+			}
 		}
 		if (target !== undefined) {
 			guest.invalidate();

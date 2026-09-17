@@ -57,7 +57,7 @@ function __bmsx_host_test.update()
 
 	if test.phase == 'start_dying' then
 		assert(world.active_space_id == 'main', 'world entry did not retain the gameplay space')
-		assert(room.room_number == castle_map.world_transitions.world_1.world_room_number,
+		assert(room.room_number == castle_map.definition.world_transitions.world_1.world_room_number,
 			'death scenario did not enter the world entrance room')
 		local item_def<const> = room.items[1]
 		assert(item_def.options.item_type == 'map_world1', 'world entrance room map item is missing')
@@ -135,7 +135,7 @@ function __bmsx_host_test.update()
 	end
 
 	assert(world.active_space_id == 'main', 'death restart entered an unexpected space')
-	local transition<const> = castle_map.world_transitions.world_1
+	local transition<const> = castle_map.definition.world_transitions.world_1
 	assert(test.saw_transition, 'death restart skipped the transition space')
 	assert(test.death_screen_frames >= flow_death_screen_frames,
 		'death restart skipped the game-over screen hold')

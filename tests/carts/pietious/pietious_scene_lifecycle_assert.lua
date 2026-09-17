@@ -16,7 +16,7 @@ function __bmsx_host_test.update()
 	if test.phase == 0 then
 		local ids<const> = {}
 		local count = 0
-		for _, template in pairs(castle_map.room_templates) do
+		for _, template in pairs(castle_map.definition.rooms) do
 			local members<const> = scene_library.definition(template.scene_id).objects
 			for i = 1, #members do
 				local member<const> = members[i]

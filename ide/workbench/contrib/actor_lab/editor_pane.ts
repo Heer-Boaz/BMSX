@@ -48,10 +48,10 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			run: () => { this.input.running = commands.toggleGamePlayback(); },
 		});
 		this.focusTarget.registerCommand('actorLab.select', { isEnabled: () => true, run: () => controller.selectActor(this.input) });
-		this.focusTarget.registerCommand('actorLab.spawn', { isEnabled: controller.canExecute, run: () => controller.spawn(this.input) });
-		this.focusTarget.registerCommand('actorLab.emit', { isEnabled: () => controller.canExecute() && this.input.actorHashId !== 0, run: () => controller.emitEvent(this.input) });
-		this.focusTarget.registerCommand('actorLab.actions', { isEnabled: () => controller.canExecute() && controller.hasActions(this.input), run: () => controller.actions(this.input) });
-		this.focusTarget.registerCommand('actorLab.call', { isEnabled: () => controller.canExecute() && controller.selected(this.input) !== undefined, run: () => controller.callMethod(this.input) });
+		this.focusTarget.registerCommand('actorLab.spawn', { isEnabled: controller.canInteract, run: () => controller.spawn(this.input) });
+		this.focusTarget.registerCommand('actorLab.emit', { isEnabled: () => controller.canInteract() && this.input.actorHashId !== 0, run: () => controller.emitEvent(this.input) });
+		this.focusTarget.registerCommand('actorLab.actions', { isEnabled: () => controller.canInteract() && controller.hasActions(this.input), run: () => controller.actions(this.input) });
+		this.focusTarget.registerCommand('actorLab.call', { isEnabled: () => controller.canInteract() && controller.selected(this.input) !== undefined, run: () => controller.callMethod(this.input) });
 		this.focusTarget.registerCommand('actorLab.details', { isEnabled: () => controller.selected(this.input) !== undefined, run: () => controller.inspect(this.input, this.inspector) });
 	}
 	public override get suspendsRuntime(): boolean { return !this.input.running; }
@@ -83,7 +83,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		}
 		this.timelineSlider.update();
 		this.actions.focusTarget.next = input.timeline.slider.interactive ? this.timelineSlider.focusTarget : null;
-		input.timeline.executePending(this.controller.selected(input), input.domain, this.controller.guest, this.controller.canExecute(), this.controller.execute);
+		input.timeline.executePending(this.controller.selected(input), input.domain, this.controller.guest, this.controller.canInteract(), this.controller.execute);
 		this.actions.update();
 		this.scrollbar.update();
 		this.inspector.update();

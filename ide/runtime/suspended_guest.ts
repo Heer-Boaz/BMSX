@@ -21,7 +21,9 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 
 export type SuspendedGuestValue = Value;
-export type RuntimeFunctionLocation = { readonly domain: ExecutionDomainId; readonly address: number };
+type LinkedRuntimeFunctionLocation = { readonly domain: ExecutionDomainId; readonly address: number };
+/** RAM functions have a shared address, not a ROM socket or linked symbols. */
+export type RuntimeFunctionLocation = LinkedRuntimeFunctionLocation | { readonly domain: null; readonly address: number };
 export type GuestInvalidationReason = 'execution' | 'heap-replaced';
 
 export type SuspendedGuestRead = {
@@ -117,13 +119,17 @@ export class SuspendedGuestSession {
 		return valueToString(value, this.stringPool);
 	}
 
-	/** A closure has no birth socket. Linked source follows the current instruction bus. */
-	public linkedFunctionLocation(value: SuspendedGuestValue): RuntimeFunctionLocation | undefined {
+	/** A closure has no birth socket. Resolve its address on the current instruction bus. */
+	public functionLocation(value: SuspendedGuestValue): RuntimeFunctionLocation | undefined {
 		if (valueTag(value) !== ValueTag.Closure) return undefined;
 		const address = (value as Closure).functionAddress;
 		const domain = this.runtime.machine.executionAddressSpace.domainIdOnBus(address, this.cpu.readExecutionBusSignals());
-		if (domain === null) return undefined;
 		return { domain, address };
+	}
+
+	public linkedFunctionLocation(value: SuspendedGuestValue): LinkedRuntimeFunctionLocation | undefined {
+		const location = this.functionLocation(value);
+		if (location !== undefined && location.domain !== null) return location;
 	}
 
 	/** The symbol reader supplies an actual closure and its installed capture index. */

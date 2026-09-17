@@ -328,7 +328,6 @@ export class RuntimeCartEditor implements CartEditor {
 					this.actorLab.didFinishCall(completed, observer);
 				},
 				error => { this.actorLab.didFinishCall(false, observer); this.handleRuntimeTaskError(error, 'Actor operation failed'); }); },
-			runtimeTasks,
 			() => runtimeTasks.mutationReady && !execution.launchPending && !scenarioRuns.active && !debuggerState.plans.mutationActive && !rewind.active);
 
 		const behaviorRegistrations = new BehaviorRegistrationIndex(this.sources);

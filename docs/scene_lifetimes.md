@@ -99,8 +99,11 @@ This preserves the game's reset rules without preserving dead room actors.
 Castle coordinates transitions and mounts progression; it is no longer the only
 storage for that progression. `progression.new_state(program)` creates values
 and once-only rule state independently. Mount/unmount controls subscriptions,
-not the data lifetime. A state belongs to its compiled program; migrating state
-to a different program/schema is not automatic and is not implemented here.
+not the data lifetime. A state belongs to its compiled program. Explicit
+`progression.rebind(ctx, program)` replaces subscriptions and remaps its dense
+slots by authored key. True and false values and retained once-only rule IDs
+survive; removed keys/IDs are forgotten and renames start fresh. The operation
+runs outside event dispatch and adds no migration checks to the dispatch path.
 
 Fresh room construction also exposed a hidden dependency on an earlier director
 event: the old room FSM started with invisible tiles and waited for `room`, which
@@ -153,14 +156,56 @@ indicator and Save/Reboot workflow distinguish that from a changed live world.
 Conformance tests read explicit instance/member/session owners; authoring does
 not manufacture a scene database by scanning guest objects.
 
+## Recreate a Pietious room without restarting the game
+
+Hot Resume publishes a new definition revision. Each active castle retains its
+complete map, progression program and filters until explicitly replaced. Its
+room uses that same revision's scene definition, so active actors cannot begin
+reading a freshly compiled schema with yesterday's numeric state slots.
+
+During room gameplay:
+
+1. Open the Scene Editor, change an authored member and Save.
+2. Use Hot Resume to install the source change; the existing room remains intact.
+3. In Actor Lab, choose the running director `d`, choose **Call**, select
+   `reload_room` and submit without arguments.
+4. Use **Run > Resume** to play the reconstructed room.
+
+The cart disposes the outgoing room group before replacing its definition and
+subscriptions. It recreates transient actors, retains the actual player and
+session, and reapplies room-entry rules without a region reset, teleport or
+music restart. Intro, inventory and transition flows refuse this operation until
+room gameplay returns. New Game still creates fresh session data.
+
+Destroyed rocks use scene/member identity. Retained consumable drops additionally
+require the same item type. Removed placements and rooms leave no tombstones;
+reintroducing one starts fresh. World entrances retain state by their target.
+Player data and defeated bosses retain their separate game identities. Changing
+the code of a retained `apply_once` rule does not grant its reward again.
+
+This follows the distinction in
+[Godot's LiveEditor](https://github.com/godotengine/godot/blob/97dab7a638ae8b613dcf6e657f93f020471d9040/scene/debugger/scene_debugger.cpp)
+between editing a live property and replacing an instance, and
+[Defold's script reload](https://github.com/defold/defold/blob/39bfda95426dcc2d635268550033fc51cd410311/engine/gameobject/src/gameobject/comp_script.cpp#L788)
+between publishing new code and invoking an explicit reload lifecycle. BMSX's
+policy lives in the cart rather than an editor copy of its gameplay rules.
+
+Actor Lab waits for an active World update or render before evaluating a method
+that can remove its participants. The generic debugger uses the outermost
+physical/inline return, following
+[LLDB's step-out handling](https://github.com/llvm/llvm-project/blob/27ffa745f3a7eaafe5f3491ace03d345e3a80129/lldb/source/Target/ThreadPlanStepOut.cpp#L99).
+World's generated update closure resides in RAM; it is identified by its shared
+address, with no invented ROM domain or requirement for linked debug symbols.
+
 ## Remaining Studio operations
 
 Further Studio work must expose three distinct concepts: editing the definition,
 inspecting a selected live instance, and inspecting game/session state. A live
 inspector should show procedural children and scene-local identity alongside
-runtime identity. Reset/reload commands must name their policy: recreate a scene
-against current session state, or start a new game. Persistence keys need explicit
-rename/removal behavior before Studio offers state-preserving source migration.
+runtime identity. The Pietious method workflow proves explicit room recreation;
+it is not yet a general Scene Editor reload command, automatic live-property
+reconciliation, or session-state editor. Other carts must expose their own
+appropriate lifecycle operations rather than inheriting Pietious's room policy.
 The compiler/linker private-symbol and debugger owners must provide any live
 binding; no new hand-authored guest globals or machine fields are justified.
 
@@ -240,3 +285,36 @@ Evidence is under `.bmsx/authoring/scene-authoring-next/`.
 - The browser Studio product build succeeds and the strict architecture audit
   reports **zero issues**. The broad tests TypeScript check produces the exact
   same **70 diagnostics** as before this follow-up; it is not a clean check.
+
+### Retained-session room recreation (2026-09-17)
+
+Evidence is under `.bmsx/authoring/scene-refresh/`.
+
+- All **35 Pietious scenarios** pass, including room recreation, definition
+  replacement, session lifetime, death restart, world transitions and Enter/halo.
+  The shared progression rebind, progression session and scene collection
+  scenarios pass **3/3**. These verify slot reorder, retained false values,
+  once-only receipts, subscription replacement, deleted identities and fresh
+  state when a removed identity is reintroduced.
+- The actual Pietious Studio workflow passes on **software, WebGL2 and WebGPU**.
+  It edits a room position through visible properties, saves, invokes Hot Resume,
+  then selects the director and calls `reload_room` through Actor Lab twice.
+  Read-only observations prove that publishing definitions leaves the active
+  revision coherent, explicit recreation replaces the room/enemies, and session,
+  player identity, health and pose survive. Run Resume returns to gameplay;
+  inventory and the Enter/halo action still work. No clipboard, source-model
+  injection or direct guest mutation is used in this workflow.
+- **112 targeted unit tests** pass across debugger state, system control, host
+  input routing, action bars and IntelliSense. The debugger cases exercise both
+  O0 and O3, including nested/recursive inline returns and a real RAM closure
+  whose physical return has no linked source domain.
+- Pietious, cartlib-test and browser Studio debug builds succeed. The strict
+  architecture audit reports **zero issues**. The broad tests TypeScript check
+  retains the same **70 pre-existing diagnostics**; it is not a clean check.
+- Against `1f1c3fff9`, the same **1,500-frame** input route retires
+  **13,165,348 → 13,165,827 instructions** and costs
+  **14,648,075 → 14,648,649 estimated base cycles** (**+0.004%**).
+  All four gameplay/room/inventory/halo captures have identical RGBA pixels.
+  This measures the recorded route, including boot, rather than hardware FPS
+  or isolated steady-state frame cost. Definition remapping runs only during
+  explicit replacement, with no new per-frame migration checks.

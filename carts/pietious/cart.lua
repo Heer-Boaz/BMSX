@@ -92,7 +92,7 @@ local create_world<const> = function(director_boot_mode)
 	world:clear()
 
 	local player_member<const> = scene_library.member_definition(gameplay_scene.id, 'player')
-	local session<const> = session_model.new(castle_module.castle._progression_program, player_member.options.pos, castle_map.room_templates)
+	local session<const> = session_model.new(castle_module.castle.level.program, player_member.options.pos, castle_module.castle.level.map.rooms)
 	local gameplay<const> = scene_library.create(gameplay_scene.id)
 	local castle<const> = gameplay:spawn('castle', { id = 'c', session = session })
 	local player<const> = gameplay:spawn_member(player_member, { castle = castle, status = session.player })

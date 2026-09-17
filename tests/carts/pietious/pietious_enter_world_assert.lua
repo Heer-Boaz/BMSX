@@ -24,7 +24,7 @@ function __bmsx_host_test.setup()
 end
 
 function __bmsx_host_test.update(_frame, _current_music)
-	local world_transition<const> = castle_map.world_transitions.world_1
+	local world_transition<const> = castle_map.definition.world_transitions.world_1
 
 	if __bmsx_host_test.phase == 'boot_room' then
 		__bmsx_host_test.frame_count = __bmsx_host_test.frame_count + 1

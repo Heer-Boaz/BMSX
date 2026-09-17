@@ -1032,11 +1032,17 @@ and [LLDB's function-call plans](https://github.com/llvm/llvm-project/blob/llvmo
 not LLDB's register-checkpoint restoration.
 An evaluation may also require an active non-reentrant function to return first.
 The debugger follows its outermost physical or compiler-recorded inline invocation,
-as in [LLDB's step-out plans](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/lldb/source/Target/ThreadPlanStepOut.cpp),
+as in [LLDB's step-out plans](https://github.com/llvm/llvm-project/blob/27ffa745f3a7eaafe5f3491ace03d345e3a80129/lldb/source/Target/ThreadPlanStepOut.cpp),
 and stops before the caller's next instruction. Inline call-site identity distinguishes
-adjacent invocations. Actor Lab supplies the actual world renderer for this constraint;
-the generic debugger knows no cartlib names. Finishing that render precedes fresh
-argument resolution, not a recursive call over its shared command buffer.
+adjacent invocations. Actor Lab supplies the actual World update and render functions
+and waits for the outermost active pass before resolving an operation that may dispose
+its participants. Runtime-compiled functions in shared RAM have an address but no
+ROM source domain; their physical return does not require linked symbols. Linked
+ROM functions additionally use their compiler-recorded inline frames. The generic
+debugger knows no cartlib names. Completing a pass precedes fresh argument resolution.
+Background rewind checkpoints do not revoke Actor Lab input or Run Resume intent.
+Those commands use the existing mutation-admission state; the task queue and host
+frame scheduler still wait for the outstanding GPU readback before executing code.
 
 Actor Lab's live timeline slider calls the selected component's `scrub_time`;
 cartlib owns sampling and scrub-event policy. It does not advance a world clock,
@@ -1827,8 +1833,17 @@ its controller; Nemesis already has independent `player_state` data. New Game
 creates fresh state. None of this is a save-file format or a second authored
 scene database.
 
-Registration replacement affects future instances; it does not silently reconcile
-living objects. The machine/ROM/TOC remain unaware of scenes. No scene cooker,
+Pietious retains each active castle's complete map/program/filter definition revision.
+Publishing new definitions through Hot Resume cannot replace its numeric progression
+schema while leaving the old room alive. Its explicit `director:reload_room()` operation
+disposes the room, rebinds progression by authored keys, and reconstructs the current
+room against the retained session and travelling player. Removed keys and once-only
+rule IDs are forgotten; retained IDs keep their values/receipts. This is a cold,
+cart-owned policy callable through the existing Actor Lab method UI, not a machine
+reload protocol. Intro/modal/transition flow must finish before room recreation.
+
+Registration replacement does not silently reconcile living objects. The
+machine/ROM/TOC remain unaware of scenes. No scene cooker,
 property descriptor, per-frame scene polling or editor binding is introduced.
 Carts without scenes allocate no scene owner or membership tables and their tick
 and render paths gain no scene work. World contains optional cold ownership hooks,

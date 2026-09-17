@@ -1,4 +1,3 @@
-import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
 import { COLOR_STATUS_TEXT } from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { CPU } from '../../../../machine/ts/machine/cpu/cpu';
@@ -31,7 +30,6 @@ export class ActorLabController {
 	private current: ActorLabInput | undefined;
 	private projection: ActorProjection;
 	private readonly completionValues: Value[] = [];
-	public readonly canExecute = () => this.tasks.ready && this.canInteract();
 	public readonly execute: RuntimeGuestCallExecutor = (prepare, observer) => {
 		// Pane replacement releases its borrowed rows while GPU admission may still await.
 		const generation = this.panes.openGeneration;
@@ -41,8 +39,11 @@ export class ActorLabController {
 			isCurrent: () => this.panes.openGeneration === generation && input.domain === domain && input.actorHashId === actorHashId,
 			waitForReturn: () => {
 				const world = runtimeWorld(this.sources, this.guest, domain);
-				if (world === undefined) return;
-				return this.guest.linkedFunctionLocation(this.guest.readStringMember(world, 'render'));
+				if (world === undefined) return [];
+				// A scene/actor operation may dispose participants in either pass.
+				// Resume its outermost active pass before resolving the receiver.
+				return ['update', 'render'].map(method =>
+					this.guest.functionLocation(this.guest.readStringMember(world, method))!);
 			},
 			prepare: () => {
 				// Completing an interrupted IRQ also ends the previous heap borrow.
@@ -60,7 +61,6 @@ export class ActorLabController {
 		private readonly panes: EditorPanes,
 		private readonly navigation: EditorNavigationController,
 		private readonly schedule: (request: RuntimeGuestCallRequest, observer?: RuntimeGuestCallObserver) => void,
-		private readonly tasks: RuntimeTaskQueue,
 		public readonly canInteract: () => boolean,
 	) {
 		guest.onDidInvalidate(reason => this.current?.invalidate(reason === 'heap-replaced'));

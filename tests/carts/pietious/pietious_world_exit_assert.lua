@@ -47,7 +47,7 @@ function __bmsx_host_test.update()
 			return false
 		end
 
-		local transition<const> = castle_map.world_transitions.world_1
+		local transition<const> = castle_map.definition.world_transitions.world_1
 		local switch<const> = castle:enter_world(transition.target)
 		player:apply_spawn_position(switch)
 		player.state_machines:transition_to('/quiet')
