@@ -118,15 +118,19 @@ test('browser scenario media session installs derived execution media and restor
 		const canonicalLayer = sources.cartridgeSlots[0]!.rom;
 		const canonicalRom = canonicalLayer.bytes;
 		const canonicalSourceMedia = sources.currentBlua32Media;
+		const canonicalInstalledSources = sources.cartridgeSlots[0]!.installedBlua32Sources;
 		const currentTestSource = PACKAGED_TEST_SOURCE.replace('\treturn true', '\treturn false');
 		const errors: unknown[] = [];
 		let starts = 0;
 		let completed = 0;
+		let inspected = 0;
 		const disposeMediaSessionListener = runService.onDidChangeMediaSession(event => {
 			if (event.type === 'error') {
 				errors.push(event.error);
 			} else if (event.type === 'started') {
 				starts += 1;
+			} else if (event.type === 'inspect') {
+				inspected += 1;
 			} else {
 				completed += 1;
 			}
@@ -155,6 +159,7 @@ test('browser scenario media session installs derived execution media and restor
 			PACKAGED_TEST_SOURCE,
 		);
 		assert.notEqual(sources.currentBlua32Media, canonicalSourceMedia);
+		assert.equal(sources.cartridgeSlots[0]!.installedBlua32Sources.get(SCENARIO_FIXTURE_TEST_SOURCE_PATH.slice(0, -4)), currentTestSource);
 		const scenarioRom = installedRomBytes(runtime);
 		assert.notEqual(scenarioRom, canonicalRom);
 		const scenarioIndex = await parseCartridgeIndex(scenarioRom);
@@ -178,8 +183,39 @@ test('browser scenario media session installs derived execution media and restor
 		assert.equal(starts, 1);
 		assert.equal(completed, 1);
 		assert.equal(sources.currentBlua32Media, canonicalSourceMedia);
+		assert.equal(sources.cartridgeSlots[0]!.installedBlua32Sources, canonicalInstalledSources);
 		assert.equal(sources.cartridgeSlots[0]!.rom, canonicalLayer);
 		assert.equal(sources.cartridgeSlots[0]!.rom.bytes, canonicalRom);
+		assert.equal(installedRomBytes(runtime), canonicalRom);
+
+		// An exception escaping the machine's host frame must retain its actual
+		// stack and installed machine even in Run mode. Stop releases that session
+		// without rewriting the failed verdict as a cancellation.
+		await runService.start(scenario.id, [{ test: scenario, source: currentTestSource, sourceRevision: 78 }], []);
+		const failedMedia = sources.currentBlua32Media;
+		const failedRom = installedRomBytes(runtime);
+		const hostError = new TypeError('host execution invariant failed');
+		runService.failHostFrame(hostError);
+		assert.equal(inspected, 1);
+		assert.equal(runService.inspectingFailure, true);
+		assert.equal(runService.active, true);
+		assert.equal(runService.execution.active, false);
+		assert.equal(sources.currentBlua32Media, failedMedia);
+		assert.equal(installedRomBytes(runtime), failedRom);
+		const failedRun = runService.results.runs[0];
+		assert.equal(failedRun.state, 'failed');
+		assert.equal(failedRun.items[0].failure!.stackTrace, hostError.stack);
+		assert.equal(failedRun.items[0].failure!.location, undefined);
+		runService.finishHostFrame(0, false);
+		assert.equal(runService.inspectingFailure, true);
+		runService.cancel();
+		await runtimeTasks.schedule(() => {}, error => errors.push(error));
+		assert.deepEqual(errors, []);
+		assert.equal(failedRun.state, 'failed');
+		assert.equal(failedRun.items[0].state, 'failed');
+		assert.equal(runService.active, false);
+		assert.equal(sources.currentBlua32Media, canonicalSourceMedia);
+		assert.equal(sources.cartridgeSlots[0]!.installedBlua32Sources, canonicalInstalledSources);
 		assert.equal(installedRomBytes(runtime), canonicalRom);
 		disposeMediaSessionListener();
 	} finally {

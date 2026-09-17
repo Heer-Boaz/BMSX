@@ -31,9 +31,9 @@ import {
 } from './result_service';
 import { ScenarioActionEffectObservation } from './actioneffect_observation';
 import { ScenarioFsmTransitionObservation } from './fsm_transition_observation';
+import { scenarioFailureFromError } from './failure';
 
 const SCENARIO_TEST_GLOBAL = '__bmsx_host_test';
-const CART_SETTLE_TICKS = 5;
 const GAMEPLAY_READY_SETTLE_TICKS = 50;
 
 type ScheduledScenarioCommand = {
@@ -65,7 +65,6 @@ type ScenarioProtocol = {
 
 type ScenarioCartPhase = {
 	readonly kind: 'cart';
-	settleTicks: number;
 };
 
 type ScenarioInstallPhase = {
@@ -158,7 +157,7 @@ export class ScenarioExecutionService {
 		);
 		this.execution = {
 			result,
-			phase: { kind: 'cart', settleTicks: 0 },
+			phase: { kind: 'cart' },
 			logicalTicks: 0,
 			tickPrepared: false,
 			completedTickPending: false,
@@ -195,7 +194,7 @@ export class ScenarioExecutionService {
 			return true;
 		} catch (error) {
 			this.presentationResult = execution.result;
-			this.fail(execution, error instanceof Error ? error.message : String(error));
+			this.fail(execution, error);
 			return false;
 		}
 	}
@@ -220,7 +219,7 @@ export class ScenarioExecutionService {
 			}
 			this.completeScenarioTick(execution);
 		} catch (error) {
-			this.fail(execution, error instanceof Error ? error.message : String(error));
+			this.fail(execution, error);
 		}
 	}
 
@@ -251,6 +250,11 @@ export class ScenarioExecutionService {
 		this.finish();
 	}
 
+	/** Host frame boundary: preserve an exception raised while advancing the machine. */
+	public failHostFrame(error: unknown): void {
+		this.fail(this.execution!, error);
+	}
+
 	private handleSupervisorFault(execution: ScenarioExecution): boolean {
 		const memory = this.runtime.machine.memory;
 		if (memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_SEQUENCE)
@@ -263,10 +267,11 @@ export class ScenarioExecutionService {
 			this.runtime,
 			this.suspendedGuest,
 		);
-		const location = {
-			resource: this.fault.faultSnapshot.resource,
-			line: this.fault.faultSnapshot.line,
-			column: this.fault.faultSnapshot.column,
+		const origin = this.fault.faultSnapshot.details.luaStack.find(frame => frame.kind === 'source');
+		const location = origin === undefined ? undefined : {
+			resource: origin.resource,
+			line: origin.line,
+			column: origin.column,
 		};
 		this.results.appendLog(
 			execution.result,
@@ -284,6 +289,8 @@ export class ScenarioExecutionService {
 			this.runtime.frameScheduler.lastTickSequence,
 			{
 				message: this.fault.faultSnapshot.message,
+				phase: execution.phase.kind,
+				stackTrace: stackText,
 				location,
 			},
 			this.fault.faultSnapshot,
@@ -306,19 +313,15 @@ export class ScenarioExecutionService {
 		}
 		const phase = execution.phase;
 		switch (phase.kind) {
-			case 'cart':
-				phase.settleTicks += 1;
-				if (phase.settleTicks === CART_SETTLE_TICKS) {
-					const cpu = this.runtime.machine.cpu;
-					execution.phase = {
-						kind: 'install',
-						loader: cpu.getGlobalByKey(
-							cpu.stringPool.intern(SCENARIO_TEST_LOADER_GLOBAL),
-						) as Closure,
-						guestCallPending: false,
-					};
-				}
+			case 'cart': {
+				// Cartridge execution can still be in module initialization. The
+				// generated entry publishes this closure when the protocol is available.
+				const cpu = this.runtime.machine.cpu;
+				const loader = cpu.getGlobalByKey(cpu.stringPool.intern(SCENARIO_TEST_LOADER_GLOBAL));
+				if (loader === null) return;
+				execution.phase = { kind: 'install', loader: loader as Closure, guestCallPending: false };
 				return;
+			}
 			case 'install':
 				if (!this.guestCallCompleted(phase, phase.loader, EMPTY_CALL_ARGS)) {
 					return;
@@ -660,7 +663,7 @@ export class ScenarioExecutionService {
 		this.playback.setGamepadButton(padIndex, code, down);
 	}
 
-	private fail(execution: ScenarioExecution, message: string): void {
+	private fail(execution: ScenarioExecution, error: unknown): void {
 		this.results.requestCapture(
 			execution.result,
 			this.runtime.frameScheduler.lastTickSequence,
@@ -669,9 +672,7 @@ export class ScenarioExecutionService {
 		this.results.fail(
 			execution.result,
 			this.runtime.frameScheduler.lastTickSequence,
-			{
-				message,
-			},
+			scenarioFailureFromError(this.sources, execution.result.test.resource.domain, execution.phase.kind, error),
 			null,
 		);
 		this.finish();

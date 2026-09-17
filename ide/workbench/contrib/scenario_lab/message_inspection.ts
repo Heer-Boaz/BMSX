@@ -8,9 +8,29 @@ export type ScenarioMessageProperty = InspectedProperty & { readonly location: S
 export function describeScenarioMessage(row: ScenarioLabMessageRow): ScenarioMessageProperty {
 	return {
 		label: row.kind === 'log' ? `LOG / TICK ${row.log.tick}` : 'FAILURE',
-		value: row.kind === 'log' ? row.log.text : row.failure.message,
-		description: `TEST: ${row.result.test.resource.path}`,
+		value: row.kind === 'log' ? row.log.text : (row.failure.stackTrace ?? row.failure.message),
+		description: `TEST: ${row.result.test.resource.path}`
+			+ (row.kind === 'failure' && row.failure.phase !== undefined ? ` / PHASE: ${row.failure.phase}` : ''),
 		location: row.location,
 		warning: row.kind === 'failure',
 	};
+}
+
+/** Project retained guest frames only when opening Details; source identity stays structured. */
+export function describeScenarioMessageDetails(row: ScenarioLabMessageRow): ScenarioMessageProperty[] {
+	const items = [describeScenarioMessage(row)];
+	if (row.kind !== 'failure' || row.result.fault === null) return items;
+	const frames = row.result.fault.details.luaStack;
+	for (let index = 0; index < frames.length; index += 1) {
+		const frame = frames[index];
+		items.push({
+			label: `FRAME ${index + 1}: ${frame.functionName}`,
+			value: frame.kind === 'source' ? `${frame.workspacePath}:${frame.line}:${frame.column}`
+				: `domain ${frame.executionDomainId} / pc 0x${frame.instructionAddress.toString(16)}`,
+			description: '',
+			location: frame.kind === 'source' ? { resource: frame.resource, line: frame.line, column: frame.column } : undefined,
+			warning: false,
+		});
+	}
+	return items;
 }

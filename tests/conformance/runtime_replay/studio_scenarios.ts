@@ -14,18 +14,20 @@ import { testSceneSourceAfterReboot, presentSceneEditor } from './studio_scene_s
 import { presentCommandPalette } from './studio_command_palette';
 import { testStudioScenarioOutput } from './studio_scenario_output';
 import { testStudioScenarioExecution } from './studio_scenario_execution';
+import { runStudioScenarioDebug } from './studio_scenario_debug';
 import { presentActionEffects } from './studio_behavior_kinds';
 import { testStudioPointerCapture } from './studio_pointer_capture';
 import { testStudioSceneViewport } from './studio_scene_viewport';
 import type { StudioFixture } from './studio_fixture';
 
-export type StudioScenario = { kind: 'workflows' | 'fsm-initial' | 'fsm-retarget' | 'fsm-retarget-imported' | 'bt-reparent' | 'runtime-inspection' | 'preload' | 'nemesis-scenes' }
+export type StudioScenario = { kind: 'workflows' | 'scenario-debug' | 'fsm-initial' | 'fsm-retarget' | 'fsm-retarget-imported' | 'bt-reparent' | 'runtime-inspection' | 'preload' | 'nemesis-scenes' }
 	| { kind: 'cart-scenes'; cart: '2025' | 'pietious' }
 	| { kind: 'navigation'; cart: NavigationCart };
 
 /** One scenario composition for every renderer project; backend checks remain in their project. */
 export function runStudioScenario(test: StudioFixture, scenario: StudioScenario) {
 	switch (scenario.kind) {
+		case 'scenario-debug': return runStudioScenarioDebug(test);
 		case 'cart-scenes': return scenario.cart === '2025' ? runStudio2025Scenes(test) : runStudioPietiousScenes(test);
 		case 'nemesis-scenes': return runStudioNemesisScenes(test);
 		case 'workflows': return runStudioWorkflows(test);

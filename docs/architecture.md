@@ -976,7 +976,16 @@ derived cartridge ROM. Only the physical ROM component in that test's already
 occupied socket is replaced; cartridge RAM, mailbox devices, the second socket,
 and the canonical authoring layers are not reclassified or copied into a Studio
 model. The matching derived BLua32 source image is the current debugger/fault map
-for exactly that item.
+for exactly that item. Its installed-source correspondence map includes the
+captured test source and source-only imports as well; runtime inspection must
+compare against that same compiled generation. Both maps are restored together.
+
+Run and Debug share this execution and media owner. Run finishes its batch and
+restores canonical media. Debug retains the first failed machine until Stop;
+host-frame exceptions retain it in either mode. A failed session cannot resume
+merely by closing Studio. Result text, original host exception stack, protocol
+phase and structured guest frames survive restoration. An absent diagnostic
+source stays absent. See [Scenario debugging](scenario_debugging.md).
 
 The first successful item publishes the run's `started` event. The workbench
 consumes this explicit Run/Rerun intent through `HostExecutionControl`, releasing
@@ -1152,7 +1161,7 @@ owner supplies row hit-testing, reveal and scroll invariants to Behavior Lens
 outlines. A selected BT uses the shared retained graph viewport instead; its
 source selection is independent of presentation, and its typed Lua relationships
 are not reconstructed from list rows. Run, rerun and cancel
-are typed workbench commands. Their labels, keybindings and named view-title
+and debug are typed workbench commands. Their labels, keybindings and named view-title
 menu placement are separate declarations; the generic action bar invokes the
 same command ids as keyboard and controller input. A feature does not render
 bespoke command buttons or write shortcut spellings into status text. The shared
@@ -1179,7 +1188,8 @@ batch, then temporarily leaves the blocking workbench so the guest can execute;
 successful canonical-media restoration returns to the same Scenario Lab input.
 The existing physical host-control chord remains the only workbench entry path
 and pauses all machine progress through the editor policy; once open, the same
-contextual Cancel command stops the active run and its queued items. A bespoke
+Stop command stops the active run and its queued items, including when source
+inspection has focus. A bespoke
 Scenario stop hotkey or feature-rendered emergency button is not added. Source
 activation uses the existing navigation owner. The view renders with the current
 IDE tiny font over the full 384x288 workbench content area; it neither draws guest

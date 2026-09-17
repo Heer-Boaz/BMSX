@@ -45,7 +45,7 @@ import { inputFocus, type InputFocusTarget } from '../input/focus';
 // model selection, prompts or asynchronous source capture (Godot EditorData).
 const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'navigateBack', 'navigateForward',
-	'save', 'hot-resume', 'reboot', 'runCurrentFile', 'runProject', 'scenarioLab.run', 'scenarioLab.rerun',
+	'save', 'hot-resume', 'reboot', 'runCurrentFile', 'runProject', 'scenarioLab.run', 'scenarioLab.debug', 'scenarioLab.rerun',
 	'sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown',
 	'behaviorLens.moveChildEarlier', 'behaviorLens.moveChildLater', 'behaviorLens.removeChild', 'behaviorLens.duplicateChild',
 	'behaviorLens.setInitialState', 'behaviorLens.editProperty',
@@ -184,6 +184,7 @@ export class IdeCommandController {
 				}
 				return;
 			case 'scenarioLab.run':
+			case 'scenarioLab.debug':
 			case 'scenarioLab.rerun':
 			case 'scenarioLab.cancel':
 				this.editor.scenarioLab.executeCommand(command);
@@ -356,6 +357,7 @@ export class IdeCommandController {
 					&& !this.scenarioRuns.active && !this.rewind.seeking
 					&& (command !== 'stepFrameBack' || this.rewind.available && this.rewind.frameStepCycles(-1) < this.rewind.positionCycles);
 			case 'scenarioLab.run':
+			case 'scenarioLab.debug':
 			case 'scenarioLab.rerun':
 			case 'scenarioLab.cancel':
 				return this.editor.scenarioLab.isCommandEnabled(command);

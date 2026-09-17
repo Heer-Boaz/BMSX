@@ -37,6 +37,7 @@ import type { ScenarioRunService } from './run_service';
 import type {
 	ScenarioMediaSessionEvent,
 	ScenarioRunTestSource,
+	ScenarioRunMode,
 } from './run_service';
 import type {
 	ScenarioTestCollection,
@@ -95,7 +96,8 @@ export class ScenarioLabController {
 		const view = this.view!;
 		switch (command) {
 			case 'scenarioLab.run':
-				this.runSelected(view);
+			case 'scenarioLab.debug':
+				this.runSelected(view, command === 'scenarioLab.debug' ? 'debug' : 'run');
 				return;
 			case 'scenarioLab.rerun':
 				this.rerunLast(view);
@@ -107,6 +109,7 @@ export class ScenarioLabController {
 	}
 
 	public isCommandEnabled(command: EditorScenarioLabCommandId): boolean {
+		if (command === 'scenarioLab.cancel') return this.runs.active;
 		return isScenarioLabActive()
 			&& this.view !== null
 			&& scenarioLabCommandEnabled(this.view, command);
@@ -195,9 +198,9 @@ export class ScenarioLabController {
 		);
 	}
 
-	private runSelected(view: ScenarioLabViewState): void {
+	private runSelected(view: ScenarioLabViewState, mode: ScenarioRunMode): void {
 		const node = selectedScenarioTestNode(view)!;
-		this.startRun(view, node.id, this.collection.resolveNode(node));
+		this.startRun(view, node.id, this.collection.resolveNode(node), mode);
 	}
 
 	private rerunLast(view: ScenarioLabViewState): void {
@@ -213,6 +216,7 @@ export class ScenarioLabController {
 		view: ScenarioLabViewState,
 		scopeId: ScenarioTestNodeId,
 		tests: readonly ScenarioTestItem[],
+		mode: ScenarioRunMode = 'run',
 	): void {
 		const testSources = new Array<ScenarioRunTestSource>(tests.length);
 		for (let index = 0; index < tests.length; index += 1) {
@@ -231,6 +235,7 @@ export class ScenarioLabController {
 			scopeId,
 			testSources,
 			programSources,
+			mode,
 		);
 		deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
 	}
@@ -247,6 +252,11 @@ export class ScenarioLabController {
 			return;
 		}
 		this.completeRun(view);
+		if (event.type === 'inspect') {
+			view.runActive = true;
+			view.status.info = 'DEBUG FAILURE / STOP TO RESTORE CARTRIDGE';
+			view.status.dirty = true;
+		}
 	}
 
 	private handleRunError(view: ScenarioLabViewState, error: unknown): void {

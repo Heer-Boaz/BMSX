@@ -1,6 +1,6 @@
 import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
-import { describeScenarioMessage, type ScenarioMessageProperty } from './message_inspection';
+import { describeScenarioMessageDetails, type ScenarioMessageProperty } from './message_inspection';
 import type { ScenarioLabMessageRow } from './view_model';
 import { selectedScenarioResultRow } from './projection';
 import { prepareScenarioLabLayout } from './layout';
@@ -124,7 +124,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 	}
 
 	private openDetails(row: ScenarioLabMessageRow): void {
-		const lifetime = this.inspector.show({ title: row.result.test.label, items: [describeScenarioMessage(row)],
+		const lifetime = this.inspector.show({ title: row.result.test.label, items: describeScenarioMessageDetails(row),
 			canOpenSource: item => item.location !== undefined,
 			openSource: item => this.controller.openSource(item.location!),
 		});

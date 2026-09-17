@@ -1,7 +1,6 @@
 import type { HostAudioOutput } from '../../../../hosts/common/audio_output';
 import type { Input } from '../../../../hosts/common/input/manager';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import { LuaError } from '../../../../toolchain/ts/lua/errors';
 import { buildScenarioCartridge, type BuiltScenarioCartridge } from '../../../../toolchain/ts/rompack/scenario_cartridge';
 import { LuaInterpreter } from '../../../language/lua/interpreter/interpreter';
 import {
@@ -12,7 +11,6 @@ import { buildScenarioRunMedia } from './media_build';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import {
 	createBlua32SourceImage,
-	resolveRuntimeLuaSourceForContext,
 	type Blua32SourceMedia,
 	type RuntimeSourceState,
 } from '../../../runtime/sources';
@@ -37,11 +35,10 @@ import { ScenarioExecutionService } from '../../../testing/scenario/execution_se
 import type {
 	ScenarioRun,
 	ScenarioRunItemSource,
-	ScenarioRunFailure,
 } from '../../../testing/scenario/result_service';
+import { scenarioFailureFromError } from '../../../testing/scenario/failure';
 import { ScenarioResultService } from '../../../testing/scenario/result_service';
 import type {
-	ScenarioTestItem,
 	ScenarioTestNodeId,
 } from '../../../testing/scenario/test_collection';
 
@@ -51,16 +48,20 @@ export type ScenarioRunTestSource = ScenarioRunItemSource & {
 	readonly source: string;
 };
 
+export type ScenarioRunMode = 'run' | 'debug';
+
 type ScenarioRunRequest = {
 	readonly testSources: readonly ScenarioRunTestSource[];
 	readonly programSources: ReadonlyArray<LuaTextModelSourceSnapshot>;
 	readonly run: ScenarioRun;
+	readonly mode: ScenarioRunMode;
 	cancelled: boolean;
 };
 
 export type ScenarioMediaSessionEvent =
 	| { readonly type: 'started' }
 	| { readonly type: 'complete' }
+	| { readonly type: 'inspect' }
 	| { readonly type: 'error'; readonly error: unknown };
 
 type ScenarioMediaSessionListener = (event: ScenarioMediaSessionEvent) => void;
@@ -70,44 +71,10 @@ type ScenarioMediaSession = {
 	readonly slot: 0 | 1;
 	readonly canonicalRom: Uint8Array;
 	readonly canonicalSourceMedia: Blua32SourceMedia;
+	readonly canonicalInstalledSources: ReadonlyMap<string, string>;
 	itemIndex: number;
-	phase: 'building' | 'running' | 'restore_queued';
+	phase: 'building' | 'running' | 'inspect' | 'restore_queued';
 };
-
-function failureFromError(
-	sources: RuntimeSourceState,
-	test: ScenarioTestItem,
-	error: unknown,
-): ScenarioRunFailure {
-	const message = error instanceof Error ? error.message : String(error);
-	if (error instanceof LuaError) {
-		const path = error.path.startsWith('@') ? error.path.slice(1) : error.path;
-		const source = resolveRuntimeLuaSourceForContext(
-			sources,
-			test.resource.domain,
-			path,
-		)!;
-		return {
-			message,
-			location: {
-				resource: {
-					domain: source.domain,
-					path: source.record.source_path,
-				},
-				line: error.line,
-				column: error.column,
-			},
-		};
-	}
-	return {
-		message,
-		location: {
-			resource: test.resource,
-			line: 1,
-			column: 1,
-		},
-	};
-}
 
 /**
  * Owns one browser Scenario run and its serial derived-cartridge media session.
@@ -145,10 +112,15 @@ export class ScenarioRunService {
 		return this.request !== null;
 	}
 
+	public get inspectingFailure(): boolean {
+		return this.mediaSession?.phase === 'inspect';
+	}
+
 	public start(
 		scopeId: ScenarioTestNodeId,
 		testSources: readonly ScenarioRunTestSource[],
 		programSources: ReadonlyArray<LuaTextModelSourceSnapshot>,
+		mode: ScenarioRunMode = 'run',
 	): Promise<void> {
 		if (this.request !== null) {
 			throw new Error('A Scenario Lab media session is already active.');
@@ -162,6 +134,7 @@ export class ScenarioRunService {
 			testSources,
 			programSources,
 			run,
+			mode,
 			cancelled: false,
 		};
 		this.request = request;
@@ -180,12 +153,28 @@ export class ScenarioRunService {
 		const request = this.request!;
 		request.cancelled = true;
 		const session = this.mediaSession;
+		if (session !== null && session.phase === 'inspect') {
+			this.queueCanonicalRestore(session, { type: 'complete' });
+			return;
+		}
 		if (session === null || session.phase !== 'running') {
 			return;
 		}
 		this.execution.cancel();
 		this.results.cancelRun(request.run);
 		this.queueCanonicalRestore(session, { type: 'complete' });
+	}
+
+	/** A host invariant failure must leave the physical machine untouched for inspection. */
+	public failHostFrame(error: unknown): void {
+		this.execution.failHostFrame(error);
+		this.inspectFailure(this.mediaSession!);
+	}
+
+	private inspectFailure(session: ScenarioMediaSession): void {
+		this.results.failRun(session.request.run);
+		session.phase = 'inspect';
+		this.emitMediaSessionEvent({ type: 'inspect' });
 	}
 
 	/** Called after the host has offered the completed guest tick for presentation. */
@@ -203,6 +192,10 @@ export class ScenarioRunService {
 		if (request.cancelled) {
 			this.results.cancelRun(request.run);
 			this.queueCanonicalRestore(session, { type: 'complete' });
+			return;
+		}
+		if (request.mode === 'debug' && request.run.items[session.itemIndex].state === 'failed') {
+			this.inspectFailure(session);
 			return;
 		}
 		const nextItemIndex = session.itemIndex + 1;
@@ -260,6 +253,7 @@ export class ScenarioRunService {
 				slot,
 				canonicalRom: cartridge.rom.bytes,
 				canonicalSourceMedia: this.sources.currentBlua32Media,
+				canonicalInstalledSources: cartridge.installedBlua32Sources,
 				itemIndex: 0,
 				phase: 'building',
 			};
@@ -308,6 +302,11 @@ export class ScenarioRunService {
 			system: session.canonicalSourceMedia.system,
 			cartridgeSlots: scenarioImages,
 		};
+		// Debug locations and source correspondence describe the same installed
+		// image, including the composed test module and its source-only imports.
+		const installedSources = new Map<string, string>();
+		for (const [path, diagnostic] of scenario.diagnosticSources) installedSources.set(path, diagnostic.source);
+		this.sources.cartridgeSlots[session.slot]!.installedBlua32Sources = installedSources;
 		this.bootMedia(interpreter);
 		session.phase = 'running';
 		this.execution.start(session.request.run.items[session.itemIndex]);
@@ -335,7 +334,7 @@ export class ScenarioRunService {
 		this.results.fail(
 			result,
 			0,
-			failureFromError(this.sources, result.test, error),
+			scenarioFailureFromError(this.sources, result.test.resource.domain, 'prepare', error),
 			null,
 		);
 		this.results.failRun(request.run);
@@ -350,7 +349,7 @@ export class ScenarioRunService {
 
 	private queueCanonicalRestore(
 		session: ScenarioMediaSession,
-		event: Exclude<ScenarioMediaSessionEvent, { readonly type: 'started' }>,
+		event: Extract<ScenarioMediaSessionEvent, { readonly type: 'complete' | 'error' }>,
 	): void {
 		session.phase = 'restore_queued';
 		this.runtimeTasks.schedule(() => {
@@ -379,6 +378,7 @@ export class ScenarioRunService {
 			session.canonicalRom,
 		);
 		this.sources.currentBlua32Media = session.canonicalSourceMedia;
+		this.sources.cartridgeSlots[session.slot]!.installedBlua32Sources = session.canonicalInstalledSources;
 		this.bootMedia(new LuaInterpreter(this.luaTooling.luaJsBridge));
 	}
 

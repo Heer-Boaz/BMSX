@@ -51,6 +51,8 @@ export type ScenarioResultCapture = {
 
 export type ScenarioRunFailure = {
 	readonly message: string;
+	readonly phase?: string;
+	readonly stackTrace?: string;
 	readonly location?: ScenarioSourceLocation;
 };
 

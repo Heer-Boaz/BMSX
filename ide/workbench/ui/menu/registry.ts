@@ -149,6 +149,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	],
 	'scenarioLab.title': [
 		{ type: 'command', command: 'scenarioLab.run' },
+		{ type: 'command', command: 'scenarioLab.debug' },
 		{ type: 'command', command: 'scenarioLab.rerun' },
 		{ type: 'command', command: 'scenarioLab.cancel' },
 		{ type: 'command', command: 'scenarioLab.details' },

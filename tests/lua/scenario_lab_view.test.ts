@@ -14,7 +14,7 @@ import { refreshScenarioLabProjection } from '../../ide/workbench/contrib/scenar
 import { drawScenarioLab } from '../../ide/workbench/contrib/scenario_lab/render';
 import { prepareScenarioLabLayout } from '../../ide/workbench/contrib/scenario_lab/layout';
 import { ScenarioLabNavigationSelection } from '../../ide/workbench/contrib/scenario_lab/navigation_selection';
-import { describeScenarioMessage } from '../../ide/workbench/contrib/scenario_lab/message_inspection';
+import { describeScenarioMessage, describeScenarioMessageDetails } from '../../ide/workbench/contrib/scenario_lab/message_inspection';
 import { WorkbenchPropertyInspectorModel } from '../../ide/workbench/ui/property_inspector/model';
 import {
 	SCENARIO_RESULT_LOG_RETAIN_COUNT,
@@ -217,6 +217,51 @@ test('scenario messages retain an actual diagnostic location separately from tes
 	}
 	results.requestCapture(result, 5, 'frame');
 	assert.equal('location' in result.captures.at(0), false, 'a capture does not fabricate a source site');
+});
+
+test('scenario Details exposes retained exception frames and phase, not only the row message', t => {
+	const { collection, results, view } = createViewFixture(t);
+	const item = collection.roots[0].children![0];
+	const run = results.beginRun(item.id, [{ test: item, sourceRevision: 1 }]);
+	const result = results.startItem(run, 0, 0);
+	const stackTrace = 'TypeError: broken protocol\n    at install (execution_service.ts:100:7)';
+	results.fail(result, 5, { message: 'broken protocol', stackTrace, phase: 'install' }, null);
+	results.completeRun(run);
+	refreshScenarioLabProjection(view);
+	const row = view.resultPane.rows.find(row => row.kind === 'failure')!;
+	if (row.kind !== 'failure') throw new Error('failure row expected');
+	const property = describeScenarioMessage(row);
+	assert.equal(property.value, stackTrace);
+	assert.match(property.description, /PHASE: install/);
+	assert.equal(property.location, undefined);
+});
+
+test('scenario Details navigates each retained source frame without fabricating locations for instruction frames', t => {
+	const { collection, results, view } = createViewFixture(t);
+	const item = collection.roots[0].children![0];
+	const run = results.beginRun(item.id, [{ test: item, sourceRevision: 1 }]);
+	const result = results.startItem(run, 0, 0);
+	const origin = { resource: { domain: 1 as const, path: 'machine/bios/base.lua' }, line: 222, column: 3 };
+	const callback = { resource: item.resource, line: 30, column: 3 };
+	results.fail(result, 10, { message: 'assertion failed', location: origin }, {
+		message: 'assertion failed',
+		...origin,
+		details: { luaStack: [
+			{ kind: 'source', functionName: 'assert', workspacePath: origin.resource.path, ...origin },
+			{ kind: 'source', functionName: 'test.update', workspacePath: item.resource.path, ...callback },
+			{ kind: 'instruction', functionName: '<unknown>', executionDomainId: 0, instructionAddress: 0x08010400 },
+		] },
+	});
+	refreshScenarioLabProjection(view);
+	const row = view.resultPane.rows.find(row => row.kind === 'failure')!;
+	if (row.kind !== 'failure') throw new Error('failure row expected');
+	const details = describeScenarioMessageDetails(row);
+	assert.equal(details.length, 4);
+	assert.deepEqual(details[0].location, origin);
+	assert.deepEqual(details[1].location, origin);
+	assert.deepEqual(details[2].location, callback);
+	assert.equal(details[3].location, undefined);
+	assert.match(details[3].value, /pc 0x8010400/);
 });
 
 test('navigation restores a result by identity after log eviction and keeps the saved collapsed run', t => {

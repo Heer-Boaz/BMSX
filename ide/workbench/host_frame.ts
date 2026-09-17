@@ -208,7 +208,7 @@ export function runWorkbenchHostFrame(
 				.catch(error => workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error));
 		}
 		const runtimeReady = ide.runtimeTasks.ready && !ide.fault.hostFrameFailed && !session.rewind.active
-			&& !ide.debugger.plans.controlSuspended;
+			&& !ide.debugger.plans.controlSuspended && !ide.scenarioRuns.inspectingFailure;
 		session.execution.setPauseReason(HostPauseReason.Workbench, ide.editor.executionSuspended);
 		audioOutput.muteUi(ide.editor.executionSuspended);
 		let action: HostFrameAction;
@@ -339,6 +339,7 @@ export function runWorkbenchHostFrame(
 		}
 	} catch (error) {
 		session.execution.finishFrameStep();
+		if (ide.scenarioRuns.execution.active) ide.scenarioRuns.failHostFrame(error);
 		workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error);
 		presentWorkbenchError(
 			session,

@@ -158,6 +158,7 @@ export function scenarioLabCommandEnabled(
 ): boolean {
 	switch (command) {
 		case 'scenarioLab.run':
+		case 'scenarioLab.debug':
 			return !state.runActive && selectedScenarioTestNode(state) !== null;
 		case 'scenarioLab.rerun':
 			return !state.runActive && state.resultService.runs.length > 0;
