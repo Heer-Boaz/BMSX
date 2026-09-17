@@ -61,6 +61,12 @@ Evidence is under `.bmsx/authoring/all-cart-scenes/` in the working checkout.
 
 ## Pietious
 
+Cold boot now explicitly constructs the intro; an in-game restart explicitly
+constructs the initial room after World update. The `init_epoch` /
+`pending_intro_boot_epoch` bookkeeping has been removed. The `<init>` function
+registers definitions; it does not decide the next game's presentation mode.
+The cinematic-flow and death/restart scenarios both pass after this cleanup.
+
 In progress: preserve the persistent castle/player/room state while moving
 the 24 rooms' 122 authored placements and presentation compositions to scenes.
 Room eligibility and progression remain cart responsibilities.

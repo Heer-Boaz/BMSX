@@ -62,9 +62,7 @@ local narrative_screen_module<const> = require('narrative_screen')
 local title_screen_module<const> = require('title_screen')
 local castle_map<const> = require('castle/map')
 
-local init_epoch = 0
-local pending_intro_boot_epoch = -1
-local new_game_requested
+local new_game_requested = false
 
 local grant_debug_starting_loadout<const> = function(player, castle)
 	player.inventory_items['keyworld1'] = true
@@ -131,11 +129,6 @@ end
 
 function new_game()
 	new_game_requested = false
-	if pending_intro_boot_epoch == init_epoch then
-		pending_intro_boot_epoch = init_epoch - 1
-		create_world('intro')
-		return
-	end
 	create_world('room')
 end
 
@@ -208,15 +201,15 @@ local function init<init>()
 	end_demo_module.register_end_demo_definition()
 	title_screen_module.register_title_screen_definition()
 	director_module.register_director_definition()
-	init_epoch = init_epoch + 1
-	pending_intro_boot_epoch = init_epoch
 end
 
 init()
 atlas.load('gameplay')
 atlas.load('font')
 atlas.load('world1_daemon')
-new_game()
+-- The cart entry owns cold boot. In-game restart requests are committed by
+-- the loop after World update and enter gameplay directly.
+create_world('intro')
 vblank.wait()
 
 -- Pietious intentionally advances one gameplay tick across two display frames.
