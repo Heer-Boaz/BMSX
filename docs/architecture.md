@@ -2190,7 +2190,7 @@ faults therefore use the same execution path and scheduling owner as all other
 guest code. A breakpoint leaves the completion frame live and continuation
 resumes it normally; there is no second scheduler loop, state capture,
 rollback, special opcode, host callback, or machine-side reload state. Existing
-carts keep their ordinary cold `init()` and `new_game()` calls in source; Hot
+carts keep their ordinary cold initialization and game construction in source; Hot
 Resume calls only the closure marked `<init>`. Those names remain cart code
 rather than a BMSX ABI. Captured-upvalue layout, static-closure identity mode,
 annotated-function layout, or static-storage layout changes are currently

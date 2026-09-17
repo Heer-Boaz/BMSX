@@ -753,15 +753,15 @@ function builders.apply_transition_frame(target, frame_index, params)
 		local visual<const> = target.panels[i]
 		local x<const> , y<const> , a<const> = panel_motion(frame_index, panel, transition_panel_in_frames, transition_panel_hold_frames, transition_panel_out_frames)
 		visual.visible = a > 0
-		visual.x = x
-		visual.y = y
+		visual.visual.offset_x = x - visual.x
+		visual.visual.offset_y = y - visual.y
 		visual.color = a > 0 and panel.color or 0
 	end
 
 	local ax<const> , ay<const> , aa<const> = panel_motion(frame_index, accent_panel, transition_accent_in_frames, transition_accent_hold_frames, transition_accent_out_frames)
 	target.accent.visible = aa > 0
-	target.accent.x = ax
-	target.accent.y = ay
+	target.accent.visual.offset_x = ax - target.accent.x
+	target.accent.visual.offset_y = ay - target.accent.y
 	target.accent.color = aa > 0 and accent_panel.color or 0
 
 	local text_x = end_x

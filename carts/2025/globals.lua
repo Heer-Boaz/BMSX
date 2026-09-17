@@ -93,8 +93,6 @@ combat_hit_slash_peak_scale = 1.45
 combat_hit_slash_visibility = 0.9
 combat_hit_slash_taper_floor = 0.3
 combat_hit_slash_z = 650
-director_visual_z = 850
-combat_maya_z = 300
 combat_results_maya_z = 900
 
 combat_dodge_timeline_id = 'combat_dodge'

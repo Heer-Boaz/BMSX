@@ -47,64 +47,22 @@ function transition.register_states(states)
 		return p3_transition_palette_dialogue
 	end
 
-	local build_transition_layout<const> = function(style, palette, layout)
-		local w<const> = screen_width
-		local h<const> = screen_height
-		local swap_frame<const> = overgang_fade_out_frames - 1
-		local center_x<const> = layout.center_x
-		local text_top<const> = layout.text_top
-		local line_height<const> = layout.line_height
-		local accent_height<const> = line_height * 1.1
-		local accent_y<const> = text_top + (line_height - accent_height) * 0.5
-
-		local panel1_width<const> = w * 1.15
-		local panel2_width<const> = w * 1.3
-		local panel3_width<const> = w * 0.55
-		local panels<const> = {
-			{
-				color = palette.panel_primary,
-				width = panel1_width,
-				height = h * 0.22,
-				y = h * 0.12,
-				x_in = -w * 1.2,
-				x_hold = center_x - (panel1_width / 2),
-				x_out = w,
-				offset = 0,
-			},
-			{
-				color = palette.panel_secondary,
-				width = panel2_width,
-				height = h * 0.2,
-				y = h * 0.42,
-				x_in = w,
-				x_hold = center_x - (panel2_width / 2),
-				x_out = -w * 1.3,
-				offset = transition_panel_gap_frames,
-			},
-			{
-				color = palette.panel_primary,
-				width = panel3_width,
-				height = h * 0.14,
-				y = h * 0.68,
-				x_in = -w * 0.55,
-				x_hold = center_x - (panel3_width / 2),
-				x_out = w * 1.1,
-				offset = swap_frame - transition_panel_in_frames,
-			},
+	local build_transition_layout<const> = function(visuals, palette)
+		local panels<const> = {}
+		for i = 1, #visuals.panels do
+			local member<const> = visuals.panels[i]
+			panels[i] = {
+				color = palette[member.palette_key],
+				x_hold = member.x, y = member.y,
+				x_in = member.enter_x, x_out = member.exit_x, offset = member.delay,
+			}
+		end
+		local accent<const> = visuals.accent
+		return panels, {
+			color = palette.accent, x_hold = accent.x, y = accent.y,
+			x_in = accent.enter_x, x_out = accent.exit_x,
+			offset = overgang_fade_out_frames - 1 - transition_accent_in_frames,
 		}
-
-		local accent<const> = {
-			color = palette.accent,
-			width = w * 0.7,
-			height = accent_height,
-			y = accent_y,
-			x_in = w,
-			x_hold = center_x - (w * 0.35),
-			x_out = -w * 0.3,
-			offset = swap_frame - transition_accent_in_frames,
-		}
-
-		return panels, accent
 	end
 
 	local finish_transition<const> = function(self)
@@ -174,12 +132,7 @@ function transition.register_states(states)
 			local style<const> = resolve_transition_style(node, next_node.kind)
 			self.transition_style = style
 			self.transition_palette = build_transition_palette(style)
-			local layout<const> = {
-				center_x = screen_width / 2,
-				text_top = transition_text.dimensions.top,
-				line_height = transition_text.text_component.line_height,
-			}
-			self.transition_panels, self.transition_accent = build_transition_layout(style, self.transition_palette, layout)
+			self.transition_panels, self.transition_accent = build_transition_layout(self.transition_visual, self.transition_palette)
 			local swap_frame<const> = overgang_fade_out_frames - 1
 			local montage_end = transition_text_in_frames + transition_text_hold_frames + transition_text_out_frames - 1
 			for i = 1, #self.transition_panels do
@@ -215,10 +168,6 @@ function transition.register_states(states)
 			local overlay<const> = self.transition_visual.overlay
 			local background<const> = self.background
 			overlay.visible = true
-			overlay.x = 0
-			overlay.y = 0
-			overlay.width = screen_width
-			overlay.height = screen_height
 			overlay.blend_mode = gp0.draw_mode_blend_subtract
 			overlay.blend_color = 0
 			overlay.color = 0
@@ -226,18 +175,12 @@ function transition.register_states(states)
 				local panel<const> = self.transition_panels[i]
 				local visual<const> = self.transition_visual.panels[i]
 				visual.visible = true
-				visual.x = panel.x_in
-				visual.y = panel.y
-				visual.width = panel.width
-				visual.height = panel.height
+				visual.visual.offset_x = panel.x_in - visual.x
 				visual.color = 0
 			end
 			local accent<const> = self.transition_visual.accent
 			accent.visible = true
-			accent.x = self.transition_accent.x_in
-			accent.y = self.transition_accent.y
-			accent.width = self.transition_accent.width
-			accent.height = self.transition_accent.height
+			accent.visual.offset_x = self.transition_accent.x_in - accent.x
 			accent.color = 0
 			if self.skip_transition_fade then
 				apply_background(self.background, self.transition_target_bg)
@@ -381,10 +324,6 @@ function transition.register_states(states)
 			local overlay<const> = self.transition_visual.overlay
 			local background<const> = self.background
 			overlay.visible = true
-			overlay.x = 0
-			overlay.y = 0
-			overlay.width = screen_width
-			overlay.height = screen_height
 			overlay.color = 0
 			overlay.blend_mode = gp0.draw_mode_blend_subtract
 			overlay.blend_color = 0

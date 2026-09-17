@@ -347,7 +347,7 @@ function combat.define_fsm()
 	local finish_combat_results_fade_out<const> = function(self)
 		local maya_b<const> = self.maya_b
 		maya_b.visible = false
-		maya_b:set_z(combat_maya_z)
+		maya_b:set_z(maya_b.home_z)
 		self.text_results:clear_text()
 		local bg<const> = self.combat_results_visual
 		bg.visible = false
@@ -392,10 +392,6 @@ function combat.define_fsm()
 			hide_transition_layers(transition_visual)
 			local overlay<const> = transition_visual.overlay
 			overlay.visible = true
-			overlay.x = 0
-			overlay.y = 0
-			overlay.width = screen_width
-			overlay.height = screen_height
 			overlay.color = 0
 			overlay.blend_mode = gp0.draw_mode_blend_subtract
 			overlay.blend_color = 0
@@ -427,10 +423,6 @@ function combat.define_fsm()
 			hide_transition_layers(transition_visual)
 			local overlay<const> = transition_visual.overlay
 			overlay.visible = true
-			overlay.x = 0
-			overlay.y = 0
-			overlay.width = screen_width
-			overlay.height = screen_height
 			overlay.color = 0
 			overlay.blend_mode = gp0.draw_mode_blend_subtract
 			overlay.blend_color = 0
@@ -461,12 +453,12 @@ function combat.define_fsm()
 			monster:set_imgid(node.monster_imgid)
 			monster.visible = false
 			monster.sprite_component.color = p3_white_color
-			monster:set_z(200)
+			monster:set_z(monster.home_z)
 			monster.sprite_component.scale_x = 1
 			monster.sprite_component.scale_y = 1
 
-			monster.x = (screen_width * 0.65) - (monster.sx / 2)
-			monster.y = (screen_height * 0.25) - (monster.sy / 3)
+			monster.x = monster.home_x - (monster.sx / 2)
+			monster.y = monster.home_y - (monster.sy / 3)
 
 			self.combat_monster_base_x = monster.x
 			self.combat_monster_base_y = monster.y
@@ -477,9 +469,9 @@ function combat.define_fsm()
 			local maya_a<const> = self.maya_a
 			maya_a:set_imgid('maya_a')
 			maya_a.visible = false
-			maya_a.x = 0
-			maya_a.y = screen_height - maya_a.sy
-			maya_a:set_z(combat_maya_z)
+			maya_a.x = maya_a.home_x
+			maya_a.y = maya_a.home_y - maya_a.sy
+			maya_a:set_z(maya_a.home_z)
 			self.combat_maya_a_base_x = maya_a.x
 			self.combat_maya_a_base_y = maya_a.y
 			self.combat_maya_a_start_x = screen_width
@@ -487,17 +479,17 @@ function combat.define_fsm()
 
 			local all_out<const> = self.all_out
 			all_out.visible = false
-			all_out.x = 0
-			all_out.y = 0
-			all_out:set_z(800)
+			all_out.x = all_out.home_x
+			all_out.y = all_out.home_y
+			all_out:set_z(all_out.home_z)
 
 			local maya_b<const> = self.maya_b
 			maya_b:set_imgid('maya_b')
 			maya_b.visible = true
 			maya_b.sprite_component.color = p3_white_color
-			maya_b.x = screen_width - maya_b.sx
-			maya_b.y = screen_height - maya_b.sy
-			maya_b:set_z(combat_maya_z)
+			maya_b.x = maya_b.home_x - maya_b.sx
+			maya_b.y = maya_b.home_y - maya_b.sy
+			maya_b:set_z(maya_b.home_z)
 			self.combat_maya_b_start_x = maya_b.x
 			self.combat_maya_b_base_y = maya_b.y
 			self.combat_maya_b_start_scale = combat_intro_maya_b_start_scale
@@ -809,10 +801,6 @@ function combat.define_fsm()
 			monster.sprite_component.color = p3_white_color
 			maya_a.sprite_component.color = p3_white_color
 			overlay.visible = true
-			overlay.x = 0
-			overlay.y = 0
-			overlay.width = screen_width
-			overlay.height = screen_height
 			overlay.color = 0
 			overlay.blend_mode = gp0.draw_mode_blend_add
 			overlay.blend_color = 0
@@ -910,10 +898,6 @@ function combat.define_fsm()
 			monster.sprite_component.color = p3_white_color
 			maya_a.sprite_component.color = p3_white_color
 			overlay.visible = true
-			overlay.x = 0
-			overlay.y = 0
-			overlay.width = screen_width
-			overlay.height = screen_height
 			overlay.color = 0
 			overlay.blend_mode = gp0.draw_mode_blend_add
 			overlay.blend_color = 0
@@ -993,11 +977,11 @@ function combat.define_fsm()
 			local portrait<const> = self.all_out_portrait
 			portrait:set_imgid('maya_v_s')
 			portrait.visible = true
-			portrait:set_z(750)
+			portrait:set_z(portrait.home_z)
 			portrait.sprite_component.scale_x = 1
 			portrait.sprite_component.scale_y = 1
-			local target_x<const> = (screen_width * 0.08) // 1
-			local target_y<const> = (screen_height - portrait.sy) // 1
+			local target_x<const> = portrait.home_x
+			local target_y<const> = portrait.home_y - portrait.sy
 			self.timelines:play(combat_all_out_prompt_timeline_id, {
 				rewind = true,
 				snap_to_start = true,
@@ -1082,9 +1066,9 @@ function combat.define_fsm()
 			local all_out<const> = self.all_out
 			atlas.load('all_out')
 			all_out.visible = true
-			all_out.x = 0
-			all_out.y = 0
-			all_out:set_z(800)
+			all_out.x = all_out.home_x
+			all_out.y = all_out.home_y
+			all_out:set_z(all_out.home_z)
 			local monster<const> = self.monster
 			local maya_a<const> = self.maya_a
 			local maya_b<const> = self.maya_b
@@ -1216,20 +1200,16 @@ function combat.define_fsm()
 
 			local bg<const> = self.combat_results_visual
 			bg.visible = true
-			bg.x = 0
-			bg.y = 0
-			bg.width = screen_width
-			bg.height = screen_height
 			bg.color = p3_black_color
 
 			local maya_b<const> = self.maya_b
 			maya_b:set_imgid('maya_b')
 			maya_b.visible = true
 			maya_b:set_z(combat_results_maya_z)
-			self.combat_results_maya_target_x = screen_width - maya_b.sx
+			self.combat_results_maya_target_x = maya_b.home_x - maya_b.sx
 			self.combat_results_maya_start_x = screen_width
 			maya_b.x = self.combat_results_maya_start_x
-			maya_b.y = screen_height - maya_b.sy
+			maya_b.y = maya_b.home_y - maya_b.sy
 			maya_b.sprite_component.color = p3_black_color
 
 			local lines<const> = { 'Combat Results:' }
@@ -1240,7 +1220,7 @@ function combat.define_fsm()
 			self.text_results:set_text(lines, { typed = false, snap = true })
 			local results<const> = self.text_results
 			results.text_component.color = p3_black_color
-			self.combat_results_text_target_x = results.text_component.offset_x / 2
+			self.combat_results_text_target_x = results.text_component.offset_x / 2 + results.results_offset_x
 			self.combat_results_text_start_x = -screen_width
 			results.text_component.offset_x = self.combat_results_text_start_x
 			return '/combat_results_fade_in'

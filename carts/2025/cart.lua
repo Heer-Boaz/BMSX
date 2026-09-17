@@ -1,397 +1,64 @@
 module<entry>
-local gp0<const> = require('cartlib/gx/gp0')
 local gx_display<const> = require('cartlib/gx/display')
 local vblank<const> = require('cartlib/gx/vblank')
 gx_display.reset_320x240()
-local fsm_component<const> = require('cartlib/fsm/fsm_component')
-local fsm_library<const> = require('cartlib/fsm/library')
 local input<const> = require('cartlib/input/input')
 input.add_player(1)
-input.push_context(1, '2025', {
-	confirm = { 'KeyX' },
-}, {
-	confirm = { 'a' },
-})
-local prefab<const> = require('cartlib/world/prefab')
-local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
-local surface_component<const> = require('cartlib/component/surface_component')
-local sprite_object<const> = require('cartlib/sprite')
-local text_object<const> = require('cartlib/text/text_object')
-local timeline_component<const> = require('cartlib/timeline/timeline_component')
+input.push_context(1, '2025', { confirm = { 'KeyX' } }, { confirm = { 'a' } })
 local world<const> = require('cartlib/world/world')
-local world_module<const> = require('world_module')
-world:configure(world_module)
-local pietsona_font<const> = require('pietsona_font')
-pietsona_font.register_fonts()
+world:configure(require('world_module'))
+require('pietsona_font').register_fonts()
+require('globals')
 local atlas<const> = require('cartlib/gx/atlas')
 local image<const> = require('cartlib/gx/image')
-require('globals')
 local story<const> = require('story')
-local start_node<const> = 'title'
--- local start_node<const> = 'combat_wekker'
 local combat_module<const> = require('combat')
-local dialogue_module<const> = require('dialogue')
-local transition_module<const> = require('transition')
-local background_definition_id<const> = 'p3.bg'
-local text_main_definition_id<const> = 'p3.text.main'
-local text_choice_definition_id<const> = 'p3.text.choice'
-local text_prompt_definition_id<const> = 'p3.text.prompt'
-local text_transition_definition_id<const> = 'p3.text.transition'
-local text_results_definition_id<const> = 'p3.text.results'
-local monster_definition_id<const> = 'p3.combat.monster'
-local maya_a_definition_id<const> = 'p3.combat.maya_a'
-local maya_b_definition_id<const> = 'p3.combat.maya_b'
-local all_out_definition_id<const> = 'p3.combat.all_out'
-local all_out_portrait_definition_id<const> = 'p3.combat.all_out_portrait'
-local combat_director_definition_id<const> = combat_module.director_definition_id
-
-local surface_object_class<const> = {}
-
-function surface_object_class:ctor()
-	self.surface_component = self:get_component(surface_component)
-	if self.imgid then
-		self.surface_component:set_imgid(self.imgid)
-	end
-end
-local dialogue_node_kinds<const> = {
-	dialogue = true,
-	dialogue_inline = true,
-}
-
-local director_def_id<const> = 'p3.director'
-local story_director_fsm_id<const> = 'p3.director.fsm'
-
-local director<const> = {}
-director.__index = director
-
-local create_rect_state<const> = function()
-	return {
-		visible = false,
-		x = 0,
-		y = 0,
-		width = 0,
-		height = 0,
-		color = 0,
-	}
-end
-
-local create_transition_visuals<const> = function()
-	local overlay<const> = create_rect_state()
-	overlay.blend_color = 0
-	overlay.blend_mode = gp0.draw_mode_blend_half
-	return {
-		overlay = overlay,
-		panels = {
-			create_rect_state(),
-			create_rect_state(),
-			create_rect_state(),
-		},
-		accent = create_rect_state(),
-	}
-end
-
-local draw_director_visual<const> = function(component, draw)
-	local parent<const> = component.parent
-	local results<const> = parent.combat_results_visual
-	if results.visible then
-		draw:rect(results.x, results.y, results.x + results.width, results.y + results.height, results.color)
-	end
-	local overlay<const> = parent.transition_visual.overlay
-	if overlay.color ~= 0 and overlay.visible then
-		draw:rect(overlay.x, overlay.y, overlay.x + overlay.width, overlay.y + overlay.height, overlay.color)
-	end
-	if overlay.blend_color ~= 0 then
-		draw:mode(overlay.blend_mode)
-		draw:semitransparent_rect(overlay.x, overlay.y, overlay.x + overlay.width, overlay.y + overlay.height, overlay.blend_color)
-	end
-	for i = 1, #parent.transition_visual.panels do
-		local panel<const> = parent.transition_visual.panels[i]
-		if panel.visible then
-			draw:rect(panel.x, panel.y, panel.x + panel.width, panel.y + panel.height, panel.color)
-		end
-	end
-	local accent<const> = parent.transition_visual.accent
-	if accent.visible then
-		draw:rect(accent.x, accent.y, accent.x + accent.width, accent.y + accent.height, accent.color)
-	end
-end
-
-function director:ctor()
-	local transition_visual<const> = self:get_component(custom_visual_component)
-	transition_visual:set_offset_z(director_visual_z)
-	transition_visual:set_draw_function(draw_director_visual)
-end
-
-function director:apply_effects(effects)
-	for i = 1, #effects do
-		local effect<const> = effects[i]
-		self.stats[effect.stat] = self.stats[effect.stat] + effect.add
-	end
-end
-
-dialogue_module.register_methods(director)
-
-local build_director_fsm<const> = function()
-	local states<const> = {
-		boot = {
-			entering_state = function(self)
-				self.stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 }
-				self.inline_pages = {}
-				self.inline_next = nil
-				self.just_finished_combat = false
-				self.skip_combat_fade_in = false
-				self.skip_transition_fade = false
-				self.fade_hold_black = false
-				clear_texts(self.texts)
-				return '/run_node'
-			end,
-		},
-		run_node = {
-			entering_state = function(self)
-				local node<const> = story[self.node_id]
-				local just_finished_combat<const> = self.just_finished_combat
-				self.events:emit('story.node.enter', { node_id = self.node_id, node_kind = node.kind, bg = node.bg, label = node.label, just_finished_combat = just_finished_combat, last_combat_monster_imgid = self.last_combat_monster_imgid })
-				self.just_finished_combat = false
-				if node.kind == 'transition' then
-					return '/transition'
-				end
-				if dialogue_node_kinds[node.kind] then
-					return '/dialogue'
-				end
-				if node.kind == 'ending' then
-					return '/ending'
-				end
-				if node.kind == 'bg_only' then
-					return '/bg_only'
-				end
-				if node.kind == 'choice' then
-					return '/choice'
-				end
-				if node.kind == 'fade' then
-					return '/fade'
-				end
-				if node.kind == 'combat' then
-					self.combat_director:start_combat(self.node_id, self.skip_combat_fade_in)
-					self.events:emit('combat.start', { node_id = self.node_id, monster_imgid = node.monster_imgid, skip_fade_in = self.skip_combat_fade_in })
-					self.skip_combat_fade_in = false
-					return '/combat_wait'
-				end
-			end,
-		},
-		combat_wait = {
-			on = {
-				['combat.end'] = {
-					emitter = combat_director_definition_id,
-					go = function(self, _state, event)
-						self.node_id = event.next_node_id
-						self.just_finished_combat = true
-						self.last_combat_monster_imgid = event.monster_imgid
-						self.skip_transition_fade = event.skip_transition_fade
-						self:apply_effects(event.rewards)
-						return '/run_node'
-					end,
-				},
-			},
-		},
-	}
-
-	transition_module.register_states(states)
-	dialogue_module.register_states(states)
-
-	fsm_library.register(story_director_fsm_id, {
-		initial = 'boot',
-		states = states,
-	})
-end
-local register_director<const> = function()
-	prefab.define({
-		def_id = director_def_id,
-		class = director,
-		components = {
-			custom_visual_component.new,
-			timeline_component.new,
-			fsm_component.factory({ story_director_fsm_id }),
-		},
-		defaults = {
-			player_index = 1,
-			node_id = start_node,
-			page_index = 1,
-			choice_index = 1,
-			inline_next = nil,
-			transition_center_x = 0,
-			transition_target_bg = story.title.bg,
-			transition_style = 'dialogue',
-			transition_palette = p3_transition_palette_dialogue,
-			transition_needs_post_fade = false,
-			fade_target_bg = story.title.bg,
-			fade_style = 'dialogue',
-			fade_palette = p3_transition_palette_dialogue,
-			skip_combat_fade_in = false,
-			skip_transition_fade = false,
-			fade_hold_black = false,
-			just_finished_combat = false,
-		},
-	})
-	prefab.define({
-			def_id = background_definition_id,
-		class = surface_object_class,
-		components = { surface_component.new },
-	})
-	prefab.define({
-			def_id = text_main_definition_id,
-		class = text_object,
-		base = text_object,
-	})
-	prefab.define({
-			def_id = text_choice_definition_id,
-		class = text_object,
-		base = text_object,
-	})
-	prefab.define({
-			def_id = text_prompt_definition_id,
-		class = text_object,
-		base = text_object,
-	})
-	prefab.define({
-			def_id = text_transition_definition_id,
-		class = text_object,
-		base = text_object,
-	})
-	prefab.define({
-			def_id = text_results_definition_id,
-		class = text_object,
-		base = text_object,
-	})
-	prefab.define({
-			def_id = monster_definition_id,
-		class = sprite_object,
-		base = sprite_object,
-	})
-	prefab.define({
-			def_id = maya_a_definition_id,
-		class = sprite_object,
-		base = sprite_object,
-	})
-	prefab.define({
-			def_id = maya_b_definition_id,
-		class = sprite_object,
-		base = sprite_object,
-	})
-	prefab.define({
-			def_id = all_out_definition_id,
-		class = surface_object_class,
-		components = { surface_component.new },
-	})
-	prefab.define({
-			def_id = all_out_portrait_definition_id,
-		class = sprite_object,
-		base = sprite_object,
-	})
-end
+local director_module<const> = require('director')
+local presentation<const> = require('presentation')
+local scene_library<const> = require('cartlib/world/scene_library')
+local dialogue_scene<const> = require('scenes/dialogue')
+local combat_scene<const> = require('scenes/combat')
+local transition_scene<const> = require('scenes/transition')
 
 local function init<init>()
+	presentation.register()
 	combat_module.define_fsm()
-	build_director_fsm()
 	combat_module.register_director()
-	register_director()
+	director_module.register()
+	dialogue_scene.register()
+	combat_scene.register()
+	transition_scene.register()
 end
 
 function new_game()
 	world:clear()
-	local w<const> = screen_width
-	local h<const> = screen_height
-	local line_height<const> = 16
-	local prompt_lines<const> = 1
-	local choice_lines<const> = 4
-	local main_lines<const> = 4
-	local prompt_top<const> = h - (line_height * prompt_lines)
-	local choice_top<const> = h - (line_height * (prompt_lines + choice_lines))
-	local main_top<const> = h - (line_height * (prompt_lines + choice_lines + main_lines))
-
-	local background<const> = world:spawn(background_definition_id, {
-		id = background_definition_id,
-		pos = { x = 0, y = 0, z = 0 },
-		visible = false,
-	})
-
-	local horizontal_margin<const> = w / 10
-	local text_main<const> = world:spawn(text_main_definition_id, {
-		id = text_main_definition_id,
-		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = main_top, bottom = choice_top },
-		blank_lines = 1,
-		pos = { z = 1000 },
-	})
-	local text_choice<const> = world:spawn(text_choice_definition_id, {
-		id = text_choice_definition_id,
-		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = choice_top, bottom = prompt_top },
-		blank_lines = 1,
-		pos = { z = 1001 },
-		highlight_move_enabled = true,
-		highlight_pulse_enabled = true,
-		highlight_jitter_enabled = false,
-	})
-	local text_prompt<const> = world:spawn(text_prompt_definition_id, {
-		id = text_prompt_definition_id,
-		dimensions = { left = horizontal_margin, right = w - horizontal_margin, top = prompt_top, bottom = h },
-		blank_lines = 1,
-		pos = { z = 1002 },
-	})
-	local text_transition<const> = world:spawn(text_transition_definition_id, {
-		id = text_transition_definition_id,
-		dimensions = { left = 0, right = w, top = (h / 2) - (line_height * 2), bottom = (h / 2) + (line_height * 2) },
-		blank_lines = 1,
-		pos = { z = 900 },
-		text_color = p3_ink_color,
-		normal_bg_color = p3_white_color,
-	})
-	local text_results<const> = world:spawn(text_results_definition_id, {
-		id = text_results_definition_id,
-		dimensions = { left = horizontal_margin, right = w - (w / 3), top = line_height * 2, bottom = h - (h / 3) },
-		blank_lines = 1,
-		pos = { z = 1003 },
-	})
-
+	local dialogue<const> = scene_library.instantiate(dialogue_scene.id)
+	local combat<const> = scene_library.instantiate(combat_scene.id)
+	local transition<const> = scene_library.instantiate(transition_scene.id)
+	local background<const> = dialogue.background
+	local text_main<const> = dialogue.main
+	local text_choice<const> = dialogue.choice
+	local text_prompt<const> = dialogue.prompt
+	local text_transition<const> = transition.caption
+	local text_results<const> = combat.results
+	local monster<const> = combat.monster
+	local maya_a<const> = combat.maya_a
+	local maya_b<const> = combat.maya_b
+	local all_out<const> = combat.all_out
+	local all_out_portrait<const> = combat.portrait
 	local texts<const> = { text_main, text_choice, text_prompt, text_transition, text_results }
 	local story_texts<const> = { text_main, text_choice, text_prompt, text_transition }
 	local choice_prompt_texts<const> = { text_choice, text_prompt }
 	local transition_result_texts<const> = { text_transition, text_results }
-
-	local monster<const> = world:spawn(monster_definition_id, {
-		id = monster_definition_id,
-		pos = { x = 0, y = 0, z = 200 },
-		imgid = 'monster_snoozer',
-		visible = false,
-	})
-	local maya_a<const> = world:spawn(maya_a_definition_id, {
-		id = maya_a_definition_id,
-		pos = { x = 0, y = 0, z = combat_maya_z },
-		imgid = 'maya_a',
-		visible = false,
-	})
-	local maya_b<const> = world:spawn(maya_b_definition_id, {
-		id = maya_b_definition_id,
-		pos = { x = 0, y = 0, z = combat_maya_z },
-		imgid = 'maya_b',
-		visible = false,
-	})
-	local all_out<const> = world:spawn(all_out_definition_id, {
-		id = all_out_definition_id,
-		pos = { x = 0, y = 0, z = 800 },
-		imgid = 'all_out',
-		visible = false,
-	})
-	local all_out_portrait<const> = world:spawn(all_out_portrait_definition_id, {
-		id = all_out_portrait_definition_id,
-		pos = { x = 0, y = 0, z = 750 },
-		imgid = 'maya_v_s',
-		visible = false,
-	})
-
 	local combat_visuals<const> = { monster, maya_a, maya_b, all_out, all_out_portrait }
-	local transition_visual<const> = create_transition_visuals()
-	local combat_results_visual<const> = create_rect_state()
-	local combat_director_instance<const> = world:spawn(combat_director_definition_id, {
-		id = combat_director_definition_id,
+	local transition_visual<const> = {
+		overlay = transition.overlay,
+		panels = { transition.upper, transition.middle, transition.lower },
+		accent = transition.accent,
+	}
+	local combat_results_visual<const> = combat.cover
+	local combat_director_instance<const> = world:spawn(combat_module.director_definition_id, {
+		id = combat_module.director_definition_id,
 		background = background,
 		text_main = text_main,
 		text_choice = text_choice,
@@ -411,8 +78,8 @@ function new_game()
 		transition_visual = transition_visual,
 		combat_results_visual = combat_results_visual,
 	})
-	world:spawn(director_def_id, {
-		id = director_def_id,
+	world:spawn(director_module.definition_id, {
+		id = director_module.definition_id,
 		combat_director = combat_director_instance,
 		background = background,
 		text_main = text_main,
