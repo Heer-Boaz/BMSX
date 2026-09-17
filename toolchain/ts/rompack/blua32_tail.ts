@@ -47,7 +47,7 @@ export type RomAssetEdit = readonly [
 export type Blua32PublicAssetChanges = {
 	assetEdits?: ReadonlyArray<RomAssetEdit>;
 	assetAdditions?: ReadonlyArray<RomAsset>;
-	assetReplacements?: ReadonlyMap<AssetId, RomAsset>;
+	assetReplacements?: ReadonlyMap<AssetType, ReadonlyMap<AssetId, RomAsset>>;
 };
 
 export function layoutBlua32PublicAssets(
@@ -85,7 +85,7 @@ export function layoutBlua32PublicAssets(
 			}
 		}
 		const isEdited = assetEdit !== undefined;
-		const replacement = changes?.assetReplacements?.get(entry.resid);
+		const replacement = changes?.assetReplacements?.get(entry.type)?.get(entry.resid);
 		const movePayloads = isEdited || replacement !== undefined
 			|| (layer.id === 'cart' && (
 				(entry.start != null && entry.start >= imageOffset)

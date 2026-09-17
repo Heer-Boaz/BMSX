@@ -4723,6 +4723,10 @@ after asynchronous workspace reads; later typing belongs to a later request.
 AEM's existing save/apply route likewise records its authored source at the
 actual asset installation. These source/application records remain exclusively
 in IDE tooling, outside cartridge ABI, machine state and rewind snapshots.
+ROM source replacement uses the existing `(asset type, asset id)` identity:
+updating a Lua module cannot replace a same-named texture or other asset. New
+Lua sources are additions unless that Lua asset is already packed. The source
+text and parsed module are published together by the source-build owner.
 The workflow contract and production references are in
 [`studio_development_workflows.md`](studio_development_workflows.md).
 

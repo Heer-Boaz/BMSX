@@ -16,8 +16,11 @@ export function buildLuaSourceAssetChanges(
 	interpreter: LuaInterpreter,
 	assetEdits: readonly RomAssetEdit[] | undefined,
 ): Blua32PublicAssetChanges {
-	const packedIds = new Set(layer.index.entries.map(asset => asset.resid));
-	const assetReplacements = new Map<string, RomAsset>();
+	const packedLuaIds = new Set<string>();
+	for (const asset of layer.index.entries) {
+		if (asset.type === 'lua') packedLuaIds.add(asset.resid);
+	}
+	const luaReplacements = new Map<string, RomAsset>();
 	const assetAdditions: RomAsset[] = [];
 	for (const record of registry.records) {
 		if (!record.program_module || record.generated) continue;
@@ -30,8 +33,8 @@ export function buildLuaSourceAssetChanges(
 			buffer: sourceEncoder.encode(source),
 			compiled_buffer: encodeBinary(interpreter.compileChunk(source, record.module_path)),
 		};
-		if (packedIds.has(record.resid)) assetReplacements.set(record.resid, asset);
+		if (packedLuaIds.has(record.resid)) luaReplacements.set(record.resid, asset);
 		else assetAdditions.push(asset);
 	}
-	return { assetEdits, assetReplacements, assetAdditions };
+	return { assetEdits, assetReplacements: new Map([['lua', luaReplacements]]), assetAdditions };
 }
