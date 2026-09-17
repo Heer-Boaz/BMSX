@@ -300,16 +300,26 @@ local list_entries<const> = function(roms, kind)
 	return out
 end
 
-local system_rom<const> = parse_rom(read_header(0x00000000))
-local active_roms<const> = { parse_rom(read_header(cart_rom_base)) }
-local active_plus_system_roms<const> = { active_roms[1], system_rom }
-local system_roms<const> = { system_rom }
+local active_roms<const> = {}
+local active_plus_system_roms<const> = {}
+local system_roms<const> = {}
 
 function rom_dir.reload_cartridge_directory()
 	local cart_rom<const> = parse_rom(read_header(cart_rom_base))
 	active_roms[1] = cart_rom
 	active_plus_system_roms[1] = cart_rom
 end
+
+local function init<init>()
+	-- Source reload moves the TOC. Renew its address indices and decoded records
+	-- before dependent modules prepare, while retaining their live game objects.
+	local system_rom<const> = parse_rom(read_header(0x00000000))
+	system_roms[1] = system_rom
+	active_plus_system_roms[2] = system_rom
+	rom_dir.reload_cartridge_directory()
+end
+
+init()
 
 function rom_dir.resource(id)
 	local rom<const>, entry_base<const> = find_in_roms(active_plus_system_roms, id)

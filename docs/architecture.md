@@ -1312,6 +1312,15 @@ batch, symbols, diagnostics, and TOC as one medium; it does not perform a
 sequence of partially visible asset installs or maintain a parallel host-only
 asset override.
 
+Guest directory indices and decoded records belong to `cartlib/rom_dir.lua`.
+Its ordinary cold initialization and dependency-ordered `<init>` preparation
+rebuild those derived caches from the installed system and cartridge headers.
+This refresh happens before dependent preparation after Hot Resume, because a
+retained raw TOC address names the previous medium even when an asset payload
+did not move. Lookups perform no revision polling; live scene and actor identity
+is independent of the directory cache. Explicit AEM media replacement retains
+its existing cartridge-directory refresh at that replacement boundary.
+
 System media has the separate fixed asset partition at ROM offset
 `0x00400000`, beyond the maximum system executable end. A source-only system
 revision retains every public system-asset payload at its exact physical
