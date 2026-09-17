@@ -35,7 +35,7 @@ function __bmsx_host_test.update()
 		local combat<const> = registry:get('p3.combat.director')
 		local owner = director
 		if pose.node then
-			director.node_id = pose.node
+			director.session.node_id = pose.node
 			director.state_machines:transition_to('/run_node')
 			director.text_main:finish_typing()
 		else

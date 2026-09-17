@@ -1,4 +1,3 @@
-local world<const> = require('cartlib/world/world')
 local enemy<const> = require('enemies/enemy')
 require('constants')
 
@@ -8,7 +7,7 @@ foe.destroyed_event = 'enemy.small.destroyed'
 setmetatable(foe, { __index = enemy })
 
 function foe:on_destroyed(projectile)
-	world:spawn(ids_small_explosion_def, {
+	self.scene:spawn(ids_small_explosion_def, {
 		stage = self.stage,
 		drop_definition_id = self.drop_definition_id,
 		pos = { x = self.x, y = self.y },

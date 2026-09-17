@@ -43,7 +43,7 @@ function __bmsx_host_test.update()
 
 	if test.phase == 'spawn' then
 		stage.actor_spawn_index = stage.actor_spawn_count + 1
-		local snowman<const> = world:spawn(ids_sneeuwpop_def, {
+		local snowman<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_sneeuwpop_def, {
 			stage = stage,
 			pos = { x = 100, y = 48 },
 		})
@@ -87,7 +87,7 @@ function __bmsx_host_test.update()
 		assert(ray.x == x and ray.y == y,
 			'ray contraction mutated world position to encode visual geometry')
 
-		local rook<const> = world:spawn(ids_rook_def, {
+		local rook<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_rook_def, {
 			stage = stage,
 			rise_distance = 0,
 			pos = { x = 240, y = 112 },

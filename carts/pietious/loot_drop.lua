@@ -5,7 +5,6 @@ local sprite_object<const> = require('cartlib/sprite')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
-local world_object<const> = require('cartlib/world/world_object')
 
 local loot_drop<const> = {}
 loot_drop.__index = loot_drop
@@ -44,10 +43,6 @@ local define_loot_drop_fsm<const> = function()
 					self:mark_for_disposal()
 				end
 			end,
-			['room.switched'] = {
-				emitter = 'pietolon',
-				go = world_object.mark_for_disposal,
-			},
 		},
 		states = {
 			active = {},

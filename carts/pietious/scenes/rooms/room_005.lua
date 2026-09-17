@@ -6,11 +6,10 @@ function room_scene.register()
 	scene_library.register(room_scene.id, {
 		objects = {
 			{
-				member_id = 'enemy_01',
+				member_id = 'enemy_005_01',
 				definition_id = 'enemy.marspeinenaardappel',
 				conditions = {},
 				options = {
-					id = 'enemy_005_01',
 					space_id = 'main',
 					pos = { x = 80, y = 40, z = 140 },
 					damage = 2,
@@ -19,11 +18,10 @@ function room_scene.register()
 				},
 			},
 			{
-				member_id = 'enemy_02',
+				member_id = 'enemy_005_02',
 				definition_id = 'enemy.marspeinenaardappel',
 				conditions = {},
 				options = {
-					id = 'enemy_005_02',
 					space_id = 'main',
 					pos = { x = 112, y = 40, z = 140 },
 					damage = 2,
@@ -32,11 +30,10 @@ function room_scene.register()
 				},
 			},
 			{
-				member_id = 'enemy_03',
+				member_id = 'enemy_005_03',
 				definition_id = 'enemy.marspeinenaardappel',
 				conditions = {},
 				options = {
-					id = 'enemy_005_03',
 					space_id = 'main',
 					pos = { x = 24, y = 72, z = 140 },
 					damage = 2,
@@ -45,11 +42,10 @@ function room_scene.register()
 				},
 			},
 			{
-				member_id = 'enemy_04',
+				member_id = 'enemy_005_04',
 				definition_id = 'enemy.marspeinenaardappel',
 				conditions = {},
 				options = {
-					id = 'enemy_005_04',
 					space_id = 'main',
 					pos = { x = 80, y = 72, z = 140 },
 					damage = 2,
@@ -58,11 +54,10 @@ function room_scene.register()
 				},
 			},
 			{
-				member_id = 'enemy_05',
+				member_id = 'enemy_005_05',
 				definition_id = 'enemy.marspeinenaardappel',
 				conditions = {},
 				options = {
-					id = 'enemy_005_05',
 					space_id = 'main',
 					pos = { x = 120, y = 112, z = 140 },
 					damage = 2,
@@ -71,11 +66,10 @@ function room_scene.register()
 				},
 			},
 			{
-				member_id = 'enemy_06',
+				member_id = 'enemy_005_06',
 				definition_id = 'enemy.marspeinenaardappel',
 				conditions = {},
 				options = {
-					id = 'enemy_005_06',
 					space_id = 'main',
 					pos = { x = 24, y = 152, z = 140 },
 					damage = 2,

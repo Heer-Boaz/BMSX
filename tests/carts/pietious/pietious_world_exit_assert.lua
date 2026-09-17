@@ -9,7 +9,7 @@ __bmsx_host_test = {
 
 function __bmsx_host_test.ready()
 	return registry:get('c') ~= nil
-		and registry:get('room') ~= nil
+		and registry:get('c').room ~= nil
 		and registry:get('pietolon') ~= nil
 		and registry:get('d') ~= nil
 end
@@ -27,7 +27,7 @@ function __bmsx_host_test.update()
 	assert(test.frames < 600, 'world exit timed out phase=' .. test.phase)
 
 	local castle<const> = registry:get('c')
-	local room<const> = registry:get('room')
+	local room = registry:get('c').room
 	local player<const> = registry:get('pietolon')
 	local director<const> = registry:get('d')
 	if test.room_state == nil then

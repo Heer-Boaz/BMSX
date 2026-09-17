@@ -26,7 +26,7 @@ end
 
 function __bmsx_host_test.ready()
 	return registry:get('c') ~= nil
-		and registry:get('room') ~= nil
+		and registry:get('c').room ~= nil
 		and registry:get('pietolon') ~= nil
 		and registry:get('d') ~= nil
 		and registry:get('transition') ~= nil
@@ -39,14 +39,14 @@ function __bmsx_host_test.update()
 	assert(test.frames < 600, 'death restart scenario timed out phase=' .. test.phase)
 
 	local castle<const> = registry:get('c')
-	local room<const> = registry:get('room')
+	local room = registry:get('c').room
 	local player<const> = registry:get('pietolon')
 	local director<const> = registry:get('d')
 	if test.phase == 'enter_world' then
 		if world.active_space_id ~= 'main' then
 			return false
 		end
-		player.inventory_items.map_world1 = false
+		player.status.inventory_items.map_world1 = false
 		local switch<const> = castle:enter_world('world_1')
 		player:apply_spawn_position(switch)
 		player:emit_room_switched(switch.from_room_number, switch.to_room_number, 'world_enter')
@@ -61,10 +61,10 @@ function __bmsx_host_test.update()
 			'death scenario did not enter the world entrance room')
 		local item_def<const> = room.items[1]
 		assert(item_def.options.item_type == 'map_world1', 'world entrance room map item is missing')
-		local item<const> = registry:get(item_def.options.id)
+		local item<const> = registry:get('c').room.scene.members[item_def.member_id]
 		assert(item ~= nil, 'world entrance room map item did not spawn')
 		progression.set(castle, 'staff1destroyed', true)
-		test.item_id = item_def.options.id
+		test.item_id = item_def.member_id
 		test.item = item
 		test.dying_state = player.state_machines:bind_state_path('/dying')
 		test.quiet_state = player.state_machines:bind_state_path('/quiet')
@@ -73,7 +73,7 @@ function __bmsx_host_test.update()
 		local ui<const> = registry:get('ui')
 		ui.hud_health_level = 0
 		ui.hud_health_target = 0
-		player.health = 0
+		player.status.health = 0
 		test.pre_dying_imgid = player.sprite_component.imgid
 		player:start_dying()
 		assert(player.state_machines:matches_state(test.dying_state), 'player did not enter dying state')
@@ -97,7 +97,7 @@ function __bmsx_host_test.update()
 		if director.state_machines:matches_state(test.death_curtain_state) then
 			test.saw_curtain = true
 			assert(test.dying_pose == #dying_imgids, 'death animation ended before its final pose')
-			assert(registry:get(test.item_id) == test.item,
+			assert(registry:get('c').room.scene.members[test.item_id] == test.item,
 				'death curtain disposed the room before it finished closing')
 			test.last_curtain_width = director.effects.curtain.width
 			test.phase = 'curtain'
@@ -112,7 +112,7 @@ function __bmsx_host_test.update()
 		assert(director.effects.curtain.width >= test.last_curtain_width,
 			'death curtain moved backwards while closing')
 		test.last_curtain_width = director.effects.curtain.width
-		assert(registry:get(test.item_id) == test.item,
+		assert(registry:get('c').room.scene.members[test.item_id] == test.item,
 			'death curtain disposed the room before it finished closing')
 		return false
 	end
@@ -128,7 +128,7 @@ function __bmsx_host_test.update()
 			'game-over text differs from the original Pietious screen')
 		test.saw_transition = true
 		test.death_screen_frames = test.death_screen_frames + 1
-		assert(registry:get(test.item_id) == nil,
+		assert(registry:get('c').room.scene.members[test.item_id] == nil,
 			'room object was admitted before the death restart barrier completed')
 		test.phase = 'restart'
 		return false
@@ -145,14 +145,14 @@ function __bmsx_host_test.update()
 	assert(player.x == transition.world_spawn_x and player.y == transition.world_spawn_y,
 		'player did not respawn at the world entrance')
 	assert(player.facing == transition.world_spawn_facing, 'player respawn facing is wrong')
-	assert(player.health == player.max_health, 'player health was not restored after death')
+	assert(player.status.health == player.status.max_health, 'player health was not restored after death')
 	local ui<const> = registry:get('ui')
-	assert(ui.hud_health_level == player.max_health, 'health bar did not snap to restored health')
-	assert(ui.hud_health_target == player.max_health, 'health bar retained a stale target after restart')
+	assert(ui.hud_health_level == player.status.max_health, 'health bar did not snap to restored health')
+	assert(ui.hud_health_target == player.status.max_health, 'health bar retained a stale target after restart')
 	assert(player.state_machines:matches_state(test.quiet_state), 'player did not return to quiet after death')
 	assert(progression.get(castle, 'staff1destroyed'),
 		'death incorrectly reset defeat retained for the current world visit')
-	local item<const> = registry:get(test.item_id)
+	local item<const> = registry:get('c').room.scene.members[test.item_id]
 	assert(item ~= nil, 'world entrance room object did not respawn after death')
 	assert(item ~= test.item, 'death restart reused the disposed room object')
 	assert(not castle.room_enter_pending, 'death restart did not publish room entry')

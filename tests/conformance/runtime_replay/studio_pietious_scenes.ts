@@ -13,6 +13,11 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 		const entries = guest.readStringMember(registry, '_entries_by_id');
 		return entries === null ? null : guest.readStringMember(entries, id);
 	};
+	const roomMember = (key: string) => {
+		const room = guest.readStringMember(registered('c'), 'room');
+		const scene = guest.readStringMember(room, 'scene');
+		return guest.readStringMember(guest.readStringMember(scene, 'members'), key);
+	};
 	const world = () => guest.global(buildModuleExportSlotName('cartlib/world/world', []));
 	const space = () => guest.formatValue(guest.readStringMember(world(), 'active_space_id'));
 	const playing = () => space() === 'main' && guest.readStringMember(world(), 'gameplay_clock_running') === true;
@@ -33,7 +38,7 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	await editPosition(test, await openScene(test, 'intro', 2), 1, 0, 48);
 	await editPosition(test, await openScene(test, 'gameplay', 2), 0, 0, 168);
 	await editPosition(test, await openScene(test, 'rooms/room_002', 5), 3, 0, 112);
-	await editPosition(test, await openScene(test, 'effects', 3), 2, 0, 16);
+	await editPosition(test, await openScene(test, 'effects', 4), 3, 0, 16);
 	await editPosition(test, await openScene(test, 'inventory', 12), 3, 0, 136);
 	check(guest.readStringMember(originalLogo, 'x') === 40, 'saving placement leaves the outgoing world untouched');
 	await test.capture?.('inventory-editor');
@@ -42,7 +47,7 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 		&& registered('d') !== null && registered('intro.logo') !== originalLogo
 		&& !runtime.completionCallPending(), 'saved scenes boot a new Pietious world');
 	check(guest.readStringMember(registered('intro.logo'), 'x') === 48, 'intro uses the edited logo anchor');
-	check(guest.readStringMember(registered('pietolon'), 'spawn_x') === 168, 'respawn anchor comes from the player scene');
+	check(guest.readStringMember(guest.readStringMember(registered('pietolon'), 'status'), 'spawn_x') === 168, 'respawn anchor comes from the player scene');
 	check(guest.readStringMember(registered('effects.victory_caption'), 'x') === 16,
 		'the director retains the edited victory caption placement');
 	const logo = guest.readStringMember(registered('intro.logo'), 'sprite_component');
@@ -57,8 +62,8 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	await until(() => guest.readStringMember(registered('c'), 'current_room_number') === 2,
 		'walk from the initial room into the edited room');
 	test.setKey('ArrowRight', false);
-	await until(() => playing() && registered('rock_002_01') !== null, 'room admission publishes its placed actors');
-	check(guest.readStringMember(registered('rock_002_01'), 'x') === 112, 'room admission uses the saved rock placement');
+	await until(() => playing() && roomMember('rock_002_01') !== null, 'room admission publishes its placed actors');
+	check(guest.readStringMember(roomMember('rock_002_01'), 'x') === 112, 'room admission uses the saved rock placement');
 	// State admission precedes draw submission. Advance one complete two-VBlank
 	// update/render pair and its scanout before capturing the game view.
 	for (let frame = 0; frame < 4; frame += 1) await test.frame();
@@ -72,7 +77,7 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	await act('Enter', () => playing() && guest.readStringMember(registered('c'), 'current_room_number') === 1,
 		'Enter activates the real halo and returns to the first room');
 	check(guest.readStringMember(registered('pietolon'), 'x') === 168, 'halo returns to the authored player anchor');
-	check(registered('rock_002_01') === null, 'room departure disposes the outgoing scene actor');
+	check(roomMember('rock_002_01') === null, 'room departure disposes the outgoing scene actor');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
 	const reopened = await openScene(test, 'rooms/room_002', 5);

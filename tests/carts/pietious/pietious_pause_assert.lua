@@ -14,7 +14,7 @@ end
 
 function __bmsx_host_test.ready()
 	return registry:get('c') ~= nil
-		and registry:get('room') ~= nil
+		and registry:get('c').room ~= nil
 		and registry:get('pietolon') ~= nil
 		and registry:get('d') ~= nil
 end
@@ -27,7 +27,7 @@ function __bmsx_host_test.update()
 	assert(test.frames < 1500, 'pause scenario timed out phase=' .. test.phase)
 
 	local castle<const> = registry:get('c')
-	local room<const> = registry:get('room')
+	local room = registry:get('c').room
 	local player<const> = registry:get('pietolon')
 	local director<const> = registry:get('d')
 	if test.room_state == nil then
@@ -78,7 +78,7 @@ function __bmsx_host_test.update()
 		player.x = 32
 		player.y = 152
 		player:apply_presentation_state()
-		world:spawn('enemy.crossfoe', {
+		registry:get('c').room.scene:spawn('enemy.crossfoe', {
 			id = 'probe.pause.enemy',
 			space_id = 'main',
 			castle = castle,
@@ -86,7 +86,7 @@ function __bmsx_host_test.update()
 			player = player,
 			pos = { x = 160, y = 96, z = 110 },
 		}).cross_state = 'flying_right'
-		world:spawn('pepernoot_projectile', {
+		registry:get('c').room.scene:spawn('pepernoot_projectile', {
 			id = 'probe.pause.projectile',
 			space_id = 'main',
 			room = room,

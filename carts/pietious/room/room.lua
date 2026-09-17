@@ -5,7 +5,6 @@ local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
 require('constants')
 local castle_map<const> = require('castle/map')
 local timeline<const> = require('cartlib/timeline/timeline')
-local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local tile_layer_component<const> = require('cartlib/component/tile_layer_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 
@@ -408,10 +407,10 @@ local build_logic_rows<const> = function(room_state)
 		logic_rows[y] = room_state.map_rows[y]
 	end
 
-	local destroyed_rock_ids<const> = room_state.destroyed_rock_ids
+	local destroyed_rock_ids<const> = room_state.progress.destroyed_rocks
 	for i = 1, #room_state.rocks do
 		local rock<const> = room_state.rocks[i]
-		if not destroyed_rock_ids[rock.options.id] then
+		if not destroyed_rock_ids[rock.member_id] then
 			local tx0<const> = ((rock.options.pos.x - room_state.tile_origin_x) // room_state.tile_size) + 1
 			local ty0<const> = ((rock.options.pos.y - room_state.tile_origin_y) // room_state.tile_size) + 1
 			for dy = 1, rock_tile_height do
@@ -566,12 +565,6 @@ end
 local room_object<const> = {}
 room_object.__index = room_object
 
-function room_object:load_room(room_number)
-	local target_room_number<const> = room_number or castle_map.start_room_number
-	apply_room_template(self, castle_map.room_templates[target_room_number])
-	self:rebuild_room_tiles()
-end
-
 function room_object:patch_rows(rows)
 	local changed
 	for i = 1, #rows do
@@ -637,15 +630,9 @@ function room_object:base_collision_flags_at_tile(tx, ty)
 end
 
 function room_object:mark_rock_destroyed(rock_id)
-	self.destroyed_rock_ids[rock_id] = true
+	self.progress.destroyed_rocks[rock_id] = true
 	rebuild_room_logic(self)
 	self:rebuild_room_tiles()
-end
-
-function room_object:reset_rock_drops()
-	for id in pairs(self.rock_drops) do
-		self.rock_drops[id] = nil
-	end
 end
 
 function room_object:water_kind_at_world(world_x, world_y)
@@ -826,8 +813,6 @@ function room_object:switch_room(direction)
 		}
 	end
 
-	apply_room_template(self, castle_map.room_templates[target_room_number])
-	self:rebuild_room_tiles()
 	return {
 		from_room_number = from_room_number,
 		to_room_number = target_room_number,
@@ -835,23 +820,7 @@ function room_object:switch_room(direction)
 	}
 end
 
-local draw_room_effect<const> = function(component, draw)
-	local room<const> = component.parent
-	if not room:has_tag('r.seal_fx') then
-		return
-	end
-	local director<const> = room.director
-	if not director:has_tag('d.seal.flash') then
-		return
-	end
-	-- MoG T9F68 writes color 14 to VDP register 7. Retain that backdrop
-	-- beneath the Graphic 2 surfaces rather than blending over their pixels.
-	draw:rect(0, 0, screen_width, screen_height, 0xffcccccc)
-end
-
 function room_object:ctor()
-	self.destroyed_rock_ids = {}
-	self.rock_drops = {}
 	self.wall_instances = {}
 	self.draaideur_instances = {}
 	self.lithograph_instances = {}
@@ -883,9 +852,11 @@ function room_object:ctor()
 	})
 	self:add_component(self.water_tile_layer)
 	self.tiles_visible = false
-	local room_effect<const> = self:get_component(custom_visual_component)
-	room_effect:set_offset_z(draw_z_room_backdrop)
-	room_effect:set_draw_function(draw_room_effect)
+end
+
+function room_object:onspawn()
+	apply_room_template(self, castle_map.room_templates[self.room_number])
+	self:rebuild_room_tiles()
 end
 
 function room_object:hide_room_tiles()
@@ -1000,27 +971,9 @@ function room_object:sync_water_surface_frame(water_surface_frame)
 	self.last_water_surface_frame = water_surface_frame
 end
 
-local room_runtime_state_name<const> = function(room_state)
-	local world_number<const> = room_state.world_number or 0
-	if world_number ~= 0 then
-		local castle<const> = room_state.castle
-		if castle:has_tag('c.daemon.fight') then
-			return 'daemon_fight'
-		end
-		if castle:has_tag('c.seal.active') then
-			return 'seal'
-		end
-		if castle:has_tag('c.seal.sequence') then
-			return 'seal'
-		end
-		return 'world'
-	end
-	return 'castle'
-end
-
 local define_room_fsm<const> = function()
 	fsm_library.register('room', {
-		initial = 'mode_state',
+		initial = 'tile_visibility',
 		on = {
 			['room.switched'] = {
 				emitter = 'pietolon',
@@ -1030,94 +983,6 @@ local define_room_fsm<const> = function()
 			},
 		},
 		states = {
-			mode_state = {
-				initial = 'room',
-				on = {
-					['room'] = '/mode_state/room',
-					['transition'] = '/mode_state/transition',
-					['halo'] = '/mode_state/halo',
-					['shrine'] = '/mode_state/shrine',
-					['item'] = '/mode_state/item',
-					['lithograph'] = '/mode_state/lithograph',
-					['title'] = '/mode_state/title',
-					['intro'] = '/mode_state/intro',
-					['story'] = '/mode_state/story',
-					['epilogue'] = '/mode_state/epilogue',
-					['end_demo'] = '/mode_state/end_demo',
-					['victory_dance'] = '/mode_state/victory_dance',
-					['death'] = '/mode_state/death',
-					['seal_dissolution'] = '/mode_state/seal_dissolution',
-					['daemon_appearance'] = '/mode_state/daemon_appearance',
-				},
-				states = {
-					room = {
-						entering_state = function(self)
-							self.events:emit('room_state.sync')
-						end,
-					},
-					transition = {},
-					halo = {},
-					shrine = {},
-					item = {},
-					lithograph = {},
-					title = {},
-					intro = {},
-					story = {},
-					epilogue = {},
-					end_demo = {},
-					victory_dance = {},
-					death = {},
-					seal_dissolution = {},
-					daemon_appearance = {},
-				},
-			},
-			room_state = {
-				is_concurrent = true,
-				initial = 'unknown',
-				on = {
-					['room_state.sync'] = function(self)
-						return '/room_state/' .. room_runtime_state_name(self)
-					end,
-					['room_state.changed'] = function(self)
-						return '/room_state/' .. room_runtime_state_name(self)
-					end,
-				},
-				states = {
-					unknown = {},
-					castle = {},
-					world = {},
-					seal = {},
-					daemon_fight = {},
-				},
-			},
-			fx_state = {
-				is_concurrent = true,
-				initial = 'active',
-				on = {
-					['seal_dissolution'] = '/fx_state/seal_fx',
-					['daemon_appearance'] = '/fx_state/daemon_fx',
-					['room'] = '/fx_state/active',
-					['transition'] = '/fx_state/active',
-					['halo'] = '/fx_state/active',
-					['shrine'] = '/fx_state/active',
-					['item'] = '/fx_state/active',
-					['lithograph'] = '/fx_state/active',
-					['title'] = '/fx_state/active',
-					['intro'] = '/fx_state/active',
-					['story'] = '/fx_state/active',
-					['epilogue'] = '/fx_state/active',
-					['end_demo'] = '/fx_state/active',
-					['victory_dance'] = '/fx_state/active',
-					['death'] = '/fx_state/active',
-				},
-				states = {
-					active = {},
-					seal_fx = {
-						tags = { 'r.seal_fx' },
-					},
-					daemon_fx = {},
-				},
-			},
 			water_state = {
 				is_concurrent = true,
 				initial = 'active',
@@ -1138,8 +1003,9 @@ local define_room_fsm<const> = function()
 				},
 			},
 			tile_visibility = {
-				is_concurrent = true,
-				initial = 'hidden',
+				-- A room is presentable as soon as it is constructed, including
+				-- while paused. Modal flow events explicitly hide/reveal it.
+				initial = 'visible',
 				on = room_tile_visibility_on,
 				states = {
 					hidden = {
@@ -1159,7 +1025,6 @@ local register_room_definition<const> = function()
 		def_id = 'room',
 		class = room_object,
 		components = {
-			custom_visual_component.new,
 			timeline_component.new,
 			fsm_component.factory({ 'room' }),
 		},

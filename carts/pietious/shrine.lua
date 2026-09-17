@@ -13,7 +13,8 @@ local shrine<const> = {}
 shrine.__index = shrine
 
 function shrine:ctor()
-	self.members = scene_library.instantiate(scene.id)
+	self.presentation = scene_library.instantiate(scene.id)
+	self.members = self.presentation.members
 	self.text_component = self.members.caption.text_component
 end
 

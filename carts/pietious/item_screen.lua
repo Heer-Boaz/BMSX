@@ -47,9 +47,10 @@ local item_screen_mode_exit_events<const> = {
 }
 
 function item_screen:ctor()
-	self.members = scene_library.instantiate(scene.id, {
-		map = { castle = self.castle, room = self.room, player = self.player },
+	self.presentation = scene_library.instantiate(scene.id, {
+		map = { castle = self.castle, player = self.player },
 	})
+	self.members = self.presentation.members
 end
 
 function item_screen:reset_for_open()
@@ -57,8 +58,8 @@ function item_screen:reset_for_open()
 	members.selector.sprite_component.visible = true
 	members.selector.sprite_component.offset_x = self.secondary_weapon_selection_index * 24
 	members.map.highlight = true
-	local world_number<const> = self.room.world_number
-	local inventory<const> = self.player.inventory_items
+	local world_number<const> = self.castle.room.world_number
+	local inventory<const> = self.player.status.inventory_items
 	for i = 1, #inventory_item_order do
 		local item_type<const> = inventory_item_order[i]
 		members[item_type].visible = inventory[item_type]
@@ -73,7 +74,7 @@ end
 function item_screen:apply_selected_secondary_weapon()
 	local player<const> = self.player
 	local selected_weapon<const> = secondary_weapon_order[self.secondary_weapon_selection_index + 1]
-	if selected_weapon ~= nil and player.inventory_items[selected_weapon] then
+	if selected_weapon ~= nil and player.status.inventory_items[selected_weapon] then
 		player:equip_subweapon(selected_weapon)
 	end
 end
@@ -90,7 +91,7 @@ function item_screen:shift_secondary_weapon_selection(direction)
 		elseif index == weapon_count then
 			index = 0
 		end
-		if player.inventory_items[secondary_weapon_order[index + 1]] then
+		if player.status.inventory_items[secondary_weapon_order[index + 1]] then
 			self.secondary_weapon_selection_index = index
 			self.members.selector.sprite_component.offset_x = index * 24
 			break

@@ -49,7 +49,6 @@ screen_height = 192
 room_hud_height = 32
 room_tile_size = 8
 draw_z_enemy = 140
-draw_z_room_backdrop = -1
 room_tile_columns = 32
 room_tile_rows = 20
 room_tile_origin_x = 0

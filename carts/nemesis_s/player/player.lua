@@ -1220,7 +1220,7 @@ function player:enter_dying()
 		if pickup_x > playfield_width then
 			pickup_x = playfield_width
 		end
-		self.world:spawn(ids_option_pickup_def, {
+		self.scene:spawn(ids_option_pickup_def, {
 			animation_frames = animation_frames,
 			animation_owner = self,
 			pos = { x = pickup_x, y = option.y, z = self.z },

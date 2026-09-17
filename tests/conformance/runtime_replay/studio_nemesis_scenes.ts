@@ -9,7 +9,7 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 	const world = () => guest.global(buildModuleExportSlotName('cartlib/world/world', []));
 	const space = () => guest.formatValue(guest.readStringMember(world(), 'active_space_id'));
 	const presentation = () => guest.readStringMember(title(), 'presentation');
-	const member = (name: string) => guest.readStringMember(presentation(), name);
+	const member = (name: string) => guest.readStringMember(guest.readStringMember(presentation(), 'members'), name);
 	const registered = (id: string) => {
 		const registry = guest.global(buildModuleExportSlotName('cartlib/registry', []));
 		return guest.readStringMember(guest.readStringMember(registry, '_entries_by_id'), id);
@@ -71,14 +71,14 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 		&& !runtime.completionCallPending(), 'Reboot installs the saved scene sources and publishes the root composition');
 	check(title() !== oldTitle, 'cold reboot created a fresh controller');
 	const intro = guest.readStringMember(registered('nemesis_s.intro'), 'presentation');
-	check(guest.readStringMember(guest.readStringMember(intro, 'logo'), 'x') === 44,
+	check(guest.readStringMember(guest.readStringMember(guest.readStringMember(intro, 'members'), 'logo'), 'x') === 44,
 		'rebooted intro consumes the separately authored logo placement');
 	await press('Space');
 	await until(() => space() === 'story'
 		&& guest.readStringMember(registered('nemesis_s.story'), 'presentation') !== null
 		&& !runtime.completionCallPending(), 'normal confirm admits the edited story composition');
 	const story = guest.readStringMember(registered('nemesis_s.story'), 'presentation');
-	check(guest.readStringMember(guest.readStringMember(story, 'primary_caption'), 'y') === 148,
+	check(guest.readStringMember(guest.readStringMember(guest.readStringMember(story, 'members'), 'primary_caption'), 'y') === 148,
 		'normal story playback consumes the edited caption position');
 	await reachTitle();
 	check(guest.readStringMember(member('selector'), 'x') === 88,

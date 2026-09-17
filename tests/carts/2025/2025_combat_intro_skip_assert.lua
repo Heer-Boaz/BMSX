@@ -17,7 +17,7 @@ function __bmsx_host_test.setup()
 	test.combat_round = combat_director.state_machines:bind_state_path('/combat_round')
 	test.combat_idle = combat_director.state_machines:bind_state_path('/idle')
 	test.director_combat_wait = director.state_machines:bind_state_path('/combat_wait')
-	director.node_id = 'combat_wekker'
+	director.session.node_id = 'combat_wekker'
 	director.state_machines:transition_to('p3.director.fsm:/combat_wait')
 	combat_director:start_combat('combat_wekker', true)
 	return { down = 'KeyC' }
@@ -32,7 +32,7 @@ function __bmsx_host_test.update()
 
 	if combat_director.state_machines:matches_state(test.combat_round) then
 		assert(director.state_machines:matches_state(test.director_combat_wait), 'director left combat wait after intro skip')
-		assert(director.node_id == 'combat_wekker', 'director changed story node during intro skip')
+		assert(director.session.node_id == 'combat_wekker', 'director changed story node during intro skip')
 		return true
 	end
 

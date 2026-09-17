@@ -1,4 +1,3 @@
-local world<const> = require('cartlib/world/world')
 local enemy<const> = require('enemies/enemy')
 local foe<const> = require('enemies/foe')
 require('constants')
@@ -17,7 +16,7 @@ function ground_foe:receive_player_projectile(projectile)
 end
 
 function ground_foe:on_destroyed(projectile)
-	world:spawn(ids_large_explosion_def, {
+	self.scene:spawn(ids_large_explosion_def, {
 		stage = self.stage,
 		drop_definition_id = self.drop_definition_id,
 		pos = { x = self.x, y = self.y },

@@ -1,5 +1,4 @@
 local prefab<const> = require('cartlib/world/prefab')
-local world<const> = require('cartlib/world/world')
 require('constants')
 local bt_result<const> = require('cartlib/behaviour_tree/result')
 local bt_success<const> = bt_result.success
@@ -15,13 +14,13 @@ local staff_shot_speed_y<const> = { 0, 6, 11, 15, 16, 15, 11, 6, 0, -6, -11, -15
 
 function stafffoe.spawn_burst(self)
 	local player<const> = self.player
-	local bullets_dangerous<const> = not player.inventory_items.greenvase
+	local bullets_dangerous<const> = not player.status.inventory_items.greenvase
 	local base_vector_index<const> = math.random(0, 15)
 	for i = 0, 3 do
 		local vector_index<const> = ((base_vector_index + (i * 4)) % 16) + 1
 		local speed_x_num<const> = staff_shot_speed_x[vector_index]
 		local speed_y_num<const> = staff_shot_speed_y[vector_index]
-		world:spawn('enemy.staffspawn', {
+		self.room.scene:spawn('enemy.staffspawn', {
 			castle = self.castle,
 			room = self.room,
 			player = player,

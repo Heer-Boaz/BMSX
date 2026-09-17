@@ -93,7 +93,7 @@ function __bmsx_host_test.update()
 		assert_authored_actor_tape(stage)
 
 		stage.actor_spawn_index = stage.actor_spawn_count + 1
-		local snowman<const> = world:spawn(ids_sneeuwpop_def, {
+		local snowman<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_sneeuwpop_def, {
 			stage = stage,
 			pos = { x = 100, y = 32 },
 		})

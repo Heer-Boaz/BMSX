@@ -1,12 +1,10 @@
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
-local world<const> = require('cartlib/world/world')
 local sprite_object<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 require('constants')
-local world_object<const> = require('cartlib/world/world_object')
 
 local enemy_explosion<const> = {}
 enemy_explosion.__index = enemy_explosion
@@ -47,7 +45,7 @@ function enemy_explosion:spawn_loot()
 
 	loot_spawn_sequence = loot_spawn_sequence + 1
 	local loot_id<const> = string.format('%s.loot.%d', self.id, loot_spawn_sequence)
-	world:spawn('loot_drop', {
+	self.room.scene:spawn('loot_drop', {
 		id = loot_id,
 		room = self.room,
 		player = self.player,
@@ -80,10 +78,6 @@ local define_enemy_explosion_fsm<const> = function()
 		},
 		initial = 'animating',
 		on = {
-			['room.switched'] = {
-				emitter = 'pietolon',
-				go = world_object.mark_for_disposal,
-			},
 		},
 		states = {
 			animating = {

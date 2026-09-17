@@ -82,6 +82,12 @@ function director:enter_intro()
 	self.events:emit('intro')
 end
 
+function director:ondespawn()
+	if self.gameplay ~= nil then
+		self.gameplay:dispose()
+	end
+end
+
 function director:enter_story()
 	self:set_active_space('story')
 	self.events:emit('story')
@@ -99,11 +105,12 @@ function director:populate_game_start()
 	for player_index = 1, self.player_count do
 		player_states[player_index] = player_state.new(player_index)
 	end
-	local members<const> = scene_library.instantiate(gameplay_scene.id, {
+	local instance<const> = scene_library.instantiate(gameplay_scene.id, {
 		stage = { start_column = self.stage_start_column, restarting = self.restarting },
 		status_bar = { player_states = player_states },
 	})
-	self.gameplay = members
+	self.gameplay = instance
+	local members<const> = instance.members
 	local stage<const> = members.stage
 	stage.starfield = members.starfield
 	self.stage = stage
@@ -111,7 +118,7 @@ function director:populate_game_start()
 	local status_bar<const> = members.status_bar
 	for player_index = 1, self.player_count do
 		local start<const> = members['player_start_' .. tostring(player_index)]
-		players[player_index] = world:spawn(player_module.player_def_id, {
+		players[player_index] = instance:spawn(player_module.player_def_id, {
 			id = start.player_id,
 			start_point = start,
 			player_index = player_index,
@@ -133,8 +140,15 @@ end
 
 function director:enter_game_start()
 	self:set_active_space('game_start')
-	world:clear_space('end_demo')
-	world:unload_space('main', director.populate_game_start, self)
+	if self.ending ~= nil then
+		self.ending:mark_for_disposal()
+		self.ending = nil
+	end
+	if self.gameplay ~= nil then
+		self.gameplay:dispose(director.populate_game_start, self)
+	else
+		self:populate_game_start()
+	end
 end
 
 function director:enter_gameplay()
@@ -185,7 +199,7 @@ function director:populate_end_demo()
 	self.players = nil
 	self.player_states = nil
 	self.status_bar = nil
-	world:spawn(end_demo_module.definition_id, {
+	self.ending = self.scene:spawn(end_demo_module.definition_id, {
 		id = end_demo_module.instance_id,
 		space_id = 'end_demo',
 		pos = { x = 0, y = 0, z = 0 },
@@ -195,7 +209,7 @@ end
 
 function director:enter_end_demo()
 	self:set_active_space('end_demo')
-	world:unload_space('main', director.populate_end_demo, self)
+	self.gameplay:dispose(director.populate_end_demo, self)
 end
 
 function director:accept_title_selection(_state, event)

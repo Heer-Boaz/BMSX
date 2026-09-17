@@ -11,13 +11,13 @@ local map_widget<const> = {}
 
 local draw_map<const> = function(component, draw)
 	local owner<const> = component.parent
-	local proxies<const> = castle_map.map_world_proxies[owner.room.world_number]
+	local proxies<const> = castle_map.map_world_proxies[owner.castle.room.world_number]
 	for i = 1, #proxies do
 		local proxy<const> = proxies[i]
 		local source
 		if owner.highlight and proxy.room_number == owner.castle.current_room_number then
 			source = sources.current
-		elseif owner.highlight and proxy.is_boss_room and owner.player.inventory_items.lamp then
+		elseif owner.highlight and proxy.is_boss_room and owner.player.status.inventory_items.lamp then
 			source = sources.boss
 		else
 			source = sources.normal

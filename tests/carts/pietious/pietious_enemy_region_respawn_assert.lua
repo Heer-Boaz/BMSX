@@ -30,7 +30,7 @@ local emit_condition_source_destroyed<const> = function(castle, room_number, con
 		local enemy<const> = enemies[i]
 		if enemy.destroyed_condition == condition then
 			castle.events:emit('damage.resolved', {
-				target_id = enemy.options.id,
+				target_key = enemy.member_id,
 				target_kind = enemy.definition_id:sub(7),
 				destroyed = true,
 				room_number = room_number,
@@ -46,7 +46,7 @@ function __bmsx_host_test.setup()
 end
 
 function __bmsx_host_test.ready()
-	return registry:get('c') ~= nil and registry:get('room') ~= nil and registry:get('pietolon') ~= nil
+	return registry:get('c') ~= nil and registry:get('c').room ~= nil and registry:get('pietolon') ~= nil
 end
 
 function __bmsx_host_test.update()
@@ -58,7 +58,7 @@ function __bmsx_host_test.update()
 	end
 
 	local castle<const> = registry:get('c')
-	local room<const> = registry:get('room')
+	local room = registry:get('c').room
 	local phase<const> = test.phase
 	if phase == nil then
 		castle.events:on({
@@ -68,6 +68,7 @@ function __bmsx_host_test.update()
 		})
 		assert(progression.get(castle, 'debug.world1_stairs'), 'starting ladder debug setting is missing')
 		castle:enter_world('world_1')
+		room = castle.room
 		test.phase = 1
 	elseif phase == 1 then
 		assert(progression.get(castle, 'r109.stairs'), 'starting ladder debug setting did not seed world 1')
@@ -81,16 +82,20 @@ function __bmsx_host_test.update()
 	elseif phase == 2 then
 		assert(not progression.get(castle, 'r109.stairs'), 'world 1 ladder survived the region boundary')
 		castle:enter_world('world_1')
+		room = castle.room
 		test.phase = 3
 	elseif phase == 3 then
 		assert(not progression.get(castle, 'r109.stairs'), 'world 1 ladder appeared without its debug setting')
 		castle:switch_room('left', 0, 0)
+		room = castle.room
 		test.phase = 4
 	elseif phase == 4 then
 		castle:switch_room('left', 0, 0)
+		room = castle.room
 		test.phase = 5
 	elseif phase == 5 then
 		castle:switch_room('down', 0, 0)
+		room = castle.room
 		test.phase = 6
 	elseif phase == 6 then
 		assert(room.room_number == 106, 'enemy respawn scenario did not enter room 106')
@@ -104,28 +109,30 @@ function __bmsx_host_test.update()
 		local enemy_def<const> = enemy_defs[1]
 		assert(enemy_def.retain_defeat_in_region, 'room 106 enemy must retain defeat within world 1')
 		test.room106_enemy_defs = enemy_defs
-		test.enemy_id = enemy_def.options.id
-		local enemy<const> = registry:get(enemy_def.options.id)
+		test.enemy_id = enemy_def.member_id
+		local enemy<const> = registry:get('c').room.scene.members[enemy_def.member_id]
 		assert(enemy ~= nil, 'room 106 enemy did not spawn')
 		destroy_enemy(enemy)
-		assert(progression.get(castle, enemy_def.options.id), 'enemy defeat was not retained in world 1')
+		assert(progression.get(castle, enemy_def.member_id), 'enemy defeat was not retained in world 1')
 		test.phase = 7
 	elseif phase == 7 then
 		castle:switch_room('up', 0, 0)
+		room = castle.room
 		test.phase = 8
 	elseif phase == 8 then
 		castle:switch_room('down', 0, 0)
+		room = castle.room
 		test.phase = 9
 	elseif phase == 9 then
 		assert(room.room_number == 106, 'enemy respawn scenario did not return to room 106')
-		assert(registry:get(test.enemy_id) == nil, 'enemy respawned during the same world visit')
+		assert(registry:get('c').room.scene.members[test.enemy_id] == nil, 'enemy respawned during the same world visit')
 		test.room106_destroy_index = 2
 		test.phase = 'destroy_room106_enemies'
 	elseif phase == 'destroy_room106_enemies' then
 		local enemy_defs<const> = test.room106_enemy_defs
 		local index<const> = test.room106_destroy_index
 		if index <= #enemy_defs then
-			local enemy<const> = registry:get(enemy_defs[index].options.id)
+			local enemy<const> = registry:get('c').room.scene.members[enemy_defs[index].member_id]
 			assert(enemy ~= nil, 'room 106 enemy disappeared before it was defeated')
 			destroy_enemy(enemy)
 			test.room106_destroy_index = index + 1
@@ -142,18 +149,22 @@ function __bmsx_host_test.update()
 		test.phase = 10
 	elseif phase == 10 then
 		castle:enter_world('world_1')
+		room = castle.room
 		test.phase = 11
 	elseif phase == 11 then
 		castle:switch_room('left', 0, 0)
+		room = castle.room
 		test.phase = 12
 	elseif phase == 12 then
 		castle:switch_room('left', 0, 0)
+		room = castle.room
 		test.phase = 13
 	elseif phase == 13 then
 		castle:switch_room('down', 0, 0)
+		room = castle.room
 		test.phase = 14
 	elseif phase == 14 then
-		assert(registry:get(test.enemy_id) ~= nil, 'enemy did not respawn on the next world visit')
+		assert(registry:get('c').room.scene.members[test.enemy_id] ~= nil, 'enemy did not respawn on the next world visit')
 		assert(#room.wall_instances == 1, 'room 106 wall did not respawn on the next world visit')
 		assert(not progression.get(castle, 'r109.stairs'), 'world 1 ladder was already open before the staff encounter')
 		emit_condition_source_destroyed(castle, 104, 'staff1destroyed')
@@ -169,15 +180,19 @@ function __bmsx_host_test.update()
 		assert(not progression.get(castle, 'staff3destroyed'), 'staff 3 defeat survived the region boundary')
 		assert(not progression.get(castle, 'r109.stairs'), 'world 1 ladder survived the region boundary')
 		castle:enter_world('world_1')
+		room = castle.room
 		test.phase = 16
 	elseif phase == 16 then
 		castle:switch_room('left', 0, 0)
+		room = castle.room
 		test.phase = 17
 	elseif phase == 17 then
 		castle:switch_room('up', 0, 0)
+		room = castle.room
 		test.phase = 18
 	elseif phase == 18 then
 		castle:switch_room('up', 0, 0)
+		room = castle.room
 		test.phase = 19
 	else
 		assert(room.room_number == 104, 'staff progression scenario did not enter room 104')
@@ -190,7 +205,7 @@ function __bmsx_host_test.update()
 			end
 		end
 		assert(staff_def ~= nil, 'room 104 staff definition is missing')
-		assert(registry:get(staff_def.options.id) ~= nil, 'staff did not respawn on the next world visit')
+		assert(registry:get('c').room.scene.members[staff_def.member_id] ~= nil, 'staff did not respawn on the next world visit')
 		emit_condition_source_destroyed(castle, 104, 'staff1destroyed')
 		emit_condition_source_destroyed(castle, 107, 'staff2destroyed')
 		emit_condition_source_destroyed(castle, 110, 'staff3destroyed')

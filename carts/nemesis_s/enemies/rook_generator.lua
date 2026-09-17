@@ -46,7 +46,7 @@ function rook_generator:enter_generating()
 end
 
 function rook_generator:spawn_rook(_state, rise_distance)
-	world:spawn(ids_rook_def, {
+	self.scene:spawn(ids_rook_def, {
 		stage = self.stage,
 		rise_distance = rise_distance,
 		pos = {

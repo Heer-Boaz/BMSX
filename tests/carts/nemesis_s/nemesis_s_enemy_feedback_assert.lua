@@ -55,7 +55,7 @@ function __bmsx_host_test.update()
 		stage.scrolling = false
 		stage.actor_spawn_index = stage.actor_spawn_count + 1
 
-		local snowman<const> = world:spawn(ids_sneeuwpop_def, {
+		local snowman<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_sneeuwpop_def, {
 			stage = stage,
 			pos = { x = 184, y = 112 },
 		})
@@ -66,7 +66,7 @@ function __bmsx_host_test.update()
 		assert(*selected_apu_source == structure_hit_source,
 			'GroundFoe nonfatal damage did not select the XNA structure-hit cue')
 
-		local mijter<const> = world:spawn(ids_mijter_foe_def, {
+		local mijter<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_mijter_foe_def, {
 			stage = stage,
 			mijter_type = mijter_foe_type_red,
 			pos = { x = 152, y = 80 },
@@ -79,7 +79,7 @@ function __bmsx_host_test.update()
 
 		local formation<const> = { remaining = sint_pop_group_size }
 		for index = 1, sint_pop_group_size do
-			local sint_pop<const> = world:spawn(ids_sint_pop_def, {
+			local sint_pop<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_sint_pop_def, {
 				stage = stage,
 				formation = formation,
 				group_type = sint_pop_group_up,
@@ -98,7 +98,7 @@ function __bmsx_host_test.update()
 		assert(formation.remaining == 0,
 			'SintPop destruction did not consume its shared formation state')
 
-		local zak<const> = world:spawn(ids_zak_foe_def, {
+		local zak<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_zak_foe_def, {
 			stage = stage,
 			pos = { x = 72, y = 112 },
 		})
@@ -118,7 +118,7 @@ function __bmsx_host_test.update()
 		assert(#test.large_explosions.objects == 1,
 			'GroundFoe fatal damage did not spawn one retained large explosion')
 
-		local generator<const> = world:spawn(ids_rook_generator_def, {
+		local generator<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_rook_generator_def, {
 			stage = stage,
 			pos = { x = 128, y = 96 },
 		})

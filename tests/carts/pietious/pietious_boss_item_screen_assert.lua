@@ -14,7 +14,7 @@ end
 
 function __bmsx_host_test.ready()
 	return registry:get('c') ~= nil
-		and registry:get('room') ~= nil
+		and registry:get('c').room ~= nil
 		and registry:get('pietolon') ~= nil
 		and registry:get('d') ~= nil
 		and registry:get('item_screen') ~= nil
@@ -35,7 +35,7 @@ function __bmsx_host_test.update()
 	assert(test.frames < 1000, 'boss item-screen scenario timed out phase=' .. test.phase)
 
 	local castle<const> = registry:get('c')
-	local room<const> = registry:get('room')
+	local room = registry:get('c').room
 	local player<const> = registry:get('pietolon')
 	local director<const> = registry:get('d')
 	local screen<const> = registry:get('item_screen')
@@ -54,7 +54,7 @@ function __bmsx_host_test.update()
 			return false
 		end
 		local from_room_number<const> = castle.current_room_number
-		room:load_room(100)
+		room = castle:load_room(100)
 		castle:commit_room_switch({
 			from_room_number = from_room_number,
 			to_room_number = 100,
@@ -65,12 +65,12 @@ function __bmsx_host_test.update()
 		player.y = 96
 		local def<const> = find_daemon_def(room)
 		assert(def ~= nil, 'room 100 has no daemon definition')
-		test.daemon_id = def.options.id
+		test.daemon_id = def.member_id
 		test.phase = 'admitted'
 		return false
 	end
 
-	local daemon<const> = registry:get(test.daemon_id)
+	local daemon<const> = registry:get('c').room.scene.members[test.daemon_id]
 	if test.phase == 'admitted' then
 		if daemon == nil then
 			return false
@@ -105,7 +105,7 @@ function __bmsx_host_test.update()
 		if screen.secondary_weapon_selection_index ~= 1 then
 			return false
 		end
-		assert(player.secondary_weapon == 'spyglass',
+		assert(player.status.secondary_weapon == 'spyglass',
 			'left navigation did not wrap to the final owned secondary weapon')
 		test.phase = 'wrap_right'
 		return host.gamepad_press(1, 'right', 4)
@@ -115,7 +115,7 @@ function __bmsx_host_test.update()
 		if screen.secondary_weapon_selection_index ~= 0 then
 			return false
 		end
-		assert(player.secondary_weapon == 'pepernoot',
+		assert(player.status.secondary_weapon == 'pepernoot',
 			'right navigation did not wrap to the first owned secondary weapon')
 		test.phase = 'closing'
 		return host.gamepad_press(1, 'lb', 4)

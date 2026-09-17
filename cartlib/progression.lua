@@ -42,7 +42,7 @@
 --                    payload fields
 --      set         — array of {key, value} assignments applied when fired
 --      apply       — array of custom commands forwarded to program.handlers
---      apply_once  — if true, this rule will only fire once per mounted runtime
+--      apply_once  — if true, commands fire only once per progression state
 --
 -- 4. CONDITIONS.
 --    Conditions have one representation: { key = 'key_name', equals = true }.
@@ -114,6 +114,7 @@ function progressionstate.new(program)
 	return setmetatable({
 		program = program,
 		values = {},
+		apply_done = {},
 		revision = 0,
 	}, progressionstate)
 end
@@ -249,9 +250,9 @@ local dispatch_rules_to_runtime<const> = function(rt, rules, event_type, emitter
 				local rule<const> = rules[i]
 				if rule.when_event(payload) and eval_predicates(rt.state.values, rule.when_all) then
 					fired[i] = generation
-					if not rule.apply_once or not (rt.apply_done[rule.id]) then
+					if not rule.apply_once or not (rt.state.apply_done[rule.id]) then
 						if rule.apply_once then
-							rt.apply_done[rule.id] = true
+							rt.state.apply_done[rule.id] = true
 						end
 						apply_set_actions(rt, rule.set)
 						apply_commands(rt, rule.apply, payload, emitter, event_type)
@@ -339,17 +340,20 @@ local remove_runtime_subscription<const> = function(rt, event_name)
 	end
 end
 
--- progression.mount(ctx, program)
---   Attaches a compiled progression program to ctx.
-function progression.mount(ctx, program)
+-- State has a game-owned lifetime, independent of subscriptions or scene
+-- controllers. Remounting the same state preserves values and once-only rules.
+function progression.new_state(program)
+	return progressionstate.new(program.state_program)
+end
+
+-- An omitted state creates a fresh session for the existing one-owner case.
+function progression.mount(ctx, program, state)
 	progression.unmount(ctx)
-	local state<const> = progressionstate.new(program.state_program)
 
 	local rt<const> = {
 		ctx = ctx,
 		program = program,
-		state = state,
-		apply_done = {},
+		state = state or progression.new_state(program),
 		dispatch_depth = 0,
 		fired_by_depth = { {} },
 		fired_generation_by_depth = { 0 },

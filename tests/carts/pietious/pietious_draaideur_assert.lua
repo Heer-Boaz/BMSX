@@ -47,7 +47,7 @@ function __bmsx_host_test.update()
 	if test.phase == 'spawn' then
 		local door_x<const> = 128
 		player.x = door_x - player.width + 1
-		world:spawn('draaideur', {
+		registry:get('c').room.scene:spawn('draaideur', {
 			id = 'probe.draaideur',
 			space_id = 'main',
 			castle = registry:get('c'),

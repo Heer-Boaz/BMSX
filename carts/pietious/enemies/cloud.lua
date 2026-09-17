@@ -6,7 +6,6 @@ local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
 local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
 local prefab<const> = require('cartlib/world/prefab')
 local velocity<const> = require('cartlib/velocity')
-local world<const> = require('cartlib/world/world')
 local enemy_base<const> = require('enemies/enemy_base')
 local abs<const> = math.abs
 require('constants')
@@ -93,7 +92,7 @@ function cloud.spawn_vlok_burst(self)
 			random_x = math.random(-5, 4)
 			random_y = math.random(-5, 4)
 		end
-		world:spawn('enemy.vlokfoe', {
+		self.room.scene:spawn('enemy.vlokfoe', {
 			castle = self.castle,
 			room = room,
 			player = self.player,

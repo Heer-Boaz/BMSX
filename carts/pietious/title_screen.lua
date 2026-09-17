@@ -132,7 +132,8 @@ local apply_title_start_frame<const> = function(self, frame)
 end
 
 function title_screen:ctor()
-	self.members = scene_library.instantiate(scene.id)
+	self.presentation = scene_library.instantiate(scene.id)
+	self.members = self.presentation.members
 	self.sparkle_sprite = self.members.sparkle.sprite_component
 	self.sparkle_sprite:set_enabled(false)
 end

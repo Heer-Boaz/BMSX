@@ -33,14 +33,14 @@ function __bmsx_host_test.update()
 		local castle<const> = registry:get('c')
 		world:set_space('main')
 		world:set_gameplay_clock_running(true)
-		world:spawn('enemy_explosion', {
+		registry:get('c').room.scene:spawn('enemy_explosion', {
 			id = 'probe.enemy_explosion',
 			space_id = 'main',
-			room = registry:get('room'),
+			room = registry:get('c').room,
 			player = registry:get('pietolon'),
 			pos = { x = 40, y = 40, z = 113 },
 		})
-		world:spawn('world_entrance', {
+		registry:get('c').room.scene:spawn('world_entrance', {
 			id = 'probe.world_entrance',
 			space_id = 'main',
 			castle = castle,
@@ -58,7 +58,7 @@ function __bmsx_host_test.update()
 			return false
 		end
 		local castle<const> = registry:get('c')
-		castle.world_entrance_states.probe_world = { state = 'closed' }
+		castle.session.world_entrances.probe_world = { state = 'closed' }
 		castle:begin_open_world_entrance('probe_world')
 		test.gameplay_time_ms = world.gameplay_time_ms
 		test.gameplay_step = 0

@@ -16,7 +16,7 @@ end
 
 function __bmsx_host_test.ready()
 	return registry:get('c') ~= nil
-		and registry:get('room') ~= nil
+		and registry:get('c').room ~= nil
 		and registry:get('pietolon') ~= nil
 		and registry:get('d') ~= nil
 		and registry:get('ui') ~= nil
@@ -40,12 +40,12 @@ function __bmsx_host_test.update()
 	end
 
 	local castle<const> = registry:get('c')
-	local room<const> = registry:get('room')
+	local room = registry:get('c').room
 	local player<const> = registry:get('pietolon')
 	local director<const> = registry:get('d')
 	if test.phase == 'setup' then
 		local from_room_number<const> = castle.current_room_number
-		room:load_room(100)
+		room = castle:load_room(100)
 		castle:commit_room_switch({
 			from_room_number = from_room_number,
 			to_room_number = 100,
@@ -56,12 +56,12 @@ function __bmsx_host_test.update()
 		player.y = 96
 		local def<const> = find_daemon_def(room)
 		assert(def ~= nil, 'room 100 has no daemon definition')
-		test.daemon_id = def.options.id
+		test.daemon_id = def.member_id
 		test.phase = 'admitted'
 		return false
 	end
 
-	local daemon<const> = registry:get(test.daemon_id)
+	local daemon<const> = registry:get('c').room.scene.members[test.daemon_id]
 	assert(daemon ~= nil, 'world 1 daemon was not admitted')
 	if test.phase == 'admitted' then
 		assert(not daemon.visible, 'daemon is visible before the appearance completes')
@@ -95,6 +95,7 @@ function __bmsx_host_test.update()
 			source_id = player.id,
 			source_kind = 'sword',
 			target_id = daemon.id,
+			target_key = daemon.scene_member_id,
 			target_kind = daemon.enemy_kind,
 			damage_kind = 'weapon',
 			weapon_kind = 'sword',
@@ -128,8 +129,8 @@ function __bmsx_host_test.update()
 			assert(director.state_machines:matches_state(test.director_key_state), 'director did not enter daemon key state')
 			assert(not daemon.visible, 'daemon remained visible beneath the key')
 			assert(key.item_type == 'keyworld1', 'daemon dropped the wrong key')
-			player.inventory_items.keyworld1 = false
-			player.health = 1
+			player.status.inventory_items.keyworld1 = false
+			player.status.health = 1
 			player:emit_health_changed()
 			test.key_x = key.x
 			test.key_y = key.y
@@ -142,7 +143,7 @@ function __bmsx_host_test.update()
 
 	if test.phase == 'health_drain' then
 		local ui<const> = registry:get('ui')
-		if ui.hud_health_level == player.max_health then
+		if ui.hud_health_level == player.status.max_health then
 			return false
 		end
 		player.x = test.key_x
@@ -152,19 +153,19 @@ function __bmsx_host_test.update()
 	end
 
 	if test.phase == 'pickup' then
-		if not player.inventory_items.keyworld1 then
+		if not player.status.inventory_items.keyworld1 then
 			return false
 		end
 		local key<const> = registry:get('world1_daemon_key')
 		assert(key ~= nil, 'daemon key disappeared before the victory dance completed')
 		assert(not key.collider.enabled, 'collected daemon key retained its pickup collider')
 		local ui<const> = registry:get('ui')
-		assert(player.health == player.max_health, 'daemon key did not restore player health')
-		assert(ui.hud_health_target == player.max_health,
+		assert(player.status.health == player.status.max_health, 'daemon key did not restore player health')
+		assert(ui.hud_health_target == player.status.max_health,
 			'daemon key health restoration did not reach the HUD target')
-		assert(ui.hud_health_level < player.max_health,
+		assert(ui.hud_health_level < player.status.max_health,
 			'daemon key health restoration skipped the HUD animation')
-		assert(castle.world_boss_defeated[1], 'world 1 daemon defeat was not retained')
+		assert(castle.session.world_boss_defeated[1], 'world 1 daemon defeat was not retained')
 		assert(director.state_machines:matches_state(test.director_game_completion_state),
 			'director did not enter game completion after key pickup')
 		assert(player.state_machines:matches_state(test.player_victory_state),

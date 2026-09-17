@@ -71,7 +71,7 @@ function __bmsx_host_test.update()
 	end
 	local payload<const> = test.exit_payload
 	assert(payload ~= nil, 'lithograph exit did not publish room music state')
-	assert(payload.world_number == registry:get('room').world_number, 'lithograph exit published the wrong world')
+	assert(payload.world_number == registry:get('c').room.world_number, 'lithograph exit published the wrong world')
 	assert(not payload.suppress_room_music, 'lithograph exit suppressed room music')
 	return true
 end

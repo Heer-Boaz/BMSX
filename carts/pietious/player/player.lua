@@ -161,7 +161,7 @@ local state_tags<const> = {
 function player:equip_subweapon(id)
 	self:remove_tag(player_actioneffects.equip_tags.pepernoot)
 	self:remove_tag(player_actioneffects.equip_tags.spyglass)
-	self.secondary_weapon = id
+	self.status.secondary_weapon = id
 	local grant_tag<const> = player_actioneffects.equip_tags[id or 'none']
 	if grant_tag ~= nil then
 		self:add_tag(grant_tag)
@@ -639,11 +639,8 @@ function player:ctor()
 	self.sword_sprite:set_enabled(false)
 	self:define_runtime_timelines()
 	self.hit_invulnerability_timeline = self.timelines:get(player_hit_invulnerability_timeline_id)
-	self.inventory_items = {}
-	self.secondary_weapon = nil
 	self.enter_leave_shrine_text_lines = {}
-	self:equip_subweapon(self.secondary_weapon)
-	self.weapon_level = 0
+	self:equip_subweapon(self.status.secondary_weapon)
 	self:apply_presentation_state()
 	self.left_wall_collision_primary = false
 	self.left_wall_collision_secondary = false
@@ -659,13 +656,6 @@ function player:ctor()
 	self.sprite_component.offset_x = 0
 	self.sprite_component:set_offset_z(110)
 
-end
-
-function player:onspawn()
-	-- World has applied the authored placement before this hook. Keep that
-	-- starting point for castle respawns, independently of subsequent motion.
-	self.spawn_x = self.x
-	self.spawn_y = self.y
 end
 
 function player:get_damage_state_imgid()
@@ -789,7 +779,7 @@ function player:apply_presentation_state()
 end
 
 function player:restart_after_death()
-	self.health = self.max_health
+	self.status.health = self.status.max_health
 	self:emit_health_changed()
 	self.events:emit('respawn')
 	self:apply_presentation_state()
@@ -856,14 +846,14 @@ end
 
 function player:emit_health_changed()
 	self.events:emit('player.health_changed', {
-		value = self.health,
-		max_value = self.max_health,
+		value = self.status.health,
+		max_value = self.status.max_health,
 	})
 end
 
 function player:emit_weapon_changed()
 	self.events:emit('player.weapon_changed', {
-		value = self.weapon_level,
+		value = self.status.weapon_level,
 		max_value = hud_weapon_level,
 	})
 end
@@ -873,12 +863,12 @@ function player:take_hit(amount, source_x, source_y, reason)
 		return false
 	end
 
-	self.health = self.health - amount
-	if self.health < 0 then
-		self.health = 0
+	self.status.health = self.status.health - amount
+	if self.status.health < 0 then
+		self.status.health = 0
 	end
 	self:emit_health_changed()
-	if self.health <= 8 then
+	if self.status.health <= 8 then
 		self.events:emit('approachingdeath')
 	else
 		self.events:emit('hit')
@@ -918,15 +908,15 @@ local loot_type_by_item_type<const> = {
 
 function player:collect_loot(loot_type, loot_value, item_type, item_id)
 	if loot_type == 'life' then
-		self.health = self.health + loot_value
-		if self.health > self.max_health then
-			self.health = self.max_health
+		self.status.health = self.status.health + loot_value
+		if self.status.health > self.status.max_health then
+			self.status.health = self.status.max_health
 		end
 		self:emit_health_changed()
 	elseif loot_type == 'ammo' then
-		self.weapon_level = self.weapon_level + loot_value
-		if self.weapon_level > hud_weapon_level then
-			self.weapon_level = hud_weapon_level
+		self.status.weapon_level = self.status.weapon_level + loot_value
+		if self.status.weapon_level > hud_weapon_level then
+			self.status.weapon_level = hud_weapon_level
 		end
 		self:emit_weapon_changed()
 	else
@@ -945,11 +935,11 @@ function player:collect_item(item_type, item_id)
 		return self:collect_loot(loot_type, pickup_item_ammo_regen, item_type, item_id)
 	end
 	if item_type == 'keyworld1' then
-		self.health = self.max_health
+		self.status.health = self.status.max_health
 		self:emit_health_changed()
-		self.inventory_items.keyworld1 = true
+		self.status.inventory_items.keyworld1 = true
 	elseif world_item_inventory[item_type] then
-		self.inventory_items[item_type] = true
+		self.status.inventory_items[item_type] = true
 	else
 		error('pietious player invalid item_type=' .. tostring(item_type))
 	end
@@ -983,7 +973,7 @@ function player:find_world_entrance_for_unlock()
 	local castle<const> = self.castle
 	for i = 1, #world_entrances do
 		local world_entrance<const> = world_entrances[i]
-		local entrance_state<const> = castle.world_entrance_states[world_entrance.target].state
+		local entrance_state<const> = castle.session.world_entrances[world_entrance.target].state
 		if entrance_state == 'closed' then
 			local within_x<const> = self.x >= world_entrance.x and self.x <= (world_entrance.x + room_tile_size2)
 			local on_trigger_y<const> = self.y == world_entrance.stair_y
@@ -1001,7 +991,7 @@ function player:find_near_open_world_entrance()
 	local castle<const> = self.castle
 	for i = 1, #world_entrances do
 		local world_entrance<const> = world_entrances[i]
-		local entrance_state<const> = castle.world_entrance_states[world_entrance.target].state
+		local entrance_state<const> = castle.session.world_entrances[world_entrance.target].state
 		if entrance_state == 'open' then
 			local within_x<const> = self.x >= (world_entrance.stair_x - world_entrance_trigger_half_width)
 			and self.x <= (world_entrance.stair_x + world_entrance_trigger_half_width)
@@ -1130,7 +1120,7 @@ function player:leave_shrine_overlay()
 end
 
 function player:open_world_entrance_with_key()
-	if not self.inventory_items.keyworld1 then
+	if not self.status.inventory_items.keyworld1 then
 		return false
 	end
 
@@ -1143,7 +1133,7 @@ function player:open_world_entrance_with_key()
 	if not opened then
 		return false
 	end
-	self.inventory_items.keyworld1 = false
+	self.status.inventory_items.keyworld1 = false
 	self.events:emit('worlddooropen')
 	return true
 end
@@ -1183,7 +1173,7 @@ function player:compute_walk_step(direction)
 	local speed_num
 	if self:has_tag(player_tags.in_water) then
 		speed_num = physics_walk_speed_water_num
-	elseif self.inventory_items['schoentjes'] then
+	elseif self.status.inventory_items['schoentjes'] then
 		speed_num = physics_walk_speed_schoentjes_num
 	else
 		return direction * physics_walk_speed_px, self.walk_x_fraction
@@ -2585,7 +2575,7 @@ function player:update_hit_fall()
 
 	if self.hit_substate >= 4 then
 		if self:collides_at_support_profile(self.x, self.y, false) then
-			if self.health <= 0 then
+			if self.status.health <= 0 then
 				self:start_dying()
 				return
 			end
@@ -2614,7 +2604,7 @@ function player:update_hit_fall()
 	self.previous_x_collision = hit_wall
 	self.previous_y_collision = false
 
-	if self.hit_substate >= 4 and self.health <= 0 then
+	if self.hit_substate >= 4 and self.status.health <= 0 then
 		self:start_dying()
 		return
 	end
@@ -2639,7 +2629,7 @@ function player:update_hit_collision()
 	if self.hit_stairs_lock then
 		if self.hit_substate >= 4 then
 			local hit_ground<const> = self:advance_hit_stairs_fall(dy)
-			if self.health <= 0 then
+			if self.status.health <= 0 then
 				self:start_dying()
 				return
 			end
@@ -2657,7 +2647,7 @@ function player:update_hit_collision()
 
 	if self.hit_substate >= 4 then
 		if self:collides_at_support_profile(self.x, self.y, false) then
-			if self.health <= 0 then
+			if self.status.health <= 0 then
 				self:start_dying()
 				return
 			end
@@ -2673,7 +2663,7 @@ function player:update_hit_collision()
 	self.previous_x_collision = false
 	self.previous_y_collision = false
 
-	if self.hit_substate >= 4 and self.health <= 0 then
+	if self.hit_substate >= 4 and self.status.health <= 0 then
 		self:start_dying()
 		return
 	end
@@ -3436,14 +3426,9 @@ local register_player_definition<const> = function()
 			water_controlled_fall_dx_accum = 0,
 			hit_stairs_lock = false,
 			stairs_landing_sound_pending = false,
-			health = damage_max_health,
-			max_health = damage_max_health,
 			hit_substate = 0,
 			hit_direction = 0,
 			enter_leave_world_target = nil,
-			inventory_items = nil,
-			secondary_weapon = nil,
-			weapon_level = 0,
 			pepernoot_projectile_sequence = 0,
 			sword_cooldown = 0,
 			sword_strike_id = 0,

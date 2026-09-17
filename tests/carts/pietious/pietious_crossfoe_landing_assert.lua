@@ -13,7 +13,7 @@ end
 
 function __bmsx_host_test.ready()
 	return registry:get('c') ~= nil
-		and registry:get('room') ~= nil
+		and registry:get('c').room ~= nil
 		and registry:get('pietolon') ~= nil
 end
 
@@ -26,11 +26,11 @@ function __bmsx_host_test.update()
 	end
 
 	local castle<const> = registry:get('c')
-	local room<const> = registry:get('room')
+	local room = registry:get('c').room
 	local player<const> = registry:get('pietolon')
 	if test.phase == 'setup' then
 		local from_room_number<const> = castle.current_room_number
-		room:load_room(6)
+		room = castle:load_room(6)
 		castle:commit_room_switch({
 			from_room_number = from_room_number,
 			to_room_number = 6,
@@ -40,13 +40,13 @@ function __bmsx_host_test.update()
 			local definition<const> = room.enemies[index]
 			if definition.definition_id == 'enemy.crossfoe' then
 				if test.cross_id == nil then
-					test.cross_id = definition.options.id
+					test.cross_id = definition.member_id
 				else
-					registry:get(definition.options.id):mark_for_disposal()
+					registry:get('c').room.scene.members[definition.member_id]:mark_for_disposal()
 				end
 			end
 		end
-		local cross<const> = registry:get(test.cross_id)
+		local cross<const> = registry:get('c').room.scene.members[test.cross_id]
 		test.cross_start_x = cross.x
 		player.x = room_tile_size * 14
 		player.y = cross.y
@@ -55,7 +55,7 @@ function __bmsx_host_test.update()
 		return false
 	end
 
-	local cross<const> = registry:get(test.cross_id)
+	local cross<const> = registry:get('c').room.scene.members[test.cross_id]
 	if test.phase == 'partial_wait' then
 		player.y = cross.y
 		test.phase_frames = test.phase_frames + 1

@@ -7,6 +7,15 @@ function scene.register()
 	scene_library.register(scene.id, {
 		objects = {
 			{
+				member_id = 'seal_backdrop',
+				definition_id = 'pietious.rectangle',
+				options = {
+					pos = { x = 0, y = 0, z = -1 },
+					width = 256, height = 192, color = 0xffcccccc,
+					visible = false,
+				},
+			},
+			{
 				member_id = 'curtain',
 				definition_id = 'pietious.rectangle',
 				options = {

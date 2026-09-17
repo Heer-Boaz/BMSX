@@ -12,8 +12,9 @@ The current production implementations reviewed for this slice are
 and [XState state entry](https://github.com/statelyai/xstate/blob/main/packages/core/src/stateUtils.ts).
 Construction applies authored properties before activation; scene replacement
 uses a structural lifetime boundary; entry actions precede scoped playback.
-BMSX already has these boundaries in World and FSM. This migration adds no
-second scheduler, SceneInstance or scene-specific World behavior.
+BMSX reuses its World and FSM boundaries. The follow-up
+[lifetime migration](scene_lifetimes.md) adds explicit live scene ownership and
+independent session state, without another scheduler.
 
 The Nemesis audit confirms that the earlier manual autoplay restart has been
 removed. Entry constructs members before autoplay; exit submits their disposal
@@ -27,8 +28,8 @@ to World. See [the Nemesis report](nemesis_s_scene_migration.md).
 | `scenes/combat.lua` | Monster, two Maya poses, all-out surface, portrait, results cover and text |
 | `scenes/transition.lua` | Fade overlay, three sliding panels, accent, caption |
 
-`director.lua` owns story progression and statistics. `combat.lua` owns combat
-phases. Neither constructs a private parallel representation of scene visuals.
+`session.lua` owns story progression and statistics. `director.lua` consumes
+that model; `combat.lua` owns combat phases. Neither constructs a private parallel representation of scene visuals.
 The previous rectangle-state tables and director-wide drawing loop are gone;
 those rectangles are ordinary visual objects with authored position and size.
 The eleven role-specific copies of sprite/text/surface definitions are replaced
@@ -40,7 +41,7 @@ Text layout is converted once from scene-local bounds into TextObject's existing
 world-space rectangle contract. Source options are not mutated. Cart reset uses
 World clear; no separate scene tick, polling or recovery path is introduced.
 
-Validation:
+Composition-migration validation (before the lifetime follow-up):
 
 - All ten 2025 headless scenarios pass, including combat first-frame/skip,
   timeline/input regressions and scene instance/disposal/reentry checks.
@@ -75,20 +76,23 @@ copy positions into a second representation. Compiled progression filters live
 in castle's program, never on authored scene members. Retained enemy defeat is
 checked once by admission, instead of also duplicating it in the conditions.
 
-The persistent castle, player and room own inventory, defeated enemies and
-destroyed rocks. Room departure disposes placed actors through World. Reentry
-creates eligible actors with fresh bindings without resurrecting persistent
-pickups. Doors derive collision tiles from placement; shrine and entrance input
-queries use admitted objects. Procedural drops and projectiles remain procedural.
+The lifetime follow-up replaces the persistent room object with one live room
+per scene entry. `session.lua` owns durable progress independently of castle,
+player and room objects. World disposes the entire outgoing composition,
+including inactive members, pending admissions, projectiles and drops. Reentry
+constructs eligible objects from definition plus session state. Doors derive
+collision tiles from placement; shrine and entrance input use admitted objects.
+See [the ownership and reset-policy table](scene_lifetimes.md).
 
-All 30 Pietious scenarios pass after the room migration, including Enter/halo,
-pause, door, seal, shrine, region respawn and a new scene ownership/reentry test.
+The first room migration passed all 30 then-existing Pietious scenarios,
+including Enter/halo, pause, door, seal, shrine, region respawn and scene
+ownership/reentry. Current results are in the [lifetime report](scene_lifetimes.md#validation).
 The 24 room scanouts plus the final image match the pre-migration ROM exactly.
 Several older scenarios bound state paths or spawned probes before their
 requested restart committed; they now wait for the incoming director identity.
 
 Pietious now has 34 scene sources: the 24 room compositions plus these ten
-compositions with 32 independently placed members:
+compositions with 33 independently placed members:
 
 | Source | Authored members |
 | --- | --- |
@@ -101,25 +105,25 @@ compositions with 32 independently placed members:
 | `scenes/inventory.lua` | Background, eight icons, selector, map title and map widget |
 | `scenes/transition.lua` | Black background, banner and game-over caption |
 | `scenes/end_demo.lua` | Picture, message cover and caption |
-| `scenes/effects.lua` | Closing curtain, victory message cover and caption |
+| `scenes/effects.lua` | Seal-flash backdrop, closing curtain, victory message cover and caption |
 
 `presentation.lua` contains the sprite, caption and rectangle prefabs. The map
 and HUD remain coherent widgets with local geometry relative to their authored
 origins. Controllers retain component references for animation and content;
 they no longer construct private copies of screen geometry. Sparkle motion is
 relative to the authored anchor. Curtain playback derives its step width once
-from the instantiated rectangle. The director moves its three effects with the
-active presentation space; World continues to own their lifetime.
+from the instantiated rectangle. The director moves its authored effects with
+the active presentation space and owns their scene; World commits their teardown.
 
 The unused `transition.timeline` and its playback calls have been removed.
 Transition timing already belongs to the director. Inventory visibility is
 bound on entry rather than querying inventory for every icon every draw. The
-player's initial scene position is retained after World's placement hook;
-death restart and Enter/halo use that instance anchor. The duplicate start,
+player's authored start position seeds the session spawn anchor; death restart
+and Enter/halo use that anchor even after replacing the actor. The duplicate start,
 screen-position and effect-depth constants are gone. Runtime player/castle/room
 bindings are applied to copies of authored options during world construction.
 
-Final validation:
+Composition-migration validation (before the lifetime follow-up):
 
 - All 31 Pietious headless scenarios pass. The final effect change also passes
   the complete cinematic and death/restart paths.

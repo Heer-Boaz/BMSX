@@ -22,7 +22,8 @@ local logo_height<const> = 48
 local logo_hold_frames<const> = 128
 
 function intro:ctor()
-	self.members = scene_library.instantiate(scene.id)
+	self.presentation = scene_library.instantiate(scene.id)
+	self.members = self.presentation.members
 	self.logo_sprite = self.members.logo.sprite_component
 	self.logo_sprite.visible = false
 	self.logo_background = self.members.background.visual

@@ -51,11 +51,11 @@ local ship_position_keys<const> = {
 }
 local selection_flash_frames<const> = timeline.build_frame_sequence({
 	{
-		value = { presentation = { selection_cover = { visible = true } } },
+		value = { presentation = { members = { selection_cover = { visible = true } } } },
 		hold = 4,
 	},
 	{
-		value = { presentation = { selection_cover = { visible = false } } },
+		value = { presentation = { members = { selection_cover = { visible = false } } } },
 		hold = 4,
 	},
 })
@@ -91,22 +91,22 @@ local hangar_background_keys<const> = {
 }
 
 local apply_background<const> = function(target, frame)
-	local background<const> = target.presentation.background
+	local background<const> = target.presentation.members.background
 	background:set_imgid(background.images[frame])
 end
 
 local apply_burst_frame<const> = function(target, frame)
-	target.presentation.ship.burst:set_imgid(ship_images[frame])
+	target.presentation.members.ship.burst:set_imgid(ship_images[frame])
 end
 
 local apply_ship_position<const> = function(target, offset_y)
-	local ship<const> = target.presentation.ship
+	local ship<const> = target.presentation.members.ship
 	ship.y = ship.start_y + offset_y
 end
 
 function title_screen:release_presentation()
 	if self.presentation then
-		scene_library.dispose(self.presentation)
+		self.presentation:dispose()
 		self.presentation = nil
 	end
 end
@@ -121,7 +121,7 @@ end
 function title_screen:toggle_player_count()
 	self.selected_player_count = self.selected_player_count == 1 and 2 or 1
 	local offset_y<const> = (self.selected_player_count - 1) * 16
-	local members<const> = self.presentation
+	local members<const> = self.presentation.members
 	members.selector.sprite_component.offset_y = offset_y
 	members.selection_cover.visual.offset_y = offset_y
 	members.selector.visible = true
@@ -133,8 +133,8 @@ end
 
 function title_screen:begin_selection_flash()
 	self.events:emit('title_start')
-	self.presentation.selector.visible = true
-	self.presentation.selection_cover.visible = true
+	self.presentation.members.selector.visible = true
+	self.presentation.members.selection_cover.visible = true
 end
 
 function title_screen:begin_flight()
@@ -144,11 +144,11 @@ end
 
 function title_screen:begin_ignition()
 	apply_ship_position(self, metalion_lift_end)
-	self.presentation.ship.burst.visible = true
+	self.presentation.members.ship.burst.visible = true
 end
 
 function title_screen:begin_full_burst()
-	local members<const> = self.presentation
+	local members<const> = self.presentation.members
 	members.ship.sprite_component.visible = false
 	members.foreground.visible = false
 	members.ship.burst.visible = true
@@ -201,7 +201,7 @@ local define_fsm<const> = function()
 								{
 									kind = 'value',
 									interpolation = 'step',
-									path = { 'presentation', 'selector', 'visible' },
+									path = { 'presentation', 'members', 'selector', 'visible' },
 									keys = {
 										{ frame = 0, value = true },
 										{ frame = 12, value = false },

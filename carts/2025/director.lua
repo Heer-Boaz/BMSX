@@ -7,7 +7,6 @@ local combat_module<const> = require('combat')
 local dialogue_module<const> = require('dialogue')
 local transition_module<const> = require('transition')
 local combat_director_definition_id<const> = combat_module.director_definition_id
-local start_node<const> = 'title'
 require('globals')
 
 local dialogue_node_kinds<const> = {
@@ -24,7 +23,7 @@ director.__index = director
 function director:apply_effects(effects)
 	for i = 1, #effects do
 		local effect<const> = effects[i]
-		self.stats[effect.stat] = self.stats[effect.stat] + effect.add
+		self.session.stats[effect.stat] = self.session.stats[effect.stat] + effect.add
 	end
 end
 
@@ -34,9 +33,6 @@ local build_director_fsm<const> = function()
 	local states<const> = {
 		boot = {
 			entering_state = function(self)
-				self.stats = { planning = 0, opdekin = 0, rust = 0, makeup = 0 }
-				self.inline_pages = {}
-				self.inline_next = nil
 				self.just_finished_combat = false
 				self.skip_combat_fade_in = false
 				self.skip_transition_fade = false
@@ -47,9 +43,9 @@ local build_director_fsm<const> = function()
 		},
 		run_node = {
 			entering_state = function(self)
-				local node<const> = story[self.node_id]
+				local node<const> = story[self.session.node_id]
 				local just_finished_combat<const> = self.just_finished_combat
-				self.events:emit('story.node.enter', { node_id = self.node_id, node_kind = node.kind, bg = node.bg, label = node.label, just_finished_combat = just_finished_combat, last_combat_monster_imgid = self.last_combat_monster_imgid })
+				self.events:emit('story.node.enter', { node_id = self.session.node_id, node_kind = node.kind, bg = node.bg, label = node.label, just_finished_combat = just_finished_combat, last_combat_monster_imgid = self.last_combat_monster_imgid })
 				self.just_finished_combat = false
 				if node.kind == 'transition' then
 					return '/transition'
@@ -70,8 +66,8 @@ local build_director_fsm<const> = function()
 					return '/fade'
 				end
 				if node.kind == 'combat' then
-					self.combat_director:start_combat(self.node_id, self.skip_combat_fade_in)
-					self.events:emit('combat.start', { node_id = self.node_id, monster_imgid = node.monster_imgid, skip_fade_in = self.skip_combat_fade_in })
+					self.combat_director:start_combat(self.session.node_id, self.skip_combat_fade_in)
+					self.events:emit('combat.start', { node_id = self.session.node_id, monster_imgid = node.monster_imgid, skip_fade_in = self.skip_combat_fade_in })
 					self.skip_combat_fade_in = false
 					return '/combat_wait'
 				end
@@ -82,7 +78,7 @@ local build_director_fsm<const> = function()
 				['combat.end'] = {
 					emitter = combat_director_definition_id,
 					go = function(self, _state, event)
-						self.node_id = event.next_node_id
+						self.session.node_id = event.next_node_id
 						self.just_finished_combat = true
 						self.last_combat_monster_imgid = event.monster_imgid
 						self.skip_transition_fade = event.skip_transition_fade
@@ -112,10 +108,8 @@ local register_director<const> = function()
 		},
 		defaults = {
 			player_index = 1,
-			node_id = start_node,
 			page_index = 1,
 			choice_index = 1,
-			inline_next = nil,
 			transition_center_x = 0,
 			transition_target_bg = story.title.bg,
 			transition_style = 'dialogue',

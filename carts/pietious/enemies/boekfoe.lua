@@ -1,5 +1,4 @@
 local prefab<const> = require('cartlib/world/prefab')
-local world<const> = require('cartlib/world/world')
 require('constants')
 local bt_result<const> = require('cartlib/behaviour_tree/result')
 local bt_success<const> = bt_result.success
@@ -24,7 +23,7 @@ end
 function boekfoe.spawn_paper(self)
 	local y_speed_num<const> = math.random(-5, 4)
 	self.castle.events:emit('paperspawn')
-	world:spawn('enemy.paperfoe', {
+	self.room.scene:spawn('enemy.paperfoe', {
 		castle = self.castle,
 		room = self.room,
 		player = self.player,

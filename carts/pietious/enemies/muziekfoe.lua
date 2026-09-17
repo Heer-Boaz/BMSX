@@ -1,5 +1,4 @@
 local prefab<const> = require('cartlib/world/prefab')
-local world<const> = require('cartlib/world/world')
 local div_toward_zero<const> = require('cartlib/util/div_toward_zero')
 local velocity<const> = require('cartlib/velocity')
 require('constants')
@@ -73,7 +72,7 @@ function muziekfoe.spawn_note(self)
 		delta_scale
 	)
 	local delta_divisor<const> = math.random(1, 2)
-	world:spawn('enemy.nootfoe', {
+	self.room.scene:spawn('enemy.nootfoe', {
 		castle = self.castle,
 		room = self.room,
 		player = player,

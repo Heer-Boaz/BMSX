@@ -3,7 +3,6 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
-local world<const> = require('cartlib/world/world')
 local assets<const> = require('bmsx/assets')
 local enemy<const> = require('enemies/enemy')
 local ground_foe<const> = require('enemies/ground_foe')
@@ -37,7 +36,7 @@ function sneeuwpop:update_idle()
 end
 
 function sneeuwpop:fire_ray()
-	local ray<const> = world:spawn(ids_sneeuwpop_ray_def, {
+	local ray<const> = self.scene:spawn(ids_sneeuwpop_ray_def, {
 		pos = {
 			x = self.x + sneeuwpop_ray_offset_x,
 			y = self.y + sneeuwpop_ray_offset_y,
@@ -60,7 +59,7 @@ function sneeuwpop:ray_finished()
 end
 
 function sneeuwpop:on_destroyed(projectile)
-	world:spawn(ids_destroyed_sneeuwpop_def, {
+	self.scene:spawn(ids_destroyed_sneeuwpop_def, {
 		stage = self.stage,
 		pos = { x = self.x, y = self.y },
 	})

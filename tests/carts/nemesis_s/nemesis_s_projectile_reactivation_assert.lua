@@ -78,7 +78,7 @@ function __bmsx_host_test.update()
 
 		player.x = 32
 		player.y = 64
-		test.target = world:spawn(target_definition_id, {
+		test.target = registry:get('nemesis_s.director').gameplay:spawn(target_definition_id, {
 			pos = { x = 48, y = 70 },
 		})
 		test.projectile = player.primary_projectiles[1]

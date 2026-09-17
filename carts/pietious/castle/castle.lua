@@ -2,11 +2,11 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
+local scene_library<const> = require('cartlib/world/scene_library')
 require('constants')
 local castle_map<const> = require('castle/map')
 local progression<const> = require('cartlib/progression')
 local room_spawner<const> = require('room/spawner')
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
 local world_object<const> = require('cartlib/world/world_object')
 
 local castle<const> = {}
@@ -68,20 +68,20 @@ local build_progression_program<const> = function()
 			filter_targets[filter_index] = enemy_def
 			if enemy_def.retain_defeat_in_region then
 				rules[#rules + 1] = {
-					id = enemy_def.options.id,
+					id = enemy_def.member_id,
 					on = 'damage.resolved',
 					when_event = {
 						equals = {
-							target_id = enemy_def.options.id,
+							target_key = enemy_def.member_id,
 							destroyed = true,
 						},
 					},
 					set = {
-						{ key = enemy_def.options.id, value = true },
+						{ key = enemy_def.member_id, value = true },
 					},
 				}
 				region_reset_actions[#region_reset_actions + 1] = {
-					key = enemy_def.options.id,
+					key = enemy_def.member_id,
 					value = false,
 				}
 			end
@@ -103,14 +103,14 @@ local build_progression_program<const> = function()
 				}
 				append_condition_reveal(apply, destroyed_condition)
 				rules[#rules + 1] = {
-					id = 'condition.' .. enemy_def.options.id,
+					id = 'condition.' .. enemy_def.member_id,
 					on = 'damage.resolved',
 					when_all = {
 						{ key = destroyed_condition, equals = false },
 					},
 					when_event = {
 						equals = {
-							target_id = enemy_def.options.id,
+							target_key = enemy_def.member_id,
 							destroyed = true,
 						},
 					},
@@ -121,7 +121,7 @@ local build_progression_program<const> = function()
 				}
 			end
 			if room_number == 106 and enemy_def.definition_id == 'enemy.marspeinenaardappel' then
-				world1_marspein_destroyed_keys[#world1_marspein_destroyed_keys + 1] = enemy_def.options.id
+				world1_marspein_destroyed_keys[#world1_marspein_destroyed_keys + 1] = enemy_def.member_id
 			end
 		end
 		local items<const> = room_template.items
@@ -131,12 +131,12 @@ local build_progression_program<const> = function()
 			filters[filter_index] = item.conditions
 			filter_targets[filter_index] = item
 			if world_item_inventory[item.options.item_type] then
-				persistent_item_ids[#persistent_item_ids + 1] = item.options.id
+				persistent_item_ids[#persistent_item_ids + 1] = item.member_id
 			end
 		end
 		local inventory_rocks<const> = room_template.inventory_rocks
 		for i = 1, #inventory_rocks do
-			persistent_item_ids[#persistent_item_ids + 1] = 'drop.' .. inventory_rocks[i].options.id
+			persistent_item_ids[#persistent_item_ids + 1] = 'drop.' .. inventory_rocks[i].member_id
 		end
 		local seal<const> = room_template.seal
 		if seal ~= nil then
@@ -272,7 +272,7 @@ local build_progression_program<const> = function()
 				if command.room_number ~= ctx.current_room_number then
 					return
 				end
-				room_spawner.reconcile_condition(ctx.room, command.condition, event.target_id)
+				room_spawner.reconcile_condition(ctx.room, command.condition, event.target_key)
 			end,
 			emit_event = function(ctx, command)
 				ctx.events:emit(command.event)
@@ -300,7 +300,7 @@ function castle:spawn_global_elevators()
 	for i = 1, #routes do
 		local route<const> = routes[i]
 		local start<const> = route.path[1]
-		elevators[i] = world:spawn('elevator_platform', {
+		elevators[i] = self.scene:spawn('elevator_platform', {
 			id = 'e.p' .. tostring(i),
 			space_id = 'main',
 			castle = self,
@@ -317,23 +317,17 @@ end
 function castle:sync_current_room_seal_instance()
 	local room<const> = self.room
 	local seal<const> = room.seal
-	local seal_instance = self.seal_instance
+	local seal_instance = room.seal_instance
 	local keep_seal_instance<const> = seal ~= nil
 		and room.seal_dissolve_step < 6
 		and self:has_tag(castle_tags.seal_active)
 	if not keep_seal_instance then
 		if seal_instance ~= nil then
 			seal_instance:mark_for_disposal()
-			self.seal_instance = nil
+			room.seal_instance = nil
 		end
 		return
 	end
-	if seal_instance ~= nil and seal_instance.id ~= seal.options.id then
-		seal_instance:mark_for_disposal()
-		seal_instance = nil
-		self.seal_instance = nil
-	end
-
 	local dissolve_step<const> = room.seal_dissolve_step
 	local sprite_id
 	if dissolve_step > 0 then
@@ -343,38 +337,16 @@ function castle:sync_current_room_seal_instance()
 	end
 
 	if seal_instance == nil then
-		local options<const> = shallow_copy(seal.options)
-		options.space_id = world.active_space_id
-		options.player_index = room.player.player_index
-		seal_instance = world:spawn(seal.definition_id, options)
-		self.seal_instance = seal_instance
+		seal_instance = room.scene:spawn_member(seal, {
+			space_id = world.active_space_id,
+			player_index = room.player.player_index,
+		})
+		room.seal_instance = seal_instance
 	else
 		seal_instance:set_space(world.active_space_id)
-		seal_instance.x = seal.options.pos.x
-		seal_instance.y = seal.options.pos.y
-		seal_instance:set_z(seal.options.pos.z)
 	end
 
 	seal_instance:set_imgid(sprite_id)
-end
-
-function castle:emit_room_state_changed()
-	local room<const> = self.room
-	local payload<const> = {
-		room_number = self.current_room_number,
-		world_number = room.world_number,
-	}
-	if self:has_tag(castle_tags.seal_active) then
-		payload.has_active_seal = true
-	else
-		payload.has_active_seal = false
-	end
-	if self:has_tag(castle_tags.daemon_fight) then
-		payload.daemon_fight_active = true
-	else
-		payload.daemon_fight_active = false
-	end
-	self.events:emit('room_state.changed', payload)
 end
 
 function castle:reset_room_encounter_tags()
@@ -388,7 +360,7 @@ end
 function castle:refresh_current_room_customizations()
 	local room<const> = self.room
 	local seal<const> = room.seal
-	local world_boss_defeated<const> = self.world_boss_defeated[room.world_number]
+	local world_boss_defeated<const> = self.session.world_boss_defeated[room.world_number]
 	local has_active_seal = false
 	if seal ~= nil then
 		if self:has_tag(castle_tags.seal_broken) then
@@ -403,12 +375,11 @@ function castle:refresh_current_room_customizations()
 	end
 	set_tag_flag(self, castle_tags.seal_active, has_active_seal)
 	self:sync_current_room_seal_instance()
-	self:emit_room_state_changed()
 end
 
 function castle:begin_seal_dissolution()
 	local room<const> = self.room
-	self.world_boss_defeated[room.world_number] = false
+	self.session.world_boss_defeated[room.world_number] = false
 	set_tag_flag(self, castle_tags.seal_sequence, true)
 	set_tag_flag(self, castle_tags.seal_dissolving, true)
 	set_tag_flag(self, castle_tags.seal_broken, false)
@@ -416,7 +387,6 @@ function castle:begin_seal_dissolution()
 	room.seal_dissolve_step = 0
 	room:rebuild_room_tiles()
 	set_tag_flag(self, castle_tags.daemon_fight, false)
-	self:emit_room_state_changed()
 	self:sync_current_room_seal_instance()
 end
 
@@ -465,25 +435,22 @@ function castle:finish_seal_dissolution()
 		room:patch_rows(row_patches)
 	end
 	self:refresh_current_room_customizations()
-	room_spawner.spawn_all_for_room(room)
 end
 
 function castle:begin_daemon_appearance()
 	set_tag_flag(self, castle_tags.seal_sequence, true)
 	set_tag_flag(self, castle_tags.seal_dissolving, false)
 	set_tag_flag(self, castle_tags.daemon_fight, false)
-	self:emit_room_state_changed()
 end
 
 function castle:mark_current_world_boss_defeated()
 	local world_number<const> = self.room.world_number
-	self.world_boss_defeated[world_number] = true
+	self.session.world_boss_defeated[world_number] = true
 	set_tag_flag(self, castle_tags.seal_sequence, false)
 	set_tag_flag(self, castle_tags.seal_dissolving, false)
 	set_tag_flag(self, castle_tags.daemon_fight, false)
 	set_tag_flag(self, castle_tags.seal_active, false)
 	self:sync_current_room_seal_instance()
-	self:emit_room_state_changed()
 end
 
 function castle:should_restart_daemon_appearance_after_death()
@@ -491,7 +458,7 @@ function castle:should_restart_daemon_appearance_after_death()
 	if room.seal == nil then
 		return false
 	end
-	if self.world_boss_defeated[room.world_number] then
+	if self.session.world_boss_defeated[room.world_number] then
 		return false
 	end
 	if self:has_tag(castle_tags.seal_broken) then
@@ -519,8 +486,8 @@ function castle:begin_death_restart()
 		switch.map_id = 0
 		switch.map_x = 5
 		switch.map_y = 12
-		switch.spawn_x = room.player.spawn_x
-		switch.spawn_y = room.player.spawn_y
+		switch.spawn_x = room.player.status.spawn_x
+		switch.spawn_y = room.player.status.spawn_y
 		switch.spawn_facing = 1
 	else
 		local transition<const> = castle_map.world_transitions_by_number[world_number]
@@ -534,7 +501,7 @@ function castle:begin_death_restart()
 	end
 
 	self.death_restart_switch = switch
-	room_spawner.mark_all_for_disposal()
+	room.scene:dispose()
 end
 
 function castle:finish_death_restart()
@@ -545,8 +512,7 @@ function castle:finish_death_restart()
 	end
 
 	self.death_restart_switch = nil
-	local room<const> = self.room
-	room:load_room(switch.to_room_number)
+	local room<const> = self:load_room(switch.to_room_number)
 	self:commit_room_switch(switch, switch.map_id, switch.map_x, switch.map_y, false)
 	local player<const> = room.player
 	player:apply_spawn_position(switch)
@@ -567,7 +533,7 @@ function castle:is_current_room_boss_encounter_active()
 		return true
 	end
 	if self:has_tag(castle_tags.seal_broken) then
-		return not self.world_boss_defeated[room.world_number]
+		return not self.session.world_boss_defeated[room.world_number]
 	end
 	return false
 end
@@ -575,14 +541,13 @@ end
 function castle:activate_current_room_daemon_fight()
 	set_tag_flag(self, castle_tags.seal_sequence, false)
 	set_tag_flag(self, castle_tags.daemon_fight, true)
-	self:emit_room_state_changed()
 end
 
 function castle:ctor()
 	self.elevators = {}
 	self.room_enter_pending = false
 	self:reset_room_encounter_tags()
-	progression.mount(self, castle._progression_program)
+	progression.mount(self, castle._progression_program, self.session.progression)
 end
 
 function castle:unbind()
@@ -590,16 +555,9 @@ function castle:unbind()
 	progression.unmount(self)
 end
 
-function castle:sync_world_entrance_states_for_room(room_state)
-	local world_entrances<const> = room_state.world_entrances
-	for i = 1, #world_entrances do
-		local target<const> = world_entrances[i].options.target
-		if self.world_entrance_states[target] == nil then
-			self.world_entrance_states[target] = {
-				state = 'closed',
-			}
-		end
-	end
+function castle:ondespawn()
+	self.room.scene:dispose()
+	self.room = nil
 end
 
 function castle:create_room_enter_payload(suppress_room_music)
@@ -644,14 +602,13 @@ function castle:commit_room_switch(switch, map_id, map_x, map_y, emit_room_enter
 	room.map_y = map_y
 	room.last_room_switch = switch
 	self:reset_room_encounter_tags()
-	self:sync_world_entrance_states_for_room(room)
 	if previous_world_number ~= room.world_number then
 		self.events:emit('room.region_enter', {
 			world_number = room.world_number,
 		})
 	end
 	self:refresh_current_room_customizations()
-	room_spawner.spawn_all_for_room(room)
+	room_spawner.populate(room)
 	if emit_room_enter_now == nil or emit_room_enter_now then
 		self:emit_room_enter()
 	else
@@ -660,24 +617,35 @@ function castle:commit_room_switch(switch, map_id, map_x, map_y, emit_room_enter
 	return switch
 end
 
+function castle:load_room(room_number)
+	local previous<const> = self.room
+	if previous ~= nil then
+		previous.scene:dispose()
+	end
+	local template<const> = castle_map.room_templates[room_number]
+	local instance<const> = scene_library.create(template.scene_id)
+	local room<const> = instance:spawn('room', {
+		space_id = 'main', castle = self, player = self.player,
+		room_number = room_number, progress = self.session.rooms[template.scene_id],
+	})
+	self.room = room
+	self.player.room = room
+	return room
+end
+
 function castle:initialize(initial_room_number, emit_room_enter_now)
-	local rm<const> = self.room
 	local room_number<const> = initial_room_number or castle_map.start_room_number
-	rm:reset_rock_drops()
 	self.current_room_number = room_number
-	rm:load_room(room_number)
+	local rm<const> = self:load_room(room_number)
 	rm.map_id = rm.world_number
 	rm.map_x = 5
 	rm.map_y = 12
 	rm.last_room_switch = nil
-	self.world_entrance_states = {}
-	self.world_boss_defeated = {}
 	self.room_enter_pending = false
 	self:reset_room_encounter_tags()
-	self:sync_world_entrance_states_for_room(rm)
 	self:refresh_current_room_customizations()
 	self:spawn_global_elevators()
-	room_spawner.spawn_all_for_room(rm)
+	room_spawner.populate(rm)
 	if emit_room_enter_now == nil or emit_room_enter_now then
 		self:emit_room_enter()
 	else
@@ -686,10 +654,10 @@ function castle:initialize(initial_room_number, emit_room_enter_now)
 end
 
 function castle:begin_open_world_entrance(target)
-	if self.world_entrance_states[target].state ~= 'closed' then
+	if self.session.world_entrances[target].state ~= 'closed' then
 		return false
 	end
-	self.world_entrance_states[target].state = 'opening_1'
+	self.session.world_entrances[target].state = 'opening_1'
 	self.events:emit('world_entrance.open.request', {
 		target = target,
 	})
@@ -716,7 +684,8 @@ function castle:switch_room(direction, player_top, player_bottom)
 	else
 		map_y = map_y + 1
 	end
-	self:commit_room_switch(switch, room.world_number, map_x, map_y)
+	local next_room<const> = self:load_room(switch.to_room_number)
+	self:commit_room_switch(switch, next_room.world_number, map_x, map_y)
 	return switch
 end
 
@@ -731,9 +700,8 @@ function castle:enter_world(target)
 	switch.spawn_x = transition.world_spawn_x
 	switch.spawn_y = transition.world_spawn_y
 	switch.spawn_facing = transition.world_spawn_facing
-	local room<const> = self.room
-	room:reset_rock_drops()
-	room:load_room(switch.to_room_number)
+	self.session:clear_region_drops()
+	local room<const> = self:load_room(switch.to_room_number)
 	self:commit_room_switch(
 		switch,
 		switch.map_id,
@@ -745,14 +713,14 @@ function castle:enter_world(target)
 end
 
 function castle:leave_world_to_castle(emit_room_enter_now)
-	local room<const> = self.room
+	local room = self.room
 	local world_number<const> = room.world_number
 	local from_room_number<const> = self.current_room_number
 
 	local transition<const> = castle_map.world_transitions_by_number[world_number]
 
-	room:reset_rock_drops()
-	room:load_room(transition.castle_room_number)
+	self.session:clear_region_drops()
+	room = self:load_room(transition.castle_room_number)
 	self.current_room_number = transition.castle_room_number
 	local switch<const> = create_room_switch(from_room_number, self.current_room_number, 'world_leave')
 	self:commit_room_switch(
@@ -774,16 +742,15 @@ function castle:leave_world_to_castle(emit_room_enter_now)
 end
 
 function castle:halo_teleport_to_room_1(emit_room_enter_now)
-	local room<const> = self.room
 	local from_room_number<const> = self.current_room_number
 
-	room:reset_rock_drops()
-	room:load_room(halo_destination_room_number)
+	self.session:clear_region_drops()
+	local room<const> = self:load_room(halo_destination_room_number)
 	self.current_room_number = halo_destination_room_number
 	local switch<const> = create_room_switch(from_room_number, self.current_room_number, 'halo')
 	self:commit_room_switch(switch, 0, 5, 12, emit_room_enter_now)
-	switch.spawn_x = room.player.spawn_x
-	switch.spawn_y = room.player.spawn_y
+	switch.spawn_x = room.player.status.spawn_x
+	switch.spawn_y = room.player.status.spawn_y
 	switch.spawn_facing = 1
 
 	return {
@@ -827,19 +794,19 @@ local define_castle_fsm<const> = function()
 			['world_entrance.opening_2'] = {
 				emitter = 'c',
 				go = function(self, _state, event)
-					self.world_entrance_states[event.target].state = 'opening_2'
+					self.session.world_entrances[event.target].state = 'opening_2'
 				end,
 			},
 			['world_entrance.opening_3'] = {
 				emitter = 'c',
 				go = function(self, _state, event)
-					self.world_entrance_states[event.target].state = 'opening_3'
+					self.session.world_entrances[event.target].state = 'opening_3'
 				end,
 			},
 			['world_entrance.opened'] = {
 				emitter = 'c',
 				go = function(self, _state, event)
-					self.world_entrance_states[event.target].state = 'open'
+					self.session.world_entrances[event.target].state = 'open'
 				end,
 			},
 			['item.picked'] = {

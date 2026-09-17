@@ -10,7 +10,6 @@ local prefab<const> = require('cartlib/world/prefab')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
-local world<const> = require('cartlib/world/world')
 local world_object<const> = require('cartlib/world/world_object')
 local assets<const> = require('bmsx/assets')
 local combat_damage<const> = require('combat/damage')
@@ -348,7 +347,7 @@ function world1_daemon:spawn_potato(x, y)
 		local existing<const> = self.potatoes[index]
 		if existing == nil or not existing.active then
 			local speed_x<const> = self.direction == 'right' and 4 or -4
-			self.potatoes[index] = world:spawn('enemy.marspeinenaardappel', {
+			self.potatoes[index] = self.room.scene:spawn('enemy.marspeinenaardappel', {
 				space_id = self.space_id,
 				castle = self.castle,
 				room = self.room,
@@ -389,7 +388,7 @@ function world1_daemon:spawn_attack_burst(burst_count)
 		if self.direction == 'left' then
 			speed_x = -speed_x
 		end
-		local projectile<const> = world:spawn('enemy.daemon_spawn', {
+		local projectile<const> = self.room.scene:spawn('enemy.daemon_spawn', {
 			space_id = self.space_id,
 			castle = self.castle,
 			room = self.room,
@@ -421,7 +420,7 @@ function world1_daemon:spawn_zak()
 				direction = 'right'
 				x = 0
 			end
-			self.zaks[index] = world:spawn('enemy.zakfoe', {
+			self.zaks[index] = self.room.scene:spawn('enemy.zakfoe', {
 				space_id = self.space_id,
 				castle = self.castle,
 				room = self.room,
@@ -517,7 +516,7 @@ end
 
 function world1_daemon:spawn_key()
 	self.death_visual:set_draw_function(nil)
-	self.key = world:spawn('world1_daemon_key', {
+	self.key = self.room.scene:spawn('world1_daemon_key', {
 		id = 'world1_daemon_key',
 		space_id = self.space_id,
 		room = self.room,
@@ -525,9 +524,7 @@ function world1_daemon:spawn_key()
 		pos = { x = boss_world1_key_x, y = boss_world1_key_y, z = draw_z_enemy },
 		item_id = 'world1_daemon_key',
 		item_type = 'keyworld1',
-		rs_room_number = self.room.room_number,
 	})
-	self.key:add_tag('rs')
 	self.events:emit('daemon.death_complete')
 end
 

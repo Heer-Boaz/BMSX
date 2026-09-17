@@ -6,22 +6,20 @@ function room_scene.register()
 	scene_library.register(room_scene.id, {
 		objects = {
 			{
-				member_id = 'seal_01',
+				member_id = 'seal_100_01',
 				definition_id = 'seal',
 				conditions = {},
 				options = {
-					id = 'seal_100_01',
 					space_id = 'main',
 					pos = { x = 96, y = 80, z = 23 },
 					command = 'eyndbaes',
 				},
 			},
 			{
-				member_id = 'enemy_01',
+				member_id = 'enemy_100_01',
 				definition_id = 'enemy.daemon',
 				conditions = {},
 				options = {
-					id = 'enemy_100_01',
 					space_id = 'main',
 					pos = { x = 0, y = 32, z = 140 },
 					damage = 12,

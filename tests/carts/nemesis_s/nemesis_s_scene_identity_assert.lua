@@ -42,16 +42,16 @@ function __bmsx_host_test.setup()
 		scene_library.register(test_scene_id, definition)
 		local first<const> = scene_library.instantiate(test_scene_id)
 		local second<const> = scene_library.instantiate(test_scene_id)
-		assert(first.left.id ~= first.right.id and second.left.id ~= second.right.id
-			and first.left.id ~= second.left.id and first.right.id ~= second.right.id,
+		assert(first.members.left.id ~= first.members.right.id and second.members.left.id ~= second.members.right.id
+			and first.members.left.id ~= second.members.left.id and first.members.right.id ~= second.members.right.id,
 			'repeated scene placement reused a Registry identity')
-		assert(first.left.x == 11 and first.left.y == 12 and first.left.z == 13
-			and second.right.x == 21 and second.right.y == 22 and second.right.z == 23,
+		assert(first.members.left.x == 11 and first.members.left.y == 12 and first.members.left.z == 13
+			and second.members.right.x == 21 and second.members.right.y == 22 and second.members.right.z == 23,
 			'placement stopped consuming the actual prefab construction and position options')
 		assert(prefab.definition(placement.definition_id).defaults.id == nil
 			and definition.objects[1].options.id == nil and definition.objects[2].options.id == nil,
 			'instantiation manufactured identity inside the authored prototype or placement')
-		for _, object in ipairs({ first.left, first.right, second.left, second.right }) do
+		for _, object in ipairs({ first.members.left, first.members.right, second.members.left, second.members.right }) do
 			assert(object.id ~= placement.named_id and object.id ~= 'left' and object.id ~= 'right'
 				and registry:get(object.id) == object and object.space_id == placement.space_id,
 				'scene-local member name replaced the Registry-owned runtime identity')

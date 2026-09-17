@@ -13,7 +13,7 @@ end
 
 function __bmsx_host_test.ready()
 	return registry:get('c') ~= nil
-		and registry:get('room') ~= nil
+		and registry:get('c').room ~= nil
 		and registry:get('pietolon') ~= nil
 		and registry:get('d') ~= nil
 end
@@ -38,7 +38,7 @@ function __bmsx_host_test.update()
 		or not director.state_machines:matches_state(test.room_state) then
 			return false
 		end
-		assert(player.inventory_items.halo, 'halo scenario started without the halo')
+		assert(player.status.inventory_items.halo, 'halo scenario started without the halo')
 		test.phase = 'open_item_screen'
 		return host.press('ShiftLeft', 2)
 	end

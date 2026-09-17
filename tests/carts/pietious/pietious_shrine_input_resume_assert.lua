@@ -8,7 +8,7 @@ __bmsx_host_test = {
 
 function __bmsx_host_test.ready()
 	return registry:get('c') ~= nil
-		and registry:get('room') ~= nil
+		and registry:get('c').room ~= nil
 		and registry:get('pietolon') ~= nil
 		and registry:get('d') ~= nil
 end
@@ -28,7 +28,7 @@ function __bmsx_host_test.update()
 	assert(test.frames < 400, 'shrine resume scenario timed out phase=' .. test.phase)
 
 	local castle<const> = registry:get('c')
-	local room<const> = registry:get('room')
+	local room = registry:get('c').room
 	local player<const> = registry:get('pietolon')
 	local director<const> = registry:get('d')
 	if test.room_state == nil then
@@ -43,7 +43,7 @@ function __bmsx_host_test.update()
 			return false
 		end
 		local from<const> = castle.current_room_number
-		room:load_room(4)
+		room = castle:load_room(4)
 		castle:commit_room_switch({ from_room_number = from, to_room_number = 4, direction = 'right' }, 0, 5, 12)
 		local shrine<const> = room.shrine_instances[1]
 		player.state_machines:transition_to('/quiet')

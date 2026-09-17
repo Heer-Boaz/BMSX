@@ -39,7 +39,7 @@ function __bmsx_host_test.update()
 		stage.scrolling = false
 		stage.actor_spawn_index = stage.actor_spawn_count + 1
 
-		local chimney<const> = world:spawn(ids_schoorsteen_foe_def, {
+		local chimney<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_schoorsteen_foe_def, {
 			stage = stage,
 			pos = { x = 120, y = 88 },
 		})
@@ -73,7 +73,7 @@ function __bmsx_host_test.update()
 				return probe_ray_tiles
 			end,
 		}
-		local bounded_ray<const> = world:spawn(ids_schoorsteen_ray_def, {
+		local bounded_ray<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_schoorsteen_ray_def, {
 			stage = probe_stage,
 			pos = { x = 48, y = 80 },
 		})
@@ -96,12 +96,12 @@ function __bmsx_host_test.update()
 		bounded_ray:apply_contraction_frame(2)
 		assert(registry:get(bounded_ray.id) == nil,
 			'empty chimney ray remained published')
-		local timed_ray<const> = world:spawn(ids_schoorsteen_ray_def, {
+		local timed_ray<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_schoorsteen_ray_def, {
 			stage = probe_stage,
 			pos = { x = 48, y = 80 },
 		})
 
-		local snowman<const> = world:spawn(ids_sneeuwpop_def, {
+		local snowman<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_sneeuwpop_def, {
 			stage = stage,
 			pos = { x = 160, y = 48 },
 		})

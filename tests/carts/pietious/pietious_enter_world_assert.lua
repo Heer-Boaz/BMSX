@@ -16,7 +16,7 @@ __bmsx_host_test = __bmsx_host_test or {
 }
 
 function __bmsx_host_test.ready()
-	return registry:get('c') ~= nil and registry:get('room') ~= nil and registry:get('pietolon') ~= nil and registry:get('d') ~= nil
+	return registry:get('c') ~= nil and registry:get('c').room ~= nil and registry:get('pietolon') ~= nil and registry:get('d') ~= nil
 end
 
 function __bmsx_host_test.setup()
@@ -39,21 +39,19 @@ function __bmsx_host_test.update(_frame, _current_music)
 		end
 
 		local castle<const> = registry:get('c')
-		local room<const> = registry:get('room')
+		local room = registry:get('c').room
 		local player<const> = registry:get('pietolon')
 		local castle_room_number<const> = 8
 		local from<const> = castle.current_room_number
 
-		room:load_room(castle_room_number)
+		room = castle:load_room(castle_room_number)
 		castle:commit_room_switch({ from_room_number = from, to_room_number = castle_room_number, direction = 'left' }, 0, world_transition.castle_map_x, world_transition.castle_map_y)
 		local selected_entrance<const> = room.world_entrance_instances[1]
-		castle.world_entrance_states = {}
-		castle:sync_world_entrance_states_for_room(room)
 		room.map_id = 0
 		room.map_x = world_transition.castle_map_x
 		room.map_y = world_transition.castle_map_y
 		room.last_room_switch = nil
-		castle.world_entrance_states[world_transition.target].state = 'open'
+		castle.session.world_entrances[world_transition.target].state = 'open'
 
 		player:clear_input_state()
 		player:zero_motion()
@@ -88,7 +86,7 @@ function __bmsx_host_test.update(_frame, _current_music)
 	end
 
 	local castle<const> = registry:get('c')
-	local room<const> = registry:get('room')
+	local room = registry:get('c').room
 	local player<const> = registry:get('pietolon')
 	local sprite<const> = player.sprite_component
 	if sprite.region_width ~= nil and sprite.region_height == 0 then

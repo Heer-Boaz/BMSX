@@ -80,7 +80,7 @@ function dialogue.register_states(states)
 
 	states.bg_only = {
 		entering_state = function(self)
-			local node<const> = story[self.node_id]
+			local node<const> = story[self.session.node_id]
 			hide_transition_layers(self.transition_visual)
 			show_background(self.background, node.bg)
 			local next_node<const> = background_node_at_or_after(node.next)
@@ -96,8 +96,8 @@ function dialogue.register_states(states)
 			{
 				pattern = 'confirm[jp]',
 				go = function(self)
-					local node<const> = story[self.node_id]
-					self.node_id = node.next
+					local node<const> = story[self.session.node_id]
+					self.session.node_id = node.next
 					return '/run_node'
 				end,
 			},
@@ -106,7 +106,7 @@ function dialogue.register_states(states)
 
 	states.dialogue = {
 		entering_state = function(self)
-			local node<const> = story[self.node_id]
+			local node<const> = story[self.session.node_id]
 			hide_transition_layers(self.transition_visual)
 			show_background(self.background, node.bg)
 			if node.kind ~= 'dialogue_inline' then
@@ -117,7 +117,7 @@ function dialogue.register_states(states)
 			end
 			reset_text_colors(self)
 			if node.kind == 'dialogue_inline' then
-				self.pages = self.inline_pages
+				self.pages = self.session.inline_pages
 			else
 				self.pages = node.pages
 			end
@@ -158,18 +158,18 @@ function dialogue.register_states(states)
 
 					if self.page_index < #self.pages then
 						self.page_index = self.page_index + 1
-						local node<const> = story[self.node_id]
+						local node<const> = story[self.session.node_id]
 						local prompt_lines<const> = node.typed and prompt_skip or dialogue_completion_prompt(self)
 						self:show_dialogue_page(node.typed, prompt_lines)
 						return
 					end
-					local node<const> = story[self.node_id]
+					local node<const> = story[self.session.node_id]
 					if node.kind == 'dialogue_inline' then
-						self.node_id = self.inline_next
-						self.inline_pages = {}
-						self.inline_next = nil
+						self.session.node_id = self.session.inline_next
+						self.session.inline_pages = {}
+						self.session.inline_next = nil
 					else
-						self.node_id = node.next
+						self.session.node_id = node.next
 					end
 					return '/run_node'
 				end,
@@ -179,12 +179,12 @@ function dialogue.register_states(states)
 
 	states.ending = {
 		entering_state = function(self)
-			local node<const> = story[self.node_id]
+			local node<const> = story[self.session.node_id]
 			hide_transition_layers(self.transition_visual)
 			show_background(self.background, node.bg)
 			reset_text_colors(self)
 			self.text_transition:clear_text()
-			local total<const> = self.stats.planning + self.stats.opdekin + self.stats.rust + self.stats.makeup
+			local total<const> = self.session.stats.planning + self.session.stats.opdekin + self.session.stats.rust + self.session.stats.makeup
 			local title = nil
 			local total_line = nil
 			local line1 = nil
@@ -209,10 +209,10 @@ function dialogue.register_states(states)
 				{ title, total_line },
 				{ line1, line2 },
 				{
-					'Planning: ' .. self.stats.planning,
-					'Opdekin: ' .. self.stats.opdekin,
-					'Rust: ' .. self.stats.rust,
-					'Make-up: ' .. self.stats.makeup,
+					'Planning: ' .. self.session.stats.planning,
+					'Opdekin: ' .. self.session.stats.opdekin,
+					'Rust: ' .. self.session.stats.rust,
+					'Make-up: ' .. self.session.stats.makeup,
 				},
 			}
 			self.page_index = 1
@@ -252,7 +252,7 @@ function dialogue.register_states(states)
 					if self.text_main:is_typing() then return end
 					if self.page_index < #self.pages then
 						self.page_index = self.page_index + 1
-						local node<const> = story[self.node_id]
+						local node<const> = story[self.session.node_id]
 						local prompt_lines
 						if not node.typed then
 							prompt_lines = ending_completion_prompt(self)
@@ -267,7 +267,7 @@ function dialogue.register_states(states)
 
 	states.choice = {
 		entering_state = function(self)
-			local node<const> = story[self.node_id]
+			local node<const> = story[self.session.node_id]
 			hide_transition_layers(self.transition_visual)
 			show_background(self.background, node.bg)
 			reset_text_colors(self)
@@ -304,7 +304,7 @@ function dialogue.register_states(states)
 				pattern = 'down[jp]',
 				go = function(self)
 					if self.stagger_blocked then return end
-					local node<const> = story[self.node_id]
+					local node<const> = story[self.session.node_id]
 					self.choice_index = math.min(#node.options, self.choice_index + 1)
 					if not self.text_main:is_typing() then
 						self.text_choice:set_highlighted_line(self.choice_index - 1)
@@ -326,16 +326,16 @@ function dialogue.register_states(states)
 				go = function(self)
 					if self.stagger_blocked then return end
 					if self.text_main:is_typing() then return end
-					local node<const> = story[self.node_id]
+					local node<const> = story[self.session.node_id]
 					local option<const> = node.options[self.choice_index]
 					local next_node<const> = background_node_at_or_after(option.next)
 					if next_node.bg ~= node.bg then
 						atlas.load(image.atlas_id(next_node.bg))
 					end
 					self:apply_effects(option.effects)
-					self.inline_pages = option.result_pages
-					self.inline_next = option.next
-					self.node_id = '__inline_dialogue'
+					self.session.inline_pages = option.result_pages
+					self.session.inline_next = option.next
+					self.session.node_id = '__inline_dialogue'
 					return '/run_node'
 				end,
 			},

@@ -3,7 +3,6 @@ local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local prefab<const> = require('cartlib/world/prefab')
-local world<const> = require('cartlib/world/world')
 local enemy<const> = require('enemies/enemy')
 local foe<const> = require('enemies/foe')
 require('constants')
@@ -51,7 +50,7 @@ function sint_pop:on_destroyed(projectile)
 	if remaining == 0 then
 		drop_definition_id = ids_roodje_def
 	end
-	world:spawn(ids_small_explosion_def, {
+	self.scene:spawn(ids_small_explosion_def, {
 		stage = self.stage,
 		drop_definition_id = drop_definition_id,
 		pos = { x = self.x, y = self.y + 8 },

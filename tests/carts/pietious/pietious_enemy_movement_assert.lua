@@ -9,7 +9,7 @@ __bmsx_host_test = {
 }
 
 local record_cross_landing<const> = function(test)
-	local cross<const> = registry:get(test.cross_id)
+	local cross<const> = registry:get('c').room.scene.members[test.cross_id]
 	test.landing_count = test.landing_count + 1
 	test.landing_x = cross.x
 end
@@ -20,7 +20,7 @@ end
 
 function __bmsx_host_test.ready()
 	return registry:get('c') ~= nil
-		and registry:get('room') ~= nil
+		and registry:get('c').room ~= nil
 		and registry:get('pietolon') ~= nil
 end
 
@@ -33,11 +33,11 @@ function __bmsx_host_test.update()
 	end
 
 	local castle<const> = registry:get('c')
-	local room<const> = registry:get('room')
+	local room = registry:get('c').room
 	local player<const> = registry:get('pietolon')
 	if test.phase == 'load_cross_room' then
 		local from_room_number<const> = castle.current_room_number
-		room:load_room(7)
+		room = castle:load_room(7)
 		castle:commit_room_switch({
 			from_room_number = from_room_number,
 			to_room_number = 7,
@@ -46,7 +46,7 @@ function __bmsx_host_test.update()
 		for index = 1, #room.enemies do
 			local definition<const> = room.enemies[index]
 			if definition.definition_id == 'enemy.crossfoe' then
-				test.cross_id = definition.options.id
+				test.cross_id = definition.member_id
 				break
 			end
 		end
@@ -56,7 +56,7 @@ function __bmsx_host_test.update()
 			subscriber = test,
 			handler = record_cross_landing,
 		})
-		world:spawn('enemy.marspeinenaardappel', {
+		registry:get('c').room.scene:spawn('enemy.marspeinenaardappel', {
 			id = 'probe.marspeinenaardappel',
 			space_id = 'main',
 			castle = castle,
@@ -92,7 +92,7 @@ function __bmsx_host_test.update()
 	end
 
 	if test.phase == 'cross_outside_lane' then
-		local cross<const> = registry:get(test.cross_id)
+		local cross<const> = registry:get('c').room.scene.members[test.cross_id]
 		player.x = room.world_width - player.width
 		player.y = room.world_top
 		if test.cross_start_x == nil then
@@ -108,7 +108,7 @@ function __bmsx_host_test.update()
 	end
 
 	if test.phase == 'cross_flight' then
-		local cross<const> = registry:get(test.cross_id)
+		local cross<const> = registry:get('c').room.scene.members[test.cross_id]
 		player.x = room.world_width - player.width
 		player.y = cross.y
 		if test.landing_count == 0 then
@@ -118,7 +118,7 @@ function __bmsx_host_test.update()
 		assert(cross.x < test.wall_x, 'cross passed through the room wall')
 
 		local from_room_number<const> = castle.current_room_number
-		room:load_room(102)
+		room = castle:load_room(102)
 		castle:commit_room_switch({
 			from_room_number = from_room_number,
 			to_room_number = 102,
@@ -127,7 +127,7 @@ function __bmsx_host_test.update()
 		for index = 1, #room.enemies do
 			local definition<const> = room.enemies[index]
 			if definition.definition_id == 'enemy.zakfoe' then
-				test.zak_id = definition.options.id
+				test.zak_id = definition.member_id
 				break
 			end
 		end
@@ -136,7 +136,7 @@ function __bmsx_host_test.update()
 		return false
 	end
 
-	local zak<const> = registry:get(test.zak_id)
+	local zak<const> = registry:get('c').room.scene.members[test.zak_id]
 	if test.zak_min_x == nil then
 		test.zak_min_x = zak.x
 		test.zak_max_x = zak.x

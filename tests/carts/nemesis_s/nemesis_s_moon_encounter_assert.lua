@@ -60,7 +60,7 @@ function __bmsx_host_test.update()
 		stage.actor_spawn_index = stage.actor_spawn_count + 1
 		stage.scrolling = false
 		stage.state_machines:transition_to('/running/stopped')
-		local boss<const> = world:spawn(ids_moon_def, {
+		local boss<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_moon_def, {
 			stage = stage,
 			pos = { x = moon_spawn_x, y = moon_spawn_y },
 		})

@@ -47,6 +47,7 @@ function __bmsx_host_test.update()
 		local pose<const> = poses[test.pose]
 		local director<const> = registry:get('nemesis_s.director')
 		if test.phase ~= pose.phase then
+			if pose.phase == 'end_demo' then director.state_machines:transition_to('/game_start') end
 			director.state_machines:transition_to('/' .. pose.phase)
 			test.phase = pose.phase
 		end

@@ -43,23 +43,23 @@ local reveal_keys<const> = {
 }
 
 local apply_primary_reveal<const> = function(target, height)
-	target.presentation.primary_caption.text_component:set_glyph_visible_height(height)
+	target.presentation.members.primary_caption.text_component:set_glyph_visible_height(height)
 end
 
 local apply_secondary_reveal<const> = function(target, height)
-	target.presentation.secondary_caption.text_component:set_glyph_visible_height(height)
+	target.presentation.members.secondary_caption.text_component:set_glyph_visible_height(height)
 end
 
 local apply_curtain_mode<const> = function(target, mode)
-	target.presentation.curtain:set_mode(mode)
+	target.presentation.members.curtain:set_mode(mode)
 end
 
 local apply_venom_image<const> = function(target, visible)
 	if visible then
 		atlas.load(image.atlas_id(story_scene.portrait_imgid))
-		target.presentation.picture:set_imgid(story_scene.portrait_imgid)
+		target.presentation.members.picture:set_imgid(story_scene.portrait_imgid)
 	else
-		target.presentation.picture:set_imgid(nil)
+		target.presentation.members.picture:set_imgid(nil)
 	end
 end
 
@@ -94,7 +94,7 @@ local build_normal_timeline<const> = function(duration_frames)
 			{
 				kind = 'value',
 				interpolation = 'step',
-				path = { 'presentation', 'curtain', 'count' },
+				path = { 'presentation', 'members', 'curtain', 'count' },
 				keys = build_curtain_count_keys(slide_out_start_frame, normal_slide_out_offsets),
 			},
 			{
@@ -218,13 +218,13 @@ local build_venom_timeline<const> = function()
 			{
 				kind = 'value',
 				interpolation = 'step',
-				path = { 'presentation', 'curtain', 'opening_start' },
+				path = { 'presentation', 'members', 'curtain', 'opening_start' },
 				keys = curtain_start_keys,
 			},
 			{
 				kind = 'value',
 				interpolation = 'step',
-				path = { 'presentation', 'curtain', 'opening_end' },
+				path = { 'presentation', 'members', 'curtain', 'opening_end' },
 				keys = curtain_end_keys,
 			},
 			{
@@ -236,7 +236,7 @@ local build_venom_timeline<const> = function()
 			{
 				kind = 'value',
 				interpolation = 'step',
-				path = { 'presentation', 'curtain', 'count' },
+				path = { 'presentation', 'members', 'curtain', 'count' },
 				keys = build_curtain_count_keys(venom_slide_out_start_frame, venom_slide_out_offsets),
 			},
 			{
@@ -260,16 +260,16 @@ function story:begin_slide(state)
 	if imgid ~= nil then
 		atlas.load(image.atlas_id(imgid))
 	end
-	local primary_text<const> = self.presentation.primary_caption.text_component
+	local primary_text<const> = self.presentation.members.primary_caption.text_component
 	primary_text:set_text(slide.text)
 	primary_text.offset_y = slide.text_y
 	primary_text:set_glyph_visible_height(0)
-	local secondary_text<const> = self.presentation.secondary_caption.text_component
+	local secondary_text<const> = self.presentation.members.secondary_caption.text_component
 	secondary_text.visible = state.data.slide_index == 6
 	secondary_text:set_glyph_visible_height(0)
-	self.presentation.curtain:set_mode(curtain_none)
-	self.presentation.curtain.count = 0
-	self.presentation.picture:set_imgid(slide.imgid)
+	self.presentation.members.curtain:set_mode(curtain_none)
+	self.presentation.members.curtain.count = 0
+	self.presentation.members.picture:set_imgid(slide.imgid)
 end
 
 local finish_story<const> = function(self)
@@ -284,7 +284,7 @@ end
 
 function story:release_presentation()
 	if self.presentation then
-		scene_library.dispose(self.presentation)
+		self.presentation:dispose()
 		self.presentation = nil
 	end
 end

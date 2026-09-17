@@ -70,10 +70,6 @@ local define_pepernoot_projectile_fsm<const> = function()
 				end
 				self:mark_for_disposal()
 			end,
-			['room.switched'] = {
-				emitter = 'pietolon',
-				go = world_object.mark_for_disposal,
-			},
 		},
 		states = {
 			active = {

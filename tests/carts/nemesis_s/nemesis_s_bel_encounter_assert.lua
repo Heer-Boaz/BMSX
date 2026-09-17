@@ -44,11 +44,11 @@ function __bmsx_host_test.update()
 		stage.actor_spawn_index = stage.actor_spawn_count + 1
 		stage.scrolling = false
 		stage.state_machines:transition_to('/running/stopped')
-		local kerk<const> = world:spawn(ids_kerk_def, {
+		local kerk<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_kerk_def, {
 			stage = stage,
 			pos = { x = 192, y = 16 },
 		})
-		local bell<const> = world:spawn(ids_bel_def, {
+		local bell<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_bel_def, {
 			stage = stage,
 			pos = { x = 199, y = 96 },
 		})
@@ -70,7 +70,7 @@ function __bmsx_host_test.update()
 			assert(motion.velocity_x <= 0,
 				'a bell note lost its retained leftward XNA launch vector')
 		end
-		local bottom_note<const> = world:spawn(ids_noot_def, {
+		local bottom_note<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_noot_def, {
 			stage = stage,
 			velocity_x = 0,
 			velocity_y = 0,
@@ -94,7 +94,7 @@ function __bmsx_host_test.update()
 			and hit_explosions[1].x == hit_point.x
 			and hit_explosions[1].y == hit_point.y,
 			'the bell hit feedback did not use the retained collision contact')
-		world:spawn(ids_small_explosion_def, {
+		registry:get('nemesis_s.director').gameplay:spawn(ids_small_explosion_def, {
 			stage = stage,
 			drop_definition_id = ids_roodje_def,
 			pos = { x = player.x, y = player.y },

@@ -6,11 +6,10 @@ function room_scene.register()
 	scene_library.register(room_scene.id, {
 		objects = {
 			{
-				member_id = 'enemy_01',
+				member_id = 'enemy_109_01',
 				definition_id = 'enemy.mijterfoe',
 				conditions = {},
 				options = {
-					id = 'enemy_109_01',
 					space_id = 'main',
 					pos = { x = 48, y = 80, z = 140 },
 					damage = 2,
@@ -18,11 +17,10 @@ function room_scene.register()
 				},
 			},
 			{
-				member_id = 'enemy_02',
+				member_id = 'enemy_109_02',
 				definition_id = 'enemy.mijterfoe',
 				conditions = {},
 				options = {
-					id = 'enemy_109_02',
 					space_id = 'main',
 					pos = { x = 208, y = 80, z = 140 },
 					damage = 2,
@@ -30,11 +28,10 @@ function room_scene.register()
 				},
 			},
 			{
-				member_id = 'enemy_03',
+				member_id = 'enemy_109_03',
 				definition_id = 'enemy.mijterfoe',
 				conditions = {},
 				options = {
-					id = 'enemy_109_03',
 					space_id = 'main',
 					pos = { x = 176, y = 136, z = 140 },
 					damage = 2,

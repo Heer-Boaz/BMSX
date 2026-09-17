@@ -34,10 +34,10 @@ export async function runStudio2025Scenes(test: StudioFixture) {
 	check(guest.readStringMember(registered('p3.text.transition'), 'y') === 96,
 		'the independently placed transition caption uses its saved position');
 	await press('KeyX');
-	await until(() => guest.formatValue(guest.readStringMember(director(), 'node_id')) === 'overgang_monday',
+	await until(() => guest.formatValue(guest.readStringMember(guest.readStringMember(director(), 'session'), 'node_id')) === 'overgang_monday',
 		'normal confirm starts the first transition');
 	await test.capture?.('transition');
-	await until(() => guest.formatValue(guest.readStringMember(director(), 'node_id')) === 'klas',
+	await until(() => guest.formatValue(guest.readStringMember(guest.readStringMember(director(), 'session'), 'node_id')) === 'klas',
 		'the real transition completes into dialogue');
 	await until(() => guest.readStringMember(text, '_has_visible_glyphs') === true,
 		'ordinary story playback renders text at its edited position');

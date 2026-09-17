@@ -3,7 +3,6 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
-local world<const> = require('cartlib/world/world')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
 require('constants')
 
@@ -25,7 +24,7 @@ local large_frames<const> = {
 function explosion:finish()
 	local drop_definition_id<const> = self.drop_definition_id
 	if drop_definition_id ~= nil then
-		world:spawn(drop_definition_id, {
+		self.scene:spawn(drop_definition_id, {
 			stage = self.stage,
 			pos = { x = self.x, y = self.y },
 		})

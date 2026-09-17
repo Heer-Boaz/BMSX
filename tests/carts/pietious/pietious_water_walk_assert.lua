@@ -13,7 +13,7 @@ function __bmsx_host_test.setup()
 end
 
 function __bmsx_host_test.ready()
-	return registry:get('c') ~= nil and registry:get('room') ~= nil and registry:get('pietolon') ~= nil
+	return registry:get('c') ~= nil and registry:get('c').room ~= nil and registry:get('pietolon') ~= nil
 end
 
 function __bmsx_host_test.update()
@@ -25,13 +25,11 @@ function __bmsx_host_test.update()
 	end
 
 	local castle<const> = registry:get('c')
-	local room<const> = registry:get('room')
+	local room = registry:get('c').room
 	local player<const> = registry:get('pietolon')
 	if test.phase == 'setup' then
 		castle.current_room_number = 8
-		room:load_room(8)
-		castle.world_entrance_states = {}
-		castle:sync_world_entrance_states_for_room(room)
+		room = castle:load_room(8)
 		local probe_x
 		local probe_y
 		for tx = 1, room.tile_columns do
@@ -58,7 +56,7 @@ function __bmsx_host_test.update()
 		player:zero_motion()
 		player:reset_fall_substate_sequence()
 		player:cancel_sword()
-		player.inventory_items.schoentjes = true
+		player.status.inventory_items.schoentjes = true
 		player.x = probe_x
 		player.y = probe_y
 		player.facing = 1

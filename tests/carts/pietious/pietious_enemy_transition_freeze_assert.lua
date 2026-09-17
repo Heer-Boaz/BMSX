@@ -6,26 +6,27 @@ function __bmsx_host_test.setup()
 	registry:get('d').request_new_game()
 end
 function __bmsx_host_test.ready()
-	return registry:get('c') ~= nil and registry:get('room') ~= nil and registry:get('d') ~= nil and registry:get('pietolon') ~= nil
+	return registry:get('c') ~= nil and registry:get('c').room ~= nil and registry:get('d') ~= nil and registry:get('pietolon') ~= nil
 end
 function __bmsx_host_test.update()
 	local test<const> = __bmsx_host_test
 	test.frames = test.frames + 1
 	assert(test.frames < 720, 'timeout phase=' .. tostring(test.phase) .. ' space=' .. tostring(world.active_space_id))
 	local castle<const> = registry:get('c')
-	local room<const> = registry:get('room')
+	local room = registry:get('c').room
 	local director<const> = registry:get('d')
 	local player<const> = registry:get('pietolon')
 	if test.phase == nil then
 		if world.active_space_id ~= 'main' then return false end
 		castle:switch_room('right', 0, 0)
-		test.enemy_id = room.enemies[1].options.id
+		room = castle.room
+		test.enemy_id = room.enemies[1].member_id
 		test.phase = 1
 		return false
 	end
 	if test.phase == 1 then
 		if world.active_space_id ~= 'main' then return false end
-		local enemy<const> = registry:get(test.enemy_id)
+		local enemy<const> = registry:get('c').room.scene.members[test.enemy_id]
 		assert(enemy ~= nil, 'enemy missing before shrine')
 		test.enemy_x = enemy.x
 		test.enemy_y = enemy.y
@@ -34,7 +35,7 @@ function __bmsx_host_test.update()
 		return false
 	end
 	if test.phase == 'shrine_enter' then
-		local enemy<const> = registry:get(test.enemy_id)
+		local enemy<const> = registry:get('c').room.scene.members[test.enemy_id]
 		if world.active_space_id == 'main' then
 			assert(not world.gameplay_clock_running,
 				'gameplay clock advanced during shrine entry')
@@ -63,7 +64,7 @@ function __bmsx_host_test.update()
 		if world.active_space_id == 'shrine' then
 			return false
 		end
-		local enemy<const> = registry:get(test.enemy_id)
+		local enemy<const> = registry:get('c').room.scene.members[test.enemy_id]
 		if not world.gameplay_clock_running then
 			assert(enemy.x == test.enemy_x and enemy.y == test.enemy_y,
 				'enemy moved during shrine exit')
@@ -73,12 +74,14 @@ function __bmsx_host_test.update()
 		assert(sprite.region_width == nil and sprite.visible,
 			'player did not finish the shrine emergence mask')
 		director.events:emit('world_transition')
-		assert(registry:get(test.enemy_id) == nil, 'world transition did not retire the previous-room enemy')
 		castle:enter_world('world_1')
+		assert(enemy.world == nil, 'room replacement did not retire the previous-room enemy')
+		room = castle.room
 		director.events:emit('world_leave_transition_start')
 		local switch<const> = castle:leave_world_to_castle(false)
+		room = castle.room
 		local destination_def<const> = room.enemies[1]
-		local destination<const> = registry:get(destination_def.options.id)
+		local destination<const> = registry:get('c').room.scene.members[destination_def.member_id]
 		assert(destination ~= nil, 'destination enemy missing')
 		test.destination_id = destination.id
 		test.destination_x = destination.x

@@ -1,4 +1,3 @@
-local world<const> = require('cartlib/world/world')
 local sprite_object<const> = require('cartlib/sprite')
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
@@ -35,20 +34,9 @@ function enemy_base.setup_projectile_boundary(self)
 end
 
 function enemy_base.bind_lifecycle(self)
-	self.events:on({
-		event = 'world_transition',
-		emitter = 'd',
-		handler = self.mark_for_disposal,
-	})
-
 	if self:get_component(screen_boundary_component) ~= nil then
 		self.events:on({
 			event = 'screen.leave',
-			handler = self.mark_for_disposal,
-		})
-		self.events:on({
-			event = 'room.switched',
-			emitter = 'pietolon',
 			handler = self.mark_for_disposal,
 		})
 	end
@@ -67,7 +55,7 @@ function enemy_base.bind(self)
 end
 
 function enemy_base.spawn_death_effect(self)
-	world:spawn('enemy_explosion', {
+	self.room.scene:spawn('enemy_explosion', {
 		room = self.room,
 		player = self.player,
 		loot_type = self:choose_drop_type(),

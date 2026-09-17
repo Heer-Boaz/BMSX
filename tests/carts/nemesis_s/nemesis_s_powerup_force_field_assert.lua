@@ -91,7 +91,7 @@ function __bmsx_host_test.update()
 	assert(player.sprite.imgid == assets_player_n_shield,
 		'strong force field did not select the XNA neutral vessel sprite')
 
-	local kerk<const> = world:spawn(ids_kerk_def, {
+	local kerk<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_kerk_def, {
 		stage = player.stage,
 		pos = { x = player.x, y = player.y },
 	})
@@ -100,7 +100,7 @@ function __bmsx_host_test.update()
 		'large enemy collision bypassed the equipped force field')
 	kerk:mark_for_disposal()
 
-	local bullet<const> = world:spawn(ids_enemy_bullet_def, {
+	local bullet<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_enemy_bullet_def, {
 		stage = player.stage,
 		pos = { x = player.x, y = player.y },
 	})
@@ -111,7 +111,7 @@ function __bmsx_host_test.update()
 		'ordinary projectile was not absorbed for one force-field strength')
 	bullet:mark_for_disposal()
 
-	local rook<const> = world:spawn(ids_rook_def, {
+	local rook<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_rook_def, {
 		stage = player.stage,
 		rise_distance = rook_rise_distances[1],
 		pos = { x = player.x, y = player.y },
@@ -129,7 +129,7 @@ function __bmsx_host_test.update()
 	assert(player.sprite.imgid == assets_player_n,
 		'weak force field retained the strong vessel sprite')
 
-	local ray<const> = world:spawn(ids_sneeuwpop_ray_def, {
+	local ray<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_sneeuwpop_ray_def, {
 		originator = { ray_disposed = function() end },
 		pos = { x = player.x, y = player.y },
 	})

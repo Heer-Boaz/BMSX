@@ -5,7 +5,6 @@ local sprite_object<const> = require('cartlib/sprite')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
-local world<const> = require('cartlib/world/world')
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
@@ -46,27 +45,26 @@ end
 
 function rock:begin_break()
 	local room<const> = self.room
-	room:mark_rock_destroyed(self.id)
+	room:mark_rock_destroyed(self.scene_member_id)
 	if self.item_type == nil then
 		return
 	end
-	if self.player.inventory_items[self.item_type] then
+	if self.player.status.inventory_items[self.item_type] then
 		return
 	end
 	local drop_y<const> = self.y + world_item_drop_offset_y[self.item_type]
-	local id<const> = 'drop.' .. self.id
+	local id<const> = 'drop.' .. self.scene_member_id
 	local rock_drop_id = nil
 	if not world_item_inventory[self.item_type] then
 		rock_drop_id = id
-		room.rock_drops[id] = {
-			room_number = room.room_number,
+		room.castle.session.region_drops[id] = {
+			scene_id = room.scene_id,
 			x = self.x,
 			y = drop_y,
 			item_type = self.item_type,
 		}
 	end
-	local drop<const> = world:spawn('world_item', {
-		id = id,
+	room.scene:spawn('world_item', {
 		space_id = 'main',
 		room = room,
 		player = self.player,
@@ -74,9 +72,7 @@ function rock:begin_break()
 		item_id = id,
 		item_type = self.item_type,
 		rock_drop_id = rock_drop_id,
-		rs_room_number = room.room_number,
-	})
-	drop:add_tag('rs')
+	}, id)
 end
 
 local define_rock_fsm<const> = function()

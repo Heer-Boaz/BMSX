@@ -335,7 +335,7 @@ function stage:advance_actor_spawns(column)
 	local index = self.actor_spawn_index
 	while index <= spawn_count and spawns[index].column <= column do
 		local spawn<const> = spawns[index]
-		world:spawn(spawn.definition_id, spawn.options)
+		self.scene:spawn(spawn.definition_id, spawn.options, spawn.member_id)
 		index = index + 1
 	end
 	self.actor_spawn_index = index
@@ -402,6 +402,7 @@ function stage:build_tape()
 		end
 		actor_spawns[index] = {
 			column = placement.column,
+			member_id = placement.member_id,
 			definition_id = placement.definition_id,
 			options = options,
 		}

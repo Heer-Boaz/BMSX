@@ -6,11 +6,10 @@ function room_scene.register()
 	scene_library.register(room_scene.id, {
 		objects = {
 			{
-				member_id = 'enemy_01',
+				member_id = 'enemy_004_01',
 				definition_id = 'enemy.boekfoe',
 				conditions = {},
 				options = {
-					id = 'enemy_004_01',
 					space_id = 'main',
 					pos = { x = 216, y = 120, z = 140 },
 					damage = 2,
@@ -18,11 +17,10 @@ function room_scene.register()
 				},
 			},
 			{
-				member_id = 'enemy_02',
+				member_id = 'enemy_004_02',
 				definition_id = 'enemy.mijterfoe',
 				conditions = {},
 				options = {
-					id = 'enemy_004_02',
 					space_id = 'main',
 					pos = { x = 48, y = 48, z = 140 },
 					damage = 2,
@@ -30,11 +28,10 @@ function room_scene.register()
 				},
 			},
 			{
-				member_id = 'enemy_03',
+				member_id = 'enemy_004_03',
 				definition_id = 'enemy.mijterfoe',
 				conditions = {},
 				options = {
-					id = 'enemy_004_03',
 					space_id = 'main',
 					pos = { x = 152, y = 96, z = 140 },
 					damage = 2,
@@ -42,29 +39,26 @@ function room_scene.register()
 				},
 			},
 			{
-				member_id = 'rock_01',
+				member_id = 'rock_004_01',
 				definition_id = 'rock',
 				options = {
-					id = 'rock_004_01',
 					space_id = 'main',
 					pos = { x = 48, y = 136, z = 140 },
 					item_type = 'ammofromrock',
 				},
 			},
 			{
-				member_id = 'rock_02',
+				member_id = 'rock_004_02',
 				definition_id = 'rock',
 				options = {
-					id = 'rock_004_02',
 					space_id = 'main',
 					pos = { x = 136, y = 72, z = 140 },
 				},
 			},
 			{
-				member_id = 'shrine_01',
+				member_id = 'shrine_004_01',
 				definition_id = 'room_shrine',
 				options = {
-					id = 'shrine_004_01',
 					space_id = 'main',
 					pos = { x = 136, y = 72, z = 22 },
 					text_lines = { 'ZONDER VERGROOTGLAS', 'KAN JE DE HEILIGE', 'ZAK NIET VINDEN...', 'DOORZOEK HET KASTEEL!' },

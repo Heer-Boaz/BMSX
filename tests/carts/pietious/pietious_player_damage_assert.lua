@@ -13,7 +13,7 @@ function __bmsx_host_test.setup()
 end
 
 function __bmsx_host_test.ready()
-	return registry:get('c') ~= nil and registry:get('room') ~= nil and registry:get('pietolon') ~= nil
+	return registry:get('c') ~= nil and registry:get('c').room ~= nil and registry:get('pietolon') ~= nil
 end
 
 function __bmsx_host_test.update()
@@ -30,19 +30,19 @@ function __bmsx_host_test.update()
 		player:clear_input_state()
 		player:zero_motion()
 		player:cancel_sword()
-		player.health = player.max_health
-		player.x = player.spawn_x
-		player.y = player.spawn_y
+		player.status.health = player.status.max_health
+		player.x = player.status.spawn_x
+		player.y = player.status.spawn_y
 		test.quiet_state = player.state_machines:bind_state_path('/quiet')
 		test.hit_fall_state = player.state_machines:bind_state_path('/hit_fall')
 		test.hit_recovery_state = player.state_machines:bind_state_path('/hit_recovery')
-		world:spawn('enemy.crossfoe', {
+		registry:get('c').room.scene:spawn('enemy.crossfoe', {
 			id = 'probe.damage',
 			space_id = 'main',
 			castle = registry:get('c'),
-			room = registry:get('room'),
+			room = registry:get('c').room,
 			player = player,
-			pos = { x = 0, y = player.spawn_y, z = 110 },
+			pos = { x = 0, y = player.status.spawn_y, z = 110 },
 			damage = damage_enemy_contact_damage,
 		})
 		test.phase = 'first_contact'
@@ -59,8 +59,8 @@ function __bmsx_host_test.update()
 			other_collider_local_id = 'body',
 			phase = 'begin',
 		})
-		local hit_health<const> = player.max_health - probe.damage
-		assert(player.health == hit_health, 'enemy contact did not damage the player')
+		local hit_health<const> = player.status.max_health - probe.damage
+		assert(player.status.health == hit_health, 'enemy contact did not damage the player')
 		assert(not player:is_hittable(),
 			'enemy contact did not start hit invulnerability')
 		assert(player.state_machines:matches_state(test.hit_fall_state), 'enemy contact did not enter hit-fall')
@@ -72,14 +72,14 @@ function __bmsx_host_test.update()
 			other_collider_local_id = 'body',
 			phase = 'begin',
 		})
-		assert(player.health == hit_health, 'invulnerability admitted a second contact hit')
+		assert(player.status.health == hit_health, 'invulnerability admitted a second contact hit')
 		test.hit_health = hit_health
 		test.phase = 'recover'
 		return false
 	end
 
 	if test.phase == 'recover' then
-		assert(player.health == test.hit_health, 'player health changed during hit invulnerability')
+		assert(player.status.health == test.hit_health, 'player health changed during hit invulnerability')
 		if player.state_machines:matches_state(test.hit_recovery_state) then
 			test.saw_hit_recovery = true
 		end
@@ -94,7 +94,7 @@ function __bmsx_host_test.update()
 			other_collider_local_id = 'body',
 			phase = 'begin',
 		})
-		assert(player.health == test.hit_health - probe.damage,
+		assert(player.status.health == test.hit_health - probe.damage,
 			'player did not become hittable after invulnerability expired')
 		assert(player.state_machines:matches_state(test.hit_fall_state), 'second accepted hit did not enter hit-fall')
 		assert(not player:is_hittable(),

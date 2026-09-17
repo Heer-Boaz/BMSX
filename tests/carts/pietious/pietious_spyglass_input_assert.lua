@@ -13,7 +13,7 @@ function __bmsx_host_test.setup()
 end
 
 function __bmsx_host_test.ready()
-	return registry:get('c') ~= nil and registry:get('room') ~= nil and registry:get('pietolon') ~= nil and registry:get('d') ~= nil
+	return registry:get('c') ~= nil and registry:get('c').room ~= nil and registry:get('pietolon') ~= nil and registry:get('d') ~= nil
 end
 
 function __bmsx_host_test.update(_frame, _current_music)

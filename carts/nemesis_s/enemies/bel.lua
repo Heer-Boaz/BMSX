@@ -44,7 +44,7 @@ function bel:ring()
 	local spawn_y<const> = self.y + sprite.offset_y + bel_note_spawn_offset_y
 	for _ = 1, spawn_count do
 		local angle<const> = math.random() * math.pi
-		world:spawn(ids_noot_def, {
+		self.scene:spawn(ids_noot_def, {
 			stage = self.stage,
 			velocity_x = math.cos(angle + math.pi * 0.5) *
 				(math.random() + 0.5) * noot_velocity_scale_px_per_second,
@@ -117,7 +117,7 @@ function bel:receive_player_projectile(projectile, _collider_local_id, hit_point
 	enemy.receive_player_projectile(self, projectile)
 	if self.health > 0 then
 		self.events:emit('enemy.bel.hit')
-		world:spawn(ids_small_explosion_def, {
+		self.scene:spawn(ids_small_explosion_def, {
 			stage = self.stage,
 			pos = { x = hit_point.x, y = hit_point.y },
 		})
@@ -127,7 +127,7 @@ end
 
 function bel:on_destroyed(projectile)
 	self:center()
-	world:spawn(ids_large_explosion_def, {
+	self.scene:spawn(ids_large_explosion_def, {
 		stage = self.stage,
 		pos = { x = self.x, y = self.y },
 	})

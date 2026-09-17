@@ -10,7 +10,7 @@ end
 function __bmsx_host_test.setup()
 	local director<const> = registry:get(director_id)
 	local combat_director<const> = registry:get(combat_director_id)
-	director.node_id = 'combat_wekker'
+	director.session.node_id = 'combat_wekker'
 	director.state_machines:transition_to('p3.director.fsm:/combat_wait')
 	combat_director:start_combat('combat_wekker', true)
 	local monster<const> = registry:get(monster_id)

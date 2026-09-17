@@ -36,7 +36,7 @@ actioneffects.register_effect('pepernoot', {
 		if live_count >= secondary_weapon_pepernoot_max_active then
 			return false
 		end
-		if owner.weapon_level < secondary_weapon_pepernoot_weapon_level_cost then
+		if owner.status.weapon_level < secondary_weapon_pepernoot_weapon_level_cost then
 			return false
 		end
 		return true
@@ -48,7 +48,7 @@ actioneffects.register_effect('pepernoot', {
 		local spawn_x = owner.x + (owner.facing < 0 and -secondary_weapon_pepernoot_spawn_offset_x or secondary_weapon_pepernoot_spawn_offset_x)
 		local spawn_y = owner.y + secondary_weapon_pepernoot_spawn_offset_y
 		spawn_x, spawn_y = room:snap_world_to_tile(spawn_x, spawn_y)
-		world:spawn('pepernoot_projectile', {
+		owner.room.scene:spawn('pepernoot_projectile', {
 			id = projectile_id,
 			room = room,
 			room_number = owner.castle.current_room_number,
@@ -56,7 +56,7 @@ actioneffects.register_effect('pepernoot', {
 			direction = owner.facing,
 			pos = { x = spawn_x, y = spawn_y, z = 113 },
 		})
-		-- owner.weapon_level = owner.weapon_level - secondary_weapon_pepernoot_weapon_level_cost
+		-- owner.status.weapon_level = owner.status.weapon_level - secondary_weapon_pepernoot_weapon_level_cost
 		owner:emit_weapon_changed()
 		owner.events:emit('fire_pepernoot')
 	end,
@@ -79,7 +79,7 @@ actioneffects.register_effect('halo', {
 	blocked_tags = { 'g.tr' },
 	can_trigger = function(owner)
 		local castle<const> = owner.castle
-		if not owner.inventory_items.halo then
+		if not owner.status.inventory_items.halo then
 			return false
 		end
 		if castle:is_current_room_boss_encounter_active() then

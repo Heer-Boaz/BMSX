@@ -1797,34 +1797,44 @@ used no scene then paid ROM, module-init, table and closure costs on the
 wrapped or optimized in place. This does not mean a cart that deliberately
 uses scenes may not pay for its scene definition and cold instantiation.
 
-The replacement design starts from cartlib's existing structured-Lua owners.
-FSM registration compiles and rebinds because a state machine has retained
-state and repeated event/tick work. Behavior Trees lower authored topology to
-specialized evaluators and dense instance slots to keep the 50-Hz path free of
-definition interpretation. ActionEffects instead install their Lua definition
-directly and retain only granted runtime state. Root scenes follow that last
-pattern: an explicitly called cart registration installs one direct ordered
-Lua definition and the opt-in scene owner instantiates its members through the
-unchanged `World:spawn` boundary. It does not copy the definition, compile a
-second program or add a branch, field or system to `World`.
+Scenes use three separate owners: an immutable authored definition, its live
+composition, and cart-owned game/session state. `scene_library.register` retains
+the direct ordered Lua definition. `instantiate` constructs its members through
+`World:spawn` and returns a live scene; `create` starts one for conditional or
+scroll-gated admission. `scene.members` indexes authored keys, while the dense
+object set owns every current object, including procedural descendants, inactive
+objects and pending admissions. Individual destruction removes membership, so
+long scenes do not retain expired projectiles. A member key is not a Registry
+runtime ID. Explicit singleton IDs remain a composition choice; repeatable room
+actors use fresh runtime IDs.
 
-The product boundary is accepted: a future visual editor is a host-side view
-on the same canonical source, machine/ROM/TOC remain unaware of scenes, and the
-host may not treat `world._objects` or arbitrary Lua tables as its scene
-database. Current carts expose both small Lua root assemblies and large
-placement sources such as Pietious' 24 rooms/122 objects and Nemesis' stage
-map. They need not share one runtime recordshape. The first root-scene
-representation is an ordered collection of direct `member_id`,
-`definition_id` and existing spawn-options values. Instantiation returns its
-scene-local membermap; runtime object identity remains `Registry`-owned.
-Registration replacement affects future instantiations, just as a
-`PackedScene` revision does; it does not silently reconcile a living
-objectgraph. No retained `SceneInstance`, property descriptor, construction
-split, structural batch, tombstone policy or guest binding becomes an
-architecture owner until a current live-edit operation proves that state is
-needed. A cart without scene imports remains byte- and runtime-neutral. The
-workload analysis and gates are recorded in
-[`studio_scene_authoring_design.md`](studio_scene_authoring_design.md).
+The live owner is justified by the room-replacement migration: a bare returned
+member map could not own later spawns or define their teardown. World attaches
+scene ownership before constructors can spawn children and detaches it at final
+disposal. These are cold spawn/despawn hooks, not another scene update system.
+Group unload queues all members before running removal hooks and completes at
+World's existing structural barrier. This also covers nested encounter teardown
+without copying lists or scanning Registry tags. Controllers dispose the
+subscenes they own on exit/teardown. Spaces still select update/render sets;
+changing an object's space does not change its lifetime owner.
+
+Pietious now constructs a new room object per entry. Session data owns inventory,
+health, loadout, destroyed terrain, region drops and progression. Render/physics
+objects consume that data without being its sole storage. Progression subscriptions
+belong to the mounted controller, while values and once-only rules belong to the
+independent progression state. 2025 likewise passes story progress/statistics to
+its controller; Nemesis already has independent `player_state` data. New Game
+creates fresh state. None of this is a save-file format or a second authored
+scene database.
+
+Registration replacement affects future instances; it does not silently reconcile
+living objects. The machine/ROM/TOC remain unaware of scenes. No scene cooker,
+property descriptor, per-frame scene polling or editor binding is introduced.
+Carts without scenes allocate no scene owner or membership tables and their tick
+and render paths gain no scene work. World contains optional cold ownership hooks,
+so this is not a claim of byte-neutral code size. The lifetime contract, production
+references and Studio follow-up are in [scene_lifetimes.md](scene_lifetimes.md);
+source-edit rules remain in [studio_scene_authoring_design.md](studio_scene_authoring_design.md).
 
 The first host-side Scene Editor is now a second view of Nemesis' canonical
 root-scene Lua document. It edits direct integer position fields through the

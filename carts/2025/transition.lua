@@ -66,10 +66,10 @@ function transition.register_states(states)
 	end
 
 	local finish_transition<const> = function(self)
-		local node<const> = story[self.node_id]
+		local node<const> = story[self.session.node_id]
 		local came_from_fade<const> = self.skip_transition_fade
-		self.node_id = node.next
-		local next_kind<const> = story[self.node_id].kind
+		self.session.node_id = node.next
+		local next_kind<const> = story[self.session.node_id].kind
 		self.skip_transition_fade = false
 		self.transition_needs_post_fade = came_from_fade and next_kind ~= 'combat'
 		if next_kind == 'combat' then
@@ -88,9 +88,9 @@ function transition.register_states(states)
 	end
 
 	local finish_fade<const> = function(self)
-		local node<const> = story[self.node_id]
-		self.node_id = node.next
-		local next_kind<const> = story[self.node_id].kind
+		local node<const> = story[self.session.node_id]
+		self.session.node_id = node.next
+		local next_kind<const> = story[self.session.node_id].kind
 		if next_kind == 'combat' then
 			self.skip_combat_fade_in = true
 		end
@@ -114,7 +114,7 @@ function transition.register_states(states)
 
 	states.transition = {
 		entering_state = function(self, state)
-			local node<const> = story[self.node_id]
+			local node<const> = story[self.session.node_id]
 			self.text_main:clear_text()
 			self.text_choice:clear_text()
 			self.text_prompt:clear_text()
@@ -251,7 +251,7 @@ function transition.register_states(states)
 		exiting_state = function(self)
 			self.timelines:stop(overgang_timeline_id)
 			self.text_transition:clear_text()
-			if self.transition_needs_post_fade or story[self.node_id].kind == 'combat' then
+			if self.transition_needs_post_fade or story[self.session.node_id].kind == 'combat' then
 				hide_transition_layers(self.transition_visual)
 				return
 			end
@@ -299,7 +299,7 @@ function transition.register_states(states)
 
 	states.fade = {
 		entering_state = function(self, state)
-			local node<const> = story[self.node_id]
+			local node<const> = story[self.session.node_id]
 			clear_texts(self.texts)
 			reset_text_colors(self)
 			local next_node<const> = story[node.next]

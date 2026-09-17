@@ -9,7 +9,8 @@ local lithograph_screen<const> = {}
 lithograph_screen.__index = lithograph_screen
 
 function lithograph_screen:ctor()
-	self.members = scene_library.instantiate(scene.id)
+	self.presentation = scene_library.instantiate(scene.id)
+	self.members = self.presentation.members
 	self.text_component = self.members.caption.text_component
 end
 

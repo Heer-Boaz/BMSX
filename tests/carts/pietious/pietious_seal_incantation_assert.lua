@@ -23,7 +23,7 @@ end
 
 function __bmsx_host_test.ready()
 	return registry:get('c') ~= nil
-		and registry:get('room') ~= nil
+		and registry:get('c').room ~= nil
 		and registry:get('pietolon') ~= nil
 		and registry:get('d') ~= nil
 end
@@ -52,7 +52,7 @@ function __bmsx_host_test.update()
 	assert(test.frames < 500, 'seal incantation scenario timed out phase=' .. test.phase)
 
 	local castle<const> = registry:get('c')
-	local room<const> = registry:get('room')
+	local room = registry:get('c').room
 	local player<const> = registry:get('pietolon')
 	local director<const> = registry:get('d')
 	if director == nil or director.state_machines == nil then
@@ -69,7 +69,7 @@ function __bmsx_host_test.update()
 			return false
 		end
 		local from_room_number<const> = castle.current_room_number
-		room:load_room(100)
+		room = castle:load_room(100)
 		castle:commit_room_switch({
 			from_room_number = from_room_number,
 			to_room_number = 100,
@@ -81,7 +81,7 @@ function __bmsx_host_test.update()
 	end
 
 	if test.phase == 'wait_for_seal' then
-		local seal<const> = castle.seal_instance
+		local seal<const> = castle.room.seal_instance
 		if seal == nil then
 			return false
 		end

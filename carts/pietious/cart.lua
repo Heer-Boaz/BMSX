@@ -14,9 +14,9 @@ input.push_context(1, 'pietious', {
 })
 local world<const> = require('cartlib/world/world')
 local scene_library<const> = require('cartlib/world/scene_library')
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
 local presentation<const> = require('presentation')
 local gameplay_scene<const> = require('scenes/gameplay')
+local session_model<const> = require('session')
 local world_module<const> = require('world_module')
 world:configure(world_module)
 require('constants')
@@ -69,16 +69,16 @@ local castle_map<const> = require('castle/map')
 local new_game_requested
 
 local grant_debug_starting_loadout<const> = function(player, castle)
-	player.inventory_items['keyworld1'] = true
-	player.inventory_items['spyglass'] = true
-	player.inventory_items['halo'] = true
-	player.inventory_items['lamp'] = true
-	player.inventory_items['schoentjes'] = true
-	player.inventory_items['greenvase'] = true
-	player.inventory_items['map_world1'] = true
-	player.inventory_items['pepernoot'] = true
+	player.status.inventory_items['keyworld1'] = true
+	player.status.inventory_items['spyglass'] = true
+	player.status.inventory_items['halo'] = true
+	player.status.inventory_items['lamp'] = true
+	player.status.inventory_items['schoentjes'] = true
+	player.status.inventory_items['greenvase'] = true
+	player.status.inventory_items['map_world1'] = true
+	player.status.inventory_items['pepernoot'] = true
 	player:equip_subweapon('pepernoot')
-	player.weapon_level = hud_weapon_level
+	player.status.weapon_level = hud_weapon_level
 	player:emit_weapon_changed()
 	progression.set(castle, 'debug.world1_stairs', true)
 end
@@ -91,16 +91,13 @@ local create_world<const> = function(director_boot_mode)
 	new_game_requested = false
 	world:clear()
 
-	local castle<const> = world:spawn('castle', { id = 'c', })
-	local room<const> = world:spawn('room', { id = 'room', castle = castle, })
-	castle.room = room
 	local members<const> = scene_library.definition(gameplay_scene.id).objects
 	local player_member<const> = members[1]
-	local player_options<const> = shallow_copy(player_member.options)
-	player_options.castle = castle
-	player_options.room = room
-	local player<const> = world:spawn(player_member.definition_id, player_options)
-	room.player = player
+	local session<const> = session_model.new(castle_module.castle._progression_program, player_member.options.pos, castle_map.room_templates)
+	local gameplay<const> = scene_library.create(gameplay_scene.id)
+	local castle<const> = gameplay:spawn('castle', { id = 'c', session = session })
+	local player<const> = gameplay:spawn_member(player_member, { castle = castle, status = session.player })
+	castle.player = player
 	grant_debug_starting_loadout(player, castle)
 	castle:initialize(castle_map.start_room_number, director_boot_mode == 'room')
 
@@ -114,13 +111,10 @@ local create_world<const> = function(director_boot_mode)
 		id = 'item_screen',
 		space_id = 'item',
 		castle = castle,
-		room = room,
 		player = player,
 	})
 	local hud_member<const> = members[2]
-	local hud_options<const> = shallow_copy(hud_member.options)
-	hud_options.player = player
-	local ui<const> = world:spawn(hud_member.definition_id, hud_options)
+	local ui<const> = gameplay:spawn_member(hud_member, { player = player })
 	world:spawn('title_screen', { id = 'title_screen', space_id = 'title', })
 	local director<const> = world:spawn('director', {
 		id = 'd',
@@ -131,7 +125,6 @@ local create_world<const> = function(director_boot_mode)
 		ui = ui,
 	})
 	player.director = director
-	room.director = director
 end
 
 function new_game()

@@ -1,6 +1,5 @@
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
-local world<const> = require('cartlib/world/world')
 require('constants')
 local bt_result<const> = require('cartlib/behaviour_tree/result')
 local bt_success<const> = bt_result.success
@@ -18,7 +17,7 @@ end
 function vlokspawner.spawn_vlok(self)
 	local room<const> = self.room
 	local random_x<const> = math.random(-5, 4)
-	world:spawn('enemy.vlokfoe', {
+	self.room.scene:spawn('enemy.vlokfoe', {
 		castle = self.castle,
 		room = room,
 		player = self.player,

@@ -1,3 +1,4 @@
+local shallow_copy<const> = require('cartlib/util/shallow_copy')
 local registry<const> = require('cartlib/registry')
 local scene_library<const> = require('cartlib/world/scene_library')
 local world<const> = require('cartlib/world/world')
@@ -19,15 +20,17 @@ function __bmsx_host_test.setup()
 	local director<const> = registry:get('nemesis_s.director')
 	director.state_machines:transition_to('/title')
 	local title<const> = registry:get('nemesis_s.title_screen')
-	local first<const> = title.presentation
+	local first<const> = shallow_copy(title.presentation.members)
 	local second<const> = scene_library.instantiate('nemesis_s.title')
-	assert(first.selector ~= second.selector and first.selector.id ~= second.selector.id,
+	assert(first.selector ~= second.members.selector and first.selector.id ~= second.members.selector.id,
 		'title placements shared an object or a runtime identity')
-	second.selector.sprite_component.offset_y = 16
+	second.members.selector.sprite_component.offset_y = 16
 	assert(first.selector.sprite_component.offset_y == 0,
 		'a second scene mutated the first scene visual')
-	scene_library.dispose(second)
-	assert_disposed(second)
+	local second_members<const> = shallow_copy(second.members)
+	second:dispose()
+	assert_disposed(second_members)
+	assert(next(second.members) == nil, 'disposed scene retained named members')
 	assert(registry:get(first.selector.id) == first.selector,
 		'disposing another scene removed the live selector')
 	__bmsx_host_test.menu = first
@@ -43,11 +46,11 @@ function __bmsx_host_test.update()
 		return host.press('Space', 2)
 	end
 	if test.phase == 'flight' then
-		if title.presentation == nil or title.presentation.ship == nil then
+		if title.presentation == nil or title.presentation.members.ship == nil then
 			return false
 		end
 		assert_disposed(test.menu)
-		test.hangar = title.presentation
+		test.hangar = shallow_copy(title.presentation.members)
 		assert(test.hangar.ship.space_id == 'title'
 			and test.hangar.ship.start_y == 129,
 			'takeoff did not consume the authored hangar in the active space')
@@ -62,7 +65,7 @@ function __bmsx_host_test.update()
 		assert(title.presentation == nil, 'gameplay retained the hangar composition')
 		-- Exercise parent teardown with an active scene, as happens on cart reset.
 		registry:get('nemesis_s.director').state_machines:transition_to('/title')
-		test.reentered = title.presentation
+		test.reentered = shallow_copy(title.presentation.members)
 		assert(test.reentered.selector ~= test.menu.selector and title.selected_player_count == 1,
 			'title reentry reused stale selection or runtime objects')
 		test.old_title = title

@@ -209,7 +209,7 @@ function zak_foe.register()
 			if velocity_x == nil then
 				return
 			end
-			local bullet<const> = world:spawn(ids_enemy_bullet_def, {
+			local bullet<const> = self.scene:spawn(ids_enemy_bullet_def, {
 				stage = self.stage,
 				pos = { x = bullet_x, y = bullet_y },
 			})

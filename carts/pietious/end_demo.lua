@@ -9,7 +9,8 @@ require('constants')
 local end_demo<const> = {}
 
 function end_demo:ctor()
-	self.members = scene_library.instantiate(scene.id)
+	self.presentation = scene_library.instantiate(scene.id)
+	self.members = self.presentation.members
 end
 
 local define_end_demo_fsm<const> = function()

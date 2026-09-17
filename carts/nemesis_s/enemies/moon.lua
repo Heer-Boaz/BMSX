@@ -194,7 +194,7 @@ function moon:spawn_mini_moon()
 	local target<const> = players[math.random(1, #players)]
 	local red<const> = math.random(1, 100) <= mini_moon_red_chance_percent
 		and #roodjes_view.objects < mini_moon_red_pickup_limit
-	world:spawn(ids_mini_moon_def, {
+	self.scene:spawn(ids_mini_moon_def, {
 		stage = self.stage,
 		target = target,
 		red = red,
@@ -244,11 +244,11 @@ function moon:fire_small_ray_volley()
 	local points_down<const> = self.rotation == moon_rotation_up
 	local direction<const> = points_down and moon_vertical_direction_down or moon_vertical_direction_up
 	local offset_y<const> = points_down and 56 or 8
-	world:spawn(ids_moon_small_ray_def, {
+	self.scene:spawn(ids_moon_small_ray_def, {
 		direction = direction,
 		pos = { x = self.x + 2, y = self.y + offset_y },
 	})
-	world:spawn(ids_moon_small_ray_def, {
+	self.scene:spawn(ids_moon_small_ray_def, {
 		direction = direction,
 		pos = { x = self.x + 44, y = self.y + offset_y },
 	})
@@ -276,7 +276,7 @@ function moon:tick_vertical_playfield()
 end
 
 function moon:begin_death_ray()
-	world:spawn(ids_moon_death_ray_def, {
+	self.scene:spawn(ids_moon_death_ray_def, {
 		originator = self,
 		pos = {
 			x = self.x + moon_death_ray_offset_x,
@@ -389,7 +389,7 @@ function moon:receive_player_projectile(projectile, collider_local_id, hit_point
 	enemy.receive_player_projectile(self, projectile)
 	if self.health > 0 then
 		self.events:emit('enemy.moon.hit')
-		world:spawn(ids_small_explosion_def, {
+		self.scene:spawn(ids_small_explosion_def, {
 			stage = self.stage,
 			pos = { x = hit_point.x, y = hit_point.y },
 		})
@@ -412,7 +412,7 @@ function moon:explode()
 	self.core_collider:set_enabled(false)
 	self.armor_collider:set_enabled(false)
 	self.events:emit('enemy.moon.explosion')
-	world:spawn(ids_large_explosion_def, {
+	self.scene:spawn(ids_large_explosion_def, {
 		stage = self.stage,
 		pos = {
 			x = self.x + moon_width // 3,

@@ -16,7 +16,8 @@ function transition:hide_captions()
 end
 
 function transition:ctor()
-	self.members = scene_library.instantiate(scene.id)
+	self.presentation = scene_library.instantiate(scene.id)
+	self.members = self.presentation.members
 	self:hide_captions()
 end
 

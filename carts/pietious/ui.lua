@@ -70,7 +70,7 @@ local draw_ui<const> = function(component, draw)
 	for i = 0, (owner.hud_weapon_level - 1) do
 		sources.weapon_stripe:blit(draw, owner.x + hud_weapon_bar_x + i, owner.y + hud_weapon_bar_y)
 	end
-	local equipped_source<const> = sources.secondary_weapon[player.secondary_weapon]
+	local equipped_source<const> = sources.secondary_weapon[player.status.secondary_weapon]
 	if equipped_source ~= nil then
 		equipped_source:blit(draw, owner.x + hud_equipped_item_x * room_tile_size, owner.y + hud_equipped_item_y * room_tile_size)
 	end
@@ -93,7 +93,7 @@ end
 
 function ui:sync_health()
 	self.timelines:stop(health_animation_timeline_id)
-	local health<const> = clamp(self.player.health // 1, 0, damage_max_health)
+	local health<const> = clamp(self.player.status.health // 1, 0, damage_max_health)
 	self.hud_health_level = health
 	self.hud_health_target = health
 end
@@ -116,7 +116,7 @@ end
 function ui:ctor()
 	self:get_component(custom_visual_component):set_draw_function(draw_ui)
 	local player<const> = self.player
-	local weapon<const> = clamp(player.weapon_level // 1, 0, hud_weapon_level)
+	local weapon<const> = clamp(player.status.weapon_level // 1, 0, hud_weapon_level)
 	self.hud_visible = true
 	self:sync_health()
 	self.hud_weapon_level = weapon

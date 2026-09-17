@@ -24,24 +24,24 @@ local logo_hold_frames<const> = 256
 function intro:begin()
 	atlas.load('intro')
 	self.presentation = scene_library.instantiate(intro_scene.id)
-	local logo<const> = self.presentation.logo
+	local logo<const> = self.presentation.members.logo
 	logo.visible = false
 	logo.sprite_component:set_region(0, 0, logo.sx, 1)
 end
 
 function intro:release_presentation()
 	if self.presentation then
-		scene_library.dispose(self.presentation)
+		self.presentation:dispose()
 		self.presentation = nil
 	end
 end
 
 function intro:begin_reveal()
-	self.presentation.logo.visible = true
+	self.presentation.members.logo.visible = true
 end
 
 function intro:reveal_row(frame)
-	self.presentation.logo.sprite_component.region_height = frame + 1
+	self.presentation.members.logo.sprite_component.region_height = frame + 1
 end
 
 function intro:finish()

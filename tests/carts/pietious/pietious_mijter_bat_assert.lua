@@ -17,7 +17,7 @@ end
 
 function __bmsx_host_test.ready()
 	return registry:get('c') ~= nil
-		and registry:get('room') ~= nil
+		and registry:get('c').room ~= nil
 		and registry:get('pietolon') ~= nil
 end
 
@@ -30,21 +30,21 @@ function __bmsx_host_test.update()
 	end
 
 	local castle<const> = registry:get('c')
-	local room<const> = registry:get('room')
+	local room = registry:get('c').room
 	if test.phase == 'load_room' then
 		local from_room_number<const> = castle.current_room_number
-		room:load_room(110)
+		room = castle:load_room(110)
 		castle:commit_room_switch({
 			from_room_number = from_room_number,
 			to_room_number = 110,
 			direction = 'left',
 		}, 0, 0, 0)
-		test.mijter_id = room.enemies[1].options.id
+		test.mijter_id = room.enemies[1].member_id
 		test.phase = 'hanging'
 		return false
 	end
 
-	local mijter<const> = registry:get(test.mijter_id)
+	local mijter<const> = registry:get('c').room.scene.members[test.mijter_id]
 	if mijter == nil then
 		return false
 	end

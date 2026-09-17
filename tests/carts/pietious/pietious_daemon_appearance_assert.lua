@@ -32,7 +32,7 @@ end
 
 function __bmsx_host_test.ready()
 	return registry:get('c') ~= nil
-		and registry:get('room') ~= nil
+		and registry:get('c').room ~= nil
 		and registry:get('pietolon') ~= nil
 		and registry:get('d') ~= nil
 end
@@ -46,12 +46,12 @@ function __bmsx_host_test.update()
 	end
 
 	local castle<const> = registry:get('c')
-	local room<const> = registry:get('room')
+	local room = registry:get('c').room
 	local player<const> = registry:get('pietolon')
 	local director<const> = registry:get('d')
 	if test.phase == 'setup' then
 		local from_room_number<const> = castle.current_room_number
-		room:load_room(100)
+		room = castle:load_room(100)
 		castle:commit_room_switch({
 			from_room_number = from_room_number,
 			to_room_number = 100,
@@ -60,7 +60,7 @@ function __bmsx_host_test.update()
 		player.state_machines:transition_to('/quiet')
 		player.x = 32
 		player.y = 96
-		local enemy<const> = world:spawn('enemy.crossfoe', {
+		local enemy<const> = registry:get('c').room.scene:spawn('enemy.crossfoe', {
 			id = 'probe.daemon.enemy',
 			space_id = 'main',
 			castle = castle,
@@ -69,7 +69,7 @@ function __bmsx_host_test.update()
 			pos = { x = 160, y = 96, z = 110 },
 		})
 		enemy.cross_state = 'flying_right'
-		local projectile<const> = world:spawn('pepernoot_projectile', {
+		local projectile<const> = registry:get('c').room.scene:spawn('pepernoot_projectile', {
 			id = 'probe.daemon.projectile',
 			space_id = 'main',
 			room = room,
@@ -112,7 +112,7 @@ function __bmsx_host_test.update()
 				'projectile moved while the summon state paused gameplay')
 			local frame<const> = seal_timeline.head
 			if frame < flow_seal_flash_frames then
-				local flash<const> = director:has_tag('d.seal.flash') ~= nil
+				local flash<const> = director.effects.seal_backdrop.visible
 				assert(flash == ((frame & 3) < 2),
 					'daemon backdrop flash differs from the MSX two-update phase')
 			end

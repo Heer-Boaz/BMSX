@@ -68,7 +68,8 @@ local request_epilogue_finish<const> = function(self)
 end
 
 function narrative_screen:ctor()
-	self.members = scene_library.instantiate(scene.id)
+	self.presentation = scene_library.instantiate(scene.id)
+	self.members = self.presentation.members
 	self.text_component = self.members.caption.text_component
 end
 

@@ -22,7 +22,7 @@ end
 
 function world_item:on_collected()
 	if self.rock_drop_id ~= nil then
-		self.room.rock_drops[self.rock_drop_id] = nil
+		self.room.castle.session.region_drops[self.rock_drop_id] = nil
 	end
 	self:mark_for_disposal()
 end
@@ -36,11 +36,7 @@ local define_world_item_fsm<const> = function()
 					return
 				end
 				local player<const> = self.player
-				local item_id = self.item_id
-				if item_id == nil then
-					item_id = self.id
-				end
-				if not player:collect_item(self.item_type, item_id) then
+				if not player:collect_item(self.item_type, self.item_id) then
 					return
 				end
 				self:on_collected()
@@ -62,7 +58,6 @@ local register_world_item_definition<const> = function()
 			fsm_component.factory({ 'world_item' }),
 		},
 		defaults = {
-			item_id = nil,
 			item_type = nil,
 		},
 	})

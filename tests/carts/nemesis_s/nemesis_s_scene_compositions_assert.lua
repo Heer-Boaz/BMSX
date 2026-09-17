@@ -1,3 +1,4 @@
+local shallow_copy<const> = require('cartlib/util/shallow_copy')
 local registry<const> = require('cartlib/registry')
 local scene_library<const> = require('cartlib/world/scene_library')
 
@@ -18,22 +19,23 @@ end
 function __bmsx_host_test.setup()
 	local director<const> = registry:get('nemesis_s.director')
 	local intro<const> = registry:get('nemesis_s.intro')
-	local logo_scene<const> = intro.presentation
+	local logo_scene<const> = shallow_copy(intro.presentation.members)
 	intro.state_machines:transition_to('/hidden')
 	assert_disposed(logo_scene)
 	intro.state_machines:transition_to('/playing')
-	assert(intro.presentation.logo ~= logo_scene.logo and intro.presentation.logo.x == 40,
+	assert(intro.presentation.members.logo ~= logo_scene.logo and intro.presentation.members.logo.x == 40,
 		'intro reentry did not instantiate fresh authored members')
 	intro.state_machines:transition_to('/hidden')
 	director.state_machines:transition_to('/story')
 	local story<const> = registry:get('nemesis_s.story')
-	local panels<const> = story.presentation
+	local panels<const> = shallow_copy(story.presentation.members)
 	story.state_machines:transition_to('/hidden')
 	assert_disposed(panels)
 	story.state_machines:transition_to('/playing')
-	assert(story.presentation.picture ~= panels.picture,
+	assert(story.presentation.members.picture ~= panels.picture,
 		'story reentry reused disposed scene members')
 	story.state_machines:transition_to('/hidden')
+	director.state_machines:transition_to('/game_start')
 	director.state_machines:transition_to('/end_demo')
 end
 
@@ -45,13 +47,13 @@ function __bmsx_host_test.update()
 	if test.phase == 'end_demo' then
 		local ending<const> = registry:get('nemesis_s.end_demo')
 		if ending == nil then return false end
-		local members<const> = ending.presentation
+		local members<const> = shallow_copy(ending.presentation.members)
 		ending.state_machines:transition_to('/hidden')
 		assert_disposed(members)
 		ending.state_machines:transition_to('/playing')
-		assert(ending.presentation.caption ~= members.caption and ending.presentation.caption.y == 8,
+		assert(ending.presentation.members.caption ~= members.caption and ending.presentation.members.caption.y == 8,
 			'end demo reentry did not use a fresh authored caption')
-		test.ending = ending.presentation
+		test.ending = shallow_copy(ending.presentation.members)
 		director.state_machines:transition_to('/game_start')
 		test.phase = 'gameplay'
 		return false
@@ -59,7 +61,7 @@ function __bmsx_host_test.update()
 	if test.phase == 'gameplay' then
 		if director.gameplay == nil then return false end
 		assert_disposed(test.ending)
-		local members<const> = director.gameplay
+		local members<const> = director.gameplay.members
 		local stage<const> = members.stage
 		assert(stage.starfield == members.starfield and members.starfield ~= stage
 			and members.status_bar ~= stage and members.game_over_curtain ~= director,
@@ -99,7 +101,9 @@ function __bmsx_host_test.update()
 		assert(stage:first_solid_vertical_tile_offset(solid_x + 16, -16, 3, -1) == 0
 			and stage:first_solid_vertical_tile_offset(solid_x + 16, 200, 3, 1) == 0,
 			'a beam outside placed terrain returned a negative length')
-		test.old_gameplay = members
+		test.old_gameplay = director.gameplay
+		test.old_members = shallow_copy(members)
+		test.old_player = player
 		-- Use the normal unload/admission boundary, as checkpoint restart does.
 		director.state_machines:transition_to('/gameplay')
 		director.state_machines:transition_to('/game_start')
@@ -107,8 +111,10 @@ function __bmsx_host_test.update()
 		return false
 	end
 	if director.gameplay == test.old_gameplay then return false end
-	assert_disposed(test.old_gameplay)
-	local stage<const> = director.gameplay.stage
+	assert_disposed(test.old_members)
+	assert(#test.old_gameplay.objects.items == 0 and test.old_player.world == nil,
+		'gameplay disposal retained dynamically admitted actors')
+	local stage<const> = director.gameplay.members.stage
 	assert(registry:get(stage.id) == stage,
 		'restart did not register the replacement stage')
 	assert(stage.actor_spawns[1].options.formation ~= test.formation

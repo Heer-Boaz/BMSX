@@ -87,7 +87,7 @@ function schoorsteen_foe:enter_opening()
 end
 
 function schoorsteen_foe:fire_ray()
-	world:spawn(ids_schoorsteen_ray_def, {
+	self.scene:spawn(ids_schoorsteen_ray_def, {
 		stage = self.stage,
 		pos = {
 			x = self.x + schoorsteen_ray_offset_x,

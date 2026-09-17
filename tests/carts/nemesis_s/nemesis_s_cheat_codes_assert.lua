@@ -110,7 +110,7 @@ function __bmsx_host_test.update()
 		assert(player_2.sprite.imgid == assets_player_2_cheat_n,
 			'Metalion cheat did not publish the player-two cyan vessel source')
 
-		local bullet<const> = world:spawn(ids_enemy_bullet_def, {
+		local bullet<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_enemy_bullet_def, {
 			stage = player_1.stage,
 			pos = { x = player_1.x, y = player_1.y },
 		})
@@ -118,7 +118,7 @@ function __bmsx_host_test.update()
 			'Metalion cheat admitted ordinary projectile damage')
 		bullet:mark_for_disposal()
 
-		local rook<const> = world:spawn(ids_rook_def, {
+		local rook<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_rook_def, {
 			stage = player_1.stage,
 			rise_distance = rook_rise_distances[1],
 			pos = { x = player_1.x, y = player_1.y },
@@ -127,7 +127,7 @@ function __bmsx_host_test.update()
 			'Metalion cheat admitted small-fry contact damage')
 		rook:mark_for_disposal()
 
-		local kerk<const> = world:spawn(ids_kerk_def, {
+		local kerk<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_kerk_def, {
 			stage = player_1.stage,
 			pos = { x = player_1.x, y = player_1.y },
 		})

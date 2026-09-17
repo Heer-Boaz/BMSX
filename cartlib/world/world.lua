@@ -58,7 +58,7 @@ local mutation_active_space<const> = 0x40
 local mutation_disposal<const> = 0x80
 local mutation_clear<const> = 0x100
 local mutation_gameplay_clock<const> = 0x200
-local mutation_space_unload<const> = 0x400
+local mutation_unload<const> = 0x400
 local structural_mutation_mask<const> = mutation_admission
 	| mutation_component_attach
 	| mutation_object
@@ -112,9 +112,9 @@ function world_class.new()
 	self._flushing_disposals = false
 	self._pending_admissions = {}
 	self._pending_admission_count = 0
-	self._pending_space_unload_callbacks = {}
-	self._pending_space_unload_contexts = {}
-	self._pending_space_unload_count = 0
+	self._pending_unload_callbacks = {}
+	self._pending_unload_contexts = {}
+	self._pending_unload_count = 0
 	self._pending_objects = {}
 	self._pending_object_count = 0
 	self._pending_components = {}
@@ -681,7 +681,7 @@ end
 -- A prefab instance is fully constructed before Registry, space and system
 -- views publish it. During a tick group that publication or cancellation
 -- happens at the group barrier.
-function world_class:spawn(definition_id, options)
+function world_class:spawn(definition_id, options, scene, member_id)
 	local definition<const> = prefab.definition(definition_id)
 	local obj<const> = {}
 	apply_spawn_values(obj, definition.defaults)
@@ -692,6 +692,10 @@ function world_class:spawn(definition_id, options)
 	setmetatable(obj, definition.instance_metatable)
 	definition.initialize(obj)
 	obj.world = self
+	if scene ~= nil then
+		obj.scene = scene
+		scene:_attach(obj, member_id)
+	end
 	obj.space_id = obj.space_id or self.active_space_id
 	local component_options<const> = { parent = obj }
 	local component_factories<const> = definition.components
@@ -747,6 +751,9 @@ function world_class:_commit_disposal(obj)
 
 	obj:ondespawn()
 	obj:_dispose()
+	if obj.scene ~= nil then
+		obj.scene:_detach(obj)
+	end
 	obj.world = nil
 end
 
@@ -857,12 +864,12 @@ function world_class:_commit_mutation_barrier()
 		self:_commit_clear()
 		return true
 	end
-	if (self._pending_mutation_mask & mutation_space_unload) ~= 0 then
-		self._pending_mutation_mask = self._pending_mutation_mask - mutation_space_unload
-		local callbacks<const> = self._pending_space_unload_callbacks
-		local contexts<const> = self._pending_space_unload_contexts
-		local count<const> = self._pending_space_unload_count
-		self._pending_space_unload_count = 0
+	if (self._pending_mutation_mask & mutation_unload) ~= 0 then
+		self._pending_mutation_mask = self._pending_mutation_mask - mutation_unload
+		local callbacks<const> = self._pending_unload_callbacks
+		local contexts<const> = self._pending_unload_contexts
+		local count<const> = self._pending_unload_count
+		self._pending_unload_count = 0
 		for index = 1, count do
 			local callback<const> = callbacks[index]
 			local context<const> = contexts[index]
@@ -950,26 +957,50 @@ end
 -- graphs at once.
 function world_class:unload_space(space_id, on_unloaded, context)
 	self:clear_space(space_id)
+	self:_after_disposals(on_unloaded, context)
+end
+
+-- Scene ownership is opt-in and independent of the selected update space.
+-- Its dense list includes inactive objects and pending admissions.
+function world_class:unload_objects(objects, on_unloaded, context)
+	-- Queue the whole group before ondespawn hooks run: an encounter's teardown
+	-- may also dispose siblings and mutate this dense membership list.
+	local own_barrier<const> = not self._mutation_barrier_open and not self._flushing_disposals
+	if own_barrier then
+		self:_open_mutation_barrier()
+	end
+	for index = #objects, 1, -1 do
+		self:mark_for_disposal(objects[index])
+	end
+	if on_unloaded ~= nil then
+		self:_after_disposals(on_unloaded, context)
+	end
+	if own_barrier then
+		self:_commit_mutation_barrier()
+	end
+end
+
+function world_class:_after_disposals(on_unloaded, context)
 	if not self._mutation_barrier_open and not self._flushing_disposals then
 		on_unloaded(context)
 		return
 	end
-	local count<const> = self._pending_space_unload_count + 1
-	self._pending_space_unload_count = count
-	self._pending_space_unload_callbacks[count] = on_unloaded
-	self._pending_space_unload_contexts[count] = context
-	self._pending_mutation_mask = self._pending_mutation_mask | mutation_space_unload
+	local count<const> = self._pending_unload_count + 1
+	self._pending_unload_count = count
+	self._pending_unload_callbacks[count] = on_unloaded
+	self._pending_unload_contexts[count] = context
+	self._pending_mutation_mask = self._pending_mutation_mask | mutation_unload
 end
 
 function world_class:_commit_clear()
-	local unload_callbacks<const> = self._pending_space_unload_callbacks
-	local unload_contexts<const> = self._pending_space_unload_contexts
-	for index = 1, self._pending_space_unload_count do
+	local unload_callbacks<const> = self._pending_unload_callbacks
+	local unload_contexts<const> = self._pending_unload_contexts
+	for index = 1, self._pending_unload_count do
 		unload_callbacks[index] = nil
 		unload_contexts[index] = nil
 	end
-	self._pending_space_unload_count = 0
-	self._pending_mutation_mask = self._pending_mutation_mask & ~mutation_space_unload
+	self._pending_unload_count = 0
+	self._pending_mutation_mask = self._pending_mutation_mask & ~mutation_unload
 	self:_commit_gameplay_clock(true)
 	self._visual_sequence = 0
 	local objects<const> = self._objects

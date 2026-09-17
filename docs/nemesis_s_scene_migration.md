@@ -168,6 +168,7 @@ Nemesis's composition migration is complete. Stage progression, enemy behavior,
 player state and boss phases remain gameplay responsibilities. `2025` and
 `pietious` are also migrated; their ownership and validation are recorded in
 [Authored cart compositions](cart_scene_migration.md). Pietious retains its
-castle, room and player owners across room composition replacement, preserving
-inventory and durable progression. These migrations add no speculative
-persistence or streaming machinery to World.
+gameplay controller across room replacement, while an independent session model
+preserves inventory and durable progression. Each room is now a fresh live
+scene. The [lifetime follow-up](scene_lifetimes.md) also gives Nemesis gameplay
+scenes ownership of dynamically admitted players, enemies and effects.

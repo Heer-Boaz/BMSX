@@ -56,7 +56,7 @@ function __bmsx_host_test.update()
 	if test.phase == 'spawn' then
 		stage.scrolling = false
 		stage.actor_spawn_index = stage.actor_spawn_count + 1
-		local generator<const> = world:spawn(ids_rook_generator_def, {
+		local generator<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_rook_generator_def, {
 			stage = stage,
 			pos = { x = 240, y = 112 },
 		})

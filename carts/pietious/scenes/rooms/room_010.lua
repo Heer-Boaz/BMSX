@@ -6,11 +6,10 @@ function room_scene.register()
 	scene_library.register(room_scene.id, {
 		objects = {
 			{
-				member_id = 'enemy_01',
+				member_id = 'enemy_010_01',
 				definition_id = 'enemy.marspeinenaardappel',
 				conditions = {},
 				options = {
-					id = 'enemy_010_01',
 					space_id = 'main',
 					pos = { x = 8, y = 88, z = 140 },
 					damage = 2,
@@ -19,11 +18,10 @@ function room_scene.register()
 				},
 			},
 			{
-				member_id = 'enemy_02',
+				member_id = 'enemy_010_02',
 				definition_id = 'enemy.marspeinenaardappel',
 				conditions = {},
 				options = {
-					id = 'enemy_010_02',
 					space_id = 'main',
 					pos = { x = 80, y = 112, z = 140 },
 					damage = 2,
@@ -32,39 +30,35 @@ function room_scene.register()
 				},
 			},
 			{
-				member_id = 'enemy_03',
+				member_id = 'enemy_010_03',
 				definition_id = 'enemy.crossfoe',
 				conditions = {},
 				options = {
-					id = 'enemy_010_03',
 					space_id = 'main',
 					pos = { x = 88, y = 32, z = 140 },
 					damage = 2,
 				},
 			},
 			{
-				member_id = 'rock_01',
+				member_id = 'rock_010_01',
 				definition_id = 'rock',
 				options = {
-					id = 'rock_010_01',
 					space_id = 'main',
 					pos = { x = 192, y = 72, z = 140 },
 				},
 			},
 			{
-				member_id = 'rock_02',
+				member_id = 'rock_010_02',
 				definition_id = 'rock',
 				options = {
-					id = 'rock_010_02',
 					space_id = 'main',
 					pos = { x = 32, y = 40, z = 140 },
 				},
 			},
 			{
-				member_id = 'rock_03',
+				member_id = 'rock_010_03',
 				definition_id = 'rock',
 				options = {
-					id = 'rock_010_03',
 					space_id = 'main',
 					pos = { x = 112, y = 168, z = 140 },
 					item_type = 'ammofromrock',

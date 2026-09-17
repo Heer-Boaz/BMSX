@@ -33,18 +33,18 @@ local slides<const> = end_demo_scene.panels
 
 local apply_slide<const> = function(target, slide_index)
 	local slide<const> = slides[slide_index]
-	target.presentation.picture:set_imgid(slide.imgid)
-	local caption<const> = target.presentation.caption.text_component
+	target.presentation.members.picture:set_imgid(slide.imgid)
+	local caption<const> = target.presentation.members.caption.text_component
 	caption.offset_x = slide.text_x
 	caption:set_text(slide.text)
 end
 
 local apply_reveal<const> = function(target, height)
-	target.presentation.caption.text_component:set_glyph_visible_height(height)
+	target.presentation.members.caption.text_component:set_glyph_visible_height(height)
 end
 
 local apply_curtain_frame<const> = function(target, frame)
-	target.presentation.curtain.count = frame + 1
+	target.presentation.members.curtain.count = frame + 1
 end
 
 local first_reveal_sequence<const> = {
@@ -97,8 +97,8 @@ local presentation_timeline<const> = {
 			kind = 'value',
 			interpolation = 'step',
 			apply = function(target, visible)
-				target.presentation.picture.visible = visible
-				target.presentation.caption.visible = visible
+				target.presentation.members.picture.visible = visible
+				target.presentation.members.caption.visible = visible
 			end,
 			keys = {
 				{ time_ms = 0, value = true },
@@ -109,7 +109,7 @@ local presentation_timeline<const> = {
 		{
 			kind = 'value',
 			interpolation = 'step',
-			path = { 'presentation', 'curtain', 'visible' },
+			path = { 'presentation', 'members', 'curtain', 'visible' },
 			keys = {
 				{ time_ms = 0, value = false },
 				{ time_ms = first_curtain_start_ms, value = true },
@@ -159,7 +159,7 @@ end
 
 function end_demo:release_presentation()
 	if self.presentation then
-		scene_library.dispose(self.presentation)
+		self.presentation:dispose()
 		self.presentation = nil
 	end
 end

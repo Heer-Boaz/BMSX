@@ -12,6 +12,7 @@ require('globals')
 local atlas<const> = require('cartlib/gx/atlas')
 local image<const> = require('cartlib/gx/image')
 local story<const> = require('story')
+local session_model<const> = require('session')
 local combat_module<const> = require('combat')
 local director_module<const> = require('director')
 local presentation<const> = require('presentation')
@@ -32,9 +33,10 @@ end
 
 function new_game()
 	world:clear()
-	local dialogue<const> = scene_library.instantiate(dialogue_scene.id)
-	local combat<const> = scene_library.instantiate(combat_scene.id)
-	local transition<const> = scene_library.instantiate(transition_scene.id)
+	local dialogue<const> = scene_library.instantiate(dialogue_scene.id).members
+	local combat_instance<const> = scene_library.instantiate(combat_scene.id)
+	local combat<const> = combat_instance.members
+	local transition<const> = scene_library.instantiate(transition_scene.id).members
 	local background<const> = dialogue.background
 	local text_main<const> = dialogue.main
 	local text_choice<const> = dialogue.choice
@@ -57,7 +59,7 @@ function new_game()
 		accent = transition.accent,
 	}
 	local combat_results_visual<const> = combat.cover
-	local combat_director_instance<const> = world:spawn(combat_module.director_definition_id, {
+	local combat_director_instance<const> = combat_instance:spawn(combat_module.director_definition_id, {
 		id = combat_module.director_definition_id,
 		background = background,
 		text_main = text_main,
@@ -80,6 +82,7 @@ function new_game()
 	})
 	world:spawn(director_module.definition_id, {
 		id = director_module.definition_id,
+		session = session_model.new(),
 		combat_director = combat_director_instance,
 		background = background,
 		text_main = text_main,

@@ -228,16 +228,23 @@ function director:enter_epilogue()
 	self.events:emit('epilogue')
 end
 
+function director:ondespawn()
+	self.effects_scene:dispose()
+	self.effects_scene = nil
+	self.effects = nil
+end
+
 function director:ctor()
 	local clouds<const> = {}
 	self.daemon_clouds = clouds
-	self.effects = scene_library.instantiate(effects_scene.id)
+	self.effects_scene = scene_library.instantiate(effects_scene.id)
+	self.effects = self.effects_scene.members
 	self.curtain_step_width = self.effects.curtain.width / flow_death_curtain_frames
 	self.banner_world_number = 0
 	self.shrine_text_lines = {}
 
 	for i = 1, flow_daemon_cloud_count do
-		clouds[i] = world:spawn('daemon_cloud', {
+		clouds[i] = self.effects_scene:spawn('daemon_cloud', {
 			id = 'dc.' .. tostring(i),
 			space_id = 'main',
 			pos = { x = 0, y = 0, z = 23 },
@@ -288,17 +295,10 @@ local define_director_fsm<const> = function()
 		end
 	end
 	local apply_seal_frame<const> = function(self, frame_value)
-		if frame_value < flow_seal_flash_frames then
-			-- T9F68 selects VDP backdrop 14 while countdown bit 1 is set,
-			-- retaining each color for two admitted bottom halves.
-			if (frame_value & 3) < 2 then
-				self:add_tag('d.seal.flash')
-			else
-				self:remove_tag('d.seal.flash')
-			end
-		elseif frame_value == flow_seal_flash_frames then
-			self:remove_tag('d.seal.flash')
-		end
+		-- T9F68 selects VDP backdrop 14 while countdown bit 1 is set,
+		-- retaining each color for two admitted bottom halves. The authored
+		-- backdrop belongs to this sequence, independently of the room actors.
+		self.effects.seal_backdrop.visible = frame_value < flow_seal_flash_frames and (frame_value & 3) < 2
 		self.castle:apply_seal_timeline_frame(frame_value)
 	end
 	local apply_curtain_frame<const> = function(self, frame_value)
@@ -421,7 +421,6 @@ local define_director_fsm<const> = function()
 			['room.switched'] = {
 				emitter = 'pietolon',
 				go = function(self, _state, event)
-					self.events:emit('room_state.sync')
 					if not room_switch_passthrough_dirs[event.dir] then
 						return '/room_switch_wait'
 					end
@@ -817,7 +816,6 @@ local define_director_fsm<const> = function()
 						stop_on_exit = true,
 						play_options = sequence_play_options,
 						on_finished = function(self)
-							self:remove_tag('d.seal.flash')
 							self.events:emit('seal_dissolution_done')
 							return '/daemon_appearance'
 						end,
@@ -825,11 +823,11 @@ local define_director_fsm<const> = function()
 				},
 				entering_state = function(self)
 					self:set_active_space('main')
-					self:remove_tag('d.seal.flash')
 					world:set_gameplay_clock_running(false)
 					self.events:emit('seal_dissolution')
 				end,
-				exiting_state = function()
+				exiting_state = function(self)
+					self.effects.seal_backdrop.visible = false
 					world:set_gameplay_clock_running(true)
 				end,
 			},
