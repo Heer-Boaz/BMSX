@@ -91,8 +91,7 @@ local create_world<const> = function(director_boot_mode)
 	new_game_requested = false
 	world:clear()
 
-	local members<const> = scene_library.definition(gameplay_scene.id).objects
-	local player_member<const> = members[1]
+	local player_member<const> = scene_library.member_definition(gameplay_scene.id, 'player')
 	local session<const> = session_model.new(castle_module.castle._progression_program, player_member.options.pos, castle_map.room_templates)
 	local gameplay<const> = scene_library.create(gameplay_scene.id)
 	local castle<const> = gameplay:spawn('castle', { id = 'c', session = session })
@@ -113,7 +112,7 @@ local create_world<const> = function(director_boot_mode)
 		castle = castle,
 		player = player,
 	})
-	local hud_member<const> = members[2]
+	local hud_member<const> = scene_library.member_definition(gameplay_scene.id, 'hud')
 	local ui<const> = gameplay:spawn_member(hud_member, { player = player })
 	world:spawn('title_screen', { id = 'title_screen', space_id = 'title', })
 	local director<const> = world:spawn('director', {

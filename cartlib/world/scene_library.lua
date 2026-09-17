@@ -16,6 +16,18 @@ function scene_library.definition(id)
 	return definitions[id]
 end
 
+-- Authored order controls admission, not a member's role. Staged constructors
+-- select by scene-local identity even after the editor reorders the definition.
+function scene_library.member_definition(id, member_id)
+	local objects<const> = definitions[id].objects
+	for index = 1, #objects do
+		local member<const> = objects[index]
+		if member.member_id == member_id then
+			return member
+		end
+	end
+end
+
 -- Runtime bindings (e.g. the current players' state) override only the named
 -- members. Keep authored options immutable so the next instance starts fresh.
 function scene_library.create(id)
