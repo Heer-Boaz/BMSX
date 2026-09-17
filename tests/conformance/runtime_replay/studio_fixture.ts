@@ -25,7 +25,9 @@ import { BrowserClipboard } from '../../../ide/browser/clipboard';
 import { createHeadlessIdeHarness } from '../../../ide/testing/headless_harness';
 import { RecordingLogOutput } from '../../../ide/testing/recording_log_output';
 import type { Table } from '../../../machine/ts/machine/cpu/table';
-import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
+import { IO_INP_KEYS, IO_INP_STATUS, IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
+import { IO_WORD_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { hidKeyUsageForCode } from '../../../hosts/common/input/hid_keys';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path';
 import type { GPUBackend } from '../../../machine/ts/render/backend/backend';
@@ -116,6 +118,17 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		for (const key of keys) setKey(key, false);
 		await frame();
 	};
+	/** Guest input is sampled independently of host-frame keyboard dispatch. */
+	const releaseGuestKey = async (key: string) => {
+		setKey(key, false);
+		const usage = hidKeyUsageForCode(key);
+		const address = IO_INP_KEYS + (usage >>> 5) * IO_WORD_SIZE;
+		const mask = 1 << (usage & 31);
+		await until(() => (runtime.machine.memory.readIoU32(address) & mask) === 0, `${key} release reaches the ICU`);
+		const releasedSample = runtime.machine.memory.readIoU32(IO_INP_STATUS);
+		await until(() => runtime.machine.memory.readIoU32(IO_INP_STATUS) !== releasedSample,
+			`cart consumes the released ${key} snapshot`);
+	};
 	const movePointer = (bounds: RectBounds) => {
 		const displayRect = display.measureDisplay();
 		const viewport = ide.overlayRenderer.viewportSize;
@@ -193,7 +206,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	};
 	audio.bootstrap();
 	return { runtime, ide, execution, rewind, tasks, history, harness, guest, clock, input, clipboard, observations,
-		frame, until, setKey, setPointerButton, press, movePointer, click, clickTab, runMenuCommand, runPaletteCommand, settle, cycles, title, capture };
+		frame, until, setKey, setPointerButton, press, releaseGuestKey, movePointer, click, clickTab, runMenuCommand, runPaletteCommand, settle, cycles, title, capture };
 }
 
 export type StudioFixture = Awaited<ReturnType<typeof createStudioFixture>>;

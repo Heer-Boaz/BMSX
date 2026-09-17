@@ -9,7 +9,15 @@ import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/edi
 import { openSceneEditor, selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
 import { testStudioPointerHover } from './studio_pointer_hover';
-import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
+import { resolveRuntimeResource, runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
+
+export async function runStudioSceneViewport(test: StudioFixture) {
+	await test.until(() => test.ide.sources.activeCartridgeSlot === 0, 'scene viewport: cartridge execution starts');
+	await test.press('ControlRight', 'ShiftRight');
+	await test.runMenuCommand('pause');
+	await testStudioSceneViewport(test);
+	return { hostFrames: test.observations.hostFrames, cycles: test.cycles() };
+}
 
 /** Actual font/layout, divider, focus, captured pointer and source edits on independent Lua. */
 export async function testStudioSceneViewport(test: StudioFixture): Promise<void> {
@@ -19,10 +27,10 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	// Their contents and names are irrelevant to this form fixture.
 	for (const resource of ide.sources.luaResources) {
 		if (resource.domain !== 0) continue;
-		harness.openLuaSource(resource.path); await frame(); await frame();
+		await ide.editor.navigation.openResource(resource); await frame(); await frame();
 		if (editorChromeState.tabScrollbar.isVisible()) break;
 	}
-	harness.openLuaSource('scenes/root.lua'); // Existing transport; no assertions depend on this cart's definitions.
+	await ide.editor.navigation.openResource(resolveRuntimeResource(ide.sources, { domain: 0, path: 'scenes/root.lua' })!);
 	const model = harness.getActiveEditorDocument().model;
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: SCENE_VIEWPORT_SOURCE }]);
@@ -36,13 +44,13 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	// Reuse a real workspace input as transport, not its game implementation.
 	const record = runtimeLuaSourceRegistry(ide.sources, model.resource.domain)!.records.find(record =>
 		record.program_module && !record.generated && record.source_path !== model.resource.path && !record.module_path.startsWith('cartlib/'))!;
-	harness.openLuaSource(record.source_path);
+	await ide.editor.navigation.openResource(resolveRuntimeResource(ide.sources, { domain: model.resource.domain, path: record.source_path })!);
 	const provider = harness.getActiveEditorDocument().model;
 	const originalProvider = provider.buffer.getText();
 	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: "return require('cartlib/world/scene_library')" }]);
 	const apiOffset = authored.indexOf('cartlib/world/scene_library');
 	model.pushEditOperations([{ offset: apiOffset, deleteLength: 'cartlib/world/scene_library'.length, text: record.module_path }]);
-	harness.openLuaSource(model.resource.path);
+	await ide.editor.navigation.openResource(model.resource);
 	check(await openSceneEditor(test) === scene, 'scene imports: the actual menu reopens the same scene through a reexport');
 	await selectMember(test, scene, 0);
 	await test.click(scene.properties[0].bounds);
@@ -102,6 +110,11 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 		const note = scene.detailsText.at(-1)!;
 		check(scene.details.offsetTop + note.top + editorViewState.lineHeight <= scene.details.bounds.bottom,
 			'A02: keyboard scroll reaches the last explanatory line');
+		// Options extend the form beyond XYZ. Position X just behind the header
+		// through keyboard scrolling, independently of the total content height.
+		await press('Home');
+		const hideXSteps = Math.ceil(scene.properties[0].contentBounds.bottom / scene.outline.layout.rowHeight);
+		for (let index = 0; index < hideXSteps; index += 1) await press('ArrowDown');
 		const hidden = scene.properties[0].bounds;
 		check(hidden.bottom <= scene.details.bounds.top && hidden.bottom > scene.details.bounds.top - scene.outline.layout.rowHeight,
 			'A02: X is clipped behind the property header, not a visible input');
@@ -155,7 +168,7 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 			'A02: returning to Scene retains an inactive Problems selection');
 		console.log(`STUDIO-SCENE-VIEWPORT:${variant}:PASS`);
 	}
-	// Keep the final renderer screenshot on a short viewport with Z and the last notes visible.
+	// Keep the final renderer screenshot on a short viewport with the last option and notes visible.
 	await press('Escape');
 	pane.focus(); await press('Tab'); await press('End'); await frame();
 	check(model.buffer.getText() === authored, 'A02: presentation never rewrites the fixture');

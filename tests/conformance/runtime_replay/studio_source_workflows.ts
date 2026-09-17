@@ -151,6 +151,8 @@ export async function testCapturedSourceReboot(test: StudioFixture): Promise<voi
 	const rebooting = harness.reboot();
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '-- W04 edit after reboot admission\n' }]);
 	await rebooting;
+	// Supervisor counters restart with the machine; the earlier intentional init fault is no longer allowed.
+	test.observations.expectedFaultSequence = 0;
 	check(ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('title_screen') === captured,
 		'W04: reboot applies its captured document after older saved workspace sources');
 	check(getTextFileRuntimeSourceStatus(ide.sources, model) === 'pending', 'W04: reboot cannot acknowledge later typing');

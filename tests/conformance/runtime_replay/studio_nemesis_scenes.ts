@@ -3,6 +3,7 @@ import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path
 import type { Table } from '../../../machine/ts/machine/cpu/table';
 import { selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
+import { reachNemesisTitle } from './studio_nemesis_navigation';
 
 export async function runStudioNemesisScenes(test: StudioFixture) {
 	const { runtime, ide, tasks, harness, guest, press, click, until, runMenuCommand, cycles, title } = test;
@@ -14,17 +15,8 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 		const registry = guest.global(buildModuleExportSlotName('cartlib/registry', []));
 		return guest.readStringMember(guest.readStringMember(registry, '_entries_by_id'), id);
 	};
-	const reachTitle = async () => {
-		for (const phase of ['intro', 'story']) {
-			if (space() === phase) {
-				await press('Space');
-				await until(() => space() !== phase, `ordinary confirm leaves ${phase}`);
-			}
-		}
-		await until(() => space() === 'title' && presentation() !== null, 'normal game input reaches title scene');
-	};
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'boot the shipped Nemesis cart');
-	await reachTitle();
+	await reachNemesisTitle(test);
 	const oldTitle = title();
 	const originalSelector = member('selector');
 	check(guest.readStringMember(originalSelector, 'x') === 80, 'unmodified selector starts at its authored position');
@@ -80,7 +72,7 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 	const story = guest.readStringMember(registered('nemesis_s.story'), 'presentation');
 	check(guest.readStringMember(guest.readStringMember(guest.readStringMember(story, 'members'), 'primary_caption'), 'y') === 148,
 		'normal story playback consumes the edited caption position');
-	await reachTitle();
+	await reachNemesisTitle(test);
 	check(guest.readStringMember(member('selector'), 'x') === 88,
 		'the actual rebooted title consumes the edited scene, not the old placement');
 	await test.capture?.('title-after');
@@ -109,6 +101,18 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 	const firstSpawn = (guest.readStringMember(stage, 'actor_spawns') as Table).get(1);
 	check(guest.readStringMember(guest.readStringMember(guest.readStringMember(firstSpawn, 'options'), 'pos'), 'y') === 24,
 		'streaming admission consumes the actor placement edited in Studio');
+	await press('ControlRight', 'ShiftRight');
+	await runMenuCommand('pause');
+	harness.openLuaSource('title_screen.lua');
+	const runtimeSource = harness.getActiveEditorDocument().model;
+	runtimeSource.pushEditOperations([{ offset: runtimeSource.buffer.length, deleteLength: 0,
+		text: '\n-- Scene workflow: keep playing after a source revision.\n' }]);
+	await press('ControlLeft', 'ShiftLeft', 'KeyS');
+	await press('Enter');
+	await until(() => tasks.ready && !ide.editor.isActive && !ide.debugger.plans.controlActive
+		&& !runtime.completionCallPending(), 'Hot Resume retains an already running gameplay scene');
+	check(registered('nemesis_s.stage') === stage && registered('nemesis_s.player.1') === player,
+		'live source installation preserves the stage and player');
 	await until(() => (guest.readStringMember(stage, 'actor_spawn_index') as number) > 1
 		&& !runtime.completionCallPending(), 'ordinary play reaches the edited enemy formation');
 	const formation = guest.readStringMember(guest.readStringMember(firstSpawn, 'options'), 'formation');

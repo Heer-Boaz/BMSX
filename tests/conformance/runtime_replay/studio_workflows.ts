@@ -45,6 +45,7 @@ import { IO_WORD_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { HostPauseReason } from '../../../hosts/common/execution_control';
 import { hidKeyUsageForCode } from '../../../hosts/common/input/hid_keys';
 import { check, type StudioFixture } from './studio_fixture';
+import { nemesisTitleState, reachNemesisTitle } from './studio_nemesis_navigation';
 import { testSceneSourceEdits } from './studio_scene_source';
 import { testSourceFormatting } from './studio_source_formatting';
 import { testStudioSyntaxHighlight } from './studio_syntax_highlight';
@@ -56,11 +57,9 @@ import { testAemSourceApplication, testCapturedSourceApply, testSourceUndoAfterA
 /** The same developer loop runs on every renderer, without backend-specific tests. */
 export async function runStudioWorkflows(test: StudioFixture) {
 	const { runtime, ide, execution, rewind, tasks, history, harness, guest, clock, input, observations,
-		frame, until, setKey, press, click, runMenuCommand, settle, cycles, title } = test;
+		frame, until, setKey, press, releaseGuestKey, click, runMenuCommand, settle, cycles, title } = test;
 	await until(() => cycles() > runtime.timing.cpuHz * 13 && !rewind.seeking, 'boot into real cart');
-	await press('Space');
-	await press('Space');
-	await until(() => guest.readStringMember(title(), 'visible') === true, 'title visible');
+	await reachNemesisTitle(test);
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
 	check(!ide.editor.isActive && !execution.userPaused, 'palette: Ctrl+Shift+P is not a gameplay shortcut');
 	for (const key of ['F5', 'F6']) {
@@ -79,6 +78,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 		await until(() => (runtime.machine.memory.readIoU32(address) & mask) === 0, `${key} release reaches the real ICU`);
 	}
 	await until(() => cycles() > runtime.timing.cpuHz * 22 && tasks.ready, 'continuous history wraps');
+	check(nemesisTitleState(test) === 'idle', 'history contains the idle title used by the source-edit workflow');
 	await press('ControlRight', 'AltRight');
 	for (let index = 0; index < 3; index += 1) await press('ArrowUp');
 	await press('KeyX');
@@ -147,9 +147,10 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await press('ArrowDown');
 	for (let index = 0; index < 5; index += 1) await frame();
 	check(guest.readStringMember(title(), 'selected_player_count') === countBefore, 'old FSM input rule no longer fires');
-	await press('ArrowRight');
+	setKey('ArrowRight', true);
 	await until(() => guest.readStringMember(title(), 'selected_player_count') !== countBefore,
 		'edited FSM rule fires on the retained actor');
+	setKey('ArrowRight', false);
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
 	const pausedAt = cycles();
@@ -205,14 +206,21 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await press('ArrowRight');
 	for (let index = 0; index < 5; index += 1) await frame();
 	check(guest.readStringMember(title(), 'selected_player_count') === countAtSecond, 'superseded rule no longer fires');
-	await press('ArrowLeft');
+	setKey('ArrowLeft', true);
 	await until(() => guest.readStringMember(title(), 'selected_player_count') !== countAtSecond, 'second rule fires');
+	await releaseGuestKey('ArrowLeft');
 
 	// Breakpoint -> inspection -> explicit step while the independent pause stays set.
-	const breakpointLine = source.split('\tif self.selected_player_count == 1 then')[0].split('\n').length;
+	const breakpointRow = source.split('\n').findIndex(line => line.includes('self.selected_player_count = self.selected_player_count == 1 and 2 or 1'));
+	check(breakpointRow >= 0, 'W03: actual title-selection statement exists');
+	const breakpointLine = breakpointRow + 1;
 	harness.toggleLuaBreakpoint('title_screen.lua', breakpointLine);
-	await press('ArrowLeft');
+	check(ide.debugger.breakpointPcs[model.resource.domain + 1].size !== 0, 'W03: breakpoint binds to installed code');
+	setKey('ArrowLeft', true);
 	await until(() => ide.debugger.stopped && ide.editor.isActive, 'W03: source breakpoint opens the real editor');
+	setKey('ArrowLeft', false);
+	check(harness.getActiveCodeContext()!.model === model
+		&& harness.getActiveCodeContext()!.executionStopRow === breakpointRow, 'W03: debugger reveals the actual title-selection statement');
 	const stopPc = ide.debugger.stopPc;
 	const inspected = harness.getHover(breakpointLine - 1, 12);
 	check(inspected !== null, 'current debugger stop can be inspected');
@@ -247,10 +255,8 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await runMenuCommand('pause');
 	await until(() => !rewind.active && tasks.ready, 'Continue takes over reviewed state');
 	setKey('ArrowLeft', true);
-	for (let index = 0; index < 10; index += 1) await frame();
-	setKey('ArrowLeft', false);
-	await frame();
 	await until(() => ide.debugger.stopped && ide.editor.isActive, 'breakpoint remains installed after rewind');
+	setKey('ArrowLeft', false);
 	harness.toggleLuaBreakpoint('title_screen.lua', breakpointLine);
 	await press('F5');
 	await until(() => !ide.debugger.stopped && !ide.editor.isActive, 'continue from restored stop');

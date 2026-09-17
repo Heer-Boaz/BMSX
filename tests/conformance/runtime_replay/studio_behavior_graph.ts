@@ -1,6 +1,7 @@
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { testStudioGraphNavigation } from './studio_graph_navigation';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
@@ -116,7 +117,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 
 /** Final screenshot state, using the same real picker and independent authored Lua. */
 export async function presentBehaviorTreeGraph(test: StudioFixture): Promise<void> {
-	test.harness.openLuaSource('cart.lua');
+	await test.ide.editor.navigation.openResource(resolveRuntimeResource(test.ide.sources, { domain: 0, path: 'cart.lua' })!);
 	const model = activeCodeEditor.model;
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BEHAVIOR_SOURCE_FIXTURE }]);
 	await test.runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');

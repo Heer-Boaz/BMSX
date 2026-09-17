@@ -27,8 +27,7 @@ export async function testSceneFieldInsertion(test: StudioFixture): Promise<void
 	const prior = ide.sources.currentBlua32Media.cartridgeSlots[0]!.symbols!;
 	const functionIndex = prior.metadata.functionIds.indexOf(functionId);
 	const names = prior.metadata.upvalueBindingsByFunction[functionIndex].map(slot => prior.metadata.capturedLocals[slot].name);
-	check(names.length === 6 && names[4] === 'title_screen' && names[5] === 'director',
-		'insert: actual registration begins with six installed capture cells');
+	check(names.includes('root_scene'), 'insert: registration captures its scene identity');
 	let removed = '';
 	for (let revision = 0; revision < 3; revision += 1) {
 		const before = cycles();

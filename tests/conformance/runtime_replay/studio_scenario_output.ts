@@ -1,4 +1,5 @@
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import type { ScenarioLabEditorPane } from '../../../ide/workbench/contrib/scenario_lab/editor_pane';
 import { SCENARIO_RESULT_LOG_RETAIN_COUNT } from '../../../ide/testing/scenario/result_service';
@@ -16,9 +17,13 @@ const MESSAGE = `expected:\n\n${Array.from({ length: 65 }, (_, n) => `line_${n}:
 
 /** Independent result/source data through the actual Lab, inspector and Quick Input routes. */
 export async function testStudioScenarioOutput(test: StudioFixture): Promise<void> {
-	const { ide, harness, press, click, frame, runPaletteCommand, cycles } = test;
+	const { ide, press, click, frame, runPaletteCommand, cycles } = test;
 	const origin = getActiveTab();
-	harness.openLuaSource('cart.lua'); // Source transport only; the fixture defines its own effects.
+	// Cancel rebooted the canonical media; the paused CPU may still be in the BIOS.
+	// Open the cartridge resource explicitly, independently of the execution domain.
+	const resource = resolveRuntimeResource(ide.sources, { domain: 0, path: 'cart.lua' });
+	check(resource !== undefined, 'A05: canonical restoration retains the cartridge source');
+	await ide.editor.navigation.openResource(resource!);
 	const model = activeCodeEditor.model, original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: EFFECTS }]);
 	const version = model.version, dirty = model.dirty, position = cycles();
@@ -102,7 +107,7 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	check(!ide.editor.isActive && !inspector.visible, 'A05: leaving the IDE disposes message inspection');
 	await press('ControlRight', 'ShiftRight');
 	await testScenarioEffectSourceChoice(test, lab.view, result, model);
-	harness.openLuaSource(model.resource.path);
+	await ide.editor.navigation.openResource(model.resource);
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'A05: inspection and source choice add no edit/Undo operation');
 	await test.clickTab(origin.id);
