@@ -4,6 +4,7 @@
 -- from Registry-owned runtime identity.
 
 local world<const> = require('cartlib/world/world')
+local shallow_copy<const> = require('cartlib/util/shallow_copy')
 
 local definitions<const> = {}
 local scene_library<const> = {}
@@ -12,12 +13,26 @@ function scene_library.register(id, definition)
 	definitions[id] = definition
 end
 
-function scene_library.instantiate(id)
+function scene_library.definition(id)
+	return definitions[id]
+end
+
+-- Runtime bindings (e.g. the current players' state) override only the named
+-- members. Keep authored options immutable so the next instance starts fresh.
+function scene_library.instantiate(id, overrides)
 	local objects<const> = definitions[id].objects
 	local members<const> = {}
 	for index = 1, #objects do
 		local object<const> = objects[index]
-		members[object.member_id] = world:spawn(object.definition_id, object.options)
+		local options = object.options
+		local member_overrides<const> = overrides and overrides[object.member_id]
+		if member_overrides then
+			options = shallow_copy(options)
+			for key, value in pairs(member_overrides) do
+				options[key] = value
+			end
+		end
+		members[object.member_id] = world:spawn(object.definition_id, options)
 	end
 	return members
 end

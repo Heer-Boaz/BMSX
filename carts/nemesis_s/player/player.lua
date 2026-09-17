@@ -1245,7 +1245,7 @@ function player:finish_dying()
 		self.events:emit('player.exhausted')
 		return '/exhausted'
 	end
-	local start<const> = player_starts[self.player_index]
+	local start<const> = self.start_point
 	self:set_pos(start.x, start.y)
 	self.sprite = self.vessel_sources.neutral
 	self:initialize_options()

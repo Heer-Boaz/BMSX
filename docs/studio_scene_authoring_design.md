@@ -1,8 +1,9 @@
 # Studio scene-authoringarchitectuur
 
-De eerste migratie van echte cartcompositie is de
-[Nemesis S titel/hangar-slice](nemesis_s_scene_migration.md), inclusief
-Studio-edit/save/reboot en het bestaande World-disposalpad.
+De eerste volledige cartmigratie staat in
+[Nemesis S scenes](nemesis_s_scene_migration.md): presentatie, gameplay en
+179 afzonderlijke actorplaatsingen, inclusief Studio-edit/save/reboot en het
+bestaande World-disposalpad.
 
 Status: **Directe opt-in scenedefinitie en eerste source-propertyview gebouwd;
 retained live-reconcile nog niet ontworpen.**

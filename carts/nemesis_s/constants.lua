@@ -1,7 +1,6 @@
 ids_stage_def = 'nemesis_s.stage'
 ids_stage_instance = 'nemesis_s.stage'
 ids_stage_fsm = 'nemesis_s.stage.fsm'
-ids_stage_star_blink_timeline = 'nemesis_s.stage.timeline.star_blink'
 ids_player_def = 'nemesis_s.player'
 ids_player_fsm = 'nemesis_s.player.fsm'
 ids_mijter_foe_def = 'nemesis_s.enemy.mijter_foe'
@@ -48,10 +47,7 @@ ids_small_explosion_def = 'nemesis_s.effect.small_explosion'
 ids_small_explosion_fsm = 'nemesis_s.effect.small_explosion.fsm'
 ids_large_explosion_def = 'nemesis_s.effect.large_explosion'
 ids_large_explosion_fsm = 'nemesis_s.effect.large_explosion.fsm'
-player_starts = {
-	{ id = 'nemesis_s.player.1', x = 80, y = 60 },
-	{ id = 'nemesis_s.player.2', x = 120, y = 80 },
-}
+
 ids_director_def = 'nemesis_s.director'
 ids_director_instance = 'nemesis_s.director'
 ids_director_fsm = 'nemesis_s.director.fsm'
@@ -61,7 +57,6 @@ playfield_width = 256
 playfield_height = 176
 game_over_curtain_columns = 32
 game_over_curtain_tile_width = 8
-game_over_curtain_draw_z = 200
 game_over_blackout_duration_ms = 2000
 name_table_weapon_draw_z = 17
 player_draw_z = 70
@@ -507,44 +502,6 @@ assets_snowtree18 = 'snowtree18'
 assets_snowtree19 = 'snowtree19'
 assets_snowtree20 = 'snowtree20'
 assets_snowtree21 = 'snowtree21'
-stars_yellow = {
-	{ x = 4, y = 10 },
-	{ x = 92, y = 10 },
-	{ x = 184, y = 10 },
-	{ x = 196, y = 10 },
-	{ x = 60, y = 43 },
-	{ x = 236, y = 43 },
-	{ x = 76, y = 58 },
-	{ x = 220, y = 74 },
-	{ x = 36, y = 75 },
-	{ x = 140, y = 91 },
-	{ x = 4, y = 10 },
-	{ x = 172, y = 107 },
-	{ x = 4, y = 10 },
-	{ x = 99, y = 122 },
-	{ x = 131, y = 138 },
-	{ x = 155, y = 138 },
-	{ x = 179, y = 154 },
-}
-
-stars_blue = {
-	{ x = 44, y = 3 },
-	{ x = 20, y = 35 },
-	{ x = 124, y = 35 },
-	{ x = 204, y = 35 },
-	{ x = 108, y = 51 },
-	{ x = 134, y = 67 },
-	{ x = 252, y = 67 },
-	{ x = 52, y = 99 },
-	{ x = 116, y = 99 },
-	{ x = 212, y = 99 },
-	{ x = 243, y = 115 },
-	{ x = 67, y = 132 },
-	{ x = 187, y = 132 },
-	{ x = 99, y = 122 },
-	{ x = 27, y = 127 },
-	{ x = 227, y = 127 },
-}
 
 telemetry_enabled = false
 telemetry_metric_prefix = 'NEMESIS_S_METRIC'

@@ -11,8 +11,7 @@ function hangar_scene.register()
 				member_id = 'background',
 				definition_id = presentation.sprite_definition_id,
 				options = {
-					imgid = 'title_hangar_1',
-					alternate_imgid = 'title_hangar_2',
+					images = { 'title_hangar_1', 'title_hangar_2' },
 					pos = { x = 0, y = 0, z = 0 },
 				},
 			},

@@ -92,7 +92,7 @@ local hangar_background_keys<const> = {
 
 local apply_background<const> = function(target, frame)
 	local background<const> = target.presentation.background
-	background:set_imgid(frame == 1 and background.imgid or background.alternate_imgid)
+	background:set_imgid(background.images[frame])
 end
 
 local apply_burst_frame<const> = function(target, frame)

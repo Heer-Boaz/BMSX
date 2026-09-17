@@ -35,7 +35,7 @@ function __bmsx_host_test.setup()
 	director.state_machines:transition_to('/game_start')
 end
 
-local assert_ascii_actor_tape<const> = function(stage)
+local assert_authored_actor_tape<const> = function(stage)
 	local counts<const> = {
 		[ids_schoorsteen_foe_def] = 0,
 		[ids_rook_generator_def] = 0,
@@ -59,15 +59,15 @@ local assert_ascii_actor_tape<const> = function(stage)
 
 	for definition_id, expected_count in pairs(expected_actor_counts) do
 		assert(counts[definition_id] == expected_count,
-			'ASCII stage marker count changed for ' .. definition_id)
+			'Authored stage placement count changed for ' .. definition_id)
 		local spawn<const> = first_spawns[definition_id]
 		local expected<const> = expected_first_spawns[definition_id]
 		assert(spawn.column == expected.column,
-			'ASCII stage marker column changed for ' .. definition_id)
+			'Authored stage placement column changed for ' .. definition_id)
 		assert(spawn.options.stage == stage,
-			'ASCII stage actor lost its stage owner')
+			'Authored stage actor lost its stage owner')
 		assert(spawn.options.pos.x == expected.x and spawn.options.pos.y == expected.y,
-			'ASCII stage marker position changed for ' .. definition_id)
+			'Authored stage placement position changed for ' .. definition_id)
 	end
 end
 
@@ -81,7 +81,7 @@ function __bmsx_host_test.update()
 	end
 	local test<const> = __bmsx_host_test
 	test.frames = test.frames + 1
-	assert(test.frames < 30, 'Nemesis S ASCII stage actor scenario timed out')
+	assert(test.frames < 30, 'Nemesis S Authored stage actor scenario timed out')
 
 	local stage<const> = registry:get(ids_stage_instance)
 	local player<const> = registry:get('nemesis_s.player.1')
@@ -90,7 +90,7 @@ function __bmsx_host_test.update()
 	end
 
 	if test.phase == 'stage' then
-		assert_ascii_actor_tape(stage)
+		assert_authored_actor_tape(stage)
 
 		stage.actor_spawn_index = stage.actor_spawn_count + 1
 		local snowman<const> = world:spawn(ids_sneeuwpop_def, {

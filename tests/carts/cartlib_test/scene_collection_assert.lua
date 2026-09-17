@@ -96,6 +96,18 @@ function __bmsx_host_test.setup()
 	assert(second.left ~= first_left and second.right ~= first_right
 		and second.left.id ~= first_left.id and second.right.id ~= first_right.id,
 		'two scene instances shared runtime objects or Registry identities')
+	local state<const> = { lives = 3 }
+	local bound<const> = scene_library.instantiate(scene_id, {
+		left = { authored_value = 'bound', player_state = state },
+	})
+	assert(bound.left.player_state == state and bound.left.authored_value == 'bound'
+		and bound.left.x == 11 and bound.right.authored_value == 'right.1',
+		'runtime binding discarded layout or affected an unbound member')
+	assert(scene_library.definition(scene_id) == first_definition
+		and first_definition.objects[1].options.authored_value == 'left.1'
+		and first_definition.objects[1].options.player_state == nil,
+		'runtime binding mutated the authored definition')
+	scene_library.dispose(bound)
 
 	scene_library.register(scene_id, replacement_definition)
 	local replacement<const> = scene_library.instantiate(scene_id)

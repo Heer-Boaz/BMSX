@@ -79,19 +79,19 @@ function __bmsx_host_test.update()
 			'exhausted player retained the XNA power-up row')
 		assert(director.stage == previous_stage and registry:get(ids_stage_instance) == previous_stage,
 			'game-over curtain unloaded gameplay before it closed')
-		assert(not director.game_over_curtain.enabled and director.game_over_curtain_width == 0,
+		assert(not director.game_over_curtain.visible and director.game_over_curtain.sx == 0,
 			'game-over curtain did not start from an empty retained span')
 
 		director.timelines:advance_to(curtain_timeline_id, game_over_curtain_columns)
-		assert(director.game_over_curtain.enabled
-			and director.game_over_curtain_width == presentation_width,
+		assert(director.game_over_curtain.visible
+			and director.game_over_curtain.sx == presentation_width,
 			'game-over curtain did not cover all XNA stage columns')
 		director.timelines:tick_frame(clock.frame_delta_milliseconds())
 		assert(director.state_machines:matches_state(test.game_over_blackout_state),
 			'completed curtain did not enter the XNA game-over blackout')
 		assert(not world.gameplay_clock_running,
 			'game-over blackout continued advancing the covered gameplay scene')
-		assert(world.active_space_id == 'game_over' and not director.game_over_curtain.enabled,
+		assert(world.active_space_id == 'game_over' and not director.game_over_curtain.visible,
 			'game-over blackout continued presenting the covered gameplay scene')
 		assert(registry:get(ids_stage_instance) == previous_stage,
 			'game-over blackout unloaded gameplay before its authored wait')
@@ -112,7 +112,7 @@ function __bmsx_host_test.update()
 			'game-over restart did not restore the XNA player life count')
 		assert(not director.players[1].metalion_cheat_active,
 			'game-over restart applied Metalion to the replacement player')
-		assert(not director.game_over_curtain.enabled,
+		assert(not director.game_over_curtain.visible,
 			'game-over curtain remained active over the status-only game start')
 
 		director.timelines:tick_frame(1500)

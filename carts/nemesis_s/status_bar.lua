@@ -16,7 +16,7 @@ local no_powerup_slot<const> = player_state.no_powerup_slot
 local powerup_max_levels<const> = player_state.powerup_max_levels
 local slot_count<const> = #powerup_max_levels
 local bar_x<const> = 8
-local bar_y<const> = 176
+local bar_y<const> = 0
 local bar_stride_x<const> = 16
 local row_height<const> = 8
 local description_x<const> = 160
@@ -55,17 +55,18 @@ local sources<const> = {
 local draw_status_bar<const> = function(component, draw)
 	local owner<const> = component.parent
 	local rows<const> = owner.rows
+	local x<const> = owner.x + component.offset_x
 	for player_index = 1, #rows do
 		local row<const> = rows[player_index]
-		local y<const> = bar_y + (player_index - 1) * row_height
+		local y<const> = owner.y + component.offset_y + bar_y + (player_index - 1) * row_height
 		if row.powerups_visible then
 			local powerup_sources<const> = row.powerup_sources
 			for slot_index = 1, slot_count do
-				powerup_sources[slot_index]:blit(draw, bar_x + (slot_index - 1) * bar_stride_x, y)
+				powerup_sources[slot_index]:blit(draw, x + bar_x + (slot_index - 1) * bar_stride_x, y)
 			end
-			row.description_source:blit(draw, description_x, y)
+			row.description_source:blit(draw, x + description_x, y)
 		end
-		sources.ship:blit(draw, ship_x, y)
+		sources.ship:blit(draw, x + ship_x, y)
 	end
 end
 local new_status_bar_visual<const> = custom_visual_component.factory({ draw = draw_status_bar })
@@ -174,9 +175,6 @@ local register_definition<const> = function()
 		class = status_bar,
 		components = {
 			new_status_bar_visual,
-		},
-		defaults = {
-			id = instance_id,
 		},
 	})
 end

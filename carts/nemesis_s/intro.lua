@@ -1,10 +1,10 @@
 local clock<const> = require('cartlib/clock')
-local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local atlas<const> = require('cartlib/gx/atlas')
 local prefab<const> = require('cartlib/world/prefab')
-local sprite_object<const> = require('cartlib/sprite')
+local scene_library<const> = require('cartlib/world/scene_library')
+local intro_scene<const> = require('scenes/intro')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
@@ -18,50 +18,38 @@ local intro_fsm_id<const> = 'nemesis_s.intro.fsm'
 local logo_blank_timeline_id<const> = 'nemesis_s.intro.blank'
 local logo_reveal_timeline_id<const> = 'nemesis_s.intro.logo_reveal'
 local logo_hold_timeline_id<const> = 'nemesis_s.intro.logo_hold'
-local logo_background_id<const> = 'background'
-local logo_x<const> = 40
-local logo_y<const> = 64
-local logo_width<const> = 168
 local logo_height<const> = 48
 local logo_hold_frames<const> = 256
 
-local draw_logo_background<const> = function(_component, draw)
-	draw:rect(0, 0, presentation_width, presentation_height, 0xffffffff)
-end
-local new_logo_background<const> = custom_visual_component.factory({
-	id_local = logo_background_id,
-	draw = draw_logo_background,
-	offset_z = -1,
-})
-
-function intro:ctor()
-	local logo<const> = self.sprite_component
-	logo.offset_x = logo_x
-	logo.offset_y = logo_y
-	logo.visible = false
-	logo:set_region(0, 0, logo_width, 1)
-end
-
 function intro:begin()
-	local logo<const> = self.sprite_component
-	logo.visible = false
-	logo.region_height = 1
 	atlas.load('intro')
+	self.presentation = scene_library.instantiate(intro_scene.id)
+	local logo<const> = self.presentation.logo
+	logo.visible = false
+	logo.sprite_component:set_region(0, 0, logo.sx, 1)
+end
+
+function intro:release_presentation()
+	if self.presentation then
+		scene_library.dispose(self.presentation)
+		self.presentation = nil
+	end
 end
 
 function intro:begin_reveal()
-	self.sprite_component.visible = true
+	self.presentation.logo.visible = true
 end
 
 function intro:reveal_row(frame)
-	self.sprite_component.region_height = frame + 1
+	self.presentation.logo.sprite_component.region_height = frame + 1
 end
 
 function intro:finish()
-	self.sprite_component.visible = false
 	self.events:emit('intro_done')
 	return '/hidden'
 end
+
+intro.ondespawn = intro.release_presentation
 
 local define_fsm<const> = function()
 	-- Metal Gear initializes counters 60 and 49. DrawKonamiLogo consumes the
@@ -83,6 +71,7 @@ local define_fsm<const> = function()
 			playing = {
 				initial = 'blank',
 				entering_state = intro.begin,
+				exiting_state = intro.release_presentation,
 				input_event_handlers = {
 					{
 						pattern = 'confirm[jp]',
@@ -137,14 +126,11 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = intro_definition_id,
 		class = intro,
-		base = sprite_object,
 		components = {
-			new_logo_background,
 			timeline_component.new,
 			fsm_component.factory({ intro_fsm_id }),
 		},
 		defaults = {
-			imgid = 'intro_konami',
 			player_index = 1,
 		},
 	})

@@ -48,17 +48,18 @@ function __bmsx_host_test.setup()
 	local intro<const> = registry:get('nemesis_s.intro')
 	intro.state_machines:transition_to('/hidden')
 	intro.state_machines:transition_to('/playing/blank')
-	local logo<const> = intro.sprite_component
+	local logo_object<const> = intro.presentation.logo
+	local logo<const> = logo_object.sprite_component
 	assert(logo.imgid == 'intro_konami'
-		and logo.offset_x == 40 and logo.offset_y == 64
+		and logo_object.x == 40 and logo_object.y == 64
 		and logo.region_width == 168 and logo.region_height == 1
-		and not logo.visible,
+		and not logo_object.visible,
 		'Konami logo did not enter the source-derived blank presentation')
 	intro.state_machines:transition_to('/playing/reveal')
 	local reveal<const> = intro.timelines:get(intro_reveal_timeline_id)
 	assert(reveal.frame_duration == clock.frame_delta_milliseconds() * 2,
 		'Konami logo reveal did not retain its two-VBlank row cadence')
-	assert(logo.visible and logo.region_height == 1,
+	assert(logo_object.visible and logo.region_height == 1,
 		'Konami logo did not reveal its first scanline')
 	intro.timelines:advance_to(intro_reveal_timeline_id, 23)
 	assert(logo.region_height == 24,
@@ -70,14 +71,15 @@ function __bmsx_host_test.setup()
 	assert(intro.timelines:get(intro_hold_timeline_id).duration_ms
 		== konami_logo_hold_frames * clock.frame_delta_milliseconds(),
 		'Konami logo hold did not retain the zero-counter wrap duration')
-	intro:finish()
-	assert(not logo.visible, 'completed Konami logo remained visible')
+	intro.state_machines:transition_to(intro:finish())
+	assert(intro.presentation == nil and registry:get(logo_object.id) == nil,
+		'completed Konami logo retained its presentation objects')
 	assert(director.state_machines:matches_state(test.story_state), 'intro did not advance to story')
 	assert(world.active_space_id == 'story', 'story did not own the active presentation space')
 
 	local story<const> = registry:get('nemesis_s.story')
-	assert(story.sprite_component.imgid == 'story_coup', 'story did not start on the coup image')
-	assert(story.primary_text.glyph_line_count == 4 and story.primary_text.offset_y == 144,
+	assert(story.presentation.picture.sprite_component.imgid == 'story_coup', 'story did not start on the coup image')
+	assert(story.presentation.primary_caption.text_component.glyph_line_count == 4 and (story.presentation.primary_caption.y + story.presentation.primary_caption.text_component.offset_y) == 144,
 		'first story caption differs from the XNA layout')
 	local story_panel_frames<const> = { 1257, 538, 480, 419, 367, 1014, 2101, 1202, 839 }
 	local story_frame_ms<const> = clock.frame_delta_milliseconds()
@@ -87,26 +89,26 @@ function __bmsx_host_test.setup()
 			'story panel duration left its observed Nemesis 2 VBlank boundary')
 	end
 	story.timelines:advance_to('nemesis_s.story.slide.1', 18)
-	assert(story.primary_text.glyph_visible_height == nil, 'story glyph-row reveal did not reach full height')
+	assert(story.presentation.primary_caption.text_component.glyph_visible_height == nil, 'story glyph-row reveal did not reach full height')
 	story.state_machines:transition_to('/playing/slide_6')
-	assert(story.secondary_text.visible and story.sprite_component.imgid == nil,
+	assert(story.presentation.secondary_caption.text_component.visible and story.presentation.picture.sprite_component.imgid == nil,
 		'Pieton interlude did not start from its authored black frame')
 	story.timelines:advance_to('nemesis_s.story.slide.6', 125)
-	assert(story.sprite_component.imgid == nil,
+	assert(story.presentation.picture.sprite_component.imgid == nil,
 		'Pieton portrait appeared before the original 50 Hz panel boundary')
 	story.timelines:advance_to('nemesis_s.story.slide.6', 126)
-	assert(story.sprite_component.imgid == 'story_piet2', 'Pieton interlude did not reveal its image')
+	assert(story.presentation.picture.sprite_component.imgid == 'story_piet2', 'Pieton interlude did not reveal its image')
 	story.timelines:advance_to('nemesis_s.story.slide.6', 158)
-	assert(story.curtain_start == 78 and story.curtain_end == 62,
+	assert(story.presentation.curtain.opening_start == 78 and story.presentation.curtain.opening_end == 62,
 		'Pieton curtain did not reach its retained upper reveal bounds')
 	story.timelines:advance_to('nemesis_s.story.slide.6', 310)
-	assert(story.curtain_start == 126 and story.curtain_end == 110,
+	assert(story.presentation.curtain.opening_start == 126 and story.presentation.curtain.opening_end == 110,
 		'Pieton curtain did not return to its retained lower bounds')
 	story.timelines:advance_to('nemesis_s.story.slide.6', 663)
-	assert(story.curtain_end == 4 and story.secondary_text.glyph_visible_height == nil,
+	assert(story.presentation.curtain.opening_end == 4 and story.presentation.secondary_caption.text_component.glyph_visible_height == nil,
 		'Pieton wipe did not reveal the complete second caption')
 	story.timelines:advance_to('nemesis_s.story.slide.6', 1003)
-	assert(story.curtain_count == 8,
+	assert(story.presentation.curtain.count == 8,
 		'Pieton panel did not reach black on the original transition boundary')
 	story.events:emit('story_done')
 	assert(director.state_machines:matches_state(test.title_state), 'story did not advance to title')
@@ -205,17 +207,17 @@ function __bmsx_host_test.setup()
 		and player_1.missile_projectiles[1].type == 0
 		and player_1.secondary_projectiles[1].type == 0,
 		'new player retained active weapons from the removed debug loadout')
-	local stage<const> = director.stage
-	assert(not stage.yellow_blink and not stage.blue_blink and stage.blink_turn == 'yellow',
+	local field<const> = director.gameplay.starfield
+	assert(not field.yellow_blink and not field.blue_blink and field.blink_turn == 'yellow',
 		'star blink did not begin from the XNA visible phase')
-	stage.timelines:advance_time_to(ids_stage_star_blink_timeline, stage_star_blink_frame_ms)
-	assert(stage.yellow_blink and not stage.blue_blink and stage.blink_turn == 'yellow',
+	field.timelines:advance_time_to('nemesis_s.starfield.blink', stage_star_blink_frame_ms)
+	assert(field.yellow_blink and not field.blue_blink and field.blink_turn == 'yellow',
 		'yellow stars did not hide after the authored 50 ms phase')
-	stage.timelines:advance_time_to(ids_stage_star_blink_timeline, stage_star_blink_frame_ms * 2)
-	assert(not stage.yellow_blink and not stage.blue_blink and stage.blink_turn == 'blue',
+	field.timelines:advance_time_to('nemesis_s.starfield.blink', stage_star_blink_frame_ms * 2)
+	assert(not field.yellow_blink and not field.blue_blink and field.blink_turn == 'blue',
 		'yellow stars did not restore before the blue phase')
-	stage.timelines:advance_time_to(ids_stage_star_blink_timeline, stage_star_blink_frame_ms * 3)
-	assert(not stage.yellow_blink and stage.blue_blink and stage.blink_turn == 'blue',
+	field.timelines:advance_time_to('nemesis_s.starfield.blink', stage_star_blink_frame_ms * 3)
+	assert(not field.yellow_blink and field.blue_blink and field.blink_turn == 'blue',
 		'blue stars did not hide on their authored phase')
 	test.phase = 'game_start'
 end
@@ -251,33 +253,33 @@ function __bmsx_host_test.update()
 			and registry:get('nemesis_s.status_bar') == nil,
 			'completed gameplay retained its unloaded space objects')
 		local presentation<const> = registry:get('nemesis_s.end_demo')
-		assert(presentation.sprite_component.imgid == 'end_demo_sint_duim',
+		assert(presentation.presentation.picture.sprite_component.imgid == 'end_demo_sint_duim',
 			'end demo did not start on the authored Sint image')
-		assert(presentation.caption.glyph_line_count == 21
-			and presentation.caption.offset_x == 0
-			and presentation.caption.offset_y == 8,
+		assert(presentation.presentation.caption.text_component.glyph_line_count == 21
+			and presentation.presentation.caption.text_component.offset_x == 0
+			and (presentation.presentation.caption.y + presentation.presentation.caption.text_component.offset_y) == 8,
 			'first end-demo caption differs from the XNA layout')
 		presentation.timelines:advance_time_to(end_demo_timeline_id, 240)
-		assert(presentation.caption.glyph_visible_height == nil,
+		assert(presentation.presentation.caption.text_component.glyph_visible_height == nil,
 			'first end-demo caption did not finish its four-row delayed reveal')
 		presentation.timelines:advance_time_to(end_demo_timeline_id, first_curtain_start_ms)
-		assert(presentation.curtain.visible and presentation.curtain_count == 1,
+		assert(presentation.presentation.curtain.visible and presentation.presentation.curtain.count == 1,
 			'first end-demo curtain did not start on its authored boundary')
 		presentation.timelines:advance_time_to(end_demo_timeline_id, first_curtain_end_ms)
-		assert(not presentation.visible and not presentation.curtain.visible,
+		assert(not presentation.presentation.picture.visible and not presentation.presentation.caption.visible and not presentation.presentation.curtain.visible,
 			'end-demo inter-slide gap did not hide the completed slide')
 		presentation.timelines:advance_time_to(end_demo_timeline_id, second_slide_start_ms)
-		assert(presentation.visible
-			and presentation.sprite_component.imgid == 'end_demo_boaz'
-			and presentation.caption.glyph_line_count == 16
-			and presentation.caption.offset_x == 128
-			and presentation.caption.glyph_visible_height == 0,
+		assert(presentation.presentation.picture.visible and presentation.presentation.caption.visible
+			and presentation.presentation.picture.sprite_component.imgid == 'end_demo_boaz'
+			and presentation.presentation.caption.text_component.glyph_line_count == 16
+			and presentation.presentation.caption.text_component.offset_x == 128
+			and presentation.presentation.caption.text_component.glyph_visible_height == 0,
 			'second end-demo slide differs from the XNA image and caption layout')
 		presentation.timelines:advance_time_to(end_demo_timeline_id, second_slide_start_ms + 160)
-		assert(presentation.caption.glyph_visible_height == nil,
+		assert(presentation.presentation.caption.text_component.glyph_visible_height == nil,
 			'second end-demo caption did not retain its faster XNA reveal')
 		presentation.timelines:advance_time_to(end_demo_timeline_id, second_curtain_start_ms)
-		assert(presentation.curtain.visible and presentation.curtain_count == 1,
+		assert(presentation.presentation.curtain.visible and presentation.presentation.curtain.count == 1,
 			'second end-demo curtain did not start on its authored boundary')
 		presentation.timelines:advance_time_to(end_demo_timeline_id, end_demo_end_ms - 1)
 		presentation.timelines:tick_frame(1)

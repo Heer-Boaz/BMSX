@@ -10,8 +10,7 @@ function title_scene.register()
 				member_id = 'background',
 				definition_id = presentation.sprite_definition_id,
 				options = {
-					imgid = 'title_screen_1',
-					alternate_imgid = 'title_screen_2',
+					images = { 'title_screen_1', 'title_screen_2' },
 					pos = { x = 0, y = 0, z = 0 },
 				},
 			},

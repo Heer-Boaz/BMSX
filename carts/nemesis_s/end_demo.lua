@@ -1,19 +1,14 @@
-local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
-local font<const> = require('cartlib/font')
 local atlas<const> = require('cartlib/gx/atlas')
 local prefab<const> = require('cartlib/world/prefab')
-local sprite_object<const> = require('cartlib/sprite')
-local text_component<const> = require('cartlib/text/text_component')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
-local game_text_module<const> = require('game_text')
-local nemesis_font<const> = require('nemesis_font')
 require('constants')
 
-local game_text<const>: *game_text_record = game_text_module.game_text
+local scene_library<const> = require('cartlib/world/scene_library')
+local end_demo_scene<const> = require('scenes/end_demo')
 
 local end_demo<const> = {}
 end_demo.__index = end_demo
@@ -34,44 +29,22 @@ local second_slide_start_ms<const> = first_curtain_end_ms + slide_gap_ms
 local second_reveal_end_ms<const> = second_slide_start_ms + 160
 local second_curtain_start_ms<const> = second_reveal_end_ms + slide_hold_ms
 local second_curtain_end_ms<const> = second_curtain_start_ms + curtain_duration_ms
-local slides<const> = {
-	{
-		imgid = 'end_demo_sint_duim',
-		text = game_text[0].end_demo_sint_text,
-		text_x = 0,
-	},
-	{
-		imgid = 'end_demo_boaz',
-		text = game_text[0].end_demo_boaz_text,
-		text_x = 128,
-	},
-}
-
-local draw_curtain<const> = function(component, draw)
-	local count<const> = component.parent.curtain_count
-	if count == 8 then
-		draw:rect(0, 0, presentation_width, presentation_height, 0xff000000)
-		return
-	end
-	for y = 0, presentation_height - 1, 8 do
-		draw:rect(0, y, presentation_width, y + count, 0xff000000)
-	end
-end
+local slides<const> = end_demo_scene.panels
 
 local apply_slide<const> = function(target, slide_index)
 	local slide<const> = slides[slide_index]
-	target:set_imgid(slide.imgid)
-	local caption<const> = target.caption
+	target.presentation.picture:set_imgid(slide.imgid)
+	local caption<const> = target.presentation.caption.text_component
 	caption.offset_x = slide.text_x
 	caption:set_text(slide.text)
 end
 
 local apply_reveal<const> = function(target, height)
-	target.caption:set_glyph_visible_height(height)
+	target.presentation.caption.text_component:set_glyph_visible_height(height)
 end
 
 local apply_curtain_frame<const> = function(target, frame)
-	target.curtain_count = frame + 1
+	target.presentation.curtain.count = frame + 1
 end
 
 local first_reveal_sequence<const> = {
@@ -123,7 +96,10 @@ local presentation_timeline<const> = {
 		{
 			kind = 'value',
 			interpolation = 'step',
-			path = { 'visible' },
+			apply = function(target, visible)
+				target.presentation.picture.visible = visible
+				target.presentation.caption.visible = visible
+			end,
 			keys = {
 				{ time_ms = 0, value = true },
 				{ time_ms = first_curtain_end_ms, value = false },
@@ -133,7 +109,7 @@ local presentation_timeline<const> = {
 		{
 			kind = 'value',
 			interpolation = 'step',
-			path = { 'curtain', 'visible' },
+			path = { 'presentation', 'curtain', 'visible' },
 			keys = {
 				{ time_ms = 0, value = false },
 				{ time_ms = first_curtain_start_ms, value = true },
@@ -171,31 +147,24 @@ local presentation_timeline<const> = {
 }
 
 local finish<const> = function(self)
-	self.visible = false
 	self.events:emit('end_demo_done')
 	return '/hidden'
 end
 
-function end_demo:ctor()
-	local caption<const> = text_component.new({
-		id_local = 'caption',
-		offset_y = 8,
-		offset_z = 1,
-	})
-	caption:set_font(font.get(nemesis_font.font_id))
-	caption:set_glyph_visible_height(0)
-	self:add_component(caption)
-	self.caption = caption
-
-	local curtain<const> = custom_visual_component.new({
-		id_local = 'curtain',
-		offset_z = 2,
-		draw = draw_curtain,
-	})
-	curtain.visible = false
-	self:add_component(curtain)
-	self.curtain = curtain
+function end_demo:begin()
+	atlas.load('font')
+	atlas.load('end_demo')
+	self.presentation = scene_library.instantiate(end_demo_scene.id)
 end
+
+function end_demo:release_presentation()
+	if self.presentation then
+		scene_library.dispose(self.presentation)
+		self.presentation = nil
+	end
+end
+
+end_demo.ondespawn = end_demo.release_presentation
 
 local define_fsm<const> = function()
 	fsm_library.register(fsm_id, {
@@ -209,10 +178,8 @@ local define_fsm<const> = function()
 		states = {
 			hidden = {},
 			playing = {
-				entering_state = function()
-					atlas.load('font')
-					atlas.load('end_demo')
-				end,
+				entering_state = end_demo.begin,
+				exiting_state = end_demo.release_presentation,
 				timelines = {
 					[presentation_timeline_id] = {
 						def = presentation_timeline,
@@ -234,14 +201,9 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = end_demo_definition_id,
 		class = end_demo,
-		base = sprite_object,
 		components = {
 			timeline_component.new,
 			fsm_component.factory({ fsm_id }),
-		},
-		defaults = {
-			id = end_demo_instance_id,
-			curtain_count = 0,
 		},
 	})
 end

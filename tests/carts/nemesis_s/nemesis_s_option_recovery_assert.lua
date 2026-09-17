@@ -36,7 +36,7 @@ function __bmsx_host_test.update()
 	test.frames = test.frames + 1
 	assert(test.frames < 180, 'Nemesis S option-recovery scenario timed out phase=' .. test.phase)
 
-	local player<const> = registry:get(player_starts[1].id)
+	local player<const> = registry:get('nemesis_s.player.1')
 	if player == nil or world.active_space_id ~= 'main' then
 		return false
 	end

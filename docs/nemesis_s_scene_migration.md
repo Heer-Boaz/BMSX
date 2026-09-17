@@ -1,8 +1,20 @@
-# Nemesis S: title and hangar scenes
+# Nemesis S: authored scenes
 
-The first migration replaces the title controller's private visual construction
-with two authored compositions. This is a vertical slice, not a declaration
-that every Nemesis phase has already been migrated.
+Nemesis S uses authored compositions for its presentation and gameplay. The
+controllers own input, progression and animation; the scene sources own placed
+objects. A scene is a useful group of objects, not a new name for every state
+in the existing game sequence.
+
+| Source | Authored members |
+| --- | --- |
+| `scenes/root.lua` | Director and presentation controllers |
+| `scenes/intro.lua` | White background and independently placed logo |
+| `scenes/story.lua` | Picture, two captions and transition curtain; panel content |
+| `scenes/title.lua` | Background, selector and selection cover |
+| `scenes/hangar.lua` | Background, ship and foreground lip |
+| `scenes/gameplay.lua` | Starfield, terrain, HUD, two player starts and game-over curtain |
+| `scenes/stage_actors.lua` | 179 individual enemies/scenery members and formation membership |
+| `scenes/end_demo.lua` | Picture, caption and curtain; panel content |
 
 ## Ownership and production references
 
@@ -31,6 +43,28 @@ Animation is relative to authored placement: player two adds 16 pixels to the
 selector and cover visuals; the lift adds offsets from 0 to -56 to the ship's
 spawn y. Editing the ship from y=129 to y=125 consequently changes its ignition
 position from 73 to 69. Background tracks use the scene's two image options.
+Those options are an explicit image list; animation does not depend on a stale
+`sprite_object.imgid` field after `set_imgid` updates the visual component.
+
+Intro, story and end-demo controllers bind their timelines to ordinary scene
+members. `presentation/caption.lua` and `presentation/curtain.lua` own reusable
+visual components. Captions animate glyph visibility and panel-relative offsets;
+curtains animate their opening at their authored position. Slides, lift, ignition,
+boss progression and blackout remain FSM/timeline phases.
+
+Gameplay owns six independent members rather than hiding all construction in a
+stage controller. The starfield owns its particles and blink timeline. The HUD
+draws sprites and text relative to its placement. The director admits selected
+players at the authored start points; respawn uses those same points. Terrain
+collision queries convert world coordinates through the terrain object's origin.
+
+The actor scene contains actual level coordinates. Each `column` is a scroll
+admission gate; `formation_id` groups actors that share progress in this run.
+Stage builds its retained admission queue once, converting level x to screen x
+at that gate and binding the current stage and formation state. It spawns members
+through the existing World boundary as scrolling reaches them. The terrain YAML
+now contains terrain only. `.` denotes empty terrain without generated snow;
+enemy, chimney-controller and scenery marker decoding has been removed.
 
 FSM entry installs completion bindings, runs `entering_state`, then starts
 autoplay before entering child states. Title and hangar use that ordinary
@@ -47,20 +81,29 @@ budget for 10,000 transitions remains enforced.
 
 ## Lifetime and cost
 
-The title controller owns one returned member map. Blackout and controller
-despawn release it through `scene_library.dispose`. That operation submits
+Each presentation controller owns its returned member map. Sequence exit and
+controller despawn release it through `scene_library.dispose`. That operation submits
 each object to World's existing disposal/barrier path, including component and
 subscription teardown. Title reentry constructs fresh members and resets
-selection. Scene-local names are not global Registry IDs.
+selection. Scene-local names are not global Registry IDs. Explicit singleton
+runtime IDs belong to the composition or the director's admission call, not to
+the reusable end-demo/HUD prefab defaults. Gameplay continues to use World's
+normal space unload boundary on restart and end-demo entry.
 
-There is no new scene tick, hierarchy, reference resolver, copied runtime
-definition, or World scheduling branch. Scenes allocate their members only
-on entry. Existing sprite/custom-visual producers still issue the draw calls.
+`scene_library.instantiate(id, overrides)` accepts per-member runtime bindings
+for values such as player state and checkpoint position. Only overridden options
+are shallow-copied; authored definitions and untouched members are not copied or
+mutated. The actor queue similarly owns its bound options and formation records.
+Reentry never inherits the previous run's formation progress.
+
+There is no new scene tick, hierarchy, reference resolver or World scheduling
+branch. Construction and binding happen on entry. Existing sprite/custom-visual
+producers still issue the draw calls.
 `World`, its structural barriers and the machine/host contracts are unchanged.
 
 ## Studio workflow and validation
 
-Open `scenes/title.lua` or `scenes/hangar.lua` through file search, then
+Open one of the scene sources through file search, then
 **View → Scene Editor**. Select a member and edit its x/y/z properties. Save
 and **Run → Reboot** install the changed cart source. Save alone does not patch
 existing live objects. Source remains ordinary Lua with shared Undo/Redo.
@@ -68,9 +111,11 @@ existing live objects. Source remains ordinary Lua with shared Undo/Redo.
 The browser regression runs this workflow through keyboard and pointer input,
 without injecting text into a model or using clipboard code. It changes the
 selector x from 80 to 88 and ship placement from (48,129) to (56,125), exercises
-Undo/Redo, saves, reboots, verifies the resulting game objects and relative lift,
-enters gameplay, and reopens the saved scene. The file API uses an isolated
-workspace. The same scenario runs with software, WebGL2 and WebGPU:
+Undo/Redo, saves, reboots and verifies the resulting game objects and relative lift.
+It also edits the logo, story/end-demo captions, player start and an individual
+stage enemy. After reboot it verifies the actual intro/story members, player
+start and admitted enemy, then reopens the saved scenes. The file API uses an
+isolated workspace. The same scenario passes with software, WebGL2 and WebGPU:
 
 ```sh
 node tests/conformance/runtime_replay/browser.mjs --studio-nemesis-scenes dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom
@@ -85,29 +130,43 @@ Headless cart regressions:
 - `nemesis_s_scene_identity_assert.lua`: repeated root-prefab instances and
   independent Registry/component lifetime.
 - `scene_collection_assert.lua` in `cartlib_test`: ordered construction,
-  options, re-registration and group disposal, including after World clear.
+  runtime bindings without source mutation, re-registration and group disposal,
+  including after World clear.
 - `nemesis_s_title_scanout_assert.lua`: fourteen fixed title/hangar poses. The
   pre-migration and migrated carts produced identical pixels for every pose.
+- `nemesis_s_presentation_scanout_assert.lua`: 25 intro/story/end-demo/gameplay
+  poses; comparison against `719dd16ab` produced identical pixels, including the
+  final capture (26 images).
+- `nemesis_s_scene_compositions_assert.lua`: presentation teardown/reentry,
+  independent formation state, authored respawn and terrain collision origins,
+  plus the normal gameplay unload/restart boundary.
+- `nemesis_s_gameplay_scanout_assert.lua`: compare actual gameplay at scroll
+  steps 8, 30 and 80, independently of time spent loading the cartridge. Those
+  captures and the final capture match the old ROM pixel for pixel.
 
-A separate, identical 1,180-frame input recording covers boot, title and the
-takeoff sequence with the production headless CPU profiler. Retired instructions
-changed from 4,736,598 to 4,730,146 (-0.14%); estimated base cycles changed from
-5,029,644 to 5,024,311 (-0.11%). Both captured frames matched pixel for pixel.
-This checks this path for a CPU regression; it is not a hardware FPS measurement
-or a claim about every gameplay phase.
+The terrain/placement migration was also compared against the running old ROM:
+all 12,188 decoded terrain/collision cells and all 179 actor records match,
+including order, gate, admission position, type/direction and formation membership.
 
-The strict architecture audit reports zero issues. The broad tests TypeScript
+An identical 2,000-host-frame input recording covers boot, title, takeoff and
+gameplay with the production fantasy-CPU profiler. Against `719dd16ab`, retired
+instructions changed from 11,207,391 to 10,909,095 (-2.66%); estimated base cycles
+changed from 11,761,435 to 11,459,533 (-2.57%). Fixed host-frame captures can have
+different animation/progression phases when loading costs change; visual parity
+is checked separately at equal poses and logical gameplay steps. This is a cost
+check for the recorded path, not a hardware FPS or universal performance claim.
+
+All 28 Nemesis headless scenarios pass, as do the generic scene-collection
+scenario and 14 targeted FSM/scene editor tests. The strict architecture audit
+reports zero issues. The broad tests TypeScript
 check reports 70 diagnostics; comparison against the pre-migration sources
 produced the identical diagnostic list. None was introduced by this slice.
 
-## Remaining migration
+## Following carts
 
-Intro/story/end-demo composition and stage placements remain subsequent Nemesis
-slices. Stage progression, enemy behavior, player state and boss phases remain
-gameplay responsibilities. They must not be hidden inside a single scene member
-that just runs the previous construction code.
-
-Then migrate `2025`, followed by `pietious`. Pietious's room reentry and persistent
+Nemesis's composition migration is complete. Stage progression, enemy behavior,
+player state and boss phases remain gameplay responsibilities. Next migrate
+`2025`, followed by `pietious`. Pietious's room reentry and persistent
 progress already constrain lifetime: disposing placed objects must not imply
 deleting the cart's durable room/player state. That state needs an explicit cart
 owner before its rooms move to authored scenes. This slice adds no speculative

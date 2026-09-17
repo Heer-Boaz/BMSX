@@ -1,6 +1,5 @@
 local bool01<const> = require('cartlib/util/bool01')
 local clock<const> = require('cartlib/clock')
-local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local atlas<const> = require('cartlib/gx/atlas')
@@ -14,8 +13,9 @@ require('constants')
 local end_demo_module<const> = require('end_demo')
 local player_module<const> = require('player/player')
 local player_state<const> = require('player/player_state')
-local stage_module<const> = require('stage')
-local status_bar_module<const> = require('status_bar')
+local gameplay_scene<const> = require('scenes/gameplay')
+local scene_library<const> = require('cartlib/world/scene_library')
+local starfield<const> = require('starfield')
 
 local director<const> = {}
 director.__index = director
@@ -24,7 +24,6 @@ local game_start_timeline_id<const> = 'nemesis_s.director.game_start'
 local game_start_duration_frames<const> = 41
 local game_over_curtain_timeline_id<const> = 'nemesis_s.director.game_over_curtain'
 local game_over_blackout_timeline_id<const> = 'nemesis_s.director.game_over_blackout'
-local game_over_curtain_visual_id<const> = 'game_over_curtain'
 local metalion_cheat_command<const> = 'cheat.metalion'
 local full_loadout_cheat_command<const> = 'cheat.lars18th'
 local cheat_input_program<const> = {
@@ -73,16 +72,6 @@ local new_cheat_input<const> = input_actioneffect_component.factory({
 	clock_source = clock.frame,
 	program = cheat_input_program,
 })
-local draw_game_over_curtain<const> = function(component, draw)
-	draw:rect(0, 0, component.parent.game_over_curtain_width, presentation_height, 0xff000000)
-end
-local new_game_over_curtain<const> = custom_visual_component.factory({
-	id_local = game_over_curtain_visual_id,
-	draw = draw_game_over_curtain,
-	offset_z = game_over_curtain_draw_z,
-	enabled = false,
-})
-
 function director:set_active_space(space_id)
 	world:set_space(space_id)
 	self:set_space(space_id)
@@ -105,34 +94,32 @@ end
 
 function director:populate_game_start()
 	self.frame = 0
-	local stage<const> = world:spawn(stage_module.stage_def_id, {
-		id = stage_module.stage_instance_id,
-		space_id = 'main',
-		start_column = self.stage_start_column,
-		restarting = self.restarting,
-		pos = { x = 0, y = 0, z = 0 },
-	})
-	self.stage = stage
 	local player_states<const> = {}
 	local players<const> = {}
 	for player_index = 1, self.player_count do
 		player_states[player_index] = player_state.new(player_index)
 	end
-	local status_bar<const> = world:spawn(status_bar_module.definition_id, {
-		space_id = 'game_start',
-		player_states = player_states,
-		pos = { x = 0, y = 0, z = 100 },
+	local members<const> = scene_library.instantiate(gameplay_scene.id, {
+		stage = { start_column = self.stage_start_column, restarting = self.restarting },
+		status_bar = { player_states = player_states },
 	})
+	self.gameplay = members
+	local stage<const> = members.stage
+	stage.starfield = members.starfield
+	self.stage = stage
+	self.game_over_curtain = members.game_over_curtain
+	local status_bar<const> = members.status_bar
 	for player_index = 1, self.player_count do
-		local start<const> = player_starts[player_index]
+		local start<const> = members['player_start_' .. tostring(player_index)]
 		players[player_index] = world:spawn(player_module.player_def_id, {
-			id = start.id,
+			id = start.player_id,
+			start_point = start,
 			player_index = player_index,
 			player_state = player_states[player_index],
 			metalion_cheat_active = self.metalion_cheat_active,
 			space_id = 'main',
 			stage = stage,
-			pos = { x = start.x, y = start.y },
+			pos = { x = start.x, y = start.y, z = start.z },
 		})
 	end
 	self.player_states = player_states
@@ -192,11 +179,14 @@ function director:grant_full_loadout()
 end
 
 function director:populate_end_demo()
+	self.gameplay = nil
+	self.game_over_curtain = nil
 	self.stage = nil
 	self.players = nil
 	self.player_states = nil
 	self.status_bar = nil
 	world:spawn(end_demo_module.definition_id, {
+		id = end_demo_module.instance_id,
 		space_id = 'end_demo',
 		pos = { x = 0, y = 0, z = 0 },
 	})
@@ -228,28 +218,21 @@ function director:on_player_death()
 end
 
 function director:apply_game_over_curtain_frame(frame)
-	self.game_over_curtain_width = frame * game_over_curtain_tile_width
-	self.game_over_curtain:set_enabled(frame ~= 0)
+	self.game_over_curtain.sx = frame * game_over_curtain_tile_width
+	self.game_over_curtain.visible = frame ~= 0
 end
 
 function director:enter_game_over()
 	self.metalion_cheat_active = false
-	self.game_over_curtain_width = 0
-	self.game_over_curtain:set_enabled(false)
+	self.game_over_curtain.sx = 0
+	self.game_over_curtain.visible = false
 	self.events:emit('game_over')
 end
 
 function director:enter_game_over_blackout()
 	world:set_gameplay_clock_running(false)
-	self.game_over_curtain:set_enabled(false)
+	self.game_over_curtain.visible = false
 	self:set_active_space('game_over')
-end
-
-function director:ctor()
-	self.game_over_curtain = self:get_component(
-		custom_visual_component,
-		game_over_curtain_visual_id
-	)
 end
 
 function director:update_telemetry()
@@ -261,11 +244,11 @@ function director:update_telemetry()
 		'%s|kind=director|f=%d|scroll=%.3f|yellow_blink=%d|blue_blink=%d|yellow_count=%d|blue_count=%d|stage_left=%d|stage_head=%d|stage_px=%.3f|stage_scrolling=%d|stage_scroll_gate=%d|stage_adv=%d',
 		telemetry_metric_prefix,
 		self.frame,
-		stage.star_scroll_px % playfield_width,
-		bool01(stage.yellow_blink),
-		bool01(stage.blue_blink),
-		#stage.yellow_stars,
-		#stage.blue_stars,
+		(stage.starfield.yellow_points[1].x - stage.starfield.yellow_stars[1].x) % playfield_width,
+		bool01(stage.starfield.yellow_blink),
+		bool01(stage.starfield.blue_blink),
+		#stage.starfield.yellow_stars,
+		#stage.starfield.blue_stars,
 		stage.left_tile,
 		stage_head,
 		stage.total_scroll_px,
@@ -290,15 +273,15 @@ local director_event_handlers<const> = {
 }
 if telemetry_enabled then
 	director_event_handlers['star_blink_toggle'] = {
-		emitter = ids_stage_instance,
-		go = function(self, _state, _event, stage)
+		emitter = starfield.instance_id,
+		go = function(self, _state, _event, field)
 			self:emit_telemetry_event(
 				'star_blink_toggle',
 				string.format(
 					'turn=%s|yellow_blink=%d|blue_blink=%d',
-					stage.blink_turn,
-					bool01(stage.yellow_blink),
-					bool01(stage.blue_blink)
+					field.blink_turn,
+					bool01(field.yellow_blink),
+					bool01(field.blue_blink)
 				)
 			)
 		end,
@@ -433,7 +416,7 @@ local define_director_fsm<const> = function()
 				initial = 'curtain',
 				entering_state = director.enter_game_over,
 				exiting_state = function(self)
-					self.game_over_curtain:set_enabled(false)
+					self.game_over_curtain.visible = false
 					world:set_gameplay_clock_running(true)
 				end,
 				states = {
@@ -492,7 +475,6 @@ local register_director_definition<const> = function()
 		def_id = ids_director_def,
 		class = director,
 		components = {
-			new_game_over_curtain,
 			timeline_component.new,
 			fsm_component.factory({ ids_director_fsm }),
 			new_cheat_input,
@@ -503,7 +485,6 @@ local register_director_definition<const> = function()
 			player_count = 1,
 			stage_start_column = 0,
 			restarting = false,
-			game_over_curtain_width = 0,
 			metalion_cheat_active = false,
 		},
 	})
