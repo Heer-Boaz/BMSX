@@ -798,6 +798,34 @@ function world_class:_open_mutation_barrier()
 	self._mutation_barrier_open = true
 end
 
+-- An external mutation must rendezvous with the running World, even when the
+-- CPU was suspended outside a tick/render function. The requester waits for
+-- this receipt, then resolves its live targets afresh. No guest call or actor
+-- reference is retained here; cancelling the requester cannot leave an edit
+-- queued for a later frame.
+function world_class:request_mutation_boundary()
+	-- Concurrent waiters share one rendezvous. Publishing one receipt is also
+	-- atomic to a debugger: no unfinished queue traversal survives admission.
+	local pending<const> = self._mutation_boundary_request
+	if pending ~= nil then
+		return pending
+	end
+	local receipt<const> = { reached = false }
+	self._mutation_boundary_request = receipt
+	return receipt
+end
+
+-- Only the scheduled update/render owner publishes a boundary. A nested scene
+-- unload may commit disposals too, but its caller still owns live iteration
+-- state. Publish after all lifecycle hooks and render submission have returned.
+function world_class:_publish_mutation_boundary()
+	local receipt<const> = self._mutation_boundary_request
+	if receipt ~= nil then
+		self._mutation_boundary_request = nil
+		receipt.reached = true
+	end
+end
+
 function world_class:_flush_structural_mutations()
 	-- Lifecycle hooks may enqueue an earlier mutation kind while a later kind
 	-- commits. Claim each kind before applying it and drain the whole cascade at
@@ -916,11 +944,15 @@ function world_class:_build_render_commands(draw_page)
 end
 
 function world_class:_render_single_page()
+	self:_open_mutation_barrier()
 	self:_build_render_commands(self._draw_page)
 	command_list.submit(self._draw_commands)
+	self:_commit_mutation_barrier()
+	self:_publish_mutation_boundary()
 end
 
 function world_class:_render_double_page()
+	self:_open_mutation_barrier()
 	local draw_page<const> = self._draw_page
 	self:_build_render_commands(draw_page)
 	command_list.submit_fenced(self._draw_commands)
@@ -928,6 +960,8 @@ function world_class:_render_double_page()
 	self._draw_page = self._display_page
 	self._display_page = draw_page
 	gx_gpu.draw_target(self._draw_page, self._page_size)
+	self:_commit_mutation_barrier()
+	self:_publish_mutation_boundary()
 end
 
 -- Removes every object owned by one space through the normal structural

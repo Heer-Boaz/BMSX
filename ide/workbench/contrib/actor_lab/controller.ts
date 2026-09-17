@@ -37,16 +37,21 @@ export class ActorLabController {
 		const domain = input.domain, actorHashId = input.actorHashId;
 		this.schedule({
 			isCurrent: () => this.panes.openGeneration === generation && input.domain === domain && input.actorHashId === actorHashId,
-			waitForReturn: () => {
+			boundary: () => {
 				const world = runtimeWorld(this.sources, this.guest, domain);
-				if (world === undefined) return [];
-				// A scene/actor operation may dispose participants in either pass.
-				// Resume its outermost active pass before resolving the receiver.
-				return ['update', 'render'].map(method =>
-					this.guest.functionLocation(this.guest.readStringMember(world, method))!);
+				if (world === undefined) return;
+				return {
+					request: { domain, closure: this.guest.readStringMember(world, 'request_mutation_boundary') as Closure,
+						args: () => [world] },
+					condition: values => {
+						const receipt = values[0] as Table;
+						const reachedKey = this.cpu.stringPool.find('reached')!;
+						return () => receipt.getStringKey(reachedKey) === true;
+					},
+				};
 			},
 			prepare: () => {
-				// Completing an interrupted IRQ also ends the previous heap borrow.
+				// Reaching the owner boundary or returning from an IRQ ends the previous heap borrow.
 				this.refresh(input);
 				if (input.actorHashId !== actorHashId) return;
 				return prepare();

@@ -60,7 +60,10 @@ local append_group<const> = function(
 				{},
 				'_commit_mutation_barrier'
 			),
-			block({ return_statement({}) })
+			block({
+				call_statement(call_expression(reference(symbols.world), {}, '_publish_mutation_boundary')),
+				return_statement({}),
+			})
 		),
 	})
 end
@@ -101,6 +104,7 @@ local build_runner<const> = function(
 		)
 		first = last + 1
 	end
+	body[#body + 1] = call_statement(call_expression(reference(symbols.world), {}, '_publish_mutation_boundary'))
 	return function_expression({}, block(body))
 end
 

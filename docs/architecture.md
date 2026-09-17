@@ -1030,16 +1030,30 @@ the separation between asynchronous debugger evaluation and editor presentation
 in [VS Code](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/debugModel.ts)
 and [LLDB's function-call plans](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/lldb/source/Target/ThreadPlanCallFunction.cpp),
 not LLDB's register-checkpoint restoration.
-An evaluation may also require an active non-reentrant function to return first.
-The debugger follows its outermost physical or compiler-recorded inline invocation,
-as in [LLDB's step-out plans](https://github.com/llvm/llvm-project/blob/27ffa745f3a7eaafe5f3491ace03d345e3a80129/lldb/source/Target/ThreadPlanStepOut.cpp),
-and stops before the caller's next instruction. Inline call-site identity distinguishes
-adjacent invocations. Actor Lab supplies the actual World update and render functions
-and waits for the outermost active pass before resolving an operation that may dispose
-its participants. Runtime-compiled functions in shared RAM have an address but no
-ROM source domain; their physical return does not require linked symbols. Linked
-ROM functions additionally use their compiler-recorded inline frames. The generic
-debugger knows no cartlib names. Completing a pass precedes fresh argument resolution.
+Actor Lab requests `World:request_mutation_boundary()` through an ordinary scheduled
+guest call. World completes the returned receipt after its next complete update or
+render, after structural commits, lifecycle callbacks and render submission. An early
+schedule exit caused by a clock change also publishes; an intermediate tick-group or
+nested unload does not. Render iteration uses the same structural barrier as system
+iteration. This follows the owner-controlled flush ordering in
+[Godot SceneTree](https://github.com/godotengine/godot/blob/97dab7a638ae8b613dcf6e657f93f020471d9040/scene/main/scene_tree.cpp#L692)
+and the exclusive application boundary of
+[Bevy CommandQueue](https://github.com/bevyengine/bevy/blob/f3b53464513111374089cfcc724ab448e8479dd1/crates/bevy_ecs/src/world/command_queue.rs#L162).
+
+The generic debugger can await a guest-owned receipt; it has no World method names,
+stack-pattern matching, cartlib dependency or scene scheduler. The control plan owns
+that receipt until completion/cancellation/reset; UI table borrows still expire on
+execution. On admission, GPU work is synchronized and the adapter resolves the current
+actor/component again. A request revoked while waiting cannot leave an edit queued in
+World: the receipt contains no operation or target. Ordinary frames allocate no
+receipts and install no debugger condition hook. This uses ordinary Lua tables on
+both machine implementations, with no new hardware/register or C++/TS CPU protocol.
+
+Explicit Actor Lab edits may finish guest work up to that next boundary while the
+workbench remains paused. This is not a time-free mutation at an arbitrary instruction,
+and a cart that stops invoking World update/render cannot admit an edit. Pause Lua Call
+can suspend that wait, and closing/replacing the pane revokes it. Opening the pane,
+inspecting objects and editing source do not request guest execution.
 Background rewind checkpoints do not revoke Actor Lab input or Run Resume intent.
 Those commands use the existing mutation-admission state; the task queue and host
 frame scheduler still wait for the outstanding GPU readback before executing code.

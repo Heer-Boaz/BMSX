@@ -5,8 +5,7 @@ import { ALL_EXECUTION_DOMAINS_MASK, type ExecutionDomainId } from '../../machin
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { RuntimeDebuggerPlanResult, type RuntimeDebuggerControlPlan } from './debugger_plans';
 import { pushRuntimeDebuggerControlPlan, type RuntimeDebuggerState } from './debugger_state';
-import type { RuntimeFunctionLocation, SuspendedGuestSession } from './suspended_guest';
-import { runtimeFunctionReturnTarget, runtimeReturnTargetReached, type RuntimeReturnTarget } from './function_return';
+import type { SuspendedGuestSession } from './suspended_guest';
 
 export type RuntimeGuestCall = {
 	readonly domain: ExecutionDomainId;
@@ -18,11 +17,17 @@ export type RuntimeGuestCall = {
 export type RuntimeGuestCallObserver = (completed: boolean, values: readonly Value[]) => void;
 /** A requester can revoke a queued evaluation before it enters the CPU. */
 export type RuntimeGuestCallExecutor = (prepare: () => RuntimeGuestCall | undefined, observer?: RuntimeGuestCallObserver) => void;
+export type RuntimeGuestCallBoundary = {
+	/** Ask the guest owner for an admission receipt using its ordinary API. */
+	readonly request: RuntimeGuestCall;
+	/** Bind a condition to the receipt returned by that call, not UI heap borrows. */
+	readonly condition: (values: readonly Value[]) => () => boolean;
+};
 export type RuntimeGuestCallRequest = {
 	/** Request lifetime is independent of any suspended-heap borrow. */
 	readonly isCurrent: () => boolean;
-	/** Finish an existing non-reentrant operation before resolving the evaluation. */
-	readonly waitForReturn?: () => readonly RuntimeFunctionLocation[];
+	/** The guest lifecycle, rather than debugger function names, admits this edit. */
+	readonly boundary?: () => RuntimeGuestCallBoundary | undefined;
 	readonly prepare: () => RuntimeGuestCall | undefined;
 };
 
@@ -33,11 +38,11 @@ export class RuntimeGuestCallPlan implements RuntimeDebuggerControlPlan {
 
 	public constructor(
 		private readonly runtime: Runtime,
-		private readonly target: RuntimeReturnTarget,
+		private readonly returnDepth: number,
 		private readonly finish: (completed: boolean) => void,
 	) {}
 
-	public shouldStop(): boolean { return runtimeReturnTargetReached(this.runtime.machine.cpu, this.target); }
+	public shouldStop(): boolean { return this.runtime.machine.cpu.getFrameDepth() <= this.returnDepth; }
 	public willExecute(): void {}
 	public didExecute(): RuntimeDebuggerPlanResult {
 		if (!this.shouldStop()) return RuntimeDebuggerPlanResult.Active;
@@ -53,6 +58,26 @@ export class RuntimeGuestCallPlan implements RuntimeDebuggerControlPlan {
 	public discard(): void { this.finish(false); }
 }
 
+/** A guest-owned rendezvous. Only an explicit evaluation installs this hook. */
+class RuntimeGuestBoundaryPlan implements RuntimeDebuggerControlPlan {
+	public readonly executionDomainMask = ALL_EXECUTION_DOMAINS_MASK;
+	public readonly preMaskableInterruptDomainMask = this.executionDomainMask;
+	public constructor(
+		private readonly request: RuntimeGuestCallRequest,
+		private readonly reached: () => boolean,
+		private readonly finish: (completed: boolean) => void,
+	) {}
+	public shouldStop(): boolean { return !this.request.isCurrent() || this.reached(); }
+	public willExecute(): void {}
+	public didExecute(): RuntimeDebuggerPlanResult {
+		if (!this.shouldStop()) return RuntimeDebuggerPlanResult.Active;
+		this.finish(this.request.isCurrent());
+		return RuntimeDebuggerPlanResult.Complete;
+	}
+	public didFault(): RuntimeDebuggerPlanResult { this.finish(false); return RuntimeDebuggerPlanResult.Active; }
+	public discard(): void { this.finish(false); }
+}
+
 /** Prepare against the current suspended heap, never a popup's expired borrow. */
 export function scheduleRuntimeGuestCall(
 	runtime: Runtime, guest: SuspendedGuestSession, debuggerState: RuntimeDebuggerState, tasks: RuntimeTaskQueue,
@@ -61,40 +86,52 @@ export function scheduleRuntimeGuestCall(
 	finished: (completed: boolean) => void,
 	failed: (error: unknown) => void,
 ): Promise<void> {
-	const admitCall = (checkFunctionReturn: boolean): boolean => {
+	const beginCall = (call: RuntimeGuestCall, finish: (completed: boolean) => void): void => {
+		guest.invalidate();
+		runtime.history.stop();
+		const cpu = runtime.machine.cpu;
+		const depth = cpu.getFrameDepth();
+		cpu.beginCompletionClosureInExecutionDomain(call.domain, call.closure, call.args());
+		pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, depth, finish), 'workbench');
+	};
+	const admitCall = (checkBoundary: boolean): boolean => {
 		if (!request.isCurrent()) { finished(false); return false; }
 		const cpu = runtime.machine.cpu;
 		const exceptionDepth = cpu.readExceptionReturnFrameDepth();
-		let target: RuntimeReturnTarget | undefined;
-		if (exceptionDepth !== -1) target = { frameDepth: exceptionDepth };
-		else if (checkFunctionReturn) {
-			const locations = request.waitForReturn?.();
-			if (locations !== undefined) for (const location of locations) {
-				const candidate = runtimeFunctionReturnTarget(cpu, debuggerState.sources, location);
-				if (candidate !== undefined && (target === undefined || candidate.frameDepth < target.frameDepth
-					|| candidate.frameDepth === target.frameDepth && (candidate.inline?.depth ?? 0) < (target.inline?.depth ?? 0))) target = candidate;
-			}
-		}
-		if (target !== undefined) {
+		if (exceptionDepth !== -1) {
 			guest.invalidate();
 			runtime.history.stop();
-			pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, target, completed => {
+			pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, exceptionDepth, completed => {
 				if (!completed) { finished(false); return; }
-				// The returning function may have submitted GPU work and changed the
-				// inspected heap. Re-enter admission, then resolve the call afresh.
-				// An adjacent inline call can begin at the return PC. It has not
-				// executed: do not chase subsequent invocations around a game loop.
-				void tasks.schedule(() => { admitCall(exceptionDepth !== -1 && checkFunctionReturn); }, failed);
+				// The handler may have submitted GPU work or replaced inspected values.
+				void tasks.schedule(() => { admitCall(checkBoundary); }, failed);
 			}), 'workbench');
+			return true;
+		}
+		const boundary = checkBoundary ? request.boundary?.() : undefined;
+		if (boundary !== undefined) {
+			beginCall(boundary.request, completed => {
+				if (!completed) { finished(false); return; }
+				const values: Value[] = [];
+				cpu.readCompletionValues(values);
+				const reached = boundary.condition(values);
+				// Leave the completion plan before installing the rendezvous. The
+				// receipt is owned by this control operation, never a pane borrower.
+				void tasks.schedule(() => {
+					if (!request.isCurrent()) { finished(false); return; }
+					guest.invalidate();
+					pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestBoundaryPlan(request, reached, ready => {
+						if (!ready) { finished(false); return; }
+						// A boundary can submit GPU work and replace the inspected graph.
+						void tasks.schedule(() => { admitCall(false); }, failed);
+					}), 'workbench');
+				}, failed);
+			});
 			return true;
 		}
 		const call = request.prepare();
 		if (call === undefined) { finished(false); return false; }
-		guest.invalidate();
-		runtime.history.stop();
-		const returnTarget = { frameDepth: cpu.getFrameDepth() };
-		cpu.beginCompletionClosureInExecutionDomain(call.domain, call.closure, call.args());
-		pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, returnTarget, finished), 'workbench');
+		beginCall(call, finished);
 		return true;
 	};
 	return tasks.schedule(() => {

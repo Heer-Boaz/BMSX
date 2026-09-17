@@ -190,12 +190,18 @@ between editing a live property and replacing an instance, and
 between publishing new code and invoking an explicit reload lifecycle. BMSX's
 policy lives in the cart rather than an editor copy of its gameplay rules.
 
-Actor Lab waits for an active World update or render before evaluating a method
-that can remove its participants. The generic debugger uses the outermost
-physical/inline return, following
-[LLDB's step-out handling](https://github.com/llvm/llvm-project/blob/27ffa745f3a7eaafe5f3491ace03d345e3a80129/lldb/source/Target/ThreadPlanStepOut.cpp#L99).
-World's generated update closure resides in RAM; it is identified by its shared
-address, with no invented ROM domain or requirement for linked debug symbols.
+Actor Lab requests a mutation boundary from World before evaluating a method.
+World acknowledges after a complete update/render and its lifecycle work; the
+adapter then resolves the actual actor/component again. Intermediate tick groups
+and nested teardown do not admit external edits. No list of update/render function
+addresses or inline debug metadata decides whether mutation is safe.
+
+An explicit operation can advance the paused guest to this boundary. It does not
+resume ordinary gameplay afterwards. Pause Lua Call can suspend the wait; closing
+the pane revokes the requested edit. A receipt has no queued actor method, so a
+later World pass cannot apply a cancelled edit. Source-only Save and inspection
+do not execute the guest. World must continue to reach an update/render boundary
+for an operation to complete.
 
 ## Remaining Studio operations
 
@@ -318,3 +324,37 @@ Evidence is under `.bmsx/authoring/scene-refresh/`.
   This measures the recorded route, including boot, rather than hardware FPS
   or isolated steady-state frame cost. Definition remapping runs only during
   explicit replacement, with no new per-frame migration checks.
+
+### World-owned mutation admission (2026-09-17)
+
+Evidence is under `.bmsx/authoring/world-mutation-boundary/`; comparisons use
+the unmodified `a3d2ebd96` checkout and the same headless tooling.
+
+- **131 targeted unit tests** pass. Admission tests cover O0/O3, fresh target
+  resolution after actor replacement, IRQ completion, cancellation during the
+  wait and GPU synchronization, Pause Lua Call, and RAM functions without linked
+  symbols. The old World function-address/inline-return matcher is removed.
+- The new packaged World scenario verifies complete scheduled updates, early
+  clock-change exits, empty/paused schedules, nested teardown, shared admission
+  receipts, and both render-page modes. Visuals dispose themselves during command
+  construction; iteration completes before disposal and admission.
+- All **35 Pietious scenarios**, **six targeted Nemesis scenarios** and **four
+  targeted 2025 scenarios** pass. The actual Pietious Studio edit, Save, Hot Resume,
+  Actor Lab room recreation and retained-session workflow passes on **software,
+  WebGL2 and WebGPU**. These authoring actions use visible controls and keyboard
+  events, without clipboard, source-model injection or direct guest mutation.
+- The broader run also found two existing failures: cartlib's
+  `input_clock_resume_assert` fails with `post-resume release did not reach
+  gameplay input`; `2024_navigation_assert` fails while reading `functionAddress`
+  from null. Both reproduce with freshly packed ROMs from the unmodified baseline.
+  They are recorded limitations, not passing validation.
+- Browser Studio, headless tooling and the exercised cart ROM builds succeed.
+  The strict architecture audit reports **zero issues**. The broad tests TypeScript
+  check has **67 existing diagnostics**, with no additions; three test-mock cast
+  diagnostics were removed from the baseline's 70. It is not a clean typecheck.
+- The same **1,500-frame** Pietious input route retires
+  **13,165,827 → 13,197,808 instructions** and costs
+  **14,648,649 → 14,684,047 estimated base cycles** (**+0.24%**).
+  All four gameplay/room/inventory/halo captures have identical RGBA pixels.
+  This measures guest CPU work for the recorded route, not hardware FPS.
+  Receipts are allocated only on explicit requests; ordinary frames allocate none.

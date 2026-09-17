@@ -1540,5 +1540,11 @@ Call lists stored Lua functions with normal table inheritance/shadowing, passes
 the selected instance as `self`, and accepts a literal argument list. Discovery
 does not evaluate functional `__index` or allocate guest values; argument values
 are materialized only at the existing scheduled-call admission boundary.
+The cartlib adapter asks World for a mutation-boundary receipt. World publishes
+it after its complete update/render lifecycle, including structural cleanup.
+The generic guest-call scheduler awaits that receipt and reacquires current
+targets through GPU-synchronized admission; it does not inspect World function
+names or depend on cartlib. Explicit operations can advance to the next boundary
+under the workbench pause. Cancelling the requester leaves no deferred edit.
 References: [Godot runtime inspection and suspension](https://github.com/godotengine/godot/blob/4.5/scene/debugger/scene_debugger.cpp)
 and [LLDB scheduled function evaluation](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/lldb/source/Target/ThreadPlanCallFunction.cpp).
