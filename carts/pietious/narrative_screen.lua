@@ -1,8 +1,8 @@
+local scene_library<const> = require('cartlib/world/scene_library')
+local scene<const> = require('scenes/narrative')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
-local font<const> = require('cartlib/font')
 local prefab<const> = require('cartlib/world/prefab')
-local text_component<const> = require('cartlib/text/text_component')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
@@ -68,10 +68,8 @@ local request_epilogue_finish<const> = function(self)
 end
 
 function narrative_screen:ctor()
-	local text<const> = self:get_component(text_component)
-	text:set_font(font.get('pietious'))
-	text.color = 0xffffffff
-	self.text_component = text
+	self.members = scene_library.instantiate(scene.id)
+	self.text_component = self.members.caption.text_component
 end
 
 local define_narrative_screen_fsm<const> = function()
@@ -156,11 +154,11 @@ local define_narrative_screen_fsm<const> = function()
 end
 
 local register_narrative_screen_definition<const> = function()
+	scene.register()
 	prefab.define({
 		def_id = 'narrative_screen',
 		class = narrative_screen,
 		components = {
-			text_component.new,
 			timeline_component.new,
 			fsm_component.factory({ 'narrative_screen' }),
 		},

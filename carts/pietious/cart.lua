@@ -13,6 +13,10 @@ input.push_context(1, 'pietious', {
 	confirm = { 'a', 'start', 'touch' },
 })
 local world<const> = require('cartlib/world/world')
+local scene_library<const> = require('cartlib/world/scene_library')
+local shallow_copy<const> = require('cartlib/util/shallow_copy')
+local presentation<const> = require('presentation')
+local gameplay_scene<const> = require('scenes/gameplay')
 local world_module<const> = require('world_module')
 world:configure(world_module)
 require('constants')
@@ -90,12 +94,12 @@ local create_world<const> = function(director_boot_mode)
 	local castle<const> = world:spawn('castle', { id = 'c', })
 	local room<const> = world:spawn('room', { id = 'room', castle = castle, })
 	castle.room = room
-	local player<const> = world:spawn('player', {
-		id = 'pietolon',
-		castle = castle,
-		room = room,
-		pos = { x = player_start_x, y = player_start_y, z = 140 },
-	})
+	local members<const> = scene_library.definition(gameplay_scene.id).objects
+	local player_member<const> = members[1]
+	local player_options<const> = shallow_copy(player_member.options)
+	player_options.castle = castle
+	player_options.room = room
+	local player<const> = world:spawn(player_member.definition_id, player_options)
 	room.player = player
 	grant_debug_starting_loadout(player, castle)
 	castle:initialize(castle_map.start_room_number, director_boot_mode == 'room')
@@ -113,7 +117,10 @@ local create_world<const> = function(director_boot_mode)
 		room = room,
 		player = player,
 	})
-	local ui<const> = world:spawn('ui', { id = 'ui', player = player, pos = { z = draw_z_hud }, })
+	local hud_member<const> = members[2]
+	local hud_options<const> = shallow_copy(hud_member.options)
+	hud_options.player = player
+	local ui<const> = world:spawn(hud_member.definition_id, hud_options)
 	world:spawn('title_screen', { id = 'title_screen', space_id = 'title', })
 	local director<const> = world:spawn('director', {
 		id = 'd',
@@ -122,7 +129,6 @@ local create_world<const> = function(director_boot_mode)
 		castle = castle,
 		player = player,
 		ui = ui,
-		pos = { z = draw_z_director_effect },
 	})
 	player.director = director
 	room.director = director
@@ -134,6 +140,8 @@ end
 
 local function init<init>()
 	pietious_font.register_fonts()
+	presentation.register()
+	gameplay_scene.register()
 	castle_map.initialize()
 
 	player_module.define_player_fsm()

@@ -20,9 +20,8 @@
 -- 2. enter_transition() HELPER.
 --    All mode switches that require the transition overlay (fade mask) follow
 --    the same two-step pattern: (a) switch to transition space, (b) emit ONE
---    mode broadcast (optionally with payload). The transition overlay listens
---    to those mode broadcasts directly and plays its fade mask from the same
---    canonical event, so entering_state callbacks are one-liners.
+--    mode broadcast (optionally with payload). The transition controller binds
+--    its captions to that event; the director retains ownership of timing.
 --
 -- 3. NO DISGUISED METHOD CALLS.
 --    Mode changes are announcements, never command events aimed at one object.
@@ -38,21 +37,17 @@
 --    boundary (for example shrine text lines or the world number shown on a
 --    banner) is stored on self.
 --
-local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
+local scene_library<const> = require('cartlib/world/scene_library')
+local effects_scene<const> = require('scenes/effects')
 local clock<const> = require('cartlib/clock')
-local font<const> = require('cartlib/font')
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
-local text_component<const> = require('cartlib/text/text_component')
 local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world<const> = require('cartlib/world/world')
-local game_text_module<const> = require('game_text')
 require('constants')
-
-local game_text<const>: *game_text_record = game_text_module.game_text
 
 local halo_teleport_timeline_id<const> = 'director.halo.transition'
 local banner_world_timeline_id<const> = 'director.banner.world'
@@ -97,28 +92,13 @@ local daemon_cloud_positions<const> = {
 local director<const> = {}
 director.__index = director
 
-local victory_message_x<const> = room_tile_size
-local victory_message_y<const> = room_tile_size * 8
-local victory_message_width<const> = room_tile_size * 30
-
-local draw_curtain<const> = function(component, draw)
-	draw:rect(0, 0, component.parent.curtain_width, screen_height, 0xff000000)
-end
-
-local draw_victory_message_background<const> = function(_, draw)
-	draw:rect(
-		victory_message_x,
-		victory_message_y,
-		victory_message_x + victory_message_width,
-		victory_message_y + room_tile_size,
-		0xff000000
-	)
-end
-
 function director:set_active_space(space_id)
 	world:set_space(space_id)
 	self:set_space(space_id)
 	self.ui:set_space(space_id)
+	for _, member in pairs(self.effects) do
+		member:set_space(space_id)
+	end
 end
 
 -- disable-next-line single_line_method_pattern -- named director state hook enters this transition from data-driven flow.
@@ -208,27 +188,24 @@ function director:leave_pause()
 end
 
 function director:begin_curtain()
-	self.curtain_width = 0
-	self.visual_component:set_draw_function(draw_curtain)
+	self.effects.curtain.width = 0
+	self.effects.curtain.visible = true
 end
 
 function director:end_curtain()
-	self.visual_component:set_draw_function(nil)
-	self.curtain_width = 0
+	self.effects.curtain.visible = false
 end
 
 function director:begin_victory_dance()
 	self:set_active_space('main')
-	local text<const> = self.text_component
-	text:set_text(game_text[0].victory_message)
-	text.visible = true
-	self.visual_component:set_draw_function(draw_victory_message_background)
+	self.effects.victory_caption.visible = true
+	self.effects.victory_cover.visible = true
 	self.events:emit('victory_dance')
 end
 
 function director:end_victory_dance()
-	self.text_component.visible = false
-	self.visual_component:set_draw_function(nil)
+	self.effects.victory_caption.visible = false
+	self.effects.victory_cover.visible = false
 end
 
 function director:enter_intro()
@@ -254,20 +231,11 @@ end
 function director:ctor()
 	local clouds<const> = {}
 	self.daemon_clouds = clouds
-	self.curtain_width = 0
+	self.effects = scene_library.instantiate(effects_scene.id)
+	self.curtain_step_width = self.effects.curtain.width / flow_death_curtain_frames
 	self.banner_world_number = 0
 	self.shrine_text_lines = {}
 
-	local visual<const> = self:get_component(custom_visual_component)
-	self.visual_component = visual
-	local text<const> = self:get_component(text_component)
-	text:set_font(font.get('pietious'))
-	text.color = 0xffffffff
-	text.offset_x = victory_message_x
-	text.offset_y = victory_message_y
-	text:set_offset_z(1)
-	text.visible = false
-	self.text_component = text
 	for i = 1, flow_daemon_cloud_count do
 		clouds[i] = world:spawn('daemon_cloud', {
 			id = 'dc.' .. tostring(i),
@@ -334,7 +302,7 @@ local define_director_fsm<const> = function()
 		self.castle:apply_seal_timeline_frame(frame_value)
 	end
 	local apply_curtain_frame<const> = function(self, frame_value)
-		self.curtain_width = (frame_value + 1) * flow_death_curtain_columns_per_frame * room_tile_size
+		self.effects.curtain.width = (frame_value + 1) * self.curtain_step_width
 	end
 	local on_daemon_finished<const> = function(self)
 		self.events:emit('daemon_appearance_done')
@@ -1103,12 +1071,11 @@ local define_director_fsm<const> = function()
 end
 
 local register_director_definition<const> = function()
+	effects_scene.register()
 	prefab.define({
 		def_id = 'director',
 		class = director,
 		components = {
-			custom_visual_component.new,
-			text_component.new,
 			timeline_component.new,
 			fsm_component.factory({ 'director' }),
 		},

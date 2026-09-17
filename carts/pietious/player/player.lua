@@ -661,6 +661,13 @@ function player:ctor()
 
 end
 
+function player:onspawn()
+	-- World has applied the authored placement before this hook. Keep that
+	-- starting point for castle respawns, independently of subsequent motion.
+	self.spawn_x = self.x
+	self.spawn_y = self.y
+end
+
 function player:get_damage_state_imgid()
 	if self:has_tag(state_tags.group.damage_visual) then
 		if self:has_tag(state_tags.variant.dying) then
@@ -3386,10 +3393,6 @@ local register_player_definition<const> = function()
 			player_index = 1,
 			width = player_width,
 			height = player_height,
-			spawn_x = player_start_x,
-			spawn_y = player_start_y,
-			x = player_start_x,
-			y = player_start_y,
 			facing = 1,
 			jump_substate = 0,
 			fall_substate = 0,
@@ -3420,8 +3423,8 @@ local register_player_definition<const> = function()
 			walk_state = 0,
 			stairs_direction = 0,
 			stairs_x = -1,
-			stairs_top_y = player_start_y,
-			stairs_bottom_y = player_start_y,
+			stairs_top_y = 0,
+			stairs_bottom_y = 0,
 			stairs_anim_frame = 0,
 			stairs_anim_distance = 0,
 			previous_water_state = water_none,

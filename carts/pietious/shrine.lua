@@ -1,30 +1,20 @@
+local scene_library<const> = require('cartlib/world/scene_library')
+local scene<const> = require('scenes/shrine')
 -- shrine.lua
 -- shrine overlay renderer — displays text on the shrine screen.
 
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
-local sprite_component<const> = require('cartlib/component/sprite_component')
 local sprite_object<const> = require('cartlib/sprite')
-local text_component<const> = require('cartlib/text/text_component')
 require('constants')
-local font_module<const> = require('cartlib/font')
 
 local shrine<const> = {}
 shrine.__index = shrine
 
 function shrine:ctor()
-	self:add_component(sprite_component.new({
-		imgid = 'shrine_inside',
-		offset_y = room_tile_origin_y,
-	}))
-	local text<const> = self:get_component(text_component)
-	text:set_font(font_module.get('pietious'))
-	text.color = 0xffffffff
-	text.offset_x = shrine_text_x
-	text.offset_y = shrine_text_y
-	text:set_offset_z(1)
-	self.text_component = text
+	self.members = scene_library.instantiate(scene.id)
+	self.text_component = self.members.caption.text_component
 end
 
 local room_shrine<const> = {}
@@ -54,11 +44,11 @@ local define_shrine_fsm<const> = function()
 end
 
 local register_shrine_definition<const> = function()
+	scene.register()
 	prefab.define({
 		def_id = 'shrine',
 		class = shrine,
 		components = {
-			text_component.new,
 			fsm_component.factory({ 'shrine' }),
 		},
 		defaults = {

@@ -1,8 +1,8 @@
 # Authored cart compositions
 
-The migration scope is `nemesis_s`, `2025`, then `pietious`. Scenes contain
-placed objects. FSMs and timelines continue to own sequence, animation and
-gameplay. Lua remains the authored source that Studio edits.
+The composition migration is complete for `nemesis_s`, `2025` and `pietious`.
+Scenes contain placed objects. FSMs and timelines continue to own sequence,
+animation and gameplay. Lua remains the authored source that Studio edits.
 
 ## References and ownership
 
@@ -87,5 +87,59 @@ The 24 room scanouts plus the final image match the pre-migration ROM exactly.
 Several older scenarios bound state paths or spawned probes before their
 requested restart committed; they now wait for the incoming director identity.
 
-In progress: author the independent presentation visuals and validate editing
-room and presentation source through Studio.
+Pietious now has 34 scene sources: the 24 room compositions plus these ten
+compositions with 32 independently placed members:
+
+| Source | Authored members |
+| --- | --- |
+| `scenes/gameplay.lua` | Player start and HUD |
+| `scenes/intro.lua` | White background and logo |
+| `scenes/title.lua` | Background and animated sparkle |
+| `scenes/narrative.lua` | Story/epilogue caption |
+| `scenes/shrine.lua` | Background and caption |
+| `scenes/lithograph.lua` | Background and caption |
+| `scenes/inventory.lua` | Background, eight icons, selector, map title and map widget |
+| `scenes/transition.lua` | Black background, banner and game-over caption |
+| `scenes/end_demo.lua` | Picture, message cover and caption |
+| `scenes/effects.lua` | Closing curtain, victory message cover and caption |
+
+`presentation.lua` contains the sprite, caption and rectangle prefabs. The map
+and HUD remain coherent widgets with local geometry relative to their authored
+origins. Controllers retain component references for animation and content;
+they no longer construct private copies of screen geometry. Sparkle motion is
+relative to the authored anchor. Curtain playback derives its step width once
+from the instantiated rectangle. The director moves its three effects with the
+active presentation space; World continues to own their lifetime.
+
+The unused `transition.timeline` and its playback calls have been removed.
+Transition timing already belongs to the director. Inventory visibility is
+bound on entry rather than querying inventory for every icon every draw. The
+player's initial scene position is retained after World's placement hook;
+death restart and Enter/halo use that instance anchor. The duplicate start,
+screen-position and effect-depth constants are gone. Runtime player/castle/room
+bindings are applied to copies of authored options during world construction.
+
+Final validation:
+
+- All 31 Pietious headless scenarios pass. The final effect change also passes
+  the complete cinematic and death/restart paths.
+- The 24 room poses and 16 presentation poses, plus their final captures,
+  match the pre-migration ROM pixel for pixel. The victory animation is sampled
+  at an explicit presentation-clock frame, independently of the gameplay clock.
+- `browser.mjs --studio-cart-scenes pietious` edits the intro logo, player
+  start, a room-2 rock, the victory caption and the halo icon through visible
+  pointer/keyboard controls. Save, reboot, walking into room 2, opening inventory,
+  Enter/halo back to the authored start and reopening the saved room source all
+  pass on software, WebGL2 and WebGPU. Game captures follow an actual
+  update/render/scanout pair; inspection does not inject runtime values or code.
+- An identical 1,500-host-frame input recording covers intro/story skip, title,
+  gameplay, room entry, inventory and halo. Retired instructions are 13,193,801
+  versus 13,284,607 before migration; estimated base cycles are 14,688,648 versus
+  14,815,575. This measures the recorded path, not SNES Mini hardware FPS.
+- The architecture audit reports zero issues. The tests TypeScript check has
+  the same 70 existing diagnostics as the pre-migration baseline.
+
+Procedural bullets, drops, clouds and the 2025 hit-slash animation remain their
+existing gameplay/effect producers. Terrain and topology remain map resources.
+Neither needs a scene per frame, enemy state or draw primitive. The migration
+adds no alternate lifecycle, recovery path or second authored placement store.

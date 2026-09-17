@@ -1,11 +1,11 @@
+local scene_library<const> = require('cartlib/world/scene_library')
+local scene<const> = require('scenes/title')
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
-local sprite_object<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 require('constants')
-local sprite_component<const> = require('cartlib/component/sprite_component')
 
 local title_screen<const> = {}
 title_screen.__index = title_screen
@@ -37,12 +37,12 @@ local sparkle_sweep_sprite_ids<const> = {
 	'tsf7',
 }
 
-local sparkle_sweep_start_x<const> = 96
-local sparkle_sweep_y<const> = 71
+local sparkle_sweep_start_x<const> = 0
+local sparkle_sweep_y<const> = 0
 local sparkle_sweep_stage_frames<const> = 7
 local sparkle_sweep_step_x<const> = 2
-local sparkle_burst_single<const> = { sprite_id = 'tsf_burst_single', x = 160, y = 63 }
-local sparkle_burst_pair<const> = { sprite_id = 'tsf_pair', x = 158, y = 63 }
+local sparkle_burst_single<const> = { sprite_id = 'tsf_burst_single', x = 64, y = -8 }
+local sparkle_burst_pair<const> = { sprite_id = 'tsf_pair', x = 62, y = -8 }
 
 local sparkle_delay_frames<const> = 48
 local sparkle_burst_single_frames<const> = 16
@@ -128,17 +128,12 @@ local build_title_start_frames<const> = function()
 end
 
 local apply_title_start_frame<const> = function(self, frame)
-	self:set_imgid(frame.sprite_id)
+	self.members.background:set_imgid(frame.sprite_id)
 end
 
 function title_screen:ctor()
-	self:set_imgid('title_screen')
-	self:set_z(350)
-	self.sparkle_sprite = sprite_component.new({
-		id_local = 'sparkle',
-		offset_z = 1,
-	})
-	self:add_component(self.sparkle_sprite)
+	self.members = scene_library.instantiate(scene.id)
+	self.sparkle_sprite = self.members.sparkle.sprite_component
 	self.sparkle_sprite:set_enabled(false)
 end
 
@@ -167,7 +162,7 @@ local define_title_screen_fsm<const> = function()
 			hidden = {},
 			idle = {
 				entering_state = function(self)
-					self:set_imgid('title_screen')
+					self.members.background:set_imgid('title_screen')
 				end,
 				timelines = {
 					[sparkle_timeline_id] = {
@@ -221,10 +216,10 @@ local define_title_screen_fsm<const> = function()
 end
 
 local register_title_screen_definition<const> = function()
+	scene.register()
 	prefab.define({
 		def_id = 'title_screen',
 		class = title_screen,
-		base = sprite_object,
 		components = { timeline_component.new, fsm_component.factory({ 'title_screen' }) },
 		defaults = { player_index = 1 },
 	})

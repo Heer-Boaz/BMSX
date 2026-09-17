@@ -99,7 +99,7 @@ function __bmsx_host_test.update()
 			assert(test.dying_pose == #dying_imgids, 'death animation ended before its final pose')
 			assert(registry:get(test.item_id) == test.item,
 				'death curtain disposed the room before it finished closing')
-			test.last_curtain_width = director.curtain_width
+			test.last_curtain_width = director.effects.curtain.width
 			test.phase = 'curtain'
 			return false
 		end
@@ -109,9 +109,9 @@ function __bmsx_host_test.update()
 	if test.phase == 'curtain' and world.active_space_id == 'main' then
 		assert(director.state_machines:matches_state(test.death_curtain_state),
 			'death curtain stopped before entering the game-over screen')
-		assert(director.curtain_width >= test.last_curtain_width,
+		assert(director.effects.curtain.width >= test.last_curtain_width,
 			'death curtain moved backwards while closing')
-		test.last_curtain_width = director.curtain_width
+		test.last_curtain_width = director.effects.curtain.width
 		assert(registry:get(test.item_id) == test.item,
 			'death curtain disposed the room before it finished closing')
 		return false
@@ -123,8 +123,8 @@ function __bmsx_host_test.update()
 		assert(test.saw_curtain, 'death restart skipped the closing curtain')
 		assert(test.last_curtain_width > 0, 'death curtain never advanced')
 		local transition_screen<const> = registry:get('transition')
-		assert(transition_screen.text_component.visible, 'game-over text is hidden')
-		assert(transition_screen.text_component.text == 'PROBEER HET NOG EENS...',
+		assert(transition_screen.members.death_caption.visible, 'game-over text is hidden')
+		assert(transition_screen.members.death_caption.text_component.text == 'PROBEER HET NOG EENS...',
 			'game-over text differs from the original Pietious screen')
 		test.saw_transition = true
 		test.death_screen_frames = test.death_screen_frames + 1

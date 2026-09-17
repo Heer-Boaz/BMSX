@@ -1,7 +1,6 @@
 local clock<const> = require('cartlib/clock')
 local registry<const> = require('cartlib/registry')
 local rom_dir<const> = require('cartlib/rom_dir')
-local text_component<const> = require('cartlib/text/text_component')
 local world<const> = require('cartlib/world/world')
 require('constants')
 
@@ -36,9 +35,9 @@ function __bmsx_host_test.setup()
 	local intro<const> = registry:get('intro')
 	intro.state_machines:transition_to('/hidden')
 	intro.state_machines:transition_to('/playing/blank')
-	local logo<const> = intro.sprite_component
+	local logo<const> = intro.logo_sprite
 	assert(logo.imgid == 'intro_konami'
-		and logo.offset_x == 40 and logo.offset_y == 64
+		and logo.parent.x == 40 and logo.parent.y == 64
 		and logo.region_width == 168 and logo.region_height == 1
 		and not logo.visible and intro.logo_background.visible,
 		'Konami logo did not enter its source-derived white presentation')
@@ -56,7 +55,7 @@ function __bmsx_host_test.setup()
 		== intro_logo_hold_frames * clock.frame_delta_milliseconds(),
 		'Konami logo hold did not retain its 256-VBlank duration')
 	intro:finish()
-	assert(not intro.visible and not intro.logo_background.visible,
+	assert(not intro.members.logo.visible and not intro.logo_background.visible,
 		'finishing the Konami logo retained its presentation')
 	assert(registry:get('narrative').text_component.offset_y == screen_height,
 		'story did not start below the screen')
@@ -171,7 +170,7 @@ function __bmsx_host_test.update()
 		assert(director.state_machines:matches_state(test.end_demo_state), 'room curtain did not advance to the end demo')
 		assert(world.active_space_id == 'end_demo', 'end demo did not own its presentation space')
 		local end_demo<const> = registry:get('end_demo')
-		assert(end_demo:get_component(text_component).text == 'DAT HEB JE BEST REDELIJK GEDAAN! ',
+		assert(end_demo.members.caption.text_component.text == 'DAT HEB JE BEST REDELIJK GEDAAN! ',
 			'end-demo message differs from the XNA source')
 		assert(*selected_apu_source == end_demo_source_address,
 			'end-demo audio was not admitted source=' .. tostring(*selected_apu_source))

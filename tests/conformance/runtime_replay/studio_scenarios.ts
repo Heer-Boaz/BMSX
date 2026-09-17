@@ -1,4 +1,5 @@
 import { runStudio2025Scenes } from './studio_2025_scenes';
+import { runStudioPietiousScenes } from './studio_pietious_scenes';
 import { runStudioRuntimeInspection } from './studio_runtime_inspection';
 import { runStudioPreload } from './studio_preload';
 import { runStudioNemesisScenes } from './studio_nemesis_scenes';
@@ -19,13 +20,13 @@ import { testStudioSceneViewport } from './studio_scene_viewport';
 import type { StudioFixture } from './studio_fixture';
 
 export type StudioScenario = { kind: 'workflows' | 'fsm-initial' | 'fsm-retarget' | 'fsm-retarget-imported' | 'bt-reparent' | 'runtime-inspection' | 'preload' | 'nemesis-scenes' }
-	| { kind: 'cart-scenes'; cart: '2025' }
+	| { kind: 'cart-scenes'; cart: '2025' | 'pietious' }
 	| { kind: 'navigation'; cart: NavigationCart };
 
 /** One scenario composition for every renderer project; backend checks remain in their project. */
 export function runStudioScenario(test: StudioFixture, scenario: StudioScenario) {
 	switch (scenario.kind) {
-		case 'cart-scenes': return runStudio2025Scenes(test);
+		case 'cart-scenes': return scenario.cart === '2025' ? runStudio2025Scenes(test) : runStudioPietiousScenes(test);
 		case 'nemesis-scenes': return runStudioNemesisScenes(test);
 		case 'workflows': return runStudioWorkflows(test);
 		case 'runtime-inspection': return runStudioRuntimeInspection(test);

@@ -63,16 +63,16 @@ local draw_ui<const> = function(component, draw)
 		return
 	end
 	local player<const> = owner.player
-	sources.header:blit(draw, 0, 0)
+	sources.header:blit(draw, owner.x, owner.y)
 	for i = 0, (owner.hud_health_level - 1) do
-		sources.health_stripe:blit(draw, hud_health_bar_x + i, hud_health_bar_y)
+		sources.health_stripe:blit(draw, owner.x + hud_health_bar_x + i, owner.y + hud_health_bar_y)
 	end
 	for i = 0, (owner.hud_weapon_level - 1) do
-		sources.weapon_stripe:blit(draw, hud_weapon_bar_x + i, hud_weapon_bar_y)
+		sources.weapon_stripe:blit(draw, owner.x + hud_weapon_bar_x + i, owner.y + hud_weapon_bar_y)
 	end
 	local equipped_source<const> = sources.secondary_weapon[player.secondary_weapon]
 	if equipped_source ~= nil then
-		equipped_source:blit(draw, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size)
+		equipped_source:blit(draw, owner.x + hud_equipped_item_x * room_tile_size, owner.y + hud_equipped_item_y * room_tile_size)
 	end
 end
 

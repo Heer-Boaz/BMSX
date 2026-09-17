@@ -519,8 +519,8 @@ function castle:begin_death_restart()
 		switch.map_id = 0
 		switch.map_x = 5
 		switch.map_y = 12
-		switch.spawn_x = player_start_x
-		switch.spawn_y = player_start_y
+		switch.spawn_x = room.player.spawn_x
+		switch.spawn_y = room.player.spawn_y
 		switch.spawn_facing = 1
 	else
 		local transition<const> = castle_map.world_transitions_by_number[world_number]
@@ -782,8 +782,8 @@ function castle:halo_teleport_to_room_1(emit_room_enter_now)
 	self.current_room_number = halo_destination_room_number
 	local switch<const> = create_room_switch(from_room_number, self.current_room_number, 'halo')
 	self:commit_room_switch(switch, 0, 5, 12, emit_room_enter_now)
-	switch.spawn_x = player_start_x
-	switch.spawn_y = player_start_y
+	switch.spawn_x = room.player.spawn_x
+	switch.spawn_y = room.player.spawn_y
 	switch.spawn_facing = 1
 
 	return {

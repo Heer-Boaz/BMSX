@@ -31,8 +31,8 @@ function __bmsx_host_test.update()
 		player:zero_motion()
 		player:cancel_sword()
 		player.health = player.max_health
-		player.x = player_start_x
-		player.y = player_start_y
+		player.x = player.spawn_x
+		player.y = player.spawn_y
 		test.quiet_state = player.state_machines:bind_state_path('/quiet')
 		test.hit_fall_state = player.state_machines:bind_state_path('/hit_fall')
 		test.hit_recovery_state = player.state_machines:bind_state_path('/hit_recovery')
@@ -42,7 +42,7 @@ function __bmsx_host_test.update()
 			castle = registry:get('c'),
 			room = registry:get('room'),
 			player = player,
-			pos = { x = 0, y = player_start_y, z = 110 },
+			pos = { x = 0, y = player.spawn_y, z = 110 },
 			damage = damage_enemy_contact_damage,
 		})
 		test.phase = 'first_contact'

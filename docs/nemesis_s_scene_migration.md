@@ -162,12 +162,12 @@ reports zero issues. The broad tests TypeScript
 check reports 70 diagnostics; comparison against the pre-migration sources
 produced the identical diagnostic list. None was introduced by this slice.
 
-## Following carts
+## Other carts in scope
 
 Nemesis's composition migration is complete. Stage progression, enemy behavior,
-player state and boss phases remain gameplay responsibilities. Next migrate
-`2025`, followed by `pietious`. Pietious's room reentry and persistent
-progress already constrain lifetime: disposing placed objects must not imply
-deleting the cart's durable room/player state. That state needs an explicit cart
-owner before its rooms move to authored scenes. This slice adds no speculative
+player state and boss phases remain gameplay responsibilities. `2025` and
+`pietious` are also migrated; their ownership and validation are recorded in
+[Authored cart compositions](cart_scene_migration.md). Pietious retains its
+castle, room and player owners across room composition replacement, preserving
+inventory and durable progression. These migrations add no speculative
 persistence or streaming machinery to World.
