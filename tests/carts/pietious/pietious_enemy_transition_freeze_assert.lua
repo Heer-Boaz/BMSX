@@ -19,7 +19,7 @@ function __bmsx_host_test.update()
 	if test.phase == nil then
 		if world.active_space_id ~= 'main' then return false end
 		castle:switch_room('right', 0, 0)
-		test.enemy_id = room.enemies[1].id
+		test.enemy_id = room.enemies[1].options.id
 		test.phase = 1
 		return false
 	end
@@ -78,7 +78,7 @@ function __bmsx_host_test.update()
 		director.events:emit('world_leave_transition_start')
 		local switch<const> = castle:leave_world_to_castle(false)
 		local destination_def<const> = room.enemies[1]
-		local destination<const> = registry:get(destination_def.id)
+		local destination<const> = registry:get(destination_def.options.id)
 		assert(destination ~= nil, 'destination enemy missing')
 		test.destination_id = destination.id
 		test.destination_x = destination.x

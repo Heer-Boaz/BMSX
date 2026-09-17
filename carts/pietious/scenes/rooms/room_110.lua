@@ -1,0 +1,227 @@
+-- Placement is authored in world pixels; progression decides admission.
+local scene_library<const> = require('cartlib/world/scene_library')
+local room_scene<const> = { id = 'pietious.room_110' }
+
+function room_scene.register()
+	scene_library.register(room_scene.id, {
+		objects = {
+			{
+				member_id = 'shrine_01',
+				definition_id = 'room_shrine',
+				options = {
+					id = 'shrine_110_01',
+					space_id = 'main',
+					pos = { x = 216, y = 48, z = 22 },
+					text_lines = { 'VERNIETIG ALLE', 'MARSPEINEN', 'AARDAPPELTJES.' },
+				},
+			},
+			{
+				member_id = 'enemy_01',
+				definition_id = 'enemy.mijterfoe',
+				conditions = {},
+				options = {
+					id = 'enemy_110_01',
+					space_id = 'main',
+					pos = { x = 144, y = 72, z = 140 },
+					damage = 2,
+					direction = 'down',
+				},
+			},
+			{
+				member_id = 'enemy_02',
+				definition_id = 'enemy.mijterfoe',
+				conditions = {},
+				options = {
+					id = 'enemy_110_02',
+					space_id = 'main',
+					pos = { x = 112, y = 104, z = 140 },
+					damage = 2,
+					direction = 'down',
+				},
+			},
+			{
+				member_id = 'enemy_03',
+				definition_id = 'enemy.mijterfoe',
+				conditions = {},
+				options = {
+					id = 'enemy_110_03',
+					space_id = 'main',
+					pos = { x = 144, y = 136, z = 140 },
+					damage = 2,
+					direction = 'down',
+				},
+			},
+			{
+				member_id = 'enemy_04',
+				definition_id = 'enemy.mijterfoe',
+				conditions = {},
+				options = {
+					id = 'enemy_110_04',
+					space_id = 'main',
+					pos = { x = 56, y = 72, z = 140 },
+					damage = 2,
+					direction = 'down',
+				},
+			},
+			{
+				member_id = 'enemy_05',
+				definition_id = 'enemy.mijterfoe',
+				conditions = {},
+				options = {
+					id = 'enemy_110_05',
+					space_id = 'main',
+					pos = { x = 232, y = 72, z = 140 },
+					damage = 2,
+					direction = 'down',
+				},
+			},
+			{
+				member_id = 'enemy_06',
+				definition_id = 'enemy.mijterfoe',
+				conditions = {},
+				options = {
+					id = 'enemy_110_06',
+					space_id = 'main',
+					pos = { x = 232, y = 104, z = 140 },
+					damage = 2,
+					direction = 'down',
+				},
+			},
+			{
+				member_id = 'enemy_07',
+				definition_id = 'enemy.mijterfoe',
+				conditions = {},
+				options = {
+					id = 'enemy_110_07',
+					space_id = 'main',
+					pos = { x = 200, y = 136, z = 140 },
+					damage = 2,
+					direction = 'down',
+				},
+			},
+			{
+				member_id = 'enemy_08',
+				definition_id = 'enemy.zakfoe',
+				conditions = {},
+				options = {
+					id = 'enemy_110_08',
+					space_id = 'main',
+					pos = { x = 112, y = 48, z = 140 },
+					damage = 2,
+					direction = 'right',
+				},
+			},
+			{
+				member_id = 'enemy_09',
+				definition_id = 'enemy.zakfoe',
+				conditions = {},
+				options = {
+					id = 'enemy_110_09',
+					space_id = 'main',
+					pos = { x = 216, y = 48, z = 140 },
+					damage = 2,
+					direction = 'right',
+				},
+			},
+			{
+				member_id = 'enemy_10',
+				definition_id = 'enemy.zakfoe',
+				conditions = {},
+				options = {
+					id = 'enemy_110_10',
+					space_id = 'main',
+					pos = { x = 216, y = 80, z = 140 },
+					damage = 2,
+					direction = 'left',
+				},
+			},
+			{
+				member_id = 'enemy_11',
+				definition_id = 'enemy.zakfoe',
+				conditions = {},
+				options = {
+					id = 'enemy_110_11',
+					space_id = 'main',
+					pos = { x = 232, y = 112, z = 140 },
+					damage = 2,
+					direction = 'left',
+				},
+			},
+			{
+				member_id = 'enemy_12',
+				definition_id = 'enemy.zakfoe',
+				conditions = {},
+				options = {
+					id = 'enemy_110_12',
+					space_id = 'main',
+					pos = { x = 112, y = 112, z = 140 },
+					damage = 2,
+					direction = 'right',
+				},
+			},
+			{
+				member_id = 'enemy_13',
+				definition_id = 'enemy.zakfoe',
+				conditions = {},
+				options = {
+					id = 'enemy_110_13',
+					space_id = 'main',
+					pos = { x = 8, y = 112, z = 140 },
+					damage = 2,
+					direction = 'right',
+				},
+			},
+			{
+				member_id = 'enemy_14',
+				definition_id = 'enemy.zakfoe',
+				conditions = {},
+				options = {
+					id = 'enemy_110_14',
+					space_id = 'main',
+					pos = { x = 128, y = 80, z = 140 },
+					damage = 2,
+					direction = 'left',
+				},
+			},
+			{
+				member_id = 'enemy_15',
+				definition_id = 'enemy.zakfoe',
+				conditions = {},
+				options = {
+					id = 'enemy_110_15',
+					space_id = 'main',
+					pos = { x = 232, y = 144, z = 140 },
+					damage = 2,
+					direction = 'left',
+				},
+			},
+			{
+				member_id = 'enemy_16',
+				definition_id = 'enemy.zakfoe',
+				conditions = {},
+				options = {
+					id = 'enemy_110_16',
+					space_id = 'main',
+					pos = { x = 96, y = 144, z = 140 },
+					damage = 2,
+					direction = 'right',
+				},
+			},
+			{
+				member_id = 'enemy_17',
+				definition_id = 'enemy.stafffoe',
+				conditions = { { key = 'staff3destroyed', equals = false } },
+				retain_defeat_in_region = true,
+				destroyed_condition = 'staff3destroyed',
+				options = {
+					id = 'enemy_110_17',
+					space_id = 'main',
+					pos = { x = 120, y = 34, z = 140 },
+					damage = 2,
+				},
+			},
+		},
+	})
+end
+
+return room_scene

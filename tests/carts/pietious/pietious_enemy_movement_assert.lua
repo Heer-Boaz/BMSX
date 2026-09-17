@@ -45,8 +45,8 @@ function __bmsx_host_test.update()
 		}, 0, 0, 0)
 		for index = 1, #room.enemies do
 			local definition<const> = room.enemies[index]
-			if definition.kind == 'crossfoe' then
-				test.cross_id = definition.id
+			if definition.definition_id == 'enemy.crossfoe' then
+				test.cross_id = definition.options.id
 				break
 			end
 		end
@@ -126,8 +126,8 @@ function __bmsx_host_test.update()
 		}, 1, 2, 2)
 		for index = 1, #room.enemies do
 			local definition<const> = room.enemies[index]
-			if definition.kind == 'zakfoe' then
-				test.zak_id = definition.id
+			if definition.definition_id == 'enemy.zakfoe' then
+				test.zak_id = definition.options.id
 				break
 			end
 		end

@@ -39,7 +39,7 @@ function __bmsx_host_test.update()
 			to_room_number = 110,
 			direction = 'left',
 		}, 0, 0, 0)
-		test.mijter_id = room.enemies[1].id
+		test.mijter_id = room.enemies[1].options.id
 		test.phase = 'hanging'
 		return false
 	end

@@ -62,7 +62,7 @@ local narrative_screen_module<const> = require('narrative_screen')
 local title_screen_module<const> = require('title_screen')
 local castle_map<const> = require('castle/map')
 
-local new_game_requested = false
+local new_game_requested
 
 local grant_debug_starting_loadout<const> = function(player, castle)
 	player.inventory_items['keyworld1'] = true
@@ -84,6 +84,7 @@ local request_new_game<const> = function()
 end
 
 local create_world<const> = function(director_boot_mode)
+	new_game_requested = false
 	world:clear()
 
 	local castle<const> = world:spawn('castle', { id = 'c', })
@@ -128,12 +129,12 @@ local create_world<const> = function(director_boot_mode)
 end
 
 function new_game()
-	new_game_requested = false
 	create_world('room')
 end
 
 local function init<init>()
 	pietious_font.register_fonts()
+	castle_map.initialize()
 
 	player_module.define_player_fsm()
 	boekfoe_module.register()

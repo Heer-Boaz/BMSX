@@ -30,8 +30,8 @@ function __bmsx_host_test.update()
 		local second_def<const> = room.enemies[2]
 		assert(not first_def.retain_defeat_in_region, 'first room 2 enemy unexpectedly retains region defeat')
 		assert(not second_def.retain_defeat_in_region, 'second room 2 enemy unexpectedly retains region defeat')
-		test.first_id = first_def.id
-		test.second_id = second_def.id
+		test.first_id = first_def.options.id
+		test.second_id = second_def.options.id
 		test.phase = 1
 		return false
 	end

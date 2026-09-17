@@ -1,6 +1,7 @@
 local world<const> = require('cartlib/world/world')
 local progression<const> = require('cartlib/progression')
 local registry<const> = require('cartlib/registry')
+local shallow_copy<const> = require('cartlib/util/shallow_copy')
 require('constants')
 
 local room_spawner<const> = {}
@@ -12,22 +13,27 @@ function room_spawner.mark_all_for_disposal()
 	end
 end
 
+-- Admission is conditional in this cart. Bind the persistent room actors
+-- before World activates the prefab, keeping the authored options immutable.
+local spawn_member<const> = function(room, member)
+	local options<const> = shallow_copy(member.options)
+	options.castle = room.castle
+	options.room = room
+	options.player = room.player
+	options.room_number = room.room_number
+	options.rs_room_number = room.room_number
+	local object<const> = world:spawn(member.definition_id, options)
+	object:add_tag('rs')
+	return object
+end
+
 local spawn_rocks<const> = function(room)
 	for i = 1, #room.rocks do
 		local def<const> = room.rocks[i]
-		local existing<const> = registry:get(def.id)
-		if not room.destroyed_rock_ids[def.id] then
+		local existing<const> = registry:get(def.options.id)
+		if not room.destroyed_rock_ids[def.options.id] then
 			if existing == nil then
-				local obj<const> = world:spawn('rock', {
-					id = def.id,
-					space_id = 'main',
-					room = room,
-					player = room.player,
-					pos = { x = def.x, y = def.y, z = 140 },
-					item_type = def.item_type,
-					rs_room_number = room.room_number,
-				})
-				obj:add_tag('rs')
+				spawn_member(room, def)
 			end
 		end
 	end
@@ -38,17 +44,9 @@ local spawn_lithographs<const> = function(room)
 	local instance_count = 0
 	for i = 1, #room.lithographs do
 		local def<const> = room.lithographs[i]
-		local existing = registry:get(def.id)
+		local existing = registry:get(def.options.id)
 		if existing == nil then
-			existing = world:spawn('lithograph', {
-				id = def.id,
-				space_id = 'main',
-				pos = { x = def.x, y = def.y, z = 10 },
-				text = def.text,
-				room_number = room.castle.current_room_number,
-				rs_room_number = room.room_number,
-			})
-			existing:add_tag('rs')
+			existing = spawn_member(room, def)
 		end
 		instance_count = instance_count + 1
 		instances[instance_count] = existing
@@ -59,19 +57,16 @@ local spawn_lithographs<const> = function(room)
 end
 
 local spawn_shrines<const> = function(room)
+	local instances<const> = room.shrine_instances
 	for i = 1, #room.shrines do
 		local def<const> = room.shrines[i]
-		local existing<const> = registry:get(def.id)
+		local existing = registry:get(def.options.id)
 		if existing == nil then
-			local obj<const> = world:spawn('room_shrine', {
-				id = def.id,
-				space_id = 'main',
-				pos = { x = def.x, y = def.y, z = 22 },
-				rs_room_number = room.room_number,
-			})
-			obj:add_tag('rs')
+			existing = spawn_member(room, def)
 		end
+		instances[i] = existing
 	end
+	for i = #room.shrines + 1, #instances do instances[i] = nil end
 end
 
 local spawn_draaideuren<const> = function(room)
@@ -79,20 +74,9 @@ local spawn_draaideuren<const> = function(room)
 	local instance_count = 0
 	for i = 1, #room.draaideuren do
 		local def<const> = room.draaideuren[i]
-		local existing = registry:get(def.id)
+		local existing = registry:get(def.options.id)
 		if existing == nil then
-			existing = world:spawn('draaideur', {
-				id = def.id,
-				space_id = 'main',
-				castle = room.castle,
-				player = room.player,
-				pos = { x = def.x, y = def.y, z = 22 },
-				kind = def.kind,
-				tile_x = def.tile_x,
-				tile_y = def.tile_y,
-				rs_room_number = room.room_number,
-			})
-			existing:add_tag('rs')
+			existing = spawn_member(room, def)
 		end
 		instance_count = instance_count + 1
 		instances[instance_count] = existing
@@ -104,45 +88,30 @@ end
 
 local spawn_world_entrances<const> = function(room)
 	local castle<const> = room.castle
+	local instances<const> = room.world_entrance_instances
 	for i = 1, #room.world_entrances do
 		local def<const> = room.world_entrances[i]
-		local existing<const> = registry:get(def.id)
+		local existing = registry:get(def.options.id)
 		if existing == nil then
-			local entrance<const> = world:spawn('world_entrance', {
-				id = def.id,
-				space_id = 'main',
-				castle = castle,
-				pos = { x = def.x, y = def.y, z = 22 },
-				target = def.target,
-				rs_room_number = room.room_number,
-			})
-			entrance:set_entrance_state(castle.world_entrance_states[def.target].state)
-			entrance:add_tag('rs')
+			existing = spawn_member(room, def)
+			existing:set_entrance_state(castle.world_entrance_states[def.options.target].state)
 		end
+		instances[i] = existing
 	end
+	for i = #room.world_entrances + 1, #instances do instances[i] = nil end
 end
 
 local sync_item<const> = function(room, def)
 	local castle<const> = room.castle
 	local player<const> = room.player
-	local picked<const> = progression.get(castle, def.picked_key)
-	local matches_conditions<const> = progression.matches(castle, def.progression_filter)
-	local already_owned<const> = player.inventory_items[def.item_type]
+	local picked<const> = progression.get(castle, 'item_picked_' .. def.options.id)
+	local matches_conditions<const> = progression.matches(castle, castle._scene_filters[def])
+	local already_owned<const> = player.inventory_items[def.options.item_type]
 	local should_spawn<const> = not picked and matches_conditions and not already_owned
-	local existing<const> = registry:get(def.id)
+	local existing<const> = registry:get(def.options.id)
 	if should_spawn then
 		if existing == nil then
-			local obj<const> = world:spawn('world_item', {
-				id = def.id,
-				space_id = 'main',
-				room = room,
-				player = player,
-				pos = { x = def.x, y = def.y, z = 130 },
-				item_id = def.id,
-				item_type = def.item_type,
-				rs_room_number = room.room_number,
-			})
-			obj:add_tag('rs')
+			spawn_member(room, def)
 			return true
 		end
 	elseif existing ~= nil then
@@ -157,42 +126,19 @@ local spawn_items<const> = function(room)
 	end
 end
 
-local spawn_enemy<const> = function(room, def)
-	local obj<const> = world:spawn('enemy.' .. def.kind, {
-		id = def.id,
-		space_id = 'main',
-		castle = room.castle,
-		room = room,
-		player = room.player,
-		pos = { x = def.x, y = def.y, z = def.draw_z },
-		damage = def.damage,
-		health = def.health,
-		max_health = def.health,
-		direction = def.direction,
-		speed_x_num = def.speedx,
-		speed_y_num = def.speedy,
-		width_tiles = def.width_tiles,
-		height_tiles = def.height_tiles,
-		tiletype = def.tiletype,
-		rs_room_number = room.room_number,
-	})
-	obj:add_tag('rs')
-	return obj
-end
-
 local spawn_enemies<const> = function(room)
 	local castle<const> = room.castle
 	local walls<const> = room.wall_instances
 	local wall_count = 0
 	for i = 1, #room.enemies do
 		local def<const> = room.enemies[i]
-		local defeated<const> = def.retain_defeat_in_region and progression.get(castle, def.id)
-		local matches_conditions<const> = progression.matches(castle, def.progression_filter)
+		local defeated<const> = def.retain_defeat_in_region and progression.get(castle, def.options.id)
+		local matches_conditions<const> = progression.matches(castle, castle._scene_filters[def])
 		local should_spawn<const> = not defeated and matches_conditions
-		local existing = registry:get(def.id)
+		local existing = registry:get(def.options.id)
 		if should_spawn then
 			if existing == nil then
-				existing = spawn_enemy(room, def)
+				existing = spawn_member(room, def)
 			end
 			if def.blocks_room_collision then
 				wall_count = wall_count + 1
@@ -215,8 +161,8 @@ local rebuild_wall_instances<const> = function(room)
 	local wall_count = 0
 	for i = 1, #wall_defs do
 		local def<const> = wall_defs[i]
-		if progression.matches(room.castle, def.progression_filter) then
-			local wall<const> = registry:get(def.id)
+		if progression.matches(room.castle, room.castle._scene_filters[def]) then
+			local wall<const> = registry:get(def.options.id)
 			if wall ~= nil then
 				wall_count = wall_count + 1
 				walls[wall_count] = wall
@@ -234,13 +180,13 @@ function room_spawner.reconcile_condition(room, condition, source_id)
 	local enemies<const> = dependency.enemies
 	for i = 1, #enemies do
 		local def<const> = enemies[i]
-		if def.id ~= source_id then
-			local existing<const> = registry:get(def.id)
-			local defeated<const> = def.retain_defeat_in_region and progression.get(castle, def.id)
-			local should_spawn<const> = not defeated and progression.matches(castle, def.progression_filter)
+		if def.options.id ~= source_id then
+			local existing<const> = registry:get(def.options.id)
+			local defeated<const> = def.retain_defeat_in_region and progression.get(castle, def.options.id)
+			local should_spawn<const> = not defeated and progression.matches(castle, castle._scene_filters[def])
 			if should_spawn then
 				if existing == nil then
-					spawn_enemy(room, def)
+					spawn_member(room, def)
 				end
 			elseif existing ~= nil then
 				existing:mark_for_disposal()
@@ -264,9 +210,9 @@ local spawn_destroyed_rock_inventory_items<const> = function(room)
 	local player<const> = room.player
 	for i = 1, #room.inventory_rocks do
 		local def<const> = room.inventory_rocks[i]
-		local item_type<const> = def.item_type
-		if room.destroyed_rock_ids[def.id] then
-			local item_id<const> = 'drop.' .. def.id
+		local item_type<const> = def.options.item_type
+		if room.destroyed_rock_ids[def.options.id] then
+			local item_id<const> = 'drop.' .. def.options.id
 			local picked<const> = progression.get(castle, 'item_picked_' .. item_id)
 			local already_owned<const> = player.inventory_items[item_type]
 			if not picked and not already_owned and registry:get(item_id) == nil then
@@ -275,7 +221,7 @@ local spawn_destroyed_rock_inventory_items<const> = function(room)
 					space_id = 'main',
 					room = room,
 					player = player,
-					pos = { x = def.x, y = def.y + world_item_drop_offset_y[item_type], z = 130 },
+					pos = { x = def.options.pos.x, y = def.options.pos.y + world_item_drop_offset_y[item_type], z = 130 },
 					item_id = item_id,
 					item_type = item_type,
 					rs_room_number = room.room_number,

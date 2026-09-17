@@ -60,11 +60,11 @@ function __bmsx_host_test.update()
 		assert(room.room_number == castle_map.world_transitions.world_1.world_room_number,
 			'death scenario did not enter the world entrance room')
 		local item_def<const> = room.items[1]
-		assert(item_def.item_type == 'map_world1', 'world entrance room map item is missing')
-		local item<const> = registry:get(item_def.id)
+		assert(item_def.options.item_type == 'map_world1', 'world entrance room map item is missing')
+		local item<const> = registry:get(item_def.options.id)
 		assert(item ~= nil, 'world entrance room map item did not spawn')
 		progression.set(castle, 'staff1destroyed', true)
-		test.item_id = item_def.id
+		test.item_id = item_def.options.id
 		test.item = item
 		test.dying_state = player.state_machines:bind_state_path('/dying')
 		test.quiet_state = player.state_machines:bind_state_path('/quiet')

@@ -30,8 +30,8 @@ local emit_condition_source_destroyed<const> = function(castle, room_number, con
 		local enemy<const> = enemies[i]
 		if enemy.destroyed_condition == condition then
 			castle.events:emit('damage.resolved', {
-				target_id = enemy.id,
-				target_kind = enemy.kind,
+				target_id = enemy.options.id,
+				target_kind = enemy.definition_id:sub(7),
 				destroyed = true,
 				room_number = room_number,
 			})
@@ -97,18 +97,18 @@ function __bmsx_host_test.update()
 		local enemy_defs<const> = {}
 		for i = 1, #room.enemies do
 			local enemy_def<const> = room.enemies[i]
-			if enemy_def.kind == 'marspeinenaardappel' then
+			if enemy_def.definition_id == 'enemy.marspeinenaardappel' then
 				enemy_defs[#enemy_defs + 1] = enemy_def
 			end
 		end
 		local enemy_def<const> = enemy_defs[1]
 		assert(enemy_def.retain_defeat_in_region, 'room 106 enemy must retain defeat within world 1')
 		test.room106_enemy_defs = enemy_defs
-		test.enemy_id = enemy_def.id
-		local enemy<const> = registry:get(enemy_def.id)
+		test.enemy_id = enemy_def.options.id
+		local enemy<const> = registry:get(enemy_def.options.id)
 		assert(enemy ~= nil, 'room 106 enemy did not spawn')
 		destroy_enemy(enemy)
-		assert(progression.get(castle, enemy_def.id), 'enemy defeat was not retained in world 1')
+		assert(progression.get(castle, enemy_def.options.id), 'enemy defeat was not retained in world 1')
 		test.phase = 7
 	elseif phase == 7 then
 		castle:switch_room('up', 0, 0)
@@ -125,7 +125,7 @@ function __bmsx_host_test.update()
 		local enemy_defs<const> = test.room106_enemy_defs
 		local index<const> = test.room106_destroy_index
 		if index <= #enemy_defs then
-			local enemy<const> = registry:get(enemy_defs[index].id)
+			local enemy<const> = registry:get(enemy_defs[index].options.id)
 			assert(enemy ~= nil, 'room 106 enemy disappeared before it was defeated')
 			destroy_enemy(enemy)
 			test.room106_destroy_index = index + 1
@@ -190,7 +190,7 @@ function __bmsx_host_test.update()
 			end
 		end
 		assert(staff_def ~= nil, 'room 104 staff definition is missing')
-		assert(registry:get(staff_def.id) ~= nil, 'staff did not respawn on the next world visit')
+		assert(registry:get(staff_def.options.id) ~= nil, 'staff did not respawn on the next world visit')
 		emit_condition_source_destroyed(castle, 104, 'staff1destroyed')
 		emit_condition_source_destroyed(castle, 107, 'staff2destroyed')
 		emit_condition_source_destroyed(castle, 110, 'staff3destroyed')

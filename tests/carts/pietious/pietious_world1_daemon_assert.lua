@@ -25,7 +25,7 @@ end
 local find_daemon_def<const> = function(room)
 	for index = 1, #room.enemies do
 		local def<const> = room.enemies[index]
-		if def.kind == 'daemon' then
+		if def.definition_id == 'enemy.daemon' then
 			return def
 		end
 	end
@@ -56,7 +56,7 @@ function __bmsx_host_test.update()
 		player.y = 96
 		local def<const> = find_daemon_def(room)
 		assert(def ~= nil, 'room 100 has no daemon definition')
-		test.daemon_id = def.id
+		test.daemon_id = def.options.id
 		test.phase = 'admitted'
 		return false
 	end

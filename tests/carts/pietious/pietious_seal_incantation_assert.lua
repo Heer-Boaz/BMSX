@@ -17,7 +17,8 @@ __bmsx_host_test = {
 }
 
 function __bmsx_host_test.setup()
-	registry:get('d').request_new_game()
+	__bmsx_host_test.outgoing_director = registry:get('d')
+	__bmsx_host_test.outgoing_director.request_new_game()
 end
 
 function __bmsx_host_test.ready()
@@ -45,6 +46,8 @@ end
 
 function __bmsx_host_test.update()
 	local test<const> = __bmsx_host_test
+	-- State paths and probe actors belong to the admitted game, not the outgoing intro.
+	if registry:get('d') == test.outgoing_director then return false end
 	test.frames = test.frames + 1
 	assert(test.frames < 500, 'seal incantation scenario timed out phase=' .. test.phase)
 
@@ -82,7 +85,7 @@ function __bmsx_host_test.update()
 		if seal == nil then
 			return false
 		end
-		assert(seal.command == room.seal.text,
+		assert(seal.command == room.seal.options.command,
 			'seal instance did not retain the room-authored incantation')
 		test.phase = 'wrong_sequence'
 		return false

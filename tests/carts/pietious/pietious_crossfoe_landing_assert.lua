@@ -38,11 +38,11 @@ function __bmsx_host_test.update()
 		}, 0, 0, 0)
 		for index = 1, #room.enemies do
 			local definition<const> = room.enemies[index]
-			if definition.kind == 'crossfoe' then
+			if definition.definition_id == 'enemy.crossfoe' then
 				if test.cross_id == nil then
-					test.cross_id = definition.id
+					test.cross_id = definition.options.id
 				else
-					registry:get(definition.id):mark_for_disposal()
+					registry:get(definition.options.id):mark_for_disposal()
 				end
 			end
 		end

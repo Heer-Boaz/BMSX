@@ -58,14 +58,14 @@ function __bmsx_host_test.update()
 		local cross_count = 0
 		for i = 1, #room.enemies do
 			local def<const> = room.enemies[i]
-			if def.kind == 'breakablewall' then
-				test.wall_id = def.id
-			elseif def.kind == 'crossfoe' then
+			if def.definition_id == 'enemy.breakablewall' then
+				test.wall_id = def.options.id
+			elseif def.definition_id == 'enemy.crossfoe' then
 				cross_count = cross_count + 1
 				if cross_count == 1 then
-					test.destroyed_cross_id = def.id
+					test.destroyed_cross_id = def.options.id
 				else
-					test.live_cross_id = def.id
+					test.live_cross_id = def.options.id
 				end
 			end
 		end
@@ -122,8 +122,8 @@ function __bmsx_host_test.update()
 		local player<const> = registry:get('pietolon')
 		player.inventory_items.greenvase = false
 		local cloud_def<const> = room.enemies[1]
-		assert(cloud_def.kind == 'cloud', 'room 13 cloud definition is missing')
-		local cloud<const> = registry:get(cloud_def.id)
+		assert(cloud_def.definition_id == 'enemy.cloud', 'room 13 cloud definition is missing')
+		local cloud<const> = registry:get(cloud_def.options.id)
 		assert(cloud ~= nil, 'room 13 cloud did not spawn')
 		cloud.health = 1
 		local result<const> = combat_damage.resolve(cloud, combat_damage.build_weapon_request(
@@ -134,7 +134,7 @@ function __bmsx_host_test.update()
 		))
 		cloud:process_damage_result(result)
 		assert(progression.get(castle, 'cloud_1_destroyed'), 'cloud defeat did not retain its reveal condition')
-		test.vase_id = room.items[1].id
+		test.vase_id = room.items[1].options.id
 		test.phase = 'verify_vase'
 		return false
 	end

@@ -6,6 +6,7 @@ require('constants')
 local castle_map<const> = require('castle/map')
 local progression<const> = require('cartlib/progression')
 local room_spawner<const> = require('room/spawner')
+local shallow_copy<const> = require('cartlib/util/shallow_copy')
 local world_object<const> = require('cartlib/world/world_object')
 
 local castle<const> = {}
@@ -67,20 +68,20 @@ local build_progression_program<const> = function()
 			filter_targets[filter_index] = enemy_def
 			if enemy_def.retain_defeat_in_region then
 				rules[#rules + 1] = {
-					id = enemy_def.id,
+					id = enemy_def.options.id,
 					on = 'damage.resolved',
 					when_event = {
 						equals = {
-							target_id = enemy_def.id,
+							target_id = enemy_def.options.id,
 							destroyed = true,
 						},
 					},
 					set = {
-						{ key = enemy_def.id, value = true },
+						{ key = enemy_def.options.id, value = true },
 					},
 				}
 				region_reset_actions[#region_reset_actions + 1] = {
-					key = enemy_def.id,
+					key = enemy_def.options.id,
 					value = false,
 				}
 			end
@@ -102,14 +103,14 @@ local build_progression_program<const> = function()
 				}
 				append_condition_reveal(apply, destroyed_condition)
 				rules[#rules + 1] = {
-					id = 'condition.' .. enemy_def.id,
+					id = 'condition.' .. enemy_def.options.id,
 					on = 'damage.resolved',
 					when_all = {
 						{ key = destroyed_condition, equals = false },
 					},
 					when_event = {
 						equals = {
-							target_id = enemy_def.id,
+							target_id = enemy_def.options.id,
 							destroyed = true,
 						},
 					},
@@ -119,8 +120,8 @@ local build_progression_program<const> = function()
 					apply = apply,
 				}
 			end
-			if room_number == 106 and enemy_def.kind == 'marspeinenaardappel' then
-				world1_marspein_destroyed_keys[#world1_marspein_destroyed_keys + 1] = enemy_def.id
+			if room_number == 106 and enemy_def.definition_id == 'enemy.marspeinenaardappel' then
+				world1_marspein_destroyed_keys[#world1_marspein_destroyed_keys + 1] = enemy_def.options.id
 			end
 		end
 		local items<const> = room_template.items
@@ -129,13 +130,13 @@ local build_progression_program<const> = function()
 			local filter_index<const> = #filters + 1
 			filters[filter_index] = item.conditions
 			filter_targets[filter_index] = item
-			if world_item_inventory[item.item_type] then
-				persistent_item_ids[#persistent_item_ids + 1] = item.id
+			if world_item_inventory[item.options.item_type] then
+				persistent_item_ids[#persistent_item_ids + 1] = item.options.id
 			end
 		end
 		local inventory_rocks<const> = room_template.inventory_rocks
 		for i = 1, #inventory_rocks do
-			persistent_item_ids[#persistent_item_ids + 1] = 'drop.' .. inventory_rocks[i].id
+			persistent_item_ids[#persistent_item_ids + 1] = 'drop.' .. inventory_rocks[i].options.id
 		end
 		local seal<const> = room_template.seal
 		if seal ~= nil then
@@ -278,13 +279,12 @@ local build_progression_program<const> = function()
 			end,
 		},
 	})
+	local scene_filters<const> = {}
 	for i = 1, #filter_targets do
-		filter_targets[i].progression_filter = compiled_filters[i]
+		scene_filters[filter_targets[i]] = compiled_filters[i]
 	end
-	return program
+	return program, scene_filters
 end
-
-castle._progression_program = build_progression_program()
 
 local create_room_switch<const> = function(from_room_number, to_room_number, direction)
 	return {
@@ -328,7 +328,7 @@ function castle:sync_current_room_seal_instance()
 		end
 		return
 	end
-	if seal_instance ~= nil and seal_instance.id ~= seal.id then
+	if seal_instance ~= nil and seal_instance.id ~= seal.options.id then
 		seal_instance:mark_for_disposal()
 		seal_instance = nil
 		self.seal_instance = nil
@@ -343,19 +343,16 @@ function castle:sync_current_room_seal_instance()
 	end
 
 	if seal_instance == nil then
-		seal_instance = world:spawn('seal', {
-			id = seal.id,
-			space_id = world.active_space_id,
-			player_index = room.player.player_index,
-			command = seal.text,
-			pos = { x = seal.x, y = seal.y, z = 23 },
-		})
+		local options<const> = shallow_copy(seal.options)
+		options.space_id = world.active_space_id
+		options.player_index = room.player.player_index
+		seal_instance = world:spawn(seal.definition_id, options)
 		self.seal_instance = seal_instance
 	else
 		seal_instance:set_space(world.active_space_id)
-		seal_instance.x = seal.x
-		seal_instance.y = seal.y
-		seal_instance:set_z(23)
+		seal_instance.x = seal.options.pos.x
+		seal_instance.y = seal.options.pos.y
+		seal_instance:set_z(seal.options.pos.z)
 	end
 
 	seal_instance:set_imgid(sprite_id)
@@ -396,12 +393,12 @@ function castle:refresh_current_room_customizations()
 	if seal ~= nil then
 		if self:has_tag(castle_tags.seal_broken) then
 			if world_boss_defeated then
-				has_active_seal = progression.matches(self, seal.progression_filter)
+				has_active_seal = progression.matches(self, self._scene_filters[seal])
 			else
 				has_active_seal = false
 			end
 		else
-			has_active_seal = progression.matches(self, seal.progression_filter)
+			has_active_seal = progression.matches(self, self._scene_filters[seal])
 		end
 	end
 	set_tag_flag(self, castle_tags.seal_active, has_active_seal)
@@ -596,7 +593,7 @@ end
 function castle:sync_world_entrance_states_for_room(room_state)
 	local world_entrances<const> = room_state.world_entrances
 	for i = 1, #world_entrances do
-		local target<const> = world_entrances[i].target
+		local target<const> = world_entrances[i].options.target
 		if self.world_entrance_states[target] == nil then
 			self.world_entrance_states[target] = {
 				state = 'closed',
@@ -871,6 +868,7 @@ local define_castle_fsm<const> = function()
 end
 
 local register_castle_definition<const> = function()
+	castle._progression_program, castle._scene_filters = build_progression_program()
 	prefab.define({
 		def_id = 'castle',
 		class = castle,

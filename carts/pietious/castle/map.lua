@@ -1,11 +1,35 @@
 require('constants')
-local text<const> = require('cartlib/util/text')
+local scene_library<const> = require('cartlib/world/scene_library')
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
 
 local castle_map<const> = {}
-local empty_conditions<const> = {}
-local empty_object_defs<const> = {}
+local room_scenes<const> = {
+	[1] = require('scenes/rooms/room_001'),
+	[2] = require('scenes/rooms/room_002'),
+	[3] = require('scenes/rooms/room_003'),
+	[4] = require('scenes/rooms/room_004'),
+	[5] = require('scenes/rooms/room_005'),
+	[6] = require('scenes/rooms/room_006'),
+	[7] = require('scenes/rooms/room_007'),
+	[8] = require('scenes/rooms/room_008'),
+	[9] = require('scenes/rooms/room_009'),
+	[10] = require('scenes/rooms/room_010'),
+	[11] = require('scenes/rooms/room_011'),
+	[12] = require('scenes/rooms/room_012'),
+	[13] = require('scenes/rooms/room_013'),
+	[100] = require('scenes/rooms/room_100'),
+	[101] = require('scenes/rooms/room_101'),
+	[102] = require('scenes/rooms/room_102'),
+	[103] = require('scenes/rooms/room_103'),
+	[104] = require('scenes/rooms/room_104'),
+	[105] = require('scenes/rooms/room_105'),
+	[106] = require('scenes/rooms/room_106'),
+	[107] = require('scenes/rooms/room_107'),
+	[108] = require('scenes/rooms/room_108'),
+	[109] = require('scenes/rooms/room_109'),
+	[110] = require('scenes/rooms/room_110'),
+}
 
 -- local start_room_number = 100
 -- local start_room_number = 8
@@ -44,36 +68,6 @@ castle_map.map_world_proxies = {
 		{ x = 3, y = 4, room_number = 110, is_boss_room = false },
 		{ x = 2, y = 5, room_number = 100, is_boss_room = true },
 	},
-}
-
-local frontworld_blue_tiletypes<const> = {
-	frontworld_blue_l = true,
-	frontworld_blue_r = true,
-}
-
-local supported_enemy_kinds<const> = {
-	mijterfoe = true,
-	crossfoe = true,
-	zakfoe = true,
-	boekfoe = true,
-	muziekfoe = true,
-	stafffoe = true,
-	cloud = true,
-	marspeinenaardappel = true,
-	vlokspawner = true,
-	breakablewall = true,
-	disappearingwall = true,
-	daemon = true,
-}
-
-local wall_enemy_kinds<const> = {
-	breakablewall = true,
-	disappearingwall = true,
-}
-
-local draaideur_kind_by_type<const> = {
-	draaideur_blauw = 1,
-	draaideur_rood = 2, -- unused right now
 }
 
 local tile_x_to_world<const> = function(tile_x)
@@ -214,289 +208,48 @@ local build_spawn<const> = function(map_rows)
 	error('pietious castle_map failed to find spawn tile')
 end
 
-local resolve_wall_tiletype<const> = function(room_subtype, tiletype)
-	if frontworld_blue_tiletypes[tiletype] then
-		if room_subtype == 'castlegold' then
-			return 'castle_front_gold_1'
+-- These are cold indices into scene members, not copied placement records.
+local categories<const> = {
+	rock = 'rocks', world_item = 'items', lithograph = 'lithographs',
+	room_shrine = 'shrines', world_entrance = 'world_entrances', draaideur = 'draaideuren',
+}
+local conditional_categories<const> = { enemies = true, items = true }
+local index_members<const> = function(template, objects)
+	for i = 1, #objects do
+		local member<const> = objects[i]
+		local definition_id<const> = member.definition_id
+		local category = categories[definition_id]
+		if definition_id:sub(1, 6) == 'enemy.' then category = 'enemies' end
+		if category ~= nil then
+			local entries<const> = template[category]
+			entries[#entries + 1] = member
+		elseif definition_id == 'seal' then
+			template.seal = member
 		end
-		if room_subtype == 'world' then
-			return 'frontworld_l'
+		if member.blocks_room_collision then
+			template.wall_enemies[#template.wall_enemies + 1] = member
 		end
-		return 'castle_front_blue_1'
-	end
-	return tiletype
-end
-
-local build_enemies<const> = function(room_number, room_subtype, object_defs)
-	local enemies<const> = {}
-	local condition_dependencies<const> = {}
-	local wall_enemies<const> = {}
-	local enemy_index = 0
-
-	for i = 1, #object_defs do
-		local object_def<const> = object_defs[i]
-		local kind<const> = object_def.type
-		if supported_enemy_kinds[kind] then
-			enemy_index = enemy_index + 1
-			local enemy_id<const> = string.format('enemy_%03d_%02d', room_number, enemy_index)
-			local raw_conditions<const> = object_def.condition or empty_conditions
-			local retain_defeat_in_region<const> = object_def.retain_defeat_in_region
-			local conditions<const> = {}
-			if retain_defeat_in_region then
-				conditions[1] = {
-					key = enemy_id,
-					equals = false,
-				}
-			end
-			for j = 1, #raw_conditions do
-				conditions[#conditions + 1] = raw_conditions[j]
-			end
-			local enemy
-			if wall_enemy_kinds[kind] then
-				local area<const> = object_def.area
-				local left<const> = area[1]
-				local top<const> = area[2]
-				local right<const> = area[3]
-				local bottom<const> = area[4]
-				enemy = {
-					id = enemy_id,
-					kind = kind,
-					blocks_room_collision = true,
-					x = tile_x_to_world(left),
-					y = tile_y_to_world(top),
-					direction = nil,
-					damage = 0,
-					health = object_def.hp,
-					speedx = nil,
-					speedy = nil,
-					retain_defeat_in_region = retain_defeat_in_region,
-					destroyed_condition = object_def.destroyed_condition,
-					conditions = conditions,
-					width_tiles = right - left,
-					height_tiles = bottom - top,
-					tiletype = resolve_wall_tiletype(room_subtype, object_def.tiletype),
-					draw_z = draw_z_environment_wall,
-				}
-			else
-				local enemy_x<const> = tile_x_to_world(object_def.x or 0)
-				local enemy_y = tile_y_to_world(object_def.y or 0)
-				if kind == 'stafffoe' then
-					enemy_y = enemy_y + 2
-				end
-				enemy = {
-					id = enemy_id,
-					kind = kind,
-					x = enemy_x,
-					y = enemy_y,
-					direction = object_def.direction,
-					damage = object_def.damage or damage_enemy_contact_damage,
-					health = object_def.health,
-					speedx = object_def.speedx,
-					speedy = object_def.speedy,
-					retain_defeat_in_region = retain_defeat_in_region,
-					destroyed_condition = object_def.destroyed_condition,
-					conditions = conditions,
-					draw_z = draw_z_enemy,
-				}
-			end
-			enemies[#enemies + 1] = enemy
-			if enemy.blocks_room_collision then
-				wall_enemies[#wall_enemies + 1] = enemy
-			end
-			for j = 1, #raw_conditions do
-				local condition<const> = raw_conditions[j].key
-				local dependency = condition_dependencies[condition]
-				if dependency == nil then
-					dependency = {
-						enemies = {},
-						items = {},
-						affects_walls = false,
-					}
-					condition_dependencies[condition] = dependency
-				end
-				if enemy.blocks_room_collision then
-					dependency.affects_walls = true
-				end
-				if condition ~= enemy.destroyed_condition then
-					local dependent_enemies<const> = dependency.enemies
-					dependent_enemies[#dependent_enemies + 1] = enemy
-				end
-			end
+		if definition_id == 'rock' and member.options.item_type ~= nil
+		and world_item_inventory[member.options.item_type] then
+			template.inventory_rocks[#template.inventory_rocks + 1] = member
 		end
-	end
-
-	return enemies, condition_dependencies, wall_enemies
-end
-
-local build_rocks<const> = function(room_number, object_defs)
-	local rocks<const> = {}
-	local inventory_rocks<const> = {}
-	local rock_index = 0
-
-	for i = 1, #object_defs do
-		local object_def<const> = object_defs[i]
-		if object_def.type == 'rock' then
-			local item_type<const> = object_def.item
-			rock_index = rock_index + 1
-			local rock<const> = {
-				id = string.format('rock_%03d_%02d', room_number, rock_index),
-				x = tile_x_to_world(object_def.x),
-				y = tile_y_to_world(object_def.y),
-				item_type = item_type,
-				conditions = object_def.condition or empty_conditions,
-			}
-			rocks[#rocks + 1] = rock
-			if item_type ~= nil and world_item_inventory[item_type] then
-				inventory_rocks[#inventory_rocks + 1] = rock
-			end
-		end
-	end
-
-	return rocks, inventory_rocks
-end
-
-local build_items<const> = function(room_number, object_defs, condition_dependencies)
-	local items<const> = {}
-	local item_index = 0
-
-	for i = 1, #object_defs do
-		local object_def<const> = object_defs[i]
-		if object_def.type == 'item' then
-			item_index = item_index + 1
-			local id<const> = string.format('item_%03d_%02d', room_number, item_index)
-			local conditions<const> = object_def.condition or empty_conditions
-			local item<const> = {
-				id = id,
-				picked_key = 'item_picked_' .. id,
-				x = tile_x_to_world(object_def.x),
-				y = tile_y_to_world(object_def.y),
-				item_type = object_def.itemtype,
-				reveal_event = object_def.reveal_event,
-				conditions = conditions,
-			}
-			items[#items + 1] = item
+		local conditions<const> = member.conditions
+		if category ~= nil and conditional_categories[category] then
 			for j = 1, #conditions do
 				local condition<const> = conditions[j].key
-				local dependency = condition_dependencies[condition]
+				local dependency = template.condition_dependencies[condition]
 				if dependency == nil then
-					dependency = {
-						enemies = {},
-						items = {},
-						affects_walls = false,
-					}
-					condition_dependencies[condition] = dependency
+					dependency = { enemies = {}, items = {}, affects_walls = false }
+					template.condition_dependencies[condition] = dependency
 				end
-				local dependent_items<const> = dependency.items
-				dependent_items[#dependent_items + 1] = item
+				if member.blocks_room_collision then dependency.affects_walls = true end
+				if condition ~= member.destroyed_condition then
+					local dependents<const> = dependency[category]
+					dependents[#dependents + 1] = member
+				end
 			end
 		end
 	end
-
-	return items
-end
-
-local build_lithographs<const> = function(room_number, object_defs)
-	local lithographs<const> = {}
-	local lithograph_index = 0
-
-	for i = 1, #object_defs do
-		local object_def<const> = object_defs[i]
-		if object_def.type == 'lithograph' then
-			lithograph_index = lithograph_index + 1
-			lithographs[#lithographs + 1] = {
-				id = string.format('lithograph_%03d_%02d', room_number, lithograph_index),
-				x = tile_x_to_world(object_def.x),
-				y = tile_y_to_world(object_def.y),
-				text = object_def.text,
-			}
-		end
-	end
-
-	return lithographs
-end
-
-local build_shrines<const> = function(room_number, object_defs)
-	local shrines<const> = {}
-	local shrine_index = 0
-
-	for i = 1, #object_defs do
-		local object_def<const> = object_defs[i]
-		if object_def.type == 'shrine' then
-			shrine_index = shrine_index + 1
-			shrines[#shrines + 1] = {
-				id = string.format('shrine_%03d_%02d', room_number, shrine_index),
-				x = tile_x_to_world(object_def.x),
-				y = tile_y_to_world(object_def.y),
-				text_lines = text.split_lines(object_def.text),
-			}
-		end
-	end
-
-	return shrines
-end
-
-local build_seal<const> = function(room_number, object_defs)
-	for i = 1, #object_defs do
-		local object_def<const> = object_defs[i]
-		if object_def.type == 'seal' then
-			return {
-				id = string.format('seal_%03d_01', room_number),
-				x = tile_x_to_world(object_def.x),
-				y = tile_y_to_world(object_def.y),
-				text = object_def.text,
-				conditions = object_def.condition or empty_conditions,
-			}
-		end
-	end
-	return nil
-end
-
-local build_world_entrances<const> = function(room_number, object_defs)
-	local world_entrances<const> = {}
-	local entrance_index = 0
-
-	for i = 1, #object_defs do
-		local object_def<const> = object_defs[i]
-		if object_def.type == 'worldentrance' then
-			entrance_index = entrance_index + 1
-			local x<const> = tile_x_to_world(object_def.x)
-			local y<const> = tile_y_to_world(object_def.y)
-			world_entrances[#world_entrances + 1] = {
-				id = string.format('world_entrance_%03d_%02d', room_number, entrance_index),
-				x = x,
-				y = y,
-				target = object_def.target,
-				stair_x = x + world_entrance_trigger_x_offset,
-				stair_y = y + world_entrance_trigger_y_offset,
-			}
-		end
-	end
-
-	return world_entrances
-end
-
-local build_draaideuren<const> = function(room_number, object_defs)
-	local draaideuren<const> = {}
-	local door_index = 0
-
-	for i = 1, #object_defs do
-		local object_def<const> = object_defs[i]
-		local object_type<const> = object_def.type
-		local kind<const> = draaideur_kind_by_type[object_type]
-		if kind ~= nil then
-			door_index = door_index + 1
-			draaideuren[#draaideuren + 1] = {
-				id = string.format('draaideur_%03d_%02d', room_number, door_index),
-				tile_x = object_def.x + 1,
-				tile_y = object_def.y + 1,
-				x = tile_x_to_world(object_def.x),
-				y = tile_y_to_world(object_def.y),
-				kind = kind,
-			}
-		end
-	end
-
-	return draaideuren
 end
 
 local load_room_templates<const> = function()
@@ -508,41 +261,30 @@ local load_room_templates<const> = function()
 		local room_number<const> = tonumber(raw_room_number)
 		local room_links<const> = build_links(room_number, room_def.exits)
 		local map_rows<const> = room_def.map
-		local object_defs<const> = room_def.objects or empty_object_defs
-		local rocks<const>, inventory_rocks<const> = build_rocks(room_number, object_defs)
-		local enemies<const>, condition_dependencies<const>, wall_enemies<const> = build_enemies(
-			room_number,
-			room_def.subtype,
-			object_defs
-		)
-		local items<const> = build_items(room_number, object_defs, condition_dependencies)
+		local room_scene<const> = room_scenes[room_number]
+		room_scene.register()
 		local room_condition_reveal_events<const> = room_def.condition_reveal_events
 		if room_condition_reveal_events ~= nil then
 			for condition, event_name in pairs(room_condition_reveal_events) do
 				condition_reveal_events[condition] = event_name
 			end
 		end
-		templates[room_number] = {
+		local template<const> = {
 			room_number = room_number,
-			world_number = room_def.worldnumber or 0, -- Normalized to prevent bugs like indexing with string world numbers for events/progression
+			world_number = room_def.worldnumber or 0, -- Castle rooms belong to region 0.
 			room_subtype = room_def.subtype,
 			water = build_water_spec(room_number, room_def.water),
 			map_rows = map_rows,
 			spawn = build_spawn(map_rows),
 			room_links = room_links,
 			edge_gates = build_edge_gates(map_rows, room_links),
-			enemies = enemies,
-			condition_dependencies = condition_dependencies,
-			wall_enemies = wall_enemies,
-			rocks = rocks,
-			inventory_rocks = inventory_rocks,
-			items = items,
-			lithographs = build_lithographs(room_number, object_defs),
-			shrines = build_shrines(room_number, object_defs),
-			seal = build_seal(room_number, object_defs),
-			world_entrances = build_world_entrances(room_number, object_defs),
-			draaideuren = build_draaideuren(room_number, object_defs),
+			scene_id = room_scene.id,
+			enemies = {}, condition_dependencies = {}, wall_enemies = {},
+			rocks = {}, inventory_rocks = {}, items = {}, lithographs = {},
+			shrines = {}, world_entrances = {}, draaideuren = {},
 		}
+		index_members(template, scene_library.definition(room_scene.id).objects)
+		templates[room_number] = template
 	end
 
 	return templates, condition_reveal_events
@@ -553,17 +295,19 @@ local attach_world_transition_metadata<const> = function(room_templates)
 		local world_entrances<const> = template.world_entrances
 		for i = 1, #world_entrances do
 			local world_entrance<const> = world_entrances[i]
-			local spec<const> = world_transition_specs[world_entrance.target]
+			local spec<const> = world_transition_specs[world_entrance.options.target]
 			spec.castle_room_number = template.room_number
-			spec.castle_spawn_x = world_entrance.stair_x
-			spec.castle_spawn_y = world_entrance.stair_y
+			spec.castle_spawn_x = world_entrance.options.pos.x + world_entrance_trigger_x_offset
+			spec.castle_spawn_y = world_entrance.options.pos.y + world_entrance_trigger_y_offset
 		end
 	end
 end
 
 castle_map.start_room_number = start_room_number
-castle_map.room_templates, castle_map.condition_reveal_events = load_room_templates()
-attach_world_transition_metadata(castle_map.room_templates)
+function castle_map.initialize()
+	castle_map.room_templates, castle_map.condition_reveal_events = load_room_templates()
+	attach_world_transition_metadata(castle_map.room_templates)
+end
 castle_map.elevator_routes = build_elevator_routes()
 castle_map.world_transitions = world_transition_specs
 castle_map.world_transitions_by_number = {}

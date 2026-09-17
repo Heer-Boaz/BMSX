@@ -951,7 +951,7 @@ function player:collect_item(item_type, item_id)
 end
 
 function player:find_near_shrine()
-	local shrines<const> = self.room.shrines
+	local shrines<const> = self.room.shrine_instances
 	local player_left<const> = self.x
 	local player_top<const> = self.y
 	local player_right<const> = self.x + self.width
@@ -972,7 +972,7 @@ function player:find_near_shrine()
 end
 
 function player:find_world_entrance_for_unlock()
-	local world_entrances<const> = self.room.world_entrances
+	local world_entrances<const> = self.room.world_entrance_instances
 	local castle<const> = self.castle
 	for i = 1, #world_entrances do
 		local world_entrance<const> = world_entrances[i]
@@ -990,7 +990,7 @@ function player:find_world_entrance_for_unlock()
 end
 
 function player:find_near_open_world_entrance()
-	local world_entrances<const> = self.room.world_entrances
+	local world_entrances<const> = self.room.world_entrance_instances
 	local castle<const> = self.castle
 	for i = 1, #world_entrances do
 		local world_entrance<const> = world_entrances[i]

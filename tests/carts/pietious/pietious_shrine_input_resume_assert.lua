@@ -22,6 +22,8 @@ end
 
 function __bmsx_host_test.update()
 	local test<const> = __bmsx_host_test
+	-- State paths and probe actors belong to the admitted game, not the outgoing intro.
+	if registry:get('d') == test.outgoing_director then return false end
 	test.frames = test.frames + 1
 	assert(test.frames < 400, 'shrine resume scenario timed out phase=' .. test.phase)
 
@@ -40,9 +42,10 @@ function __bmsx_host_test.update()
 		or not director.state_machines:matches_state(test.room_state) then
 			return false
 		end
-		castle.current_room_number = 4
+		local from<const> = castle.current_room_number
 		room:load_room(4)
-		local shrine<const> = room.shrines[1]
+		castle:commit_room_switch({ from_room_number = from, to_room_number = 4, direction = 'right' }, 0, 5, 12)
+		local shrine<const> = room.shrine_instances[1]
 		player.state_machines:transition_to('/quiet')
 		player.x = shrine.x
 		player.y = shrine.y

@@ -53,8 +53,8 @@ function __bmsx_host_test.update()
 	if test.phase == 'destroy_cloud' then
 		assert(room.room_number == 13, 'owned green vase scenario did not enter room 13')
 		local cloud_def<const> = room.enemies[1]
-		assert(cloud_def.kind == 'cloud', 'room 13 cloud definition is missing')
-		local cloud<const> = registry:get(cloud_def.id)
+		assert(cloud_def.definition_id == 'enemy.cloud', 'room 13 cloud definition is missing')
+		local cloud<const> = registry:get(cloud_def.options.id)
 		assert(cloud ~= nil, 'room 13 cloud did not spawn')
 		cloud.health = 1
 		local result<const> = combat_damage.resolve(cloud, combat_damage.build_weapon_request(
@@ -65,7 +65,7 @@ function __bmsx_host_test.update()
 		))
 		cloud:process_damage_result(result)
 		assert(progression.get(castle, 'cloud_1_destroyed'), 'cloud defeat did not retain its condition')
-		test.vase_id = room.items[1].id
+		test.vase_id = room.items[1].options.id
 		test.phase = 'verify'
 		return false
 	end

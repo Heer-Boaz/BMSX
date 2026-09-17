@@ -21,6 +21,11 @@ local opening_visual_event<const> = 'world_entrance.opening.visual'
 local world_entrance<const> = {}
 world_entrance.__index = world_entrance
 
+function world_entrance:onspawn()
+	self.stair_x = self.x + world_entrance_trigger_x_offset
+	self.stair_y = self.y + world_entrance_trigger_y_offset
+end
+
 function world_entrance:set_entrance_state(entrance_state)
 	self.entrance_state = entrance_state
 	self:set_imgid(world_entrance_sprite_ids[entrance_state])

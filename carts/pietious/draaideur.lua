@@ -33,6 +33,11 @@ local opening_rightward_timeline_id<const> = 'draaideur.opening_rightward'
 local draaideur<const> = {}
 draaideur.__index = draaideur
 
+function draaideur:onspawn()
+	self.tile_x = self.x // room_tile_size + 1
+	self.tile_y = (self.y - room_tile_origin_y) // room_tile_size + 1
+end
+
 function draaideur:touches_player(player, walking_left, walking_right)
 	if walking_left then
 		return rect_overlaps(

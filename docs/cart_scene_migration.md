@@ -67,6 +67,25 @@ constructs the initial room after World update. The `init_epoch` /
 registers definitions; it does not decide the next game's presentation mode.
 The cinematic-flow and death/restart scenarios both pass after this cleanup.
 
-In progress: preserve the persistent castle/player/room state while moving
-the 24 rooms' 122 authored placements and presentation compositions to scenes.
-Room eligibility and progression remain cart responsibilities.
+The 24 room compositions now author all 122 placed actors in
+`scenes/rooms/room_*.lua`. Terrain, links and region topology remain in the map
+resource. The YAML object lists and their placement decoder have been removed.
+Cold category/dependency indices reference scene members directly; they do not
+copy positions into a second representation. Compiled progression filters live
+in castle's program, never on authored scene members. Retained enemy defeat is
+checked once by admission, instead of also duplicating it in the conditions.
+
+The persistent castle, player and room own inventory, defeated enemies and
+destroyed rocks. Room departure disposes placed actors through World. Reentry
+creates eligible actors with fresh bindings without resurrecting persistent
+pickups. Doors derive collision tiles from placement; shrine and entrance input
+queries use admitted objects. Procedural drops and projectiles remain procedural.
+
+All 30 Pietious scenarios pass after the room migration, including Enter/halo,
+pause, door, seal, shrine, region respawn and a new scene ownership/reentry test.
+The 24 room scanouts plus the final image match the pre-migration ROM exactly.
+Several older scenarios bound state paths or spawned probes before their
+requested restart committed; they now wait for the incoming director identity.
+
+In progress: author the independent presentation visuals and validate editing
+room and presentation source through Studio.

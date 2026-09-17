@@ -248,8 +248,8 @@ local build_screen_rows<const> = function(map_rows, draaideuren)
 
 	for i = 1, #draaideuren do
 		local draaideur<const> = draaideuren[i]
-		local tx<const> = draaideur.tile_x
-		local ty<const> = draaideur.tile_y
+		local tx<const> = draaideur.options.pos.x // room_tile_size + 1
+		local ty<const> = (draaideur.options.pos.y - room_tile_origin_y) // room_tile_size + 1
 		for row = ty, ty + 2 do
 			local line<const> = screen_rows[row]
 			screen_rows[row] = line:sub(1, tx - 1) .. '.' .. line:sub(tx + 1)
@@ -411,9 +411,9 @@ local build_logic_rows<const> = function(room_state)
 	local destroyed_rock_ids<const> = room_state.destroyed_rock_ids
 	for i = 1, #room_state.rocks do
 		local rock<const> = room_state.rocks[i]
-		if not destroyed_rock_ids[rock.id] then
-			local tx0<const> = ((rock.x - room_state.tile_origin_x) // room_state.tile_size) + 1
-			local ty0<const> = ((rock.y - room_state.tile_origin_y) // room_state.tile_size) + 1
+		if not destroyed_rock_ids[rock.options.id] then
+			local tx0<const> = ((rock.options.pos.x - room_state.tile_origin_x) // room_state.tile_size) + 1
+			local ty0<const> = ((rock.options.pos.y - room_state.tile_origin_y) // room_state.tile_size) + 1
 			for dy = 1, rock_tile_height do
 				local ty<const> = ty0 + dy - 1
 				local row = logic_rows[ty]
@@ -546,6 +546,7 @@ local apply_room_template<const> = function(room_state, template)
 	room_state.tile_columns = #map_rows[1]
 	room_state.map_rows = map_rows
 	room_state.water = template.water
+	room_state.scene_id = template.scene_id
 	room_state.enemies = template.enemies
 	room_state.condition_dependencies = template.condition_dependencies
 	room_state.wall_enemies = template.wall_enemies
@@ -854,6 +855,8 @@ function room_object:ctor()
 	self.wall_instances = {}
 	self.draaideur_instances = {}
 	self.lithograph_instances = {}
+	self.shrine_instances = {}
+	self.world_entrance_instances = {}
 	self.logic_rows = {}
 	self.room_tile_count = 0
 	self.water_tile_count = 0

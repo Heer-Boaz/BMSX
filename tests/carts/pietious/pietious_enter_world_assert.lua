@@ -42,10 +42,11 @@ function __bmsx_host_test.update(_frame, _current_music)
 		local room<const> = registry:get('room')
 		local player<const> = registry:get('pietolon')
 		local castle_room_number<const> = 8
-		local selected_entrance<const> = castle_map.room_templates[castle_room_number].world_entrances[1]
+		local from<const> = castle.current_room_number
 
 		room:load_room(castle_room_number)
-		castle.current_room_number = castle_room_number
+		castle:commit_room_switch({ from_room_number = from, to_room_number = castle_room_number, direction = 'left' }, 0, world_transition.castle_map_x, world_transition.castle_map_y)
+		local selected_entrance<const> = room.world_entrance_instances[1]
 		castle.world_entrance_states = {}
 		castle:sync_world_entrance_states_for_room(room)
 		room.map_id = 0
