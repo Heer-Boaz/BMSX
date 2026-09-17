@@ -45,6 +45,7 @@ export function layoutSceneEditor(input: SceneEditorInput, contentChanged: boole
 
 	if (measured || layout.projectedOffsetTop !== input.details.offsetTop) {
 		for (const property of input.properties) input.details.project(property.contentBounds, property.bounds);
+		for (const property of input.optionProperties) input.details.project(property.contentBounds, property.bounds);
 		layout.projectedOffsetTop = input.details.offsetTop;
 	}
 	return measured;
@@ -65,6 +66,13 @@ function measureSceneDetails(input: SceneEditorInput, width: number): number {
 	for (const property of input.properties) {
 		write_rect_bounds(property.contentBounds, fieldLeft, top, width - PADDING, top + fieldHeight);
 		property.text = truncateTextToWidth(uppercaseOutsideStrings(property.sourceText), width - PADDING - fieldLeft - 6);
+		top += fieldHeight + PADDING;
+	}
+	if (input.optionProperties.length > 0) top = appendDetailsText(input, 'OPTIONS / LUA VALUES', textWidth, top);
+	for (const property of input.optionProperties) {
+		top = appendDetailsText(input, uppercaseOutsideStrings(property.label), textWidth, top);
+		write_rect_bounds(property.contentBounds, PADDING, top, width - PADDING, top + fieldHeight);
+		property.text = truncateTextToWidth(uppercaseOutsideStrings(property.preview), textWidth - 6);
 		top += fieldHeight + PADDING;
 	}
 	top = appendDetailsText(input, node.element.scene.resolution === 'partial' ? 'PARTIAL DEFINITION' : 'DEFINITION ONLY',

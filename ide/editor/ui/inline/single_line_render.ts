@@ -25,7 +25,9 @@ export function drawSingleLineField(field: TextField, view: SingleLineFieldViewp
 	} else {
 		api.blit_text_inline_span_with_font(field.text, view.start, view.end, left, top, 0, color, font);
 	}
-	const caretLeft = left + view.advances[selection.cursorOffset] - view.offset;
-	drawInlineCaret(api, field, caretLeft, top, caretLeft + view.caretWidth, top + editorViewState.lineHeight,
-		caretLeft, field.focusTarget.hasFocus);
+	if (field.focusTarget.hasFocus) {
+		const caretLeft = left + view.advances[selection.cursorOffset] - view.offset;
+		drawInlineCaret(api, field, caretLeft, top, caretLeft + view.caretWidth, top + editorViewState.lineHeight,
+			caretLeft, true);
+	}
 }

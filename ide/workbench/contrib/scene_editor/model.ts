@@ -18,6 +18,7 @@ export type SceneSourceObject = {
 	readonly field: LuaTableField;
 	readonly memberId: LuaExpression;
 	readonly definitionId: LuaExpression;
+	readonly options: LuaTableField | null;
 	readonly position: SceneSourcePosition | null;
 };
 

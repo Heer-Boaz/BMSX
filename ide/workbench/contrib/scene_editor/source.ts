@@ -123,6 +123,7 @@ function buildSceneObject(field: LuaTableField, table: LuaTableConstructorExpres
 		field,
 		memberId: memberId.value,
 		definitionId: definitionId.value,
+		options,
 		position: options !== null && options.value.kind === LuaSyntaxKind.TableConstructorExpression
 			? findScenePosition(options.value)
 			: null,

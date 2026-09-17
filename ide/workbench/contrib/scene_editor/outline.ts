@@ -4,6 +4,7 @@ import { luaSourceRangeToTextRange, readLuaSourceRange, readLuaTableFieldInteger
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
 import type { SceneSourceDefinition, SceneSourceDocument, SceneSourceEntry } from './model';
 import type { SceneEditorInput } from './editor_input';
+import { collectSceneOptionProperties } from './option_properties';
 
 type SceneOutlineSource = {
 	readonly scene: SceneSourceDefinition;
@@ -61,6 +62,8 @@ export function selectSceneOutlineRow(input: SceneEditorInput, index: number): v
 	const row = input.outline.rows[index]?.element;
 	input.selectionRange.start = row === undefined ? 0 : row.span.start;
 	input.selectionRange.end = row === undefined ? 0 : row.span.end;
+	input.optionProperties = row?.kind === 'member' && row.entry.kind === 'object'
+		? collectSceneOptionProperties(input.workingCopy.buffer, row.entry) : [];
 	for (const property of input.properties) {
 		const field = row?.kind === 'member' && row.entry.kind === 'object' && row.entry.position !== null
 			? row.entry.position[property.axis] : null;

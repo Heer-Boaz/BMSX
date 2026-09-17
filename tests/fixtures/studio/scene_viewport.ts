@@ -4,7 +4,7 @@ local function compute_x() return 14 end
 local function compute_z() return 42 end
 viewport_scenes.register('viewport proof with a deliberately long scene name', {
 	objects = {
-		{ member_id = 'subject', definition_id = 'proof.actor', options = { pos = { x = 11, y = -22, z = 33 } } },
+		{ member_id = 'subject', definition_id = 'proof.actor', options = { pos = { x = 11, y = -22, z = 33 }, color = 0xffabcdef, visible = true, region = { width = 16, height = 24 } } },
 		{ member_id = 'source only', definition_id = 'proof.dynamic', options = { pos = { x = compute_x(), y = 2, z = compute_z() } } },
 	},
 })

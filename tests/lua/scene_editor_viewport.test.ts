@@ -19,6 +19,7 @@ import { HostOverlayQuadStream } from '../../machine/ts/render/host_overlay/quad
 import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { inputFocus } from '../../ide/input/focus';
+import { SceneOptionEditor } from '../../ide/workbench/contrib/scene_editor/option_editor';
 import * as colors from '../../ide/common/constants';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
@@ -51,6 +52,10 @@ for (const font of ['tiny', 'msx'] as const) for (const width of [256, 384]) {
 		input.details.scrollbar.reveal(row.contentBounds.top, row.contentBounds.bottom, 2);
 		layoutSceneEditor(input, false);
 		assert.ok(row.bounds.top >= input.details.bounds.top && row.bounds.bottom <= input.details.bounds.bottom);
+		const option = input.optionProperties.at(-1)!;
+		input.details.scrollbar.reveal(option.contentBounds.top, option.contentBounds.bottom, 2);
+		layoutSceneEditor(input, false);
+		assert.ok(option.bounds.top >= input.details.bounds.top && option.bounds.bottom <= input.details.bounds.bottom);
 		const runs = input.detailsText.slice();
 		const contentBounds = row.contentBounds;
 		const screenBounds = row.bounds;
@@ -89,12 +94,14 @@ test('scene painting publishes nested content clips and reuses quad storage on s
 		const field = new ValueInput(parent, { text: '', isSupported: () => false, writeText: async () => {} }, INTEGER_INPUT_FORMAT, () => assert.fail('paint accepted a value'));
 		field.setValue(property.value!); return field;
 	});
-	t.after(() => { for (const control of controls) control.dispose(); });
+	const options = new SceneOptionEditor(parent, { text: '', isSupported: () => false, writeText: async () => {} }, () => assert.fail('paint committed source'), () => {});
+	options.bind(input);
+	t.after(() => { for (const control of controls) control.dispose(); options.clear(); });
 	const overlay = createHostOverlayFixture(384, 288); const stream = new HostOverlayQuadStream();
 	const commands = { isEnabled: () => true };
 	const draw = () => {
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-		drawSceneEditor(input, controls, commands, true); overlay.renderer.endFrame();
+		drawSceneEditor(input, controls, options.controls, commands, true); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(); stream.reset(384, 288);
 		for (let index = 0; index < frame.commandCount; index += 1) stream.appendEntry(frame.commandKinds[index], frame.commandRefs[index]);
 		return frame;

@@ -13,6 +13,7 @@ import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
 import { sourceTabDescription } from '../../ui/tab/titles';
 import type { SceneSourceDocument } from './model';
+import type { SceneOptionProperty } from './option_properties';
 
 export const POSITION_AXES = ['x', 'y', 'z'] as const;
 
@@ -36,6 +37,7 @@ export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, '
 		axis, label: axis.toUpperCase(), field: null as LuaTableField | null,
 		value: null as number | null, sourceText: '', text: '', contentBounds: create_rect_bounds(), bounds: create_rect_bounds(),
 	}));
+	public optionProperties: readonly SceneOptionProperty[] = [];
 	public readonly layout: FullWidthWorkbenchLayout & { detailsLeft: number; projectedOffsetTop: number } = {
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
 		viewportWidth: -1, viewportHeight: -1, codeAreaTop: -1, codeAreaBottom: -1,

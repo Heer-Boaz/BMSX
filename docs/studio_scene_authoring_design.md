@@ -5,8 +5,15 @@ De eerste volledige cartmigratie staat in
 179 afzonderlijke actorplaatsingen, inclusief Studio-edit/save/reboot en het
 bestaande World-disposalpad.
 
-Status: **Directe opt-in scenedefinitie en eerste source-propertyview gebouwd;
-retained live-reconcile nog niet ontworpen.**
+Status (2026-09-17): **De drie carts in scope gebruiken scenes met expliciete
+levensduur en afzonderlijke sessiestatus. Studio bewerkt posities en authored
+Lua-opties; live-reconcile is nog niet gebouwd.**
+
+Het actuele ownercontract en de huidige editorbediening staan in
+[Scene definitions, instances and game state](scene_lifetimes.md). De eerste
+representatiekeuze en de gedateerde metingen hieronder beschrijven eerdere
+stappen, voordat live scenes hun eigen objectlevensduur kregen. Die historische
+meting is geen uitspraak over de huidige ROM-grootte of World-hookkosten.
 
 Scenes zijn een legitiem engine- en Studio-concept. De fout in de eerste
 implementatie was niet dat zij structured scenes introduceerde of dat een cart
@@ -225,12 +232,15 @@ voor ongeveer 0,53% van één 50-Hz-CPU-frame aan eenmalig loadwerk. De echte
 Pietious-rooms en Nemesis-stage krijgen daarom later een afzonderlijk
 placementbesluit; zij blokkeren de directe root-scene niet.
 
-## Performance- en ownershipgate
+## Actuele performance- en ownershipgate
 
-- Een release-O3-cart zonder scene-import is bytegelijk en heeft exact nul
-  scene-init, tables, closures, branches of framewerk.
-- `World:spawn`, update, render, Registry en de bestaande mutation barrier
-  veranderen niet om een sceneconsument mogelijk te maken.
+- Een cart zonder scene-import krijgt geen scenedefinities, scene-instances of
+  scene-initloop. De gedeelde koude World-hooks worden bij een vergelijking van
+  de huidige runtime meegemeten; de historische bytegelijkheid gold vóór die
+  expliciete objectownership.
+- `World:spawn` en teardown publiceren en verwijderen sceneownership op hun
+  bestaande koude grenzen. Update, render en Registry krijgen geen extra
+  scene-scheduler of scene-scan.
 - Scene admission draait niet als system en wordt niet iedere tick bezocht.
 - Een definitie wordt niet eerst naar een tweede verzameling Lua-records en
   maps gekopieerd. Verlaging moet minder retained gueststate of minder herhaald

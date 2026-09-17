@@ -6,8 +6,9 @@ import { drawValueInput } from '../../../editor/ui/inline/value_input_render';
 import { api } from '../../../runtime/overlay_api';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import type { SceneEditorInput } from './editor_input';
+import type { LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
 
-export function drawSceneEditor(input: SceneEditorInput, controls: readonly ValueInput<number>[], commands: EditorCommandEnablement, detailsFocused: boolean): void {
+export function drawSceneEditor(input: SceneEditorInput, controls: readonly ValueInput<number>[], optionControls: readonly ValueInput<LuaFieldValueEdit>[], commands: EditorCommandEnablement, detailsFocused: boolean): void {
 	const { layout, outline } = input;
 	const font = editorViewState.font.renderFont();
 	const color = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
@@ -46,6 +47,12 @@ export function drawSceneEditor(input: SceneEditorInput, controls: readonly Valu
 			if (property.bounds.bottom <= bounds.top || property.bounds.top >= bounds.bottom) continue;
 			api.blit_text_inline_with_font(property.label, bounds.left + 4, property.bounds.top + 2, 0, color, font);
 			if (property.value !== null && !input.workingCopy.readOnly) drawValueInput(controls[index], property.bounds);
+			else api.blit_text_inline_with_font(property.text, property.bounds.left + 3, property.bounds.top + 2, 0, constants.COLOR_STATUS_TEXT, font);
+		}
+		for (let index = 0; index < optionControls.length; index += 1) {
+			const property = input.optionProperties[index];
+			if (property.bounds.bottom <= bounds.top || property.bounds.top >= bounds.bottom) continue;
+			if (!optionControls[index].field.readOnly) drawValueInput(optionControls[index], property.bounds);
 			else api.blit_text_inline_with_font(property.text, property.bounds.left + 3, property.bounds.top + 2, 0, constants.COLOR_STATUS_TEXT, font);
 		}
 	}

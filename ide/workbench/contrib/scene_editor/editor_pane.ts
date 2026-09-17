@@ -29,6 +29,8 @@ import { POSITION_AXES, type SceneEditorInput } from './editor_input';
 import { drawSceneEditor } from './render';
 import { layoutSceneEditor } from './layout';
 import { selectSceneOutlineRow } from './outline';
+import { SceneOptionEditor } from './option_editor';
+import type { SceneOptionProperty } from './option_properties';
 
 /** Concrete editable view: document history here, draft history in each field. */
 export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInput> {
@@ -38,6 +40,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	}
 
 	public readonly controls: readonly ValueInput<number>[];
+	public readonly options: SceneOptionEditor;
 	private status = '';
 	private boundVersion = 0;
 	private readonly actionBar: WorkbenchActionBarControl;
@@ -59,6 +62,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 			this.input.workingCopy.pushEditOperations(createLuaTableFieldIntegerEdits(this.input.workingCopy.buffer, property.field!, value)!);
 		}, () => this.update()));
 		this.unbindFieldFocus = this.controls.map((control, index) => control.field.focusTarget.onDidFocus(() => this.revealProperty(index)));
+		this.options = new SceneOptionEditor(this.focusTarget, clipboard, () => this.update(), property => this.revealOption(property));
 		this.focusTarget.registerCommand('undo', {
 			isEnabled: () => !this.input.workingCopy.readOnly && this.input.workingCopy.canUndo,
 			run: () => { executeTextHistoryCommand(this.input.workingCopy, 'undo'); },
@@ -90,16 +94,24 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 			for (let index = 0; index < this.controls.length; index += 1) {
 				if (this.controls[index].field.focusTarget.hasFocus) this.revealProperty(index);
 			}
+			for (let index = 0; index < this.options.controls.length; index += 1) {
+				if (this.options.controls[index].field.focusTarget.hasFocus) this.revealOption(this.input.optionProperties[index]);
+			}
 		}
 		this.details.update();
 		this.status = SOURCE_STATUS[getTextFileRuntimeSourceStatus(this.sources, this.input.workingCopy)];
 	}
 
-	public draw(): void { drawSceneEditor(this.input, this.controls, this.commands, this.details.focusTarget.hasFocus); }
+	public draw(): void { drawSceneEditor(this.input, this.controls, this.options.controls, this.commands, this.details.focusTarget.hasFocus); }
 
 	private revealProperty(index: number): void {
 		const bounds = this.input.properties[index].contentBounds;
 		this.input.details.scrollbar.reveal(bounds.top, bounds.bottom, 2);
+		layoutSceneEditor(this.input, false);
+	}
+
+	private revealOption(property: SceneOptionProperty): void {
+		this.input.details.scrollbar.reveal(property.contentBounds.top, property.contentBounds.bottom, 2);
 		layoutSceneEditor(this.input, false);
 	}
 
@@ -130,6 +142,13 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 				control.field.focusTarget.previous = previous;
 				previous = control.field.focusTarget;
 			}
+		}
+		this.options.bind(this.input);
+		for (const control of this.options.controls) {
+			if (control.field.readOnly) continue;
+			previous.next = control.field.focusTarget;
+			control.field.focusTarget.previous = previous;
+			previous = control.field.focusTarget;
 		}
 		previous.next = this.actionBar.focusTarget;
 		this.actionBar.focusTarget.previous = previous;
@@ -179,6 +198,15 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 				return true;
 			}
 		}
+		for (let index = 0; index < this.options.controls.length; index += 1) {
+			const control = this.options.controls[index];
+			const bounds = this.input.optionProperties[index].bounds;
+			if (!control.field.readOnly && ((point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.details.bounds)
+				&& point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds)) || control.field.pointerSelecting)) {
+				control.handlePointer(bounds.left + 3, snapshot.viewportX, justPressed, ((snapshot.pressedButtons & PointerButton.Primary) !== 0));
+				return true;
+			}
+		}
 		if (this.details.handlePointer(snapshot)) return true;
 		const index = workbenchListRowIndexAtPosition(this.input.outline, snapshot.viewportX, snapshot.viewportY);
 		if (index >= 0) pointerHover.visit(this);
@@ -210,6 +238,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		pointerHover.release(this);
 		this.actionBar.dispose();
 		this.details.dispose();
+		this.options.clear();
 		for (const unbind of this.unbindFieldFocus) unbind();
 		for (const control of this.controls) control.dispose();
 		super.dispose();
@@ -219,6 +248,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		pointerHover.release(this);
 		this.actionBar.clearInput();
 		this.details.clearInput();
+		this.options.clear();
 		super.clearInput();
 	}
 }

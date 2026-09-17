@@ -1,5 +1,5 @@
 import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path';
-import { openScene, editPosition } from './studio_scene_authoring';
+import { openScene, editPosition, editOption, focusOption, typeSourceText } from './studio_scene_authoring';
 import { selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
 
@@ -35,10 +35,35 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	const originalLogo = registered('intro.logo');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
-	await editPosition(test, await openScene(test, 'intro', 2), 1, 0, 48);
-	await editPosition(test, await openScene(test, 'gameplay', 2), 0, 0, 168);
+	const intro = await openScene(test, 'intro', 2);
+	await editPosition(test, intro, 1, 0, 48);
+	await editOption(test, intro, 0, 'color', '0xff305070');
+	await press('ControlLeft', 'KeyZ');
+	check(intro.workingCopy.buffer.getText().includes('color = 0xffffffff'), 'document Undo restores the authored color');
+	await press('ControlLeft', 'KeyY');
+	await press('ControlLeft', 'KeyS');
+	await until(() => !intro.workingCopy.dirty, 'save the redone color');
+	await editOption(test, intro, 1, 'region.width', '160');
+	await test.capture?.('options-editor');
+	const gameplay = await openScene(test, 'gameplay', 2);
+	await editPosition(test, gameplay, 0, 0, 168);
+	await selectMember(test, gameplay, 1);
+	await test.click(gameplay.actionBar.items.find(item => item.command === 'sceneEditor.moveMemberUp')!.bounds);
+	check(gameplay.outline.roots[0].children[0].element.label === "'hud'", 'Studio moved HUD before the player');
+	await press('ControlLeft', 'KeyS');
+	await until(() => !gameplay.workingCopy.dirty, 'persist the reordered gameplay members');
 	await editPosition(test, await openScene(test, 'rooms/room_002', 5), 3, 0, 112);
-	await editPosition(test, await openScene(test, 'effects', 4), 3, 0, 16);
+	const effects = await openScene(test, 'effects', 4);
+	await editPosition(test, effects, 3, 0, 16);
+	await editOption(test, effects, 3, 'text', "'Scene victory!'");
+	const visibility = await focusOption(test, effects, 0, 'visible');
+	await typeSourceText(test, 'true');
+	await press('Enter');
+	check(visibility.field.text === 'true', 'boolean options accept ordinary Lua values');
+	await press('ControlLeft', 'KeyZ');
+	check(effects.optionProperties.find(property => property.label === 'visible')!.sourceText === 'false', 'Undo restores the hidden effect before gameplay');
+	await press('ControlLeft', 'KeyS');
+	await until(() => !effects.workingCopy.dirty, 'save the original effect visibility');
 	await editPosition(test, await openScene(test, 'inventory', 12), 3, 0, 136);
 	check(guest.readStringMember(originalLogo, 'x') === 40, 'saving placement leaves the outgoing world untouched');
 	await test.capture?.('inventory-editor');
@@ -47,10 +72,15 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 		&& registered('d') !== null && registered('intro.logo') !== originalLogo
 		&& !runtime.completionCallPending(), 'saved scenes boot a new Pietious world');
 	check(guest.readStringMember(registered('intro.logo'), 'x') === 48, 'intro uses the edited logo anchor');
+	const backgroundColor = guest.readStringMember(registered('intro.background'), 'color');
+	check(backgroundColor === 0xff305070, `scene construction uses the edited background color: actual=${backgroundColor}`);
 	check(guest.readStringMember(guest.readStringMember(registered('pietolon'), 'status'), 'spawn_x') === 168, 'respawn anchor comes from the player scene');
 	check(guest.readStringMember(registered('effects.victory_caption'), 'x') === 16,
 		'the director retains the edited victory caption placement');
+	check(guest.formatValue(guest.readStringMember(registered('effects.victory_caption'), 'text')) === 'Scene victory!',
+		'caption construction uses the edited string expression');
 	const logo = guest.readStringMember(registered('intro.logo'), 'sprite_component');
+	check(guest.readStringMember(logo, 'region_width') === 160, 'nested region option reaches the actual sprite component');
 	await until(() => guest.readStringMember(logo, 'visible') === true
 		&& (guest.readStringMember(logo, 'region_height') as number) >= 24, 'the edited logo reveals normally');
 	await test.capture?.('intro');
@@ -83,6 +113,6 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	const reopened = await openScene(test, 'rooms/room_002', 5);
 	await selectMember(test, reopened, 3);
 	check(reopened.properties[0].value === 112, 'saved room placement survives gameplay and reopening');
-	console.info('STUDIO: Pietious intro/gameplay/room/inventory authoring, save, reboot, walking and Enter/halo PASS');
+	console.info('STUDIO: Pietious named-member reorder, option/position authoring, save, reboot, walking and Enter/halo PASS');
 	return { hostFrames: test.observations.hostFrames, logoX: 48, rockX: 112, playerX: 168, haloX: 136 };
 }
