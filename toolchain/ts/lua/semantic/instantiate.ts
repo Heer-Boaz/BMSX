@@ -14,6 +14,12 @@ import { SemanticDependencyIndex, type SemanticQueryDependencies } from './query
 import { BidirectionalTermRelation, TermRelation } from './term_relation';
 import type { CallValueEntry, DeclarationValueEntry } from './value_graph';
 
+/**
+ * Call-string length (k) that keeps argument-distinct contexts. Empirical: the
+ * semantic suite needs k >= 2..3 (k = 1 merges receiver and keyed-shape contexts).
+ */
+const MAX_CALL_CONTEXT_DEPTH = 3;
+
 export class WriteSet {
 	private readonly baseDependencies: SemanticDependencyIndex;
 	private readonly nameDependencies: SemanticDependencyIndex;
@@ -121,6 +127,7 @@ export class InstantiationFrames {
 	private readonly summaries: FunctionSummaryID[] = [0 as FunctionSummaryID];
 	private readonly closures: number[] = [0];
 	private readonly callers: number[] = [0];
+	private readonly depths: number[] = [0];
 	private readonly argumentOffsets: number[] = [0];
 	private readonly argumentCounts: number[] = [0];
 	private readonly arguments: TermID[] = [];
@@ -169,6 +176,7 @@ export class InstantiationFrames {
 		this.summaries.push(summary);
 		this.closures.push(closure);
 		this.callers.push(caller);
+		this.depths.push(this.depths[caller] + 1);
 		this.argumentOffsets.push(offset);
 		this.argumentCounts.push(args.length);
 		for (let argumentIndex = 0; argumentIndex < args.length; argumentIndex += 1) {
@@ -189,6 +197,22 @@ export class InstantiationFrames {
 
 	public summary(frame: number): FunctionSummaryID {
 		return this.summaries[frame];
+	}
+
+	/** Caller-chain length of the context that first admitted this frame; module scope is 0. */
+	public depth(frame: number): number {
+		return this.depths[frame];
+	}
+
+	/** A context of this callable at this site at least `minDepth` deep, regardless of its argument tuple. */
+	public findSiteFrame(site: CallValueEntry, summary: FunctionSummaryID, closure: number, minDepth: number): number {
+		const frames = this.framesBySite.get(site);
+		if (frames === undefined) return 0;
+		for (let frameIndex = 0; frameIndex < frames.length; frameIndex += 1) {
+			const frame = frames[frameIndex];
+			if (this.summaries[frame] === summary && this.closures[frame] === closure && this.depths[frame] >= minDepth) return frame;
+		}
+		return 0;
 	}
 
 	public get count(): number {
@@ -441,6 +465,18 @@ export class SemanticInstantiationQuery {
 			this.publishArguments(summary.parameters, cycleFrame);
 			this.publishReturns(summary.returns, cycleFrame, result);
 			return cycleFrame;
+		}
+		if (this.frames.depth(callerFrame) >= MAX_CALL_CONTEXT_DEPTH) {
+			// Distinct caller chains mint distinct contextual arguments, so an
+			// unbounded call string never reaches a fixpoint on real carts. Past
+			// the limit, one context per site merges every argument tuple; the
+			// precise shallower contexts at that site stay unmerged.
+			const siteFrame = this.frames.findSiteFrame(site, summaryId, closure, MAX_CALL_CONTEXT_DEPTH + 1);
+			if (siteFrame !== 0) {
+				this.publishArguments(summary.parameters, siteFrame);
+				this.publishReturns(summary.returns, siteFrame, result);
+				return siteFrame;
+			}
 		}
 		const frame = this.frames.intern(site, summaryId, closure, callerFrame, this.frameArguments);
 		if (!this.instantiatedFrames[frame]) {

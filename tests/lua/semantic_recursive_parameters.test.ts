@@ -86,6 +86,45 @@ return first.left, second.right`;
 	}
 }
 
+test('a fanning non-recursive call chain keeps a bounded number of analysis frames', () => {
+	// Every level calls the next from two sites with distinct contextual
+	// arguments; an unbounded call string admits 2^levels frames here.
+	const levels = 12;
+	const lines = ['local function wrap0(value) return value end'];
+	for (let level = 1; level <= levels; level += 1) {
+		lines.push(`local function wrap${level}(value)
+	local kept = wrap${level - 1}({ inner = value })
+	wrap${level - 1}({ other = value })
+	return kept
+end`);
+	}
+	const path = '.inner'.repeat(levels);
+	lines.push(
+		`local result = wrap${levels}({ marker = 1 })`,
+		`local left_leaf = wrap${levels}({ left = 1 })${path}`,
+		`local right_leaf = wrap${levels}({ right = 2 })${path}`,
+		'return result.inner, left_leaf.left, right_leaf.right',
+	);
+	let retainedLeaves: Record<string, string[]> | undefined;
+	for (const order of [['left_leaf', 'right_leaf'], ['right_leaf', 'left_leaf']]) {
+		const workspace = new LuaSemanticWorkspace();
+		workspace.updateFile('fanout.lua', lines.join('\n'));
+		const snapshot = workspace.getSnapshot();
+		const file = snapshot.getFileData('fanout.lua')!;
+		const members = (name: string) => snapshot.symbolResolver.getMembers(
+			declarationValueSource(file.decls.find(entry => entry.name === name)!.id),
+		).map(entry => entry.name).sort();
+		assert.deepEqual(members('result'), ['inner']);
+		const leaves: Record<string, string[]> = {};
+		for (const name of order) leaves[name] = members(name);
+		assert.ok(leaves.left_leaf.includes('left') && leaves.right_leaf.includes('right'));
+		// Contexts merged past the call-string limit must not depend on which query admitted them first.
+		if (retainedLeaves === undefined) retainedLeaves = leaves;
+		else assert.deepEqual(leaves, retainedLeaves, 'merged contexts are independent of query order');
+		assert.ok(snapshot.symbolResolver.getSemanticQueryMetrics().instantiatedCalls <= 8 * levels, 'call depth does not multiply analysis frames');
+	}
+});
+
 test('recursive indexed reads follow retained element storage instead of growing access paths', () => {
 	const source = `local leaf = { marker = 11 }
 local root = { { { leaf } } }
