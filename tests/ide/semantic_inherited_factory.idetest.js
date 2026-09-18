@@ -4,7 +4,7 @@ await t.frames(10);
 t.openLuaSource('director.lua');
 await t.frames(2);
 
-const inherited = t.hover(87, 8);
+const inherited = t.hover(76, 8);
 t.assert(inherited !== null, 'configured base method hover did not resolve');
 t.assert(
 	inherited.contentLines.includes('(method) world_object:set_space(space_id)'),
@@ -25,7 +25,10 @@ t.assert(
 	'configured factory-return method resolved to the wrong declaration',
 );
 
-const inheritedLookup = t.hover(248, 34);
+t.openLuaSource('presentation.lua');
+await t.frames(2);
+
+const inheritedLookup = t.hover(21, 20);
 t.assert(inheritedLookup !== null, 'second configured base method hover did not resolve');
 t.assert(
 	inheritedLookup.contentLines.includes('(method) world_object:get_component(component_class, id_local)'),
