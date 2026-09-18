@@ -2,6 +2,7 @@ import type { Decl, FileSemanticData, LuaCallSite, Ref, SymbolID } from './model
 import { LuaSemanticQueryStore, type LuaSemanticQueryMetrics } from './query_store';
 import {
 	declarationValueSource,
+	type ModuleValueEntry,
 	type SemanticValueSource,
 } from './value_graph';
 import { sourceRangesEqual } from '../source_range';
@@ -14,6 +15,8 @@ import type { LuaSourceValueQuery } from './source_value_query';
 const EMPTY_SYMBOLS: readonly SymbolID[] = [];
 /** Alias hops a definition lookup follows (`local f = t.g`, `t.g = h`, ...). */
 const MAX_DEFINITION_ALIAS_DEPTH = 8;
+const EMPTY_DECLARATIONS: readonly Decl[] = [];
+const EMPTY_MODULE_EXPORTS: readonly ModuleValueEntry[] = [];
 
 function appendUniqueSymbols(target: SymbolID[], source: readonly SymbolID[]): void {
 	for (let sourceIndex = 0; sourceIndex < source.length; sourceIndex += 1) {
@@ -38,6 +41,7 @@ export class WorkspaceSymbolResolver {
 	private readonly definitionFunctionTargets: Map<SymbolID, readonly SymbolID[]> = new Map();
 	private membersByOwnerPath?: Map<string, Decl[]>;
 	private filesByPath?: Map<string, FileSemanticData>;
+	private moduleExportsByName?: Map<string, ModuleValueEntry[]>;
 	private readonly callableTargets: Map<LuaCallSite, readonly SymbolID[]> = new Map();
 	private readonly referencesBySymbol: Map<SymbolID, readonly Ref[]> = new Map();
 	private readonly membersBySource: Map<SemanticValueSource, readonly Decl[]> = new Map();
@@ -131,37 +135,82 @@ export class WorkspaceSymbolResolver {
 			return retained;
 		}
 		const targets: SymbolID[] = [];
-		this.appendDefinitionFunctionTargets(symbolId, targets, new Set(), 0);
+		for (const declaration of this.definitionAliases(this.declarations.get(symbolId), 0)) {
+			if (declaration.signature !== undefined) targets.push(declaration.id);
+		}
 		this.definitionFunctionTargets.set(symbolId, targets);
 		return targets;
 	}
 
-	private appendDefinitionFunctionTargets(symbolId: SymbolID, targets: SymbolID[], visited: Set<SymbolID>, depth: number): void {
-		if (visited.has(symbolId) || depth > MAX_DEFINITION_ALIAS_DEPTH) return;
-		visited.add(symbolId);
-		const declaration = this.declarations.get(symbolId);
-		if (declaration.signature !== undefined) {
-			if (!targets.includes(symbolId)) targets.push(symbolId);
-			return;
-		}
-		const values = this.fileData(declaration.file).declarationValuesByDeclaration.get(symbolId);
-		if (values === undefined) return;
-		for (const value of values) {
-			if (value.source.root.kind !== 'declaration') continue;
-			let current: Decl | undefined = this.declarations.get(value.source.root.declId);
-			for (const step of value.source.steps) {
-				if (current === undefined || step.kind !== 'member') {
-					current = undefined;
-					break;
+	/** The declaration and every declaration its written values name, transitively. */
+	private definitionAliases(declaration: Decl, depth: number): readonly Decl[] {
+		const aliases: Decl[] = [declaration];
+		for (let index = 0; index < aliases.length; index += 1) {
+			const values = this.fileData(aliases[index].file).declarationValuesByDeclaration.get(aliases[index].id);
+			if (values === undefined) continue;
+			for (const value of values) {
+				for (const alias of this.definedSourceDeclarations(value.source, depth + 1)) {
+					if (!aliases.includes(alias)) aliases.push(alias);
 				}
-				current = this.findDefinedMember(current, step.name);
 			}
-			if (current !== undefined) this.appendDefinitionFunctionTargets(current.id, targets, visited, depth + 1);
 		}
+		return aliases;
 	}
 
-	/** A local owner's members are defined in its own file; a global owner's anywhere. */
-	private findDefinedMember(owner: Decl, name: string): Decl | undefined {
+	/** Declarations a static source path is defined as; dynamic steps end the lookup. */
+	private definedSourceDeclarations(source: SemanticValueSource, depth: number): readonly Decl[] {
+		if (depth > MAX_DEFINITION_ALIAS_DEPTH) return EMPTY_DECLARATIONS;
+		let current: Decl[] = [];
+		const root = source.root;
+		switch (root.kind) {
+			case 'declaration':
+				current.push(this.declarations.get(root.declId));
+				break;
+			case 'global': {
+				const global = this.globals.get(root.symbolKey);
+				if (global !== undefined) current.push(this.declarations.get(global));
+				break;
+			}
+			case 'module':
+				for (const exported of this.moduleExports(root.module)) {
+					for (const declaration of this.definedSourceDeclarations(exported.source, depth + 1)) {
+						if (!current.includes(declaration)) current.push(declaration);
+					}
+				}
+				break;
+			default:
+				return EMPTY_DECLARATIONS;
+		}
+		for (const step of source.steps) {
+			if (step.kind !== 'member') return EMPTY_DECLARATIONS;
+			const members: Decl[] = [];
+			for (const owner of current) {
+				for (const alias of this.definitionAliases(owner, depth + 1)) this.appendDefinedMembers(alias, step.name, members);
+			}
+			current = members;
+		}
+		return current;
+	}
+
+	private moduleExports(module: string): readonly ModuleValueEntry[] {
+		if (this.moduleExportsByName === undefined) {
+			this.moduleExportsByName = new Map();
+			for (const file of this.files) {
+				for (const exported of file.moduleValues) {
+					let exports = this.moduleExportsByName.get(exported.module);
+					if (!exports) {
+						exports = [];
+						this.moduleExportsByName.set(exported.module, exports);
+					}
+					exports.push(exported);
+				}
+			}
+		}
+		return this.moduleExportsByName.get(module) || EMPTY_MODULE_EXPORTS;
+	}
+
+	/** A local owner's members are defined in its own file; a global owner's in every file. */
+	private appendDefinedMembers(owner: Decl, name: string, output: Decl[]): void {
 		if (this.membersByOwnerPath === undefined) {
 			this.membersByOwnerPath = new Map();
 			for (const declaration of this.declarations.values()) {
@@ -176,11 +225,10 @@ export class WorkspaceSymbolResolver {
 			}
 		}
 		const members = this.membersByOwnerPath.get(`${owner.namePath.join('.')}.${name}`);
-		if (members === undefined) return undefined;
+		if (members === undefined) return;
 		for (const member of members) {
-			if (owner.isGlobal || member.file === owner.file) return member;
+			if ((owner.isGlobal || member.file === owner.file) && !output.includes(member)) output.push(member);
 		}
-		return undefined;
 	}
 
 	private fileData(path: string): FileSemanticData {

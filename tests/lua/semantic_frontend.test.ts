@@ -1363,6 +1363,27 @@ test('LuaSemanticFrontend hover signatures follow definitions through aliases an
 	]);
 });
 
+test('LuaSemanticFrontend hover signatures keep every file defining a global member', () => {
+	const first = ['shared = {}', 'function shared.run(first) end'].join('\n');
+	const second = ['function shared.run(second) end', 'local alias<const> = shared.run', 'return alias'].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'first.lua', source: first }, { path: 'second.lua', source: second }]);
+	const position = findPosition(second, 'return alias', 'alias');
+	const labels = frontend.provideHover('second.lua', position.line, position.column)?.contents.map(content => content.label).sort();
+	assert.deepEqual(labels, ['(function) alias(first)', '(function) alias(second)']);
+});
+
+test('LuaSemanticFrontend hover signatures follow required module exports', () => {
+	const library = ['local util<const> = {}', 'function util.go(value) end', 'return util'].join('\n');
+	const main = ["local util<const> = require('lib/util')", 'local go<const> = util.go', "local direct<const> = require('lib/util').go", 'return go, direct'].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'lib/util.lua', source: library }, { path: 'main.lua', source: main }]);
+	for (const name of ['go', 'direct']) {
+		const position = findPosition(main, 'return go, direct', name);
+		assert.deepEqual(frontend.provideHover('main.lua', position.line, position.column)?.contents, [
+			{ label: `(function) ${name}(value)` },
+		]);
+	}
+});
+
 test('LuaSemanticFrontend hover on a call-result binding does not start the may-call solver', () => {
 	const source = [
 		'local class<const> = {}',
