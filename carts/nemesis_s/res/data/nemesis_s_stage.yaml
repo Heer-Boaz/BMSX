@@ -2,7 +2,6 @@ source: nemesis-s-bdx StageFactory.Stage0Map
 stage_number: 0
 tile_size: 8
 tile_columns: 32
-draw_z: 16
 tile_rows: 22
 tape_length_tiles: 554
 scroll_stop_columns: [492, 551]

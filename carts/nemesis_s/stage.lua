@@ -1,13 +1,9 @@
 local clamp<const> = require('cartlib/util/clamp')
 local rol8<const> = require('cartlib/util/rol8')
-local velocity<const> = require('cartlib/velocity')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
-local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/world/prefab')
-local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local tile_layer_component<const> = require('cartlib/component/tile_layer_component')
-local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world<const> = require('cartlib/world/world')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
 require('constants')
@@ -95,22 +91,6 @@ local mijter_foe_type_by_symbol<const> = {
 }
 local stage_scroll_follower_view
 
-local star_sources<const> = {
-	yellow = image.resolve(assets_star_yellow),
-	blue = image.resolve(assets_star_blue),
-}
-local star_blink_tracks<const> = telemetry_enabled and {
-	{
-		kind = 'event',
-		keys = {
-			{ frame = 0, event = 'star_blink_toggle', direction = 'forward' },
-			{ frame = 1, event = 'star_blink_toggle', direction = 'forward' },
-			{ frame = 2, event = 'star_blink_toggle', direction = 'forward' },
-			{ frame = 3, event = 'star_blink_toggle', direction = 'forward' },
-		},
-	},
-}
-
 local new_rows<const> = function(width, height, default_value)
 	local out<const> = {}
 	for y = 1, height do
@@ -121,22 +101,6 @@ local new_rows<const> = function(width, height, default_value)
 		out[y] = row
 	end
 	return out
-end
-
-local reset_star_positions<const> = function(target, source)
-	for i = 1, #source do
-		local src<const> = source[i]
-		local star = target[i]
-		if star == nil then
-			star = {}
-			target[i] = star
-		end
-		star.x = src.x
-		star.y = src.y
-	end
-	for i = #source + 1, #target do
-		target[i] = nil
-	end
 end
 
 local decode_stage_tile<const> = function(above_row, row, below_row, x, y, width, ch)
@@ -385,8 +349,6 @@ function stage:apply_stage_config(stage_data)
 	self.restart_points = stage_data.restart_points
 	self.scroll_stop_columns = stage_data.scroll_stop_columns
 	self.scroll_stop_count = #stage_data.scroll_stop_columns
-	self.star_visual:set_offset_z(stage_data.draw_z)
-	self.stage_tiles:set_offset_z(stage_data.draw_z)
 end
 
 function stage:advance_music_cues(column)
@@ -407,7 +369,7 @@ function stage:advance_actor_spawns(column)
 	local index = self.actor_spawn_index
 	while index <= spawn_count and spawns[index].column <= column do
 		local spawn<const> = spawns[index]
-		world:spawn(spawn.definition_id, spawn.options)
+		self.scene:spawn(spawn.definition_id, spawn.options)
 		index = index + 1
 	end
 	self.actor_spawn_index = index
@@ -579,16 +541,6 @@ function stage:build_tape()
 	self.actor_spawn_count = #actor_spawns
 end
 
-function stage:apply_star_scroll(stars, step)
-	for i = 1, #stars do
-		local star<const> = stars[i]
-		star.x = star.x - step
-		if star.x < 0 then
-			star.x = playfield_width
-		end
-	end
-end
-
 function stage:reset_runtime()
 	if self.stage_tiles.tile_count == 0 then
 		self:build_tape()
@@ -627,11 +579,7 @@ function stage:reset_runtime()
 	self.total_scroll_px = start_column * self.tile_size
 	self.scroll_gate = 0x01
 	self.scrolling = true
-	reset_star_positions(self.yellow_stars, stars_yellow)
-	reset_star_positions(self.blue_stars, stars_blue)
-	self.yellow_blink = false
-	self.blue_blink = false
-	self.blink_turn = 'yellow'
+
 end
 
 function stage:begin_play()
@@ -718,9 +666,7 @@ function stage:update_runtime()
 		return '/running/stopped'
 	end
 
-	local star_scroll_step<const> = self.star_scroll_step
-	self:apply_star_scroll(self.yellow_stars, star_scroll_step)
-	self:apply_star_scroll(self.blue_stars, star_scroll_step)
+	self.starfield:scroll()
 end
 
 function stage:resume_scrolling()
@@ -728,26 +674,9 @@ function stage:resume_scrolling()
 	self.events:emit(resume_scrolling_event)
 end
 
-function stage:draw_star_particles(draw, stars, source, hidden)
-	if hidden then
-		return
-	end
-	for i = 1, #stars do
-		local star<const> = stars[i]
-		source:blit(draw, star.x, star.y)
-	end
-end
-
-local draw_stars<const> = function(component, draw)
-	local owner<const> = component.parent
-	owner:draw_star_particles(draw, owner.yellow_stars, star_sources.yellow, owner.yellow_blink)
-	owner:draw_star_particles(draw, owner.blue_stars, star_sources.blue, owner.blue_blink)
-end
-local new_star_visual<const> = custom_visual_component.factory({ draw = draw_stars })
-
 function stage:is_solid_pixel(screen_x, screen_y)
-	local map_x = ((screen_x + self.total_scroll_px) // self.tile_size) + 1
-	local map_y = (screen_y // self.tile_size) + 1
+	local map_x = ((screen_x - self.x + self.total_scroll_px) // self.tile_size) + 1
+	local map_y = ((screen_y - self.y) // self.tile_size) + 1
 
 	map_x = clamp(map_x, 1, self.tape_length_tiles)
 	map_y = clamp(map_y, 1, self.tile_rows)
@@ -759,14 +688,17 @@ end
 -- or tile_count when the complete run is clear. Beam and sprite-width collision
 -- paths consume the retained stage row directly instead of sampling pixels.
 function stage:first_solid_tile_offset(screen_x, screen_y, tile_count)
-	local map_x<const> = ((screen_x + self.total_scroll_px) // self.tile_size) + 1
-	local row<const> = self.solid_tape[(screen_y // self.tile_size) + 1]
+	local map_x<const> = ((screen_x - self.x + self.total_scroll_px) // self.tile_size) + 1
+	local map_y<const> = ((screen_y - self.y) // self.tile_size) + 1
+	if map_y < 1 or map_y > self.tile_rows then return tile_count end
+	local row<const> = self.solid_tape[map_y]
 	local last_offset = tile_count - 1
 	local screen_last_offset<const> = self.tile_columns - (screen_x // self.tile_size) - 1
 	if last_offset > screen_last_offset then
 		last_offset = screen_last_offset
 	end
-	for tile_offset = 0, last_offset do
+	last_offset = math.min(last_offset, self.tape_length_tiles - map_x)
+	for tile_offset = math.max(0, 1 - map_x), last_offset do
 		if row[map_x + tile_offset] ~= 0 then
 			return tile_offset
 		end
@@ -779,36 +711,34 @@ end
 -- Stage-relative beams retain this result once because their map column stays
 -- fixed while both the stage and beam consume the same tile scroll.
 function stage:first_solid_vertical_tile_offset(screen_x, screen_y, tile_count, direction)
-	local map_x<const> = ((screen_x + self.total_scroll_px) // self.tile_size) + 1
-	local map_y<const> = (screen_y // self.tile_size) + 1
+	local map_x<const> = ((screen_x - self.x + self.total_scroll_px) // self.tile_size) + 1
+	local map_y<const> = ((screen_y - self.y) // self.tile_size) + 1
+	if map_x < 1 or map_x > self.tape_length_tiles then return tile_count end
 	local last_offset = tile_count - 1
+	local first_offset
 	if direction < 0 then
+		first_offset = math.max(0, map_y - self.tile_rows)
 		if last_offset >= map_y then
 			last_offset = map_y - 1
 		end
 	else
+		first_offset = math.max(0, 1 - map_y)
 		local bottom_offset<const> = self.tile_rows - map_y
 		if last_offset > bottom_offset then
 			last_offset = bottom_offset
 		end
 	end
 	local solid_tape<const> = self.solid_tape
-	for tile_offset = 0, last_offset do
+	for tile_offset = first_offset, last_offset do
 		if solid_tape[map_y + tile_offset * direction][map_x] ~= 0 then
 			return tile_offset
 		end
 	end
-	return last_offset + 1
+	return math.max(0, last_offset + 1)
 end
 
 function stage:ctor()
 	self.solid_tape = {}
-	self.yellow_stars = {}
-	self.blue_stars = {}
-	self.star_scroll_step = velocity.pixels_per_second_to_pixels_per_tick(
-		stage_star_scroll_speed_px_per_second
-	)
-	self.star_visual = self:get_component(custom_visual_component)
 	self.stage_tiles = self:get_component(tile_layer_component)
 end
 
@@ -827,28 +757,6 @@ local define_stage_fsm<const> = function()
 			},
 			running = {
 				initial = 'begin_play',
-				timelines = {
-					[ids_stage_star_blink_timeline] = {
-						def = {
-							frames = {
-								{ blink_turn = 'yellow', yellow_blink = false, blue_blink = false },
-								{ blink_turn = 'yellow', yellow_blink = true, blue_blink = false },
-								{ blink_turn = 'blue', yellow_blink = false, blue_blink = false },
-								{ blink_turn = 'blue', yellow_blink = false, blue_blink = true },
-							},
-							frame_duration = stage_star_blink_frame_ms,
-							playback_mode = 'loop',
-							apply = true,
-							tracks = star_blink_tracks,
-						},
-						autoplay = true,
-						stop_on_exit = true,
-						play_options = {
-							rewind = true,
-							snap_to_start = true,
-						},
-					},
-				},
 				states = {
 					begin_play = {
 						update = stage.begin_play,
@@ -869,9 +777,7 @@ local register_stage_definition<const> = function()
 		def_id = ids_stage_def,
 		class = stage,
 		components = {
-			new_star_visual,
 			tile_layer_component.new,
-			timeline_component.new,
 			fsm_component.factory({ ids_stage_fsm }),
 		},
 		defaults = {

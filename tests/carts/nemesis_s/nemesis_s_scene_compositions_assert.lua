@@ -1,6 +1,5 @@
 local shallow_copy<const> = require('cartlib/util/shallow_copy')
 local registry<const> = require('cartlib/registry')
-local scene_library<const> = require('cartlib/world/scene_library')
 
 local assert_disposed<const> = function(members)
 	for name, member in pairs(members) do
@@ -75,17 +74,13 @@ function __bmsx_host_test.update()
 		assert(player.x == 88 and player.y == 68,
 			'respawn discarded the authored start point')
 		assert(stage.actor_spawn_count == 179 and stage.actor_spawns[1].options.pos.y == 16,
-			'stage did not consume its separately authored actor scene')
+			'stage did not consume its YAML-authored actor placements')
 		local first<const> = stage.actor_spawns[1]
 		assert(first.options.formation == stage.actor_spawns[6].options.formation
 			and first.options.formation ~= stage.actor_spawns[7].options.formation,
 			'formation ownership crossed an authored group')
 		first.options.formation.remaining = 1
 		test.formation = first.options.formation
-		local authored<const> = scene_library.definition('nemesis_s.stage.actors').objects[1]
-		assert(authored.options.stage == nil and authored.options.formation == nil
-			and authored.options.pos.x == 280 and authored.options.pos.y == 16,
-			'streaming admission mutated level placement or stored runtime bindings in source')
 		-- The placed terrain and its collision queries share one origin.
 		stage.total_scroll_px = 128 * 8
 		local solid_x<const> = (150 - 1) * 8 - stage.total_scroll_px
