@@ -58,12 +58,31 @@ export class EditorTabGroupModel {
 	public async deserialize(data: SerializedEditorGroup, serializers: EditorInputSerializers): Promise<void> {
 		this.clear();
 		for (const entry of data.inputs) {
-			const input = await serializers[entry.kind].deserialize(entry.value);
-			this.editorTabs.push(input);
-			this.registerInputListeners(input);
+			try {
+				const serializer = serializers[entry.kind];
+				if (!serializer) {
+					// Unknown input kind; skip gracefully
+					console.warn && console.warn('Unknown editor input kind:', entry.kind);
+					continue;
+				}
+				const input = await serializer.deserialize(entry.value);
+				if (!input) {
+					// Serializer chose to skip (or returned undefined); continue
+					continue;
+				}
+				this.editorTabs.push(input);
+				this.registerInputListeners(input);
+			} catch (err) {
+				// Skip inputs that fail to deserialize (missing resources, format drift, etc.)
+				console.warn && console.warn('Failed to deserialize editor input, skipping:', err);
+				continue;
+			}
 		}
-		this.activeEditor = data.active === null ? null : this.editorTabs[data.active];
-		this.previewEditor = data.preview === null ? null : this.editorTabs[data.preview];
+		// If inputs were skipped, clamp active/preview indices to available tabs.
+		const activeIndex = data.active === null ? null : (data.active < this.editorTabs.length ? data.active : (this.editorTabs.length > 0 ? 0 : null));
+		const previewIndex = data.preview === null ? null : (data.preview < this.editorTabs.length ? data.preview : null);
+		this.activeEditor = activeIndex === null ? null : this.editorTabs[activeIndex];
+		this.previewEditor = previewIndex === null ? null : this.editorTabs[previewIndex];
 		this.updateLabels();
 	}
 

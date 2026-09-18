@@ -22,7 +22,10 @@ export function captureTextFileModel(model: EditorTextModel): TextFileModelSnaps
 export async function resolveTextFileModelSnapshot(
 	storage: KeyValueStorage, sources: RuntimeSourceState, snapshot: TextFileModelSnapshot,
 ): Promise<{ model: EditorTextModel; sameSource: boolean }> {
-	const resource = resolveRuntimeResource(sources, snapshot.resource)!;
+	const resource = resolveRuntimeResource(sources, snapshot.resource);
+	if (!resource) {
+		throw new Error(`Workspace resource '${snapshot.resource.path}' is not installed for domain '${snapshot.resource.domain}'.`);
+	}
 	const model = await resolveTextFileModel(storage, sources, resource);
 	const fingerprint = getTextSnapshotFingerprint(model.buffer);
 	return { model, sameSource: fingerprint.length === snapshot.fingerprint.length && fingerprint.hash === snapshot.fingerprint.hash };
@@ -34,6 +37,9 @@ export function resolveTextFileModel(
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
 ): EditorTextModel | Promise<EditorTextModel> {
+	if (!resource || !resource.source) {
+		throw new Error(`Runtime resource for '${resource?.path ?? '<unknown>'}' is not available.`);
+	}
 	switch (resource.source.type) {
 		case 'lua':
 			return editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(sources, resource));
