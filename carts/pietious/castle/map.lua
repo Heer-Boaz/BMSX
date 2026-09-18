@@ -243,16 +243,9 @@ local build_enemies<const> = function(room_number, room_subtype, object_defs)
 			local enemy_id<const> = string.format('enemy_%03d_%02d', room_number, enemy_index)
 			local raw_conditions<const> = object_def.condition or empty_conditions
 			local retain_defeat_in_region<const> = object_def.retain_defeat_in_region
-			local conditions<const> = {}
-			if retain_defeat_in_region then
-				conditions[1] = {
-					key = enemy_id,
-					equals = false,
-				}
-			end
-			for j = 1, #raw_conditions do
-				conditions[#conditions + 1] = raw_conditions[j]
-			end
+			-- Region defeat is owned by the spawner and the castle's damage rule,
+			-- which key it by member id; the authored conditions stay as written.
+			local conditions<const> = raw_conditions
 			local enemy
 			if wall_enemy_kinds[kind] then
 				local area<const> = object_def.area
