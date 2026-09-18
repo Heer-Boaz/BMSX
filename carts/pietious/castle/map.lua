@@ -561,15 +561,79 @@ local attach_world_transition_metadata<const> = function(room_templates)
 	end
 end
 
-castle_map.start_room_number = start_room_number
-castle_map.room_templates, castle_map.condition_reveal_events = load_room_templates()
-attach_world_transition_metadata(castle_map.room_templates)
-castle_map.elevator_routes = build_elevator_routes()
-castle_map.world_transitions = world_transition_specs
-castle_map.world_transitions_by_number = {}
+local prepare_scene_members<const> = function(template)
+	local objects<const> = {}
+	local append<const> = function(member, definition_id, z, options)
+		member.member_id = member.id
+		member.definition_id = definition_id
+		options.space_id = 'main'
+		options.pos = { x = member.x, y = member.y, z = z }
+		member.options = options
+		objects[#objects + 1] = member
+	end
+	for i = 1, #template.enemies do
+		local member<const> = template.enemies[i]
+		append(member, 'enemy.' .. member.kind, member.draw_z, {
+			damage = member.damage, direction = member.direction,
+			health = member.health, max_health = member.health,
+			speed_x_num = member.speedx, speed_y_num = member.speedy,
+			width_tiles = member.width_tiles, height_tiles = member.height_tiles,
+			tiletype = member.tiletype,
+		})
+	end
+	for i = 1, #template.rocks do
+		local member<const> = template.rocks[i]
+		append(member, 'rock', draw_z_enemy, { item_type = member.item_type })
+	end
+	for i = 1, #template.items do
+		local member<const> = template.items[i]
+		append(member, 'world_item', 130, { item_type = member.item_type })
+	end
+	for i = 1, #template.lithographs do
+		local member<const> = template.lithographs[i]
+		append(member, 'lithograph', 10, { text = member.text })
+	end
+	for i = 1, #template.shrines do
+		local member<const> = template.shrines[i]
+		append(member, 'room_shrine', 22, { text_lines = member.text_lines })
+	end
+	for i = 1, #template.world_entrances do
+		local member<const> = template.world_entrances[i]
+		append(member, 'world_entrance', 22, { target = member.target })
+	end
+	for i = 1, #template.draaideuren do
+		local member<const> = template.draaideuren[i]
+		append(member, 'draaideur', 22, { kind = member.kind })
+	end
+	if template.seal ~= nil then
+		append(template.seal, 'seal', 23, { command = template.seal.text })
+	end
+	template.scene_id = string.format('pietious.room_%03d', template.room_number)
+	template.scene_definition = { objects = objects }
+end
 
-for _, spec in pairs(world_transition_specs) do
-	castle_map.world_transitions_by_number[spec.world_number] = spec
+castle_map.start_room_number = start_room_number
+castle_map.elevator_routes = build_elevator_routes()
+function castle_map.initialize()
+	local rooms<const>, condition_reveal_events<const> = load_room_templates()
+	attach_world_transition_metadata(rooms)
+	local transitions_by_number<const> = {}
+	for _, template in pairs(rooms) do
+		prepare_scene_members(template)
+	end
+	for _, spec in pairs(world_transition_specs) do
+		transitions_by_number[spec.world_number] = spec
+	end
+	castle_map.room_templates = rooms
+	castle_map.condition_reveal_events = condition_reveal_events
+	castle_map.world_transitions = world_transition_specs
+	castle_map.world_transitions_by_number = transitions_by_number
+	castle_map.definition = {
+		rooms = rooms,
+		condition_reveal_events = condition_reveal_events,
+		world_transitions = world_transition_specs,
+		world_transitions_by_number = transitions_by_number,
+	}
 end
 
 return castle_map
