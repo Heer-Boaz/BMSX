@@ -56,6 +56,28 @@
   - '####-=...ll.........-=.ll.....##'
   - '####-=...ar.........-=.ar.....##'
   - '#########################.....##'
+  objects:
+  - type: mijterfoe
+    x: 14
+    y: 3
+    direction: down
+  - type: mijterfoe
+    x: 20
+    y: 3
+    direction: down
+  - type: mijterfoe
+    x: 16
+    y: 17
+    direction: up
+  - type: rock
+    condition:
+    x: 13
+    y: 13
+  - type: rock
+    condition:
+    x: 18
+    y: 17
+    item: schoentjes
 3:
   type: castle
   subtype: castlestone
@@ -85,6 +107,28 @@
   - '####-=..........................'
   - '####-=..........................'
   - '################################'
+  objects:
+  - type: mijterfoe
+    x: 18
+    y: 13
+    direction: down
+  - type: mijterfoe
+    x: 27
+    y: 4
+    direction: down
+  - type: rock
+    condition:
+    x: 28
+    y: 1
+    item: pepernoot
+  - type: rock
+    condition:
+    x: 13
+    y: 17
+  - type: rock
+    condition:
+    x: 10
+    y: 1
 4:
   type: castle
   subtype: castlegarden
@@ -114,6 +158,37 @@
   - '......ll............-=##########'
   - '......ar............-=##########'
   - '################################'
+  objects:
+  - type: boekfoe
+    condition:
+    x: 27
+    y: 11
+    direction: left
+  - type: mijterfoe
+    x: 6
+    y: 2
+    direction: right
+  - type: mijterfoe
+    x: 19
+    y: 8
+    direction: down
+  - type: rock
+    condition:
+    x: 6
+    y: 13
+    item: ammofromrock
+  - type: rock
+    condition:
+    x: 17
+    y: 5
+  - type: shrine
+    x: 17
+    y: 5
+    text: |-
+      ZONDER VERGROOTGLAS
+      KAN JE DE HEILIGE
+      ZAK NIET VINDEN...
+      DOORZOEK HET KASTEEL!
 5:
   type: castle
   subtype: castlered
@@ -143,6 +218,37 @@
   - '##########################-=####'
   - '##########################-=####'
   - '##########################-=####'
+  objects:
+  - type: marspeinenaardappel
+    x: 10
+    y: 1
+    speedx: 0
+    speedy: 2
+  - type: marspeinenaardappel
+    x: 14
+    y: 1
+    speedx: 2
+    speedy: 2
+  - type: marspeinenaardappel
+    x: 3
+    y: 5
+    speedx: 2
+    speedy: 2
+  - type: marspeinenaardappel
+    x: 10
+    y: 5
+    speedx: -2
+    speedy: 2
+  - type: marspeinenaardappel
+    x: 15
+    y: 10
+    speedx: -2
+    speedy: -2
+  - type: marspeinenaardappel
+    x: 3
+    y: 15
+    speedx: 2
+    speedy: -2
 12:
   type: castle
   subtype: castlered
@@ -172,6 +278,37 @@
   - '################################'
   - '################################'
   - '################################'
+  objects:
+  - type: marspeinenaardappel
+    x: 11
+    y: 6
+    speedx: 2
+    speedy: 0
+  - type: marspeinenaardappel
+    x: 13
+    y: 7
+    speedx: -2
+    speedy: 0
+  - type: marspeinenaardappel
+    x: 9
+    y: 10
+    speedx: -2
+    speedy: 0
+  - type: marspeinenaardappel
+    x: 11
+    y: 11
+    speedx: 2
+    speedy: 0
+  - type: boekfoe
+    condition:
+    x: 9
+    y: 1
+    direction: right
+  - type: rock
+    condition:
+    x: 21
+    y: 2
+    item: keyworld1
 6:
   type: castle
   subtype: castlegarden
@@ -201,6 +338,19 @@
   - '###############-=###############'
   - '###############-=###############'
   - '###############-=###############'
+  objects:
+  - type: vlokspawner
+    condition:
+    - key: cloud_1_destroyed
+      equals: false
+  - type: crossfoe
+    condition:
+    x: 3
+    y: 9
+  - type: crossfoe
+    condition:
+    x: 27
+    y: 9
 7:
   type: castle
   subtype: castlered
@@ -232,6 +382,49 @@
   - '################################'
   - '################################'
   - '################################'
+  objects:
+  - type: shrine
+    x: 14
+    y: 6
+    text: |-
+      VIND DE PEPERNOTEN
+      IN DIT KASTEEL...
+      EEN PIET KAN NIET
+      ZONDER ZIJN OF HAAR
+      PEPERNOTEN!
+  - type: rock
+    condition:
+    x: 25
+    y: 6
+  - type: rock
+    condition:
+    x: 27
+    y: 6
+    item: halo
+  - type: breakablewall
+    condition:
+    - key: castlewalldestroyed
+      equals: false
+    area:
+    - 10
+    - 5
+    - 18
+    - 8
+    hp: 20
+    destroyed_condition: castlewalldestroyed
+    tiletype: frontworld_blue_l
+  - type: crossfoe
+    condition:
+    x: 5
+    y: 5
+  - type: crossfoe
+    condition:
+    x: 5
+    y: 9
+  - type: crossfoe
+    condition:
+    x: 26
+    y: 9
 8:
   type: castle
   subtype: castleblue
@@ -263,6 +456,32 @@
   - '################################'
   water:
     surface_row: 17
+  objects:
+  - type: boekfoe
+    condition:
+    x: 1
+    y: 12
+    direction: right
+  - type: crossfoe
+    condition:
+    x: 5
+    y: 16
+  - type: mijterfoe
+    x: 3
+    y: 5
+    direction: down
+  - type: mijterfoe
+    x: 8
+    y: 1
+    direction: right
+  - type: mijterfoe
+    x: 15
+    y: 12
+    direction: down
+  - type: worldentrance
+    x: 18
+    y: 4
+    target: world_1
 9:
   type: castle
   subtype: castleblue
@@ -292,6 +511,22 @@
   - '.......ll..............ll.......'
   - '.......ar..............ar.......'
   - '################################'
+  objects:
+  - type: boekfoe
+    condition:
+    x: 3
+    y: 3
+    direction: right
+  - type: boekfoe
+    condition:
+    x: 23
+    y: 9
+    direction: left
+  - type: rock
+    condition:
+    x: 20
+    y: 10
+    item: spyglass
 10:
   type: castle
   subtype: castlegarden
@@ -321,6 +556,34 @@
   - '#-=....ll..............ll.......'
   - '#-=....ar..............ar.......'
   - '################################'
+  objects:
+  - type: marspeinenaardappel
+    x: 1
+    y: 7
+    speedx: 2
+    speedy: 2
+  - type: marspeinenaardappel
+    x: 10
+    y: 10
+    speedx: 2
+    speedy: -2
+  - type: crossfoe
+    condition:
+    x: 11
+    y: 0
+  - type: rock
+    condition:
+    x: 24
+    y: 5
+  - type: rock
+    condition:
+    x: 4
+    y: 1
+  - type: rock
+    condition:
+    x: 14
+    y: 17
+    item: ammofromrock
 11:
   type: castle
   subtype: castlestone
@@ -350,6 +613,36 @@
   - '.............ll.....-=........##'
   - '.............ar.....-=........##'
   - '################################'
+  objects:
+  - type: crossfoe
+    condition:
+    x: 11
+    y: 8
+  - type: crossfoe
+    condition:
+    x: 5
+    y: 12
+  - type: mijterfoe
+    x: 3
+    y: 3
+    direction: down
+  - type: mijterfoe
+    x: 8
+    y: 16
+    direction: down
+  - type: rock
+    condition:
+    x: 8
+    y: 9
+    item: lamp
+  - type: rock
+    condition:
+    x: 17
+    y: 4
+  - type: rock
+    condition:
+    x: 13
+    y: 13
 13:
   type: castle
   subtype: castlegarden
@@ -379,6 +672,35 @@
   - '##............................##'
   - '##............................##'
   - '##............................##'
+  objects:
+  - type: rock
+    condition:
+    x: 26
+    y: 10
+  - type: rock
+    condition:
+    x: 7
+    y: 3
+    item: ammofromrock
+  - type: cloud
+    condition:
+    - key: cloud_1_destroyed
+      equals: false
+    x: 16
+    y: 10
+    direction: right
+    destroyed_condition: cloud_1_destroyed
+    retain_defeat_in_region: true
+  - type: item
+    condition:
+    - key: cloud_1_destroyed
+      equals: true
+    - key: greenvase
+      equals: false
+    x: 23
+    y: 3
+    itemtype: greenvase
+    reveal_event: appearance
 101:
   type: world
   subtype: world
@@ -409,6 +731,14 @@
   - '################################'
   - '################################'
   - '################################'
+  objects:
+  - type: item
+    condition:
+    - key: map_world1
+      equals: false
+    x: 4
+    y: 9
+    itemtype: map_world1
 102:
   type: world
   subtype: world
@@ -439,6 +769,23 @@
   - '################################'
   - '################################'
   - '################################'
+  objects:
+  - type: lithograph
+    x: 2
+    y: 5
+    text: ''
+  - type: zakfoe
+    x: 2
+    y: 11
+    direction: right
+  - type: zakfoe
+    x: 17
+    y: 11
+    direction: left
+  - type: zakfoe
+    x: 4
+    y: 5
+    direction: right
 103:
   type: world
   subtype: world
@@ -469,6 +816,27 @@
   - '###############-=###############'
   - '###############-=###############'
   - '###############-=###############'
+  objects:
+  - type: shrine
+    x: 9
+    y: 4
+    text: |-
+      VERNEDER DE DRIE
+      STAFFEN VAN
+      SINTERKLAAS OM BIJ
+      DE ZAK TE KOMEN.
+  - type: crossfoe
+    condition:
+    x: 15
+    y: 3
+  - type: crossfoe
+    condition:
+    x: 29
+    y: 10
+  - type: crossfoe
+    condition:
+    x: 2
+    y: 10
 104:
   type: world
   subtype: world
@@ -499,6 +867,20 @@
   - '################################'
   - '###############-=###############'
   - '###############-=###############'
+  objects:
+  - type: muziekfoe
+    condition:
+    x: 24
+    y: 8
+    direction: left
+  - type: stafffoe
+    condition:
+    - key: staff1destroyed
+      equals: false
+    x: 7
+    y: 1
+    destroyed_condition: staff1destroyed
+    retain_defeat_in_region: true
 105:
   type: world
   subtype: world
@@ -529,6 +911,19 @@
   - '################################'
   - '###############-=###############'
   - '###############-=###############'
+  objects:
+  - type: lithograph
+    x: 4
+    y: 7
+    text: ''
+  - type: zakfoe
+    x: 11
+    y: 7
+    direction: right
+  - type: zakfoe
+    x: 8
+    y: 15
+    direction: left
 106:
   type: world
   subtype: world
@@ -561,6 +956,84 @@
   - '################################'
   - '##########################-=####'
   - '##########################-=####'
+  objects:
+  - type: marspeinenaardappel
+    condition:
+    - key: r106.wall
+      equals: false
+    x: 2
+    y: 5
+    speedx: 2
+    speedy: 2
+    retain_defeat_in_region: true
+  - type: marspeinenaardappel
+    condition:
+    - key: r106.wall
+      equals: false
+    x: 10
+    y: 15
+    speedx: -2
+    speedy: 2
+    retain_defeat_in_region: true
+  - type: marspeinenaardappel
+    condition:
+    - key: r106.wall
+      equals: false
+    x: 20
+    y: 12
+    speedx: 2
+    speedy: -2
+    retain_defeat_in_region: true
+  - type: marspeinenaardappel
+    condition:
+    - key: r106.wall
+      equals: false
+    x: 6
+    y: 10
+    speedx: -2
+    speedy: -2
+    retain_defeat_in_region: true
+  - type: marspeinenaardappel
+    condition:
+    - key: r106.wall
+      equals: false
+    x: 13
+    y: 13
+    speedx: -2
+    speedy: 2
+    retain_defeat_in_region: true
+  - type: marspeinenaardappel
+    condition:
+    - key: r106.wall
+      equals: false
+    x: 18
+    y: 8
+    speedx: -2
+    speedy: -2
+    retain_defeat_in_region: true
+  - type: marspeinenaardappel
+    condition:
+    - key: r106.wall
+      equals: false
+    x: 25
+    y: 7
+    speedx: 2
+    speedy: -2
+    retain_defeat_in_region: true
+  - type: disappearingwall
+    condition:
+    - key: r106.wall
+      equals: false
+    area:
+    - 10
+    - 1
+    - 15
+    - 4
+    tiletype: frontworld_l
+  - type: lithograph
+    x: 10
+    y: 2
+    text: EYNDBAES
 107:
   type: world
   subtype: world
@@ -591,6 +1064,34 @@
   - '########...........#############'
   - '########...........#############'
   - '################################'
+  objects:
+  - type: crossfoe
+    condition:
+    x: 5
+    y: 2
+  - type: crossfoe
+    condition:
+    x: 10
+    y: 6
+  - type: crossfoe
+    condition:
+    x: 29
+    y: 6
+  - type: crossfoe
+    condition:
+    x: 1
+    y: 10
+  - type: stafffoe
+    condition:
+    - key: staff2destroyed
+      equals: false
+    x: 15
+    y: 15
+    destroyed_condition: staff2destroyed
+    retain_defeat_in_region: true
+  - type: draaideur_blauw
+    x: 15
+    y: 2
 108:
   type: world
   subtype: world
@@ -621,6 +1122,36 @@
   - '#..-=..........................#'
   - '#..-=..........................#'
   - '################################'
+  objects:
+  - type: lithograph
+    x: 25
+    y: 17
+    text: ''
+  - type: muziekfoe
+    condition:
+    x: 2
+    y: 0
+    direction: right
+  - type: muziekfoe
+    condition:
+    x: 8
+    y: 15
+    direction: right
+  - type: muziekfoe
+    condition:
+    x: 25
+    y: 15
+    direction: left
+  - type: mijterfoe
+    condition:
+    x: 14
+    y: 6
+    direction: up
+  - type: mijterfoe
+    condition:
+    x: 17
+    y: 8
+    direction: right
 109:
   type: world
   subtype: world
@@ -653,6 +1184,19 @@
   - '#..............................#'
   - '#..............................#'
   - '#..............................#'
+  objects:
+  - type: mijterfoe
+    x: 6
+    y: 6
+    direction: down
+  - type: mijterfoe
+    x: 26
+    y: 6
+    direction: down
+  - type: mijterfoe
+    x: 22
+    y: 13
+    direction: down
   custom: world1stairsappear
 110:
   type: world
@@ -684,6 +1228,95 @@
   - '################################'
   - '################################'
   - '################################'
+  objects:
+  - type: shrine
+    x: 27
+    y: 2
+    text: |-
+      VERNIETIG ALLE
+      MARSPEINEN
+      AARDAPPELTJES.
+  - type: mijterfoe
+    x: 18
+    y: 5
+    direction: down
+  - type: mijterfoe
+    x: 14
+    y: 9
+    direction: down
+  - type: mijterfoe
+    x: 18
+    y: 13
+    direction: down
+  - type: mijterfoe
+    x: 7
+    y: 5
+    direction: down
+  - type: mijterfoe
+    x: 29
+    y: 5
+    direction: down
+  - type: mijterfoe
+    x: 29
+    y: 9
+    direction: down
+  - type: mijterfoe
+    x: 25
+    y: 13
+    direction: down
+  - type: zakfoe
+    condition:
+    x: 14
+    y: 2
+    direction: right
+  - type: zakfoe
+    condition:
+    x: 27
+    y: 2
+    direction: right
+  - type: zakfoe
+    condition:
+    x: 27
+    y: 6
+    direction: left
+  - type: zakfoe
+    condition:
+    x: 29
+    y: 10
+    direction: left
+  - type: zakfoe
+    condition:
+    x: 14
+    y: 10
+    direction: right
+  - type: zakfoe
+    condition:
+    x: 1
+    y: 10
+    direction: right
+  - type: zakfoe
+    condition:
+    x: 16
+    y: 6
+    direction: left
+  - type: zakfoe
+    condition:
+    x: 29
+    y: 14
+    direction: left
+  - type: zakfoe
+    condition:
+    x: 12
+    y: 14
+    direction: right
+  - type: stafffoe
+    condition:
+    - key: staff3destroyed
+      equals: false
+    x: 15
+    y: 0
+    destroyed_condition: staff3destroyed
+    retain_defeat_in_region: true
 100:
   type: world
   subtype: world
@@ -714,4 +1347,14 @@
   - '################################'
   - '################################'
   - '################################'
+  objects:
+  - type: seal
+    x: 12
+    y: 6
+    text: eyndbaes
+  - type: daemon
+    x: 0
+    y: 0
+    health: 60
+    damage: 12
   custom: removetilesbehindseal
