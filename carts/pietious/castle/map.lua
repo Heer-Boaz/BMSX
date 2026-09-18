@@ -1,4 +1,6 @@
 require('constants')
+local scene_library<const> = require('cartlib/world/scene_library')
+local shallow_copy<const> = require('cartlib/util/shallow_copy')
 local text<const> = require('cartlib/util/text')
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
@@ -548,12 +550,12 @@ local load_room_templates<const> = function()
 	return templates, condition_reveal_events
 end
 
-local attach_world_transition_metadata<const> = function(room_templates)
+local attach_world_transition_metadata<const> = function(room_templates, transitions)
 	for _, template in pairs(room_templates) do
 		local world_entrances<const> = template.world_entrances
 		for i = 1, #world_entrances do
 			local world_entrance<const> = world_entrances[i]
-			local spec<const> = world_transition_specs[world_entrance.target]
+			local spec<const> = transitions[world_entrance.target]
 			spec.castle_room_number = template.room_number
 			spec.castle_spawn_x = world_entrance.stair_x
 			spec.castle_spawn_y = world_entrance.stair_y
@@ -610,28 +612,31 @@ local prepare_scene_members<const> = function(template)
 	end
 	template.scene_id = string.format('pietious.room_%03d', template.room_number)
 	template.scene_definition = { objects = objects }
+	-- The YAML-built room is the canonical scene definition for this room id.
+	scene_library.register(template.scene_id, template.scene_definition)
 end
 
 castle_map.start_room_number = start_room_number
 castle_map.elevator_routes = build_elevator_routes()
 function castle_map.initialize()
 	local rooms<const>, condition_reveal_events<const> = load_room_templates()
-	attach_world_transition_metadata(rooms)
-	local transitions_by_number<const> = {}
 	for _, template in pairs(rooms) do
 		prepare_scene_members(template)
 	end
-	for _, spec in pairs(world_transition_specs) do
+	-- Runtime metadata is attached to copies; the authored specs stay pristine
+	-- across source reloads.
+	local transitions<const> = {}
+	local transitions_by_number<const> = {}
+	for target, authored in pairs(world_transition_specs) do
+		local spec<const> = shallow_copy(authored)
+		transitions[target] = spec
 		transitions_by_number[spec.world_number] = spec
 	end
-	castle_map.room_templates = rooms
-	castle_map.condition_reveal_events = condition_reveal_events
-	castle_map.world_transitions = world_transition_specs
-	castle_map.world_transitions_by_number = transitions_by_number
+	attach_world_transition_metadata(rooms, transitions)
 	castle_map.definition = {
 		rooms = rooms,
 		condition_reveal_events = condition_reveal_events,
-		world_transitions = world_transition_specs,
+		world_transitions = transitions,
 		world_transitions_by_number = transitions_by_number,
 	}
 end
