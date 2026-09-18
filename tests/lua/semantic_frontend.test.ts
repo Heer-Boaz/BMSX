@@ -1341,6 +1341,44 @@ test('LuaSemanticFrontend follows exported function values for hover signatures'
 	]);
 });
 
+test('LuaSemanticFrontend hover signatures follow definitions through aliases and member paths', () => {
+	const source = [
+		'local run<const> = function(first, ...) return first end',
+		'exported = { run = run }',
+		'local lib<const> = {}',
+		'function lib.go(value) end',
+		'lib.alias = lib.go',
+		'local alias<const> = exported.run',
+		'local indirect<const> = lib.alias',
+		'return alias, indirect',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'hover_alias.lua', source }]);
+	const aliasPosition = findPosition(source, 'return alias, indirect', 'alias');
+	assert.deepEqual(frontend.provideHover('hover_alias.lua', aliasPosition.line, aliasPosition.column)?.contents, [
+		{ label: '(function) alias(first, ...)' },
+	]);
+	const indirectPosition = findPosition(source, 'return alias, indirect', 'indirect');
+	assert.deepEqual(frontend.provideHover('hover_alias.lua', indirectPosition.line, indirectPosition.column)?.contents, [
+		{ label: '(function) indirect(value)' },
+	]);
+});
+
+test('LuaSemanticFrontend hover on a call-result binding does not start the may-call solver', () => {
+	const source = [
+		'local class<const> = {}',
+		'function class.new() return setmetatable({}, { __index = class }) end',
+		'function class:run() end',
+		'local instance<const> = class.new()',
+		'instance:run()',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'hover_instance.lua', source }]);
+	const position = findPosition(source, 'instance:run()', 'instance');
+	assert.deepEqual(frontend.provideHover('hover_instance.lua', position.line, position.column)?.contents, [
+		{ label: '(constant) instance' },
+	]);
+	assert.equal(frontend.snapshot.symbolResolver.getSemanticQueryMetrics().instantiatedCalls, 0);
+});
+
 test('LuaSemanticFrontend provides debugger expressions only for static Lua access paths', () => {
 	const source = [
 		'local target<const> = { value = 1 }',

@@ -12,6 +12,8 @@ import type { LuaSourceCallGraph } from './source_call_graph';
 import type { LuaSourceValueQuery } from './source_value_query';
 
 const EMPTY_SYMBOLS: readonly SymbolID[] = [];
+/** Alias hops a definition lookup follows (`local f = t.g`, `t.g = h`, ...). */
+const MAX_DEFINITION_ALIAS_DEPTH = 8;
 
 function appendUniqueSymbols(target: SymbolID[], source: readonly SymbolID[]): void {
 	for (let sourceIndex = 0; sourceIndex < source.length; sourceIndex += 1) {
@@ -33,7 +35,9 @@ export class WorkspaceSymbolResolver {
 	private sourceQuery?: LuaWrittenSourceQuery;
 	private moduleImportQuery?: LuaModuleImportQuery;
 	private readonly referenceTargets: Map<Ref, readonly SymbolID[]> = new Map();
-	private readonly referenceFunctionTargets: Map<Ref, readonly SymbolID[]> = new Map();
+	private readonly definitionFunctionTargets: Map<SymbolID, readonly SymbolID[]> = new Map();
+	private membersByOwnerPath?: Map<string, Decl[]>;
+	private filesByPath?: Map<string, FileSemanticData>;
 	private readonly callableTargets: Map<LuaCallSite, readonly SymbolID[]> = new Map();
 	private readonly referencesBySymbol: Map<SymbolID, readonly Ref[]> = new Map();
 	private readonly membersBySource: Map<SemanticValueSource, readonly Decl[]> = new Map();
@@ -116,30 +120,75 @@ export class WorkspaceSymbolResolver {
 		return targets;
 	}
 
-	public resolveReferenceFunctionTargets(reference: Ref): readonly SymbolID[] {
-		const retained = this.referenceFunctionTargets.get(reference);
+	/**
+	 * Functions a binding is defined as: its written values followed through
+	 * declaration aliases and static member paths. Like a language server's
+	 * definition lookup, this never asks what other code may write or call.
+	 */
+	public resolveDefinitionFunctionTargets(symbolId: SymbolID): readonly SymbolID[] {
+		const retained = this.definitionFunctionTargets.get(symbolId);
 		if (retained) {
 			return retained;
 		}
 		const targets: SymbolID[] = [];
-		if (reference.call) {
-			const facts = this.getQueryStore().callee(reference.call);
-			for (let factIndex = 0; factIndex < facts.length; factIndex += 1) {
-				if (!targets.includes(facts[factIndex].calleeFn)) {
-					targets.push(facts[factIndex].calleeFn);
+		this.appendDefinitionFunctionTargets(symbolId, targets, new Set(), 0);
+		this.definitionFunctionTargets.set(symbolId, targets);
+		return targets;
+	}
+
+	private appendDefinitionFunctionTargets(symbolId: SymbolID, targets: SymbolID[], visited: Set<SymbolID>, depth: number): void {
+		if (visited.has(symbolId) || depth > MAX_DEFINITION_ALIAS_DEPTH) return;
+		visited.add(symbolId);
+		const declaration = this.declarations.get(symbolId);
+		if (declaration.signature !== undefined) {
+			if (!targets.includes(symbolId)) targets.push(symbolId);
+			return;
+		}
+		const values = this.fileData(declaration.file).declarationValuesByDeclaration.get(symbolId);
+		if (values === undefined) return;
+		for (const value of values) {
+			if (value.source.root.kind !== 'declaration') continue;
+			let current: Decl | undefined = this.declarations.get(value.source.root.declId);
+			for (const step of value.source.steps) {
+				if (current === undefined || step.kind !== 'member') {
+					current = undefined;
+					break;
 				}
+				current = this.findDefinedMember(current, step.name);
 			}
-		} else {
-			const declarations = this.resolveReferenceTargets(reference);
-			for (let declarationIndex = 0; declarationIndex < declarations.length; declarationIndex += 1) {
-				appendUniqueSymbols(
-					targets,
-					this.getQueryStore().functions(declarationValueSource(declarations[declarationIndex])),
-				);
+			if (current !== undefined) this.appendDefinitionFunctionTargets(current.id, targets, visited, depth + 1);
+		}
+	}
+
+	/** A local owner's members are defined in its own file; a global owner's anywhere. */
+	private findDefinedMember(owner: Decl, name: string): Decl | undefined {
+		if (this.membersByOwnerPath === undefined) {
+			this.membersByOwnerPath = new Map();
+			for (const declaration of this.declarations.values()) {
+				if (declaration.namePath.length < 2) continue;
+				const key = declaration.namePath.join('.');
+				let members = this.membersByOwnerPath.get(key);
+				if (!members) {
+					members = [];
+					this.membersByOwnerPath.set(key, members);
+				}
+				members.push(declaration);
 			}
 		}
-		this.referenceFunctionTargets.set(reference, targets);
-		return targets;
+		const members = this.membersByOwnerPath.get(`${owner.namePath.join('.')}.${name}`);
+		if (members === undefined) return undefined;
+		for (const member of members) {
+			if (owner.isGlobal || member.file === owner.file) return member;
+		}
+		return undefined;
+	}
+
+	private fileData(path: string): FileSemanticData {
+		if (this.filesByPath === undefined) {
+			this.filesByPath = new Map();
+			for (const file of this.files) this.filesByPath.set(file.file, file);
+		}
+		return this.filesByPath.get(path)!;
 	}
 
 	public getMembers(source: SemanticValueSource): readonly Decl[] {

@@ -1,6 +1,6 @@
 import type { LuaBuiltinDescriptor } from '../semantic_contracts';
 import type { LuaSourceRange } from '../syntax/ast';
-import type { Decl, FileSemanticData, FunctionSignatureInfo, Ref } from './model';
+import type { Decl, FileSemanticData, FunctionSignatureInfo, Ref, SymbolID } from './model';
 import { findLuaSemanticOccurrenceAt } from './position_query';
 import type { WorkspaceSymbolResolver } from './workspace_symbol_resolver';
 
@@ -52,7 +52,12 @@ export function provideLuaHover(
 			}
 			return { contents, applicableRange: reference.range };
 		}
-		const functionTargets = symbolResolver.resolveReferenceFunctionTargets(reference);
+		const functionTargets: SymbolID[] = [];
+		for (let index = 0; index < targetIds.length; index += 1) {
+			for (const target of symbolResolver.resolveDefinitionFunctionTargets(targetIds[index])) {
+				if (!functionTargets.includes(target)) functionTargets.push(target);
+			}
+		}
 		if (functionTargets.length > 0) {
 			const contents = new Array<LuaHoverContent>(functionTargets.length);
 			const displayName = formatReferenceFunctionName(reference);
