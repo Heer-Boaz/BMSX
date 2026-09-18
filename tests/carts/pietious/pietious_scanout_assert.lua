@@ -1,6 +1,9 @@
 local registry<const> = require('cartlib/registry')
 local world<const> = require('cartlib/world/world')
 local confirm_hold_frames<const> = 4
+-- Pietious samples input once per two physical frames; a release must span a
+-- full sample or the next press is not a new confirm edge.
+local confirm_release_frames<const> = 2
 
 __bmsx_host_test = {
 	phase = 'skip_intro',
@@ -46,7 +49,7 @@ function __bmsx_host_test.update(frame)
 		end
 		assert(director.state_machines:matches_state(test.story_state), 'intro did not advance to the story')
 		assert(world.active_space_id == 'narrative', 'story did not own the narrative presentation space')
-		if frame <= test.confirm_release_frame
+		if frame <= test.confirm_release_frame + confirm_release_frames
 		or not test.narrative.state_machines:matches_state(test.narrative_story_state) then
 			return false
 		end
@@ -61,7 +64,7 @@ function __bmsx_host_test.update(frame)
 		end
 		assert(director.state_machines:matches_state(test.title_state), 'story did not advance to the title screen')
 		assert(world.active_space_id == 'title', 'title did not own the presentation space')
-		if frame <= test.confirm_release_frame
+		if frame <= test.confirm_release_frame + confirm_release_frames
 		or not test.title_screen.state_machines:matches_state(test.title_idle_state) then
 			return false
 		end

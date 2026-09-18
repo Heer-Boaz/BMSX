@@ -47,8 +47,16 @@ function __bmsx_host_test.update()
 			target = 'probe_world',
 			pos = { x = 80, y = 80, z = 22 },
 		})
+		-- The explosion's poses count gameplay updates from its own spawn; the
+		-- tick on which this test observes admission depends on frame parity.
+		test.explosion_time_ms = world.gameplay_time_ms
+		test.explosion_updates = 0
 		test.phase = 'admission'
 		return false
+	end
+	if world.gameplay_time_ms ~= test.explosion_time_ms then
+		test.explosion_time_ms = world.gameplay_time_ms
+		test.explosion_updates = test.explosion_updates + 1
 	end
 
 	local explosion<const> = registry:get('probe.enemy_explosion')
@@ -74,13 +82,12 @@ function __bmsx_host_test.update()
 	local step<const> = test.gameplay_step
 
 	if explosion ~= nil then
-		local admitted_source_update<const> = step + 1
-		local pose<const> = admitted_source_update // enemy_explosion_pose_frames + 1
+		local pose<const> = test.explosion_updates // enemy_explosion_pose_frames + 1
 		assert(explosion.sprite_component.imgid == explosion_image_by_pose[pose],
 			'enemy explosion left its three-update pose at step=' .. step)
 	else
-		assert(step == enemy_explosion_pose_frames * #explosion_image_by_pose - 1,
-			'enemy explosion completed outside its eight three-update poses at step=' .. step)
+		assert(test.explosion_updates == enemy_explosion_pose_frames * #explosion_image_by_pose,
+			'enemy explosion completed outside its eight three-update poses at update=' .. test.explosion_updates)
 	end
 
 	local phase_frames<const> = world_entrance_open_phase_frames
