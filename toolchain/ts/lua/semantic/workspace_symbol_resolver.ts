@@ -2,21 +2,35 @@ import type { Decl, FileSemanticData, LuaCallSite, Ref, SymbolID } from './model
 import { LuaSemanticQueryStore, type LuaSemanticQueryMetrics } from './query_store';
 import {
 	declarationValueSource,
-	type ModuleValueEntry,
 	type SemanticValueSource,
 } from './value_graph';
 import { sourceRangesEqual } from '../source_range';
 import { compareSourcePosition } from './source_range';
 import { LuaWrittenSourceQuery } from './written_sources';
+import { LuaDefinitionTypes } from './definition_types';
 import { LuaModuleImportQuery } from './module_import_query';
 import type { LuaSourceCallGraph } from './source_call_graph';
 import type { LuaSourceValueQuery } from './source_value_query';
 
 const EMPTY_SYMBOLS: readonly SymbolID[] = [];
-/** Alias hops a definition lookup follows (`local f = t.g`, `t.g = h`, ...). */
-const MAX_DEFINITION_ALIAS_DEPTH = 8;
-const EMPTY_DECLARATIONS: readonly Decl[] = [];
-const EMPTY_MODULE_EXPORTS: readonly ModuleValueEntry[] = [];
+
+function sortMembers(members: Decl[]): Decl[] {
+	return members.sort((left, right) => {
+		const name = left.name.localeCompare(right.name);
+		if (name !== 0) {
+			return name;
+		}
+		if (left.file !== right.file) {
+			return left.file.localeCompare(right.file);
+		}
+		return compareSourcePosition(
+			left.range.start.line,
+			left.range.start.column,
+			right.range.start.line,
+			right.range.start.column,
+		);
+	});
+}
 
 function appendUniqueSymbols(target: SymbolID[], source: readonly SymbolID[]): void {
 	for (let sourceIndex = 0; sourceIndex < source.length; sourceIndex += 1) {
@@ -39,9 +53,7 @@ export class WorkspaceSymbolResolver {
 	private moduleImportQuery?: LuaModuleImportQuery;
 	private readonly referenceTargets: Map<Ref, readonly SymbolID[]> = new Map();
 	private readonly definitionFunctionTargets: Map<SymbolID, readonly SymbolID[]> = new Map();
-	private membersByOwnerPath?: Map<string, Decl[]>;
-	private filesByPath?: Map<string, FileSemanticData>;
-	private moduleExportsByName?: Map<string, ModuleValueEntry[]>;
+	private definitionTypeQuery?: LuaDefinitionTypes;
 	private readonly callableTargets: Map<LuaCallSite, readonly SymbolID[]> = new Map();
 	private readonly referencesBySymbol: Map<SymbolID, readonly Ref[]> = new Map();
 	private readonly membersBySource: Map<SemanticValueSource, readonly Decl[]> = new Map();
@@ -98,145 +110,88 @@ export class WorkspaceSymbolResolver {
 		return targets;
 	}
 
+	/**
+	 * The may-call solver's answer for a reference: what the value can be given
+	 * everything the program writes and calls. Whole-program features only;
+	 * interactive queries use `resolveReferenceTargets`.
+	 */
+	public resolveWholeProgramReferenceTargets(ref: Ref): readonly SymbolID[] {
+		if (!ref.target && (ref.referenceKind === 'member' || ref.referenceKind === 'method')) {
+			return this.getQueryStore().member(ref.receiverValue, ref.name);
+		}
+		return this.resolveReferenceTargets(ref);
+	}
+
+	/** The may-call solver's members of a value; see `resolveWholeProgramReferenceTargets`. */
+	public getWholeProgramMembers(source: SemanticValueSource): readonly Decl[] {
+		const membersByName = new Map<string, Decl>();
+		for (const memberId of this.getQueryStore().allMembers(source)) {
+			const declaration = this.declarations.get(memberId);
+			if (!membersByName.has(declaration.name)) membersByName.set(declaration.name, declaration);
+		}
+		return sortMembers(Array.from(membersByName.values()));
+	}
+
+	/** The may-call solver's callees of a call site; see `resolveWholeProgramReferenceTargets`. */
+	public resolveWholeProgramCallableTargets(callSite: LuaCallSite): readonly SymbolID[] {
+		const targets: SymbolID[] = [];
+		const call = callSite.reference?.call;
+		if (call) {
+			for (const fact of this.getQueryStore().callee(call)) {
+				if (!targets.includes(fact.calleeFn)) targets.push(fact.calleeFn);
+			}
+		} else if (callSite.directTarget !== undefined) {
+			appendUniqueSymbols(targets, this.getQueryStore().functions(declarationValueSource(callSite.directTarget)));
+		} else if (callSite.calleeValue !== undefined) {
+			appendUniqueSymbols(targets, this.getQueryStore().functions(callSite.calleeValue));
+		}
+		return targets;
+	}
+
+	/** Declared functions a call site's callee is defined as. */
 	public resolveCallableTargets(callSite: LuaCallSite): readonly SymbolID[] {
 		const retained = this.callableTargets.get(callSite);
 		if (retained) {
 			return retained;
 		}
-		const targets: SymbolID[] = [];
-		const call = callSite.reference?.call;
-		if (call) {
-			const facts = this.getQueryStore().callee(call);
-			for (let factIndex = 0; factIndex < facts.length; factIndex += 1) {
-				if (!targets.includes(facts[factIndex].calleeFn)) {
-					targets.push(facts[factIndex].calleeFn);
-				}
-			}
-		} else if (callSite.directTarget !== undefined) {
-			appendUniqueSymbols(
-				targets,
-				this.getQueryStore().functions(declarationValueSource(callSite.directTarget)),
-			);
-		} else if (callSite.calleeValue !== undefined) {
-			appendUniqueSymbols(targets, this.getQueryStore().functions(callSite.calleeValue));
-		}
+		const callee = callSite.directTarget !== undefined
+			? declarationValueSource(callSite.directTarget)
+			: callSite.calleeValue ?? callSite.call.callee;
+		const targets = this.definitionFunctionDeclarations(callee);
 		this.callableTargets.set(callSite, targets);
 		return targets;
 	}
 
 	/**
-	 * Functions a binding is defined as: its written values followed through
-	 * declaration aliases and static member paths. Like a language server's
-	 * definition lookup, this never asks what other code may write or call.
+	 * Functions a binding is defined as. Like a language server's definition
+	 * lookup, this never asks what other code may write or call.
 	 */
 	public resolveDefinitionFunctionTargets(symbolId: SymbolID): readonly SymbolID[] {
 		const retained = this.definitionFunctionTargets.get(symbolId);
 		if (retained) {
 			return retained;
 		}
-		const targets: SymbolID[] = [];
-		for (const declaration of this.definitionAliases(this.declarations.get(symbolId), 0)) {
-			if (declaration.signature !== undefined) targets.push(declaration.id);
-		}
+		const targets = this.declarations.get(symbolId).signature !== undefined
+			? [symbolId]
+			: this.definitionFunctionDeclarations(declarationValueSource(symbolId));
 		this.definitionFunctionTargets.set(symbolId, targets);
 		return targets;
 	}
 
-	/** The declaration and every declaration its written values name, transitively. */
-	private definitionAliases(declaration: Decl, depth: number): readonly Decl[] {
-		const aliases: Decl[] = [declaration];
-		for (let index = 0; index < aliases.length; index += 1) {
-			const values = this.fileData(aliases[index].file).declarationValuesByDeclaration.get(aliases[index].id);
-			if (values === undefined) continue;
-			for (const value of values) {
-				for (const alias of this.definedSourceDeclarations(value.source, depth + 1)) {
-					if (!aliases.includes(alias)) aliases.push(alias);
-				}
-			}
+	private definitionFunctionDeclarations(source: SemanticValueSource): SymbolID[] {
+		const targets: SymbolID[] = [];
+		for (const target of this.definitionTypes.functionDeclarations(source)) {
+			if (this.declarations.get(target)?.signature !== undefined) targets.push(target);
 		}
-		return aliases;
+		return targets;
 	}
 
-	/** Declarations a static source path is defined as; dynamic steps end the lookup. */
-	private definedSourceDeclarations(source: SemanticValueSource, depth: number): readonly Decl[] {
-		if (depth > MAX_DEFINITION_ALIAS_DEPTH) return EMPTY_DECLARATIONS;
-		let current: Decl[] = [];
-		const root = source.root;
-		switch (root.kind) {
-			case 'declaration':
-				current.push(this.declarations.get(root.declId));
-				break;
-			case 'global': {
-				const global = this.globals.get(root.symbolKey);
-				if (global !== undefined) current.push(this.declarations.get(global));
-				break;
-			}
-			case 'module':
-				for (const exported of this.moduleExports(root.module)) {
-					for (const declaration of this.definedSourceDeclarations(exported.source, depth + 1)) {
-						if (!current.includes(declaration)) current.push(declaration);
-					}
-				}
-				break;
-			default:
-				return EMPTY_DECLARATIONS;
+	/** Definition-based shapes serving every interactive query. */
+	public get definitionTypes(): LuaDefinitionTypes {
+		if (this.definitionTypeQuery === undefined) {
+			this.definitionTypeQuery = new LuaDefinitionTypes(this.files, this.declarations, this.globals);
 		}
-		for (const step of source.steps) {
-			if (step.kind !== 'member') return EMPTY_DECLARATIONS;
-			const members: Decl[] = [];
-			for (const owner of current) {
-				for (const alias of this.definitionAliases(owner, depth + 1)) this.appendDefinedMembers(alias, step.name, members);
-			}
-			current = members;
-		}
-		return current;
-	}
-
-	private moduleExports(module: string): readonly ModuleValueEntry[] {
-		if (this.moduleExportsByName === undefined) {
-			this.moduleExportsByName = new Map();
-			for (const file of this.files) {
-				for (const exported of file.moduleValues) {
-					let exports = this.moduleExportsByName.get(exported.module);
-					if (!exports) {
-						exports = [];
-						this.moduleExportsByName.set(exported.module, exports);
-					}
-					exports.push(exported);
-				}
-			}
-		}
-		return this.moduleExportsByName.get(module) || EMPTY_MODULE_EXPORTS;
-	}
-
-	/** A local owner's members are defined in its own file; a global owner's in every file. */
-	private appendDefinedMembers(owner: Decl, name: string, output: Decl[]): void {
-		if (this.membersByOwnerPath === undefined) {
-			this.membersByOwnerPath = new Map();
-			for (const declaration of this.declarations.values()) {
-				if (declaration.namePath.length < 2) continue;
-				const key = declaration.namePath.join('.');
-				let members = this.membersByOwnerPath.get(key);
-				if (!members) {
-					members = [];
-					this.membersByOwnerPath.set(key, members);
-				}
-				members.push(declaration);
-			}
-		}
-		const members = this.membersByOwnerPath.get(`${owner.namePath.join('.')}.${name}`);
-		if (members === undefined) return;
-		for (const member of members) {
-			if ((owner.isGlobal || member.file === owner.file) && !output.includes(member)) output.push(member);
-		}
-	}
-
-	private fileData(path: string): FileSemanticData {
-		if (this.filesByPath === undefined) {
-			this.filesByPath = new Map();
-			for (const file of this.files) this.filesByPath.set(file.file, file);
-		}
-		return this.filesByPath.get(path)!;
+		return this.definitionTypeQuery;
 	}
 
 	public getMembers(source: SemanticValueSource): readonly Decl[] {
@@ -245,29 +200,10 @@ export class WorkspaceSymbolResolver {
 			return cached;
 		}
 		const membersByName = new Map<string, Decl>();
-		const memberIds = this.getQueryStore().allMembers(source);
-		for (let index = 0; index < memberIds.length; index += 1) {
-			const declaration = this.declarations.get(memberIds[index]);
-			if (!membersByName.has(declaration.name)) {
-				membersByName.set(declaration.name, declaration);
-			}
+		for (const [name, declarations] of this.definitionTypes.visibleMembers(this.definitionTypes.shapesOf(source))) {
+			membersByName.set(name, declarations[0]);
 		}
-		const members = Array.from(membersByName.values());
-		members.sort((left, right) => {
-			const name = left.name.localeCompare(right.name);
-			if (name !== 0) {
-				return name;
-			}
-			if (left.file !== right.file) {
-				return left.file.localeCompare(right.file);
-			}
-			return compareSourcePosition(
-				left.range.start.line,
-				left.range.start.column,
-				right.range.start.line,
-				right.range.start.column,
-			);
-		});
+		const members = sortMembers(Array.from(membersByName.values()));
 		this.membersBySource.set(source, members);
 		return members;
 	}
@@ -355,7 +291,8 @@ export class WorkspaceSymbolResolver {
 			return EMPTY_SYMBOLS;
 		}
 		if (ref.referenceKind === 'member' || ref.referenceKind === 'method') {
-			return this.getQueryStore().member(ref.receiverValue, ref.name);
+			const declarations = this.definitionTypes.lookupMember(this.definitionTypes.shapesOf(ref.receiverValue), ref.name);
+			return declarations.map(declaration => declaration.id);
 		}
 		if (ref.symbolKey.length === 0) {
 			return EMPTY_SYMBOLS;

@@ -60,7 +60,7 @@ return result.updated`;
 			const snapshot = workspace.getSnapshot();
 			for (const name of names) {
 				const declaration = snapshot.getFileData(PATH)!.decls.find(entry => entry.name === name)!;
-				const members = snapshot.symbolResolver.getMembers(declarationValueSource(declaration.id)).map(member => member.name).sort();
+				const members = snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(declaration.id)).map(member => member.name).sort();
 				assert.deepEqual(members, name === 'original' ? ['change', 'initial'] : name === 'replacement' ? ['updated'] : ['change', 'initial', 'updated'], name);
 			}
 		}
@@ -125,7 +125,7 @@ return original:change()`;
 	const snapshot = workspace.getSnapshot();
 	const data = snapshot.getFileData(PATH)!;
 	const reference = data.refs.find(entry => entry.name === 'read' && entry.isCall)!;
-	const targets = snapshot.symbolResolver.resolveReferenceTargets(reference).map(id => snapshot.symbolResolver.getDeclaration(id)!.namePath.join('.')).sort();
+	const targets = snapshot.symbolResolver.resolveWholeProgramReferenceTargets(reference).map(id => snapshot.symbolResolver.getDeclaration(id)!.namePath.join('.')).sort();
 	assert.deepEqual(targets, ['original.read', 'replacement.read'], 'possible targets, not exclusive reaching-definition proof');
 	for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, PATH, level), [22]);
 });
@@ -150,7 +150,7 @@ return original:change(), original:read()`;
 	const snapshot = workspace.getSnapshot();
 	const references = snapshot.getFileData(PATH)!.refs.filter(entry => entry.name === 'read' && entry.isCall);
 	for (const index of [1, 0, 1, 0]) {
-		const targets = snapshot.symbolResolver.resolveReferenceTargets(references[index])
+		const targets = snapshot.symbolResolver.resolveWholeProgramReferenceTargets(references[index])
 			.map(id => snapshot.symbolResolver.getDeclaration(id)!.namePath.join('.')).sort();
 		assert.deepEqual(targets, index === 0 ? ['first.read', 'second.read', 'third.read'] : ['first.read']);
 	}
@@ -239,7 +239,7 @@ for (const depth of [1, 4, 8]) {
 			const snapshot = workspace.getSnapshot();
 			for (const name of names) {
 				const declaration = snapshot.getFileData(PATH)!.decls.find(entry => entry.name === name)!;
-				assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(declaration.id)).map(member => member.name), name === 'written' ? ['ready'] : []);
+				assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(declaration.id)).map(member => member.name), name === 'written' ? ['ready'] : []);
 			}
 		}
 		for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, PATH, level), [true, null, null]);

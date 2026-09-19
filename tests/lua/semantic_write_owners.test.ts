@@ -145,7 +145,7 @@ test('the public resolver sees a module replacement after a function introduced 
 	].join('\n'));
 	const snapshot = workspace.getSnapshot();
 	const selected = snapshot.getFileData('module-write.lua')!.decls.find(entry => entry.name === 'selected' && entry.kind === 'constant')!;
-	assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(selected.id)).map(entry => entry.name), ['from_module']);
+	assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(selected.id)).map(entry => entry.name), ['from_module']);
 });
 
 test('instantiation publishes only the selected function writes, with compiled BLua as execution oracle', () => {

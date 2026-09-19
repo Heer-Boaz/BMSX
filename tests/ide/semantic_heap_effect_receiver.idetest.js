@@ -4,9 +4,17 @@ await t.frames(10);
 t.openLuaSource('cartlib/actioneffects/actioneffect_component.lua');
 await t.frames(2);
 
-const stateMachineMethod = t.hover(9, 34);
-t.assert(stateMachineMethod !== null, 'co-attached component receiver did not resolve');
+const own = t.hover(71, 7);
+t.assert(own !== null, 'component method hover did not resolve');
 t.assert(
-	stateMachineMethod.contentLines.includes('(method) fsm_component:bind_state_path(path)'),
-	'co-attached component receiver resolved to the wrong declaration',
+	own.contentLines.includes('(method) actioneffect_component:rebind_effect(id, definition)'),
+	'component method resolved to the wrong declaration',
+);
+
+// `owner.state_machines` is attached by fsm_component:on_attach at run time,
+// not declared on the owner: without an annotation it stays unresolved.
+const attached = t.hover(9, 34);
+t.assert(
+	attached === null || !attached.contentLines.some(line => line.startsWith('(')),
+	'a field attached by another component was resolved without a defining declaration',
 );

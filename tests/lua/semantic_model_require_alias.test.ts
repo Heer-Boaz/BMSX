@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { semanticSymbolAt } from './semantic_test_harness';
+import { semanticSymbolAt, wholeProgramSymbolAt } from './semantic_test_harness';
 
 const semanticWorkspaceModulePromise = import('../../toolchain/ts/lua/semantic/model');
 
@@ -663,7 +663,7 @@ test('explicit self receivers project writes without adopting call argument memb
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFile('actor.lua', sourceLines.join('\n'));
 	const snapshot = workspace.getSnapshot();
-	const projectedTarget = semanticSymbolAt(snapshot,
+	const projectedTarget = wholeProgramSymbolAt(snapshot,
 		'actor.lua',
 		7,
 		sourceLines[6].indexOf('events') + 1,
@@ -672,7 +672,7 @@ test('explicit self receivers project writes without adopting call argument memb
 	assert.ok(projectedTarget, 'receiver write projected onto the explicit call argument');
 	assert.deepEqual(projectedTarget!.declaration.namePath, ['self', 'events']);
 	assert.equal(
-		semanticSymbolAt(snapshot, 'actor.lua', 9, sourceLines[8].indexOf('foreign_only') + 1),
+		wholeProgramSymbolAt(snapshot, 'actor.lua', 9, sourceLines[8].indexOf('foreign_only') + 1),
 		null,
 		'foreign argument members do not become actor instance members',
 	);
@@ -703,7 +703,7 @@ test('higher-order callback parameters retain every callsite receiver alternativ
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFile('callbacks.lua', sourceLines.join('\n'));
 	const snapshot = workspace.getSnapshot();
-	const targetAt = (line: number, name: string) => semanticSymbolAt(snapshot,
+	const targetAt = (line: number, name: string) => wholeProgramSymbolAt(snapshot,
 		'callbacks.lua',
 		line,
 		sourceLines[line - 1].indexOf(name) + 1,
@@ -750,7 +750,7 @@ test('callback roles follow explicit executor arguments', async () => {
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFile('sequence.lua', sourceLines.join('\n'));
 	const snapshot = workspace.getSnapshot();
-	const targetAt = (line: number, name: string) => semanticSymbolAt(snapshot,
+	const targetAt = (line: number, name: string) => wholeProgramSymbolAt(snapshot,
 		'sequence.lua',
 		line,
 		sourceLines[line - 1].indexOf(name) + 1,
@@ -817,14 +817,14 @@ test('semantic workspace retargets literal-keyed registry results after an edit'
 	workspace.updateFile('main.lua', mainLines.join('\n'));
 	const leftColumn = mainLines[5].indexOf('left_action') + 1;
 	const rightColumn = mainLines[6].indexOf('right_action') + 1;
-	const initialTarget = semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 6, leftColumn);
+	const initialTarget = wholeProgramSymbolAt(workspace.getSnapshot(), 'main.lua', 6, leftColumn);
 	assert.ok(initialTarget, 'initial literal registry target');
 	assert.equal(initialTarget!.declaration.file, 'left.lua');
-	assert.equal(semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 7, rightColumn), null);
+	assert.equal(wholeProgramSymbolAt(workspace.getSnapshot(), 'main.lua', 7, rightColumn), null);
 
 	workspace.updateFile('constants.lua', constantsRightSource);
-	assert.equal(semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 6, leftColumn), null);
-	const reboundTarget = semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 7, rightColumn);
+	assert.equal(wholeProgramSymbolAt(workspace.getSnapshot(), 'main.lua', 6, leftColumn), null);
+	const reboundTarget = wholeProgramSymbolAt(workspace.getSnapshot(), 'main.lua', 7, rightColumn);
 	assert.ok(reboundTarget, 'retargeted literal registry target');
 	assert.equal(reboundTarget!.declaration.file, 'right.lua');
 });

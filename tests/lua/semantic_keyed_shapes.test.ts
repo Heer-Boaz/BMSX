@@ -4,9 +4,9 @@ import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/fronte
 
 function completedNames(body: string): string[] {
 	const source = `${body}\nreturn selected.marker`;
-	const file = buildLuaSemanticFrontend([{ path: 'shape.lua', source }]).getFile('shape.lua');
-	const context = file.findMemberCompletionContextAt(source.split('\n').length, 'return selected.'.length + 1)!;
-	return file.getMemberCompletionDeclarations(context).map(declaration => declaration.name);
+	const frontend = buildLuaSemanticFrontend([{ path: 'shape.lua', source }]);
+	const context = frontend.getFile('shape.lua').findMemberCompletionContextAt(source.split('\n').length, 'return selected.'.length + 1)!;
+	return frontend.snapshot.symbolResolver.getWholeProgramMembers(context.receiver).map(declaration => declaration.name);
 }
 
 test('stored values follow the last assignment in the current block', () => {
@@ -135,7 +135,7 @@ for (const buckets of [false, true]) for (const chains of [false, true]) for (co
 		const frontend = buildLuaSemanticFrontend([{ path: 'keyed.lua', source }]);
 		const file = frontend.getFile('keyed.lua');
 		const context = file.findMemberCompletionContextAt(source.split('\n').length, source.split('\n').at(-1)!.indexOf('move') + 1)!;
-		const names = () => file.getMemberCompletionDeclarations(context).map(declaration => declaration.name);
+		const names = () => frontend.snapshot.symbolResolver.getWholeProgramMembers(context.receiver).map(declaration => declaration.name);
 		assert.deepEqual(names(), ['__index', 'move', 'new']);
 		const metrics = frontend.snapshot.symbolResolver.getSemanticQueryMetrics();
 		assert.deepEqual(names(), ['__index', 'move', 'new']);
@@ -193,6 +193,6 @@ for (const topLevel of [true, false]) test(`constructor query follows external r
 	const usageIndex = lines.findIndex(line => line.includes('found:move'));
 	const context = file.findMemberCompletionContextAt(usageIndex + 1, 8)!;
 
-	const names = file.getMemberCompletionDeclarations(context).map(declaration => declaration.name);
+	const names = frontend.snapshot.symbolResolver.getWholeProgramMembers(context.receiver).map(declaration => declaration.name);
 	assert.deepEqual(names, ['__index', 'move', 'new']);
 });

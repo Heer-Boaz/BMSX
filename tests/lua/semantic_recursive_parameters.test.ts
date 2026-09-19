@@ -71,13 +71,13 @@ return first.left, second.right`;
 				for (const name of order) {
 					const declaration = file.decls.find(entry => entry.name === name)!;
 					const expected = name === 'first' ? ['left', 'next'] : ['next', 'right'];
-					assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(declaration.id)).map(entry => entry.name).sort(), expected);
+					assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(declaration.id)).map(entry => entry.name).sort(), expected);
 				}
 				const metrics = snapshot.symbolResolver.getSemanticQueryMetrics();
 				assert.equal(metrics.instantiatedCalls, mutual ? 4 : 2, 'chain length does not grow analysis frames');
 				for (const name of order) {
 					const declaration = file.decls.find(entry => entry.name === name)!;
-					snapshot.symbolResolver.getMembers(declarationValueSource(declaration.id));
+					snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(declaration.id));
 				}
 				assert.deepEqual(snapshot.symbolResolver.getSemanticQueryMetrics(), metrics, 'repeated reads retain the solved facts');
 			}
@@ -111,7 +111,7 @@ end`);
 		workspace.updateFile('fanout.lua', lines.join('\n'));
 		const snapshot = workspace.getSnapshot();
 		const file = snapshot.getFileData('fanout.lua')!;
-		const members = (name: string) => snapshot.symbolResolver.getMembers(
+		const members = (name: string) => snapshot.symbolResolver.getWholeProgramMembers(
 			declarationValueSource(file.decls.find(entry => entry.name === name)!.id),
 		).map(entry => entry.name).sort();
 		assert.deepEqual(members('result'), ['inner']);
@@ -138,7 +138,7 @@ return result.marker`;
 	workspace.updateFile('indexed.lua', source);
 	const snapshot = workspace.getSnapshot();
 	const result = snapshot.getFileData('indexed.lua')!.decls.find(entry => entry.name === 'result')!;
-	assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(result.id)).map(entry => entry.name), ['marker']);
+	assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(result.id)).map(entry => entry.name), ['marker']);
 	assert.equal(snapshot.symbolResolver.getSemanticQueryMetrics().instantiatedCalls, 1);
 	for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'indexed.lua', level), [11]);
 });
@@ -151,7 +151,7 @@ return result.found`;
 	workspace.updateFile('unknown_index.lua', source);
 	const snapshot = workspace.getSnapshot();
 	const result = snapshot.getFileData('unknown_index.lua')!.decls.find(entry => entry.name === 'result')!;
-	assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(result.id)).map(entry => entry.name), ['found']);
+	assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(result.id)).map(entry => entry.name), ['found']);
 	for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'unknown_index.lua', level), [true]);
 });
 
@@ -163,7 +163,7 @@ local function walk(value) return walk(value.next) or value end
 local result = walk(node)`);
 	const snapshot = workspace.getSnapshot();
 	const result = snapshot.getFileData('cycle.lua')!.decls.find(entry => entry.name === 'result')!;
-	assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(result.id)).map(entry => entry.name).sort(), ['marker', 'next']);
+	assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(result.id)).map(entry => entry.name).sort(), ['marker', 'next']);
 	assert.equal(snapshot.symbolResolver.getSemanticQueryMetrics().instantiatedCalls, 1);
 });
 
@@ -180,7 +180,7 @@ return result.late`;
 	workspace.updateFile('callbacks.lua', source);
 	const snapshot = workspace.getSnapshot();
 	const result = snapshot.getFileData('callbacks.lua')!.decls.find(entry => entry.name === 'result')!;
-	assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(result.id)).map(entry => entry.name).sort(), ['early', 'late']);
+	assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(result.id)).map(entry => entry.name).sort(), ['early', 'late']);
 	for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'callbacks.lua', level), [true]);
 });
 
@@ -198,7 +198,7 @@ local selected = run(${argument})
 return selected.${expected}`);
 		const snapshot = workspace.getSnapshot();
 		const result = snapshot.getFileData('values.lua')!.decls.find(entry => entry.name === 'selected')!;
-		const names = snapshot.symbolResolver.getMembers(declarationValueSource(result.id)).map(entry => entry.name).sort();
+		const names = snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(result.id)).map(entry => entry.name).sort();
 		assert.deepEqual(names, name === 'nested' ? ['nested'] : ['data', 'found']);
 		assert.equal(snapshot.symbolResolver.getSemanticQueryMetrics().instantiatedCalls, 2, 'the value producer is required even without a callback invocation');
 	});
@@ -222,7 +222,7 @@ return first.red, second.blue`;
 			const snapshot = workspace.getSnapshot();
 			for (const name of order) {
 				const declaration = snapshot.getFileData('storage.lua')!.decls.find(entry => entry.name === name)!;
-				assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(declaration.id)).map(entry => entry.name), [name === 'first' ? 'red' : 'blue']);
+				assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(declaration.id)).map(entry => entry.name), [name === 'first' ? 'red' : 'blue']);
 			}
 		}
 		for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'storage.lua', level), [true, true]);
@@ -247,7 +247,7 @@ return selected.right, first.left, second.right`;
 		for (const name of order) {
 			const declaration = snapshot.getFileData('aliases.lua')!.decls.find(entry => entry.name === name)!;
 			const expected = name === 'selected' ? ['left', 'right'] : [name === 'first' ? 'left' : 'right'];
-			assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(declaration.id)).map(entry => entry.name).sort(), expected);
+			assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(declaration.id)).map(entry => entry.name).sort(), expected);
 		}
 	}
 	for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'aliases.lua', level), [true, true, true]);
@@ -314,8 +314,8 @@ return first.token.left, second.token.right, first.item.leaf_left, second.item.l
 		for (const name of order) {
 			const declaration = snapshot.getFileData('closures.lua')!.decls.find(entry => entry.name === name)!;
 			const value = declarationValueSource(declaration.id);
-			assert.deepEqual(snapshot.symbolResolver.getMembers(appendValueMember(value, 'token')).map(entry => entry.name), [name === 'first' ? 'left' : 'right']);
-			assert.deepEqual(snapshot.symbolResolver.getMembers(appendValueMember(value, 'item')).map(entry => entry.name).sort(), [name === 'first' ? 'leaf_left' : 'leaf_right', 'next']);
+			assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(appendValueMember(value, 'token')).map(entry => entry.name), [name === 'first' ? 'left' : 'right']);
+			assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(appendValueMember(value, 'item')).map(entry => entry.name).sort(), [name === 'first' ? 'leaf_left' : 'leaf_right', 'next']);
 		}
 	}
 	for (const level of [0, 3] as const) assert.deepEqual(runCompiledLua(source, 'closures.lua', level), [11, 22, true, true]);

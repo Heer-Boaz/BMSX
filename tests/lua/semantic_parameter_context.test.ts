@@ -90,7 +90,7 @@ test('rebinding a parameter cannot merge the actual argument and replacement obj
 		const file = snapshot.getFileData('parameters.lua')!;
 		for (const name of names) {
 			const declaration = file.decls.find(entry => entry.name === name && entry.kind === 'constant')!;
-			const members = snapshot.symbolResolver.getMembers(declarationValueSource(declaration.id)).map(entry => entry.name).sort();
+			const members = snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(declaration.id)).map(entry => entry.name).sort();
 			assert.deepEqual(members, name === 'selected' ? ['original', 'replacement'] : [name], name);
 		}
 	}
@@ -112,7 +112,7 @@ test('parameter rebinding stays local when the argument is another formal', () =
 	].join('\n'));
 	const snapshot = workspace.getSnapshot();
 	const selected = snapshot.getFileData('forward.lua')!.decls.find(entry => entry.name === 'selected')!;
-	assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(selected.id)).map(entry => entry.name), ['original']);
+	assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(selected.id)).map(entry => entry.name), ['original']);
 });
 
 test('a closure rebinds its captured formal without rebinding the original argument', () => {
@@ -131,7 +131,7 @@ test('a closure rebinds its captured formal without rebinding the original argum
 	const snapshot = workspace.getSnapshot();
 	for (const name of ['selected', 'original', 'replacement']) {
 		const declaration = snapshot.getFileData('capture.lua')!.decls.find(entry => entry.name === name && entry.kind === 'constant')!;
-		assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(declaration.id)).map(entry => entry.name).sort(),
+		assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(declaration.id)).map(entry => entry.name).sort(),
 			name === 'selected' ? ['original', 'replacement'] : [name], name);
 	}
 });
@@ -150,7 +150,7 @@ test('a called closure can also replace an ordinary captured local', () => {
 	].join('\n'));
 	const snapshot = workspace.getSnapshot();
 	const selected = snapshot.getFileData('local.lua')!.decls.find(entry => entry.name === 'selected')!;
-	assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(selected.id)).map(entry => entry.name).sort(), ['initial', 'updated']);
+	assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(selected.id)).map(entry => entry.name).sort(), ['initial', 'updated']);
 });
 
 test('writing through a parameter still modifies the shared argument object', () => {
@@ -164,7 +164,7 @@ test('writing through a parameter still modifies the shared argument object', ()
 	workspace.updateFile('mutation.lua', source);
 	const snapshot = workspace.getSnapshot();
 	const original = snapshot.getFileData('mutation.lua')!.decls.find(entry => entry.name === 'original' && entry.kind === 'constant')!;
-	assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(original.id)).map(entry => entry.name).sort(), ['attached', 'original']);
+	assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(original.id)).map(entry => entry.name).sort(), ['attached', 'original']);
 	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'mutation.lua'), [], {
 		entrySource: source, programDomain: 'system', optLevel: 0,
 	});
@@ -205,7 +205,7 @@ test('calls keep parameter and replacement pairs separate', () => {
 		['left', ['left']], ['right', ['right']], ['red', ['red']], ['blue', ['blue']],
 	] as const) {
 		const declaration = snapshot.getFileData('pairs.lua')!.decls.find(entry => entry.name === name && entry.kind === 'constant')!;
-		assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(declaration.id)).map(entry => entry.name).sort(), expected, name);
+		assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(declaration.id)).map(entry => entry.name).sort(), expected, name);
 	}
 });
 
@@ -223,7 +223,7 @@ for (const [name, body, argument] of [
 		].join('\n'));
 		const snapshot = workspace.getSnapshot();
 		const result = snapshot.getFileData('callbacks.lua')!.decls.find(entry => entry.name === 'result' && entry.kind === 'constant')!;
-		assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(result.id)).map(entry => entry.name), ['found']);
+		assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(result.id)).map(entry => entry.name), ['found']);
 	});
 }
 
@@ -248,7 +248,7 @@ for (const depth of [1, 2, 4]) {
 		const snapshot = workspace.getSnapshot();
 		for (const [name, expected] of [['first', 'red'], ['second', 'blue']]) {
 			const declaration = snapshot.getFileData('storage.lua')!.decls.find(entry => entry.name === name)!;
-			assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(declaration.id)).map(entry => entry.name), [expected]);
+			assert.deepEqual(snapshot.symbolResolver.getWholeProgramMembers(declarationValueSource(declaration.id)).map(entry => entry.name), [expected]);
 		}
 	});
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { semanticSymbolAt } from './semantic_test_harness';
+import { wholeProgramSymbolAt } from './semantic_test_harness';
 
 const semanticWorkspaceModulePromise = import('../../toolchain/ts/lua/semantic/model');
 
@@ -83,7 +83,7 @@ test('semantic workspace follows member effects through higher-order factory cal
 	workspace.updateFile('effect_unit.lua', effectSource.join('\n'));
 	workspace.updateFile('actor.lua', actorLines.join('\n'));
 	const snapshot = workspace.getSnapshot();
-	const targetAt = (line: string, member: string) => semanticSymbolAt(snapshot,
+	const targetAt = (line: string, member: string) => wholeProgramSymbolAt(snapshot,
 		'actor.lua',
 		lineNumber(actorLines, line),
 		line.lastIndexOf(member) + 1,
@@ -101,7 +101,7 @@ test('semantic workspace follows member effects through higher-order factory cal
 	);
 	const rightPlayLine = actorLines.lastIndexOf('\tself.timers:play()') + 1;
 	assert.equal(
-		semanticSymbolAt(snapshot, 'actor.lua', rightPlayLine, actorLines[rightPlayLine - 1].lastIndexOf('play') + 1),
+		wholeProgramSymbolAt(snapshot, 'actor.lua', rightPlayLine, actorLines[rightPlayLine - 1].lastIndexOf('play') + 1),
 		null,
 		'an unattached value does not acquire factory effects',
 	);
@@ -110,7 +110,7 @@ test('semantic workspace follows member effects through higher-order factory cal
 	workspace.updateFile('actor.lua', withoutTimer.join('\n'));
 	const playLine = lineNumber(withoutTimer, '\tself.timers:play()');
 	assert.equal(
-		semanticSymbolAt(workspace.getSnapshot(),
+		wholeProgramSymbolAt(workspace.getSnapshot(),
 			'actor.lua',
 			playLine,
 			withoutTimer[playLine - 1].lastIndexOf('play') + 1,
@@ -176,7 +176,7 @@ test('semantic workspace follows inherited method effects without matching by me
 	const impostorEffectLine = actorLines.lastIndexOf('\tself.effects:trigger()') + 1;
 
 	assert.equal(
-		semanticSymbolAt(snapshot,
+		wholeProgramSymbolAt(snapshot,
 			'actor.lua',
 			actorEffectLine,
 			actorLines[actorEffectLine - 1].lastIndexOf('effects') + 1,
@@ -184,7 +184,7 @@ test('semantic workspace follows inherited method effects without matching by me
 		'effect_unit.lua',
 	);
 	assert.equal(
-		semanticSymbolAt(snapshot,
+		wholeProgramSymbolAt(snapshot,
 			'actor.lua',
 			actorEffectLine,
 			actorLines[actorEffectLine - 1].lastIndexOf('trigger') + 1,
@@ -192,7 +192,7 @@ test('semantic workspace follows inherited method effects without matching by me
 		'effect_unit.lua',
 	);
 	assert.equal(
-		semanticSymbolAt(snapshot,
+		wholeProgramSymbolAt(snapshot,
 			'actor.lua',
 			impostorEffectLine,
 			actorLines[impostorEffectLine - 1].lastIndexOf('trigger') + 1,
@@ -206,7 +206,7 @@ test('semantic workspace follows inherited method effects without matching by me
 	snapshot = workspace.getSnapshot();
 	const detachedEffectLine = lineNumber(detachedActorLines, '\tself.effects:trigger()');
 	assert.equal(
-		semanticSymbolAt(snapshot,
+		wholeProgramSymbolAt(snapshot,
 			'actor.lua',
 			detachedEffectLine,
 			detachedActorLines[detachedEffectLine - 1].lastIndexOf('trigger') + 1,
@@ -234,7 +234,7 @@ test('function-owned table fields do not escape as external member effects', asy
 	const referenceLine = lineNumber(actorLines, '\tself.font:draw_text()');
 
 	assert.equal(
-		semanticSymbolAt(snapshot,
+		wholeProgramSymbolAt(snapshot,
 			'actor.lua',
 			referenceLine,
 			actorLines[referenceLine - 1].lastIndexOf('font') + 1,
@@ -243,7 +243,7 @@ test('function-owned table fields do not escape as external member effects', asy
 		'a function-local options table does not publish its fields onto unrelated receivers',
 	);
 	const optionsLine = lineNumber(actorLines, '\treturn { font = font }');
-	const optionsField = semanticSymbolAt(snapshot,
+	const optionsField = wholeProgramSymbolAt(snapshot,
 		'actor.lua',
 		optionsLine,
 		actorLines[optionsLine - 1].indexOf('font') + 1,
@@ -315,7 +315,7 @@ test('semantic workspace keeps metatable-keyed storage contextual to each callsi
 	workspace.updateFile('right.lua', rightSource);
 	workspace.updateFile('actor.lua', actorLines.join('\n'));
 	let snapshot = workspace.getSnapshot();
-	const targetAt = (line: string, member: string) => semanticSymbolAt(snapshot,
+	const targetAt = (line: string, member: string) => wholeProgramSymbolAt(snapshot,
 		'actor.lua',
 		lineNumber(actorLines, line),
 		line.lastIndexOf(member) + 1,
@@ -332,7 +332,7 @@ test('semantic workspace keeps metatable-keyed storage contextual to each callsi
 	workspace.updateFile('actor.lua', retargetedLines.join('\n'));
 	snapshot = workspace.getSnapshot();
 	assert.equal(
-		semanticSymbolAt(snapshot,
+		wholeProgramSymbolAt(snapshot,
 			'actor.lua',
 			lineNumber(retargetedLines, '\tleft_value:left_only()'),
 			'\tleft_value:left_only()'.lastIndexOf('left_only') + 1,
@@ -341,7 +341,7 @@ test('semantic workspace keeps metatable-keyed storage contextual to each callsi
 		'retargeting removes the previous indexed value',
 	);
 	assert.equal(
-		semanticSymbolAt(snapshot,
+		wholeProgramSymbolAt(snapshot,
 			'actor.lua',
 			lineNumber(retargetedLines, '\tleft_value:right_only()'),
 			'\tleft_value:right_only()'.lastIndexOf('right_only') + 1,

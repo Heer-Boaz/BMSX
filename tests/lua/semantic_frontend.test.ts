@@ -11,6 +11,7 @@ import { createLuaSemanticFrontendFromSnapshot } from '../../ide/editor/contrib/
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { parseLuaChunk, parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
+import { wholeProgramSymbolAt } from './semantic_test_harness';
 
 test('semantic revisions identify immutable binder facts independently of shared syntax and workspace version numbers', () => {
 	const source = 'return { answer = 42 }';
@@ -459,7 +460,7 @@ test('LuaSemanticFrontend retains BLua pointer-member completion syntax', () => 
 	);
 });
 
-test('LuaSemanticFrontend enumerates members through modules, nested values, effects, and prototypes', () => {
+test('LuaSemanticFrontend completes members from module, nested and prototype definitions, not effects of other functions', () => {
 	const usageLines = [
 		"local api<const> = require('api')",
 		'local base<const> = { inherited = 1 }',
@@ -497,13 +498,15 @@ test('LuaSemanticFrontend enumerates members through modules, nested values, eff
 		file.getMemberCompletionDeclarations(build).map(member => member.name),
 		['build'],
 	);
+	// `extend(derived)` writes `added` through another function's parameter;
+	// like a language server, completion follows definitions only.
 	assert.deepEqual(
 		file.getMemberCompletionDeclarations(own).map(member => member.name),
-		['added', 'inherited', 'own'],
+		['inherited', 'own'],
 	);
 });
 
-test('LuaSemanticFrontend follows a callback parameter returned by another function', () => {
+test('the whole-program solver follows a callback parameter returned by another function', () => {
 	const source = `local function selected(value) return value end
 local function dispatch(action, target)
 	local callback = selected(action)
@@ -517,12 +520,14 @@ return object.ready.answer`;
 	const frontend = buildLuaSemanticFrontend([{ path: 'callback.lua', source }]);
 	const file = frontend.getFile('callback.lua');
 	const position = findPosition(source, 'return object.ready.answer', 'answer');
-	const navigation = firstNavigationTarget(file, position.line, position.column);
-	assert.ok(navigation);
-	assert.equal(navigation.range.start.line, 6);
+	const target = wholeProgramSymbolAt(frontend.snapshot, 'callback.lua', position.line, position.column);
+	assert.ok(target);
+	assert.equal(target.declaration.range.start.line, 6);
 	const receiver = file.findMemberCompletionContextAt(position.line, 'return object.'.length + 1);
 	assert.ok(receiver);
-	assert.deepEqual(file.getMemberCompletionDeclarations(receiver).map(member => member.name), ['ready']);
+	assert.deepEqual(frontend.snapshot.symbolResolver.getWholeProgramMembers(receiver.receiver).map(member => member.name), ['ready']);
+	// Interactive navigation follows definitions only: the callback's write is not one.
+	assert.equal(firstNavigationTarget(file, position.line, position.column) ?? null, null);
 });
 
 test('LuaSemanticFrontend retains repeat locals through the until condition', () => {
