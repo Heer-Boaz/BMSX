@@ -151,7 +151,8 @@ export class EditorLuaSemanticProject {
 			const input = inputs[index];
 			this.documentPaths.add(input.path);
 			const existing = this.workspace.getFileData(input.path);
-			if (!existing || existing.source !== input.source) {
+			if (!existing || existing.source !== input.source
+				|| (input.parsed !== undefined && existing.chunk !== input.parsed.chunk)) {
 				changedAnalyses.push(buildLuaFileSemanticData(
 					input.source,
 					input.path,

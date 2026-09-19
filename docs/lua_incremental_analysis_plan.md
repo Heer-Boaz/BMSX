@@ -104,6 +104,8 @@ slice 1b has not been met by this ownership change alone.
 ### 1b. Relative syntax and document edit transport — planned
 
 - Define immutable syntax payloads with relative widths/spans in `syntax/`.
+  Payloads must cover full source extents, including trivia and skipped/error
+  text; formatted absolute diagnostics remain snapshot presentation.
   Snapshot-owned occurrence locations provide absolute source positions.
   Distinct occurrences remain distinct even when their payloads are identical.
 - Make the existing lexer/parser produce that representation directly. No
@@ -306,3 +308,21 @@ alive; removal of the global cache improves release. The remaining released
 heap includes initialization/JIT effects, not necessarily retained documents.
 Compact reusable syntax/token representation remains work for 1b/2; this result
 must not be described as meeting the final allocation/performance gate.
+
+
+## Independent review checkpoints
+
+2026-09-20 (fresh agent, no conversation history): reviewed `3075a9b50` against
+live owners. The review reproduced same-text explicit-generation replacement
+being suppressed in workspace updates. This existing contract gap is now fixed:
+text-only updates may retain a generation, but explicit parses/facts are
+published by identity. Regression tests preserve old snapshots and verify
+republication of the same facts is a no-op.
+
+The review also requires full-width trivia/recovery in the representation step,
+not as a later parser patch. Relative statement/scope units with explicit
+snapshot location lookup are preferred over AST range proxies. Source string
+materialization and flat suffix copying remain separately measured work;
+no regional-work claim may hide them. Context-token reads currently use a
+writing project entrypoint; batching and syntax/binding ownership still need
+attention as the document delta path is integrated.

@@ -429,7 +429,7 @@ class LuaProjectIndex {
 
 	public updateFile(file: string, source: string, parsed?: ParsedLuaChunk): FileSemanticData {
 		const current = this.files.get(file);
-		if (current && current.source === source) {
+		if (current && current.source === source && (parsed === undefined || current.chunk === parsed.chunk)) {
 			return current;
 		}
 		const data = buildLuaFileSemanticData(source, file, parsed);
@@ -588,7 +588,7 @@ class LuaProjectIndex {
 
 	private replaceIndexedFile(file: string, data: FileSemanticData): boolean {
 		const current = this.files.get(file);
-		if (current && current.source === data.source) {
+		if (current === data) {
 			return false;
 		}
 		if (current) {

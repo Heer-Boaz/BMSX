@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { EditorLuaSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/project';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
@@ -347,4 +348,22 @@ test('non-Lua model changes do not invalidate a Lua semantic project', () => {
 	model.pushEditOperations([{ offset: 1, deleteLength: 0, text: ' ' }]);
 	models.clear();
 	assert.equal(project.getSnapshot(), before);
+});
+
+
+test('explicit editor parses replace same-text generations without replacing retained snapshots', t => {
+	const models = new EditorTextModelService();
+	const project = new EditorLuaSemanticProject(0, models);
+	t.after(() => { project.dispose(); models.clear(); });
+	const path = 'explicit.lua';
+	const source = 'local value = 1; return value';
+	project.updateDocument(path, source);
+	const old = project.getSnapshot();
+	const parsed = parseLuaChunkWithRecovery(source, path);
+	project.updateDocuments([{ path, source, parsed }]);
+	const updated = project.getSnapshot();
+	assert.equal(updated.getFileData(path)!.chunk, parsed.chunk);
+	assert.notEqual(old.getFileData(path)!.chunk, parsed.chunk);
+	project.updateDocuments([{ path, source, parsed }]);
+	assert.equal(project.getSnapshot(), updated);
 });

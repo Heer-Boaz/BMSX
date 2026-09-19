@@ -62,6 +62,29 @@ test('workspace construction retains an explicitly supplied parse generation', (
 		'an independent source load cannot borrow another document owner');
 });
 
+test('workspace updates publish explicit generations even when source text is equal', () => {
+	const workspace = new LuaSemanticWorkspace();
+	const first = workspace.updateFile(path, original);
+	const old = workspace.getSnapshot();
+	const parsed = parseLuaChunkWithRecovery(original, path);
+	const second = workspace.updateFile(path, original, parsed);
+	assert.equal(second.chunk, parsed.chunk);
+	assert.notEqual(first, second);
+	assert.equal(workspace.getSnapshot().getFileData(path), second);
+	assert.equal(old.getFileData(path), first);
+	const third = buildLuaFileSemanticData(original, path);
+	workspace.updateFiles([third]);
+	const updated = workspace.getSnapshot();
+	assert.equal(updated.getFileData(path), third);
+	for (const [node, id] of third.declarationIdsBySyntax) {
+		assert.equal(updated.symbolResolver.getDeclaration(id), third.decls.find(decl => decl.id === id));
+		assert.equal(first.declarationIdsBySyntax.has(node), false);
+	}
+	workspace.updateFiles([third]);
+	assert.equal(workspace.getSnapshot(), updated, 'republishing the same facts is a no-op');
+	assert.equal(workspace.updateFile(path, original), third, 'text-only reads retain the generation');
+});
+
 const edits = [
 	['insert line at start', '\n' + original],
 	['insert within function', original.replace('\titem:run()', '\tlocal value = 1\n\titem:run()')],
