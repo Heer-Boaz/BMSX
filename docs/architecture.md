@@ -4787,7 +4787,11 @@ directly; it does not rebuild token maps or rescan the token stream for function
 paths, member names, or method names. The parser does not build declaration or
 scope indexes; those are binder products. A file-semantic record owns exactly one
 retained AST and its lexical token sequence. The binder indexes declarations
-and references by the identity of their identifier nodes. Compiler passes bind
+and references by the identity of their identifier nodes. When a caller supplies
+a parsed chunk, the binder consumes that exact syntax generation; a path/source
+parse-cache hit cannot substitute a different AST. The incremental-analysis
+plan and cold/edit equivalence gates are in `lua_incremental_analysis_plan.md`;
+sub-file incremental parsing and binding are not yet implemented. Compiler passes bind
 the same retained nodes and never reconstruct semantic identity from encoded
 source ranges, start-position fallbacks, or synthesized references. Source
 ranges remain the correct boundary for cursor- and protocol-originated queries,

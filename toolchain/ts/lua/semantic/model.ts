@@ -372,13 +372,12 @@ export function buildLuaFileSemanticData(
 	parsed?: ParsedLuaChunk,
 	chunk?: LuaChunk,
 ): FileSemanticData {
-	const parseEntry = getCachedLuaParse({
+	const parseResult = parsed ?? getCachedLuaParse({
 		path,
 		source,
-		parsed,
-	});
-	const retainedChunk = chunk === undefined ? parseEntry.parsed.chunk : chunk;
-	const tokens = parseEntry.parsed.tokens;
+	}).parsed;
+	const retainedChunk = chunk === undefined ? parseResult.chunk : chunk;
+	const tokens = parseResult.tokens;
 	const eof = tokens[tokens.length - 1];
 	const builder = new SemanticBuilder({
 		path,
@@ -398,7 +397,7 @@ export function buildLuaFileSemanticData(
 		file: path,
 		revision: Symbol(),
 		source,
-		syntaxError: parseEntry.syntaxError,
+		syntaxError: parseResult.syntaxError,
 		chunk: retainedChunk,
 		annotations,
 		decls,

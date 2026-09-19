@@ -20,7 +20,9 @@ export function getCachedLuaParse(options: {
 }): LuaAnalysisEntry {
 	const cacheKey = options.path;
 	const cached = analysisCache.get(cacheKey);
-	if (cached && cached.source === options.source) {
+	// Supplied syntax owns its node identities even when the source text matches.
+	if (cached && cached.source === options.source
+		&& (options.parsed === undefined || cached.parsed === options.parsed)) {
 		cached.lastAccessMs = Date.now();
 		return cached;
 	}

@@ -82,6 +82,11 @@ the same depth bound. No rule enumerates writers elsewhere in the program.
 
 ## Incrementality
 
+The next parse/bind work is specified in
+[Incremental Lua parsing and binding](lua_incremental_analysis_plan.md).
+It separates the measured baseline from the planned syntax-representation,
+incremental-parser and scope-binding slices; annotations remain out of scope.
+
 Per-file facts (shape definitions, static members, `self` fields, prototype
 edges, return expressions, prototype summaries) are pure functions of a file's
 `FileSemanticData` and are cached on it. Cross-file answers are memoized per
