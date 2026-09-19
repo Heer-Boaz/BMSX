@@ -1,3 +1,5 @@
+import type { LuaSourceUnit } from '../source_layout';
+import type { LuaSourceLocations, LuaSyntaxSpan } from '../source_locations';
 import type { LuaSyntaxError } from '../../errors';
 import type { LuaToken } from '../token';
 
@@ -60,7 +62,7 @@ export const enum LuaSyntaxKind {
 
 export type LuaNode = {
 	readonly kind: LuaSyntaxKind;
-	readonly range: LuaSourceRange;
+	readonly span: LuaSyntaxSpan;
 };
 
 export type LuaStatement =
@@ -103,22 +105,31 @@ export type LuaExpression =
 	| LuaSizeOfExpression
 	| LuaOffsetOfExpression;
 
+/** Non-executable source consumed by recovery, including discarded nested units. */
+export type LuaSkippedSyntax = {
+	readonly span: LuaSyntaxSpan;
+	readonly units: readonly LuaSourceUnit[];
+};
+
 export type LuaChunk = LuaNode & {
 	readonly kind: LuaSyntaxKind.Chunk;
 	/** One immutable source generation, retained with its syntax rather than a path cache. */
 	readonly source: string;
+	readonly locations: LuaSourceLocations;
 	readonly tokens: readonly LuaToken[];
 	readonly syntaxError: LuaSyntaxError | null;
 	readonly constModule: boolean;
 	readonly entryModule: boolean;
 	readonly body: ReadonlyArray<LuaStatement>;
+	readonly skippedSyntax: readonly LuaSkippedSyntax[];
 };
 
 export type LuaBlock = LuaNode & {
 	readonly kind: LuaSyntaxKind.Block;
-	readonly startInclusive: LuaSourcePosition;
-	readonly endExclusive: LuaSourcePosition;
+	readonly startInclusive: number;
+	readonly endExclusive: number;
 	readonly body: ReadonlyArray<LuaStatement>;
+	readonly skippedSyntax: readonly LuaSkippedSyntax[];
 };
 
 export const enum LuaAssignmentOperator {
@@ -227,13 +238,13 @@ export type LuaHaltUntilIrqStatement = LuaNode & {
 export type LuaTypeReference = {
 	readonly name: string;
 	readonly arrayLengths: ReadonlyArray<LuaExpression | null>;
-	readonly range: LuaSourceRange;
+	readonly span: LuaSyntaxSpan;
 };
 
 export type LuaStructFieldDeclaration = {
 	readonly name: string;
 	readonly typeRef: LuaTypeReference;
-	readonly range: LuaSourceRange;
+	readonly span: LuaSyntaxSpan;
 };
 
 export type LuaStructDeclarationStatement = LuaNode & {
@@ -326,21 +337,21 @@ export const enum LuaTableFieldKind {
 export type LuaTableArrayField = {
 	readonly kind: LuaTableFieldKind.Array;
 	readonly value: LuaExpression;
-	readonly range: LuaSourceRange;
+	readonly span: LuaSyntaxSpan;
 };
 
 export type LuaTableIdentifierField = {
 	readonly kind: LuaTableFieldKind.IdentifierKey;
 	readonly name: string;
 	readonly value: LuaExpression;
-	readonly range: LuaSourceRange;
+	readonly span: LuaSyntaxSpan;
 };
 
 export type LuaTableExpressionField = {
 	readonly kind: LuaTableFieldKind.ExpressionKey;
 	readonly key: LuaExpression;
 	readonly value: LuaExpression;
-	readonly range: LuaSourceRange;
+	readonly span: LuaSyntaxSpan;
 };
 
 /** Range covers all field tokens, including grouping/brackets, but not its separator or exterior trivia. */
@@ -413,8 +424,9 @@ export type LuaCallExpression = LuaNode & {
 };
 
 export type LuaCallArgumentList = {
-	readonly range: LuaSourceRange;
-	readonly separators: ReadonlyArray<LuaSourcePosition>;
+	readonly span: LuaSyntaxSpan;
+	/** UTF-16 offsets relative to span.unit. */
+	readonly separators: ReadonlyArray<number>;
 };
 
 export const enum LuaMemberOperator {

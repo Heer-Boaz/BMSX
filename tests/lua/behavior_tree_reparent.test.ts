@@ -21,7 +21,7 @@ test('a drop into deeper and empty parents proposes source, then one Undo/Redo p
 		f.select(0, edge);
 		const root = () => f.viewport.model.nodes[0].children[0];
 		let proposal: Parameters<BehaviorTreeTransferDrop> | undefined;
-		const drag = beginBehaviorTreeDrag(f.model, f.view, f.analysis, (...drop) => { proposal = drop; })!;
+		const drag = beginBehaviorTreeDrag(f.model, f.view, (...drop) => { proposal = drop; })!;
 		drag.dragOver(...targetPoint(f, root().children[targetIndex], 'inside'));
 		assert.equal(drag.feedback.accepted, true);
 		assert.equal(drag.feedback.kind, 'node-insertion');
@@ -60,7 +60,7 @@ test('an only child moves upward before a sibling and leaves its written list em
 	const root = () => f.viewport.model.nodes[0].children[0];
 	f.viewport.selection = root().children[1].children[0].children[0];
 	acceptBehaviorGraphSelection(f.view, f.graph);
-	const drag = beginBehaviorTreeDrag(f.model, f.view, f.analysis, (analysis, insertion, check) => {
+	const drag = beginBehaviorTreeDrag(f.model, f.view, (analysis, insertion, check) => {
 		transferBehaviorTreeChild(f.model, f.view, analysis.member, check, insertion);
 	})!;
 	drag.dragOver(...targetPoint(f, root().children[2], 'before'));
@@ -87,7 +87,7 @@ trees.register('weighted', { root={type='sequence',children={
 		const node = root().children[0].children[0];
 		f.viewport.selection = edge ? f.viewport.model.edges.find(edge => edge.child === node)! : node;
 		acceptBehaviorGraphSelection(f.view, f.graph);
-		const drag = beginBehaviorTreeDrag(f.model, f.view, f.analysis, (analysis, insertion, check) => {
+		const drag = beginBehaviorTreeDrag(f.model, f.view, (analysis, insertion, check) => {
 			assert.ok(behaviorTreeTransferImpacts(f.view, analysis, insertion, check).some(item => item.label === 'EMPTY RANDOM SELECTOR'));
 			transferBehaviorTreeChild(f.model, f.view, analysis.member, check, insertion);
 		})!;
@@ -107,7 +107,7 @@ trees.register('weighted', { root={type='sequence',children={
 test('center sectors do not fabricate lists, replace roots or permit a descendant cycle', t => {
 	const f = fixture(t, BT_REPARENT_SOURCE);
 	f.select(1);
-	const drag = beginBehaviorTreeDrag(f.model, f.view, f.analysis, () => assert.fail('unexpected list transfer'))!;
+	const drag = beginBehaviorTreeDrag(f.model, f.view, () => assert.fail('unexpected list transfer'))!;
 	const root = f.viewport.model.nodes[0].children[0];
 	for (const node of [root.children[0], root.children[1], root.children[1].children[0], f.viewport.model.nodes[0]]) {
 		drag.dragOver(...targetPoint(f, node, 'inside'));
@@ -125,7 +125,7 @@ trees.register('shared', {root={type='sequence',children={shared,shared,{type='s
 	const root = () => f.viewport.model.nodes[0].children[0];
 	f.viewport.selection = root().children[1].children[0];
 	acceptBehaviorGraphSelection(f.view, f.graph);
-	const drag = beginBehaviorTreeDrag(f.model, f.view, f.analysis, (analysis, insertion, check) => {
+	const drag = beginBehaviorTreeDrag(f.model, f.view, (analysis, insertion, check) => {
 		assert.equal(analysis.sourceUses.length, 2);
 		const impacts = behaviorTreeTransferImpacts(f.view, analysis, insertion, check);
 		assert.equal(impacts.filter(item => item.label.startsWith('REMOVE FROM')).length, 2);

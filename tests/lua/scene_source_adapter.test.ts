@@ -90,11 +90,11 @@ test('scene source adapter projects the real Nemesis root without executing Lua'
 	assert.deepEqual(scene.objects.map(object => object.field), scene.objectsTable.fields,
 		'a complete projection retains the actual ordered parent fields');
 	assert.deepEqual(
-		scene.objects.map(object => object.kind === 'object' ? object.memberId.range.start.line : -1),
+		scene.objects.map(object => object.kind === 'object' ? document.analysis.chunk.locations.range(object.memberId.span).start.line : -1),
 		[15, 24, 33, 42],
 	);
 	assert.deepEqual(
-		scene.objects.map(object => object.kind === 'object' ? object.position!.x.range.start.line : -1),
+		scene.objects.map(object => object.kind === 'object' ? document.analysis.chunk.locations.range(object.position!.x.span).start.line : -1),
 		[20, 29, 38, 47],
 	);
 	assert.ok(scene.objects.every(object => object.kind === 'object'
@@ -128,11 +128,11 @@ test('scene member moves use the retained parent table and preserve neighbouring
 	assert.equal(document.scenes.length, 2);
 	assert.equal(document.scenes[0].resolution, 'complete');
 	assert.equal(document.scenes[1].objects.length, 1);
-	model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, path, document.scenes[0].objectsTable, 1, 0));
+	model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, document.analysis.chunk.locations, document.scenes[0].objectsTable, 1, 0));
 	assert.equal(model.buffer.getText(), header + second + first + footer);
 	const moved = buildSceneSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), path)));
 	assert.deepEqual(moved.scenes.map(scene => scene.objects.map(object =>
-		object.kind === 'object' ? readLuaSourceRange(model.buffer, object.definitionId.range) : 'dynamic',
+		object.kind === 'object' ? readLuaSourceRange(model.buffer, moved.analysis.chunk.locations.range(object.definitionId.span)) : 'dynamic',
 	)), [["'two'", "'one'"], ["'three'"]]);
 	model.undo();
 	assert.equal(model.buffer.getText(), source);
@@ -149,7 +149,7 @@ test('scene position edit changes the canonical Nemesis source through its text 
 	const object = document.scenes[0].objects[0];
 	assert.equal(object.kind, 'object');
 	if (object.kind === 'object') {
-		const edits = createLuaTableFieldIntegerEdits(model.buffer, object.position!.x, 65536);
+		const edits = createLuaTableFieldIntegerEdits(model.buffer, document.analysis.chunk.locations, object.position!.x, 65536);
 		assert.notEqual(edits, null);
 		model.pushEditOperations(edits!);
 	}
@@ -217,11 +217,11 @@ test('scene members retain complete parser fields for source-only removal and do
 	const document = buildSceneSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, path, parsed)));
 	const [direct, dynamic] = document.scenes[0].objects;
 	assert.equal(direct.kind, 'object');
-	assert.equal(readLuaSourceRange(model.buffer, direct.field.range), member);
+	assert.equal(readLuaSourceRange(model.buffer, document.analysis.chunk.locations.range(direct.field.span)), member);
 	assert.equal(dynamic.kind, 'dynamic');
-	assert.equal(readLuaSourceRange(model.buffer, dynamic.field.range), 'build_object()');
+	assert.equal(readLuaSourceRange(model.buffer, document.analysis.chunk.locations.range(dynamic.field.span)), 'build_object()');
 	assert.equal(document.scenes[0].resolution, 'partial');
-	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, direct.field));
+	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.chunk.locations, parsed.tokens, direct.field));
 	const removed = source.replace(member, '').replace('\t; -- after', '\t -- after');
 	assert.equal(model.buffer.getText(), removed);
 	assert.equal(parseLuaChunkWithRecovery(removed, path).syntaxError, null);

@@ -13,7 +13,7 @@ export function leaveSingleUseLocalScope(context: SingleUseLocalContext): void {
 				: binding.readCount === 1 && !binding.capturedRead;
 			if (shouldReport) {
 				pushIssue(
-					context.issues,
+					context.lint,
 					singleUseLocalPatternRule.name,
 					binding.declaration,
 					singleUseLocalMessage(binding),

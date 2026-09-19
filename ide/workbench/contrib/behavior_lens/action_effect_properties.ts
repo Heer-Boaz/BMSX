@@ -1,3 +1,4 @@
+import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import { ACTION_EFFECT_FIELDS, type EffectPropertyGroup } from './action_effect_fields';
 import { LuaSyntaxKind, type LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import { readLuaExpressionPreview, readLuaSourceLinePreview } from '../../../language/lua/source_edits';
@@ -22,7 +23,7 @@ const GROUP_ORDER = Object.keys(GROUPS) as EffectPropertyGroup[];
 const UNKNOWN_FIELD = { group: 'unresolved' as const, label: 'UNRESOLVED FIELD', description: GROUPS.unresolved.description };
 
 
-export type EffectPropertyWrite = { readonly field: LuaTableField; readonly sourceSelection: 'field' | 'value' };
+export type EffectPropertyWrite = { readonly file: FileSemanticData; readonly field: LuaTableField; readonly sourceSelection: 'field' | 'value' };
 export type EffectPropertyElement = WorkbenchPropertyElement & (
 	{ readonly kind: 'group'; readonly group: EffectPropertyGroup }
 	| { readonly kind: 'property'; readonly source: BehaviorSourceNode; readonly write: EffectPropertyWrite | undefined }
@@ -65,9 +66,9 @@ export function projectActionEffectProperties(
 		return;
 	}
 	const groups = new Map<EffectPropertyGroup, WorkbenchTreeNode<EffectPropertyElement>>();
-	function add(source: BehaviorSourceNode, parent: WorkbenchTreeNode<EffectPropertyElement>, label: string, value: string, description: string, field?: LuaTableField, sourceSelection: 'field' | 'value' = 'value') {
+	function add(file: FileSemanticData, source: BehaviorSourceNode, parent: WorkbenchTreeNode<EffectPropertyElement>, label: string, value: string, description: string, field?: LuaTableField, sourceSelection: 'field' | 'value' = 'value') {
 		const node = appendWorkbenchTreeNode(tree, parent, {
-			kind: 'property', source, write: field === undefined ? undefined : { field, sourceSelection }, label: uppercaseOutsideStrings(label), value, description,
+			kind: 'property', source, write: field === undefined ? undefined : { file, field, sourceSelection }, label: uppercaseOutsideStrings(label), value, description,
 			warning: source.resolution !== 'complete', displayLabel: '', displayValue: '', displayValueLeft: 0,
 		}, properties.collapsedRowKeys.has(source.rowKey));
 		properties.nodesBySource.set(source.rowKey, node);
@@ -86,9 +87,9 @@ export function projectActionEffectProperties(
 			const count = field.source.resolution === 'complete' ? `${field.entries.length} ${field.entries.length === 1 ? 'VALUE' : 'VALUES'}`
 				: `${field.entries.length} AUTHORED / PARTIAL`;
 			value = field.field.value.kind === LuaSyntaxKind.TableConstructorExpression ? count
-				: `${readLuaExpressionPreview(view.source.models.get(field.field.value.range.path)!.buffer, field.field.value)} / ${count}`;
-		} else value = field.kind === 'unknown' ? readLuaSourceLinePreview(view.source.models.get(field.field.range.path)!.buffer, field.field.range) : readLuaExpressionPreview(view.source.models.get(field.field.value.range.path)!.buffer, field.field.value);
-		const row = add(field.source, group, metadata.label, value, metadata.description, field.kind === 'unknown' ? undefined : field.field, field.kind === 'value' ? 'field' : 'value');
+				: `${readLuaExpressionPreview(view.source.models.get(definition.body.file.file)!.buffer, definition.body.file.chunk.locations, field.field.value)} / ${count}`;
+		} else value = field.kind === 'unknown' ? readLuaSourceLinePreview(view.source.models.get(definition.body.file.file)!.buffer, definition.body.file.chunk.locations.range(field.field.span)) : readLuaExpressionPreview(view.source.models.get(definition.body.file.file)!.buffer, definition.body.file.chunk.locations, field.field.value);
+		const row = add(definition.body.file, field.source, group, metadata.label, value, metadata.description, field.kind === 'unknown' ? undefined : field.field, field.kind === 'value' ? 'field' : 'value');
 		if (field.kind !== 'list') continue;
 		const entries = new Map<BehaviorSourceNode, BehaviorSourceArrayEntry<BehaviorSourceNode>>();
 		for (const entry of field.entries) entries.set(entry.node, entry);
@@ -96,8 +97,8 @@ export function projectActionEffectProperties(
 			for (const child of source.children) {
 				const entry = entries.get(child);
 				const nested = entry === undefined
-					? add(child, parent, child.label, child.detail, 'PARTIAL REQUIREMENT SOURCE. NO DENSE RUNTIME INDEX IS INFERRED.')
-					: add(child, parent, '', readLuaExpressionPreview(view.source.models.get(entry.field.value.range.path)!.buffer, entry.field.value), 'AUTHORED REQUIREMENT VALUE. SOURCE OPENS THIS EXPRESSION, NOT ITS PARENT LIST.', entry.field);
+					? add(definition.body!.file, child, parent, child.label, child.detail, 'PARTIAL REQUIREMENT SOURCE. NO DENSE RUNTIME INDEX IS INFERRED.')
+					: add(entry.file, child, parent, '', readLuaExpressionPreview(view.source.models.get(entry.file.file)!.buffer, entry.file.chunk.locations, entry.field.value), 'AUTHORED REQUIREMENT VALUE. SOURCE OPENS THIS EXPRESSION, NOT ITS PARENT LIST.', entry.field);
 				children(child, nested);
 			}
 		}

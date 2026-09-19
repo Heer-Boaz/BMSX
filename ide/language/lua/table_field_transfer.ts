@@ -1,3 +1,4 @@
+import type { LuaSourceLocations } from '../../../toolchain/ts/lua/syntax/source_locations';
 import type { LuaTableConstructorExpression, LuaTableField } from '../../../toolchain/ts/lua/syntax/ast';
 import { LuaLexer } from '../../../toolchain/ts/lua/syntax/lexer';
 import { getLuaTableFieldTriviaSpan } from '../../../toolchain/ts/lua/syntax/table_fields';
@@ -25,17 +26,17 @@ export type LuaTableFieldTransfer = {
  */
 export function createLuaTableFieldTransfer(
 	buffer: TextBuffer,
-	path: string,
+	locations: LuaSourceLocations,
 	field: LuaTableField,
 	target: LuaTableConstructorExpression,
 	destination: number,
 ): LuaTableFieldTransfer {
-	const tokens = new LuaLexer(getTextSnapshot(buffer), path, false).scanTokens();
-	const selected = getLuaTableFieldTriviaSpan(tokens, field);
+	const tokens = new LuaLexer(getTextSnapshot(buffer), locations.path, false).scanTokens();
+	const selected = getLuaTableFieldTriviaSpan(locations, tokens, field);
 	const start = buffer.offsetAt(selected.startToken.line - 1, selected.startToken.column - 1);
 	const end = buffer.offsetAt(selected.endToken.line - 1, selected.endToken.column - 1);
-	const fieldStart = buffer.offsetAt(field.range.start.line - 1, field.range.start.column - 1);
-	const fieldEnd = buffer.offsetAt(field.range.end.line - 1, field.range.end.column);
+	const fieldStart = buffer.offsetAt(locations.range(field.span).start.line - 1, locations.range(field.span).start.column - 1);
+	const fieldEnd = buffer.offsetAt(locations.range(field.span).end.line - 1, locations.range(field.span).end.column);
 	let text: string;
 	if (selected.separator === null && destination < target.fields.length) {
 		// The grammar separator precedes trailing comments, never follows them.
@@ -47,14 +48,14 @@ export function createLuaTableFieldTransfer(
 	let fieldPrefix = fieldStart - start;
 	let precedingInsertion = 0;
 	if (destination < target.fields.length) {
-		const next = getLuaTableFieldTriviaSpan(tokens, target.fields[destination]).startToken;
+		const next = getLuaTableFieldTriviaSpan(locations, tokens, target.fields[destination]).startToken;
 		offset = buffer.offsetAt(next.line - 1, next.column - 1);
 	} else if (target.fields.length > 0) {
 		const previous = target.fields[target.fields.length - 1];
-		const span = getLuaTableFieldTriviaSpan(tokens, previous);
+		const span = getLuaTableFieldTriviaSpan(locations, tokens, previous);
 		offset = buffer.offsetAt(span.endToken.line - 1, span.endToken.column - 1);
 		if (span.separator === null) {
-			const punctuation = buffer.offsetAt(previous.range.end.line - 1, previous.range.end.column);
+			const punctuation = buffer.offsetAt(locations.range(previous.span).end.line - 1, locations.range(previous.span).end.column);
 			if (punctuation === offset) {
 				text = ',' + text;
 				fieldPrefix += 1;
@@ -64,7 +65,7 @@ export function createLuaTableFieldTransfer(
 			}
 		}
 	} else {
-		const closeIndex = findLuaTokenAfterPosition(tokens, target.range.end) - 1;
+		const closeIndex = findLuaTokenAfterPosition(tokens, locations.range(target.span).end) - 1;
 		const anchor = tokens[luaTokenLeadingTriviaStart(tokens, closeIndex)];
 		offset = buffer.offsetAt(anchor.line - 1, anchor.column - 1);
 	}

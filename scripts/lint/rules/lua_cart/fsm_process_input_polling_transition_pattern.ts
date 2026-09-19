@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
 import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { findCallExpressionInStatements } from '../../../../toolchain/ts/lua/syntax/calls';
 import { isTickInputCheckCallExpression } from './impl/support/fsm_core';
 import { hasTransitionReturnInStatements } from './impl/support/fsm_transitions';
@@ -9,7 +9,7 @@ import { pushIssue } from './impl/support/lint_context';
 
 export const fsmProcessInputPollingTransitionPatternRule = defineLintRule('cart', 'fsm_process_input_polling_transition_pattern');
 
-export function lintFsmProcessInputPollingTransitionPatternInTable(expression: Expression, issues: CartLintIssue[]): void {
+export function lintFsmProcessInputPollingTransitionPatternInTable(expression: Expression, lint: CartLintContext): void {
 	if (expression.kind !== SyntaxKind.TableConstructorExpression) {
 		return;
 	}
@@ -19,7 +19,7 @@ export function lintFsmProcessInputPollingTransitionPatternInTable(expression: E
 			const inputCheck = findCallExpressionInStatements(field.value.body.body, isTickInputCheckCallExpression);
 			if (inputCheck && hasTransitionReturnInStatements(field.value.body.body)) {
 				pushIssue(
-					issues,
+					lint,
 					fsmProcessInputPollingTransitionPatternRule.name,
 					inputCheck,
 					'FSM process_input polling that drives state transitions is forbidden. Use input_event_handlers with direct state-id mappings instead of action_triggered checks in process_input.',
@@ -27,8 +27,8 @@ export function lintFsmProcessInputPollingTransitionPatternInTable(expression: E
 			}
 		}
 		if (field.kind === TableFieldKind.ExpressionKey) {
-			lintFsmProcessInputPollingTransitionPatternInTable(field.key, issues);
+			lintFsmProcessInputPollingTransitionPatternInTable(field.key, lint);
 		}
-		lintFsmProcessInputPollingTransitionPatternInTable(field.value, issues);
+		lintFsmProcessInputPollingTransitionPatternInTable(field.value, lint);
 	}
 }

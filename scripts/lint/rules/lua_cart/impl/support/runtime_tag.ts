@@ -1,5 +1,5 @@
 import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../../../lua_rule';
+import { type CartLintContext } from '../../../../lua_rule';
 import { lintRuntimeTagLookupInExpression } from '../../runtime_tag_table_access_pattern';
 import { declareBinding, discardBindingScope, enterBindingScope, lintNullBindingFunctionScope, lintScopedBindingStatements, resolveBinding, setBinding } from './bindings';
 import { isObjectOrServiceResolverCallExpression } from './object_ownership';
@@ -7,9 +7,9 @@ import { isSelfExpressionRoot } from './self_properties';
 import { isTagsContainerExpression } from './tags';
 import { RuntimeTagLookupBinding, RuntimeTagLookupContext } from './types';
 
-export function createRuntimeTagLookupContext(issues: CartLintIssue[]): RuntimeTagLookupContext {
+export function createRuntimeTagLookupContext(lint: CartLintContext): RuntimeTagLookupContext {
 	const context: RuntimeTagLookupContext = {
-		issues,
+		lint,
 		bindingStacksByName: new Map<string, Array<RuntimeTagLookupBinding | null>>(),
 		scopeStack: [],
 	};
@@ -194,8 +194,8 @@ export function lintRuntimeTagLookupInStatements(
 	}
 }
 
-export function lintRuntimeTagTableAccessPattern(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
-	const context = createRuntimeTagLookupContext(issues);
+export function lintRuntimeTagTableAccessPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
+	const context = createRuntimeTagLookupContext(lint);
 	try {
 		lintRuntimeTagLookupInStatements(statements, context);
 	} finally {

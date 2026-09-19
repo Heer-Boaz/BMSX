@@ -5,7 +5,7 @@ import {
 	LuaSyntaxKind as SyntaxKind,
 	LuaUnaryOperator as UnaryOperator,
 } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 import { pushIssue } from './impl/support/lint_context';
 
@@ -39,7 +39,7 @@ function staticTableKey(field: TableField, arrayIndex: number): StaticTableKey |
 
 export function lintDuplicateTableKeyPattern(
 	expression: TableConstructorExpression,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 ): void {
 	const keys = new Set<StaticTableKey>();
 	let arrayIndex = 0;
@@ -53,7 +53,7 @@ export function lintDuplicateTableKeyPattern(
 		}
 		if (keys.has(key)) {
 			pushIssue(
-				issues,
+				lint,
 				duplicateTableKeyPatternRule.name,
 				field,
 				`Duplicate table key ${JSON.stringify(key)} is forbidden; the later field silently replaces the earlier value.`,

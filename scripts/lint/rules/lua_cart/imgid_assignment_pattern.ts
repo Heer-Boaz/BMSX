@@ -1,13 +1,13 @@
 import { defineLintRule } from '../../rule';
 import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { getRootIdentifier } from './impl/support/bindings';
 import { isSelfExpressionRoot, isSpriteComponentImageIdAssignmentTarget } from './impl/support/self_properties';
 import { pushIssue } from './impl/support/lint_context';
 
 export const imgidAssignmentPatternRule = defineLintRule('cart', 'imgid_assignment_pattern');
 
-export function lintSpriteImgIdAssignmentPattern(target: Expression, issues: CartLintIssue[]): void {
+export function lintSpriteImgIdAssignmentPattern(target: Expression, lint: CartLintContext): void {
 	if (!isSpriteComponentImageIdAssignmentTarget(target)) {
 		return;
 	}
@@ -26,7 +26,7 @@ export function lintSpriteImgIdAssignmentPattern(target: Expression, issues: Car
 		? 'Direct imgid assignment on sprite component is forbidden. Use self.gfx(<img>) instead.'
 		: 'Direct imgid assignment on sprite component is forbidden. Use self.gfx(<img>) or <sprite_component>.gfx(<img>) instead.';
 	pushIssue(
-		issues,
+		lint,
 		imgidAssignmentPatternRule.name,
 		target,
 		`${message.replace('<sprite_component>', replacementBase)}`,

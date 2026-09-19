@@ -145,7 +145,7 @@ export async function buildScenarioCartridge(
 	const entryComposition = composeLuaSource(SCENARIO_ENTRY_MODULE_PATH, [
 		{
 			kind: 'source',
-			rangePath: entryCandidate.chunk.range.path,
+			rangePath: entryCandidate.chunk.locations.path,
 			displayPath: entrySourcePath,
 			source: entrySource,
 			endOffset: firstLineEnd,
@@ -167,7 +167,7 @@ export async function buildScenarioCartridge(
 		{ kind: 'generated', source: 'end' },
 		{
 			kind: 'source',
-			rangePath: entryCandidate.chunk.range.path,
+			rangePath: entryCandidate.chunk.locations.path,
 			displayPath: entrySourcePath,
 			source: entrySource,
 			startOffset: firstLineEnd,

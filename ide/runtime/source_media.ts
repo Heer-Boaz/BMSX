@@ -1,4 +1,4 @@
-import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
+import { encodeLuaChunk } from '../../toolchain/ts/lua/syntax/serialization';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import type { Blua32PublicAssetChanges, RomAssetEdit } from '../../toolchain/ts/rompack/blua32_tail';
 import type { RomSourceLayer } from '../../toolchain/ts/rompack/source';
@@ -31,7 +31,7 @@ export function buildLuaSourceAssetChanges(
 			source_path: record.source_path, normalized_source_path: record.normalized_source_path,
 			update_timestamp: record.update_timestamp,
 			buffer: sourceEncoder.encode(source),
-			compiled_buffer: encodeBinary(interpreter.compileChunk(source, record.module_path)),
+			compiled_buffer: encodeLuaChunk(interpreter.compileChunk(source, record.module_path)),
 		};
 		if (packedLuaIds.has(record.resid)) luaReplacements.set(record.resid, asset);
 		else assetAdditions.push(asset);

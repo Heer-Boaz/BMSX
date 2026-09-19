@@ -1,3 +1,4 @@
+import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaExpression, LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import type { BehaviorSourceNode } from './model';
@@ -8,6 +9,7 @@ import { appendBehaviorSourcePath, behaviorSourceFieldSegment, buildResolvedTabl
 
 export function appendFsmEventSection(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	owner: LuaTableConstructorExpression,
 	activeTables: Set<LuaTableConstructorExpression>,
@@ -19,9 +21,9 @@ export function appendFsmEventSection(
 	if (!field) {
 		return;
 	}
-	const resolved = resolveSourceTable(context, field.value, activeTables);
+	const resolved = resolveSourceTable(context, file, field.value, activeTables);
 	if (!resolved) {
-		children.push(createDynamicNode(context, path, `dynamic ${fieldName}`, field.value));
+		children.push(createDynamicNode(context, file, path, `dynamic ${fieldName}`, field.value));
 		return;
 	}
 	const eventNodes: BehaviorSourceNode[] = [];
@@ -29,13 +31,13 @@ export function appendFsmEventSection(
 	for (let index = 0; index < events.length; index += 1) {
 		const event = events[index];
 		const { source, spec } = buildFsmEvent(
-			context,
+			context, resolved.file,
 			appendBehaviorSourcePath(path, behaviorSourceFieldSegment(event, index)),
 			event,
 			activeTables,
 		);
 		eventNodes.push(source);
-		slots.push({ kind: 'event', source, spec, field: event.field, value: event.field.value,
+		slots.push({ file: resolved.file, kind: 'event', source, spec, field: event.field, value: event.field.value,
 			bindingComplete: (resolved.issues & SourceTableIssue.KnownMutation) === 0 });
 	}
 	children.push(createSourceNode(context, path, {
@@ -44,7 +46,7 @@ export function appendFsmEventSection(
 			? `events (${eventNodes.length})`
 			: `events (${eventNodes.length} entries)`,
 		detail: describeResolvedSourceTable(resolved),
-		authoredRange: resolved.table.range,
+		authoredRange: resolved.file.chunk.locations.range(resolved.table.span),
 		referenceRange: resolved.referenceRange,
 		resolution: resolved.resolution,
 		children: eventNodes,
@@ -53,6 +55,7 @@ export function appendFsmEventSection(
 
 function buildFsmEvent(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	event: NamedSourceField,
 	activeTables: Set<LuaTableConstructorExpression>,
@@ -61,7 +64,7 @@ function buildFsmEvent(
 	const keyResolution = event.keyKind === 'named'
 		? 'complete'
 		: (event.keyKind === 'numeric' ? 'partial' : 'unresolved');
-	const handler = resolveSourceTable(context, event.field.value, activeTables);
+	const handler = resolveSourceTable(context, file, event.field.value, activeTables);
 	if (handler) {
 		const go = findNamedLuaTableField(handler.table, 'go');
 		const emitter = findNamedLuaTableField(handler.table, 'emitter');
@@ -78,7 +81,7 @@ function buildFsmEvent(
 			kind: 'event',
 			label: eventName,
 			detail: detail.length > 0 ? detail : 'handler table',
-			authoredRange: handler.table.range,
+			authoredRange: handler.file.chunk.locations.range(handler.table.span),
 			referenceRange: handler.referenceRange,
 			resolution: keyResolution === 'complete' ? handler.resolution : keyResolution,
 			children: [],
@@ -88,7 +91,7 @@ function buildFsmEvent(
 		kind: 'event',
 		label: eventName,
 		detail: describeExpression(event.field.value),
-		authoredRange: event.field.range,
+		authoredRange: file.chunk.locations.range(event.field.span),
 		referenceRange: null,
 		resolution: keyResolution,
 		children: [],
@@ -97,6 +100,7 @@ function buildFsmEvent(
 
 export function appendInputHandlers(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	owner: LuaTableConstructorExpression,
 	activeTables: Set<LuaTableConstructorExpression>,
@@ -108,14 +112,14 @@ export function appendInputHandlers(
 		return;
 	}
 	children.push(buildTableArraySection(
-		context,
+		context, file,
 		path,
 		'input handlers',
 		field.value,
 		activeTables,
-		(entryContext, entryPath, expression, active, entryField, index) => {
-			const { source, spec } = buildInputHandler(entryContext, entryPath, expression, active);
-			slots.push({ kind: 'input', source, spec, field: entryField, value: expression, bindingComplete: index !== null });
+		(entryContext, entryFile, entryPath, expression, active, entryField, index) => {
+			const { source, spec } = buildInputHandler(entryContext, entryFile, entryPath, expression, active);
+			slots.push({ file: entryFile, kind: 'input', source, spec, field: entryField, value: expression, bindingComplete: index !== null });
 			return source;
 		},
 	));
@@ -123,13 +127,14 @@ export function appendInputHandlers(
 
 function buildInputHandler(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	expression: LuaExpression,
 	activeTables: Set<LuaTableConstructorExpression>,
 ): { source: BehaviorSourceNode; spec: ResolvedSourceTable | null } {
-	const resolved = resolveSourceTable(context, expression, activeTables);
+	const resolved = resolveSourceTable(context, file, expression, activeTables);
 	if (!resolved) {
-		return { spec: null, source: createDynamicNode(context, path, 'dynamic input handler', expression) };
+		return { spec: null, source: createDynamicNode(context, file, path, 'dynamic input handler', expression) };
 	}
 	const pattern = findNamedLuaTableField(resolved.table, 'pattern');
 	const go = findNamedLuaTableField(resolved.table, 'go');
@@ -148,7 +153,7 @@ function buildInputHandler(
 		kind: 'event',
 		label: pattern ? describeExpression(pattern.value) : '<unresolved input>',
 		detail,
-		authoredRange: resolved.table.range,
+		authoredRange: resolved.file.chunk.locations.range(resolved.table.span),
 		referenceRange: resolved.referenceRange,
 		resolution: resolved.resolution !== 'complete' || !pattern ? 'partial' : 'complete',
 		children: [],
@@ -156,13 +161,13 @@ function buildInputHandler(
 }
 
 /** Timeline identity may be computed; its completion slot still has authored source. */
-export function appendFsmTimelines(context: BehaviorRecognizerContext, path: string, owner: LuaTableConstructorExpression,
+export function appendFsmTimelines(context: BehaviorRecognizerContext, file: FileSemanticData, path: string, owner: LuaTableConstructorExpression,
 	active: Set<LuaTableConstructorExpression>, children: BehaviorSourceNode[], slots: StateMachineSourceSlot[]): void {
 	const field = findNamedLuaTableField(owner, 'timelines');
 	if (field === null) return;
-	const resolved = resolveSourceTable(context, field.value, active);
+	const resolved = resolveSourceTable(context, file, field.value, active);
 	if (resolved === null) {
-		children.push(createDynamicNode(context, path, 'dynamic timelines', field.value));
+		children.push(createDynamicNode(context, file, path, 'dynamic timelines', field.value));
 		return;
 	}
 	const entries = collectNamedFields(resolved.table);
@@ -171,21 +176,21 @@ export function appendFsmTimelines(context: BehaviorRecognizerContext, path: str
 		const entry = entries[index];
 		const entryPath = appendBehaviorSourcePath(path, behaviorSourceFieldSegment(entry, index));
 		const label = entry.name === null ? `[${entry.authoredKeyLabel}]` : entry.name;
-		const table = resolveSourceTable(context, entry.field.value, active);
+		const table = resolveSourceTable(context, resolved.file, entry.field.value, active);
 		if (table === null) {
-			nodes.push(createDynamicNode(context, entryPath, `unresolved ${label}`, entry.field.value));
+			nodes.push(createDynamicNode(context, resolved.file, entryPath, `unresolved ${label}`, entry.field.value));
 			continue;
 		}
-		const source = buildResolvedTableSection(context, entryPath, label, table, entry.field.range);
+		const source = buildResolvedTableSection(context, entryPath, label, table, resolved.file.chunk.locations.range(entry.field.span));
 		nodes.push(source);
 		const finished = findNamedLuaTableField(source.table, 'on_finished');
-		if (finished !== null) slots.push({ kind: 'timeline-finished', source, field: finished, value: finished.value,
-			spec: resolveSourceTable(context, finished.value, active),
+		if (finished !== null) slots.push({ file: source.file, kind: 'timeline-finished', source, field: finished, value: finished.value,
+			spec: resolveSourceTable(context, source.file, finished.value, active),
 			bindingComplete: source.issues === SourceTableIssue.None && (resolved.issues & SourceTableIssue.KnownMutation) === 0 });
 	}
 	children.push(createSourceNode(context, path, {
 		kind: 'section', label: resolved.resolution === 'complete' ? `timelines (${nodes.length})` : `timelines (${nodes.length} entries)`,
-		detail: describeResolvedSourceTable(resolved), authoredRange: resolved.table.range, referenceRange: resolved.referenceRange,
+		detail: describeResolvedSourceTable(resolved), authoredRange: resolved.file.chunk.locations.range(resolved.table.span), referenceRange: resolved.referenceRange,
 		resolution: resolved.resolution, children: nodes,
 	}));
 }

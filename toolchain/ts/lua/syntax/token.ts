@@ -79,6 +79,8 @@ export function isLuaTrivia(type: LuaTokenType): boolean {
 export type LuaTokenLiteral = number | string | boolean;
 
 export type LuaToken = {
+	/** UTF-16 start in this lexical generation. */
+	readonly offset: number;
 	readonly type: LuaTokenType;
 	readonly lexeme: string;
 	readonly line: number;

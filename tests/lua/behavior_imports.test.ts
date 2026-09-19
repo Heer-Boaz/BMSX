@@ -59,9 +59,9 @@ fsm.register('second', { states = { room = { initial = 'idle', states = states }
 		const transition = definition.transitions.find(item => item.slot.kind === 'update')!;
 		const outcome = transition.outcomes[0];
 		assert.ok(outcome.proof.kind === 'return' && outcome.target.kind === 'path');
-		assert.equal(outcome.proof.binding.range.path, 'states.lua');
-		assert.equal(outcome.proof.statement.range.path, 'callback.lua');
-		assert.equal(outcome.value?.range.path, 'callback.lua');
+		assert.equal(outcome.proof.file.chunk.locations.range(outcome.proof.binding.span).path, 'states.lua');
+		assert.equal(outcome.proof.callbackFile.chunk.locations.range(outcome.proof.statement.span).path, 'callback.lua');
+		assert.equal(outcome.valueFile!.chunk.locations.range(outcome.value!.span).path, 'callback.lua');
 		assert.equal(outcome.target.target, definition.scopes.find(scope => scope.name === 'active')!.rowKey);
 	}
 });
@@ -132,7 +132,7 @@ test('an imported effect owns its list and scalar fields; source edit and Undo r
 	projectActionEffectProperties(view, view.presentation, definition);
 	assert.equal(definition.body.issues, SourceTableIssue.None);
 	const duration = definition.body.fields.find(field => field.kind === 'value' && field.name === 'period_ms')!;
-	assert.equal(duration.field.range.path, 'definition.lua');
+	assert.equal(definition.body.file.chunk.locations.range(duration.field.span).path, 'definition.lua');
 	view.selection = { kind: 'node', rowKey: duration.source.rowKey };
 	assert.ok(buildBehaviorInspection(view).some(item => item.value.includes('40')));
 	assert.equal(mainModel.dirty, false); assert.equal(sourceModel.dirty, false);
@@ -145,7 +145,7 @@ test('an imported effect owns its list and scalar fields; source edit and Undo r
 	const changed = view.document.definitions[0];
 	assert.ok(changed.behaviorKind === 'action_effect' && changed.body !== null);
 	const changedDuration = changed.body.fields.find(field => field.kind === 'value' && field.name === 'period_ms')!;
-	assert.equal(readLuaSourceRange(sourceModel.buffer, changedDuration.field.value.range), '80');
+	assert.equal(readLuaSourceRange(sourceModel.buffer, changed.body.file.chunk.locations.range(changedDuration.field.value.span)), '80');
 	assert.equal(mainModel.version, 1);
 	sourceModel.undo(); project.updateFile('definition.lua', sourceModel.buffer.getText());
 	installBehaviorLensDocument(view, document());

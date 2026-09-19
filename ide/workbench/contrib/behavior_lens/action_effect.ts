@@ -27,10 +27,10 @@ export function buildActionEffectBody(
 		switch (entry.name) {
 			case 'required_tags': case 'blocked_tags': case 'required_state_paths': case 'blocked_state_paths': {
 				const entries: BehaviorSourceArrayEntry<BehaviorSourceNode>[] = [];
-				const source = buildTableArraySection(context, appendBehaviorSourcePath('', entry.name), entry.name, field.value, activeTables,
-					(childContext, path, expression, active, field, index) => {
-						const node = buildExpressionProperty(childContext, path, expression, active);
-						entries.push({ field, index, node });
+				const source = buildTableArraySection(context, resolved.file, appendBehaviorSourcePath('', entry.name), entry.name, field.value, activeTables,
+					(childContext, file, path, expression, active, field, index) => {
+						const node = buildExpressionProperty(childContext, file, path, expression, active);
+						entries.push({ file, field, index, node });
 						return node;
 					});
 				children.push(source);
@@ -41,7 +41,7 @@ export function buildActionEffectBody(
 			case 'initial_cooldown_ms': case 'defer_cooldown_commit': case 'period_ms': {
 				const source = createSourceNode(context, appendBehaviorSourcePath('', entry.name), {
 					kind: 'property', label: `${entry.name} = ${describeExpression(field.value)}`, detail: '',
-					authoredRange: field.range, referenceRange: null, resolution: 'complete', children: [],
+					authoredRange: resolved.file.chunk.locations.range(field.span), referenceRange: null, resolution: 'complete', children: [],
 				});
 				children.push(source);
 				fields.push({ kind: 'value', name: entry.name, field, source });
@@ -51,7 +51,7 @@ export function buildActionEffectBody(
 				const source = createSourceNode(context, appendBehaviorSourcePath('', behaviorSourceFieldSegment(entry, index)), {
 					kind: 'dynamic', label: `[${entry.authoredKeyLabel}] = ${describeExpression(field.value)}`,
 					detail: entry.keyKind === 'numeric' ? 'numeric key, not a named effect field' : 'computed effect field',
-					authoredRange: field.range, referenceRange: null, resolution: 'unresolved', children: [],
+					authoredRange: resolved.file.chunk.locations.range(field.span), referenceRange: null, resolution: 'unresolved', children: [],
 				});
 				children.push(source);
 				fields.push({ kind: 'unknown', field, source });
@@ -59,5 +59,5 @@ export function buildActionEffectBody(
 			}
 		}
 	}
-	return { body: { table: resolved.table, issues: resolved.issues, fields }, children };
+	return { body: { file: resolved.file, table: resolved.table, issues: resolved.issues, fields }, children };
 }

@@ -1,3 +1,4 @@
+import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaTableConstructorExpression, LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { BehaviorDynamicSourceNode, BehaviorSourceNode } from './model';
 import type { BehaviorSourceArrayEntry, BehaviorSourceTableSection, SourceTableIssue } from './source';
@@ -24,6 +25,7 @@ export type ActionEffectSourceField = {
 });
 
 export type ActionEffectSourceBody = {
+	readonly file: FileSemanticData;
 	readonly table: LuaTableConstructorExpression;
 	readonly issues: SourceTableIssue;
 	readonly fields: readonly ActionEffectSourceField[];

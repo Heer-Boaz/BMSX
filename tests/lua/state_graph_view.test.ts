@@ -242,7 +242,7 @@ test('concrete input coalesces edits, hides stale geometry, publishes no obsolet
 		await f.settle();
 		const reference = f.graph.viewport.model.edges.find(edge => edge.link.reference.kind === 'state-outcome')!.link.reference;
 		f.view.selection = selectStateMachineSource(reference, f.view.source.models);
-		assert.ok(reference.kind === 'state-outcome' && reference.outcome.proof.kind === 'return' && reference.outcome.proof.statement.range.start.line >= 6);
+		assert.ok(reference.kind === 'state-outcome' && reference.outcome.proof.kind === 'return' && reference.outcome.proof.callbackFile.chunk.locations.range(reference.outcome.proof.statement.span).start.line >= 6);
 		f.input.updatePresentation(new Font({ variant: 'msx' }));
 		assert.equal(f.graph.layoutState.kind, 'pending', 'font measurement starts a new unpublished generation');
 		held.jobs[2].reject(new Error('deliberate layout failure'));

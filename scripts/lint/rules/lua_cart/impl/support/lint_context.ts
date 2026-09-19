@@ -1,5 +1,5 @@
 import { type LintRuleName } from '../../../../rule';
-import { type CartLintIssue, type CartLintNode } from '../../../../lua_rule';
+import { type CartLintContext, type CartLintIssue, type CartLintNode } from '../../../../lua_rule';
 import { type CartLintSuppressionRange } from './types';
 
 export const suppressedLineRangesByPath = new Map<string, ReadonlyArray<CartLintSuppressionRange>>();
@@ -34,18 +34,19 @@ export function isLineSuppressed(path: string, line: number, rule: LintRuleName)
 	return false;
 }
 
-export function pushIssue(issues: CartLintIssue[], rule: LintRuleName, node: CartLintNode, message: string): void {
+export function pushIssue(context: CartLintContext, rule: LintRuleName, node: CartLintNode, message: string): void {
 	if (!activeLintRules.has(rule)) {
 		return;
 	}
-	if (isLineSuppressed(node.range.path, node.range.start.line, rule)) {
+	const range = context.locations.range(node.span);
+	if (isLineSuppressed(range.path, range.start.line, rule)) {
 		return;
 	}
-	issues.push({
+	context.issues.push({
 		rule,
-		path: node.range.path,
-		line: node.range.start.line,
-		column: node.range.start.column,
+		path: range.path,
+		line: range.start.line,
+		column: range.start.column,
 		message,
 	});
 }

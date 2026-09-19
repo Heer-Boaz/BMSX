@@ -61,7 +61,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	public readonly propertyEdit: ActionEffectPropertyEdit;
 	private readonly stateMachineDrop: StateMachineRetargetDrop = (selection, target) => {
 		const input = this.input;
-		const model = input.view.source.models.get(target.literal.range.path)!;
+		const model = input.view.source.models.get(target.file.file)!;
 		if (target.uses.length === 1) retargetStateMachineTransition(model, input.view, selection, target);
 		else {
 			const lifetime = this.sourceEditReview.show({
@@ -80,7 +80,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	};
 	private readonly treeDrop: BehaviorTreeTransferDrop = (analysis, insertion, check) => {
 		const input = this.input;
-		const model = input.view.source.models.get(analysis.member.table.range.path)!;
+		const model = input.view.source.models.get(analysis.member.file.file)!;
 		const items = behaviorTreeTransferImpacts(input.view, analysis, insertion, check);
 		const lifetime = this.sourceEditReview.show({
 			model, title: 'MOVE BT SOURCE', summary: `${analysis.member.branch.role} -> ${check.target.role} POSITION ${insertion + 1}`,
@@ -110,7 +110,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			isEnabled: () => {
 				if (this.sourceEditReview.visible || this.inspector.visible) return false;
 				const property = selectedActionEffectProperty(this.input.view);
-				return property !== undefined && !this.input.view.source.models.get(property.field.range.path)!.readOnly;
+				return property !== undefined && !this.input.view.source.models.get(property.file.file)!.readOnly;
 			},
 			run: () => this.editProperty(),
 		});
@@ -328,7 +328,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		const properties = this.input.view.presentation;
 		if (properties.kind === 'properties') {
 			const property = selectedActionEffectProperty(this.input.view)!;
-			const range = property.field.value.range;
+			const range = property.file.chunk.locations.range(property.field.value.span);
 			if (range.start.line !== range.end.line) {
 				this.controller.openWrittenSource(this.input, range);
 			} else this.propertyEdit.open(this.input, properties, property);

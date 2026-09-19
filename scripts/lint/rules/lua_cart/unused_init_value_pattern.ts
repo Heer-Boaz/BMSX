@@ -19,7 +19,7 @@ export function markUnusedInitValueWrite(
 		return;
 	}
 	pushIssue(
-		context.issues,
+		context.lint,
 		unusedInitValuePatternRule.name,
 		binding.declaration,
 		`Unused initial value is forbidden ("${binding.declaration.name}"). Remove the initializer and assign only when the value is actually known.`,

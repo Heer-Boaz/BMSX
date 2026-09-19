@@ -29,7 +29,7 @@ require('library')['tools'].run()
 		const data = buildLuaFileSemanticData(source, 'bindings.lua');
 		assert.equal(data.syntaxError, null);
 		const lines = [4, 7, 11, 15, 17, 18];
-		assert.deepEqual(data.callSites.filter(site => lines.includes(site.expression.range.start.line)
+		assert.deepEqual(data.callSites.filter(site => lines.includes(data.chunk.locations.range(site.expression.span).start.line)
 			&& site.moduleTarget !== null).map(site => site.moduleTarget), [
 			{ module: 'library', memberPath: ['tools', 'run'] },
 			{ module: 'library', memberPath: ['run'] },
@@ -112,7 +112,7 @@ test('semantic file data records direct and chained require aliases', async () =
 		'constants.read(); hud.read(); physics.read(); overlay.read(); combat_overlap.read()',
 	].join('\n');
 	const data = buildLuaFileSemanticData(source, 'testpath');
-	assert.deepEqual(data.callSites.filter(site => site.expression.range.start.line === 6).map(site => site.moduleTarget), [
+	assert.deepEqual(data.callSites.filter(site => data.chunk.locations.range(site.expression.span).start.line === 6).map(site => site.moduleTarget), [
 		{ module: 'constants', memberPath: ['read'] },
 		{ module: 'constants', memberPath: ['hud', 'read'] },
 		{ module: 'constants', memberPath: ['physics', 'read'] },
@@ -131,7 +131,7 @@ test('semantic call sites retain function-local module targets', async () => {
 		'return register',
 	].join('\n');
 	const data = buildLuaFileSemanticData(source, 'function_local_alias.lua');
-	const registration = data.callSites.find(callSite => callSite.expression.range.start.line === 3)!;
+	const registration = data.callSites.find(callSite => data.chunk.locations.range(callSite.expression.span).start.line === 3)!;
 	assert.deepEqual(registration.moduleTarget, {
 		module: 'cartlib/behaviour_tree/library',
 		memberPath: ['register'],
@@ -147,8 +147,8 @@ test('semantic module paths do not pretend AST visitation order is execution ord
 		'api.second()',
 	].join('\n');
 	const data = buildLuaFileSemanticData(source, 'temporal_alias.lua');
-	const first = data.callSites.find(callSite => callSite.expression.range.start.line === 2)!;
-	const second = data.callSites.find(callSite => callSite.expression.range.start.line === 4)!;
+	const first = data.callSites.find(callSite => data.chunk.locations.range(callSite.expression.span).start.line === 2)!;
+	const second = data.callSites.find(callSite => data.chunk.locations.range(callSite.expression.span).start.line === 4)!;
 	assert.equal(first.moduleTarget, null);
 	assert.equal(second.moduleTarget, null);
 });
@@ -162,7 +162,7 @@ test('semantic module bindings include writes in argument closures', async () =>
 		'end)',
 	].join('\n');
 	const data = buildLuaFileSemanticData(source, 'callee_before_arguments.lua');
-	const call = data.callSites.find(callSite => callSite.expression.range.start.line === 2)!;
+	const call = data.callSites.find(callSite => data.chunk.locations.range(callSite.expression.span).start.line === 2)!;
 	assert.equal(call.moduleTarget, null);
 });
 
@@ -175,7 +175,7 @@ test('a const copy does not certify an import through a reassigned local', async
 		'retained.run()',
 	].join('\n');
 	const data = buildLuaFileSemanticData(source, 'retained_alias.lua');
-	const call = data.callSites.find(callSite => callSite.expression.range.start.line === 4)!;
+	const call = data.callSites.find(callSite => data.chunk.locations.range(callSite.expression.span).start.line === 4)!;
 	assert.equal(call.moduleTarget, null);
 });
 
@@ -190,7 +190,7 @@ test('semantic file data does not create module aliases after require is assigne
 		'constants.read(); combat.read()',
 	].join('\n');
 	const data = buildLuaFileSemanticData(source, 'testpath');
-	assert.deepEqual(data.callSites.filter(site => site.expression.range.start.line === 6).map(site => site.moduleTarget), [
+	assert.deepEqual(data.callSites.filter(site => data.chunk.locations.range(site.expression.span).start.line === 6).map(site => site.moduleTarget), [
 		{ module: 'constants', memberPath: ['read'] }, null,
 	]);
 	assert.deepEqual(data.moduleReferences.map(reference => reference.value), ['constants']);

@@ -49,26 +49,27 @@ function buildDefinition(
 	reader: BehaviorSourceReader,
 	registration: BehaviorRegistration,
 ): BehaviorSourceDefinition {
+	const file = registration.file;
 	const call = registration.callSite.expression;
 	const definitionExpression = call.arguments[registration.definitionArgument];
 	const context: BehaviorRecognizerContext = {
 		reader,
 		anchor: registration.anchor,
 		behaviorKind: registration.behaviorKind,
-		registrationRange: call.range,
-		sourceIncomplete: reader.snapshot.getFileData(call.range.path)!.syntaxError !== null,
+		registrationRange: file.chunk.locations.range(call.span),
+		sourceIncomplete: file.syntaxError !== null,
 	};
 	const definitionPath = appendBehaviorSourcePath('', 'definition');
 	const activeTables = new Set<LuaTableConstructorExpression>();
 	const resolved = definitionExpression
-		? resolveSourceTable(context, definitionExpression, activeTables) : null;
+		? resolveSourceTable(context, file, definitionExpression, activeTables) : null;
 	let input: SourceNodeInput & { kind: 'definition' };
 	if (!definitionExpression) {
 		input = {
 			kind: 'definition',
 			label: registration.label,
 			detail: 'registration has no definition argument',
-			authoredRange: call.range,
+			authoredRange: file.chunk.locations.range(call.span),
 			referenceRange: null,
 			resolution: 'unresolved',
 			children: [],
@@ -78,10 +79,10 @@ function buildDefinition(
 			kind: 'definition',
 			label: registration.label,
 			detail: context.sourceIncomplete ? 'unresolved registration definition | syntax recovery' : 'unresolved registration definition',
-			authoredRange: definitionExpression.range,
+			authoredRange: file.chunk.locations.range(definitionExpression.span),
 			referenceRange: null,
 			resolution: 'unresolved',
-			children: [createDynamicNode(context, appendBehaviorSourcePath(definitionPath, 'value'), 'definition', definitionExpression)],
+			children: [createDynamicNode(context, file, appendBehaviorSourcePath(definitionPath, 'value'), 'definition', definitionExpression)],
 		};
 	} else {
 		const resolvedDetail = describeResolvedSourceTable(resolved);
@@ -90,7 +91,7 @@ function buildDefinition(
 			kind: 'definition',
 			label: registration.label,
 			detail,
-			authoredRange: resolved.table.range,
+			authoredRange: resolved.file.chunk.locations.range(resolved.table.span),
 			referenceRange: resolved.referenceRange,
 			resolution: resolved.resolution,
 			children: [],
@@ -99,7 +100,7 @@ function buildDefinition(
 	if (context.behaviorKind === 'behavior_tree') {
 		const body = resolved === null
 			? { root: null, blackboard: null, children: input.children }
-			: buildBehaviorTreeDefinition(context, resolved.table, activeTables);
+			: buildBehaviorTreeDefinition(context, resolved.file, resolved.table, activeTables);
 		return createSourceNode(context, definitionPath, { ...input, ...body });
 	}
 	if (context.behaviorKind === 'state_machine') {

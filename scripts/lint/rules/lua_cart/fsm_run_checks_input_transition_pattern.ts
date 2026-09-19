@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
 import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { findCallExpressionInStatements } from '../../../../toolchain/ts/lua/syntax/calls';
 import { isTickInputCheckCallExpression } from './impl/support/fsm_core';
 import { hasTransitionReturnInStatements } from './impl/support/fsm_transitions';
@@ -10,7 +10,7 @@ import { pushIssue } from './impl/support/lint_context';
 
 export const fsmRunChecksInputTransitionPatternRule = defineLintRule('cart', 'fsm_run_checks_input_transition_pattern');
 
-export function lintFsmRunChecksInputTransitionPatternInTable(expression: Expression, issues: CartLintIssue[]): void {
+export function lintFsmRunChecksInputTransitionPatternInTable(expression: Expression, lint: CartLintContext): void {
 	if (expression.kind !== SyntaxKind.TableConstructorExpression) {
 		return;
 	}
@@ -30,7 +30,7 @@ export function lintFsmRunChecksInputTransitionPatternInTable(expression: Expres
 					continue;
 				}
 				pushIssue(
-					issues,
+					lint,
 					fsmRunChecksInputTransitionPatternRule.name,
 					inputCheck,
 					'FSM run_checks input polling with state-transition return is forbidden. Use input_event_handlers with direct state-id mappings instead of action_triggered checks in run_checks.',
@@ -38,8 +38,8 @@ export function lintFsmRunChecksInputTransitionPatternInTable(expression: Expres
 			}
 		}
 		if (field.kind === TableFieldKind.ExpressionKey) {
-			lintFsmRunChecksInputTransitionPatternInTable(field.key, issues);
+			lintFsmRunChecksInputTransitionPatternInTable(field.key, lint);
 		}
-		lintFsmRunChecksInputTransitionPatternInTable(field.value, issues);
+		lintFsmRunChecksInputTransitionPatternInTable(field.value, lint);
 	}
 }

@@ -34,6 +34,7 @@ export class LuaLexer {
 		tokens.push({
 			type: LuaTokenType.Eof,
 			lexeme: '',
+			offset: this.currentIndex,
 			line: this.line,
 			column: this.column,
 			endLine: this.line,
@@ -62,6 +63,7 @@ export class LuaLexer {
 		tokens.push({
 			type: LuaTokenType.Eof,
 			lexeme: '',
+			offset: syntaxError ? this.tokenStartIndex : this.currentIndex,
 			line: eofLine,
 			column: eofColumn,
 			endLine: eofLine,
@@ -536,6 +538,7 @@ export class LuaLexer {
 		tokens.push({
 			type,
 			lexeme: this.currentLexeme(),
+			offset: this.tokenStartIndex,
 			line: this.tokenStartLine,
 			column: this.tokenStartColumn,
 			endLine: this.line,
@@ -548,6 +551,7 @@ export class LuaLexer {
 		tokens.push({
 			type,
 			lexeme,
+			offset: this.tokenStartIndex,
 			line: this.tokenStartLine,
 			column: this.tokenStartColumn,
 			endLine: this.line,

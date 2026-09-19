@@ -3,17 +3,17 @@ import { isBooleanToken } from '../../language/cpp/syntax/syntax';
 import type { Token } from '../../language/cpp/syntax/tokens';
 import { lintAdjacentEqualityComparison } from '../cpp/support/comparison';
 import type { LintIssue } from '../cpp/support/diagnostics';
-import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
+import type { CartLintContext, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 
 export const explicitTruthyComparisonPatternRule = defineLintRule('common', 'explicit_truthy_comparison_pattern');
 
-export function lintAstExplicitTruthyComparisonPattern(expression: Expression, issues: CartLintIssue[], pushIssue: CartLintIssuePusher): void {
+export function lintAstExplicitTruthyComparisonPattern(expression: Expression, lint: CartLintContext, pushIssue: CartLintIssuePusher): void {
 	if (!matchesAstExplicitTruthyComparisonPattern(expression)) {
 		return;
 	}
 	pushIssue(
-		issues,
+		lint,
 		explicitTruthyComparisonPatternRule.name,
 		expression,
 		'Explicit boolean literal comparison is forbidden. Use truthy/falsy checks instead.',

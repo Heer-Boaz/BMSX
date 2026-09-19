@@ -1037,7 +1037,7 @@ export class ValueKindFlowAnalyzer {
 			}
 			entryState = nextEntry;
 		}
-		throw new Error(`[ValueKindFlowAnalyzer] Loop fixpoint did not converge for while at ${statement.range.path}:${statement.range.start.line}.`);
+		throw new Error(`[ValueKindFlowAnalyzer] Loop fixpoint did not converge for while at ${this.semantics.locations.range(statement.span).path}:${this.semantics.locations.range(statement.span).start.line}.`);
 	}
 
 	private analyzeRepeat(statement: LuaRepeatStatement): void {
@@ -1060,7 +1060,7 @@ export class ValueKindFlowAnalyzer {
 			}
 			entryState = nextEntry;
 		}
-		throw new Error(`[ValueKindFlowAnalyzer] Loop fixpoint did not converge for repeat at ${statement.range.path}:${statement.range.start.line}.`);
+		throw new Error(`[ValueKindFlowAnalyzer] Loop fixpoint did not converge for repeat at ${this.semantics.locations.range(statement.span).path}:${this.semantics.locations.range(statement.span).start.line}.`);
 	}
 
 	private analyzeForNumeric(statement: LuaForNumericStatement): void {
@@ -1078,7 +1078,7 @@ export class ValueKindFlowAnalyzer {
 			const stableEntry = this.analyzeLoopEntryFixpoint(
 				this.snapshotState(),
 				() => this.analyzeBlockWithScope(statement.block),
-				`numeric-for ${statement.range.path}:${statement.range.start.line}`,
+				`numeric-for ${this.semantics.locations.range(statement.span).path}:${this.semantics.locations.range(statement.span).start.line}`,
 			);
 			this.state = cloneState(stableEntry);
 		});
@@ -1096,7 +1096,7 @@ export class ValueKindFlowAnalyzer {
 			const stableEntry = this.analyzeLoopEntryFixpoint(
 				this.snapshotState(),
 				() => this.analyzeBlockWithScope(statement.block),
-				`generic-for ${statement.range.path}:${statement.range.start.line}`,
+				`generic-for ${this.semantics.locations.range(statement.span).path}:${this.semantics.locations.range(statement.span).start.line}`,
 			);
 			this.state = cloneState(stableEntry);
 		});

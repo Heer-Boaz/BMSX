@@ -33,7 +33,7 @@ function fixture(t: TestContext, weighted = false, edge = false, definition = 1)
 	prepareBehaviorLensLayout(f.view);
 	f.viewport.selection = edge ? f.viewport.model.edgesBySource.get(node.rowKey)! : f.viewport.model.nodesBySource.get(node.rowKey)!;
 	acceptBehaviorGraphSelection(f.view, f.graph);
-	const member = { table: origin.source.table, branch: origin, index: 1 };
+	const member = { file: origin.source.file, table: origin.source.table, branch: origin, index: 1 };
 	return { ...f, source, target, member, transfer: () => transferBehaviorFixtureSelection(f.model, f.view, member, target) };
 }
 
@@ -135,7 +135,7 @@ test('a bookmark can retain a selected descendant whose initializer bytes were n
 test('unannotated transfers keep the strict parent-correspondence rule rather than guessing a moved selection', t => {
 	const f = fixture(t);
 	assert.ok(f.target.source.kind === 'section');
-	const transfer = createLuaTableFieldTransfer(f.model.buffer, f.model.resource.path, f.member.branch.entries[1].field,
+	const transfer = createLuaTableFieldTransfer(f.model.buffer, f.member.file.chunk.locations, f.member.branch.entries[1].field,
 		f.target.source.table, f.target.source.table.fields.length);
 	f.model.pushEditOperations(transfer.edits); f.refresh();
 	assert.equal(f.view.selection, null);
@@ -175,7 +175,7 @@ test('a removed history occurrence does not select a surviving namesake, even af
 	t.after(() => input.dispose());
 	const selected = new BehaviorLensNavigationSelection(input);
 	t.after(() => selected.dispose());
-	removeBehaviorTreeChild(f.model, f.member, f.analysis.chunk);
+	removeBehaviorTreeChild(f.model, f.member);
 	f.refresh(); selected.restore(input); prepareBehaviorLensLayout(f.view);
 	assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
 	assert.equal(f.view.selection, null);

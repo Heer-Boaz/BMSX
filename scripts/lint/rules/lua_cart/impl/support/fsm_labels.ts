@@ -1,6 +1,6 @@
 import { type LuaExpression as Expression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, type LuaTableField as TableField, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { type LintRuleName } from '../../../../rule';
-import { type CartLintIssue } from '../../../../lua_rule';
+import { type CartLintContext } from '../../../../lua_rule';
 import { getExpressionKeyName } from './expression_signatures';
 import { appendSuggestionMessage } from './general';
 import { getSelfAssignedPropertyNameFromTarget } from './self_properties';
@@ -251,7 +251,7 @@ export function lintCollectionStringValuesForLabel(
 	expression: Expression,
 	label: string,
 	rule: LintRuleName,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 	messagePrefix: string,
 ): void {
 	if (expression.kind === SyntaxKind.StringLiteralExpression) {
@@ -259,7 +259,7 @@ export function lintCollectionStringValuesForLabel(
 			return;
 		}
 		pushIssue(
-			issues,
+			lint,
 			rule,
 			expression,
 			appendSuggestionMessage(
@@ -282,7 +282,7 @@ export function lintCollectionStringValuesForLabel(
 			continue;
 		}
 		pushIssue(
-			issues,
+			lint,
 			rule,
 			field.value,
 			appendSuggestionMessage(

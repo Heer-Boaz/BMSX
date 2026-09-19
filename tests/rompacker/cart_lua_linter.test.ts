@@ -18,6 +18,25 @@ async function withCartLintFixture(name: string, source: string, run: (root: str
 	}
 }
 
+test('cross-file constant diagnostics retain each source position without retaining syntax', async () => {
+	await withCartLintFixture('cart_lua_linter_source_owners', '-- 😀\r\nlocal shared_name<const> = "first"\r\nreturn shared_name', async root => {
+		await writeFile(join(root, 'other.lua'), '\n-- second source\n\nlocal shared_name<const> = "second"\nreturn shared_name');
+		await assert.rejects(lintCartSources({ roots: [root], profile: 'cart' }), error => {
+			assert.ok(error instanceof Error);
+			assert.match(error.message, /sample\.lua:2:7: Cross-file duplicated local "global constant"/);
+			assert.match(error.message, /other\.lua:4:7: Cross-file duplicated local "global constant"/);
+			return true;
+		});
+	});
+});
+
+test('duplicate-statement diagnostics preserve multiline token endpoints', async () => {
+	const source = 'local value = nil\r\nvalue = [=[x\r\ny]=]\r\nvalue = [=[x\r\ny]=]\r\nreturn value';
+	await withCartLintFixture('cart_lua_linter_multiline_positions', source, async root => {
+		await assert.rejects(lintCartSources({ roots: [root], profile: 'cart' }), /sample\.lua:4:1: Consecutive duplicate statement is forbidden/);
+	});
+});
+
 test('cart lua linter rejects const copies from globals module aliases', async () => {
 	await withCartLintFixture(
 		'cart_lua_linter_globals_const_copy',

@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
 import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { getCallMethodName } from '../../../../toolchain/ts/lua/syntax/calls';
 import { FSM_DELEGATE_HANDLER_KEYS } from './impl/support/fsm_core';
 import { getLifecycleWrapperCallExpression } from './impl/support/fsm_events';
@@ -9,7 +9,7 @@ import { pushIssue } from './impl/support/lint_context';
 
 export const fsmLifecycleWrapperPatternRule = defineLintRule('cart', 'fsm_lifecycle_wrapper_pattern');
 
-export function lintFsmLifecycleWrapperPatternInTable(expression: Expression, issues: CartLintIssue[]): void {
+export function lintFsmLifecycleWrapperPatternInTable(expression: Expression, lint: CartLintContext): void {
 	if (expression.kind !== SyntaxKind.TableConstructorExpression) {
 		return;
 	}
@@ -20,7 +20,7 @@ export function lintFsmLifecycleWrapperPatternInTable(expression: Expression, is
 			if (callExpression) {
 				const methodName = getCallMethodName(callExpression) || 'handler';
 				pushIssue(
-					issues,
+					lint,
 					fsmLifecycleWrapperPatternRule.name,
 					field.value,
 					`FSM handler wrapper for "${key}" is forbidden ("${methodName}"). Use a direct function reference (for example "<class>.${methodName}") instead of wrapper functions like "function(self) self:${methodName}(...) end".`,
@@ -28,8 +28,8 @@ export function lintFsmLifecycleWrapperPatternInTable(expression: Expression, is
 			}
 		}
 		if (field.kind === TableFieldKind.ExpressionKey) {
-			lintFsmLifecycleWrapperPatternInTable(field.key, issues);
+			lintFsmLifecycleWrapperPatternInTable(field.key, lint);
 		}
-		lintFsmLifecycleWrapperPatternInTable(field.value, issues);
+		lintFsmLifecycleWrapperPatternInTable(field.value, lint);
 	}
 }

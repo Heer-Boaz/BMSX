@@ -13,18 +13,18 @@ import type { Token } from '../../language/cpp/syntax/tokens';
 import { pushTokenLintIssue, type LintIssue } from '../cpp/support/diagnostics';
 import { nullishNullNormalizationPatternRule } from '../code_quality/nullish_null_normalization_pattern';
 import { redundantConditionalPatternRule } from '../code_quality/redundant_conditional_pattern';
-import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
+import type { CartLintContext, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 import { orNilFallbackPatternRule } from './or_nil_fallback_pattern';
 
 export const emptyStringFallbackPatternRule = defineLintRule('common', 'empty_string_fallback_pattern');
 
-export function lintAstEmptyStringFallbackPattern(expression: Expression, issues: CartLintIssue[], pushIssue: CartLintIssuePusher): void {
+export function lintAstEmptyStringFallbackPattern(expression: Expression, lint: CartLintContext, pushIssue: CartLintIssuePusher): void {
 	if (!luaBinaryExpressionHasOperand(expression, BinaryOperator.Or, isEmptyStringLiteral)) {
 		return;
 	}
 	pushIssue(
-		issues,
+		lint,
 		emptyStringFallbackPatternRule.name,
 		expression,
 		'Empty-string fallback via "or \'\'" is forbidden. Do not use empty strings as fallback/default values; keep string truthy-check semantics intact.',

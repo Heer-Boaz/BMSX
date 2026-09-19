@@ -19,6 +19,7 @@ export type SceneOutlineElement = SceneOutlineSource & { readonly kind: 'scene' 
 
 /** Source correspondence belongs to this outline, not to labels or the generic tree. */
 export function installSceneOutline(input: SceneEditorInput, document: SceneSourceDocument): void {
+	input.document = document;
 	const { outline, workingCopy: { buffer } } = input;
 	const previous = new Map<number, WorkbenchTreeNode<SceneOutlineElement>>();
 	for (const root of outline.roots) {
@@ -30,17 +31,17 @@ export function installSceneOutline(input: SceneEditorInput, document: SceneSour
 		const prior = previous.get(span.start);
 		const root = appendWorkbenchTreeNode(outline, null, {
 			kind: 'scene', scene, source: scene.range, span,
-			label: readLuaSourceRange(buffer, scene.id.range).replace(/\s+/g, ' '),
+			label: readLuaSourceRange(buffer, document.analysis.chunk.locations.range(scene.id.span)).replace(/\s+/g, ' '),
 			detail: `${scene.objects.length} MEMBERS${scene.resolution === 'partial' ? ' (PARTIAL)' : ''}`, displayLabel: '',
 		}, prior !== undefined && prior.element.span.end === span.end && prior.collapsed);
 		for (let index = 0; index < scene.objects.length; index += 1) {
 			const entry = scene.objects[index];
-			const range = entry.field.range;
+			const range = document.analysis.chunk.locations.range(entry.field.span);
 			appendWorkbenchTreeNode(outline, root, {
 				kind: 'member', scene, entry, index, source: range,
 				span: luaSourceRangeToTextRange(buffer, range),
-				label: readLuaSourceRange(buffer, entry.kind === 'object' ? entry.memberId.range : entry.field.value.range).replace(/\s+/g, ' '),
-				detail: entry.kind === 'object' ? readLuaSourceRange(buffer, entry.definitionId.range).replace(/\s+/g, ' ') : 'Dynamic Lua composition',
+				label: readLuaSourceRange(buffer, entry.kind === 'object' ? document.analysis.chunk.locations.range(entry.memberId.span) : document.analysis.chunk.locations.range(entry.field.value.span)).replace(/\s+/g, ' '),
+				detail: entry.kind === 'object' ? readLuaSourceRange(buffer, document.analysis.chunk.locations.range(entry.definitionId.span)).replace(/\s+/g, ' ') : 'Dynamic Lua composition',
 				displayLabel: '',
 			});
 		}
@@ -63,12 +64,12 @@ export function selectSceneOutlineRow(input: SceneEditorInput, index: number): v
 	input.selectionRange.start = row === undefined ? 0 : row.span.start;
 	input.selectionRange.end = row === undefined ? 0 : row.span.end;
 	input.optionProperties = row?.kind === 'member' && row.entry.kind === 'object'
-		? collectSceneOptionProperties(input.workingCopy.buffer, row.entry) : [];
+		? collectSceneOptionProperties(input.workingCopy.buffer, input.document.analysis.chunk.locations, row.entry) : [];
 	for (const property of input.properties) {
 		const field = row?.kind === 'member' && row.entry.kind === 'object' && row.entry.position !== null
 			? row.entry.position[property.axis] : null;
 		property.field = field;
 		property.value = field === null ? null : readLuaTableFieldInteger(field);
-		property.sourceText = field === null ? 'Lua source' : readLuaSourceRange(input.workingCopy.buffer, field.value.range).replace(/\s+/g, ' ');
+		property.sourceText = field === null ? 'Lua source' : readLuaSourceRange(input.workingCopy.buffer, input.document.analysis.chunk.locations.range(field.value.span)).replace(/\s+/g, ' ');
 	}
 }

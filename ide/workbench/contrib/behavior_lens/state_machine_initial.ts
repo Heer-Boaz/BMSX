@@ -46,7 +46,7 @@ export function stateMachineInitialTarget(view: BehaviorLensViewState): StateMac
 
 export function setStateMachineInitial(model: EditorTextModel, target: StateMachineInitialTarget): void {
 	const edits = target.literal === undefined
-		? createLuaTableFieldInsertionEdits(model.buffer, model.resource.path, target.owner.table, 0, 'initial = ' + quoteLuaString(target.name))
-		: [createLuaStringValueEdit(model.buffer, target.literal, target.name)];
+		? createLuaTableFieldInsertionEdits(model.buffer, target.owner.file.chunk.locations, target.owner.table, 0, 'initial = ' + quoteLuaString(target.name))
+		: [createLuaStringValueEdit(model.buffer, target.owner.file.chunk.locations, target.literal, target.name)];
 	model.pushEditOperations(edits);
 }

@@ -1,3 +1,4 @@
+import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import { createFsmStatePath } from '../../../../toolchain/ts/cartlib/fsm/state_path';
 import { LuaSyntaxKind, type LuaStringLiteralExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { BehaviorSourceDocument } from './model';
@@ -19,11 +20,12 @@ type RetargetUnavailable = {
 export type StateMachineRetargetCheck = RetargetUnavailable
 	| { readonly kind: 'unchanged' }
 	| { readonly kind: 'unresolved-consumer'; readonly use: StateMachinePathUse; readonly target: StateMachineSourceOutcome['target'] }
-	| { readonly kind: 'available'; readonly literal: LuaStringLiteralExpression; readonly text: string;
+	| { readonly kind: 'available'; readonly file: FileSemanticData; readonly literal: LuaStringLiteralExpression; readonly text: string;
 		readonly uses: readonly { readonly use: StateMachinePathUse; readonly original: StateMachineSourcePath; readonly plan: StateMachineSourcePath }[] };
 
 type RetargetSource = {
 	readonly kind: 'source';
+	readonly file: FileSemanticData;
 	readonly literal: LuaStringLiteralExpression;
 	readonly path: StateMachineSourcePath;
 	readonly use: StateMachinePathUse;
@@ -66,7 +68,7 @@ export class StateMachineRetargetAnalysis {
 				if (consumer === transition && candidate === outcome) selectedUse = use;
 			}
 		}
-		this.source = { kind: 'source', literal, path: outcome.target, use: selectedUse! };
+		this.source = { kind: 'source', file: outcome.valueFile!, literal, path: outcome.target, use: selectedUse! };
 	}
 
 	/** Retain the current candidate only: no target-count × shared-consumer result cache. */
@@ -104,6 +106,6 @@ export class StateMachineRetargetAnalysis {
 			if (plan.kind !== 'path') return { kind: 'unresolved-consumer', use, target: plan };
 			uses.push({ use, original: use.outcome.target, plan });
 		}
-		return { kind: 'available', literal: source.literal, text: path.text, uses };
+		return { kind: 'available', file: source.file, literal: source.literal, text: path.text, uses };
 	}
 }

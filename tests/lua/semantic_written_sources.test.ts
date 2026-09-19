@@ -15,20 +15,20 @@ function sourceQuery(source: string) {
 function writtenLines(sources: readonly LuaWrittenSource[]): number[] {
 	return sources.map(source => {
 		switch (source.kind) {
-			case 'expression': return source.expression.range.start.line;
+			case 'expression': return source.file.chunk.locations.range(source.expression.span).start.line;
 			case 'member-base': return writtenLines([source.read])[0];
 			case 'binding-input': return source.declaration.range.start.line;
-			case 'module-export': return source.export.statement.range.start.line;
-			case 'module-bypass': return source.statement.range.start.line;
-			case 'call-input': case 'call-callee': return source.call.expression.range.start.line;
-			case 'function-return': return source.entry.statement.range.start.line;
-			case 'function-completion': return source.body.expression.range.start.line;
+			case 'module-export': return source.file.chunk.locations.range(source.export.statement.span).start.line;
+			case 'module-bypass': return source.file.chunk.locations.range(source.statement.span).start.line;
+			case 'call-input': case 'call-callee': return source.file.chunk.locations.range(source.call.expression.span).start.line;
+			case 'function-return': return source.file.chunk.locations.range(source.entry.statement.span).start.line;
+			case 'function-completion': return source.file.chunk.locations.range(source.body.expression.span).start.line;
 			case 'write-receiver': return source.reference.range.start.line;
 			case 'receiver-input': {
 				assert.ok(source.value.root.kind === 'owned');
-				return source.value.root.syntax.range.start.line;
+				return source.file.chunk.locations.range(source.value.root.syntax.span).start.line;
 			}
-			default: return source.write.syntax.range.start.line;
+			default: return source.file.chunk.locations.range(source.write.syntax.span).start.line;
 		}
 	});
 }
@@ -419,7 +419,7 @@ return { canonical = true }`, 'library.lua');
 	assert.equal(library.moduleValues.length, 1);
 	const entry = library.moduleValues[0];
 	assert.equal(entry.statement, library.chunk.body[3]);
-	assert.deepEqual(entry.bypassingReturns.map(statement => statement.range.start.line), [2, 3]);
+	assert.deepEqual(entry.bypassingReturns.map(statement => library.chunk.locations.range(statement.span).start.line), [2, 3]);
 	assert.equal(library.functionValueFlows[0].returns.length, 1);
 	const query = workspace.getSnapshot().symbolResolver.writtenSources;
 	const trace = query.trace(query.expression(consumer, (consumer.chunk.body[0] as LuaReturnStatement).expressions[0]));

@@ -1,13 +1,13 @@
 import { defineLintRule } from '../../rule';
 import { LuaAssignmentOperator as AssignmentOperator, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { isModuleFieldAssignmentTarget } from './impl/support/object_ownership';
 import { isSingleUseLocalCandidateValue } from './impl/support/single_use_local';
 import { pushIssue } from './impl/support/lint_context';
 
 export const stagedExportLocalCallPatternRule = defineLintRule('cart', 'staged_export_local_call_pattern');
 
-export function lintStagedExportLocalCallPattern(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
+export function lintStagedExportLocalCallPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
 	const stagedLocalCallDeclarations = new Map<string, IdentifierExpression>();
 	const flagged = new Set<string>();
 	for (const statement of statements) {
@@ -49,7 +49,7 @@ export function lintStagedExportLocalCallPattern(statements: ReadonlyArray<State
 			}
 			flagged.add(right.name);
 			pushIssue(
-				issues,
+				lint,
 				stagedExportLocalCallPatternRule.name,
 				declaration,
 				`Staged local call-result export is forbidden ("${right.name}"). Assign call results directly to the module field and use that field directly.`,

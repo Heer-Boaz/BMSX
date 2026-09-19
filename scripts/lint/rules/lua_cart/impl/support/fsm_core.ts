@@ -1,5 +1,5 @@
 import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../../../lua_rule';
+import { type CartLintContext } from '../../../../lua_rule';
 import { lintFsmDirectStateHandlerMapValue } from '../../fsm_direct_state_handler_shorthand_pattern';
 import { getCallMethodName, getCallReceiverExpression } from '../../../../../../toolchain/ts/lua/syntax/calls';
 import { FSM_STATE_HANDLER_MAP_KEYS } from './fsm_transitions';
@@ -70,7 +70,7 @@ function isActionInputCallName(name: string): boolean {
 
 export function lintFsmDirectStateHandlerShorthandPatternInTable(
 	expression: Expression,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 ): void {
 	if (expression.kind !== SyntaxKind.TableConstructorExpression) {
 		return;
@@ -78,19 +78,19 @@ export function lintFsmDirectStateHandlerShorthandPatternInTable(
 	for (const field of expression.fields) {
 		const key = getTableFieldKey(field);
 		if (key && FSM_STATE_HANDLER_MAP_KEYS.has(key)) {
-			lintFsmDirectStateHandlerMapValue(field.value, issues);
+			lintFsmDirectStateHandlerMapValue(field.value, lint);
 		}
 		if (field.kind === TableFieldKind.ExpressionKey) {
-			lintFsmDirectStateHandlerShorthandPatternInTable(field.key, issues);
+			lintFsmDirectStateHandlerShorthandPatternInTable(field.key, lint);
 		}
-		lintFsmDirectStateHandlerShorthandPatternInTable(field.value, issues);
+		lintFsmDirectStateHandlerShorthandPatternInTable(field.value, lint);
 	}
 }
 
 export function lintFsmDirectStateHandlerShorthandPattern(
 	expression: CallExpression,
 	callKind: CartModuleCallKind | undefined,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 ): void {
 	if (callKind !== CART_MODULE_CALL_FSM_REGISTER) {
 		return;
@@ -99,7 +99,7 @@ export function lintFsmDirectStateHandlerShorthandPattern(
 	if (!definition) {
 		return;
 	}
-	lintFsmDirectStateHandlerShorthandPatternInTable(definition, issues);
+	lintFsmDirectStateHandlerShorthandPatternInTable(definition, lint);
 }
 
 export const FSM_DELEGATE_HANDLER_KEYS = new Set<string>([

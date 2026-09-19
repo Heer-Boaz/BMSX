@@ -55,25 +55,25 @@ class FileCorrespondence {
 		const oldFunctions = new Map<string, LuaFunctionExpression>();
 		const newFunctions = new Map<string, LuaFunctionExpression>();
 		walkLuaAst(this.oldFile.chunk, node => {
-			if (node.kind === LuaSyntaxKind.FunctionExpression) oldFunctions.set(sourceRangeKey(node.range), node);
+			if (node.kind === LuaSyntaxKind.FunctionExpression) oldFunctions.set(sourceRangeKey(this.oldFile.chunk.locations.range(node.span)), node);
 		});
 		walkLuaAst(this.newFile.chunk, node => {
-			if (node.kind === LuaSyntaxKind.FunctionExpression) newFunctions.set(sourceRangeKey(node.range), node);
+			if (node.kind === LuaSyntaxKind.FunctionExpression) newFunctions.set(sourceRangeKey(this.newFile.chunk.locations.range(node.span)), node);
 		});
 		const oldScopes = new Map<string, number>();
 		for (let index = 1; index < this.oldFile.scopes.length; index += 1) {
 			oldScopes.set(sourcePositionKey(this.oldFile.scopes[index].startInclusive), index);
 		}
 		for (const oldFunction of oldFunctions.values()) {
-			const mapped = this.mapRange(oldFunction.range, true);
+			const mapped = this.mapRange(this.oldFile.chunk.locations.range(oldFunction.span), true);
 			if (mapped === undefined) continue;
 			const newFunction = newFunctions.get(sourceRangeKey(mapped));
 			if (newFunction === undefined) continue;
-			const oldScope = oldScopes.get(sourcePositionKey(oldFunction.body.startInclusive))!;
-			const newScope = newScopes.get(sourcePositionKey(newFunction.body.startInclusive))!;
+			const oldScope = oldScopes.get(sourcePositionKey(this.oldFile.chunk.locations.position(oldFunction.body.span.unit, oldFunction.body.startInclusive)))!;
+			const newScope = newScopes.get(sourcePositionKey(this.newFile.chunk.locations.position(newFunction.body.span.unit, newFunction.body.startInclusive)))!;
 			if (this.scopes[oldScope] !== newScope) continue;
-			this.forwardFunctions.set(sourceRangeKey(oldFunction.range), newFunction.range);
-			this.backwardFunctions.set(sourceRangeKey(newFunction.range), oldFunction.range);
+			this.forwardFunctions.set(sourceRangeKey(this.oldFile.chunk.locations.range(oldFunction.span)), this.newFile.chunk.locations.range(newFunction.span));
+			this.backwardFunctions.set(sourceRangeKey(this.newFile.chunk.locations.range(newFunction.span)), this.oldFile.chunk.locations.range(oldFunction.span));
 		}
 	}
 

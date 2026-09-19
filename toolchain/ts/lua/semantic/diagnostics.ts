@@ -1,3 +1,4 @@
+import type { LuaSourceLocations } from '../syntax/source_locations';
 import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
@@ -309,7 +310,7 @@ function addConstLocalInitializerDiagnostics(diagnostics: LuaStaticDiagnostic[],
 				continue;
 			}
 			const identifier = localAssignment.names[index];
-			pushRangeDiagnostic(diagnostics, identifier.range, `Constant local '${identifier.name}' must have an initializer.`, 'error');
+			pushRangeDiagnostic(diagnostics, chunk.locations.range(identifier.span), `Constant local '${identifier.name}' must have an initializer.`, 'error');
 		}
 	};
 	walkLuaStatementTree(chunk.body, checkStatement);
@@ -337,7 +338,7 @@ function addCallDiagnosticsFromSemantic(
 				symbolResolver,
 			);
 			if (userMetadata) {
-				validateCallArity(diagnostics, call, userMetadata);
+				validateCallArity(diagnostics, analysis.chunk.locations, call, userMetadata);
 			}
 			continue;
 		}
@@ -351,13 +352,13 @@ function addCallDiagnosticsFromSemantic(
 				symbolResolver,
 			);
 			if (userMetadata) {
-				validateCallArity(diagnostics, call, userMetadata);
+				validateCallArity(diagnostics, analysis.chunk.locations, call, userMetadata);
 			}
 			continue;
 		}
 		const metadata = resolveCallSignature(call, builtinLookup);
 		if (metadata) {
-			validateCallArity(diagnostics, call, metadata);
+			validateCallArity(diagnostics, analysis.chunk.locations, call, metadata);
 		}
 	}
 }
@@ -400,15 +401,16 @@ function resolveUserFunctionSignature(
 	};
 }
 
-function validateCallArity(diagnostics: LuaStaticDiagnostic[], call: LuaCallExpression, metadata: CallSignatureMetadata): void {
+function validateCallArity(diagnostics: LuaStaticDiagnostic[], locations: LuaSourceLocations, call: LuaCallExpression, metadata: CallSignatureMetadata): void {
 	const required = metadata.required;
 	const actualCount = call.arguments.length;
 	if (actualCount >= required) {
 		return;
 	}
-	const row = call.range.start.line - 1;
-	const startColumn = call.range.start.column - 1;
-	const endColumnCandidate = call.range.end.column;
+	const range = locations.range(call.span);
+	const row = range.start.line - 1;
+	const startColumn = range.start.column - 1;
+	const endColumnCandidate = range.end.column;
 	const endColumn = endColumnCandidate > startColumn ? endColumnCandidate : startColumn + 1;
 	const expectedLabel = required === 1 ? 'argument' : 'arguments';
 	const providedLabel = actualCount === 1 ? 'was' : 'were';
@@ -481,7 +483,7 @@ function collectAllowedReservedMemoryRanges(chunk: LuaChunk): Set<string> {
 		switch (expression.kind) {
 			case LuaSyntaxKind.IndexExpression:
 				if (expression.base.kind === LuaSyntaxKind.IdentifierExpression && isReservedMemoryMapName(expression.base.name)) {
-					allowed.add(sourcePositionKey(expression.base.range.start));
+					allowed.add(sourcePositionKey(chunk.locations.range(expression.base.span).start));
 				}
 				visitExpression(expression.base);
 				visitExpression(expression.index);

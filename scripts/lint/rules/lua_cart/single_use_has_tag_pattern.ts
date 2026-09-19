@@ -9,7 +9,7 @@ export function leaveSingleUseHasTagScope(context: SingleUseHasTagContext): void
 	leaveBindingScope(context.scopeStack, context.bindingStacksByName, binding => {
 		if (binding.pendingReadCount === 1) {
 			pushIssue(
-				context.issues,
+				context.lint,
 				singleUseHasTagPatternRule.name,
 				binding.declaration,
 				`Local has_tag result "${binding.declaration.name}" is read exactly once; inline self:has_tag(...) instead of caching it.`,

@@ -1,5 +1,5 @@
 import { LuaAssignmentOperator as AssignmentOperator, type LuaAssignmentStatement as AssignmentStatement, LuaBinaryOperator as BinaryOperator, type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../../../lua_rule';
+import { type CartLintContext } from '../../../../lua_rule';
 import { lintFsmForbiddenLegacyFieldsInTable } from '../../fsm_forbidden_legacy_fields_pattern';
 import { lintFsmProcessInputPollingTransitionPatternInTable } from '../../fsm_process_input_polling_transition_pattern';
 import { lintFsmRunChecksInputTransitionPatternInTable } from '../../fsm_run_checks_input_transition_pattern';
@@ -65,7 +65,7 @@ export const FSM_STATE_HANDLER_MAP_KEYS = new Set<string>([
 export function lintFsmForbiddenLegacyFieldsPattern(
 	expression: CallExpression,
 	callKind: CartModuleCallKind | undefined,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 ): void {
 	if (callKind !== CART_MODULE_CALL_FSM_REGISTER) {
 		return;
@@ -74,13 +74,13 @@ export function lintFsmForbiddenLegacyFieldsPattern(
 	if (!definition) {
 		return;
 	}
-	lintFsmForbiddenLegacyFieldsInTable(definition, issues);
+	lintFsmForbiddenLegacyFieldsInTable(definition, lint);
 }
 
 export function lintFsmProcessInputPollingTransitionPattern(
 	expression: CallExpression,
 	callKind: CartModuleCallKind | undefined,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 ): void {
 	if (callKind !== CART_MODULE_CALL_FSM_REGISTER) {
 		return;
@@ -89,13 +89,13 @@ export function lintFsmProcessInputPollingTransitionPattern(
 	if (!definition) {
 		return;
 	}
-	lintFsmProcessInputPollingTransitionPatternInTable(definition, issues);
+	lintFsmProcessInputPollingTransitionPatternInTable(definition, lint);
 }
 
 export function lintFsmRunChecksInputTransitionPattern(
 	expression: CallExpression,
 	callKind: CartModuleCallKind | undefined,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 ): void {
 	if (callKind !== CART_MODULE_CALL_FSM_REGISTER) {
 		return;
@@ -104,7 +104,7 @@ export function lintFsmRunChecksInputTransitionPattern(
 	if (!definition) {
 		return;
 	}
-	lintFsmRunChecksInputTransitionPatternInTable(definition, issues);
+	lintFsmRunChecksInputTransitionPatternInTable(definition, lint);
 }
 
 export function findTickCounterMutationInAssignment(statement: AssignmentStatement): Expression | undefined {
@@ -203,7 +203,7 @@ export function findTickCounterMutationInStatements(statements: ReadonlyArray<St
 export function lintFsmTickCounterTransitionPattern(
 	expression: CallExpression,
 	callKind: CartModuleCallKind | undefined,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 ): void {
 	if (callKind !== CART_MODULE_CALL_FSM_REGISTER) {
 		return;
@@ -212,5 +212,5 @@ export function lintFsmTickCounterTransitionPattern(
 	if (!definition) {
 		return;
 	}
-	lintFsmTickCounterTransitionPatternInTable(definition, issues);
+	lintFsmTickCounterTransitionPatternInTable(definition, lint);
 }

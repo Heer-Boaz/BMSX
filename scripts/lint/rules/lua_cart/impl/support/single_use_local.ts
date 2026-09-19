@@ -1,5 +1,6 @@
+import type { LuaSourceLocations } from '../../../../../../toolchain/ts/lua/syntax/source_locations';
 import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaFunctionExpression as CartFunctionExpression, type LuaIdentifierExpression as IdentifierExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../../../lua_rule';
+import { type CartLintContext } from '../../../../lua_rule';
 import { leaveSingleUseLocalScope } from '../../../common/single_use_local_pattern';
 import { declareBinding, enterBindingScope } from './bindings';
 import { getRangeLineSpan } from './expressions';
@@ -21,8 +22,8 @@ export function isSingleUseLocalCandidateValue(expression: Expression | undefine
 	return true;
 }
 
-export function isTrivialSingleUseLocalHelperFunctionExpression(expression: CartFunctionExpression): boolean {
-	if (getRangeLineSpan(expression) > SINGLE_USE_LOCAL_SMALL_HELPER_MAX_LINES) {
+export function isTrivialSingleUseLocalHelperFunctionExpression(expression: CartFunctionExpression, locations: LuaSourceLocations): boolean {
+	if (getRangeLineSpan(expression, locations) > SINGLE_USE_LOCAL_SMALL_HELPER_MAX_LINES) {
 		return false;
 	}
 	const bodyStatements = expression.body.body;
@@ -39,19 +40,19 @@ export function isTrivialSingleUseLocalHelperFunctionExpression(expression: Cart
 	return onlyStatement.expressions.length === 1;
 }
 
-export function resolveSingleUseLocalReportKindForValue(expression: Expression | undefined): SingleUseLocalReportKind | null {
+export function resolveSingleUseLocalReportKindForValue(expression: Expression | undefined, locations: LuaSourceLocations): SingleUseLocalReportKind | null {
 	if (isSingleUseLocalCandidateValue(expression)) {
 		return 'call_result';
 	}
-	if (expression && expression.kind === SyntaxKind.FunctionExpression && isTrivialSingleUseLocalHelperFunctionExpression(expression)) {
+	if (expression && expression.kind === SyntaxKind.FunctionExpression && isTrivialSingleUseLocalHelperFunctionExpression(expression, locations)) {
 		return 'small_helper';
 	}
 	return null;
 }
 
-export function createSingleUseLocalContext(issues: CartLintIssue[]): SingleUseLocalContext {
+export function createSingleUseLocalContext(lint: CartLintContext): SingleUseLocalContext {
 	return {
-		issues,
+		lint,
 		bindingStacksByName: new Map<string, SingleUseLocalBinding[]>(),
 		scopeStack: [],
 		functionDepth: 0,
@@ -175,7 +176,7 @@ export function lintSingleUseLocalInStatements(statements: ReadonlyArray<Stateme
 				}
 				for (let index = 0; index < statement.names.length; index += 1) {
 					const value = index < statement.values.length ? statement.values[index] : undefined;
-					const reportKind = resolveSingleUseLocalReportKindForValue(value);
+					const reportKind = resolveSingleUseLocalReportKindForValue(value, context.lint.locations);
 					declareSingleUseLocalBinding(context, statement.names[index], reportKind);
 				}
 				break;
@@ -189,7 +190,7 @@ export function lintSingleUseLocalInStatements(statements: ReadonlyArray<Stateme
 				break;
 			case SyntaxKind.LocalFunctionStatement: {
 				const localFunction = statement as LocalFunctionStatement;
-				const reportKind = isTrivialSingleUseLocalHelperFunctionExpression(localFunction.functionExpression) ? 'small_helper' : null;
+				const reportKind = isTrivialSingleUseLocalHelperFunctionExpression(localFunction.functionExpression, context.lint.locations) ? 'small_helper' : null;
 				declareSingleUseLocalBinding(context, localFunction.name, reportKind);
 				context.functionDepth += 1;
 				enterBindingScope(context);
@@ -278,8 +279,8 @@ export function lintSingleUseLocalInStatements(statements: ReadonlyArray<Stateme
 	}
 }
 
-export function lintSingleUseLocalPattern(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
-	const context = createSingleUseLocalContext(issues);
+export function lintSingleUseLocalPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
+	const context = createSingleUseLocalContext(lint);
 	enterBindingScope(context);
 	try {
 		lintSingleUseLocalInStatements(statements, context);

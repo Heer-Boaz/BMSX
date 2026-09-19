@@ -75,7 +75,7 @@ test('unchanged resume spans between separate edits retain exact token positions
 	const before = 'local before = 1\ncheckpoint()\nlocal after = 2';
 	const after = '-- heading\n' + before.replace('= 1', '= 10').replace('= 2', '= 20');
 	const { match, old, fresh } = compare(before, after);
-	assert.deepEqual(match.unchangedRange(old.chunk.body[1].range), fresh.chunk.body[1].range);
+	assert.deepEqual(match.unchangedRange(old.chunk.locations.range(old.chunk.body[1].span)), fresh.chunk.locations.range(fresh.chunk.body[1].span));
 	const point = { path: PATH, start: { line: 2, column: 4 }, end: { line: 2, column: 4 } };
 	assert.deepEqual(match.unchangedRange(point), { path: PATH, start: { line: 3, column: 4 }, end: { line: 3, column: 4 } });
 });
@@ -106,8 +106,9 @@ test('anonymous function body edits map both directions, but reparenting does no
 	const after = '\nreturn function() return 2 end';
 	const functions = (source: string) => {
 		const ranges: SourceRange[] = [];
-		walkLuaAst(parseLuaChunk(source, PATH).chunk!, node => {
-			if (node.kind === LuaSyntaxKind.FunctionExpression) ranges.push(node.range);
+		const chunk = parseLuaChunk(source, PATH).chunk;
+		walkLuaAst(chunk, node => {
+			if (node.kind === LuaSyntaxKind.FunctionExpression) ranges.push(chunk.locations.range(node.span));
 		});
 		return ranges;
 	};

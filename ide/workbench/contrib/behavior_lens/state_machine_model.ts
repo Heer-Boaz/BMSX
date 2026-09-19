@@ -1,3 +1,4 @@
+import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaExpression, LuaFunctionExpression, LuaReturnStatement,
 	LuaTableConstructorExpression, LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { BehaviorSourceTableSection, ResolvedSourceTable, SourceTableIssue } from './source';
@@ -5,6 +6,7 @@ import type { BehaviorDynamicSourceNode, BehaviorSourceNode, BehaviorSourceRowKe
 
 /** Authored consumer candidate; its trigger expression need not have a statically known key. */
 export type StateMachineSourceSlot = {
+	readonly file: FileSemanticData;
 	readonly kind: 'event' | 'input' | 'timeline-finished' | 'update' | 'enter';
 	readonly source: BehaviorSourceNode;
 	readonly field: LuaTableField;
@@ -15,12 +17,14 @@ export type StateMachineSourceSlot = {
 };
 
 export type StateMachineSourceStates = {
+	readonly file: FileSemanticData;
 	readonly source: BehaviorSourceNode;
 	readonly field: LuaTableField;
 } & ({
 	readonly kind: 'resolved';
 	readonly issues: SourceTableIssue;
 	readonly entries: readonly {
+		readonly file: FileSemanticData;
 		readonly name: string | null;
 		readonly field: LuaTableField;
 		readonly node: StateMachineSourceState | BehaviorDynamicSourceNode;
@@ -28,6 +32,7 @@ export type StateMachineSourceStates = {
 } | { readonly kind: 'dynamic' });
 
 export type StateMachineSourceBody = {
+	readonly file: FileSemanticData;
 	readonly table: LuaTableConstructorExpression;
 	readonly issues: SourceTableIssue;
 	readonly initial: LuaTableField | null;
@@ -84,10 +89,11 @@ export type StateMachineSourcePath = {
 };
 
 export type StateMachineSourceOutcome = {
-	readonly proof: { readonly kind: 'direct'; readonly expression: LuaExpression }
-		| { readonly kind: 'return'; readonly binding: LuaExpression; readonly callback: LuaFunctionExpression; readonly statement: LuaReturnStatement };
+	readonly proof: { readonly kind: 'direct'; readonly file: FileSemanticData; readonly expression: LuaExpression }
+		| { readonly kind: 'return'; readonly file: FileSemanticData; readonly callbackFile: FileSemanticData; readonly binding: LuaExpression; readonly callback: LuaFunctionExpression; readonly statement: LuaReturnStatement };
 	/** Resolved authored value, even when a consumer's path binding is incomplete. */
 	readonly value: LuaExpression | undefined;
+	readonly valueFile: FileSemanticData | undefined;
 	readonly target: StateMachineSourcePath | StateMachineSourceUnknown | {
 		/** No returned path, not a claim that the callback has no imperative effects. */
 		readonly kind: 'no-path';
@@ -103,6 +109,7 @@ export type StateMachineSourceTransition = {
 };
 
 export type StateMachineSourceEntry = {
+	readonly file: FileSemanticData;
 	readonly kind: 'initial' | 'concurrent';
 	/** Declaring scope; a concurrent entry's origin is its parent, not this owner. */
 	readonly owner: BehaviorSourceRowKey;

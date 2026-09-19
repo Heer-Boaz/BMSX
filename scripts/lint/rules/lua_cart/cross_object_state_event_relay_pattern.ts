@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
 import { type LuaCallExpression as CallExpression, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { forbiddenDispatchPatternRule } from './forbidden_dispatch_pattern';
 import { getCallReceiverExpression } from '../../../../toolchain/ts/lua/syntax/calls';
 import { isCrossObjectDispatchStateEventCallExpression, isObjectOrServiceResolverCallExpression } from './impl/support/object_ownership';
@@ -11,7 +11,7 @@ export const crossObjectStateEventRelayPatternRule = defineLintRule('cart', 'cro
 const CROSS_OBJECT_STATE_EVENT_RELAY_MESSAGE =
 	'Cross-object dispatch_state_event relay with dynamic event names is forbidden. Keep event ownership local and model transitions via FSM events/on maps.';
 
-export function lintCrossObjectStateEventRelayPattern(expression: CallExpression, issues: CartLintIssue[]): void {
+export function lintCrossObjectStateEventRelayPattern(expression: CallExpression, lint: CartLintContext): void {
 	if (activeLintRules.has(forbiddenDispatchPatternRule.name)) {
 		return;
 	}
@@ -26,7 +26,7 @@ export function lintCrossObjectStateEventRelayPattern(expression: CallExpression
 		return;
 	}
 	pushIssue(
-		issues,
+		lint,
 		crossObjectStateEventRelayPatternRule.name,
 		expression,
 		CROSS_OBJECT_STATE_EVENT_RELAY_MESSAGE,

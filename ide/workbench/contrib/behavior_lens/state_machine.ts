@@ -1,3 +1,4 @@
+import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
@@ -39,36 +40,38 @@ const SCALAR_FIELDS = [
 export function buildStateMachineBody(
 	context: BehaviorRecognizerContext, path: string, resolved: ResolvedSourceTable, activeTables: Set<LuaTableConstructorExpression>,
 ): { body: StateMachineSourceBody; children: readonly BehaviorSourceNode[] } {
+	const file = resolved.file;
 	const definition = resolved.table;
 	activeTables.add(definition);
 	const children: BehaviorSourceNode[] = [];
 	const slots: StateMachineSourceSlot[] = [];
-	appendScalarFields(context, path, definition, children, slots);
-	appendFsmEventSection(context, appendBehaviorSourcePath(path, 'on'), definition, activeTables, children, slots);
-	appendFsmTimelines(context, appendBehaviorSourcePath(path, 'timelines'), definition, activeTables, children, slots);
-	appendNamedSection(context, appendBehaviorSourcePath(path, 'data'), definition, activeTables, children, 'data');
+	appendScalarFields(context, file, path, definition, children, slots);
+	appendFsmEventSection(context, file, appendBehaviorSourcePath(path, 'on'), definition, activeTables, children, slots);
+	appendFsmTimelines(context, file, appendBehaviorSourcePath(path, 'timelines'), definition, activeTables, children, slots);
+	appendNamedSection(context, file, appendBehaviorSourcePath(path, 'data'), definition, activeTables, children, 'data');
 	const guardField = findNamedLuaTableField(definition, 'transition_guards');
 	let guards: StateMachineSourceBody['guards'] = null;
 	if (guardField !== null) {
-		const source = buildNamedTableSection(context, appendBehaviorSourcePath(path, 'transition_guards'), 'transition_guards', guardField.value, activeTables);
+		const source = buildNamedTableSection(context, file, appendBehaviorSourcePath(path, 'transition_guards'), 'transition_guards', guardField.value, activeTables);
 		children.push(source);
 		guards = { source, field: guardField,
 			canEnter: source.kind === 'dynamic' ? null : findNamedLuaTableField(source.table, 'can_enter'),
 			canExit: source.kind === 'dynamic' ? null : findNamedLuaTableField(source.table, 'can_exit') };
 	}
-	if (path.length === 0) appendTableMapSection(context, appendBehaviorSourcePath(path, 'tag_derivations'), definition, activeTables, children, 'tag_derivations');
-	appendExpressionListSection(context, appendBehaviorSourcePath(path, 'tags'), definition, activeTables, children, 'tags');
-	appendExpressionListSection(context, appendBehaviorSourcePath(path, 'event_list'), definition, activeTables, children, 'event_list');
-	appendExpressionListSection(context, appendBehaviorSourcePath(path, 'actioneffects'), definition, activeTables, children, 'actioneffects');
-	appendInputHandlers(context, appendBehaviorSourcePath(path, 'input_event_handlers'), definition, activeTables, children, slots);
-	const states = appendFsmStates(context, appendBehaviorSourcePath(path, 'states'), definition, activeTables, children);
+	if (path.length === 0) appendTableMapSection(context, file, appendBehaviorSourcePath(path, 'tag_derivations'), definition, activeTables, children, 'tag_derivations');
+	appendExpressionListSection(context, file, appendBehaviorSourcePath(path, 'tags'), definition, activeTables, children, 'tags');
+	appendExpressionListSection(context, file, appendBehaviorSourcePath(path, 'event_list'), definition, activeTables, children, 'event_list');
+	appendExpressionListSection(context, file, appendBehaviorSourcePath(path, 'actioneffects'), definition, activeTables, children, 'actioneffects');
+	appendInputHandlers(context, file, appendBehaviorSourcePath(path, 'input_event_handlers'), definition, activeTables, children, slots);
+	const states = appendFsmStates(context, file, appendBehaviorSourcePath(path, 'states'), definition, activeTables, children);
 	activeTables.delete(definition);
-	return { body: { table: definition, issues: resolved.issues, initial: findNamedLuaTableField(definition, 'initial'),
+	return { body: { file, table: definition, issues: resolved.issues, initial: findNamedLuaTableField(definition, 'initial'),
 		concurrent: findNamedLuaTableField(definition, 'is_concurrent'), guards, states, slots }, children };
 }
 
 function appendFsmStates(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	owner: LuaTableConstructorExpression,
 	activeTables: Set<LuaTableConstructorExpression>,
@@ -78,17 +81,17 @@ function appendFsmStates(
 	if (!statesField) {
 		return null;
 	}
-	const resolved = resolveSourceTable(context, statesField.value, activeTables);
+	const resolved = resolveSourceTable(context, file, statesField.value, activeTables);
 	if (!resolved) {
-		const source = createDynamicNode(context, path, 'dynamic states', statesField.value);
+		const source = createDynamicNode(context, file, path, 'dynamic states', statesField.value);
 		children.push(source);
-		return { kind: 'dynamic', source, field: statesField };
+		return { kind: 'dynamic', file, source, field: statesField };
 	}
 	// Implicit numeric members are not string-addressable child definitions either.
 	const issues = resolved.table.fields.some(field => field.kind === LuaTableFieldKind.Array)
 		? resolved.issues | SourceTableIssue.NumericKey : resolved.issues;
 	const initialField = findNamedLuaTableField(owner, 'initial');
-	const initialValue = initialField && context.reader.expression(initialField.value);
+	const initialValue = initialField && context.reader.expression(file, initialField.value)?.expression;
 	const initial = initialValue?.kind === LuaSyntaxKind.StringLiteralExpression
 		? initialValue.value
 		: null;
@@ -103,18 +106,18 @@ function appendFsmStates(
 				kind: 'dynamic',
 				label: `[${entry.authoredKeyLabel}]`,
 				detail: `state = ${describeExpression(entry.field.value)}`,
-				authoredRange: entry.field.range,
+				authoredRange: resolved.file.chunk.locations.range(entry.field.span),
 				referenceRange: null,
 				resolution: entry.keyKind === 'numeric' ? 'partial' : 'unresolved',
 				children: [],
 			});
 			stateNodes.push(node);
-			entries.push({ name: null, field: entry.field, node });
+			entries.push({ file: resolved.file, name: null, field: entry.field, node });
 			continue;
 		}
 		knownStateCount += 1;
 		const node = buildFsmState(
-			context,
+			context, resolved.file,
 			appendBehaviorSourcePath(path, behaviorSourceFieldSegment(entry, index)),
 			entry.name,
 			entry.field.value,
@@ -122,7 +125,7 @@ function appendFsmStates(
 			activeTables,
 		);
 		stateNodes.push(node);
-		entries.push({ name: entry.name, field: entry.field, node });
+		entries.push({ file: resolved.file, name: entry.name, field: entry.field, node });
 	}
 	const source = createSourceNode(context, path, {
 		kind: 'section',
@@ -130,30 +133,31 @@ function appendFsmStates(
 			? `states (${knownStateCount})`
 			: `states (${knownStateCount} known)`,
 		detail: describeResolvedSourceTable(resolved),
-		authoredRange: resolved.table.range,
+		authoredRange: resolved.file.chunk.locations.range(resolved.table.span),
 		referenceRange: resolved.referenceRange,
 		resolution: issues === SourceTableIssue.None ? 'complete' : 'partial',
 		children: stateNodes,
 	});
 	children.push(source);
-	return { kind: 'resolved', field: statesField, source, issues, entries };
+	return { kind: 'resolved', file, field: statesField, source, issues, entries };
 }
 
 function buildFsmState(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	name: string,
 	expression: LuaExpression,
 	initial: boolean,
 	activeTables: Set<LuaTableConstructorExpression>,
 ): StateMachineSourceState | BehaviorDynamicSourceNode {
-	const resolved = resolveSourceTable(context, expression, activeTables);
+	const resolved = resolveSourceTable(context, file, expression, activeTables);
 	if (!resolved) {
-		return createDynamicNode(context, path, `state ${name}: dynamic`, expression);
+		return createDynamicNode(context, file, path, `state ${name}: dynamic`, expression);
 	}
 	const state = resolved.table;
 	const concurrentField = findNamedLuaTableField(state, 'is_concurrent');
-	const concurrentValue = concurrentField && context.reader.expression(concurrentField.value);
+	const concurrentValue = concurrentField && context.reader.expression(resolved.file, concurrentField.value)?.expression;
 	const concurrent = concurrentValue?.kind === LuaSyntaxKind.BooleanLiteralExpression && concurrentValue.value;
 	const markers: string[] = [];
 	if (initial) {
@@ -171,7 +175,7 @@ function buildFsmState(
 		kind: 'state',
 		label: name,
 		detail: markers.join(', '),
-		authoredRange: state.range,
+		authoredRange: resolved.file.chunk.locations.range(state.span),
 		referenceRange: resolved.referenceRange,
 		resolution: resolved.resolution,
 		body,
@@ -181,6 +185,7 @@ function buildFsmState(
 
 function appendTableMapSection(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	owner: LuaTableConstructorExpression,
 	activeTables: Set<LuaTableConstructorExpression>,
@@ -191,9 +196,9 @@ function appendTableMapSection(
 	if (!field) {
 		return;
 	}
-	const resolved = resolveSourceTable(context, field.value, activeTables);
+	const resolved = resolveSourceTable(context, file, field.value, activeTables);
 	if (!resolved) {
-		children.push(createDynamicNode(context, path, `dynamic ${fieldName}`, field.value));
+		children.push(createDynamicNode(context, file, path, `dynamic ${fieldName}`, field.value));
 		return;
 	}
 	const entries = collectNamedFields(resolved.table);
@@ -205,7 +210,7 @@ function appendTableMapSection(
 				kind: 'dynamic',
 				label: `[${entry.authoredKeyLabel}]`,
 				detail: describeExpression(entry.field.value),
-				authoredRange: entry.field.range,
+				authoredRange: resolved.file.chunk.locations.range(entry.field.span),
 				referenceRange: null,
 				resolution: entry.keyKind === 'numeric' ? 'partial' : 'unresolved',
 				children: [],
@@ -214,7 +219,7 @@ function appendTableMapSection(
 		}
 		const label = entry.name;
 		entryNodes.push(buildNamedTableSection(
-			context,
+			context, resolved.file,
 			appendBehaviorSourcePath(path, behaviorSourceFieldSegment(entry, index)),
 			label,
 			entry.field.value,
@@ -227,7 +232,7 @@ function appendTableMapSection(
 			? `${fieldName} (${entryNodes.length})`
 			: `${fieldName} (${entryNodes.length} entries)`,
 		detail: describeResolvedSourceTable(resolved),
-		authoredRange: resolved.table.range,
+		authoredRange: resolved.file.chunk.locations.range(resolved.table.span),
 		referenceRange: resolved.referenceRange,
 		resolution: resolved.resolution,
 		children: entryNodes,
@@ -236,6 +241,7 @@ function appendTableMapSection(
 
 function appendNamedSection(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	owner: LuaTableConstructorExpression,
 	activeTables: Set<LuaTableConstructorExpression>,
@@ -244,12 +250,13 @@ function appendNamedSection(
 ): void {
 	const field = findNamedLuaTableField(owner, fieldName);
 	if (field) {
-		children.push(buildNamedTableSection(context, path, fieldName, field.value, activeTables));
+		children.push(buildNamedTableSection(context, file, path, fieldName, field.value, activeTables));
 	}
 }
 
 function appendExpressionListSection(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	owner: LuaTableConstructorExpression,
 	activeTables: Set<LuaTableConstructorExpression>,
@@ -261,7 +268,7 @@ function appendExpressionListSection(
 		return;
 	}
 	children.push(buildTableArraySection(
-		context,
+		context, file,
 		path,
 		fieldName,
 		field.value,
@@ -272,6 +279,7 @@ function appendExpressionListSection(
 
 function appendScalarFields(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	owner: LuaTableConstructorExpression,
 	children: BehaviorSourceNode[],
@@ -287,14 +295,14 @@ function appendScalarFields(
 			kind: 'property',
 			label: `${fieldName} = ${describeExpression(field.value)}`,
 			detail: '',
-			authoredRange: field.range,
+			authoredRange: file.chunk.locations.range(field.span),
 			referenceRange: null,
 			resolution: 'complete',
 			children: [],
 		});
 		children.push(source);
 		if (fieldName === 'update' || fieldName === 'entering_state') {
-			slots.push({ kind: fieldName === 'update' ? 'update' : 'enter', source, field, value: field.value, spec: null, bindingComplete: true });
+			slots.push({ file, kind: fieldName === 'update' ? 'update' : 'enter', source, field, value: field.value, spec: null, bindingComplete: true });
 		}
 	}
 }

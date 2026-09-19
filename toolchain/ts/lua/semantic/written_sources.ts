@@ -62,6 +62,8 @@ export type LuaSourceBoundary = 'unknown-value' | 'unbound-global' | 'unwritten-
 
 type LuaSourceContributions = { readonly kind: 'contributions'; readonly sources: readonly LuaWrittenSource[] };
 
+export type LuaWrittenExpression = Extract<LuaWrittenSource, { kind: 'expression' }>;
+
 export type LuaWrittenSourceInputs =
 	| { readonly kind: 'terminal' }
 	| LuaSourceContributions
@@ -94,7 +96,7 @@ const PARAMETER: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'parameter
  */
 export class LuaWrittenSourceQuery {
 	private readonly filesByPath = new Map<string, FileSemanticData>();
-	private readonly expressions = new Map<FileSemanticData, Map<LuaExpression, LuaWrittenSource>>();
+	private readonly expressions = new Map<FileSemanticData, Map<LuaExpression, LuaWrittenExpression>>();
 	private readonly declarations = new Map<SymbolID, LuaSourceContributions>();
 	private readonly writes = new Map<DeclarationValueEntry, LuaWrittenSource>();
 	private readonly globals = new Map<string, LuaWrittenSourceInputs>();
@@ -119,7 +121,7 @@ export class LuaWrittenSourceQuery {
 		for (const file of files) this.filesByPath.set(file.file, file);
 	}
 
-	public expression(file: FileSemanticData, expression: LuaExpression): LuaWrittenSource {
+	public expression(file: FileSemanticData, expression: LuaExpression): LuaWrittenExpression {
 		let expressions = this.expressions.get(file);
 		if (expressions === undefined) {
 			expressions = new Map();
@@ -137,7 +139,7 @@ export class LuaWrittenSourceQuery {
 	public write(write: DeclarationValueEntry): LuaWrittenSource {
 		let source = this.writes.get(write);
 		if (source === undefined) {
-			source = { kind: 'declaration-write', file: this.filesByPath.get(write.syntax.range.path)!, write, value: write.source };
+			source = { kind: 'declaration-write', file: this.filesByPath.get(write.file)!, write, value: write.source };
 			this.writes.set(write, source);
 		}
 		return source;
@@ -150,7 +152,7 @@ export class LuaWrittenSourceQuery {
 		let input = inputs[index];
 		if (input !== undefined) return input;
 		const syntax = call.expression;
-		const file = this.filesByPath.get(syntax.range.path)!;
+		const file = this.filesByPath.get(call.file)!;
 		const receiver = syntax.method !== null;
 		const expression = receiver && index === 0 ? syntax.callee : syntax.arguments[index - (receiver ? 1 : 0)];
 		if (expression !== undefined) input = this.expression(file, expression);
@@ -167,7 +169,7 @@ export class LuaWrittenSourceQuery {
 	public callee(call: CallValueEntry): LuaWrittenSource {
 		let source = this.callees.get(call);
 		if (source === undefined) {
-			source = { kind: 'call-callee', file: this.filesByPath.get(call.expression.range.path)!, call, value: call.callee };
+			source = { kind: 'call-callee', file: this.filesByPath.get(call.file)!, call, value: call.callee };
 			this.callees.set(call, source);
 		}
 		return source;
@@ -177,7 +179,7 @@ export class LuaWrittenSourceQuery {
 	public returns(body: FunctionValueFlowEntry): readonly LuaWrittenSource[] {
 		let inputs = this.returnInputs.get(body);
 		if (inputs !== undefined) return inputs;
-		const file = this.filesByPath.get(body.expression.range.path)!;
+		const file = this.filesByPath.get(body.functionValue.root.file)!;
 		const sources: LuaWrittenSource[] = [];
 		for (const entry of body.returns) sources.push({ kind: 'function-return', file, entry, value: entry.firstValue });
 		if (body.completion & LuaCompletion.Fallthrough) {

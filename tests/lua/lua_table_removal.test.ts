@@ -32,13 +32,13 @@ test('parser field ranges own expression-key brackets and all grouping, excludin
 	const source = `local values = { -- outside\n${texts[0]} -- after field\n; ${texts[1]}, ${texts[2]}; ${texts[3]}\n}`;
 	const model = new EditorTextModel(resource, 'lua', source);
 	const { parsed, table } = parseTable(source);
-	assert.deepEqual(table.fields.map(field => readLuaSourceRange(model.buffer, field.range)), texts);
-	assert.deepEqual(table.fields.map(field => findLuaTableFieldSeparator(parsed.tokens, field)?.lexeme), [';', ',', ';', undefined]);
-	assert.equal(readLuaSourceRange(model.buffer, table.fields[2].value.range), '3', 'child expression ranges keep their semantic meaning');
-	const plain = parseTable('local values = { 10, { 20 }, named = 30 }').table;
-	assert.equal(plain.fields[0].range, plain.fields[0].value.range, 'an ungrouped array field shares its immutable value range');
-	assert.equal(plain.fields[1].range, plain.fields[1].value.range);
-	assert.equal(plain.fields[2].range.end, plain.fields[2].value.range.end, 'a named field shares its unchanged endpoint');
+	assert.deepEqual(table.fields.map(field => readLuaSourceRange(model.buffer, parsed.chunk.locations.range(field.span))), texts);
+	assert.deepEqual(table.fields.map(field => findLuaTableFieldSeparator(parsed.chunk.locations, parsed.tokens, field)?.lexeme), [';', ',', ';', undefined]);
+	assert.equal(readLuaSourceRange(model.buffer, parsed.chunk.locations.range(table.fields[2].value.span)), '3', 'child expression ranges keep their semantic meaning');
+	const { table: plain, parsed: plainParsed } = parseTable('local values = { 10, { 20 }, named = 30 }');
+	assert.equal(plainParsed.chunk.locations.range(plain.fields[0].span), plainParsed.chunk.locations.range(plain.fields[0].value.span), 'an ungrouped array field shares its immutable value range');
+	assert.equal(plainParsed.chunk.locations.range(plain.fields[1].span), plainParsed.chunk.locations.range(plain.fields[1].value.span));
+	assert.deepEqual(plainParsed.chunk.locations.range(plain.fields[2].span).end, plainParsed.chunk.locations.range(plain.fields[2].value.span).end, 'a named field shares its unchanged endpoint');
 });
 
 test('removal keeps exterior comments verbatim and removes only the field plus its own separator', () => {
@@ -48,7 +48,7 @@ test('removal keeps exterior comments verbatim and removes only the field plus i
 	const { parsed, table } = parseTable(source);
 	let events = 0;
 	model.onDidChangeContent(() => { events += 1; });
-	const edits = createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, table.fields[0]);
+	const edits = createLuaTableFieldRemovalEdits(model.buffer, parsed.chunk.locations, parsed.tokens, table.fields[0]);
 	assert.equal(edits.length, 2);
 	assert.ok(edits[0].offset + edits[0].deleteLength < edits[1].offset, 'outside comments are not included in a broad replacement');
 	model.pushEditOperations(edits);
@@ -71,7 +71,7 @@ test('first, middle and last array removal follow Lua order and allow an existin
 	] as const) {
 		const model = new EditorTextModel(resource, 'lua', 'local values = { (10), (20); (30) }');
 		const { parsed, table } = parseTable(model.buffer.getText());
-		model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, table.fields[index]));
+		model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.chunk.locations, parsed.tokens, table.fields[index]));
 		assert.equal(model.buffer.getText(), expected);
 		assert.deepEqual(runCompiledLua(expected + '\nreturn values[1], values[2], values[3]'), result);
 	}
@@ -82,7 +82,7 @@ test('sole fields with either trailing separator or none produce an empty valid 
 		const source = `local values = { -- leading\n (10) -- trailing\n ${punctuation} -- footer\n}`;
 		const model = new EditorTextModel(resource, 'lua', source);
 		const { parsed, table } = parseTable(source);
-		model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, table.fields[0]));
+		model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.chunk.locations, parsed.tokens, table.fields[0]));
 		const expected = 'local values = { -- leading\n  -- trailing\n  -- footer\n}';
 		assert.equal(model.buffer.getText(), expected);
 		assert.equal(parseTable(expected).table.fields.length, 0);
@@ -96,7 +96,7 @@ test('field deletion is independent of key spelling and nested punctuation or co
 		const source = `local values = { ${fields.join(', ')}; }`;
 		const model = new EditorTextModel(resource, 'lua', source);
 		const { parsed, table } = parseTable(source);
-		const edits = createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, table.fields[index]);
+		const edits = createLuaTableFieldRemovalEdits(model.buffer, parsed.chunk.locations, parsed.tokens, table.fields[index]);
 		assert.equal(model.buffer.getTextRange(edits[0].offset, edits[0].offset + edits[0].deleteLength), fields[index]);
 		assert.equal(model.buffer.getTextRange(edits[1].offset, edits[1].offset + edits[1].deleteLength), index === fields.length - 1 ? ';' : ',');
 		model.pushEditOperations(edits);
@@ -113,7 +113,7 @@ test('repeated removal reparses the current document, and ordered document histo
 	for (let count = 3; count > 0; count -= 1) {
 		const { parsed, table } = parseTable(model.buffer.getText());
 		assert.equal(table.fields.length, count);
-		model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, table.fields[0]));
+		model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.chunk.locations, parsed.tokens, table.fields[0]));
 	}
 	assert.equal(parseTable(model.buffer.getText()).table.fields.length, 0);
 	for (let index = 0; index < 3; index += 1) model.undo();

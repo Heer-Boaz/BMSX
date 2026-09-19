@@ -1,6 +1,7 @@
 # Incremental Lua parsing and binding
 
-Date: 2026-09-19. Branch: `fix/lua-bounded-call-contexts`.
+Date: 2026-09-19. Current branch: `master` (existing work fast-forwarded from
+`fix/lua-bounded-call-contexts` at user request; no new branches).
 
 ## Scope and decision
 
@@ -47,7 +48,7 @@ in place is expressly excluded: retained semantic snapshots must remain valid.
 | `ide/editor/contrib/intellisense/semantic/workspace/project.ts` | Queues changed paths; events currently discard edit spans | Project must retain the delta between its analyzed revision and current model revision |
 | `syntax/ast/index.ts:LuaChunk` | Root retains its source, lexical tokens and syntax error; global parse cache removed | Syntax lifetime follows retained file records and compiler inputs |
 | `syntax/lexer.ts`, `syntax/parser.ts`, `analysis/parse.ts` | Whole-file token array and strict/recovering parser | One grammar for initial and incremental parsing; no second IDE grammar |
-| `syntax/ast/index.ts` | Absolute line/column ranges on nodes and blocks | Changed positions currently invalidate otherwise unchanged nodes |
+| `syntax/ast/index.ts` | Relative spans in the working migration; locations belong to the generation | Correctness integration is being validated; cold-performance and reuse gates remain open |
 | `semantic/model.ts` | Single ordered binder; scope indexes, mutable build state; immutable published file facts | Cached function bodies cannot replay old ambient binder state |
 | `semantic/model.ts:createSymbolId` | IDs contain source line and column | Separate reusable declaration identity from presentation coordinates |
 | `semantic/value_graph.ts` | Owned values have allocated IDs and syntax references | Preserve occurrence identity, not independently allocated IDs in differential tests |
@@ -481,3 +482,163 @@ one existing named-workbench-menu failure, one skipped (1,973 total). Targeted
 TypeScript check reports only the pre-existing unused `depth` parameter in
 `definition_types.ts`; `git diff --check` passes. No compiler/IDE behavior claim
 is made for the as-yet unwired source-layout index.
+
+### Relative span integration — validated foundation (2026-09-20)
+
+The parser now emits occurrence-relative UTF-16 spans directly
+from the existing parser. Statement/function units retain distinct identity;
+blocks, argument separators, fields and type references use the same coordinate
+contract. A snapshot-owned `LuaSourceLocations` explicitly projects spans for
+binder/compiler/IDE consumers. No AST getters/proxies or shifted suffix copies
+are involved. Parser recovery owns discarded nested unit markers as skipped
+syntax; lexical failure retains its unparsed source suffix.
+
+Fresh syntax generations retain source plus the parser's native origins and
+source-ordered placements. Their LF-only line index is lazy. The persistent
+layout is materialized once on first edit-index access, not on every cold parse
+or binding request. Layout-backed generations get their own empty origin/range
+caches and never borrow the old absolute index. This follows the source-owner
+separation in [TypeScript's lazy line map](https://github.com/microsoft/TypeScript/blob/v5.9.3/src/compiler/scanner.ts)
+and [Roslyn SourceText](https://github.com/dotnet/roslyn/blob/main/src/Compilers/Core/Portable/Text/SourceText.cs),
+not TypeScript's mutable incremental AST. First-edit materialization cost still
+needs to be measured alongside subsequent edits: deferral alone is not a speedup
+of the full incremental route.
+
+The schema-owned syntax storage boundary is now explicit. ROM `compiled_start`
+still identifies program modules; its Lua payload is consumed only by TS tooling,
+not a TS/C++ VM datapath. `syntax/serialization.ts` persists plain syntax/tokens,
+source/path, source-ordered unit offsets and a shared span table. Storage-local
+ordinals are not runtime unit identities. Import allocates fresh occurrences,
+preserves shared span identity and constructs the source owner without reparsing.
+Locations, lazy indexes, cursors and query caches are never serialized. Existing
+ROM artifacts must be rebuilt; there is no old-shape revival or compatibility
+fallback.
+
+Consumer ownership is explicit across imported tables and callbacks. Behavior
+Lens retains the actual `FileSemanticData` for written fields, resolved tables,
+FSM binding/callback/result evidence and source edits. Scene outline installation
+publishes its source document before selecting/projecting rows. Compiler modules
+and interpreter closures project against their own retained syntax generation.
+
+Fresh-context reviews found and drove fixes for quadratic cursor traversal,
+unowned recovery markers, premature diagnostic publication and lost shared-span
+identity through the generic binary serializer. A far cursor projection over
+10,000 markers now uses tree summaries (42 HAMT lookups, height 16), covered by a
+height-bounded regression test. Independent probes checked 437 tracked Lua files
+plus 238 prefixes and 1,500 recovery token mixes; the workspace parser oracle
+compares 1,566 sources. Syntax storage roundtrips 1,098 whole/truncated workspace
+sources, and direct versus stored O0/O3 output/debug metadata are tested.
+
+**Cold performance gate remains open.** Same isolated pietious edit harness,
+Node 22.23.1, 20 warmups/50 samples; function-body edit, p50 / p95 milliseconds:
+
+| Phase | Pre-relative layout foundation | Eager layout projection | Native cold source owner |
+| --- | ---: | ---: | ---: |
+| director parse | 0.84 / 1.33 | 1.11 / 1.49 | 0.86 / 1.00 |
+| director bind | 1.63 / 4.03 | 2.01 / 4.51 | 1.85 / 4.24 |
+| director public update | 3.32 / 6.91 | 3.91 / 7.58 | 3.57 / 6.96 |
+| player parse | 3.21 / 3.94 | 5.00 / 9.32 | 3.36 / 6.60 |
+| player bind | 9.14 / 11.09 | 12.11 / 14.17 | 10.45 / 11.87 |
+| player public update | 16.30 / 18.55 | 20.97 / 26.05 | 17.76 / 19.15 |
+
+This removes most of the measured eager-index regression, not all overhead.
+These distributions do not establish cold cartcompiler/heap acceptance, and the
+2x edit target is not met. Full relative token/trivia representation, persistent
+statement/token sequences, editor deltas, syntax reuse and scope binding remain
+unimplemented. No completed incremental parse/bind claim is made.
+
+One earlier ownership claim needs qualification: source removal/diagnostics use
+retained syntax tokens, but insertion/move/transfer still relex source for trivia.
+That is existing work, not solved by passing source locations. Replacing those
+scans with the current trivia-free token sequence would be incorrect. Complete
+the full-fidelity token owner in slice 2 and then consume that retained sequence
+for these edits, with a no-extra-lexer-pass regression test.
+
+### Additional integration measurements (2026-09-20)
+
+`profile_lua_compilation.ts` now makes the cold-syntax compiler check
+reproducible from the workspace dump and BIOS import sidecar. Every pass parses
+new syntax and compiles the dumped entry plus its reachable modules at O3;
+this is warmed JavaScript, not process startup, ROM packing or entry composition.
+Four warmups and twelve isolated samples on the same machine:
+
+| pietious, 207 modules / 2,131 functions | Pre-relative `27ae61b2c` | Relative source owner |
+| --- | ---: | ---: |
+| parse + select, p50 / p95 ms | 120.56 / 185.61 | 118.37 / 155.09 |
+| compile, p50 / p95 ms | 3155.84 / 3209.66 | 3202.97 / 3307.11 |
+| total, p50 / p95 ms | 3294.38 / 3333.31 | 3356.60 / 3426.98 |
+
+The complete program/debug output hashes are identical:
+`3fdb5f9056ff7c83be99a65f19e856cd75546327a18ccc0ec7fe6dbad32ca64d`.
+Total median/p95 overhead is 1.9%/2.8% in this sample. The retained bound
+285-file snapshot grows from 166.51 to 175.20 MiB after GC; releasing the
+snapshot leaves 2.20/2.25 MiB respectively. This is a measured 5.2% retained-heap
+tradeoff, not an allocation reduction claim. The absolute semantic presentation
+records still coexist with relative syntax until scope binding changes.
+
+The optional workspace arguments to `profile_lua_source_layout.ts` measure the
+previously deferred first-index cost separately (20 warmups, 100 samples):
+
+| Initial native source | materialize p50 / p95 ms | materialize + leading edit p50 / p95 ms |
+| --- | ---: | ---: |
+| director.lua, 32,148 UTF-16 units | 0.20 / 0.94 | 0.22 / 0.96 |
+| player/player.lua, 100,293 UTF-16 units | 1.33 / 3.65 | 1.36 / 3.67 |
+
+These results characterize the foundation only. They do not close the final
+edit-latency/allocation gate or establish incremental parse/bind performance.
+
+Integration validation: 2,002 Lua tests, 2,000 passing, one pre-existing named
+workbench-menu failure and one skip. The 16 rompacker/lint tests pass, including
+cross-file source positions and multiline duplicate-statement endpoints. Lint
+results for pietious, nemesis_s and BIOS match the pre-migration baseline.
+The lint rules now carry `{ locations, issues }`; cross-file diagnostics retain
+position facts rather than syntax/whole chunks. A fresh independent review
+checked mixed C++/Lua helpers and confirmed their non-Lua logic is unchanged.
+
+Node headless tooling, BIOS, nemesis_s and pietious rebuild successfully with
+the new syntax payload. Precision idetests against the rebuilt nemesis_s pass:
+`semantic_inherited_factory` (8 assertions), `semantic_dynamic_receiver` (5),
+and `semantic_heap_effect_receiver` (3). Targeted tooling/IDE checking still
+reports the pre-existing unused `depth`; the wider scripts/tests typecheck has
+unrelated baseline errors, but no remaining lint-owner migration errors.
+`audit:core-parity` and `git diff --check` also pass.
+
+### Next lexical/reuse gate: independent review findings
+
+The fresh-context lexical review confirmed the next boundary is an immutable
+full-fidelity lexical generation, fed by ordered editor changes, before adding
+statement reuse. Token payloads must shed absolute positions; a persistent
+width/token-count sequence and cursor must retain trivia and lexical failures.
+Neither flat token-array copying nor rebuilding every `body` array proves
+bounded work for a large unchanged suffix.
+
+In particular, `determineLongBracketLevelAt` can read arbitrarily far through
+`=` even when the result is a plain `[` token. Relexing just one previous token
+is not sound. Retain actual read extents, including failed probes/EOF, and
+aggregate dependency ends in the lexical sequence. Synchronization requires an
+unchanged mapped suffix boundary with matching lexical state, not a fixed
+number of equal tokens.
+
+Parser reuse must include entry context, consumed/read extents, previous-token
+newline context and per-unit recovery status. Initially reparse recovered units;
+clean nested statement/function occurrences can be candidates independently.
+The ancestor marker surviving is insufficient: children such as arguments in
+`f(a, b, c)` still share ancestor-relative offsets, so an insertion before `b`
+requires reconstructing them. Reuse only independently anchored statement or
+function units until a finer owner is explicitly introduced.
+
+Editor events currently carry replacement lengths, not inserted text. Choose
+either replacement text at the producer or composed change mappings into the
+current text reader; do not pretend those length-only events can replay literal
+layout replacements. Full replacement remains an explicit mode.
+
+## Lowest-priority follow-up: absent-value convention
+
+User request, 2026-09-20: after the incremental parsing/binding work and its
+validation, audit the apparently arbitrary mix of `undefined` and `null`
+(e.g. an absent call argument versus an absent named table field). Choose one
+explicit absent-value convention for these APIs, using C++-style optionality
+and representation clarity as a design check. `undefined` is acceptable; no C++
+port is requested. Change producer/consumer contracts coherently, not through
+callsite normalization or fallback wrappers. This is deliberately last and is
+not part of the current implementation slice.

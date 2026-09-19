@@ -6,7 +6,7 @@ import { getCallLeafName } from '../../../../toolchain/ts/lua/syntax/calls';
 import { stringLiteralValue } from '../../../../toolchain/ts/lua/syntax/literals';
 import type { LuaCallExpression as CallExpression, LuaExpression as Expression } from '../../../../toolchain/ts/lua/syntax/ast';
 import { lineInAnalysisRegion, type AnalysisRegion } from '../../../analysis/lint_suppressions';
-import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
+import type { CartLintContext, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { nodeStartLine, pushLintIssue, type LintIssue } from '../ts/support/ast';
@@ -125,14 +125,14 @@ export function lintNewlineNormalizationPattern(
 
 export function lintCallNewlineNormalizationPattern(
 	expression: CallExpression,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 	pushIssue: CartLintIssuePusher,
 ): void {
 	if (!expressionCallNormalizesNewlines(expression)) {
 		return;
 	}
 	pushIssue(
-		issues,
+		lint,
 		newlineNormalizationPatternRule.name,
 		expression.callee,
 		'Newline normalization is forbidden unless this boundary is explicitly marked with newline_normalization_pattern.',

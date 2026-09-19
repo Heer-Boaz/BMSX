@@ -50,7 +50,7 @@ export function lintDuplicateInitializerInStatements(
 						continue;
 					}
 					pushIssue(
-						context.issues,
+						context.lint,
 						duplicateInitializerPatternRule.name,
 						left,
 						`Duplicate initializer pattern is forbidden ("${left.name}"). Do not initialize and later reassign the same value expression; keep one deterministic initialization point.`,

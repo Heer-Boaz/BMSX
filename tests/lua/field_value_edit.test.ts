@@ -15,7 +15,7 @@ test('a submitted value is an isolated expression, not a second statement, print
 	assert.ok(statement.kind === LuaSyntaxKind.LocalAssignmentStatement && statement.values[0].kind === LuaSyntaxKind.TableConstructorExpression);
 	const field = statement.values[0].fields[0];
 	for (const value of ['clock.delta() * 2', "'Changed Tag'", 'false', 'function(owner) return owner.period end', '{ 1, 2 }', ' 1 --[[note]] ', '1 -- note\n']) {
-		const result = parseLuaFieldValueEdit(model.buffer, field, value);
+		const result = parseLuaFieldValueEdit(model.buffer, file.chunk.locations, field, value);
 		assert.ok('value' in result, value);
 		model.pushEditOperations([result.value.edit]);
 		assert.equal(model.buffer.getText(), SOURCE.replace('(timing)', '(' + value + ')'));
@@ -24,12 +24,12 @@ test('a submitted value is an isolated expression, not a second statement, print
 		const declaration = next.chunk.body[1];
 		assert.ok(declaration.kind === LuaSyntaxKind.LocalAssignmentStatement && declaration.values[0].kind === LuaSyntaxKind.TableConstructorExpression);
 		const actual = declaration.values[0].fields[0];
-		assert.deepEqual(result.value.fieldRange, actual.range);
-		assert.deepEqual(result.value.expressionRange, actual.value.range);
+		assert.deepEqual(result.value.fieldRange, next.chunk.locations.range(actual.span));
+		assert.deepEqual(result.value.expressionRange, next.chunk.locations.range(actual.value.span));
 		model.undo(); assert.equal(model.buffer.getText(), SOURCE);
 	}
 	for (const value of ['', '1, 2', '1; effect.event = false', ')', 'clock.', '1 -- swallowed neighbour', '1 --[=[unfinished', 'function()']) {
-		assert.ok('error' in parseLuaFieldValueEdit(model.buffer, field, value), value);
+		assert.ok('error' in parseLuaFieldValueEdit(model.buffer, file.chunk.locations, field, value), value);
 		assert.equal(model.buffer.getText(), SOURCE);
 	}
 });

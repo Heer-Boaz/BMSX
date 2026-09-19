@@ -54,7 +54,7 @@ test('opaque choices and choice-child values retain their ordered slots and inde
 	for (const entry of branch.branches[0].entries) {
 		const edge = graph.edgesBySource.get(entry.node.rowKey)!;
 		assert.equal(edge.source, entry.node);
-		assert.equal(edge.range, entry.field.value.range);
+		assert.equal(edge.range, entry.file.chunk.locations.range(entry.field.value.span));
 	}
 	const third = root.children[2];
 	const thirdEdge = graph.edgesBySource.get(branch.branches[0].entries[2].node.rowKey)!;
@@ -160,7 +160,7 @@ test('nested membership warnings, shared occurrences, hidden edits and Undo use 
 	const hidden = view.document;
 	const second = f.definition.root;
 	assert.ok(second?.kind === 'node' && second.branches[0].role === 'children');
-	const span = luaSourceRangeToTextRange(f.model.buffer, second.branches[0].entries[1].field.range);
+	const span = luaSourceRangeToTextRange(f.model.buffer, second.branches[0].entries[1].file.chunk.locations.range(second.branches[0].entries[1].field.span));
 	f.model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text: 'leaf' }]);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉 shifted source\n' }]);
 	assert.equal(view.document, hidden);

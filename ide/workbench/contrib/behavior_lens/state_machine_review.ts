@@ -17,7 +17,7 @@ export function stateMachineRetargetImpacts(view: BehaviorLensViewState,
 		const before = breadcrumbs(view.stateMachines.scopes.get(original.target)!);
 		const after = breadcrumbs(view.stateMachines.scopes.get(plan.target)!);
 		const proof = use.outcome.proof;
-		const source = proof.kind === 'direct' ? proof.expression.range : proof.statement.range;
+		const source = proof.kind === 'direct' ? proof.file.chunk.locations.range(proof.expression.span) : proof.callbackFile.chunk.locations.range(proof.statement.span);
 		const label = `${use.definition.label} ${origin}`;
 		return { label, value: `${before} -> ${after}`,
 			description: `${label}: ${use.transition.slot.source.label}, ${proof.kind} ${source.path}:${source.start.line}:${source.start.column}. ${before} -> ${after}. RECOGNIZED IN ${view.resource.path}; OTHER REGISTRATION FILES AND DYNAMIC CALLS ARE NOT ENUMERATED.` };

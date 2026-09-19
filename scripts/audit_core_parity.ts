@@ -15,6 +15,7 @@ import {
 	LuaSyntaxKind,
 } from '../toolchain/ts/lua/syntax/ast';
 import { parseLuaChunk } from '../toolchain/ts/lua/analysis/parse';
+import type { LuaSourceLocations } from '../toolchain/ts/lua/syntax/source_locations';
 import {
 	auditPublicSymbolParity,
 	type PublicSymbolParityEntry,
@@ -998,7 +999,7 @@ function luaCallRootName(call: LuaCallExpression): string | null {
 	return null;
 }
 
-function auditLuaNoHeapBody(file: string, label: string, body: LuaBlock): string[] {
+function auditLuaNoHeapBody(file: string, label: string, body: LuaBlock, locations: LuaSourceLocations): string[] {
 	const errors: string[] = [];
 	walkLuaAst(body, null, (node) => {
 		let allocation: string | null = null;
@@ -1025,7 +1026,7 @@ function auditLuaNoHeapBody(file: string, label: string, body: LuaBlock): string
 			}
 		}
 		if (allocation !== null) {
-			errors.push(`${file}:${node.range.start.line}: function ${label} forbidden lua heap/gc pattern ${allocation}`);
+			errors.push(`${file}:${locations.range(node.span).start.line}: function ${label} forbidden lua heap/gc pattern ${allocation}`);
 		}
 	});
 	return errors;
@@ -1049,12 +1050,12 @@ function auditStrictLuaNoHeapFunctions(manifest: Manifest): string[] {
 				errors.push(`${entry.file}: lua no-heap function missing ${name}`);
 				continue;
 			}
-			errors.push(...auditLuaNoHeapBody(entry.file, name, expression.body));
+			errors.push(...auditLuaNoHeapBody(entry.file, name, expression.body, parsed.chunk.locations));
 		}
 		if (entry.top_level_loops) {
 			for (const statement of parsed.chunk.body) {
 				if (statement.kind === LuaSyntaxKind.WhileStatement || statement.kind === LuaSyntaxKind.RepeatStatement || statement.kind === LuaSyntaxKind.ForNumericStatement || statement.kind === LuaSyntaxKind.ForGenericStatement) {
-					errors.push(...auditLuaNoHeapBody(entry.file, '<top-level-loop>', statement.block));
+					errors.push(...auditLuaNoHeapBody(entry.file, '<top-level-loop>', statement.block, parsed.chunk.locations));
 				}
 			}
 		}

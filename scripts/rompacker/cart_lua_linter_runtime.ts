@@ -3,7 +3,7 @@ import { LuaSyntaxError as ParserSyntaxError } from '../../toolchain/ts/lua/erro
 import { LuaLexer as Lexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser as Parser } from '../../toolchain/ts/lua/syntax/parser';
 import { type LintRuleName } from '../lint/rule';
-import { type CartLintIssue } from '../lint/lua_rule';
+import { type CartLintIssue, type CartLintContext } from '../lint/lua_rule';
 import { lintAstEmptyStringConditionPattern } from '../lint/rules/common/empty_string_condition_pattern';
 import { lintAstEmptyStringFallbackPattern } from '../lint/rules/common/empty_string_fallback_pattern';
 import { lintAstExplicitTruthyComparisonPattern } from '../lint/rules/common/explicit_truthy_comparison_pattern';
@@ -309,18 +309,18 @@ export function toWorkspaceRelativePath(absolutePath: string): string {
 export function lintFunctionBody(
 	functionName: string,
 	functionExpression: CartFunctionExpression,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 	isMethodDeclaration: boolean,
 ): void {
 	const isNamedFunction = functionName !== '<anonymous>';
-	lintSinglePropertyOptionsParameter(functionExpression, issues);
-	const isVisualUpdateLike = lintVisualUpdatePattern(functionName, functionExpression, issues);
-	const isGetterOrSetter = lintGetterSetterPattern(functionName, functionExpression, issues);
-	const isBuiltinRecreation = lintBuiltinRecreationPattern(functionName, functionExpression, issues);
-	lintComparisonWrapperGetterPattern(functionName, functionExpression, issues);
-	lintForbiddenRandomHelperPattern(functionName, functionExpression, isBuiltinRecreation, issues);
-	lintBool01DuplicatePattern(functionName, functionExpression, issues);
-	lintPureCopyFunctionPattern(functionName, functionExpression, issues);
+	lintSinglePropertyOptionsParameter(functionExpression, lint);
+	const isVisualUpdateLike = lintVisualUpdatePattern(functionName, functionExpression, lint);
+	const isGetterOrSetter = lintGetterSetterPattern(functionName, functionExpression, lint);
+	const isBuiltinRecreation = lintBuiltinRecreationPattern(functionName, functionExpression, lint);
+	lintComparisonWrapperGetterPattern(functionName, functionExpression, lint);
+	lintForbiddenRandomHelperPattern(functionName, functionExpression, isBuiltinRecreation, lint);
+	lintBool01DuplicatePattern(functionName, functionExpression, lint);
+	lintPureCopyFunctionPattern(functionName, functionExpression, lint);
 	if (
 		isNamedFunction
 		&& isMethodDeclaration
@@ -330,7 +330,7 @@ export function lintFunctionBody(
 		&& matchesMeaninglessSingleLineMethodPattern(functionExpression)
 	) {
 		pushIssue(
-			issues,
+			lint,
 			'single_line_method_pattern',
 			functionExpression,
 			`Meaningless single-line method is forbidden ("${functionName}").`,
@@ -338,22 +338,22 @@ export function lintFunctionBody(
 	}
 	if (matchesEnsurePattern(functionExpression)) {
 		pushIssue(
-			issues,
+			lint,
 			'ensure_pattern',
 			functionExpression,
 			`Ensure-style lazy initialization pattern is forbidden ("${functionName}").`,
 		);
 	}
-	lintEnsureLocalAliasPattern(functionName, functionExpression, issues);
+	lintEnsureLocalAliasPattern(functionName, functionExpression, lint);
 	if (isNamedFunction) {
-		lintInlineStaticLookupTablePattern(functionName, functionExpression, issues);
+		lintInlineStaticLookupTablePattern(functionName, functionExpression, lint);
 	}
-	lintHandlerIdentityDispatchPattern(functionName, functionExpression, issues);
+	lintHandlerIdentityDispatchPattern(functionName, functionExpression, lint);
 }
 
 export function lintExpression(
 	expression: Expression | null,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 	moduleCalls: CartModuleCallMap,
 	topLevel = true,
 	insideFunction = false,
@@ -361,69 +361,69 @@ export function lintExpression(
 	if (!expression) {
 		return;
 	}
-	lintAstEmptyStringConditionPattern(expression, issues, pushIssue);
-	lintAstEmptyStringFallbackPattern(expression, issues, pushIssue);
-	lintAstOrNilFallbackPattern(expression, issues, pushIssue);
-	lintAstExplicitTruthyComparisonPattern(expression, issues, pushIssue);
-	lintForbiddenMathFloorPattern(expression, issues, pushIssue);
-	lintDeprecatedMemoryAccessPattern(expression, issues, pushIssue);
-	lintStringOrChainComparisonPattern(expression, issues);
-	lintActionTriggeredBoolChainPattern(expression, issues);
+	lintAstEmptyStringConditionPattern(expression, lint, pushIssue);
+	lintAstEmptyStringFallbackPattern(expression, lint, pushIssue);
+	lintAstOrNilFallbackPattern(expression, lint, pushIssue);
+	lintAstExplicitTruthyComparisonPattern(expression, lint, pushIssue);
+	lintForbiddenMathFloorPattern(expression, lint, pushIssue);
+	lintDeprecatedMemoryAccessPattern(expression, lint, pushIssue);
+	lintStringOrChainComparisonPattern(expression, lint);
+	lintActionTriggeredBoolChainPattern(expression, lint);
 	if (topLevel) {
-		lintMultiHasTagPattern(expression, issues);
+		lintMultiHasTagPattern(expression, lint);
 	}
 	switch (expression.kind) {
 		case SyntaxKind.CallExpression:
 			const moduleCallKind = moduleCalls.get(expression);
-			lintFunctionBodyRequireCall(expression, insideFunction, issues, pushIssue);
-			lintRequireCall(expression, issues, pushIssue);
-			lintForbiddenRenderWrapperCall(expression, issues, pushIssue);
-			lintForbiddenStateCalls(expression, issues);
-			lintForbiddenDispatchPattern(expression, issues);
-			lintEventHandlerDispatchPattern(expression, issues);
-			lintCrossObjectStateEventRelayPattern(expression, issues);
-			lintSetSpaceRoundtripPattern(expression, issues);
-			lintDefineFactoryTickEnabledAndSpaceIdPattern(expression, moduleCallKind, issues);
-			lintPrefabInlineDefaultTablePattern(expression, moduleCallKind, issues);
-			lintCallNewlineNormalizationPattern(expression, issues, pushIssue);
-			lintFsmDirectStateHandlerShorthandPattern(expression, moduleCallKind, issues);
-			lintFsmEventReemitHandlerPattern(expression, moduleCallKind, issues);
-			lintFsmForbiddenLegacyFieldsPattern(expression, moduleCallKind, issues);
-			lintFsmProcessInputPollingTransitionPattern(expression, moduleCallKind, issues);
-			lintFsmRunChecksInputTransitionPattern(expression, moduleCallKind, issues);
-			lintFsmLifecycleWrapperPattern(expression, moduleCallKind, issues);
-			lintFsmTickCounterTransitionPattern(expression, moduleCallKind, issues);
-			lintFsmIdLabelPattern(expression, moduleCallKind, issues);
-			lintFsmStateNameMirrorAssignmentPattern(expression, moduleCallKind, issues);
-			lintBtIdLabelPattern(expression, issues);
-			lintExpression(expression.callee, issues, moduleCalls, false, insideFunction);
+			lintFunctionBodyRequireCall(expression, insideFunction, lint, pushIssue);
+			lintRequireCall(expression, lint, pushIssue);
+			lintForbiddenRenderWrapperCall(expression, lint, pushIssue);
+			lintForbiddenStateCalls(expression, lint);
+			lintForbiddenDispatchPattern(expression, lint);
+			lintEventHandlerDispatchPattern(expression, lint);
+			lintCrossObjectStateEventRelayPattern(expression, lint);
+			lintSetSpaceRoundtripPattern(expression, lint);
+			lintDefineFactoryTickEnabledAndSpaceIdPattern(expression, moduleCallKind, lint);
+			lintPrefabInlineDefaultTablePattern(expression, moduleCallKind, lint);
+			lintCallNewlineNormalizationPattern(expression, lint, pushIssue);
+			lintFsmDirectStateHandlerShorthandPattern(expression, moduleCallKind, lint);
+			lintFsmEventReemitHandlerPattern(expression, moduleCallKind, lint);
+			lintFsmForbiddenLegacyFieldsPattern(expression, moduleCallKind, lint);
+			lintFsmProcessInputPollingTransitionPattern(expression, moduleCallKind, lint);
+			lintFsmRunChecksInputTransitionPattern(expression, moduleCallKind, lint);
+			lintFsmLifecycleWrapperPattern(expression, moduleCallKind, lint);
+			lintFsmTickCounterTransitionPattern(expression, moduleCallKind, lint);
+			lintFsmIdLabelPattern(expression, moduleCallKind, lint);
+			lintFsmStateNameMirrorAssignmentPattern(expression, moduleCallKind, lint);
+			lintBtIdLabelPattern(expression, lint);
+			lintExpression(expression.callee, lint, moduleCalls, false, insideFunction);
 			for (const arg of expression.arguments) {
-				lintExpression(arg, issues, moduleCalls, false, insideFunction);
+				lintExpression(arg, lint, moduleCalls, false, insideFunction);
 			}
 			return;
 		case SyntaxKind.MemberExpression:
-			lintExpression(expression.base, issues, moduleCalls, false, insideFunction);
+			lintExpression(expression.base, lint, moduleCalls, false, insideFunction);
 			return;
 		case SyntaxKind.IndexExpression:
-			lintExpression(expression.base, issues, moduleCalls, false, insideFunction);
-			lintExpression(expression.index, issues, moduleCalls, false, insideFunction);
+			lintExpression(expression.base, lint, moduleCalls, false, insideFunction);
+			lintExpression(expression.index, lint, moduleCalls, false, insideFunction);
 			return;
 		case SyntaxKind.BinaryExpression:
-			lintExpression(expression.left, issues, moduleCalls, false, insideFunction);
-			lintExpression(expression.right, issues, moduleCalls, false, insideFunction);
+			lintExpression(expression.left, lint, moduleCalls, false, insideFunction);
+			lintExpression(expression.right, lint, moduleCalls, false, insideFunction);
 			return;
 		case SyntaxKind.UnaryExpression:
-			lintExpression(expression.operand, issues, moduleCalls, false, insideFunction);
+			lintExpression(expression.operand, lint, moduleCalls, false, insideFunction);
 			return;
 		case SyntaxKind.TableConstructorExpression:
-			lintDuplicateTableKeyPattern(expression, issues);
+			lintDuplicateTableKeyPattern(expression, lint);
 			for (const field of expression.fields) {
-				lintTableField(field, issues, moduleCalls, insideFunction);
+				lintTableField(field, lint, moduleCalls, insideFunction);
 			}
 			return;
 		case SyntaxKind.FunctionExpression:
-			lintFunctionBody('<anonymous>', expression, issues, false);
-			lintStatements(expression.body.body, issues, moduleCalls, true);
+			lintFunctionBody('<anonymous>', expression, lint, false);
+			lintStatements(expression.body.body, lint, moduleCalls, true);
 			return;
 		default:
 			return;
@@ -432,45 +432,45 @@ export function lintExpression(
 
 export function lintStatements(
 	statements: ReadonlyArray<Statement>,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 	moduleCalls: CartModuleCallMap,
 	insideFunction = false,
 ): void {
-	lintBranchUninitializedLocalPattern(statements, issues);
-	lintContiguousMultiEmitPattern(statements, issues);
+	lintBranchUninitializedLocalPattern(statements, lint);
+	lintContiguousMultiEmitPattern(statements, lint);
 	for (const statement of statements) {
 		switch (statement.kind) {
 			case SyntaxKind.LocalAssignmentStatement:
-				lintLocalAssignment(statement, issues);
+				lintLocalAssignment(statement, lint);
 				for (let index = 0; index < statement.values.length; index += 1) {
 					const value = statement.values[index];
 					if (index < statement.names.length && value.kind === SyntaxKind.FunctionExpression) {
-						lintFunctionBody(statement.names[index].name, value, issues, false);
-						lintStatements(value.body.body, issues, moduleCalls, true);
+						lintFunctionBody(statement.names[index].name, value, lint, false);
+						lintStatements(value.body.body, lint, moduleCalls, true);
 						continue;
 					}
-					lintExpression(value, issues, moduleCalls, true, insideFunction);
+					lintExpression(value, lint, moduleCalls, true, insideFunction);
 				}
 				break;
 			case SyntaxKind.AssignmentStatement:
 				for (const left of statement.left) {
-					lintExpression(left, issues, moduleCalls, true, insideFunction);
+					lintExpression(left, lint, moduleCalls, true, insideFunction);
 				}
 				for (let index = 0; index < statement.left.length; index += 1) {
 					const left = statement.left[index];
 					const right = statement.right[index];
-					lintSpriteImgIdAssignmentPattern(left, issues);
-					lintSelfImgIdAssignmentPattern(left, right, issues);
+					lintSpriteImgIdAssignmentPattern(left, lint);
+					lintSelfImgIdAssignmentPattern(left, right, lint);
 				}
 				for (const right of statement.right) {
-					lintExpression(right, issues, moduleCalls, true, insideFunction);
+					lintExpression(right, lint, moduleCalls, true, insideFunction);
 				}
 				break;
 			case SyntaxKind.LocalFunctionStatement: {
 				const localFunction = statement as LocalFunctionStatement;
-				lintLocalFunctionConstPattern(localFunction, issues, pushIssue);
-				lintFunctionBody(getFunctionDisplayName(localFunction), localFunction.functionExpression, issues, false);
-				lintStatements(localFunction.functionExpression.body.body, issues, moduleCalls, true);
+				lintLocalFunctionConstPattern(localFunction, lint, pushIssue);
+				lintFunctionBody(getFunctionDisplayName(localFunction), localFunction.functionExpression, lint, false);
+				lintStatements(localFunction.functionExpression.body.body, lint, moduleCalls, true);
 				break;
 			}
 			case SyntaxKind.FunctionDeclarationStatement: {
@@ -478,55 +478,55 @@ export function lintStatements(
 				lintFunctionBody(
 					getFunctionDisplayName(declaration),
 					declaration.functionExpression,
-					issues,
+					lint,
 					isMethodLikeFunctionDeclaration(declaration),
 				);
-				lintStatements(declaration.functionExpression.body.body, issues, moduleCalls, true);
+				lintStatements(declaration.functionExpression.body.body, lint, moduleCalls, true);
 				break;
 			}
 			case SyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
-					lintExpression(expression, issues, moduleCalls, true, insideFunction);
+					lintExpression(expression, lint, moduleCalls, true, insideFunction);
 				}
 				break;
 			case SyntaxKind.IfStatement:
-				lintUselessAssertPattern(statement, issues);
-				lintImgIdFallbackPattern(statement, issues);
-				lintSplitNestedIfHasTagPattern(statement, issues);
+				lintUselessAssertPattern(statement, lint);
+				lintImgIdFallbackPattern(statement, lint);
+				lintSplitNestedIfHasTagPattern(statement, lint);
 				for (const clause of statement.clauses) {
 					if (clause.condition) {
-						lintExpression(clause.condition, issues, moduleCalls, true, insideFunction);
+						lintExpression(clause.condition, lint, moduleCalls, true, insideFunction);
 					}
-					lintStatements(clause.block.body, issues, moduleCalls, insideFunction);
+					lintStatements(clause.block.body, lint, moduleCalls, insideFunction);
 				}
 				break;
 			case SyntaxKind.WhileStatement:
-				lintExpression(statement.condition, issues, moduleCalls, true, insideFunction);
-				lintStatements(statement.block.body, issues, moduleCalls, insideFunction);
+				lintExpression(statement.condition, lint, moduleCalls, true, insideFunction);
+				lintStatements(statement.block.body, lint, moduleCalls, insideFunction);
 				break;
 			case SyntaxKind.RepeatStatement:
-				lintStatements(statement.block.body, issues, moduleCalls, insideFunction);
-				lintExpression(statement.condition, issues, moduleCalls, true, insideFunction);
+				lintStatements(statement.block.body, lint, moduleCalls, insideFunction);
+				lintExpression(statement.condition, lint, moduleCalls, true, insideFunction);
 				break;
 			case SyntaxKind.ForNumericStatement:
-				lintDispatchFanoutLoopPattern(statement, issues);
-				lintExpression(statement.start, issues, moduleCalls, true, insideFunction);
-				lintExpression(statement.limit, issues, moduleCalls, true, insideFunction);
-				lintExpression(statement.step, issues, moduleCalls, true, insideFunction);
-				lintStatements(statement.block.body, issues, moduleCalls, insideFunction);
+				lintDispatchFanoutLoopPattern(statement, lint);
+				lintExpression(statement.start, lint, moduleCalls, true, insideFunction);
+				lintExpression(statement.limit, lint, moduleCalls, true, insideFunction);
+				lintExpression(statement.step, lint, moduleCalls, true, insideFunction);
+				lintStatements(statement.block.body, lint, moduleCalls, insideFunction);
 				break;
 			case SyntaxKind.ForGenericStatement:
-				lintDispatchFanoutLoopPattern(statement, issues);
+				lintDispatchFanoutLoopPattern(statement, lint);
 				for (const iterator of statement.iterators) {
-					lintExpression(iterator, issues, moduleCalls, true, insideFunction);
+					lintExpression(iterator, lint, moduleCalls, true, insideFunction);
 				}
-				lintStatements(statement.block.body, issues, moduleCalls, insideFunction);
+				lintStatements(statement.block.body, lint, moduleCalls, insideFunction);
 				break;
 			case SyntaxKind.DoStatement:
-				lintStatements(statement.block.body, issues, moduleCalls, insideFunction);
+				lintStatements(statement.block.body, lint, moduleCalls, insideFunction);
 				break;
 			case SyntaxKind.CallStatement:
-				lintExpression(statement.expression, issues, moduleCalls, true, insideFunction);
+				lintExpression(statement.expression, lint, moduleCalls, true, insideFunction);
 				break;
 			case SyntaxKind.BreakStatement:
 			case SyntaxKind.GotoStatement:
@@ -589,22 +589,23 @@ export async function lintCartSources(options: CartLintOptions): Promise<void> {
 				continue;
 			}
 			const chunk = parsed.path;
-			lintConsecutiveDuplicateStatementPattern(chunk.body, tokens, issues);
-			const moduleCalls = analyzeRequireAliases(chunk.body, issues);
-			topLevelLocalStringConstants.push(...collectTopLevelLocalStringConstants(workspacePath, chunk.body));
-			lintSplitLocalTableInitPattern(chunk.body, issues);
-			lintDuplicateInitializerPattern(chunk.body, issues);
-			lintStagedExportLocalCallPattern(chunk.body, issues);
-			lintStagedExportLocalTablePattern(chunk.body, issues);
-			lintUnusedInitValuesInFunctionBody(chunk.body, issues, []);
-			lintForeignObjectInternalMutationPattern(chunk.body, issues);
-			lintRuntimeTagTableAccessPattern(chunk.body, issues);
-			lintFsmEnteringStateVisualSetupPattern(chunk.body, moduleCalls, issues);
-			lintConstLocalPattern(chunk.body, issues);
-			lintConstantCopyPattern(chunk.body, issues);
-			lintStatements(chunk.body, issues, moduleCalls);
-			lintSingleUseHasTagPattern(chunk.body, issues);
-			lintSingleUseLocalPattern(chunk.body, issues);
+			const lint: CartLintContext = { locations: chunk.locations, issues };
+			lintConsecutiveDuplicateStatementPattern(chunk.body, tokens, lint);
+			const moduleCalls = analyzeRequireAliases(chunk.body, lint);
+			topLevelLocalStringConstants.push(...collectTopLevelLocalStringConstants(chunk.body, chunk.locations));
+			lintSplitLocalTableInitPattern(chunk.body, lint);
+			lintDuplicateInitializerPattern(chunk.body, lint);
+			lintStagedExportLocalCallPattern(chunk.body, lint);
+			lintStagedExportLocalTablePattern(chunk.body, lint);
+			lintUnusedInitValuesInFunctionBody(chunk.body, lint, []);
+			lintForeignObjectInternalMutationPattern(chunk.body, lint);
+			lintRuntimeTagTableAccessPattern(chunk.body, lint);
+			lintFsmEnteringStateVisualSetupPattern(chunk.body, moduleCalls, lint);
+			lintConstLocalPattern(chunk.body, lint);
+			lintConstantCopyPattern(chunk.body, lint);
+			lintStatements(chunk.body, lint, moduleCalls);
+			lintSingleUseHasTagPattern(chunk.body, lint);
+			lintSingleUseLocalPattern(chunk.body, lint);
 		}
 		lintCrossFileLocalGlobalConstantPattern(topLevelLocalStringConstants, issues);
 	} finally {

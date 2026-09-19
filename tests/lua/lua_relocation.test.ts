@@ -19,14 +19,14 @@ function fixture(source: string, from = 0, to = 1, index = 0) {
 	walkLuaAst(file.chunk, node => { if (node.kind === LuaSyntaxKind.TableConstructorExpression) tables.push(node); });
 	const field = tables[from].fields[index];
 	const target = tables[to];
-	const analysis = new LuaRelocationAnalysis(file, field.range);
-	return { file, tables, field, target, analysis, changes: analysis.getBindingChangesAt(target.range.start) };
+	const analysis = new LuaRelocationAnalysis(file, file.chunk.locations.range(field.span));
+	return { file, tables, field, target, analysis, changes: analysis.getBindingChangesAt(file.chunk.locations.range(target.span).start) };
 }
 
 test('scope producers retain actual lexical declarations, not global writes or anonymous table properties', () => {
 	const { file, target } = fixture('assigned=1\npublish({ghost=4})\nlocal value=2\nlocal from={value}\nlocal to={assigned=3}', 1, 2);
 	assert.deepEqual(file.scopes[0].declarationIndices.map(index => file.decls[index].name), ['value', 'from', 'to']);
-	const position = target.range.start;
+	const position = file.chunk.locations.range(target.span).start;
 	assert.deepEqual(collectVisibleDeclarationsAt(file, position.line, position.column).map(decl => decl.name), ['from', 'value']);
 	assert.equal(findLuaLexicalBindingAt(file, 'assigned', position.line, position.column).kind, 'global');
 	assert.equal(findLuaLexicalBindingAt(file, 'ghost', position.line, position.column).kind, 'global');
@@ -86,12 +86,12 @@ test('computed field keys participate; identifier keys and property/method label
 
 test('implicit receivers are method-owned even for unknown global classes, distinct from outer locals and inferred class values', () => {
 	const { file, field, target, changes } = fixture('local self=99\nfunction unknown:first() local from={self} end\nfunction unknown:second() local to={} end');
-	const binding = findLuaLexicalBindingAt(file, 'self', field.range.start.line, field.range.start.column);
+	const binding = findLuaLexicalBindingAt(file, 'self', file.chunk.locations.range(field.span).start.line, file.chunk.locations.range(field.span).start.column);
 	assert.equal(binding.kind, 'receiver');
 	assert.equal(changes.length, 1);
 	assert.ok(changes[0].kind === 'identifier' && changes[0].from.kind === 'receiver' && changes[0].to.kind === 'receiver');
 	assert.notEqual(changes[0].from.scopeIndex, changes[0].to.scopeIndex);
-	assert.ok(!collectVisibleDeclarationsAt(file, target.range.start.line, target.range.start.column).some(decl => decl.name === 'self'));
+	assert.ok(!collectVisibleDeclarationsAt(file, file.chunk.locations.range(target.span).start.line, file.chunk.locations.range(target.span).start.column).some(decl => decl.name === 'self'));
 });
 
 test('self capture follows its declaring method through plain nested functions, but explicit parameters/locals shadow it', () => {
@@ -116,8 +116,8 @@ test('varargs use the nearest function scope, not an enclosing variadic function
 	const different = fixture('local function outer(...) local from={...} local function inner() local to={} end end');
 	assert.equal(different.changes.length, 1);
 	assert.equal(different.changes[0].kind, 'vararg');
-	assert.notEqual(findLuaFunctionScopeIndexAt(different.file, different.field.range.start.line, different.field.range.start.column),
-		findLuaFunctionScopeIndexAt(different.file, different.target.range.start.line, different.target.range.start.column));
+	assert.notEqual(findLuaFunctionScopeIndexAt(different.file, different.file.chunk.locations.range(different.field.span).start.line, different.file.chunk.locations.range(different.field.span).start.column),
+		findLuaFunctionScopeIndexAt(different.file, different.file.chunk.locations.range(different.target.span).start.line, different.file.chunk.locations.range(different.target.span).start.column));
 	const own = fixture('local from={function(...) return ... end}\nlocal to={}');
 	assert.deepEqual(own.analysis.bindings, []);
 });
@@ -129,10 +129,10 @@ test('self and varargs are distinct dependencies even when the same method intro
 	assert.ok(from.kind === LuaSyntaxKind.FunctionDeclarationStatement);
 	const constructor = from.functionExpression.body.body[0];
 	assert.ok(constructor.kind === LuaSyntaxKind.LocalAssignmentStatement);
-	const complete = new LuaRelocationAnalysis(analysis.source, constructor.values[0].range);
+	const complete = new LuaRelocationAnalysis(analysis.source, analysis.source.chunk.locations.range(constructor.values[0].span));
 	assert.deepEqual(complete.bindings.map(binding => binding.kind), ['identifier', 'vararg']);
 	assert.equal(changes.length, 1);
-	assert.equal(complete.getBindingChangesAt(target.range.start).length, 2);
+	assert.equal(complete.getBindingChangesAt(analysis.source.chunk.locations.range(target.span).start).length, 2);
 });
 
 test('actual compiled BLua confirms preserved and changed captures after the syntax owner transfers source', () => {
@@ -141,9 +141,9 @@ test('actual compiled BLua confirms preserved and changed captures after the syn
 		['local value=1\nlocal from={function() return value end}\nlocal to={}', 1, 1],
 		['local value=1\nlocal from={function() local value=3; return value end}\nlocal value=2\nlocal to={}', 3, 3],
 	] as const) {
-		const { field, target, changes } = fixture(source);
+		const { file, field, target, changes } = fixture(source);
 		const model = new EditorTextModel(resource, 'lua', source);
-		const transfer = createLuaTableFieldTransfer(model.buffer, path, field, target, 0);
+		const transfer = createLuaTableFieldTransfer(model.buffer, file.chunk.locations, field, target, 0);
 		model.pushEditOperations(transfer.edits);
 		assert.deepEqual(runCompiledLua(source + '\nreturn from[1]()'), [original]);
 		assert.deepEqual(runCompiledLua(model.buffer.getText() + '\nreturn to[1]()'), [moved]);
@@ -164,10 +164,10 @@ function class:second() return {} end`, 1, 2,
 local function second(...) return {} end`, 0, 1,
 			'return first(11)[1]', 'return second(22)[1]'],
 	] as const) {
-		const { field, target, changes } = fixture(source, from, to);
+		const { file, field, target, changes } = fixture(source, from, to);
 		assert.equal(changes.length, 1);
 		const model = new EditorTextModel(resource, 'lua', source);
-		model.pushEditOperations(createLuaTableFieldTransfer(model.buffer, path, field, target, 0).edits);
+		model.pushEditOperations(createLuaTableFieldTransfer(model.buffer, file.chunk.locations, field, target, 0).edits);
 		assert.deepEqual(runCompiledLua(source + '\n' + before), [11]);
 		assert.deepEqual(runCompiledLua(model.buffer.getText() + '\n' + after), [22]);
 		model.dispose();

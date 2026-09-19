@@ -77,15 +77,7 @@ export class LuaSourceLayout {
 		while (id !== 0) {
 			const node = this.records.get(id)!;
 			if (node.kind === 'unit') break;
-			if (node.kind === 'text') {
-				let low = 0, high = node.lineStarts.length;
-				while (low < high) {
-					const middle = (low + high) >>> 1;
-					if (node.lineStarts[middle] <= offset) low = middle + 1;
-					else high = middle;
-				}
-				return { line: line + low, column: low === 0 ? column + offset : offset - node.lineStarts[low - 1] + 1 };
-			}
+			if (node.kind === 'text') return positionInText(node.lineStarts, offset, line, column);
 			const left = this.records.get(node.left)!;
 			if (offset < left.width) id = node.left;
 			else {
@@ -350,4 +342,15 @@ function readText(records: HashMapSnapshot<number, Record>, id: number, offset: 
 		readText(records, node.left, offset, take, pieces);
 		readText(records, node.right, 0, length - take, pieces);
 	} else readText(records, node.right, offset - width, length, pieces);
+}
+
+/** Shared leaf-local projection for random lookups and sequential cursors. */
+export function positionInText(lineStarts: readonly number[], offset: number, line: number, column: number): LuaSourcePosition {
+	let low = 0, high = lineStarts.length;
+	while (low < high) {
+		const middle = (low + high) >>> 1;
+		if (lineStarts[middle] <= offset) low = middle + 1;
+		else high = middle;
+	}
+	return { line: line + low, column: low === 0 ? column + offset : offset - lineStarts[low - 1] + 1 };
 }

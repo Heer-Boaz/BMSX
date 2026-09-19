@@ -13,7 +13,7 @@ export function retargetStateMachineTransition(
 ): void {
 	const before = captureBehaviorSourceBookmark(view, selection);
 	const after = copyBehaviorSourceBookmark(before);
-	const edit = createLuaStringValueEdit(model.buffer, target.literal, target.text);
+	const edit = createLuaStringValueEdit(model.buffer, target.file.chunk.locations, target.literal, target.text);
 	model.pushEditOperations([edit], behaviorSourceEditState.of(before), changes => {
 		mapBehaviorSourceBookmark(after, model.resource, changes);
 		if (after.tracked.kind === 'direct') {

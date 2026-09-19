@@ -59,7 +59,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		this.details.focusTarget.commandContext = this.focusTarget;
 		this.controls = POSITION_AXES.map((_axis, index) => new ValueInput(this.focusTarget, clipboard, INTEGER_INPUT_FORMAT, value => {
 			const property = this.input.properties[index];
-			this.input.workingCopy.pushEditOperations(createLuaTableFieldIntegerEdits(this.input.workingCopy.buffer, property.field!, value)!);
+			this.input.workingCopy.pushEditOperations(createLuaTableFieldIntegerEdits(this.input.workingCopy.buffer, this.input.document.analysis.chunk.locations, property.field!, value)!);
 		}, () => this.update()));
 		this.unbindFieldFocus = this.controls.map((control, index) => control.field.focusTarget.onDidFocus(() => this.revealProperty(index)));
 		this.options = new SceneOptionEditor(this.focusTarget, clipboard, () => this.update(), property => this.revealOption(property));

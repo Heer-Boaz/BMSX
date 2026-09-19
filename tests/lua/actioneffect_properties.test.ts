@@ -131,7 +131,7 @@ test('property drafts edit written expressions and retain ordinary source histor
 		acceptEffectPropertySelection(f.view, f.properties, false);
 		const property = selectedActionEffectProperty(f.view)!;
 		const field = property.field;
-		const originalValue = readLuaSourceRange(f.model.buffer, field.value.range);
+		const originalValue = readLuaSourceRange(f.model.buffer, property.file.chunk.locations.range(field.value.span));
 		edit.open(f.input, f.properties, property);
 		insertValue(edit.control.field, value);
 		assert.equal(f.model.buffer.getText(), ACTIONEFFECT_SOURCE);
@@ -237,7 +237,7 @@ second]=],
 		const read = f.model.buffer.getTextRange;
 		f.model.buffer.getTextRange = function(start, end) { reads.push([start, end]); return read.call(this, start, end); };
 		f.properties.dirty = true; f.update();
-		const period = fields[0].field.value.range;
+		const period = definition.body.file.chunk.locations.range(fields[0].field.value.span);
 		assert.ok(reads.some(([start, end]) => start === f.model.buffer.offsetAt(period.start.line - 1, period.start.column - 1)
 			&& end === f.model.buffer.offsetAt(period.end.line - 1, period.end.column)), 'single-line previews read only their source range, not an entire potentially fragmented line');
 		assert.equal(rows.get(fields[0].source.rowKey)!.element.value, 'cadence() * 2');
@@ -266,7 +266,7 @@ test('requirements appear once as full-width values while aliases and inline cal
 				for (const entry of field.entries) {
 					const child = f.properties.nodesBySource.get(entry.node.rowKey)!;
 					assert.equal(child.element.label, '');
-					assert.equal(child.element.value, readLuaSourceRange(f.model.buffer, entry.field.value.range));
+					assert.equal(child.element.value, readLuaSourceRange(f.model.buffer, entry.file.chunk.locations.range(entry.field.value.span)));
 					assert.ok(child.element.displayValueLeft < f.properties.tree.layout.valueLeft);
 				}
 			} else if (field.kind === 'value') {

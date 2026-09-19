@@ -1,5 +1,5 @@
 import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../../../lua_rule';
+import { type CartLintContext } from '../../../../lua_rule';
 import { markUnusedInitValueWrite } from '../../unused_init_value_pattern';
 import { declareBinding, discardBindingScope, enterBindingScope, resolveBinding } from './bindings';
 import { UnusedInitValueBinding, UnusedInitValueContext } from './types';
@@ -12,9 +12,9 @@ export function leaveUnusedInitValueScope(context: UnusedInitValueContext): void
 	discardBindingScope(context);
 }
 
-export function createUnusedInitValueContext(issues: CartLintIssue[]): UnusedInitValueContext {
+export function createUnusedInitValueContext(lint: CartLintContext): UnusedInitValueContext {
 	const context: UnusedInitValueContext = {
-		issues,
+		lint,
 		bindingStacksByName: new Map<string, UnusedInitValueBinding[]>(),
 		scopeStack: [],
 	};
@@ -78,7 +78,7 @@ export function lintUnusedInitValuesInExpression(expression: Expression | null, 
 			}
 			return;
 		case SyntaxKind.FunctionExpression:
-			lintUnusedInitValuesInFunctionBody(expression.body.body, context.issues, expression.parameters);
+			lintUnusedInitValuesInFunctionBody(expression.body.body, context.lint, expression.parameters);
 			return;
 		default:
 			return;
@@ -139,7 +139,7 @@ export function lintUnusedInitValuesInStatements(
 				declareUnusedInitValueBinding(context, localFunction.name, false);
 				lintUnusedInitValuesInFunctionBody(
 					localFunction.functionExpression.body.body,
-					context.issues,
+					context.lint,
 					localFunction.functionExpression.parameters,
 				);
 				break;
@@ -147,7 +147,7 @@ export function lintUnusedInitValuesInStatements(
 			case SyntaxKind.FunctionDeclarationStatement:
 				lintUnusedInitValuesInFunctionBody(
 					statement.functionExpression.body.body,
-					context.issues,
+					context.lint,
 					statement.functionExpression.parameters,
 				);
 				break;
@@ -218,10 +218,10 @@ export function lintUnusedInitValuesInStatements(
 
 export function lintUnusedInitValuesInFunctionBody(
 	statements: ReadonlyArray<Statement>,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 	parameters: ReadonlyArray<IdentifierExpression>,
 ): void {
-	const context = createUnusedInitValueContext(issues);
+	const context = createUnusedInitValueContext(lint);
 	try {
 		for (const parameter of parameters) {
 			declareUnusedInitValueBinding(context, parameter, false);

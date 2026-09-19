@@ -1,13 +1,13 @@
 import { type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../../../lua_rule';
+import { type CartLintContext } from '../../../../lua_rule';
 import { lintConstantCopyInStatements } from '../../constant_copy_pattern';
 import { declareBinding, discardBindingScope, enterBindingScope, resolveBinding, setBinding } from './bindings';
 import { isConstantBindingPathExpression } from './expressions';
 import { ConstantCopyBinding, ConstantCopyContext } from './types';
 
-export function createConstantCopyContext(issues: CartLintIssue[]): ConstantCopyContext {
+export function createConstantCopyContext(lint: CartLintContext): ConstantCopyContext {
 	return {
-		issues,
+		lint,
 		bindingStacksByName: new Map<string, ConstantCopyBinding[]>(),
 		scopeStack: [],
 	};
@@ -101,8 +101,8 @@ export function lintConstantCopyInAssignmentTarget(target: Expression | null, co
 	}
 }
 
-export function lintConstantCopyPattern(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
-	const context = createConstantCopyContext(issues);
+export function lintConstantCopyPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
+	const context = createConstantCopyContext(lint);
 	enterConstantCopyScope(context);
 	try {
 		lintConstantCopyInStatements(statements, context);

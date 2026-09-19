@@ -88,7 +88,7 @@ test('one literal edit covers actual shared consumers but not identical return t
 	assert.equal(check.text, '../other');
 	assert.equal(new Set(check.uses.map(use => use.plan.target)).size, 3, 'shared text does not merge source occurrences');
 	assert.deepEqual(check.uses.map(use => use.plan.target), analysis.uses.map(use => scopeAt(use.transition.origin.parent!, ['other']).rowKey));
-	f.model.pushEditOperations([createLuaStringValueEdit(f.model.buffer, check.literal, check.text)]);
+	f.model.pushEditOperations([createLuaStringValueEdit(f.model.buffer, check.file.chunk.locations, check.literal, check.text)]);
 	assert.equal(f.model.buffer.getText(), FSM_RETARGET_SOURCE.replace("--[[selected return]] '../active'", "--[[selected return]] '../other'"));
 	f.model.undo(); assert.equal(f.model.buffer.getText(), FSM_RETARGET_SOURCE);
 	f.model.redo(); assert.ok(f.model.buffer.getText().includes("if actor.first then return '../active', 'ignored result' end"));
@@ -104,7 +104,7 @@ test('direct and go-table fields preserve wrappers and metadata, while aliases r
 		if (name === 'aliased') { assert.deepEqual(check, { kind: 'unavailable', reason: 'indirect-literal' }); continue; }
 		assert.ok(check.kind === 'available');
 		assert.equal(check.uses.length, 3);
-		f.model.pushEditOperations([createLuaStringValueEdit(f.model.buffer, check.literal, check.text)]);
+		f.model.pushEditOperations([createLuaStringValueEdit(f.model.buffer, check.file.chunk.locations, check.literal, check.text)]);
 		assert.equal(f.model.buffer.getText(), FSM_RETARGET_SOURCE.replace(`--[[${name} path]] '../active'`, `--[[${name} path]] '../other'`));
 		f.model.undo(); assert.equal(f.model.buffer.getText(), FSM_RETARGET_SOURCE);
 	}

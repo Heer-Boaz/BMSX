@@ -1,3 +1,4 @@
+import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
@@ -33,6 +34,7 @@ export type BehaviorRecognizerContext = {
 } & ({ readonly behaviorKind: 'behavior_tree' } | { readonly behaviorKind: 'state_machine' } | { readonly behaviorKind: 'action_effect' });
 
 export type ResolvedSourceTable = {
+	readonly file: FileSemanticData;
 	readonly table: LuaTableConstructorExpression;
 	readonly referenceRange: LuaSourceRange | null;
 	readonly referenceLabel: string;
@@ -42,6 +44,7 @@ export type ResolvedSourceTable = {
 
 export type BehaviorSourceTableSection = BehaviorDynamicSourceNode | (BehaviorSourceNode & {
 	readonly kind: 'section';
+	readonly file: FileSemanticData;
 	readonly table: LuaTableConstructorExpression;
 	readonly issues: SourceTableIssue;
 });
@@ -58,6 +61,7 @@ export type SourceNodeInput = {
 
 /** One syntactic list entry; explicit/computed keys are not inferred list indices. */
 export type BehaviorSourceArrayEntry<T extends BehaviorSourceNode> = {
+	readonly file: FileSemanticData;
 	readonly field: LuaTableField;
 	readonly index: number | null;
 	readonly node: T;
@@ -72,6 +76,7 @@ export type NamedSourceField = {
 
 export type SourceNodeBuilder = (
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	expression: LuaExpression,
 	activeTables: Set<LuaTableConstructorExpression>,
@@ -104,16 +109,19 @@ export function createBehaviorSourceAnchor(
 
 export function resolveSourceTable(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	expression: LuaExpression,
 	activeTables: Set<LuaTableConstructorExpression>,
 ): ResolvedSourceTable | null {
-	const table = context.reader.expression(expression);
+	const result = context.reader.expression(file, expression);
+	const table = result?.expression;
 	if (table?.kind !== LuaSyntaxKind.TableConstructorExpression || activeTables.has(table)) return null;
 	let issues = sourceTableIssues(table);
 	if (context.reader.snapshot.symbolResolver.writtenSources.tableMutations().has(table)) issues |= SourceTableIssue.KnownMutation;
 	return {
 		table,
-		referenceRange: table === expression ? null : expression.range,
+		file: result!.file,
+		referenceRange: table === expression ? null : file.chunk.locations.range(expression.span),
 		referenceLabel: table === expression ? '' : describeExpression(expression),
 		issues,
 		resolution: issues === SourceTableIssue.None ? 'complete' : 'partial',
@@ -205,6 +213,7 @@ export function describeExpression(expression: LuaExpression): string {
 
 export function createDynamicNode(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	label: string,
 	expression: LuaExpression,
@@ -213,7 +222,7 @@ export function createDynamicNode(
 		kind: 'dynamic',
 		label,
 		detail: describeExpression(expression),
-		authoredRange: expression.range,
+		authoredRange: file.chunk.locations.range(expression.span),
 		referenceRange: null,
 		resolution: 'unresolved',
 		children: [],
@@ -257,16 +266,17 @@ export function createSourceNode<C extends BehaviorRecognizerContext, T extends 
 
 export function buildNamedTableSection(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	label: string,
 	expression: LuaExpression,
 	activeTables: Set<LuaTableConstructorExpression>,
 ): BehaviorSourceTableSection {
-	const resolved = resolveSourceTable(context, expression, activeTables);
+	const resolved = resolveSourceTable(context, file, expression, activeTables);
 	if (!resolved) {
-		return createDynamicNode(context, path, `unresolved ${label}`, expression);
+		return createDynamicNode(context, file, path, `unresolved ${label}`, expression);
 	}
-	return buildResolvedTableSection(context, path, label, resolved, resolved.table.range);
+	return buildResolvedTableSection(context, path, label, resolved, resolved.file.chunk.locations.range(resolved.table.span));
 }
 
 /** A resolved table with its authored owner span (a map entry may include its key). */
@@ -284,7 +294,7 @@ export function buildResolvedTableSection(
 			kind: entry.keyKind === 'computed' ? 'dynamic' : 'property',
 			label: fieldLabel,
 			detail: entry.keyKind === 'numeric' ? 'explicit numeric key' : '',
-			authoredRange: entry.field.range,
+			authoredRange: resolved.file.chunk.locations.range(entry.field.span),
 			referenceRange: null,
 			resolution: entry.keyKind === 'named'
 				? 'complete'
@@ -299,7 +309,7 @@ export function buildResolvedTableSection(
 			kind: 'property',
 			label: describeExpression(field.value),
 			detail: '',
-			authoredRange: field.range,
+			authoredRange: resolved.file.chunk.locations.range(field.span),
 			referenceRange: null,
 			resolution: 'complete',
 			children: [],
@@ -308,6 +318,7 @@ export function buildResolvedTableSection(
 	return createSourceNode(context, path, {
 		kind: 'section',
 		table: resolved.table,
+		file: resolved.file,
 		issues: resolved.issues,
 		label: resolved.resolution === 'complete'
 			? `${label} (${children.length})`
@@ -322,15 +333,16 @@ export function buildResolvedTableSection(
 
 export function buildTableArraySection(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	label: string,
 	expression: LuaExpression,
 	activeTables: Set<LuaTableConstructorExpression>,
 	buildChild: SourceNodeBuilder,
 ): BehaviorSourceTableSection {
-	const resolved = resolveSourceTable(context, expression, activeTables);
+	const resolved = resolveSourceTable(context, file, expression, activeTables);
 	if (!resolved) {
-		return createDynamicNode(context, path, `unresolved ${label}`, expression);
+		return createDynamicNode(context, file, path, `unresolved ${label}`, expression);
 	}
 	const entries = collectArrayFields(resolved.table);
 	const keyedFields = collectNamedFields(resolved.table);
@@ -338,6 +350,7 @@ export function buildTableArraySection(
 	for (let index = 0; index < entries.length; index += 1) {
 		children.push(buildChild(
 			context,
+			resolved.file,
 			appendBehaviorSourcePath(path, `array:${index + 1}`),
 			entries[index].value,
 			activeTables,
@@ -354,6 +367,7 @@ export function buildTableArraySection(
 		if (entry.keyKind === 'numeric') {
 			const child = buildChild(
 				context,
+				resolved.file,
 				appendBehaviorSourcePath(entryPath, 'value'),
 				entry.field.value,
 				activeTables,
@@ -364,7 +378,7 @@ export function buildTableArraySection(
 				kind: 'section',
 				label: `[${entry.authoredKeyLabel}]`,
 				detail: 'explicit numeric key',
-				authoredRange: entry.field.range,
+				authoredRange: resolved.file.chunk.locations.range(entry.field.span),
 				referenceRange: null,
 				resolution: 'partial',
 				children: [child],
@@ -375,7 +389,7 @@ export function buildTableArraySection(
 			kind: 'dynamic',
 			label: `[${entry.authoredKeyLabel}]`,
 			detail: `element = ${describeExpression(entry.field.value)}`,
-			authoredRange: entry.field.range,
+			authoredRange: resolved.file.chunk.locations.range(entry.field.span),
 			referenceRange: null,
 			resolution: 'unresolved',
 			children: [],
@@ -384,12 +398,13 @@ export function buildTableArraySection(
 	return createSourceNode(context, path, {
 		kind: 'section',
 		table: resolved.table,
+		file: resolved.file,
 		issues: resolved.issues,
 		label: resolved.resolution === 'complete'
 			? `${label} (${entries.length})`
 			: `${label} (${children.length} authored)`,
 		detail: describeResolvedSourceTable(resolved),
-		authoredRange: resolved.table.range,
+		authoredRange: resolved.file.chunk.locations.range(resolved.table.span),
 		referenceRange: resolved.referenceRange,
 		resolution: resolved.resolution,
 		children,
@@ -398,6 +413,7 @@ export function buildTableArraySection(
 
 export function buildExpressionProperty(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	expression: LuaExpression,
 	_activeTables: Set<LuaTableConstructorExpression>,
@@ -406,7 +422,7 @@ export function buildExpressionProperty(
 		kind: 'property',
 		label: describeExpression(expression),
 		detail: '',
-		authoredRange: expression.range,
+		authoredRange: file.chunk.locations.range(expression.span),
 		referenceRange: null,
 		resolution: 'complete',
 		children: [],

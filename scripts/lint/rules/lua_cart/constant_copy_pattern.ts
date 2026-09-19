@@ -23,7 +23,7 @@ export function lintConstantCopyInStatements(statements: ReadonlyArray<Statement
 				for (let index = 0; index < statement.names.length; index += 1) {
 					if (index < valueCount && isForbiddenCopyByValue[index]) {
 						pushIssue(
-							context.issues,
+							context.lint,
 							constantCopyPatternRule.name,
 							statement.values[index],
 							`Local copies of constants are forbidden ("${statement.names[index].name}").`,

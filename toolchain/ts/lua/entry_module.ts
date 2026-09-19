@@ -9,7 +9,7 @@ export function resolveLuaEntryModuleIndex(
 	entryModulePath?: string,
 ): number {
 	if (entryModulePath !== undefined) {
-		const index = modules.findIndex(module => module.chunk.range.path === entryModulePath);
+		const index = modules.findIndex(module => module.chunk.locations.path === entryModulePath);
 		if (index < 0) throw new Error(`BLua entry module '${entryModulePath}' is not in the program.`);
 		return index;
 	}
@@ -20,7 +20,7 @@ export function resolveLuaEntryModuleIndex(
 		}
 		if (entryIndex >= 0) {
 			throw new Error(
-				`BLua program has multiple module<entry> roots: '${modules[entryIndex].chunk.range.path}' and '${modules[index].chunk.range.path}'.`,
+				`BLua program has multiple module<entry> roots: '${modules[entryIndex].chunk.locations.path}' and '${modules[index].chunk.locations.path}'.`,
 			);
 		}
 		entryIndex = index;

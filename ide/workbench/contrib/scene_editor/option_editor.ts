@@ -18,15 +18,16 @@ export class SceneOptionEditor {
 	public bind(input: SceneEditorInput): void {
 		this.input = input;
 		const model = input.workingCopy;
+		const locations = input.document.analysis.chunk.locations;
 		while (this.controls.length > input.optionProperties.length) this.removeLast();
 		for (let index = 0; index < input.optionProperties.length; index += 1) {
 			const property = input.optionProperties[index];
 			const field = property.field;
 			if (index === this.controls.length) this.append(index);
 			const control = this.controls[index];
-			const span = luaSourceRangeToTextRange(model.buffer, field.value.range);
+			const span = luaSourceRangeToTextRange(model.buffer, locations.range(field.value.span));
 			control.setValue({ edit: { offset: span.start, deleteLength: span.end - span.start, text: property.sourceText },
-				fieldRange: field.range, expressionRange: field.value.range });
+				fieldRange: locations.range(field.span), expressionRange: locations.range(field.value.span) });
 			control.field.readOnly = model.readOnly || !property.editable;
 			control.field.focusTarget.previous = null;
 			control.field.focusTarget.next = null;
@@ -44,7 +45,7 @@ export class SceneOptionEditor {
 			options: { allowSpace: true, singleLine: true },
 			invalidBlurMessage: 'Invalid expression edit cancelled; source unchanged.',
 			format: value => value.edit.text,
-			parse: text => parseLuaFieldValueEdit(this.input!.workingCopy.buffer, this.input!.optionProperties[index].field, text),
+			parse: text => parseLuaFieldValueEdit(this.input!.workingCopy.buffer, this.input!.document.analysis.chunk.locations, this.input!.optionProperties[index].field, text),
 		}, value => { this.input!.workingCopy.pushEditOperations([value.edit]); }, this.beforeCommit);
 		this.unbindFocus.push(control.field.focusTarget.onDidFocus(() => this.reveal(this.input!.optionProperties[index])));
 		this.controls.push(control);

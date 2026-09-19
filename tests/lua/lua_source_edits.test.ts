@@ -36,36 +36,41 @@ test('expression previews keep references verbatim and summarize only inline fun
 	]) {
 		const source = `local values<const> = { value = ${expression} }`;
 		const model = new EditorTextModel(resource, 'lua', source);
-		const field = parseFields(source).get('value')!;
-		assert.equal(readLuaExpressionPreview(model.buffer, field.value), expected);
-		assert.equal(readLuaSourceRange(model.buffer, field.value.range), expression);
+		const { fields, locations } = parseFields(source);
+		const field = fields.get('value')!;
+		assert.equal(readLuaExpressionPreview(model.buffer, locations, field.value), expected);
+		assert.equal(readLuaSourceRange(model.buffer, locations.range(field.value.span)), expression);
 		assert.equal(model.version, 1); assert.equal(model.canUndo, false); assert.equal(model.dirty, false);
 	}
 });
 
 test('Lua syntax-start anchors survive expression-end growth without changing ordinary tracked-range affinity', () => {
 	const model = new EditorTextModel(resource, 'lua', '-- 🐉\nreturn next_path');
-	const syntax = () => parseLuaChunk(model.buffer.getText(), resource.path).chunk.body[0];
+	const syntax = () => {
+		const chunk = parseLuaChunk(model.buffer.getText(), resource.path).chunk;
+		return chunk.locations.range(chunk.body[0].span);
+	};
 	const statement = syntax();
-	const range = luaSourceRangeToTextRange(model.buffer, statement.range);
-	const start = luaSourcePositionToTextRange(model.buffer, statement.range.start);
+	const range = luaSourceRangeToTextRange(model.buffer, statement);
+	const start = luaSourcePositionToTextRange(model.buffer, statement.start);
 	assert.deepEqual(start, { start: 6, end: 7 }, 'source positions use UTF-16, not byte offsets or display columns');
 	model.onDidChangeContent(event => { mapTrackedTextRange(range, event.changes); mapTrackedTextRange(start, event.changes); });
 	model.pushEditOperations([{ offset: 13, deleteLength: 9, text: 'nil' }]);
-	assert.equal(luaSourceRangeMatchesTextRange(model.buffer, syntax().range, range), true);
+	assert.equal(luaSourceRangeMatchesTextRange(model.buffer, syntax(), range), true);
 	model.undo();
-	assert.equal(luaSourceRangeMatchesTextRange(model.buffer, syntax().range, range), false,
+	assert.equal(luaSourceRangeMatchesTextRange(model.buffer, syntax(), range), false,
 		'NeverGrowsWhenTypingAtEdges does not adopt the longer replacement at the old end');
-	assert.equal(luaSourcePositionMatchesTextRange(model.buffer, syntax().range.start, start), true,
+	assert.equal(luaSourcePositionMatchesTextRange(model.buffer, syntax().start, start), true,
 		'the return statement still begins at the same surviving source character');
 	model.pushEditOperations([{ offset: start.start, deleteLength: 1, text: 'r' }]);
 	model.undo();
-	assert.equal(luaSourcePositionMatchesTextRange(model.buffer, syntax().range.start, start), false,
+	assert.equal(luaSourcePositionMatchesTextRange(model.buffer, syntax().start, start), false,
 		'deletion and Undo do not recreate the source character selected by the user');
 });
 
-function parseFields(source: string): Map<string, LuaTableField> {
-	const statement = parseLuaChunk(source, resource.path).chunk.body[0];
+function parseFields(source: string) {
+	const chunk = parseLuaChunk(source, resource.path).chunk;
+	const statement = chunk.body[0];
 	assert.equal(statement.kind, LuaSyntaxKind.LocalAssignmentStatement);
 	const table = statement.values[0] as LuaTableConstructorExpression;
 	assert.equal(table.kind, LuaSyntaxKind.TableConstructorExpression);
@@ -76,7 +81,7 @@ function parseFields(source: string): Map<string, LuaTableField> {
 			fields.set(field.name, field);
 		}
 	}
-	return fields;
+	return { fields, locations: chunk.locations };
 }
 
 test('Lua field integer edits change only number/sign tokens and preserve source conventions', () => {
@@ -101,12 +106,12 @@ test('Lua field integer edits change only number/sign tokens and preserve source
 		'',
 	].join('\n');
 	const model = new EditorTextModel(resource, 'lua', source);
-	const fields = parseFields(source);
+	const { fields, locations } = parseFields(source);
 	const edits = [
-		...createLuaTableFieldIntegerEdits(model.buffer, fields.get('decimal')!, 42)!,
-		...createLuaTableFieldIntegerEdits(model.buffer, fields.get('upper_hex')!, 0xbeef)!,
-		...createLuaTableFieldIntegerEdits(model.buffer, fields.get('lower_hex')!, 0x10)!,
-		...createLuaTableFieldIntegerEdits(model.buffer, fields.get('exponent')!, -250)!,
+		...createLuaTableFieldIntegerEdits(model.buffer, locations, fields.get('decimal')!, 42)!,
+		...createLuaTableFieldIntegerEdits(model.buffer, locations, fields.get('upper_hex')!, 0xbeef)!,
+		...createLuaTableFieldIntegerEdits(model.buffer, locations, fields.get('lower_hex')!, 0x10)!,
+		...createLuaTableFieldIntegerEdits(model.buffer, locations, fields.get('exponent')!, -250)!,
 	];
 	model.pushEditOperations(edits);
 
@@ -120,9 +125,9 @@ test('Lua field integer edits change only number/sign tokens and preserve source
 test('Lua integer edits do not reinterpret dynamic expressions', () => {
 	const source = 'local values<const> = { dynamic = origin + 1 }\n';
 	const model = new EditorTextModel(resource, 'lua', source);
-	const fields = parseFields(source);
+	const { fields, locations } = parseFields(source);
 	assert.equal(
-		createLuaTableFieldIntegerEdits(model.buffer, fields.get('dynamic')!, 12),
+		createLuaTableFieldIntegerEdits(model.buffer, locations, fields.get('dynamic')!, 12),
 		null,
 	);
 	assert.equal(model.buffer.getText(), source);
@@ -130,7 +135,7 @@ test('Lua integer edits do not reinterpret dynamic expressions', () => {
 
 test('source numeric control reads literal values only, preserving source ranges and integer eligibility', () => {
 	const source = 'local values = { zero = -(0), max = 2147483647, min = -( --[[keep]]\r\n2147483648), hex = 0X11, exponent = 1e3, fraction = 1.5, outside = 2147483648, dynamic = origin + 1 }';
-	const fields = parseFields(source);
+	const { fields, locations } = parseFields(source);
 	const model = new EditorTextModel(resource, 'lua', source);
 	assert.equal(readLuaTableFieldInteger(fields.get('zero')!), -0);
 	assert.equal(readLuaTableFieldInteger(fields.get('max')!), 0x7fffffff);
@@ -138,7 +143,7 @@ test('source numeric control reads literal values only, preserving source ranges
 	assert.equal(readLuaTableFieldInteger(fields.get('hex')!), 17);
 	assert.equal(readLuaTableFieldInteger(fields.get('exponent')!), 1000);
 	for (const key of ['fraction', 'outside', 'dynamic']) assert.equal(readLuaTableFieldInteger(fields.get(key)!), null);
-	assert.equal(readLuaSourceRange(model.buffer, fields.get('dynamic')!.value.range), 'origin + 1');
+	assert.equal(readLuaSourceRange(model.buffer, locations.range(fields.get('dynamic')!.value.span)), 'origin + 1');
 	assert.equal(model.buffer.getText(), source);
 });
 
@@ -155,15 +160,16 @@ test('Lua field edits preserve nested parentheses and inter-token trivia through
 		for (const value of [17, -17]) {
 			const source = `local values<const> = { x = ${sample.source}; other = 3^2 }`;
 			const model = new EditorTextModel(resource, 'lua', source);
-			const field = parseFields(source).get('x')!;
-			const edits = createLuaTableFieldIntegerEdits(model.buffer, field, value)!;
+			const { fields, locations } = parseFields(source);
+		const field = fields.get('x')!;
+			const edits = createLuaTableFieldIntegerEdits(model.buffer, locations, field, value)!;
 			const expected = `local values<const> = { x = ${value < 0 ? sample.negative : sample.positive}; other = 3^2 }`;
 			let events = 0;
 			model.onDidChangeContent(() => { events += 1; });
 			model.pushEditOperations(edits);
 			assert.equal(events, 1, 'sign and numeric token changes are one document mutation');
 			assert.equal(model.buffer.getText(), expected);
-			assert.equal(parseFields(expected).size, 2, 'edited Lua reparses without recovery');
+			assert.equal(parseFields(expected).fields.size, 2, 'edited Lua reparses without recovery');
 			assert.deepEqual(runCompiledLua(`${expected}\nreturn values.x, values.other`), [value, 9]);
 			model.undo();
 			assert.equal(model.buffer.getText(), source, 'one undo restores every original byte');
@@ -178,8 +184,9 @@ test('Lua field edits do not grow grouping or whitespace during repeated sign ch
 	const source = 'local values<const> = { x = --[[anchor]](- (0x002a)) }';
 	const model = new EditorTextModel(resource, 'lua', source);
 	for (const value of [17, -17, 0, 17, -17, 0]) {
-		const field = parseFields(model.buffer.getText()).get('x')!;
-		model.pushEditOperations(createLuaTableFieldIntegerEdits(model.buffer, field, value)!);
+		const { fields, locations } = parseFields(model.buffer.getText());
+		const field = fields.get('x')!;
+		model.pushEditOperations(createLuaTableFieldIntegerEdits(model.buffer, locations, field, value)!);
 		const number = value < 0 ? '-0x0011' : value === 0 ? '0x0000' : '0x0011';
 		const expected = `local values<const> = { x = --[[anchor]]( (${number})) }`;
 		assert.equal(model.buffer.getText(), expected);
@@ -192,17 +199,19 @@ test('Lua field edits do not grow grouping or whitespace during repeated sign ch
 test('Lua field edits cover array, expression-key and identifier fields without changing keys', () => {
 	const source = "local values<const> = { -(42); [1+1] = -(0x2a), ['third'] = ((4)); named = 5 }";
 	const model = new EditorTextModel(resource, 'lua', source);
-	const statement = parseLuaChunk(source, resource.path).chunk!.body[0];
+	const chunk = parseLuaChunk(source, resource.path).chunk;
+	const locations = chunk.locations;
+	const statement = chunk.body[0];
 	assert.equal(statement.kind, LuaSyntaxKind.LocalAssignmentStatement);
 	if (statement.kind !== LuaSyntaxKind.LocalAssignmentStatement) throw new Error('expected assignment');
 	const table = statement.values[0];
 	assert.equal(table.kind, LuaSyntaxKind.TableConstructorExpression);
 	if (table.kind !== LuaSyntaxKind.TableConstructorExpression) throw new Error('expected table');
 	model.pushEditOperations([
-		...createLuaTableFieldIntegerEdits(model.buffer, table.fields[0], 42)!,
-		...createLuaTableFieldIntegerEdits(model.buffer, table.fields[1], 17)!,
-		...createLuaTableFieldIntegerEdits(model.buffer, table.fields[2], -4)!,
-		...createLuaTableFieldIntegerEdits(model.buffer, table.fields[3], -5)!,
+		...createLuaTableFieldIntegerEdits(model.buffer, locations, table.fields[0], 42)!,
+		...createLuaTableFieldIntegerEdits(model.buffer, locations, table.fields[1], 17)!,
+		...createLuaTableFieldIntegerEdits(model.buffer, locations, table.fields[2], -4)!,
+		...createLuaTableFieldIntegerEdits(model.buffer, locations, table.fields[3], -5)!,
 	]);
 	const expected = "local values<const> = { (42); [1+1] = (0x11), ['third'] = ((-4)); named = -5 }";
 	assert.equal(model.buffer.getText(), expected);
@@ -212,8 +221,9 @@ test('Lua field edits cover array, expression-key and identifier fields without 
 test('Lua field edits cannot rewrite a literal inside a computed field value', () => {
 	const source = 'local values<const> = { power = 2^2, negative_power = -2^2, call = compute(42), nested = - -2 }';
 	const model = new EditorTextModel(resource, 'lua', source);
-	for (const field of parseFields(source).values()) {
-		assert.equal(createLuaTableFieldIntegerEdits(model.buffer, field, -17), null);
+	const { fields, locations } = parseFields(source);
+	for (const field of fields.values()) {
+		assert.equal(createLuaTableFieldIntegerEdits(model.buffer, locations, field, -17), null);
 	}
 	assert.equal(model.buffer.getText(), source);
 	assert.equal(model.undo(), null);
@@ -222,13 +232,13 @@ test('Lua field edits cannot rewrite a literal inside a computed field value', (
 test('Lua field edits preserve the original spelling and history when the value is unchanged', () => {
 	const source = 'local values<const> = { positive = 0X002A, negative = -( --[[keep]] 0x002a), zero = -0, exponent = 1e3 }';
 	const model = new EditorTextModel(resource, 'lua', source);
-	const fields = parseFields(source);
+	const { fields, locations } = parseFields(source);
 	const version = model.version;
 	model.pushEditOperations([
-		...createLuaTableFieldIntegerEdits(model.buffer, fields.get('positive')!, 42)!,
-		...createLuaTableFieldIntegerEdits(model.buffer, fields.get('negative')!, -42)!,
-		...createLuaTableFieldIntegerEdits(model.buffer, fields.get('zero')!, 0)!,
-		...createLuaTableFieldIntegerEdits(model.buffer, fields.get('exponent')!, 1000)!,
+		...createLuaTableFieldIntegerEdits(model.buffer, locations, fields.get('positive')!, 42)!,
+		...createLuaTableFieldIntegerEdits(model.buffer, locations, fields.get('negative')!, -42)!,
+		...createLuaTableFieldIntegerEdits(model.buffer, locations, fields.get('zero')!, 0)!,
+		...createLuaTableFieldIntegerEdits(model.buffer, locations, fields.get('exponent')!, 1000)!,
 	]);
 	assert.equal(model.version, version);
 	assert.equal(model.dirty, false);

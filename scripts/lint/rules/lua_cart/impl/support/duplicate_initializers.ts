@@ -1,12 +1,12 @@
 import { type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../../../lua_rule';
+import { type CartLintContext } from '../../../../lua_rule';
 import { lintDuplicateInitializerInStatements } from '../../duplicate_initializer_pattern';
 import { declareBinding, discardBindingScope, enterBindingScope, resolveBinding } from './bindings';
 import { DuplicateInitializerBinding, DuplicateInitializerContext } from './types';
 
-export function createDuplicateInitializerContext(issues: CartLintIssue[]): DuplicateInitializerContext {
+export function createDuplicateInitializerContext(lint: CartLintContext): DuplicateInitializerContext {
 	const context: DuplicateInitializerContext = {
-		issues,
+		lint,
 		bindingStacksByName: new Map<string, DuplicateInitializerBinding[]>(),
 		scopeStack: [],
 	};
@@ -83,8 +83,8 @@ export function lintDuplicateInitializerInExpression(expression: Expression | nu
 	}
 }
 
-export function lintDuplicateInitializerPattern(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
-	const context = createDuplicateInitializerContext(issues);
+export function lintDuplicateInitializerPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
+	const context = createDuplicateInitializerContext(lint);
 	try {
 		lintDuplicateInitializerInStatements(statements, context);
 	} finally {

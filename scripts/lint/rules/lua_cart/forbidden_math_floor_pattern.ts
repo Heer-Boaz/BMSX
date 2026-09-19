@@ -1,15 +1,15 @@
 import { LuaSyntaxKind as SyntaxKind, type LuaExpression as Expression } from '../../../../toolchain/ts/lua/syntax/ast';
-import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
+import type { CartLintContext, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 
 export const forbiddenMathFloorPatternRule = defineLintRule('cart', 'forbidden_math_floor_pattern');
 
-export function lintForbiddenMathFloorPattern(expression: Expression, issues: CartLintIssue[], pushIssue: CartLintIssuePusher): void {
+export function lintForbiddenMathFloorPattern(expression: Expression, lint: CartLintContext, pushIssue: CartLintIssuePusher): void {
 	if (luaExpressionReferenceName(expression) !== 'math.floor') {
 		return;
 	}
 	pushIssue(
-		issues,
+		lint,
 		forbiddenMathFloorPatternRule.name,
 		expression,
 		'math.floor is forbidden. Use // instead of floor-based rounding or truncation.',

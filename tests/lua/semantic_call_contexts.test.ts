@@ -321,8 +321,8 @@ return seen.left == 'walk', seen.right == 'run'`;
 	const incoming = heads.map(head => ancestry.applications.filter(edge => edge.target === head.caller));
 	assert.deepEqual(incoming.map(edges => edges.length), [1, 1]);
 	const argumentsByCaller = incoming.map(([edge]) => edge.call.site.expression.arguments);
-	assert.deepEqual(argumentsByCaller.map(args => args[0].range.start.line), [4, 5]);
-	assert.deepEqual(argumentsByCaller.map(args => args[1].range.start.line), [4, 5]);
+	assert.deepEqual(argumentsByCaller.map(args => file.chunk.locations.range(args[0].span).start.line), [4, 5]);
+	assert.deepEqual(argumentsByCaller.map(args => file.chunk.locations.range(args[1].span).start.line), [4, 5]);
 	assert.equal(ancestry.calls.filter(call => call.caller.kind === 'module').length, 2);
 	assert.equal(sources.ancestry(wrap.calls[0]), ancestry);
 	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, file.file, optimization), [true, true]);
@@ -347,7 +347,7 @@ relay()`);
 	assert.equal(callers[0].call.site, callers[1].call.site);
 	assert.notEqual(callers[0].call.caller, callers[1].call.caller);
 	const roots = ancestry.calls.filter(call => call.caller.kind === 'module');
-	assert.deepEqual(roots.map(call => call.site.expression.range.start.line).sort(), [5, 6]);
+	assert.deepEqual(roots.map(call => file.chunk.locations.range(call.site.expression.span).start.line).sort(), [5, 6]);
 });
 
 test('recursive source ancestry remains a finite graph with a real back edge', () => {
@@ -372,7 +372,7 @@ local function unused()
  relay({})
 end`);
 	const sources = new LuaSourceCallQuery(summaries, instantiation, graph);
-	const relay = file.functionValueFlows.find(flow => flow.calls.some(call => call.expression.range.start.line === 3))!;
+	const relay = file.functionValueFlows.find(flow => flow.calls.some(call => file.chunk.locations.range(call.expression.span).start.line === 3))!;
 	const ancestry = sources.ancestry(relay.calls[0]);
 	assert.ok(ancestry.applications.some(edge => edge.target.kind === 'invocation'));
 	assert.ok(ancestry.calls.some(call => call.caller.kind === 'projection'));
@@ -394,7 +394,7 @@ local right_value = right()
 return left_value == 7, right_value == 8`;
 	const { file, summaries, instantiation, graph } = callQueries(source);
 	const sources = new LuaSourceCallQuery(summaries, instantiation, graph);
-	const closure = file.functionValueFlows.find(flow => flow.calls.some(call => call.expression.range.start.line === 3))!;
+	const closure = file.functionValueFlows.find(flow => flow.calls.some(call => file.chunk.locations.range(call.expression.span).start.line === 3))!;
 	const ancestry = sources.ancestry(closure.calls[0]);
 	const heads = ancestry.heads.filter(head => head.caller.kind === 'invocation');
 	assert.equal(heads.length, 2);
@@ -404,10 +404,10 @@ return left_value == 7, right_value == 8`;
 		assert.equal(lexicalOwner.kind, 'invocation');
 		const creation = ancestry.applications.filter(edge => edge.target === lexicalOwner);
 		assert.equal(creation.length, 1);
-		assert.ok([5, 6].includes(creation[0].call.site.expression.range.start.line));
+		assert.ok([5, 6].includes(file.chunk.locations.range(creation[0].call.site.expression.span).start.line));
 		const invocation = ancestry.applications.filter(edge => edge.target === head.caller);
 		assert.equal(invocation.length, 1);
-		assert.ok([7, 8].includes(invocation[0].call.site.expression.range.start.line));
+		assert.ok([7, 8].includes(file.chunk.locations.range(invocation[0].call.site.expression.span).start.line));
 	}
 	const [left, right] = heads;
 	assert.ok(left.caller.kind === 'invocation' && right.caller.kind === 'invocation');
@@ -475,16 +475,16 @@ right()`, [library]);
 	const heads = ancestry.heads.filter(head => head.caller.kind === 'invocation');
 	assert.equal(heads.length, 2);
 	for (const head of heads) {
-		assert.equal(head.site.expression.range.path, library.file);
+		assert.equal(head.site.file, library.file);
 		assert.ok(head.caller.kind === 'invocation');
 		const creator = head.caller.lexicalOwner;
 		assert.equal(creator.kind, 'invocation');
 		const creation = ancestry.applications.filter(edge => edge.target === creator);
 		assert.equal(creation.length, 1);
-		assert.equal(creation[0].call.site.expression.range.path, file.file);
+		assert.equal(creation[0].call.site.file, file.file);
 		const invocation = ancestry.applications.filter(edge => edge.target === head.caller);
 		assert.equal(invocation.length, 1);
-		assert.equal(invocation[0].call.site.expression.range.path, file.file);
+		assert.equal(invocation[0].call.site.file, file.file);
 	}
 });
 
@@ -608,11 +608,11 @@ test('an imported factory application keeps the provider body and consumer call 
 	const sources = new LuaSourceCallQuery(summaries, instantiation, graph);
 	const ancestry = sources.ancestry(file.callValues[1]);
 	assert.equal(ancestry.applications.length, 1);
-	assert.equal(ancestry.heads[0].site.expression.range.path, file.file);
+	assert.equal(ancestry.heads[0].site.file, file.file);
 	const target = ancestry.applications[0].target;
 	assert.ok(target.kind === 'invocation');
 	assert.equal(target.body, library.functionValueFlows[0]);
-	assert.equal(target.body.returns[0].statement.range.path, library.file);
+	assert.equal(library.chunk.locations.range(target.body.returns[0].statement.span).path, library.file);
 });
 
 test('incoming application index retains negative dependencies and updates after its first read', () => {
@@ -691,7 +691,7 @@ absent()`);
 	assert.notEqual(after, before);
 	assert.ok(after.heads.includes(retainedHead));
 	assert.equal(after.applications.filter(edge => edge.target === retainedHead.caller).length, 3);
-	assert.deepEqual(after.calls.filter(call => call.caller.kind === 'module').map(call => call.site.expression.range.start.line).sort(), [4, 5]);
+	assert.deepEqual(after.calls.filter(call => call.caller.kind === 'module').map(call => file.chunk.locations.range(call.site.expression.span).start.line).sort(), [4, 5]);
 	assert.equal(before.applications.filter(edge => edge.target === retainedHead.caller).length, 2, 'published source graphs are not mutated');
 	assert.equal(sources.ancestry(headSite), after);
 });

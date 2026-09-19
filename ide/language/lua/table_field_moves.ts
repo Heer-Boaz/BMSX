@@ -1,3 +1,4 @@
+import type { LuaSourceLocations } from '../../../toolchain/ts/lua/syntax/source_locations';
 import type { LuaTableConstructorExpression } from '../../../toolchain/ts/lua/syntax/ast';
 import { LuaLexer } from '../../../toolchain/ts/lua/syntax/lexer';
 import { getLuaTableFieldTriviaSpan } from '../../../toolchain/ts/lua/syntax/table_fields';
@@ -13,21 +14,21 @@ import type { TextBuffer } from '../../editor/text/text_buffer';
  */
 export function createLuaTableFieldMoveEdits(
 	buffer: TextBuffer,
-	path: string,
+	locations: LuaSourceLocations,
 	table: LuaTableConstructorExpression,
 	index: number,
 	destination: number,
 ): EditorTextEdit[] {
-	const tokens = new LuaLexer(getTextSnapshot(buffer), path, false).scanTokens();
-	const selected = getLuaTableFieldTriviaSpan(tokens, table.fields[index]);
-	const sibling = getLuaTableFieldTriviaSpan(tokens, table.fields[destination]);
+	const tokens = new LuaLexer(getTextSnapshot(buffer), locations.path, false).scanTokens();
+	const selected = getLuaTableFieldTriviaSpan(locations, tokens, table.fields[index]);
+	const sibling = getLuaTableFieldTriviaSpan(locations, tokens, table.fields[destination]);
 	const selectedStart = buffer.offsetAt(selected.startToken.line - 1, selected.startToken.column - 1);
 	const selectedEnd = buffer.offsetAt(selected.endToken.line - 1, selected.endToken.column - 1);
 	if (destination > index) {
 		const end = buffer.offsetAt(sibling.endToken.line - 1, sibling.endToken.column - 1);
 		let text: string;
 		if (sibling.separator === null) {
-			const fieldEnd = table.fields[destination].range.end;
+			const fieldEnd = locations.range(table.fields[destination].span).end;
 			const separatorOffset = buffer.offsetAt(fieldEnd.line - 1, fieldEnd.column);
 			text = buffer.getTextRange(selectedEnd, separatorOffset) + ',' + buffer.getTextRange(separatorOffset, end);
 		} else text = buffer.getTextRange(selectedEnd, end);
@@ -40,7 +41,7 @@ export function createLuaTableFieldMoveEdits(
 	let text = buffer.getTextRange(start, selectedStart);
 	const edits: EditorTextEdit[] = [{ offset: start, deleteLength: selectedStart - start, text: '' }];
 	if (selected.separator === null) {
-		const fieldEnd = table.fields[index].range.end;
+		const fieldEnd = locations.range(table.fields[index].span).end;
 		const separatorOffset = buffer.offsetAt(fieldEnd.line - 1, fieldEnd.column);
 		// Punctuation precedes trailing comments. Merge co-located insertions.
 		if (separatorOffset === selectedEnd) text = ',' + text;

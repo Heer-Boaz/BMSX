@@ -5,7 +5,7 @@ import { pushTokenLintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { pushLintIssue, type LintIssue } from '../ts/support/ast';
 import { type LuaFunctionExpression as CartFunctionExpression } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { collectOptionsParameterUseInStatements } from '../lua_cart/impl/support/functions';
 import { OptionsParameterUse } from '../lua_cart/impl/support/types';
 import { pushIssue } from '../lua_cart/impl/support/lint_context';
@@ -86,7 +86,7 @@ export function lintSinglePropertyOptionsTypes(file: string, tokens: readonly To
 	}
 }
 
-export function lintSinglePropertyOptionsParameter(functionExpression: CartFunctionExpression, issues: CartLintIssue[]): void {
+export function lintSinglePropertyOptionsParameter(functionExpression: CartFunctionExpression, lint: CartLintContext): void {
 	for (const parameter of functionExpression.parameters) {
 		if (!isOptionsParameterName(parameter.name)) {
 			continue;
@@ -101,7 +101,7 @@ export function lintSinglePropertyOptionsParameter(functionExpression: CartFunct
 			continue;
 		}
 		pushIssue(
-			issues,
+			lint,
 			singlePropertyOptionsParameterPatternRule.name,
 			parameter,
 			`Single-property options parameter "${parameter.name}" is forbidden. Use a direct parameter or split the operation instead of implying future extensibility.`,

@@ -69,7 +69,7 @@ export class SceneEditorController {
 		const row = this.editableMember();
 		if (row === undefined) return;
 		this.panes.activePane.focus();
-		input.workingCopy.pushEditOperations(createLuaTableFieldRemovalEdits(input.workingCopy.buffer, input.parsed.tokens, row.entry.field));
+		input.workingCopy.pushEditOperations(createLuaTableFieldRemovalEdits(input.workingCopy.buffer, input.parsed.locations, input.parsed.tokens, row.entry.field));
 		// Do not let a surviving namesake inherit the removed member's selection.
 		selectSceneOutlineRow(input, -1);
 	}
@@ -97,7 +97,7 @@ export class SceneEditorController {
 		const row = this.editableMember()!;
 		this.panes.activePane.focus();
 		input.workingCopy.pushEditOperations(createLuaTableFieldMoveEdits(
-			input.workingCopy.buffer, input.workingCopy.resource.path, row.scene.objectsTable, row.index, row.index + direction,
+			input.workingCopy.buffer, input.document.analysis.chunk.locations, row.scene.objectsTable, row.index, row.index + direction,
 		));
 		this.refresh(input);
 		revealWorkbenchListSelection(input.outline);
@@ -114,7 +114,6 @@ export class SceneEditorController {
 		if (document === input.document) return;
 		input.parsed = document.analysis.chunk;
 		installSceneOutline(input, document);
-		input.document = document;
 		input.version += 1;
 	}
 }

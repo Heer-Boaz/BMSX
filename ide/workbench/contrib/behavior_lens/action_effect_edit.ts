@@ -39,7 +39,7 @@ export class ActionEffectPropertyEdit {
 			options: { allowSpace: true, singleLine: true },
 			invalidBlurMessage: 'Invalid expression edit cancelled; source unchanged.',
 			format: value => value.edit.text,
-			parse: text => parseLuaFieldValueEdit(this.binding!.model.buffer, this.binding!.write.field, text),
+			parse: text => parseLuaFieldValueEdit(this.binding!.model.buffer, this.binding!.write.file.chunk.locations, this.binding!.write.field, text),
 		}, value => {
 			const { input, model } = this.binding!;
 			const selectedRange = this.binding!.write.sourceSelection === 'field' ? value.fieldRange : value.expressionRange;
@@ -69,12 +69,13 @@ export class ActionEffectPropertyEdit {
 		this.close();
 		const tree = properties.tree;
 		const field = write.field;
-		const model = input.view.source.models.get(field.range.path)!;
+		const locations = write.file.chunk.locations;
+		const model = input.view.source.models.get(write.file.file)!;
 		revealWorkbenchListSelection(tree);
 		this.binding = { input, model, properties, write, row: tree.rows[tree.selectionIndex], index: tree.selectionIndex };
-		const span = luaSourceRangeToTextRange(model.buffer, field.value.range);
+		const span = luaSourceRangeToTextRange(model.buffer, locations.range(field.value.span));
 		this.control.setValue({ edit: { offset: span.start, deleteLength: span.end - span.start,
-			text: readLuaSourceRange(model.buffer, field.value.range) }, fieldRange: field.range, expressionRange: field.value.range });
+			text: readLuaSourceRange(model.buffer, locations.range(field.value.span)) }, fieldRange: locations.range(field.span), expressionRange: locations.range(field.value.span) });
 		this.lifetime = new DisposableStore();
 		this.lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.close()) });
 		this.control.field.focusTarget.focus();

@@ -1,13 +1,13 @@
 import { defineLintRule } from '../../rule';
 import { type LuaCallExpression as CallExpression } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { getCallMethodName } from '../../../../toolchain/ts/lua/syntax/calls';
 import { isGetSpaceCallExpression } from './impl/support/calls';
 import { pushIssue } from './impl/support/lint_context';
 
 export const setSpaceRoundtripPatternRule = defineLintRule('cart', 'set_space_roundtrip_pattern');
 
-export function lintSetSpaceRoundtripPattern(expression: CallExpression, issues: CartLintIssue[]): void {
+export function lintSetSpaceRoundtripPattern(expression: CallExpression, lint: CartLintContext): void {
 	if (getCallMethodName(expression) !== 'set_space' || expression.arguments.length !== 1) {
 		return;
 	}
@@ -15,7 +15,7 @@ export function lintSetSpaceRoundtripPattern(expression: CallExpression, issues:
 		return;
 	}
 	pushIssue(
-		issues,
+		lint,
 		setSpaceRoundtripPatternRule.name,
 		expression,
 		'set_space(get_space()) is forbidden. Set the target space directly instead of re-reading and re-applying the same space.',

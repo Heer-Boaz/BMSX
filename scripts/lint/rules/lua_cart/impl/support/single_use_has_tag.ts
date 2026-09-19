@@ -1,13 +1,13 @@
 import { type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaIdentifierExpression as IdentifierExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../../../lua_rule';
+import { type CartLintContext } from '../../../../lua_rule';
 import { leaveSingleUseHasTagScope } from '../../single_use_has_tag_pattern';
 import { declareBinding, enterBindingScope } from './bindings';
 import { isSelfHasTagCall } from './tags';
 import { SingleUseHasTagBinding, SingleUseHasTagContext } from './types';
 
-export function createSingleUseHasTagContext(issues: CartLintIssue[]): SingleUseHasTagContext {
+export function createSingleUseHasTagContext(lint: CartLintContext): SingleUseHasTagContext {
 	return {
-		issues,
+		lint,
 		bindingStacksByName: new Map<string, SingleUseHasTagBinding[]>(),
 		scopeStack: [],
 	};
@@ -199,8 +199,8 @@ export function lintSingleUseHasTagInStatements(statements: ReadonlyArray<Statem
 	}
 }
 
-export function lintSingleUseHasTagPattern(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
-	const context = createSingleUseHasTagContext(issues);
+export function lintSingleUseHasTagPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
+	const context = createSingleUseHasTagContext(lint);
 	enterSingleUseHasTagScope(context);
 	try {
 		lintSingleUseHasTagInStatements(statements, context);

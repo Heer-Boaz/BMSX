@@ -44,20 +44,20 @@ export type StateMachineSourceSelection = StateMachineSourceReference & StateMac
 /** Only the selected evidence is tracked, not every possible edge in the document. */
 export function selectStateMachineSource(reference: StateMachineSourceReference, models: LuaSourceModels): StateMachineSourceSelection {
 	if (reference.kind === 'state-entry') return { ...reference,
-		tracked: { ...luaSourceStartToTextLocation(models, reference.field.range), entryKind: reference.entry.kind } };
+		tracked: { ...luaSourceStartToTextLocation(models, reference.entry.file.chunk.locations.range(reference.field.span)), entryKind: reference.entry.kind } };
 	const proof = reference.outcome.proof;
 	const slotKind = reference.transition.slot.kind;
 	const tracked: TrackedTransitionProof = proof.kind === 'direct'
-		? { kind: 'direct', slotKind, bindingKind: proof.expression.kind, binding: luaSourceRangeToTextLocation(models, proof.expression.range) }
-		: { kind: 'return', slotKind, bindingKind: proof.binding.kind, binding: luaSourceRangeToTextLocation(models, proof.binding.range),
-			callback: luaSourceRangeToTextLocation(models, proof.callback.range), statementStart: luaSourceStartToTextLocation(models, proof.statement.range) };
+		? { kind: 'direct', slotKind, bindingKind: proof.expression.kind, binding: luaSourceRangeToTextLocation(models, proof.file.chunk.locations.range(proof.expression.span)) }
+		: { kind: 'return', slotKind, bindingKind: proof.binding.kind, binding: luaSourceRangeToTextLocation(models, proof.file.chunk.locations.range(proof.binding.span)),
+			callback: luaSourceRangeToTextLocation(models, proof.callbackFile.chunk.locations.range(proof.callback.span)), statementStart: luaSourceStartToTextLocation(models, proof.callbackFile.chunk.locations.range(proof.statement.span)) };
 	return { ...reference, tracked };
 }
 
 export function stateMachineSourceRange(reference: StateMachineSourceReference): LuaSourceRange {
-	if (reference.kind === 'state-entry') return reference.field.range;
+	if (reference.kind === 'state-entry') return reference.entry.file.chunk.locations.range(reference.field.span);
 	const proof = reference.outcome.proof;
-	return proof.kind === 'direct' ? proof.expression.range : proof.statement.range;
+	return proof.kind === 'direct' ? proof.file.chunk.locations.range(proof.expression.span) : proof.callbackFile.chunk.locations.range(proof.statement.span);
 }
 
 /** Copy coordinates only, never the live reference's transition, outcome or entry. */
@@ -103,7 +103,7 @@ export function reconcileStateMachineSourceSelection(
 	if (selection.kind === 'state-entry') {
 		for (const reference of references) {
 			if (reference.kind === 'state-entry' && reference.entry.kind === selection.tracked.entryKind
-				&& luaSourceStartMatchesTextLocation(models, reference.field.range, selection.tracked)) {
+				&& luaSourceStartMatchesTextLocation(models, reference.entry.file.chunk.locations.range(reference.field.span), selection.tracked)) {
 				return { ...reference, tracked: selection.tracked };
 			}
 		}
@@ -114,10 +114,10 @@ export function reconcileStateMachineSourceSelection(
 		if (reference.kind !== 'state-outcome' || reference.transition.slot.kind !== tracked.slotKind) continue;
 		const proof = reference.outcome.proof;
 		const binding = proof.kind === 'direct' ? proof.expression : proof.binding;
-		if (binding.kind !== tracked.bindingKind || !luaSourceRangeMatchesTextLocation(models, binding.range, tracked.binding)) continue;
+		if (binding.kind !== tracked.bindingKind || !luaSourceRangeMatchesTextLocation(models, proof.file.chunk.locations.range(binding.span), tracked.binding)) continue;
 		if (proof.kind === 'return') {
-			if (tracked.kind !== 'return' || !luaSourceRangeMatchesTextLocation(models, proof.callback.range, tracked.callback)
-				|| !luaSourceStartMatchesTextLocation(models, proof.statement.range, tracked.statementStart)) continue;
+			if (tracked.kind !== 'return' || !luaSourceRangeMatchesTextLocation(models, proof.callbackFile.chunk.locations.range(proof.callback.span), tracked.callback)
+				|| !luaSourceStartMatchesTextLocation(models, proof.callbackFile.chunk.locations.range(proof.statement.span), tracked.statementStart)) continue;
 		} else if (tracked.kind !== 'direct') continue;
 		return { ...reference, tracked };
 	}

@@ -45,7 +45,7 @@ export function lintForeignObjectMutationInStatements(
 						continue;
 					}
 					pushIssue(
-						context.issues,
+						context.lint,
 						foreignObjectInternalMutationPatternRule.name,
 						left,
 						`Direct top-level mutation on service alias ${targetInfo.rootName}.${propertyName} is forbidden. Keep ownership in the target service implementation and call domain methods/events; do not add getter/setter wrappers as a workaround.`,

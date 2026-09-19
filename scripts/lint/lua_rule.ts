@@ -1,4 +1,5 @@
 import { type LintRuleName } from './rule';
+import type { LuaSourceLocations, LuaSyntaxSpan } from '../../toolchain/ts/lua/syntax/source_locations';
 
 export type CartLintIssue = {
 	readonly rule: LintRuleName;
@@ -9,18 +10,17 @@ export type CartLintIssue = {
 };
 
 export type CartLintNode = {
-	readonly range: {
-		readonly path: string;
-		readonly start: {
-			readonly line: number;
-			readonly column: number;
-		};
-	};
+	readonly span: LuaSyntaxSpan;
+};
+
+export type CartLintContext = {
+	readonly locations: LuaSourceLocations;
+	readonly issues: CartLintIssue[];
 };
 
 export type CartLintReporter = (rule: LintRuleName, node: CartLintNode, message: string) => void;
 
-export type CartLintIssuePusher = (issues: CartLintIssue[], rule: LintRuleName, node: CartLintNode, message: string) => void;
+export type CartLintIssuePusher = (context: CartLintContext, rule: LintRuleName, node: CartLintNode, message: string) => void;
 
 export type CartLintLocationPusher = (
 	issues: CartLintIssue[],

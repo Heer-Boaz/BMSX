@@ -33,8 +33,8 @@ export function transferBehaviorFixtureSelection(
 	const moving = captureBehaviorSourceBookmark(view, { kind: selection.kind, rowKey: entry.node.rowKey });
 	const destination = captureBehaviorSourceBookmark(view, { kind: selection.kind, rowKey: target.source.rowKey });
 	const suffix = before.path.slice(moving.path.length - 1).map(step => ({ ...step }));
-	const original = luaSourceRangeToTextRange(model.buffer, entry.field.range);
-	const transfer = createLuaTableFieldTransfer(model.buffer, model.resource.path, entry.field, target.source.table,
+	const original = luaSourceRangeToTextRange(model.buffer, entry.file.chunk.locations.range(entry.field.span));
+	const transfer = createLuaTableFieldTransfer(model.buffer, entry.file.chunk.locations, entry.field, target.source.table,
 		target.source.table.fields.length);
 	model.pushEditOperations(transfer.edits, behaviorSourceEditState.of(before), changes => {
 		mapBehaviorSourceBookmark(destination, model.resource, changes);

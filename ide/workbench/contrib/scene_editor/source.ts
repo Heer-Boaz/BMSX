@@ -50,13 +50,13 @@ export function buildSceneSourceDocument(
 			continue;
 		}
 		const prior = previous?.scenes[scenes.length];
-		if (unchanged && prior?.range === definition.range) {
+		if (unchanged && prior?.range === analysis.chunk.locations.range(definition.span)) {
 			scenes.push(prior);
 		} else {
 			unchanged = false;
 			const objects = collectSceneObjects(objectsField.value);
 			scenes.push({
-				range: definition.range,
+				range: analysis.chunk.locations.range(definition.span),
 				id,
 				objectsTable: objectsField.value,
 				objects: objects.entries,

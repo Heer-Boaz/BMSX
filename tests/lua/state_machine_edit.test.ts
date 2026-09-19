@@ -42,7 +42,7 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE, definitionIndex =
 		assert.equal(view.selectionBookmark, undefined);
 		return selected;
 	};
-	const model = view.source.models.get(target.literal.range.path)!;
+	const model = view.source.models.get(target.file.chunk.locations.range(target.literal.span).path)!;
 	return { ...f, anchor: f.model, model, selection, target, refresh, checkSelection,
 		edit: () => retargetStateMachineTransition(model, view, selection, target) };
 }
@@ -61,7 +61,7 @@ test('imported transition edits and source bookmarks belong to the literal, not 
 		const untouched = slot === 'update' ? provider : callback;
 		const otherSource = untouched.buffer.getText();
 		f.anchor.refreshResource({ ...f.anchor.resource, source: { ...f.anchor.resource.source, generated: true } });
-		const edit = createLuaStringValueEdit(f.model.buffer, f.target.literal, f.target.text);
+		const edit = createLuaStringValueEdit(f.model.buffer, f.target.file.chunk.locations, f.target.literal, f.target.text);
 		f.edit(); f.refresh(); f.checkSelection('../other');
 		assert.equal(f.model.buffer.getText(), original.slice(0, edit.offset) + edit.text + original.slice(edit.offset + edit.deleteLength));
 		assert.equal(untouched.buffer.getText(), otherSource);
@@ -88,7 +88,7 @@ test('retarget history restores exact direct, wrapped and callback evidence in e
 	for (const [definition, branch] of [[0, 'left'], [0, 'right'], [1, 'left']] as const) {
 		for (const [slot, outcome] of [['direct', 0], ['wrapped', 0], ['update', 0], ['update', 1]] as const) {
 			const f = fixture(t, FSM_RETARGET_SOURCE, definition, branch, slot, outcome);
-			const edit = createLuaStringValueEdit(f.model.buffer, f.target.literal, f.target.text);
+			const edit = createLuaStringValueEdit(f.model.buffer, f.target.file.chunk.locations, f.target.literal, f.target.text);
 			f.edit();
 			const expected = FSM_RETARGET_SOURCE.slice(0, edit.offset) + edit.text + FSM_RETARGET_SOURCE.slice(edit.offset + edit.deleteLength);
 			assert.equal(f.model.buffer.getText(), expected, 'all exterior bytes, comments, wrappers and extra returns survive');
@@ -159,7 +159,7 @@ test('ordinary replacement of binding, return, callback or parent still deletes 
 		assert.ok(selected.kind === 'state-outcome');
 		const proof = selected.outcome.proof;
 		const range = part === 'parent' ? selected.transition.slot.source.occurrenceRange
-			: proof.kind === 'direct' ? proof.expression.range : part === 'callback' ? proof.callback.range : proof.statement.range;
+			: proof.kind === 'direct' ? proof.file.chunk.locations.range(proof.expression.span) : part === 'callback' ? proof.callbackFile.chunk.locations.range(proof.callback.span) : proof.callbackFile.chunk.locations.range(proof.statement.span);
 		const span = luaSourceRangeToTextRange(f.model.buffer, range);
 		const text = readLuaSourceRange(f.model.buffer, range);
 		f.model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text }]);
@@ -172,7 +172,7 @@ test('ordinary replacement of binding, return, callback or parent still deletes 
 
 test('unannotated literal replacement never gains the explicit retarget selection policy', t => {
 	const f = fixture(t);
-	f.model.pushEditOperations([createLuaStringValueEdit(f.model.buffer, f.target.literal, f.target.text)]);
+	f.model.pushEditOperations([createLuaStringValueEdit(f.model.buffer, f.target.file.chunk.locations, f.target.literal, f.target.text)]);
 	f.refresh(); assert.equal(f.view.selection, null);
 	f.model.undo(); f.refresh(); assert.equal(f.view.selection, null);
 });

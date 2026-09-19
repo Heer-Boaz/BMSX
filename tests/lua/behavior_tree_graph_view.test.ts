@@ -166,8 +166,8 @@ trees.register('choices', { root = { type = 'weighted_random_selector', choices 
 	const b = model.edgesBySource.get(second.node.rowKey)!;
 	assert.equal(a.source, first.node);
 	assert.equal(b.source, second.node);
-	assert.equal(a.range, first.field.value.range);
-	assert.equal(b.range, second.field.value.range);
+	assert.equal(a.range, first.file.chunk.locations.range(first.field.value.span));
+	assert.equal(b.range, second.file.chunk.locations.range(second.field.value.span));
 	assert.deepEqual(a.range, a.source.occurrenceRange);
 	assert.deepEqual(b.range, b.source.occurrenceRange);
 	assert.equal(readLuaSourceRange(f.model.buffer, a.range), 'choice');

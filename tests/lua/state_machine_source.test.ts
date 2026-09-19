@@ -11,7 +11,7 @@ import type { StateMachineSourceDefinition, StateMachineSourceState } from '../.
 import { bindStateMachineSourcePath, indexStateMachineScopes } from '../../ide/workbench/contrib/behavior_lens/state_machine_scope';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 import { parseFsmStatePath } from '../../toolchain/ts/cartlib/fsm/state_path';
-import type { LuaStringLiteralExpression } from '../../toolchain/ts/lua/syntax/ast';
+import type { LuaSyntaxSpan } from '../../toolchain/ts/lua/syntax/source_locations';
 import { FSM_BEHAVIOR_SOURCE, FSM_PATH_CASES, FSM_SCOPE_SOURCE } from '../helpers/fsm_source_fixture';
 
 function fixture(source = FSM_BEHAVIOR_SOURCE) {
@@ -22,7 +22,7 @@ function fixture(source = FSM_BEHAVIOR_SOURCE) {
 	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(analysis));
 	const definition = document.definitions[0];
 	assert.ok(definition.behaviorKind === 'state_machine');
-	return { model, analysis, document, definition, read: (node: { range: LuaStringLiteralExpression['range'] }) => readLuaSourceRange(model.buffer, node.range) };
+	return { model, analysis, document, definition, read: (node: { span: LuaSyntaxSpan }) => readLuaSourceRange(model.buffer, analysis.chunk.locations.range(node.span)) };
 }
 
 function stateAt(root: StateMachineSourceDefinition | StateMachineSourceState, ...keys: string[]): StateMachineSourceDefinition | StateMachineSourceState {
@@ -90,7 +90,7 @@ test('FSM containment, guards and transitions refer to the same authored occurre
 	assert.equal(f.read(proof.statement), "return next_path, '/ignored-second-result'");
 	assert.ok(f.read(proof.callback).startsWith('function(owner)'));
 	const timeline = root.transitions.find(transition => transition.origin.rowKey === idle.rowKey && transition.slot.kind === 'timeline-finished')!;
-	assert.ok(f.read({ range: timeline.slot.source.occurrenceRange }).startsWith('[clips.intro] = {'),
+	assert.ok(readLuaSourceRange(f.model.buffer, timeline.slot.source.occurrenceRange).startsWith('[clips.intro] = {'),
 		'the timeline declaration owns its source range, including the computed key');
 	assert.ok(timeline.outcomes[0].proof.kind === 'return');
 	assert.equal(f.read(timeline.outcomes[0].proof.binding), 'step');

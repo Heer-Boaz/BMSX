@@ -1,6 +1,6 @@
 import { type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { resolveModuleAliasInitializer } from '../../../../../../toolchain/ts/lua/semantic/module_bindings';
-import { type CartLintIssue } from '../../../../lua_rule';
+import { type CartLintContext } from '../../../../lua_rule';
 import { declareShadowedRequireAliasBinding } from '../../shadowed_require_alias_pattern';
 import { discardBindingScope, enterBindingScope, lintScopedBindingStatements, resolveBinding } from './bindings';
 import { isConstantModulePath } from './object_ownership';
@@ -35,10 +35,10 @@ export function isConstantModuleRequireExpression(expression: Expression): boole
 	return requiredModulePath !== undefined && isConstantModulePath(requiredModulePath);
 }
 
-export function createShadowedRequireAliasContext(issues: CartLintIssue[]): ShadowedRequireAliasContext {
+export function createShadowedRequireAliasContext(lint: CartLintContext): ShadowedRequireAliasContext {
 	const bindingStacksByName = new Map<string, ShadowedRequireAliasBinding[]>();
 	return {
-		issues,
+		lint,
 		bindingStacksByName,
 		scopeStack: [],
 		moduleCalls: new WeakMap(),
@@ -243,8 +243,8 @@ function lintShadowedRequireAliasFunctionExpression(functionExpression: CartFunc
 	context.requireIsBuiltin = requireIsBuiltin;
 }
 
-export function analyzeRequireAliases(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): CartModuleCallMap {
-	const context = createShadowedRequireAliasContext(issues);
+export function analyzeRequireAliases(statements: ReadonlyArray<Statement>, lint: CartLintContext): CartModuleCallMap {
+	const context = createShadowedRequireAliasContext(lint);
 	enterBindingScope(context);
 	lintShadowedRequireAliasStatements(statements, context);
 	discardBindingScope(context);

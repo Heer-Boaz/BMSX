@@ -1,3 +1,5 @@
+import { LuaSourceLocations, type LuaSyntaxSpan } from './source_locations';
+import { createLuaSourceUnit, type LuaSourceUnitPlacement } from './source_layout';
 import { LuaSyntaxError } from '../errors';
 import type { LuaToken } from './token';
 import { LuaTokenType } from './token';
@@ -46,9 +48,8 @@ import type {
 	LuaNumericLiteralExpression,
 	LuaRepeatStatement,
 	LuaReturnStatement,
-	LuaSourcePosition,
-	LuaSourceRange,
 	LuaStatement,
+	LuaSkippedSyntax,
 	LuaStringLiteralExpression,
 	LuaStructDeclarationStatement,
 	LuaStructFieldDeclaration,
@@ -67,9 +68,14 @@ import type {
 
 type ParsedArguments = {
 	readonly arguments: ReadonlyArray<LuaExpression>;
-	readonly end: LuaSourcePosition;
+	readonly end: number;
 	readonly argumentList: LuaCallArgumentList | null;
 };
+
+/** Unformatted parser failure; recovery retains its syntax occurrence until publication. */
+class LuaParserSpanError extends Error {
+	public constructor(public readonly span: LuaSyntaxSpan, message: string) { super(message); }
+}
 
 type LuaBinaryOperatorSpec = readonly [LuaTokenType, LuaBinaryOperator];
 type LuaOperandParser = (this: LuaParser) => LuaExpression;
@@ -101,6 +107,7 @@ const MULTIPLICATIVE_BINARY_OPERATORS: readonly LuaBinaryOperatorSpec[] = [
 	[LuaTokenType.FloorDivide, LuaBinaryOperator.FloorDivide],
 	[LuaTokenType.Percent, LuaBinaryOperator.Modulus],
 ];
+const EMPTY_SKIPPED_SYNTAX: readonly LuaSkippedSyntax[] = [];
 const CHUNK_TERMINATORS: ReadonlySet<LuaTokenType> = new Set([LuaTokenType.Eof]);
 const END_TERMINATORS: ReadonlySet<LuaTokenType> = new Set([LuaTokenType.End]);
 const IF_CLAUSE_TERMINATORS: ReadonlySet<LuaTokenType> = new Set([
@@ -110,6 +117,7 @@ const IF_CLAUSE_TERMINATORS: ReadonlySet<LuaTokenType> = new Set([
 ]);
 const REPEAT_TERMINATORS: ReadonlySet<LuaTokenType> = new Set([LuaTokenType.Until]);
 
+/** One syntax-generation builder; publication transfers its location index. */
 export class LuaParser {
 	private readonly tokens: ReadonlyArray<LuaToken>;
 	private readonly path: string;
@@ -117,7 +125,10 @@ export class LuaParser {
 	private index: number;
 	private previousToken: LuaToken;
 	private recoverStatements = false;
-	private recoveredSyntaxError: LuaSyntaxError | null = null;
+	private recoveredSyntaxError: LuaSyntaxError | { span: LuaSyntaxSpan; message: string } | null = null;
+	private currentUnit: LuaSourceUnitPlacement = { unit: createLuaSourceUnit(), offset: 0 };
+	private readonly units: LuaSourceUnitPlacement[] = [this.currentUnit];
+	private unitOrigins: Map<LuaSourceUnitPlacement['unit'], number> | undefined = new Map([[this.currentUnit.unit, 0]]);
 
 	constructor(tokens: ReadonlyArray<LuaToken>, path: string, source: string) {
 		this.tokens = tokens;
@@ -131,24 +142,26 @@ export class LuaParser {
 		const moduleAttribute = this.parseModuleAttribute();
 		const block = this.parseBlock(CHUNK_TERMINATORS);
 		const eofToken = this.consume(LuaTokenType.Eof, 'Expected end of input.');
-		const range = this.rangeFromBlockAndToken(block, eofToken);
+		const span = this.spanFromBlockAndToken(block, eofToken);
 		return {
 			kind: LuaSyntaxKind.Chunk,
 			source: this.source,
+			locations: this.publishLocations(),
 			tokens: this.tokens,
 			syntaxError: null,
-			range,
+			span,
 			constModule: moduleAttribute === 'const',
 			entryModule: moduleAttribute === 'entry',
 			body: block.body,
+			skippedSyntax: block.skippedSyntax,
 		};
 	}
 
 	/** A complete expression fragment; no fabricated statement or coordinate prefix. */
-	public parseExpressionOnly(): LuaExpression {
+	public parseExpressionOnly(): { expression: LuaExpression; locations: LuaSourceLocations } {
 		const expression = this.parseExpression();
 		this.consume(LuaTokenType.Eof, 'Expected end of expression.');
-		return expression;
+		return { expression, locations: this.publishLocations() };
 	}
 
 	public parseChunkWithRecovery(lexicalError: LuaSyntaxError | null = null): { path: LuaChunk; syntaxError: LuaSyntaxError | null } {
@@ -156,9 +169,13 @@ export class LuaParser {
 		const moduleAttribute = this.parseModuleAttribute();
 		const block = this.parseBlock(CHUNK_TERMINATORS);
 		const eofToken = this.consume(LuaTokenType.Eof, 'Expected end of input.');
-		const end = this.positionFromToken(eofToken);
-		const range: LuaSourceRange = { path: this.path, start: block.range.start, end };
-		let syntaxError = this.recoveredSyntaxError;
+		const end = eofToken.offset;
+		const span: LuaSyntaxSpan = this.createSpan(this.spanStart(block.span), end);
+		const locations = this.publishLocations();
+		const diagnostic = this.recoveredSyntaxError;
+		let syntaxError: LuaSyntaxError | null = null;
+		if (diagnostic instanceof LuaSyntaxError) syntaxError = diagnostic;
+		else if (diagnostic !== null) syntaxError = this.errorAtSpan(diagnostic.span, diagnostic.message, locations);
 		if (lexicalError && (!syntaxError || lexicalError.line < syntaxError.line
 			|| (lexicalError.line === syntaxError.line && lexicalError.column < syntaxError.column))) {
 			syntaxError = lexicalError;
@@ -166,12 +183,16 @@ export class LuaParser {
 		const path: LuaChunk = {
 			kind: LuaSyntaxKind.Chunk,
 			source: this.source,
+			locations,
 			tokens: this.tokens,
 			syntaxError,
-			range,
+			span,
 			constModule: moduleAttribute === 'const',
 			entryModule: moduleAttribute === 'entry',
 			body: block.body,
+			skippedSyntax: lexicalError === null ? block.skippedSyntax : [...block.skippedSyntax, {
+				span: this.createSpan(eofToken.offset, this.source.length - 1), units: [],
+			}],
 		};
 		return { path, syntaxError };
 	}
@@ -199,8 +220,9 @@ export class LuaParser {
 
 	private parseBlock(terminators: ReadonlySet<LuaTokenType>): LuaBlock {
 		const startToken = this.current();
-		const startInclusive = this.blockStartPosition();
+		const startInclusive = this.blockStartOffset();
 		const statements: LuaStatement[] = [];
+		let skippedSyntax: LuaSkippedSyntax[] | undefined;
 		while (!this.isAtEnd() && !terminators.has(this.current().type)) {
 			if (this.current().type === LuaTokenType.Semicolon) {
 				this.advance();
@@ -210,28 +232,31 @@ export class LuaParser {
 				statements.push(this.parseStatement());
 				continue;
 			}
+			const skippedStart = this.current().offset;
+			const firstUnit = this.units.length;
 			try {
 				statements.push(this.parseStatement());
 			} catch (error) {
-				if (!(error instanceof LuaSyntaxError)) {
+				if (!(error instanceof LuaSyntaxError) && !(error instanceof LuaParserSpanError)) {
 					throw error;
 				}
 				this.retainSyntaxError(error);
 				this.synchronizeStatement(terminators);
+				if (skippedSyntax === undefined) skippedSyntax = [];
+				const units = new Array<LuaSourceUnitPlacement['unit']>(this.units.length - firstUnit);
+				for (let index = firstUnit; index < this.units.length; index++) units[index - firstUnit] = this.units[index].unit;
+				skippedSyntax.push({ span: this.createSpan(skippedStart, this.current().offset - 1), units });
 			}
 		}
-		const startPosition = statements.length > 0 ? statements[0].range.start : this.positionFromToken(startToken);
-		const endPosition = statements.length > 0 ? statements[statements.length - 1].range.end : startPosition;
+		const startPosition = statements.length > 0 ? this.spanStart(statements[0].span) : startToken.offset;
+		const endPosition = statements.length > 0 ? this.spanEnd(statements[statements.length - 1].span) : startPosition;
 		return {
 			kind: LuaSyntaxKind.Block,
-			startInclusive,
-			range: {
-				path: this.path,
-				start: startPosition,
-				end: endPosition,
-			},
-			endExclusive: this.positionFromToken(this.current()),
+			startInclusive: startInclusive - this.currentUnit.offset,
+			span: this.createSpan(startPosition, endPosition),
+			endExclusive: this.current().offset - this.currentUnit.offset,
 			body: statements,
+			skippedSyntax: skippedSyntax === undefined ? EMPTY_SKIPPED_SYNTAX : skippedSyntax,
 		};
 	}
 
@@ -272,6 +297,13 @@ export class LuaParser {
 	}
 
 	private parseStatement(): LuaStatement {
+		const parentUnit = this.currentUnit;
+		this.beginUnit(this.current().offset);
+		try { return this.parseStatementBody(); }
+		finally { this.currentUnit = parentUnit; }
+	}
+
+	private parseStatementBody(): LuaStatement {
 		const token = this.current();
 		if (token.type === LuaTokenType.DoubleColon) {
 			return this.parseLabelStatement();
@@ -351,11 +383,7 @@ export class LuaParser {
 			fields.push({
 				name: fieldToken.lexeme,
 				typeRef,
-				range: {
-					path: this.path,
-					start: this.positionFromToken(fieldToken),
-					end: typeRef.range.end,
-				},
+				span: this.createSpan(fieldToken.offset, this.spanEnd(typeRef.span)),
 			});
 			this.match(LuaTokenType.Comma);
 			this.match(LuaTokenType.Semicolon);
@@ -363,7 +391,7 @@ export class LuaParser {
 		const endToken = this.consume(LuaTokenType.End, 'Expected "end" after struct declaration.');
 		return {
 			kind: LuaSyntaxKind.StructDeclarationStatement,
-			range: this.rangeFromTokenAndToken(structToken, endToken),
+			span: this.spanFromTokenAndToken(structToken, endToken),
 			name,
 			fields,
 		};
@@ -378,11 +406,7 @@ export class LuaParser {
 		this.match(LuaTokenType.Semicolon);
 		return {
 			kind: LuaSyntaxKind.BssDeclarationStatement,
-			range: {
-				path: this.path,
-				start: this.positionFromToken(bssToken),
-				end: typeRef.range.end,
-			},
+			span: this.createSpan(bssToken.offset, this.spanEnd(typeRef.span)),
 			name,
 			typeRef,
 		};
@@ -399,11 +423,7 @@ export class LuaParser {
 		this.match(LuaTokenType.Semicolon);
 		return {
 			kind: LuaSyntaxKind.DataDeclarationStatement,
-			range: {
-				path: this.path,
-				start: this.positionFromToken(dataToken),
-				end: initializer.range.end,
-			},
+			span: this.createSpan(dataToken.offset, this.spanEnd(initializer.span)),
 			name,
 			typeRef,
 			initializer,
@@ -421,11 +441,7 @@ export class LuaParser {
 		this.match(LuaTokenType.Semicolon);
 		return {
 			kind: LuaSyntaxKind.RodataDeclarationStatement,
-			range: {
-				path: this.path,
-				start: this.positionFromToken(rodataToken),
-				end: initializer.range.end,
-			},
+			span: this.createSpan(rodataToken.offset, this.spanEnd(initializer.span)),
 			name,
 			typeRef,
 			initializer,
@@ -446,10 +462,10 @@ export class LuaParser {
 		const nameExpression = this.createIdentifierExpression(nameToken);
 		const attribute = this.parseLocalFunctionAttribute();
 		const functionExpression = this.parseFunctionExpression(functionToken);
-		const range = this.rangeFromTokenAndNode(localToken, functionExpression);
+		const span = this.spanFromTokenAndNode(localToken, functionExpression);
 		return {
 			kind: LuaSyntaxKind.LocalFunctionStatement,
-			range,
+			span,
 			name: nameExpression,
 			attribute,
 			functionExpression,
@@ -475,7 +491,7 @@ export class LuaParser {
 		const secondColon = this.consume(LuaTokenType.DoubleColon, 'Expected closing "::" after label name.');
 		return {
 			kind: LuaSyntaxKind.LabelStatement,
-			range: this.rangeFromTokenAndToken(firstColon, secondColon),
+			span: this.spanFromTokenAndToken(firstColon, secondColon),
 			label: nameToken.lexeme,
 		};
 	}
@@ -485,7 +501,7 @@ export class LuaParser {
 		const nameToken = this.consume(LuaTokenType.Identifier, 'Expected label name after goto.');
 		return {
 			kind: LuaSyntaxKind.GotoStatement,
-			range: this.rangeFromTokenAndToken(gotoToken, nameToken),
+			span: this.spanFromTokenAndToken(gotoToken, nameToken),
 			label: nameToken.lexeme,
 		};
 	}
@@ -496,7 +512,7 @@ export class LuaParser {
 		const token = this.advance();
 		return {
 			kind,
-			range: this.finishOptionalSemicolonStatementRange(token),
+			span: this.finishOptionalSemicolonStatementRange(token),
 		};
 	}
 
@@ -504,34 +520,30 @@ export class LuaParser {
 		const names: LuaIdentifierExpression[] = [];
 		const attributes: (LuaLocalAttribute | null)[] = [];
 		const pointerTypeRefs: (LuaTypeReference | null)[] = [];
-		let endPosition = this.endPositionFromToken(localToken);
+		let endPosition = this.tokenEndOffset(localToken);
 		do {
 			const nameToken = this.consume(LuaTokenType.Identifier, 'Expected local variable name.');
 			names.push(this.createIdentifierExpression(nameToken));
-			endPosition = this.endPositionFromToken(nameToken);
+			endPosition = this.tokenEndOffset(nameToken);
 			const attribute = this.parseLocalAttribute();
 			attributes.push(attribute);
 			if (attribute !== null) {
-				endPosition = this.endPositionFromToken(this.previous());
+				endPosition = this.tokenEndOffset(this.previous());
 			}
 			const pointerTypeRef = this.parseLocalPointerTypeReference();
 			pointerTypeRefs.push(pointerTypeRef);
 			if (pointerTypeRef !== null) {
-				endPosition = pointerTypeRef.range.end;
+				endPosition = this.spanEnd(pointerTypeRef.span);
 			}
 		} while (this.match(LuaTokenType.Comma));
 		const values: LuaExpression[] = [];
 		if (this.match(LuaTokenType.Equal)) {
 			values.push(...this.parseExpressionList());
-			endPosition = values[values.length - 1].range.end;
+			endPosition = this.spanEnd(values[values.length - 1].span);
 		}
 		return {
 			kind: LuaSyntaxKind.LocalAssignmentStatement,
-			range: {
-				path: this.path,
-				start: this.positionFromToken(localToken),
-				end: endPosition,
-			},
+			span: this.createSpan(localToken.offset, endPosition),
 			names,
 			attributes,
 			pointerTypeRefs,
@@ -572,10 +584,10 @@ export class LuaParser {
 		const functionToken = this.advance();
 		const functionName = this.parseFunctionName();
 		const functionExpression = this.parseFunctionExpression(functionToken);
-		const range = this.rangeFromTokenAndNode(functionToken, functionExpression);
+		const span = this.spanFromTokenAndNode(functionToken, functionExpression);
 		return {
 			kind: LuaSyntaxKind.FunctionDeclarationStatement,
-			range,
+			span,
 			name: functionName,
 			functionExpression,
 		};
@@ -601,6 +613,13 @@ export class LuaParser {
 	}
 
 	private parseFunctionExpression(functionToken: LuaToken): LuaFunctionExpression {
+		const parentUnit = this.currentUnit;
+		this.beginUnit(functionToken.offset);
+		try { return this.parseFunctionExpressionBody(functionToken); }
+		finally { this.currentUnit = parentUnit; }
+	}
+
+	private parseFunctionExpressionBody(functionToken: LuaToken): LuaFunctionExpression {
 		this.consume(LuaTokenType.LeftParen, 'Expected "(" after function keyword.');
 		const parameters: LuaIdentifierExpression[] = [];
 		let hasVararg = false;
@@ -623,10 +642,10 @@ export class LuaParser {
 		this.consume(LuaTokenType.RightParen, 'Expected ")" after function parameters.');
 		const body = this.parseBlock(END_TERMINATORS);
 		const endToken = this.consume(LuaTokenType.End, 'Expected "end" after function body.');
-		const range = this.rangeFromTokenAndToken(functionToken, endToken);
+		const span = this.spanFromTokenAndToken(functionToken, endToken);
 		return {
 			kind: LuaSyntaxKind.FunctionExpression,
-			range,
+			span,
 			parameters,
 			hasVararg,
 			body,
@@ -642,33 +661,25 @@ export class LuaParser {
 				expressions.push(this.parseExpression());
 			}
 		}
-		let endPosition: LuaSourcePosition = this.endPositionFromToken(returnToken);
+		let endPosition: number = this.tokenEndOffset(returnToken);
 		if (expressions.length > 0) {
-			endPosition = expressions[expressions.length - 1].range.end;
+			endPosition = this.spanEnd(expressions[expressions.length - 1].span);
 		}
 		if (this.match(LuaTokenType.Semicolon)) {
-			endPosition = this.endPositionFromToken(this.previous());
+			endPosition = this.tokenEndOffset(this.previous());
 		}
 		return {
 			kind: LuaSyntaxKind.ReturnStatement,
-			range: {
-				path: this.path,
-				start: this.positionFromToken(returnToken),
-				end: endPosition,
-			},
+			span: this.createSpan(returnToken.offset, endPosition),
 			expressions,
 		};
 	}
 
-	private finishOptionalSemicolonStatementRange(firstToken: LuaToken): LuaSourceRange {
+	private finishOptionalSemicolonStatementRange(firstToken: LuaToken): LuaSyntaxSpan {
 		if (this.match(LuaTokenType.Semicolon)) {
 			// Semicolon is optional and ignored.
 		}
-		return {
-			path: this.path,
-			start: this.positionFromToken(firstToken),
-			end: this.endPositionFromToken(this.previous()),
-		};
+		return this.createSpan(firstToken.offset, this.tokenEndOffset(this.previous()));
 	}
 
 	private parseIfStatement(): LuaIfStatement {
@@ -698,10 +709,10 @@ export class LuaParser {
 			});
 		}
 		const endToken = this.consume(LuaTokenType.End, 'Expected "end" after if statement.');
-		const range = this.rangeFromTokenAndToken(ifToken, endToken);
+		const span = this.spanFromTokenAndToken(ifToken, endToken);
 		return {
 			kind: LuaSyntaxKind.IfStatement,
-			range,
+			span,
 			clauses,
 		};
 	}
@@ -712,10 +723,10 @@ export class LuaParser {
 		this.consume(LuaTokenType.Do, 'Expected "do" after while condition.');
 		const block = this.parseBlock(END_TERMINATORS);
 		const endToken = this.consume(LuaTokenType.End, 'Expected "end" after while body.');
-		const range = this.rangeFromTokenAndToken(whileToken, endToken);
+		const span = this.spanFromTokenAndToken(whileToken, endToken);
 		return {
 			kind: LuaSyntaxKind.WhileStatement,
-			range,
+			span,
 			condition,
 			block,
 		};
@@ -726,10 +737,10 @@ export class LuaParser {
 		const block = this.parseBlock(REPEAT_TERMINATORS);
 		this.consume(LuaTokenType.Until, 'Expected "until" after repeat block.');
 		const condition = this.parseExpression();
-		const range = this.rangeFromTokenAndNode(repeatToken, condition);
+		const span = this.spanFromTokenAndNode(repeatToken, condition);
 		return {
 			kind: LuaSyntaxKind.RepeatStatement,
-			range,
+			span,
 			block,
 			condition,
 		};
@@ -752,10 +763,10 @@ export class LuaParser {
 		this.consume(LuaTokenType.Do, 'Expected "do" in for loop.');
 		const block = this.parseBlock(END_TERMINATORS);
 		const endToken = this.consume(LuaTokenType.End, 'Expected "end" after for loop.');
-		const range = this.rangeFromTokenAndToken(forToken, endToken);
+		const span = this.spanFromTokenAndToken(forToken, endToken);
 		const statement: LuaForGenericStatement = {
 			kind: LuaSyntaxKind.ForGenericStatement,
-			range,
+			span,
 			variables,
 			iterators,
 			block,
@@ -774,10 +785,10 @@ export class LuaParser {
 		this.consume(LuaTokenType.Do, 'Expected "do" in numeric for loop.');
 		const block = this.parseBlock(END_TERMINATORS);
 		const endToken = this.consume(LuaTokenType.End, 'Expected "end" after numeric for loop.');
-		const range = this.rangeFromTokenAndToken(forToken, endToken);
+		const span = this.spanFromTokenAndToken(forToken, endToken);
 		return {
 			kind: LuaSyntaxKind.ForNumericStatement,
-			range,
+			span,
 			variable,
 			start: startExpression,
 			limit: limitExpression,
@@ -790,10 +801,10 @@ export class LuaParser {
 		const doToken = this.advance();
 		const block = this.parseBlock(END_TERMINATORS);
 		const endToken = this.consume(LuaTokenType.End, 'Expected "end" after do block.');
-		const range = this.rangeFromTokenAndToken(doToken, endToken);
+		const span = this.spanFromTokenAndToken(doToken, endToken);
 		return {
 			kind: LuaSyntaxKind.DoStatement,
-			range,
+			span,
 			block,
 		};
 	}
@@ -807,15 +818,16 @@ export class LuaParser {
 			return this.createCallStatement(expression as LuaCallExpression);
 		}
 		if (this.recoverStatements && expression.kind === LuaSyntaxKind.MemberExpression) {
-			this.retainSyntaxError(this.errorAtRange(expression.range, 'Expected assignment or function call.'));
+			this.retainSpanError(expression.span, 'Expected assignment or function call.');
 			const statement: LuaErrorStatement = {
 				kind: LuaSyntaxKind.ErrorStatement,
-				range: expression.range,
+				span: expression.span,
 				expression,
 			};
 			return statement;
 		}
-		throw this.errorAtRange(expression.range, 'Expected assignment or function call.');
+		if (this.recoverStatements) throw new LuaParserSpanError(expression.span, 'Expected assignment or function call.');
+		throw this.errorAtSpan(expression.span, 'Expected assignment or function call.', this.publishLocations());
 	}
 
 	private parseAssignment(firstExpression: LuaExpression): LuaAssignmentStatement {
@@ -845,15 +857,11 @@ export class LuaParser {
 			}
 			values = [expression];
 		}
-		const startPosition = targets[0].range.start;
-		const endPosition = values.length > 0 ? values[values.length - 1].range.end : this.endPositionFromToken(this.previous());
+		const startPosition = this.spanStart(targets[0].span);
+		const endPosition = values.length > 0 ? this.spanEnd(values[values.length - 1].span) : this.tokenEndOffset(this.previous());
 		return {
 			kind: LuaSyntaxKind.AssignmentStatement,
-			range: {
-				path: this.path,
-				start: startPosition,
-				end: endPosition,
-			},
+			span: this.createSpan(startPosition, endPosition),
 			left: targets,
 			right: values,
 			operator,
@@ -867,7 +875,7 @@ export class LuaParser {
 	private createCallStatement(expression: LuaCallExpression): LuaCallStatement {
 		return {
 			kind: LuaSyntaxKind.CallStatement,
-			range: expression.range,
+			span: expression.span,
 			expression,
 		};
 	}
@@ -1025,10 +1033,10 @@ export class LuaParser {
 			if (this.match(LuaTokenType.LeftBracket)) {
 				const indexExpression = this.parseExpression();
 				const rightBracket = this.consume(LuaTokenType.RightBracket, 'Expected "]" after index expression.');
-				const range = this.rangeFromNodeAndToken(expression, rightBracket);
+				const span = this.spanFromNodeAndToken(expression, rightBracket);
 				const indexNode: LuaIndexExpression = {
 					kind: LuaSyntaxKind.IndexExpression,
-					range,
+					span,
 					base: expression,
 					index: indexExpression,
 				};
@@ -1069,16 +1077,12 @@ export class LuaParser {
 			if (!this.recoverStatements) {
 				throw this.error(this.current(), message);
 			}
-			const column = operatorToken.endColumn + 1;
-			const range: LuaSourceRange = {
-				path: this.path,
-				start: { line: operatorToken.endLine, column },
-				end: { line: operatorToken.endLine, column },
-			};
-			this.retainSyntaxError(this.errorAtRange(range, message));
+			const offset = this.tokenEndOffset(operatorToken) + 1;
+			const span = this.createSpan(offset, offset);
+			this.retainSpanError(span, message);
 			member = {
 				kind: LuaSyntaxKind.MissingIdentifier,
-				range,
+				span,
 				name: '',
 			};
 		}
@@ -1090,17 +1094,13 @@ export class LuaParser {
 			if (!this.recoverStatements) {
 				throw this.error(this.current(), 'Invalid function call arguments.');
 			}
-			this.retainSyntaxError(this.error(this.current(), 'Invalid function call arguments.'));
+			this.retainTokenError(this.current(), 'Invalid function call arguments.');
 		}
 		return {
 			kind: LuaSyntaxKind.MemberExpression,
-			range: {
-				path: this.path,
-				start: expression.range.start,
-				end: member.kind === LuaSyntaxKind.MissingIdentifier
-					? this.endPositionFromToken(operatorToken)
-					: member.range.end,
-			},
+			span: this.createSpan(this.spanStart(expression.span), member.kind === LuaSyntaxKind.MissingIdentifier
+					? this.tokenEndOffset(operatorToken)
+					: this.spanEnd(member.span)),
 			base: expression,
 			member,
 			operator,
@@ -1142,34 +1142,30 @@ export class LuaParser {
 		if (this.match(LuaTokenType.LeftParen)) {
 			const leftParen = this.previous();
 			const args: LuaExpression[] = [];
-			const separators: LuaSourcePosition[] = [];
+			const separators: number[] = [];
 			if (!this.check(LuaTokenType.RightParen)) {
 				if (!this.recoverStatements || this.startsExpression()) {
 					args.push(this.parseExpression());
 					while (this.match(LuaTokenType.Comma)) {
-						separators.push(this.positionFromToken(this.previous()));
+						separators.push(this.previous().offset - this.currentUnit.offset);
 						if (this.recoverStatements && !this.startsExpression()) {
-							this.retainSyntaxError(this.error(this.current(), 'Expected expression after ",".'));
+							this.retainTokenError(this.current(), 'Expected expression after ",".');
 							break;
 						}
 						args.push(this.parseExpression());
 					}
 				} else {
-					this.retainSyntaxError(this.error(this.current(), 'Expected expression after "(".'));
+					this.retainTokenError(this.current(), 'Expected expression after "(".');
 				}
 			}
 			if (this.match(LuaTokenType.RightParen)) {
 				const rightParen = this.previous();
-				const end = this.endPositionFromToken(rightParen);
+				const end = this.tokenEndOffset(rightParen);
 				return {
 					arguments: args,
 					end,
 					argumentList: {
-						range: {
-							path: this.path,
-							start: this.positionFromToken(leftParen),
-							end,
-						},
+						span: this.createSpan(leftParen.offset, end),
 						separators,
 					},
 				};
@@ -1177,21 +1173,17 @@ export class LuaParser {
 			if (!this.recoverStatements) {
 				this.consume(LuaTokenType.RightParen, 'Expected ")" after arguments.');
 			}
-			this.retainSyntaxError(this.error(this.current(), 'Expected ")" after arguments.'));
+			this.retainTokenError(this.current(), 'Expected ")" after arguments.');
 			const current = this.current();
 			const previous = this.previous();
 			const end = current.type === LuaTokenType.Eof
-				? this.positionFromToken(current)
-				: { line: previous.endLine, column: previous.endColumn + 1 };
+				? current.offset
+				: this.tokenEndOffset(previous) + 1;
 			return {
 				arguments: args,
 				end,
 				argumentList: {
-					range: {
-						path: this.path,
-						start: this.positionFromToken(leftParen),
-						end,
-					},
+					span: this.createSpan(leftParen.offset, end),
 					separators,
 				},
 			};
@@ -1202,7 +1194,7 @@ export class LuaParser {
 			const endToken = this.previous();
 			return {
 				arguments: [tableExpression],
-				end: this.endPositionFromToken(endToken),
+				end: this.tokenEndOffset(endToken),
 				argumentList: null,
 			};
 		}
@@ -1211,7 +1203,7 @@ export class LuaParser {
 			const stringExpression = this.createStringLiteralExpression(stringToken);
 			return {
 				arguments: [stringExpression],
-				end: this.endPositionFromToken(stringToken),
+				end: this.tokenEndOffset(stringToken),
 				argumentList: null,
 			};
 		}
@@ -1225,11 +1217,7 @@ export class LuaParser {
 	): LuaCallExpression {
 		return {
 			kind: LuaSyntaxKind.CallExpression,
-			range: {
-				path: this.path,
-				start: callee.range.start,
-				end: parsedArguments.end,
-			},
+			span: this.createSpan(this.spanStart(callee.span), parsedArguments.end),
 			callee,
 			arguments: parsedArguments.arguments,
 			method,
@@ -1282,7 +1270,7 @@ export class LuaParser {
 		const rightParen = this.consume(LuaTokenType.RightParen, 'Expected ")" after sizeof type.');
 		return {
 			kind: LuaSyntaxKind.SizeOfExpression,
-			range: this.rangeFromTokenAndToken(sizeofToken, rightParen),
+			span: this.spanFromTokenAndToken(sizeofToken, rightParen),
 			typeRef,
 		};
 	}
@@ -1302,7 +1290,7 @@ export class LuaParser {
 		const rightParen = this.consume(LuaTokenType.RightParen, 'Expected ")" after offsetof path.');
 		return {
 			kind: LuaSyntaxKind.OffsetOfExpression,
-			range: this.rangeFromTokenAndToken(offsetofToken, rightParen),
+			span: this.spanFromTokenAndToken(offsetofToken, rightParen),
 			typeName: typeToken.lexeme,
 			fieldPath,
 		};
@@ -1313,7 +1301,7 @@ export class LuaParser {
 		private createTokenOnlyExpression(token: LuaToken, kind: LuaSyntaxKind.NilLiteralExpression | LuaSyntaxKind.VarargExpression): LuaNilLiteralExpression | LuaVarargExpression {
 			return {
 				kind,
-				range: this.rangeFromTokenAndToken(token, token),
+				span: this.spanFromTokenAndToken(token, token),
 			};
 		}
 
@@ -1321,7 +1309,7 @@ export class LuaParser {
 		const token = this.advance();
 		return {
 			kind: LuaSyntaxKind.BooleanLiteralExpression,
-			range: this.rangeFromTokenAndToken(token, token),
+			span: this.spanFromTokenAndToken(token, token),
 			value,
 		};
 	}
@@ -1333,7 +1321,7 @@ export class LuaParser {
 		}
 		return {
 			kind: LuaSyntaxKind.NumericLiteralExpression,
-			range: this.rangeFromTokenAndToken(token, token),
+			span: this.spanFromTokenAndToken(token, token),
 			value: token.literal,
 		};
 	}
@@ -1351,20 +1339,16 @@ export class LuaParser {
 	private parseTypeReference(): LuaTypeReference {
 		const nameToken = this.consume(LuaTokenType.Identifier, 'Expected type name.');
 		const arrayLengths: Array<LuaExpression | null> = [];
-		let end = this.endPositionFromToken(nameToken);
+		let end = this.tokenEndOffset(nameToken);
 		while (this.match(LuaTokenType.LeftBracket)) {
 			arrayLengths.push(this.check(LuaTokenType.RightBracket) ? null : this.parseExpression());
 			const rightBracket = this.consume(LuaTokenType.RightBracket, 'Expected "]" after type array length.');
-			end = this.endPositionFromToken(rightBracket);
+			end = this.tokenEndOffset(rightBracket);
 		}
 		return {
 			name: nameToken.lexeme,
 			arrayLengths,
-			range: {
-				path: this.path,
-				start: this.positionFromToken(nameToken),
-				end,
-			},
+			span: this.createSpan(nameToken.offset, end),
 		};
 	}
 
@@ -1380,7 +1364,7 @@ export class LuaParser {
 					const valueExpression = this.parseExpression();
 					const field: LuaTableExpressionField = {
 						kind: LuaTableFieldKind.ExpressionKey,
-						range: this.rangeAroundNode(fieldStart, valueExpression, this.previous()),
+						span: this.spanAroundNode(fieldStart, valueExpression, this.previous()),
 						key: keyExpression,
 						value: valueExpression,
 					};
@@ -1392,7 +1376,7 @@ export class LuaParser {
 					const valueExpression = this.parseExpression();
 					const field: LuaTableIdentifierField = {
 						kind: LuaTableFieldKind.IdentifierKey,
-						range: this.rangeAroundNode(fieldStart, valueExpression, this.previous()),
+						span: this.spanAroundNode(fieldStart, valueExpression, this.previous()),
 						name: nameToken.lexeme,
 						value: valueExpression,
 					};
@@ -1402,7 +1386,7 @@ export class LuaParser {
 					const valueExpression = this.parseExpression();
 					const field: LuaTableArrayField = {
 						kind: LuaTableFieldKind.Array,
-						range: this.rangeAroundNode(fieldStart, valueExpression, this.previous()),
+						span: this.spanAroundNode(fieldStart, valueExpression, this.previous()),
 						value: valueExpression,
 					};
 					fields.push(field);
@@ -1417,10 +1401,10 @@ export class LuaParser {
 			}
 		}
 		const rightBrace = this.consume(LuaTokenType.RightBrace, 'Expected "}" after table constructor.');
-		const range = this.rangeFromTokenAndToken(leftBrace, rightBrace);
+		const span = this.spanFromTokenAndToken(leftBrace, rightBrace);
 		return {
 			kind: LuaSyntaxKind.TableConstructorExpression,
-			range,
+			span,
 			fields,
 		};
 	}
@@ -1437,11 +1421,7 @@ export class LuaParser {
 	private createBinaryExpression(left: LuaExpression, right: LuaExpression, operator: LuaBinaryOperator): LuaBinaryExpression {
 		return {
 			kind: LuaSyntaxKind.BinaryExpression,
-			range: {
-				path: this.path,
-				start: left.range.start,
-				end: right.range.end,
-			},
+			span: this.createSpan(this.spanStart(left.span), this.spanEnd(right.span)),
 			operator,
 			left,
 			right,
@@ -1451,11 +1431,7 @@ export class LuaParser {
 	private createUnaryExpression(operatorToken: LuaToken, operand: LuaExpression, operator: LuaUnaryOperator): LuaUnaryExpression {
 		return {
 			kind: LuaSyntaxKind.UnaryExpression,
-			range: {
-				path: this.path,
-				start: this.positionFromToken(operatorToken),
-				end: operand.range.end,
-			},
+			span: this.createSpan(operatorToken.offset, this.spanEnd(operand.span)),
 			operator,
 			operand,
 		};
@@ -1464,7 +1440,7 @@ export class LuaParser {
 	private createIdentifierExpression(token: LuaToken): LuaIdentifierExpression {
 		return {
 			kind: LuaSyntaxKind.IdentifierExpression,
-			range: this.rangeFromTokenAndToken(token, token),
+			span: this.spanFromTokenAndToken(token, token),
 			name: token.lexeme,
 		};
 	}
@@ -1472,7 +1448,7 @@ export class LuaParser {
 	private createStringLiteralExpression(token: LuaToken): LuaStringLiteralExpression {
 		return {
 			kind: LuaSyntaxKind.StringLiteralExpression,
-			range: this.rangeFromTokenAndToken(token, token),
+			span: this.spanFromTokenAndToken(token, token),
 			value: this.stringLiteralValue(token, 'Expected string literal.'),
 		};
 	}
@@ -1559,71 +1535,73 @@ export class LuaParser {
 		return this.tokens[index].type;
 	}
 
-	private rangeFromTokenAndToken(startToken: LuaToken, endToken: LuaToken): LuaSourceRange {
-		return {
-			path: this.path,
-			start: this.positionFromToken(startToken),
-			end: this.endPositionFromToken(endToken),
-		};
+	private spanFromTokenAndToken(startToken: LuaToken, endToken: LuaToken): LuaSyntaxSpan {
+		return this.createSpan(startToken.offset, this.tokenEndOffset(endToken));
 	}
 
-	/** Reuses immutable positions (or the whole range) when a field adds no syntax there. */
-	private rangeAroundNode(startToken: LuaToken, node: LuaNode, endToken: LuaToken): LuaSourceRange {
-		const { range } = node;
-		const sameStart = range.start.line === startToken.line && range.start.column === startToken.column;
-		const sameEnd = range.end.line === endToken.endLine && range.end.column === endToken.endColumn;
-		if (sameStart && sameEnd) return range;
-		return {
-			path: this.path,
-			start: sameStart ? range.start : this.positionFromToken(startToken),
-			end: sameEnd ? range.end : this.endPositionFromToken(endToken),
-		};
+	/** Retains span identity when a field adds no syntax around its value. */
+	private spanAroundNode(startToken: LuaToken, node: LuaNode, endToken: LuaToken): LuaSyntaxSpan {
+		if (this.spanStart(node.span) === startToken.offset && this.spanEnd(node.span) === this.tokenEndOffset(endToken)) return node.span;
+		return this.spanFromTokenAndToken(startToken, endToken);
 	}
 
-	private rangeFromTokenAndNode(startToken: LuaToken, node: LuaNode): LuaSourceRange {
-		return {
-			path: this.path,
-			start: this.positionFromToken(startToken),
-			end: node.range.end,
-		};
+	private spanFromTokenAndNode(startToken: LuaToken, node: LuaNode): LuaSyntaxSpan {
+		return this.createSpan(startToken.offset, this.spanEnd(node.span));
 	}
 
-	private rangeFromNodeAndToken(node: LuaNode, endToken: LuaToken): LuaSourceRange {
-		return {
-			path: this.path,
-			start: node.range.start,
-			end: this.endPositionFromToken(endToken),
-		};
+	private spanFromNodeAndToken(node: LuaNode, endToken: LuaToken): LuaSyntaxSpan {
+		return this.createSpan(this.spanStart(node.span), this.tokenEndOffset(endToken));
 	}
 
-	private rangeFromBlockAndToken(block: LuaBlock, endToken: LuaToken): LuaSourceRange {
-		return {
-			path: this.path,
-			start: block.range.start,
-			end: this.endPositionFromToken(endToken),
-		};
+	private spanFromBlockAndToken(block: LuaBlock, endToken: LuaToken): LuaSyntaxSpan {
+		return this.createSpan(this.spanStart(block.span), this.tokenEndOffset(endToken));
 	}
 
-	private positionFromToken(token: LuaToken): LuaSourcePosition {
-		return { line: token.line, column: token.column };
+	private tokenEndOffset(token: LuaToken): number {
+		return token.offset + (token.type === LuaTokenType.Eof ? 0 : token.lexeme.length - 1);
 	}
 
-	private endPositionFromToken(token: LuaToken): LuaSourcePosition {
-		return { line: token.endLine, column: token.endColumn };
+	private blockStartOffset(): number {
+		return this.index === 0 ? 0 : this.tokenEndOffset(this.previous()) + 1;
 	}
 
-	private blockStartPosition(): LuaSourcePosition {
-		if (this.index === 0) {
-			return { line: 1, column: 1 };
-		}
-		const token = this.previous();
-		return { line: token.endLine, column: token.endColumn + 1 };
+	private createSpan(start: number, end: number): LuaSyntaxSpan {
+		return { unit: this.currentUnit.unit, start: start - this.currentUnit.offset, end: end - this.currentUnit.offset };
 	}
 
-	private retainSyntaxError(error: LuaSyntaxError): void {
+	private spanStart(span: LuaSyntaxSpan): number {
+		return this.unitOrigins.get(span.unit)! + span.start;
+	}
+
+	private spanEnd(span: LuaSyntaxSpan): number {
+		return this.unitOrigins.get(span.unit)! + span.end;
+	}
+
+	private beginUnit(offset: number): void {
+		const unit = { unit: createLuaSourceUnit(), offset };
+		this.currentUnit = unit;
+		this.units.push(unit);
+		this.unitOrigins.set(unit.unit, offset);
+	}
+
+	private publishLocations(): LuaSourceLocations {
+		const origins = this.unitOrigins!;
+		this.unitOrigins = undefined;
+		return LuaSourceLocations.fromSource(this.path, this.source, this.units, origins);
+	}
+
+	private retainSyntaxError(error: LuaSyntaxError | LuaParserSpanError): void {
 		if (this.recoveredSyntaxError === null) {
 			this.recoveredSyntaxError = error;
 		}
+	}
+
+	private retainSpanError(span: LuaSyntaxSpan, message: string): void {
+		if (this.recoveredSyntaxError === null) this.recoveredSyntaxError = { span, message };
+	}
+
+	private retainTokenError(token: LuaToken, message: string): void {
+		if (this.recoveredSyntaxError === null) this.recoveredSyntaxError = this.error(token, message);
 	}
 
 	private error(token: LuaToken, message: string): LuaSyntaxError {
@@ -1631,10 +1609,14 @@ export class LuaParser {
 		return new LuaSyntaxError(payload, this.path, token.line, token.column);
 	}
 
-	private errorAtRange(range: LuaSourceRange, message: string): LuaSyntaxError {
-		const lexeme = this.extractLexeme(range);
-		const payload = this.formatError(range.start.line, range.start.column, message, lexeme);
-		return new LuaSyntaxError(payload, this.path, range.start.line, range.start.column);
+	private errorAtSpan(span: LuaSyntaxSpan, message: string, locations: LuaSourceLocations): LuaSyntaxError {
+		// Diagnostics are exceptional parser output, not per-node presentation.
+		const { start, end } = locations.range(span);
+		const lineText = this.sourceLine(start.line);
+		const startIndex = Math.max(start.column - 1, 0);
+		const endIndex = Math.min(Math.max(end.column, startIndex + 1), lineText.length);
+		const lexeme = lineText.slice(startIndex, endIndex);
+		return new LuaSyntaxError(this.formatError(start.line, start.column, message, lexeme), this.path, start.line, start.column);
 	}
 
 	private formatError(line: number, column: number, message: string, lexeme?: string): string {
@@ -1644,13 +1626,6 @@ export class LuaParser {
 		return `[line ${line}, column ${column}] ${message}${near}\n${lineText}\n${pointer}`;
 	}
 
-	private extractLexeme(range: LuaSourceRange): string {
-		const line = this.sourceLine(range.start.line);
-		const startIndex = Math.max(range.start.column - 1, 0);
-		let endIndex = Math.max(range.end.column, startIndex + 1);
-		endIndex = Math.min(endIndex, line.length);
-		return line.slice(startIndex, endIndex);
-	}
 
 	private sourceLine(line: number): string {
 		let currentLine = 1;

@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
 import { type LuaStringLiteralExpression as StringLiteralExpression } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue, type CartLintIssuePusher } from '../../lua_rule';
+import { type CartLintContext, type CartLintIssuePusher } from '../../lua_rule';
 
 export const forbiddenRenderModuleRequirePatternRule = defineLintRule('cart', 'forbidden_render_module_require_pattern');
 
@@ -13,12 +13,12 @@ export function isForbiddenRenderModuleRequire(value: string): boolean {
 	return FORBIDDEN_RENDER_MODULE_REQUIRES.has(value);
 }
 
-export function lintForbiddenRenderModuleRequirePattern(expression: StringLiteralExpression, issues: CartLintIssue[], pushIssue: CartLintIssuePusher): boolean {
+export function lintForbiddenRenderModuleRequirePattern(expression: StringLiteralExpression, lint: CartLintContext, pushIssue: CartLintIssuePusher): boolean {
 	if (!isForbiddenRenderModuleRequire(expression.value)) {
 		return false;
 	}
 	pushIssue(
-		issues,
+		lint,
 		forbiddenRenderModuleRequirePatternRule.name,
 		expression,
 		`require('${expression.value}') is forbidden. The legacy Lua render wrapper modules are removed; submit graphics work through the GX GPU/GTE owners instead.`,

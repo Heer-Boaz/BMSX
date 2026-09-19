@@ -1,5 +1,5 @@
+import { decodeLuaChunk } from '../lua/syntax/serialization';
 import {
-	decodeBinary,
 	utf8FatalDecoder,
 } from '../../../machine/ts/common/serializer/binencoder';
 import { parseLuaChunk } from '../lua/analysis/parse';
@@ -91,7 +91,7 @@ export function decodeBlua32SourceModules(assets: ReadonlyArray<RomAsset>): Blua
 		modules.push({
 			path: toLuaModulePath(asset.source_path),
 			displayPath: asset.source_path!,
-			chunk: decodeBinary(asset.compiled_buffer) as LuaChunk,
+			chunk: decodeLuaChunk(asset.compiled_buffer),
 			source: utf8FatalDecoder.decode(asset.buffer!),
 		});
 	}
@@ -134,7 +134,7 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 	}
 	const entryIndex = resolveLuaEntryModuleIndex(modules);
 	let entry = modules[entryIndex];
-	const entryOrigin = entry.chunk.range;
+	const entryOrigin = entry.chunk.locations.range(entry.chunk.span);
 	if (options.entryComposition !== undefined) {
 		const composition = options.entryComposition;
 		if (modulePaths.has(composition.sourceMap.generatedPath)) {
@@ -176,7 +176,7 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 	}
 	for (let moduleIndex = 0; moduleIndex < modules.length; moduleIndex += 1) {
 		const module = modules[moduleIndex];
-		diagnosticSources.set(module.chunk.range.path, {
+		diagnosticSources.set(module.chunk.locations.path, {
 			displayPath: module.displayPath,
 			source: module.source,
 		});

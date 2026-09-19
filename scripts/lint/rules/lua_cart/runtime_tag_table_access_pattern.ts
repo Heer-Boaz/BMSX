@@ -15,7 +15,7 @@ export function lintRuntimeTagLookupInExpression(
 	}
 	if (isRuntimeTagLookupExpression(expression, context)) {
 		pushIssue(
-			context.issues,
+			context.lint,
 			runtimeTagTableAccessPatternRule.name,
 			expression,
 			'Direct runtime .tags access is forbidden. Use :has_tag(...) and derived/group tags instead of reading internal tag tables to bypass linting.',

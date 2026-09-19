@@ -1,13 +1,13 @@
 import { defineLintRule } from '../../rule';
 import { LuaAssignmentOperator as AssignmentOperator, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { countIdentifierMentionsInStatements } from './impl/support/identifier_flow';
 import { getModuleFieldAssignmentBaseIdentifier, isModuleFieldAssignmentTarget } from './impl/support/object_ownership';
 import { pushIssue } from './impl/support/lint_context';
 
 export const stagedExportLocalTablePatternRule = defineLintRule('cart', 'staged_export_local_table_pattern');
 
-export function lintStagedExportLocalTablePattern(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
+export function lintStagedExportLocalTablePattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
 	const stagedLocalTableDeclarations = new Map<string, { declaration: IdentifierExpression; declarationStatementIndex: number; }>();
 	const flagged = new Set<string>();
 	for (let statementIndex = 0; statementIndex < statements.length; statementIndex += 1) {
@@ -61,7 +61,7 @@ export function lintStagedExportLocalTablePattern(statements: ReadonlyArray<Stat
 				}
 				flagged.add(right.name);
 				pushIssue(
-					issues,
+					lint,
 					stagedExportLocalTablePatternRule.name,
 					stagedDeclaration.declaration,
 					`Staged local table export is forbidden ("${right.name}"). Build table values directly on the destination module field instead.`,

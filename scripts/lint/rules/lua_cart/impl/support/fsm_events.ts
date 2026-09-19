@@ -1,5 +1,5 @@
 import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../../../lua_rule';
+import { type CartLintContext } from '../../../../lua_rule';
 import { lintFsmEventReemitHandlerPatternInMap } from '../../fsm_event_reemit_handler_pattern';
 import { lintFsmLifecycleWrapperPatternInTable } from '../../fsm_lifecycle_wrapper_pattern';
 import { getCallMethodName, getCallReceiverExpression } from '../../../../../../toolchain/ts/lua/syntax/calls';
@@ -79,26 +79,26 @@ export function getGoFunctionFromHandlerEntryValue(value: Expression): CartFunct
 	return goField.value;
 }
 
-export function lintFsmEventReemitHandlerPatternInTable(expression: Expression, issues: CartLintIssue[]): void {
+export function lintFsmEventReemitHandlerPatternInTable(expression: Expression, lint: CartLintContext): void {
 	if (expression.kind !== SyntaxKind.TableConstructorExpression) {
 		return;
 	}
 	for (const field of expression.fields) {
 		const key = getTableFieldKey(field);
 		if (key && FSM_STATE_HANDLER_MAP_KEYS.has(key)) {
-			lintFsmEventReemitHandlerPatternInMap(field.value, issues);
+			lintFsmEventReemitHandlerPatternInMap(field.value, lint);
 		}
 		if (field.kind === TableFieldKind.ExpressionKey) {
-			lintFsmEventReemitHandlerPatternInTable(field.key, issues);
+			lintFsmEventReemitHandlerPatternInTable(field.key, lint);
 		}
-		lintFsmEventReemitHandlerPatternInTable(field.value, issues);
+		lintFsmEventReemitHandlerPatternInTable(field.value, lint);
 	}
 }
 
 export function lintFsmEventReemitHandlerPattern(
 	expression: CallExpression,
 	callKind: CartModuleCallKind | undefined,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 ): void {
 	if (callKind !== CART_MODULE_CALL_FSM_REGISTER) {
 		return;
@@ -107,7 +107,7 @@ export function lintFsmEventReemitHandlerPattern(
 	if (!definition) {
 		return;
 	}
-	lintFsmEventReemitHandlerPatternInTable(definition, issues);
+	lintFsmEventReemitHandlerPatternInTable(definition, lint);
 }
 
 export function getLifecycleWrapperCallExpression(functionExpression: CartFunctionExpression): CallExpression | undefined {
@@ -155,7 +155,7 @@ export function getLifecycleWrapperCallExpression(functionExpression: CartFuncti
 export function lintFsmLifecycleWrapperPattern(
 	expression: CallExpression,
 	callKind: CartModuleCallKind | undefined,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 ): void {
 	if (callKind !== CART_MODULE_CALL_FSM_REGISTER) {
 		return;
@@ -164,5 +164,5 @@ export function lintFsmLifecycleWrapperPattern(
 	if (!definition) {
 		return;
 	}
-	lintFsmLifecycleWrapperPatternInTable(definition, issues);
+	lintFsmLifecycleWrapperPatternInTable(definition, lint);
 }

@@ -1,3 +1,4 @@
+import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import {
 	LuaSyntaxKind,
 	type LuaExpression,
@@ -28,6 +29,7 @@ import {
 
 export function buildBehaviorTreeDefinition(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	definition: LuaTableConstructorExpression,
 	activeTables: Set<LuaTableConstructorExpression>,
 ): BehaviorTreeSourceBody {
@@ -38,7 +40,7 @@ export function buildBehaviorTreeDefinition(
 	let blackboard: BehaviorSourceNode | null = null;
 	if (blackboardField) {
 		blackboard = buildNamedTableSection(
-			context,
+			context, file,
 			appendBehaviorSourcePath('', 'blackboard'),
 			'blackboard',
 			blackboardField.value,
@@ -49,7 +51,7 @@ export function buildBehaviorTreeDefinition(
 	const rootField = findNamedLuaTableField(definition, 'root');
 	let root: BehaviorTreeSourceNode | null = null;
 	if (rootField) {
-		root = buildBehaviorTreeNode(context, rootPath, rootField.value, activeTables);
+		root = buildBehaviorTreeNode(context, file, rootPath, rootField.value, activeTables);
 		children.push(root);
 	}
 	activeTables.delete(definition);
@@ -58,17 +60,18 @@ export function buildBehaviorTreeDefinition(
 
 function buildBehaviorTreeNode(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	expression: LuaExpression,
 	activeTables: Set<LuaTableConstructorExpression>,
 ): BehaviorTreeSourceNode {
-	const resolved = resolveSourceTable(context, expression, activeTables);
+	const resolved = resolveSourceTable(context, file, expression, activeTables);
 	if (!resolved) {
-		return createDynamicNode(context, path, 'dynamic node', expression);
+		return createDynamicNode(context, file, path, 'dynamic node', expression);
 	}
 	const table = resolved.table;
 	const typeField = findNamedLuaTableField(table, 'type');
-	const typeValue = typeField && context.reader.expression(typeField.value);
+	const typeValue = typeField && context.reader.expression(resolved.file, typeField.value)?.expression;
 	const nodeType = typeValue?.kind === LuaSyntaxKind.StringLiteralExpression
 		? typeValue.value
 		: null;
@@ -82,12 +85,13 @@ function buildBehaviorTreeNode(
 	const attachments: BehaviorTreeSourceAttachmentGroup[] = [];
 	const branches: BehaviorTreeSourceBranch[] = [];
 	activeTables.add(table);
-	appendBehaviorTreeAttachments(context, path, table, activeTables, children, attachments);
-	appendBehaviorTreeChildren(context, path, table, nodeType, activeTables, children, branches);
+	appendBehaviorTreeAttachments(context, resolved.file, path, table, activeTables, children, attachments);
+	appendBehaviorTreeChildren(context, resolved.file, path, table, nodeType, activeTables, children, branches);
 	activeTables.delete(table);
 	return createSourceNode(context, path, {
 		kind: 'node',
 		table,
+		file: resolved.file,
 		issues: resolved.issues,
 		nodeType,
 		referenceLabel: resolved.referenceLabel,
@@ -96,7 +100,7 @@ function buildBehaviorTreeNode(
 		attachments,
 		label: typeLabel,
 		detail,
-		authoredRange: table.range,
+		authoredRange: resolved.file.chunk.locations.range(table.span),
 		referenceRange: resolved.referenceRange,
 		resolution: resolved.resolution !== 'complete' || typeLabel === '<dynamic type>'
 			? 'partial'
@@ -130,6 +134,7 @@ function behaviorTreeNodeDetail(table: LuaTableConstructorExpression, typeLabel:
 
 function appendBehaviorTreeAttachments(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	table: LuaTableConstructorExpression,
 	activeTables: Set<LuaTableConstructorExpression>,
@@ -141,25 +146,26 @@ function appendBehaviorTreeAttachments(
 		if (!field) continue;
 		const entries: BehaviorSourceArrayEntry<BehaviorTreeSourceAttachment | BehaviorDynamicSourceNode>[] = [];
 		const source = buildTableArraySection(
-			context,
+			context, file,
 			appendBehaviorSourcePath(path, role),
 			role,
 			field.value,
 			activeTables,
-			(entryContext, entryPath, expression, active, entryField, index) => {
-				const node = buildBehaviorTreeAttachment(entryContext, entryPath, expression, active,
+			(entryContext, entryFile, entryPath, expression, active, field, index) => {
+				const node = buildBehaviorTreeAttachment(entryContext, entryFile, entryPath, expression, active,
 					role === 'services' ? 'service' : 'decorator', role === 'services' ? 'service' : 'type');
-				entries.push({ field: entryField, index, node });
+				entries.push({ file: entryFile, field, index, node });
 				return node;
 			},
 		);
 		children.push(source);
-		attachments.push({ role, field, source, entries });
+		attachments.push({ file, role, field, source, entries });
 	}
 }
 
 function appendBehaviorTreeChildren(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	table: LuaTableConstructorExpression,
 	nodeType: string | null,
@@ -171,39 +177,39 @@ function appendBehaviorTreeChildren(
 	if (childList) {
 		const entries: BehaviorSourceArrayEntry<BehaviorTreeSourceNode>[] = [];
 		const source = buildTableArraySection(
-			context,
+			context, file,
 			appendBehaviorSourcePath(path, 'children'),
 			'children',
 			childList.value,
 			activeTables,
-			(_entryContext, entryPath, expression, active, field, index) => {
-				const node = buildBehaviorTreeNode(context, entryPath, expression, active);
-				entries.push({ field, index, node });
+			(_entryContext, entryFile, entryPath, expression, active, field, index) => {
+				const node = buildBehaviorTreeNode(context, entryFile, entryPath, expression, active);
+				entries.push({ file: entryFile, field, index, node });
 				return node;
 			},
 		);
 		children.push(source);
 		if (nodeType === 'sequence' || nodeType === 'selector' || nodeType === 'random_selector') {
-			branches.push({ role: 'children', field: childList, source, entries });
+			branches.push({ file, role: 'children', field: childList, source, entries });
 		}
 	}
 	for (const fieldName of ['main_task', 'background_tree'] as const) {
 		const field = findNamedLuaTableField(table, fieldName);
 		if (field) {
 			const node = buildBehaviorTreeNode(
-				context,
+				context, file,
 				appendBehaviorSourcePath(path, fieldName),
 				field.value,
 				activeTables,
 			);
 			children.push(node);
-			if (nodeType === 'simple_parallel') branches.push({ role: fieldName, field, node });
+			if (nodeType === 'simple_parallel') branches.push({ file, role: fieldName, field, node });
 		}
 	}
 	const choices = findNamedLuaTableField(table, 'choices');
 	if (choices) {
 		const branch = buildBehaviorTreeChoices(
-			context,
+			context, file,
 			appendBehaviorSourcePath(path, 'choices'),
 			choices,
 			activeTables,
@@ -215,22 +221,23 @@ function appendBehaviorTreeChildren(
 
 function buildBehaviorTreeChoices(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	field: LuaTableField,
 	activeTables: Set<LuaTableConstructorExpression>,
 ): Extract<BehaviorTreeSourceBranch, { role: 'choices' }> {
 	const expression = field.value;
 	const choices: BehaviorSourceArrayEntry<BehaviorTreeSourceChoice | BehaviorDynamicSourceNode>[] = [];
-	const resolved = resolveSourceTable(context, expression, activeTables);
+	const resolved = resolveSourceTable(context, file, expression, activeTables);
 	if (!resolved) {
-		return { role: 'choices', field, entries: choices, source: createDynamicNode(context, path, 'dynamic choices', expression) };
+		return { file, role: 'choices', field, entries: choices, source: createDynamicNode(context, file, path, 'dynamic choices', expression) };
 	}
 	const entries = collectArrayFields(resolved.table);
 	const keyedEntries = collectNamedFields(resolved.table);
 	const children: BehaviorSourceNode[] = [];
 	for (let index = 0; index < entries.length; index += 1) {
 		const node = buildBehaviorTreeChoice(
-			context,
+			context, resolved.file,
 			appendBehaviorSourcePath(path, `array:${index + 1}`),
 			`choice ${index + 1}`,
 			entries[index].value,
@@ -238,7 +245,7 @@ function buildBehaviorTreeChoices(
 			false,
 		);
 		children.push(node);
-		choices.push({ field: entries[index], index: resolved.resolution === 'complete' ? index + 1 : null, node });
+		choices.push({ file: resolved.file, field: entries[index], index: resolved.resolution === 'complete' ? index + 1 : null, node });
 	}
 	for (let index = 0; index < keyedEntries.length; index += 1) {
 		const entry = keyedEntries[index];
@@ -248,7 +255,7 @@ function buildBehaviorTreeChoices(
 		const entryPath = appendBehaviorSourcePath(path, behaviorSourceFieldSegment(entry, index));
 		if (entry.keyKind === 'numeric') {
 			const node = buildBehaviorTreeChoice(
-				context,
+				context, resolved.file,
 				entryPath,
 				`[${entry.authoredKeyLabel}]`,
 				entry.field.value,
@@ -256,48 +263,50 @@ function buildBehaviorTreeChoices(
 				true,
 			);
 			children.push(node);
-			choices.push({ field: entry.field, index: null, node });
+			choices.push({ file: resolved.file, field: entry.field, index: null, node });
 			continue;
 		}
-		const node = createDynamicNode(context, entryPath, `[${entry.authoredKeyLabel}]`, entry.field.value);
+		const node = createDynamicNode(context, resolved.file, entryPath, `[${entry.authoredKeyLabel}]`, entry.field.value);
 		children.push(node);
-		choices.push({ field: entry.field, index: null, node });
+		choices.push({ file: resolved.file, field: entry.field, index: null, node });
 	}
 	const source = createSourceNode(context, path, {
 		kind: 'section',
 		table: resolved.table,
+		file: resolved.file,
 		issues: resolved.issues,
 		label: resolved.resolution === 'complete'
 			? `choices (${entries.length})`
 			: `choices (${children.length} authored)`,
 		detail: describeResolvedSourceTable(resolved),
-		authoredRange: resolved.table.range,
+		authoredRange: resolved.file.chunk.locations.range(resolved.table.span),
 		referenceRange: resolved.referenceRange,
 		resolution: resolved.resolution,
 		children,
 	});
-	return { role: 'choices', field, source, entries: choices };
+	return { file, role: 'choices', field, source, entries: choices };
 }
 
 function buildBehaviorTreeChoice(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	label: string,
 	expression: LuaExpression,
 	activeTables: Set<LuaTableConstructorExpression>,
 	explicitNumericKey: boolean,
 ): BehaviorTreeSourceChoice | BehaviorDynamicSourceNode {
-	const choice = resolveSourceTable(context, expression, activeTables);
+	const choice = resolveSourceTable(context, file, expression, activeTables);
 	if (!choice) {
-		return createDynamicNode(context, path, 'dynamic choice', expression);
+		return createDynamicNode(context, file, path, 'dynamic choice', expression);
 	}
 	const child = findNamedLuaTableField(choice.table, 'child');
 	if (!child) {
-		return createDynamicNode(context, path, 'choice without child', expression);
+		return createDynamicNode(context, file, path, 'choice without child', expression);
 	}
 	const weight = findNamedLuaTableField(choice.table, 'weight');
 	const childNode = buildBehaviorTreeNode(
-		context,
+		context, choice.file,
 		appendBehaviorSourcePath(path, 'child'),
 		child.value,
 		activeTables,
@@ -306,10 +315,11 @@ function buildBehaviorTreeChoice(
 		kind: 'section',
 		issues: choice.issues,
 		weight,
+		file: choice.file,
 		child: childNode,
 		label,
 		detail: weight ? `weight=${describeExpression(weight.value)}` : '',
-		authoredRange: choice.table.range,
+		authoredRange: choice.file.chunk.locations.range(choice.table.span),
 		referenceRange: choice.referenceRange,
 		resolution: explicitNumericKey ? 'partial' : choice.resolution,
 		children: [childNode],
@@ -318,15 +328,16 @@ function buildBehaviorTreeChoice(
 
 function buildBehaviorTreeAttachment(
 	context: BehaviorRecognizerContext,
+	file: FileSemanticData,
 	path: string,
 	expression: LuaExpression,
 	activeTables: Set<LuaTableConstructorExpression>,
 	kind: 'service' | 'decorator',
 	primaryFieldName: string,
 ): BehaviorTreeSourceAttachment | BehaviorDynamicSourceNode {
-	const resolved = resolveSourceTable(context, expression, activeTables);
+	const resolved = resolveSourceTable(context, file, expression, activeTables);
 	if (!resolved) {
-		return createDynamicNode(context, path, `dynamic ${kind}`, expression);
+		return createDynamicNode(context, file, path, `dynamic ${kind}`, expression);
 	}
 	const primary = findNamedLuaTableField(resolved.table, primaryFieldName);
 	const label = primary ? describeExpression(primary.value) : `<unresolved ${kind}>`;
@@ -341,10 +352,11 @@ function buildBehaviorTreeAttachment(
 	return createSourceNode(context, path, {
 		kind,
 		table: resolved.table,
+		file: resolved.file,
 		primary,
 		label,
 		detail,
-		authoredRange: resolved.table.range,
+		authoredRange: resolved.file.chunk.locations.range(resolved.table.span),
 		referenceRange: resolved.referenceRange,
 		resolution: resolved.resolution !== 'complete' || !primary ? 'partial' : 'complete',
 		children: [],

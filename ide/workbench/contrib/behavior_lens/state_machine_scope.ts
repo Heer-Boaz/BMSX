@@ -9,7 +9,7 @@ function sourceConcurrency(context: BehaviorRecognizerContext, body: StateMachin
 	if (body.issues !== SourceTableIssue.None) return undefined;
 	const field = body.concurrent;
 	if (field === null) return false;
-	const value = context.reader.expression(field.value);
+	const value = context.reader.expression(body.file, field.value)?.expression;
 	switch (value?.kind) {
 		case LuaSyntaxKind.NilLiteralExpression: return false;
 		case LuaSyntaxKind.BooleanLiteralExpression: return value.value;

@@ -4,17 +4,17 @@ import { isEmptyStringToken } from '../../language/cpp/syntax/syntax';
 import type { Token } from '../../language/cpp/syntax/tokens';
 import { lintAdjacentEqualityComparison } from '../cpp/support/comparison';
 import type { LintIssue } from '../cpp/support/diagnostics';
-import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
+import type { CartLintContext, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 
 export const emptyStringConditionPatternRule = defineLintRule('common', 'empty_string_condition_pattern');
 
-export function lintAstEmptyStringConditionPattern(expression: Expression, issues: CartLintIssue[], pushIssue: CartLintIssuePusher): void {
+export function lintAstEmptyStringConditionPattern(expression: Expression, lint: CartLintContext, pushIssue: CartLintIssuePusher): void {
 	if (!matchesAstEmptyStringConditionPattern(expression)) {
 		return;
 	}
 	pushIssue(
-		issues,
+		lint,
 		emptyStringConditionPatternRule.name,
 		expression,
 		'Empty-string condition pattern is forbidden. Prefer truthy checks, and do not define empty strings as default/start/empty values.',

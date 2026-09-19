@@ -15,6 +15,8 @@ import {
 	type LuaChunk,
 	type LuaExpression,
 	type LuaForGenericStatement,
+	type LuaForNumericStatement,
+	type LuaRepeatStatement,
 	type LuaFunctionExpression,
 	type LuaFunctionDeclarationStatement,
 	type LuaIdentifierExpression,
@@ -1396,13 +1398,13 @@ class FunctionBuilder {
 	public compileChunk(chunk: LuaChunk): void {
 		this.registerStructDeclarations(chunk.body);
 		this.flowAnalysis = new ValueKindFlowAnalyzer(chunk.body, this.semantics);
-		this.pushScope(chunk.range);
+		this.pushScope(chunk.locations.range(chunk.span));
 		for (let i = 0; i < chunk.body.length; i += 1) {
 			this.compileStatement(chunk.body[i]);
 			this.resetTemps();
 		}
 		this.popScope();
-		this.withRange(chunk.range, () => this.emitDefaultReturn());
+		this.withRange(chunk.locations.range(chunk.span), () => this.emitDefaultReturn());
 		this.finalizeLabels();
 	}
 
@@ -1457,13 +1459,13 @@ class FunctionBuilder {
 
 	public compileStaticModuleScope(chunk: LuaChunk): void {
 		this.registerStructDeclarations(chunk.body);
-		this.pushScope(chunk.range);
+		this.pushScope(chunk.locations.range(chunk.span));
 		for (let index = 0; index < chunk.body.length; index += 1) {
 			const statement = chunk.body[index];
 			if (statement.kind === LuaSyntaxKind.LocalFunctionStatement) {
 				const localFunction = statement as LuaLocalFunctionStatement;
 				const decl = getResolvedDeclaration(this.semantics, localFunction.name);
-				this.declareLocalFromDecl(decl, localFunction.name.range);
+				this.declareLocalFromDecl(decl, this.semantics.locations.range(localFunction.name.span));
 				continue;
 			}
 			if (statement.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
@@ -1497,7 +1499,7 @@ class FunctionBuilder {
 				if (flags & INIT_HAS_VALUE) {
 					this.declareLocalFromDecl(
 						decl,
-						localName.range,
+						this.semantics.locations.range(localName.span),
 						undefined,
 						this.initializerValues[nameIndex],
 						true,
@@ -1510,7 +1512,7 @@ class FunctionBuilder {
 						this.initializerRelocValues[nameIndex],
 					);
 				} else {
-					this.declareLocalFromDecl(decl, localName.range, undefined, null, false, null, moduleBinding);
+					this.declareLocalFromDecl(decl, this.semantics.locations.range(localName.span), undefined, null, false, null, moduleBinding);
 				}
 			}
 		}
@@ -1519,21 +1521,21 @@ class FunctionBuilder {
 	public compileFunctionExpression(expression: LuaFunctionExpression, implicitSelf: boolean): void {
 		this.registerStructDeclarations(expression.body.body);
 		this.flowAnalysis = new ValueKindFlowAnalyzer(expression.body.body, this.semantics);
-		this.pushScope(expression.body.range);
+		this.pushScope(this.semantics.locations.range(expression.body.span));
 		if (implicitSelf) {
-			this.declareLocal(IMPLICIT_SELF_SYMBOL_HANDLE, 'self', expression.range, expression.range, 'receiver');
+			this.declareLocal(IMPLICIT_SELF_SYMBOL_HANDLE, 'self', this.semantics.locations.range(expression.span), this.semantics.locations.range(expression.span), 'receiver');
 		}
 		for (let i = 0; i < expression.parameters.length; i += 1) {
 			const parameter = expression.parameters[i];
 			const decl = getResolvedDeclaration(this.semantics, parameter);
-			this.declareLocalFromDecl(decl, parameter.range, expression.range);
+			this.declareLocalFromDecl(decl, this.semantics.locations.range(parameter.span), this.semantics.locations.range(expression.span));
 		}
 		for (let i = 0; i < expression.body.body.length; i += 1) {
 			this.compileStatement(expression.body.body[i]);
 			this.resetTemps();
 		}
 		this.popScope();
-		this.withRange(expression.range, () => this.emitDefaultReturn());
+		this.withRange(this.semantics.locations.range(expression.span), () => this.emitDefaultReturn());
 		this.finalizeLabels();
 	}
 
@@ -3364,10 +3366,10 @@ class FunctionBuilder {
 		functionDisplayNameHint: string | null = null,
 	): number | null {
 		let closureProtoIndex: number | null = null;
-		this.withRange(expression.range, () => {
+		this.withRange(this.semantics.locations.range(expression.span), () => {
 			if (expression.kind === LuaSyntaxKind.FunctionExpression) {
 				const protoId = protoIdHint === null
-					? this.program.anonymousProtoId(this.protoId, expression.range)
+					? this.program.anonymousProtoId(this.protoId, this.semantics.locations.range(expression.span))
 					: buildProtoId(this.protoId, protoIdHint);
 				const displayName = functionDisplayNameHint ?? `${this.functionDisplayName}.<anonymous>`;
 				closureProtoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, displayName, this.moduleId, this.semantics, this.frontend);
@@ -3786,8 +3788,8 @@ class FunctionBuilder {
 			this.currentFlowState = this.flowAnalysis.getFlowStateAt(statement);
 		}
 		const previousStatementRange = this.currentStatementRange;
-		this.currentStatementRange = statement.range;
-		this.withRange(statement.range, () => {
+		this.currentStatementRange = this.semantics.locations.range(statement.span);
+		this.withRange(this.semantics.locations.range(statement.span), () => {
 			switch (statement.kind) {
 				case LuaSyntaxKind.LocalAssignmentStatement:
 					this.compileLocalAssignment(statement as LuaLocalAssignmentStatement);
@@ -3817,7 +3819,7 @@ class FunctionBuilder {
 					this.compileForGeneric(statement as LuaForGenericStatement);
 					return;
 				case LuaSyntaxKind.DoStatement:
-					this.pushScope(statement.block.range);
+					this.pushScope(this.semantics.locations.range(statement.block.span));
 					for (let i = 0; i < statement.block.body.length; i += 1) {
 						this.compileStatement(statement.block.body[i]);
 						this.resetTemps();
@@ -4003,7 +4005,7 @@ class FunctionBuilder {
 		if (isRecursiveConstClosureDeclaration(statement)) {
 			const decl = getResolvedDeclaration(this.semantics, names[0]);
 			const name = decl.name;
-			const target = this.declareLocalFromDecl(decl, names[0].range);
+			const target = this.declareLocalFromDecl(decl, this.semantics.locations.range(names[0].span));
 			const hint = this.createLocalFunctionHint(name);
 			const closureProtoIndex = this.compileExpressionWithStaticClosureProto(values[0], target, 1, hint, name);
 			(this.localBindings.get(decl.id) as LocalBinding).constClosureProtoIndex = closureProtoIndex;
@@ -4155,7 +4157,7 @@ class FunctionBuilder {
 			const target = this.declareLocal(
 				decl.id,
 				decl.name,
-				names[i].range,
+				this.semantics.locations.range(names[i].span),
 				undefined,
 				attribute === 'const' ? 'const' : 'local',
 				constValue,
@@ -4256,9 +4258,9 @@ class FunctionBuilder {
 				if (expr.kind === LuaSyntaxKind.UnaryExpression) {
 					throw new LuaSyntaxError(
 						'Pointer dereference assignment requires a typed pointer.',
-						expr.range.path,
-						expr.range.start.line,
-						expr.range.start.column,
+						this.semantics.locations.range(expr.span).path,
+						this.semantics.locations.range(expr.span).start.line,
+						this.semantics.locations.range(expr.span).start.column,
 					);
 				}
 			}
@@ -4590,7 +4592,7 @@ class FunctionBuilder {
 			if (clause.condition) {
 				const jumpsToNext: number[] = [];
 				this.compileConditionJumps(clause.condition, false, jumpsToNext);
-				this.pushScope(clause.block.range);
+				this.pushScope(this.semantics.locations.range(clause.block.span));
 				for (let j = 0; j < clause.block.body.length; j += 1) {
 					this.compileStatement(clause.block.body[j]);
 					this.resetTemps();
@@ -4602,7 +4604,7 @@ class FunctionBuilder {
 				}
 				continue;
 			}
-			this.pushScope(clause.block.range);
+			this.pushScope(this.semantics.locations.range(clause.block.span));
 			for (let j = 0; j < clause.block.body.length; j += 1) {
 				this.compileStatement(clause.block.body[j]);
 				this.resetTemps();
@@ -4621,7 +4623,7 @@ class FunctionBuilder {
 		this.compileConditionJumps(statement.condition, false, jumpsOut);
 		const ctx: LoopContext = { breakJumps: [] };
 		this.loopStack.push(ctx);
-		this.pushScope(statement.block.range);
+		this.pushScope(this.semantics.locations.range(statement.block.span));
 		for (let i = 0; i < statement.block.body.length; i += 1) {
 			this.compileStatement(statement.block.body[i]);
 			this.resetTemps();
@@ -4637,11 +4639,11 @@ class FunctionBuilder {
 		}
 	}
 
-	private compileRepeat(statement: any): void {
+	private compileRepeat(statement: LuaRepeatStatement): void {
 		const loopStart = this.code.length;
 		const ctx: LoopContext = { breakJumps: [] };
 		this.loopStack.push(ctx);
-		this.pushScope(statement.block.range);
+		this.pushScope(this.semantics.locations.range(statement.block.span));
 		for (let i = 0; i < statement.block.body.length; i += 1) {
 			this.compileStatement(statement.block.body[i]);
 			this.resetTemps();
@@ -4658,10 +4660,10 @@ class FunctionBuilder {
 		}
 	}
 
-	private compileForNumeric(statement: any): void {
-		this.pushScope(statement.block.range);
+	private compileForNumeric(statement: LuaForNumericStatement): void {
+		this.pushScope(this.semantics.locations.range(statement.block.span));
 		const loopDecl = getResolvedDeclaration(this.semantics, statement.variable);
-		const indexReg = this.declareLocalFromDecl(loopDecl, statement.variable.range);
+		const indexReg = this.declareLocalFromDecl(loopDecl, this.semantics.locations.range(statement.variable.span));
 		this.compileExpressionInto(statement.start, indexReg, 1);
 		const limitReg = this.allocLocal();
 		this.compileExpressionInto(statement.limit, limitReg, 1);
@@ -4701,7 +4703,7 @@ class FunctionBuilder {
 	}
 
 	private compileForGeneric(statement: LuaForGenericStatement): void {
-		this.pushScope(statement.block.range);
+		this.pushScope(this.semantics.locations.range(statement.block.span));
 		const valueTargets: Array<ReadonlyArray<string> | null> = new Array(statement.iterators.length).fill(null);
 		const iteratorValues = this.compileAssignmentValues(statement.iterators, 3, valueTargets);
 		const iteratorReg = this.allocLocal();
@@ -4722,7 +4724,7 @@ class FunctionBuilder {
 		for (let i = 0; i < statement.variables.length; i += 1) {
 			const variable = statement.variables[i];
 			const decl = getResolvedDeclaration(this.semantics, variable);
-			loopVars.push(this.declareLocalFromDecl(decl, variable.range));
+			loopVars.push(this.declareLocalFromDecl(decl, this.semantics.locations.range(variable.span)));
 		}
 
 		const resultCount = loopVars.length;
@@ -4804,7 +4806,7 @@ class FunctionBuilder {
 	private compileLocalFunction(statement: LuaLocalFunctionStatement): void {
 		const decl = getResolvedDeclaration(this.semantics, statement.name);
 		const name = decl.name;
-		const reg = this.declareLocalFromDecl(decl, statement.name.range);
+		const reg = this.declareLocalFromDecl(decl, this.semantics.locations.range(statement.name.span));
 		const hint = this.createLocalFunctionHint(name);
 		const protoId = buildProtoId(this.protoId, hint);
 		const protoIndex = compileFunctionExpression(this.program, statement.functionExpression, this, false, protoId, name, this.moduleId, this.semantics, this.frontend);
@@ -4878,7 +4880,7 @@ class FunctionBuilder {
 		protoIdHint: string | null = null,
 		functionDisplayNameHint: string | null = null,
 	): void {
-		this.withRange(expression.range, () => {
+		this.withRange(this.semantics.locations.range(expression.span), () => {
 			switch (expression.kind) {
 				case LuaSyntaxKind.NumericLiteralExpression:
 					this.emitLoadConst(target, expression.value);
@@ -4926,7 +4928,7 @@ class FunctionBuilder {
 					return;
 				case LuaSyntaxKind.FunctionExpression: {
 					const protoId = protoIdHint === null
-						? this.program.anonymousProtoId(this.protoId, expression.range)
+						? this.program.anonymousProtoId(this.protoId, this.semantics.locations.range(expression.span))
 						: buildProtoId(this.protoId, protoIdHint);
 					const displayName = functionDisplayNameHint ?? `${this.functionDisplayName}.<anonymous>`;
 					const protoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, displayName, this.moduleId, this.semantics, this.frontend);
@@ -4940,7 +4942,7 @@ class FunctionBuilder {
 		});
 	}
 
-	private compileMemberExpression(expression: any, target: number): void {
+	private compileMemberExpression(expression: LuaMemberExpression, target: number): void {
 		const cop0Register = this.resolveCop0Register(expression as LuaMemberExpression);
 		if (cop0Register) {
 			if (cop0Register === COP0_EXEC) {
@@ -4988,7 +4990,7 @@ class FunctionBuilder {
 		}
 	}
 
-	private compileIndexExpression(expression: any, target: number): void {
+	private compileIndexExpression(expression: LuaIndexExpression, target: number): void {
 		const constExport = this.resolveModuleExportConstValue(expression as LuaIndexExpression);
 		if (constExport) {
 			this.emitLoadConstExportValue(target, constExport.value);
@@ -5435,9 +5437,9 @@ class FunctionBuilder {
 			default:
 				throw new LuaSyntaxError(
 					`& expects a string value (got: ${valueKind}).`,
-					expression.operand.range.path,
-					expression.operand.range.start.line,
-					expression.operand.range.start.column,
+					this.semantics.locations.range(expression.operand.span).path,
+					this.semantics.locations.range(expression.operand.span).start.line,
+					this.semantics.locations.range(expression.operand.span).start.column,
 				);
 		}
 		const tempBase = this.tempTop;
@@ -5485,9 +5487,9 @@ class FunctionBuilder {
 			if (!structAddress) {
 				throw new LuaSyntaxError(
 					'Pointer dereference requires a typed pointer.',
-					expression.range.path,
-					expression.range.start.line,
-					expression.range.start.column,
+					this.semantics.locations.range(expression.span).path,
+					this.semantics.locations.range(expression.span).start.line,
+					this.semantics.locations.range(expression.span).start.column,
 				);
 			}
 			this.emitStructScalarLoad(target, structAddress);
@@ -5516,7 +5518,7 @@ class FunctionBuilder {
 		}
 	}
 
-	private compileBinaryExpression(expression: any, target: number): void {
+	private compileBinaryExpression(expression: LuaBinaryExpression, target: number): void {
 		const compileTimeValue = this.evaluateCompileTimeNumericValue(expression as LuaBinaryExpression);
 		if (compileTimeValue?.kind === 'link_value') {
 			this.emitLoadConstExportValue(target, compileTimeValue);
@@ -5619,7 +5621,7 @@ class FunctionBuilder {
 
 	private compileConditionJumps(expression: LuaExpression, jumpOnTruthy: boolean, jumps: number[]): void {
 		const tempBase = this.tempTop;
-		this.withRange(expression.range, () => {
+		this.withRange(this.semantics.locations.range(expression.span), () => {
 			if (this.evaluateCompileTimeExpression(expression)) {
 				if ((!this.compileTimeValueIsFalsey()) === jumpOnTruthy) {
 					jumps.push(this.emitJumpPlaceholder());
@@ -5700,14 +5702,14 @@ class FunctionBuilder {
 		this.tempTop = tempBase;
 	}
 
-	private compileAndExpression(expression: any, target: number): void {
+	private compileAndExpression(expression: LuaBinaryExpression, target: number): void {
 		this.compileExpressionInto(expression.left, target, 1);
 		const jump = this.emitJumpPlaceholder(OpCode.JMPIFNOT, target);
 		this.compileExpressionInto(expression.right, target, 1);
 		this.patchJump(jump, this.code.length);
 	}
 
-	private compileOrExpression(expression: any, target: number): void {
+	private compileOrExpression(expression: LuaBinaryExpression, target: number): void {
 		this.compileExpressionInto(expression.left, target, 1);
 		const jumpEnd = this.emitJumpPlaceholder(OpCode.JMPIF, target);
 		this.compileExpressionInto(expression.right, target, 1);
@@ -5726,7 +5728,7 @@ class FunctionBuilder {
 		out.push(expression);
 	}
 
-	private compileConcatExpression(expression: any, target: number): void {
+	private compileConcatExpression(expression: LuaBinaryExpression, target: number): void {
 		const operands: LuaExpression[] = [];
 		this.collectConcatOperands(expression, operands);
 		if (operands.length === 2) {
@@ -6091,8 +6093,8 @@ function buildCompilerSemanticFrontend(
 	options: CompileOptions,
 ): LuaSemanticFrontend {
 	const sources = [{
-		path: entryChunk.range.path,
-		source: requireEntrySource(options, entryChunk.range.path),
+		path: entryChunk.locations.path,
+		source: requireEntrySource(options, entryChunk.locations.path),
 		chunk: entryChunk,
 	}];
 	for (let index = 0; index < modules.length; index += 1) {
@@ -6171,7 +6173,7 @@ function compileFunctionExpression(
 			maxStack: builder.getMaxStack(),
 			upvalueDescs: builder.getUpvalueDescs(),
 			staticClosure: false,
-	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueBindings(), protoId, functionDisplayName, instructionSet, expression.range);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueBindings(), protoId, functionDisplayName, instructionSet, semantics.locations.range(expression.span));
 	return protoIndex;
 }
 
@@ -6354,7 +6356,7 @@ export function compileLuaChunkToProgram(
 	}
 	const frontend = buildCompilerSemanticFrontend(chunk, canonicalModules, options);
 	const moduleCompileContext = buildModuleCompileContext(canonicalModules, frontend);
-	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path, sourceMaps);
+	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.locations.path, sourceMaps);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));
 	}
@@ -6362,7 +6364,7 @@ export function compileLuaChunkToProgram(
 	try {
 		validateInitParticipantPlacement(chunk);
 	} catch (error) {
-		compileErrors.push(toCompileError(error, chunk.range.path, 'entry', sourceMaps));
+		compileErrors.push(toCompileError(error, chunk.locations.path, 'entry', sourceMaps));
 	}
 	for (let index = 0; index < canonicalModules.length; index += 1) {
 		const module = canonicalModules[index];
@@ -6463,7 +6465,7 @@ export function compileLuaChunkToProgram(
 	if (compileErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(compileErrors));
 	}
-	const moduleId = chunk.range.path;
+	const moduleId = chunk.locations.path;
 	const entryProtoId = buildEntryProtoId(moduleId);
 	let entryProtoIndex = -1;
 	let startupProtoIndex = -1;
@@ -6475,7 +6477,7 @@ export function compileLuaChunkToProgram(
 		moduleId,
 		protoId: entryProtoId,
 		functionDisplayName: 'entry',
-		semantics: frontend.getFile(chunk.range.path),
+		semantics: frontend.getFile(chunk.locations.path),
 		frontend,
 		moduleCompileContext,
 	});
@@ -6499,7 +6501,7 @@ export function compileLuaChunkToProgram(
 			staticClosure: false,
 		}, entryCode, entryRanges, entryBuilder.getInlineCallSites(), entryConstRelocs, entryBuilder.getStatementPoints(), entryBuilder.getResumePoints(), entryLocalSlots, entryBuilder.getUpvalueBindings(), entryProtoId, 'entry', entryInstructionSet);
 	} catch (error) {
-		compileErrors.push(toCompileError(error, chunk.range.path, 'entry', sourceMaps));
+		compileErrors.push(toCompileError(error, chunk.locations.path, 'entry', sourceMaps));
 	}
 	for (let i = 0; i < canonicalModules.length; i += 1) {
 		const module = canonicalModules[i];
@@ -6543,10 +6545,10 @@ export function compileLuaChunkToProgram(
 	if (compileErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(compileErrors));
 	}
-	const entrySemantics = frontend.getFile(chunk.range.path);
-	sectionInitProtoIndex = compileSectionInitProto(programBuilder, moduleId, chunk.range, entrySemantics, frontend);
-	irqProtoIndex = compileInterruptProto(programBuilder, moduleId, chunk.range, entrySemantics, frontend);
-	exceptionProtoIndex = compileExceptionProto(programBuilder, moduleId, chunk.range, entrySemantics, frontend);
+	const entrySemantics = frontend.getFile(chunk.locations.path);
+	sectionInitProtoIndex = compileSectionInitProto(programBuilder, moduleId, chunk.locations.range(chunk.span), entrySemantics, frontend);
+	irqProtoIndex = compileInterruptProto(programBuilder, moduleId, chunk.locations.range(chunk.span), entrySemantics, frontend);
+	exceptionProtoIndex = compileExceptionProto(programBuilder, moduleId, chunk.locations.range(chunk.span), entrySemantics, frontend);
 	if (programDomain === 'system') {
 		for (let index = 0; index < canonicalModules.length; index += 1) {
 			entryBuilder.markStaticModulePath(canonicalModules[index].path);
@@ -6557,7 +6559,7 @@ export function compileLuaChunkToProgram(
 		initProtoIndex = compileInitProto(
 			programBuilder,
 			moduleId,
-			chunk.range,
+			chunk.locations.range(chunk.span),
 			entrySemantics,
 			frontend,
 			initParticipants,
@@ -6566,7 +6568,7 @@ export function compileLuaChunkToProgram(
 	startupProtoIndex = compileStartupProto(
 		programBuilder,
 		moduleId,
-		options.entryOrigin ?? chunk.range,
+		options.entryOrigin ?? chunk.locations.range(chunk.span),
 		entrySemantics,
 		frontend,
 		sectionInitProtoIndex,

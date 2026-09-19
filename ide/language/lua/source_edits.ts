@@ -1,3 +1,4 @@
+import type { LuaSourceLocations } from '../../../toolchain/ts/lua/syntax/source_locations';
 import {
 	LuaSyntaxKind,
 	LuaUnaryOperator,
@@ -47,13 +48,14 @@ export function luaSourcePositionMatchesTextRange(buffer: TextBuffer, position: 
  */
 export function createLuaTableFieldRemovalEdits(
 	buffer: TextBuffer,
+	locations: LuaSourceLocations,
 	tokens: readonly LuaToken[],
 	field: LuaTableField,
 ): EditorTextEdit[] {
-	const start = buffer.offsetAt(field.range.start.line - 1, field.range.start.column - 1);
-	const end = buffer.offsetAt(field.range.end.line - 1, field.range.end.column);
+	const start = buffer.offsetAt(locations.range(field.span).start.line - 1, locations.range(field.span).start.column - 1);
+	const end = buffer.offsetAt(locations.range(field.span).end.line - 1, locations.range(field.span).end.column);
 	const edits: EditorTextEdit[] = [{ offset: start, deleteLength: end - start, text: '' }];
-	const separator = findLuaTableFieldSeparator(tokens, field);
+	const separator = findLuaTableFieldSeparator(locations, tokens, field);
 	if (separator !== null) {
 		edits.push({ offset: buffer.offsetAt(separator.line - 1, separator.column - 1), deleteLength: separator.lexeme.length, text: '' });
 	}
@@ -70,9 +72,9 @@ export function readLuaSourceRange(buffer: TextBuffer, range: LuaSourceRange): s
 export type LuaScalarLiteral = LuaStringLiteralExpression | LuaNilLiteralExpression | LuaBooleanLiteralExpression | LuaNumericLiteralExpression;
 
 /** Replace one atomic value, not its grouping/trivia or a referenced initializer. */
-export function createLuaStringValueEdit(buffer: TextBuffer, literal: LuaScalarLiteral, value: string): EditorTextEdit {
-	const start = buffer.offsetAt(literal.range.start.line - 1, literal.range.start.column - 1);
-	const end = buffer.offsetAt(literal.range.end.line - 1, literal.range.end.column);
+export function createLuaStringValueEdit(buffer: TextBuffer, locations: LuaSourceLocations, literal: LuaScalarLiteral, value: string): EditorTextEdit {
+	const start = buffer.offsetAt(locations.range(literal.span).start.line - 1, locations.range(literal.span).start.column - 1);
+	const end = buffer.offsetAt(locations.range(literal.span).end.line - 1, locations.range(literal.span).end.column);
 	// Retain short-string quote style; long strings become a properly quoted token.
 	const quote = buffer.charCodeAt(start) === 34 ? '"' : "'";
 	return { offset: start, deleteLength: end - start, text: quoteLuaString(value, quote) };
@@ -86,8 +88,8 @@ export function readLuaSourceLinePreview(buffer: TextBuffer, range: LuaSourceRan
 }
 
 /** Expression display, not printed replacement source. Function bodies stay in full inspection. */
-export function readLuaExpressionPreview(buffer: TextBuffer, expression: LuaExpression): string {
-	if (expression.kind !== LuaSyntaxKind.FunctionExpression) return readLuaSourceLinePreview(buffer, expression.range);
+export function readLuaExpressionPreview(buffer: TextBuffer, locations: LuaSourceLocations, expression: LuaExpression): string {
+	if (expression.kind !== LuaSyntaxKind.FunctionExpression) return readLuaSourceLinePreview(buffer, locations.range(expression.span));
 	let signature = 'function(';
 	for (let index = 0; index < expression.parameters.length; index += 1) {
 		if (index > 0) signature += ', ';
@@ -124,6 +126,7 @@ function numericFieldLiteral(field: LuaTableField): LuaNumericLiteralExpression 
  */
 export function createLuaTableFieldIntegerEdits(
 	buffer: TextBuffer,
+	locations: LuaSourceLocations,
 	field: LuaTableField,
 	value: number,
 ): EditorTextEdit[] | null {
@@ -135,8 +138,8 @@ export function createLuaTableFieldIntegerEdits(
 		return [];
 	}
 
-	const literalStart = buffer.offsetAt(literal.range.start.line - 1, literal.range.start.column - 1);
-	const literalEnd = buffer.offsetAt(literal.range.end.line - 1, literal.range.end.column);
+	const literalStart = buffer.offsetAt(locations.range(literal.span).start.line - 1, locations.range(literal.span).start.column - 1);
+	const literalEnd = buffer.offsetAt(locations.range(literal.span).end.line - 1, locations.range(literal.span).end.column);
 	const literalSource = buffer.getTextRange(literalStart, literalEnd);
 	const negative = value < 0;
 	const magnitude = negative ? -value : value;
@@ -146,7 +149,7 @@ export function createLuaTableFieldIntegerEdits(
 	if (expression.kind === LuaSyntaxKind.UnaryExpression) {
 		if (!negative) {
 			edits.push({
-				offset: buffer.offsetAt(expression.range.start.line - 1, expression.range.start.column - 1),
+				offset: buffer.offsetAt(locations.range(expression.span).start.line - 1, locations.range(expression.span).start.column - 1),
 				deleteLength: 1,
 				text: '',
 			});

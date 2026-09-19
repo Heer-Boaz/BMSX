@@ -44,7 +44,7 @@ export function leaveConstLocalScope(context: ConstLocalContext): void {
 	leaveBindingScope(context.scopeStack, context.bindingStacksByName, binding => {
 		if (binding.shouldReport && binding.writeCountAfterDeclaration === 0) {
 			pushIssue(
-				context.issues,
+				context.lint,
 				localConstPatternRule.name,
 				binding.declaration,
 				`Local "${binding.declaration.name}" is never reassigned. Mark it <const>.`,

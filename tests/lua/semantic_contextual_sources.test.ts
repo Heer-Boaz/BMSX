@@ -302,7 +302,7 @@ return make()`,
 	const trace = f.values.trace(f.values.argument(f.calls('record').heads[0], 0));
 	assert.deepEqual(literals(trace), ['provider']);
 	assert.equal(trace.terminals[0].source.file, f.files[1]);
-	assert.equal(trace.callResults[0].call.site.expression.range.path, 'library.lua');
+	assert.equal(trace.callResults[0].call.site.file, 'library.lua');
 	assert.equal(trace.callResults[0].call.caller.kind, 'module');
 });
 
@@ -319,7 +319,7 @@ return replace('input', false) == 'input', replace('input', true) == 'written'`;
 		const trace = f.values.trace(f.values.argument(head, 0));
 		assert.deepEqual(new Set(literals(trace)), new Set(['input', 'written', 'other body']));
 		const other = trace.terminals.find(value => value.source.kind === 'declaration-write'
-			&& value.source.write.syntax.range.start.line === 4)!;
+			&& value.source.file.chunk.locations.range(value.source.write.syntax.span).start.line === 4)!;
 		assert.equal(other.activation.kind, 'projection', 'an uncalled captured write is not an effect in this activation');
 	}
 	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [true, true]);
@@ -357,14 +357,14 @@ return a, b`;
 	const absent = missing.terminals[0].source;
 	assert.ok(absent.kind === 'call-input');
 	assert.equal(absent.index, 1);
-	assert.equal(absent.call.expression.range.start.line, 4);
+	assert.equal(f.file.chunk.locations.range(absent.call.expression.span).start.line, 4);
 	const expanded = f.values.trace(f.values.argument(actual[1], 1));
 	assert.equal(expanded.terminals.length, 0);
 	assert.deepEqual(expanded.boundaries.map(boundary => boundary.reason), ['unknown-value']);
 	const tail = expanded.boundaries[0].source.source;
 	assert.ok(tail.kind === 'call-input');
 	assert.equal(tail.index, 1);
-	assert.equal(tail.call.expression.range.start.line, 5);
+	assert.equal(f.file.chunk.locations.range(tail.call.expression.span).start.line, 5);
 	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [null, 2]);
 });
 

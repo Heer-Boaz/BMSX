@@ -7,7 +7,6 @@ import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_
 import { createLuaTableFieldTransfer } from '../../../language/lua/table_field_transfer';
 import type { BehaviorTreeTransferCheck } from './behavior_tree_transfer';
 import { behaviorSourceEditState, captureBehaviorSourceBookmark, mapBehaviorSourceBookmark } from './source_bookmark';
-import type { LuaChunk } from '../../../../toolchain/ts/lua/syntax/ast';
 
 /** Constant-time command admission from the current projection's source evidence. */
 export function behaviorTreeEditTarget(view: BehaviorLensViewState): BehaviorTreeSourceMember | null {
@@ -25,21 +24,21 @@ export function behaviorTreeMoveTarget(view: BehaviorLensViewState, direction: -
 }
 
 /** Remove the authored list entry, not its referenced initializer or a guessed runtime node. */
-export function removeBehaviorTreeChild(model: EditorTextModel, member: BehaviorTreeSourceMember, syntax: LuaChunk): void {
-	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, syntax.tokens, member.branch.entries[member.index].field));
+export function removeBehaviorTreeChild(model: EditorTextModel, member: BehaviorTreeSourceMember): void {
+	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, member.file.chunk.locations, member.file.chunk.tokens, member.branch.entries[member.index].field));
 }
 
 /** Insert before the retained field: its tracked selection becomes the second occurrence. */
 export function duplicateBehaviorTreeChild(model: EditorTextModel, member: BehaviorTreeSourceMember): void {
 	const field = member.branch.entries[member.index].field;
-	model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, model.resource.path, member.table,
-		member.table.fields.indexOf(field), readLuaSourceRange(model.buffer, field.range)));
+	model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, member.file.chunk.locations, member.table,
+		member.table.fields.indexOf(field), readLuaSourceRange(model.buffer, member.file.chunk.locations.range(field.span))));
 }
 
 /** Array ranks are not lexical field indices: named metadata stays ordinary Lua. */
 export function moveBehaviorTreeChild(model: EditorTextModel, member: BehaviorTreeSourceMember, destination: number): void {
 	const fields = member.table.fields;
-	model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, model.resource.path, member.table,
+	model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, member.file.chunk.locations, member.table,
 		fields.indexOf(member.branch.entries[member.index].field), fields.indexOf(member.branch.entries[destination].field)));
 }
 
@@ -49,10 +48,10 @@ export function transferBehaviorTreeChild(model: EditorTextModel, view: Behavior
 	const field = member.branch.entries[member.index].field;
 	const { target, table } = check;
 	const destination = insertion === target.entries.length ? table.fields.length : table.fields.indexOf(target.entries[insertion].field);
-	const transfer = createLuaTableFieldTransfer(model.buffer, model.resource.path, field, table, destination);
+	const transfer = createLuaTableFieldTransfer(model.buffer, member.file.chunk.locations, field, table, destination);
 	const before = captureBehaviorSourceBookmark(view, view.selection!);
 	const after = captureBehaviorSourceBookmark(view, { kind: before.kind === 'tree-edge' ? 'tree-edge' : 'node', rowKey: target.source.rowKey });
-	const fieldStart = model.buffer.offsetAt(field.range.start.line - 1, field.range.start.column - 1);
+	const fieldStart = model.buffer.offsetAt(member.file.chunk.locations.range(field.span).start.line - 1, member.file.chunk.locations.range(field.span).start.column - 1);
 	let prefixLength = before.path.length;
 	for (let key = view.selection!.rowKey; key !== member.branch.source.rowKey; key = view.source.parentByRowKey.get(key)!) prefixLength -= 1;
 	const suffix = before.path.slice(prefixLength);

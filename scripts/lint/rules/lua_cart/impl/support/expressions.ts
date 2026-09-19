@@ -1,3 +1,4 @@
+import type { LuaSourceLocations, LuaSyntaxSpan } from '../../../../../../toolchain/ts/lua/syntax/source_locations';
 import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { isConstantSourceIdentifierName } from './bindings';
 import { isConstantModuleRequireExpression } from './require_aliases';
@@ -23,12 +24,9 @@ export function isConstantBindingPathExpression(expression: Expression, context:
 	return false;
 }
 
-export function getRangeLineSpan(node: { readonly range: { readonly start: { readonly line: number; }; readonly end: { readonly line: number; }; }; }): number {
-	const lineSpan = node.range.end.line - node.range.start.line + 1;
-	if (lineSpan <= 0) {
-		return 1;
-	}
-	return lineSpan;
+export function getRangeLineSpan(node: { readonly span: LuaSyntaxSpan }, locations: LuaSourceLocations): number {
+	const range = locations.range(node.span);
+	return range.end.line - range.start.line + 1;
 }
 
 export function isSimpleCallableExpression(expression: Expression): boolean {

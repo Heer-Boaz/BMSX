@@ -13,7 +13,7 @@ import { runCompiledLua } from './cpu_test_harness';
 const resource = { domain: 0 as const, path: 'transfer.lua', source: { type: 'lua' as const, resid: 'transfer' } };
 // Compare grammar structure: source text/tokens and locations necessarily change
 // when a field moves. The exact source/history checks below cover those bytes.
-const locationKeys = new Set(['range', 'startInclusive', 'endExclusive', 'line', 'column', 'source', 'tokens', 'syntaxError']);
+const locationKeys = new Set(['span', 'locations', 'offset', 'skippedSyntax', 'range', 'startInclusive', 'endExclusive', 'line', 'column', 'source', 'tokens', 'syntaxError']);
 
 function applyTransfer(source: string, sourceTableIndex: number, fieldIndex: number, targetTableIndex: number, destination: number) {
 	const model = new EditorTextModel(resource, 'lua', source);
@@ -24,11 +24,11 @@ function applyTransfer(source: string, sourceTableIndex: number, fieldIndex: num
 	const from = tables[sourceTableIndex];
 	const target = tables[targetTableIndex];
 	const field = from.fields[fieldIndex];
-	const fieldSource = readLuaSourceRange(model.buffer, field.range);
-	const sourceMarker = luaSourceRangeToTextRange(model.buffer, field.range);
+	const fieldSource = readLuaSourceRange(model.buffer, parsed.chunk.locations.range(field.span));
+	const sourceMarker = luaSourceRangeToTextRange(model.buffer, parsed.chunk.locations.range(field.span));
 	let events = 0;
 	model.onDidChangeContent(event => { events += 1; mapTrackedTextRange(sourceMarker, event.changes); });
-	const result = createLuaTableFieldTransfer(model.buffer, resource.path, field, target, destination);
+	const result = createLuaTableFieldTransfer(model.buffer, parsed.chunk.locations, field, target, destination);
 	assert.ok(result.edits.length >= 2 && result.edits.length <= 3);
 	for (let index = 1; index < result.edits.length; index += 1) {
 		const previous = result.edits[index - 1];

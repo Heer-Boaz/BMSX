@@ -114,7 +114,7 @@ test('imported callback drag admission checks the actual return owner and invali
 		assert.equal(stateMachineConnectionEnds(f.view, f.edge), 'target', 'a read-only anchor is not the write target');
 		const session = f.begin(); f.hover(session, 'other');
 		assert.equal(session.feedback.accepted, true);
-		session.drop(); assert.equal(f.drops[0][1].literal.range.path, owner.resource.path);
+		session.drop(); assert.equal(f.drops[0][1].file.chunk.locations.range(f.drops[0][1].literal.span).path, owner.resource.path);
 		assert.equal(f.drops[0][1].uses.length, 3);
 		assert.ok(stateMachineRetargetImpacts(f.view, f.drops[0][1]).every(item => item.description.includes('return callback.lua:')
 			&& item.description.includes('RECOGNIZED IN drag.lua')), 'review distinguishes write-file coordinates from registration coverage');

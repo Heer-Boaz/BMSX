@@ -27,6 +27,7 @@ export type OwnedValueID = number & { readonly [ownedValueBrand]: true };
 
 export type OwnedValueRoot = {
 	readonly kind: 'owned';
+	readonly file: string;
 	readonly id: OwnedValueID;
 	readonly syntax: LuaExpression;
 	readonly role: 'expression' | 'receiver';
@@ -76,6 +77,7 @@ export type FunctionSemanticValueSource = DeclarationSemanticValueSource | Owned
 export type DeclarationValueRelation = 'value' | 'identity' | 'projection';
 
 export type DeclarationValueEntry = {
+	readonly file: string;
 	readonly declId: SymbolID;
 	readonly source: SemanticValueSource;
 	readonly relation: DeclarationValueRelation;
@@ -128,6 +130,7 @@ export type FunctionValueFlowEntry = {
 };
 
 export type CallValueEntry = {
+	readonly file: string;
 	readonly expression: LuaCallExpression;
 	callee: SemanticValueSource;
 	arguments: readonly SemanticValueSource[];
@@ -243,9 +246,9 @@ function semanticLiteralValueKey(literal: SemanticLiteralValue): string {
 }
 
 /** Bound once by the file producer; this is neither a value union nor a persistent editor id. */
-export function ownedValueSource(syntax: LuaExpression, role: OwnedValueRoot['role']): OwnedSemanticValueSource {
+export function ownedValueSource(file: string, syntax: LuaExpression, role: OwnedValueRoot['role']): OwnedSemanticValueSource {
 	return {
-		root: { kind: 'owned', id: nextOwnedValueId++ as OwnedValueID, syntax, role },
+		root: { kind: 'owned', file, id: nextOwnedValueId++ as OwnedValueID, syntax, role },
 		steps: [],
 	};
 }

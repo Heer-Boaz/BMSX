@@ -190,14 +190,14 @@ function prepareRegistryProgramSources(
 	const compiledSources = new Map<string, string>();
 	const diagnosticSources = new Map<string, Blua32DiagnosticSource>();
 	compiledSources.set(entryPath, entrySource);
-	diagnosticSources.set(programSources.entry.chunk.range.path, {
+	diagnosticSources.set(programSources.entry.chunk.locations.path, {
 		displayPath: programSources.entry.sourcePath,
 		source: entrySource,
 	});
 	for (let index = 0; index < modules.length; index += 1) {
 		const module = modules[index];
 		compiledSources.set(module.path, module.source);
-		diagnosticSources.set(module.chunk.range.path, {
+		diagnosticSources.set(module.chunk.locations.path, {
 			displayPath: module.sourcePath,
 			source: module.source,
 		});
@@ -234,7 +234,7 @@ function applyLinkedAssetModule(
 	}
 	modules[moduleIndex].source = assetModule.source;
 	modules[moduleIndex].linkValues = assetModule.linkValues;
-	diagnosticSources.set(modules[moduleIndex].chunk.range.path, {
+	diagnosticSources.set(modules[moduleIndex].chunk.locations.path, {
 		displayPath: modules[moduleIndex].sourcePath,
 		source: assetModule.source,
 	});

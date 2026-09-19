@@ -1,12 +1,12 @@
 import { type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaIdentifierExpression as IdentifierExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../../../lua_rule';
+import { type CartLintContext } from '../../../../lua_rule';
 import { leaveConstLocalScope } from '../../../common/local_const_pattern';
 import { declareBinding, enterBindingScope } from './bindings';
 import { ConstLocalBinding, ConstLocalContext } from './types';
 
-export function createConstLocalContext(issues: CartLintIssue[]): ConstLocalContext {
+export function createConstLocalContext(lint: CartLintContext): ConstLocalContext {
 	return {
-		issues,
+		lint,
 		bindingStacksByName: new Map<string, ConstLocalBinding[]>(),
 		scopeStack: [],
 	};
@@ -222,8 +222,8 @@ export function lintConstLocalInStatements(statements: ReadonlyArray<Statement>,
 	}
 }
 
-export function lintConstLocalPattern(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
-	const context = createConstLocalContext(issues);
+export function lintConstLocalPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
+	const context = createConstLocalContext(lint);
 	enterConstLocalScope(context);
 	try {
 		lintConstLocalInStatements(statements, context);

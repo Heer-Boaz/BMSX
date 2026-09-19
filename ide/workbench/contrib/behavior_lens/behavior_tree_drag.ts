@@ -1,5 +1,4 @@
 import { create_rect_bounds, write_rect_bounds } from '../../../../machine/ts/common/rect';
-import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { WorkbenchGraphNodeDragFeedback, WorkbenchGraphDragSession } from '../../ui/graph/drag';
 import type { WorkbenchGraphViewport } from '../../ui/graph/viewport';
@@ -14,7 +13,7 @@ export type BehaviorTreeTransferDrop = (analysis: BehaviorTreeTransferAnalysis,
 
 /** Freeze the proven source occurrence only when a physical press becomes a drag. */
 export function beginBehaviorTreeDrag(model: EditorTextModel, view: BehaviorLensViewState,
-	file: FileSemanticData, transfer: BehaviorTreeTransferDrop): WorkbenchGraphDragSession | undefined {
+	transfer: BehaviorTreeTransferDrop): WorkbenchGraphDragSession | undefined {
 	if (model.readOnly || !view.source.isCurrent || !view.document.syntaxComplete || view.presentation.kind !== 'graph') return undefined;
 	const viewport = view.presentation.viewport;
 	const selected = viewport.selection;
@@ -22,7 +21,7 @@ export function beginBehaviorTreeDrag(model: EditorTextModel, view: BehaviorLens
 	const node = selected.kind === 'node' ? selected : selected.child;
 	const member = behaviorTreeEditTarget(view);
 	if (member === null) return undefined;
-	return new BehaviorTreeDrag(model, view, viewport, node, new BehaviorTreeTransferAnalysis(view.document, file, member), transfer);
+	return new BehaviorTreeDrag(model, view, viewport, node, new BehaviorTreeTransferAnalysis(view.document, member), transfer);
 }
 
 /** Normalize visual sectors to an authored list and insertion rank before editing. */

@@ -51,7 +51,7 @@ export function validateInitParticipantPlacement(
 				case LuaSyntaxKind.LocalFunctionStatement:
 					if (statement.attribute === 'init') {
 						if (compileTimeModule) {
-							throw new Error(`Compile-time module '${chunk.range.path}' cannot declare an <init> function.`);
+							throw new Error(`Compile-time module '${chunk.locations.path}' cannot declare an <init> function.`);
 						}
 						if (!topLevel) {
 							throw new Error('Function attribute <init> is only valid on module/chunk top-level local functions.');

@@ -18,7 +18,7 @@ export function declareShadowedRequireAliasBinding(
 				const outer = stack[index];
 				if (outer.requiredModulePath !== undefined) {
 					pushIssue(
-						context.issues,
+						context.lint,
 						shadowedRequireAliasPatternRule.name,
 						declaration,
 						`Local "${name}" shadows outer module alias from require('${outer.requiredModulePath}'). Rename the local; do not shadow imported module aliases.`,

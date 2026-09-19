@@ -1,3 +1,4 @@
+import { luaSyntaxSnapshot } from '../helpers/lua_syntax_snapshot';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
@@ -106,7 +107,7 @@ for (const [name, edited] of edits) {
 		workspace.updateFile(path, original);
 		workspace.updateFile('consumer.lua', "local item<const> = require('edit')\nitem:run()");
 		const retained = workspace.getSnapshot();
-		const retainedTree = JSON.stringify(retained.getFileData(path)!.chunk);
+		const retainedTree = luaSyntaxSnapshot(retained.getFileData(path)!.chunk);
 		const retainedAnswers = answers(retained);
 		const consumer = retained.getFileData('consumer.lua');
 
@@ -114,7 +115,7 @@ for (const [name, edited] of edits) {
 			const updated = workspace.updateFile(path, source);
 			const parsed = parseLuaChunkWithRecovery(source, path);
 			const fresh = buildLuaFileSemanticData(source, path, parsed);
-			assert.deepEqual(updated.chunk, parsed.chunk);
+			assert.deepEqual(luaSyntaxSnapshot(updated.chunk), luaSyntaxSnapshot(parsed.chunk));
 			assert.deepEqual(updated.syntaxError, parsed.syntaxError);
 			assert.deepEqual(updated.annotations, fresh.annotations);
 			const cold = new LuaSemanticWorkspace();
@@ -122,7 +123,7 @@ for (const [name, edited] of edits) {
 				parseLuaChunkWithRecovery(consumer!.source, consumer!.file))]);
 			assert.deepEqual(answers(workspace.getSnapshot()), answers(cold.getSnapshot()));
 			assert.equal(workspace.getFileData('consumer.lua'), consumer);
-			assert.equal(JSON.stringify(retained.getFileData(path)!.chunk), retainedTree);
+			assert.deepEqual(luaSyntaxSnapshot(retained.getFileData(path)!.chunk), retainedTree);
 			assert.deepEqual(answers(retained), retainedAnswers);
 		}
 	});

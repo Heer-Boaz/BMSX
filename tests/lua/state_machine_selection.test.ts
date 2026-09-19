@@ -176,7 +176,7 @@ test('deleting the selected proof, binding, callback or parent use clears select
 			const proof = selected.outcome.proof;
 			assert.ok(proof.kind === 'return');
 			const parent = f.view.source.nodes.find(node => node.kind === 'state' && node.label === 'right')!;
-			const range = part === 'parent' ? parent.occurrenceRange : proof[part].range;
+			const range = part === 'parent' ? parent.occurrenceRange : (part === 'binding' ? proof.file : proof.callbackFile).chunk.locations.range(proof[part].span);
 			f.replace(range, '');
 			if (undoBeforeRefresh) f.model.undo();
 			f.refresh();
@@ -245,12 +245,12 @@ test('explicit entry identity uses its declaring owner and role, not the parent 
 	assert.notEqual(concurrent.entry.owner, concurrent.entry.origin);
 	f.choose(concurrent);
 	assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(f.view)!), 'is_concurrent = true');
-	f.replace(concurrent.field.value.range, '0'); // Lua truth, not a host boolean validator.
+	f.replace(concurrent.entry.file.chunk.locations.range(concurrent.field.value.span), '0'); // Lua truth, not a host boolean validator.
 	f.refresh();
 	assert.ok(f.view.selection?.kind === 'state-entry');
 	assert.equal(f.view.selection.entry.kind, 'concurrent');
 	assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(f.view)!), 'is_concurrent = 0');
-	f.replace(f.view.selection.field.value.range, 'false');
+	f.replace(f.view.selection.entry.file.chunk.locations.range(f.view.selection.field.value.span), 'false');
 	f.refresh();
 	assert.equal(f.view.selection, null, 'the concurrent entry relation no longer exists');
 	f.model.undo();
@@ -261,10 +261,10 @@ test('explicit entry identity uses its declaring owner and role, not the parent 
 test('an explicit initial field keeps its own evidence when a longer target is edited and undone', () => {
 	const f = fixture();
 	const initial = [...f.view.stateMachines.references.values()].flat().find(reference => reference.kind === 'state-entry'
-		&& reference.entry.kind === 'initial' && readLuaSourceRange(f.model.buffer, reference.field.value.range) === "'idle'")!;
+		&& reference.entry.kind === 'initial' && readLuaSourceRange(f.model.buffer, reference.entry.file.chunk.locations.range(reference.field.value.span)) === "'idle'")!;
 	assert.ok(initial.kind === 'state-entry');
 	f.choose(initial);
-	f.replace(initial.field.value.range, "'active'");
+	f.replace(initial.entry.file.chunk.locations.range(initial.field.value.span), "'active'");
 	f.refresh();
 	let selection = f.view.selection;
 	assert.ok(selection?.kind === 'state-entry' && selection.entry.target.kind === 'state');

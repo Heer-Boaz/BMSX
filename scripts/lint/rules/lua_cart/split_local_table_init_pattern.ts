@@ -1,12 +1,12 @@
 import { defineLintRule } from '../../rule';
 import { LuaAssignmentOperator as AssignmentOperator, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { isIdentifier } from './impl/support/bindings';
 import { pushIssue } from './impl/support/lint_context';
 
 export const splitLocalTableInitPatternRule = defineLintRule('cart', 'split_local_table_init_pattern');
 
-export function lintSplitLocalTableInitPattern(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
+export function lintSplitLocalTableInitPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
 	for (let index = 0; index < statements.length; index += 1) {
 		const statement = statements[index];
 		if (statement.kind !== SyntaxKind.LocalAssignmentStatement) {
@@ -37,7 +37,7 @@ export function lintSplitLocalTableInitPattern(statements: ReadonlyArray<Stateme
 				break;
 			}
 			pushIssue(
-				issues,
+				lint,
 				splitLocalTableInitPatternRule.name,
 				statement.names[0],
 				`Split local declaration + table initialization is forbidden ("${localName}"). Initialize the table in the local declaration.`,

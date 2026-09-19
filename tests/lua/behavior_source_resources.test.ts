@@ -42,12 +42,12 @@ function fixture() {
 		assert.ok(outcome.proof.kind === 'return');
 		const body = dependency.functionValueFlows[0];
 		const returned = body.returns[0].statement;
-		const transition = { ...original, outcomes: [{ ...outcome, value: returned.expressions[0],
-			proof: { kind: 'return' as const, binding: outcome.proof.binding, callback: body.expression, statement: returned } }] };
+		const transition = { ...original, outcomes: [{ ...outcome, value: returned.expressions[0], valueFile: dependency,
+			proof: { kind: 'return' as const, file: outcome.proof.file, callbackFile: dependency, binding: outcome.proof.binding, callback: body.expression, statement: returned } }] };
 		// An independent foreign occurrence exercises the same generic source-tree index as BT nodes/properties.
 		const providerNode: BehaviorSourceNode = { rowKey: 'provider-return', behaviorKind: 'state_machine', kind: 'property',
-			label: 'provider return', detail: '', authoredRange: returned.range, referenceRange: null,
-			occurrenceRange: returned.range, resolution: 'complete', children: [] };
+			label: 'provider return', detail: '', authoredRange: dependency.chunk.locations.range(returned.span), referenceRange: null,
+			occurrenceRange: dependency.chunk.locations.range(returned.span), resolution: 'complete', children: [] };
 		return { ...document, files: [analysis, dependency].map(file => ({ file: file.file, revision: file.revision })), definitions: [{ ...definition,
 			children: [...definition.children, providerNode], transitions: [transition] }] };
 	}
@@ -73,7 +73,7 @@ test('binding and callback markers use their own resource, buffer and UTF-16 coo
 	assert.equal(selected.tracked.callback.resource, f.provider.identity);
 	assert.equal(selected.tracked.statementStart.resource, f.provider.identity);
 	assert.deepEqual(selected.tracked.callback, { resource: f.provider.identity,
-		...luaSourceRangeToTextRange(f.provider.buffer, selected.outcome.proof.callback.range) });
+		...luaSourceRangeToTextRange(f.provider.buffer, selected.outcome.proof.callbackFile.chunk.locations.range(selected.outcome.proof.callback.span)) });
 	const own = { ...selected.tracked.binding };
 	const callbackStart = selected.tracked.callback.start;
 	const rootStart = f.view.source.ranges.get(f.view.definitionRowKey!)!.start;
@@ -132,9 +132,10 @@ test('equal coordinates in another file or socket do not identify the same sourc
 	otherFile.path[last] = { ...otherFile.path[last], resource: f.main.identity };
 	assert.equal(behaviorSourceBookmarksEqual(bookmark, otherFile), false);
 	assert.equal(resolveBehaviorSourceBookmark(otherFile, f.view), undefined);
-	const expression = buildLuaFileSemanticData(PROVIDER, f.provider.identity.path).chunk.body[0];
+	const dependency = buildLuaFileSemanticData(PROVIDER, f.provider.identity.path);
+	const expression = dependency.chunk.body[0];
 	assert.ok(expression.kind === LuaSyntaxKind.ReturnStatement);
-	const location = luaSourceRangeToTextLocation(f.models, expression.range);
+	const location = luaSourceRangeToTextLocation(f.models, dependency.chunk.locations.range(expression.span));
 	assert.equal(trackedTextLocationsEqual(location, { ...location, resource: { domain: 1, path: location.resource.path } }), false);
 });
 

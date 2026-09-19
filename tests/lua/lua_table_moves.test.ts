@@ -23,7 +23,7 @@ function parseTable(source: string) {
 	if (statement.kind !== LuaSyntaxKind.LocalAssignmentStatement) throw new Error('expected local assignment');
 	const table = statement.values[0];
 	if (table.kind !== LuaSyntaxKind.TableConstructorExpression) throw new Error('expected table');
-	return table;
+	return { table, locations: parsed.chunk.locations };
 }
 
 test('Lua punctuated field spans own documentation and inline trivia, not enclosing brace trivia', () => {
@@ -32,21 +32,21 @@ test('Lua punctuated field spans own documentation and inline trivia, not enclos
 	const second = '\r\n\t--[=[ second documentation ]=]\r\n\t(20), -- second inline\r\n';
 	const footer = '\t-- table footer\r\n} -- outside';
 	const source = header + first + second + footer;
-	const table = parseTable(source);
+	const { table, locations } = parseTable(source);
 	const tokens = new LuaLexer(source, resource.path, false).scanTokens();
 	const model = new EditorTextModel(resource, 'lua', source);
-	const spans = table.fields.map(field => getLuaTableFieldTriviaSpan(tokens, field));
+	const spans = table.fields.map(field => getLuaTableFieldTriviaSpan(locations, tokens, field));
 	assert.equal(spans[0].endToken, spans[1].startToken, 'adjacent punctuated pairs have one shared trivia boundary');
 	assert.deepEqual(spans.map(span => model.buffer.getTextRange(
 		model.buffer.offsetAt(span.startToken.line - 1, span.startToken.column - 1),
 		model.buffer.offsetAt(span.endToken.line - 1, span.endToken.column - 1),
 	)), [first, second]);
 	assert.deepEqual(spans.map(span => span.separator!.lexeme), [';', ',']);
-	const edits = createLuaTableFieldMoveEdits(model.buffer, resource.path, table, 1, 0);
+	const edits = createLuaTableFieldMoveEdits(model.buffer, locations, table, 1, 0);
 	assert.equal(edits.length, 2);
 	model.pushEditOperations(edits);
 	assert.equal(model.buffer.getText(), header + second + first + footer);
-	assert.equal(parseTable(model.buffer.getText()).fields.length, 2);
+	assert.equal(parseTable(model.buffer.getText()).table.fields.length, 2);
 });
 
 test('moving fields follows token attachment through long comments, strings and unusual line layouts', () => {
@@ -66,11 +66,12 @@ test('moving fields follows token attachment through long comments, strings and 
 	for (const [source, expected] of cases) {
 		for (const [index, direction] of [[0, 1], [1, -1]] as const) {
 			const model = new EditorTextModel(resource, 'lua', source);
-			const table = parseTable(source);
-			const texts = table.fields.map(field => readLuaSourceRange(model.buffer, field.range));
-			model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, resource.path, table, index, index + direction));
+			const { table, locations } = parseTable(source);
+			const texts = table.fields.map(field => readLuaSourceRange(model.buffer, locations.range(field.span)));
+			model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, locations, table, index, index + direction));
 			assert.equal(model.buffer.getText(), expected, source);
-			assert.deepEqual(parseTable(expected).fields.map(field => readLuaSourceRange(model.buffer, field.range)), texts.reverse());
+			const after = parseTable(expected);
+			assert.deepEqual(after.table.fields.map(field => readLuaSourceRange(model.buffer, after.locations.range(field.span))), texts.reverse());
 			model.undo();
 			assert.equal(model.buffer.getText(), source);
 			model.redo();
@@ -85,7 +86,8 @@ test('missing separators are inserted before comments; repeated moves do not acc
 	let events = 0;
 	model.onDidChangeContent(() => { events += 1; });
 	for (const [index, direction] of [[2, -1], [1, -1], [0, 1], [1, 1]] as const) {
-		model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, resource.path, parseTable(model.buffer.getText()), index, index + direction));
+		const { table, locations } = parseTable(model.buffer.getText());
+		model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, locations, table, index, index + direction));
 	}
 	assert.equal(events, 4, 'one event and history element per explicit move');
 	const withSeparator = source.replace('(30)', '(30),');
@@ -107,7 +109,8 @@ test('first, interior and final swaps change actual BLua32 field evaluation and 
 		[3, -1, [1243, 1, 2, 4, 3]],
 	] as const) {
 		const model = new EditorTextModel(resource, 'lua', source);
-		model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, resource.path, parseTable(source), index, index + direction));
+		const { table, locations } = parseTable(model.buffer.getText());
+		model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, locations, table, index, index + direction));
 		assert.deepEqual(runCompiledLua(prefix + model.buffer.getText() + '\nreturn order, values[1], values[2], values[3], values[4]'), expected);
 	}
 });
@@ -117,7 +120,8 @@ test('moving syntax fields does not confuse identical names or mutate nested or 
 	const second = '\t-- second\n\tduplicate = {4, 5; 6},\n';
 	const source = 'local values = {\n' + first + second + '}\nlocal other = {7,8}';
 	const model = new EditorTextModel(resource, 'lua', source);
-	model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, resource.path, parseTable(source), 0, 1));
+	const { table, locations } = parseTable(model.buffer.getText());
+	model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, locations, table, 0, 1));
 	assert.equal(model.buffer.getText(), 'local values = {\n' + second + first + '}\nlocal other = {7,8}');
 	assert.deepEqual(runCompiledLua(model.buffer.getText() + '\nreturn values.duplicate[1], other[2]'), [1, 8]);
 });
@@ -132,12 +136,12 @@ test('non-adjacent moves retain the selected source and nested markers through o
 		for (let index = 0; index < 4; index += 1) for (let destination = 0; destination < 4; destination += 1) {
 			if (index === destination) continue;
 			const model = new EditorTextModel(resource, 'lua', source);
-			const table = parseTable(source);
-			const span = luaSourceRangeToTextRange(model.buffer, table.fields[index].range);
+			const { table, locations } = parseTable(source);
+			const span = luaSourceRangeToTextRange(model.buffer, locations.range(table.fields[index].span));
 			const interior = { start: span.start + 1, end: span.end - 1 };
 			const selectedText = model.buffer.getTextRange(span.start, span.end);
 			const interiorText = model.buffer.getTextRange(interior.start, interior.end);
-			const expected = table.fields.map(field => readLuaSourceRange(model.buffer, field.range));
+			const expected = table.fields.map(field => readLuaSourceRange(model.buffer, locations.range(field.span)));
 			expected.splice(destination, 0, expected.splice(index, 1)[0]);
 			let events = 0;
 			model.onDidChangeContent(event => {
@@ -145,13 +149,14 @@ test('non-adjacent moves retain the selected source and nested markers through o
 				mapTrackedTextRange(span, event.changes);
 				mapTrackedTextRange(interior, event.changes);
 			});
-			const edits = createLuaTableFieldMoveEdits(model.buffer, resource.path, table, index, destination);
+			const edits = createLuaTableFieldMoveEdits(model.buffer, locations, table, index, destination);
 			assert.ok(edits.length >= 2 && edits.length <= 3);
 			assert.ok(edits.every(edit => edit.deleteLength === 0 || edit.offset >= span.end || edit.offset + edit.deleteLength <= span.start),
 				'the selected syntax is never replaced');
 			model.pushEditOperations(edits);
 			const moved = model.buffer.getText();
-			assert.deepEqual(parseTable(moved).fields.map(field => readLuaSourceRange(model.buffer, field.range)), expected);
+			const after = parseTable(moved);
+			assert.deepEqual(after.table.fields.map(field => readLuaSourceRange(model.buffer, after.locations.range(field.span))), expected);
 			for (const operation of [() => {}, () => model.undo(), () => model.redo()]) {
 				operation();
 				assert.equal(model.buffer.getTextRange(span.start, span.end), selectedText);

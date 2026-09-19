@@ -1,30 +1,29 @@
 import {
 	LuaSyntaxKind as SyntaxKind,
 	type LuaExpression as Expression,
-	type LuaSourcePosition as SourcePosition,
 	type LuaStatement as Statement,
 } from '../../../../toolchain/ts/lua/syntax/ast';
 import { visitLuaExpressionChildren } from '../../../../toolchain/ts/lua/syntax/ast/traversal';
 import { type LuaToken as Token } from '../../../../toolchain/ts/lua/syntax/token';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { consecutiveDuplicateStatementPatternRule } from '../common/consecutive_duplicate_statement_pattern';
 import { pushIssue } from './impl/support/lint_context';
 
 const duplicateMessage = 'Consecutive duplicate statement is forbidden. Remove the duplicate or replace intentional repetition with a named loop/helper.';
 
-export function lintConsecutiveDuplicateStatementPattern(statements: ReadonlyArray<Statement>, tokens: ReadonlyArray<Token>, issues: CartLintIssue[]): void {
+export function lintConsecutiveDuplicateStatementPattern(statements: ReadonlyArray<Statement>, tokens: ReadonlyArray<Token>, lint: CartLintContext): void {
 	if (statements.length > 1) {
 		let previous = statements[0];
-		let previousStart = firstTokenAtOrAfter(tokens, previous.range.start);
-		let previousEnd = firstTokenAfter(tokens, previous.range.end);
+		let previousStart = firstTokenAtOrAfter(tokens, lint.locations.offset(previous.span.unit, previous.span.start));
+		let previousEnd = firstTokenAfter(tokens, lint.locations.offset(previous.span.unit, previous.span.end));
 		for (let index = 1; index < statements.length; index += 1) {
 			const statement = statements[index];
-			const start = firstTokenAtOrAfter(tokens, statement.range.start);
-			const end = firstTokenAfter(tokens, statement.range.end);
+			const start = firstTokenAtOrAfter(tokens, lint.locations.offset(statement.span.unit, statement.span.start));
+			const end = firstTokenAfter(tokens, lint.locations.offset(statement.span.unit, statement.span.end));
 			if (statement.kind !== SyntaxKind.CallStatement
 				&& statement.kind === previous.kind
 				&& tokensEqual(tokens, previousStart, previousEnd, start, end)) {
-				pushIssue(issues, consecutiveDuplicateStatementPatternRule.name, statement, duplicateMessage);
+				pushIssue(lint, consecutiveDuplicateStatementPatternRule.name, statement, duplicateMessage);
 			}
 			previous = statement;
 			previousStart = start;
@@ -32,64 +31,64 @@ export function lintConsecutiveDuplicateStatementPattern(statements: ReadonlyArr
 		}
 	}
 	for (let index = 0; index < statements.length; index += 1) {
-		lintStatementChildren(statements[index], tokens, issues);
+		lintStatementChildren(statements[index], tokens, lint);
 	}
 }
 
-function lintStatementChildren(statement: Statement, tokens: ReadonlyArray<Token>, issues: CartLintIssue[]): void {
+function lintStatementChildren(statement: Statement, tokens: ReadonlyArray<Token>, lint: CartLintContext): void {
 	switch (statement.kind) {
 		case SyntaxKind.AssignmentStatement:
-			lintExpressions(statement.left, tokens, issues);
-			lintExpressions(statement.right, tokens, issues);
+			lintExpressions(statement.left, tokens, lint);
+			lintExpressions(statement.right, tokens, lint);
 			return;
 		case SyntaxKind.LocalAssignmentStatement:
-			lintExpressions(statement.values, tokens, issues);
+			lintExpressions(statement.values, tokens, lint);
 			return;
 		case SyntaxKind.LocalFunctionStatement:
 		case SyntaxKind.FunctionDeclarationStatement:
-			lintConsecutiveDuplicateStatementPattern(statement.functionExpression.body.body, tokens, issues);
+			lintConsecutiveDuplicateStatementPattern(statement.functionExpression.body.body, tokens, lint);
 			return;
 		case SyntaxKind.ReturnStatement:
-			lintExpressions(statement.expressions, tokens, issues);
+			lintExpressions(statement.expressions, tokens, lint);
 			return;
 		case SyntaxKind.IfStatement:
 			for (let index = 0; index < statement.clauses.length; index += 1) {
 				const clause = statement.clauses[index];
 				if (clause.condition !== null) {
-					lintExpression(clause.condition, tokens, issues);
+					lintExpression(clause.condition, tokens, lint);
 				}
-				lintConsecutiveDuplicateStatementPattern(clause.block.body, tokens, issues);
+				lintConsecutiveDuplicateStatementPattern(clause.block.body, tokens, lint);
 			}
 			return;
 		case SyntaxKind.WhileStatement:
-			lintExpression(statement.condition, tokens, issues);
-			lintConsecutiveDuplicateStatementPattern(statement.block.body, tokens, issues);
+			lintExpression(statement.condition, tokens, lint);
+			lintConsecutiveDuplicateStatementPattern(statement.block.body, tokens, lint);
 			return;
 		case SyntaxKind.RepeatStatement:
-			lintConsecutiveDuplicateStatementPattern(statement.block.body, tokens, issues);
-			lintExpression(statement.condition, tokens, issues);
+			lintConsecutiveDuplicateStatementPattern(statement.block.body, tokens, lint);
+			lintExpression(statement.condition, tokens, lint);
 			return;
 		case SyntaxKind.ForNumericStatement:
-			lintExpression(statement.start, tokens, issues);
-			lintExpression(statement.limit, tokens, issues);
+			lintExpression(statement.start, tokens, lint);
+			lintExpression(statement.limit, tokens, lint);
 			if (statement.step !== null) {
-				lintExpression(statement.step, tokens, issues);
+				lintExpression(statement.step, tokens, lint);
 			}
-			lintConsecutiveDuplicateStatementPattern(statement.block.body, tokens, issues);
+			lintConsecutiveDuplicateStatementPattern(statement.block.body, tokens, lint);
 			return;
 		case SyntaxKind.ForGenericStatement:
-			lintExpressions(statement.iterators, tokens, issues);
-			lintConsecutiveDuplicateStatementPattern(statement.block.body, tokens, issues);
+			lintExpressions(statement.iterators, tokens, lint);
+			lintConsecutiveDuplicateStatementPattern(statement.block.body, tokens, lint);
 			return;
 		case SyntaxKind.DoStatement:
-			lintConsecutiveDuplicateStatementPattern(statement.block.body, tokens, issues);
+			lintConsecutiveDuplicateStatementPattern(statement.block.body, tokens, lint);
 			return;
 		case SyntaxKind.DataDeclarationStatement:
 		case SyntaxKind.RodataDeclarationStatement:
-			lintExpression(statement.initializer, tokens, issues);
+			lintExpression(statement.initializer, tokens, lint);
 			return;
 		case SyntaxKind.CallStatement:
-			lintExpression(statement.expression, tokens, issues);
+			lintExpression(statement.expression, tokens, lint);
 			return;
 		case SyntaxKind.BreakStatement:
 		case SyntaxKind.HaltUntilIrqStatement:
@@ -101,28 +100,28 @@ function lintStatementChildren(statement: Statement, tokens: ReadonlyArray<Token
 	}
 }
 
-function lintExpressions(expressions: ReadonlyArray<Expression>, tokens: ReadonlyArray<Token>, issues: CartLintIssue[]): void {
+function lintExpressions(expressions: ReadonlyArray<Expression>, tokens: ReadonlyArray<Token>, lint: CartLintContext): void {
 	for (let index = 0; index < expressions.length; index += 1) {
-		lintExpression(expressions[index], tokens, issues);
+		lintExpression(expressions[index], tokens, lint);
 	}
 }
 
-function lintExpression(expression: Expression, tokens: ReadonlyArray<Token>, issues: CartLintIssue[]): void {
+function lintExpression(expression: Expression, tokens: ReadonlyArray<Token>, lint: CartLintContext): void {
 	if (expression.kind === SyntaxKind.FunctionExpression) {
-		lintConsecutiveDuplicateStatementPattern(expression.body.body, tokens, issues);
+		lintConsecutiveDuplicateStatementPattern(expression.body.body, tokens, lint);
 		return;
 	}
 	visitLuaExpressionChildren(expression, child => {
-		lintExpression(child, tokens, issues);
+		lintExpression(child, tokens, lint);
 	});
 }
 
-function firstTokenAtOrAfter(tokens: ReadonlyArray<Token>, position: SourcePosition): number {
+function firstTokenAtOrAfter(tokens: ReadonlyArray<Token>, offset: number): number {
 	let low = 0;
 	let high = tokens.length;
 	while (low < high) {
 		const middle = (low + high) >>> 1;
-		if (tokenStartsBefore(tokens[middle], position)) {
+		if (tokens[middle].offset < offset) {
 			low = middle + 1;
 		}
 		else {
@@ -132,12 +131,12 @@ function firstTokenAtOrAfter(tokens: ReadonlyArray<Token>, position: SourcePosit
 	return low;
 }
 
-function firstTokenAfter(tokens: ReadonlyArray<Token>, position: SourcePosition): number {
+function firstTokenAfter(tokens: ReadonlyArray<Token>, offset: number): number {
 	let low = 0;
 	let high = tokens.length;
 	while (low < high) {
 		const middle = (low + high) >>> 1;
-		if (tokenStartsAfter(tokens[middle], position)) {
+		if (tokens[middle].offset > offset) {
 			high = middle;
 		}
 		else {
@@ -145,14 +144,6 @@ function firstTokenAfter(tokens: ReadonlyArray<Token>, position: SourcePosition)
 		}
 	}
 	return low;
-}
-
-function tokenStartsBefore(token: Token, position: SourcePosition): boolean {
-	return token.line < position.line || (token.line === position.line && token.column < position.column);
-}
-
-function tokenStartsAfter(token: Token, position: SourcePosition): boolean {
-	return token.line > position.line || (token.line === position.line && token.column > position.column);
 }
 
 function tokensEqual(tokens: ReadonlyArray<Token>, leftStart: number, leftEnd: number, rightStart: number, rightEnd: number): boolean {

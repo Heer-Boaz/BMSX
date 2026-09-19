@@ -38,7 +38,6 @@ import type { BehaviorInspectionProperty } from './inspection';
 import { behaviorTreeEditTarget, behaviorTreeMoveTarget, duplicateBehaviorTreeChild, moveBehaviorTreeChild, removeBehaviorTreeChild } from './behavior_tree_edit';
 import type { StateMachinePathUse } from './state_machine_retarget';
 import { setStateMachineInitial, stateMachineInitialTarget } from './state_machine_initial';
-import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { beginBehaviorTreeDrag, type BehaviorTreeTransferDrop } from './behavior_tree_drag';
 import type { WorkbenchGraphDragSession } from '../../ui/graph/drag';
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
@@ -258,30 +257,29 @@ export class BehaviorLensController {
 	public beginTreeDrag(input: BehaviorLensInput, transfer: BehaviorTreeTransferDrop): WorkbenchGraphDragSession | undefined {
 		const member = behaviorTreeEditTarget(input.view);
 		if (member === null) return undefined;
-		const model = input.view.source.models.get(member.table.range.path)!;
-		const file = getOrCreateSemanticProject(input.view.resource.domain).getSnapshot().getFileData(model.resource.path)!;
-		return beginBehaviorTreeDrag(model, input.view, file, transfer);
+		const model = input.view.source.models.get(member.file.file)!;
+		return beginBehaviorTreeDrag(model, input.view, transfer);
 	}
 
 	public canMoveSelectedChild(direction: -1 | 1): boolean {
 		const input = getActiveTab();
 		if (input.kind !== 'behavior_lens' || !input.view.source.isCurrent) return false;
 		const member = behaviorTreeMoveTarget(input.view, direction);
-		return member !== undefined && !input.view.source.models.get(member.table.range.path)!.readOnly;
+		return member !== undefined && !input.view.source.models.get(member.file.file)!.readOnly;
 	}
 
 	public canEditSelectedChild(): boolean {
 		const input = getActiveTab();
 		if (input.kind !== 'behavior_lens' || !input.view.source.isCurrent) return false;
 		const member = behaviorTreeEditTarget(input.view);
-		return member !== null && !input.view.source.models.get(member.table.range.path)!.readOnly;
+		return member !== null && !input.view.source.models.get(member.file.file)!.readOnly;
 	}
 
 	public canSetSelectedInitialState(): boolean {
 		const input = getActiveTab();
 		if (input.kind !== 'behavior_lens' || !input.view.source.isCurrent) return false;
 		const target = stateMachineInitialTarget(input.view);
-		return target !== undefined && !input.view.source.models.get(target.owner.table.range.path)!.readOnly;
+		return target !== undefined && !input.view.source.models.get(target.owner.file.file)!.readOnly;
 	}
 
 	public setSelectedInitialState(): void {
@@ -290,7 +288,7 @@ export class BehaviorLensController {
 		this.updateView(input);
 		const target = stateMachineInitialTarget(input.view);
 		if (target === undefined) return;
-		const model = input.view.source.models.get(target.owner.table.range.path)!;
+		const model = input.view.source.models.get(target.owner.file.file)!;
 		if (model.readOnly) return;
 		this.editorPanes.activePane.focus();
 		setStateMachineInitial(model, target);
@@ -303,7 +301,7 @@ export class BehaviorLensController {
 		this.updateView(input);
 		const member = behaviorTreeEditTarget(input.view);
 		if (member === null) return;
-		const model = input.view.source.models.get(member.table.range.path)!;
+		const model = input.view.source.models.get(member.file.file)!;
 		if (model.readOnly) return;
 		this.editorPanes.activePane.focus();
 		duplicateBehaviorTreeChild(model, member);
@@ -316,11 +314,10 @@ export class BehaviorLensController {
 		this.updateView(input);
 		const member = behaviorTreeEditTarget(input.view);
 		if (member === null) return;
-		const model = input.view.source.models.get(member.table.range.path)!;
+		const model = input.view.source.models.get(member.file.file)!;
 		if (model.readOnly) return;
 		this.editorPanes.activePane.focus();
-		const file = getOrCreateSemanticProject(input.view.resource.domain).getFileData(model.resource.path)!;
-		removeBehaviorTreeChild(model, member, file.chunk);
+		removeBehaviorTreeChild(model, member);
 		// Ordinary source correspondence clears the deleted occurrence, including
 		// shared/identical uses. It must not select its former index or a namesake.
 		this.updateView(input);
@@ -332,7 +329,7 @@ export class BehaviorLensController {
 		this.updateView(input);
 		const member = behaviorTreeMoveTarget(input.view, direction);
 		if (member === undefined) return;
-		const model = input.view.source.models.get(member.table.range.path)!;
+		const model = input.view.source.models.get(member.file.file)!;
 		if (model.readOnly) return;
 		this.editorPanes.activePane.focus();
 		moveBehaviorTreeChild(model, member, member.index + direction);

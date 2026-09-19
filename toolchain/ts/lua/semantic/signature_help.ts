@@ -1,3 +1,4 @@
+import type { LuaSourceLocations } from '../syntax/source_locations';
 import {
 	LuaSyntaxKind,
 	type LuaCallArgumentList,
@@ -59,12 +60,12 @@ export function provideLuaSignatureHelp(
 	line: number,
 	column: number,
 ): LuaSignatureHelp | null {
-	const callSite = findContainingCall(analysis.callSites, line, column);
+	const callSite = findContainingCall(analysis.chunk.locations, analysis.callSites, line, column);
 	if (callSite === null) {
 		return null;
 	}
 	const call = callSite.expression;
-	const argumentIndex = findActiveArgument(call, line, column);
+	const argumentIndex = findActiveArgument(analysis.chunk.locations, call, line, column);
 	const argumentCount = authoredArgumentCount(call);
 	const candidates: SignatureCandidate[] = [];
 	const callStyle = getLuaCallStyle(call);
@@ -122,11 +123,12 @@ export function provideLuaSignatureHelp(
 		activeParameter: activeParameterCount === 0
 			? -1
 			: Math.min(argumentIndex, activeParameterCount - 1),
-		applicableRange: call.argumentList.range,
+		applicableRange: analysis.chunk.locations.range(call.argumentList.span),
 	};
 }
 
 function findContainingCall(
+	locations: LuaSourceLocations,
 	calls: readonly LuaCallSite[],
 	line: number,
 	column: number,
@@ -139,16 +141,16 @@ function findContainingCall(
 		if (argumentList === null) {
 			continue;
 		}
-		if (compareSourcePosition(line, column, argumentList.range.start.line, argumentList.range.start.column) <= 0
-			|| compareSourcePosition(line, column, argumentList.range.end.line, argumentList.range.end.column) > 0) {
+		if (compareSourcePosition(line, column, locations.range(argumentList.span).start.line, locations.range(argumentList.span).start.column) <= 0
+			|| compareSourcePosition(line, column, locations.range(argumentList.span).end.line, locations.range(argumentList.span).end.column) > 0) {
 			continue;
 		}
 		if (containing === null
 			|| compareSourcePosition(
-				argumentList.range.start.line,
-				argumentList.range.start.column,
-				containing.expression.argumentList.range.start.line,
-				containing.expression.argumentList.range.start.column,
+				locations.range(argumentList.span).start.line,
+				locations.range(argumentList.span).start.column,
+				locations.range(containing.expression.argumentList.span).start.line,
+				locations.range(containing.expression.argumentList.span).start.column,
 			) > 0) {
 			containing = callSite as ParenthesizedLuaCallSite;
 		}
@@ -156,11 +158,11 @@ function findContainingCall(
 	return containing;
 }
 
-function findActiveArgument(call: ParenthesizedLuaCall, line: number, column: number): number {
+function findActiveArgument(locations: LuaSourceLocations, call: ParenthesizedLuaCall, line: number, column: number): number {
 	const separators = call.argumentList.separators;
 	let argumentIndex = 0;
 	while (argumentIndex < separators.length) {
-		const separator = separators[argumentIndex];
+		const separator = locations.position(call.argumentList.span.unit, separators[argumentIndex]);
 		if (compareSourcePosition(separator.line, separator.column, line, column) >= 0) {
 			break;
 		}

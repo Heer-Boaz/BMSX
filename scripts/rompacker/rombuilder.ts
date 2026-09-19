@@ -1,3 +1,4 @@
+import { encodeLuaChunk } from '../../toolchain/ts/lua/syntax/serialization';
 // @ts-ignore
 import type { Stats } from 'fs';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
@@ -471,7 +472,7 @@ export function compileLuaChunkBuffer(source: string, path: string): Buffer {
 	const tokens = lexer.scanTokens();
 	const parser = new LuaParser(tokens, path, source);
 	const chunk = parser.parseChunk();
-	const encoded = encodeBinary(chunk);
+	const encoded = encodeLuaChunk(chunk);
 	return Buffer.from(encoded);
 }
 

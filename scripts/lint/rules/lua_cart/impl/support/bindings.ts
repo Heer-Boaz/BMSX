@@ -1,3 +1,4 @@
+import type { LuaSourceLocations } from '../../../../../../toolchain/ts/lua/syntax/source_locations';
 import { LuaAssignmentOperator as AssignmentOperator, LuaBinaryOperator as BinaryOperator, type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { evaluateTopLevelStringConstantExpression } from './conditions';
 import { getConstantCopyBinding } from './constant_copy';
@@ -117,8 +118,8 @@ export function isConstantSourceIdentifierName(name: string, context: ConstantCo
 }
 
 export function collectTopLevelLocalStringConstants(
-	path: string,
 	statements: ReadonlyArray<Statement>,
+	locations: LuaSourceLocations,
 ): TopLevelLocalStringConstant[] {
 	const constants: TopLevelLocalStringConstant[] = [];
 	const knownValues = new Map<string, string>();
@@ -138,11 +139,13 @@ export function collectTopLevelLocalStringConstants(
 			}
 			const name = statement.names[index];
 			knownValues.set(name.name, resolved);
+			const position = locations.range(name.span).start;
 			constants.push({
-				path,
+				path: locations.path,
 				name: name.name,
 				value: resolved,
-				declaration: name,
+				line: position.line,
+				column: position.column,
 			});
 		}
 	}

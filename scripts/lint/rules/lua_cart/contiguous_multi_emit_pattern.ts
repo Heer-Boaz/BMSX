@@ -1,12 +1,12 @@
 import { defineLintRule } from '../../rule';
 import { type LuaCallExpression as CallExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { isEventsEmitCallExpression } from './impl/support/fsm_events';
 import { pushIssue } from './impl/support/lint_context';
 
 export const contiguousMultiEmitPatternRule = defineLintRule('cart', 'contiguous_multi_emit_pattern');
 
-export function lintContiguousMultiEmitPattern(statements: ReadonlyArray<Statement>, issues: CartLintIssue[]): void {
+export function lintContiguousMultiEmitPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
 	let firstEmitCall: CallExpression | undefined;
 	let emitCount = 0;
 
@@ -17,7 +17,7 @@ export function lintContiguousMultiEmitPattern(statements: ReadonlyArray<Stateme
 			return;
 		}
 		pushIssue(
-			issues,
+			lint,
 			contiguousMultiEmitPatternRule.name,
 			firstEmitCall,
 			`${emitCount} consecutive events:emit(...) calls in one straight-line block are forbidden. Emit one canonical event and let other systems react to it instead of alias/fanout event chains.`,

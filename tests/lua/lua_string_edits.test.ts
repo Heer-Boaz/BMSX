@@ -26,13 +26,14 @@ test('a string-value edit preserves grouping and all exterior trivia in one Undo
 		const source = `return ( --[[before]]\n ${original} --[[after]]\n)`;
 		const model = new EditorTextModel({ domain: 0, path: 'value.lua', source: { type: 'lua', resid: 'value' } }, 'lua', source);
 		t.after(() => model.dispose());
-		const statement = buildLuaFileSemanticData(source, 'value.lua').chunk.body[0];
+		const file = buildLuaFileSemanticData(source, 'value.lua');
+		const statement = file.chunk.body[0];
 		assert.ok(statement.kind === LuaSyntaxKind.ReturnStatement);
 		const literal = statement.expressions[0];
 		assert.ok(literal.kind === LuaSyntaxKind.StringLiteralExpression || literal.kind === LuaSyntaxKind.NilLiteralExpression
 			|| literal.kind === LuaSyntaxKind.BooleanLiteralExpression || literal.kind === LuaSyntaxKind.NumericLiteralExpression);
 		const value = 'new\n"\\\0' + '3';
-		const edit = createLuaStringValueEdit(model.buffer, literal, value);
+		const edit = createLuaStringValueEdit(model.buffer, file.chunk.locations, literal, value);
 		model.pushEditOperations([edit]);
 		assert.equal(model.buffer.getText(), source.replace(original, quoteLuaString(value, original[0] === '"' ? '"' : "'")));
 		const result = buildLuaFileSemanticData(model.buffer.getText(), 'value.lua');

@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
 import { type LuaCallExpression as CallExpression, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { lintEventHandlerFlagProxyPattern } from './event_handler_flag_proxy_pattern';
 import { lintEventHandlerStateDispatchPattern } from './event_handler_state_dispatch_pattern';
 import { forbiddenDispatchPatternRule } from './forbidden_dispatch_pattern';
@@ -12,7 +12,7 @@ import { activeLintRules, pushIssue } from './impl/support/lint_context';
 
 export const eventHandlerDispatchPatternRule = defineLintRule('cart', 'event_handler_dispatch_pattern');
 
-export function lintEventHandlerDispatchPattern(expression: CallExpression, issues: CartLintIssue[]): void {
+export function lintEventHandlerDispatchPattern(expression: CallExpression, lint: CartLintContext): void {
 	if (!isEventsOnCallExpression(expression)) {
 		return;
 	}
@@ -30,14 +30,14 @@ export function lintEventHandlerDispatchPattern(expression: CallExpression, issu
 			);
 			if (scDispatchCall) {
 				pushIssue(
-					issues,
+					lint,
 					eventHandlerDispatchPatternRule.name,
 					scDispatchCall,
 					'Event handler callbacks must not call sc:dispatch(...). Route event-driven transitions via FSM definitions instead of manual dispatch inside events:on handlers.',
 				);
 			}
-			lintEventHandlerStateDispatchPattern(handlerBody, issues);
+			lintEventHandlerStateDispatchPattern(handlerBody, lint);
 		}
-		lintEventHandlerFlagProxyPattern(handlerBody, issues);
+		lintEventHandlerFlagProxyPattern(handlerBody, lint);
 	}
 }

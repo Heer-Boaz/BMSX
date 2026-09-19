@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
 import { type LuaFunctionExpression as CartFunctionExpression, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { hasTransitionReturnInStatements } from './impl/support/fsm_transitions';
 import { isEventProxyFlagPropertyName } from './impl/support/general';
 import { getSelfPropertyNameFromConditionExpression, hasSelfPropertyResetInStatements } from './impl/support/self_properties';
@@ -8,7 +8,7 @@ import { pushIssue } from './impl/support/lint_context';
 
 export const tickFlagPollingPatternRule = defineLintRule('cart', 'tick_flag_polling_pattern');
 
-export function lintTickFlagPollingPattern(functionExpression: CartFunctionExpression, issues: CartLintIssue[]): void {
+export function lintTickFlagPollingPattern(functionExpression: CartFunctionExpression, lint: CartLintContext): void {
 	for (const statement of functionExpression.body.body) {
 		if (statement.kind !== SyntaxKind.IfStatement) {
 			continue;
@@ -27,7 +27,7 @@ export function lintTickFlagPollingPattern(functionExpression: CartFunctionExpre
 				continue;
 			}
 			pushIssue(
-				issues,
+				lint,
 				tickFlagPollingPatternRule.name,
 				clause.condition ?? statement,
 				hasTransitionReturn

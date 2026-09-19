@@ -210,7 +210,7 @@ class LuaScriptFunction implements LuaFunctionValue {
 		this.expression = expression;
 		this.closure = closure;
 		this.implicitSelfName = implicitSelfName;
-		this.range = expression.range;
+		this.range = closure.locations!.range(expression.span);
 	}
 
 	public call(args: ReadonlyArray<LuaValue>): LuaCallResult {
@@ -415,8 +415,8 @@ export class LuaInterpreter {
 		} : null;
 
 		this.valueNameCache = new WeakMap<object | Function, string>();
-		this.currentChunk = path.range.path;
-		const pathScope = LuaEnvironment.createChild(this.globals);
+		this.currentChunk = path.locations.path;
+		const pathScope = LuaEnvironment.createChild(this.globals, path.locations);
 		this._pathEnvironment = pathScope;
 		this.envStack.length = 0;
 		this.frameStack.length = 0;
@@ -431,7 +431,7 @@ export class LuaInterpreter {
 			varargs: [],
 			scope: rootScope,
 			boundary: 'path',
-			callRange: path.range,
+			callRange: path.locations.range(path.span),
 			callName: '<path>',
 		});
 		return { path, pathScope, nested, savedState };
@@ -783,7 +783,7 @@ export class LuaInterpreter {
 	public executeLocalAssignment(statement: LuaLocalAssignmentStatement, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): void {
 		if (statement.names.length === 1 && statement.attributes[0] === 'const' && statement.values.length === 1 && statement.values[0].kind === LuaSyntaxKind.FunctionExpression) {
 			const identifier = statement.names[0];
-			environment.set(identifier.name, null, identifier.range);
+			environment.set(identifier.name, null, environment.locations!.range(identifier.span));
 			const functionValue = new LuaScriptFunction(statement.values[0] as LuaFunctionExpression, environment, identifier.name, null, this);
 			environment.assignExisting(identifier.name, functionValue, true);
 			return;
@@ -797,16 +797,16 @@ export class LuaInterpreter {
 			if (statement.attributes[index] === 'const') {
 				const hasInitializer = statement.values.length > 0 && (index < lastIndex || index === lastIndex || hasMultiReturn);
 				if (!hasInitializer) {
-					throw this.runtimeErrorAt(identifier.range, `Constant local '${identifier.name}' must have an initializer.`);
+					throw this.runtimeErrorAt(environment.locations!.range(identifier.span), `Constant local '${identifier.name}' must have an initializer.`);
 				}
 			}
 			const value = index < values.length ? values[index] : null;
-			environment.set(identifier.name, value, identifier.range, statement.attributes[index] === 'const');
+			environment.set(identifier.name, value, environment.locations!.range(identifier.span), statement.attributes[index] === 'const');
 		}
 	}
 
 	public executeLocalFunction(statement: LuaLocalFunctionStatement, environment: LuaEnvironment): void {
-		environment.set(statement.name.name, null, statement.name.range);
+		environment.set(statement.name.name, null, environment.locations!.range(statement.name.span));
 		const functionValue = new LuaScriptFunction(statement.functionExpression, environment, statement.name.name, null, this);
 		environment.assignExisting(statement.name.name, functionValue);
 	}
@@ -814,30 +814,30 @@ export class LuaInterpreter {
 	public executeFunctionDeclaration(statement: LuaFunctionDeclarationStatement, environment: LuaEnvironment): void {
 		const functionNameParts = statement.name.path;
 		if (functionNameParts.length === 0) {
-			throw this.runtimeErrorAt(statement.range, 'Function declaration missing name.');
+			throw this.runtimeErrorAt(environment.locations!.range(statement.span), 'Function declaration missing name.');
 		}
 		const functionDisplayName = this.composeFunctionName(statement.name);
 		const implicitSelfName = statement.name.method !== null ? 'self' : null;
 		const functionValue = new LuaScriptFunction(statement.functionExpression, environment, functionDisplayName, implicitSelfName, this);
 
 		if (statement.name.method !== null) {
-			const methodTable = this.resolveTableFromPath(functionNameParts, functionNameParts.length, environment, functionDisplayName, statement.range);
+			const methodTable = this.resolveTableFromPath(functionNameParts, functionNameParts.length, environment, functionDisplayName, environment.locations!.range(statement.span));
 			methodTable.set(statement.name.method.name, functionValue);
 			return;
 		}
 
 		if (functionNameParts.length === 1) {
 			const name = functionNameParts[0].name;
-			const resolvedEnv = environment.resolve(name, statement.range);
+			const resolvedEnv = environment.resolve(name, environment.locations!.range(statement.span));
 			if (resolvedEnv !== null) {
 				resolvedEnv.assignExisting(name, functionValue);
 				return;
 			}
-			this.globals.set(name, functionValue, statement.range);
+			this.globals.set(name, functionValue, environment.locations!.range(statement.span));
 			return;
 		}
 
-		const containerTable = this.resolveTableFromPath(functionNameParts, functionNameParts.length - 1, environment, functionDisplayName, statement.range);
+		const containerTable = this.resolveTableFromPath(functionNameParts, functionNameParts.length - 1, environment, functionDisplayName, environment.locations!.range(statement.span));
 		const finalName = functionNameParts[functionNameParts.length - 1].name;
 		containerTable.set(finalName, functionValue);
 	}
@@ -884,23 +884,23 @@ export class LuaInterpreter {
 			for (let index = 0; index < resolvedTargets.length; index += 1) {
 				const resolved = resolvedTargets[index];
 				const value = index < values.length ? values[index] : null;
-				const targetRange = statement.left[index].range;
+				const targetRange = environment.locations!.range(statement.left[index].span);
 				this.assignResolvedTarget(resolved, value, targetRange);
 			}
 			return;
 		}
 		if (statement.left.length !== 1) {
-			throw this.runtimeErrorAt(statement.range, 'Augmented assignment requires exactly one target.');
+			throw this.runtimeErrorAt(environment.locations!.range(statement.span), 'Augmented assignment requires exactly one target.');
 		}
 		if (statement.right.length !== 1) {
-			throw this.runtimeErrorAt(statement.range, 'Augmented assignment requires exactly one expression.');
+			throw this.runtimeErrorAt(environment.locations!.range(statement.span), 'Augmented assignment requires exactly one expression.');
 		}
 		const resolvedTarget = resolvedTargets[0];
 		const targetExpression = statement.left[0];
 		const incrementValue = this.evaluateSingleExpression(statement.right[0], environment, varargs);
-		const currentValue = this.getResolvedTargetValue(resolvedTarget, targetExpression.range, environment);
-		const resultValue = this.applyAugmentedAssignment(statement.operator, currentValue, incrementValue, targetExpression.range);
-		this.assignResolvedTarget(resolvedTarget, resultValue, targetExpression.range);
+		const currentValue = this.getResolvedTargetValue(resolvedTarget, environment.locations!.range(targetExpression.span), environment);
+		const resultValue = this.applyAugmentedAssignment(statement.operator, currentValue, incrementValue, environment.locations!.range(targetExpression.span));
+		this.assignResolvedTarget(resolvedTarget, resultValue, environment.locations!.range(targetExpression.span));
 	}
 
 	public executeReturn(statement: LuaReturnStatement, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): ExecutionSignal {
@@ -986,7 +986,7 @@ export class LuaInterpreter {
 			case LuaSyntaxKind.VarargExpression:
 				return varargs.length > 0 ? varargs[0] : null;
 			case LuaSyntaxKind.IdentifierExpression:
-				return this.lookupIdentifier(expression.name, environment, expression.range);
+				return this.lookupIdentifier(expression.name, environment, environment.locations!.range(expression.span));
 			case LuaSyntaxKind.FunctionExpression:
 				return new LuaScriptFunction(expression as LuaFunctionExpression, environment, '<anonymous>', null, this);
 			case LuaSyntaxKind.TableConstructorExpression:
@@ -1015,25 +1015,25 @@ export class LuaInterpreter {
 	private evaluateMemberExpression(expression: LuaMemberExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): LuaValue {
 		const baseValue = this.evaluateSingleExpression(expression.base, environment, varargs);
 		if (isLuaTable(baseValue)) {
-			return this.getTableValueWithMetamethod(baseValue, expression.member.name, expression.range);
+			return this.getTableValueWithMetamethod(baseValue, expression.member.name, environment.locations!.range(expression.span));
 		}
 		if (baseValue instanceof LuaNativeValue) {
-			return this.getNativeValueWithMetamethod(baseValue, expression.member.name, expression.range);
+			return this.getNativeValueWithMetamethod(baseValue, expression.member.name, environment.locations!.range(expression.span));
 		}
-		throw this.runtimeErrorAt(expression.range, 'Attempted to index field on a non-table value.');
+		throw this.runtimeErrorAt(environment.locations!.range(expression.span), 'Attempted to index field on a non-table value.');
 	}
 
 	private evaluateIndexExpression(expression: LuaIndexExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): LuaValue {
 		const baseValue = this.evaluateSingleExpression(expression.base, environment, varargs);
 		if (isLuaTable(baseValue)) {
 			const indexValue = this.evaluateExpressionFirst(expression.index, environment, varargs);
-			return this.getTableValueWithMetamethod(baseValue, indexValue, expression.range);
+			return this.getTableValueWithMetamethod(baseValue, indexValue, environment.locations!.range(expression.span));
 		}
 		if (baseValue instanceof LuaNativeValue) {
 			const indexValue = this.evaluateExpressionFirst(expression.index, environment, varargs);
-			return this.getNativeValueWithMetamethod(baseValue, indexValue, expression.range);
+			return this.getNativeValueWithMetamethod(baseValue, indexValue, environment.locations!.range(expression.span));
 		}
-		throw this.runtimeErrorAt(expression.range, 'Attempted to index on a non-table value.');
+		throw this.runtimeErrorAt(environment.locations!.range(expression.span), 'Attempted to index on a non-table value.');
 	}
 
 	private evaluateBinaryExpression(expression: LuaBinaryExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): LuaValue {
@@ -1091,7 +1091,7 @@ export class LuaInterpreter {
 			case LuaBinaryOperator.Exponent:
 				return this.evaluateArithmeticExpression(expression, environment, varargs, '__pow', (a, b) => Math.pow(a, b), 'Exponent operands must be numbers or define __pow metamethod.');
 			default:
-				throw this.runtimeErrorAt(expression.range, 'Unsupported binary operator.');
+				throw this.runtimeErrorAt(environment.locations!.range(expression.span), 'Unsupported binary operator.');
 		}
 	}
 
@@ -1102,7 +1102,7 @@ export class LuaInterpreter {
 				if (typeof operand === 'number') {
 					return -operand;
 				}
-				return this.unaryMetamethodOrThrow(operand, '__unm', expression.range, 'Unary minus operand must be a number or define __unm metamethod.');
+				return this.unaryMetamethodOrThrow(operand, '__unm', environment.locations!.range(expression.span), 'Unary minus operand must be a number or define __unm metamethod.');
 			case LuaUnaryOperator.Not:
 				return !this.isTruthy(operand);
 			case LuaUnaryOperator.Length:
@@ -1115,7 +1115,7 @@ export class LuaInterpreter {
 					const metamethodResult = this.invokeMetamethod(operand, '__len', lenArgs);
 					if (metamethodResult !== null) {
 						const first = metamethodResult.length > 0 ? metamethodResult[0] : null;
-						return this.expectNumber(first, 'Metamethod __len must return a number.', expression.range);
+						return this.expectNumber(first, 'Metamethod __len must return a number.', environment.locations!.range(expression.span));
 					}
 					return operand.numericLength();
 				}
@@ -1129,24 +1129,24 @@ export class LuaInterpreter {
 					if (metatable !== null) {
 						const handler = metatable.get('__len');
 						if (handler !== null) {
-							const fn = this.expectFunction(handler, '__len metamethod must be a function.', expression.range);
+							const fn = this.expectFunction(handler, '__len metamethod must be a function.', environment.locations!.range(expression.span));
 							const args = this.allocateValueList();
 							args.push(operand);
 							const first = this.firstCallValue(fn.call(args));
-							return this.expectNumber(first, '__len metamethod must return a number.', expression.range);
+							return this.expectNumber(first, '__len metamethod must return a number.', environment.locations!.range(expression.span));
 						}
 					}
 				}
-				throw this.runtimeErrorAt(expression.range, 'Length operator expects a string or table.');
+				throw this.runtimeErrorAt(environment.locations!.range(expression.span), 'Length operator expects a string or table.');
 			case LuaUnaryOperator.BitwiseNot:
 				if (typeof operand === 'number') {
 					return this.bitwiseNot(operand);
 				}
-				return this.unaryMetamethodOrThrow(operand, '__bnot', expression.range, 'Bitwise not operand must be a number or define __bnot metamethod.');
+				return this.unaryMetamethodOrThrow(operand, '__bnot', environment.locations!.range(expression.span), 'Bitwise not operand must be a number or define __bnot metamethod.');
 			case LuaUnaryOperator.Dereference:
-				throw this.runtimeErrorAt(expression.range, 'Pointer dereference is only supported by the BMSX compiler.');
+				throw this.runtimeErrorAt(environment.locations!.range(expression.span), 'Pointer dereference is only supported by the BMSX compiler.');
 			default:
-				throw this.runtimeErrorAt(expression.range, 'Unsupported unary operator.');
+				throw this.runtimeErrorAt(environment.locations!.range(expression.span), 'Unsupported unary operator.');
 		}
 	}
 
@@ -1155,29 +1155,29 @@ export class LuaInterpreter {
 		if (expression.method !== null) {
 			const methodName = expression.method.name;
 			if (isLuaTable(calleeValue)) {
-				const methodValue = this.getTableValueWithMetamethod(calleeValue, methodName, expression.range);
-				const functionValue = this.expectFunction(methodValue, LuaInterpreter.buildMethodNotFoundOnTableMessage, methodName, expression.range);
+				const methodValue = this.getTableValueWithMetamethod(calleeValue, methodName, environment.locations!.range(expression.span));
+				const functionValue = this.expectFunction(methodValue, LuaInterpreter.buildMethodNotFoundOnTableMessage, methodName, environment.locations!.range(expression.span));
 				const args = this.buildCallArguments(expression, environment, varargs, calleeValue);
-				return this.invokeFunction(functionValue, args, expression.range);
+				return this.invokeFunction(functionValue, args, environment.locations!.range(expression.span));
 			}
 			if (calleeValue instanceof LuaNativeValue) {
-				const methodValue = this.getNativeValueWithMetamethod(calleeValue, methodName, expression.range);
-				const functionValue = this.expectFunction(methodValue, LuaInterpreter.buildMethodNotFoundOnNativeValueMessage, methodName, expression.range);
+				const methodValue = this.getNativeValueWithMetamethod(calleeValue, methodName, environment.locations!.range(expression.span));
+				const functionValue = this.expectFunction(methodValue, LuaInterpreter.buildMethodNotFoundOnNativeValueMessage, methodName, environment.locations!.range(expression.span));
 				const args = this.buildCallArguments(expression, environment, varargs, calleeValue);
-				return this.invokeFunction(functionValue, args, expression.range);
+				return this.invokeFunction(functionValue, args, environment.locations!.range(expression.span));
 			}
-			throw this.runtimeErrorAt(expression.range, 'Method call requires a table or native instance.');
+			throw this.runtimeErrorAt(environment.locations!.range(expression.span), 'Method call requires a table or native instance.');
 		}
 		if (isLuaTable(calleeValue) || calleeValue instanceof LuaNativeValue) {
-			const callMetamethod = this.extractMetamethodFunction(calleeValue, '__call', expression.range);
+			const callMetamethod = this.extractMetamethodFunction(calleeValue, '__call', environment.locations!.range(expression.span));
 			if (callMetamethod !== null) {
 				const args = this.buildCallArguments(expression, environment, varargs, calleeValue);
-				return this.invokeFunction(callMetamethod, args, expression.range);
+				return this.invokeFunction(callMetamethod, args, environment.locations!.range(expression.span));
 			}
 		}
-		const functionValue = this.expectFunction(calleeValue, LuaInterpreter.buildCallErrorMessage, expression.callee, calleeValue, expression.range);
+		const functionValue = this.expectFunction(calleeValue, LuaInterpreter.buildCallErrorMessage, expression.callee, calleeValue, environment.locations!.range(expression.span));
 		const args = this.buildCallArguments(expression, environment, varargs, null);
-		return this.invokeFunction(functionValue, args, expression.range);
+		return this.invokeFunction(functionValue, args, environment.locations!.range(expression.span));
 	}
 
 	private buildCallArguments(expression: LuaCallExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, selfValue: LuaValue): LuaValue[] {
@@ -1233,7 +1233,7 @@ export class LuaInterpreter {
 	private resolveAssignmentTarget(target: LuaAssignableExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): ResolvedAssignmentTarget {
 		if (target.kind === LuaSyntaxKind.IdentifierExpression) {
 			const identifier = target as LuaIdentifierExpression;
-			const resolvedEnvironment = environment.resolve(identifier.name, identifier.range);
+			const resolvedEnvironment = environment.resolve(identifier.name, environment.locations!.range(identifier.span));
 			return {
 				kind: 'identifier',
 				name: identifier.name,
@@ -1257,7 +1257,7 @@ export class LuaInterpreter {
 					key: member.member.name,
 				};
 			}
-			throw this.runtimeErrorAt(member.base.range, 'Attempted to assign to a member of an unsupported value.');
+			throw this.runtimeErrorAt(environment.locations!.range(member.base.span), 'Attempted to assign to a member of an unsupported value.');
 		}
 		if (target.kind === LuaSyntaxKind.IndexExpression) {
 			const indexExpression = target as LuaIndexExpression;
@@ -1277,7 +1277,7 @@ export class LuaInterpreter {
 					key: indexValue,
 				};
 			}
-			throw this.runtimeErrorAt(indexExpression.base.range, 'Attempted to assign to an index of an unsupported value.');
+			throw this.runtimeErrorAt(environment.locations!.range(indexExpression.base.span), 'Attempted to assign to an index of an unsupported value.');
 		}
 		throw this.runtimeError('Unsupported assignment target.');
 	}
@@ -1644,11 +1644,11 @@ export class LuaInterpreter {
 		if (typeof left === 'number' && typeof right === 'number') {
 			return operator(left, right);
 		}
-		const metamethodResult = this.invokeBinaryMetamethod(left, right, metamethodName, expression.range);
+		const metamethodResult = this.invokeBinaryMetamethod(left, right, metamethodName, environment.locations!.range(expression.span));
 		if (metamethodResult !== null) {
 			return metamethodResult;
 		}
-		throw this.runtimeErrorAt(expression.range, message);
+		throw this.runtimeErrorAt(environment.locations!.range(expression.span), message);
 	}
 
 	private evaluateBitwiseExpression(
@@ -1666,11 +1666,11 @@ export class LuaInterpreter {
 			const rightInt = this.coerceToBitwiseInteger(right);
 			return operator(leftInt, rightInt);
 		}
-		const metamethodResult = this.invokeBinaryMetamethod(left, right, metamethodName, expression.range);
+		const metamethodResult = this.invokeBinaryMetamethod(left, right, metamethodName, environment.locations!.range(expression.span));
 		if (metamethodResult !== null) {
 			return metamethodResult;
 		}
-		throw this.runtimeErrorAt(expression.range, message);
+		throw this.runtimeErrorAt(environment.locations!.range(expression.span), message);
 	}
 
 	private evaluateFloorDivision(expression: LuaBinaryExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): LuaValue {
@@ -1678,15 +1678,15 @@ export class LuaInterpreter {
 		const right = this.evaluateSingleExpression(expression.right, environment, varargs);
 		if (typeof left === 'number' && typeof right === 'number') {
 			if (right === 0) {
-				throw this.runtimeErrorAt(expression.range, 'Division by zero.');
+				throw this.runtimeErrorAt(environment.locations!.range(expression.span), 'Division by zero.');
 			}
 			return Math.floor(left / right);
 		}
-		const metamethodResult = this.invokeBinaryMetamethod(left, right, '__idiv', expression.range);
+		const metamethodResult = this.invokeBinaryMetamethod(left, right, '__idiv', environment.locations!.range(expression.span));
 		if (metamethodResult !== null) {
 			return metamethodResult;
 		}
-		throw this.runtimeErrorAt(expression.range, 'Floor division operands must be numbers or define __idiv metamethod.');
+		throw this.runtimeErrorAt(environment.locations!.range(expression.span), 'Floor division operands must be numbers or define __idiv metamethod.');
 	}
 
 	private evaluateConcatenationExpression(expression: LuaBinaryExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): LuaValue {
@@ -1695,11 +1695,11 @@ export class LuaInterpreter {
 		if ((typeof left === 'string' || typeof left === 'number') && (typeof right === 'string' || typeof right === 'number')) {
 			return this.toLuaString(left) + this.toLuaString(right);
 		}
-		const metamethodResult = this.invokeBinaryMetamethod(left, right, '__concat', expression.range);
+		const metamethodResult = this.invokeBinaryMetamethod(left, right, '__concat', environment.locations!.range(expression.span));
 		if (metamethodResult !== null) {
 			return metamethodResult;
 		}
-		throw this.runtimeErrorAt(expression.range, 'Concatenation operands must be strings/numbers or define __concat metamethod.');
+		throw this.runtimeErrorAt(environment.locations!.range(expression.span), 'Concatenation operands must be strings/numbers or define __concat metamethod.');
 	}
 
 	private evaluateEqualityExpression(expression: LuaBinaryExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): boolean {
@@ -1711,14 +1711,14 @@ export class LuaInterpreter {
 		if (left instanceof LuaNativeValue && right instanceof LuaNativeValue) {
 			return left.native === right.native;
 		}
-		const handler = this.extractSharedMetamethodFunction(left, right, '__eq', expression.range);
+		const handler = this.extractSharedMetamethodFunction(left, right, '__eq', environment.locations!.range(expression.span));
 		if (handler !== null) {
 			const args = this.allocateValueList();
 			args.push(left);
 			args.push(right);
 			const result = handler.call(args);
 			const first = result.length > 0 ? result[0] : null;
-			return this.expectBoolean(first, '__eq metamethod must return a boolean.', expression.range);
+			return this.expectBoolean(first, '__eq metamethod must return a boolean.', environment.locations!.range(expression.span));
 		}
 		return false;
 	}
@@ -1742,20 +1742,20 @@ export class LuaInterpreter {
 		}
 		const metaLeft = swapForMetamethod ? right : left;
 		const metaRight = swapForMetamethod ? left : right;
-		const handler = this.extractSharedMetamethodFunction(metaLeft, metaRight, metamethodName, expression.range);
+		const handler = this.extractSharedMetamethodFunction(metaLeft, metaRight, metamethodName, environment.locations!.range(expression.span));
 		if (handler !== null) {
 			const args = this.allocateValueList();
 			args.push(metaLeft);
 			args.push(metaRight);
 			const result = handler.call(args);
 			const first = result.length > 0 ? result[0] : null;
-			return this.expectBoolean(first, LuaInterpreter.buildMetamethodMustReturnBooleanMessage, metamethodName, expression.range);
+			return this.expectBoolean(first, LuaInterpreter.buildMetamethodMustReturnBooleanMessage, metamethodName, environment.locations!.range(expression.span));
 		}
 		// Fail, so let's see whether we can give a better error message
 		if (left === null || left === undefined) {
-			throw this.runtimeErrorAt(expression.left.range, `Attempt to compare nil value to ${right ?? 'nil'}: ${message}`);
+			throw this.runtimeErrorAt(environment.locations!.range(expression.left.span), `Attempt to compare nil value to ${right ?? 'nil'}: ${message}`);
 		}
-		else throw this.runtimeErrorAt(expression.range, message);
+		else throw this.runtimeErrorAt(environment.locations!.range(expression.span), message);
 	}
 
 	private invokeUnaryMetamethod(operand: LuaValue, name: string, range: LuaSourceRange): LuaValue {
@@ -2437,7 +2437,7 @@ export class LuaInterpreter {
 			argumentIndex += 1;
 		}
 		for (const parameter of parameters) {
-			activationEnvironment.set(parameter.name, this.argumentOrNil(args, argumentIndex), parameter.range);
+			activationEnvironment.set(parameter.name, this.argumentOrNil(args, argumentIndex), activationEnvironment.locations!.range(parameter.span));
 			argumentIndex += 1;
 		}
 		if (!expression.hasVararg) {
@@ -2517,7 +2517,7 @@ export class LuaInterpreter {
 						closure = functionValue.closure;
 						name = functionValue.name;
 						implicitSelfName = functionValue.implicitSelfName;
-							callRange = this._currentCallRange ?? expression.range;
+							callRange = this._currentCallRange ?? functionValue.range;
 
 							activationEnvironment = LuaEnvironment.createChild(closure);
 							varargValues = this.bindScriptArguments(activationEnvironment, expression, args, implicitSelfName);
@@ -2541,7 +2541,7 @@ export class LuaInterpreter {
 							this.consumeReturnValues();
 							return NORMAL_SIGNAL;
 						case 'break':
-							throw this.runtimeErrorAt(expression.range, `Cannot break from function '${name}'.`);
+							throw this.runtimeErrorAt(functionValue.range, `Cannot break from function '${name}'.`);
 						case 'goto':
 							throw this.runtimeErrorAt(signal.originRange, `Label '${signal.label}' not found in function '${name}'.`);
 						default:
@@ -2562,7 +2562,7 @@ export class LuaInterpreter {
 
 	public invokeScriptFunction(expression: LuaFunctionExpression, closure: LuaEnvironment, name: string, args: ReadonlyArray<LuaValue>, implicitSelfName: string): LuaCallResult {
 		const activationEnvironment = LuaEnvironment.createChild(closure);
-		const callRange = this._currentCallRange ?? expression.range;
+		const callRange = this._currentCallRange ?? closure.locations!.range(expression.span);
 		const varargValues = this.bindScriptArguments(activationEnvironment, expression, args, implicitSelfName);
 		const startingDepth = this.frameStack.length;
 		const scope = this.createLabelScope(expression.body.body, null);
@@ -2577,7 +2577,7 @@ export class LuaInterpreter {
 		});
 		try {
 			const signal = this.runFrameLoop(startingDepth);
-			return this.resolveFunctionSignal(signal, expression, name);
+			return this.resolveFunctionSignal(signal, closure.locations!.range(expression.span), name);
 		} catch (error) {
 			this.recordFaultCallStack();
 			throw error;
@@ -2586,13 +2586,13 @@ export class LuaInterpreter {
 		}
 	}
 
-	private resolveFunctionSignal(signal: ExecutionSignal, expression: LuaFunctionExpression, name: string): LuaValue[] {
+	private resolveFunctionSignal(signal: ExecutionSignal, range: LuaSourceRange, name: string): LuaValue[] {
 		if (!signal) return [];
 		switch (signal.kind) {
 			case 'return':
 				return this.consumeReturnValues();
 			case 'break':
-				throw this.runtimeErrorAt(expression.range, `Cannot break from function '${name}'.`);
+				throw this.runtimeErrorAt(range, `Cannot break from function '${name}'.`);
 			case 'goto':
 				throw this.runtimeErrorAt(signal.originRange, `Label '${signal.label}' not found in function '${name}'.`);
 			default:

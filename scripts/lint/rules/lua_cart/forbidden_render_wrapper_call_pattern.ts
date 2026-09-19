@@ -1,5 +1,5 @@
 import { LuaSyntaxKind as SyntaxKind, type LuaCallExpression as CallExpression } from '../../../../toolchain/ts/lua/syntax/ast';
-import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
+import type { CartLintContext, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 
 export const forbiddenRenderWrapperCallPatternRule = defineLintRule('cart', 'forbidden_render_wrapper_call_pattern');
@@ -18,7 +18,7 @@ const FORBIDDEN_RENDER_WRAPPER_CALLS = new Set<string>([
 	'blit_text_inline_span_with_font',
 ]);
 
-export function lintForbiddenRenderWrapperCall(expression: CallExpression, issues: CartLintIssue[], pushIssue: CartLintIssuePusher): void {
+export function lintForbiddenRenderWrapperCall(expression: CallExpression, lint: CartLintContext, pushIssue: CartLintIssuePusher): void {
 	if (expression.callee.kind !== SyntaxKind.IdentifierExpression) {
 		return;
 	}
@@ -27,7 +27,7 @@ export function lintForbiddenRenderWrapperCall(expression: CallExpression, issue
 		return;
 	}
 	pushIssue(
-		issues,
+		lint,
 		forbiddenRenderWrapperCallPatternRule.name,
 		expression.callee,
 		`Legacy render wrapper "${calleeName}" is forbidden. Program GX through MMIO instead of Lua draw-wrapper calls.`,

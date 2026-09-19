@@ -23,7 +23,7 @@ test('syntax recovery blocks deletion without discarding recognized weighted top
 	assert.equal(f.view.selection?.rowKey, selected);
 	assert.equal(f.viewport.selection?.kind, 'edge');
 	const member = behaviorTreeEditTarget(f.view)!;
-	assert.equal(readLuaSourceRange(f.model.buffer, member.branch.entries[member.index].field.range), '{ weight = 9, child = nested }');
+	assert.equal(readLuaSourceRange(f.model.buffer, member.file.chunk.locations.range(member.branch.entries[member.index].field.span)), '{ weight = 9, child = nested }');
 });
 
 test('BT removal deletes the selected source field, preserving initializers, metadata and exterior trivia', t => {
@@ -35,11 +35,11 @@ test('BT removal deletes the selected source field, preserving initializers, met
 		const f = fixture(t);
 		f.select(index);
 		const member = behaviorTreeEditTarget(f.view)!;
-		assert.equal(readLuaSourceRange(f.model.buffer, member.branch.entries[member.index].field.range), field);
+		assert.equal(readLuaSourceRange(f.model.buffer, member.file.chunk.locations.range(member.branch.entries[member.index].field.span)), field);
 		assert.equal(member.table.fields.length, 4, 'named metadata is not a child rank');
 		let events = 0;
 		f.model.onDidChangeContent(() => { events += 1; });
-		removeBehaviorTreeChild(f.model, member, f.analysis.chunk);
+		removeBehaviorTreeChild(f.model, member);
 		assert.equal(events, 1, 'field and separator share one content event');
 		assert.equal(f.model.buffer.getText(), expected);
 		assert.equal(f.model.dirty, true);
@@ -68,7 +68,7 @@ test('weighted node and edge removal delete the complete choice, never just the 
 		f.select(1, edge);
 		assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(f.view)!),
 			edge ? '{ weight = 9, child = nested }' : 'nested');
-		removeBehaviorTreeChild(f.model, behaviorTreeEditTarget(f.view)!, f.analysis.chunk);
+		removeBehaviorTreeChild(f.model, behaviorTreeEditTarget(f.view)!);
 		f.refresh();
 		assert.equal(f.model.buffer.getText(), BT_ORDER_SOURCE.replace('\t{ weight = 9, child = nested },', '\t'));
 		assert.deepEqual(f.viewport.model.nodes[0].children[0].children.map(node => node.lines.find(line => line.startsWith('CHOICE'))), ['CHOICE  W=1', 'CHOICE  W=3']);
@@ -83,7 +83,7 @@ test('shared list edits update all occurrences but keep the chosen registration;
 	const source = BT_ORDER_SOURCE.replace('make_node(3) -- last inline', 'nested -- last inline');
 	const f = fixture(t, source, 1);
 	f.select(1);
-	removeBehaviorTreeChild(f.model, behaviorTreeEditTarget(f.view)!, f.analysis.chunk);
+	removeBehaviorTreeChild(f.model, behaviorTreeEditTarget(f.view)!);
 	f.refresh();
 	assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
 	assert.equal(f.viewport.selection, null);
@@ -108,7 +108,7 @@ test('deleting a child inside a shared initializer edits that one constructor, n
 	assert.ok(nested.kind === 'node');
 	f.viewport.selection = nested.children[0];
 	acceptBehaviorGraphSelection(f.view, f.graph);
-	removeBehaviorTreeChild(f.model, behaviorTreeEditTarget(f.view)!, f.analysis.chunk);
+	removeBehaviorTreeChild(f.model, behaviorTreeEditTarget(f.view)!);
 	f.refresh();
 	assert.equal(f.model.buffer.getText(), BT_ORDER_SOURCE.replace('children = { leaf, make_node(2) }', 'children = {  make_node(2) }'));
 	assert.equal(f.viewport.selection, null);
@@ -138,7 +138,7 @@ trees.register('sole', { root = { type = '${nodeType}', ${fields} } })`;
 		f.select(0);
 		const member = behaviorTreeEditTarget(f.view)!;
 		assert.equal(member.branch.entries.length, 1);
-		removeBehaviorTreeChild(f.model, member, f.analysis.chunk);
+		removeBehaviorTreeChild(f.model, member);
 		f.refresh();
 		assert.equal(f.view.document.syntaxComplete, true);
 		assert.equal(f.viewport.model.nodes[0].children[0].children.length, 0);
@@ -191,7 +191,7 @@ test('hidden source history and warm admission use retained correspondence rathe
 	}
 	assert.equal(f.viewport.model, graph);
 	assert.equal(f.view.document, document);
-	removeBehaviorTreeChild(f.model, member!, f.analysis.chunk);
+	removeBehaviorTreeChild(f.model, member!);
 	f.refresh();
 	const removed = f.view.document;
 	f.model.undo();

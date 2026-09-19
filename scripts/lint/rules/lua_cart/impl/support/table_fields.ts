@@ -1,5 +1,5 @@
 import { type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, type LuaTableField as TableField, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../../../lua_rule';
+import { type CartLintContext } from '../../../../lua_rule';
 import { lintExpression } from '../../../../../rompacker/cart_lua_linter_runtime';
 import { lintCollectionLabelPatterns } from '../../fsm_id_label_pattern';
 import { lintInlineStaticLookupTableExpression } from '../../inline_static_lookup_table_pattern';
@@ -74,61 +74,61 @@ export function isStaticLookupTableConstructor(expression: Expression): boolean 
 export function lintInlineStaticLookupTableStatements(
 	statements: ReadonlyArray<Statement>,
 	functionName: string,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 ): void {
 	for (const statement of statements) {
 		switch (statement.kind) {
 			case SyntaxKind.LocalAssignmentStatement:
 				for (const value of statement.values) {
-					lintInlineStaticLookupTableExpression(value, functionName, issues);
+					lintInlineStaticLookupTableExpression(value, functionName, lint);
 				}
 				break;
 			case SyntaxKind.AssignmentStatement:
 				for (const left of statement.left) {
-					lintInlineStaticLookupTableExpression(left, functionName, issues);
+					lintInlineStaticLookupTableExpression(left, functionName, lint);
 				}
 				for (const right of statement.right) {
-					lintInlineStaticLookupTableExpression(right, functionName, issues);
+					lintInlineStaticLookupTableExpression(right, functionName, lint);
 				}
 				break;
 			case SyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
-					lintInlineStaticLookupTableExpression(expression, functionName, issues);
+					lintInlineStaticLookupTableExpression(expression, functionName, lint);
 				}
 				break;
 			case SyntaxKind.IfStatement:
 				for (const clause of statement.clauses) {
 					if (clause.condition) {
-						lintInlineStaticLookupTableExpression(clause.condition, functionName, issues);
+						lintInlineStaticLookupTableExpression(clause.condition, functionName, lint);
 					}
-					lintInlineStaticLookupTableStatements(clause.block.body, functionName, issues);
+					lintInlineStaticLookupTableStatements(clause.block.body, functionName, lint);
 				}
 				break;
 			case SyntaxKind.WhileStatement:
-				lintInlineStaticLookupTableExpression(statement.condition, functionName, issues);
-				lintInlineStaticLookupTableStatements(statement.block.body, functionName, issues);
+				lintInlineStaticLookupTableExpression(statement.condition, functionName, lint);
+				lintInlineStaticLookupTableStatements(statement.block.body, functionName, lint);
 				break;
 			case SyntaxKind.RepeatStatement:
-				lintInlineStaticLookupTableStatements(statement.block.body, functionName, issues);
-				lintInlineStaticLookupTableExpression(statement.condition, functionName, issues);
+				lintInlineStaticLookupTableStatements(statement.block.body, functionName, lint);
+				lintInlineStaticLookupTableExpression(statement.condition, functionName, lint);
 				break;
 			case SyntaxKind.ForNumericStatement:
-				lintInlineStaticLookupTableExpression(statement.start, functionName, issues);
-				lintInlineStaticLookupTableExpression(statement.limit, functionName, issues);
-				lintInlineStaticLookupTableExpression(statement.step, functionName, issues);
-				lintInlineStaticLookupTableStatements(statement.block.body, functionName, issues);
+				lintInlineStaticLookupTableExpression(statement.start, functionName, lint);
+				lintInlineStaticLookupTableExpression(statement.limit, functionName, lint);
+				lintInlineStaticLookupTableExpression(statement.step, functionName, lint);
+				lintInlineStaticLookupTableStatements(statement.block.body, functionName, lint);
 				break;
 			case SyntaxKind.ForGenericStatement:
 				for (const iterator of statement.iterators) {
-					lintInlineStaticLookupTableExpression(iterator, functionName, issues);
+					lintInlineStaticLookupTableExpression(iterator, functionName, lint);
 				}
-				lintInlineStaticLookupTableStatements(statement.block.body, functionName, issues);
+				lintInlineStaticLookupTableStatements(statement.block.body, functionName, lint);
 				break;
 			case SyntaxKind.DoStatement:
-				lintInlineStaticLookupTableStatements(statement.block.body, functionName, issues);
+				lintInlineStaticLookupTableStatements(statement.block.body, functionName, lint);
 				break;
 			case SyntaxKind.CallStatement:
-				lintInlineStaticLookupTableExpression(statement.expression, functionName, issues);
+				lintInlineStaticLookupTableExpression(statement.expression, functionName, lint);
 				break;
 			case SyntaxKind.LocalFunctionStatement:
 			case SyntaxKind.FunctionDeclarationStatement:
@@ -145,9 +145,9 @@ export function lintInlineStaticLookupTableStatements(
 export function lintInlineStaticLookupTablePattern(
 	functionName: string,
 	functionExpression: CartFunctionExpression,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 ): void {
-	lintInlineStaticLookupTableStatements(functionExpression.body.body, functionName, issues);
+	lintInlineStaticLookupTableStatements(functionExpression.body.body, functionName, lint);
 }
 
 export function readStringFieldValueFromTable(expression: Expression | undefined, fieldName: string): string | undefined {
@@ -212,27 +212,27 @@ export function visitTableFieldsRecursively(
 
 export function lintTableField(
 	field: TableField,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 	moduleCalls: CartModuleCallMap,
 	insideFunction = false,
 ): void {
-	lintCollectionLabelPatterns(field, issues);
+	lintCollectionLabelPatterns(field, lint);
 	if (field.kind === TableFieldKind.IdentifierKey
 		&& field.name === 'tick'
 		&& field.value.kind === SyntaxKind.FunctionExpression) {
-		lintTickFlagPollingPattern(field.value, issues);
-		lintTickInputCheckPattern(field.value, issues);
+		lintTickFlagPollingPattern(field.value, lint);
+		lintTickInputCheckPattern(field.value, lint);
 	}
 	switch (field.kind) {
 		case TableFieldKind.Array:
-			lintExpression(field.value, issues, moduleCalls, false, insideFunction);
+			lintExpression(field.value, lint, moduleCalls, false, insideFunction);
 			return;
 		case TableFieldKind.IdentifierKey:
-			lintExpression(field.value, issues, moduleCalls, false, insideFunction);
+			lintExpression(field.value, lint, moduleCalls, false, insideFunction);
 			return;
 		case TableFieldKind.ExpressionKey:
-			lintExpression(field.key, issues, moduleCalls, false, insideFunction);
-			lintExpression(field.value, issues, moduleCalls, false, insideFunction);
+			lintExpression(field.key, lint, moduleCalls, false, insideFunction);
+			lintExpression(field.value, lint, moduleCalls, false, insideFunction);
 			return;
 		default:
 			return;

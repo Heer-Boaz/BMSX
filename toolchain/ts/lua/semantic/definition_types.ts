@@ -275,7 +275,7 @@ export class LuaDefinitionTypes {
 				return shapes;
 			}
 			case 'owned':
-				return this.ownedShapes(root.id, root.syntax.range.path, binding, depth);
+				return this.ownedShapes(root.id, root.file, binding, depth);
 			default:
 				return EMPTY_SHAPES;
 		}

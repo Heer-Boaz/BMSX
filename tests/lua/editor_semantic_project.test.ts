@@ -213,7 +213,7 @@ test('factory source origins follow a hidden working copy through edit and Undo 
 		const source = trace.terminals[0].source;
 		assert.ok(source.kind === 'function-return');
 		assert.equal(source.file, snapshot.getFileData(model.resource.path));
-		return { source, text: readLuaSourceRange(model.buffer, source.entry.statement.range) };
+		return { source, text: readLuaSourceRange(model.buffer, source.file.chunk.locations.range(source.entry.statement.span)) };
 	}
 	const first = read();
 	assert.equal(first.text, 'return 1');

@@ -1,11 +1,11 @@
 import { LuaSyntaxKind as SyntaxKind, type LuaCallExpression as CallExpression } from '../../../../toolchain/ts/lua/syntax/ast';
-import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
+import type { CartLintContext, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 import { lintForbiddenRenderModuleRequirePattern } from './forbidden_render_module_require_pattern';
 
 export const requireExtensionPatternRule = defineLintRule('cart', 'require_lua_extension_pattern');
 
-export function lintRequireCall(expression: CallExpression, issues: CartLintIssue[], pushIssue: CartLintIssuePusher): void {
+export function lintRequireCall(expression: CallExpression, lint: CartLintContext, pushIssue: CartLintIssuePusher): void {
 	if (expression.callee.kind !== SyntaxKind.IdentifierExpression || expression.callee.name !== 'require') {
 		return;
 	}
@@ -16,14 +16,14 @@ export function lintRequireCall(expression: CallExpression, issues: CartLintIssu
 	if (firstArgument.kind !== SyntaxKind.StringLiteralExpression) {
 		return;
 	}
-	if (lintForbiddenRenderModuleRequirePattern(firstArgument, issues, pushIssue)) {
+	if (lintForbiddenRenderModuleRequirePattern(firstArgument, lint, pushIssue)) {
 		return;
 	}
 	if (!firstArgument.value.toLowerCase().endsWith('.lua')) {
 		return;
 	}
 	pushIssue(
-		issues,
+		lint,
 		requireExtensionPatternRule.name,
 		firstArgument,
 		`require() must not include a ".lua" suffix ("${firstArgument.value}").`,

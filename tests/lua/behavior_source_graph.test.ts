@@ -71,7 +71,7 @@ test('typed BT relationships and the outline use the same occurrence objects and
 	const branch = root.branches[0];
 	assert.ok(branch.role === 'children');
 	assert.deepEqual(branch.source.children, children.map(entry => entry.node));
-	assert.equal(readLuaSourceRange(f.model.buffer, children[1].field.range), 'shared');
+	assert.equal(readLuaSourceRange(f.model.buffer, children[1].file.chunk.locations.range(children[1].field.span)), 'shared');
 	assert.deepEqual(root.attachments.map(group => group.role), ['services', 'decorators']);
 	for (const group of root.attachments) {
 		assert.equal(group.source.children[0], group.entries[0].node);
@@ -85,7 +85,7 @@ test('typed BT relationships and the outline use the same occurrence objects and
 	const choice = choices.entries[1].node;
 	assert.ok(choice.kind === 'section');
 	assert.equal(choice.children[0], choice.child);
-	assert.equal(readLuaSourceRange(f.model.buffer, choice.weight!.value.range), 'weights.retreat');
+	assert.equal(readLuaSourceRange(f.model.buffer, choice.file.chunk.locations.range(choice.weight!.value.span)), 'weights.retreat');
 	assert.equal(choice.child.authoredRange, children[0].node.authoredRange);
 	assert.notEqual(choice.child.rowKey, children[0].node.rowKey);
 	const parallel = tree(f, 1).root!;
@@ -158,7 +158,7 @@ test('hidden-pane edits preserve selected reused descendants, independent collap
 	f.view.sourceMatchRowKeys.add(definition.rowKey);
 	const oldDocument = f.view.document;
 	const oldSelectedKey = nested.rowKey;
-	const insert = luaSourceRangeToTextRange(f.model.buffer, entries[0].field.range);
+	const insert = luaSourceRangeToTextRange(f.model.buffer, entries[0].file.chunk.locations.range(entries[0].field.span));
 	const prefix = '-- 🐉 source insertion\n';
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: prefix }]);
 	f.model.pushEditOperations([{ offset: insert.start + prefix.length, deleteLength: 0, text: "{ type = 'wait' }, " }]);
@@ -180,7 +180,7 @@ test('removing a reused occurrence never selects the next namesake, including un
 		const entries = childEntries(tree(f).root!);
 		select(f, childEntries(entries[0].node)[0].node);
 		const parsed = f.analysis.chunk;
-		f.model.pushEditOperations(createLuaTableFieldRemovalEdits(f.model.buffer, parsed.tokens, entries[0].field));
+		f.model.pushEditOperations(createLuaTableFieldRemovalEdits(f.model.buffer, entries[0].file.chunk.locations, parsed.tokens, entries[0].field));
 		if (undoBeforeRefresh) f.model.undo();
 		f.refresh();
 		assert.equal(f.outline.selectionIndex, -1);
@@ -212,7 +212,7 @@ test('reordering source preserves untouched occurrences but does not infer cut/p
 		const f = fixture();
 		const entries = childEntries(tree(f).root!);
 		select(f, childEntries(entries[movingSelected ? 0 : 1].node)[0].node);
-		const span = luaSourceRangeToTextRange(f.model.buffer, entries[0].field.range);
+		const span = luaSourceRangeToTextRange(f.model.buffer, entries[0].file.chunk.locations.range(entries[0].field.span));
 		f.model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start + 1, text: '' }]);
 		f.model.pushEditOperations([{ offset: f.model.buffer.getText().indexOf('\n\t\t},\n\t},\n}'),
 			deleteLength: 0, text: '\n\t\t\tshared,' }]);
@@ -247,7 +247,7 @@ test('partial initializer edits preserve a reference occurrence; replacing that 
 	f.refresh();
 	assert.equal(f.outline.rows[f.outline.selectionIndex].node, childEntries(tree(f).root!)[1].node);
 	const current = childEntries(tree(f).root!)[1];
-	const span = luaSourceRangeToTextRange(f.model.buffer, current.field.value.range);
+	const span = luaSourceRangeToTextRange(f.model.buffer, current.file.chunk.locations.range(current.field.value.span));
 	f.model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text: 'leaf' }]);
 	f.refresh();
 	assert.equal(f.outline.selectionIndex, -1);

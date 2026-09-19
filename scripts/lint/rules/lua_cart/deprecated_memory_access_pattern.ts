@@ -1,5 +1,5 @@
 import { LuaSyntaxKind as SyntaxKind, type LuaExpression as Expression } from '../../../../toolchain/ts/lua/syntax/ast';
-import type { CartLintIssue, CartLintIssuePusher } from '../../lua_rule';
+import type { CartLintContext, CartLintIssuePusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 
 const DEPRECATED_MEMORY_SPACES = new Set([
@@ -13,7 +13,7 @@ const DEPRECATED_MEMORY_SPACES = new Set([
 
 export const deprecatedMemoryAccessPatternRule = defineLintRule('cart', 'deprecated_memory_access_pattern');
 
-export function lintDeprecatedMemoryAccessPattern(expression: Expression, issues: CartLintIssue[], pushIssue: CartLintIssuePusher): void {
+export function lintDeprecatedMemoryAccessPattern(expression: Expression, lint: CartLintContext, pushIssue: CartLintIssuePusher): void {
 	if (
 		expression.kind !== SyntaxKind.IndexExpression
 		|| expression.base.kind !== SyntaxKind.IdentifierExpression
@@ -22,7 +22,7 @@ export function lintDeprecatedMemoryAccessPattern(expression: Expression, issues
 		return;
 	}
 	pushIssue(
-		issues,
+		lint,
 		deprecatedMemoryAccessPatternRule.name,
 		expression,
 		`Deprecated raw memory access "${expression.base.name}[...]" is forbidden. Use a typed pointer.`,

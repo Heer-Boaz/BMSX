@@ -8,7 +8,7 @@ import type { Token } from '../../language/cpp/syntax/tokens';
 import { pushTokenLintIssue, type LintIssue } from '../cpp/support/diagnostics';
 import { defineLintRule } from '../../rule';
 import { type LuaExpression as Expression } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { matchesStringOrChainComparisonPattern } from '../lua_cart/impl/support/conditions';
 import { pushIssue } from '../lua_cart/impl/support/lint_context';
 
@@ -69,12 +69,12 @@ function stringComparisonSubject(tokens: readonly Token[], start: number, end: n
 	return null;
 }
 
-export function lintStringOrChainComparisonPattern(expression: Expression, issues: CartLintIssue[]): void {
+export function lintStringOrChainComparisonPattern(expression: Expression, lint: CartLintContext): void {
 	if (!matchesStringOrChainComparisonPattern(expression)) {
 		return;
 	}
 	pushIssue(
-		issues,
+		lint,
 		stringOrChainComparisonPatternRule.name,
 		expression,
 		'OR-chains that compare the same expression against multiple string literals are forbidden. Use lookup-based membership instead.',

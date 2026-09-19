@@ -1,6 +1,6 @@
 import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import type { ModuleAliasTarget } from '../../../../../../toolchain/ts/lua/semantic/module_bindings';
-import { type CartLintIssue } from '../../../../lua_rule';
+import { type CartLintContext } from '../../../../lua_rule';
 import { type LintRuleName } from '../../../../rule';
 
 export type CartLintProfile = 'cart' | 'bios';
@@ -21,7 +21,7 @@ export type UnusedInitValueScope = {
 };
 
 export type UnusedInitValueContext = {
-	readonly issues: CartLintIssue[];
+	readonly lint: CartLintContext;
 	readonly bindingStacksByName: Map<string, UnusedInitValueBinding[]>;
 	readonly scopeStack: UnusedInitValueScope[];
 };
@@ -32,7 +32,7 @@ export type SingleUseHasTagBinding = {
 };
 
 export type SingleUseHasTagContext = {
-	readonly issues: CartLintIssue[];
+	readonly lint: CartLintContext;
 	readonly bindingStacksByName: Map<string, SingleUseHasTagBinding[]>;
 	readonly scopeStack: UnusedInitValueScope[];
 };
@@ -51,7 +51,7 @@ export type SingleUseLocalBinding = {
 };
 
 export type SingleUseLocalContext = {
-	readonly issues: CartLintIssue[];
+	readonly lint: CartLintContext;
 	readonly bindingStacksByName: Map<string, SingleUseLocalBinding[]>;
 	readonly scopeStack: UnusedInitValueScope[];
 	functionDepth: number;
@@ -68,7 +68,7 @@ export type ConstLocalScope = {
 };
 
 export type ConstLocalContext = {
-	readonly issues: CartLintIssue[];
+	readonly lint: CartLintContext;
 	readonly bindingStacksByName: Map<string, ConstLocalBinding[]>;
 	readonly scopeStack: ConstLocalScope[];
 };
@@ -82,7 +82,7 @@ export type ConstantCopyScope = {
 };
 
 export type ConstantCopyContext = {
-	readonly issues: CartLintIssue[];
+	readonly lint: CartLintContext;
 	readonly bindingStacksByName: Map<string, ConstantCopyBinding[]>;
 	readonly scopeStack: ConstantCopyScope[];
 };
@@ -98,7 +98,7 @@ export type ShadowedRequireAliasScope = {
 };
 
 export type ShadowedRequireAliasContext = {
-	readonly issues: CartLintIssue[];
+	readonly lint: CartLintContext;
 	readonly bindingStacksByName: Map<string, ShadowedRequireAliasBinding[]>;
 	readonly scopeStack: ShadowedRequireAliasScope[];
 	readonly moduleCalls: WeakMap<CallExpression, CartModuleCallKind>;
@@ -126,7 +126,7 @@ export type DuplicateInitializerScope = {
 };
 
 export type DuplicateInitializerContext = {
-	readonly issues: CartLintIssue[];
+	readonly lint: CartLintContext;
 	readonly bindingStacksByName: Map<string, DuplicateInitializerBinding[]>;
 	readonly scopeStack: DuplicateInitializerScope[];
 };
@@ -140,7 +140,7 @@ export type ForeignObjectAliasScope = {
 };
 
 export type ForeignObjectMutationContext = {
-	readonly issues: CartLintIssue[];
+	readonly lint: CartLintContext;
 	readonly bindingStacksByName: Map<string, Array<ForeignObjectAliasBinding | null>>;
 	readonly scopeStack: ForeignObjectAliasScope[];
 };
@@ -154,7 +154,7 @@ export type RuntimeTagLookupScope = {
 };
 
 export type RuntimeTagLookupContext = {
-	readonly issues: CartLintIssue[];
+	readonly lint: CartLintContext;
 	readonly bindingStacksByName: Map<string, Array<RuntimeTagLookupBinding | null>>;
 	readonly scopeStack: RuntimeTagLookupScope[];
 };
@@ -168,7 +168,8 @@ export type TopLevelLocalStringConstant = {
 	readonly path: string;
 	readonly name: string;
 	readonly value: string;
-	readonly declaration: IdentifierExpression;
+	readonly line: number;
+	readonly column: number;
 };
 
 export type SelfPropertyAssignmentMatch = {

@@ -59,12 +59,12 @@ test('parses function declaration with method name and parameters', () => {
 	const functionStatement = statement as LuaFunctionDeclarationStatement;
 	assert.deepEqual(functionStatement.name.path.map(identifier => identifier.name), ['module', 'object']);
 	assert.equal(functionStatement.name.method?.name, 'method');
-	assert.deepEqual(functionStatement.name.path[1].range, {
+	assert.deepEqual(path.locations.range(functionStatement.name.path[1].span), {
 		path: 'path',
 		start: { line: 1, column: 17 },
 		end: { line: 1, column: 22 },
 	});
-	assert.deepEqual(functionStatement.name.method?.range, {
+	assert.deepEqual(path.locations.range(functionStatement.name.method!.span), {
 		path: 'path',
 		start: { line: 1, column: 24 },
 		end: { line: 1, column: 29 },
@@ -128,7 +128,7 @@ test('recovery preserves enclosing blocks and statements after an incomplete mem
 	const access = errorStatement.expression as LuaMemberExpression;
 	assert.equal(access.kind, LuaSyntaxKind.MemberExpression);
 	assert.equal(access.member.kind, LuaSyntaxKind.MissingIdentifier);
-	assert.deepEqual(access.member.range, {
+	assert.deepEqual(parsed.chunk.locations.range(access.member.span), {
 		path: 'recovery.lua',
 		start: { line: 4, column: 7 },
 		end: { line: 4, column: 7 },
@@ -152,7 +152,8 @@ test('recovery retains an incomplete call and its authored argument-list syntax'
 	const call = statement.expression as LuaCallExpression;
 	assert.equal(call.kind, LuaSyntaxKind.CallExpression);
 	assert.equal(call.arguments.length, 1);
-	assert.deepEqual(call.argumentList, {
+	assert.deepEqual({ range: parsed.chunk.locations.range(call.argumentList!.span),
+		separators: call.argumentList!.separators.map(offset => parsed.chunk.locations.position(call.argumentList!.span.unit, offset)) }, {
 		range: {
 			path: 'incomplete_call.lua',
 			start: { line: 1, column: 9 },
@@ -174,7 +175,7 @@ test('recovery does not consume a following statement as an incomplete call argu
 		[LuaSyntaxKind.CallStatement, LuaSyntaxKind.LocalAssignmentStatement],
 	);
 	const call = (parsed.chunk.body[0] as LuaCallStatement).expression as LuaCallExpression;
-	assert.deepEqual(call.argumentList?.range, {
+	assert.deepEqual(parsed.chunk.locations.range(call.argumentList!.span), {
 		path: 'call_boundary.lua',
 		start: { line: 1, column: 9 },
 		end: { line: 1, column: 10 },
@@ -190,15 +191,16 @@ test('call argument-list separators exclude commas owned by nested expressions',
 		'\tlast',
 		')',
 	].join('\n');
-	const statement = parseChunk(source).body[0] as LuaCallStatement;
+	const chunk = parseChunk(source);
+	const statement = chunk.body[0] as LuaCallStatement;
 	const call = statement.expression as LuaCallExpression;
-	assert.deepEqual(call.argumentList?.separators, [
+	assert.deepEqual(call.argumentList!.separators.map(offset => chunk.locations.position(call.argumentList!.span.unit, offset)), [
 		{ line: 2, column: 7 },
 		{ line: 3, column: 18 },
 		{ line: 4, column: 17 },
 	]);
 	const nested = call.arguments[1] as LuaCallExpression;
-	assert.deepEqual(nested.argumentList?.separators, [{ line: 3, column: 12 }]);
+	assert.deepEqual(nested.argumentList!.separators.map(offset => chunk.locations.position(nested.argumentList!.span.unit, offset)), [{ line: 3, column: 12 }]);
 });
 
 test('strict parsing still rejects incomplete call arguments', () => {
@@ -264,13 +266,13 @@ test('retains member identifier nodes with their authored range', () => {
 	const leaf = statement.values[0] as LuaMemberExpression;
 	const branch = leaf.base as LuaMemberExpression;
 	assert.equal(branch.member.name, 'branch');
-	assert.deepEqual(branch.member.range, {
+	assert.deepEqual(path.locations.range(branch.member.span), {
 		path: 'path',
 		start: { line: 1, column: 20 },
 		end: { line: 1, column: 25 },
 	});
 	assert.equal(leaf.member.name, 'leaf');
-	assert.deepEqual(leaf.member.range, {
+	assert.deepEqual(path.locations.range(leaf.member.span), {
 		path: 'path',
 		start: { line: 1, column: 27 },
 		end: { line: 1, column: 30 },
@@ -388,7 +390,7 @@ test('parses paren-less single string argument calls', () => {
 	const methodCall = methodChunk.body[0] as LuaCallStatement;
 	const methodExpression = methodCall.expression as LuaCallExpression;
 	assert.equal(methodExpression.method?.name, 'method');
-	assert.deepEqual(methodExpression.method?.range, {
+	assert.deepEqual(methodChunk.locations.range(methodExpression.method!.span), {
 		path: 'path',
 		start: { line: 1, column: 5 },
 		end: { line: 1, column: 10 },

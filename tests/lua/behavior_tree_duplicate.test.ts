@@ -18,7 +18,7 @@ test('BT duplication inserts first/middle/last source entries, not metadata rank
 		f.select(index);
 		const member = behaviorTreeEditTarget(f.view)!;
 		assert.equal(member.table.fields.length, 4, 'named metadata is not a child');
-		assert.equal(readLuaSourceRange(f.model.buffer, member.branch.entries[index].field.range), field);
+		assert.equal(readLuaSourceRange(f.model.buffer, member.file.chunk.locations.range(member.branch.entries[index].field.span)), field);
 		let events = 0;
 		f.model.onDidChangeContent(() => { events += 1; });
 		duplicateBehaviorTreeChild(f.model, member);
@@ -134,7 +134,7 @@ test('sole grouped and opaque members copy interior syntax byte-exactly with sou
 		assert.equal(f.view.document.syntaxComplete, true);
 		const member = behaviorTreeEditTarget(f.view)!;
 		assert.equal(member.index, 1);
-		assert.deepEqual(member.branch.entries.map(entry => readLuaSourceRange(f.model.buffer, entry.field.range)), [fieldSource, fieldSource]);
+		assert.deepEqual(member.branch.entries.map(entry => readLuaSourceRange(f.model.buffer, entry.file.chunk.locations.range(entry.field.span))), [fieldSource, fieldSource]);
 		f.model.undo(); f.refresh();
 		assert.equal(f.model.buffer.getText(), source);
 		assert.equal(behaviorTreeEditTarget(f.view)!.index, 0);

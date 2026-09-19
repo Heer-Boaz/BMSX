@@ -1,3 +1,4 @@
+import type { LuaSourceLocations } from '../../../../toolchain/ts/lua/syntax/source_locations';
 import { LuaRuntimeError } from '../../../../toolchain/ts/lua/errors';
 import type { LuaValue } from './value';
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
@@ -12,17 +13,17 @@ export class LuaEnvironment {
 	private readonly parent: LuaEnvironment;
 	private readonly bindings: Map<string, BindingRecord>;
 
-	private constructor(parent: LuaEnvironment, bindings: Map<string, BindingRecord> = new Map<string, BindingRecord>()) {
+	private constructor(parent: LuaEnvironment, public readonly locations: LuaSourceLocations | null, bindings: Map<string, BindingRecord> = new Map<string, BindingRecord>()) {
 		this.parent = parent;
 		this.bindings = bindings;
 	}
 
 	public static createRoot(): LuaEnvironment {
-		return new LuaEnvironment(null);
+		return new LuaEnvironment(null, null);
 	}
 
-	public static createChild(parent: LuaEnvironment): LuaEnvironment {
-		return new LuaEnvironment(parent);
+	public static createChild(parent: LuaEnvironment, locations = parent.locations): LuaEnvironment {
+		return new LuaEnvironment(parent, locations);
 	}
 
 	public snapshot(): LuaEnvironment {
@@ -30,7 +31,7 @@ export class LuaEnvironment {
 			return this;
 		}
 		const parentSnapshot = this.parent.parent === null ? this.parent : this.parent.snapshot();
-		return new LuaEnvironment(parentSnapshot, new Map(this.bindings));
+		return new LuaEnvironment(parentSnapshot, this.locations, new Map(this.bindings));
 	}
 
 	private isBindingVisible(binding: BindingRecord, accessRange: LuaSourceRange | null): boolean {

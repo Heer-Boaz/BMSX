@@ -1,3 +1,4 @@
+import type { LuaSourceLocations } from '../syntax/source_locations';
 import type { LuaChunk, LuaIdentifierExpression, LuaSourceRange } from '../syntax/ast';
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../semantic_contracts';
 import { getLuaBuiltinDescriptorLookup } from '../builtin_descriptors';
@@ -121,6 +122,7 @@ export type LuaCallHierarchyOutgoingCall = {
 };
 
 export type LuaSemanticFrontendFile = {
+	readonly locations: LuaSourceLocations;
 	diagnostics: readonly LuaStaticDiagnostic[];
 	getDeclaration(identifier: LuaIdentifierExpression): Decl | undefined;
 	getReference(identifier: LuaIdentifierExpression): LuaBoundReference | undefined;
@@ -425,6 +427,7 @@ function createBoundFile(
 		return reference;
 	};
 	return {
+		locations: source.chunk.locations,
 		diagnostics,
 		getDeclaration(identifier: LuaIdentifierExpression): Decl | undefined {
 			const id = source.declarationIdsBySyntax.get(identifier);
@@ -566,7 +569,7 @@ function collectRequireNavigationTargets(
 		targets.push({
 			range: reference.range,
 			moduleName,
-			target: targetSource.chunk.range,
+			target: targetSource.chunk.locations.range(targetSource.chunk.span),
 		});
 	}
 	return targets;

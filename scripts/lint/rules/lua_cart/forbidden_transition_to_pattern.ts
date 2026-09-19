@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
 import { type LuaCallExpression as CallExpression } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { lintForbiddenMatchesStatePathPattern } from './forbidden_matches_state_path_pattern';
 import { getCallMethodName, getCallReceiverName } from '../../../../toolchain/ts/lua/syntax/calls';
 import { FORBIDDEN_STATE_CALL_RECEIVERS } from './impl/support/general';
@@ -8,7 +8,7 @@ import { pushIssue } from './impl/support/lint_context';
 
 export const forbiddenTransitionToPatternRule = defineLintRule('cart', 'forbidden_transition_to_pattern');
 
-export function lintForbiddenStateCalls(expression: CallExpression, issues: CartLintIssue[]): void {
+export function lintForbiddenStateCalls(expression: CallExpression, lint: CartLintContext): void {
 	const receiverName = getCallReceiverName(expression);
 	if (!receiverName || !FORBIDDEN_STATE_CALL_RECEIVERS.has(receiverName)) {
 		return;
@@ -16,12 +16,12 @@ export function lintForbiddenStateCalls(expression: CallExpression, issues: Cart
 	const methodName = getCallMethodName(expression);
 	if (methodName === 'transition_to') {
 		pushIssue(
-			issues,
+			lint,
 			forbiddenTransitionToPatternRule.name,
 			expression,
 			`Use of "${receiverName}:transition_to" is forbidden.`,
 		);
 		return;
 	}
-	lintForbiddenMatchesStatePathPattern(expression, issues);
+	lintForbiddenMatchesStatePathPattern(expression, lint);
 }

@@ -20,7 +20,7 @@ export function stateMachineConnectionEnds(view: BehaviorLensViewState, edge: Wo
 	if (selected === null || selected.kind !== 'edge' || selected !== edge) return undefined;
 	const reference = selected.link.reference;
 	const literal = reference.kind === 'state-outcome' ? view.stateMachines.retargetLiterals.get(reference.outcome) : undefined;
-	return literal !== undefined && !view.source.models.get(literal.range.path)!.readOnly ? 'target' : undefined;
+	return reference.kind === 'state-outcome' && literal !== undefined && !view.source.models.get(reference.outcome.valueFile!.file)!.readOnly ? 'target' : undefined;
 }
 
 export function beginStateMachineDrag(view: BehaviorLensViewState,
@@ -34,7 +34,7 @@ export function beginStateMachineDrag(view: BehaviorLensViewState,
 		|| selected.link.reference.outcome !== selection.outcome) return undefined;
 	const literal = view.stateMachines.retargetLiterals.get(selection.outcome);
 	if (literal === undefined) return undefined;
-	const model = view.source.models.get(literal.range.path)!;
+	const model = view.source.models.get(selection.outcome.valueFile!.file)!;
 	if (model.readOnly) return undefined;
 	return new StateMachineDrag(model, view, presentation.viewport, selected, selection, accept);
 }

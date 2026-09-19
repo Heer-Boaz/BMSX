@@ -1,5 +1,5 @@
 import { LuaSyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import type { LuaCallSite } from '../../../../toolchain/ts/lua/semantic/model';
+import type { FileSemanticData, LuaCallSite } from '../../../../toolchain/ts/lua/semantic/model';
 import type { ModuleAliasTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
 import type { LuaModuleImportQuery } from '../../../../toolchain/ts/lua/semantic/module_import_query';
 import type { BehaviorSourceReader } from './source_reader';
@@ -35,6 +35,7 @@ const REGISTRATIONS: readonly BehaviorRegistrationKind[] = [
 
 /** Shallow source registration; topology is built only when its document is opened. */
 export type BehaviorRegistration = BehaviorRegistrationSource & {
+	readonly file: FileSemanticData;
 	readonly callSite: LuaCallSite;
 	readonly definitionArgument: number;
 	readonly anchor: string;
@@ -54,7 +55,7 @@ export function collectBehaviorRegistrations(resource: ResourceIdentity, reader:
 		if (registration === null) continue;
 		const idExpression = callSite.expression.arguments[0];
 		const idLabel = idExpression ? describeExpression(idExpression) : '<unresolved id>';
-		const idValue = idExpression && reader.expression(idExpression);
+		const idValue = idExpression && reader.expression(analysis, idExpression)?.expression;
 		const semanticId = idValue?.kind === LuaSyntaxKind.StringLiteralExpression ? idValue.value : null;
 		const occurrenceKey = `${registration.behaviorKind}\0${idLabel}`;
 		const occurrence = occurrences.get(occurrenceKey) || 0;
@@ -62,11 +63,12 @@ export function collectBehaviorRegistrations(resource: ResourceIdentity, reader:
 		const anchor = createBehaviorSourceAnchor(resource, registration.behaviorKind, idLabel, occurrence);
 		registrations.push({
 			resource,
+			file: analysis,
 			behaviorKind: registration.behaviorKind,
 			semanticId,
 			label: `${definitionKindLabel(registration.behaviorKind)} ${semanticId === null ? idLabel : semanticId}`,
-			range: idExpression ? idExpression.range : callSite.expression.range,
-			occurrenceRange: callSite.expression.range,
+			range: idExpression ? analysis.chunk.locations.range(idExpression.span) : analysis.chunk.locations.range(callSite.expression.span),
+			occurrenceRange: analysis.chunk.locations.range(callSite.expression.span),
 			rowKey: anchor + appendBehaviorSourcePath('', 'definition'),
 			callSite,
 			definitionArgument: registration.definitionArgument,

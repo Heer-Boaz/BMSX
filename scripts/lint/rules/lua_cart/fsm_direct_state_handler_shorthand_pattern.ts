@@ -1,12 +1,12 @@
 import { defineLintRule } from '../../rule';
 import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { findTableFieldByKey } from './impl/support/table_fields';
 import { pushIssue } from './impl/support/lint_context';
 
 export const fsmDirectStateHandlerShorthandPatternRule = defineLintRule('cart', 'fsm_direct_state_handler_shorthand_pattern');
 
-export function lintFsmDirectStateHandlerMapValue(mapExpression: Expression, issues: CartLintIssue[]): void {
+export function lintFsmDirectStateHandlerMapValue(mapExpression: Expression, lint: CartLintContext): void {
 	if (mapExpression.kind !== SyntaxKind.TableConstructorExpression) {
 		return;
 	}
@@ -33,7 +33,7 @@ export function lintFsmDirectStateHandlerMapValue(mapExpression: Expression, iss
 		}
 		if (goField.value.kind === SyntaxKind.StringLiteralExpression) {
 			pushIssue(
-				issues,
+				lint,
 				fsmDirectStateHandlerShorthandPatternRule.name,
 				goField.value,
 				`FSM direct state-id handlers must use shorthand. Replace "{ go = '${goField.value.value}' }" with "${goField.value.value}".`,
@@ -41,7 +41,7 @@ export function lintFsmDirectStateHandlerMapValue(mapExpression: Expression, iss
 			continue;
 		}
 		pushIssue(
-			issues,
+			lint,
 			fsmDirectStateHandlerShorthandPatternRule.name,
 			goField.value,
 			'FSM direct handler shorthand is required. Replace "{ go = <handler> }" with "<handler>".',

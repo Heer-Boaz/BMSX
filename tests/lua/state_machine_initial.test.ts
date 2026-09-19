@@ -23,7 +23,7 @@ test('imported parent initial edits insert or replace in the provider and partic
 		const f = createBehaviorEditFixture(t, 'initial.lua', fsmInitialImportedSource('branch'), 'outline', 0, { 'branch.lua': source });
 		const targets = f.view.stateMachines.initialTargets;
 		const target = [...targets.values()].find(target => target.name === 'active')!;
-		const owner = f.view.source.models.get(target.owner.table.range.path)!;
+		const owner = f.view.source.models.get(target.owner.file.chunk.locations.range(target.owner.table.span).path)!;
 		assert.equal(owner, f.models.get('branch.lua'));
 		assert.deepEqual(new Set(f.input.getWorkingCopies()), new Set([f.model, owner]));
 		setStateMachineInitial(owner, target); f.refresh();

@@ -36,8 +36,8 @@ function fixture(t: TestContext, source = ordinary, index = 0, origin = 0) {
 	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(analysis));
 	const branch = rootList(document, origin);
 	assert.ok(branch.source.kind === 'section');
-	const member = { table: branch.source.table, branch, index };
-	const transfer = new BehaviorTreeTransferAnalysis(document, analysis, member);
+	const member = { file: branch.source.file, table: branch.source.table, branch, index };
+	const transfer = new BehaviorTreeTransferAnalysis(document, member);
 	return { source, model, analysis, document, member, transfer };
 }
 
@@ -82,8 +82,8 @@ trees.register('ordinary', {root={type='sequence',children={leaf}}})`;
 	assert.deepEqual(reverse.transfer.checkTarget(rootList(reverse.document, 1)), { kind: 'unavailable', reason: 'different-list-role' });
 	assert.ok(target.source.kind === 'section');
 	const field = f.member.branch.entries[0].field;
-	const text = readLuaSourceRange(f.model.buffer, field.range);
-	const result = createLuaTableFieldTransfer(f.model.buffer, f.model.resource.path, field, target.source.table, 0);
+	const text = readLuaSourceRange(f.model.buffer, f.member.file.chunk.locations.range(field.span));
+	const result = createLuaTableFieldTransfer(f.model.buffer, f.member.file.chunk.locations, field, target.source.table, 0);
 	f.model.pushEditOperations(result.edits);
 	assert.equal(f.model.buffer.getTextRange(result.fieldRange.start, result.fieldRange.end), text);
 	f.model.undo();
@@ -213,6 +213,6 @@ trees.register('to', require('target'))`, 'from.lua');
 	const document = buildBehaviorSourceDocument({domain:0,path:file.file}, semanticSnapshot(file, provider));
 	const branch = rootList(document, 0);
 	assert.ok(branch.source.kind === 'section');
-	const analysis = new BehaviorTreeTransferAnalysis(document, file, { table: branch.source.table, branch, index: 0 });
+	const analysis = new BehaviorTreeTransferAnalysis(document, { file: branch.source.file, table: branch.source.table, branch, index: 0 });
 	assert.deepEqual(analysis.checkTarget(rootList(document, 1)), { kind: 'unavailable', reason: 'different-write-resource' });
 });

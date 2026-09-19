@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
 import { type LuaCallExpression as CallExpression, LuaSyntaxKind as SyntaxKind, type LuaTableField as TableField, LuaTableFieldKind as TableFieldKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { btIdLabelPatternRule } from './bt_id_label_pattern';
 import { containsLabel, lintCollectionStringValuesForLabel } from './impl/support/fsm_labels';
 import { appendSuggestionMessage } from './impl/support/general';
@@ -12,7 +12,7 @@ export const fsmIdLabelPatternRule = defineLintRule('cart', 'fsm_id_label_patter
 export function lintFsmIdLabelPattern(
 	expression: CallExpression,
 	callKind: CartModuleCallKind | undefined,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 ): void {
 	if (callKind !== CART_MODULE_CALL_FSM_REGISTER) {
 		return;
@@ -26,7 +26,7 @@ export function lintFsmIdLabelPattern(
 		return;
 	}
 	pushIssue(
-		issues,
+		lint,
 		fsmIdLabelPatternRule.name,
 		idArgument,
 		appendSuggestionMessage(
@@ -37,7 +37,7 @@ export function lintFsmIdLabelPattern(
 	);
 }
 
-export function lintCollectionLabelPatterns(field: TableField, issues: CartLintIssue[]): void {
+export function lintCollectionLabelPatterns(field: TableField, lint: CartLintContext): void {
 	if (field.kind !== TableFieldKind.IdentifierKey) {
 		return;
 	}
@@ -46,7 +46,7 @@ export function lintCollectionLabelPatterns(field: TableField, issues: CartLintI
 			field.value,
 			'fsm',
 			fsmIdLabelPatternRule.name,
-			issues,
+			lint,
 			'FSM id',
 		);
 		return;
@@ -56,7 +56,7 @@ export function lintCollectionLabelPatterns(field: TableField, issues: CartLintI
 			field.value,
 			'bt',
 			btIdLabelPatternRule.name,
-			issues,
+			lint,
 			'Behavior-tree id',
 		);
 	}

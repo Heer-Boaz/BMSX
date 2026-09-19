@@ -24,12 +24,12 @@ export class LuaRelocationAnalysis {
 		const bindings: LuaRelocationBinding[] = [];
 		const seen = new Set<Decl | SemanticScope | string | number>();
 		walkLuaAst(source.chunk, node => {
-			if (compareSourcePosition(node.range.end.line, node.range.end.column, range.start.line, range.start.column) < 0
-				|| compareSourcePosition(node.range.start.line, node.range.start.column, range.end.line, range.end.column) > 0) return false;
+			if (compareSourcePosition(source.chunk.locations.range(node.span).end.line, source.chunk.locations.range(node.span).end.column, range.start.line, range.start.column) < 0
+				|| compareSourcePosition(source.chunk.locations.range(node.span).start.line, source.chunk.locations.range(node.span).start.column, range.end.line, range.end.column) > 0) return false;
 			if (node.kind === LuaSyntaxKind.IdentifierExpression) {
 				const reference = source.referencesBySyntax.get(node);
 				if (reference === undefined || (reference.referenceKind !== 'identifier' && reference.referenceKind !== 'self')) return;
-				const binding = findLuaLexicalBindingAt(source, reference.name, node.range.start.line, node.range.start.column);
+				const binding = findLuaLexicalBindingAt(source, reference.name, source.chunk.locations.range(node.span).start.line, source.chunk.locations.range(node.span).start.column);
 				let identity: Decl | SemanticScope | string;
 				if (binding.kind === 'declaration') {
 					const declaration = binding.declaration;
@@ -44,7 +44,7 @@ export class LuaRelocationAnalysis {
 				seen.add(identity);
 				bindings.push({ kind: 'identifier', reference, binding });
 			} else if (node.kind === LuaSyntaxKind.VarargExpression) {
-				const scopeIndex = findLuaFunctionScopeIndexAt(source, node.range.start.line, node.range.start.column);
+				const scopeIndex = findLuaFunctionScopeIndexAt(source, source.chunk.locations.range(node.span).start.line, source.chunk.locations.range(node.span).start.column);
 				const scope = source.scopes[scopeIndex];
 				if (sourcePositionInRange(scope.startInclusive.line, scope.startInclusive.column, range) || seen.has(scopeIndex)) return;
 				seen.add(scopeIndex);

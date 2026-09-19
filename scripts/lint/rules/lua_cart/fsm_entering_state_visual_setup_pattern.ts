@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
 import { type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { findCallExpressionInStatements, visitCallExpressionsInStatements } from '../../../../toolchain/ts/lua/syntax/calls';
 import { getStateNameFromStateField } from './impl/support/fsm_labels';
 import { collectPrefabVisualDefaultsById, getSelfGfxStringLiteralArgument, isSelfGfxCallExpression, stateTimelinesDriveSelfGfx } from './impl/support/fsm_visual';
@@ -14,7 +14,7 @@ export const fsmEnteringStateVisualSetupPatternRule = defineLintRule('cart', 'fs
 export function lintFsmEnteringStateVisualSetupPattern(
 	statements: ReadonlyArray<Statement>,
 	moduleCalls: CartModuleCallMap,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 ): void {
 	const ruleName = fsmEnteringStateVisualSetupPatternRule.name;
 	const prefabDefaultsById = collectPrefabVisualDefaultsById(statements, moduleCalls);
@@ -46,7 +46,7 @@ export function lintFsmEnteringStateVisualSetupPattern(
 			const gfxCall = findCallExpressionInStatements(body, isSelfGfxCallExpression);
 			if (visibleAssignment) {
 				pushIssue(
-					issues,
+					lint,
 					ruleName,
 					visibleAssignment.target,
 					`FSM state "${stateName}" must not set self.visible in entering_state. Move the object between spaces instead of hiding/showing it via visible; keep visual setup out of entering_state${gfxCall ? ', including self:gfx(...)' : ''}.`,
@@ -59,7 +59,7 @@ export function lintFsmEnteringStateVisualSetupPattern(
 			const gfxLiteral = getSelfGfxStringLiteralArgument(gfxCall);
 			if (gfxLiteral && prefabDefaults?.imgid === gfxLiteral) {
 				pushIssue(
-					issues,
+					lint,
 					ruleName,
 					gfxCall,
 					`FSM state "${stateName}" must not call self:gfx('${gfxLiteral}') in entering_state when prefab.define already sets imgid='${gfxLiteral}'. Keep the default sprite in prefab defaults instead of reapplying it on state entry.`,
@@ -70,7 +70,7 @@ export function lintFsmEnteringStateVisualSetupPattern(
 				continue;
 			}
 			pushIssue(
-				issues,
+				lint,
 				ruleName,
 				gfxCall,
 				`FSM state "${stateName}" must not seed self:gfx(...) in entering_state when the same state's timeline definition already drives gfx through apply. Let the timeline produce the visual frame instead of pre-setting gfx on entry.`,

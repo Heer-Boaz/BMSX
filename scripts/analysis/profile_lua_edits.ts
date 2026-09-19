@@ -44,7 +44,7 @@ for (const path of paths) {
 		}
 	});
 	assert(editedFunction!, `${path} needs a nonempty function for the body-edit workload`);
-	const bodyStart = editedFunction!.body.body[0].range.start;
+	const bodyStart = file.chunk.locations.range(editedFunction!.body.body[0].span).start;
 	const bodyOffset = lineOffsets[bodyStart.line - 1] + bodyStart.column - 1;
 	const scenarios = [
 		{ name: 'leading-newline', source: '\n' + file.source },

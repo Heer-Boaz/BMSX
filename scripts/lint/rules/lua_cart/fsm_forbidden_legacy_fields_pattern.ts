@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
 import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { getTableFieldKey } from './impl/support/table_fields';
 import { pushIssue } from './impl/support/lint_context';
 
@@ -17,7 +17,7 @@ const forbiddenFsmLegacyFieldReplacements: Readonly<Record<string, string>> = {
 	on_end: 'Use timeline binding "on_finished" for terminal completion.',
 };
 
-export function lintFsmForbiddenLegacyFieldsInTable(expression: Expression, issues: CartLintIssue[]): void {
+export function lintFsmForbiddenLegacyFieldsInTable(expression: Expression, lint: CartLintContext): void {
 	if (expression.kind !== SyntaxKind.TableConstructorExpression) {
 		return;
 	}
@@ -26,15 +26,15 @@ export function lintFsmForbiddenLegacyFieldsInTable(expression: Expression, issu
 		const replacement = key && forbiddenFsmLegacyFieldReplacements[key];
 		if (replacement) {
 			pushIssue(
-				issues,
+				lint,
 				fsmForbiddenLegacyFieldsPatternRule.name,
 				field.value,
 				`FSM field "${key}" is forbidden. ${replacement}`,
 			);
 		}
 		if (field.kind === TableFieldKind.ExpressionKey) {
-			lintFsmForbiddenLegacyFieldsInTable(field.key, issues);
+			lintFsmForbiddenLegacyFieldsInTable(field.key, lint);
 		}
-		lintFsmForbiddenLegacyFieldsInTable(field.value, issues);
+		lintFsmForbiddenLegacyFieldsInTable(field.value, lint);
 	}
 }

@@ -118,10 +118,11 @@ test('source composition maps disjoint whole-line fragments to one complete auth
 	);
 	assert.deepEqual(mapped.sourceMap.lines[2], { sourceIndex: 1, sourceLine: 2 });
 	assert.equal(mapped.sourceMap.sources[1].source, entrySource);
+	const entryChunk = parseLuaChunk(entrySource, ENTRY_PATH).chunk;
 	for (const optLevel of [0, 3] as const) {
 		const compiled = compileLuaChunkToProgram(parseLuaChunk(mapped.source, GENERATED_PATH).chunk!, [], {
 			entrySource: mapped.source, entrySourceMap: mapped.sourceMap, optLevel,
-			entryOrigin: parseLuaChunk(entrySource, ENTRY_PATH).chunk!.range,
+			entryOrigin: entryChunk.locations.range(entryChunk.span),
 		});
 		const startup = compiled.program.protos[compiled.startupProtoIndex];
 		assert.deepEqual(compiled.metadata.debugRanges[startup.entryPC / INSTRUCTION_BYTES], {

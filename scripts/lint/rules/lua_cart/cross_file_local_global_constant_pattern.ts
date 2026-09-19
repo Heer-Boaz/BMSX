@@ -1,7 +1,7 @@
 import { defineLintRule } from '../../rule';
 import { type CartLintIssue } from '../../lua_rule';
 import { TopLevelLocalStringConstant } from './impl/support/types';
-import { pushIssue } from './impl/support/lint_context';
+import { pushIssueAt } from './impl/support/lint_context';
 
 export const crossFileLocalGlobalConstantPatternRule = defineLintRule('cart', 'cross_file_local_global_constant_pattern');
 
@@ -25,10 +25,12 @@ export function lintCrossFileLocalGlobalConstantPattern(
 		}
 		for (const entry of entries) {
 			const otherPaths = paths.filter(path => path !== entry.path);
-			pushIssue(
+			pushIssueAt(
 				issues,
 				crossFileLocalGlobalConstantPatternRule.name,
-				entry.declaration,
+				entry.path,
+				entry.line,
+				entry.column,
 				`Cross-file duplicated local "global constant" is forbidden ("${name}"). Define it once and reuse it. Also defined in: ${otherPaths.join(', ')}.`,
 			);
 		}

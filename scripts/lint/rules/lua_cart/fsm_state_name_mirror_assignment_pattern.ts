@@ -1,6 +1,6 @@
 import { defineLintRule } from '../../rule';
 import { type LuaCallExpression as CallExpression, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import { type CartLintIssue } from '../../lua_rule';
+import { type CartLintContext } from '../../lua_rule';
 import { findStateNameMirrorAssignmentInExpression, getStateNameFromStateField, normalizeStateNameToken } from './impl/support/fsm_labels';
 import { findTableFieldByKey } from './impl/support/table_fields';
 import { pushIssue } from './impl/support/lint_context';
@@ -11,7 +11,7 @@ export const fsmStateNameMirrorAssignmentPatternRule = defineLintRule('cart', 'f
 export function lintFsmStateNameMirrorAssignmentPattern(
 	expression: CallExpression,
 	callKind: CartModuleCallKind | undefined,
-	issues: CartLintIssue[],
+	lint: CartLintContext,
 ): void {
 	if (callKind !== CART_MODULE_CALL_FSM_REGISTER) {
 		return;
@@ -35,7 +35,7 @@ export function lintFsmStateNameMirrorAssignmentPattern(
 			continue;
 		}
 		pushIssue(
-			issues,
+			lint,
 			fsmStateNameMirrorAssignmentPatternRule.name,
 			mirror.valueNode,
 			`FSM state "${stateName}" must not be mirrored into self.${mirror.propertyName} using the same string literal. Derive behavior from the active state instead of duplicating state-name strings in properties.`,

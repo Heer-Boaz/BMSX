@@ -44,7 +44,7 @@ export function projectBehaviorTreeGraph(
 			const relationships = new Set<LuaTableField>();
 			for (const branch of source.branches) relationships.add(branch.field);
 			for (const group of source.attachments) relationships.add(group.field);
-			appendBehaviorGraphFields(details, source.table, 'NODE', relationships);
+			appendBehaviorGraphFields(details, source.file, source.table, 'NODE', relationships);
 			for (const group of source.attachments) {
 				const label = group.role === 'services' ? 'SVC' : 'DEC';
 				const membershipKnown = group.source.kind === 'section' && group.source.issues === SourceTableIssue.None;
@@ -53,7 +53,7 @@ export function projectBehaviorTreeGraph(
 				else {
 					for (const entry of group.entries) {
 						if (entry.node.kind === 'dynamic') appendBehaviorGraphSourceDetails(details, entry.node, group.role);
-						else appendBehaviorGraphFields(details, entry.node.table, `${label} ${entry.index}`);
+						else appendBehaviorGraphFields(details, entry.node.file, entry.node.table, `${label} ${entry.index}`);
 					}
 				}
 			}
@@ -76,29 +76,29 @@ export function projectBehaviorTreeGraph(
 			const { source, node } = pending.pop()!;
 			for (const branch of source.branches) {
 				if (branch.role !== 'children' && branch.role !== 'choices') {
-					behavior(branch.node, node, branch.role, branch.field.value.range);
+					behavior(branch.node, node, branch.role, branch.file.chunk.locations.range(branch.field.value.span));
 					continue;
 				}
 				// A warning inside one member does not revoke the enclosing list's order.
 				if (branch.source.kind === 'dynamic' || branch.source.issues !== SourceTableIssue.None) {
 					const details: BehaviorGraphDetail[] = [];
 					appendBehaviorGraphSourceDetails(details, branch.source, branch.role);
-					card(branch.source, `${branch.role}\n? PARTIAL MEMBERSHIP`, node, details, branch.field.value.range);
+					card(branch.source, `${branch.role}\n? PARTIAL MEMBERSHIP`, node, details, branch.file.chunk.locations.range(branch.field.value.span));
 					continue;
 				}
 				if (branch.role === 'children') {
 					for (let index = 0; index < branch.entries.length; index += 1) {
 						const entry = branch.entries[index];
-						behavior(entry.node, node, '', entry.field.value.range, [], entry.node,
-							{ table: branch.source.table, branch, index });
+						behavior(entry.node, node, '', entry.file.chunk.locations.range(entry.field.value.span), [], entry.node,
+							{ file: branch.source.file, table: branch.source.table, branch, index });
 					}
 				} else {
 					for (let index = 0; index < branch.entries.length; index += 1) {
 						const entry = branch.entries[index];
-						const member = { table: branch.source.table, branch, index };
+						const member = { file: branch.source.file, table: branch.source.table, branch, index };
 						const choice = entry.node;
 						if (choice.kind === 'dynamic') {
-							behavior(choice, node, 'CHOICE', entry.field.value.range, [], choice, member);
+							behavior(choice, node, 'CHOICE', entry.file.chunk.locations.range(entry.field.value.span), [], choice, member);
 							continue;
 						}
 						const details: BehaviorGraphDetail[] = [];
@@ -106,10 +106,10 @@ export function projectBehaviorTreeGraph(
 						if (choice.weight !== null) {
 							const weight = describeExpression(choice.weight.value);
 							label += `  W=${weight}`;
-							details.push({ label: 'weight', description: weight, detail: 'CHOICE', range: choice.weight.value.range });
+							details.push({ label: 'weight', description: weight, detail: 'CHOICE', range: choice.file.chunk.locations.range(choice.weight.value.span) });
 						} else label += '  W=?';
 						if (choice.issues !== SourceTableIssue.None) label += ' ? SOURCE';
-						behavior(choice.child, node, label, entry.field.value.range, details, choice, member);
+						behavior(choice.child, node, label, entry.file.chunk.locations.range(entry.field.value.span), details, choice, member);
 					}
 				}
 			}

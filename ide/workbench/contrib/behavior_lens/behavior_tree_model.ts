@@ -1,9 +1,11 @@
+import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaTableConstructorExpression, LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { BehaviorDynamicSourceNode, BehaviorSourceNode } from './model';
 import type { BehaviorSourceArrayEntry, BehaviorSourceTableSection, SourceTableIssue } from './source';
 
 /** A proven authored list position, independent of the member's content resolution. */
 export type BehaviorTreeSourceMember = {
+	readonly file: FileSemanticData;
 	readonly table: LuaTableConstructorExpression;
 	readonly branch: BehaviorTreeSourceList;
 	readonly index: number;
@@ -12,22 +14,26 @@ export type BehaviorTreeSourceMember = {
 export type BehaviorTreeSourceChoice = BehaviorSourceNode & {
 	readonly kind: 'section';
 	readonly issues: SourceTableIssue;
+	readonly file: FileSemanticData;
 	readonly weight: LuaTableField | null;
 	readonly child: BehaviorTreeSourceNode;
 };
 
 export type BehaviorTreeSourceBranch = {
 	readonly role: 'children';
+	readonly file: FileSemanticData;
 	readonly field: LuaTableField;
 	readonly source: BehaviorSourceTableSection;
 	readonly entries: readonly BehaviorSourceArrayEntry<BehaviorTreeSourceNode>[];
 } | {
 	readonly role: 'choices';
+	readonly file: FileSemanticData;
 	readonly field: LuaTableField;
 	readonly source: BehaviorSourceTableSection;
 	readonly entries: readonly BehaviorSourceArrayEntry<BehaviorTreeSourceChoice | BehaviorDynamicSourceNode>[];
 } | {
 	readonly role: 'main_task' | 'background_tree';
+	readonly file: FileSemanticData;
 	readonly field: LuaTableField;
 	readonly node: BehaviorTreeSourceNode;
 };
@@ -36,12 +42,14 @@ export type BehaviorTreeSourceList = Extract<BehaviorTreeSourceBranch, { role: '
 
 export type BehaviorTreeSourceAttachment = BehaviorSourceNode & {
 	readonly kind: 'service' | 'decorator';
+	readonly file: FileSemanticData;
 	readonly table: LuaTableConstructorExpression;
 	readonly primary: LuaTableField | null;
 };
 
 export type BehaviorTreeSourceAttachmentGroup = {
 	readonly role: 'services' | 'decorators';
+	readonly file: FileSemanticData;
 	readonly field: LuaTableField;
 	readonly source: BehaviorSourceTableSection;
 	readonly entries: readonly BehaviorSourceArrayEntry<BehaviorTreeSourceAttachment | BehaviorDynamicSourceNode>[];
@@ -50,6 +58,7 @@ export type BehaviorTreeSourceAttachmentGroup = {
 /** The very same occurrence object that the outline displays, with typed relationships. */
 export type BehaviorTreeSourceNode = BehaviorDynamicSourceNode | (BehaviorSourceNode & {
 	readonly kind: 'node';
+	readonly file: FileSemanticData;
 	readonly table: LuaTableConstructorExpression;
 	/** Local constructor evidence, not aggregate warnings from descendants/attachments. */
 	readonly issues: SourceTableIssue;

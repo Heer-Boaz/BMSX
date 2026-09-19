@@ -71,7 +71,7 @@ export function selectLuaProgramModules<T extends { path: string; chunk: LuaChun
 	for (const path of moduleRoots) {
 		const module = byPath.get(path);
 		if (module === undefined) {
-			throw new Error(`Program module root '${path}' is not available as a dependency of entry '${entry.range.path}'.`);
+			throw new Error(`Program module root '${path}' is not available as a dependency of entry '${entry.locations.path}'.`);
 		}
 		roots.push(module.chunk);
 	}

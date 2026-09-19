@@ -1,5 +1,4 @@
 import type { LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
-import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import { LuaRelocationAnalysis, type LuaRelocationBindingChange } from '../../../../toolchain/ts/lua/semantic/relocation';
 import { sourcePositionInRange } from '../../../../toolchain/ts/lua/semantic/source_range';
 import type { BehaviorSourceDocument } from './model';
@@ -44,7 +43,7 @@ export class BehaviorTreeTransferAnalysis {
 	private readonly subtreeComplete: boolean;
 	private readonly bindings: LuaRelocationAnalysis;
 
-	public constructor(private readonly document: BehaviorSourceDocument, public readonly file: FileSemanticData,
+	public constructor(private readonly document: BehaviorSourceDocument,
 		public readonly member: BehaviorTreeSourceMember) {
 		const uses: BehaviorTreeSourceListUse[] = [];
 		for (const definition of document.definitions) {
@@ -66,7 +65,7 @@ export class BehaviorTreeTransferAnalysis {
 		}
 		this.sourceUses = this.consumers.get(member.table)!.uses;
 		const entry = member.branch.entries[member.index];
-		this.bindings = new LuaRelocationAnalysis(file, entry.field.range);
+		this.bindings = new LuaRelocationAnalysis(entry.file, entry.file.chunk.locations.range(entry.field.span));
 		const node = entry.node;
 		this.subtreeComplete = node.kind === 'section'
 			? (node.issues & ambiguousTopology) === 0 && collectSubtreeLists(node.child, this.subtreeLists, new Set())
@@ -86,7 +85,7 @@ export class BehaviorTreeTransferAnalysis {
 	private computeTarget(target: BehaviorTreeSourceList): BehaviorTreeTransferCheck {
 		if (!this.document.syntaxComplete) return { kind: 'unavailable', reason: 'syntax-incomplete' };
 		if (target.source.kind === 'dynamic') return { kind: 'unavailable', reason: 'list-incomplete' };
-		if (target.source.table.range.path !== this.member.table.range.path) return { kind: 'unavailable', reason: 'different-write-resource' };
+		if (target.source.file.file !== this.member.file.file) return { kind: 'unavailable', reason: 'different-write-resource' };
 		const targetConsumers = this.consumers.get(target.source.table)!;
 		const sourceIssue = this.consumers.get(this.member.table)!.issue;
 		if (sourceIssue !== undefined) return { kind: 'unavailable', reason: sourceIssue };
@@ -95,11 +94,11 @@ export class BehaviorTreeTransferAnalysis {
 		if (target.role !== this.member.branch.role) return { kind: 'unavailable', reason: 'different-list-role' };
 		if (target.source.table === this.member.table) return { kind: 'unavailable', reason: 'same-list' };
 		const field = this.member.branch.entries[this.member.index].field;
-		const start = target.source.table.range.start;
-		if (sourcePositionInRange(start.line, start.column, field.range)) return { kind: 'unavailable', reason: 'target-inside-source' };
+		const start = target.source.file.chunk.locations.range(target.source.table.span).start;
+		if (sourcePositionInRange(start.line, start.column, this.member.file.chunk.locations.range(field.span))) return { kind: 'unavailable', reason: 'target-inside-source' };
 		if (this.subtreeLists.has(target.source.table)) return { kind: 'unavailable', reason: 'cycle' };
 		if (!this.subtreeComplete) return { kind: 'unavailable', reason: 'subtree-incomplete' };
-		const changes = this.bindings.getBindingChangesAt(target.source.table.range.end);
+		const changes = this.bindings.getBindingChangesAt(target.source.file.chunk.locations.range(target.source.table.span).end);
 		if (changes.length !== 0) return { kind: 'binding-change', changes };
 		return { kind: 'available', target, table: target.source.table, targetUses: targetConsumers.uses };
 	}
