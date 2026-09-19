@@ -144,9 +144,22 @@ which call hierarchy uses. Interactive APIs never reach it.
 Against the solver on 300 sampled member references per workspace: zero
 contradicting answers and zero targets the solver does not also produce;
 82–83 % of the solver's resolved references resolve identically, the rest are
-parameter- or effect-derived (the intended contract change). The remaining
-~80 ms per snapshot is the one-time member/prototype index, paid again after
-every edit until per-file facts are cached (step 5).
+parameter- or effect-derived (the intended contract change).
+
+Incrementality (step 5): per-file facts live in a `WeakMap` on each file's
+`FileSemanticData`, so an edit re-derives only the edited file. Prototypes are
+found lazily per table from the sites that name it (its constructor or a
+declaration holding it, as a `setmetatable` target, a call argument, or a field
+of a call's table-constructor argument), instead of scanning every call. After
+an edit the first member query costs 1.4–4.6 ms (was ~33 ms); the edited file's
+rebind (7–21 ms for pietious' largest files) is now the dominant per-edit cost.
+Lazy site discovery resolves 13 fewer of pietious' 21 135 member references
+than the eager scan did: prototypes applied through sites that do not name the
+table directly.
+
+In the IDE, stopped at a breakpoint in pietious `director.lua` (the scenario
+that previously exhausted a 4 GB heap): `world` 36.5 ms on the first query of a
+session, `self.ui` 1.3 ms, `self.effects` 1.6 ms, frames 1–2 ms.
 
 ## Order of work
 
