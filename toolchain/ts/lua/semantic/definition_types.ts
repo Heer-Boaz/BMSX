@@ -1,3 +1,4 @@
+import type { StringLookup } from '../../collections/string_map';
 import { LuaSyntaxKind } from '../syntax/ast';
 import type { Decl, FileSemanticData, SymbolID } from './model';
 import type {
@@ -105,7 +106,7 @@ export class LuaDefinitionTypes {
 
 	constructor(
 		files: readonly FileSemanticData[],
-		private readonly declarations: ReadonlyMap<SymbolID, Decl>,
+		private readonly declarations: StringLookup<Decl>,
 		private readonly globals: ReadonlyMap<string, SymbolID>,
 	) {
 		for (const file of files) this.files.set(file.file, file);

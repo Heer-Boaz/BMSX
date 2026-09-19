@@ -16,13 +16,13 @@ for (const aliases of [1, 64, 1024, 4096]) {
 	const files = [file];
 	const declarations = new Map(file.decls.map(declaration => [declaration.id, declaration]));
 	const coldQueryMilliseconds = medianMilliseconds(() => {
-		const query = new LuaWrittenSourceQuery(files, declarations);
+		const query = new LuaWrittenSourceQuery(files, declarations, files.map(file => file.globalStorageDecls));
 		const trace = query.trace(query.expression(file, expression));
 		assert.equal(trace.sources.length, aliases + 2);
 		assert.equal(trace.terminals.length, 1);
 		assert.equal(trace.boundaries.length, 0);
 	});
-	const query = new LuaWrittenSourceQuery(files, declarations);
+	const query = new LuaWrittenSourceQuery(files, declarations, files.map(file => file.globalStorageDecls));
 	const root = query.expression(file, expression);
 	const retained = query.trace(root);
 	let count = 0;
@@ -48,13 +48,13 @@ for (const modules of [1, 64, 256, 1024]) {
 	const declarations = new Map<SymbolID, Decl>();
 	for (const file of files) for (const declaration of file.decls) declarations.set(declaration.id, declaration);
 	const coldQueryMilliseconds = medianMilliseconds(() => {
-		const query = new LuaWrittenSourceQuery(files, declarations);
+		const query = new LuaWrittenSourceQuery(files, declarations, files.map(file => file.globalStorageDecls));
 		const trace = query.trace(query.expression(file, expression));
 		assert.equal(trace.sources.length, modules + 1);
 		assert.equal(trace.terminals[0].file, files[0]);
 		assert.equal(trace.boundaries.length, 0);
 	});
-	const query = new LuaWrittenSourceQuery(files, declarations);
+	const query = new LuaWrittenSourceQuery(files, declarations, files.map(file => file.globalStorageDecls));
 	const root = query.expression(file, expression);
 	const retained = query.trace(root);
 	let count = 0;

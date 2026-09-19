@@ -223,7 +223,7 @@ test('a contextual return trace tracks a negative callee row and preserves earli
 local function target() return 7 end
 record(absent())`);
 	const calls = new LuaSourceCallQuery(summaries, instantiation, graph);
-	const written = new LuaWrittenSourceQuery([file], new Map(file.decls.map(declaration => [declaration.id, declaration])));
+	const written = new LuaWrittenSourceQuery([file], new Map(file.decls.map(declaration => [declaration.id, declaration])), [file.globalStorageDecls]);
 	const values = new LuaSourceValueQuery(written, calls, summaries, instantiation, members, graph);
 	const record = file.callSites.find(site => site.reference?.name === 'record')!.call;
 	const root = values.argument(calls.ancestry(record).heads[0], 0);
@@ -250,7 +250,7 @@ local function relay() consume('same') end
 relay()
 absent()`);
 	const calls = new LuaSourceCallQuery(summaries, instantiation, graph);
-	const written = new LuaWrittenSourceQuery([file], new Map(file.decls.map(declaration => [declaration.id, declaration])));
+	const written = new LuaWrittenSourceQuery([file], new Map(file.decls.map(declaration => [declaration.id, declaration])), [file.globalStorageDecls]);
 	const values = new LuaSourceValueQuery(written, calls, summaries, instantiation, members, graph);
 	const record = file.functionValueFlows[1].calls[0];
 	const head = calls.ancestry(record).heads.find(call => call.caller.kind === 'invocation')!;
@@ -277,7 +277,7 @@ local function install(value) object.task = value end
 record(object.task)
 absent('later')`);
 	const calls = new LuaSourceCallQuery(summaries, instantiation, graph);
-	const written = new LuaWrittenSourceQuery([file], new Map(file.decls.map(declaration => [declaration.id, declaration])));
+	const written = new LuaWrittenSourceQuery([file], new Map(file.decls.map(declaration => [declaration.id, declaration])), [file.globalStorageDecls]);
 	const values = new LuaSourceValueQuery(written, calls, summaries, instantiation, members, graph);
 	const record = file.callSites.find(site => site.reference?.name === 'record')!.call;
 	const root = values.argument(calls.ancestry(record).heads[0], 0);

@@ -8,7 +8,7 @@ Follow-up to [the definition-based language service](lua_language_service_design
 Annotations, additional inference, and changes to the whole-program solver are
 out of scope. Optimize edits, not the meaning of interactive queries.
 
-Implement in the ordered slices below. **Slices 0 and 1a are implemented.**
+Implement in the ordered slices below. **Slices 0 and 1a, and the publication subtask of 3, are implemented.**
 The production parser and binder still process the entire changed file. This
 document is not a claim that incremental parsing or binding already exists.
 
@@ -162,11 +162,12 @@ local edits, and report genuine whole-file invalidations separately.
   remains intentionally unknown in interactive features.
 - Adapt definition facts to these immutable units; cross-file query answers
   remain snapshot-owned until a separate dependency proof permits more reuse.
-- Account for publication: `LuaProjectIndex` currently copies the entire symbol
-  map, and snapshot construction scans file declarations for globals. Carry
-  immutable file/scope contributions into the resolver rather than flattening
-  the entire workspace after each edit. Preserve existing lookup precedence;
-  do not replace the copies with an indefinitely growing chain of overlays.
+- Publication subtask implemented independently: `LuaProjectIndex` retains a
+  persistent declaration-lookup root, and binding produces per-file global
+  contributions. Publishing neither copies the symbol table nor scans unchanged
+  declaration arrays. Scope-level contributions still await scope binding.
+  Navigation, snapshot global enumeration and written-source storage retain
+  their separate precedence/order contracts; there are no overlay chains.
 
 Acceptance: lexical shadowing, closure capture, local activation order,
 recursive const closures, method/self changes, nested functions, globals,
@@ -312,7 +313,7 @@ must not be described as meeting the final allocation/performance gate.
 
 ## Independent review checkpoints
 
-2026-09-20 (fresh agent, no conversation history): reviewed `3075a9b50` against
+2026-09-19 (fresh agent, no conversation history): reviewed `3075a9b50` against
 live owners. The review reproduced same-text explicit-generation replacement
 being suppressed in workspace updates. This existing contract gap is now fixed:
 text-only updates may retain a generation, but explicit parses/facts are
@@ -326,3 +327,96 @@ materialization and flat suffix copying remain separately measured work;
 no regional-work claim may hide them. Context-token reads currently use a
 writing project entrypoint; batching and syntax/binding ownership still need
 attention as the document delta path is integrated.
+
+
+## Publication subtask of slice 3
+
+This independent, already-measured bottleneck can be removed before changing
+syntax or binder identity. It is **not incremental binding**. Two fresh-context
+reviews covered the design and implementation. They required separate contracts
+for navigation precedence, global list multiplicity and written-source insertion
+order, and a shared collection owner rather than a semantic-feature-local map.
+
+`toolchain/ts/collections/string_map.ts` implements a get-only immutable lookup
+and a batch builder with owner-scoped mutation, following the structural-sharing
+and publication ownership in [Immutable.js Map](https://github.com/immutable-js/immutable-js/blob/main/src/Map.js).
+It uses the existing shared string hash, handles full hash collisions, and
+retains trie roots directly rather than chaining snapshots. No SymbolID decoder
+or second per-file declaration index was introduced. A published root cannot be
+mutated by later builder operations.
+
+Binder-produced globals have two explicit forms: all declarations in binder
+order (snapshot enumeration), and root-global storage declarations deduplicated
+by ID (last value, first key position). The index retains storage contributions
+in publication order. Editing a file moves its storage contributions to the end,
+as the old symbol Map did, but does not change its navigation file precedence.
+Global enumeration is materialized only on request, from immutable snapshot
+files; no full declaration flattening is deferred to the first query.
+
+Validation includes old lookup roots, unread old lazy globals after edits,
+remove/readd precedence, same-file ID tie breaks, duplicate declaration IDs,
+two same-file replacements in one batch, and zero reads of unchanged declaration
+arrays when publishing/enumerating globals in 1- and 100-file workspaces.
+The independent reviewer additionally ran 200,000 mixed map operations with
+200 retained snapshots against native Map. Its test-coverage observation was
+fixed: generated keys and delete decisions now use different random bits.
+
+
+Publication measurement (isolated sequential runs, archived `3b273cdca`, same
+285-file pietious dump/Node/CPU as above, 20 warmups/50 edit samples):
+
+| Body-edit workload | Baseline | Persistent publication |
+| --- | ---: | ---: |
+| director public update p50 / p95 | 8.37 / 9.47 ms | 3.13 / 6.95 ms |
+| player public update p50 / p95 | 19.70 / 23.95 ms | 14.90 / 16.71 ms |
+| director publication p50 | 4.10 ms | 0.54 ms |
+| player publication p50 | 4.32 ms | 1.22 ms |
+| player first member p50 / p95 | 1.56 / 5.02 ms | 1.27 / 4.69 ms |
+| player completion after member p50 / p95 | 7.03 / 10.86 ms | 7.90 / 12.01 ms |
+| Retained snapshot heap delta after GC | 168.01 MiB | 166.50 MiB |
+
+The player 2x target is **not met**. Completion p50/p95 are about 12%/11%
+higher in this run; this is not proven to be merely noise and is not hidden
+by the faster publication result. First query costs include no
+full-declaration flattening; retained heap uses the earlier probe's boundary.
+
+There is a lookup/build tradeoff. `profile_lua_publication.ts` measures a fresh
+workspace index over already bound files (10 warmups, 30 samples, warmed JS):
+initial publication p50 rises from 5.15 to 8.56 ms. One sweep of all 26,219
+declaration lookups rises from 0.50 to 9.03 ms because the trie hashes each
+string key rather than relying on native Map's cached hashes. This artificial
+whole-index sweep is not interactive latency, but it must be recorded. Initial
+parse+bind in these two processes was about 420–428 ms; this is a single startup
+sample, not a compiler performance distribution. No unbounded hash cache or
+encoded-ID workaround has been added. A separate compiler probe with 1,000
+static functions, retained strict syntax, 3 warmups and 10 compiles gives O0
+p50 48.45 -> 51.85 ms and O3 p50 197.37 -> 198.78 ms. It excludes parsing and
+cart linking. The added initial-index cost is visible, not claimed away.
+The independent review accepted this isolated publication tradeoff, but did
+not accept the final no-material-regression gate: real cartcompiler
+distributions and the completed representation remain required.
+
+Validation: full Lua suite (before the final three publication cases) 1,960
+passed, one skipped, only the existing menu failure; all nine collection/
+publication cases pass. Headless build and the three nemesis_s precision tests
+pass. Six O0/O3 compiler-oracle outputs remain byte-for-byte equal. Targeted
+and IDE typechecks still report only the existing unused `depth` parameter
+(now line 313). `git diff --check` passes.
+
+### Next representation gate (independent review)
+
+A fresh fourth review made the missing origin-lookup algorithm explicit. The
+candidate is a persistent, balanced source-order layout with unit markers,
+disjoint text/gap leaves, width/newline aggregates and an inverse ID-to-record
+index. Snapshot-specific parent IDs allow a marker to find its origin by
+walking to the root and summing left weights. A splice changes tree spines and
+the parent records of moved subtree roots, not every shifted unit. This is a
+location index, not a second grammar tree. Random lookup has real logarithmic
+costs; sequential binder/compiler walks need cursors with retained unit origins.
+
+Before adopting it, prove old/new positions for the same retained occurrence,
+distinct identical occurrences, changed parents retaining nested units,
+logarithmic changed-record counts, no historical tombstones/overlay chains,
+and linear bulk construction. Statement lists and token sequences also need
+chunked/persistent composition; leaving flat suffix copies would not satisfy
+the regional-work gate. This is reviewed design, **not implemented syntax**.

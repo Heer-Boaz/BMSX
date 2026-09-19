@@ -4800,6 +4800,16 @@ source ranges, start-position fallbacks, or synthesized references. Source
 ranges remain the correct boundary for cursor- and protocol-originated queries,
 where no syntax node exists at the callsite.
 
+Workspace declaration lookup retains a persistent string-key trie root per
+publication; it never copies the whole declaration table or decodes symbol IDs
+for file routing. The index's batch builder can mutate only nodes owned since
+its last publication. Resolvers consume a get-only lookup, not mutable builder
+state. File semantics produces global-declaration contributions once at binding.
+Snapshot global enumeration is lazy over those retained contributions, in file
+precedence/binder order. Written-source storage contributions preserve their
+separate publication insertion order and same-ID last-value semantics; neither
+navigation precedence nor source ordering depends on trie traversal.
+
 A property's binding kind does not change the lexical kind of its written key.
 Quoted and long-string keys retain their full parser-owned source range for
 declarations and references, but emit no identifier-color annotation. Decoded

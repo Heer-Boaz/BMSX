@@ -24,7 +24,9 @@ test('semantic revisions identify immutable binder facts independently of shared
 	workspace.updateFiles([first]);
 	const initial = workspace.getSnapshot();
 	workspace.updateFiles([second]);
-	assert.equal(workspace.getSnapshot(), initial, 'no published source change retains the current generation');
+	assert.notEqual(workspace.getSnapshot(), initial, 'an explicit new bind publishes its own fact generation');
+	assert.equal(workspace.getSnapshot().getFileData('revision.lua'), second);
+	assert.equal(initial.getFileData('revision.lua'), first);
 	const another = new LuaSemanticWorkspace();
 	another.updateFiles([first]);
 	assert.equal(another.getSnapshot().version, initial.version);

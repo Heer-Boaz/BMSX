@@ -1,3 +1,4 @@
+import { StringMapBuilder } from '../../collections/string_map';
 import {
 	LuaAssignmentOperator,
 	LuaBinaryOperator,
@@ -163,6 +164,10 @@ export type FileSemanticData = LuaFileSemanticRevision & {
 	readonly chunk: LuaChunk;
 	readonly annotations: SemanticAnnotations;
 	readonly decls: readonly Decl[];
+	/** Binder order and multiplicity, for snapshot global enumeration. */
+	readonly globalDecls: readonly Decl[];
+	/** Root-global storage witnesses, last value per symbol in first-key order. */
+	readonly globalStorageDecls: readonly Decl[];
 	readonly scopes: readonly SemanticScope[];
 	readonly refs: readonly Ref[];
 	readonly memberAccesses: readonly MemberAccessEntry[];
@@ -198,7 +203,7 @@ export class LuaSemanticWorkspaceSnapshot {
 	public readonly files: readonly FileSemanticData[];
 	public readonly symbolResolver: WorkspaceSymbolResolver;
 	private readonly dataByPath: ReadonlyMap<string, FileSemanticData>;
-	private readonly globalDecls: readonly Decl[];
+	private globalDecls: readonly Decl[] | undefined;
 
 	constructor(
 		version: number,
@@ -209,19 +214,11 @@ export class LuaSemanticWorkspaceSnapshot {
 		this.files = files;
 		this.symbolResolver = symbolResolver;
 		const dataByPath = new Map<string, FileSemanticData>();
-		const globalDecls: Decl[] = [];
 		for (let index = 0; index < files.length; index += 1) {
 			const file = files[index];
 			dataByPath.set(file.file, file);
-			for (let declIndex = 0; declIndex < file.decls.length; declIndex += 1) {
-				const decl = file.decls[declIndex];
-				if (decl.isGlobal) {
-					globalDecls.push(decl);
-				}
-			}
 		}
 		this.dataByPath = dataByPath;
-		this.globalDecls = globalDecls;
 	}
 
 	public getFileData(path: string): FileSemanticData | undefined {
@@ -229,6 +226,13 @@ export class LuaSemanticWorkspaceSnapshot {
 	}
 
 	public listGlobalDecls(): readonly Decl[] {
+		if (this.globalDecls === undefined) {
+			const globals: Decl[] = [];
+			for (const file of this.files) {
+				for (const decl of file.globalDecls) globals.push(decl);
+			}
+			this.globalDecls = globals;
+		}
 		return this.globalDecls;
 	}
 
@@ -380,7 +384,17 @@ export function buildLuaFileSemanticData(
 		},
 	});
 	const result = builder.build();
-	const decls = result.decls.map(toDecl);
+	const decls = new Array<Decl>(result.decls.length);
+	const globalDecls: Decl[] = [];
+	const globalStorageDecls = new Map<SymbolID, Decl>();
+	for (let index = 0; index < result.decls.length; index++) {
+		const decl = toDecl(result.decls[index]);
+		decls[index] = decl;
+		if (decl.isGlobal) {
+			globalDecls.push(decl);
+			if (decl.namePath.length === 1) globalStorageDecls.set(decl.id, decl);
+		}
+	}
 	const scopes = result.scopes.map(toSemanticScope);
 	const refs = result.refs.slice();
 	const annotations = finalizeAnnotations(result.annotations);
@@ -392,6 +406,8 @@ export function buildLuaFileSemanticData(
 		chunk: retainedChunk,
 		annotations,
 		decls,
+		globalDecls,
+		globalStorageDecls: Array.from(globalStorageDecls.values()),
 		scopes,
 		refs,
 		memberAccesses: result.memberAccesses,
@@ -414,7 +430,9 @@ export function buildLuaFileSemanticData(
 
 class LuaProjectIndex {
 	private readonly files: Map<string, FileSemanticData> = new Map();
-	private readonly symbols: Map<SymbolID, Decl> = new Map();
+	private readonly symbols = new StringMapBuilder<Decl>();
+	/** Symbol insertion order differs from navigation file precedence after edits. */
+	private readonly storageContributions = new Map<string, readonly Decl[]>();
 	private readonly globalsByKey: Map<string, SymbolID> = new Map();
 	private readonly globalsSources: Map<string, Map<SymbolID, number>> = new Map();
 	private readonly fileOrder: Map<string, number> = new Map();
@@ -478,22 +496,17 @@ class LuaProjectIndex {
 			const decl = data.decls[i];
 			this.symbols.set(decl.id, decl);
 		}
-		for (let i = 0; i < data.decls.length; i += 1) {
-			const decl = data.decls[i];
-			if (decl.isGlobal) {
-				this.addGlobalDecl(decl);
-			}
-		}
+		for (const decl of data.globalDecls) this.addGlobalDecl(decl);
+		this.storageContributions.set(data.file, data.globalStorageDecls);
 	}
 
 	private removeFileData(data: FileSemanticData): void {
 		for (let i = 0; i < data.decls.length; i += 1) {
 			const decl = data.decls[i];
 			this.symbols.delete(decl.id);
-			if (decl.isGlobal) {
-				this.removeGlobalDecl(decl);
-			}
 		}
+		for (const decl of data.globalDecls) this.removeGlobalDecl(decl);
+		this.storageContributions.delete(data.file);
 	}
 
 	private addGlobalDecl(decl: Decl): void {
@@ -581,7 +594,8 @@ class LuaProjectIndex {
 		const globals = new Map(this.globalsByKey);
 		return new WorkspaceSymbolResolver({
 			files: this.orderedFiles,
-			declarations: new Map(this.symbols),
+			declarations: this.symbols.snapshot(),
+			globalStorage: Array.from(this.storageContributions.values()),
 			globals,
 		});
 	}

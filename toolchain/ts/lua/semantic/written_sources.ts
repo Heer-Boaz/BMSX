@@ -1,3 +1,4 @@
+import type { StringLookup } from '../../collections/string_map';
 import { isMultiReturnExpression, LuaSyntaxKind, type LuaCallExpression, type LuaExpression, type LuaReturnStatement, type LuaTableConstructorExpression } from '../syntax/ast';
 import { LuaCompletion } from '../analysis/completion';
 import type { Decl, FileSemanticData, Ref, SymbolID } from './model';
@@ -110,7 +111,11 @@ export class LuaWrittenSourceQuery {
 	private readonly callsByFile = new Map<FileSemanticData, ReadonlyMap<LuaCallExpression, CallValueEntry>>();
 	private mutatedTables: ReadonlySet<LuaTableConstructorExpression> | undefined;
 
-	public constructor(files: readonly FileSemanticData[], private readonly symbols: ReadonlyMap<SymbolID, Decl>) {
+	public constructor(
+		files: readonly FileSemanticData[],
+		private readonly symbols: StringLookup<Decl>,
+		private readonly globalStorage: readonly (readonly Decl[])[],
+	) {
 		for (const file of files) this.filesByPath.set(file.file, file);
 	}
 
@@ -370,14 +375,15 @@ export class LuaWrittenSourceQuery {
 		if (inputs !== undefined) return inputs;
 		if (this.globalDeclarations === undefined) {
 			const declarations = new Map<string, Decl[]>();
-			for (const declaration of this.symbols.values()) {
-				if (!declaration.isGlobal || declaration.namePath.length !== 1) continue;
-				let group = declarations.get(declaration.symbolKey);
-				if (group === undefined) {
-					group = [];
-					declarations.set(declaration.symbolKey, group);
+			for (const file of this.globalStorage) {
+				for (const declaration of file) {
+					let group = declarations.get(declaration.symbolKey);
+					if (group === undefined) {
+						group = [];
+						declarations.set(declaration.symbolKey, group);
+					}
+					group.push(declaration);
 				}
-				group.push(declaration);
 			}
 			this.globalDeclarations = declarations;
 		}
