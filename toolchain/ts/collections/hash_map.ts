@@ -1,68 +1,84 @@
-import { hashText } from '../../../machine/ts/common/byte_hex_string';
-
 /** A lookup contract, deliberately independent of Map insertion order. */
-export interface StringLookup<V> {
-	get(key: string): V | undefined;
+export interface HashLookup<K, V> {
+	get(key: K): V | undefined;
 }
 
 // Bitmap HAMT, five hash bits per level. As in Immutable.js Map, builder
 // ownership permits batch mutation only on nodes created since publication.
 // No snapshot chains: each published root directly shares unchanged subtrees.
-type Leaf<V> = {
+type Leaf<K, V> = {
 	kind: 'leaf';
 	owner: symbol;
 	hash: number;
-	key: string;
+	key: K;
 	value: V;
 };
-type Collision<V> = {
+type Collision<K, V> = {
 	kind: 'collision';
 	owner: symbol;
 	hash: number;
-	entries: Leaf<V>[];
+	entries: Leaf<K, V>[];
 };
-type Branch<V> = {
+type Branch<K, V> = {
 	kind: 'branch';
 	owner: symbol;
 	bitmap: number;
-	children: Node<V>[];
+	children: Node<K, V>[];
 };
-type Node<V> = Leaf<V> | Collision<V> | Branch<V>;
+type Node<K, V> = Leaf<K, V> | Collision<K, V> | Branch<K, V>;
+type EditState = { owner: symbol; size: number };
 
-export class StringMapSnapshot<V> implements StringLookup<V> {
-	public constructor(private readonly root: Node<V> | undefined) {}
+export class HashMapSnapshot<K, V> implements HashLookup<K, V> {
+	public constructor(
+		private readonly hashKey: (key: K) => number,
+		private readonly root: Node<K, V> | undefined,
+		public readonly size: number,
+	) {}
 
-	public get(key: string): V | undefined {
-		return lookup(this.root, key);
+	public edit(): HashMapBuilder<K, V> {
+		return new HashMapBuilder(this.hashKey, this.root, this.size);
+	}
+
+	public get(key: K): V | undefined {
+		return lookup(this.root, this.hashKey(key), key);
 	}
 }
 
 /** Mutable publication owner. Snapshot creation is O(1), not a map copy. */
-export class StringMapBuilder<V> implements StringLookup<V> {
-	private root: Node<V> | undefined;
-	private owner = Symbol();
+export class HashMapBuilder<K, V> implements HashLookup<K, V> {
+	private readonly state: EditState;
 
-	public get(key: string): V | undefined {
-		return lookup(this.root, key);
+	/** hashKey produces a 32-bit unsigned hash; key equality remains strict identity. */
+	public constructor(
+		private readonly hashKey: (key: K) => number,
+		private root: Node<K, V> | undefined = undefined,
+		size = 0,
+	) {
+		this.state = { owner: Symbol(), size };
 	}
 
-	public set(key: string, value: V): void {
-		this.root = insert(this.root, 0, hashText(key), key, value, this.owner);
+	public get size(): number { return this.state.size; }
+
+	public get(key: K): V | undefined {
+		return lookup(this.root, this.hashKey(key), key);
 	}
 
-	public delete(key: string): void {
-		this.root = remove(this.root, 0, hashText(key), key, this.owner);
+	public set(key: K, value: V): void {
+		this.root = insert(this.root, 0, this.hashKey(key), key, value, this.state);
 	}
 
-	public snapshot(): StringMapSnapshot<V> {
-		const snapshot = new StringMapSnapshot(this.root);
-		this.owner = Symbol();
+	public delete(key: K): void {
+		this.root = remove(this.root, 0, this.hashKey(key), key, this.state);
+	}
+
+	public snapshot(): HashMapSnapshot<K, V> {
+		const snapshot = new HashMapSnapshot(this.hashKey, this.root, this.state.size);
+		this.state.owner = Symbol();
 		return snapshot;
 	}
 }
 
-function lookup<V>(root: Node<V> | undefined, key: string): V | undefined {
-	const hash = hashText(key);
+function lookup<K, V>(root: Node<K, V> | undefined, hash: number, key: K): V | undefined {
 	let node = root;
 	let shift = 0;
 	while (node !== undefined) {
@@ -79,14 +95,22 @@ function lookup<V>(root: Node<V> | undefined, key: string): V | undefined {
 	return undefined;
 }
 
-function insert<V>(node: Node<V> | undefined, shift: number, hash: number, key: string, value: V, owner: symbol): Node<V> {
-	if (node === undefined) return { kind: 'leaf', owner, hash, key, value };
+function insert<K, V>(node: Node<K, V> | undefined, shift: number, hash: number, key: K, value: V, state: EditState): Node<K, V> {
+	const owner = state.owner;
+	if (node === undefined) {
+		state.size++;
+		return { kind: 'leaf', owner, hash, key, value };
+	}
 	if (node.kind !== 'branch') {
 		if (node.hash !== hash) {
+			state.size++;
 			return join(node, { kind: 'leaf', owner, hash, key, value }, shift, owner);
 		}
 		if (node.kind === 'leaf') {
-			if (node.key !== key) return { kind: 'collision', owner, hash, entries: [node, { kind: 'leaf', owner, hash, key, value }] };
+			if (node.key !== key) {
+				state.size++;
+				return { kind: 'collision', owner, hash, entries: [node, { kind: 'leaf', owner, hash, key, value }] };
+			}
 			if (node.value === value) return node;
 			if (node.owner === owner) {
 				node.value = value;
@@ -97,8 +121,8 @@ function insert<V>(node: Node<V> | undefined, shift: number, hash: number, key: 
 		const index = node.entries.findIndex(entry => entry.key === key);
 		if (index >= 0 && node.entries[index].value === value) return node;
 		const entries = node.owner === owner ? node.entries : node.entries.slice();
-		const entry: Leaf<V> = { kind: 'leaf', owner, hash, key, value };
-		if (index < 0) entries.push(entry);
+		const entry: Leaf<K, V> = { kind: 'leaf', owner, hash, key, value };
+		if (index < 0) { entries.push(entry); state.size++; }
 		else entries[index] = entry;
 		return node.owner === owner ? node : { kind: 'collision', owner, hash, entries };
 	}
@@ -106,7 +130,7 @@ function insert<V>(node: Node<V> | undefined, shift: number, hash: number, key: 
 	const index = populationCount(node.bitmap & (bit - 1));
 	const present = (node.bitmap & bit) !== 0;
 	const old = present ? node.children[index] : undefined;
-	const child = insert(old, shift + 5, hash, key, value, owner);
+	const child = insert(old, shift + 5, hash, key, value, state);
 	if (old === child) return node;
 	const children = node.owner === owner ? node.children : node.children.slice();
 	if (present) children[index] = child;
@@ -119,7 +143,7 @@ function insert<V>(node: Node<V> | undefined, shift: number, hash: number, key: 
 }
 
 /** Different complete hashes must diverge within their seven five-bit groups. */
-function join<V>(left: Leaf<V> | Collision<V>, right: Leaf<V>, shift: number, owner: symbol): Branch<V> {
+function join<K, V>(left: Leaf<K, V> | Collision<K, V>, right: Leaf<K, V>, shift: number, owner: symbol): Branch<K, V> {
 	const leftSlot = (left.hash >>> shift) & 31;
 	const rightSlot = (right.hash >>> shift) & 31;
 	if (leftSlot === rightSlot) {
@@ -128,12 +152,18 @@ function join<V>(left: Leaf<V> | Collision<V>, right: Leaf<V>, shift: number, ow
 	return { kind: 'branch', owner, bitmap: (1 << leftSlot) | (1 << rightSlot), children: leftSlot < rightSlot ? [left, right] : [right, left] };
 }
 
-function remove<V>(node: Node<V> | undefined, shift: number, hash: number, key: string, owner: symbol): Node<V> | undefined {
+function remove<K, V>(node: Node<K, V> | undefined, shift: number, hash: number, key: K, state: EditState): Node<K, V> | undefined {
+	const owner = state.owner;
 	if (node === undefined) return undefined;
-	if (node.kind === 'leaf') return node.key === key ? undefined : node;
+	if (node.kind === 'leaf') {
+		if (node.key !== key) return node;
+		state.size--;
+		return undefined;
+	}
 	if (node.kind === 'collision') {
 		const index = node.entries.findIndex(entry => entry.key === key);
 		if (index < 0) return node;
+		state.size--;
 		if (node.entries.length === 2) return node.entries[index ^ 1];
 		const entries = node.owner === owner ? node.entries : node.entries.slice();
 		entries.splice(index, 1);
@@ -143,7 +173,7 @@ function remove<V>(node: Node<V> | undefined, shift: number, hash: number, key: 
 	if ((node.bitmap & bit) === 0) return node;
 	const index = populationCount(node.bitmap & (bit - 1));
 	const old = node.children[index];
-	const child = remove(old, shift + 5, hash, key, owner);
+	const child = remove(old, shift + 5, hash, key, state);
 	if (child === old) return node;
 	if (child === undefined && node.children.length === 1) return undefined;
 	// A leaf/collision has no level-dependent routing. Branches cannot be

@@ -337,7 +337,7 @@ reviews covered the design and implementation. They required separate contracts
 for navigation precedence, global list multiplicity and written-source insertion
 order, and a shared collection owner rather than a semantic-feature-local map.
 
-`toolchain/ts/collections/string_map.ts` implements a get-only immutable lookup
+`toolchain/ts/collections/hash_map.ts` implements a get-only immutable lookup
 and a batch builder with owner-scoped mutation, following the structural-sharing
 and publication ownership in [Immutable.js Map](https://github.com/immutable-js/immutable-js/blob/main/src/Map.js).
 It uses the existing shared string hash, handles full hash collisions, and
@@ -420,3 +420,64 @@ logarithmic changed-record counts, no historical tombstones/overlay chains,
 and linear bulk construction. Statement lists and token sequences also need
 chunked/persistent composition; leaving flat suffix copies would not satisfy
 the regional-work gate. This is reviewed design, **not implemented syntax**.
+
+### Slice 1b foundation: persistent source locations (2026-09-19)
+
+`syntax/source_layout.ts` is a source-order location index, **not an additional
+syntax tree**. Text leaves include all trivia and skipped/error suffixes; unique
+zero-width occurrence markers locate future reusable statement/function units.
+An immutable AVL text/marker tree has snapshot-owned inverse parent edges in the
+shared bitmap HAMT. Leading edits replace tree/index paths rather than relocating
+all later markers. Removing a reparsed parent marker leaves retained nested
+occurrences independent. Deleted records are removed from the current root;
+old snapshots retain only their own shared roots. Adjacent text fragments coalesce
+at edit boundaries, so temporary marker insertion/removal does not accumulate
+fragments. Cold construction is bulk, not one persistent insertion per marker.
+
+The existing shared string map became `collections/hash_map.ts`: key hashing
+belongs to its producer, strict key identity to the map. Numeric occurrence IDs
+are not truncated to their 32-bit hashes. Forking an old snapshot creates a fresh
+mutable ownership epoch; constant-time size tracks actual entries, not history.
+
+Reference inspection included Lezer's
+[tree representation](https://github.com/lezer-parser/common/blob/main/src/tree.ts)
+and [fragment mapping](https://github.com/lezer-parser/common/blob/main/src/parse.ts),
+and Immutable.js's [owner-scoped Map mutation](https://github.com/immutable-js/immutable-js/blob/main/src/Map.js).
+This adopts bounded leaf storage, occurrence/location separation and structural
+sharing, not another grammar or an in-place rewrite of AST positions.
+
+A fresh-context independent reviewer checked 50,000 edit/fork steps against text,
+UTF-16 positions, exact AVL balance/aggregates, inverse parent edges and reachable
+record counts; 200,000 numeric-map edits with collisions/forks/400 retained
+snapshots; and every cursor seek over 1,000 initial/edited layouts. The reviewer
+found a real source-retention bug: a 32-character slice retained its deleted
+16-MiB source. The text-leaf producer now constructs bounded owned UTF-16 strings
+(including unpaired surrogates), instead of storing arbitrary source slices.
+Independent GC remeasurement: 0.137 MiB live delta, 0.136 MiB after releasing the
+layout, versus the original 16.124/0.123 MiB. These small residuals include process
+noise; record-count tests alone would not have caught the bug.
+
+Durable probes: `tests/lua/source_layout.test.ts`, `tests/lua/hash_map.test.ts`,
+`scripts/analysis/profile_lua_source_layout.ts`. On Node 22.23.1 / Ultra 7 265KF,
+20 warmups and 100 samples, isolated p50/p95 milliseconds:
+
+| Markers / UTF-16 length | Bulk create | Leading insert+publish | All random origins | Sequential marker/text walk |
+| --- | --- | --- | --- | --- |
+| 100 / 4,000 | 0.052/0.176 | 0.014/0.026 | 0.019/0.026 | 0.012/0.016 |
+| 1,000 / 40,000 | 0.580/1.307 | 0.024/0.046 | 0.354/0.557 | 0.114/0.283 |
+| 10,000 / 400,000 | 8.157/9.410 | 0.053/0.067 | 6.332/7.531 | 2.109/2.967 |
+
+The cursor is an amortized sequential **offset** walk; repeatedly calling random
+line/column projection does not make a consumer linear. Full compiler/binder
+walks must use the appropriate projection path. These numbers are not parse,
+bind or UI timings and do not satisfy the slice-1b integration gate. The existing
+publication edit profiler after map generalization showed comparable medians
+(player public update 16.2–16.8 vs 16.7–17.3 ms in four workloads), but variable
+p95s (including 24.8 vs 17.6 ms for rename): no complete no-regression claim is made
+from this single pair. Actual parser, tokens and binder are still whole-file.
+
+Foundation validation: 11/11 targeted tests; full Lua suite 1,971 passed,
+one existing named-workbench-menu failure, one skipped (1,973 total). Targeted
+TypeScript check reports only the pre-existing unused `depth` parameter in
+`definition_types.ts`; `git diff --check` passes. No compiler/IDE behavior claim
+is made for the as-yet unwired source-layout index.

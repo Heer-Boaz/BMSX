@@ -1,4 +1,4 @@
-import type { StringLookup } from '../../collections/string_map';
+import type { HashLookup } from '../../collections/hash_map';
 import type { Decl, FileSemanticData, LuaCallSite, Ref, SymbolID } from './model';
 import { LuaSemanticQueryStore, type LuaSemanticQueryMetrics } from './query_store';
 import {
@@ -47,7 +47,7 @@ function appendUniqueSymbols(target: SymbolID[], source: readonly SymbolID[]): v
 // version; unchanged FileSemanticData remains binder input rather than a heap.
 export class WorkspaceSymbolResolver {
 	private readonly files: readonly FileSemanticData[];
-	private readonly declarations: StringLookup<Decl>;
+	private readonly declarations: HashLookup<SymbolID, Decl>;
 	private readonly globals: ReadonlyMap<string, SymbolID>;
 	private readonly globalStorage: readonly (readonly Decl[])[];
 	private queryStore?: LuaSemanticQueryStore;
@@ -65,7 +65,7 @@ export class WorkspaceSymbolResolver {
 
 	constructor(options: {
 		files: readonly FileSemanticData[];
-		declarations: StringLookup<Decl>;
+		declarations: HashLookup<SymbolID, Decl>;
 		globals: ReadonlyMap<string, SymbolID>;
 		globalStorage: readonly (readonly Decl[])[];
 	}) {

@@ -1,4 +1,5 @@
-import { StringMapBuilder } from '../../collections/string_map';
+import { hashText } from '../../../../machine/ts/common/byte_hex_string';
+import { HashMapBuilder } from '../../collections/hash_map';
 import {
 	LuaAssignmentOperator,
 	LuaBinaryOperator,
@@ -430,7 +431,7 @@ export function buildLuaFileSemanticData(
 
 class LuaProjectIndex {
 	private readonly files: Map<string, FileSemanticData> = new Map();
-	private readonly symbols = new StringMapBuilder<Decl>();
+	private readonly symbols = new HashMapBuilder<SymbolID, Decl>(hashText);
 	/** Symbol insertion order differs from navigation file precedence after edits. */
 	private readonly storageContributions = new Map<string, readonly Decl[]>();
 	private readonly globalsByKey: Map<string, SymbolID> = new Map();

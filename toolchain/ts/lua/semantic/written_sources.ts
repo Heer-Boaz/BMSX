@@ -1,4 +1,4 @@
-import type { StringLookup } from '../../collections/string_map';
+import type { HashLookup } from '../../collections/hash_map';
 import { isMultiReturnExpression, LuaSyntaxKind, type LuaCallExpression, type LuaExpression, type LuaReturnStatement, type LuaTableConstructorExpression } from '../syntax/ast';
 import { LuaCompletion } from '../analysis/completion';
 import type { Decl, FileSemanticData, Ref, SymbolID } from './model';
@@ -113,7 +113,7 @@ export class LuaWrittenSourceQuery {
 
 	public constructor(
 		files: readonly FileSemanticData[],
-		private readonly symbols: StringLookup<Decl>,
+		private readonly symbols: HashLookup<SymbolID, Decl>,
 		private readonly globalStorage: readonly (readonly Decl[])[],
 	) {
 		for (const file of files) this.filesByPath.set(file.file, file);

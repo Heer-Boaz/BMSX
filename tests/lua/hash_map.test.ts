@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { StringMapBuilder } from '../../toolchain/ts/collections/string_map';
+import { HashMapBuilder } from '../../toolchain/ts/collections/hash_map';
 import { hashText } from '../../machine/ts/common/byte_hex_string';
 
 test('persistent string lookup preserves published generations through batched mutation', () => {
-	const builder = new StringMapBuilder<number>();
+	const builder = new HashMapBuilder<string, number>(hashText);
 	const empty = builder.snapshot();
 	for (let index = 0; index < 4096; index++) builder.set(`file.lua|${index}|value`, index);
 	const first = builder.snapshot();
@@ -26,7 +26,7 @@ test('persistent string lookup preserves published generations through batched m
 });
 
 test('persistent string lookup agrees with Map across deterministic interleaved snapshots', () => {
-	const builder = new StringMapBuilder<number>();
+	const builder = new HashMapBuilder<string, number>(hashText);
 	const expected = new Map<string, number>();
 	const retained: { map: ReturnType<typeof builder.snapshot>; entries: Map<string, number> }[] = [];
 	let state = 713;
@@ -47,7 +47,7 @@ test('complete hash collisions survive replacement, shrinking and snapshot relea
 	// Fixed collision in the shared UTF-16 FNV-1a hash, not a mocked hash path.
 	const keys = ['9p4fsl', '1jxusol'];
 	assert.equal(hashText(keys[0]), hashText(keys[1]));
-	const builder = new StringMapBuilder<number>();
+	const builder = new HashMapBuilder<string, number>(hashText);
 	builder.set(keys[0], 1);
 	builder.set(keys[1], 2);
 	const both = builder.snapshot();
@@ -61,4 +61,35 @@ test('complete hash collisions survive replacement, shrinking and snapshot relea
 	assert.equal(one.get(keys[1]), undefined);
 	builder.delete(keys[0]);
 	assert.equal(builder.snapshot().get(keys[0]), undefined);
+});
+
+
+test('numeric identity maps fork independently and account for collision deletion exactly', () => {
+	const builder = new HashMapBuilder<number, string>(key => key >>> 0);
+	builder.set(1, 'first');
+	builder.set(0x100000001, 'collision');
+	builder.set(0x200000001, 'third');
+	builder.set(2, 'other branch');
+	const first = builder.snapshot();
+	assert.equal(first.size, 4);
+	const left = first.edit(), right = first.edit();
+	left.delete(0x100000001);
+	left.set(1, 'updated');
+	right.delete(0x200000001);
+	right.delete(1);
+	right.delete(1);
+	right.set(3, 'new');
+	const afterLeft = left.snapshot(), afterRight = right.snapshot();
+	assert.equal(afterLeft.size, 3);
+	assert.equal(afterRight.size, 3);
+	assert.equal(afterLeft.get(1), 'updated');
+	assert.equal(afterRight.get(1), undefined);
+	assert.equal(afterLeft.get(0x100000001), undefined);
+	assert.equal(afterRight.get(0x100000001), 'collision');
+	assert.equal(first.get(1), 'first');
+	assert.equal(first.get(0x200000001), 'third');
+	assert.equal(first.size, 4);
+	left.delete(1); left.delete(2); left.delete(0x200000001);
+	assert.equal(left.size, 0);
+	assert.equal(afterLeft.size, 3);
 });
