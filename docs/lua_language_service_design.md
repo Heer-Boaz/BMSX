@@ -147,15 +147,34 @@ contradicting answers and zero targets the solver does not also produce;
 parameter- or effect-derived (the intended contract change).
 
 Incrementality (step 5): per-file facts live in a `WeakMap` on each file's
-`FileSemanticData`, so an edit re-derives only the edited file. Prototypes are
-found lazily per table from the sites that name it (its constructor or a
-declaration holding it, as a `setmetatable` target, a call argument, or a field
-of a call's table-constructor argument), instead of scanning every call. After
-an edit the first member query costs 1.4–4.6 ms (was ~33 ms); the edited file's
-rebind (7–21 ms for pietious' largest files) is now the dominant per-edit cost.
-Lazy site discovery resolves 13 fewer of pietious' 21 135 member references
-than the eager scan did: prototypes applied through sites that do not name the
-table directly.
+`FileSemanticData`, so an edit re-derives only the edited file. Member facts are
+keyed by an owner that names their shape directly (a table constructor, a
+declaration holding one, a class instance through `self`); only the ~800 of
+pietious' ~11 000 member facts whose owner is an alias, path or global are
+evaluated, with the same rules a reader uses. Prototypes are found lazily per
+table from the sites that name it, plus `setmetatable` targets that name no
+table directly, evaluated once per snapshot.
+
+`setmetatable(x, mt)` over a value that is not a table constructor (a subclass
+constructor calling `setmetatable(base.new(opts), class)`) yields a *retag*
+shape: `x`'s own fields followed by `mt`'s prototype chain, replacing `x`'s
+prototypes, as Lua does. Attaching `mt` to the base table instead gave that one
+table every subclass's prototype.
+
+| After an edit (pietious) | |
+|---|---|
+| rebind of the edited file | 5–22 ms (the dominant remaining cost) |
+| first member query | 1.3–2.9 ms (was ~33 ms) |
+| first member completion | ~11 ms (was ~51 ms) |
+
+Coverage and agreement: 12 911 of pietious' 21 135 member references resolve
+(the first, eager version: 12 899), 11 050 in nemesis_s (11 038); against the
+solver on 300 sampled references per workspace, 189 and 180 identical, zero
+contradictions, zero targets the solver lacks.
+
+Other idetests (`behavior_lens`, `command_palette_scenario`, `scenario_lab`,
+`scenario_lab_actioneffect_pietious`, `semantic_hover`, `signature_help`) fail
+identically on `master`; `scenario_preparation` passes on both.
 
 In the IDE, stopped at a breakpoint in pietious `director.lua` (the scenario
 that previously exhausted a 4 GB heap): `world` 36.5 ms on the first query of a

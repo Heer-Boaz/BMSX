@@ -27,7 +27,15 @@ export type LuaDefinitionShape =
 	| { readonly kind: 'function'; readonly key: string; readonly flow: FunctionValueFlowEntry }
 	| { readonly kind: 'instance'; readonly key: string; readonly of: LuaDefinitionShape }
 	/** A member path written through without a value of its own (`function base.tools.byte()`). */
-	| { readonly kind: 'path'; readonly key: string; readonly owner: LuaDefinitionShape; readonly name: string };
+	| { readonly kind: 'path'; readonly key: string; readonly owner: LuaDefinitionShape; readonly name: string }
+	/**
+	 * `setmetatable(x, mt)` over a value that is not a table constructor
+	 * (`setmetatable(base.new(opts), class)`): `x`'s own fields with `mt`'s
+	 * prototype, replacing whatever prototype `x` had.
+	 */
+	| { readonly kind: 'retag'; readonly key: string; readonly retag: Retag };
+
+type Retag = { readonly base: SemanticValueSource; readonly prototype: SemanticValueSource };
 
 type OwnedFact =
 	| { readonly kind: 'table' }
@@ -45,13 +53,20 @@ type PrototypeSite =
 /** Facts of one bound file; pure functions of its `FileSemanticData`. */
 type FileDefinitionFacts = {
 	readonly ownedFacts: ReadonlyMap<number, OwnedFact>;
-	readonly membersByName: ReadonlyMap<string, readonly MemberFact[]>;
+	/** Members whose owner names a table, holder declaration or class instance directly. */
+	readonly membersByOwnerKey: ReadonlyMap<string, readonly MemberFact[]>;
+	/** Members whose owner must be evaluated (aliases, paths, globals, call results), by name. */
+	readonly indirectMembersByName: ReadonlyMap<string, readonly MemberFact[]>;
 	readonly valueAssignmentsByTarget: ReadonlyMap<number, readonly ValueAssignmentEntry[]>;
 	readonly receiverParameters: ReadonlyMap<SymbolID, FunctionValueFlowEntry>;
 	/** Sites keyed by the declarations, globals and tables their target or arguments name. */
 	readonly prototypeSitesByKey: ReadonlyMap<string, readonly PrototypeSite[]>;
 	/** Declarations whose written value is exactly this table constructor. */
 	readonly holdersByTable: ReadonlyMap<number, readonly Decl[]>;
+	/** `setmetatable` targets that name no table directly and are not retags. */
+	readonly indirectPrototypeAssignments: readonly ValueAssignmentEntry[];
+	/** `setmetatable(x, mt)` call results over a non-constructor `x`, by result id. */
+	readonly retagsByCall: ReadonlyMap<number, Retag>;
 };
 
 /** Parameter declarations bound to call-site argument sources for one callee body. */
@@ -67,18 +82,26 @@ const factsByFile = new WeakMap<FileSemanticData, FileDefinitionFacts>();
 
 export class LuaDefinitionTypes {
 	private readonly files = new Map<string, FileSemanticData>();
-	private readonly membersByName = new Map<string, readonly MemberFact[]>();
+	private readonly keyedMembers = new Map<string, readonly MemberFact[]>();
 	private readonly moduleExports = new Map<string, readonly ModuleValueEntry[]>();
 	private readonly prototypeSites = new Map<string, readonly PrototypeSite[]>();
 	private readonly prototypes = new Map<string, readonly LuaDefinitionShape[]>();
-	/** Retained answers of the current phase; see `prototypeShapes`. */
+	/** Retained answers of the current phase; see `enterPhase`. */
 	private declarationShapes = new Map<SymbolID, readonly LuaDefinitionShape[]>();
 	private sourceShapes = new Map<SemanticValueSource, readonly LuaDefinitionShape[]>();
+	private membersByShape = new Map<string, ReadonlyMap<string, readonly Decl[]>>();
 	private ownerShapes = new Map<MemberFact, readonly LuaDefinitionShape[]>();
+	private readonly indirectByName = new Map<string, readonly MemberFact[]>();
+	private allIndirect?: readonly MemberFact[];
+	private indirectPrototypeSites?: ReadonlyMap<string, readonly PrototypeSite[]>;
 	private readonly shapes = new Map<string, LuaDefinitionShape>();
 	private readonly inProgress = new Set<SemanticValueSource | SymbolID>();
-	/** While a prototype is collected, lookups see own members only, retained in phase-local maps. */
-	private collectingPrototypes = false;
+	/**
+	 * `prototype` collects one table's prototypes without following prototype
+	 * chains itself; `normal` answers queries. Each phase keeps its answers in
+	 * its own retained maps, so neither sees the other's partial results.
+	 */
+	private phase: 'normal' | 'prototype' = 'normal';
 
 	constructor(
 		files: readonly FileSemanticData[],
@@ -96,11 +119,9 @@ export class LuaDefinitionTypes {
 	/** Declarations of `name` found first along each shape's own members and prototype chain. */
 	public lookupMember(shapes: readonly LuaDefinitionShape[], name: string): readonly Decl[] {
 		const found: Decl[] = [];
-		const facts = this.membersNamed(name);
-		if (facts.length === 0) return found;
 		for (const shape of shapes) {
 			for (const chainShape of this.chain(shape)) {
-				const own = this.ownMembers(chainShape, facts);
+				const own = this.ownMember(chainShape, name);
 				if (own.length === 0) continue;
 				for (const declaration of own) if (!found.includes(declaration)) found.push(declaration);
 				break;
@@ -112,13 +133,16 @@ export class LuaDefinitionTypes {
 	/** Every member visible on the shapes; nearer definitions shadow prototype ones. */
 	public visibleMembers(shapes: readonly LuaDefinitionShape[]): ReadonlyMap<string, readonly Decl[]> {
 		const members = new Map<string, Decl[]>();
-		const names = new Set<string>();
-		for (const file of this.files.values()) for (const name of this.facts(file).membersByName.keys()) names.add(name);
-		for (const name of names) {
-			for (const declaration of this.lookupMember(shapes, name)) {
-				let bucket = members.get(name);
-				if (!bucket) members.set(name, bucket = []);
-				if (!bucket.includes(declaration)) bucket.push(declaration);
+		for (const shape of shapes) {
+			const shadowed = new Set<string>();
+			for (const chainShape of this.chain(shape)) {
+				for (const [name, declarations] of this.ownMembers(chainShape)) {
+					if (shadowed.has(name)) continue;
+					shadowed.add(name);
+					let bucket = members.get(name);
+					if (!bucket) members.set(name, bucket = []);
+					for (const declaration of declarations) if (!bucket.includes(declaration)) bucket.push(declaration);
+				}
 			}
 		}
 		return members;
@@ -149,15 +173,15 @@ export class LuaDefinitionTypes {
 		return file === undefined ? undefined : this.facts(file);
 	}
 
-	private membersNamed(name: string): readonly MemberFact[] {
-		let facts = this.membersByName.get(name);
+	private membersKeyed(key: string): readonly MemberFact[] {
+		let facts = this.keyedMembers.get(key);
 		if (facts === undefined) {
 			const merged: MemberFact[] = [];
 			for (const file of this.files.values()) {
-				const own = this.facts(file).membersByName.get(name);
+				const own = this.facts(file).membersByOwnerKey.get(key);
 				if (own !== undefined) merged.push(...own);
 			}
-			this.membersByName.set(name, facts = merged);
+			this.keyedMembers.set(key, facts = merged);
 		}
 		return facts;
 	}
@@ -259,6 +283,8 @@ export class LuaDefinitionTypes {
 	private ownedShapes(id: number, path: string, binding: Binding, depth: number): readonly LuaDefinitionShape[] {
 		const facts = this.factsFor(path);
 		if (facts === undefined) return EMPTY_SHAPES;
+		const retag = facts.retagsByCall.get(id);
+		if (retag !== undefined) return [this.retagShape(id, retag)];
 		const shapes: LuaDefinitionShape[] = [];
 		const fact = facts.ownedFacts.get(id);
 		if (fact !== undefined) {
@@ -327,24 +353,127 @@ export class LuaDefinitionTypes {
 				pending.push(current.of);
 				continue;
 			}
+			if (current.kind === 'retag') {
+				// The retagged value keeps its own fields; its old prototypes are replaced.
+				for (const base of this.shapesOf(current.retag.base)) {
+					if (!chain.some(existing => existing.key === base.key)) chain.push(base);
+				}
+				if (this.phase === 'normal') for (const prototype of this.shapesOf(current.retag.prototype)) pending.push(prototype);
+				continue;
+			}
 			const instance = this.instance(current);
 			if (!chain.some(existing => existing.key === instance.key)) chain.push(instance);
-			if (!this.collectingPrototypes) for (const prototype of this.prototypeShapes(current)) pending.push(prototype);
+			if (this.phase === 'normal') for (const prototype of this.prototypeShapes(current)) pending.push(prototype);
 		}
 		return chain;
 	}
 
-	private ownMembers(shape: LuaDefinitionShape, facts: readonly MemberFact[]): readonly Decl[] {
+	/** Declarations of `name` defined on exactly this shape. */
+	private ownMember(shape: LuaDefinitionShape, name: string): readonly Decl[] {
 		const found: Decl[] = [];
-		for (const fact of facts) {
-			let owners = this.ownerShapes.get(fact);
-			if (owners === undefined) {
-				owners = this.shapesOf(fact.entry.owner);
-				this.ownerShapes.set(fact, owners);
-			}
-			if (owners.some(owner => owner.key === shape.key) && !found.includes(fact.declaration)) found.push(fact.declaration);
+		for (const key of this.ownerKeys(shape)) {
+			for (const fact of this.membersKeyed(key)) if (fact.entry.name === name && !found.includes(fact.declaration)) found.push(fact.declaration);
+		}
+		for (const fact of this.indirectMembersNamed(name)) {
+			if (this.ownersOf(fact).some(owner => owner.key === shape.key) && !found.includes(fact.declaration)) found.push(fact.declaration);
 		}
 		return found;
+	}
+
+	/** Every member defined on exactly this shape, by name. */
+	private ownMembers(shape: LuaDefinitionShape): ReadonlyMap<string, readonly Decl[]> {
+		const retained = this.membersByShape.get(shape.key);
+		if (retained !== undefined) return retained;
+		const members = new Map<string, Decl[]>();
+		const add = (fact: MemberFact): void => {
+			let declarations = members.get(fact.entry.name);
+			if (!declarations) members.set(fact.entry.name, declarations = []);
+			if (!declarations.includes(fact.declaration)) declarations.push(fact.declaration);
+		};
+		for (const key of this.ownerKeys(shape)) for (const fact of this.membersKeyed(key)) add(fact);
+		for (const fact of this.allIndirectMembers()) if (this.ownersOf(fact).some(owner => owner.key === shape.key)) add(fact);
+		this.membersByShape.set(shape.key, members);
+		return members;
+	}
+
+	/** Shapes an indirect member's owner evaluates to, with the same rules a reader uses. */
+	private ownersOf(fact: MemberFact): readonly LuaDefinitionShape[] {
+		let owners = this.ownerShapes.get(fact);
+		if (owners === undefined) {
+			owners = this.shapesOf(fact.entry.owner);
+			this.ownerShapes.set(fact, owners);
+		}
+		return owners;
+	}
+
+	/** Keys under which member facts name this shape directly. */
+	private ownerKeys(shape: LuaDefinitionShape): readonly string[] {
+		if (shape.kind === 'table') return this.tableKeys(shape);
+		if (shape.kind !== 'instance' || shape.of.kind !== 'table') return [];
+		const keys: string[] = [];
+		for (const holder of this.factsFor(shape.of.file)?.holdersByTable.get(shape.of.owned) || EMPTY_DECLS) keys.push(instanceKey(holder.id));
+		return keys;
+	}
+
+	private indirectMembersNamed(name: string): readonly MemberFact[] {
+		let facts = this.indirectByName.get(name);
+		if (facts === undefined) {
+			const merged: MemberFact[] = [];
+			for (const file of this.files.values()) {
+				const own = this.facts(file).indirectMembersByName.get(name);
+				if (own !== undefined) merged.push(...own);
+			}
+			this.indirectByName.set(name, facts = merged);
+		}
+		return facts;
+	}
+
+	private allIndirectMembers(): readonly MemberFact[] {
+		if (this.allIndirect === undefined) {
+			const all: MemberFact[] = [];
+			for (const file of this.files.values()) for (const facts of this.facts(file).indirectMembersByName.values()) all.push(...facts);
+			this.allIndirect = all;
+		}
+		return this.allIndirect;
+	}
+
+	/**
+	 * Prototype assignments whose target names no table directly, grouped by
+	 * the tables their targets evaluate to; once per snapshot, in the
+	 * `prototype` phase, which follows no prototype chains itself.
+	 */
+	private indirectPrototypeSitesMap(): ReadonlyMap<string, readonly PrototypeSite[]> {
+		if (this.indirectPrototypeSites !== undefined) return this.indirectPrototypeSites;
+		const sites = new Map<string, PrototypeSite[]>();
+		this.enterPhase('prototype', () => {
+			for (const file of this.files.values()) {
+				for (const entry of this.facts(file).indirectPrototypeAssignments) {
+					const site: PrototypeSite = { kind: 'assignment', entry };
+					for (const target of this.shapesOf(entry.target)) {
+						let bucket = sites.get(target.key);
+						if (!bucket) sites.set(target.key, bucket = []);
+						bucket.push(site);
+					}
+				}
+			}
+		});
+		this.indirectPrototypeSites = sites;
+		return sites;
+	}
+
+	/** Runs `work` in `phase` with fresh retained maps, restoring the caller's afterwards. */
+	private enterPhase(phase: 'prototype', work: () => void): void {
+		const retained = [this.phase, this.sourceShapes, this.declarationShapes, this.membersByShape, this.ownerShapes] as const;
+		this.phase = phase;
+		this.sourceShapes = new Map();
+		this.declarationShapes = new Map();
+		this.membersByShape = new Map();
+		this.ownerShapes = new Map();
+		try {
+			work();
+		} finally {
+			[this.phase, this.sourceShapes, this.declarationShapes, this.membersByShape, this.ownerShapes] = retained;
+		}
 	}
 
 	/**
@@ -361,20 +490,22 @@ export class LuaDefinitionTypes {
 		for (const key of this.tableKeys(shape)) {
 			for (const site of this.sitesKeyed(key)) if (!sites.includes(site)) sites.push(site);
 		}
+		for (const site of this.indirectPrototypeSitesMap().get(shape.key) || []) if (!sites.includes(site)) sites.push(site);
 		const prototypes: LuaDefinitionShape[] = [];
 		this.prototypes.set(shape.key, prototypes);
 		if (sites.length === 0) return prototypes;
-		// Collection sees own members only. Its answers are consistent with each
-		// other but not with the final chains, so they live in phase-local maps.
-		const retained = [this.sourceShapes, this.declarationShapes, this.ownerShapes] as const;
-		this.sourceShapes = new Map();
-		this.declarationShapes = new Map();
-		this.ownerShapes = new Map();
-		this.collectingPrototypes = true;
 		const add = (targets: readonly LuaDefinitionShape[], sources: readonly LuaDefinitionShape[]): void => {
 			if (!targets.some(target => target.key === shape.key)) return;
 			appendShapes(prototypes, sources.filter(source => source.key !== shape.key));
 		};
+		this.enterPhase('prototype', () => this.collectPrototypes(sites, add));
+		return prototypes;
+	}
+
+	private collectPrototypes(
+		sites: readonly PrototypeSite[],
+		add: (targets: readonly LuaDefinitionShape[], sources: readonly LuaDefinitionShape[]) => void,
+	): void {
 		for (const site of sites) {
 			if (site.kind === 'assignment') {
 				add(this.shapesOf(site.entry.target), this.shapesOf(site.entry.source));
@@ -394,9 +525,6 @@ export class LuaDefinitionTypes {
 				}
 			}
 		}
-		this.collectingPrototypes = false;
-		[this.sourceShapes, this.declarationShapes, this.ownerShapes] = retained;
-		return prototypes;
 	}
 
 	/** Site keys that can name a table: the constructor itself and the declarations holding it. */
@@ -427,6 +555,13 @@ export class LuaDefinitionTypes {
 		const key = `${owner.key}.${name}`;
 		let shape = this.shapes.get(key);
 		if (!shape) this.shapes.set(key, shape = { kind: 'path', key, owner, name });
+		return shape;
+	}
+
+	private retagShape(call: number, retag: Retag): LuaDefinitionShape {
+		const key = `r${call}`;
+		let shape = this.shapes.get(key);
+		if (!shape) this.shapes.set(key, shape = { kind: 'retag', key, retag });
 		return shape;
 	}
 
@@ -530,7 +665,79 @@ function buildFileFacts(file: FileSemanticData): FileDefinitionFacts {
 			}
 		}
 	}
-	return { ownedFacts, membersByName, valueAssignmentsByTarget, receiverParameters, prototypeSitesByKey, holdersByTable };
+	// Key each member by an owner that names its shape directly; evaluate the rest.
+	const holdsOnlyTables = (declId: SymbolID): boolean => {
+		const values = file.declarationValuesByDeclaration.get(declId);
+		return values !== undefined && values.length > 0 && values.every(value => value.source.steps.length === 0
+			&& value.source.root.kind === 'owned' && ownedFacts.get(value.source.root.id)?.kind === 'table');
+	};
+	const receiverKey = (flow: FunctionValueFlowEntry): string | undefined => {
+		const projection = flow.receiverProjection;
+		if (projection === undefined || projection.root.kind !== 'declaration'
+			|| projection.steps.length !== 1 || projection.steps[0].kind !== 'instance') return undefined;
+		return holdsOnlyTables(projection.root.declId) ? instanceKey(projection.root.declId) : undefined;
+	};
+	const membersByOwnerKey = new Map<string, MemberFact[]>();
+	const indirectMembersByName = new Map<string, MemberFact[]>();
+	for (const facts of membersByName.values()) {
+		for (const fact of facts) {
+			const owner = fact.entry.owner;
+			let key: string | undefined;
+			let unknown = false;
+			if (owner.steps.length === 0) {
+				const root = owner.root;
+				if (root.kind === 'owned') {
+					const ownerFact = ownedFacts.get(root.id);
+					if (ownerFact?.kind === 'receiver') key = receiverKey(ownerFact.flow);
+					else if (ownerFact?.kind === 'table') key = ownedKey(root.id);
+				} else if (root.kind === 'declaration') {
+					const receiverFlow = receiverParameters.get(root.declId);
+					if (receiverFlow !== undefined) key = receiverKey(receiverFlow);
+					else if (holdsOnlyTables(root.declId)) key = declarationKey(root.declId);
+					// A parameter has no definition to follow: its members name nothing.
+					else unknown = declarations.get(root.declId)?.kind === 'parameter' && !file.declarationValuesByDeclaration.has(root.declId);
+				}
+			}
+			if (unknown) continue;
+			if (key === undefined) {
+				let indirect = indirectMembersByName.get(fact.entry.name);
+				if (!indirect) indirectMembersByName.set(fact.entry.name, indirect = []);
+				indirect.push(fact);
+				continue;
+			}
+			let keyed = membersByOwnerKey.get(key);
+			if (!keyed) membersByOwnerKey.set(key, keyed = []);
+			keyed.push(fact);
+		}
+	}
+	const indirectPrototypeAssignments: ValueAssignmentEntry[] = [];
+	const retagsByCall = new Map<number, Retag>();
+	const callsByExpression = new Map<unknown, CallValueEntry>();
+	for (const call of calls) callsByExpression.set(call.expression, call);
+	const collectIndirectPrototypes = (entries: readonly ValueAssignmentEntry[]): void => {
+		for (const entry of entries) {
+			if (entry.relation !== 'prototype') continue;
+			const target = entry.target;
+			const direct = target.steps.length === 0 && (target.root.kind === 'owned'
+				? ownedFacts.get(target.root.id)?.kind === 'table'
+				: target.root.kind === 'declaration' && holdsOnlyTables(target.root.declId));
+			if (direct) continue;
+			const call = entry.syntax.kind === LuaSyntaxKind.CallExpression ? callsByExpression.get(entry.syntax) : undefined;
+			if (call?.result !== undefined) {
+				retagsByCall.set(call.result.root.id, { base: target, prototype: entry.source });
+				continue;
+			}
+			indirectPrototypeAssignments.push(entry);
+		}
+	};
+	collectIndirectPrototypes(file.valueAssignments);
+	for (const flow of file.functionValueFlows) collectIndirectPrototypes(flow.assignments);
+	// A retagged call result is its retag shape, not the value it was given.
+	for (const id of retagsByCall.keys()) valueAssignmentsByTarget.delete(id);
+	return {
+		ownedFacts, membersByOwnerKey, indirectMembersByName, valueAssignmentsByTarget, receiverParameters,
+		prototypeSitesByKey, holdersByTable, indirectPrototypeAssignments, retagsByCall,
+	};
 }
 
 function sourceKey(source: SemanticValueSource): string | undefined {
@@ -545,6 +752,7 @@ function sourceKey(source: SemanticValueSource): string | undefined {
 
 function declarationKey(declId: SymbolID): string { return `d${declId}`; }
 function ownedKey(owned: number): string { return `o${owned}`; }
+function instanceKey(declId: SymbolID): string { return `i${declId}`; }
 function globalKey(symbolKey: string): string { return `g${symbolKey}`; }
 
 function appendShapes(target: LuaDefinitionShape[], shapes: readonly LuaDefinitionShape[]): void {

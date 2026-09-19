@@ -121,3 +121,48 @@ test('definition answers are independent of query order', () => {
 		.map(target => `${target.declaration.file}:${target.declaration.namePath.join('.')}`).sort()).reverse();
 	assert.deepEqual(reversed, forward);
 });
+
+test('definition types retag setmetatable over a base constructor without merging sibling classes', () => {
+	const source = [
+		'local base<const> = {}',
+		'base.__index = base',
+		'function base.new() local self<const> = setmetatable({}, base) self.parent = 1 return self end',
+		'function base:shared() end',
+		'local left<const> = setmetatable({}, { __index = base })',
+		'left.__index = left',
+		'function left:left_only() end',
+		'function left.new() return setmetatable(base.new(), left) end',
+		'local right<const> = setmetatable({}, { __index = base })',
+		'right.__index = right',
+		'function right:right_only() end',
+		'function right.new() return setmetatable(base.new(), right) end',
+		'local object<const> = left.new()',
+		'object:left_only()',
+		'object:shared()',
+		'object:right_only()',
+		'return object.parent',
+	].join('\n');
+	const files = [{ path: 'retag.lua', source }];
+	assert.deepEqual(targetsAt(files, 'retag.lua', 14, 'left_only'), ['retag.lua:left.left_only']);
+	assert.deepEqual(targetsAt(files, 'retag.lua', 15, 'shared'), ['retag.lua:base.shared']);
+	assert.deepEqual(targetsAt(files, 'retag.lua', 16, 'right_only'), [], 'a sibling class does not leak through the shared base table');
+	assert.deepEqual(targetsAt(files, 'retag.lua', 17, 'parent'), ['retag.lua:self.parent'], 'fields the base constructor set remain');
+});
+
+test('definition types see writes through a local alias of a field', () => {
+	const source = [
+		'local owner<const> = {}',
+		'function owner:attach(room)',
+		'\tself.room = { id = 1 }',
+		'end',
+		'function owner:mark()',
+		'\tlocal room<const> = self.room',
+		'\troom.marked = true',
+		'end',
+		'function owner:read()',
+		'\tlocal room<const> = self.room',
+		'\treturn room.marked',
+		'end',
+	].join('\n');
+	assert.deepEqual(targetsAt([{ path: 'alias.lua', source }], 'alias.lua', 11, 'marked'), ['alias.lua:room.marked']);
+});
