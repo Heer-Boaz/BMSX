@@ -2,7 +2,6 @@ import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import { LuaLexer } from '../../../../toolchain/ts/lua/syntax/lexer';
 import { clamp } from '../../../../machine/ts/common/clamp';
-import { getCachedLuaParse } from '../../../../toolchain/ts/lua/analysis/cache';
 import {
 	SuspendedGuestValueKind,
 	type SuspendedGuestValue,
@@ -251,10 +250,8 @@ type ContextMenuTokenMatch = {
 };
 
 function findContextMenuTokenMatch(row: number, column: number, path: string, source: string): ContextMenuTokenMatch {
-	const tokens = getCachedLuaParse({
-		path,
-		source,
-	}).parsed.tokens;
+	const tokens = getOrCreateSemanticProject(activeCodeEditor.model.resource.domain)
+		.updateDocument(path, source).chunk.tokens;
 	const targetLine = row + 1;
 	let adjacent: ContextMenuTokenMatch = null;
 	for (let index = 0; index < tokens.length; index += 1) {

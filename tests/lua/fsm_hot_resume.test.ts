@@ -451,11 +451,12 @@ test('BT source removal changes actual compiled task order without deleting refe
 	const resource = { domain: 0 as const, path: 'remove.lua', source: { type: 'lua' as const, resid: 'remove' } };
 	for (const [definitionIndex, index, expected] of [[0, 0, 123], [0, 1, 13], [0, 2, 112], [2, 1, 13]] as const) {
 		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
-		const definition = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path))).definitions[definitionIndex];
+		const analysis = buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path);
+		const definition = buildBehaviorSourceDocument(resource, semanticSnapshot(analysis)).definitions[definitionIndex];
 		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
 		const branch = definition.root.branches[0];
 		assert.ok((branch.role === 'children' || branch.role === 'choices') && branch.source.kind === 'section');
-		removeBehaviorTreeChild(model, { table: branch.source.table, branch, index });
+		removeBehaviorTreeChild(model, { table: branch.source.table, branch, index }, analysis.chunk);
 		const execution = definitionIndex === 0 ? `
 local program<const> = require('cartlib/behaviour_tree/program').compile('oracle', { root = root })
 assert(program.evaluate(target, { _execution_state = program.create_execution_state() }, program.operand) == result.success)

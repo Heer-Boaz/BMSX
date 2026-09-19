@@ -11,13 +11,13 @@ import { prepareBehaviorLensLayout, selectBehaviorLensDefinition } from '../../.
 import { behaviorTreeEditTarget, duplicateBehaviorTreeChild, removeBehaviorTreeChild } from '../../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
 import { createLuaTableFieldRemovalEdits, readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import { createLuaTableFieldInsertionEdits } from '../../../ide/language/lua/table_field_insertion';
-import { getCachedLuaParse } from '../../../toolchain/ts/lua/analysis/cache';
 
 Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, codeAreaTop: 24, codeAreaBottom: 276 });
 for (const siblings of [24, 1024]) {
 	const source = `local trees<const> = require('cartlib/behaviour_tree/library')\nlocal child<const> = { type = 'wait', duration_ticks = 2 }\ntrees.register('profile', { root = { type = 'sequence', children = {\n${'child, -- independent source occurrence\n'.repeat(siblings)} } } })`;
 	const model = new EditorTextModel({ domain: 0, path: 'edit.lua', source: { type: 'lua', resid: 'edit' } }, 'lua', source);
-	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path)));
+	const analysis = buildLuaFileSemanticData(source, model.resource.path);
+	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(analysis));
 	const state = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 	selectBehaviorLensDefinition(state, document.definitions[0].rowKey);
 	prepareBehaviorLensLayout(state);
@@ -33,7 +33,7 @@ for (const siblings of [24, 1024]) {
 		}
 	});
 	assert.ok(admitted > 0);
-	const parsed = getCachedLuaParse({ path: model.resource.path, source }).parsed;
+	const parsed = analysis.chunk;
 	const field = member.branch.entries[member.index].field;
 	let constructed = 0;
 	const constructMicroseconds = medianMilliseconds(() => {
@@ -52,7 +52,7 @@ for (const siblings of [24, 1024]) {
 	});
 	const removeUndoMicroseconds = medianMilliseconds(() => {
 		for (let index = 0; index < 1000; index += 1) {
-			removeBehaviorTreeChild(model, member);
+			removeBehaviorTreeChild(model, member, parsed);
 			model.undo();
 		}
 	});
@@ -86,7 +86,7 @@ for (const siblings of [24, 1024]) {
 	assert.equal(viewport.model, graph);
 	console.log(JSON.stringify({ siblings, sourceUtf16: source.length, admissionMicroseconds, constructMicroseconds,
 		applyUndoMicroseconds, removeUndoMicroseconds, editCount: edits.length, deletedUtf16: edits.reduce((sum, edit) => sum + edit.deleteLength, 0),
-		boundary: '1000-operation batches; 10 warmups, median of 25; retained syntax. Remove+Undo includes snapshot/cache access after Undo, not semantic refresh, graph rebuilding, save/Hot Resume, rendering or total frames; not allocation profiling' }));
+		boundary: '1000-operation batches; 10 warmups, median of 25; retained syntax. Remove+Undo uses retained syntax, not semantic refresh, graph rebuilding, save/Hot Resume, rendering or total frames; not allocation profiling' }));
 	console.log(JSON.stringify({ siblings, sourceUtf16: source.length, duplicateConstructMicroseconds, duplicateApplyUndoMicroseconds,
 		duplicateUndoMicroseconds, editCount: duplicateEdits.length, insertedUtf16: duplicateEdits[0].text.length,
 		boundary: '100-operation construction/entrypoint batches, 1000-operation apply+Undo batches; 10 warmups, median of 25. Includes the insertion owner lexer, not semantic refresh, graph rebuilding, save/Hot Resume, rendering or total frames; not allocation profiling' }));

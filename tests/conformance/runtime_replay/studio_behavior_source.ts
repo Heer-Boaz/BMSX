@@ -4,7 +4,7 @@ import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { createLuaTableFieldRemovalEdits, luaSourceRangeToTextRange } from '../../../ide/language/lua/source_edits';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
-import { getCachedLuaParse } from '../../../toolchain/ts/lua/analysis/cache';
+import { getOrCreateSemanticProject } from '../../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { BEHAVIOR_SOURCE_FIXTURE } from '../../helpers/behavior_source_fixture';
 import { revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
@@ -93,7 +93,7 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	await click(graph.actionBar.items[0].bounds, 6);
 	check(activeCodeEditor.view.cursorRow === sourceRow + 1 && activeCodeEditor.view.cursorColumn === sourceColumn
 		&& !hasSelection(), 'source graph: Source uses the new generation, including the UTF-16 insertion');
-	const parsed = getCachedLuaParse({ source: model.buffer.getText(), path: model.resource.path }).parsed;
+	const parsed = getOrCreateSemanticProject(model.resource.domain).getFileData(model.resource.path)!.chunk;
 	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, nextEntries[2].field));
 	await test.clickTab(lens.id);
 	check(view.selection === null && viewport.selection === null, 'source graph: deleting the selected occurrence does not choose its namesake');

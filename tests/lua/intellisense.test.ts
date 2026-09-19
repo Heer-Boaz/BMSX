@@ -420,6 +420,44 @@ test('editor diagnostics share one retained project snapshot across open documen
 	assert.ok(updated.some(diagnostic => diagnostic.message.includes("'shared' is not defined")));
 });
 
+test('diagnostics over more than 24 documents parse each generation once, including recovery', async t => {
+	const { computeAggregatedEditorDiagnostics } = await editorDiagnosticsModulePromise;
+	const { resetSemanticProject } = await workspaceStateModulePromise;
+	const files: Record<string, string> = {};
+	const contexts: DiagnosticContextInput[] = [];
+	for (let index = 0; index < 40; index++) {
+		const path = `document_${index}.lua`;
+		const source = `return ${index}`;
+		files[path] = source;
+		contexts.push({ id: `code:system\0${path}`, domain: SYSTEM_RESOURCE_DOMAIN, path, source, version: 1 });
+	}
+	const bridge = createIntellisenseBridge(files);
+	const project = resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
+	const parse = t.mock.method(LuaParser.prototype, 'parseChunkWithRecovery');
+	assert.deepEqual(computeAggregatedEditorDiagnostics(bridge, contexts), []);
+	assert.equal(parse.mock.callCount(), contexts.length);
+	const old = project.getSnapshot();
+	for (let pass = 0; pass < 3; pass++) assert.deepEqual(computeAggregatedEditorDiagnostics(bridge, contexts), []);
+	assert.equal(parse.mock.callCount(), contexts.length, 'document lifetime, not cache capacity, determines reuse');
+	assert.equal(project.getSnapshot(), old);
+	contexts[0] = { ...contexts[0], source: 'local value =', version: 2 };
+	const diagnostics = computeAggregatedEditorDiagnostics(bridge, contexts);
+	assert.equal(diagnostics.length, 1);
+	assert.equal(diagnostics[0].path, contexts[0].path);
+	assert.equal(parse.mock.callCount(), contexts.length + 1);
+	const invalid = project.getFileData(contexts[0].path)!;
+	assert.equal(invalid.syntaxError, invalid.chunk.syntaxError);
+	assert.equal(invalid.chunk.source, contexts[0].source);
+	computeAggregatedEditorDiagnostics(bridge, contexts);
+	assert.equal(project.getFileData(contexts[0].path)!.chunk, invalid.chunk);
+	assert.equal(parse.mock.callCount(), contexts.length + 1, 'incomplete source is retained, not reparsed on each diagnostic read');
+	contexts[0] = { ...contexts[0], source: files[contexts[0].path], version: 3 };
+	assert.deepEqual(computeAggregatedEditorDiagnostics(bridge, contexts), []);
+	assert.equal(parse.mock.callCount(), contexts.length + 2);
+	assert.equal(old.getFileData(contexts[0].path)!.chunk.source, contexts[0].source);
+	assert.equal(old.getFileData(contexts[0].path)!.syntaxError, null);
+});
+
 test('static definition lookup preserves one-based source coordinates at an identifier boundary', async () => {
 	const { findStaticDefinitionLocation } = await intellisenseEngineModulePromise;
 	const { resetSemanticProject } = await workspaceStateModulePromise;

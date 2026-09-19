@@ -1,3 +1,6 @@
+import type { LuaSyntaxError } from '../../errors';
+import type { LuaToken } from '../token';
+
 export type LuaSourcePosition = {
 	readonly line: number;
 	readonly column: number;
@@ -102,6 +105,10 @@ export type LuaExpression =
 
 export type LuaChunk = LuaNode & {
 	readonly kind: LuaSyntaxKind.Chunk;
+	/** One immutable source generation, retained with its syntax rather than a path cache. */
+	readonly source: string;
+	readonly tokens: readonly LuaToken[];
+	readonly syntaxError: LuaSyntaxError | null;
 	readonly constModule: boolean;
 	readonly entryModule: boolean;
 	readonly body: ReadonlyArray<LuaStatement>;

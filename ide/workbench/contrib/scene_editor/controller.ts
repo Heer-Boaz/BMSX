@@ -3,7 +3,6 @@ import type { EditorTextModel, EditorTextModelContentChangeEvent } from '../../.
 import { mapTrackedTextRange } from '../../../editor/text/text_change';
 import { createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
 import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_moves';
-import { getCachedLuaParse } from '../../../../toolchain/ts/lua/analysis/cache';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { resourceIdentityKey } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
@@ -113,7 +112,7 @@ export class SceneEditorController {
 		const document = buildSceneSourceDocument(model.resource, snapshot, input.document);
 		input.sourceRevision = snapshot.revision;
 		if (document === input.document) return;
-		input.parsed = getCachedLuaParse({ path: model.resource.path, source: document.analysis.source }).parsed;
+		input.parsed = document.analysis.chunk;
 		installSceneOutline(input, document);
 		input.document = document;
 		input.version += 1;

@@ -10,7 +10,7 @@ import { createLuaTableFieldMoveEdits } from '../../ide/language/lua/table_field
 import { buildSceneSourceDocument, hasSceneSourceDefinitions } from '../../ide/workbench/contrib/scene_editor/source';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
-import { getCachedLuaParse } from '../../toolchain/ts/lua/analysis/cache';
+import { parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
 
 function luaResource(path: string): RuntimeResource {
 	return {
@@ -213,7 +213,7 @@ test('scene members retain complete parser fields for source-only removal and do
 		+ "scenes.register('root', { objects = {\n\t-- before\n\t" + member
 		+ " -- exterior , ;\n\t; -- after\n\tbuild_object(),\n} })";
 	const model = new EditorTextModel(luaResource(path), 'lua', source);
-	const parsed = getCachedLuaParse({ path, source }).parsed;
+	const parsed = parseLuaChunkWithRecovery(source, path);
 	const document = buildSceneSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, path, parsed)));
 	const [direct, dynamic] = document.scenes[0].objects;
 	assert.equal(direct.kind, 'object');
@@ -224,7 +224,7 @@ test('scene members retain complete parser fields for source-only removal and do
 	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, direct.field));
 	const removed = source.replace(member, '').replace('\t; -- after', '\t -- after');
 	assert.equal(model.buffer.getText(), removed);
-	assert.equal(getCachedLuaParse({ path, source: removed }).syntaxError, null);
+	assert.equal(parseLuaChunkWithRecovery(removed, path).syntaxError, null);
 	model.undo();
 	assert.equal(model.buffer.getText(), source);
 	model.redo();

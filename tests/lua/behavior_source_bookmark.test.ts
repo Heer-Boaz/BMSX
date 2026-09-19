@@ -175,7 +175,7 @@ test('a removed history occurrence does not select a surviving namesake, even af
 	t.after(() => input.dispose());
 	const selected = new BehaviorLensNavigationSelection(input);
 	t.after(() => selected.dispose());
-	removeBehaviorTreeChild(f.model, f.member);
+	removeBehaviorTreeChild(f.model, f.member, f.analysis.chunk);
 	f.refresh(); selected.restore(input); prepareBehaviorLensLayout(f.view);
 	assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
 	assert.equal(f.view.selection, null);

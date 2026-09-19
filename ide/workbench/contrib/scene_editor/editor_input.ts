@@ -1,6 +1,5 @@
 import { create_rect_bounds } from '../../../../machine/ts/common/rect';
-import type { LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
-import type { ParsedLuaChunk } from '../../../../toolchain/ts/lua/analysis/parse';
+import type { LuaChunk, LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { resourceIdentityKey } from '../../../common/resource';
@@ -22,7 +21,7 @@ export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, '
 	public sourceRevision: symbol | undefined;
 	public document: SceneSourceDocument | undefined;
 	public position: { readonly outlineScroll: number; readonly detailsScroll: number } | undefined;
-	public parsed: ParsedLuaChunk;
+	public parsed: LuaChunk;
 	public sourceText = '';
 	public readonly details = new WorkbenchScrollViewport();
 	public readonly detailsText: { text: string; top: number; warning: boolean }[] = [];

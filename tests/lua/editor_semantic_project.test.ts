@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { EditorLuaSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/project';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import type { ResourceDomain, RuntimeResource } from '../../ide/common/resource';
@@ -70,6 +71,37 @@ test('editor semantic project retains its immutable snapshot while source genera
 	project.synchronizeRuntimeSources(sources);
 
 	assert.equal(project.getSnapshot(), snapshot);
+});
+
+test('document syntax survives unrelated reads and is isolated across domains with equal paths', t => {
+	const models = new EditorTextModelService();
+	const first = new EditorLuaSemanticProject(0, models);
+	const second = new EditorLuaSemanticProject(1, models);
+	t.after(() => { first.dispose(); second.dispose(); models.clear(); });
+	const parse = t.mock.method(LuaParser.prototype, 'parseChunkWithRecovery');
+	const left = models.retain(resource(0, 'same.lua'), 'lua', 'return { left = 1 }');
+	models.retain(resource(1, 'same.lua'), 'lua', 'return { right = 2 }');
+	for (let index = 0; index < 40; index++) models.retain(resource(0, `other_${index}.lua`), 'lua', `return ${index}`);
+	const initial = first.getSnapshot();
+	const firstSyntax = initial.getFileData('same.lua')!.chunk;
+	const secondSyntax = second.getFileData('same.lua')!.chunk;
+	const count = parse.mock.callCount();
+	for (let index = 0; index < 40; index++) {
+		assert.equal(first.getFileData('same.lua')!.chunk, firstSyntax);
+		assert.equal(second.getFileData('same.lua')!.chunk, secondSyntax);
+		assert.equal(first.getFileData(`other_${index}.lua`)!.chunk.source, `return ${index}`);
+	}
+	assert.notEqual(firstSyntax, secondSyntax);
+	assert.equal(parse.mock.callCount(), count, 'reads never reparse because other files evicted syntax');
+	left.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- first\n' }]);
+	left.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- second\n' }]);
+	assert.equal(parse.mock.callCount(), count, 'model events queue work only');
+	const updated = first.getFileData('same.lua')!;
+	assert.equal(parse.mock.callCount(), count + 1, 'coalesced edits parse once');
+	assert.equal(updated.chunk.source, '-- second\n-- first\nreturn { left = 1 }');
+	assert.equal(initial.getFileData('same.lua')!.chunk, firstSyntax);
+	assert.equal(firstSyntax.source, 'return { left = 1 }');
+	assert.equal(second.getFileData('same.lua')!.chunk, secondSyntax);
 });
 
 test('editor document source remains authoritative across a newer runtime registry generation', () => {

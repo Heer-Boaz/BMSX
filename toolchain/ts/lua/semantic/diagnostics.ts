@@ -22,7 +22,7 @@ import {
 	type SymbolID,
 } from './model';
 import type { WorkspaceSymbolResolver } from './workspace_symbol_resolver';
-import { getCachedLuaParse } from '../analysis/cache';
+import { parseLuaChunkWithRecovery } from '../analysis/parse';
 import { sourcePositionKey } from './source_range';
 import { buildLuaKnownNameSet, isReservedMemoryMapName, semanticSymbolKindToLuaSymbolKind } from './common';
 import {
@@ -147,18 +147,15 @@ export function computeLuaProjectDiagnostics(
 	const snapshotInputs: LuaSemanticWorkspaceSnapshotInput[] = [];
 	for (let index = 0; index < sources.length; index += 1) {
 		const source = sources[index];
-		const parseEntry = getCachedLuaParse({
-			path: source.path,
-			source: source.source,
-		});
-		if (parseEntry.syntaxError) {
-			results.set(source.path, [toSyntaxDiagnostic(parseEntry.syntaxError.message, parseEntry.syntaxError.line, parseEntry.syntaxError.column)]);
+		const parsed = parseLuaChunkWithRecovery(source.source, source.path);
+		if (parsed.syntaxError) {
+			results.set(source.path, [toSyntaxDiagnostic(parsed.syntaxError.message, parsed.syntaxError.line, parsed.syntaxError.column)]);
 			continue;
 		}
 		snapshotInputs.push({
 			path: source.path,
-			source: parseEntry.source,
-			parsed: parseEntry.parsed,
+			source: source.source,
+			parsed,
 		});
 	}
 	if (snapshotInputs.length === 0) {

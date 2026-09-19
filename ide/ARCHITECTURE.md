@@ -730,7 +730,7 @@ full-fidelity.
 
 The parser now owns complete table-field ranges, including expression-key
 brackets and grouping, while child expressions keep their semantic ranges.
-`ParsedLuaChunk.tokens` already owns separators. A language-owned removal
+`LuaChunk.tokens` owns separators with the retained syntax generation. A language-owned removal
 primitive deletes a complete field and its following comma/semicolon as
 separate spans in one edit batch, keeping every exterior comment and whitespace
 byte. It consumes a complete parse of the current buffer version; it does not

@@ -51,7 +51,7 @@ import {
 } from './value';
 import { isLuaHandlerFunction } from './handler_cache';
 import type { LuaInteropAdapter } from './interop';
-import { getCachedLuaParse } from '../../../../toolchain/ts/lua/analysis/cache';
+import { parseLuaChunkWithRecovery } from '../../../../toolchain/ts/lua/analysis/parse';
 import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
 import { luaModulo } from '../../../../machine/ts/spec/blua32/numeric';
 
@@ -286,15 +286,11 @@ export class LuaInterpreter {
 	}
 
 	public compileChunk(source: string, path: string): LuaChunk {
-		const parseEntry = getCachedLuaParse({
-			path,
-			source,
-		});
-		if (parseEntry.syntaxError) {
-			throw parseEntry.syntaxError;
+		const parsed = parseLuaChunkWithRecovery(source, path);
+		if (parsed.syntaxError) {
+			throw parsed.syntaxError;
 		}
-		const chunk = parseEntry.parsed.chunk!;
-		return chunk;
+		return parsed.chunk;
 	}
 
 	public loadChunk(chunk: LuaChunk): void {

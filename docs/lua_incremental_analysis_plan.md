@@ -8,7 +8,7 @@ Follow-up to [the definition-based language service](lua_language_service_design
 Annotations, additional inference, and changes to the whole-program solver are
 out of scope. Optimize edits, not the meaning of interactive queries.
 
-Implement in the ordered slices below. **Only slice 0 is implemented here.**
+Implement in the ordered slices below. **Slices 0 and 1a are implemented.**
 The production parser and binder still process the entire changed file. This
 document is not a claim that incremental parsing or binding already exists.
 
@@ -23,6 +23,9 @@ in place is expressly excluded: retained semantic snapshots must remain valid.
   `IncrementalParser.updateSourceFile`, `currentNode`, and `canReuseNode`.
   Reuse checks syntax context, errors, and the affected lookahead region.
   Its in-place position updates invalidate the old tree: do not copy that part.
+- [TypeScript document registry](https://github.com/microsoft/TypeScript/blob/v5.9.3/src/services/documentRegistry.ts):
+  acquire/update source files by document version and release them with their
+  owners. Adopt document lifetime, not an arbitrary process-wide cache capacity.
 - [TypeScript binder](https://github.com/microsoft/TypeScript/blob/v5.9.3/src/compiler/binder.ts):
   `bindSourceFile` skips an already bound file using `file.locals`. This is not
   evidence of arbitrary function-level incremental binding in a changed file.
@@ -42,7 +45,7 @@ in place is expressly excluded: retained semantic snapshots must remain valid.
 | --- | --- | --- |
 | `ide/editor/model/text_model.ts`, `text/text_change.ts` | Versioned model events; UTF-16 replacements in application order | Preserve changes rather than rediffing full strings on each request |
 | `ide/editor/contrib/intellisense/semantic/workspace/project.ts` | Queues changed paths; events currently discard edit spans | Project must retain the delta between its analyzed revision and current model revision |
-| `toolchain/ts/lua/analysis/cache.ts` | Process-wide, 24-entry, path/source parse cache | Not the lifetime owner for incremental syntax or a workspace's previous version |
+| `syntax/ast/index.ts:LuaChunk` | Root retains its source, lexical tokens and syntax error; global parse cache removed | Syntax lifetime follows retained file records and compiler inputs |
 | `syntax/lexer.ts`, `syntax/parser.ts`, `analysis/parse.ts` | Whole-file token array and strict/recovering parser | One grammar for initial and incremental parsing; no second IDE grammar |
 | `syntax/ast/index.ts` | Absolute line/column ranges on nodes and blocks | Changed positions currently invalidate otherwise unchanged nodes |
 | `semantic/model.ts` | Single ordered binder; scope indexes, mutable build state; immutable published file facts | Cached function bodies cannot replay old ambient binder state |
@@ -77,7 +80,28 @@ representation changes require compiler/codegen validation, not just IDE tests.
 - Do not present cache hits, warmed completion or isolated resolver timing as
   complete keystroke-to-screen latency.
 
-### 1. Fix syntax representation and document ownership
+### 1a. Establish syntax-generation ownership — implemented
+
+- `LuaChunk` retains its source, token sequence and syntax error. Strict and
+  recovering parses publish this information directly; no copied token array
+  or post-parse tree conversion. Recovery selects the earliest lexer/parser
+  error before publishing the generation.
+- Remove `analysis/cache.ts`, the process-wide 24-entry path cache. The existing
+  document/project retains file analysis and its syntax. Independent one-shot
+  parses are independent generations, even for equal paths and source strings.
+- Diagnostics, source-edit operations and context-menu token lookup consume the
+  retained generation rather than requesting a separate cached parse.
+- Semantic builds with an explicit compiler AST use its lexical sequence;
+  they never lex or parse that source again. O0/O3 use the same retained nodes.
+
+This is the lifetime prerequisite, **not** relative syntax or incremental
+parse/bind. Child-node locations remain absolute. The changed file is still
+parsed and bound in full; editor events still queue paths rather than deltas.
+Retaining the complete token sequence increases live snapshot heap; see the
+measured tradeoff below. The representation/performance acceptance gate for
+slice 1b has not been met by this ownership change alone.
+
+### 1b. Relative syntax and document edit transport — planned
 
 - Define immutable syntax payloads with relative widths/spans in `syntax/`.
   Snapshot-owned occurrence locations provide absolute source positions.
@@ -87,9 +111,9 @@ representation changes require compiler/codegen validation, not just IDE tests.
   that silently rewrites ranges on access.
 - Keep source-position conversion in the syntax/source owner. Existing range
   consumers get snapshot-specific locations without mutating shared payloads.
-- Retain prior syntax in the document/project lifetime, not the small global
-  cache. Carry model revision and ordered edits to analysis; coalesce edits
-  against the last *analyzed* revision, including undo/redo and multi-edit.
+- Build on the document-owned syntax from 1a. Carry model revision and ordered
+  edits to analysis; coalesce against the last *analyzed* revision, including
+  undo/redo and multi-edit.
 - Full source replacement is an explicit input mode for runtime reload and
   non-editor callers, not a fabricated edit history.
 
@@ -223,3 +247,62 @@ failure. Toolchain typechecking reports the already-existing unused `depth`
 parameter in `semantic/definition_types.ts:312`; the same declaration is present
 at baseline `6def7b018`. No additional errors were reported when typechecking
 the new profiler and tests. `git diff --check` passes.
+
+## Slice-1a validation and measurements
+
+Work-count tests exercise the actual editor diagnostic pipeline with 40 files:
+40 parses on initial analysis, zero on each subsequent unchanged pass, one for
+an incomplete edit, zero for a repeated diagnostic read of that edit, and one
+for its repair. Project tests cover equal paths in different resource domains,
+retained old snapshots, and two model edits coalesced into one parse. Compiler
+tests reject any lexer/parser invocation when binding or compiling a supplied
+syntax tree. Recovery tests cover syntax and lexical errors and their ordering.
+
+Validation on 2026-09-19:
+- Full Lua suite: 1,952 passed, one skipped, the same existing `named workbench
+  menu` failure (1,954 total). Table-transfer assertions compare grammar shape
+  separately from root-owned source/tokens; exact source and undo checks remain.
+- Headless tooling build, forced BIOS build and forced nemesis_s cart build pass.
+  The three precision idetests pass against the rebuilt ROMs.
+- Six compiler oracle cases (three fixtures at O0/O3) have identical serialized
+  code, constants and debug metadata before/after. This is fixture parity, not
+  a claim that every cart binary was compared.
+- IDE and new ownership-test/heap-profiler typechecks report only the
+  pre-existing unused `depth` parameter in `semantic/definition_types.ts:312`.
+  Including the broader IDE test harness also reports errors at unchanged
+  `tests/helpers/runtime_sources.ts:181,192` and `intellisense.test.ts:235`.
+- `git diff --check` passes.
+
+Sequential, isolated runs against archived baseline `bacc7eb64`, with the same
+285-file pietious dump, Node 22.23.1 and CPU as above. Body-statement edit/undo,
+20 warmups and 50 samples per run:
+
+| File | Baseline public update p50 / p95 (ms) | Ownership slice p50 / p95 (ms) |
+| --- | ---: | ---: |
+| director.lua | 9.17 / 11.60 | 9.05 / 12.22 |
+| player/player.lua | 21.11 / 32.83 | 21.00 / 25.96 |
+
+Medians are essentially unchanged; p95 variation is not evidence of an
+incremental speedup. This slice eliminates duplicate parses on read/compiler
+paths, not changed-file parsing or binding. The 2x edit target remains open.
+
+The retained/released heap probe can be repeated with:
+
+```sh
+node node_modules/tsx/dist/cli.mjs --expose-gc --tsconfig tsconfig.base.json \
+  scripts/analysis/profile_lua_syntax_lifetime.ts /tmp/pietious-workspace.json
+```
+
+| Heap delta after GC | Baseline | Ownership slice |
+| --- | ---: | ---: |
+| While retaining the workspace snapshot | 143.84 MiB | 168.02 MiB |
+| After releasing the snapshot/workspace | 11.80 MiB | 2.15 MiB |
+
+Source strings are loaded before the initial measurement. Construction runs in
+its own stack frame; event-loop turns precede GC to release temporary roots.
+These are V8 heap deltas, not allocation counts, browser heap or process RSS.
+Keeping tokens for all 285 files costs about 24 MiB while the workspace is
+alive; removal of the global cache improves release. The remaining released
+heap includes initialization/JIT effects, not necessarily retained documents.
+Compact reusable syntax/token representation remains work for 1b/2; this result
+must not be described as meeting the final allocation/performance gate.

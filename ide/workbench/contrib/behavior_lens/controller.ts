@@ -319,7 +319,8 @@ export class BehaviorLensController {
 		const model = input.view.source.models.get(member.table.range.path)!;
 		if (model.readOnly) return;
 		this.editorPanes.activePane.focus();
-		removeBehaviorTreeChild(model, member);
+		const file = getOrCreateSemanticProject(input.view.resource.domain).getFileData(model.resource.path)!;
+		removeBehaviorTreeChild(model, member, file.chunk);
 		// Ordinary source correspondence clears the deleted occurrence, including
 		// shared/identical uses. It must not select its former index or a namesake.
 		this.updateView(input);

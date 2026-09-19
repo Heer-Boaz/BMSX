@@ -15,9 +15,10 @@ import { wholeProgramSymbolAt } from './semantic_test_harness';
 
 test('semantic revisions identify immutable binder facts independently of shared syntax and workspace version numbers', () => {
 	const source = 'return { answer = 42 }';
-	const first = buildLuaFileSemanticData(source, 'revision.lua');
-	const second = buildLuaFileSemanticData(source, 'revision.lua');
-	assert.equal(first.chunk, second.chunk, 'the parse cache shares unchanged syntax');
+	const parsed = parseLuaChunk(source, 'revision.lua');
+	const first = buildLuaFileSemanticData(source, 'revision.lua', parsed);
+	const second = buildLuaFileSemanticData(source, 'revision.lua', parsed);
+	assert.equal(first.chunk, second.chunk, 'binders consume the retained syntax generation');
 	assert.notEqual(first.revision, second.revision, 'a distinct bind has its own fact revision');
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFiles([first]);

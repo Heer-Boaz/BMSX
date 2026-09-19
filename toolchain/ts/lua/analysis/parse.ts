@@ -5,9 +5,9 @@ import { LuaParser } from '../syntax/parser';
 import type { LuaToken } from '../syntax/token';
 
 export type ParsedLuaChunk = {
-	chunk: LuaChunk | null;
-	tokens: LuaToken[];
-	syntaxError: LuaSyntaxError | null;
+	readonly chunk: LuaChunk;
+	readonly tokens: readonly LuaToken[];
+	readonly syntaxError: LuaSyntaxError | null;
 };
 
 export function parseLuaChunk(source: string, path: string): ParsedLuaChunk {
@@ -23,18 +23,10 @@ export function parseLuaChunkWithRecovery(source: string, path: string): ParsedL
 	const lexed = lexer.scanTokensWithRecovery();
 	const tokens = lexed.tokens;
 	const parser = new LuaParser(tokens, path, source);
-	const parsed = parser.parseChunkWithRecovery();
-	let syntaxError = parsed.syntaxError;
-	if (lexed.syntaxError) {
-		if (!syntaxError) {
-			syntaxError = lexed.syntaxError;
-		} else if (lexed.syntaxError.line < syntaxError.line || (lexed.syntaxError.line === syntaxError.line && lexed.syntaxError.column < syntaxError.column)) {
-			syntaxError = lexed.syntaxError;
-		}
-	}
+	const parsed = parser.parseChunkWithRecovery(lexed.syntaxError);
 	return {
 		chunk: parsed.path,
 		tokens,
-		syntaxError,
+		syntaxError: parsed.syntaxError,
 	};
 }

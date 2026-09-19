@@ -41,7 +41,7 @@ function answers(snapshot: LuaSemanticWorkspaceSnapshot) {
 	}));
 }
 
-test('binding consumes the supplied syntax generation, not the path cache', () => {
+test('binding consumes the supplied syntax generation independently of other documents', () => {
 	const cached = buildLuaFileSemanticData(original, path);
 	const parsed = parseLuaChunkWithRecovery(original, path);
 	const explicit = buildLuaFileSemanticData(original, path, parsed);
@@ -58,7 +58,8 @@ test('workspace construction retains an explicitly supplied parse generation', (
 	const snapshot = buildLuaSemanticWorkspaceSnapshot([{ path, source: original, parsed }]);
 	assert.notEqual(parsed.chunk, cached.chunk);
 	assert.equal(snapshot.getFileData(path)!.chunk, parsed.chunk);
-	assert.equal(buildLuaFileSemanticData(original, path).chunk, parsed.chunk);
+	assert.notEqual(buildLuaFileSemanticData(original, path).chunk, parsed.chunk,
+		'an independent source load cannot borrow another document owner');
 });
 
 const edits = [

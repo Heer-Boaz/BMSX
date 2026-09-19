@@ -31,10 +31,9 @@ import {
 	type LuaReturnStatement,
 } from '../syntax/ast';
 import type { LuaSymbolEntry } from '../semantic_contracts';
-import type { ParsedLuaChunk } from '../analysis/parse';
+import { parseLuaChunkWithRecovery, type ParsedLuaChunk } from '../analysis/parse';
 import { LuaCompletionAnalysis, type LuaCompletion } from '../analysis/completion';
 import type { LuaSyntaxError } from '../errors';
-import { getCachedLuaParse } from '../analysis/cache';
 import type { SourcePosition } from '../source_range';
 import type { SemanticSymbolKind } from './symbols';
 import type { SemanticAnnotations, SemanticRole } from './tokens';
@@ -254,19 +253,15 @@ export function buildLuaSemanticWorkspaceSnapshot(
 			analyses[index] = source.analysis;
 			continue;
 		}
-		const parseEntry = getCachedLuaParse({
-			path: source.path,
-			source: source.source,
-			parsed: source.parsed,
-		});
-		if (parseEntry.syntaxError) {
-			throw new Error(`[LuaSemanticWorkspace] Syntax error in ${source.path}: ${parseEntry.syntaxError.message}`);
+		const chunk = source.chunk ?? source.parsed?.chunk ?? parseLuaChunkWithRecovery(source.source, source.path).chunk;
+		if (chunk.syntaxError) {
+			throw new Error(`[LuaSemanticWorkspace] Syntax error in ${source.path}: ${chunk.syntaxError.message}`);
 		}
 		analyses[index] = buildLuaFileSemanticData(
-			parseEntry.source,
+			source.source,
 			source.path,
-			parseEntry.parsed,
-			source.chunk,
+			undefined,
+			chunk,
 		);
 	}
 	workspace.updateFiles(analyses);
@@ -372,12 +367,8 @@ export function buildLuaFileSemanticData(
 	parsed?: ParsedLuaChunk,
 	chunk?: LuaChunk,
 ): FileSemanticData {
-	const parseResult = parsed ?? getCachedLuaParse({
-		path,
-		source,
-	}).parsed;
-	const retainedChunk = chunk === undefined ? parseResult.chunk : chunk;
-	const tokens = parseResult.tokens;
+	const retainedChunk = chunk ?? parsed?.chunk ?? parseLuaChunkWithRecovery(source, path).chunk;
+	const tokens = retainedChunk.tokens;
 	const eof = tokens[tokens.length - 1];
 	const builder = new SemanticBuilder({
 		path,
@@ -397,7 +388,7 @@ export function buildLuaFileSemanticData(
 		file: path,
 		revision: Symbol(),
 		source,
-		syntaxError: parseResult.syntaxError,
+		syntaxError: retainedChunk.syntaxError,
 		chunk: retainedChunk,
 		annotations,
 		decls,

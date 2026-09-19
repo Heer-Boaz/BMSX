@@ -1,14 +1,13 @@
 import type { BehaviorTreeSourceMember } from './behavior_tree_model';
 import type { BehaviorLensViewState } from './view_model';
 import type { EditorTextModel } from '../../../editor/model/text_model';
-import { getTextSnapshot } from '../../../editor/text/source_text';
 import { createLuaTableFieldRemovalEdits, readLuaSourceRange } from '../../../language/lua/source_edits';
 import { createLuaTableFieldInsertionEdits } from '../../../language/lua/table_field_insertion';
 import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_moves';
 import { createLuaTableFieldTransfer } from '../../../language/lua/table_field_transfer';
 import type { BehaviorTreeTransferCheck } from './behavior_tree_transfer';
 import { behaviorSourceEditState, captureBehaviorSourceBookmark, mapBehaviorSourceBookmark } from './source_bookmark';
-import { getCachedLuaParse } from '../../../../toolchain/ts/lua/analysis/cache';
+import type { LuaChunk } from '../../../../toolchain/ts/lua/syntax/ast';
 
 /** Constant-time command admission from the current projection's source evidence. */
 export function behaviorTreeEditTarget(view: BehaviorLensViewState): BehaviorTreeSourceMember | null {
@@ -26,9 +25,8 @@ export function behaviorTreeMoveTarget(view: BehaviorLensViewState, direction: -
 }
 
 /** Remove the authored list entry, not its referenced initializer or a guessed runtime node. */
-export function removeBehaviorTreeChild(model: EditorTextModel, member: BehaviorTreeSourceMember): void {
-	const parsed = getCachedLuaParse({ path: model.resource.path, source: getTextSnapshot(model.buffer) }).parsed;
-	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, member.branch.entries[member.index].field));
+export function removeBehaviorTreeChild(model: EditorTextModel, member: BehaviorTreeSourceMember, syntax: LuaChunk): void {
+	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, syntax.tokens, member.branch.entries[member.index].field));
 }
 
 /** Insert before the retained field: its tracked selection becomes the second occurrence. */

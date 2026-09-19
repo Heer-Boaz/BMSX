@@ -11,7 +11,9 @@ import { LUA_TABLE_TRANSFER_SOURCE } from '../helpers/lua_table_transfer_fixture
 import { runCompiledLua } from './cpu_test_harness';
 
 const resource = { domain: 0 as const, path: 'transfer.lua', source: { type: 'lua' as const, resid: 'transfer' } };
-const locationKeys = new Set(['range', 'startInclusive', 'endExclusive', 'line', 'column']);
+// Compare grammar structure: source text/tokens and locations necessarily change
+// when a field moves. The exact source/history checks below cover those bytes.
+const locationKeys = new Set(['range', 'startInclusive', 'endExclusive', 'line', 'column', 'source', 'tokens', 'syntaxError']);
 
 function applyTransfer(source: string, sourceTableIndex: number, fieldIndex: number, targetTableIndex: number, destination: number) {
 	const model = new EditorTextModel(resource, 'lua', source);

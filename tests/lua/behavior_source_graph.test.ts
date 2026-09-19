@@ -15,7 +15,6 @@ import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavio
 import type { BehaviorSourceNode } from '../../ide/workbench/contrib/behavior_lens/model';
 import type { BehaviorTreeSourceNode } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_model';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
-import { getCachedLuaParse } from '../../toolchain/ts/lua/analysis/cache';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { BEHAVIOR_SOURCE_FIXTURE } from '../helpers/behavior_source_fixture';
 
@@ -23,11 +22,13 @@ function fixture(source = BEHAVIOR_SOURCE_FIXTURE) {
 	const model = new EditorTextModel({ domain: 0, path: 'behavior_fixture.lua',
 		source: { resid: 'behavior_fixture', type: 'lua', source_path: 'behavior_fixture.lua', generated: false },
 	}, 'lua', source);
-	const project = () => buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), model.resource.path)));
+	let analysis = buildLuaFileSemanticData(model.buffer.getText(), model.resource.path);
+	const project = () => buildBehaviorSourceDocument(model.resource, semanticSnapshot(analysis));
 	const input = new BehaviorLensInput(model, createBehaviorLensViewState(project(), model, 'outline', assert.fail), () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
 	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(input.view, model.resource, event));
 	assert.ok(input.view.presentation.kind === 'outline');
-	return { model, input, view: input.view, outline: input.view.presentation, refresh() {
+	return { model, input, get analysis() { return analysis; }, view: input.view, outline: input.view.presentation, refresh() {
+		analysis = buildLuaFileSemanticData(model.buffer.getText(), model.resource.path);
 		installBehaviorLensDocument(input.view, project());
 	} };
 }
@@ -178,7 +179,7 @@ test('removing a reused occurrence never selects the next namesake, including un
 		const f = fixture();
 		const entries = childEntries(tree(f).root!);
 		select(f, childEntries(entries[0].node)[0].node);
-		const parsed = getCachedLuaParse({ source: f.model.buffer.getText(), path: f.model.resource.path }).parsed;
+		const parsed = f.analysis.chunk;
 		f.model.pushEditOperations(createLuaTableFieldRemovalEdits(f.model.buffer, parsed.tokens, entries[0].field));
 		if (undoBeforeRefresh) f.model.undo();
 		f.refresh();

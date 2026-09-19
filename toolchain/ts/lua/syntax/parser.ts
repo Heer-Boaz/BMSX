@@ -134,6 +134,9 @@ export class LuaParser {
 		const range = this.rangeFromBlockAndToken(block, eofToken);
 		return {
 			kind: LuaSyntaxKind.Chunk,
+			source: this.source,
+			tokens: this.tokens,
+			syntaxError: null,
 			range,
 			constModule: moduleAttribute === 'const',
 			entryModule: moduleAttribute === 'entry',
@@ -148,21 +151,29 @@ export class LuaParser {
 		return expression;
 	}
 
-	public parseChunkWithRecovery(): { path: LuaChunk; syntaxError: LuaSyntaxError | null } {
+	public parseChunkWithRecovery(lexicalError: LuaSyntaxError | null = null): { path: LuaChunk; syntaxError: LuaSyntaxError | null } {
 		this.recoverStatements = true;
 		const moduleAttribute = this.parseModuleAttribute();
 		const block = this.parseBlock(CHUNK_TERMINATORS);
 		const eofToken = this.consume(LuaTokenType.Eof, 'Expected end of input.');
 		const end = this.positionFromToken(eofToken);
 		const range: LuaSourceRange = { path: this.path, start: block.range.start, end };
+		let syntaxError = this.recoveredSyntaxError;
+		if (lexicalError && (!syntaxError || lexicalError.line < syntaxError.line
+			|| (lexicalError.line === syntaxError.line && lexicalError.column < syntaxError.column))) {
+			syntaxError = lexicalError;
+		}
 		const path: LuaChunk = {
 			kind: LuaSyntaxKind.Chunk,
+			source: this.source,
+			tokens: this.tokens,
+			syntaxError,
 			range,
 			constModule: moduleAttribute === 'const',
 			entryModule: moduleAttribute === 'entry',
 			body: block.body,
 		};
-		return { path, syntaxError: this.recoveredSyntaxError };
+		return { path, syntaxError };
 	}
 
 	private parseModuleAttribute(): 'const' | 'entry' | null {
