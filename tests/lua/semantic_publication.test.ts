@@ -87,13 +87,13 @@ test('global contributions preserve duplicate declarations while storage and loo
 	assert.equal(snapshot.symbolResolver.getDeclaration(file.decls[0].id), file.decls[1]);
 });
 
-test('same-file global navigation retains its lexical symbol-ID tie break', () => {
+test('same-file global navigation follows source order rather than symbol-ID spelling', () => {
 	const workspace = new LuaSemanticWorkspace();
 	const source = '\nbss counter: word' + '\n'.repeat(8) + 'bss counter: word';
 	const file = buildLuaFileSemanticData(source, 'order.lua');
 	const reader = buildLuaFileSemanticData('return counter', 'reader.lua');
 	workspace.updateFiles([file, reader]);
-	const winner = file.globalDecls.map(decl => decl.id).sort()[0];
+	const winner = file.globalDecls[0].id;
 	assert.deepEqual(workspace.getSnapshot().symbolResolver.resolveReferenceTargets(reader.refs[0]), [winner]);
 	assert.deepEqual(workspace.getSnapshot().listGlobalDecls(), file.globalDecls);
 });

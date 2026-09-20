@@ -51,7 +51,7 @@ in place is expressly excluded: retained semantic snapshots must remain valid.
 | `syntax/lexer.ts`, `syntax/parser.ts`, `analysis/parse.ts` | Cold scan or edit-driven lexical block splices; strict/recovering grammar parser consumes a cursor | One grammar for initial and incremental parsing; no second IDE grammar |
 | `syntax/ast/index.ts` | Committed relative spans; locations belong to the generation | Reuse and final edit/cold-performance gates remain open |
 | `semantic/model.ts` | Single ordered binder; scope indexes, mutable build state; immutable published file facts | Cached function bodies cannot replay old ambient binder state |
-| `semantic/model.ts:createSymbolId` | IDs contain source line and column | Separate reusable declaration identity from presentation coordinates |
+| `semantic/symbols.ts:createSymbolId` | IDs contain defining syntax occurrence, not source line/column | Identity survives shared shifted syntax; semantic facts still require dependency checks |
 | `semantic/value_graph.ts` | Owned values have allocated IDs and syntax references | Preserve occurrence identity, not independently allocated IDs in differential tests |
 | `semantic/definition_types.ts` | Per-file facts in WeakMap; cross-file results per snapshot | Reuse the right facts without retaining stale snapshot-dependent answers |
 
@@ -957,6 +957,53 @@ no concurrent tests/builds) keep the same program/debug hash and 207 modules /
 released heap above input baseline is 2.65 versus 2.66 MiB. The cold-parse gate
 is still **open**; neither the unchanged heap nor approximately 0.9% total
 compile increase cancels the observed parse regression.
+
+## Binder prerequisite: declaration occurrence identity
+
+Declaration IDs now use file ownership plus the defining syntax unit/relative
+start, declaration kind and name path. Every declaration producer supplies its
+defining syntax, including identifier and quoted table fields; the identifier
+lookup map still contains identifiers only. No process-wide declaration interner
+or source-text identity cache is introduced. A cold independent parse has new
+occurrences; a reused occurrence keeps its ID, not its old presentation object
+or binding answers. Existing snapshot-owned symbol maps publish the current
+`Decl` for that ID while retained snapshots keep their own declaration record.
+
+The audit found a real coupling between identity and behavior: same-file global
+navigation selected the lexicographically smallest old position-based ID, so
+line 10 beat line 2. Keeping this rule with allocation IDs would make navigation
+change with edit/allocation history. Publication now explicitly selects the
+first numeric source occurrence within the first-precedence file. This is a
+deliberate correction of that tie-break, not an incidental ID-format change;
+cross-file precedence, global enumeration and written-source contribution order
+are unchanged. The publication bucket retains current declaration records, not
+a second ordering/position authority.
+
+This is **not incremental binding**. Absolute presentation/visibility points,
+file-wide scope indices and ambient property/signature state remain in the
+binder. Owned value IDs also remain binding-generation-owned until real local
+fact units can own them; no temporary weak interning layer is added merely to
+make a whole-file rebuild look reusable.
+
+Next boundary: make lexical scope facts authoritative and relative at their
+producer, migrate scope/visibility consumers together, then record successful
+and failed external lexical/property/signature reads and outer contributions.
+Do not cache or replay `visitFunctionExpression` into mutable ambient maps.
+The reference is rust-analyzer's separation of local arenas/source maps in
+[expression storage](https://github.com/rust-lang/rust-analyzer/blob/master/crates/hir-def/src/expr_store.rs)
+and its [lexical scope implementation](https://github.com/rust-lang/rust-analyzer/blob/master/crates/hir-def/src/expr_store/scope.rs).
+Its Rust body-isolation assumptions do not transfer wholesale to Lua's outer
+writes and property discovery.
+
+Validation of the declaration-identity prerequisite: fresh-context review found
+no blocker; focused identity/publication tests pass 11/11. The full Lua suite
+reports 2,102 tests: 2,100 pass, the same named-workbench-menu failure, one skip.
+Broad typechecking adds no errors in changed owners; rebuilt tooling passes the
+three precision idetests (8/5/3), and `git diff --check` passes. An isolated repeat
+of the edit profiler measures director/player public function-body updates at
+3.390/7.485 and 17.532/18.824 ms p50/p95 respectively. Player whole-file binding
+is still 15.230/24.299 ms; this identity migration does not claim a binding speedup
+or a passed final performance gate.
 
 ## Lowest-priority follow-up: absent-value convention
 

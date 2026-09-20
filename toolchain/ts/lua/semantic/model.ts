@@ -39,7 +39,8 @@ import { parseLuaChunkWithRecovery, updateLuaChunk, type ParsedLuaChunk } from '
 import { LuaCompletionAnalysis, type LuaCompletion } from '../analysis/completion';
 import type { LuaSyntaxError } from '../errors';
 import type { SourcePosition } from '../source_range';
-import type { SemanticSymbolKind } from './symbols';
+import { createSymbolId, type SemanticSymbolKind, type SymbolID } from './symbols';
+import { compareSourcePosition } from './source_range';
 import type { SemanticAnnotations, SemanticRole } from './tokens';
 import { methodPathToPropertyPath } from './common';
 import { toLuaModulePath } from '../module_path';
@@ -84,7 +85,7 @@ import {
 	resolveStaticLuaNamePath,
 } from './expression_path';
 
-export type SymbolID = string;
+export type { SymbolID } from './symbols';
 
 const EMPTY_FILE_PATHS: readonly string[] = [];
 
@@ -437,7 +438,7 @@ class LuaProjectIndex {
 	/** Symbol insertion order differs from navigation file precedence after edits. */
 	private readonly storageContributions = new Map<string, readonly Decl[]>();
 	private readonly globalsByKey: Map<string, SymbolID> = new Map();
-	private readonly globalsSources: Map<string, Map<SymbolID, number>> = new Map();
+	private readonly globalsSources: Map<string, Map<SymbolID, Decl>> = new Map();
 	private readonly fileOrder: Map<string, number> = new Map();
 	public orderedFiles: readonly FileSemanticData[] = [];
 	public symbolResolver: WorkspaceSymbolResolver;
@@ -520,19 +521,10 @@ class LuaProjectIndex {
 			bucket = new Map();
 			this.globalsSources.set(key, bucket);
 		}
-		const existingOrder = bucket.get(decl.id);
-		if (existingOrder === undefined) {
-			bucket.set(decl.id, this.ensureFileOrder(decl.file));
-		}
+		bucket.set(decl.id, decl);
 		const current = this.globalsByKey.get(key) ;
 		const selected = this.selectGlobalForKey(bucket);
-		if (selected !== current) {
-			if (selected !== null) {
-				this.globalsByKey.set(key, selected);
-			} else {
-				this.globalsByKey.delete(key);
-			}
-		}
+		if (selected !== current) this.globalsByKey.set(key, selected);
 	}
 
 	private removeGlobalDecl(decl: Decl): void {
@@ -554,27 +546,24 @@ class LuaProjectIndex {
 		}
 		const current = this.globalsByKey.get(key) ;
 		const selected = this.selectGlobalForKey(bucket);
-		if (selected !== current) {
-			if (selected !== null) {
-				this.globalsByKey.set(key, selected);
-			} else {
-				this.globalsByKey.delete(key);
-			}
-		}
+		if (selected !== current) this.globalsByKey.set(key, selected);
 	}
 
-	private selectGlobalForKey(bucket: Map<SymbolID, number>): SymbolID {
-		let selected: SymbolID = null;
+	private selectGlobalForKey(bucket: Map<SymbolID, Decl>): SymbolID {
+		let selected: Decl | undefined;
 		let best = Number.POSITIVE_INFINITY;
-		for (const [id, order] of bucket) {
-			if (order < best) {
+		for (const declaration of bucket.values()) {
+			const order = this.fileOrder.get(declaration.file)!;
+			// Navigation precedence is source-defined, never allocated-ID order.
+			if (order < best || order === best && compareSourcePosition(
+				declaration.range.start.line, declaration.range.start.column,
+				selected!.range.start.line, selected!.range.start.column,
+			) < 0) {
 				best = order;
-				selected = id;
-			} else if (order === best && selected !== null && id < selected) {
-				selected = id;
+				selected = declaration;
 			}
 		}
-		return selected;
+		return selected!.id;
 	}
 
 	private ensureFileOrder(file: string): number {
@@ -1852,7 +1841,7 @@ class SemanticBuilder {
 			: this.chunk.locations.range(syntax.span);
 		const isGlobal = baseDecl ? baseDecl.isGlobal : scope.kind === 'path' && namePath.length > 1;
 		const decl = this.createDecl({
-			syntax: syntax.kind === LuaSyntaxKind.IdentifierExpression ? syntax : undefined,
+			syntax,
 			namePath: namePath,
 			name,
 			kind: 'property',
@@ -1934,7 +1923,7 @@ class SemanticBuilder {
 	}
 
 	private createDecl(options: {
-		syntax?: LuaIdentifierExpression;
+		syntax: LuaIdentifierExpression | LuaStringLiteralExpression | LuaTableIdentifierField;
 		namePath: readonly string[];
 		name: string;
 		kind: SemanticSymbolKind;
@@ -1945,7 +1934,7 @@ class SemanticBuilder {
 		lexical: boolean;
 	}): InternalDecl {
 		const { syntax, namePath, name, kind, range, scopeRef, isGlobal, active } = options;
-		const id = createSymbolId(this.path, range, kind, namePath);
+		const id = createSymbolId(this.path, syntax.span, kind, namePath);
 		const decl: InternalDecl = {
 			id,
 			file: this.path,
@@ -1966,7 +1955,7 @@ class SemanticBuilder {
 		}
 		this.decls.push(decl);
 		this.declById.set(id, decl);
-		if (syntax !== undefined) {
+		if (syntax.kind === LuaSyntaxKind.IdentifierExpression) {
 			this.declarationIdsBySyntax.set(syntax, id);
 		}
 		const flow = this.functionValueFlowStack[this.functionValueFlowStack.length - 1];
@@ -2343,11 +2332,6 @@ function buildRangeFromPosition(position: SourcePosition, length: number, path: 
 
 function positionAfter(position: SourcePosition): SourcePosition {
 	return { line: position.line, column: position.column + 1 };
-}
-
-function createSymbolId(file: string, range: LuaSourceRange, kind: SemanticSymbolKind, namePath: readonly string[]): SymbolID {
-	const key = joinNamePath(namePath);
-	return `${file}|${range.start.line}|${range.start.column}|${kind}|${key}`;
 }
 
 function joinNamePath(namePath: readonly string[]): string {
