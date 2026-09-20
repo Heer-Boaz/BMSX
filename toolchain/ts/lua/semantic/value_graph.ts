@@ -1,6 +1,5 @@
 import type { ScopeID } from './scope_facts';
 import type { FileSemanticData, SymbolID } from './model';
-import type { ModuleAliasTarget } from './module_bindings';
 import {
 	LuaBinaryOperator,
 	LuaSyntaxKind,
@@ -93,8 +92,6 @@ export type DeclarationValueEntry = {
 export type ModuleValueEntry = {
 	readonly module: string;
 	readonly source: SemanticValueSource;
-	/** Immediate written reexport, not an evaluated/frozen module value. */
-	readonly moduleTarget: ModuleAliasTarget | null;
 	readonly statement: LuaReturnStatement;
 	/** Written module returns that bypass this export site, not additional exports. */
 	readonly bypassingReturns: readonly LuaReturnStatement[];

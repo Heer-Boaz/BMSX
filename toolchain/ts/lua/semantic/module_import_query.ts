@@ -1,5 +1,5 @@
 import type { FileSemanticData } from './model';
-import type { ModuleAliasTarget } from './module_bindings';
+import { getLuaModuleAliasTarget, type ModuleAliasTarget } from './module_bindings';
 import { toLuaModulePath } from '../module_path';
 
 type Resolution = boolean | 'resolving';
@@ -19,7 +19,7 @@ export class LuaModuleImportQuery {
 			const module = toLuaModulePath(file.file);
 			const entry = file.moduleValues[0];
 			this.exports.set(module, this.exports.has(module) || file.syntaxError !== null
-				|| entry === undefined || entry.bypassingReturns.length !== 0 ? null : entry.moduleTarget);
+				|| entry === undefined || entry.bypassingReturns.length !== 0 ? null : getLuaModuleAliasTarget(file, entry.source));
 		}
 	}
 

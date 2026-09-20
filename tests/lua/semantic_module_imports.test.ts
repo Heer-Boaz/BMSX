@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
-import type { ModuleAliasTarget } from '../../toolchain/ts/lua/semantic/module_bindings';
+import { getLuaModuleAliasTarget, type ModuleAliasTarget } from '../../toolchain/ts/lua/semantic/module_bindings';
 import { semanticSnapshot } from './semantic_test_harness';
 
 const PUBLIC: ModuleAliasTarget = { module: 'public/api', memberPath: ['group', 'run'] };
@@ -13,7 +13,7 @@ test('immediate module aliases compose in member order and preserve the public A
 		buildLuaFileSemanticData("local module = require('middle'); local copy = module; return copy", 'bridge.lua'),
 		buildLuaFileSemanticData("return require('private/implementation')", 'public/api.lua'),
 	];
-	assert.deepEqual(files[0].moduleValues[0].moduleTarget, { module: 'public/api', memberPath: ['group'] });
+	assert.deepEqual(getLuaModuleAliasTarget(files[0], files[0].moduleValues[0].source), { module: 'public/api', memberPath: ['group'] });
 	for (const ordered of [files, files.toReversed()]) {
 		const snapshot = semanticSnapshot(...ordered);
 		const query = snapshot.symbolResolver.moduleImports;

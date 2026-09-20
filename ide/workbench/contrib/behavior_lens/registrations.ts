@@ -1,6 +1,6 @@
 import { LuaSyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { FileSemanticData, LuaCallSite } from '../../../../toolchain/ts/lua/semantic/model';
-import type { ModuleAliasTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
+import { getLuaModuleAliasTarget, type ModuleAliasTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
 import type { LuaModuleImportQuery } from '../../../../toolchain/ts/lua/semantic/module_import_query';
 import type { BehaviorSourceReader } from './source_reader';
 import type { ResourceIdentity } from '../../../common/resource';
@@ -51,7 +51,7 @@ export function collectBehaviorRegistrations(resource: ResourceIdentity, reader:
 	const occurrences = new Map<string, number>();
 	const registrations: BehaviorRegistration[] = [];
 	for (const callSite of analysis.callSites) {
-		const registration = resolveRegistration(callSite, reader.snapshot.symbolResolver.moduleImports);
+		const registration = resolveRegistration(analysis, callSite, reader.snapshot.symbolResolver.moduleImports);
 		if (registration === null) continue;
 		const idExpression = callSite.expression.arguments[0];
 		const idLabel = idExpression ? describeExpression(idExpression) : '<unresolved id>';
@@ -80,12 +80,13 @@ export function collectBehaviorRegistrations(resource: ResourceIdentity, reader:
 }
 
 function resolveRegistration(
+	analysis: FileSemanticData,
 	callSite: LuaCallSite,
 	imports: LuaModuleImportQuery,
 ): BehaviorRegistrationKind | null {
-	const target = callSite.moduleTarget;
-	if (callSite.expression.method !== null
-		|| !target) {
+	if (callSite.expression.method !== null) return null;
+	const target = getLuaModuleAliasTarget(analysis, callSite.call.callee);
+	if (target === null) {
 		return null;
 	}
 	for (let index = 0; index < REGISTRATIONS.length; index += 1) {

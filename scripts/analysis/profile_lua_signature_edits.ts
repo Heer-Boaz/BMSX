@@ -8,6 +8,7 @@ import { getLuaBuiltinDescriptorLookup } from '../../toolchain/ts/lua/builtin_de
 import { getDefaultLuaBuiltinDescriptors } from '../../toolchain/ts/lua/semantic/diagnostics';
 import { provideLuaSignatureHelp } from '../../toolchain/ts/lua/semantic/signature_help';
 import { provideLuaHover } from '../../toolchain/ts/lua/semantic/hover';
+import { getLuaModuleAliasTarget } from '../../toolchain/ts/lua/semantic/module_bindings';
 import { SourceChangeMap } from '../../toolchain/ts/text/source_changes';
 
 const [dumpPath, ...paths] = process.argv.slice(2);
@@ -38,7 +39,7 @@ for (const path of paths) {
 	const edited = file.source.slice(0, offset) + inserted + file.source.slice(offset);
 	const forward = SourceChangeMap.unchanged(file.source.length).append([{ offset, deletedLength: 0, insertedLength: inserted.length }]);
 	const undo = SourceChangeMap.unchanged(edited.length).append([{ offset, deletedLength: inserted.length, insertedLength: 0 }]);
-	for (const demand of ['hover', 'signature', 'diagnostics'] as const) {
+	for (const demand of ['hover', 'signature', 'diagnostics', 'imports'] as const) {
 		workspace.updateFiles([file]);
 		const measurements = { update: [] as number[], demand: [] as number[], total: [] as number[] };
 		let answerCount = 0;
@@ -48,7 +49,15 @@ for (const path of paths) {
 				iteration % 2 === 0 ? forward : undo);
 			const snapshot = workspace.getSnapshot();
 			const updated = performance.now();
-			if (demand === 'diagnostics') {
+			if (demand === 'imports') {
+				// Source-discovery consumers demand the snapshot's reexports and
+				// authored dot-call paths; neither query is a callable/effect proof.
+				void snapshot.symbolResolver.moduleImports;
+				answerCount = 0;
+				for (const site of analysis.callSites) {
+					if (site.expression.method === null && getLuaModuleAliasTarget(analysis, site.call.callee) !== null) answerCount += 1;
+				}
+			} else if (demand === 'diagnostics') {
 				answerCount = buildLuaSemanticFrontendFromSnapshot(snapshot).getFile(path).diagnostics.length;
 			} else {
 				const site = analysis.callSites[callIndex];
@@ -76,4 +85,4 @@ for (const path of paths) {
 	workspace.updateFiles([file]);
 }
 console.log(JSON.stringify({ node: process.version, cpu: cpus()[0].model, workspaceFiles: files.length, warmup, samples,
-	note: 'Independent warm edit/undo passes. Each sample creates a fresh snapshot, then first-demand hover, signature help or full-file diagnostics. Diagnostics includes frontend construction/global presentation. Update includes publication/getSnapshot. No prior member query warms the signature owner. These are CPU timings, not UI latency; highlighting is measured by profile_lua_edits.ts.', results }, null, 2));
+	note: 'Independent warm edit/undo passes. Each sample creates a fresh snapshot, then first-demand hover, signature help, full-file diagnostics or authored imports. Diagnostics includes frontend construction/global presentation; imports includes snapshot reexport indexing and dot-call import paths in the edited file. Update includes publication/getSnapshot. No prior member query warms the signature owner. These are CPU timings, not UI latency; highlighting is measured by profile_lua_edits.ts.', results }, null, 2));

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { getLuaModuleAliasTarget } from '../../toolchain/ts/lua/semantic/module_bindings';
+import { SourceChangeMap } from '../../toolchain/ts/text/source_changes';
 import { semanticSymbolAt, wholeProgramSymbolAt } from './semantic_test_harness';
 
 const semanticWorkspaceModulePromise = import('../../toolchain/ts/lua/semantic/model');
@@ -30,7 +32,7 @@ require('library')['tools'].run()
 		assert.equal(data.syntaxError, null);
 		const lines = [4, 7, 11, 15, 17, 18];
 		assert.deepEqual(data.callSites.filter(site => lines.includes(data.chunk.locations.range(site.expression.span).start.line)
-			&& site.moduleTarget !== null).map(site => site.moduleTarget), [
+			&& getLuaModuleAliasTarget(data, site.call.callee) !== null).map(site => getLuaModuleAliasTarget(data, site.call.callee)), [
 			{ module: 'library', memberPath: ['tools', 'run'] },
 			{ module: 'library', memberPath: ['run'] },
 			{ module: 'other', memberPath: ['run'] },
@@ -61,7 +63,7 @@ api.run(); copy.run(); member()
 `;
 		const data = buildLuaFileSemanticData(source, 'writes.lua');
 		assert.equal(data.syntaxError, null);
-		assert.ok(data.callSites.every(site => site.moduleTarget === null));
+		assert.ok(data.callSites.every(site => getLuaModuleAliasTarget(data, site.call.callee) === null));
 	});
 });
 
@@ -79,14 +81,14 @@ test('module paths do not guess through globals, parameters, builders, unknown k
 	]) await t.test(source, () => {
 		const data = buildLuaFileSemanticData(source, 'boundaries.lua');
 		assert.equal(data.syntaxError, null);
-		assert.ok(data.callSites.every(site => site.moduleTarget === null));
+		assert.ok(data.callSites.every(site => getLuaModuleAliasTarget(data, site.call.callee) === null));
 	});
 });
 
 test('module paths describe binding provenance, not the current contents of a mutable module table', async () => {
 	const { buildLuaFileSemanticData } = await semanticWorkspaceModulePromise;
 	const data = buildLuaFileSemanticData("local api = require('library'); api.run = replacement; api.run()", 'member.lua');
-	assert.deepEqual(data.callSites.at(-1)!.moduleTarget, { module: 'library', memberPath: ['run'] });
+	assert.deepEqual(getLuaModuleAliasTarget(data, data.callSites.at(-1)!.call.callee), { module: 'library', memberPath: ['run'] });
 });
 
 test('long local alias chains share resolved paths instead of recursively expanding each call', async () => {
@@ -96,12 +98,12 @@ test('long local alias chains share resolved paths instead of recursively expand
 	const data = buildLuaFileSemanticData(lines.join('\n'), 'chain.lua');
 	assert.equal(data.syntaxError, null);
 	assert.equal(data.callSites.length, 10001);
-	const first = data.callSites[1].moduleTarget;
+	const first = getLuaModuleAliasTarget(data, data.callSites[1].call.callee);
 	assert.deepEqual(first, { module: 'library', memberPath: [] });
-	for (let index = 2; index < data.callSites.length; index += 1) assert.strictEqual(data.callSites[index].moduleTarget, first);
+	for (let index = 2; index < data.callSites.length; index += 1) assert.strictEqual(getLuaModuleAliasTarget(data, data.callSites[index].call.callee), first);
 });
 
-test('semantic file data records direct and chained require aliases', async () => {
+test('file-generation queries resolve direct and chained require aliases', async () => {
 	const { buildLuaFileSemanticData } = await semanticWorkspaceModulePromise;
 	const source = [
 		"local constants<const> = require('constants')",
@@ -112,7 +114,7 @@ test('semantic file data records direct and chained require aliases', async () =
 		'constants.read(); hud.read(); physics.read(); overlay.read(); combat_overlap.read()',
 	].join('\n');
 	const data = buildLuaFileSemanticData(source, 'testpath');
-	assert.deepEqual(data.callSites.filter(site => data.chunk.locations.range(site.expression.span).start.line === 6).map(site => site.moduleTarget), [
+	assert.deepEqual(data.callSites.filter(site => data.chunk.locations.range(site.expression.span).start.line === 6).map(site => getLuaModuleAliasTarget(data, site.call.callee)), [
 		{ module: 'constants', memberPath: ['read'] },
 		{ module: 'constants', memberPath: ['hud', 'read'] },
 		{ module: 'constants', memberPath: ['physics', 'read'] },
@@ -121,7 +123,7 @@ test('semantic file data records direct and chained require aliases', async () =
 	]);
 });
 
-test('semantic call sites retain function-local module targets', async () => {
+test('file-generation queries resolve function-local module targets', async () => {
 	const { buildLuaFileSemanticData } = await semanticWorkspaceModulePromise;
 	const source = [
 		'local register<const> = function()',
@@ -132,7 +134,7 @@ test('semantic call sites retain function-local module targets', async () => {
 	].join('\n');
 	const data = buildLuaFileSemanticData(source, 'function_local_alias.lua');
 	const registration = data.callSites.find(callSite => data.chunk.locations.range(callSite.expression.span).start.line === 3)!;
-	assert.deepEqual(registration.moduleTarget, {
+	assert.deepEqual(getLuaModuleAliasTarget(data, registration.call.callee), {
 		module: 'cartlib/behaviour_tree/library',
 		memberPath: ['register'],
 	});
@@ -149,8 +151,8 @@ test('semantic module paths do not pretend AST visitation order is execution ord
 	const data = buildLuaFileSemanticData(source, 'temporal_alias.lua');
 	const first = data.callSites.find(callSite => data.chunk.locations.range(callSite.expression.span).start.line === 2)!;
 	const second = data.callSites.find(callSite => data.chunk.locations.range(callSite.expression.span).start.line === 4)!;
-	assert.equal(first.moduleTarget, null);
-	assert.equal(second.moduleTarget, null);
+	assert.equal(getLuaModuleAliasTarget(data, first.call.callee), null);
+	assert.equal(getLuaModuleAliasTarget(data, second.call.callee), null);
 });
 
 test('semantic module bindings include writes in argument closures', async () => {
@@ -163,7 +165,7 @@ test('semantic module bindings include writes in argument closures', async () =>
 	].join('\n');
 	const data = buildLuaFileSemanticData(source, 'callee_before_arguments.lua');
 	const call = data.callSites.find(callSite => data.chunk.locations.range(callSite.expression.span).start.line === 2)!;
-	assert.equal(call.moduleTarget, null);
+	assert.equal(getLuaModuleAliasTarget(data, call.call.callee), null);
 });
 
 test('a const copy does not certify an import through a reassigned local', async () => {
@@ -176,7 +178,7 @@ test('a const copy does not certify an import through a reassigned local', async
 	].join('\n');
 	const data = buildLuaFileSemanticData(source, 'retained_alias.lua');
 	const call = data.callSites.find(callSite => data.chunk.locations.range(callSite.expression.span).start.line === 4)!;
-	assert.equal(call.moduleTarget, null);
+	assert.equal(getLuaModuleAliasTarget(data, call.call.callee), null);
 });
 
 test('semantic file data does not create module aliases after require is assigned globally', async () => {
@@ -190,10 +192,56 @@ test('semantic file data does not create module aliases after require is assigne
 		'constants.read(); combat.read()',
 	].join('\n');
 	const data = buildLuaFileSemanticData(source, 'testpath');
-	assert.deepEqual(data.callSites.filter(site => data.chunk.locations.range(site.expression.span).start.line === 6).map(site => site.moduleTarget), [
+	assert.deepEqual(data.callSites.filter(site => data.chunk.locations.range(site.expression.span).start.line === 6).map(site => getLuaModuleAliasTarget(data, site.call.callee)), [
 		{ module: 'constants', memberPath: ['read'] }, null,
 	]);
 	assert.deepEqual(data.moduleReferences.map(reference => reference.value), ['constants']);
+});
+
+test('module alias answers use the explicit file generation, not retained callee or export facts', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	for (const editedFirst of [false, true]) {
+		const workspace = new LuaSemanticWorkspace();
+		const source = [
+			"local api = require('library')",
+			'local invoke = api.run',
+			'local function consume() invoke() end',
+			'local function replace()',
+			'	-- edit here',
+			'end',
+			'return api',
+		].join('\n');
+		const before = workspace.updateFile('generation.lua', source);
+		const call = before.callSites.find(site => before.chunk.locations.range(site.expression.span).start.line === 3)!;
+		const exported = before.moduleValues[0];
+		const callee = call.call.callee;
+		for (const fact of [call, call.call, callee, callee.root, callee.steps,
+			exported, exported.source, exported.source.root, exported.source.steps]) Object.freeze(fact);
+		Object.freeze(before);
+		assert.equal('moduleTarget' in call, false);
+		assert.equal('moduleTarget' in exported, false);
+		const offset = source.indexOf('-- edit here');
+		const inserted = 'api = nil';
+		const after = workspace.updateFile('generation.lua', source.slice(0, offset) + inserted + source.slice(offset + 12),
+			SourceChangeMap.unchanged(source.length).append([{ offset, deletedLength: 12, insertedLength: inserted.length }]));
+		assert.equal(after.syntaxError, null);
+		const reboundCall = after.callSites.find(site => after.chunk.locations.range(site.expression.span).start.line === 3)!;
+		assert.deepEqual(reboundCall.call.callee, callee, 'the retained callee still names the same declaration');
+		assert.deepEqual(after.moduleValues[0].source, exported.source);
+		if (editedFirst) {
+			assert.equal(getLuaModuleAliasTarget(after, callee), null);
+			assert.equal(getLuaModuleAliasTarget(after, exported.source), null);
+		}
+		const oldCallTarget = getLuaModuleAliasTarget(before, callee);
+		const oldExportTarget = getLuaModuleAliasTarget(before, exported.source);
+		assert.deepEqual(oldCallTarget, { module: 'library', memberPath: ['run'] });
+		assert.deepEqual(oldExportTarget, { module: 'library', memberPath: [] });
+		assert.equal(getLuaModuleAliasTarget(after, callee), null, 'a nested write invalidates the captured alias chain');
+		assert.equal(getLuaModuleAliasTarget(after, reboundCall.call.callee), null);
+		assert.equal(getLuaModuleAliasTarget(after, exported.source), null);
+		assert.strictEqual(getLuaModuleAliasTarget(before, callee), oldCallTarget);
+		assert.strictEqual(getLuaModuleAliasTarget(before, exported.source), oldExportTarget);
+	}
 });
 
 test('semantic workspace resolves transitive module aliases independently of file order', async () => {

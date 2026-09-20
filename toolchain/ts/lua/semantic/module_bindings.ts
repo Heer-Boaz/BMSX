@@ -7,7 +7,7 @@ import {
 	type LuaStringLiteralExpression,
 	type LuaReturnStatement,
 } from '../syntax/ast';
-import type { Decl, SymbolID } from './model';
+import type { Decl, FileSemanticData, SymbolID } from './model';
 import type { DeclarationValueEntry, SemanticValueSource } from './value_graph';
 
 export type ModuleAliasTarget = {
@@ -98,13 +98,10 @@ export function resolveModuleAliasInitializer(
 	return { module: target.module, memberPath };
 }
 
-export function resolveModuleAliasValueSource(
-	source: SemanticValueSource | undefined,
-	aliasesByDeclaration: ReadonlyMap<string, ModuleAliasTarget>,
+function resolveModuleAliasValueSource(
+	source: SemanticValueSource,
+	aliasesByDeclaration: ReadonlyMap<SymbolID, ModuleAliasTarget>,
 ): ModuleAliasTarget | null {
-	if (!source) {
-		return null;
-	}
 	const steps = source.steps;
 	let module: string;
 	let basePath: readonly string[];
@@ -147,7 +144,7 @@ export function resolveModuleAliasValueSource(
  * initializer can only read earlier lexical bindings, so declaration order is
  * dependency order: no recursion, per-call alias walk or fixed-point expansion.
  */
-export function collectStableModuleAliases(
+function collectStableModuleAliases(
 	declarations: readonly Decl[],
 	writesByDeclaration: ReadonlyMap<SymbolID, readonly DeclarationValueEntry[]>,
 ): ReadonlyMap<SymbolID, ModuleAliasTarget> {
@@ -161,4 +158,30 @@ export function collectStableModuleAliases(
 		if (target !== null) aliases.set(declaration.id, target);
 	}
 	return aliases;
+}
+
+/** Complete-write answers belong to a file generation, never to reusable call/export facts. */
+const moduleAliasesByFile = new WeakMap<FileSemanticData, {
+	readonly aliases: ReadonlyMap<SymbolID, ModuleAliasTarget>;
+	readonly targets: Map<SemanticValueSource, ModuleAliasTarget | null>;
+}>();
+
+/** Written import provenance, not the runtime identity or contents of a module value. */
+export function getLuaModuleAliasTarget(
+	file: FileSemanticData,
+	source: SemanticValueSource,
+): ModuleAliasTarget | null {
+	let query = moduleAliasesByFile.get(file);
+	if (query === undefined) {
+		query = {
+			aliases: collectStableModuleAliases(file.decls, file.declarationValuesByDeclaration),
+			targets: new Map(),
+		};
+		moduleAliasesByFile.set(file, query);
+	}
+	const retained = query.targets.get(source);
+	if (retained !== undefined) return retained;
+	const target = resolveModuleAliasValueSource(source, query.aliases);
+	query.targets.set(source, target);
+	return target;
 }

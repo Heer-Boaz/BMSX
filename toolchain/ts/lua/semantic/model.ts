@@ -43,11 +43,8 @@ import type { SemanticTokenFact, SemanticRole } from './tokens';
 import { toLuaModulePath } from '../module_path';
 import { LUA_BUILTIN_TABLE_ITERATOR_ARGUMENTS } from '../builtin_descriptors';
 import {
-	collectStableModuleAliases,
 	findLuaModuleExport,
 	resolveBuiltinRequireArgument,
-	resolveModuleAliasValueSource,
-	type ModuleAliasTarget,
 } from './module_bindings';
 import {
 	appendValueElement,
@@ -123,8 +120,6 @@ export type LuaCallSite = {
 	readonly expression: LuaCallExpression;
 	readonly call: CallValueEntry;
 	readonly calleeValue: SemanticValueSource | undefined;
-	/** Written import path through unchanged locals; not runtime callable identity. */
-	readonly moduleTarget: ModuleAliasTarget | null;
 	readonly reference: Ref | undefined;
 	readonly directTarget: SymbolID | undefined;
 };
@@ -624,7 +619,7 @@ class SemanticBuilder {
 	private readonly referencesBySyntax: Map<LuaIdentifierExpression, Ref> = new Map();
 	private readonly referencesByName: Map<string, Ref[]> = new Map();
 	private readonly moduleReferences: { value: string; span: LuaSyntaxSpan }[] = [];
-	private readonly callSites: (Omit<LuaCallSite, 'moduleTarget'> & { moduleTarget: ModuleAliasTarget | null })[] = [];
+	private readonly callSites: LuaCallSite[] = [];
 	private readonly declarationValues: DeclarationValueEntry[] = [];
 	private readonly readValuesBySyntax = new Map<LuaExpression, SemanticValueSource>();
 	private readonly ownedValuesBySyntax = new Map<LuaExpression, OwnedSemanticValueSource>();
@@ -638,7 +633,7 @@ class SemanticBuilder {
 	private readonly valueAssignments: ValueAssignmentEntry[] = [];
 	private readonly moduleExport: LuaReturnStatement | undefined;
 	private readonly bypassingModuleReturns: LuaReturnStatement[] = [];
-	private moduleValue: (Omit<ModuleValueEntry, 'moduleTarget'> & { moduleTarget: ModuleAliasTarget | null }) | undefined;
+	private moduleValue: ModuleValueEntry | undefined;
 	private readonly functionValueFlowStack: FunctionValueFlowState[] = [];
 
 	constructor(options: {
@@ -662,13 +657,6 @@ class SemanticBuilder {
 			this.visitStatement(cursor.statement);
 		}
 		this.leaveScope();
-		const moduleAliases = collectStableModuleAliases(this.decls, this.declarationValuesByDeclaration);
-		for (const site of this.callSites) {
-			site.moduleTarget = resolveModuleAliasValueSource(site.call.callee, moduleAliases);
-		}
-		if (this.moduleValue !== undefined) {
-			this.moduleValue.moduleTarget = resolveModuleAliasValueSource(this.moduleValue.source, moduleAliases);
-		}
 		return {
 			decls: this.decls,
 			scopes: this.scopes,
@@ -910,7 +898,6 @@ class SemanticBuilder {
 				} else if (statement === this.moduleExport) {
 					this.moduleValue = {
 						module: toLuaModulePath(this.path), source: returnValue,
-						moduleTarget: null,
 						statement, bypassingReturns: this.bypassingModuleReturns,
 					};
 				} else this.bypassingModuleReturns.push(statement);
@@ -1160,7 +1147,6 @@ class SemanticBuilder {
 					expression: callExpression,
 					call,
 					calleeValue: calledValue,
-					moduleTarget: null,
 					reference: callReference,
 					directTarget: callReference === undefined
 						&& calleeInfo.namePath !== null

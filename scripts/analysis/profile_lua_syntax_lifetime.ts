@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { setImmediate } from 'node:timers/promises';
 import { getLuaSemanticAnnotations } from '../../toolchain/ts/lua/semantic/tokens';
 import { buildLuaSemanticFrontendFromSnapshot } from '../../toolchain/ts/lua/semantic/frontend';
+import { getLuaModuleAliasTarget } from '../../toolchain/ts/lua/semantic/module_bindings';
 import {
 	buildLuaFileSemanticData,
 	LuaSemanticWorkspace,
@@ -60,6 +61,16 @@ async function main(): Promise<void> {
 	await setImmediate();
 	globalThis.gc();
 	const queried = process.memoryUsage().heapUsed;
+	void snapshot.symbolResolver.moduleImports;
+	let importedCalls = 0;
+	for (const file of snapshot.files) {
+		for (const site of file.callSites) {
+			if (site.expression.method === null && getLuaModuleAliasTarget(file, site.call.callee) !== null) importedCalls += 1;
+		}
+	}
+	await setImmediate();
+	globalThis.gc();
+	const imported = process.memoryUsage().heapUsed;
 	retainedOwners.frontend = undefined;
 	retainedOwners.snapshot = undefined;
 	frontend = null;
@@ -76,10 +87,12 @@ async function main(): Promise<void> {
 		highlightedHeapMiB: (highlighted - initial) / (1024 * 1024),
 		diagnosedHeapMiB: (diagnosed - initial) / (1024 * 1024),
 		queriedHeapMiB: (queried - initial) / (1024 * 1024),
+		importedHeapMiB: (imported - initial) / (1024 * 1024),
 		memberReferences,
 		resolvedMemberReferences,
+		importedCalls,
 		releasedHeapMiB: (released - initial) / (1024 * 1024),
-		note: 'Heap deltas after GC, not allocation counts or a browser memory measurement. Input source strings are already present in the initial heap. Retained is binding without highlighting; highlighted additionally materializes every file annotation presentation; diagnosed additionally retains a frontend with diagnostics for every file and demanded signature/query caches; queried additionally resolves every member/method reference through the definition layer (not the solver). Both frontend and snapshot are released before the final measurement.',
+		note: 'Heap deltas after GC, not allocation counts or a browser memory measurement. Input source strings stay rooted throughout. Retained is binding without highlighting; highlighted adds all annotation presentations; diagnosed adds the frontend with all diagnostics and demanded signature/query caches; queried resolves all member/method references through the definition layer (not the solver); imported adds snapshot reexport indexing and all dot-call import paths. Both frontend and snapshot are released before the final measurement.',
 	}, null, 2));
 	retainedOwners.inputs = undefined;
 }

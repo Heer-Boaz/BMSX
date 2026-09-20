@@ -20,8 +20,8 @@ Inspected TypeScript's production [v5.9.3 checker](https://github.com/microsoft/
 
 BMSX already has a complete per-binding written-input index. It does not need
 TypeScript's AST assignment scan, control-flow implementation or symbol flags
-copied wholesale. The language-specific adaptation is a post-binding pass over
-those existing facts, in `semantic/module_bindings.ts`.
+copied wholesale. The language-specific adaptation is a lazy, file-generation
+query over those existing facts, in `semantic/module_bindings.ts`.
 
 The previous `moduleTargetBinding` tested only the immediate declaration kind.
 It hid never-reassigned ordinary locals, but accepted const copies of aliases
@@ -32,7 +32,8 @@ are removed rather than preserved behind a new recognizer.
 
 ## Producer contract
 
-`LuaCallSite.moduleTarget` is a **written module/member path**, with these rules:
+`getLuaModuleAliasTarget(file, source)` returns a **written module/member path**,
+with these rules:
 
 | Written form | Source admission |
 | --- | --- |
@@ -45,8 +46,11 @@ are removed rather than preserved behind a new recognizer.
 All written assignments are available before admission. Single-initializer
 local aliases depend only on earlier visible lexical declarations; therefore
 the binder's declaration order is dependency order. Each declaration is visited
-once, a no-suffix alias shares its resolved path, and callsites consume that
-index once before publishing immutable file facts. No recursive chain walk,
+once on first demand, and a no-suffix alias shares its resolved path. Raw call
+and export facts contain their value sources, not derived alias answers. A
+`WeakMap` keyed by immutable `FileSemanticData` retains the alias index and
+source-answer memo; the same retained source may have different answers in two
+file generations when a nested write is added or removed. No recursive chain walk,
 workspace solver, per-call write scan, query budget or per-frame cache is added.
 The 10,000-alias probe checks both stack independence and shared result identity.
 
@@ -65,8 +69,8 @@ or runtime-publication evidence; a contribution must never use it for either.
 
 Behavior Lens owns the BT/FSM/ActionEffect module paths, member names and
 argument roles. Scene Editor owns its scene-library registration role. They
-consume the generic call fact directly; neither contribution reconstructs an
-alias chain. A colon call still has a different argument ABI and is not admitted
+pass the call's raw callee source and owning file to the language query; neither
+contribution reconstructs an alias chain. A colon call still has a different argument ABI and is not admitted
 as a dot registration.
 
 The existing workspace snapshot, catalog, source-document and working-copy
@@ -151,9 +155,10 @@ driver, generated game ROM fixture or runtime validation layer was introduced.
 
 ## Explicit API reexports (follow-through from `2737af288`)
 
-The binder now publishes an immediate `ModuleValueEntry.moduleTarget` using the
-same completed local-write index as callsites. `LuaModuleImportQuery`, owned by
-the immutable workspace resolver, consumes that fact. Contributions provide
+The binder publishes the raw `ModuleValueEntry.source`; the immediate reexport
+is derived by `getLuaModuleAliasTarget` from the same completed local-write
+index as callsites. `LuaModuleImportQuery`, owned by the immutable workspace
+resolver, consumes that generation-owned answer. Contributions provide
 their retained public module/member descriptors; no cartlib names or argument
 roles enter the language layer.
 

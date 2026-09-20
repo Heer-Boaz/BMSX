@@ -5,8 +5,8 @@ import {
 	type LuaTableField,
 } from '../../../../toolchain/ts/lua/syntax/ast';
 import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
-import type { LuaCallSite, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
-import type { ModuleAliasTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
+import type { FileSemanticData, LuaCallSite, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
+import { getLuaModuleAliasTarget, type ModuleAliasTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
 import type { LuaModuleImportQuery } from '../../../../toolchain/ts/lua/semantic/module_import_query';
 import type { ResourceIdentity } from '../../../common/resource';
 import type {
@@ -34,7 +34,7 @@ export function buildSceneSourceDocument(
 	const scenes: SceneSourceDefinition[] = [];
 	for (let index = 0; index < analysis.callSites.length; index += 1) {
 		const callSite = analysis.callSites[index];
-		if (!isSceneRegistration(callSite, imports)) {
+		if (!isSceneRegistration(analysis, callSite, imports)) {
 			continue;
 		}
 		const id = callSite.expression.arguments[0];
@@ -72,13 +72,14 @@ export function buildSceneSourceDocument(
 /** Recognized registrations remain discoverable while their authored arguments are incomplete. */
 export function hasSceneSourceDefinitions(resource: ResourceIdentity, snapshot: LuaSemanticWorkspaceSnapshot): boolean {
 	const imports = snapshot.symbolResolver.moduleImports;
-	return snapshot.getFileData(resource.path)!.callSites.some(call => isSceneRegistration(call, imports));
+	const analysis = snapshot.getFileData(resource.path)!;
+	return analysis.callSites.some(call => isSceneRegistration(analysis, call, imports));
 }
 
-function isSceneRegistration(callSite: LuaCallSite, imports: LuaModuleImportQuery): boolean {
-	const target = callSite.moduleTarget;
-	return callSite.expression.method === null
-		&& target !== null
+function isSceneRegistration(analysis: FileSemanticData, callSite: LuaCallSite, imports: LuaModuleImportQuery): boolean {
+	if (callSite.expression.method !== null) return false;
+	const target = getLuaModuleAliasTarget(analysis, callSite.call.callee);
+	return target !== null
 		&& imports.matchesImport(target, SCENE_REGISTRATION);
 }
 

@@ -1354,14 +1354,110 @@ baseline; released deltas are 3.30 versus 3.43 MiB. These are whole retained-que
 heap measurements (taken after the topology shortcut), not allocation counts;
 the earlier local-only release measurements are not the new lifetime oracle.
 
+### File-generation import provenance — implemented
+
+Removed derived `moduleTarget` fields and their post-bind mutation from
+`LuaCallSite` and `ModuleValueEntry`. Raw facts retain only their authored value
+sources. `module_bindings.ts:getLuaModuleAliasTarget(file, source)` now owns a
+lazy file-identity cache of the existing complete-write alias index and demanded
+source answers. Module reexports and both Scene Editor/Behavior Lens discovery
+supply the owning file explicitly; colon calls are rejected before demanding
+provenance. The cache is not keyed by syntax/source identity alone: one retained
+callee can have different answers in old and edited file generations.
+
+The admission rules are unchanged: single-initializer local imports/copies and
+static members are supported; a write anywhere in the binding's lifetime,
+including a nested body, invalidates the alias chain. This does not move builtin
+recognition, infer dynamic module contents, or cache body binding. The ownership
+reference is TypeScript's checker-local node-link/alias answers, not placing
+semantic results on reusable syntax. Canonical API documentation is updated in
+[lua_source_api_bindings.md](lua_source_api_bindings.md).
+
+A fresh-context review found no new owner/lifetime blocker. Focused import,
+registration, scene and edit-equivalence tests pass 82/82. The new regression
+queries the same frozen callee/export sources against old and edited file
+facts in both demand orders: a nested captured write changes only the edited
+generation's answer. Actual call-fact reuse remains the later body-binding gate.
+
+Both durable demand/lifetime profilers now include import provenance and
+snapshot reexport indexing. Moving work out of binding is not presented as
+removing it: first demand builds the alias index and retains source answers;
+repeat reads perform the owner-cache lookups.
+
+Full validation: 2,153 Lua tests pass, with the known named-menu failure and
+one skip; rompacker 129/129, product build and precision idetests 8/5/3 pass.
+The broad typecheck adds no diagnostics in changed owners/profilers, but still
+has unrelated existing failures. O3 output matches the preceding alias slice
+exactly (same 207 modules/2,131 functions and hash above). Core parity and diff
+checks pass. The independent reviewer also inspected the final required-source
+contract, early colon filtering and retained-generation regression.
+
+Isolated 20-warm/50-sample CPU measurement against the preceding alias slice
+(archived `5eb7e6d85`; amended to `d8bc99017` with a comment-only correction):
+
+| Edited file | Update + first imports p50/p95 ms | Baseline | Import demand alone p50, current / baseline |
+| --- | --- | --- | --- |
+| director | 2.495 / 5.366 | 2.489 / 5.259 | 0.159 / 0.107 |
+| player | 11.390 / 18.911 | 11.401 / 19.911 | 0.491 / 0.350 |
+
+The two files retain the same 20/44 authored dot-call import answers. Independent
+hover/signature/diagnostic passes show no uniform speedup (e.g. player signature
+13.919/18.821 versus 13.259/16.793 ms); these are not UI latency measurements.
+The baseline profiler uses its published fields where the new profiler calls
+the generation-owned query, otherwise the workload is identical.
+
+All-file import demand admits the same 1,304 calls. Rooted heap before import
+demand is 221.21 versus 221.47 MiB; after demand it is 221.71 versus 221.50 MiB.
+Released deltas are 3.32 versus 3.31 MiB. Binding no longer retains an alias
+answer on every call, but the demanded file-query maps have their own retained
+cost. The final incremental-binding/performance gate remains open.
+
 Remaining body-binding gate, independently audited: global/member storage is
 still selected from prior traversal witnesses (`globalsByKey`,
 `propertiesByOwner`, reverse declaration-write scans). Replace it with raw
 storage paths plus per-occurrence written contributions and composition-owned
-navigation witnesses. Also derive module aliases from complete composed writes
-without mutating retained calls/exports. Reusing bodies before those changes
+navigation witnesses. Generation-owned module aliases are now separate from
+raw calls/exports, but the storage/contribution blockers remain. Reusing bodies
+before those changes
 would just replay ambient binder state. The final gate must demonstrate
 unchanged sibling fact identity and zero binder visits, not just lower timings.
+
+### Next cold-binding owner gate (fresh-context audit)
+
+Before retaining bodies, separate three identities in `model.ts` and every
+consumer: lexical storage remains a declaration ID; global/member storage is a
+raw `globalValueSource`/member path; each nonlexical written definition has its
+own occurrence declaration. Local reassignment keeps its original lexical
+binding. An earlier navigation witness must never choose a later write's
+storage or suppress another written function/constructor field.
+
+Composition must keep writes-by-storage separate from writes-by-definition;
+`written_sources.ts`, definition aliases, direct callable/signature selection
+and whole-program fact ingestion must migrate together. Do not replace the
+current witness with a synthetic canonical declaration. Navigation precedence
+is a separate policy from storage multiplicity.
+
+Additional live blockers identified by the independent review:
+
+- Builtin recognition (`require`, metatable operations, iterator projections)
+  currently depends on `callee.decl`/ambient static declaration lookup. Simply
+  removing global witnesses would wrongly classify user-defined globals as
+  builtins. Raw binding and composed builtin-availability facts need distinct
+  ownership before reuse. The compiler's syntactic module dependency closure
+  is not a semantic shadowing oracle.
+- `Ref.caller` comes from the nearest named enclosing flow. Treat that as an
+  attachment-owned projection or an explicit body input, not accidental old
+  builder stack state.
+- Valid reuse inputs include name-to-lexical-declaration lookup results **and
+  misses**, activation position semantics, receiver and declaration metadata
+  actually consumed. A set of captured IDs alone is insufficient. Prior global
+  or property winners are not lexical captures and cannot be replayed.
+
+Acceptance remains actual sibling fact identity with zero binder visits,
+capture-miss invalidation, independent child reuse, repeated global/member
+writes and alias owners, unchanged old snapshots, cold/edit answer comparison,
+and first-query performance. This audit is a migration gate, not an implemented
+body cache.
 
 ## Lowest-priority follow-up: absent-value convention
 
