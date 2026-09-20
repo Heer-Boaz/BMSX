@@ -13,7 +13,7 @@ const definitions = [
 	'return object',
 ].join('\n');
 
-test('shifted shared declaration occurrences retain identity but not presentation objects', () => {
+test('shifted body facts retain identity while presentation belongs to each generation', () => {
 	const workspace = new LuaSemanticWorkspace();
 	const source = padding + definitions;
 	const first = workspace.updateFile('identity.lua', source);
@@ -24,7 +24,8 @@ test('shifted shared declaration occurrences retain identity but not presentatio
 	assert.ok(first.decls.some(decl => decl.name === 'quoted'));
 	for (let index = 0; index < first.decls.length; index++) {
 		const old = first.decls[index], current = next.decls[index];
-		assert.notEqual(current, old);
+		if (current.scope === old.scope) assert.equal(current, old);
+		else assert.notEqual(current, old);
 		assert.equal(next.chunk.locations.range(current.span).start.line, first.chunk.locations.range(old.span).start.line + 1);
 		assert.equal(workspace.getSnapshot().symbolResolver.getDeclaration(old.id), current);
 		assert.equal(retained.symbolResolver.getDeclaration(old.id), old);

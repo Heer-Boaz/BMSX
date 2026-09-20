@@ -613,3 +613,31 @@ test('first public callback of a compound edit and Undo/Redo sees every applied 
 	assert.equal(project.getFileData(left.resource.path)!.source, 'return 11');
 	assert.equal(project.getFileData(right.resource.path)!.source, 'return 222');
 });
+
+test('editor model edits, inactive documents and undo reuse unchanged binding bodies', t => {
+	const models = new EditorTextModelService();
+	const project = new EditorLuaSemanticProject(0, models);
+	t.after(() => { project.dispose(); models.clear(); });
+	const padding = 'do end\n'.repeat(80);
+	const source = `local item = { field = 1 }\n${padding}local function changed()\n${padding}return item end\nlocal function retained()\n${padding}return item.field end\n${padding}`;
+	const model = models.retain(resource(0, 'reuse.lua'), 'lua', source);
+	const inactive = models.retain(resource(0, 'inactive.lua'), 'lua', 'return {}');
+	const first = project.getSnapshot();
+	const old = first.getFileData('reuse.lua')!;
+	const retained = old.functionValueFlows[1];
+	const offset = source.indexOf('local function changed()') + 'local function changed()\n'.length + 20 * 'do end\n'.length;
+	model.pushEditOperations([{ offset, deleteLength: 0, text: 'do end; ' }]);
+	model.pushEditOperations([{ offset, deleteLength: 0, text: 'do end; ' }]);
+	const edited = project.getFileData('reuse.lua')!;
+	assert.equal(edited.bindingWork.reusedFunctions, 1);
+	assert.equal(edited.functionValueFlows[1], retained);
+	assert.equal(project.getFileData('inactive.lua'), first.getFileData('inactive.lua'));
+	model.undo();
+	assert.equal(project.getFileData('reuse.lua')!.functionValueFlows[1], retained);
+	model.redo();
+	assert.equal(project.getFileData('reuse.lua')!.functionValueFlows[1], retained);
+	inactive.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- changed elsewhere\n' }]);
+	assert.equal(project.getFileData('reuse.lua')!.functionValueFlows[1], retained);
+	assert.equal(first.getFileData('reuse.lua'), old);
+	assert.equal(old.source, source);
+});

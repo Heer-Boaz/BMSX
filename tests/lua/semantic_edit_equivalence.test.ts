@@ -1,3 +1,4 @@
+import { semanticAnswers } from './semantic_test_harness';
 import { getLuaSemanticAnnotations } from '../../toolchain/ts/lua/semantic/tokens';
 import { luaSyntaxSnapshot } from '../helpers/lua_syntax_snapshot';
 import assert from 'node:assert/strict';
@@ -8,7 +9,6 @@ import {
 	buildLuaFileSemanticData,
 	buildLuaSemanticWorkspaceSnapshot,
 	LuaSemanticWorkspace,
-	type LuaSemanticWorkspaceSnapshot,
 } from '../../toolchain/ts/lua/semantic/model';
 
 const path = 'edit.lua';
@@ -22,34 +22,6 @@ const original = [
 	'invoke()',
 	'return item',
 ].join('\n');
-
-// Compare public answers rather than cross-generation identity. Future stable
-// symbol IDs need not match a separately constructed workspace's IDs.
-function answers(snapshot: LuaSemanticWorkspaceSnapshot) {
-	const resolver = snapshot.symbolResolver;
-	return snapshot.files.map(file => ({
-		file: file.file,
-		scopes: file.scopes.map(scope => ({
-			kind: scope.kind,
-			start: file.chunk.locations.position(scope.startInclusive.unit, scope.startInclusive.offset),
-			end: file.chunk.locations.position(scope.endExclusive.unit, scope.endExclusive.offset),
-			parent: file.scopes.findIndex(parent => parent.id === file.scopeParents.get(scope.id)),
-			declarations: scope.declarations.map(decl => file.decls.indexOf(decl)),
-		})),
-		declarations: file.decls.map(decl => ({
-			name: decl.namePath, range: file.chunk.locations.range(decl.span),
-			visibleFrom: file.chunk.locations.position(decl.visibleFrom.unit, decl.visibleFrom.offset),
-		})),
-		refs: file.refs.map(ref => ({
-			name: ref.name,
-			range: file.chunk.locations.range(ref.span),
-			targets: resolver.resolveReferenceTargets(ref).map(id => {
-				const decl = resolver.getDeclaration(id);
-				return { file: decl.file, name: decl.namePath, range: file.chunk.locations.range(decl.span), signatures: resolver.getFunctionSignatures(id) };
-			}),
-		})),
-	}));
-}
 
 test('binding consumes the supplied syntax generation independently of other documents', () => {
 	const cached = buildLuaFileSemanticData(original, path);
@@ -117,7 +89,7 @@ for (const [name, edited] of edits) {
 		workspace.updateFile('consumer.lua', "local item<const> = require('edit')\nitem:run()");
 		const retained = workspace.getSnapshot();
 		const retainedTree = luaSyntaxSnapshot(retained.getFileData(path)!.chunk);
-		const retainedAnswers = answers(retained);
+		const retainedAnswers = semanticAnswers(retained);
 		const consumer = retained.getFileData('consumer.lua');
 
 		for (const source of [edited, original]) { // Edit, then undo/repair.
@@ -130,10 +102,10 @@ for (const [name, edited] of edits) {
 			const cold = new LuaSemanticWorkspace();
 			cold.updateFiles([fresh, buildLuaFileSemanticData(consumer!.source, consumer!.file,
 				parseLuaChunkWithRecovery(consumer!.source, consumer!.file))]);
-			assert.deepEqual(answers(workspace.getSnapshot()), answers(cold.getSnapshot()));
+			assert.deepEqual(semanticAnswers(workspace.getSnapshot()), semanticAnswers(cold.getSnapshot()));
 			assert.equal(workspace.getFileData('consumer.lua'), consumer);
 			assert.deepEqual(luaSyntaxSnapshot(retained.getFileData(path)!.chunk), retainedTree);
-			assert.deepEqual(answers(retained), retainedAnswers);
+			assert.deepEqual(semanticAnswers(retained), retainedAnswers);
 		}
 	});
 }
@@ -143,7 +115,7 @@ test('public workspace edit maps retain lexical islands and match fresh binding 
 	let source = original + '\n-- retained suffix\n'.repeat(80);
 	const initial = workspace.updateFile(path, source);
 	const retained = workspace.getSnapshot();
-	const retainedAnswers = answers(retained);
+	const retainedAnswers = semanticAnswers(retained);
 	const edits = [
 		{ offset: 0, deletedLength: 0, inserted: '-- café 😀\r\n' },
 		{ offset: 0, deletedLength: 0, inserted: '--[=[' },
@@ -162,8 +134,8 @@ test('public workspace edit maps retain lexical islands and match fresh binding 
 		coldWorkspace.updateFile(path, source);
 		const cold = coldWorkspace.getSnapshot();
 		assert.deepEqual(luaSyntaxSnapshot(updated.chunk), luaSyntaxSnapshot(cold.getFileData(path)!.chunk));
-		assert.deepEqual(answers(workspace.getSnapshot()), answers(cold));
-		assert.deepEqual(answers(retained), retainedAnswers);
+		assert.deepEqual(semanticAnswers(workspace.getSnapshot()), semanticAnswers(cold));
+		assert.deepEqual(semanticAnswers(retained), retainedAnswers);
 		if (index === 0) {
 			assert.strictEqual(updated.chunk.tokens.get(updated.chunk.tokens.length - 1),
 				previous.chunk.tokens.get(previous.chunk.tokens.length - 1));

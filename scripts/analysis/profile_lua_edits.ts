@@ -183,6 +183,17 @@ for (const path of paths) {
 	workspace.updateFiles([file]);
 }
 
+const bindingWork = [];
+for (const { path, file, scenario, forward, undo } of lexicalWorkloads) {
+	workspace.updateFiles([file]);
+	for (const direction of ['forward', 'undo'] as const) {
+		const source = direction === 'forward' ? scenario.source : file.source;
+		const changes = direction === 'forward' ? forward : undo;
+		const analysis = workspace.updateFile(path, source, changes);
+		bindingWork.push({ path, edit: scenario.name, direction, ...analysis.bindingWork });
+	}
+}
+
 // Instrument only after every timed pass: patching the scanner must not change
 // optimized callsites or count work inside the measurements above.
 const scanBlock = LuaLexer.prototype.scanBlock;
@@ -238,5 +249,5 @@ for (const { path, file, scenario, forward, undo } of lexicalWorkloads) {
 console.log(JSON.stringify({
 	node: process.version, cpu: cpus()[0].model, workspaceFiles: files.length, warmup, samples,
 	note: 'Full-source, incremental-lexical and incremental-syntax phases and public updates with/without highlighting are separate warm passes. Full-source and lexical-only passes parse the entire file; binding remains whole-file in all passes. Public timings include getSnapshot, not queries. WithHighlight also includes lazy annotation projection; analysis-only updates exclude it. Phase totals include highlighting after queries, so projection does not have a pristine cold location owner. Maps are composed from known forward/undo deltas outside timing. The first member query selects a read, not an authored definition/write witness. Completion follows that read; not a cold completion or UI-frame measurement. Lexical and syntax work counts are separate untimed forward/undo passes after all timings; marker counts exclude one-time cold edit-index construction; scannedWidth counts consumed UTF-16 units, not lookahead reads.',
-	results, lexicalWork, syntaxWork,
+	results, lexicalWork, syntaxWork, bindingWork,
 }, null, 2));

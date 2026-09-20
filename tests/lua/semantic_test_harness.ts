@@ -76,3 +76,31 @@ export function wholeProgramSymbolAt(
 	const targets = wholeProgramSymbolsAt(snapshot, path, line, column);
 	return targets.length === 1 ? targets[0] : null;
 }
+
+// Compare public answers rather than cross-generation identity. Future stable
+// symbol IDs need not match a separately constructed workspace's IDs.
+export function semanticAnswers(snapshot: LuaSemanticWorkspaceSnapshot) {
+	const resolver = snapshot.symbolResolver;
+	return snapshot.files.map(file => ({
+		file: file.file,
+		scopes: file.scopes.map(scope => ({
+			kind: scope.kind,
+			start: file.chunk.locations.position(scope.startInclusive.unit, scope.startInclusive.offset),
+			end: file.chunk.locations.position(scope.endExclusive.unit, scope.endExclusive.offset),
+			parent: file.scopes.findIndex(parent => parent.id === file.scopeParents.get(scope.id)),
+			declarations: scope.declarations.map(decl => file.decls.indexOf(decl)),
+		})),
+		declarations: file.decls.map(decl => ({
+			name: decl.namePath, range: file.chunk.locations.range(decl.span),
+			visibleFrom: file.chunk.locations.position(decl.visibleFrom.unit, decl.visibleFrom.offset),
+		})),
+		refs: file.refs.map(ref => ({
+			name: ref.name,
+			range: file.chunk.locations.range(ref.span),
+			targets: resolver.resolveReferenceTargets(ref).map(id => {
+				const decl = resolver.getDeclaration(id);
+				return { file: decl.file, name: decl.namePath, range: file.chunk.locations.range(decl.span), signatures: resolver.getFunctionSignatures(id) };
+			}),
+		})),
+	}));
+}

@@ -10,9 +10,11 @@ Annotations, additional inference, and changes to the whole-program solver are
 out of scope. Optimize edits, not the meaning of interactive queries.
 
 Implement in the ordered slices below. **Slices 0, 1a and 2, the relative syntax/edit transport, and the publication subtask of 3 are implemented.**
-The production parser now reuses unchanged grammar parts through the same cold
-grammar. The binder still processes the entire changed file; scope-owned fact
-reuse and the final cold/edit performance gates remain open.
+The production parser reuses unchanged grammar parts through the same cold
+grammar. The first binding-reuse delivery now retains unchanged non-nested
+function subtrees and composes their immutable facts into the current file.
+Finer nested-body reuse and the original complete performance gates remain
+follow-up work; see the user priority clarification and measured delivery below.
 
 The target is immutable, position-independent syntax plus scope-owned binding
 facts. Document positions belong to a syntax snapshot, not to the identity of a
@@ -147,7 +149,7 @@ and reallocation of an entire shifted suffix just to update coordinates.
 Test large generated files to prove work scales with the affected region for
 local edits, and report genuine whole-file invalidations separately.
 
-### 3. Incremental binding by scope and dependencies
+### 3. Incremental binding by scope and dependencies — first delivery implemented
 
 - Build immutable scope-local facts using local declaration slots and explicit
   captured-name/receiver inputs. Compose them into a semantic snapshot.
@@ -1719,6 +1721,90 @@ invalidation is acceptable for this first delivery. Finer nested-body reuse and
 avoiding every harmless invalidation remain follow-up optimizations, not a
 reason to defer the working edit-speedup. Correctness and retained snapshot
 safety remain mandatory. Keep reviews focused and non-overlapping.
+
+### First body-reuse implementation and validation
+
+`body_facts.ts` owns finished pre-projection contributions and ordered file
+composition. The binder constructs a non-nested function and its nested bodies
+in an isolated temporary builder, finalizes public declarations/scopes, and
+retains only immutable facts. A syntax-keyed WeakMap retains one current input
+variant per function occurrence; it has no file-generation history chain and
+retains no `Scope`, parent environment or `SemanticBuilder`. Nested bodies are
+part of their enclosing cached unit, not additional copies of its descendants.
+
+Admission compares actual external lexical lookups, including misses and
+unknown loop reads, plus written destination, parent attachment and receiver
+inputs. It happens before parameters, completion analysis and body traversal.
+Retained function values also feed the parent's declaration assignment: no new
+owned identity points at an old flow. File-scope attachment is composed directly
+into the final declaration/parent streams, without per-body projected maps or
+replaying binder state. Named non-file parent changes conservatively rebind.
+Builtin operations still compose from raw sites against the current full file.
+
+`FileSemanticData.bindingWork` exposes bound/reused function and visited syntax
+counts. The checked-in edit profiler reports these separately from timed passes.
+A local body edit in dumped pietious `player/player.lua` binds one function and
+reuses 162: statement visits fall from 1,695 to 195 and expression visits from
+6,241 to 210. Unchanged body-local facts retain object identity. Top-level facts
+and the final flat file maps are still rebuilt, an explicit remaining floor.
+
+The implementation follows body ownership and temporary traversal state from
+[rust-analyzer expression scopes](https://github.com/rust-lang/rust-analyzer/blob/master/crates/hir-def/src/expr_store/scope.rs),
+not TypeScript's in-place AST updates. One fresh-context implementation review
+found no concrete blocker in captures, external writes, receiver inputs,
+function identity, composition order or retained-snapshot ownership.
+
+Validation of the committed delivery:
+- Focused reuse, occurrence, edit-equivalence and editor-project tests: 61/61.
+  These prove skipped sibling/nested-subtree visits, retained identity,
+  lexical misses/shadows, unrelated insertions, root attachment, outer writes,
+  loop captures, recursive const closures, builtin recomposition, distinct cold
+  generations, coalesced model edits, inactive documents and undo/redo.
+- `scripts/analysis/check_lua_binding_edits.ts` compares cold answers with body
+  edits, leading edits, undo and retained snapshots in real dumped sources:
+  pietious 264 files / 1,056 edits, nemesis_s 243 files / 972 edits, all equal.
+  Counts are 8,511 and 7,422 reused functions respectively. Files without a
+  nonempty function body are not counted as edit workloads.
+- Complete Lua suite: 2,224 tests, 2,222 passed, the existing named-menu failure
+  and one skip. Toolchain types, rompacker 129/129, product build and precision
+  idetests 8/5/3 pass. The final attachment-composition code was rerun through
+  the full suite, both edit corpora, product build and all three precision tests.
+- Fresh O3 compilation preserves the program/debug hash above. Isolated current
+  compile p50/p95: 3,032/3,267 ms; total parse/select/compile 3,237/3,496 ms.
+  This is compilation evidence, not a GUI frame-latency measurement.
+
+Measured delivery (same dumped workspace, Node, 20 warmups/50 samples, isolated
+runs; before is `32cb85e48`):
+
+| Local body edit | Before p50/p95 | Reuse p50/p95 |
+| --- | ---: | ---: |
+| director public update | 1.743 / 5.897 ms | 0.870 / 4.040 ms |
+| director update + highlighting | 2.211 / 5.845 ms | 1.226 / 4.538 ms |
+| player public update | 10.080 / 10.771 ms | 2.608 / 6.468 ms |
+| player update + highlighting | 12.340 / 13.552 ms | 5.477 / 9.112 ms |
+| player bind, incremental-syntax phase | 7.921 / 9.159 ms | 2.016 / 5.017 ms |
+| player first member query | 1.526 / 5.281 ms | 1.402 / 4.292 ms |
+
+Player public update improves about 3.9x at the median, **1.7x at p95**. Thus the
+original requirement of 2x at both median and p95 is not claimed as met. The
+user's first-delivery priority achieves a substantial real edit win without
+claiming that every remaining tail or frame stall has been eliminated.
+
+Tradeoff: fresh player binding in this phase profiler grows from 5.034/9.273 to
+9.364/10.219 ms. The new cold path builds body-owned contributions as well as
+flat file output. Do not hide this cost behind the incremental result. A separate
+single cold full-workspace load was 477.8 -> 483.9 ms (not a distribution).
+Forced-GC rooted workspace heap was 191.25 -> 201.62 MiB; after 80 player edits
+with the initial and latest snapshots retained, 199.29 -> 206.24 MiB. Releasing
+the workspace leaves 2.54 -> 2.60 MiB above the pre-load measurement. This sample
+shows roughly 5.4% extra initially retained heap and no observed growing
+old-generation chain; it is not proof of every possible editor lifetime.
+
+This delivery is real incremental binding, but not arbitrary nested-scope
+incrementality. Editing an outer function rebinds that entire subtree; changing
+an external declaration's syntax identity may conservatively rebind dependents.
+Those refinements and actual GUI frame profiling are deliberately not claimed
+as complete.
 
 ## Lowest-priority follow-up: absent-value convention
 
