@@ -1806,6 +1806,108 @@ an external declaration's syntax identity may conservatively rebind dependents.
 Those refinements and actual GUI frame profiling are deliberately not claimed
 as complete.
 
+## Bounded follow-up: nested body contributions (2026-09-20)
+
+The next priority after `0cf6c98e7` is unchanged nested functions inside an edited
+outer body. This slice does not resume the entire parked roadmap. References
+revisited before implementation: rust-analyzer's
+[body-owned expression scopes](https://github.com/rust-lang/rust-analyzer/blob/master/crates/hir-def/src/expr_store/scope.rs).
+
+Every function now owns a direct binding contribution plus ordered edges to its
+nested contributions. Child facts are **not** flattened into ancestor caches;
+only file publication flattens each stream once. Traversal scopes/builders remain
+temporary. A child starts with its lexical parent, not a copied ancestor stack.
+Scope-parent attachments are generation-owned and leave retained snapshots intact.
+
+Cache dependencies propagate through every intervening body, including lookups
+performed while admitting a cached child. Captured declaration inputs retain
+binding identity, scope attachment, global/read classification, or implicit
+receiver identity. File scopes normalize to the new file scope; other captured
+scope changes conservatively invalidate. This keeps member declarations attached
+to the scope of their current lexical owner. A proposed narrower scope gate was
+rejected during independent review: mere presence of an old scope in the
+ancestor chain does not prove that a moved declaration still belongs to it.
+The regression retains both local declaration and function syntax while moving
+them into a nested block. Parameter/declaration syntax changes still invalidate
+dependent bodies; no inference or fallback was added.
+
+### Measurements
+
+`scripts/analysis/profile_lua_nested_binding.ts` loads the complete dumped
+workspace, then alternates a statement insertion and undo in a named outer body
+and one nested body. Same Node v22.23.1, 20 warmups / 80 measured updates per
+workload, no concurrent tests/builds. Three serial baseline/current pairs;
+baseline is `0cf6c98e7`. Table entries are the **median of the three run
+percentiles**, not pooled percentiles or GUI frame timings.
+
+| Pietious public update + snapshot | Baseline p50/p95 | Nested reuse p50/p95 |
+| --- | ---: | ---: |
+| director outer body | 1.976 / 4.940 ms | 1.710 / 4.349 ms |
+| director nested body | 1.890 / 6.832 ms | 1.698 / 4.958 ms |
+| player outer body | 4.825 / 8.192 ms | 4.920 / 7.898 ms |
+| player nested body | 5.119 / 9.489 ms | 5.167 / 9.422 ms |
+
+Director rebinds 2 rather than 38 functions; player outer rebinds 14 rather than
+33. Director's median update improves about 10–13%; player medians are 1–2%
+worse while its p95 is slightly better. There is no meaningful player win. **This is not another multi-fold
+latency win.** Much of the remaining work is outside the retained nested bodies.
+In particular, existing syntax reparsing recreates some nested function nodes;
+this slice does not introduce a second syntax identity mechanism in the binder.
+Early timings exposed regressions despite fewer visits. Final composition avoids
+per-body/per-stream closures and per-entry temporary syntax-map iteration pairs; the
+three paired measurements above are after that correction.
+
+The nemesis_s task-program workload still binds 9 functions: their required
+syntax/inputs are not retained. Nested reuse is conditional on the actual
+syntax and lexical dependencies, not a same-name heuristic. Small-body overhead
+and tails remain explicit follow-ups, not hidden by work counters.
+
+Ordinary first-body control (plain file paths to the same focused profiler,
+three paired runs, same 20/80 sampling) exposes the tradeoff:
+
+| Public update / update + highlight, p50 | Baseline | Nested contributions |
+| --- | ---: | ---: |
+| director first body | 1.153 / 1.567 ms | 1.122 / 1.533 ms |
+| player first body | 3.067 / 6.075 ms | 3.221 / 6.203 ms |
+
+Player's ordinary update gains no reuse and pays about 0.15 ms additional
+composition cost (~5%); update+highlight grows ~2%, with p95 9.629 -> 9.180 ms.
+Do **not** describe this as a universal speedup or a regression-free optimization.
+The broader `profile_lua_edits.ts` multiphase run showed greater variability:
+player public first-body update 2.484 -> 2.686 ms and update+highlight
+5.992 -> 8.035 ms (p95 9.301 -> 14.066). Its binding phase grows
+1.985 -> 2.179 ms; fresh binding 9.166 -> 9.490 ms. The focused control avoids
+preceding whole-file parse/query/completion passes, but does not invalidate
+those less favorable broader-run measurements. Further allocation/publication
+work stays parked rather than expanding this slice to mask the tradeoff.
+
+### Correctness and boundaries
+
+The corpus checker now edits every enclosing function as well as the first body
+and file prefix. Pietious: 264 files / 1,222 edits; nemesis_s: 243 files / 1,118
+edits. Cold/edit/undo answers and retained snapshots agree in all 2,340 edits.
+Targeted body-reuse tests: 15/15, including transitive misses, cached-child
+admission, lexical scope attachment, external member scope invalidation, raw
+builtin recomposition, and previous-snapshot isolation. Independent read-only
+review checks owner boundaries and transitive dependency admission.
+
+Full validation: toolchain typecheck; Lua suite 2,229 tests / 2,227 passed,
+the existing named-workbench-menu failure and one skip; rompacker 129/129;
+headless tooling build; inherited-factory, dynamic-receiver and heap-effect
+precision idetests (8/5/3 assertions). No new test failure.
+
+One isolated full-workspace load sample costs 500.0 -> 503.3 ms. Forced-GC heap
+above pre-load baseline: initially 201.65 -> 202.87 MiB; after 80 normal player
+edits retaining initial/latest snapshots, 206.23 -> 207.36 MiB; after release,
+2.58 -> 2.55 MiB. This is about 1.2 MiB added retention, not evidence of a
+history chain. A separate final nested-outer-body run retains 208.60 MiB after
+80 edits and releases to 2.98 MiB above baseline. These samples are not a cold
+latency distribution or proof of every possible editor lifetime.
+
+Remaining work stays parked: finer syntax/declaration retention, file-level
+publication and highlighting costs, cold-path allocation, actual GUI frame
+profiling, and annotations. The absent-value audit remains last below.
+
 ## Lowest-priority follow-up: absent-value convention
 
 User request, 2026-09-20: after the incremental parsing/binding work and its

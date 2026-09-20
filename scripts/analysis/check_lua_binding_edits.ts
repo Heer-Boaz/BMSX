@@ -18,8 +18,20 @@ for (const input of inputs) {
 	const bodyOffset = old.chunk.locations.offset(statement.span.unit, statement.span.start);
 	const oldSnapshot = workspace.getSnapshot();
 	const before = semanticAnswers(oldSnapshot);
-	for (const offset of [bodyOffset, 0]) {
-		const inserted = offset === bodyOffset ? 'do end; ' : '-- shifted generation\n';
+	const enclosingScopes = new Set(old.functionValueFlows.flatMap(flow => {
+		const ancestors = [];
+		let parent = old.scopeParents.get(flow.id);
+		while (parent !== undefined) { ancestors.push(parent); parent = old.scopeParents.get(parent); }
+		return ancestors;
+	}));
+	const offsets = new Set([bodyOffset, 0]);
+	for (const outer of old.functionValueFlows) {
+		if (!enclosingScopes.has(outer.id) || outer.expression.body.body.length === 0) continue;
+		const first = outer.expression.body.body.get(0)!;
+		offsets.add(old.chunk.locations.offset(first.span.unit, first.span.start));
+	}
+	for (const offset of offsets) {
+		const inserted = offset !== 0 ? 'do end; ' : '-- shifted generation\n';
 		for (const undo of [false, true]) {
 			const previous = workspace.getFileData(input.path)!;
 			const source = undo ? input.source : input.source.slice(0, offset) + inserted + input.source.slice(offset);

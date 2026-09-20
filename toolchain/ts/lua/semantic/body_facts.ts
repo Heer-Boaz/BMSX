@@ -36,62 +36,98 @@ export type LuaBindingWork = {
 	visitedExpressions: number;
 };
 
-export const LUA_BINDING_ARRAYS = [
+const LUA_BINDING_ARRAYS = [
 	'decls', 'scopes', 'refs', 'memberAccesses', 'annotationFacts', 'callSites',
 	'declarationValues', 'builtinOperations', 'moduleValues', 'memberValues',
 	'functionValueFlows', 'callValues', 'valueAssignments', 'moduleReferences',
 ] as const;
 type ArrayKey = typeof LUA_BINDING_ARRAYS[number];
-export type LuaBodyInsertion = {
-	readonly facts: LuaBindingFacts;
-	/** File-scope attachment used while these raw facts were produced. */
-	readonly fileScope: ScopeID;
-	readonly offsets: { readonly [K in ArrayKey]: number };
+type FactCounts = { readonly [K in ArrayKey]: number };
+
+/** Each body stores only its own facts and edges to child contributions. */
+export type LuaBindingContribution = {
+	readonly own: LuaBindingFacts;
+	readonly bodies: readonly LuaBodyInsertion[];
+	readonly counts: FactCounts;
 };
 
-/** One flattening pass per stream; cached subtrees are not copied into other caches. */
-export function composeLuaBindingFacts(own: LuaBindingFacts, bodies: readonly LuaBodyInsertion[]): LuaBindingFacts {
-	if (bodies.length === 0) return own;
-	const result = { ...own };
-	const fileScope = own.scopes[0].id;
+export type LuaBodyInsertion = {
+	readonly contribution: LuaBindingContribution;
+	readonly fileScope: ScopeID;
+	readonly parentScope: ScopeID;
+	readonly attachedParent: ScopeID;
+	readonly offsets: FactCounts;
+};
+
+export function finishLuaBindingContribution(own: LuaBindingFacts, bodies: readonly LuaBodyInsertion[]): LuaBindingContribution {
+	const counts = {} as { [K in ArrayKey]: number };
 	for (const key of LUA_BINDING_ARRAYS) {
-		if (key === 'decls') continue;
-		composeArray(result, own, bodies, key);
+		let count = own[key].length;
+		for (const body of bodies) count += body.contribution.counts[key];
+		counts[key] = count;
 	}
-	composeArray(result, own, bodies, 'decls', (declaration, body) =>
-		declaration.scope === body.fileScope && declaration.scope !== fileScope
-			? { ...declaration, scope: fileScope } : declaration);
-	const scopeParents = new Map(own.scopeParents);
-	for (const body of bodies) for (const [scope, parent] of body.facts.scopeParents) {
-		scopeParents.set(scope, parent === body.fileScope ? fileScope : parent);
+	return { own, bodies, counts };
+}
+
+/** Flatten once at the file boundary, never once per ancestor body. */
+export function composeLuaBindingFacts(root: LuaBindingContribution): LuaBindingFacts {
+	if (root.bodies.length === 0) return root.own;
+	const result = { ...root.own };
+	const fileScope = root.own.scopes[0].id;
+	for (const key of LUA_BINDING_ARRAYS) composeArray(result, root, key, fileScope);
+	const scopeParents = new Map(root.own.scopeParents);
+	const declarationIdsBySyntax = new Map(root.own.declarationIdsBySyntax);
+	const referencesBySyntax = new Map(root.own.referencesBySyntax);
+	const readValuesBySyntax = new Map(root.own.readValuesBySyntax);
+	const ownedValuesBySyntax = new Map(root.own.ownedValuesBySyntax);
+	const addDeclaration = (id: SymbolID, syntax: LuaIdentifierExpression) => { declarationIdsBySyntax.set(syntax, id); };
+	const addReference = (ref: Ref, syntax: LuaIdentifierExpression) => { referencesBySyntax.set(syntax, ref); };
+	const addRead = (value: SemanticValueSource, syntax: LuaExpression) => { readValuesBySyntax.set(syntax, value); };
+	const addOwned = (value: OwnedSemanticValueSource, syntax: LuaExpression) => { ownedValuesBySyntax.set(syntax, value); };
+	function appendMaps(body: LuaBodyInsertion): void {
+		const facts = body.contribution.own;
+		for (const [scope, parent] of facts.scopeParents) {
+			scopeParents.set(scope, parent === body.parentScope
+				? (body.attachedParent === body.fileScope ? fileScope : body.attachedParent)
+				: parent === body.fileScope ? fileScope : parent);
+		}
+		facts.declarationIdsBySyntax.forEach(addDeclaration);
+		facts.referencesBySyntax.forEach(addReference);
+		facts.readValuesBySyntax.forEach(addRead);
+		facts.ownedValuesBySyntax.forEach(addOwned);
+		for (const child of body.contribution.bodies) appendMaps(child);
 	}
+	for (const body of root.bodies) appendMaps(body);
 	result.scopeParents = scopeParents;
-	result.declarationIdsBySyntax = composeMap(own.declarationIdsBySyntax, bodies, facts => facts.declarationIdsBySyntax);
-	result.referencesBySyntax = composeMap(own.referencesBySyntax, bodies, facts => facts.referencesBySyntax);
-	result.readValuesBySyntax = composeMap(own.readValuesBySyntax, bodies, facts => facts.readValuesBySyntax);
-	result.ownedValuesBySyntax = composeMap(own.ownedValuesBySyntax, bodies, facts => facts.ownedValuesBySyntax);
+	result.declarationIdsBySyntax = declarationIdsBySyntax;
+	result.referencesBySyntax = referencesBySyntax;
+	result.readValuesBySyntax = readValuesBySyntax;
+	result.ownedValuesBySyntax = ownedValuesBySyntax;
 	return result;
 }
 
-function composeArray<K extends ArrayKey>(result: LuaBindingFacts, own: LuaBindingFacts, bodies: readonly LuaBodyInsertion[], key: K, project?: (value: LuaBindingFacts[K][number], body: LuaBodyInsertion) => LuaBindingFacts[K][number]): void {
-	let length = own[key].length;
-	for (const body of bodies) length += body.facts[key].length;
-	if (length === own[key].length) return;
-	const values = new Array<LuaBindingFacts[K][number]>(length);
-	let source = 0;
+function composeArray<K extends ArrayKey>(result: LuaBindingFacts, root: LuaBindingContribution, key: K, fileScope: ScopeID): void {
+	if (root.counts[key] === root.own[key].length) return;
+	const values = new Array<LuaBindingFacts[K][number]>(root.counts[key]);
 	let target = 0;
-	for (const body of bodies) {
-		while (source < body.offsets[key]) values[target++] = own[key][source++];
-		if (project === undefined) for (const value of body.facts[key]) values[target++] = value;
-		else for (const value of body.facts[key]) values[target++] = project(value, body);
+	function append(contribution: LuaBindingContribution, previousFileScope: ScopeID): void {
+		if (contribution.counts[key] === 0) return;
+		const own = contribution.own[key];
+		const bodies = contribution.bodies;
+		let source = 0;
+		for (let index = 0; index <= bodies.length; index++) {
+			const end = index === bodies.length ? own.length : bodies[index].offsets[key];
+			if (key === 'decls') {
+				while (source < end) {
+					const declaration = contribution.own.decls[source++];
+					values[target++] = declaration.scope === previousFileScope && declaration.scope !== fileScope
+						? { ...declaration, scope: fileScope } : declaration;
+				}
+			} else while (source < end) values[target++] = own[source++];
+			if (index < bodies.length) append(bodies[index].contribution, bodies[index].fileScope);
+		}
 	}
-	while (source < own[key].length) values[target++] = own[key][source++];
-	// K selects the same element representation from all three streams.
+	append(root, fileScope);
+	// K selects the same element representation in every contribution.
 	result[key] = values as LuaBindingFacts[K];
-}
-
-function composeMap<K, V>(own: ReadonlyMap<K, V>, bodies: readonly LuaBodyInsertion[], select: (facts: LuaBindingFacts) => ReadonlyMap<K, V>): ReadonlyMap<K, V> {
-	const result = new Map(own);
-	for (const body of bodies) for (const [key, value] of select(body.facts)) result.set(key, value);
-	return result;
 }

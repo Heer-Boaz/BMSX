@@ -135,3 +135,76 @@ test('recursive const closures and explicit self parameters preserve lexical act
 	assert.equal(current.functionValueFlows[0], old.functionValueFlows[0]);
 	assert.equal(current.functionValueFlows[1], old.functionValueFlows[1]);
 });
+
+test('editing an outer body reuses nested bodies without retaining their previous parent attachment', () => {
+	const workspace = new LuaSemanticWorkspace();
+	const source = `local item = { field = 1 }\n${padding}local function outer()\n${padding}local function inner()\n${body}return item.field end\n${padding}return inner end\n${padding}`;
+	const old = workspace.updateFile('reuse.lua', source);
+	const inner = old.functionValueFlows[0];
+	const outer = old.functionValueFlows[1];
+	const before = semanticAnswers(workspace.getSnapshot());
+	const offset = source.indexOf('local function outer()') + 'local function outer()\n'.length + 20 * 'do end\n'.length;
+	const current = edit(workspace, offset, 0, 'do end; ');
+	assert.equal(current.bindingWork.boundFunctions, 1);
+	assert.equal(current.bindingWork.reusedFunctions, 1);
+	assert.equal(current.functionValueFlows[0], inner);
+	assert.notEqual(current.functionValueFlows[1].id, outer.id);
+	assert.equal(current.scopeParents.get(inner.id), current.functionValueFlows[1].id);
+	assert.equal(old.scopeParents.get(inner.id), outer.id);
+	assert.deepEqual(semanticAnswers(semanticSnapshot(old)), before);
+});
+
+test('cached descendants propagate lexical misses through every retained ancestor', () => {
+	const workspace = new LuaSemanticWorkspace();
+	const source = `${padding}local function outer()\n${padding}return function()\n${padding}return function() return future.field end end end\n${padding}`;
+	const old = workspace.updateFile('reuse.lua', source);
+	// First rebind outer while retaining its child: validation itself must
+	// register the child's transitive miss as an input of this new outer.
+	const offset = source.indexOf('local function outer()') + 'local function outer()\n'.length + 20 * 'do end\n'.length;
+	const middle = edit(workspace, offset, 0, 'do end; ');
+	assert.equal(middle.bindingWork.boundFunctions, 1);
+	assert.equal(middle.bindingWork.reusedFunctions, 2);
+	assert.equal(middle.functionValueFlows[0], old.functionValueFlows[0]);
+	const current = edit(workspace, 0, 0, 'local future = { field = 1 }\n');
+	assert.equal(current.bindingWork.boundFunctions, 3);
+	assert.equal(current.bindingWork.reusedFunctions, 0);
+});
+
+test('nested raw builtin sites compose using writes outside a reused outer contribution', () => {
+	const workspace = new LuaSemanticWorkspace();
+	const source = `${padding}local function outer()\n${padding}return function() return setmetatable({}, {}) end end\n${padding}`;
+	const old = workspace.updateFile('reuse.lua', source);
+	const current = edit(workspace, source.length, 0, 'setmetatable = custom\n');
+	assert.equal(current.bindingWork.reusedFunctions, 2);
+	assert.equal(current.functionValueFlows[0].assignments.length, 0);
+	assert.equal(old.functionValueFlows[0].assignments.length, 3);
+});
+
+test('moving retained locals into a nested block invalidates captured member scopes', () => {
+	const workspace = new LuaSemanticWorkspace();
+	const source = `do\n${padding}${padding}local item = {}\n${padding}local function inner() item.field = 1 end\n${padding}end`;
+	const old = workspace.updateFile('reuse.lua', source);
+	const offset = 3 + padding.length;
+	const end = source.lastIndexOf('end');
+	const updated = source.slice(0, offset) + 'do\n' + source.slice(offset, end) + 'end\n' + source.slice(end);
+	const current = workspace.updateFile('reuse.lua', updated, SourceChangeMap.unchanged(source.length).append([
+		{ offset, deletedLength: 0, insertedLength: 3 },
+		{ offset: end + 3, deletedLength: 0, insertedLength: 4 },
+	]));
+	assert.deepEqual(semanticAnswers(workspace.getSnapshot()), semanticAnswers(semanticSnapshot(buildLuaFileSemanticData(updated, 'reuse.lua'))));
+	assert.equal(current.functionValueFlows[0].expression, old.functionValueFlows[0].expression, 'the function syntax survives the move');
+	assert.equal(current.decls.find(decl => decl.name === 'item')!.id, old.decls.find(decl => decl.name === 'item')!.id);
+	assert.equal(current.bindingWork.boundFunctions, 1);
+	assert.equal(current.decls.find(decl => decl.name === 'field')!.scope, current.decls.find(decl => decl.name === 'item')!.scope);
+});
+
+test('nested member publications invalidate when their external lexical scope changes', () => {
+	const workspace = new LuaSemanticWorkspace();
+	const source = `local function outer()\n${padding}local item = {}\nlocal function middle()\nlocal function inner() item.field = 1 end\nreturn inner end\nreturn middle end`;
+	const old = workspace.updateFile('reuse.lua', source);
+	const current = edit(workspace, source.indexOf('do end'), 0, 'do end; ');
+	assert.equal(current.bindingWork.boundFunctions, 3);
+	assert.equal(current.bindingWork.reusedFunctions, 0);
+	const field = current.decls.find(decl => decl.name === 'field')!;
+	assert.notEqual(field.scope, old.decls.find(decl => decl.name === 'field')!.scope);
+});

@@ -1,4 +1,4 @@
-import { composeLuaBindingFacts, type LuaBindingFacts, type LuaBindingWork, type LuaBodyInsertion } from './body_facts';
+import { composeLuaBindingFacts, finishLuaBindingContribution, type LuaBindingContribution, type LuaBindingFacts, type LuaBindingWork, type LuaBodyInsertion } from './body_facts';
 import { composeLuaBuiltinOperations, type LuaBuiltinOperationSite } from './builtin_operations';
 import { createScopeId, type ScopeID, type ScopeKind, type SemanticScope } from './scope_facts';
 import type { LuaSyntaxPoint, LuaSyntaxSpan } from '../syntax/source_locations';
@@ -589,11 +589,11 @@ type CachedBody = {
 	readonly receiverKey: string | undefined;
 	readonly functionValue: OwnedSemanticValueSource;
 	readonly inputs: ReadonlyMap<string, CapturedBinding | undefined>;
-	readonly facts: LuaBindingFacts;
+	readonly contribution: LuaBindingContribution;
 };
 
 // Syntax owns lifetime: no file-generation chain or retained traversal environment.
-// The first delivery caches non-nested bodies, each containing its nested bodies.
+// Contributions retain child edges, not duplicate flattened descendant facts.
 const bodyFacts = new WeakMap<LuaFunctionExpression, CachedBody>();
 
 class SemanticBuilder {
@@ -606,6 +606,7 @@ class SemanticBuilder {
 	private readonly documentEndExclusive: LuaSyntaxPoint;
 	private readonly annotationFacts: SemanticTokenFact[] = [];
 	private readonly scopeStack: Scope[] = [];
+	private fileScope: Scope;
 	private readonly scopes: Scope[] = [];
 	private readonly decls: InternalDecl[] = [];
 	private readonly declById: Map<SymbolID, InternalDecl> = new Map();
@@ -638,7 +639,8 @@ class SemanticBuilder {
 	}) {
 		this.parent = options.parent;
 		if (this.parent !== undefined) {
-			this.scopeStack.push(...this.parent.scopeStack);
+			this.scopeStack.push(this.parent.currentScope());
+			this.fileScope = this.parent.fileScope;
 			this.externalInputs = new Map();
 		}
 		this.chunk = options.chunk;
@@ -657,10 +659,10 @@ class SemanticBuilder {
 			this.visitStatement(cursor.statement);
 		}
 		this.leaveScope();
-		return this.finish();
+		return composeLuaBindingFacts(this.finish());
 	}
 
-	private finish(): LuaBindingFacts {
+	private finish(): LuaBindingContribution {
 		const decls = this.decls.map(toDecl);
 		const scopeParents = new Map<ScopeID, ScopeID>();
 		const scopes = this.scopes.map(scope => {
@@ -672,7 +674,7 @@ class SemanticBuilder {
 				implicitSelfValue: scope.implicitSelfValue,
 			};
 		});
-		return composeLuaBindingFacts({
+		return finishLuaBindingContribution({
 			decls,
 			scopeParents,
 			scopes,
@@ -749,7 +751,7 @@ class SemanticBuilder {
 				const decl = this.declareLocal(localFunction.name, 'function', true);
 				const functionValue = this.createExpressionValueSource(localFunction.functionExpression);
 				this.setDeclarationValue(decl, functionValue, statement, 0);
-				this.visitFunctionExpression(
+				this.bindRetainedBody(
 					localFunction.functionExpression,
 					undefined,
 					functionValue,
@@ -790,7 +792,7 @@ class SemanticBuilder {
 				const functionValue = this.createExpressionValueSource(functionDeclaration.functionExpression);
 				if (decl) this.setDeclarationValue(decl, functionValue, statement, 0);
 				else this.recordValueFlow(identifierTarget.valueSource, functionValue, 'value', statement, 0);
-				this.visitFunctionExpression(
+				this.bindRetainedBody(
 					functionDeclaration.functionExpression,
 					methodSelfPath,
 					functionValue,
@@ -828,7 +830,7 @@ class SemanticBuilder {
 							selfPath = targetPath.slice(0, -1);
 						}
 						const functionValue = this.createExpressionValueSource(valueExpression);
-						this.visitFunctionExpression(valueExpression, selfPath, functionValue, targetInfo?.decl?.id, 'function');
+						this.bindRetainedBody(valueExpression, selfPath, functionValue, targetInfo?.decl?.id, 'function');
 						if (targetInfo?.decl) {
 							this.setDeclarationValue(targetInfo.decl, functionValue, statement, index);
 						}
@@ -1145,7 +1147,7 @@ class SemanticBuilder {
 			}
 			case LuaSyntaxKind.FunctionExpression: {
 				const functionValue = this.createExpressionValueSource(expression);
-				this.visitFunctionExpression(expression, undefined, functionValue, context.tableBaseDecl?.id, 'function');
+				this.bindRetainedBody(expression, undefined, functionValue, context.tableBaseDecl?.id, 'function');
 				return { namePath: null, decl: context.tableBaseDecl, valueSource: functionValue };
 			}
 			case LuaSyntaxKind.TableConstructorExpression: {
@@ -1288,7 +1290,7 @@ class SemanticBuilder {
 		}
 	}
 
-	private visitFunctionExpression(
+	private bindFunctionBody(
 		expression: LuaFunctionExpression,
 		methodSelfPath: readonly string[] | undefined,
 		functionValue: OwnedSemanticValueSource,
@@ -1296,10 +1298,6 @@ class SemanticBuilder {
 		scopeKind: 'function' | 'method',
 		methodReceiverClass?: SemanticValueSource,
 	): void {
-		if (this.parent === undefined) {
-			this.bindRetainedBody(expression, methodSelfPath, functionValue, declaration, scopeKind, methodReceiverClass);
-			return;
-		}
 		this.work.boundFunctions++;
 		const explicitReceiverClass = !methodReceiverClass && methodSelfPath
 			? this.resolveValueSourceFromNamePath(methodSelfPath)
@@ -1362,34 +1360,35 @@ class SemanticBuilder {
 		functionValue: OwnedSemanticValueSource,
 		declaration: SymbolID | undefined,
 		scopeKind: 'function' | 'method',
-		methodReceiverClass: SemanticValueSource | undefined,
+		methodReceiverClass?: SemanticValueSource,
 	): void {
 		const receiver = methodReceiverClass ?? (methodSelfPath === undefined ? undefined : this.resolveValueSourceFromNamePath(methodSelfPath));
 		const receiverKey = receiver === undefined ? undefined : semanticValueSourceKey(receiver);
 		const previous = bodyFacts.get(expression);
-		let facts: LuaBindingFacts;
-		let fileScope = this.scopeStack[0].id;
+		let contribution: LuaBindingContribution;
+		let fileScope = this.fileScope.id;
+		let parentScope = this.currentScope().id;
 		if (previous !== undefined && previous.file === this.path
-			&& (previous.parentScope === previous.rootScope
-				? this.currentScope() === this.scopeStack[0] : previous.parentScope === this.currentScope().id)
 			&& previous.declaration === declaration && previous.scopeKind === scopeKind
 			&& previous.receiverKey === receiverKey && this.matchesInputs(previous.inputs, previous.rootScope)) {
-			facts = previous.facts;
+			contribution = previous.contribution;
+			parentScope = previous.parentScope;
 			fileScope = previous.rootScope;
-			this.work.reusedFunctions += facts.functionValueFlows.length;
+			this.work.reusedFunctions += contribution.counts.functionValueFlows;
 		} else {
 			const builder = new SemanticBuilder({ parent: this, path: this.path, chunk: this.chunk, documentEndExclusive: this.documentEndExclusive });
-			builder.visitFunctionExpression(expression, methodSelfPath, functionValue, declaration, scopeKind, methodReceiverClass);
-			facts = builder.finish();
+			builder.bindFunctionBody(expression, methodSelfPath, functionValue, declaration, scopeKind, methodReceiverClass);
+			contribution = builder.finish();
 			bodyFacts.set(expression, {
-				file: this.path, parentScope: this.currentScope().id, rootScope: this.scopeStack[0].id,
-				declaration, scopeKind, receiverKey, functionValue, inputs: builder.externalInputs!, facts,
+				file: this.path, parentScope: this.currentScope().id, rootScope: this.fileScope.id,
+				declaration, scopeKind, receiverKey, functionValue, inputs: builder.externalInputs!, contribution,
 			});
 			this.work.boundFunctions += builder.work.boundFunctions;
+			this.work.reusedFunctions += builder.work.reusedFunctions;
 			this.work.visitedStatements += builder.work.visitedStatements;
 			this.work.visitedExpressions += builder.work.visitedExpressions;
 		}
-		this.bodyInsertions.push({ facts, fileScope, offsets: {
+		this.bodyInsertions.push({ contribution, fileScope, parentScope, attachedParent: this.currentScope().id, offsets: {
 			decls: this.decls.length, scopes: this.scopes.length, refs: this.refs.length,
 			memberAccesses: this.memberAccesses.length, annotationFacts: this.annotationFacts.length,
 			callSites: this.callSites.length, declarationValues: this.declarationValues.length,
@@ -1409,7 +1408,7 @@ class SemanticBuilder {
 				if (binding?.kind !== 'receiver' || binding.valueSource.root.id !== expected.value.root.id) return false;
 			} else {
 				if (!binding || binding.kind === 'receiver' || binding.id !== expected.id
-					|| binding.scope !== (expected.scope === previousFileScope ? this.scopeStack[0].id : expected.scope)
+					|| binding.scope !== (expected.scope === previousFileScope ? this.fileScope.id : expected.scope)
 					|| binding.isGlobal !== expected.global
 					|| this.hasUnknownRead(binding.id) !== expected.unknownRead) return false;
 			}
@@ -1768,7 +1767,7 @@ class SemanticBuilder {
 	}
 
 	private declareGlobal(identifier: LuaIdentifierExpression, kind: 'global' | 'function' = 'global'): InternalDecl {
-		const scope = this.scopeStack[0];
+		const scope = this.fileScope;
 		const namePath = [identifier.name];
 		const decl = this.createDecl({
 			syntax: identifier,
@@ -2040,7 +2039,7 @@ class SemanticBuilder {
 	private createExpressionValueSource(expression: LuaExpression): OwnedSemanticValueSource {
 		const retained = this.ownedValuesBySyntax.get(expression);
 		if (retained !== undefined) return retained;
-		const cached = this.parent === undefined && expression.kind === LuaSyntaxKind.FunctionExpression ? bodyFacts.get(expression) : undefined;
+		const cached = expression.kind === LuaSyntaxKind.FunctionExpression ? bodyFacts.get(expression) : undefined;
 		const source = cached !== undefined && cached.file === this.path
 			? cached.functionValue : ownedValueSource(this.path, expression, 'expression');
 		this.ownedValuesBySyntax.set(expression, source);
@@ -2074,12 +2073,12 @@ class SemanticBuilder {
 		while (scope) {
 			const binding = scope.bindings.get(name);
 			if (binding) {
-				if (scope.owner !== this) this.captureInput(name, binding);
+				for (let builder: SemanticBuilder = this; builder !== scope.owner; builder = builder.parent!) builder.captureInput(name, binding);
 				return binding;
 			}
 			scope = scope.parent;
 		}
-		this.captureInput(name, undefined);
+		for (let builder: SemanticBuilder | undefined = this; builder !== undefined; builder = builder.parent) builder.captureInput(name, undefined);
 		return null;
 	}
 
@@ -2102,6 +2101,7 @@ class SemanticBuilder {
 			bindings: new Map(),
 			declarations: [],
 		};
+		if (this.parent === undefined && this.scopeStack.length === 0) this.fileScope = scope;
 		this.scopes.push(scope);
 		this.scopeStack.push(scope);
 		return scope;
