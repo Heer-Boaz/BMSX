@@ -1,3 +1,4 @@
+import type { LuaStatementSequence } from '../statement_sequence';
 import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
@@ -171,11 +172,11 @@ export function walkLuaAst(
 }
 
 function walkLuaStatements(
-	statements: ReadonlyArray<LuaStatement>,
+	statements: LuaStatementSequence,
 	visit: (node: LuaAstNode) => void | false,
 ): void {
-	for (let index = 0; index < statements.length; index += 1) {
-		walkLuaAst(statements[index], visit);
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		walkLuaAst(cursor.statement, visit);
 	}
 }
 

@@ -150,6 +150,6 @@ test('an imported effect owns its list and scalar fields; source edit and Undo r
 	sourceModel.undo(); project.updateFile('definition.lua', sourceModel.buffer.getText());
 	installBehaviorLensDocument(view, document());
 	assert.equal(sourceModel.buffer.getText(), effect); assert.equal(sourceModel.dirty, false);
-	const statement = project.getFileData('definition.lua')!.chunk.body[0];
+	const statement = project.getFileData('definition.lua')!.chunk.body.get(0)!;
 	assert.ok(statement.kind === LuaSyntaxKind.ReturnStatement);
 });

@@ -1,5 +1,6 @@
+import type { LuaStatementSequence } from '../../../../toolchain/ts/lua/syntax/statement_sequence';
 import { defineLintRule } from '../../rule';
-import { LuaAssignmentOperator as AssignmentOperator, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaIdentifierExpression as IdentifierExpression, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintContext } from '../../lua_rule';
 import { isModuleFieldAssignmentTarget } from './impl/support/object_ownership';
 import { isSingleUseLocalCandidateValue } from './impl/support/single_use_local';
@@ -7,10 +8,11 @@ import { pushIssue } from './impl/support/lint_context';
 
 export const stagedExportLocalCallPatternRule = defineLintRule('cart', 'staged_export_local_call_pattern');
 
-export function lintStagedExportLocalCallPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
+export function lintStagedExportLocalCallPattern(statements: LuaStatementSequence, lint: CartLintContext): void {
 	const stagedLocalCallDeclarations = new Map<string, IdentifierExpression>();
 	const flagged = new Set<string>();
-	for (const statement of statements) {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		if (statement.kind === SyntaxKind.LocalAssignmentStatement) {
 			const valueCount = Math.min(statement.names.length, statement.values.length);
 			for (let index = 0; index < valueCount; index += 1) {

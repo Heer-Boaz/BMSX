@@ -20,8 +20,8 @@ for (const functions of [32, 1024]) {
 	console.log(JSON.stringify({ functions, sourceUtf16: source.length, scopes: file.scopes.length,
 		declarations: file.decls.length, binderMilliseconds, boundary: '10 binds per sample on the same retained parse; no parsing, workspace resolution or compilation' }));
 	if (binderOnly) continue;
-	const from = file.chunk.body[1];
-	const target = file.chunk.body[file.chunk.body.length - 1];
+	const from = file.chunk.body.get(1)!;
+	const target = file.chunk.body.get(file.chunk.body.length - 1)!;
 	assert.ok(from.kind === LuaSyntaxKind.LocalAssignmentStatement && from.values[0].kind === LuaSyntaxKind.TableConstructorExpression);
 	assert.ok(target.kind === LuaSyntaxKind.LocalAssignmentStatement);
 	const field = from.values[0].fields[0];

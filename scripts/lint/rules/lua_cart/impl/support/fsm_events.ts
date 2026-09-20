@@ -117,7 +117,7 @@ export function getLifecycleWrapperCallExpression(functionExpression: CartFuncti
 	if (functionExpression.body.body.length !== 1) {
 		return undefined;
 	}
-	const onlyStatement = functionExpression.body.body[0];
+	const onlyStatement = functionExpression.body.body.get(0);
 	let expression: Expression | undefined;
 	if (onlyStatement.kind === SyntaxKind.CallStatement) {
 		expression = onlyStatement.expression;

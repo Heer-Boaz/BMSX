@@ -40,8 +40,8 @@ const collectTopLevelFunctionExpressions = (
 	semantics: LuaSemanticFrontendFile,
 ): Map<string, TopLevelFunction> => {
 	const functions = new Map<string, TopLevelFunction>();
-	for (let index = 0; index < chunk.body.length; index += 1) {
-		const statement = chunk.body[index];
+	for (const cursor = chunk.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		if (statement.kind === LuaSyntaxKind.LocalFunctionStatement) {
 			const localFunction = statement as LuaLocalFunctionStatement;
 			const declaration = getBoundDeclaration(semantics, localFunction.name);

@@ -1,3 +1,4 @@
+import type { LuaStatementSequence } from '../../../../../../toolchain/ts/lua/syntax/statement_sequence';
 import type { LuaSourceLocations } from '../../../../../../toolchain/ts/lua/syntax/source_locations';
 import { LuaAssignmentOperator as AssignmentOperator, LuaBinaryOperator as BinaryOperator, type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { evaluateTopLevelStringConstantExpression } from './conditions';
@@ -80,8 +81,8 @@ export function discardBindingScope<TBinding>(context: BindingContext<TBinding>)
 
 export function lintScopedBindingStatements<TBinding, TContext extends BindingContext<TBinding>>(
 	context: TContext,
-	statements: ReadonlyArray<Statement>,
-	lintStatements: (statements: ReadonlyArray<Statement>, context: TContext) => void,
+	statements: LuaStatementSequence,
+	lintStatements: (statements: LuaStatementSequence, context: TContext) => void,
 ): void {
 	enterBindingScope(context);
 	lintStatements(statements, context);
@@ -91,7 +92,7 @@ export function lintScopedBindingStatements<TBinding, TContext extends BindingCo
 export function lintNullBindingFunctionScope<TBinding, TContext extends BindingContext<TBinding | null>>(
 	context: TContext,
 	functionExpression: CartFunctionExpression,
-	lintStatements: (statements: ReadonlyArray<Statement>, context: TContext) => void,
+	lintStatements: (statements: LuaStatementSequence, context: TContext) => void,
 ): void {
 	enterBindingScope(context);
 	for (const parameter of functionExpression.parameters) {
@@ -118,12 +119,13 @@ export function isConstantSourceIdentifierName(name: string, context: ConstantCo
 }
 
 export function collectTopLevelLocalStringConstants(
-	statements: ReadonlyArray<Statement>,
+	statements: LuaStatementSequence,
 	locations: LuaSourceLocations,
 ): TopLevelLocalStringConstant[] {
 	const constants: TopLevelLocalStringConstant[] = [];
 	const knownValues = new Map<string, string>();
-	for (const statement of statements) {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		if (statement.kind !== SyntaxKind.LocalAssignmentStatement) {
 			continue;
 		}

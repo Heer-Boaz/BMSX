@@ -1,24 +1,37 @@
 import { decodeBinary, encodeBinary } from '../../../../machine/ts/common/serializer/binencoder';
 import { LuaSyntaxError } from '../errors';
-import { LuaSyntaxKind, LuaTableFieldKind, type LuaChunk, type LuaSkippedSyntax, type LuaTableField, type LuaTypeReference } from './ast';
+import { LuaSyntaxKind, LuaTableFieldKind, type LuaChunk, type LuaSkippedSyntax, type LuaStatement, type LuaTableField, type LuaTypeReference } from './ast';
 import type { LuaAstNode } from './ast/traversal';
 import { createLuaSourceUnit, type LuaSourceUnit, type LuaSourceUnitPlacement } from './source_layout';
 import { LuaSourceLocations, type LuaSyntaxSpan } from './source_locations';
 import type { LuaToken } from './token';
+import { LuaStatementSequence } from './statement_sequence';
 import { LuaTokenSequence } from './token_sequence';
 
 /** Storage ordinals, not runtime occurrence identities or source coordinates. */
 type UnitOrdinal = number & { readonly __syntaxUnitOrdinal: unique symbol };
 type SpanOrdinal = number & { readonly __syntaxSpanOrdinal: unique symbol };
 type StoredSpan = { readonly unit: UnitOrdinal; readonly start: number; readonly end: number };
-type SyntaxData<T, Span, Unit> = T extends LuaSyntaxSpan ? Span
+type SyntaxData<T, Span, Unit, Statements> = T extends LuaSyntaxSpan ? Span
+	: T extends LuaStatementSequence ? Statements
 	: T extends LuaSkippedSyntax ? { readonly span: Span; readonly units: readonly Unit[] }
-	: T extends object ? { readonly [Key in keyof T]: SyntaxData<T[Key], Span, Unit> } : T;
+	: T extends object ? { readonly [Key in keyof T]: SyntaxData<T[Key], Span, Unit, Statements> } : T;
 type ChunkData = Omit<LuaChunk, 'locations' | 'syntaxError' | 'tokens'>;
-type NodeData<Span, Unit> = SyntaxData<Exclude<LuaAstNode, LuaChunk>, Span, Unit>;
+type NodeData<Span, Unit, Statements> = SyntaxData<Exclude<LuaAstNode, LuaChunk>, Span, Unit, Statements>;
+type StoredStatements = {
+	readonly context: number;
+	readonly parts: readonly {
+		readonly statement: SyntaxData<LuaStatement, SpanOrdinal, UnitOrdinal, StoredStatements> | null;
+		readonly width: number;
+		readonly readWidth: number;
+		readonly recovery: boolean;
+		readonly endsNewLine: boolean;
+		readonly units: readonly UnitOrdinal[];
+	}[];
+};
 type StoredToken = Omit<LuaToken, keyof LuaSyntaxSpan> & { readonly span: SpanOrdinal };
 type StoredChunk = {
-	readonly syntax: SyntaxData<ChunkData, SpanOrdinal, UnitOrdinal>;
+	readonly syntax: SyntaxData<ChunkData, SpanOrdinal, UnitOrdinal, StoredStatements>;
 	readonly path: string;
 	readonly lexical: readonly { readonly unit: UnitOrdinal; readonly items: readonly StoredToken[] }[];
 	readonly offsets: readonly number[];
@@ -30,28 +43,32 @@ type StoredChunk = {
  * Schema-directed wire projection. Only the storage boundary walks syntax;
  * parser publication and live location queries never clone executable nodes.
  */
-class SyntaxUnits<FromSpan, FromUnit, ToSpan, ToUnit> {
-	public constructor(public readonly span: (span: FromSpan) => ToSpan, private readonly unit: (unit: FromUnit) => ToUnit) {}
+class SyntaxUnits<FromSpan, FromUnit, FromStatements, ToSpan, ToUnit, ToStatements> {
+	public constructor(
+		public readonly span: (span: FromSpan) => ToSpan,
+		private readonly unit: (unit: FromUnit) => ToUnit,
+		public readonly statements: (body: FromStatements) => ToStatements,
+	) {}
 
-	public skipped(entries: readonly SyntaxData<LuaSkippedSyntax, FromSpan, FromUnit>[]): readonly SyntaxData<LuaSkippedSyntax, ToSpan, ToUnit>[] {
+	public skipped(entries: readonly SyntaxData<LuaSkippedSyntax, FromSpan, FromUnit, FromStatements>[]): readonly SyntaxData<LuaSkippedSyntax, ToSpan, ToUnit, ToStatements>[] {
 		return entries.map(entry => ({ span: this.span(entry.span), units: entry.units.map(this.unit) }));
 	}
 
-	public type(ref: SyntaxData<LuaTypeReference, FromSpan, FromUnit>): SyntaxData<LuaTypeReference, ToSpan, ToUnit> {
+	public type(ref: SyntaxData<LuaTypeReference, FromSpan, FromUnit, FromStatements>): SyntaxData<LuaTypeReference, ToSpan, ToUnit, ToStatements> {
 		return { ...ref, span: this.span(ref.span), arrayLengths: ref.arrayLengths.map(length => length === null ? null : this.node(length)) };
 	}
 
-	public field(field: SyntaxData<LuaTableField, FromSpan, FromUnit>): SyntaxData<LuaTableField, ToSpan, ToUnit> {
+	public field(field: SyntaxData<LuaTableField, FromSpan, FromUnit, FromStatements>): SyntaxData<LuaTableField, ToSpan, ToUnit, ToStatements> {
 		const span = this.span(field.span), value = this.node(field.value);
 		return field.kind === LuaTableFieldKind.ExpressionKey
 			? { ...field, span, value, key: this.node(field.key) } : { ...field, span, value };
 	}
 
-	public node<Kind extends NodeData<FromSpan, FromUnit>['kind']>(node: NodeData<FromSpan, FromUnit> & { readonly kind: Kind }): Extract<NodeData<ToSpan, ToUnit>, { readonly kind: Kind }>;
-	public node(node: NodeData<FromSpan, FromUnit>): NodeData<ToSpan, ToUnit> {
+	public node<Kind extends NodeData<FromSpan, FromUnit, FromStatements>['kind']>(node: NodeData<FromSpan, FromUnit, FromStatements> & { readonly kind: Kind }): Extract<NodeData<ToSpan, ToUnit, ToStatements>, { readonly kind: Kind }>;
+	public node(node: NodeData<FromSpan, FromUnit, FromStatements>): NodeData<ToSpan, ToUnit, ToStatements> {
 		const span = this.span(node.span);
 		switch (node.kind) {
-			case LuaSyntaxKind.Block: return { ...node, span, body: node.body.map(item => this.node(item)), skippedSyntax: this.skipped(node.skippedSyntax) };
+			case LuaSyntaxKind.Block: return { ...node, span, body: this.statements(node.body), skippedSyntax: this.skipped(node.skippedSyntax) };
 			case LuaSyntaxKind.AssignmentStatement: return { ...node, span, left: node.left.map(item => this.node(item)), right: node.right.map(item => this.node(item)) };
 			case LuaSyntaxKind.LocalAssignmentStatement: return { ...node, span, names: node.names.map(item => this.node(item)), values: node.values.map(item => this.node(item)),
 				pointerTypeRefs: node.pointerTypeRefs.map(ref => ref === null ? null : this.type(ref)) };
@@ -111,7 +128,7 @@ export function encodeLuaChunk(chunk: LuaChunk): Uint8Array {
 	}
 	const spans: StoredSpan[] = [];
 	const spanOrdinals = new Map<LuaSyntaxSpan, SpanOrdinal>();
-	const mapper = new SyntaxUnits<LuaSyntaxSpan, LuaSourceUnit, SpanOrdinal, UnitOrdinal>(span => {
+	const mapper: SyntaxUnits<LuaSyntaxSpan, LuaSourceUnit, LuaStatementSequence, SpanOrdinal, UnitOrdinal, StoredStatements> = new SyntaxUnits(span => {
 		let ordinal = spanOrdinals.get(span);
 		if (ordinal === undefined) {
 			ordinal = spans.length as SpanOrdinal;
@@ -119,10 +136,17 @@ export function encodeLuaChunk(chunk: LuaChunk): Uint8Array {
 			spans.push({ unit: ordinals.get(span.unit)!, start: span.start, end: span.end });
 		}
 		return ordinal;
-	}, unit => ordinals.get(unit)!);
-	const syntax: SyntaxData<ChunkData, SpanOrdinal, UnitOrdinal> = {
+	}, unit => ordinals.get(unit)!, body => ({
+		context: body.context,
+		parts: Array.from(body.parts(), part => ({
+			statement: part.statement === null ? null : mapper.node(part.statement),
+			width: part.width, readWidth: part.readWidth, recovery: part.recovery, endsNewLine: part.endsNewLine,
+			units: part.units.map(unit => ordinals.get(unit)!),
+		})),
+	}));
+	const syntax: SyntaxData<ChunkData, SpanOrdinal, UnitOrdinal, StoredStatements> = {
 		kind: chunk.kind, span: mapper.span(chunk.span), source: chunk.source,
-		body: chunk.body.map(node => mapper.node(node)), skippedSyntax: mapper.skipped(chunk.skippedSyntax),
+		body: mapper.statements(chunk.body), skippedSyntax: mapper.skipped(chunk.skippedSyntax),
 		constModule: chunk.constModule, entryModule: chunk.entryModule,
 	};
 	const error = chunk.syntaxError;
@@ -148,10 +172,16 @@ export function decodeLuaChunk(bytes: Uint8Array): LuaChunk {
 		return { unit, offset };
 	});
 	const spans: LuaSyntaxSpan[] = stored.spans.map(span => ({ unit: units[span.unit], start: span.start, end: span.end }));
-	const mapper = new SyntaxUnits<SpanOrdinal, UnitOrdinal, LuaSyntaxSpan, LuaSourceUnit>(ordinal => spans[ordinal], ordinal => units[ordinal]);
+	const mapper: SyntaxUnits<SpanOrdinal, UnitOrdinal, StoredStatements, LuaSyntaxSpan, LuaSourceUnit, LuaStatementSequence> = new SyntaxUnits(
+		ordinal => spans[ordinal], ordinal => units[ordinal], body => LuaStatementSequence.fromParts(body.context, body.parts.map(part => ({
+			statement: part.statement === null ? null : mapper.node(part.statement),
+			width: part.width, readWidth: part.readWidth, recovery: part.recovery, endsNewLine: part.endsNewLine,
+			units: part.units.map(ordinal => units[ordinal]),
+		}))),
+	);
 	const syntax = stored.syntax, error = stored.error;
 	return {
-		...syntax, span: mapper.span(syntax.span), body: syntax.body.map(node => mapper.node(node)), skippedSyntax: mapper.skipped(syntax.skippedSyntax),
+		...syntax, span: mapper.span(syntax.span), body: mapper.statements(syntax.body), skippedSyntax: mapper.skipped(syntax.skippedSyntax),
 		tokens: LuaTokenSequence.fromBlocks(stored.lexical.map(block => ({ unit: units[block.unit],
 			items: block.items.map(({ span, ...data }) => ({ ...data, ...mapper.span(span) })),
 		}))),

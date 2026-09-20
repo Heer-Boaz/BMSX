@@ -18,7 +18,7 @@ export function lintFsmEventReemitHandlerPatternInMap(mapExpression: Expression,
 		if (goFunction.body.body.length !== 1) {
 			continue;
 		}
-		const onlyStatement = goFunction.body.body[0];
+		const onlyStatement = goFunction.body.body.get(0);
 		if (onlyStatement.kind !== SyntaxKind.CallStatement) {
 			continue;
 		}

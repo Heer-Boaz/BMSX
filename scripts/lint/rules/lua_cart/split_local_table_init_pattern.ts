@@ -1,14 +1,15 @@
+import type { LuaStatementSequence } from '../../../../toolchain/ts/lua/syntax/statement_sequence';
 import { defineLintRule } from '../../rule';
-import { LuaAssignmentOperator as AssignmentOperator, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintContext } from '../../lua_rule';
 import { isIdentifier } from './impl/support/bindings';
 import { pushIssue } from './impl/support/lint_context';
 
 export const splitLocalTableInitPatternRule = defineLintRule('cart', 'split_local_table_init_pattern');
 
-export function lintSplitLocalTableInitPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
-	for (let index = 0; index < statements.length; index += 1) {
-		const statement = statements[index];
+export function lintSplitLocalTableInitPattern(statements: LuaStatementSequence, lint: CartLintContext): void {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		if (statement.kind !== SyntaxKind.LocalAssignmentStatement) {
 			continue;
 		}
@@ -16,8 +17,8 @@ export function lintSplitLocalTableInitPattern(statements: ReadonlyArray<Stateme
 			continue;
 		}
 		const localName = statement.names[0].name;
-		for (let nextIndex = index + 1; nextIndex < statements.length; nextIndex += 1) {
-			const nextStatement = statements[nextIndex];
+		for (const next = statements.cursor(cursor.index + 1); next.statement !== undefined; next.advance()) {
+			const nextStatement = next.statement;
 			if (nextStatement.kind === SyntaxKind.LocalAssignmentStatement) {
 				if (nextStatement.names.some(name => name.name === localName)) {
 					break;

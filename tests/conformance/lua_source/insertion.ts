@@ -15,7 +15,7 @@ const paths = execFileSync('git', ['ls-files', 'cartlib', 'machine/bios', 'carts
 const locations = new Set(['range', 'startInclusive', 'endExclusive', 'line', 'column']);
 const stripLocations = (key: string, value: unknown) => locations.has(key) ? undefined : value;
 const fieldSource = '__bmsx_insert_probe = 7';
-const probe = parseLuaChunk(`local probe = {${fieldSource}}`, 'probe.lua').chunk!.body[0];
+const probe = parseLuaChunk(`local probe = {${fieldSource}}`, 'probe.lua').chunk!.body.get(0)!;
 if (probe.kind !== LuaSyntaxKind.LocalAssignmentStatement) throw new Error('expected probe assignment');
 const probeTable = probe.values[0];
 if (probeTable.kind !== LuaSyntaxKind.TableConstructorExpression) throw new Error('expected probe table');

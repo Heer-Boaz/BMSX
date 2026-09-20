@@ -1,4 +1,5 @@
-import { type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, type LuaTableField as TableField, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
+import type { LuaStatementSequence } from '../../../../../../toolchain/ts/lua/syntax/statement_sequence';
+import { type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, LuaSyntaxKind as SyntaxKind, type LuaTableField as TableField, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintContext } from '../../../../lua_rule';
 import { lintExpression } from '../../../../../rompacker/cart_lua_linter_runtime';
 import { lintCollectionLabelPatterns } from '../../fsm_id_label_pattern';
@@ -72,11 +73,12 @@ export function isStaticLookupTableConstructor(expression: Expression): boolean 
 }
 
 export function lintInlineStaticLookupTableStatements(
-	statements: ReadonlyArray<Statement>,
+	statements: LuaStatementSequence,
 	functionName: string,
 	lint: CartLintContext,
 ): void {
-	for (const statement of statements) {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case SyntaxKind.LocalAssignmentStatement:
 				for (const value of statement.values) {

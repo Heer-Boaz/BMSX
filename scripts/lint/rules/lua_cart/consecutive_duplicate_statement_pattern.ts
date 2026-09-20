@@ -1,3 +1,4 @@
+import type { LuaStatementSequence } from '../../../../toolchain/ts/lua/syntax/statement_sequence';
 import {
 	LuaSyntaxKind as SyntaxKind,
 	type LuaExpression as Expression,
@@ -11,13 +12,14 @@ import { pushIssue } from './impl/support/lint_context';
 
 const duplicateMessage = 'Consecutive duplicate statement is forbidden. Remove the duplicate or replace intentional repetition with a named loop/helper.';
 
-export function lintConsecutiveDuplicateStatementPattern(statements: ReadonlyArray<Statement>, tokens: LuaTokenSequence, lint: CartLintContext): void {
+export function lintConsecutiveDuplicateStatementPattern(statements: LuaStatementSequence, tokens: LuaTokenSequence, lint: CartLintContext): void {
 	if (statements.length > 1) {
-		let previous = statements[0];
+		const cursor = statements.cursor();
+		let previous = cursor.statement!;
 		let previousStart = lint.locations.offset(previous.span.unit, previous.span.start);
 		let previousEnd = lint.locations.offset(previous.span.unit, previous.span.end);
-		for (let index = 1; index < statements.length; index += 1) {
-			const statement = statements[index];
+		while (cursor.advance()) {
+			const statement = cursor.statement!;
 			const start = lint.locations.offset(statement.span.unit, statement.span.start);
 			const end = lint.locations.offset(statement.span.unit, statement.span.end);
 			if (statement.kind !== SyntaxKind.CallStatement
@@ -30,8 +32,8 @@ export function lintConsecutiveDuplicateStatementPattern(statements: ReadonlyArr
 			previousEnd = end;
 		}
 	}
-	for (let index = 0; index < statements.length; index += 1) {
-		lintStatementChildren(statements[index], tokens, lint);
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		lintStatementChildren(cursor.statement, tokens, lint);
 	}
 }
 

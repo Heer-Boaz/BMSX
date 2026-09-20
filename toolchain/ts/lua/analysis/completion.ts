@@ -1,9 +1,9 @@
+import type { LuaStatementSequence } from '../syntax/statement_sequence';
 import {
 	LuaBinaryOperator,
 	LuaSyntaxKind,
 	LuaUnaryOperator,
 	type LuaExpression,
-	type LuaStatement,
 } from '../syntax/ast';
 
 export const enum LuaCompletion {
@@ -34,7 +34,7 @@ export class LuaCompletionAnalysis {
 	private unboundLabels = 0;
 	private completion = LuaCompletion.None;
 
-	public analyze(body: readonly LuaStatement[]): LuaCompletion {
+	public analyze(body: LuaStatementSequence): LuaCompletion {
 		this.nodeCount = 2;
 		this.generation += 1;
 		this.unboundLabels = 0;
@@ -60,10 +60,10 @@ export class LuaCompletionAnalysis {
 		return this.completion;
 	}
 
-	private buildBlock(body: readonly LuaStatement[], next: number, breakTarget: number | undefined): number {
+	private buildBlock(body: LuaStatementSequence, next: number, breakTarget: number | undefined): number {
 		let entry = next;
-		for (let index = body.length - 1; index >= 0; index -= 1) {
-			const statement = body[index];
+		for (const cursor = body.cursor(body.length); cursor.retreat();) {
+			const statement = cursor.statement!;
 			switch (statement.kind) {
 				case LuaSyntaxKind.ReturnStatement:
 					entry = RETURN;

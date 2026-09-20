@@ -1,3 +1,4 @@
+import type { LuaStatementSequence } from '../../../../../../toolchain/ts/lua/syntax/statement_sequence';
 import { LuaAssignmentOperator as AssignmentOperator, type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind, LuaUnaryOperator as UnaryOperator } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { isIdentifier } from './bindings';
 import { isBuiltinCallExpression } from './calls';
@@ -101,7 +102,7 @@ export function matchesPureCopyFunctionPattern(functionExpression: CartFunctionE
 	if (body.length !== 1) {
 		return false;
 	}
-	const onlyStatement = body[0];
+	const onlyStatement = body.get(0);
 	if (onlyStatement.kind !== SyntaxKind.ReturnStatement || onlyStatement.expressions.length !== 1) {
 		return false;
 	}
@@ -144,7 +145,7 @@ export function matchesGetterPattern(functionExpression: CartFunctionExpression)
 	if (body.length !== 1) {
 		return false;
 	}
-	const returnStatement = body[0];
+	const returnStatement = body.get(0);
 	if (returnStatement.kind !== SyntaxKind.ReturnStatement || returnStatement.expressions.length !== 1) {
 		return false;
 	}
@@ -160,7 +161,7 @@ export function matchesSetterPattern(functionExpression: CartFunctionExpression)
 	if (functionExpression.parameters.length < 1 || body.length !== 1) {
 		return false;
 	}
-	const assignment = body[0];
+	const assignment = body.get(0);
 	if (assignment.kind !== SyntaxKind.AssignmentStatement) {
 		return false;
 	}
@@ -208,8 +209,9 @@ export function matchesBuiltinRecreationPattern(functionExpression: CartFunction
 	return matchesForwardedArgumentList(expression.arguments, getFunctionParameterNames(functionExpression));
 }
 
-export function collectOptionsParameterUseInStatements(statements: ReadonlyArray<Statement>, parameterName: string, use: OptionsParameterUse): void {
-	for (const statement of statements) {
+export function collectOptionsParameterUseInStatements(statements: LuaStatementSequence, parameterName: string, use: OptionsParameterUse): void {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case SyntaxKind.LocalAssignmentStatement:
 				for (const value of statement.values) {

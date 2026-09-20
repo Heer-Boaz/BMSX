@@ -1,5 +1,6 @@
+import type { LuaStatementSequence } from '../../../../toolchain/ts/lua/syntax/statement_sequence';
 import { defineLintRule } from '../../rule';
-import { type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
+import { type LuaFunctionExpression as CartFunctionExpression, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import { lintScopedBindingStatements } from './impl/support/bindings';
 import { declareDuplicateInitializerBinding, enterDuplicateInitializerScope, leaveDuplicateInitializerScope, lintDuplicateInitializerInExpression, resolveDuplicateInitializerBinding } from './impl/support/duplicate_initializers';
 import { getExpressionSignature } from './impl/support/expression_signatures';
@@ -9,10 +10,11 @@ import { pushIssue } from './impl/support/lint_context';
 export const duplicateInitializerPatternRule = defineLintRule('cart', 'duplicate_initializer_pattern');
 
 export function lintDuplicateInitializerInStatements(
-	statements: ReadonlyArray<Statement>,
+	statements: LuaStatementSequence,
 	context: DuplicateInitializerContext,
 ): void {
-	for (const statement of statements) {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case SyntaxKind.LocalAssignmentStatement: {
 				for (const value of statement.values) {

@@ -1,5 +1,6 @@
 // start repeated-sequence-acceptable -- Program codegen keeps opcode/slot emission direct; helper extraction would add dispatch in compile hot paths.
 // start normalized-body-acceptable -- Resolver/emitter specializations share shapes but preserve distinct compiler ownership.
+import type { LuaStatementSequence } from './syntax/statement_sequence';
 import { CapturedLocalKind } from './compiler/capture_kind';
 import {
 	LuaAssignmentOperator,
@@ -1399,8 +1400,8 @@ class FunctionBuilder {
 		this.registerStructDeclarations(chunk.body);
 		this.flowAnalysis = new ValueKindFlowAnalyzer(chunk.body, this.semantics);
 		this.pushScope(chunk.locations.range(chunk.span));
-		for (let i = 0; i < chunk.body.length; i += 1) {
-			this.compileStatement(chunk.body[i]);
+		for (const cursor = chunk.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+			this.compileStatement(cursor.statement);
 			this.resetTemps();
 		}
 		this.popScope();
@@ -1460,8 +1461,8 @@ class FunctionBuilder {
 	public compileStaticModuleScope(chunk: LuaChunk): void {
 		this.registerStructDeclarations(chunk.body);
 		this.pushScope(chunk.locations.range(chunk.span));
-		for (let index = 0; index < chunk.body.length; index += 1) {
-			const statement = chunk.body[index];
+		for (const cursor = chunk.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+			const statement = cursor.statement;
 			if (statement.kind === LuaSyntaxKind.LocalFunctionStatement) {
 				const localFunction = statement as LuaLocalFunctionStatement;
 				const decl = getResolvedDeclaration(this.semantics, localFunction.name);
@@ -1530,8 +1531,8 @@ class FunctionBuilder {
 			const decl = getResolvedDeclaration(this.semantics, parameter);
 			this.declareLocalFromDecl(decl, this.semantics.locations.range(parameter.span), this.semantics.locations.range(expression.span));
 		}
-		for (let i = 0; i < expression.body.body.length; i += 1) {
-			this.compileStatement(expression.body.body[i]);
+		for (const cursor = expression.body.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+			this.compileStatement(cursor.statement);
 			this.resetTemps();
 		}
 		this.popScope();
@@ -1707,9 +1708,9 @@ class FunctionBuilder {
 		this.finalizeLabels();
 	}
 
-	private registerStructDeclarations(statements: ReadonlyArray<LuaStatement>): void {
-		for (let index = 0; index < statements.length; index += 1) {
-			const statement = statements[index];
+	private registerStructDeclarations(statements: LuaStatementSequence): void {
+		for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+			const statement = cursor.statement;
 			if (statement.kind === LuaSyntaxKind.StructDeclarationStatement) {
 				this.program.registerStructDeclaration(statement as LuaStructDeclarationStatement);
 			}
@@ -3820,8 +3821,8 @@ class FunctionBuilder {
 					return;
 				case LuaSyntaxKind.DoStatement:
 					this.pushScope(this.semantics.locations.range(statement.block.span));
-					for (let i = 0; i < statement.block.body.length; i += 1) {
-						this.compileStatement(statement.block.body[i]);
+					for (const cursor = statement.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+						this.compileStatement(cursor.statement);
 						this.resetTemps();
 					}
 					this.popScope();
@@ -4593,8 +4594,8 @@ class FunctionBuilder {
 				const jumpsToNext: number[] = [];
 				this.compileConditionJumps(clause.condition, false, jumpsToNext);
 				this.pushScope(this.semantics.locations.range(clause.block.span));
-				for (let j = 0; j < clause.block.body.length; j += 1) {
-					this.compileStatement(clause.block.body[j]);
+				for (const cursor = clause.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+					this.compileStatement(cursor.statement);
 					this.resetTemps();
 				}
 				this.popScope();
@@ -4605,8 +4606,8 @@ class FunctionBuilder {
 				continue;
 			}
 			this.pushScope(this.semantics.locations.range(clause.block.span));
-			for (let j = 0; j < clause.block.body.length; j += 1) {
-				this.compileStatement(clause.block.body[j]);
+			for (const cursor = clause.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+				this.compileStatement(cursor.statement);
 				this.resetTemps();
 			}
 			this.popScope();
@@ -4624,8 +4625,8 @@ class FunctionBuilder {
 		const ctx: LoopContext = { breakJumps: [] };
 		this.loopStack.push(ctx);
 		this.pushScope(this.semantics.locations.range(statement.block.span));
-		for (let i = 0; i < statement.block.body.length; i += 1) {
-			this.compileStatement(statement.block.body[i]);
+		for (const cursor = statement.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+			this.compileStatement(cursor.statement);
 			this.resetTemps();
 		}
 		this.popScope();
@@ -4644,8 +4645,8 @@ class FunctionBuilder {
 		const ctx: LoopContext = { breakJumps: [] };
 		this.loopStack.push(ctx);
 		this.pushScope(this.semantics.locations.range(statement.block.span));
-		for (let i = 0; i < statement.block.body.length; i += 1) {
-			this.compileStatement(statement.block.body[i]);
+		for (const cursor = statement.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+			this.compileStatement(cursor.statement);
 			this.resetTemps();
 		}
 		this.popScope();
@@ -4687,8 +4688,8 @@ class FunctionBuilder {
 		this.patchJump(jumpToBody, this.code.length);
 		const ctx: LoopContext = { breakJumps: [] };
 		this.loopStack.push(ctx);
-		for (let i = 0; i < statement.block.body.length; i += 1) {
-			this.compileStatement(statement.block.body[i]);
+		for (const cursor = statement.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+			this.compileStatement(cursor.statement);
 			this.resetTemps();
 		}
 		this.loopStack.pop();
@@ -4749,8 +4750,8 @@ class FunctionBuilder {
 
 		const ctx: LoopContext = { breakJumps: [] };
 		this.loopStack.push(ctx);
-		for (let i = 0; i < statement.block.body.length; i += 1) {
-			this.compileStatement(statement.block.body[i]);
+		for (const cursor = statement.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+			this.compileStatement(cursor.statement);
 			this.resetTemps();
 		}
 		this.loopStack.pop();

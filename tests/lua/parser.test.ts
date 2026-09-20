@@ -38,7 +38,7 @@ function parseChunk(source: string): LuaChunk {
 test('parses local assignment with multiple values', () => {
 	const path = parseChunk('local a, b = 1, 2');
 	assert.equal(path.body.length, 1);
-	const statement = path.body[0];
+	const statement = path.body.get(0)!;
 	assert.equal(statement.kind, LuaSyntaxKind.LocalAssignmentStatement);
 	const localStatement = statement as LuaLocalAssignmentStatement;
 	assert.equal(localStatement.names.length, 2);
@@ -54,7 +54,7 @@ test('parses local assignment with multiple values', () => {
 test('parses function declaration with method name and parameters', () => {
 	const path = parseChunk('function module.object:method(x, y, ...)\nreturn x + y\nend');
 	assert.equal(path.body.length, 1);
-	const statement = path.body[0];
+	const statement = path.body.get(0)!;
 	assert.equal(statement.kind, LuaSyntaxKind.FunctionDeclarationStatement);
 	const functionStatement = statement as LuaFunctionDeclarationStatement;
 	assert.deepEqual(functionStatement.name.path.map(identifier => identifier.name), ['module', 'object']);
@@ -79,7 +79,7 @@ test('parses function declaration with method name and parameters', () => {
 
 test('parses init attribute on a local function declaration', () => {
 	const chunk = parseChunk('local function reload<init>()\nreturn 1\nend');
-	const statement = chunk.body[0] as LuaLocalFunctionStatement;
+	const statement = chunk.body.get(0)! as LuaLocalFunctionStatement;
 	assert.equal(statement.kind, LuaSyntaxKind.LocalFunctionStatement);
 	assert.equal(statement.name.name, 'reload');
 	assert.equal(statement.attribute, 'init');
@@ -114,17 +114,17 @@ test('recovery preserves enclosing blocks and statements after an incomplete mem
 	assert.ok(parsed.syntaxError);
 	assert.equal(parsed.syntaxError.line, 4);
 	assert.equal(parsed.chunk?.body.length, 3);
-	const method = parsed.chunk?.body[1] as LuaFunctionDeclarationStatement;
+	const method = parsed.chunk?.body.get(1)! as LuaFunctionDeclarationStatement;
 	assert.equal(method.kind, LuaSyntaxKind.FunctionDeclarationStatement);
 	assert.deepEqual(
-		method.functionExpression.body.body.map(statement => statement.kind),
+		Array.from(method.functionExpression.body.body, statement => statement.kind),
 		[
 			LuaSyntaxKind.LocalAssignmentStatement,
 			LuaSyntaxKind.ErrorStatement,
 			LuaSyntaxKind.ReturnStatement,
 		],
 	);
-	const errorStatement = method.functionExpression.body.body[1] as LuaErrorStatement;
+	const errorStatement = method.functionExpression.body.body.get(1)! as LuaErrorStatement;
 	const access = errorStatement.expression as LuaMemberExpression;
 	assert.equal(access.kind, LuaSyntaxKind.MemberExpression);
 	assert.equal(access.member.kind, LuaSyntaxKind.MissingIdentifier);
@@ -133,7 +133,7 @@ test('recovery preserves enclosing blocks and statements after an incomplete mem
 		start: { line: 4, column: 7 },
 		end: { line: 4, column: 7 },
 	});
-	assert.equal(parsed.chunk?.body[2].kind, LuaSyntaxKind.ReturnStatement);
+	assert.equal(parsed.chunk?.body.get(2)!.kind, LuaSyntaxKind.ReturnStatement);
 });
 
 test('strict parsing still rejects an incomplete member access', () => {
@@ -147,7 +147,7 @@ test('recovery retains an incomplete call and its authored argument-list syntax'
 	const parsed = parseLuaChunkWithRecovery('dispatch(target, ', 'incomplete_call.lua');
 	assert.ok(parsed.syntaxError);
 	assert.equal(parsed.chunk.body.length, 1);
-	const statement = parsed.chunk.body[0] as LuaCallStatement;
+	const statement = parsed.chunk.body.get(0)! as LuaCallStatement;
 	assert.equal(statement.kind, LuaSyntaxKind.CallStatement);
 	const call = statement.expression as LuaCallExpression;
 	assert.equal(call.kind, LuaSyntaxKind.CallExpression);
@@ -171,10 +171,10 @@ test('recovery does not consume a following statement as an incomplete call argu
 	const parsed = parseLuaChunkWithRecovery(source, 'call_boundary.lua');
 	assert.ok(parsed.syntaxError);
 	assert.deepEqual(
-		parsed.chunk.body.map(statement => statement.kind),
+		Array.from(parsed.chunk.body, statement => statement.kind),
 		[LuaSyntaxKind.CallStatement, LuaSyntaxKind.LocalAssignmentStatement],
 	);
-	const call = (parsed.chunk.body[0] as LuaCallStatement).expression as LuaCallExpression;
+	const call = (parsed.chunk.body.get(0)! as LuaCallStatement).expression as LuaCallExpression;
 	assert.deepEqual(parsed.chunk.locations.range(call.argumentList!.span), {
 		path: 'call_boundary.lua',
 		start: { line: 1, column: 9 },
@@ -192,7 +192,7 @@ test('call argument-list separators exclude commas owned by nested expressions',
 		')',
 	].join('\n');
 	const chunk = parseChunk(source);
-	const statement = chunk.body[0] as LuaCallStatement;
+	const statement = chunk.body.get(0)! as LuaCallStatement;
 	const call = statement.expression as LuaCallExpression;
 	assert.deepEqual(call.argumentList!.separators.map(offset => chunk.locations.position(call.argumentList!.span.unit, offset)), [
 		{ line: 2, column: 7 },
@@ -221,7 +221,7 @@ else
 end`;
 	const path = parseChunk(source);
 	assert.equal(path.body.length, 1);
-	const statement = path.body[0];
+	const statement = path.body.get(0)!;
 	assert.equal(statement.kind, LuaSyntaxKind.IfStatement);
 	const ifStatement = statement as LuaIfStatement;
 	assert.equal(ifStatement.clauses.length, 3);
@@ -233,7 +233,7 @@ end`;
 test('parses numeric for loop', () => {
 	const path = parseChunk('for i = 1, 10, 2 do sum = sum + i end');
 	assert.equal(path.body.length, 1);
-	const statement = path.body[0];
+	const statement = path.body.get(0)!;
 	assert.equal(statement.kind, LuaSyntaxKind.ForNumericStatement);
 	const forStatement = statement as LuaForNumericStatement;
 	assert.equal(forStatement.variable.name, 'i');
@@ -248,13 +248,13 @@ test('parses numeric for loop', () => {
 test('parses table assignment and preserves call statement', () => {
 	const path = parseChunk('t[i] = t[i] + 1\nprint("updated")');
 	assert.equal(path.body.length, 2);
-	const assignment = path.body[0];
+	const assignment = path.body.get(0)!;
 	assert.equal(assignment.kind, LuaSyntaxKind.AssignmentStatement);
 	const assignmentStatement = assignment as LuaAssignmentStatement;
 	assert.equal(assignmentStatement.left.length, 1);
 	assert.equal(assignmentStatement.right.length, 1);
 	assert.equal(assignmentStatement.operator, LuaAssignmentOperator.Assign);
-	const callStatement = path.body[1];
+	const callStatement = path.body.get(1)!;
 	assert.equal(callStatement.kind, LuaSyntaxKind.CallStatement);
 	const call = callStatement as LuaCallStatement;
 	assert.equal(call.expression.kind, LuaSyntaxKind.CallExpression);
@@ -262,7 +262,7 @@ test('parses table assignment and preserves call statement', () => {
 
 test('retains member identifier nodes with their authored range', () => {
 	const path = parseChunk('local value = root.branch.leaf');
-	const statement = path.body[0] as LuaLocalAssignmentStatement;
+	const statement = path.body.get(0)! as LuaLocalAssignmentStatement;
 	const leaf = statement.values[0] as LuaMemberExpression;
 	const branch = leaf.base as LuaMemberExpression;
 	assert.equal(branch.member.name, 'branch');
@@ -282,7 +282,7 @@ test('retains member identifier nodes with their authored range', () => {
 test('parses augmented assignment statement', () => {
 	const path = parseChunk('value += 1');
 	assert.equal(path.body.length, 1);
-	const statement = path.body[0] as LuaAssignmentStatement;
+	const statement = path.body.get(0)! as LuaAssignmentStatement;
 	assert.equal(statement.kind, LuaSyntaxKind.AssignmentStatement);
 	assert.equal(statement.left.length, 1);
 	assert.equal(statement.right.length, 1);
@@ -291,7 +291,7 @@ test('parses augmented assignment statement', () => {
 
 test('parses unary minus with exponent precedence', () => {
 	const path = parseChunk('local value = -2 ^ 2');
-	const statement = path.body[0] as LuaLocalAssignmentStatement;
+	const statement = path.body.get(0)! as LuaLocalAssignmentStatement;
 	assert.equal(statement.values.length, 1);
 	const unary = statement.values[0] as LuaUnaryExpression;
 	assert.equal(unary.kind, LuaSyntaxKind.UnaryExpression);
@@ -306,10 +306,10 @@ test('parses unary minus with exponent precedence', () => {
 test('parses goto and label statements', () => {
 	const path = parseChunk('::loop::\ngoto loop');
 	assert.equal(path.body.length, 2);
-	const label = path.body[0] as LuaLabelStatement;
+	const label = path.body.get(0)! as LuaLabelStatement;
 	assert.equal(label.kind, LuaSyntaxKind.LabelStatement);
 	assert.equal(label.label, 'loop');
-	const gotoStatement = path.body[1] as LuaGotoStatement;
+	const gotoStatement = path.body.get(1)! as LuaGotoStatement;
 	assert.equal(gotoStatement.kind, LuaSyntaxKind.GotoStatement);
 	assert.equal(gotoStatement.label, 'loop');
 });
@@ -317,7 +317,7 @@ test('parses goto and label statements', () => {
 test('parses floor division operator', () => {
 	const path = parseChunk('return a // b');
 	assert.equal(path.body.length, 1);
-	const statement = path.body[0] as LuaReturnStatement;
+	const statement = path.body.get(0)! as LuaReturnStatement;
 	assert.equal(statement.kind, LuaSyntaxKind.ReturnStatement);
 	assert.equal(statement.expressions.length, 1);
 	const binary = statement.expressions[0] as LuaBinaryExpression;
@@ -326,7 +326,7 @@ test('parses floor division operator', () => {
 
 test('parses bitwise operator precedence', () => {
 	const path = parseChunk('return a | b ~ c & d');
-	const statement = path.body[0] as LuaReturnStatement;
+	const statement = path.body.get(0)! as LuaReturnStatement;
 	const root = statement.expressions[0] as LuaBinaryExpression;
 	assert.equal(root.operator, LuaBinaryOperator.BitwiseOr);
 	const left = root.left as LuaIdentifierExpression;
@@ -339,7 +339,7 @@ test('parses bitwise operator precedence', () => {
 
 test('parses shift operators as left associative', () => {
 	const path = parseChunk('return a << b >> c');
-	const statement = path.body[0] as LuaReturnStatement;
+	const statement = path.body.get(0)! as LuaReturnStatement;
 	const root = statement.expressions[0] as LuaBinaryExpression;
 	assert.equal(root.operator, LuaBinaryOperator.ShiftRight);
 	const left = root.left as LuaBinaryExpression;
@@ -348,21 +348,21 @@ test('parses shift operators as left associative', () => {
 
 test('parses unary bitwise not', () => {
 	const path = parseChunk('return ~value');
-	const statement = path.body[0] as LuaReturnStatement;
+	const statement = path.body.get(0)! as LuaReturnStatement;
 	const unary = statement.expressions[0] as LuaUnaryExpression;
 	assert.equal(unary.operator, LuaUnaryOperator.BitwiseNot);
 });
 
 test('parses pointer local types while preserving unary ampersand', () => {
 	const path = parseChunk('local view<const>: *tri[count] = base\nreturn &view[0]');
-	const localStatement = path.body[0] as LuaLocalAssignmentStatement;
+	const localStatement = path.body.get(0)! as LuaLocalAssignmentStatement;
 	const pointerTypeRef = localStatement.pointerTypeRefs[0];
 	assert.notEqual(pointerTypeRef, null);
 	assert.equal(pointerTypeRef!.name, 'tri');
 	assert.equal((pointerTypeRef!.arrayLengths[0] as LuaIdentifierExpression).name, 'count');
 	assert.equal((localStatement.values[0] as LuaIdentifierExpression).name, 'base');
 
-	const returnStatement = path.body[1] as LuaReturnStatement;
+	const returnStatement = path.body.get(1)! as LuaReturnStatement;
 	const addressOf = returnStatement.expressions[0] as LuaUnaryExpression;
 	assert.equal(addressOf.kind, LuaSyntaxKind.UnaryExpression);
 	assert.equal(addressOf.operator, LuaUnaryOperator.StringId);
@@ -371,23 +371,23 @@ test('parses pointer local types while preserving unary ampersand', () => {
 
 test('parses paren-less single string argument calls', () => {
 	const simpleChunk = parseChunk('f "x"');
-	const simpleCall = simpleChunk.body[0] as LuaCallStatement;
+	const simpleCall = simpleChunk.body.get(0)! as LuaCallStatement;
 	const simpleExpression = simpleCall.expression as LuaCallExpression;
 	assert.equal(simpleExpression.method, null);
 	assert.equal((simpleExpression.arguments[0] as LuaStringLiteralExpression).value, 'x');
 
 	const singleQuoteChunk = parseChunk("f 'x'");
-	const singleQuoteCall = singleQuoteChunk.body[0] as LuaCallStatement;
+	const singleQuoteCall = singleQuoteChunk.body.get(0)! as LuaCallStatement;
 	const singleQuoteExpression = singleQuoteCall.expression as LuaCallExpression;
 	assert.equal((singleQuoteExpression.arguments[0] as LuaStringLiteralExpression).value, 'x');
 
 	const longStringChunk = parseChunk('f [[multi line]]');
-	const longStringCall = longStringChunk.body[0] as LuaCallStatement;
+	const longStringCall = longStringChunk.body.get(0)! as LuaCallStatement;
 	const longStringExpression = longStringCall.expression as LuaCallExpression;
 	assert.equal((longStringExpression.arguments[0] as LuaStringLiteralExpression).value, 'multi line');
 
 	const methodChunk = parseChunk('obj:method "arg"');
-	const methodCall = methodChunk.body[0] as LuaCallStatement;
+	const methodCall = methodChunk.body.get(0)! as LuaCallStatement;
 	const methodExpression = methodCall.expression as LuaCallExpression;
 	assert.equal(methodExpression.method?.name, 'method');
 	assert.deepEqual(methodChunk.locations.range(methodExpression.method!.span), {
@@ -399,7 +399,7 @@ test('parses paren-less single string argument calls', () => {
 	assert.equal((methodExpression.arguments[0] as LuaStringLiteralExpression).value, 'arg');
 
 	const chainedChunk = parseChunk('(f())[1] "x"');
-	const chainedCall = chainedChunk.body[0] as LuaCallStatement;
+	const chainedCall = chainedChunk.body.get(0)! as LuaCallStatement;
 	const chainedExpression = chainedCall.expression as LuaCallExpression;
 	assert.equal((chainedExpression.arguments[0] as LuaStringLiteralExpression).value, 'x');
 	const calleeIndex = chainedExpression.callee as LuaIndexExpression;
@@ -412,12 +412,12 @@ test('parses paren-less table constructor arguments', () => {
 obj:method { key = "value" }`);
 	assert.equal(path.body.length, 2);
 
-	const firstCall = path.body[0] as LuaCallStatement;
+	const firstCall = path.body.get(0)! as LuaCallStatement;
 	const firstExpression = firstCall.expression as LuaCallExpression;
 	const tableArg = firstExpression.arguments[0] as LuaTableConstructorExpression;
 	assert.equal(tableArg.fields.length, 3);
 
-	const methodCall = path.body[1] as LuaCallStatement;
+	const methodCall = path.body.get(1)! as LuaCallStatement;
 	const methodExpression = methodCall.expression as LuaCallExpression;
 	assert.equal(methodExpression.method?.name, 'method');
 	const methodTableArg = methodExpression.arguments[0] as LuaTableConstructorExpression;
@@ -428,7 +428,7 @@ test('rejects invalid paren-less call arguments', () => {
 	assert.throws(() => parseChunk('f 1'));
 	assert.throws(() => parseChunk('f x'));
 	const path = parseChunk("return f 'a' .. 'b'");
-	const statement = path.body[0] as LuaReturnStatement;
+	const statement = path.body.get(0)! as LuaReturnStatement;
 	const binary = statement.expressions[0] as LuaBinaryExpression;
 	assert.equal(binary.operator, LuaBinaryOperator.Concat);
 	const callLeft = binary.left as LuaCallExpression;

@@ -149,8 +149,8 @@ export function matchesBool01DuplicatePattern(functionExpression: CartFunctionEx
 	const parameterName = functionExpression.parameters[0].name;
 	const body = functionExpression.body.body;
 	if (body.length === 2) {
-		const firstStatement = body[0];
-		const fallback = getSingleReturnedStringValue(body[1]);
+		const firstStatement = body.get(0);
+		const fallback = getSingleReturnedStringValue(body.get(1));
 		if (firstStatement.kind !== SyntaxKind.IfStatement || !fallback || firstStatement.clauses.length !== 1) {
 			return false;
 		}
@@ -158,7 +158,7 @@ export function matchesBool01DuplicatePattern(functionExpression: CartFunctionEx
 		if (!onlyClause.condition || onlyClause.block.body.length !== 1) {
 			return false;
 		}
-		const clauseReturn = getSingleReturnedStringValue(onlyClause.block.body[0]);
+		const clauseReturn = getSingleReturnedStringValue(onlyClause.block.body.get(0));
 		if (!clauseReturn) {
 			return false;
 		}
@@ -171,7 +171,7 @@ export function matchesBool01DuplicatePattern(functionExpression: CartFunctionEx
 		return false;
 	}
 	if (body.length === 1) {
-		const onlyIf = body[0];
+		const onlyIf = body.get(0);
 		if (onlyIf.kind !== SyntaxKind.IfStatement || onlyIf.clauses.length !== 2) {
 			return false;
 		}
@@ -180,8 +180,8 @@ export function matchesBool01DuplicatePattern(functionExpression: CartFunctionEx
 		if (!first.condition || second.condition || first.block.body.length !== 1 || second.block.body.length !== 1) {
 			return false;
 		}
-		const firstReturn = getSingleReturnedStringValue(first.block.body[0]);
-		const secondReturn = getSingleReturnedStringValue(second.block.body[0]);
+		const firstReturn = getSingleReturnedStringValue(first.block.body.get(0));
+		const secondReturn = getSingleReturnedStringValue(second.block.body.get(0));
 		if (!firstReturn || !secondReturn) {
 			return false;
 		}

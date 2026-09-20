@@ -212,7 +212,7 @@ return record(object:run('result')) == 'result'`;
 	assert.equal(callee.memberReads[0].name, 'run');
 	assert.equal(callee.terminals.length, 1);
 	assert.ok(callee.terminals[0].source.kind === 'declaration-write');
-	assert.equal(callee.terminals[0].source.write.syntax, f.file.chunk.body[2]);
+	assert.equal(callee.terminals[0].source.write.syntax, f.file.chunk.body.get(2)!);
 });
 
 test('written arguments follow ordinary aliases in the selected wrapper context, not a cross product', () => {

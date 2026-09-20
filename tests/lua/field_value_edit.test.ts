@@ -11,7 +11,7 @@ test('a submitted value is an isolated expression, not a second statement, print
 	const model = new EditorTextModel({ domain: 0, path: 'values.lua', source: { type: 'lua', resid: 'values' } }, 'lua', SOURCE);
 	t.after(() => model.dispose());
 	const file = buildLuaFileSemanticData(SOURCE, model.resource.path);
-	const statement = file.chunk.body[1];
+	const statement = file.chunk.body.get(1)!;
 	assert.ok(statement.kind === LuaSyntaxKind.LocalAssignmentStatement && statement.values[0].kind === LuaSyntaxKind.TableConstructorExpression);
 	const field = statement.values[0].fields[0];
 	for (const value of ['clock.delta() * 2', "'Changed Tag'", 'false', 'function(owner) return owner.period end', '{ 1, 2 }', ' 1 --[[note]] ', '1 -- note\n']) {
@@ -21,7 +21,7 @@ test('a submitted value is an isolated expression, not a second statement, print
 		assert.equal(model.buffer.getText(), SOURCE.replace('(timing)', '(' + value + ')'));
 		const next = buildLuaFileSemanticData(model.buffer.getText(), model.resource.path);
 		assert.equal(next.syntaxError, null);
-		const declaration = next.chunk.body[1];
+		const declaration = next.chunk.body.get(1)!;
 		assert.ok(declaration.kind === LuaSyntaxKind.LocalAssignmentStatement && declaration.values[0].kind === LuaSyntaxKind.TableConstructorExpression);
 		const actual = declaration.values[0].fields[0];
 		assert.deepEqual(result.value.fieldRange, next.chunk.locations.range(actual.span));

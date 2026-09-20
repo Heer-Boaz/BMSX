@@ -1,4 +1,5 @@
-import { type LuaExpression as Expression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, type LuaTableField as TableField, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
+import type { LuaStatementSequence } from '../../../../../../toolchain/ts/lua/syntax/statement_sequence';
+import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, type LuaTableField as TableField, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { type LintRuleName } from '../../../../rule';
 import { type CartLintContext } from '../../../../lua_rule';
 import { getExpressionKeyName } from './expression_signatures';
@@ -91,10 +92,11 @@ export function findStateNameMirrorAssignmentInExpression(
 }
 
 export function findStateNameMirrorAssignmentInStatements(
-	statements: ReadonlyArray<Statement>,
+	statements: LuaStatementSequence,
 	stateName: string,
 ): { readonly propertyName: string; readonly valueNode: Expression; } | undefined {
-	for (const statement of statements) {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case SyntaxKind.LocalAssignmentStatement:
 				for (const value of statement.values) {

@@ -60,7 +60,8 @@ class SemanticAssignmentValues {
 
 	private block(block: LuaBlock): void {
 		const values = new Map<SymbolID, SemanticValueSource>();
-		for (const statement of block.body) {
+		for (const cursor = block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+			const statement = cursor.statement;
 			let calls = false;
 			const entries = this.statementTransfers;
 			entries.length = 0;

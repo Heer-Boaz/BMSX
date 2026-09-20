@@ -2,6 +2,7 @@ import type { LuaSourceUnit } from '../source_layout';
 import type { LuaSourceLocations, LuaSyntaxSpan } from '../source_locations';
 import type { LuaSyntaxError } from '../../errors';
 import type { LuaTokenSequence } from '../token_sequence';
+import type { LuaStatementSequence } from '../statement_sequence';
 
 export type LuaSourcePosition = {
 	readonly line: number;
@@ -120,7 +121,7 @@ export type LuaChunk = LuaNode & {
 	readonly syntaxError: LuaSyntaxError | null;
 	readonly constModule: boolean;
 	readonly entryModule: boolean;
-	readonly body: ReadonlyArray<LuaStatement>;
+	readonly body: LuaStatementSequence;
 	readonly skippedSyntax: readonly LuaSkippedSyntax[];
 };
 
@@ -128,7 +129,7 @@ export type LuaBlock = LuaNode & {
 	readonly kind: LuaSyntaxKind.Block;
 	readonly startInclusive: number;
 	readonly endExclusive: number;
-	readonly body: ReadonlyArray<LuaStatement>;
+	readonly body: LuaStatementSequence;
 	readonly skippedSyntax: readonly LuaSkippedSyntax[];
 };
 

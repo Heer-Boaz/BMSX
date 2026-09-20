@@ -19,8 +19,8 @@ test('function bodies retain distinct values and returns when they write the sam
 	const identities = new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() });
 	const summaries = new FunctionSummaryStore([file], identities);
 	const [first, second] = summaries.list();
-	const firstStatement = file.chunk.body[1];
-	const secondStatement = file.chunk.body[2];
+	const firstStatement = file.chunk.body.get(1)!;
+	const secondStatement = file.chunk.body.get(2)!;
 	assert.ok(firstStatement.kind === LuaSyntaxKind.FunctionDeclarationStatement);
 	assert.ok(secondStatement.kind === LuaSyntaxKind.FunctionDeclarationStatement);
 	assert.equal(first.source.expression, firstStatement.functionExpression);
@@ -71,7 +71,7 @@ test('return facts preserve written occurrences before value deduplication', () 
 		'end',
 	].join('\n'), 'returns.lua');
 	const flow = file.functionValueFlows[0];
-	const statement = file.chunk.body[0];
+	const statement = file.chunk.body.get(0)!;
 	assert.ok(statement.kind === LuaSyntaxKind.LocalFunctionStatement);
 	assert.equal(flow.expression, statement.functionExpression);
 	assert.equal(flow.returns.length, 2);
@@ -154,8 +154,9 @@ test('surplus right-hand functions are bound without attaching them to the last 
 		assert.notEqual(bound.declaration, undefined);
 		assert.equal(discarded.declaration, undefined);
 		const values = file.declarationValues.filter(entry => entry.declId === bound.declaration);
-		assert.deepEqual(values.map(entry => entry.source), file.chunk.body[0].kind === LuaSyntaxKind.LocalAssignmentStatement
-			&& file.chunk.body[0].values.length === 0 ? [NIL_VALUE_SOURCE, bound.functionValue] : [bound.functionValue]);
+		const first = file.chunk.body.get(0)!;
+		assert.deepEqual(values.map(entry => entry.source), first.kind === LuaSyntaxKind.LocalAssignmentStatement
+			&& first.values.length === 0 ? [NIL_VALUE_SOURCE, bound.functionValue] : [bound.functionValue]);
 		assert.equal(discarded.calls.length, 1, 'the discarded expression body is still bound');
 		assert.equal(discarded.returns.length, 1);
 	}

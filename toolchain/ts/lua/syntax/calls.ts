@@ -1,4 +1,5 @@
-import { type LuaCallExpression, type LuaExpression, type LuaStatement, LuaSyntaxKind, LuaTableFieldKind } from './ast';
+import type { LuaStatementSequence } from './statement_sequence';
+import { type LuaCallExpression, type LuaExpression, LuaSyntaxKind, LuaTableFieldKind } from './ast';
 
 export function getCallReceiverName(expression: LuaCallExpression): string | undefined {
 	if (expression.method && expression.callee.kind === LuaSyntaxKind.IdentifierExpression) {
@@ -155,10 +156,11 @@ export function visitCallExpressionsInExpression(
 }
 
 export function findCallExpressionInStatements(
-	statements: ReadonlyArray<LuaStatement>,
+	statements: LuaStatementSequence,
 	predicate: (expression: LuaCallExpression) => boolean,
 ): LuaCallExpression | undefined {
-	for (const statement of statements) {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case LuaSyntaxKind.LocalAssignmentStatement:
 				for (const value of statement.values) {
@@ -297,10 +299,11 @@ export function findCallExpressionInStatements(
 }
 
 export function visitCallExpressionsInStatements(
-	statements: ReadonlyArray<LuaStatement>,
+	statements: LuaStatementSequence,
 	visitor: (expression: LuaCallExpression) => void,
 ): void {
-	for (const statement of statements) {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case LuaSyntaxKind.LocalAssignmentStatement:
 				for (const value of statement.values) {

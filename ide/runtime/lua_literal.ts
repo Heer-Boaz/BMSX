@@ -19,10 +19,12 @@ export function prepareLuaArguments(text: string): readonly PreparedLuaLiteral[]
 
 function literalExpressions(text: string): readonly LuaExpression[] {
 	const chunk = parseLuaChunk(`return ${text}`, '=input').chunk!;
-	if (chunk.body.length !== 1 || chunk.body[0].kind !== LuaSyntaxKind.ReturnStatement) {
+	if (chunk.body.length !== 1) throw new Error('Enter Lua literals, not statements.');
+	const statement = chunk.body.get(0);
+	if (statement.kind !== LuaSyntaxKind.ReturnStatement) {
 		throw new Error('Enter Lua literals, not statements.');
 	}
-	return chunk.body[0].expressions;
+	return statement.expressions;
 }
 
 function prepareLiteral(expression: LuaExpression): PreparedLuaLiteral {

@@ -1,3 +1,4 @@
+import { LuaStatementSequence } from '../../toolchain/ts/lua/syntax/statement_sequence';
 import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
 import type { LuaSyntaxSpan } from '../../toolchain/ts/lua/syntax/source_locations';
 
@@ -5,6 +6,7 @@ import type { LuaSyntaxSpan } from '../../toolchain/ts/lua/syntax/source_locatio
 export function luaSyntaxSnapshot(chunk: LuaChunk): unknown {
 	const locations = chunk.locations;
 	return JSON.parse(JSON.stringify(chunk, function(key, value) {
+		if (value instanceof LuaStatementSequence) return Array.from(value);
 		if (key === 'locations') return undefined;
 		if (key === 'tokens') return Array.from(chunk.tokens, token => {
 			const { unit, start, end, ...data } = token;

@@ -1,5 +1,6 @@
+import type { LuaStatementSequence } from '../../../../toolchain/ts/lua/syntax/statement_sequence';
 import { defineLintRule } from '../../rule';
-import { LuaAssignmentOperator as AssignmentOperator, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import { getAssignmentTargetInfo, lintNullBindingFunctionScope, lintScopedBindingStatements } from './impl/support/bindings';
 import { declareForeignObjectBinding, enterForeignObjectMutationScope, isForeignObjectAliasInitializer, leaveForeignObjectMutationScope, lintForeignObjectMutationInExpression, resolveForeignObjectBinding, setForeignObjectBinding } from './impl/support/foreign_object';
 import { ForeignObjectMutationContext } from './impl/support/types';
@@ -8,10 +9,11 @@ import { pushIssue } from './impl/support/lint_context';
 export const foreignObjectInternalMutationPatternRule = defineLintRule('cart', 'foreign_object_internal_mutation_pattern');
 
 export function lintForeignObjectMutationInStatements(
-	statements: ReadonlyArray<Statement>,
+	statements: LuaStatementSequence,
 	context: ForeignObjectMutationContext,
 ): void {
-	for (const statement of statements) {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case SyntaxKind.LocalAssignmentStatement:
 				for (const value of statement.values) {

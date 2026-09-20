@@ -1,4 +1,5 @@
-import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
+import type { LuaStatementSequence } from '../../../../../../toolchain/ts/lua/syntax/statement_sequence';
+import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { findCallExpressionInStatements, getCallMethodName, getCallReceiverExpression, visitCallExpressionsInStatements } from '../../../../../../toolchain/ts/lua/syntax/calls';
 import { getFunctionLeafName } from './functions';
 import { isSelfExpressionRoot } from './self_properties';
@@ -60,7 +61,7 @@ export function stateTimelinesDriveSelfGfx(stateExpression: Expression): boolean
 }
 
 export function collectPrefabVisualDefaultsById(
-	statements: ReadonlyArray<Statement>,
+	statements: LuaStatementSequence,
 	moduleCalls: CartModuleCallMap,
 ): ReadonlyMap<string, FsmVisualPrefabDefaults> {
 	const prefabs = new Map<string, FsmVisualPrefabDefaults>();

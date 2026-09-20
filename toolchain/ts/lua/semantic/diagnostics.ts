@@ -1,3 +1,4 @@
+import type { LuaStatementSequence } from '../syntax/statement_sequence';
 import type { LuaSourceLocations } from '../syntax/source_locations';
 import {
 	LuaSyntaxKind,
@@ -68,9 +69,9 @@ type CallSignatureMetadata = {
 	label: string;
 };
 
-function walkLuaStatementTree(statements: readonly LuaStatement[], visitStatement: (statement: LuaStatement) => void): void {
-	for (let index = 0; index < statements.length; index += 1) {
-		const statement = statements[index];
+function walkLuaStatementTree(statements: LuaStatementSequence, visitStatement: (statement: LuaStatement) => void): void {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		visitStatement(statement);
 		walkLuaStatementChildren(statement, visitStatement);
 	}

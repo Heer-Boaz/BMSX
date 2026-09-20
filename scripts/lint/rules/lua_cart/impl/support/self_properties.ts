@@ -1,4 +1,5 @@
-import { LuaAssignmentOperator as AssignmentOperator, type LuaAssignmentStatement as AssignmentStatement, LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression, type LuaIfStatement as IfStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaUnaryOperator as UnaryOperator } from '../../../../../../toolchain/ts/lua/syntax/ast';
+import type { LuaStatementSequence } from '../../../../../../toolchain/ts/lua/syntax/statement_sequence';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaAssignmentStatement as AssignmentStatement, LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression, type LuaIfStatement as IfStatement, LuaSyntaxKind as SyntaxKind, LuaUnaryOperator as UnaryOperator } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { getRootIdentifier, isIdentifier } from './bindings';
 import { isFalseOrNilExpression, isNilExpression } from './conditions';
 import { getExpressionKeyName } from './expression_signatures';
@@ -78,10 +79,11 @@ export function isSpriteComponentImageIdAssignmentTarget(target: Expression): bo
 }
 
 export function findSelfPropertyAssignmentInStatements(
-	statements: ReadonlyArray<Statement>,
+	statements: LuaStatementSequence,
 	propertyPredicate: (propertyName: string) => boolean,
 ): SelfPropertyAssignmentMatch | undefined {
-	for (const statement of statements) {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case SyntaxKind.AssignmentStatement:
 				for (const target of statement.left) {
@@ -170,8 +172,9 @@ export function getSelfPropertyNameFromConditionExpression(expression: Expressio
 	return undefined;
 }
 
-export function hasSelfPropertyResetInStatements(statements: ReadonlyArray<Statement>, propertyName: string): boolean {
-	for (const statement of statements) {
+export function hasSelfPropertyResetInStatements(statements: LuaStatementSequence, propertyName: string): boolean {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		if (statement.kind !== SyntaxKind.AssignmentStatement || statement.operator !== AssignmentOperator.Assign) {
 			continue;
 		}
@@ -210,7 +213,7 @@ export function matchesImgIdNilFallbackPattern(statement: IfStatement): boolean 
 	if (clause.block.body.length !== 1) {
 		return false;
 	}
-	const clauseStatement = clause.block.body[0];
+	const clauseStatement = clause.block.body.get(0);
 	if (clauseStatement.kind !== SyntaxKind.AssignmentStatement) {
 		return false;
 	}
@@ -223,10 +226,11 @@ export function matchesImgIdNilFallbackPattern(statement: IfStatement): boolean 
 }
 
 export function findSelfBooleanPropertyAssignmentInStatements(
-	statements: ReadonlyArray<Statement>,
+	statements: LuaStatementSequence,
 	propertyName: string,
 ): SelfBooleanPropertyAssignmentMatch | undefined {
-	for (const statement of statements) {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case SyntaxKind.AssignmentStatement:
 				if (statement.operator !== AssignmentOperator.Assign) {

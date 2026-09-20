@@ -1,3 +1,4 @@
+import type { LuaStatementSequence } from '../../../../toolchain/ts/lua/syntax/statement_sequence';
 import {
 	LuaSyntaxKind,
 	LuaBinaryOperator,
@@ -21,7 +22,6 @@ import type {
 	LuaLocalFunctionStatement,
 	LuaMemberExpression,
 	LuaReturnStatement,
-	LuaStatement,
 	LuaTableArrayField,
 	LuaTableConstructorExpression,
 	LuaTableExpressionField,
@@ -574,7 +574,7 @@ export class LuaInterpreter {
 		this.lastFaultDepth = snapshotDepth;
 	}
 
-	private createLabelScope(statements: ReadonlyArray<LuaStatement>, parent: LabelScope): LabelScope {
+	private createLabelScope(statements: LuaStatementSequence, parent: LabelScope): LabelScope {
 		void statements;
 		void parent;
 		return {} as LabelScope;
@@ -585,7 +585,7 @@ export class LuaInterpreter {
 	}
 
 	private pushStatementsFrame(config: {
-		readonly statements: ReadonlyArray<LuaStatement>;
+		readonly statements: LuaStatementSequence;
 		readonly environment: LuaEnvironment;
 		readonly varargs: ReadonlyArray<LuaValue>;
 		readonly scope: LabelScope;

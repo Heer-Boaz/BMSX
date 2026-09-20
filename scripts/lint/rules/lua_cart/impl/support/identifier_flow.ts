@@ -1,3 +1,4 @@
+import type { LuaStatementSequence } from '../../../../../../toolchain/ts/lua/syntax/statement_sequence';
 import { LuaAssignmentOperator as AssignmentOperator, LuaBinaryOperator as BinaryOperator, type LuaExpression as Expression, type LuaIfStatement as IfStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind, LuaUnaryOperator as UnaryOperator } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { assignmentDirectlyTargetsIdentifier } from './bindings';
 
@@ -128,9 +129,10 @@ export function countIdentifierMentionsInStatement(statement: Statement, identif
 	}
 }
 
-export function countIdentifierMentionsInStatements(statements: ReadonlyArray<Statement>, identifierName: string): number {
+export function countIdentifierMentionsInStatements(statements: LuaStatementSequence, identifierName: string, startIndex = 0): number {
 	let count = 0;
-	for (const statement of statements) {
+	for (const cursor = statements.cursor(startIndex); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		count += countIdentifierMentionsInStatement(statement, identifierName);
 	}
 	return count;
@@ -250,8 +252,9 @@ export function expressionUsesIdentifierUnsafely(expression: Expression | null, 
 	}
 }
 
-export function blockDirectlyAssignsIdentifier(blockStatements: ReadonlyArray<Statement>, name: string): boolean {
-	for (const statement of blockStatements) {
+export function blockDirectlyAssignsIdentifier(blockStatements: LuaStatementSequence, name: string): boolean {
+	for (const cursor = blockStatements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		if (assignmentDirectlyTargetsIdentifier(statement, name)) {
 			return true;
 		}
@@ -310,7 +313,8 @@ export function statementUsesIdentifierUnsafelyInCurrentScope(statement: Stateme
 					if (clause.condition && expressionUsesIdentifierUnsafely(clause.condition, name)) {
 						return true;
 					}
-					for (const nested of clause.block.body) {
+					for (const cursor = clause.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+						const nested = cursor.statement;
 						if (statementUsesIdentifierUnsafelyInCurrentScope(nested, name)) {
 							return true;
 						}
@@ -321,14 +325,16 @@ export function statementUsesIdentifierUnsafelyInCurrentScope(statement: Stateme
 				if (expressionUsesIdentifierUnsafely(statement.condition, name)) {
 					return true;
 				}
-				for (const nested of statement.block.body) {
+				for (const cursor = statement.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+					const nested = cursor.statement;
 					if (statementUsesIdentifierUnsafelyInCurrentScope(nested, name)) {
 						return true;
 					}
 				}
 				return false;
 			case SyntaxKind.RepeatStatement:
-				for (const nested of statement.block.body) {
+				for (const cursor = statement.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+					const nested = cursor.statement;
 					if (statementUsesIdentifierUnsafelyInCurrentScope(nested, name)) {
 						return true;
 					}
@@ -340,7 +346,8 @@ export function statementUsesIdentifierUnsafelyInCurrentScope(statement: Stateme
 					|| expressionUsesIdentifier(statement.step, name)) {
 					return true;
 				}
-				for (const nested of statement.block.body) {
+				for (const cursor = statement.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+					const nested = cursor.statement;
 					if (statementUsesIdentifierUnsafelyInCurrentScope(nested, name)) {
 						return true;
 					}
@@ -352,14 +359,16 @@ export function statementUsesIdentifierUnsafelyInCurrentScope(statement: Stateme
 						return true;
 					}
 				}
-				for (const nested of statement.block.body) {
+				for (const cursor = statement.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+					const nested = cursor.statement;
 					if (statementUsesIdentifierUnsafelyInCurrentScope(nested, name)) {
 						return true;
 					}
 				}
 				return false;
 			case SyntaxKind.DoStatement:
-				for (const nested of statement.block.body) {
+				for (const cursor = statement.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+					const nested = cursor.statement;
 					if (statementUsesIdentifierUnsafelyInCurrentScope(nested, name)) {
 						return true;
 					}

@@ -52,7 +52,7 @@ for (const path of paths) {
 		}
 	});
 	assert(editedFunction!, `${path} needs a nonempty function for the body-edit workload`);
-	const bodySpan = editedFunction!.body.body[0].span;
+	const bodySpan = editedFunction!.body.body.get(0).span;
 	const bodyOffset = file.chunk.locations.offset(bodySpan.unit, bodySpan.start);
 	const comment = '-- incremental edit benchmark\n';
 	const statement = 'do end; ';

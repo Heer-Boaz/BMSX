@@ -125,9 +125,9 @@ test('varargs use the nearest function scope, not an enclosing variadic function
 test('self and varargs are distinct dependencies even when the same method introduces both', () => {
 	const { analysis, target, changes } = fixture('function unknown:first(...) local from={function() return self end, ...} end\nfunction unknown:second(...) local to={} end', 0, 1);
 	// The complete constructor expression contains two external bindings.
-	const from = analysis.source.chunk.body[0];
+	const from = analysis.source.chunk.body.get(0)!;
 	assert.ok(from.kind === LuaSyntaxKind.FunctionDeclarationStatement);
-	const constructor = from.functionExpression.body.body[0];
+	const constructor = from.functionExpression.body.body.get(0)!;
 	assert.ok(constructor.kind === LuaSyntaxKind.LocalAssignmentStatement);
 	const complete = new LuaRelocationAnalysis(analysis.source, analysis.source.chunk.locations.range(constructor.values[0].span));
 	assert.deepEqual(complete.bindings.map(binding => binding.kind), ['identifier', 'vararg']);

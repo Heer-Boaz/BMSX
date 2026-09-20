@@ -1,4 +1,5 @@
-import { type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
+import type { LuaStatementSequence } from '../../../../../../toolchain/ts/lua/syntax/statement_sequence';
+import { type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintContext } from '../../../../lua_rule';
 import { lintForeignObjectMutationInStatements } from '../../foreign_object_internal_mutation_pattern';
 import { declareBinding, discardBindingScope, enterBindingScope, resolveBinding, setBinding } from './bindings';
@@ -99,7 +100,7 @@ export function lintForeignObjectMutationInExpression(
 	}
 }
 
-export function lintForeignObjectInternalMutationPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
+export function lintForeignObjectInternalMutationPattern(statements: LuaStatementSequence, lint: CartLintContext): void {
 	const context = createForeignObjectMutationContext(lint);
 	try {
 		lintForeignObjectMutationInStatements(statements, context);

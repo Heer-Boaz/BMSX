@@ -6,7 +6,7 @@ import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 
 function writtenFiles(workspace: LuaSemanticWorkspace, reader: FileSemanticData): string[] {
 	const query = workspace.getSnapshot().symbolResolver.writtenSources;
-	const returned = reader.chunk.body[0];
+	const returned = reader.chunk.body.get(0)!;
 	assert.ok(returned.kind === LuaSyntaxKind.ReturnStatement);
 	return query.trace(query.expression(reader, returned.expressions[0])).terminals.map(source => source.file.file);
 }
@@ -71,7 +71,7 @@ test('global contributions preserve duplicate declarations while storage and loo
 	// One owned syntax occurrence can be supplied more than once by a compiler
 	// input. The binder's declaration list and symbol lookup have different
 	// multiplicity contracts even in this representable case.
-	const chunk = { ...parsed.chunk, body: [parsed.chunk.body[0], parsed.chunk.body[0]] };
+	const chunk = { ...parsed.chunk, body: parsed.chunk.body.concat(parsed.chunk.body) };
 	const file = buildLuaFileSemanticData(source, 'duplicate.lua', undefined, chunk);
 	assert.equal(file.decls.length, 2);
 	assert.equal(file.decls[0].id, file.decls[1].id);

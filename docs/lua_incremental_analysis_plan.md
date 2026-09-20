@@ -815,6 +815,81 @@ full pietious program/debug hash still matches
 The heap comparison uses the same dumped workspace and explicit-GC procedure as
 the preceding lexical foundation; it is not a per-keystroke allocation count.
 
+## Persistent statement parts — representation for grammar reuse
+
+`LuaChunk.body` and `LuaBlock.body` now contain `LuaStatementSequence`, not
+arrays. Bounded leaves and balanced persistent branches support split/join,
+part splices, rank/offset cursors and clean-prefix selection using aggregate
+consumed/read widths and local recovery flags. Selecting an unaffected run
+shares its subtrees; there is no array proxy, suffix flattening or snapshot
+chain. Indexed access requires an existing statement rank; optional first/last
+consumers handle an empty body explicitly. Sequential compiler, binder, tooling
+and cart-lint consumers use cursors; completion traverses backwards.
+
+The existing parser produces the parts directly. Each part holds a statement
+or a grammar gap, consumed UTF-16 width, farthest inspected token end, local
+recovery state, newline exit state, and owned occurrence units. Nested statement
+frames own their own units and propagate read/recovery summaries to parents.
+If an attempted statement is discarded, its gap owns every unit allocated by
+that attempt, including detached nested syntax. Recovery is recorded even when
+an earlier diagnostic already occupies the file's first-error latch. Reads are
+recorded on token advancement/lookahead, not on every repeated `current()` call.
+The newline exit flag avoids rescanning arbitrarily long retained trivia when
+later skipping a reusable run. Previous-token identity must still come from
+the new lexical generation.
+
+Coverage is explicitly **the grammar block**, from the preceding consumed
+token's end through the terminating token's start. Module attributes are a
+separate chunk-prefix production; a failed EOF token owns the remaining lexical
+suffix and the chunk retains its skipped span. These are not statement parts.
+A clean body summary is therefore not proof of a clean whole file. The future
+reuse path must always reevaluate chunk prefix/diagnostic publication and also
+prove lexical-block provenance, not merely inspect `hasRecovery` or text spans.
+The wire codec persists part metadata and unit ordinals explicitly, rebuilding
+the same sequence contract on decode; tree internals are not serialized.
+
+References include the parser reuse gates above,
+[Roslyn's internal syntax lists](https://github.com/dotnet/roslyn/blob/main/src/Compilers/Core/Portable/Syntax/InternalSyntax/SyntaxList.WithManyChildren.cs)
+and [Lezer's persistent tree representation](https://github.com/lezer-parser/common/blob/main/src/tree.ts).
+The independent fresh-context review covers source ownership, read/recovery
+metadata, cursor operations, structural sharing and storage boundaries.
+
+**This slice still does not skip grammar parsing or binding.** It removes the
+flat statement-array prerequisite before introducing actual reuse into the
+existing grammar. Incremental lexical placement and retirement of replaced
+syntax units remain part of that next implementation, not deferred performance
+claims. The cold and public-edit acceptance gates remain open.
+
+Validation for this representation slice: 2,064 Lua tests report 2,062 passes,
+one existing named-workbench-menu failure and one skip; all 129 rompacker tests
+pass. The final parser/parts/sequence/codec bundle passes 70 tests. An independent
+cold parser oracle agrees on 1,569 complete/edited sources. A fresh reviewer ran
+5,000 persistent splice/balance/reuse/cursor oracle iterations, 3,000 source
+mutations checking source widths and comprehensive unique occurrence ownership,
+and 100 storage byte fixedpoints, with no blocker. The reported lexical-tail
+boundary concern is now explicit above and covered by tests. Rebuilt tooling,
+BIOS and both carts pass the three nemesis_s precision idetests (8/5/3); core
+parity and `git diff --check` pass. Broad typechecking adds no changed-owner
+errors to the existing unrelated baseline.
+
+Paired pietious O3 runs against `5d1818c4f` (four warmups/twelve samples,
+Node 22.23.1, no concurrent builds/tests during timing) measured:
+
+| Boundary | Before statement parts | Statement parts |
+| --- | ---: | ---: |
+| Parse + select, p50 / p95 ms | 159.32 / 250.23 | 187.95 / 263.86 |
+| Complete O3 compilation, p50 / p95 ms | 3260.52 / 3513.82 | 3298.48 / 3389.31 |
+| Retained bound 285-file heap, MiB | 207.46 | 216.61 |
+| Released heap above input baseline, MiB | 2.48 | 2.63 |
+
+The program/debug hash remains
+`3fdb5f9056ff7c83be99a65f19e856cd75546327a18ccc0ec7fe6dbad32ca64d`.
+The added full-fidelity parts/ownership summaries increase retained heap by
+about 9.15 MiB. Parse median is still about 18% slower in this paired sample;
+a roughly 1.2% complete-compile median increase and a noisier faster tail are
+**not** a passed cold-parse gate. Repeated `current()` bookkeeping was removed,
+but actual reuse and the final cold/edit performance gates still require work.
+
 ## Lowest-priority follow-up: absent-value convention
 
 User request, 2026-09-20: after the incremental parsing/binding work and its

@@ -80,7 +80,7 @@ export function countSplitNestedIfHasTagCalls(statement: IfStatement): number {
 		if (clause.block.body.length !== 1) {
 			break;
 		}
-		const nested = clause.block.body[0];
+		const nested = clause.block.body.get(0);
 		if (nested.kind !== SyntaxKind.IfStatement) {
 			break;
 		}

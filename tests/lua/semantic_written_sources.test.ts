@@ -37,7 +37,7 @@ test('written lane syntax keeps missing results absent and member reads separate
 	const { file, query } = sourceQuery(`local first, absent = 'same'
 first = 'changed'
 return first, absent, ({ key = 'member' }).key`);
-	const local = file.chunk.body[0], assignment = file.chunk.body[1], returned = file.chunk.body[2];
+	const local = file.chunk.body.get(0)!, assignment = file.chunk.body.get(1)!, returned = file.chunk.body.get(2)!;
 	assert.ok(local.kind === LuaSyntaxKind.LocalAssignmentStatement && assignment.kind === LuaSyntaxKind.AssignmentStatement
 		&& returned.kind === LuaSyntaxKind.ReturnStatement);
 	const writes = file.declarationValues.filter(write => write.syntax === local || write.syntax === assignment);
@@ -58,7 +58,7 @@ local changed = { nested = {} }
 local alias = changed
 alias.nested[slot] = 3
 return untouched, changed`);
-	const first = file.chunk.body[0], second = file.chunk.body[1];
+	const first = file.chunk.body.get(0)!, second = file.chunk.body.get(1)!;
 	assert.ok(first.kind === LuaSyntaxKind.LocalAssignmentStatement && second.kind === LuaSyntaxKind.LocalAssignmentStatement);
 	assert.ok(first.values[0].kind === LuaSyntaxKind.TableConstructorExpression && second.values[0].kind === LuaSyntaxKind.TableConstructorExpression);
 	const mutations = query.tableMutations();
@@ -72,10 +72,10 @@ test('bound read values include callees, arguments, literal occurrences and unmo
 local result = identity('same')
 local other = 'same'
 return result, other, 1 + 2`);
-	const declaration = file.chunk.body[0];
-	const assignment = file.chunk.body[1];
-	const other = file.chunk.body[2];
-	const result = file.chunk.body[3];
+	const declaration = file.chunk.body.get(0)!;
+	const assignment = file.chunk.body.get(1)!;
+	const other = file.chunk.body.get(2)!;
+	const result = file.chunk.body.get(3)!;
 	assert.ok(declaration.kind === LuaSyntaxKind.LocalFunctionStatement);
 	assert.ok(assignment.kind === LuaSyntaxKind.LocalAssignmentStatement);
 	assert.ok(other.kind === LuaSyntaxKind.LocalAssignmentStatement);
@@ -103,7 +103,7 @@ test('ordinary local aliases trace written values without requiring const spelli
 local second = first
 local third = second
 return third`);
-	const result = file.chunk.body[3] as LuaReturnStatement;
+	const result = file.chunk.body.get(3)! as LuaReturnStatement;
 	const root = query.expression(file, result.expressions[0]);
 	const trace = query.trace(root);
 	assert.deepEqual(writtenLines(trace.sources), [4, 3, 2, 1]);
@@ -123,7 +123,7 @@ value = 1
 value += 3
 return value, extra`;
 	const { file, query } = sourceQuery(source);
-	const result = file.chunk.body[3] as LuaReturnStatement;
+	const result = file.chunk.body.get(3)! as LuaReturnStatement;
 	const trace = query.trace(query.expression(file, result.expressions[0]));
 	assert.deepEqual(writtenLines(trace.terminals), [1, 2]);
 	assert.deepEqual(writtenLines(trace.boundaries.map(boundary => boundary.source)), [3]);
@@ -142,7 +142,7 @@ test('captured writes retain their containing body without claiming that it ran'
 	const { file, query } = sourceQuery(`local value = 'initial'
 local function replace() value = 'later' end
 return value`);
-	const root = query.expression(file, (file.chunk.body[2] as LuaReturnStatement).expressions[0]);
+	const root = query.expression(file, (file.chunk.body.get(2)! as LuaReturnStatement).expressions[0]);
 	const trace = query.trace(root);
 	assert.deepEqual(writtenLines(trace.terminals), [1, 2]);
 	const [initial, later] = trace.terminals;
@@ -155,7 +155,7 @@ return value`);
 test('logical alternatives preserve unknown and known inputs rather than a closed target count', () => {
 	const { file, query } = sourceQuery(`local value = external_value or { task = 'walk' }
 return value`);
-	const root = query.expression(file, (file.chunk.body[1] as LuaReturnStatement).expressions[0]);
+	const root = query.expression(file, (file.chunk.body.get(1)! as LuaReturnStatement).expressions[0]);
 	const trace = query.trace(root);
 	assert.equal(trace.terminals.length, 1);
 	assert.equal(trace.terminals[0].kind, 'value-transfer');
@@ -172,7 +172,7 @@ test('cycles remain source edges and do not recurse or erase an unknown input', 
 local right = left
 left = right
 return left`);
-	const root = query.expression(file, (file.chunk.body[3] as LuaReturnStatement).expressions[0]);
+	const root = query.expression(file, (file.chunk.body.get(3)! as LuaReturnStatement).expressions[0]);
 	const trace = query.trace(root);
 	assert.deepEqual(writtenLines(trace.sources), [4, 1, 3, 2]);
 	assert.equal(trace.terminals.length, 0);
@@ -184,7 +184,7 @@ test('module, access, call and formal input boundaries keep their real source re
 	const { file, query } = sourceQuery(`local imported = require('library')
 local function forward(value) return value end
 return imported, imported.item, imported[computed_key], forward({})`);
-	const result = file.chunk.body[2] as LuaReturnStatement;
+	const result = file.chunk.body.get(2)! as LuaReturnStatement;
 	const traces = result.expressions.map(expression => query.trace(query.expression(file, expression)));
 	assert.deepEqual(traces.map(trace => trace.boundaries[0].reason), ['module', 'member-read', 'access-path', 'call-result']);
 	assert.equal(traces[1].boundaries[0].source.value.steps[0].kind, 'member');
@@ -231,12 +231,12 @@ test('source global contributions include writes from all files, with no same-na
 	const second = buildLuaFileSemanticData('shared = unknown_value; local shared = 9; return shared', 'second.lua');
 	const snapshot = buildLuaSemanticWorkspaceSnapshot([first, second].map(analysis => ({ path: analysis.file, source: analysis.source, analysis })));
 	const query = snapshot.symbolResolver.writtenSources;
-	const global = query.trace(query.expression(first, (first.chunk.body[1] as LuaReturnStatement).expressions[0]));
+	const global = query.trace(query.expression(first, (first.chunk.body.get(1)! as LuaReturnStatement).expressions[0]));
 	assert.equal(global.terminals.length, 1);
 	assert.equal(global.terminals[0].file, first);
 	assert.equal(global.boundaries.length, 1);
 	assert.equal(global.boundaries[0].source.file, second);
-	const local = query.trace(query.expression(second, (second.chunk.body[2] as LuaReturnStatement).expressions[0]));
+	const local = query.trace(query.expression(second, (second.chunk.body.get(2)! as LuaReturnStatement).expressions[0]));
 	assert.equal(local.terminals.length, 1);
 	assert.equal(local.terminals[0].file, second);
 	assert.equal(local.boundaries.length, 0);
@@ -247,7 +247,7 @@ test('builtin transfer facts are consumed without re-recognizing the builtin nam
 local function setmetatable(value) return value end
 local other = setmetatable({})
 return value, other`);
-	const returned = file.chunk.body[3] as LuaReturnStatement;
+	const returned = file.chunk.body.get(3)! as LuaReturnStatement;
 	const builtin = query.trace(query.expression(file, returned.expressions[0]));
 	assert.equal(builtin.terminals.length, 1);
 	assert.equal(builtin.terminals[0].kind, 'value-transfer');
@@ -262,7 +262,7 @@ test('unbound globals and definitions from another source retain their file owne
 	const consumer = buildLuaFileSemanticData('return shared_value, missing_value', 'consumer.lua');
 	const snapshot = buildLuaSemanticWorkspaceSnapshot([definition, consumer].map(analysis => ({ path: analysis.file, source: analysis.source, analysis })));
 	const query = snapshot.symbolResolver.writtenSources;
-	const returned = consumer.chunk.body[0] as LuaReturnStatement;
+	const returned = consumer.chunk.body.get(0)! as LuaReturnStatement;
 	const known = query.trace(query.expression(consumer, returned.expressions[0]));
 	assert.equal(known.root.file, consumer);
 	assert.equal(known.terminals.length, 1);
@@ -277,7 +277,7 @@ test('new workspace generations share binder facts but not old source-query answ
 	const consumer = buildLuaFileSemanticData('return shared_value', 'consumer.lua');
 	workspace.updateFiles([consumer]);
 	const before = workspace.getSnapshot();
-	const expression = (consumer.chunk.body[0] as LuaReturnStatement).expressions[0];
+	const expression = (consumer.chunk.body.get(0)! as LuaReturnStatement).expressions[0];
 	const beforeQuery = before.symbolResolver.writtenSources;
 	const missing = beforeQuery.trace(beforeQuery.expression(consumer, expression));
 	assert.equal(missing.boundaries[0].reason, 'unbound-global');
@@ -297,9 +297,9 @@ test('new workspace generations share binder facts but not old source-query answ
 
 test('iteration-value uncertainty does not erase the written loop binding', () => {
 	const { file, query } = sourceQuery('for index = 1, 4 do consume(index) end');
-	const loop = file.chunk.body[0];
+	const loop = file.chunk.body.get(0)!;
 	assert.ok(loop.kind === LuaSyntaxKind.ForNumericStatement);
-	const call = loop.block.body[0];
+	const call = loop.block.body.get(0)!;
 	assert.ok(call.kind === LuaSyntaxKind.CallStatement);
 	const expression = call.expression.arguments[0];
 	assert.equal(readLuaExpressionSource(file, expression).root.kind, 'declaration');
@@ -315,7 +315,7 @@ test('iteration-value uncertainty does not erase the written loop binding', () =
 test('incomplete member syntax is not a value alias to its receiver', () => {
 	const { file, query } = sourceQuery('local options = {}; local value = options.');
 	assert.notEqual(file.syntaxError, null);
-	const statement = file.chunk.body[1];
+	const statement = file.chunk.body.get(1)!;
 	assert.ok(statement.kind === LuaSyntaxKind.LocalAssignmentStatement);
 	const expression = statement.values[0];
 	assert.ok(expression.kind === LuaSyntaxKind.MemberExpression);
@@ -334,7 +334,7 @@ test('imports follow the canonical export and ordinary aliases in their original
 		const workspace = new LuaSemanticWorkspace();
 		workspace.updateFiles([library, consumer]);
 		const query = workspace.getSnapshot().symbolResolver.writtenSources;
-		const result = consumer.chunk.body[1] as LuaReturnStatement;
+		const result = consumer.chunk.body.get(1)! as LuaReturnStatement;
 		const trace = query.trace(query.expression(consumer, result.expressions[0]));
 		assert.equal(trace.root.file, consumer);
 		assert.equal(trace.terminals.length, 1);
@@ -343,7 +343,7 @@ test('imports follow the canonical export and ordinary aliases in their original
 		const exported = trace.sources.find(source => source.kind === 'module-export')!;
 		assert.ok(exported.kind === 'module-export');
 		assert.equal(exported.export, library.moduleValues[0]);
-		assert.equal(exported.export.statement, library.chunk.body[library.chunk.body.length - 1]);
+		assert.equal(exported.export.statement, library.chunk.body.get(library.chunk.body.length - 1)!);
 		assert.equal(exported.export.bypassingReturns.length, 0, 'function-body returns are not module exits');
 		assert.equal(query.trace(trace.root), trace);
 	}
@@ -356,7 +356,7 @@ test('reexports retain each written module edge, including cyclic imports', () =
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFiles([leaf, middle, consumer]);
 	const query = workspace.getSnapshot().symbolResolver.writtenSources;
-	const expression = (consumer.chunk.body[0] as LuaReturnStatement).expressions[0];
+	const expression = (consumer.chunk.body.get(0)! as LuaReturnStatement).expressions[0];
 	const trace = query.trace(query.expression(consumer, expression));
 	assert.deepEqual(trace.sources.filter(source => source.kind === 'module-export').map(source => source.file.file), ['middle.lua', 'leaf.lua']);
 	assert.equal(trace.terminals[0].file, leaf);
@@ -379,14 +379,14 @@ test('factory exports move the unresolved call boundary to the provider, not the
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFiles([library, consumer]);
 	const query = workspace.getSnapshot().symbolResolver.writtenSources;
-	const trace = query.trace(query.expression(consumer, (consumer.chunk.body[0] as LuaReturnStatement).expressions[0]));
+	const trace = query.trace(query.expression(consumer, (consumer.chunk.body.get(0)! as LuaReturnStatement).expressions[0]));
 	assert.equal(trace.terminals.length, 0, 'written-source tracking does not manufacture call-return proof');
 	assert.equal(trace.boundaries.length, 1);
 	const boundary = trace.boundaries[0];
 	assert.equal(boundary.reason, 'call-result');
 	assert.equal(boundary.source.file, library);
 	assert.ok(boundary.source.kind === 'module-export');
-	assert.equal(boundary.source.export.statement, library.chunk.body[1]);
+	assert.equal(boundary.source.export.statement, library.chunk.body.get(1)!);
 	assert.equal(boundary.source.value.root.kind, 'owned');
 });
 
@@ -399,7 +399,7 @@ test('unshaped and missing modules are boundaries, not invented constructor expo
 		const workspace = new LuaSemanticWorkspace();
 		workspace.updateFiles([library, consumer]);
 		const query = workspace.getSnapshot().symbolResolver.writtenSources;
-		for (const expression of (consumer.chunk.body[0] as LuaReturnStatement).expressions) {
+		for (const expression of (consumer.chunk.body.get(0)! as LuaReturnStatement).expressions) {
 			const trace = query.trace(query.expression(consumer, expression));
 			assert.equal(trace.terminals.length, 0);
 			assert.equal(trace.boundaries.length, 1);
@@ -418,11 +418,11 @@ return { canonical = true }`, 'library.lua');
 	workspace.updateFiles([library, consumer]);
 	assert.equal(library.moduleValues.length, 1);
 	const entry = library.moduleValues[0];
-	assert.equal(entry.statement, library.chunk.body[3]);
+	assert.equal(entry.statement, library.chunk.body.get(3)!);
 	assert.deepEqual(entry.bypassingReturns.map(statement => library.chunk.locations.range(statement.span).start.line), [2, 3]);
 	assert.equal(library.functionValueFlows[0].returns.length, 1);
 	const query = workspace.getSnapshot().symbolResolver.writtenSources;
-	const trace = query.trace(query.expression(consumer, (consumer.chunk.body[0] as LuaReturnStatement).expressions[0]));
+	const trace = query.trace(query.expression(consumer, (consumer.chunk.body.get(0)! as LuaReturnStatement).expressions[0]));
 	assert.equal(trace.terminals.length, 1);
 	assert.deepEqual(writtenLines(trace.terminals), [4]);
 	assert.deepEqual(trace.boundaries.map(boundary => boundary.reason), ['module-publication', 'module-publication']);
@@ -436,7 +436,7 @@ return { canonical = true }`, 'library.lua');
 
 test('adding and editing an export replaces module answers without reparsing its importer', () => {
 	const consumer = buildLuaFileSemanticData('return require("library")', 'consumer.lua');
-	const expression = (consumer.chunk.body[0] as LuaReturnStatement).expressions[0];
+	const expression = (consumer.chunk.body.get(0)! as LuaReturnStatement).expressions[0];
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFiles([consumer]);
 	const before = workspace.getSnapshot().symbolResolver.writtenSources;

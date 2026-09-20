@@ -1,4 +1,5 @@
-import { type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaIdentifierExpression as IdentifierExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
+import type { LuaStatementSequence } from '../../../../../../toolchain/ts/lua/syntax/statement_sequence';
+import { type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaIdentifierExpression as IdentifierExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintContext } from '../../../../lua_rule';
 import { leaveSingleUseHasTagScope } from '../../single_use_has_tag_pattern';
 import { declareBinding, enterBindingScope } from './bindings';
@@ -82,8 +83,9 @@ export function lintSingleUseHasTagInExpression(expression: Expression, context:
 	}
 }
 
-export function lintSingleUseHasTagInStatements(statements: ReadonlyArray<Statement>, context: SingleUseHasTagContext): void {
-	for (const statement of statements) {
+export function lintSingleUseHasTagInStatements(statements: LuaStatementSequence, context: SingleUseHasTagContext): void {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case SyntaxKind.LocalAssignmentStatement:
 				for (let index = 0; index < Math.min(statement.names.length, statement.values.length); index += 1) {
@@ -199,7 +201,7 @@ export function lintSingleUseHasTagInStatements(statements: ReadonlyArray<Statem
 	}
 }
 
-export function lintSingleUseHasTagPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
+export function lintSingleUseHasTagPattern(statements: LuaStatementSequence, lint: CartLintContext): void {
 	const context = createSingleUseHasTagContext(lint);
 	enterSingleUseHasTagScope(context);
 	try {

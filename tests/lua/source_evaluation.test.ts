@@ -12,7 +12,7 @@ test('source evaluation includes eager reads/operations, not a referenced initia
 return { alias, build(value), object.field, object[key], left + right,
  function() return deferred(captured) end, condition and maybe(), ... }`;
 	const file = buildLuaFileSemanticData(source, 'evaluation.lua');
-	const statement = file.chunk.body[1];
+	const statement = file.chunk.body.get(1)!;
 	assert.ok(statement.kind === LuaSyntaxKind.ReturnStatement);
 	const evaluation = collectLuaSourceEvaluation(file, statement.expressions[0]);
 	assert.deepEqual(evaluation.filter(item => item.kind === 'call').map(item => {
@@ -34,7 +34,7 @@ local next_value<const> = function() serial=serial+1; return serial end
 local from={ {duration_ticks=next_value()}, {duration_ticks=next_value()} }
 local to={}`;
 	const file = buildLuaFileSemanticData(source, 'evaluation.lua');
-	const from = file.chunk.body[2], to = file.chunk.body[3];
+	const from = file.chunk.body.get(2)!, to = file.chunk.body.get(3)!;
 	assert.ok(from.kind === LuaSyntaxKind.LocalAssignmentStatement && to.kind === LuaSyntaxKind.LocalAssignmentStatement);
 	const table = from.values[0], target = to.values[0];
 	assert.ok(table.kind === LuaSyntaxKind.TableConstructorExpression && target.kind === LuaSyntaxKind.TableConstructorExpression);

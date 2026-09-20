@@ -10,7 +10,7 @@ for (const aliases of [1, 64, 1024, 4096]) {
 	lines.push(`return value_${aliases}`);
 	const source = lines.join('\n');
 	const file = buildLuaFileSemanticData(source, 'written.lua');
-	const statement = file.chunk.body[file.chunk.body.length - 1];
+	const statement = file.chunk.body.get(file.chunk.body.length - 1)!;
 	assert.ok(statement.kind === LuaSyntaxKind.ReturnStatement);
 	const expression = statement.expressions[0];
 	const files = [file];
@@ -42,7 +42,7 @@ for (const modules of [1, 64, 256, 1024]) {
 		files.push(buildLuaFileSemanticData(`return require("module_${index - 1}")`, `module_${index}.lua`));
 	}
 	const file = files[modules];
-	const statement = file.chunk.body[0];
+	const statement = file.chunk.body.get(0)!;
 	assert.ok(statement.kind === LuaSyntaxKind.ReturnStatement);
 	const expression = statement.expressions[0];
 	const declarations = new Map<SymbolID, Decl>();

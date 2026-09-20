@@ -10,8 +10,8 @@ for (const lines of [64, 4096]) {
 	const source = `local first={1,2}${gap}\nlocal second={3,4}`;
 	const model = new EditorTextModel({ domain: 0, path: 'transfer.lua', source: { type: 'lua', resid: 'transfer' } }, 'lua', source);
 	const parsed = parseLuaChunk(source, model.resource.path).chunk!;
-	const first = parsed.body[0];
-	const second = parsed.body[1];
+	const first = parsed.body.get(0)!;
+	const second = parsed.body.get(1)!;
 	assert.ok(first.kind === LuaSyntaxKind.LocalAssignmentStatement && first.values[0].kind === LuaSyntaxKind.TableConstructorExpression);
 	assert.ok(second.kind === LuaSyntaxKind.LocalAssignmentStatement && second.values[0].kind === LuaSyntaxKind.TableConstructorExpression);
 	const field = first.values[0].fields[0];

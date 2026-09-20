@@ -169,7 +169,7 @@ test('model addition and hidden dependency edits are visible at the next semanti
 		sourceRegistry([['main.lua', "return require('dependency')"], ['dependency.lua', 'return {}']])));
 	const old = project.getSnapshot();
 	const importer = old.getFileData('main.lua')!;
-	const statement = importer.chunk.body[0];
+	const statement = importer.chunk.body.get(0)!;
 	assert.equal(statement.kind, LuaSyntaxKind.ReturnStatement);
 	if (statement.kind !== LuaSyntaxKind.ReturnStatement) throw new Error('fixture must return its import');
 	const oldQuery = old.symbolResolver.writtenSources;

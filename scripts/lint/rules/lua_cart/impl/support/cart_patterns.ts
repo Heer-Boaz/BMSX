@@ -10,8 +10,8 @@ export function matchesLocalAliasReturnWrapperPattern(functionExpression: CartFu
 	if (body.length !== 2) {
 		return false;
 	}
-	const localAssignment = body[0];
-	const returnStatement = body[1];
+	const localAssignment = body.get(0);
+	const returnStatement = body.get(1);
 	if (localAssignment.kind !== SyntaxKind.LocalAssignmentStatement) {
 		return false;
 	}
@@ -31,26 +31,26 @@ export function matchesEnsurePattern(functionExpression: CartFunctionExpression)
 	if (body.length !== 2) {
 		return false;
 	}
-	if (body[0].kind !== SyntaxKind.IfStatement || body[1].kind !== SyntaxKind.ReturnStatement) {
+	const ifStatement = body.get(0);
+	const returnStatement = body.get(1);
+	if (ifStatement.kind !== SyntaxKind.IfStatement || returnStatement.kind !== SyntaxKind.ReturnStatement) {
 		return false;
 	}
-	const ifStatement = body[0];
 	const variableName = getEnsureVariableName(ifStatement);
 	if (!variableName) {
 		return false;
 	}
 	const clauseBody = ifStatement.clauses[0].block.body;
-	if (clauseBody.length !== 1 || clauseBody[0].kind !== SyntaxKind.AssignmentStatement) {
+	if (clauseBody.length !== 1 || clauseBody.get(0).kind !== SyntaxKind.AssignmentStatement) {
 		return false;
 	}
-	const assignment = clauseBody[0] as AssignmentStatement;
+	const assignment = clauseBody.get(0) as AssignmentStatement;
 	if (assignment.operator !== AssignmentOperator.Assign || assignment.left.length !== 1 || assignment.right.length !== 1) {
 		return false;
 	}
 	if (!isIdentifier(assignment.left[0], variableName)) {
 		return false;
 	}
-	const returnStatement = body[1];
 	return returnStatement.expressions.length === 1 && isIdentifier(returnStatement.expressions[0], variableName);
 }
 
@@ -70,8 +70,8 @@ export function matchesEnsureLocalAliasPattern(functionExpression: CartFunctionE
 	if (!comparesNil || onlyClause.block.body.length !== 2) {
 		return false;
 	}
-	const assignLocal = onlyClause.block.body[0];
-	const assignStorage = onlyClause.block.body[1];
+	const assignLocal = onlyClause.block.body.get(0);
+	const assignStorage = onlyClause.block.body.get(1);
 	if (assignLocal.kind !== SyntaxKind.AssignmentStatement || assignStorage.kind !== SyntaxKind.AssignmentStatement) {
 		return false;
 	}

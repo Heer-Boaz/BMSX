@@ -1,4 +1,5 @@
-import { type LuaExpression as Expression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
+import type { LuaStatementSequence } from '../../../../../../toolchain/ts/lua/syntax/statement_sequence';
+import { type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { FunctionUsageInfo, incrementUsageCount } from '../../../../function_usage';
 import { getExpressionKeyName } from './expression_signatures';
 
@@ -91,11 +92,12 @@ export function collectCartExpressionFunctionUsageCounts(
 }
 
 export function collectCartStatementListFunctionUsageCounts(
-	statements: ReadonlyArray<Statement>,
+	statements: LuaStatementSequence,
 	totalCounts: Map<string, number>,
 	referenceCounts: Map<string, number>,
 ): void {
-	for (const statement of statements) {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case SyntaxKind.LocalAssignmentStatement:
 				for (const value of statement.values) {
@@ -156,7 +158,7 @@ export function collectCartStatementListFunctionUsageCounts(
 	}
 }
 
-export function collectCartFunctionUsageCounts(statements: ReadonlyArray<Statement>): FunctionUsageInfo {
+export function collectCartFunctionUsageCounts(statements: LuaStatementSequence): FunctionUsageInfo {
 	const totalCounts = new Map<string, number>();
 	const referenceCounts = new Map<string, number>();
 	collectCartStatementListFunctionUsageCounts(statements, totalCounts, referenceCounts);

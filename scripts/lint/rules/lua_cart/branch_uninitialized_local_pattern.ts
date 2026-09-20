@@ -1,14 +1,15 @@
+import type { LuaStatementSequence } from '../../../../toolchain/ts/lua/syntax/statement_sequence';
 import { defineLintRule } from '../../rule';
-import { type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
+import { LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintContext } from '../../lua_rule';
 import { isSingleBranchConditionalAssignment, statementUsesIdentifierUnsafelyInCurrentScope } from './impl/support/identifier_flow';
 import { pushIssue } from './impl/support/lint_context';
 
 export const branchUninitializedLocalPatternRule = defineLintRule('cart', 'branch_uninitialized_local_pattern');
 
-export function lintBranchUninitializedLocalPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
-	for (let index = 0; index + 2 < statements.length; index += 1) {
-		const declaration = statements[index];
+export function lintBranchUninitializedLocalPattern(statements: LuaStatementSequence, lint: CartLintContext): void {
+	for (const cursor = statements.cursor(); cursor.index + 2 < statements.length; cursor.advance()) {
+		const declaration = cursor.statement!;
 		if (declaration.kind !== SyntaxKind.LocalAssignmentStatement) {
 			continue;
 		}
@@ -16,7 +17,8 @@ export function lintBranchUninitializedLocalPattern(statements: ReadonlyArray<St
 			continue;
 		}
 		const name = declaration.names[0].name;
-		const firstStatement = statements[index + 1];
+		const following = statements.cursor(cursor.index + 1);
+		const firstStatement = following.statement!;
 		if (firstStatement.kind !== SyntaxKind.IfStatement) {
 			continue;
 		}
@@ -24,8 +26,8 @@ export function lintBranchUninitializedLocalPattern(statements: ReadonlyArray<St
 			continue;
 		}
 		let usedAfter = false;
-		for (let scan = index + 2; scan < statements.length; scan += 1) {
-			if (statementUsesIdentifierUnsafelyInCurrentScope(statements[scan], name)) {
+		while (following.advance()) {
+			if (statementUsesIdentifierUnsafelyInCurrentScope(following.statement!, name)) {
 				usedAfter = true;
 				break;
 			}

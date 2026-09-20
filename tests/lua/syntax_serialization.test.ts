@@ -48,10 +48,10 @@ test('syntax import preserves shared span identity and never reparses or materia
 	const create = LuaSourceLayout.create;
 	t.mock.method(LuaSourceLayout, 'create', (...args: Parameters<typeof create>) => { builds++; return create(...args); });
 	const decoded = decodeLuaChunk(encodeLuaChunk(chunk));
-	const call = decoded.body[0];
+	const call = decoded.body.get(0)!;
 	assert.ok(call.kind === LuaSyntaxKind.CallStatement);
 	assert.strictEqual(call.span, call.expression.span);
-	const returned = decoded.body[1];
+	const returned = decoded.body.get(1)!;
 	assert.ok(returned.kind === LuaSyntaxKind.ReturnStatement);
 	const table = returned.expressions[0];
 	assert.ok(table.kind === LuaSyntaxKind.TableConstructorExpression);

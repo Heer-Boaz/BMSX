@@ -48,7 +48,7 @@ test('Lua syntax-start anchors survive expression-end growth without changing or
 	const model = new EditorTextModel(resource, 'lua', '-- 🐉\nreturn next_path');
 	const syntax = () => {
 		const chunk = parseLuaChunk(model.buffer.getText(), resource.path).chunk;
-		return chunk.locations.range(chunk.body[0].span);
+		return chunk.locations.range(chunk.body.get(0)!.span);
 	};
 	const statement = syntax();
 	const range = luaSourceRangeToTextRange(model.buffer, statement);
@@ -70,7 +70,7 @@ test('Lua syntax-start anchors survive expression-end growth without changing or
 
 function parseFields(source: string) {
 	const chunk = parseLuaChunk(source, resource.path).chunk;
-	const statement = chunk.body[0];
+	const statement = chunk.body.get(0)!;
 	assert.equal(statement.kind, LuaSyntaxKind.LocalAssignmentStatement);
 	const table = statement.values[0] as LuaTableConstructorExpression;
 	assert.equal(table.kind, LuaSyntaxKind.TableConstructorExpression);
@@ -201,7 +201,7 @@ test('Lua field edits cover array, expression-key and identifier fields without 
 	const model = new EditorTextModel(resource, 'lua', source);
 	const chunk = parseLuaChunk(source, resource.path).chunk;
 	const locations = chunk.locations;
-	const statement = chunk.body[0];
+	const statement = chunk.body.get(0)!;
 	assert.equal(statement.kind, LuaSyntaxKind.LocalAssignmentStatement);
 	if (statement.kind !== LuaSyntaxKind.LocalAssignmentStatement) throw new Error('expected assignment');
 	const table = statement.values[0];

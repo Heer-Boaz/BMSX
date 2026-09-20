@@ -15,7 +15,7 @@ const resource: RuntimeResource = {
 
 function parseTable(source: string) {
 	const parsed = parseLuaChunk(source, resource.path);
-	const statement = parsed.chunk!.body[0];
+	const statement = parsed.chunk!.body.get(0)!;
 	if (statement.kind !== LuaSyntaxKind.LocalAssignmentStatement) throw new Error('expected local assignment');
 	const table = statement.values[0];
 	if (table.kind !== LuaSyntaxKind.TableConstructorExpression) throw new Error('expected table');

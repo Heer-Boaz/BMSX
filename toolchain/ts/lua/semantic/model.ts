@@ -1,3 +1,4 @@
+import type { LuaStatementSequence } from '../syntax/statement_sequence';
 import { hashText } from '../../../../machine/ts/common/byte_hex_string';
 import { HashMapBuilder } from '../../collections/hash_map';
 import { SourceChangeMap } from '../../text/source_changes';
@@ -679,8 +680,8 @@ class SemanticBuilder {
 			this.documentEndExclusive,
 			'path',
 		);
-		for (let index = 0; index < this.chunk.body.length; index += 1) {
-			this.visitStatement(this.chunk.body[index]);
+		for (const cursor = this.chunk.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+			this.visitStatement(cursor.statement);
 		}
 		this.leaveScope();
 		const moduleAliases = collectStableModuleAliases(this.decls, this.declarationValuesByDeclaration);
@@ -1104,8 +1105,8 @@ class SemanticBuilder {
 	}
 
 	private visitBlock(block: LuaBlock): void {
-		for (let index = 0; index < block.body.length; index += 1) {
-			this.visitStatement(block.body[index]);
+		for (const cursor = block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+			this.visitStatement(cursor.statement);
 		}
 	}
 
@@ -2551,14 +2552,14 @@ function inferMinimumArgumentCount(
 }
 
 function parameterHasUnsafeUse(
-	statements: readonly LuaStatement[],
+	statements: LuaStatementSequence,
 	parameterName: string,
 	signatures: ReadonlyMap<string, FunctionSignatureInfo>,
 	guarded: boolean,
 ): boolean {
 	let parameterGuarded = guarded;
-	for (let index = 0; index < statements.length; index += 1) {
-		const statement = statements[index];
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		if (statement.kind === LuaSyntaxKind.IfStatement) {
 			const ifStatement = statement;
 			for (let clauseIndex = 0; clauseIndex < ifStatement.clauses.length; clauseIndex += 1) {
@@ -2667,12 +2668,12 @@ function parameterHasUnsafeUse(
 }
 
 function parameterHasExplicitOptionalPattern(
-	statements: readonly LuaStatement[],
+	statements: LuaStatementSequence,
 	parameterName: string,
 	signatures: ReadonlyMap<string, FunctionSignatureInfo>,
 ): boolean {
-	for (let index = 0; index < statements.length; index += 1) {
-		const statement = statements[index];
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		if (statement.kind === LuaSyntaxKind.IfStatement) {
 			if (isEarlyReturnOnMissingParameter(statement, parameterName)) {
 				return true;
@@ -2929,11 +2930,11 @@ function isEarlyReturnOnMissingParameter(statement: LuaStatement, parameterName:
 	return !!condition && conditionGuaranteesParameterAbsent(condition, parameterName) && blockEndsWithReturn(clause.block.body);
 }
 
-function blockEndsWithReturn(statements: readonly LuaStatement[]): boolean {
+function blockEndsWithReturn(statements: LuaStatementSequence): boolean {
 	if (statements.length === 0) {
 		return false;
 	}
-	return statements[statements.length - 1].kind === LuaSyntaxKind.ReturnStatement;
+	return statements.get(statements.length - 1).kind === LuaSyntaxKind.ReturnStatement;
 }
 
 function conditionGuaranteesParameterPresent(expression: LuaExpression, parameterName: string): boolean {

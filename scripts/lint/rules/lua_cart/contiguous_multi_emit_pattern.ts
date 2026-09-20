@@ -1,12 +1,13 @@
+import type { LuaStatementSequence } from '../../../../toolchain/ts/lua/syntax/statement_sequence';
 import { defineLintRule } from '../../rule';
-import { type LuaCallExpression as CallExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
+import { type LuaCallExpression as CallExpression, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintContext } from '../../lua_rule';
 import { isEventsEmitCallExpression } from './impl/support/fsm_events';
 import { pushIssue } from './impl/support/lint_context';
 
 export const contiguousMultiEmitPatternRule = defineLintRule('cart', 'contiguous_multi_emit_pattern');
 
-export function lintContiguousMultiEmitPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
+export function lintContiguousMultiEmitPattern(statements: LuaStatementSequence, lint: CartLintContext): void {
 	let firstEmitCall: CallExpression | undefined;
 	let emitCount = 0;
 
@@ -26,7 +27,8 @@ export function lintContiguousMultiEmitPattern(statements: ReadonlyArray<Stateme
 		emitCount = 0;
 	};
 
-	for (const statement of statements) {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		if (statement.kind === SyntaxKind.CallStatement && isEventsEmitCallExpression(statement.expression)) {
 			if (!firstEmitCall) {
 				firstEmitCall = statement.expression;

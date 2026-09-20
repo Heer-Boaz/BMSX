@@ -1,5 +1,6 @@
+import type { LuaStatementSequence } from '../../toolchain/ts/lua/syntax/statement_sequence';
 import { LuaSourceLocations } from '../../toolchain/ts/lua/syntax/source_locations';
-import { type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaFunctionExpression as CartFunctionExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
+import { type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaFunctionExpression as CartFunctionExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, LuaSyntaxKind as SyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { LuaSyntaxError as ParserSyntaxError } from '../../toolchain/ts/lua/errors';
 import { LuaLexer as Lexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser as Parser } from '../../toolchain/ts/lua/syntax/parser';
@@ -432,14 +433,15 @@ export function lintExpression(
 }
 
 export function lintStatements(
-	statements: ReadonlyArray<Statement>,
+	statements: LuaStatementSequence,
 	lint: CartLintContext,
 	moduleCalls: CartModuleCallMap,
 	insideFunction = false,
 ): void {
 	lintBranchUninitializedLocalPattern(statements, lint);
 	lintContiguousMultiEmitPattern(statements, lint);
-	for (const statement of statements) {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case SyntaxKind.LocalAssignmentStatement:
 				lintLocalAssignment(statement, lint);

@@ -21,8 +21,8 @@ export const collectStaticStorageDeclarations = (
 	semantics: LuaSemanticFrontendFile,
 ): StaticStorageDeclaration[] => {
 	const declarations: StaticStorageDeclaration[] = [];
-	for (let index = 0; index < chunk.body.length; index += 1) {
-		const statement = chunk.body[index];
+	for (const cursor = chunk.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case LuaSyntaxKind.StructDeclarationStatement:
 				declarations.push({ kind: 'struct', statement: statement as LuaStructDeclarationStatement });

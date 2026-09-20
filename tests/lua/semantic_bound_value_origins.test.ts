@@ -62,7 +62,7 @@ test('rebinding identical syntax does not reuse another binding generation of ow
 	const source = 'return { item = true }';
 	const first = buildLuaFileSemanticData(source, 'provider.lua');
 	const second = buildLuaFileSemanticData(source, 'provider.lua', undefined, first.chunk);
-	const statement = first.chunk.body[0];
+	const statement = first.chunk.body.get(0)!;
 	assert.ok(statement.kind === LuaSyntaxKind.ReturnStatement);
 	const expression = statement.expressions[0];
 	const firstValue = first.ownedValuesBySyntax.get(expression)!;

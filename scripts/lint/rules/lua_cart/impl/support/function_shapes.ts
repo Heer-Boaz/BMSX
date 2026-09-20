@@ -20,9 +20,9 @@ export function getThreeStatementFunctionBody(functionExpression: CartFunctionEx
 		return undefined;
 	}
 	return {
-		first: body[0],
-		second: body[1],
-		third: body[2],
+		first: body.get(0),
+		second: body.get(1),
+		third: body.get(2),
 	};
 }
 
@@ -56,7 +56,7 @@ export function getFunctionSingleReturnExpression(functionExpression: CartFuncti
 	if (body.length !== 1) {
 		return undefined;
 	}
-	const statement = body[0];
+	const statement = body.get(0);
 	if (statement.kind !== SyntaxKind.ReturnStatement || statement.expressions.length !== 1) {
 		return undefined;
 	}

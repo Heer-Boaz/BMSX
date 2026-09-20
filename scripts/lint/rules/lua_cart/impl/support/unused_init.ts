@@ -1,4 +1,5 @@
-import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
+import type { LuaStatementSequence } from '../../../../../../toolchain/ts/lua/syntax/statement_sequence';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintContext } from '../../../../lua_rule';
 import { markUnusedInitValueWrite } from '../../unused_init_value_pattern';
 import { declareBinding, discardBindingScope, enterBindingScope, resolveBinding } from './bindings';
@@ -107,11 +108,12 @@ export function lintUnusedInitValuesInAssignmentTarget(
 }
 
 export function lintUnusedInitValuesInStatements(
-	statements: ReadonlyArray<Statement>,
+	statements: LuaStatementSequence,
 	context: UnusedInitValueContext,
 	isGuaranteedPath: boolean,
 ): void {
-	for (const statement of statements) {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case SyntaxKind.LocalAssignmentStatement:
 				for (const value of statement.values) {
@@ -217,7 +219,7 @@ export function lintUnusedInitValuesInStatements(
 }
 
 export function lintUnusedInitValuesInFunctionBody(
-	statements: ReadonlyArray<Statement>,
+	statements: LuaStatementSequence,
 	lint: CartLintContext,
 	parameters: ReadonlyArray<IdentifierExpression>,
 ): void {

@@ -1,3 +1,4 @@
+import type { LuaStatementSequence } from '../syntax/statement_sequence';
 import {
 	LuaAssignmentOperator,
 	LuaBinaryOperator,
@@ -432,12 +433,12 @@ function resolveReferenceHandle(
 // ---------------------------------------------------------------------------
 
 function collectNestedClosureWritesFromStatementList(
-	body: ReadonlyArray<LuaStatement>,
+	body: LuaStatementSequence,
 	semantics: LuaSemanticFrontendFile,
 	out: Set<string>,
 ): void {
-	for (let index = 0; index < body.length; index += 1) {
-		collectNestedClosureWritesFromStatement(body[index], semantics, out);
+	for (const cursor = body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		collectNestedClosureWritesFromStatement(cursor.statement, semantics, out);
 	}
 }
 
@@ -554,12 +555,12 @@ function collectNestedClosureWritesFromExpression(
 }
 
 function collectLexicalWritesInFunctionBody(
-	body: ReadonlyArray<LuaStatement>,
+	body: LuaStatementSequence,
 	semantics: LuaSemanticFrontendFile,
 	out: Set<string>,
 ): void {
-	for (let index = 0; index < body.length; index += 1) {
-		collectLexicalWritesInStatement(body[index], semantics, out);
+	for (const cursor = body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		collectLexicalWritesInStatement(cursor.statement, semantics, out);
 	}
 }
 
@@ -687,7 +688,7 @@ function collectLexicalWritesInStatement(
 }
 
 function computeClosureWrittenSymbols(
-	body: ReadonlyArray<LuaStatement>,
+	body: LuaStatementSequence,
 	semantics: LuaSemanticFrontendFile,
 ): Set<string> {
 	const result = new Set<string>();
@@ -713,7 +714,7 @@ export class ValueKindFlowAnalyzer {
 	private state: MutableFlowState = new Map();
 
 	constructor(
-		body: ReadonlyArray<LuaStatement>,
+		body: LuaStatementSequence,
 		semantics: LuaSemanticFrontendFile,
 	) {
 		this.semantics = semantics;
@@ -733,10 +734,10 @@ export class ValueKindFlowAnalyzer {
 	//  Statement-list traversal
 	// -----------------------------------------------------------------------
 
-	private analyzeStatementList(statements: ReadonlyArray<LuaStatement>): void {
-		for (let index = 0; index < statements.length; index += 1) {
-			this.stateAtStatement.set(statements[index], freezeState(cloneState(this.state)));
-			this.analyzeStatement(statements[index]);
+	private analyzeStatementList(statements: LuaStatementSequence): void {
+		for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+			this.stateAtStatement.set(cursor.statement, freezeState(cloneState(this.state)));
+			this.analyzeStatement(cursor.statement);
 		}
 	}
 

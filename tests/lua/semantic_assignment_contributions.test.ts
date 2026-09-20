@@ -27,17 +27,17 @@ test('written contributions retain equal-valued occurrences and self-assignment 
 	const contributions = file.declarationValues.filter(item => item.declId === declaration.id);
 	assert.equal(contributions.length, 6);
 	assert.equal(contributions[0].source, NIL_VALUE_SOURCE);
-	assert.equal(contributions[0].syntax, file.chunk.body[0]);
-	assert.equal(contributions[1].syntax, file.chunk.body[1]);
-	assert.equal(contributions[2].syntax, file.chunk.body[2]);
+	assert.equal(contributions[0].syntax, file.chunk.body.get(0)!);
+	assert.equal(contributions[1].syntax, file.chunk.body.get(1)!);
+	assert.equal(contributions[2].syntax, file.chunk.body.get(2)!);
 	assert.ok(semanticValueSourcesEqual(contributions[1].source, contributions[2].source));
-	assert.equal(contributions[3].syntax, file.chunk.body[3]);
+	assert.equal(contributions[3].syntax, file.chunk.body.get(3)!);
 	assert.ok(semanticValueSourcesEqual(contributions[3].source, declarationValueSource(declaration.id)));
 	assert.ok(contributions.slice(0, 4).every(item => item.flow === undefined && item.index === 0));
 	const flow = file.functionValueFlows[0];
 	assert.equal(contributions[4].flow, flow);
-	assert.equal(contributions[4].syntax, flow.expression.body.body[0]);
-	assert.equal(contributions[5].syntax, flow.expression.body.body[1]);
+	assert.equal(contributions[4].syntax, flow.expression.body.body.get(0)!);
+	assert.equal(contributions[5].syntax, flow.expression.body.body.get(1)!);
 	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
 	assert.equal(summaries.list()[0].aliases.length, 1, 'summary terms deduplicate values without erasing written occurrences');
 	assert.deepEqual(runCompiledLua(source), [1]);
@@ -82,15 +82,15 @@ test('short assignments distinguish nil padding from unmodeled expanded result l
 	].join('\n');
 	const file = buildLuaFileSemanticData(source, 'lanes.lua');
 	const values = file.declarationValues;
-	const paddedLocal = values.filter(item => item.syntax === file.chunk.body[1]);
+	const paddedLocal = values.filter(item => item.syntax === file.chunk.body.get(1)!);
 	assert.deepEqual(paddedLocal.map(item => item.index), [0, 1, 2]);
 	assert.equal(paddedLocal[1].source, NIL_VALUE_SOURCE);
 	assert.equal(paddedLocal[2].source, NIL_VALUE_SOURCE);
-	const expandedLocal = values.filter(item => item.syntax === file.chunk.body[2]);
+	const expandedLocal = values.filter(item => item.syntax === file.chunk.body.get(2)!);
 	assert.equal(expandedLocal.length, 2);
 	assert.equal(expandedLocal[0].source.root.kind, 'owned');
 	assert.equal(expandedLocal[1].source.root.kind, 'unknown');
-	const paddedAssignment = values.filter(item => item.syntax === file.chunk.body[3]);
+	const paddedAssignment = values.filter(item => item.syntax === file.chunk.body.get(3)!);
 	assert.deepEqual(paddedAssignment.map(item => item.index), [0, 1, 2]);
 	assert.equal(paddedAssignment[1].source, NIL_VALUE_SOURCE);
 	assert.equal(paddedAssignment[2].source, NIL_VALUE_SOURCE);
@@ -115,10 +115,10 @@ test('parallel RHS references keep the prior scope and surplus RHS still bind ca
 		'end',
 	].join('\n');
 	const file = buildLuaFileSemanticData(source, 'parallel.lua');
-	const block = file.chunk.body[3];
+	const block = file.chunk.body.get(3)!;
 	assert.ok(block.kind === LuaSyntaxKind.DoStatement);
 	const declaration = file.decls.find(item => item.name === 'left')!;
-	const initializers = file.declarationValues.filter(item => item.syntax === block.block.body[0]);
+	const initializers = file.declarationValues.filter(item => item.syntax === block.block.body.get(0)!);
 	assert.equal(initializers.length, 2);
 	assert.ok(semanticValueSourcesEqual(initializers[1].source, declarationValueSource(declaration.id)));
 	assert.equal(file.callValues.length, 2, 'surplus calls are not discarded with their unused result');
@@ -137,7 +137,7 @@ test('table writes and logical operand transfers retain real fields and unmodele
 		'return data.named, data[1], data[2], data[3] == nil, data.other, selected == data, both == data',
 	].join('\n');
 	const file = buildLuaFileSemanticData(source, 'tables.lua');
-	const declaration = file.chunk.body[0];
+	const declaration = file.chunk.body.get(0)!;
 	assert.ok(declaration.kind === LuaSyntaxKind.LocalAssignmentStatement);
 	const constructor = declaration.values[0];
 	const fields = file.declarationValues.filter(item => item.syntax === constructor);
@@ -295,8 +295,8 @@ test('term identity classification is fixed before const aliases or their access
 test('iteration contributions keep their producer syntax, not fabricated initializer expressions', () => {
 	const file = buildLuaFileSemanticData('for i = 1, 3 do end; for key, value, extra in pairs({}) do end', 'loops.lua');
 	assert.deepEqual(file.declarationValues.map(item => item.index), [0, 0, 1, 2]);
-	assert.equal(file.declarationValues[0].syntax, file.chunk.body[0]);
-	assert.ok(file.declarationValues.slice(1).every(item => item.syntax === file.chunk.body[1]));
+	assert.equal(file.declarationValues[0].syntax, file.chunk.body.get(0)!);
+	assert.ok(file.declarationValues.slice(1).every(item => item.syntax === file.chunk.body.get(1)!));
 	assert.equal(file.declarationValues[2].relation, 'projection');
 	assert.equal(file.declarationValues[2].source.steps[0].kind, 'element');
 	for (const index of [0, 1, 3]) assert.equal(file.declarationValues[index].source.root.kind, 'unknown');
@@ -312,8 +312,8 @@ test('written origins belong to immutable file facts, not the current workspace 
 	assert.equal(workspace.getSnapshot().getFileData('provider.lua'), provider);
 	workspace.updateFile('provider.lua', 'local value = 1; value = 2; return value');
 	const after = workspace.getSnapshot().getFileData('provider.lua')!;
-	assert.equal(provider.declarationValues[1].syntax, provider.chunk.body[1]);
-	assert.equal(after.declarationValues[1].syntax, after.chunk.body[1]);
+	assert.equal(provider.declarationValues[1].syntax, provider.chunk.body.get(1)!);
+	assert.equal(after.declarationValues[1].syntax, after.chunk.body.get(1)!);
 	assert.notEqual(after.declarationValues[1].syntax, provider.declarationValues[1].syntax);
 	assert.notDeepEqual(after.declarationValues[1].source, provider.declarationValues[1].source);
 });

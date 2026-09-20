@@ -1,5 +1,6 @@
+import type { LuaStatementSequence } from '../../../../toolchain/ts/lua/syntax/statement_sequence';
 import { defineLintRule } from '../../rule';
-import { type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
+import { LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintContext } from '../../lua_rule';
 import { findCallExpressionInStatements, visitCallExpressionsInStatements } from '../../../../toolchain/ts/lua/syntax/calls';
 import { getStateNameFromStateField } from './impl/support/fsm_labels';
@@ -12,7 +13,7 @@ import { CART_MODULE_CALL_FSM_REGISTER, type CartModuleCallMap } from './impl/su
 export const fsmEnteringStateVisualSetupPatternRule = defineLintRule('cart', 'fsm_entering_state_visual_setup_pattern');
 
 export function lintFsmEnteringStateVisualSetupPattern(
-	statements: ReadonlyArray<Statement>,
+	statements: LuaStatementSequence,
 	moduleCalls: CartModuleCallMap,
 	lint: CartLintContext,
 ): void {

@@ -1,5 +1,6 @@
+import type { LuaStatementSequence } from '../../../../toolchain/ts/lua/syntax/statement_sequence';
 import { defineLintRule } from '../../rule';
-import { LuaAssignmentOperator as AssignmentOperator, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaIdentifierExpression as IdentifierExpression, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintContext } from '../../lua_rule';
 import { countIdentifierMentionsInStatements } from './impl/support/identifier_flow';
 import { getModuleFieldAssignmentBaseIdentifier, isModuleFieldAssignmentTarget } from './impl/support/object_ownership';
@@ -7,11 +8,11 @@ import { pushIssue } from './impl/support/lint_context';
 
 export const stagedExportLocalTablePatternRule = defineLintRule('cart', 'staged_export_local_table_pattern');
 
-export function lintStagedExportLocalTablePattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
+export function lintStagedExportLocalTablePattern(statements: LuaStatementSequence, lint: CartLintContext): void {
 	const stagedLocalTableDeclarations = new Map<string, { declaration: IdentifierExpression; declarationStatementIndex: number; }>();
 	const flagged = new Set<string>();
-	for (let statementIndex = 0; statementIndex < statements.length; statementIndex += 1) {
-		const statement = statements[statementIndex];
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		if (statement.kind === SyntaxKind.LocalAssignmentStatement) {
 			const valueCount = Math.min(statement.names.length, statement.values.length);
 			for (let index = 0; index < valueCount; index += 1) {
@@ -20,7 +21,7 @@ export function lintStagedExportLocalTablePattern(statements: ReadonlyArray<Stat
 				if (value.kind === SyntaxKind.TableConstructorExpression) {
 					stagedLocalTableDeclarations.set(name.name, {
 						declaration: name,
-						declarationStatementIndex: statementIndex,
+						declarationStatementIndex: cursor.index,
 					});
 				} else {
 					stagedLocalTableDeclarations.delete(name.name);
@@ -53,8 +54,9 @@ export function lintStagedExportLocalTablePattern(statements: ReadonlyArray<Stat
 					continue;
 				}
 				const mentionCountAfterDeclaration = countIdentifierMentionsInStatements(
-					statements.slice(stagedDeclaration.declarationStatementIndex + 1),
+					statements,
 					right.name,
+					stagedDeclaration.declarationStatementIndex + 1,
 				);
 				if (mentionCountAfterDeclaration > 2) {
 					continue;

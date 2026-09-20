@@ -1,4 +1,5 @@
-import { type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
+import type { LuaStatementSequence } from '../../../../../../toolchain/ts/lua/syntax/statement_sequence';
+import { type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { resolveModuleAliasInitializer } from '../../../../../../toolchain/ts/lua/semantic/module_bindings';
 import { type CartLintContext } from '../../../../lua_rule';
 import { declareShadowedRequireAliasBinding } from '../../shadowed_require_alias_pattern';
@@ -98,10 +99,11 @@ export function lintShadowedRequireAliasExpression(expression: Expression | null
 }
 
 export function lintShadowedRequireAliasStatements(
-	statements: ReadonlyArray<Statement>,
+	statements: LuaStatementSequence,
 	context: ShadowedRequireAliasContext,
 ): void {
-	for (const statement of statements) {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 			switch (statement.kind) {
 				case SyntaxKind.LocalAssignmentStatement: {
 					for (const value of statement.values) {
@@ -243,7 +245,7 @@ function lintShadowedRequireAliasFunctionExpression(functionExpression: CartFunc
 	context.requireIsBuiltin = requireIsBuiltin;
 }
 
-export function analyzeRequireAliases(statements: ReadonlyArray<Statement>, lint: CartLintContext): CartModuleCallMap {
+export function analyzeRequireAliases(statements: LuaStatementSequence, lint: CartLintContext): CartModuleCallMap {
 	const context = createShadowedRequireAliasContext(lint);
 	enterBindingScope(context);
 	lintShadowedRequireAliasStatements(statements, context);

@@ -25,7 +25,7 @@ test('location cursor projects forward and backward UTF-16 seeks through source 
 
 test('one retained syntax occurrence projects independently in old and shifted snapshots', () => {
 	const old = parseLuaChunk('local a = 1\nlocal b = a\n', 'retained.lua').chunk;
-	const node = old.body[1];
+	const node = old.body.get(1)!;
 	const oldRange = old.locations.range(node.span);
 	const edit = old.locations.layout.edit();
 	edit.replace(0, 0, '-- leading\n');
@@ -42,7 +42,7 @@ test('one retained syntax occurrence projects independently in old and shifted s
 test('parser emits unit-local nodes, block boundaries and argument separators directly', () => {
 	const source = '-- header\r\nlocal function f(a)\r\n local b = function() return a end\r\n return g(a, b)\r\nend';
 	const chunk = parseLuaChunk(source, 'nested.lua').chunk;
-	const statement = chunk.body[0];
+	const statement = chunk.body.get(0)!;
 	assert.equal(statement.kind, LuaSyntaxKind.LocalFunctionStatement);
 	if (statement.kind !== LuaSyntaxKind.LocalFunctionStatement) throw new Error('Expected local function');
 	const fn = statement.functionExpression;
@@ -141,7 +141,7 @@ test('native generations project all coordinates without materializing a persist
 
 test('two layout edits fork from a native generation without borrowing its absolute caches', () => {
 	const { chunk } = parseLuaChunk('local a=1\nlocal b=2', 'fork.lua');
-	const span = chunk.body[1].span;
+	const span = chunk.body.get(1)!.span;
 	const oldRange = chunk.locations.range(span);
 	const left = chunk.locations.layout.edit(), right = chunk.locations.layout.edit();
 	left.replace(0, 0, '-- left\n');

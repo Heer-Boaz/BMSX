@@ -1,5 +1,6 @@
+import type { LuaStatementSequence } from '../../../../toolchain/ts/lua/syntax/statement_sequence';
 import { defineLintRule } from '../../rule';
-import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaLocalFunctionStatement as LocalFunctionStatement, LuaSyntaxKind as SyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import { declareConstantCopyBinding, enterConstantCopyScope, isForbiddenConstantCopyExpression, leaveConstantCopyScope, lintConstantCopyInAssignmentTarget, lintConstantCopyInExpression, setConstantCopyBindingByName } from './impl/support/constant_copy';
 import { isConstantSourceExpression } from './impl/support/expressions';
 import { ConstantCopyContext } from './impl/support/types';
@@ -7,8 +8,9 @@ import { pushIssue } from './impl/support/lint_context';
 
 export const constantCopyPatternRule = defineLintRule('cart', 'constant_copy_pattern');
 
-export function lintConstantCopyInStatements(statements: ReadonlyArray<Statement>, context: ConstantCopyContext): void {
-	for (const statement of statements) {
+export function lintConstantCopyInStatements(statements: LuaStatementSequence, context: ConstantCopyContext): void {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case SyntaxKind.LocalAssignmentStatement: {
 				const valueCount = Math.min(statement.names.length, statement.values.length);

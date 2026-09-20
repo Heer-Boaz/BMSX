@@ -1,5 +1,5 @@
+import type { LuaStatementSequence } from '../../../../toolchain/ts/lua/syntax/statement_sequence';
 import { defineLintRule } from '../../rule';
-import { type LuaStatement as Statement } from '../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintContext } from '../../lua_rule';
 import { isEventProxyFlagPropertyName } from './impl/support/general';
 import { pushIssue } from './impl/support/lint_context';
@@ -7,7 +7,7 @@ import { findSelfPropertyAssignmentInStatements } from './impl/support/self_prop
 
 export const eventHandlerFlagProxyPatternRule = defineLintRule('cart', 'event_handler_flag_proxy_pattern');
 
-export function lintEventHandlerFlagProxyPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
+export function lintEventHandlerFlagProxyPattern(statements: LuaStatementSequence, lint: CartLintContext): void {
 	const assignment = findSelfPropertyAssignmentInStatements(statements, isEventProxyFlagPropertyName);
 	if (!assignment) {
 		return;

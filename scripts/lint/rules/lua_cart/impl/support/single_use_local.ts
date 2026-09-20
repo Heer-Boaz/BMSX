@@ -1,5 +1,6 @@
+import type { LuaStatementSequence } from '../../../../../../toolchain/ts/lua/syntax/statement_sequence';
 import type { LuaSourceLocations } from '../../../../../../toolchain/ts/lua/syntax/source_locations';
-import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaFunctionExpression as CartFunctionExpression, type LuaIdentifierExpression as IdentifierExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaFunctionExpression as CartFunctionExpression, type LuaIdentifierExpression as IdentifierExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintContext } from '../../../../lua_rule';
 import { leaveSingleUseLocalScope } from '../../../common/single_use_local_pattern';
 import { declareBinding, enterBindingScope } from './bindings';
@@ -30,7 +31,7 @@ export function isTrivialSingleUseLocalHelperFunctionExpression(expression: Cart
 	if (bodyStatements.length !== 1) {
 		return false;
 	}
-	const onlyStatement = bodyStatements[0];
+	const onlyStatement = bodyStatements.get(0);
 	if (onlyStatement.kind === SyntaxKind.AssignmentStatement) {
 		return onlyStatement.left.length === 1 && onlyStatement.right.length === 1;
 	}
@@ -167,8 +168,9 @@ export function lintSingleUseLocalInAssignmentTarget(
 	}
 }
 
-export function lintSingleUseLocalInStatements(statements: ReadonlyArray<Statement>, context: SingleUseLocalContext): void {
-	for (const statement of statements) {
+export function lintSingleUseLocalInStatements(statements: LuaStatementSequence, context: SingleUseLocalContext): void {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case SyntaxKind.LocalAssignmentStatement:
 				for (const value of statement.values) {
@@ -279,7 +281,7 @@ export function lintSingleUseLocalInStatements(statements: ReadonlyArray<Stateme
 	}
 }
 
-export function lintSingleUseLocalPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
+export function lintSingleUseLocalPattern(statements: LuaStatementSequence, lint: CartLintContext): void {
 	const context = createSingleUseLocalContext(lint);
 	enterBindingScope(context);
 	try {

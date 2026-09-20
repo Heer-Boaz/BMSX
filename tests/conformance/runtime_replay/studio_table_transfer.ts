@@ -21,8 +21,8 @@ export async function testStudioTableTransfer(test: StudioFixture): Promise<void
 	const cursor = { row: 0, column: 0 };
 	for (const reverse of [false, true]) {
 		const parsed = parseLuaChunk(model.buffer.getText(), model.resource.path);
-		const from = parsed.chunk!.body[reverse ? 1 : 0];
-		const to = parsed.chunk!.body[reverse ? 0 : 1];
+		const from = parsed.chunk!.body.get(reverse ? 1 : 0)!;
+		const to = parsed.chunk!.body.get(reverse ? 0 : 1)!;
 		if (from.kind !== LuaSyntaxKind.LocalAssignmentStatement || to.kind !== LuaSyntaxKind.LocalAssignmentStatement
 			|| from.values[0].kind !== LuaSyntaxKind.TableConstructorExpression || to.values[0].kind !== LuaSyntaxKind.TableConstructorExpression) {
 			throw new Error('transfer: expected independent source constructors');

@@ -27,7 +27,7 @@ test('a string-value edit preserves grouping and all exterior trivia in one Undo
 		const model = new EditorTextModel({ domain: 0, path: 'value.lua', source: { type: 'lua', resid: 'value' } }, 'lua', source);
 		t.after(() => model.dispose());
 		const file = buildLuaFileSemanticData(source, 'value.lua');
-		const statement = file.chunk.body[0];
+		const statement = file.chunk.body.get(0)!;
 		assert.ok(statement.kind === LuaSyntaxKind.ReturnStatement);
 		const literal = statement.expressions[0];
 		assert.ok(literal.kind === LuaSyntaxKind.StringLiteralExpression || literal.kind === LuaSyntaxKind.NilLiteralExpression
@@ -38,7 +38,7 @@ test('a string-value edit preserves grouping and all exterior trivia in one Undo
 		assert.equal(model.buffer.getText(), source.replace(original, quoteLuaString(value, original[0] === '"' ? '"' : "'")));
 		const result = buildLuaFileSemanticData(model.buffer.getText(), 'value.lua');
 		assert.equal(result.syntaxError, null);
-		const returned = result.chunk.body[0];
+		const returned = result.chunk.body.get(0)!;
 		assert.ok(returned.kind === LuaSyntaxKind.ReturnStatement && returned.expressions[0].kind === LuaSyntaxKind.StringLiteralExpression);
 		assert.equal(returned.expressions[0].value, value);
 		model.undo();

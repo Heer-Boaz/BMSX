@@ -1,4 +1,5 @@
-import { type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaIdentifierExpression as IdentifierExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
+import type { LuaStatementSequence } from '../../../../../../toolchain/ts/lua/syntax/statement_sequence';
+import { type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaIdentifierExpression as IdentifierExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintContext } from '../../../../lua_rule';
 import { leaveConstLocalScope } from '../../../common/local_const_pattern';
 import { declareBinding, enterBindingScope } from './bindings';
@@ -108,8 +109,9 @@ export function lintConstLocalInAssignmentTarget(target: Expression | null, cont
 	}
 }
 
-export function lintConstLocalInStatements(statements: ReadonlyArray<Statement>, context: ConstLocalContext): void {
-	for (const statement of statements) {
+export function lintConstLocalInStatements(statements: LuaStatementSequence, context: ConstLocalContext): void {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case SyntaxKind.LocalAssignmentStatement: {
 				const hasInitializer = statement.values.length > 0;
@@ -222,7 +224,7 @@ export function lintConstLocalInStatements(statements: ReadonlyArray<Statement>,
 	}
 }
 
-export function lintConstLocalPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
+export function lintConstLocalPattern(statements: LuaStatementSequence, lint: CartLintContext): void {
 	const context = createConstLocalContext(lint);
 	enterConstLocalScope(context);
 	try {

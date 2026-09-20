@@ -5,6 +5,7 @@ import { mapTrackedTextRange } from '../../ide/editor/text/text_change';
 import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { createLuaTableFieldInsertionEdits } from '../../ide/language/lua/table_field_insertion';
 import { createLuaTableFieldMoveEdits } from '../../ide/language/lua/table_field_moves';
+import { LuaStatementSequence } from '../../toolchain/ts/lua/syntax/statement_sequence';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { createLuaTableFieldTransfer } from '../../ide/language/lua/table_field_transfer';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
@@ -47,10 +48,10 @@ function applyTransfer(source: string, sourceTableIndex: number, fieldIndex: num
 	assert.equal(after.syntaxError, null, edited);
 	const targetFields = [...target.fields];
 	targetFields.splice(destination, 0, field);
-	const expected = JSON.stringify(parsed.chunk, (key, value) => locationKeys.has(key) ? undefined
+	const expected = JSON.stringify(parsed.chunk, (key, value) => value instanceof LuaStatementSequence ? Array.from(value) : locationKeys.has(key) ? undefined
 		: value === from ? { ...from, fields: from.fields.filter(candidate => candidate !== field) }
 			: value === target ? { ...target, fields: targetFields } : value);
-	assert.equal(JSON.stringify(after.chunk, (key, value) => locationKeys.has(key) ? undefined : value), expected,
+	assert.equal(JSON.stringify(after.chunk, (key, value) => value instanceof LuaStatementSequence ? Array.from(value) : locationKeys.has(key) ? undefined : value), expected,
 		'the entire AST changes only the two lists, including ancestor/descendant containers');
 	model.undo();
 	assert.equal(model.buffer.getText(), source);
@@ -88,7 +89,7 @@ test('empty targets, compact lists, owned comments, long strings and missing sep
 		for (const second of ['{}', '{ }', '{ --[[header]] }', '{ -- header\n-- footer\n}', '{2}', '{2,}', '{2 -- tail\n}']) {
 			for (const reverse of [false, true]) {
 				const source = reverse ? `local target=${second}\nlocal source=${first}` : `local source=${first}\nlocal target=${second}`;
-				const target = parseLuaChunk(`local target=${second}`, resource.path).chunk!.body[0];
+				const target = parseLuaChunk(`local target=${second}`, resource.path).chunk!.body.get(0)!;
 				assert.ok(target.kind === LuaSyntaxKind.LocalAssignmentStatement && target.values[0].kind === LuaSyntaxKind.TableConstructorExpression);
 				for (let index = 0; index <= target.values[0].fields.length; index += 1) applyTransfer(source, reverse ? 1 : 0, 0, reverse ? 0 : 1, index);
 			}

@@ -133,7 +133,7 @@ test('equal coordinates in another file or socket do not identify the same sourc
 	assert.equal(behaviorSourceBookmarksEqual(bookmark, otherFile), false);
 	assert.equal(resolveBehaviorSourceBookmark(otherFile, f.view), undefined);
 	const dependency = buildLuaFileSemanticData(PROVIDER, f.provider.identity.path);
-	const expression = dependency.chunk.body[0];
+	const expression = dependency.chunk.body.get(0)!;
 	assert.ok(expression.kind === LuaSyntaxKind.ReturnStatement);
 	const location = luaSourceRangeToTextLocation(f.models, dependency.chunk.locations.range(expression.span));
 	assert.equal(trackedTextLocationsEqual(location, { ...location, resource: { domain: 1, path: location.resource.path } }), false);

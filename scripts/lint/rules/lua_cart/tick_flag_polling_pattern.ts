@@ -9,7 +9,8 @@ import { pushIssue } from './impl/support/lint_context';
 export const tickFlagPollingPatternRule = defineLintRule('cart', 'tick_flag_polling_pattern');
 
 export function lintTickFlagPollingPattern(functionExpression: CartFunctionExpression, lint: CartLintContext): void {
-	for (const statement of functionExpression.body.body) {
+	for (const cursor = functionExpression.body.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		if (statement.kind !== SyntaxKind.IfStatement) {
 			continue;
 		}

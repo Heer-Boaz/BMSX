@@ -80,7 +80,7 @@ test('unchanged resume spans between separate edits retain exact token positions
 	const before = 'local before = 1\ncheckpoint()\nlocal after = 2';
 	const after = '-- heading\n' + before.replace('= 1', '= 10').replace('= 2', '= 20');
 	const { match, old, fresh } = compare(before, after);
-	assert.deepEqual(match.unchangedRange(old.chunk.locations.range(old.chunk.body[1].span)), fresh.chunk.locations.range(fresh.chunk.body[1].span));
+	assert.deepEqual(match.unchangedRange(old.chunk.locations.range(old.chunk.body.get(1)!.span)), fresh.chunk.locations.range(fresh.chunk.body.get(1)!.span));
 	const point = { path: PATH, start: { line: 2, column: 4 }, end: { line: 2, column: 4 } };
 	assert.deepEqual(match.unchangedRange(point), { path: PATH, start: { line: 3, column: 4 }, end: { line: 3, column: 4 } });
 });

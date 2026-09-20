@@ -21,7 +21,7 @@ const EMPTY_MEMBER_PATH: readonly string[] = [];
 
 /** BMSX's written export site; nested/earlier returns do not declare module exports. */
 export function findLuaModuleExport(chunk: LuaChunk): LuaReturnStatement | undefined {
-	const statement = chunk.body[chunk.body.length - 1];
+	const statement = chunk.body.length === 0 ? undefined : chunk.body.get(chunk.body.length - 1);
 	return statement !== undefined && statement.kind === LuaSyntaxKind.ReturnStatement
 		&& statement.expressions.length === 1 ? statement : undefined;
 }

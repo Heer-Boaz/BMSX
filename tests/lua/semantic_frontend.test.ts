@@ -179,7 +179,7 @@ test('LuaSemanticFrontend binds declarations and references to retained syntax i
 	const path = 'syntax_identity.lua';
 	const retainedChunk = parseLuaChunk(source, path).chunk;
 	const frontend = buildLuaSemanticFrontend([{ path, source, chunk: retainedChunk }]);
-	const assignment = retainedChunk.body[0];
+	const assignment = retainedChunk.body.get(0)!;
 	assert.equal(assignment.kind, LuaSyntaxKind.AssignmentStatement);
 	const identifier = assignment.left[0];
 	assert.equal(identifier.kind, LuaSyntaxKind.IdentifierExpression);
@@ -192,7 +192,7 @@ test('LuaSemanticFrontend binds declarations and references to retained syntax i
 	assert.equal(reference.ref.target, declaration.id);
 	assert.equal(reference.ref.isWrite, true);
 
-	const reparsedAssignment = parseLuaChunk(source, path).chunk.body[0];
+	const reparsedAssignment = parseLuaChunk(source, path).chunk.body.get(0)!;
 	assert.equal(reparsedAssignment.kind, LuaSyntaxKind.AssignmentStatement);
 	const reparsedIdentifier = reparsedAssignment.left[0];
 	assert.equal(reparsedIdentifier.kind, LuaSyntaxKind.IdentifierExpression);
@@ -228,9 +228,9 @@ test('LuaSemanticFrontend binds method self independently of out-of-scope siblin
 	const parsed = parseLuaChunk(source, 'method_self.lua');
 	const frontend = buildLuaSemanticFrontend([{ path: 'method_self.lua', source, parsed }]);
 	const file = frontend.getFile('method_self.lua');
-	const method = parsed.chunk.body[2];
+	const method = parsed.chunk.body.get(2)!;
 	assert.equal(method.kind, LuaSyntaxKind.FunctionDeclarationStatement);
-	const returnStatement = method.functionExpression.body.body[0];
+	const returnStatement = method.functionExpression.body.body.get(0)!;
 	assert.equal(returnStatement.kind, LuaSyntaxKind.ReturnStatement);
 	const self = returnStatement.expressions[0];
 	assert.equal(self.kind, LuaSyntaxKind.IdentifierExpression);

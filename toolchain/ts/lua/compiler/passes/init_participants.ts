@@ -1,9 +1,9 @@
+import type { LuaStatementSequence } from '../../syntax/statement_sequence';
 import {
 	LuaSyntaxKind,
 	type LuaChunk,
 	type LuaExpression,
 	type LuaFunctionExpression,
-	type LuaStatement,
 	type LuaTypeReference,
 } from '../../syntax/ast';
 import { walkLuaExpressionTree } from '../../syntax/ast/traversal';
@@ -33,9 +33,9 @@ export function validateInitParticipantPlacement(
 		});
 	}
 
-	function visitStatements(statements: ReadonlyArray<LuaStatement>, topLevel: boolean): void {
-		for (let index = 0; index < statements.length; index += 1) {
-			const statement = statements[index];
+	function visitStatements(statements: LuaStatementSequence, topLevel: boolean): void {
+		for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+			const statement = cursor.statement;
 			switch (statement.kind) {
 				case LuaSyntaxKind.LocalAssignmentStatement:
 					for (let valueIndex = 0; valueIndex < statement.values.length; valueIndex += 1) {

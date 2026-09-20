@@ -1,4 +1,5 @@
-import { LuaAssignmentOperator as AssignmentOperator, type LuaAssignmentStatement as AssignmentStatement, LuaBinaryOperator as BinaryOperator, type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
+import type { LuaStatementSequence } from '../../../../../../toolchain/ts/lua/syntax/statement_sequence';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaAssignmentStatement as AssignmentStatement, LuaBinaryOperator as BinaryOperator, type LuaCallExpression as CallExpression, type LuaExpression as Expression, LuaSyntaxKind as SyntaxKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintContext } from '../../../../lua_rule';
 import { lintFsmForbiddenLegacyFieldsInTable } from '../../fsm_forbidden_legacy_fields_pattern';
 import { lintFsmProcessInputPollingTransitionPatternInTable } from '../../fsm_process_input_polling_transition_pattern';
@@ -7,8 +8,9 @@ import { lintFsmTickCounterTransitionPatternInTable } from '../../fsm_tick_count
 import { getSelfAssignedPropertyNameFromTarget, isSelfPropertyReferenceByName } from './self_properties';
 import { CART_MODULE_CALL_FSM_REGISTER, type CartModuleCallKind } from './types';
 
-export function hasTransitionReturnInStatements(statements: ReadonlyArray<Statement>): boolean {
-	for (const statement of statements) {
+export function hasTransitionReturnInStatements(statements: LuaStatementSequence): boolean {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case SyntaxKind.ReturnStatement:
 				for (const expression of statement.expressions) {
@@ -140,8 +142,9 @@ export function findTickCounterMutationInAssignment(statement: AssignmentStateme
 	return undefined;
 }
 
-export function findTickCounterMutationInStatements(statements: ReadonlyArray<Statement>): Expression | undefined {
-	for (const statement of statements) {
+export function findTickCounterMutationInStatements(statements: LuaStatementSequence): Expression | undefined {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case SyntaxKind.AssignmentStatement: {
 				const found = findTickCounterMutationInAssignment(statement);

@@ -105,7 +105,7 @@ export function matchesMeaninglessSingleLineMethodPattern(functionExpression: Ca
 	if (body.length !== 1) {
 		return false;
 	}
-	const statement = body[0];
+	const statement = body.get(0);
 	if (statement.kind === SyntaxKind.CallStatement) {
 		return isDelegationCallCandidate(statement.expression);
 	}
@@ -135,7 +135,8 @@ export function matchesUselessAssertPattern(statement: IfStatement): boolean {
 		if (!clause.condition) {
 			continue;
 		}
-		for (const clauseStatement of clause.block.body) {
+		for (const cursor = clause.block.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
+			const clauseStatement = cursor.statement;
 			if (isErrorTerminatingStatement(clauseStatement)) {
 				return true;
 			}
@@ -187,7 +188,7 @@ export function matchesHandlerIdentityDispatchPattern(functionExpression: CartFu
 	if (onlyClause.block.body.length !== 1) {
 		return false;
 	}
-	const specialReturnCall = getReturnedCallToIdentifier(onlyClause.block.body[0], localName);
+	const specialReturnCall = getReturnedCallToIdentifier(onlyClause.block.body.get(0), localName);
 	if (!specialReturnCall) {
 		return false;
 	}

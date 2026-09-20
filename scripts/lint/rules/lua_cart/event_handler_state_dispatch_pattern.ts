@@ -1,5 +1,5 @@
+import type { LuaStatementSequence } from '../../../../toolchain/ts/lua/syntax/statement_sequence';
 import { defineLintRule } from '../../rule';
-import { type LuaStatement as Statement } from '../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintContext } from '../../lua_rule';
 import { findCallExpressionInStatements } from '../../../../toolchain/ts/lua/syntax/calls';
 import { isCrossObjectDispatchStateEventCallExpression } from './impl/support/object_ownership';
@@ -7,7 +7,7 @@ import { pushIssue } from './impl/support/lint_context';
 
 export const eventHandlerStateDispatchPatternRule = defineLintRule('cart', 'event_handler_state_dispatch_pattern');
 
-export function lintEventHandlerStateDispatchPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
+export function lintEventHandlerStateDispatchPattern(statements: LuaStatementSequence, lint: CartLintContext): void {
 	const expression = findCallExpressionInStatements(statements, isCrossObjectDispatchStateEventCallExpression);
 	if (!expression) {
 		return;

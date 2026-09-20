@@ -1,4 +1,5 @@
-import { type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
+import type { LuaStatementSequence } from '../../../../../../toolchain/ts/lua/syntax/statement_sequence';
+import { type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintContext } from '../../../../lua_rule';
 import { lintDuplicateInitializerInStatements } from '../../duplicate_initializer_pattern';
 import { declareBinding, discardBindingScope, enterBindingScope, resolveBinding } from './bindings';
@@ -83,7 +84,7 @@ export function lintDuplicateInitializerInExpression(expression: Expression | nu
 	}
 }
 
-export function lintDuplicateInitializerPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
+export function lintDuplicateInitializerPattern(statements: LuaStatementSequence, lint: CartLintContext): void {
 	const context = createDuplicateInitializerContext(lint);
 	try {
 		lintDuplicateInitializerInStatements(statements, context);

@@ -1,4 +1,5 @@
-import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
+import type { LuaStatementSequence } from '../../../../../../toolchain/ts/lua/syntax/statement_sequence';
+import { LuaAssignmentOperator as AssignmentOperator, type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression, LuaSyntaxKind as SyntaxKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
 import { type CartLintContext } from '../../../../lua_rule';
 import { lintRuntimeTagLookupInExpression } from '../../runtime_tag_table_access_pattern';
 import { declareBinding, discardBindingScope, enterBindingScope, lintNullBindingFunctionScope, lintScopedBindingStatements, resolveBinding, setBinding } from './bindings';
@@ -88,10 +89,11 @@ export function isRuntimeTagLookupExpression(expression: Expression, context: Ru
 }
 
 export function lintRuntimeTagLookupInStatements(
-	statements: ReadonlyArray<Statement>,
+	statements: LuaStatementSequence,
 	context: RuntimeTagLookupContext,
 ): void {
-	for (const statement of statements) {
+	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
+		const statement = cursor.statement;
 		switch (statement.kind) {
 			case SyntaxKind.LocalAssignmentStatement:
 				for (const value of statement.values) {
@@ -194,7 +196,7 @@ export function lintRuntimeTagLookupInStatements(
 	}
 }
 
-export function lintRuntimeTagTableAccessPattern(statements: ReadonlyArray<Statement>, lint: CartLintContext): void {
+export function lintRuntimeTagTableAccessPattern(statements: LuaStatementSequence, lint: CartLintContext): void {
 	const context = createRuntimeTagLookupContext(lint);
 	try {
 		lintRuntimeTagLookupInStatements(statements, context);
