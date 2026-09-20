@@ -628,8 +628,8 @@ export class SemanticCallGraph {
 			}
 			this.valueProducerSeen[current] = this.valueProducerGeneration;
 			const kind = this.summaries.terms.kind(current);
-			if (kind === TermKind.Index) {
-				for (const summary of this.demand.indexedWriters(current)) {
+			if (kind === TermKind.Index || this.summaries.terms.isGlobalStorage(current)) {
+				for (const summary of this.demand.storageWriters(current)) {
 					this.activateCallers(this.summaries.get(summary).functionValue);
 				}
 			}

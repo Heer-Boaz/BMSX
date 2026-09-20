@@ -411,6 +411,8 @@ export class SemanticInstantiationQuery {
 		}
 		for (let aliasIndex = 0; aliasIndex < summary.aliases.length; aliasIndex += 1) {
 			const alias = summary.aliases[aliasIndex];
+			// Raw global publication is a call effect, not a body projection.
+			if (this.summaries.terms.isGlobalStorage(alias.target)) continue;
 			this.addAlias({
 				target: this.summaries.projectExternalTerm(alias.target),
 				source: this.summaries.projectExternalTerm(alias.source),

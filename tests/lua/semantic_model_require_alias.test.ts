@@ -181,7 +181,7 @@ test('a const copy does not certify an import through a reassigned local', async
 	assert.equal(getLuaModuleAliasTarget(data, call.call.callee), null);
 });
 
-test('semantic file data does not create module aliases after require is assigned globally', async () => {
+test('semantic file data retains compiler module aliases after require is assigned globally', async () => {
 	const { buildLuaFileSemanticData } = await semanticWorkspaceModulePromise;
 	const source = [
 		"local constants<const> = require('constants')",
@@ -193,9 +193,9 @@ test('semantic file data does not create module aliases after require is assigne
 	].join('\n');
 	const data = buildLuaFileSemanticData(source, 'testpath');
 	assert.deepEqual(data.callSites.filter(site => data.chunk.locations.range(site.expression.span).start.line === 6).map(site => getLuaModuleAliasTarget(data, site.call.callee)), [
-		{ module: 'constants', memberPath: ['read'] }, null,
+		{ module: 'constants', memberPath: ['read'] }, { module: 'combat', memberPath: ['read'] },
 	]);
-	assert.deepEqual(data.moduleReferences.map(reference => reference.value), ['constants']);
+	assert.deepEqual(data.moduleReferences.map(reference => reference.value), ['constants', 'combat']);
 });
 
 test('module alias answers use the explicit file generation, not retained callee or export facts', async () => {

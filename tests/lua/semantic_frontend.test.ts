@@ -626,7 +626,7 @@ test('LuaSemanticFrontend resolves require strings to their target module files'
 	});
 });
 
-test('LuaSemanticFrontend navigates only calls bound to the builtin require', () => {
+test('LuaSemanticFrontend navigates compiler require syntax unless shadowed lexically', () => {
 	const entrySource = [
 		'require("lib/util")',
 		'local function load(require)',
@@ -643,7 +643,7 @@ test('LuaSemanticFrontend navigates only calls bound to the builtin require', ()
 	]);
 	const source = frontend.snapshot.getFileData('main.lua');
 	assert.ok(source);
-	assert.equal(source.moduleReferences.length, 1);
+	assert.equal(source.moduleReferences.length, 2);
 	assert.equal(source.moduleReferences[0].value, 'lib/util');
 	assert.deepEqual(source.chunk.locations.range(source.moduleReferences[0].span), {
 		path: 'main.lua',
@@ -659,10 +659,7 @@ test('LuaSemanticFrontend navigates only calls bound to the builtin require', ()
 		frontend.getFile('main.lua').findNavigationAt(shadowedPosition.line, shadowedPosition.column),
 		null,
 	);
-	assert.equal(
-		frontend.getFile('main.lua').findNavigationAt(assignedPosition.line, assignedPosition.column),
-		null,
-	);
+	assert.ok(frontend.getFile('main.lua').findNavigationAt(assignedPosition.line, assignedPosition.column));
 });
 
 test('LuaSemanticFrontend can build from immutable analysis snapshots without reparsing source state', () => {

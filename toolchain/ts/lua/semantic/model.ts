@@ -1,3 +1,4 @@
+import { composeLuaBuiltinOperations, type LuaBuiltinOperationSite } from './builtin_operations';
 import { createScopeId, type ScopeID, type ScopeKind, type SemanticScope } from './scope_facts';
 import type { LuaSyntaxPoint, LuaSyntaxSpan } from '../syntax/source_locations';
 import { hashText } from '../../../../machine/ts/common/byte_hex_string';
@@ -51,7 +52,6 @@ import {
 	appendValueIndex,
 	appendValueInstance,
 	appendValueMember,
-	appendValueMetatable,
 	declarationValueSource,
 	globalValueSource,
 	literalExpressionValueSource,
@@ -142,7 +142,7 @@ export type FileSemanticData = LuaFileSemanticRevision & {
 	readonly decls: readonly Decl[];
 	/** Binder order and multiplicity, for snapshot global enumeration. */
 	readonly globalDecls: readonly Decl[];
-	/** Root-global storage witnesses, last value per symbol in first-key order. */
+	/** All authored root-global publications, separate from navigation precedence. */
 	readonly globalStorageDecls: readonly Decl[];
 	readonly scopes: readonly SemanticScope[];
 	readonly scopesById: ReadonlyMap<ScopeID, SemanticScope>;
@@ -260,6 +260,8 @@ type InternalDecl = Decl & {
 	scopeRef: Scope;
 	active: boolean;
 	valueSource: DeclarationSemanticValueSource;
+	/** Publication destination, not lexical storage or declaration identity. */
+	globalPublication?: SemanticValueSource;
 };
 
 type ImplicitReceiverBinding = {
@@ -325,7 +327,7 @@ type SemanticBuildResult = {
 	annotationFacts: SemanticTokenFact[];
 	callSites: LuaCallSite[];
 	declarationValues: DeclarationValueEntry[];
-	declarationValuesByDeclaration: Map<SymbolID, DeclarationValueEntry[]>;
+	builtinOperations: LuaBuiltinOperationSite[];
 	readValuesBySyntax: Map<LuaExpression, SemanticValueSource>;
 	ownedValuesBySyntax: Map<LuaExpression, OwnedSemanticValueSource>;
 	moduleValues: ModuleValueEntry[];
@@ -356,13 +358,13 @@ export function buildLuaFileSemanticData(
 	const result = builder.build();
 	const decls = new Array<Decl>(result.decls.length);
 	const globalDecls: Decl[] = [];
-	const globalStorageDecls = new Map<SymbolID, Decl>();
+	const globalStorageDecls: Decl[] = [];
 	for (let index = 0; index < result.decls.length; index++) {
 		const decl = toDecl(result.decls[index]);
 		decls[index] = decl;
 		if (decl.isGlobal) {
 			globalDecls.push(decl);
-			if (decl.namePath.length === 1) globalStorageDecls.set(decl.id, decl);
+			if (decl.namePath.length === 1) globalStorageDecls.push(decl);
 		}
 	}
 	const scopes = new Array<SemanticScope>(result.scopes.length);
@@ -382,6 +384,8 @@ export function buildLuaFileSemanticData(
 		scopesById.set(scope.id, scope);
 		if (internal.parent) scopeParents.set(scope.id, internal.parent.id);
 	}
+	const values = composeLuaBuiltinOperations(result.builtinOperations, globalStorageDecls,
+		result.declarationValues, result.functionValueFlows, result.valueAssignments);
 	const refs = result.refs.slice();
 	return {
 		file: path,
@@ -392,7 +396,7 @@ export function buildLuaFileSemanticData(
 		annotationFacts: result.annotationFacts,
 		decls,
 		globalDecls,
-		globalStorageDecls: Array.from(globalStorageDecls.values()),
+		globalStorageDecls,
 		scopes,
 		scopesById,
 		scopeParents,
@@ -403,15 +407,15 @@ export function buildLuaFileSemanticData(
 		referencesByName: result.referencesByName,
 		moduleReferences: result.moduleReferences,
 		callSites: result.callSites,
-		declarationValues: result.declarationValues,
-		declarationValuesByDeclaration: result.declarationValuesByDeclaration,
+		declarationValues: values.declarationValues,
+		declarationValuesByDeclaration: values.declarationValuesByDeclaration,
 		readValuesBySyntax: result.readValuesBySyntax,
 		ownedValuesBySyntax: result.ownedValuesBySyntax,
 		moduleValues: result.moduleValues,
 		memberValues: result.memberValues,
-		functionValueFlows: result.functionValueFlows,
+		functionValueFlows: values.functionValueFlows,
 		callValues: result.callValues,
-		valueAssignments: result.valueAssignments,
+		valueAssignments: values.valueAssignments,
 	};
 }
 
@@ -605,7 +609,6 @@ class SemanticBuilder {
 	private readonly annotationFacts: SemanticTokenFact[] = [];
 	private readonly scopeStack: Scope[] = [];
 	private readonly scopes: Scope[] = [];
-	private readonly globalsByKey: Map<string, InternalDecl> = new Map();
 	private readonly decls: InternalDecl[] = [];
 	private readonly declById: Map<SymbolID, InternalDecl> = new Map();
 	private readonly refs: Ref[] = [];
@@ -618,8 +621,7 @@ class SemanticBuilder {
 	private readonly declarationValues: DeclarationValueEntry[] = [];
 	private readonly readValuesBySyntax = new Map<LuaExpression, SemanticValueSource>();
 	private readonly ownedValuesBySyntax = new Map<LuaExpression, OwnedSemanticValueSource>();
-	// Shared immutable write index after binding; no query rebuilds or value deduplication.
-	private readonly declarationValuesByDeclaration: Map<SymbolID, DeclarationValueEntry[]> = new Map();
+	private readonly builtinOperations: LuaBuiltinOperationSite[] = [];
 	private readonly unknownValueDeclarations: Set<SymbolID> = new Set();
 	private readonly memberValues: MemberValueEntry[] = [];
 	private readonly functionValueFlows: FunctionValueFlowEntry[] = [];
@@ -663,7 +665,7 @@ class SemanticBuilder {
 			annotationFacts: this.annotationFacts,
 			callSites: this.callSites,
 			declarationValues: this.declarationValues,
-			declarationValuesByDeclaration: this.declarationValuesByDeclaration,
+			builtinOperations: this.builtinOperations,
 			readValuesBySyntax: this.readValuesBySyntax,
 			ownedValuesBySyntax: this.ownedValuesBySyntax,
 			moduleValues: this.moduleValue === undefined ? [] : [this.moduleValue],
@@ -931,7 +933,7 @@ class SemanticBuilder {
 				for (let index = 0; index < forGeneric.iterators.length; index += 1) {
 					this.visitExpression(forGeneric.iterators[index], { tableBaseDecl: null, tableBasePath: null });
 				}
-				const tableSource = this.resolveGenericForTableSource(forGeneric);
+				const iterator = this.resolveGenericForTableSource(forGeneric);
 				this.enterScope(
 					{ unit: forGeneric.block.span.unit, offset: forGeneric.block.startInclusive },
 					{ unit: forGeneric.block.span.unit, offset: forGeneric.block.endExclusive },
@@ -942,10 +944,9 @@ class SemanticBuilder {
 					if (index === 0) {
 						this.unknownValueDeclarations.add(variable.id);
 					}
-					if (tableSource && index === 1) {
-						this.setDeclarationValue(variable, appendValueElement(tableSource), statement, index, 'projection');
-					} else {
-						this.setDeclarationValue(variable, unknownValueSource(), statement, index);
+					const declaration = this.setDeclarationValue(variable, unknownValueSource(), statement, index);
+					if (iterator !== undefined && index === 1) {
+						this.builtinOperations.push({ kind: 'iterator', name: iterator.name, table: iterator.table, declaration });
 					}
 				}
 				this.visitBlock(forGeneric.block);
@@ -1076,8 +1077,6 @@ class SemanticBuilder {
 				const calledValue = methodName
 					? appendValueMember(calleeInfo.valueSource, methodName)
 					: calleeInfo.valueSource;
-				let firstArgumentInfo: ResolvedNamePath = null;
-				let secondArgumentInfo: ResolvedNamePath = null;
 				const argumentOffset = methodName ? 1 : 0;
 				const argumentValues = new Array<SemanticValueSource>(
 					callExpression.arguments.length + argumentOffset,
@@ -1090,15 +1089,10 @@ class SemanticBuilder {
 						callExpression.arguments[index],
 						{ tableBaseDecl: null, tableBasePath: null },
 					);
-					if (index === 0) {
-						firstArgumentInfo = argumentInfo;
-					}
-					if (index === 1) {
-						secondArgumentInfo = argumentInfo;
-					}
 					argumentValues[index + argumentOffset] = argumentInfo.valueSource;
 				}
 				const call: CallValueEntry = {
+					module: requireArgument?.value,
 					file: this.path,
 					expression: callExpression,
 					callee: calledValue,
@@ -1116,14 +1110,16 @@ class SemanticBuilder {
 						? calleeInfo.decl?.id
 						: undefined,
 				});
-				const valueSource = this.resolveCallResultValue(
-					callExpression,
-					requireArgument,
-					calleeInfo,
-					firstArgumentInfo,
-					secondArgumentInfo,
-					callResult,
-				);
+				if (!callExpression.method && calleeInfo.valueSource.root.kind === 'global'
+					&& calleeInfo.valueSource.steps.length === 0) {
+					const name = resolveDirectCallName(callExpression.callee);
+					if ((name === 'setmetatable' && call.arguments.length === 2)
+						|| (name === 'getmetatable' && call.arguments.length === 1)) {
+						this.builtinOperations.push({ kind: name, call,
+							flow: this.functionValueFlowStack[this.functionValueFlowStack.length - 1]?.id });
+					}
+				}
+				const valueSource = requireArgument ? moduleValueSource(requireArgument.value) : callResult;
 				this.readValuesBySyntax.set(expression, valueSource);
 				return { namePath: null, decl: null, valueSource };
 			}
@@ -1477,9 +1473,9 @@ class SemanticBuilder {
 		isCall = false,
 		declarationKind: 'global' | 'function' = 'global',
 	): ResolvedNamePath {
-		let binding = this.resolveName(identifier.name) ?? this.globalsByKey.get(identifier.name);
-		if (!binding && isWrite) binding = this.declareGlobal(identifier, declarationKind);
-		const decl = binding?.kind === 'receiver' ? undefined : binding;
+		const binding = this.resolveName(identifier.name);
+		const decl = binding?.kind === 'receiver' ? undefined
+			: binding ?? (isWrite ? this.declareGlobal(identifier, declarationKind) : undefined);
 		const namePath = [identifier.name];
 		this.recordReference({
 			syntax: identifier,
@@ -1615,9 +1611,6 @@ class SemanticBuilder {
 			lexical: true,
 		});
 		scope.bindings.set(decl.name, decl);
-		if (decl.isGlobal) {
-			this.globalsByKey.set(decl.symbolKey, decl);
-		}
 		this.recordDefinitionAnnotation(decl);
 		return decl;
 	}
@@ -1635,9 +1628,6 @@ class SemanticBuilder {
 			lexical: true,
 		});
 		scope.bindings.set(decl.name, decl);
-		if (decl.isGlobal) {
-			this.globalsByKey.set(decl.symbolKey, decl);
-		}
 		this.recordDefinitionAnnotation(decl);
 		return decl;
 	}
@@ -1655,9 +1645,6 @@ class SemanticBuilder {
 			lexical: true,
 		});
 		scope.bindings.set(decl.name, decl);
-		if (decl.isGlobal) {
-			this.globalsByKey.set(decl.symbolKey, decl);
-		}
 		this.recordDefinitionAnnotation(decl);
 		return decl;
 	}
@@ -1675,9 +1662,6 @@ class SemanticBuilder {
 			lexical: true,
 		});
 		scope.bindings.set(decl.name, decl);
-		if (decl.isGlobal) {
-			this.globalsByKey.set(decl.symbolKey, decl);
-		}
 		this.recordDefinitionAnnotation(decl);
 		return decl;
 	}
@@ -1695,8 +1679,6 @@ class SemanticBuilder {
 			active: true,
 			lexical: false,
 		});
-		this.globalsByKey.set(decl.symbolKey, decl);
-		this.recordDefinitionAnnotation(decl);
 		return decl;
 	}
 
@@ -1765,6 +1747,7 @@ class SemanticBuilder {
 			scopeRef,
 			active,
 			valueSource: declarationValueSource(id),
+			globalPublication: isGlobal && namePath.length === 1 ? globalValueSource(name) : undefined,
 		};
 		if (options.lexical) {
 			scopeRef.declarations.push(decl);
@@ -1820,7 +1803,8 @@ class SemanticBuilder {
 			this.referencesBySyntax.set(options.syntax, ref);
 			const targetDecl = options.target ? this.declById.get(options.target) : null;
 			const kind = targetDecl ? targetDecl.kind : inferReferenceKind(ref);
-			const role = ref.isWrite && (ref.referenceKind === 'member' || ref.referenceKind === 'method')
+			const role = ref.isWrite && (ref.referenceKind === 'member' || ref.referenceKind === 'method'
+				|| (ref.referenceKind === 'identifier' && options.binding === undefined && options.target !== undefined))
 				? 'definition' : 'usage';
 			this.annotate(ref.span, options.syntax.name.length, kind, role);
 		}
@@ -1884,16 +1868,14 @@ class SemanticBuilder {
 		index: number,
 		relation: DeclarationValueEntry['relation'] = decl.kind === 'constant' && source.root.kind !== 'unknown'
 			? 'identity' : 'value',
-	): void {
+	): DeclarationValueEntry {
 		const flow = this.functionValueFlowStack[this.functionValueFlowStack.length - 1];
 		const entry: DeclarationValueEntry = { file: this.path, declId: decl.id, source, relation, syntax, index, flow: flow?.id };
-		let declarationSources = this.declarationValuesByDeclaration.get(decl.id);
-		if (!declarationSources) {
-			declarationSources = [];
-			this.declarationValuesByDeclaration.set(decl.id, declarationSources);
-		}
-		declarationSources.push(entry);
 		this.declarationValues.push(entry);
+		if (decl.globalPublication !== undefined) {
+			this.recordValueFlow(decl.globalPublication, decl.valueSource, 'value', syntax, index);
+		}
+		return entry;
 	}
 
 	private recordValueFlow(
@@ -1928,7 +1910,7 @@ class SemanticBuilder {
 		if (namePath.length === 0) {
 			return undefined;
 		}
-		const binding = this.resolveName(namePath[0]) ?? this.globalsByKey.get(namePath[0]);
+		const binding = this.resolveName(namePath[0]);
 		let source = binding
 			? binding.valueSource
 			: globalValueSource(namePath[0]);
@@ -1946,65 +1928,19 @@ class SemanticBuilder {
 
 	private resolveGenericForTableSource(
 		statement: LuaForGenericStatement,
-	): SemanticValueSource | undefined {
+	): { readonly name: string; readonly table: SemanticValueSource } | undefined {
 		const iterator = statement.iterators[0];
-		if (iterator.kind === LuaSyntaxKind.CallExpression
-			&& !iterator.method) {
-			const name = resolveDirectCallName(iterator.callee);
-			const tableArgument = LUA_BUILTIN_TABLE_ITERATOR_ARGUMENTS[name];
-			if (tableArgument !== undefined
-				&& !this.resolveName(name) && !this.globalsByKey.has(name)) {
-				const tableExpression = iterator.arguments[tableArgument];
-				return tableExpression
-					? this.resolveExpressionValueSource(tableExpression)
-					: undefined;
-			}
-		}
-		return undefined;
+		if (iterator.kind !== LuaSyntaxKind.CallExpression || iterator.method
+			|| iterator.callee.kind !== LuaSyntaxKind.IdentifierExpression) return undefined;
+		const call = this.referencesBySyntax.get(iterator.callee)!.call!;
+		if (call.callee.root.kind !== 'global' || call.callee.steps.length !== 0) return undefined;
+		const name = iterator.callee.name;
+		const tableArgument = LUA_BUILTIN_TABLE_ITERATOR_ARGUMENTS[name];
+		if (tableArgument === undefined) return undefined;
+		const table = call.arguments[tableArgument];
+		return table === undefined ? undefined : { name, table };
 	}
 
-	private resolveCallResultValue(
-		callExpression: LuaCallExpression,
-		requireArgument: LuaStringLiteralExpression | null,
-		callee: ResolvedNamePath,
-		firstArgument: ResolvedNamePath,
-		secondArgument: ResolvedNamePath,
-		callResult: SemanticValueSource,
-	): SemanticValueSource {
-		if (requireArgument) {
-			return moduleValueSource(requireArgument.value);
-		}
-		if (!callExpression.method) {
-			const directCallName = resolveDirectCallName(callExpression.callee);
-			const firstArgumentValue = firstArgument?.valueSource;
-			if (directCallName === 'setmetatable'
-				&& !callee?.decl
-				&& callExpression.arguments.length === 2) {
-				if (firstArgumentValue) {
-					this.recordValueFlow(callResult, firstArgumentValue, 'value', callExpression, 0);
-				}
-				const metatableValue = secondArgument?.valueSource;
-				if (firstArgumentValue && metatableValue) {
-					this.recordValueFlow(firstArgumentValue, metatableValue, 'metatable', callExpression, 1);
-					this.recordValueFlow(
-						firstArgumentValue,
-						appendValueMember(metatableValue, '__index'),
-						'prototype',
-						callExpression,
-						1,
-					);
-				}
-				return callResult;
-			}
-			if (directCallName === 'getmetatable'
-				&& !callee?.decl
-				&& callExpression.arguments.length === 1
-				&& firstArgumentValue) {
-				return appendValueMetatable(firstArgumentValue);
-			}
-		}
-		return callResult;
-	}
 
 	private createExpressionValueSource(expression: LuaExpression): OwnedSemanticValueSource {
 		const retained = this.ownedValuesBySyntax.get(expression);
@@ -2022,17 +1958,6 @@ class SemanticBuilder {
 		}
 	}
 
-	private resolveExpressionValueSource(expression: LuaExpression): SemanticValueSource | undefined {
-		if (expression.kind === LuaSyntaxKind.CallExpression
-			|| expression.kind === LuaSyntaxKind.TableConstructorExpression
-			|| expression.kind === LuaSyntaxKind.FunctionExpression
-			|| (expression.kind === LuaSyntaxKind.BinaryExpression
-				&& (expression.operator === LuaBinaryOperator.And || expression.operator === LuaBinaryOperator.Or))) {
-			return this.createExpressionValueSource(expression);
-		}
-		const path = extractStaticMemberPath(expression);
-		return path ? this.resolveValueSourceFromNamePath(path) : undefined;
-	}
 
 	private annotate(span: LuaSyntaxSpan, length: number, kind: SemanticSymbolKind, role: SemanticRole): void {
 		this.annotationFacts.push({ span, width: Math.max(length, 1), kind, role });
@@ -2101,32 +2026,6 @@ function joinNamePath(namePath: readonly string[]): string {
 	return namePath.join('.');
 }
 
-function extractStaticMemberPath(expression: LuaExpression): string[] | null {
-	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
-		return [expression.name];
-	}
-	if (expression.kind === LuaSyntaxKind.MemberExpression) {
-		const base = extractStaticMemberPath(expression.base);
-		if (!base) {
-			return null;
-		}
-		base.push(expression.member.name);
-		return base;
-	}
-	if (expression.kind === LuaSyntaxKind.IndexExpression) {
-		const base = extractStaticMemberPath(expression.base);
-		if (!base) {
-			return null;
-		}
-		const key = extractStringLiteral(expression.index);
-		if (!key) {
-			return null;
-		}
-		base.push(key);
-		return base;
-	}
-	return null;
-}
 
 function appendToNamePath(base: readonly string[], segment: string): string[] {
 	const result = base.slice();
@@ -2182,12 +2081,6 @@ function resolveDirectCallName(expression: LuaExpression): string {
 	return expression.name;
 }
 
-function extractStringLiteral(expression: LuaExpression): string {
-	if (!expression || expression.kind !== LuaSyntaxKind.StringLiteralExpression) {
-		return null;
-	}
-	return expression.value;
-}
 
 function buildFunctionNamePath(name: LuaFunctionName): string[] {
 	const identifiers = new Array<string>(name.path.length + (name.method ? 1 : 0));

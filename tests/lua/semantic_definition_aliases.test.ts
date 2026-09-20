@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/frontend';
 import { LuaSemanticWorkspace, type LuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
-import { declarationValueSource } from '../../toolchain/ts/lua/semantic/value_graph';
+import { declarationValueSource, globalValueSource } from '../../toolchain/ts/lua/semantic/value_graph';
 import { SourceChangeMap } from '../../toolchain/ts/text/source_changes';
 
 function declaration(snapshot: LuaSemanticWorkspaceSnapshot, name: string, file = 'aliases.lua') {
@@ -171,4 +171,84 @@ test('a long written-alias chain does not consume the host call stack', () => {
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFile('aliases.lua', lines.join('\n'));
 	assert.deepEqual(functionNames(workspace.getSnapshot(), 'alias_3000'), ['aliases.lua:alias_0']);
+});
+
+test('raw global values retain every authored table and function occurrence', () => {
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('aliases.lua', [
+		'owner = { first = 1 }',
+		'owner = { second = 2 }',
+		'function run(first) return first end',
+		'function run(second) return second end',
+		'run = function(third) return third end',
+		'run()',
+	].join('\n'));
+	const snapshot = workspace.getSnapshot();
+	const file = snapshot.getFileData('aliases.lua')!;
+	const owners = file.decls.filter(item => item.name === 'owner');
+	const functions = file.decls.filter(item => item.name === 'run');
+	assert.equal(owners.length, 2);
+	assert.equal(functions.length, 3);
+	assert.deepEqual(snapshot.symbolResolver.getMembers(globalValueSource('owner')).map(item => item.name), ['first', 'second']);
+	for (const [index, owner] of owners.entries()) {
+		assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(owner.id)).map(item => item.name), [index === 0 ? 'first' : 'second']);
+	}
+	assert.deepEqual(snapshot.symbolResolver.resolveCallableTargets(file.callSites[0]), functions.map(item => item.id));
+	for (const definition of functions) {
+		assert.deepEqual(snapshot.symbolResolver.resolveDefinitionFunctionTargets(definition.id), [definition.id]);
+	}
+});
+
+test('global alias components retain all cross-file exits regardless of warmed occurrence', () => {
+	for (const warm of ['left', 'right', 'leftExit', 'rightExit']) {
+		const workspace = new LuaSemanticWorkspace();
+		workspace.updateFile('left.lua', 'left = right\nleft = function(left_arg) return left_arg end');
+		workspace.updateFile('right.lua', 'right = left\nright = function(right_arg) return right_arg end');
+		const snapshot = workspace.getSnapshot();
+		const left = snapshot.getFileData('left.lua')!.decls.filter(item => item.name === 'left');
+		const right = snapshot.getFileData('right.lua')!.decls.filter(item => item.name === 'right');
+		const selected = warm === 'left' ? left[0] : warm === 'right' ? right[0] : warm === 'leftExit' ? left[1] : right[1];
+		snapshot.symbolResolver.resolveDefinitionFunctionTargets(selected.id);
+		// The first authored alias reads right, then the second reads left.
+		const expected = [right[1].id, left[1].id];
+		assert.deepEqual(snapshot.symbolResolver.resolveDefinitionFunctionTargets(left[0].id), expected);
+		assert.deepEqual(snapshot.symbolResolver.resolveDefinitionFunctionTargets(right[0].id), expected);
+		assert.deepEqual(snapshot.symbolResolver.definitionTypes.functionDeclarations(globalValueSource('left')), expected);
+		assert.deepEqual(snapshot.symbolResolver.definitionTypes.functionDeclarations(globalValueSource('right')), expected);
+	}
+});
+
+test('global definition maps remain snapshot-owned across removal and restoration of writes', () => {
+	const workspace = new LuaSemanticWorkspace();
+	const source = 'value = { first = 1 }\nvalue = { second = 2 }';
+	workspace.updateFile('aliases.lua', source);
+	const before = workspace.getSnapshot();
+	workspace.updateFile('aliases.lua', 'value = { first = 1 }');
+	const removed = workspace.getSnapshot();
+	assert.deepEqual(removed.symbolResolver.getMembers(globalValueSource('value')).map(item => item.name), ['first']);
+	// First demand on the old snapshot happens after the edit.
+	assert.deepEqual(before.symbolResolver.getMembers(globalValueSource('value')).map(item => item.name), ['first', 'second']);
+	workspace.updateFile('aliases.lua', source);
+	assert.deepEqual(workspace.getSnapshot().symbolResolver.getMembers(globalValueSource('value')).map(item => item.name), ['first', 'second']);
+	assert.deepEqual(removed.symbolResolver.getMembers(globalValueSource('value')).map(item => item.name), ['first']);
+});
+
+test('compiler imports do not resolve to authored global require functions', () => {
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('module.lua', 'return { member = 1 }');
+	workspace.updateFile('aliases.lua', [
+		'require = function(name) return name end',
+		"local imported = require('module')",
+		'local require = function(name) return name end',
+		"local ordinary = require('module')",
+	].join('\n'));
+	const snapshot = workspace.getSnapshot();
+	const file = snapshot.getFileData('aliases.lua')!;
+	const [imported, ordinary] = file.callSites;
+	assert.equal(imported.call.module, 'module');
+	assert.deepEqual(snapshot.symbolResolver.resolveCallableTargets(imported), []);
+	assert.deepEqual(snapshot.symbolResolver.resolveReferenceTargets(imported.reference!), []);
+	assert.equal(ordinary.call.module, undefined);
+	const lexical = file.decls.find(item => item.name === 'require' && !item.isGlobal)!;
+	assert.deepEqual(snapshot.symbolResolver.resolveCallableTargets(ordinary), [lexical.id]);
 });

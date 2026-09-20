@@ -1,13 +1,12 @@
 import type { HashLookup } from '../../collections/hash_map';
 import { stronglyConnectedComponents, type StronglyConnectedNode } from '../../collections/strongly_connected_components';
 import type { Decl, FileSemanticData, SymbolID } from './model';
-import type { SemanticValueSource } from './value_graph';
+import type { SemanticValueRoot, SemanticValueSource } from './value_graph';
 
 /** Only unchanged value reads are aliases; projections belong to evaluation. */
-export function directAliasTarget(source: SemanticValueSource, globals: ReadonlyMap<string, SymbolID>): SymbolID | undefined {
+export function directAliasRoot(source: SemanticValueSource): Extract<SemanticValueRoot, { kind: 'declaration' | 'global' }> | undefined {
 	if (source.steps.length !== 0) return undefined;
-	if (source.root.kind === 'declaration') return source.root.declId;
-	if (source.root.kind === 'global') return globals.get(source.root.symbolKey);
+	if (source.root.kind === 'declaration' || source.root.kind === 'global') return source.root;
 	return undefined;
 }
 
@@ -31,7 +30,7 @@ export class LuaDefinitionAliases {
 	constructor(
 		private readonly declarations: HashLookup<SymbolID, Decl>,
 		private readonly files: ReadonlyMap<string, FileSemanticData>,
-		private readonly globals: ReadonlyMap<string, SymbolID>,
+		private readonly globals: ReadonlyMap<string, readonly SymbolID[]>,
 	) {}
 
 	public componentOf(id: SymbolID): LuaDefinitionAliasComponent {
@@ -41,7 +40,7 @@ export class LuaDefinitionAliases {
 		const writes = this.files.get(declaration.file)!.declarationValuesByDeclaration.get(id);
 		let hasAlias = false;
 		if (writes !== undefined) for (const write of writes) {
-			if (directAliasTarget(write.source, this.globals) !== undefined) {
+			if (directAliasRoot(write.source) !== undefined) {
 				hasAlias = true;
 				break;
 			}
@@ -63,9 +62,15 @@ export class LuaDefinitionAliases {
 			const writes = file.declarationValuesByDeclaration.get(node.id);
 			if (writes === undefined) continue;
 			for (const value of writes) {
-				const target = directAliasTarget(value.source, this.globals);
-				if (target === undefined) continue;
-				node.targets.push(target);
+				const root = directAliasRoot(value.source);
+				if (root === undefined) continue;
+				if (root.kind === 'declaration') node.targets.push(root.declId);
+				else {
+					const targets = this.globals.get(root.symbolKey);
+					if (targets !== undefined) for (const target of targets) node.targets.push(target);
+				}
+			}
+			for (const target of node.targets) {
 				if (this.components.has(target)) continue;
 				let dependency = nodes.get(target);
 				if (dependency === undefined) {

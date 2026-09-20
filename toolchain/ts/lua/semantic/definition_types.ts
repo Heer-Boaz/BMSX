@@ -1,4 +1,4 @@
-import { LuaDefinitionAliases, directAliasTarget, type LuaDefinitionAliasComponent } from './definition_aliases';
+import { LuaDefinitionAliases, directAliasRoot, type LuaDefinitionAliasComponent } from './definition_aliases';
 import type { HashLookup } from '../../collections/hash_map';
 import { LuaSyntaxKind } from '../syntax/ast';
 import type { Decl, FileSemanticData, SymbolID } from './model';
@@ -111,7 +111,7 @@ export class LuaDefinitionTypes {
 	constructor(
 		files: readonly FileSemanticData[],
 		private readonly declarations: HashLookup<SymbolID, Decl>,
-		private readonly globals: ReadonlyMap<string, SymbolID>,
+		private readonly globals: ReadonlyMap<string, readonly SymbolID[]>,
 	) {
 		for (const file of files) this.files.set(file.file, file);
 		this.aliases = new LuaDefinitionAliases(declarations, this.files, globals);
@@ -228,8 +228,8 @@ export class LuaDefinitionTypes {
 		if (memoized) {
 			// Zero-step aliases are graph edges, not separately memoized value
 			// reads: no recursive cut may become a second durable source answer.
-			const target = directAliasTarget(source, this.globals);
-			if (target !== undefined) return this.declarationValues(evaluation, target);
+			const root = directAliasRoot(source);
+			if (root !== undefined) return this.evaluateRoot(evaluation, root, binding, depth);
 		}
 		if (memoized) {
 			const retained = evaluation.sourceShapes.get(source);
@@ -282,8 +282,12 @@ export class LuaDefinitionTypes {
 					: this.boundDeclarationValues(evaluation, root.declId, binding, depth + 1);
 			}
 			case 'global': {
-				const global = this.globals.get(root.symbolKey);
-				return global === undefined ? EMPTY_SHAPES : this.declarationValues(evaluation, global);
+				const definitions = this.globals.get(root.symbolKey);
+				if (definitions === undefined) return EMPTY_SHAPES;
+				if (definitions.length === 1) return this.declarationValues(evaluation, definitions[0]);
+				const shapes: LuaDefinitionShape[] = [];
+				for (const definition of definitions) appendShapes(shapes, this.declarationValues(evaluation, definition));
+				return shapes;
 			}
 			case 'module': {
 				const shapes: LuaDefinitionShape[] = [];
@@ -368,14 +372,9 @@ export class LuaDefinitionTypes {
 				const writes = file.declarationValuesByDeclaration.get(member);
 				if (writes === undefined) continue;
 				for (const write of writes) {
-					const target = directAliasTarget(write.source, this.globals);
-					if (target === undefined) {
-						appendShapes(shapes, this.evaluate(evaluation, write.source, EMPTY_BINDING, 1));
-					} else {
-						const targetComponent = this.aliases.componentOf(target);
-						if (targetComponent === component || evaluation.activeAliases.has(targetComponent)) continue;
-						appendShapes(shapes, evaluation.declarationShapes.get(target)!);
-					}
+					// Dependencies have finalized answers; reads inside this active
+					// component contribute nothing until its shared union is published.
+					appendShapes(shapes, this.evaluate(evaluation, write.source, EMPTY_BINDING, 1));
 				}
 			}
 			for (const member of component.members) evaluation.declarationShapes.set(member, shapes);

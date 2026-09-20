@@ -5,7 +5,7 @@ import { SemanticEffectIndex } from '../../toolchain/ts/lua/semantic/effect_inde
 import { FunctionSummaryStore, type FunctionSummaryID, type SemanticNameID } from '../../toolchain/ts/lua/semantic/function_summary';
 import { WorkspaceValueIdentityIndex } from '../../toolchain/ts/lua/semantic/identity';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
-import { declarationValueSource, literalValueSource } from '../../toolchain/ts/lua/semantic/value_graph';
+import { declarationValueSource, globalValueSource, literalValueSource, moduleValueSource } from '../../toolchain/ts/lua/semantic/value_graph';
 import { LuaSemanticQueryStore } from '../../toolchain/ts/lua/semantic/query_store';
 
 for (const receiver of [false, true]) test(`scalar field values cannot select unrelated storage: receiver=${receiver}`, () => {
@@ -130,4 +130,141 @@ test('edited, removed and reintroduced providers use a fresh term universe while
 	workspace.updateFiles([first]);
 	assert.deepEqual(workspace.getSnapshot().symbolResolver.resolveReferenceTargets(reference), firstTarget);
 	assert.deepEqual(removed.symbolResolver.resolveReferenceTargets(reference), []);
+});
+
+
+test('global storage is distinct from every navigation occurrence and remains selectively indexable', () => {
+	const file = buildLuaFileSemanticData('handler = function() end\nhandler = function() end\nhandler()', 'globals.lua');
+	const occurrences = file.decls.filter(declaration => declaration.name === 'handler');
+	assert.equal(occurrences.length, 2);
+	for (const winner of occurrences) {
+		const identities = new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map([['handler', winner.id]]) });
+		const summaries = new FunctionSummaryStore([file], identities);
+		const global = summaries.terms.compileSource(globalValueSource('handler'));
+		assert.equal(summaries.terms.isIndexableAnchor(global), true);
+		for (const occurrence of occurrences) {
+			assert.notEqual(global, summaries.terms.compileSource(declarationValueSource(occurrence.id)));
+		}
+		const query = new LuaSemanticQueryStore([file], new Map([['handler', winner.id]]));
+		assert.deepEqual(new Set(query.callee(file.callValues[0]).map(fact => fact.calleeFn)), new Set(occurrences.map(entry => entry.id)));
+	}
+});
+
+test('raw global storage selects callee uses, argument dependencies and indexed writers', () => {
+	const file = buildLuaFileSemanticData(`registry = {}
+function handler(value) end
+function publish(key, value) registry[key] = value end
+function forward() handler(registry) end
+handler(registry)`, 'global_selection.lua');
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const demand = new SemanticDemandIndex([file], summaries);
+	const registry = summaries.terms.compileSource(globalValueSource('registry'));
+	const handler = summaries.terms.compileSource(globalValueSource('handler'));
+	const publish = summaries.list().find(summary => summary.source.declaration === file.decls.find(entry => entry.name === 'publish')!.id)!;
+	const forward = summaries.list().find(summary => summary.source.declaration === file.decls.find(entry => entry.name === 'forward')!.id)!;
+	assert.deepEqual(demand.storageWriters(registry), [publish.id]);
+	assert.ok(demand.dependentSummariesForTerm(registry).includes(publish.id));
+	assert.ok(demand.dependentSummariesForTerm(registry).includes(forward.id));
+	assert.deepEqual(demand.dependentCallsForTerm(registry), forward.calls);
+	assert.equal(demand.calleeCallsForTerm(handler).length, 2);
+	assert.equal(demand.topLevelCallsForTerm(handler).length, 1);
+	assert.equal(demand.topLevelCallsForTerm(registry).length, 1);
+	assert.deepEqual(demand.directTargets(file.callValues[0]), [], 'raw globals have candidates, not lexical call proof');
+});
+
+for (const invoked of [false, true]) test(`body global publication requires a call: invoked=${invoked}`, () => {
+	const file = buildLuaFileSemanticData(`function install()
+ handler = function() end
+end
+${invoked ? 'install()' : ''}
+handler()`, 'global_effect.lua');
+	const target = file.decls.find(entry => entry.name === 'handler')!;
+	const query = new LuaSemanticQueryStore([file], new Map([['handler', target.id]]));
+	const use = file.callValues[file.callValues.length - 1];
+	assert.deepEqual(query.functions(globalValueSource('handler')), invoked ? [target.id] : []);
+	assert.deepEqual(query.callee(use).map(fact => fact.calleeFn), invoked ? [target.id] : []);
+});
+
+
+test('calling one global writer does not publish a sibling occurrence', () => {
+	const file = buildLuaFileSemanticData(`function first()
+ handler = function() end
+end
+function second()
+ handler = function() end
+end
+first()
+handler()`, 'global_siblings.lua');
+	const occurrences = file.decls.filter(entry => entry.name === 'handler');
+	assert.equal(occurrences.length, 2);
+	const query = new LuaSemanticQueryStore([file], new Map([['handler', occurrences[1].id]]));
+	assert.deepEqual(query.functions(globalValueSource('handler')), [occurrences[0].id]);
+	assert.deepEqual(query.callee(file.callValues[1]).map(fact => fact.calleeFn), [occurrences[0].id]);
+});
+
+test('indexed global callees retain their called writer and key-specific value', () => {
+	const file = buildLuaFileSemanticData(`registry = {}
+local function target() end
+function publish(key, value) registry[key] = value end
+publish('chosen', target)
+local chosen = 'chosen'
+registry[chosen]()
+registry['missing']()`, 'global_index.lua');
+	const query = new LuaSemanticQueryStore([file], new Map());
+	const target = file.decls.find(entry => entry.name === 'target')!;
+	assert.deepEqual(query.functions(file.callValues[1].callee), [target.id]);
+	assert.equal(query.callContexts(file.callValues[1]).flatMap(context => context.applications).length, 1);
+	assert.deepEqual(query.functions(file.callValues[2].callee), []);
+	assert.equal(query.callContexts(file.callValues[2]).flatMap(context => context.applications).length, 0);
+});
+
+
+test('compiler imports do not execute a same-name global runtime function', () => {
+	const file = buildLuaFileSemanticData(`function require(name)
+ leaked = function() end
+end
+local imported = require('provider')
+local function load() return require('provider') end
+load()`, 'import_use.lua');
+	const provider = buildLuaFileSemanticData('return { marker = true }', 'provider.lua');
+	const files = [file, provider];
+	const query = new LuaSemanticQueryStore(files, new Map());
+	const imported = file.decls.find(entry => entry.name === 'imported')!;
+	assert.equal(query.member(declarationValueSource(imported.id), 'marker').length, 1);
+	const imports = file.callSites.map(site => site.call).filter(call => call.module !== undefined);
+	assert.equal(imports.length, 2);
+	for (const call of imports) {
+		assert.deepEqual(query.callee(call), []);
+		assert.equal(query.callContexts(call).flatMap(context => context.applications).length, 0);
+	}
+	assert.deepEqual(query.functions(globalValueSource('leaked')), []);
+});
+
+for (const invoked of [false, true]) test(`module exports copy raw globals without merging storage: invoked=${invoked}`, () => {
+	const provider = buildLuaFileSemanticData(`function install()
+ shared = function() end
+end
+${invoked ? 'install()' : ''}
+return shared`, 'provider.lua');
+	const identities = new WorkspaceValueIdentityIndex({ files: [provider], globalValues: new Map() });
+	const summaries = new FunctionSummaryStore([provider], identities);
+	const global = summaries.terms.compileSource(globalValueSource('shared'));
+	const module = summaries.terms.compileSource(moduleValueSource('provider'));
+	assert.notEqual(global, module);
+	assert.ok(!summaries.terms.isGlobalStorage(module));
+	assert.ok(!summaries.terms.isModuleAnchor(global));
+	const query = new LuaSemanticQueryStore([provider], new Map());
+	const target = provider.decls.find(entry => entry.name === 'shared')!;
+	assert.deepEqual(query.functions(moduleValueSource('provider')), invoked ? [target.id] : []);
+});
+
+for (const invoked of [false, true]) test(`global argument forwarding retains call-gated publication: invoked=${invoked}`, () => {
+	const file = buildLuaFileSemanticData(`function install() handler = function() end end
+function consume(callback) callback() end
+${invoked ? 'install()' : ''}
+consume(handler)`, 'global_argument.lua');
+	const query = new LuaSemanticQueryStore([file], new Map());
+	const call = file.functionValueFlows.find(flow => flow.calls.length === 1)!.calls[0];
+	const target = file.decls.find(entry => entry.name === 'handler')!;
+	assert.deepEqual(query.callee(call).map(fact => fact.calleeFn), invoked ? [target.id] : []);
 });

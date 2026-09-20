@@ -65,7 +65,7 @@ test('two replacements in one batch publish the final facts without retaining in
 });
 
 
-test('global contributions preserve duplicate declarations while storage and lookup use the last same-ID value', () => {
+test('global publications preserve occurrences while symbol lookup uses the last same-ID value', () => {
 	const source = 'bss counter: word';
 	const parsed = parseLuaChunk(source, 'duplicate.lua');
 	// One owned syntax occurrence can be supplied more than once by a compiler
@@ -76,7 +76,7 @@ test('global contributions preserve duplicate declarations while storage and loo
 	assert.equal(file.decls.length, 2);
 	assert.equal(file.decls[0].id, file.decls[1].id);
 	assert.deepEqual(file.globalDecls, file.decls);
-	assert.deepEqual(file.globalStorageDecls, [file.decls[1]]);
+	assert.deepEqual(file.globalStorageDecls, file.decls);
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFiles([file]);
 	const snapshot = workspace.getSnapshot();

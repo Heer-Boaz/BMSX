@@ -106,6 +106,7 @@ export class SemanticTermStore {
 	/** Binding owners and module unions are fixed before this snapshot compiles any terms. */
 	private readonly compiledRoots: TermID[] = [];
 	private readonly indexableRootTerms: boolean[] = [];
+	private readonly globalRootTerms: boolean[] = [];
 	private readonly moduleRootTerms: boolean[] = [];
 	private readonly nonSelectiveRootTerms: boolean[] = [];
 	private readonly stringLiteralTerms: boolean[] = [];
@@ -445,6 +446,10 @@ export class SemanticTermStore {
 				&& !this.nonSelectiveRootTerms[term]);
 	}
 
+	public isGlobalStorage(term: TermID): boolean {
+		return this.kinds[term] === TermKind.Root && this.globalRootTerms[term];
+	}
+
 	public isModuleAnchor(term: TermID): boolean {
 		return this.kinds[term] === TermKind.Root && this.moduleRootTerms[term];
 	}
@@ -519,14 +524,14 @@ export class SemanticTermStore {
 		if (root.kind === 'literal' && root.literal.kind === 'number') {
 			this.numericLiteralTerms[term] = true;
 		}
-		if (root.kind === 'declaration' || root.kind === 'module' || root.kind === 'owned') {
+		if (root.kind === 'declaration' || root.kind === 'global' || root.kind === 'module' || root.kind === 'owned') {
 			this.indexableRootTerms[term] = true;
 		}
+		if (root.kind === 'global') this.globalRootTerms[term] = true;
 		if (root.kind === 'module') {
 			this.moduleRootTerms[term] = true;
 		}
-		if (root.kind === 'global'
-			|| root.kind === 'unknown'
+		if (root.kind === 'unknown'
 			|| root.kind === 'literal') {
 			this.nonSelectiveRootTerms[term] = true;
 		}
@@ -827,7 +832,8 @@ export class FunctionSummaryStore {
 			calls[callIndex] = {
 				owner: id,
 				site: call,
-				callee: this.terms.compileSource(call.callee),
+				// Compiler imports have a module value, not a runtime callable.
+				callee: call.module === undefined ? this.terms.compileSource(call.callee) : this.terms.unknown(),
 				arguments: args,
 				result: call.result === undefined
 					? undefined

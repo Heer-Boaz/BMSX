@@ -1637,34 +1637,88 @@ are retained rather than discarded as noise. These results are not the final
 This closes the caller-attachment prerequisite, not body reuse itself. Global
 storage/builtin classification and actual contribution caching remain open.
 
-### Global-storage gate: runtime classification findings
+### Global storage and composed operation sites
 
-A new context-free audit verified the actual BIOS/workspace rather than
-assuming all builtins share one shadowing rule. This is a design correction for
-the next slice, not implemented global/builtin migration:
+The binder no longer keeps a traversal-order global-definition witness. Every
+root-global write publishes its own declaration occurrence and an explicit
+value transfer to raw global storage. A read uses that storage name, never a
+previously visited write. Lexical declarations remain lexical, including their
+activation rules; root-visible BSS/data/type declarations publish separately.
+Navigation precedence remains an independent project-index policy. Definition
+alias components and written-source queries consume all authored publications,
+not that navigation winner.
+
+This representation also reaches the hierarchy solver: raw global terms are
+separate, selectively indexed storage. A function's global publication is a
+call effect, not an unconditional body projection. Existing reverse writer
+selection finds potential callers, but only proven applications publish their
+values. Exporting a global copies its value rather than unioning module and
+global storage identity. This is adaptation to the new facts, not an expanded
+interactive inference engine.
+
+A context-free review corrected the scope of builtin classification:
 
 - `require` is compiler syntax (`compiler.ts:resolveRequireModuleBinding`),
-  disabled by a lexical binding, not by another global write. There is no BIOS
-  runtime `require` declaration. The current binder's ambient global witness
-  is not its semantic classification authority.
-- The actual BIOS publishes `type`, `setmetatable` and `getmetatable` through
-  lexical aliases of VM primitives. Therefore "any workspace declaration
-  suppresses the builtin" would reject the normal BIOS itself. The existing
-  optionality check `!globals.has('type')` has this limitation and is not a
-  correctness oracle for the migration.
-- VM primitive identity belongs to the ABI/source environment, not to a BIOS
-  path whitelist or a private-looking identifier in arbitrary cart source.
-  Current semantic source inputs do not carry execution-domain provenance;
-  do not invent that provenance inside a query.
-- `pairs` and `ipairs` are authored wrappers, not primitive aliases. Their
-  names alone do not prove table-element semantics. Do not replace the removed
-  traversal witness with an equally unjustified name-based classification or
-  introduce general effect inference to retain it.
+  disabled by a lexical binding, not by another global write. Its bound call
+  explicitly records the imported module and has no runtime callable in either
+  interactive queries or the hierarchy solver. O0/O3 execution tests verify that
+  an authored same-name global replacement is not executed.
+- Metatable and table-iterator sites are raw body facts. A file composition step
+  applies the existing finite file-local standard-library projections against
+  **all** authored root-global names, including writes in later/nested bodies.
+  Lexical shadows never produce these sites. A same-name global write disables
+  the projection regardless of binder visitation order. Iterator projections
+  consume already bound call arguments; they do not resolve syntax a second time.
+- This declared file-local analysis contract is not runtime identity inference.
+  Extending suppression to all workspace declarations would incorrectly reject
+  the real BIOS's normal `setmetatable` aliases and `pairs` wrappers. No ABI
+  manifests, BIOS path whitelist or general wrapper inference are prerequisites
+  for body caching. The existing optionality check `!globals.has('type')` is a
+  separate limitation, not copied as this slice's classification authority.
 
-The global migration must separate raw storage, written occurrences and
-composed operation interpretation. Its environment boundary must be established
-from the actual producers before implementing or caching builtin projections.
-This does not add annotations or expand the whole-program solver's role.
+The composition creates derived facts only for active sites, without mutating
+raw declarations/flows or retained snapshots. It allocates a per-body assignment
+projection only where an operation exists. The complete-file declaration-value
+index is built once after projection. This follows the explicit global/variable
+facts inspected in [Luau's builtin analysis](https://github.com/luau-lang/luau/blob/master/Compiler/src/Builtins.cpp),
+not a previous-visitor witness. The compiler import distinction is established
+from BMSX's own compiler rather than imported from another Lua dialect.
+
+Validation: complete Lua suite 2,212 tests, 2,210 passed, the existing named-menu
+failure and one skip; rompacker 129/129, toolchain types, product build and the
+three precision idetests (8/5/3 assertions) pass. Independent composition review
+passed 66 targeted tests and found no blocker. The dumped pietious O3 program
+and debug metadata hash is identical to `8572d6d06`:
+`dd405f9a1b6fb463b2f8b2fb8bdf9f81d0cb2c84d89a7f1e5d583bf0d19b51d5`.
+Compiler timings were not isolated from all concurrent testing and are not used
+as performance evidence for this slice.
+
+The 300-reference-per-cart comparison has zero contradictory answers in both
+carts. Its strict subset assertion is **not green**: nemesis retains the existing
+`cartlib/aem.lua:160` extra target; pietious now includes two authored `test.phase`
+writes in `pietious_spyglass_input_assert.lua:40/44` that the solver does not
+return. Static definition lookup considers all global publications, whereas the
+solver requires application evidence for effects. Do not make that solver
+publish uncalled effects just to force the subset metric to zero.
+
+Isolated edit profiler, 20 warmups/50 samples, body-edit public update with
+highlighting p50/p95 before -> after: director 2.112/5.874 -> 2.211/5.845 ms;
+player 12.364/14.194 -> 12.340/13.552 ms. Player incremental-syntax phase binding
+p50 is 7.577 -> 7.921 ms, first member query 1.459 -> 1.526 ms. This ownership
+slice makes no edit-speedup claim; actual body caching remains necessary.
+
+### First body-reuse delivery (user priority clarification)
+
+The user explicitly prioritizes a substantial measured slowdown reduction over
+finishing every incremental refinement in one delivery (2026-09-20). Implement
+and validate reuse of unchanged non-nested function-body contributions first;
+each contribution includes its nested bodies without duplicating descendant
+facts into additional caches. Compare actually consumed lexical names, including
+misses, and retain immutable facts, never binder stacks. Conservative context
+invalidation is acceptable for this first delivery. Finer nested-body reuse and
+avoiding every harmless invalidation remain follow-up optimizations, not a
+reason to defer the working edit-speedup. Correctness and retained snapshot
+safety remain mandatory. Keep reviews focused and non-overlapping.
 
 ## Lowest-priority follow-up: absent-value convention
 

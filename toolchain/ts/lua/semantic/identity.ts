@@ -41,17 +41,12 @@ export class WorkspaceValueIdentityIndex {
 			}
 			for (let moduleIndex = 0; moduleIndex < file.moduleValues.length; moduleIndex += 1) {
 				const entry = file.moduleValues[moduleIndex];
-				if (entry.source.steps.length === 0 && entry.source.root.kind !== 'unknown') {
+				if (entry.source.steps.length === 0
+					&& entry.source.root.kind !== 'unknown'
+					&& entry.source.root.kind !== 'global') {
 					this.union({ kind: 'module', module: entry.module }, entry.source.root);
 				}
 			}
-		}
-
-		for (const [symbolKey, declId] of input.globalValues) {
-			this.union(
-				{ kind: 'global', symbolKey },
-				{ kind: 'declaration', declId },
-			);
 		}
 	}
 

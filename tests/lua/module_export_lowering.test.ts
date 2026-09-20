@@ -582,3 +582,16 @@ test('const modules reject runtime root values', () => {
 		/Module 'assets' root is compile-time only/,
 	);
 });
+
+test('a global require assignment does not replace compiler module syntax', () => {
+	const source = [
+		'local called = false',
+		'require = function(name) called = true; return { value = 99 } end',
+		'local imported = require("fixture")',
+		'return imported.value, called',
+	].join('\n');
+	for (const level of [0, 3] as const) {
+		const { compiled } = compileWithModule(source, 'fixture', 'return { value = 17 }', [], level);
+		assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [17, false]);
+	}
+});

@@ -131,11 +131,13 @@ export type FunctionValueFlowEntry = {
 };
 
 export type CallValueEntry = {
+	/** A compiler import has no runtime callable, even if a global named require is written. */
+	readonly module?: string;
 	readonly file: string;
 	readonly expression: LuaCallExpression;
-	callee: SemanticValueSource;
-	arguments: readonly SemanticValueSource[];
-	result?: OwnedSemanticValueSource;
+	readonly callee: SemanticValueSource;
+	readonly arguments: readonly SemanticValueSource[];
+	readonly result?: OwnedSemanticValueSource;
 };
 
 export type ValueAssignmentEntry = {
@@ -143,8 +145,7 @@ export type ValueAssignmentEntry = {
 	readonly source: SemanticValueSource;
 	readonly relation: 'value' | 'metatable' | 'prototype';
 	/** Actual source of the transfer; expression transfers are not storage writes. */
-	readonly syntax: LuaAssignmentStatement | LuaFunctionDeclarationStatement | LuaTableConstructorExpression
-		| LuaBinaryExpression | LuaCallExpression;
+	readonly syntax: DeclarationValueEntry['syntax'] | LuaBinaryExpression | LuaCallExpression;
 	/** Assignment target, constructor field, logical operand or builtin argument index. */
 	readonly index: number;
 };

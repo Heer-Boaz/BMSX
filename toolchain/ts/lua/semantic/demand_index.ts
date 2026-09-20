@@ -48,7 +48,7 @@ export class SemanticDemandIndex {
 	private readonly referencesByCall: Map<CallValueEntry, Ref> = new Map();
 	private readonly callsBySite: Map<CallValueEntry, SummaryCall> = new Map();
 	private readonly dependentSummariesByTerm: FunctionSummaryID[][] = [];
-	private readonly indexedWritersByAnchor: FunctionSummaryID[][] = [];
+	private readonly storageWritersByAnchor: FunctionSummaryID[][] = [];
 	private readonly dependentCallsByTerm: FunctionCall[][] = [];
 	private readonly calleeCallsByTerm: SummaryCall[][] = [];
 	private readonly topLevelCallsByAnchor: SummaryCall[][] = [];
@@ -200,11 +200,12 @@ export class SemanticDemandIndex {
 				: functionNamesByDeclaration.get(declaration);
 			this.indexSummaryDependencies(summary);
 			for (const alias of summary.aliases) {
-				if (summaries.terms.kind(alias.target) !== TermKind.Index) continue;
+				if (summaries.terms.kind(alias.target) !== TermKind.Index
+					&& !summaries.terms.isGlobalStorage(alias.target)) continue;
 				const anchor = summaries.terms.anchor(alias.target);
 				if (summaries.terms.kind(anchor) !== TermKind.Root || !summaries.terms.isIndexableAnchor(anchor)) continue;
-				let writers = this.indexedWritersByAnchor[anchor];
-				if (!writers) this.indexedWritersByAnchor[anchor] = writers = [];
+				let writers = this.storageWritersByAnchor[anchor];
+				if (!writers) this.storageWritersByAnchor[anchor] = writers = [];
 				if (writers[writers.length - 1] !== summary.id) writers.push(summary.id);
 			}
 			this.indexProjectedReceiverWrites(summary);
@@ -386,8 +387,8 @@ export class SemanticDemandIndex {
 		return this.dependentSummariesByTerm[term] || EMPTY_SUMMARIES;
 	}
 
-	public indexedWriters(term: TermID): readonly FunctionSummaryID[] {
-		return this.indexedWritersByAnchor[this.summaries.terms.anchor(term)] || EMPTY_SUMMARIES;
+	public storageWriters(term: TermID): readonly FunctionSummaryID[] {
+		return this.storageWritersByAnchor[this.summaries.terms.anchor(term)] || EMPTY_SUMMARIES;
 	}
 
 	public dependentCallsForTerm(term: TermID): readonly FunctionCall[] {
@@ -496,7 +497,8 @@ export class SemanticDemandIndex {
 		return {
 			owner: undefined,
 			site: call,
-			callee: this.summaries.terms.compileSource(call.callee),
+			// Compiler imports have a module value, not a runtime callable.
+			callee: call.module === undefined ? this.summaries.terms.compileSource(call.callee) : this.summaries.terms.unknown(),
 			arguments: args,
 			result: call.result === undefined
 				? undefined

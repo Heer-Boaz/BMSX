@@ -163,13 +163,12 @@ export class WorkspaceSymbolResolver {
 
 	/** Declared functions a call site's callee is defined as. */
 	public resolveCallableTargets(callSite: LuaCallSite): readonly SymbolID[] {
+		if (callSite.call.module !== undefined) return EMPTY_SYMBOLS;
 		const retained = this.callableTargets.get(callSite);
 		if (retained) {
 			return retained;
 		}
-		const callee = callSite.directTarget !== undefined
-			? declarationValueSource(callSite.directTarget)
-			: callSite.calleeValue ?? callSite.call.callee;
+		const callee = callSite.call.callee;
 		const targets = [...this.definitionTypes.functionDeclarations(callee)];
 		if (callee.steps.length > 0) {
 			const file = this.dataByPath.get(callSite.call.file)!;
@@ -246,7 +245,15 @@ export class WorkspaceSymbolResolver {
 	/** Definition-based shapes serving every interactive query. */
 	public get definitionTypes(): LuaDefinitionTypes {
 		if (this.definitionTypeQuery === undefined) {
-			this.definitionTypeQuery = new LuaDefinitionTypes(this.files, this.declarations, this.globals);
+			const definitions = new Map<string, SymbolID[]>();
+			for (const declarations of this.globalStorage) {
+				for (const declaration of declarations) {
+					let bucket = definitions.get(declaration.symbolKey);
+					if (bucket === undefined) definitions.set(declaration.symbolKey, bucket = []);
+					bucket.push(declaration.id);
+				}
+			}
+			this.definitionTypeQuery = new LuaDefinitionTypes(this.files, this.declarations, definitions);
 		}
 		return this.definitionTypeQuery;
 	}
@@ -337,6 +344,7 @@ export class WorkspaceSymbolResolver {
 	}
 
 	private resolveReferenceTargetsUncached(ref: Ref): readonly SymbolID[] {
+		if (ref.call?.module !== undefined) return EMPTY_SYMBOLS;
 		if (ref.referenceKind === 'member' || ref.referenceKind === 'method') {
 			const declarations = this.definitionTypes.lookupMember(this.definitionTypes.shapesOf(ref.receiverValue), ref.name);
 			const targets = declarations.map(declaration => declaration.id);

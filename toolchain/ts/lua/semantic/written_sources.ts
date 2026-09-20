@@ -46,6 +46,10 @@ export function writtenSourceExpression(source: LuaWrittenSource): LuaExpression
 		case 'value-transfer': {
 			const { syntax, index } = source.write;
 			switch (syntax.kind) {
+				case LuaSyntaxKind.LocalAssignmentStatement: return syntax.values[index];
+				case LuaSyntaxKind.LocalFunctionStatement: return syntax.functionExpression;
+				case LuaSyntaxKind.ForNumericStatement:
+				case LuaSyntaxKind.ForGenericStatement: return undefined;
 				case LuaSyntaxKind.AssignmentStatement: return syntax.right[index];
 				case LuaSyntaxKind.FunctionDeclarationStatement: return syntax.functionExpression;
 				case LuaSyntaxKind.TableConstructorExpression: return syntax.fields[index].value;
@@ -58,7 +62,7 @@ export function writtenSourceExpression(source: LuaWrittenSource): LuaExpression
 }
 
 export type LuaSourceBoundary = 'unknown-value' | 'unbound-global' | 'unwritten-binding'
-	| 'access-path' | 'member-read' | 'unwritten-member' | 'module' | 'module-publication' | 'call-result' | 'receiver' | 'parameter-input';
+	| 'access-path' | 'member-read' | 'unwritten-member' | 'module' | 'module-import' | 'module-publication' | 'call-result' | 'receiver' | 'parameter-input';
 
 type LuaSourceContributions = { readonly kind: 'contributions'; readonly sources: readonly LuaWrittenSource[] };
 
@@ -87,6 +91,7 @@ const MODULE_PUBLICATION: LuaWrittenSourceInputs = { kind: 'boundary', reason: '
 const RECEIVER: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'receiver' };
 const UNBOUND: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'unbound-global' };
 const UNWRITTEN: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'unwritten-binding' };
+const MODULE_IMPORT: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'module-import' };
 const PARAMETER: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'parameter-input' };
 
 /**
@@ -286,6 +291,7 @@ export class LuaWrittenSourceQuery {
 	}
 
 	private readInputs(source: LuaWrittenSource): LuaWrittenSourceInputs {
+		if (source.kind === 'call-callee' && source.call.module !== undefined) return MODULE_IMPORT;
 		if (source.kind === 'binding-input') return source.declaration.kind === 'parameter' ? PARAMETER : UNWRITTEN;
 		if (source.kind === 'receiver-input') return RECEIVER;
 		if (source.kind === 'module-bypass') return MODULE_PUBLICATION;
@@ -303,8 +309,7 @@ export class LuaWrittenSourceQuery {
 			case 'literal': return TERMINAL;
 			case 'declaration': {
 				const declaration = this.symbols.get(root.declId)!;
-				return declaration.isGlobal && declaration.namePath.length === 1
-					? this.globalInputs(declaration.symbolKey) : this.declarationInputs(declaration);
+				return this.declarationInputs(declaration);
 			}
 			case 'global': return this.globalInputs(root.symbolKey);
 			case 'module': return this.moduleInputs(root.module);
