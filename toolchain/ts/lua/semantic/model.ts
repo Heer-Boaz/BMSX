@@ -1,4 +1,5 @@
 import type { LuaStatementSequence } from '../syntax/statement_sequence';
+import type { LuaSyntaxPoint } from '../syntax/source_locations';
 import { hashText } from '../../../../machine/ts/common/byte_hex_string';
 import { HashMapBuilder } from '../../collections/hash_map';
 import { SourceChangeMap } from '../../text/source_changes';
@@ -105,15 +106,15 @@ export type Decl = {
 	kind: SemanticSymbolKind;
 	range: LuaSourceRange;
 	scopeIndex: number;
-	visibleFrom: SourcePosition;
+	visibleFrom: LuaSyntaxPoint;
 	isGlobal: boolean;
 	signature?: FunctionSignatureInfo;
 };
 
 export type SemanticScope = {
 	readonly kind: ScopeKind;
-	readonly startInclusive: SourcePosition;
-	readonly endExclusive: SourcePosition;
+	readonly startInclusive: LuaSyntaxPoint;
+	readonly endExclusive: LuaSyntaxPoint;
 	readonly parentIndex: number;
 	readonly declarationIndices: readonly number[];
 	/** The parameter declared by this method scope, not an inherited visible value. */
@@ -281,8 +282,8 @@ type ScopeKind = 'path' | 'function' | 'method' | 'block' | 'loop';
 type Scope = {
 	index: number;
 	kind: ScopeKind;
-	startInclusive: SourcePosition;
-	endExclusive: SourcePosition;
+	startInclusive: LuaSyntaxPoint;
+	endExclusive: LuaSyntaxPoint;
 	parent: Scope;
 	bindings: Map<string, InternalBinding>;
 	declarationIndices: number[];
@@ -377,14 +378,14 @@ export function buildLuaFileSemanticData(
 ): FileSemanticData {
 	const retainedChunk = chunk ?? parsed?.chunk ?? parseLuaChunkWithRecovery(source, path).chunk;
 	const tokens = retainedChunk.tokens;
-	const eof = retainedChunk.locations.range(tokens.get(tokens.length - 1)).end;
+	const eof = tokens.get(tokens.length - 1);
 	const builder = new SemanticBuilder({
 		path,
 		chunk: retainedChunk,
-		lineCount: eof.line,
+		lineCount: retainedChunk.locations.range(eof).end.line,
 		documentEndExclusive: {
-			line: eof.line,
-			column: eof.column + 1,
+			unit: eof.unit,
+			offset: eof.end + 1,
 		},
 	});
 	const result = builder.build();
@@ -617,7 +618,7 @@ class LuaProjectIndex {
 class SemanticBuilder {
 	private readonly chunk: LuaChunk;
 	private readonly path: string;
-	private readonly documentEndExclusive: SourcePosition;
+	private readonly documentEndExclusive: LuaSyntaxPoint;
 	private readonly annotations: SemanticAnnotations;
 	private readonly scopeStack: Scope[] = [];
 	private readonly scopes: Scope[] = [];
@@ -654,7 +655,7 @@ class SemanticBuilder {
 		chunk: LuaChunk;
 		path: string;
 		lineCount: number;
-		documentEndExclusive: SourcePosition;
+		documentEndExclusive: LuaSyntaxPoint;
 	}) {
 		this.chunk = options.chunk;
 		this.moduleExport = findLuaModuleExport(this.chunk);
@@ -665,7 +666,7 @@ class SemanticBuilder {
 
 	public build(): SemanticBuildResult {
 		this.enterScope(
-			{ line: 1, column: 1 },
+			{ unit: this.chunk.span.unit, offset: 0 },
 			this.documentEndExclusive,
 			'path',
 		);
@@ -723,7 +724,7 @@ class SemanticBuilder {
 					}
 				}
 				if (isRecursiveConstClosureDeclaration(localAssignment)) {
-					this.activateDecl(pending[0], pending[0].range.end);
+					this.activateDecl(pending[0], pending[0].visibleFrom);
 				}
 				const valueLimit = localAssignment.values.length;
 				for (let index = 0; index < valueLimit; index += 1) {
@@ -750,7 +751,7 @@ class SemanticBuilder {
 							? unknownValueSource() : NIL_VALUE_SOURCE;
 						this.setDeclarationValue(pending[index], source, statement, index);
 					}
-					this.activateDecl(pending[index], this.chunk.locations.range(localAssignment.span).end);
+					this.activateDecl(pending[index], { unit: localAssignment.span.unit, offset: localAssignment.span.end });
 				}
 				break;
 			}
@@ -953,7 +954,11 @@ class SemanticBuilder {
 					if (clause.condition) {
 						this.visitExpression(clause.condition, { tableBaseDecl: null, tableBasePath: null });
 					}
-					this.enterScope(this.chunk.locations.position(clause.block.span.unit, clause.block.startInclusive), this.chunk.locations.position(clause.block.span.unit, clause.block.endExclusive), 'block');
+					this.enterScope(
+						{ unit: clause.block.span.unit, offset: clause.block.startInclusive },
+						{ unit: clause.block.span.unit, offset: clause.block.endExclusive },
+						'block',
+					);
 					this.visitBlock(clause.block);
 					this.leaveScope();
 				}
@@ -962,7 +967,11 @@ class SemanticBuilder {
 			case LuaSyntaxKind.WhileStatement: {
 				const whileStatement = statement;
 				this.visitExpression(whileStatement.condition, { tableBaseDecl: null, tableBasePath: null });
-				this.enterScope(this.chunk.locations.position(whileStatement.block.span.unit, whileStatement.block.startInclusive), this.chunk.locations.position(whileStatement.block.span.unit, whileStatement.block.endExclusive), 'loop');
+				this.enterScope(
+					{ unit: whileStatement.block.span.unit, offset: whileStatement.block.startInclusive },
+					{ unit: whileStatement.block.span.unit, offset: whileStatement.block.endExclusive },
+					'loop',
+				);
 				this.visitBlock(whileStatement.block);
 				this.leaveScope();
 				break;
@@ -970,8 +979,8 @@ class SemanticBuilder {
 			case LuaSyntaxKind.RepeatStatement: {
 				const repeatStatement = statement;
 				this.enterScope(
-					this.chunk.locations.position(repeatStatement.block.span.unit, repeatStatement.block.startInclusive),
-					positionAfter(this.chunk.locations.range(repeatStatement.span).end),
+					{ unit: repeatStatement.block.span.unit, offset: repeatStatement.block.startInclusive },
+					{ unit: repeatStatement.span.unit, offset: repeatStatement.span.end + 1 },
 					'loop',
 				);
 				this.visitBlock(repeatStatement.block);
@@ -986,7 +995,11 @@ class SemanticBuilder {
 				if (forNumeric.step) {
 					this.visitExpression(forNumeric.step, { tableBaseDecl: null, tableBasePath: null });
 				}
-				this.enterScope(this.chunk.locations.position(forNumeric.block.span.unit, forNumeric.block.startInclusive), this.chunk.locations.position(forNumeric.block.span.unit, forNumeric.block.endExclusive), 'loop');
+				this.enterScope(
+					{ unit: forNumeric.block.span.unit, offset: forNumeric.block.startInclusive },
+					{ unit: forNumeric.block.span.unit, offset: forNumeric.block.endExclusive },
+					'loop',
+				);
 				const variable = this.declareLocal(forNumeric.variable, 'local', true);
 				this.unknownValueDeclarations.add(variable.id);
 				this.setDeclarationValue(variable, unknownValueSource(), statement, 0);
@@ -1000,7 +1013,11 @@ class SemanticBuilder {
 					this.visitExpression(forGeneric.iterators[index], { tableBaseDecl: null, tableBasePath: null });
 				}
 				const tableSource = this.resolveGenericForTableSource(forGeneric);
-				this.enterScope(this.chunk.locations.position(forGeneric.block.span.unit, forGeneric.block.startInclusive), this.chunk.locations.position(forGeneric.block.span.unit, forGeneric.block.endExclusive), 'loop');
+				this.enterScope(
+					{ unit: forGeneric.block.span.unit, offset: forGeneric.block.startInclusive },
+					{ unit: forGeneric.block.span.unit, offset: forGeneric.block.endExclusive },
+					'loop',
+				);
 				for (let index = 0; index < forGeneric.variables.length; index += 1) {
 					const variable = this.declareLocal(forGeneric.variables[index], 'local', true);
 					if (index === 0) {
@@ -1018,7 +1035,11 @@ class SemanticBuilder {
 			}
 			case LuaSyntaxKind.DoStatement: {
 				const doStatement = statement;
-				this.enterScope(this.chunk.locations.position(doStatement.block.span.unit, doStatement.block.startInclusive), this.chunk.locations.position(doStatement.block.span.unit, doStatement.block.endExclusive), 'block');
+				this.enterScope(
+					{ unit: doStatement.block.span.unit, offset: doStatement.block.startInclusive },
+					{ unit: doStatement.block.span.unit, offset: doStatement.block.endExclusive },
+					'block',
+				);
 				this.visitBlock(doStatement.block);
 				this.leaveScope();
 				break;
@@ -1382,7 +1403,11 @@ class SemanticBuilder {
 		};
 		this.functionValueFlowStack.push(valueFlow);
 		const block = expression.body;
-		this.enterScope(this.chunk.locations.position(block.span.unit, block.startInclusive), this.chunk.locations.position(block.span.unit, block.endExclusive), scopeKind);
+		this.enterScope(
+			{ unit: block.span.unit, offset: block.startInclusive },
+			{ unit: block.span.unit, offset: block.endExclusive },
+			scopeKind,
+		);
 		if (receiver) {
 			this.retainOwnedValueSource(receiver);
 			this.currentScope().bindings.set('self', { kind: 'receiver', name: 'self', valueSource: receiver });
@@ -1944,7 +1969,8 @@ class SemanticBuilder {
 			kind,
 			range,
 			scopeIndex: scopeRef.index,
-			visibleFrom: range.end,
+			visibleFrom: { unit: syntax.span.unit, offset: syntax.kind === LuaTableFieldKind.IdentifierKey
+				? syntax.span.start + name.length - 1 : syntax.span.end },
 			isGlobal,
 			scopeRef,
 			active,
@@ -2264,7 +2290,7 @@ class SemanticBuilder {
 		});
 	}
 
-	private activateDecl(decl: InternalDecl, visibleFrom: SourcePosition): void {
+	private activateDecl(decl: InternalDecl, visibleFrom: LuaSyntaxPoint): void {
 		if (decl.active) {
 			return;
 		}
@@ -2290,8 +2316,8 @@ class SemanticBuilder {
 	}
 
 	private enterScope(
-		startInclusive: SourcePosition,
-		endExclusive: SourcePosition,
+		startInclusive: LuaSyntaxPoint,
+		endExclusive: LuaSyntaxPoint,
 		kind: ScopeKind,
 	): void {
 		const scope: Scope = {
@@ -2329,10 +2355,6 @@ function buildRangeFromPosition(position: SourcePosition, length: number, path: 
 }
 
 
-
-function positionAfter(position: SourcePosition): SourcePosition {
-	return { line: position.line, column: position.column + 1 };
-}
 
 function joinNamePath(namePath: readonly string[]): string {
 	if (namePath.length === 0) {
@@ -2395,10 +2417,7 @@ function toDecl(internal: InternalDecl): Decl {
 		kind: internal.kind,
 		range: internal.range,
 		scopeIndex: internal.scopeIndex,
-		visibleFrom: {
-			line: internal.visibleFrom.line,
-			column: internal.visibleFrom.column,
-		},
+		visibleFrom: internal.visibleFrom,
 		isGlobal: internal.isGlobal,
 		signature: internal.signature,
 	};
@@ -2407,14 +2426,8 @@ function toDecl(internal: InternalDecl): Decl {
 function toSemanticScope(scope: Scope): SemanticScope {
 	return {
 		kind: scope.kind,
-		startInclusive: {
-			line: scope.startInclusive.line,
-			column: scope.startInclusive.column,
-		},
-		endExclusive: {
-			line: scope.endExclusive.line,
-			column: scope.endExclusive.column,
-		},
+		startInclusive: scope.startInclusive,
+		endExclusive: scope.endExclusive,
 		parentIndex: scope.parent ? scope.parent.index : -1,
 		declarationIndices: scope.declarationIndices.slice(),
 		implicitSelfValue: scope.implicitSelfValue,

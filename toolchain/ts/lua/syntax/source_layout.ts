@@ -87,7 +87,7 @@ export class LuaSourceLayout {
 				id = node.right;
 			}
 		}
-		return { line, column };
+		return { line, column: column + offset };
 	}
 
 	public offsetAt(position: LuaSourcePosition): number {

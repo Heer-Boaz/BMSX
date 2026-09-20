@@ -13,6 +13,12 @@ export type LuaSyntaxSpan = {
 	readonly end: number;
 };
 
+/** An occurrence-relative position, also used for exclusive scope endpoints. */
+export type LuaSyntaxPoint = {
+	readonly unit: LuaSourceUnit;
+	readonly offset: number;
+};
+
 type LocationBacking = {
 	readonly kind: 'source';
 	readonly source: string;

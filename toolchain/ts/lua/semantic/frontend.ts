@@ -655,18 +655,10 @@ function isReferenceInsideDeclScope(ref: Ref, decl: Decl, source: FileSemanticDa
 		return false;
 	}
 	const scope = source.scopes[decl.scopeIndex];
-	return compareSourcePosition(
-		ref.range.start.line,
-		ref.range.start.column,
-		scope.startInclusive.line,
-		scope.startInclusive.column,
-	) >= 0
-		&& compareSourcePosition(
-			ref.range.start.line,
-			ref.range.start.column,
-			scope.endExclusive.line,
-			scope.endExclusive.column,
-		) < 0;
+	const locations = source.chunk.locations;
+	const offset = locations.offsetAt(ref.range.start);
+	return offset >= locations.offset(scope.startInclusive.unit, scope.startInclusive.offset)
+		&& offset < locations.offset(scope.endExclusive.unit, scope.endExclusive.offset);
 }
 
 function buildCombinedGlobalSymbols(decls: readonly Decl[], externalGlobalSymbols?: readonly LuaSymbolEntry[]): LuaSymbolEntry[] {

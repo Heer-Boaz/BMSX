@@ -30,13 +30,15 @@ class FileCorrespondence {
 		this.tokens = matchLuaTokens(this.oldTokens, this.newTokens);
 		const newScopes = new Map<string, number>();
 		for (let index = 1; index < this.newFile.scopes.length; index += 1) {
-			newScopes.set(sourcePositionKey(this.newFile.scopes[index].startInclusive), index);
+			const start = this.newFile.scopes[index].startInclusive;
+			newScopes.set(sourcePositionKey(this.newFile.chunk.locations.position(start.unit, start.offset)), index);
 		}
 		this.scopes = new Int32Array(this.oldFile.scopes.length).fill(-1);
 		this.scopes[0] = 0; // The same module is the root of both lexical trees.
 		for (let index = 1; index < this.oldFile.scopes.length; index += 1) {
 			const scope = this.oldFile.scopes[index];
-			const opening = this.tokenAt({ line: scope.startInclusive.line, column: scope.startInclusive.column - 1 });
+			const start = this.oldFile.chunk.locations.position(scope.startInclusive.unit, scope.startInclusive.offset);
+			const opening = this.tokenAt({ line: start.line, column: start.column - 1 });
 			const targetToken = opening < 0 ? -1 : this.tokens[opening];
 			if (targetToken < 0) {
 				continue;
@@ -64,7 +66,8 @@ class FileCorrespondence {
 		});
 		const oldScopes = new Map<string, number>();
 		for (let index = 1; index < this.oldFile.scopes.length; index += 1) {
-			oldScopes.set(sourcePositionKey(this.oldFile.scopes[index].startInclusive), index);
+			const start = this.oldFile.scopes[index].startInclusive;
+			oldScopes.set(sourcePositionKey(this.oldFile.chunk.locations.position(start.unit, start.offset)), index);
 		}
 		for (const oldFunction of oldFunctions.values()) {
 			const mapped = this.mapRange(this.oldFile.chunk.locations.range(oldFunction.span), true);

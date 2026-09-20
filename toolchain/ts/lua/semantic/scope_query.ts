@@ -1,19 +1,23 @@
 import type { Decl, FileSemanticData } from './model';
 import type { SemanticValueSource } from './value_graph';
-import { compareSourcePosition } from './source_range';
 
 export function findInnermostScopeIndex(
 	source: FileSemanticData,
 	line: number,
 	column: number,
 ): number {
+	return findInnermostScopeIndexAtOffset(source, source.chunk.locations.offsetAt({ line, column }));
+}
+
+function findInnermostScopeIndexAtOffset(source: FileSemanticData, offset: number): number {
+	const locations = source.chunk.locations;
 	const scopes = source.scopes;
 	let low = 0;
 	let high = scopes.length;
 	while (low < high) {
 		const middle = (low + high) >>> 1;
 		const start = scopes[middle].startInclusive;
-		if (compareSourcePosition(start.line, start.column, line, column) <= 0) {
+		if (locations.offset(start.unit, start.offset) <= offset) {
 			low = middle + 1;
 		} else {
 			high = middle;
@@ -23,7 +27,7 @@ export function findInnermostScopeIndex(
 	while (scopeIndex >= 0) {
 		const scope = scopes[scopeIndex];
 		const end = scope.endExclusive;
-		if (compareSourcePosition(line, column, end.line, end.column) < 0) {
+		if (offset < locations.offset(end.unit, end.offset)) {
 			return scopeIndex;
 		}
 		scopeIndex = scope.parentIndex;
@@ -43,19 +47,16 @@ export function findLuaLexicalBindingAt(
 	line: number,
 	column: number,
 ): LuaLexicalBinding {
-	let scopeIndex = findInnermostScopeIndex(source, line, column);
+	const locations = source.chunk.locations;
+	const offset = locations.offsetAt({ line, column });
+	let scopeIndex = findInnermostScopeIndexAtOffset(source, offset);
 	while (scopeIndex >= 0) {
 		const scope = source.scopes[scopeIndex];
 		const indices = scope.declarationIndices;
 		for (let index = indices.length - 1; index >= 0; index -= 1) {
 			const declaration = source.decls[indices[index]];
 			if (declaration.name === name
-				&& compareSourcePosition(
-					line,
-					column,
-					declaration.visibleFrom.line,
-					declaration.visibleFrom.column,
-				) > 0) {
+				&& offset > locations.offset(declaration.visibleFrom.unit, declaration.visibleFrom.offset)) {
 				return { kind: 'declaration', declaration };
 			}
 		}
@@ -88,7 +89,9 @@ export function collectVisibleDeclarationsAt(
 	line: number,
 	column: number,
 ): readonly Decl[] {
-	let scopeIndex = findInnermostScopeIndex(source, line, column);
+	const locations = source.chunk.locations;
+	const offset = locations.offsetAt({ line, column });
+	let scopeIndex = findInnermostScopeIndexAtOffset(source, offset);
 	if (scopeIndex < 0) {
 		return [];
 	}
@@ -100,12 +103,7 @@ export function collectVisibleDeclarationsAt(
 		for (let index = indices.length - 1; index >= 0; index -= 1) {
 			const declaration = source.decls[indices[index]];
 			if (names.has(declaration.name)
-				|| compareSourcePosition(
-					line,
-					column,
-					declaration.visibleFrom.line,
-					declaration.visibleFrom.column,
-				) <= 0) {
+				|| offset <= locations.offset(declaration.visibleFrom.unit, declaration.visibleFrom.offset)) {
 				continue;
 			}
 			names.add(declaration.name);

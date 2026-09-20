@@ -7,7 +7,7 @@ import { resolveInlineLocalContextRange } from '../../toolchain/ts/lua/compiler/
 import type { FileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 import { findLuaSemanticOccurrenceAt } from '../../toolchain/ts/lua/semantic/position_query';
 import { findLuaLexicalBindingAt } from '../../toolchain/ts/lua/semantic/scope_query';
-import { compareSourcePosition, sourcePositionInRange } from '../../toolchain/ts/lua/semantic/source_range';
+import { sourcePositionInRange } from '../../toolchain/ts/lua/semantic/source_range';
 import { sourceRangesEqual, type SourceRange } from '../../toolchain/ts/lua/source_range';
 import { SYSTEM_RESOURCE_DOMAIN, type ResourceDomain, type ResourceIdentity } from '../common/resource';
 import type { RuntimeFaultState } from './fault_state';
@@ -155,8 +155,8 @@ export function readRuntimeLuaValue(
 			if (context === null || context.path !== definition.path
 				|| !sourcePositionInRange(context.start.line, context.start.column, slot.scope)
 				|| !blua32LocalSlotLiveAtPc(slot, image.layout.functions[functionIndex].codeAddress, pc)) return NOT_IN_SCOPE;
-			if (binding.kind === 'declaration' && compareSourcePosition(context.start.line, context.start.column,
-				binding.declaration.visibleFrom.line, binding.declaration.visibleFrom.column) <= 0) return NOT_IN_SCOPE;
+			if (binding.kind === 'declaration' && analysis.chunk.locations.offsetAt(context.start)
+				<= analysis.chunk.locations.offset(binding.declaration.visibleFrom.unit, binding.declaration.visibleFrom.offset)) return NOT_IN_SCOPE;
 			const value = captured === undefined ? cpu.readFrameRegister(frameIndex, slot.registerIndex) : captured.registers[slot.registerIndex];
 			return guest.readStringPath(value, parts, 1);
 		}

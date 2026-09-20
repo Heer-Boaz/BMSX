@@ -14,6 +14,24 @@ function position(source: string, offset: number) {
 	return { line: prefix.split('\n').length, column: offset - start + 1 };
 }
 
+test('exclusive EOF points retain their residual offset in every location backing', () => {
+	for (const source of ['', 'text', 'text\n', 'text\r\n']) {
+		for (const terminalUnit of [false, true]) {
+			const placements = terminalUnit ? [{ unit: createLuaSourceUnit(), offset: source.length }] : [];
+			const layout = LuaSourceLayout.create(source, placements);
+			const locations = LuaSourceLocations.fromLayout('end.lua', layout);
+			const cursor = layout.cursor();
+			for (const offset of [0, source.length, source.length + 1, source.length + 2, source.length]) {
+				const expected = position(source, offset);
+				assert.deepEqual(layout.positionAt(offset), expected);
+				assert.deepEqual(layout.cursor(offset).positionAt(offset), expected);
+				assert.deepEqual(locations.positionAt(offset), expected);
+				assert.deepEqual(cursor.positionAt(offset), expected);
+			}
+		}
+	}
+});
+
 test('location cursor projects forward and backward UTF-16 seeks through source and occurrence leaves', () => {
 	const source = 'a\r\n😀\ud800x\udc00\n'.repeat(120);
 	const placements = Array.from({ length: 100 }, (_, index) => ({ unit: createLuaSourceUnit(), offset: index * 13 }));

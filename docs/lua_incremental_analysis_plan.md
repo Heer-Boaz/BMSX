@@ -1005,6 +1005,50 @@ of the edit profiler measures director/player public function-body updates at
 is still 15.230/24.299 ms; this identity migration does not claim a binding speedup
 or a passed final performance gate.
 
+## Binder prerequisite: relative lexical boundaries
+
+The producer now stores scope start/end and declaration activation sites as
+`LuaSyntaxPoint { unit, offset }`, defined by the existing syntax-location owner.
+Scope lookup and visibility compare offsets in the current generation;
+source correspondence resolves points through each independently parsed owner.
+Relocation, frontend scope checks and runtime local inspection consume the same
+contract. There is no parallel absolute scope/activation copy or hidden getter
+that changes presentation with the current editor revision.
+
+Local activation remains strict after its activation token. Ordinary locals do
+not see themselves in their initializer; recursive const closures activate at
+their declaration name. Repeat scopes include their condition. Root scope ends
+one position after the lexical EOF point, including recovered lexical failures.
+A reused point resolves through the old or new owner without mutating either.
+
+This removes two more absolute-location fields from future reusable facts. It
+**does not** yet replace file-wide scope/declaration indices, `Decl.range`,
+reference ranges, annotations or mutable ambient property/signature discovery.
+Full-file traversal remains. Do not interpret this boundary migration as cached
+scope facts, and do not preserve the remaining wrong ownership by wrapping it.
+
+The retained-snapshot oracle exposed an existing location-owner inconsistency:
+layout-backed projection discarded the residual offset after the final leaf,
+while source-backed projection kept it. Both layout and sequential cursor now
+carry that residual column offset, including empty documents and trailing
+zero-width units. EOF+1/EOF+2 tests cover both paths; no binder fallback or
+alternate scope endpoint was introduced.
+
+Validation: a before/after owner oracle matches scope/activation presentation on
+549 cart files against `f23a76327`; focused scope/visibility/correspondence/
+relocation/capture tests pass 66/66 and layout/location tests pass 17/17. The
+independent reviewer found no blocker, including malformed EOF probes. The
+final Lua suite reports 2,108 tests (2,106 pass, the same workbench-menu failure,
+one skip); rompacker passes 129/129. Broad typechecking adds no changed-owner
+errors. Rebuilt tooling passes precision idetests 8/5/3; core parity and
+`git diff --check` pass.
+
+An isolated 20-warmup/50-sample repeat measures director/player public body edits
+at 3.322/7.455 and 16.412/17.351 ms p50/p95. Player binding still costs
+14.345/15.974 ms; its full-source public comparison is 25.085/28.304 ms. Retained
+285-file bound heap is 215.33 MiB, released overhead 2.61 MiB. This remains
+approximately 1.53x at the public player-update median, not the final 2x gate.
+
 ## Lowest-priority follow-up: absent-value convention
 
 User request, 2026-09-20: after the incremental parsing/binding work and its

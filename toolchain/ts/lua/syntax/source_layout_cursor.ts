@@ -62,7 +62,7 @@ export class LuaSourceLayoutCursor {
 				break;
 			}
 		}
-		return this.leaf === undefined ? { line: this.line, column: this.column }
+		return this.leaf === undefined ? { line: this.line, column: this.column + offset - this.start }
 			: positionInText((this.leaf as Extract<LuaSourceLayoutLeaf, { kind: 'text' }>).lineStarts, offset - this.start, this.line, this.column);
 	}
 

@@ -21,6 +21,9 @@ export class LuaRelocationAnalysis {
 	public readonly bindings: readonly LuaRelocationBinding[];
 
 	constructor(public readonly source: FileSemanticData, range: LuaSourceRange) {
+		const locations = source.chunk.locations;
+		const rangeStart = locations.offsetAt(range.start);
+		const rangeEnd = locations.offsetAt(range.end);
 		const bindings: LuaRelocationBinding[] = [];
 		const seen = new Set<Decl | SemanticScope | string | number>();
 		walkLuaAst(source.chunk, node => {
@@ -37,7 +40,8 @@ export class LuaRelocationAnalysis {
 					identity = declaration;
 				} else if (binding.kind === 'receiver') {
 					const scope = source.scopes[binding.scopeIndex];
-					if (sourcePositionInRange(scope.startInclusive.line, scope.startInclusive.column, range)) return;
+					const scopeStart = locations.offset(scope.startInclusive.unit, scope.startInclusive.offset);
+					if (scopeStart >= rangeStart && scopeStart <= rangeEnd) return;
 					identity = scope;
 				} else identity = binding.name;
 				if (seen.has(identity)) return;
@@ -46,7 +50,8 @@ export class LuaRelocationAnalysis {
 			} else if (node.kind === LuaSyntaxKind.VarargExpression) {
 				const scopeIndex = findLuaFunctionScopeIndexAt(source, source.chunk.locations.range(node.span).start.line, source.chunk.locations.range(node.span).start.column);
 				const scope = source.scopes[scopeIndex];
-				if (sourcePositionInRange(scope.startInclusive.line, scope.startInclusive.column, range) || seen.has(scopeIndex)) return;
+				const scopeStart = locations.offset(scope.startInclusive.unit, scope.startInclusive.offset);
+				if (scopeStart >= rangeStart && scopeStart <= rangeEnd || seen.has(scopeIndex)) return;
 				seen.add(scopeIndex);
 				bindings.push({ kind: 'vararg', expression: node, scopeIndex });
 			}

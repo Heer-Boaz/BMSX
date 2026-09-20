@@ -29,8 +29,14 @@ function answers(snapshot: LuaSemanticWorkspaceSnapshot) {
 	return snapshot.files.map(file => ({
 		file: file.file,
 		scopes: file.scopes.map(scope => ({
-			kind: scope.kind, start: scope.startInclusive, end: scope.endExclusive,
+			kind: scope.kind,
+			start: file.chunk.locations.position(scope.startInclusive.unit, scope.startInclusive.offset),
+			end: file.chunk.locations.position(scope.endExclusive.unit, scope.endExclusive.offset),
 			parent: scope.parentIndex, declarations: scope.declarationIndices,
+		})),
+		declarations: file.decls.map(decl => ({
+			name: decl.namePath, range: decl.range,
+			visibleFrom: file.chunk.locations.position(decl.visibleFrom.unit, decl.visibleFrom.offset),
 		})),
 		refs: file.refs.map(ref => ({
 			name: ref.name,
