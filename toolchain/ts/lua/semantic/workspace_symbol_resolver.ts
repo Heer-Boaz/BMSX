@@ -1,9 +1,13 @@
+import { LuaSyntaxKind, type LuaCallExpression, type LuaFunctionExpression } from '../syntax/ast';
+import type { ScopeID } from './scope_facts';
+import { getLuaDeclaredFunctions, inferLuaFunctionSignatures, type FunctionSignatureInfo } from './function_signatures';
 import type { HashLookup } from '../../collections/hash_map';
 import type { Decl, FileSemanticData, LuaCallSite, Ref, SymbolID } from './model';
 import { LuaSemanticQueryStore, type LuaSemanticQueryMetrics } from './query_store';
 import {
 	declarationValueSource,
 	type SemanticValueSource,
+	type FunctionValueFlowEntry,
 } from './value_graph';
 import { LuaWrittenSourceQuery } from './written_sources';
 import { LuaDefinitionTypes } from './definition_types';
@@ -12,6 +16,7 @@ import type { LuaSourceCallGraph } from './source_call_graph';
 import type { LuaSourceValueQuery } from './source_value_query';
 
 const EMPTY_SYMBOLS: readonly SymbolID[] = [];
+const EMPTY_SIGNATURES: readonly FunctionSignatureInfo[] = [];
 
 function sortMembers(members: Decl[], files: ReadonlyMap<string, FileSemanticData>): Decl[] {
 	return members.sort((left, right) => {
@@ -42,6 +47,8 @@ function appendUniqueSymbols(target: SymbolID[], source: readonly SymbolID[]): v
 export class WorkspaceSymbolResolver {
 	private readonly files: readonly FileSemanticData[];
 	private readonly dataByPath = new Map<string, FileSemanticData>();
+	private readonly functionSignaturesBySymbol = new Map<SymbolID, readonly FunctionSignatureInfo[]>();
+	private readonly functionSignaturesByFile = new Map<FileSemanticData, ReadonlyMap<ScopeID, FunctionSignatureInfo>>();
 	private readonly declarations: HashLookup<SymbolID, Decl>;
 	private readonly globals: ReadonlyMap<string, SymbolID>;
 	private readonly globalStorage: readonly (readonly Decl[])[];
@@ -161,7 +168,7 @@ export class WorkspaceSymbolResolver {
 		const callee = callSite.directTarget !== undefined
 			? declarationValueSource(callSite.directTarget)
 			: callSite.calleeValue ?? callSite.call.callee;
-		const targets = this.definitionFunctionDeclarations(callee);
+		const targets = this.definitionTypes.functionDeclarations(callee);
 		this.callableTargets.set(callSite, targets);
 		return targets;
 	}
@@ -175,19 +182,52 @@ export class WorkspaceSymbolResolver {
 		if (retained) {
 			return retained;
 		}
-		const targets = this.declarations.get(symbolId).signature !== undefined
-			? [symbolId]
-			: this.definitionFunctionDeclarations(declarationValueSource(symbolId));
+		const targets = this.definitionTypes.functionDeclarations(declarationValueSource(symbolId));
 		this.definitionFunctionTargets.set(symbolId, targets);
 		return targets;
 	}
 
-	private definitionFunctionDeclarations(source: SemanticValueSource): SymbolID[] {
-		const targets: SymbolID[] = [];
-		for (const target of this.definitionTypes.functionDeclarations(source)) {
-			if (this.declarations.get(target)?.signature !== undefined) targets.push(target);
+	/** Written function definitions expose their headers without optionality inference. */
+	public getDeclaredFunctions(symbolId: SymbolID): readonly FunctionValueFlowEntry[] {
+		const declaration = this.declarations.get(symbolId);
+		return getLuaDeclaredFunctions(this.dataByPath.get(declaration.file)!, symbolId);
+	}
+
+	/** Required-argument analysis is a signature/diagnostic demand, not a hover demand. */
+	public getFunctionSignatures(symbolId: SymbolID): readonly FunctionSignatureInfo[] {
+		const retained = this.functionSignaturesBySymbol.get(symbolId);
+		if (retained !== undefined) return retained;
+		const functions = this.getDeclaredFunctions(symbolId);
+		if (functions.length === 0) return EMPTY_SIGNATURES;
+		const signatures = functions.map(flow => this.signatureOfFunction(flow));
+		this.functionSignaturesBySymbol.set(symbolId, signatures);
+		return signatures;
+	}
+
+	private signatureOfFunction(flow: FunctionValueFlowEntry): FunctionSignatureInfo {
+		const file = this.dataByPath.get(flow.functionValue.root.file)!;
+		let signatures = this.functionSignaturesByFile.get(file);
+		if (signatures === undefined) {
+			const calls = new Map<LuaCallExpression, LuaCallSite>();
+			for (const site of file.callSites) calls.set(site.expression, site);
+			const functions = new Map<LuaFunctionExpression, FunctionValueFlowEntry>();
+			for (const definition of file.functionValueFlows) functions.set(definition.expression, definition);
+			signatures = inferLuaFunctionSignatures(file, expression => {
+				if (expression.method === null && expression.callee.kind === LuaSyntaxKind.FunctionExpression) {
+					return functions.get(expression.callee);
+				}
+				// Optionality reads only a directly bound written definition in this
+				// file. Aliases, dynamic receivers and other files remain unknown;
+				// this is not another value-shape query or parameter/effect solver.
+				const site = calls.get(expression)!;
+				const target = site.directTarget ?? site.reference?.target;
+				if (target === undefined) return undefined;
+				const definitions = getLuaDeclaredFunctions(file, target);
+				return definitions.length === 1 ? definitions[0] : undefined;
+			}, !this.globals.has('type'));
+			this.functionSignaturesByFile.set(file, signatures);
 		}
-		return targets;
+		return signatures.get(flow.id)!;
 	}
 
 	/** Definition-based shapes serving every interactive query. */

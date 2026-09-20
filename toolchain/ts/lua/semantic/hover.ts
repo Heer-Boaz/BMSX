@@ -1,6 +1,7 @@
+import type { FunctionValueFlowEntry } from './value_graph';
 import type { LuaBuiltinDescriptor } from '../semantic_contracts';
-import type { LuaSourceRange } from '../syntax/ast';
-import type { Decl, FileSemanticData, FunctionSignatureInfo, Ref, SymbolID } from './model';
+import type { LuaFunctionExpression, LuaSourceRange } from '../syntax/ast';
+import type { Decl, FileSemanticData, Ref, SymbolID } from './model';
 import { findLuaSemanticOccurrenceAt } from './position_query';
 import type { WorkspaceSymbolResolver } from './workspace_symbol_resolver';
 
@@ -26,31 +27,25 @@ export function provideLuaHover(
 		return null;
 	}
 	if (occurrence.kind === 'declaration') {
+		const functions = symbolResolver.getDeclaredFunctions(occurrence.declaration.id);
 		return {
-			contents: [buildDeclarationHoverContent(occurrence.declaration)],
+			contents: functions.length === 0
+				? [buildDeclarationHoverContent(occurrence.declaration)]
+				: functions.map(definition => buildDeclarationHoverContent(occurrence.declaration, definition)),
 			applicableRange: analysis.chunk.locations.range(occurrence.declaration.span),
 		};
 	}
 	const reference = occurrence.reference;
 	const targetIds = symbolResolver.resolveReferenceTargets(reference);
 	if (targetIds.length > 0) {
-		let signatureCount = 0;
-		for (let index = 0; index < targetIds.length; index += 1) {
-			if (symbolResolver.getDeclaration(targetIds[index]).signature !== undefined) {
-				signatureCount += 1;
+		const signatureContents: LuaHoverContent[] = [];
+		for (const target of targetIds) {
+			for (const definition of symbolResolver.getDeclaredFunctions(target)) {
+				signatureContents.push(buildDeclarationHoverContent(symbolResolver.getDeclaration(target), definition));
 			}
 		}
-		if (signatureCount > 0) {
-			const contents = new Array<LuaHoverContent>(signatureCount);
-			let contentIndex = 0;
-			for (let index = 0; index < targetIds.length; index += 1) {
-				const declaration = symbolResolver.getDeclaration(targetIds[index]);
-				if (declaration.signature !== undefined) {
-					contents[contentIndex] = buildDeclarationHoverContent(declaration);
-					contentIndex += 1;
-				}
-			}
-			return { contents, applicableRange: analysis.chunk.locations.range(reference.span) };
+		if (signatureContents.length > 0) {
+			return { contents: signatureContents, applicableRange: analysis.chunk.locations.range(reference.span) };
 		}
 		const functionTargets: SymbolID[] = [];
 		for (let index = 0; index < targetIds.length; index += 1) {
@@ -59,11 +54,13 @@ export function provideLuaHover(
 			}
 		}
 		if (functionTargets.length > 0) {
-			const contents = new Array<LuaHoverContent>(functionTargets.length);
+			const contents: LuaHoverContent[] = [];
 			const displayName = formatReferenceFunctionName(reference);
 			for (let index = 0; index < functionTargets.length; index += 1) {
 				const declaration = symbolResolver.getDeclaration(functionTargets[index]);
-				contents[index] = buildDeclarationHoverContent(declaration, displayName);
+				for (const definition of symbolResolver.getDeclaredFunctions(declaration.id)) {
+					contents.push(buildDeclarationHoverContent(declaration, definition, displayName));
+				}
 			}
 			return { contents, applicableRange: analysis.chunk.locations.range(reference.span) };
 		}
@@ -102,14 +99,12 @@ function formatMethodPath(path: string): string {
 		: `${path.slice(0, separator)}:${path.slice(separator + 1)}`;
 }
 
-function buildDeclarationHoverContent(declaration: Decl, displayName?: string): LuaHoverContent {
-	const signature = declaration.signature;
-	if (signature !== undefined) {
-		const name = displayName === undefined
-			? formatFunctionName(declaration, signature)
-			: displayName;
+function buildDeclarationHoverContent(declaration: Decl, definition?: FunctionValueFlowEntry, displayName?: string): LuaHoverContent {
+	if (definition !== undefined) {
+		const style = definition.implicitReceiver ? 'method' : 'function';
+		const name = displayName === undefined ? formatFunctionName(declaration, style) : displayName;
 		return {
-			label: `(${signature.declarationStyle}) ${name}(${formatParameters(signature)})`,
+			label: `(${style}) ${name}(${formatParameters(definition.expression)})`,
 		};
 	}
 	return {
@@ -117,9 +112,9 @@ function buildDeclarationHoverContent(declaration: Decl, displayName?: string): 
 	};
 }
 
-function formatFunctionName(declaration: Decl, signature: FunctionSignatureInfo): string {
+function formatFunctionName(declaration: Decl, style: 'function' | 'method'): string {
 	const path = declaration.namePath;
-	if (signature.declarationStyle !== 'method' || path.length < 2) {
+	if (style !== 'method' || path.length < 2) {
 		return path.join('.');
 	}
 	let name = path[0];
@@ -129,9 +124,13 @@ function formatFunctionName(declaration: Decl, signature: FunctionSignatureInfo)
 	return `${name}:${path[path.length - 1]}`;
 }
 
-function formatParameters(signature: FunctionSignatureInfo): string {
-	let parameters = signature.params.join(', ');
-	if (signature.hasVararg) {
+function formatParameters(expression: LuaFunctionExpression): string {
+	let parameters = '';
+	for (let index = 0; index < expression.parameters.length; index++) {
+		if (index > 0) parameters += ', ';
+		parameters += expression.parameters[index].name;
+	}
+	if (expression.hasVararg) {
 		parameters += parameters.length === 0 ? '...' : ', ...';
 	}
 	return parameters;

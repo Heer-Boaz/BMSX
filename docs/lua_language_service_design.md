@@ -86,10 +86,12 @@ The next parse/bind work is specified in
 [Incremental Lua parsing and binding](lua_incremental_analysis_plan.md).
 It separates the measured baseline from the planned syntax-representation,
 incremental-parser and scope-binding slices; annotations remain out of scope.
-The first ownership slice is implemented: syntax roots retain source, tokens
-and recovery diagnostics; the global parse cache is removed. Editor reads and
-compiler binding share the supplied syntax generation. Changed files still
-parse and bind in full; relative syntax and sub-file reuse remain planned.
+Syntax roots retain source, persistent tokens and recovery diagnostics; the
+global parse cache is removed. Relative syntax and edit transport now permit
+lexical and grammar-part reuse through the same parser used by compilation.
+Binding facts use occurrence identities and generation-owned locations/parent
+attachments, but binding still visits the whole changed file. Scope-local fact
+reuse and the final edit-performance gate remain open.
 
 Per-file facts (shape definitions, static members, `self` fields, prototype
 edges, return expressions, prototype summaries) are pure functions of a file's

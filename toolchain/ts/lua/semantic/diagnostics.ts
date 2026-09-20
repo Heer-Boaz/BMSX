@@ -393,15 +393,16 @@ function resolveUserFunctionSignature(
 	target: SymbolID,
 	symbolResolver: WorkspaceSymbolResolver,
 ): CallSignatureMetadata | null {
-	const signature = symbolResolver.getDeclaration(target).signature;
-	if (!signature) {
+	const signatures = symbolResolver.getFunctionSignatures(target);
+	if (signatures.length === 0) {
 		return null;
 	}
 	const callStyle = getLuaCallStyle(call);
-	return {
-		required: getLuaCallMinimumArgumentCount(signature, callStyle),
-		label,
-	};
+	let required = getLuaCallMinimumArgumentCount(signatures[0], callStyle);
+	for (let index = 1; index < signatures.length; index++) {
+		required = Math.min(required, getLuaCallMinimumArgumentCount(signatures[index], callStyle));
+	}
+	return { required, label };
 }
 
 function validateCallArity(diagnostics: LuaStaticDiagnostic[], locations: LuaSourceLocations, call: LuaCallExpression, metadata: CallSignatureMetadata): void {

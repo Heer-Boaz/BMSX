@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { setImmediate } from 'node:timers/promises';
 import { getLuaSemanticAnnotations } from '../../toolchain/ts/lua/semantic/tokens';
+import { buildLuaSemanticFrontendFromSnapshot } from '../../toolchain/ts/lua/semantic/frontend';
 import {
 	buildLuaFileSemanticData,
 	LuaSemanticWorkspace,
@@ -32,6 +33,12 @@ async function main(): Promise<void> {
 	await setImmediate();
 	globalThis.gc();
 	const highlighted = process.memoryUsage().heapUsed;
+	let frontend = buildLuaSemanticFrontendFromSnapshot(snapshot);
+	for (const file of snapshot.files) frontend.getFile(file.file);
+	await setImmediate();
+	globalThis.gc();
+	const diagnosed = process.memoryUsage().heapUsed;
+	frontend = null;
 	snapshot = null;
 	await setImmediate();
 	globalThis.gc();
@@ -43,8 +50,9 @@ async function main(): Promise<void> {
 		files: fileCount,
 		retainedHeapMiB: (retained - initial) / (1024 * 1024),
 		highlightedHeapMiB: (highlighted - initial) / (1024 * 1024),
+		diagnosedHeapMiB: (diagnosed - initial) / (1024 * 1024),
 		releasedHeapMiB: (released - initial) / (1024 * 1024),
-		note: 'Heap deltas after GC, not allocation counts or a browser memory measurement. Input source strings are already present in the initial heap. Retained is binding without highlighting; highlighted additionally materializes every file annotation presentation.',
+		note: 'Heap deltas after GC, not allocation counts or a browser memory measurement. Input source strings are already present in the initial heap. Retained is binding without highlighting; highlighted additionally materializes every file annotation presentation; diagnosed additionally retains a frontend with diagnostics for every file and demanded signature/query caches. Both frontend and snapshot are released before the final measurement.',
 	}, null, 2));
 }
 

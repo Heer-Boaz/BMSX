@@ -68,7 +68,7 @@ test('unmodeled expressions and compound writes retain unknown rather than alias
 	const functionOperand = buildLuaFileSemanticData('local value = 1; value += function() return 9 end', 'operand.lua');
 	assert.equal(functionOperand.functionValueFlows[0].declaration, undefined, 'a compound RHS closure is not the assigned function');
 	assert.equal(functionOperand.declarationValues[1].source.root.kind, 'unknown');
-	assert.equal(functionOperand.decls.find(item => item.name === 'value')!.signature, undefined);
+	assert.equal('signature' in functionOperand.decls.find(item => item.name === 'value')!, false);
 });
 
 test('short assignments distinguish nil padding from unmodeled expanded result lanes', () => {

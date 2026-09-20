@@ -102,7 +102,7 @@ export class SemanticDemandIndex {
 			const file = files[fileIndex];
 			for (let declarationIndex = 0; declarationIndex < file.decls.length; declarationIndex += 1) {
 				const declaration = file.decls[declarationIndex];
-				if (declaration.signature !== undefined) {
+				if (summaries.summaryIdsForDeclaration(declaration.id).length !== 0) {
 					functionNamesByDeclaration.set(
 						declaration.id,
 						summaries.terms.nameId(declaration.name),

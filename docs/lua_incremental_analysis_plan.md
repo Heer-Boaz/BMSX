@@ -50,7 +50,7 @@ in place is expressly excluded: retained semantic snapshots must remain valid.
 | `syntax/ast/index.ts:LuaChunk` | Root retains its source, lexical tokens and syntax error; global parse cache removed | Syntax lifetime follows retained file records and compiler inputs |
 | `syntax/lexer.ts`, `syntax/parser.ts`, `analysis/parse.ts` | Cold scan or edit-driven lexical block splices; strict/recovering grammar parser consumes a cursor | One grammar for initial and incremental parsing; no second IDE grammar |
 | `syntax/ast/index.ts` | Committed relative spans; locations belong to the generation | Reuse and final edit/cold-performance gates remain open |
-| `semantic/model.ts` | Single ordered binder; scope indexes, mutable build state; immutable published file facts | Cached function bodies cannot replay old ambient binder state |
+| `semantic/model.ts` | Single ordered binder; occurrence scope IDs, mutable build state; immutable published file facts | Cached function bodies cannot replay old ambient binder state |
 | `semantic/symbols.ts:createSymbolId` | IDs contain defining syntax occurrence, not source line/column | Identity survives shared shifted syntax; semantic facts still require dependency checks |
 | `semantic/value_graph.ts` | Owned values have allocated IDs and syntax references | Preserve occurrence identity, not independently allocated IDs in differential tests |
 | `semantic/definition_types.ts` | Per-file facts in WeakMap; cross-file results per snapshot | Reuse the right facts without retaining stale snapshot-dependent answers |
@@ -1194,6 +1194,124 @@ Retained heap for 285 files is 194.39 MiB bound and 207.88 MiB highlighted,
 versus 192.08/205.58 MiB baseline: stable scope IDs and generation indexes cost
 about 2.31 MiB. Released overhead is 2.53 versus 2.61 MiB. This is an explicit
 ownership cost, not a memory/performance optimization claim or binder reuse.
+
+## Signature facts and snapshot-owned optionality
+
+The next body-binding prerequisite removes `Decl.signature` and the binder's
+mutable signature map keyed by printed name paths. Two independent fixtures
+showed that it selected a same-named function outside the lexical scope, or
+missed an inner definition because it inferred the enclosing function before
+binding its body. Merely caching that map would retain those errors.
+
+Written function headers now come directly from occurrence-owned function
+flows, indexed by their declaration within the bound file. Hover does not ask
+for required-argument inference, alias evaluation or a call solver merely to
+format a written header. Multiple functions written to one binding retain
+separate headers/signatures rather than overwriting declaration metadata.
+
+Required-argument analysis is a separate signature/diagnostic query:
+
+- Intrinsic optionality recipes use bound parameter identities, not identifier
+  spelling. These facts are cached with the bound file, independently of
+  snapshot-derived callee answers. Builtin `type` availability is an explicit
+  input; a local or workspace-global shadow cannot supply a builtin guard.
+- Forwarding reads accept one directly bound written definition in the same
+  file, or a direct function literal. Alias/value-return inference, dynamic
+  receivers, multiple definitions and external callees are deliberately unknown.
+  Signature-help target discovery still uses the ordinary definition layer;
+  this narrower contract concerns only forwarded optionality evidence.
+- Only relevant signature reads enter the dependency graph. Intrinsic unsafe
+  use, local optional proof or unknown OR alternatives remove unneeded reads.
+  Iterative SCC classification precedes evaluation; every intra-component
+  read is unknown, and the component DAG is evaluated once. There is no
+  parameter/effect fixpoint or recursion-stack-dependent answer cache.
+- The existing local optionality policy remains: an unknown forwarded argument
+  supplies optional evidence, while a known-required argument alone is not an
+  intrinsic unsafe use. This is not a general Lua type-safety proof.
+- Inferred answers belong to the workspace snapshot. Retaining a file or old
+  snapshot must not retain a new snapshot's inferred dependency answers.
+
+References revisited: rust-analyzer's
+[function signature owner](https://github.com/rust-lang/rust-analyzer/blob/master/crates/hir-def/src/signatures.rs)
+separates function-ID queries/source maps from bodies; TypeScript's
+[binder](https://github.com/microsoft/TypeScript/blob/v5.9.3/src/compiler/binder.ts)
+does not justify replaying ambient name maps for sub-file reuse. These inform
+ownership, not a claim that either implements this Lua optionality policy.
+
+Validation of this owner slice: focused signature/frontend/edit-equivalence
+coverage passes 96/96; the full suite
+reports 2,138 tests (2,136 pass, the known workbench-menu failure, one skip).
+Rompacker passes 129/129, rebuilt tooling passes precision idetests 8/5/3,
+and the one-shot O3 pietious build again has exactly the full output hash
+`a297b840826af25b3345872b9d31dc0a1efcfaf8437e4c9ddaf99c5ba54ac505`.
+Broad owner/tooling/test typechecking adds no changed-owner errors (existing
+`definition_types.ts` unused-depth and unrelated repository errors remain).
+Core parity and `git diff --check` pass.
+The fresh-context review accepted the final direct-only ownership contract;
+it does not certify the still-unimplemented body cache.
+
+The durable `profile_lua_signature_edits.ts` now measures independent first
+hover, signature-help and full-file-diagnostic demand after real edit/undo,
+not just the newly cheaper binding phase. The final isolated 20-warmup/50-sample run (p50/p95 ms) is:
+
+| Update plus first demand | Current | `89c9690d5` repeat |
+| --- | --- | --- |
+| director hover | 3.782 / 6.381 | 3.801 / 7.035 |
+| director signature help | 4.825 / 9.438 | 4.183 / 9.345 |
+| director diagnostics | 3.955 / 6.842 | 4.060 / 7.007 |
+| player hover | 12.939 / 14.402 | 12.435 / 13.516 |
+| player signature help | 13.341 / 21.464 | 14.405 / 23.147 |
+| player diagnostics | 14.605 / 16.537 | 14.408 / 15.752 |
+
+Earlier direct-only repeats had player signature-help totals of 14.92–15.33 ms
+p50 and diagnostics of 14.57–14.70 ms, compared with baseline 14.41–15.44 and
+13.94–14.41 ms respectively. New signature ownership has a small query cost,
+not an across-the-board speedup; timings and GC/JIT tails vary. No
+keystroke-to-screen/UI claim is made from these CPU measurements.
+
+Paired ordinary edit measurements, including highlighting: director body
+updates are 2.875/6.633 ms p50/p95 versus 2.969/6.564 baseline; player is
+13.836/15.049 versus 14.614/18.410. Full-source updates with highlighting
+are 6.459/12.756 versus 6.567/12.325 for director, and 23.330/25.490 versus
+24.073/26.231 for player. Player binding is still 8.929/10.031 ms; the final
+2x incremental-edit gate remains open.
+
+The lifetime profiler now additionally retains a frontend with diagnostics
+for all 285 files, so lazy signature caches are included: bound/highlighted/
+diagnosed heap is 193.58/207.08/209.52 MiB versus 194.41/207.90/209.20 baseline;
+released deltas are 3.06 versus 2.91 MiB. Moving computation out of binding
+is not presented as eliminating its retained query costs.
+
+A fresh-context review also found a **pre-existing definition-layer alias-cycle
+cache defect**: querying an alias first can cache a partial answer for another
+member of the cycle. Minimum-arity inference must not broaden its direct-call
+contract into that value query. The underlying defect is still open at
+`definition_types.ts`, with the repro below; the direct-only signature policy
+is not claimed as a fix for definition-query order independence:
+
+```lua
+local sink, alias
+sink = alias
+alias = sink
+alias = function(x) return x + 1 end
+local function f(a, b) sink(a) end
+f()
+```
+
+Querying `resolveDefinitionFunctionTargets(alias)` before resolving `sink`
+can change the latter's answer. Repair the owning finite written-alias
+representation/cache, not by adding a signature-specific alias resolver or
+moving the whole-program solver. This correctness item precedes completion of
+the overall incremental-binding task.
+
+Remaining body-binding gate, independently audited: global/member storage is
+still selected from prior traversal witnesses (`globalsByKey`,
+`propertiesByOwner`, reverse declaration-write scans). Replace it with raw
+storage paths plus per-occurrence written contributions and composition-owned
+navigation witnesses. Also derive module aliases from complete composed writes
+without mutating retained calls/exports. Reusing bodies before those changes
+would just replay ambient binder state. The final gate must demonstrate
+unchanged sibling fact identity and zero binder visits, not just lower timings.
 
 ## Lowest-priority follow-up: absent-value convention
 

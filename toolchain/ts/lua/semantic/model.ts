@@ -1,5 +1,4 @@
 import { createScopeId, type ScopeID, type ScopeKind, type SemanticScope } from './scope_facts';
-import type { LuaStatementSequence } from '../syntax/statement_sequence';
 import type { LuaSyntaxPoint, LuaSyntaxSpan } from '../syntax/source_locations';
 import { hashText } from '../../../../machine/ts/common/byte_hex_string';
 import { HashMapBuilder } from '../../collections/hash_map';
@@ -41,7 +40,6 @@ import { LuaCompletionAnalysis, type LuaCompletion } from '../analysis/completio
 import type { LuaSyntaxError } from '../errors';
 import { createSymbolId, type SemanticSymbolKind, type SymbolID } from './symbols';
 import type { SemanticTokenFact, SemanticRole } from './tokens';
-import { methodPathToPropertyPath } from './common';
 import { toLuaModulePath } from '../module_path';
 import { LUA_BUILTIN_TABLE_ITERATOR_ARGUMENTS } from '../builtin_descriptors';
 import {
@@ -89,13 +87,6 @@ export type { SemanticScope } from './scope_facts';
 
 const EMPTY_FILE_PATHS: readonly string[] = [];
 
-export type FunctionSignatureInfo = {
-	readonly params: readonly string[];
-	readonly hasVararg: boolean;
-	readonly minimumArgumentCount: number;
-	readonly declarationStyle: 'function' | 'method';
-};
-
 export type Decl = {
 	id: SymbolID;
 	file: string;
@@ -107,7 +98,6 @@ export type Decl = {
 	scope: ScopeID;
 	visibleFrom: LuaSyntaxPoint;
 	isGlobal: boolean;
-	signature?: FunctionSignatureInfo;
 };
 
 export type Ref = {
@@ -635,7 +625,6 @@ class SemanticBuilder {
 	private readonly referencesByName: Map<string, Ref[]> = new Map();
 	private readonly moduleReferences: { value: string; span: LuaSyntaxSpan }[] = [];
 	private readonly callSites: (Omit<LuaCallSite, 'moduleTarget'> & { moduleTarget: ModuleAliasTarget | null })[] = [];
-	private readonly functionSignaturesByPath: Map<string, FunctionSignatureInfo> = new Map();
 	private readonly declarationValues: DeclarationValueEntry[] = [];
 	private readonly readValuesBySyntax = new Map<LuaExpression, SemanticValueSource>();
 	private readonly ownedValuesBySyntax = new Map<LuaExpression, OwnedSemanticValueSource>();
@@ -729,9 +718,6 @@ class SemanticBuilder {
 				for (let index = 0; index < valueLimit; index += 1) {
 					const valueExpression = localAssignment.values[index];
 					const targetDecl = pending[index];
-					if (valueExpression.kind === LuaSyntaxKind.FunctionExpression && targetDecl) {
-						this.recordFunctionSignature(targetDecl, targetDecl.name, valueExpression, 'function');
-					}
 					const context: ExpressionContext = {
 						tableBaseDecl: targetDecl,
 						tableBasePath: targetDecl?.namePath,
@@ -757,7 +743,6 @@ class SemanticBuilder {
 			case LuaSyntaxKind.LocalFunctionStatement: {
 				const localFunction = statement;
 				const decl = this.declareLocal(localFunction.name, 'function', true);
-				this.recordFunctionSignature(decl, localFunction.name.name, localFunction.functionExpression, 'function');
 				const functionValue = this.createExpressionValueSource(localFunction.functionExpression);
 				this.setDeclarationValue(decl, functionValue, statement, 0);
 				this.visitFunctionExpression(
@@ -822,13 +807,8 @@ class SemanticBuilder {
 				for (let pathIndex = 0; pathIndex < functionPath.length; pathIndex += 1) {
 					baseNames[pathIndex] = functionPath[pathIndex].name;
 				}
-				const basePath = joinNamePath(baseNames);
 				const methodName = functionDeclaration.name.method?.name;
 				const methodReceiverClass = methodName ? functionOwner : undefined;
-				const declarationPath = methodName
-					? `${basePath}:${methodName}`
-					: basePath;
-				this.recordFunctionSignature(decl, declarationPath, functionDeclaration.functionExpression, methodName ? 'method' : 'function');
 				let methodSelfPath = methodName ? baseNames : undefined;
 				if (!methodSelfPath
 					&& baseNames.length > 1
@@ -868,14 +848,6 @@ class SemanticBuilder {
 					}
 					const valueExpression = assignment.right[index];
 					if (valueExpression.kind === LuaSyntaxKind.FunctionExpression && isAssignment) {
-						if (targetInfo?.decl) {
-							this.recordFunctionSignature(
-								targetInfo.decl,
-								joinNamePath(targetInfo.decl.namePath),
-								valueExpression,
-								'function',
-							);
-						}
 						const targetPath = targetInfo?.namePath;
 						let selfPath: readonly string[] | undefined;
 						if (targetPath
@@ -1305,9 +1277,6 @@ class SemanticBuilder {
 						tableBasePath: decl.namePath,
 						tableOwner: decl.valueSource,
 					};
-					if (field.value.kind === LuaSyntaxKind.FunctionExpression) {
-						this.recordFunctionSignature(decl, joinNamePath(decl.namePath), field.value, 'function');
-					}
 					const valueInfo = this.visitExpression(field.value, valueContext);
 					this.setDeclarationValue(decl, valueInfo.valueSource, expression, index);
 					break;
@@ -1328,9 +1297,6 @@ class SemanticBuilder {
 							context.tableBaseDecl,
 							context.tableOwner,
 						);
-						if (field.value.kind === LuaSyntaxKind.FunctionExpression) {
-							this.recordFunctionSignature(decl, joinNamePath(decl.namePath), field.value, 'function');
-						}
 						const valueInfo = this.visitExpression(field.value, {
 							tableBaseDecl: decl,
 							tableBasePath: decl.namePath,
@@ -1561,21 +1527,6 @@ class SemanticBuilder {
 			isCall: true,
 		});
 		return reference;
-	}
-
-	private recordFunctionSignature(
-		decl: InternalDecl | undefined,
-		path: string,
-		expression: LuaFunctionExpression,
-		declarationStyle: 'function' | 'method',
-	): void {
-		const signature = registerFunctionFromExpression(
-			this.functionSignaturesByPath,
-			path,
-			expression,
-			declarationStyle,
-		);
-		if (decl) decl.signature = signature;
 	}
 
 	private handleIdentifierExpression(
@@ -2363,7 +2314,6 @@ function toDecl(internal: InternalDecl): Decl {
 		scope: internal.scope,
 		visibleFrom: internal.visibleFrom,
 		isGlobal: internal.isGlobal,
-		signature: internal.signature,
 	};
 }
 
@@ -2416,590 +2366,6 @@ function buildFunctionNamePath(name: LuaFunctionName): string[] {
 		identifiers[identifiers.length - 1] = name.method.name;
 	}
 	return identifiers;
-}
-
-function registerFunctionSignatureExplicit(
-	signatures: Map<string, FunctionSignatureInfo>,
-	path: string,
-	params: string[],
-	hasVararg: boolean,
-	minimumArgumentCount: number,
-	declarationStyle: 'function' | 'method',
-): void {
-	if (!path || path.length === 0) {
-		return;
-	}
-	signatures.set(path, { params, hasVararg, minimumArgumentCount, declarationStyle });
-}
-
-function registerFunctionFromExpression(
-	signatures: Map<string, FunctionSignatureInfo>,
-	path: string,
-	expression: LuaFunctionExpression,
-	declarationStyle: 'function' | 'method',
-): FunctionSignatureInfo {
-	const params: string[] = [];
-	for (let index = 0; index < expression.parameters.length; index += 1) {
-		const parameter = expression.parameters[index];
-		if (parameter.name.length > 0) {
-			params.push(parameter.name);
-		}
-	}
-	const minimumArgumentCount = inferMinimumArgumentCount(expression, params, signatures);
-	const signature: FunctionSignatureInfo = {
-		params,
-		hasVararg: expression.hasVararg,
-		minimumArgumentCount,
-		declarationStyle,
-	};
-	signatures.set(path, signature);
-	if (declarationStyle === 'method') {
-		const dotPath = methodPathToPropertyPath(path);
-		if (dotPath) {
-			const extended = ['self', ...params];
-			registerFunctionSignatureExplicit(signatures, dotPath, extended, expression.hasVararg, minimumArgumentCount + 1, 'function');
-		}
-	}
-	return signature;
-}
-
-function inferMinimumArgumentCount(
-	expression: LuaFunctionExpression,
-	params: readonly string[],
-	signatures: ReadonlyMap<string, FunctionSignatureInfo>,
-): number {
-	let minimumArgumentCount = params.length;
-	for (let index = params.length - 1; index >= 0; index -= 1) {
-		const parameterName = params[index];
-		if (parameterHasUnsafeUse(expression.body.body, parameterName, signatures, false)) {
-			break;
-		}
-		if (index < params.length - 1 && !parameterHasExplicitOptionalPattern(expression.body.body, parameterName, signatures)) {
-			break;
-		}
-		minimumArgumentCount = index;
-	}
-	return minimumArgumentCount;
-}
-
-function parameterHasUnsafeUse(
-	statements: LuaStatementSequence,
-	parameterName: string,
-	signatures: ReadonlyMap<string, FunctionSignatureInfo>,
-	guarded: boolean,
-): boolean {
-	let parameterGuarded = guarded;
-	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
-		const statement = cursor.statement;
-		if (statement.kind === LuaSyntaxKind.IfStatement) {
-			const ifStatement = statement;
-			for (let clauseIndex = 0; clauseIndex < ifStatement.clauses.length; clauseIndex += 1) {
-				const clause = ifStatement.clauses[clauseIndex];
-				const condition = clause.condition as LuaExpression | null;
-				if (condition && expressionHasUnsafeParameterUse(condition, parameterName, signatures, parameterGuarded)) {
-					return true;
-				}
-				const clauseGuarded = parameterGuarded || (condition ? conditionGuaranteesParameterPresent(condition, parameterName) : false);
-				if (parameterHasUnsafeUse(clause.block.body, parameterName, signatures, clauseGuarded)) {
-					return true;
-				}
-			}
-			if (isEarlyReturnOnMissingParameter(ifStatement, parameterName)) {
-				parameterGuarded = true;
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.WhileStatement) {
-			const whileStatement = statement;
-			if (expressionHasUnsafeParameterUse(whileStatement.condition, parameterName, signatures, parameterGuarded)) {
-				return true;
-			}
-			if (parameterHasUnsafeUse(whileStatement.block.body, parameterName, signatures, parameterGuarded || conditionGuaranteesParameterPresent(whileStatement.condition, parameterName))) {
-				return true;
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.RepeatStatement) {
-			const repeatStatement = statement;
-			if (parameterHasUnsafeUse(repeatStatement.block.body, parameterName, signatures, parameterGuarded)) {
-				return true;
-			}
-			if (expressionHasUnsafeParameterUse(repeatStatement.condition, parameterName, signatures, parameterGuarded)) {
-				return true;
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.DoStatement) {
-			if (parameterHasUnsafeUse(statement.block.body, parameterName, signatures, parameterGuarded)) {
-				return true;
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.ForNumericStatement) {
-			if (expressionHasUnsafeParameterUse(statement.start, parameterName, signatures, parameterGuarded)
-				|| expressionHasUnsafeParameterUse(statement.limit, parameterName, signatures, parameterGuarded)
-				|| (statement.step ? expressionHasUnsafeParameterUse(statement.step, parameterName, signatures, parameterGuarded) : false)) {
-				return true;
-			}
-			if (parameterHasUnsafeUse(statement.block.body, parameterName, signatures, parameterGuarded)) {
-				return true;
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.ForGenericStatement) {
-			for (let iteratorIndex = 0; iteratorIndex < statement.iterators.length; iteratorIndex += 1) {
-				if (expressionHasUnsafeParameterUse(statement.iterators[iteratorIndex], parameterName, signatures, parameterGuarded)) {
-					return true;
-				}
-			}
-			if (parameterHasUnsafeUse(statement.block.body, parameterName, signatures, parameterGuarded)) {
-				return true;
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.LocalFunctionStatement || statement.kind === LuaSyntaxKind.FunctionDeclarationStatement) {
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.LocalAssignmentStatement) {
-			for (let valueIndex = 0; valueIndex < statement.values.length; valueIndex += 1) {
-				if (expressionHasUnsafeParameterUse(statement.values[valueIndex], parameterName, signatures, parameterGuarded)) {
-					return true;
-				}
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.AssignmentStatement) {
-			for (let targetIndex = 0; targetIndex < statement.left.length; targetIndex += 1) {
-				if (expressionHasUnsafeParameterUse(statement.left[targetIndex], parameterName, signatures, parameterGuarded)) {
-					return true;
-				}
-			}
-			for (let valueIndex = 0; valueIndex < statement.right.length; valueIndex += 1) {
-				if (expressionHasUnsafeParameterUse(statement.right[valueIndex], parameterName, signatures, parameterGuarded)) {
-					return true;
-				}
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.ReturnStatement) {
-			for (let expressionIndex = 0; expressionIndex < statement.expressions.length; expressionIndex += 1) {
-				if (expressionHasUnsafeParameterUse(statement.expressions[expressionIndex], parameterName, signatures, parameterGuarded)) {
-					return true;
-				}
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.CallStatement) {
-			if (expressionHasUnsafeParameterUse(statement.expression, parameterName, signatures, parameterGuarded)) {
-				return true;
-			}
-		}
-	}
-	return false;
-}
-
-function parameterHasExplicitOptionalPattern(
-	statements: LuaStatementSequence,
-	parameterName: string,
-	signatures: ReadonlyMap<string, FunctionSignatureInfo>,
-): boolean {
-	for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
-		const statement = cursor.statement;
-		if (statement.kind === LuaSyntaxKind.IfStatement) {
-			if (isEarlyReturnOnMissingParameter(statement, parameterName)) {
-				return true;
-			}
-			for (let clauseIndex = 0; clauseIndex < statement.clauses.length; clauseIndex += 1) {
-				const clause = statement.clauses[clauseIndex];
-				const condition = clause.condition as LuaExpression | null;
-				if (condition && expressionHasExplicitOptionalPattern(condition, parameterName, signatures)) {
-					return true;
-				}
-				if (parameterHasExplicitOptionalPattern(clause.block.body, parameterName, signatures)) {
-					return true;
-				}
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.WhileStatement) {
-			if (expressionHasExplicitOptionalPattern(statement.condition, parameterName, signatures)
-				|| parameterHasExplicitOptionalPattern(statement.block.body, parameterName, signatures)) {
-				return true;
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.RepeatStatement) {
-			if (parameterHasExplicitOptionalPattern(statement.block.body, parameterName, signatures)
-				|| expressionHasExplicitOptionalPattern(statement.condition, parameterName, signatures)) {
-				return true;
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.DoStatement) {
-			if (parameterHasExplicitOptionalPattern(statement.block.body, parameterName, signatures)) {
-				return true;
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.ForNumericStatement) {
-			if (expressionHasExplicitOptionalPattern(statement.start, parameterName, signatures)
-				|| expressionHasExplicitOptionalPattern(statement.limit, parameterName, signatures)
-				|| (statement.step ? expressionHasExplicitOptionalPattern(statement.step, parameterName, signatures) : false)
-				|| parameterHasExplicitOptionalPattern(statement.block.body, parameterName, signatures)) {
-				return true;
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.ForGenericStatement) {
-			for (let iteratorIndex = 0; iteratorIndex < statement.iterators.length; iteratorIndex += 1) {
-				if (expressionHasExplicitOptionalPattern(statement.iterators[iteratorIndex], parameterName, signatures)) {
-					return true;
-				}
-			}
-			if (parameterHasExplicitOptionalPattern(statement.block.body, parameterName, signatures)) {
-				return true;
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.LocalFunctionStatement || statement.kind === LuaSyntaxKind.FunctionDeclarationStatement) {
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.LocalAssignmentStatement) {
-			for (let valueIndex = 0; valueIndex < statement.values.length; valueIndex += 1) {
-				if (expressionHasExplicitOptionalPattern(statement.values[valueIndex], parameterName, signatures)) {
-					return true;
-				}
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.AssignmentStatement) {
-			for (let targetIndex = 0; targetIndex < statement.left.length; targetIndex += 1) {
-				if (expressionHasExplicitOptionalPattern(statement.left[targetIndex], parameterName, signatures)) {
-					return true;
-				}
-			}
-			for (let valueIndex = 0; valueIndex < statement.right.length; valueIndex += 1) {
-				if (expressionHasExplicitOptionalPattern(statement.right[valueIndex], parameterName, signatures)) {
-					return true;
-				}
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.ReturnStatement) {
-			for (let expressionIndex = 0; expressionIndex < statement.expressions.length; expressionIndex += 1) {
-				if (expressionHasExplicitOptionalPattern(statement.expressions[expressionIndex], parameterName, signatures)) {
-					return true;
-				}
-			}
-			continue;
-		}
-		if (statement.kind === LuaSyntaxKind.CallStatement && expressionHasExplicitOptionalPattern(statement.expression, parameterName, signatures)) {
-			return true;
-		}
-	}
-	return false;
-}
-
-function expressionPairHasUnsafeParameterUse(
-	left: LuaExpression,
-	right: LuaExpression,
-	parameterName: string,
-	signatures: ReadonlyMap<string, FunctionSignatureInfo>,
-): boolean {
-	return expressionHasUnsafeParameterUse(left, parameterName, signatures, false)
-		|| expressionHasUnsafeParameterUse(right, parameterName, signatures, false);
-}
-
-function expressionHasUnsafeParameterUse(
-	expression: LuaExpression,
-	parameterName: string,
-	signatures: ReadonlyMap<string, FunctionSignatureInfo>,
-	guarded: boolean,
-): boolean {
-	if (!expressionContainsParameter(expression, parameterName)) {
-		return false;
-	}
-	if (guarded) {
-		return false;
-	}
-	switch (expression.kind) {
-		case LuaSyntaxKind.IdentifierExpression:
-			return false;
-		case LuaSyntaxKind.MemberExpression:
-			return expressionContainsParameter(expression.base, parameterName);
-		case LuaSyntaxKind.IndexExpression:
-			return expressionContainsParameter(expression.base, parameterName)
-				|| expressionHasUnsafeParameterUse(expression.index, parameterName, signatures, false);
-		case LuaSyntaxKind.UnaryExpression:
-			if (expression.operator === LuaUnaryOperator.Not) {
-				return expressionHasUnsafeParameterUse(expression.operand, parameterName, signatures, false);
-			}
-			return expressionContainsParameter(expression.operand, parameterName);
-		case LuaSyntaxKind.BinaryExpression:
-			switch (expression.operator) {
-				case LuaBinaryOperator.And:
-					if (conditionGuaranteesParameterPresent(expression.left, parameterName)) {
-						return expressionHasUnsafeParameterUse(expression.left, parameterName, signatures, false)
-							|| expressionHasUnsafeParameterUse(expression.right, parameterName, signatures, true);
-					}
-					return expressionPairHasUnsafeParameterUse(expression.left, expression.right, parameterName, signatures);
-				case LuaBinaryOperator.Or:
-					if (expressionContainsParameter(expression.left, parameterName)
-						&& !expressionHasUnsafeParameterUse(expression.left, parameterName, signatures, false)) {
-						return expressionHasUnsafeParameterUse(expression.right, parameterName, signatures, false);
-					}
-					return expressionHasUnsafeParameterUse(expression.left, parameterName, signatures, false)
-						|| expressionHasUnsafeParameterUse(expression.right, parameterName, signatures, false);
-				case LuaBinaryOperator.Equal:
-				case LuaBinaryOperator.NotEqual:
-					return expressionPairHasUnsafeParameterUse(expression.left, expression.right, parameterName, signatures);
-				default:
-					return expressionContainsParameter(expression.left, parameterName)
-						|| expressionContainsParameter(expression.right, parameterName);
-			}
-		case LuaSyntaxKind.CallExpression:
-			if (expressionContainsParameter(expression.callee, parameterName)) {
-				return true;
-			}
-			for (let index = 0; index < expression.arguments.length; index += 1) {
-				const argument = expression.arguments[index];
-				if (isOptionalCallArgumentUse(expression, index, argument, parameterName, signatures)) {
-					continue;
-				}
-				if (expressionHasUnsafeParameterUse(argument, parameterName, signatures, false)) {
-					return true;
-				}
-			}
-			return false;
-		case LuaSyntaxKind.TableConstructorExpression:
-			for (let index = 0; index < expression.fields.length; index += 1) {
-				const field = expression.fields[index];
-				if (field.kind === LuaTableFieldKind.Array || field.kind === LuaTableFieldKind.IdentifierKey) {
-					if (expressionHasUnsafeParameterUse(field.value, parameterName, signatures, false)) {
-						return true;
-					}
-					continue;
-				}
-				if (expressionHasUnsafeParameterUse(field.key, parameterName, signatures, false)
-					|| expressionHasUnsafeParameterUse(field.value, parameterName, signatures, false)) {
-					return true;
-				}
-			}
-			return false;
-		case LuaSyntaxKind.FunctionExpression:
-			return false;
-		default:
-			return false;
-	}
-}
-
-function expressionHasExplicitOptionalPattern(
-	expression: LuaExpression,
-	parameterName: string,
-	signatures: ReadonlyMap<string, FunctionSignatureInfo>,
-): boolean {
-	if (!expressionContainsParameter(expression, parameterName)) {
-		return false;
-	}
-	if (expression.kind === LuaSyntaxKind.BinaryExpression) {
-		if (expression.operator === LuaBinaryOperator.Or
-			&& expressionContainsParameter(expression.left, parameterName)
-			&& !expressionHasUnsafeParameterUse(expression.left, parameterName, signatures, false)) {
-			return true;
-		}
-		if (expressionHasExplicitOptionalPattern(expression.left, parameterName, signatures)
-			|| expressionHasExplicitOptionalPattern(expression.right, parameterName, signatures)) {
-			return true;
-		}
-		return false;
-	}
-	if (expression.kind === LuaSyntaxKind.UnaryExpression) {
-		return expressionHasExplicitOptionalPattern(expression.operand, parameterName, signatures);
-	}
-	if (expression.kind === LuaSyntaxKind.CallExpression) {
-		for (let index = 0; index < expression.arguments.length; index += 1) {
-			if (isOptionalCallArgumentUse(expression, index, expression.arguments[index], parameterName, signatures)) {
-				return true;
-			}
-			if (expressionHasExplicitOptionalPattern(expression.arguments[index], parameterName, signatures)) {
-				return true;
-			}
-		}
-		return expressionHasExplicitOptionalPattern(expression.callee, parameterName, signatures);
-	}
-	if (expression.kind === LuaSyntaxKind.MemberExpression) {
-		return expressionHasExplicitOptionalPattern(expression.base, parameterName, signatures);
-	}
-	if (expression.kind === LuaSyntaxKind.IndexExpression) {
-		return expressionHasExplicitOptionalPattern(expression.base, parameterName, signatures)
-			|| expressionHasExplicitOptionalPattern(expression.index, parameterName, signatures);
-	}
-	if (expression.kind === LuaSyntaxKind.TableConstructorExpression) {
-		for (let index = 0; index < expression.fields.length; index += 1) {
-			const field = expression.fields[index];
-			if (field.kind === LuaTableFieldKind.Array || field.kind === LuaTableFieldKind.IdentifierKey) {
-				if (expressionHasExplicitOptionalPattern(field.value, parameterName, signatures)) {
-					return true;
-				}
-				continue;
-			}
-			if (expressionHasExplicitOptionalPattern(field.key, parameterName, signatures)
-				|| expressionHasExplicitOptionalPattern(field.value, parameterName, signatures)) {
-				return true;
-			}
-		}
-	}
-	return false;
-}
-
-function isEarlyReturnOnMissingParameter(statement: LuaStatement, parameterName: string): boolean {
-	if (statement.kind !== LuaSyntaxKind.IfStatement || statement.clauses.length !== 1) {
-		return false;
-	}
-	const clause = statement.clauses[0];
-	const condition = clause.condition as LuaExpression | null;
-	return !!condition && conditionGuaranteesParameterAbsent(condition, parameterName) && blockEndsWithReturn(clause.block.body);
-}
-
-function blockEndsWithReturn(statements: LuaStatementSequence): boolean {
-	if (statements.length === 0) {
-		return false;
-	}
-	return statements.get(statements.length - 1).kind === LuaSyntaxKind.ReturnStatement;
-}
-
-function conditionGuaranteesParameterPresent(expression: LuaExpression, parameterName: string): boolean {
-	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
-		return expression.name === parameterName;
-	}
-	if (expression.kind === LuaSyntaxKind.UnaryExpression && expression.operator === LuaUnaryOperator.Not) {
-		return false;
-	}
-	if (expression.kind === LuaSyntaxKind.BinaryExpression) {
-		if (expression.operator === LuaBinaryOperator.And) {
-			return conditionGuaranteesParameterPresent(expression.left, parameterName)
-				|| conditionGuaranteesParameterPresent(expression.right, parameterName);
-		}
-		if (expression.operator === LuaBinaryOperator.NotEqual && isDirectParameterReference(expression.left, parameterName) && isNilLiteral(expression.right)) {
-			return true;
-		}
-		if (expression.operator === LuaBinaryOperator.NotEqual && isDirectParameterReference(expression.right, parameterName) && isNilLiteral(expression.left)) {
-			return true;
-		}
-		if (expression.operator === LuaBinaryOperator.Equal && isTypeCallOnParameter(expression.left, parameterName) && expression.right.kind === LuaSyntaxKind.StringLiteralExpression) {
-			return true;
-		}
-		if (expression.operator === LuaBinaryOperator.Equal && isTypeCallOnParameter(expression.right, parameterName) && expression.left.kind === LuaSyntaxKind.StringLiteralExpression) {
-			return true;
-		}
-	}
-	return false;
-}
-
-function conditionGuaranteesParameterAbsent(expression: LuaExpression, parameterName: string): boolean {
-	if (expression.kind === LuaSyntaxKind.UnaryExpression && expression.operator === LuaUnaryOperator.Not) {
-		return isDirectParameterReference(expression.operand, parameterName);
-	}
-	if (expression.kind === LuaSyntaxKind.BinaryExpression) {
-		if (expression.operator === LuaBinaryOperator.Equal && isDirectParameterReference(expression.left, parameterName) && isNilLiteral(expression.right)) {
-			return true;
-		}
-		if (expression.operator === LuaBinaryOperator.Equal && isDirectParameterReference(expression.right, parameterName) && isNilLiteral(expression.left)) {
-			return true;
-		}
-	}
-	return false;
-}
-
-function isOptionalCallArgumentUse(
-	callExpression: LuaCallExpression,
-	argumentIndex: number,
-	argument: LuaExpression,
-	parameterName: string,
-	signatures: ReadonlyMap<string, FunctionSignatureInfo>,
-): boolean {
-	if (!isDirectParameterReference(argument, parameterName)) {
-		return false;
-	}
-	const callPath = resolveDirectCallPath(callExpression);
-	if (!callPath) {
-		return true;
-	}
-	const signature = signatures.get(callPath);
-	if (!signature) {
-		return true;
-	}
-	return argumentIndex + 1 > signature.minimumArgumentCount;
-}
-
-function resolveDirectCallPath(expression: LuaCallExpression): string {
-	if (expression.method) {
-		const basePath = extractNamePath(expression.callee);
-		return basePath ? `${joinNamePath(basePath)}:${expression.method.name}` : null;
-	}
-	const calleePath = extractNamePath(expression.callee);
-	return calleePath ? joinNamePath(calleePath) : null;
-}
-
-function isDirectParameterReference(expression: LuaExpression, parameterName: string): boolean {
-	return expression.kind === LuaSyntaxKind.IdentifierExpression && expression.name === parameterName;
-}
-
-function isNilLiteral(expression: LuaExpression): boolean {
-	return expression.kind === LuaSyntaxKind.NilLiteralExpression;
-}
-
-function isTypeCallOnParameter(expression: LuaExpression, parameterName: string): boolean {
-	if (expression.kind !== LuaSyntaxKind.CallExpression || expression.method) {
-		return false;
-	}
-	if (resolveDirectCallName(expression.callee) !== 'type' || expression.arguments.length !== 1) {
-		return false;
-	}
-	return isDirectParameterReference(expression.arguments[0], parameterName);
-}
-
-function expressionContainsParameter(expression: LuaExpression, parameterName: string): boolean {
-	switch (expression.kind) {
-		case LuaSyntaxKind.IdentifierExpression:
-			return expression.name === parameterName;
-		case LuaSyntaxKind.MemberExpression:
-			return expressionContainsParameter(expression.base, parameterName);
-		case LuaSyntaxKind.IndexExpression:
-			return expressionContainsParameter(expression.base, parameterName) || expressionContainsParameter(expression.index, parameterName);
-		case LuaSyntaxKind.CallExpression:
-			if (expressionContainsParameter(expression.callee, parameterName)) {
-				return true;
-			}
-			for (let index = 0; index < expression.arguments.length; index += 1) {
-				if (expressionContainsParameter(expression.arguments[index], parameterName)) {
-					return true;
-				}
-			}
-			return false;
-		case LuaSyntaxKind.BinaryExpression:
-			return expressionContainsParameter(expression.left, parameterName) || expressionContainsParameter(expression.right, parameterName);
-		case LuaSyntaxKind.UnaryExpression:
-			return expressionContainsParameter(expression.operand, parameterName);
-		case LuaSyntaxKind.TableConstructorExpression:
-			for (let index = 0; index < expression.fields.length; index += 1) {
-				const field = expression.fields[index];
-				if (field.kind === LuaTableFieldKind.Array || field.kind === LuaTableFieldKind.IdentifierKey) {
-					if (expressionContainsParameter(field.value, parameterName)) {
-						return true;
-					}
-					continue;
-				}
-				if (expressionContainsParameter(field.key, parameterName) || expressionContainsParameter(field.value, parameterName)) {
-					return true;
-				}
-			}
-			return false;
-		case LuaSyntaxKind.FunctionExpression:
-			return false;
-		default:
-			return false;
-	}
 }
 
 export class LuaSemanticWorkspace {

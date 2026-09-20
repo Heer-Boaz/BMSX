@@ -45,7 +45,7 @@ function answers(snapshot: LuaSemanticWorkspaceSnapshot) {
 			range: file.chunk.locations.range(ref.span),
 			targets: resolver.resolveReferenceTargets(ref).map(id => {
 				const decl = resolver.getDeclaration(id);
-				return { file: decl.file, name: decl.namePath, range: file.chunk.locations.range(decl.span), signature: decl.signature };
+				return { file: decl.file, name: decl.namePath, range: file.chunk.locations.range(decl.span), signatures: resolver.getFunctionSignatures(id) };
 			}),
 		})),
 	}));

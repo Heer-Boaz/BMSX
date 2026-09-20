@@ -1,3 +1,4 @@
+import type { FunctionSignatureInfo } from './function_signatures';
 import type { LuaSourceLocations } from '../syntax/source_locations';
 import {
 	LuaSyntaxKind,
@@ -7,7 +8,7 @@ import {
 	type LuaSourceRange,
 } from '../syntax/ast';
 import type { LuaBuiltinDescriptor } from '../semantic_contracts';
-import type { FileSemanticData, FunctionSignatureInfo, LuaCallSite } from './model';
+import type { FileSemanticData, LuaCallSite } from './model';
 import type { WorkspaceSymbolResolver } from './workspace_symbol_resolver';
 import { compareSourcePosition } from './source_range';
 import {
@@ -76,10 +77,10 @@ export function provideLuaSignatureHelp(
 	const targets = symbolResolver.resolveCallableTargets(callSite);
 	for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
 		const declaration = symbolResolver.getDeclaration(targets[targetIndex]);
-		if (declaration.signature) {
+		for (const signature of symbolResolver.getFunctionSignatures(declaration.id)) {
 			candidates.push(buildFunctionCandidate(
 				name ?? declaration.namePath.join('.'),
-				declaration.signature,
+				signature,
 				callStyle,
 			));
 		}

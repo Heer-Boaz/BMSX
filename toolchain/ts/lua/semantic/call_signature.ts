@@ -1,6 +1,7 @@
+import type { FunctionSignatureInfo } from './function_signatures';
 import type { LuaCallExpression } from '../syntax/ast';
 import type { LuaBuiltinDescriptor } from '../semantic_contracts';
-import type { FunctionSignatureInfo, Ref } from './model';
+import type { Ref } from './model';
 
 export type LuaCallStyle = 'function' | 'method';
 
