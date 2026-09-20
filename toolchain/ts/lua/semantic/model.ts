@@ -104,7 +104,6 @@ export type Ref = {
 	target?: SymbolID;
 	isWrite: boolean;
 	isCall: boolean;
-	caller?: SymbolID;
 	referenceKind: 'identifier' | 'self' | 'member' | 'method';
 	/** Identifier storage, independent of a written declaration/navigation target. */
 	binding?: FunctionSemanticValueSource;
@@ -1813,15 +1812,6 @@ class SemanticBuilder {
 			receiverSymbolKey: options.receiverSymbolKey,
 			receiverValue: options.receiverValue,
 		};
-		if (ref.isCall) {
-			for (let index = this.functionValueFlowStack.length - 1; index >= 0; index -= 1) {
-				const declaration = this.functionValueFlowStack[index].declaration;
-				if (declaration !== undefined) {
-					ref.caller = declaration;
-					break;
-				}
-			}
-		}
 		if (options.target) {
 			ref.target = options.target;
 		}

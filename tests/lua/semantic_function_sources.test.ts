@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { getLuaCallHierarchyCallers } from '../../toolchain/ts/lua/semantic/scope_query';
 import { FunctionSummaryStore } from '../../toolchain/ts/lua/semantic/function_summary';
 import { WorkspaceValueIdentityIndex } from '../../toolchain/ts/lua/semantic/identity';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
@@ -114,7 +115,8 @@ test('nested closures retain their own returns and the enclosing binding for cal
 	assert.notEqual(outer.declaration, undefined);
 	assert.equal(outer.returns[0].statement.expressions[0], inner.expression);
 	assert.equal(inner.returns.length, 1);
-	assert.equal(file.callSites[0].reference!.caller, outer.declaration);
+	assert.equal('caller' in file.callSites[0].reference!, false);
+	assert.equal(getLuaCallHierarchyCallers(file).get(file.callSites[0].call), outer.declaration);
 });
 
 test('function statement assigns an existing local rather than declaring a namesake global', () => {

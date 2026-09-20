@@ -22,7 +22,7 @@ import {
 	findOrderedSourceRangeEntryAtPosition,
 	findOrderedSourceSpanEntryAtPosition,
 } from './source_range';
-import { collectVisibleDeclarationsAt } from './scope_query';
+import { collectVisibleDeclarationsAt, getLuaCallHierarchyCallers } from './scope_query';
 import {
 	findLuaMemberCompletionContext,
 	type LuaMemberCompletionContext,
@@ -297,11 +297,13 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 			if (allowedPaths && !allowedPaths.has(reference.file)) {
 				continue;
 			}
-			const callerKey = reference.caller ? `decl:${reference.caller}` : `chunk:${reference.file}`;
+			const file = this.snapshot.getFileData(reference.file)!;
+			const callerId = getLuaCallHierarchyCallers(file).get(reference.call!);
+			const callerKey = callerId !== undefined ? `decl:${callerId}` : `chunk:${reference.file}`;
 			let bucket = grouped.get(callerKey);
 			if (!bucket) {
-				const caller = reference.caller
-					? buildSymbolCallHierarchyItem(this.snapshot.symbolResolver.getDeclaration(reference.caller), this.snapshot)
+				const caller = callerId !== undefined
+					? buildSymbolCallHierarchyItem(this.snapshot.symbolResolver.getDeclaration(callerId), this.snapshot)
 					: buildChunkCallerScope(reference.file);
 				bucket = {
 					from: caller,
@@ -309,7 +311,7 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 				};
 				grouped.set(callerKey, bucket);
 			}
-			bucket.fromRanges.push(this.snapshot.getFileData(reference.file)!.chunk.locations.range(reference.span));
+			bucket.fromRanges.push(file.chunk.locations.range(reference.span));
 		}
 		const groups = Array.from(grouped.values());
 		for (let index = 0; index < groups.length; index += 1) {

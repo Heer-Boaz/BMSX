@@ -701,11 +701,12 @@ export class SemanticCallGraph {
 		for (const summary of this.summaries.summaryIdsForDeclaration(calleeFn)) {
 			this.incomingFactDependencies.changed(summary);
 		}
-		if (reference.caller !== undefined) {
-			let outgoing = this.outgoingByFunction.get(reference.caller);
+		const caller = this.demand.caller(site);
+		if (caller !== undefined) {
+			let outgoing = this.outgoingByFunction.get(caller);
 			if (!outgoing) {
 				outgoing = [];
-				this.outgoingByFunction.set(reference.caller, outgoing);
+				this.outgoingByFunction.set(caller, outgoing);
 			}
 			outgoing.push(fact);
 		}

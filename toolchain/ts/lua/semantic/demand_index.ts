@@ -1,4 +1,5 @@
 import type { FileSemanticData, Ref, SymbolID } from './model';
+import { getLuaCallHierarchyCallers } from './scope_query';
 import { getLuaWrittenDeclarations } from './written_declarations';
 import { SemanticEffectIndex, type EffectRelevance } from './effect_index';
 import {
@@ -43,6 +44,7 @@ export class SemanticDemandIndex {
 	private readonly candidateCallsByName: Map<SemanticNameID, SummaryCall[]> = new Map();
 	private readonly directTargetsByCall: Map<CallValueEntry, SymbolID[]> = new Map();
 	private readonly candidateTargetsByCall: Map<CallValueEntry, readonly SymbolID[]> = new Map();
+	private readonly callersByFile = new Map<string, ReadonlyMap<CallValueEntry, SymbolID>>();
 	private readonly referencesByCall: Map<CallValueEntry, Ref> = new Map();
 	private readonly callsBySite: Map<CallValueEntry, SummaryCall> = new Map();
 	private readonly dependentSummariesByTerm: FunctionSummaryID[][] = [];
@@ -101,6 +103,7 @@ export class SemanticDemandIndex {
 		const functionNamesByDeclaration = new Map<SymbolID, SemanticNameID>();
 		for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
 			const file = files[fileIndex];
+			this.callersByFile.set(file.file, getLuaCallHierarchyCallers(file));
 			for (let declarationIndex = 0; declarationIndex < file.decls.length; declarationIndex += 1) {
 				const declaration = file.decls[declarationIndex];
 				if (summaries.summaryIdsForDeclaration(declaration.id).length !== 0) {
@@ -305,6 +308,10 @@ export class SemanticDemandIndex {
 	/** Lexically bound targets only; selection candidates must pass value resolution. */
 	public directTargets(call: CallValueEntry): readonly SymbolID[] {
 		return this.directTargetsByCall.get(call) || EMPTY_SYMBOLS;
+	}
+
+	public caller(call: CallValueEntry): SymbolID | undefined {
+		return this.callersByFile.get(call.file)!.get(call);
 	}
 
 	public reference(call: CallValueEntry): Ref | undefined {

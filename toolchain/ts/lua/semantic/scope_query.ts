@@ -1,6 +1,6 @@
-import type { Decl, FileSemanticData, SemanticScope } from './model';
+import type { Decl, FileSemanticData, SemanticScope, SymbolID } from './model';
 import type { ScopeID } from './scope_facts';
-import type { SemanticValueSource } from './value_graph';
+import type { CallValueEntry, SemanticValueSource } from './value_graph';
 
 export function findInnermostScope(
 	source: FileSemanticData,
@@ -112,4 +112,32 @@ export function collectVisibleDeclarationsAt(
 		scope = parent === undefined ? undefined : source.scopesById.get(parent)!;
 	}
 	return declarations;
+}
+
+const callHierarchyCallers = new WeakMap<FileSemanticData, ReadonlyMap<CallValueEntry, SymbolID>>();
+
+/** Named presentation owner, derived from this generation's lexical attachments.
+ * An anonymous callback has its own execution flow, but is displayed under the
+ * nearest named enclosing function. It must not capture that ancestor in Ref.
+ */
+export function getLuaCallHierarchyCallers(source: FileSemanticData): ReadonlyMap<CallValueEntry, SymbolID> {
+	const retained = callHierarchyCallers.get(source);
+	if (retained !== undefined) return retained;
+	const declarations = new Map<ScopeID, SymbolID>();
+	for (const flow of source.functionValueFlows) {
+		if (flow.declaration !== undefined) declarations.set(flow.id, flow.declaration);
+	}
+	const callers = new Map<CallValueEntry, SymbolID>();
+	for (const flow of source.functionValueFlows) {
+		if (flow.calls.length === 0) continue;
+		let caller = flow.declaration;
+		let parent = source.scopeParents.get(flow.id);
+		while (caller === undefined && parent !== undefined) {
+			caller = declarations.get(parent);
+			parent = source.scopeParents.get(parent);
+		}
+		if (caller !== undefined) for (const call of flow.calls) callers.set(call, caller);
+	}
+	callHierarchyCallers.set(source, callers);
+	return callers;
 }

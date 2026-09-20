@@ -1592,6 +1592,80 @@ caller attachments and actual body contribution reuse remain open. The final
 acceptance still requires unchanged sibling fact identity and zero binder
 visits, plus the end-to-end edit/performance gates.
 
+### Call hierarchy caller attachments — implemented
+
+`Ref` no longer retains the nearest named enclosing declaration from the
+builder's flow stack. `scope_query.ts:getLuaCallHierarchyCallers` derives that
+presentation owner lazily from this file generation's `flow.calls`, written
+function declarations and `scopeParents`. A nested anonymous body remains a
+separate execution flow; only its call-hierarchy presentation inherits the
+nearest named ancestor. Module calls and anonymous bodies without a named
+ancestor remain chunk callers.
+
+The frontend and the solver's outgoing-fact index consume the same cached
+file-owned projection. No call/reference field captures a parent declaration,
+no old binder stack is replayed, and interactive features gain no solver
+dependency. Most flows have a direct declaration; anonymous flows walk their
+ancestry once, not once per call. This is not an unconditional linear-time
+claim for arbitrarily deep anonymous nesting.
+
+The implementation follows the occurrence/attachment distinction inspected in
+[rust-analyzer's expression scopes](https://github.com/rust-lang/rust-analyzer/blob/master/crates/hir-def/src/expr_store/scope.rs).
+Independent review additionally inspected
+[TypeScript's call-hierarchy ownership](https://github.com/microsoft/TypeScript/blob/v5.9.3/src/services/callHierarchy.ts)
+and found no ownership or correctness blocker. Tests cover named/anonymous
+nested flows, block scopes, module calls, public incoming grouping, and a
+retained anonymous syntax occurrence after renaming its outer function. Old
+file generations keep their original answers; cold and edited queries agree.
+
+Validation: focused function/context tests 59/59, public hierarchy/frontend
+65/65; complete Lua suite 2,186 tests, 2,184 passed, the same named-menu failure
+and one skip. Toolchain typecheck, product build and precision idetests 8/5/3
+pass. A corpus comparison against `ebd6b82a6` preserves all 10,783 reference-call
+caller answers across 285 pietious files. First projection of all file caller
+maps took 2.946 ms in that single run (not a distribution or UI latency).
+
+The same edit profiler (20 warmup, 50 samples, isolated runs) measured body-edit
+public update + highlighting p50/p95, before → after: director 2.154/5.561 →
+2.333/7.192 ms; player 13.222/14.255 → 12.694/13.494 ms. Binding p50 remains
+roughly unchanged (1.070 → 1.093 and 8.006 → 8.091 ms). This ownership slice
+makes no edit-speedup claim; the projection is absent from the interactive
+bind path. Player's phase run had a 53.692 ms maximum bind sample; tail numbers
+are retained rather than discarded as noise. These results are not the final
+2x edit-performance gate.
+
+This closes the caller-attachment prerequisite, not body reuse itself. Global
+storage/builtin classification and actual contribution caching remain open.
+
+### Global-storage gate: runtime classification findings
+
+A new context-free audit verified the actual BIOS/workspace rather than
+assuming all builtins share one shadowing rule. This is a design correction for
+the next slice, not implemented global/builtin migration:
+
+- `require` is compiler syntax (`compiler.ts:resolveRequireModuleBinding`),
+  disabled by a lexical binding, not by another global write. There is no BIOS
+  runtime `require` declaration. The current binder's ambient global witness
+  is not its semantic classification authority.
+- The actual BIOS publishes `type`, `setmetatable` and `getmetatable` through
+  lexical aliases of VM primitives. Therefore "any workspace declaration
+  suppresses the builtin" would reject the normal BIOS itself. The existing
+  optionality check `!globals.has('type')` has this limitation and is not a
+  correctness oracle for the migration.
+- VM primitive identity belongs to the ABI/source environment, not to a BIOS
+  path whitelist or a private-looking identifier in arbitrary cart source.
+  Current semantic source inputs do not carry execution-domain provenance;
+  do not invent that provenance inside a query.
+- `pairs` and `ipairs` are authored wrappers, not primitive aliases. Their
+  names alone do not prove table-element semantics. Do not replace the removed
+  traversal witness with an equally unjustified name-based classification or
+  introduce general effect inference to retain it.
+
+The global migration must separate raw storage, written occurrences and
+composed operation interpretation. Its environment boundary must be established
+from the actual producers before implementing or caching builtin projections.
+This does not add annotations or expand the whole-program solver's role.
+
 ## Lowest-priority follow-up: absent-value convention
 
 User request, 2026-09-20: after the incremental parsing/binding work and its

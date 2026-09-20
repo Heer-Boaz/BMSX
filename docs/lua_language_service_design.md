@@ -114,7 +114,9 @@ Syntax roots retain source, persistent tokens and recovery diagnostics; the
 global parse cache is removed. Relative syntax and edit transport now permit
 lexical and grammar-part reuse through the same parser used by compilation.
 Binding facts use occurrence identities and generation-owned locations/parent
-attachments, but binding still visits the whole changed file. Scope-local fact
+attachments. Call-hierarchy presentation owners are derived lazily from those
+attachments rather than retained on references. Binding still visits the whole
+changed file. Scope-local fact
 reuse and the final edit-performance gate remain open.
 
 Per-file facts (shape definitions, static members, `self` fields, prototype
