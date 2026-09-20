@@ -1,6 +1,21 @@
 # Studio scene-authoringarchitectuur
 
-De eerste volledige cartmigratie staat in
+## Actuele bronafspraak (2026-09-20)
+
+**Bestaande YAML blijft authored bron.** Pietious bewaart kamerobjecten in
+`castle_map.yaml`; Nemesis S bewaart stageplaatsingen in `nemesis_s_stage.yaml`,
+onder andere als kaarttekens. De eerdere extractie naar afzonderlijke Lua-actors
+is teruggedraaid. Runtime-scenes die Lua uit deze data opbouwt zijn afgeleide
+representaties, geen reden om authored plaatsingen naar Lua te verhuizen.
+
+Studio mag spelspecifieke room-, castle- en stage-editors hebben, opgebouwd uit
+gedeelde document-, selectie-, grid-, property- en historycomponenten. Geen
+verplicht universeel sceneformaat. De actuele source-editingbasis en het
+vervolgcontract staan in [YAML-backed Studio editing](studio_yaml_authoring.md).
+
+## Historische Lua-sceneslices
+
+De toenmalige cartmigratie staat in
 [Nemesis S scenes](nemesis_s_scene_migration.md): presentatie, gameplay en
 179 afzonderlijke actorplaatsingen, inclusief Studio-edit/save/reboot en het
 bestaande World-disposalpad.

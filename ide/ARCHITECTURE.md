@@ -275,6 +275,9 @@ records an outcome without blocking the installed execution; failures after
 installation retain the ordinary operational error boundary. No acknowledgement
 is rolled back.
 Source-only Lua documents do not claim executable-code apply status.
+Ordinary YAML data documents are also untracked: saving their source does not
+replace a cooked ROM asset. Save explicitly reports that an asset rebuild is
+required; neither Lua Hot Resume nor a text-model version proves data installation.
 
 The production references and the combined text/lens/save/apply proof are in
 [`docs/studio_development_workflows.md`](../docs/studio_development_workflows.md#w04-authored-document-versus-geïnstalleerde-bron).
@@ -284,7 +287,9 @@ contracts, not implied features of this source revision owner.
 
 ### Source-backed visual projections
 
-A visual scene or behavior editor is another view on the resource-owned Lua
+A visual editor is another view on its authored resource, which may be Lua or
+YAML; it must not migrate placements to fit an existing projection. The current
+Lua scene and behavior editors are views on the resource-owned Lua
 `EditorTextModel`, not another working copy and not a generated behavior or
 scene resource. The Lua parser and each workbench-owned domain recognizer
 derive its retained BT-, FSM-, ActionEffect- or sceneprojection from a current
@@ -933,6 +938,17 @@ editor will open them. Only the active execution domain contributes data
 resources to the visible catalog, while the existing domain-qualified identity
 map retains all installed domains. Compiler-owned `code` payloads and assets
 without a source path are not source documents.
+
+Built-in source editing admits ordinary `data` resources ending in `.yaml` or
+`.yml` through the existing workspace source provider. AEM retains its more
+specific contribution. Missing YAML source is an open error, never reconstructed
+from cooked data. The shared text model owns exact source, history, dirty state,
+save and recovery. `language/configuration.ts` owns indentation/comment syntax:
+Lua uses tabs and `--`, YAML uses two spaces and `#`, JSON has no line comments.
+YAML uses the existing retained line-highlighting path, not Lua semantics or a
+whole-document parse during rendering. No YAML formatter/serializer is invoked.
+Cart-specific visual projections are separate from source admission; see
+[`studio_yaml_authoring.md`](../docs/studio_yaml_authoring.md).
 
 This is the deliberately small built-in subset of VS Code's editor resolver:
 editors register independently against resource patterns, resolution chooses a

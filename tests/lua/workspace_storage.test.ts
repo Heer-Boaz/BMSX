@@ -1667,6 +1667,49 @@ test('workspace recovery hydrates a dirty working copy without creating an edito
 	assert.equal([...editorTextModelService.models].length, 1);
 });
 
+test('YAML dirty session recovery restores exact unsaved source into a fresh working copy', async t => {
+	const storage = new MockStorage();
+	installOfflineWorkspace(t, storage);
+	const sources = await startAutosaveSession(t, storage);
+	const resource = testResource('res/data/stage.yaml', TEST_DOMAIN, 'data');
+	sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
+	const canonicalPath = 'offline-cart/res/data/stage.yaml';
+	const original = '# Keep authored glyphs and spacing\nmap_rows:\n  - "  pM/^^\\\\  " # roof\n';
+	writeRecord(storage, 'offline-cart', canonicalPath, original, 1);
+	const model = await resolveTextFileModel(storage, sources, resource);
+	model.pushEditOperations([{ offset: original.indexOf('pM'), deleteLength: 2, text: 'Pm' }]);
+	const unsaved = original.replace('pM', 'Pm');
+	assert.equal(model.dirty, true);
+	persistWorkspaceSessionLocally();
+	assert.deepEqual(workspaceState.localGeneration!.payload.dirtyFiles.map(entry => entry.path), [resource.path]);
+	assert.equal(readLocalWorkspaceRecord(storage, 'offline-cart', canonicalPath)!.contents, original);
+
+	await shutdownWorkspaceStorage();
+	editorTextModelService.clear();
+	assert.equal(editorTextModelService.get(resource), undefined);
+	const restoredPayload = await initializeWorkspaceStorage(
+		storage, workspaceEnvironment.clock, 'offline-cart', sources, workspaceFiles, testLogOutput,
+	);
+	assert.ok(restoredPayload);
+	await restoreWorkspaceStorageSession(
+		editorStub(storage, sources) as any,
+		sources,
+		{ breakpoints: [new Map(), new Map(), new Map()] },
+		restoredPayload,
+		new Set(),
+	);
+
+	const restored = editorTextModelService.get(resource)!;
+	assert.notEqual(restored, model);
+	assert.equal(restored.mode, 'yaml');
+	assert.equal(getTextSnapshot(restored.buffer), unsaved);
+	assert.equal(restored.dirty, true);
+	assert.equal(await resolveTextFileModel(storage, sources, resource), restored);
+	assert.equal(readLocalWorkspaceRecord(storage, 'offline-cart', canonicalPath)!.contents, original);
+	assert.equal(getTextFileRuntimeSourceStatus(sources, restored), 'untracked');
+	assert.deepEqual(captureLuaTextModelSources(sources), []);
+});
+
 test('workspace override arbitration keeps dirty and canonical namespaces separate', async (t) => {
 	const storage = new MockStorage();
 	installOfflineWorkspace(t, storage);
@@ -1988,6 +2031,87 @@ test('built-in resolution admits source without opening tabs or stealing the pre
 	assert.equal(editorTabGroup.activeTab, viewer);
 	assert.equal(editorTabGroup.tabs.length, 3);
 	assert.equal(await resolveTextFileModel(storage, sources, aem), first.workingCopy);
+	assert.equal(first.workingCopy.mode, 'aem', 'the YAML suffix does not replace AEM source ownership');
+});
+
+test('YAML data opens one authored working copy with shared edit history and no Lua installation', async t => {
+	const storage = new MockStorage();
+	const { server } = installWorkspaceServer(t, storage);
+	workspaceRecordState.connected = true;
+	t.after(() => resetSemanticProjects());
+	const registry = sourceRegistry('-- cart');
+	const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [registry, null], 0);
+	const project = getOrCreateSemanticProject(0);
+	project.synchronizeRuntimeSources(sources);
+	const semanticSnapshot = project.getSnapshot();
+	const registryRevision = registry.revision;
+	const resolver = createResourceEditorResolver(storage, sources);
+	const original = '# Authored map: keep comments and spacing\nmap_rows:\n  - "  pM/^^\\\\  " # actor and roof glyphs\nobjects:\n  - type: rock\n    x: 13\n    y: 17\n';
+
+	for (const path of ['res/data/room.yaml', 'res/data/stage.YML']) {
+		const resource = testResource(path, 0, 'data');
+		server.files.set(`offline-cart/${path}`, { contents: original, updatedAt: 10 });
+		sources.cartridgeSlots[0]!.package.data[path] = { cooked: true };
+		const [first, second] = await Promise.all([resolver.resolveEditorInput(resource), resolver.resolveEditorInput(resource)]);
+		assert.equal(first.kind, 'code_editor');
+		assert.equal(second.kind, 'code_editor');
+		if (first.kind !== 'code_editor' || second.kind !== 'code_editor') throw new Error('YAML text contribution');
+		const model = first.workingCopy;
+		assert.equal(model, second.workingCopy);
+		assert.equal(model, await resolveTextFileModel(storage, sources, resource));
+		assert.equal(model.mode, 'yaml');
+		assert.equal(model.resource.source.type, 'data');
+		assert.equal(getTextSnapshot(model.buffer), original);
+		assert.equal(model.dirty, false);
+		assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'untracked');
+
+		const edited = original.replace('x: 13', 'x: 14');
+		model.pushEditOperations([{ offset: original.indexOf('13'), deleteLength: 2, text: '14' }]);
+		assert.equal(getTextSnapshot(second.workingCopy.buffer), edited);
+		assert.equal(model.dirty, true);
+		assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'untracked');
+		model.undo();
+		assert.equal(getTextSnapshot(model.buffer), original);
+		assert.equal(model.dirty, false);
+		model.redo();
+		assert.equal(getTextSnapshot(model.buffer), edited);
+		model.completeSave(model.createSnapshot());
+		assert.equal(model.dirty, false);
+		assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'untracked', 'saving source is not installing cooked assets');
+		assert.equal(project.getSnapshot().getFileData(path), undefined);
+	}
+	assert.equal(project.getSnapshot(), semanticSnapshot, 'YAML edits do not invalidate Lua semantics');
+	assert.equal(registry.revision, registryRevision);
+	assert.equal(registry.records.length, 1);
+	assert.deepEqual(captureLuaTextModelSources(sources), []);
+	assert.equal(sources.cartridgeBlua32MediaDirty[0], false);
+});
+
+test('non-YAML data retains its cooked resource preview', async t => {
+	const storage = new MockStorage();
+	installOfflineWorkspace(t, storage);
+	const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [sourceRegistry('-- cart'), null], 0);
+	const resource = testResource('res/data/stage.json', 0, 'data');
+	sources.cartridgeSlots[0]!.package.data[resource.source.resid] = { tile_size: 8 };
+	const input = await createResourceEditorResolver(storage, sources).resolveEditorInput(resource);
+	assert.equal(input.kind, 'resource_view');
+	assert.equal(editorTextModelService.get(resource), undefined);
+	assert.throws(() => resolveTextFileModel(storage, sources, resource), /no editable text format/);
+});
+
+test('missing authored YAML fails rather than reconstructing source from cooked data', async t => {
+	const storage = new MockStorage();
+	const { server } = installWorkspaceServer(t, storage);
+	workspaceRecordState.connected = true;
+	const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [sourceRegistry('-- cart'), null], 0);
+	const resource = testResource('res/data/missing.yaml', 0, 'data');
+	sources.cartridgeSlots[0]!.package.data[resource.source.resid] = { objects: [{ type: 'rock', x: 13, y: 17 }] };
+	await assert.rejects(
+		async () => createResourceEditorResolver(storage, sources).resolveEditorInput(resource),
+		/Source for 'res\/data\/missing\.yaml' is unavailable/,
+	);
+	assert.equal(editorTextModelService.get(resource), undefined);
+	assert.ok(server.requests.some(request => request.method === 'GET' && request.path === 'offline-cart/res/data/missing.yaml'));
 });
 
 test('new Lua files belong to their explicit project and are published only after exclusive creation', async t => {

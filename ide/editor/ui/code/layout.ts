@@ -5,6 +5,7 @@ import { clamp } from '../../../../machine/ts/common/clamp';
 import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
 import { highlightTextLine as highlightTextLineExternal } from '../../../language/lua/syntax_highlight';
 import { highlightAemTextLine } from '../../../language/aem/syntax_highlight';
+import { highlightYamlTextLine } from '../../../language/yaml/syntax/highlight';
 import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import type { SemanticSymbolKind } from '../../../../toolchain/ts/lua/semantic/symbols';
 import { getLuaSemanticAnnotations, type SemanticAnnotations, type TokenAnnotation } from '../../../../toolchain/ts/lua/semantic/tokens';
@@ -279,6 +280,7 @@ export class CodeLayout {
 			case 'lua':
 				this.ensureSemanticAnalysis(buffer, documentVersion, identity);
 				return;
+			case 'yaml':
 			case 'aem':
 				this.pendingSemantic = null;
 				this.semanticDueAtMs = null;
@@ -319,6 +321,9 @@ export class CodeLayout {
 		switch (this.documentMode) {
 			case 'lua':
 				highlight = highlightTextLineExternal(source, lineAnnotations, builtinIdentifiers);
+				break;
+			case 'yaml':
+				highlight = highlightYamlTextLine(source);
 				break;
 			case 'aem':
 				highlight = highlightAemTextLine(source);

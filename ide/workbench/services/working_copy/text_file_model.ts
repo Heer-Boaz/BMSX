@@ -31,7 +31,7 @@ export async function resolveTextFileModelSnapshot(
 	return { model, sameSource: fingerprint.length === snapshot.fingerprint.length && fingerprint.hash === snapshot.fingerprint.hash };
 }
 
-/** Source admission for the two editable file formats; no view/group side effects. */
+/** Source admission for editable source formats; no view/group side effects. */
 export function resolveTextFileModel(
 	storage: KeyValueStorage,
 	sources: RuntimeSourceState,
@@ -43,14 +43,18 @@ export function resolveTextFileModel(
 	switch (resource.source.type) {
 		case 'lua':
 			return editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(sources, resource));
-		case 'aem':
-			return editorTextModelService.resolve(resource, 'aem', async () => {
+		case 'data':
+			if (!/\.ya?ml$/i.test(resource.path)) break;
+			// Data stays in its authored YAML; never reconstruct it from cooked assets.
+		case 'aem': {
+			const mode = resource.source.type === 'aem' ? 'aem' : 'yaml';
+			return editorTextModelService.resolve(resource, mode, async () => {
 				const root = runtimeSourceProjectRootPath(sources, resource.domain);
 				const source = await loadWorkspaceSourceFile(storage, resolveWorkspacePath(resource.path, root), root);
-				if (source === null) throw new Error(`AEM resource '${resource.path}' is unavailable.`);
+				if (source === null) throw new Error(`Source for '${resource.path}' is unavailable.`);
 				return source;
 			});
-		default:
-			throw new Error(`Resource '${resource.path}' has no editable text format.`);
+		}
 	}
+	throw new Error(`Resource '${resource.path}' has no editable text format.`);
 }

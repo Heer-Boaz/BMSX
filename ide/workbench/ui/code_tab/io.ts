@@ -12,7 +12,7 @@ export function resolveLuaCodeEditorInput(sources: RuntimeSourceState, resource:
 	return resolveCodeEditorInput(retainLuaCodeTabContext(sources, resource));
 }
 
-export async function resolveAemCodeEditorInput(
+export async function resolveTextCodeEditorInput(
 	storage: KeyValueStorage,
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,

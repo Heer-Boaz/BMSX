@@ -62,7 +62,7 @@ function resolveYamlTokenColor(kind: ReturnType<typeof parseYamlInlineTokens>[nu
 	}
 }
 
-function highlightYamlTextLine(line: string, valueKeywords: ReadonlySet<string>): HighlightLine {
+export function highlightYamlTextLine(line: string, valueKeywords: ReadonlySet<string> = DEFAULT_YAML_VALUE_KEYWORDS): HighlightLine {
 	const length = line.length;
 	const defaultColor = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
 	const columnColors: number[] = new Array(length);

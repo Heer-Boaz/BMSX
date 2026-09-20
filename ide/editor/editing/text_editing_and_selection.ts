@@ -21,7 +21,7 @@ import * as constants from '../../common/constants';
 import { formatLuaDocument } from '../../language/lua/formatter';
 import { extractErrorMessage } from '../../language/lua/interpreter/value';
 import { getLinesSnapshot, getTextSnapshot } from '../text/source_text';
-import { extractIndentation } from '../text/indentation';
+import { extractIndentation, countLeadingIndent } from '../text/indentation';
 import type { MutableTextPosition, TextBuffer } from '../text/text_buffer';
 import { prepareUndo, applyUndoableReplace, recordEditContext } from './undo_controller';
 import { formatAemDocument } from '../../language/aem/editor';
@@ -741,22 +741,23 @@ export function copySelectionLines(delta: number): void {
 // ============================================================================
 
 /**
- * Indents the current line or selected lines by adding a tab character.
+ * Indents the current line or selected lines by adding one document indentation unit.
  */
 export function indentSelectionOrLine(): void {
 	if (!editorAllowsMutation()) {
 		return;
 	}
 	const buffer = activeCodeEditor.model.buffer;
+	const unit = activeCodeEditor.model.language.indentationUnit;
 	prepareUndo('indent', false);
 	const range = getSelectionRange();
 	if (!range) {
 		const row = activeCodeEditor.view.cursorRow;
 		const offset = buffer.getLineStartOffset(row);
-		applyUndoableReplace(offset, 0, '\t');
-		activeCodeEditor.view.cursorColumn += 1;
+		applyUndoableReplace(offset, 0, unit);
+		activeCodeEditor.view.cursorColumn += unit.length;
 		editorViewState.layout.invalidateLine(activeCodeEditor.view.cursorRow);
-		recordEditContext('insert', '\t');
+		recordEditContext('insert', unit);
 		markTextMutated();
 		resetBlink();
 		updateDesiredColumn();
@@ -765,15 +766,15 @@ export function indentSelectionOrLine(): void {
 	}
 	for (let row = range.end.row; row >= range.start.row; row -= 1) {
 		const offset = buffer.getLineStartOffset(row);
-		applyUndoableReplace(offset, 0, '\t');
+		applyUndoableReplace(offset, 0, unit);
 		editorViewState.layout.invalidateLine(row);
 	}
 	const anchor = activeCodeEditor.view.selectionAnchor;
 	if (anchor) {
-		anchor.column += 1;
+		anchor.column += unit.length;
 	}
-	activeCodeEditor.view.cursorColumn += 1;
-	recordEditContext('insert', '\t');
+	activeCodeEditor.view.cursorColumn += unit.length;
+	recordEditContext('insert', unit);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -781,13 +782,14 @@ export function indentSelectionOrLine(): void {
 }
 
 /**
- * Unindents the current line or selected lines by removing one indentation character.
+ * Unindents the current line or selected lines by removing up to one document indentation unit.
  */
 export function unindentSelectionOrLine(): void {
 	if (!editorAllowsMutation()) {
 		return;
 	}
 	const buffer = activeCodeEditor.model.buffer;
+	const unitLength = activeCodeEditor.model.language.indentationUnit.length;
 	const range = getSelectionRange();
 	if (!range) {
 		const row = activeCodeEditor.view.cursorRow;
@@ -795,30 +797,31 @@ export function unindentSelectionOrLine(): void {
 		if (line.length === 0) {
 			return;
 		}
-		const first = line.charAt(0);
-		if (first !== '\t' && first !== ' ') {
+		const length = Math.min(unitLength, countLeadingIndent(line));
+		if (length === 0) {
 			return;
 		}
 		prepareUndo('unindent', false);
 		const offset = buffer.getLineStartOffset(row);
-		applyUndoableReplace(offset, 1, '');
-		activeCodeEditor.view.cursorColumn = Math.max(0, activeCodeEditor.view.cursorColumn - 1);
+		applyUndoableReplace(offset, length, '');
+		activeCodeEditor.view.cursorColumn = Math.max(0, activeCodeEditor.view.cursorColumn - length);
 		editorViewState.layout.invalidateLine(activeCodeEditor.view.cursorRow);
-		recordEditContext('delete', first);
+		recordEditContext('delete', line.slice(0, length));
 		markTextMutated();
 		resetBlink();
 		updateDesiredColumn();
 		revealCursor();
 		return;
 	}
+	const anchor = activeCodeEditor.view.selectionAnchor;
 	let changed = false;
 	for (let row = range.end.row; row >= range.start.row; row -= 1) {
 		const line = buffer.getLineContent(row);
 		if (line.length === 0) {
 			continue;
 		}
-		const first = line.charAt(0);
-		if (first !== '\t' && first !== ' ') {
+		const length = Math.min(unitLength, countLeadingIndent(line));
+		if (length === 0) {
 			continue;
 		}
 		if (!changed) {
@@ -826,18 +829,17 @@ export function unindentSelectionOrLine(): void {
 			changed = true;
 		}
 		const offset = buffer.getLineStartOffset(row);
-		applyUndoableReplace(offset, 1, '');
+		applyUndoableReplace(offset, length, '');
+		if (anchor?.row === row) anchor.column = Math.max(0, anchor.column - length);
+		if (activeCodeEditor.view.cursorRow === row) {
+			activeCodeEditor.view.cursorColumn = Math.max(0, activeCodeEditor.view.cursorColumn - length);
+		}
 		editorViewState.layout.invalidateLine(row);
 	}
 	if (!changed) {
 		return;
 	}
-	const anchor = activeCodeEditor.view.selectionAnchor;
-	if (anchor) {
-		anchor.column = Math.max(0, anchor.column - 1);
-	}
-	activeCodeEditor.view.cursorColumn = Math.max(0, activeCodeEditor.view.cursorColumn - 1);
-	recordEditContext('delete', '\t');
+	recordEditContext('delete', activeCodeEditor.model.language.indentationUnit);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -961,6 +963,9 @@ export function applyDocumentFormatting(): void {
 	try {
 		let formatted: string;
 		switch (activeCodeEditor.model.mode) {
+			case 'yaml':
+				showEditorMessage('YAML formatting is not available', constants.COLOR_STATUS_TEXT, 2.0);
+				return;
 			case 'lua':
 				formatted = formatLuaDocument(originalSource, originalLines);
 				break;

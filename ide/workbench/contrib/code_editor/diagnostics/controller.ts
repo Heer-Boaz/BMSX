@@ -165,6 +165,7 @@ export function runDiagnosticsForContexts(bridge: RuntimeLuaTooling, contextIds:
 		switch (context.model.mode) {
 			case 'lua':
 				break;
+			case 'yaml':
 			case 'aem': {
 				const model = context.model;
 				editorDiagnosticsState.diagnosticsCache.set(context.id, {

@@ -77,3 +77,14 @@ test('an explicit editor id creates another matching input for the same resource
 		/No editor 'missing\.editor' is registered/,
 	);
 });
+
+test('filename suffix and asset type selectors must both match', async () => {
+	const yamlEditor = registration('workbench.yaml', { kind: 'filename_suffix', suffix: '.yaml', assetType: 'data' });
+	const viewer = registration('workbench.viewer', { kind: 'all' });
+	const resolver = new ResourceEditorResolver([yamlEditor, viewer]);
+
+	assert.equal((await resolver.resolveEditorInput(resource('res/room.YAML', 'data'))).title, yamlEditor.id);
+	assert.equal((await resolver.resolveEditorInput(resource('res/room.json', 'data'))).title, viewer.id);
+	assert.equal((await resolver.resolveEditorInput(resource('res/cue.aem.yaml', 'aem'))).title, viewer.id);
+	assert.throws(() => resolver.resolveEditorInput(resource('res/cue.aem.yaml', 'aem'), yamlEditor.id), /No editor/);
+});

@@ -49,6 +49,7 @@ export async function saveTextFileWorkingCopy(
 					source,
 				);
 				break;
+			case 'yaml':
 			case 'aem': {
 				const projectRootPath = runtimeSourceProjectRootPath(
 					sources,
@@ -69,6 +70,9 @@ export async function saveTextFileWorkingCopy(
 		model.completeSave(snapshot);
 		requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 		switch (model.mode) {
+			case 'yaml':
+				showEditorMessage(`${title} saved (asset rebuild required)`, constants.COLOR_STATUS_WARNING, 4.0);
+				return;
 			case 'lua':
 				if (savedLuaProgramModule && getTextFileRuntimeSourceStatus(sources, model) === 'pending') {
 					showEditorMessage(`${title} saved (runtime update pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);

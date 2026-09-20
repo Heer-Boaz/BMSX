@@ -87,6 +87,7 @@ export function requestSemanticRefresh(): void {
 				activeCodeEditor.model.resource,
 			);
 			return;
+		case 'yaml':
 		case 'aem':
 			return;
 	}
@@ -417,6 +418,7 @@ export function refreshGotoHoverHighlight(
 	switch (context.model.mode) {
 		case 'lua':
 			break;
+		case 'yaml':
 		case 'aem':
 			clearGotoHoverHighlight();
 			return;

@@ -1,6 +1,6 @@
 import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import { resolveAemCodeEditorInput, resolveLuaCodeEditorInput } from '../../ui/code_tab/io';
+import { resolveTextCodeEditorInput, resolveLuaCodeEditorInput } from '../../ui/code_tab/io';
 import { resolveResourceViewerInput } from './view_tabs';
 import {
 	ResourceEditorResolver,
@@ -24,8 +24,13 @@ export function createResourceEditorResolver(
 		{
 			id: WORKBENCH_TEXT_EDITOR_ID,
 			selector: { kind: 'asset_type', assetType: 'aem' },
-			createEditorInput: resource => resolveAemCodeEditorInput(storage, sources, resource),
+			createEditorInput: resource => resolveTextCodeEditorInput(storage, sources, resource),
 		},
+		...['.yaml', '.yml'].map(suffix => ({
+			id: WORKBENCH_TEXT_EDITOR_ID,
+			selector: { kind: 'filename_suffix' as const, suffix, assetType: 'data' as const },
+			createEditorInput: resource => resolveTextCodeEditorInput(storage, sources, resource),
+		} satisfies ResourceEditorRegistration)),
 		{
 			id: WORKBENCH_RESOURCE_VIEWER_ID,
 			selector: { kind: 'all' },

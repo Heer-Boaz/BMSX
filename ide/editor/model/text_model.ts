@@ -1,3 +1,4 @@
+import { textLanguageConfiguration, type EditorDocumentMode, type TextLanguageConfiguration } from '../../language/configuration';
 import * as constants from '../../common/constants';
 import type { EditContext } from '../../common/models';
 import type { ResourceIdentity, RuntimeResource } from '../../common/resource';
@@ -9,7 +10,7 @@ import { mapTrackedTextRange, type EditorTextChange, type TrackedTextRange } fro
 import type { EditorEditState } from './edit_state';
 import { EditorUndoRedoService, type EditorHistoryDirection } from './undo_redo_service';
 
-export type EditorDocumentMode = 'lua' | 'aem';
+export type { EditorDocumentMode } from '../../language/configuration';
 
 export type EditorTextEdit = {
 	offset: number;
@@ -86,6 +87,7 @@ export class EditorTextModel {
 	private pendingStartRow = 0;
 
 	public readonly mode: EditorDocumentMode;
+	public readonly language: TextLanguageConfiguration;
 	/** Stable source identity for markers/history, without ROM asset metadata. */
 	public readonly identity: ResourceIdentity;
 
@@ -94,6 +96,7 @@ export class EditorTextModel {
 		this.resourceValue = resource;
 		this.identity = { domain: resource.domain, path: resource.path };
 		this.mode = mode;
+		this.language = textLanguageConfiguration(mode, resource.path);
 		this.pieceTree = new PieceTreeBuffer(source);
 		this.lastSavedSourceValue = source;
 	}

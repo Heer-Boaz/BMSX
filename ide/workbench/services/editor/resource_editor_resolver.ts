@@ -3,7 +3,7 @@ import type { EditorInput } from '../../ui/tab/model';
 
 export type ResourceEditorSelector =
 	| { kind: 'asset_type'; assetType: RuntimeResource['source']['type'] }
-	| { kind: 'filename_suffix'; suffix: string }
+	| { kind: 'filename_suffix'; suffix: string; assetType?: RuntimeResource['source']['type'] }
 	| { kind: 'all' };
 
 export type ResourceEditorRegistration = {
@@ -37,7 +37,8 @@ function resourceMatchesSelector(resource: RuntimeResource, selector: ResourceEd
 		case 'asset_type':
 			return resource.source.type === selector.assetType;
 		case 'filename_suffix':
-			return resource.path.toLowerCase().endsWith(selector.suffix.toLowerCase());
+			return (selector.assetType === undefined || resource.source.type === selector.assetType)
+				&& resource.path.toLowerCase().endsWith(selector.suffix.toLowerCase());
 		case 'all':
 			return true;
 	}

@@ -20,6 +20,7 @@ export function openRenamePrompt(bridge: RuntimeLuaTooling, rename: RenameContro
 	switch (context.model.mode) {
 		case 'lua':
 			break;
+		case 'yaml':
 		case 'aem':
 			return;
 	}

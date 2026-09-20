@@ -31,6 +31,7 @@ function setCodeTabDiagnosticsState(context: CodeTabContext): void {
 			}
 			return;
 		}
+		case 'yaml':
 		case 'aem':
 			editorDiagnosticsState.dirtyDiagnosticContexts.delete(context.id);
 			editorDiagnosticsState.diagnosticsCache.set(context.id, {

@@ -1,3 +1,4 @@
+import { activeCodeEditor } from '../../../../../editor/ui/code_editor_state';
 import { insertText } from '../../../../../editor/editing/text_editing_and_selection';
 import * as TextEditing from '../../../../../editor/editing/text_editing_and_selection';
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../../../input/keyboard/key_input';
@@ -11,7 +12,7 @@ export function handleEditorEditingKeys(playerInput: PlayerInput): void {
 		if (shiftDown) {
 			TextEditing.unindentSelectionOrLine();
 		} else {
-			insertText('\t');
+			insertText(activeCodeEditor.model.language.indentationUnit);
 		}
 		return;
 	}

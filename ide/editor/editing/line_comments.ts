@@ -8,6 +8,8 @@ import { activeCodeEditor } from '../ui/code_editor_state';
 import { editorViewState } from '../ui/view/state';
 
 export function toggleLineComments(): void {
+	const prefix = activeCodeEditor.model.language.lineComment;
+	if (prefix === undefined) return;
 	if (activeCodeEditor.model.readOnly) {
 		notifyReadOnlyEdit();
 		return;
@@ -24,7 +26,7 @@ export function toggleLineComments(): void {
 			allCommented = false;
 			break;
 		}
-		if (!line.startsWith('--', commentIndex)) {
+		if (!line.startsWith(prefix, commentIndex)) {
 			allCommented = false;
 			break;
 		}
@@ -37,6 +39,8 @@ export function toggleLineComments(): void {
 }
 
 export function addLineComments(range?: { startRow: number; endRow: number }): void {
+	const prefix = activeCodeEditor.model.language.lineComment;
+	if (prefix === undefined) return;
 	if (activeCodeEditor.model.readOnly) {
 		notifyReadOnlyEdit();
 		return;
@@ -51,11 +55,11 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 		const originalLine = activeCodeEditor.model.buffer.getLineContent(row);
 		const insertIndex = firstNonWhitespaceIndex(originalLine);
 		const hasContent = insertIndex < originalLine.length;
-		let insertion = '--';
+		let insertion = prefix;
 		if (hasContent) {
 			const nextChar = originalLine.charAt(insertIndex);
 			if (nextChar !== ' ' && nextChar !== '\t') {
-				insertion = '-- ';
+				insertion = prefix + ' ';
 			}
 		}
 		applyUndoableReplace(activeCodeEditor.model.buffer.offsetAt(row, insertIndex), 0, insertion);
@@ -77,6 +81,8 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 }
 
 export function removeLineComments(range?: { startRow: number; endRow: number }): void {
+	const prefix = activeCodeEditor.model.language.lineComment;
+	if (prefix === undefined) return;
 	if (activeCodeEditor.model.readOnly) {
 		notifyReadOnlyEdit();
 		return;
@@ -92,14 +98,14 @@ export function removeLineComments(range?: { startRow: number; endRow: number })
 		if (commentIndex >= originalLine.length) {
 			continue;
 		}
-		if (!originalLine.startsWith('--', commentIndex)) {
+		if (!originalLine.startsWith(prefix, commentIndex)) {
 			continue;
 		}
-		let removal = 2;
-		if (commentIndex + 2 < originalLine.length) {
-			const trailing = originalLine.charAt(commentIndex + 2);
+		let removal = prefix.length;
+		if (commentIndex + prefix.length < originalLine.length) {
+			const trailing = originalLine.charAt(commentIndex + prefix.length);
 			if (trailing === ' ') {
-				removal = 3;
+				removal += 1;
 			}
 		}
 		if (!changed) {
