@@ -1908,6 +1908,78 @@ Remaining work stays parked: finer syntax/declaration retention, file-level
 publication and highlighting costs, cold-path allocation, actual GUI frame
 profiling, and annotations. The absent-value audit remains last below.
 
+## UI input evidence and user-requested stopping point (2026-09-20)
+
+After the nested-body delivery, the user asked whether the IDE still suffers
+seconds-long stalls, then requested moving on to Studio/game-development work
+if it is usable. Performance refinement is **parked**, not declared complete.
+
+A headless TypeScript Studio session exercised actual keyboard, pointer and
+clipboard input through `scripts/host_control/actions.mjs`. No semantic-harness
+calls, model injection, editor command injection or guest inspection drove these
+actions. Captured presentations were visually inspected. The user-I/O boundary
+also follows the separation in [VS Code automation](https://github.com/microsoft/vscode/blob/main/test/automation/src/code.ts);
+this is not a claim of equivalent test coverage.
+
+Host invocation:
+
+```sh
+node dist/host_headless_tooling.debug.js --system-rom dist/bmsx-bios.debug.rom \
+  --control 0 --studio-workspace /tmp/bmsx-ui-perf-workspace pietious
+node scripts/host_control.mjs <reported-port>
+```
+
+The recorded `action` objects can be sent as JSON lines to that client. The
+first action opens the workbench; Quick Open selects director.lua; command
+palette Go to Line selects line 96. Alt+pointer opens the world tooltip. Edits,
+Ctrl+Space and typing `(` exercise completion and signature help. Quick Open
+then selects player/player.lua, Go to Line selects 2699, and keyboard input
+inserts a newline, types/deletes a space and performs undo. No saves or hot
+resume were performed; edited source was not applied to running gameplay.
+
+Evidence: [action records](evidence/lua_ide_latency_2026-09-20/actions.jsonl),
+[world hover](evidence/lua_ide_latency_2026-09-20/world_hover.png),
+[completion](evidence/lua_ide_latency_2026-09-20/completion.png),
+[signature help](evidence/lua_ide_latency_2026-09-20/signature_help.png),
+[player edit](evidence/lua_ide_latency_2026-09-20/player_edit.png).
+The action log excludes two actions from an earlier non-Studio process, which
+could not paste because it had no clipboard. Paths/frame numbers in replies
+identify original captures; selected PNGs above are retained in the repository.
+
+Individual wall-time observations, measured around `performHostControlAction`
+using `performance.now()` in the client (logging after the measurement):
+
+| Action to acknowledgement | Time |
+| --- | ---: |
+| First workbench activation in this Studio process | 756 ms |
+| First world hover input in this session | 94 ms |
+| Subsequent method hover input | 12 ms |
+| Later manual completion request | 27 ms |
+| Switch to player/player.lua | 75 ms |
+| Player outer-body newline | 101 ms |
+| Player space / backspace | 40 / 40 ms |
+| Player undo | 77 ms |
+
+These times include control transport and host-frame scheduling: every input
+packet waits one host frame; a key press sends down and up separately. They are
+**not semantic-only durations, input-to-first-visible timings, percentiles or
+cold-completion measurements**. Capture separately waits for a presentation and
+PNG write; explicit frame waits precede some screenshots. No browser compositor,
+physical display or native host was tested. The screenshots prove visible
+editor functionality, not successful compilation/hot resume of the edits.
+An independent context-free review confirmed these limitations.
+
+Provenance: source HEAD `300f64ba3` (no IDE/toolchain/TS host changes since
+`cc210e033`); Node v22.23.1; host SHA-256
+`220f7a4bb2d78f8756385ef8dcad8a97e2252eaa4d7013c352975e0db13cae97`;
+pietious ROM SHA-256
+`e2e35610da39c4bc13fbef5368468b045a11d9c68088533640d66d5b34abb0cc`.
+
+Conclusion: the tested interactions were usable without observed seconds-long
+freezes. The approximately 0.76-second first workbench activation remains
+noticeable. This supports moving on to Studio workflows, not a guarantee that
+every IDE operation is stall-free or completion of the full incremental plan.
+
 ## Lowest-priority follow-up: absent-value convention
 
 User request, 2026-09-20: after the incremental parsing/binding work and its
