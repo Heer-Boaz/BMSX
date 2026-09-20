@@ -148,7 +148,7 @@ return value`);
 	const [initial, later] = trace.terminals;
 	assert.ok(initial.kind === 'declaration-write' && later.kind === 'declaration-write');
 	assert.equal(initial.write.flow, undefined);
-	assert.equal(later.write.flow, file.functionValueFlows[0]);
+	assert.equal(later.write.flow, file.functionValueFlows[0].id);
 	assert.deepEqual(runCompiledLua("local value = 1; local function replace() value = 2 end; return value"), [1]);
 });
 

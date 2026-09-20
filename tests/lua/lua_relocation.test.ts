@@ -4,7 +4,7 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { createLuaTableFieldTransfer } from '../../ide/language/lua/table_field_transfer';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 import { LuaRelocationAnalysis } from '../../toolchain/ts/lua/semantic/relocation';
-import { collectVisibleDeclarationsAt, findLuaFunctionScopeIndexAt, findLuaLexicalBindingAt } from '../../toolchain/ts/lua/semantic/scope_query';
+import { collectVisibleDeclarationsAt, findLuaFunctionScopeAt, findLuaLexicalBindingAt } from '../../toolchain/ts/lua/semantic/scope_query';
 import { LuaSyntaxKind, type LuaTableConstructorExpression } from '../../toolchain/ts/lua/syntax/ast';
 import { walkLuaAst } from '../../toolchain/ts/lua/syntax/ast/traversal';
 import { runCompiledLua } from './cpu_test_harness';
@@ -25,7 +25,7 @@ function fixture(source: string, from = 0, to = 1, index = 0) {
 
 test('scope producers retain actual lexical declarations, not global writes or anonymous table properties', () => {
 	const { file, target } = fixture('assigned=1\npublish({ghost=4})\nlocal value=2\nlocal from={value}\nlocal to={assigned=3}', 1, 2);
-	assert.deepEqual(file.scopes[0].declarationIndices.map(index => file.decls[index].name), ['value', 'from', 'to']);
+	assert.deepEqual(file.scopes[0].declarations.map(decl => decl.name), ['value', 'from', 'to']);
 	const position = file.chunk.locations.range(target.span).start;
 	assert.deepEqual(collectVisibleDeclarationsAt(file, position.line, position.column).map(decl => decl.name), ['from', 'value']);
 	assert.equal(findLuaLexicalBindingAt(file, 'assigned', position.line, position.column).kind, 'global');
@@ -90,7 +90,7 @@ test('implicit receivers are method-owned even for unknown global classes, disti
 	assert.equal(binding.kind, 'receiver');
 	assert.equal(changes.length, 1);
 	assert.ok(changes[0].kind === 'identifier' && changes[0].from.kind === 'receiver' && changes[0].to.kind === 'receiver');
-	assert.notEqual(changes[0].from.scopeIndex, changes[0].to.scopeIndex);
+	assert.notEqual(changes[0].from.scope, changes[0].to.scope);
 	assert.ok(!collectVisibleDeclarationsAt(file, file.chunk.locations.range(target.span).start.line, file.chunk.locations.range(target.span).start.column).some(decl => decl.name === 'self'));
 });
 
@@ -116,8 +116,8 @@ test('varargs use the nearest function scope, not an enclosing variadic function
 	const different = fixture('local function outer(...) local from={...} local function inner() local to={} end end');
 	assert.equal(different.changes.length, 1);
 	assert.equal(different.changes[0].kind, 'vararg');
-	assert.notEqual(findLuaFunctionScopeIndexAt(different.file, different.file.chunk.locations.range(different.field.span).start.line, different.file.chunk.locations.range(different.field.span).start.column),
-		findLuaFunctionScopeIndexAt(different.file, different.file.chunk.locations.range(different.target.span).start.line, different.file.chunk.locations.range(different.target.span).start.column));
+	assert.notEqual(findLuaFunctionScopeAt(different.file, different.file.chunk.locations.range(different.field.span).start.line, different.file.chunk.locations.range(different.field.span).start.column),
+		findLuaFunctionScopeAt(different.file, different.file.chunk.locations.range(different.target.span).start.line, different.file.chunk.locations.range(different.target.span).start.column));
 	const own = fixture('local from={function(...) return ... end}\nlocal to={}');
 	assert.deepEqual(own.analysis.bindings, []);
 });

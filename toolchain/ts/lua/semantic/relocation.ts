@@ -1,15 +1,16 @@
 import { LuaSyntaxKind, type LuaSourcePosition, type LuaSourceRange, type LuaVarargExpression } from '../syntax/ast';
 import { walkLuaAst } from '../syntax/ast/traversal';
 import type { Decl, FileSemanticData, Ref, SemanticScope } from './model';
-import { findLuaFunctionScopeIndexAt, findLuaLexicalBindingAt, type LuaLexicalBinding } from './scope_query';
+import type { ScopeID } from './scope_facts';
+import { findLuaFunctionScopeAt, findLuaLexicalBindingAt, type LuaLexicalBinding } from './scope_query';
 
 export type LuaRelocationBinding =
 	| { readonly kind: 'identifier'; readonly reference: Ref; readonly binding: LuaLexicalBinding }
-	| { readonly kind: 'vararg'; readonly expression: LuaVarargExpression; readonly scopeIndex: number };
+	| { readonly kind: 'vararg'; readonly expression: LuaVarargExpression; readonly scope: ScopeID };
 
 export type LuaRelocationBindingChange =
 	| { readonly kind: 'identifier'; readonly reference: Ref; readonly from: LuaLexicalBinding; readonly to: LuaLexicalBinding }
-	| { readonly kind: 'vararg'; readonly expression: LuaVarargExpression; readonly fromScopeIndex: number; readonly toScopeIndex: number };
+	| { readonly kind: 'vararg'; readonly expression: LuaVarargExpression; readonly fromScope: ScopeID; readonly toScope: ScopeID };
 
 /**
  * TypeScript-style free-binding analysis of a complete current-source field or
@@ -24,7 +25,8 @@ export class LuaRelocationAnalysis {
 		const rangeStart = locations.offsetAt(range.start);
 		const rangeEnd = locations.offsetAt(range.end);
 		const bindings: LuaRelocationBinding[] = [];
-		const seen = new Set<Decl | SemanticScope | string | number>();
+		const seen = new Set<Decl | SemanticScope | string>();
+		const seenVarargs = new Set<ScopeID>();
 		walkLuaAst(source.chunk, node => {
 			if (locations.offset(node.span.unit, node.span.end) < rangeStart
 				|| locations.offset(node.span.unit, node.span.start) > rangeEnd) return false;
@@ -40,7 +42,7 @@ export class LuaRelocationAnalysis {
 					if (declarationStart >= rangeStart && declarationStart <= rangeEnd) return;
 					identity = declaration;
 				} else if (binding.kind === 'receiver') {
-					const scope = source.scopes[binding.scopeIndex];
+					const scope = source.scopesById.get(binding.scope)!;
 					const scopeStart = locations.offset(scope.startInclusive.unit, scope.startInclusive.offset);
 					if (scopeStart >= rangeStart && scopeStart <= rangeEnd) return;
 					identity = scope;
@@ -50,12 +52,11 @@ export class LuaRelocationAnalysis {
 				bindings.push({ kind: 'identifier', reference, binding });
 			} else if (node.kind === LuaSyntaxKind.VarargExpression) {
 				const position = locations.position(node.span.unit, node.span.start);
-				const scopeIndex = findLuaFunctionScopeIndexAt(source, position.line, position.column);
-				const scope = source.scopes[scopeIndex];
+				const scope = findLuaFunctionScopeAt(source, position.line, position.column);
 				const scopeStart = locations.offset(scope.startInclusive.unit, scope.startInclusive.offset);
-				if (scopeStart >= rangeStart && scopeStart <= rangeEnd || seen.has(scopeIndex)) return;
-				seen.add(scopeIndex);
-				bindings.push({ kind: 'vararg', expression: node, scopeIndex });
+				if (scopeStart >= rangeStart && scopeStart <= rangeEnd || seenVarargs.has(scope.id)) return;
+				seenVarargs.add(scope.id);
+				bindings.push({ kind: 'vararg', expression: node, scope: scope.id });
 			}
 		});
 		this.bindings = bindings;
@@ -68,13 +69,13 @@ export class LuaRelocationAnalysis {
 				const to = findLuaLexicalBindingAt(this.source, entry.reference.name, destination.line, destination.column);
 				const from = entry.binding;
 				if (from.kind === 'declaration' && to.kind === 'declaration' && from.declaration.id === to.declaration.id) continue;
-				if (from.kind === 'receiver' && to.kind === 'receiver' && from.scopeIndex === to.scopeIndex) continue;
+				if (from.kind === 'receiver' && to.kind === 'receiver' && from.scope === to.scope) continue;
 				if (from.kind === 'global' && to.kind === 'global') continue; // The query uses the same identifier name.
 				changes.push({ kind: 'identifier', reference: entry.reference, from, to });
 			} else {
-				const toScopeIndex = findLuaFunctionScopeIndexAt(this.source, destination.line, destination.column);
-				if (entry.scopeIndex !== toScopeIndex) {
-					changes.push({ kind: 'vararg', expression: entry.expression, fromScopeIndex: entry.scopeIndex, toScopeIndex });
+				const toScope = findLuaFunctionScopeAt(this.source, destination.line, destination.column).id;
+				if (entry.scope !== toScope) {
+					changes.push({ kind: 'vararg', expression: entry.expression, fromScope: entry.scope, toScope });
 				}
 			}
 		}

@@ -188,7 +188,7 @@ return outer.change(40), outer:shadow(0)`;
 		const binding = findLuaLexicalBindingAt(data, 'self', line, column);
 		if (binding.kind === 'receiver') {
 			assert.equal(reference.referenceKind, 'self');
-			assert.equal(reference.binding, data.scopes[binding.scopeIndex].implicitSelfValue);
+			assert.equal(reference.binding, data.scopesById.get(binding.scope)!.implicitSelfValue);
 			assert.equal(findImplicitSelfValueAt(data, line, column), reference.binding);
 			assert.equal(summaries.terms.kind(summaries.terms.compileSource(reference.binding!)), TermKind.Local);
 		} else {

@@ -1,3 +1,4 @@
+import type { ScopeID } from './scope_facts';
 import type { FileSemanticData, SymbolID } from './model';
 import type { ModuleAliasTarget } from './module_bindings';
 import {
@@ -86,7 +87,7 @@ export type DeclarationValueEntry = {
 	/** Target/field/iteration-variable index in the actual syntax, including implicit result lanes. */
 	readonly index: number;
 	/** Body containing the write; undefined means module evaluation, not declaration scope. */
-	readonly flow: FunctionValueFlowEntry | undefined;
+	readonly flow: ScopeID | undefined;
 };
 
 export type ModuleValueEntry = {
@@ -112,11 +113,11 @@ export type FunctionReturnValueEntry = {
 };
 
 export type FunctionValueFlowEntry = {
+	readonly id: ScopeID;
 	readonly expression: LuaFunctionExpression;
 	/** Named destination for hierarchy, not the identity of this function body. */
 	readonly declaration: SymbolID | undefined;
 	readonly functionValue: OwnedSemanticValueSource;
-	readonly lexicalOwner?: FunctionValueFlowEntry;
 	readonly parameters: readonly FunctionSemanticValueSource[];
 	readonly receiverProjection?: SemanticValueSource;
 	readonly implicitReceiver: boolean;

@@ -1128,6 +1128,73 @@ all highlighting projected, versus 215.20 MiB in the eager baseline. Released
 overhead is 2.63 versus 2.50 MiB. These are post-GC heap deltas, not allocation
 counts; temporary allocation and browser-frame claims remain unproven.
 
+## Binder prerequisite: lexical scope handles and generation-owned attachment
+
+Lexical scopes now have `ScopeID`, based on binding file, relative syntax point
+and scope kind. A declaration records that handle rather than a file traversal
+index. Lexical scope rows reference the published declaration objects directly;
+no declaration-array indices escape into those rows. The temporary builder's
+publication slot is private and does not survive publication.
+
+Parent attachment is stored only in the file generation's `scopeParents` map;
+`scopesById` resolves handles and the ordered scope array serves interval lookup.
+These are indexes of the same facts, not shifted/rebased scope copies. Inserting
+a sibling does not change an unchanged body's ID; rebuilding its outer body
+changes the attachment in the new generation without modifying the old one.
+Binding the same supplied syntax under different file paths produces distinct
+scope IDs.
+
+A function flow uses its body scope ID, and declaration writes identify their
+writer by that ID. Flow facts no longer point at an enclosing flow object.
+The call-hierarchy summary owner derives enclosing functions through the current
+generation's lexical parent graph, including intervening block/loop scopes.
+Source correspondence maps independent generations' handles explicitly; source
+inspection, lexical queries and relocation no longer consume file-wide scope
+indices.
+
+This is **not a body cache** or an incremental-binding completion claim. Binding
+still traverses every scope and builds fresh facts. Property/global witness
+selection and signature mutation are still the old ambient contribution rules;
+converting their indices to handles does not make those rules scope-owned. The
+next boundary removes that discovery/mutation coupling, rather than recording
+and replaying it. A property declaration's current scope association is not proof
+that its write was performed there; writes carry their own flow identity.
+
+Validation so far: the 549-file paired oracle matches lexical attachments,
+declaration/activation presentation, signatures and write ownership against
+`32ca8e7eb`. The full Lua suite reports 2,115 tests (2,113 pass, the same
+workbench-menu failure, one skip); a subsequently added same-AST/two-file
+identity test brings the focused lexical file to 7/7. Focused scope/receiver/
+relocation/correspondence/capture tests pass 68/68, and flow/write-source tests
+pass 55/55. Relocation conformance again passes 4,508 transfers/4,848 binding
+checks on 345 files. Rompacker passes 129/129; rebuilt tooling passes precision
+idetests 8/5/3. Broad typechecking adds no changed-owner errors; core parity and
+`git diff --check` pass.
+
+A paired one-shot O3 build of pietious (207 modules/2,131 functions) has identical
+complete serialized output:
+`a297b840826af25b3345872b9d31dc0a1efcfaf8437e4c9ddaf99c5ba54ac505`.
+This is compiler parity evidence, not a one-sample performance claim; compare
+hashes only between runs with the same parse/allocation sequence.
+
+Fresh-context review found no blocker, including a shared-AST/two-file probe
+and 63 targeted tests. It confirmed the property/global scope-association
+qualification above. The final producer consumes the scope's ID directly when
+creating its flow, avoiding a duplicate ID string/point allocation.
+
+Isolated 20-warmup/50-sample runs, including highlighting: director public body
+updates are 2.901/6.451 ms p50/p95 versus 2.830/6.376 ms on `32ca8e7eb`;
+player is 14.206/15.755 versus 14.100/16.054 ms. An earlier pre-cleanup repeat
+had a player p95 of 20.929 ms, so this is not evidence of a tail-latency
+improvement. Current player binding is 9.165/10.762 ms, member query
+1.186/4.561 ms and completion-after-member 7.917/11.718 ms. Full-source public
+update plus highlighting is 22.552/27.769 ms; the final 2x gate remains open.
+
+Retained heap for 285 files is 194.39 MiB bound and 207.88 MiB highlighted,
+versus 192.08/205.58 MiB baseline: stable scope IDs and generation indexes cost
+about 2.31 MiB. Released overhead is 2.53 versus 2.61 MiB. This is an explicit
+ownership cost, not a memory/performance optimization claim or binder reuse.
+
 ## Lowest-priority follow-up: absent-value convention
 
 User request, 2026-09-20: after the incremental parsing/binding work and its

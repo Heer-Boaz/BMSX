@@ -1,3 +1,4 @@
+import { createScopeId, type ScopeID, type ScopeKind, type SemanticScope } from './scope_facts';
 import type { LuaStatementSequence } from '../syntax/statement_sequence';
 import type { LuaSyntaxPoint, LuaSyntaxSpan } from '../syntax/source_locations';
 import { hashText } from '../../../../machine/ts/common/byte_hex_string';
@@ -84,6 +85,7 @@ import {
 } from './expression_path';
 
 export type { SymbolID } from './symbols';
+export type { SemanticScope } from './scope_facts';
 
 const EMPTY_FILE_PATHS: readonly string[] = [];
 
@@ -102,20 +104,10 @@ export type Decl = {
 	symbolKey: string;
 	kind: SemanticSymbolKind;
 	span: LuaSyntaxSpan;
-	scopeIndex: number;
+	scope: ScopeID;
 	visibleFrom: LuaSyntaxPoint;
 	isGlobal: boolean;
 	signature?: FunctionSignatureInfo;
-};
-
-export type SemanticScope = {
-	readonly kind: ScopeKind;
-	readonly startInclusive: LuaSyntaxPoint;
-	readonly endExclusive: LuaSyntaxPoint;
-	readonly parentIndex: number;
-	readonly declarationIndices: readonly number[];
-	/** The parameter declared by this method scope, not an inherited visible value. */
-	readonly implicitSelfValue?: OwnedSemanticValueSource;
 };
 
 export type Ref = {
@@ -171,6 +163,8 @@ export type FileSemanticData = LuaFileSemanticRevision & {
 	/** Root-global storage witnesses, last value per symbol in first-key order. */
 	readonly globalStorageDecls: readonly Decl[];
 	readonly scopes: readonly SemanticScope[];
+	readonly scopesById: ReadonlyMap<ScopeID, SemanticScope>;
+	readonly scopeParents: ReadonlyMap<ScopeID, ScopeID>;
 	readonly refs: readonly Ref[];
 	readonly memberAccesses: readonly MemberAccessEntry[];
 	readonly declarationIdsBySyntax: ReadonlyMap<LuaIdentifierExpression, SymbolID>;
@@ -267,20 +261,20 @@ export function buildLuaSemanticWorkspaceSnapshot(
 	return workspace.getSnapshot();
 }
 
-type ScopeKind = 'path' | 'function' | 'method' | 'block' | 'loop';
-
 type Scope = {
-	index: number;
+	id: ScopeID;
 	kind: ScopeKind;
 	startInclusive: LuaSyntaxPoint;
 	endExclusive: LuaSyntaxPoint;
 	parent: Scope;
 	bindings: Map<string, InternalBinding>;
-	declarationIndices: number[];
+	declarations: InternalDecl[];
 	implicitSelfValue?: OwnedSemanticValueSource;
 };
 
 type InternalDecl = Decl & {
+	/** Build-local publication slot; never retained by a published fact. */
+	publicationSlot: number;
 	scopeRef: Scope;
 	active: boolean;
 	valueSource: DeclarationSemanticValueSource;
@@ -313,10 +307,10 @@ type ExpressionContext = {
 };
 
 type FunctionValueFlowState = {
+	id: ScopeID;
 	expression: LuaFunctionExpression;
 	declaration: SymbolID | undefined;
 	functionValue: OwnedSemanticValueSource;
-	lexicalOwner?: FunctionValueFlowState;
 	parameters: FunctionSemanticValueSource[];
 	receiverProjection?: SemanticValueSource;
 	implicitReceiver: boolean;
@@ -389,7 +383,23 @@ export function buildLuaFileSemanticData(
 			if (decl.namePath.length === 1) globalStorageDecls.set(decl.id, decl);
 		}
 	}
-	const scopes = result.scopes.map(toSemanticScope);
+	const scopes = new Array<SemanticScope>(result.scopes.length);
+	const scopesById = new Map<ScopeID, SemanticScope>();
+	const scopeParents = new Map<ScopeID, ScopeID>();
+	for (let index = 0; index < result.scopes.length; index++) {
+		const internal = result.scopes[index];
+		const scope: SemanticScope = {
+			id: internal.id,
+			kind: internal.kind,
+			startInclusive: internal.startInclusive,
+			endExclusive: internal.endExclusive,
+			declarations: internal.declarations.map(decl => decls[decl.publicationSlot]),
+			implicitSelfValue: internal.implicitSelfValue,
+		};
+		scopes[index] = scope;
+		scopesById.set(scope.id, scope);
+		if (internal.parent) scopeParents.set(scope.id, internal.parent.id);
+	}
 	const refs = result.refs.slice();
 	return {
 		file: path,
@@ -402,6 +412,8 @@ export function buildLuaFileSemanticData(
 		globalDecls,
 		globalStorageDecls: Array.from(globalStorageDecls.values()),
 		scopes,
+		scopesById,
+		scopeParents,
 		refs,
 		memberAccesses: result.memberAccesses,
 		declarationIdsBySyntax: result.declarationIdsBySyntax,
@@ -1370,11 +1382,17 @@ class SemanticBuilder {
 		if (receiver) {
 			parameters[0] = receiver;
 		}
+		const block = expression.body;
+		const scope = this.enterScope(
+			{ unit: block.span.unit, offset: block.startInclusive },
+			{ unit: block.span.unit, offset: block.endExclusive },
+			scopeKind,
+		);
 		const valueFlow: FunctionValueFlowState = {
+			id: scope.id,
 			expression,
 			declaration,
 			functionValue,
-			lexicalOwner: this.functionValueFlowStack[this.functionValueFlowStack.length - 1],
 			parameters,
 			receiverProjection,
 			implicitReceiver: methodReceiverClass !== undefined,
@@ -1387,12 +1405,6 @@ class SemanticBuilder {
 			returns: [],
 		};
 		this.functionValueFlowStack.push(valueFlow);
-		const block = expression.body;
-		this.enterScope(
-			{ unit: block.span.unit, offset: block.startInclusive },
-			{ unit: block.span.unit, offset: block.endExclusive },
-			scopeKind,
-		);
 		if (receiver) {
 			this.retainOwnedValueSource(receiver);
 			this.currentScope().bindings.set('self', { kind: 'receiver', name: 'self', valueSource: receiver });
@@ -1937,7 +1949,8 @@ class SemanticBuilder {
 			symbolKey: joinNamePath(namePath),
 			kind,
 			span,
-			scopeIndex: scopeRef.index,
+			scope: scopeRef.id,
+			publicationSlot: this.decls.length,
 			visibleFrom: { unit: span.unit, offset: span.end },
 			isGlobal,
 			scopeRef,
@@ -1945,7 +1958,7 @@ class SemanticBuilder {
 			valueSource: declarationValueSource(id),
 		};
 		if (options.lexical) {
-			scopeRef.declarationIndices.push(this.decls.length);
+			scopeRef.declarations.push(decl);
 		}
 		this.decls.push(decl);
 		this.declById.set(id, decl);
@@ -2075,7 +2088,7 @@ class SemanticBuilder {
 			? 'identity' : 'value',
 	): void {
 		const flow = this.functionValueFlowStack[this.functionValueFlowStack.length - 1];
-		const entry: DeclarationValueEntry = { file: this.path, declId: decl.id, source, relation, syntax, index, flow };
+		const entry: DeclarationValueEntry = { file: this.path, declId: decl.id, source, relation, syntax, index, flow: flow?.id };
 		let declarationSources = this.declarationValuesByDeclaration.get(decl.id);
 		if (!declarationSources) {
 			declarationSources = [];
@@ -2271,18 +2284,19 @@ class SemanticBuilder {
 		startInclusive: LuaSyntaxPoint,
 		endExclusive: LuaSyntaxPoint,
 		kind: ScopeKind,
-	): void {
+	): Scope {
 		const scope: Scope = {
-			index: this.scopes.length,
+			id: createScopeId(this.path, startInclusive, kind),
 			kind,
 			startInclusive,
 			endExclusive,
 			parent: this.scopeStack.length > 0 ? this.scopeStack[this.scopeStack.length - 1] : null,
 			bindings: new Map(),
-			declarationIndices: [],
+			declarations: [],
 		};
 		this.scopes.push(scope);
 		this.scopeStack.push(scope);
+		return scope;
 	}
 
 	private leaveScope(): void {
@@ -2346,23 +2360,13 @@ function toDecl(internal: InternalDecl): Decl {
 		symbolKey: internal.symbolKey,
 		kind: internal.kind,
 		span: internal.span,
-		scopeIndex: internal.scopeIndex,
+		scope: internal.scope,
 		visibleFrom: internal.visibleFrom,
 		isGlobal: internal.isGlobal,
 		signature: internal.signature,
 	};
 }
 
-function toSemanticScope(scope: Scope): SemanticScope {
-	return {
-		kind: scope.kind,
-		startInclusive: scope.startInclusive,
-		endExclusive: scope.endExclusive,
-		parentIndex: scope.parent ? scope.parent.index : -1,
-		declarationIndices: scope.declarationIndices.slice(),
-		implicitSelfValue: scope.implicitSelfValue,
-	};
-}
 
 function extractNamePath(expression: LuaExpression): string[] {
 	switch (expression.kind) {

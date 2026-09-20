@@ -4,6 +4,7 @@ import { FunctionSummaryStore } from '../../toolchain/ts/lua/semantic/function_s
 import { WorkspaceValueIdentityIndex } from '../../toolchain/ts/lua/semantic/identity';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { declarationValueSource, literalValueSource, NIL_VALUE_SOURCE, semanticValueSourcesEqual, unknownValueSource } from '../../toolchain/ts/lua/semantic/value_graph';
+import { SourceChangeMap } from '../../toolchain/ts/text/source_changes';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { semanticSymbolAt } from './semantic_test_harness';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
@@ -106,7 +107,8 @@ test('nested closures retain their own returns and the enclosing binding for cal
 		'end',
 	].join('\n'), 'closures.lua');
 	const [inner, outer] = file.functionValueFlows;
-	assert.equal(inner.lexicalOwner, outer);
+	assert.equal(file.scopeParents.get(inner.id), outer.id);
+	assert.equal('lexicalOwner' in inner, false);
 	assert.equal(inner.declaration, undefined);
 	assert.notEqual(outer.declaration, undefined);
 	assert.equal(outer.returns[0].statement.expressions[0], inner.expression);
@@ -205,4 +207,29 @@ test('possible call results retain every body through the public workspace resol
 	assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(instance.id)).map(decl => decl.name).sort(), ['first', 'second']);
 	assert.equal(semanticSymbolAt(snapshot, 'use.lua', 3, 17)!.range.start.line, 2);
 	assert.equal(semanticSymbolAt(snapshot, 'use.lua', 3, 33)!.range.start.line, 3);
+});
+
+
+test('shared nested flow occurrences attach to the current outer body without retaining it', () => {
+	const padding = '-- flow boundary\n'.repeat(80);
+	const source = 'local function outer()\n' + padding
+		+ 'local function inner() return 1 end\nreturn inner\nend\nreturn outer';
+	const workspace = new LuaSemanticWorkspace();
+	const old = workspace.updateFile('owners.lua', source);
+	const insertion = source.indexOf(padding);
+	const inserted = 'do local inserted = 1 end; ';
+	const current = workspace.updateFile('owners.lua', source.slice(0, insertion) + inserted + source.slice(insertion),
+		SourceChangeMap.unchanged(source.length).append([{ offset: insertion, deletedLength: 0, insertedLength: inserted.length }]));
+	const [oldInner, oldOuter] = old.functionValueFlows;
+	const [newInner, newOuter] = current.functionValueFlows;
+	assert.equal(newInner.id, oldInner.id);
+	assert.notEqual(newOuter.id, oldOuter.id);
+	assert.equal(old.scopeParents.get(oldInner.id), oldOuter.id);
+	assert.equal(current.scopeParents.get(newInner.id), newOuter.id);
+	for (const file of [old, current]) {
+		const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+		const [inner, outer] = file.functionValueFlows;
+		assert.equal(summaries.get(summaries.idForFlow(inner.id)).lexicalOwner, summaries.idForFlow(outer.id));
+		assert.equal('lexicalOwner' in inner, false);
+	}
 });

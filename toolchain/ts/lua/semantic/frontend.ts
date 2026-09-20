@@ -659,7 +659,7 @@ function isReferenceInsideDeclScope(ref: Ref, decl: Decl, source: FileSemanticDa
 	if (decl.file !== ref.file) {
 		return false;
 	}
-	const scope = source.scopes[decl.scopeIndex];
+	const scope = source.scopesById.get(decl.scope)!;
 	const locations = source.chunk.locations;
 	const offset = locations.offset(ref.span.unit, ref.span.start);
 	return offset >= locations.offset(scope.startInclusive.unit, scope.startInclusive.offset)

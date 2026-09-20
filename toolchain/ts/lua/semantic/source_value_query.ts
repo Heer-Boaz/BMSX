@@ -117,7 +117,7 @@ export class LuaSourceValueQuery {
 			} else if (inputs.reason === 'parameter-input' || inputs.reason === 'receiver') {
 				const parameter = this.summaries.terms.parameterOwner(current.source.value.root)!;
 				const summary = this.summaries.get(parameter.summary);
-				const activation = this.calls.scope(summary.source, current.activation);
+				const activation = this.calls.scope(summary.source.id, current.activation);
 				if (activation.kind === 'projection') {
 					boundaries.push({ source: current, reason: inputs.reason });
 					continue;
@@ -170,7 +170,7 @@ export class LuaSourceValueQuery {
 		switch (source.kind) {
 			case 'module-export': case 'module-bypass': return this.calls.module;
 			case 'declaration-write': return this.calls.scope(source.write.flow, activation);
-			case 'value-transfer': return this.calls.scope(source.flow, activation);
+			case 'value-transfer': return this.calls.scope(source.flow?.id, activation);
 			default: return activation;
 		}
 	}

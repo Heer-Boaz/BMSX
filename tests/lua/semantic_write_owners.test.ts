@@ -19,7 +19,7 @@ test('each write belongs to its executing function, not the captured declaration
 	const selected = file.decls.find(declaration => declaration.name === 'selected')!;
 	const [left, right] = file.functionValueFlows;
 	const values = file.declarationValues.filter(entry => entry.declId === selected.id);
-	assert.deepEqual(values.map(entry => entry.flow), [undefined, left, right]);
+	assert.deepEqual(values.map(entry => entry.flow), [undefined, left.id, right.id]);
 	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
 	const target = summaries.terms.compileSource(declarationValueSource(selected.id));
 	for (const [index, value] of [11, 22].entries()) {
@@ -46,8 +46,8 @@ test('equal writes in different functions retain separate execution owners', () 
 	const selected = file.decls.find(declaration => declaration.name === 'selected')!;
 	const values = file.declarationValues.filter(entry => entry.declId === selected.id);
 	assert.equal(values.length, 3);
-	assert.equal(values[1].flow, file.functionValueFlows[0]);
-	assert.equal(values[2].flow, file.functionValueFlows[1]);
+	assert.equal(values[1].flow, file.functionValueFlows[0].id);
+	assert.equal(values[2].flow, file.functionValueFlows[1].id);
 });
 
 test('summary and instantiated field rows retain equal RHS occurrences and writer scopes', () => {
@@ -107,7 +107,7 @@ test('nested writes do not acquire the outer function that declared their destin
 	const [inner, outer] = file.functionValueFlows;
 	const selected = file.decls.find(declaration => declaration.name === 'selected')!;
 	const values = file.declarationValues.filter(entry => entry.declId === selected.id);
-	assert.deepEqual(values.map(entry => entry.flow), [outer, inner]);
+	assert.deepEqual(values.map(entry => entry.flow), [outer.id, inner.id]);
 	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
 	const target = summaries.terms.compileSource(declarationValueSource(selected.id));
 	assert.deepEqual(summaries.list()[0].aliases.filter(alias => alias.target === target).map(alias => alias.source),

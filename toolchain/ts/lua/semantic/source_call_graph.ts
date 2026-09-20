@@ -1,3 +1,4 @@
+import type { ScopeID } from './scope_facts';
 import type { CallApplication, SemanticCallContext } from './call_context';
 import type { SemanticCallGraph } from './call_graph';
 import type { FunctionSummaryID, FunctionSummaryStore, TermID } from './function_summary';
@@ -111,12 +112,12 @@ export class LuaSourceCallQuery {
 	}
 
 	/** A captured binding follows its lexical creator, never an arbitrary incoming caller. */
-	public scope(body: FunctionValueFlowEntry, from: LuaSourceActivation): LuaFunctionSourceActivation;
-	public scope(body: FunctionValueFlowEntry | undefined, from: LuaSourceActivation): LuaSourceActivation;
-	public scope(body: FunctionValueFlowEntry | undefined, from: LuaSourceActivation): LuaSourceActivation {
+	public scope(body: ScopeID, from: LuaSourceActivation): LuaFunctionSourceActivation;
+	public scope(body: ScopeID | undefined, from: LuaSourceActivation): LuaSourceActivation;
+	public scope(body: ScopeID | undefined, from: LuaSourceActivation): LuaSourceActivation {
 		if (body === undefined) return this.module;
 		for (let current = from; current.kind !== 'module'; current = current.lexicalOwner) {
-			if (current.body === body) return current;
+			if (current.body.id === body) return current;
 		}
 		// A write from another body is a projected contribution, not proof that it ran here.
 		return this.functionActivation(-this.summaries.idForFlow(body));

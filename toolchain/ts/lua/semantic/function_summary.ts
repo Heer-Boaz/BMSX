@@ -1,3 +1,4 @@
+import type { ScopeID } from './scope_facts';
 import type { FileSemanticData, SymbolID } from './model';
 import { LuaCompletion } from '../analysis/completion';
 import { computeAssignmentValues } from './assignment_values';
@@ -559,7 +560,7 @@ export class FunctionSummaryStore {
 	public readonly terms: SemanticTermStore;
 	private readonly summaries: FunctionSummary[] = [];
 	private readonly declarationsBySummary: (SymbolID | undefined)[] = [];
-	private readonly summaryIdByFlow: Map<FunctionValueFlowEntry, FunctionSummaryID> = new Map();
+	private readonly summaryIdByFlow: Map<ScopeID, FunctionSummaryID> = new Map();
 	private readonly summaryIdsByFunctionTerm: Map<TermID, FunctionSummaryID[]> = new Map();
 	private readonly summaryByDeclaration: Map<SymbolID, FunctionSummaryID[]> = new Map();
 	private readonly receiverProjectionByParameter: Map<TermID, TermID> = new Map();
@@ -569,15 +570,25 @@ export class FunctionSummaryStore {
 		identities: WorkspaceValueIdentityIndex,
 	) {
 		const flows: FunctionValueFlowEntry[] = [];
-		const valuesByFlow = new Map<FunctionValueFlowEntry, DeclarationValueEntry[]>();
+		const lexicalOwners = new Map<ScopeID, ScopeID>();
+		const valuesByFlow = new Map<ScopeID, DeclarationValueEntry[]>();
 		for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
 			const file = files[fileIndex];
 			for (let flowIndex = 0; flowIndex < file.functionValueFlows.length; flowIndex += 1) {
 				const flow = file.functionValueFlows[flowIndex];
 				const id = (flows.length + 1) as FunctionSummaryID;
 				flows.push(flow);
-				valuesByFlow.set(flow, []);
-				this.summaryIdByFlow.set(flow, id);
+				valuesByFlow.set(flow.id, []);
+				this.summaryIdByFlow.set(flow.id, id);
+				let parent = file.scopeParents.get(flow.id);
+				while (parent !== undefined) {
+					const scope = file.scopesById.get(parent)!;
+					if (scope.kind === 'function' || scope.kind === 'method') {
+						lexicalOwners.set(flow.id, parent);
+						break;
+					}
+					parent = file.scopeParents.get(parent);
+				}
 			}
 		}
 
@@ -650,7 +661,8 @@ export class FunctionSummaryStore {
 		for (let flowIndex = 0; flowIndex < flows.length; flowIndex += 1) {
 			const flow = flows[flowIndex];
 			const id = (flowIndex + 1) as FunctionSummaryID;
-			const summary = this.buildSummary(id, flow, valuesByFlow.get(flow)!, capturedWrites);
+			const summary = this.buildSummary(id, flow, valuesByFlow.get(flow.id)!, capturedWrites,
+				this.summaryIdByFlow.get(lexicalOwners.get(flow.id)));
 			this.summaries[id] = summary;
 			this.appendSummary(this.summaryIdsByFunctionTerm, summary.functionValue, id);
 			if (flow.declaration !== undefined) {
@@ -675,7 +687,7 @@ export class FunctionSummaryStore {
 		return this.summaries.length - 1;
 	}
 
-	public idForFlow(flow: FunctionValueFlowEntry): FunctionSummaryID {
+	public idForFlow(flow: ScopeID): FunctionSummaryID {
 		return this.summaryIdByFlow.get(flow)!;
 	}
 
@@ -735,6 +747,7 @@ export class FunctionSummaryStore {
 		flow: FunctionValueFlowEntry,
 		declarationValues: readonly DeclarationValueEntry[],
 		capturedWrites: ReadonlySet<SymbolID>,
+		lexicalOwner: FunctionSummaryID | undefined,
 	): FunctionSummary {
 		const assignmentValues = computeAssignmentValues(flow, declarationValues, capturedWrites);
 		const writesByDeclaration = new Map<SymbolID, DeclarationValueEntry[]>();
@@ -841,9 +854,7 @@ export class FunctionSummaryStore {
 			id,
 			source: flow,
 			functionValue: this.terms.compileSource(flow.functionValue),
-			lexicalOwner: flow.lexicalOwner
-				? this.summaryIdByFlow.get(flow.lexicalOwner)
-				: undefined,
+			lexicalOwner,
 			parameters,
 			receiverProjection: flow.receiverProjection
 				? this.terms.compileSource(flow.receiverProjection)

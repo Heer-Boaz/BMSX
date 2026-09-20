@@ -6,6 +6,7 @@ import { walkLuaAst } from '../syntax/ast/traversal';
 import { isLuaTrivia } from '../syntax/token';
 import type { LuaTokenSequence } from '../syntax/token_sequence';
 import { buildLuaFileSemanticData, type FileSemanticData } from './model';
+import type { ScopeID } from './scope_facts';
 import { compareSourcePosition, sourcePositionKey, sourceRangeKey } from './source_range';
 
 class FileCorrespondence {
@@ -14,7 +15,7 @@ class FileCorrespondence {
 	private readonly oldTokens: LuaTokenSequence;
 	private readonly newTokens: LuaTokenSequence;
 	private readonly tokens: Int32Array;
-	private readonly scopes: Int32Array;
+	private readonly scopes = new Map<ScopeID, ScopeID>();
 	private readonly oldDeclarations = new Map<string, number>();
 	private readonly newDeclarations = new Map<string, number>();
 	private readonly forwardFunctions = new Map<string, SourceRange>();
@@ -28,13 +29,14 @@ class FileCorrespondence {
 		this.oldTokens = oldParsed.tokens;
 		this.newTokens = newParsed.tokens;
 		this.tokens = matchLuaTokens(this.oldTokens, this.newTokens);
-		const newScopes = new Map<string, number>();
+		const newScopes = new Map<string, ScopeID>();
 		for (let index = 1; index < this.newFile.scopes.length; index += 1) {
-			const start = this.newFile.scopes[index].startInclusive;
-			newScopes.set(sourcePositionKey(this.newFile.chunk.locations.position(start.unit, start.offset)), index);
+			const scope = this.newFile.scopes[index];
+			const start = scope.startInclusive;
+			newScopes.set(sourcePositionKey(this.newFile.chunk.locations.position(start.unit, start.offset)), scope.id);
 		}
-		this.scopes = new Int32Array(this.oldFile.scopes.length).fill(-1);
-		this.scopes[0] = 0; // The same module is the root of both lexical trees.
+		// Independent roots correspond by module ownership, not by occurrence identity.
+		this.scopes.set(this.oldFile.scopes[0].id, this.newFile.scopes[0].id);
 		for (let index = 1; index < this.oldFile.scopes.length; index += 1) {
 			const scope = this.oldFile.scopes[index];
 			const start = this.oldFile.chunk.locations.position(scope.startInclusive.unit, scope.startInclusive.offset);
@@ -46,8 +48,9 @@ class FileCorrespondence {
 			const token = this.newTokens.getSignificant(targetToken);
 			const end = this.newFile.chunk.locations.range(token).end;
 			const target = newScopes.get(`${end.line}:${end.column + 1}`);
-			if (target !== undefined && this.newFile.scopes[target].parentIndex === this.scopes[scope.parentIndex]) {
-				this.scopes[index] = target;
+			if (target !== undefined
+				&& this.newFile.scopeParents.get(target) === this.scopes.get(this.oldFile.scopeParents.get(scope.id)!)) {
+				this.scopes.set(scope.id, target);
 			}
 		}
 		for (let index = 0; index < this.oldFile.decls.length; index += 1) {
@@ -68,10 +71,11 @@ class FileCorrespondence {
 		walkLuaAst(this.newFile.chunk, node => {
 			if (node.kind === LuaSyntaxKind.FunctionExpression) newFunctions.set(sourceRangeKey(this.newFile.chunk.locations.range(node.span)), node);
 		});
-		const oldScopes = new Map<string, number>();
+		const oldScopes = new Map<string, ScopeID>();
 		for (let index = 1; index < this.oldFile.scopes.length; index += 1) {
-			const start = this.oldFile.scopes[index].startInclusive;
-			oldScopes.set(sourcePositionKey(this.oldFile.chunk.locations.position(start.unit, start.offset)), index);
+			const scope = this.oldFile.scopes[index];
+			const start = scope.startInclusive;
+			oldScopes.set(sourcePositionKey(this.oldFile.chunk.locations.position(start.unit, start.offset)), scope.id);
 		}
 		for (const oldFunction of oldFunctions.values()) {
 			const mapped = this.mapRange(this.oldFile.chunk.locations.range(oldFunction.span), true);
@@ -80,7 +84,7 @@ class FileCorrespondence {
 			if (newFunction === undefined) continue;
 			const oldScope = oldScopes.get(sourcePositionKey(this.oldFile.chunk.locations.position(oldFunction.body.span.unit, oldFunction.body.startInclusive)))!;
 			const newScope = newScopes.get(sourcePositionKey(this.newFile.chunk.locations.position(newFunction.body.span.unit, newFunction.body.startInclusive)))!;
-			if (this.scopes[oldScope] !== newScope) continue;
+			if (this.scopes.get(oldScope) !== newScope) continue;
 			this.forwardFunctions.set(sourceRangeKey(this.oldFile.chunk.locations.range(oldFunction.span)), this.newFile.chunk.locations.range(newFunction.span));
 			this.backwardFunctions.set(sourceRangeKey(this.newFile.chunk.locations.range(newFunction.span)), this.oldFile.chunk.locations.range(oldFunction.span));
 		}
@@ -147,7 +151,7 @@ class FileCorrespondence {
 		if (newIndex === undefined) return undefined;
 		const oldDecl = this.oldFile.decls[oldIndex];
 		const newDecl = this.newFile.decls[newIndex];
-		return this.scopes[oldDecl.scopeIndex] === newDecl.scopeIndex ? this.newFile.chunk.locations.range(newDecl.span) : undefined;
+		return this.scopes.get(oldDecl.scope) === newDecl.scope ? this.newFile.chunk.locations.range(newDecl.span) : undefined;
 	}
 
 	public functionRange(range: SourceRange): SourceRange | undefined {

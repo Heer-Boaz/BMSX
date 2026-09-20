@@ -1,15 +1,16 @@
-import type { Decl, FileSemanticData } from './model';
+import type { Decl, FileSemanticData, SemanticScope } from './model';
+import type { ScopeID } from './scope_facts';
 import type { SemanticValueSource } from './value_graph';
 
-export function findInnermostScopeIndex(
+export function findInnermostScope(
 	source: FileSemanticData,
 	line: number,
 	column: number,
-): number {
-	return findInnermostScopeIndexAtOffset(source, source.chunk.locations.offsetAt({ line, column }));
+): SemanticScope | undefined {
+	return findInnermostScopeAtOffset(source, source.chunk.locations.offsetAt({ line, column }));
 }
 
-function findInnermostScopeIndexAtOffset(source: FileSemanticData, offset: number): number {
+function findInnermostScopeAtOffset(source: FileSemanticData, offset: number): SemanticScope | undefined {
 	const locations = source.chunk.locations;
 	const scopes = source.scopes;
 	let low = 0;
@@ -23,21 +24,21 @@ function findInnermostScopeIndexAtOffset(source: FileSemanticData, offset: numbe
 			high = middle;
 		}
 	}
-	let scopeIndex = low - 1;
-	while (scopeIndex >= 0) {
-		const scope = scopes[scopeIndex];
+	let scope: SemanticScope | undefined = scopes[low - 1];
+	while (scope !== undefined) {
 		const end = scope.endExclusive;
 		if (offset < locations.offset(end.unit, end.offset)) {
-			return scopeIndex;
+			return scope;
 		}
-		scopeIndex = scope.parentIndex;
+		const parent = source.scopeParents.get(scope.id);
+		scope = parent === undefined ? undefined : source.scopesById.get(parent)!;
 	}
-	return -1;
+	return undefined;
 }
 
 export type LuaLexicalBinding =
 	| { readonly kind: 'declaration'; readonly declaration: Decl }
-	| { readonly kind: 'receiver'; readonly scopeIndex: number }
+	| { readonly kind: 'receiver'; readonly scope: ScopeID }
 	| { readonly kind: 'global'; readonly name: string };
 
 /** Lexical storage identity, not a declaration's inferred value or receiver class. */
@@ -49,30 +50,29 @@ export function findLuaLexicalBindingAt(
 ): LuaLexicalBinding {
 	const locations = source.chunk.locations;
 	const offset = locations.offsetAt({ line, column });
-	let scopeIndex = findInnermostScopeIndexAtOffset(source, offset);
-	while (scopeIndex >= 0) {
-		const scope = source.scopes[scopeIndex];
-		const indices = scope.declarationIndices;
-		for (let index = indices.length - 1; index >= 0; index -= 1) {
-			const declaration = source.decls[indices[index]];
+	let scope = findInnermostScopeAtOffset(source, offset);
+	while (scope !== undefined) {
+		for (let index = scope.declarations.length - 1; index >= 0; index -= 1) {
+			const declaration = scope.declarations[index];
 			if (declaration.name === name
 				&& offset > locations.offset(declaration.visibleFrom.unit, declaration.visibleFrom.offset)) {
 				return { kind: 'declaration', declaration };
 			}
 		}
-		if (name === 'self' && scope.kind === 'method') return { kind: 'receiver', scopeIndex };
-		scopeIndex = scope.parentIndex;
+		if (name === 'self' && scope.kind === 'method') return { kind: 'receiver', scope: scope.id };
+		const parent = source.scopeParents.get(scope.id);
+		scope = parent === undefined ? undefined : source.scopesById.get(parent)!;
 	}
 	return { kind: 'global', name };
 }
 
 /** Varargs belong to the nearest function, never to an enclosing variadic one. */
-export function findLuaFunctionScopeIndexAt(source: FileSemanticData, line: number, column: number): number {
-	let scopeIndex = findInnermostScopeIndex(source, line, column);
-	while (source.scopes[scopeIndex].kind === 'block' || source.scopes[scopeIndex].kind === 'loop') {
-		scopeIndex = source.scopes[scopeIndex].parentIndex;
+export function findLuaFunctionScopeAt(source: FileSemanticData, line: number, column: number): SemanticScope {
+	let scope = findInnermostScope(source, line, column)!;
+	while (scope.kind === 'block' || scope.kind === 'loop') {
+		scope = source.scopesById.get(source.scopeParents.get(scope.id)!)!;
 	}
-	return scopeIndex;
+	return scope;
 }
 
 export function findImplicitSelfValueAt(
@@ -81,7 +81,7 @@ export function findImplicitSelfValueAt(
 	column: number,
 ): SemanticValueSource | undefined {
 	const binding = findLuaLexicalBindingAt(source, 'self', line, column);
-	return binding.kind === 'receiver' ? source.scopes[binding.scopeIndex].implicitSelfValue : undefined;
+	return binding.kind === 'receiver' ? source.scopesById.get(binding.scope)!.implicitSelfValue : undefined;
 }
 
 export function collectVisibleDeclarationsAt(
@@ -91,17 +91,15 @@ export function collectVisibleDeclarationsAt(
 ): readonly Decl[] {
 	const locations = source.chunk.locations;
 	const offset = locations.offsetAt({ line, column });
-	let scopeIndex = findInnermostScopeIndexAtOffset(source, offset);
-	if (scopeIndex < 0) {
+	let scope = findInnermostScopeAtOffset(source, offset);
+	if (scope === undefined) {
 		return [];
 	}
 	const declarations: Decl[] = [];
 	const names = new Set<string>();
-	while (scopeIndex >= 0) {
-		const scope = source.scopes[scopeIndex];
-		const indices = scope.declarationIndices;
-		for (let index = indices.length - 1; index >= 0; index -= 1) {
-			const declaration = source.decls[indices[index]];
+	while (scope !== undefined) {
+		for (let index = scope.declarations.length - 1; index >= 0; index -= 1) {
+			const declaration = scope.declarations[index];
 			if (names.has(declaration.name)
 				|| offset <= locations.offset(declaration.visibleFrom.unit, declaration.visibleFrom.offset)) {
 				continue;
@@ -110,7 +108,8 @@ export function collectVisibleDeclarationsAt(
 			declarations.push(declaration);
 		}
 		if (scope.kind === 'method') names.add('self');
-		scopeIndex = scope.parentIndex;
+		const parent = source.scopeParents.get(scope.id);
+		scope = parent === undefined ? undefined : source.scopesById.get(parent)!;
 	}
 	return declarations;
 }

@@ -33,7 +33,8 @@ function answers(snapshot: LuaSemanticWorkspaceSnapshot) {
 			kind: scope.kind,
 			start: file.chunk.locations.position(scope.startInclusive.unit, scope.startInclusive.offset),
 			end: file.chunk.locations.position(scope.endExclusive.unit, scope.endExclusive.offset),
-			parent: scope.parentIndex, declarations: scope.declarationIndices,
+			parent: file.scopes.findIndex(parent => parent.id === file.scopeParents.get(scope.id)),
+			declarations: scope.declarations.map(decl => file.decls.indexOf(decl)),
 		})),
 		declarations: file.decls.map(decl => ({
 			name: decl.namePath, range: file.chunk.locations.range(decl.span),

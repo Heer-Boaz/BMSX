@@ -7,7 +7,7 @@ import { luaSourceRangeToTextRange, luaSourcePositionToTextRange, luaSourcePosit
 import { createLuaTableFieldTransfer } from '../../../ide/language/lua/table_field_transfer';
 import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
 import { LuaRelocationAnalysis } from '../../../toolchain/ts/lua/semantic/relocation';
-import { findLuaFunctionScopeIndexAt, findLuaLexicalBindingAt } from '../../../toolchain/ts/lua/semantic/scope_query';
+import { findLuaFunctionScopeAt, findLuaLexicalBindingAt } from '../../../toolchain/ts/lua/semantic/scope_query';
 import { LuaSyntaxKind, type LuaTableConstructorExpression } from '../../../toolchain/ts/lua/syntax/ast';
 import { walkLuaAst } from '../../../toolchain/ts/lua/syntax/ast/traversal';
 
@@ -48,8 +48,8 @@ for (const path of paths) {
 		const predicted = new Set(changes.map(change => change.kind === 'identifier' ? change.reference : change.expression));
 		const evidence = analysis.bindings.map(entry => {
 			const occurrence = entry.kind === 'identifier' ? locations.range(entry.reference.span) : locations.range(entry.expression.span);
-			const scopeStart = entry.kind === 'vararg' ? original.scopes[entry.scopeIndex].startInclusive
-				: entry.binding.kind === 'receiver' ? original.scopes[entry.binding.scopeIndex].startInclusive : undefined;
+			const scopeStart = entry.kind === 'vararg' ? original.scopesById.get(entry.scope)!.startInclusive
+				: entry.binding.kind === 'receiver' ? original.scopesById.get(entry.binding.scope)!.startInclusive : undefined;
 			const position = scopeStart !== undefined ? locations.position(scopeStart.unit, scopeStart.offset)
 				: entry.kind === 'identifier' && entry.binding.kind === 'declaration'
 					? locations.position(entry.binding.declaration.span.unit, entry.binding.declaration.span.start) : undefined;
@@ -75,13 +75,13 @@ for (const path of paths) {
 					const position = after.chunk.locations.position(binding.declaration.span.unit, binding.declaration.span.start);
 					same = entry.binding.kind === binding.kind && luaSourcePositionMatchesTextRange(model.buffer, position, origin!);
 				} else {
-					const point = after.scopes[binding.scopeIndex].startInclusive;
+					const point = after.scopesById.get(binding.scope)!.startInclusive;
 					const position = after.chunk.locations.position(point.unit, point.offset);
 					same = entry.binding.kind === binding.kind && luaSourcePositionMatchesTextRange(model.buffer, position, origin!);
 				}
 			} else {
-				const scope = findLuaFunctionScopeIndexAt(after, cursor.row + 1, cursor.column + 1);
-				const point = after.scopes[scope].startInclusive;
+				const scope = findLuaFunctionScopeAt(after, cursor.row + 1, cursor.column + 1);
+				const point = scope.startInclusive;
 				same = luaSourcePositionMatchesTextRange(model.buffer, after.chunk.locations.position(point.unit, point.offset), origin!);
 			}
 			assert.equal(!same, predicted.has(entry.kind === 'identifier' ? entry.reference : entry.expression),

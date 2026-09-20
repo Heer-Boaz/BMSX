@@ -35,7 +35,7 @@ test('written contributions retain equal-valued occurrences and self-assignment 
 	assert.ok(semanticValueSourcesEqual(contributions[3].source, declarationValueSource(declaration.id)));
 	assert.ok(contributions.slice(0, 4).every(item => item.flow === undefined && item.index === 0));
 	const flow = file.functionValueFlows[0];
-	assert.equal(contributions[4].flow, flow);
+	assert.equal(contributions[4].flow, flow.id);
 	assert.equal(contributions[4].syntax, flow.expression.body.body.get(0)!);
 	assert.equal(contributions[5].syntax, flow.expression.body.body.get(1)!);
 	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
