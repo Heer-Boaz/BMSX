@@ -500,6 +500,11 @@ for (const [name, body, moduleCalls] of [
  local result = holder[1](); return result == value`, 'return entry(7), entry(8)'],
 	['member callback', `local holder = { run = function() return consume(value) end }
  local result = holder.run(); return result == value`, 'return entry(7), entry(8)'],
+	['string-key member callback', `local holder = { run = function() return consume(value) end }
+ local result = holder['run'](); return result == value`, 'return entry(7), entry(8)'],
+	['aliased member callback', `local callback = function() return consume(value) end
+ local holder = { run = callback }
+ local result = holder.run(); return result == value`, 'return entry(7), entry(8)'],
 ] as const) {
 	test(`cold callable-use demand discovers module-rooted applications through a ${name}`, () => {
 		const source = `local function consume(value) return value end
@@ -552,6 +557,29 @@ entry(function() end, 'run')`);
 	}
 	for (const call of demand.topLevelCalls) assert.ok(demand.calleeCallsForTerm(call.callee).includes(call));
 	assert.equal(instantiation.frames.count, 0, 'a use is a selection fact, not a resolved function call');
+});
+
+test('authored member destinations select callable uses without proving same-name callees', () => {
+	const { file, summaries, demand, instantiation, graph } = callQueries(`local function entry(value)
+ local holder = { run = function() return value end }
+ local unrelated = { run = function() return false end }
+ return holder.run()
+end
+entry(7)
+entry(8)`);
+	const call = file.refs.find(reference => reference.name === 'run' && reference.call !== undefined)!.call!;
+	const fields = file.decls.filter(declaration => declaration.name === 'run');
+	const selected = summaries.summaryIdsForDeclaration(fields[0].id)[0];
+	const unrelated = summaries.summaryIdsForDeclaration(fields[1].id)[0];
+	assert.equal(demand.directTargets(call).length, 0, 'a written destination is not a proven callee');
+	assert.equal(instantiation.frames.count, 0, 'selection does not instantiate a body');
+	const contexts = graph.callContexts(call);
+	assert.ok(contexts.some(context => context.ownerFrame > 0));
+	for (const context of contexts) {
+		assert.ok(context.applications.length > 0);
+		assert.deepEqual(context.applications.map(application => application.callee), [selected]);
+	}
+	assert.equal(instantiation.frames.first(unrelated), 0, 'equal member names do not create an unrelated invocation');
 });
 
 test('callable-use reads track empty reverse rows and cycles, not unrelated assignment growth', () => {

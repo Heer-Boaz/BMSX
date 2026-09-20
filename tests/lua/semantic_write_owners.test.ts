@@ -58,8 +58,9 @@ local function install()
 end`, 'equal-fields.lua');
 	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
 	const summary = summaries.list()[0];
-	const field = file.decls.find(declaration => declaration.name === 'task')!;
-	const sources = file.declarationValuesByDeclaration.get(field.id)!;
+	const fields = file.decls.filter(declaration => declaration.name === 'task');
+	assert.equal(fields.length, 3, 'each written member owns its definition occurrence');
+	const sources = fields.map(field => file.declarationValuesByDeclaration.get(field.id)![0]);
 	assert.equal(summary.writes.length, 2, 'equal semantic values are not equal source occurrences');
 	assert.equal(summary.writes[0].value, summary.writes[1].value);
 	assert.deepEqual(summary.writes.map(write => write.source), sources.slice(1));
@@ -128,10 +129,15 @@ test('a module write stays a module effect even when a function first named the 
 	assert.equal(writes.length, 1);
 	assert.equal(file.memberValues.length, 1);
 	assert.equal(file.functionValueFlows[0].members.length, 1);
-	const declaration = file.decls.find(entry => entry.name === 'selected')!;
-	const target = summaries.terms.compileSource(declarationValueSource(declaration.id));
-	assert.deepEqual(demand.aliases.filter(alias => alias.target === target).map(alias => alias.source),
+	const [bodyDefinition, moduleDefinition] = file.decls.filter(entry => entry.name === 'selected');
+	const bodyTarget = summaries.terms.compileSource(declarationValueSource(bodyDefinition.id));
+	const moduleTarget = summaries.terms.compileSource(declarationValueSource(moduleDefinition.id));
+	assert.deepEqual(demand.aliases.filter(alias => alias.target === bodyTarget), [],
+		'the body definition does not own the later module write');
+	assert.deepEqual(demand.aliases.filter(alias => alias.target === moduleTarget).map(alias => alias.source),
 		[summaries.terms.compileSource(literalValueSource({ kind: 'number', value: 22 }))]);
+	assert.deepEqual(summaries.list()[0].aliases.filter(alias => alias.target === bodyTarget).map(alias => alias.source),
+		[summaries.terms.compileSource(literalValueSource({ kind: 'number', value: 11 }))]);
 });
 
 test('the public resolver sees a module replacement after a function introduced the field', () => {

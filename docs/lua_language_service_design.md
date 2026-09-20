@@ -65,6 +65,19 @@ once per snapshot and memoized:
 4. the prototype chain, from `setmetatable(C, { __index = B })`, `C.__index = C`,
    and **prototype summaries** (below).
 
+**Written member definitions.** Each authored field/write/function has its own
+declaration occurrence; `MemberValueEntry.owner` plus `name` identifies the raw
+storage path, independently of navigation. Members are not coalesced by the
+binder. Interactive navigation combines shape lookup with file-owned direct
+written-path evidence (`written_declarations.ts`), so an explicit write on an
+otherwise unknown receiver can be found without inventing a receiver type.
+This direct query follows exact paths/direct constructors only, not aliases or
+caller effects. Dynamic/unknown-owner writes retain their own declaration but
+cannot match unrelated reads. Completion remains shape-based; hover presents
+distinct labels once while navigation keeps the occurrences. Signature
+optionality and arity diagnostics consume direct written destinations rather
+than former binder member witnesses.
+
 **Prototype summaries.** A function whose body sets a metatable `__index` on
 data reachable from its parameters gets a summary, computed once per function
 from its own body: e.g. `prefab.define(source)` sets

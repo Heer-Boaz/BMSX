@@ -131,7 +131,7 @@ for (const path of paths) {
 				workspace.updateFiles([analysis]);
 				const snapshot = workspace.getSnapshot();
 				const publishEnd = performance.now();
-				const reference = analysis.refs.find(ref => ref.receiverValue !== undefined
+				const reference = analysis.refs.find(ref => !ref.isWrite && ref.receiverValue !== undefined
 					&& (ref.referenceKind === 'method' || ref.referenceKind === 'member'))!;
 				const queryStart = performance.now();
 				targetCount = snapshot.symbolResolver.resolveReferenceTargets(reference).length;
@@ -237,6 +237,6 @@ for (const { path, file, scenario, forward, undo } of lexicalWorkloads) {
 
 console.log(JSON.stringify({
 	node: process.version, cpu: cpus()[0].model, workspaceFiles: files.length, warmup, samples,
-	note: 'Full-source, incremental-lexical and incremental-syntax phases and public updates with/without highlighting are separate warm passes. Full-source and lexical-only passes parse the entire file; binding remains whole-file in all passes. Public timings include getSnapshot, not queries. WithHighlight also includes lazy annotation projection; analysis-only updates exclude it. Phase totals include highlighting after queries, so projection does not have a pristine cold location owner. Maps are composed from known forward/undo deltas outside timing. Completion follows the member query; not a cold completion or UI-frame measurement. Lexical and syntax work counts are separate untimed forward/undo passes after all timings; marker counts exclude one-time cold edit-index construction; scannedWidth counts consumed UTF-16 units, not lookahead reads.',
+	note: 'Full-source, incremental-lexical and incremental-syntax phases and public updates with/without highlighting are separate warm passes. Full-source and lexical-only passes parse the entire file; binding remains whole-file in all passes. Public timings include getSnapshot, not queries. WithHighlight also includes lazy annotation projection; analysis-only updates exclude it. Phase totals include highlighting after queries, so projection does not have a pristine cold location owner. Maps are composed from known forward/undo deltas outside timing. The first member query selects a read, not an authored definition/write witness. Completion follows that read; not a cold completion or UI-frame measurement. Lexical and syntax work counts are separate untimed forward/undo passes after all timings; marker counts exclude one-time cold edit-index construction; scannedWidth counts consumed UTF-16 units, not lookahead reads.',
 	results, lexicalWork, syntaxWork,
 }, null, 2));

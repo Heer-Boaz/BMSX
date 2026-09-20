@@ -5,11 +5,13 @@ import type { HashLookup } from '../../collections/hash_map';
 import type { Decl, FileSemanticData, LuaCallSite, Ref, SymbolID } from './model';
 import { LuaSemanticQueryStore, type LuaSemanticQueryMetrics } from './query_store';
 import {
+	appendValueMember,
 	declarationValueSource,
 	type SemanticValueSource,
 	type FunctionValueFlowEntry,
 } from './value_graph';
 import { LuaWrittenSourceQuery } from './written_sources';
+import { getLuaWrittenDeclarations } from './written_declarations';
 import { LuaDefinitionTypes } from './definition_types';
 import { LuaModuleImportQuery } from './module_import_query';
 import type { LuaSourceCallGraph } from './source_call_graph';
@@ -168,7 +170,13 @@ export class WorkspaceSymbolResolver {
 		const callee = callSite.directTarget !== undefined
 			? declarationValueSource(callSite.directTarget)
 			: callSite.calleeValue ?? callSite.call.callee;
-		const targets = this.definitionTypes.functionDeclarations(callee);
+		const targets = [...this.definitionTypes.functionDeclarations(callee)];
+		if (callee.steps.length > 0) {
+			const file = this.dataByPath.get(callSite.call.file)!;
+			for (const declaration of getLuaWrittenDeclarations(file, callee)) {
+				appendUniqueSymbols(targets, this.resolveDefinitionFunctionTargets(declaration));
+			}
+		}
 		this.callableTargets.set(callSite, targets);
 		return targets;
 	}
@@ -216,14 +224,19 @@ export class WorkspaceSymbolResolver {
 				if (expression.method === null && expression.callee.kind === LuaSyntaxKind.FunctionExpression) {
 					return functions.get(expression.callee);
 				}
-				// Optionality reads only a directly bound written definition in this
-				// file. Aliases, dynamic receivers and other files remain unknown;
+				// Optionality reads only direct written destinations in this file.
+				// Aliases, inferred receiver values and other files remain unknown;
 				// this is not another value-shape query or parameter/effect solver.
 				const site = calls.get(expression)!;
-				const target = site.directTarget ?? site.reference?.target;
-				if (target === undefined) return undefined;
-				const definitions = getLuaDeclaredFunctions(file, target);
-				return definitions.length === 1 ? definitions[0] : undefined;
+				const source = site.directTarget === undefined ? site.call.callee : declarationValueSource(site.directTarget);
+				let definition: FunctionValueFlowEntry | undefined;
+				for (const target of getLuaWrittenDeclarations(file, source)) {
+					for (const candidate of getLuaDeclaredFunctions(file, target)) {
+						if (definition !== undefined && definition !== candidate) return undefined;
+						definition = candidate;
+					}
+				}
+				return definition;
 			}, !this.globals.has('type'));
 			this.functionSignaturesByFile.set(file, signatures);
 		}
@@ -324,15 +337,22 @@ export class WorkspaceSymbolResolver {
 	}
 
 	private resolveReferenceTargetsUncached(ref: Ref): readonly SymbolID[] {
+		if (ref.referenceKind === 'member' || ref.referenceKind === 'method') {
+			const declarations = this.definitionTypes.lookupMember(this.definitionTypes.shapesOf(ref.receiverValue), ref.name);
+			const targets = declarations.map(declaration => declaration.id);
+			// Exact authored paths are evidence independently of receiver values;
+			// they do not infer a parameter or invent a table for an unknown value.
+			appendUniqueSymbols(targets, getLuaWrittenDeclarations(this.dataByPath.get(ref.file)!, appendValueMember(ref.receiverValue, ref.name)));
+			// Dynamic/unknown owners cannot be matched to other uses, but the
+			// authored write still names its own definition occurrence.
+			if (ref.target !== undefined && !targets.includes(ref.target)) targets.push(ref.target);
+			return targets;
+		}
 		if (ref.target) {
 			return [ref.target];
 		}
 		if (ref.referenceKind === 'self') {
 			return EMPTY_SYMBOLS;
-		}
-		if (ref.referenceKind === 'member' || ref.referenceKind === 'method') {
-			const declarations = this.definitionTypes.lookupMember(this.definitionTypes.shapesOf(ref.receiverValue), ref.name);
-			return declarations.map(declaration => declaration.id);
 		}
 		if (ref.symbolKey.length === 0) {
 			return EMPTY_SYMBOLS;

@@ -1,4 +1,5 @@
 import type { FileSemanticData, Ref, SymbolID } from './model';
+import { getLuaWrittenDeclarations } from './written_declarations';
 import { SemanticEffectIndex, type EffectRelevance } from './effect_index';
 import {
 	type FunctionCall,
@@ -162,12 +163,6 @@ export class SemanticDemandIndex {
 				}
 				if (!authored) this.appendStaticWrite({ base, name, value, declaration: member.declId, source: undefined });
 			}
-			for (let callIndex = 0; callIndex < file.callValues.length; callIndex += 1) {
-				const call = this.compileTopLevelCall(file.callValues[callIndex]);
-				topLevelCalls.push(call);
-				this.indexCall(call);
-				this.indexTopLevelCall(call);
-			}
 			for (let referenceIndex = 0; referenceIndex < file.refs.length; referenceIndex += 1) {
 				const reference = file.refs[referenceIndex];
 				if (!reference.call) {
@@ -178,12 +173,18 @@ export class SemanticDemandIndex {
 					this.appendDirectTarget(reference.call, reference.target);
 				}
 			}
-			for (let callSiteIndex = 0; callSiteIndex < file.callSites.length; callSiteIndex += 1) {
-				const callSite = file.callSites[callSiteIndex];
-				const call = callSite.reference?.call;
-				if (call && callSite.directTarget !== undefined) {
-					this.appendDirectTarget(call, callSite.directTarget);
-				}
+			// String-indexed callees have no identifier Ref. All authored calls
+			// contribute selection facts; only raw callee resolution proves them.
+			for (const site of file.callSites) {
+				if (site.call.callee.steps.length === 0) continue;
+				const written = getLuaWrittenDeclarations(file, site.call.callee);
+				if (written.length > 0) this.candidateTargetsByCall.set(site.call, written);
+			}
+			for (let callIndex = 0; callIndex < file.callValues.length; callIndex += 1) {
+				const call = this.compileTopLevelCall(file.callValues[callIndex]);
+				topLevelCalls.push(call);
+				this.indexCall(call);
+				this.indexTopLevelCall(call);
 			}
 		}
 
@@ -569,6 +570,16 @@ export class SemanticDemandIndex {
 			this.calleeCallsByTerm[call.callee] = uses;
 		}
 		uses.push(call);
+		// A written member destination selects this use, but is not its callee.
+		// Resolution still consumes the raw receiver/path before publishing calls.
+		const written = this.candidateTargetsByCall.get(call.site);
+		if (written !== undefined) for (const declaration of written) {
+			const term = this.summaries.terms.compileSource(declarationValueSource(declaration));
+			if (term === call.callee) continue;
+			let candidates = this.calleeCallsByTerm[term];
+			if (candidates === undefined) this.calleeCallsByTerm[term] = candidates = [];
+			candidates.push(call);
+		}
 		if (this.summaries.terms.kind(call.callee) !== TermKind.Member) {
 			return;
 		}
@@ -972,11 +983,11 @@ export class SemanticDemandIndex {
 			targets = this.collectCandidateTargets(call.callee);
 			this.staticTargetsByTerm[call.callee] = targets;
 		}
-		const direct = this.directTargets(call.site);
+		const retained = this.candidateTargets(call.site);
 		let candidates: SymbolID[] | undefined;
 		for (const target of targets) {
-			if ((candidates || direct).includes(target)) continue;
-			if (candidates === undefined) candidates = direct.slice();
+			if ((candidates || retained).includes(target)) continue;
+			if (candidates === undefined) candidates = retained.slice();
 			candidates.push(target);
 		}
 		if (candidates !== undefined) this.candidateTargetsByCall.set(call.site, candidates);

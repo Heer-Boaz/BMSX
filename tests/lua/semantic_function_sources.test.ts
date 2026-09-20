@@ -27,10 +27,11 @@ test('function bodies retain distinct values and returns when they write the sam
 	assert.equal(first.source.expression, firstStatement.functionExpression);
 	assert.equal(second.source.expression, secondStatement.functionExpression);
 	assert.notEqual(first.functionValue, second.functionValue, 'a storage binding is not its function value');
-	assert.equal(first.source.declaration, second.source.declaration);
+	assert.notEqual(first.source.declaration, second.source.declaration);
 	assert.deepEqual(first.returns, [summaries.terms.compileSource(literalValueSource({ kind: 'string', value: 'first' }))]);
 	assert.deepEqual(second.returns, [summaries.terms.compileSource(literalValueSource({ kind: 'string', value: 'second' }))]);
-	assert.deepEqual(summaries.summaryIdsForDeclaration(first.source.declaration!), [first.id, second.id]);
+	assert.deepEqual(summaries.summaryIdsForDeclaration(first.source.declaration!), [first.id]);
+	assert.deepEqual(summaries.summaryIdsForDeclaration(second.source.declaration!), [second.id]);
 });
 
 test('a later body without a return does not erase the earlier body return', () => {

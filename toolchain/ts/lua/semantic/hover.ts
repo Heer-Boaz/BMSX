@@ -28,24 +28,30 @@ export function provideLuaHover(
 	}
 	if (occurrence.kind === 'declaration') {
 		const functions = symbolResolver.getDeclaredFunctions(occurrence.declaration.id);
+		if (functions.length <= 1) return {
+			contents: [{ label: declarationHoverLabel(occurrence.declaration, functions[0]) }],
+			applicableRange: analysis.chunk.locations.range(occurrence.declaration.span),
+		};
+		const labels = new Set<string>();
+		for (const definition of functions) labels.add(declarationHoverLabel(occurrence.declaration, definition));
 		return {
-			contents: functions.length === 0
-				? [buildDeclarationHoverContent(occurrence.declaration)]
-				: functions.map(definition => buildDeclarationHoverContent(occurrence.declaration, definition)),
+			contents: Array.from(labels, label => ({ label })),
 			applicableRange: analysis.chunk.locations.range(occurrence.declaration.span),
 		};
 	}
 	const reference = occurrence.reference;
 	const targetIds = symbolResolver.resolveReferenceTargets(reference);
 	if (targetIds.length > 0) {
-		const signatureContents: LuaHoverContent[] = [];
+		// Navigation keeps every written occurrence. Hover presents each distinct
+		// header once, not a repeated line for every assignment to one field.
+		const labels = new Set<string>();
 		for (const target of targetIds) {
 			for (const definition of symbolResolver.getDeclaredFunctions(target)) {
-				signatureContents.push(buildDeclarationHoverContent(symbolResolver.getDeclaration(target), definition));
+				labels.add(declarationHoverLabel(symbolResolver.getDeclaration(target), definition));
 			}
 		}
-		if (signatureContents.length > 0) {
-			return { contents: signatureContents, applicableRange: analysis.chunk.locations.range(reference.span) };
+		if (labels.size > 0) {
+			return { contents: Array.from(labels, label => ({ label })), applicableRange: analysis.chunk.locations.range(reference.span) };
 		}
 		const functionTargets: SymbolID[] = [];
 		for (let index = 0; index < targetIds.length; index += 1) {
@@ -54,23 +60,17 @@ export function provideLuaHover(
 			}
 		}
 		if (functionTargets.length > 0) {
-			const contents: LuaHoverContent[] = [];
 			const displayName = formatReferenceFunctionName(reference);
 			for (let index = 0; index < functionTargets.length; index += 1) {
 				const declaration = symbolResolver.getDeclaration(functionTargets[index]);
 				for (const definition of symbolResolver.getDeclaredFunctions(declaration.id)) {
-					contents.push(buildDeclarationHoverContent(declaration, definition, displayName));
+					labels.add(declarationHoverLabel(declaration, definition, displayName));
 				}
 			}
-			return { contents, applicableRange: analysis.chunk.locations.range(reference.span) };
+		} else {
+			for (const target of targetIds) labels.add(declarationHoverLabel(symbolResolver.getDeclaration(target)));
 		}
-		const contents = new Array<LuaHoverContent>(targetIds.length);
-		for (let index = 0; index < targetIds.length; index += 1) {
-			contents[index] = buildDeclarationHoverContent(
-				symbolResolver.getDeclaration(targetIds[index]),
-			);
-		}
-		return { contents, applicableRange: analysis.chunk.locations.range(reference.span) };
+		return { contents: Array.from(labels, label => ({ label })), applicableRange: analysis.chunk.locations.range(reference.span) };
 	}
 	const builtin = builtinLookup.get(reference.symbolKey);
 	if (builtin === undefined) {
@@ -99,17 +99,13 @@ function formatMethodPath(path: string): string {
 		: `${path.slice(0, separator)}:${path.slice(separator + 1)}`;
 }
 
-function buildDeclarationHoverContent(declaration: Decl, definition?: FunctionValueFlowEntry, displayName?: string): LuaHoverContent {
+function declarationHoverLabel(declaration: Decl, definition?: FunctionValueFlowEntry, displayName?: string): string {
 	if (definition !== undefined) {
 		const style = definition.implicitReceiver ? 'method' : 'function';
 		const name = displayName === undefined ? formatFunctionName(declaration, style) : displayName;
-		return {
-			label: `(${style}) ${name}(${formatParameters(definition.expression)})`,
-		};
+		return `(${style}) ${name}(${formatParameters(definition.expression)})`;
 	}
-	return {
-		label: `(${declarationKindLabel(declaration)}) ${declaration.namePath.join('.')}`,
-	};
+	return `(${declarationKindLabel(declaration)}) ${declaration.namePath.join('.')}`;
 }
 
 function formatFunctionName(declaration: Decl, style: 'function' | 'method'): string {

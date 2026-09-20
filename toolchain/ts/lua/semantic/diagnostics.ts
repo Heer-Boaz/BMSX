@@ -33,6 +33,7 @@ import {
 	getLuaCallStyle,
 } from './call_signature';
 import { resolveStaticLuaExpressionPath } from './expression_path';
+import { getLuaWrittenDeclarations } from './written_declarations';
 
 export type LuaStaticDiagnostic = {
 	row: number;
@@ -332,31 +333,13 @@ function addCallDiagnosticsFromSemantic(
 	for (let index = 0; index < callSites.length; index += 1) {
 		const callSite = callSites[index];
 		const call = callSite.expression;
-		if (callSite.directTarget !== undefined) {
-			const declaration = symbolResolver.getDeclaration(callSite.directTarget);
-			const userMetadata = resolveUserFunctionSignature(
-				call,
-				declaration.namePath.join('.'),
-				callSite.directTarget,
-				symbolResolver,
-			);
-			if (userMetadata) {
-				validateCallArity(diagnostics, analysis.chunk.locations, call, userMetadata);
-			}
-			continue;
-		}
-		const reference = callSite.reference;
-		if (reference?.target !== undefined) {
-			const callStyle = getLuaCallStyle(call);
-			const userMetadata = resolveUserFunctionSignature(
-				call,
-				formatLuaCallReferencePath(reference, callStyle),
-				reference.target,
-				symbolResolver,
-			);
-			if (userMetadata) {
-				validateCallArity(diagnostics, analysis.chunk.locations, call, userMetadata);
-			}
+		const targets = getLuaWrittenDeclarations(analysis, callSite.call.callee);
+		if (targets.length > 0) {
+			const label = callSite.reference
+				? formatLuaCallReferencePath(callSite.reference, getLuaCallStyle(call))
+				: resolveStaticLuaExpressionPath(call.callee)!;
+			const userMetadata = resolveUserFunctionSignature(call, label, targets, symbolResolver);
+			if (userMetadata) validateCallArity(diagnostics, analysis.chunk.locations, call, userMetadata);
 			continue;
 		}
 		const metadata = resolveCallSignature(call, builtinLookup);
@@ -390,19 +373,18 @@ function resolveCallSignature(
 function resolveUserFunctionSignature(
 	call: LuaCallExpression,
 	label: string,
-	target: SymbolID,
+	targets: readonly SymbolID[],
 	symbolResolver: WorkspaceSymbolResolver,
 ): CallSignatureMetadata | null {
-	const signatures = symbolResolver.getFunctionSignatures(target);
-	if (signatures.length === 0) {
-		return null;
-	}
 	const callStyle = getLuaCallStyle(call);
-	let required = getLuaCallMinimumArgumentCount(signatures[0], callStyle);
-	for (let index = 1; index < signatures.length; index++) {
-		required = Math.min(required, getLuaCallMinimumArgumentCount(signatures[index], callStyle));
+	let required: number | undefined;
+	for (const target of targets) {
+		for (const signature of symbolResolver.getFunctionSignatures(target)) {
+			const count = getLuaCallMinimumArgumentCount(signature, callStyle);
+			required = required === undefined ? count : Math.min(required, count);
+		}
 	}
-	return { required, label };
+	return required === undefined ? null : { required, label };
 }
 
 function validateCallArity(diagnostics: LuaStaticDiagnostic[], locations: LuaSourceLocations, call: LuaCallExpression, metadata: CallSignatureMetadata): void {

@@ -1011,8 +1011,10 @@ state.count = state.count + 1
 	assert.ok(definition, 'property definition found');
 	assert.ok(definitionAgain, 'property definition found for rhs');
 	assert.equal(definition!.kind, 'property');
-	assert.equal(frontend.getFile(definition!.file).locations.range(definition!.span).start.line, 3);
-	assert.equal(frontend.getFile(definitionAgain!.file).locations.range(definitionAgain!.span).start.line, frontend.getFile(definition!.file).locations.range(definition!.span).start.line);
+	assert.equal(frontend.getFile(definition!.file).locations.range(definition!.span).start.line, 5,
+		'the assignment owns its written definition, not the constructor field');
+	assert.equal(frontend.getFile(definitionAgain!.file).locations.range(definitionAgain!.span).start.line, 3);
+	assert.deepEqual(frontend.findSymbolsByPosition('testpath', 5, secondZeroBased + 1)!.targets.map(target => target.range.start.line), [3, 5]);
 });
 
 test('semantic workspace reports references for locals', async () => {

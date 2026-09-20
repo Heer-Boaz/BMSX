@@ -97,10 +97,13 @@ export type ModuleValueEntry = {
 	readonly bypassingReturns: readonly LuaReturnStatement[];
 };
 
+/** One authored member definition, stored in its executing module/body. */
 export type MemberValueEntry = {
-	declId: SymbolID;
-	name: string;
-	owner: SemanticValueSource;
+	/** This write's definition occurrence, never an earlier member witness. */
+	readonly declId: SymbolID;
+	/** Raw destination path is owner + name, independent of the definition ID. */
+	readonly name: string;
+	readonly owner: SemanticValueSource;
 };
 
 export type FunctionReturnValueEntry = {
@@ -255,13 +258,13 @@ export function semanticValueRootKey(root: SemanticValueRoot): string {
 	let key: string;
 	switch (root.kind) {
 		case 'declaration':
-			key = `d\0${root.declId}`;
+			key = `d\0${root.declId.length}\0${root.declId}`;
 			break;
 		case 'global':
-			key = `g\0${root.symbolKey}`;
+			key = `g\0${root.symbolKey.length}\0${root.symbolKey}`;
 			break;
 		case 'module':
-			key = `m\0${root.module}`;
+			key = `m\0${root.module.length}\0${root.module}`;
 			break;
 		case 'owned':
 			key = `o\0${root.id}`;
@@ -276,17 +279,20 @@ export function semanticValueRootKey(root: SemanticValueRoot): string {
 	return key;
 }
 
+/** Length-delimited components preserve arbitrary Lua string keys and nested index paths. */
 export function semanticValueSourceKey(source: SemanticValueSource): string {
 	let key = semanticValueRootKey(source.root);
 	for (let index = 0; index < source.steps.length; index += 1) {
 		const step = source.steps[index];
 		switch (step.kind) {
 			case 'member':
-				key += `\0m\0${step.name}`;
+				key += `\0m\0${step.name.length}\0${step.name}`;
 				break;
-			case 'index':
-				key += `\0k\0${semanticValueSourceKey(step.key)}`;
+			case 'index': {
+				const indexKey = semanticValueSourceKey(step.key);
+				key += `\0k\0${indexKey.length}\0${indexKey}`;
 				break;
+			}
 			case 'element':
 				key += '\0e';
 				break;

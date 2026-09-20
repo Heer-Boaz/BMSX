@@ -1459,6 +1459,139 @@ writes and alias owners, unchanged old snapshots, cold/edit answer comparison,
 and first-query performance. This audit is a migration gate, not an implemented
 body cache.
 
+### Written member occurrences — implemented
+
+The member-storage part of the cold-binding gate now produces one declaration
+per authored member definition. A field in a constructor, a dot/string-key
+assignment, and a member function statement each retain their own occurrence,
+RHS and writer flow. The raw `MemberValueEntry.owner`/`name` path is separate
+from that definition ID. Lexical variable reassignment still uses its original
+binding. Member reads no longer inherit a preceding property witness.
+
+The removed binder member maps and reverse declaration-write lookup are not
+cached or replayed. A local root supplies visibility/scope metadata; an earlier
+member declaration does not. The builder appends each member contribution
+once, in its actual module/function owner, without the old coalescing scan.
+This also corrects top-level methods on local tables being published as global
+members merely because they were declared in file scope.
+
+`written_declarations.ts` owns a lazy file-generation raw-member index and
+cached direct written destinations. It follows exact member paths and directly
+written constructor fields, consuming a path step per constructor projection;
+it does not follow aliases, calls, dynamic indices or foreign modules. Unknown
+and literal value roots are not storage identities. Signature optionality uses
+this direct evidence only when it selects one written function; ordinary
+interactive navigation/callables also retain the broader definition-shape
+query. Diagnostics no longer depend on a binder-selected member target.
+
+Navigation combines exact authored path evidence with definition-shape
+answers. This keeps `external.run = ...; external.run()` navigable without
+inventing a type for `external`, and keeps explicit writes on a parameter
+navigable without inferring incoming arguments or another function's effects.
+A write always names its own definition, including dynamic/unknown owners whose
+other uses cannot be resolved. A member assignment position is now its actual
+written declaration, rather than the first constructor field; reads and
+find-references include the other definitions of that storage. Completion
+remains shape-based: this change does not manufacture receiver shapes for
+unknown values.
+
+Written path caches use the central `semanticValueSourceKey` representation.
+A regression with a valid NUL-containing Lua string key exposed an ambiguity
+between one member component and a longer path. The central owner now
+length-delimits arbitrary root/member strings and nested index keys; there is
+no feature-local encoding. Structural equality/key tests cover the boundary.
+
+The call hierarchy's demand index consumes direct written destinations as
+**candidate selection only**, including string-indexed callees which have no
+identifier reference. Reverse callable-use discovery can reach those authored
+calls without publishing member effects first. Candidates never enter
+`directTargets`: the solver must still resolve the actual callee/receiver
+before instantiating a body or publishing a call. Tests include module-rooted
+callback ancestry, callback aliases and an unrelated same-name method which
+must not be invoked. Hover presents each distinct written header once while
+navigation keeps every occurrence, avoiding dozens of identical field lines.
+
+Production references: TypeScript's
+[assignment declaration binding](https://github.com/microsoft/TypeScript/blob/v5.9.3/src/compiler/binder.ts)
+keeps authored declarations distinct from lookup tables; rust-analyzer's
+[body-owned scopes](https://github.com/rust-lang/rust-analyzer/blob/master/crates/hir-def/src/expr_store/scope.rs)
+separate bindings from traversal state; LuaLS's
+[definition query](https://github.com/LuaLS/lua-language-server/blob/master/script/core/definition.lua)
+is a lookup owner, not a mutable binder witness. None is evidence of BMSX body
+reuse by itself.
+
+Independent review caught and drove regression tests for unknown-root
+cross-linking and loss of dynamic-write occurrence identity. Constructor
+isolation, repeated member functions, aliases, nested locality, string keys,
+writer insertion/removal, old snapshots and cold/edit answer parity have focused
+coverage. The old tests which required two authored members to share one
+navigation declaration were migrated to assert separate occurrences, while
+retaining their original RHS/flow/public-answer checks.
+
+Validation/performance against `e5615ea8e` (same 285-source pietious dump,
+Node 22.23.1, 20 warmup + 50 samples, isolated sequential processes):
+
+| Local body edit, ms p50 / p95 | Before | After |
+| --- | --- | --- |
+| director public update + highlighting | 2.871 / 6.634 | 2.174 / 6.227 |
+| player public update + highlighting | 14.084 / 20.596 | 12.931 / 14.332 |
+| director first member read | 0.584 / 3.194 | 0.650 / 0.877 |
+| player first member read | 1.263 / 4.835 | 1.423 / 5.074 |
+| director completion after that read | 7.668 / 11.027 | 7.821 / 11.514 |
+| player completion after that read | 8.108 / 11.913 | 8.106 / 11.735 |
+| director phase total, including queries/highlighting | 13.766 / 14.922 | 13.113 / 15.332 |
+| player phase total, including queries/highlighting | 23.040 / 26.376 | 22.223 / 25.935 |
+
+The durable profiler now explicitly chooses a member **read** (director
+`world:set_space`, player `require('cartlib/clock').gameplay`), not the first member write whose
+old bound witness bypassed lookup. Both revisions use that same revised
+profiler. Public update passes and phase totals are independent workloads;
+completion follows a member query, not an entirely cold completion. These are
+CPU measurements, not UI-frame latency or the final 2x target.
+
+A measured intermediate highlighting regression exposed duplicate,
+out-of-source-order annotations at member function definitions. The producer
+now emits one annotation: constructor keys own theirs, member write references
+own theirs. There is no presentation deduplication pass. A focused regression
+asserts one definition token per member identifier and no identifier token for
+quoted keys. Player highlight-after-query p50 is 2.401 ms versus 2.265 ms before,
+rather than the intermediate 4.001 ms.
+
+Separate edit + first-demand p50/p95: director hover 3.093/6.291 versus
+3.848/7.401; player signature 12.239/14.565 versus 13.398/23.925. Not every tail
+improves: director signature is 3.632/7.696 versus 4.120/7.531. No uniform
+speedup claim is made.
+
+Explicitly rooted heap after binding is 193.30 versus 193.34 MiB; after
+highlighting 206.65 versus 206.83; after diagnostics 211.15 versus 209.30; after
+all member queries 226.84 versus 221.36; after import queries 227.35 versus
+221.85. The additional lazy written-path index/answers cost about 5.5 MiB after
+full demand. Released deltas are 3.36 versus 3.47 MiB. Of 21,088 member/method
+references, 13,119 versus 12,890 resolve; this includes direct written-path
+answers, not inferred receiver types.
+
+Lua suite: 2,183 tests, 2,181 passed, one pre-existing named-menu failure and
+one skip. Toolchain typecheck passes; the broader check has only existing
+unrelated errors. Independent reviews covered the member owner, cache keys,
+highlighting/hover presentation and candidate-versus-proven-call boundary.
+
+Rompacker 129/129 and precision idetests 8/5/3 pass; O3 compilation of pietious
+retains 207 modules, 2,131 functions and identical hash
+`a297b840826af25b3345872b9d31dc0a1efcfaf8437e4c9ddaf99c5ba54ac505`.
+
+The 300-reference solver comparison per cart has zero contradictions and no
+new definition-only targets: pietious has zero extras; nemesis retains the
+same single pre-existing extra at `cartlib/aem.lua:160`,
+`target.source.loop_start_sample` (`cartlib/apu.lua:123`). The strict zero-extra
+oracle therefore still fails that nemesis sample. Answers intentionally keep
+more distinct authored definitions than before; they are not byte-for-byte
+identical to the formerly coalesced navigation answers.
+
+This is not the completed body cache: global storage/builtin classification,
+caller attachments and actual body contribution reuse remain open. The final
+acceptance still requires unchanged sibling fact identity and zero binder
+visits, plus the end-to-end edit/performance gates.
+
 ## Lowest-priority follow-up: absent-value convention
 
 User request, 2026-09-20: after the incremental parsing/binding work and its

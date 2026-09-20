@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { FunctionSummaryStore } from '../../toolchain/ts/lua/semantic/function_summary';
 import { WorkspaceValueIdentityIndex } from '../../toolchain/ts/lua/semantic/identity';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
-import { declarationValueSource, literalValueSource, semanticValueSourceKey, semanticValueSourcesEqual, type SemanticLiteralValue } from '../../toolchain/ts/lua/semantic/value_graph';
+import { appendValueIndex, appendValueMember, declarationValueSource, globalValueSource, literalValueSource, moduleValueSource, semanticValueSourceKey, semanticValueSourcesEqual, type SemanticLiteralValue } from '../../toolchain/ts/lua/semantic/value_graph';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { semanticSymbolAt } from './semantic_test_harness';
 
@@ -133,4 +133,21 @@ test('literal roots retain typed payloads and primitive identities without encod
 	assert.equal(identities.rawRootId(zero.root), identities.rawRootId(negativeZero.root));
 	assert.ok(semanticValueSourcesEqual(zero, negativeZero));
 	assert.equal(semanticValueSourceKey(zero), semanticValueSourceKey(negativeZero));
+});
+
+
+test('value-source keys preserve component boundaries for arbitrary strings and nested indexes', () => {
+	const root = globalValueSource('object');
+	const pairs = [
+		[appendValueMember(root, 'a\0m\0b'), appendValueMember(appendValueMember(root, 'a'), 'b')],
+		[declarationValueSource('binding\0m\0field'), appendValueMember(declarationValueSource('binding'), 'field')],
+		[moduleValueSource('module\0m\0field'), appendValueMember(moduleValueSource('module'), 'field')],
+		[appendValueIndex(root, appendValueMember(globalValueSource('key'), 'field')),
+			appendValueMember(appendValueIndex(root, globalValueSource('key')), 'field')],
+	];
+	for (const [left, right] of pairs) {
+		assert.equal(semanticValueSourcesEqual(left, right), false);
+		assert.notEqual(semanticValueSourceKey(left), semanticValueSourceKey(right));
+		assert.equal(semanticValueSourceKey(left), semanticValueSourceKey({ root: { ...left.root }, steps: [...left.steps] }));
+	}
 });
