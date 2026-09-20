@@ -1,5 +1,6 @@
 import { hashText } from '../../../../machine/ts/common/byte_hex_string';
 import { HashMapBuilder } from '../../collections/hash_map';
+import { SourceChangeMap } from '../../text/source_changes';
 import {
 	LuaAssignmentOperator,
 	LuaBinaryOperator,
@@ -33,7 +34,7 @@ import {
 	type LuaReturnStatement,
 } from '../syntax/ast';
 import type { LuaSymbolEntry } from '../semantic_contracts';
-import { parseLuaChunkWithRecovery, type ParsedLuaChunk } from '../analysis/parse';
+import { parseLuaChunkWithRecovery, updateLuaChunk, type ParsedLuaChunk } from '../analysis/parse';
 import { LuaCompletionAnalysis, type LuaCompletion } from '../analysis/completion';
 import type { LuaSyntaxError } from '../errors';
 import type { SourcePosition } from '../source_range';
@@ -446,11 +447,12 @@ class LuaProjectIndex {
 		this.symbolResolver = this.buildWorkspaceSymbolResolver();
 	}
 
-	public updateFile(file: string, source: string, parsed?: ParsedLuaChunk): FileSemanticData {
+	public updateFile(file: string, source: string, input?: ParsedLuaChunk | SourceChangeMap): FileSemanticData {
 		const current = this.files.get(file);
-		if (current && current.source === source && (parsed === undefined || current.chunk === parsed.chunk)) {
+		if (current && current.source === source && (input === undefined || input instanceof SourceChangeMap || current.chunk === input.chunk)) {
 			return current;
 		}
+		const parsed = input instanceof SourceChangeMap ? updateLuaChunk(current!.chunk, source, input) : input;
 		const data = buildLuaFileSemanticData(source, file, parsed);
 		this.replaceIndexedFile(file, data);
 		this.commitFileChanges();
@@ -3076,9 +3078,10 @@ export class LuaSemanticWorkspace {
 		return this.index.getVersion();
 	}
 
-	public updateFile(file: string, source: string, parsed?: ParsedLuaChunk): FileSemanticData {
+	/** Omitted input replaces source; edit maps describe the current file generation. */
+	public updateFile(file: string, source: string, input?: ParsedLuaChunk | SourceChangeMap): FileSemanticData {
 		const previousVersion = this.index.getVersion();
-		const data = this.index.updateFile(file, source, parsed);
+		const data = this.index.updateFile(file, source, input);
 		if (this.index.getVersion() !== previousVersion) {
 			this.snapshot = null;
 		}

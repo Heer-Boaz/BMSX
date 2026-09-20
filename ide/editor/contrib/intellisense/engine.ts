@@ -29,7 +29,6 @@ import {
 	type ResourceDomain,
 } from '../../../common/resource';
 import { KEYWORDS, isLuaTrivia, LuaTokenType, type LuaToken } from '../../../../toolchain/ts/lua/syntax/token';
-import { getTextSnapshot } from '../../text/source_text';
 import type { TextBuffer } from '../../text/text_buffer';
 import { activeCodeEditor } from '../../ui/code_editor_state';
 import { clearSingleCursorSelection } from '../../editing/cursor/state';
@@ -104,8 +103,7 @@ function extractIdentifierExpression(buffer: TextBuffer, row: number, column: nu
 	if (line.length === 0) {
 		return null;
 	}
-	const source = getTextSnapshot(buffer);
-	const tokenMatch = findContextMenuTokenMatch(row, safeColumn, path, source);
+	const tokenMatch = findContextMenuTokenMatch(row, safeColumn, path, buffer);
 	if (tokenMatch && tokenMatch.token.type === LuaTokenType.String) {
 		return null;
 	}
@@ -250,9 +248,9 @@ type ContextMenuTokenMatch = {
 	chunk: LuaChunk;
 };
 
-function findContextMenuTokenMatch(row: number, column: number, path: string, source: string): ContextMenuTokenMatch {
+function findContextMenuTokenMatch(row: number, column: number, path: string, buffer: TextBuffer): ContextMenuTokenMatch {
 	const chunk = getOrCreateSemanticProject(activeCodeEditor.model.resource.domain)
-		.updateDocument(path, source).chunk;
+		.analyzeDocument(path, buffer).chunk;
 	const { tokens, locations } = chunk;
 	const targetLine = row + 1;
 	let adjacent: ContextMenuTokenMatch = null;
@@ -372,8 +370,7 @@ export function resolveContextMenuToken(row: number, column: number, path: strin
 			);
 		}
 	}
-	const source = getTextSnapshot(activeCodeEditor.model.buffer);
-	const match = findContextMenuTokenMatch(row, safeColumn, path, source);
+	const match = findContextMenuTokenMatch(row, safeColumn, path, buffer);
 	if (!match) {
 		return null;
 	}
@@ -581,7 +578,7 @@ export function findStaticDefinitionLocation(
 	const project = getOrCreateSemanticProject(activeContext.model.resource.domain);
 	project.synchronizeRuntimeSources(bridge.sources);
 	if (activeContext.model.resource.path === sourcePath) {
-		project.updateDocument(sourcePath, getTextSnapshot(activeContext.model.buffer));
+		project.analyzeDocument(sourcePath, activeContext.model.buffer);
 	}
 	const frontend = createEditorSemanticFrontend(bridge, project.getSnapshot());
 	const symbols = frontend.findSymbolsByPosition(sourcePath, usageRow, usageColumn);

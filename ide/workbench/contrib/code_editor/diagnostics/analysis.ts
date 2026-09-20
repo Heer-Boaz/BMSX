@@ -1,3 +1,4 @@
+import type { TextBuffer } from '../../../../editor/text/text_buffer';
 import type { EditorDiagnostic } from '../../../../common/models';
 import { createEditorSemanticFrontend } from '../../../../editor/contrib/intellisense/frontend';
 import { getOrCreateSemanticProject } from '../../../../editor/contrib/intellisense/semantic/workspace/state';
@@ -9,20 +10,23 @@ import type { ResourceDomain } from '../../../../common/resource';
 import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 import type { CodeEditorInputId } from '../../../../common/editor_context';
 
-export type DiagnosticContextInput = {
+type DiagnosticContext = {
 	id: CodeEditorInputId;
 	domain: ResourceDomain;
 	path: string;
-	source: string;
 	version: number;
 };
 
+export type DiagnosticContextInput = DiagnosticContext & { source: string };
+export type DiagnosticBufferContextInput = DiagnosticContext & { buffer: TextBuffer };
+type DiagnosticInput = DiagnosticContextInput | DiagnosticBufferContextInput;
+
 export function computeAggregatedEditorDiagnostics(
 	bridge: RuntimeLuaTooling,
-	contexts: ReadonlyArray<DiagnosticContextInput>,
+	contexts: ReadonlyArray<DiagnosticInput>,
 ): EditorDiagnostic[] {
 	if (contexts.length === 0) return [];
-	const batches = new Map<ResourceDomain, DiagnosticContextInput[]>();
+	const batches = new Map<ResourceDomain, DiagnosticInput[]>();
 	for (let index = 0; index < contexts.length; index += 1) {
 		const context = contexts[index];
 		let batch = batches.get(context.domain);
@@ -36,7 +40,17 @@ export function computeAggregatedEditorDiagnostics(
 	for (const [domain, batch] of batches) {
 		const project = getOrCreateSemanticProject(domain);
 		project.synchronizeRuntimeSources(bridge.sources);
-		project.updateDocuments(batch);
+		let explicit: DiagnosticContextInput[] | undefined;
+		for (const context of batch) {
+			if ('source' in context) {
+				if (explicit === undefined) explicit = [];
+				explicit.push(context);
+			}
+		}
+		if (explicit !== undefined) project.updateDocuments(explicit);
+		for (const context of batch) {
+			if ('buffer' in context) project.analyzeDocument(context.path, context.buffer);
+		}
 		const snapshot = project.getSnapshot();
 		const frontend = createEditorSemanticFrontend(bridge, snapshot);
 		for (let contextIndex = 0; contextIndex < batch.length; contextIndex += 1) {
@@ -63,7 +77,7 @@ export function computeAggregatedEditorDiagnostics(
 
 function appendEditorDiagnostic(
 	output: EditorDiagnostic[],
-	context: DiagnosticContextInput,
+	context: DiagnosticContext,
 	diagnostic: LuaStaticDiagnostic,
 ): void {
 	output.push({

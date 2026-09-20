@@ -12,7 +12,6 @@ import type { CachedHighlight, HighlightLine, VisualLineSegment } from '../../..
 import type { EditorDocumentMode, EditorTextModelContentChangeEvent } from '../../model/text_model';
 import { textChangesEndOffset } from '../../text/text_change';
 import { EditorFont } from '../view/font';
-import { getTextSnapshot } from '../../text/source_text';
 import { getOrCreateSemanticProject } from '../../contrib/intellisense/semantic/workspace/state';
 import type { TextBuffer } from '../../text/text_buffer';
 import type { Position } from '../../../common/models';
@@ -92,7 +91,6 @@ type PendingSemanticUpdate = {
 	path: string;
 	requestId: number;
 	buffer: TextBuffer;
-	source?: string;
 };
 
 const createVisualLineSegment = (): VisualLineSegment => ({
@@ -231,6 +229,7 @@ export class CodeLayout {
 
 	/** Model events invalidate the projection regardless of which editor produced the edit. */
 	public onDidChangeContent(buffer: TextBuffer, event: EditorTextModelContentChangeEvent): void {
+		if (this.pendingSemantic?.buffer === buffer) this.pendingSemantic = null;
 		buffer.positionAt(textChangesEndOffset(event.changes), this.changedEndPosition);
 		this.invalidateHighlightsFromRow(event.startRow);
 		this.markVisualLinesDirtyForRows(event.startRow, this.changedEndPosition.row);
@@ -906,17 +905,8 @@ export class CodeLayout {
 		this.pendingSemantic = pending;
 		return pending;
 	}
-
-	private materializeSemanticSource(pending: PendingSemanticUpdate): string {
-		if (pending.source === undefined) {
-			pending.source = getTextSnapshot(pending.buffer);
-		}
-		return pending.source;
-	}
-
 	private dispatchSemanticUpdate(pending: PendingSemanticUpdate): void {
 		this.semanticDueAtMs = null;
-		this.materializeSemanticSource(pending);
 		this.pendingSemantic = pending;
 		if (this.semanticDispatchHandle) {
 			this.semanticDispatchHandle.cancel();
@@ -935,8 +925,7 @@ export class CodeLayout {
 		let fileData: FileSemanticData = null;
 		let errorMessage: string = null;
 		try {
-			const source = this.materializeSemanticSource(pending);
-			fileData = getOrCreateSemanticProject(pending.domain).updateDocument(pending.path, source);
+			fileData = getOrCreateSemanticProject(pending.domain).analyzeDocument(pending.path, pending.buffer);
 		} catch (error) {
 			fileData = null;
 			errorMessage = error instanceof Error ? error.message : String(error);

@@ -3,9 +3,12 @@ import {
 	EditorTextModel,
 	type EditorDocumentMode,
 	type EditorTextModelContentChangeEvent,
+	type EditorTextModelAppliedChanges,
 } from './text_model';
 
 import { EditorUndoRedoService } from './undo_redo_service';
+
+type ModelAppliedChangesListener = (model: EditorTextModel, event: EditorTextModelAppliedChanges) => void;
 
 type ModelContentChangeListener = (
 	model: EditorTextModel,
@@ -17,6 +20,7 @@ type ModelListener = (model: EditorTextModel) => void;
 export class EditorTextModelService {
 	public readonly history = new EditorUndoRedoService();
 	private readonly modelsByResource = new Map<string, EditorTextModel>();
+	private readonly appliedChangesListeners = new Set<ModelAppliedChangesListener>();
 	private readonly contentChangeListeners = new Set<ModelContentChangeListener>();
 	private readonly modelAddedListeners = new Set<ModelListener>();
 	private readonly modelRemovedListeners = new Set<ModelListener>();
@@ -78,6 +82,9 @@ export class EditorTextModelService {
 	private register(model: EditorTextModel): void {
 		const key = resourceIdentityKey(model.resource);
 		this.modelsByResource.set(key, model);
+		model.onDidApplyChanges(event => {
+			for (const listener of this.appliedChangesListeners) listener(model, event);
+		});
 		model.onDidChangeContent(event => {
 			for (const listener of this.contentChangeListeners) {
 				listener(model, event);
@@ -94,6 +101,12 @@ export class EditorTextModelService {
 	public onDidRemoveModel(listener: ModelListener): () => void {
 		this.modelRemovedListeners.add(listener);
 		return () => this.modelRemovedListeners.delete(listener);
+	}
+
+	/** Internal post-apply phase: track/invalidate deltas only, without queries or model writes. */
+	public onDidApplyChanges(listener: ModelAppliedChangesListener): () => void {
+		this.appliedChangesListeners.add(listener);
+		return () => this.appliedChangesListeners.delete(listener);
 	}
 
 	public onDidChangeContent(listener: ModelContentChangeListener): () => void {

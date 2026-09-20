@@ -1,9 +1,7 @@
-/** One replacement in application order; offsets refer to the preceding change's output. */
-export type EditorTextChange = {
-	readonly offset: number;
-	readonly deletedLength: number;
-	readonly insertedLength: number;
-};
+import type { SourceTextChange } from '../../../toolchain/ts/text/source_changes';
+
+/** One replacement in application order; owned by the shared source-change contract. */
+export type EditorTextChange = SourceTextChange;
 
 /** Half-open UTF-16 source span. A collapsed span has no selected source. */
 export type TrackedTextRange = {

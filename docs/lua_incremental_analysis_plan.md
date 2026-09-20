@@ -9,7 +9,7 @@ Follow-up to [the definition-based language service](lua_language_service_design
 Annotations, additional inference, and changes to the whole-program solver are
 out of scope. Optimize edits, not the meaning of interactive queries.
 
-Implement in the ordered slices below. **Slices 0 and 1a, and the publication subtask of 3, are implemented.**
+Implement in the ordered slices below. **Slices 0 and 1a, the lexical/edit-transport part of 2, and the publication subtask of 3 are implemented.**
 The production parser and binder still process the entire changed file. This
 document is not a claim that incremental parsing or binding already exists.
 
@@ -45,9 +45,9 @@ in place is expressly excluded: retained semantic snapshots must remain valid.
 | Owner | Current contract | Consequence |
 | --- | --- | --- |
 | `ide/editor/model/text_model.ts`, `text/text_change.ts` | Versioned model events; UTF-16 replacements in application order | Preserve changes rather than rediffing full strings on each request |
-| `ide/editor/contrib/intellisense/semantic/workspace/project.ts` | Queues changed paths; events currently discard edit spans | Project must retain the delta between its analyzed revision and current model revision |
+| `ide/editor/contrib/intellisense/semantic/workspace/project.ts` | Composes model-owned deltas against the last analyzed model/version | Project must retain the delta between its analyzed revision and current model revision |
 | `syntax/ast/index.ts:LuaChunk` | Root retains its source, lexical tokens and syntax error; global parse cache removed | Syntax lifetime follows retained file records and compiler inputs |
-| `syntax/lexer.ts`, `syntax/parser.ts`, `analysis/parse.ts` | Full-file lexical scan into relative persistent blocks; strict/recovering parser consumes a cursor | One grammar for initial and incremental parsing; no second IDE grammar |
+| `syntax/lexer.ts`, `syntax/parser.ts`, `analysis/parse.ts` | Cold scan or edit-driven lexical block splices; strict/recovering grammar parser consumes a cursor | One grammar for initial and incremental parsing; no second IDE grammar |
 | `syntax/ast/index.ts` | Committed relative spans; locations belong to the generation | Reuse and final edit/cold-performance gates remain open |
 | `semantic/model.ts` | Single ordered binder; scope indexes, mutable build state; immutable published file facts | Cached function bodies cannot replay old ambient binder state |
 | `semantic/model.ts:createSymbolId` | IDs contain source line and column | Separate reusable declaration identity from presentation coordinates |
@@ -700,8 +700,8 @@ compilation is about 5.0%/6.1% slower here. **The final no-material-regression g
 is still open.** Do not count this foundation as edit acceleration: whole-file
 parsing and binding still run, and the earlier 2x target is still unmet.
 
-Next: connect ordered editor deltas to lexical block replacement and the source
-layout, then implement context/read/recovery-aware syntax reuse and scope binding.
+The next section records lexical edit transport. Remaining: source-layout edits
+with context/read/recovery-aware syntax reuse, then scope binding.
 Before retaining lexical blocks across generations, eliminate original-source
 backing-string retention at the lexical text producer (not a consumer-side copy).
 Keep an explicit full-replacement mode. The inspected
@@ -709,6 +709,111 @@ Keep an explicit full-replacement mode. The inspected
 provides the matching reference for composing length-only edit descriptions:
 keep changed/unchanged ranges and retrieve replacement text from the latest source,
 without retaining another inserted-text history or diffing the entire document.
+
+## Edit-driven lexical reuse and delta transport
+
+`SourceChangeMap` owns length-only edit composition. Its unchanged runs preserve
+provenance, not guessed text equality; disjoint edits keep their intervening gaps.
+It does not retain replacement text or diff whole source strings. Editor text
+changes use this shared representation rather than a second toolchain DTO.
+
+`updateLuaTokens` starts at the earliest block whose recorded read extent crosses
+an edit. The scanner resumes only at base-state item boundaries, consumes entire
+comments/strings and synchronizes at a proven unchanged old block boundary.
+Partial final blocks permit synchronization after token insertions/deletions;
+requiring exactly 32 new items would otherwise prevent early resynchronization.
+Persistent block replacement shares the prefix, intervening islands and suffix.
+Long-bracket edits can legitimately consume the rest of the file. Raw lexical
+failures are retained in EOF and presented once through the new source owner.
+
+`OwnedSourceText` detaches bounded 1,024-code-unit chunks at the lexical spelling
+producer. The forward scanner retains only its latest detached chunk, and numeric
+scanners pass their already extracted spelling to token construction. This is a
+lifetime requirement, not an optional optimization: a retained small token must
+not pin a historical whole-file string. `profile_lua_lexical_lifetime.ts` reproduces
+that boundary. Retaining 24 identifier tokens from separately generated 1 MiB
+files retained 24.024 MiB with the preceding lexer and 0.049 MiB here, after GC.
+Keeping only the spellings retained 24.016 versus 0.047 MiB. These are Node heap
+measurements, not browser evidence or allocation counts.
+
+Projects key analyzed baselines by selected model identity and revision. Full
+source publication, removal/re-addition and same-path domain ownership changes
+reset the edit baseline. Equal-source no-ops still advance the analyzed revision.
+Normal frontend, context-menu, diagnostic and highlighting paths consume retained
+model buffers. Explicit source/supplied-parse callers remain explicit publication
+modes; `LuaSemanticWorkspace.updateFile` additionally accepts a current-generation
+`SourceChangeMap`. A supplied same-text parse remains authoritative.
+
+Independent review caught an event-order defect before acceptance: completion's
+public listener can precede the lazily created project, and workspace edits apply
+all buffers before publishing each public event. Consequently delta delivery must
+happen in the model's apply phase, before public callbacks, not by relying on
+listener registration order. Projects only track/invalidate in this internal
+phase; analysis stays lazy. The reference is the distinction between internal
+model updates and public content notifications in
+[VS Code TextModel](https://github.com/microsoft/vscode/blob/1.105.0/src/vs/editor/common/model/textModel.ts).
+An additional delayed-highlighting regression is covered by invalidating the
+scheduled request when its model changes, rather than analyzing newer content
+under the old scheduled version.
+
+Differential evidence includes 1,569 complete/edited source comparisons against
+the earlier compiler parser, 6,000 independently generated multi-edit lexical
+comparisons, exhaustive lexical-position edits, 160 multi-generation parse/repair
+comparisons and 8,000 change-composition batches. A 12,000-line local edit asserts
+fewer than 100 emitted items and 5,000 character probes/copies, while retaining the
+old suffix. Separate tests cover disjoint islands, genuine whole-suffix lexical
+invalidation, generation-relative diagnostics and retained snapshot answers.
+
+Validation of this slice: 2,040 Lua tests, 2,038 passing, the existing named
+workbench-menu failure and one skip; all 129 rompacker tests pass. Rebuilt
+headless tooling, BIOS and both carts pass the three nemesis_s precision idetests
+(8/5/3 assertions). The previously reported `signature_help` null-after-paste
+failure still reproduces (the multiline user-call popup does not open); it is not
+counted as passing. Core parity and `git diff --check` pass. Broad typechecking
+still reports the existing unrelated baseline errors, with no new changed-owner
+errors. A fresh integration review independently reproduced both event-order
+failures, then verified the corrected apply/public order across all mutation
+paths, including compound Undo/Redo: analysis never runs in the delta phase and
+the internal/public phases share their computed change arrays.
+
+The durable `profile_lua_edits.ts` now separates full-source phases, incremental
+lexical phases, full-source public updates and map-driven public updates. Its known
+forward/undo edits are composed outside the timed region; an additional disjoint
+workload verifies multi-edit composition. Work instrumentation runs only after
+all timed passes. Twenty warmups/fifty samples on the same pietious dump gave:
+
+| Function-body edit boundary | Full-source path p50 / p95 ms | Map-driven path p50 / p95 ms |
+| --- | ---: | ---: |
+| director.lua lexer | 0.718 / 0.915 | 0.077 / 0.103 |
+| director.lua public update + snapshot | 4.296 / 8.141 | 3.536 / 7.706 |
+| player/player.lua lexer | 2.812 / 6.872 | 0.081 / 0.112 |
+| player/player.lua public update + snapshot | 24.092 / 27.276 | 18.874 / 24.948 |
+
+The forward body edit emits 37 items in two blocks instead of 7,648 / 28,463
+items in 239 / 890 blocks respectively; undo emits 27 items in one block.
+These counts include consumed widths, not every lookahead character probe.
+Player's first member query remained 1.412 / 5.098 versus 1.280 / 5.989 ms;
+its tail did not improve in this sample. These are separate warmed phase/public
+passes, not actual model-event/keystroke-to-frame timings. The complete public
+update is only about 1.28x faster at its median here, **not the required 2x**.
+
+**This is not incremental grammar parsing or binding.** The parser still creates
+new AST units and the binder still visits the entire edited file. The cold and
+2x public-edit acceptance gates remain open. Against `aeb160d68`, a repeated
+pietious O3 cold-syntax run (four warmups/twelve samples, Node 22.23.1) measured:
+
+| Boundary | Previous lexical foundation | Edit-capable lexer |
+| --- | ---: | ---: |
+| Parse + select, p50 / p95 ms | 158.52 / 281.55 | 187.44 / 245.93 |
+| Complete O3 compilation, p50 / p95 ms | 3295.74 / 3363.66 | 3289.26 / 3525.82 |
+| Retained bound 285-file heap, MiB | 205.79 | 207.45 |
+| Released heap above input baseline, MiB | 2.43 | 2.47 |
+
+Do not call the noisier cold tail or +18.2% parse median a passed cold gate. The
+full pietious program/debug hash still matches
+`3fdb5f9056ff7c83be99a65f19e856cd75546327a18ccc0ec7fe6dbad32ca64d`.
+The heap comparison uses the same dumped workspace and explicit-GC procedure as
+the preceding lexical foundation; it is not a per-keystroke allocation count.
 
 ## Lowest-priority follow-up: absent-value convention
 

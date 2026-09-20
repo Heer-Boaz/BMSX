@@ -2,6 +2,7 @@ import { luaSyntaxSnapshot } from '../helpers/lua_syntax_snapshot';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
+import { SourceChangeMap } from '../../toolchain/ts/text/source_changes';
 import {
 	buildLuaFileSemanticData,
 	buildLuaSemanticWorkspaceSnapshot,
@@ -128,3 +129,43 @@ for (const [name, edited] of edits) {
 		}
 	});
 }
+
+test('public workspace edit maps retain lexical islands and match fresh binding through repair and undo', () => {
+	const workspace = new LuaSemanticWorkspace();
+	let source = original + '\n-- retained suffix\n'.repeat(80);
+	const initial = workspace.updateFile(path, source);
+	const retained = workspace.getSnapshot();
+	const retainedAnswers = answers(retained);
+	const edits = [
+		{ offset: 0, deletedLength: 0, inserted: '-- café 😀\r\n' },
+		{ offset: 0, deletedLength: 0, inserted: '--[=[' },
+		{ offset: 0, deletedLength: 5, inserted: '' },
+		{ offset: 0, deletedLength: 0, inserted: '\n' },
+		{ offset: 0, deletedLength: 1, inserted: '' },
+	];
+	for (const [index, edit] of edits.entries()) {
+		const previous = workspace.getFileData(path)!;
+		const changes = SourceChangeMap.unchanged(source.length).append([
+			{ offset: edit.offset, deletedLength: edit.deletedLength, insertedLength: edit.inserted.length },
+		]);
+		source = source.slice(0, edit.offset) + edit.inserted + source.slice(edit.offset + edit.deletedLength);
+		const updated = workspace.updateFile(path, source, changes);
+		const coldWorkspace = new LuaSemanticWorkspace();
+		coldWorkspace.updateFile(path, source);
+		const cold = coldWorkspace.getSnapshot();
+		assert.deepEqual(luaSyntaxSnapshot(updated.chunk), luaSyntaxSnapshot(cold.getFileData(path)!.chunk));
+		assert.deepEqual(answers(workspace.getSnapshot()), answers(cold));
+		assert.deepEqual(answers(retained), retainedAnswers);
+		if (index === 0) {
+			assert.strictEqual(updated.chunk.tokens.get(updated.chunk.tokens.length - 1),
+				previous.chunk.tokens.get(previous.chunk.tokens.length - 1));
+		}
+	}
+	assert.strictEqual(retained.getFileData(path), initial);
+	const current = workspace.getSnapshot();
+	workspace.updateFile(path, source, SourceChangeMap.unchanged(source.length));
+	assert.strictEqual(workspace.getSnapshot(), current);
+	const parsed = parseLuaChunkWithRecovery(source, path);
+	assert.strictEqual(workspace.updateFile(path, source, parsed).chunk, parsed.chunk,
+		'supplied syntax remains authoritative after incremental updates');
+});

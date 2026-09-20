@@ -1,6 +1,6 @@
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import type { HostClock, TimerHandle } from '../../../../../hosts/common/clock';
-import { computeAggregatedEditorDiagnostics, type DiagnosticContextInput } from './analysis';
+import { computeAggregatedEditorDiagnostics, type DiagnosticBufferContextInput } from './analysis';
 import type { EditorDiagnostic } from '../../../../common/models';
 import type { CodeTabContext } from '../../../ui/code_tab/model';
 import { getTextSnapshot } from '../../../../editor/text/source_text';
@@ -153,7 +153,7 @@ export function runDiagnosticsForContexts(bridge: RuntimeLuaTooling, contextIds:
 	if (contextIds.length === 0) {
 		return;
 	}
-	const inputs: DiagnosticContextInput[] = [];
+	const inputs: DiagnosticBufferContextInput[] = [];
 	for (let index = 0; index < contextIds.length; index += 1) {
 		const contextId = contextIds[index];
 		const context = getCodeTabContextById(contextId);
@@ -187,12 +187,11 @@ export function runDiagnosticsForContexts(bridge: RuntimeLuaTooling, contextIds:
 			editorDiagnosticsState.dirtyDiagnosticContexts.delete(contextId);
 			continue;
 		}
-		const source = getTextSnapshot(buffer);
-		const input: DiagnosticContextInput = {
+		const input: DiagnosticBufferContextInput = {
 			id: context.id,
 			domain: context.model.resource.domain,
 			path,
-			source,
+			buffer,
 			version,
 		};
 		inputs.push(input);
@@ -221,7 +220,7 @@ export function runDiagnosticsForContexts(bridge: RuntimeLuaTooling, contextIds:
 			path: input.path,
 			diagnostics: diagList,
 			version: input.version,
-			source: input.source,
+			source: getTextSnapshot(input.buffer),
 		});
 		editorDiagnosticsState.dirtyDiagnosticContexts.delete(input.id);
 	}

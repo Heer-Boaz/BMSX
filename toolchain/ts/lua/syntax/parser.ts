@@ -176,7 +176,7 @@ export class LuaParser {
 		return { expression, locations: this.publishLocations() };
 	}
 
-	public parseChunkWithRecovery(lexicalError: LuaSyntaxError | null = null): { path: LuaChunk; syntaxError: LuaSyntaxError | null } {
+	public parseChunkWithRecovery(): { path: LuaChunk; syntaxError: LuaSyntaxError | null } {
 		this.recoverStatements = true;
 		const moduleAttribute = this.parseModuleAttribute();
 		const block = this.parseBlock(CHUNK_TERMINATORS);
@@ -184,6 +184,11 @@ export class LuaParser {
 		const end = this.spanStart(eofToken);
 		const span: LuaSyntaxSpan = this.createSpan(this.spanStart(block.span), end);
 		const locations = this.publishLocations();
+		let lexicalError: LuaSyntaxError | null = null;
+		if (eofToken.error !== undefined) {
+			const position = locations.range(eofToken).start;
+			lexicalError = new LuaSyntaxError(eofToken.error, this.path, position.line, position.column);
+		}
 		const diagnostic = this.recoveredSyntaxError;
 		let syntaxError: LuaSyntaxError | null = null;
 		if (diagnostic instanceof LuaSyntaxError) syntaxError = diagnostic;

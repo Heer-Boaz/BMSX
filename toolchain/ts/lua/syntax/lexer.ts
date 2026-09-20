@@ -1,60 +1,83 @@
+import { OwnedSourceText } from '../../text/owned_source_text';
+import { LuaSourceLocations } from './source_locations';
 import { createLuaSourceUnit, type LuaSourceUnitPlacement } from './source_layout';
 import { LuaTokenSequence, LUA_LEXICAL_BLOCK_CAPACITY, type LuaTokenBlock } from './token_sequence';
 import { LuaSyntaxError } from '../errors';
 import type { LuaToken, LuaTokenLiteral } from './token';
 import { LuaTokenType, resolveKeyword } from './token';
 
+/** Raw scanner failure; source-generation presentation happens at publication. */
+class LuaLexicalError extends Error {}
+
 export class LuaLexer {
 	private readonly source: string;
 	private readonly path: string;
-	private readonly blocks: LuaTokenBlock[] = [];
+	private readonly text: OwnedSourceText;
+	private finished = false;
 	private items: LuaToken[] = [];
-	private unit: LuaSourceUnitPlacement = { unit: createLuaSourceUnit(), offset: 0 };
+	private unit: LuaSourceUnitPlacement;
 	private readEnd = 0;
 	private currentIndex: number;
 	private line: number;
-	private column: number;
 	private tokenStartIndex: number;
 	private tokenStartLine: number;
-	private tokenStartColumn: number;
 
-	constructor(source: string, path: string) {
+	/** A nonzero offset starts at a known base-state lexical item boundary. */
+	constructor(source: string, path: string, offset = 0) {
 		this.source = source;
 		this.path = path;
-		this.blocks.push({ unit: this.unit.unit, items: this.items });
-		this.currentIndex = 0;
+		this.text = new OwnedSourceText(source);
+		this.currentIndex = offset;
 		this.line = 1;
-		this.column = 1;
-		this.tokenStartIndex = 0;
+		this.tokenStartIndex = offset;
 		this.tokenStartLine = 1;
-		this.tokenStartColumn = 1;
 	}
 
+	public get offset(): number { return this.currentIndex; }
+	public get done(): boolean { return this.finished; }
+
 	public scanTokens(): LuaTokenSequence {
-		while (!this.isAtEnd()) {
-			this.beginToken();
-			this.scanToken();
-		}
-		this.emitEof(null);
-		return LuaTokenSequence.fromBlocks(this.blocks);
+		const result = this.scanTokensWithRecovery();
+		if (result.syntaxError !== null) throw result.syntaxError;
+		return result.tokens;
+	}
+
+	/** Remaining lexical sequence, including its raw terminal failure if any. */
+	public scanSequence(): LuaTokenSequence {
+		const blocks: LuaTokenBlock[] = [];
+		while (!this.finished) blocks.push(this.scanBlock());
+		return LuaTokenSequence.fromBlocks(blocks);
 	}
 
 	public scanTokensWithRecovery(): { tokens: LuaTokenSequence; syntaxError: LuaSyntaxError | null } {
+		const tokens = this.scanSequence();
+		const eof = tokens.get(tokens.length - 1);
 		let syntaxError: LuaSyntaxError | null = null;
-		try {
-			while (!this.isAtEnd()) {
-				this.beginToken();
-				this.scanToken();
-			}
-		} catch (error) {
-			if (!(error instanceof LuaSyntaxError)) throw error;
-			syntaxError = error;
+		if (eof.error !== undefined) {
+			const position = LuaSourceLocations.fromSource(this.path, this.source, [], new Map()).positionAt(this.tokenStartIndex);
+			syntaxError = new LuaSyntaxError(eof.error, this.path, position.line, position.column);
 		}
-		this.emitEof(syntaxError);
-		return { tokens: LuaTokenSequence.fromBlocks(this.blocks), syntaxError };
+		return { tokens, syntaxError };
 	}
 
-	private emitEof(error: LuaSyntaxError | null): void {
+	/** Stop only between complete lexical items, including a partial resync block. */
+	public scanBlock(untilOffset = this.source.length + 1): LuaTokenBlock {
+		this.items = [];
+		this.unit = { unit: createLuaSourceUnit(), offset: this.currentIndex };
+		try {
+			do {
+				if (this.isAtEnd()) { this.emitEof(null); break; }
+				this.beginToken();
+				this.scanToken();
+			} while (this.items.length < LUA_LEXICAL_BLOCK_CAPACITY && this.currentIndex < untilOffset);
+		} catch (error) {
+			if (!(error instanceof LuaLexicalError)) throw error;
+			this.emitEof(error);
+		}
+		return { unit: this.unit.unit, items: this.items };
+	}
+
+	private emitEof(error: LuaLexicalError | null): void {
 		const start = error === null ? this.currentIndex : this.tokenStartIndex;
 		let breaks = 0;
 		if (error !== null) {
@@ -63,7 +86,7 @@ export class LuaLexer {
 				if (this.source.charCodeAt(index) === 10) breaks++;
 			}
 		}
-		this.beginItem(start);
+		this.finished = true;
 		const relative = start - this.unit.offset;
 		this.items.push({
 			type: LuaTokenType.Eof, lexeme: '', literal: null,
@@ -79,7 +102,6 @@ export class LuaLexer {
 		this.tokenStartIndex = this.currentIndex;
 		this.readEnd = this.currentIndex;
 		this.tokenStartLine = this.line;
-		this.tokenStartColumn = this.column;
 	}
 
 	private scanToken(): void {
@@ -213,7 +235,7 @@ export class LuaLexer {
 					this.scanIdentifier();
 					return;
 				}
-				throw new LuaSyntaxError(`[LuaLexer] Unexpected character '${char}'.`, this.path, this.tokenStartLine, this.tokenStartColumn);
+				throw new LuaLexicalError(`[LuaLexer] Unexpected character '${char}'.`);
 		}
 	}
 
@@ -244,7 +266,7 @@ export class LuaLexer {
 		}
 		const lexeme = this.currentLexeme();
 		if (LuaLexer.hasUppercaseAscii(lexeme)) {
-			throw new LuaSyntaxError(`[LuaLexer] Upper-case identifiers are not allowed in cart Lua: '${lexeme}'.`, this.path, this.tokenStartLine, this.tokenStartColumn);
+			throw new LuaLexicalError(`[LuaLexer] Upper-case identifiers are not allowed in cart Lua: '${lexeme}'.`);
 		}
 		const keywordType = resolveKeyword(lexeme);
 		if (keywordType === LuaTokenType.True) {
@@ -284,9 +306,9 @@ export class LuaLexer {
 		const lexeme = this.currentLexeme();
 		const parsed = Number(lexeme);
 		if (!Number.isFinite(parsed)) {
-			throw new LuaSyntaxError('[LuaLexer] Numeric literal is not finite.', this.path, this.tokenStartLine, this.tokenStartColumn);
+			throw new LuaLexicalError('[LuaLexer] Numeric literal is not finite.');
 		}
-		this.pushToken(LuaTokenType.Number, parsed);
+		this.pushToken(LuaTokenType.Number, parsed, lexeme);
 	}
 
 	private scanString(delimiter: string): void {
@@ -299,7 +321,7 @@ export class LuaLexer {
 				break;
 			}
 			if (char === '\n') {
-				throw new LuaSyntaxError('[LuaLexer] Unterminated string literal.', this.path, this.tokenStartLine, this.tokenStartColumn);
+				throw new LuaLexicalError('[LuaLexer] Unterminated string literal.');
 			}
 			if (char === '\\') {
 				value += this.translateEscape();
@@ -308,7 +330,7 @@ export class LuaLexer {
 			value += char;
 		}
 		if (!terminated) {
-			throw new LuaSyntaxError('[LuaLexer] Unterminated string literal.', this.path, this.tokenStartLine, this.tokenStartColumn);
+			throw new LuaLexicalError('[LuaLexer] Unterminated string literal.');
 		}
 		this.pushToken(LuaTokenType.String, value);
 	}
@@ -352,11 +374,11 @@ export class LuaLexer {
 					}
 					const value = Number.parseInt(digits, 10);
 					if (!Number.isFinite(value) || value > 255) {
-						throw new LuaSyntaxError('[LuaLexer] Invalid decimal escape sequence.', this.path, this.tokenStartLine, this.tokenStartColumn);
+						throw new LuaLexicalError('[LuaLexer] Invalid decimal escape sequence.');
 					}
 					return String.fromCharCode(value);
 				}
-				throw new LuaSyntaxError(`[LuaLexer] Unsupported escape sequence '\\${code}'.`, this.path, this.tokenStartLine, this.tokenStartColumn);
+				throw new LuaLexicalError(`[LuaLexer] Unsupported escape sequence '\\${code}'.`);
 		}
 	}
 
@@ -373,11 +395,11 @@ export class LuaLexer {
 			this.advance();
 		}
 		if (!LuaLexer.isDigit(this.currentChar())) {
-			throw new LuaSyntaxError('[LuaLexer] Invalid numeric literal exponent.', this.path, this.tokenStartLine, this.tokenStartColumn);
+			throw new LuaLexicalError('[LuaLexer] Invalid numeric literal exponent.');
 		}
 		this.consumeDigits();
 		if (this.currentIndex === markerIndex + 1) {
-			throw new LuaSyntaxError('[LuaLexer] Invalid numeric literal exponent.', this.path, this.tokenStartLine, this.tokenStartColumn);
+			throw new LuaLexicalError('[LuaLexer] Invalid numeric literal exponent.');
 		}
 	}
 
@@ -395,7 +417,7 @@ export class LuaLexer {
 			}
 		}
 		if (!hasDigits) {
-			throw new LuaSyntaxError('[LuaLexer] Hexadecimal literal requires digits.', this.path, this.tokenStartLine, this.tokenStartColumn);
+			throw new LuaLexicalError('[LuaLexer] Hexadecimal literal requires digits.');
 		}
 		if (this.currentChar() === 'p' || this.currentChar() === 'P') {
 			this.advance();
@@ -403,16 +425,16 @@ export class LuaLexer {
 				this.advance();
 			}
 			if (!LuaLexer.isDigit(this.currentChar())) {
-				throw new LuaSyntaxError('[LuaLexer] Hexadecimal literal requires binary exponent.', this.path, this.tokenStartLine, this.tokenStartColumn);
+				throw new LuaLexicalError('[LuaLexer] Hexadecimal literal requires binary exponent.');
 			}
 			this.consumeDigits();
 		}
 		const lexeme = this.currentLexeme();
 		const parsed = this.parseHexLiteral(lexeme);
 		if (!Number.isFinite(parsed)) {
-			throw new LuaSyntaxError('[LuaLexer] Numeric literal is not finite.', this.path, this.tokenStartLine, this.tokenStartColumn);
+			throw new LuaLexicalError('[LuaLexer] Numeric literal is not finite.');
 		}
-		this.pushToken(LuaTokenType.Number, parsed);
+		this.pushToken(LuaTokenType.Number, parsed, lexeme);
 	}
 
 	private skipWhitespaceSequence(): void {
@@ -426,7 +448,7 @@ export class LuaLexer {
 		for (let index = 0; index < required; index += 1) {
 			const next = this.currentChar();
 			if (!LuaLexer.isHexDigit(next)) {
-				throw new LuaSyntaxError('[LuaLexer] Invalid hexadecimal escape sequence.', this.path, this.tokenStartLine, this.tokenStartColumn);
+				throw new LuaLexicalError('[LuaLexer] Invalid hexadecimal escape sequence.');
 			}
 			digits += this.advance();
 		}
@@ -450,12 +472,12 @@ export class LuaLexer {
 			for (let index = 0; index < level; index += 1) {
 				const char = this.advance();
 				if (char !== '=') {
-					throw new LuaSyntaxError('[LuaLexer] Malformed long string delimiter.', this.path, this.tokenStartLine, this.tokenStartColumn);
+					throw new LuaLexicalError('[LuaLexer] Malformed long string delimiter.');
 				}
 			}
 			const finalChar = this.advance();
 			if (finalChar !== finalExpected) {
-				throw new LuaSyntaxError('[LuaLexer] Malformed long string delimiter.', this.path, this.tokenStartLine, this.tokenStartColumn);
+				throw new LuaLexicalError('[LuaLexer] Malformed long string delimiter.');
 			}
 		}
 
@@ -470,7 +492,7 @@ export class LuaLexer {
 				}
 			value += char;
 		}
-		throw new LuaSyntaxError('[LuaLexer] Unterminated long string literal.', this.path, this.tokenStartLine, this.tokenStartColumn);
+		throw new LuaLexicalError('[LuaLexer] Unterminated long string literal.');
 	}
 
 	private skipLongBracketContent(level: number): void {
@@ -482,7 +504,7 @@ export class LuaLexer {
 					return;
 				}
 		}
-		throw new LuaSyntaxError('[LuaLexer] Unterminated block comment.', this.path, this.tokenStartLine, this.tokenStartColumn);
+		throw new LuaLexicalError('[LuaLexer] Unterminated block comment.');
 	}
 
 	private checkLongBracketClose(level: number): boolean {
@@ -519,7 +541,7 @@ export class LuaLexer {
 			const fractionalPart = match[2];
 			const exponentPart = match[3];
 			if (integerPart.length === 0 && (fractionalPart === undefined || fractionalPart.length === 0)) {
-				throw new LuaSyntaxError('[LuaLexer] Hexadecimal literal requires digits.', this.path, this.tokenStartLine, this.tokenStartColumn);
+				throw new LuaLexicalError('[LuaLexer] Hexadecimal literal requires digits.');
 			}
 		let value = 0;
 		for (let index = 0; index < integerPart.length; index += 1) {
@@ -536,16 +558,7 @@ export class LuaLexer {
 		return (value + fraction) * Math.pow(2, exponent);
 	}
 
-	private beginItem(offset: number): void {
-		if (this.items.length === LUA_LEXICAL_BLOCK_CAPACITY) {
-			this.items = [];
-			this.unit = { unit: createLuaSourceUnit(), offset };
-			this.blocks.push({ unit: this.unit.unit, items: this.items });
-		}
-	}
-
 	private pushToken(type: LuaTokenType, literal: LuaTokenLiteral, lexeme = this.currentLexeme()): void {
-		this.beginItem(this.tokenStartIndex);
 		const start = this.tokenStartIndex - this.unit.offset;
 		const width = this.currentIndex - this.tokenStartIndex;
 		this.items.push({
@@ -561,10 +574,6 @@ export class LuaLexer {
 		this.currentIndex += 1;
 		if (char === '\n') {
 			this.line += 1;
-			this.column = 1;
-		}
-		else {
-			this.column += 1;
 		}
 		return char;
 	}
@@ -626,6 +635,6 @@ export class LuaLexer {
 	}
 
 	private currentLexeme(): string {
-		return this.source.slice(this.tokenStartIndex, this.currentIndex);
+		return this.text.slice(this.tokenStartIndex, this.currentIndex);
 	}
 }

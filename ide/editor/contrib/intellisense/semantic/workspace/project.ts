@@ -1,4 +1,5 @@
-import type { ParsedLuaChunk } from '../../../../../../toolchain/ts/lua/analysis/parse';
+import { SourceChangeMap } from '../../../../../../toolchain/ts/text/source_changes';
+import { updateLuaChunk, type ParsedLuaChunk } from '../../../../../../toolchain/ts/lua/analysis/parse';
 import {
 	buildLuaFileSemanticData,
 	LuaSemanticWorkspace,
@@ -18,11 +19,18 @@ import { readWorkspaceLuaSourceText } from '../../../../../workspace/files';
 import type { EditorTextModelService } from '../../../../model/model_service';
 import type { EditorTextModel } from '../../../../model/text_model';
 import { getTextSnapshot } from '../../../../text/source_text';
+import type { TextBuffer } from '../../../../text/text_buffer';
 
 export type SemanticDocumentInput = {
 	path: string;
 	source: string;
 	parsed?: ParsedLuaChunk;
+};
+
+type ModelAnalysisBaseline = {
+	readonly model: EditorTextModel;
+	readonly version: number;
+	changes: SourceChangeMap;
 };
 
 type ProjectBaseSource = {
@@ -39,6 +47,7 @@ export class EditorLuaSemanticProject {
 	private readonly workspace = new LuaSemanticWorkspace();
 	private readonly documentPaths = new Set<string>();
 	private readonly pendingPaths = new Set<string>();
+	private readonly modelBaselines = new Map<string, ModelAnalysisBaseline>();
 	private baseSources: ReadonlyMap<string, ProjectBaseSource> = new Map();
 	private readonly modelSubscriptions: readonly (() => void)[];
 	private primaryRegistry: LuaSourceRegistry | undefined;
@@ -58,8 +67,13 @@ export class EditorLuaSemanticProject {
 		};
 		this.modelSubscriptions = [
 			models.onDidAddModel(queueModel),
-			models.onDidChangeContent(queueModel),
+			models.onDidApplyChanges((model, event) => {
+				const baseline = this.modelBaselines.get(model.resource.path);
+				if (baseline?.model === model) baseline.changes = baseline.changes.append(event.changes);
+				queueModel(model);
+			}),
 			models.onDidRemoveModel(model => {
+				if (this.modelBaselines.get(model.resource.path)?.model === model) this.modelBaselines.delete(model.resource.path);
 				if (model.mode === 'lua' && model.resource.domain === domain) this.documentPaths.delete(model.resource.path);
 				queueModel(model);
 			}),
@@ -70,6 +84,7 @@ export class EditorLuaSemanticProject {
 	public dispose(): void {
 		for (const unsubscribe of this.modelSubscriptions) unsubscribe();
 		this.pendingPaths.clear();
+		this.modelBaselines.clear();
 	}
 
 	public synchronizeRuntimeSources(sources: RuntimeSourceState): void {
@@ -119,11 +134,17 @@ export class EditorLuaSemanticProject {
 			const base = this.baseSources.get(path);
 			let model = this.models.get({ domain: this.domain, path });
 			if (model === undefined) {
-				if (this.documentPaths.has(path)) continue;
+				if (this.documentPaths.has(path)) {
+					this.modelBaselines.delete(path);
+					continue;
+				}
 				if (this.domain !== SYSTEM_RESOURCE_DOMAIN && base?.domain !== this.domain) {
 					model = this.models.get({ domain: SYSTEM_RESOURCE_DOMAIN, path });
 				}
 			}
+			const baseline = this.modelBaselines.get(path);
+			if (baseline?.model === model && model !== undefined && baseline.version === model.version) continue;
+			if (model === undefined || baseline?.model !== model) this.modelBaselines.delete(path);
 			if (model === undefined && base === undefined) {
 				removedPaths.push(path);
 				continue;
@@ -133,14 +154,32 @@ export class EditorLuaSemanticProject {
 				: getTextSnapshot(model.buffer);
 			const existing = this.workspace.getFileData(path);
 			if (existing === undefined || existing.source !== source) {
-				changedAnalyses.push(buildLuaFileSemanticData(source, path));
+				const parsed = model !== undefined && baseline?.model === model
+					? updateLuaChunk(existing!.chunk, source, baseline.changes)
+					: undefined;
+				changedAnalyses.push(buildLuaFileSemanticData(source, path, parsed));
 			}
+			if (model !== undefined) this.modelBaselines.set(path, {
+				model, version: model.version, changes: SourceChangeMap.unchanged(source.length),
+			});
 		}
 		this.pendingPaths.clear();
 		this.workspace.updateFiles(changedAnalyses, removedPaths);
 	}
 
+	/** Retained buffers consume queued edits; detached buffers supply a full source generation. */
+	public analyzeDocument(path: string, buffer: TextBuffer): FileSemanticData {
+		const model = this.models.get({ domain: this.domain, path });
+		if (model !== undefined && model.buffer === buffer) {
+			if (this.modelBaselines.get(path)?.model !== model) this.pendingPaths.add(path);
+			this.synchronizeDocuments();
+			return this.workspace.getFileData(path)!;
+		}
+		return this.updateDocument(path, getTextSnapshot(buffer));
+	}
+
 	public updateDocument(path: string, source: string, parsed?: ParsedLuaChunk): FileSemanticData {
+		this.modelBaselines.delete(path);
 		this.documentPaths.add(path);
 		return this.workspace.updateFile(path, source, parsed);
 	}
@@ -149,6 +188,7 @@ export class EditorLuaSemanticProject {
 		const changedAnalyses: FileSemanticData[] = [];
 		for (let index = 0; index < inputs.length; index += 1) {
 			const input = inputs[index];
+			this.modelBaselines.delete(input.path);
 			this.documentPaths.add(input.path);
 			const existing = this.workspace.getFileData(input.path);
 			if (!existing || existing.source !== input.source

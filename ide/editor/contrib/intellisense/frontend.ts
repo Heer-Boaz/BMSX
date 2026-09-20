@@ -4,7 +4,6 @@ import {
 } from './semantic/workspace/index';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import { getOrCreateSemanticProject } from './semantic/workspace/state';
-import { getTextSnapshot } from '../../text/source_text';
 import type { TextBuffer } from '../../text/text_buffer';
 import type { ResourceIdentity } from '../../../common/resource';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
@@ -24,10 +23,9 @@ export function buildEditorSemanticSnapshot(
 	identity: ResourceIdentity,
 	buffer: TextBuffer,
 ): LuaSemanticWorkspaceSnapshot {
-	const source = getTextSnapshot(buffer);
 	const project = getOrCreateSemanticProject(identity.domain);
 	project.synchronizeRuntimeSources(bridge.sources);
-	project.updateDocument(identity.path, source);
+	project.analyzeDocument(identity.path, buffer);
 	return project.getSnapshot();
 }
 

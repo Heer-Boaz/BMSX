@@ -73,9 +73,9 @@ export class EditorUndoRedoService {
 		const records = participants.map(([model, edit]) => model.beginEditOperations(edit.beforeEditState));
 		const dirtyBefore = records.map(record => record.model.dirty);
 		this.push(records.length === 1 ? records[0] : { kind: 'workspace', order: 0, records });
-		const startRows = records.map((record, index) => record.model.applyEditOperations(record, participants[index][1].edits));
+		const applied = records.map((record, index) => record.model.applyEditOperations(record, participants[index][1].edits));
 		for (let index = 0; index < records.length; index += 1) {
-			records[index].model.endEditOperations(records[index], startRows[index], dirtyBefore[index], participants[index][1].computeAfterEditState);
+			records[index].model.endEditOperations(records[index], applied[index], dirtyBefore[index], participants[index][1].computeAfterEditState);
 		}
 	}
 
@@ -90,8 +90,8 @@ export class EditorUndoRedoService {
 			model.beginHistoryReplay();
 			const wasDirty = model.dirty;
 			this.move(element, element, from, to);
-			model.applyHistoryRecord(element, from);
-			model.endHistoryReplay(element, from, wasDirty);
+			const applied = model.applyHistoryRecord(element, from);
+			model.endHistoryReplay(element, from, applied, wasDirty);
 			return element;
 		}
 		for (const record of element.records) {
@@ -102,10 +102,10 @@ export class EditorUndoRedoService {
 		for (const record of element.records) record.model.beginHistoryReplay();
 		const dirtyBefore = element.records.map(record => record.model.dirty);
 		for (const record of element.records) this.move(element, record, from, to);
-		for (const record of element.records) record.model.applyHistoryRecord(record, from);
+		const applied = element.records.map(record => record.model.applyHistoryRecord(record, from));
 		for (let index = 0; index < element.records.length; index += 1) {
 			const record = element.records[index];
-			record.model.endHistoryReplay(record, from, dirtyBefore[index]);
+			record.model.endHistoryReplay(record, from, applied[index], dirtyBefore[index]);
 		}
 		return element.records.find(record => record.model === model)!;
 	}

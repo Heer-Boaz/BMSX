@@ -26,6 +26,13 @@ export type EditorModelEdit = {
 
 export type EditorTextModelChangeKind = 'edit' | 'undo' | 'redo' | 'restore' | 'revert';
 
+/** Post-apply delta. Internal owners only track/invalidate here; never query or mutate models. */
+export type EditorTextModelAppliedChanges = {
+	readonly version: number;
+	readonly startRow: number;
+	readonly changes: readonly EditorTextChange[];
+};
+
 export type EditorTextModelContentChangeEvent = {
 	kind: EditorTextModelChangeKind;
 	version: number;
@@ -42,6 +49,7 @@ export type EditorTextModelSnapshot = {
 	readonly stateId: number;
 };
 
+type AppliedChangesListener = (event: EditorTextModelAppliedChanges) => void;
 type ContentChangeListener = (event: EditorTextModelContentChangeEvent) => void;
 type WorkingCopyListener = () => void;
 
@@ -53,6 +61,7 @@ const editStartPosition = { row: 0, column: 0 };
  */
 export class EditorTextModel {
 	private readonly pieceTree: PieceTreeBuffer;
+	private readonly appliedChangesListeners = new Set<AppliedChangesListener>();
 	private readonly contentChangeListeners = new Set<ContentChangeListener>();
 	private readonly beforeContentChangeListeners = new Set<WorkingCopyListener>();
 	private readonly dirtyChangeListeners = new Set<WorkingCopyListener>();
@@ -137,6 +146,12 @@ export class EditorTextModel {
 
 	private emitBeforeContentChange(): void {
 		for (const listener of this.beforeContentChangeListeners) listener();
+	}
+
+	/** Runs during apply, before any public callback, also across compound workspace edits. */
+	public onDidApplyChanges(listener: AppliedChangesListener): () => void {
+		this.appliedChangesListeners.add(listener);
+		return () => this.appliedChangesListeners.delete(listener);
 	}
 
 	public onDidChangeContent(listener: ContentChangeListener): () => void {
@@ -244,7 +259,8 @@ export class EditorTextModel {
 		this.versionValue += 1;
 		const startRow = this.pendingStartRow;
 		this.clearPreparedEdit();
-		this.emitContentChange('edit', startRow, editContext, changes, record.afterEditState);
+		const applied = this.emitAppliedChanges(startRow, changes);
+		this.emitContentChange('edit', applied, editContext, record.afterEditState);
 		this.emitDirtyChange(wasDirty);
 		return true;
 	}
@@ -262,8 +278,8 @@ export class EditorTextModel {
 		const record = this.beginEditOperations(beforeEditState);
 		const wasDirty = this.dirty;
 		this.history.push(record);
-		const startRow = this.applyEditOperations(record, edits);
-		this.endEditOperations(record, startRow, wasDirty, computeAfterEditState);
+		const applied = this.applyEditOperations(record, edits);
+		this.endEditOperations(record, applied, wasDirty, computeAfterEditState);
 	}
 
 	/** History-owner phases also let a workspace edit publish only complete buffers. */
@@ -276,7 +292,7 @@ export class EditorTextModel {
 		return record;
 	}
 
-	public applyEditOperations(record: EditorUndoRecord, edits: readonly EditorTextEdit[]): number {
+	public applyEditOperations(record: EditorUndoRecord, edits: readonly EditorTextEdit[]): EditorTextModelAppliedChanges {
 		let startRow = this.pieceTree.getLineCount() - 1;
 		for (let index = edits.length - 1; index >= 0; index -= 1) {
 			const edit = edits[index];
@@ -287,14 +303,13 @@ export class EditorTextModel {
 		this.currentStateId = this.nextStateId++;
 		record.afterStateId = this.currentStateId;
 		this.versionValue += 1;
-		return startRow;
+		return this.emitAppliedChanges(startRow, record.getTextChanges());
 	}
 
-	public endEditOperations(record: EditorUndoRecord, startRow: number, wasDirty: boolean,
+	public endEditOperations(record: EditorUndoRecord, applied: EditorTextModelAppliedChanges, wasDirty: boolean,
 		computeAfterEditState: ((changes: readonly EditorTextChange[]) => EditorEditState) | null = null): void {
-		const changes = record.getTextChanges();
-		if (computeAfterEditState !== null) record.afterEditState = computeAfterEditState(changes);
-		this.emitContentChange('edit', startRow, null, changes, record.afterEditState);
+		if (computeAfterEditState !== null) record.afterEditState = computeAfterEditState(applied.changes);
+		this.emitContentChange('edit', applied, null, record.afterEditState);
 		this.emitDirtyChange(wasDirty);
 	}
 
@@ -306,7 +321,7 @@ export class EditorTextModel {
 		this.emitBeforeContentChange();
 	}
 
-	public applyHistoryRecord(record: EditorUndoRecord, direction: EditorHistoryDirection): void {
+	public applyHistoryRecord(record: EditorUndoRecord, direction: EditorHistoryDirection): EditorTextModelAppliedChanges {
 		const ops = record.ops;
 		if (direction === 'undo') {
 			for (let index = ops.length - 1; index >= 0; index -= 1) {
@@ -347,11 +362,12 @@ export class EditorTextModel {
 			this.currentStateId = record.afterStateId;
 		}
 		this.versionValue += 1;
+		return this.emitAppliedChanges(0, record.getTextChanges(0, direction === 'undo'));
 	}
 
-	public endHistoryReplay(record: EditorUndoRecord, direction: EditorHistoryDirection, wasDirty: boolean): void {
+	public endHistoryReplay(record: EditorUndoRecord, direction: EditorHistoryDirection, applied: EditorTextModelAppliedChanges, wasDirty: boolean): void {
 		const undo = direction === 'undo';
-		this.emitContentChange(direction, 0, null, record.getTextChanges(0, undo), undo ? record.beforeEditState : record.afterEditState);
+		this.emitContentChange(direction, applied, null, undo ? record.beforeEditState : record.afterEditState);
 		this.emitDirtyChange(wasDirty);
 	}
 
@@ -393,7 +409,8 @@ export class EditorTextModel {
 		this.replaceContents(source);
 		this.currentStateId = this.nextStateId;
 		this.nextStateId += 1;
-		this.emitContentChange('restore', 0, null, [{ offset: 0, deletedLength, insertedLength: source.length }]);
+		const applied = this.emitAppliedChanges(0, [{ offset: 0, deletedLength, insertedLength: source.length }]);
+		this.emitContentChange('restore', applied, null);
 		this.emitDirtyChange(wasDirty);
 	}
 
@@ -403,7 +420,8 @@ export class EditorTextModel {
 		const deletedLength = this.pieceTree.length;
 		this.replaceContents(this.lastSavedSourceValue);
 		this.currentStateId = this.savedStateId;
-		this.emitContentChange('revert', 0, null, [{ offset: 0, deletedLength, insertedLength: this.lastSavedSourceValue.length }]);
+		const applied = this.emitAppliedChanges(0, [{ offset: 0, deletedLength, insertedLength: this.lastSavedSourceValue.length }]);
+		this.emitContentChange('revert', applied, null);
 		this.emitDirtyChange(wasDirty);
 		for (const listener of this.revertListeners) {
 			listener();
@@ -412,6 +430,7 @@ export class EditorTextModel {
 
 	public dispose(): void {
 		this.history.remove(this);
+		this.appliedChangesListeners.clear();
 		this.contentChangeListeners.clear();
 		this.beforeContentChangeListeners.clear();
 		this.dirtyChangeListeners.clear();
@@ -466,16 +485,22 @@ export class EditorTextModel {
 		this.pendingHistoryMerge = false;
 	}
 
-	private emitContentChange(kind: EditorTextModelChangeKind, startRow: number, editContext: EditContext | null, changes: readonly EditorTextChange[], editState: EditorEditState | null = null): void {
+	private emitAppliedChanges(startRow: number, changes: readonly EditorTextChange[]): EditorTextModelAppliedChanges {
 		for (const ranges of this.trackedRangeSets) {
 			for (const range of ranges.values()) mapTrackedTextRange(range, changes);
 		}
+		const applied = { version: this.versionValue, startRow, changes };
+		for (const listener of this.appliedChangesListeners) listener(applied);
+		return applied;
+	}
+
+	private emitContentChange(kind: EditorTextModelChangeKind, applied: EditorTextModelAppliedChanges, editContext: EditContext | null, editState: EditorEditState | null = null): void {
 		const event: EditorTextModelContentChangeEvent = {
 			kind,
-			version: this.versionValue,
-			startRow,
+			version: applied.version,
+			startRow: applied.startRow,
 			editContext,
-			changes,
+			changes: applied.changes,
 			editState,
 		};
 		for (const listener of this.contentChangeListeners) {

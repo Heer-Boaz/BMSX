@@ -1,3 +1,4 @@
+import { luaSyntaxSnapshot } from '../helpers/lua_syntax_snapshot';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
@@ -366,4 +367,249 @@ test('explicit editor parses replace same-text generations without replacing ret
 	assert.notEqual(old.getFileData(path)!.chunk, parsed.chunk);
 	project.updateDocuments([{ path, source, parsed }]);
 	assert.equal(project.getSnapshot(), updated);
+});
+
+test('model deltas compose across multiple events and preserve lexical identities through Undo and Redo', t => {
+	const models = new EditorTextModelService();
+	const project = new EditorLuaSemanticProject(0, models);
+	t.after(() => { project.dispose(); models.clear(); });
+	const source = Array.from({ length: 90 }, (_, index) => `local value_${index} = ${index}\n`).join('') + 'return value_89';
+	const model = models.retain(resource(0, 'composed.lua'), 'lua', source);
+	const first = project.getFileData('composed.lua')!;
+	const tail = Array.from(first.chunk.tokens).find(token => token.lexeme === 'value_70')!;
+	const parse = t.mock.method(LuaParser.prototype, 'parseChunkWithRecovery');
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- first\n' }]);
+	model.pushEditOperations([{ offset: 3, deleteLength: 5, text: 'changed' }]);
+	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n' }]);
+	assert.equal(parse.mock.callCount(), 0, 'event callbacks compose lengths without parsing');
+	const edited = project.getFileData('composed.lua')!;
+	assert.equal(parse.mock.callCount(), 1);
+	assert.equal(edited.source, model.buffer.getText());
+	assert.ok(Array.from(edited.chunk.tokens).includes(tail), 'unchanged lexical blocks survive the composed edit');
+	model.undo(); model.undo(); model.undo();
+	const undone = project.getFileData('composed.lua')!;
+	assert.equal(undone.source, source);
+	assert.ok(Array.from(undone.chunk.tokens).includes(tail));
+	model.redo(); model.redo(); model.redo();
+	const redone = project.getFileData('composed.lua')!;
+	assert.equal(redone.source, edited.source);
+	assert.ok(Array.from(redone.chunk.tokens).includes(tail));
+	assert.equal(first.source, source);
+});
+
+test('explicit same-text parses replace the model baseline and the next model analysis starts from that generation', t => {
+	const models = new EditorTextModelService();
+	const project = new EditorLuaSemanticProject(0, models);
+	t.after(() => { project.dispose(); models.clear(); });
+	const source = Array.from({ length: 90 }, (_, index) => `local value_${index} = ${index}\n`).join('') + 'return value_89';
+	const model = models.retain(resource(0, 'explicit_model.lua'), 'lua', source);
+	project.analyzeDocument(model.resource.path, model.buffer);
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- pending\n' }]);
+	const parsed = parseLuaChunkWithRecovery(model.buffer.getText(), model.resource.path);
+	project.updateDocuments([{ path: model.resource.path, source: model.buffer.getText(), parsed }]);
+	assert.equal(project.analyzeDocument(model.resource.path, model.buffer).chunk, parsed.chunk,
+		'the pending model event cannot replace a supplied same-text parse');
+	const retained = parsed.tokens.get(parsed.tokens.length - 2);
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- next\n' }]);
+	assert.ok(Array.from(project.analyzeDocument(model.resource.path, model.buffer).chunk.tokens).includes(retained));
+	const detached = new EditorTextModelService();
+	t.after(() => detached.clear());
+	const other = detached.retain(resource(0, model.resource.path), 'lua', 'return 77');
+	assert.equal(project.analyzeDocument(model.resource.path, other.buffer).source, 'return 77', 'detached buffers are explicit full-source input');
+	assert.equal(project.analyzeDocument(model.resource.path, model.buffer).source, model.buffer.getText(), 'retained input reestablishes its own baseline');
+});
+
+test('ownership changes discard queued deltas before SYSTEM models are uncovered or a path is re-added', t => {
+	const models = new EditorTextModelService();
+	const project = new EditorLuaSemanticProject(0, models);
+	t.after(() => { project.dispose(); models.clear(); });
+	const sources = runtimeSources(sourceRegistry([['shared.lua', 'return 1']]), sourceRegistry([['entry.lua', 'return 0']]));
+	const system = models.retain(resource(-1, 'shared.lua'), 'lua', 'return 1');
+	project.synchronizeRuntimeSources(sources);
+	assert.equal(project.getFileData('shared.lua')!.source, 'return 1');
+	system.pushEditOperations([{ offset: 7, deleteLength: 1, text: '222' }]);
+	sources.cartridgeSlots[0] = { luaSources: sourceRegistry([['shared.lua', 'return 33333']]) } as RuntimeSourceState['cartridgeSlots'][0];
+	project.synchronizeRuntimeSources(sources);
+	assert.equal(project.getFileData('shared.lua')!.source, 'return 33333');
+	system.pushEditOperations([{ offset: 7, deleteLength: 3, text: '4' }]);
+	sources.cartridgeSlots[0] = { luaSources: sourceRegistry([['entry.lua', 'return 0']]) } as RuntimeSourceState['cartridgeSlots'][0];
+	project.synchronizeRuntimeSources(sources);
+	assert.equal(project.getFileData('shared.lua')!.source, 'return 4');
+	system.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- discarded\n' }]);
+	models.clear();
+	const next = models.retain(resource(-1, 'shared.lua'), 'lua', 'return 56789');
+	next.pushEditOperations([{ offset: 7, deleteLength: 5, text: '6' }]);
+	assert.equal(project.getFileData('shared.lua')!.source, 'return 6');
+});
+
+test('actual editor frontend and context token queries consume queued model edits instead of publishing full-source replacements', async t => {
+	const { editorTextModelService } = await import('../../ide/editor/model/model_service');
+	const { resetSemanticProject, resetSemanticProjects } = await import('../../ide/editor/contrib/intellisense/semantic/workspace/state');
+	const { buildEditorSemanticSnapshot } = await import('../../ide/editor/contrib/intellisense/frontend');
+	const { resolveContextMenuToken } = await import('../../ide/editor/contrib/intellisense/engine');
+	const { activeCodeEditor, createCodeEditorViewState } = await import('../../ide/editor/ui/code_editor_state');
+	const path = 'frontend_incremental.lua';
+	const source = Array.from({ length: 90 }, (_, index) => `local value_${index} = ${index}\n`).join('') + 'return value_89';
+	const model = editorTextModelService.retain(resource(0, path), 'lua', source);
+	const project = resetSemanticProject(0);
+	const sources = runtimeSources(sourceRegistry([['system.lua', 'return 0']]), sourceRegistry([[path, source]]));
+	const bridge = { sources } as import('../../ide/runtime/lua_tooling').RuntimeLuaTooling;
+	t.after(() => { activeCodeEditor.detach(); resetSemanticProjects(); editorTextModelService.clear(); });
+	const initial = buildEditorSemanticSnapshot(bridge, model.resource, model.buffer);
+	const retained = initial.getFileData(path)!.chunk.tokens.get(initial.getFileData(path)!.chunk.tokens.length - 2);
+	const explicit = t.mock.method(project, 'updateDocument');
+	activeCodeEditor.attach(model, createCodeEditorViewState());
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- frontend\n' }]);
+	const next = buildEditorSemanticSnapshot(bridge, model.resource, model.buffer);
+	assert.ok(Array.from(next.getFileData(path)!.chunk.tokens).includes(retained));
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- context\n' }]);
+	assert.equal(resolveContextMenuToken(2, 7, path)?.text, 'value_0');
+	assert.ok(Array.from(project.getFileData(path)!.chunk.tokens).includes(retained));
+	assert.equal(explicit.mock.callCount(), 0, 'model-backed frontend calls must not reset the incremental baseline');
+});
+
+test('queued edits for multiple models publish one workspace batch and full-source inputs discard old deltas', async t => {
+	const { LuaSemanticWorkspace } = await import('../../toolchain/ts/lua/semantic/model');
+	const models = new EditorTextModelService();
+	const project = new EditorLuaSemanticProject(0, models);
+	t.after(() => { project.dispose(); models.clear(); });
+	const left = models.retain(resource(0, 'left.lua'), 'lua', 'return 1');
+	const right = models.retain(resource(0, 'right.lua'), 'lua', 'return 2');
+	project.getSnapshot();
+	const publish = t.mock.method(LuaSemanticWorkspace.prototype, 'updateFiles');
+	left.pushEditOperations([{ offset: 7, deleteLength: 1, text: '123456' }]);
+	right.pushEditOperations([{ offset: 7, deleteLength: 1, text: '234567' }]);
+	const snapshot = project.getSnapshot();
+	assert.equal(publish.mock.callCount(), 1);
+	assert.equal(publish.mock.calls[0].arguments[0].length, 2);
+	assert.equal(snapshot.getFileData('left.lua')!.source, 'return 123456');
+	assert.equal(snapshot.getFileData('right.lua')!.source, 'return 234567');
+	left.pushEditOperations([{ offset: 7, deleteLength: 6, text: '3' }]);
+	project.updateDocument('left.lua', 'local unrelated = "a different source length"; return unrelated');
+	left.pushEditOperations([{ offset: 7, deleteLength: 1, text: '4' }]);
+	assert.equal(project.getFileData('left.lua')!.source, 'return 4', 'model deltas are not applied to an explicit replacement baseline');
+});
+
+test('diagnostics distinguish model-buffer analysis from explicit source input', async t => {
+	const { editorTextModelService } = await import('../../ide/editor/model/model_service');
+	const { resetSemanticProject, resetSemanticProjects } = await import('../../ide/editor/contrib/intellisense/semantic/workspace/state');
+	const { computeAggregatedEditorDiagnostics } = await import('../../ide/workbench/contrib/code_editor/diagnostics/analysis');
+	const { RuntimeLuaTooling } = await import('../../ide/runtime/lua_tooling');
+	const { SuspendedGuestSession } = await import('../../ide/runtime/suspended_guest');
+	const { createTestRuntime, createTestRuntimeRomPayload } = await import('../helpers/runtime_sources');
+	const path = 'diagnostics_incremental.lua';
+	const source = Array.from({ length: 90 }, (_, index) => `local value_${index} = ${index}\n`).join('') + 'return value_89';
+	const model = editorTextModelService.retain(resource(0, path), 'lua', source);
+	const project = resetSemanticProject(0);
+	const sources = runtimeSources(sourceRegistry([['system.lua', 'return 0']]), sourceRegistry([[path, source]]));
+	const bridge = new RuntimeLuaTooling(sources, new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload())));
+	t.after(() => { resetSemanticProjects(); editorTextModelService.clear(); });
+	project.synchronizeRuntimeSources(sources);
+	const before = project.getFileData(path)!;
+	const retained = before.chunk.tokens.get(before.chunk.tokens.length - 2);
+	const explicit = t.mock.method(project, 'updateDocuments');
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- diagnostics\n' }]);
+	computeAggregatedEditorDiagnostics(bridge, [{ id: `code:0\0${path}`, domain: 0, path, buffer: model.buffer, version: model.version }]);
+	assert.equal(explicit.mock.callCount(), 0);
+	assert.ok(Array.from(project.getFileData(path)!.chunk.tokens).includes(retained));
+	computeAggregatedEditorDiagnostics(bridge, [{ id: `code:0\0${path}`, domain: 0, path, source: model.buffer.getText(), version: model.version }]);
+	assert.equal(explicit.mock.callCount(), 1, 'explicit source diagnostics remain a distinct full-source input mode');
+});
+
+test('scheduled syntax highlighting consumes current model deltas and invalidates a superseded request', async t => {
+	const { editorTextModelService } = await import('../../ide/editor/model/model_service');
+	const { resetSemanticProject, resetSemanticProjects } = await import('../../ide/editor/contrib/intellisense/semantic/workspace/state');
+	const { CodeLayout } = await import('../../ide/editor/ui/code/layout');
+	const { EditorFont } = await import('../../ide/editor/ui/view/font');
+	const { VirtualHeadlessClock } = await import('../../hosts/node/headless/clock');
+	const source = Array.from({ length: 90 }, (_, index) => `local value_${index} = ${index}\n`).join('') + 'return value_89';
+	const model = editorTextModelService.retain(resource(0, 'highlight_incremental.lua'), 'lua', source);
+	const project = resetSemanticProject(0);
+	const before = project.getFileData(model.resource.path)!;
+	const retained = before.chunk.tokens.get(before.chunk.tokens.length - 2);
+	const clock = new VirtualHeadlessClock();
+	const layout = new CodeLayout(new EditorFont('tiny'), { maxHighlightCache: 64, semanticDebounceMs: 0,
+		clock, getBuiltinIdentifiers: () => ({ epoch: 0, ids: [] }), computeWrapWidth: () => 320 });
+	model.onDidChangeContent(event => layout.onDidChangeContent(model.buffer, event));
+	t.after(() => { layout.invalidateAllHighlights(); resetSemanticProjects(); editorTextModelService.clear(); });
+	const explicit = t.mock.method(project, 'updateDocument');
+	const analyze = t.mock.method(project, 'analyzeDocument');
+	layout.requestSemanticUpdate(model.buffer, model.version, model.resource);
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- superseded\n' }]);
+	clock.advance(0);
+	assert.equal(analyze.mock.callCount(), 0, 'a queued request cannot publish new text under its old model version');
+	layout.requestSemanticUpdate(model.buffer, model.version, model.resource);
+	clock.advance(0);
+	const current = layout.getSemanticFileData(model.buffer, model.version, model.resource);
+	assert.equal(current.source, model.buffer.getText());
+	assert.ok(Array.from(current.chunk.tokens).includes(retained));
+	assert.equal(explicit.mock.callCount(), 0);
+});
+
+test('public listeners registered before a lazy semantic project observe current analysis for every model mutation', async t => {
+	const { EditorEditStateType } = await import('../../ide/editor/model/edit_state');
+	const models = new EditorTextModelService();
+	const model = models.retain(resource(0, 'listener_order.lua'), 'lua', 'return 1');
+	let project: EditorLuaSemanticProject;
+	let observed = 0;
+	let applied: import('../../ide/editor/model/text_model').EditorTextModelAppliedChanges;
+	models.onDidChangeContent((changed, event) => {
+		const actual = project.getFileData(changed.resource.path)!;
+		assert.equal(actual.source, changed.buffer.getText());
+		assert.deepEqual(luaSyntaxSnapshot(actual.chunk), luaSyntaxSnapshot(parseLuaChunkWithRecovery(changed.buffer.getText(), changed.resource.path).chunk));
+		assert.equal(event.version, applied.version);
+		assert.equal(event.changes, applied.changes, 'internal/public phases share one computed delta array');
+		observed++;
+	});
+	model.onDidChangeContent(() => assert.equal(project.getFileData(model.resource.path)!.source, model.buffer.getText()));
+	models.onDidApplyChanges((changed, event) => {
+		assert.equal(changed.version, event.version);
+		applied = event;
+	});
+	project = new EditorLuaSemanticProject(0, models);
+	t.after(() => { project.dispose(); models.clear(); });
+	project.getSnapshot();
+	model.pushEditOperations([{ offset: 7, deleteLength: 1, text: '22' }]);
+	model.undo(); model.redo();
+	const state = new EditorEditStateType<null>().of(null);
+	model.prepareUndo('typing', false, 1, state);
+	model.applyUndoableReplace(7, 2, '333');
+	model.commitEdit(state, null);
+	model.undo(); model.redo();
+	model.restoreDirtySource('return 4444');
+	model.revert();
+	assert.equal(observed, 8);
+	assert.equal(project.getFileData(model.resource.path)!.source, 'return 1');
+});
+
+test('first public callback of a compound edit and Undo/Redo sees every applied model delta', t => {
+	const models = new EditorTextModelService();
+	const left = models.retain(resource(0, 'compound_left.lua'), 'lua', 'return 1');
+	const right = models.retain(resource(0, 'compound_right.lua'), 'lua', 'return 2');
+	let project: EditorLuaSemanticProject;
+	let observed = 0;
+	const versions = new Map<import('../../ide/editor/model/text_model').EditorTextModel, number>();
+	models.onDidChangeContent(() => {
+		const snapshot = project.getSnapshot();
+		for (const model of [left, right]) {
+			assert.equal(versions.get(model), model.version, 'all internal phases finish before the first public phase');
+			const actual = snapshot.getFileData(model.resource.path)!;
+			assert.equal(actual.source, model.buffer.getText());
+			assert.deepEqual(luaSyntaxSnapshot(actual.chunk), luaSyntaxSnapshot(parseLuaChunkWithRecovery(model.buffer.getText(), model.resource.path).chunk));
+		}
+		observed++;
+	});
+	models.onDidApplyChanges((model, applied) => versions.set(model, applied.version));
+	project = new EditorLuaSemanticProject(0, models);
+	t.after(() => { project.dispose(); models.clear(); });
+	project.getSnapshot();
+	models.history.applyEdits(new Map([
+		[left, { version: left.version, edits: [{ offset: 7, deleteLength: 1, text: '11' }] }],
+		[right, { version: right.version, edits: [{ offset: 7, deleteLength: 1, text: '222' }] }],
+	]));
+	left.undo();
+	right.redo();
+	assert.equal(observed, 6);
+	assert.equal(project.getFileData(left.resource.path)!.source, 'return 11');
+	assert.equal(project.getFileData(right.resource.path)!.source, 'return 222');
 });
