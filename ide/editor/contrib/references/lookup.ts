@@ -27,7 +27,7 @@ export function resolveReferenceLookup(bridge: RuntimeLuaTooling, options: Refer
 	const matches: SearchMatch[] = [];
 	for (let targetIndex = 0; targetIndex < resolution.targets.length; targetIndex += 1) {
 		const target = resolution.targets[targetIndex];
-		const range = target.declaration.range;
+		const range = target.range;
 		if (range.path === path) {
 			const definitionMatch = searchMatchFromSourceRange(range);
 			matches.push(definitionMatch);
@@ -38,7 +38,7 @@ export function resolveReferenceLookup(bridge: RuntimeLuaTooling, options: Refer
 		if (reference.file !== path) {
 			continue;
 		}
-		const match = searchMatchFromSourceRange(reference.range);
+		const match = searchMatchFromSourceRange(frontend.snapshot.getFileData(reference.file)!.chunk.locations.range(reference.span));
 		matches.push(match);
 	}
 	matches.sort((left, right) => left.row !== right.row ? left.row - right.row : left.start - right.start);

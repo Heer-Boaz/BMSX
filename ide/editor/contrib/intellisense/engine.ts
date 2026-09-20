@@ -501,7 +501,7 @@ export function listLuaSymbols(bridge: RuntimeLuaTooling, domain: ResourceDomain
 	const symbols = new Array<LuaSymbolEntry>(declarations.length);
 	for (let index = 0; index < declarations.length; index += 1) {
 		const declaration = declarations[index];
-		const location = definitionLocationFromSourceRange(declaration.range);
+		const location = definitionLocationFromSourceRange(analysis.chunk.locations.range(declaration.span));
 		symbols[index] = {
 			name: declaration.name,
 			path: declaration.namePath.length > 0
@@ -539,7 +539,7 @@ export function listGlobalLuaSymbols(bridge: RuntimeLuaTooling, domain: Resource
 			name: decl.name,
 			path,
 			kind: semanticSymbolKindToLuaSymbolKind(decl.kind),
-			location: definitionLocationFromSourceRange(decl.range),
+			location: definitionLocationFromSourceRange(snapshot.getFileData(decl.file)!.chunk.locations.range(decl.span)),
 		});
 	}
 	entries.sort((a, b) => {
@@ -583,7 +583,7 @@ export function findStaticDefinitionLocation(
 	const frontend = createEditorSemanticFrontend(bridge, project.getSnapshot());
 	const symbols = frontend.findSymbolsByPosition(sourcePath, usageRow, usageColumn);
 	return symbols && symbols.targets.length === 1
-		? definitionLocationFromSourceRange(symbols.targets[0].declaration.range)
+		? definitionLocationFromSourceRange(symbols.targets[0].range)
 		: null;
 }
 

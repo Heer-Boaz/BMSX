@@ -152,11 +152,11 @@ test('LuaSemanticFrontend returns every valid definition target', () => {
 	assert.ok(references);
 	assert.equal(references.label, 'selected:run');
 	assert.deepEqual(
-		references.targets.map(target => target.declaration.range.start.line),
+		references.targets.map(target => target.range.start.line),
 		[2, 4],
 	);
 	assert.deepEqual(
-		references.references.map(reference => reference.range.start.line),
+		references.references.map(reference => frontend.snapshot.getFileData(reference.file)!.chunk.locations.range(reference.span).start.line),
 		[6, 7, 8],
 	);
 });
@@ -297,7 +297,7 @@ test('LuaSemanticFrontend owns visible declarations and lexical shadowing', () =
 		'parameter',
 		'retained',
 	]);
-	assert.equal(nestedByName.get('outer')?.range.start.line, 5);
+	assert.equal(file.locations.range(nestedByName.get('outer')!.span).start.line, 5);
 	assert.deepEqual(
 		file.getVisibleDeclarationsAt(8, lines[7].length + 1)
 			.map(declaration => declaration.name)
@@ -328,8 +328,8 @@ test('LuaSemanticFrontend applies local declaration visibility after its initial
 	const bodyValue = file.getVisibleDeclarationsAt(4, lines[3].length + 1)
 		.find(declaration => declaration.name === 'value');
 
-	assert.equal(initializerValue?.range.start.line, 1);
-	assert.equal(bodyValue?.range.start.line, 3);
+	assert.equal(file.locations.range(initializerValue!.span).start.line, 1);
+	assert.equal(file.locations.range(bodyValue!.span).start.line, 3);
 });
 
 test('LuaSemanticFrontend retains parameters and loop variables on blank body lines', () => {
@@ -525,7 +525,7 @@ return object.ready.answer`;
 	const position = findPosition(source, 'return object.ready.answer', 'answer');
 	const target = wholeProgramSymbolAt(frontend.snapshot, 'callback.lua', position.line, position.column);
 	assert.ok(target);
-	assert.equal(target.declaration.range.start.line, 6);
+	assert.equal(target.range.start.line, 6);
 	const receiver = file.findMemberCompletionContextAt(position.line, 'return object.'.length + 1);
 	assert.ok(receiver);
 	assert.deepEqual(frontend.snapshot.symbolResolver.getWholeProgramMembers(receiver.receiver).map(member => member.name), ['ready']);
@@ -645,7 +645,7 @@ test('LuaSemanticFrontend navigates only calls bound to the builtin require', ()
 	assert.ok(source);
 	assert.equal(source.moduleReferences.length, 1);
 	assert.equal(source.moduleReferences[0].value, 'lib/util');
-	assert.deepEqual(source.moduleReferences[0].range, {
+	assert.deepEqual(source.chunk.locations.range(source.moduleReferences[0].span), {
 		path: 'main.lua',
 		start: { line: 1, column: 9 },
 		end: { line: 1, column: 18 },

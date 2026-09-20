@@ -57,10 +57,14 @@ export function wholeProgramSymbolsAt(
 	const file = snapshot.getFileData(path);
 	const occurrence = file === undefined ? null : findLuaSemanticOccurrenceAt(file, line, column);
 	if (occurrence === null) return EMPTY_POSITION_TARGETS;
-	if (occurrence.kind === 'declaration') return [{ id: occurrence.declaration.id, declaration: occurrence.declaration }];
+	if (occurrence.kind === 'declaration') return [{ id: occurrence.declaration.id, declaration: occurrence.declaration,
+		range: file!.chunk.locations.range(occurrence.declaration.span) }];
 	const resolver = snapshot.symbolResolver;
 	return resolver.resolveWholeProgramReferenceTargets(occurrence.reference)
-		.map(id => ({ id, declaration: resolver.getDeclaration(id) }));
+		.map(id => {
+			const declaration = resolver.getDeclaration(id);
+			return { id, declaration, range: snapshot.getFileData(declaration.file)!.chunk.locations.range(declaration.span) };
+		});
 }
 
 export function wholeProgramSymbolAt(

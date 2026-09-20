@@ -112,7 +112,7 @@ test('edited, removed and reintroduced providers use a fresh term universe while
 	const reference = use.refs.find(ref => ref.name === 'marker')!;
 	const firstTarget = old.symbolResolver.resolveReferenceTargets(reference);
 	assert.equal(firstTarget.length, 1);
-	assert.equal(old.symbolResolver.getDeclaration(firstTarget[0]).range.start.line, 2);
+	assert.equal(first.chunk.locations.range(old.symbolResolver.getDeclaration(firstTarget[0]).span).start.line, 2);
 
 	const replacement = buildLuaFileSemanticData('local provider = {}\n\n\nfunction provider.make() return { marker = 22 } end\nreturn provider', 'provider.lua');
 	workspace.updateFiles([replacement]);
@@ -120,9 +120,9 @@ test('edited, removed and reintroduced providers use a fresh term universe while
 	assert.equal(changed.getFileData('use.lua'), use);
 	const changedTarget = changed.symbolResolver.resolveReferenceTargets(reference);
 	assert.equal(changedTarget.length, 1);
-	assert.equal(changed.symbolResolver.getDeclaration(changedTarget[0]).range.start.line, 4);
+	assert.equal(replacement.chunk.locations.range(changed.symbolResolver.getDeclaration(changedTarget[0]).span).start.line, 4);
 	assert.deepEqual(old.symbolResolver.resolveReferenceTargets(reference), firstTarget);
-	assert.equal(old.symbolResolver.getDeclaration(firstTarget[0]).range.start.line, 2);
+	assert.equal(first.chunk.locations.range(old.symbolResolver.getDeclaration(firstTarget[0]).span).start.line, 2);
 
 	workspace.updateFiles([], ['provider.lua']);
 	const removed = workspace.getSnapshot();

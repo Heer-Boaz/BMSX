@@ -31,7 +31,7 @@ function referenceFixture() {
 	const query = frontend.findReferencesByPosition('usage.lua', 6, 10)!;
 	assert.ok(query);
 	const info = { query, snapshot, expression: query.label,
-		matches: query.references.filter(reference => reference.range.path === 'usage.lua').map(reference => searchMatchFromSourceRange(reference.range)) };
+		matches: query.references.filter(reference => reference.file === 'usage.lua').map(reference => searchMatchFromSourceRange(snapshot.getFileData(reference.file)!.chunk.locations.range(reference.span))) };
 	return { workspace, info };
 }
 
@@ -73,9 +73,9 @@ test('reference text and range identities come from the captured snapshot, read 
 	workspace.updateFile('usage.lua', '-- later source generation\n' + SOURCE_CHOICES_USAGE);
 	const sources = buildReferenceSources(info);
 	assert.deepEqual(lookups.sort(), ['definitions.lua', 'usage.lua']);
-	assert.equal(sources[0].range, info.query.targets[0].declaration.range);
+	assert.equal(sources[0].range, info.query.targets[0].range);
 	assert.equal(sources[0].lineText, 'source_choice_beacon = 1');
-	for (const source of sources.slice(1)) assert.ok(info.query.references.some(reference => reference.range === source.range));
+	for (const source of sources.slice(1)) assert.ok(info.query.references.some(reference => getFileData(reference.file)!.chunk.locations.range(reference.span) === source.range));
 	assert.equal(sources[3].lineText, 'return source_choice_beacon');
 	assert.equal(sources[3].range.start.line, 6);
 });

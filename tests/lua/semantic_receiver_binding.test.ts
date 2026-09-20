@@ -26,7 +26,7 @@ return original.initial, result.updated, self == 99`;
 	const data = buildLuaFileSemanticData(source, PATH);
 	const frontend = buildLuaSemanticFrontend([{ path: PATH, source, analysis: data }]);
 	const file = frontend.getFile(PATH);
-	assert.deepEqual(data.decls.filter(declaration => declaration.name === 'self').map(declaration => declaration.range.start.line), [1]);
+	assert.deepEqual(data.decls.filter(declaration => declaration.name === 'self').map(declaration => data.chunk.locations.range(declaration.span).start.line), [1]);
 	const references = data.refs.filter(reference => reference.name === 'self');
 	assert.deepEqual(references.map(reference => reference.referenceKind), ['identifier', 'self', 'self', 'identifier']);
 	for (const [syntax, reference] of data.referencesBySyntax) {
@@ -184,7 +184,7 @@ return outer.change(40), outer:shadow(0)`;
 	const data = buildLuaFileSemanticData(source, PATH);
 	const summaries = new FunctionSummaryStore([data], new WorkspaceValueIdentityIndex({ files: [data], globalValues: new Map() }));
 	for (const reference of data.refs.filter(entry => entry.name === 'self')) {
-		const { line, column } = reference.range.start;
+		const { line, column } = data.chunk.locations.range(reference.span).start;
 		const binding = findLuaLexicalBindingAt(data, 'self', line, column);
 		if (binding.kind === 'receiver') {
 			assert.equal(reference.referenceKind, 'self');

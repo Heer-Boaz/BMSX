@@ -72,7 +72,7 @@ test('declarations survive separate edits and CRLF/comment shifts without name l
 	const { match, old, fresh } = compare(before, after);
 	const definitions = fresh.decls.filter(decl => decl.name === 'value');
 	for (const [index, decl] of old.decls.filter(decl => decl.name === 'value').entries()) {
-		assert.deepEqual(match.declaration(decl.range), definitions[index].range);
+		assert.deepEqual(match.declaration(old.chunk.locations.range(decl.span)), fresh.chunk.locations.range(definitions[index].span));
 	}
 });
 
@@ -87,23 +87,23 @@ test('unchanged resume spans between separate edits retain exact token positions
 
 test('moving a declaration into a new scope cannot reuse the old captured local', () => {
 	const { match, old } = compare('local value = 1\nprint(value)', 'do\nlocal value = 1\nprint(value)\nend');
-	assert.equal(match.declaration(old.decls[0].range), undefined);
+	assert.equal(match.declaration(old.chunk.locations.range(old.decls[0].span)), undefined);
 });
 
 test('deleting a scope does not map its local onto an equal root declaration', () => {
 	const { match, old } = compare('do\nlocal value = 1\nprint(value)\nend', 'local value = 1\nprint(value)');
-	assert.equal(match.declaration(old.decls[0].range), undefined);
+	assert.equal(match.declaration(old.chunk.locations.range(old.decls[0].span)), undefined);
 });
 
 test('a captured parameter remains in the corresponding function body scope', () => {
 	const { match, old, fresh } = compare('function read(value) return value end', '\nfunction read(value) return value + 1 end');
 	const previous = old.decls.find(decl => decl.name === 'value')!;
-	assert.deepEqual(match.declaration(previous.range), fresh.decls.find(decl => decl.name === 'value')!.range);
+	assert.deepEqual(match.declaration(old.chunk.locations.range(previous.span)), fresh.chunk.locations.range(fresh.decls.find(decl => decl.name === 'value')!.span));
 });
 
 test('repeat scope correspondence includes its unchanged opening, not an edited until condition', () => {
 	const { match, old, fresh } = compare('repeat local value = 1 until value == 2', 'repeat local value = 1 until value > 10');
-	assert.deepEqual(match.declaration(old.decls[0].range), fresh.decls[0].range);
+	assert.deepEqual(match.declaration(old.chunk.locations.range(old.decls[0].span)), fresh.chunk.locations.range(fresh.decls[0].span));
 });
 
 test('anonymous function body edits map both directions, but reparenting does not', () => {
@@ -127,7 +127,7 @@ test('anonymous function body edits map both directions, but reparenting does no
 
 test('deleted declarations and missing source files are not identity matches', () => {
 	const { match, old } = compare('local removed = 1\nlocal retained = 2', 'local retained = 2');
-	assert.equal(match.declaration(old.decls[0].range), undefined);
+	assert.equal(match.declaration(old.chunk.locations.range(old.decls[0].span)), undefined);
 	const absent = new LuaSourceCorrespondence(new Map(), new Map());
-	assert.equal(absent.declaration(old.decls[1].range), undefined);
+	assert.equal(absent.declaration(old.chunk.locations.range(old.decls[1].span)), undefined);
 });

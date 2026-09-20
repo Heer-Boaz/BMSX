@@ -61,8 +61,8 @@ export class CrossFileRenameManager {
 			if (bucket === undefined) ranges.set(range.path, [range]);
 			else bucket.push(range);
 		};
-		for (const target of info.query.targets) add(target.declaration.range);
-		for (const reference of info.query.references) add(reference.range);
+		for (const target of info.query.targets) add(target.range);
+		for (const reference of info.query.references) add(info.snapshot.getFileData(reference.file)!.chunk.locations.range(reference.span));
 		const result = new Map<EditorTextModel, EditorModelEdit>();
 		for (const [path, locations] of ranges) {
 			const resource = resolveRuntimeResourceForContext(this.sources, domain, path)!;

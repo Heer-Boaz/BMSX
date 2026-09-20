@@ -990,7 +990,7 @@ end
 	assert.ok(rightDefinition, 'right seed definition');
 	assert.equal(leftDefinition!.kind, 'property');
 	assert.equal(rightDefinition!.kind, 'parameter');
-	assert.equal(rightDefinition!.range.start.line, 2);
+	assert.equal(frontend.getFile(rightDefinition!.file).locations.range(rightDefinition!.span).start.line, 2);
 });
 
 test('semantic workspace resolves table property access', async () => {
@@ -1011,8 +1011,8 @@ state.count = state.count + 1
 	assert.ok(definition, 'property definition found');
 	assert.ok(definitionAgain, 'property definition found for rhs');
 	assert.equal(definition!.kind, 'property');
-	assert.equal(definition!.range.start.line, 3);
-	assert.equal(definitionAgain!.range.start.line, definition!.range.start.line);
+	assert.equal(frontend.getFile(definition!.file).locations.range(definition!.span).start.line, 3);
+	assert.equal(frontend.getFile(definitionAgain!.file).locations.range(definitionAgain!.span).start.line, frontend.getFile(definition!.file).locations.range(definition!.span).start.line);
 });
 
 test('semantic workspace reports references for locals', async () => {
@@ -1027,7 +1027,10 @@ test('semantic workspace reports references for locals', async () => {
 	const definitionColumn = lines[0].indexOf('counter') + 1;
 	const lookup = frontend.findReferencesByPosition('testpath', 1, definitionColumn);
 	assert.ok(lookup, 'definition present');
-	const referenceKeys = lookup.references.map(reference => `${reference.range.start.line}:${reference.range.start.column}`);
+	const referenceKeys = lookup.references.map(reference => {
+		const range = frontend.getFile(reference.file).locations.range(reference.span);
+		return `${range.start.line}:${range.start.column}`;
+	});
 	const secondLine = lines[1];
 	const firstValueColumn = secondLine.indexOf('counter') + 1;
 	const secondValueColumn = secondLine.indexOf('counter', secondLine.indexOf('counter') + 1) + 1;
@@ -1052,7 +1055,10 @@ test('semantic workspace reports references for table fields', async () => {
 	const definitionColumn = lines[0].indexOf('value') + 1;
 	const lookup = frontend.findReferencesByPosition('testpath', 1, definitionColumn);
 	assert.ok(lookup);
-	const referenceKeys = lookup.references.map(reference => `${reference.range.start.line}:${reference.range.start.column}`);
+	const referenceKeys = lookup.references.map(reference => {
+		const range = frontend.getFile(reference.file).locations.range(reference.span);
+		return `${range.start.line}:${range.start.column}`;
+	});
 	const secondLine = lines[1];
 	const firstValueColumn = secondLine.indexOf('value') + 1;
 	const secondValueColumn = secondLine.indexOf('value', secondLine.indexOf('value') + 1) + 1;
@@ -1114,7 +1120,7 @@ test('project reference catalog resolves globals across paths', async () => {
 
 	const matches = symbolInfo.references
 		.filter(ref => ref.file === 'usage.lua')
-		.map(ref => luaRangeToSearchMatch(ref.range, usageLines))
+		.map(ref => luaRangeToSearchMatch(snapshot.getFileData(ref.file)!.chunk.locations.range(ref.span), usageLines))
 		.filter((match): match is { row: number; start: number; end: number } => match !== null);
 
 	const info = {
@@ -1181,8 +1187,8 @@ test('reference lookup resolves global definition across paths', async () => {
 		assert.ok(symbolInfo);
 		if (symbolInfo) {
 			assert.deepEqual(
-				result.info.query.targets.map(target => target.declaration.range),
-				symbolInfo.targets.map(target => target.declaration.range),
+				result.info.query.targets.map(target => target.range),
+				symbolInfo.targets.map(target => target.range),
 			);
 		}
 	}
@@ -1217,7 +1223,7 @@ test('reference lookup retains all definitions of a value alternative', async ()
 	if (result.kind === 'success') {
 		assert.equal(result.info.expression, 'selected:run');
 		assert.deepEqual(
-			result.info.query.targets.map(target => target.declaration.range.start.line),
+			result.info.query.targets.map(target => target.range.start.line),
 			[2, 4],
 		);
 		assert.deepEqual(result.info.matches.map(match => match.row + 1), [2, 4, 6, 7, 8]);
@@ -1261,8 +1267,8 @@ test('reference lookup prefers local parameter over global', async () => {
 		const workspaceGlobal = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot()).findReferencesByPosition('global.lua', 1, 1);
 		if (workspaceGlobal) {
 			assert.notDeepEqual(
-				parameterResult.info.query.targets[0].declaration.range,
-				workspaceGlobal.targets[0].declaration.range,
+				parameterResult.info.query.targets[0].range,
+				workspaceGlobal.targets[0].range,
 				'parameter is not resolved as global',
 			);
 		}

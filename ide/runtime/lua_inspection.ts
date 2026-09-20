@@ -125,7 +125,7 @@ export function readRuntimeLuaValue(
 	if (binding.kind === 'receiver') {
 		const receiver = analysis.scopes[binding.scopeIndex].implicitSelfValue!;
 		declaration = analysis.chunk.locations.range(receiver.root.syntax.span);
-	} else declaration = binding.declaration.range;
+	} else declaration = analysis.chunk.locations.range(binding.declaration.span);
 	// The binder owns workspace paths; installed symbols own canonical module paths.
 	const definition = { ...declaration, path: record.module_path };
 	const cpu = runtime.machine.cpu;

@@ -1,6 +1,6 @@
 import { LuaMemberOperator } from '../syntax/ast';
 import type { FileSemanticData } from './model';
-import { findOrderedSourceRangeEntryAtPosition } from './source_range';
+import { findOrderedSourceSpanEntryAtPosition } from './source_range';
 import {
 	semanticValueSourceKey,
 	type SemanticValueSource,
@@ -18,8 +18,9 @@ export function findLuaMemberCompletionContext(
 	line: number,
 	memberStartColumn: number,
 ): LuaMemberCompletionContext | null {
-	const access = findOrderedSourceRangeEntryAtPosition(
+	const access = findOrderedSourceSpanEntryAtPosition(
 		source.memberAccesses,
+		source.chunk.locations,
 		line,
 		memberStartColumn,
 	);

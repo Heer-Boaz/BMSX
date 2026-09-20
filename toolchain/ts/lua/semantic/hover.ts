@@ -28,7 +28,7 @@ export function provideLuaHover(
 	if (occurrence.kind === 'declaration') {
 		return {
 			contents: [buildDeclarationHoverContent(occurrence.declaration)],
-			applicableRange: occurrence.declaration.range,
+			applicableRange: analysis.chunk.locations.range(occurrence.declaration.span),
 		};
 	}
 	const reference = occurrence.reference;
@@ -50,7 +50,7 @@ export function provideLuaHover(
 					contentIndex += 1;
 				}
 			}
-			return { contents, applicableRange: reference.range };
+			return { contents, applicableRange: analysis.chunk.locations.range(reference.span) };
 		}
 		const functionTargets: SymbolID[] = [];
 		for (let index = 0; index < targetIds.length; index += 1) {
@@ -65,7 +65,7 @@ export function provideLuaHover(
 				const declaration = symbolResolver.getDeclaration(functionTargets[index]);
 				contents[index] = buildDeclarationHoverContent(declaration, displayName);
 			}
-			return { contents, applicableRange: reference.range };
+			return { contents, applicableRange: analysis.chunk.locations.range(reference.span) };
 		}
 		const contents = new Array<LuaHoverContent>(targetIds.length);
 		for (let index = 0; index < targetIds.length; index += 1) {
@@ -73,7 +73,7 @@ export function provideLuaHover(
 				symbolResolver.getDeclaration(targetIds[index]),
 			);
 		}
-		return { contents, applicableRange: reference.range };
+		return { contents, applicableRange: analysis.chunk.locations.range(reference.span) };
 	}
 	const builtin = builtinLookup.get(reference.symbolKey);
 	if (builtin === undefined) {
@@ -82,7 +82,7 @@ export function provideLuaHover(
 	const content: LuaHoverContent = builtin.description === undefined
 		? { label: `(builtin) ${builtin.signature}` }
 		: { label: `(builtin) ${builtin.signature}`, documentation: builtin.description };
-	return { contents: [content], applicableRange: reference.range };
+	return { contents: [content], applicableRange: analysis.chunk.locations.range(reference.span) };
 }
 
 function formatReferenceFunctionName(reference: Ref): string | undefined {

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { cpus } from 'node:os';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
+import { getLuaSemanticAnnotations } from '../../toolchain/ts/lua/semantic/tokens';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaSyntaxUpdate } from '../../toolchain/ts/lua/syntax/syntax_update';
 import { parseLuaChunkWithRecovery, updateLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
@@ -110,7 +111,7 @@ for (const path of paths) {
 			let previousChunk = file.chunk;
 			const measurements = {
 				lex: [] as number[], parse: [] as number[], bind: [] as number[],
-				publish: [] as number[], firstMember: [] as number[], completionAfterMember: [] as number[], total: [] as number[],
+				publish: [] as number[], firstMember: [] as number[], completionAfterMember: [] as number[], highlightAfterQueries: [] as number[], total: [] as number[],
 			};
 			for (let iteration = 0; iteration < warmup + samples; iteration++) {
 				// Both edit and undo do real work; never time an unchanged-source hit.
@@ -137,8 +138,10 @@ for (const path of paths) {
 				const queryEnd = performance.now();
 				memberCount = snapshot.symbolResolver.getMembers(reference.receiverValue).length;
 				const completionEnd = performance.now();
+				getLuaSemanticAnnotations(analysis);
+				const highlightEnd = performance.now();
 				assert.equal(parsed.syntaxError, null);
-				query = { name: reference.name, ...reference.range.start };
+				query = { name: reference.name, ...analysis.chunk.locations.range(reference.span).start };
 				previousChunk = parsed.path;
 				if (iteration < warmup) continue;
 				measurements.lex.push(lexEnd - start);
@@ -147,23 +150,27 @@ for (const path of paths) {
 				measurements.publish.push(publishEnd - bindEnd);
 				measurements.firstMember.push(queryEnd - queryStart);
 				measurements.completionAfterMember.push(completionEnd - queryEnd);
-				measurements.total.push(completionEnd - start);
+				measurements.highlightAfterQueries.push(highlightEnd - completionEnd);
+				measurements.total.push(highlightEnd - start);
 			}
 			milliseconds[mode] = Object.fromEntries(Object.entries(measurements).map(([phase, values]) => [phase, distribution(values)]));
 		}
 		// Independent real-entrypoint passes. Omitting the optional input requests
 		// full-source analysis; the map-input pass exercises incremental publication.
-		for (const mode of ['publicFullSourceUpdate', 'publicComposedChangesUpdate'] as const) {
+		for (const mode of ['publicFullSourceUpdate', 'publicComposedChangesUpdate', 'publicFullSourceWithHighlight', 'publicComposedChangesWithHighlight'] as const) {
 			workspace.updateFiles([file]);
 			const measurements: number[] = [];
 			for (let iteration = 0; iteration < warmup + samples; iteration++) {
 				const source = iteration % 2 === 0 ? scenario.source : file.source;
 				const changes = iteration % 2 === 0 ? forward : undo;
 				const start = performance.now();
-				const analysis = mode === 'publicFullSourceUpdate'
+				const analysis = (mode === 'publicFullSourceUpdate' || mode === 'publicFullSourceWithHighlight')
 					? workspace.updateFile(path, source)
 					: workspace.updateFile(path, source, changes);
 				workspace.getSnapshot();
+				if (mode === 'publicFullSourceWithHighlight' || mode === 'publicComposedChangesWithHighlight') {
+					getLuaSemanticAnnotations(analysis);
+				}
 				const elapsed = performance.now() - start;
 				assert.equal(analysis.syntaxError, null);
 				if (iteration >= warmup) measurements.push(elapsed);
@@ -230,6 +237,6 @@ for (const { path, file, scenario, forward, undo } of lexicalWorkloads) {
 
 console.log(JSON.stringify({
 	node: process.version, cpu: cpus()[0].model, workspaceFiles: files.length, warmup, samples,
-	note: 'Full-source, incremental-lexical and incremental-syntax phases and both public updates are separate warm passes. Only the lexical-only pass still parses the entire file; binding remains whole-file in all passes. Public timings include getSnapshot, not queries. Maps are composed from known forward/undo deltas outside timing. Completion follows the member query; not a cold completion or UI-frame measurement. Lexical and syntax work counts are separate untimed forward/undo passes after all timings; marker counts exclude one-time cold edit-index construction; scannedWidth counts consumed UTF-16 units, not lookahead reads.',
+	note: 'Full-source, incremental-lexical and incremental-syntax phases and public updates with/without highlighting are separate warm passes. Full-source and lexical-only passes parse the entire file; binding remains whole-file in all passes. Public timings include getSnapshot, not queries. WithHighlight also includes lazy annotation projection; analysis-only updates exclude it. Phase totals include highlighting after queries, so projection does not have a pristine cold location owner. Maps are composed from known forward/undo deltas outside timing. Completion follows the member query; not a cold completion or UI-frame measurement. Lexical and syntax work counts are separate untimed forward/undo passes after all timings; marker counts exclude one-time cold edit-index construction; scannedWidth counts consumed UTF-16 units, not lookahead reads.',
 	results, lexicalWork, syntaxWork,
 }, null, 2));

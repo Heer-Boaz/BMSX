@@ -190,8 +190,8 @@ if (callHierarchyLocation) {
 		label: symbols.label,
 		targets: symbols.targets.map(target => ({
 			file: target.declaration.file,
-			line: target.declaration.range.start.line,
-			column: target.declaration.range.start.column,
+			line: target.range.start.line,
+			column: target.range.start.column,
 		})),
 		targetCount: symbols.targets.length,
 		groupCount,

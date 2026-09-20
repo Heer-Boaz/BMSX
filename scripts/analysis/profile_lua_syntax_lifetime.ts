@@ -2,6 +2,7 @@
 //   scripts/analysis/profile_lua_syntax_lifetime.ts /tmp/pietious-workspace.json
 import { readFileSync } from 'node:fs';
 import { setImmediate } from 'node:timers/promises';
+import { getLuaSemanticAnnotations } from '../../toolchain/ts/lua/semantic/tokens';
 import {
 	buildLuaFileSemanticData,
 	LuaSemanticWorkspace,
@@ -27,6 +28,10 @@ async function main(): Promise<void> {
 	globalThis.gc();
 	const retained = process.memoryUsage().heapUsed;
 	const fileCount = snapshot.files.length;
+	snapshot.files.forEach(getLuaSemanticAnnotations);
+	await setImmediate();
+	globalThis.gc();
+	const highlighted = process.memoryUsage().heapUsed;
 	snapshot = null;
 	await setImmediate();
 	globalThis.gc();
@@ -37,8 +42,9 @@ async function main(): Promise<void> {
 		node: process.version,
 		files: fileCount,
 		retainedHeapMiB: (retained - initial) / (1024 * 1024),
+		highlightedHeapMiB: (highlighted - initial) / (1024 * 1024),
 		releasedHeapMiB: (released - initial) / (1024 * 1024),
-		note: 'Heap deltas after GC, not allocation counts or a browser memory measurement. Input source strings are already present in the initial heap.',
+		note: 'Heap deltas after GC, not allocation counts or a browser memory measurement. Input source strings are already present in the initial heap. Retained is binding without highlighting; highlighted additionally materializes every file annotation presentation.',
 	}, null, 2));
 }
 

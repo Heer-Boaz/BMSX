@@ -1,4 +1,5 @@
 import type { SourcePosition, SourceRange } from '../source_range';
+import type { LuaSourceLocations, LuaSyntaxSpan } from '../syntax/source_locations';
 
 export type SourceLocation = {
 	readonly path: string;
@@ -61,6 +62,31 @@ export function findOrderedSourceRangeEntryAtPosition<T extends { readonly range
 	return compareSourcePosition(line, column, entry.range.end.line, entry.range.end.column) <= 0
 		? entry
 		: undefined;
+}
+
+// Binder occurrences stay relative; only the query position crosses the source boundary.
+export function findOrderedSourceSpanEntryAtPosition<T extends { readonly span: LuaSyntaxSpan }>(
+	entries: readonly T[],
+	locations: LuaSourceLocations,
+	line: number,
+	column: number,
+): T | undefined {
+	const offset = locations.offsetAt({ line, column });
+	let low = 0;
+	let high = entries.length;
+	while (low < high) {
+		const middle = (low + high) >>> 1;
+		const span = entries[middle].span;
+		if (locations.offset(span.unit, span.start) <= offset) {
+			low = middle + 1;
+		} else {
+			high = middle;
+		}
+	}
+	const index = low - 1;
+	if (index < 0) return undefined;
+	const entry = entries[index];
+	return offset <= locations.offset(entry.span.unit, entry.span.end) ? entry : undefined;
 }
 
 export function cloneSourceRange(range: SourceRange): SourceRange {

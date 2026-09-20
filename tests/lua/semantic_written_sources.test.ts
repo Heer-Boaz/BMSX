@@ -17,13 +17,13 @@ function writtenLines(sources: readonly LuaWrittenSource[]): number[] {
 		switch (source.kind) {
 			case 'expression': return source.file.chunk.locations.range(source.expression.span).start.line;
 			case 'member-base': return writtenLines([source.read])[0];
-			case 'binding-input': return source.declaration.range.start.line;
+			case 'binding-input': return source.file.chunk.locations.range(source.declaration.span).start.line;
 			case 'module-export': return source.file.chunk.locations.range(source.export.statement.span).start.line;
 			case 'module-bypass': return source.file.chunk.locations.range(source.statement.span).start.line;
 			case 'call-input': case 'call-callee': return source.file.chunk.locations.range(source.call.expression.span).start.line;
 			case 'function-return': return source.file.chunk.locations.range(source.entry.statement.span).start.line;
 			case 'function-completion': return source.file.chunk.locations.range(source.body.expression.span).start.line;
-			case 'write-receiver': return source.reference.range.start.line;
+			case 'write-receiver': return source.file.chunk.locations.range(source.reference.span).start.line;
 			case 'receiver-input': {
 				assert.ok(source.value.root.kind === 'owned');
 				return source.file.chunk.locations.range(source.value.root.syntax.span).start.line;

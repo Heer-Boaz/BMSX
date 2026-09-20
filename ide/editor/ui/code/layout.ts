@@ -7,7 +7,7 @@ import { highlightTextLine as highlightTextLineExternal } from '../../../languag
 import { highlightAemTextLine } from '../../../language/aem/syntax_highlight';
 import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import type { SemanticSymbolKind } from '../../../../toolchain/ts/lua/semantic/symbols';
-import type { SemanticAnnotations, TokenAnnotation } from '../../../../toolchain/ts/lua/semantic/tokens';
+import { getLuaSemanticAnnotations, type SemanticAnnotations, type TokenAnnotation } from '../../../../toolchain/ts/lua/semantic/tokens';
 import type { CachedHighlight, HighlightLine, VisualLineSegment } from '../../../common/models';
 import type { EditorDocumentMode, EditorTextModelContentChangeEvent } from '../../model/text_model';
 import { textChangesEndOffset } from '../../text/text_change';
@@ -289,7 +289,7 @@ export class CodeLayout {
 	}
 
 	public getCachedHighlight(buffer: TextBuffer, row: number): CachedHighlight {
-		const annotations = this.semanticFileData ? this.semanticFileData.annotations : null;
+		const annotations = this.semanticFileData ? getLuaSemanticAnnotations(this.semanticFileData) : null;
 		const builtinEpoch = this.builtinEpoch;
 		const builtinIdentifiers = this.builtinIdentifiers;
 		const textVersion = buffer.version;
@@ -948,7 +948,7 @@ export class CodeLayout {
 		path: string,
 		errorMessage?: string,
 	): void {
-		const annotations = fileData ? fileData.annotations : null;
+		const annotations = fileData ? getLuaSemanticAnnotations(fileData) : null;
 		this.semanticBuffer = buffer;
 		this.semanticFileData = fileData;
 		this.semanticVersion = version;

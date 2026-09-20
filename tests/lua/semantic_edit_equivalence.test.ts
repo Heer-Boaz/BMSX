@@ -1,3 +1,4 @@
+import { getLuaSemanticAnnotations } from '../../toolchain/ts/lua/semantic/tokens';
 import { luaSyntaxSnapshot } from '../helpers/lua_syntax_snapshot';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -35,15 +36,15 @@ function answers(snapshot: LuaSemanticWorkspaceSnapshot) {
 			parent: scope.parentIndex, declarations: scope.declarationIndices,
 		})),
 		declarations: file.decls.map(decl => ({
-			name: decl.namePath, range: decl.range,
+			name: decl.namePath, range: file.chunk.locations.range(decl.span),
 			visibleFrom: file.chunk.locations.position(decl.visibleFrom.unit, decl.visibleFrom.offset),
 		})),
 		refs: file.refs.map(ref => ({
 			name: ref.name,
-			range: ref.range,
+			range: file.chunk.locations.range(ref.span),
 			targets: resolver.resolveReferenceTargets(ref).map(id => {
 				const decl = resolver.getDeclaration(id);
-				return { file: decl.file, name: decl.namePath, range: decl.range, signature: decl.signature };
+				return { file: decl.file, name: decl.namePath, range: file.chunk.locations.range(decl.span), signature: decl.signature };
 			}),
 		})),
 	}));
@@ -124,7 +125,7 @@ for (const [name, edited] of edits) {
 			const fresh = buildLuaFileSemanticData(source, path, parsed);
 			assert.deepEqual(luaSyntaxSnapshot(updated.chunk), luaSyntaxSnapshot(parsed.chunk));
 			assert.deepEqual(updated.syntaxError, parsed.syntaxError);
-			assert.deepEqual(updated.annotations, fresh.annotations);
+			assert.deepEqual(getLuaSemanticAnnotations(updated), getLuaSemanticAnnotations(fresh));
 			const cold = new LuaSemanticWorkspace();
 			cold.updateFiles([fresh, buildLuaFileSemanticData(consumer!.source, consumer!.file,
 				parseLuaChunkWithRecovery(consumer!.source, consumer!.file))]);

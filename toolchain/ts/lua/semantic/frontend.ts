@@ -20,6 +20,7 @@ import {
 import {
 	compareSourcePosition,
 	findOrderedSourceRangeEntryAtPosition,
+	findOrderedSourceSpanEntryAtPosition,
 } from './source_range';
 import { collectVisibleDeclarationsAt } from './scope_query';
 import {
@@ -76,6 +77,7 @@ export type LuaSemanticNavigationTarget =
 export type LuaSemanticPositionTarget = {
 	id: SymbolID;
 	declaration: Decl;
+	range: LuaSourceRange;
 };
 
 export type LuaSemanticPositionSymbols = {
@@ -183,7 +185,7 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 		this.builtinDescriptorLookup = getLuaBuiltinDescriptorLookup(this.builtinDescriptors);
 		this.extraGlobalNames = options.extraGlobalNames;
 		// Queries remain bound to this immutable source and global-symbol generation.
-		this.globalSymbols = buildCombinedGlobalSymbols(snapshot.listGlobalDecls(), options.externalGlobalSymbols);
+		this.globalSymbols = buildCombinedGlobalSymbols(snapshot, options.externalGlobalSymbols);
 		this.knownGlobalNames = buildLuaKnownNameSet(
 			this.globalSymbols,
 			this.builtinDescriptors,
@@ -299,7 +301,7 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 			let bucket = grouped.get(callerKey);
 			if (!bucket) {
 				const caller = reference.caller
-					? buildSymbolCallHierarchyItem(this.snapshot.symbolResolver.getDeclaration(reference.caller))
+					? buildSymbolCallHierarchyItem(this.snapshot.symbolResolver.getDeclaration(reference.caller), this.snapshot)
 					: buildChunkCallerScope(reference.file);
 				bucket = {
 					from: caller,
@@ -307,7 +309,7 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 				};
 				grouped.set(callerKey, bucket);
 			}
-			bucket.fromRanges.push(reference.range);
+			bucket.fromRanges.push(this.snapshot.getFileData(reference.file)!.chunk.locations.range(reference.span));
 		}
 		const groups = Array.from(grouped.values());
 		for (let index = 0; index < groups.length; index += 1) {
@@ -332,12 +334,12 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 					continue;
 				}
 				bucket = {
-					to: buildSymbolCallHierarchyItem(target),
+					to: buildSymbolCallHierarchyItem(target, this.snapshot),
 					fromRanges: [],
 				};
 				grouped.set(call.callee, bucket);
 			}
-			bucket.fromRanges.push(call.reference.range);
+			bucket.fromRanges.push(this.snapshot.getFileData(call.reference.file)!.chunk.locations.range(call.reference.span));
 		}
 		const groups = Array.from(grouped.values());
 		for (let index = 0; index < groups.length; index += 1) {
@@ -358,14 +360,14 @@ type OutgoingCalleeGroup = {
 	fromRanges: LuaSourceRange[];
 };
 
-function buildSymbolCallHierarchyItem(decl: Decl): LuaCallHierarchySymbolItem {
+function buildSymbolCallHierarchyItem(decl: Decl, snapshot: LuaSemanticWorkspaceSnapshot): LuaCallHierarchySymbolItem {
 	const label = decl.namePath.length > 0 ? decl.namePath.join('.') : decl.name;
 	return {
 		kind: 'symbol',
 		key: `decl:${decl.id}`,
 		label,
 		symbolId: decl.id,
-		range: decl.range,
+		range: snapshot.getFileData(decl.file)!.chunk.locations.range(decl.span),
 	};
 }
 
@@ -452,8 +454,8 @@ function createBoundFile(
 			return snapshot.symbolResolver.getMembers(context.receiver);
 		},
 		findModuleCompletionRangeAt(line: number, column: number): LuaSourceRange | null {
-			const reference = findOrderedSourceRangeEntryAtPosition(source.moduleReferences, line, column);
-			return reference === undefined ? null : reference.range;
+			const reference = findOrderedSourceSpanEntryAtPosition(source.moduleReferences, source.chunk.locations, line, column);
+			return reference === undefined ? null : source.chunk.locations.range(reference.span);
 		},
 		findNavigationAt(line: number, column: number): LuaSemanticNavigationQuery | null {
 			const symbols = findPositionSymbols(source, snapshot, line, column);
@@ -464,7 +466,7 @@ function createBoundFile(
 					targets[index] = {
 						kind: 'declaration',
 						declaration,
-						range: declaration.range,
+						range: symbols.targets[index].range,
 					};
 				}
 				return {
@@ -502,10 +504,11 @@ function findPositionSymbols(
 	}
 	if (occurrence.kind === 'declaration') {
 		const decl = occurrence.declaration;
+		const range = source.chunk.locations.range(decl.span);
 		return {
-			origin: decl.range,
+			origin: range,
 			label: semanticOccurrenceLabel(decl.symbolKey, decl.name, false),
-			targets: [{ id: decl.id, declaration: decl }],
+			targets: [{ id: decl.id, declaration: decl, range }],
 		};
 	}
 	const ref = occurrence.reference;
@@ -516,13 +519,15 @@ function findPositionSymbols(
 	const targets = new Array<LuaSemanticPositionTarget>(targetIds.length);
 	for (let targetIndex = 0; targetIndex < targetIds.length; targetIndex += 1) {
 		const targetId = targetIds[targetIndex];
+		const declaration = snapshot.symbolResolver.getDeclaration(targetId);
 		targets[targetIndex] = {
 			id: targetId,
-			declaration: snapshot.symbolResolver.getDeclaration(targetId),
+			declaration,
+			range: snapshot.getFileData(declaration.file)!.chunk.locations.range(declaration.span),
 		};
 	}
 	return {
-		origin: ref.range,
+		origin: source.chunk.locations.range(ref.span),
 		label: semanticOccurrenceLabel(ref.symbolKey, ref.name, ref.referenceKind === 'method'),
 		targets,
 	};
@@ -567,7 +572,7 @@ function collectRequireNavigationTargets(
 			continue;
 		}
 		targets.push({
-			range: reference.range,
+			range: source.chunk.locations.range(reference.span),
 			moduleName,
 			target: targetSource.chunk.locations.range(targetSource.chunk.span),
 		});
@@ -656,15 +661,17 @@ function isReferenceInsideDeclScope(ref: Ref, decl: Decl, source: FileSemanticDa
 	}
 	const scope = source.scopes[decl.scopeIndex];
 	const locations = source.chunk.locations;
-	const offset = locations.offsetAt(ref.range.start);
+	const offset = locations.offset(ref.span.unit, ref.span.start);
 	return offset >= locations.offset(scope.startInclusive.unit, scope.startInclusive.offset)
 		&& offset < locations.offset(scope.endExclusive.unit, scope.endExclusive.offset);
 }
 
-function buildCombinedGlobalSymbols(decls: readonly Decl[], externalGlobalSymbols?: readonly LuaSymbolEntry[]): LuaSymbolEntry[] {
+function buildCombinedGlobalSymbols(snapshot: LuaSemanticWorkspaceSnapshot, externalGlobalSymbols?: readonly LuaSymbolEntry[]): LuaSymbolEntry[] {
+	const decls = snapshot.listGlobalDecls();
 	const symbols: LuaSymbolEntry[] = [];
 	for (let index = 0; index < decls.length; index += 1) {
 		const decl = decls[index];
+		const range = snapshot.getFileData(decl.file)!.chunk.locations.range(decl.span);
 		symbols.push({
 			name: decl.name,
 			path: decl.namePath.length > 0 ? decl.namePath.join('.') : decl.name,
@@ -672,10 +679,10 @@ function buildCombinedGlobalSymbols(decls: readonly Decl[], externalGlobalSymbol
 			location: {
 				path: decl.file,
 				range: {
-					startLine: decl.range.start.line,
-					startColumn: decl.range.start.column,
-					endLine: decl.range.end.line,
-					endColumn: decl.range.end.column,
+					startLine: range.start.line,
+					startColumn: range.start.column,
+					endLine: range.end.line,
+					endColumn: range.end.column,
 				},
 			},
 		});

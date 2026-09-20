@@ -33,7 +33,7 @@ import { isActiveLuaCodeTab, isReadOnlyCodeTab } from '../../../ui/code_tab/cont
 import { prepareUndo } from '../../../../editor/editing/undo_controller';
 import { updateDesiredColumn, revealCursor } from '../../../../editor/ui/view/caret/caret';
 import { resetBlink } from '../../../../editor/render/caret';
-import type { Decl, FileSemanticData } from '../../../../../toolchain/ts/lua/semantic/model';
+import type { Decl, FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../../toolchain/ts/lua/semantic/model';
 import type { LuaSemanticFrontendFile } from '../../../../../toolchain/ts/lua/semantic/frontend';
 import type { LuaSignatureHelp } from '../../../../../toolchain/ts/lua/semantic/signature_help';
 import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';
@@ -44,7 +44,7 @@ import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../../runtime/fault_state';
 
 type LocalCompletionCacheEntry = {
-	snapshotRevision: symbol;
+	snapshot: LuaSemanticWorkspaceSnapshot;
 	path: string;
 	file: LuaSemanticFrontendFile;
 	analysis: FileSemanticData;
@@ -598,7 +598,7 @@ export class CompletionController {
 		if (filtered.length === 0) {
 			return [];
 		}
-		return this.buildLocalCompletionItems(filtered, cached.path);
+		return this.buildLocalCompletionItems(filtered, cached.analysis);
 	}
 
 	private ensureLocalCompletionCache(): LocalCompletionCacheEntry {
@@ -610,12 +610,12 @@ export class CompletionController {
 			this.getBuffer(),
 		);
 		const cached = this.localCompletionCache.get(key);
-		if (cached && cached.path === path && cached.snapshotRevision === frontend.snapshot.revision) {
+		if (cached && cached.path === path && cached.snapshot === frontend.snapshot) {
 			return cached;
 		}
 		const file = frontend.getFile(path);
 		const updated: LocalCompletionCacheEntry = {
-			snapshotRevision: frontend.snapshot.revision,
+			snapshot: frontend.snapshot,
 			path,
 			file,
 			analysis: frontend.snapshot.getFileData(path)!,
@@ -675,7 +675,7 @@ export class CompletionController {
 		return items;
 	}
 
-	private buildLocalCompletionItems(symbols: readonly Decl[], pathLabel: string): LuaCompletionItem[] {
+	private buildLocalCompletionItems(symbols: readonly Decl[], analysis: FileSemanticData): LuaCompletionItem[] {
 		const items: LuaCompletionItem[] = [];
 		for (let index = 0; index < symbols.length; index += 1) {
 			const symbol = symbols[index];
@@ -685,12 +685,13 @@ export class CompletionController {
 			const label = symbol.name;
 			const kindLabel = this.formatSymbolKind(semanticSymbolKindToLuaSymbolKind(symbol.kind));
 			const detailParts: string[] = [kindLabel];
-			if (pathLabel && pathLabel.length > 0) {
-				detailParts.push(pathLabel);
+			if (analysis.file && analysis.file.length > 0) {
+				detailParts.push(analysis.file);
 			}
-			detailParts.push(`line ${symbol.range.start.line}`);
+			const line = analysis.chunk.locations.range(symbol.span).start.line;
+			detailParts.push(`line ${line}`);
 			const detail = detailParts.join(' • ');
-			const sortKey = `local:${symbol.range.start.line.toString().padStart(6, '0')}:${label}`;
+			const sortKey = `local:${line.toString().padStart(6, '0')}:${label}`;
 			items.push({ label, insertText: label, sortKey, kind: 'local', detail });
 		}
 		items.sort((a, b) => a.label.localeCompare(b.label));
@@ -709,12 +710,13 @@ export class CompletionController {
 		for (let index = 0; index < symbols.length; index += 1) {
 			const symbol = symbols[index];
 			const kind = semanticSymbolKindToLuaSymbolKind(symbol.kind);
+			const range = cached.snapshot.getFileData(symbol.file)!.chunk.locations.range(symbol.span);
 			items[index] = {
 				label: symbol.name,
 				insertText: symbol.name,
-				sortKey: `member:${symbol.name}:${symbol.file}:${symbol.range.start.line}:${symbol.range.start.column}`,
+				sortKey: `member:${symbol.name}:${symbol.file}:${range.start.line}:${range.start.column}`,
 				kind: 'member',
-				detail: `${this.formatSymbolKind(kind)} • ${symbol.file} • line ${symbol.range.start.line}`,
+				detail: `${this.formatSymbolKind(kind)} • ${symbol.file} • line ${range.start.line}`,
 			};
 		}
 		return items;

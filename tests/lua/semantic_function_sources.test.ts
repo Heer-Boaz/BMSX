@@ -203,6 +203,6 @@ test('possible call results retain every body through the public workspace resol
 	const snapshot = workspace.getSnapshot();
 	const instance = snapshot.getFileData('use.lua')!.decls.find(decl => decl.name === 'instance')!;
 	assert.deepEqual(snapshot.symbolResolver.getMembers(declarationValueSource(instance.id)).map(decl => decl.name).sort(), ['first', 'second']);
-	assert.equal(semanticSymbolAt(snapshot, 'use.lua', 3, 17)!.declaration.range.start.line, 2);
-	assert.equal(semanticSymbolAt(snapshot, 'use.lua', 3, 33)!.declaration.range.start.line, 3);
+	assert.equal(semanticSymbolAt(snapshot, 'use.lua', 3, 17)!.range.start.line, 2);
+	assert.equal(semanticSymbolAt(snapshot, 'use.lua', 3, 33)!.range.start.line, 3);
 });

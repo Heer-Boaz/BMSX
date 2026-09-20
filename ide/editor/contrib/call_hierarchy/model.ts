@@ -56,7 +56,7 @@ export class CallHierarchyModel {
 				kind: 'symbol',
 				id: `root:${symbolId}`,
 				name: declaration.namePath.length > 0 ? declaration.namePath.join('.') : declaration.name,
-				location: definitionLocationFromSourceRange(declaration.range),
+				location: definitionLocationFromSourceRange(frontend.snapshot.getFileData(declaration.file)!.chunk.locations.range(declaration.span)),
 				fromRanges: EMPTY_CALL_RANGES,
 				symbolId,
 			};

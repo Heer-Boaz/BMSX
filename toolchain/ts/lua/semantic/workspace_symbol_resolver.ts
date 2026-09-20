@@ -5,8 +5,6 @@ import {
 	declarationValueSource,
 	type SemanticValueSource,
 } from './value_graph';
-import { sourceRangesEqual } from '../source_range';
-import { compareSourcePosition } from './source_range';
 import { LuaWrittenSourceQuery } from './written_sources';
 import { LuaDefinitionTypes } from './definition_types';
 import { LuaModuleImportQuery } from './module_import_query';
@@ -15,7 +13,7 @@ import type { LuaSourceValueQuery } from './source_value_query';
 
 const EMPTY_SYMBOLS: readonly SymbolID[] = [];
 
-function sortMembers(members: Decl[]): Decl[] {
+function sortMembers(members: Decl[], files: ReadonlyMap<string, FileSemanticData>): Decl[] {
 	return members.sort((left, right) => {
 		const name = left.name.localeCompare(right.name);
 		if (name !== 0) {
@@ -24,12 +22,8 @@ function sortMembers(members: Decl[]): Decl[] {
 		if (left.file !== right.file) {
 			return left.file.localeCompare(right.file);
 		}
-		return compareSourcePosition(
-			left.range.start.line,
-			left.range.start.column,
-			right.range.start.line,
-			right.range.start.column,
-		);
+		const locations = files.get(left.file)!.chunk.locations;
+		return locations.offset(left.span.unit, left.span.start) - locations.offset(right.span.unit, right.span.start);
 	});
 }
 
@@ -47,6 +41,7 @@ function appendUniqueSymbols(target: SymbolID[], source: readonly SymbolID[]): v
 // version; unchanged FileSemanticData remains binder input rather than a heap.
 export class WorkspaceSymbolResolver {
 	private readonly files: readonly FileSemanticData[];
+	private readonly dataByPath = new Map<string, FileSemanticData>();
 	private readonly declarations: HashLookup<SymbolID, Decl>;
 	private readonly globals: ReadonlyMap<string, SymbolID>;
 	private readonly globalStorage: readonly (readonly Decl[])[];
@@ -70,9 +65,14 @@ export class WorkspaceSymbolResolver {
 		globalStorage: readonly (readonly Decl[])[];
 	}) {
 		this.files = options.files;
+		for (const file of this.files) this.dataByPath.set(file.file, file);
 		this.declarations = options.declarations;
 		this.globals = options.globals;
 		this.globalStorage = options.globalStorage;
+	}
+
+	public getFileData(path: string): FileSemanticData | undefined {
+		return this.dataByPath.get(path);
 	}
 
 	// disable-next-line single_line_method_pattern -- declaration lookup remains owned by the immutable workspace resolver.
@@ -133,7 +133,7 @@ export class WorkspaceSymbolResolver {
 			const declaration = this.declarations.get(memberId);
 			if (!membersByName.has(declaration.name)) membersByName.set(declaration.name, declaration);
 		}
-		return sortMembers(Array.from(membersByName.values()));
+		return sortMembers(Array.from(membersByName.values()), this.dataByPath);
 	}
 
 	/** The may-call solver's callees of a call site; see `resolveWholeProgramReferenceTargets`. */
@@ -207,7 +207,7 @@ export class WorkspaceSymbolResolver {
 		for (const [name, declarations] of this.definitionTypes.visibleMembers(this.definitionTypes.shapesOf(source))) {
 			membersByName.set(name, declarations[0]);
 		}
-		const members = sortMembers(Array.from(membersByName.values()));
+		const members = sortMembers(Array.from(membersByName.values()), this.dataByPath);
 		this.membersBySource.set(source, members);
 		return members;
 	}
@@ -242,12 +242,8 @@ export class WorkspaceSymbolResolver {
 			if (left.file !== right.file) {
 				return left.file.localeCompare(right.file);
 			}
-			return compareSourcePosition(
-				left.range.start.line,
-				left.range.start.column,
-				right.range.start.line,
-				right.range.start.column,
-			);
+			const locations = this.dataByPath.get(left.file)!.chunk.locations;
+			return locations.offset(left.span.unit, left.span.start) - locations.offset(right.span.unit, right.span.start);
 		});
 		return references;
 	}
@@ -341,9 +337,14 @@ export class WorkspaceSymbolResolver {
 			for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
 				const target = targets[targetIndex];
 				const bucket = references.get(target);
-				if (bucket && !sourceRangesEqual(candidate.range, this.declarations.get(target).range)) {
-					bucket.push(candidate);
-				}
+				if (!bucket) continue;
+				const declaration = this.declarations.get(target);
+				const candidateLocations = this.dataByPath.get(candidate.file)!.chunk.locations;
+				const declarationLocations = this.dataByPath.get(declaration.file)!.chunk.locations;
+				if (candidateLocations.path === declarationLocations.path
+					&& candidateLocations.offset(candidate.span.unit, candidate.span.start) === declarationLocations.offset(declaration.span.unit, declaration.span.start)
+					&& candidateLocations.offset(candidate.span.unit, candidate.span.end) === declarationLocations.offset(declaration.span.unit, declaration.span.end)) continue;
+				bucket.push(candidate);
 			}
 		}
 		for (const [symbolId, symbolReferences] of references) {

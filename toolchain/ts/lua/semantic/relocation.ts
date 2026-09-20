@@ -2,7 +2,6 @@ import { LuaSyntaxKind, type LuaSourcePosition, type LuaSourceRange, type LuaVar
 import { walkLuaAst } from '../syntax/ast/traversal';
 import type { Decl, FileSemanticData, Ref, SemanticScope } from './model';
 import { findLuaFunctionScopeIndexAt, findLuaLexicalBindingAt, type LuaLexicalBinding } from './scope_query';
-import { compareSourcePosition, sourcePositionInRange } from './source_range';
 
 export type LuaRelocationBinding =
 	| { readonly kind: 'identifier'; readonly reference: Ref; readonly binding: LuaLexicalBinding }
@@ -27,16 +26,18 @@ export class LuaRelocationAnalysis {
 		const bindings: LuaRelocationBinding[] = [];
 		const seen = new Set<Decl | SemanticScope | string | number>();
 		walkLuaAst(source.chunk, node => {
-			if (compareSourcePosition(source.chunk.locations.range(node.span).end.line, source.chunk.locations.range(node.span).end.column, range.start.line, range.start.column) < 0
-				|| compareSourcePosition(source.chunk.locations.range(node.span).start.line, source.chunk.locations.range(node.span).start.column, range.end.line, range.end.column) > 0) return false;
+			if (locations.offset(node.span.unit, node.span.end) < rangeStart
+				|| locations.offset(node.span.unit, node.span.start) > rangeEnd) return false;
 			if (node.kind === LuaSyntaxKind.IdentifierExpression) {
 				const reference = source.referencesBySyntax.get(node);
 				if (reference === undefined || (reference.referenceKind !== 'identifier' && reference.referenceKind !== 'self')) return;
-				const binding = findLuaLexicalBindingAt(source, reference.name, source.chunk.locations.range(node.span).start.line, source.chunk.locations.range(node.span).start.column);
+				const position = locations.position(node.span.unit, node.span.start);
+				const binding = findLuaLexicalBindingAt(source, reference.name, position.line, position.column);
 				let identity: Decl | SemanticScope | string;
 				if (binding.kind === 'declaration') {
 					const declaration = binding.declaration;
-					if (sourcePositionInRange(declaration.range.start.line, declaration.range.start.column, range)) return;
+					const declarationStart = locations.offset(declaration.span.unit, declaration.span.start);
+					if (declarationStart >= rangeStart && declarationStart <= rangeEnd) return;
 					identity = declaration;
 				} else if (binding.kind === 'receiver') {
 					const scope = source.scopes[binding.scopeIndex];
@@ -48,7 +49,8 @@ export class LuaRelocationAnalysis {
 				seen.add(identity);
 				bindings.push({ kind: 'identifier', reference, binding });
 			} else if (node.kind === LuaSyntaxKind.VarargExpression) {
-				const scopeIndex = findLuaFunctionScopeIndexAt(source, source.chunk.locations.range(node.span).start.line, source.chunk.locations.range(node.span).start.column);
+				const position = locations.position(node.span.unit, node.span.start);
+				const scopeIndex = findLuaFunctionScopeIndexAt(source, position.line, position.column);
 				const scope = source.scopes[scopeIndex];
 				const scopeStart = locations.offset(scope.startInclusive.unit, scope.startInclusive.offset);
 				if (scopeStart >= rangeStart && scopeStart <= rangeEnd || seen.has(scopeIndex)) return;

@@ -26,7 +26,7 @@ test('semantic workspace projects observed parameter members without merging arg
 	const common = wholeProgramSymbolsAt(snapshot, 'main.lua', 4, memberColumn(lines[3], 'common'));
 
 	assert.deepEqual(
-		common.map((symbol) => symbol.declaration.range.start.line),
+		common.map((symbol) => symbol.range.start.line),
 		[1, 2],
 		'member observed through every parameter value alternative',
 	);
@@ -64,11 +64,11 @@ test('semantic workspace retains every same-name method definition across value 
 	);
 
 	assert.deepEqual(
-		targets.map((target) => target.declaration.range.start.line),
+		targets.map((target) => target.range.start.line),
 		[2, 4],
 	);
-	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 7, memberColumn(lines[6], 'run'))!.declaration.range.start.line, 2);
-	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 8, memberColumn(lines[7], 'run'))!.declaration.range.start.line, 4);
+	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 7, memberColumn(lines[6], 'run'))!.range.start.line, 2);
+	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 8, memberColumn(lines[7], 'run'))!.range.start.line, 4);
 });
 
 test('semantic workspace hides base methods overridden by a derived class', async () => {
@@ -101,7 +101,7 @@ test('semantic workspace hides base methods overridden by a derived class', asyn
 
 	assert.equal(targets.length, 1);
 	assert.equal(targets[0].declaration.file, 'derived.lua');
-	assert.equal(targets[0].declaration.range.start.line, 5);
+	assert.equal(targets[0].range.start.line, 5);
 });
 
 test('semantic workspace retains member writes through reused table elements', async () => {
@@ -128,7 +128,7 @@ test('semantic workspace retains member writes through reused table elements', a
 	);
 
 	assert.ok(counts, 'nested member written through another parameter');
-	assert.equal(counts!.declaration.range.start.line, 5);
+	assert.equal(counts!.range.start.line, 5);
 });
 
 test('semantic workspace propagates table elements through standard generic iterators', async () => {
@@ -153,14 +153,14 @@ test('semantic workspace propagates table elements through standard generic iter
 	);
 
 	assert.ok(target, 'table entry receiver from pairs');
-	assert.equal(target!.declaration.range.start.line, 2);
+	assert.equal(target!.range.start.line, 2);
 	const indexedTarget = wholeProgramSymbolAt(workspace.getSnapshot(),
 		'main.lua',
 		8,
 		memberColumn(lines[7], 'run'),
 	);
 	assert.ok(indexedTarget, 'table entry receiver from ipairs');
-	assert.equal(indexedTarget!.declaration.range.start.line, 2);
+	assert.equal(indexedTarget!.range.start.line, 2);
 });
 
 test('semantic workspace does not assign builtin iterator semantics to a shadowing function', async () => {
@@ -205,7 +205,7 @@ test('semantic workspace propagates values through higher-order calls', async ()
 	);
 
 	assert.ok(ready, 'member written by a higher-order callback');
-	assert.equal(ready!.declaration.range.start.line, 5);
+	assert.equal(ready!.range.start.line, 5);
 });
 
 test('semantic workspace follows function values through table member aliases', async () => {
@@ -229,7 +229,7 @@ test('semantic workspace follows function values through table member aliases', 
 	);
 
 	assert.ok(wait, 'call argument observed through table member aliases');
-	assert.equal(wait!.declaration.range.start.line, 2);
+	assert.equal(wait!.range.start.line, 2);
 });
 
 test('semantic workspace projects callbacks stored in aggregate arguments', async () => {
@@ -255,7 +255,7 @@ test('semantic workspace projects callbacks stored in aggregate arguments', asyn
 	);
 
 	assert.ok(run, 'callback field projected from the actual aggregate to the formal parameter');
-	assert.equal(run.declaration.range.start.line, 2);
+	assert.equal(run.range.start.line, 2);
 });
 
 test('aggregate callbacks project through dynamically resolved methods', async () => {
@@ -284,7 +284,7 @@ test('aggregate callbacks project through dynamically resolved methods', async (
 	);
 
 	assert.ok(run, 'the method target is retained from its receiver value');
-	assert.equal(run.declaration.range.start.line, 2);
+	assert.equal(run.range.start.line, 2);
 });
 
 test('aggregate callback projections retain their callsite roles', async () => {
@@ -318,9 +318,9 @@ test('aggregate callback projections retain their callsite roles', async () => {
 		memberColumn(lines[line - 1], name),
 	);
 
-	assert.equal(targetAt(6, 'left_only')!.declaration.range.start.line, 2);
+	assert.equal(targetAt(6, 'left_only')!.range.start.line, 2);
 	assert.equal(targetAt(7, 'right_only'), null);
-	assert.equal(targetAt(10, 'right_only')!.declaration.range.start.line, 4);
+	assert.equal(targetAt(10, 'right_only')!.range.start.line, 4);
 	assert.equal(targetAt(11, 'left_only'), null);
 });
 
@@ -350,7 +350,7 @@ test('aggregate callback projections converge through forwarding functions', asy
 	);
 
 	assert.ok(run, 'aggregate callback reaches the executor through a forwarding call');
-	assert.equal(run.declaration.range.start.line, 2);
+	assert.equal(run.range.start.line, 2);
 });
 
 test('unresolved aggregate members do not open unrelated final-name effects', async () => {
@@ -403,9 +403,9 @@ test('semantic workspace evaluates every dynamic callee before resolving argumen
 	const right = wholeProgramSymbolAt(snapshot, 'main.lua', 12, lines[11].indexOf('right_value') + 1);
 
 	assert.ok(left, 'return path from the first callee');
-	assert.equal(left!.declaration.range.start.line, 10);
+	assert.equal(left!.range.start.line, 10);
 	assert.ok(right, 'return path from the second callee');
-	assert.equal(right!.declaration.range.start.line, 10);
+	assert.equal(right!.range.start.line, 10);
 });
 
 test('semantic workspace retains every object-return branch', async () => {
@@ -429,9 +429,9 @@ test('semantic workspace retains every object-return branch', async () => {
 	const right = wholeProgramSymbolAt(snapshot, 'main.lua', 10, lines[9].indexOf('right_value') + 1);
 
 	assert.ok(left, 'first return branch');
-	assert.equal(left!.declaration.range.start.line, 1);
+	assert.equal(left!.range.start.line, 1);
 	assert.ok(right, 'first value from a multiple-value return');
-	assert.equal(right!.declaration.range.start.line, 2);
+	assert.equal(right!.range.start.line, 2);
 });
 
 test('semantic workspace keeps function return values contextual to each callsite', async () => {
@@ -452,7 +452,7 @@ test('semantic workspace keeps function return values contextual to each callsit
 	const snapshot = workspace.getSnapshot();
 
 	assert.equal(
-		wholeProgramSymbolAt(snapshot, 'main.lua', 8, lines[7].indexOf('left_only') + 1)!.declaration.range.start.line,
+		wholeProgramSymbolAt(snapshot, 'main.lua', 8, lines[7].indexOf('left_only') + 1)!.range.start.line,
 		1,
 	);
 	assert.equal(
@@ -460,7 +460,7 @@ test('semantic workspace keeps function return values contextual to each callsit
 		null,
 	);
 	assert.equal(
-		wholeProgramSymbolAt(snapshot, 'main.lua', 9, lines[8].indexOf('right_only') + 1)!.declaration.range.start.line,
+		wholeProgramSymbolAt(snapshot, 'main.lua', 9, lines[8].indexOf('right_only') + 1)!.range.start.line,
 		2,
 	);
 	assert.equal(
@@ -495,7 +495,7 @@ test('semantic workspace keeps bound nested calls attached to their lexical clos
 	const snapshot = workspace.getSnapshot();
 
 	assert.equal(
-		wholeProgramSymbolAt(snapshot, 'main.lua', 16, lines[15].indexOf('left_only') + 1)!.declaration.range.start.line,
+		wholeProgramSymbolAt(snapshot, 'main.lua', 16, lines[15].indexOf('left_only') + 1)!.range.start.line,
 		1,
 	);
 	assert.equal(
@@ -503,7 +503,7 @@ test('semantic workspace keeps bound nested calls attached to their lexical clos
 		null,
 	);
 	assert.equal(
-		wholeProgramSymbolAt(snapshot, 'main.lua', 17, lines[16].indexOf('right_only') + 1)!.declaration.range.start.line,
+		wholeProgramSymbolAt(snapshot, 'main.lua', 17, lines[16].indexOf('right_only') + 1)!.range.start.line,
 		2,
 	);
 	assert.equal(
@@ -538,8 +538,8 @@ test('semantic workspace keeps parameter-indexed return values contextual to eac
 	workspace.updateFile('main.lua', lines.join('\n'));
 	let snapshot = workspace.getSnapshot();
 
-	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 15, memberColumn(lines[14], 'left_only'))!.declaration.range.start.line, 4);
-	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 16, memberColumn(lines[15], 'right_only'))!.declaration.range.start.line, 6);
+	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 15, memberColumn(lines[14], 'left_only'))!.range.start.line, 4);
+	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 16, memberColumn(lines[15], 'right_only'))!.range.start.line, 6);
 	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 17, memberColumn(lines[16], 'right_only')), null);
 	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 18, memberColumn(lines[17], 'left_only')), null);
 
@@ -548,7 +548,7 @@ test('semantic workspace keeps parameter-indexed return values contextual to eac
 	workspace.updateFile('main.lua', retargeted.join('\n'));
 	snapshot = workspace.getSnapshot();
 	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 15, memberColumn(retargeted[14], 'left_only')), null);
-	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 17, memberColumn(retargeted[16], 'right_only'))!.declaration.range.start.line, 6);
+	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 17, memberColumn(retargeted[16], 'right_only'))!.range.start.line, 6);
 });
 
 test('semantic workspace keeps parameter-keyed table writes contextual to each invocation', async () => {
@@ -581,8 +581,8 @@ test('semantic workspace keeps parameter-keyed table writes contextual to each i
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 
-	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 19, memberColumn(lines[18], 'left_only'))!.declaration.range.start.line, 3);
-	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 20, memberColumn(lines[19], 'right_only'))!.declaration.range.start.line, 6);
+	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 19, memberColumn(lines[18], 'left_only'))!.range.start.line, 3);
+	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 20, memberColumn(lines[19], 'right_only'))!.range.start.line, 6);
 	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 21, memberColumn(lines[20], 'right_only')), null);
 	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 22, memberColumn(lines[21], 'left_only')), null);
 });
@@ -614,10 +614,10 @@ test('semantic workspace reads index keys as values through reciprocal table map
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 	for (const line of [14, 16]) {
-		assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', line, memberColumn(lines[line - 1], 'left_only'))!.declaration.range.start.line, 8);
+		assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', line, memberColumn(lines[line - 1], 'left_only'))!.range.start.line, 8);
 	}
 	for (const line of [15, 17]) {
-		assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', line, memberColumn(lines[line - 1], 'right_only'))!.declaration.range.start.line, 10);
+		assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', line, memberColumn(lines[line - 1], 'right_only'))!.range.start.line, 10);
 	}
 	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 18, memberColumn(lines[17], 'right_only')), null);
 	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 19, memberColumn(lines[18], 'left_only')), null);
@@ -647,7 +647,7 @@ test('semantic workspace maps numeric loop keys to the shared table element doma
 	);
 
 	assert.ok(target, 'independent numeric loops share the numeric index domain');
-	assert.equal(target.declaration.range.start.line, 3);
+	assert.equal(target.range.start.line, 3);
 });
 
 test('semantic workspace reads literal table entries through a numeric loop key', async () => {
@@ -670,12 +670,12 @@ test('semantic workspace reads literal table entries through a numeric loop key'
 
 	assert.equal(
 		wholeProgramSymbolAt(snapshot, 'main.lua', 8, memberColumn(lines[7], 'left_only'))!
-			.declaration.range.start.line,
+			.range.start.line,
 		2,
 	);
 	assert.equal(
 		wholeProgramSymbolAt(snapshot, 'main.lua', 9, memberColumn(lines[8], 'right_only'))!
-			.declaration.range.start.line,
+			.range.start.line,
 		4,
 	);
 });
@@ -699,7 +699,7 @@ test('semantic workspace keeps literal table indices disjoint from the element d
 
 	assert.equal(
 		wholeProgramSymbolAt(snapshot, 'main.lua', 8, memberColumn(lines[7], 'left_only'))!
-			.declaration.range.start.line,
+			.range.start.line,
 		2,
 	);
 	assert.equal(
@@ -728,7 +728,7 @@ test('semantic workspace summarizes recursive value flow without unbounded call 
 	);
 
 	assert.ok(visited);
-	assert.equal(visited.declaration.range.start.line, 2);
+	assert.equal(visited.range.start.line, 2);
 });
 
 test('semantic workspace widens recursive local aliases into one call context', async () => {
@@ -755,7 +755,7 @@ test('semantic workspace widens recursive local aliases into one call context', 
 	);
 
 	assert.ok(visited);
-	assert.equal(visited.declaration.range.start.line, 2);
+	assert.equal(visited.range.start.line, 2);
 });
 
 test('semantic workspace passes colon-call receivers through nested method calls', async () => {
@@ -793,8 +793,8 @@ test('semantic workspace passes colon-call receivers through nested method calls
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 
-	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 24, memberColumn(lines[23], 'left_only'))!.declaration.range.start.line, 15);
-	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 25, memberColumn(lines[24], 'right_only'))!.declaration.range.start.line, 17);
+	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 24, memberColumn(lines[23], 'left_only'))!.range.start.line, 15);
+	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 25, memberColumn(lines[24], 'right_only'))!.range.start.line, 17);
 	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 26, memberColumn(lines[25], 'right_only')), null);
 	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 27, memberColumn(lines[26], 'left_only')), null);
 });
@@ -865,7 +865,7 @@ test('semantic workspace retains projected receiver effects through ordinary fun
 	);
 
 	assert.ok(inherited, 'the ordinary function parameter retains its caller receiver projection');
-	assert.equal(inherited.declaration.range.start.line, 2);
+	assert.equal(inherited.range.start.line, 2);
 });
 
 test('semantic workspace observes the current metatable after repeated setmetatable calls', async () => {
@@ -892,8 +892,8 @@ test('semantic workspace observes the current metatable after repeated setmetata
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 
-	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 13, memberColumn(lines[12], 'left_only'))!.declaration.range.start.line, 5);
-	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 14, memberColumn(lines[13], 'right_only'))!.declaration.range.start.line, 8);
+	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 13, memberColumn(lines[12], 'left_only'))!.range.start.line, 5);
+	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 14, memberColumn(lines[13], 'right_only'))!.range.start.line, 8);
 	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 15, memberColumn(lines[14], 'right_only')), null);
 	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 16, memberColumn(lines[15], 'left_only')), null);
 });
@@ -913,8 +913,8 @@ test('semantic workspace follows ordinary Lua metatable identity through getmeta
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 
-	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 6, memberColumn(lines[5], 'run'))!.declaration.range.start.line, 3);
-	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 7, memberColumn(lines[6], 'run'))!.declaration.range.start.line, 3);
+	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 6, memberColumn(lines[5], 'run'))!.range.start.line, 3);
+	assert.equal(wholeProgramSymbolAt(snapshot, 'main.lua', 7, memberColumn(lines[6], 'run'))!.range.start.line, 3);
 });
 
 test('semantic workspace applies metatables to values passed through function parameters', async () => {
@@ -939,7 +939,7 @@ test('semantic workspace applies metatables to values passed through function pa
 		lines[usageLine - 1].lastIndexOf('inherited') + 1,
 	);
 
-	assert.equal(result!.declaration.range.start.line, 3);
+	assert.equal(result!.range.start.line, 3);
 });
 
 test('semantic workspace preserves both value alternatives of Lua and-or expressions', async () => {
@@ -957,9 +957,9 @@ test('semantic workspace preserves both value alternatives of Lua and-or express
 	const fallback = wholeProgramSymbolAt(snapshot, 'main.lua', 4, lines[3].indexOf('fallback_value') + 1);
 
 	assert.ok(primary, 'left alternative member');
-	assert.equal(primary!.declaration.range.start.line, 1);
+	assert.equal(primary!.range.start.line, 1);
 	assert.ok(fallback, 'right alternative member');
-	assert.equal(fallback!.declaration.range.start.line, 2);
+	assert.equal(fallback!.range.start.line, 2);
 });
 
 test('semantic workspace retains every prototype alternative of an abstract value', async () => {
@@ -982,9 +982,9 @@ test('semantic workspace retains every prototype alternative of an abstract valu
 	const right = wholeProgramSymbolAt(snapshot, 'main.lua', 9, memberColumn(lines[8], 'right_only'));
 
 	assert.ok(left, 'first prototype alternative');
-	assert.equal(left.declaration.range.start.line, 3);
+	assert.equal(left.range.start.line, 3);
 	assert.ok(right, 'second prototype alternative');
-	assert.equal(right.declaration.range.start.line, 6);
+	assert.equal(right.range.start.line, 6);
 });
 
 test('semantic workspace publishes direct method receiver members without executing the method', async () => {
@@ -1105,10 +1105,10 @@ test('semantic workspace resolves fields injected by a generic instance factory 
 
 	assert.ok(create, 'factory-injected owner member');
 	assert.equal(create!.declaration.file, 'factory.lua');
-	assert.equal(create!.declaration.range.start.line, 7);
+	assert.equal(create!.range.start.line, 7);
 	const callReferences = snapshot.symbolResolver.incomingCalls(create!.id);
 	assert.equal(
-		callReferences.some(reference => reference.file === 'actor.lua' && reference.range.start.line === 5),
+		callReferences.some(reference => reference.file === 'actor.lua' && snapshot.getFileData(reference.file)!.chunk.locations.range(reference.span).start.line === 5),
 		true,
 		'call hierarchy retains the constructed class method call',
 	);
@@ -1225,7 +1225,7 @@ test('semantic workspace retains contextual prototype effects through configurat
 	);
 	assert.ok(inheritedMethod, 'prototype installed through the configuration call');
 	assert.equal(inheritedMethod!.declaration.file, 'base.lua');
-	assert.equal(inheritedMethod!.declaration.range.start.line, 7);
+	assert.equal(inheritedMethod!.range.start.line, 7);
 
 	const initializedField = wholeProgramSymbolAt(
 		snapshot,
@@ -1235,7 +1235,7 @@ test('semantic workspace retains contextual prototype effects through configurat
 	);
 	assert.ok(initializedField, 'field published by the configured base initializer');
 	assert.equal(initializedField!.declaration.file, 'base.lua');
-	assert.equal(initializedField!.declaration.range.start.line, 5);
+	assert.equal(initializedField!.range.start.line, 5);
 
 	const chainedMethod = wholeProgramSymbolAt(
 		snapshot,
@@ -1245,7 +1245,7 @@ test('semantic workspace retains contextual prototype effects through configurat
 	);
 	assert.ok(chainedMethod, 'method retained from the initialized factory return');
 	assert.equal(chainedMethod!.declaration.file, 'channel.lua');
-	assert.equal(chainedMethod!.declaration.range.start.line, 4);
+	assert.equal(chainedMethod!.range.start.line, 4);
 
 	assert.equal(
 		wholeProgramSymbolAt(
@@ -1348,7 +1348,7 @@ test('semantic workspace follows co-attached extension effects through a generic
 
 	assert.ok(bind, 'method published by a co-attached extension');
 	assert.equal(bind.declaration.file, 'controller.lua');
-	assert.equal(bind.declaration.range.start.line, 9);
+	assert.equal(bind.range.start.line, 9);
 	const inspect = wholeProgramSymbolAt(
 		workspace.getSnapshot(),
 		'consumer.lua',
@@ -1357,7 +1357,7 @@ test('semantic workspace follows co-attached extension effects through a generic
 	);
 	assert.ok(inspect, 'later context candidate remains available to another query');
 	assert.equal(inspect.declaration.file, 'monitor.lua');
-	assert.equal(inspect.declaration.range.start.line, 5);
+	assert.equal(inspect.range.start.line, 5);
 	assert.equal(
 		wholeProgramSymbolAt(
 			workspace.getSnapshot(),
@@ -1509,7 +1509,7 @@ test('generic host lifecycle effects stay with the receiver of their attachment 
 	);
 	assert.ok(rightBind);
 	assert.equal(rightBind.declaration.file, 'controller.lua');
-	assert.equal(rightBind.declaration.range.start.line, 5);
+	assert.equal(rightBind.range.start.line, 5);
 });
 
 test('semantic workspace projects extension effects through retained factory aggregates', async () => {
@@ -1587,7 +1587,7 @@ test('semantic workspace projects extension effects through retained factory agg
 	);
 	assert.ok(bind, 'the constructed extension publishes its field through the aggregate factory');
 	assert.equal(bind.declaration.file, 'controller.lua');
-	assert.equal(bind.declaration.range.start.line, 8);
+	assert.equal(bind.range.start.line, 8);
 });
 
 test('semantic workspace propagates member effects through forwarding call summaries', async () => {
@@ -1620,7 +1620,7 @@ test('semantic workspace propagates member effects through forwarding call summa
 	);
 
 	assert.ok(ready, 'field written through three forwarding calls');
-	assert.equal(ready!.declaration.range.start.line, 3);
+	assert.equal(ready!.range.start.line, 3);
 });
 
 test('forwarding call summaries preserve callsite receiver identity', async () => {
@@ -1651,7 +1651,7 @@ test('forwarding call summaries preserve callsite receiver identity', async () =
 
 	assert.equal(
 		wholeProgramSymbolAt(snapshot, 'main.lua', 17, memberColumn(lines[16], 'ready'))!
-			.declaration.range.start.line,
+			.range.start.line,
 		3,
 	);
 	assert.equal(

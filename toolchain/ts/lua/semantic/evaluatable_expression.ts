@@ -25,7 +25,7 @@ export function provideLuaEvaluatableExpression(
 		}
 		return {
 			expression,
-			range: declaration.range,
+			range: analysis.chunk.locations.range(declaration.span),
 		};
 	}
 	const reference = occurrence.reference;
@@ -34,6 +34,6 @@ export function provideLuaEvaluatableExpression(
 	}
 	return {
 		expression: reference.staticExpressionPath,
-		range: reference.range,
+		range: analysis.chunk.locations.range(reference.span),
 	};
 }

@@ -83,7 +83,7 @@ test('cross file rename updates a retained background model without opening an e
 
 	const otherRanges = resolution!.references
 		.filter(ref => ref.file === 'usage.lua')
-		.map(ref => ref.range);
+		.map(ref => workspace.getSnapshot().getFileData(ref.file)!.chunk.locations.range(ref.span));
 	assert.ok(otherRanges.length > 0);
 
 	const manager = new CrossFileRenameManager(sources);

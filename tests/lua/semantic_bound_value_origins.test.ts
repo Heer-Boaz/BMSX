@@ -83,14 +83,14 @@ test('module aliases use new provider origins without mutating retained consumer
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFiles([first, consumer]);
 	const oldSnapshot = workspace.getSnapshot();
-	assert.equal(semanticSymbolAt(oldSnapshot, consumer.file, 2, 17)!.declaration.range.start.line, 1);
+	assert.equal(semanticSymbolAt(oldSnapshot, consumer.file, 2, 17)!.range.start.line, 1);
 	const next = buildLuaFileSemanticData('return {\n  item = false\n}', first.file);
 	workspace.updateFiles([next]);
 	const current = workspace.getSnapshot();
 	assert.equal(current.getFileData(consumer.file), consumer);
 	assert.equal(current.getFileData(consumer.file)!.ownedValuesBySyntax, consumer.ownedValuesBySyntax);
-	assert.equal(semanticSymbolAt(current, consumer.file, 2, 17)!.declaration.range.start.line, 2);
-	assert.equal(semanticSymbolAt(oldSnapshot, consumer.file, 2, 17)!.declaration.range.start.line, 1);
+	assert.equal(semanticSymbolAt(current, consumer.file, 2, 17)!.range.start.line, 2);
+	assert.equal(semanticSymbolAt(oldSnapshot, consumer.file, 2, 17)!.range.start.line, 1);
 	assert.notEqual(first.moduleValues[0].source, next.moduleValues[0].source);
 	assert.equal(first.moduleValues[0].source.root.kind, 'owned');
 });

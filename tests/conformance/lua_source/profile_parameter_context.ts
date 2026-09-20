@@ -34,7 +34,7 @@ for (const [callSites, writtenParameter] of [[32, false], [256, false], [32, tru
 	for (let index = 0; index < references.length; index += 1) {
 		const targets = snapshot.symbolResolver.resolveReferenceTargets(references[index]);
 		assert.equal(targets.length, 1);
-		assert.equal(snapshot.symbolResolver.getDeclaration(targets[0])!.range.start.line, 4 + index * 3);
+		assert.equal(file.chunk.locations.range(snapshot.symbolResolver.getDeclaration(targets[0])!.span).start.line, 4 + index * 3);
 	}
 	let retainedCount = 0;
 	const retainedQueryMicroseconds = medianMilliseconds(() => {

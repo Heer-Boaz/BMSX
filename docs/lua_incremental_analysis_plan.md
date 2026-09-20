@@ -1049,6 +1049,85 @@ at 3.322/7.455 and 16.412/17.351 ms p50/p95. Player binding still costs
 285-file bound heap is 215.33 MiB, released overhead 2.61 MiB. This remains
 approximately 1.53x at the public player-update median, not the final 2x gate.
 
+## Binder prerequisite: relative facts and explicit highlighting presentation
+
+Declarations, references, member-access sites and module references now retain
+`LuaSyntaxSpan`, not absolute `SourceRange` objects. Defining-name extents are
+produced at declaration creation: identifier table keys cover the name only;
+quoted keys preserve the written literal extent. Position queries compare
+owning offsets; navigation and other presentation results explicitly project
+ranges through the retained file generation. The resolver owns the single
+snapshot file lookup map, also used by snapshot consumers.
+
+Highlighting follows the same boundary: the binder emits relative
+`SemanticTokenFact` records, without asking for positions or ranges.
+`getLuaSemanticAnnotations` in the existing token owner projects and caches rows
+only when a consumer requests highlighting, using a WeakMap keyed by the
+immutable file generation. Code layout requests that projection explicitly.
+This is syntax highlighting, **not** the deferred LuaLS type-annotation feature.
+There is no mutable current-generation getter on retained facts.
+
+This is still a prerequisite, **not scope-owned binding reuse**. File-wide
+scope/declaration indices, ambient property/signature maps, flow-owner object
+links and whole-file traversal remain. No body cache replays these mutable maps.
+The next implementation must produce composable local facts with explicit
+external dependencies, including failed lookups, before skipping scope work.
+
+The edit profiler now separately reports highlight projection after queries;
+phase totals include that work. Public updates have both analysis-only and
+update-plus-highlighting passes, neither including queries. Compare the latter
+against the eager-highlighting baseline; moving work must not be reported as
+eliminating it. The heap profiler likewise distinguishes bound facts from a
+snapshot with every file's highlighting materialized. Neither profiler is an
+editor-frame measurement.
+
+Independent fresh-context review found no blocker and explicitly called out
+possible extra annotation-fact plus presentation allocations. A before/after
+oracle matches all fact locations, signatures and highlighting rows on 549
+cart files against `fda1dc801`. Tests cover retained shifted generations, exact
+field extents, zero position/range calls during binding, lazy highlighting and
+logarithmic ordered-span lookup. The full Lua suite has 2,113 tests: 2,111 pass,
+the same named-workbench-menu failure, one skip. Rompacker passes 129/129;
+rebuilt tooling passes precision idetests 8/5/3. Broad typechecking reports no
+new changed-owner errors; core parity and `git diff --check` pass. The older
+parameter-context and recursive-input conformance profilers fail identically
+on the baseline before their migrated range assertions; they are not counted
+as passing validation.
+
+Isolated paired runs (20 warmups/50 samples, no simultaneous builds/tests)
+measure function-body public updates **including highlighting** as follows:
+
+| File | `fda1dc801` p50/p95 | Relative facts p50/p95 |
+| --- | --- | --- |
+| director.lua | 3.280 / 7.383 ms | 2.921 / 6.786 ms |
+| player/player.lua | 16.794 / 17.851 ms | 13.873 / 15.220 ms |
+
+Player's new analysis-only public update is 11.765/13.461 ms; it is not the
+combined highlighting figure. Its whole-file bind is 9.392/10.624 ms and
+highlight-after-query projection is 2.541/6.053 ms (separate phase percentiles
+must not be added). Member query is 1.216/4.838 ms versus 1.301/5.132 baseline;
+completion-after-member is 7.888/11.804 versus 8.380/12.797 ms. Current
+full-source update plus highlighting is 22.919/24.998 ms: the incremental path
+is about 1.65x at both percentiles, **not** the final 2x gate.
+
+The relocation conformance helper is also migrated to the current syntax,
+scope-point and transfer APIs (it still contained older absolute-AST accesses).
+Its real edit/rebind oracle passes 4,508 transfers and 4,848 binding checks on
+345 tracked Lua files, including 698 predicted binding changes.
+
+A fresh paired O3 compilation of pietious (207 modules, 2,131 functions)
+produces the same complete serialized output hash on `fda1dc801` and this
+change: `dd405f9a1b6fb463b2f8b2fb8bdf9f81d0cb2c84d89a7f1e5d583bf0d19b51d5`.
+Total compile p50/p95 is 3,237.98/3,388.87 ms baseline versus
+3,231.20/3,262.64 ms current. The parse-only subphase is noisy and higher in
+this run (169.30/222.98 versus 185.77/252.59 ms); this slice changes no syntax
+producer, and these totals do not close the earlier cold-parser gate.
+
+Retained 285-file heap is 192.10 MiB before highlighting and 205.59 MiB with
+all highlighting projected, versus 215.20 MiB in the eager baseline. Released
+overhead is 2.63 versus 2.50 MiB. These are post-GC heap deltas, not allocation
+counts; temporary allocation and browser-frame claims remain unproven.
+
 ## Lowest-priority follow-up: absent-value convention
 
 User request, 2026-09-20: after the incremental parsing/binding work and its

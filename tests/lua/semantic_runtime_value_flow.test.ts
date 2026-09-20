@@ -91,12 +91,12 @@ test('semantic workspace follows member effects through higher-order factory cal
 
 	assert.equal(targetAt('\tself.timers:play()', 'play')!.declaration.file, 'timer_unit.lua');
 	assert.equal(
-		targetAt('\tself.timers:play()', 'timers')!.declaration.range.start.line,
+		targetAt('\tself.timers:play()', 'timers')!.range.start.line,
 		lineNumber(timerSource, '\tself.parent.timers = self'),
 	);
 	assert.equal(targetAt('\tself.effects:trigger()', 'trigger')!.declaration.file, 'effect_unit.lua');
 	assert.equal(
-		targetAt('\tself.effects:trigger()', 'effects')!.declaration.range.start.line,
+		targetAt('\tself.effects:trigger()', 'effects')!.range.start.line,
 		lineNumber(effectSource, '\tself.parent.effects = self'),
 	);
 	const rightPlayLine = actorLines.lastIndexOf('\tself.timers:play()') + 1;
@@ -250,7 +250,7 @@ test('function-owned table fields do not escape as external member effects', asy
 	)!;
 	assert.equal(
 		snapshot.symbolResolver.getReferences(optionsField.id).some(
-			reference => reference.range.start.line === referenceLine,
+			reference => snapshot.getFileData(reference.file)!.chunk.locations.range(reference.span).start.line === referenceLine,
 		),
 		false,
 		'a references search does not adopt an unrelated unresolved receiver',

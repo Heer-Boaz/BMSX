@@ -51,10 +51,14 @@ class FileCorrespondence {
 			}
 		}
 		for (let index = 0; index < this.oldFile.decls.length; index += 1) {
-			this.oldDeclarations.set(sourceRangeKey(this.oldFile.decls[index].range), index);
+			const span = this.oldFile.decls[index].span;
+			const locations = this.oldFile.chunk.locations;
+			this.oldDeclarations.set(`${locations.offset(span.unit, span.start)}:${locations.offset(span.unit, span.end)}`, index);
 		}
 		for (let index = 0; index < this.newFile.decls.length; index += 1) {
-			this.newDeclarations.set(sourceRangeKey(this.newFile.decls[index].range), index);
+			const span = this.newFile.decls[index].span;
+			const locations = this.newFile.chunk.locations;
+			this.newDeclarations.set(`${locations.offset(span.unit, span.start)}:${locations.offset(span.unit, span.end)}`, index);
 		}
 		const oldFunctions = new Map<string, LuaFunctionExpression>();
 		const newFunctions = new Map<string, LuaFunctionExpression>();
@@ -133,15 +137,17 @@ class FileCorrespondence {
 	public unchangedRange(range: SourceRange): SourceRange | undefined { return this.mapRange(range, false); }
 
 	public declaration(range: SourceRange): SourceRange | undefined {
-		const oldIndex = this.oldDeclarations.get(sourceRangeKey(range));
+		const oldLocations = this.oldFile.chunk.locations;
+		const oldIndex = this.oldDeclarations.get(`${oldLocations.offsetAt(range.start)}:${oldLocations.offsetAt(range.end)}`);
 		if (oldIndex === undefined) return undefined;
 		const mapped = this.mapRange(range, false);
 		if (mapped === undefined) return undefined;
-		const newIndex = this.newDeclarations.get(sourceRangeKey(mapped));
+		const newLocations = this.newFile.chunk.locations;
+		const newIndex = this.newDeclarations.get(`${newLocations.offsetAt(mapped.start)}:${newLocations.offsetAt(mapped.end)}`);
 		if (newIndex === undefined) return undefined;
 		const oldDecl = this.oldFile.decls[oldIndex];
 		const newDecl = this.newFile.decls[newIndex];
-		return this.scopes[oldDecl.scopeIndex] === newDecl.scopeIndex ? newDecl.range : undefined;
+		return this.scopes[oldDecl.scopeIndex] === newDecl.scopeIndex ? this.newFile.chunk.locations.range(newDecl.span) : undefined;
 	}
 
 	public functionRange(range: SourceRange): SourceRange | undefined {

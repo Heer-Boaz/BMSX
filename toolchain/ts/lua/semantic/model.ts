@@ -1,5 +1,5 @@
 import type { LuaStatementSequence } from '../syntax/statement_sequence';
-import type { LuaSyntaxPoint } from '../syntax/source_locations';
+import type { LuaSyntaxPoint, LuaSyntaxSpan } from '../syntax/source_locations';
 import { hashText } from '../../../../machine/ts/common/byte_hex_string';
 import { HashMapBuilder } from '../../collections/hash_map';
 import { SourceChangeMap } from '../../text/source_changes';
@@ -31,7 +31,6 @@ import {
 	type LuaRodataDeclarationStatement,
 	type LuaFunctionDeclarationStatement,
 	type LuaFunctionName,
-	type LuaSourceRange,
 	type LuaStringLiteralExpression,
 	type LuaReturnStatement,
 } from '../syntax/ast';
@@ -39,10 +38,8 @@ import type { LuaSymbolEntry } from '../semantic_contracts';
 import { parseLuaChunkWithRecovery, updateLuaChunk, type ParsedLuaChunk } from '../analysis/parse';
 import { LuaCompletionAnalysis, type LuaCompletion } from '../analysis/completion';
 import type { LuaSyntaxError } from '../errors';
-import type { SourcePosition } from '../source_range';
 import { createSymbolId, type SemanticSymbolKind, type SymbolID } from './symbols';
-import { compareSourcePosition } from './source_range';
-import type { SemanticAnnotations, SemanticRole } from './tokens';
+import type { SemanticTokenFact, SemanticRole } from './tokens';
 import { methodPathToPropertyPath } from './common';
 import { toLuaModulePath } from '../module_path';
 import { LUA_BUILTIN_TABLE_ITERATOR_ARGUMENTS } from '../builtin_descriptors';
@@ -104,7 +101,7 @@ export type Decl = {
 	namePath: readonly string[];
 	symbolKey: string;
 	kind: SemanticSymbolKind;
-	range: LuaSourceRange;
+	span: LuaSyntaxSpan;
 	scopeIndex: number;
 	visibleFrom: LuaSyntaxPoint;
 	isGlobal: boolean;
@@ -126,7 +123,7 @@ export type Ref = {
 	name: string;
 	namePath: readonly string[];
 	symbolKey: string;
-	range: LuaSourceRange;
+	span: LuaSyntaxSpan;
 	target?: SymbolID;
 	isWrite: boolean;
 	isCall: boolean;
@@ -151,7 +148,7 @@ export type LuaCallSite = {
 };
 
 export type MemberAccessEntry = {
-	readonly range: LuaSourceRange;
+	readonly span: LuaSyntaxSpan;
 	readonly receiver: SemanticValueSource;
 	readonly operator: LuaMemberOperator;
 	readonly namePath?: readonly string[];
@@ -167,7 +164,7 @@ export type FileSemanticData = LuaFileSemanticRevision & {
 	readonly source: string;
 	readonly syntaxError: LuaSyntaxError | null;
 	readonly chunk: LuaChunk;
-	readonly annotations: SemanticAnnotations;
+	readonly annotationFacts: readonly SemanticTokenFact[];
 	readonly decls: readonly Decl[];
 	/** Binder order and multiplicity, for snapshot global enumeration. */
 	readonly globalDecls: readonly Decl[];
@@ -179,7 +176,7 @@ export type FileSemanticData = LuaFileSemanticRevision & {
 	readonly declarationIdsBySyntax: ReadonlyMap<LuaIdentifierExpression, SymbolID>;
 	readonly referencesBySyntax: ReadonlyMap<LuaIdentifierExpression, Ref>;
 	readonly referencesByName: ReadonlyMap<string, readonly Ref[]>;
-	readonly moduleReferences: readonly { value: string; range: LuaSourceRange }[];
+	readonly moduleReferences: readonly { value: string; span: LuaSyntaxSpan }[];
 	readonly callSites: readonly LuaCallSite[];
 	readonly declarationValues: readonly DeclarationValueEntry[];
 	readonly declarationValuesByDeclaration: ReadonlyMap<SymbolID, readonly DeclarationValueEntry[]>;
@@ -207,7 +204,6 @@ export class LuaSemanticWorkspaceSnapshot {
 	public readonly version: number;
 	public readonly files: readonly FileSemanticData[];
 	public readonly symbolResolver: WorkspaceSymbolResolver;
-	private readonly dataByPath: ReadonlyMap<string, FileSemanticData>;
 	private globalDecls: readonly Decl[] | undefined;
 
 	constructor(
@@ -218,16 +214,10 @@ export class LuaSemanticWorkspaceSnapshot {
 		this.version = version;
 		this.files = files;
 		this.symbolResolver = symbolResolver;
-		const dataByPath = new Map<string, FileSemanticData>();
-		for (let index = 0; index < files.length; index += 1) {
-			const file = files[index];
-			dataByPath.set(file.file, file);
-		}
-		this.dataByPath = dataByPath;
 	}
 
 	public getFileData(path: string): FileSemanticData | undefined {
-		return this.dataByPath.get(path);
+		return this.symbolResolver.getFileData(path);
 	}
 
 	public listGlobalDecls(): readonly Decl[] {
@@ -356,7 +346,7 @@ type SemanticBuildResult = {
 	declarationIdsBySyntax: Map<LuaIdentifierExpression, SymbolID>;
 	referencesBySyntax: Map<LuaIdentifierExpression, Ref>;
 	referencesByName: Map<string, Ref[]>;
-	annotations: SemanticAnnotations;
+	annotationFacts: SemanticTokenFact[];
 	callSites: LuaCallSite[];
 	declarationValues: DeclarationValueEntry[];
 	declarationValuesByDeclaration: Map<SymbolID, DeclarationValueEntry[]>;
@@ -367,7 +357,7 @@ type SemanticBuildResult = {
 	functionValueFlows: FunctionValueFlowEntry[];
 	callValues: CallValueEntry[];
 	valueAssignments: ValueAssignmentEntry[];
-	moduleReferences: { value: string; range: LuaSourceRange }[];
+	moduleReferences: { value: string; span: LuaSyntaxSpan }[];
 };
 
 export function buildLuaFileSemanticData(
@@ -382,7 +372,6 @@ export function buildLuaFileSemanticData(
 	const builder = new SemanticBuilder({
 		path,
 		chunk: retainedChunk,
-		lineCount: retainedChunk.locations.range(eof).end.line,
 		documentEndExclusive: {
 			unit: eof.unit,
 			offset: eof.end + 1,
@@ -402,14 +391,13 @@ export function buildLuaFileSemanticData(
 	}
 	const scopes = result.scopes.map(toSemanticScope);
 	const refs = result.refs.slice();
-	const annotations = finalizeAnnotations(result.annotations);
 	return {
 		file: path,
 		revision: Symbol(),
 		source,
 		syntaxError: retainedChunk.syntaxError,
 		chunk: retainedChunk,
-		annotations,
+		annotationFacts: result.annotationFacts,
 		decls,
 		globalDecls,
 		globalStorageDecls: Array.from(globalStorageDecls.values()),
@@ -556,12 +544,13 @@ class LuaProjectIndex {
 		for (const declaration of bucket.values()) {
 			const order = this.fileOrder.get(declaration.file)!;
 			// Navigation precedence is source-defined, never allocated-ID order.
-			if (order < best || order === best && compareSourcePosition(
-				declaration.range.start.line, declaration.range.start.column,
-				selected!.range.start.line, selected!.range.start.column,
-			) < 0) {
+			if (order < best) {
 				best = order;
 				selected = declaration;
+			} else if (order === best) {
+				const locations = this.files.get(declaration.file)!.chunk.locations;
+				if (locations.offset(declaration.span.unit, declaration.span.start)
+					< locations.offset(selected!.span.unit, selected!.span.start)) selected = declaration;
 			}
 		}
 		return selected!.id;
@@ -619,7 +608,7 @@ class SemanticBuilder {
 	private readonly chunk: LuaChunk;
 	private readonly path: string;
 	private readonly documentEndExclusive: LuaSyntaxPoint;
-	private readonly annotations: SemanticAnnotations;
+	private readonly annotationFacts: SemanticTokenFact[] = [];
 	private readonly scopeStack: Scope[] = [];
 	private readonly scopes: Scope[] = [];
 	private readonly properties: Map<string, InternalDecl> = new Map();
@@ -632,7 +621,7 @@ class SemanticBuilder {
 	private readonly declarationIdsBySyntax: Map<LuaIdentifierExpression, SymbolID> = new Map();
 	private readonly referencesBySyntax: Map<LuaIdentifierExpression, Ref> = new Map();
 	private readonly referencesByName: Map<string, Ref[]> = new Map();
-	private readonly moduleReferences: { value: string; range: LuaSourceRange }[] = [];
+	private readonly moduleReferences: { value: string; span: LuaSyntaxSpan }[] = [];
 	private readonly callSites: (Omit<LuaCallSite, 'moduleTarget'> & { moduleTarget: ModuleAliasTarget | null })[] = [];
 	private readonly functionSignaturesByPath: Map<string, FunctionSignatureInfo> = new Map();
 	private readonly declarationValues: DeclarationValueEntry[] = [];
@@ -654,14 +643,12 @@ class SemanticBuilder {
 	constructor(options: {
 		chunk: LuaChunk;
 		path: string;
-		lineCount: number;
 		documentEndExclusive: LuaSyntaxPoint;
 	}) {
 		this.chunk = options.chunk;
 		this.moduleExport = findLuaModuleExport(this.chunk);
 		this.path = options.path;
 		this.documentEndExclusive = options.documentEndExclusive;
-		this.annotations = new Array(options.lineCount);
 	}
 
 	public build(): SemanticBuildResult {
@@ -689,7 +676,7 @@ class SemanticBuilder {
 			declarationIdsBySyntax: this.declarationIdsBySyntax,
 			referencesBySyntax: this.referencesBySyntax,
 			referencesByName: this.referencesByName,
-			annotations: this.annotations,
+			annotationFacts: this.annotationFacts,
 			callSites: this.callSites,
 			declarationValues: this.declarationValues,
 			declarationValuesByDeclaration: this.declarationValuesByDeclaration,
@@ -786,13 +773,11 @@ class SemanticBuilder {
 					const isGlobal = scope.kind === 'path';
 					const declarationName = functionDeclaration.name.method
 						?? functionDeclaration.name.path[functionDeclaration.name.path.length - 1];
-					const range = this.chunk.locations.range(declarationName.span);
 					decl = this.createDecl({
 						syntax: declarationName,
 						namePath,
 						name: namePath[namePath.length - 1],
 						kind: 'function',
-						range,
 						scopeRef: scope,
 						isGlobal,
 						active: true,
@@ -1143,7 +1128,7 @@ class SemanticBuilder {
 					calleeInfo.valueSource.root.kind === 'global',
 				);
 				if (requireArgument) {
-					this.moduleReferences.push({ value: requireArgument.value, range: this.chunk.locations.range(requireArgument.span) });
+					this.moduleReferences.push({ value: requireArgument.value, span: requireArgument.span });
 				}
 				let callReference: Ref | undefined;
 				if (methodName) {
@@ -1452,7 +1437,7 @@ class SemanticBuilder {
 	private assignMember(member: LuaMemberExpression): AssignmentTargetInfo {
 		const baseInfo = this.visitExpression(member.base, { tableBaseDecl: null, tableBasePath: null });
 		this.recordMemberAccess(
-			this.chunk.locations.range(member.member.span),
+			member.member.span,
 			baseInfo.valueSource,
 			member.operator,
 			baseInfo.namePath,
@@ -1535,7 +1520,7 @@ class SemanticBuilder {
 		const receiverSymbolKey = calleeInfo.decl?.symbolKey || (calleeInfo.namePath && joinNamePath(calleeInfo.namePath));
 		const method = callExpression.method;
 		this.recordMemberAccess(
-			this.chunk.locations.range(method.span),
+			method.span,
 			calleeInfo.valueSource,
 			LuaMemberOperator.Colon,
 			calleeInfo.namePath,
@@ -1587,9 +1572,8 @@ class SemanticBuilder {
 		isCall = false,
 		declarationKind: 'global' | 'function' = 'global',
 	): ResolvedNamePath {
-		const range = this.chunk.locations.range(identifier.span);
 		let binding = this.resolveName(identifier.name) ?? this.globalsByKey.get(identifier.name);
-		if (!binding && isWrite) binding = this.declareGlobal(identifier, range, declarationKind);
+		if (!binding && isWrite) binding = this.declareGlobal(identifier, declarationKind);
 		const decl = binding?.kind === 'receiver' ? undefined : binding;
 		const namePath = [identifier.name];
 		this.recordReference({
@@ -1615,7 +1599,7 @@ class SemanticBuilder {
 	private handleMemberExpression(member: LuaMemberExpression, context: ExpressionContext, isWrite: boolean, isCall = false): ResolvedNamePath {
 		const baseInfo = this.visitExpression(member.base, context);
 		this.recordMemberAccess(
-			this.chunk.locations.range(member.member.span),
+			member.member.span,
 			baseInfo.valueSource,
 			member.operator,
 			baseInfo.namePath,
@@ -1652,16 +1636,16 @@ class SemanticBuilder {
 	}
 
 	private recordMemberAccess(
-		range: LuaSourceRange,
+		span: LuaSyntaxSpan,
 		receiver: SemanticValueSource,
 		operator: LuaMemberOperator,
 		namePath: readonly string[] | null | undefined,
 	): void {
 		if (namePath != null) {
-			this.memberAccesses.push({ range, receiver, operator, namePath });
+			this.memberAccesses.push({ span, receiver, operator, namePath });
 			return;
 		}
-		this.memberAccesses.push({ range, receiver, operator });
+		this.memberAccesses.push({ span, receiver, operator });
 	}
 
 	private handleIndexExpression(indexExpression: LuaIndexExpression, context: ExpressionContext): ResolvedNamePath {
@@ -1691,13 +1675,11 @@ class SemanticBuilder {
 
 	private declareLocal(name: LuaIdentifierExpression, kind: SemanticSymbolKind, activate: boolean): InternalDecl {
 		const scope = this.currentScope();
-		const range = this.chunk.locations.range(name.span);
 		const decl = this.createDecl({
 			syntax: name,
 			namePath: [name.name],
 			name: name.name,
 			kind,
-			range,
 			scopeRef: scope,
 			isGlobal: false,
 			active: activate,
@@ -1712,13 +1694,11 @@ class SemanticBuilder {
 
 	private declareParameter(name: LuaIdentifierExpression): InternalDecl {
 		const scope = this.currentScope();
-		const range = this.chunk.locations.range(name.span);
 		const decl = this.createDecl({
 			syntax: name,
 			namePath: [name.name],
 			name: name.name,
 			kind: 'parameter',
-			range,
 			scopeRef: scope,
 			isGlobal: false,
 			active: true,
@@ -1731,13 +1711,11 @@ class SemanticBuilder {
 
 	private declareType(name: LuaIdentifierExpression): InternalDecl {
 		const scope = this.currentScope();
-		const range = this.chunk.locations.range(name.span);
 		const decl = this.createDecl({
 			syntax: name,
 			namePath: [name.name],
 			name: name.name,
 			kind: 'type',
-			range,
 			scopeRef: scope,
 			isGlobal: scope.kind === 'path',
 			active: true,
@@ -1753,13 +1731,11 @@ class SemanticBuilder {
 
 	private declareBss(name: LuaIdentifierExpression): InternalDecl {
 		const scope = this.currentScope();
-		const range = this.chunk.locations.range(name.span);
 		const decl = this.createDecl({
 			syntax: name,
 			namePath: [name.name],
 			name: name.name,
 			kind: 'bss',
-			range,
 			scopeRef: scope,
 			isGlobal: scope.kind === 'path',
 			active: true,
@@ -1775,13 +1751,11 @@ class SemanticBuilder {
 
 	private declareData(name: LuaIdentifierExpression): InternalDecl {
 		const scope = this.currentScope();
-		const range = this.chunk.locations.range(name.span);
 		const decl = this.createDecl({
 			syntax: name,
 			namePath: [name.name],
 			name: name.name,
 			kind: 'data',
-			range,
 			scopeRef: scope,
 			isGlobal: scope.kind === 'path',
 			active: true,
@@ -1797,13 +1771,11 @@ class SemanticBuilder {
 
 	private declareRodata(name: LuaIdentifierExpression): InternalDecl {
 		const scope = this.currentScope();
-		const range = this.chunk.locations.range(name.span);
 		const decl = this.createDecl({
 			syntax: name,
 			namePath: [name.name],
 			name: name.name,
 			kind: 'rodata',
-			range,
 			scopeRef: scope,
 			isGlobal: scope.kind === 'path',
 			active: true,
@@ -1817,7 +1789,7 @@ class SemanticBuilder {
 		return decl;
 	}
 
-	private declareGlobal(identifier: LuaIdentifierExpression, range: LuaSourceRange, kind: 'global' | 'function' = 'global'): InternalDecl {
+	private declareGlobal(identifier: LuaIdentifierExpression, kind: 'global' | 'function' = 'global'): InternalDecl {
 		const scope = this.scopeStack[0];
 		const namePath = [identifier.name];
 		const decl = this.createDecl({
@@ -1825,7 +1797,6 @@ class SemanticBuilder {
 			namePath,
 			name: identifier.name,
 			kind,
-			range,
 			scopeRef: scope,
 			isGlobal: true,
 			active: true,
@@ -1861,16 +1832,12 @@ class SemanticBuilder {
 			return existing;
 		}
 		const scope = baseDecl ? baseDecl.scopeRef : this.currentScope();
-		const range = syntax.kind === LuaTableFieldKind.IdentifierKey
-			? buildRangeFromPosition(this.chunk.locations.range(syntax.span).start, syntax.name.length, this.path)
-			: this.chunk.locations.range(syntax.span);
 		const isGlobal = baseDecl ? baseDecl.isGlobal : scope.kind === 'path' && namePath.length > 1;
 		const decl = this.createDecl({
 			syntax,
 			namePath: namePath,
 			name,
 			kind: 'property',
-			range,
 			scopeRef: scope,
 			isGlobal,
 			active: true,
@@ -1952,14 +1919,16 @@ class SemanticBuilder {
 		namePath: readonly string[];
 		name: string;
 		kind: SemanticSymbolKind;
-		range: LuaSourceRange;
 		scopeRef: Scope;
 		isGlobal: boolean;
 		active: boolean;
 		lexical: boolean;
 	}): InternalDecl {
-		const { syntax, namePath, name, kind, range, scopeRef, isGlobal, active } = options;
+		const { syntax, namePath, name, kind, scopeRef, isGlobal, active } = options;
 		const id = createSymbolId(this.path, syntax.span, kind, namePath);
+		const span = syntax.kind === LuaTableFieldKind.IdentifierKey
+			? { unit: syntax.span.unit, start: syntax.span.start, end: syntax.span.start + name.length - 1 }
+			: syntax.span;
 		const decl: InternalDecl = {
 			id,
 			file: this.path,
@@ -1967,10 +1936,9 @@ class SemanticBuilder {
 			namePath: namePath.slice(),
 			symbolKey: joinNamePath(namePath),
 			kind,
-			range,
+			span,
 			scopeIndex: scopeRef.index,
-			visibleFrom: { unit: syntax.span.unit, offset: syntax.kind === LuaTableFieldKind.IdentifierKey
-				? syntax.span.start + name.length - 1 : syntax.span.end },
+			visibleFrom: { unit: span.unit, offset: span.end },
 			isGlobal,
 			scopeRef,
 			active,
@@ -1992,7 +1960,7 @@ class SemanticBuilder {
 	}
 
 	private recordDefinitionAnnotation(decl: InternalDecl): void {
-		this.annotate(decl.range, decl.name.length, decl.kind, 'definition');
+		this.annotate(decl.span, decl.name.length, decl.kind, 'definition');
 	}
 
 	private recordReference(options: {
@@ -2013,7 +1981,7 @@ class SemanticBuilder {
 			name: options.name,
 			namePath: options.namePath.slice(),
 			symbolKey: joinNamePath(options.namePath),
-			range: this.chunk.locations.range(options.syntax.span),
+			span: options.syntax.span,
 			isWrite: options.isWrite,
 			isCall: !!options.isCall,
 			referenceKind: options.referenceKind,
@@ -2039,7 +2007,7 @@ class SemanticBuilder {
 			this.referencesBySyntax.set(options.syntax, ref);
 			const targetDecl = options.target ? this.declById.get(options.target) : null;
 			const kind = targetDecl ? targetDecl.kind : inferReferenceKind(ref);
-			this.annotate(ref.range, options.syntax.name.length, kind, 'usage');
+			this.annotate(ref.span, options.syntax.name.length, kind, 'usage');
 		}
 		let references = this.referencesByName.get(ref.name);
 		if (!references) {
@@ -2270,24 +2238,8 @@ class SemanticBuilder {
 		return path ? this.resolveValueSourceFromNamePath(path) : undefined;
 	}
 
-	private annotate(range: LuaSourceRange, length: number, kind: SemanticSymbolKind, role: SemanticRole): void {
-		const rowIndex = range.start.line - 1;
-		if (rowIndex < 0 || rowIndex >= this.annotations.length) {
-			return;
-		}
-		const startColumn = range.start.column - 1;
-		const endColumn = startColumn + Math.max(length, 1);
-		let rowAnnotations = this.annotations[rowIndex];
-		if (!rowAnnotations) {
-			rowAnnotations = [];
-			this.annotations[rowIndex] = rowAnnotations;
-		}
-		rowAnnotations.push({
-			start: startColumn,
-			end: endColumn,
-			kind,
-			role,
-		});
+	private annotate(span: LuaSyntaxSpan, length: number, kind: SemanticSymbolKind, role: SemanticRole): void {
+		this.annotationFacts.push({ span, width: Math.max(length, 1), kind, role });
 	}
 
 	private activateDecl(decl: InternalDecl, visibleFrom: LuaSyntaxPoint): void {
@@ -2345,17 +2297,6 @@ function inferReferenceKind(ref: Ref): SemanticSymbolKind {
 	return 'global';
 }
 
-function buildRangeFromPosition(position: SourcePosition, length: number, path: string): LuaSourceRange {
-	const endColumn = position.column + Math.max(length, 1) - 1;
-	return {
-		path,
-		start: { line: position.line, column: position.column },
-		end: { line: position.line, column: endColumn },
-	};
-}
-
-
-
 function joinNamePath(namePath: readonly string[]): string {
 	if (namePath.length === 0) {
 		return '';
@@ -2396,17 +2337,6 @@ function appendToNamePath(base: readonly string[], segment: string): string[] {
 	return result;
 }
 
-function finalizeAnnotations(annotations: SemanticAnnotations): SemanticAnnotations {
-	for (let index = 0; index < annotations.length; index += 1) {
-		const row = annotations[index];
-		if (!row) {
-			continue;
-		}
-		row.sort((a, b) => a.start - b.start);
-	}
-	return annotations;
-}
-
 function toDecl(internal: InternalDecl): Decl {
 	return {
 		id: internal.id,
@@ -2415,7 +2345,7 @@ function toDecl(internal: InternalDecl): Decl {
 		namePath: internal.namePath.slice(),
 		symbolKey: internal.symbolKey,
 		kind: internal.kind,
-		range: internal.range,
+		span: internal.span,
 		scopeIndex: internal.scopeIndex,
 		visibleFrom: internal.visibleFrom,
 		isGlobal: internal.isGlobal,

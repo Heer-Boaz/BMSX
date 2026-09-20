@@ -25,7 +25,6 @@ import {
 } from './model';
 import type { WorkspaceSymbolResolver } from './workspace_symbol_resolver';
 import { parseLuaChunkWithRecovery } from '../analysis/parse';
-import { sourcePositionKey } from './source_range';
 import { buildLuaKnownNameSet, isReservedMemoryMapName, semanticSymbolKindToLuaSymbolKind } from './common';
 import {
 	formatLuaCallReferencePath,
@@ -164,7 +163,7 @@ export function computeLuaProjectDiagnostics(
 		return results;
 	}
 	const snapshot = buildLuaSemanticWorkspaceSnapshot(snapshotInputs);
-	const globalSymbols = buildGlobalSymbols(snapshot.listGlobalDecls());
+	const globalSymbols = buildGlobalSymbols(snapshot.listGlobalDecls(), snapshot.symbolResolver);
 	for (let index = 0; index < snapshot.files.length; index += 1) {
 		const file = snapshot.files[index];
 		results.set(file.file, computeLuaDiagnosticsFromAnalysis({
@@ -179,10 +178,11 @@ export function computeLuaProjectDiagnostics(
 	return results;
 }
 
-function buildGlobalSymbols(decls: readonly Decl[]): LuaSymbolEntry[] {
+function buildGlobalSymbols(decls: readonly Decl[], resolver: WorkspaceSymbolResolver): LuaSymbolEntry[] {
 	const symbols: LuaSymbolEntry[] = [];
 	for (let index = 0; index < decls.length; index += 1) {
 		const decl = decls[index];
+		const range = resolver.getFileData(decl.file)!.chunk.locations.range(decl.span);
 		symbols.push({
 			name: decl.name,
 			path: decl.namePath.length > 0 ? decl.namePath.join('.') : decl.name,
@@ -190,10 +190,10 @@ function buildGlobalSymbols(decls: readonly Decl[]): LuaSymbolEntry[] {
 			location: {
 				path: decl.file,
 				range: {
-					startLine: decl.range.start.line,
-					startColumn: decl.range.start.column,
-					endLine: decl.range.end.line,
-					endColumn: decl.range.end.column,
+					startLine: range.start.line,
+					startColumn: range.start.column,
+					endLine: range.end.line,
+					endColumn: range.end.column,
 				},
 			},
 		});
@@ -256,8 +256,9 @@ function addIdentifierDiagnosticsFromSemantic(
 		if (globalKnownNames.has(ref.name)) {
 			continue;
 		}
-		const row = ref.range.start.line - 1;
-		const startColumn = ref.range.start.column - 1;
+		const start = analysis.chunk.locations.position(ref.span.unit, ref.span.start);
+		const row = start.line - 1;
+		const startColumn = start.column - 1;
 		const endColumn = startColumn + ref.name.length;
 		pushDiagnostic(diagnostics, row, startColumn, endColumn, `'${ref.name}' is not defined.`, 'error');
 	}
@@ -278,8 +279,9 @@ function addConstLocalWriteDiagnosticsFromSemantic(diagnostics: LuaStaticDiagnos
 		if (!decl || decl.kind !== 'constant') {
 			continue;
 		}
-		const row = ref.range.start.line - 1;
-		const startColumn = ref.range.start.column - 1;
+		const start = analysis.chunk.locations.position(ref.span.unit, ref.span.start);
+		const row = start.line - 1;
+		const startColumn = start.column - 1;
 		const endColumn = startColumn + ref.name.length;
 		pushDiagnostic(diagnostics, row, startColumn, endColumn, `Cannot assign to constant local '${ref.name}'.`, 'error');
 	}
@@ -425,8 +427,8 @@ function validateCallArity(diagnostics: LuaStaticDiagnostic[], locations: LuaSou
 	);
 }
 
-function collectAllowedReservedMemoryRanges(chunk: LuaChunk): Set<string> {
-	const allowed = new Set<string>();
+function collectAllowedReservedMemoryOffsets(chunk: LuaChunk): Set<number> {
+	const allowed = new Set<number>();
 	const collectStatement = (statement: LuaStatement): void => {
 		switch (statement.kind) {
 			case LuaSyntaxKind.LocalAssignmentStatement:
@@ -484,7 +486,7 @@ function collectAllowedReservedMemoryRanges(chunk: LuaChunk): Set<string> {
 		switch (expression.kind) {
 			case LuaSyntaxKind.IndexExpression:
 				if (expression.base.kind === LuaSyntaxKind.IdentifierExpression && isReservedMemoryMapName(expression.base.name)) {
-					allowed.add(sourcePositionKey(chunk.locations.range(expression.base.span).start));
+					allowed.add(chunk.locations.offset(expression.base.span.unit, expression.base.span.start));
 				}
 				visitExpression(expression.base);
 				visitExpression(expression.index);
@@ -536,7 +538,7 @@ function addReservedMemoryDiagnosticsFromSemantic(
 	analysis: FileSemanticData,
 	chunk: LuaChunk,
 ): void {
-	const allowedReservedRanges = collectAllowedReservedMemoryRanges(chunk);
+	const allowedReservedOffsets = collectAllowedReservedMemoryOffsets(chunk);
 	for (let index = 0; index < analysis.decls.length; index += 1) {
 		const decl = analysis.decls[index];
 		if (!isReservedMemoryMapName(decl.name)) {
@@ -546,11 +548,11 @@ function addReservedMemoryDiagnosticsFromSemantic(
 			case 'local':
 			case 'constant':
 			case 'parameter':
-				pushRangeDiagnostic(diagnostics, decl.range, `'${decl.name}' is a reserved memory map name and cannot be used as a local, constant, or parameter.`, 'error');
+				pushRangeDiagnostic(diagnostics, analysis.chunk.locations.range(decl.span), `'${decl.name}' is a reserved memory map name and cannot be used as a local, constant, or parameter.`, 'error');
 				continue;
 			case 'function':
 			case 'global':
-				pushRangeDiagnostic(diagnostics, decl.range, `'${decl.name}' is a reserved memory map. Use direct indexing syntax like ${decl.name}[addr].`, 'error');
+				pushRangeDiagnostic(diagnostics, analysis.chunk.locations.range(decl.span), `'${decl.name}' is a reserved memory map. Use direct indexing syntax like ${decl.name}[addr].`, 'error');
 				continue;
 		}
 	}
@@ -559,9 +561,9 @@ function addReservedMemoryDiagnosticsFromSemantic(
 		if (!isReservedMemoryMapName(ref.name) || ref.referenceKind !== 'identifier' || ref.namePath.length !== 1) {
 			continue;
 		}
-		if (allowedReservedRanges.has(sourcePositionKey(ref.range.start))) {
+		if (allowedReservedOffsets.has(analysis.chunk.locations.offset(ref.span.unit, ref.span.start))) {
 			continue;
 		}
-		pushRangeDiagnostic(diagnostics, ref.range, `'${ref.name}' is a reserved memory map. Use direct indexing syntax like ${ref.name}[addr].`, 'error');
+		pushRangeDiagnostic(diagnostics, analysis.chunk.locations.range(ref.span), `'${ref.name}' is a reserved memory map. Use direct indexing syntax like ${ref.name}[addr].`, 'error');
 	}
 }

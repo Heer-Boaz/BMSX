@@ -35,7 +35,7 @@ for (const chainLength of [8, 64]) {
 	for (let index = 0; index < references.length; index += 1) {
 		const targets = snapshot.symbolResolver.resolveReferenceTargets(references[index]);
 		assert.equal(targets.length, 1);
-		assert.equal(snapshot.symbolResolver.getDeclaration(targets[0])!.range.start.line, declarationLines[index]);
+		assert.equal(file.chunk.locations.range(snapshot.symbolResolver.getDeclaration(targets[0])!.span).start.line, declarationLines[index]);
 	}
 	const metrics = snapshot.symbolResolver.getSemanticQueryMetrics();
 	assert.equal(metrics.instantiatedCalls, 2);
