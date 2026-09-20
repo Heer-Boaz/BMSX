@@ -9,9 +9,10 @@ Follow-up to [the definition-based language service](lua_language_service_design
 Annotations, additional inference, and changes to the whole-program solver are
 out of scope. Optimize edits, not the meaning of interactive queries.
 
-Implement in the ordered slices below. **Slices 0 and 1a, the lexical/edit-transport part of 2, and the publication subtask of 3 are implemented.**
-The production parser and binder still process the entire changed file. This
-document is not a claim that incremental parsing or binding already exists.
+Implement in the ordered slices below. **Slices 0, 1a and 2, the relative syntax/edit transport, and the publication subtask of 3 are implemented.**
+The production parser now reuses unchanged grammar parts through the same cold
+grammar. The binder still processes the entire changed file; scope-owned fact
+reuse and the final cold/edit performance gates remain open.
 
 The target is immutable, position-independent syntax plus scope-owned binding
 facts. Document positions belong to a syntax snapshot, not to the identity of a
@@ -889,6 +890,73 @@ about 9.15 MiB. Parse median is still about 18% slower in this paired sample;
 a roughly 1.2% complete-compile median increase and a noisier faster tail are
 **not** a passed cold-parse gate. Repeated `current()` bookkeeping was removed,
 but actual reuse and the final cold/edit performance gates still require work.
+
+## Actual grammar reuse — implemented
+
+`updateLuaChunk` now supplies `LuaSyntaxUpdate` to the existing parser. The lexer
+publishes its actual merged replacement runs (old/new source extents and original
+emitted block identities). Reuse must fit inside retained lexical blocks,
+including the part's farthest lookahead read, and match the parser context.
+An ephemeral old-tree frontier seeks into persistent statement sequences;
+unchanged runs are shared, not copied into a flat suffix. Changed ancestors can
+reuse unaffected nested bodies. The chunk prefix and diagnostics always run.
+
+`LuaSyntaxUpdate` owns coordinate translation and publication of new occurrences.
+It retires discarded AST and lexical units **before** applying text edits, then
+inserts only newly produced units. It never enumerates retained token placements
+or shifts retained syntax. The parser resumes with the previous token from the
+**new** lexical generation. If a newly parsed parent fails after retaining child
+runs, those occurrences become recovery-owned; only that genuine failed region
+collects their units. Successful reuse never enumerates their payloads.
+
+Cold location owners lazily construct their persistent edit index on the first
+edit. Work-count tests initialize that index separately; this one-time cost is
+not claimed as bounded local edit work. Repeated generations do not retain old
+chunks/location owners or accumulate retired occurrence markers.
+
+Independent fresh-context review found no blocker after 50,000 edit generations
+compared with cold syntax and a WeakRef/GC owner-lifetime probe. The durable cart
+corpus runner compares 3,294 edit/undo generations across 549 files with fresh
+parses and retained snapshots. Focused tests cover lexical provenance (including
+zero-width EOF blocks), grammar/read/recovery gates, nested reuse, malformed
+parents, codec roundtrips, O0/O3 code/debug parity and bounded large-file work.
+
+An isolated pietious edit run (20 warmups / 50 samples, Node 22.23.1, no concurrent
+agent probes/builds/tests) measured a function-body statement edit:
+
+| Boundary, p50 / p95 ms | Full source | Incremental syntax |
+| --- | ---: | ---: |
+| director grammar + placement | 1.126 / 1.363 | 0.443 / 0.547 |
+| player grammar + placement | 4.515 / 4.850 | 0.449 / 0.585 |
+| player binding | 11.287 / 12.624 | 14.588 / 16.421 |
+| player public update + snapshot | 24.055 / 27.443 | 16.531 / 17.716 |
+| director public update + snapshot | 4.464 / 8.961 | 3.576 / 10.403 |
+
+The corresponding forward edits parse 5 rather than 210 statements in director,
+and 5 rather than 1,696 in player; both allocate 7 syntax units instead of
+276/1,860, inserting 9 and retiring 7 occurrence markers. These are untimed
+instrumented work counts after the measurement passes. The public player update
+is about 1.46x faster, **not** the final 2x acceptance gate; director's tail remains
+worse. Binding still walks all syntax, and layout-backed position lookups make
+that old whole-file workload more expensive. Scope-owned binding is the next
+owner-boundary change, not an excuse to flatten/shift syntax locations again.
+First-query and completion timings remain separate from public update; these
+are not UI-frame latency measurements.
+
+Final parser-reuse validation: 2,097 Lua tests report 2,095 passes, the existing
+named-workbench-menu failure and one skip; all 129 rompacker tests pass. Rebuilt
+headless tooling, BIOS and both carts pass the nemesis_s precision idetests
+(8/5/3 assertions). Core parity and `git diff --check` pass; broad typechecking
+adds no changed-owner errors to the existing baseline.
+
+Paired cold pietious O3 runs against `7a003569a` (four warmups / twelve samples,
+no concurrent tests/builds) keep the same program/debug hash and 207 modules /
+2,131 functions. Parse/select p50/p95 is 167.15/260.94 ms before versus
+188.64/273.81 ms after; complete compilation is 3246.47/3336.95 ms versus
+3276.55/3359.26 ms. Retained 285-file bound heap is 216.63 versus 216.64 MiB;
+released heap above input baseline is 2.65 versus 2.66 MiB. The cold-parse gate
+is still **open**; neither the unchanged heap nor approximately 0.9% total
+compile increase cancels the observed parse regression.
 
 ## Lowest-priority follow-up: absent-value convention
 

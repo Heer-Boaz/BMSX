@@ -4,6 +4,7 @@ import type { LuaChunk } from '../syntax/ast';
 import { LuaSyntaxError } from '../errors';
 import { LuaLexer } from '../syntax/lexer';
 import { LuaParser } from '../syntax/parser';
+import { LuaSyntaxUpdate } from '../syntax/syntax_update';
 import type { LuaTokenSequence } from '../syntax/token_sequence';
 
 export type ParsedLuaChunk = {
@@ -32,9 +33,11 @@ export function parseLuaChunkWithRecovery(source: string, path: string): ParsedL
 	};
 }
 
-/** Editor edits retain lexical blocks; grammar parsing still owns new AST units. */
+/** Reuse lexically unchanged syntax through the same grammar as a cold parse. */
 export function updateLuaChunk(previous: LuaChunk, source: string, changes: SourceChangeMap): ParsedLuaChunk {
-	const tokens = updateLuaTokens(previous.tokens, source, previous.locations.path, changes);
-	const parsed = new LuaParser(tokens, previous.locations.path, source).parseChunkWithRecovery();
+	const lexical = updateLuaTokens(previous.tokens, source, previous.locations.path, changes);
+	const tokens = lexical.tokens;
+	const update = new LuaSyntaxUpdate(previous, source, changes, lexical);
+	const parsed = new LuaParser(tokens, previous.locations.path, source, update).parseChunkWithRecovery();
 	return { chunk: parsed.path, tokens, syntaxError: parsed.syntaxError };
 }

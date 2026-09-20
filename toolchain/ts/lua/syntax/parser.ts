@@ -5,6 +5,7 @@ import type { LuaToken } from './token';
 import { LuaTokenType, isLuaTrivia } from './token';
 import type { LuaTokenSequence, LuaTokenCursor } from './token_sequence';
 import { LuaStatementSequence, type LuaStatementPart } from './statement_sequence';
+import type { LuaSyntaxUpdate } from './syntax_update';
 import {
 	LuaSyntaxKind,
 	LuaBinaryOperator,
@@ -145,6 +146,7 @@ export class LuaParser {
 	private readonly lexicalUnits: LuaSourceUnitPlacement[];
 	private nextLexicalUnit = 0;
 	private readonly recoveryUnits: LuaSyntaxSpan['unit'][] = [];
+	private readonly recoveryReuses: { readonly at: number; readonly body: LuaStatementSequence }[] = [];
 	private startsNewLine = false;
 	private statementFrame: StatementParseFrame | undefined;
 	private readonly locations: LuaSourceLocations;
@@ -158,13 +160,19 @@ export class LuaParser {
 	private readonly units: LuaSourceUnitPlacement[] = [this.currentUnit];
 	private unitOrigins: Map<LuaSourceUnitPlacement['unit'], number> | undefined = new Map([[this.currentUnit.unit, 0]]);
 
-	constructor(tokens: LuaTokenSequence, path: string, source: string) {
+	constructor(tokens: LuaTokenSequence, path: string, source: string, private readonly update?: LuaSyntaxUpdate) {
 		this.tokens = tokens;
 		this.path = path;
 		this.source = source;
 		this.index = 0;
-		this.lexicalUnits = [...tokens.placements()];
-		for (const placement of this.lexicalUnits) this.unitOrigins.set(placement.unit, placement.offset);
+		if (update === undefined) {
+			this.lexicalUnits = [...tokens.placements()];
+			for (const placement of this.lexicalUnits) this.unitOrigins.set(placement.unit, placement.offset);
+		} else {
+			this.lexicalUnits = [];
+			this.unitOrigins = update.origins;
+			this.unitOrigins.set(this.currentUnit.unit, 0);
+		}
 		this.locations = LuaSourceLocations.fromSource(path, source, this.units, this.unitOrigins);
 		this.cursor = tokens.cursor();
 		while (isLuaTrivia(this.cursor.token!.type)) this.cursor.advance();
@@ -259,14 +267,38 @@ export class LuaParser {
 	private parseBlock(terminators: ReadonlySet<LuaTokenType>): LuaBlock {
 		const startToken = this.current();
 		const startInclusive = this.blockStartOffset();
-		const parts: LuaStatementPart[] = [];
+		const context = (terminators === CHUNK_TERMINATORS ? BlockContext.Chunk
+			: terminators === END_TERMINATORS ? BlockContext.End
+			: terminators === IF_CLAUSE_TERMINATORS ? BlockContext.IfClause : BlockContext.Repeat)
+			| (this.recoverStatements ? BlockContext.Recovering : 0);
+		let parts: LuaStatementPart[] = [];
+		let reusedBody: LuaStatementSequence | undefined;
 		const firstOffset = this.spanStart(startToken);
 		if (firstOffset > startInclusive) parts.push({ statement: null, width: firstOffset - startInclusive,
 			readWidth: firstOffset - startInclusive, recovery: false, endsNewLine: this.startsNewLine, units: [] });
 		let skippedSyntax: LuaSkippedSyntax[] | undefined;
 		while (!this.isAtEnd() && !terminators.has(this.current().type)) {
 			const partStart = this.spanStart(this.current());
+			const reused = this.update?.takeStatements(partStart, context);
+			if (reused !== undefined) {
+				if (parts.length > 0) {
+					const parsed = LuaStatementSequence.fromParts(context, parts);
+					reusedBody = reusedBody === undefined ? parsed : reusedBody.concat(parsed);
+					parts = [];
+				}
+				reusedBody = reusedBody === undefined ? reused : reusedBody.concat(reused);
+				if (this.recoverStatements) this.recoveryReuses.push({ at: this.recoveryUnits.length, body: reused });
+				if (this.statementFrame !== undefined) this.statementFrame.readWidth = Math.max(this.statementFrame.readWidth, partStart + reused.readWidth);
+				const last = reused.cursor();
+				last.seekPart(reused.partCount - 1);
+				this.startsNewLine = last.part!.endsNewLine;
+				this.cursor.seekOffset(partStart + reused.width);
+				this.index = this.cursor.significantIndex;
+				this.previousToken = this.tokens.getSignificant(this.index - 1);
+				continue;
+			}
 			const firstUnit = this.recoveryUnits.length;
+			const firstReuse = this.recoveryReuses.length;
 			const parentFrame = this.statementFrame;
 			const frame: StatementParseFrame = { statement: null, width: 0,
 				readWidth: this.cursor.blockOffset + this.cursor.token!.end + 1, recovery: false, endsNewLine: this.startsNewLine, units: [] };
@@ -279,7 +311,7 @@ export class LuaParser {
 				this.retainSyntaxError(error);
 				this.synchronizeStatement(terminators);
 				if (skippedSyntax === undefined) skippedSyntax = [];
-				const units = this.recoveryUnits.slice(firstUnit);
+				const units = this.collectRecoveryUnits(firstUnit, firstReuse);
 				frame.units = units;
 				skippedSyntax.push({ span: this.createSpan(partStart, this.spanStart(this.current()) - 1), units });
 			} finally {
@@ -294,11 +326,8 @@ export class LuaParser {
 			frame.readWidth = Math.max(frame.readWidth - partStart, frame.width);
 			parts.push(frame);
 		}
-		const context = (terminators === CHUNK_TERMINATORS ? BlockContext.Chunk
-			: terminators === END_TERMINATORS ? BlockContext.End
-			: terminators === IF_CLAUSE_TERMINATORS ? BlockContext.IfClause : BlockContext.Repeat)
-			| (this.recoverStatements ? BlockContext.Recovering : 0);
-		const statements = LuaStatementSequence.fromParts(context, parts);
+		const tail = LuaStatementSequence.fromParts(context, parts);
+		const statements = reusedBody === undefined ? tail : reusedBody.concat(tail);
 		const startPosition = statements.length > 0 ? this.spanStart(statements.get(0)!.span) : this.spanStart(startToken);
 		const endPosition = statements.length > 0 ? this.spanEnd(statements.get(statements.length - 1)!.span) : startPosition;
 		return {
@@ -309,6 +338,20 @@ export class LuaParser {
 			body: statements,
 			skippedSyntax: skippedSyntax === undefined ? EMPTY_SKIPPED_SYNTAX : skippedSyntax,
 		};
+	}
+
+	/** Failed parents retain occurrences from both newly parsed and reused children. */
+	private collectRecoveryUnits(firstUnit: number, firstReuse: number): LuaSyntaxSpan['unit'][] {
+		if (firstReuse === this.recoveryReuses.length) return this.recoveryUnits.slice(firstUnit);
+		const units: LuaSyntaxSpan['unit'][] = [];
+		let nextUnit = firstUnit;
+		for (let index = firstReuse; index < this.recoveryReuses.length; index++) {
+			const reused = this.recoveryReuses[index];
+			while (nextUnit < reused.at) units.push(this.recoveryUnits[nextUnit++]);
+			for (const unit of this.update!.statements.collectUnits(reused.body)) units.push(unit);
+		}
+		while (nextUnit < this.recoveryUnits.length) units.push(this.recoveryUnits[nextUnit++]);
+		return units;
 	}
 
 	private synchronizeStatement(terminators: ReadonlySet<LuaTokenType>): void {
@@ -1632,11 +1675,11 @@ export class LuaParser {
 	}
 
 	private spanStart(span: LuaSyntaxSpan): number {
-		return this.unitOrigins.get(span.unit)! + span.start;
+		return (this.update === undefined ? this.unitOrigins.get(span.unit)! : this.update.origin(span.unit)) + span.start;
 	}
 
 	private spanEnd(span: LuaSyntaxSpan): number {
-		return this.unitOrigins.get(span.unit)! + span.end;
+		return (this.update === undefined ? this.unitOrigins.get(span.unit)! : this.update.origin(span.unit)) + span.end;
 	}
 
 	private beginUnit(offset: number): void {
@@ -1654,7 +1697,7 @@ export class LuaParser {
 	private publishLocations(): LuaSourceLocations {
 		while (this.nextLexicalUnit < this.lexicalUnits.length) this.units.push(this.lexicalUnits[this.nextLexicalUnit++]);
 		this.unitOrigins = undefined;
-		return this.locations;
+		return this.update === undefined ? this.locations : this.update.publish(this.units);
 	}
 
 	private retainSyntaxError(error: LuaSyntaxError | LuaParserSpanError): void {
@@ -1675,7 +1718,7 @@ export class LuaParser {
 	}
 
 	private error(token: LuaToken, message: string): LuaSyntaxError {
-		const { line, column } = this.locations.range(token).start;
+		const { line, column } = this.locations.positionAt(this.spanStart(token));
 		const payload = this.formatError(line, column, message, token.lexeme);
 		return new LuaSyntaxError(payload, this.path, line, column);
 	}

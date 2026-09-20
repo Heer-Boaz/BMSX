@@ -2,25 +2,43 @@ import type { SourceChangeMap } from '../../text/source_changes';
 import { LuaLexer } from './lexer';
 import type { LuaTokenBlock, LuaTokenSequence } from './token_sequence';
 
+/** One actual relex run, in the original and updated source coordinates. */
+export type LuaLexicalReplacement = {
+	readonly oldBlockStart: number;
+	readonly oldBlockCount: number;
+	readonly oldStart: number;
+	readonly oldEnd: number;
+	readonly newStart: number;
+	readonly newEnd: number;
+	readonly blocks: readonly LuaTokenBlock[];
+};
+
+export type LuaLexicalUpdate = {
+	readonly tokens: LuaTokenSequence;
+	readonly replacements: readonly LuaLexicalReplacement[];
+};
+
 /**
  * Relex affected blocks, synchronizing at an unchanged old block boundary.
  * Lua's items consume complete strings/comments, so every such boundary has
  * the same base lexical state. Actual read extents select the restart point.
  */
-export function updateLuaTokens(previous: LuaTokenSequence, source: string, path: string, changeMap: SourceChangeMap): LuaTokenSequence {
+export function updateLuaTokens(previous: LuaTokenSequence, source: string, path: string, changeMap: SourceChangeMap): LuaLexicalUpdate {
 	const changes = Array.from(changeMap.changes());
-	if (changes.length === 0) return previous;
+	if (changes.length === 0) return { tokens: previous, replacements: [] };
 	const oldCursor = previous.cursor();
 	const starts = changes.map(change => {
 		oldCursor.seek(previous.firstDependency(change.oldStart));
 		return { index: oldCursor.blockIndex, offset: oldCursor.blockOffset };
 	});
 	let result = previous, blockDelta = 0;
+	const replacements: LuaLexicalReplacement[] = [];
 	for (let changeIndex = 0; changeIndex < changes.length; changeIndex++) {
 		const start = starts[changeIndex], change = changes[changeIndex];
-		const lexer = new LuaLexer(source, path, change.newStart - (change.oldStart - start.offset));
+		const newStart = change.newStart - (change.oldStart - start.offset);
+		const lexer = new LuaLexer(source, path, newStart);
 		const blocks: LuaTokenBlock[] = [];
-		let endBlock: number;
+		let endBlock: number, oldEnd: number;
 		for (;;) {
 			const active = changes[changeIndex];
 			const delta = active.newEnd - active.oldEnd;
@@ -39,13 +57,15 @@ export function updateLuaTokens(previous: LuaTokenSequence, source: string, path
 				continue;
 			}
 			const until = candidate === undefined ? source.length + 1 : candidate.offset + delta;
-			if (lexer.offset === until) { endBlock = candidateIndex; break; }
+			if (lexer.offset === until) { endBlock = candidateIndex; oldEnd = candidate.offset; break; }
 			blocks.push(lexer.scanBlock(until));
-			if (lexer.done) { endBlock = previous.blockCount; changeIndex = changes.length; break; }
+			if (lexer.done) { endBlock = previous.blockCount; oldEnd = previous.width; changeIndex = changes.length; break; }
 		}
 		const removed = endBlock - start.index;
 		result = result.replaceBlocks(start.index + blockDelta, removed, blocks);
 		blockDelta += blocks.length - removed;
+		replacements.push({ oldBlockStart: start.index, oldBlockCount: removed, oldStart: start.offset, oldEnd,
+			newStart, newEnd: lexer.done ? source.length : lexer.offset, blocks });
 	}
-	return result;
+	return { tokens: result, replacements };
 }

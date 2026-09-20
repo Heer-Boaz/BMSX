@@ -5,6 +5,9 @@ import { readFileSync } from 'node:fs';
 import { cpus } from 'node:os';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
+import { LuaSyntaxUpdate } from '../../toolchain/ts/lua/syntax/syntax_update';
+import { parseLuaChunkWithRecovery, updateLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
+import { LuaSourceLayoutBuilder } from '../../toolchain/ts/lua/syntax/source_layout';
 import { updateLuaTokens } from '../../toolchain/ts/lua/syntax/lexical_update';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { LuaTokenType } from '../../toolchain/ts/lua/syntax/token';
@@ -102,9 +105,9 @@ for (const path of paths) {
 		let query: { name: string; line: number; column: number };
 		let targetCount = 0;
 		let memberCount = 0;
-		for (const mode of ['fullSourcePhases', 'incrementalLexicalPhases'] as const) {
+		for (const mode of ['fullSourcePhases', 'incrementalLexicalPhases', 'incrementalSyntaxPhases'] as const) {
 			workspace.updateFiles([file]);
-			let previousTokens = file.chunk.tokens;
+			let previousChunk = file.chunk;
 			const measurements = {
 				lex: [] as number[], parse: [] as number[], bind: [] as number[],
 				publish: [] as number[], firstMember: [] as number[], completionAfterMember: [] as number[], total: [] as number[],
@@ -114,11 +117,11 @@ for (const path of paths) {
 				const source = iteration % 2 === 0 ? scenario.source : file.source;
 				const changes = iteration % 2 === 0 ? forward : undo;
 				const start = performance.now();
-				const tokens = mode === 'fullSourcePhases'
-					? new LuaLexer(source, path).scanSequence()
-					: updateLuaTokens(previousTokens, source, path, changes);
+				const lexical = mode === 'fullSourcePhases' ? undefined : updateLuaTokens(previousChunk.tokens, source, path, changes);
+				const tokens = lexical === undefined ? new LuaLexer(source, path).scanSequence() : lexical.tokens;
 				const lexEnd = performance.now();
-				const parsed = new LuaParser(tokens, path, source).parseChunkWithRecovery();
+				const update = mode === 'incrementalSyntaxPhases' ? new LuaSyntaxUpdate(previousChunk, source, changes, lexical!) : undefined;
+				const parsed = new LuaParser(tokens, path, source, update).parseChunkWithRecovery();
 				const parseEnd = performance.now();
 				const analysis = buildLuaFileSemanticData(source, path, {
 					chunk: parsed.path, tokens, syntaxError: parsed.syntaxError,
@@ -136,7 +139,7 @@ for (const path of paths) {
 				const completionEnd = performance.now();
 				assert.equal(parsed.syntaxError, null);
 				query = { name: reference.name, ...reference.range.start };
-				previousTokens = tokens;
+				previousChunk = parsed.path;
 				if (iteration < warmup) continue;
 				measurements.lex.push(lexEnd - start);
 				measurements.parse.push(parseEnd - lexEnd);
@@ -194,15 +197,39 @@ for (const { path, file, scenario, forward, undo } of lexicalWorkloads) {
 			scannedBlocks = scannedItems = scannedWidth = 0;
 			const tokens = mode === 'fullSource'
 				? new LuaLexer(source, path).scanSequence()
-				: updateLuaTokens(previousTokens, source, path, changes);
+				: updateLuaTokens(previousTokens, source, path, changes).tokens;
 			lexicalWork.push({ path, edit: scenario.name, direction, mode, scannedBlocks, scannedItems, scannedWidth });
 			if (mode === 'incrementalLexical') previousTokens = tokens;
 		}
 	}
 }
 
+const parser = LuaParser.prototype as unknown as { parseStatement(): unknown; beginUnit(offset: number): void };
+const parseStatement = parser.parseStatement, beginUnit = parser.beginUnit;
+const insertUnit = LuaSourceLayoutBuilder.prototype.insertUnit, removeUnit = LuaSourceLayoutBuilder.prototype.removeUnit;
+let parsedStatements = 0, newSyntaxUnits = 0, insertedMarkers = 0, retiredMarkers = 0;
+parser.parseStatement = function (this: LuaParser) { parsedStatements++; return parseStatement.call(this); };
+parser.beginUnit = function (this: LuaParser, offset: number) { newSyntaxUnits++; beginUnit.call(this, offset); };
+LuaSourceLayoutBuilder.prototype.insertUnit = function (...args: Parameters<typeof insertUnit>) { insertedMarkers++; return insertUnit.apply(this, args); };
+LuaSourceLayoutBuilder.prototype.removeUnit = function (...args: Parameters<typeof removeUnit>) { retiredMarkers++; return removeUnit.apply(this, args); };
+const syntaxWork = [];
+for (const { path, file, scenario, forward, undo } of lexicalWorkloads) {
+	let previous = file.chunk;
+	for (const direction of ['forward', 'undo'] as const) {
+		const source = direction === 'forward' ? scenario.source : file.source;
+		const changes = direction === 'forward' ? forward : undo;
+		for (const mode of ['fullSource', 'incrementalSyntax'] as const) {
+			parsedStatements = newSyntaxUnits = insertedMarkers = retiredMarkers = 0;
+			const parsed = mode === 'fullSource' ? parseLuaChunkWithRecovery(source, path) : updateLuaChunk(previous, source, changes);
+			syntaxWork.push({ path, edit: scenario.name, direction, mode, parsedStatements,
+				newSyntaxUnits: newSyntaxUnits + 1, insertedMarkers, retiredMarkers });
+			if (mode === 'incrementalSyntax') previous = parsed.chunk;
+		}
+	}
+}
+
 console.log(JSON.stringify({
 	node: process.version, cpu: cpus()[0].model, workspaceFiles: files.length, warmup, samples,
-	note: 'Full-source phases, incremental-lexical phases and both public updates are separate warm passes. Parsing and binding remain whole-file. Public timings include getSnapshot, not queries. Maps are composed from known forward/undo deltas outside timing. Completion follows the member query; not a cold completion or UI-frame measurement. Lexical work counts are a separate untimed forward/undo pass after all timings; scannedWidth counts consumed UTF-16 units, not lookahead reads.',
-	results, lexicalWork,
+	note: 'Full-source, incremental-lexical and incremental-syntax phases and both public updates are separate warm passes. Only the lexical-only pass still parses the entire file; binding remains whole-file in all passes. Public timings include getSnapshot, not queries. Maps are composed from known forward/undo deltas outside timing. Completion follows the member query; not a cold completion or UI-frame measurement. Lexical and syntax work counts are separate untimed forward/undo passes after all timings; marker counts exclude one-time cold edit-index construction; scannedWidth counts consumed UTF-16 units, not lookahead reads.',
+	results, lexicalWork, syntaxWork,
 }, null, 2));
