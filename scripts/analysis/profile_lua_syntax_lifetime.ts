@@ -11,6 +11,14 @@ import {
 	type LuaSemanticWorkspaceSnapshotInput,
 } from '../../toolchain/ts/lua/semantic/model';
 
+// Module exports are GC roots. Locals alone can become dead before an explicit
+// `= null`, especially after the last query loop, invalidating heap readings.
+export const retainedOwners: {
+	inputs?: readonly LuaSemanticWorkspaceSnapshotInput[];
+	snapshot?: LuaSemanticWorkspaceSnapshot;
+	frontend?: ReturnType<typeof buildLuaSemanticFrontendFromSnapshot>;
+} = {};
+
 // Keep construction temporaries off the measurement frame's stack. Without
 // this boundary and an event-loop turn, V8 can retain dead temporary roots.
 function retainSnapshot(files: readonly LuaSemanticWorkspaceSnapshotInput[]): LuaSemanticWorkspaceSnapshot {
@@ -21,10 +29,12 @@ function retainSnapshot(files: readonly LuaSemanticWorkspaceSnapshotInput[]): Lu
 
 async function main(): Promise<void> {
 	const files: LuaSemanticWorkspaceSnapshotInput[] = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+	retainedOwners.inputs = files;
 	await setImmediate();
 	globalThis.gc();
 	const initial = process.memoryUsage().heapUsed;
 	let snapshot: LuaSemanticWorkspaceSnapshot | null = retainSnapshot(files);
+	retainedOwners.snapshot = snapshot;
 	await setImmediate();
 	globalThis.gc();
 	const retained = process.memoryUsage().heapUsed;
@@ -34,10 +44,24 @@ async function main(): Promise<void> {
 	globalThis.gc();
 	const highlighted = process.memoryUsage().heapUsed;
 	let frontend = buildLuaSemanticFrontendFromSnapshot(snapshot);
+	retainedOwners.frontend = frontend;
 	for (const file of snapshot.files) frontend.getFile(file.file);
 	await setImmediate();
 	globalThis.gc();
 	const diagnosed = process.memoryUsage().heapUsed;
+	let memberReferences = 0, resolvedMemberReferences = 0;
+	for (const file of snapshot.files) {
+		for (const reference of file.refs) {
+			if (reference.referenceKind !== 'member' && reference.referenceKind !== 'method') continue;
+			memberReferences += 1;
+			if (snapshot.symbolResolver.resolveReferenceTargets(reference).length > 0) resolvedMemberReferences += 1;
+		}
+	}
+	await setImmediate();
+	globalThis.gc();
+	const queried = process.memoryUsage().heapUsed;
+	retainedOwners.frontend = undefined;
+	retainedOwners.snapshot = undefined;
 	frontend = null;
 	snapshot = null;
 	await setImmediate();
@@ -51,9 +75,13 @@ async function main(): Promise<void> {
 		retainedHeapMiB: (retained - initial) / (1024 * 1024),
 		highlightedHeapMiB: (highlighted - initial) / (1024 * 1024),
 		diagnosedHeapMiB: (diagnosed - initial) / (1024 * 1024),
+		queriedHeapMiB: (queried - initial) / (1024 * 1024),
+		memberReferences,
+		resolvedMemberReferences,
 		releasedHeapMiB: (released - initial) / (1024 * 1024),
-		note: 'Heap deltas after GC, not allocation counts or a browser memory measurement. Input source strings are already present in the initial heap. Retained is binding without highlighting; highlighted additionally materializes every file annotation presentation; diagnosed additionally retains a frontend with diagnostics for every file and demanded signature/query caches. Both frontend and snapshot are released before the final measurement.',
+		note: 'Heap deltas after GC, not allocation counts or a browser memory measurement. Input source strings are already present in the initial heap. Retained is binding without highlighting; highlighted additionally materializes every file annotation presentation; diagnosed additionally retains a frontend with diagnostics for every file and demanded signature/query caches; queried additionally resolves every member/method reference through the definition layer (not the solver). Both frontend and snapshot are released before the final measurement.',
 	}, null, 2));
+	retainedOwners.inputs = undefined;
 }
 
 void main();

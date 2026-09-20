@@ -1,3 +1,4 @@
+import { LuaDefinitionAliases, directAliasTarget, type LuaDefinitionAliasComponent } from './definition_aliases';
 import type { HashLookup } from '../../collections/hash_map';
 import { LuaSyntaxKind } from '../syntax/ast';
 import type { Decl, FileSemanticData, SymbolID } from './model';
@@ -81,28 +82,31 @@ const EMPTY_BINDING: Binding = new Map();
 
 const factsByFile = new WeakMap<FileSemanticData, FileDefinitionFacts>();
 
+/** Independent memoization and pending work for one definition evaluation mode. */
+class DefinitionEvaluation {
+	readonly declarationShapes = new Map<SymbolID, readonly LuaDefinitionShape[]>();
+	readonly sourceShapes = new Map<SemanticValueSource, readonly LuaDefinitionShape[]>();
+	readonly membersByShape = new Map<string, ReadonlyMap<string, readonly Decl[]>>();
+	readonly ownerShapes = new Map<MemberFact, readonly LuaDefinitionShape[]>();
+	readonly inProgress = new Set<SemanticValueSource>();
+	readonly activeAliases = new Set<LuaDefinitionAliasComponent>();
+
+	constructor(readonly phase: 'normal' | 'prototype') {}
+}
+
 export class LuaDefinitionTypes {
 	private readonly files = new Map<string, FileSemanticData>();
+	private readonly aliases: LuaDefinitionAliases;
 	private readonly keyedMembers = new Map<string, readonly MemberFact[]>();
 	private readonly moduleExports = new Map<string, readonly ModuleValueEntry[]>();
 	private readonly prototypeSites = new Map<string, readonly PrototypeSite[]>();
 	private readonly prototypes = new Map<string, readonly LuaDefinitionShape[]>();
-	/** Retained answers of the current phase; see `enterPhase`. */
-	private declarationShapes = new Map<SymbolID, readonly LuaDefinitionShape[]>();
-	private sourceShapes = new Map<SemanticValueSource, readonly LuaDefinitionShape[]>();
-	private membersByShape = new Map<string, ReadonlyMap<string, readonly Decl[]>>();
-	private ownerShapes = new Map<MemberFact, readonly LuaDefinitionShape[]>();
+	private readonly normal = new DefinitionEvaluation('normal');
+	private readonly prototype = new DefinitionEvaluation('prototype');
 	private readonly indirectByName = new Map<string, readonly MemberFact[]>();
 	private allIndirect?: readonly MemberFact[];
 	private indirectPrototypeSites?: ReadonlyMap<string, readonly PrototypeSite[]>;
 	private readonly shapes = new Map<string, LuaDefinitionShape>();
-	private readonly inProgress = new Set<SemanticValueSource | SymbolID>();
-	/**
-	 * `prototype` collects one table's prototypes without following prototype
-	 * chains itself; `normal` answers queries. Each phase keeps its answers in
-	 * its own retained maps, so neither sees the other's partial results.
-	 */
-	private phase: 'normal' | 'prototype' = 'normal';
 
 	constructor(
 		files: readonly FileSemanticData[],
@@ -110,19 +114,24 @@ export class LuaDefinitionTypes {
 		private readonly globals: ReadonlyMap<string, SymbolID>,
 	) {
 		for (const file of files) this.files.set(file.file, file);
+		this.aliases = new LuaDefinitionAliases(declarations, this.files, globals);
 	}
 
 	/** Shapes a value source is defined as; unknown values contribute nothing. */
 	public shapesOf(source: SemanticValueSource): readonly LuaDefinitionShape[] {
-		return this.evaluate(source, EMPTY_BINDING, 0);
+		return this.evaluate(this.normal, source, EMPTY_BINDING, 0);
 	}
 
 	/** Declarations of `name` found first along each shape's own members and prototype chain. */
 	public lookupMember(shapes: readonly LuaDefinitionShape[], name: string): readonly Decl[] {
+		return this.lookupMembers(this.normal, shapes, name);
+	}
+
+	private lookupMembers(evaluation: DefinitionEvaluation, shapes: readonly LuaDefinitionShape[], name: string): readonly Decl[] {
 		const found: Decl[] = [];
 		for (const shape of shapes) {
-			for (const chainShape of this.chain(shape)) {
-				const own = this.ownMember(chainShape, name);
+			for (const chainShape of this.chain(evaluation, shape)) {
+				const own = this.ownMember(evaluation, chainShape, name);
 				if (own.length === 0) continue;
 				for (const declaration of own) if (!found.includes(declaration)) found.push(declaration);
 				break;
@@ -133,11 +142,12 @@ export class LuaDefinitionTypes {
 
 	/** Every member visible on the shapes; nearer definitions shadow prototype ones. */
 	public visibleMembers(shapes: readonly LuaDefinitionShape[]): ReadonlyMap<string, readonly Decl[]> {
+		const evaluation = this.normal;
 		const members = new Map<string, Decl[]>();
 		for (const shape of shapes) {
 			const shadowed = new Set<string>();
-			for (const chainShape of this.chain(shape)) {
-				for (const [name, declarations] of this.ownMembers(chainShape)) {
+			for (const chainShape of this.chain(evaluation, shape)) {
+				for (const [name, declarations] of this.ownMembers(evaluation, chainShape)) {
 					if (shadowed.has(name)) continue;
 					shadowed.add(name);
 					let bucket = members.get(name);
@@ -212,19 +222,25 @@ export class LuaDefinitionTypes {
 		return sites;
 	}
 
-	private evaluate(source: SemanticValueSource, binding: Binding, depth: number): readonly LuaDefinitionShape[] {
+	private evaluate(evaluation: DefinitionEvaluation, source: SemanticValueSource, binding: Binding, depth: number): readonly LuaDefinitionShape[] {
 		if (depth > MAX_DEFINITION_DEPTH) return EMPTY_SHAPES;
 		const memoized = binding === EMPTY_BINDING;
 		if (memoized) {
-			const retained = this.sourceShapes.get(source);
+			// Zero-step aliases are graph edges, not separately memoized value
+			// reads: no recursive cut may become a second durable source answer.
+			const target = directAliasTarget(source, this.globals);
+			if (target !== undefined) return this.declarationValues(evaluation, target);
+		}
+		if (memoized) {
+			const retained = evaluation.sourceShapes.get(source);
 			if (retained) return retained;
-			if (this.inProgress.has(source)) return EMPTY_SHAPES;
-			this.inProgress.add(source);
+			if (evaluation.inProgress.has(source)) return EMPTY_SHAPES;
+			evaluation.inProgress.add(source);
 			// A retained answer must not depend on how deep its first caller was;
 			// cycles are cut by inProgress, so the bound restarts here.
 			depth = 0;
 		}
-		let shapes = this.evaluateRoot(source.root, binding, depth);
+		let shapes = this.evaluateRoot(evaluation, source.root, binding, depth);
 		for (const step of source.steps) {
 			if (shapes.length === 0) break;
 			const next: LuaDefinitionShape[] = [];
@@ -232,14 +248,14 @@ export class LuaDefinitionTypes {
 				case 'member':
 					for (const shape of shapes) {
 						const values: LuaDefinitionShape[] = [];
-						for (const declaration of this.lookupMember([shape], step.name)) {
-							appendShapes(values, this.declarationValues(declaration.id, depth + 1));
+						for (const declaration of this.lookupMembers(evaluation, [shape], step.name)) {
+							appendShapes(values, this.declarationValues(evaluation, declaration.id));
 						}
 						appendShapes(next, values.length > 0 ? values : [this.path(shape, step.name)]);
 					}
 					break;
 				case 'call':
-					for (const shape of shapes) if (shape.kind === 'function') appendShapes(next, this.returns(shape.flow, depth + 1));
+					for (const shape of shapes) if (shape.kind === 'function') appendShapes(next, this.returns(evaluation, shape.flow, depth + 1));
 					break;
 				case 'instance':
 					for (const shape of shapes) appendShapes(next, [this.instance(shape)]);
@@ -250,38 +266,38 @@ export class LuaDefinitionTypes {
 			shapes = next;
 		}
 		if (memoized) {
-			this.inProgress.delete(source);
-			this.sourceShapes.set(source, shapes);
+			evaluation.inProgress.delete(source);
+			evaluation.sourceShapes.set(source, shapes);
 		}
 		return shapes;
 	}
 
-	private evaluateRoot(root: SemanticValueRoot, binding: Binding, depth: number): readonly LuaDefinitionShape[] {
+	private evaluateRoot(evaluation: DefinitionEvaluation, root: SemanticValueRoot, binding: Binding, depth: number): readonly LuaDefinitionShape[] {
 		switch (root.kind) {
 			case 'declaration': {
 				const bound = binding.get(root.declId);
-				if (bound !== undefined) return this.evaluate(bound, EMPTY_BINDING, depth + 1);
+				if (bound !== undefined) return this.evaluate(evaluation, bound, EMPTY_BINDING, depth + 1);
 				return binding === EMPTY_BINDING
-					? this.declarationValues(root.declId, depth + 1)
-					: this.boundDeclarationValues(root.declId, binding, depth + 1);
+					? this.declarationValues(evaluation, root.declId)
+					: this.boundDeclarationValues(evaluation, root.declId, binding, depth + 1);
 			}
 			case 'global': {
 				const global = this.globals.get(root.symbolKey);
-				return global === undefined ? EMPTY_SHAPES : this.declarationValues(global, depth + 1);
+				return global === undefined ? EMPTY_SHAPES : this.declarationValues(evaluation, global);
 			}
 			case 'module': {
 				const shapes: LuaDefinitionShape[] = [];
-				for (const exported of this.exportsOf(root.module)) appendShapes(shapes, this.evaluate(exported.source, EMPTY_BINDING, depth + 1));
+				for (const exported of this.exportsOf(root.module)) appendShapes(shapes, this.evaluate(evaluation, exported.source, EMPTY_BINDING, depth + 1));
 				return shapes;
 			}
 			case 'owned':
-				return this.ownedShapes(root.id, root.file, binding, depth);
+				return this.ownedShapes(evaluation, root.id, root.file, binding, depth);
 			default:
 				return EMPTY_SHAPES;
 		}
 	}
 
-	private ownedShapes(id: number, path: string, binding: Binding, depth: number): readonly LuaDefinitionShape[] {
+	private ownedShapes(evaluation: DefinitionEvaluation, id: number, path: string, binding: Binding, depth: number): readonly LuaDefinitionShape[] {
 		const facts = this.factsFor(path);
 		if (facts === undefined) return EMPTY_SHAPES;
 		const retag = facts.retagsByCall.get(id);
@@ -297,44 +313,92 @@ export class LuaDefinitionTypes {
 					shapes.push(this.function(id, fact.flow));
 					break;
 				case 'receiver':
-					if (fact.flow.receiverProjection !== undefined) appendShapes(shapes, this.evaluate(fact.flow.receiverProjection, EMPTY_BINDING, depth + 1));
+					if (fact.flow.receiverProjection !== undefined) appendShapes(shapes, this.evaluate(evaluation, fact.flow.receiverProjection, EMPTY_BINDING, depth + 1));
 					break;
 				case 'call':
-					for (const callee of this.evaluate(fact.call.callee, binding, depth + 1)) {
-						if (callee.kind === 'function') appendShapes(shapes, this.returns(callee.flow, depth + 1));
+					for (const callee of this.evaluate(evaluation, fact.call.callee, binding, depth + 1)) {
+						if (callee.kind === 'function') appendShapes(shapes, this.returns(evaluation, callee.flow, depth + 1));
 					}
 					break;
 			}
 		}
-		for (const assignment of facts.valueAssignmentsByTarget.get(id) || []) appendShapes(shapes, this.evaluate(assignment.source, binding, depth + 1));
+		for (const assignment of facts.valueAssignmentsByTarget.get(id) || []) appendShapes(shapes, this.evaluate(evaluation, assignment.source, binding, depth + 1));
 		return shapes;
 	}
 
-	private declarationValues(symbolId: SymbolID, depth: number): readonly LuaDefinitionShape[] {
-		const retained = this.declarationShapes.get(symbolId);
-		if (retained) return retained;
-		if (this.inProgress.has(symbolId)) return EMPTY_SHAPES;
-		this.inProgress.add(symbolId);
-		const shapes = this.boundDeclarationValues(symbolId, EMPTY_BINDING, 0);
-		this.inProgress.delete(symbolId);
-		this.declarationShapes.set(symbolId, shapes);
-		return shapes;
+	private declarationValues(evaluation: DefinitionEvaluation, symbolId: SymbolID): readonly LuaDefinitionShape[] {
+		const retained = evaluation.declarationShapes.get(symbolId);
+		if (retained !== undefined) return retained;
+		const root = this.aliases.componentOf(symbolId);
+		// Recursive terminals can reenter a pending component. The singleton
+		// leaf path also visits self-alias reads, which contribute nothing.
+		if (evaluation.activeAliases.has(root)) return EMPTY_SHAPES;
+		if (root.members.length === 1 && root.dependencies.length === 0) {
+			// A terminal definition (or self-alias) needs no DAG work stack.
+			evaluation.activeAliases.add(root);
+			const shapes = this.boundDeclarationValues(evaluation, symbolId, EMPTY_BINDING, 0);
+			evaluation.declarationShapes.set(symbolId, shapes);
+			evaluation.activeAliases.delete(root);
+			return shapes;
+		}
+		const pending: { component: LuaDefinitionAliasComponent; nextDependency: number }[] = [
+			{ component: root, nextDependency: 0 },
+		];
+		evaluation.activeAliases.add(root);
+		while (pending.length > 0) {
+			const frame = pending[pending.length - 1];
+			const component = frame.component;
+			if (frame.nextDependency < component.dependencies.length) {
+				const dependency = component.dependencies[frame.nextDependency++];
+				if (!evaluation.declarationShapes.has(dependency.members[0])
+					&& !evaluation.activeAliases.has(dependency)) {
+					evaluation.activeAliases.add(dependency);
+					pending.push({ component: dependency, nextDependency: 0 });
+				}
+				continue;
+			}
+			const shapes: LuaDefinitionShape[] = [];
+			for (const member of component.members) {
+				const declaration = this.declarations.get(member)!;
+				const file = this.files.get(declaration.file)!;
+				const receiver = this.facts(file).receiverParameters.get(member);
+				if (receiver !== undefined) {
+					appendShapes(shapes, this.evaluate(evaluation, receiver.receiverProjection!, EMPTY_BINDING, 1));
+				}
+				const writes = file.declarationValuesByDeclaration.get(member);
+				if (writes === undefined) continue;
+				for (const write of writes) {
+					const target = directAliasTarget(write.source, this.globals);
+					if (target === undefined) {
+						appendShapes(shapes, this.evaluate(evaluation, write.source, EMPTY_BINDING, 1));
+					} else {
+						const targetComponent = this.aliases.componentOf(target);
+						if (targetComponent === component || evaluation.activeAliases.has(targetComponent)) continue;
+						appendShapes(shapes, evaluation.declarationShapes.get(target)!);
+					}
+				}
+			}
+			for (const member of component.members) evaluation.declarationShapes.set(member, shapes);
+			evaluation.activeAliases.delete(component);
+			pending.pop();
+		}
+		return evaluation.declarationShapes.get(symbolId)!;
 	}
 
-	private boundDeclarationValues(symbolId: SymbolID, binding: Binding, depth: number): readonly LuaDefinitionShape[] {
+	private boundDeclarationValues(evaluation: DefinitionEvaluation, symbolId: SymbolID, binding: Binding, depth: number): readonly LuaDefinitionShape[] {
 		const declaration = this.declarations.get(symbolId);
 		const file = declaration === undefined ? undefined : this.files.get(declaration.file);
 		if (file === undefined) return EMPTY_SHAPES;
 		const shapes: LuaDefinitionShape[] = [];
 		const receiverFlow = this.facts(file).receiverParameters.get(symbolId);
-		if (receiverFlow !== undefined) appendShapes(shapes, this.evaluate(receiverFlow.receiverProjection!, EMPTY_BINDING, depth + 1));
-		for (const value of file.declarationValuesByDeclaration.get(symbolId) || []) appendShapes(shapes, this.evaluate(value.source, binding, depth + 1));
+		if (receiverFlow !== undefined) appendShapes(shapes, this.evaluate(evaluation, receiverFlow.receiverProjection!, EMPTY_BINDING, depth + 1));
+		for (const value of file.declarationValuesByDeclaration.get(symbolId) || []) appendShapes(shapes, this.evaluate(evaluation, value.source, binding, depth + 1));
 		return shapes;
 	}
 
-	private returns(flow: FunctionValueFlowEntry, depth: number): readonly LuaDefinitionShape[] {
+	private returns(evaluation: DefinitionEvaluation, flow: FunctionValueFlowEntry, depth: number): readonly LuaDefinitionShape[] {
 		const shapes: LuaDefinitionShape[] = [];
-		for (const returned of flow.returns) appendShapes(shapes, this.evaluate(returned.firstValue, EMPTY_BINDING, depth + 1));
+		for (const returned of flow.returns) appendShapes(shapes, this.evaluate(evaluation, returned.firstValue, EMPTY_BINDING, depth + 1));
 		return shapes;
 	}
 
@@ -343,7 +407,7 @@ export class LuaDefinitionTypes {
 	 * then each `__index` prototype. A class also carries the fields its
 	 * methods assign to `self`, which are the members of its instances.
 	 */
-	private chain(shape: LuaDefinitionShape): readonly LuaDefinitionShape[] {
+	private chain(evaluation: DefinitionEvaluation, shape: LuaDefinitionShape): readonly LuaDefinitionShape[] {
 		const chain: LuaDefinitionShape[] = [];
 		const pending: LuaDefinitionShape[] = [shape];
 		for (let index = 0; index < pending.length && chain.length <= MAX_DEFINITION_DEPTH; index += 1) {
@@ -356,34 +420,34 @@ export class LuaDefinitionTypes {
 			}
 			if (current.kind === 'retag') {
 				// The retagged value keeps its own fields; its old prototypes are replaced.
-				for (const base of this.shapesOf(current.retag.base)) {
+				for (const base of this.evaluate(evaluation, current.retag.base, EMPTY_BINDING, 0)) {
 					if (!chain.some(existing => existing.key === base.key)) chain.push(base);
 				}
-				if (this.phase === 'normal') for (const prototype of this.shapesOf(current.retag.prototype)) pending.push(prototype);
+				if (evaluation.phase === 'normal') for (const prototype of this.evaluate(evaluation, current.retag.prototype, EMPTY_BINDING, 0)) pending.push(prototype);
 				continue;
 			}
 			const instance = this.instance(current);
 			if (!chain.some(existing => existing.key === instance.key)) chain.push(instance);
-			if (this.phase === 'normal') for (const prototype of this.prototypeShapes(current)) pending.push(prototype);
+			if (evaluation.phase === 'normal') for (const prototype of this.prototypeShapes(current)) pending.push(prototype);
 		}
 		return chain;
 	}
 
 	/** Declarations of `name` defined on exactly this shape. */
-	private ownMember(shape: LuaDefinitionShape, name: string): readonly Decl[] {
+	private ownMember(evaluation: DefinitionEvaluation, shape: LuaDefinitionShape, name: string): readonly Decl[] {
 		const found: Decl[] = [];
 		for (const key of this.ownerKeys(shape)) {
 			for (const fact of this.membersKeyed(key)) if (fact.entry.name === name && !found.includes(fact.declaration)) found.push(fact.declaration);
 		}
 		for (const fact of this.indirectMembersNamed(name)) {
-			if (this.ownersOf(fact).some(owner => owner.key === shape.key) && !found.includes(fact.declaration)) found.push(fact.declaration);
+			if (this.ownersOf(evaluation, fact).some(owner => owner.key === shape.key) && !found.includes(fact.declaration)) found.push(fact.declaration);
 		}
 		return found;
 	}
 
 	/** Every member defined on exactly this shape, by name. */
-	private ownMembers(shape: LuaDefinitionShape): ReadonlyMap<string, readonly Decl[]> {
-		const retained = this.membersByShape.get(shape.key);
+	private ownMembers(evaluation: DefinitionEvaluation, shape: LuaDefinitionShape): ReadonlyMap<string, readonly Decl[]> {
+		const retained = evaluation.membersByShape.get(shape.key);
 		if (retained !== undefined) return retained;
 		const members = new Map<string, Decl[]>();
 		const add = (fact: MemberFact): void => {
@@ -392,17 +456,17 @@ export class LuaDefinitionTypes {
 			if (!declarations.includes(fact.declaration)) declarations.push(fact.declaration);
 		};
 		for (const key of this.ownerKeys(shape)) for (const fact of this.membersKeyed(key)) add(fact);
-		for (const fact of this.allIndirectMembers()) if (this.ownersOf(fact).some(owner => owner.key === shape.key)) add(fact);
-		this.membersByShape.set(shape.key, members);
+		for (const fact of this.allIndirectMembers()) if (this.ownersOf(evaluation, fact).some(owner => owner.key === shape.key)) add(fact);
+		evaluation.membersByShape.set(shape.key, members);
 		return members;
 	}
 
 	/** Shapes an indirect member's owner evaluates to, with the same rules a reader uses. */
-	private ownersOf(fact: MemberFact): readonly LuaDefinitionShape[] {
-		let owners = this.ownerShapes.get(fact);
+	private ownersOf(evaluation: DefinitionEvaluation, fact: MemberFact): readonly LuaDefinitionShape[] {
+		let owners = evaluation.ownerShapes.get(fact);
 		if (owners === undefined) {
-			owners = this.shapesOf(fact.entry.owner);
-			this.ownerShapes.set(fact, owners);
+			owners = this.evaluate(evaluation, fact.entry.owner, EMPTY_BINDING, 0);
+			evaluation.ownerShapes.set(fact, owners);
 		}
 		return owners;
 	}
@@ -446,35 +510,19 @@ export class LuaDefinitionTypes {
 	private indirectPrototypeSitesMap(): ReadonlyMap<string, readonly PrototypeSite[]> {
 		if (this.indirectPrototypeSites !== undefined) return this.indirectPrototypeSites;
 		const sites = new Map<string, PrototypeSite[]>();
-		this.enterPhase('prototype', () => {
-			for (const file of this.files.values()) {
-				for (const entry of this.facts(file).indirectPrototypeAssignments) {
-					const site: PrototypeSite = { kind: 'assignment', entry };
-					for (const target of this.shapesOf(entry.target)) {
-						let bucket = sites.get(target.key);
-						if (!bucket) sites.set(target.key, bucket = []);
-						bucket.push(site);
-					}
+		const evaluation = this.prototype;
+		for (const file of this.files.values()) {
+			for (const entry of this.facts(file).indirectPrototypeAssignments) {
+				const site: PrototypeSite = { kind: 'assignment', entry };
+				for (const target of this.evaluate(evaluation, entry.target, EMPTY_BINDING, 0)) {
+					let bucket = sites.get(target.key);
+					if (!bucket) sites.set(target.key, bucket = []);
+					bucket.push(site);
 				}
 			}
-		});
+		}
 		this.indirectPrototypeSites = sites;
 		return sites;
-	}
-
-	/** Runs `work` in `phase` with fresh retained maps, restoring the caller's afterwards. */
-	private enterPhase(phase: 'prototype', work: () => void): void {
-		const retained = [this.phase, this.sourceShapes, this.declarationShapes, this.membersByShape, this.ownerShapes] as const;
-		this.phase = phase;
-		this.sourceShapes = new Map();
-		this.declarationShapes = new Map();
-		this.membersByShape = new Map();
-		this.ownerShapes = new Map();
-		try {
-			work();
-		} finally {
-			[this.phase, this.sourceShapes, this.declarationShapes, this.membersByShape, this.ownerShapes] = retained;
-		}
 	}
 
 	/**
@@ -499,7 +547,7 @@ export class LuaDefinitionTypes {
 			if (!targets.some(target => target.key === shape.key)) return;
 			appendShapes(prototypes, sources.filter(source => source.key !== shape.key));
 		};
-		this.enterPhase('prototype', () => this.collectPrototypes(sites, add));
+		this.collectPrototypes(sites, add);
 		return prototypes;
 	}
 
@@ -507,12 +555,13 @@ export class LuaDefinitionTypes {
 		sites: readonly PrototypeSite[],
 		add: (targets: readonly LuaDefinitionShape[], sources: readonly LuaDefinitionShape[]) => void,
 	): void {
+		const evaluation = this.prototype;
 		for (const site of sites) {
 			if (site.kind === 'assignment') {
-				add(this.shapesOf(site.entry.target), this.shapesOf(site.entry.source));
+				add(this.evaluate(evaluation, site.entry.target, EMPTY_BINDING, 0), this.evaluate(evaluation, site.entry.source, EMPTY_BINDING, 0));
 				continue;
 			}
-			for (const callee of this.shapesOf(site.call.callee)) {
+			for (const callee of this.evaluate(evaluation, site.call.callee, EMPTY_BINDING, 0)) {
 				if (callee.kind !== 'function') continue;
 				const flow = callee.flow;
 				const binding = new Map<SymbolID, SemanticValueSource>();
@@ -522,7 +571,7 @@ export class LuaDefinitionTypes {
 				}
 				if (binding.size === 0) continue;
 				for (const write of flow.assignments) {
-					if (write.relation === 'prototype') add(this.evaluate(write.target, binding, 0), this.evaluate(write.source, binding, 0));
+					if (write.relation === 'prototype') add(this.evaluate(evaluation, write.target, binding, 0), this.evaluate(evaluation, write.source, binding, 0));
 				}
 			}
 		}

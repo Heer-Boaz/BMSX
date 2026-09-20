@@ -1282,27 +1282,77 @@ diagnosed heap is 193.58/207.08/209.52 MiB versus 194.41/207.90/209.20 baseline;
 released deltas are 3.06 versus 2.91 MiB. Moving computation out of binding
 is not presented as eliminating its retained query costs.
 
-A fresh-context review also found a **pre-existing definition-layer alias-cycle
-cache defect**: querying an alias first can cache a partial answer for another
-member of the cycle. Minimum-arity inference must not broaden its direct-call
-contract into that value query. The underlying defect is still open at
-`definition_types.ts`, with the repro below; the direct-only signature policy
-is not claimed as a fix for definition-query order independence:
+### Written-alias component correctness — implemented
+
+A fresh-context signature review found a pre-existing definition-layer cache
+bug: querying `alias` first could cache a partial answer for `sink` in this
+written cycle:
 
 ```lua
 local sink, alias
 sink = alias
 alias = sink
 alias = function(x) return x + 1 end
-local function f(a, b) sink(a) end
-f()
 ```
 
-Querying `resolveDefinitionFunctionTargets(alias)` before resolving `sink`
-can change the latter's answer. Repair the owning finite written-alias
-representation/cache, not by adding a signature-specific alias resolver or
-moving the whole-program solver. This correctness item precedes completion of
-the overall incremental-binding task.
+`definition_aliases.ts` now owns the lazy finite graph of zero-step written
+aliases. It condenses reachable cycles and publishes one complete shape union
+for every member, after outgoing dependencies. Components are ordered by file
+and numeric source offset, not by allocated syntax IDs. Source-value memoization
+does not independently cache these alias edges. The traversal is iterative,
+including long acyclic chains; it does not instantiate calls or infer effects.
+
+The existing signature SCC traversal was extracted to
+`collections/strongly_connected_components.ts`, shared by the two actual graph
+owners. Traversal metadata exists only on temporary graph nodes, not syntax or
+retained file facts. The iterative dependency-first contract was also checked
+against [LLVM SCCIterator](https://github.com/llvm/llvm-project/blob/main/llvm/include/llvm/ADT/SCCIterator.h).
+
+Normal and prototype evaluation now have explicit independent memo/pending
+contexts. The former ambient phase/map capture-and-restore has been removed;
+raw alias topology is shared by the snapshot, answers are not shared across
+modes. This guarantee is deliberately limited to **pure written-alias cycles
+with nonrecursive terminal evaluation**. Member/call/module/receiver/prototype
+projections are not zero-step aliases; their existing recursion limitations
+remain. Neither general definition-query order independence nor body fact
+reuse is claimed by this slice.
+
+Validation against `3efc6fcf6`: focused 64/64 (including 12 alias cases and four
+SCC utility cases); the full run before the final singleton work-stack
+simplification had 2,151 passing, one known menu failure and one skip;
+rompacker 129/129; product build and precision idetests 8/5/3 pass. Relevant
+owner/typecheck diagnostics are clean; existing unrelated broad type errors
+remain. O3 pietious output (207 modules/2,131 functions) has the identical
+one-shot hash `a297b840826af25b3345872b9d31dc0a1efcfaf8437e4c9ddaf99c5ba54ac505`.
+Core parity and `git diff --check` pass.
+
+New 300-reference sample comparisons have identical definition answers to
+baseline on both carts. Pietious: zero contradictions and zero targets absent
+from the solver. Nemesis: zero contradictions, but **one baseline-identical
+target absent from the solver**, `aem.lua:160`'s
+`target.source.loop_start_sample` -> `apu.lua:123`. Thus the strict zero-extra
+oracle does not pass for that new Nemesis sample; it is not reported as a new
+regression or hidden by excluding the reference. The previous handoff's sample
+was different.
+
+The fresh-context review found no blocker for this limited guarantee. Measured
+completion overhead in the initial graph version prompted two owner-level base
+cases: terminal definitions allocate no DFS topology, and singleton leaves need
+no dependency-DAG work stack. Both retain the same recursion markers; an explicit
+self-alias regression covers that case. Final director body-edit completion
+p50/p95 is 7.881/10.552 ms versus baseline 8.041/10.455. Its public edit+highlight
+is 2.837/6.479 versus 2.825/6.676 ms. This is CPU evidence, not UI latency or a
+2x edit improvement. The last two-file run before the final leaf work-stack
+simplification measured player edit+highlight 13.921/14.652 versus
+13.857/15.169 ms; whole-file binding remains the dominant unremoved work.
+
+The lifetime profiler now explicitly roots inputs and retained snapshot/frontend
+owners through each GC measurement; local variable liveness alone was insufficient
+once an all-member query pass was added. With 21,088 member/method references,
+12,890 resolve in both versions. Rooted queried heap is 221.46 MiB versus 221.11
+baseline; released deltas are 3.30 versus 3.43 MiB. These are whole retained-query
+heap measurements (taken after the topology shortcut), not allocation counts;
+the earlier local-only release measurements are not the new lifetime oracle.
 
 Remaining body-binding gate, independently audited: global/member storage is
 still selected from prior traversal witnesses (`globalsByKey`,

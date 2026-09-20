@@ -1,3 +1,4 @@
+import { stronglyConnectedComponents, type StronglyConnectedNode } from '../../collections/strongly_connected_components';
 import {
 	LuaBinaryOperator, LuaSyntaxKind, LuaTableFieldKind, LuaUnaryOperator,
 	type LuaCallExpression, type LuaExpression, type LuaStatement,
@@ -50,14 +51,10 @@ const recipesWithBuiltinType = new WeakMap<FileSemanticData, readonly FunctionRe
 const recipesWithoutBuiltinType = new WeakMap<FileSemanticData, readonly FunctionRecipe[]>();
 
 type ResolvedRead = { readonly target: SignatureNode; readonly read: ForwardingRead };
-type SignatureNode = {
+type SignatureNode = StronglyConnectedNode<SignatureNode> & {
 	readonly recipe: FunctionRecipe;
 	readonly parameters: { readonly index: number; readonly reads: readonly ResolvedRead[] }[];
 	readonly dependencies: SignatureNode[];
-	index: number;
-	lowlink: number;
-	component: number;
-	active: boolean;
 };
 
 /**
@@ -109,50 +106,7 @@ export function inferLuaFunctionSignatures(
 		}
 	}
 
-	// Iterative Tarjan emits components in dependency-first order, without a
-	// host-stack limit for a long chain of directly written functions.
-	const components: SignatureNode[][] = [];
-	const active: SignatureNode[] = [];
-	const traversal: { node: SignatureNode; next: number }[] = [];
-	let nextIndex = 0;
-	for (const root of nodes.values()) {
-		if (root.index !== -1) continue;
-		root.index = root.lowlink = nextIndex++;
-		root.active = true;
-		active.push(root);
-		traversal.push({ node: root, next: 0 });
-		while (traversal.length > 0) {
-			const frame = traversal[traversal.length - 1];
-			const node = frame.node;
-			if (frame.next < node.dependencies.length) {
-				const target = node.dependencies[frame.next++];
-				if (target.index === -1) {
-					target.index = target.lowlink = nextIndex++;
-					target.active = true;
-					active.push(target);
-					traversal.push({ node: target, next: 0 });
-				} else if (target.active) {
-					node.lowlink = Math.min(node.lowlink, target.index);
-				}
-				continue;
-			}
-			traversal.pop();
-			if (traversal.length > 0) {
-				const parent = traversal[traversal.length - 1].node;
-				parent.lowlink = Math.min(parent.lowlink, node.lowlink);
-			}
-			if (node.lowlink !== node.index) continue;
-			const component: SignatureNode[] = [];
-			let member: SignatureNode;
-			do {
-				member = active.pop()!;
-				member.active = false;
-				member.component = components.length;
-				component.push(member);
-			} while (member !== node);
-			components.push(component);
-		}
-	}
+	const components = stronglyConnectedComponents(nodes.values());
 	const signatures = new Map<ScopeID, FunctionSignatureInfo>();
 	for (const component of components) {
 		for (const node of component) {

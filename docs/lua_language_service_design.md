@@ -76,9 +76,20 @@ arguments contribute nothing. This is definition-based: one level, the callee's
 own body, the call site's own arguments. It covers the 94 `prefab.define` uses
 without a framework-specific rule.
 
-**Bounds.** Alias and prototype chains stop at depth 8 and on revisits; return
-inference follows definition-resolved callees only, context-insensitive, with
-the same depth bound. No rule enumerates writers elsewhere in the program.
+**Written aliases.** Zero-step declaration/global reads form a finite graph of
+written aliases. A demanded reachable component is condensed with iterative
+SCC traversal, then its dependency DAG is evaluated once. Every member of a
+cycle receives the same finalized union of written exits, in file/source
+order. These alias edges bypass source-value memoization, so a recursive cut
+cannot leave a second partial answer in that cache. Pure aliases have no
+arbitrary hop limit and do not consume the host call stack.
+
+**Other recursion.** Member, return, receiver, module and prototype projections
+remain value evaluations, not alias edges. Their existing revisit/depth policy
+(depth 8) remains; the alias fix does not establish query-order independence
+for mixed recursive projections. Normal and prototype evaluation have separate
+explicit pending/answer contexts, with shared snapshot-owned alias topology.
+This is finite written-definition traversal, not a may-call/effect fixpoint.
 
 ## Incrementality
 
