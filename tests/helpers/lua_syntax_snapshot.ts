@@ -6,6 +6,10 @@ export function luaSyntaxSnapshot(chunk: LuaChunk): unknown {
 	const locations = chunk.locations;
 	return JSON.parse(JSON.stringify(chunk, function(key, value) {
 		if (key === 'locations') return undefined;
+		if (key === 'tokens') return Array.from(chunk.tokens, token => {
+			const { unit, start, end, ...data } = token;
+			return { ...data, span: { unit, start, end } };
+		});
 		if (key === 'span') return locations.range(value as LuaSyntaxSpan);
 		if (key === 'units') return (value as LuaSyntaxSpan['unit'][]).map(unit => locations.offset(unit, 0));
 		if (key === 'startInclusive' || key === 'endExclusive') return locations.position(this.span.unit, value);

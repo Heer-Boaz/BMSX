@@ -1,3 +1,5 @@
+import type { LuaSyntaxSpan } from './source_locations';
+
 export const enum LuaTokenType {
 	LeftParen,
 	RightParen,
@@ -78,16 +80,20 @@ export function isLuaTrivia(type: LuaTokenType): boolean {
 
 export type LuaTokenLiteral = number | string | boolean;
 
-export type LuaToken = {
-	/** UTF-16 start in this lexical generation. */
-	readonly offset: number;
+/** A token is a lexical-block-relative span, not a node wrapping another span. */
+export type LuaToken = LuaSyntaxSpan & {
 	readonly type: LuaTokenType;
+	/** Grammar spelling; terminal failure text belongs to the source, not EOF. */
 	readonly lexeme: string;
-	readonly line: number;
-	readonly column: number;
-	readonly endLine: number;
-	readonly endColumn: number;
 	readonly literal: LuaTokenLiteral;
+	/** Full source coverage; a failed lexer's EOF also owns its skipped suffix. */
+	readonly width: number;
+	/** Exclusive farthest inspected UTF-16 offset, relative to this item start. */
+	readonly readWidth: number;
+	/** LF count across full coverage, including a terminal failure suffix. */
+	readonly breaks: number;
+	/** Raw lexical failure on EOF, formatted against its source generation. */
+	readonly error?: string;
 };
 
 export function resolveKeyword(identifier: string): LuaTokenType {

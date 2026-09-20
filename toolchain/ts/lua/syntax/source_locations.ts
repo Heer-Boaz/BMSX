@@ -1,6 +1,7 @@
 import type { LuaSourcePosition, LuaSourceRange } from './ast';
 import { LuaSourceLayout, positionInText, type LuaSourceUnit, type LuaSourceUnitPlacement } from './source_layout';
 import type { LuaSourceLayoutCursor } from './source_layout_cursor';
+import type { LuaTokenSequence } from './token_sequence';
 
 /**
  * UTF-16 endpoints relative to one syntax occurrence. End is inclusive, as in
@@ -37,6 +38,14 @@ export class LuaSourceLocations {
 	/** Takes the fresh parser's origins directly; no suffix copy or AST conversion. */
 	public static fromSource(path: string, source: string, units: readonly LuaSourceUnitPlacement[], origins: Map<LuaSourceUnit, number>): LuaSourceLocations {
 		return new LuaSourceLocations(path, { kind: 'source', source, units, lineStarts: undefined, layout: undefined }, origins);
+	}
+
+	/** Standalone lexical consumers own the same relative blocks without an AST. */
+	public static fromLexical(path: string, source: string, tokens: LuaTokenSequence): LuaSourceLocations {
+		const units = [...tokens.placements()];
+		const origins = new Map<LuaSourceUnit, number>();
+		for (const placement of units) origins.set(placement.unit, placement.offset);
+		return LuaSourceLocations.fromSource(path, source, units, origins);
 	}
 
 	/** An edited generation owns only its new layout, never old absolute caches. */
@@ -77,15 +86,25 @@ export class LuaSourceLocations {
 		return this.positionAt(this.offset(unit, relativeOffset));
 	}
 
-	private positionAt(offset: number): LuaSourcePosition {
+	public offsetAt(position: LuaSourcePosition): number {
+		const backing = this.backing;
+		if (backing.kind === 'layout') return backing.layout.offsetAt(position);
+		return (position.line === 1 ? 0 : this.sourceLineStarts(backing)[position.line - 2]) + position.column - 1;
+	}
+
+	private sourceLineStarts(backing: Extract<LocationBacking, { kind: 'source' }>): readonly number[] {
+		if (backing.lineStarts === undefined) {
+			const starts: number[] = [];
+			for (let index = backing.source.indexOf('\n'); index !== -1; index = backing.source.indexOf('\n', index + 1)) starts.push(index + 1);
+			backing.lineStarts = starts;
+		}
+		return backing.lineStarts;
+	}
+
+	public positionAt(offset: number): LuaSourcePosition {
 		const backing = this.backing;
 		if (backing.kind === 'source') {
-			if (backing.lineStarts === undefined) {
-				const starts: number[] = [];
-				for (let index = backing.source.indexOf('\n'); index !== -1; index = backing.source.indexOf('\n', index + 1)) starts.push(index + 1);
-				backing.lineStarts = starts;
-			}
-			return positionInText(backing.lineStarts, offset, 1, 1);
+			return positionInText(this.sourceLineStarts(backing), offset, 1, 1);
 		}
 		if (backing.cursor === undefined || offset < backing.cursor.offset) backing.cursor = backing.layout.cursor(offset);
 		return backing.cursor.positionAt(offset);

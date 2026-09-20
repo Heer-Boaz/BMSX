@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { matchLuaTokens } from '../../toolchain/ts/lua/analysis/token_match';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
+import { LuaTokenSequence } from '../../toolchain/ts/lua/syntax/token_sequence';
 import { LuaTokenType } from '../../toolchain/ts/lua/syntax/token';
 import { LuaSourceCorrespondence } from '../../toolchain/ts/lua/semantic/source_correspondence';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
@@ -21,13 +22,13 @@ test('Myers token matches agree with an exhaustive LCS oracle', () => {
 			sequences.push(sequence);
 		}
 	}
-	const lexed = sequences.map(source => new LuaLexer(source, PATH).scanTokens().filter(token => token.type !== LuaTokenType.Eof));
+	const lexed = sequences.map(source => new LuaLexer(source, PATH).scanTokens());
 	for (const old of lexed) {
 		for (const fresh of lexed) {
-			const oracle = Array.from({ length: old.length + 1 }, () => new Int32Array(fresh.length + 1));
-			for (let x = 1; x <= old.length; x += 1) {
-				for (let y = 1; y <= fresh.length; y += 1) {
-					oracle[x][y] = old[x - 1].lexeme === fresh[y - 1].lexeme
+			const oracle = Array.from({ length: old.significantCount + 1 }, () => new Int32Array(fresh.significantCount + 1));
+			for (let x = 1; x <= old.significantCount; x += 1) {
+				for (let y = 1; y <= fresh.significantCount; y += 1) {
+					oracle[x][y] = old.getSignificant(x - 1).lexeme === fresh.getSignificant(y - 1).lexeme
 						? oracle[x - 1][y - 1] + 1 : Math.max(oracle[x - 1][y], oracle[x][y - 1]);
 				}
 			}
@@ -38,19 +39,23 @@ test('Myers token matches agree with an exhaustive LCS oracle', () => {
 				const target = matches[index];
 				if (target < 0) continue;
 				assert.ok(target > previous);
-				assert.equal(old[index].lexeme, fresh[target].lexeme);
+				assert.equal(old.getSignificant(index).lexeme, fresh.getSignificant(target).lexeme);
 				previous = target;
 				count += 1;
 			}
-			assert.equal(count, oracle[old.length][fresh.length]);
+			assert.equal(count, oracle[old.significantCount][fresh.significantCount]);
 		}
 	}
 });
 
 test('token correspondence requires both token kind and raw spelling', () => {
-	const old = new LuaLexer('word', PATH).scanTokens().slice(0, 1);
-	assert.deepEqual(Array.from(matchLuaTokens(old, [{ ...old[0], type: LuaTokenType.String }])), [-1]);
-	assert.deepEqual(Array.from(matchLuaTokens(old, [{ ...old[0], lexeme: 'another' }])), [-1]);
+	const old = new LuaLexer('word', PATH).scanTokens();
+	for (const change of [{ type: LuaTokenType.String }, { lexeme: 'another' }]) {
+		const changed = LuaTokenSequence.fromBlocks(Array.from(old.blocks(), ({ block }) => ({ ...block,
+			items: block.items.map((token, index) => index === 0 ? { ...token, ...change } : token),
+		})));
+		assert.deepEqual(Array.from(matchLuaTokens(old, changed)), [-1, 1]);
+	}
 });
 
 function compare(before: string, after: string) {

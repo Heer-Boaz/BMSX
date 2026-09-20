@@ -416,7 +416,7 @@ test('source-owned BT moves change actual compiled task order and keep choice we
 		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
 		const branch = definition.root.branches[0];
 		assert.ok(branch.role === 'children' && branch.source.kind === 'section');
-		model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, branch.source.file.chunk.locations, branch.source.table, 2, destination));
+		model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, branch.source.file.chunk, branch.source.table, 2, destination));
 		const { cpu } = createCartlibProgramHarness(model.buffer.getText() + `
 local program<const> = require('cartlib/behaviour_tree/program').compile('oracle', { root = root })
 local target<const> = { order = 0 }
@@ -432,7 +432,7 @@ return status == result.success, target.order, #children, children.note == 'meta
 		assert.ok(weighted.behaviorKind === 'behavior_tree' && weighted.root?.kind === 'node');
 		const choices = weighted.root.branches[0];
 		assert.ok(choices.role === 'choices' && choices.source.kind === 'section');
-		model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, choices.source.file.chunk.locations, choices.source.table, 2, destination));
+		model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, choices.source.file.chunk, choices.source.table, 2, destination));
 		const { cpu: choiceCpu } = createCartlibProgramHarness(model.buffer.getText() + `
 local target<const> = { order = 0 }
 for index = 1, #weighted.choices do
@@ -531,8 +531,8 @@ test('language-owned field transfer changes actual compiled BT composition witho
 		const inner = node.branches[0];
 		assert.ok(inner.role === 'children' && inner.source.kind === 'section');
 		const transfer = inward
-			? createLuaTableFieldTransfer(model.buffer, outer.source.file.chunk.locations, outer.entries[2].field, inner.source.table, 0)
-			: createLuaTableFieldTransfer(model.buffer, inner.source.file.chunk.locations, inner.entries[1].field, outer.source.table, outer.source.table.fields.length);
+			? createLuaTableFieldTransfer(model.buffer, outer.source.file.chunk, outer.entries[2].field, inner.source.table, 0)
+			: createLuaTableFieldTransfer(model.buffer, inner.source.file.chunk, inner.entries[1].field, outer.source.table, outer.source.table.fields.length);
 		model.pushEditOperations(transfer.edits);
 		const { cpu } = createCartlibProgramHarness(model.buffer.getText() + `
 local target<const> = { order = 0 }
@@ -568,7 +568,7 @@ test('admitted BT transfers compile with actual source sharing and cartlib task 
 		const member = { file: origin.source.file, table: origin.source.table, branch: origin, index: 0 };
 		const admission = new BehaviorTreeTransferAnalysis(document, member);
 		assert.equal(admission.checkTarget(target).kind, 'available');
-		model.pushEditOperations(createLuaTableFieldTransfer(model.buffer, origin.source.file.chunk.locations, origin.entries[0].field,
+		model.pushEditOperations(createLuaTableFieldTransfer(model.buffer, origin.source.file.chunk, origin.entries[0].field,
 			target.source.table, target.source.table.fields.length).edits);
 		const { cpu } = createCartlibProgramHarness(model.buffer.getText() + `
 local target<const> = {order=0}

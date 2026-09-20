@@ -1,3 +1,4 @@
+import type { LuaChunk } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import { LuaLexer } from '../../../../toolchain/ts/lua/syntax/lexer';
@@ -27,7 +28,7 @@ import type { CodeEditorContext } from '../../ui/code_editor_state';
 import {
 	type ResourceDomain,
 } from '../../../common/resource';
-import { KEYWORDS, LuaTokenType, type LuaToken } from '../../../../toolchain/ts/lua/syntax/token';
+import { KEYWORDS, isLuaTrivia, LuaTokenType, type LuaToken } from '../../../../toolchain/ts/lua/syntax/token';
 import { getTextSnapshot } from '../../text/source_text';
 import type { TextBuffer } from '../../text/text_buffer';
 import { activeCodeEditor } from '../../ui/code_editor_state';
@@ -246,30 +247,34 @@ type ContextMenuTokenMatch = {
 	index: number;
 	startColumn: number;
 	endColumn: number;
-	tokens: readonly LuaToken[];
+	chunk: LuaChunk;
 };
 
 function findContextMenuTokenMatch(row: number, column: number, path: string, source: string): ContextMenuTokenMatch {
-	const tokens = getOrCreateSemanticProject(activeCodeEditor.model.resource.domain)
-		.updateDocument(path, source).chunk.tokens;
+	const chunk = getOrCreateSemanticProject(activeCodeEditor.model.resource.domain)
+		.updateDocument(path, source).chunk;
+	const { tokens, locations } = chunk;
 	const targetLine = row + 1;
 	let adjacent: ContextMenuTokenMatch = null;
-	for (let index = 0; index < tokens.length; index += 1) {
-		const token = tokens[index];
+	for (const cursor = tokens.cursor(); cursor.token !== undefined; cursor.advance()) {
+		const token = cursor.token;
+		const index = cursor.index;
+		if (isLuaTrivia(token.type)) continue;
+		const position = locations.range(token).start;
 		if (token.type === LuaTokenType.Eof) {
 			break;
 		}
-		if (token.line < targetLine) {
+		if (position.line < targetLine) {
 			continue;
 		}
-		if (token.line > targetLine) {
+		if (position.line > targetLine) {
 			break;
 		}
 		const tokenLength = token.lexeme.length;
 		if (tokenLength === 0) {
 			continue;
 		}
-		const tokenStart = token.column - 1;
+		const tokenStart = position.column - 1;
 		const tokenEnd = tokenStart + tokenLength;
 		if (column >= tokenStart && column < tokenEnd) {
 			return {
@@ -277,7 +282,7 @@ function findContextMenuTokenMatch(row: number, column: number, path: string, so
 				index,
 				startColumn: tokenStart,
 				endColumn: tokenEnd,
-				tokens,
+				chunk,
 			};
 		}
 		if (column === tokenEnd) {
@@ -286,7 +291,7 @@ function findContextMenuTokenMatch(row: number, column: number, path: string, so
 				index,
 				startColumn: tokenStart,
 				endColumn: tokenEnd,
-				tokens,
+				chunk,
 			};
 			continue;
 		}
@@ -302,16 +307,18 @@ function resolveIdentifierExpressionForKeyword(row: number, match: ContextMenuTo
 		return null;
 	}
 	const targetLine = row + 1;
-	const tokens = match.tokens;
-	for (let index = match.index + 1; index < tokens.length; index += 1) {
-		const token = tokens[index];
-		if (token.type === LuaTokenType.Eof || token.line !== targetLine) {
+	const { tokens, locations } = match.chunk;
+	for (const cursor = tokens.cursor(match.index + 1); cursor.token !== undefined; cursor.advance()) {
+		const token = cursor.token;
+		if (isLuaTrivia(token.type)) continue;
+		const position = locations.range(token).start;
+		if (token.type === LuaTokenType.Eof || position.line !== targetLine) {
 			break;
 		}
 		if (token.type !== LuaTokenType.Identifier) {
 			continue;
 		}
-		return extractIdentifierExpression(activeCodeEditor.model.buffer, row, token.column - 1, path);
+		return extractIdentifierExpression(activeCodeEditor.model.buffer, row, position.column - 1, path);
 	}
 	return null;
 }

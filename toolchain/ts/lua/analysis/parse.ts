@@ -2,11 +2,11 @@ import type { LuaChunk } from '../syntax/ast';
 import { LuaSyntaxError } from '../errors';
 import { LuaLexer } from '../syntax/lexer';
 import { LuaParser } from '../syntax/parser';
-import type { LuaToken } from '../syntax/token';
+import type { LuaTokenSequence } from '../syntax/token_sequence';
 
 export type ParsedLuaChunk = {
 	readonly chunk: LuaChunk;
-	readonly tokens: readonly LuaToken[];
+	readonly tokens: LuaTokenSequence;
 	readonly syntaxError: LuaSyntaxError | null;
 };
 

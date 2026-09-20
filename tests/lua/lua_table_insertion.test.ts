@@ -20,14 +20,14 @@ function parseTable(source: string) {
 	if (statement.kind !== LuaSyntaxKind.LocalAssignmentStatement) throw new Error('expected local assignment');
 	const table = statement.values[0];
 	if (table.kind !== LuaSyntaxKind.TableConstructorExpression) throw new Error('expected table');
-	return { table, locations: parsed.chunk.locations };
+	return { table, chunk: parsed.chunk, locations: parsed.chunk.locations };
 }
 
 function insert(source: string, index: number, fieldSource: string) {
 	const model = new EditorTextModel(resource, 'lua', source);
-	const { table, locations } = parseTable(source);
+	const { table, chunk, locations } = parseTable(source);
 	const fields = table.fields.map(field => readLuaSourceRange(model.buffer, locations.range(field.span)));
-	const edits = createLuaTableFieldInsertionEdits(model.buffer, locations, table, index, fieldSource);
+	const edits = createLuaTableFieldInsertionEdits(model.buffer, chunk, table, index, fieldSource);
 	assert.ok(edits.length >= 1 && edits.length <= 2 && edits.every(edit => edit.deleteLength === 0));
 	assert.equal(new Set(edits.map(edit => edit.offset)).size, edits.length, 'coincident punctuation belongs to one producer-ordered insertion');
 	let events = 0;
@@ -149,8 +149,8 @@ test('repeated insertion reuses actual syntax and one history element per field 
 	const original = 'local values = {\n}';
 	const model = new EditorTextModel(resource, 'lua', original);
 	for (let index = 0; index < 12; index += 1) {
-		const { table, locations } = parseTable(model.buffer.getText());
-		model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, locations, table, index, String(index + 1)));
+		const { table, chunk } = parseTable(model.buffer.getText());
+		model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, chunk, table, index, String(index + 1)));
 	}
 	const expected = 'local values = {\n' + Array.from({ length: 12 }, (_, index) => '\t' + (index + 1) + (index < 11 ? ',' : '') + '\n').join('') + '}';
 	assert.equal(model.buffer.getText(), expected);

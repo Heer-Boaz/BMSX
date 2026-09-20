@@ -135,7 +135,7 @@ test('a bookmark can retain a selected descendant whose initializer bytes were n
 test('unannotated transfers keep the strict parent-correspondence rule rather than guessing a moved selection', t => {
 	const f = fixture(t);
 	assert.ok(f.target.source.kind === 'section');
-	const transfer = createLuaTableFieldTransfer(f.model.buffer, f.member.file.chunk.locations, f.member.branch.entries[1].field,
+	const transfer = createLuaTableFieldTransfer(f.model.buffer, f.member.file.chunk, f.member.branch.entries[1].field,
 		f.target.source.table, f.target.source.table.fields.length);
 	f.model.pushEditOperations(transfer.edits); f.refresh();
 	assert.equal(f.view.selection, null);

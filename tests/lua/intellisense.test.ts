@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { CodeEditorContext } from '../../ide/editor/ui/code_editor_state';
-import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
+import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -1277,4 +1277,21 @@ test('intellisense recognizes global variable from another file', async () => {
 	], { builtinDescriptors: [], externalGlobalSymbols: [] });
 	assert.ok(!frontend.getFile('usage.lua').diagnostics.some(d => /'state' is not defined/.test(d.message)),
 		'workspace global declarations, not UI reference rows, supply name binding');
+});
+
+
+test('context tokens ignore retained comment trivia and resolve declaration names across inline comments', async context => {
+	const { resolveContextMenuToken } = await intellisenseEngineModulePromise;
+	const { resetSemanticProject } = await workspaceStateModulePromise;
+	const source = 'local --[[decoy_name]] actual_name = 7 -- trailing_name\nreturn actual_name';
+	const path = 'comment_context.lua';
+	const model = new EditorTextModel({ domain: SYSTEM_RESOURCE_DOMAIN, path,
+		source: { resid: path, type: 'lua', source_path: path, generated: false } }, 'lua', source);
+	resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
+	activeCodeEditor.attach(model, createCodeEditorViewState());
+	context.after(() => { activeCodeEditor.detach(); model.dispose(); });
+	assert.equal(resolveContextMenuToken(0, 0, path)?.text, 'actual_name');
+	assert.equal(resolveContextMenuToken(0, source.indexOf('decoy_name') + 1, path), null);
+	assert.equal(resolveContextMenuToken(0, source.indexOf('trailing_name') + 1, path), null);
+	assert.equal(resolveContextMenuToken(0, source.indexOf('actual_name') + 1, path)?.text, 'actual_name');
 });

@@ -1,9 +1,6 @@
-import type { LuaSourceLocations } from '../../../toolchain/ts/lua/syntax/source_locations';
-import type { LuaTableConstructorExpression } from '../../../toolchain/ts/lua/syntax/ast';
-import { LuaLexer } from '../../../toolchain/ts/lua/syntax/lexer';
+import type { LuaChunk, LuaTableConstructorExpression } from '../../../toolchain/ts/lua/syntax/ast';
 import { getLuaTableFieldTriviaSpan } from '../../../toolchain/ts/lua/syntax/table_fields';
 import type { EditorTextEdit } from '../../editor/model/text_model';
-import { getTextSnapshot } from '../../editor/text/source_text';
 import type { TextBuffer } from '../../editor/text/text_buffer';
 
 /**
@@ -14,18 +11,18 @@ import type { TextBuffer } from '../../editor/text/text_buffer';
  */
 export function createLuaTableFieldMoveEdits(
 	buffer: TextBuffer,
-	locations: LuaSourceLocations,
+	chunk: LuaChunk,
 	table: LuaTableConstructorExpression,
 	index: number,
 	destination: number,
 ): EditorTextEdit[] {
-	const tokens = new LuaLexer(getTextSnapshot(buffer), locations.path, false).scanTokens();
+	const { locations, tokens } = chunk;
 	const selected = getLuaTableFieldTriviaSpan(locations, tokens, table.fields[index]);
 	const sibling = getLuaTableFieldTriviaSpan(locations, tokens, table.fields[destination]);
-	const selectedStart = buffer.offsetAt(selected.startToken.line - 1, selected.startToken.column - 1);
-	const selectedEnd = buffer.offsetAt(selected.endToken.line - 1, selected.endToken.column - 1);
+	const selectedStart = locations.offset(selected.startToken.unit, selected.startToken.start);
+	const selectedEnd = locations.offset(selected.endToken.unit, selected.endToken.start);
 	if (destination > index) {
-		const end = buffer.offsetAt(sibling.endToken.line - 1, sibling.endToken.column - 1);
+		const end = locations.offset(sibling.endToken.unit, sibling.endToken.start);
 		let text: string;
 		if (sibling.separator === null) {
 			const fieldEnd = locations.range(table.fields[destination].span).end;
@@ -37,7 +34,7 @@ export function createLuaTableFieldMoveEdits(
 			{ offset: selectedEnd, deleteLength: end - selectedEnd, text: '' },
 		];
 	}
-	const start = buffer.offsetAt(sibling.startToken.line - 1, sibling.startToken.column - 1);
+	const start = locations.offset(sibling.startToken.unit, sibling.startToken.start);
 	let text = buffer.getTextRange(start, selectedStart);
 	const edits: EditorTextEdit[] = [{ offset: start, deleteLength: selectedStart - start, text: '' }];
 	if (selected.separator === null) {

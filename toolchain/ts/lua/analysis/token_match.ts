@@ -18,28 +18,33 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-import type { LuaToken } from '../syntax/token';
+import { isLuaTrivia } from '../syntax/token';
+import type { LuaTokenSequence } from '../syntax/token_sequence';
 
 type MatchPath = { previous: MatchPath | null; x: number; y: number; length: number };
 
 /** Exact, ordered token correspondence. -1 denotes an unmatched old token. */
-export function matchLuaTokens(oldTokens: readonly LuaToken[], newTokens: readonly LuaToken[]): Int32Array {
-	const matches = new Int32Array(oldTokens.length).fill(-1);
+export function matchLuaTokens(oldTokens: LuaTokenSequence, newTokens: LuaTokenSequence): Int32Array {
+	const matches = new Int32Array(oldTokens.significantCount).fill(-1);
+	const oldCursor = oldTokens.cursor(), newCursor = newTokens.cursor();
+	oldCursor.seekSignificant(0);
+	newCursor.seekSignificant(0);
 	let prefix = 0;
-	while (prefix < oldTokens.length && prefix < newTokens.length
-		&& oldTokens[prefix].type === newTokens[prefix].type
-		&& oldTokens[prefix].lexeme === newTokens[prefix].lexeme) {
+	while (oldCursor.token !== undefined && newCursor.token !== undefined) {
+		if (oldCursor.token.type !== newCursor.token.type || oldCursor.token.lexeme !== newCursor.token.lexeme) break;
 		matches[prefix] = prefix;
-		prefix += 1;
+		prefix++;
+		oldCursor.advanceSignificant();
+		newCursor.advanceSignificant();
 	}
-	let oldEnd = oldTokens.length;
-	let newEnd = newTokens.length;
-	while (oldEnd > prefix && newEnd > prefix
-		&& oldTokens[oldEnd - 1].type === newTokens[newEnd - 1].type
-		&& oldTokens[oldEnd - 1].lexeme === newTokens[newEnd - 1].lexeme) {
-		oldEnd -= 1;
-		newEnd -= 1;
-		matches[oldEnd] = newEnd;
+	let oldEnd = oldTokens.significantCount, newEnd = newTokens.significantCount;
+	oldCursor.seek(oldTokens.length);
+	newCursor.seek(newTokens.length);
+	while (oldEnd > prefix && newEnd > prefix) {
+		do { oldCursor.retreat(); } while (isLuaTrivia(oldCursor.token!.type));
+		do { newCursor.retreat(); } while (isLuaTrivia(newCursor.token!.type));
+		if (oldCursor.token!.type !== newCursor.token!.type || oldCursor.token!.lexeme !== newCursor.token!.lexeme) break;
+		matches[--oldEnd] = --newEnd;
 	}
 	const width = oldEnd - prefix;
 	const height = newEnd - prefix;
@@ -62,13 +67,17 @@ export function matchLuaTokens(oldTokens: readonly LuaToken[], newTokens: readon
 				continue;
 			}
 			let end = x;
+			oldCursor.seekSignificant(prefix + x);
+			newCursor.seekSignificant(prefix + y);
 			while (end < width && y + end - x < height) {
-				const oldToken = oldTokens[prefix + end];
-				const newToken = newTokens[prefix + y + end - x];
+				const oldToken = oldCursor.token!;
+				const newToken = newCursor.token!;
 				if (oldToken.type !== newToken.type || oldToken.lexeme !== newToken.lexeme) {
 					break;
 				}
 				end += 1;
+				oldCursor.advanceSignificant();
+				newCursor.advanceSignificant();
 			}
 			const previous = paths[center + diagonal + (x === top ? 1 : -1)];
 			const path = end === x ? previous : { previous, x, y, length: end - x };

@@ -128,7 +128,7 @@ test('scene member moves use the retained parent table and preserve neighbouring
 	assert.equal(document.scenes.length, 2);
 	assert.equal(document.scenes[0].resolution, 'complete');
 	assert.equal(document.scenes[1].objects.length, 1);
-	model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, document.analysis.chunk.locations, document.scenes[0].objectsTable, 1, 0));
+	model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, document.analysis.chunk, document.scenes[0].objectsTable, 1, 0));
 	assert.equal(model.buffer.getText(), header + second + first + footer);
 	const moved = buildSceneSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), path)));
 	assert.deepEqual(moved.scenes.map(scene => scene.objects.map(object =>

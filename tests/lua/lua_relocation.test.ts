@@ -143,7 +143,7 @@ test('actual compiled BLua confirms preserved and changed captures after the syn
 	] as const) {
 		const { file, field, target, changes } = fixture(source);
 		const model = new EditorTextModel(resource, 'lua', source);
-		const transfer = createLuaTableFieldTransfer(model.buffer, file.chunk.locations, field, target, 0);
+		const transfer = createLuaTableFieldTransfer(model.buffer, file.chunk, field, target, 0);
 		model.pushEditOperations(transfer.edits);
 		assert.deepEqual(runCompiledLua(source + '\nreturn from[1]()'), [original]);
 		assert.deepEqual(runCompiledLua(model.buffer.getText() + '\nreturn to[1]()'), [moved]);
@@ -167,7 +167,7 @@ local function second(...) return {} end`, 0, 1,
 		const { file, field, target, changes } = fixture(source, from, to);
 		assert.equal(changes.length, 1);
 		const model = new EditorTextModel(resource, 'lua', source);
-		model.pushEditOperations(createLuaTableFieldTransfer(model.buffer, file.chunk.locations, field, target, 0).edits);
+		model.pushEditOperations(createLuaTableFieldTransfer(model.buffer, file.chunk, field, target, 0).edits);
 		assert.deepEqual(runCompiledLua(source + '\n' + before), [11]);
 		assert.deepEqual(runCompiledLua(model.buffer.getText() + '\n' + after), [22]);
 		model.dispose();

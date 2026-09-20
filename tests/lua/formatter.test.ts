@@ -61,14 +61,18 @@ test('formatting real source is idempotent and preserves non-whitespace lexemes 
 		const source = readFileSync(path, 'utf8');
 		const formatted = formatLuaDocument(source, source.split('\n'));
 		assert.equal(formatLuaDocument(formatted, formatted.split('\n')), formatted, path);
-		const before = new LuaLexer(source, path, false).scanTokens();
-		const after = new LuaLexer(formatted, path, false).scanTokens();
-		assert.deepEqual(
-			after.filter(token => token.type !== LuaTokenType.WhitespaceTrivia && token.type !== LuaTokenType.NewLineTrivia)
-				.map(token => [token.type, token.lexeme, token.literal]),
-			before.filter(token => token.type !== LuaTokenType.WhitespaceTrivia && token.type !== LuaTokenType.NewLineTrivia)
-				.map(token => [token.type, token.lexeme, token.literal]),
-			path,
-		);
+		const before = new LuaLexer(source, path).scanTokens();
+		const after = new LuaLexer(formatted, path).scanTokens();
+		const previous = before.cursor(), next = after.cursor();
+		while (previous.token !== undefined && next.token !== undefined) {
+			while (previous.token.type === LuaTokenType.WhitespaceTrivia || previous.token.type === LuaTokenType.NewLineTrivia) previous.advance();
+			while (next.token.type === LuaTokenType.WhitespaceTrivia || next.token.type === LuaTokenType.NewLineTrivia) next.advance();
+			assert.deepEqual([next.token.type, next.token.lexeme, next.token.literal],
+				[previous.token.type, previous.token.lexeme, previous.token.literal], path);
+			previous.advance();
+			next.advance();
+		}
+		assert.equal(previous.token, undefined);
+		assert.equal(next.token, undefined);
 	}
 });

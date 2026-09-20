@@ -3,15 +3,16 @@ import { matchLuaTokens } from '../analysis/token_match';
 import type { SourcePosition, SourceRange } from '../source_range';
 import { LuaSyntaxKind, type LuaFunctionExpression } from '../syntax/ast';
 import { walkLuaAst } from '../syntax/ast/traversal';
-import type { LuaToken } from '../syntax/token';
+import { isLuaTrivia } from '../syntax/token';
+import type { LuaTokenSequence } from '../syntax/token_sequence';
 import { buildLuaFileSemanticData, type FileSemanticData } from './model';
 import { compareSourcePosition, sourcePositionKey, sourceRangeKey } from './source_range';
 
 class FileCorrespondence {
 	private readonly oldFile: FileSemanticData;
 	private readonly newFile: FileSemanticData;
-	private readonly oldTokens: readonly LuaToken[];
-	private readonly newTokens: readonly LuaToken[];
+	private readonly oldTokens: LuaTokenSequence;
+	private readonly newTokens: LuaTokenSequence;
 	private readonly tokens: Int32Array;
 	private readonly scopes: Int32Array;
 	private readonly oldDeclarations = new Map<string, number>();
@@ -40,8 +41,9 @@ class FileCorrespondence {
 			if (targetToken < 0) {
 				continue;
 			}
-			const token = this.newTokens[targetToken];
-			const target = newScopes.get(`${token.endLine}:${token.endColumn + 1}`);
+			const token = this.newTokens.getSignificant(targetToken);
+			const end = this.newFile.chunk.locations.range(token).end;
+			const target = newScopes.get(`${end.line}:${end.column + 1}`);
 			if (target !== undefined && this.newFile.scopes[target].parentIndex === this.scopes[scope.parentIndex]) {
 				this.scopes[index] = target;
 			}
@@ -78,18 +80,15 @@ class FileCorrespondence {
 	}
 
 	private tokenAt(position: SourcePosition): number {
-		let low = 0;
-		let high = this.oldTokens.length;
-		while (low < high) {
-			const middle = (low + high) >>> 1;
-			const token = this.oldTokens[middle];
-			if (compareSourcePosition(token.line, token.column, position.line, position.column) <= 0) low = middle + 1;
-			else high = middle;
-		}
-		const index = low - 1;
-		if (index < 0) return -1;
-		const token = this.oldTokens[index];
-		return compareSourcePosition(position.line, position.column, token.endLine, token.endColumn) <= 0 ? index : -1;
+		const locations = this.oldFile.chunk.locations;
+		const cursor = this.oldTokens.cursor();
+		cursor.seekOffset(locations.offsetAt(position));
+		const token = cursor.token;
+		if (token === undefined || isLuaTrivia(token.type)) return -1;
+		const range = locations.range(token);
+		return compareSourcePosition(range.start.line, range.start.column, position.line, position.column) <= 0
+			&& compareSourcePosition(position.line, position.column, range.end.line, range.end.column) <= 0
+			? cursor.significantIndex : -1;
 	}
 
 	private mapRange(range: SourceRange, enclosing: boolean): SourceRange | undefined {
@@ -101,27 +100,29 @@ class FileCorrespondence {
 			// Compare the exact syntax span from its matched opening. Global LCS
 			// ties may assign its closing ')' to a later inserted statement.
 			targetEnd = this.tokens[start] + end - start;
-			if (targetEnd >= this.newTokens.length) return undefined;
+			if (targetEnd >= this.newTokens.significantCount) return undefined;
 			for (let index = start; index <= end; index += 1) {
-				const oldToken = this.oldTokens[index];
-				const newToken = this.newTokens[this.tokens[start] + index - start];
+				const oldToken = this.oldTokens.getSignificant(index);
+				const newToken = this.newTokens.getSignificant(this.tokens[start] + index - start);
 				if (oldToken.type !== newToken.type || oldToken.lexeme !== newToken.lexeme) return undefined;
 			}
 		}
 		if (targetEnd < 0) return undefined;
-		const startToken = this.newTokens[this.tokens[start]];
-		const endToken = this.newTokens[targetEnd];
+		const startToken = this.newFile.chunk.locations.range(this.newTokens.getSignificant(this.tokens[start])).start;
+		const endToken = this.newFile.chunk.locations.range(this.newTokens.getSignificant(targetEnd)).start;
+		const oldStart = this.oldFile.chunk.locations.range(this.oldTokens.getSignificant(start)).start;
+		const oldEnd = this.oldFile.chunk.locations.range(this.oldTokens.getSignificant(end)).start;
 		return {
 			path: range.path,
 			start: {
-				line: startToken.line + range.start.line - this.oldTokens[start].line,
-				column: range.start.line === this.oldTokens[start].line
-					? startToken.column + range.start.column - this.oldTokens[start].column : range.start.column,
+				line: startToken.line + range.start.line - oldStart.line,
+				column: range.start.line === oldStart.line
+					? startToken.column + range.start.column - oldStart.column : range.start.column,
 			},
 			end: {
-				line: endToken.line + range.end.line - this.oldTokens[end].line,
-				column: range.end.line === this.oldTokens[end].line
-					? endToken.column + range.end.column - this.oldTokens[end].column : range.end.column,
+				line: endToken.line + range.end.line - oldEnd.line,
+				column: range.end.line === oldEnd.line
+					? endToken.column + range.end.column - oldEnd.column : range.end.column,
 			},
 		};
 	}

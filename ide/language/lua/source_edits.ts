@@ -13,7 +13,7 @@ import {
 } from '../../../toolchain/ts/lua/syntax/ast';
 import { findLuaTableFieldSeparator } from '../../../toolchain/ts/lua/syntax/table_fields';
 import { quoteLuaString } from '../../../toolchain/ts/lua/syntax/string_literal';
-import type { LuaToken } from '../../../toolchain/ts/lua/syntax/token';
+import type { LuaTokenSequence } from '../../../toolchain/ts/lua/syntax/token_sequence';
 import type { EditorTextEdit } from '../../editor/model/text_model';
 import type { TextBuffer } from '../../editor/text/text_buffer';
 import type { TrackedTextRange } from '../../editor/text/text_change';
@@ -49,7 +49,7 @@ export function luaSourcePositionMatchesTextRange(buffer: TextBuffer, position: 
 export function createLuaTableFieldRemovalEdits(
 	buffer: TextBuffer,
 	locations: LuaSourceLocations,
-	tokens: readonly LuaToken[],
+	tokens: LuaTokenSequence,
 	field: LuaTableField,
 ): EditorTextEdit[] {
 	const start = buffer.offsetAt(locations.range(field.span).start.line - 1, locations.range(field.span).start.column - 1);
@@ -57,7 +57,7 @@ export function createLuaTableFieldRemovalEdits(
 	const edits: EditorTextEdit[] = [{ offset: start, deleteLength: end - start, text: '' }];
 	const separator = findLuaTableFieldSeparator(locations, tokens, field);
 	if (separator !== null) {
-		edits.push({ offset: buffer.offsetAt(separator.line - 1, separator.column - 1), deleteLength: separator.lexeme.length, text: '' });
+		edits.push({ offset: locations.offset(separator.unit, separator.start), deleteLength: separator.lexeme.length, text: '' });
 	}
 	return edits;
 }

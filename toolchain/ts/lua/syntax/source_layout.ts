@@ -157,9 +157,8 @@ export class LuaSourceLayoutBuilder {
 		this.setParent(this.root, 0);
 	}
 
-	public insertUnit(offset: number): LuaSourceUnit {
+	public insertUnit(offset: number, unit = createLuaSourceUnit()): LuaSourceUnit {
 		const [left, right] = this.split(this.root, offset, false);
-		const unit = createLuaSourceUnit();
 		this.records.set(unit, { kind: 'unit', unit, parent: 0, width: 0, breaks: 0, tail: 0, height: 1 });
 		this.root = this.join(this.join(left, unit), right);
 		this.setParent(this.root, 0);

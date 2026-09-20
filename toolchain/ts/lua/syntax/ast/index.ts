@@ -1,7 +1,7 @@
 import type { LuaSourceUnit } from '../source_layout';
 import type { LuaSourceLocations, LuaSyntaxSpan } from '../source_locations';
 import type { LuaSyntaxError } from '../../errors';
-import type { LuaToken } from '../token';
+import type { LuaTokenSequence } from '../token_sequence';
 
 export type LuaSourcePosition = {
 	readonly line: number;
@@ -116,7 +116,7 @@ export type LuaChunk = LuaNode & {
 	/** One immutable source generation, retained with its syntax rather than a path cache. */
 	readonly source: string;
 	readonly locations: LuaSourceLocations;
-	readonly tokens: readonly LuaToken[];
+	readonly tokens: LuaTokenSequence;
 	readonly syntaxError: LuaSyntaxError | null;
 	readonly constModule: boolean;
 	readonly entryModule: boolean;

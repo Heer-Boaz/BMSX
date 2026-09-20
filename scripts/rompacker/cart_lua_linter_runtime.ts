@@ -1,3 +1,4 @@
+import { LuaSourceLocations } from '../../toolchain/ts/lua/syntax/source_locations';
 import { type LuaExpression as Expression, type LuaFunctionDeclarationStatement as FunctionDeclarationStatement, type LuaFunctionExpression as CartFunctionExpression, type LuaLocalFunctionStatement as LocalFunctionStatement, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { LuaSyntaxError as ParserSyntaxError } from '../../toolchain/ts/lua/errors';
 import { LuaLexer as Lexer } from '../../toolchain/ts/lua/syntax/lexer';
@@ -570,8 +571,9 @@ export async function lintCartSources(options: CartLintOptions): Promise<void> {
 			const lexer = new Lexer(source, workspacePath);
 			const lexed = lexer.scanTokensWithRecovery();
 			const tokens = lexed.tokens;
-			lintUppercaseCode(workspacePath, tokens, issues, pushIssueAt);
-			if (lintSyntaxError(lexed.syntaxError, issues)) {
+			if (lexed.syntaxError !== null) {
+				lintUppercaseCode(LuaSourceLocations.fromLexical(workspacePath, source, tokens), tokens, issues, pushIssueAt);
+				lintSyntaxError(lexed.syntaxError, issues);
 				continue;
 			}
 			const parser = new Parser(tokens, workspacePath, source);
@@ -585,6 +587,7 @@ export async function lintCartSources(options: CartLintOptions): Promise<void> {
 				}
 				throw error;
 			}
+			lintUppercaseCode(parsed.path.locations, tokens, issues, pushIssueAt);
 			if (lintSyntaxError(parsed.syntaxError, issues)) {
 				continue;
 			}

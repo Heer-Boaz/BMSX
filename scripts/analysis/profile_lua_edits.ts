@@ -29,12 +29,13 @@ for (const path of paths) {
 	const file = baseline.getFileData(path)!;
 	assert(file, `No workspace source: ${path}`);
 	assert.equal(file.syntaxError, null, `${path} must start with valid syntax`);
-	const tokens = new LuaLexer(file.source, path).scanTokens();
-	const identifier = tokens.find(token => token.type === LuaTokenType.Identifier)!;
+	const cursor = file.chunk.tokens.cursor();
+	while (cursor.token!.type !== LuaTokenType.Identifier) cursor.advance();
+	const identifier = cursor.token!;
 	const lines = file.source.split('\n');
 	const lineOffsets = [0];
 	for (let row = 1; row < lines.length; row++) lineOffsets.push(lineOffsets[row - 1] + lines[row - 1].length + 1);
-	const identifierOffset = lineOffsets[identifier.line - 1] + identifier.column - 1;
+	const identifierOffset = cursor.offset;
 	let editedFunction: LuaFunctionExpression;
 	walkLuaAst(file.chunk, node => {
 		if (editedFunction !== undefined) return false;

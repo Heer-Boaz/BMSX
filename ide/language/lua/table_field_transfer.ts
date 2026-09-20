@@ -1,10 +1,7 @@
-import type { LuaSourceLocations } from '../../../toolchain/ts/lua/syntax/source_locations';
-import type { LuaTableConstructorExpression, LuaTableField } from '../../../toolchain/ts/lua/syntax/ast';
-import { LuaLexer } from '../../../toolchain/ts/lua/syntax/lexer';
+import type { LuaChunk, LuaTableConstructorExpression, LuaTableField } from '../../../toolchain/ts/lua/syntax/ast';
 import { getLuaTableFieldTriviaSpan } from '../../../toolchain/ts/lua/syntax/table_fields';
 import { findLuaTokenAfterPosition, luaTokenLeadingTriviaStart } from '../../../toolchain/ts/lua/syntax/token_navigation';
 import type { EditorTextEdit } from '../../editor/model/text_model';
-import { getTextSnapshot } from '../../editor/text/source_text';
 import type { TextBuffer } from '../../editor/text/text_buffer';
 import type { TrackedTextRange } from '../../editor/text/text_change';
 
@@ -26,15 +23,15 @@ export type LuaTableFieldTransfer = {
  */
 export function createLuaTableFieldTransfer(
 	buffer: TextBuffer,
-	locations: LuaSourceLocations,
+	chunk: LuaChunk,
 	field: LuaTableField,
 	target: LuaTableConstructorExpression,
 	destination: number,
 ): LuaTableFieldTransfer {
-	const tokens = new LuaLexer(getTextSnapshot(buffer), locations.path, false).scanTokens();
+	const { locations, tokens } = chunk;
 	const selected = getLuaTableFieldTriviaSpan(locations, tokens, field);
-	const start = buffer.offsetAt(selected.startToken.line - 1, selected.startToken.column - 1);
-	const end = buffer.offsetAt(selected.endToken.line - 1, selected.endToken.column - 1);
+	const start = locations.offset(selected.startToken.unit, selected.startToken.start);
+	const end = locations.offset(selected.endToken.unit, selected.endToken.start);
 	const fieldStart = buffer.offsetAt(locations.range(field.span).start.line - 1, locations.range(field.span).start.column - 1);
 	const fieldEnd = buffer.offsetAt(locations.range(field.span).end.line - 1, locations.range(field.span).end.column);
 	let text: string;
@@ -49,11 +46,11 @@ export function createLuaTableFieldTransfer(
 	let precedingInsertion = 0;
 	if (destination < target.fields.length) {
 		const next = getLuaTableFieldTriviaSpan(locations, tokens, target.fields[destination]).startToken;
-		offset = buffer.offsetAt(next.line - 1, next.column - 1);
+		offset = locations.offset(next.unit, next.start);
 	} else if (target.fields.length > 0) {
 		const previous = target.fields[target.fields.length - 1];
 		const span = getLuaTableFieldTriviaSpan(locations, tokens, previous);
-		offset = buffer.offsetAt(span.endToken.line - 1, span.endToken.column - 1);
+		offset = locations.offset(span.endToken.unit, span.endToken.start);
 		if (span.separator === null) {
 			const punctuation = buffer.offsetAt(locations.range(previous.span).end.line - 1, locations.range(previous.span).end.column);
 			if (punctuation === offset) {
@@ -65,9 +62,9 @@ export function createLuaTableFieldTransfer(
 			}
 		}
 	} else {
-		const closeIndex = findLuaTokenAfterPosition(tokens, locations.range(target.span).end) - 1;
-		const anchor = tokens[luaTokenLeadingTriviaStart(tokens, closeIndex)];
-		offset = buffer.offsetAt(anchor.line - 1, anchor.column - 1);
+		const closeIndex = findLuaTokenAfterPosition(locations, tokens, locations.range(target.span).end) - 1;
+		const anchor = tokens.get(luaTokenLeadingTriviaStart(tokens, closeIndex));
+		offset = locations.offset(anchor.unit, anchor.start);
 	}
 	edits.push({ offset, deleteLength: 0, text });
 	edits.sort((left, right) => left.offset - right.offset);

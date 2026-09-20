@@ -69,8 +69,8 @@ test('recovery EOF stays at the failing token while source layout retains the sk
 	for (const suffix of ['"unterminated\nremaining', '--[=[unterminated\nremaining', '[==[unterminated']) {
 		const source = 'local a = 1\n' + suffix;
 		const parsed = parseLuaChunkWithRecovery(source, 'recovery.lua');
-		const token = parsed.tokens[parsed.tokens.length - 1];
-		assert.equal(token.offset, 12);
+		const token = parsed.tokens.get(parsed.tokens.length - 1);
+		assert.equal(parsed.chunk.locations.offset(token.unit, token.start), 12);
 		assert.deepEqual(parsed.chunk.locations.range(parsed.chunk.span).end, { line: 2, column: 1 });
 		assert.equal(parsed.chunk.locations.layout.read(0, source.length), source);
 	}
@@ -85,7 +85,7 @@ test('standalone expression retains its own source generation without a fabricat
 test('recovery owns discarded nested unit markers and lexical suffixes explicitly', () => {
 	for (const source of ['a', 'a\nlocal b=1', 'local function f() a end', 'local = 1;', 'local function f() return 1', 'do\nlocal a=1\n', 'local a="bad\nrest', 'local function f() a.\nreturn 1 end']) {
 		const { chunk } = parseLuaChunkWithRecovery(source, 'skipped.lua');
-		const owned = new Set<number>();
+		const owned = new Set<number>(Array.from(chunk.tokens.placements(), entry => entry.unit));
 		walkLuaAst(chunk, node => {
 			owned.add(node.span.unit);
 			if (node.kind === LuaSyntaxKind.Block || node.kind === LuaSyntaxKind.Chunk) {

@@ -16,7 +16,7 @@ test('Lua string emission round-trips bytes, delimiters and Unicode through the 
 		assert.equal(source[source.length - 1], quote);
 		const tokens = new LuaLexer(source, 'string.lua').scanTokens();
 		assert.equal(tokens.length, 2);
-		assert.equal(tokens[0].literal, value);
+		assert.equal(tokens.get(0).literal, value);
 	}
 	assert.equal(quoteLuaString('\0' + '123'), "'\\x00123'");
 });

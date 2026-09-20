@@ -1,5 +1,6 @@
 import { LuaLexer } from '../../../toolchain/ts/lua/syntax/lexer';
-import type { LuaToken } from '../../../toolchain/ts/lua/syntax/token';
+import type { LuaTokenSequence } from '../../../toolchain/ts/lua/syntax/token_sequence';
+import { LuaSourceLocations } from '../../../toolchain/ts/lua/syntax/source_locations';
 import { isLuaTrivia, LuaTokenType } from '../../../toolchain/ts/lua/syntax/token';
 
 type LineMetadata = {
@@ -30,9 +31,9 @@ export function formatLuaDocument(source: string, lines: readonly string[]): str
 	if (source.length === 0) {
 		return '';
 	}
-	const lexer = new LuaLexer(source, 'lua-editor', /*skipTrivia*/ false);
+	const lexer = new LuaLexer(source, 'lua-editor');
 	const tokens = lexer.scanTokens();
-	const metadata = computeLineMetadata(lines.length, tokens);
+	const metadata = computeLineMetadata(lines.length, tokens, LuaSourceLocations.fromLexical('lua-editor', source, tokens));
 	const formatted: string[] = [];
 	let indentLevel = 0;
 	for (let index = 0; index < lines.length; index += 1) {
@@ -63,7 +64,7 @@ export function formatLuaDocument(source: string, lines: readonly string[]): str
 	return formatted.join('\n');
 }
 
-function computeLineMetadata(lineCount: number, tokens: readonly LuaToken[]): LineMetadata[] {
+function computeLineMetadata(lineCount: number, tokens: LuaTokenSequence, locations: LuaSourceLocations): LineMetadata[] {
 	const metadata: LineMetadata[] = new Array(lineCount);
 	for (let index = 0; index < lineCount; index += 1) {
 		metadata[index] = {
@@ -75,13 +76,15 @@ function computeLineMetadata(lineCount: number, tokens: readonly LuaToken[]): Li
 	}
 	let tokenLine = 0;
 	let atLineStart = true;
-	for (let index = 0; index < tokens.length; index += 1) {
-		const token = tokens[index];
+	for (const cursor = tokens.cursor(); cursor.token !== undefined; cursor.advance()) {
+		const token = cursor.token;
 		if (token.type === LuaTokenType.Eof) break;
-		const info = metadata[token.line - 1];
+		if (token.type === LuaTokenType.WhitespaceTrivia || token.type === LuaTokenType.NewLineTrivia) continue;
+		const range = locations.range(token);
+		const info = metadata[range.start.line - 1];
 		if (token.type === LuaTokenType.String || token.type === LuaTokenType.MultiLineCommentTrivia) {
 			// Prefixes/suffixes crossing a token are content, not indentation.
-			for (let line = token.line; line < token.endLine; line += 1) {
+			for (let line = range.start.line; line < range.end.line; line += 1) {
 				metadata[line - 1].preserveTrailingWhitespace = true;
 				metadata[line].preserveLeadingWhitespace = true;
 			}
@@ -89,8 +92,8 @@ function computeLineMetadata(lineCount: number, tokens: readonly LuaToken[]): Li
 			info.preserveTrailingWhitespace = true;
 		}
 		if (isLuaTrivia(token.type)) continue;
-		if (token.line !== tokenLine) {
-			tokenLine = token.line;
+		if (range.start.line !== tokenLine) {
+			tokenLine = range.start.line;
 			atLineStart = true;
 		}
 		if (CLOSING_TOKENS.has(token.type)) {

@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
+import { LuaSourceLocations } from '../../toolchain/ts/lua/syntax/source_locations';
 import { LuaSyntaxError } from '../../toolchain/ts/lua/errors';
-import { LuaTokenType, type LuaToken } from '../../toolchain/ts/lua/syntax/token';
+import { isLuaTrivia, LuaTokenType, type LuaToken } from '../../toolchain/ts/lua/syntax/token';
 
 function lex(source: string): LuaToken[] {
 	const lexer = new LuaLexer(source, 'path');
-	return lexer.scanTokens();
+	const tokens = lexer.scanTokens();
+	return Array.from(tokens.blocks(), ({ block }) => block.items).flat().filter(token => !isLuaTrivia(token.type));
 }
 
 function requireNumberLiteral(token: LuaToken): number {
@@ -100,17 +102,13 @@ test('parses strings with escapes', () => {
 	assert.equal(requireStringLiteral(tokens[3]), 'tab\t');
 });
 
-test('tracks token positions', () => {
-	const tokens = lex('local a\nreturn a');
-	const localToken = tokens[0];
-	const identifierToken = tokens[1];
-	const returnToken = tokens[2];
-	assert.equal(localToken.line, 1);
-	assert.equal(localToken.column, 1);
-	assert.equal(identifierToken.line, 1);
-	assert.equal(identifierToken.column, 7);
-	assert.equal(returnToken.line, 2);
-	assert.equal(returnToken.column, 1);
+test('tracks relative token positions through the lexical generation', () => {
+	const source = 'local a\nreturn a';
+	const tokens = new LuaLexer(source, 'path').scanTokens();
+	const locations = LuaSourceLocations.fromLexical('path', source, tokens);
+	assert.deepEqual(locations.range(tokens.getSignificant(0)).start, { line: 1, column: 1 });
+	assert.deepEqual(locations.range(tokens.getSignificant(1)).start, { line: 1, column: 7 });
+	assert.deepEqual(locations.range(tokens.getSignificant(2)).start, { line: 2, column: 1 });
 });
 
 test('recognizes vararg marker', () => {

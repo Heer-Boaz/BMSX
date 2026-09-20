@@ -2,7 +2,8 @@ import { LuaSourceLocations, type LuaSyntaxSpan } from './source_locations';
 import { createLuaSourceUnit, type LuaSourceUnitPlacement } from './source_layout';
 import { LuaSyntaxError } from '../errors';
 import type { LuaToken } from './token';
-import { LuaTokenType } from './token';
+import { LuaTokenType, isLuaTrivia } from './token';
+import type { LuaTokenSequence, LuaTokenCursor } from './token_sequence';
 import {
 	LuaSyntaxKind,
 	LuaBinaryOperator,
@@ -119,7 +120,13 @@ const REPEAT_TERMINATORS: ReadonlySet<LuaTokenType> = new Set([LuaTokenType.Unti
 
 /** One syntax-generation builder; publication transfers its location index. */
 export class LuaParser {
-	private readonly tokens: ReadonlyArray<LuaToken>;
+	private readonly tokens: LuaTokenSequence;
+	private readonly cursor: LuaTokenCursor;
+	private readonly lexicalUnits: LuaSourceUnitPlacement[];
+	private nextLexicalUnit = 0;
+	private readonly recoveryUnits: LuaSyntaxSpan['unit'][] = [];
+	private startsNewLine = false;
+	private readonly locations: LuaSourceLocations;
 	private readonly path: string;
 	private readonly source: string;
 	private index: number;
@@ -130,12 +137,17 @@ export class LuaParser {
 	private readonly units: LuaSourceUnitPlacement[] = [this.currentUnit];
 	private unitOrigins: Map<LuaSourceUnitPlacement['unit'], number> | undefined = new Map([[this.currentUnit.unit, 0]]);
 
-	constructor(tokens: ReadonlyArray<LuaToken>, path: string, source: string) {
+	constructor(tokens: LuaTokenSequence, path: string, source: string) {
 		this.tokens = tokens;
 		this.path = path;
 		this.source = source;
 		this.index = 0;
-		this.previousToken = this.tokens[0];
+		this.lexicalUnits = [...tokens.placements()];
+		for (const placement of this.lexicalUnits) this.unitOrigins.set(placement.unit, placement.offset);
+		this.locations = LuaSourceLocations.fromSource(path, source, this.units, this.unitOrigins);
+		this.cursor = tokens.cursor();
+		while (isLuaTrivia(this.cursor.token!.type)) this.cursor.advance();
+		this.previousToken = this.cursor.token!;
 	}
 
 	public parseChunk(): LuaChunk {
@@ -169,7 +181,7 @@ export class LuaParser {
 		const moduleAttribute = this.parseModuleAttribute();
 		const block = this.parseBlock(CHUNK_TERMINATORS);
 		const eofToken = this.consume(LuaTokenType.Eof, 'Expected end of input.');
-		const end = eofToken.offset;
+		const end = this.spanStart(eofToken);
 		const span: LuaSyntaxSpan = this.createSpan(this.spanStart(block.span), end);
 		const locations = this.publishLocations();
 		const diagnostic = this.recoveredSyntaxError;
@@ -191,7 +203,7 @@ export class LuaParser {
 			entryModule: moduleAttribute === 'entry',
 			body: block.body,
 			skippedSyntax: lexicalError === null ? block.skippedSyntax : [...block.skippedSyntax, {
-				span: this.createSpan(eofToken.offset, this.source.length - 1), units: [],
+				span: this.createSpan(end, this.source.length - 1), units: [],
 			}],
 		};
 		return { path, syntaxError };
@@ -206,7 +218,7 @@ export class LuaParser {
 			|| this.peekType(3) !== LuaTokenType.Greater) {
 			return null;
 		}
-		const attribute = this.tokens[this.index + 2].lexeme;
+		const attribute = this.cursor.peekSignificant(2)!.lexeme;
 		if (attribute !== 'const' && attribute !== 'entry') {
 			return null;
 		}
@@ -232,8 +244,8 @@ export class LuaParser {
 				statements.push(this.parseStatement());
 				continue;
 			}
-			const skippedStart = this.current().offset;
-			const firstUnit = this.units.length;
+			const skippedStart = this.spanStart(this.current());
+			const firstUnit = this.recoveryUnits.length;
 			try {
 				statements.push(this.parseStatement());
 			} catch (error) {
@@ -243,18 +255,17 @@ export class LuaParser {
 				this.retainSyntaxError(error);
 				this.synchronizeStatement(terminators);
 				if (skippedSyntax === undefined) skippedSyntax = [];
-				const units = new Array<LuaSourceUnitPlacement['unit']>(this.units.length - firstUnit);
-				for (let index = firstUnit; index < this.units.length; index++) units[index - firstUnit] = this.units[index].unit;
-				skippedSyntax.push({ span: this.createSpan(skippedStart, this.current().offset - 1), units });
+				const units = this.recoveryUnits.slice(firstUnit);
+				skippedSyntax.push({ span: this.createSpan(skippedStart, this.spanStart(this.current()) - 1), units });
 			}
 		}
-		const startPosition = statements.length > 0 ? this.spanStart(statements[0].span) : startToken.offset;
+		const startPosition = statements.length > 0 ? this.spanStart(statements[0].span) : this.spanStart(startToken);
 		const endPosition = statements.length > 0 ? this.spanEnd(statements[statements.length - 1].span) : startPosition;
 		return {
 			kind: LuaSyntaxKind.Block,
 			startInclusive: startInclusive - this.currentUnit.offset,
 			span: this.createSpan(startPosition, endPosition),
-			endExclusive: this.current().offset - this.currentUnit.offset,
+			endExclusive: this.spanStart(this.current()) - this.currentUnit.offset,
 			body: statements,
 			skippedSyntax: skippedSyntax === undefined ? EMPTY_SKIPPED_SYNTAX : skippedSyntax,
 		};
@@ -266,7 +277,7 @@ export class LuaParser {
 				return;
 			}
 			const token = this.current();
-			if (token.line > this.previous().endLine && this.isStatementStart(token.type)) {
+			if (this.startsNewLine && this.isStatementStart(token.type)) {
 				return;
 			}
 			this.advance();
@@ -298,7 +309,7 @@ export class LuaParser {
 
 	private parseStatement(): LuaStatement {
 		const parentUnit = this.currentUnit;
-		this.beginUnit(this.current().offset);
+		this.beginUnit(this.spanStart(this.current()));
 		try { return this.parseStatementBody(); }
 		finally { this.currentUnit = parentUnit; }
 	}
@@ -383,7 +394,7 @@ export class LuaParser {
 			fields.push({
 				name: fieldToken.lexeme,
 				typeRef,
-				span: this.createSpan(fieldToken.offset, this.spanEnd(typeRef.span)),
+				span: this.createSpan(this.spanStart(fieldToken), this.spanEnd(typeRef.span)),
 			});
 			this.match(LuaTokenType.Comma);
 			this.match(LuaTokenType.Semicolon);
@@ -406,7 +417,7 @@ export class LuaParser {
 		this.match(LuaTokenType.Semicolon);
 		return {
 			kind: LuaSyntaxKind.BssDeclarationStatement,
-			span: this.createSpan(bssToken.offset, this.spanEnd(typeRef.span)),
+			span: this.createSpan(this.spanStart(bssToken), this.spanEnd(typeRef.span)),
 			name,
 			typeRef,
 		};
@@ -423,7 +434,7 @@ export class LuaParser {
 		this.match(LuaTokenType.Semicolon);
 		return {
 			kind: LuaSyntaxKind.DataDeclarationStatement,
-			span: this.createSpan(dataToken.offset, this.spanEnd(initializer.span)),
+			span: this.createSpan(this.spanStart(dataToken), this.spanEnd(initializer.span)),
 			name,
 			typeRef,
 			initializer,
@@ -441,7 +452,7 @@ export class LuaParser {
 		this.match(LuaTokenType.Semicolon);
 		return {
 			kind: LuaSyntaxKind.RodataDeclarationStatement,
-			span: this.createSpan(rodataToken.offset, this.spanEnd(initializer.span)),
+			span: this.createSpan(this.spanStart(rodataToken), this.spanEnd(initializer.span)),
 			name,
 			typeRef,
 			initializer,
@@ -543,7 +554,7 @@ export class LuaParser {
 		}
 		return {
 			kind: LuaSyntaxKind.LocalAssignmentStatement,
-			span: this.createSpan(localToken.offset, endPosition),
+			span: this.createSpan(this.spanStart(localToken), endPosition),
 			names,
 			attributes,
 			pointerTypeRefs,
@@ -614,7 +625,7 @@ export class LuaParser {
 
 	private parseFunctionExpression(functionToken: LuaToken): LuaFunctionExpression {
 		const parentUnit = this.currentUnit;
-		this.beginUnit(functionToken.offset);
+		this.beginUnit(this.spanStart(functionToken));
 		try { return this.parseFunctionExpressionBody(functionToken); }
 		finally { this.currentUnit = parentUnit; }
 	}
@@ -670,7 +681,7 @@ export class LuaParser {
 		}
 		return {
 			kind: LuaSyntaxKind.ReturnStatement,
-			span: this.createSpan(returnToken.offset, endPosition),
+			span: this.createSpan(this.spanStart(returnToken), endPosition),
 			expressions,
 		};
 	}
@@ -679,7 +690,7 @@ export class LuaParser {
 		if (this.match(LuaTokenType.Semicolon)) {
 			// Semicolon is optional and ignored.
 		}
-		return this.createSpan(firstToken.offset, this.tokenEndOffset(this.previous()));
+		return this.createSpan(this.spanStart(firstToken), this.tokenEndOffset(this.previous()));
 	}
 
 	private parseIfStatement(): LuaIfStatement {
@@ -1013,7 +1024,7 @@ export class LuaParser {
 	private matchBinaryOperator(operators: readonly LuaBinaryOperatorSpec[]): LuaBinaryOperator | null {
 		for (let index = 0; index < operators.length; index += 1) {
 			const [tokenType, operator] = operators[index];
-			if (tokenType === LuaTokenType.Star && this.startsOnNewLine(this.current())) {
+			if (tokenType === LuaTokenType.Star && this.startsNewLine) {
 				continue;
 			}
 			if (this.match(tokenType)) {
@@ -1021,10 +1032,6 @@ export class LuaParser {
 			}
 		}
 		return null;
-	}
-
-	private startsOnNewLine(token: LuaToken): boolean {
-		return this.previous().endLine < token.line;
 	}
 
 	private parsePrefixExpression(): LuaExpression {
@@ -1147,7 +1154,7 @@ export class LuaParser {
 				if (!this.recoverStatements || this.startsExpression()) {
 					args.push(this.parseExpression());
 					while (this.match(LuaTokenType.Comma)) {
-						separators.push(this.previous().offset - this.currentUnit.offset);
+						separators.push(this.spanStart(this.previous()) - this.currentUnit.offset);
 						if (this.recoverStatements && !this.startsExpression()) {
 							this.retainTokenError(this.current(), 'Expected expression after ",".');
 							break;
@@ -1165,7 +1172,7 @@ export class LuaParser {
 					arguments: args,
 					end,
 					argumentList: {
-						span: this.createSpan(leftParen.offset, end),
+						span: this.createSpan(this.spanStart(leftParen), end),
 						separators,
 					},
 				};
@@ -1177,13 +1184,13 @@ export class LuaParser {
 			const current = this.current();
 			const previous = this.previous();
 			const end = current.type === LuaTokenType.Eof
-				? current.offset
+				? this.spanStart(current)
 				: this.tokenEndOffset(previous) + 1;
 			return {
 				arguments: args,
 				end,
 				argumentList: {
-					span: this.createSpan(leftParen.offset, end),
+					span: this.createSpan(this.spanStart(leftParen), end),
 					separators,
 				},
 			};
@@ -1348,7 +1355,7 @@ export class LuaParser {
 		return {
 			name: nameToken.lexeme,
 			arrayLengths,
-			span: this.createSpan(nameToken.offset, end),
+			span: this.createSpan(this.spanStart(nameToken), end),
 		};
 	}
 
@@ -1431,7 +1438,7 @@ export class LuaParser {
 	private createUnaryExpression(operatorToken: LuaToken, operand: LuaExpression, operator: LuaUnaryOperator): LuaUnaryExpression {
 		return {
 			kind: LuaSyntaxKind.UnaryExpression,
-			span: this.createSpan(operatorToken.offset, this.spanEnd(operand.span)),
+			span: this.createSpan(this.spanStart(operatorToken), this.spanEnd(operand.span)),
 			operator,
 			operand,
 		};
@@ -1485,7 +1492,7 @@ export class LuaParser {
 	}
 
 	private current(): LuaToken {
-		return this.tokens[this.index];
+		return this.cursor.token!;
 	}
 
 	private previous(): LuaToken {
@@ -1493,9 +1500,15 @@ export class LuaParser {
 	}
 
 	private advance(): LuaToken {
-		const token = this.tokens[this.index];
-		if (!this.isAtEnd()) {
+		const token = this.cursor.token!;
+		if (token.type !== LuaTokenType.Eof) {
 			this.index += 1;
+			this.startsNewLine = false;
+			this.cursor.advance();
+			while (isLuaTrivia(this.cursor.token!.type)) {
+				if (this.cursor.token!.breaks > 0) this.startsNewLine = true;
+				this.cursor.advance();
+			}
 		}
 		this.previousToken = token;
 		return token;
@@ -1528,25 +1541,22 @@ export class LuaParser {
 	}
 
 	private peekType(offset: number): LuaTokenType {
-		const index = this.index + offset;
-		if (index >= this.tokens.length) {
-			return LuaTokenType.Eof;
-		}
-		return this.tokens[index].type;
+		const token = this.cursor.peekSignificant(offset);
+		return token === undefined ? LuaTokenType.Eof : token.type;
 	}
 
 	private spanFromTokenAndToken(startToken: LuaToken, endToken: LuaToken): LuaSyntaxSpan {
-		return this.createSpan(startToken.offset, this.tokenEndOffset(endToken));
+		return this.createSpan(this.spanStart(startToken), this.tokenEndOffset(endToken));
 	}
 
 	/** Retains span identity when a field adds no syntax around its value. */
 	private spanAroundNode(startToken: LuaToken, node: LuaNode, endToken: LuaToken): LuaSyntaxSpan {
-		if (this.spanStart(node.span) === startToken.offset && this.spanEnd(node.span) === this.tokenEndOffset(endToken)) return node.span;
+		if (this.spanStart(node.span) === this.spanStart(startToken) && this.spanEnd(node.span) === this.tokenEndOffset(endToken)) return node.span;
 		return this.spanFromTokenAndToken(startToken, endToken);
 	}
 
 	private spanFromTokenAndNode(startToken: LuaToken, node: LuaNode): LuaSyntaxSpan {
-		return this.createSpan(startToken.offset, this.spanEnd(node.span));
+		return this.createSpan(this.spanStart(startToken), this.spanEnd(node.span));
 	}
 
 	private spanFromNodeAndToken(node: LuaNode, endToken: LuaToken): LuaSyntaxSpan {
@@ -1558,7 +1568,7 @@ export class LuaParser {
 	}
 
 	private tokenEndOffset(token: LuaToken): number {
-		return token.offset + (token.type === LuaTokenType.Eof ? 0 : token.lexeme.length - 1);
+		return this.spanEnd(token);
 	}
 
 	private blockStartOffset(): number {
@@ -1578,16 +1588,20 @@ export class LuaParser {
 	}
 
 	private beginUnit(offset: number): void {
+		while (this.nextLexicalUnit < this.lexicalUnits.length && this.lexicalUnits[this.nextLexicalUnit].offset <= offset) {
+			this.units.push(this.lexicalUnits[this.nextLexicalUnit++]);
+		}
 		const unit = { unit: createLuaSourceUnit(), offset };
 		this.currentUnit = unit;
 		this.units.push(unit);
 		this.unitOrigins.set(unit.unit, offset);
+		if (this.recoverStatements) this.recoveryUnits.push(unit.unit);
 	}
 
 	private publishLocations(): LuaSourceLocations {
-		const origins = this.unitOrigins!;
+		while (this.nextLexicalUnit < this.lexicalUnits.length) this.units.push(this.lexicalUnits[this.nextLexicalUnit++]);
 		this.unitOrigins = undefined;
-		return LuaSourceLocations.fromSource(this.path, this.source, this.units, origins);
+		return this.locations;
 	}
 
 	private retainSyntaxError(error: LuaSyntaxError | LuaParserSpanError): void {
@@ -1605,8 +1619,9 @@ export class LuaParser {
 	}
 
 	private error(token: LuaToken, message: string): LuaSyntaxError {
-		const payload = this.formatError(token.line, token.column, message, token.lexeme);
-		return new LuaSyntaxError(payload, this.path, token.line, token.column);
+		const { line, column } = this.locations.range(token).start;
+		const payload = this.formatError(line, column, message, token.lexeme);
+		return new LuaSyntaxError(payload, this.path, line, column);
 	}
 
 	private errorAtSpan(span: LuaSyntaxSpan, message: string, locations: LuaSourceLocations): LuaSyntaxError {

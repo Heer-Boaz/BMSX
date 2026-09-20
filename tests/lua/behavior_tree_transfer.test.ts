@@ -83,7 +83,7 @@ trees.register('ordinary', {root={type='sequence',children={leaf}}})`;
 	assert.ok(target.source.kind === 'section');
 	const field = f.member.branch.entries[0].field;
 	const text = readLuaSourceRange(f.model.buffer, f.member.file.chunk.locations.range(field.span));
-	const result = createLuaTableFieldTransfer(f.model.buffer, f.member.file.chunk.locations, field, target.source.table, 0);
+	const result = createLuaTableFieldTransfer(f.model.buffer, f.member.file.chunk, field, target.source.table, 0);
 	f.model.pushEditOperations(result.edits);
 	assert.equal(f.model.buffer.getTextRange(result.fieldRange.start, result.fieldRange.end), text);
 	f.model.undo();

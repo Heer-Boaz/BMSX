@@ -4,6 +4,8 @@ import { LuaSyntaxKind, LuaTableFieldKind, type LuaChunk, type LuaSkippedSyntax,
 import type { LuaAstNode } from './ast/traversal';
 import { createLuaSourceUnit, type LuaSourceUnit, type LuaSourceUnitPlacement } from './source_layout';
 import { LuaSourceLocations, type LuaSyntaxSpan } from './source_locations';
+import type { LuaToken } from './token';
+import { LuaTokenSequence } from './token_sequence';
 
 /** Storage ordinals, not runtime occurrence identities or source coordinates. */
 type UnitOrdinal = number & { readonly __syntaxUnitOrdinal: unique symbol };
@@ -12,11 +14,13 @@ type StoredSpan = { readonly unit: UnitOrdinal; readonly start: number; readonly
 type SyntaxData<T, Span, Unit> = T extends LuaSyntaxSpan ? Span
 	: T extends LuaSkippedSyntax ? { readonly span: Span; readonly units: readonly Unit[] }
 	: T extends object ? { readonly [Key in keyof T]: SyntaxData<T[Key], Span, Unit> } : T;
-type ChunkData = Omit<LuaChunk, 'locations' | 'syntaxError'>;
+type ChunkData = Omit<LuaChunk, 'locations' | 'syntaxError' | 'tokens'>;
 type NodeData<Span, Unit> = SyntaxData<Exclude<LuaAstNode, LuaChunk>, Span, Unit>;
+type StoredToken = Omit<LuaToken, keyof LuaSyntaxSpan> & { readonly span: SpanOrdinal };
 type StoredChunk = {
 	readonly syntax: SyntaxData<ChunkData, SpanOrdinal, UnitOrdinal>;
 	readonly path: string;
+	readonly lexical: readonly { readonly unit: UnitOrdinal; readonly items: readonly StoredToken[] }[];
 	readonly offsets: readonly number[];
 	readonly spans: readonly StoredSpan[];
 	readonly error: { readonly line: number; readonly column: number; readonly message: string } | null;
@@ -117,12 +121,18 @@ export function encodeLuaChunk(chunk: LuaChunk): Uint8Array {
 		return ordinal;
 	}, unit => ordinals.get(unit)!);
 	const syntax: SyntaxData<ChunkData, SpanOrdinal, UnitOrdinal> = {
-		kind: chunk.kind, span: mapper.span(chunk.span), source: chunk.source, tokens: chunk.tokens,
+		kind: chunk.kind, span: mapper.span(chunk.span), source: chunk.source,
 		body: chunk.body.map(node => mapper.node(node)), skippedSyntax: mapper.skipped(chunk.skippedSyntax),
 		constModule: chunk.constModule, entryModule: chunk.entryModule,
 	};
 	const error = chunk.syntaxError;
-	const stored: StoredChunk = { syntax, path: chunk.locations.path, offsets, spans,
+	const lexical = Array.from(chunk.tokens.blocks(), ({ block }) => ({
+		unit: ordinals.get(block.unit)!, items: block.items.map(token => {
+			const { unit: _unit, start: _start, end: _end, ...data } = token;
+			return { ...data, span: mapper.span(token) };
+		}),
+	}));
+	const stored: StoredChunk = { syntax, lexical, path: chunk.locations.path, offsets, spans,
 		error: error === null ? null : { line: error.line, column: error.column, message: error.message } };
 	return encodeBinary(stored);
 }
@@ -142,6 +152,9 @@ export function decodeLuaChunk(bytes: Uint8Array): LuaChunk {
 	const syntax = stored.syntax, error = stored.error;
 	return {
 		...syntax, span: mapper.span(syntax.span), body: syntax.body.map(node => mapper.node(node)), skippedSyntax: mapper.skipped(syntax.skippedSyntax),
+		tokens: LuaTokenSequence.fromBlocks(stored.lexical.map(block => ({ unit: units[block.unit],
+			items: block.items.map(({ span, ...data }) => ({ ...data, ...mapper.span(span) })),
+		}))),
 		locations: LuaSourceLocations.fromSource(stored.path, syntax.source, placements, origins),
 		syntaxError: error === null ? null : new LuaSyntaxError(error.message, stored.path, error.line, error.column),
 	};

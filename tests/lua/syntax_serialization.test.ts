@@ -70,6 +70,8 @@ test('syntax storage uses the edited layout owner, not the retained generation o
 		const fresh = parseLuaChunk(source, 'shifted.lua').chunk;
 		const edit = original.locations.layout.edit();
 		edit.replace(0, 0, prefix);
+		for (const { unit } of original.tokens.placements()) edit.removeUnit(unit);
+		for (const { unit, offset } of fresh.tokens.placements()) edit.insertUnit(offset, unit);
 		const shifted = { ...original, source, tokens: fresh.tokens,
 			locations: LuaSourceLocations.fromLayout(original.locations.path, edit.snapshot()) };
 		const imported = decodeLuaChunk(encodeLuaChunk(shifted));

@@ -47,8 +47,8 @@ in place is expressly excluded: retained semantic snapshots must remain valid.
 | `ide/editor/model/text_model.ts`, `text/text_change.ts` | Versioned model events; UTF-16 replacements in application order | Preserve changes rather than rediffing full strings on each request |
 | `ide/editor/contrib/intellisense/semantic/workspace/project.ts` | Queues changed paths; events currently discard edit spans | Project must retain the delta between its analyzed revision and current model revision |
 | `syntax/ast/index.ts:LuaChunk` | Root retains its source, lexical tokens and syntax error; global parse cache removed | Syntax lifetime follows retained file records and compiler inputs |
-| `syntax/lexer.ts`, `syntax/parser.ts`, `analysis/parse.ts` | Whole-file token array and strict/recovering parser | One grammar for initial and incremental parsing; no second IDE grammar |
-| `syntax/ast/index.ts` | Relative spans in the working migration; locations belong to the generation | Correctness integration is being validated; cold-performance and reuse gates remain open |
+| `syntax/lexer.ts`, `syntax/parser.ts`, `analysis/parse.ts` | Full-file lexical scan into relative persistent blocks; strict/recovering parser consumes a cursor | One grammar for initial and incremental parsing; no second IDE grammar |
+| `syntax/ast/index.ts` | Committed relative spans; locations belong to the generation | Reuse and final edit/cold-performance gates remain open |
 | `semantic/model.ts` | Single ordered binder; scope indexes, mutable build state; immutable published file facts | Cached function bodies cannot replay old ambient binder state |
 | `semantic/model.ts:createSymbolId` | IDs contain source line and column | Separate reusable declaration identity from presentation coordinates |
 | `semantic/value_graph.ts` | Owned values have allocated IDs and syntax references | Preserve occurrence identity, not independently allocated IDs in differential tests |
@@ -95,14 +95,15 @@ representation changes require compiler/codegen validation, not just IDE tests.
 - Semantic builds with an explicit compiler AST use its lexical sequence;
   they never lex or parse that source again. O0/O3 use the same retained nodes.
 
-This is the lifetime prerequisite, **not** relative syntax or incremental
-parse/bind. Child-node locations remain absolute. The changed file is still
-parsed and bound in full; editor events still queue paths rather than deltas.
+This was the lifetime prerequisite, **not** relative syntax or incremental
+parse/bind. At that slice boundary child-node locations were still absolute; the
+later relative migration is recorded below. The changed file is still parsed and
+bound in full; editor events still queue paths rather than deltas.
 Retaining the complete token sequence increases live snapshot heap; see the
 measured tradeoff below. The representation/performance acceptance gate for
 slice 1b has not been met by this ownership change alone.
 
-### 1b. Relative syntax and document edit transport — planned
+### 1b. Relative syntax and document edit transport — in progress
 
 - Define immutable syntax payloads with relative widths/spans in `syntax/`.
   Payloads must cover full source extents, including trivia and skipped/error
@@ -631,6 +632,83 @@ Editor events currently carry replacement lengths, not inserted text. Choose
 either replacement text at the producer or composed change mappings into the
 current text reader; do not pretend those length-only events can replay literal
 layout replacements. Full replacement remains an explicit mode.
+
+### Relative full-fidelity lexical generation
+
+The lexer now produces immutable blocks of at most 32 lexical items, retained
+in a persistent balanced sequence. Each token is itself a block-relative span;
+there is no separately allocated per-token span wrapper. The sequence aggregates
+source widths, significant-token counts and actual read dependencies. Its cursor
+supports forward/backward traversal, source-offset and significant-rank seeks,
+and non-mutating significant lookahead. A block replacement shares the untouched
+prefix/suffix and reconstructs only balanced ancestor paths. This is a storage
+primitive, **not yet an incremental lexer or parser**.
+
+The producer emits whitespace and comment items directly. Parser consumers skip
+trivia through the cursor, retaining inter-token newline context. Source-edit
+commands now use the chunk's lexical generation rather than scanning its source
+again. Formatter-only scans have an explicit lexical location owner. Significant
+matching for source correspondence deliberately ignores trivia; Myers prefix,
+suffix and matching runs traverse cursors rather than copying a significant-token
+array or searching the tree for every sequential token.
+
+Read extents include failed long-bracket probes and EOF. This follows the explicit
+lookahead dependency in [Lezer's token stream](https://github.com/lezer-parser/lr/blob/main/src/token.ts),
+not a fixed number of predecessor tokens. A recovered EOF has a point syntax span
+at the failure, an empty grammar spelling and the raw lexical diagnostic; its
+full width and LF count cover the skipped suffix in the source owner. It does not
+pretend that skipped failure text was consumed as ordinary grammar. Valid token
+spellings reconstruct source; malformed losslessness is source plus item coverage.
+
+ROM storage persists the lexical blocks and storage span/unit ordinals explicitly,
+not the sequence tree, methods, absolute positions or caches. Decode gives every
+import fresh runtime occurrences. The parser merges lexical and statement/function
+placements in source order; discarded AST occurrences remain separate from lexical
+occurrences during recovery.
+
+Correctness evidence: independent pre-change/changed parser and lexer comparison
+on 1,569 complete/edited sources; a separate agent compared 345 repository Lua
+files. The full pietious O3 output and debug hash remains
+`3fdb5f9056ff7c83be99a65f19e856cd75546327a18ccc0ec7fe6dbad32ca64d`
+(207 dependencies, 2,131 functions). Durable tests exercise persistent forks,
+random cursor direction changes, significant ranks, bounded dependency searches,
+8,192-block suffix sharing and real lexical edit probes. Review caught an incomplete
+LF summary on the recovered EOF; that summary now includes the skipped suffix.
+
+Integration validation: 2,015 Lua tests, 2,013 passing, one pre-existing named
+workbench-menu failure and one skip; all 129 rompacker tests pass. Rebuilt
+headless tooling, BIOS, nemesis_s and pietious succeed. The three precision
+idetests against the rebuilt nemesis_s pass (8/5/3 assertions). Core parity and
+`git diff --check` pass. The broad tooling/scripts typecheck still has the existing
+unused `depth`, rombuilder `Resource` mismatch and unrelated test/machine baseline
+errors; no new token/IDE/lint-owner errors remain.
+
+Measured costs, same dumped pietious inputs and Node 22.23.1:
+
+| Boundary | Before lexical migration | Relative full-fidelity tokens |
+| --- | ---: | ---: |
+| Retained bound 285-file snapshot, MiB after GC | 175.21 | 205.79 |
+| Released snapshot, MiB above initial heap | 2.26 | 2.43 |
+| Parse + select, p50 / p95 ms | 113.35 / 125.81 | 181.49 / 248.90 |
+| Complete O3 compilation, p50 / p95 ms | 3141.86 / 3199.53 | 3297.48 / 3395.03 |
+
+Compilation used fresh syntax per pass, four warmups/twelve samples. These are
+warmed-JS timings, not process startup. An initially wrapped token-span payload
+retained 221.52 MiB; removing that unnecessary allocation saved about 15.7 MiB.
+The remaining full-fidelity/dependency data still costs memory, and complete
+compilation is about 5.0%/6.1% slower here. **The final no-material-regression gate
+is still open.** Do not count this foundation as edit acceleration: whole-file
+parsing and binding still run, and the earlier 2x target is still unmet.
+
+Next: connect ordered editor deltas to lexical block replacement and the source
+layout, then implement context/read/recovery-aware syntax reuse and scope binding.
+Before retaining lexical blocks across generations, eliminate original-source
+backing-string retention at the lexical text producer (not a consumer-side copy).
+Keep an explicit full-replacement mode. The inspected
+[CodeMirror ChangeDesc](https://github.com/codemirror/state/blob/main/src/change.ts)
+provides the matching reference for composing length-only edit descriptions:
+keep changed/unchanged ranges and retrieve replacement text from the latest source,
+without retaining another inserted-text history or diffing the entire document.
 
 ## Lowest-priority follow-up: absent-value convention
 

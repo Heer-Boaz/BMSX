@@ -3,6 +3,9 @@ import test from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { mapTrackedTextRange } from '../../ide/editor/text/text_change';
 import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../ide/language/lua/source_edits';
+import { createLuaTableFieldInsertionEdits } from '../../ide/language/lua/table_field_insertion';
+import { createLuaTableFieldMoveEdits } from '../../ide/language/lua/table_field_moves';
+import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { createLuaTableFieldTransfer } from '../../ide/language/lua/table_field_transfer';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { LuaSyntaxKind, type LuaTableConstructorExpression } from '../../toolchain/ts/lua/syntax/ast';
@@ -28,7 +31,7 @@ function applyTransfer(source: string, sourceTableIndex: number, fieldIndex: num
 	const sourceMarker = luaSourceRangeToTextRange(model.buffer, parsed.chunk.locations.range(field.span));
 	let events = 0;
 	model.onDidChangeContent(event => { events += 1; mapTrackedTextRange(sourceMarker, event.changes); });
-	const result = createLuaTableFieldTransfer(model.buffer, parsed.chunk.locations, field, target, destination);
+	const result = createLuaTableFieldTransfer(model.buffer, parsed.chunk, field, target, destination);
 	assert.ok(result.edits.length >= 2 && result.edits.length <= 3);
 	for (let index = 1; index < result.edits.length; index += 1) {
 		const previous = result.edits[index - 1];
@@ -132,4 +135,23 @@ test('syntax transfer does not claim that moving a captured identifier across sh
 	const { edited } = applyTransfer(source, 0, 0, 1, 0);
 	assert.deepEqual(runCompiledLua(source + '\nreturn first[1]()'), [1]);
 	assert.deepEqual(runCompiledLua(edited + '\nreturn second[1]()'), [2], 'a valid transfer still needs semantic admission before a graph may authorize it');
+});
+
+
+test('structural field edits consume retained syntax without relexing the document', context => {
+	const source = 'local from = { -- header\n\t1, -- first\n\t2\n}\nlocal target = {}';
+	const model = new EditorTextModel(resource, 'lua', source);
+	const parsed = parseLuaChunk(source, resource.path);
+	assert.equal(parsed.syntaxError, null);
+	const chunk = parsed.chunk!;
+	const tables: LuaTableConstructorExpression[] = [];
+	walkLuaAst(chunk, node => { if (node.kind === LuaSyntaxKind.TableConstructorExpression) tables.push(node); });
+	const scan = context.mock.method(LuaLexer.prototype, 'scanTokens', () => { throw new Error('Structural edits must reuse retained tokens'); });
+	const recoveryScan = context.mock.method(LuaLexer.prototype, 'scanTokensWithRecovery', () => { throw new Error('Structural edits must reuse retained tokens'); });
+	assert.ok(createLuaTableFieldInsertionEdits(model.buffer, chunk, tables[0], 1, '3').length > 0);
+	assert.ok(createLuaTableFieldMoveEdits(model.buffer, chunk, tables[0], 0, 1).length > 0);
+	assert.ok(createLuaTableFieldTransfer(model.buffer, chunk, tables[0].fields[0], tables[1], 0).edits.length > 0);
+	assert.equal(scan.mock.callCount(), 0);
+	assert.equal(recoveryScan.mock.callCount(), 0);
+	model.dispose();
 });

@@ -31,14 +31,14 @@ export function removeBehaviorTreeChild(model: EditorTextModel, member: Behavior
 /** Insert before the retained field: its tracked selection becomes the second occurrence. */
 export function duplicateBehaviorTreeChild(model: EditorTextModel, member: BehaviorTreeSourceMember): void {
 	const field = member.branch.entries[member.index].field;
-	model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, member.file.chunk.locations, member.table,
+	model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, member.file.chunk, member.table,
 		member.table.fields.indexOf(field), readLuaSourceRange(model.buffer, member.file.chunk.locations.range(field.span))));
 }
 
 /** Array ranks are not lexical field indices: named metadata stays ordinary Lua. */
 export function moveBehaviorTreeChild(model: EditorTextModel, member: BehaviorTreeSourceMember, destination: number): void {
 	const fields = member.table.fields;
-	model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, member.file.chunk.locations, member.table,
+	model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, member.file.chunk, member.table,
 		fields.indexOf(member.branch.entries[member.index].field), fields.indexOf(member.branch.entries[destination].field)));
 }
 
@@ -48,7 +48,7 @@ export function transferBehaviorTreeChild(model: EditorTextModel, view: Behavior
 	const field = member.branch.entries[member.index].field;
 	const { target, table } = check;
 	const destination = insertion === target.entries.length ? table.fields.length : table.fields.indexOf(target.entries[insertion].field);
-	const transfer = createLuaTableFieldTransfer(model.buffer, member.file.chunk.locations, field, table, destination);
+	const transfer = createLuaTableFieldTransfer(model.buffer, member.file.chunk, field, table, destination);
 	const before = captureBehaviorSourceBookmark(view, view.selection!);
 	const after = captureBehaviorSourceBookmark(view, { kind: before.kind === 'tree-edge' ? 'tree-edge' : 'node', rowKey: target.source.rowKey });
 	const fieldStart = model.buffer.offsetAt(member.file.chunk.locations.range(field.span).start.line - 1, member.file.chunk.locations.range(field.span).start.column - 1);

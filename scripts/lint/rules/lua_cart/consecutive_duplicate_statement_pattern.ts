@@ -4,22 +4,22 @@ import {
 	type LuaStatement as Statement,
 } from '../../../../toolchain/ts/lua/syntax/ast';
 import { visitLuaExpressionChildren } from '../../../../toolchain/ts/lua/syntax/ast/traversal';
-import { type LuaToken as Token } from '../../../../toolchain/ts/lua/syntax/token';
+import type { LuaTokenSequence } from '../../../../toolchain/ts/lua/syntax/token_sequence';
 import { type CartLintContext } from '../../lua_rule';
 import { consecutiveDuplicateStatementPatternRule } from '../common/consecutive_duplicate_statement_pattern';
 import { pushIssue } from './impl/support/lint_context';
 
 const duplicateMessage = 'Consecutive duplicate statement is forbidden. Remove the duplicate or replace intentional repetition with a named loop/helper.';
 
-export function lintConsecutiveDuplicateStatementPattern(statements: ReadonlyArray<Statement>, tokens: ReadonlyArray<Token>, lint: CartLintContext): void {
+export function lintConsecutiveDuplicateStatementPattern(statements: ReadonlyArray<Statement>, tokens: LuaTokenSequence, lint: CartLintContext): void {
 	if (statements.length > 1) {
 		let previous = statements[0];
-		let previousStart = firstTokenAtOrAfter(tokens, lint.locations.offset(previous.span.unit, previous.span.start));
-		let previousEnd = firstTokenAfter(tokens, lint.locations.offset(previous.span.unit, previous.span.end));
+		let previousStart = lint.locations.offset(previous.span.unit, previous.span.start);
+		let previousEnd = lint.locations.offset(previous.span.unit, previous.span.end);
 		for (let index = 1; index < statements.length; index += 1) {
 			const statement = statements[index];
-			const start = firstTokenAtOrAfter(tokens, lint.locations.offset(statement.span.unit, statement.span.start));
-			const end = firstTokenAfter(tokens, lint.locations.offset(statement.span.unit, statement.span.end));
+			const start = lint.locations.offset(statement.span.unit, statement.span.start);
+			const end = lint.locations.offset(statement.span.unit, statement.span.end);
 			if (statement.kind !== SyntaxKind.CallStatement
 				&& statement.kind === previous.kind
 				&& tokensEqual(tokens, previousStart, previousEnd, start, end)) {
@@ -35,7 +35,7 @@ export function lintConsecutiveDuplicateStatementPattern(statements: ReadonlyArr
 	}
 }
 
-function lintStatementChildren(statement: Statement, tokens: ReadonlyArray<Token>, lint: CartLintContext): void {
+function lintStatementChildren(statement: Statement, tokens: LuaTokenSequence, lint: CartLintContext): void {
 	switch (statement.kind) {
 		case SyntaxKind.AssignmentStatement:
 			lintExpressions(statement.left, tokens, lint);
@@ -100,13 +100,13 @@ function lintStatementChildren(statement: Statement, tokens: ReadonlyArray<Token
 	}
 }
 
-function lintExpressions(expressions: ReadonlyArray<Expression>, tokens: ReadonlyArray<Token>, lint: CartLintContext): void {
+function lintExpressions(expressions: ReadonlyArray<Expression>, tokens: LuaTokenSequence, lint: CartLintContext): void {
 	for (let index = 0; index < expressions.length; index += 1) {
 		lintExpression(expressions[index], tokens, lint);
 	}
 }
 
-function lintExpression(expression: Expression, tokens: ReadonlyArray<Token>, lint: CartLintContext): void {
+function lintExpression(expression: Expression, tokens: LuaTokenSequence, lint: CartLintContext): void {
 	if (expression.kind === SyntaxKind.FunctionExpression) {
 		lintConsecutiveDuplicateStatementPattern(expression.body.body, tokens, lint);
 		return;
@@ -116,47 +116,15 @@ function lintExpression(expression: Expression, tokens: ReadonlyArray<Token>, li
 	});
 }
 
-function firstTokenAtOrAfter(tokens: ReadonlyArray<Token>, offset: number): number {
-	let low = 0;
-	let high = tokens.length;
-	while (low < high) {
-		const middle = (low + high) >>> 1;
-		if (tokens[middle].offset < offset) {
-			low = middle + 1;
-		}
-		else {
-			high = middle;
-		}
+/** Statement endpoints are significant token boundaries; trivia is not syntax. */
+function tokensEqual(tokens: LuaTokenSequence, leftStart: number, leftEnd: number, rightStart: number, rightEnd: number): boolean {
+	const left = tokens.cursor(), right = tokens.cursor();
+	left.seekOffset(leftStart);
+	right.seekOffset(rightStart);
+	while (left.offset <= leftEnd && right.offset <= rightEnd) {
+		if (left.token!.type !== right.token!.type || left.token!.lexeme !== right.token!.lexeme) return false;
+		left.advanceSignificant();
+		right.advanceSignificant();
 	}
-	return low;
-}
-
-function firstTokenAfter(tokens: ReadonlyArray<Token>, offset: number): number {
-	let low = 0;
-	let high = tokens.length;
-	while (low < high) {
-		const middle = (low + high) >>> 1;
-		if (tokens[middle].offset > offset) {
-			high = middle;
-		}
-		else {
-			low = middle + 1;
-		}
-	}
-	return low;
-}
-
-function tokensEqual(tokens: ReadonlyArray<Token>, leftStart: number, leftEnd: number, rightStart: number, rightEnd: number): boolean {
-	const count = leftEnd - leftStart;
-	if (count !== rightEnd - rightStart) {
-		return false;
-	}
-	for (let index = 0; index < count; index += 1) {
-		const left = tokens[leftStart + index];
-		const right = tokens[rightStart + index];
-		if (left.type !== right.type || left.lexeme !== right.lexeme) {
-			return false;
-		}
-	}
-	return true;
+	return left.offset > leftEnd && right.offset > rightEnd;
 }

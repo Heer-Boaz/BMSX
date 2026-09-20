@@ -374,14 +374,14 @@ export function buildLuaFileSemanticData(
 ): FileSemanticData {
 	const retainedChunk = chunk ?? parsed?.chunk ?? parseLuaChunkWithRecovery(source, path).chunk;
 	const tokens = retainedChunk.tokens;
-	const eof = tokens[tokens.length - 1];
+	const eof = retainedChunk.locations.range(tokens.get(tokens.length - 1)).end;
 	const builder = new SemanticBuilder({
 		path,
 		chunk: retainedChunk,
-		lineCount: eof.endLine,
+		lineCount: eof.line,
 		documentEndExclusive: {
-			line: eof.endLine,
-			column: eof.endColumn + 1,
+			line: eof.line,
+			column: eof.column + 1,
 		},
 	});
 	const result = builder.build();

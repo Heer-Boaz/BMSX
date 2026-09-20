@@ -1,11 +1,16 @@
-import { LuaTokenType as TokenType, type LuaToken as Token } from '../../../../toolchain/ts/lua/syntax/token';
+import type { LuaSourceLocations } from '../../../../toolchain/ts/lua/syntax/source_locations';
+import type { LuaTokenSequence } from '../../../../toolchain/ts/lua/syntax/token_sequence';
+import { LuaTokenType as TokenType, isLuaTrivia } from '../../../../toolchain/ts/lua/syntax/token';
 import type { CartLintIssue, CartLintLocationPusher } from '../../lua_rule';
 import { defineLintRule } from '../../rule';
 
 export const uppercaseCodePatternRule = defineLintRule('cart', 'uppercase_code_pattern');
 
-export function lintUppercaseCode(path: string, tokens: ReadonlyArray<Token>, issues: CartLintIssue[], pushIssueAt: CartLintLocationPusher): void {
-	for (const token of tokens) {
+export function lintUppercaseCode(locations: LuaSourceLocations, tokens: LuaTokenSequence, issues: CartLintIssue[], pushIssueAt: CartLintLocationPusher): void {
+	const cursor = tokens.cursor();
+	while (cursor.token !== undefined && isLuaTrivia(cursor.token.type)) cursor.advance();
+	for (; cursor.token !== undefined; cursor.advanceSignificant()) {
+		const token = cursor.token;
 		if (token.type === TokenType.String || token.type === TokenType.Eof) {
 			continue;
 		}
@@ -13,12 +18,13 @@ export function lintUppercaseCode(path: string, tokens: ReadonlyArray<Token>, is
 		if (uppercaseIndex === -1) {
 			continue;
 		}
+		const start = locations.range(token).start;
 		pushIssueAt(
 			issues,
 			uppercaseCodePatternRule.name,
-			path,
-			token.line,
-			token.column + uppercaseIndex,
+			locations.path,
+			start.line,
+			start.column + uppercaseIndex,
 			'Upper-case code is forbidden outside strings/comments.',
 		);
 	}

@@ -97,7 +97,7 @@ export class SceneEditorController {
 		const row = this.editableMember()!;
 		this.panes.activePane.focus();
 		input.workingCopy.pushEditOperations(createLuaTableFieldMoveEdits(
-			input.workingCopy.buffer, input.document.analysis.chunk.locations, row.scene.objectsTable, row.index, row.index + direction,
+			input.workingCopy.buffer, input.document.analysis.chunk, row.scene.objectsTable, row.index, row.index + direction,
 		));
 		this.refresh(input);
 		revealWorkbenchListSelection(input.outline);
