@@ -268,3 +268,19 @@ consume(handler)`, 'global_argument.lua');
 	const target = file.decls.find(entry => entry.name === 'handler')!;
 	assert.deepEqual(query.callee(call).map(fact => fact.calleeFn), invoked ? [target.id] : []);
 });
+
+
+test('const aliases copy raw global values without merging their storage identities', () => {
+	const file = buildLuaFileSemanticData('shared = function() end; local captured<const> = shared; return captured', 'const_global.lua');
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const captured = file.decls.find(entry => entry.name === 'captured')!;
+	const global = summaries.terms.compileSource(globalValueSource('shared'));
+	const alias = summaries.terms.compileSource(declarationValueSource(captured.id));
+	const module = summaries.terms.compileSource(moduleValueSource('const_global'));
+	assert.notEqual(global, alias);
+	assert.notEqual(global, module);
+	assert.ok(!summaries.terms.isModuleAnchor(global));
+	assert.ok(!summaries.terms.isGlobalStorage(module));
+	const query = new LuaSemanticQueryStore([file], new Map());
+	assert.deepEqual(query.functions(moduleValueSource('const_global')), [file.decls.find(entry => entry.name === 'shared')!.id]);
+});

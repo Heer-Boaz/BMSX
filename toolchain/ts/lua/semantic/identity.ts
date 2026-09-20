@@ -32,7 +32,8 @@ export class WorkspaceValueIdentityIndex {
 				const entry = file.declarationValues[declarationIndex];
 				if (entry.relation === 'identity'
 					&& entry.flow === undefined
-					&& entry.source.steps.length === 0) {
+					&& entry.source.steps.length === 0
+					&& entry.source.root.kind !== 'global') {
 					this.union(
 						{ kind: 'declaration', declId: entry.declId },
 						entry.source.root,
