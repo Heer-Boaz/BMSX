@@ -11,6 +11,7 @@ struct Blua32ExecutionImage;
 struct DecodedInstructionPage;
 struct Closure;
 struct Upvalue;
+struct Thread;
 
 enum class ProtectedCallKind : uint8_t {
 	PCall,
@@ -19,6 +20,7 @@ enum class ProtectedCallKind : uint8_t {
 };
 
 struct CallFrame {
+	Thread* thread = nullptr;
 	u32 functionAddress = 0;
 	Blua32ExecutionImage* executionImage = nullptr;
 	DecodedInstructionPage* decodedPage = nullptr;

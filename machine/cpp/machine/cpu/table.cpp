@@ -104,7 +104,7 @@ int Table::findNodeIndexForNext(const Value& key) const {
 		return -1;
 	}
 	uint32_t deadKeyHashId = 0;
-	if (valueIsTable(key) || valueIsClosure(key)) {
+	if (valueIsTable(key) || valueIsClosure(key) || valueIsThread(key)) {
 		deadKeyHashId = valueObjectHashId(key);
 	}
 	const size_t mask = m_hashSize - 1;

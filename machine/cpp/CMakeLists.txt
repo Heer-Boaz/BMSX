@@ -729,6 +729,11 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_cpu_supervisor_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_supervisor_tests COMMAND bmsx_cpu_supervisor_tests)
 
+	add_executable(bmsx_coroutine_runner
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/coroutine_runner.cpp
+	)
+	target_link_libraries(bmsx_coroutine_runner PRIVATE bmsx_core)
+
 	add_executable(bmsx_cpu_save_state_replay_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cpu_save_state_replay_test.cpp
 		${BMSX_TEST_ROM_SOURCE}

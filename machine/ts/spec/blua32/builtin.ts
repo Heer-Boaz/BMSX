@@ -13,9 +13,16 @@ export const enum BuiltinFunctionId {
 	XPCall = 11,
 	SetStringIndex = 12,
 	CollectGarbage = 13,
+	CoroutineCreate = 14,
+	CoroutineResume = 15,
+	CoroutineYield = 16,
+	CoroutineStatus = 17,
+	CoroutineRunning = 18,
+	CoroutineClose = 19,
+	CoroutineIsYieldable = 20,
 }
 
-export const BUILTIN_FUNCTION_COUNT = 14;
+export const BUILTIN_FUNCTION_COUNT = 21;
 
 export interface LuaBootPrimitive {
 	readonly name: string;
@@ -37,4 +44,11 @@ export const LUA_BOOT_PRIMITIVES: ReadonlyArray<LuaBootPrimitive> = [
 	{ name: '__bmsx_xpcall', id: BuiltinFunctionId.XPCall },
 	{ name: '__bmsx_set_string_index', id: BuiltinFunctionId.SetStringIndex },
 	{ name: '__bmsx_collect_garbage', id: BuiltinFunctionId.CollectGarbage },
+	{ name: '__bmsx_coroutine_create', id: BuiltinFunctionId.CoroutineCreate },
+	{ name: '__bmsx_coroutine_resume', id: BuiltinFunctionId.CoroutineResume },
+	{ name: '__bmsx_coroutine_yield', id: BuiltinFunctionId.CoroutineYield },
+	{ name: '__bmsx_coroutine_status', id: BuiltinFunctionId.CoroutineStatus },
+	{ name: '__bmsx_coroutine_running', id: BuiltinFunctionId.CoroutineRunning },
+	{ name: '__bmsx_coroutine_close', id: BuiltinFunctionId.CoroutineClose },
+	{ name: '__bmsx_coroutine_isyieldable', id: BuiltinFunctionId.CoroutineIsYieldable },
 ];

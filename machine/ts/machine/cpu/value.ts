@@ -3,6 +3,7 @@ import { BuiltinFunctionId } from '../../spec/blua32/builtin';
 import type { Closure } from './closure';
 import type { StringId, StringPool } from './string_pool';
 import type { Table } from './table';
+import type { Thread } from './thread';
 
 export const enum ValueTag {
 	Nil,
@@ -13,6 +14,7 @@ export const enum ValueTag {
 	Table,
 	Closure,
 	BuiltinFunction,
+	Thread,
 }
 
 export const VALUE_TAG: unique symbol = Symbol('bmsx.valueTag');
@@ -39,8 +41,8 @@ const STRING_VALUES: StringValue[] = [];
 
 export const valueString = StringValue.fromId;
 
-export type Value = null | boolean | number | StringValue | Table | Closure | BuiltinFunction;
-export type ValueReference = Table | Closure | null;
+export type Value = null | boolean | number | StringValue | Table | Closure | Thread | BuiltinFunction;
+export type ValueReference = Table | Closure | Thread | null;
 export const EMPTY_CALL_ARGS: ReadonlyArray<Value> = [];
 
 export function valueFromNumber(value: number): number {
@@ -61,6 +63,7 @@ export function materializeValue(tag: ValueTag, scalar: number, reference: Value
 			return valueString(scalar);
 		case ValueTag.Table:
 		case ValueTag.Closure:
+		case ValueTag.Thread:
 			return reference;
 		case ValueTag.BuiltinFunction:
 			return createBuiltinFunction(scalar as BuiltinFunctionId);
@@ -122,6 +125,13 @@ export const BUILTIN_FUNCTIONS: readonly BuiltinFunction[] = [
 	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.XPCall, cost: BUILTIN_COST_TIER4 },
 	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.SetStringIndex, cost: BUILTIN_COST_TIER1 },
 	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.CollectGarbage, cost: BUILTIN_COST_TIER4 },
+	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.CoroutineCreate, cost: BUILTIN_COST_TIER4 },
+	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.CoroutineResume, cost: BUILTIN_COST_TIER4 },
+	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.CoroutineYield, cost: BUILTIN_COST_TIER4 },
+	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.CoroutineStatus, cost: BUILTIN_COST_TIER4 },
+	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.CoroutineRunning, cost: BUILTIN_COST_TIER4 },
+	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.CoroutineClose, cost: BUILTIN_COST_TIER4 },
+	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.CoroutineIsYieldable, cost: BUILTIN_COST_TIER4 },
 ];
 
 export function createBuiltinFunction(id: BuiltinFunctionId): BuiltinFunction {
@@ -139,6 +149,8 @@ export function valueTypeNameForLuaTag(tag: ValueTag): string {
 			return 'number';
 		case ValueTag.String:
 			return 'string';
+		case ValueTag.Thread:
+			return 'thread';
 		case ValueTag.Table:
 			return 'table';
 		case ValueTag.Closure:
@@ -176,6 +188,8 @@ export function storedValueToString(tag: ValueTag, scalar: number, stringPool: S
 		}
 		case ValueTag.String:
 			return stringPool.toString(scalar as StringId);
+		case ValueTag.Thread:
+			return 'thread';
 		case ValueTag.Table:
 			return 'table';
 		case ValueTag.Closure:

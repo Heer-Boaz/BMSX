@@ -1,3 +1,5 @@
+export const RUNTIME_SAVE_STATE_VERSION = 2;
+
 export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'activeCpuUsedCycles',
 	'accumulatedHostTimeMs',
@@ -396,4 +398,14 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'exceptionDomainWord',
 	'nmiReturnLuaFaultReasonWord',
 	'nmiReturnExceptionDomainWord',
+	'threads',
+	'rootThreadRef',
+	'activeThreadRef',
+	'completionThreadRef',
+	'status',
+	'entryRef',
+	'resumerRef',
+	'stackCapacity',
+	'error',
+	'schemaVersion',
 ] as const;

@@ -229,9 +229,9 @@ void testManualNmiAndSaveStateReturn() {
 	require(machine.cpu.enterPendingInterrupt(), "NMI enters through the CPU interrupt boundary");
 
 	bmsx::CpuRuntimeState active = machine.cpu.captureRuntimeState();
-	require(active.frames.size() == 2u, "NMI retains the user frame beneath the exception root");
-	require(active.frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_EXCEPTION_FUNCTION], "NMI selects the physical system exception vector");
-	require(active.frames.back().isExceptionFrame, "NMI marks the exception root");
+	require(active.threads[0].frames.size() == 2u, "NMI retains the user frame beneath the exception root");
+	require(active.threads[0].frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_EXCEPTION_FUNCTION], "NMI selects the physical system exception vector");
+	require(active.threads[0].frames.back().isExceptionFrame, "NMI marks the exception root");
 	require(active.causeWord == bmsx::CPU_CAUSE_NMI, "NMI latches CAUSE.NMI");
 	require(active.epcWord == machine.cartRom.textAddress + bmsx::INSTRUCTION_BYTES, "asynchronous EPC points after HALT");
 	require(active.statusWord == (bmsx::CPU_STATUS_CART_ENTRY << 2u), "exception entry pushes the raw STATUS mode stack");
@@ -256,7 +256,7 @@ void testPrivilegeVectorRoutingAndCp0Fault() {
 		machine.memory.writeMappedU32LE(bmsx::IO_IRQ_MASK, bmsx::IRQ_VBLANK);
 		machine.irq.raise(bmsx::IRQ_VBLANK);
 		require(machine.cpu.enterPendingInterrupt(), "user IRQ enters");
-		require(machine.cpu.captureRuntimeState().frames.back().functionAddress == machine.cartRom.functionAddresses[CART_IRQ_FUNCTION], "user IRQ selects the cartridge's physical IRQ vector");
+		require(machine.cpu.captureRuntimeState().threads[0].frames.back().functionAddress == machine.cartRom.functionAddresses[CART_IRQ_FUNCTION], "user IRQ selects the cartridge's physical IRQ vector");
 	}
 
 	{
@@ -266,7 +266,7 @@ void testPrivilegeVectorRoutingAndCp0Fault() {
 		machine.memory.writeMappedU32LE(bmsx::IO_IRQ_MASK, bmsx::IRQ_VBLANK);
 		machine.irq.raise(bmsx::IRQ_VBLANK);
 		require(machine.cpu.enterPendingInterrupt(), "supervisor IRQ enters");
-		require(machine.cpu.captureRuntimeState().frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_IRQ_FUNCTION], "supervisor IRQ selects the system's physical IRQ vector");
+		require(machine.cpu.captureRuntimeState().threads[0].frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_IRQ_FUNCTION], "supervisor IRQ selects the system's physical IRQ vector");
 	}
 
 	{
@@ -278,7 +278,7 @@ void testPrivilegeVectorRoutingAndCp0Fault() {
 		bmsx::CpuRuntimeState fault = machine.cpu.captureRuntimeState();
 		require(fault.causeWord == bmsx::CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE, "user CP0 access latches the privileged-instruction cause");
 		require(fault.epcWord == machine.cartRom.textAddress + 4u * bmsx::INSTRUCTION_BYTES, "synchronous EPC identifies the physical faulting instruction");
-		require(fault.frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_EXCEPTION_FUNCTION], "user CP0 fault selects the system exception vector");
+		require(fault.threads[0].frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_EXCEPTION_FUNCTION], "user CP0 fault selects the system exception vector");
 		fault.epcWord += bmsx::INSTRUCTION_BYTES;
 		machine.cpu.restoreRuntimeState(fault);
 		require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "edited EPC skips the faulting instruction on RFE");
@@ -330,8 +330,8 @@ void testCp0ExecTransfersToTheSelectedPhysicalCartridgeImage() {
 	require(machine.cpu.isExecutionDomainResident(0), "CP0.EXEC makes the selected cartridge domain resident");
 	const bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
 	require(state.executionCartridgeSlot == 0, "CP0.EXEC selects the cartridge in the physical bus socket");
-	require(state.frames.size() == 1u, "CP0.EXEC replaces the system root instead of stacking a host call");
-	require(state.frames.back().functionAddress == machine.cartRom.functionAddresses[CART_USER_HALT_FUNCTION], "CP0.EXEC enters the function record addressed by the cartridge header");
+	require(state.threads[0].frames.size() == 1u, "CP0.EXEC replaces the system root instead of stacking a host call");
+	require(state.threads[0].frames.back().functionAddress == machine.cartRom.functionAddresses[CART_USER_HALT_FUNCTION], "CP0.EXEC enters the function record addressed by the cartridge header");
 	require(state.statusWord == bmsx::CPU_STATUS_CART_ENTRY, "CP0.EXEC enters cartridge privilege mode");
 }
 
@@ -381,7 +381,7 @@ void testBranchesFetchAdjacentMappedInstructions() {
 
 		require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, testCase.name);
 		const bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
-		require(state.frames.empty(), "branch target executes through the mapped instruction bus");
+		require(state.threads[0].frames.empty(), "branch target executes through the mapped instruction bus");
 	}
 }
 
@@ -464,8 +464,8 @@ void testUnmappedClosureRecordHardHalts() {
 
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "unmapped CLOSURE record hard-halts");
 	const bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
-	require(state.frames.size() == 1u, "unmapped CLOSURE record retains the active frame");
-	require(state.frames.back().functionAddress == machine.systemRom.functionAddresses[0], "unmapped CLOSURE record does not enter host state");
+	require(state.threads[0].frames.size() == 1u, "unmapped CLOSURE record retains the active frame");
+	require(state.threads[0].frames.back().functionAddress == machine.systemRom.functionAddresses[0], "unmapped CLOSURE record does not enter host state");
 }
 
 void testCrossImageCallStackPcsBelongToTheirFrames() {
@@ -1172,7 +1172,7 @@ void testRfeResumesAtAnyMappedInstructionAddress() {
 	machine.cpu.restoreRuntimeState(state);
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "RFE resumes mapped adjacent text");
 	state = machine.cpu.captureRuntimeState();
-	require(state.frames.empty(), "mapped RET completes the retained frame after RFE");
+	require(state.threads[0].frames.empty(), "mapped RET completes the retained frame after RFE");
 }
 
 void testMappedBusErrorsEnterTheSystemExceptionVector() {
@@ -1185,7 +1185,7 @@ void testMappedBusErrorsEnterTheSystemExceptionVector() {
 	require(loadFault.causeWord == bmsx::CPU_CAUSE_CODE_DATA_BUS_ERROR, "mapped load latches DBE");
 	require(loadFault.epcWord == machine.cartRom.textAddress + 9u * bmsx::INSTRUCTION_BYTES, "mapped load EPC identifies the physical faulting instruction");
 	require(loadFault.badAddressWord == 0u, "DBE leaves BAD_ADDRESS unchanged");
-	require(loadFault.frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_EXCEPTION_FUNCTION], "mapped load selects the system exception vector");
+	require(loadFault.threads[0].frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_EXCEPTION_FUNCTION], "mapped load selects the system exception vector");
 	require(bmsx::asNumber(machine.cpu.readFrameRegister(0, 1)) == 1.0, "faulting load does not commit its destination register");
 	loadFault.epcWord += bmsx::INSTRUCTION_BYTES;
 	machine.cpu.restoreRuntimeState(loadFault);
@@ -1204,7 +1204,7 @@ void testMappedBusErrorsEnterTheSystemExceptionVector() {
 	require(burstFault.causeWord == bmsx::CPU_CAUSE_CODE_DATA_BUS_ERROR, "supervisor burst latches DBE");
 	require(burstFault.epcWord == machine.systemRom.textAddress + 12u * bmsx::INSTRUCTION_BYTES, "supervisor burst EPC identifies the physical faulting instruction");
 	require(burstFault.statusWord == (bmsx::CPU_STATUS_SYSTEM_ENTRY << 2u), "supervisor DBE pushes the status mode stack");
-	require(burstFault.frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_EXCEPTION_FUNCTION], "supervisor DBE selects the system exception vector");
+	require(burstFault.threads[0].frames.back().functionAddress == machine.systemRom.functionAddresses[SYSTEM_EXCEPTION_FUNCTION], "supervisor DBE selects the system exception vector");
 	require(machine.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE - bmsx::IO_WORD_SIZE) == 1u, "burst retains the completed write prefix");
 	require(machine.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_CODE) == bmsx::BUS_FAULT_UNMAPPED, "occupied first-fault state does not hide a new CPU DBE");
 	require(machine.memory.readIoU32(bmsx::IO_SYS_BUS_FAULT_ADDR) == UNMAPPED_ADDRESS, "burst tail does not overwrite the first-fault address");
@@ -1401,7 +1401,7 @@ void testAddressErrorsPrecedeMappedMemoryBusCycles() {
 		require(state.causeWord == testCase.cause, testCase.name);
 		require(state.epcWord == machine.systemRom.textAddress + memoryInstruction * bmsx::INSTRUCTION_BYTES, testCase.name);
 		require(state.badAddressWord == FAULT_ADDRESS, testCase.name);
-		require(state.frames.back().functionAddress == machine.systemRom.functionAddresses[0], testCase.name);
+		require(state.threads[0].frames.back().functionAddress == machine.systemRom.functionAddresses[0], testCase.name);
 		require(machine.memory.readBusFaultSequence() == faultSequence, testCase.name);
 		require(bmsx::asNumber(machine.cpu.readFrameRegister(0, 1)) == 1.0, testCase.name);
 		require(machine.memory.readMappedU32LE(ALIGNED_ADDRESS) == 0x11223344u, testCase.name);
@@ -1498,7 +1498,7 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 
 	require(machine.cpu.runUntilDepth(0, 3) == bmsx::RunResult::Yielded, "pcall body should remain preemptible");
 	bmsx::CpuRuntimeState state = machine.cpu.captureRuntimeState();
-	require(state.protectedCalls.size() == 1u, "save state should retain the active protected call");
+	require(state.threads[0].protectedCalls.size() == 1u, "save state should retain the active protected call");
 	machine.cpu.restoreRuntimeState(state);
 	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "restored pcall should complete");
 	require(machine.cpu.readCompletionValues().size() == 3u && bmsx::isTruthy(machine.cpu.readCompletionValues()[0]), "pcall should return success");

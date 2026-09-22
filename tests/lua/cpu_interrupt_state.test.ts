@@ -752,7 +752,7 @@ nested_outer, nested_inner, nested_a, nested_b = pcall(pcall, succeed)
 		assert.equal(cpu.runUntilDepth(0, 1), cpu.getFrameDepth() === 0 ? RunResult.Halted : RunResult.Yielded);
 		if (!restoredProtectedCall && cpu.getFrameDepth() > 0) {
 			const state = cpu.captureRuntimeState();
-			if (state.protectedCalls.length > 0) {
+			if (state.threads[0].protectedCalls.length > 0) {
 				cpu.restoreRuntimeState(state);
 				restoredProtectedCall = true;
 			}
@@ -784,7 +784,7 @@ nested_outer, nested_inner, nested_a, nested_b = pcall(pcall, succeed)
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('nested_inner')), true);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('nested_a')), 3);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('nested_b')), 4);
-	assert.deepEqual(cpu.captureRuntimeState().protectedCalls, []);
+	assert.deepEqual(cpu.captureRuntimeState().threads[0].protectedCalls, []);
 });
 
 test('CPU closure calls that execute HALT without a scheduled interrupt park without host exception', () => {
@@ -912,8 +912,8 @@ test('completion-call return routing survives save-state through the raw CPU lat
 	cpu.beginCompletionCall(closure);
 	assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded);
 	const state = cpu.captureRuntimeState();
-	assert.equal(state.frames.length, 1);
-	assert.equal(state.frames[0].returnToCompletionLatch, true);
+	assert.equal(state.threads[0].frames.length, 1);
+	assert.equal(state.threads[0].frames[0].returnToCompletionLatch, true);
 
 	cpu.restoreRuntimeState(state);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
@@ -1171,6 +1171,8 @@ after_enable = irq_seen
 	const { cpu, irqController, cpuExecution, state } = makeCompiledIrqRuntime(source);
 
 	irqController.raise(IRQ_VBLANK);
+	state.cycleBudgetRemaining = 1000;
+	state.cycleBudgetGranted = 1000;
 	cpuExecution.runWithBudget(state);
 
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('irq_seen')), IRQ_VBLANK);
@@ -1225,8 +1227,8 @@ mem[${resumedAddress}] = 1
 	const activeState = cpu.captureRuntimeState();
 	assert.equal(activeState.causeWord, CPU_CAUSE_NMI);
 	assert.equal(activeState.statusWord, CPU_STATUS_CART_ENTRY << 2);
-	assert.equal(activeState.frames.at(-1)!.functionAddress, images.systemVectors.exceptionFunctionAddress);
-	assert.equal(activeState.frames.at(-1)!.isExceptionFrame, true);
+	assert.equal(activeState.threads[0].frames.at(-1)!.functionAddress, images.systemVectors.exceptionFunctionAddress);
+	assert.equal(activeState.threads[0].frames.at(-1)!.isExceptionFrame, true);
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 
 	assert.equal(memory.readMappedU32LE(exceptionCauseAddress), CPU_CAUSE_NMI);
@@ -1640,7 +1642,7 @@ test('CPU mapped bus errors enter the system exception vector without committing
 	assert.equal(loadFault.causeWord, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 	assert.equal(loadFault.epcWord, images.cartImage.header.textAddress + 2 * INSTRUCTION_BYTES);
 	assert.equal(loadFault.badAddressWord, 0);
-	assert.equal(loadFault.frames.at(-1)!.functionAddress, systemExceptionAddress);
+	assert.equal(loadFault.threads[0].frames.at(-1)!.functionAddress, systemExceptionAddress);
 	assert.equal(cpu.readFrameRegister(0, 1), 1);
 	loadFault.epcWord += INSTRUCTION_BYTES;
 	cpu.restoreRuntimeState(loadFault);
@@ -1660,7 +1662,7 @@ test('CPU mapped bus errors enter the system exception vector without committing
 	assert.equal(burstFault.causeWord, CPU_CAUSE_CODE_DATA_BUS_ERROR);
 	assert.equal(burstFault.epcWord, systemBurstImage.image.header.textAddress + 11 * INSTRUCTION_BYTES);
 	assert.equal(burstFault.statusWord, CPU_STATUS_SYSTEM_ENTRY << 2);
-	assert.equal(burstFault.frames.at(-1)!.functionAddress, systemBurstImage.symbols.functionAddresses[1]);
+	assert.equal(burstFault.threads[0].frames.at(-1)!.functionAddress, systemBurstImage.symbols.functionAddresses[1]);
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE - IO_WORD_SIZE), 1);
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_CODE), BUS_FAULT_UNMAPPED);
 	assert.equal(memory.readIoU32(IO_SYS_BUS_FAULT_ADDR), unmappedAddress);
@@ -1816,7 +1818,7 @@ test('CPU address errors vector before any mapped-memory bus cycle or destinatio
 		assert.equal(state.causeWord, testCase.cause, testCase.name);
 		assert.equal(state.epcWord, image.image.header.textAddress + memoryInstruction * INSTRUCTION_BYTES, testCase.name);
 		assert.equal(state.badAddressWord, faultAddress, testCase.name);
-		assert.equal(state.frames.at(-1)!.functionAddress, image.symbols.functionAddresses[0], testCase.name);
+		assert.equal(state.threads[0].frames.at(-1)!.functionAddress, image.symbols.functionAddresses[0], testCase.name);
 		assert.equal(memory.readBusFaultSequence(), faultSequence, testCase.name);
 		assert.equal(cpu.readFrameRegister(0, 1), 1, testCase.name);
 		assert.deepEqual([

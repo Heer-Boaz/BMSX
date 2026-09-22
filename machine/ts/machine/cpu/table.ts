@@ -1,7 +1,6 @@
 import { ceilLog2, nextPowerOfTwo } from '../common/numeric';
 import { LUA_FAULT_REASON_INDEX_NIL } from '../../spec/blua32/cop0';
 import { LuaExecutionError } from './errors';
-import type { Closure } from './closure';
 import type { LuaHeap } from './lua_heap';
 import type { StringId } from './string_pool';
 import {
@@ -116,8 +115,9 @@ export class Table {
 			case ValueTag.BuiltinFunction:
 				return this.getByParts(tag, (key as BuiltinFunction).id, null);
 			case ValueTag.Table:
+			case ValueTag.Thread:
 			case ValueTag.Closure:
-				return this.getByParts(tag, NaN, key as Table | Closure);
+				return this.getByParts(tag, NaN, key as NonNullable<ValueReference>);
 		}
 	}
 
@@ -139,8 +139,9 @@ export class Table {
 				this.setHostValue(tag, (key as BuiltinFunction).id, null, value);
 				return;
 			case ValueTag.Table:
+			case ValueTag.Thread:
 			case ValueTag.Closure:
-				this.setHostValue(tag, NaN, key as Table | Closure, value);
+				this.setHostValue(tag, NaN, key as NonNullable<ValueReference>, value);
 				return;
 		}
 	}
@@ -757,8 +758,9 @@ export class Table {
 				this.store(keyTag, keyScalar, keyReference, tag, (value as BuiltinFunction).id, null);
 				return;
 			case ValueTag.Table:
+			case ValueTag.Thread:
 			case ValueTag.Closure:
-				this.store(keyTag, keyScalar, keyReference, tag, NaN, value as Table | Closure);
+				this.store(keyTag, keyScalar, keyReference, tag, NaN, value as NonNullable<ValueReference>);
 				return;
 		}
 	}
@@ -871,8 +873,9 @@ export class Table {
 			case ValueTag.BuiltinFunction:
 				return Math.imul(scalar + 1, 0x27d4eb2d) >>> 0;
 			case ValueTag.Table:
+			case ValueTag.Thread:
 			case ValueTag.Closure:
-				return Math.imul((reference as Table | Closure).hashId, 2654435761) >>> 0;
+				return Math.imul((reference as NonNullable<ValueReference>).hashId, 2654435761) >>> 0;
 			case ValueTag.Nil:
 				return 0x27d4eb2d;
 		}
@@ -896,6 +899,7 @@ export class Table {
 			case ValueTag.BuiltinFunction:
 				return this.scalars[storedSlot] === scalar;
 			case ValueTag.Table:
+			case ValueTag.Thread:
 			case ValueTag.Closure:
 				return this.references[storedSlot] === reference;
 			case ValueTag.Nil:
@@ -941,7 +945,7 @@ export class Table {
 			return -1;
 		}
 		const deadKeyHashId = tag === ValueTag.Table || tag === ValueTag.Closure
-			? (reference as Table | Closure).hashId
+			? (reference as NonNullable<ValueReference>).hashId
 			: 0;
 		const mask = this.hashSize - 1;
 		let index = (this.hashValue(tag, scalar, reference) & mask) >>> 0;
@@ -1370,11 +1374,12 @@ export class Table {
 		const valueSlot = this.hashValueSlot(index);
 		switch (this.tags[keySlot]) {
 			case ValueTag.Table:
+			case ValueTag.Thread:
 			case ValueTag.Closure:
 				this.setEncoded(
 					valueSlot,
 					ValueTag.Number,
-					(this.references[keySlot] as Table | Closure).hashId,
+					(this.references[keySlot] as NonNullable<ValueReference>).hashId,
 					null,
 				);
 				this.setNil(keySlot);

@@ -474,8 +474,9 @@ DISPATCH_LABEL(SETUP) {
 
 DISPATCH_LABEL(VARARG) {
 	const int count = b == 0 ? FRAME.varargCount : b;
+	if (count > 0) registers = ensureRegisterCapacity(FRAME, a + count - 1);
 	const int copyCount = std::min(count, FRAME.varargCount);
-	std::copy_n(m_stack.data() + FRAME.varargBase, copyCount, registers + a);
+	std::copy_n(m_activeThread->stack.data() + FRAME.varargBase, copyCount, registers + a);
 	std::fill_n(registers + a + copyCount, count - copyCount, valueNil());
 	const int nextTop = a + count;
 	if (b == 0) {
@@ -505,46 +506,47 @@ DISPATCH_LABEL(CALL) {
 DISPATCH_LABEL(RET) {
 	int count = b == 0 ? std::max(FRAME.top - a, 0) : b;
 	closeUpvalues(FRAME);
-	if (m_protectedCallDepth > 0) {
-		const size_t continuationIndex = m_protectedCallDepth - 1;
-		ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
+	if (m_activeThread->protectedCallDepth > 0) {
+		const size_t continuationIndex = m_activeThread->protectedCallDepth - 1;
+		ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(continuationIndex);
 		if (continuation.target == &FRAME) {
 			finishProtectedCall(continuationIndex, FRAME, a, count);
-			auto finished = std::move(m_frames.back());
-			m_frames.pop_back();
-			m_stackTop = finished->varargBase;
+			auto finished = std::move(m_activeThread->frames.back());
+			m_activeThread->frames.pop_back();
+			m_activeThread->stackTop = finished->varargBase;
 			releaseFrame(std::move(finished));
 			DISPATCH_CONTINUE();
 		}
 	}
-	const int resultOffset = FRAME.stackBase + a;
-	const Value* results = m_stack.data() + resultOffset;
-	auto finished = std::move(m_frames.back());
-	m_frames.pop_back();
-	if (finished->returnToCompletionLatch) {
-		m_completionValues.assign(results, results + count);
-		m_stackTop = finished->varargBase;
+	if (FRAME.returnToCompletionLatch) {
+		m_completionValues.assign(FRAME.registers + a, FRAME.registers + a + count);
+		auto finished = std::move(m_activeThread->frames.back());
+		m_activeThread->frames.pop_back();
+		m_activeThread->stackTop = finished->varargBase;
 		releaseFrame(std::move(finished));
 		DISPATCH_CONTINUE();
 	}
-	if (m_frames.empty()) {
-		m_completionValues.assign(results, results + count);
-		m_stackTop = finished->varargBase;
+	if (m_activeThread->frames.size() == 1 && m_activeThread->resumer != nullptr) {
+		Thread* thread = m_activeThread;
+		thread->status = ThreadStatus::Dead;
+		returnToResumer(FRAME.registers + a, count, true);
+		auto finished = std::move(thread->frames.back());
+		thread->frames.pop_back();
+		thread->stackTop = 0;
 		releaseFrame(std::move(finished));
 		DISPATCH_CONTINUE();
 	}
-	CallFrame& caller = *m_frames.back();
-	const int writeCount = finished->returnCount == 0 ? count : finished->returnCount;
-	if (writeCount > 0 && finished->returnBase + writeCount > caller.stackCapacity) {
-		auto resultsScratch = acquireBuiltinResultScratch();
-		BuiltinResults& scratch = resultsScratch.get();
-		scratch.append(results, static_cast<size_t>(count));
-		ensureRegisterCapacity(caller, finished->returnBase + writeCount - 1);
-		writeReturnValues(caller, finished->returnBase, finished->returnCount, scratch.data(), static_cast<int>(scratch.size()));
+	if (m_activeThread->frames.size() == 1) {
+		m_completionValues.assign(FRAME.registers + a, FRAME.registers + a + count);
 	} else {
-		writeReturnValues(caller, finished->returnBase, finished->returnCount, results, count);
+		CallFrame& caller = *m_activeThread->frames[m_activeThread->frames.size() - 2];
+		const int writeCount = FRAME.returnCount == 0 ? count : FRAME.returnCount;
+		if (writeCount > 0) ensureRegisterCapacity(caller, FRAME.returnBase + writeCount - 1);
+		writeReturnValues(caller, FRAME.returnBase, FRAME.returnCount, FRAME.registers + a, count);
 	}
-	m_stackTop = finished->varargBase;
+	auto finished = std::move(m_activeThread->frames.back());
+	m_activeThread->frames.pop_back();
+	m_activeThread->stackTop = finished->varargBase;
 	releaseFrame(std::move(finished));
 	DISPATCH_CONTINUE();
 }
@@ -695,13 +697,13 @@ DISPATCH_LABEL(RFE) {
 	const bool returnFromNmi = FRAME.isNonMaskableExceptionFrame;
 	const u32 returnPc = m_epcWord;
 	closeUpvalues(FRAME);
-	auto finished = std::move(m_frames.back());
-	m_frames.pop_back();
-	m_stackTop = finished->varargBase;
+	auto finished = std::move(m_activeThread->frames.back());
+	m_activeThread->frames.pop_back();
+	m_activeThread->stackTop = finished->varargBase;
 	m_statusWord = (m_statusWord & ~CPU_STATUS_RFE_RESTORE_MASK)
 		| ((m_statusWord >> 2u) & CPU_STATUS_RFE_RESTORE_MASK);
-	if (!m_frames.empty()) {
-		m_frames.back()->pc = returnPc;
+	if (!m_activeThread->frames.empty()) {
+		m_activeThread->frames.back()->pc = returnPc;
 	}
 	if (returnFromNmi) {
 		m_causeWord = m_nmiReturnCauseWord;

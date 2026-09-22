@@ -4,6 +4,7 @@ module<entry>
 require('base')
 table = require('table')
 string = require('string')
+coroutine = require('coroutine')
 lua_compiler = require('compiler/api')
 load = lua_compiler.load
 os = require('os')

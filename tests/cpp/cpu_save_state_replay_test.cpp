@@ -196,7 +196,7 @@ void restoreUnrootedCanonicalClosure() {
 	const auto cold = cpu.captureRuntimeState();
 	cpu.runUntilDepth(0, 2);
 	const auto warm = cpu.captureRuntimeState();
-	require(warm.snapshot.word(warm.frames[0].registers[0]) == static_cast<bmsx::u32>(bmsx::CpuSnapshotValueTag::Nil), "static closure is no longer a guest root");
+	require(warm.snapshot.word(warm.threads[0].frames[0].registers[0]) == static_cast<bmsx::u32>(bmsx::CpuSnapshotValueTag::Nil), "static closure is no longer a guest root");
 	bool captured = false;
 	for (bmsx::u32 offset : warm.snapshot.objectWords()) {
 		if (warm.snapshot.word(offset) == static_cast<bmsx::u32>(bmsx::CpuSnapshotObjectKind::Closure)
@@ -249,7 +249,7 @@ void restoreHardHalt() {
 	cpu.restoreRuntimeState(halted);
 	cpu.runUntilDepth(0, 1000);
 	const auto after = cpu.captureRuntimeState();
-	require(after.hardHalted && after.frames[0].pc == halted.frames[0].pc, "restored hard halt does not execute further instructions");
+	require(after.hardHalted && after.threads[0].frames[0].pc == halted.threads[0].frames[0].pc, "restored hard halt does not execute further instructions");
 }
 
 void reuseSnapshotStorage() {

@@ -1454,6 +1454,7 @@ BinValue encodeCpuFrameState(const CpuFrameState& state) {
 	object["functionAddress"] = static_cast<i64>(state.functionAddress);
 	object["pc"] = static_cast<i64>(state.pc);
 	object["closureRef"] = static_cast<i64>(state.closureRef);
+	object["stackCapacity"] = static_cast<i64>(state.stackCapacity);
 	object["registers"] = encodeVector(state.registers, [](u32 value) {
 		return BinValue(static_cast<i64>(value));
 	});
@@ -1478,6 +1479,7 @@ CpuFrameState decodeCpuFrameState(const BinValue& value, const char* label) {
 		"cpuFrameState.functionAddress"
 	);
 	state.pc = requireU32(requireField(object, "pc", label), "cpuFrameState.pc");
+	state.stackCapacity = static_cast<int>(requireI64(requireField(object, "stackCapacity", label), "cpuFrameState.stackCapacity"));
 	state.closureRef = requireI32(requireField(object, "closureRef", label), "cpuFrameState.closureRef");
 	state.registers = decodeVector<u32>(requireField(object, "registers", label), "cpuFrameState.registers",
 		[](const BinValue& entryValue, size_t) {
@@ -1537,6 +1539,52 @@ CpuRootValueState decodeCpuRootValueState(const BinValue& value, const char* lab
 	return state;
 }
 
+BinValue encodeCpuThreadState(const CpuThreadState& state) {
+	BinObject object;
+	object["status"] = static_cast<i64>(state.status);
+	object["entryRef"] = static_cast<i64>(state.entryRef);
+	object["resumerRef"] = static_cast<i64>(state.resumerRef);
+	object["callBase"] = static_cast<i64>(state.callBase);
+	object["returnCount"] = static_cast<i64>(state.returnCount);
+	object["stackCapacity"] = static_cast<i64>(state.stackCapacity);
+	object["error"] = static_cast<i64>(state.error);
+	object["frames"] = encodeVector(state.frames, [](const CpuFrameState& value) {
+		return encodeCpuFrameState(value);
+	});
+	object["protectedCalls"] = encodeVector(state.protectedCalls, [](const CpuProtectedCallState& value) {
+		return encodeCpuProtectedCallState(value);
+	});
+	object["openUpvalues"] = encodeVector(state.openUpvalues, [](int value) {
+		return BinValue(static_cast<i64>(value));
+	});
+	return BinValue(std::move(object));
+}
+
+CpuThreadState decodeCpuThreadState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	CpuThreadState state;
+	state.status = static_cast<ThreadStatus>(requireI64(requireField(object, "status", label), "cpuThread.status"));
+	state.entryRef = static_cast<int>(requireI64(requireField(object, "entryRef", label), "cpuThread.entryRef"));
+	state.resumerRef = static_cast<int>(requireI64(requireField(object, "resumerRef", label), "cpuThread.resumerRef"));
+	state.callBase = static_cast<int>(requireI64(requireField(object, "callBase", label), "cpuThread.callBase"));
+	state.returnCount = static_cast<int>(requireI64(requireField(object, "returnCount", label), "cpuThread.returnCount"));
+	state.stackCapacity = static_cast<size_t>(requireI64(requireField(object, "stackCapacity", label), "cpuThread.stackCapacity"));
+	state.error = static_cast<u32>(requireI64(requireField(object, "error", label), "cpuThread.error"));
+	state.frames = decodeVector<CpuFrameState>(requireField(object, "frames", label), "cpuThread.frames",
+		[](const BinValue& entryValue, size_t) {
+			return decodeCpuFrameState(entryValue, "cpuThread.frames[]");
+		});
+	state.protectedCalls = decodeVector<CpuProtectedCallState>(requireField(object, "protectedCalls", label), "cpuThread.protectedCalls",
+		[](const BinValue& entryValue, size_t) {
+			return decodeCpuProtectedCallState(entryValue, "cpuThread.protectedCalls[]");
+		});
+	state.openUpvalues = decodeVector<int>(requireField(object, "openUpvalues", label), "cpuThread.openUpvalues",
+		[](const BinValue& entryValue, size_t) {
+			return requireI32(entryValue, "cpuThread.openUpvalues[]");
+		});
+	return state;
+}
+
 BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	BinObject object;
 	object["executionCartridgeSlot"] = static_cast<i64>(state.executionCartridgeSlot);
@@ -1547,12 +1595,10 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 		return encodeCpuRootValueState(value);
 	});
 	object["stringIndexTable"] = static_cast<i64>(state.stringIndexTable);
-	object["frames"] = encodeVector(state.frames, [](const CpuFrameState& value) {
-		return encodeCpuFrameState(value);
-	});
-	object["protectedCalls"] = encodeVector(state.protectedCalls, [](const CpuProtectedCallState& value) {
-		return encodeCpuProtectedCallState(value);
-	});
+	object["rootThreadRef"] = static_cast<i64>(state.rootThreadRef);
+	object["activeThreadRef"] = static_cast<i64>(state.activeThreadRef);
+	object["completionThreadRef"] = static_cast<i64>(state.completionThreadRef);
+	object["threads"] = encodeVector(state.threads, [](const CpuThreadState& value) { return encodeCpuThreadState(value); });
 	object["completionValues"] = encodeVector(state.completionValues, [](u32 value) {
 		return BinValue(static_cast<i64>(value));
 	});
@@ -1560,9 +1606,6 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	snapshot["words"] = BinValue(writeLE32Array(state.snapshot.words()));
 	snapshot["objectWords"] = BinValue(writeLE32Array(state.snapshot.objectWords()));
 	object["snapshot"] = BinValue(std::move(snapshot));
-	object["openUpvalues"] = encodeVector(state.openUpvalues, [](int value) {
-		return BinValue(static_cast<i64>(value));
-	});
 	object["lastExecutionDomainId"] = static_cast<i64>(state.lastExecutionDomainId);
 	object["globalTableRef"] = static_cast<i64>(state.globalTableRef);
 	object["executionResidencyMask"] = static_cast<i64>(state.executionResidencyMask);
@@ -1612,14 +1655,11 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 		requireField(object, "stringIndexTable", label),
 		"cpuState.stringIndexTable"
 	);
-	state.frames = decodeVector<CpuFrameState>(requireField(object, "frames", label), "cpuState.frames",
-		[](const BinValue& entryValue, size_t) {
-			return decodeCpuFrameState(entryValue, "cpuState.frames[]");
-		});
-	state.protectedCalls = decodeVector<CpuProtectedCallState>(requireField(object, "protectedCalls", label), "cpuState.protectedCalls",
-		[](const BinValue& entryValue, size_t) {
-			return decodeCpuProtectedCallState(entryValue, "cpuState.protectedCalls[]");
-		});
+	state.rootThreadRef = static_cast<int>(requireI64(requireField(object, "rootThreadRef", label), "cpuState.rootThreadRef"));
+	state.activeThreadRef = static_cast<int>(requireI64(requireField(object, "activeThreadRef", label), "cpuState.activeThreadRef"));
+	state.completionThreadRef = static_cast<int>(requireI64(requireField(object, "completionThreadRef", label), "cpuState.completionThreadRef"));
+	state.threads = decodeVector<CpuThreadState>(requireField(object, "threads", label), "cpuState.threads",
+		[](const BinValue& value, size_t) { return decodeCpuThreadState(value, "cpuState.threads[]"); });
 	state.completionValues = decodeVector<u32>(requireField(object, "completionValues", label), "cpuState.completionValues",
 		[](const BinValue& entryValue, size_t) {
 			return requireU32(entryValue, "cpuState.completionValues[]");
@@ -1628,10 +1668,6 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 	state.snapshot = CpuSnapshot(
 		decodeU32Binary(requireField(snapshot, "words", label), "cpuState.snapshot.words"),
 		decodeU32Binary(requireField(snapshot, "objectWords", label), "cpuState.snapshot.objectWords"));
-	state.openUpvalues = decodeVector<int>(requireField(object, "openUpvalues", label), "cpuState.openUpvalues",
-		[](const BinValue& entryValue, size_t) {
-			return requireI32(entryValue, "cpuState.openUpvalues[]");
-		});
 	state.lastExecutionDomainId = requireI32(
 		requireField(object, "lastExecutionDomainId", label),
 		"cpuState.lastExecutionDomainId"
@@ -1671,6 +1707,7 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 
 std::vector<u8> encodeRuntimeSaveState(const RuntimeSaveState& state) {
 	BinObject object;
+	object["schemaVersion"] = static_cast<i64>(RUNTIME_SAVE_STATE_VERSION);
 	object["machineState"] = encodeRuntimeSaveMachineState(state.machineState);
 	object["cpuState"] = encodeCpuRuntimeState(state.cpuState);
 	object["pendingEntryCall"] = state.pendingEntryCall;
@@ -1688,6 +1725,9 @@ RuntimeSaveState decodeRuntimeSaveState(
 		data.size(),
 		RUNTIME_SAVE_STATE_PROP_NAMES);
 	const BinObject& object = requireObject(value, label);
+	if (requireI64(requireField(object, "schemaVersion", label), "runtimeSaveState.schemaVersion") != RUNTIME_SAVE_STATE_VERSION) {
+		throw std::runtime_error("Unsupported runtime save-state schema.");
+	}
 	RuntimeSaveState state;
 	state.machineState = decodeRuntimeSaveMachineState(
 		requireField(object, "machineState", label),

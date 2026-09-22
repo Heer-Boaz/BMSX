@@ -510,6 +510,11 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					{ key: 3, value: 3 },
 				],
 				stringIndexTable: 6,
+			rootThreadRef: 0,
+			activeThreadRef: 0,
+			completionThreadRef: 0,
+			threads: [{ status: 1, entryRef: -1, resumerRef: -1, callBase: 0, returnCount: 0, stackCapacity: 8, error: 0, openUpvalues: [],
+
 				frames: [],
 			protectedCalls: [{
 				kind: ProtectedCallKind.XPCallHandler,
@@ -520,9 +525,9 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				returnCount: 3,
 				handlerRegister: 7,
 			}],
+			}],
 			completionValues: [],
 			snapshot: snapshot.finish(),
-			openUpvalues: [],
 			lastExecutionDomainId: 0,
 			lastPc: 0,
 			haltedUntilIrqFrameDepth: -1,
@@ -623,10 +628,11 @@ test('runtime save-state codec stores READY GPUREAD bytes and rejects backend-on
 
 test('runtime save-state codec preserves exception frame metadata', () => {
 	const state = createRuntimeSaveState();
-	state.cpuState.frames = [{
+	state.cpuState.threads[0].frames = [{
 		functionAddress: 0x10000120,
 		pc: 44,
 		closureRef: 7,
+		stackCapacity: 8,
 		registers: [state.cpuState.stringIndexTable],
 		varargs: [],
 		returnBase: 1,

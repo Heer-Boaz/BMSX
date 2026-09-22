@@ -1,3 +1,4 @@
+import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import type { Value } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -36,13 +37,14 @@ export class RuntimeGuestCallPlan implements RuntimeDebuggerControlPlan {
 	public readonly executionDomainMask = ALL_EXECUTION_DOMAINS_MASK;
 	public readonly preMaskableInterruptDomainMask = this.executionDomainMask;
 
+	private readonly thread: Thread;
 	public constructor(
-		private readonly runtime: Runtime,
+		runtime: Runtime,
 		private readonly returnDepth: number,
 		private readonly finish: (completed: boolean) => void,
-	) {}
+	) { this.thread = runtime.machine.cpu.activeThread; }
 
-	public shouldStop(): boolean { return this.runtime.machine.cpu.getFrameDepth() <= this.returnDepth; }
+	public shouldStop(): boolean { return this.thread.frames.length <= this.returnDepth; }
 	public willExecute(): void {}
 	public didExecute(): RuntimeDebuggerPlanResult {
 		if (!this.shouldStop()) return RuntimeDebuggerPlanResult.Active;

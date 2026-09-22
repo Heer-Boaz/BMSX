@@ -227,9 +227,10 @@ export class ValueSlots {
 				this.refs[slot] = null;
 				return;
 			case ValueTag.Table:
+			case ValueTag.Thread:
 			case ValueTag.Closure:
 				this.scalars[slot] = NaN;
-				this.refs[slot] = value as Table | Closure;
+				this.refs[slot] = value as NonNullable<ValueReference>;
 				return;
 			case ValueTag.BuiltinFunction:
 				this.scalars[slot] = (value as BuiltinFunction).id;

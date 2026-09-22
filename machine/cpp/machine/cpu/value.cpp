@@ -15,6 +15,7 @@ void appendValueString(std::string& out, Value value, const StringPool& stringPo
 			case ValueTag::True: out.append("true"); return;
 			case ValueTag::String: out.append(stringPool.toString(asStringId(value))); return;
 			case ValueTag::Table: out.append("table"); return;
+			case ValueTag::Thread: out.append("thread"); return;
 			case ValueTag::Closure:
 			case ValueTag::BuiltinFunction: out.append("function"); return;
 			default: __builtin_unreachable();

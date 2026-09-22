@@ -10,8 +10,8 @@ namespace bmsx {
 
 constexpr u32 CPU_SNAPSHOT_VALUE_WORDS = 3;
 // Matches the TS register tag column; native Value uses NaN-boxed tags.
-enum class CpuSnapshotValueTag : u32 { Nil, False, True, Number, String, Table, Closure, BuiltinFunction };
-enum class CpuSnapshotObjectKind : u32 { Table, Closure, Upvalue };
+enum class CpuSnapshotValueTag : u32 { Nil, False, True, Number, String, Table, Closure, BuiltinFunction, Thread };
+enum class CpuSnapshotObjectKind : u32 { Table, Closure, Upvalue, Thread };
 enum CpuSnapshotTable : u32 {
 	SNAP_TABLE_KIND, SNAP_TABLE_HASH_ID, SNAP_TABLE_ARRAY_LENGTH, SNAP_TABLE_ARRAY_CAPACITY,
 	SNAP_TABLE_HASH_SIZE, SNAP_TABLE_HASH_FREE, SNAP_TABLE_METATABLE,
@@ -23,8 +23,9 @@ enum CpuSnapshotClosure : u32 {
 };
 enum CpuSnapshotUpvalue : u32 {
 	SNAP_UPVALUE_KIND, SNAP_UPVALUE_HASH_ID, SNAP_UPVALUE_OPEN,
-	SNAP_UPVALUE_INDEX, SNAP_UPVALUE_FRAME_INDEX, SNAP_UPVALUE_VALUE,
+	SNAP_UPVALUE_INDEX, SNAP_UPVALUE_THREAD_REF, SNAP_UPVALUE_FRAME_INDEX, SNAP_UPVALUE_VALUE,
 };
+enum CpuSnapshotThread : u32 { SNAP_THREAD_KIND, SNAP_THREAD_HASH_ID, SNAP_THREAD_INDEX, SNAP_THREAD_SIZE };
 using CpuSnapshotValueWriter = std::function<void(u32, Value)>;
 
 class CpuSnapshot {

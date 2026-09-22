@@ -1,18 +1,20 @@
 import type { Closure, Upvalue } from './closure';
 import type { Table } from './table';
+import type { Thread } from './thread';
 import { ValueTag, type ValueReference } from './value';
 
 // Snapshot-local word offsets, not a guest ABI. Values are tag + f64/u32
 // payload; references use object ordinals, never host pointers or hash ids.
 export const CPU_SNAPSHOT_VALUE_WORDS = 3;
-export const enum CpuSnapshotObjectKind { Table, Closure, Upvalue }
+export const enum CpuSnapshotObjectKind { Table, Closure, Upvalue, Thread }
 export const enum CpuSnapshotTable {
 	Kind, HashId, ArrayLength, ArrayCapacity, HashSize, HashFree, Metatable,
 	Data = 9,
 }
 export const enum CpuSnapshotClosure { Kind, HashId, FunctionAddress, Canonical, UpvalueCount, Data }
-export const enum CpuSnapshotUpvalue { Kind, HashId, Open, Index, FrameIndex, Value }
-export type CpuSnapshotObject = Table | Closure | Upvalue;
+export const enum CpuSnapshotUpvalue { Kind, HashId, Open, Index, ThreadRef, FrameIndex, Value }
+export const enum CpuSnapshotThread { Kind, HashId, Index, Size }
+export type CpuSnapshotObject = Table | Closure | Upvalue | Thread;
 export type CpuSnapshotValueWriter = (offset: number, tag: ValueTag, scalar: number, reference: ValueReference) => void;
 
 const numberBits = new DataView(new ArrayBuffer(8));
@@ -93,6 +95,7 @@ export class CpuSnapshotReader {
 			case ValueTag.String:
 			case ValueTag.BuiltinFunction: this.scalar = snapshot.word(offset + 1); break;
 			case ValueTag.Table:
+			case ValueTag.Thread:
 			case ValueTag.Closure: this.reference = this.objects[snapshot.word(offset + 1)] as ValueReference; break;
 		}
 	}

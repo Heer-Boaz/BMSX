@@ -3,7 +3,7 @@ import { CpuSnapshot } from '../../cpu/snapshot';
 import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, requireObjectKey } from '../../../common/serializer/binencoder';
 import { IO_DMA_CHANNEL_COUNT } from '../../../spec/bmsx/io';
 import type { MachineSaveState } from '../../save_state';
-import type { CpuFrameState, CpuProtectedCallState, CpuRootValueState, CpuRuntimeState } from '../../cpu/cpu';
+import type { CpuFrameState, CpuThreadState, CpuProtectedCallState, CpuRootValueState, CpuRuntimeState } from '../../cpu/cpu';
 import type { ExecutionDomainId } from '../../../spec/blua32/execution_domain';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { AudioControllerState } from '../../devices/audio/save_state';
@@ -91,7 +91,7 @@ import type { FrameSchedulerStateSnapshot } from '../../scheduler/frame';
 import type { FrameLoopStateSnapshot } from '../frame/loop';
 import type { RuntimeSaveMachineState } from '../save_machine_state';
 import type { RuntimeSaveState } from '../save_state';
-import { RUNTIME_SAVE_STATE_PROP_NAMES } from './schema';
+import { RUNTIME_SAVE_STATE_PROP_NAMES, RUNTIME_SAVE_STATE_VERSION } from './schema';
 
 function requireArray(value: unknown, label: string): unknown[] {
 	if (!Array.isArray(value)) {
@@ -1400,6 +1400,7 @@ function decodeCpuFrameState(value: unknown, label: string): CpuFrameState {
 		functionAddress: requireObjectKey(object, 'functionAddress', label, 'cpuFrameState.functionAddress') as number,
 		pc: requireObjectKey(object, 'pc', label, 'cpuFrameState.pc') as number,
 		closureRef: requireObjectKey(object, 'closureRef', label, 'cpuFrameState.closureRef') as number,
+		stackCapacity: requireObjectKey(object, 'stackCapacity', label, 'cpuFrameState.stackCapacity') as number,
 		registers: decodeVector(
 			requireObjectKey(object, 'registers', label, 'cpuFrameState.registers'),
 			'cpuFrameState.registers',
@@ -1451,6 +1452,34 @@ function encodeCpuRuntimeState(state: CpuRuntimeState) {
 	};
 }
 
+function decodeCpuThreadState(value: unknown, label: string): CpuThreadState {
+	const object = requireObject(value, label);
+	return {
+		status: requireObjectKey(object, 'status', label, 'cpuThread.status') as CpuThreadState['status'],
+		entryRef: requireObjectKey(object, 'entryRef', label, 'cpuThread.entryRef') as number,
+		resumerRef: requireObjectKey(object, 'resumerRef', label, 'cpuThread.resumerRef') as number,
+		callBase: requireObjectKey(object, 'callBase', label, 'cpuThread.callBase') as number,
+		returnCount: requireObjectKey(object, 'returnCount', label, 'cpuThread.returnCount') as number,
+		stackCapacity: requireObjectKey(object, 'stackCapacity', label, 'cpuThread.stackCapacity') as number,
+		error: requireObjectKey(object, 'error', label, 'cpuThread.error') as number,
+		frames: decodeVector(
+			requireObjectKey(object, 'frames', label, 'cpuThread.frames'),
+			'cpuThread.frames',
+			(entry) => decodeCpuFrameState(entry, 'cpuThread.frames[]'),
+		),
+		protectedCalls: decodeVector(
+			requireObjectKey(object, 'protectedCalls', label, 'cpuThread.protectedCalls'),
+			'cpuThread.protectedCalls',
+			(entry) => decodeCpuProtectedCallState(entry, 'cpuThread.protectedCalls[]'),
+		),
+		openUpvalues: decodeVector(
+			requireObjectKey(object, 'openUpvalues', label, 'cpuThread.openUpvalues'),
+			'cpuThread.openUpvalues',
+			(entry) => entry as number,
+		),
+	};
+}
+
 function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 	const object = requireObject(value, label);
 	const snapshot = requireObject(requireObjectKey(object, 'snapshot', label, 'cpuState.snapshot'), 'cpuState.snapshot');
@@ -1488,16 +1517,10 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 			requireObjectKey(object, 'stringIndexTable', label, 'cpuState.stringIndexTable'),
 			'cpuState.stringIndexTable', 0, 0xffffffff,
 		),
-		frames: decodeVector(
-			requireObjectKey(object, 'frames', label, 'cpuState.frames'),
-			'cpuState.frames',
-			(entry) => decodeCpuFrameState(entry, 'cpuState.frames[]'),
-		),
-		protectedCalls: decodeVector(
-			requireObjectKey(object, 'protectedCalls', label, 'cpuState.protectedCalls'),
-			'cpuState.protectedCalls',
-			(entry) => decodeCpuProtectedCallState(entry, 'cpuState.protectedCalls[]'),
-		),
+		threads: decodeVector(requireObjectKey(object, 'threads', label, 'cpuState.threads'), 'cpuState.threads', entry => decodeCpuThreadState(entry, 'cpuState.threads[]')),
+		rootThreadRef: requireObjectKey(object, 'rootThreadRef', label, 'cpuState.rootThreadRef') as number,
+		activeThreadRef: requireObjectKey(object, 'activeThreadRef', label, 'cpuState.activeThreadRef') as number,
+		completionThreadRef: requireObjectKey(object, 'completionThreadRef', label, 'cpuState.completionThreadRef') as number,
 		completionValues: decodeVector(
 			requireObjectKey(object, 'completionValues', label, 'cpuState.completionValues'),
 			'cpuState.completionValues',
@@ -1506,11 +1529,6 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 		snapshot: new CpuSnapshot(
 			decodeU32Binary(requireObjectKey(snapshot, 'words', label, 'cpuState.snapshot.words'), 'cpuState.snapshot.words'),
 			decodeU32Binary(requireObjectKey(snapshot, 'objectWords', label, 'cpuState.snapshot.objectWords'), 'cpuState.snapshot.objectWords'),
-		),
-		openUpvalues: decodeVector(
-			requireObjectKey(object, 'openUpvalues', label, 'cpuState.openUpvalues'),
-			'cpuState.openUpvalues',
-			(entry) => entry as number,
 		),
 		lastExecutionDomainId: requireObjectKey(
 			object,
@@ -1544,6 +1562,7 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 
 export function encodeRuntimeSaveState(state: RuntimeSaveState): Uint8Array {
 	return encodeBinaryWithPropTable({
+		schemaVersion: RUNTIME_SAVE_STATE_VERSION,
 		machineState: encodeRuntimeSaveMachineState(state.machineState),
 		cpuState: encodeCpuRuntimeState(state.cpuState),
 		pendingEntryCall: state.pendingEntryCall,
@@ -1560,6 +1579,9 @@ export function decodeRuntimeSaveState(
 		decodeBinaryWithPropTable(bytes, RUNTIME_SAVE_STATE_PROP_NAMES),
 		label,
 	);
+	if (requireObjectKey(object, 'schemaVersion', label, 'runtimeSaveState.schemaVersion') !== RUNTIME_SAVE_STATE_VERSION) {
+		throw new Error('Unsupported runtime save-state schema.');
+	}
 	return {
 		machineState: decodeRuntimeSaveMachineState(requireObjectKey(object, 'machineState', label, 'runtimeSaveState.machineState'), 'runtimeSaveState.machineState', ramByteCount, vramByteCount),
 		cpuState: decodeCpuRuntimeState(requireObjectKey(object, 'cpuState', label, 'runtimeSaveState.cpuState'), 'runtimeSaveState.cpuState'),

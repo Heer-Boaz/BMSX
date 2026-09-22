@@ -22,9 +22,16 @@ enum class BuiltinFunctionId : uint8_t {
 	XPCall = 11,
 	SetStringIndex = 12,
 	CollectGarbage = 13,
+	CoroutineCreate = 14,
+	CoroutineResume = 15,
+	CoroutineYield = 16,
+	CoroutineStatus = 17,
+	CoroutineRunning = 18,
+	CoroutineClose = 19,
+	CoroutineIsYieldable = 20,
 };
 
-constexpr size_t BUILTIN_FUNCTION_COUNT = 14u;
+constexpr size_t BUILTIN_FUNCTION_COUNT = 21u;
 
 struct LuaBootPrimitive {
 	std::string_view name;
@@ -46,6 +53,13 @@ inline constexpr std::array<LuaBootPrimitive, BUILTIN_FUNCTION_COUNT> LUA_BOOT_P
 	{ "__bmsx_xpcall", BuiltinFunctionId::XPCall },
 	{ "__bmsx_set_string_index", BuiltinFunctionId::SetStringIndex },
 	{ "__bmsx_collect_garbage", BuiltinFunctionId::CollectGarbage },
+	{ "__bmsx_coroutine_create", BuiltinFunctionId::CoroutineCreate },
+	{ "__bmsx_coroutine_resume", BuiltinFunctionId::CoroutineResume },
+	{ "__bmsx_coroutine_yield", BuiltinFunctionId::CoroutineYield },
+	{ "__bmsx_coroutine_status", BuiltinFunctionId::CoroutineStatus },
+	{ "__bmsx_coroutine_running", BuiltinFunctionId::CoroutineRunning },
+	{ "__bmsx_coroutine_close", BuiltinFunctionId::CoroutineClose },
+	{ "__bmsx_coroutine_isyieldable", BuiltinFunctionId::CoroutineIsYieldable },
 }};
 
 } // namespace bmsx

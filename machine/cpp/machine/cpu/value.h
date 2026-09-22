@@ -18,6 +18,7 @@ namespace bmsx {
 struct Table;
 struct Closure;
 struct Upvalue;
+struct Thread;
 
 struct BuiltinFunctionCost {
 	uint16_t base = 1;
@@ -35,12 +36,14 @@ enum class ValueTag : uint8_t {
 	Table = 4,
 	Closure = 5,
 	BuiltinFunction = 6,
+	Thread = 7,
 };
 
 enum class ObjType : uint8_t {
 	Table,
 	Closure,
 	Upvalue,
+	Thread,
 };
 
 struct GCObject {
@@ -71,6 +74,13 @@ inline constexpr std::array<BuiltinFunctionCost, BUILTIN_FUNCTION_COUNT> BUILTIN
 	{ 4, 0, 0 },
 	{ 4, 0, 0 },
 	{ 1, 0, 0 },
+	{ 4, 0, 0 },
+	{ 4, 0, 0 },
+	{ 4, 0, 0 },
+	{ 4, 0, 0 },
+	{ 4, 0, 0 },
+	{ 4, 0, 0 },
+	{ 4, 0, 0 },
 	{ 4, 0, 0 },
 }};
 
@@ -152,6 +162,16 @@ inline Value valueTable(Table* table) {
 
 inline Value valueClosure(Closure* closure) {
 	return valueFromTag(ValueTag::Closure, reinterpret_cast<uint64_t>(closure));
+}
+
+inline Value valueThread(Thread* thread) {
+	return valueFromTag(ValueTag::Thread, reinterpret_cast<uint64_t>(thread));
+}
+inline Thread* asThread(Value value) {
+	return reinterpret_cast<Thread*>(valuePayload(value));
+}
+inline bool valueIsThread(Value value) {
+	return valueEncodedTag(value) == static_cast<uint8_t>(ValueTag::Thread) + 1u;
 }
 
 inline Value valueBuiltinFunction(BuiltinFunction* fn) {
@@ -274,6 +294,7 @@ struct ValueHash {
 				return static_cast<size_t>(static_cast<uint64_t>(asStringId(v)) * 2654435761ULL);
 			case ValueTag::BuiltinFunction:
 				return static_cast<size_t>(valueBuiltinFunctionHashId(v) * 0x27d4eb2du);
+			case ValueTag::Thread:
 			case ValueTag::Table:
 			case ValueTag::Closure:
 				return static_cast<size_t>(static_cast<uint64_t>(valueObjectHashId(v)) * 2654435761ULL);
@@ -441,6 +462,7 @@ inline const char* valueTypeName(Value value) {
 		case ValueTag::False: return "boolean";
 		case ValueTag::True: return "boolean";
 		case ValueTag::String: return "string";
+		case ValueTag::Thread: return "thread";
 		case ValueTag::Table: return "table";
 		case ValueTag::Closure: return "closure";
 		case ValueTag::BuiltinFunction: return "builtin_function";
@@ -456,6 +478,7 @@ inline const char* valueTypeNameForLua(Value value) {
 		case ValueTag::False:
 		case ValueTag::True: return "boolean";
 		case ValueTag::String: return "string";
+		case ValueTag::Thread: return "thread";
 		case ValueTag::Table: return "table";
 		case ValueTag::Closure:
 		case ValueTag::BuiltinFunction:

@@ -1,3 +1,4 @@
+import type { Thread } from '../cpu/thread';
 import { RunResult } from '../cpu/cpu';
 import { GX_GPU_SERVICE_RUNTIME_EDGE_MASK, GX_GPU_SERVICE_TIMING_PUBLISHED } from '../devices/gx/gpu';
 import { DEVICE_SERVICE_GPU } from '../scheduler/device';
@@ -17,6 +18,7 @@ export const enum CpuExecutionResult {
 
 export const enum CpuSuspendedRunResult {
 	Completed,
+	Yielded,
 	Halted,
 	ExecutionStopped,
 }
@@ -137,13 +139,15 @@ export class CpuExecutionState {
 		}
 	}
 
-	public runSuspendedUntilDepth(targetDepth: number): CpuSuspendedRunResult {
+	public runSuspendedUntilDepth(targetDepth: number, cycleBudget = MAX_CPU_SLICE_CYCLES, targetThread: Thread = this.runtime.machine.cpu.activeThread): CpuSuspendedRunResult {
 		const runtime = this.runtime;
 		const machine = runtime.machine;
 		const cpu = machine.cpu;
 		const scheduler = machine.scheduler;
+		const endCycle = scheduler.nowCycles + cycleBudget;
 		runDueRuntimeTimers(runtime);
-		while (cpu.getFrameDepth() > targetDepth) {
+		while (targetThread.frames.length > targetDepth) {
+			if (scheduler.nowCycles >= endCycle) return CpuSuspendedRunResult.Yielded;
 			if (machine.gxGpu.backendServiceBlocksMachine()
 				|| machine.systemController.cpuHeld()) {
 				return CpuSuspendedRunResult.Halted;
@@ -153,7 +157,7 @@ export class CpuExecutionState {
 				if (nextDeadline === Number.MAX_SAFE_INTEGER) {
 					return CpuSuspendedRunResult.Halted;
 				}
-				const waitBudget = nextDeadline - scheduler.nowCycles;
+				const waitBudget = Math.min(nextDeadline, endCycle) - scheduler.nowCycles;
 				if (waitBudget <= 0) {
 					runDueRuntimeTimers(runtime);
 					continue;
@@ -164,7 +168,7 @@ export class CpuExecutionState {
 				advanceRuntimeTime(runtime, waitCycles);
 				continue;
 			}
-			let sliceBudget = MAX_CPU_SLICE_CYCLES;
+			let sliceBudget = Math.min(MAX_CPU_SLICE_CYCLES, endCycle - scheduler.nowCycles);
 			const nextDeadline = scheduler.nextDeadline();
 			if (nextDeadline !== Number.MAX_SAFE_INTEGER) {
 				const deadlineBudget = nextDeadline - scheduler.nowCycles;
@@ -176,7 +180,7 @@ export class CpuExecutionState {
 					sliceBudget = deadlineBudget;
 				}
 			}
-			const result = scheduler.runCpuSlice(targetDepth, sliceBudget);
+			const result = scheduler.runCpuSlice(targetDepth, sliceBudget, targetThread);
 			const consumed = sliceBudget - cpu.instructionBudgetRemaining;
 			if (consumed > 0) {
 				machine.advanceDevices(consumed);
@@ -185,7 +189,7 @@ export class CpuExecutionState {
 				}
 				runDueRuntimeTimers(runtime);
 			}
-			if (cpu.getFrameDepth() <= targetDepth) {
+			if (targetThread.frames.length <= targetDepth) {
 				return CpuSuspendedRunResult.Completed;
 			}
 			if (result === RunResult.ExecutionStopped) {
@@ -200,6 +204,7 @@ export class CpuExecutionState {
 				}
 				let advancedDeadline = false;
 				while (cpu.isHaltedUntilIrq()) {
+					if (scheduler.nowCycles >= endCycle) return CpuSuspendedRunResult.Yielded;
 					if (machine.gxGpu.backendServiceBlocksMachine()) {
 						return CpuSuspendedRunResult.Halted;
 					}
@@ -214,7 +219,7 @@ export class CpuExecutionState {
 					if (haltedDeadline === Number.MAX_SAFE_INTEGER) {
 						return CpuSuspendedRunResult.Halted;
 					}
-					const cyclesToDeadline = haltedDeadline - scheduler.nowCycles;
+					const cyclesToDeadline = Math.min(haltedDeadline, endCycle) - scheduler.nowCycles;
 					if (cyclesToDeadline <= 0) {
 						if (runDueRuntimeTimers(runtime)) {
 							return CpuSuspendedRunResult.Halted;

@@ -19,6 +19,7 @@ enum class CpuExecutionResult {
 
 enum class CpuSuspendedRunResult {
 	Completed,
+	Yielded,
 	Halted,
 	ExecutionStopped,
 };
@@ -28,7 +29,7 @@ public:
 	bool runStoppedCpu(Runtime& runtime, FrameState& frameState);
 	CpuExecutionResult runWithBudget(Runtime& runtime, FrameState& frameState);
 	InstructionStepResult runInstruction(Runtime& runtime, FrameState& frameState);
-	CpuSuspendedRunResult runSuspendedUntilDepth(Runtime& runtime, int targetDepth);
+	CpuSuspendedRunResult runSuspendedUntilDepth(Runtime& runtime, int targetDepth, int cycleBudget = MAX_CPU_SLICE_CYCLES, Thread* targetThread = nullptr);
 
 private:
 	enum class CpuSliceResult : uint8_t {

@@ -1,3 +1,4 @@
+import type { Thread } from './thread';
 import type { Closure, Upvalue } from './closure';
 import type { Blua32ExecutionImage, DecodedInstructionPage } from './execution_image';
 import type { ValueSlots } from './value_slots';
@@ -9,6 +10,7 @@ export const enum ProtectedCallKind {
 }
 
 export type CallFrame = {
+	thread: Thread;
 	functionAddress: number;
 	executionImage: Blua32ExecutionImage;
 	decodedPage: DecodedInstructionPage | null;

@@ -128,8 +128,9 @@ import {
 	type DecodedInstructionPage,
 } from './execution_image';
 import { ProtectedCallContinuation, ProtectedCallKind, type CallFrame } from './call_state';
+import { Thread, ThreadStatus, THREAD_HEAP_BYTES, THREAD_STACK_SLOT_BYTES } from './thread';
 import { LuaHeap, type LuaHeapState } from './lua_heap';
-import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader, CpuSnapshotObjectKind, CpuSnapshotClosure, CpuSnapshotTable, CpuSnapshotUpvalue, CPU_SNAPSHOT_VALUE_WORDS, type CpuSnapshotObject, type CpuSnapshotValueWriter } from './snapshot';
+import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader, CpuSnapshotObjectKind, CpuSnapshotClosure, CpuSnapshotTable, CpuSnapshotUpvalue, CpuSnapshotThread, CPU_SNAPSHOT_VALUE_WORDS, type CpuSnapshotObject, type CpuSnapshotValueWriter } from './snapshot';
 
 // start repeated-sequence-acceptable -- Lua VM/table/register hot paths deliberately keep short copy/update sequences inline.
 // start normalized-body-acceptable -- Specialized Lua VM accessors stay split so the fast paths avoid dispatch helpers.
@@ -147,6 +148,7 @@ export type CpuFrameState = {
 	pc: number;
 	closureRef: number;
 	registers: number[];
+	stackCapacity: number;
 	varargs: number[];
 	returnBase: number;
 	returnCount: number;
@@ -172,6 +174,19 @@ export type CpuRootValueState = {
 	value: number;
 };
 
+export type CpuThreadState = {
+	status: ThreadStatus;
+	entryRef: number;
+	resumerRef: number;
+	callBase: number;
+	returnCount: number;
+	stackCapacity: number;
+	error: number;
+	frames: CpuFrameState[];
+	protectedCalls: CpuProtectedCallState[];
+	openUpvalues: number[];
+};
+
 export type CpuRuntimeState = {
 	executionCartridgeSlot: ExecutionDomainId;
 	systemGlobals: CpuRootValueState[];
@@ -182,11 +197,12 @@ export type CpuRuntimeState = {
 	hardHalted: boolean;
 	luaHeap: LuaHeapState;
 	stringIndexTable: number;
-	frames: CpuFrameState[];
-	protectedCalls: CpuProtectedCallState[];
+	rootThreadRef: number;
+	activeThreadRef: number;
+	completionThreadRef: number;
+	threads: CpuThreadState[];
 	completionValues: number[];
 	snapshot: CpuSnapshot;
-	openUpvalues: number[];
 	lastExecutionDomainId: ExecutionDomainId;
 	lastPc: number;
 	haltedUntilIrqFrameDepth: number;
@@ -236,6 +252,9 @@ export class CPU implements MappedPageInvalidator {
 	/** Current runUntilDepth grant; consumed by the caller, not checkpoint state. */
 	public instructionBudgetRemaining: number = 0;
 	public lastPc: number = 0;
+	public readonly rootThread = new Thread(null);
+	public activeThread = this.rootThread;
+	private completionThread = this.rootThread;
 	public readonly globals: Table;
 	public readonly memory: Memory;
 
@@ -264,13 +283,11 @@ export class CPU implements MappedPageInvalidator {
 	private nonMaskableInterruptPending = false;
 	private systemExceptionFunctionAddress = 0;
 	private yieldRequested = false;
+	private threadSwitchRequested = false;
 	private executionHook: ExecutionHook | null = null;
 	private executionHookDomainMask: ExecutionDomainMask = 0;
 	private preMaskableInterruptExecutionHookDomainMask: ExecutionDomainMask = 0;
 	private runUntilDepthEntry = this.runUntilDepthNormal;
-	private readonly frames: CallFrame[] = [];
-	private readonly protectedCallContinuations = new ScratchBuffer<ProtectedCallContinuation>(() => new ProtectedCallContinuation(), MAX_POOLED_FRAMES);
-	private protectedCallDepth = 0;
 	private readonly registerBuiltinArgsScratch = new ScratchBuffer<BuiltinArgsView>(
 		() => new BuiltinArgsView(),
 		1,
@@ -282,7 +299,7 @@ export class CPU implements MappedPageInvalidator {
 	);
 	private builtinResultsScratchIndex = 0;
 	private closureUpvalueWords = new Uint32Array(0);
-	private readonly heapObjectStack: Array<Table | Closure> = [];
+	private readonly heapObjectStack: Array<Table | Closure | Thread> = [];
 	private readonly heapUpvalueStack: Upvalue[] = [];
 	private readonly heapWeakTables: Table[] = [];
 	private readonly heapWeakTableModes: number[] = [];
@@ -299,8 +316,9 @@ export class CPU implements MappedPageInvalidator {
 		reference: ValueReference,
 	): boolean => {
 		switch (tag) {
+			case ValueTag.Thread:
 			case ValueTag.Table:
-				return this.heapSeen.get(reference as Table) === this.heapEpoch;
+				return this.heapSeen.get(reference!) === this.heapEpoch;
 			case ValueTag.Closure: {
 				const closure = reference as Closure;
 				return closure.heapBytes === 0 || this.heapSeen.get(closure) === this.heapEpoch;
@@ -336,9 +354,10 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		switch (valueTag) {
+			case ValueTag.Thread:
 			case ValueTag.Table:
-				if (this.heapSeen.get(valueReference as Table) !== this.heapEpoch) {
-					this.heapObjectStack.push(valueReference as Table);
+				if (this.heapSeen.get(valueReference!) !== this.heapEpoch) {
+					this.heapObjectStack.push(valueReference!);
 					this.heapEphemeronChanged = true;
 				}
 				return;
@@ -389,8 +408,9 @@ export class CPU implements MappedPageInvalidator {
 			case ValueTag.String:
 				this.stringPool.markReachable(scalar as StringId);
 				return;
+			case ValueTag.Thread:
 			case ValueTag.Table:
-				this.heapObjectStack.push(reference as Table);
+				this.heapObjectStack.push(reference as Table | Thread);
 				return;
 			case ValueTag.Closure: {
 				const closure = reference as Closure;
@@ -445,8 +465,6 @@ export class CPU implements MappedPageInvalidator {
 	private globalSlots = new ValueSlots(0);
 	private globalSlotByKey: Map<StringId, number> = new Map();
 	private readonly framePool: CallFrame[] = [];
-	private stackRegisters = new ValueSlots(8);
-	private stackTop = 0;
 	private completionValueSlots = new ValueSlots(8);
 	private completionValueCount = 0;
 	private nextObjectHashId = 1;
@@ -461,6 +479,9 @@ export class CPU implements MappedPageInvalidator {
 		this.memory = memory;
 		this.luaHeap = new LuaHeap(this, memory.ramByteCount());
 		this.stringPool = new StringPool(this.luaHeap);
+		this.luaHeap.reserve(THREAD_HEAP_BYTES + 8 * THREAD_STACK_SLOT_BYTES);
+		this.rootThread.hashId = this.allocateObjectHashId();
+		this.rootThread.status = ThreadStatus.Running;
 		this.globals = this.createTable(0, 0);
 		this.indexKey = this.stringPool.intern('__index');
 		this.modeKey = this.stringPool.intern('__mode');
@@ -493,7 +514,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private ensureStackCapacity(size: number): void {
-		const stack = this.stackRegisters;
+		const stack = this.activeThread.stackRegisters;
 		if (size <= stack.capacity()) {
 			return;
 		}
@@ -501,15 +522,16 @@ export class CPU implements MappedPageInvalidator {
 		if (nextCapacity < 8) {
 			nextCapacity = 8;
 		}
+		this.luaHeap.reserve((nextCapacity - stack.capacity()) * THREAD_STACK_SLOT_BYTES);
 		const next = new ValueSlots(nextCapacity);
-		next.copyRangeFrom(stack, 0, 0, this.stackTop);
-		this.stackRegisters = next;
+		next.copyRangeFrom(stack, 0, 0, this.activeThread.stackTop);
+		this.activeThread.stackRegisters = next;
 		this.refreshFrameRegisterViews();
 	}
 
 	private refreshFrameRegisterViews(): void {
-		const stack = this.stackRegisters;
-		const frames = this.frames;
+		const stack = this.activeThread.stackRegisters;
+		const frames = this.activeThread.frames;
 		for (let index = 0; index < frames.length; index += 1) {
 			const frame = frames[index];
 			frame.registers.rebind(stack, frame.stackBase, frame.stackCapacity);
@@ -770,6 +792,7 @@ export class CPU implements MappedPageInvalidator {
 			return this.framePool.pop()!;
 		}
 		return {
+			thread: this.activeThread,
 			functionAddress: 0,
 			executionImage: null!,
 			decodedPage: null,
@@ -799,7 +822,8 @@ export class CPU implements MappedPageInvalidator {
 		frame.stackCapacity = 0;
 		frame.decodedPage = null;
 		frame.decodedPageAddress = 0;
-		frame.registers.rebind(this.stackRegisters, 0, 0);
+		frame.registers.rebind(this.rootThread.stackRegisters, 0, 0);
+		frame.thread = this.rootThread;
 		frame.isExceptionFrame = false;
 		frame.isNonMaskableExceptionFrame = false;
 		if (this.framePool.length < MAX_POOLED_FRAMES) {
@@ -808,18 +832,31 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private clearCallStack(): void {
-		for (let index = 0; index < this.protectedCallDepth; index += 1) {
-			const continuation = this.protectedCallContinuations.peek(index);
-			continuation.caller = null;
-			continuation.target = null;
+		for (;;) {
+			for (let index = 0; index < this.activeThread.protectedCallDepth; index += 1) {
+				const continuation = this.activeThread.protectedCallContinuations.peek(index);
+				continuation.caller = null;
+				continuation.target = null;
+			}
+			this.activeThread.protectedCallDepth = 0;
+			while (this.activeThread.frames.length > 0) {
+				const frame = this.activeThread.frames.pop()!;
+				this.closeUpvalues(frame);
+				this.releaseFrame(frame);
+			}
+			this.activeThread.stackRegisters.clear(this.activeThread.stackTop);
+			this.activeThread.stackTop = 0;
+			const thread = this.activeThread;
+			thread.status = ThreadStatus.Dead;
+			thread.entry = null;
+			thread.error.setNil(0);
+			if (thread === this.rootThread) break;
+			this.activeThread = thread.resumer === null ? this.rootThread : thread.resumer;
+			thread.resumer = null;
 		}
-		this.protectedCallDepth = 0;
-		while (this.frames.length > 0) {
-			const frame = this.frames.pop()!;
-			this.closeUpvalues(frame);
-			this.releaseFrame(frame);
-		}
-		this.stackTop = 0;
+		this.rootThread.status = ThreadStatus.Running;
+		this.completionThread = this.rootThread;
+		this.threadSwitchRequested = false;
 	}
 
 	public reset(): void {
@@ -1501,6 +1538,7 @@ export class CPU implements MappedPageInvalidator {
 
 	public beginCompletionCall(closure: Closure, args: ReadonlyArray<Value> = EMPTY_CALL_ARGS): void {
 		this.clearCompletionValues();
+		this.completionThread = this.activeThread;
 		this.yieldRequested = false;
 		this.pushFrame(closure, args, 0, 0, true);
 	}
@@ -1518,6 +1556,7 @@ export class CPU implements MappedPageInvalidator {
 		args: ReadonlyArray<Value> = EMPTY_CALL_ARGS,
 	): void {
 		this.clearCompletionValues();
+		this.completionThread = this.activeThread;
 		this.yieldRequested = false;
 		this.readFunctionRecord(
 			this.executionImageForDomain(executionDomainId)!,
@@ -1555,7 +1594,7 @@ export class CPU implements MappedPageInvalidator {
 			this.interruptEventPending = false;
 			return;
 		}
-		this.haltedUntilIrqFrameDepth = this.frames.length;
+		this.haltedUntilIrqFrameDepth = this.activeThread.frames.length;
 		this.yieldRequested = false;
 	}
 
@@ -1572,7 +1611,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public isHaltedUntilIrq(): boolean {
-		return this.haltedUntilIrqFrameDepth === this.frames.length;
+		return this.haltedUntilIrqFrameDepth === this.activeThread.frames.length;
 	}
 
 	public isMemoryWriteBlocked(): boolean {
@@ -1643,9 +1682,9 @@ export class CPU implements MappedPageInvalidator {
 			this.enterException(
 				this.systemExceptionFunctionAddress,
 				CPU_CAUSE_NMI,
-				this.frames[this.frames.length - 1].pc,
+				this.activeThread.frames[this.activeThread.frames.length - 1].pc,
 			);
-			this.frames[this.frames.length - 1].isNonMaskableExceptionFrame = true;
+			this.activeThread.frames[this.activeThread.frames.length - 1].isNonMaskableExceptionFrame = true;
 			this.nmiReturnCauseWord = returnCauseWord;
 			this.nmiReturnEpcWord = returnEpcWord;
 			this.nmiReturnBadAddressWord = returnBadAddressWord;
@@ -1660,7 +1699,7 @@ export class CPU implements MappedPageInvalidator {
 			this.enterException(
 				image.irqFunctionAddress,
 				CPU_CAUSE_IRQ,
-				this.frames[this.frames.length - 1].pc,
+				this.activeThread.frames[this.activeThread.frames.length - 1].pc,
 			);
 			if (!hadHaltLatch) this.interruptEventPending = true;
 			return true;
@@ -1691,8 +1730,8 @@ export class CPU implements MappedPageInvalidator {
 		errorReference: ValueReference,
 	): void {
 		this.luaFaultReasonWord = reason;
-		this.enterSynchronousException(this.frames[this.frames.length - 1], CPU_CAUSE_CODE_TRAP);
-		this.frames[this.frames.length - 1].registers.setEncoded(
+		this.enterSynchronousException(this.activeThread.frames[this.activeThread.frames.length - 1], CPU_CAUSE_CODE_TRAP);
+		this.activeThread.frames[this.activeThread.frames.length - 1].registers.setEncoded(
 			0,
 			errorTag,
 			errorScalar,
@@ -1705,7 +1744,7 @@ export class CPU implements MappedPageInvalidator {
 		causeWord: number,
 		epcWord: number,
 	): void {
-		this.exceptionDomainWord = this.frames[this.frames.length - 1].executionImage.executionDomainId >>> 0;
+		this.exceptionDomainWord = this.activeThread.frames[this.activeThread.frames.length - 1].executionImage.executionDomainId >>> 0;
 		this.epcWord = epcWord >>> 0;
 		this.causeWord = causeWord >>> 0;
 		this.statusWord = ((this.statusWord & ~CPU_STATUS_MODE_STACK_MASK)
@@ -1723,28 +1762,35 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public getFrameDepth(): number {
-		return this.frames.length;
+		return this.activeThread.frames.length;
 	}
 
-	public runUntilDepth(targetDepth: number, instructionBudget: number): RunResult {
-		return this.runUntilDepthEntry(targetDepth, instructionBudget);
+	public runUntilDepth(targetDepth: number, instructionBudget: number, target: Thread = this.rootThread): RunResult {
+		for (;;) {
+			const result = this.runUntilDepthEntry(this.activeThread === target ? targetDepth : 0, instructionBudget);
+			if (!this.threadSwitchRequested) return result;
+			this.threadSwitchRequested = false;
+			this.yieldRequested = false;
+			instructionBudget = this.instructionBudgetRemaining;
+			if (instructionBudget <= 0) return RunResult.Yielded;
+		}
 	}
 
 	private runUntilDepthNormal(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
-		const frames = this.frames;
+		const frames = this.activeThread.frames;
 		const dispatchBaseCycles = DECODED_DISPATCH_BASE_CYCLES;
 		while (frames.length > targetDepth) {
 			try {
 				while (frames.length > targetDepth) {
+					if (this.yieldRequested) {
+						this.yieldRequested = false;
+						return RunResult.Yielded;
+					}
 					if (this.hardHalted
 						|| this.haltedUntilIrqFrameDepth === frames.length
 						|| this.memoryWriteBlocked) {
 						return RunResult.Halted;
-					}
-					if (this.yieldRequested) {
-						this.yieldRequested = false;
-						return RunResult.Yielded;
 					}
 					if (this.instructionBudgetRemaining <= 0) {
 						return RunResult.Yielded;
@@ -1793,7 +1839,7 @@ export class CPU implements MappedPageInvalidator {
 
 	private runUntilDepthInstrumented(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
-		const frames = this.frames;
+		const frames = this.activeThread.frames;
 		const baseCycles = BASE_CYCLES;
 		const executionHook = this.executionHook!;
 		const executionDomainMask = this.executionHookDomainMask;
@@ -1802,14 +1848,14 @@ export class CPU implements MappedPageInvalidator {
 		while (frames.length > targetDepth) {
 			try {
 				while (frames.length > targetDepth) {
+					if (this.yieldRequested) {
+						this.yieldRequested = false;
+						return RunResult.Yielded;
+					}
 					if (this.hardHalted
 						|| this.haltedUntilIrqFrameDepth === frames.length
 						|| this.memoryWriteBlocked) {
 						return RunResult.Halted;
-					}
-					if (this.yieldRequested) {
-						this.yieldRequested = false;
-						return RunResult.Yielded;
 					}
 					if (this.instructionBudgetRemaining <= 0) {
 						return RunResult.Yielded;
@@ -1872,7 +1918,7 @@ export class CPU implements MappedPageInvalidator {
 	private handleRunLoopError(error: unknown): void {
 		if (error === LUA_OUT_OF_MEMORY_SIGNAL) {
 			const errorStringId = this.luaFaultErrorStringIds[LUA_FAULT_REASON_OUT_OF_MEMORY];
-			if (!this.handleProtectedCallError(ValueTag.String, errorStringId, null)) {
+			if (!this.handleThreadError(ValueTag.String, errorStringId, null)) {
 				this.enterLuaFaultException(
 					LUA_FAULT_REASON_OUT_OF_MEMORY,
 					ValueTag.String,
@@ -1881,7 +1927,7 @@ export class CPU implements MappedPageInvalidator {
 				);
 			}
 		} else if (error instanceof LuaThrownValueError) {
-			if (!this.handleProtectedCallError(error.tag, error.scalar, error.reference)) {
+			if (!this.handleThreadError(error.tag, error.scalar, error.reference)) {
 				this.enterLuaFaultException(
 					LUA_FAULT_REASON_EXPLICIT_ERROR,
 					error.tag,
@@ -1891,7 +1937,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 		} else if (error instanceof LuaExecutionError) {
 			const errorStringId = this.luaFaultErrorStringIds[error.reason];
-			if (!this.handleProtectedCallError(ValueTag.String, errorStringId, null)) {
+			if (!this.handleThreadError(ValueTag.String, errorStringId, null)) {
 				this.enterLuaFaultException(error.reason, ValueTag.String, errorStringId, null);
 			}
 		} else {
@@ -1900,20 +1946,20 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private unwindToDepth(targetDepth: number): void {
-		while (this.frames.length > targetDepth) {
-			const frame = this.frames.pop()!;
+		while (this.activeThread.frames.length > targetDepth) {
+			const frame = this.activeThread.frames.pop()!;
 			this.closeUpvalues(frame);
-			this.stackTop = frame.varargBase;
+			this.activeThread.stackTop = frame.varargBase;
 			this.releaseFrame(frame);
 		}
-		while (this.protectedCallDepth > 0) {
-			const continuation = this.protectedCallContinuations.peek(this.protectedCallDepth - 1);
-			if (this.frames.indexOf(continuation.caller!) >= 0) {
+		while (this.activeThread.protectedCallDepth > 0) {
+			const continuation = this.activeThread.protectedCallContinuations.peek(this.activeThread.protectedCallDepth - 1);
+			if (this.activeThread.frames.indexOf(continuation.caller!) >= 0) {
 				break;
 			}
 			continuation.caller = null;
 			continuation.target = null;
-			this.protectedCallDepth -= 1;
+			this.activeThread.protectedCallDepth -= 1;
 		}
 	}
 
@@ -1934,7 +1980,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public readFrameExecutionDomain(frameIndex: number): ExecutionDomainId {
-		return this.frames[frameIndex].executionImage.executionDomainId;
+		return this.activeThread.frames[frameIndex].executionImage.executionDomainId;
 	}
 
 	public readLastExecutionDomain(): ExecutionDomainId {
@@ -1942,20 +1988,20 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public readFrameFunctionAddress(frameIndex: number): number {
-		return this.frames[frameIndex].functionAddress;
+		return this.activeThread.frames[frameIndex].functionAddress;
 	}
 
 	public readFramePc(frameIndex: number): number {
-		return this.frames[frameIndex].pc;
+		return this.activeThread.frames[frameIndex].pc;
 	}
 
 	public readFrameCallSitePc(childFrameIndex: number): number {
-		return this.frames[childFrameIndex].callSitePc;
+		return this.activeThread.frames[childFrameIndex].callSitePc;
 	}
 
 	public completionCallPending(): boolean {
-		for (let frameIndex = this.frames.length - 1; frameIndex >= 0; frameIndex -= 1) {
-			if (this.frames[frameIndex].returnToCompletionLatch) {
+		for (let frameIndex = this.completionThread.frames.length - 1; frameIndex >= 0; frameIndex -= 1) {
+			if (this.completionThread.frames[frameIndex].returnToCompletionLatch) {
 				return true;
 			}
 		}
@@ -1963,7 +2009,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public readFrameReturnsToCompletionLatch(frameIndex: number): boolean {
-		return this.frames[frameIndex].returnToCompletionLatch;
+		return this.activeThread.frames[frameIndex].returnToCompletionLatch;
 	}
 
 	public abortCompletionCall(frameIndex: number): void {
@@ -1976,35 +2022,35 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public isExceptionFrame(frameIndex: number): boolean {
-		return this.frames[frameIndex].isExceptionFrame;
+		return this.activeThread.frames[frameIndex].isExceptionFrame;
 	}
 
 	/** Frame depth reached after all currently active exception roots return. */
 	public readExceptionReturnFrameDepth(): number {
-		for (let frameIndex = 0; frameIndex < this.frames.length; frameIndex += 1) {
-			if (this.frames[frameIndex].isExceptionFrame) return frameIndex;
+		for (let frameIndex = 0; frameIndex < this.activeThread.frames.length; frameIndex += 1) {
+			if (this.activeThread.frames[frameIndex].isExceptionFrame) return frameIndex;
 		}
 		return -1;
 	}
 
 	public isNonMaskableExceptionFrame(frameIndex: number): boolean {
-		return this.frames[frameIndex].isNonMaskableExceptionFrame;
+		return this.activeThread.frames[frameIndex].isNonMaskableExceptionFrame;
 	}
 
 	public getFrameRegisterCount(frameIndex: number): number {
-		return this.frames[frameIndex].top;
+		return this.activeThread.frames[frameIndex].top;
 	}
 
 	public readFrameRegister(frameIndex: number, registerIndex: number): Value {
-		return this.frames[frameIndex].registers.get(registerIndex);
+		return this.activeThread.frames[frameIndex].registers.get(registerIndex);
 	}
 
 	public getFrameUpvalueCount(frameIndex: number): number {
-		return this.frames[frameIndex].closure.upvalues.length;
+		return this.activeThread.frames[frameIndex].closure.upvalues.length;
 	}
 
 	public readFrameUpvalue(frameIndex: number, upvalueIndex: number): Value {
-		return this.readClosureUpvalue(this.frames[frameIndex].closure, upvalueIndex);
+		return this.readClosureUpvalue(this.activeThread.frames[frameIndex].closure, upvalueIndex);
 	}
 
 	/** Read a retained closure without calling it or requiring an active frame. */
@@ -2061,7 +2107,7 @@ export class CPU implements MappedPageInvalidator {
 			CPU.executionBusSignalsForDomain(executionDomainId),
 		);
 		const functionRecord = this.functionRecordLatch;
-		const frame = this.frames[frameIndex];
+		const frame = this.activeThread.frames[frameIndex];
 		if (functionRecord.maxStack > frame.stackCapacity) {
 			this.ensureRegisterCapacity(frame, functionRecord.maxStack - 1);
 		}
@@ -2079,7 +2125,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public writeFrameCallSitePc(childFrameIndex: number, pc: number): void {
-		this.frames[childFrameIndex].callSitePc = pc;
+		this.activeThread.frames[childFrameIndex].callSitePc = pc;
 	}
 
 	public setGlobalByKey(
@@ -2715,10 +2761,10 @@ export class CPU implements MappedPageInvalidator {
 					}
 					const returnFromNmi = frame.isNonMaskableExceptionFrame;
 					const returnPc = this.epcWord;
-					const caller = this.frames[this.frames.length - 2];
+					const caller = this.activeThread.frames[this.activeThread.frames.length - 2];
 					this.closeUpvalues(frame);
-					this.frames.pop();
-					this.stackTop = frame.varargBase;
+					this.activeThread.frames.pop();
+					this.activeThread.stackTop = frame.varargBase;
 					this.releaseFrame(frame);
 					this.statusWord = ((this.statusWord & ~CPU_STATUS_RFE_RESTORE_MASK)
 						| ((this.statusWord >> 2) & CPU_STATUS_RFE_RESTORE_MASK)) >>> 0;
@@ -2830,9 +2876,10 @@ export class CPU implements MappedPageInvalidator {
 				case OpCode.VARARG: {
 					const b = page.b[pageOffset];
 					const count = b === 0 ? frame.varargCount : b;
+					if (count > 0) this.ensureRegisterCapacity(frame, a + count - 1);
 					const copyCount = Math.min(count, frame.varargCount);
 					registers.copyRangeFrom(
-						this.stackRegisters,
+						this.activeThread.stackRegisters,
 						a,
 						frame.varargBase,
 						copyCount,
@@ -2876,40 +2923,49 @@ export class CPU implements MappedPageInvalidator {
 					const b = page.b[pageOffset];
 					const total = b === 0 ? Math.max(frame.top - a, 0) : b;
 					this.closeUpvalues(frame);
-					const frameIndex = this.frames.length - 1;
-					if (this.protectedCallDepth > 0) {
-						const continuationIndex = this.protectedCallDepth - 1;
-						const continuation = this.protectedCallContinuations.peek(continuationIndex);
+					const frameIndex = this.activeThread.frames.length - 1;
+					if (this.activeThread.protectedCallDepth > 0) {
+						const continuationIndex = this.activeThread.protectedCallDepth - 1;
+						const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
 						if (continuation.target === frame) {
 							this.finishProtectedCallFromRegisters(continuationIndex, registers, a, total);
-							this.frames.pop();
-							this.stackTop = frame.varargBase;
+							this.activeThread.frames.pop();
+							this.activeThread.stackTop = frame.varargBase;
 							this.releaseFrame(frame);
 							return;
 						}
 					}
 					if (frame.returnToCompletionLatch) {
 						this.latchCompletionValues(registers, a, total);
-						this.frames.pop();
-						this.stackTop = frame.varargBase;
+						this.activeThread.frames.pop();
+						this.activeThread.stackTop = frame.varargBase;
+						this.releaseFrame(frame);
+						return;
+					}
+					if (frameIndex === 0 && this.activeThread.resumer !== null) {
+						const finished = this.activeThread;
+						finished.status = ThreadStatus.Dead;
+						this.returnToResumer(registers, a, total, true);
+						finished.frames.pop();
+						finished.stackTop = 0;
 						this.releaseFrame(frame);
 						return;
 					}
 					if (frameIndex === 0) {
 						this.latchCompletionValues(registers, a, total);
-						this.frames.pop();
-						this.stackTop = frame.varargBase;
+						this.activeThread.frames.pop();
+						this.activeThread.stackTop = frame.varargBase;
 						this.releaseFrame(frame);
 						return;
 					}
-					const caller = this.frames[frameIndex - 1];
+					const caller = this.activeThread.frames[frameIndex - 1];
 					const writeCount = frame.returnCount === 0 ? total : frame.returnCount;
 					if (writeCount > 0) {
 						this.ensureRegisterCapacity(caller, frame.returnBase + writeCount - 1);
 					}
 					this.writeReturnValuesFromRegisters(caller, frame.returnBase, frame.returnCount, registers, a, total);
-					this.frames.pop();
-					this.stackTop = frame.varargBase;
+					this.activeThread.frames.pop();
+					this.activeThread.stackTop = frame.varargBase;
 					this.releaseFrame(frame);
 					return;
 				}
@@ -3097,17 +3153,13 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private prepareFrameRegisters(frame: CallFrame, registerCount: number): ValueSlots {
-		const needed = Math.max(registerCount, 1);
-		let capacity = 1 << (32 - Math.clz32(needed - 1));
-		if (capacity < 8) {
-			capacity = 8;
-		}
+		const capacity = Math.max(registerCount, 1);
 		frame.stackBase = frame.varargBase + frame.varargCount;
 		frame.stackCapacity = capacity;
-		this.stackTop = frame.stackBase + capacity;
-		this.ensureStackCapacity(this.stackTop);
+		this.activeThread.stackTop = frame.stackBase + capacity;
+		this.ensureStackCapacity(this.activeThread.stackTop);
 		const registers = frame.registers;
-		registers.rebind(this.stackRegisters, frame.stackBase, frame.stackCapacity);
+		registers.rebind(this.activeThread.stackRegisters, frame.stackBase, frame.stackCapacity);
 		registers.clear(frame.stackCapacity);
 		return registers;
 	}
@@ -3145,6 +3197,7 @@ export class CPU implements MappedPageInvalidator {
 	): CallFrame {
 		const functionRecord = this.functionRecordLatch;
 		const frame = this.acquireFrame();
+		frame.thread = this.activeThread;
 		frame.functionAddress = closure.functionAddress;
 		frame.executionImage = functionRecord.image;
 		frame.decodedPage = null;
@@ -3156,7 +3209,7 @@ export class CPU implements MappedPageInvalidator {
 		frame.top = functionRecord.numParams;
 		frame.returnToCompletionLatch = returnToCompletionLatch;
 		frame.callSitePc = functionRecord.codeAddress;
-		frame.varargBase = this.stackTop;
+		frame.varargBase = this.activeThread.stackTop;
 		frame.varargCount = (functionRecord.flags & BLUA32_FUNCTION_VARARG) !== 0
 			? Math.max(args.length - functionRecord.numParams, 0)
 			: 0;
@@ -3169,10 +3222,10 @@ export class CPU implements MappedPageInvalidator {
 		}
 		if ((functionRecord.flags & BLUA32_FUNCTION_VARARG) !== 0) {
 			for (let index = 0; index < frame.varargCount; index += 1) {
-				this.stackRegisters.set(frame.varargBase + index, args[argIndex + index]);
+				this.activeThread.stackRegisters.set(frame.varargBase + index, args[argIndex + index]);
 			}
 		}
-		this.frames.push(frame);
+		this.activeThread.frames.push(frame);
 		return frame;
 	}
 
@@ -3187,6 +3240,7 @@ export class CPU implements MappedPageInvalidator {
 		}
 		const functionRecord = this.functionRecordLatch;
 		const frame = this.acquireFrame();
+		frame.thread = this.activeThread;
 		frame.functionAddress = closure.functionAddress;
 		frame.executionImage = functionRecord.image;
 		frame.decodedPage = null;
@@ -3198,7 +3252,7 @@ export class CPU implements MappedPageInvalidator {
 		frame.top = functionRecord.numParams;
 		frame.returnToCompletionLatch = returnToCompletionLatch;
 		frame.callSitePc = callSitePc;
-		frame.varargBase = this.stackTop;
+		frame.varargBase = this.activeThread.stackTop;
 		frame.varargCount = (functionRecord.flags & BLUA32_FUNCTION_VARARG) !== 0
 			? Math.max(argCount - functionRecord.numParams, 0)
 			: 0;
@@ -3214,14 +3268,14 @@ export class CPU implements MappedPageInvalidator {
 		}
 		if ((functionRecord.flags & BLUA32_FUNCTION_VARARG) !== 0) {
 			for (let index = 0; index < frame.varargCount; index += 1) {
-				this.stackRegisters.copySlotFrom(
+				this.activeThread.stackRegisters.copySlotFrom(
 					callerRegisters,
 					frame.varargBase + index,
 					argBase + functionRecord.numParams + index,
 				);
 			}
 		}
-		this.frames.push(frame);
+		this.activeThread.frames.push(frame);
 		return frame;
 	}
 
@@ -3367,7 +3421,7 @@ export class CPU implements MappedPageInvalidator {
 	private ensureRegisterCapacity(frame: CallFrame, index: number): ValueSlots {
 		const registers = frame.registers;
 		if (index >= frame.stackCapacity) {
-			const frameIndex = this.frames.indexOf(frame);
+			const frameIndex = this.activeThread.frames.indexOf(frame);
 			if (frameIndex < 0) {
 				throw new Error('Attempted to grow registers for a released frame.');
 			}
@@ -3379,17 +3433,17 @@ export class CPU implements MappedPageInvalidator {
 			}
 			const delta = capacity - previousCapacity;
 			frame.stackCapacity = capacity;
-			this.ensureStackCapacity(this.stackTop + delta);
+			this.ensureStackCapacity(this.activeThread.stackTop + delta);
 			if (delta > 0) {
-				const stack = this.stackRegisters;
-				for (let i = this.frames.length - 1; i > frameIndex; i -= 1) {
-					const shifted = this.frames[i];
+				const stack = this.activeThread.stackRegisters;
+				for (let i = this.activeThread.frames.length - 1; i > frameIndex; i -= 1) {
+					const shifted = this.activeThread.frames[i];
 					stack.moveRange(shifted.varargBase + delta, shifted.varargBase, shifted.varargCount + shifted.stackCapacity);
 					shifted.varargBase += delta;
 					shifted.stackBase += delta;
 				}
 			}
-			this.stackTop += delta;
+			this.activeThread.stackTop += delta;
 			this.refreshFrameRegisterViews();
 			for (let slot = previousCapacity; slot < frame.stackCapacity; slot += 1) {
 				registers.setNil(slot);
@@ -3507,6 +3561,7 @@ export class CPU implements MappedPageInvalidator {
 				return leftScalar === rightScalar;
 			case ValueTag.Table:
 			case ValueTag.Closure:
+			case ValueTag.Thread:
 				return registers.getReference(left) === registers.getReference(right);
 		}
 	}
@@ -3559,6 +3614,37 @@ export class CPU implements MappedPageInvalidator {
 				}
 				this.stringIndexTable = args.registers.getTable(args.base);
 				break;
+			case BuiltinFunctionId.CoroutineCreate:
+				if (args.length === 0 || args.registers.getTag(args.base) !== ValueTag.Closure) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+				out.push(ValueTag.Thread, NaN, this.createThread(args.registers.getClosure(args.base)));
+				break;
+			case BuiltinFunctionId.CoroutineRunning:
+				out.push(ValueTag.Thread, NaN, this.activeThread);
+				out.push(this.activeThread === this.rootThread ? ValueTag.True : ValueTag.False);
+				break;
+			case BuiltinFunctionId.CoroutineStatus:
+			case BuiltinFunctionId.CoroutineClose:
+			case BuiltinFunctionId.CoroutineIsYieldable: {
+				const thread = args.length === 0 && id === BuiltinFunctionId.CoroutineIsYieldable ? this.activeThread
+					: args.length > 0 && args.registers.getTag(args.base) === ValueTag.Thread ? args.registers.getReference(args.base) as Thread : null;
+				if (thread === null) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+				if (id === BuiltinFunctionId.CoroutineIsYieldable) out.push(this.coroutineYieldable(thread) ? ValueTag.True : ValueTag.False);
+				else if (id === BuiltinFunctionId.CoroutineStatus) {
+					const name = thread.status === ThreadStatus.Running ? 'running' : thread.status === ThreadStatus.Normal ? 'normal'
+						: thread.status === ThreadStatus.Dead || thread.status === ThreadStatus.Failed ? 'dead' : 'suspended';
+					out.push(ValueTag.String, this.stringPool.intern(name));
+				} else {
+					const failed = thread.status === ThreadStatus.Failed;
+					out.push(failed ? ValueTag.False : ValueTag.True);
+					if (failed) out.push(thread.error.getTag(0), thread.error.getScalar(0), thread.error.getReference(0));
+					this.closeThread(thread);
+					thread.error.setNil(0);
+				}
+				break;
+			}
+			case BuiltinFunctionId.CoroutineResume:
+			case BuiltinFunctionId.CoroutineYield:
+				throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			case BuiltinFunctionId.CollectGarbage:
 				this.collectTrackedHeapBytes();
 				break;
@@ -3571,10 +3657,123 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
+	public createThread(entry: Closure): Thread {
+		this.luaHeap.reserve(THREAD_HEAP_BYTES + 8 * THREAD_STACK_SLOT_BYTES, ValueTag.Closure, NaN, entry);
+		const thread = new Thread(entry);
+		thread.hashId = this.allocateObjectHashId();
+		return thread;
+	}
+
+	private coroutineYieldable(thread: Thread): boolean {
+		if (thread === this.rootThread) return false;
+		for (const frame of thread.frames) if (frame.isExceptionFrame) return false;
+		for (let index = 0; index < thread.protectedCallDepth; index += 1) {
+			if (thread.protectedCallContinuations.peek(index).kind === ProtectedCallKind.XPCallHandler) return false;
+		}
+		return true;
+	}
+
+	private returnToResumer(source: ValueSlots, sourceBase: number, sourceCount: number, succeeded: boolean): void {
+		const thread = this.activeThread;
+		const resumer = thread.resumer!;
+		this.activeThread = resumer;
+		resumer.status = ThreadStatus.Running;
+		const caller = resumer.frames[resumer.frames.length - 1];
+		const count = resumer.returnCount === 0 ? sourceCount + 1 : resumer.returnCount;
+		const registers = this.ensureRegisterCapacity(caller, resumer.callBase + count - 1);
+		registers.setBool(resumer.callBase, succeeded);
+		const copied = Math.min(sourceCount, count - 1);
+		registers.copyRangeFrom(source, resumer.callBase + 1, sourceBase, copied);
+		for (let index = copied + 1; index < count; index += 1) registers.setNil(resumer.callBase + index);
+		caller.top = resumer.callBase + count;
+		thread.resumer = null;
+		this.threadSwitchRequested = true;
+		this.yieldRequested = true;
+	}
+
+	private runCoroutineTransfer(id: BuiltinFunctionId, caller: CallFrame, callBase: number, returnCount: number, argCount: number): void {
+		const thread = this.activeThread;
+		if (id === BuiltinFunctionId.CoroutineYield) {
+			if (!this.coroutineYieldable(thread)) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			thread.callBase = callBase;
+			thread.returnCount = returnCount;
+			thread.status = ThreadStatus.Suspended;
+			this.returnToResumer(caller.registers, callBase + 1, argCount, true);
+			return;
+		}
+		if (argCount === 0 || caller.registers.getTag(callBase + 1) !== ValueTag.Thread) {
+			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		}
+		const target = caller.registers.getReference(callBase + 1) as Thread;
+		if (target.status !== ThreadStatus.New && target.status !== ThreadStatus.Suspended) {
+			const results = this.acquireBuiltinResults();
+			try {
+				results.push(ValueTag.False);
+				results.push(ValueTag.String, this.stringPool.intern('cannot resume non-suspended coroutine'));
+				this.writeReturnValuesFromBuiltinResults(caller, callBase, returnCount, results);
+			} finally { this.releaseBuiltinResults(results); }
+			return;
+		}
+		const fresh = target.status === ThreadStatus.New;
+		thread.callBase = callBase;
+		thread.returnCount = returnCount;
+		thread.status = ThreadStatus.Normal;
+		target.resumer = thread;
+		target.status = ThreadStatus.Running;
+		this.activeThread = target;
+		if (fresh) {
+			this.pushFrameFromCaller(caller, target.entry!, callBase + 2, argCount - 1, 0, 0, false, 0);
+			target.entry = null;
+		} else {
+			const frame = target.frames[target.frames.length - 1];
+			const count = target.returnCount === 0 ? argCount - 1 : target.returnCount;
+			this.ensureRegisterCapacity(frame, target.callBase + count - 1);
+			this.writeReturnValuesFromRegisters(frame, target.callBase, target.returnCount, caller.registers, callBase + 2, argCount - 1);
+		}
+		this.threadSwitchRequested = true;
+		this.yieldRequested = true;
+	}
+
+	private handleThreadError(tag: ValueTag, scalar: number, reference: ValueReference): boolean {
+		if (this.handleProtectedCallError(tag, scalar, reference)) return true;
+		const thread = this.activeThread;
+		if (thread.resumer === null) return false;
+		for (const frame of thread.frames) if (frame.isExceptionFrame) return false;
+		thread.status = ThreadStatus.Failed;
+		thread.error.setEncoded(0, tag, scalar, reference);
+		this.returnToResumer(thread.error, 0, 1, false);
+		return true;
+	}
+
+	public closeThread(thread: Thread): void {
+		if (thread.status === ThreadStatus.Running || thread.status === ThreadStatus.Normal) {
+			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		}
+		for (const frame of thread.frames) {
+			this.closeUpvalues(frame);
+			this.releaseFrame(frame);
+		}
+		thread.frames.length = 0;
+		for (let index = 0; index < thread.protectedCallDepth; index += 1) {
+			const continuation = thread.protectedCallContinuations.peek(index);
+			continuation.caller = null;
+			continuation.target = null;
+		}
+		thread.protectedCallDepth = 0;
+		thread.stackRegisters.clear(thread.stackTop);
+		thread.stackTop = 0;
+		thread.entry = null;
+		thread.status = ThreadStatus.Dead;
+	}
+
 	private runBuiltinFunction(id: BuiltinFunctionId, frame: CallFrame, callBase: number, returnCount: number, argCount: number): void {
 		this.charge(BUILTIN_FUNCTIONS[id].cost.base);
 		if (id === BuiltinFunctionId.PCall || id === BuiltinFunctionId.XPCall) {
 			this.startProtectedCall(id, frame, callBase, returnCount, callBase + 1, argCount, false);
+			return;
+		}
+		if (id === BuiltinFunctionId.CoroutineResume || id === BuiltinFunctionId.CoroutineYield) {
+			this.runCoroutineTransfer(id, frame, callBase, returnCount, argCount);
 			return;
 		}
 		const builtinArgs = this.acquireRegisterBuiltinArgs();
@@ -3582,7 +3781,7 @@ export class CPU implements MappedPageInvalidator {
 		try {
 			builtinArgs.bind(frame.registers, callBase + 1, argCount);
 			this.callBuiltinFunction(id, builtinArgs, results);
-			if (this.frames.length > 0 && this.frames[this.frames.length - 1] === frame) {
+			if (this.activeThread.frames.length > 0 && this.activeThread.frames[this.activeThread.frames.length - 1] === frame) {
 				this.writeReturnValuesFromBuiltinResults(frame, callBase, returnCount, results);
 			}
 		} finally {
@@ -3609,9 +3808,9 @@ export class CPU implements MappedPageInvalidator {
 				throw new LuaExecutionError(LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION);
 			}
 		}
-		const continuationIndex = this.protectedCallDepth;
-		const continuation = this.protectedCallContinuations.get(continuationIndex);
-		this.protectedCallDepth = continuationIndex + 1;
+		const continuationIndex = this.activeThread.protectedCallDepth;
+		const continuation = this.activeThread.protectedCallContinuations.get(continuationIndex);
+		this.activeThread.protectedCallDepth = continuationIndex + 1;
 		continuation.kind = id === BuiltinFunctionId.PCall ? ProtectedCallKind.PCall : ProtectedCallKind.XPCallBody;
 		continuation.caller = caller;
 		continuation.target = null;
@@ -3639,7 +3838,7 @@ export class CPU implements MappedPageInvalidator {
 		argumentBase: number,
 		argumentCount: number,
 	): void {
-		const continuation = this.protectedCallContinuations.peek(continuationIndex);
+		const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
 		const caller = continuation.caller!;
 		const targetTag = targetPresent
 			? targetRegisters.getTag(targetRegister)
@@ -3682,7 +3881,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private finishProtectedCallFromBuiltinResults(continuationIndex: number, values: BuiltinResults): void {
-		const continuation = this.protectedCallContinuations.peek(continuationIndex);
+		const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
 		if (continuation.kind === ProtectedCallKind.XPCallHandler) {
 			if (values.length > 0) {
 				this.finishProtectedCallWithError(
@@ -3706,7 +3905,7 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private finishProtectedCallFromRegisters(continuationIndex: number, source: ValueSlots, sourceBase: number, sourceCount: number): void {
-		const continuation = this.protectedCallContinuations.peek(continuationIndex);
+		const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
 		if (continuation.kind === ProtectedCallKind.XPCallHandler) {
 			if (sourceCount > 0) {
 				this.finishProtectedCallWithError(
@@ -3735,7 +3934,7 @@ export class CPU implements MappedPageInvalidator {
 		errorScalar: number,
 		errorReference: ValueReference,
 	): void {
-		const continuation = this.protectedCallContinuations.peek(continuationIndex);
+		const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
 		const caller = continuation.caller!;
 		const resultCount = continuation.returnCount === 0 ? 2 : continuation.returnCount;
 		if (resultCount > 0) {
@@ -3808,13 +4007,13 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	private finishProtectedContinuation(continuationIndex: number, resultCount: number): void {
-		const continuation = this.protectedCallContinuations.peek(continuationIndex);
+		const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
 		const caller = continuation.caller!;
 		const callBase = continuation.callBase;
 		const returnsToProtectedParent = continuation.returnsToProtectedParent;
 		continuation.target = null;
 		continuation.caller = null;
-		this.protectedCallDepth = continuationIndex;
+		this.activeThread.protectedCallDepth = continuationIndex;
 		if (returnsToProtectedParent) {
 			this.finishProtectedCallFromRegisters(continuationIndex - 1, caller.registers, callBase, resultCount);
 		}
@@ -3826,15 +4025,15 @@ export class CPU implements MappedPageInvalidator {
 		errorReference: ValueReference,
 	): boolean {
 		for (;;) {
-			if (this.protectedCallDepth === 0) {
+			if (this.activeThread.protectedCallDepth === 0) {
 				return false;
 			}
-			const continuationIndex = this.protectedCallDepth - 1;
-			const continuation = this.protectedCallContinuations.peek(continuationIndex);
+			const continuationIndex = this.activeThread.protectedCallDepth - 1;
+			const continuation = this.activeThread.protectedCallContinuations.peek(continuationIndex);
 			const caller = continuation.caller!;
-			const callerIndex = this.frames.indexOf(caller);
-			for (let frameIndex = this.frames.length - 1; frameIndex > callerIndex; frameIndex -= 1) {
-				if (this.frames[frameIndex].isExceptionFrame) {
+			const callerIndex = this.activeThread.frames.indexOf(caller);
+			for (let frameIndex = this.activeThread.frames.length - 1; frameIndex > callerIndex; frameIndex -= 1) {
+				if (this.activeThread.frames[frameIndex].isExceptionFrame) {
 					return false;
 				}
 			}
@@ -4133,6 +4332,7 @@ export class CPU implements MappedPageInvalidator {
 				case ValueTag.BuiltinFunction: writer.setWord(offset + 1, scalar); break;
 				case ValueTag.Table: writer.setWord(offset + 1, captureObject(reference as Table, CpuSnapshotObjectKind.Table)); break;
 				case ValueTag.Closure: writer.setWord(offset + 1, captureObject(reference as Closure, CpuSnapshotObjectKind.Closure)); break;
+				case ValueTag.Thread: writer.setWord(offset + 1, captureObject(reference as Thread, CpuSnapshotObjectKind.Thread)); break;
 			}
 			writer.setWord(offset + 2, 0);
 		};
@@ -4141,6 +4341,84 @@ export class CPU implements MappedPageInvalidator {
 			writeValue(offset, tag, scalar, reference);
 			return offset;
 		};
+
+		const threads: CpuThreadState[] = [];
+		const captureThread = (thread: Thread): number => {
+			const frames = new Array<CpuFrameState>(thread.frames.length);
+			for (let frameIndex = 0; frameIndex < thread.frames.length; frameIndex += 1) {
+				const frame = thread.frames[frameIndex];
+				const closureRef = captureObject(frame.closure, CpuSnapshotObjectKind.Closure);
+				const registers = new Array<number>(frame.top);
+				for (let registerIndex = 0; registerIndex < frame.top; registerIndex += 1) {
+					registers[registerIndex] = captureStoredValueState(
+						frame.registers.getTag(registerIndex),
+						frame.registers.getScalar(registerIndex),
+						frame.registers.getReference(registerIndex),
+					);
+				}
+				const varargs = new Array<number>(frame.varargCount);
+				for (let varargIndex = 0; varargIndex < frame.varargCount; varargIndex += 1) {
+					const slot = frame.varargBase + varargIndex;
+					varargs[varargIndex] = captureStoredValueState(
+						thread.stackRegisters.getTag(slot),
+						thread.stackRegisters.getScalar(slot),
+						thread.stackRegisters.getReference(slot),
+					);
+				}
+				frames[frameIndex] = {
+					functionAddress: frame.functionAddress,
+					pc: frame.pc,
+					closureRef,
+					registers,
+					stackCapacity: frame.stackCapacity,
+					varargs,
+					returnBase: frame.returnBase,
+					returnCount: frame.returnCount,
+					top: frame.top,
+					returnToCompletionLatch: frame.returnToCompletionLatch,
+					callSitePc: frame.callSitePc,
+					isExceptionFrame: frame.isExceptionFrame,
+					isNonMaskableExceptionFrame: frame.isNonMaskableExceptionFrame,
+				};
+			}
+			const protectedCalls = new Array<CpuProtectedCallState>(thread.protectedCallDepth);
+			for (let index = 0; index < thread.protectedCallDepth; index += 1) {
+				const continuation = thread.protectedCallContinuations.peek(index);
+				const caller = continuation.caller!;
+				protectedCalls[index] = {
+					kind: continuation.kind,
+					callerFrameIndex: thread.frames.indexOf(caller),
+					targetFrameIndex: continuation.target === null ? -1 : thread.frames.indexOf(continuation.target),
+					returnsToProtectedParent: continuation.returnsToProtectedParent,
+					callBase: continuation.callBase,
+					returnCount: continuation.returnCount,
+					handlerRegister: continuation.handlerRegister,
+				};
+			}
+
+			const openUpvalues: number[] = [];
+			for (let frameIndex = 0; frameIndex < thread.frames.length; frameIndex += 1) {
+				let upvalue = thread.frames[frameIndex].openUpvalueHead;
+				while (upvalue) {
+					openUpvalues.push(captureObject(upvalue, CpuSnapshotObjectKind.Upvalue));
+					upvalue = upvalue.nextOpen;
+				}
+			}
+			const index = threads.length;
+			threads.push({
+				status: thread.status,
+				entryRef: thread.entry === null ? -1 : captureObject(thread.entry, CpuSnapshotObjectKind.Closure),
+				resumerRef: thread.resumer === null ? -1 : captureObject(thread.resumer, CpuSnapshotObjectKind.Thread),
+				callBase: thread.callBase, returnCount: thread.returnCount,
+				stackCapacity: thread.stackRegisters.capacity(),
+				error: captureStoredValueState(thread.error.getTag(0), thread.error.getScalar(0), thread.error.getReference(0)),
+				frames, protectedCalls, openUpvalues,
+			});
+			return index;
+		};
+		const rootThreadRef = captureObject(this.rootThread, CpuSnapshotObjectKind.Thread);
+		const activeThreadRef = captureObject(this.activeThread, CpuSnapshotObjectKind.Thread);
+		const completionThreadRef = captureObject(this.completionThread, CpuSnapshotObjectKind.Thread);
 
 		const systemGlobals: CpuRootValueState[] = [];
 		for (let slot = 0; slot < this.systemGlobalNames.length; slot += 1) {
@@ -4167,56 +4445,6 @@ export class CPU implements MappedPageInvalidator {
 			});
 		}
 
-		const frames = new Array<CpuFrameState>(this.frames.length);
-		for (let frameIndex = 0; frameIndex < this.frames.length; frameIndex += 1) {
-			const frame = this.frames[frameIndex];
-			const closureRef = captureObject(frame.closure, CpuSnapshotObjectKind.Closure);
-			const registers = new Array<number>(frame.top);
-			for (let registerIndex = 0; registerIndex < frame.top; registerIndex += 1) {
-				registers[registerIndex] = captureStoredValueState(
-					frame.registers.getTag(registerIndex),
-					frame.registers.getScalar(registerIndex),
-					frame.registers.getReference(registerIndex),
-				);
-			}
-			const varargs = new Array<number>(frame.varargCount);
-			for (let varargIndex = 0; varargIndex < frame.varargCount; varargIndex += 1) {
-				const slot = frame.varargBase + varargIndex;
-				varargs[varargIndex] = captureStoredValueState(
-					this.stackRegisters.getTag(slot),
-					this.stackRegisters.getScalar(slot),
-					this.stackRegisters.getReference(slot),
-				);
-			}
-			frames[frameIndex] = {
-				functionAddress: frame.functionAddress,
-				pc: frame.pc,
-				closureRef,
-				registers,
-				varargs,
-				returnBase: frame.returnBase,
-				returnCount: frame.returnCount,
-				top: frame.top,
-				returnToCompletionLatch: frame.returnToCompletionLatch,
-				callSitePc: frame.callSitePc,
-				isExceptionFrame: frame.isExceptionFrame,
-				isNonMaskableExceptionFrame: frame.isNonMaskableExceptionFrame,
-			};
-		}
-		const protectedCalls = new Array<CpuProtectedCallState>(this.protectedCallDepth);
-		for (let index = 0; index < this.protectedCallDepth; index += 1) {
-			const continuation = this.protectedCallContinuations.peek(index);
-			const caller = continuation.caller!;
-			protectedCalls[index] = {
-				kind: continuation.kind,
-				callerFrameIndex: this.frames.indexOf(caller),
-				targetFrameIndex: continuation.target === null ? -1 : this.frames.indexOf(continuation.target),
-				returnsToProtectedParent: continuation.returnsToProtectedParent,
-				callBase: continuation.callBase,
-				returnCount: continuation.returnCount,
-				handlerRegister: continuation.handlerRegister,
-			};
-		}
 
 		const completionValues = new Array<number>(this.completionValueCount);
 		for (let index = 0; index < this.completionValueCount; index += 1) {
@@ -4227,14 +4455,6 @@ export class CPU implements MappedPageInvalidator {
 			);
 		}
 
-		const openUpvalues: number[] = [];
-		for (let frameIndex = 0; frameIndex < this.frames.length; frameIndex += 1) {
-			let upvalue = this.frames[frameIndex].openUpvalueHead;
-			while (upvalue) {
-				openUpvalues.push(captureObject(upvalue, CpuSnapshotObjectKind.Upvalue));
-				upvalue = upvalue.nextOpen;
-			}
-		}
 		const stringIndexTable = captureStoredValueState(
 			this.stringIndexTable ? ValueTag.Table : ValueTag.Nil,
 			NaN,
@@ -4255,6 +4475,14 @@ export class CPU implements MappedPageInvalidator {
 			const kind = pendingKinds[id];
 			let offset: number;
 			switch (kind) {
+				case CpuSnapshotObjectKind.Thread: {
+					const thread = object as Thread;
+					offset = writer.reserveWords(CpuSnapshotThread.Size);
+					writer.setWord(offset + CpuSnapshotThread.Kind, kind);
+					writer.setWord(offset + CpuSnapshotThread.HashId, thread.hashId);
+					writer.setWord(offset + CpuSnapshotThread.Index, captureThread(thread));
+					break;
+				}
 				case CpuSnapshotObjectKind.Table:
 					offset = (object as Table).captureSnapshot(writer, writeValue);
 					break;
@@ -4278,7 +4506,8 @@ export class CPU implements MappedPageInvalidator {
 					writer.setWord(offset + CpuSnapshotUpvalue.HashId, upvalue.hashId);
 					writer.setWord(offset + CpuSnapshotUpvalue.Open, upvalue.open ? 1 : 0);
 					writer.setWord(offset + CpuSnapshotUpvalue.Index, upvalue.index);
-					writer.setWord(offset + CpuSnapshotUpvalue.FrameIndex, upvalue.open ? this.frames.indexOf(upvalue.frame) : -1);
+					writer.setWord(offset + CpuSnapshotUpvalue.ThreadRef, upvalue.open ? captureObject(upvalue.frame!.thread, CpuSnapshotObjectKind.Thread) : -1);
+					writer.setWord(offset + CpuSnapshotUpvalue.FrameIndex, upvalue.open ? upvalue.frame!.thread.frames.indexOf(upvalue.frame!) : -1);
 					if (upvalue.open) {
 						const registers = upvalue.frame!.registers;
 						writeValue(offset + CpuSnapshotUpvalue.Value, registers.getTag(upvalue.index), registers.getScalar(upvalue.index), registers.getReference(upvalue.index));
@@ -4307,11 +4536,9 @@ export class CPU implements MappedPageInvalidator {
 			hardHalted: this.hardHalted,
 			luaHeap: this.luaHeap.captureState(),
 			stringIndexTable,
-			frames,
-			protectedCalls,
+			rootThreadRef, activeThreadRef, completionThreadRef, threads,
 			completionValues,
 			snapshot,
-			openUpvalues,
 			lastExecutionDomainId: this.lastExecutionDomainId,
 			lastPc: this.lastPc,
 			haltedUntilIrqFrameDepth: this.haltedUntilIrqFrameDepth,
@@ -4353,6 +4580,19 @@ export class CPU implements MappedPageInvalidator {
 		for (let index = 0; index < snapshot.objectCount; index += 1) {
 			const offset = snapshot.objectWord(index);
 			switch (snapshot.word(offset)) {
+				case CpuSnapshotObjectKind.Thread: {
+					const thread = index === state.rootThreadRef ? this.rootThread : new Thread(null);
+					const saved = state.threads[snapshot.word(offset + CpuSnapshotThread.Index)];
+					thread.hashId = snapshot.word(offset + CpuSnapshotThread.HashId);
+					thread.stackRegisters = new ValueSlots(saved.stackCapacity);
+					thread.stackTop = 0;
+					thread.frames.length = 0;
+					thread.status = saved.status;
+					thread.callBase = saved.callBase;
+					thread.returnCount = saved.returnCount;
+					restoredObjects[index] = thread;
+					break;
+				}
 				case CpuSnapshotObjectKind.Table: {
 					let table: Table;
 					if (index === state.globalTableRef) {
@@ -4453,75 +4693,96 @@ export class CPU implements MappedPageInvalidator {
 		const executionImage = this.executionImagesByDomain[state.executionCartridgeSlot + 1]!;
 		this.latchActiveExecutionImage(executionImage);
 
-		for (let frameIndex = 0; frameIndex < state.frames.length; frameIndex += 1) {
-			const frameState = state.frames[frameIndex];
-			this.readFunctionRecordOnBus(
-				executionImage,
-				frameState.functionAddress,
-				this.executionBusSignals,
-			);
-			const functionRecord = this.functionRecordLatch;
-			const frame = this.acquireFrame();
-			frame.functionAddress = frameState.functionAddress;
-			frame.executionImage = functionRecord.image;
-			frame.pc = frameState.pc;
-			frame.closure = restoredObjects[frameState.closureRef] as Closure;
-			frame.returnBase = frameState.returnBase;
-			frame.returnCount = frameState.returnCount;
-			frame.returnToCompletionLatch = frameState.returnToCompletionLatch;
-			frame.callSitePc = frameState.callSitePc;
-			frame.isExceptionFrame = frameState.isExceptionFrame;
-			frame.isNonMaskableExceptionFrame = frameState.isNonMaskableExceptionFrame;
-			frame.varargBase = this.stackTop;
-			frame.varargCount = frameState.varargs.length;
-			const registers = this.prepareFrameRegisters(frame, functionRecord.maxStack);
-			for (let registerIndex = 0; registerIndex < frameState.registers.length; registerIndex += 1) {
-				reader.readValue(frameState.registers[registerIndex]);
-				registers.setEncoded(
-					registerIndex,
-					reader.tag,
-					reader.scalar,
-					reader.reference,
+		for (let objectIndex = 0; objectIndex < snapshot.objectCount; objectIndex += 1) {
+			const offset = snapshot.objectWord(objectIndex);
+			if (snapshot.word(offset) !== CpuSnapshotObjectKind.Thread) continue;
+			const saved = state.threads[snapshot.word(offset + CpuSnapshotThread.Index)];
+			const thread = restoredObjects[objectIndex] as Thread;
+			this.activeThread = thread;
+			thread.entry = saved.entryRef < 0 ? null : restoredObjects[saved.entryRef] as Closure;
+			thread.resumer = saved.resumerRef < 0 ? null : restoredObjects[saved.resumerRef] as Thread;
+			reader.readValue(saved.error);
+			thread.error.setEncoded(0, reader.tag, reader.scalar, reader.reference);
+			for (let frameIndex = 0; frameIndex < saved.frames.length; frameIndex += 1) {
+				const frameState = saved.frames[frameIndex];
+				this.readFunctionRecordOnBus(
+					executionImage,
+					frameState.functionAddress,
+					this.executionBusSignals,
 				);
+				const functionRecord = this.functionRecordLatch;
+				const frame = this.acquireFrame();
+				frame.thread = this.activeThread;
+				frame.functionAddress = frameState.functionAddress;
+				frame.executionImage = functionRecord.image;
+				frame.pc = frameState.pc;
+				frame.closure = restoredObjects[frameState.closureRef] as Closure;
+				frame.returnBase = frameState.returnBase;
+				frame.returnCount = frameState.returnCount;
+				frame.returnToCompletionLatch = frameState.returnToCompletionLatch;
+				frame.callSitePc = frameState.callSitePc;
+				frame.isExceptionFrame = frameState.isExceptionFrame;
+				frame.isNonMaskableExceptionFrame = frameState.isNonMaskableExceptionFrame;
+				frame.varargBase = this.activeThread.stackTop;
+				frame.varargCount = frameState.varargs.length;
+				const registers = this.prepareFrameRegisters(frame, frameState.stackCapacity);
+				for (let registerIndex = 0; registerIndex < frameState.registers.length; registerIndex += 1) {
+					reader.readValue(frameState.registers[registerIndex]);
+					registers.setEncoded(
+						registerIndex,
+						reader.tag,
+						reader.scalar,
+						reader.reference,
+					);
+				}
+				for (let varargIndex = 0; varargIndex < frameState.varargs.length; varargIndex += 1) {
+					reader.readValue(frameState.varargs[varargIndex]);
+					this.activeThread.stackRegisters.setEncoded(
+						frame.varargBase + varargIndex,
+						reader.tag,
+						reader.scalar,
+						reader.reference,
+					);
+				}
+				frame.top = frameState.top;
+				this.activeThread.frames.push(frame);
 			}
-			for (let varargIndex = 0; varargIndex < frameState.varargs.length; varargIndex += 1) {
-				reader.readValue(frameState.varargs[varargIndex]);
-				this.stackRegisters.setEncoded(
-					frame.varargBase + varargIndex,
-					reader.tag,
-					reader.scalar,
-					reader.reference,
-				);
+			for (let index = 0; index < saved.protectedCalls.length; index += 1) {
+				const continuationState = saved.protectedCalls[index];
+				const continuation = this.activeThread.protectedCallContinuations.get(index);
+				continuation.kind = continuationState.kind;
+				continuation.caller = this.activeThread.frames[continuationState.callerFrameIndex];
+				continuation.target = continuationState.targetFrameIndex < 0 ? null : this.activeThread.frames[continuationState.targetFrameIndex];
+				continuation.returnsToProtectedParent = continuationState.returnsToProtectedParent;
+				continuation.callBase = continuationState.callBase;
+				continuation.returnCount = continuationState.returnCount;
+				continuation.handlerRegister = continuationState.handlerRegister;
 			}
-			frame.top = frameState.top;
-			this.frames.push(frame);
-		}
-		for (let index = 0; index < state.protectedCalls.length; index += 1) {
-			const continuationState = state.protectedCalls[index];
-			const continuation = this.protectedCallContinuations.get(index);
-			continuation.kind = continuationState.kind;
-			continuation.caller = this.frames[continuationState.callerFrameIndex];
-			continuation.target = continuationState.targetFrameIndex < 0 ? null : this.frames[continuationState.targetFrameIndex];
-			continuation.returnsToProtectedParent = continuationState.returnsToProtectedParent;
-			continuation.callBase = continuationState.callBase;
-			continuation.returnCount = continuationState.returnCount;
-			continuation.handlerRegister = continuationState.handlerRegister;
-		}
-		this.protectedCallDepth = state.protectedCalls.length;
+			this.activeThread.protectedCallDepth = saved.protectedCalls.length;
 
-		for (let index = 0; index < state.openUpvalues.length; index += 1) {
-			const offset = snapshot.objectWord(state.openUpvalues[index]);
-			const upvalue = restoredObjects[state.openUpvalues[index]] as Upvalue;
-			const frame = this.frames[snapshot.int(offset + CpuSnapshotUpvalue.FrameIndex)];
-			upvalue.open = true;
-			upvalue.index = snapshot.int(offset + CpuSnapshotUpvalue.Index);
-			upvalue.frame = frame;
-			upvalue.valueTag = ValueTag.Nil;
-			upvalue.valueScalar = NaN;
-			upvalue.valueReference = null;
-			this.linkOpenUpvalue(frame, upvalue);
 		}
+		for (let objectIndex = 0; objectIndex < snapshot.objectCount; objectIndex += 1) {
+			const offset = snapshot.objectWord(objectIndex);
+			if (snapshot.word(offset) !== CpuSnapshotObjectKind.Thread) continue;
+			const saved = state.threads[snapshot.word(offset + CpuSnapshotThread.Index)];
+			for (let index = 0; index < saved.openUpvalues.length; index += 1) {
+				const offset = snapshot.objectWord(saved.openUpvalues[index]);
+				const upvalue = restoredObjects[saved.openUpvalues[index]] as Upvalue;
+				const owner = restoredObjects[snapshot.int(offset + CpuSnapshotUpvalue.ThreadRef)] as Thread;
+				const frame = owner.frames[snapshot.int(offset + CpuSnapshotUpvalue.FrameIndex)];
+				upvalue.open = true;
+				upvalue.index = snapshot.int(offset + CpuSnapshotUpvalue.Index);
+				upvalue.frame = frame;
+				upvalue.valueTag = ValueTag.Nil;
+				upvalue.valueScalar = NaN;
+				upvalue.valueReference = null;
+				this.linkOpenUpvalue(frame, upvalue);
+			}
 
+		}
+		this.activeThread = restoredObjects[state.activeThreadRef] as Thread;
+		this.completionThread = restoredObjects[state.completionThreadRef] as Thread;
+		this.threadSwitchRequested = false;
 		reader.readValue(state.stringIndexTable);
 		this.stringIndexTable = reader.reference as Table | null;
 		if (state.completionValues.length > this.completionValueSlots.capacity()) {
@@ -4604,6 +4865,30 @@ export class CPU implements MappedPageInvalidator {
 		}
 	}
 
+	private traceThread(thread: Thread): void {
+		if (thread.entry !== null) this.heapObjectStack.push(thread.entry);
+		if (thread.resumer !== null) this.heapObjectStack.push(thread.resumer);
+		this.pushHeapRegister(thread.error, 0);
+		for (let frameIndex = 0; frameIndex < thread.frames.length; frameIndex += 1) {
+			const frame = thread.frames[frameIndex];
+			this.pushHeapImage(frame.executionImage);
+			if (frame.closure.heapBytes !== 0) {
+				this.heapObjectStack.push(frame.closure);
+			}
+			for (let registerIndex = 0; registerIndex < frame.top; registerIndex += 1) {
+				this.pushHeapRegister(frame.registers, registerIndex);
+			}
+			for (let index = 0; index < frame.varargCount; index += 1) {
+				this.pushHeapRegister(thread.stackRegisters, frame.varargBase + index);
+			}
+			let upvalue = frame.openUpvalueHead;
+			while (upvalue) {
+				this.heapUpvalueStack.push(upvalue);
+				upvalue = upvalue.nextOpen;
+			}
+		}
+	}
+
 	public collectTrackedHeapBytes(
 		root0Tag: ValueTag = ValueTag.Nil,
 		root0Scalar: number = NaN,
@@ -4661,24 +4946,7 @@ export class CPU implements MappedPageInvalidator {
 				this.pushHeapImage(image);
 			}
 		}
-		for (let frameIndex = 0; frameIndex < this.frames.length; frameIndex += 1) {
-			const frame = this.frames[frameIndex];
-			this.pushHeapImage(frame.executionImage);
-			if (frame.closure.heapBytes !== 0) {
-				objectStack.push(frame.closure);
-			}
-			for (let registerIndex = 0; registerIndex < frame.top; registerIndex += 1) {
-				this.pushHeapRegister(frame.registers, registerIndex);
-			}
-			for (let index = 0; index < frame.varargCount; index += 1) {
-				this.pushHeapRegister(this.stackRegisters, frame.varargBase + index);
-			}
-			let upvalue = frame.openUpvalueHead;
-			while (upvalue) {
-				upvalueStack.push(upvalue);
-				upvalue = upvalue.nextOpen;
-			}
-		}
+		objectStack.push(this.rootThread, this.activeThread, this.completionThread);
 		this.pushHeapStoredValue(root0Tag, root0Scalar, root0Reference);
 		this.pushHeapStoredValue(root1Tag, root1Scalar, root1Reference);
 		this.pushHeapStoredValue(root2Tag, root2Scalar, root2Reference);
@@ -4693,6 +4961,7 @@ export class CPU implements MappedPageInvalidator {
 					total += UPVALUE_HEAP_BYTES;
 					if (upvalue.open) {
 						this.pushHeapRegister(upvalue.frame!.registers, upvalue.index);
+						objectStack.push(upvalue.frame!.thread);
 					} else {
 						this.pushHeapStoredValue(
 							upvalue.valueTag,
@@ -4704,6 +4973,14 @@ export class CPU implements MappedPageInvalidator {
 				}
 				const object = objectStack.pop()!;
 				switch (object[VALUE_TAG]) {
+					case ValueTag.Thread: {
+						const thread = object as Thread;
+						if (seen.get(thread) === this.heapEpoch) continue;
+						seen.set(thread, this.heapEpoch);
+						total += THREAD_HEAP_BYTES + thread.stackRegisters.capacity() * THREAD_STACK_SLOT_BYTES;
+						this.traceThread(thread);
+						continue;
+					}
 					case ValueTag.Table: {
 						const table = object as Table;
 						if (seen.get(table) === this.heapEpoch) {

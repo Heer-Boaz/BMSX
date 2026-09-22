@@ -44,6 +44,7 @@ export const enum SuspendedGuestValueKind {
 	String,
 	Table,
 	Function,
+	Thread,
 }
 
 type SuspendedGuestTableMemberVisitor = (
@@ -107,6 +108,8 @@ export class SuspendedGuestSession {
 				return SuspendedGuestValueKind.Number;
 			case ValueTag.String:
 				return SuspendedGuestValueKind.String;
+			case ValueTag.Thread:
+				return SuspendedGuestValueKind.Thread;
 			case ValueTag.Table:
 				return SuspendedGuestValueKind.Table;
 			case ValueTag.Closure:

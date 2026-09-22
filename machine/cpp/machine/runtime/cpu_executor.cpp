@@ -115,13 +115,18 @@ InstructionStepResult CpuExecutionState::runInstruction(Runtime& runtime, FrameS
 
 CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	Runtime& runtime,
-	int targetDepth
+	int targetDepth,
+	int cycleBudget,
+	Thread* targetThread
 ) {
 	auto& machine = runtime.machine;
 	auto& cpu = machine.cpu;
 	auto& scheduler = machine.scheduler;
+	if (!targetThread) targetThread = cpu.activeThread();
+	const i64 endCycle = scheduler.nowCycles() + cycleBudget;
 	runDueRuntimeTimers(runtime);
-	while (cpu.getFrameDepth() > targetDepth) {
+	while (static_cast<int>(targetThread->frames.size()) > targetDepth) {
+		if (scheduler.nowCycles() >= endCycle) return CpuSuspendedRunResult::Yielded;
 		if (machine.gxGpu.backendServiceBlocksMachine()
 			|| machine.systemController.cpuHeld()) {
 			return CpuSuspendedRunResult::Halted;
@@ -131,7 +136,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 			if (nextDeadline == std::numeric_limits<i64>::max()) {
 				return CpuSuspendedRunResult::Halted;
 			}
-			const i64 waitBudget = nextDeadline - scheduler.nowCycles();
+			const i64 waitBudget = std::min(nextDeadline, endCycle) - scheduler.nowCycles();
 			if (waitBudget <= 0) {
 				runDueRuntimeTimers(runtime);
 				continue;
@@ -144,7 +149,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 			advanceRuntimeTime(runtime, waitCycles);
 			continue;
 		}
-		int sliceBudget = MAX_CPU_SLICE_CYCLES;
+		int sliceBudget = static_cast<int>(std::min<i64>(MAX_CPU_SLICE_CYCLES, endCycle - scheduler.nowCycles()));
 		const i64 nextDeadline = scheduler.nextDeadline();
 		if (nextDeadline != std::numeric_limits<i64>::max()) {
 			const i64 deadlineBudget = nextDeadline - scheduler.nowCycles();
@@ -156,7 +161,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 				sliceBudget = static_cast<int>(deadlineBudget);
 			}
 		}
-		const RunResult result = scheduler.runCpuSlice(targetDepth, sliceBudget);
+		const RunResult result = scheduler.runCpuSlice(targetDepth, sliceBudget, targetThread);
 		const int consumed = sliceBudget - cpu.instructionBudgetRemaining;
 		if (consumed > 0) {
 			machine.advanceDevices(consumed);
@@ -165,7 +170,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 			}
 			runDueRuntimeTimers(runtime);
 		}
-		if (cpu.getFrameDepth() <= targetDepth) {
+		if (static_cast<int>(targetThread->frames.size()) <= targetDepth) {
 			return CpuSuspendedRunResult::Completed;
 		}
 		if (result == RunResult::ExecutionStopped) {
@@ -180,6 +185,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 			}
 			bool advancedDeadline = false;
 			while (cpu.isHaltedUntilIrq()) {
+				if (scheduler.nowCycles() >= endCycle) return CpuSuspendedRunResult::Yielded;
 				if (machine.gxGpu.backendServiceBlocksMachine()) {
 					return CpuSuspendedRunResult::Halted;
 				}
@@ -194,7 +200,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 				if (haltedDeadline == std::numeric_limits<i64>::max()) {
 					return CpuSuspendedRunResult::Halted;
 				}
-				const i64 cyclesToDeadline = haltedDeadline - scheduler.nowCycles();
+				const i64 cyclesToDeadline = std::min(haltedDeadline, endCycle) - scheduler.nowCycles();
 				if (cyclesToDeadline <= 0) {
 					if (runDueRuntimeTimers(runtime)) {
 						return CpuSuspendedRunResult::Halted;

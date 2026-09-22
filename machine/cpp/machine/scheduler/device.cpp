@@ -37,10 +37,10 @@ i64 DeviceScheduler::currentNowCycles() const {
 	return m_activeSliceBaseCycle + (m_activeSliceBudgetCycles - m_cpu.instructionBudgetRemaining);
 }
 
-RunResult DeviceScheduler::runCpuSlice(int targetDepth, int sliceBudget) {
+RunResult DeviceScheduler::runCpuSlice(int targetDepth, int sliceBudget, const Thread* targetThread) {
 	beginCpuSlice(sliceBudget);
 	ScopeExit activeSlice([this]() { endCpuSlice(); });
-	return m_cpu.runUntilDepth(targetDepth, sliceBudget);
+	return m_cpu.runUntilDepth(targetDepth, sliceBudget, targetThread);
 }
 
 void DeviceScheduler::advanceTo(i64 nowCycles) {

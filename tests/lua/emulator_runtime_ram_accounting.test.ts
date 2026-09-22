@@ -1,3 +1,4 @@
+import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
 import { CPU_SNAPSHOT_VALUE_WORDS, CpuSnapshotObjectKind, CpuSnapshotTable } from '../../machine/ts/machine/cpu/snapshot';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -140,10 +141,12 @@ test('non-capturing const functions materialize as static proto references', () 
 		'return f',
 	].join('\n'));
 	const before = cpu.collectTrackedHeapBytes();
+	const stackBefore = cpu.rootThread.stackRegisters.capacity();
 
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 
-	assert.equal(cpu.collectTrackedHeapBytes(), before);
+	assert.equal(cpu.collectTrackedHeapBytes() - before,
+		(cpu.rootThread.stackRegisters.capacity() - stackBefore) * THREAD_STACK_SLOT_BYTES);
 });
 
 test('restored static closures reuse the static proto cache', () => {

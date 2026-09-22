@@ -405,6 +405,16 @@ const auto RUNTIME_SAVE_STATE_PROP_NAME_STORAGE = std::to_array<std::string>({
 	"exceptionDomainWord",
 	"nmiReturnLuaFaultReasonWord",
 	"nmiReturnExceptionDomainWord",
+	"threads",
+	"rootThreadRef",
+	"activeThreadRef",
+	"completionThreadRef",
+	"status",
+	"entryRef",
+	"resumerRef",
+	"stackCapacity",
+	"error",
+	"schemaVersion",
 });
 
 } // namespace

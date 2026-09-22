@@ -9,6 +9,7 @@
 namespace bmsx {
 
 class CPU;
+struct Thread;
 enum class RunResult;
 
 constexpr uint8_t DEVICE_SERVICE_GEO = 1;
@@ -37,7 +38,7 @@ public:
 		m_activeSliceTargetCycle = m_schedulerNowCycles + sliceBudget;
 	}
 	void endCpuSlice() { m_schedulerSliceActive = false; }
-	RunResult runCpuSlice(int targetDepth, int sliceBudget);
+	RunResult runCpuSlice(int targetDepth, int sliceBudget, const Thread* targetThread = nullptr);
 	void advanceTo(i64 nowCycles);
 	i64 nextDeadline();
 	bool hasDueTimer();

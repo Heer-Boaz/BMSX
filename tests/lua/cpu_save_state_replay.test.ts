@@ -136,7 +136,7 @@ test('a materialized but unrooted canonical closure remains part of the checkpoi
 	const cold = cpu.captureRuntimeState();
 	assert.equal(cpu.runUntilDepth(0, 2), RunResult.Yielded);
 	const warm = cpu.captureRuntimeState();
-	assert.equal(warm.snapshot.word(warm.frames[0].registers[0]), ValueTag.Nil);
+	assert.equal(warm.snapshot.word(warm.threads[0].frames[0].registers[0]), ValueTag.Nil);
 	assert.ok(warm.snapshot.objectWords.some(offset => warm.snapshot.word(offset) === CpuSnapshotObjectKind.Closure
 		&& warm.snapshot.word(offset + CpuSnapshotClosure.Canonical) === 1
 		&& warm.snapshot.word(offset + CpuSnapshotClosure.FunctionAddress) === address));
@@ -168,7 +168,7 @@ test('hard-halt is restored independently of the live future CPU latch', () => {
 	cpu.runUntilDepth(0, 1000);
 	const after = cpu.captureRuntimeState();
 	assert.equal(after.hardHalted, true);
-	assert.deepEqual(after.frames, halted.frames);
+	assert.deepEqual(after.threads[0].frames, halted.threads[0].frames);
 });
 
 test('CPU snapshots reuse exclusive storage across graph growth, cycles and a shorter capture', () => {

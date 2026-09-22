@@ -14,6 +14,7 @@
 #include "common/scratchbuffer.h"
 #include "common/primitives.h"
 #include "machine/cpu/call_state.h"
+#include "machine/cpu/thread.h"
 #include "machine/cpu/closure.h"
 #include "machine/execution_address_space.h"
 #include "machine/cpu/errors.h"
@@ -75,6 +76,7 @@ struct CpuFrameState {
 	u32 pc = 0;
 	int closureRef = -1;
 	std::vector<u32> registers;
+	int stackCapacity = 0;
 	std::vector<u32> varargs;
 	int returnBase = 0;
 	int returnCount = 0;
@@ -100,6 +102,19 @@ struct CpuRootValueState {
 	u32 value = 0;
 };
 
+struct CpuThreadState {
+	ThreadStatus status = ThreadStatus::New;
+	int entryRef = -1;
+	int resumerRef = -1;
+	int callBase = 0;
+	int returnCount = 0;
+	size_t stackCapacity = 0;
+	u32 error = 0;
+	std::vector<CpuFrameState> frames;
+	std::vector<CpuProtectedCallState> protectedCalls;
+	std::vector<int> openUpvalues;
+};
+
 struct CpuRuntimeState {
 	ExecutionDomainId executionCartridgeSlot = SYSTEM_EXECUTION_DOMAIN_ID;
 	std::vector<CpuRootValueState> systemGlobals;
@@ -110,11 +125,12 @@ struct CpuRuntimeState {
 	bool hardHalted = false;
 	LuaHeapState luaHeap;
 	u32 stringIndexTable = 0;
-	std::vector<CpuFrameState> frames;
-	std::vector<CpuProtectedCallState> protectedCalls;
+	int rootThreadRef = -1;
+	int activeThreadRef = -1;
+	int completionThreadRef = -1;
+	std::vector<CpuThreadState> threads;
 	std::vector<u32> completionValues;
 	CpuSnapshot snapshot;
-	std::vector<int> openUpvalues;
 	ExecutionDomainId lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 lastPc = 0;
 	int haltedUntilIrqFrameDepth = -1;
@@ -252,7 +268,7 @@ public:
 	void haltUntilIrq();
 	void clearHaltUntilIrq();
 	bool isHaltedUntilIrq() const {
-		return m_haltedUntilIrqFrameDepth == static_cast<int>(m_frames.size());
+		return m_haltedUntilIrqFrameDepth == static_cast<int>(m_activeThread->frames.size());
 	}
 	bool isMemoryWriteBlocked() const { return m_memoryWriteBlocked; }
 	uint32_t stalledMemoryWriteAddress() const { return m_memoryWriteBlockedAddress; }
@@ -265,9 +281,7 @@ public:
 	AcceptedInterruptKind peekPendingInterrupt() const;
 	bool enterPendingInterrupt();
 	void setExecutionHook(ExecutionHookBinding binding);
-	RunResult runUntilDepth(int targetDepth, int instructionBudget) {
-		return m_runUntilDepthEntry(*this, targetDepth, instructionBudget);
-	}
+	RunResult runUntilDepth(int targetDepth, int instructionBudget, const Thread* target = nullptr);
 	void collectHeap();
 	class LocalRootsScope {
 	public:
@@ -287,7 +301,9 @@ public:
 	};
 	LocalRootsScope acquireLocalRoots();
 
-	int getFrameDepth() const { return static_cast<int>(m_frames.size()); }
+	Thread* activeThread() const { return m_activeThread; }
+	Thread* rootThread() const { return m_rootThread; }
+	int getFrameDepth() const { return static_cast<int>(m_activeThread->frames.size()); }
 	ExecutionDomainId readFrameExecutionDomain(int frameIndex) const;
 	ExecutionDomainId readLastExecutionDomain() const;
 	u32 readFrameFunctionAddress(int frameIndex) const;
@@ -462,9 +478,6 @@ private:
 	Blua32ExecutionImage* m_systemImage = nullptr;
 	Blua32ExecutionImage* m_activeExecutionImage = nullptr;
 	MappedBusSignals m_executionBusSignals = MAPPED_BUS_MASTER_CPU;
-	std::vector<std::unique_ptr<CallFrame>> m_frames;
-	ScratchBuffer<ProtectedCallContinuation> m_protectedCallContinuations;
-	size_t m_protectedCallDepth = 0;
 	int m_haltedUntilIrqFrameDepth = -1;
 	bool m_interruptEventPending = false;
 	bool m_memoryWriteBlocked = false;
@@ -486,6 +499,17 @@ private:
 	bool m_nonMaskableInterruptPending = false;
 	u32 m_systemExceptionFunctionAddress = 0;
 	bool m_yieldRequested = false;
+	bool m_threadSwitchRequested = false;
+	Thread* m_rootThread = nullptr;
+	Thread* m_activeThread = nullptr;
+	Thread* m_completionThread = nullptr;
+	Thread* createThread(Closure* entry);
+	bool coroutineYieldable(const Thread& thread) const;
+	void returnToResumer(const Value* source, int count, bool succeeded);
+	void runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base, int count, int argc);
+	bool handleThreadError(Value error);
+	void closeThread(Thread& thread);
+
 	ExecutionHookBinding m_executionHookBinding{nullptr, nullptr, 0u, 0u};
 	RunUntilDepthEntry m_runUntilDepthEntry = &CPU::runUntilDepthNormal;
 	Memory& m_memory;
@@ -513,8 +537,6 @@ private:
 	std::vector<Upvalue*> m_closureUpvalueScratch;
 	std::vector<u32> m_closureUpvalueWordScratch;
 	static constexpr int MAX_POOLED_FRAMES = 32;
-	std::vector<Value> m_stack;
-	int m_stackTop = 0;
 	std::vector<StringId> m_systemGlobalNames;
 	std::vector<Value> m_systemGlobalValues;
 	std::unordered_map<StringId, size_t> m_systemGlobalSlotByKey;

@@ -37,6 +37,8 @@ bool GcHeap::markValue(Value v) {
 		return false;
 	}
 	switch (valueTag(v)) {
+		case ValueTag::Thread:
+			return markObject(asThread(v));
 		case ValueTag::Table:
 			return markObject(asTable(v));
 		case ValueTag::Closure:
@@ -120,6 +122,8 @@ bool GcHeap::valueIsAlive(Value value) const {
 		return true;
 	}
 	switch (valueTag(value)) {
+		case ValueTag::Thread:
+			return asThread(value)->marked;
 		case ValueTag::Table:
 			return asTable(value)->marked;
 		case ValueTag::Closure: {
@@ -136,6 +140,27 @@ void GcHeap::trace() {
 		GCObject* obj = m_grayStack.back();
 		m_grayStack.pop_back();
 		switch (obj->type) {
+			case ObjType::Thread: {
+				auto* thread = static_cast<Thread*>(obj);
+				markObject(thread->resumer);
+				if (thread->entry != nullptr) markClosure(thread->entry);
+				markValue(thread->error);
+	for (const auto& framePtr : thread->frames) {
+		CallFrame* frame = framePtr.get();
+		markClosure(frame->closure);
+		for (int i = 0; i < frame->top; ++i) {
+			markValue(frame->registers[static_cast<size_t>(i)]);
+		}
+		for (int i = 0; i < frame->varargCount; ++i) {
+			markValue(thread->stack[static_cast<size_t>(frame->varargBase + i)]);
+		}
+		for (Upvalue* upvalue = frame->openUpvalueHead; upvalue; upvalue = upvalue->nextOpen) {
+			markObject(upvalue);
+			markValue(frame->registers[static_cast<size_t>(upvalue->index)]);
+		}
+	}
+				break;
+			}
 			case ObjType::Table: {
 				auto* table = static_cast<Table*>(obj);
 				if (table->metatable) {
@@ -170,6 +195,8 @@ void GcHeap::trace() {
 				auto* upvalue = static_cast<Upvalue*>(obj);
 				if (!upvalue->open) {
 					markValue(upvalue->value);
+				} else {
+					markObject(upvalue->frame->thread);
 				}
 				break;
 			}
@@ -214,6 +241,10 @@ void GcHeap::clearWeakTables() {
 
 void GcHeap::destroyObject(GCObject* object) {
 	switch (object->type) {
+		case ObjType::Thread:
+			m_luaHeap.release(THREAD_HEAP_BYTES + static_cast<Thread*>(object)->stack.size() * THREAD_STACK_SLOT_BYTES);
+			delete static_cast<Thread*>(object);
+			break;
 		case ObjType::Table:
 			m_luaHeap.release(static_cast<Table*>(object)->trackedHeapBytes());
 			delete static_cast<Table*>(object);
@@ -237,6 +268,7 @@ size_t GcHeap::sweep() {
 		GCObject* object = *current;
 		if (object->marked) {
 			switch (object->type) {
+				case ObjType::Thread: liveBytes += THREAD_HEAP_BYTES + static_cast<Thread*>(object)->stack.size() * THREAD_STACK_SLOT_BYTES; break;
 				case ObjType::Table: liveBytes += static_cast<Table*>(object)->trackedHeapBytes(); break;
 				case ObjType::Closure: liveBytes += trackedClosureBytes(*static_cast<Closure*>(object)); break;
 				case ObjType::Upvalue: liveBytes += kUpvalueHeapBytes; break;
@@ -326,8 +358,7 @@ CPU::CPU(
 	IrqController& irqController,
 	ExecutionAddressSpace& executionAddressSpace
 )
-	: m_protectedCallContinuations(MAX_POOLED_FRAMES)
-	, m_memory(memory)
+	: m_memory(memory)
 	, m_irqController(irqController)
 	, m_executionAddressSpace(executionAddressSpace)
 	, m_luaHeap(*this, memory.ramByteCount())
@@ -357,6 +388,11 @@ CPU::CPU(
 		builtin.cyclePerArg = cost.perArg;
 		builtin.cyclePerRet = cost.perRet;
 	}
+	m_luaHeap.reserve(THREAD_HEAP_BYTES + 8 * THREAD_STACK_SLOT_BYTES);
+	m_rootThread = m_heap.allocate<Thread>(ObjType::Thread);
+	m_rootThread->status = ThreadStatus::Running;
+	m_activeThread = m_rootThread;
+	m_completionThread = m_rootThread;
 	globals = createTable();
 	m_memory.attachMappedPageInvalidator(*this);
 }
@@ -1081,6 +1117,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 
 void CPU::beginCompletionCall(Closure& closure, BuiltinArgsView args) {
 	m_completionValues.clear();
+	m_completionThread = m_activeThread;
 	m_yieldRequested = false;
 	pushFrame(&closure, args.data(), args.size(), 0, 0, true);
 }
@@ -1098,6 +1135,7 @@ void CPU::beginCompletionClosureInExecutionDomain(
 	BuiltinArgsView args
 ) {
 	m_completionValues.clear();
+	m_completionThread = m_activeThread;
 	m_yieldRequested = false;
 	readFunctionRecord(
 		*executionImageForDomain(executionDomainId),
@@ -1153,6 +1191,10 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 				snapshot.setWord(offset, static_cast<u32>(CpuSnapshotValueTag::Table));
 				snapshot.setWord(offset + 1, captureObject(asTable(value)));
 				break;
+			case ValueTag::Thread:
+				snapshot.setWord(offset, static_cast<u32>(CpuSnapshotValueTag::Thread));
+				snapshot.setWord(offset + 1, captureObject(asThread(value)));
+				break;
 			case ValueTag::Closure:
 				snapshot.setWord(offset, static_cast<u32>(CpuSnapshotValueTag::Closure));
 				snapshot.setWord(offset + 1, captureObject(asClosure(value)));
@@ -1166,6 +1208,72 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	};
 
 	CpuRuntimeState state;
+	const auto captureThread = [&](const Thread* thread) -> u32 {
+		CpuThreadState saved;
+		saved.frames.reserve(thread->frames.size());
+		for (const auto& framePtr : thread->frames) {
+			const CallFrame& frame = *framePtr;
+			CpuFrameState frameState;
+			frameState.functionAddress = frame.functionAddress;
+			frameState.pc = frame.pc;
+			frameState.closureRef = captureObject(frame.closure);
+			frameState.returnBase = frame.returnBase;
+			frameState.returnCount = frame.returnCount;
+			frameState.top = frame.top;
+			frameState.returnToCompletionLatch = frame.returnToCompletionLatch;
+			frameState.callSitePc = frame.callSitePc;
+			frameState.isExceptionFrame = frame.isExceptionFrame;
+			frameState.isNonMaskableExceptionFrame = frame.isNonMaskableExceptionFrame;
+			frameState.stackCapacity = frame.stackCapacity;
+			frameState.registers.reserve(static_cast<size_t>(frame.top));
+			for (int index = 0; index < frame.top; ++index) {
+				frameState.registers.push_back(captureValueState(frame.registers[static_cast<size_t>(index)]));
+			}
+			frameState.varargs.reserve(static_cast<size_t>(frame.varargCount));
+			for (int index = 0; index < frame.varargCount; ++index) {
+				frameState.varargs.push_back(captureValueState(thread->stack[static_cast<size_t>(frame.varargBase + index)]));
+			}
+			saved.frames.push_back(std::move(frameState));
+		}
+		saved.protectedCalls.reserve(thread->protectedCallDepth);
+		for (size_t index = 0; index < thread->protectedCallDepth; ++index) {
+			const ProtectedCallContinuation& continuation = thread->protectedCallContinuations.peek(index);
+			CpuProtectedCallState continuationState;
+			continuationState.kind = continuation.kind;
+			continuationState.returnsToProtectedParent = continuation.returnsToProtectedParent;
+			continuationState.callBase = continuation.callBase;
+			continuationState.returnCount = continuation.returnCount;
+			continuationState.handlerRegister = continuation.handlerRegister;
+			for (size_t frameIndex = 0; frameIndex < thread->frames.size(); ++frameIndex) {
+				CallFrame* frame = thread->frames[frameIndex].get();
+				if (frame == continuation.caller) {
+					continuationState.callerFrameIndex = static_cast<int>(frameIndex);
+				}
+				if (frame == continuation.target) {
+					continuationState.targetFrameIndex = static_cast<int>(frameIndex);
+				}
+			}
+			saved.protectedCalls.push_back(continuationState);
+		}
+		for (const auto& frame : thread->frames) {
+			for (Upvalue* upvalue = frame->openUpvalueHead; upvalue; upvalue = upvalue->nextOpen) {
+				saved.openUpvalues.push_back(captureObject(upvalue));
+			}
+		}
+		saved.status = thread->status;
+		saved.entryRef = thread->entry == nullptr ? -1 : static_cast<int>(captureObject(thread->entry));
+		saved.resumerRef = thread->resumer == nullptr ? -1 : static_cast<int>(captureObject(thread->resumer));
+		saved.callBase = thread->callBase;
+		saved.returnCount = thread->returnCount;
+		saved.stackCapacity = thread->stack.size();
+		saved.error = captureValueState(thread->error);
+		const u32 index = static_cast<u32>(state.threads.size());
+		state.threads.push_back(std::move(saved));
+		return index;
+	};
+	state.rootThreadRef = static_cast<int>(captureObject(m_rootThread));
+	state.activeThreadRef = static_cast<int>(captureObject(m_activeThread));
+	state.completionThreadRef = static_cast<int>(captureObject(m_completionThread));
 	state.systemGlobals.reserve(m_systemGlobalNames.size());
 	for (size_t index = 0; index < m_systemGlobalNames.size(); ++index) {
 		const Value value = m_systemGlobalValues[index];
@@ -1183,58 +1291,9 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 		});
 	}
 	state.executionCartridgeSlot = m_activeExecutionImage->executionDomainId;
-	state.frames.reserve(m_frames.size());
-	for (const auto& framePtr : m_frames) {
-		const CallFrame& frame = *framePtr;
-		CpuFrameState frameState;
-		frameState.functionAddress = frame.functionAddress;
-		frameState.pc = frame.pc;
-		frameState.closureRef = captureObject(frame.closure);
-		frameState.returnBase = frame.returnBase;
-		frameState.returnCount = frame.returnCount;
-		frameState.top = frame.top;
-		frameState.returnToCompletionLatch = frame.returnToCompletionLatch;
-		frameState.callSitePc = frame.callSitePc;
-		frameState.isExceptionFrame = frame.isExceptionFrame;
-		frameState.isNonMaskableExceptionFrame = frame.isNonMaskableExceptionFrame;
-		frameState.registers.reserve(static_cast<size_t>(frame.top));
-		for (int index = 0; index < frame.top; ++index) {
-			frameState.registers.push_back(captureValueState(frame.registers[static_cast<size_t>(index)]));
-		}
-		frameState.varargs.reserve(static_cast<size_t>(frame.varargCount));
-		for (int index = 0; index < frame.varargCount; ++index) {
-			frameState.varargs.push_back(captureValueState(m_stack[static_cast<size_t>(frame.varargBase + index)]));
-		}
-		state.frames.push_back(std::move(frameState));
-	}
-	state.protectedCalls.reserve(m_protectedCallDepth);
-	for (size_t index = 0; index < m_protectedCallDepth; ++index) {
-		const ProtectedCallContinuation& continuation = m_protectedCallContinuations.peek(index);
-		CpuProtectedCallState continuationState;
-		continuationState.kind = continuation.kind;
-		continuationState.returnsToProtectedParent = continuation.returnsToProtectedParent;
-		continuationState.callBase = continuation.callBase;
-		continuationState.returnCount = continuation.returnCount;
-		continuationState.handlerRegister = continuation.handlerRegister;
-		for (size_t frameIndex = 0; frameIndex < m_frames.size(); ++frameIndex) {
-			CallFrame* frame = m_frames[frameIndex].get();
-			if (frame == continuation.caller) {
-				continuationState.callerFrameIndex = static_cast<int>(frameIndex);
-			}
-			if (frame == continuation.target) {
-				continuationState.targetFrameIndex = static_cast<int>(frameIndex);
-			}
-		}
-		state.protectedCalls.push_back(continuationState);
-	}
 	state.completionValues.reserve(m_completionValues.size());
 	for (const Value& value : m_completionValues) {
 		state.completionValues.push_back(captureValueState(value));
-	}
-	for (const auto& frame : m_frames) {
-		for (Upvalue* upvalue = frame->openUpvalueHead; upvalue; upvalue = upvalue->nextOpen) {
-			state.openUpvalues.push_back(captureObject(upvalue));
-		}
 	}
 	state.stringIndexTable = captureValueState(
 		m_stringIndexTable ? valueTable(m_stringIndexTable) : valueNil()
@@ -1258,6 +1317,14 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 		const auto* object = pendingObjects[id];
 		u32 offset;
 		switch (object->type) {
+			case ObjType::Thread: {
+				const auto* thread = static_cast<const Thread*>(object);
+				offset = snapshot.reserveWords(SNAP_THREAD_SIZE);
+				snapshot.setWord(offset + SNAP_THREAD_KIND, static_cast<u32>(CpuSnapshotObjectKind::Thread));
+				snapshot.setWord(offset + SNAP_THREAD_HASH_ID, thread->hashId);
+				snapshot.setWord(offset + SNAP_THREAD_INDEX, captureThread(thread));
+				break;
+			}
 			case ObjType::Table:
 				offset = static_cast<const Table*>(object)->captureSnapshot(snapshot, writeValue);
 				break;
@@ -1284,8 +1351,9 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 				int frameIndex = -1;
 				if (upvalue->open) {
 					frameIndex = 0;
-					while (m_frames[static_cast<size_t>(frameIndex)].get() != upvalue->frame) ++frameIndex;
+					while (upvalue->frame->thread->frames[static_cast<size_t>(frameIndex)].get() != upvalue->frame) ++frameIndex;
 				}
+				snapshot.setWord(offset + SNAP_UPVALUE_THREAD_REF, upvalue->open ? captureObject(upvalue->frame->thread) : static_cast<u32>(-1));
 				snapshot.setWord(offset + SNAP_UPVALUE_FRAME_INDEX, static_cast<u32>(frameIndex));
 				writeValue(offset + SNAP_UPVALUE_VALUE, upvalue->open ? upvalue->frame->registers[upvalue->index] : upvalue->value);
 				break;
@@ -1340,6 +1408,23 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	for (size_t index = 0; index < snapshot.objectCount(); ++index) {
 		const u32 offset = snapshot.objectWord(static_cast<u32>(index));
 		switch (static_cast<CpuSnapshotObjectKind>(snapshot.word(offset))) {
+			case CpuSnapshotObjectKind::Thread: {
+				if (index != static_cast<size_t>(state.rootThreadRef)) {
+					m_luaHeap.restoreAllocate(THREAD_HEAP_BYTES + state.threads[snapshot.word(offset + SNAP_THREAD_INDEX)].stackCapacity * THREAD_STACK_SLOT_BYTES);
+				}
+				Thread* thread = index == static_cast<size_t>(state.rootThreadRef) ? m_rootThread : m_heap.allocate<Thread>(ObjType::Thread);
+				const auto& saved = state.threads[snapshot.word(offset + SNAP_THREAD_INDEX)];
+				thread->marked = true;
+				thread->hashId = snapshot.word(offset + SNAP_THREAD_HASH_ID);
+				thread->stack.assign(saved.stackCapacity, valueNil());
+				thread->stackTop = 0;
+				thread->frames.clear();
+				thread->status = saved.status;
+				thread->callBase = saved.callBase;
+				thread->returnCount = saved.returnCount;
+				restoredObjects[index] = thread;
+				break;
+			}
 			case CpuSnapshotObjectKind::Table: {
 				Table* table;
 				if (index == static_cast<size_t>(state.globalTableRef)) {
@@ -1389,6 +1474,8 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	for (size_t index = 0; index < snapshot.objectCount(); ++index) {
 		const u32 offset = snapshot.objectWord(static_cast<u32>(index));
 		switch (static_cast<CpuSnapshotObjectKind>(snapshot.word(offset))) {
+			case CpuSnapshotObjectKind::Thread:
+				break;
 			case CpuSnapshotObjectKind::Table:
 				static_cast<Table*>(restoredObjects[index])->restoreSnapshot(reader, offset);
 				break;
@@ -1436,69 +1523,89 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	Blua32ExecutionImage* executionImage = m_executionImagesByDomain[static_cast<size_t>(state.executionCartridgeSlot + 1)].get();
 	latchActiveExecutionImage(*executionImage);
 
-	for (const CpuFrameState& frameState : state.frames) {
-		readFunctionRecordOnBus(
-			*executionImage,
-			frameState.functionAddress,
-			m_executionBusSignals
-		);
-		const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
-		auto frame = acquireFrame();
-		frame->functionAddress = frameState.functionAddress;
-		frame->executionImage = functionRecord.image;
-		frame->pc = frameState.pc;
-		frame->closure = static_cast<Closure*>(restoredObjects[static_cast<size_t>(frameState.closureRef)]);
-		frame->returnBase = frameState.returnBase;
-		frame->returnCount = frameState.returnCount;
-		frame->returnToCompletionLatch = frameState.returnToCompletionLatch;
-		frame->callSitePc = frameState.callSitePc;
-		frame->isExceptionFrame = frameState.isExceptionFrame;
-		frame->isNonMaskableExceptionFrame = frameState.isNonMaskableExceptionFrame;
-		frame->varargBase = m_stackTop;
-		frame->varargCount = static_cast<int>(frameState.varargs.size());
-		frame->stackBase = frame->varargBase + frame->varargCount;
-		const size_t targetCapacity = std::max(functionRecord.maxStack, 1u);
-		frame->stackCapacity = static_cast<int>(targetCapacity);
-		m_stackTop = frame->stackBase + frame->stackCapacity;
-		ensureStackSize(static_cast<size_t>(m_stackTop));
-		frame->registers = m_stack.data() + frame->stackBase;
-		for (int slot = 0; slot < frame->stackCapacity; ++slot) {
-			frame->registers[static_cast<size_t>(slot)] = valueNil();
+	for (size_t objectIndex = 0; objectIndex < snapshot.objectCount(); ++objectIndex) {
+		const u32 offset = snapshot.objectWord(static_cast<u32>(objectIndex));
+		if (snapshot.word(offset) != static_cast<u32>(CpuSnapshotObjectKind::Thread)) continue;
+		const auto& saved = state.threads[snapshot.word(offset + SNAP_THREAD_INDEX)];
+		Thread* thread = static_cast<Thread*>(restoredObjects[objectIndex]);
+		m_activeThread = thread;
+		thread->entry = saved.entryRef < 0 ? nullptr : static_cast<Closure*>(restoredObjects[saved.entryRef]);
+		thread->resumer = saved.resumerRef < 0 ? nullptr : static_cast<Thread*>(restoredObjects[saved.resumerRef]);
+		thread->error = reader.readValue(saved.error);
+		for (const CpuFrameState& frameState : saved.frames) {
+			readFunctionRecordOnBus(
+				*executionImage,
+				frameState.functionAddress,
+				m_executionBusSignals
+			);
+			const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
+			auto frame = acquireFrame();
+			frame->thread = m_activeThread;
+			frame->functionAddress = frameState.functionAddress;
+			frame->executionImage = functionRecord.image;
+			frame->pc = frameState.pc;
+			frame->closure = static_cast<Closure*>(restoredObjects[static_cast<size_t>(frameState.closureRef)]);
+			frame->returnBase = frameState.returnBase;
+			frame->returnCount = frameState.returnCount;
+			frame->returnToCompletionLatch = frameState.returnToCompletionLatch;
+			frame->callSitePc = frameState.callSitePc;
+			frame->isExceptionFrame = frameState.isExceptionFrame;
+			frame->isNonMaskableExceptionFrame = frameState.isNonMaskableExceptionFrame;
+			frame->varargBase = m_activeThread->stackTop;
+			frame->varargCount = static_cast<int>(frameState.varargs.size());
+			frame->stackBase = frame->varargBase + frame->varargCount;
+			const size_t targetCapacity = static_cast<size_t>(frameState.stackCapacity);
+			frame->stackCapacity = static_cast<int>(targetCapacity);
+			m_activeThread->stackTop = frame->stackBase + frame->stackCapacity;
+			ensureStackSize(static_cast<size_t>(m_activeThread->stackTop));
+			frame->registers = m_activeThread->stack.data() + frame->stackBase;
+			for (int slot = 0; slot < frame->stackCapacity; ++slot) {
+				frame->registers[static_cast<size_t>(slot)] = valueNil();
+			}
+			for (size_t registerIndex = 0; registerIndex < frameState.registers.size(); ++registerIndex) {
+				frame->registers[registerIndex] = reader.readValue(frameState.registers[registerIndex]);
+			}
+			for (size_t varargIndex = 0; varargIndex < frameState.varargs.size(); ++varargIndex) {
+				m_activeThread->stack[static_cast<size_t>(frame->varargBase) + varargIndex] = reader.readValue(frameState.varargs[varargIndex]);
+			}
+			frame->top = frameState.top;
+			m_activeThread->frames.push_back(std::move(frame));
 		}
-		for (size_t registerIndex = 0; registerIndex < frameState.registers.size(); ++registerIndex) {
-			frame->registers[registerIndex] = reader.readValue(frameState.registers[registerIndex]);
+		for (size_t index = 0; index < saved.protectedCalls.size(); ++index) {
+			const CpuProtectedCallState& continuationState = saved.protectedCalls[index];
+			ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(index);
+			continuation.kind = continuationState.kind;
+			continuation.caller = m_activeThread->frames[static_cast<size_t>(continuationState.callerFrameIndex)].get();
+			continuation.target = continuationState.targetFrameIndex < 0
+				? nullptr
+				: m_activeThread->frames[static_cast<size_t>(continuationState.targetFrameIndex)].get();
+			continuation.returnsToProtectedParent = continuationState.returnsToProtectedParent;
+			continuation.callBase = continuationState.callBase;
+			continuation.returnCount = continuationState.returnCount;
+			continuation.handlerRegister = continuationState.handlerRegister;
 		}
-		for (size_t varargIndex = 0; varargIndex < frameState.varargs.size(); ++varargIndex) {
-			m_stack[static_cast<size_t>(frame->varargBase) + varargIndex] = reader.readValue(frameState.varargs[varargIndex]);
-		}
-		frame->top = frameState.top;
-		m_frames.push_back(std::move(frame));
+		m_activeThread->protectedCallDepth = saved.protectedCalls.size();
 	}
-	for (size_t index = 0; index < state.protectedCalls.size(); ++index) {
-		const CpuProtectedCallState& continuationState = state.protectedCalls[index];
-		ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(index);
-		continuation.kind = continuationState.kind;
-		continuation.caller = m_frames[static_cast<size_t>(continuationState.callerFrameIndex)].get();
-		continuation.target = continuationState.targetFrameIndex < 0
-			? nullptr
-			: m_frames[static_cast<size_t>(continuationState.targetFrameIndex)].get();
-		continuation.returnsToProtectedParent = continuationState.returnsToProtectedParent;
-		continuation.callBase = continuationState.callBase;
-		continuation.returnCount = continuationState.returnCount;
-		continuation.handlerRegister = continuationState.handlerRegister;
-	}
-	m_protectedCallDepth = state.protectedCalls.size();
+	for (size_t objectIndex = 0; objectIndex < snapshot.objectCount(); ++objectIndex) {
+		const u32 offset = snapshot.objectWord(static_cast<u32>(objectIndex));
+		if (snapshot.word(offset) != static_cast<u32>(CpuSnapshotObjectKind::Thread)) continue;
+		const auto& saved = state.threads[snapshot.word(offset + SNAP_THREAD_INDEX)];
+		for (int upvalueRef : saved.openUpvalues) {
+			const u32 offset = snapshot.objectWord(static_cast<u32>(upvalueRef));
+			Upvalue* upvalue = static_cast<Upvalue*>(restoredObjects[static_cast<size_t>(upvalueRef)]);
+			Thread* owner = static_cast<Thread*>(restoredObjects[snapshot.word(offset + SNAP_UPVALUE_THREAD_REF)]);
+			CallFrame* frame = owner->frames[static_cast<size_t>(snapshot.integer(offset + SNAP_UPVALUE_FRAME_INDEX))].get();
+			upvalue->open = true;
+			upvalue->index = snapshot.integer(offset + SNAP_UPVALUE_INDEX);
+			upvalue->frame = frame;
+			upvalue->value = valueNil();
+			linkOpenUpvalue(*frame, upvalue);
+		}
 
-	for (int upvalueRef : state.openUpvalues) {
-		const u32 offset = snapshot.objectWord(static_cast<u32>(upvalueRef));
-		Upvalue* upvalue = static_cast<Upvalue*>(restoredObjects[static_cast<size_t>(upvalueRef)]);
-		CallFrame* frame = m_frames[static_cast<size_t>(snapshot.integer(offset + SNAP_UPVALUE_FRAME_INDEX))].get();
-		upvalue->open = true;
-		upvalue->index = snapshot.integer(offset + SNAP_UPVALUE_INDEX);
-		upvalue->frame = frame;
-		upvalue->value = valueNil();
-		linkOpenUpvalue(*frame, upvalue);
 	}
+	m_activeThread = static_cast<Thread*>(restoredObjects[state.activeThreadRef]);
+	m_completionThread = static_cast<Thread*>(restoredObjects[state.completionThreadRef]);
+	m_threadSwitchRequested = false;
 
 	const Value stringIndexTable = reader.readValue(state.stringIndexTable);
 	m_stringIndexTable = isNil(stringIndexTable) ? nullptr : asTable(stringIndexTable);
@@ -1539,7 +1646,7 @@ void CPU::haltUntilIrq() {
 		m_interruptEventPending = false;
 		return;
 	}
-	m_haltedUntilIrqFrameDepth = static_cast<int>(m_frames.size());
+	m_haltedUntilIrqFrameDepth = static_cast<int>(m_activeThread->frames.size());
 	m_yieldRequested = false;
 }
 
@@ -1585,6 +1692,37 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			}
 			m_stringIndexTable = asTable(args[0]);
 			break;
+		case BuiltinFunctionId::CoroutineCreate:
+			if (args.empty() || !valueIsClosure(args[0])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			out.push_back(valueThread(createThread(asClosure(args[0]))));
+			break;
+		case BuiltinFunctionId::CoroutineRunning:
+			out.push_back(valueThread(m_activeThread));
+			out.push_back(valueBool(m_activeThread == m_rootThread));
+			break;
+		case BuiltinFunctionId::CoroutineStatus:
+		case BuiltinFunctionId::CoroutineClose:
+		case BuiltinFunctionId::CoroutineIsYieldable: {
+			Thread* thread = args.empty() && fn.id == BuiltinFunctionId::CoroutineIsYieldable ? m_activeThread
+				: !args.empty() && valueIsThread(args[0]) ? asThread(args[0]) : nullptr;
+			if (thread == nullptr) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			if (fn.id == BuiltinFunctionId::CoroutineIsYieldable) out.push_back(valueBool(coroutineYieldable(*thread)));
+			else if (fn.id == BuiltinFunctionId::CoroutineStatus) {
+				const char* name = thread->status == ThreadStatus::Running ? "running" : thread->status == ThreadStatus::Normal ? "normal"
+					: thread->status == ThreadStatus::Dead || thread->status == ThreadStatus::Failed ? "dead" : "suspended";
+				out.push_back(valueString(m_stringPool.intern(name)));
+			} else {
+				const bool failed = thread->status == ThreadStatus::Failed;
+				out.push_back(valueBool(!failed));
+				if (failed) out.push_back(thread->error);
+				closeThread(*thread);
+				thread->error = valueNil();
+			}
+			break;
+		}
+		case BuiltinFunctionId::CoroutineResume:
+		case BuiltinFunctionId::CoroutineYield:
+			throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		case BuiltinFunctionId::CollectGarbage:
 			collectHeap();
 			break;
@@ -1597,6 +1735,107 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 	}
 }
 
+Thread* CPU::createThread(Closure* entry) {
+	m_luaHeap.reserve(THREAD_HEAP_BYTES + 8 * THREAD_STACK_SLOT_BYTES, valueClosure(entry));
+	auto* thread = m_heap.allocate<Thread>(ObjType::Thread);
+	thread->entry = entry;
+	trackLocalRoot(valueThread(thread));
+	return thread;
+}
+
+bool CPU::coroutineYieldable(const Thread& thread) const {
+	if (&thread == m_rootThread) return false;
+	for (const auto& frame : thread.frames) if (frame->isExceptionFrame) return false;
+	for (size_t i = 0; i < thread.protectedCallDepth; ++i) {
+		if (thread.protectedCallContinuations.get(i).kind == ProtectedCallKind::XPCallHandler) return false;
+	}
+	return true;
+}
+
+void CPU::returnToResumer(const Value* source, int sourceCount, bool succeeded) {
+	Thread* thread = m_activeThread;
+	Thread* resumer = thread->resumer;
+	m_activeThread = resumer;
+	resumer->status = ThreadStatus::Running;
+	CallFrame& caller = *resumer->frames.back();
+	const int count = resumer->returnCount == 0 ? sourceCount + 1 : resumer->returnCount;
+	ensureRegisterCapacity(caller, resumer->callBase + count - 1);
+	caller.registers[resumer->callBase] = valueBool(succeeded);
+	const int copied = std::min(sourceCount, count - 1);
+	for (int i = 0; i < copied; ++i) caller.registers[resumer->callBase + i + 1] = source[i];
+	for (int i = copied + 1; i < count; ++i) caller.registers[resumer->callBase + i] = valueNil();
+	caller.top = resumer->callBase + count;
+	thread->resumer = nullptr;
+	m_threadSwitchRequested = true;
+	m_yieldRequested = true;
+}
+
+void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base, int count, int argc) {
+	Thread* thread = m_activeThread;
+	if (id == BuiltinFunctionId::CoroutineYield) {
+		if (!coroutineYieldable(*thread)) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+		thread->callBase = base;
+		thread->returnCount = count;
+		thread->status = ThreadStatus::Suspended;
+		returnToResumer(caller.registers + base + 1, argc, true);
+		return;
+	}
+	if (argc == 0 || !valueIsThread(caller.registers[base + 1])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	Thread* target = asThread(caller.registers[base + 1]);
+	if (target->status != ThreadStatus::New && target->status != ThreadStatus::Suspended) {
+		auto scratch = acquireBuiltinResultScratch();
+		BuiltinResults& out = scratch.get();
+		out.push_back(valueBool(false));
+		out.push_back(valueString(m_stringPool.intern("cannot resume non-suspended coroutine")));
+		writeReturnValues(caller, base, count, out.data(), static_cast<int>(out.size()));
+		return;
+	}
+	const bool fresh = target->status == ThreadStatus::New;
+	thread->callBase = base;
+	thread->returnCount = count;
+	thread->status = ThreadStatus::Normal;
+	target->resumer = thread;
+	target->status = ThreadStatus::Running;
+	m_activeThread = target;
+	if (fresh) {
+		pushFrame(caller, target->entry, base + 2, argc - 1, 0, 0, false, 0);
+		target->entry = nullptr;
+	} else {
+		CallFrame& frame = *target->frames.back();
+		const int returned = target->returnCount == 0 ? argc - 1 : target->returnCount;
+		ensureRegisterCapacity(frame, target->callBase + returned - 1);
+		writeReturnValues(frame, target->callBase, target->returnCount, caller.registers + base + 2, argc - 1);
+	}
+	m_threadSwitchRequested = true;
+	m_yieldRequested = true;
+}
+
+bool CPU::handleThreadError(Value error) {
+	if (handleProtectedCallError(error)) return true;
+	Thread* thread = m_activeThread;
+	if (thread->resumer == nullptr) return false;
+	for (const auto& frame : thread->frames) if (frame->isExceptionFrame) return false;
+	thread->status = ThreadStatus::Failed;
+	thread->error = error;
+	returnToResumer(&thread->error, 1, false);
+	return true;
+}
+
+void CPU::closeThread(Thread& thread) {
+	if (thread.status == ThreadStatus::Running || thread.status == ThreadStatus::Normal) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+	for (auto& frame : thread.frames) {
+		closeUpvalues(*frame);
+		releaseFrame(std::move(frame));
+	}
+	thread.frames.clear();
+	thread.protectedCallDepth = 0;
+	thread.protectedCallContinuations.clear();
+	std::fill(thread.stack.begin(), thread.stack.end(), valueNil());
+	thread.stackTop = 0;
+	thread.entry = nullptr;
+	thread.status = ThreadStatus::Dead;
+}
+
 void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase, int returnCount, int argCount) {
 	instructionBudgetRemaining -= static_cast<int>(fn.cycleBase);
 	if (fn.id == BuiltinFunctionId::PCall || fn.id == BuiltinFunctionId::XPCall) {
@@ -1605,9 +1844,13 @@ void CPU::runBuiltinFunction(BuiltinFunction& fn, CallFrame& frame, int callBase
 	}
 	auto outScratch = acquireBuiltinResultScratch();
 	BuiltinResults& out = outScratch.get();
+	if (fn.id == BuiltinFunctionId::CoroutineResume || fn.id == BuiltinFunctionId::CoroutineYield) {
+		runCoroutineTransfer(fn.id, frame, callBase, returnCount, argCount);
+		return;
+	}
 	const BuiltinArgsView args(frame.registers + static_cast<size_t>(callBase + 1), static_cast<size_t>(argCount));
 	callBuiltinFunction(fn, args, out);
-	if (!m_frames.empty() && m_frames.back().get() == &frame) {
+	if (!m_activeThread->frames.empty() && m_activeThread->frames.back().get() == &frame) {
 		writeReturnValues(frame, callBase, returnCount, out.data(), static_cast<int>(out.size()));
 	}
 }
@@ -1622,9 +1865,9 @@ void CPU::startProtectedCall(BuiltinFunctionId id, CallFrame& caller, int callBa
 			throw LuaExecutionError(LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION);
 		}
 	}
-	const size_t continuationIndex = m_protectedCallDepth;
-	ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
-	m_protectedCallDepth = continuationIndex + 1;
+	const size_t continuationIndex = m_activeThread->protectedCallDepth;
+	ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(continuationIndex);
+	m_activeThread->protectedCallDepth = continuationIndex + 1;
 	continuation.kind = id == BuiltinFunctionId::PCall ? ProtectedCallKind::PCall : ProtectedCallKind::XPCallBody;
 	continuation.caller = &caller;
 	continuation.target = nullptr;
@@ -1643,7 +1886,7 @@ void CPU::startProtectedCall(BuiltinFunctionId id, CallFrame& caller, int callBa
 }
 
 void CPU::invokeProtectedTarget(size_t continuationIndex, Value target, int argumentBase, int argumentCount) {
-	ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
+	ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(continuationIndex);
 	CallFrame& caller = *continuation.caller;
 	if (valueIsClosure(target)) {
 		continuation.target = pushFrame(caller, asClosure(target), argumentBase, argumentCount, 0, 0, false, caller.pc - INSTRUCTION_BYTES);
@@ -1670,7 +1913,7 @@ void CPU::invokeProtectedTarget(size_t continuationIndex, Value target, int argu
 }
 
 void CPU::finishProtectedCall(size_t continuationIndex, const Value* values, int valueCount) {
-	ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
+	ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(continuationIndex);
 	if (continuation.kind == ProtectedCallKind::XPCallHandler) {
 		finishProtectedCallWithError(continuationIndex, valueCount > 0 ? values[0] : valueNil());
 		return;
@@ -1680,7 +1923,7 @@ void CPU::finishProtectedCall(size_t continuationIndex, const Value* values, int
 }
 
 void CPU::finishProtectedCall(size_t continuationIndex, CallFrame& source, int sourceBase, int sourceCount) {
-	ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
+	ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(continuationIndex);
 	if (continuation.kind == ProtectedCallKind::XPCallHandler) {
 		finishProtectedCallWithError(
 			continuationIndex,
@@ -1693,7 +1936,7 @@ void CPU::finishProtectedCall(size_t continuationIndex, CallFrame& source, int s
 }
 
 void CPU::finishProtectedCallWithError(size_t continuationIndex, Value errorValue) {
-	ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
+	ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(continuationIndex);
 	CallFrame& caller = *continuation.caller;
 	const int resultCount = continuation.returnCount == 0 ? 2 : continuation.returnCount;
 	if (resultCount > 0) {
@@ -1755,13 +1998,13 @@ int CPU::writeProtectedResults(ProtectedCallContinuation& continuation, bool pre
 }
 
 void CPU::finishProtectedContinuation(size_t continuationIndex, int resultCount) {
-	ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
+	ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(continuationIndex);
 	CallFrame* caller = continuation.caller;
 	const int callBase = continuation.callBase;
 	const bool returnsToProtectedParent = continuation.returnsToProtectedParent;
 	continuation.caller = nullptr;
 	continuation.target = nullptr;
-	m_protectedCallDepth = continuationIndex;
+	m_activeThread->protectedCallDepth = continuationIndex;
 	if (returnsToProtectedParent) {
 		finishProtectedCall(continuationIndex - 1, *caller, callBase, resultCount);
 	}
@@ -1769,17 +2012,17 @@ void CPU::finishProtectedContinuation(size_t continuationIndex, int resultCount)
 
 bool CPU::handleProtectedCallError(Value errorValue) {
 	for (;;) {
-		if (m_protectedCallDepth == 0) {
+		if (m_activeThread->protectedCallDepth == 0) {
 			return false;
 		}
-		const size_t continuationIndex = m_protectedCallDepth - 1;
-		ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(continuationIndex);
+		const size_t continuationIndex = m_activeThread->protectedCallDepth - 1;
+		ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(continuationIndex);
 		int callerIndex = 0;
-		while (m_frames[static_cast<size_t>(callerIndex)].get() != continuation.caller) {
+		while (m_activeThread->frames[static_cast<size_t>(callerIndex)].get() != continuation.caller) {
 			callerIndex += 1;
 		}
-		for (int frameIndex = static_cast<int>(m_frames.size()) - 1; frameIndex > callerIndex; --frameIndex) {
-			if (m_frames[static_cast<size_t>(frameIndex)]->isExceptionFrame) {
+		for (int frameIndex = static_cast<int>(m_activeThread->frames.size()) - 1; frameIndex > callerIndex; --frameIndex) {
+			if (m_activeThread->frames[static_cast<size_t>(frameIndex)]->isExceptionFrame) {
 				return false;
 			}
 		}
@@ -1983,9 +2226,9 @@ bool CPU::enterPendingInterrupt() {
 		enterException(
 			m_systemExceptionFunctionAddress,
 			CPU_CAUSE_NMI,
-			m_frames.back()->pc
+			m_activeThread->frames.back()->pc
 		);
-		m_frames.back()->isNonMaskableExceptionFrame = true;
+		m_activeThread->frames.back()->isNonMaskableExceptionFrame = true;
 		m_nmiReturnCauseWord = returnCauseWord;
 		m_nmiReturnEpcWord = returnEpcWord;
 		m_nmiReturnBadAddressWord = returnBadAddressWord;
@@ -1997,7 +2240,7 @@ bool CPU::enterPendingInterrupt() {
 	if (canAcceptMaskableInterruptLine()) {
 		Blua32ExecutionImage& image = isUserMode() ? *m_activeExecutionImage : *m_systemImage;
 		const bool hadHaltLatch = m_haltedUntilIrqFrameDepth >= 0;
-		enterException(image.irqFunctionAddress, CPU_CAUSE_IRQ, m_frames.back()->pc);
+		enterException(image.irqFunctionAddress, CPU_CAUSE_IRQ, m_activeThread->frames.back()->pc);
 		if (!hadHaltLatch) m_interruptEventPending = true;
 		return true;
 	}
@@ -2022,8 +2265,8 @@ void CPU::enterInstructionFetchException(CallFrame& interruptedFrame, u32 causeW
 
 void CPU::enterLuaFaultException(u32 reason, Value errorValue) {
 	m_luaFaultReasonWord = reason;
-	enterSynchronousException(*m_frames.back(), CPU_CAUSE_CODE_TRAP);
-	m_frames.back()->registers[0] = errorValue;
+	enterSynchronousException(*m_activeThread->frames.back(), CPU_CAUSE_CODE_TRAP);
+	m_activeThread->frames.back()->registers[0] = errorValue;
 }
 
 void CPU::enterException(
@@ -2031,7 +2274,7 @@ void CPU::enterException(
 	u32 causeWord,
 	u32 epcWord
 ) {
-	m_exceptionDomainWord = static_cast<u32>(m_frames.back()->executionImage->executionDomainId);
+	m_exceptionDomainWord = static_cast<u32>(m_activeThread->frames.back()->executionImage->executionDomainId);
 	m_epcWord = epcWord;
 	m_causeWord = causeWord;
 	m_statusWord = (m_statusWord & ~CPU_STATUS_MODE_STACK_MASK)
@@ -2075,7 +2318,7 @@ RunResult CPU::runLoop(
 	int instructionBudget
 ) {
 	instructionBudgetRemaining = instructionBudget;
-	auto& frames = m_frames;
+	auto& frames = m_activeThread->frames;
 	ExecutionHookBinding hookBinding;
 	if constexpr (Instrumented) {
 		hookBinding = m_executionHookBinding;
@@ -2342,22 +2585,34 @@ dispatch_continue:
 #undef FRAME
 			continue;
 		} catch (const LuaOutOfMemorySignal&) {
-			if (!handleProtectedCallError(m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY])) {
+			if (!handleThreadError(m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY])) {
 				enterLuaFaultException(
 					LUA_FAULT_REASON_OUT_OF_MEMORY,
 					m_luaFaultErrorValues[LUA_FAULT_REASON_OUT_OF_MEMORY]
 				);
 			}
 		} catch (const LuaThrownValueError& error) {
-			if (!handleProtectedCallError(error.value)) {
+			if (!handleThreadError(error.value)) {
 				enterLuaFaultException(LUA_FAULT_REASON_EXPLICIT_ERROR, error.value);
 			}
 		} catch (const LuaExecutionError& error) {
 			const Value errorValue = m_luaFaultErrorValues[error.reason];
-			if (!handleProtectedCallError(errorValue)) {
+			if (!handleThreadError(errorValue)) {
 				enterLuaFaultException(error.reason, errorValue);
 			}
 		}
+	}
+}
+
+RunResult CPU::runUntilDepth(int targetDepth, int instructionBudget, const Thread* target) {
+	if (!target) target = m_rootThread;
+	for (;;) {
+		const RunResult result = m_runUntilDepthEntry(*this, m_activeThread == target ? targetDepth : 0, instructionBudget);
+		if (!m_threadSwitchRequested) return result;
+		m_threadSwitchRequested = false;
+		m_yieldRequested = false;
+		instructionBudget = instructionBudgetRemaining;
+		if (instructionBudget <= 0) return RunResult::Yielded;
 	}
 }
 
@@ -2383,17 +2638,17 @@ void CPU::setExecutionHook(ExecutionHookBinding binding) {
 }
 
 void CPU::unwindToDepth(int targetDepth) {
-	while (static_cast<int>(m_frames.size()) > targetDepth) {
-		auto finished = std::move(m_frames.back());
-		m_frames.pop_back();
+	while (static_cast<int>(m_activeThread->frames.size()) > targetDepth) {
+		auto finished = std::move(m_activeThread->frames.back());
+		m_activeThread->frames.pop_back();
 		closeUpvalues(*finished);
-		m_stackTop = finished->varargBase;
+		m_activeThread->stackTop = finished->varargBase;
 		releaseFrame(std::move(finished));
 	}
-	while (m_protectedCallDepth > 0) {
-		ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(m_protectedCallDepth - 1);
+	while (m_activeThread->protectedCallDepth > 0) {
+		ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(m_activeThread->protectedCallDepth - 1);
 		bool callerActive = false;
-		for (const auto& frame : m_frames) {
+		for (const auto& frame : m_activeThread->frames) {
 			if (frame.get() == continuation.caller) {
 				callerActive = true;
 				break;
@@ -2404,7 +2659,7 @@ void CPU::unwindToDepth(int targetDepth) {
 		}
 		continuation.caller = nullptr;
 		continuation.target = nullptr;
-		m_protectedCallDepth -= 1;
+		m_activeThread->protectedCallDepth -= 1;
 	}
 }
 
@@ -2418,7 +2673,7 @@ void CPU::collectHeap(Value root0, Value root1, Value root2) {
 }
 
 ExecutionDomainId CPU::readFrameExecutionDomain(int frameIndex) const {
-	return m_frames[static_cast<size_t>(frameIndex)]->executionImage->executionDomainId;
+	return m_activeThread->frames[static_cast<size_t>(frameIndex)]->executionImage->executionDomainId;
 }
 
 ExecutionDomainId CPU::readLastExecutionDomain() const {
@@ -2426,19 +2681,19 @@ ExecutionDomainId CPU::readLastExecutionDomain() const {
 }
 
 u32 CPU::readFrameFunctionAddress(int frameIndex) const {
-	return m_frames[static_cast<size_t>(frameIndex)]->functionAddress;
+	return m_activeThread->frames[static_cast<size_t>(frameIndex)]->functionAddress;
 }
 
 u32 CPU::readFramePc(int frameIndex) const {
-	return m_frames[static_cast<size_t>(frameIndex)]->pc;
+	return m_activeThread->frames[static_cast<size_t>(frameIndex)]->pc;
 }
 
 u32 CPU::readFrameCallSitePc(int childFrameIndex) const {
-	return m_frames[static_cast<size_t>(childFrameIndex)]->callSitePc;
+	return m_activeThread->frames[static_cast<size_t>(childFrameIndex)]->callSitePc;
 }
 
 bool CPU::completionCallPending() const {
-	for (auto frame = m_frames.rbegin(); frame != m_frames.rend(); ++frame) {
+	for (auto frame = m_completionThread->frames.rbegin(); frame != m_completionThread->frames.rend(); ++frame) {
 		if ((*frame)->returnToCompletionLatch) {
 			return true;
 		}
@@ -2447,7 +2702,7 @@ bool CPU::completionCallPending() const {
 }
 
 bool CPU::readFrameReturnsToCompletionLatch(int frameIndex) const {
-	return m_frames[static_cast<size_t>(frameIndex)]->returnToCompletionLatch;
+	return m_activeThread->frames[static_cast<size_t>(frameIndex)]->returnToCompletionLatch;
 }
 
 void CPU::abortCompletionCall(int frameIndex) {
@@ -2460,37 +2715,37 @@ auto CPU::readCompletionValues() const -> std::span<const Value> {
 }
 
 bool CPU::isExceptionFrame(int frameIndex) const {
-	return m_frames[static_cast<size_t>(frameIndex)]->isExceptionFrame;
+	return m_activeThread->frames[static_cast<size_t>(frameIndex)]->isExceptionFrame;
 }
 
 // Frame depth reached after all currently active exception roots return.
 int CPU::readExceptionReturnFrameDepth() const {
-	for (size_t frameIndex = 0; frameIndex < m_frames.size(); frameIndex += 1) {
-		if (m_frames[frameIndex]->isExceptionFrame) return static_cast<int>(frameIndex);
+	for (size_t frameIndex = 0; frameIndex < m_activeThread->frames.size(); frameIndex += 1) {
+		if (m_activeThread->frames[frameIndex]->isExceptionFrame) return static_cast<int>(frameIndex);
 	}
 	return -1;
 }
 
 bool CPU::isNonMaskableExceptionFrame(int frameIndex) const {
-	return m_frames[static_cast<size_t>(frameIndex)]->isNonMaskableExceptionFrame;
+	return m_activeThread->frames[static_cast<size_t>(frameIndex)]->isNonMaskableExceptionFrame;
 }
 
 int CPU::getFrameRegisterCount(int frameIndex) const {
-	return m_frames[static_cast<size_t>(frameIndex)]->top;
+	return m_activeThread->frames[static_cast<size_t>(frameIndex)]->top;
 }
 
 Value CPU::readFrameRegister(int frameIndex, int registerIndex) const {
-	const CallFrame& frame = *m_frames[static_cast<size_t>(frameIndex)];
+	const CallFrame& frame = *m_activeThread->frames[static_cast<size_t>(frameIndex)];
 	return frame.registers[static_cast<size_t>(registerIndex)];
 }
 
 int CPU::getFrameUpvalueCount(int frameIndex) const {
-	const CallFrame& frame = *m_frames[static_cast<size_t>(frameIndex)];
+	const CallFrame& frame = *m_activeThread->frames[static_cast<size_t>(frameIndex)];
 	return static_cast<int>(frame.closure->upvalueCount);
 }
 
 Value CPU::readFrameUpvalue(int frameIndex, int upvalueIndex) const {
-	const CallFrame& frame = *m_frames[static_cast<size_t>(frameIndex)];
+	const CallFrame& frame = *m_activeThread->frames[static_cast<size_t>(frameIndex)];
 	return readClosureUpvalue(frame.closure, upvalueIndex);
 }
 
@@ -2543,7 +2798,7 @@ void CPU::writeFrameExecution(
 		executionBusSignalsForDomain(executionDomainId)
 	);
 	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
-	CallFrame& frame = *m_frames[static_cast<size_t>(frameIndex)];
+	CallFrame& frame = *m_activeThread->frames[static_cast<size_t>(frameIndex)];
 	if (functionRecord.maxStack > static_cast<u32>(frame.stackCapacity)) {
 		ensureRegisterCapacity(frame, static_cast<int>(functionRecord.maxStack) - 1);
 	}
@@ -2561,7 +2816,7 @@ void CPU::writeFrameExecution(
 }
 
 void CPU::writeFrameCallSitePc(int childFrameIndex, u32 pc) {
-	m_frames[static_cast<size_t>(childFrameIndex)]->callSitePc = pc;
+	m_activeThread->frames[static_cast<size_t>(childFrameIndex)]->callSitePc = pc;
 }
 
 Upvalue* CPU::findOpenUpvalue(const CallFrame& frame, int index) const {
@@ -2685,6 +2940,7 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
 	const int callerArgBase = caller.stackBase + argBase;
 	auto frame = acquireFrame();
+	frame->thread = m_activeThread;
 	frame->functionAddress = closure->functionAddress;
 	frame->executionImage = functionRecord.image;
 	frame->pc = functionRecord.codeAddress;
@@ -2693,35 +2949,35 @@ CallFrame* CPU::pushFrame(CallFrame& caller, Closure* closure, int argBase, int 
 	frame->returnCount = returnCount;
 	frame->returnToCompletionLatch = returnToCompletionLatch;
 	frame->callSitePc = callSitePc;
-	frame->varargBase = m_stackTop;
+	frame->varargBase = m_activeThread->stackTop;
 	frame->varargCount = (functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u
 		? std::max(argCount - static_cast<int>(functionRecord.numParams), 0)
 		: 0;
 	frame->stackBase = frame->varargBase + frame->varargCount;
 	const size_t targetCapacity = std::max(functionRecord.maxStack, 1u);
 	frame->stackCapacity = static_cast<int>(targetCapacity);
-	m_stackTop = frame->stackBase + frame->stackCapacity;
-	ensureStackSize(static_cast<size_t>(m_stackTop));
-	frame->registers = m_stack.data() + frame->stackBase;
+	m_activeThread->stackTop = frame->stackBase + frame->stackCapacity;
+	ensureStackSize(static_cast<size_t>(m_activeThread->stackTop));
+	frame->registers = m_activeThread->stack.data() + frame->stackBase;
 	frame->top = static_cast<int>(functionRecord.numParams);
 	std::fill_n(frame->registers, functionRecord.maxStack, valueNil());
 
 	for (int i = 0; i < static_cast<int>(functionRecord.numParams); ++i) {
 		if (i < argCount) {
-			frame->registers[static_cast<size_t>(i)] = m_stack[static_cast<size_t>(callerArgBase + i)];
+			frame->registers[static_cast<size_t>(i)] = caller.thread->stack[static_cast<size_t>(callerArgBase + i)];
 		} else {
 			frame->registers[static_cast<size_t>(i)] = valueNil();
 		}
 	}
 	if ((functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u) {
 		for (int i = 0; i < frame->varargCount; ++i) {
-			m_stack[static_cast<size_t>(frame->varargBase + i)] = m_stack[
+			m_activeThread->stack[static_cast<size_t>(frame->varargBase + i)] = caller.thread->stack[
 				static_cast<size_t>(callerArgBase + static_cast<int>(functionRecord.numParams) + i)
 			];
 		}
 	}
 	CallFrame* pushed = frame.get();
-	m_frames.push_back(std::move(frame));
+	m_activeThread->frames.push_back(std::move(frame));
 	return pushed;
 }
 
@@ -2754,13 +3010,14 @@ CallFrame* CPU::pushLatchedFrame(
 	bool returnToCompletionLatch
 ) {
 	const Blua32FunctionRecordLatch& functionRecord = m_functionRecordLatch;
-	const uintptr_t stackBegin = reinterpret_cast<uintptr_t>(m_stack.data());
-	const uintptr_t stackEnd = stackBegin + m_stack.size() * sizeof(Value);
+	const uintptr_t stackBegin = reinterpret_cast<uintptr_t>(m_activeThread->stack.data());
+	const uintptr_t stackEnd = stackBegin + m_activeThread->stack.size() * sizeof(Value);
 	const uintptr_t argsBegin = reinterpret_cast<uintptr_t>(args);
 	const uintptr_t argsEnd = argsBegin + argCount * sizeof(Value);
 	const bool argsInStack = argCount > 0 && stackBegin != 0 && argsBegin >= stackBegin && argsEnd <= stackEnd;
 	const ptrdiff_t argsOffset = argsInStack ? static_cast<ptrdiff_t>((argsBegin - stackBegin) / sizeof(Value)) : 0;
 	auto frame = acquireFrame();
+	frame->thread = m_activeThread;
 	frame->functionAddress = closure->functionAddress;
 	frame->executionImage = functionRecord.image;
 	frame->pc = functionRecord.codeAddress;
@@ -2769,19 +3026,19 @@ CallFrame* CPU::pushLatchedFrame(
 	frame->returnCount = returnCount;
 	frame->returnToCompletionLatch = returnToCompletionLatch;
 	frame->callSitePc = functionRecord.codeAddress;
-	frame->varargBase = m_stackTop;
+	frame->varargBase = m_activeThread->stackTop;
 	frame->varargCount = (functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u
 		? std::max(static_cast<int>(argCount) - static_cast<int>(functionRecord.numParams), 0)
 		: 0;
 	frame->stackBase = frame->varargBase + frame->varargCount;
 	const size_t targetCapacity = std::max(functionRecord.maxStack, 1u);
 	frame->stackCapacity = static_cast<int>(targetCapacity);
-	m_stackTop = frame->stackBase + frame->stackCapacity;
-	ensureStackSize(static_cast<size_t>(m_stackTop));
-	frame->registers = m_stack.data() + frame->stackBase;
+	m_activeThread->stackTop = frame->stackBase + frame->stackCapacity;
+	ensureStackSize(static_cast<size_t>(m_activeThread->stackTop));
+	frame->registers = m_activeThread->stack.data() + frame->stackBase;
 	frame->top = static_cast<int>(functionRecord.numParams);
 	std::fill_n(frame->registers, functionRecord.maxStack, valueNil());
-	const Value* sourceArgs = argsInStack ? m_stack.data() + argsOffset : args;
+	const Value* sourceArgs = argsInStack ? m_activeThread->stack.data() + argsOffset : args;
 
 	for (int i = 0; i < static_cast<int>(functionRecord.numParams); ++i) {
 		if (i < static_cast<int>(argCount)) {
@@ -2792,13 +3049,13 @@ CallFrame* CPU::pushLatchedFrame(
 	}
 	if ((functionRecord.flags & BLUA32_FUNCTION_VARARG) != 0u) {
 		for (int i = 0; i < frame->varargCount; ++i) {
-			m_stack[static_cast<size_t>(frame->varargBase + i)] = sourceArgs[
+			m_activeThread->stack[static_cast<size_t>(frame->varargBase + i)] = sourceArgs[
 				static_cast<size_t>(functionRecord.numParams) + static_cast<size_t>(i)
 			];
 		}
 	}
 	CallFrame* pushed = frame.get();
-	m_frames.push_back(std::move(frame));
+	m_activeThread->frames.push_back(std::move(frame));
 	return pushed;
 }
 
@@ -2831,8 +3088,8 @@ Value* CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
 		return frame.registers;
 	}
 	int frameIndex = -1;
-	for (size_t i = 0; i < m_frames.size(); ++i) {
-		if (m_frames[i].get() == &frame) {
+	for (size_t i = 0; i < m_activeThread->frames.size(); ++i) {
+		if (m_activeThread->frames[i].get() == &frame) {
 			frameIndex = static_cast<int>(i);
 			break;
 		}
@@ -2848,20 +3105,20 @@ Value* CPU::ensureRegisterCapacity(CallFrame& frame, int index) {
 	const int previousCapacity = frame.stackCapacity;
 	frame.stackCapacity = static_cast<int>(bucket);
 	const int delta = frame.stackCapacity - previousCapacity;
-	ensureStackSize(static_cast<size_t>(m_stackTop + delta));
+	ensureStackSize(static_cast<size_t>(m_activeThread->stackTop + delta));
 	if (delta > 0) {
-		for (int i = static_cast<int>(m_frames.size()) - 1; i > frameIndex; --i) {
-			CallFrame* shifted = m_frames[static_cast<size_t>(i)].get();
+		for (int i = static_cast<int>(m_activeThread->frames.size()) - 1; i > frameIndex; --i) {
+			CallFrame* shifted = m_activeThread->frames[static_cast<size_t>(i)].get();
 			const int rangeBase = shifted->varargBase;
 			const int rangeCount = shifted->varargCount + shifted->stackCapacity;
 			for (int slot = rangeCount - 1; slot >= 0; --slot) {
-				m_stack[static_cast<size_t>(rangeBase + delta + slot)] = m_stack[static_cast<size_t>(rangeBase + slot)];
+				m_activeThread->stack[static_cast<size_t>(rangeBase + delta + slot)] = m_activeThread->stack[static_cast<size_t>(rangeBase + slot)];
 			}
 			shifted->varargBase += delta;
 			shifted->stackBase += delta;
 		}
 	}
-	m_stackTop += delta;
+	m_activeThread->stackTop += delta;
 	refreshFrameRegisterPointers();
 	for (int i = previousCapacity; i < frame.stackCapacity; ++i) {
 		frame.registers[static_cast<size_t>(i)] = valueNil();
@@ -3064,36 +3321,48 @@ void CPU::releaseFrame(std::unique_ptr<CallFrame> frame) {
 }
 
 void CPU::clearCallStack() {
-	for (size_t index = 0; index < m_protectedCallDepth; ++index) {
-		ProtectedCallContinuation& continuation = m_protectedCallContinuations.get(index);
-		continuation.caller = nullptr;
-		continuation.target = nullptr;
+	for (;;) {
+		for (size_t index = 0; index < m_activeThread->protectedCallDepth; ++index) {
+			ProtectedCallContinuation& continuation = m_activeThread->protectedCallContinuations.get(index);
+			continuation.caller = nullptr;
+			continuation.target = nullptr;
+		}
+		m_activeThread->protectedCallDepth = 0;
+		while (!m_activeThread->frames.empty()) {
+			CallFrame* frame = m_activeThread->frames.back().get();
+			closeUpvalues(*frame);
+			auto finished = std::move(m_activeThread->frames.back());
+			m_activeThread->frames.pop_back();
+			releaseFrame(std::move(finished));
+		}
+		std::fill(m_activeThread->stack.begin(), m_activeThread->stack.end(), valueNil());
+		m_activeThread->stackTop = 0;
+		Thread* thread = m_activeThread;
+		thread->status = ThreadStatus::Dead;
+		thread->entry = nullptr;
+		thread->error = valueNil();
+		if (thread == m_rootThread) break;
+		m_activeThread = thread->resumer == nullptr ? m_rootThread : thread->resumer;
+		thread->resumer = nullptr;
 	}
-	m_protectedCallDepth = 0;
-	while (!m_frames.empty()) {
-		CallFrame* frame = m_frames.back().get();
-		closeUpvalues(*frame);
-		auto finished = std::move(m_frames.back());
-		m_frames.pop_back();
-		releaseFrame(std::move(finished));
-	}
-	m_stack.clear();
-	m_stackTop = 0;
+	m_rootThread->status = ThreadStatus::Running;
+	m_completionThread = m_rootThread;
+	m_threadSwitchRequested = false;
 }
 
+
 void CPU::ensureStackSize(size_t size) {
-	Value* previousBase = m_stack.data();
-	if (size > m_stack.size()) {
-		m_stack.resize(size, valueNil());
-	}
-	if (m_stack.data() != previousBase) {
-		refreshFrameRegisterPointers();
-	}
+	if (size <= m_activeThread->stack.size()) return;
+	size_t capacity = 8;
+	while (capacity < size) capacity *= 2;
+	m_luaHeap.reserve((capacity - m_activeThread->stack.size()) * THREAD_STACK_SLOT_BYTES);
+	m_activeThread->stack.resize(capacity, valueNil());
+	refreshFrameRegisterPointers();
 }
 
 void CPU::refreshFrameRegisterPointers() {
-	Value* base = m_stack.data();
-	for (const auto& framePtr : m_frames) {
+	Value* base = m_activeThread->stack.data();
+	for (const auto& framePtr : m_activeThread->frames) {
 		framePtr->registers = base + framePtr->stackBase;
 	}
 }
@@ -3151,20 +3420,9 @@ void CPU::markRoots(GcHeap& heap) {
 			heap.markValue(value);
 		}
 	}
-	for (const auto& framePtr : m_frames) {
-		CallFrame* frame = framePtr.get();
-		heap.markClosure(frame->closure);
-		for (int i = 0; i < frame->top; ++i) {
-			heap.markValue(frame->registers[static_cast<size_t>(i)]);
-		}
-		for (int i = 0; i < frame->varargCount; ++i) {
-			heap.markValue(m_stack[static_cast<size_t>(frame->varargBase + i)]);
-		}
-		for (Upvalue* upvalue = frame->openUpvalueHead; upvalue; upvalue = upvalue->nextOpen) {
-			heap.markObject(upvalue);
-			heap.markValue(frame->registers[static_cast<size_t>(upvalue->index)]);
-		}
-	}
+	heap.markObject(m_rootThread);
+	heap.markObject(m_activeThread);
+	heap.markObject(m_completionThread);
 }
 
 // end repeated-sequence-acceptable
