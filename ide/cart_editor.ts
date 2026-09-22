@@ -328,7 +328,7 @@ export class RuntimeCartEditor implements CartEditor {
 					this.actorLab.didFinishCall(completed, observer);
 				},
 				error => { this.actorLab.didFinishCall(false, observer); this.handleRuntimeTaskError(error, 'Actor operation failed'); }); },
-			() => runtimeTasks.mutationReady && !execution.launchPending && !scenarioRuns.active && !debuggerState.plans.mutationActive && !rewind.active);
+			() => runtimeTasks.mutationReady && !execution.launchPending && !debuggerState.plans.mutationActive && !rewind.active);
 
 		const behaviorRegistrations = new BehaviorRegistrationIndex(this.sources);
 		this.behaviorLens = new BehaviorLensController(
@@ -348,10 +348,6 @@ export class RuntimeCartEditor implements CartEditor {
 			behaviorRegistrations,
 			scenarioTests,
 			scenarioRuns,
-			this.runtime,
-			execution,
-			this.overlayRenderer,
-			audioOutput,
 		);
 		this.editorInputSerializers = {
 			actor_lab: { serialize: () => '', deserialize: () => this.actorLab.resolveInput() },

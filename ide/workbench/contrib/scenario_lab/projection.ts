@@ -24,7 +24,7 @@ export function rebuildScenarioLabTestRows(state: ScenarioLabViewState): void {
 	const roots = state.collection.roots;
 	for (let rootIndex = 0; rootIndex < roots.length; rootIndex += 1) {
 		const root = roots[rootIndex];
-		const expanded = !pane.collapsedRootIds.has(root.id);
+		const expanded = !pane.collapsedNodeIds.has(root.id);
 		pane.rows.push({
 			id: root.id,
 			kind: 'root',
@@ -41,22 +41,15 @@ export function rebuildScenarioLabTestRows(state: ScenarioLabViewState): void {
 		if (!expanded) {
 			continue;
 		}
-		const tests = state.collection.resolveRoot(root.id);
-		for (let testIndex = 0; testIndex < tests.length; testIndex += 1) {
-			const test = tests[testIndex];
-			pane.rows.push({
-				id: test.id,
-				kind: 'test',
-				root,
-				test,
-				depth: 1,
-				expandable: false,
-				expanded: false,
-				latestState: null,
-				text: '',
-				twistieLeft: 0,
-				twistieRight: 0,
-			});
+		for (const module of state.collection.resolveRoot(root.id)) {
+			const expanded = !pane.collapsedNodeIds.has(module.id);
+			pane.rows.push({ id: module.id, kind: 'module', root, module, test: null, depth: 1,
+				expandable: true, expanded, latestState: null, text: '', twistieLeft: 0, twistieRight: 0 });
+			if (!expanded) continue;
+			for (const test of module.children) {
+				pane.rows.push({ id: test.id, kind: 'test', root, test, depth: 2,
+					expandable: false, expanded: false, latestState: null, text: '', twistieLeft: 0, twistieRight: 0 });
+			}
 		}
 	}
 
@@ -110,10 +103,10 @@ function appendScenarioResultDetails(
 	run: ScenarioRun,
 	result: ScenarioTestResult,
 ): void {
-	const failure = result.failure;
-	if (failure !== null) {
+	for (let index = 0; index < result.failures.length; index += 1) {
+		const failure = result.failures[index];
 		pane.rows.push({
-			id: `${result.id}:failure`,
+			id: `${result.id}:failure:${index}`,
 			kind: 'failure',
 			run,
 			result,
@@ -306,7 +299,7 @@ export function selectedScenarioTestNode(state: ScenarioLabViewState): ScenarioT
 		return null;
 	}
 	const row = pane.rows[pane.selectionIndex];
-	return row.kind === 'root' ? row.root : row.test;
+	return row.kind === 'root' ? row.root : row.kind === 'module' ? row.module : row.test;
 }
 
 export function selectedScenarioResultRow(state: ScenarioLabViewState): ScenarioLabResultRow | null {
@@ -318,8 +311,8 @@ export function updateScenarioTestResultStates(state: ScenarioLabViewState): voi
 	const rows = state.testPane.rows;
 	for (let index = 0; index < rows.length; index += 1) {
 		const row = rows[index];
-		if (row.kind === 'root') {
-			const run = state.resultService.latestRunForScope(row.root.id);
+		if (row.kind !== 'test') {
+			const run = state.resultService.latestRunForScope(row.id);
 			row.latestState = run === null ? null : run.state;
 			continue;
 		}

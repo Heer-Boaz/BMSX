@@ -2139,6 +2139,10 @@ test('new Lua files belong to their explicit project and are published only afte
 	assert.equal(system.records.length, 1);
 	assert.deepEqual(server.requests.map(request => request.method), ['PUT', 'PUT'], 'exclusive create does not race a separate existence probe');
 	await assert.rejects(createLuaResource(storage, clock, sources, request), /Lua module already exists/);
+	const suite = await createLuaResource(storage, clock, sources, { domain: 1,
+		relativePath: 'experiments/simple_assert.lua', contents: "return { kind = 'unit', tests = { sample = function() end } }" });
+	assert.equal(second.path2lua[suite.path].program_module, false);
+	assert.equal(suite.source.resid, '__bmsx_scenario_test__/experiments/simple_assert.lua');
 	for (const relativePath of ['../outside.lua', '/absolute.lua', 'actor.txt', 'bmsx/assets.lua', 'test/ignored.lua', 'other/actor.lua']) {
 		await assert.rejects(createLuaResource(storage, clock, sources, { ...request, relativePath }));
 	}

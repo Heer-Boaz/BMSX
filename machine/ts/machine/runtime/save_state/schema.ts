@@ -407,5 +407,6 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'resumerRef',
 	'stackCapacity',
 	'error',
+	'haltedUntilIrqThreadRef',
 	'schemaVersion',
 ] as const;

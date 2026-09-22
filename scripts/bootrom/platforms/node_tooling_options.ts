@@ -8,7 +8,7 @@ import {
 export type NodeToolingMode =
 	| { kind: 'plain' }
 	| { kind: 'timeline'; path: string }
-	| { kind: 'host-test'; path: string }
+	| { kind: 'host-test'; path: string; caseName?: string }
 	| { kind: 'control'; port: number; workspaceRoot?: string }
 	| { kind: 'ide-test'; path: string };
 
@@ -40,7 +40,8 @@ Options:
   --ttl <seconds>            Stop after the given duration.
   --system-rom <path>        System ROM path.
   --input-timeline <file>    Schedule a JSON input/capture timeline.
-  --test <file>              Run a packaged scenario test.
+  --test <file>              Run a packaged Lua test suite.
+  --case <name>              Select one named case from --test.
   --ide-test <file>          Run a host-side Studio test.
   --control <port>           Live host control on loopback TCP (0 chooses a port).
   --studio-workspace <dir>   Run Studio with real workspace files; requires --control.
@@ -62,12 +63,17 @@ export function parseNodeToolingOptions(
 	let mode: NodeToolingMode = { kind: 'plain' };
 	let cpuProfile = false;
 	let help = false;
+	let caseName: string | undefined;
 	let workspaceRoot: string | undefined;
 
 	let index = 0;
 	while (index < argv.length) {
 		const argument = argv[index];
 		switch (argument) {
+			case '--case':
+				caseName = requiredNodeOptionValue(argv, index, argument);
+				index += 2;
+				continue;
 			case '--control': {
 				if (mode.kind !== 'plain') throw new Error('Only one tooling mode may be selected.');
 				const port = Number(requiredNodeOptionValue(argv, index, argument));
@@ -162,6 +168,11 @@ export function parseNodeToolingOptions(
 			continue;
 		}
 		throw new Error(`Unrecognized argument: ${argument}`);
+	}
+
+	if (caseName !== undefined) {
+		if (mode.kind !== 'host-test') throw new Error('--case requires --test.');
+		mode.caseName = caseName;
 	}
 
 	if (help) {

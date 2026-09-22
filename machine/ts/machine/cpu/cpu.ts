@@ -206,6 +206,7 @@ export type CpuRuntimeState = {
 	lastExecutionDomainId: ExecutionDomainId;
 	lastPc: number;
 	haltedUntilIrqFrameDepth: number;
+	haltedUntilIrqThreadRef: number;
 	interruptEventPending: boolean;
 	memoryWriteBlocked: boolean;
 	memoryWriteBlockedAddress: number;
@@ -263,6 +264,7 @@ export class CPU implements MappedPageInvalidator {
 	private indexKey!: StringId;
 	private modeKey!: StringId;
 	private haltedUntilIrqFrameDepth = -1;
+	private haltedUntilIrqThread: Thread | null = null;
 	private interruptEventPending = false;
 	private memoryWriteBlocked = false;
 	private memoryWriteBlockedAddress = 0;
@@ -866,6 +868,7 @@ export class CPU implements MappedPageInvalidator {
 		this.clearCallStack();
 		this.stringIndexTable = null;
 		this.haltedUntilIrqFrameDepth = -1;
+		this.haltedUntilIrqThread = null;
 		this.interruptEventPending = false;
 		this.memoryWriteBlocked = false;
 		this.memoryWriteBlockedAddress = 0;
@@ -1527,6 +1530,7 @@ export class CPU implements MappedPageInvalidator {
 		const cartridgeEntry = image.executionDomainId >= 0;
 		this.statusWord = cartridgeEntry ? CPU_STATUS_CART_ENTRY : CPU_STATUS_SYSTEM_ENTRY;
 		this.haltedUntilIrqFrameDepth = -1;
+		this.haltedUntilIrqThread = null;
 		this.interruptEventPending = false;
 		this.memoryWriteBlocked = false;
 		this.memoryWriteBlockedAddress = 0;
@@ -1595,23 +1599,26 @@ export class CPU implements MappedPageInvalidator {
 			return;
 		}
 		this.haltedUntilIrqFrameDepth = this.activeThread.frames.length;
+		this.haltedUntilIrqThread = this.activeThread;
 		this.yieldRequested = false;
 	}
 
 	private hardHalt(): void {
 		this.hardHalted = true;
 		this.haltedUntilIrqFrameDepth = -1;
+		this.haltedUntilIrqThread = null;
 		this.yieldRequested = false;
 	}
 
 
 	public clearHaltUntilIrq(): void {
 		this.haltedUntilIrqFrameDepth = -1;
+		this.haltedUntilIrqThread = null;
 		this.yieldRequested = false;
 	}
 
 	public isHaltedUntilIrq(): boolean {
-		return this.haltedUntilIrqFrameDepth === this.activeThread.frames.length;
+		return this.haltedUntilIrqThread === this.activeThread && this.haltedUntilIrqFrameDepth === this.activeThread.frames.length;
 	}
 
 	public isMemoryWriteBlocked(): boolean {
@@ -1758,6 +1765,7 @@ export class CPU implements MappedPageInvalidator {
 
 	private clearHaltAfterAcceptedInterrupt(): void {
 		this.haltedUntilIrqFrameDepth = -1;
+		this.haltedUntilIrqThread = null;
 		this.yieldRequested = false;
 	}
 
@@ -1788,7 +1796,7 @@ export class CPU implements MappedPageInvalidator {
 						return RunResult.Yielded;
 					}
 					if (this.hardHalted
-						|| this.haltedUntilIrqFrameDepth === frames.length
+						|| (this.haltedUntilIrqThread === this.activeThread && this.haltedUntilIrqFrameDepth === frames.length)
 						|| this.memoryWriteBlocked) {
 						return RunResult.Halted;
 					}
@@ -1853,7 +1861,7 @@ export class CPU implements MappedPageInvalidator {
 						return RunResult.Yielded;
 					}
 					if (this.hardHalted
-						|| this.haltedUntilIrqFrameDepth === frames.length
+						|| (this.haltedUntilIrqThread === this.activeThread && this.haltedUntilIrqFrameDepth === frames.length)
 						|| this.memoryWriteBlocked) {
 						return RunResult.Halted;
 					}
@@ -3630,9 +3638,7 @@ export class CPU implements MappedPageInvalidator {
 				if (thread === null) throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 				if (id === BuiltinFunctionId.CoroutineIsYieldable) out.push(this.coroutineYieldable(thread) ? ValueTag.True : ValueTag.False);
 				else if (id === BuiltinFunctionId.CoroutineStatus) {
-					const name = thread.status === ThreadStatus.Running ? 'running' : thread.status === ThreadStatus.Normal ? 'normal'
-						: thread.status === ThreadStatus.Dead || thread.status === ThreadStatus.Failed ? 'dead' : 'suspended';
-					out.push(ValueTag.String, this.stringPool.intern(name));
+					out.push(ValueTag.Number, thread.status);
 				} else {
 					const failed = thread.status === ThreadStatus.Failed;
 					out.push(failed ? ValueTag.False : ValueTag.True);
@@ -3705,11 +3711,12 @@ export class CPU implements MappedPageInvalidator {
 			throw new LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 		}
 		const target = caller.registers.getReference(callBase + 1) as Thread;
-		if (target.status !== ThreadStatus.New && target.status !== ThreadStatus.Suspended) {
+		const exceptionActive = this.readExceptionReturnFrameDepth() !== -1;
+		if (exceptionActive || (target.status !== ThreadStatus.New && target.status !== ThreadStatus.Suspended)) {
 			const results = this.acquireBuiltinResults();
 			try {
 				results.push(ValueTag.False);
-				results.push(ValueTag.String, this.stringPool.intern('cannot resume non-suspended coroutine'));
+				results.push(ValueTag.String, this.stringPool.intern(exceptionActive ? 'cannot resume coroutine across a hardware exception' : 'cannot resume non-suspended coroutine'));
 				this.writeReturnValuesFromBuiltinResults(caller, callBase, returnCount, results);
 			} finally { this.releaseBuiltinResults(results); }
 			return;
@@ -4419,6 +4426,7 @@ export class CPU implements MappedPageInvalidator {
 		const rootThreadRef = captureObject(this.rootThread, CpuSnapshotObjectKind.Thread);
 		const activeThreadRef = captureObject(this.activeThread, CpuSnapshotObjectKind.Thread);
 		const completionThreadRef = captureObject(this.completionThread, CpuSnapshotObjectKind.Thread);
+		const haltedUntilIrqThreadRef = this.haltedUntilIrqThread === null ? -1 : captureObject(this.haltedUntilIrqThread, CpuSnapshotObjectKind.Thread);
 
 		const systemGlobals: CpuRootValueState[] = [];
 		for (let slot = 0; slot < this.systemGlobalNames.length; slot += 1) {
@@ -4542,6 +4550,7 @@ export class CPU implements MappedPageInvalidator {
 			lastExecutionDomainId: this.lastExecutionDomainId,
 			lastPc: this.lastPc,
 			haltedUntilIrqFrameDepth: this.haltedUntilIrqFrameDepth,
+			haltedUntilIrqThreadRef,
 			interruptEventPending: this.interruptEventPending,
 			memoryWriteBlocked: this.memoryWriteBlocked,
 			memoryWriteBlockedAddress: this.memoryWriteBlockedAddress,
@@ -4805,6 +4814,7 @@ export class CPU implements MappedPageInvalidator {
 		this.lastExecutionDomainId = state.lastExecutionDomainId;
 		this.lastPc = state.lastPc;
 		this.haltedUntilIrqFrameDepth = state.haltedUntilIrqFrameDepth;
+		this.haltedUntilIrqThread = state.haltedUntilIrqThreadRef === -1 ? null : restoredObjects[state.haltedUntilIrqThreadRef] as Thread;
 		this.interruptEventPending = state.interruptEventPending;
 		this.memoryWriteBlocked = state.memoryWriteBlocked;
 		this.memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
@@ -4947,6 +4957,7 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 		objectStack.push(this.rootThread, this.activeThread, this.completionThread);
+		if (this.haltedUntilIrqThread !== null) objectStack.push(this.haltedUntilIrqThread);
 		this.pushHeapStoredValue(root0Tag, root0Scalar, root0Reference);
 		this.pushHeapStoredValue(root1Tag, root1Scalar, root1Reference);
 		this.pushHeapStoredValue(root2Tag, root2Scalar, root2Reference);

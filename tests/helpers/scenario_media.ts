@@ -50,8 +50,12 @@ function luaEntry(source: string): RomAsset {
 export async function buildScenarioMediaFixture(
 	outputDirectory: string,
 	testSources: readonly ScenarioMediaTestSource[],
+	options?: { systemSource: string; systemModules: readonly { path: string; source: string }[]; cartSource: string; cartModules?: readonly { path: string; source: string }[] },
 ): Promise<ScenarioMediaFixture> {
-	const systemAssets = [luaEntry('module<entry>\nreturn true')];
+	const systemAssets = [luaEntry(options === undefined ? 'module<entry>\nreturn true' : options.systemSource)];
+	if (options !== undefined) for (const module of options.systemModules) {
+		systemAssets.push({ resid: module.path, type: 'lua', buffer: Buffer.from(module.source), compiled_buffer: compileLuaChunkBuffer(module.source, module.path), source_path: `${module.path}.lua`, normalized_source_path: `${module.path}.lua` });
+	}
 	const systemLayout = layoutRomPrefix(
 		systemAssets,
 		true,
@@ -88,8 +92,13 @@ export async function buildScenarioMediaFixture(
 		source_path: 'testlib/unselected.lua',
 		normalized_source_path: 'testlib/unselected.lua',
 	};
+	const frameworkAssets: RomAsset[] = [];
+	for (const name of ['context', 'execution']) {
+		frameworkAssets.push({ resid: `testlib/${name}`, type: 'lua', buffer: await readFile(`testlib/${name}.lua`), source_path: `testlib/${name}.lua`, normalized_source_path: `testlib/${name}.lua` });
+	}
 	const cartAssets = [
-		luaEntry(SCENARIO_FIXTURE_CART_ENTRY_SOURCE),
+		...frameworkAssets,
+		luaEntry(options === undefined ? SCENARIO_FIXTURE_CART_ENTRY_SOURCE : options.cartSource),
 		sourceOnlyModule,
 		unselectedSourceOnlyModule,
 	];
@@ -104,6 +113,10 @@ export async function buildScenarioMediaFixture(
 			update_timestamp: 1234 + index,
 		});
 	}
+	if (options?.cartModules !== undefined) for (const module of options.cartModules) {
+		cartAssets.push({ resid: module.path, type: 'lua', buffer: Buffer.from(module.source), compiled_buffer: compileLuaChunkBuffer(module.source, module.path), source_path: `${module.path}.lua`, normalized_source_path: `${module.path}.lua` });
+	}
+
 	const cartLayout = layoutRomPrefix(cartAssets, true, MANIFEST);
 	const cartBlua32 = buildRomBlua32Tail(cartAssets, {
 		generatedLuaModules: [],

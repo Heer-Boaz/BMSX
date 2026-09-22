@@ -36,7 +36,7 @@ const EMPTY_IMAGE = linkRawTestSystemBlua32({
 	functions: [{ firstWord: 0, wordCount: 1 }],
 });
 
-test('scenario collection scans cartridge registries once and resolves retained children lazily', () => {
+test('test collection retains source-derived modules and named case identities', () => {
 	const firstPath = 'tests/carts/nemesis_s/a_assert.lua';
 	const secondPath = 'tests/carts/nemesis_s/b_assert.lua';
 	const records = [
@@ -51,7 +51,7 @@ test('scenario collection scans cartridge registries once and resolves retained 
 	assert.equal(root.id, 'scenario-root:0');
 	assert.equal(root.label, 'nemesis_s');
 	assert.equal(root.testCount, 2);
-	assert.equal(root.children, null);
+	assert.equal(root.children.length, 2);
 
 	registerLuaSourceRecord(
 		sources.cartridgeSlots[0]!.luaSources,
@@ -64,18 +64,22 @@ test('scenario collection scans cartridge registries once and resolves retained 
 	assert.equal(children[0].label, 'a');
 	assert.equal(children[1].label, 'b');
 	assert.equal(
-		children[0].id,
-		scenarioTestId(0, scenarioTestAssetId(firstPath)),
+		children[0].children[0].id,
+		scenarioTestId(0, scenarioTestAssetId(firstPath), 'sample'),
 	);
 	assert.equal(collection.resolveRoot(root.id), children);
-	assert.equal(collection.findTestBySourcePath(0, secondPath), children[1]);
+	assert.equal(collection.findModuleBySourcePath(0, secondPath), children[1]);
+	assert.equal(collection.refresh(), true);
+	assert.equal(root.testCount, 3);
+	assert.equal(collection.findModuleBySourcePath(0, 'tests/carts/nemesis_s/later_assert.lua').children.length, 1);
+	assert.equal(collection.refresh(), false);
 });
 
 test('scenario result service retains current-first runs and bounded ordered output', () => {
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
 	]));
-	const item = collection.resolveRoot(collection.roots[0].id)[0];
+	const item = collection.resolveNode(collection.roots[0])[0];
 	const service = new ScenarioResultService();
 	const firstRun = service.beginRun(item.id, [{ test: item, sourceRevision: 7 }]);
 	const first = service.startItem(firstRun, 0, 100);
@@ -154,7 +158,7 @@ test('scenario result service retains current-first runs and bounded ordered out
 		actionEffectTrace.facts.at(actionEffectTrace.facts.length - 1).kind,
 		'deactivate',
 	);
-	service.pass(first, 200);
+	service.complete(first, 200);
 	service.completeRun(firstRun);
 	assert.equal(service.liveRun, null);
 	assert.equal(first.state, 'passed');
@@ -188,7 +192,7 @@ test('scenario result service retains aggregate failure and cancellation item st
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/c_assert.lua', 30),
 	]));
 	const root = collection.roots[0];
-	const tests = collection.resolveRoot(root.id);
+	const tests = collection.resolveNode(root);
 	const service = new ScenarioResultService();
 	const run = service.beginRun(root.id, tests.map((item, index) => ({
 		test: item,
@@ -202,9 +206,9 @@ test('scenario result service retains aggregate failure and cancellation item st
 	assert.equal(service.liveRun, run);
 	assert.equal(service.activeResult, null);
 	const passed = service.startItem(run, 1, 0);
-	service.pass(passed, 5);
+	service.complete(passed, 5);
 	const last = service.startItem(run, 2, 0);
-	service.pass(last, 6);
+	service.complete(last, 6);
 	service.completeRun(run);
 	assert.equal(run.state, 'failed');
 	assert.equal(run.completedCount, 3);
@@ -253,7 +257,7 @@ test('scenario FSM observation consumes the fixed guest channel and fails on ove
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
 	]));
 	const service = new ScenarioResultService();
-	const item = collection.resolveRoot(collection.roots[0].id)[0];
+	const item = collection.resolveNode(collection.roots[0])[0];
 	const run = service.beginRun(item.id, [{ test: item, sourceRevision: 1 }]);
 	const result = service.startItem(run, 0, 10);
 	const observation = new ScenarioFsmTransitionObservation(
@@ -309,7 +313,7 @@ test('scenario ActionEffect observation consumes ordered producer facts and fail
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
 	]));
 	const service = new ScenarioResultService();
-	const item = collection.resolveRoot(collection.roots[0].id)[0];
+	const item = collection.resolveNode(collection.roots[0])[0];
 	const run = service.beginRun(item.id, [{ test: item, sourceRevision: 1 }]);
 	const result = service.startItem(run, 0, 10);
 	const observation = new ScenarioActionEffectObservation(
@@ -349,7 +353,7 @@ test('scenario failure retains authored fault navigation', () => {
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
 	]));
-	const item = collection.resolveRoot(collection.roots[0].id)[0];
+	const item = collection.resolveNode(collection.roots[0])[0];
 	const service = new ScenarioResultService();
 	const run = service.beginRun(item.id, [{ test: item, sourceRevision: 10 }]);
 	const result = service.startItem(run, 0, 1);
@@ -370,7 +374,7 @@ test('scenario failure retains authored fault navigation', () => {
 	}, fault);
 
 	assert.equal(result.state, 'failed');
-	assert.deepEqual(result.failure!.location, {
+	assert.deepEqual(result.failures[0].location, {
 		resource: item.resource,
 		line: 12,
 		column: 4,

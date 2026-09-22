@@ -1,85 +1,39 @@
 local registry<const> = require('cartlib/registry')
 local world<const> = require('cartlib/world/world')
+local fixture<const> = require('tests/carts/pietious/fixture')
 
-__bmsx_host_test = {
-	phase = 'setup',
-	frames = 0,
+return {
+	kind = 'integration',
+	tests = {
+		shrine_input_resume = function(t)
+			local director<const>, castle<const>, player<const> = fixture.start_game(t)
+			local room
+			local room_state<const> = director.state_machines:bind_state_path('/room')
+			local shrine_state<const> = director.state_machines:bind_state_path('/shrine')
+			local quiet_state<const> = player.state_machines:bind_state_path('/quiet')
+			local from<const> = castle.current_room_number
+			room = castle:load_room(4)
+			castle:commit_room_switch({ from_room_number = from, to_room_number = 4, direction = 'right' }, 0, 5, 12)
+			local shrine<const> = room.shrine_instances[1]
+			player.state_machines:transition_to('/quiet')
+			player.x = shrine.x
+			player.y = shrine.y
+			player:begin_entering_shrine(shrine)
+
+			t:wait_until('shrine entered', function() return world.active_space_id == 'shrine' end, 120)
+			assert(director.state_machines:matches_state(shrine_state), 'director did not enter shrine state')
+			t:press('ArrowDown', 2)
+			t:wait_until('room input resumed', function()
+				return world.gameplay_clock_running and director.state_machines:matches_state(room_state)
+				and player.state_machines:matches_state(quiet_state)
+			end, 120)
+			for tick = 1, 5 do
+				t:wait_ticks(1)
+				assert(world.gameplay_clock_running, 'modal Down input suspended gameplay again')
+				assert(director.state_machines:matches_state(room_state), 'modal Down input reopened shrine')
+				assert(player.state_machines:matches_state(quiet_state), 'player re-entered shrine')
+			end
+
+		end,
+	},
 }
-
-function __bmsx_host_test.ready()
-	return registry:get('c') ~= nil
-		and registry:get('c').room ~= nil
-		and registry:get('pietolon') ~= nil
-		and registry:get('d') ~= nil
-end
-
-function __bmsx_host_test.setup()
-	local director<const> = registry:get('d')
-	director.state_machines:transition_to('/room')
-	world:set_space('main')
-	world:set_gameplay_clock_running(true)
-end
-
-function __bmsx_host_test.update()
-	local test<const> = __bmsx_host_test
-	-- State paths and probe actors belong to the admitted game, not the outgoing intro.
-	if registry:get('d') == test.outgoing_director then return false end
-	test.frames = test.frames + 1
-	assert(test.frames < 400, 'shrine resume scenario timed out phase=' .. test.phase)
-
-	local castle<const> = registry:get('c')
-	local room = registry:get('c').room
-	local player<const> = registry:get('pietolon')
-	local director<const> = registry:get('d')
-	if test.room_state == nil then
-		test.room_state = director.state_machines:bind_state_path('/room')
-		test.shrine_state = director.state_machines:bind_state_path('/shrine')
-		test.quiet_state = player.state_machines:bind_state_path('/quiet')
-	end
-
-	if test.phase == 'setup' then
-		if world.active_space_id ~= 'main'
-		or not director.state_machines:matches_state(test.room_state) then
-			return false
-		end
-		local from<const> = castle.current_room_number
-		room = castle:load_room(4)
-		castle:commit_room_switch({ from_room_number = from, to_room_number = 4, direction = 'right' }, 0, 5, 12)
-		local shrine<const> = room.shrine_instances[1]
-		player.state_machines:transition_to('/quiet')
-		player.x = shrine.x
-		player.y = shrine.y
-		player:begin_entering_shrine(shrine)
-		test.phase = 'entering'
-		return false
-	end
-
-	if test.phase == 'entering' then
-		if world.active_space_id ~= 'shrine' then
-			return false
-		end
-		assert(director.state_machines:matches_state(test.shrine_state),
-			'director did not enter the shrine state')
-		test.phase = 'exiting'
-		return host.press('ArrowDown', 2)
-	end
-
-	if test.phase == 'exiting' then
-		if not world.gameplay_clock_running
-		or not director.state_machines:matches_state(test.room_state)
-		or not player.state_machines:matches_state(test.quiet_state) then
-			return false
-		end
-		test.phase = 'stable'
-		test.stable_frames = 0
-		return false
-	end
-
-	test.stable_frames = test.stable_frames + 1
-	assert(world.gameplay_clock_running, 'modal Down input suspended gameplay again after shrine exit')
-	assert(director.state_machines:matches_state(test.room_state),
-		'modal Down input reopened the shrine')
-	assert(player.state_machines:matches_state(test.quiet_state),
-		'player re-entered the shrine after modal exit')
-	return test.stable_frames == 5
-end

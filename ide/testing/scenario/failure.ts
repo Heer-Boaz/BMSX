@@ -2,7 +2,7 @@ import { LuaError } from '../../../toolchain/ts/lua/errors';
 import { resolveRuntimeLuaSourceForContext, type RuntimeSourceState } from '../../runtime/sources';
 import type { ScenarioRunFailure } from './result_service';
 
-/** Retain the original exception before a run restores its execution media. */
+/** Project preparation errors into immutable run diagnostics. */
 export function scenarioFailureFromError(
 	sources: RuntimeSourceState,
 	domain: 0 | 1,

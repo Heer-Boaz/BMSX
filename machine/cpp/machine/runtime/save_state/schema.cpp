@@ -414,6 +414,7 @@ const auto RUNTIME_SAVE_STATE_PROP_NAME_STORAGE = std::to_array<std::string>({
 	"resumerRef",
 	"stackCapacity",
 	"error",
+	"haltedUntilIrqThreadRef",
 	"schemaVersion",
 });
 

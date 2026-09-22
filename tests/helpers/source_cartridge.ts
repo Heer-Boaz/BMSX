@@ -28,6 +28,7 @@ export async function buildSourceCartridgeFixture(
 	const metadata = await getResMetaList([], {
 		domain: 'cart', extraLuaPaths: [root], virtualRoot: root,
 		libraryLuaPaths: ['cartlib', 'testlib'], sourceOnlyLuaRootFiles: [],
+		sourceOnlyLuaModuleRoots: [],
 	});
 	const assets = await generateRomAssets(await getResourcesList(metadata));
 	const layout = layoutRomPrefix(assets, true, { hardware: [{ type: 'rom' }] });

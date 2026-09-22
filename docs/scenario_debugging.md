@@ -1,5 +1,8 @@
 # Scenario failures and debugging
 
+> Historical scenario-runner design. The returned-suite implementation and
+> current limitations are documented in [Guest testing](guest_testing.md).
+
 ## Production references, read before implementation
 
 VS Code at `d456201d22788424abecff0d5127fa169d90f2aa`:

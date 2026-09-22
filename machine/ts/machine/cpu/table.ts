@@ -944,7 +944,7 @@ export class Table {
 		if (this.hashSize === 0) {
 			return -1;
 		}
-		const deadKeyHashId = tag === ValueTag.Table || tag === ValueTag.Closure
+		const deadKeyHashId = tag === ValueTag.Table || tag === ValueTag.Closure || tag === ValueTag.Thread
 			? (reference as NonNullable<ValueReference>).hashId
 			: 0;
 		const mask = this.hashSize - 1;

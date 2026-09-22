@@ -83,6 +83,8 @@ function writeScenarioTestText(state: ScenarioLabViewState): void {
 		if (row.kind === 'root') {
 			const marker = row.expanded ? '-' : '+';
 			rawText = `${marker} ${row.root.label} (${row.root.testCount})`;
+		} else if (row.kind === 'module') {
+			rawText = `${row.expanded ? '-' : '+'} ${row.module.label} (${row.module.children.length})${row.module.diagnostic === null ? '' : ' / INVALID'}`;
 		} else {
 			rawText = `  ${scenarioStateBadge(row.latestState)} ${row.test.label}`;
 		}

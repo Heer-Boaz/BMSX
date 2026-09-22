@@ -29,7 +29,7 @@ async function main(): Promise<void> {
 		{ HostAudioOutput },
 		{ SystemOutputLog },
 		{ HeadlessGPUBackend },
-		{ HeadlessVideoOutput },
+		{ OffscreenVideoOutput },
 		{ Input },
 		{ DiscardingAudioSink },
 		{ VirtualHeadlessClock },
@@ -47,7 +47,7 @@ async function main(): Promise<void> {
 		import('../../../hosts/common/audio_output'),
 		import('../../../hosts/common/system_output_log'),
 		import('../../../machine/ts/render/headless/backend'),
-		import('../../../hosts/node/headless/video_output'),
+		import('../../../hosts/common/offscreen_video_output'),
 		import('../../../hosts/common/input/manager'),
 		import('../../../hosts/node/common/discarding_audio'),
 		import('../../../hosts/node/headless/clock'),
@@ -79,7 +79,7 @@ async function main(): Promise<void> {
 		new HeadlessInputHub(),
 		-1,
 	);
-	const videoOutput = new HeadlessVideoOutput(256, 212);
+	const videoOutput = new OffscreenVideoOutput(256, 212);
 	const runtime = initializeMachineRuntime(
 		systemRom,
 		[dataRom, bootableCartRom],

@@ -1,3 +1,4 @@
+import { TEST_EXECUTION_MODULE_PATH } from '../../toolchain/ts/rompack/test_cartridge';
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE BUILDER CANNOT HANDLE THIS!!!!!
 
 import pc from 'picocolors';
@@ -426,6 +427,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	const BIOSResMetaList = await runBIOSStep(TASK.MANIFEST_SCAN, () => getResMetaList([BIOSResPath], {
 		domain: 'system',
 		sourceOnlyLuaRootFiles: [],
+		sourceOnlyLuaModuleRoots: [],
 		extraLuaPaths: [biosSourcePath],
 		virtualRoot: BIOSVirtualRoot,
 	}));
@@ -512,6 +514,7 @@ async function main() {
 		const libraryLuaPathSet = new Set<string>(libraryLuaRoots.map(normalizePathKey));
 		if (romPackDebug) {
 			libraryLuaPathSet.add(normalizePathKey(testlibLuaPath));
+			libraryLuaPathSet.add(join('tests', projectRootPath));
 		}
 		const cartSourceFiles = collectCartSourceFiles(extraLuaRoots);
 		const cartHasProgramSource = cartSourceFiles.length !== 0;
@@ -597,6 +600,7 @@ async function main() {
 				extraLuaFiles: cartSourceFiles,
 				libraryLuaPaths: Array.from(libraryLuaPathSet),
 				sourceOnlyLuaRootFiles: scenarioTestSources.sourceFiles,
+				sourceOnlyLuaModuleRoots: scenarioTestSources.sourceFiles.length === 0 ? [] : [TEST_EXECUTION_MODULE_PATH],
 				virtualRoot,
 			}));
 			await progress.taskCompleted();
@@ -649,7 +653,9 @@ async function main() {
 			}
 			await progress.taskCompleted();
 			const cartLuaRoots = Array.from(extraLuaPathSet);
-			const sharedLuaRoots = Array.from(libraryLuaPathSet);
+			const sharedLuaRoots = debug
+				? [...libraryLuaRoots, testlibLuaPath]
+				: libraryLuaRoots;
 			if (biosImportsPath !== undefined) {
 				await progress.runWithDetail('Lint cart + shared Lua', async () => {
 					await lintCartSources({ roots: cartLuaRoots, profile: 'cart' });
@@ -674,6 +680,7 @@ async function main() {
 		logOk(`ROM packing complete → ${romOutput}`);
 		writeOut(`\n`);
 		} catch (e) {
+			process.exitCode = 1;
 			const message = e instanceof Error ? e.message : String(e);
 			const isCompilationFailureReport = typeof message === 'string'
 				&& /^Compilation failed with \d+ (?:Lua )?error\(s\):/.test(message);

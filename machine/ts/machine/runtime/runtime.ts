@@ -17,6 +17,7 @@ import { RuntimeHistory } from './history/history';
 
 export class Runtime {
 	public readonly timing: TimingState;
+	public readonly model: RuntimeOptions['machineModel'];
 	public cpuUsageCyclesUsed(): number {
 		return this.frameLoop.frameActive ? this.frameLoop.frameState.activeCpuUsedCycles : this.frameScheduler.lastTickCpuUsedCycles;
 	}
@@ -120,6 +121,7 @@ export class Runtime {
 		this.frameLoop = new FrameLoopState(this);
 		this.vblank = new VblankState(this);
 		this.cpuExecution = new CpuExecutionState(this);
+		this.model = options.machineModel;
 		this.timing = new TimingState(options.machineModel);
 		this.history = new RuntimeHistory(this, input);
 		this.machine = new Machine(

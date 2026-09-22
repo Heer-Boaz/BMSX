@@ -77,6 +77,8 @@ type Blua32ImageBuildOptions =
 export type BuiltBlua32Image<TLinked extends LinkedBlua32Image = LinkedBlua32Image> = {
 	linked: TLinked;
 	object: ProgramObjectImage;
+	/** Entry body boundary after section and static module initialization. Tooling only. */
+	entryCodeAddress: number;
 	diagnosticSources: Blua32DiagnosticSourceMap;
 };
 
@@ -212,14 +214,16 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 			preloadModules: options.preloadModules,
 		});
 		const object = encodeCompiledProgramObject(compiled);
-		return {
-			linked: linkCartBlua32Image(
+		const linked = linkCartBlua32Image(
 				options.biosImports,
 				object,
 				compiled.metadata,
 				options.loadAddress,
 				options.ramByteCount,
-			),
+		);
+		return {
+			linked,
+			entryCodeAddress: linked.layout.functions[linked.functionProtoIndices.indexOf(compiled.entryProtoIndex)].codeAddress,
 			object,
 			diagnosticSources,
 		};
@@ -234,14 +238,16 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		preloadModules: options.preloadModules,
 	});
 	const object = encodeCompiledProgramObject(compiled);
-	return {
-		linked: linkSystemBlua32Image(
+	const linked = linkSystemBlua32Image(
 			object,
 			compiled.metadata,
 			options.loadAddress,
 			options.ramByteCount,
 			options.biosExports,
-		),
+	);
+	return {
+		linked,
+		entryCodeAddress: linked.layout.functions[linked.functionProtoIndices.indexOf(compiled.entryProtoIndex)].codeAddress,
 		object,
 		diagnosticSources,
 	};

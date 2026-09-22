@@ -127,7 +127,7 @@ export type ScenarioTestResult = {
 	readonly captures: ScenarioRetainedSequence<ScenarioResultCapture>;
 	fsmTransitionTrace: ScenarioFsmTransitionTrace | null;
 	actionEffectTrace: ScenarioActionEffectTrace | null;
-	failure: ScenarioRunFailure | null;
+	readonly failures: ScenarioRunFailure[];
 	fault: FaultSnapshot | null;
 };
 
@@ -219,7 +219,7 @@ export class ScenarioResultService {
 				captures: new ScenarioRetainedSequence(SCENARIO_RESULT_CAPTURE_RETAIN_COUNT),
 				fsmTransitionTrace: null,
 				actionEffectTrace: null,
-				failure: null,
+				failures: [],
 				fault: null,
 			};
 		}
@@ -426,12 +426,17 @@ export class ScenarioResultService {
 		return captureCount;
 	}
 
-	public pass(result: ScenarioTestResult, endTick: number): void {
-		this.complete(result, 'passed', endTick);
+	public complete(result: ScenarioTestResult, endTick: number): void {
+		this.finish(result, result.failures.length === 0 ? 'passed' : 'failed', endTick);
 	}
 
 	public cancel(result: ScenarioTestResult, endTick: number): void {
-		this.complete(result, 'cancelled', endTick);
+		this.finish(result, 'cancelled', endTick);
+	}
+
+	public recordFailure(result: ScenarioTestResult, failure: ScenarioRunFailure): void {
+		result.failures.push(failure);
+		this.revision += 1;
 	}
 
 	public fail(
@@ -440,12 +445,12 @@ export class ScenarioResultService {
 		failure: ScenarioRunFailure,
 		fault: FaultSnapshot | null,
 	): void {
-		result.failure = failure;
+		this.recordFailure(result, failure);
 		result.fault = fault;
-		this.complete(result, 'failed', endTick);
+		this.finish(result, 'failed', endTick);
 	}
 
-	private complete(
+	private finish(
 		result: ScenarioTestResult,
 		state: 'passed' | 'failed' | 'cancelled',
 		endTick: number,

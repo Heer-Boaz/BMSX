@@ -1,110 +1,64 @@
 local registry<const> = require('cartlib/registry')
 local world<const> = require('cartlib/world/world')
 require('constants')
-
--- Timers encoded by the original Bat routine at 0x7d5f and 0x7d75.
 local bat_hang_ticks<const> = 0x50
 local bat_takeoff_ticks<const> = 0x0a
+local fixture<const> = require('tests/carts/pietious/fixture')
 
-__bmsx_host_test = {
-	frames = 0,
-	phase = 'load_room',
-}
+return {
+	kind = 'integration',
+	tests = {
+		mijter_bat = function(t)
+			local _director<const>, castle<const> = fixture.start_game(t)
+			local room
+			local test<const> = {}
+			local from_room_number<const> = castle.current_room_number
+			room = castle:load_room(110)
+			castle:commit_room_switch({
+				from_room_number = from_room_number,
+				to_room_number = 110,
+				direction = 'left',
+			}, 0, 0, 0)
+			test.mijter_id = room.enemies[1].member_id
 
-function __bmsx_host_test.setup()
-	registry:get('d').request_new_game()
-end
-
-function __bmsx_host_test.ready()
-	return registry:get('c') ~= nil
-		and registry:get('c').room ~= nil
-		and registry:get('pietolon') ~= nil
-end
-
-function __bmsx_host_test.update()
-	local test<const> = __bmsx_host_test
-	test.frames = test.frames + 1
-	assert(test.frames < 2500, 'mijter Bat cycle did not return to a ceiling')
-	if world.active_space_id ~= 'main' then
-		return false
-	end
-
-	local castle<const> = registry:get('c')
-	local room = registry:get('c').room
-	if test.phase == 'load_room' then
-		local from_room_number<const> = castle.current_room_number
-		room = castle:load_room(110)
-		castle:commit_room_switch({
-			from_room_number = from_room_number,
-			to_room_number = 110,
-			direction = 'left',
-		}, 0, 0, 0)
-		test.mijter_id = room.enemies[1].member_id
-		test.phase = 'hanging'
-		return false
-	end
-
-	local mijter<const> = registry:get('c').room.scene.members[test.mijter_id]
-	if mijter == nil then
-		return false
-	end
-	local motion<const> = mijter.motion
-	if test.start_x == nil then
-		test.start_x = mijter.x
-		test.start_y = mijter.y
-		test.previous_x = mijter.x
-		test.previous_y = mijter.y
-		test.hanging_frames = 0
-	end
-
-	if test.phase == 'hanging' then
-		if motion.velocity_x == 0 and motion.velocity_y == 0 then
-			test.hanging_frames = test.hanging_frames + 1
-			assert(mijter.x == test.start_x and mijter.y == test.start_y,
-				'mijter moved while hanging from the ceiling')
-			return false
-		end
-		assert(motion.velocity_x == 0 and motion.velocity_y == 256,
-			'mijter did not begin the original one-pixel downward takeoff')
-		assert(test.hanging_frames >= (bat_hang_ticks * 2) - 1
-			and test.hanging_frames <= (bat_hang_ticks * 2) + 1,
+			t:at_boundary(world:request_mutation_boundary(), 30)
+			local mijter<const> = castle.room.scene.members[test.mijter_id]
+			local motion<const> = mijter.motion
+			local start_x<const>, start_y<const> = mijter.x, mijter.y
+			local hanging_frames = 0
+			t:wait_until('Bat takeoff', function()
+				if motion.velocity_x ~= 0 or motion.velocity_y ~= 0 then return true end
+				assert(mijter.x == start_x and mijter.y == start_y, 'mijter moved while hanging')
+				hanging_frames = hanging_frames + 1
+				return false
+			end, 2500)
+			assert(motion.velocity_x == 0 and motion.velocity_y == 256, 'mijter lost one-pixel downward takeoff')
+			assert(hanging_frames >= (bat_hang_ticks * 2) - 1 and hanging_frames <= (bat_hang_ticks * 2) + 1,
 			'mijter ceiling wait no longer matches the 25 Hz Bat timer')
-		test.phase = 'takeoff'
-		test.takeoff_moves = 0
-		return false
-	end
-
-	local dx<const> = mijter.x - test.previous_x
-	local dy<const> = mijter.y - test.previous_y
-	test.previous_x = mijter.x
-	test.previous_y = mijter.y
-	if test.phase == 'takeoff' and (dx ~= 0 or dy ~= 0) then
-		test.takeoff_moves = test.takeoff_moves + 1
-		assert(dx == 0 and dy == 1, 'mijter takeoff did not retain +1px vertical motion')
-		if test.takeoff_moves == bat_takeoff_ticks then
-			test.phase = 'flight'
-		end
-	end
-
-	if test.phase == 'flight' then
-		if motion.fraction_x ~= 0 or motion.fraction_y ~= 0 then
-			test.saw_fractional_motion = true
-		end
-		if motion.velocity_x == 0 and motion.velocity_y == 0 then
-			assert(test.saw_fractional_motion,
-				'mijter flight never exercised the Bat Q8.8 direction table')
+			local previous_x = mijter.x
+			local previous_y = mijter.y
+			for move = 1, bat_takeoff_ticks do
+				t:wait_until('Bat takeoff step', function() return mijter.x ~= previous_x or mijter.y ~= previous_y end, 10)
+				assert(mijter.x == previous_x and mijter.y == previous_y + 1, 'mijter takeoff lost +1px motion')
+				previous_x = mijter.x
+				previous_y = mijter.y
+			end
+			local saw_fractional_motion = false
+			t:wait_until('Bat finds ceiling', function()
+				if motion.fraction_x ~= 0 or motion.fraction_y ~= 0 then saw_fractional_motion = true end
+				return motion.velocity_x == 0 and motion.velocity_y == 0
+			end, 2500)
+			assert(saw_fractional_motion, 'mijter flight never exercised Bat Q8.8 direction table')
 			assert(room:has_collision_flags_at_world(
-				mijter.x,
-				mijter.y - 1,
-				collision_flags_solid_mask
+			mijter.x,
+			mijter.y - 1,
+			collision_flags_solid_mask
 			), 'mijter stopped without a ceiling')
 			assert(room:has_collision_flags_at_world(
-				mijter.x + room_tile_size,
-				mijter.y - 1,
-				collision_flags_solid_mask
+			mijter.x + room_tile_size,
+			mijter.y - 1,
+			collision_flags_solid_mask
 			), 'mijter stopped without a two-tile ceiling')
-			return true
-		end
-	end
-	return false
-end
+		end,
+	},
+}

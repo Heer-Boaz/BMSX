@@ -1,8 +1,9 @@
 import { utf8FatalDecoder } from '../../../machine/ts/common/serializer/binencoder';
-import { CART_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
+import { parseSystemRomImage, parseCartridgePackage } from '../../../machine/ts/rompack/image';
+import { loadBlua32ToolingImage, type Blua32ToolingImage } from './blua32_media';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { parseLuaChunk } from '../lua/analysis/parse';
 import { collectLuaModuleDependencyClosure } from '../lua/compiler/module_graph';
-import { composeLuaSource } from '../lua/compiler/source_map';
 import { resolveLuaEntryModuleIndex } from '../lua/entry_module';
 import { toLuaModulePath } from '../lua/module_path';
 import {
@@ -34,24 +35,37 @@ import { GX_DISPLAY_PRESET_MODULE_SOURCE } from './gx_display_preset_module';
 import { GX_REGISTER_MODULE_SOURCE } from './gx_register_module';
 import { loadRomAssetList, parseCartridgeIndex } from './loader';
 import { applyBlua32LinkValues, type LinkedCartBlua32Image } from './blua32_linker';
-import { SCENARIO_GUEST_API_SOURCE, SCENARIO_TEST_LOADER_GLOBAL } from './scenario_guest_api';
+import { discoverGuestTestSuite, type GuestTestSuite } from './test_suite';
 import { scenarioTestAssetId, type ScenarioTestSource } from './scenario_test';
 import type { RomSourceLayer } from './source';
 
-export const SCENARIO_ENTRY_MODULE_PATH = 'bmsx/scenario_entry';
+export const TEST_EXECUTION_MODULE_PATH = 'testlib/execution';
 
-export type ScenarioCartridgeBuildOptions = {
+export const UNIT_TEST_ENTRY_MODULE_PATH = 'testlib/unit_entry';
+const UNIT_TEST_ENTRY_SOURCE = 'module<entry>\nreturn';
+
+export type TestCartridgeBuildOptions = {
+	sourceOnlyModules?: readonly ScenarioTestSource[];
 	systemRom: Uint8Array;
 	cartridge: Uint8Array;
+	companionCartridge?: Uint8Array | null;
 	test: ScenarioTestSource;
 	ramByteCount: number;
 	optLevel: 0 | 1 | 2 | 3;
 };
 
-export type BuiltScenarioCartridge = {
+export type TestDebugImage = {
+	readonly image: Blua32ToolingImage;
+	readonly sourcePaths: ReadonlyMap<string, string>;
+};
+
+export type BuiltTestCartridge = {
 	layer: RomSourceLayer<'cart'>;
+	debugImages: readonly [TestDebugImage, TestDebugImage, TestDebugImage | null];
 	linked: LinkedCartBlua32Image;
 	diagnosticSources: Blua32DiagnosticSourceMap;
+	suite: GuestTestSuite;
+	entryCodeAddress: number;
 };
 
 const utf8Encoder = new TextEncoder();
@@ -75,9 +89,9 @@ function collectLuaSourceAssets(payload: Uint8Array, entries: ReadonlyArray<RomA
 	return assets;
 }
 
-export async function buildScenarioCartridge(
-	options: ScenarioCartridgeBuildOptions,
-): Promise<BuiltScenarioCartridge> {
+export async function buildTestCartridge(
+	options: TestCartridgeBuildOptions,
+): Promise<BuiltTestCartridge> {
 	const [systemIndex, cartridgeIndex] = await Promise.all([
 		loadRomAssetList(options.systemRom, 'system'),
 		parseCartridgeIndex(options.cartridge),
@@ -95,10 +109,16 @@ export async function buildScenarioCartridge(
 		bytes: options.cartridge,
 	};
 	const luaSourceAssets = collectLuaSourceAssets(options.cartridge, cartridgeIndex.entries);
+	const sourceIndex = new Map(luaSourceAssets.map((asset, index) => [asset.source_path, index]));
+	const sourceReplacements = new Map<string, RomAsset>();
+	for (const source of options.sourceOnlyModules ?? []) {
+		const index = sourceIndex.get(source.sourcePath)!;
+		const asset = { ...luaSourceAssets[index], buffer: utf8Encoder.encode(source.source) };
+		luaSourceAssets[index] = asset;
+		sourceReplacements.set(asset.resid, asset);
+	}
 	const programModules = decodeBlua32SourceModules(luaSourceAssets);
 	const entryCandidate = programModules[resolveLuaEntryModuleIndex(programModules)];
-	const entrySource = entryCandidate.source;
-	const entrySourcePath = entryCandidate.displayPath;
 	const sourceAssetByModulePath = new Map<string, RomAsset>();
 	for (let index = 0; index < luaSourceAssets.length; index += 1) {
 		const asset = luaSourceAssets[index];
@@ -126,54 +146,36 @@ export async function buildScenarioCartridge(
 		sourceModuleByPath.set(modulePath, module);
 		return module;
 	};
-	const testChunk = parseLuaChunk(options.test.source, options.test.sourcePath).chunk!;
-	const testDependencyPaths = collectLuaModuleDependencyClosure(
-		[testChunk],
+	const testModulePath = toLuaModulePath(options.test.sourcePath);
+	const testChunk = parseLuaChunk(options.test.source, testModulePath).chunk;
+	const suite = discoverGuestTestSuite(testChunk, options.test.sourcePath);
+	const testDependencyPaths = new Set([TEST_EXECUTION_MODULE_PATH, ...collectLuaModuleDependencyClosure(
+		[testChunk, loadSourceModule(TEST_EXECUTION_MODULE_PATH).chunk],
 		modulePaths,
 		modulePath => loadSourceModule(modulePath).chunk,
-	);
+	)]);
 	const derivedProgramModules = programModules.slice();
-	for (let index = 0; index < testDependencyPaths.length; index += 1) {
-		const modulePath = testDependencyPaths[index];
+	for (const modulePath of testDependencyPaths) {
 		const asset = sourceAssetByModulePath.get(modulePath)!;
 		if (asset.compiled_buffer !== undefined) {
 			continue;
 		}
 		derivedProgramModules.push(loadSourceModule(modulePath));
 	}
-	const firstLineEnd = entrySource.indexOf('\n') + 1;
-	const entryComposition = composeLuaSource(SCENARIO_ENTRY_MODULE_PATH, [
-		{
-			kind: 'source',
-			rangePath: entryCandidate.chunk.locations.path,
-			displayPath: entrySourcePath,
-			source: entrySource,
-			endOffset: firstLineEnd,
-		},
-		{
-			kind: 'generated',
-			source: `${SCENARIO_TEST_LOADER_GLOBAL} = function()`,
-		},
-		{
-			kind: 'generated',
-			source: SCENARIO_GUEST_API_SOURCE,
-		},
-		{
-			kind: 'source',
-			rangePath: toLuaModulePath(options.test.sourcePath),
-			displayPath: options.test.sourcePath,
-			source: options.test.source,
-		},
-		{ kind: 'generated', source: 'end' },
-		{
-			kind: 'source',
-			rangePath: entryCandidate.chunk.locations.path,
-			displayPath: entrySourcePath,
-			source: entrySource,
-			startOffset: firstLineEnd,
-		},
-	]);
+	derivedProgramModules.push({
+		path: testModulePath, displayPath: options.test.sourcePath,
+		chunk: testChunk, source: options.test.source,
+	});
+	if (suite.kind === 'unit') {
+		derivedProgramModules.splice(derivedProgramModules.indexOf(entryCandidate), 1);
+		derivedProgramModules.push({
+			path: UNIT_TEST_ENTRY_MODULE_PATH, displayPath: `${UNIT_TEST_ENTRY_MODULE_PATH}.lua`,
+			chunk: parseLuaChunk(UNIT_TEST_ENTRY_SOURCE, UNIT_TEST_ENTRY_MODULE_PATH).chunk,
+			source: UNIT_TEST_ENTRY_SOURCE,
+		});
+	}
 	const changes: Blua32PublicAssetChanges = {
+		assetReplacements: new Map([['lua', sourceReplacements]]),
 		assetEdits: [[
 			'lua',
 			scenarioTestAssetId(options.test.sourcePath),
@@ -189,7 +191,7 @@ export async function buildScenarioCartridge(
 	);
 	const built = buildBlua32Image({
 		luaModules: derivedProgramModules,
-		entryComposition,
+		preloadModules: [testModulePath, TEST_EXECUTION_MODULE_PATH],
 		generatedLuaModules: [
 			{
 				path: ROM_ASSET_SYMBOL_MODULE_PATH,
@@ -223,7 +225,25 @@ export async function buildScenarioCartridge(
 		displayPath: `${ROM_ASSET_SYMBOL_MODULE_PATH}.lua`,
 		source: finalAssetModule.source,
 	});
+	const companionBytes = options.companionCartridge;
+	let companion: TestDebugImage | null = null;
+	if (companionBytes !== undefined && companionBytes !== null) {
+		const companionIndex = await parseCartridgeIndex(companionBytes);
+		const image = loadBlua32ToolingImage(parseCartridgePackage(companionBytes), CART_ROM_BASE);
+		if (image !== null) companion = { image, sourcePaths: new Map(companionIndex.entries
+			.filter(entry => entry.type === 'lua').map(entry => [toLuaModulePath(entry.source_path!), entry.source_path!])) };
+	}
 	return {
+		suite,
+		debugImages: [
+			{ image: loadBlua32ToolingImage(parseSystemRomImage(options.systemRom), SYSTEM_ROM_BASE)!,
+				sourcePaths: new Map(systemIndex.entries.filter(entry => entry.type === 'lua')
+					.map(entry => [toLuaModulePath(entry.source_path!), entry.source_path!])) },
+			{ image: built.linked,
+				sourcePaths: new Map([...diagnosticSources].map(([module, source]) => [module, source.displayPath])) },
+			companion,
+		],
+		entryCodeAddress: built.entryCodeAddress,
 		layer: buildBlua32Tail(layer, built.linked, diagnosticSources, changes),
 		linked: built.linked,
 		diagnosticSources,

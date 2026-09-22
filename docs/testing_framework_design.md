@@ -1,5 +1,8 @@
 # Guest test framework: target architecture
 
+> Design proposal. For the implemented API, evidence, budgets and remaining
+> capabilities, see [Guest testing](guest_testing.md).
+
 Status: **design proposal, not an implemented contract**. Written 2026-09-22
 against `master` at `99cfe4ebf`, with a clean worktree before this document.
 The current behavior remains documented in [architecture.md](architecture.md).

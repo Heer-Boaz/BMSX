@@ -1,4 +1,4 @@
-import type { ScenarioTestRootId } from '../../../testing/scenario/test_collection';
+import type { ScenarioTestNodeId } from '../../../testing/scenario/test_collection';
 import { rebuildScenarioLabTestRows, updateSelectedScenarioNode } from './projection';
 import type { ScenarioLabViewState } from './view_model';
 
@@ -6,16 +6,16 @@ import type { ScenarioLabViewState } from './view_model';
 export type ScenarioLabTestViewSnapshot = {
 	readonly testId: ScenarioLabViewState['testPane']['selectedNodeId'];
 	readonly scroll: number;
-	readonly collapsedRoots: readonly ScenarioTestRootId[];
+	readonly collapsedNodes: readonly ScenarioTestNodeId[];
 };
 
 export function captureScenarioLabTestView(view: ScenarioLabViewState): ScenarioLabTestViewSnapshot {
-	return { testId: view.testPane.selectedNodeId, scroll: view.testPane.scroll, collapsedRoots: [...view.testPane.collapsedRootIds] };
+	return { testId: view.testPane.selectedNodeId, scroll: view.testPane.scroll, collapsedNodes: [...view.testPane.collapsedNodeIds] };
 }
 
 export function restoreScenarioLabTestView(view: ScenarioLabViewState, snapshot: ScenarioLabTestViewSnapshot): void {
-	view.testPane.collapsedRootIds.clear();
-	for (const id of snapshot.collapsedRoots) view.testPane.collapsedRootIds.add(id);
+	view.testPane.collapsedNodeIds.clear();
+	for (const id of snapshot.collapsedNodes) view.testPane.collapsedNodeIds.add(id);
 	rebuildScenarioLabTestRows(view);
 	view.testPane.selectionIndex = view.testPane.rows.findIndex(row => row.id === snapshot.testId);
 	updateSelectedScenarioNode(view);

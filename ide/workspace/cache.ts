@@ -45,6 +45,11 @@ export function deleteWorkspaceLuaSourceOverride(
 	}
 }
 
+/** Release a build-owned source registry without invalidating authoring documents. */
+export function releaseWorkspaceSourceOverrides(registry: LuaSourceRegistry): void {
+	luaSourceOverrides.delete(registry);
+}
+
 export function clearWorkspaceSourceCaches(): void {
 	workspaceCanonicalSourceCache.clear();
 	for (const registry of luaSourceOverrides.keys()) {

@@ -1,5 +1,3 @@
--- Exercise the shipped controllers and timelines at reproducible poses, using
--- the same script with the pre-migration ROM to compare actual scanout pixels.
 local registry<const> = require('cartlib/registry')
 local world<const> = require('cartlib/world/world')
 local poses<const> = {
@@ -19,38 +17,31 @@ local poses<const> = {
 	{ combat = '/combat_results_setup', timeline = 'combat_results_fade_in', frame = 9 },
 	{ combat = '/combat_results_setup', timeline = 'combat_results_fade_in', frame = 17 },
 }
-
-__bmsx_host_test = { pose = 0, ticks = 0 }
-function __bmsx_host_test.ready()
-	return registry:get('p3.director') ~= nil
-end
-function __bmsx_host_test.setup() end
-function __bmsx_host_test.update()
-	local test<const> = __bmsx_host_test
-	if test.ticks == 0 then
-		test.pose = test.pose + 1
-		if test.pose > #poses then return true end
-		local pose<const> = poses[test.pose]
-		local director<const> = registry:get('p3.director')
-		local combat<const> = registry:get('p3.combat.director')
-		local owner = director
-		if pose.node then
-			director.session.node_id = pose.node
-			director.state_machines:transition_to('/run_node')
-			director.text_main:finish_typing()
-		else
-			director.state_machines:transition_to('/combat_wait')
-			combat:start_combat('combat_wekker', true)
-			combat.state_machines:transition_to(pose.combat)
-			owner = combat
-		end
-		if pose.timeline then owner.timelines:seek(pose.timeline, pose.frame) end
-		world:set_gameplay_clock_running(false)
-	end
-	test.ticks = test.ticks + 1
-	if test.ticks == 4 then
-		test.ticks = 0
-		return host.capture('scene-pose-' .. tostring(test.pose))
-	end
-	return false
-end
+return {
+	kind = 'integration',
+	tests = {
+		presentation_poses = function(t)
+			t:wait_until('story director', function() return registry:get('p3.director') ~= nil end, 120)
+			for index = 1, #poses do
+				local pose<const> = poses[index]
+				local director<const> = registry:get('p3.director')
+				local combat<const> = registry:get('p3.combat.director')
+				local owner = director
+				if pose.node then
+					director.session.node_id = pose.node
+					director.state_machines:transition_to('/run_node')
+					director.text_main:finish_typing()
+				else
+					director.state_machines:transition_to('/combat_wait')
+					combat:start_combat('combat_wekker', true)
+					combat.state_machines:transition_to(pose.combat)
+					owner = combat
+				end
+				if pose.timeline then owner.timelines:seek(pose.timeline, pose.frame) end
+				world:set_gameplay_clock_running(false)
+				t:wait_ticks(3)
+				t:capture('scene-pose-' .. tostring(index))
+			end
+		end,
+	},
+}

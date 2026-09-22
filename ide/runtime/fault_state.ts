@@ -281,7 +281,8 @@ export function recordLuaError(
 		lastExecutionDomainId,
 		lastPc,
 	);
-	fault.lastLuaCallStack = buildLuaStackFrames(sources, fault.lastCpuFaultSnapshot);
+	fault.lastLuaCallStack = buildLuaStackFrames(fault.lastCpuFaultSnapshot,
+		(domain, path, line, column, name) => createLuaSourceStackTraceFrame(sources, domain, path, line, column, name));
 	const message = sanitizeLuaErrorMessage(extractErrorMessage(error));
 	const location = resolveRuntimeErrorLocation(fault, sources, error);
 	const runtimeDetails = buildRuntimeErrorDetails(fault, sources, error);
@@ -334,7 +335,8 @@ export function recordSupervisorFault(
 		executionDomainId,
 		pc,
 	);
-	fault.lastLuaCallStack = buildLuaStackFrames(sources, fault.lastCpuFaultSnapshot);
+	fault.lastLuaCallStack = buildLuaStackFrames(fault.lastCpuFaultSnapshot,
+		(domain, path, line, column, name) => createLuaSourceStackTraceFrame(sources, domain, path, line, column, name));
 	let name = 'CPU exception';
 	let message: string;
 	switch (causeCode) {

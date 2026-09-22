@@ -1,6 +1,11 @@
+local fixture<const> = require('tests/carts/nemesis_s/fixture')
+local test<const> = {}
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+
 local registry<const> = require('cartlib/registry')
+
 local world<const> = require('cartlib/world/world')
+
 require('constants')
 
 local expected_actor_counts<const> = {
@@ -20,20 +25,6 @@ local expected_first_spawns<const> = {
 	[ids_bel_def] = { column = 484, x = 255, y = 96 },
 	[ids_kerk_def] = { column = 484, x = 248, y = 16 },
 }
-
-__bmsx_host_test = {
-	frames = 0,
-	phase = 'stage',
-}
-
-function __bmsx_host_test.ready()
-	return registry:get(ids_director_instance) ~= nil
-end
-
-function __bmsx_host_test.setup()
-	local director<const> = registry:get(ids_director_instance)
-	director.state_machines:transition_to('/game_start')
-end
 
 local assert_authored_actor_tape<const> = function(stage)
 	local counts<const> = {
@@ -59,80 +50,61 @@ local assert_authored_actor_tape<const> = function(stage)
 
 	for definition_id, expected_count in pairs(expected_actor_counts) do
 		assert(counts[definition_id] == expected_count,
-			'Authored stage placement count changed for ' .. definition_id)
+		'Authored stage placement count changed for ' .. definition_id)
 		local spawn<const> = first_spawns[definition_id]
 		local expected<const> = expected_first_spawns[definition_id]
 		assert(spawn.column == expected.column,
-			'Authored stage placement column changed for ' .. definition_id)
+		'Authored stage placement column changed for ' .. definition_id)
 		assert(spawn.options.stage == stage,
-			'Authored stage actor lost its stage owner')
+		'Authored stage actor lost its stage owner')
 		assert(spawn.options.pos.x == expected.x and spawn.options.pos.y == expected.y,
-			'Authored stage placement position changed for ' .. definition_id)
+		'Authored stage placement position changed for ' .. definition_id)
 	end
 end
 
-function __bmsx_host_test.update()
-	if world.active_space_id == 'game_start' then
-		local director<const> = registry:get(ids_director_instance)
-		if director.status_bar ~= nil then
-			director.state_machines:transition_to('/gameplay')
-		end
-		return false
-	end
-	local test<const> = __bmsx_host_test
-	test.frames = test.frames + 1
-	assert(test.frames < 30, 'Nemesis S Authored stage actor scenario timed out')
+return {
+	kind = 'integration',
+	tests = {
+		ascii_stage_actors = function(t)
+			local director<const>, stage<const>, player<const> = fixture.start_game(t)
 
-	local stage<const> = registry:get(ids_stage_instance)
-	local player<const> = registry:get('nemesis_s.player.1')
-	if world.active_space_id ~= 'main' or stage == nil or player == nil then
-		return false
-	end
-
-	if test.phase == 'stage' then
-		assert_authored_actor_tape(stage)
-
-		stage.actor_spawn_index = stage.actor_spawn_count + 1
-		local snowman<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_sneeuwpop_def, {
-			stage = stage,
-			pos = { x = 100, y = 32 },
-		})
-		local collider<const> = snowman:get_component(collider_2d_component)
-		assert(collider.shape_ref ~= nil,
-			'the snowman did not bind its authored tile collision shape')
-		stage:advance_tape()
-		assert(snowman.x == 92,
-			'the retained stage follower did not consume one ASCII tile step')
-
-		stage.scrolling = false
-		for row_index = 1, stage.tile_rows do
-			local row<const> = stage.solid_tape[row_index]
-			for column = 1, 40 do
-				row[column] = 0
+			do
+				assert_authored_actor_tape(stage)
+				stage.actor_spawn_index = stage.actor_spawn_count + 1
+				local snowman<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_sneeuwpop_def, {
+					stage = stage,
+					pos = { x = 100, y = 32 },
+				})
+				local collider<const> = snowman:get_component(collider_2d_component)
+				assert(collider.shape_ref ~= nil,
+				'the snowman did not bind its authored tile collision shape')
+				stage:advance_tape()
+				assert(snowman.x == 92,
+				'the retained stage follower did not consume one ASCII tile step')
+				stage.scrolling = false
+				for row_index = 1, stage.tile_rows do
+					local row<const> = stage.solid_tape[row_index]
+					for column = 1, 40 do
+						row[column] = 0
+					end
+				end
+				snowman.x = 44
+				snowman.y = 32
+				player.x = 41
+				player.y = 25
+				player:spawn_bullet(player, player.primary_projectiles[1])
+				test.snowman = snowman
+				test.initial_health = snowman.health
+				test.gameplay_time_ms = world.gameplay_time_ms
+				t:wait_ticks(1)
 			end
-		end
-		snowman.x = 44
-		snowman.y = 32
-		player.x = 41
-		player.y = 25
-		player:spawn_bullet(player, player.primary_projectiles[1])
-		test.snowman = snowman
-		test.initial_health = snowman.health
-		test.gameplay_time_ms = world.gameplay_time_ms
-		test.phase = 'collision'
-		return false
-	end
-
-	if world.gameplay_time_ms == test.gameplay_time_ms then
-		return false
-	end
-	if test.snowman.health == test.initial_health
-	and player.primary_projectiles[1].collider.enabled then
-		return false
-	end
-	assert(test.snowman.health == test.initial_health - 1,
-		'the fixed projectile lane did not hit the authored tile collision shape')
-	assert(not player.primary_projectiles[1].collider.enabled,
-		'the bullet slot remained active after a large-enemy collision')
-	return true
-end
+			t:wait_until('ascii_stage_actors observation 1', function() return not (world.gameplay_time_ms == test.gameplay_time_ms) end, 120)
+			t:wait_until('ascii_stage_actors observation 2', function() return not (test.snowman.health == test.initial_health
+				and player.primary_projectiles[1].collider.enabled) end, 120)
+			assert(test.snowman.health == test.initial_health - 1,
+			'the fixed projectile lane did not hit the authored tile collision shape')
+			assert(not player.primary_projectiles[1].collider.enabled,
+			'the bullet slot remained active after a large-enemy collision')
+		end,
+	},
+}

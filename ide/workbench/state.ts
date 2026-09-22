@@ -67,17 +67,7 @@ export class RuntimeIdeState {
 			new SuspendedGuestSession(runtime),
 		);
 		this.scenarioTests = new ScenarioTestCollection(sources);
-		this.scenarioRuns = new ScenarioRunService(
-			runtime,
-			sources,
-			input,
-			audioOutput,
-			storage,
-			this.fault,
-			this.luaTooling,
-			this.debugger,
-			this.runtimeTasks,
-		);
+		this.scenarioRuns = new ScenarioRunService(sources, this.luaTooling, storage, runtime.model);
 		this.editor = new RuntimeCartEditor(
 			runtime,
 			presenter,

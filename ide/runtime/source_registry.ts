@@ -103,7 +103,7 @@ export function buildLuaSources(
 		const baseEntry = cartSource.getEntry(entry.resid);
 		const src = utf8FatalDecoder.decode(romSource.getBytes(entry));
 		const baseSrc = baseEntry ? utf8FatalDecoder.decode(cartSource.getBytes(baseEntry)) : src;
-		const luaRecord = entry as LuaSourceRecord;
+		const luaRecord = { ...entry } as LuaSourceRecord;
 		luaRecord.src = src;
 		luaRecord.base_src = baseSrc;
 		luaRecord.base_update_timestamp = entry.update_timestamp ?? 0;

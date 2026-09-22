@@ -2,7 +2,6 @@ import { HostPauseReason } from '../../hosts/common/execution_control';
 import { captureLuaTextModelSources } from './services/working_copy/lua_sources';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import {
-	advanceHostScheduledLogicalTick,
 	beginHostFrame,
 	executeHostUpdate,
 	HostFrameAction,
@@ -11,7 +10,6 @@ import {
 	type HostFrameSession,
 	prepareHostUpdate,
 	presentHostPresentation,
-	syncAfterRuntimeUpdate,
 } from '../../hosts/common/host_frame';
 import { HostMenuExecution, HostMenuInput, type HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import type { Input } from '../../hosts/common/input/manager';
@@ -49,10 +47,6 @@ function executeWorkbenchHostMenuAction(
 			return false;
 		case HostMenuInput.RebootCart:
 			screen.clearPresentation();
-			if (ide.scenarioRuns.active) {
-				ide.scenarioRuns.cancel();
-				return true;
-			}
 			const sourceSnapshots = captureLuaTextModelSources(ide.sources);
 			ide.runtimeTasks.schedule(async () => {
 				const booted = await rebootPreparedRuntime(
@@ -162,7 +156,6 @@ export function runWorkbenchHostFrame(
 ): HostFrameRunResult {
 	let hostDeltaMs = 0;
 	let systemOutputDrained = false;
-	let scenarioGuestFrame = false;
 	try {
 		hostDeltaMs = beginHostFrame(
 			session,
@@ -193,9 +186,10 @@ export function runWorkbenchHostFrame(
 			workbenchMode.tickIdeInput(ide, input);
 		}
 
+		ide.scenarioRuns.advance();
 		screen.clearPresentation();
 		if (!menuPaused) {
-			session.rewind.service(!ide.scenarioRuns.active && !ide.debugger.plans.mutationActive);
+			session.rewind.service(!ide.debugger.plans.mutationActive);
 			if (session.rewind.playing && !session.execution.executionBlocked() && !ide.fault.hostFrameFailed) {
 				session.rewind.runPlayback(session.execution.consumeElapsedTime(hostDeltaMs));
 				session.syncMachineOutput(runtime, input, audioOutput);
@@ -208,7 +202,7 @@ export function runWorkbenchHostFrame(
 				.catch(error => workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error));
 		}
 		const runtimeReady = ide.runtimeTasks.ready && !ide.fault.hostFrameFailed && !session.rewind.active
-			&& !ide.debugger.plans.controlSuspended && !ide.scenarioRuns.inspectingFailure;
+			&& !ide.debugger.plans.controlSuspended;
 		session.execution.setPauseReason(HostPauseReason.Workbench, ide.editor.executionSuspended);
 		audioOutput.muteUi(ide.editor.executionSuspended);
 		let action: HostFrameAction;
@@ -225,84 +219,41 @@ export function runWorkbenchHostFrame(
 			runtimeDebuggerExecutionRequested(ide.debugger),
 		);
 		if (action === HostFrameAction.Execute) {
-			const scenarioExecution = ide.scenarioRuns.execution;
-			if (scenarioExecution.active) {
-				scenarioGuestFrame = true;
-				const previousTickSequence = runtime.frameScheduler.lastTickSequence;
-				let scheduledDeltaMs = session.execution.consumeElapsedTime(hostDeltaMs);
-				let machineAdvanced = false;
-				while (scenarioExecution.active && scenarioExecution.prepareLogicalTick()) {
-					const completed = advanceHostScheduledLogicalTick(
-						runtime,
-						presenter,
-						scheduledDeltaMs,
-					);
-					machineAdvanced = true;
-					scenarioExecution.didRunLogicalTick(completed);
-					scheduledDeltaMs = 0;
-					if (!completed) {
-						break;
-					}
-				}
-				if (machineAdvanced) {
-					syncAfterRuntimeUpdate(
-						session,
-						runtime,
-						input,
-						audioOutput,
-						screen,
-						previousTickSequence,
-					);
-				}
-			} else {
-				if (ide.debugger.plans.controlActive) {
-					willExecuteRuntimeDebuggerPlan(ide.debugger);
-				}
-				if (ide.editor.isActive) ide.luaTooling.suspendedGuest.invalidate();
-				executeHostUpdate(
-					session,
-					runtime,
-					presenter,
-					input,
-					audioOutput,
-					screen,
-					hostDeltaMs,
-				);
-			}
+			if (ide.debugger.plans.controlActive) willExecuteRuntimeDebuggerPlan(ide.debugger);
+			if (ide.editor.isActive) ide.luaTooling.suspendedGuest.invalidate();
+			executeHostUpdate(session, runtime, presenter, input, audioOutput, screen, hostDeltaMs);
 			systemOutput.flush(runtime, logOutput);
 			systemOutputDrained = true;
-			if (!scenarioGuestFrame) {
-				const supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
-					IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
+			const supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
+				IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
+			);
+			if (supervisorFaultSequence !== ide.fault.supervisorFaultSequence) {
+				session.execution.finishFrameStep();
+				ide.fault.supervisorFaultSequence = supervisorFaultSequence;
+				handleSupervisorFault(
+					logOutput,
+					ide.fault,
+					ide.sources,
+					runtime,
+					ide.luaTooling.suspendedGuest,
 				);
-				if (supervisorFaultSequence !== ide.fault.supervisorFaultSequence) {
-					session.execution.finishFrameStep();
-					ide.fault.supervisorFaultSequence = supervisorFaultSequence;
-					handleSupervisorFault(
-						logOutput,
-						ide.fault,
-						ide.sources,
-						runtime,
-						ide.luaTooling.suspendedGuest,
-					);
-					if (ide.debugger.plans.controlActive) {
-						didFaultRuntimeDebuggerPlan(ide.debugger);
-					}
-				} else if (ide.debugger.plans.controlActive) {
-					didExecuteRuntimeDebuggerPlan(ide.debugger);
+				if (ide.debugger.plans.controlActive) {
+					didFaultRuntimeDebuggerPlan(ide.debugger);
 				}
-				ide.debugger.plans.pruneCompletedCompletionBatches();
-				if (ide.debugger.stopPresentationPending) {
-					session.execution.finishFrameStep();
-					activateEditor(
-						ide.editor,
-						ide.sources,
-						runtime,
-						audioOutput,
-					);
-					void presentRuntimeDebuggerStop(ide.editor, ide.debugger)
-						.catch(error => workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error));
-				}
+			} else if (ide.debugger.plans.controlActive) {
+				didExecuteRuntimeDebuggerPlan(ide.debugger);
+			}
+			ide.debugger.plans.pruneCompletedCompletionBatches();
+			if (ide.debugger.stopPresentationPending) {
+				session.execution.finishFrameStep();
+				activateEditor(
+					ide.editor,
+					ide.sources,
+					runtime,
+					audioOutput,
+				);
+				void presentRuntimeDebuggerStop(ide.editor, ide.debugger)
+					.catch(error => workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error));
 			}
 			action = HostFrameAction.PresentPending;
 		}
@@ -315,7 +266,6 @@ export function runWorkbenchHostFrame(
 			ide.microtasks.flush();
 			action = HostFrameAction.PresentPending;
 		}
-		const previousPresentation = presenter.presentationSequence;
 		if (hostOverlayMenu.queueFrameOverlayCommands(session.hostFps)
 			|| session.rewind.active || !ide.runtimeTasks.ready) screen.requestHeldPresentation();
 		presentWorkbenchFrame(
@@ -328,18 +278,12 @@ export function runWorkbenchHostFrame(
 			screen,
 			hostDeltaMs,
 		);
-		if (scenarioGuestFrame) {
-			ide.scenarioRuns.finishHostFrame(
-				presenter.presentationSequence,
-				presenter.presentationSequence !== previousPresentation,
-			);
-		}
+
 		if (!menuPaused && runtime.history.checkpointPending && ide.runtimeTasks.ready) {
-			session.rewind.service(!ide.scenarioRuns.active && !ide.debugger.plans.mutationActive);
+			session.rewind.service(!ide.debugger.plans.mutationActive);
 		}
 	} catch (error) {
 		session.execution.finishFrameStep();
-		if (ide.scenarioRuns.execution.active) ide.scenarioRuns.failHostFrame(error);
 		workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error);
 		presentWorkbenchError(
 			session,

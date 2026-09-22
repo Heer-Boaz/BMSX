@@ -14,10 +14,25 @@ The owner audit preceded the mirrored implementation on 2026-09-22.
 | Guest identity | `ValueTag.Thread`, `Thread` reference | NaN-boxed `ValueTag::Thread`, `GCObject::Thread` |
 | Language continuation | Thread frames, register arena, protected calls | Thread frame vector, value arena, protected calls |
 | Open upvalue | Owning frame and its thread | Owning frame and its thread |
+| Internal status primitive | Raw `ThreadStatus` ordinal 0..5 | Same ordinal; BIOS alone maps to Lua status names |
 | Resume handoff | Resumer, destination register and result count | Same |
 | External completion | Owning thread plus CPU completion latch | Same |
-| Physical execution | CPU COP0/IRQ/HALT/bus state | Same; not copied on coroutine switches |
+| Physical execution | CPU COP0/IRQ/HALT/bus state; HALT latches owning Thread and frame depth | Same; not copied on coroutine switches |
 | Checkpoint | Ordinal thread objects and per-thread records | Same snapshot tags and words |
+
+The final review audited the status builtin in both cores and BIOS `coroutine.status`/
+`wrap`: only Failed closes after a rejected resume. Admission errors must not
+close New, Suspended, Running, Normal or already-completed threads.
+
+The final review additionally audited `Table.next` dead-key traversal (TS
+`findNodeIndexForNext`, C++ `Table::findNodeIndexForNext`) and the coroutine
+resume transfer gate (TS `runCoroutineTransfer`, C++ `CPU::runCoroutineTransfer`).
+Both consume the existing Thread tag and exception-frame representation above;
+HALT admission additionally compares its owning thread, not another thread at the same depth.
+The single physical latch is cleared by reset, hard halt, exception admission and
+explicit wake. Its thread is a GC root and snapshot reference. Audited callsites:
+normal/instrumented dispatch, `isHaltedUntilIrq`, HALT, reset/EXEC, exception entry,
+heap tracing, CPU capture/restore and both save-state codecs.
 
 Audited hot paths: normal/instrumented dispatch; CALL, RET, VARARG and RFE;
 builtin dispatch and protected-call entry/return/error; frame allocation,
@@ -29,8 +44,10 @@ intact. Internal coroutine handoffs continue inside that same grant.
 
 A thread keeps its own stack across yields. Uncaught coroutine errors return
 `false, error` to the resumer and retain the failed frames until close or
-collection. Protected calls are thread-local. Error handlers and interrupt
-frames cannot directly yield. Physical interrupts still enter the currently
+collection. Protected calls are thread-local. Error handlers cannot directly yield. An active hardware-exception frame
+forbids coroutine resume as well as yield: the physical exception continuation
+cannot be parked on a resumer while privileged execution moves to another
+thread. Failed resume admission returns false without changing either thread. Physical interrupts still enter the currently
 executing continuation and RFE returns there.
 
 Guest heap accounting includes a 64-byte virtual thread header and eight bytes
@@ -45,7 +62,7 @@ needed for native RET.
 
 After representation and bounded-resumption tests passed in both cores, the
 owning runtime save-state envelope advanced to schema 2. It stores root, active
-and completion identities, per-thread status/entry/resumer/frames/protected
+completion and HALT-owner identities, per-thread status/entry/resumer/frames/protected
 calls/error/arena capacity, and each open upvalue's owning thread and frame.
 Older envelopes are rejected; there is no legacy-stack compatibility layout.
 Restore allocates identities before edges and all frames before open upvalues.

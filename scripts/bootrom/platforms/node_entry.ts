@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 
 import { HeadlessGPUBackend } from '../../../machine/ts/render/headless/backend';
-import { HeadlessVideoOutput } from '../../../hosts/node/headless/video_output';
+import { OffscreenVideoOutput } from '../../../hosts/common/offscreen_video_output';
 import { Input } from '../../../hosts/common/input/manager';
 import {
 	initializeMachineRuntime,
@@ -101,7 +101,7 @@ async function main(): Promise<void> {
 		new HeadlessInputHub(),
 		-1,
 	);
-	const videoOutput = new HeadlessVideoOutput(256, 212);
+	const videoOutput = new OffscreenVideoOutput(256, 212);
 	const runtime = initializeMachineRuntime(
 		systemRom,
 		[slot0Rom, slot1Rom],

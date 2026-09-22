@@ -120,8 +120,8 @@ export class HeadlessGPUBackend implements GPUBackend {
 	private passIdSeq = 0;
 	private bufferIdSeq = 0;
 	private vaoIdSeq = 0;
-	public framebufferPixels = new Uint8Array(0);
-	public framebufferWords = new Uint32Array(0);
+	public framebufferPixels: Uint8Array = new Uint8Array(0);
+	public framebufferWords: Uint32Array = new Uint32Array(0);
 	public framebufferWidth = 0;
 	public framebufferHeight = 0;
 	private defaultFramebufferPixels = this.framebufferPixels;

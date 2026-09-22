@@ -91,7 +91,6 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	debugStepOver: { category: 'Debug', title: 'Step Over' },
 	'scenarioLab.details': { category: 'Scenario Lab', title: 'Inspect Result Message', shortTitle: 'Details' },
 	'scenarioLab.run': { category: 'Scenario Lab', title: 'Run Scenarios', shortTitle: 'Run' },
-	'scenarioLab.debug': { category: 'Scenario Lab', title: 'Debug Scenarios', shortTitle: 'Debug' },
 	'scenarioLab.rerun': { category: 'Scenario Lab', title: 'Rerun Scenarios', shortTitle: 'Rerun' },
 	'scenarioLab.cancel': { category: 'Scenario Lab', title: 'Stop Scenarios', shortTitle: 'Stop' },
 };

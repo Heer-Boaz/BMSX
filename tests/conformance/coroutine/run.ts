@@ -1,3 +1,4 @@
+import type { Closure } from '../../../machine/ts/machine/cpu/closure';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -28,10 +29,31 @@ try {
 			});
 			runtime.boot();
 			const cpu = runtime.machine.cpu;
+			if (name === 'halted_tooling_call') {
+				assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+				assert.equal(cpu.isHaltedUntilIrq(), true);
+				const depth = cpu.getFrameDepth();
+				cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.intern('probe')) as Closure);
+				for (let grant = 0; grant < 10000; grant++) {
+					const status = cpu.runUntilDepth(depth, 17, cpu.rootThread);
+					const snapshot = cpu.captureRuntimeState();
+					cpu.restoreRuntimeState(snapshot);
+					assert.deepEqual(cpu.captureRuntimeState(), snapshot, 'HALT owner survives suspended tooling call');
+					if (status !== RunResult.Yielded) break;
+				}
+				assert.equal(cpu.activeThread, cpu.rootThread);
+				assert.equal(cpu.getFrameDepth(), depth);
+				assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('entered')), true);
+				assert.equal(cpu.isHaltedUntilIrq(), true, 'returning from tooling preserves the root HALT');
+				applyRuntimeSaveState(runtime, decodeRuntimeSaveState(encodeRuntimeSaveState(captureRuntimeSaveState(runtime)), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
+				assert.equal(cpu.isHaltedUntilIrq(), true, 'HALT owner survives the full codec');
+				cpu.clearHaltUntilIrq();
+			}
 			let result = RunResult.Yielded;
 			let interrupted = false;
 			for (let grant = 0; grant < 10000 && result === RunResult.Yielded; grant += 1) {
-				if (name === 'interrupted' && !interrupted && cpu.activeThread !== cpu.rootThread) {
+				if (name === 'interrupted' && !interrupted && cpu.activeThread !== cpu.rootThread
+					&& cpu.getGlobalByKey(cpu.stringPool.intern('interrupt_ready')) === true) {
 					cpu.requestNonMaskableInterrupt();
 					assert.equal(cpu.enterPendingInterrupt(), true);
 					cpu.restoreRuntimeState(cpu.captureRuntimeState());

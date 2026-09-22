@@ -437,6 +437,7 @@ void CPU::reset() {
 	clearCallStack();
 	m_stringIndexTable = nullptr;
 	m_haltedUntilIrqFrameDepth = -1;
+	m_haltedUntilIrqThread = nullptr;
 	m_interruptEventPending = false;
 	m_memoryWriteBlocked = false;
 	m_memoryWriteBlockedAddress = 0u;
@@ -1106,6 +1107,7 @@ void CPU::executeFunctionAddress(u32 functionAddress) {
 		? CPU_STATUS_CART_ENTRY
 		: CPU_STATUS_SYSTEM_ENTRY;
 	m_haltedUntilIrqFrameDepth = -1;
+	m_haltedUntilIrqThread = nullptr;
 	m_interruptEventPending = false;
 	m_memoryWriteBlocked = false;
 	m_memoryWriteBlockedAddress = 0u;
@@ -1274,6 +1276,7 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	state.rootThreadRef = static_cast<int>(captureObject(m_rootThread));
 	state.activeThreadRef = static_cast<int>(captureObject(m_activeThread));
 	state.completionThreadRef = static_cast<int>(captureObject(m_completionThread));
+	state.haltedUntilIrqThreadRef = m_haltedUntilIrqThread == nullptr ? -1 : static_cast<int>(captureObject(m_haltedUntilIrqThread));
 	state.systemGlobals.reserve(m_systemGlobalNames.size());
 	for (size_t index = 0; index < m_systemGlobalNames.size(); ++index) {
 		const Value value = m_systemGlobalValues[index];
@@ -1616,6 +1619,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_lastExecutionDomainId = state.lastExecutionDomainId;
 	lastPc = state.lastPc;
 	m_haltedUntilIrqFrameDepth = state.haltedUntilIrqFrameDepth;
+	m_haltedUntilIrqThread = state.haltedUntilIrqThreadRef == -1 ? nullptr : static_cast<Thread*>(restoredObjects[state.haltedUntilIrqThreadRef]);
 	m_interruptEventPending = state.interruptEventPending;
 	m_memoryWriteBlocked = state.memoryWriteBlocked;
 	m_memoryWriteBlockedAddress = state.memoryWriteBlockedAddress;
@@ -1647,12 +1651,14 @@ void CPU::haltUntilIrq() {
 		return;
 	}
 	m_haltedUntilIrqFrameDepth = static_cast<int>(m_activeThread->frames.size());
+	m_haltedUntilIrqThread = m_activeThread;
 	m_yieldRequested = false;
 }
 
 void CPU::hardHalt() {
 	m_hardHalted = true;
 	m_haltedUntilIrqFrameDepth = -1;
+	m_haltedUntilIrqThread = nullptr;
 	m_yieldRequested = false;
 }
 
@@ -1708,9 +1714,7 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			if (thread == nullptr) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 			if (fn.id == BuiltinFunctionId::CoroutineIsYieldable) out.push_back(valueBool(coroutineYieldable(*thread)));
 			else if (fn.id == BuiltinFunctionId::CoroutineStatus) {
-				const char* name = thread->status == ThreadStatus::Running ? "running" : thread->status == ThreadStatus::Normal ? "normal"
-					: thread->status == ThreadStatus::Dead || thread->status == ThreadStatus::Failed ? "dead" : "suspended";
-				out.push_back(valueString(m_stringPool.intern(name)));
+				out.push_back(valueNumber(static_cast<int>(thread->status)));
 			} else {
 				const bool failed = thread->status == ThreadStatus::Failed;
 				out.push_back(valueBool(!failed));
@@ -1782,11 +1786,12 @@ void CPU::runCoroutineTransfer(BuiltinFunctionId id, CallFrame& caller, int base
 	}
 	if (argc == 0 || !valueIsThread(caller.registers[base + 1])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
 	Thread* target = asThread(caller.registers[base + 1]);
-	if (target->status != ThreadStatus::New && target->status != ThreadStatus::Suspended) {
+	const bool exceptionActive = readExceptionReturnFrameDepth() != -1;
+	if (exceptionActive || (target->status != ThreadStatus::New && target->status != ThreadStatus::Suspended)) {
 		auto scratch = acquireBuiltinResultScratch();
 		BuiltinResults& out = scratch.get();
 		out.push_back(valueBool(false));
-		out.push_back(valueString(m_stringPool.intern("cannot resume non-suspended coroutine")));
+		out.push_back(valueString(m_stringPool.intern(exceptionActive ? "cannot resume coroutine across a hardware exception" : "cannot resume non-suspended coroutine")));
 		writeReturnValues(caller, base, count, out.data(), static_cast<int>(out.size()));
 		return;
 	}
@@ -2190,6 +2195,7 @@ void CPU::runBuiltinError(BuiltinArgsView args) {
 
 void CPU::clearHaltUntilIrq() {
 	m_haltedUntilIrqFrameDepth = -1;
+	m_haltedUntilIrqThread = nullptr;
 	m_yieldRequested = false;
 }
 
@@ -2295,6 +2301,7 @@ void CPU::enterException(
 
 void CPU::clearHaltAfterAcceptedInterrupt() {
 	m_haltedUntilIrqFrameDepth = -1;
+	m_haltedUntilIrqThread = nullptr;
 	m_yieldRequested = false;
 }
 
@@ -2348,7 +2355,7 @@ RunResult CPU::runLoop(
 				}
 			}
 			if (m_hardHalted
-				|| m_haltedUntilIrqFrameDepth == static_cast<int>(frames.size())
+				|| (m_haltedUntilIrqThread == m_activeThread && m_haltedUntilIrqFrameDepth == static_cast<int>(frames.size()))
 				|| m_memoryWriteBlocked) {
 				return RunResult::Halted;
 			}
@@ -3423,6 +3430,7 @@ void CPU::markRoots(GcHeap& heap) {
 	heap.markObject(m_rootThread);
 	heap.markObject(m_activeThread);
 	heap.markObject(m_completionThread);
+	heap.markObject(m_haltedUntilIrqThread);
 }
 
 // end repeated-sequence-acceptable

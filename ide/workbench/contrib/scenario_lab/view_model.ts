@@ -20,15 +20,14 @@ import type {
 } from '../../../testing/scenario/result_service';
 import type {
 	ScenarioTestCollection,
-	ScenarioTestId,
 	ScenarioTestItem,
 	ScenarioTestNodeId,
 	ScenarioTestRoot,
-	ScenarioTestRootId,
+	ScenarioTestModule,
 } from '../../../testing/scenario/test_collection';
 
 export type ScenarioLabFocus = 'tests' | 'results';
-export type ScenarioLabTestRowId = ScenarioTestRootId | ScenarioTestId;
+export type ScenarioLabTestRowId = ScenarioTestNodeId;
 
 type ScenarioLabTestRowBase = {
 	readonly id: ScenarioLabTestRowId;
@@ -42,6 +41,12 @@ type ScenarioLabTestRowBase = {
 
 export type ScenarioLabTestRow = ScenarioLabTestRowBase & ({
 	readonly kind: 'root';
+	readonly test: null;
+	readonly expandable: true;
+	expanded: boolean;
+} | {
+	readonly kind: 'module';
+	readonly module: ScenarioTestModule;
 	readonly test: null;
 	readonly expandable: true;
 	expanded: boolean;
@@ -124,7 +129,7 @@ export type ScenarioLabPaneState<Row> = WorkbenchListState<Row, ScenarioLabPaneL
 };
 
 export type ScenarioLabTestPaneState = ScenarioLabPaneState<ScenarioLabTestRow> & {
-	readonly collapsedRootIds: Set<ScenarioTestRootId>;
+	readonly collapsedNodeIds: Set<ScenarioTestNodeId>;
 	selectedNodeId: ScenarioTestNodeId | null;
 	rowsDirty: boolean;
 };

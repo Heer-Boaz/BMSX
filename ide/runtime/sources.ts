@@ -5,6 +5,7 @@ import type { RomToolingLayer } from '../../toolchain/ts/rompack/loader';
 import { RomSourceStack, type RawRomSource, type RomSourceLayer } from '../../toolchain/ts/rompack/source';
 import {
 	buildLuaSources,
+	registerLuaSourceRecord,
 	resolveLuaSourceRecord,
 	type LuaSourceMatch,
 	type LuaSourceRecord,
@@ -314,6 +315,30 @@ export function installRuntimeRomLayers(
 		? state.systemRomSource
 		: state.cartridgeSlots[state.activeCartridgeSlot]!.romSource;
 	rebuildRuntimeSourceResources(state);
+}
+
+/** A build owns mutable source records; ROM bytes and installed source maps remain immutable. */
+export function forkRuntimeSourceState(source: RuntimeSourceState): RuntimeSourceState {
+	const fork = createRuntimeSourceState(source.systemRom,
+		[source.cartridgeSlots[0] === null ? null : source.cartridgeSlots[0].rom,
+		 source.cartridgeSlots[1] === null ? null : source.cartridgeSlots[1].rom]);
+	for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
+		const registry = runtimeLuaSourceRegistry(source, domain);
+		if (registry === undefined) continue;
+		const target = runtimeLuaSourceRegistry(fork, domain)!;
+		target.records.length = 0;
+		target.path2lua = {};
+		target.module2lua = {};
+		for (const record of registry.records) registerLuaSourceRecord(target, { ...record });
+		target.entrySourcePath = registry.entrySourcePath;
+		target.can_boot_from_source = registry.can_boot_from_source;
+		target.revision = registry.revision;
+	}
+	fork.realtimeCompileOptLevel = source.realtimeCompileOptLevel;
+	fork.systemBlua32MediaDirty = source.systemBlua32MediaDirty;
+	fork.cartridgeBlua32MediaDirty = [...source.cartridgeBlua32MediaDirty];
+	rebuildRuntimeSourceResources(fork);
+	return fork;
 }
 
 export function runtimeLuaSourceRegistry(

@@ -1,225 +1,138 @@
-import { HeadlessVideoOutput } from '../../hosts/node/headless/video_output';
-import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
+import { IO_CART_SELECT, IO_CART_STATUS } from '../../machine/ts/spec/bmsx/io';
+import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
+import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setImmediate } from 'node:timers/promises';
 import { test } from 'node:test';
-
-import { HostAudioOutput } from '../../hosts/common/audio_output';
-import { Input } from '../../hosts/common/input/manager';
-import { initializeMachineRuntime, initializeMachineVideoPresenter } from '../../hosts/common/machine_runtime';
-import { DiscardingAudioSink } from '../../hosts/node/common/discarding_audio';
-import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
-import { HeadlessInputHub } from '../../hosts/node/headless/input';
-import { createRuntimeDebuggerState } from '../../ide/runtime/debugger_state';
-import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
-import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
-import { createRuntimeSourceState } from '../../ide/runtime/sources';
-import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
-import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
-import { MemoryStorage } from '../../ide/workspace/memory_storage';
-import { ScenarioRunService } from '../../ide/workbench/contrib/scenario_lab/run_service';
-import { ScenarioTestCollection } from '../../ide/testing/scenario/test_collection';
-import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import type { CartridgeByteView } from '../../machine/ts/machine/devices/cartridge/contracts';
-import { utf8FatalDecoder } from '../../machine/ts/common/serializer/binencoder';
+import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH } from '../helpers/scenario_media';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
-import { parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
-import {
-	buildScenarioMediaFixture,
-	SCENARIO_FIXTURE_TEST_SOURCE_PATH,
-} from '../helpers/scenario_media';
+import { createRuntimeSourceState, enterCartridgeSources } from '../../ide/runtime/sources';
+import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
+import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
+import { ScenarioTestCollection } from '../../ide/testing/scenario/test_collection';
+import { ScenarioRunService } from '../../ide/workbench/contrib/scenario_lab/run_service';
+import { MemoryStorage } from '../../ide/workspace/memory_storage';
+import { TestTarget } from '../../ide/testing/target';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { cartridgeMediaFromPackage } from '../../hosts/common/cartridge_media';
+import { parseCartridgePackage } from '../../machine/ts/rompack/image';
+import { captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
 
-const ROOT = join(process.cwd(), 'tmp', 'scenario-run-service-test');
-const PACKAGED_TEST_SOURCE = [
-	'__bmsx_host_test = {}',
-	'function __bmsx_host_test.ready()',
-	'\treturn true',
-	'end',
-	'function __bmsx_host_test.setup()',
-	'end',
-	'function __bmsx_host_test.update()',
-	'\treturn true',
-	'end',
-].join('\n');
-
-function installedRomBytes(serviceRuntime: ReturnType<typeof initializeMachineRuntime>): Uint8Array {
-	const view: CartridgeByteView = {
-		bytes: new Uint8Array(0),
-		byteOffset: 0,
-		byteLength: 0,
-	};
-	assert.equal(
-		serviceRuntime.machine.cartridgeController.bindRomByteView(
-			0,
-			CART_ROM_BASE,
-			4,
-			view,
-		),
-		true,
-	);
-	return view.bytes;
-}
-
-test('browser scenario media session installs derived execution media and restores canonical media', async () => {
-	await rm(ROOT, { recursive: true, force: true });
-	const clock = new VirtualHeadlessClock();
-	const inputHub = new HeadlessInputHub();
-	const input = new Input(clock, inputHub, -1);
+test('Studio runs fresh targets and current sources without touching the authoring machine, sources or debugger', async () => {
+	const directory = await mkdtemp(join(tmpdir(), 'bmsx-isolation-'));
 	try {
-		await mkdir(ROOT, { recursive: true });
-		const fixture = await buildScenarioMediaFixture(ROOT, [{
-			path: SCENARIO_FIXTURE_TEST_SOURCE_PATH,
-			source: PACKAGED_TEST_SOURCE,
-		}]);
-		const media = await loadRomToolingMedia(
-			fixture.systemRom,
-			[fixture.cartRom, null],
-		);
-		const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
-		const runtime = initializeMachineRuntime(
-			fixture.systemRom,
-			[fixture.cartRom, null],
-			PSX_MACHINE_SPEC,
-			input,
-		);
-		const audioOutput = new HostAudioOutput(
-			new DiscardingAudioSink(),
-			runtime.machine.audioController,
-			runtime.machine.audioOutput.outputRing,
-			runtime.timing.ufpsScaled,
-		);
-		const fault = createRuntimeFaultState();
-		const luaTooling = new RuntimeLuaTooling(
-			sources,
-			new SuspendedGuestSession(runtime),
-		);
-		const debuggerState = createRuntimeDebuggerState(runtime, sources);
-		const presenter = initializeMachineVideoPresenter(runtime, new HeadlessVideoOutput(256, 212),
-			new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes));
-		const runtimeTasks = new RuntimeTaskQueue(audioOutput, presenter);
-		const runService = new ScenarioRunService(
-			runtime,
-			sources,
-			input,
-			audioOutput,
-			new MemoryStorage(),
-			fault,
-			luaTooling,
-			debuggerState,
-			runtimeTasks,
-		);
-		const collection = new ScenarioTestCollection(sources);
-		const scenario = collection.findTestBySourcePath(
-			0,
-			SCENARIO_FIXTURE_TEST_SOURCE_PATH,
-		);
-		const canonicalLayer = sources.cartridgeSlots[0]!.rom;
-		const canonicalRom = canonicalLayer.bytes;
-		const canonicalSourceMedia = sources.currentBlua32Media;
-		const canonicalInstalledSources = sources.cartridgeSlots[0]!.installedBlua32Sources;
-		const currentTestSource = PACKAGED_TEST_SOURCE.replace('\treturn true', '\treturn false');
-		const errors: unknown[] = [];
-		let starts = 0;
-		let completed = 0;
-		let inspected = 0;
-		const disposeMediaSessionListener = runService.onDidChangeMediaSession(event => {
-			if (event.type === 'error') {
-				errors.push(event.error);
-			} else if (event.type === 'started') {
-				starts += 1;
-			} else if (event.type === 'inspect') {
-				inspected += 1;
-			} else {
-				completed += 1;
-			}
+		const source = `local fixture = require('testlib/fixture')
+return { kind = 'unit', tests = {
+ first = function() assert(fixture == 'edited helper'); isolated = 9 end,
+ second = function() assert(isolated == nil); error('retained failure') end,
+ third = function() assert(isolated == nil) end,
+} }`;
+		const fixture = await buildScenarioMediaFixture(directory, [{ path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }], {
+			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]`,
+			systemModules: [
+				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = __bmsx_setmetatable` },
+				{ path: 'coroutine', source: await readFile('machine/bios/coroutine.lua', 'utf8') },
+			],
+			cartSource: `module<entry>\nerror('do not run the game for unit cases')`,
 		});
+		const media = await loadRomToolingMedia(fixture.systemRom, [fixture.cartRom, null]);
+		const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
+		const authoring = new TestTarget({ systemRomBytes: fixture.systemRom,
+			cartridgeSlots: [cartridgeMediaFromPackage(parseCartridgePackage(fixture.cartRom)), null], machineModel: PSX_MACHINE_SPEC });
+		const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(authoring.runtime));
+		const runs = new ScenarioRunService(sources, tooling, new MemoryStorage(), PSX_MACHINE_SPEC);
+		const collection = new ScenarioTestCollection(sources);
+		const module = collection.findModuleBySourcePath(0, SCENARIO_FIXTURE_TEST_SOURCE_PATH);
+		const cases = collection.resolveNode(module);
+		// A saved source-only helper does not dirty the gameplay image. Test compilation
+		// still consumes it, independently of unsaved editor models.
+		const helper = sources.cartridgeSlots[0]!.luaSources.module2lua['testlib/fixture'];
+		helper.src = helper.base_src = `return 'edited helper'`;
+		const originalState = captureRuntimeMachineState(authoring.runtime);
+		const originalMedia = sources.currentBlua32Media;
+		const originalSource = sources.cartridgeSlots[0]!.luaSources.module2lua['testlib/fixture'].src;
+		await runs.start(module.id, cases.map(test => ({ test, source, sourceRevision: 77 })), []);
+		for (let grants = 0; runs.active && grants < 10000; grants += 1) {
+			runs.advance();
+			await setImmediate();
+		}
+		assert.equal(runs.active, false);
+		assert.deepEqual(runs.results.runs[0].items.map(item => item.state), ['passed', 'failed', 'passed']);
+		assert.equal(runs.session!.failedExecution!.result.test.caseName, 'second');
+		assert.notEqual(runs.session!.failedExecution!.target.runtime, authoring.runtime);
+		assert.deepEqual(captureRuntimeMachineState(authoring.runtime), originalState);
+		assert.equal(sources.currentBlua32Media, originalMedia);
+		assert.equal(sources.cartridgeSlots[0]!.luaSources.module2lua['testlib/fixture'].src, originalSource);
+		assert.equal(sources.cartridgeBlua32MediaDirty[0], false);
+		const addedSource = "local helper = require('testlib/fixture')\nreturn { kind = 'unit', tests = { added = function() assert(helper == 'edited helper') end } }";
+		const added = createScenarioTestSourceRecord('tests/carts/example/new_assert.lua', 99, addedSource);
+		registerLuaSourceRecord(sources.cartridgeSlots[0]!.luaSources, added);
+		sources.cartridgeBlua32MediaDirty[0] = true; // The workspace admission owner marks this build input.
+		collection.refresh();
+		const addedModule = collection.findModuleBySourcePath(0, added.source_path);
+		await runs.start(addedModule.id, collection.resolveNode(addedModule).map(test => ({ test, source: addedSource, sourceRevision: 99 })), []);
+		for (let grant = 0; runs.active && grant < 10000; grant++) { runs.advance(); await setImmediate(); }
+		assert.equal(runs.active, false);
+		assert.equal(runs.results.runs[0].state, 'passed', JSON.stringify(runs.results.runs[0].items[0].failures));
+		assert.deepEqual(captureRuntimeMachineState(authoring.runtime), originalState);
+		assert.equal(sources.currentBlua32Media, originalMedia);
+		assert.equal(added.src, addedSource);
+		runs.dispose();
+		authoring.dispose();
+	} finally { await rm(directory, { recursive: true, force: true }); }
+});
 
-		const started = runService.start(
-			scenario.id,
-			[{
-				test: scenario,
-				source: currentTestSource,
-				sourceRevision: 77,
-			}],
-			[],
-		);
-		await started;
-
-		assert.deepEqual(errors, []);
-		assert.equal(runService.active, true);
-		assert.equal(runService.execution.active, true);
-		assert.equal(starts, 1);
-		assert.equal(completed, 0);
-		assert.equal(runService.results.activeResult?.sourceRevision, 77);
-		assert.equal(canonicalLayer.bytes, canonicalRom);
-		assert.equal(
-			sources.cartridgeSlots[0]!.luaSources.path2lua[SCENARIO_FIXTURE_TEST_SOURCE_PATH].src,
-			PACKAGED_TEST_SOURCE,
-		);
-		assert.notEqual(sources.currentBlua32Media, canonicalSourceMedia);
-		assert.equal(sources.cartridgeSlots[0]!.installedBlua32Sources.get(SCENARIO_FIXTURE_TEST_SOURCE_PATH.slice(0, -4)), currentTestSource);
-		const scenarioRom = installedRomBytes(runtime);
-		assert.notEqual(scenarioRom, canonicalRom);
-		const scenarioIndex = await parseCartridgeIndex(scenarioRom);
-		const testEntry = scenarioIndex.entries.find(
-			entry => entry.source_path === SCENARIO_FIXTURE_TEST_SOURCE_PATH,
-		)!;
-		assert.equal(
-			utf8FatalDecoder.decode(scenarioRom.subarray(testEntry.start, testEntry.end)),
-			currentTestSource,
-		);
-
-		runService.cancel();
-		assert.equal(runService.results.runs[0].state, 'cancelled');
-		assert.equal(runService.results.runs[0].items[0].state, 'cancelled');
-		const drained = runtimeTasks.schedule(() => {}, error => errors.push(error));
-		await drained;
-
-		assert.deepEqual(errors, []);
-		assert.equal(runService.active, false);
-		assert.equal(runService.execution.active, false);
-		assert.equal(starts, 1);
-		assert.equal(completed, 1);
-		assert.equal(sources.currentBlua32Media, canonicalSourceMedia);
-		assert.equal(sources.cartridgeSlots[0]!.installedBlua32Sources, canonicalInstalledSources);
-		assert.equal(sources.cartridgeSlots[0]!.rom, canonicalLayer);
-		assert.equal(sources.cartridgeSlots[0]!.rom.bytes, canonicalRom);
-		assert.equal(installedRomBytes(runtime), canonicalRom);
-
-		// An exception escaping the machine's host frame must retain its actual
-		// stack and installed machine even in Run mode. Stop releases that session
-		// without rewriting the failed verdict as a cancellation.
-		await runService.start(scenario.id, [{ test: scenario, source: currentTestSource, sourceRevision: 78 }], []);
-		const failedMedia = sources.currentBlua32Media;
-		const failedRom = installedRomBytes(runtime);
-		const hostError = new TypeError('host execution invariant failed');
-		runService.failHostFrame(hostError);
-		assert.equal(inspected, 1);
-		assert.equal(runService.inspectingFailure, true);
-		assert.equal(runService.active, true);
-		assert.equal(runService.execution.active, false);
-		assert.equal(sources.currentBlua32Media, failedMedia);
-		assert.equal(installedRomBytes(runtime), failedRom);
-		const failedRun = runService.results.runs[0];
-		assert.equal(failedRun.state, 'failed');
-		assert.equal(failedRun.items[0].failure!.stackTrace, hostError.stack);
-		assert.equal(failedRun.items[0].failure!.location, undefined);
-		runService.finishHostFrame(0, false);
-		assert.equal(runService.inspectingFailure, true);
-		runService.cancel();
-		await runtimeTasks.schedule(() => {}, error => errors.push(error));
-		assert.deepEqual(errors, []);
-		assert.equal(failedRun.state, 'failed');
-		assert.equal(failedRun.items[0].state, 'failed');
-		assert.equal(runService.active, false);
-		assert.equal(sources.currentBlua32Media, canonicalSourceMedia);
-		assert.equal(sources.cartridgeSlots[0]!.installedBlua32Sources, canonicalInstalledSources);
-		assert.equal(installedRomBytes(runtime), canonicalRom);
-		disposeMediaSessionListener();
-	} finally {
-		input.dispose();
-		await rm(ROOT, { recursive: true, force: true });
-	}
+test('both authoring domains retain companion ROM data and source identity; runner errors stop the run', async () => {
+	const directory = await mkdtemp(join(tmpdir(), 'bmsx-test-slots-'));
+	try {
+		const source = `return { kind = 'integration', tests = {
+ companion = function(t)
+  t:wait_ticks(1)
+  assert(mem[${IO_CART_STATUS}] & 3 == 3)
+  mem[${IO_CART_SELECT}] = 1
+  assert(mem[0x10000000] ~= 0)
+  mem[${IO_CART_SELECT}] = 0
+ end,
+ location = function() error('source identity') end,
+ after = function() end,
+} }`;
+		const fixture = await buildScenarioMediaFixture(directory, [{ path: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source }], {
+			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]`,
+			systemModules: [
+				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = __bmsx_setmetatable` },
+				{ path: 'coroutine', source: await readFile('machine/bios/coroutine.lua', 'utf8') },
+			], cartSource: `module<entry>\nwhile true do halt_until_irq end`,
+		});
+		const media = await loadRomToolingMedia(fixture.systemRom, [fixture.cartRom, fixture.cartRom]);
+		const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
+		const authoring = new TestTarget({ systemRomBytes: fixture.systemRom,
+			cartridgeSlots: [cartridgeMediaFromPackage(parseCartridgePackage(fixture.cartRom)), null], machineModel: PSX_MACHINE_SPEC });
+		const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(authoring.runtime));
+		const runs = new ScenarioRunService(sources, tooling, new MemoryStorage(), PSX_MACHINE_SPEC);
+		const collection = new ScenarioTestCollection(sources);
+		for (const slot of [0, 1] as const) {
+			enterCartridgeSources(sources, slot);
+			assert.equal(collection.refresh(), slot === 1, 'owner change matters even at equal registry revision');
+			assert.equal(collection.roots[0].domain, slot);
+			assert.equal(collection.refresh(), false);
+			const module = collection.findModuleBySourcePath(slot, SCENARIO_FIXTURE_TEST_SOURCE_PATH);
+			const cases = collection.resolveNode(module).map(test => ({ test, source, sourceRevision: 0 }));
+			await runs.start(module.id, cases, []);
+			for (let grant = 0; runs.active && grant < 10000; grant++) { runs.advance(); await setImmediate(); }
+			assert.equal(runs.active, false);
+			assert.deepEqual(runs.results.runs[0].items.map(item => item.state), ['passed', 'failed', 'passed']);
+			assert.equal(runs.results.runs[0].items[1].failures[0].location!.resource.domain, slot);
+			assert.equal(runs.results.runs[0].items[1].failures[0].location!.resource.path, SCENARIO_FIXTURE_TEST_SOURCE_PATH);
+			await runs.start(module.id, cases, []);
+			runs.session!.execution!.advance = () => { throw new Error('infrastructure failure'); };
+			runs.advance();
+			assert.equal(runs.active, false);
+			assert.deepEqual(runs.results.runs[0].items.map(item => item.state), ['failed', 'skipped', 'skipped']);
+			assert.equal(runs.results.runs[0].items[0].failures[0].phase, 'runner');
+		}
+		runs.dispose(); authoring.dispose();
+	} finally { await rm(directory, { recursive: true, force: true }); }
 });

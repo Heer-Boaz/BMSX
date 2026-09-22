@@ -16,7 +16,7 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
 import { api } from '../../ide/runtime/overlay_api';
 import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
-import { HeadlessVideoOutput } from '../../hosts/node/headless/video_output';
+import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
@@ -302,7 +302,7 @@ test('picker uses the actual tiny font and draws only a bounded span of an unbou
 	insertValue(picker.field, 'very_long_query_'.repeat(50));
 	picker.update();
 	assert.equal(picker.field.text.length, 800);
-	const presenter = new VideoPresenter(new HeadlessVideoOutput(384, 288),
+	const presenter = new VideoPresenter(new OffscreenVideoOutput(384, 288),
 		new HeadlessGPUBackend(384, 288, PSX_MACHINE_SPEC.gxGpuVramBytes), 384, 288);
 	const queue = presenter.hostOverlayQueue;
 	const renderer = new OverlayRenderer(queue);

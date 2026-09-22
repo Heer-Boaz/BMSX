@@ -1537,6 +1537,7 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 			'cpuState.lastExecutionDomainId',
 		) as ExecutionDomainId,
 		lastPc: requireObjectKey(object, 'lastPc', label, 'cpuState.lastPc') as number,
+		haltedUntilIrqThreadRef: requireObjectKey(object, 'haltedUntilIrqThreadRef', label, 'cpuState.haltedUntilIrqThreadRef') as number,
 		haltedUntilIrqFrameDepth: requireI32(
 			requireObjectKey(object, 'haltedUntilIrqFrameDepth', label, 'cpuState.haltedUntilIrqFrameDepth'),
 			'cpuState.haltedUntilIrqFrameDepth',

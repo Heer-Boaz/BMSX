@@ -25,11 +25,30 @@ int main(int argc, char** argv) {
 			bmsx::Runtime runtime({rom, {}, bmsx::PSX_MACHINE_SPEC}, input);
 			runtime.boot();
 			auto& cpu = runtime.machine.cpu;
+			if (std::string(argv[index]).find("halted_tooling_call-") != std::string::npos) {
+				if (cpu.runUntilDepth(0, 100000) != bmsx::RunResult::Halted || !cpu.isHaltedUntilIrq()) throw std::runtime_error("root did not HALT");
+				const int depth = cpu.getFrameDepth();
+				cpu.beginCompletionCall(*bmsx::asClosure(cpu.getGlobalByKey(cpu.stringPool().intern("probe"))));
+				for (int grant = 0; grant < 10000; ++grant) {
+					const auto status = cpu.runUntilDepth(depth, 17, cpu.rootThread());
+					const auto snapshot = cpu.captureRuntimeState();
+					cpu.restoreRuntimeState(snapshot);
+					if (cpu.captureRuntimeState().haltedUntilIrqThreadRef != snapshot.haltedUntilIrqThreadRef) throw std::runtime_error("HALT owner not restored");
+					if (status != bmsx::RunResult::Yielded) break;
+				}
+				if (cpu.activeThread() != cpu.rootThread() || cpu.getFrameDepth() != depth
+					|| cpu.getGlobalByKey(cpu.stringPool().intern("entered")) != bmsx::valueBool(true)
+					|| !cpu.isHaltedUntilIrq()) throw std::runtime_error("HALT affected another thread or did not survive tooling call");
+				bmsx::applyRuntimeSaveState(runtime, bmsx::decodeRuntimeSaveState(bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime)), bmsx::PSX_MACHINE_SPEC.ramBytes, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes));
+				if (!cpu.isHaltedUntilIrq()) throw std::runtime_error("HALT owner did not survive full codec");
+				cpu.clearHaltUntilIrq();
+			}
 			auto result = bmsx::RunResult::Yielded;
 			const bool interruptVector = std::string(argv[index]).find("interrupted-") != std::string::npos;
 			bool interrupted = false;
 			for (int grant = 0; grant < 10000 && result == bmsx::RunResult::Yielded; ++grant) {
-				if (interruptVector && !interrupted && cpu.activeThread() != cpu.rootThread()) {
+				if (interruptVector && !interrupted && cpu.activeThread() != cpu.rootThread()
+					&& cpu.getGlobalByKey(cpu.stringPool().intern("interrupt_ready")) == bmsx::valueBool(true)) {
 					cpu.requestNonMaskableInterrupt();
 					if (!cpu.enterPendingInterrupt()) throw std::runtime_error("NMI was not admitted");
 					cpu.restoreRuntimeState(cpu.captureRuntimeState());

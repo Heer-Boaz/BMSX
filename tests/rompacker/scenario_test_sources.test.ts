@@ -18,5 +18,5 @@ test('debug scenario discovery packages each authored assertion as one source-on
 	assert.equal(asset.type, 'lua');
 	assert.equal(asset.normalized_source_path, NEMESIS_SCENARIO_PATH);
 	assert.equal(asset.compiled_buffer, undefined);
-	assert.match(Buffer.from(asset.buffer!).toString('utf8'), /__bmsx_host_test/);
+	assert.match(Buffer.from(asset.buffer!).toString('utf8'), /input_pause_retains_simulation_and_music = function\(t\)/);
 });

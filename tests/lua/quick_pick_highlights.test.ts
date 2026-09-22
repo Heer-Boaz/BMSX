@@ -13,7 +13,7 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
 import { api } from '../../ide/runtime/overlay_api';
 import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
-import { HeadlessVideoOutput } from '../../hosts/node/headless/video_output';
+import { OffscreenVideoOutput } from '../../hosts/common/offscreen_video_output';
 import { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
@@ -131,7 +131,7 @@ test('shared picker consumes provider spans, updates them without text queries a
 	assert.equal(label.runs.peek(0), run);
 	assert.deepEqual([...label.runs].filter(value => value.highlighted).map(value => [value.start, value.end]), [[7, 10]]);
 	assert.equal(picker.model.list.rows[0].item, item);
-	const presenter = new VideoPresenter(new HeadlessVideoOutput(384, 288),
+	const presenter = new VideoPresenter(new OffscreenVideoOutput(384, 288),
 		new HeadlessGPUBackend(384, 288, PSX_MACHINE_SPEC.gxGpuVramBytes), 384, 288);
 	const renderer = new OverlayRenderer(presenter.hostOverlayQueue);
 	for (const variant of ['msx', 'tiny'] as const) {

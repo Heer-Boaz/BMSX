@@ -83,9 +83,9 @@ export function toggleScenarioLabTestRow(state: ScenarioLabViewState, index: num
 		return;
 	}
 	if (row.expanded) {
-		state.testPane.collapsedRootIds.add(row.root.id);
+		state.testPane.collapsedNodeIds.add(row.id);
 	} else {
-		state.testPane.collapsedRootIds.delete(row.root.id);
+		state.testPane.collapsedNodeIds.delete(row.id);
 	}
 	state.testPane.rowsDirty = true;
 	refreshScenarioLabProjection(state);
@@ -158,7 +158,6 @@ export function scenarioLabCommandEnabled(
 ): boolean {
 	switch (command) {
 		case 'scenarioLab.run':
-		case 'scenarioLab.debug':
 			return !state.runActive && selectedScenarioTestNode(state) !== null;
 		case 'scenarioLab.rerun':
 			return !state.runActive && state.resultService.runs.length > 0;
@@ -174,7 +173,12 @@ function activateScenarioLabSelection(state: ScenarioLabViewState): ScenarioLabN
 			return NAVIGATION_NONE;
 		}
 		const row = state.testPane.rows[selectionIndex];
-		if (row.kind === 'root') {
+		if (row.kind === 'module' && row.module.diagnostic !== null) {
+			const diagnostic = row.module.diagnostic;
+			return { kind: 'open-source', location: { resource: row.module.resource,
+				line: diagnostic.line, column: diagnostic.column } };
+		}
+		if (row.expandable) {
 			toggleScenarioLabTestRow(state, selectionIndex);
 			return NAVIGATION_CHANGED;
 		}
@@ -182,8 +186,8 @@ function activateScenarioLabSelection(state: ScenarioLabViewState): ScenarioLabN
 			kind: 'open-source',
 			location: {
 				resource: row.test.resource,
-				line: 1,
-				column: 1,
+				line: row.test.range.start.line,
+				column: row.test.range.start.column,
 			},
 		};
 	}
@@ -222,13 +226,13 @@ function moveScenarioLabLeft(state: ScenarioLabViewState): boolean {
 		return false;
 	}
 	const row = state.testPane.rows[selectionIndex];
-	if (row.kind === 'root') {
-		if (!row.expanded) return false;
+	if (row.expandable && row.expanded) {
 		toggleScenarioLabTestRow(state, selectionIndex);
 		return true;
 	}
+	if (row.kind === 'root') return false;
 	for (let index = selectionIndex - 1; index >= 0; index -= 1) {
-		if (state.testPane.rows[index].id === row.root.id) {
+		if (state.testPane.rows[index].id === (row.kind === 'test' ? row.test.parentId : row.module.parentId)) {
 			selectScenarioTestRow(state, index);
 			return true;
 		}
@@ -252,7 +256,7 @@ function moveScenarioLabRight(state: ScenarioLabViewState): boolean {
 		return false;
 	}
 	const row = state.testPane.rows[selectionIndex];
-	if (row.kind === 'root') {
+	if (row.expandable) {
 		if (row.expanded) return false;
 		toggleScenarioLabTestRow(state, selectionIndex);
 		return true;

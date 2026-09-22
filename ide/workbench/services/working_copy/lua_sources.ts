@@ -26,10 +26,10 @@ export function captureCurrentLuaSource(sources: RuntimeSourceState, resource: R
 }
 
 /** Pins all retained program documents before asynchronous workspace/build work. */
-export function captureLuaTextModelSources(sources: RuntimeSourceState): LuaTextModelSourceSnapshot[] {
+export function captureLuaTextModelSources(sources: RuntimeSourceState, includeSourceOnly = false): LuaTextModelSourceSnapshot[] {
 	const snapshots: LuaTextModelSourceSnapshot[] = [];
 	for (const model of editorTextModelService.models) {
-		if (model.mode !== 'lua' || model.readOnly || !resolveRuntimeLuaSource(sources, model.resource)!.record.program_module) {
+		if (model.mode !== 'lua' || model.readOnly || (!includeSourceOnly && !resolveRuntimeLuaSource(sources, model.resource)!.record.program_module)) {
 			continue;
 		}
 		snapshots.push({ ...model.createSnapshot(), domain: model.resource.domain, path: model.resource.path });

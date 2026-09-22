@@ -24,7 +24,7 @@ async function main(): Promise<void> {
 	const { Input } = await import('../../../hosts/common/input/manager');
 	const { VirtualHeadlessClock } = await import('../../../hosts/node/headless/clock');
 	const { HeadlessInputHub } = await import('../../../hosts/node/headless/input');
-	const { HeadlessVideoOutput } = await import('../../../hosts/node/headless/video_output');
+	const { OffscreenVideoOutput } = await import('../../../hosts/common/offscreen_video_output');
 	const { HeadlessGPUBackend } = await import('../../../machine/ts/render/headless/backend');
 	const { PSX_MACHINE_SPEC } = await import('../../../machine/ts/spec/bmsx/model');
 	const { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } = await import('../../../machine/ts/spec/bmsx/io');
@@ -41,7 +41,7 @@ async function main(): Promise<void> {
 	runtime.onStateRestored = () => { restores += 1; };
 	const captureVram = backend.captureGxGpuVramSnapshot.bind(backend);
 	backend.captureGxGpuVramSnapshot = gpu => { vramCaptures += 1; captureVram(gpu); };
-	const video = new HeadlessVideoOutput(256, 212);
+	const video = new OffscreenVideoOutput(256, 212);
 	const presenter = initializeMachineVideoPresenter(runtime, video, backend);
 	presenter.crt_postprocessing_enabled = false;
 	let puller: Puller | null = null;

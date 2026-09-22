@@ -1,6 +1,6 @@
-import type { VideoOutput } from '../../../machine/ts/render/video_output';
+import type { VideoOutput } from '../../machine/ts/render/video_output';
 
-export class HeadlessVideoOutput implements VideoOutput {
+export class OffscreenVideoOutput implements VideoOutput {
 	private readonly displayBounds: { width: number; height: number; left: number; top: number; };
 
 	public constructor(width: number, height: number) {

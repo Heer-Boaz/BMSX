@@ -40,7 +40,7 @@ export function createScenarioLabViewState(
 		resultService: results,
 		testPane: {
 			...createScenarioLabPaneState<ScenarioLabTestRow>(),
-			collapsedRootIds: new Set(),
+			collapsedNodeIds: new Set(),
 			selectedNodeId: null,
 			rowsDirty: true,
 		},

@@ -851,9 +851,9 @@ round trip. The one
 `LuaSourceRegistry` records that distinction as `program_module`; tooling does
 not create a second test-source registry or infer execution from a filename.
 Their edits advance the semantic source revision without dirtying BLua media
-or entering Hot Resume. Newly authored Lua modules explicitly enter the
-program, while a packer that adds a source-only document omits the compiled
-payload.
+or entering Hot Resume. Newly authored gameplay modules explicitly enter the program. The workspace
+creation owner marks conventional assertion modules as source-only test assets;
+their role is retained in the registry, not inferred by runtime consumers.
 
 Generated Lua may compose authored whole-line fragments behind generated glue.
 The compiler analyzes the generated coordinates, then its source-map owner
@@ -877,21 +877,14 @@ location. Release carts do not carry these authoring resources. Browser and
 headless discovery therefore enumerate the same packaged records once instead
 of maintaining registration lists or scanning a host filesystem at run time.
 
-The browser-safe scenario cartridge builder consumes one of those records as a
-distinct derived-build dependency root and compiles only
-its reachable source-only library modules alongside the canonical program
-modules; unrelated test support remains source-only. It leaves the public
-entry document untouched and compiles a synthetic entry in
-which the deferred loader is inserted after the entry declaration. Whole-line
-source-map fragments project the original entry suffix and the selected test
-back to their complete authored documents. The selected source-only payload is
-replaced with its current workspace bytes, while the BLua image and any
-image-relative asset addresses are linked against the final tail layout.
-Calling the loader after cart settle therefore keeps the existing guest-test
-timing, while assertions and faults resolve to the `_assert.lua` resource and
-its exact authored line and column. Requiring the test as an independent module
-would be incorrect: BLua `require` selects static startup modules and would run
-the test before the execution owner's settle phase.
+The browser-safe test cartridge builder uses the existing generic linker preloads
+and module export slots. A returned suite declares named unit or integration
+cases, plus optional setup/teardown hooks. Discovery reads source, never executes
+registration. The builder retains authored modules and source ranges directly;
+it does not splice a deferred loader into the game entry. Unit targets replace
+the entry with an empty unit harness; integration targets retain the actual game
+entry. Both stop after module initialization to select the named case. Test-only
+library dependencies are compiled from their ordinary source-only records.
 
 The Scenario builder is also the only executable-image producer that emits
 BLua32 trace statements. Ordinary release ROMs, ordinary debug ROMs and live
@@ -903,97 +896,37 @@ where disabled trace macros expand to no code rather than leaving a runtime
 enabled check in the product path
 ([pinned source](https://github.com/wolfpld/tracy/blob/89132aed2ad7f40e880c7e315b8e9ee5437d2277/public/tracy/Tracy.hpp#L25-L107)).
 
-Scenario discovery, execution and results remain separate retained owners in
-`ide/testing/scenario`; neither the browser panel nor the Node adapter owns
-them. `ScenarioTestCollection` enumerates the workbench's selected development
-cartridge source registry once and lazily materializes stable
-`scenario:<domain>:<asset-id>` children beneath one project-suite node. The
-suite's user-facing identity is the cartridge-project label; its execution
-domain remains routing data on the suite and leaves and is not prefixed to the
-primary label. A selection identifies a collection node. The collection resolves
-that node once into its stable authored-order leaf sequence, so the same request
-shape runs one leaf or the complete selected subtree. The current flat project
-root is therefore a runnable suite; no category metadata or parallel test
-registration is invented before authored subgroups exist. Expansion cards and a
-second unrelated executable cartridge do not become a second project in the
-current workspace.
+Test discovery, execution and results remain separate retained owners beneath
+`ide/testing`. `ScenarioTestCollection` projects the development cartridge into
+project/module/named-case nodes with stable source identities and ranges. It
+refreshes with registry and editor revisions, including new workspace suites.
+A run pins its source generation; rerun resolves the current source declarations
+for the previous scope rather than reusing stale case objects.
 
-One `ScenarioRun` retains the resolved request scope, ordered test items,
-aggregate state and cancellation; its active media request retains the immutable
-per-run source snapshots only for the execution lifetime. Test items move through
-queued and running into a terminal result. Finalizing or cancelling the run
-marks every still queued item skipped rather than silently omitting it; the
-active item retains its own cancelled result. One item failure does not prevent
-later selected items from running; a host
-media/session failure terminates the run. `ScenarioResultService` owns bounded
-current-first run history and the per-item logs, captures, failures and semantic
-facts. A child result is not promoted to an unrelated top-level run. Rerun uses
-the previous run's resolved item scope rather than whichever row happens to be
-selected afterward, while taking one new immutable source batch for that new
-run. This is the same retained run/result split used by VS Code: explorer
-actions submit selected nodes in one request, the test service owns cancellation,
-and one live result retains all included items
-([selected-node request](https://github.com/microsoft/vscode/blob/4290bede3cbc24e3fe9c979b655cebdf3b4e5f6b/src/vs/workbench/contrib/testing/browser/testExplorerActions.ts#L164-L182),
-[run-all roots](https://github.com/microsoft/vscode/blob/4290bede3cbc24e3fe9c979b655cebdf3b4e5f6b/src/vs/workbench/contrib/testing/browser/testExplorerActions.ts#L626-L650),
-[live result](https://github.com/microsoft/vscode/blob/4290bede3cbc24e3fe9c979b655cebdf3b4e5f6b/src/vs/workbench/contrib/testing/common/testResult.ts#L276-L348)).
+`TestRun` owns a serial batch and at most one current physical target plus the
+most recent failed target. Each case gets a fresh Runtime, CPU, heap, devices,
+input and output, with its own derived cartridge. Immutable ROM bytes may be
+shared. Compiled media is cached only for the current module. `TestExecution`
+advances ordinary retained Lua phase coroutines through bounded CPU grants;
+`testlib/execution.lua` owns the setup/body/teardown threads and fixture table.
+There is no ready/update callback, authored host global or command-return
+convention. Integration context methods yield to schedule real game execution,
+ICU samples, owner-published mutation receipts and accepted presentations.
+Unit bodies do not enter the game loop. CPU faults and uncooperative timeouts
+quarantine the continuation rather than truncating it to manufacture cleanup.
 
-`ScenarioExecutionService` alone advances the packaged loader/ready/setup/update
-protocol against one Runtime and installs a retained raw ICU playback source.
-These callbacks are ordinary guest work. Before admitting a new call, the
-service reads the CPU's outermost exception return depth and uses the existing
-`runSuspendedUntilDepth` executor to execute outstanding exception frames through
-their real return. A halted device path, pending backend operation or debugger
-stop leaves the protocol call unstarted. It does not force user mode, drive DMA
-from the host or merely skip every IRQ-aligned frame. `Runtime.callClosure`
-retains its current-context meaning for other tooling callers. The CPU owns
-only the read-only frame-depth projection, mirrored in TS/C++; it has no
-Scenario admission policy. See [the admission contract](scenario_call_admission.md).
-
-Scheduled input is applied before the exact logical tick's ICU sample; guest
-closures that span more than one machine tick do not stretch a requested input
-hold. It knows logical machine/scenario ticks but not elapsed host time or pacing
-policy. The browser run owner supplies a 3000-logical-tick item deadline, equal
-to the default sixty-second PAL test budget but consumed as scenario time; BIOS
-monitor ticks therefore do not consume it. Node automation derives the same
-execution-owner deadline from its explicit test TTL and still runs those ticks
-without wall-time pacing. A timed-out item fails and the retained run proceeds
-to its next queued item. Each capture records its requesting logical tick and is bound only when
-`VideoPresenter` accepts an actual presentation.
-
-The browser workbench adds an explicit scenario **media session** above those
-owners. The workspace/source registries and their `RomToolingLayer`s stay
-the canonical authoring media. Starting a run first commits the current editor
-generation and captures every selected test source plus the open program-source
-batch exactly once. Workspace overrides and the captured program sources feed
-the ordinary compiler. Dirty canonical ROM layers and the first derived test
-ROM are prepared without installing either. Only successful preparation and
-uncancelled launch admit publication through the existing ROM owners and open
-the media session. Failure or cancellation before this boundary leaves the
-old ROM bytes, installed-source baseline and machine continuation untouched;
-there is no session to restore and no rollback. Each later test item is then
-compiled from those snapshots and the retained canonical ROM into its own
-derived cartridge ROM. Only the physical ROM component in that test's already
-occupied socket is replaced; cartridge RAM, mailbox devices, the second socket,
-and the canonical authoring layers are not reclassified or copied into a Studio
-model. The matching derived BLua32 source image is the current debugger/fault map
-for exactly that item. Its installed-source correspondence map includes the
-captured test source and source-only imports as well; runtime inspection must
-compare against that same compiled generation. Both maps are restored together.
-
-Run and Debug share this execution and media owner. Run finishes its batch and
-restores canonical media. Debug retains the first failed machine until Stop;
-host-frame exceptions retain it in either mode. A failed session cannot resume
-merely by closing Studio. Result text, original host exception stack, protocol
-phase and structured guest frames survive restoration. An absent diagnostic
-source stays absent. See [Scenario debugging](scenario_debugging.md).
-
-The first successful item publishes the run's `started` event. The workbench
-consumes this explicit Run/Rerun intent through `HostExecutionControl`, releasing
-only user-requested pause. Independent host holds remain active; failed
-preparation and later items do not release pause. Build preparation follows
-VS Code's prelaunch-work boundary and successful-start publication follows
-Godot's run owner, without importing a second process or Runtime model
-([production references](scenario_call_admission.md#adjacent-proven-launch-defect-before-its-diff)).
+Studio's `ScenarioRunService` builds in an independently owned source state,
+including saved/edited source-only helpers, and drives the shared run owner.
+It never installs test ROMs into the authoring Runtime, restores authoring state,
+changes its pause reasons, or borrows its input/debugger plans. The workbench
+stays visible during a run and continues to offer ordinary authoring operations.
+Result history retains multiple phase failures; teardown does not erase a body
+failure. Failed threads remain on the failed target. Stack symbolization uses
+the common BIOS/cart/inline-frame owner, not a test-specific source mapper.
+Interactive debugger attachment to a separate test target is not yet supplied;
+the old command that debugged the authoring Runtime has been removed.
+See [Guest testing](guest_testing.md) for the implemented API, cancellation
+boundaries, budgets, measured costs and validation.
 
 `ide/workbench/state.ts` is the browser-workbench composition owner that wires
 the shared scenario services to `ScenarioRunService` and the editor. Runtime
@@ -1129,23 +1062,6 @@ tool-directed completion execution end history at their owning boundaries;
 queue admission alone does not. Existing operation failure stops still apply
 to failed mutation, without rollback or a Run Anyway route.
 
-Every selected item receives an ordinary cold boot for isolation. After an
-item's final presentation opportunity, the next derived ROM may replace it
-directly; every build still consumes the retained canonical ROM rather than the
-previous derived bytes. Completion, cancellation or host failure restores the
-canonical ROM bytes and canonical BLua32 source map once, followed by the
-ordinary cold-boot lifecycle on the same `Runtime`. This is not save-state
-rollback: RAM, VRAM, device reset semantics, and cart-owned seed/setup remain
-exactly those of an ordinary reboot. Compile/install/next-item/restore
-transitions are serialized by the shared host runtime-task owner; a panel never
-mutates machine media directly.
-The split follows production emulator media ownership: openMSX replaces a
-cartridge through its slot manager while the inserted extension owns the
-device, and MAME's image manager coordinates lifecycle while each image device
-performs its own load/unload
-([openMSX slot manager](https://github.com/openMSX/openMSX/blob/master/src/CartridgeSlotManager.cc#L348-L378),
-[MAME image manager](https://github.com/mamedev/mame/blob/master/src/emu/image.cpp#L34-L128)).
-
 `ScenarioLabController` is the workbench contribution above those services; it
 does not become another test owner. One `scenario_lab` editor-input discriminant
 retains a two-pane projection: the selected development cartridge's test tree on
@@ -1160,8 +1076,7 @@ collection, result revision, font or viewport changes. The same workbench-list
 owner supplies row hit-testing, reveal and scroll invariants to Behavior Lens
 outlines. A selected BT uses the shared retained graph viewport instead; its
 source selection is independent of presentation, and its typed Lua relationships
-are not reconstructed from list rows. Run, rerun and cancel
-and debug are typed workbench commands. Their labels, keybindings and named view-title
+are not reconstructed from list rows. Run, rerun and cancel are typed workbench commands. Their labels, keybindings and named view-title
 menu placement are separate declarations; the generic action bar invokes the
 same command ids as keyboard and controller input. A feature does not render
 bespoke command buttons or write shortcut spellings into status text. The shared
@@ -1181,15 +1096,10 @@ Multiple recognized ActionEffect source occurrences use Quick Input with distinc
 resource/position labels, and model changes expire that source choice. This does
 not establish exhaustive behavior origins or implement property authoring. See
 [Scenario result inspection](scenario_result_inspection.md).
-The weighted keybinding resolver chooses the applicable contextual command, so the
-Scenario Lab F5 binding and debugger F5 binding do not become ordered branches
-inside either feature. Starting a run captures the resolved request and source
-batch, then temporarily leaves the blocking workbench so the guest can execute;
-successful canonical-media restoration returns to the same Scenario Lab input.
-The existing physical host-control chord remains the only workbench entry path
-and pauses all machine progress through the editor policy; once open, the same
-Stop command stops the active run and its queued items, including when source
-inspection has focus. A bespoke
+The weighted keybinding resolver chooses the applicable contextual command.
+Starting a test run pins source snapshots without leaving the workbench or
+resuming the authoring machine. Stop cancels the test target and queued cases,
+including while source inspection has focus. A bespoke
 Scenario stop hotkey or feature-rendered emergency button is not added. Source
 activation uses the existing navigation owner. The view renders with the current
 IDE tiny font over the full 384x288 workbench content area; it neither draws guest
@@ -1205,17 +1115,11 @@ command/menu/keybinding registration path
 [action registration](https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/platform/actions/common/actions.ts#L679-L779),
 [keybinding resolver](https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/platform/keybinding/common/keybindingResolver.ts#L320-L395)).
 
-The headless tooling host adapts that shared execution owner through explicit
-`executeHostLogicalTick`, services GPU backend fences on the existing host
-boundary and captures completed presentations. It deliberately supplies no wall
-time and therefore runs as fast as possible; this is execution policy, not a
-different scenario state machine. The browser adaptation instead uses scheduled
-bounded ticks and may execute multiple prepared logical ticks during one host
-callback while presenting only the accepted result. The ordinary browser and
-Node players do not import these Scenario Lab owners, and the machine, cartlib
-and native core know nothing about them. The direct libretro host's separate
-input-timeline runner retains the same host-policy distinction: unpaced by
-default, explicitly paced only on request.
+Node tooling and Studio drive the same isolated run owner, servicing its GPU
+backend and accepted presentations. Node yields between CPU grants without
+wall-time pacing; Studio batches a bounded number of grants per host frame.
+Ordinary player products do not import these owners. The native core implements
+generic Lua coroutines, not a test framework or Studio protocol.
 
 `Blua32ImageLayout` is a tooling representation for inspection, disassembly,
 linking, and hot-resume relocation. It is not part of the runtime execution
@@ -4622,18 +4526,12 @@ input ports against machine time and applies playback at the emulated port
 boundary
 ([input frame/playback](https://github.com/mamedev/mame/blob/58c92ce6a8538181533dc16a28482b010466e1a9/src/emu/ioport.cpp#L2143-L2197)).
 
-An active Scenario execution treats a voluntary supervisor context as a pause
-of scenario time, not machine time. No scheduled scenario command is applied and
-no scenario tick, timeout or guest protocol call advances while the BIOS owns
-the supervisor context; the BIOS, PCRTC and ICU continue normally with physical
-input. The supervisor-fault sequence is checked first, so a synchronous guest
-fault still terminates the active test rather than masquerading as a pause. On a
-resumable monitor exit, playback resumes at the same not-yet-consumed scenario
-boundary. If the ICU already sampled a prepared boundary before supervisor entry
-became active, that completed machine boundary is retained for post-tick
-protocol advancement and is not sampled a second time. Opening the blocking
-workbench is different again: its existing host policy stops machine execution
-entirely.
+Guest test targets have a separate case-owned ICU source. Studio input and
+supervisor requests never enter that machine. Opening Studio therefore does not
+pause test time or substitute physical input into a test. A physical fault in
+the target terminates the case and retains its evidence without faulting the
+authoring Runtime. Ordinary input-timeline playback keeps the host policy above;
+it is not an alternative test execution engine.
 
 Normal gameplay carts may build retained input semantics on top of the raw
 snapshot. Bare-metal carts may intentionally read the raw keyboard, pointer and

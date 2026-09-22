@@ -28,8 +28,8 @@ test('player bundle boundary rejects IDE, compiler, and tooling sources', () => 
 		'scripts/bootrom/platforms/node_tooling_options.ts',
 		'scripts/bootrom/platforms/node_workspace_bridge.ts',
 		'scripts/bootrom/platforms/headless_capture.ts',
-		'ide/testing/scenario/execution_service.ts',
-		'scripts/bootrom/platforms/hostrunner/scenario_host_frame.ts',
+		'ide/testing/execution.ts',
+		'scripts/bootrom/platforms/hostrunner/test_runner.ts',
 		'node_modules/elkjs/lib/elk.bundled.js',
 	]) {
 		assert.throws(

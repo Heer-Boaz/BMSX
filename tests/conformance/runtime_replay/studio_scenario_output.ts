@@ -19,10 +19,9 @@ const MESSAGE = `expected:\n\n${Array.from({ length: 65 }, (_, n) => `line_${n}:
 export async function testStudioScenarioOutput(test: StudioFixture): Promise<void> {
 	const { ide, press, click, frame, runPaletteCommand, cycles } = test;
 	const origin = getActiveTab();
-	// Cancel rebooted the canonical media; the paused CPU may still be in the BIOS.
-	// Open the cartridge resource explicitly, independently of the execution domain.
+	// Open the canonical cartridge resource independently of test-target lifetime.
 	const resource = resolveRuntimeResource(ide.sources, { domain: 0, path: 'cart.lua' });
-	check(resource !== undefined, 'A05: canonical restoration retains the cartridge source');
+	check(resource !== undefined, 'A05: test cancellation retains the cartridge source');
 	await ide.editor.navigation.openResource(resource!);
 	const model = activeCodeEditor.model, original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: EFFECTS }]);

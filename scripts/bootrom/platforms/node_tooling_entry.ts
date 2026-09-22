@@ -1,3 +1,4 @@
+import { runGuestTests } from './hostrunner/test_runner';
 import { Worker } from 'node:worker_threads';
 import { NodeGraphLayoutEngine } from '../../../ide/node/graph_layout';
 import { HostExecutionControl } from '../../../hosts/common/execution_control';
@@ -15,7 +16,7 @@ import { RESOURCE_PANEL_DEFAULT_RATIO } from '../../../ide/common/constants';
 import { IdeMicrotaskQueue } from '../../../ide/common/microtask_queue';
 import { createHeadlessIdeHarness } from '../../../ide/testing/headless_harness';
 import { HeadlessGPUBackend } from '../../../machine/ts/render/headless/backend';
-import { HeadlessVideoOutput } from '../../../hosts/node/headless/video_output';
+import { OffscreenVideoOutput } from '../../../hosts/common/offscreen_video_output';
 import { Input } from '../../../hosts/common/input/manager';
 import { ConsoleLogOutput } from '../../../hosts/common/log';
 import type { LogOutput } from '../../../hosts/common/log';
@@ -68,12 +69,6 @@ import {
 import { DiskWorkspaceRecordProvider } from '../../../ide/node/workspace_records';
 import { RecordingLogOutput } from '../../../ide/testing/recording_log_output';
 import { createRuntimeSourceState } from '../../../ide/runtime/sources';
-import { buildScenarioCartridge } from '../../../toolchain/ts/rompack/scenario_cartridge';
-import { ScenarioTestCollection } from '../../../ide/testing/scenario/test_collection';
-import { ScenarioResultService } from '../../../ide/testing/scenario/result_service';
-import { ScenarioExecutionService } from '../../../ide/testing/scenario/execution_service';
-import { createRuntimeFaultState } from '../../../ide/runtime/fault_state';
-import { runHeadlessScenarioFrame } from './hostrunner/scenario_host_frame';
 import { RemoteInput } from '../../../hosts/common/input/remote';
 import { HostControlServer } from '../../../hosts/node/control/server';
 import { HostControlSession } from '../../../hosts/node/control/session';
@@ -104,20 +99,10 @@ async function main(): Promise<void> {
 			: Promise.resolve(null),
 	]);
 
-	let slot0Rom: Uint8Array = originalSlot0Rom;
+	const slot0Rom: Uint8Array = originalSlot0Rom;
 	if (options.mode.kind === 'host-test') {
-		const testSource = await fs.readFile(options.mode.path, 'utf8');
-		const scenario = await buildScenarioCartridge({
-			systemRom,
-			cartridge: slot0Rom,
-			test: {
-				sourcePath: path.relative(process.cwd(), path.resolve(options.mode.path)).split(path.sep).join('/'),
-				source: testSource,
-			},
-			ramByteCount: PSX_MACHINE_SPEC.ramBytes,
-			optLevel: 3,
-		});
-		slot0Rom = scenario.layer.bytes;
+		await runGuestTests(systemRom, [slot0Rom, slot1Rom], options.mode.path, options.ttlMs, options.mode.caseName);
+		return;
 	}
 
 	let clock: HostClock;
@@ -136,7 +121,7 @@ async function main(): Promise<void> {
 		inputHub,
 		-1,
 	);
-	const videoOutput = new HeadlessVideoOutput(256, 212);
+	const videoOutput = new OffscreenVideoOutput(256, 212);
 	const videoBackend = new HeadlessGPUBackend(
 		256,
 		212,
@@ -370,91 +355,6 @@ async function main(): Promise<void> {
 					} finally {
 						await fs.rm(workspaceRoot, { recursive: true });
 					}
-				}
-				return;
-			}
-			case 'host-test': {
-				const media = await loadRomToolingMedia(systemRom, [slot0Rom, slot1Rom]);
-				const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
-				const testPath = path.relative(
-					process.cwd(),
-					path.resolve(options.mode.path),
-				).split(path.sep).join('/');
-				const collection = new ScenarioTestCollection(sources);
-				const test = collection.findTestBySourcePath(0, testPath);
-				const results = new ScenarioResultService();
-				const execution = new ScenarioExecutionService(
-					runtime,
-					sources,
-					input,
-					createRuntimeFaultState(),
-					results,
-					Math.trunc(options.ttlMs / runtime.timing.frameDurationMs),
-				);
-				const capture = new HeadlessCaptureCoordinator(
-					videoBackend,
-					deriveHeadlessCaptureOutputDir(options.mode.path),
-					() => clock.now(),
-				);
-				console.log(
-					`[bootrom:headless:input] [capture] screenshots -> ${capture.outputDir}`,
-				);
-				let passed = false;
-				try {
-					runtime.frameScheduler.clearQueuedTime();
-					const run = results.beginRun(test.id, [{
-						test,
-						sourceRevision: test.sourceTimestamp,
-					}]);
-					const result = results.startItem(
-						run,
-						0,
-						runtime.frameScheduler.lastTickSequence,
-					);
-					execution.start(result);
-					await new Promise<void>((resolve, reject) => {
-						const frameLoop = frames.start((currentTime) => {
-							runHeadlessScenarioFrame(
-								frameSession,
-								runtime,
-								presenter,
-								input,
-								audioOutput,
-								systemOutput,
-								logOutput,
-								presentation,
-								execution,
-								capture,
-								currentTime,
-							);
-							if (execution.active) {
-								return;
-							}
-							frameLoop.stop();
-							results.completeRun(run);
-							for (let index = 0; index < result.logs.length; index += 1) {
-								inputLogger(`test:${test.id} ${result.logs.at(index).text}`);
-							}
-							if (result.state === 'passed') {
-								inputLogger(`test:${test.id} passed`);
-								resolve();
-								return;
-							}
-							reject(new Error(
-								`Scenario '${test.id}' ${result.state}: ${result.failure!.message}`,
-							));
-						});
-						clock.scheduleOnce(options.ttlMs, () => {
-							frameLoop.stop();
-							execution.cancel();
-							results.cancelRun(run);
-							reject(new Error(`Scenario '${test.id}' did not finish before TTL.`));
-						});
-					});
-					passed = true;
-				} finally {
-					await capture.flushWrites(passed);
-					capture.dispose();
 				}
 				return;
 			}

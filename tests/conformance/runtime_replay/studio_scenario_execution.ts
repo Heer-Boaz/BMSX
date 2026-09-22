@@ -20,7 +20,7 @@ export async function testStudioScenarioExecution(test: StudioFixture): Promise<
 	const canonicalRom = ide.sources.cartridgeSlots[0]!.rom.bytes;
 	const row = view.testPane.rows[index];
 	if (row.kind !== 'test') throw new Error('scenario: selected item must be the cinematic test');
-	harness.openLuaSource(row.test.resource.path);
+	harness.openLuaSource('title_screen.lua');
 	const model = harness.getActiveEditorDocument().model;
 	const source = model.buffer.getText();
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\nend end\n' }]);
@@ -31,9 +31,9 @@ export async function testStudioScenarioExecution(test: StudioFixture): Promise<
 	check(view.resultService.runs[0].state === 'failed' && execution.userPaused && cycles() === beforeRejected
 		&& ide.sources.currentBlua32Media === canonicalMedia && ide.sources.cartridgeSlots[0]!.rom.bytes === canonicalRom,
 		'scenario: failed preparation cannot resume or replace paused gameplay');
-	harness.openLuaSource(row.test.resource.path);
+	harness.openLuaSource('title_screen.lua');
 	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === source, 'scenario: source repair restores the exact original test');
+	check(model.buffer.getText() === source, 'scenario: source repair restores the exact program text');
 	await runPaletteCommand('Scenario Lab: Open');
 	execution.setPauseReason(HostPauseReason.Fullscreen, true);
 	await press('Tab'); check(view.focus === 'results', 'A01: Scenario Tab focuses the result control');
@@ -41,43 +41,40 @@ export async function testStudioScenarioExecution(test: StudioFixture): Promise<
 	await press('Home'); setKey('Enter', true); await frame();
 	check(!view.runActive && execution.userPaused, 'A01: Run is not started on toolbar key down');
 	setKey('Enter', false); await frame();
-	await until(() => !execution.userPaused && tasks.ready, 'scenario: successful preparation starts the explicit Run');
-	check(view.runActive && execution.paused && !ide.editor.isActive,
-		'scenario: explicit Run starts execution from paused gameplay');
+	await until(() => ide.scenarioRuns.session !== null && ide.scenarioRuns.session.execution !== null && view.runActive && tasks.ready, 'scenario: successful preparation starts the separate target');
+	check(view.runActive && execution.userPaused && execution.paused && ide.editor.isActive,
+		'scenario: explicit Run leaves authoring paused and Studio visible');
 	const heldAt = cycles();
 	await frame();
 	check(cycles() === heldAt, 'scenario: starting a test does not release an independent fullscreen hold');
 	execution.setPauseReason(HostPauseReason.Fullscreen, false);
-	await until(() => !view.runActive && tasks.ready, 'scenario: cinematic completes and restores canonical media');
+	await until(() => !view.runActive && tasks.ready, 'scenario: cinematic completes on its separate target');
 	const passed = view.resultService.runs[0];
 	check(passed.state === 'passed' && passed.items.length === 1 && passed.items[0].state === 'passed',
 		'scenario: cinematic passes its assertions, not merely its host timeout');
 	check(ide.sources.currentBlua32Media === canonicalMedia && ide.sources.cartridgeSlots[0]!.rom.bytes === canonicalRom
 		&& getActiveTab() === tab && ide.editor.isActive,
-		'scenario: completion restores the canonical media and originating workbench input');
+		'scenario: completion leaves canonical media and originating input untouched');
 	await runPaletteCommand('Scenario Lab: Rerun Scenarios');
 	const rerun = view.resultService.runs[0];
 	const result = rerun.items[0];
-	await until(() => result.logs.length > 0 && result.logs.at(result.logs.length - 1).text === 'gameplay ready',
-		'scenario: rerun reaches its real guest setup');
-	await press('ControlRight', 'ShiftRight');
-	check(ide.editor.isActive && view.runActive, 'scenario: host IDE chord interrupts the running cinematic');
+	await until(() => result.state === 'running', 'scenario: rerun reaches its real phase execution');
+	check(ide.editor.isActive && view.runActive, 'scenario: Studio remains visible during a run');
 	const pausedAt = cycles();
 	await frame();
-	check(cycles() === pausedAt, 'scenario: workbench focus suspends the test without extra guest calls');
+	check(cycles() === pausedAt, 'scenario: running tests does not advance authoring gameplay');
 	const cancel = view.actionBar.items.find(item => item.command === 'scenarioLab.cancel')!;
 	movePointer(cancel.bounds); await frame(); setPointerButton('pointer_primary', true); await frame();
 	check(view.runActive, 'A01: Cancel Run waits for a physical release');
 	movePointer({ left: view.layout.left, right: view.layout.left + 2, top: view.layout.bottom - 4, bottom: view.layout.bottom - 2 });
 	setPointerButton('pointer_primary', false); await frame();
-	check(view.runActive, 'A01: releasing outside Cancel keeps the scenario suspended for inspection');
+	check(view.runActive, 'A01: releasing outside Cancel leaves the run active');
 	await test.click(cancel.bounds);
-	await until(() => !view.runActive && tasks.ready, 'scenario: Cancel completes canonical media restoration');
+	await until(() => !view.runActive && tasks.ready, 'scenario: Cancel completes test-target cleanup');
 	check(rerun.state === 'cancelled' && result.state === 'cancelled', 'scenario: Cancel retains its actual terminal result');
 	check(ide.sources.currentBlua32Media === canonicalMedia && ide.sources.cartridgeSlots[0]!.rom.bytes === canonicalRom
 		&& getActiveTab() === tab && ide.editor.isActive && !runtime.completionCallPending(),
-		'scenario: cancellation restores the canonical media without a stale completion call');
-	await runPaletteCommand('Run: Pause');
+		'scenario: cancellation leaves authoring media and completion state untouched');
 	await runPaletteCommand('Scene Editor: Open');
 	const picker = ide.editor.quickInput;
 	check(picker.visible && picker.title === 'SCENE EDITOR', 'scenario: canonical source views remain available after Cancel');

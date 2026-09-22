@@ -571,6 +571,7 @@ export type ResourceScanOptions = {
 	libraryLuaPaths?: string[];
 	/** Derived-build roots whose reachable library modules remain source-only in the base image. */
 	sourceOnlyLuaRootFiles: readonly string[];
+	sourceOnlyLuaModuleRoots: readonly string[];
 };
 
 export type RebuildOptions = {
@@ -606,6 +607,7 @@ type LibraryLuaClosure = {
 function collectLibraryLuaClosure(
 	programRootFiles: readonly string[],
 	sourceOnlyRootFiles: readonly string[],
+	sourceOnlyModuleRoots: readonly string[],
 	libraryRoots: readonly string[],
 	virtualRoot: string,
 ): LibraryLuaClosure {
@@ -640,14 +642,13 @@ function collectLibraryLuaClosure(
 			rootChunks[index] = loadFileChunk(rootFiles[index]);
 		}
 		return collectLuaModuleDependencyClosure(
-			rootChunks,
-			modulePaths,
-			(modulePath: string): LuaChunk => loadFileChunk(moduleFileByPath.get(modulePath)!),
+			rootChunks, modulePaths, modulePath => loadFileChunk(moduleFileByPath.get(modulePath)!),
 		);
 	};
 	const programModulePaths = collectClosure(programRootFiles);
 	const programModules = new Set(programModulePaths);
-	const sourceOnlyModulePaths = collectClosure(sourceOnlyRootFiles).filter(
+	const sourceOnlyModulePaths = [...new Set([...sourceOnlyModuleRoots,
+		...collectClosure([...sourceOnlyRootFiles, ...sourceOnlyModuleRoots.map(path => moduleFileByPath.get(path)!)])])].filter(
 		modulePath => !programModules.has(modulePath),
 	);
 	const includedModulePaths = new Set(programModulePaths);
@@ -708,6 +709,7 @@ export async function getResMetaList(
 		const libraryClosure = collectLibraryLuaClosure(
 			programRootFiles,
 			options.sourceOnlyLuaRootFiles,
+			options.sourceOnlyLuaModuleRoots,
 			libraryLuaRoots,
 			virtualRoot,
 		);

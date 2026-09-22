@@ -40,6 +40,7 @@ test('resource scan treats glTF buffer URIs as model-owned and keeps other .bin 
 		const resources = await getResMetaList([ROOT], {
 			domain: 'cart',
 			sourceOnlyLuaRootFiles: [],
+			sourceOnlyLuaModuleRoots: [],
 		});
 		const binResources = resources.filter(resource => resource.type === 'bin');
 
@@ -57,6 +58,7 @@ test('Lua assets retain separate module-local and workspace source paths', async
 		const metadata = await getResMetaList([ROOT], {
 			domain: 'cart',
 			sourceOnlyLuaRootFiles: [],
+			sourceOnlyLuaModuleRoots: [],
 			virtualRoot: ROOT,
 		});
 		const assets = await generateRomAssets(await getResourcesList(metadata));
@@ -89,6 +91,7 @@ test('source-only scenario roots retain library source without base compilation'
 			virtualRoot: ROOT,
 			libraryLuaPaths: [libraryRoot],
 			sourceOnlyLuaRootFiles: [scenarioPath],
+			sourceOnlyLuaModuleRoots: [],
 		});
 		const luaResources = metadata
 			.filter(resource => resource.type === 'lua')

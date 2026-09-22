@@ -531,6 +531,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			lastExecutionDomainId: 0,
 			lastPc: 0,
 			haltedUntilIrqFrameDepth: -1,
+			haltedUntilIrqThreadRef: -1,
 			interruptEventPending: false,
 			memoryWriteBlocked: false,
 			memoryWriteBlockedAddress: 0,
@@ -650,7 +651,7 @@ test('runtime save-state codec preserves exception frame metadata', () => {
 		PSX_MACHINE_SPEC.gxGpuVramBytes,
 	);
 
-	assert.deepEqual(decoded.cpuState.frames, state.cpuState.frames);
+	assert.deepEqual(decoded.cpuState.threads[0].frames, state.cpuState.threads[0].frames);
 });
 
 test('runtime save-state codec preserves builtin VM primitive ids', () => {

@@ -1,5 +1,8 @@
 # Scenario call admission
 
+> Historical scenario-runner design. The returned-suite implementation and
+> current limitations are documented in [Guest testing](guest_testing.md).
+
 ## Owner decision before implementation (2026-09-08)
 
 The live cinematic stack is `entry → vblank.wait → irq → setup → ... →

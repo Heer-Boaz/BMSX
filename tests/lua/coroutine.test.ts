@@ -1,3 +1,4 @@
+import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createTestSystemCpu } from '../helpers/blua32';
@@ -11,10 +12,29 @@ for (const optLevel of [0, 3] as const) {
 		test(`coroutine ${name}, O${optLevel}, bounded real CPU grants`, () => {
 			const { cpu } = createTestSystemCpu(compileCoroutineTest(body, optLevel));
 			cpu.installBootPrimitives();
+			if (name === 'halted_tooling_call') {
+				assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+				assert.equal(cpu.isHaltedUntilIrq(), true);
+				const depth = cpu.getFrameDepth();
+				cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.intern('probe')) as Closure);
+				for (let grant = 0; grant < 10000; grant++) {
+					const status = cpu.runUntilDepth(depth, 17, cpu.rootThread);
+					const snapshot = cpu.captureRuntimeState();
+					cpu.restoreRuntimeState(snapshot);
+					assert.deepEqual(cpu.captureRuntimeState(), snapshot, 'HALT owner survives suspended tooling call');
+					if (status !== RunResult.Yielded) break;
+				}
+				assert.equal(cpu.activeThread, cpu.rootThread);
+				assert.equal(cpu.getFrameDepth(), depth);
+				assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('entered')), true);
+				assert.equal(cpu.isHaltedUntilIrq(), true, 'returning from tooling preserves the root HALT');
+				cpu.clearHaltUntilIrq();
+			}
 			let result = RunResult.Yielded;
 			let interrupted = false;
 			for (let grant = 0; grant < 10000 && result === RunResult.Yielded; grant += 1) {
-				if (name === 'interrupted' && !interrupted && cpu.activeThread !== cpu.rootThread) {
+				if (name === 'interrupted' && !interrupted && cpu.activeThread !== cpu.rootThread
+					&& cpu.getGlobalByKey(cpu.stringPool.intern('interrupt_ready')) === true) {
 					cpu.requestNonMaskableInterrupt();
 					assert.equal(cpu.enterPendingInterrupt(), true);
 					const snapshot = cpu.captureRuntimeState();

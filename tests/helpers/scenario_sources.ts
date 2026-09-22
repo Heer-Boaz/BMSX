@@ -29,12 +29,13 @@ function scenarioSourceRegistry(
 export function createScenarioTestSourceRecord(
 	path: string,
 	timestamp: number,
+	source = `return { kind = 'unit', tests = { sample = function() end } }`,
 ): LuaSourceRecord {
 	return {
 		resid: scenarioTestAssetId(path),
 		type: 'lua',
-		src: `-- ${path}`,
-		base_src: `-- ${path}`,
+		src: source,
+		base_src: source,
 		base_update_timestamp: timestamp,
 		source_path: path,
 		normalized_source_path: path,

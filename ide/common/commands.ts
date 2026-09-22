@@ -53,7 +53,6 @@ export type EditorDebugCommandId =
 
 export type EditorScenarioLabCommandId =
 	| 'scenarioLab.run'
-	| 'scenarioLab.debug'
 	| 'scenarioLab.rerun'
 	| 'scenarioLab.cancel';
 

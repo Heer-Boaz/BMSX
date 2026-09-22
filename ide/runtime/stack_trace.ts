@@ -3,7 +3,7 @@ import {
 	blua32InlineCallSitesAtPc,
 	blua32SourceRangeAtPc,
 } from '../../toolchain/ts/rompack/blua32_symbols';
-import type { RuntimeCpuFaultFrame } from './fault_state';
+import type { Blua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
 import {
 	resolveRuntimeLuaSource,
 	type RuntimeSourceState,
@@ -55,9 +55,17 @@ export function createLuaSourceStackTraceFrame(
 	};
 }
 
+export type RuntimeStackFrame = {
+	readonly executionDomainId: ExecutionDomainId;
+	readonly toolingImage: Blua32ToolingImage;
+	readonly functionAddress: number;
+	readonly functionIndex: number;
+	readonly tracePc: number;
+};
+
 export function buildLuaStackFrames(
-	sources: RuntimeSourceState,
-	faultFrames: readonly RuntimeCpuFaultFrame[],
+	faultFrames: readonly RuntimeStackFrame[],
+	createSourceFrame: (domain: ResourceDomain, source: string, line: number, column: number, functionName: string) => SourceStackTraceFrame,
 ): StackTraceFrame[] {
 	const frames: StackTraceFrame[] = [];
 	for (let index = faultFrames.length - 1; index >= 0; index -= 1) {
@@ -85,8 +93,7 @@ export function buildLuaStackFrames(
 				const inlineRange = inlineIndex === inlineCallSites.length - 1
 					? range
 					: inlineCallSites[inlineIndex + 1].callRange;
-				frames.push(createLuaSourceStackTraceFrame(
-					sources,
+				frames.push(createSourceFrame(
 					entry.executionDomainId,
 					inlineRange.path,
 					inlineRange.start.line,
@@ -95,8 +102,7 @@ export function buildLuaStackFrames(
 				));
 			}
 			const physicalRange = inlineCallSites.length === 0 ? range : inlineCallSites[0].callRange;
-			frames.push(createLuaSourceStackTraceFrame(
-				sources,
+			frames.push(createSourceFrame(
 				entry.executionDomainId,
 				physicalRange.path,
 				physicalRange.start.line,

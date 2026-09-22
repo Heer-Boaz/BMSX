@@ -155,7 +155,7 @@ test('buildLuaSources retains source-only Lua without admitting it to the progra
 	};
 	const source = new TestRomSource([entry, testSource], {
 		main: 'module<entry>\nreturn 1',
-		__test_source__: '__bmsx_host_test = {}',
+		__test_source__: 'return { kind=\'unit\', tests={ sample=function() end } }',
 	});
 
 	const registry = buildLuaSources(source, source, makeIndex([entry, testSource]), 'cart', 'cart');
@@ -163,7 +163,7 @@ test('buildLuaSources retains source-only Lua without admitting it to the progra
 
 	assert.equal(registry.can_boot_from_source, true);
 	assert.equal(retained.program_module, false);
-	assert.equal(retained.src, '__bmsx_host_test = {}');
+	assert.equal(retained.src, 'return { kind=\'unit\', tests={ sample=function() end } }');
 	assert.equal(retained.normalized_source_path, 'tests/carts/test/cart_assert.lua');
 	assert.equal(registry.module2lua['tests/carts/test/cart_assert'], retained);
 	assert.equal(registry.entrySourcePath, 'cart.lua');

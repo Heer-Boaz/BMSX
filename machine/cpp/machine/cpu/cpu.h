@@ -134,6 +134,7 @@ struct CpuRuntimeState {
 	ExecutionDomainId lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 lastPc = 0;
 	int haltedUntilIrqFrameDepth = -1;
+	int haltedUntilIrqThreadRef = -1;
 	bool interruptEventPending = false;
 	bool memoryWriteBlocked = false;
 	uint32_t memoryWriteBlockedAddress = 0;
@@ -268,7 +269,8 @@ public:
 	void haltUntilIrq();
 	void clearHaltUntilIrq();
 	bool isHaltedUntilIrq() const {
-		return m_haltedUntilIrqFrameDepth == static_cast<int>(m_activeThread->frames.size());
+		return m_haltedUntilIrqThread == m_activeThread
+			&& m_haltedUntilIrqFrameDepth == static_cast<int>(m_activeThread->frames.size());
 	}
 	bool isMemoryWriteBlocked() const { return m_memoryWriteBlocked; }
 	uint32_t stalledMemoryWriteAddress() const { return m_memoryWriteBlockedAddress; }
@@ -479,6 +481,7 @@ private:
 	Blua32ExecutionImage* m_activeExecutionImage = nullptr;
 	MappedBusSignals m_executionBusSignals = MAPPED_BUS_MASTER_CPU;
 	int m_haltedUntilIrqFrameDepth = -1;
+	Thread* m_haltedUntilIrqThread = nullptr;
 	bool m_interruptEventPending = false;
 	bool m_memoryWriteBlocked = false;
 	uint32_t m_memoryWriteBlockedAddress = 0;
