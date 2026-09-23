@@ -564,3 +564,29 @@ keeps original output separate from a compact preview and
 [retirement](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/contrib/testing/common/testResult.ts#L510-L519)
 separate from outcome. BMSX applies that distinction to its accepted suite bytes,
 without importing VS Code's persistence or extension-host protocol.
+
+### Read-only test evidence through the shared result owner
+
+`WorkspaceTestTools` now exposes retained run summaries and targeted case reads
+through the existing conversation/HTTP/private-process chain. It receives only
+`ScenarioResultService`, not a runner, machine, source writer or polling loop.
+Prompt-local membership/handles and result-revision snapshots preserve old
+evidence without renewing source edit rights. Empty history, preparation states,
+suite-only source coverage, capture metadata and retained-output loss are explicit.
+Ordinary Details also displays retention counts. `TestRun` now consumes the
+accepted source from its result record directly, removing its independently
+supplied source array in both Studio and CLI. See the
+[test-evidence owner and capability contract](studio_test_evidence.md).
+
+The actual browser/HTTP/pinned-process tests run an isolated failing/passing suite,
+inspect the same historical source, edit the current working copy, then read the
+old evidence through the model protocol on all three renderers. The reads neither
+rerun tests nor change source, canonical files or the authoring machine. This is
+offline-provider evidence, not paid-model reasoning or UI-only source authoring.
+
+Validation: Lua **2381 passed, 1 skipped**, ROM packer **158 passed**, all twelve
+assistant browser workflows and the five-case CLI BIOS runtime suite pass;
+product typechecks/builds and strict architecture audit pass. Tests-project
+typechecking retains the same 96 existing diagnostics.
+Pinned VS Code result-owner/result-service references and exact coverage limits
+are recorded in the capability contract above.

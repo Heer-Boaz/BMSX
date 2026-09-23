@@ -6,6 +6,8 @@ import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import type { WorkspaceEditProposal } from '../working_copy/workspace_edit';
 import type { ResourceDiagnosticsService } from '../diagnostics/resource_diagnostics';
 import { WorkspaceSourceTools } from './source_tools';
+import { WorkspaceTestTools } from './test_tools';
+import type { ScenarioResultService } from '../../../testing/scenario/result_service';
 
 export type AssistantState = 'disconnected' | 'connecting' | 'ready' | 'running' | 'stopping' | 'signing-in' | 'cancelling-sign-in' | 'signing-out';
 export type AssistantEntry = {
@@ -15,7 +17,7 @@ export type AssistantEntry = {
 	readonly proposal?: WorkspaceEditProposal;
 	resetRevision: number;
 };
-type ActiveTurn = { tools: WorkspaceSourceTools; requests: Set<string>; messages: Map<string, AssistantEntry> };
+type ActiveTurn = { tools: WorkspaceSourceTools; tests: WorkspaceTestTools; requests: Set<string>; messages: Map<string, AssistantEntry> };
 type ConversationChange = 'state' | 'text' | 'proposal' | 'reset';
 
 /** Workspace-owned conversation and accepted prompt context, independent of an attached pane. */
@@ -38,7 +40,8 @@ export class AssistantConversation {
 	private disposed = false;
 
 	public constructor(private readonly models: EditorTextModelService, private readonly sources: RuntimeSourceState,
-		private readonly storage: KeyValueStorage, private readonly diagnostics: ResourceDiagnosticsService, private readonly openConnection?: AssistantConnectionFactory) {
+		private readonly storage: KeyValueStorage, private readonly diagnostics: ResourceDiagnosticsService,
+		private readonly testResults: ScenarioResultService, private readonly openConnection?: AssistantConnectionFactory) {
 		this.unbindWorkspace = models.onWillClear(() => this.clearConversation());
 	}
 	public get available(): boolean { return this.openConnection !== undefined && !this.disposed; }
@@ -88,6 +91,7 @@ export class AssistantConversation {
 		const authority = this.sourceLifetime!;
 		const reviews: AssistantReviewUpdate[] = Array.from(this.outstandingReviews, ([review, proposal]) => ({ review, state: proposal.state, reason: proposal.reason }));
 		const turn: ActiveTurn = { tools: new WorkspaceSourceTools(this.models, this.sources, this.storage, this.diagnostics, authority.signal),
+			tests: new WorkspaceTestTools(this.testResults, authority.signal),
 			requests: new Set(), messages: new Map() };
 		this.turn = turn; this.state = 'running';
 		this.append('user', prompt);
@@ -106,7 +110,7 @@ export class AssistantConversation {
 	public async interrupt(): Promise<void> {
 		const turn = this.turn;
 		if (!turn || this.state === 'stopping') return;
-		this.state = 'stopping'; turn.tools.dispose(); turn.requests.clear(); this.changed();
+		this.state = 'stopping'; turn.tools.dispose(); turn.tests.dispose(); turn.requests.clear(); this.changed();
 		try { await this.connection!.send({ type: 'interrupt' }); }
 		catch (error) { if (this.turn === turn) this.append('status', `Stop failed: ${String(error)}`); }
 	}
@@ -185,7 +189,8 @@ export class AssistantConversation {
 		turn.requests.add(event.requestId);
 		let text: string, success = true;
 		try {
-			const result = await turn.tools.execute(event.name, event.arguments);
+			const result = await (event.name === 'studio_list_test_runs' || event.name === 'studio_read_test_run' || event.name === 'studio_read_test_result'
+				? turn.tests.execute(event.name, event.arguments) : turn.tools.execute(event.name, event.arguments));
 			if (this.turn !== turn || !turn.requests.has(event.requestId)) {
 				if (result.kind === 'proposal') result.proposal.dispose();
 				return;
@@ -201,7 +206,7 @@ export class AssistantConversation {
 		catch (error) { if (this.turn === turn) this.append('status', `Tool reply failed: ${String(error)}`); }
 	}
 	private finishTurn(): void {
-		this.turn?.tools.dispose(); this.turn?.requests.clear(); this.turn = undefined;
+		this.turn?.tools.dispose(); this.turn?.tests.dispose(); this.turn?.requests.clear(); this.turn = undefined;
 		this.state = this.connection ? 'ready' : 'disconnected'; this.changed();
 	}
 	public disconnect(): void {

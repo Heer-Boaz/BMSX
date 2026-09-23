@@ -82,7 +82,8 @@ if (args.includes('--assistant')) {
 	if (!workspaceSession.enabled) throw new Error('The Studio assistant requires a loopback-bound server.');
 	const { CodexHttpApi } = await import('../hosts/node/codex/http_api.ts');
 	const { STUDIO_SOURCE_TOOLS } = await import('../ide/workbench/services/assistant/source_tool_protocol.ts');
-	assistant = new CodexHttpApi({ tools: STUDIO_SOURCE_TOOLS,
+	const { STUDIO_TEST_TOOLS } = await import('../ide/workbench/services/assistant/test_tool_protocol.ts');
+	assistant = new CodexHttpApi({ tools: [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS],
 		profileDirectory: path.join(process.env.XDG_STATE_HOME ?? path.join(os.homedir(), '.local', 'state'), 'bmsx', 'studio-codex') });
 }
 

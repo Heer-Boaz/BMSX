@@ -100,9 +100,9 @@ test('result Details reads the captured suite without substituting current decla
 	collection.updateSource(module, '-- later bytes\n' + module.source, 2);
 	const properties = describeScenarioTestResult(result);
 	assert.equal(properties[0].value, 'failed');
-	assert.equal(properties[1].value, source);
+	assert.equal(properties[2].value, source);
 	assert.ok(properties.every(property => property.location === undefined));
-	assert.match(properties[1].description, /does not certify current workspace or dependency sources/);
+	assert.match(properties[2].description, /does not certify current workspace or dependency sources/);
 });
 
 test('scenario workbench view retains lazy test projection and contextual actions', (t) => {

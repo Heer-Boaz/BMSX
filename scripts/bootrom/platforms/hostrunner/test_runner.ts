@@ -29,7 +29,7 @@ export async function runGuestTests(systemRom: Uint8Array, cartridgeSlots: reado
 	const writes: Promise<void>[] = [];
 	let captureIndex = 0;
 	const outputDir = deriveHeadlessCaptureOutputDir(testPath);
-	const run = new TestRun(result, sources, { systemRom, cartridgeSlots, machineModel: PSX_MACHINE_SPEC, optLevel: 3 }, results,
+	const run = new TestRun(result, { systemRom, cartridgeSlots, machineModel: PSX_MACHINE_SPEC, optLevel: 3 }, results,
 		(systemRom, cartridgeSlots, model, input) => new OffscreenMachine(systemRom, cartridgeSlots, model, input), () => {}, undefined,
 		(target, label) => {
 			const frame = target.backend.latestPresentedFrame!;

@@ -8,8 +8,39 @@ import { createCodexModelFixture, CODEX_FIXTURE_DONE, CODEX_FIXTURE_WAIT } from 
 import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixture';
 import { createCodexAccountFixture } from '../helpers/codex_account_fixture';
 import { CODEX_ACCOUNT_FIXTURE, createCodexAccountProxy } from '../helpers/codex_account_proxy';
+import { STUDIO_SOURCE_TOOLS } from '../../ide/workbench/services/assistant/source_tool_protocol';
+import { STUDIO_TEST_TOOLS } from '../../ide/workbench/services/assistant/test_tool_protocol';
 
 const backends = ['software', 'webgl2', 'webgpu'] as const;
+for (const backend of backends) test(`Studio ${backend}: Codex reads the ordinary isolated test evidence, not current-source success`, { timeout: 180000 }, async t => {
+	const call = (name: string, args: unknown, id = name) => ({ type: 'function_call', call_id: id, name, arguments: JSON.stringify(args) });
+	const outputs = (body: { input: { type: string; output: string }[] }) => body.input.filter(item => item.type === 'function_call_output').map(item => JSON.parse(item.output));
+	const model = await createCodexModelFixture(t, [
+		[call('studio_list_test_runs', {})],
+		body => [call('studio_read_test_run', { run: outputs(body)[0].runs[0].run })],
+		body => outputs(body)[1].cases.map((item, index) => call('studio_read_test_result', { result: item.result }, `case:${index}`)),
+		CODEX_FIXTURE_DONE,
+	]);
+	const f = await createAssistantStudioFixture(t, `test-evidence-${backend}`, {
+		provider: { name: 'Offline test evidence fixture', model: 'mock-model', baseUrl: `${model.url}/v1` } });
+	const result = await f.page.evaluate(async backend => {
+		const entry = '/test.js', module = await import(entry);
+		return module.runAssistantTestEvidence(backend, document.querySelector('canvas'), globalThis.capture);
+	}, backend);
+	assert.equal(result.evidence, 'pass'); assert.equal(model.requests.length, 4);
+	assert.deepEqual(f.observations.errors, []); assert.equal(f.observations.connects, 1);
+	assert.deepEqual(model.requests[0].tools.map(tool => tool.name), [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS].map(tool => tool.name));
+	const [catalog, run, ...cases] = outputs(model.requests[3]);
+	assert.equal(catalog.coverage, 'retained-studio-runs'); assert.equal(run.failedCount, 1); assert.equal(run.passedCount, 1);
+	assert.deepEqual(cases.map(item => item.state), ['failed', 'passed']);
+	assert.ok(cases.every(item => item.sourceCoverage === 'accepted-suite-only' && item.source === result.source && item.source !== result.current));
+	assert.match(cases[0].failures[0].message, /evidence failure/);
+	assert.equal(cases[0].failures[0].phase, 'body'); assert.equal(cases[0].failures[0].location.resource.path, result.path);
+	assert.ok(cases.every(item => item.logs.omitted === 0 && item.logs.entries[0].text === 'cleanup evidence'));
+	assert.equal(await readFile(join(f.root, result.path), 'utf8'), await readFile(result.path, 'utf8'), 'source edits and evidence reads never save the authored suite');
+	await writeFile(join(f.evidence, `test-evidence-${backend}-result.json`), JSON.stringify({ result, catalog, run, cases }));
+});
+
 for (const backend of backends) test(`Studio ${backend}: actual browser, HTTP lease, Codex process, source tools and shared review`, { timeout: 180000 }, async t => {
 	const call = (name: string, args: unknown) => ({ type: 'function_call', call_id: name, name, arguments: JSON.stringify(args) });
 	const outputs = (body: { input: { type: string; output: string; role?: string }[] }) => body.input

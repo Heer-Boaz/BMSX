@@ -8,7 +8,8 @@ import type { ResourceDiagnostics, ResourceDiagnosticsService } from '../diagnos
 import { WorkspaceSourceContext, type CapturedWorkspaceSource } from '../working_copy/source_context';
 import { resolveTextFileModel, textFileMode } from '../working_copy/text_file_model';
 import { WorkspaceEditProposal } from '../working_copy/workspace_edit';
-import { decodeSourceToolRequest, SourceToolInputError } from './source_tool_protocol';
+import { decodeSourceToolRequest } from './source_tool_protocol';
+import { StudioToolInputError } from './tool_input';
 
 export type ToolSourceResource = { readonly resource: string; readonly domain: ResourceDomain; readonly path: string; readonly mode: EditorDocumentMode; readonly readOnly: boolean };
 export type ToolSourceReceipt = { readonly receipt: string; readonly resource: string; readonly version: number; readonly source: string; readonly readOnly: boolean };
@@ -67,7 +68,7 @@ export class WorkspaceSourceTools {
 			case 'studio_list_sources': return { kind: 'sources', data: this.catalog };
 			case 'studio_read_source': {
 				const resource = this.resources.get(request.resource);
-				if (!resource) throw new SourceToolInputError('Resource handle does not belong to this source context');
+				if (!resource) throw new StudioToolInputError('Resource handle does not belong to this source context');
 				if (resource.read === undefined) {
 					resource.read = Promise.resolve(resolveTextFileModel(this.models, this.storage, this.sources, resource.resource)).then(model => {
 						this.assertReading();
@@ -83,7 +84,7 @@ export class WorkspaceSourceTools {
 			}
 			case 'studio_read_diagnostics': {
 				const receipt = this.receipts.get(request.receipt);
-				if (!receipt) throw new SourceToolInputError('Diagnostics require a receipt read in this source context');
+				if (!receipt) throw new StudioToolInputError('Diagnostics require a receipt read in this source context');
 				this.diagnostics.computePending();
 				this.assertReading();
 				const entry = this.diagnostics.get(receipt.captured.model.identity)!;
@@ -104,17 +105,17 @@ export class WorkspaceSourceTools {
 				const edits = new Map<EditorTextModel, EditorModelEdit>();
 				for (const file of request.files) {
 					const receipt = this.receipts.get(file.receipt);
-					if (!receipt) throw new SourceToolInputError('Every edited file needs a receipt read in this source context');
+					if (!receipt) throw new StudioToolInputError('Every edited file needs a receipt read in this source context');
 					const { captured } = receipt;
-					if (edits.has(captured.model)) throw new SourceToolInputError('A proposal must list each file once');
+					if (edits.has(captured.model)) throw new StudioToolInputError('A proposal must list each file once');
 					let previousOffset = -1, previousEnd = 0;
 					const operations = file.edits.map(edit => {
 						if (edit.offset <= previousOffset || edit.offset < previousEnd || edit.offset > captured.source.length
 							|| edit.deleteLength > captured.source.length - edit.offset) {
-							throw new SourceToolInputError('Edits must be ascending, non-overlapping and within the captured source');
+							throw new StudioToolInputError('Edits must be ascending, non-overlapping and within the captured source');
 						}
 						if (edit.expectedText !== captured.source.slice(edit.offset, edit.offset + edit.deleteLength)) {
-							throw new SourceToolInputError('expectedText does not match the captured source; no fuzzy edit was attempted');
+							throw new StudioToolInputError('expectedText does not match the captured source; no fuzzy edit was attempted');
 						}
 						previousOffset = edit.offset;
 						previousEnd = edit.offset + edit.deleteLength;
@@ -134,7 +135,7 @@ export class WorkspaceSourceTools {
 	}
 
 	private assertReading(): void {
-		if (this.state !== 'reading') throw new SourceToolInputError(`Source tool context is ${this.state}`);
+		if (this.state !== 'reading') throw new StudioToolInputError(`Source tool context is ${this.state}`);
 		this.context.assertCurrent();
 	}
 

@@ -76,6 +76,13 @@ dependency changes retire those receipts; reading again does not refresh them.
 Text-file resolution takes the actual model service explicitly, including for
 ordinary restoration. See [source tool contract](../docs/studio_source_tools.md).
 
+Its separate read-only test tools consume `ScenarioResultService`, the same
+history shown by Scenario Lab. A prompt captures retained run membership; targeted
+reads expose recorded outcomes, accepted suite text and bounded output at the
+result-owner revision. They neither execute tests nor assert correspondence with
+current sources/dependencies. Source edits do not invalidate historical evidence
+or renew source/edit receipts. See [test evidence](../docs/studio_test_evidence.md).
+
 ## Local HTTP workspace capability
 
 `StudioHttpSession` owns coalesced admission to the loopback server and holds its
@@ -94,8 +101,9 @@ process ownership stay in Node; source context/history stay in the workbench.
 See [assistant transport](../docs/studio_assistant_transport.md).
 
 `AssistantConversation` owns a workspace's connection epoch, per-prompt source
-authority and retained transcript. The browser composition injects the narrow
-`AssistantConnectionFactory` from the pure `hosts/common/assistant_protocol.ts`
+authority and test-evidence handles, and retained transcript. The browser
+composition injects the narrow `AssistantConnectionFactory` from the pure
+`hosts/common/assistant_protocol.ts`
 contract, like clipboard/clock contracts; no workbench feature imports a browser
 transport, Node process or host-session implementation. The architecture audit
 classifies that exact protocol file as a host contract, not all of host/common.
@@ -1494,6 +1502,11 @@ Testing separates discovery, case policy, physical resources and results:
   not the current collection/model. It claims neither dependency provenance nor
   current-workspace correspondence, and never opens a historical source as an
   editable working copy. Layout is retained by the shared property inspector.
+  Output rings also own their eviction counts; omission is not manufactured by
+  a view/transport truncator. The assistant's prompt-scoped test tools consume
+  the same results without a run service, Runtime or source writer. See
+  [test evidence](../docs/studio_test_evidence.md) for lifetime/coverage and the
+  distinction between historical suite evidence and current workspace source.
 
 `workbench/services/testing/scenario_runs.ts` owns workspace discovery and run
 admission. It receives the concrete document service and dirty-record map at

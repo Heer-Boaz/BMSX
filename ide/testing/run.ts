@@ -27,7 +27,6 @@ export class TestRun {
 
 	public constructor(
 		public readonly result: ScenarioRun,
-		private readonly sources: readonly ScenarioRunItemSource[],
 		private readonly media: TestRunMedia,
 		private readonly results: ScenarioResultService,
 		private readonly createTarget: TestTargetFactory,
@@ -37,17 +36,16 @@ export class TestRun {
 	) {}
 
 	public async prepare(): Promise<void> {
-		const source = this.sources[this.index];
 		const result = this.results.startItem(this.result, this.index, 0);
-		const slot = source.test.resource.domain;
+		const slot = result.test.resource.domain;
 		const companion = this.media.cartridgeSlots[1 - slot];
 		try {
-			if (this.programSource === null || this.programSource.test.resource.domain !== slot || this.programSource.test.assetId !== source.test.assetId
-				|| this.programSource.source !== source.source) {
+			if (this.programSource === null || this.programSource.test.resource.domain !== slot || this.programSource.test.assetId !== result.test.assetId
+				|| this.programSource.source !== result.source) {
 				this.program = await buildTestCartridge({ ...this.media, ramByteCount: this.media.machineModel.ramBytes,
 					cartridge: this.media.cartridgeSlots[slot]!, companionCartridge: companion,
-					test: { sourcePath: source.test.resource.path, source: source.source } });
-				this.programSource = source;
+					test: { sourcePath: result.test.resource.path, source: result.source } });
+				this.programSource = result;
 			}
 			if (!this.active) { this.program = null; return; }
 			const target = this.createTarget(this.media.systemRom, [this.program!.layer.bytes, companion], this.media.machineModel, new TestInput());
@@ -57,7 +55,7 @@ export class TestRun {
 			this.results.fail(result, 0, {
 				phase: 'prepare', message: error instanceof Error ? error.message : String(error),
 				stackTrace: error instanceof Error ? error.stack : undefined,
-				location: error instanceof LuaError ? { resource: { domain: source.test.resource.domain, path: error.path }, line: error.line, column: error.column } : undefined,
+				location: error instanceof LuaError ? { resource: { domain: result.test.resource.domain, path: error.path }, line: error.line, column: error.column } : undefined,
 			}, null);
 			this.results.failRun(this.result);
 			this.finish();
@@ -94,7 +92,7 @@ export class TestRun {
 		if (this.cancelled) {
 			this.results.cancelRun(this.result);
 			this.finish();
-		} else if (this.index === this.sources.length) {
+		} else if (this.index === this.result.items.length) {
 			this.results.completeRun(this.result);
 			this.finish();
 		} else void this.prepare();

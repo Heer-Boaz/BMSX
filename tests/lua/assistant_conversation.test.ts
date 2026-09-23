@@ -12,6 +12,8 @@ import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
+import { ScenarioResultService } from '../../ide/testing/scenario/result_service';
+import { ScenarioTestCollection } from '../../ide/testing/scenario/test_collection';
 
 class Connection implements AssistantConnection {
 	public readonly lifetime = new AbortController();
@@ -35,12 +37,48 @@ function fixture(t: TestContext) {
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved\n' }]);
 	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload())));
 	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
-	const conversation = new AssistantConversation(models, sources, storage, diagnostics, async (_signal, emit) => {
+	const testResults = new ScenarioResultService();
+	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testResults, async (_signal, emit) => {
 		const connection = new Connection(emit); connections.push(connection); return connection;
 	});
 	t.after(() => { conversation.dispose(); diagnostics.dispose(); models.clear(); });
-	return { conversation, model, models, connections };
+	return { conversation, model, models, connections, testResults };
 }
+
+test('conversation reads historical test evidence after source edits and retires its handles with the prompt/workspace', async t => {
+	const f = fixture(t), conversation = f.conversation;
+	const module = new ScenarioTestCollection(createScenarioTestSourceState([createScenarioTestSourceRecord('suite_assert.lua', 7)])).roots[0].children[0];
+	const run = f.testResults.beginRun(module.id, [{ test: module.children[0], source: module.source, sourceRevision: 7 }]);
+	const result = f.testResults.startItem(run, 0, 0); f.testResults.complete(result, 1); f.testResults.completeRun(run);
+	await conversation.connect(); await conversation.sendPrompt('Read the earlier run');
+	const connection = f.connections[0];
+	let request = 0;
+	async function call(name: string, args: unknown) {
+		const requestId = String(++request);
+		connection.emit({ type: 'tool-request', requestId, name, arguments: args }); await setImmediate();
+		const reply = connection.commands.at(-1)!; assert.ok(reply.type === 'tool-result' && reply.requestId === requestId);
+		return reply;
+	}
+	const catalog = await call('studio_list_test_runs', {}); assert.equal(catalog.success, true);
+	const handle = JSON.parse(catalog.text).runs[0].run;
+	const runReply = await call('studio_read_test_run', { run: handle }); assert.equal(runReply.success, true);
+	const caseHandle = JSON.parse(runReply.text).cases[0].result;
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- changed after prompt\n' }]);
+	const evidence = await call('studio_read_test_result', { result: caseHandle }); assert.equal(evidence.success, true);
+	assert.equal(JSON.parse(evidence.text).source, module.source);
+	assert.equal(JSON.parse(evidence.text).sourceCoverage, 'accepted-suite-only');
+	const sources = await call('studio_list_sources', {}); assert.equal(sources.success, false, 'historical evidence cannot refresh source-edit authority');
+	assert.equal(connection.commands.filter(command => command.type === 'start').length, 1);
+	connection.emit({ type: 'turn-completed', turnId: 't', status: 'completed' });
+	await conversation.sendPrompt('New prompt');
+	const old = await call('studio_read_test_result', { result: caseHandle }); assert.equal(old.success, false);
+	assert.match(old.text, /must be read from a run in this prompt/);
+	const commandCount = connection.commands.length;
+	f.models.clear();
+	connection.emit({ type: 'tool-request', requestId: 'late', name: 'studio_list_test_runs', arguments: {} }); await setImmediate();
+	assert.equal(connection.commands.length, commandCount, 'workspace retirement rejects late connection callbacks');
+	assert.equal(conversation.state, 'disconnected'); assert.equal(conversation.entries.length, 0);
+});
 async function propose(f: ReturnType<typeof fixture>) {
 	const connection = f.connections.at(-1)!;
 	let id = 0;

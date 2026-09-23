@@ -8,7 +8,7 @@ import type { EditorTextModel } from '../../../editor/model/text_model';
 import { captureCurrentLuaSource, captureLuaTextModelSources, type LuaTextModelSourceSnapshot } from '../working_copy/lua_sources';
 import { TestRun } from '../../../testing/run';
 import type { TestTargetFactory } from '../../../testing/target';
-import { ScenarioResultService, type ScenarioRun, type ScenarioRunItemSource } from '../../../testing/scenario/result_service';
+import { ScenarioResultService, type ScenarioRun } from '../../../testing/scenario/result_service';
 import { ScenarioTestCollection, type ScenarioTestModule, type ScenarioTestNodeId } from '../../../testing/scenario/test_collection';
 import { isScenarioTestAsset } from '../../../../toolchain/ts/rompack/scenario_test';
 import { scenarioFailureFromError } from '../../../testing/scenario/failure';
@@ -82,15 +82,15 @@ export class ScenarioRunService {
 		const run = this.results.beginRun(scopeId, tests);
 		this.preparing = run;
 		this.emit({ type: 'started' });
-		return this.prepare(run, tests, programSources);
+		return this.prepare(run, programSources);
 	}
 
-	private async prepare(run: ScenarioRun, tests: readonly ScenarioRunItemSource[], programSources: readonly LuaTextModelSourceSnapshot[]): Promise<void> {
+	private async prepare(run: ScenarioRun, programSources: readonly LuaTextModelSourceSnapshot[]): Promise<void> {
 		try {
 			const media = await buildTestRunMedia(this.sources, this.tooling, this.storage, this.dirtyRecords, programSources,
-				tests[0].test.resource.domain, this.model);
+				run.items[0].test.resource.domain, this.model);
 			if (this.preparing !== run) return; // Cancelled while the workspace build was pending.
-			this.session = new TestRun(run, tests, media, this.results, this.createTarget, () => this.emit({ type: 'complete' }));
+			this.session = new TestRun(run, media, this.results, this.createTarget, () => this.emit({ type: 'complete' }));
 			this.preparing = null;
 			await this.session.prepare();
 		} catch (error) {

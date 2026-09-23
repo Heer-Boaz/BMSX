@@ -7,9 +7,14 @@ export type ScenarioMessageProperty = InspectedProperty & { readonly location: S
 /** Historical suite evidence is readable even after edits, reruns or target disposal. */
 export function describeScenarioTestResult(result: ScenarioTestResult): ScenarioMessageProperty[] {
 	return [{
-		label: 'RECORDED RESULT', value: result.state,
+		label: 'RESULT AT INSPECTION', value: result.state,
 		description: `${result.test.resource.path} / ${result.test.caseName} / REV ${result.sourceRevision}`,
 		location: undefined, warning: result.state === 'failed',
+	}, {
+		label: 'RETAINED OUTPUT AT INSPECTION',
+		value: `${result.logs.length} logs (${result.logs.droppedCount} omitted), ${result.captures.length} captures (${result.captures.droppedCount} omitted)`,
+		description: 'Output retention is bounded. Capture records are presentation metadata, not stored image pixels.',
+		location: undefined, warning: false,
 	}, {
 		label: 'CAPTURED SUITE SOURCE', value: result.source,
 		description: 'Accepted test declaration only. This does not certify current workspace or dependency sources.',

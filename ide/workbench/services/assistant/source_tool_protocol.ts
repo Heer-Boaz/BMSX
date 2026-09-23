@@ -1,5 +1,4 @@
-/** External tool arguments are admitted here, not in the text model/history owners. */
-export class SourceToolInputError extends Error {}
+import { StudioToolInputError, toolArguments } from './tool_input';
 
 export type SourceToolEdit = { offset: number; deleteLength: number; text: string; expectedText: string };
 export type SourceToolRequest =
@@ -33,32 +32,32 @@ export const STUDIO_SOURCE_TOOLS = [
 export function decodeSourceToolRequest(name: string, input: unknown): SourceToolRequest {
 	switch (name) {
 		case 'studio_list_sources':
-			object(input, NO_FIELDS);
+			toolArguments(input, NO_FIELDS);
 			return { name };
 		case 'studio_read_source': {
-			const value = object(input, READ_FIELDS);
-			if (typeof value.resource !== 'string') throw new SourceToolInputError('resource must be a Studio resource handle');
+			const value = toolArguments(input, READ_FIELDS);
+			if (typeof value.resource !== 'string') throw new StudioToolInputError('resource must be a Studio resource handle');
 			return { name, resource: value.resource };
 		}
 		case 'studio_read_diagnostics': {
-			const value = object(input, RECEIPT_FIELDS);
-			if (typeof value.receipt !== 'string') throw new SourceToolInputError('Diagnostics require a source receipt');
+			const value = toolArguments(input, RECEIPT_FIELDS);
+			if (typeof value.receipt !== 'string') throw new StudioToolInputError('Diagnostics require a source receipt');
 			return { name, receipt: value.receipt };
 		}
 		case 'studio_propose_edits': {
-			const value = object(input, PROPOSAL_FIELDS);
-			if (typeof value.title !== 'string' || value.title.length === 0) throw new SourceToolInputError('A proposal needs a title');
-			if (!Array.isArray(value.files) || value.files.length === 0) throw new SourceToolInputError('A proposal needs source files');
+			const value = toolArguments(input, PROPOSAL_FIELDS);
+			if (typeof value.title !== 'string' || value.title.length === 0) throw new StudioToolInputError('A proposal needs a title');
+			if (!Array.isArray(value.files) || value.files.length === 0) throw new StudioToolInputError('A proposal needs source files');
 			const files = value.files.map(file => {
-				const value = object(file, FILE_FIELDS);
-				if (typeof value.receipt !== 'string') throw new SourceToolInputError('Each file needs a source receipt');
-				if (!Array.isArray(value.edits) || value.edits.length === 0) throw new SourceToolInputError('Each file needs edits');
+				const value = toolArguments(file, FILE_FIELDS);
+				if (typeof value.receipt !== 'string') throw new StudioToolInputError('Each file needs a source receipt');
+				if (!Array.isArray(value.edits) || value.edits.length === 0) throw new StudioToolInputError('Each file needs edits');
 				const edits = value.edits.map(edit => {
-					const value = object(edit, EDIT_FIELDS);
+					const value = toolArguments(edit, EDIT_FIELDS);
 					if (!Number.isSafeInteger(value.offset) || (value.offset as number) < 0
 						|| !Number.isSafeInteger(value.deleteLength) || (value.deleteLength as number) < 0
 						|| typeof value.text !== 'string' || typeof value.expectedText !== 'string') {
-						throw new SourceToolInputError('Edits require non-negative integer UTF-16 offsets/lengths and exact source/replacement strings');
+						throw new StudioToolInputError('Edits require non-negative integer UTF-16 offsets/lengths and exact source/replacement strings');
 					}
 					return { offset: value.offset as number, deleteLength: value.deleteLength as number,
 						text: value.text, expectedText: value.expectedText };
@@ -67,13 +66,6 @@ export function decodeSourceToolRequest(name: string, input: unknown): SourceToo
 			});
 			return { name, title: value.title, files };
 		}
-		default: throw new SourceToolInputError(`Unknown Studio source tool: ${name}`);
+		default: throw new StudioToolInputError(`Unknown Studio source tool: ${name}`);
 	}
-}
-
-function object(input: unknown, fields: readonly string[]): Record<string, unknown> {
-	if (!input || typeof input !== 'object' || Array.isArray(input)) throw new SourceToolInputError('Tool arguments must be an object');
-	const keys = Object.keys(input);
-	if (keys.length !== fields.length || keys.some(key => !fields.includes(key))) throw new SourceToolInputError('Tool arguments do not match the declared fields');
-	return input as Record<string, unknown>;
 }

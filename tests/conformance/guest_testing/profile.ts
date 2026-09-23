@@ -23,7 +23,7 @@ async function main(): Promise<void> {
 	const sources = collection.resolveNode(module).map(test => ({ test, source, sourceRevision: 1 }));
 	const results = new ScenarioResultService();
 	const result = results.beginRun(module.id, sources);
-	const run = new TestRun(result, sources, { systemRom, cartridgeSlots: [cartridge, null], machineModel: PSX_MACHINE_SPEC, optLevel: 3 }, results,
+	const run = new TestRun(result, { systemRom, cartridgeSlots: [cartridge, null], machineModel: PSX_MACHINE_SPEC, optLevel: 3 }, results,
 		(systemRom, cartridges, model, input) => new OffscreenMachine(systemRom, cartridges, model, input), () => {});
 	let peakRss = 0;
 	const records: { ms: number; bootCycles: number; cycles: number; rss: number }[] = [];

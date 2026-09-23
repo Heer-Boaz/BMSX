@@ -26,6 +26,11 @@ after reading a file. These are shared language-service results, not a build or
 test run. Unsupported coverage (including YAML) is explicit rather than reported
 as a clean file. Source changes retire those receipts along with edit authority.
 
+It can also list retained test runs and read individual run/case evidence through
+the [shared result owner](studio_test_evidence.md). These are historical outcomes,
+captured suite bytes and retained output, not claims about the current workspace.
+This read capability never starts or cancels a test and grants no edit authority.
+
 Pointer selection and Copy operate on transcript messages. With transcript
 focus, Up/Down select messages, Enter opens the selected proposal, Ctrl/Meta+C
 copies, and Page Up/Down/Home/End scroll. Tab moves between controls. The composer
@@ -115,7 +120,7 @@ enlarge the provider's context window or hide context-limit failures.
 
 ## Validation and limits
 
-- `npm run test:studio-assistant`: nine passing cases, running the conversation,
+- `npm run test:studio-assistant`: twelve cases, running retained test evidence, the conversation,
   pending/failed account and successful login workflows on actual software,
   WebGL2 and WebGPU Studio presentation,
   authorized HTTP leases and the pinned CLI, with offline Responses/issuer fixtures.

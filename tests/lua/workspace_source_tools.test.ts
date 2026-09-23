@@ -4,7 +4,7 @@ import { getEventListeners } from 'node:events';
 import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
 import { resourceIdentityKey, type RuntimeResource } from '../../ide/common/resource';
 import { WorkspaceSourceTools } from '../../ide/workbench/services/assistant/source_tools';
-import { SourceToolInputError } from '../../ide/workbench/services/assistant/source_tool_protocol';
+import { StudioToolInputError } from '../../ide/workbench/services/assistant/tool_input';
 import { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
 import { resolveTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { workspaceCanonicalSourceCache } from '../../ide/workspace/cache';
@@ -167,10 +167,10 @@ test('external malformed, unproven or ambiguous edits reject the whole proposal 
 		[{ ...file, edits: [{ ...edit, deleteLength: -1 }] }],
 		[{ ...file, edits: [{ ...edit, text: null }] }],
 		[{ ...file, edits: [] }], [], null,
-	]) await assert.rejects(f.tools.execute('studio_propose_edits', { title: 'Invalid', files }), SourceToolInputError);
-	await assert.rejects(f.tools.execute('studio_list_sources', { cwd: '/tmp' }), SourceToolInputError);
-	await assert.rejects(f.tools.execute('studio_propose_edits', { title: 'Cannot apply', files: [file], apply: true }), SourceToolInputError);
-	await assert.rejects(f.tools.execute('apply_patch', {}), SourceToolInputError);
+	]) await assert.rejects(f.tools.execute('studio_propose_edits', { title: 'Invalid', files }), StudioToolInputError);
+	await assert.rejects(f.tools.execute('studio_list_sources', { cwd: '/tmp' }), StudioToolInputError);
+	await assert.rejects(f.tools.execute('studio_propose_edits', { title: 'Cannot apply', files: [file], apply: true }), StudioToolInputError);
+	await assert.rejects(f.tools.execute('apply_patch', {}), StudioToolInputError);
 	assert.equal(f.models.get({ domain: 0, path: 'cart.lua' })!.canUndo, false);
 });
 
@@ -247,7 +247,7 @@ test('diagnostics reject external malformed, unread and foreign receipts before 
 	const f = fixture(t), read = await f.read('cart.lua');
 	const compute = t.mock.method(f.diagnostics, 'computePending');
 	for (const input of [{}, { receipt: 0 }, { receipt: read.receipt, path: 'cart.lua' }, { receipt: 'cart.lua' }, { receipt: read.resource }]) {
-		await assert.rejects(f.tools.execute('studio_read_diagnostics', input), SourceToolInputError);
+		await assert.rejects(f.tools.execute('studio_read_diagnostics', input), StudioToolInputError);
 	}
 	const other = new WorkspaceSourceTools(f.models, f.sources, f.storage, f.diagnostics, f.connection.signal); t.after(() => other.dispose());
 	await assert.rejects(other.execute('studio_read_diagnostics', { receipt: read.receipt }), /this source context/);

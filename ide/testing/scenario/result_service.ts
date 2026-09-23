@@ -156,12 +156,15 @@ export type ScenarioRunItemSource = {
 export class ScenarioRetainedSequence<T> {
 	private readonly entries: T[] = [];
 	private startIndex = 0;
+	private dropped = 0;
 
 	public constructor(private readonly capacity: number) {}
 
 	public get length(): number {
 		return this.entries.length;
 	}
+
+	public get droppedCount(): number { return this.dropped; }
 
 	public at(index: number): T {
 		return this.entries[(this.startIndex + index) % this.entries.length];
@@ -174,6 +177,7 @@ export class ScenarioRetainedSequence<T> {
 		}
 		this.entries[this.startIndex] = value;
 		this.startIndex = (this.startIndex + 1) % this.capacity;
+		this.dropped++;
 	}
 }
 

@@ -9,6 +9,7 @@ import type { Browser } from 'playwright';
 import { CodexHttpApi } from '../../hosts/node/codex/http_api';
 import type { CodexSessionOptions } from '../../hosts/node/codex/session';
 import { STUDIO_SOURCE_TOOLS } from '../../ide/workbench/services/assistant/source_tool_protocol';
+import { STUDIO_TEST_TOOLS } from '../../ide/workbench/services/assistant/test_tool_protocol';
 import { WorkspaceHttpSession, HttpError } from '../../scripts/dev/http_security.mjs';
 import { handleWorkspaceRequest } from '../../scripts/dev/workspace_api.mjs';
 
@@ -23,10 +24,10 @@ export async function createAssistantStudioFixture(t: TestContext, evidenceName:
 	await writeFile(join(root, 'index.html'), '<!doctype html><link rel="icon" href="data:,"><style>body{margin:0;background:#000}canvas{image-rendering:pixelated}</style><canvas width="256" height="212"></canvas>');
 	await copyFile('dist/bmsx-bios.debug.rom', join(root, 'bios.rom')); await copyFile('dist/nemesis_s.debug.rom', join(root, 'cart.rom'));
 	await copyFile('dist/graph-layout.worker.js', join(root, 'graph-layout.worker.js'));
-	for (const path of ['carts/nemesis_s', 'cartlib', 'machine/bios']) await cp(path, join(root, path), { recursive: true,
+	for (const path of ['carts/nemesis_s', 'cartlib', 'machine/bios', 'testlib', 'tests/carts/nemesis_s']) await cp(path, join(root, path), { recursive: true,
 		filter: async path => (await stat(path)).isDirectory() || /\.(lua|yaml|yml)$/.test(path) });
 	const profileDirectory = join(root, 'profile');
-	const api = new CodexHttpApi({ ...options, profileDirectory, tools: STUDIO_SOURCE_TOOLS });
+	const api = new CodexHttpApi({ ...options, profileDirectory, tools: [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS] });
 	const authority = new WorkspaceHttpSession('127.0.0.1');
 	const observations = { connects: 0, errors: [] as Error[] };
 	const server = createServer(async (request, response) => {

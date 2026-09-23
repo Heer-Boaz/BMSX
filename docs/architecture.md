@@ -1109,6 +1109,12 @@ the shared read-only property inspector on the original retained message. An act
 diagnostic location is optional; the test resource is context, never a substitute
 message location. New unrelated output preserves inspection and scroll; eviction
 clears the selected message rather than selecting the row at its old ordinal.
+Details on a case result also exposes its exact accepted suite source and output
+retention counts at inspection time, without opening an editable historical
+working copy. `TestRun` compiles that accepted result-owned source directly;
+recorded and executed suite text do not come from independent inputs. Historical
+outcomes do not certify current suite or dependency sources. See
+[test evidence](studio_test_evidence.md).
 Multiple recognized ActionEffect source occurrences use Quick Input with distinct
 resource/position labels, and model changes expire that source choice. This does
 not establish exhaustive behavior origins or implement property authoring. See
@@ -5032,6 +5038,13 @@ resource diagnostics service. Problems and the assistant share results for the
 same source revision; unsupported/pending/failed coverage is never an empty
 successful analysis. Repeated reads retain their diagnostic projection, and
 dependency changes retire the source context even if the queried file is unchanged.
+Separate read-only test capabilities consume Scenario Lab's existing result owner.
+Prompt-local run/case handles expose historical outcomes, exact accepted suite
+text and explicitly bounded output; they authorize neither test execution nor
+edits. Prompt admission captures retained run membership, while explicit reads
+observe its progress without waiting or polling. Result-source coverage is
+suite-only, not current workspace/dependency certification. See
+[test evidence](studio_test_evidence.md).
 The proposal owner publishes one terminal review outcome after retiring edit
 authority and finishing history admission. Clients observe that state rather
 than polling source or maintaining a second edit lifecycle; transcript status

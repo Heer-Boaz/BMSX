@@ -171,6 +171,8 @@ this adapter with the real process and an offline model fixture. The secured
 HTTP/Chromium evidence. The [conversation contribution](studio_assistant_contribution.md)
 now composes the pane and fixed device-code account actions; the loopback
 capability never admits a general process proxy.
+The fixed [test-evidence tools](studio_test_evidence.md) now read the same retained
+results as Scenario Lab through this chain, without adding execution authority.
 
 ## Account and exact-output follow-through
 

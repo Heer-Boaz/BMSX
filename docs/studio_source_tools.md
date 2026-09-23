@@ -55,7 +55,8 @@ client of this capability, not a second document/history implementation.
   disposing the shared source documents. Callers also dispose untransferred
   reading contexts on interruption or prompt completion.
 
-`source_tool_protocol.ts` owns the external schema/argument conversion. Consumers
+`source_tool_protocol.ts` owns the external schema/argument conversion, using the
+shared external argument-object admission in `tool_input.ts`. Consumers
 use admitted editor edits directly. Text-file resolution now takes its concrete
 model owner explicitly for ordinary restoration and source-view callers too.
 `WorkspaceSourceContext` also checks replacement of the complete resource
@@ -71,6 +72,10 @@ Before this capability was exposed, a reproduced global-project ownership leak
 was repaired at the [shared semantic registry](studio_resource_context.md#follow-through-semantic-projects-belong-to-their-document-owner).
 Diagnostics now analyze their actual model owner, not matching global editor
 paths. Ordinary code, visual views, highlighting and Rename share that correction.
+
+The separate [test evidence capability](studio_test_evidence.md) consumes recorded
+results, not current source receipts. A result handle never authorizes a proposal
+or refreshes this source context after an edit.
 
 ## Evidence
 

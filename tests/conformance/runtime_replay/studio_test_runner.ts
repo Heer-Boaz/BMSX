@@ -64,11 +64,11 @@ export async function runStudioTestRunner(test: StudioFixture) {
 	const pane = ide.editor.editorPanes.activePane;
 	if (!(pane instanceof ScenarioLabEditorPane)) throw new Error('Scenario Lab result pane expected');
 	check(pane.inspector.visible && pane.inspector.model.rows[0].element.value === 'failed', 'Details observes the recorded outcome');
-	check(pane.inspector.model.rows[1].element.value === authored, 'Details reads the failed suite, not the passing rerun source');
+	check(pane.inspector.model.rows[2].element.value === authored, 'Details reads the failed suite, not the passing rerun source');
 	check(!pane.inspector.isEnabled('propertyInspector.source'), 'historical suite inspection cannot substitute current source navigation');
-	const measured = pane.inspector.model.rows[1];
+	const measured = pane.inspector.model.rows[2];
 	for (let index = 0; index < 20; index++) await frame();
-	check(pane.inspector.model.rows[1] === measured && cycles() === authoringCycles, 'source evidence has retained layout and no guest execution');
+	check(pane.inspector.model.rows[2] === measured && cycles() === authoringCycles, 'source evidence has retained layout and no guest execution');
 	await test.capture?.('captured-suite-source');
 	await press('Escape');
 	await press('ShiftLeft', 'Tab');

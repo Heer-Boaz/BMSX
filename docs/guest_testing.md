@@ -98,6 +98,9 @@ and working copy. This is historical suite evidence, not an editable source or
 proof that the current workspace/dependencies match. A preparation failure may
 not have executed the captured suite at all. Revision numbers are labels within
 their source owner, not globally unique content identities.
+Details also reports retained log/capture counts and Studio-ring eviction.
+The [assistant evidence tools](studio_test_evidence.md) read these same historical
+records; they cannot run tests, install media or attach a debugger.
 
 Machine construction is supplied by Studio/CLI composition through
 `TestTargetFactory`. The run owns test input and case/result policy; the concrete
