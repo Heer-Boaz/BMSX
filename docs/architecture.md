@@ -5036,10 +5036,18 @@ the existing development server exposes its fixed endpoints alongside source IO
 on both local and trusted LAN bindings. There is no separate assistant launch
 command or server. Host/origin/session admission remains shared; LAN reachability
 does not identify individual users. Server startup starts no Codex process;
-only the explicit Connect operation does. The browser runtime's secure-context
+explicit chat, history or account use admits one coalesced connection. The browser runtime's secure-context
 requirements remain independent of network API admission.
 The Node adapter owns the isolated Codex account/process, fixed operation
-protocol and process lease. Each prompt captures ordinary source authority;
+protocol and process lease. Codex owns durable threads and queued text; native
+history browsing is separate from resuming execution. Studio reads paged history
+and notification-driven queue snapshots, not JSONL files or polling endpoints.
+Normal submission queues while busy; Direct steers the exact active turn and
+Stop pauses waiting work. The browser never dequeues a server-managed queue.
+New turns capture ordinary source authority; queued turns capture it on dispatch,
+while direct steering keeps the current turn's context. Historical tool records
+carry no live edit rights. See [conversation lifecycle](studio_assistant_conversations.md).
+All
 proposed edits require the same explicit multi-file review and shared history.
 Diagnostic reads require those exact source receipts and consume the ordinary
 resource diagnostics service. Problems and the assistant share results for the
@@ -5067,8 +5075,9 @@ observations leave the outstanding set only after prompt admission; pending ones
 can settle during that wait. Connection/account retirement clears the set, and
 old acknowledgements cannot retire observations in a new authority epoch.
 Neither the transcript nor source-tool execution owns Save, installation or guest
-execution. The pane does not suspend the cart; no normal guest shortcut is
-reserved for submitting prompts. Closing/disconnecting, account changes and
+execution. The assistant and edit-review panes keep the ordinary workbench pause;
+network/model IO continues independently. No normal guest shortcut is reserved
+for submitting prompts. Closing/disconnecting, account changes and
 workspace teardown retire source rights. Device-code login does not open a local
 OAuth callback listener or borrow the user's CLI profile. See
 [assistant contribution](studio_assistant_contribution.md).

@@ -1,4 +1,4 @@
-import type { AssistantAccount, AssistantCommand, AssistantEvent } from '../../hosts/common/assistant_protocol';
+import type { AssistantAccount, AssistantCommand, AssistantEvent, AssistantReply } from '../../hosts/common/assistant_protocol';
 import { STUDIO_ACCOUNT_LOGIN_URL } from '../../hosts/common/assistant_protocol';
 import { readJsonLines } from '../../hosts/common/json_lines';
 import type { StudioHttpSession } from './http_session';
@@ -62,7 +62,7 @@ export class AssistantHttpConnection {
 		throw new Error('Assistant event stream ended without closing its lease');
 	}
 
-	public async send(command: AssistantCommand): Promise<{ turnId: string } | undefined> {
+	public async send(command: AssistantCommand): Promise<AssistantReply | undefined> {
 		this.signal.throwIfAborted();
 		let failure: Error;
 		try {

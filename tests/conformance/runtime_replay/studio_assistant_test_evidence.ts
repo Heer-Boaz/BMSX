@@ -45,8 +45,6 @@ export async function runAssistantTestEvidence(kind: StudioRendererKind, canvas:
 	await runPaletteCommand('View: Codex Assistant');
 	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant pane required');
 	const conversation = ide.editor.assistant;
-	await test.click(view.accountActions.items.find(item => item.command === 'assistant.connect')!.bounds);
-	await until(() => conversation.state === 'ready', 'test evidence: connect actual private process');
 	await test.click(view.composerBounds); test.clipboard.text = 'Read the recorded test results. They predate my source edit; do not run or change anything.';
 	await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'Enter');
 	await until(() => conversation.state === 'ready' && conversation.entries.some(entry => entry.kind === 'assistant'), 'test evidence: real tool round trip');

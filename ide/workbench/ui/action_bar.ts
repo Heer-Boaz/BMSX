@@ -11,6 +11,7 @@ export type WorkbenchActionBarItem = {
 	readonly command: EditorCommandId;
 	readonly label: string;
 	readonly bounds: RectBounds;
+	visible: boolean;
 };
 
 export type WorkbenchActionBarState = {
@@ -31,6 +32,7 @@ export function createWorkbenchActionBar(menuId: WorkbenchActionMenuId): Workben
 			command: contribution.command,
 			label: editorCommandTitle(contribution.command, false, true),
 			bounds: create_rect_bounds(),
+			visible: true,
 		};
 	}
 	return { items, hoveredCommand: null, pressedCommand: null, focusedIndex: -1, hasFocus: false };
@@ -46,6 +48,7 @@ export function layoutWorkbenchActionBar(
 	let itemRight = right;
 	for (let index = state.items.length - 1; index >= 0; index -= 1) {
 		const item = state.items[index];
+		if (!item.visible) continue;
 		const width = measure(item.label) + WORKBENCH_ACTION_BAR_ITEM_PADDING_X * 2;
 		write_rect_bounds(item.bounds, itemRight - width, top, itemRight, bottom);
 		itemRight -= width + WORKBENCH_ACTION_BAR_ITEM_SPACING;

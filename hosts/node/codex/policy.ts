@@ -14,7 +14,7 @@ export class CodexPolicy {
 	public constructor(provider?: CodexProvider) {
 		const features: Record<string, Json> = { skip_host_skill_discovery: true };
 		for (const feature of ['shell_tool', 'unified_exec', 'code_mode_host', 'plugins', 'apps', 'browser_use', 'computer_use',
-			'multi_agent', 'memories', 'hooks', 'workspace_dependencies', 'image_generation', 'goals',
+			'multi_agent', 'memories', 'hooks', 'workspace_dependencies', 'image_generation', 'view_image', 'goals',
 			'shell_snapshot', 'skill_mcp_dependency_install']) features[feature] = false;
 		this.config = {
 			approval_policy: 'never', sandbox_mode: 'read-only', web_search: 'disabled',

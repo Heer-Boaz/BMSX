@@ -7,7 +7,7 @@ in the existing development server. Ordinary `serve:dist`, direct
 There is no separate assistant command or flag. The entry loads its existing
 TypeScript dependency itself; no extra Node loader argument is required.
 Starting the server opens no account profile, checks no Codex executable and
-sends no model request. Explicit Connect owns process admission.
+sends no model request. Explicit chat/history/account use owns coalesced process admission; no Connect toolbar is needed.
 
 ## Owners and authority
 
@@ -43,8 +43,9 @@ A competing live connection gets 409. An explicitly requested replacement may
 wait for an already retired process to drain; it cannot take over a live lease.
 
 `POST /__bmsx__/assistant/command` additionally requires that lease in
-`X-BMSX-Assistant-Lease`. Only start, interrupt, tool-result, login-start, login-cancel and sign-out
-operations exist. Login IDs remain process-owned; the browser receives only a
+`X-BMSX-Assistant-Lease`. Fixed operations are start, steer, queue, queue-update,
+queue-delete, queue-continue, history, open, older, new, interrupt, tool-result,
+login-start, login-cancel and sign-out; no arbitrary provider method is accepted. Login IDs remain process-owned; the browser receives only a
 one-time code and a public account snapshot, never credentials or arbitrary URLs.
 Each tool request receives a new one-shot reply identity, not the external
 provider's RPC/call ID. Interrupt/disconnect removes pending reply rights; a late,
@@ -57,7 +58,8 @@ source/Save semantics. These are not injected provider methods or edit rights.
 Review actions never send start; only an explicit prompt can submit observations.
 Acknowledgement means prompt admission, not proof that the model used that context.
 
-There is no reconnect/replay queue. Even a 401 does not automatically renew and
+There is no transport reconnect/replay queue. The native user-message queue is
+durable Codex state, not a transport retry mechanism (see [lifecycle](studio_assistant_conversations.md)). Even a 401 does not automatically renew and
 repeat an assistant command. A lost response **or interrupted response body**
 may follow an accepted prompt; the client retires its lease rather than guessing
 whether it was accepted. Known operation rejection can leave the connection live.
@@ -103,6 +105,9 @@ and [ordinary review](studio_workspace_edit_review.md), not by transport IDs.
   This is automated browser evidence, not UI-only authoring. Changed-file
   indentation and `git diff --check` pass.
 
+The counts above record the transport slice; current lifecycle coverage is in
+[conversation lifecycle](studio_assistant_conversations.md).
+
 These transport tests alone are **not** a chat-pane, real account authorization,
 paid-inference or OS-sandbox demonstration. The separate
 [contribution tests](studio_assistant_contribution.md) cover the visible pane
@@ -110,7 +115,7 @@ and the device-code protocol with offline fixtures. No credentials were
 copied and no remote model requests were made. The pinned process capability
 limits and same-user threat model remain in the [process contract](studio_codex_process_contract.md).
 
-Before implementation, the pinned Codex [App Server client](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server-client/src/lib.rs)
+Before implementation, the pinned Codex [App Server client](https://github.com/openai/codex/blob/b4b055cfc8fccc0040d13aa4304cf9ba61c2e27e/codex-rs/app-server-client/src/lib.rs)
 was studied for independent response/event processing and shutdown, and VS Code's
 [IPC process owner](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/base/parts/ipc/node/ipc.cp.ts)
 for request/listener retirement. BMSX deliberately adopts neither an unbounded

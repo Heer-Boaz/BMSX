@@ -8,17 +8,21 @@ contracts, not as a second editor or a browser tunnel to Codex RPC.
 1. Build the browser Studio and debug BIOS/cart normally. Use the existing
    development server (`npm run serve:dist` or the LAN/WSL launcher).
    Codex is part of that server, without an assistant flag or separate command.
-   Connect requires the admitted `codex-cli 0.156.1` on the server machine.
+   The integration requires the admitted `codex-cli 0.156.1` on the server machine.
 2. Open **View → Codex Assistant** or the command palette's
    **View: Codex Assistant**. Opening the pane starts no process or model call.
-3. **Connect** opens a private local process lease. **Sign in** requests a device
-   code for the separate Studio account profile. **Copy code** and **Open login**
-   are explicit actions; the latter opens only the official fixed OpenAI page.
-   Complete the authorization there. **Cancel** retires the pending attempt;
-   **Sign out** removes that profile's account and disconnects the conversation.
-4. Type a multiline prompt. Enter inserts a newline; Ctrl/Meta+Enter submits
-   only while the composer has focus. **Stop** interrupts a running response.
-   Prompts and requested source content are sent to the connected provider.
+3. Type a prompt and use **Send** (Ctrl/Meta+Enter). The first submission opens
+   the private process connection. If authorization is needed, device sign-in
+   appears in the transcript and the draft stays unsent. `/open`, `/copy-code`
+   and `/cancel` handle that temporary sign-in. There are no permanent account,
+   Connect or Disconnect buttons. `/login` and `/logout` are explicit commands.
+4. Enter inserts a newline. While Codex works, Send becomes **Queue**; **Direct**
+   (Ctrl/Meta+Shift+Enter) steers that exact active turn. **Stop** interrupts and
+   pauses the native queue without deleting waiting messages. `/queue` inspects,
+   edits or removes them; `/continue` resumes stopped work. `/history` lists saved
+   Studio conversations, `/older` pages older turns, `/new` starts a separate
+   conversation. `/` opens the shared command picker. Prompts and requested
+   source content are sent to the connected provider.
 5. Select a proposal and use **Review**. Only the ordinary review's **Apply**
    edits working copies. Apply is not Save, build or installation. Ordinary
    source Undo/Redo spans all files in the proposal.
@@ -49,13 +53,15 @@ There are no globally reserved gameplay keys or automatic guest evaluation.
 
 - `services/assistant/conversation.ts` owns the workspace conversation, account
   snapshot, connection epoch, prompt context and tool replies. It captures a
-  `WorkspaceSourceTools` context **before** asynchronous prompt submission.
+  `WorkspaceSourceTools` context **before** asynchronous turn submission. Native
+  queued turns capture their context on dispatch; Direct retains the active turn context.
   Late operations from retired connections cannot update a replacement.
 - `contrib/assistant/editor_input.ts` owns ephemeral draft/selection/scroll state;
   `editor_pane.ts` owns attached controls and uses the normal command/menu/focus
   routes. A tab switch does not disconnect. Closing the input does disconnect.
-  Reopening does not replay previous messages; an explicit new connection marks
-  earlier transcript entries as display-only.
+  Reopening alone does not reconnect or replay messages. Explicit chat/history use
+  reconnects and reads the selected native transcript without running it. Historical
+  tool records remain text only; new turns acquire new source receipts.
 - Account/source authority is distinct from view attachment. Turn completion
   ends read rights but can leave an explicit review pending. Connection close,
   sign-out or account-change notification invalidates pending review rights
@@ -84,7 +90,8 @@ There are no globally reserved gameplay keys or automatic guest evaluation.
   clears observations along with source authority. Old acknowledgements cannot
   consume replacement-session evidence. No full-transcript scan is involved.
 - The assistant and review inputs are deliberately absent from session
-  serialization. They cannot restore a conversation or resurrect edit rights.
+  serialization. Codex owns saved conversation text and queue persistence; editor
+  session restoration cannot resurrect edit rights.
 - `hosts/common/assistant_protocol.ts` is a narrow platform contract, with no
   browser/Node/runtime implementation imports. Browser composition supplies the
   connection factory and shares `StudioHttpSession` with ordinary file IO.
@@ -128,7 +135,7 @@ enlarge the provider's context window or hide context-limit failures.
 
 ## Validation and limits
 
-- `npm run test:studio-assistant`: twelve cases, running retained test evidence, the conversation,
+- `npm run test:studio-assistant`: fifteen cases, running native history/queue/steering, retained test evidence, the conversation,
   pending/failed account and successful login workflows on actual software,
   WebGL2 and WebGPU Studio presentation,
   authorized HTTP leases and the pinned CLI, with offline Responses/issuer fixtures.
@@ -159,13 +166,13 @@ enlarge the provider's context window or hide context-limit failures.
   The account workflow covers pending polling, Copy code, the fixed login
   destination with popup blocking enabled and no opener/referrer, cancel after
   the code, actual polling failure, cancel before a held start response, close
-  while signing in and explicit reconnect/disconnect. The login destination is
+  while signing in and explicit reconnect through the composer. The login destination is
   intercepted before external navigation. No account is authorized, credentials
   created, thread started or prompt sent in those pending/failed account cases.
   The separate successful-login workflow exercises real device-code exchange,
-  explicit disconnect/reconnect using the private account profile, token revocation
+  close/reopen and history use with the private account profile, token revocation
   and profile removal on Sign out, then reconnect requiring a new authorization.
-  The unsent draft survives every account transition. Signed-in screenshots in
+  Authorization retains the unsent draft and never automatically submits it. Signed-in screenshots in
   both fonts and the signed-out screenshot were inspected.
 - `npm run test:codex-account`: nine passing device-code/adapter contract cases,
   including actual local-issuer polling/cancel/logout and test-only protocol
@@ -195,8 +202,8 @@ enlarge the provider's context window or hide context-limit failures.
   competing proposals, known rejection, and connection/account replacement with
   delayed acknowledgements. The real HTTP/CLI test verifies structured data and
   the unchanged multiline Unicode prompt in the actual provider request.
-- Regression bundle: **2365 Lua tests passed, 1 skipped**; process/stdio **19**,
-  independent Codex contract **5**, assistant HTTP **13**, workspace HTTP **6**,
+- Regression bundle: **2387 Lua tests passed, 1 skipped**; process/stdio **24**,
+  independent Codex contract **5**, assistant HTTP/entry **16**, workspace HTTP **7**,
   process/workbench **1**, and account **9** pass. Actual WebGL2 cold-page session
   restoration passes. Source-save/local-only/reconnect workflows pass on all
   three renderers through the same shared renderer fixture used by the assistant.
@@ -206,9 +213,15 @@ enlarge the provider's context window or hide context-limit failures.
   Changed-file indentation and `git diff --check` pass.
 
 These are automated browser/contract tests, **not UI-only authoring**, personal
-account authorization or paid-model verification. There is no transcript
-persistence, automatic reconnect, general shell, direct model file writer,
+account authorization or paid-model verification. Native history is scoped to the
+Studio profile, not imported VS Code/CLI or ChatGPT conversations. There is no
+automatic reconnect, general shell, direct model file writer,
 provider picker, background multi-agent workflow or OS-wide sandbox claim.
+
+For the durable conversation/queue owners, native protocol details, cold-resume
+capability audit and current validation, see [conversation lifecycle](studio_assistant_conversations.md).
+The native history and queue are not a Studio transcript database or client-side
+dequeue loop. Older tests described above remain regressions for source authority.
 
 ## Production references studied before implementation
 
@@ -216,24 +229,24 @@ provider picker, background multi-agent workflow or OS-wide sandbox claim.
   retained request/response state, independent of view attachment.
 - VS Code's [editing session](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/contrib/chat/browser/chatEditing/chatEditingSession.ts)
   delegates decisions to retained edit owners; Codex's pinned
-  [dynamic-tool roundtrip](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server/tests/suite/v2/dynamic_tools.rs)
+  [dynamic-tool roundtrip](https://github.com/openai/codex/blob/b4b055cfc8fccc0040d13aa4304cf9ba61c2e27e/codex-rs/app-server/tests/suite/v2/dynamic_tools.rs)
   verifies the tool result in actual subsequent model input. BMSX keeps its own
   preview-before-Apply semantics rather than copying speculative writes/restore,
   and submits later review observations only with an explicit prompt.
 - VS Code's [chat widget](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/contrib/chat/browser/chatWidget.ts)
-  and Codex's [account contract tests](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server/tests/suite/v2/account.rs):
+  and Codex's [account contract tests](https://github.com/openai/codex/blob/b4b055cfc8fccc0040d13aa4304cf9ba61c2e27e/codex-rs/app-server/tests/suite/v2/account.rs):
   separate view/model lifetimes and exercise device-code failures/cancellation
   at the real issuer boundary, rather than replacing Codex's account RPC implementation.
-- Codex's pinned [account processor](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server/src/request_processors/account_processor.rs),
-  [device-code owner](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/login/src/device_code_auth.rs)
-  and [browser OAuth listener](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/login/src/server.rs):
+- Codex's pinned [account processor](https://github.com/openai/codex/blob/b4b055cfc8fccc0040d13aa4304cf9ba61c2e27e/codex-rs/app-server/src/request_processors/account_processor.rs),
+  [device-code owner](https://github.com/openai/codex/blob/b4b055cfc8fccc0040d13aa4304cf9ba61c2e27e/codex-rs/login/src/device_code_auth.rs)
+  and [browser OAuth listener](https://github.com/openai/codex/blob/b4b055cfc8fccc0040d13aa4304cf9ba61c2e27e/codex-rs/login/src/server.rs):
   process-owned IDs/cancellation and why Studio does not borrow the callback port.
-- Codex's [history owner](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/core/src/context_manager/history.rs):
+- Codex's [history owner](https://github.com/openai/codex/blob/b4b055cfc8fccc0040d13aa4304cf9ba61c2e27e/codex-rs/core/src/context_manager/history.rs):
   tool-output truncation is an external ABI concern, not something to repair in
   a Studio source receipt.
-- Codex's pinned [auth fixtures](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server/tests/common/auth_fixtures.rs),
-  [custom CA owner](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/http-client/src/custom_ca.rs)
-  and [token revocation](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/login/src/auth/revoke.rs):
+- Codex's pinned [auth fixtures](https://github.com/openai/codex/blob/b4b055cfc8fccc0040d13aa4304cf9ba61c2e27e/codex-rs/app-server/tests/common/auth_fixtures.rs),
+  [custom CA owner](https://github.com/openai/codex/blob/b4b055cfc8fccc0040d13aa4304cf9ba61c2e27e/codex-rs/http-client/src/custom_ca.rs)
+  and [token revocation](https://github.com/openai/codex/blob/b4b055cfc8fccc0040d13aa4304cf9ba61c2e27e/codex-rs/login/src/auth/revoke.rs):
   synthetic claims, scoped TLS trust and the real revoke-before-local-removal
   path. The fixture changes the test executable's outbound transport, not the
   production account or configuration admission contract.

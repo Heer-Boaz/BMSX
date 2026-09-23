@@ -311,7 +311,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources,
 		);
 		this.editorPanes = new EditorPanes({
-			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes),
+			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.quickInput),
 			workspace_edit_review: () => new WorkspaceEditReviewPane(this.resourcePanel),
 			code_editor: () => new CodeEditorPane(
 				this,

@@ -59,14 +59,17 @@ export type EditorScenarioLabCommandId =
 	| 'scenarioLab.cancel';
 
 export type EditorCommandId =
-	| 'assistant.connect'
-	| 'assistant.disconnect'
 	| 'assistant.signIn'
 	| 'assistant.cancelLogin'
 	| 'assistant.signOut'
 	| 'assistant.openLogin'
 	| 'assistant.copyCode'
 	| 'assistant.send'
+	| 'assistant.queue'
+	| 'assistant.direct'
+	| 'assistant.history'
+	| 'assistant.new'
+	| 'assistant.commands'
 	| 'assistant.stop'
 	| 'assistant.review'
 	| 'assistant.copy'

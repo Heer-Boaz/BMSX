@@ -14,6 +14,7 @@ export function renderWorkbenchActionBar(
 ): void {
 	for (let index = 0; index < state.items.length; index += 1) {
 		const item = state.items[index];
+		if (!item.visible) continue;
 		const enabled = commands.isEnabled(item.command);
 		const hovered = state.hoveredCommand === item.command;
 		const pressed = state.pressedCommand === item.command;

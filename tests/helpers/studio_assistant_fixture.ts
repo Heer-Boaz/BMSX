@@ -29,7 +29,7 @@ export async function createAssistantStudioFixture(t: TestContext, evidenceName:
 	const profileDirectory = join(root, 'profile');
 	const api = new CodexHttpApi({ ...options, profileDirectory, tools: [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS] });
 	const authority = new WorkspaceHttpSession('127.0.0.1');
-	const observations = { connects: 0, errors: [] as Error[] };
+	const observations = { connects: 0, commands: [] as string[], errors: [] as Error[] };
 	const server = createServer(async (request, response) => {
 		try {
 			const url = new URL(request.url!, 'http://local');
@@ -57,6 +57,7 @@ export async function createAssistantStudioFixture(t: TestContext, evidenceName:
 	const page = await browser.newPage({ viewport: { width: 768, height: 576 } });
 	await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
 	page.on('pageerror', error => observations.errors.push(error));
+	page.on('request', request => { if (request.url().endsWith('/command')) observations.commands.push(request.postDataJSON().type); });
 	page.on('console', message => console.log(`[${evidenceName}:${message.type()}] ${message.text()}`));
 	const evidence = '/tmp/bmsx-studio-chat'; await mkdir(evidence, { recursive: true });
 	await page.exposeFunction('capture', async (name: string) => { await page.screenshot({ path: join(evidence, `${evidenceName}-${name}.png`) }); });

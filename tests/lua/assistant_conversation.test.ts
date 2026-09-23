@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { setImmediate } from 'node:timers/promises';
-import type { AssistantAccount, AssistantCommand, AssistantConnection, AssistantEvent } from '../../hosts/common/assistant_protocol';
+import type { AssistantAccount, AssistantCommand, AssistantConnection, AssistantEvent, AssistantReply } from '../../hosts/common/assistant_protocol';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { AssistantConversation } from '../../ide/workbench/services/assistant/conversation';
 import { AssistantInput } from '../../ide/workbench/contrib/assistant/editor_input';
@@ -21,14 +21,21 @@ class Connection implements AssistantConnection {
 	public readonly closed = Promise.resolve();
 	public account: AssistantAccount = { connected: false, requiresLogin: false };
 	public readonly commands: AssistantCommand[] = [];
-	public pending: Promise<undefined> | undefined;
+	public pending: Promise<AssistantReply | undefined> | undefined;
 	public openedLogin = 0;
 	public constructor(public readonly emit: (event: AssistantEvent) => void) {}
-	public async send(command: AssistantCommand) { this.commands.push(command); return this.pending; }
+	public async send(command: AssistantCommand) {
+		this.commands.push(command);
+		if (command.type === 'start') {
+			this.emit({ type: 'turn-started', turnId: 't' });
+			this.emit({ type: 'user-message', turnId: 't', itemId: String(this.commands.length), text: command.prompt });
+		}
+		return this.pending;
+	}
 	public openLoginPage(): void { this.openedLogin++; }
 	public close(): void { this.lifetime.abort(); }
 }
-function fixture(t: TestContext) {
+function fixture(t: TestContext, waitForConnection?: (connection: Connection) => Promise<void>) {
 	const models = new EditorTextModelService();
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1, 'return old\n')]);
 	const storage = { getItem: () => null, setItem: () => assert.fail('not Save'), removeItem: () => assert.fail('not Delete') };
@@ -39,7 +46,9 @@ function fixture(t: TestContext) {
 	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
 	const testResults = new ScenarioResultService();
 	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testResults, async (_signal, emit) => {
-		const connection = new Connection(emit); connections.push(connection); return connection;
+		const connection = new Connection(emit); connections.push(connection);
+		await waitForConnection?.(connection);
+		return connection;
 	});
 	t.after(() => { conversation.dispose(); diagnostics.dispose(); models.clear(); });
 	return { conversation, model, models, connections, testResults };
@@ -158,7 +167,7 @@ test('source-change publication during Apply is not prematurely reported as a su
 	const f = fixture(t), c = f.conversation; await c.connect(); await c.sendPrompt('Propose');
 	const connection = f.connections[0], proposal = await propose(f);
 	connection.emit({ type: 'turn-completed', turnId: 't', status: 'completed' });
-	let submitted!: Promise<void>;
+	let submitted!: Promise<boolean>;
 	const unbind = f.model.onDidChangeContent(() => { submitted = c.sendPrompt('Observe during history publication'); });
 	proposal.apply(); unbind(); await submitted;
 	const during = connection.commands.at(-1)!; assert.ok(during.type === 'start');
@@ -356,4 +365,90 @@ test('account transition retires pending reviews before the new account snapshot
 	f.connections[0].emit({ type: 'account-refreshing' }); // Another notification while the read is pending.
 	f.connections[0].emit({ type: 'account-changed', account: { connected: false, requiresLogin: true } });
 	assert.equal(c.accountRefreshing, false); assert.equal(c.canSend, false);
+});
+
+test('implicit connection coalesces and a cancelled pending prompt cannot enter a replacement connection', async t => {
+	let release!: () => void, openings = 0;
+	const f = fixture(t, async () => { if (++openings === 1) await new Promise<void>(resolve => { release = resolve; }); });
+	const c = f.conversation, old = c.sendPrompt('Old draft');
+	const connecting = c.connect(); assert.equal(c.connect(), connecting);
+	assert.equal(await c.sendPrompt('Duplicate'), false); assert.equal(openings, 1);
+	c.disconnect();
+	assert.equal(await c.sendPrompt('Current draft'), true);
+	release(); assert.equal(await old, false); await connecting;
+	assert.equal(openings, 2); assert.equal(f.connections[0].commands.length, 0);
+	assert.deepEqual(f.connections[1].commands, [{ type: 'start', prompt: 'Current draft', reviews: [] }]);
+	assert.equal(c.state, 'running'); assert.equal(c.submitting, false);
+});
+
+test('submission and history admission coalesce instead of spamming or retrying commands', async t => {
+	const f = fixture(t), c = f.conversation; await c.connect(); const connection = f.connections[0];
+	let release!: (reply: AssistantReply | undefined) => void;
+	connection.pending = new Promise(resolve => { release = resolve; });
+	const sent = c.sendPrompt('First');
+	for (let index = 0; index < 100; index++) assert.equal(await c.sendPrompt('Duplicate'), false);
+	assert.equal(connection.commands.length, 1); release(undefined); await sent;
+	connection.emit({ type: 'turn-completed', turnId: 't', status: 'completed' });
+	connection.pending = new Promise(resolve => { release = resolve; });
+	const history = c.listHistory(), repeated = c.listHistory(); await setImmediate();
+	assert.equal(connection.commands.filter(command => command.type === 'history').length, 1);
+	const page = { threads: [], nextCursor: null }; release(page);
+	assert.equal(await history, page); assert.equal(await repeated, page);
+});
+
+test('native queue notifications alone dispatch fresh source context; direct messages keep active turn context', async t => {
+	const f = fixture(t), c = f.conversation; await c.sendPrompt('First'); const connection = f.connections[0];
+	await c.sendPrompt('Queued'); await c.sendPrompt('Direct', true);
+	assert.deepEqual(connection.commands.slice(1), [{ type: 'queue', prompt: 'Queued', reviews: [] }, { type: 'steer', turnId: 't', prompt: 'Direct', reviews: [] }]);
+	assert.deepEqual(c.entries.filter(entry => entry.kind === 'user').map(entry => entry.text.getText()), ['First'], 'accepted text is not falsely reported consumed');
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- new source\n' }]);
+	connection.emit({ type: 'tool-request', requestId: 'old-context', name: 'studio_list_sources', arguments: {} }); await setImmediate();
+	let reply = connection.commands.at(-1)!; assert.ok(reply.type === 'tool-result' && !reply.success);
+	connection.emit({ type: 'turn-completed', turnId: 't', status: 'completed' });
+	const count = connection.commands.length; await setImmediate();
+	assert.equal(connection.commands.length, count, 'completion never invokes a browser dequeue loop');
+	connection.emit({ type: 'turn-started', turnId: 'queued' });
+	connection.emit({ type: 'user-message', turnId: 'queued', itemId: 'queued-item', text: 'Queued' });
+	connection.emit({ type: 'tool-request', requestId: 'fresh-context', name: 'studio_list_sources', arguments: {} }); await setImmediate();
+	reply = connection.commands.at(-1)!; assert.ok(reply.type === 'tool-result' && reply.success);
+	assert.equal(c.state, 'running'); assert.equal(connection.commands.filter(command => command.type === 'start').length, 1);
+	connection.emit({ type: 'queue', messages: [{ id: 'waiting', text: 'Keep this' }] });
+	await c.interrupt(); await c.interrupt();
+	connection.emit({ type: 'turn-completed', turnId: 'queued', status: 'interrupted' });
+	assert.equal(c.queuePaused, true); assert.equal(c.queued[0].text, 'Keep this');
+	assert.equal(connection.commands.filter(command => command.type === 'interrupt').length, 1);
+	assert.equal(connection.commands.filter(command => command.type === 'queue-continue').length, 0);
+});
+
+test('history pages are text only, revoke source proposals and retain existing buffers on older-page insertion', async t => {
+	const f = fixture(t), c = f.conversation; await c.sendPrompt('Propose'); const connection = f.connections[0];
+	const view = new AssistantInput(c); t.after(() => view.dispose());
+	const proposal = await propose(f);
+	connection.emit({ type: 'turn-completed', turnId: 't', status: 'completed' });
+	const thread = { id: 'saved', title: 'Saved conversation', updatedAt: 1 };
+	connection.pending = Promise.resolve({ thread, entries: [{ kind: 'user', text: 'Saved user' }, { kind: 'status', text: 'Historical tool: studio_propose_edits. No active source/edit rights.' }], nextCursor: 'older' });
+	await c.openConversation(thread.id);
+	assert.equal(proposal.state, 'stale'); assert.equal(c.thread, thread); assert.equal(c.queuePaused, true);
+	assert.ok(c.entries.every(entry => entry.kind !== 'proposal')); assert.throws(() => proposal.apply(), /stale/);
+	const retained = c.entries[0], buffer = retained.text;
+	view.selectedEntry = 0;
+	connection.pending = Promise.resolve({ thread, entries: [{ kind: 'user', text: 'Older user' }], nextCursor: null });
+	await c.loadOlder();
+	assert.equal(c.entries[1], retained); assert.equal(c.entries[1].text, buffer); assert.equal(retained.index, 1);
+	assert.equal(view.selectedEntry, 1); assert.equal(view.revealOlder, true);
+	assert.deepEqual(c.entries.map(entry => entry.index), [0, 1, 2]); assert.equal(c.olderCursor, null);
+	connection.pending = undefined; await c.newConversation();
+	assert.equal(c.entries.length, 0); assert.equal(c.thread, undefined);
+	assert.deepEqual(connection.commands.at(-1), { type: 'new' });
+});
+
+test('late Stop of an idle queue cannot reset a replacement connection with active work', async t => {
+	const f = fixture(t), c = f.conversation; await c.connect(); const connection = f.connections[0];
+	connection.emit({ type: 'queue', messages: [{ id: 'waiting', text: 'Pending' }] });
+	let release!: () => void;
+	connection.pending = new Promise(resolve => { release = () => resolve(undefined); });
+	const stopping = c.interrupt(); c.disconnect(); await c.connect();
+	f.connections[1].emit({ type: 'queue', messages: [] });
+	await c.sendPrompt('Replacement work'); release(); await stopping;
+	assert.equal(c.state, 'running');
 });

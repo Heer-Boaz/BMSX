@@ -118,7 +118,7 @@ for (const operation of ['startTurn', 'startLogin', 'signOut'] as const) {
 		let session: CodexSession | undefined, checked = false;
 		t.after(async () => { if (session) assert.equal((await session.close()).forced, false); });
 		const f = await createCodexAccountProxy(t), admission = Promise.withResolvers<void>(), changed = Promise.withResolvers<void>();
-		const message = operation === 'startTurn' ? /Finish the account operation/ : operation === 'startLogin'
+		const message = operation === 'startTurn' ? /Finish the current conversation\/account operation/ : operation === 'startLogin'
 			? /Finish the current account\/conversation/ : /Finish or cancel the current operation/;
 		session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), tools: [],
 			executeTool: async () => assert.fail('No source tools while authenticating'), onEvent: event => {

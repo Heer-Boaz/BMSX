@@ -6,7 +6,9 @@ review foundation and the Node process adapter below are implemented. The later
 through fixed endpoints on the existing development server, not provider RPC. The subsequent
 [contribution](studio_assistant_contribution.md) implements account connection and
 the visible workbench assistant; the sections below retain the original audit
-and record its account follow-through separately.
+and record its account follow-through separately. Persistent history, native
+queue/steering, stop/resume and cold-resume capability admission supersede the
+original ephemeral-thread scope in [conversation lifecycle](studio_assistant_conversations.md).
 
 ## Protocol evidence
 
@@ -106,7 +108,7 @@ process-launch service:
 - `profile.ts` creates an exclusive private process lease with empty HOME/XDG
   directories, private cwd/tmp and a separate persistent Codex account directory.
   Environment inheritance is an explicit platform allowlist, not `process.env`
-  spread. Only the account directory survives normal process exit. No user
+  spread. Only the account directory (including native threads/queues) survives normal process exit. No user
   credentials/configuration are copied; conflicting leases fail rather than
   guessing that a lock is stale. The platform composition must choose this
   application-owned directory, never accept it from a browser or model.
@@ -125,9 +127,8 @@ process-launch service:
   Stderr retention is bounded. There is no notification backlog or automatic
   reconnect/replay queue.
 - `session.ts` owns one conversation and one active turn. Its public operations
-  are account inspection/device-code login/cancel/logout, turn start, interrupt
-  and close, not arbitrary Codex
-  methods. Every tool request must match the current thread, turn and admitted
+  include account inspection/device-code login/cancel/logout, fixed history and
+  queue operations, turn start/steer, interrupt and close, not arbitrary Codex methods. Every tool request must match the current thread, turn and admitted
   tool. Other server requests (including approvals and token refresh) are denied.
   Cancellation aborts pending tool work immediately; late results cannot answer
   a subsequent turn. A session-wide AbortSignal also covers startup. `closed`
@@ -157,10 +158,10 @@ indentation and `git diff --check` pass. This slice adds no render/frame work an
 does not claim browser assistant or account-login evidence.
 
 Before implementation, the matching pinned production references were studied:
-Codex's [app-server client](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server-client/src/lib.rs)
+Codex's [app-server client](https://github.com/openai/codex/blob/b4b055cfc8fccc0040d13aa4304cf9ba61c2e27e/codex-rs/app-server-client/src/lib.rs)
 separates response processing from tool/event waits and joins shutdown; its
-[tool plan](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/core/src/tools/spec_plan.rs)
-and [skills extension](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/ext/skills/src/extension.rs)
+[tool plan](https://github.com/openai/codex/blob/b4b055cfc8fccc0040d13aa4304cf9ba61c2e27e/codex-rs/core/src/tools/spec_plan.rs)
+and [skills extension](https://github.com/openai/codex/blob/b4b055cfc8fccc0040d13aa4304cf9ba61c2e27e/codex-rs/ext/skills/src/extension.rs)
 establish capability ownership. VS Code's [child-process IPC owner](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/base/parts/ipc/node/ipc.cp.ts)
 ties active requests and listeners to process lifetime. BMSX deliberately does
 not adopt its lazy reconnect behavior for source-edit authority.

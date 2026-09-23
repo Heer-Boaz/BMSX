@@ -177,3 +177,50 @@ for (const backend of backends) test(`Studio ${backend}: real successful account
 	assert.equal(issuer.requests.filter(request => request.path === '/oauth/revoke').length, 1);
 	await writeFile(join(f.evidence, `login-${backend}-result.json`), JSON.stringify(result));
 });
+
+for (const backend of backends) test(`Studio ${backend}: native history, editable FIFO queue, direct steering, Stop and cold resume`, { timeout: 180000 }, async t => {
+	const call = (name: string, args: unknown, id = name) => ({ type: 'function_call', call_id: id, name, arguments: JSON.stringify(args) });
+	const outputs = (body: { input: { type: string; output: string; role?: string }[] }) => body.input
+		.slice(body.input.findLastIndex(item => item.role === 'user') + 1).filter(item => item.type === 'function_call_output').map(item => JSON.parse(item.output));
+	let release!: () => void, stopped!: () => void;
+	const held = new Promise<typeof CODEX_FIXTURE_DONE>(resolve => { release = () => resolve(CODEX_FIXTURE_DONE); });
+	const waiting = new Promise<void>(resolve => { stopped = resolve; });
+	const reads = [
+		[call('studio_list_sources', {})],
+		body => [call('studio_read_source', { resource: outputs(body)[0].find(resource => resource.domain === 0 && resource.path === 'cart.lua').resource })],
+	];
+	const model = await createCodexModelFixture(t, [
+		() => held, CODEX_FIXTURE_DONE, ...reads,
+		body => [call('studio_propose_edits', { title: 'Queued source review', files: [{ receipt: outputs(body)[1].receipt,
+			edits: [{ offset: 0, deleteLength: 0, expectedText: '', text: '-- Queued proposal\n' }] }] })], CODEX_FIXTURE_DONE,
+		() => { stopped(); return CODEX_FIXTURE_WAIT; }, ...reads, CODEX_FIXTURE_DONE, CODEX_FIXTURE_DONE,
+	]);
+	const f = await createAssistantStudioFixture(t, `history-${backend}`, {
+		provider: { name: 'Offline native history fixture', model: 'mock-model', baseUrl: `${model.url}/v1` } });
+	await f.page.exposeFunction('releaseFirst', release);
+	await f.page.exposeFunction('waitForStop', () => waiting);
+	await f.page.exposeFunction('metrics', () => ({ requests: model.requests.length, connects: f.observations.connects, commands: f.observations.commands.length }));
+	const result = await f.page.evaluate(async backend => {
+		const entry = '/test.js', module = await import(entry);
+		return module.runAssistantHistory(backend, document.querySelector('canvas'), globalThis.capture, {
+			releaseFirst: globalThis.releaseFirst, waitForStop: globalThis.waitForStop, metrics: globalThis.metrics,
+		});
+	}, backend);
+	assert.equal(result.history, 'pass'); assert.equal(f.observations.connects, 2); assert.deepEqual(f.observations.errors, []);
+	assert.equal(model.requests.length, 11);
+	assert.doesNotMatch(JSON.stringify(model.requests), /Queued original|Remove this queued message|Remove this cold queued message/);
+	assert.equal(outputs(model.requests[4])[1].source, result.source, 'native queued turn reads the source edited after enqueue');
+	assert.equal(outputs(model.requests[9])[1].source, result.source, 'cold resume asks Studio for current source again');
+	assert.notEqual(outputs(model.requests[4])[1].receipt, outputs(model.requests[9])[1].receipt, 'cold history never restores old source receipts');
+	assert.deepEqual(model.requests[7].tools.map(tool => tool.name), [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS].map(tool => tool.name), 'cold resume admits no filesystem or shell builtin');
+	const commands = f.observations.commands;
+	assert.equal(commands.filter(command => command === 'start').length, 3);
+	assert.equal(commands.filter(command => command === 'queue').length, 4);
+	assert.equal(commands.filter(command => command === 'queue-update').length, 2);
+	assert.equal(commands.filter(command => command === 'queue-delete').length, 2);
+	assert.equal(commands.filter(command => command === 'steer').length, 1);
+	assert.equal(commands.filter(command => command === 'interrupt').length, 1);
+	assert.equal(commands.filter(command => command === 'queue-continue').length, 1);
+	assert.equal(commands.filter(command => command === 'history').length, 2);
+	await writeFile(join(f.evidence, `history-${backend}-result.json`), JSON.stringify({ result, commands }));
+});

@@ -92,7 +92,7 @@ test('real HTTP/browser client owns one lease, multiplexes a source tool and rej
 	assert.equal((await f.command('another-tab', { type: 'tool-result', requestId: call.requestId, success: true, text: 'WRONG' })).status, 410);
 	await c.client.send({ type: 'tool-result', requestId: call.requestId, success: true, text: 'UNSAVED RECEIPT FROM BROWSER' });
 	const completed = await c.wait(event => event.type === 'turn-completed'); assert.ok(completed.type === 'turn-completed');
-	assert.equal(completed.turnId, turn!.turnId); assert.equal(completed.status, 'completed');
+	assert.ok(turn && 'turnId' in turn); assert.equal(completed.turnId, turn.turnId); assert.equal(completed.status, 'completed');
 	assert.equal(f.model.requests[1].input.find(item => item.type === 'function_call_output').output, 'UNSAVED RECEIPT FROM BROWSER');
 	assert.equal((await f.command(c.lease, { type: 'tool-result', requestId: call.requestId, success: true, text: 'REPLAY' })).status, 409);
 	c.client.close(); await c.client.closed;
@@ -261,7 +261,7 @@ test('Chromium uses the real same-origin transport and shares admission with ord
 	});
 	assert.equal(result.source, 'return 1'); assert.equal(result.saved, 'return 2'); assert.equal(result.closed, true);
 	assert.equal(result.account.requiresLogin, false);
-	assert.deepEqual(result.events, ['connected', 'turn-started', 'tool-request', 'message', 'turn-completed']);
+	assert.deepEqual(result.events, ['connected', 'thread', 'turn-started', 'user-message', 'tool-request', 'message', 'turn-completed']);
 	assert.equal(f.model.requests[1].input.find(item => item.type === 'function_call_output').output, '-- UNSAVED 🐉 browser receipt\nreturn 1');
 	assert.equal(f.requests.get('/__bmsx__/session'), 1, 'simultaneous file and process admission share one capability request');
 	assert.equal(await readFile(join(f.root, 'source.lua'), 'utf8'), 'return 2');

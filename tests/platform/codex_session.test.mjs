@@ -69,6 +69,75 @@ test('owned process serves a live Studio receipt, has no builtin tool surface an
 	await assert.rejects(session.startTurn('Late prompt', []), /closed/);
 });
 
+test('native queue dispatch and direct steering preserve one thread and exact user message order', { timeout: 20000 }, async t => {
+	let release, called;
+	const requested = new Promise(resolve => { called = resolve; });
+	const f = await fixture(t, [[readCall], CODEX_FIXTURE_DONE, CODEX_FIXTURE_DONE], () => {
+		called(); return new Promise(resolve => { release = resolve; });
+	});
+	const session = await f.open();
+	const turn = await session.startTurn('First message', []); await requested;
+	await session.enqueue('Queued original', [{ review: 'observed-review', state: 'discarded', reason: '' }]);
+	const queue = await f.wait(event => event.type === 'queue' && event.messages.length === 1);
+	await session.updateQueued(queue.messages[0].id, 'Queued edited 🐉');
+	await session.enqueue('Remove this message', []);
+	const two = await f.wait(event => event.type === 'queue' && event.messages.length === 2);
+	await session.deleteQueued(two.messages[1].id);
+	assert.equal(await session.steer(turn, 'Direct correction', []), turn);
+	release({ success: true, text: 'Fresh source result' });
+	const next = await f.wait(event => event.type === 'turn-started' && event.turnId !== turn);
+	await f.wait(event => event.type === 'turn-completed' && event.turn.id === next.turnId);
+	assert.equal(f.model.requests.length, 3, 'only explicit first/direct/queued work reaches the model');
+	assert.deepEqual(f.events.filter(event => event.type === 'user-message').map(event => event.text), ['First message', 'Direct correction', 'Queued edited 🐉']);
+	assert.doesNotMatch(JSON.stringify(f.model.requests), /Remove this message|Queued original/);
+	assert.match(JSON.stringify(f.model.requests[1].input), /Direct correction/);
+	assert.match(JSON.stringify(f.model.requests[2].input), /observed-review/, 'editing queued text preserves its submitted review observations');
+	await assert.rejects(session.updateQueued(queue.messages[0].id, 'Too late to edit'), /already been dispatched/);
+	await assert.rejects(session.deleteQueued(queue.messages[0].id), /already been dispatched/);
+	await assert.rejects(session.steer(turn, 'Too late', []), /no longer accepting/);
+	const history = await session.listHistory();
+	assert.equal(history.threads.length, 1);
+	const opened = await session.selectThread(history.threads[0].id);
+	assert.deepEqual(opened.entries.filter(entry => entry.kind === 'user').map(entry => entry.text), ['First message', 'Direct correction', 'Queued edited 🐉']);
+	assert.equal(f.model.requests.length, 3, 'history is not inference');
+});
+
+test('Stop and process exit persist queued text; cold history browsing never starts it', { timeout: 20000 }, async t => {
+	let called;
+	const requested = new Promise(resolve => { called = resolve; });
+	const f = await fixture(t, [[readCall], CODEX_FIXTURE_DONE], () => { called(); return new Promise(() => {}); });
+	let session = await f.open();
+	const turn = await session.startTurn('Persist this conversation', []); await requested;
+	await session.enqueue('Keep this queued across reconnect', []);
+	const queued = await f.wait(event => event.type === 'queue' && event.messages.length === 1);
+	const stopping = session.interrupt();
+	assert.equal(session.interrupt(), stopping, 'coalesce repeated Stop while admission is in flight');
+	await stopping;
+	await f.wait(event => event.type === 'turn-completed' && event.turn.id === turn);
+	await session.close();
+	session = await f.open();
+	const first = await session.listHistory();
+	assert.equal(first.threads.length, 1);
+	assert.equal((await session.listHistory(undefined, 'Persist')).threads.length, 1);
+	const page = await session.selectThread(first.threads[0].id);
+	assert.ok(page.entries.some(entry => entry.kind === 'user' && entry.text === 'Persist this conversation'));
+	assert.equal(f.events.filter(event => event.type === 'queue').at(-1).messages[0].id, queued.messages[0].id);
+	assert.equal(f.model.requests.length, 1, 'metadata and queue inspection do not resume work');
+	await session.enqueue('Add while cold and paused', []);
+	const coldQueue = await f.wait(event => event.type === 'queue' && event.messages.length === 2);
+	await session.updateQueued(coldQueue.messages[1].id, 'Edit while cold and paused');
+	await f.wait(event => event.type === 'queue' && event.messages[1]?.text === 'Edit while cold and paused');
+	await session.deleteQueued(coldQueue.messages[1].id);
+	assert.equal(f.model.requests.length, 1, 'cold queue mutations still do not resume inference');
+	const next = await session.startTurn('', [], true);
+	await f.wait(event => event.type === 'turn-completed' && event.turn.id === next);
+	assert.equal(f.model.requests.length, 2);
+	assert.deepEqual(f.model.requests[1].tools.map(tool => tool.name), ['studio_read'], 'the real resumed thread retains its Studio tools');
+	assert.match(JSON.stringify(f.model.requests[1].input), /Persist this conversation/);
+	await session.selectThread();
+	assert.equal((await session.listHistory()).threads.length, 1, 'New neither deletes nor synthesizes old history');
+});
+
 test('late tool results cannot answer an interrupted turn or acquire the next turn rights', { timeout: 15000 }, async t => {
 	let resolveTool, called;
 	const toolStarted = new Promise(resolve => { called = resolve; });
@@ -186,6 +255,7 @@ test('unadvertised shell, patch, skills and permission attempts cannot bypass St
 		{ type: 'custom_tool_call', call_id: 'patch', name: 'apply_patch', input: '*** Begin Patch\n*** Add File: CANARY\n+bad\n*** End Patch' },
 		{ type: 'function_call', call_id: 'skills', name: 'skills.read', arguments: '{"package":"/etc","resource":"passwd"}' },
 		{ type: 'function_call', call_id: 'permission', name: 'request_permissions', arguments: '{}' },
+		{ type: 'function_call', call_id: 'image', name: 'view_image', arguments: '{"path":"CANARY.png"}' },
 	];
 	const f = await fixture(t, [attempts, CODEX_FIXTURE_DONE], () => assert.fail('These are not Studio tools'));
 	const session = await f.open();
@@ -195,4 +265,62 @@ test('unadvertised shell, patch, skills and permission attempts cannot bypass St
 	assert.equal(outputs.length, attempts.length);
 	for (const output of outputs) assert.match(output.output, /unsupported|unknown|not found/i);
 	await assert.rejects(access(join(f.profileDirectory, 'lease', 'workspace', 'CANARY')), { code: 'ENOENT' });
+});
+
+test('disconnect during active work pauses the durable queue before joining; browsing never drains it', { timeout: 20000 }, async t => {
+	let called;
+	const toolStarted = new Promise(resolve => { called = resolve; });
+	const f = await fixture(t, [[readCall]], () => { called(); return new Promise(() => {}); });
+	let session = await f.open();
+	await session.startTurn('Close while busy', []); await toolStarted;
+	await session.enqueue('Must wait after disconnect', []);
+	await session.close();
+	session = await f.open();
+	const history = await session.listHistory();
+	await session.selectThread(history.threads[0].id);
+	assert.deepEqual(f.events.filter(event => event.type === 'queue').at(-1).messages.map(message => message.text), ['Must wait after disconnect']);
+	assert.equal(f.model.requests.length, 1);
+});
+
+test('Stop at the completed-to-queued boundary revokes next-turn tools and keeps waiting text', { timeout: 20000 }, async t => {
+	let called, release;
+	const toolStarted = new Promise(resolve => { called = resolve; });
+	const f = await fixture(t, [[readCall], CODEX_FIXTURE_DONE, [readCall]], (_call, signal) => {
+		signal.throwIfAborted(); called(); return new Promise(resolve => { release = resolve; });
+	});
+	let session, stopping;
+	const emit = f.options.onEvent;
+	f.options.onEvent = event => {
+		emit(event);
+		if (event.type === 'turn-completed' && event.turn.status === 'completed') stopping = session.interrupt();
+	};
+	session = await f.open();
+	await session.startTurn('First boundary turn', []); await toolStarted;
+	await session.enqueue('Waiting boundary turn', []);
+	release({ success: true, text: 'Read complete' });
+	await f.wait(event => event.type === 'turn-completed' && event.turn.status === 'completed'); await stopping;
+	await session.close();
+	session = await f.open();
+	const history = await session.listHistory();
+	const page = await session.selectThread(history.threads[0].id);
+	const consumed = page.entries.some(entry => entry.kind === 'user' && entry.text === 'Waiting boundary turn');
+	const queue = f.events.filter(event => event.type === 'queue').at(-1).messages;
+	assert.equal(queue.length, consumed ? 0 : 1, 'native Stop may interrupt an already dispatched turn, never duplicate or lose unconsumed text');
+	assert.ok(f.model.requests.length <= 3, 'no retry or browser/provider dequeue loop');
+});
+
+test('history loads older turn pages explicitly without extra inference or duplicate messages', { timeout: 30000 }, async t => {
+	const f = await fixture(t, Array.from({ length: 22 }, () => CODEX_FIXTURE_DONE), () => assert.fail());
+	const session = await f.open();
+	for (let index = 0; index < 22; index++) {
+		const turn = await session.startTurn(`Page turn ${index}`, []);
+		await f.wait(event => event.type === 'turn-completed' && event.turn.id === turn);
+	}
+	const history = await session.listHistory();
+	const current = await session.selectThread(history.threads[0].id);
+	assert.notEqual(current.nextCursor, null);
+	const older = await session.readOlder(current.nextCursor);
+	assert.equal(older.nextCursor, null);
+	assert.deepEqual([...older.entries, ...current.entries].filter(entry => entry.kind === 'user').map(entry => entry.text), Array.from({ length: 22 }, (_, index) => `Page turn ${index}`));
+	assert.equal(f.model.requests.length, 22);
 });

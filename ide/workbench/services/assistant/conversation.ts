@@ -1,4 +1,5 @@
-import type { AssistantAccount, AssistantConnection, AssistantConnectionFactory, AssistantEvent, AssistantReviewUpdate } from '../../../../hosts/common/assistant_protocol';
+import type { AssistantAccount, AssistantCommand, AssistantConnection, AssistantConnectionFactory, AssistantEvent, AssistantHistoryPage,
+	AssistantQueuedMessage, AssistantReviewUpdate, AssistantThread, AssistantTranscriptPage } from '../../../../hosts/common/assistant_protocol';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import { PieceTreeBuffer } from '../../../editor/text/piece_tree_buffer';
 import type { RuntimeSourceState } from '../../../runtime/sources';
@@ -9,16 +10,16 @@ import { WorkspaceSourceTools } from './source_tools';
 import { WorkspaceTestTools } from './test_tools';
 import type { ScenarioResultService } from '../../../testing/scenario/result_service';
 
-export type AssistantState = 'disconnected' | 'connecting' | 'ready' | 'running' | 'stopping' | 'signing-in' | 'cancelling-sign-in' | 'signing-out';
+export type AssistantState = 'disconnected' | 'connecting' | 'loading' | 'starting' | 'ready' | 'running' | 'stopping' | 'signing-in' | 'cancelling-sign-in' | 'signing-out';
 export type AssistantEntry = {
 	readonly kind: 'user' | 'assistant' | 'status' | 'proposal';
 	readonly text: PieceTreeBuffer;
-	readonly index: number;
+	index: number;
 	readonly proposal?: WorkspaceEditProposal;
 	resetRevision: number;
 };
-type ActiveTurn = { tools: WorkspaceSourceTools; tests: WorkspaceTestTools; requests: Set<string>; messages: Map<string, AssistantEntry> };
-type ConversationChange = 'state' | 'text' | 'proposal' | 'reset';
+type ActiveTurn = { id?: string; tools: WorkspaceSourceTools; tests: WorkspaceTestTools; requests: Set<string>; messages: Map<string, AssistantEntry> };
+type ConversationChange = 'state' | 'text' | 'proposal' | 'reset' | 'prepend';
 
 /** Workspace-owned conversation and accepted prompt context, independent of an attached pane. */
 export class AssistantConversation {
@@ -27,6 +28,11 @@ export class AssistantConversation {
 	public account: AssistantAccount | undefined;
 	public accountRefreshing = false;
 	public loginCode: string | undefined;
+	public thread: AssistantThread | undefined;
+	public queued: readonly AssistantQueuedMessage[] = [];
+	public queuePaused = false;
+	public olderCursor: string | null = null;
+	public submitting = false;
 	public revision = 0;
 	private readonly listeners = new Set<(entry: number, kind: ConversationChange) => void>();
 	private readonly unbindWorkspace: () => void;
@@ -36,6 +42,8 @@ export class AssistantConversation {
 	// The proposal remains the state owner; this is not a second review/history model.
 	private readonly outstandingReviews = new Map<string, WorkspaceEditProposal>();
 	private connection: AssistantConnection | undefined;
+	private connecting: Promise<void> | undefined;
+	private historyRequest: Promise<AssistantHistoryPage> | undefined;
 	private turn: ActiveTurn | undefined;
 	private disposed = false;
 
@@ -45,7 +53,10 @@ export class AssistantConversation {
 		this.unbindWorkspace = models.onWillClear(() => this.clearConversation());
 	}
 	public get available(): boolean { return this.openConnection !== undefined && !this.disposed; }
-	public get canSend(): boolean { return this.state === 'ready' && !this.accountRefreshing && !this.account!.requiresLogin; }
+	public get canSend(): boolean { return (this.state === 'ready' || this.state === 'running') && !this.submitting && !this.accountRefreshing && !this.account!.requiresLogin; }
+	public get canSubmit(): boolean { return this.available && !this.submitting && (this.state === 'disconnected' || this.state === 'ready' || this.state === 'running'); }
+	public get canDirect(): boolean { return this.canSend && this.state === 'running' && this.turn?.id !== undefined; }
+	public get canBrowse(): boolean { return this.available && !this.submitting && (this.state === 'disconnected' || this.state === 'ready' && (this.queued.length === 0 || this.queuePaused)); }
 	public onDidChange(listener: (entry: number, kind: ConversationChange) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 	private changed(entry = this.entries.length, kind: ConversationChange = 'state'): void {
 		this.revision++;
@@ -58,7 +69,14 @@ export class AssistantConversation {
 		this.entries.push(entry); this.changed(entry.index, 'text'); return entry;
 	}
 
-	public async connect(): Promise<void> {
+	public connect(): Promise<void> {
+		if (this.connecting) return this.connecting;
+		const pending = this.establishConnection();
+		this.connecting = pending;
+		void pending.finally(() => { if (this.connecting === pending) this.connecting = undefined; });
+		return pending;
+	}
+	private async establishConnection(): Promise<void> {
 		if (!this.available || this.lifetime) return;
 		const lifetime = new AbortController();
 		this.lifetime = lifetime;
@@ -76,7 +94,7 @@ export class AssistantConversation {
 			connection.signal.throwIfAborted();
 			this.account = connection.account;
 			this.state = 'ready';
-			if (this.entries.length > 0) this.append('status', 'New session. Earlier messages are display-only, not sent again.');
+			if (this.thread) await this.openConversation(this.thread.id);
 			else this.changed();
 		} catch (error) {
 			if (this.lifetime !== lifetime) return;
@@ -85,35 +103,133 @@ export class AssistantConversation {
 		}
 	}
 
-	/** Capture source authority before any asynchronous prompt submission. Never retry an accepted prompt. */
-	public async sendPrompt(prompt: string): Promise<void> {
-		if (!this.canSend || prompt.trim().length === 0) return;
+	private createTurn(): ActiveTurn {
+		return { tools: new WorkspaceSourceTools(this.models, this.sources, this.storage, this.diagnostics, this.sourceLifetime!.signal),
+			tests: new WorkspaceTestTools(this.testResults, this.sourceLifetime!.signal), requests: new Set(), messages: new Map() };
+	}
+
+	/** One explicit submission. Native Codex owns FIFO dispatch; no retries or client dequeue loop. */
+	public async sendPrompt(prompt: string, direct = false): Promise<boolean> {
+		if (!this.canSubmit || prompt.trim().length === 0 || (direct && !this.canDirect)) return false;
+		this.submitting = true; this.changed();
+		if (this.state === 'disconnected') {
+			const connecting = this.connect(), lifetime = this.lifetime;
+			await connecting;
+			if (this.lifetime !== lifetime) return false;
+		}
+		if (!this.connection || this.accountRefreshing) { this.submitting = false; this.changed(); return false; }
+		const connection = this.connection;
+		if (this.account!.requiresLogin) {
+			await this.startLogin();
+			if (this.connection === connection) { this.submitting = false; this.changed(); }
+			return false;
+		}
 		const authority = this.sourceLifetime!;
 		const reviews: AssistantReviewUpdate[] = Array.from(this.outstandingReviews, ([review, proposal]) => ({ review, state: proposal.state, reason: proposal.reason }));
-		const turn: ActiveTurn = { tools: new WorkspaceSourceTools(this.models, this.sources, this.storage, this.diagnostics, authority.signal),
-			tests: new WorkspaceTestTools(this.testResults, authority.signal),
-			requests: new Set(), messages: new Map() };
-		this.turn = turn; this.state = 'running';
-		this.append('user', prompt);
+		const queued = !direct && (this.state === 'running' || this.queued.length > 0);
+		let turn: ActiveTurn | undefined;
+		if (!direct && !queued) { this.turn = turn = this.createTurn(); this.state = 'starting'; this.changed(); }
 		try {
-			await this.connection!.send({ type: 'start', prompt, reviews });
+			await connection.send(direct ? { type: 'steer', turnId: this.turn!.id!, prompt, reviews }
+				: { type: queued ? 'queue' : 'start', prompt, reviews });
 			// Pending reviews can settle while admission is in flight. Acknowledge
 			// only terminal observations actually submitted, never their newer state.
 			if (this.sourceLifetime === authority) for (const review of reviews) {
 				if (review.state !== 'pending' && review.state !== 'applying') this.outstandingReviews.delete(review.review);
 			}
+			if (direct && this.connection === connection) this.append('status', 'Direct message accepted for the current turn. It appears in history when Codex consumes it.');
+			return true;
 		} catch (error) {
-			if (this.turn === turn) { this.append('status', `Prompt failed: ${String(error)}`); this.finishTurn(); }
-		}
+			if (this.connection === connection) {
+				this.append('status', `Message not sent: ${String(error)}`);
+				if (turn && this.turn === turn) this.finishTurn();
+			}
+			return false;
+		} finally { if (this.connection === connection) { this.submitting = false; this.changed(); } }
 	}
 
 	public async interrupt(): Promise<void> {
-		const turn = this.turn;
-		if (!turn || this.state === 'stopping') return;
-		this.state = 'stopping'; turn.tools.dispose(); turn.tests.dispose(); turn.requests.clear(); this.changed();
-		try { await this.connection!.send({ type: 'interrupt' }); }
-		catch (error) { if (this.turn === turn) this.append('status', `Stop failed: ${String(error)}`); }
+		const turn = this.turn, connection = this.connection;
+		if (!connection || (!turn && this.queued.length === 0) || this.state === 'stopping') return;
+		this.queuePaused = true;
+		this.state = 'stopping'; turn?.tools.dispose(); turn?.tests.dispose(); turn?.requests.clear(); this.changed();
+		try { await connection.send({ type: 'interrupt' }); }
+		catch (error) { if (this.connection === connection && this.turn === turn) this.append('status', `Stop failed: ${String(error)}`); }
+		if (!this.turn && this.connection === connection) { this.state = 'ready'; this.changed(); }
 	}
+
+	public async listHistory(cursor?: string, search?: string): Promise<AssistantHistoryPage> {
+		if (this.historyRequest) return this.historyRequest;
+		const pending = (async () => {
+			const connecting = this.connect(), lifetime = this.lifetime;
+			await connecting;
+			if (!this.connection || this.lifetime !== lifetime) throw new Error('Codex connection closed');
+			return await this.connection.send({ type: 'history', cursor, search }) as AssistantHistoryPage;
+		})();
+		this.historyRequest = pending;
+		try { return await pending; }
+		finally { if (this.historyRequest === pending) this.historyRequest = undefined; }
+	}
+
+	public async openConversation(id: string): Promise<void> {
+		if (this.state !== 'ready') return;
+		const connection = this.connection!;
+		this.state = 'loading'; this.changed();
+		try {
+			const page = await connection.send({ type: 'open', id }) as AssistantTranscriptPage;
+			if (this.connection !== connection) return;
+			this.resetSourceAuthority(); this.resetTranscript();
+			this.thread = page.thread; this.olderCursor = page.nextCursor; this.queuePaused = true;
+			for (const entry of page.entries) this.append(entry.kind, entry.text);
+		} catch (error) { if (this.connection === connection) this.append('status', `Could not open conversation: ${String(error)}`); }
+		finally { if (this.connection === connection) { this.state = 'ready'; this.changed(); } }
+	}
+	public async newConversation(): Promise<void> {
+		if (!this.canBrowse) return;
+		const connection = this.connection;
+		this.state = connection ? 'loading' : 'disconnected'; this.changed();
+		try {
+			if (connection) await connection.send({ type: 'new' });
+			if (this.connection !== connection) return;
+			this.resetSourceAuthority(); this.resetTranscript(); this.thread = undefined; this.olderCursor = null; this.queued = []; this.queuePaused = false;
+		} catch (error) { if (this.connection === connection) this.append('status', `Could not create conversation: ${String(error)}`); }
+		finally { if (this.connection === connection) { this.state = connection ? 'ready' : 'disconnected'; this.changed(); } }
+	}
+	public async loadOlder(): Promise<void> {
+		if (this.state !== 'ready' || this.olderCursor === null) return;
+		const connection = this.connection!;
+		this.state = 'loading'; this.changed();
+		try {
+			const page = await connection.send({ type: 'older', cursor: this.olderCursor }) as AssistantTranscriptPage;
+			if (this.connection !== connection) return;
+			this.entries.unshift(...page.entries.map(entry => ({ kind: entry.kind, text: new PieceTreeBuffer(entry.text), index: 0, resetRevision: 0 })));
+			for (let index = 0; index < this.entries.length; index++) this.entries[index].index = index;
+			this.olderCursor = page.nextCursor; this.changed(page.entries.length, 'prepend');
+		} catch (error) { if (this.connection === connection) this.append('status', `Could not load older messages: ${String(error)}`); }
+		finally { if (this.connection === connection) { this.state = 'ready'; this.changed(); } }
+	}
+	public async continueQueue(): Promise<void> {
+		if (!this.canBrowse || this.queued.length === 0) return;
+		if (this.state === 'disconnected') {
+			const connecting = this.connect(), lifetime = this.lifetime;
+			await connecting;
+			if (this.lifetime !== lifetime) return;
+		}
+		if (!this.canSend) { await this.startLogin(); return; }
+		const turn = this.createTurn();
+		this.turn = turn; this.state = 'starting'; this.queuePaused = false; this.changed();
+		try { await this.connection!.send({ type: 'queue-continue' }); }
+		catch (error) { if (this.turn === turn) { this.queuePaused = true; this.append('status', `Queue could not continue: ${String(error)}`); this.finishTurn(); } }
+	}
+	public async changeQueued(command: Extract<AssistantCommand, { type: 'queue-update' | 'queue-delete' }>): Promise<boolean> {
+		if (!this.connection || this.submitting || (this.state !== 'ready' && this.state !== 'running')) return false;
+		const connection = this.connection;
+		this.submitting = true; this.changed();
+		try { await connection.send(command); return true; }
+		catch (error) { if (this.connection === connection) this.append('status', `Queue unchanged: ${String(error)}`); return false; }
+		finally { if (this.connection === connection) { this.submitting = false; this.changed(); } }
+	}
+	public notice(text: string): void { this.append('status', text); }
 
 	public async startLogin(): Promise<void> {
 		if (this.state !== 'ready' || this.accountRefreshing || this.account!.connected) return;
@@ -148,20 +264,34 @@ export class AssistantConversation {
 	private receive(event: AssistantEvent): void {
 		switch (event.type) {
 			case 'connected': this.account = event.account; break;
+			case 'thread': this.thread = event.thread; this.changed(); break;
+			case 'queue': this.queued = event.messages; this.changed(); break;
 			case 'account-refreshing':
 				this.sourceLifetime?.abort(new Error('Studio account changed')); this.sourceLifetime = undefined;
 				this.outstandingReviews.clear();
+				this.thread = undefined; this.queued = []; this.olderCursor = null;
 				this.accountRefreshing = true; this.changed(); break;
 			case 'account-changed':
 				this.sourceLifetime = new AbortController();
 				this.account = event.account; this.accountRefreshing = false; this.changed(); break;
 			case 'login-started':
-				if (this.state === 'signing-in') { this.loginCode = event.code; this.changed(); }
+				if (this.state === 'signing-in') {
+					this.loginCode = event.code;
+					this.append('status', `Sign in at https://auth.openai.com/codex/device\nCode: ${event.code}\n/open opens the page; /copy-code copies the code; /cancel cancels sign-in. Your draft has not been sent.`);
+				}
 				break;
 			case 'login-completed':
 				this.loginCode = undefined; this.state = 'ready';
 				this.append('status', event.success ? 'Studio account connected.' : `Sign-in failed: ${event.error}`); break;
-			case 'turn-started': break; // Provider turn identity remains transport-owned.
+			case 'turn-started':
+				// Native queued turns start here, not from a browser dequeue loop. Source
+				// evidence is captured once at dispatch, never while text waits in the queue.
+				if (!this.turn) this.turn = this.createTurn();
+				this.turn.id = event.turnId;
+				if (this.state !== 'stopping') { this.state = 'running'; this.queuePaused = false; }
+				else { this.turn.tools.dispose(); this.turn.tests.dispose(); }
+				this.changed(); break;
+			case 'user-message': this.append('user', event.text); break;
 			case 'text-delta':
 			case 'message': {
 				const turn = this.turn!;
@@ -176,6 +306,7 @@ export class AssistantConversation {
 			case 'tool-request': void this.executeTool(event); break;
 			case 'tool-cancelled': this.turn?.requests.delete(event.requestId); break;
 			case 'turn-completed':
+				if (event.status !== 'completed') this.queuePaused = true;
 				this.append('status', event.status === 'failed' ? `Turn failed: ${event.error}` : `Turn ${event.status}.`);
 				this.finishTurn(); break;
 			case 'closed':
@@ -211,17 +342,24 @@ export class AssistantConversation {
 	}
 	public disconnect(): void {
 		const lifetime = this.lifetime, connection = this.connection;
-		this.lifetime = undefined; this.connection = undefined;
+		this.lifetime = undefined; this.connection = undefined; this.connecting = undefined; this.historyRequest = undefined;
 		this.sourceLifetime?.abort(new Error('Assistant connection closed')); this.sourceLifetime = undefined;
 		this.outstandingReviews.clear();
 		lifetime?.abort(); connection?.close();
-		this.account = undefined; this.accountRefreshing = false; this.loginCode = undefined;
+		this.account = undefined; this.accountRefreshing = false; this.loginCode = undefined; this.submitting = false; this.queuePaused = true;
 		this.finishTurn();
 	}
-	private clearConversation(): void {
-		this.disconnect();
+	private resetSourceAuthority(): void {
+		this.sourceLifetime?.abort(new Error('Assistant conversation changed'));
+		this.outstandingReviews.clear();
+		this.sourceLifetime = this.connection ? new AbortController() : undefined;
+	}
+	private resetTranscript(): void {
 		for (const entry of this.entries) entry.proposal?.dispose();
 		this.entries.length = 0; this.changed(0, 'reset');
+	}
+	private clearConversation(): void {
+		this.disconnect(); this.resetTranscript(); this.thread = undefined; this.queued = []; this.olderCursor = null;
 	}
 	public dispose(): void {
 		this.disposed = true; this.unbindWorkspace(); this.clearConversation(); this.listeners.clear();

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { AssistantCommand, AssistantEvent } from '../../common/assistant_protocol';
+import type { AssistantCommand, AssistantEvent, AssistantReply } from '../../common/assistant_protocol';
 import { CodexSession, type CodexSessionOptions } from './session';
 import type { CodexSessionEvent, CodexToolResult } from './protocol';
 
@@ -52,12 +52,21 @@ export class CodexHttpApi {
 		// A request body can arrive after its streaming connection has disconnected.
 		if (connection.lifetime.signal.aborted) { response.writeHead(410).end('Studio assistant connection has retired'); return; }
 		try {
+			let result: AssistantReply | undefined;
 			switch (command.type) {
 				case 'start': {
 					const turnId = await connection.session!.startTurn(command.prompt, command.reviews);
-					response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }).end(JSON.stringify({ turnId }));
-					return;
+					result = { turnId }; break;
 				}
+				case 'steer': result = { turnId: await connection.session!.steer(command.turnId, command.prompt, command.reviews) }; break;
+				case 'queue': await connection.session!.enqueue(command.prompt, command.reviews); break;
+				case 'queue-update': await connection.session!.updateQueued(command.id, command.prompt); break;
+				case 'queue-delete': await connection.session!.deleteQueued(command.id); break;
+				case 'queue-continue': result = { turnId: await connection.session!.startTurn('', [], true) }; break;
+				case 'history': result = await connection.session!.listHistory(command.cursor, command.search); break;
+				case 'open': result = await connection.session!.selectThread(command.id); break;
+				case 'new': await connection.session!.selectThread(); break;
+				case 'older': result = await connection.session!.readOlder(command.cursor); break;
 				case 'interrupt': await connection.session!.interrupt(); break;
 				case 'login-start': await connection.session!.startLogin(); break;
 				case 'login-cancel': await connection.session!.cancelLogin(); break;
@@ -71,7 +80,8 @@ export class CodexHttpApi {
 				}
 				default: response.writeHead(400).end('Unknown Studio operation'); return;
 			}
-			response.writeHead(204).end();
+			if (result === undefined) response.writeHead(204).end();
+			else response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }).end(JSON.stringify(result));
 		} catch (error) {
 			response.writeHead(409, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }).end((error as Error).message);
 		}

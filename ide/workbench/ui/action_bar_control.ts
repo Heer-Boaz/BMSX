@@ -63,8 +63,8 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 	public update(): void {
 		const state = this.input!;
 		const command = this.pointerCommand === null ? state.pressedCommand : this.pointerCommand;
-		if (command !== null && !this.commands.isEnabled(command)) this.cancelPointer();
-		if (state.hasFocus && (state.focusedIndex < 0 || !this.commands.isEnabled(state.items[state.focusedIndex].command))) {
+		if (command !== null && (!state.items.some(item => item.command === command && item.visible) || !this.commands.isEnabled(command))) this.cancelPointer();
+		if (state.hasFocus && (state.focusedIndex < 0 || !state.items[state.focusedIndex].visible || !this.commands.isEnabled(state.items[state.focusedIndex].command))) {
 			this.moveFocus(1, state.focusedIndex);
 		}
 	}
@@ -127,7 +127,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		if (!snapshot.valid || !snapshot.insideViewport) return -1;
 		const items = this.input!.items;
 		for (let index = 0; index < items.length; index += 1) {
-			if (point_in_rect(snapshot.viewportX, snapshot.viewportY, items[index].bounds)) return index;
+			if (items[index].visible && point_in_rect(snapshot.viewportX, snapshot.viewportY, items[index].bounds)) return index;
 		}
 		return -1;
 	}
@@ -138,7 +138,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		let index = from;
 		for (let remaining = count; remaining > 0; remaining -= 1) {
 			index = (index + direction + count) % count;
-			if (this.commands.isEnabled(state.items[index].command)) {
+			if (state.items[index].visible && this.commands.isEnabled(state.items[index].command)) {
 				state.focusedIndex = index;
 				return;
 			}

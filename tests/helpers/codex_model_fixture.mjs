@@ -12,9 +12,9 @@ export async function createCodexModelFixture(t, steps) {
 		const body = JSON.parse(Buffer.concat(parts).toString('utf8'));
 		const step = steps[requests.length];
 		assert.ok(step !== undefined, 'unexpected extra model request');
-		const items = typeof step === 'function' ? step(body) : step;
 		requests.push(body);
 		const id = `fixture-response-${requests.length}`;
+		const items = typeof step === 'function' ? await step(body) : step;
 		if (items === CODEX_FIXTURE_WAIT) {
 			response.writeHead(200, { 'Content-Type': 'text/event-stream' });
 			response.write(`event: response.created\ndata: ${JSON.stringify({ type: 'response.created', response: { id } })}\n\n`);

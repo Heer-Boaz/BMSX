@@ -1,3 +1,5 @@
+import type { AssistantQueuedMessage, AssistantThread } from '../../common/assistant_protocol';
+
 /** The small subset of the pinned external protocol that the Studio process owner consumes. */
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type RpcId = string | number;
@@ -41,6 +43,9 @@ export type CodexTurn = { id: string; status: 'inProgress' | 'completed' | 'inte
 export type CodexAccount = { account: { type: string; email?: string; planType?: string } | null; requiresOpenaiAuth: boolean };
 export type CodexLogin = { type: 'chatgptDeviceCode'; loginId: string; verificationUrl: string; userCode: string };
 export type CodexSessionEvent =
+	| { type: 'thread'; thread: AssistantThread }
+	| { type: 'queue'; messages: AssistantQueuedMessage[] }
+	| { type: 'user-message'; turnId: string; itemId: string; text: string }
 	| { type: 'turn-started'; turnId: string }
 	| { type: 'turn-completed'; turn: CodexTurn }
 	| { type: 'text-delta'; turnId: string; itemId: string; text: string }

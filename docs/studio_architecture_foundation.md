@@ -658,3 +658,15 @@ IDE/browser/Node typechecks and browser Studio build pass, strict architecture
 audit reports **0 issues**, tests-project typechecking retains **96** existing
 diagnostics. Changed-file indentation and `git diff --check` pass. These are
 automated runtime/browser assertions, not physical-phone or UI-only evidence.
+
+## 2026-09-24: native conversation lifecycle, not a second chat backend
+
+[Conversation lifecycle](studio_assistant_conversations.md) supersedes the earlier
+no-history/ephemeral-thread and permanent account-toolbar limitations. Codex owns
+saved history and waiting messages; Studio uses native paged reads, steering and
+queue dispatch. Explicit chat/history use coalesces connection admission, Stop
+preserves queued text, and cold resume reacquires source capabilities. Shared
+Quick Pick, multiline fields and contextual action-bar visibility provide the UI.
+No separate server, custom transcript database, browser dequeue loop or polling
+was added. Importing a separate VS Code/CLI conversation remains unimplemented;
+it is not disguised as Studio-profile history support.

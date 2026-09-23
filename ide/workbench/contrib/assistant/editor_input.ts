@@ -14,9 +14,10 @@ import { AssistantTranscriptProjection } from './projection';
 /** Ephemeral view state; the workspace owns the conversation across pane switches. */
 export class AssistantInput extends ReadonlyEditorInput<'assistant', 'assistant'> {
 	public get resource(): undefined { return undefined; }
-	public readonly accountActions = createWorkbenchActionBar('assistant.account');
-	public readonly loginActions = createWorkbenchActionBar('assistant.login');
 	public readonly turnActions = createWorkbenchActionBar('assistant.turn');
+	public readonly lifetime = new AbortController();
+	public editingQueuedId: string | undefined;
+	public commandPending = false;
 	public readonly draft = new TextField();
 	public readonly composer = new MultilineFieldViewport();
 	public readonly composerBounds = create_rect_bounds();
@@ -29,19 +30,23 @@ export class AssistantInput extends ReadonlyEditorInput<'assistant', 'assistant'
 	public draftHasText = false;
 	public selectedEntry = -1;
 	public projectedRevision = -1;
+	public revealOlder = false;
 	public status = '';
-	public loginLabel = '';
 	public constructor(public readonly conversation: AssistantConversation) {
 		super('assistant', 'assistant', 'CODEX', true);
 		this.disposables.add({ dispose: this.draft.onDidChangeText(() => { this.draftHasText = this.draft.text.trim().length > 0; }) });
 		this.disposables.add({ dispose: conversation.onDidChange((index, kind) => {
-			if (kind === 'reset') this.transcript.reset();
+			if (kind === 'reset' || kind === 'prepend') this.transcript.reset();
 			else if (kind === 'proposal') this.transcript.invalidateHeading(index);
 			else if (kind === 'text') this.transcript.invalidate(index);
+			if (kind === 'prepend') { this.revealOlder = true; if (this.selectedEntry >= 0) this.selectedEntry += index; }
+			if (kind === 'reset') { this.editingQueuedId = undefined; this.revealOlder = false; }
+			if (conversation.accountRefreshing) this.editingQueuedId = undefined;
 			if (conversation.entries.length === 0) this.selectedEntry = -1;
 			if (kind === 'text' && conversation.entries[index]?.kind === 'proposal') this.selectedEntry = index;
 		}) });
 		this.disposables.add({ dispose: () => conversation.disconnect() });
+		this.disposables.add({ dispose: () => this.lifetime.abort() });
 	}
 }
 

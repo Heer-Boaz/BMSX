@@ -10,6 +10,7 @@ import { createStudioRenderer, type StudioRendererKind } from './studio_renderer
 export { runAssistantAccount } from './studio_assistant_account';
 export { runAssistantLogin } from './studio_assistant_login';
 export { runAssistantTestEvidence } from './studio_assistant_test_evidence';
+export { runAssistantHistory } from './studio_assistant_history';
 
 /** Automated fixture setup; prompt, review and Undo use the production keyboard/pointer route. */
 export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasElement, capture: (name: string) => Promise<void>, waitForModel: () => Promise<void>) {
@@ -36,8 +37,6 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	check(cycles() === position && test.execution.paused && !test.execution.userPaused && test.observations.suspended,
 		'assistant: ordinary workbench pause holds the guest and audio without a requested pause');
 	await capture('disconnected');
-	await test.click(view.accountActions.items.find(item => item.command === 'assistant.connect')!.bounds);
-	await until(() => conversation.state === 'ready', 'assistant: connect actual private Codex process');
 	await test.click(view.composerBounds);
 	test.clipboard.text = 'Read the unsaved Lua and authored YAML.'; await press('ControlLeft', 'KeyV');
 	await press('Enter'); test.clipboard.text = 'Propose comments for review; do not save.'; await press('ControlLeft', 'KeyV');
@@ -46,7 +45,7 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	await press('ControlLeft', 'KeyY');
 	await frame(); await capture('composer');
 	ide.editor.setFontVariant('msx'); await frame();
-	check(view.accountActions.items[0].bounds.left >= 0, 'MSX font keeps account controls on screen');
+	check(view.turnActions.items.filter(item => item.visible).every(item => item.bounds.left >= 0), 'MSX font keeps message controls on screen');
 	await capture('composer-msx');
 	ide.editor.setFontVariant('tiny'); await frame();
 	await press('ControlLeft', 'Enter');

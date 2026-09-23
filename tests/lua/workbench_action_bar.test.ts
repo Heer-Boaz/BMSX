@@ -270,3 +270,20 @@ test('action hover leaves on an exclusive route or detach, independently of pres
 	assert.equal(f.capture.active, false);
 	f.hover.clear(); // The detached target must no longer be called with an absent input.
 });
+
+test('hidden actions occupy no layout and cannot be focused, pressed or released after hiding', t => {
+	const f = fixture(t), first = f.state.items[0], middle = f.state.items[1], last = f.state.items[2];
+	const oldLeft = first.bounds.left;
+	middle.visible = false;
+	layoutWorkbenchActionBar(f.state, 240, 10, 22, text => text.length * 4);
+	assert.ok(first.bounds.left > oldLeft);
+	assert.equal(first.bounds.right + 2, last.bounds.left);
+	f.bar.focusTarget.focus(); f.press('ArrowRight'); assert.equal(f.state.focusedIndex, 2);
+	f.pointer(0, PRIMARY, PRIMARY); first.visible = false; f.bar.update();
+	assert.equal(f.capture.active, false); assert.equal(f.state.focusedIndex, 2);
+	f.pointer(0, 0, 0, PRIMARY); assert.deepEqual(f.calls, []);
+	f.key('Space', true); last.visible = false; f.bar.update(); last.visible = true; f.key('Space', false);
+	assert.deepEqual(f.calls, [], 'hiding cancels keyboard activation even after reappearance');
+	last.visible = false; f.bar.update(); assert.equal(f.state.focusedIndex, -1);
+	f.press('Enter'); assert.deepEqual(f.calls, []);
+});

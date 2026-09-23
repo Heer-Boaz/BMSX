@@ -7,13 +7,31 @@ export type AssistantReviewUpdate = {
 	readonly state: 'pending' | 'applying' | 'applied' | 'discarded' | 'stale' | 'failed';
 	readonly reason: string;
 };
+export type AssistantThread = { id: string; title: string; updatedAt: number };
+export type AssistantHistoryPage = { threads: AssistantThread[]; nextCursor: string | null };
+export type AssistantHistoryEntry = { kind: 'user' | 'assistant' | 'status'; text: string };
+export type AssistantTranscriptPage = { thread: AssistantThread; entries: AssistantHistoryEntry[]; nextCursor: string | null };
+export type AssistantQueuedMessage = { id: string; text: string };
+export type AssistantReply = { turnId: string } | AssistantHistoryPage | AssistantTranscriptPage;
 export type AssistantCommand =
 	| { type: 'start'; prompt: string; reviews: readonly AssistantReviewUpdate[] }
+	| { type: 'steer'; turnId: string; prompt: string; reviews: readonly AssistantReviewUpdate[] }
+	| { type: 'queue'; prompt: string; reviews: readonly AssistantReviewUpdate[] }
+	| { type: 'queue-update'; id: string; prompt: string }
+	| { type: 'queue-delete'; id: string }
+	| { type: 'queue-continue' }
+	| { type: 'history'; cursor?: string; search?: string }
+	| { type: 'open'; id: string }
+	| { type: 'older'; cursor: string }
+	| { type: 'new' }
 	| { type: 'interrupt' }
 	| { type: 'login-start' | 'login-cancel' | 'sign-out' }
 	| { type: 'tool-result'; requestId: string; success: boolean; text: string };
 export type AssistantEvent =
 	| { type: 'connected'; lease: string; account: AssistantAccount }
+	| { type: 'thread'; thread: AssistantThread }
+	| { type: 'queue'; messages: AssistantQueuedMessage[] }
+	| { type: 'user-message'; turnId: string; itemId: string; text: string }
 	| { type: 'turn-started'; turnId: string }
 	| { type: 'turn-completed'; turnId: string; status: 'completed' | 'interrupted' | 'failed'; error?: string }
 	| { type: 'text-delta' | 'message'; turnId: string; itemId: string; text: string }
@@ -30,7 +48,7 @@ export interface AssistantConnection {
 	readonly signal: AbortSignal;
 	readonly closed: Promise<void>;
 	readonly account: AssistantAccount;
-	send(command: AssistantCommand): Promise<{ turnId: string } | undefined>;
+	send(command: AssistantCommand): Promise<AssistantReply | undefined>;
 	openLoginPage(): void;
 	close(error?: Error): void;
 }
