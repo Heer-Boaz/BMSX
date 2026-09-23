@@ -372,3 +372,14 @@ override retains inherited servers and can still launch their processes. The
 adapter must own its profile/working directory and capability admission; merely
 adding auth to a generic JSON-RPC proxy is explicitly rejected. No production
 agent endpoint or account connection is admitted by these tests.
+
+### Gate 5d: owned local process adapter
+
+The [Node adapter](studio_codex_process_contract.md#owned-node-adapter) now owns a
+private profile/process directory, exact external version/config admission,
+continuous stdio correlation and explicit connection/turn lifetimes. Cancellation
+retires tool rights immediately, joins actual process exit and cannot replay a
+late reply into a new turn. Configured MCP inheritance is rejected before thread
+creation. This is a real adapter exercised with the actual CLI and an offline
+model fixture, not a public JSON-RPC tunnel. Browser transport, account connection
+and the visible workbench assistant remain unconnected.

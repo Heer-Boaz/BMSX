@@ -37,6 +37,7 @@
 		"headless:forcebuildalltest": "sh -c 'rom=\"$1\"; test=\"$2\"; if [ -z \"$rom\" ] || [ -z \"$test\" ]; then echo \"Usage: npm run headless:forcebuildalltest -- <gameromname> <test-file>\"; exit 1; fi; shift 2; npm run build:product:node-headless-tooling -- --debug --force && npm run build:toolchain:bios -- --debug --force && npm run build:toolchain:cart -- \"$rom\" --debug --force && npm run headless:test -- \"$rom\" \"$test\" \"$@\"' --",
 		"test:workspace-http": "node --test tests/platform/workspace_http.test.mjs",
 		"test:codex-contract": "node --test tests/platform/codex_contract.test.mjs",
+		"test:codex-session": "node --import tsx --test tests/platform/codex_session.test.mjs tests/platform/codex_stdio.test.mjs",
 		"test:lua": "npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts tests/lua/*.test.ts",
 		"test:rompacker": "npx tsx --test tests/rompacker/*.ts",
 		"test:render-parity": "npm run build:product:node-headless-tooling -- --force && npm run build:product:libretro-wsl -- --force && npm run build:libretro-host && npm run build:toolchain:bios -- --force && npm run build:toolchain:cart -- renderhwtest --force && npm run build:toolchain:cart -- bare_metal_cart --force && node scripts/render/pixel_parity.mjs renderhwtest && node scripts/render/pixel_parity.mjs bare_metal_cart",

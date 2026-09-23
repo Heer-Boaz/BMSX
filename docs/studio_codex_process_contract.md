@@ -1,7 +1,7 @@
 # Codex process admission: measured protocol, not a privileged RPC tunnel
 
 Audit at `52a655924`; local executable **codex-cli 0.156.1**. The source/context/
-review foundation is implemented. This document and its executable probes do
+review foundation and the Node process adapter below are implemented. They do
 **not** expose an agent endpoint or attach a process to the workbench yet.
 
 ## Protocol evidence
@@ -94,6 +94,72 @@ must still be accounted for when composing a production profile.
   dynamic-tool negotiation and configurable capabilities. The installed binary
   and executed probes, not documentation alone, determine version admission.
 
-No endpoint should be added until the adapter implements the owned profile,
-capability admission and connection lifetime above. The existing loopback file
+## Owned Node adapter
+
+`hosts/node/codex` is the process boundary, not an IDE model owner or a general
+process-launch service:
+
+- `profile.ts` creates an exclusive private process lease with empty HOME/XDG
+  directories, private cwd/tmp and a separate persistent Codex account directory.
+  Environment inheritance is an explicit platform allowlist, not `process.env`
+  spread. Only the account directory survives normal process exit. No user
+  credentials/configuration are copied; conflicting leases fail rather than
+  guessing that a lock is stale. The platform composition must choose this
+  application-owned directory, never accept it from a browser or model.
+- `policy.ts` emits the pinned external TOML launch representation and admits
+  actual configuration layers. Every nonempty non-Studio layer is rejected,
+  including otherwise harmless user or managed overrides. Empty-map merging is
+  never treated as revocation. Admission repeats at turn start because account/
+  managed configuration can change after connection. Shell/patch environments,
+  MCP, skills discovery, plugins and other executable capabilities are absent
+  from the measured tool surface. No permissions can escalate.
+- `stdio.ts` continuously drains responses, notifications and server requests.
+  Outstanding requests have independent correlation and deadlines; waiting for
+  a Studio tool never blocks an interrupt or other response. Protocol failure,
+  timeout, EOF and shutdown retire rights synchronously. EOF gets a bounded drain;
+  a hung process is killed and reported as forced, not called a graceful success.
+  Stderr retention is bounded. There is no notification backlog or automatic
+  reconnect/replay queue.
+- `session.ts` owns one conversation and one active turn. Its public operations
+  are account inspection, turn start, interrupt and close, not arbitrary Codex
+  methods. Every tool request must match the current thread, turn and admitted
+  tool. Other server requests (including approvals and token refresh) are denied.
+  Cancellation aborts pending tool work immediately; late results cannot answer
+  a subsequent turn. A session-wide AbortSignal also covers startup. `closed`
+  joins actual process exit and releases the lease, once.
+
+The actual adapter advertises only the supplied `studio_read` in the offline
+fixture: disabling orchestrator skills and host skill discovery removes the
+earlier `skills` namespace. This is the tested model metadata/version, **not** a
+claim that all model catalogs expose identical utility tools. No builtin that
+can write source is admitted. Unadvertised shell/patch/skills/permission attempts
+are rejected. There is no OS-wide protection against a hostile same-user process
+altering the binary or directories; this is process/capability ownership, not an
+OS sandbox certification.
+
+`npm run test:codex-session` covers the real adapter against local Responses SSE,
+unowned MCP and changed config, exact version rejection, profile exclusivity,
+turn interruption/admission/disconnect and late replies. Faulty stdio peers also
+cover out-of-order responses amid 10,000 notifications, nested requests, malformed
+frames, unknown response identities, process crash, launch failure and forced
+timeout teardown. These fixtures do not connect an account or make paid/remote
+model requests. The original five `test:codex-contract` probes remain independent.
+
+Adapter validation: **19 session/transport tests**, **5 independent contract
+tests**, and **6 existing real HTTP tests** pass. IDE/browser/Node typechecks and
+the strict architecture audit pass (zero boundary issues). Changed-file
+indentation and `git diff --check` pass. This slice adds no render/frame work and
+does not claim browser assistant or account-login evidence.
+
+Before implementation, the matching pinned production references were studied:
+Codex's [app-server client](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server-client/src/lib.rs)
+separates response processing from tool/event waits and joins shutdown; its
+[tool plan](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/core/src/tools/spec_plan.rs)
+and [skills extension](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/ext/skills/src/extension.rs)
+establish capability ownership. VS Code's [child-process IPC owner](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/base/parts/ipc/node/ipc.cp.ts)
+ties active requests and listeners to process lifetime. BMSX deliberately does
+not adopt its lazy reconnect behavior for source-edit authority.
+
+Browser lease transport, explicit account connection, workbench tools and visible
+conversation contribution remain separate work. The existing loopback file
 capability is not permission to turn `serve-dist` into a general process proxy.
