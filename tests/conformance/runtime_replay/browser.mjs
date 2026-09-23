@@ -96,7 +96,7 @@ for (const backend of requestedBackend === undefined ? backends : [requestedBack
 		await page.goto(address);
 		let result = await page.evaluate(async ({ studio, session, backend, scenario, capture }) => {
 			const test = await import('/test.js');
-			return session ? test.studioSessionBackends[backend](document.querySelector('canvas')) : studio ? test.studioBackends[backend](document.querySelector('canvas'), scenario,
+			return session ? test.studioSessionBackends[backend](document.querySelector('canvas')) : studio ? test.runStudio(backend, document.querySelector('canvas'), scenario,
 				capture ? globalThis.captureStudioCheckpoint : undefined)
 				: test.runBrowserRewindConformance(document.querySelector('canvas'));
 		}, { studio, session, backend, scenario, capture: screenshot !== undefined });

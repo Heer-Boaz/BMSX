@@ -1,18 +1,20 @@
-import { createWebGLBackend } from '../../../hosts/browser/backend';
 import { HostPauseReason } from '../../../hosts/common/execution_control';
-import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { editorTabGroup } from '../../../ide/workbench/ui/tab/group_model';
 import { check, createStudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
+import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
+
+export { runAssistantAccount } from './studio_assistant_account';
 
 /** Automated fixture setup; prompt, review and Undo use the production keyboard/pointer route. */
-export async function runAssistant(canvas: HTMLCanvasElement, capture: (name: string) => Promise<void>, waitForModel: () => Promise<void>) {
-	const backend = createWebGLBackend(canvas, PSX_MACHINE_SPEC.gxGpuVramBytes);
+export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasElement, capture: (name: string) => Promise<void>, waitForModel: () => Promise<void>) {
+	const renderer = await createStudioRenderer(kind, canvas, capture);
 	const http = new StudioHttpSession();
-	const test = await createStudioFixture(canvas, backend, capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
+	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
+	capture = renderer.capture!;
 	const { ide, runtime, frame, press, until, cycles, harness } = test;
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'assistant: boot actual cart');
 	await reachNemesisTitle(test);
@@ -52,6 +54,7 @@ export async function runAssistant(canvas: HTMLCanvasElement, capture: (name: st
 	await capture('response');
 	await press('Tab'); await press('Tab'); await press('ArrowDown'); await press('ControlLeft', 'KeyC');
 	check(test.clipboard.text === 'Contract fixture finished.', 'transcript keyboard selects and copies an ordinary message');
+	check(await navigator.clipboard.readText() === 'Contract fixture finished.', 'transcript Copy reaches the authorized browser clipboard');
 	await press('ArrowUp');
 	await test.clickTab(mainTab.id); await test.clickTab(view.id);
 	check(conversation.state === 'ready' && proposal.state === 'pending', 'switching panes does not retire conversation/review');
@@ -82,7 +85,7 @@ export async function runAssistant(canvas: HTMLCanvasElement, capture: (name: st
 	await test.runPaletteCommand('View: Codex Assistant');
 	check(conversation.state === 'disconnected', 'reopening does not replay a prompt');
 	await frame(); await capture('closed-reopened');
-	check(backend.gl.getError() === backend.gl.NO_ERROR, 'WebGL2 no errors');
+	await renderer.finish();
 	await ide.editor.shutdown();
 	return { assistant: 'pass', sourceFiles: proposal.files.length, frames: test.observations.hostFrames };
 }

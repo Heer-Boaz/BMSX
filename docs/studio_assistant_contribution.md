@@ -82,13 +82,23 @@ enlarge the provider's context window or hide context-limit failures.
 
 ## Validation and limits
 
-- `npm run test:studio-assistant`: actual Chromium/WebGL2 Studio, authorized HTTP
-  lease and pinned CLI, with an offline Responses fixture. Visible keyboard and
+- `npm run test:studio-assistant`: six passing cases, running both the conversation
+  and account workflows on actual software, WebGL2 and WebGPU Studio presentation,
+  authorized HTTP leases and the pinned CLI, with offline Responses/issuer fixtures.
+  Visible keyboard and
   pointer routes exercise the multiline composer and its Undo/Redo, both fonts,
   Lua/YAML proposal, review Apply and joint source Undo, pane switching, Stop of
   a waiting provider stream, a second proposal and close/reopen retirement.
   Guest cycles advance while the pane waits. Authored project files remain
-  unchanged. The selected-message, composer and review screenshots were inspected.
+  unchanged. Copy is checked against the browser clipboard with explicit clipboard
+  permission, not just the editor's cached clipboard. Selected-message, composer,
+  account-code (both fonts) and review screenshots were inspected.
+  The account workflow covers pending polling, Copy code, the fixed login
+  destination with popup blocking enabled and no opener/referrer, cancel after
+  the code, actual polling failure, cancel before a held start response, close
+  while signing in and explicit reconnect/disconnect. The login destination is
+  intercepted before external navigation. No account is authorized, credentials
+  created, thread started or prompt sent in those account cases.
 - `npm run test:codex-account`: five passing device-code/adapter contract cases,
   including actual local-issuer polling/cancel/logout and test-only protocol
   ordering injection. No successful personal account authorization is claimed.
@@ -101,7 +111,8 @@ enlarge the provider's context window or hide context-limit failures.
 - Regression bundle: **2335 Lua tests passed, 1 skipped**; process/stdio **19**,
   independent Codex contract **5**, assistant HTTP **12**, workspace HTTP **6**,
   process/workbench **1**, and account **5** pass. Actual WebGL2 cold-page session
-  restoration and source-save/local-only/reconnect workflows also pass.
+  restoration passes. Source-save/local-only/reconnect workflows pass on all
+  three renderers through the same shared renderer fixture used by the assistant.
   IDE/browser/Node typechecks and both Studio product builds pass. The full
   tests-project typecheck retains **96 pre-existing diagnostics**, with no new
   diagnostics; it is not reported as green. Architecture audit: **0 issues**.
@@ -116,6 +127,10 @@ provider picker, background multi-agent workflow or OS-wide sandbox claim.
 
 - VS Code's pinned [chat model](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/contrib/chat/common/chatModel.ts):
   retained request/response state, independent of view attachment.
+- VS Code's [chat widget](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/contrib/chat/browser/chatWidget.ts)
+  and Codex's [account contract tests](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server/tests/suite/v2/account.rs):
+  separate view/model lifetimes and exercise device-code failures/cancellation
+  at the real issuer boundary, rather than inventing a replacement account server.
 - Codex's pinned [account processor](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server/src/request_processors/account_processor.rs),
   [device-code owner](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/login/src/device_code_auth.rs)
   and [browser OAuth listener](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/login/src/server.rs):

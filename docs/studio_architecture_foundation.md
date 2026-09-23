@@ -427,3 +427,10 @@ setting. Model context exhaustion remains a provider error, not permission to
 truncate/repair source receipts. The production device-code flow avoids Codex's
 browser-login behavior of cancelling an existing localhost OAuth listener.
 See the contribution document for commands, evidence and remaining limits.
+
+The follow-through browser matrix exercises conversation/review and account
+controls on software, WebGL2 and WebGPU (six cases). Account polling and failures
+use the real pinned CLI against an offline issuer; no personal account is
+authorized. Shared browser renderer ownership also runs the ordinary source-save,
+local-only and reconnect regressions on all three backends. This is automated
+browser evidence, not UI-only authoring or paid-model verification.
