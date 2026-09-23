@@ -1,13 +1,15 @@
 # Studio local platform boundary
 
 Status: local file-transport boundary implemented. Audit baseline `d320e771c`.
+The later opt-in [assistant transport](studio_assistant_transport.md) reuses this
+admission owner; default serving and LAN presentation still grant no process rights.
 
 ## Scope and threat model
 
-The existing HTTP server combines public static product presentation and a
-workspace file API. It binds all interfaces, sends wildcard CORS, admits writes
-without session authorization and only checks lexical path containment. A
-symlink can cross that boundary. These are real existing capabilities, not
+At the audit baseline, the HTTP server combined public static product presentation and a
+workspace file API. It bound all interfaces, sent wildcard CORS, admitted writes
+without session authorization and only checked lexical path containment. A
+symlink could cross that boundary. These were real existing capabilities, not
 reasons to preemptively add an agent endpoint.
 
 The supported authoring boundary will be a loopback-bound local server with
@@ -24,7 +26,7 @@ The normal development command defaults to loopback. This is not remote IDE
 authentication, protection against a malicious local OS user/filesystem race,
 or an admissible generic process launcher. Same-origin product JavaScript is
 trusted. Agent process permissions, review and protocol lifetime are separate
-gates. No subprocess/WebSocket/tool-dispatch endpoint is introduced.
+gates. This original file-boundary slice introduced no subprocess endpoint.
 
 ## Implemented owners and use
 
@@ -37,8 +39,8 @@ gates. No subprocess/WebSocket/tool-dispatch endpoint is introduced.
 - `scripts/dev/rooted_path.mjs`: shared workspace/static path admission rejects
   traversal and symlink components. Final file opens use `O_NOFOLLOW`. This is not
   an OS sandbox against concurrent hostile changes to ancestor directories.
-- `HttpWorkspaceRecordProvider`: one coalesced admission per provider, capability
-  held in memory. A 401 can renew/replay once because the server rejected it before
+- `StudioHttpSession`: coalesced admission shared by browser platform consumers,
+  capability held in memory. The file provider can renew/replay once after 401 because the server rejected it before
   any file operation; transport/500 errors are never automatically replayed.
   Local-only persistence/reconnect feedback remains owned by workspace records.
 

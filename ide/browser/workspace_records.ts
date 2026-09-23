@@ -1,37 +1,22 @@
 import type { WorkspaceDirectoryEntry, WorkspaceRecord, WorkspaceRecordProvider } from '../workspace/record_provider';
+import { StudioHttpSession } from './http_session';
 
 const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
 
 export class HttpWorkspaceRecordProvider implements WorkspaceRecordProvider {
-	private session: Promise<string> | undefined;
-
-	/** Coalesce local session admission. Never persist or put a capability in a URL. */
-	private connect(): Promise<string> {
-		if (this.session === undefined) {
-			const pending = fetch('/__bmsx__/session', { headers: { 'X-BMSX-Client': 'studio' }, cache: 'no-store' })
-				.then(async response => {
-					if (!response.ok) throw new Error(`[WorkspaceStorage] Session unavailable: ${await response.text()}`);
-					return (await response.json()).workspaceToken as string;
-				}).catch(error => {
-					if (this.session === pending) this.session = undefined;
-					throw error;
-				});
-			this.session = pending;
-		}
-		return this.session;
-	}
+	public constructor(private readonly session = new StudioHttpSession()) {}
 
 	/** Only a rejected capability permits replay: the server has performed no file operation. */
 	private async request(url: string, init: RequestInit): Promise<Response> {
-		const session = this.connect();
+		const session = this.session.connect();
 		const headers = new Headers(init.headers);
 		headers.set('Authorization', `Bearer ${await session}`);
-		const response = await fetch(url, { ...init, headers });
+		const response = await fetch(this.session.baseUrl + url, { ...init, headers });
 		if (response.status !== 401) return response;
 		await response.body?.cancel();
-		if (this.session === session) this.session = undefined;
-		headers.set('Authorization', `Bearer ${await this.connect()}`);
-		return fetch(url, { ...init, headers });
+		this.session.expire(session);
+		headers.set('Authorization', `Bearer ${await this.session.connect()}`);
+		return fetch(this.session.baseUrl + url, { ...init, headers });
 	}
 
 	public async readDirectory(relativePath: string): Promise<WorkspaceDirectoryEntry[] | null> {

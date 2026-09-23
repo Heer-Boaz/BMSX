@@ -31,6 +31,7 @@ Options:
 	-H, --host <address>  Host address (default: 127.0.0.1; LAN bindings disable workspace API)
 			--spa             Fallback to index.html for unknown routes
 			--cache <secs|no-store>  Cache-Control (default: no-store)
+			--assistant       Enable the owned local Codex adapter (run via npm run serve:studio)
 	-h, --help            Show this help
 `);
 	process.exit(0);
@@ -76,6 +77,14 @@ const MIME = new Map(Object.entries({
 
 const projectRoot = await realpath(process.cwd());
 const workspaceSession = new WorkspaceHttpSession(host);
+let assistant;
+if (args.includes('--assistant')) {
+	if (!workspaceSession.enabled) throw new Error('The Studio assistant requires a loopback-bound server.');
+	const { CodexHttpApi } = await import('../hosts/node/codex/http_api.ts');
+	const { STUDIO_SOURCE_TOOLS } = await import('../ide/workbench/services/assistant/source_tool_protocol.ts');
+	assistant = new CodexHttpApi({ tools: STUDIO_SOURCE_TOOLS,
+		profileDirectory: path.join(process.env.XDG_STATE_HOME ?? path.join(os.homedir(), '.local', 'state'), 'bmsx', 'studio-codex') });
+}
 
 async function handleCartsApi(req, res, url) {
 	if (url.pathname !== '/__bmsx__/carts') {
@@ -151,6 +160,12 @@ const server = createServer(async (req, res) => {
 		if (requestUrl.pathname === '/__bmsx__/lua') {
 			workspaceSession.authorize(req);
 			await handleWorkspaceRequest(projectRoot, req, res, requestUrl);
+			return;
+		}
+		if (requestUrl.pathname.startsWith('/__bmsx__/assistant/')) {
+			workspaceSession.authorize(req);
+			if (!assistant) throw new HttpError(503, 'Studio assistant is not enabled on this server.');
+			await assistant.handle(req, res, requestUrl.pathname);
 			return;
 		}
 		if (await handleCartsApi(req, res, requestUrl)) {
@@ -234,3 +249,16 @@ server.listen(port, host, () => {
 		console.log('\nTip: open your HTML file, e.g. /index.html?rom=<your-rom>.rom');
 	}
 });
+
+if (assistant) {
+	let shutdown;
+	const stop = () => {
+		// Stop admission, then join both the assistant process and accepted HTTP IO.
+		// Killing every socket here would interrupt an already accepted source save.
+		shutdown ??= Promise.all([assistant.close(), new Promise((resolve, reject) => {
+			server.close(error => error ? reject(error) : resolve());
+		})]).catch(error => { console.error(error); process.exitCode = 1; });
+	};
+	process.once('SIGTERM', stop);
+	process.once('SIGINT', stop);
+}

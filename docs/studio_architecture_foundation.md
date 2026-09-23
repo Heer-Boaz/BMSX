@@ -1,8 +1,9 @@
 # Studio architecture foundation before agent integration
 
-Status: foundation work in progress, 2026-09-23; gates 1-4 implemented and local
-file/whole-workbench portions of gate 5 validated. The external process/tool
-boundary remains open: Codex integration is **not admitted** by this work. The user requested the
+Status: foundation work in progress, 2026-09-23; gates 1-4 implemented, with local
+files, whole-workbench review, owned process/source tools and secured browser
+transport validated under gate 5. Account connection and a visible assistant
+contribution remain open. The user requested the
 whole IDE/Studio ownership model to be corrected first, rather than adapting an
 agent to accidental UI internals.
 
@@ -33,7 +34,7 @@ reason to introduce parallel owners or to postpone unrelated product value.
 Only contracts needed by the proposed agent capabilities are integration gates,
 not every outstanding IDE feature or test-fixture issue.
 
-## Eventual Codex position (design only)
+## Codex composition target (workbench contribution still open)
 
 The workbench remains authoritative; an agent is another client, not a second
 editor or an emulator extension:
@@ -61,12 +62,13 @@ future Codex view <-> secured local transport <-> Codex App Server process
   own results. A queued request or a status message is never proof of success.
 - Conversation reconnect cannot revive retired proposals. Process lifecycle,
   authentication/origin checks and capability limits precede any privileged
-  transport. The existing development server is not that security boundary.
+  transport. The loopback server's explicit admission and process owners are
+  the boundary; static/LAN presentation has no process capability.
 
-The locally inspected Codex App Server is the candidate transport, not an SDK
-embedded in Studio. Its protocol/tool support must be pinned and exercised when
-integration is admitted. No process endpoint, agent pane, tool dispatcher or
-network permission has been added by this groundwork.
+The locally inspected Codex App Server is the pinned local process, not an SDK
+embedded in Studio. Gates 5c-5f record actual protocol/tool/transport evidence.
+The process endpoint is opt-in and exposes only fixed Studio operations; no
+account connection or agent pane has been added by this groundwork.
 
 ## Live baseline
 
@@ -394,3 +396,13 @@ Lua/YAML review/Undo/disconnect flows pass on all three browser renderers. The
 whole Lua suite has 2319 passes; tests-project typecheck debt remains 96.
 Browser connection leases, explicit account connection and conversation UI are
 the next composition boundary, not permission to expose raw Codex methods.
+
+### Gate 5f: secured browser/process lease transport
+
+[Assistant transport](studio_assistant_transport.md) now composes the pinned
+process with the authorized local server and a single browser lease. File and
+assistant clients share platform admission but retain distinct retry policies.
+Prompts/tool answers never replay automatically; interrupt/disconnect retires
+reply rights and remote shutdown joins actual process exit. Production opt-in,
+LAN rejection and a real Chromium/source-IO round trip are tested without account
+credentials or paid inference. Account connection and conversation UI remain open.

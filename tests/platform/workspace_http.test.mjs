@@ -52,12 +52,14 @@ test('workspace API rejects unauthenticated reads, enumeration and writes before
 	const response = await request('/__bmsx__/lua', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ path: 'source.lua', contents: 'unauthorized', updatedAt: 1 }) });
 	assert.equal(response.status, 401);
+	assert.equal((await request('/__bmsx__/assistant/connect', { method: 'POST' })).status, 401);
 	assert.equal(await readFile(join(root, 'source.lua'), 'utf8'), 'return 1');
 });
 
 test('authorized source CRUD preserves timestamps and exclusive creation', async t => {
 	const { request, session } = await fixture(t);
 	const headers = await session();
+	assert.equal((await request('/__bmsx__/assistant/connect', { method: 'POST', headers })).status, 503, 'ordinary static serving does not enable a process endpoint');
 	const put = (contents, extra = {}) => request('/__bmsx__/lua', { method: 'PUT',
 		headers: { ...headers, 'Content-Type': 'application/json', ...extra },
 		body: JSON.stringify({ path: 'new/nested/source.lua', contents, updatedAt: 1234567890000 }) });
@@ -114,6 +116,7 @@ test('LAN presentation has no workspace capability even through a loopback clien
 	assert.equal((await request('/__bmsx__/carts')).status, 200);
 	assert.equal((await request('/__bmsx__/session', { headers: { 'X-BMSX-Client': 'studio' } })).status, 403);
 	assert.equal((await request('/__bmsx__/lua?path=source.lua')).status, 403);
+	assert.equal((await request('/__bmsx__/assistant/connect', { method: 'POST' })).status, 403);
 });
 
 test('capabilities are process-local; static presentation has no cross-origin or embedding permission', async t => {

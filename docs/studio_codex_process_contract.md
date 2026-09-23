@@ -1,8 +1,10 @@
 # Codex process admission: measured protocol, not a privileged RPC tunnel
 
 Audit at `52a655924`; local executable **codex-cli 0.156.1**. The source/context/
-review foundation and the Node process adapter below are implemented. They do
-**not** expose an agent endpoint or attach a process to the workbench yet.
+review foundation and the Node process adapter below are implemented. The later
+[browser transport](studio_assistant_transport.md) exposes fixed Studio operations
+through an explicitly enabled local endpoint, not provider RPC. Account connection
+and the visible workbench assistant remain open.
 
 ## Protocol evidence
 
@@ -161,7 +163,8 @@ ties active requests and listeners to process lifetime. BMSX deliberately does
 not adopt its lazy reconnect behavior for source-edit authority.
 
 The [workbench source tools](studio_source_tools.md) are now exercised through
-this adapter with the real process and an offline model fixture. Browser lease
-transport, explicit account connection and the visible conversation contribution
-remain separate work. The existing loopback file
-capability is not permission to turn `serve-dist` into a general process proxy.
+this adapter with the real process and an offline model fixture. The secured
+[browser lease transport](studio_assistant_transport.md) now has its own real
+HTTP/Chromium evidence. Explicit account connection and the visible conversation
+contribution remain separate work; the loopback capability never admits a general
+process proxy.
