@@ -6,6 +6,7 @@ import type { SceneEditorInput } from '../../contrib/scene_editor/editor_input';
 import type { EditorTabId } from './id';
 import type { ActorLabInput } from '../../contrib/actor_lab/editor_input';
 import type { GameViewInput } from '../../contrib/game_view/editor_input';
+import type { WorkspaceEditReviewInput } from '../../contrib/edit_review/editor_input';
 
 export type EditorInput =
 	| CodeEditorInput
@@ -14,6 +15,7 @@ export type EditorInput =
 	| ScenarioLabInput
 	| ActorLabInput
 	| GameViewInput
+	| WorkspaceEditReviewInput
 	| SceneEditorInput;
 
 export type EditorInputKind = EditorInput['kind'];

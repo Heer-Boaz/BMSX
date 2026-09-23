@@ -1,7 +1,8 @@
 # Studio architecture foundation before agent integration
 
-Status: foundation work in progress, 2026-09-23; gates 1-3 implemented, gates 4-5
-open. Codex integration is **not admitted** by this work. The user requested the
+Status: foundation work in progress, 2026-09-23; gates 1-4 implemented and local
+file/whole-workbench portions of gate 5 validated. The external process/tool
+boundary remains open: Codex integration is **not admitted** by this work. The user requested the
 whole IDE/Studio ownership model to be corrected first, rather than adapting an
 agent to accidental UI internals.
 
@@ -343,3 +344,20 @@ Validation against the owners from gates 1-5a:
 The earlier broad-workflow fixture failure is resolved. General multi-file
 review and remaining lifetime admission still precede agent integration; browser
 coverage alone does not establish those architectural contracts.
+
+### Gate 4b: captured context and general multi-file review
+
+Implemented explicit source-reading contexts, one-shot workspace proposals and a
+transient review pane. Ordinary Rename can now preview all edited files and then
+apply through joint history, without saving/installing or holding guest execution.
+Context lifetime starts before delayed results, observes catalog/dependency
+changes and retires even on empty-workspace teardown. Session persistence omits
+review inputs by construction; it cannot restore old edit rights.
+
+[Workspace edit review](studio_workspace_edit_review.md) records owner contracts,
+production references, 2309 Lua passes (1 skip), actual multi-file review and
+shared Undo/Redo browser evidence, complete WebGL2 and cold-session regressions,
+preparation/reflow measurements, product validation and the remaining 96
+tests-project diagnostics. Source/resource/review foundation gates are now
+implemented. The next admission concerns the real external process/protocol and
+its capabilities, not another editor-specific source-writing path.

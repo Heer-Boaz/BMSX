@@ -19,6 +19,10 @@ import type { CrossFileRenameManager } from './operations';
 import type { PlayerInput } from '../../../../../hosts/common/input/player';
 import type { Clipboard } from '../../../../../hosts/common/clipboard';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
+import type { EditorPanes } from '../../../services/editor/editor_panes';
+import { WorkspaceEditReviewInput } from '../../edit_review/editor_input';
+import { openEditorTab } from '../../../ui/tabs';
+import { WorkspaceSourceContext, WorkspaceSourceContextConflict } from '../../../services/working_copy/source_context';
 
 export type RenameStartOptions = ReferenceLookupOptions;
 
@@ -30,6 +34,8 @@ export class RenameController {
 	private matches: SearchMatch[] = EMPTY_RENAME_MATCHES;
 	private info: ReferenceMatchInfo = null;
 	private unbindSourceChanges: () => void;
+	private reviewPanes: EditorPanes | undefined;
+	private context: WorkspaceSourceContext | undefined;
 	private originalName = '';
 	private activeIndex = -1;
 	private expressionLabel: string = null;
@@ -47,9 +53,7 @@ export class RenameController {
 	public constructor() {
 		this.field.focusTarget.onDidFocus(() => {
 			setSingleCursorSelectionAnchor(this.field, 0, 0);
-			// The reference proposal belongs to this workspace generation, not just
-			// the active file. A new reference in another model also invalidates it.
-			this.unbindSourceChanges = editorTextModelService.onDidChangeContent(() => this.field.focusTarget.release());
+			this.unbindSourceChanges = this.context!.onDidInvalidate(() => this.field.focusTarget.release());
 		});
 		this.field.focusTarget.onDidBlur(() => {
 			this.unbindSourceChanges();
@@ -57,7 +61,7 @@ export class RenameController {
 		});
 	}
 
-	public begin(bridge: RuntimeLuaTooling, options: RenameStartOptions): boolean {
+	public begin(bridge: RuntimeLuaTooling, options: RenameStartOptions, reviewPanes?: EditorPanes): boolean {
 		const lookup = resolveReferenceLookup(bridge, options);
 		if (lookup.kind === 'error') {
 			showEditorMessage(lookup.message, constants.COLOR_STATUS_WARNING, lookup.duration);
@@ -76,6 +80,8 @@ export class RenameController {
 			return false;
 		}
 		this.matches = info.matches;
+		this.context = new WorkspaceSourceContext(editorTextModelService, bridge.sources);
+		this.reviewPanes = reviewPanes;
 		this.info = info;
 		this.originalName = currentName;
 		this.activeIndex = initialIndex;
@@ -157,9 +163,17 @@ export class RenameController {
 		}
 		let updatedMatches: number;
 		try {
+			if (this.reviewPanes !== undefined) {
+				const proposal = crossFileRename.proposeRename(this.context!, activeCodeEditor.model.resource.domain, this.info, nextName);
+				this.context = undefined; // Review now owns the accepted reading operation.
+				const panes = this.reviewPanes;
+				this.field.focusTarget.release();
+				openEditorTab(panes, new WorkspaceEditReviewInput(proposal));
+				return;
+			}
 			updatedMatches = commitRename(crossFileRename, this.matches, nextName, this.activeIndex, this.info);
 		} catch (error) {
-			if (!(error instanceof EditorWorkspaceEditConflict)) throw error;
+			if (!(error instanceof EditorWorkspaceEditConflict || error instanceof WorkspaceSourceContextConflict)) throw error;
 			showEditorMessage(error.message, constants.COLOR_STATUS_WARNING, 4);
 			this.field.focusTarget.release();
 			return;
@@ -181,9 +195,12 @@ export class RenameController {
 	}
 
 	private dismiss(): void {
+		this.context?.dispose();
+		this.context = undefined;
 		this.visible = false;
 		this.matches = EMPTY_RENAME_MATCHES;
 		this.info = null;
+		this.reviewPanes = undefined;
 		this.originalName = '';
 		this.activeIndex = -1;
 		this.expressionLabel = null;

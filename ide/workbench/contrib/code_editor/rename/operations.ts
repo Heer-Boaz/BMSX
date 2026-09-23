@@ -18,6 +18,9 @@ import { getTextSnapshot } from '../../../../editor/text/source_text';
 import { mapTextOffset } from '../../../../editor/text/text_change';
 import { luaSourceRangeToTextRange } from '../../../../language/lua/source_edits';
 import { clearForwardNavigationHistory } from '../../../../navigation/navigation_history';
+import { WorkspaceEditProposal } from '../../../services/working_copy/workspace_edit';
+import { getOrCreateSemanticProject } from '../../../../editor/contrib/intellisense/semantic/workspace/state';
+import type { WorkspaceSourceContext } from '../../../services/working_copy/source_context';
 
 export function commitRename(
 	crossFileRename: CrossFileRenameManager,
@@ -54,7 +57,16 @@ export function commitRename(
 export class CrossFileRenameManager {
 	public constructor(private readonly sources: RuntimeSourceState) {}
 
+	public proposeRename(context: WorkspaceSourceContext, domain: ResourceDomain, info: ReferenceMatchInfo, newName: string): WorkspaceEditProposal {
+		context.assertCurrent();
+		return new WorkspaceEditProposal(`Rename ${info.expression} to ${newName}`, context,
+			this.prepareRename(domain, info, newName));
+	}
+
 	public prepareRename(domain: ResourceDomain, info: ReferenceMatchInfo, newName: string): Map<EditorTextModel, EditorModelEdit> {
+		const project = getOrCreateSemanticProject(domain);
+		project.synchronizeRuntimeSources(this.sources);
+		const currentSnapshot = project.getSnapshot();
 		const ranges = new Map<string, LuaSourceRange[]>();
 		const add = (range: LuaSourceRange): void => {
 			const bucket = ranges.get(range.path);
@@ -67,7 +79,7 @@ export class CrossFileRenameManager {
 		for (const [path, locations] of ranges) {
 			const resource = resolveRuntimeResourceForContext(this.sources, domain, path)!;
 			const model = editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource));
-			if (getTextSnapshot(model.buffer) !== info.snapshot.getFileData(path)!.source) {
+			if (currentSnapshot !== info.snapshot || getTextSnapshot(model.buffer) !== info.snapshot.getFileData(path)!.source) {
 				throw new EditorWorkspaceEditConflict(model);
 			}
 			const edits = locations.map(range => {

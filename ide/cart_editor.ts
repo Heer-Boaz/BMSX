@@ -80,6 +80,7 @@ import { EditorSearchController, applySearchFieldText, cancelGlobalSearchJob, ca
 import { editorSearchState, lineJumpState } from './workbench/contrib/code_editor/find/widget_state';
 import { renameController } from './workbench/contrib/code_editor/rename/controller';
 import { CrossFileRenameManager } from './workbench/contrib/code_editor/rename/operations';
+import { WorkspaceEditReviewPane } from './workbench/contrib/edit_review/editor_pane';
 import { EditorCompletionController } from './workbench/contrib/code_editor/suggest/completion_controller';
 import { handleEditorInput } from './input/keyboard/dispatch';
 import { captureKeys } from './workbench/contrib/code_editor/input/keyboard/capture_keys';
@@ -304,6 +305,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources,
 		);
 		this.editorPanes = new EditorPanes({
+			workspace_edit_review: () => new WorkspaceEditReviewPane(this.resourcePanel),
 			code_editor: () => new CodeEditorPane(
 				this,
 				this.clipboard,

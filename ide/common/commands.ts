@@ -8,7 +8,8 @@ export type EditorSearchCommandId =
 	| 'findLocal'
 	| 'lineJump'
 	| 'referenceSearch'
-	| 'rename';
+	| 'rename'
+	| 'renamePreview';
 
 export type EditorSymbolNavigationCommandId =
 	| 'goToDefinition'
@@ -57,6 +58,8 @@ export type EditorScenarioLabCommandId =
 	| 'scenarioLab.cancel';
 
 export type EditorCommandId =
+	| 'workspaceEditReview.apply'
+	| 'workspaceEditReview.discard'
 	| 'gameView.playback'
 	| 'actorLab.playback' | 'actorLab.select' | 'actorLab.spawn' | 'actorLab.emit' | 'actorLab.actions' | 'actorLab.call' | 'actorLab.details'
 	| 'scenarioLab.details'

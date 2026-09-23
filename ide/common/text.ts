@@ -83,6 +83,23 @@ export function uppercaseOutsideStrings(text: string): string {
 
 export type TextRangeMeasure = (text: string, start: number, end: number) => number;
 
+/** Source previews must not trim indentation or omit whitespace at a wrap boundary. */
+export function writeWrappedSourceLine(lines: string[], text: string, maxWidth: number, measure: TextRangeMeasure): void {
+	let start = 0, width = 0;
+	for (let index = 0; index < text.length;) {
+		const end = index + (text.codePointAt(index)! > 0xffff ? 2 : 1);
+		const advance = measure(text, index, end);
+		if (index > start && width + advance > maxWidth) {
+			lines.push(text.slice(start, index));
+			start = index;
+			width = 0;
+		}
+		width += advance;
+		index = end;
+	}
+	lines.push(text.slice(start));
+}
+
 function isHorizontalWhitespaceCode(code: number): boolean {
 	return code === 32 || code === 9;
 }

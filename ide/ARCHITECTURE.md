@@ -44,6 +44,22 @@ admits membership of every target before any pre-edit notification or mutation;
 matching resource paths and resettable version numbers cannot revive an edit
 proposal from a disposed workspace. See [resource context](../docs/studio_resource_context.md).
 
+## Captured source operations and edit review
+
+`WorkspaceSourceContext` owns immutable model/version/source reads from the start
+of an operation. Changes and teardown retire the entire accepted context,
+including an empty workspace; late results cannot refresh their own edit rights.
+`WorkspaceEditProposal` takes that context and admits exact edits through shared
+model history. Apply is distinct from Save/build/install. Terminal proposals
+cannot execute twice, and a failed operation is not called a successful edit.
+
+`workbench/contrib/edit_review` is a transient, resource-oriented review input,
+not an editable code widget. Ordered text-edit hunks are projected by the editor
+text owner; retained render rows only reflow on font/width changes. Its pane has
+an explicit non-suspending runtime policy. The group serializes only persistent
+inputs and produces their actual selection indices; restoration never repairs
+failed inputs by selecting a different file. See [workspace edit review](../docs/studio_workspace_edit_review.md).
+
 ## Local HTTP workspace capability
 
 `HttpWorkspaceRecordProvider` owns coalesced admission to the loopback server and

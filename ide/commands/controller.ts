@@ -147,6 +147,8 @@ export class IdeCommandController {
 			case 'propertyInspector.source':
 			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
+			case 'workspaceEditReview.apply':
+			case 'workspaceEditReview.discard':
 			case 'sourceEditReview.discard':
 			case 'sourceEditReview.source':
 			case 'undo':
@@ -321,6 +323,8 @@ export class IdeCommandController {
 			case 'propertyInspector.source':
 			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
+			case 'workspaceEditReview.apply':
+			case 'workspaceEditReview.discard':
 			case 'sourceEditReview.discard':
 			case 'sourceEditReview.source':
 			case 'undo':
@@ -381,6 +385,7 @@ export class IdeCommandController {
 			case 'behaviorLens.source':
 				return getActiveTab().kind === 'behavior_lens';
 			case 'rename':
+			case 'renamePreview':
 				return isActiveLuaCodeTab() && !activeCodeEditor.model.readOnly;
 			case 'findGlobal':
 			case 'findLocal':

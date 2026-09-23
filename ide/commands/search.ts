@@ -24,6 +24,7 @@ export function isEditorSearchCommand(command: EditorCommandId): command is Edit
 		case 'lineJump':
 		case 'referenceSearch':
 		case 'rename':
+		case 'renamePreview':
 			return true;
 		default:
 			return false;
@@ -68,6 +69,9 @@ export function executeEditorSearchCommand(
 			return;
 		case 'rename':
 			openRenamePrompt(luaTooling, rename);
+			return;
+		case 'renamePreview':
+			openRenamePrompt(luaTooling, rename, editor.editorPanes);
 			return;
 	}
 }

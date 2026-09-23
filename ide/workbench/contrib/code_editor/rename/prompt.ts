@@ -8,8 +8,9 @@ import { revealCursor } from '../../../../editor/ui/view/caret/caret';
 import { editorCaretState } from '../../../../editor/ui/view/caret/state';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
 import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
+import type { EditorPanes } from '../../../services/editor/editor_panes';
 
-export function openRenamePrompt(bridge: RuntimeLuaTooling, rename: RenameController): void {
+export function openRenamePrompt(bridge: RuntimeLuaTooling, rename: RenameController, reviewPanes?: EditorPanes): void {
 	if (!isEditableCodeTab()) {
 		notifyReadOnlyEdit();
 		return;
@@ -29,7 +30,7 @@ export function openRenamePrompt(bridge: RuntimeLuaTooling, rename: RenameContro
 		cursorRow: activeCodeEditor.view.cursorRow,
 		cursorColumn: activeCodeEditor.view.cursorColumn,
 		identity: context.model.resource,
-	});
+	}, reviewPanes);
 	if (started) {
 		editorCaretState.cursorVisible = true;
 		resetBlink();

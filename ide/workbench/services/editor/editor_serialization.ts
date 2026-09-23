@@ -1,4 +1,6 @@
-import type { EditorInput, EditorInputKind } from '../../ui/tab/model';
+import type { EditorInput } from '../../ui/tab/model';
+
+export type PersistentEditorInput = Exclude<EditorInput, { kind: 'workspace_edit_review' }>;
 
 /** Each contribution owns its serialized representation and reconstruction. */
 export interface EditorInputSerializer<TInput extends EditorInput> {
@@ -7,11 +9,11 @@ export interface EditorInputSerializer<TInput extends EditorInput> {
 }
 
 export type EditorInputSerializers = {
-	[TKind in EditorInputKind]: EditorInputSerializer<Extract<EditorInput, { kind: TKind }>>;
+	[TKind in PersistentEditorInput['kind']]: EditorInputSerializer<Extract<PersistentEditorInput, { kind: TKind }>>;
 };
 
 export type SerializedEditorInput = {
-	readonly kind: EditorInputKind;
+	readonly kind: PersistentEditorInput['kind'];
 	readonly value: string;
 };
 

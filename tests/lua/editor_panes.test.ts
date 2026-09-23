@@ -1,4 +1,7 @@
 import type { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
+import type { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor_input';
+import type { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import type { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -133,6 +136,9 @@ function createEditorPanes() {
 	let codeFactoryCount = 0;
 	let resourceFactoryCount = 0;
 	const editorPanes = new EditorPanes({
+		actor_lab: () => new RecordingEditorPane<ActorLabInput>(),
+		game_view: () => new RecordingEditorPane<GameViewInput>(),
+		workspace_edit_review: () => new RecordingEditorPane<WorkspaceEditReviewInput>(),
 		code_editor: () => {
 			codeFactoryCount += 1;
 			codePane = new RecordingEditorPane<CodeEditorInput>();

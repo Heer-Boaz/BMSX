@@ -13,7 +13,7 @@ import type {
 	ScenarioLabInput,
 } from './model';
 import { DisposableStore } from '../../../common/lifecycle';
-import type { EditorInputSerializer, EditorInputSerializers, SerializedEditorGroup } from '../../services/editor/editor_serialization';
+import type { EditorInputSerializer, EditorInputSerializers, SerializedEditorGroup, SerializedEditorInput, PersistentEditorInput } from '../../services/editor/editor_serialization';
 
 export type EditorOpenOptions = { readonly pinned?: boolean };
 
@@ -41,14 +41,23 @@ export class EditorTabGroupModel {
 	}
 
 	public serialize(serializers: EditorInputSerializers, previous?: SerializedEditorGroup): SerializedEditorGroup {
-		const inputs = this.editorTabs.map((input, index) => {
-			const serializer: EditorInputSerializer<EditorInput> = serializers[input.kind];
+		// A transient active view closes at reload: select its nearest persistent
+		// left neighbour, or the first persistent input when it had none on the left.
+		// Selection indices are produced in the persisted sequence, never clamped at restore.
+		const inputs: SerializedEditorInput[] = [];
+		let active: number | null = null, preview: number | null = null;
+		let passedActive = false;
+		for (const input of this.editorTabs) {
+			if (input === this.activeEditor) passedActive = true;
+			if (input.kind === 'workspace_edit_review') continue;
+			const index = inputs.length;
+			const serializer: EditorInputSerializer<PersistentEditorInput> = serializers[input.kind];
 			const value = serializer.serialize(input);
 			const prior = previous?.inputs[index];
-			return prior !== undefined && prior.kind === input.kind && prior.value === value ? prior : { kind: input.kind, value };
-		});
-		const active = this.activeEditor === null ? null : this.indexOf(this.activeEditor);
-		const preview = this.previewEditor === null ? null : this.indexOf(this.previewEditor);
+			inputs.push(prior !== undefined && prior.kind === input.kind && prior.value === value ? prior : { kind: input.kind, value });
+			if (input === this.activeEditor || this.activeEditor?.kind === 'workspace_edit_review' && (!passedActive || active === null)) active = index;
+			if (input === this.previewEditor) preview = index;
+		}
 		if (previous !== undefined && active === previous.active && preview === previous.preview
 			&& inputs.length === previous.inputs.length && inputs.every((input, index) => input === previous.inputs[index])) return previous;
 		return { inputs, active, preview };
@@ -58,31 +67,12 @@ export class EditorTabGroupModel {
 	public async deserialize(data: SerializedEditorGroup, serializers: EditorInputSerializers): Promise<void> {
 		this.clear();
 		for (const entry of data.inputs) {
-			try {
-				const serializer = serializers[entry.kind];
-				if (!serializer) {
-					// Unknown input kind; skip gracefully
-					console.warn && console.warn('Unknown editor input kind:', entry.kind);
-					continue;
-				}
-				const input = await serializer.deserialize(entry.value);
-				if (!input) {
-					// Serializer chose to skip (or returned undefined); continue
-					continue;
-				}
-				this.editorTabs.push(input);
-				this.registerInputListeners(input);
-			} catch (err) {
-				// Skip inputs that fail to deserialize (missing resources, format drift, etc.)
-				console.warn && console.warn('Failed to deserialize editor input, skipping:', err);
-				continue;
-			}
+			const input = await serializers[entry.kind].deserialize(entry.value);
+			this.editorTabs.push(input);
+			this.registerInputListeners(input);
 		}
-		// If inputs were skipped, clamp active/preview indices to available tabs.
-		const activeIndex = data.active === null ? null : (data.active < this.editorTabs.length ? data.active : (this.editorTabs.length > 0 ? 0 : null));
-		const previewIndex = data.preview === null ? null : (data.preview < this.editorTabs.length ? data.preview : null);
-		this.activeEditor = activeIndex === null ? null : this.editorTabs[activeIndex];
-		this.previewEditor = previewIndex === null ? null : this.editorTabs[previewIndex];
+		this.activeEditor = data.active === null ? null : this.editorTabs[data.active];
+		this.previewEditor = data.preview === null ? null : this.editorTabs[data.preview];
 		this.updateLabels();
 	}
 

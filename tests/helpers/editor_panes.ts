@@ -1,6 +1,9 @@
 import type { EditorPaneSelection } from '../../ide/workbench/services/editor/editor_selection';
 import { CodeEditorNavigationSelection } from '../../ide/workbench/contrib/code_editor/navigation_selection';
 import type { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
+import type { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor_input';
+import type { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import type { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
 import type { PlayerInput } from '../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../ide/common/models';
 import type { EditorTextSelection } from '../../ide/editor/navigation/text_selection';
@@ -78,6 +81,9 @@ function activateViewInput(_input: EditorInput): void {
 /** Editor-group lifecycle used by tests that exercise workspace and navigation owners. */
 export function createTestEditorPanes(): EditorPanes {
 	return new EditorPanes({
+		actor_lab: () => new TestEditorPane<ActorLabInput>(activateViewInput),
+		game_view: () => new TestEditorPane<GameViewInput>(activateViewInput),
+		workspace_edit_review: () => new TestEditorPane<WorkspaceEditReviewInput>(activateViewInput),
 		code_editor: () => new TestEditorPane<CodeEditorInput>(activateCodeEditorTab, input => new CodeEditorNavigationSelection(input)),
 		resource_view: () => new TestEditorPane<ResourceViewerInput>(activateViewInput),
 		behavior_lens: () => new TestEditorPane<BehaviorLensInput>(activateViewInput),

@@ -25,6 +25,7 @@ export class EditorTextModelService {
 	private readonly modelAddedListeners = new Set<ModelListener>();
 	private readonly modelRemovedListeners = new Set<ModelListener>();
 	private readonly modelSavedListeners = new Set<ModelListener>();
+	private readonly clearListeners = new Set<() => void>();
 	private readonly pendingResolutions = new Map<string, Promise<EditorTextModel>>();
 	private generation = 0;
 
@@ -112,6 +113,12 @@ export class EditorTextModelService {
 		return () => this.modelSavedListeners.delete(listener);
 	}
 
+	/** Retire source operations even when this workspace has no retained documents. */
+	public onWillClear(listener: () => void): () => void {
+		this.clearListeners.add(listener);
+		return () => this.clearListeners.delete(listener);
+	}
+
 	/** Internal post-apply phase: track/invalidate deltas only, without queries or model writes. */
 	public onDidApplyChanges(listener: ModelAppliedChangesListener): () => void {
 		this.appliedChangesListeners.add(listener);
@@ -124,6 +131,7 @@ export class EditorTextModelService {
 	}
 
 	public clear(): void {
+		for (const listener of this.clearListeners) listener();
 		this.generation += 1;
 		this.pendingResolutions.clear();
 		for (const [key, model] of this.modelsByResource) {
