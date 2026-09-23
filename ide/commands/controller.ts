@@ -147,6 +147,17 @@ export class IdeCommandController {
 			case 'propertyInspector.source':
 			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
+			case 'assistant.connect':
+			case 'assistant.disconnect':
+			case 'assistant.signIn':
+			case 'assistant.cancelLogin':
+			case 'assistant.signOut':
+			case 'assistant.openLogin':
+			case 'assistant.copyCode':
+			case 'assistant.send':
+			case 'assistant.stop':
+			case 'assistant.review':
+			case 'assistant.copy':
 			case 'workspaceEditReview.apply':
 			case 'workspaceEditReview.discard':
 			case 'sourceEditReview.discard':
@@ -323,6 +334,17 @@ export class IdeCommandController {
 			case 'propertyInspector.source':
 			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
+			case 'assistant.connect':
+			case 'assistant.disconnect':
+			case 'assistant.signIn':
+			case 'assistant.cancelLogin':
+			case 'assistant.signOut':
+			case 'assistant.openLogin':
+			case 'assistant.copyCode':
+			case 'assistant.send':
+			case 'assistant.stop':
+			case 'assistant.review':
+			case 'assistant.copy':
 			case 'workspaceEditReview.apply':
 			case 'workspaceEditReview.discard':
 			case 'sourceEditReview.discard':

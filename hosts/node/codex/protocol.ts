@@ -39,10 +39,14 @@ export type CodexToolCall = { threadId: string; turnId: string; callId: string; 
 export type CodexToolResult = { success: boolean; text: string };
 export type CodexTurn = { id: string; status: 'inProgress' | 'completed' | 'interrupted' | 'failed'; error: { message: string } | null };
 export type CodexAccount = { account: { type: string; email?: string; planType?: string } | null; requiresOpenaiAuth: boolean };
+export type CodexLogin = { type: 'chatgptDeviceCode'; loginId: string; verificationUrl: string; userCode: string };
 export type CodexSessionEvent =
 	| { type: 'turn-started'; turnId: string }
 	| { type: 'turn-completed'; turn: CodexTurn }
 	| { type: 'text-delta'; turnId: string; itemId: string; text: string }
 	| { type: 'message'; turnId: string; itemId: string; text: string }
-	| { type: 'account-changed' }
+	| { type: 'account-refreshing' }
+	| { type: 'account-changed'; account: CodexAccount }
+	| { type: 'login-started'; code: string }
+	| { type: 'login-completed'; success: boolean; error?: string }
 	| { type: 'closed'; error?: Error };

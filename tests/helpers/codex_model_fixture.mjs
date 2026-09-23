@@ -15,6 +15,11 @@ export async function createCodexModelFixture(t, steps) {
 		const items = typeof step === 'function' ? step(body) : step;
 		requests.push(body);
 		const id = `fixture-response-${requests.length}`;
+		if (items === CODEX_FIXTURE_WAIT) {
+			response.writeHead(200, { 'Content-Type': 'text/event-stream' });
+			response.write(`event: response.created\ndata: ${JSON.stringify({ type: 'response.created', response: { id } })}\n\n`);
+			return;
+		}
 		const events = [{ type: 'response.created', response: { id } },
 			...items.map(item => ({ type: 'response.output_item.done', item })),
 			{ type: 'response.completed', response: { id, usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 } } }];
@@ -28,3 +33,6 @@ export async function createCodexModelFixture(t, steps) {
 
 export const CODEX_FIXTURE_DONE = [{ type: 'message', id: 'fixture-message', role: 'assistant',
 	content: [{ type: 'output_text', text: 'Contract fixture finished.' }] }];
+
+/** An accepted provider request whose stream intentionally waits for client interruption. */
+export const CODEX_FIXTURE_WAIT = Symbol('provider-wait');

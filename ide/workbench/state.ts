@@ -1,3 +1,4 @@
+import type { AssistantConnectionFactory } from '../../hosts/common/assistant_protocol';
 import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
 import type { HostRewind } from '../../hosts/common/rewind';
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
@@ -72,6 +73,7 @@ export class RuntimeIdeState {
 		workspaceDirtyRecords: ReadonlyMap<string, WorkspaceRecord>,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
 		createTestTarget: TestTargetFactory,
+		connectAssistant?: AssistantConnectionFactory,
 	) {
 		this.debugger = createRuntimeDebuggerState(runtime, sources);
 		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue);
@@ -115,6 +117,7 @@ export class RuntimeIdeState {
 			this.boots,
 			this.diagnostics,
 			createGraphLayoutEngine,
+			connectAssistant,
 		);
 		this.overlayRenderer.setViewportSize(viewport);
 		this.editor.updateViewport(viewport);

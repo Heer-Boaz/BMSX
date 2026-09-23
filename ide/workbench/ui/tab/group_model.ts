@@ -49,13 +49,13 @@ export class EditorTabGroupModel {
 		let passedActive = false;
 		for (const input of this.editorTabs) {
 			if (input === this.activeEditor) passedActive = true;
-			if (input.kind === 'workspace_edit_review') continue;
+			if (input.kind === 'workspace_edit_review' || input.kind === 'assistant') continue;
 			const index = inputs.length;
 			const serializer: EditorInputSerializer<PersistentEditorInput> = serializers[input.kind];
 			const value = serializer.serialize(input);
 			const prior = previous?.inputs[index];
 			inputs.push(prior !== undefined && prior.kind === input.kind && prior.value === value ? prior : { kind: input.kind, value });
-			if (input === this.activeEditor || this.activeEditor?.kind === 'workspace_edit_review' && (!passedActive || active === null)) active = index;
+			if (input === this.activeEditor || (this.activeEditor?.kind === 'workspace_edit_review' || this.activeEditor?.kind === 'assistant') && (!passedActive || active === null)) active = index;
 			if (input === this.previewEditor) preview = index;
 		}
 		if (previous !== undefined && active === previous.active && preview === previous.preview

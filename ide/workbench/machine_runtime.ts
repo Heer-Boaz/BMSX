@@ -1,3 +1,4 @@
+import type { AssistantConnectionFactory } from '../../hosts/common/assistant_protocol';
 import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
 import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
 import { activateEditor } from './overlay_modes';
@@ -41,6 +42,7 @@ export async function prepareWorkbenchRuntime(
 	logOutput: LogOutput,
 	resourcePanelWidthRatio: number,
 	createGraphLayoutEngine: GraphLayoutEngineFactory,
+	connectAssistant?: AssistantConnectionFactory,
 ): Promise<RuntimeIdeState> {
 	const media = await loadRomToolingMedia(
 		systemRom,
@@ -71,6 +73,7 @@ export async function prepareWorkbenchRuntime(
 		sources,
 		createGraphLayoutEngine,
 		(systemRom, cartridgeSlots, model, input) => new OffscreenMachine(systemRom, cartridgeSlots, model, input),
+		connectAssistant,
 	);
 	ide.editor.onDidChangeActive(active => {
 		if (active) hostMenu.dismiss();

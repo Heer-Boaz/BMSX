@@ -58,7 +58,7 @@ export function createGraphFixturePanes(views: readonly GraphFixtureView[]) {
 	const pane = new GraphFixturePane(new Map(inputs.map((input, index) => [input, views[index]])));
 	const unused = (): never => { throw new Error('Only the domain-free fixture is registered in this editor group'); };
 	const panes = new EditorPanes({ code_editor: () => pane, behavior_lens: unused, resource_view: unused, scenario_lab: unused, scene_editor: unused,
-		actor_lab: unused, game_view: unused, workspace_edit_review: unused });
+		actor_lab: unused, game_view: unused, workspace_edit_review: unused, assistant: unused });
 	const group = new EditorTabGroupModel();
 	group.initialize(inputs[0]);
 	for (let index = 1; index < inputs.length; index += 1) group.add(inputs[index]);

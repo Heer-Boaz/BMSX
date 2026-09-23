@@ -1,4 +1,5 @@
 import type { AssistantAccount, AssistantCommand, AssistantEvent } from '../../hosts/common/assistant_protocol';
+import { STUDIO_ACCOUNT_LOGIN_URL } from '../../hosts/common/assistant_protocol';
 import { readJsonLines } from '../../hosts/common/json_lines';
 import type { StudioHttpSession } from './http_session';
 
@@ -51,6 +52,7 @@ export class AssistantHttpConnection {
 				this.account = event.account;
 				this.ready.resolve();
 			} else if (this.lease === undefined) throw new Error('Assistant sent an event before connection admission');
+			if (event.type === 'account-changed') this.account = event.account;
 			this.onEvent(event);
 			if (event.type === 'closed') {
 				this.close(event.error === undefined ? undefined : new Error(event.error));
@@ -74,6 +76,8 @@ export class AssistantHttpConnection {
 		} catch (error) { this.close(error as Error); throw error; }
 		throw failure;
 	}
+
+	public openLoginPage(): void { window.open(STUDIO_ACCOUNT_LOGIN_URL, '_blank', 'noopener,noreferrer'); }
 
 	/** Retire local source/review rights immediately. The server independently joins process exit. */
 	public close(error?: Error): void {

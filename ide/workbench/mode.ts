@@ -1,3 +1,4 @@
+import type { AssistantConnectionFactory } from '../../hosts/common/assistant_protocol';
 import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
 import type { TestTargetFactory } from '../testing/target';
 import type { HostRewind } from '../../hosts/common/rewind';
@@ -64,6 +65,7 @@ export async function initializeIdeFeatures(
 	sources: RuntimeSourceState,
 	createGraphLayoutEngine: GraphLayoutEngineFactory,
 	createTestTarget: TestTargetFactory,
+	connectAssistant?: AssistantConnectionFactory,
 ): Promise<RuntimeIdeState> {
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 	const editorAvailable = runtimeSourcesSupportIde(sources);
@@ -107,6 +109,7 @@ export async function initializeIdeFeatures(
 		workspaceDirtyRecords,
 		createGraphLayoutEngine,
 		createTestTarget,
+		connectAssistant,
 	);
 	seedDefaultLuaBuiltins();
 	audioOutput.muteUi(state.editor.executionSuspended);

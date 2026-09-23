@@ -1,3 +1,4 @@
+import type { AssistantInput } from '../../ide/workbench/contrib/assistant/editor_input';
 import type { EditorPaneSelection } from '../../ide/workbench/services/editor/editor_selection';
 import { CodeEditorNavigationSelection } from '../../ide/workbench/contrib/code_editor/navigation_selection';
 import type { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
@@ -83,6 +84,7 @@ export function createTestEditorPanes(): EditorPanes {
 	return new EditorPanes({
 		actor_lab: () => new TestEditorPane<ActorLabInput>(activateViewInput),
 		game_view: () => new TestEditorPane<GameViewInput>(activateViewInput),
+		assistant: () => new TestEditorPane<AssistantInput>(activateViewInput),
 		workspace_edit_review: () => new TestEditorPane<WorkspaceEditReviewInput>(activateViewInput),
 		code_editor: () => new TestEditorPane<CodeEditorInput>(activateCodeEditorTab, input => new CodeEditorNavigationSelection(input)),
 		resource_view: () => new TestEditorPane<ResourceViewerInput>(activateViewInput),

@@ -1,3 +1,5 @@
+import { AssistantHttpConnection } from './assistant_connection';
+import { StudioHttpSession } from './http_session';
 import { BrowserGraphLayoutEngine } from './graph_layout';
 import { HostExecutionControl } from '../../hosts/common/execution_control';
 import { HostRewind } from '../../hosts/common/rewind';
@@ -73,6 +75,7 @@ async function startBrowserStudio(): Promise<void> {
 			rewind,
 			execution,
 		);
+		const httpSession = new StudioHttpSession();
 		const ide = await prepareWorkbenchRuntime(
 			options.systemRom,
 			options.cartridgeSlots,
@@ -86,13 +89,14 @@ async function startBrowserStudio(): Promise<void> {
 			rewind,
 			hostOverlayMenu,
 			window.localStorage,
-			new HttpWorkspaceRecordProvider(),
+			new HttpWorkspaceRecordProvider(httpSession),
 			options.clock,
 			new BrowserClipboard(),
 			new IdeMicrotaskQueue(),
 			options.logOutput,
 			defaultResourcePanelRatio(window.innerWidth / window.screen.width),
 			() => new BrowserGraphLayoutEngine(new Worker(new URL('./graph-layout.worker.js', document.baseURI))),
+			(signal, onEvent) => AssistantHttpConnection.open(httpSession, signal, onEvent),
 		);
 		systemOutput.flush(runtime, options.logOutput);
 		audioOutput.bootstrap();
@@ -108,6 +112,7 @@ async function startBrowserStudio(): Promise<void> {
 			}
 		});
 		window.addEventListener('pagehide', () => {
+			ide.editor.assistant.disconnect();
 			persistWorkspaceSessionLocally();
 		});
 		runtime.frameScheduler.clearQueuedTime();

@@ -3,8 +3,12 @@ import { promisify } from 'node:util';
 import { CODEX_VERSION, CodexPolicy, type CodexProvider } from './policy';
 import { CodexProfile } from './profile';
 import { CodexStdio, type CodexProcessExit } from './stdio';
+import { STUDIO_ACCOUNT_LOGIN_URL } from '../../common/assistant_protocol';
 import { CodexAdmissionError, CodexProtocolError, type CodexAccount, type CodexSessionEvent,
-	type CodexTool, type CodexToolCall, type CodexToolResult, type CodexTurn, type RpcId, type RpcMessage } from './protocol';
+	type CodexLogin, type CodexTool, type CodexToolCall, type CodexToolResult, type CodexTurn, type RpcId, type RpcMessage } from './protocol';
+
+type LoginCompletion = { loginId: string; success: boolean; error: string | null };
+type LoginLifetime = { started: Promise<CodexLogin>; id?: string; cancelled: boolean; completion?: LoginCompletion };
 
 type TurnLifetime = {
 	id?: string;
@@ -30,6 +34,9 @@ export class CodexSession {
 	private active: TurnLifetime | undefined;
 	public readonly closed: Promise<CodexProcessExit>;
 	private retired = false;
+	private login: LoginLifetime | undefined;
+	private signingOut = false;
+	private accountRevision = 0;
 	private readonly onAbort = () => { this.close(this.options.signal.reason); };
 
 	private constructor(private readonly profile: CodexProfile, private readonly options: CodexSessionOptions, private readonly policy: CodexPolicy) {
@@ -75,9 +82,61 @@ export class CodexSession {
 
 	public readAccount(): Promise<CodexAccount> { return this.rpc.request('account/read', { refreshToken: false }); }
 
+	/** Device authorization never binds or cancels another application's localhost OAuth listener. */
+	public async startLogin(): Promise<void> {
+		if (this.retired) throw new CodexProtocolError('Codex connection closed');
+		if (this.active || this.login || this.signingOut || this.threadId) throw new Error('Finish the current account/conversation before signing in');
+		const attempt: LoginLifetime = { started: this.rpc.request<CodexLogin>('account/login/start', { type: 'chatgptDeviceCode' }), cancelled: false };
+		this.login = attempt;
+		try {
+			const result = await attempt.started;
+			// This URL comes from an external executable, not a model or a browser command.
+			if (result.type !== 'chatgptDeviceCode' || result.verificationUrl !== STUDIO_ACCOUNT_LOGIN_URL) {
+				const error = new CodexProtocolError('Codex returned an unadmitted account authorization URL');
+				await this.close(error); throw error;
+			}
+			attempt.id = result.loginId;
+			if (attempt.completion) this.completeLogin(attempt, attempt.completion);
+			if (!this.retired && this.login === attempt && !attempt.cancelled) this.options.onEvent({ type: 'login-started', code: result.userCode });
+		} catch (error) { if (this.login === attempt) this.login = undefined; throw error; }
+	}
+
+	public async cancelLogin(): Promise<void> {
+		const attempt = this.login;
+		if (!attempt || attempt.cancelled) return;
+		attempt.cancelled = true;
+		try {
+			const { loginId } = await attempt.started;
+			await this.rpc.request('account/login/cancel', { loginId });
+		} finally { if (this.login === attempt) this.login = undefined; }
+	}
+
+	public async signOut(): Promise<void> {
+		if (this.active || this.login || this.signingOut) throw new Error('Finish or cancel the current operation before signing out');
+		this.signingOut = true;
+		this.threadId = undefined;
+		try { await this.rpc.request('account/logout', {}); }
+		finally { this.signingOut = false; }
+	}
+
+	private completeLogin(attempt: LoginLifetime, completed: LoginCompletion): void {
+		if (this.login !== attempt || attempt.cancelled || completed.loginId !== attempt.id) return;
+		this.login = undefined;
+		this.options.onEvent({ type: 'login-completed', success: completed.success, error: completed.error === null ? undefined : completed.error });
+	}
+
+	private async refreshAccount(): Promise<void> {
+		const revision = ++this.accountRevision;
+		try {
+			const account = await this.readAccount();
+			if (!this.retired && revision === this.accountRevision) this.options.onEvent({ type: 'account-changed', account });
+		} catch (error) { await this.close(error as Error); }
+	}
+
 	public async startTurn(prompt: string): Promise<string> {
 		if (this.retired) throw new CodexProtocolError('Codex connection closed');
 		if (this.active) throw new Error('A Codex turn is already active');
+		if (this.login || this.signingOut) throw new Error('Finish the account operation before starting a turn');
 		const turn: TurnLifetime = { started: undefined, controller: new AbortController(), calls: new Set() };
 		this.active = turn;
 		turn.started = this.start(turn, prompt);
@@ -180,7 +239,21 @@ export class CodexSession {
 					this.options.onEvent({ type: 'message', turnId: params.turnId, itemId: params.item.id, text: params.item.text });
 				}
 				break;
-			case 'account/updated': this.options.onEvent({ type: 'account-changed' }); break;
+			case 'account/updated':
+				if (this.active) { void this.close(new Error('Codex account changed during a turn')); break; }
+				this.threadId = undefined;
+				this.options.onEvent({ type: 'account-refreshing' });
+				void this.refreshAccount();
+				break;
+			case 'account/login/completed': {
+				const completed = message.params as LoginCompletion;
+				const attempt = this.login;
+				if (!attempt || attempt.cancelled) break;
+				// A failed device poll may finish in the same stdout chunk as the start response.
+				if (attempt.id === undefined) attempt.completion = completed;
+				else this.completeLogin(attempt, completed);
+				break;
+			}
 		}
 	}
 
@@ -207,6 +280,7 @@ export class CodexSession {
 	private retire(): void {
 		if (!this.retired) {
 			this.retired = true;
+			this.login = undefined;
 			this.options.signal.removeEventListener('abort', this.onAbort);
 			if (this.active) this.retireTurn(this.active);
 		}

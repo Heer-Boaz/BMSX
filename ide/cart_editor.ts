@@ -1,3 +1,6 @@
+import { AssistantConversation } from './workbench/services/assistant/conversation';
+import { AssistantPane } from './workbench/contrib/assistant/editor_pane';
+import type { AssistantConnectionFactory } from '../hosts/common/assistant_protocol';
 import type { HotResumeService } from './workbench/services/execution/hot_resume';
 import { ActorLabController } from './workbench/contrib/actor_lab/controller';
 import { GameViewInput } from './workbench/contrib/game_view/editor_input';
@@ -142,6 +145,7 @@ const EDITOR_TARGET_WIDTH = 384;
 const EDITOR_TARGET_HEIGHT = 288;
 
 export type CartEditor = {
+	readonly assistant: AssistantConversation;
 	readonly diagnostics: ResourceDiagnosticsService;
 	readonly executionSuspended: boolean;
 	readonly isAvailable: boolean;
@@ -235,6 +239,8 @@ export class RuntimeCartEditor implements CartEditor {
 		},
 	};
 
+	public readonly assistant: AssistantConversation;
+
 	public constructor(
 		runtime: Runtime,
 		presenter: VideoPresenter,
@@ -263,7 +269,9 @@ export class RuntimeCartEditor implements CartEditor {
 		private readonly boots: BootService,
 		public readonly diagnostics: ResourceDiagnosticsService,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
+		connectAssistant?: AssistantConnectionFactory,
 	) {
+		this.assistant = new AssistantConversation(editorTextModelService, sources, storage, connectAssistant);
 		this.runtime = runtime;
 		this.presenter = presenter;
 		this.display = display;
@@ -305,6 +313,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources,
 		);
 		this.editorPanes = new EditorPanes({
+			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes),
 			workspace_edit_review: () => new WorkspaceEditReviewPane(this.resourcePanel),
 			code_editor: () => new CodeEditorPane(
 				this,
@@ -591,6 +600,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public async shutdown(): Promise<void> {
+		this.assistant.dispose();
 		this.diagnostics.dispose();
 		this.unsubscribeDiagnosticsChanged();
 		const executionDrained = this.hotResumes.shutdown();

@@ -59,6 +59,9 @@ export class CodexHttpApi {
 					return;
 				}
 				case 'interrupt': await connection.session!.interrupt(); break;
+				case 'login-start': await connection.session!.startLogin(); break;
+				case 'login-cancel': await connection.session!.cancelLogin(); break;
+				case 'sign-out': await connection.session!.signOut(); break;
 				case 'tool-result': {
 					const tool = connection.tools.get(command.requestId);
 					if (!tool) { response.writeHead(409).end('Tool request has retired or was already answered'); return; }
@@ -126,6 +129,10 @@ export class CodexHttpApi {
 		} else if (event.type === 'turn-completed') {
 			this.publish(connection, { type: 'turn-completed', turnId: event.turn.id,
 				status: event.turn.status as 'completed' | 'interrupted' | 'failed', error: event.turn.error?.message });
+		} else if (event.type === 'account-changed') {
+			this.publish(connection, { type: 'account-changed', account: { connected: event.account.account !== null,
+				requiresLogin: event.account.requiresOpenaiAuth && event.account.account === null,
+				email: event.account.account?.email, plan: event.account.account?.planType } });
 		} else this.publish(connection, event);
 	}
 

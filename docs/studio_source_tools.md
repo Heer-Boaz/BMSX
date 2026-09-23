@@ -84,7 +84,7 @@ its [conflict detector](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/
 ties proposals to live models/files. BMSX retains its own stronger one-shot
 context and canonical-byte contract rather than adopting fallback range repair.
 
-Browser connection leases, explicit product account connection and the visible
-conversation contribution are still separate integration work. None of these
+Browser connection leases and the visible conversation/account composition are
+now covered by [assistant contribution](studio_assistant_contribution.md). None of these
 tools grant a general-purpose RPC tunnel, shell, file writer or permission to
 rewrite source outside the shared review/history path.

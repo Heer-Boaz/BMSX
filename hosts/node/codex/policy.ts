@@ -18,6 +18,9 @@ export class CodexPolicy {
 			'shell_snapshot', 'skill_mcp_dependency_install']) features[feature] = false;
 		this.config = {
 			approval_policy: 'never', sandbox_mode: 'read-only', web_search: 'disabled',
+			// Disable Codex's lossy text truncation for every JS-representable tool result.
+			// These are exact JSON receipts, not shell logs. Provider context limits still apply.
+			tool_output_token_limit: Number.MAX_SAFE_INTEGER,
 			mcp_servers: {}, notify: [], features, project_doc_max_bytes: 0,
 			cli_auth_credentials_store: 'file', mcp_oauth_credentials_store: 'file',
 			orchestrator: { skills: { enabled: false }, mcp: { enabled: false } },
@@ -47,7 +50,8 @@ export class CodexPolicy {
 			}
 		}
 		if (!sessionFlags || !isDeepStrictEqual(read.config.mcp_servers, {}) || read.config.approval_policy !== 'never'
-			|| read.config.sandbox_mode !== 'read-only' || read.config.web_search !== 'disabled') {
+			|| read.config.sandbox_mode !== 'read-only' || read.config.web_search !== 'disabled'
+			|| read.config.tool_output_token_limit !== this.config.tool_output_token_limit) {
 			throw new CodexAdmissionError('Codex did not admit the Studio capability policy');
 		}
 		const effectiveFeatures = read.config.features as Record<string, Json>;

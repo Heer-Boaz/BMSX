@@ -1,3 +1,4 @@
+import type { AssistantInput } from '../../ide/workbench/contrib/assistant/editor_input';
 import type { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import type { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor_input';
 import type { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
@@ -138,6 +139,7 @@ function createEditorPanes() {
 	const editorPanes = new EditorPanes({
 		actor_lab: () => new RecordingEditorPane<ActorLabInput>(),
 		game_view: () => new RecordingEditorPane<GameViewInput>(),
+		assistant: () => new RecordingEditorPane<AssistantInput>(),
 		workspace_edit_review: () => new RecordingEditorPane<WorkspaceEditReviewInput>(),
 		code_editor: () => {
 			codeFactoryCount += 1;

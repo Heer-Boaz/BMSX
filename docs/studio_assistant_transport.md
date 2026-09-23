@@ -1,7 +1,7 @@
 # Studio assistant connection: a local lease, not an RPC proxy
 
-The browser and Node transport are implemented; account connection and a visible
-conversation contribution are not. `npm run serve:studio` explicitly enables the
+The browser and Node transport are composed with the
+[workspace conversation and account controls](studio_assistant_contribution.md). `npm run serve:studio` explicitly enables the
 adapter on the loopback Studio server. Ordinary `serve:dist` does not enable it;
 `--assistant` on a non-loopback binding fails before opening a profile/process.
 Enabling the endpoint alone starts no Codex process or model request.
@@ -40,7 +40,9 @@ A competing live connection gets 409. An explicitly requested replacement may
 wait for an already retired process to drain; it cannot take over a live lease.
 
 `POST /__bmsx__/assistant/command` additionally requires that lease in
-`X-BMSX-Assistant-Lease`. Only start, interrupt and tool-result operations exist.
+`X-BMSX-Assistant-Lease`. Only start, interrupt, tool-result, login-start, login-cancel and sign-out
+operations exist. Login IDs remain process-owned; the browser receives only a
+one-time code and a public account snapshot, never credentials or arbitrary URLs.
 Each tool request receives a new one-shot reply identity, not the external
 provider's RPC/call ID. Interrupt/disconnect removes pending reply rights; a late,
 duplicate, foreign-connection or retargeted reply is rejected.
@@ -83,8 +85,10 @@ and [ordinary review](studio_workspace_edit_review.md), not by transport IDs.
   This is automated browser evidence, not UI-only authoring. Changed-file
   indentation and `git diff --check` pass.
 
-These are automated transport/browser tests, **not** a visible chat-pane,
-account-login, paid-inference or OS-sandbox demonstration. No credentials were
+These transport tests alone are **not** a chat-pane, real account authorization,
+paid-inference or OS-sandbox demonstration. The separate
+[contribution tests](studio_assistant_contribution.md) cover the visible pane
+and the device-code protocol with offline fixtures. No credentials were
 copied and no remote model requests were made. The pinned process capability
 limits and same-user threat model remain in the [process contract](studio_codex_process_contract.md).
 

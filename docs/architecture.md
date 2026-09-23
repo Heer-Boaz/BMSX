@@ -5010,8 +5010,19 @@ global connectivity. Local persistence still establishes the document's saved
 identity; UI explicitly warns when the project file was not acknowledged.
 Reconnect synchronizes the saved record, not newer model text, and does not
 rewrite the original Save receipt. See [source save acknowledgements](studio_source_save_acknowledgements.md).
+The optional Studio assistant is host tooling only. Its workspace-owned
+conversation receives a platform connection capability from browser composition;
+the Node adapter owns the isolated Codex account/process, fixed operation
+protocol and process lease. Each prompt captures ordinary source authority;
+proposed edits require the same explicit multi-file review and shared history.
+Neither the transcript nor source-tool execution owns Save, installation or guest
+execution. The pane does not suspend the cart; no normal guest shortcut is
+reserved for submitting prompts. Closing/disconnecting, account changes and
+workspace teardown retire source rights. Device-code login does not open a local
+OAuth callback listener or borrow the user's CLI profile. See
+[assistant contribution](studio_assistant_contribution.md).
 The staged ownership audit and
-remaining pre-agent gates are in [Studio architecture foundation](studio_architecture_foundation.md).
+remaining integration limits are in [Studio architecture foundation](studio_architecture_foundation.md).
 
 Pane detachment completes ordinary focus/capture cleanup while the input and its
 working copy still live. The code widget detaches its model/view on clear; other

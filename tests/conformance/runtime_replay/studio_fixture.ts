@@ -1,3 +1,4 @@
+import type { AssistantConnectionFactory } from '../../../hosts/common/assistant_protocol';
 import { HttpWorkspaceRecordProvider } from '../../../ide/browser/workspace_records';
 import { stripProjectRootPrefix } from '../../../ide/workspace/path';
 import { runtimeSourceProjectRootPath } from '../../../ide/runtime/sources';
@@ -56,7 +57,7 @@ export function codePositionBounds(row: number, column: number) {
 }
 
 /** Actual Studio composition; backend selection belongs to the test project. */
-export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GPUBackend, capture?: (name: string) => Promise<void>) {
+export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GPUBackend, capture?: (name: string) => Promise<void>, connectAssistant?: AssistantConnectionFactory) {
 	const bios = new Uint8Array(await (await fetch('/bios.rom')).arrayBuffer());
 	const cart = new Uint8Array(await (await fetch('/cart.rom')).arrayBuffer());
 	const clock = new VirtualHeadlessClock();
@@ -82,7 +83,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const menu = new HostOverlayMenu(presenter, runtime, input, rewind, execution);
 	const clipboard = new BrowserClipboard();
 	const ide = await prepareWorkbenchRuntime(bios, [cart, null], runtime, presenter, display, input,
-		audio, tasks, execution, rewind, menu, localStorage, new HttpWorkspaceRecordProvider(), clock, clipboard, new IdeMicrotaskQueue(), log, 0.3, () => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')));
+		audio, tasks, execution, rewind, menu, localStorage, new HttpWorkspaceRecordProvider(), clock, clipboard, new IdeMicrotaskQueue(), log, 0.3, () => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')), connectAssistant);
 	const output = new SystemOutputLog();
 	const harness = createHeadlessIdeHarness(ide, runtime, audio, log);
 	const history = runtime.history;

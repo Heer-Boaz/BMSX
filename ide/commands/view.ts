@@ -1,3 +1,4 @@
+import { openAssistant } from '../workbench/contrib/assistant/editor_input';
 import type { CartEditor } from '../cart_editor';
 import { toggleProblemsPanel } from '../workbench/contrib/problems/panel/controller';
 import { toggleWordWrap } from '../editor/ui/view/view';
@@ -10,6 +11,7 @@ import { openGameView } from '../workbench/contrib/game_view/editor_input';
 
 export function isEditorViewCommand(command: EditorCommandId): command is EditorViewCommandId {
 	switch (command) {
+		case 'assistant':
 		case 'resources':
 		case 'problems':
 		case 'behaviorLens':
@@ -36,6 +38,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 	switch (command) {
 		case 'actorLab': editor.actorLab.open(); return;
 		case 'gameView': openGameView(editor.editorPanes); return;
+		case 'assistant': openAssistant(editor.editorPanes, editor.assistant); return;
 		case 'resources':
 			editor.resourcePanel.togglePanel();
 			return;

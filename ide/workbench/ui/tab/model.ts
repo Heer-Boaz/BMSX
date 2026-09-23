@@ -1,3 +1,4 @@
+import type { AssistantInput } from '../../contrib/assistant/editor_input';
 import type { BehaviorLensInput } from '../../contrib/behavior_lens/editor_input';
 import type { CodeEditorInput } from '../../contrib/code_editor/editor_input';
 import type { ResourceViewerInput } from '../../contrib/resources/editor_input';
@@ -15,6 +16,7 @@ export type EditorInput =
 	| ScenarioLabInput
 	| ActorLabInput
 	| GameViewInput
+	| AssistantInput
 	| WorkspaceEditReviewInput
 	| SceneEditorInput;
 

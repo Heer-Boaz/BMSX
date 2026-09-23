@@ -87,6 +87,20 @@ operations cross HTTP, never provider RPC/configuration. Account/credential and
 process ownership stay in Node; source context/history stay in the workbench.
 See [assistant transport](../docs/studio_assistant_transport.md).
 
+`AssistantConversation` owns a workspace's connection epoch, per-prompt source
+authority and retained transcript. The browser composition injects the narrow
+`AssistantConnectionFactory` from the pure `hosts/common/assistant_protocol.ts`
+contract, like clipboard/clock contracts; no workbench feature imports a browser
+transport, Node process or host-session implementation. The architecture audit
+classifies that exact protocol file as a host contract, not all of host/common.
+The transient assistant input owns draft/focus/scroll/projection state. Detaching
+its pane leaves the conversation alive; closing disconnects it. Workspace clear
+also disposes transcript proposals, so old workspace data and capabilities do
+not cross teardown. Model output reaches only the existing explicit review.
+Multiline fields retain exact UTF-16/LF-delimited input slices (including CR),
+independent control history, cached wrap geometry and captured pointer selection.
+See [assistant contribution](../docs/studio_assistant_contribution.md).
+
 ## Execution, view lifetime, and restored inspection
 
 Host execution is independent of editor focus. `hosts/common/execution_control.ts`

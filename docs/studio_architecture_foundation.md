@@ -2,8 +2,9 @@
 
 Status: foundation work in progress, 2026-09-23; gates 1-4 implemented, with local
 files, whole-workbench review, owned process/source tools and secured browser
-transport validated under gate 5. Account connection and a visible assistant
-contribution remain open. The user requested the
+transport, device-code account operations and a visible conversation/review
+contribution implemented under gate 5. Real account authorization and paid-model
+use are not part of the automated evidence. The user requested the
 whole IDE/Studio ownership model to be corrected first, rather than adapting an
 agent to accidental UI internals.
 
@@ -34,19 +35,19 @@ reason to introduce parallel owners or to postpone unrelated product value.
 Only contracts needed by the proposed agent capabilities are integration gates,
 not every outstanding IDE feature or test-fixture issue.
 
-## Codex composition target (workbench contribution still open)
+## Codex composition target
 
 The workbench remains authoritative; an agent is another client, not a second
 editor or an emulator extension:
 
 ```text
-Code / Scene Editor / Behavior Lens / Scenario Lab / future Codex view
+Code / Scene Editor / Behavior Lens / Scenario Lab / Codex view
                              |
       resource models + shared history + explicit workbench operations
                     /                         \
     canonical workspace storage         runtime and test owners
 
-future Codex view <-> secured local transport <-> Codex App Server process
+Codex view <-> secured local transport <-> Codex App Server process
 ```
 
 - A local process belongs to the Node/platform composition, never the machine
@@ -406,3 +407,23 @@ Prompts/tool answers never replay automatically; interrupt/disconnect retires
 reply rights and remote shutdown joins actual process exit. Production opt-in,
 LAN rejection and a real Chromium/source-IO round trip are tested without account
 credentials or paid inference. Account connection and conversation UI remain open.
+
+
+### Gate 5g: account operations and the workspace-owned conversation
+
+[Assistant contribution](studio_assistant_contribution.md) binds the admitted
+process/HTTP/source-tool owners to a transient, non-suspending workbench pane.
+There is now an actual View / Codex Assistant entry, multiline prompt, retained
+streaming transcript, account actions, Stop, and explicit shared-review handoff.
+Tab switching keeps the conversation; closing, workspace teardown and sign-out
+retire its source rights. Workspace teardown also releases retained transcripts
+and proposals. No source writer, guest execution path or durable conversation
+replay was introduced.
+
+The real-cart browser probe exposed Codex's default lossy tool-output truncation:
+it cut the JSON source catalog in half. The process policy now disables that
+text-log truncation for JS-representable results and verifies the effective
+setting. Model context exhaustion remains a provider error, not permission to
+truncate/repair source receipts. The production device-code flow avoids Codex's
+browser-login behavior of cancelling an existing localhost OAuth listener.
+See the contribution document for commands, evidence and remaining limits.

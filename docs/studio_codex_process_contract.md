@@ -123,7 +123,8 @@ process-launch service:
   Stderr retention is bounded. There is no notification backlog or automatic
   reconnect/replay queue.
 - `session.ts` owns one conversation and one active turn. Its public operations
-  are account inspection, turn start, interrupt and close, not arbitrary Codex
+  are account inspection/device-code login/cancel/logout, turn start, interrupt
+  and close, not arbitrary Codex
   methods. Every tool request must match the current thread, turn and admitted
   tool. Other server requests (including approvals and token refresh) are denied.
   Cancellation aborts pending tool work immediately; late results cannot answer
@@ -165,6 +166,30 @@ not adopt its lazy reconnect behavior for source-edit authority.
 The [workbench source tools](studio_source_tools.md) are now exercised through
 this adapter with the real process and an offline model fixture. The secured
 [browser lease transport](studio_assistant_transport.md) now has its own real
-HTTP/Chromium evidence. Explicit account connection and the visible conversation
-contribution remain separate work; the loopback capability never admits a general
-process proxy.
+HTTP/Chromium evidence. The [conversation contribution](studio_assistant_contribution.md)
+now composes the pane and fixed device-code account actions; the loopback
+capability never admits a general process proxy.
+
+## Account and exact-output follow-through
+
+The adapter admits only `chatgptDeviceCode` login, with the pinned official
+`https://auth.openai.com/codex/device` verification destination. Ordinary browser
+login can cancel an existing listener on localhost:1455; Studio does not use it.
+The process owns login IDs and cancellation, including cancellation before the
+start response and completion arriving before that response's continuation.
+Account changes invalidate the old conversation thread and publish a fresh
+`account/read` snapshot; changes during a turn terminate its connection.
+
+`tool_output_token_limit` is set to `Number.MAX_SAFE_INTEGER`, a protocol setting
+that disables lossy history truncation for any JS-representable source result,
+not a preallocation or a larger model context. Effective configuration admission
+checks it. The actual-cart browser test verifies full JSON catalog/read receipts
+beyond the default truncation size. Context overflow still fails at the provider;
+Studio never repairs missing source bytes or treats a shortened receipt as exact.
+
+`test:codex-account` has five passing cases. A real pinned process uses a local
+issuer to exercise device-code request/poll/cancel/logout with no credentials.
+An explicitly test-only relay rewrites that issuer's verification URL and injects
+notification ordering for the production session adapter tests. The unmodified
+local URL is rejected by production admission. This is not a claim of successful
+personal account authorization, token refresh or paid inference.

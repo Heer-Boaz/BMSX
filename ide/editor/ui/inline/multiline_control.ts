@@ -16,8 +16,15 @@ export class MultilineFieldControl implements PointerCaptureTarget {
 	public rowHeight = 0;
 	private verticalOffset = -1;
 	private desiredX = 0;
-	public setInput(field: TextField, view: MultilineFieldViewport, bounds: RectBounds): void { this.input = { field, view, bounds }; }
-	public clearInput(): void { this.cancelPointer(); this.input?.field.focusTarget.release(); this.input = undefined; }
+	private unbindBlur: (() => void) | undefined;
+	public setInput(field: TextField, view: MultilineFieldViewport, bounds: RectBounds): void {
+		this.clearInput(); this.input = { field, view, bounds };
+		this.unbindBlur = field.focusTarget.onDidBlur(() => this.cancelPointer());
+	}
+	public clearInput(): void {
+		this.cancelPointer(); this.unbindBlur?.(); this.unbindBlur = undefined;
+		this.input?.field.focusTarget.release(); this.input = undefined; this.verticalOffset = -1;
+	}
 	public handleKeyboard(input: PlayerInput, clipboard: Clipboard): void {
 		const { field, view } = this.input!;
 		for (const code of ['ArrowUp', 'ArrowDown', 'Home', 'End', 'Enter'] as const) {
