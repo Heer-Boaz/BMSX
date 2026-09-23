@@ -1,5 +1,4 @@
 import type { Position } from '../../../common/models';
-import { splitText } from '../../../../machine/ts/common/text_lines';
 import { inputFocus, type InputFocusTarget } from '../../../input/focus';
 
 type TextFieldRevision = {
@@ -14,6 +13,7 @@ type TextFieldRevision = {
 export class TextField {
 	public readOnly = false;
 	public text = '';
+	/** Exact LF-delimited slices: CR bytes remain part of the field's UTF-16 positions. */
 	public lines = [''];
 	public cursorRow = 0;
 	public cursorColumn = 0;
@@ -92,7 +92,7 @@ export class TextField {
 
 	private restoreRevision(revision: TextFieldRevision): void {
 		this.text = revision.text;
-		this.lines = splitText(revision.text);
+		this.lines = revision.text.split('\n');
 		this.cursorRow = revision.cursorRow;
 		this.cursorColumn = revision.cursorColumn;
 		this.desiredColumn = revision.cursorColumn;

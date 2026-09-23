@@ -5,7 +5,6 @@ import type { InlineInputOptions, Position } from '../../../common/models';
 import type { TextField } from './text_field_model';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { LuaLexer } from '../../../../toolchain/ts/lua/syntax/lexer';
-import { splitText } from '../../../../machine/ts/common/text_lines';
 import { advanceToggleBlink } from '../view/caret/blink';
 import { editorCaretState } from '../view/caret/state';
 import {
@@ -83,7 +82,7 @@ const applyTextUpdate = (field: TextField, nextText: string, nextCursorOffset: n
 	if (field.readOnly) return false;
 	const changed = nextText !== field.text;
 	if (changed) field.recordEdit();
-	const lines = splitText(nextText);
+	const lines = nextText.split('\n');
 	field.text = nextText;
 	field.lines = lines;
 	offsetToPosition(lines, nextCursorOffset, scratchPosition);
@@ -384,7 +383,7 @@ export function registerPointerClick(field: TextField, column: number, doubleCli
 
 export function setFieldText(field: TextField, value: string, moveCursorToEnd: boolean): void {
 	field.clearHistory();
-	const lines = splitText(value);
+	const lines = value.split('\n');
 	field.text = value;
 	field.lines = lines;
 	if (moveCursorToEnd) {

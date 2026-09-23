@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { InputFocusService, inputFocus } from '../../ide/input/focus';
 import { TextField } from '../../ide/editor/ui/inline/text_field_model';
-import { insertValue, setFieldText, selectAll, backspace, setCursorFromOffset } from '../../ide/editor/ui/inline/text_field';
+import { insertValue, setFieldText, selectAll, backspace, setCursorFromOffset, getCursorOffset } from '../../ide/editor/ui/inline/text_field';
 import { resolveEditorCommandKeybinding } from '../../ide/input/keyboard/command_keybindings';
 import { KeyModifier } from '../../hosts/common/input/player';
 import { Input } from '../../hosts/common/input/manager';
@@ -209,4 +209,17 @@ test('the view declares a retained focus order; controls without an order keep t
 	assert.equal(focus.target, code);
 	focus.setTarget(null);
 	assert.equal(focus.moveFocus(true), false);
+});
+
+test('text-field positions and Undo preserve CRLF bytes rather than indexing a lossy display split', () => {
+	const field = new TextField();
+	setFieldText(field, 'a\r\nb\r\n', true);
+	assert.equal(getCursorOffset(field), 6);
+	insertValue(field, 'z');
+	assert.equal(field.text, 'a\r\nb\r\nz');
+	field.undo(); assert.equal(field.text, 'a\r\nb\r\n');
+	assert.equal(getCursorOffset(field), 6);
+	setCursorFromOffset(field, 3); insertValue(field, 'before-');
+	assert.equal(field.text, 'a\r\nbefore-b\r\n');
+	field.undo(); field.redo(); assert.equal(field.text, 'a\r\nbefore-b\r\n');
 });
