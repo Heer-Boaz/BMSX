@@ -215,6 +215,8 @@ class MockWorkspaceServer {
 	async fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
 		const method = init?.method || 'GET';
 		const url = new URL(String(input), 'http://workspace.local');
+		if (url.pathname === '/__bmsx__/session') return Response.json({ workspaceToken: 'workspace-storage-test' });
+		assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer workspace-storage-test');
 		const directory = url.searchParams.get('directory');
 		if (directory !== null) {
 			const entries = new Map<string, 'file' | 'directory'>();
@@ -571,6 +573,7 @@ test('canonical source cache keys identical resource paths by physical project p
 	workspaceCanonicalSourceCache.set('cart0/entry.lua', 'return "slot 0"');
 	const requestedPaths: string[] = [];
 	globalThis.fetch = async (input: RequestInfo | URL) => {
+		if (String(input) === '/__bmsx__/session') return Response.json({ workspaceToken: 'workspace-storage-test' });
 		const url = new URL(String(input), 'http://workspace.local');
 		const directory = url.searchParams.get('directory');
 		if (directory !== null) {

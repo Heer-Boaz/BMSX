@@ -44,6 +44,17 @@ admits membership of every target before any pre-edit notification or mutation;
 matching resource paths and resettable version numbers cannot revive an edit
 proposal from a disposed workspace. See [resource context](../docs/studio_resource_context.md).
 
+## Local HTTP workspace capability
+
+`HttpWorkspaceRecordProvider` owns coalesced admission to the loopback server and
+holds its per-process capability only in memory. It renews once after a 401,
+which means no filesystem operation was admitted. Other failures flow into the
+existing local/project persistence distinction; writes are not blindly replayed.
+The server admits local Host/origin/capability before touching the workspace,
+and its filesystem boundary rejects traversal and symlinks. Non-loopback serving
+is static-only, with no workspace capability. None of this grants process/agent
+rights. See [platform boundary](../docs/studio_platform_boundary.md).
+
 ## Execution, view lifetime, and restored inspection
 
 Host execution is independent of editor focus. `hosts/common/execution_control.ts`

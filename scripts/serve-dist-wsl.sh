@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Serve ./dist from WSL and (best-effort) open Windows firewall for the port.
+# Serve static products on the LAN; workspace authoring requires npm run serve:dist instead.
+# This command intentionally has no workspace file API.
 # Usage: bash scripts/serve-dist-wsl.sh [--port 8080] [--dir dist] [--spa] [--cache no-store]
 
 PORT=8080
@@ -61,6 +62,7 @@ else
 fi
 
 echo "Serving ${DIR} on port ${PORT} (WSL: ${is_wsl})"
+echo "Static-only LAN presentation. For local Studio project writes: npm run serve:dist"
 if [[ -n "${WIN_IPS}" ]]; then
 	echo "Windows LAN IP(s): ${WIN_IPS}"
 	echo "Try on iPhone: http://<one-of-these>:${PORT}/index.html?rom=<your-rom>.rom"

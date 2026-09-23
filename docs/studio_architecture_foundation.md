@@ -296,3 +296,18 @@ issues, real visual-only diagnostics/Problems/navigation/Undo/shutdown browser
 evidence, cold session reload and rebuilt Node operation regressions. The
 tests-project baseline remains 112 diagnostics. General multi-file review and
 the platform/security gate remain open; no agent integration is admitted yet.
+
+### Gate 5a: local file-transport authority
+
+The development server now defaults to loopback. A per-process capability and
+Host/origin admission protect file IO; traversal/symlink escapes and wildcard
+CORS are removed. Explicit LAN presentation has no workspace capability.
+The browser file provider coalesces admission and renews only explicitly rejected
+sessions; ordinary source-save acknowledgements and reconnect keep their owners.
+
+[Platform boundary evidence](studio_platform_boundary.md) records six real HTTP
+process probes, three provider lifetime probes, 2293 Lua passes (1 skip), green
+product typechecks/browser build, zero import-boundary issues and actual Save,
+resource-context, cold-session and isolated-test browser regressions. This is
+not a process sandbox or permission to attach Codex: general multi-file review
+and whole-workbench validation remain open.

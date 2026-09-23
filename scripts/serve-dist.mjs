@@ -1,12 +1,15 @@
 #!/usr/bin/env node
-// Minimal static file server to host ./dist over your LAN
-// Usage: node scripts/serve-dist.mjs [--dir dist] [--port 8080] [--host 0.0.0.0] [--spa] [--cache <seconds|no-store>]
+// Local Studio server; explicit non-loopback binding serves static products only.
+// Usage: node scripts/serve-dist.mjs [--dir dist] [--port 8080] [--host 127.0.0.1] [--spa] [--cache <seconds|no-store>]
 
 import { createServer } from 'node:http';
-import { stat, access, readFile, writeFile, readdir, mkdir, unlink, utimes } from 'node:fs/promises';
-import { createReadStream } from 'node:fs';
+import { stat, access, readdir, realpath } from 'node:fs/promises';
+import { createReadStream, constants } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { HttpError, WorkspaceHttpSession } from './dev/http_security.mjs';
+import { resolveRootedPath } from './dev/rooted_path.mjs';
+import { handleWorkspaceRequest } from './dev/workspace_api.mjs';
 
 const args = process.argv.slice(2);
 function getArg(name, short, def) {
@@ -25,7 +28,7 @@ Usage: node scripts/serve-dist.mjs [options]
 Options:
 	-d, --dir <path>      Directory to serve (default: dist)
 	-p, --port <number>   Port to listen on (default: 8080)
-	-H, --host <address>  Host address to bind (default: 0.0.0.0)
+	-H, --host <address>  Host address (default: 127.0.0.1; LAN bindings disable workspace API)
 			--spa             Fallback to index.html for unknown routes
 			--cache <secs|no-store>  Cache-Control (default: no-store)
 	-h, --help            Show this help
@@ -35,7 +38,7 @@ Options:
 
 const dir = path.resolve(String(getArg('dir', 'd', 'dist')));
 const port = Number(getArg('port', 'p', '8080'));
-const host = String(getArg('host', 'H', '0.0.0.0'));
+const host = String(getArg('host', 'H', '127.0.0.1'));
 const spa = Boolean(getArg('spa', '', false));
 const cacheArg = String(getArg('cache', '', 'no-store'));
 const cacheHeader = cacheArg === 'no-store' ? 'no-store' : `public, max-age=${Number(cacheArg) || 0}`;
@@ -71,152 +74,12 @@ const MIME = new Map(Object.entries({
 	'.woff2': 'font/woff2'
 }));
 
-const projectRoot = process.cwd();
-
-function resolveWorkspacePath(relativePath) {
-	const trimmed = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
-	const target = path.resolve(projectRoot, trimmed);
-	if (target === projectRoot) {
-		return target;
-	}
-	const boundary = projectRoot.endsWith(path.sep) ? projectRoot : projectRoot + path.sep;
-	if (!target.startsWith(boundary)) {
-		throw new Error(`Path "${relativePath}" is outside of the workspace.`);
-	}
-	return target;
-}
-
-async function readRequestBody(req) {
-	return await new Promise((resolveBody, rejectBody) => {
-		const chunks = [];
-		req.on('data', chunk => {
-			chunks.push(chunk);
-		});
-		req.on('end', () => {
-			const buffer = chunks.length > 0 ? Buffer.concat(chunks) : Buffer.alloc(0);
-			resolveBody(buffer.toString('utf8'));
-		});
-		req.on('error', rejectBody);
-	});
-}
-
-async function handleLuaApi(req, res, url) {
-	if (url.pathname !== '/__bmsx__/lua') {
-		return false;
-	}
-	if (req.method === 'OPTIONS') {
-		res.writeHead(204, {
-			'Access-Control-Allow-Methods': 'GET,PUT,DELETE,OPTIONS',
-			'Access-Control-Allow-Headers': 'Content-Type,If-None-Match',
-		}).end();
-		return true;
-	}
-	if (req.method === 'GET') {
-		const directoryPath = url.searchParams.get('directory');
-		if (directoryPath !== null) {
-			let entries;
-			try {
-				entries = await readdir(resolveWorkspacePath(directoryPath), { withFileTypes: true });
-			} catch (error) {
-				if (error.code !== 'ENOENT') throw error;
-				res.writeHead(404).end();
-				return true;
-			}
-			res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(entries.map(entry => ({
-				name: entry.name, type: entry.isDirectory() ? 'directory'
-					: entry.isFile() ? 'file' : entry.isSymbolicLink() ? 'symbolic-link' : 'other',
-			}))));
-			return true;
-		}
-		const targetPath = url.searchParams.get('path');
-		if (!targetPath) {
-			res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Missing "path" query parameter.' }));
-			return true;
-		}
-		let absolutePath;
-		try {
-			absolutePath = resolveWorkspacePath(targetPath);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: message }));
-			return true;
-		}
-		let contents;
-		let stats;
-		try {
-			stats = await stat(absolutePath);
-			contents = await readFile(absolutePath, 'utf8');
-		} catch {
-			res.writeHead(404, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: `File not found: ${targetPath}` }));
-			return true;
-		}
-		res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({
-			path: targetPath,
-			contents,
-			updatedAt: Math.round(stats.mtimeMs),
-		}));
-		return true;
-	}
-	if (req.method === 'PUT') {
-		const payload = JSON.parse(await readRequestBody(req));
-		const absolutePath = resolveWorkspacePath(payload.path);
-		await mkdir(path.dirname(absolutePath), { recursive: true });
-		try {
-			await writeFile(absolutePath, payload.contents, {
-				encoding: 'utf8', flag: req.headers['if-none-match'] === '*' ? 'wx' : 'w',
-			});
-		} catch (error) {
-			if (error.code !== 'EEXIST') throw error;
-			res.writeHead(412, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: `File already exists: ${payload.path}` }));
-			return true;
-		}
-		const modifiedSeconds = payload.updatedAt / 1000;
-		await utimes(absolutePath, modifiedSeconds, modifiedSeconds);
-		res.writeHead(204).end();
-		return true;
-	}
-	if (req.method === 'DELETE') {
-		const targetPath = url.searchParams.get('path');
-		if (!targetPath) {
-			res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Missing "path" query parameter.' }));
-			return true;
-		}
-		let absolutePath;
-		try {
-			absolutePath = resolveWorkspacePath(targetPath);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: message }));
-			return true;
-		}
-		try {
-			await unlink(absolutePath);
-		} catch (err) {
-			if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') {
-				res.writeHead(204).end();
-				return true;
-			}
-			const message = err instanceof Error ? err.message : String(err);
-			res.writeHead(500, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: message }));
-			return true;
-		}
-		res.writeHead(204).end();
-		return true;
-	}
-	res.writeHead(405, { 'Allow': 'GET,PUT,DELETE,OPTIONS' }).end();
-	return true;
-}
+const projectRoot = await realpath(process.cwd());
+const workspaceSession = new WorkspaceHttpSession(host);
 
 async function handleCartsApi(req, res, url) {
 	if (url.pathname !== '/__bmsx__/carts') {
 		return false;
-	}
-	if (req.method === 'OPTIONS') {
-		res.writeHead(204, {
-			'Access-Control-Allow-Methods': 'GET,OPTIONS',
-			'Access-Control-Allow-Headers': 'Content-Type',
-		}).end();
-		return true;
 	}
 	if (req.method !== 'GET') {
 		res.writeHead(405, { 'Allow': 'GET' }).end();
@@ -245,15 +108,6 @@ function getType(p) {
 	return MIME.get(ext) || 'application/octet-stream';
 }
 
-function safeJoin(root, urlPath) {
-	const decoded = decodeURIComponent(urlPath || '/');
-	const rel = decoded.startsWith('/') ? decoded.slice(1) : decoded;
-	const joined = path.resolve(path.join(root, rel));
-	if (joined === root) return joined; // root allowed
-	if (!joined.startsWith(root + path.sep)) return null; // block traversal
-	return joined;
-}
-
 function getLocalIPs() {
 	const nets = os.networkInterfaces();
 	const addrs = [];
@@ -269,7 +123,7 @@ async function fileExists(p) {
 	try { await access(p); return true; } catch { return false; }
 }
 
-const root = dir;
+const root = await realpath(dir);
 
 // Decide default file to open/redirect when path is '/'
 const defaultCandidates = ['index.html'];
@@ -287,13 +141,23 @@ const server = createServer(async (req, res) => {
 			res.setHeader(k, v);
 		}
 
-		// (optional) Basic CORS for your internal API endpoints
-		res.setHeader('Access-Control-Allow-Origin', '*');
-
-		if (await handleLuaApi(req, res, requestUrl)) {
+		res.setHeader('X-Content-Type-Options', 'nosniff');
+		res.setHeader('X-Frame-Options', 'DENY');
+		res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+		if (requestUrl.pathname === '/__bmsx__/session') {
+			workspaceSession.bootstrap(req, res);
+			return;
+		}
+		if (requestUrl.pathname === '/__bmsx__/lua') {
+			workspaceSession.authorize(req);
+			await handleWorkspaceRequest(projectRoot, req, res, requestUrl);
 			return;
 		}
 		if (await handleCartsApi(req, res, requestUrl)) {
+			return;
+		}
+		if (req.method !== 'GET' && req.method !== 'HEAD') {
+			res.writeHead(405, { Allow: 'GET,HEAD' }).end();
 			return;
 		}
 		const urlPath = requestUrl.pathname;
@@ -305,17 +169,13 @@ const server = createServer(async (req, res) => {
 				return;
 			}
 		}
-		let target = safeJoin(root, urlPath);
-		if (!target) {
-			res.writeHead(403).end('Forbidden');
-			return;
-		}
-
+		let target;
 		let st;
 		try {
+			target = await resolveRootedPath(root, decodeURIComponent(urlPath).slice(1));
 			st = await stat(target);
 			if (st.isDirectory()) {
-				const idx = path.join(target, 'index.html');
+				const idx = await resolveRootedPath(root, path.relative(root, path.join(target, 'index.html')));
 				if (await fileExists(idx)) {
 					target = idx;
 					st = await stat(target);
@@ -324,9 +184,10 @@ const server = createServer(async (req, res) => {
 					return;
 				}
 			}
-		} catch {
+		} catch (error) {
+			if (error.code !== 'ENOENT') throw error;
 			if (spa) {
-				const idx = path.join(root, 'index.html');
+				const idx = await resolveRootedPath(root, 'index.html');
 				try {
 					st = await stat(idx);
 					target = idx;
@@ -345,9 +206,13 @@ const server = createServer(async (req, res) => {
 		res.setHeader('Content-Length', st.size);
 		res.setHeader('Last-Modified', st.mtime.toUTCString());
 		res.setHeader('Cache-Control', cacheHeader);
-		createReadStream(target).pipe(res);
-	} catch (e) {
-		res.writeHead(500).end('Internal Server Error');
+		if (req.method === 'HEAD') res.end();
+		else createReadStream(target, { flags: constants.O_RDONLY | constants.O_NOFOLLOW }).on('error', error => res.destroy(error)).pipe(res);
+	} catch (error) {
+		if (error instanceof HttpError) res.writeHead(error.status).end(error.message);
+		else if (error.code === 'ENOENT') res.writeHead(404).end('Not Found');
+		else if (error instanceof SyntaxError || error instanceof URIError) res.writeHead(400).end('Bad Request');
+		else { console.error(error); res.writeHead(500).end('Internal Server Error'); }
 	}
 });
 
@@ -358,11 +223,10 @@ server.listen(port, host, () => {
 	if (defaultFile) {
 		console.log(`Default file: /${defaultFile}`);
 	}
-	if (ips.length) {
+	console.log(workspaceSession.enabled ? 'Workspace API: local, session-authorized' : 'Static-only: workspace API disabled on non-loopback binding');
+	if (!workspaceSession.enabled && ips.length) {
 		console.log('On your LAN:');
 		for (const ip of ips) console.log(`  http://${ip}:${port}/`);
-	} else {
-		console.log('No external IPv4 found. Is your network up?');
 	}
 	if (defaultFile) {
 		console.log(`\nTip: open http://localhost:${port}/${defaultFile}`);
