@@ -361,3 +361,14 @@ preparation/reflow measurements, product validation and the remaining 96
 tests-project diagnostics. Source/resource/review foundation gates are now
 implemented. The next admission concerns the real external process/protocol and
 its capabilities, not another editor-specific source-writing path.
+
+### Gate 5c: real external-process contract audit (adapter still open)
+
+[Codex process admission](studio_codex_process_contract.md) pins the locally
+generated 0.156.1 protocol and records five real-process/offline-model probes.
+They prove dynamic tool round-trip, rejected shell/patch calls, interruption and
+EOF teardown. The audit also disproved a security assumption: an empty MCP map
+override retains inherited servers and can still launch their processes. The
+adapter must own its profile/working directory and capability admission; merely
+adding auth to a generic JSON-RPC proxy is explicitly rejected. No production
+agent endpoint or account connection is admitted by these tests.
