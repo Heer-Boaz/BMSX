@@ -60,6 +60,16 @@ an explicit non-suspending runtime policy. The group serializes only persistent
 inputs and produces their actual selection indices; restoration never repairs
 failed inputs by selecting a different file. See [workspace edit review](../docs/studio_workspace_edit_review.md).
 
+`services/assistant` is an external protocol consumer of those owners, not an
+alternate document service. Its per-prompt source tools issue context-local
+resource handles and exact read receipts, then hand one admitted proposal to
+ordinary review. External argument/range/text checks stay at that protocol
+boundary; text models consume native edits directly. Reads include unsaved
+working copies without code views or history boundaries. A completed turn may
+leave a review pending; a disconnected connection may not leave edit rights.
+Text-file resolution takes the actual model service explicitly, including for
+ordinary restoration. See [source tool contract](../docs/studio_source_tools.md).
+
 ## Local HTTP workspace capability
 
 `HttpWorkspaceRecordProvider` owns coalesced admission to the loopback server and

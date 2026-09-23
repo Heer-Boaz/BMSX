@@ -10,8 +10,9 @@ export async function createCodexModelFixture(t, steps) {
 		for await (const part of request) parts.push(part);
 		assert.equal(request.url, '/v1/responses');
 		const body = JSON.parse(Buffer.concat(parts).toString('utf8'));
-		const items = steps[requests.length];
-		assert.ok(items !== undefined, 'unexpected extra model request');
+		const step = steps[requests.length];
+		assert.ok(step !== undefined, 'unexpected extra model request');
+		const items = typeof step === 'function' ? step(body) : step;
 		requests.push(body);
 		const id = `fixture-response-${requests.length}`;
 		const events = [{ type: 'response.created', response: { id } },

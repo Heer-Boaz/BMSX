@@ -50,7 +50,7 @@ async function resolveDirtyFileModels(
 		if (!resource) {
 			throw new Error(`Workspace resource '${entry.path}' is not installed for domain '${entry.domain}'.`);
 		}
-		await resolveTextFileModel(storage, sources, resource);
+		await resolveTextFileModel(editorTextModelService, storage, sources, resource);
 	}
 }
 

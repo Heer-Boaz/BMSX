@@ -160,6 +160,8 @@ establish capability ownership. VS Code's [child-process IPC owner](https://gith
 ties active requests and listeners to process lifetime. BMSX deliberately does
 not adopt its lazy reconnect behavior for source-edit authority.
 
-Browser lease transport, explicit account connection, workbench tools and visible
-conversation contribution remain separate work. The existing loopback file
+The [workbench source tools](studio_source_tools.md) are now exercised through
+this adapter with the real process and an offline model fixture. Browser lease
+transport, explicit account connection and the visible conversation contribution
+remain separate work. The existing loopback file
 capability is not permission to turn `serve-dist` into a general process proxy.

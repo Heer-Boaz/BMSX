@@ -38,6 +38,7 @@
 		"test:workspace-http": "node --test tests/platform/workspace_http.test.mjs",
 		"test:codex-contract": "node --test tests/platform/codex_contract.test.mjs",
 		"test:codex-session": "node --import tsx --test tests/platform/codex_session.test.mjs tests/platform/codex_stdio.test.mjs",
+		"test:codex-workbench": "node --import tsx --import ./tests/lua/test_setup.ts --test tests/platform/codex_workbench.test.ts",
 		"test:lua": "npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts tests/lua/*.test.ts",
 		"test:rompacker": "npx tsx --test tests/rompacker/*.ts",
 		"test:render-parity": "npm run build:product:node-headless-tooling -- --force && npm run build:product:libretro-wsl -- --force && npm run build:libretro-host && npm run build:toolchain:bios -- --force && npm run build:toolchain:cart -- renderhwtest --force && npm run build:toolchain:cart -- bare_metal_cart --force && node scripts/render/pixel_parity.mjs renderhwtest && node scripts/render/pixel_parity.mjs bare_metal_cart",

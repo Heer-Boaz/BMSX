@@ -383,3 +383,14 @@ late reply into a new turn. Configured MCP inheritance is rejected before thread
 creation. This is a real adapter exercised with the actual CLI and an offline
 model fixture, not a public JSON-RPC tunnel. Browser transport, account connection
 and the visible workbench assistant remain unconnected.
+
+### Gate 5e: process-to-workbench source capabilities
+
+[Source tools](studio_source_tools.md) now list/read canonical working copies and
+offer exact receipt-bound edits to the ordinary review owner. No file writer,
+shell, Save/build/run bypass or private model/history was added. A real Codex
+process/offline model fixture completes this tool exchange, and visible
+Lua/YAML review/Undo/disconnect flows pass on all three browser renderers. The
+whole Lua suite has 2319 passes; tests-project typecheck debt remains 96.
+Browser connection leases, explicit account connection and conversation UI are
+the next composition boundary, not permission to expose raw Codex methods.

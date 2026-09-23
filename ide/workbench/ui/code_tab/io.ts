@@ -1,3 +1,4 @@
+import { editorTextModelService } from '../../../editor/model/model_service';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { RuntimeResource } from '../../../common/resource';
 import { openEditorTab } from '../tabs';
@@ -17,7 +18,7 @@ export async function resolveTextCodeEditorInput(
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
 ): Promise<CodeEditorInput> {
-	const model = await resolveTextFileModel(storage, sources, resource);
+	const model = await resolveTextFileModel(editorTextModelService, storage, sources, resource);
 	return resolveCodeEditorInput(retainModelCodeTabContext(model));
 }
 

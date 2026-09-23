@@ -33,7 +33,7 @@ export async function runStudioResourceContext(test: StudioFixture) {
 	check(codeEditorInputManager.get(buildCodeTabId(resource)) === undefined && getActiveTab() === scene,
 		'resource context: analysis neither requires nor creates a code input');
 	const yaml = ide.sources.cartridgeSlots[0]!.dataResources.find(item => item.path.endsWith('nemesis_s_stage.yaml'))!;
-	await resolveTextFileModel(ide.storage, ide.sources, yaml);
+	await resolveTextFileModel(editorTextModelService, ide.storage, ide.sources, yaml);
 	check(ide.diagnostics.get(yaml)!.status === 'unsupported', 'resource context: YAML is not an empty successful Lua analysis');
 	check(ide.diagnostics.get({ domain: 0, path: 'scenes/hangar.lua' }) === undefined, 'resource context: unopened source is unrequested coverage');
 	await test.runPaletteCommand('View: Problems Panel');

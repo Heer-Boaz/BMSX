@@ -1,3 +1,4 @@
+import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorInputSerializer } from '../../services/editor/editor_serialization';
 import { captureTextFileModel, resolveTextFileModelSnapshot, type TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
 import type { RuntimeSourceState } from '../../../runtime/sources';
@@ -20,7 +21,7 @@ export class SceneEditorInputSerializer implements EditorInputSerializer<SceneEd
 
 	public async deserialize(value: string): Promise<SceneEditorInput> {
 		const state: SerializedSceneEditorInput = JSON.parse(value);
-		const { model, sameSource } = await resolveTextFileModelSnapshot(this.storage, this.sources, state.source);
+		const { model, sameSource } = await resolveTextFileModelSnapshot(editorTextModelService, this.storage, this.sources, state.source);
 		const input = new SceneEditorInput(model);
 		this.controller.refresh(input);
 		if (sameSource) restoreSceneEditorView(input, state.view);

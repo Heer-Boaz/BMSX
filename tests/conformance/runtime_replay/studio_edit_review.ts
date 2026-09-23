@@ -1,6 +1,9 @@
 import { HostPauseReason } from '../../../hosts/common/execution_control';
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
+import { getActiveTab, openEditorTab } from '../../../ide/workbench/ui/tabs';
+import { editorTextModelService } from '../../../ide/editor/model/model_service';
+import { WorkspaceSourceTools } from '../../../ide/workbench/services/assistant/source_tools';
+import { WorkspaceEditReviewInput } from '../../../ide/workbench/contrib/edit_review/editor_input';
 import { editorTabGroup } from '../../../ide/workbench/ui/tab/group_model';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
@@ -88,5 +91,54 @@ export async function runStudioEditReview(test: StudioFixture) {
 	await test.clickTab(mainTab.id); await press('ControlLeft', 'KeyZ');
 	check(main.buffer.getText() === originalMain && provider.buffer.getText() === originalProvider, 'edit review: fixture cleanup uses ordinary source history');
 	check(ide.sources.currentBlua32Media === media, 'edit review: installed media is unchanged');
+	await sourceToolReview(test, main.resource.path);
 	return { hostFrames: test.observations.hostFrames, review: 'pass', files: review.proposal.files.length, guestCycles: cycles() };
+}
+
+/** Tool-origin Lua/YAML edits use the same visible review and ordinary source history. No chat UI claim. */
+async function sourceToolReview(test: StudioFixture, mainPath: string): Promise<void> {
+	const { ide, frame, press } = test;
+	const connection = new AbortController();
+	const offer = async () => {
+		const tools = new WorkspaceSourceTools(editorTextModelService, ide.sources, ide.storage, connection.signal);
+		try {
+			const catalog = await tools.execute('studio_list_sources', {});
+			if (catalog.kind !== 'sources') throw new Error('source tools: catalog expected');
+			const selected = [catalog.data.find(source => source.domain === 0 && source.path === mainPath)!,
+				catalog.data.find(source => source.domain === 0 && source.path.endsWith('nemesis_s_stage.yaml'))!];
+			const tabCount = editorTabGroup.tabs.length;
+			const reads = await Promise.all(selected.map(source => tools.execute('studio_read_source', { resource: source.resource })));
+			const files = reads.map((read, index) => {
+				if (read.kind !== 'source') throw new Error('source tools: captured source expected');
+				return { receipt: read.data.receipt, edits: [{ offset: 0, deleteLength: 0, expectedText: '',
+					text: index === 0 ? '-- Studio source tool review\n' : '# Studio source tool review\n' }] };
+			});
+			const result = await tools.execute('studio_propose_edits', { title: 'Source tools: Lua and YAML review', files });
+			if (result.kind !== 'proposal') throw new Error('source tools: review proposal expected');
+			check(editorTabGroup.tabs.length === tabCount, 'source tools: source reads/proposal do not create hidden source tabs');
+			const input = new WorkspaceEditReviewInput(result.proposal);
+			openEditorTab(ide.editor.editorPanes, input);
+			return { input, before: selected.map(source => editorTextModelService.get(source)!.buffer.getText()),
+				models: selected.map(source => editorTextModelService.get(source)!) };
+		} finally { tools.dispose(); }
+	};
+	try {
+		const { input, before, models } = await offer();
+		check(input.proposal.state === 'pending', 'source tools: turn completion leaves explicit review pending');
+		const media = ide.sources.currentBlua32Media, saved = models.map(model => model.lastSavedSource);
+		await frame(); await test.capture?.('tools-pending');
+		await test.click(input.actionBar.items.find(item => item.command === 'workspaceEditReview.apply')!.bounds);
+		check(input.proposal.state === 'applied' && models.every((model, index) => model.buffer.getText() !== before[index]),
+			'source tools: visible Apply edits both canonical working copies');
+		check(models.every((model, index) => model.lastSavedSource === saved[index]) && ide.sources.currentBlua32Media === media,
+			'source tools: review is neither Save nor install');
+		test.harness.openLuaSource(mainPath); await frame(); await press('ControlLeft', 'KeyZ');
+		check(models.every((model, index) => model.buffer.getText() === before[index]), 'source tools: normal Lua Undo restores Lua and YAML together');
+		const disconnected = await offer();
+		connection.abort();
+		await frame(); await test.capture?.('tools-disconnected');
+		check(disconnected.input.proposal.state === 'stale' && !ide.editor.commands.isEnabled('workspaceEditReview.apply'),
+			'source tools: disconnect retires review rights without changing source');
+		check(models.every((model, index) => model.buffer.getText() === before[index]), 'source tools: retirement leaves source untouched');
+	} finally { connection.abort(); }
 }

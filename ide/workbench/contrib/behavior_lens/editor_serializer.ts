@@ -1,3 +1,4 @@
+import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorInputSerializer } from '../../services/editor/editor_serialization';
 import { captureTextFileModel, resolveTextFileModelSnapshot, type TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
 import type { RuntimeSourceState } from '../../../runtime/sources';
@@ -30,10 +31,10 @@ export class BehaviorLensInputSerializer implements EditorInputSerializer<Behavi
 
 	public async deserialize(value: string): Promise<BehaviorLensInput> {
 		const state: SerializedBehaviorLensInput = JSON.parse(value);
-		const { model, sameSource } = await resolveTextFileModelSnapshot(this.storage, this.sources, state.source);
+		const { model, sameSource } = await resolveTextFileModelSnapshot(editorTextModelService, this.storage, this.sources, state.source);
 		let sameDependencies = true;
 		for (const dependency of state.dependencies) {
-			const resolved = await resolveTextFileModelSnapshot(this.storage, this.sources, dependency);
+			const resolved = await resolveTextFileModelSnapshot(editorTextModelService, this.storage, this.sources, dependency);
 			if (!resolved.sameSource) sameDependencies = false;
 		}
 		const input = this.controller.createInput(model, state.presentation);

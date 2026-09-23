@@ -55,7 +55,7 @@ for (const backend of requestedBackend === undefined ? backends : [requestedBack
 				: [`carts/${sceneCart !== null ? sceneCart : navigation === null ? 'nemesis_s' : navigation}`, 'cartlib', 'machine/bios'];
 			for (const root of sourceRoots) {
 				await cp(root, join(directory, root), { recursive: true,
-					filter: async path => (await stat(path)).isDirectory() || path.endsWith('.lua') || path.endsWith('.aem.yaml') || ((sourceSaves || resourceContext) && /\.ya?ml$/.test(path)) });
+					filter: async path => (await stat(path)).isDirectory() || path.endsWith('.lua') || path.endsWith('.aem.yaml') || ((sourceSaves || resourceContext || editReview) && /\.ya?ml$/.test(path)) });
 			}
 		}
 		if (bootOperations) {

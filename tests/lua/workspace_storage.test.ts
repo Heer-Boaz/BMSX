@@ -1679,7 +1679,7 @@ test('YAML dirty session recovery restores exact unsaved source into a fresh wor
 	const canonicalPath = 'offline-cart/res/data/stage.yaml';
 	const original = '# Keep authored glyphs and spacing\nmap_rows:\n  - "  pM/^^\\\\  " # roof\n';
 	writeRecord(storage, 'offline-cart', canonicalPath, original, 1);
-	const model = await resolveTextFileModel(storage, sources, resource);
+	const model = await resolveTextFileModel(editorTextModelService, storage, sources, resource);
 	model.pushEditOperations([{ offset: original.indexOf('pM'), deleteLength: 2, text: 'Pm' }]);
 	const unsaved = original.replace('pM', 'Pm');
 	assert.equal(model.dirty, true);
@@ -1707,7 +1707,7 @@ test('YAML dirty session recovery restores exact unsaved source into a fresh wor
 	assert.equal(restored.mode, 'yaml');
 	assert.equal(getTextSnapshot(restored.buffer), unsaved);
 	assert.equal(restored.dirty, true);
-	assert.equal(await resolveTextFileModel(storage, sources, resource), restored);
+	assert.equal(await resolveTextFileModel(editorTextModelService, storage, sources, resource), restored);
 	assert.equal(readLocalWorkspaceRecord(storage, 'offline-cart', canonicalPath)!.contents, original);
 	assert.equal(getTextFileRuntimeSourceStatus(sources, restored), 'untracked');
 	assert.deepEqual(captureLuaTextModelSources(sources), []);
@@ -2034,7 +2034,7 @@ test('built-in resolution admits source without opening tabs or stealing the pre
 	assert.equal(viewer.view.scroll, 3, 'resolving an existing preview preserves its view state');
 	assert.equal(editorTabGroup.activeTab, viewer);
 	assert.equal(editorTabGroup.tabs.length, 3);
-	assert.equal(await resolveTextFileModel(storage, sources, aem), first.workingCopy);
+	assert.equal(await resolveTextFileModel(editorTextModelService, storage, sources, aem), first.workingCopy);
 	assert.equal(first.workingCopy.mode, 'aem', 'the YAML suffix does not replace AEM source ownership');
 });
 
@@ -2062,7 +2062,7 @@ test('YAML data opens one authored working copy with shared edit history and no 
 		if (first.kind !== 'code_editor' || second.kind !== 'code_editor') throw new Error('YAML text contribution');
 		const model = first.workingCopy;
 		assert.equal(model, second.workingCopy);
-		assert.equal(model, await resolveTextFileModel(storage, sources, resource));
+		assert.equal(model, await resolveTextFileModel(editorTextModelService, storage, sources, resource));
 		assert.equal(model.mode, 'yaml');
 		assert.equal(model.resource.source.type, 'data');
 		assert.equal(getTextSnapshot(model.buffer), original);
@@ -2100,7 +2100,7 @@ test('non-YAML data retains its cooked resource preview', async t => {
 	const input = await createResourceEditorResolver(storage, sources).resolveEditorInput(resource);
 	assert.equal(input.kind, 'resource_view');
 	assert.equal(editorTextModelService.get(resource), undefined);
-	assert.throws(() => resolveTextFileModel(storage, sources, resource), /no editable text format/);
+	assert.throws(() => resolveTextFileModel(editorTextModelService, storage, sources, resource), /no editable text format/);
 });
 
 test('missing authored YAML fails rather than reconstructing source from cooked data', async t => {

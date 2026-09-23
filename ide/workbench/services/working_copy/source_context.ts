@@ -21,9 +21,11 @@ export class WorkspaceSourceContext {
 	private readonly captured = new Map<EditorTextModel, CapturedWorkspaceSource>();
 	private readonly invalidationListeners = new Set<() => void>();
 	private readonly registries;
+	private readonly catalog;
 	private reasonValue: string | undefined;
 
 	public constructor(public readonly models: EditorTextModelService, private readonly sources: RuntimeSourceState) {
+		this.catalog = sources.resourceByIdentity;
 		this.lifetime.add({ dispose: models.onWillClear(() => this.invalidate('Workspace closed')) });
 		this.lifetime.add({ dispose: models.onDidChangeContent(model => this.invalidate(`Source changed: ${model.resource.path}`)) });
 		this.registries = ([SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const).map(domain => ({ domain, registry: runtimeLuaSourceRegistry(sources, domain) }));
@@ -45,6 +47,9 @@ export class WorkspaceSourceContext {
 
 	/** Admission checks identities of replaced sockets without scanning/re-reading source. */
 	public assertCurrent(): void {
+		if (this.reasonValue === undefined && this.catalog !== this.sources.resourceByIdentity) {
+			this.invalidate('Workspace resource catalog was replaced');
+		}
 		if (this.reasonValue === undefined && this.registries.some(({ domain, registry }) => runtimeLuaSourceRegistry(this.sources, domain) !== registry)) {
 			this.invalidate('Workspace source catalog was replaced');
 		}
