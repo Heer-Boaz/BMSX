@@ -8,6 +8,7 @@ import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 
 export { runAssistantAccount } from './studio_assistant_account';
+export { runAssistantLogin } from './studio_assistant_login';
 
 /** Automated fixture setup; prompt, review and Undo use the production keyboard/pointer route. */
 export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasElement, capture: (name: string) => Promise<void>, waitForModel: () => Promise<void>) {

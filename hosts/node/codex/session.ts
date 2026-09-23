@@ -36,6 +36,7 @@ export class CodexSession {
 	private retired = false;
 	private login: LoginLifetime | undefined;
 	private signingOut = false;
+	private accountRefreshing = false;
 	private accountRevision = 0;
 	private readonly onAbort = () => { this.close(this.options.signal.reason); };
 
@@ -85,7 +86,7 @@ export class CodexSession {
 	/** Device authorization never binds or cancels another application's localhost OAuth listener. */
 	public async startLogin(): Promise<void> {
 		if (this.retired) throw new CodexProtocolError('Codex connection closed');
-		if (this.active || this.login || this.signingOut || this.threadId) throw new Error('Finish the current account/conversation before signing in');
+		if (this.active || this.login || this.signingOut || this.accountRefreshing || this.threadId) throw new Error('Finish the current account/conversation before signing in');
 		const attempt: LoginLifetime = { started: this.rpc.request<CodexLogin>('account/login/start', { type: 'chatgptDeviceCode' }), cancelled: false };
 		this.login = attempt;
 		try {
@@ -112,7 +113,7 @@ export class CodexSession {
 	}
 
 	public async signOut(): Promise<void> {
-		if (this.active || this.login || this.signingOut) throw new Error('Finish or cancel the current operation before signing out');
+		if (this.active || this.login || this.signingOut || this.accountRefreshing) throw new Error('Finish or cancel the current operation before signing out');
 		this.signingOut = true;
 		this.threadId = undefined;
 		try { await this.rpc.request('account/logout', {}); }
@@ -129,14 +130,17 @@ export class CodexSession {
 		const revision = ++this.accountRevision;
 		try {
 			const account = await this.readAccount();
-			if (!this.retired && revision === this.accountRevision) this.options.onEvent({ type: 'account-changed', account });
+			if (!this.retired && revision === this.accountRevision) {
+				this.accountRefreshing = false;
+				this.options.onEvent({ type: 'account-changed', account });
+			}
 		} catch (error) { await this.close(error as Error); }
 	}
 
 	public async startTurn(prompt: string): Promise<string> {
 		if (this.retired) throw new CodexProtocolError('Codex connection closed');
 		if (this.active) throw new Error('A Codex turn is already active');
-		if (this.login || this.signingOut) throw new Error('Finish the account operation before starting a turn');
+		if (this.login || this.signingOut || this.accountRefreshing) throw new Error('Finish the account operation before starting a turn');
 		const turn: TurnLifetime = { started: undefined, controller: new AbortController(), calls: new Set() };
 		this.active = turn;
 		turn.started = this.start(turn, prompt);
@@ -242,6 +246,8 @@ export class CodexSession {
 			case 'account/updated':
 				if (this.active) { void this.close(new Error('Codex account changed during a turn')); break; }
 				this.threadId = undefined;
+				// Admission belongs to the process owner, before the browser sees the transition.
+				this.accountRefreshing = true;
 				this.options.onEvent({ type: 'account-refreshing' });
 				void this.refreshAccount();
 				break;

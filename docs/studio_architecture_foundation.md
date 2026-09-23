@@ -3,7 +3,7 @@
 Status: foundation work in progress, 2026-09-23; gates 1-4 implemented, with local
 files, whole-workbench review, owned process/source tools and secured browser
 transport, device-code account operations and a visible conversation/review
-contribution implemented under gate 5. Real account authorization and paid-model
+contribution implemented under gate 5. Personal account authorization and paid-model
 use are not part of the automated evidence. The user requested the
 whole IDE/Studio ownership model to be corrected first, rather than adapting an
 agent to accidental UI internals.
@@ -67,9 +67,10 @@ Codex view <-> secured local transport <-> Codex App Server process
   the boundary; static/LAN presentation has no process capability.
 
 The locally inspected Codex App Server is the pinned local process, not an SDK
-embedded in Studio. Gates 5c-5f record actual protocol/tool/transport evidence.
+embedded in Studio. Gates 5c-5g record actual protocol/tool/transport/UI evidence.
 The process endpoint is opt-in and exposes only fixed Studio operations; no
-account connection or agent pane has been added by this groundwork.
+general provider RPC or direct file writer is exposed by the account and
+conversation contribution.
 
 ## Live baseline
 
@@ -429,8 +430,13 @@ browser-login behavior of cancelling an existing localhost OAuth listener.
 See the contribution document for commands, evidence and remaining limits.
 
 The follow-through browser matrix exercises conversation/review and account
-controls on software, WebGL2 and WebGPU (six cases). Account polling and failures
+controls on software, WebGL2 and WebGPU (nine cases). Account polling and failures
 use the real pinned CLI against an offline issuer; no personal account is
-authorized. Shared browser renderer ownership also runs the ordinary source-save,
+authorized. A separate non-forwarding TLS fixture now proves successful synthetic
+authorization, private-profile reconnect and revocation/removal on Sign out,
+without changing the official URLs or production process admission. The process
+owner also rejects prompt/login/logout while refreshing its authoritative account
+snapshot, independently of browser delivery timing. Shared browser renderer
+ownership also runs the ordinary source-save,
 local-only and reconnect regressions on all three backends. This is automated
 browser evidence, not UI-only authoring or paid-model verification.

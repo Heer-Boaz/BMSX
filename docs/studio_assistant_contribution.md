@@ -66,6 +66,9 @@ code and public account availability, not credentials, arbitrary authorization
 URLs or provider RPC. Cancel-before-start-response and completion-before-start-
 continuation are explicitly handled by that process owner. Credentials remain
 in the private application profile; no global CLI credentials/config are copied.
+The Node session closes operation admission before publishing an account refresh;
+only the latest authoritative snapshot reopens it. Browser button state is not
+the authority for accepting a prompt, another login or logout during that read.
 
 ## Text and work budgets
 
@@ -92,8 +95,9 @@ enlarge the provider's context window or hide context-limit failures.
 
 ## Validation and limits
 
-- `npm run test:studio-assistant`: six passing cases, running both the conversation
-  and account workflows on actual software, WebGL2 and WebGPU Studio presentation,
+- `npm run test:studio-assistant`: nine passing cases, running the conversation,
+  pending/failed account and successful login workflows on actual software,
+  WebGL2 and WebGPU Studio presentation,
   authorized HTTP leases and the pinned CLI, with offline Responses/issuer fixtures.
   Visible keyboard and
   pointer routes exercise the multiline composer and its Undo/Redo, both fonts,
@@ -110,10 +114,24 @@ enlarge the provider's context window or hide context-limit failures.
   the code, actual polling failure, cancel before a held start response, close
   while signing in and explicit reconnect/disconnect. The login destination is
   intercepted before external navigation. No account is authorized, credentials
-  created, thread started or prompt sent in those account cases.
-- `npm run test:codex-account`: five passing device-code/adapter contract cases,
+  created, thread started or prompt sent in those pending/failed account cases.
+  The separate successful-login workflow exercises real device-code exchange,
+  explicit disconnect/reconnect using the private account profile, token revocation
+  and profile removal on Sign out, then reconnect requiring a new authorization.
+  The unsent draft survives every account transition. Signed-in screenshots in
+  both fonts and the signed-out screenshot were inspected.
+- `npm run test:codex-account`: nine passing device-code/adapter contract cases,
   including actual local-issuer polling/cancel/logout and test-only protocol
-  ordering injection. No successful personal account authorization is claimed.
+  ordering injection. Successful login uses a **non-forwarding local TLS proxy**
+  and synthetic account tokens, with unchanged official URLs, process configuration
+  and RPC responses. `openssl` creates a temporary CA trusted only by the test
+  executable; no host trust store is modified. The fixture admits only measured
+  account endpoints and an empty model catalog, never inference or remote traffic.
+  The real CLI persists the synthetic tokens in its private mode-0600 auth file;
+  public events contain neither token. Three regressions issue prompt/login/logout
+  directly during the refresh notification, before browser state could gate them.
+  Logout originally succeeded in that window; the process owner now rejects all
+  three until the current snapshot arrives. No personal authorization is claimed.
 - Conversation tests cover source capture, shared history, close/workspace
   teardown, delayed old operations, login cancellation, account replacement and
   authoritative streamed-message completion. Projection exercises 10,000 chunks
@@ -127,7 +145,7 @@ enlarge the provider's context window or hide context-limit failures.
   before another frame and verifies that no old offsets or edit state survive.
 - Regression bundle: **2344 Lua tests passed, 1 skipped**; process/stdio **19**,
   independent Codex contract **5**, assistant HTTP **12**, workspace HTTP **6**,
-  process/workbench **1**, and account **5** pass. Actual WebGL2 cold-page session
+  process/workbench **1**, and account **9** pass. Actual WebGL2 cold-page session
   restoration passes. Source-save/local-only/reconnect workflows pass on all
   three renderers through the same shared renderer fixture used by the assistant.
   IDE/browser/Node typechecks and both Studio product builds pass. The full
@@ -135,7 +153,7 @@ enlarge the provider's context window or hide context-limit failures.
   diagnostics; it is not reported as green. Architecture audit: **0 issues**.
   Changed-file indentation and `git diff --check` pass.
 
-These are automated browser/contract tests, **not UI-only authoring**, real
+These are automated browser/contract tests, **not UI-only authoring**, personal
 account authorization or paid-model verification. There is no transcript
 persistence, automatic reconnect, general shell, direct model file writer,
 provider picker, background multi-agent workflow or OS-wide sandbox claim.
@@ -155,3 +173,9 @@ provider picker, background multi-agent workflow or OS-wide sandbox claim.
 - Codex's [history owner](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/core/src/context_manager/history.rs):
   tool-output truncation is an external ABI concern, not something to repair in
   a Studio source receipt.
+- Codex's pinned [auth fixtures](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server/tests/common/auth_fixtures.rs),
+  [custom CA owner](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/http-client/src/custom_ca.rs)
+  and [token revocation](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/login/src/auth/revoke.rs):
+  synthetic claims, scoped TLS trust and the real revoke-before-local-removal
+  path. The fixture changes the test executable's outbound transport, not the
+  production account or configuration admission contract.

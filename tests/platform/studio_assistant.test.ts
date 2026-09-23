@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Page } from 'playwright';
 import { STUDIO_ACCOUNT_LOGIN_URL } from '../../hosts/common/assistant_protocol';
 import { createCodexModelFixture, CODEX_FIXTURE_DONE, CODEX_FIXTURE_WAIT } from '../helpers/codex_model_fixture.mjs';
 import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixture';
 import { createCodexAccountFixture } from '../helpers/codex_account_fixture';
+import { CODEX_ACCOUNT_FIXTURE, createCodexAccountProxy } from '../helpers/codex_account_proxy';
 
 const backends = ['software', 'webgl2', 'webgpu'] as const;
 for (const backend of backends) test(`Studio ${backend}: actual browser, HTTP lease, Codex process, source tools and shared review`, { timeout: 180000 }, async t => {
@@ -90,4 +91,34 @@ for (const backend of backends) test(`Studio ${backend}: visible account control
 	assert.ok(commands.every(command => !['thread/start', 'turn/start'].includes(command.method)), 'unauthorized draft is never sent');
 	await assert.rejects(access(join(f.profileDirectory, 'account/auth.json')), { code: 'ENOENT' });
 	await writeFile(join(f.evidence, `account-${backend}-result.json`), JSON.stringify(result));
+});
+
+for (const backend of backends) test(`Studio ${backend}: real successful account exchange, private-profile reconnect and Sign out`, { timeout: 180000 }, async t => {
+	const issuer = await createCodexAccountProxy(t);
+	const f = await createAssistantStudioFixture(t, `login-${backend}`, { executable: issuer.executable });
+	const { page } = f;
+	await page.exposeFunction('authorize', () => issuer.authorize());
+	await page.exposeFunction('verifyProfile', async (connected: boolean) => {
+		const path = join(f.profileDirectory, 'account/auth.json');
+		if (connected) {
+			assert.equal((await stat(path)).mode & 0o777, 0o600);
+			const saved = JSON.parse(await readFile(path, 'utf8'));
+			assert.equal(saved.tokens.access_token, CODEX_ACCOUNT_FIXTURE.accessToken);
+			assert.equal(saved.tokens.refresh_token, CODEX_ACCOUNT_FIXTURE.refreshToken);
+		} else await assert.rejects(access(path), { code: 'ENOENT' });
+	});
+	const result = await page.evaluate(async backend => {
+		const entry = '/test.js';
+		const module = await import(entry);
+		return module.runAssistantLogin(backend, document.querySelector('canvas'), globalThis.capture, {
+			authorize: globalThis.authorize, verifyProfile: globalThis.verifyProfile,
+		});
+	}, backend);
+	assert.equal(result.login, 'pass'); assert.equal(f.observations.connects, 3);
+	assert.deepEqual(result.account, { connected: true, requiresLogin: false, email: CODEX_ACCOUNT_FIXTURE.email, plan: CODEX_ACCOUNT_FIXTURE.planType });
+	assert.deepEqual(f.observations.errors, []);
+	assert.equal(issuer.requests.filter(request => request.path === '/api/accounts/deviceauth/usercode').length, 1);
+	assert.equal(issuer.requests.filter(request => request.path === '/oauth/token').length, 1);
+	assert.equal(issuer.requests.filter(request => request.path === '/oauth/revoke').length, 1);
+	await writeFile(join(f.evidence, `login-${backend}-result.json`), JSON.stringify(result));
 });

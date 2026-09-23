@@ -1,6 +1,6 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { access, readFile, rm } from 'node:fs/promises';
+import { access, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CodexProfile } from '../../hosts/node/codex/profile';
 import { CodexPolicy } from '../../hosts/node/codex/policy';
@@ -9,6 +9,7 @@ import { CodexSession } from '../../hosts/node/codex/session';
 import type { CodexLogin, CodexSessionEvent } from '../../hosts/node/codex/protocol';
 
 import { createCodexAccountFixture } from '../helpers/codex_account_fixture';
+import { CODEX_ACCOUNT_FIXTURE, createCodexAccountProxy } from '../helpers/codex_account_proxy';
 
 test('real pinned device-code contract polls and cancels without credentials or an OAuth callback listener', { timeout: 15000 }, async t => {
 	const f = await createCodexAccountFixture(t), profile = await CodexProfile.acquire(join(f.root, 'profile'));
@@ -76,3 +77,64 @@ test('an unadmitted authorization URL retires the process instead of forwarding 
 	assert.ok(!f.events.some(event => event.type === 'login-started'));
 	assert.match((await f.session.closed).error!.message, /unadmitted/);
 });
+
+test('successful real device-code exchange persists only the private profile and logout revokes it through unchanged TLS URLs', { timeout: 30000 }, async t => {
+	let session: CodexSession | undefined;
+	t.after(async () => { if (session) assert.equal((await session.close()).forced, false); });
+	const f = await createCodexAccountProxy(t), events: CodexSessionEvent[] = [];
+	const changed = Promise.withResolvers<void>();
+	session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), tools: [],
+		executeTool: async () => assert.fail('No source tools while authenticating'),
+		onEvent: event => { events.push(event); if (event.type === 'account-changed') changed.resolve(); } });
+	assert.equal((await session.readAccount()).account, null);
+	await session.startLogin();
+	assert.deepEqual(events.at(-1), { type: 'login-started', code: 'TEST-CODE' });
+	f.authorize(); await changed.promise;
+	assert.ok(events.some(event => event.type === 'login-completed' && event.success));
+	const account = await session.readAccount();
+	assert.deepEqual(account.account, { type: 'chatgpt', email: CODEX_ACCOUNT_FIXTURE.email, planType: CODEX_ACCOUNT_FIXTURE.planType });
+	assert.equal(account.requiresOpenaiAuth, true);
+	const path = join(f.root, 'profile/account/auth.json');
+	const saved = JSON.parse(await readFile(path, 'utf8'));
+	assert.equal(saved.tokens.access_token, CODEX_ACCOUNT_FIXTURE.accessToken);
+	assert.equal(saved.tokens.refresh_token, CODEX_ACCOUNT_FIXTURE.refreshToken);
+	assert.equal((await stat(path)).mode & 0o777, 0o600);
+	assert.equal((await session.close()).forced, false);
+	session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), tools: [],
+		executeTool: async () => assert.fail('No source tools while authenticating'), onEvent: event => events.push(event) });
+	assert.deepEqual((await session.readAccount()).account, account.account, 'an explicit new process uses only the persisted Studio profile');
+	await session.signOut();
+	assert.equal((await session.readAccount()).account, null);
+	await assert.rejects(access(path), { code: 'ENOENT' });
+	assert.equal(f.requests.filter(request => request.path === '/oauth/token').length, 1);
+	assert.equal(f.requests.filter(request => request.path === '/oauth/revoke').length, 1);
+	assert.ok(f.tunnels.includes('auth.openai.com:443') && f.tunnels.includes('chatgpt.com:443'));
+	assert.ok(!JSON.stringify(events).includes(CODEX_ACCOUNT_FIXTURE.accessToken));
+	assert.ok(!JSON.stringify(events).includes(CODEX_ACCOUNT_FIXTURE.refreshToken));
+});
+
+for (const operation of ['startTurn', 'startLogin', 'signOut'] as const) {
+	test(`account refresh rejects ${operation} before publishing the pending account transition`, { timeout: 30000 }, async t => {
+		let session: CodexSession | undefined, checked = false;
+		t.after(async () => { if (session) assert.equal((await session.close()).forced, false); });
+		const f = await createCodexAccountProxy(t), admission = Promise.withResolvers<void>(), changed = Promise.withResolvers<void>();
+		const message = operation === 'startTurn' ? /Finish the account operation/ : operation === 'startLogin'
+			? /Finish the current account\/conversation/ : /Finish or cancel the current operation/;
+		session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), tools: [],
+			executeTool: async () => assert.fail('No source tools while authenticating'), onEvent: event => {
+				if (event.type === 'account-changed') changed.resolve();
+				if (event.type !== 'account-refreshing' || checked) return;
+				checked = true;
+				// A command can arrive before the browser receives this notification.
+				admission.resolve(assert.rejects(operation === 'startTurn' ? session!.startTurn('Do not submit during an account transition')
+					: session![operation](), message));
+			} });
+		await session.startLogin(); f.authorize();
+		await admission.promise; await changed.promise;
+		assert.ok((await session.readAccount()).account, 'the rejected operation leaves the successful account transition intact');
+		await session.signOut();
+		assert.equal((await session.readAccount()).account, null, 'the current account snapshot releases operation admission');
+		assert.equal(f.requests.filter(request => request.path === '/api/accounts/deviceauth/usercode').length, 1);
+		assert.equal(f.requests.filter(request => request.path === '/oauth/revoke').length, 1);
+	});
+}
