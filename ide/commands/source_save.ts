@@ -21,15 +21,22 @@ export async function saveTextFileFromCommand(
 		if (model.mode !== 'lua' || !showLuaErrorOverlay(editor, model.resource, result.error)) {
 			showEditorMessage(extractErrorMessage(result.error), constants.COLOR_STATUS_ERROR, 4.0);
 		}
-	} else if (result.application.status === 'failed') {
-		showEditorMessage(`${title} saved, but runtime apply failed`, constants.COLOR_STATUS_WARNING, 4.0);
-		showEditorWarningBanner(`Saved, but runtime apply failed: ${extractErrorMessage(result.application.error)}`, 5.0);
+		return result;
+	}
+	const saved = `${title} saved${result.persistence.status === 'local-only' ? ' locally only' : ''}`;
+	if (result.application.status === 'failed') {
+		showEditorWarningBanner(`${saved}; runtime apply failed: ${extractErrorMessage(result.application.error)}`, 5.0);
+	} else if (result.persistence.status === 'local-only') {
+		const reason = result.persistence.reason === 'write-failed'
+			? extractErrorMessage(result.persistence.error)
+			: 'Workspace disconnected';
+		showEditorWarningBanner(`${saved}: ${reason}`, 5.0);
 	} else if (model.mode === 'yaml') {
-		showEditorMessage(`${title} saved (asset rebuild required)`, constants.COLOR_STATUS_WARNING, 4.0);
+		showEditorMessage(`${saved} (asset rebuild required)`, constants.COLOR_STATUS_WARNING, 4.0);
 	} else if (model.mode === 'lua' && getTextFileRuntimeSourceStatus(sources, model) === 'pending') {
-		showEditorMessage(`${title} saved (runtime update pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
+		showEditorMessage(`${saved} (runtime update pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
 	} else {
-		showEditorMessage(`${title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
+		showEditorMessage(saved, constants.COLOR_STATUS_SUCCESS, 2.5);
 	}
 	return result;
 }

@@ -1956,7 +1956,7 @@ test('source-only Lua saves without scheduling a BLua media rebuild', async (t) 
 		TEST_DOMAIN,
 	);
 
-	const programModule = await saveLuaResourceSource(
+	const result = await saveLuaResourceSource(
 		workspaceEnvironment.storage,
 		workspaceEnvironment.clock,
 		sources,
@@ -1964,7 +1964,8 @@ test('source-only Lua saves without scheduling a BLua media rebuild', async (t) 
 		'-- saved test',
 	);
 
-	assert.equal(programModule, false);
+	assert.equal(result.persistence.status, 'local-only');
+	assert.equal(result.record.contents, '-- saved test');
 	assert.equal(sources.cartridgeBlua32MediaDirty[TEST_DOMAIN], false);
 	assert.equal(registry.records[0].src, '-- saved test');
 });

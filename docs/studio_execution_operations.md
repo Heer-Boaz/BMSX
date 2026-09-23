@@ -2,8 +2,9 @@
 
 Status: Hot Resume implementation complete, 2026-09-23. **Only gate 3a** of
 [Studio foundation](studio_architecture_foundation.md), not permission to add Codex.
-Reboot/startup completion and local/remote source acknowledgement remain separate
-follow-up work; they must not inherit a Hot Resume result by analogy.
+Reboot/startup completion remains separate follow-up work; it must not inherit a
+Hot Resume result by analogy. Source-save acknowledgement is implemented at its
+own boundary; see [source save acknowledgements](studio_source_save_acknowledgements.md).
 
 ## Pre-implementation owner audit at `5c2b0ba27`
 

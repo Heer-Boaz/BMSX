@@ -18,6 +18,7 @@ import {
 	applyWorkspaceSourceOverrides,
 	readWorkspaceLuaSourceText,
 	persistWorkspaceSourceFile,
+	type WorkspaceSourceSaveResult,
 } from './files';
 import {
 	deleteWorkspaceLuaSourceOverride,
@@ -84,7 +85,7 @@ export async function saveLuaResourceSource(
 	sources: RuntimeSourceState,
 	identity: ResourceIdentity,
 	source: string,
-): Promise<boolean> {
+): Promise<WorkspaceSourceSaveResult> {
 	const target = resolveEditableLuaSource(sources, identity);
 	const registry = target.registry;
 	const asset = target.asset;
@@ -93,13 +94,14 @@ export async function saveLuaResourceSource(
 	}
 	const sourcePath = asset.source_path;
 	const workspacePath = asset.normalized_source_path;
-	const record = await persistWorkspaceSourceFile(
+	const result = await persistWorkspaceSourceFile(
 		storage,
 		clock,
 		workspacePath,
 		source,
 		registry.projectRootPath,
 	);
+	const { record } = result;
 	asset.src = source;
 	asset.base_src = source;
 	asset.base_update_timestamp = record.updatedAt;
@@ -110,7 +112,7 @@ export async function saveLuaResourceSource(
 	}
 	workspaceCanonicalSourceCache.set(workspacePath, source);
 	deleteWorkspaceLuaSourceOverride(registry, sourcePath);
-	return asset.program_module;
+	return result;
 }
 
 export async function createLuaResource(

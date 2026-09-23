@@ -10,9 +10,11 @@ import { persistWorkspaceSourceFile } from '../../../workspace/files';
 import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import { resolveWorkspacePath } from '../../../workspace/path';
 import { saveLuaResourceSource } from '../../../workspace/workspace';
+import type { WorkspaceRecordPersistence } from '../../../workspace/records';
 
 export type TextFileSaveResult = { readonly snapshot: EditorTextModelSnapshot } & (
-	| { readonly status: 'saved'; readonly application: AemSourceApplyResult | { readonly status: 'not-requested' } }
+	| { readonly status: 'saved'; readonly persistence: WorkspaceRecordPersistence;
+		readonly application: AemSourceApplyResult | { readonly status: 'not-requested' } }
 	| { readonly status: 'failed'; readonly error: unknown }
 );
 
@@ -58,16 +60,17 @@ export class TextFileSaveService {
 
 	private async performSave(model: EditorTextModel, snapshot: EditorTextModelSnapshot): Promise<TextFileSaveResult> {
 		const resource = model.resource;
+		let persistence: WorkspaceRecordPersistence;
 		try {
 			switch (model.mode) {
 				case 'lua':
-					await saveLuaResourceSource(this.storage, this.clock, this.sources, resource, snapshot.source);
+					({ persistence } = await saveLuaResourceSource(this.storage, this.clock, this.sources, resource, snapshot.source));
 					break;
 				case 'yaml':
 				case 'aem': {
 					const root = runtimeSourceProjectRootPath(this.sources, resource.domain);
 					const path = resolveWorkspacePath(resource.path, root);
-					await persistWorkspaceSourceFile(this.storage, this.clock, path, snapshot.source, root);
+					({ persistence } = await persistWorkspaceSourceFile(this.storage, this.clock, path, snapshot.source, root));
 					workspaceCanonicalSourceCache.set(path, snapshot.source);
 					break;
 				}
@@ -79,6 +82,6 @@ export class TextFileSaveService {
 		const application = model.mode === 'aem'
 			? await applyAemSourceRevision(this.sources, this.luaTooling, this.runtime, this.runtimeTasks, resource, snapshot.source)
 			: { status: 'not-requested' } as const;
-		return { status: 'saved', snapshot, application };
+		return { status: 'saved', snapshot, persistence, application };
 	}
 }

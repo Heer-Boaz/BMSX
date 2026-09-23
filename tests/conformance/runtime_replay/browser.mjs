@@ -10,6 +10,7 @@ import { join, parse, resolve } from 'node:path';
 const { chromium } = await import(process.env.BMSX_PLAYWRIGHT_MODULE || 'playwright');
 const navigation = process.argv[2] === '--studio-navigation' ? process.argv[3] : null;
 const fsm = process.argv[2] === '--studio-fsm-retarget-imported' ? 'retarget-imported' : process.argv[2] === '--studio-fsm-retarget' ? 'retarget' : process.argv[2] === '--studio-fsm-initial' ? 'initial' : null;
+const sourceSaves = process.argv[2] === '--studio-source-saves';
 const executionOperations = process.argv[2] === '--studio-execution-operations';
 const testRunner = process.argv[2] === '--studio-test-runner';
 const sceneViewport = process.argv[2] === '--studio-scene-viewport';
@@ -19,11 +20,11 @@ const reparent = process.argv[2] === '--studio-bt-reparent';
 const session = process.argv[2] === '--studio-session';
 const sceneCart = process.argv[2] === '--studio-cart-scenes' ? process.argv[3] : null;
 const nemesisScenes = process.argv[2] === '--studio-nemesis-scenes';
-const scenario = executionOperations ? { kind: 'execution-operations' } : testRunner ? { kind: 'test-runner' } : sceneViewport ? { kind: 'scene-viewport' } : sceneCart !== null ? { kind: 'cart-scenes', cart: sceneCart } : nemesisScenes ? { kind: 'nemesis-scenes' } : preload ? { kind: 'preload' } : inspection ? { kind: 'runtime-inspection' } : navigation !== null ? { kind: 'navigation', cart: navigation } : fsm !== null ? { kind: `fsm-${fsm}` } : reparent ? { kind: 'bt-reparent' } : { kind: 'workflows' };
-const studio = executionOperations || testRunner || sceneViewport || sceneCart !== null || nemesisScenes || preload || inspection || session || process.argv[2] === '--studio' || navigation !== null || fsm !== null || reparent;
-const studioLabel = executionOperations ? 'STUDIO-EXECUTION-OPERATIONS' : sceneViewport ? 'STUDIO-SCENE-VIEWPORT' : sceneCart !== null ? `STUDIO-${sceneCart}-SCENES` : nemesisScenes ? 'STUDIO-NEMESIS-SCENES' : preload ? 'STUDIO-PRELOAD' : inspection ? 'STUDIO-RUNTIME-INSPECTION' : session ? 'STUDIO-SESSION' : reparent ? 'STUDIO-BT-REPARENT' : fsm !== null ? `STUDIO-FSM-${fsm.toUpperCase()}` : navigation === null ? 'STUDIO-WORKFLOWS' : 'STUDIO-NAVIGATION';
+const scenario = sourceSaves ? { kind: 'source-saves' } : executionOperations ? { kind: 'execution-operations' } : testRunner ? { kind: 'test-runner' } : sceneViewport ? { kind: 'scene-viewport' } : sceneCart !== null ? { kind: 'cart-scenes', cart: sceneCart } : nemesisScenes ? { kind: 'nemesis-scenes' } : preload ? { kind: 'preload' } : inspection ? { kind: 'runtime-inspection' } : navigation !== null ? { kind: 'navigation', cart: navigation } : fsm !== null ? { kind: `fsm-${fsm}` } : reparent ? { kind: 'bt-reparent' } : { kind: 'workflows' };
+const studio = sourceSaves || executionOperations || testRunner || sceneViewport || sceneCart !== null || nemesisScenes || preload || inspection || session || process.argv[2] === '--studio' || navigation !== null || fsm !== null || reparent;
+const studioLabel = sourceSaves ? 'STUDIO-SOURCE-SAVES' : executionOperations ? 'STUDIO-EXECUTION-OPERATIONS' : sceneViewport ? 'STUDIO-SCENE-VIEWPORT' : sceneCart !== null ? `STUDIO-${sceneCart}-SCENES` : nemesisScenes ? 'STUDIO-NEMESIS-SCENES' : preload ? 'STUDIO-PRELOAD' : inspection ? 'STUDIO-RUNTIME-INSPECTION' : session ? 'STUDIO-SESSION' : reparent ? 'STUDIO-BT-REPARENT' : fsm !== null ? `STUDIO-FSM-${fsm.toUpperCase()}` : navigation === null ? 'STUDIO-WORKFLOWS' : 'STUDIO-NAVIGATION';
 const [bios, cart, screenshot] = process.argv.slice(navigation !== null || sceneCart !== null ? 4 : studio ? 3 : 2);
-if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio-cart-scenes CART_FOLDER | --studio-execution-operations | --studio-test-runner | --studio-scene-viewport | --studio | --studio-nemesis-scenes | --studio-preload | --studio-runtime-inspection | --studio-session | --studio-fsm-initial | --studio-fsm-retarget | --studio-fsm-retarget-imported | --studio-bt-reparent | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
+if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio-source-saves | --studio-cart-scenes CART_FOLDER | --studio-execution-operations | --studio-test-runner | --studio-scene-viewport | --studio | --studio-nemesis-scenes | --studio-preload | --studio-runtime-inspection | --studio-session | --studio-fsm-initial | --studio-fsm-retarget | --studio-fsm-retarget-imported | --studio-bt-reparent | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
 let inspectionPixels;
 const backends = studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu'];
 const requestedBackend = process.env.BMSX_TEST_BACKEND;
@@ -51,7 +52,7 @@ for (const backend of requestedBackend === undefined ? backends : [requestedBack
 				: [`carts/${sceneCart !== null ? sceneCart : navigation === null ? 'nemesis_s' : navigation}`, 'cartlib', 'machine/bios'];
 			for (const root of sourceRoots) {
 				await cp(root, join(directory, root), { recursive: true,
-					filter: async path => (await stat(path)).isDirectory() || path.endsWith('.lua') || path.endsWith('.aem.yaml') });
+					filter: async path => (await stat(path)).isDirectory() || path.endsWith('.lua') || path.endsWith('.aem.yaml') || (sourceSaves && /\.ya?ml$/.test(path)) });
 			}
 		}
 		// The actual product file API, rooted in an isolated workspace. No recovery
@@ -72,6 +73,12 @@ for (const backend of requestedBackend === undefined ? backends : [requestedBack
 			'--enable-features=Vulkan', '--use-angle=vulkan', '--use-vulkan=swiftshader',
 			'--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface', '--disable-dev-shm-usage'] });
 		const page = await browser.newPage({ viewport: { width: 768, height: 576 } });
+		if (sourceSaves) {
+			let failWrites = false;
+			await page.exposeFunction('setStudioWorkspaceWriteFailure', failed => { failWrites = failed; });
+			await page.route('**/__bmsx__/lua', route => failWrites && route.request().method() === 'PUT'
+				? route.fulfill({ status: 503, body: 'Test workspace write failure' }) : route.continue());
+		}
 		const pageErrors = [];
 		page.on('pageerror', error => { pageErrors.push(error); console.error(error); });
 		page.on('console', message => console.log(`[browser:${message.type()}] ${message.text()}`));

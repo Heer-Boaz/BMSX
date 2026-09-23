@@ -4992,9 +4992,15 @@ clear newer authored edits; Lua saves do not acknowledge installed executable
 code and YAML saves do not acknowledge cooked assets. Command UI consumes the
 result and recovery listens to resource-model save events. Normal shutdown
 closes Save admission and joins accepted operations before checkpointing and
-destroying source owners. Under the existing workspace record contract, saved
-source may be locally authoritative while remote replication is still pending;
-it is not a remote filesystem acknowledgement. The staged ownership audit and
+destroying source owners. The record owner returns an exact write acknowledgement:
+`workspace` only after the provider accepts the project-file write, or
+`local-only` with a disconnected/write-failed reason after local persistence.
+The source catalog and save service carry this result without inferring it from
+global connectivity. Local persistence still establishes the document's saved
+identity; UI explicitly warns when the project file was not acknowledged.
+Reconnect synchronizes the saved record, not newer model text, and does not
+rewrite the original Save receipt. See [source save acknowledgements](studio_source_save_acknowledgements.md).
+The staged ownership audit and
 remaining pre-agent gates are in [Studio architecture foundation](studio_architecture_foundation.md).
 
 Pane detachment completes ordinary focus/capture cleanup while the input and its

@@ -25,6 +25,12 @@ type PendingRemoteWorkspaceRecord = {
 const pendingRemoteWorkspaceRecords = new Map<string, PendingRemoteWorkspaceRecord>();
 const remoteWorkspaceOperationTails = new Map<string, Promise<void>>();
 
+/** Acknowledgement for this write, not the provider's current connection state. */
+export type WorkspaceRecordPersistence =
+	| { readonly status: 'workspace' }
+	| { readonly status: 'local-only'; readonly reason: 'disconnected' }
+	| { readonly status: 'local-only'; readonly reason: 'write-failed'; readonly error: unknown };
+
 export function buildWorkspaceStorageKey(projectRootPath: string, relativePath: string): string {
 	return `${WORKSPACE_STORAGE_PREFIX}:${projectRootPath}:${relativePath}`;
 }
@@ -102,20 +108,22 @@ export async function writeWorkspaceRecord(
 	projectRootPath: string,
 	relativePath: string,
 	record: WorkspaceRecord,
-): Promise<void> {
+): Promise<WorkspaceRecordPersistence> {
 	writeLocalWorkspaceRecord(storage, projectRootPath, relativePath, record);
 	const pendingRecord = { storage, projectRootPath, record };
 	pendingRemoteWorkspaceRecords.set(relativePath, pendingRecord);
 	if (!workspaceRecordState.connected) {
-		return;
+		return { status: 'local-only', reason: 'disconnected' };
 	}
 	try {
 		await writeRemoteWorkspaceRecord(relativePath, record);
 		if (pendingRemoteWorkspaceRecords.get(relativePath) === pendingRecord) {
 			pendingRemoteWorkspaceRecords.delete(relativePath);
 		}
+		return { status: 'workspace' };
 	} catch (error) {
 		disconnectWorkspaceRecords(error);
+		return { status: 'local-only', reason: 'write-failed', error };
 	}
 }
 

@@ -14,6 +14,7 @@ import {
 	readWorkspaceRecord,
 	writeWorkspaceRecord,
 	type WorkspaceRecord,
+	type WorkspaceRecordPersistence,
 } from './records';
 import { joinWorkspacePaths, stripProjectRootPrefix } from './path';
 import type { ResourceDomain } from '../common/resource';
@@ -21,6 +22,11 @@ import type { ResourceDomain } from '../common/resource';
 export { joinWorkspacePaths } from './path';
 
 type WorkspaceWinnerKind = 'dirty' | 'canonical' | 'rom';
+
+export type WorkspaceSourceSaveResult = {
+	readonly record: WorkspaceRecord;
+	readonly persistence: WorkspaceRecordPersistence;
+};
 
 export function buildWorkspaceDirtyEntryPath(
 	projectRootPath: string,
@@ -60,15 +66,15 @@ export async function persistWorkspaceSourceFile(
 	workspacePath: string,
 	source: string,
 	projectRootPath: string,
-): Promise<WorkspaceRecord> {
+): Promise<WorkspaceSourceSaveResult> {
 	const record = createWorkspaceRecord(clock, source);
-	await writeWorkspaceRecord(
+	const persistence = await writeWorkspaceRecord(
 		storage,
 		projectRootPath,
 		workspacePath,
 		record,
 	);
-	return record;
+	return { record, persistence };
 }
 
 export async function loadWorkspaceSourceFile(

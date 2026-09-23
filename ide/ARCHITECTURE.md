@@ -235,6 +235,15 @@ inputs without consulting an active-tab document copy. Completing an
 asynchronous save records the exact captured model state; an edit made while
 the write is outstanding remains dirty.
 
+The workspace record owner separately acknowledges local persistence and the
+project-file provider's write. `TextFileSaveService` carries that exact result
+for Lua, YAML and AEM alongside runtime application. A local-only save establishes
+the saved document identity but commands show a warning rather than claiming the
+project file was saved. Provider connectivity alone cannot acknowledge a file:
+another request can disconnect it while this write succeeds. Reconnection sends
+the saved record without acknowledging subsequent edits or rewriting the earlier
+Save result. See [source save acknowledgements](../docs/studio_source_save_acknowledgements.md).
+
 This follows the production VS Code ownership pattern rather than its full
 service surface:
 
@@ -273,7 +282,7 @@ The projection retains source resolution and caches text equality by model
 version and installed source. Stable status drawing performs only retained
 lookups, without rescanning text, parsing Lua or allocating source snapshots.
 Undo can therefore return to installed source while remaining dirty relative
-to disk, or return to saved source while newer code remains installed.
+to the last saved snapshot, or return to saved source while newer code remains installed.
 
 AEM's existing save/apply owner records its installed authored source and apply
 failure in `RuntimeSourceState.aemSourceApplications`. Those are tooling-only

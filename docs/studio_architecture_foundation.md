@@ -24,6 +24,13 @@ contribution will have the same rights and boundaries; it does not get an
 exception or an alternative source-writing route. This is not a generic plugin
 framework, service locator or wholesale singleton-to-DI rewrite.
 
+Each slice must improve an ordinary Studio workflow without Codex: reliable
+Save feedback, actual execution results, isolated tests, shared edit history or
+session lifetime. A future agent consumes those improvements; it is not the
+reason to introduce parallel owners or to postpone unrelated product value.
+Only contracts needed by the proposed agent capabilities are integration gates,
+not every outstanding IDE feature or test-fixture issue.
+
 ## Eventual Codex position (design only)
 
 The workbench remains authoritative; an agent is another client, not a second
@@ -240,6 +247,15 @@ architecture boundary issues. The tests-project baseline remains exactly 112
 diagnostics; the broad behavior-source browser fixture is still a separate
 known failure. This is automated runtime/UI evidence, not UI-only development.
 
-**Still open in gate 3:** Reboot/startup operation results and explicit
-local-versus-remote persistence acknowledgement. Gates 4 and 5 remain open.
+### Gate 3b: exact source-save acknowledgement (partial gate 3)
+
+The workspace record owner now reports whether the exact write reached the
+project-file provider or only local storage. Lua, YAML and AEM carry the same
+result through their existing save owners. Commands warn about local-only saves
+and independently report failed runtime application. Reconnect preserves later
+unsaved model edits. No extra storage layer, retry worker or frame-time work was
+introduced. Contract, production references and validation are recorded in
+[source save acknowledgements](studio_source_save_acknowledgements.md).
+
+**Still open in gate 3:** Reboot/startup operation results. Gates 4 and 5 remain open.
 Codex integration is not yet admitted.

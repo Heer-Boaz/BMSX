@@ -13,9 +13,14 @@ import type { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { TextFileSaveService } from '../../ide/workbench/services/working_copy/text_file_save';
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import type { WorkspaceRecord, WorkspaceRecordProvider } from '../../ide/workspace/record_provider';
-import { closeWorkspaceRecords, openWorkspaceRecords, readLocalWorkspaceRecord } from '../../ide/workspace/records';
+import { closeWorkspaceRecords, disconnectWorkspaceRecords, openWorkspaceRecords, readLocalWorkspaceRecord,
+	reconnectWorkspaceRecords, workspaceRecordState } from '../../ide/workspace/records';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { saveTextFileFromCommand } from '../../ide/commands/source_save';
+import type { CartEditor } from '../../ide/cart_editor';
+import { editorFeedbackState } from '../../ide/common/feedback_state';
+import { COLOR_STATUS_WARNING } from '../../ide/common/constants';
 
 class SaveStorage extends MemoryStorage {
 	public failure: Error | undefined;
@@ -63,7 +68,7 @@ async function fixture(t: TestContext) {
 	});
 	const yaml = (path = 'res/data/save.yaml') => models.retain({ domain: 0, path,
 		source: { resid: path, type: 'data' } }, 'yaml', '# untouched\nvalue: 1\n');
-	return { saves, models, storage, files, root, yaml, sources, lua, tasks,
+	return { saves, models, storage, files, clock, root, yaml, sources, lua, tasks,
 		failReadback(error: Error) { readbackFailure = error; } };
 }
 
@@ -84,6 +89,8 @@ test('Save captures and coalesces one revision, while newer edits remain dirty',
 	f.files.writes[0].complete();
 	const result = await first;
 	assert.equal(result.status, 'saved');
+	if (result.status !== 'saved') assert.fail('expected a saved source');
+	assert.deepEqual(result.persistence, { status: 'workspace' });
 	assert.equal(result.snapshot.source, '# untouched\nvalue: 2\n');
 	assert.equal(model.lastSavedSource, result.snapshot.source);
 	assert.equal(model.dirty, true);
@@ -160,6 +167,100 @@ test('source persistence failure is an explicit outcome, does not complete the s
 	f.storage.failure = undefined;
 	assert.equal((await f.saves.save(model)).status, 'saved');
 	assert.equal(model.dirty, false);
+});
+
+test('a failed project write acknowledges local storage and reconnect persists that exact source without saving later edits', async t => {
+	const f = await fixture(t);
+	const model = f.yaml();
+	const path = `${f.root}/${model.resource.path}`;
+	const error = new Error('project filesystem unavailable');
+	const saved: EditorTextModel[] = [];
+	f.models.onDidSaveModel(model => saved.push(model));
+	setSource(model, 'value: 2');
+	f.files.failure = error;
+	const result = await f.saves.save(model);
+	if (result.status !== 'saved') assert.fail('expected locally saved source');
+	assert.deepEqual(result.persistence, { status: 'local-only', reason: 'write-failed', error });
+	assert.equal(result.application.status, 'not-requested');
+	assert.equal(readLocalWorkspaceRecord(f.storage, f.root, path)!.contents, 'value: 2');
+	assert.equal(f.files.records.has(path), false);
+	assert.equal(model.dirty, false, 'dirty identity is relative to the actual local save');
+	setSource(model, 'value: 3');
+	f.files.failure = undefined;
+	await reconnectWorkspaceRecords(f.clock, f.root);
+	assert.equal(f.files.records.get(path)!.contents, 'value: 2');
+	assert.equal(model.lastSavedSource, 'value: 2');
+	assert.equal(model.dirty, true);
+	assert.deepEqual(saved, [model], 'remote synchronization cannot acknowledge newer document content');
+	assert.equal(result.persistence.status, 'local-only', 'the receipt describes the original save, not later connectivity');
+	const retried = await f.saves.save(model);
+	if (retried.status !== 'saved') assert.fail('expected workspace save');
+	assert.equal(retried.persistence.status, 'workspace');
+	assert.equal(f.files.records.get(path)!.contents, 'value: 3');
+	assert.equal(model.dirty, false);
+});
+
+test('disconnected Lua save carries the local-only acknowledgement through its source catalog', async t => {
+	const f = await fixture(t);
+	const model = f.models.retain({ domain: 0, path: f.lua.source_path, source: f.lua }, 'lua', f.lua.src);
+	closeWorkspaceRecords();
+	setSource(model, 'return false');
+	const result = await f.saves.save(model);
+	if (result.status !== 'saved') assert.fail('expected locally saved Lua');
+	assert.deepEqual(result.persistence, { status: 'local-only', reason: 'disconnected' });
+	assert.equal(f.lua.src, result.snapshot.source);
+	assert.equal(model.dirty, false);
+	await reconnectWorkspaceRecords(f.clock, f.root);
+	assert.equal(f.files.records.get(f.lua.normalized_source_path)!.contents, result.snapshot.source);
+});
+
+test('an acknowledged write stays a workspace save even when another operation disconnected the provider', async t => {
+	const f = await fixture(t);
+	const model = f.yaml();
+	setSource(model, 'value: 2');
+	f.files.delayed = true;
+	const pending = f.saves.save(model);
+	await setImmediate();
+	disconnectWorkspaceRecords(new Error('another resource failed'));
+	f.files.writes[0].complete();
+	const result = await pending;
+	if (result.status !== 'saved') assert.fail('expected saved source');
+	assert.equal(workspaceRecordState.connected, false);
+	assert.deepEqual(result.persistence, { status: 'workspace' });
+});
+
+test('Save command distinguishes local-only persistence from an AEM application failure and a successful retry', async t => {
+	const f = await fixture(t);
+	const model = f.models.retain({ domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
+	closeWorkspaceRecords();
+	setSource(model, '[');
+	const result = await saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources);
+	if (result.status !== 'saved' || result.application.status !== 'failed') assert.fail('expected saved local source and failed AEM');
+	assert.equal(result.persistence.status, 'local-only');
+	assert.equal(result.application.phase, 'build');
+	assert.match(editorFeedbackState.message.text, /saved locally only; runtime apply failed/);
+	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_WARNING);
+	assert.equal(f.tasks.ready, true);
+	await reconnectWorkspaceRecords(f.clock, f.root);
+	const yaml = f.yaml();
+	setSource(yaml, 'value: 2');
+	const retry = await saveTextFileFromCommand(f.saves, yaml, {} as CartEditor, f.sources);
+	if (retry.status !== 'saved') assert.fail('expected saved project file');
+	assert.equal(retry.persistence.status, 'workspace');
+	assert.doesNotMatch(editorFeedbackState.message.text, /locally only|apply failed/);
+	assert.match(editorFeedbackState.message.text, /saved \(asset rebuild required\)/);
+});
+
+test('Save command presents a local-only write failure without claiming the project file was saved', async t => {
+	const f = await fixture(t);
+	const model = f.yaml();
+	setSource(model, 'value: 2');
+	f.files.failure = new Error('project filesystem unavailable');
+	await saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources);
+	assert.match(editorFeedbackState.message.text, /saved locally only: project filesystem unavailable/);
+	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_WARNING);
+	f.files.failure = undefined;
+	await reconnectWorkspaceRecords(f.clock, f.root);
 });
 
 test('AEM build rejection reports saved source separately and does not poison the runtime queue', async t => {
