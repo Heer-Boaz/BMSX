@@ -29,7 +29,7 @@ import type { TextFileSaveService } from '../workbench/services/working_copy/tex
 import { saveTextFileFromCommand } from './source_save';
 import type { EditorTextModel } from '../editor/model/text_model';
 import { resolveRuntimeLuaSource, type RuntimeSourceState } from '../runtime/sources';
-import type { ScenarioRunService } from '../workbench/contrib/scenario_lab/run_service';
+import type { ScenarioRunService } from '../workbench/services/testing/scenario_runs';
 import type { RuntimeFaultState } from '../runtime/fault_state';
 import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';

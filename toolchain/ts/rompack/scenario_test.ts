@@ -12,6 +12,6 @@ export function scenarioTestAssetId(sourcePath: string): string {
 	return `${SCENARIO_TEST_ASSET_ID_PREFIX}${sourcePath}`;
 }
 
-export function isScenarioTestAsset(asset: RomAsset): boolean {
+export function isScenarioTestAsset(asset: Pick<RomAsset, 'resid'>): boolean {
 	return asset.resid.startsWith(SCENARIO_TEST_ASSET_ID_PREFIX);
 }

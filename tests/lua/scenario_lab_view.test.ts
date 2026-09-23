@@ -76,6 +76,20 @@ function createViewFixture(t: TestContext) {
 	return { collection, results, view };
 }
 
+test('Scenario Lab observes shared discovery revisions even when another consumer refreshes them first', t => {
+	const { collection, view } = createViewFixture(t);
+	const module = collection.roots[0].children[0];
+	const source = "return { kind = 'unit', tests = { newly_discovered = function() end } }";
+	collection.updateSource(module, source, 42);
+	assert.equal(view.testPane.rowsDirty, false, 'there is no controller-local invalidation');
+	prepareScenarioLabLayout(view);
+	assert.equal(view.testPane.projectedRevision, collection.revision);
+	assert.ok(view.testPane.rows.some(row => row.kind === 'test' && row.test.caseName === 'newly_discovered'));
+	const rows = view.testPane.rows.slice();
+	for (let frame = 0; frame < 1000; frame++) prepareScenarioLabLayout(view);
+	assert.ok(view.testPane.rows.every((row, index) => row === rows[index]), 'unchanged frames retain rows');
+});
+
 test('scenario workbench view retains lazy test projection and contextual actions', (t) => {
 	const { collection, view } = createViewFixture(t);
 	const root = collection.roots[0];

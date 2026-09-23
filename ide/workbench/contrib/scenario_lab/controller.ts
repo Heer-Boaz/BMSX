@@ -5,12 +5,7 @@ import { TextQuickPickProvider } from '../../services/quick_input/text_provider'
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { PointerSnapshot } from '../../../common/models';
 import type { CartEditor } from '../../../cart_editor';
-import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { EditorScenarioLabCommandId } from '../../../common/commands';
-import {
-	captureCurrentLuaSource,
-	captureLuaTextModelSources,
-} from '../../services/working_copy/lua_sources';
 import type { ScenarioLabTabId } from '../../ui/tab/id';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { isScenarioLabActive, openEditorTab } from '../../ui/tabs';
@@ -29,16 +24,7 @@ import {
 	refreshScenarioLabProjection,
 	selectedScenarioTestNode,
 } from './projection';
-import type { ScenarioRunService } from './run_service';
-import type {
-	ScenarioRunEvent,
-	ScenarioRunTestSource,
-} from './run_service';
-import type {
-	ScenarioTestCollection,
-	ScenarioTestItem,
-	ScenarioTestNodeId,
-} from '../../../testing/scenario/test_collection';
+import { ScenarioRunAdmissionError, type ScenarioRunService, type ScenarioRunEvent } from '../../services/testing/scenario_runs';
 import type { ScenarioLabViewState } from './view_model';
 import { createScenarioLabViewState } from './view_state';
 import type { ScenarioSourceLocation } from '../../../testing/scenario/result_service';
@@ -52,46 +38,28 @@ const WHEEL_SCROLL_ROWS = 3;
 export class ScenarioLabController {
 	private view: ScenarioLabViewState | null = null;
 	private readonly disposeRunListener: () => void;
-	private readonly sourceListeners: (() => void)[];
-	private sourcesDirty = true;
 
 	public constructor(
 		private readonly editor: CartEditor,
-		private readonly sources: RuntimeSourceState,
 		private readonly navigation: EditorNavigationController,
 		private readonly editorPanes: EditorPanes,
 		private readonly behaviorRegistrations: BehaviorRegistrationIndex,
-		private readonly collection: ScenarioTestCollection,
 		private readonly runs: ScenarioRunService,
 	) {
 		this.disposeRunListener = this.runs.onDidChangeRun(
 			event => this.handleRunChange(event),
 		);
-		const changed = () => { this.sourcesDirty = true; };
-		this.sourceListeners = [editorTextModelService.onDidAddModel(changed),
-			editorTextModelService.onDidChangeContent(changed), editorTextModelService.onDidRemoveModel(changed)];
 	}
 
 	private refreshSources(): void {
-		const membershipChanged = this.collection.refresh();
-		if (!this.sourcesDirty && !membershipChanged) return;
-		for (const root of this.collection.roots) {
-			for (const module of root.children) {
-				const snapshot = captureCurrentLuaSource(editorTextModelService, this.sources, module.resource);
-				this.collection.updateSource(module, snapshot.source, snapshot.revision);
-			}
-		}
-		this.sourcesDirty = false;
+		this.runs.refreshSources();
 		if (this.view !== null) {
-			this.view.testPane.rowsDirty = true;
 			refreshScenarioLabProjection(this.view);
 		}
 	}
 
 	public dispose(): void {
 		this.disposeRunListener();
-		for (const dispose of this.sourceListeners) dispose();
-		this.runs.dispose();
 	}
 
 	public open(): void {
@@ -99,7 +67,7 @@ export class ScenarioLabController {
 	}
 
 	public updateView(view: ScenarioLabViewState): void {
-		this.refreshSources();
+		this.runs.refreshSources();
 		if (view.runActive !== this.runs.active) {
 			view.runActive = this.runs.active;
 			updateScenarioLabStatus(view);
@@ -116,7 +84,7 @@ export class ScenarioLabController {
 					if (command === 'scenarioLab.run') this.runSelected(view);
 					else this.rerunLast(view);
 				} catch (error) {
-					if (!(error instanceof LuaSyntaxError)) throw error;
+					if (!(error instanceof LuaSyntaxError) && !(error instanceof ScenarioRunAdmissionError)) throw error;
 					this.editor.handleRuntimeTaskError(error, 'Invalid test declaration');
 				}
 				return;
@@ -171,7 +139,7 @@ export class ScenarioLabController {
 			return this.view;
 		}
 		const view = createScenarioLabViewState(
-			this.collection,
+			this.runs.collection,
 			this.runs.results,
 			this.runs.active,
 		);
@@ -220,44 +188,19 @@ export class ScenarioLabController {
 	private runSelected(view: ScenarioLabViewState): void {
 		this.refreshSources();
 		const node = selectedScenarioTestNode(view)!;
-		this.startRun(view, node.id, this.collection.resolveNode(node));
+		void this.runs.start(node.id);
 	}
 
 	private rerunLast(view: ScenarioLabViewState): void {
 		const previous = this.runs.results.runs[0];
 		this.refreshSources();
-		const scope = this.collection.getNode(previous.scopeId);
+		const scope = this.runs.collection.getNode(previous.scopeId);
 		if (scope === undefined) {
 			view.status.info = 'THE PREVIOUS TEST SELECTION NO LONGER EXISTS';
 			view.status.dirty = true;
 			return;
 		}
-		this.startRun(view, scope.id, this.collection.resolveNode(scope));
-	}
-
-	private startRun(
-		view: ScenarioLabViewState,
-		scopeId: ScenarioTestNodeId,
-		tests: readonly ScenarioTestItem[],
-	): void {
-		const testSources = new Array<ScenarioRunTestSource>(tests.length);
-		for (let index = 0; index < tests.length; index += 1) {
-			const test = tests[index];
-			const snapshot = captureCurrentLuaSource(editorTextModelService, this.sources, test.resource);
-			testSources[index] = {
-				test,
-				source: snapshot.source,
-				sourceRevision: snapshot.revision,
-			};
-		}
-		const programSources = captureLuaTextModelSources(editorTextModelService, this.sources, true);
-		view.runActive = true;
-		updateScenarioLabStatus(view);
-		void this.runs.start(
-			scopeId,
-			testSources,
-			programSources,
-		);
+		void this.runs.start(scope.id);
 	}
 
 	private handleRunChange(event: ScenarioRunEvent): void {

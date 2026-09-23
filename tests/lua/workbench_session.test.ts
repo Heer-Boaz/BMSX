@@ -45,8 +45,7 @@ import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { BT_TRANSFER_SOURCE } from '../helpers/behavior_transfer_fixture';
 import { ScenarioLabInputSerializer } from '../../ide/workbench/contrib/scenario_lab/editor_serializer';
 import { ScenarioLabController } from '../../ide/workbench/contrib/scenario_lab/controller';
-import { ScenarioRunService } from '../../ide/workbench/contrib/scenario_lab/run_service';
-import { ScenarioTestCollection } from '../../ide/testing/scenario/test_collection';
+import { ScenarioRunService } from '../../ide/workbench/services/testing/scenario_runs';
 import { captureScenarioLabTestView } from '../../ide/workbench/contrib/scenario_lab/view_snapshot';
 import { updateSelectedScenarioNode } from '../../ide/workbench/contrib/scenario_lab/projection';
 
@@ -68,8 +67,8 @@ function fixture(t: TestContext) {
 	const behavior = new BehaviorLensController(sources, null, panes, null, null, () => assert.fail('metadata must not start an FSM layout worker'), null);
 	const scene = new SceneEditorController(sources, panes, null);
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
-	const runs = new ScenarioRunService(sources, null, null, runtime.model, () => assert.fail('session recovery must not create test machines'));
-	const scenario = new ScenarioLabController(null, sources, null, panes, null, new ScenarioTestCollection(sources), runs);
+	const runs = new ScenarioRunService(editorTextModelService, sources, null, null, new Map(), runtime.model, () => assert.fail('session recovery must not create test machines'));
+	const scenario = new ScenarioLabController(null, null, panes, null, runs);
 	const serializers: EditorInputSerializers = {
 		code_editor: new CodeEditorInputSerializer(null, sources),
 		behavior_lens: new BehaviorLensInputSerializer(null, sources, behavior),
@@ -80,7 +79,7 @@ function fixture(t: TestContext) {
 	const unsubscribe = editorTextModelService.onDidChangeContent((model, event) => {
 		behavior.onDidChangeContent(model, event); scene.onDidChangeContent(model, event);
 	});
-	t.after(() => { panes.dispose(); scenario.dispose(); unsubscribe(); editorTabGroup.clear(); clearCodeEditorInputs(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); workspaceDirtyRecords.clear(); });
+	t.after(() => { panes.dispose(); scenario.dispose(); runs.dispose(); unsubscribe(); editorTabGroup.clear(); clearCodeEditorInputs(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); workspaceDirtyRecords.clear(); });
 	const resource = resolveRuntimeResource(sources, { domain: 0, path: 'definitions.lua' })!;
 	const model = editorTextModelService.retain(resource, 'lua', SOURCE);
 	return { sources, panes, behavior, scene, scenario, serializers, model, runtime };
@@ -238,12 +237,12 @@ test('Scenario Lab persists only test identity and scope expansion, not run/resu
 	const value = f.serializers.scenario_lab.serialize(input);
 	assert.deepEqual(JSON.parse(value), captureScenarioLabTestView(input.view));
 	assert.doesNotMatch(value, /results|runActive|focus|previous/);
-	const next = new ScenarioLabController(null, f.sources, null, f.panes, null, new ScenarioTestCollection(f.sources),
-		new ScenarioRunService(f.sources, null, null, f.runtime.model, () => assert.fail('session recovery must not create test machines')));
+	const runs = new ScenarioRunService(editorTextModelService, f.sources, null, null, new Map(), f.runtime.model, () => assert.fail('session recovery must not create test machines'));
+	const next = new ScenarioLabController(null, null, f.panes, null, runs);
 	const fresh = new ScenarioLabInputSerializer(next).deserialize(value);
 	assert.deepEqual(captureScenarioLabTestView(fresh.view), captureScenarioLabTestView(input.view));
 	assert.equal(fresh.view.runActive, false); assert.equal(fresh.view.focus, 'tests'); assert.equal(fresh.view.resultPane.rows.length, 0);
-	input.dispose(); fresh.dispose(); next.dispose();
+	input.dispose(); fresh.dispose(); next.dispose(); runs.dispose();
 });
 
 test('a persisted behavior snapshot is immutable across later model edits', t => {

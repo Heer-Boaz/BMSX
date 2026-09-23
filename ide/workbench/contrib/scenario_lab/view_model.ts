@@ -132,6 +132,7 @@ export type ScenarioLabTestPaneState = ScenarioLabPaneState<ScenarioLabTestRow> 
 	readonly collapsedNodeIds: Set<ScenarioTestNodeId>;
 	selectedNodeId: ScenarioTestNodeId | null;
 	rowsDirty: boolean;
+	projectedRevision: number;
 };
 
 export type ScenarioLabResultPaneState = ScenarioLabPaneState<ScenarioLabResultRow> & {

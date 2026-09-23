@@ -43,6 +43,7 @@ export function createScenarioLabViewState(
 			collapsedNodeIds: new Set(),
 			selectedNodeId: null,
 			rowsDirty: true,
+			projectedRevision: -1,
 		},
 		resultPane: {
 			...createScenarioLabPaneState<ScenarioLabResultRow>(),

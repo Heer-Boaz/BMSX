@@ -12,15 +12,18 @@ import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { createRuntimeSourceState, enterCartridgeSources } from '../../ide/runtime/sources';
 import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
-import { ScenarioTestCollection } from '../../ide/testing/scenario/test_collection';
-import { ScenarioRunService } from '../../ide/workbench/contrib/scenario_lab/run_service';
+import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
+import { ScenarioRunService } from '../../ide/workbench/services/testing/scenario_runs';
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
 import { TestInput } from '../../ide/testing/input';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
+import { workspaceDirtyRecords } from '../../ide/workbench/workspace/state';
+import { buildWorkspaceDirtyEntryPath } from '../../ide/workspace/files';
 
-test('Studio runs fresh targets and current sources without touching the authoring machine, sources or debugger', async () => {
+test('Studio runs fresh targets and current sources without touching the authoring machine, sources or debugger', async t => {
+	t.after(() => { workspaceDirtyRecords.clear(); editorTextModelService.clear(); });
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-isolation-'));
 	try {
 		const source = `local fixture = require('testlib/fixture')
@@ -44,7 +47,8 @@ return { kind = 'unit', tests = {
 		const targets: OffscreenMachine<TestInput>[] = [];
 		const disposed = new Set<OffscreenMachine<TestInput>>();
 		let constructionFailure: Error | undefined;
-		const runs = new ScenarioRunService(sources, tooling, new MemoryStorage(), PSX_MACHINE_SPEC,
+		const models = new EditorTextModelService();
+		const runs = new ScenarioRunService(models, sources, tooling, new MemoryStorage(), new Map(), PSX_MACHINE_SPEC,
 			(systemRom, cartridges, model, input) => {
 				if (constructionFailure) throw constructionFailure;
 				const target = new OffscreenMachine(systemRom, cartridges, model, input);
@@ -54,23 +58,35 @@ return { kind = 'unit', tests = {
 				targets.push(target);
 				return target;
 			});
-		const collection = new ScenarioTestCollection(sources);
+		const collection = runs.collection;
 		const module = collection.findModuleBySourcePath(0, SCENARIO_FIXTURE_TEST_SOURCE_PATH);
-		const cases = collection.resolveNode(module);
 		// A saved source-only helper does not dirty the gameplay image. Test compilation
 		// still consumes it, independently of unsaved editor models.
 		const helper = sources.cartridgeSlots[0]!.luaSources.module2lua['testlib/fixture'];
 		helper.src = helper.base_src = `return 'edited helper'`;
+		workspaceDirtyRecords.set(buildWorkspaceDirtyEntryPath(sources.cartridgeSlots[0]!.projectRootPath, 0, helper.source_path),
+			{ contents: 'return "foreign helper"', updatedAt: helper.update_timestamp + 1 });
+		const suite = models.retain(sources.luaResources.find(resource => resource.path === SCENARIO_FIXTURE_TEST_SOURCE_PATH)!, 'lua', source);
+		suite.pushEditOperations([{ offset: source.indexOf('first ='), deleteLength: 5, text: 'captured' }]);
+		const capturedVersion = suite.version;
+		editorTextModelService.retain(suite.resource, 'lua', 'end end -- foreign document');
+		const helperModel = models.retain(sources.luaResources.find(resource => resource.path === helper.source_path)!, 'lua', helper.src);
 		const originalState = captureRuntimeMachineState(authoring.runtime);
 		const originalMedia = sources.currentBlua32Media;
 		const originalSource = sources.cartridgeSlots[0]!.luaSources.module2lua['testlib/fixture'].src;
-		await runs.start(module.id, cases.map(test => ({ test, source, sourceRevision: 77 })), []);
+		const prepared = runs.start(module.id);
+		suite.pushEditOperations([{ offset: 0, deleteLength: suite.buffer.length, text: 'end end -- later typing' }]);
+		helperModel.pushEditOperations([{ offset: 0, deleteLength: helperModel.buffer.length, text: 'return "later helper"' }]);
+		await prepared;
 		for (let grants = 0; runs.active && grants < 10000; grants += 1) {
 			runs.advance();
 			await setImmediate();
 		}
 		assert.equal(runs.active, false);
 		assert.deepEqual(runs.results.runs[0].items.map(item => item.state), ['passed', 'failed', 'passed']);
+		assert.equal(runs.results.runs[0].items[0].test.caseName, 'captured');
+		assert.equal(runs.results.runs[0].items[0].sourceRevision, capturedVersion);
+		suite.undo(); helperModel.undo();
 		assert.equal(targets.length, 3, 'product construction runs once per case');
 		assert.equal(new Set(targets.map(target => target.input)).size, 3, 'each case supplies its own input');
 		assert.deepEqual([...disposed], [targets[0], targets[2]], 'only the failed machine remains retained');
@@ -86,7 +102,7 @@ return { kind = 'unit', tests = {
 		sources.cartridgeBlua32MediaDirty[0] = true; // The workspace admission owner marks this build input.
 		collection.refresh();
 		const addedModule = collection.findModuleBySourcePath(0, added.source_path);
-		await runs.start(addedModule.id, collection.resolveNode(addedModule).map(test => ({ test, source: addedSource, sourceRevision: 99 })), []);
+		await runs.start(addedModule.id);
 		assert.equal(disposed.has(targets[1]), true, 'a new run releases the previous failed machine');
 		for (let grant = 0; runs.active && grant < 10000; grant++) { runs.advance(); await setImmediate(); }
 		assert.equal(runs.active, false);
@@ -95,12 +111,29 @@ return { kind = 'unit', tests = {
 		assert.equal(sources.currentBlua32Media, originalMedia);
 		assert.equal(added.src, addedSource);
 		constructionFailure = new Error('offscreen machine could not be constructed');
-		await runs.start(addedModule.id, collection.resolveNode(addedModule).map(test => ({ test, source: addedSource, sourceRevision: 100 })), []);
+		await runs.start(addedModule.id);
 		assert.equal(runs.active, false);
 		assert.equal(runs.results.runs[0].items[0].failures[0].phase, 'prepare');
 		assert.equal(runs.results.runs[0].items[0].failures[0].message, constructionFailure.message);
 		assert.deepEqual(captureRuntimeMachineState(authoring.runtime), originalState);
+		constructionFailure = undefined;
+		const targetCount = targets.length;
+		const restoring = runs.start(addedModule.id);
+		models.clear(); // Autosave restoration replaces models without replacing the workbench.
+		await restoring;
+		assert.equal(runs.results.runs[0].state, 'cancelled');
+		assert.equal(runs.active, false); assert.equal(runs.session, null);
+		assert.equal(targets.length, targetCount, 'retired preparation cannot construct a target');
+		await runs.start(addedModule.id);
+		for (let grant = 0; runs.active && grant < 10000; grant++) { runs.advance(); await setImmediate(); }
+		assert.equal(runs.results.runs[0].state, 'passed', 'rehydrated workspace can run again');
+		const shuttingDown = runs.start(addedModule.id);
 		runs.dispose();
+		await shuttingDown;
+		assert.equal(runs.results.runs[0].state, 'cancelled');
+		assert.equal(targets.length, targetCount + 1, 'shutdown cannot publish a pending target');
+		assert.throws(() => runs.start(addedModule.id), /closed/);
+		models.clear(); editorTextModelService.clear();
 		assert.equal(disposed.size, targets.length);
 		authoring.dispose();
 	} finally { await rm(directory, { recursive: true, force: true }); }
@@ -131,29 +164,29 @@ test('both authoring domains retain companion ROM data and source identity; runn
 		const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
 		const authoring = new OffscreenMachine(fixture.systemRom, [fixture.cartRom, null], PSX_MACHINE_SPEC, new TestInput());
 		const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(authoring.runtime));
-		const runs = new ScenarioRunService(sources, tooling, new MemoryStorage(), PSX_MACHINE_SPEC,
+		const models = new EditorTextModelService();
+		const runs = new ScenarioRunService(models, sources, tooling, new MemoryStorage(), new Map(), PSX_MACHINE_SPEC,
 			(systemRom, cartridges, model, input) => new OffscreenMachine(systemRom, cartridges, model, input));
-		const collection = new ScenarioTestCollection(sources);
+		const collection = runs.collection;
 		for (const slot of [0, 1] as const) {
 			enterCartridgeSources(sources, slot);
 			assert.equal(collection.refresh(), slot === 1, 'owner change matters even at equal registry revision');
 			assert.equal(collection.roots[0].domain, slot);
 			assert.equal(collection.refresh(), false);
 			const module = collection.findModuleBySourcePath(slot, SCENARIO_FIXTURE_TEST_SOURCE_PATH);
-			const cases = collection.resolveNode(module).map(test => ({ test, source, sourceRevision: 0 }));
-			await runs.start(module.id, cases, []);
+			await runs.start(module.id);
 			for (let grant = 0; runs.active && grant < 10000; grant++) { runs.advance(); await setImmediate(); }
 			assert.equal(runs.active, false);
 			assert.deepEqual(runs.results.runs[0].items.map(item => item.state), ['passed', 'failed', 'passed']);
 			assert.equal(runs.results.runs[0].items[1].failures[0].location!.resource.domain, slot);
 			assert.equal(runs.results.runs[0].items[1].failures[0].location!.resource.path, SCENARIO_FIXTURE_TEST_SOURCE_PATH);
-			await runs.start(module.id, cases, []);
+			await runs.start(module.id);
 			runs.session!.execution!.advance = () => { throw new Error('infrastructure failure'); };
 			runs.advance();
 			assert.equal(runs.active, false);
 			assert.deepEqual(runs.results.runs[0].items.map(item => item.state), ['failed', 'skipped', 'skipped']);
 			assert.equal(runs.results.runs[0].items[0].failures[0].phase, 'runner');
 		}
-		runs.dispose(); authoring.dispose();
+		runs.dispose(); models.clear(); editorTextModelService.clear(); authoring.dispose();
 	} finally { await rm(directory, { recursive: true, force: true }); }
 });

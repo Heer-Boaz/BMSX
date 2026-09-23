@@ -80,6 +80,17 @@ resolves the current selection and current sources. Test builds own editable
 source records, including saved source-only helpers. They never install media,
 restore state or attach a test continuation to the authoring Runtime.
 
+`workbench/services/testing/scenario_runs.ts` owns that workspace admission,
+not the Scenario Lab view. Clients pass a stable project/module/case identity;
+the service resolves current declarations and captures its own document models
+and source revisions before preparation yields. Later typing cannot alter an
+accepted run, and unrelated document services or dirty-record maps cannot supply
+its inputs. `start()` rejects stale/invalid selections synchronously; its promise
+settles preparation, **not** test completion. The retained result/run owner
+reports actual completion. Disposing a view leaves this workspace owner alive.
+Working-copy restoration retires pending execution and permits new requests;
+workbench shutdown closes admission before asynchronous source saves.
+
 Machine construction is supplied by Studio/CLI composition through
 `TestTargetFactory`. The run owns test input and case/result policy; the concrete
 `OffscreenMachine` owns physical boot, lazy rendering and disposal. The host

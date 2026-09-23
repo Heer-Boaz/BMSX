@@ -484,8 +484,8 @@ paid-model or personal-account verification.
 Before extending execution context, two regressions reproduced source capture
 reading an unrelated global working copy at the same resource identity/version.
 The shared Lua capture functions now require their `EditorTextModelService`;
-Hot Resume/Reboot retain it explicitly, and Scenario Lab's ordinary discovery/run
-capture passes the same owner. This fixes the producer, not a Codex-only filter.
+Hot Resume/Reboot and the workspace test service retain it explicitly. This fixes
+the producer, not a Codex-only filter.
 The existing 20 physical-media Hot Resume/Reboot service tests now use private
 document owners while an invalid foreign global `entry.lua` remains open.
 The unopened-source case also proves that a foreign model cannot shadow the
@@ -501,3 +501,40 @@ Reference: VS Code's pinned
 [text-file save owner](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/services/textfile/common/textFileEditorModel.ts#L926-L962)
 captures from the resolved model and admits completion against that model's
 version, rather than treating a matching path as document identity.
+
+### Workspace-owned test discovery and admission
+
+The next live audit found discovery invalidation and run-source selection still
+owned by `ScenarioLabController`, while its media builder read the global dirty
+map. `workbench/services/testing/scenario_runs.ts` now owns both, using the actual
+document service, source catalog and dirty records supplied at composition.
+Callers pass only a stable scope identity. The service resolves current cases
+and captures their exact suite/model sources before asynchronous preparation;
+invalid or vanished selections cannot record a run. The existing physical run,
+offscreen targets, budgets and results remain the execution owners.
+
+Scenario Lab observes this collection's revision, including changes published
+before the view refreshes. Closing/disposal of the view does not retire the
+workspace service. Restoring working copies cancels old preparation/execution,
+but the same workbench can discover and run its restored sources. Only service
+shutdown closes admission. A completed preparation promise is not a passed test.
+No test-execution capability has been added to the assistant by this slice.
+
+Validation: Lua **2372 passed, 1 skipped**, ROM packer **158 passed**; isolated
+runner workflows on software/WebGL2/WebGPU and the broad Studio workflow on
+WebGL2 pass. The named-case results screenshot was inspected. Tests prove private
+document/dirty-map ownership, edits after admission, cancellation during build,
+shutdown retirement, discovery without a view and renewed admission after model
+restoration. One thousand unchanged refreshes read/parse no source and retain
+view rows. Both product builds and typechecks pass, strict architecture audit
+reports zero issues, and tests-project typechecking retains the same 96 existing
+diagnostics. This remains automated evidence, not UI-only authoring or paid-model
+verification.
+
+Reference: VS Code's pinned
+[test service](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/contrib/testing/common/testService.ts)
+separates collection/selection admission from presentation, while its
+[result owner](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/contrib/testing/common/testResult.ts#L510-L519)
+keeps source retirement distinct from a recorded outcome. BMSX does not import
+the extension-host/service registry or claim historical results certify current
+workspace dependencies.

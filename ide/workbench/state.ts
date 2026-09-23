@@ -21,8 +21,7 @@ import { SuspendedGuestSession } from '../runtime/suspended_guest';
 import { OverlayRenderer } from '../runtime/overlay_renderer';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
-import { ScenarioRunService } from './contrib/scenario_lab/run_service';
-import { ScenarioTestCollection } from '../testing/scenario/test_collection';
+import { ScenarioRunService } from './services/testing/scenario_runs';
 import type { TestTargetFactory } from '../testing/target';
 import { TextFileSaveService } from './services/working_copy/text_file_save';
 import { HotResumeService } from './services/execution/hot_resume';
@@ -45,7 +44,6 @@ export class RuntimeIdeState {
 	public readonly debugger: RuntimeDebuggerState;
 	public shortcutDisposers: Array<() => void> = [];
 	public readonly luaTooling: RuntimeLuaTooling;
-	public readonly scenarioTests: ScenarioTestCollection;
 	public readonly scenarioRuns: ScenarioRunService;
 	public readonly textFileSaves: TextFileSaveService;
 	public readonly hotResumes: HotResumeService;
@@ -81,8 +79,7 @@ export class RuntimeIdeState {
 			sources,
 			new SuspendedGuestSession(runtime),
 		);
-		this.scenarioTests = new ScenarioTestCollection(sources);
-		this.scenarioRuns = new ScenarioRunService(sources, this.luaTooling, storage, runtime.model, createTestTarget);
+		this.scenarioRuns = new ScenarioRunService(editorTextModelService, sources, this.luaTooling, storage, workspaceDirtyRecords, runtime.model, createTestTarget);
 		this.textFileSaves = new TextFileSaveService(editorTextModelService, storage, clock, sources, this.luaTooling, runtime, runtimeTasks);
 		this.hotResumes = new HotResumeService(editorTextModelService, sources, this.luaTooling, this.fault, this.debugger,
 			input, runtime, runtimeTasks, storage, workspaceDirtyRecords);
@@ -110,7 +107,6 @@ export class RuntimeIdeState {
 			execution,
 			rewind,
 			this.overlayRenderer,
-			this.scenarioTests,
 			this.scenarioRuns,
 			this.textFileSaves,
 			this.hotResumes,

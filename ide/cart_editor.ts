@@ -114,10 +114,9 @@ import { EditorNavigationController } from './workbench/contrib/resources/naviga
 import { BehaviorLensController } from './workbench/contrib/behavior_lens/controller';
 import { BehaviorRegistrationIndex } from './workbench/contrib/behavior_lens/registration_index';
 import { ScenarioLabController } from './workbench/contrib/scenario_lab/controller';
-import type { ScenarioRunService } from './workbench/contrib/scenario_lab/run_service';
+import type { ScenarioRunService } from './workbench/services/testing/scenario_runs';
 import type { TextFileSaveService } from './workbench/services/working_copy/text_file_save';
 import type { BootService } from './workbench/services/execution/boot';
-import type { ScenarioTestCollection } from './testing/scenario/test_collection';
 import { editorChromeState } from './workbench/ui/chrome_state';
 import { getActiveTab, getActiveTabId, initializeTabs, setActiveTab } from './workbench/ui/tabs';
 import { editorTabGroup } from './workbench/ui/tab/group_model';
@@ -262,8 +261,7 @@ export class RuntimeCartEditor implements CartEditor {
 		execution: HostExecutionControl,
 		rewind: HostRewind,
 		overlayRenderer: OverlayRenderer,
-		scenarioTests: ScenarioTestCollection,
-		scenarioRuns: ScenarioRunService,
+		private readonly scenarioRuns: ScenarioRunService,
 		private readonly textFileSaves: TextFileSaveService,
 		private readonly hotResumes: HotResumeService,
 		private readonly boots: BootService,
@@ -364,11 +362,9 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		this.scenarioLab = new ScenarioLabController(
 			this,
-			this.sources,
 			this.navigation,
 			this.editorPanes,
 			behaviorRegistrations,
-			scenarioTests,
 			scenarioRuns,
 		);
 		this.editorInputSerializers = {
@@ -601,6 +597,7 @@ export class RuntimeCartEditor implements CartEditor {
 
 	public async shutdown(): Promise<void> {
 		this.assistant.dispose();
+		this.scenarioRuns.dispose();
 		this.diagnostics.dispose();
 		this.unsubscribeDiagnosticsChanged();
 		const executionDrained = this.hotResumes.shutdown();

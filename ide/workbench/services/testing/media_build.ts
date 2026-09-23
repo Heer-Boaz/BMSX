@@ -6,8 +6,8 @@ import { forkRuntimeSourceState, type RuntimeSourceState } from '../../../runtim
 import { blua32MediaRequiresRebuild, buildBlua32Media, layoutBlua32MediaInstallation } from '../../../runtime/lua_pipeline';
 import { applyAllWorkspaceSourceOverrides, applyLuaTextModelSources } from '../../../workspace/workspace';
 import type { KeyValueStorage } from '../../../workspace/key_value_storage';
-import type { LuaTextModelSourceSnapshot } from '../../services/working_copy/lua_sources';
-import { workspaceDirtyRecords } from '../../workspace/state';
+import type { LuaTextModelSourceSnapshot } from '../working_copy/lua_sources';
+import type { WorkspaceRecord } from '../../../workspace/records';
 import type { TestRunMedia } from '../../../testing/run';
 import type { MachineModelSpec } from '../../../../machine/ts/spec/bmsx/model';
 
@@ -16,13 +16,14 @@ export async function buildTestRunMedia(
 	authoring: RuntimeSourceState,
 	tooling: RuntimeLuaTooling,
 	storage: KeyValueStorage,
+	dirtyRecords: ReadonlyMap<string, WorkspaceRecord>,
 	programSources: readonly LuaTextModelSourceSnapshot[],
 	slot: 0 | 1,
 	machineModel: MachineModelSpec,
 ): Promise<TestRunMedia> {
 	const sources = forkRuntimeSourceState(authoring);
 	try {
-		await applyAllWorkspaceSourceOverrides(storage, sources, new Map(workspaceDirtyRecords));
+		await applyAllWorkspaceSourceOverrides(storage, sources, new Map(dirtyRecords));
 		applyLuaTextModelSources(sources, programSources);
 		let systemRom = sources.systemRom.bytes;
 		const cartridgeSlots: [Uint8Array | null, Uint8Array | null] = [

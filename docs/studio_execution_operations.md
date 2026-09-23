@@ -59,9 +59,9 @@ toast from an earlier request on screen.
 
 ## Representation and performance boundary
 
-Source capture takes the concrete document owner explicitly. Hot Resume and
-Reboot receive that owner at composition, and Scenario Lab passes its own owner
-to the same capture functions. Matching path/version numbers in another model
+Source capture takes the concrete document owner explicitly. Hot Resume, Reboot
+and the workspace test service receive that owner at composition and use the
+same capture functions. Matching path/version numbers in another model
 service cannot supply the accepted source. An unopened source resolves from its
 own workspace record, not an unrelated open global document. No process/tool
 adapter chooses a document owner after asynchronous admission.

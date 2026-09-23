@@ -60,6 +60,7 @@ export function rebuildScenarioLabTestRows(state: ScenarioLabViewState): void {
 	updateSelectedScenarioNode(state);
 	pane.hoverIndex = -1;
 	pane.rowsDirty = false;
+	pane.projectedRevision = state.collection.revision;
 	pane.textDirty = true;
 }
 
@@ -247,7 +248,7 @@ export function refreshScenarioLabProjection(state: ScenarioLabViewState): void 
 	const testPane = state.testPane;
 	const resultPane = state.resultPane;
 	const resultService = state.resultService;
-	if (testPane.rowsDirty) {
+	if (testPane.rowsDirty || testPane.projectedRevision !== state.collection.revision) {
 		rebuildScenarioLabTestRows(state);
 	}
 	if (resultPane.projectedRevision === resultService.revision

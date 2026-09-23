@@ -923,8 +923,17 @@ test contract directly, without a wrapper. Socket-image conversion is shared
 with the ordinary player construction in `hosts/common/cartridge_media.ts`;
 neither test execution nor test preparation decodes hardware manifests.
 
-Studio's `ScenarioRunService` builds in an independently owned source state,
-including saved/edited source-only helpers, and drives the shared run owner.
+Studio's `ScenarioRunService` in `workbench/services/testing/scenario_runs.ts`
+owns discovery and run admission independently of Scenario Lab. It consumes the document service and
+dirty-record map supplied at composition, resolves stable scope identities
+against current declarations, and captures the accepted suite and open source
+models before asynchronous preparation. It builds in an independently owned
+source state, including saved/edited source-only helpers, and drives the shared
+run owner. Clients cannot choose a different capture owner or manufacture source
+revisions. Unchanged discovery does not reread or reparse source. View disposal
+does not end a workspace run; workbench shutdown closes admission, while model
+replacement during session restoration retires the old execution but permits
+new requests against restored sources.
 It never installs test ROMs into the authoring Runtime, restores authoring state,
 changes its pause reasons, or borrows its input/debugger plans. The workbench
 stays visible during a run and continues to offer ordinary authoring operations.

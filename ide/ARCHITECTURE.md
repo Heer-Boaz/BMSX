@@ -1490,17 +1490,27 @@ Testing separates discovery, case policy, physical resources and results:
   logs, captures, multiple phase failures and semantic facts. Test failure
   retains its own machine and failed threads, not an authoring fault snapshot.
 
-`workbench/contrib/scenario_lab/run_service.ts` builds an independent source
-state from accepted workspace revisions, including saved/edited source-only
-helpers, then drives the shared run. It never installs test media into the
+`workbench/services/testing/scenario_runs.ts` owns workspace discovery and run
+admission. It receives the concrete document service and dirty-record map at
+composition, resolves a stable selection against current declarations, captures
+the suite and all open source models synchronously, then builds an independent
+source state including saved/edited source-only helpers. Callers cannot supply
+their own test/source-revision DTOs. Unchanged discovery reads no model text and
+does not parse; only suite edits or source-registry changes invalidate it.
+The service drives the shared run. It never installs test media into the
 authoring machine, captures/restores authoring state, borrows debugger plans or
 changes authoring pause reasons. The old canonical/derived-media session and
 callback protocol are gone. Preparation or construction failure terminates the
 run without manufacturing a target. Starting another run or disposing the
-service releases the previously retained failed target.
+service releases the previously retained failed target. Workbench shutdown
+closes admission before source-save draining. Replacing working copies during
+session restoration retires pending execution, not the reusable service;
+restored documents can immediately be discovered and run again.
 
-`ScenarioLabController` resolves selection, captures sources and invokes the
-service. It does not build a second execution queue or cancellation route.
+`ScenarioLabController` owns selection/navigation and invokes the service by
+scope identity. Its rows observe the shared collection revision even if another
+client refreshed it first. Disposing the view does not dispose the workspace
+run owner. The controller builds no second execution queue or cancellation route.
 Studio advances at most sixteen CPU grants per host frame, keeping UI work
 bounded while its authoring machine remains independently paused/runnable.
 The CLI drives the same run owner without wall-clock pacing and applies capture
