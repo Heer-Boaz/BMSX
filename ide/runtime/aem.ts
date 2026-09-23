@@ -1,4 +1,5 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import {
@@ -31,6 +32,38 @@ export type BuiltAemSourceRevision = {
 	revision: BuiltBlua32Revision;
 	relocation: Uint32Array;
 };
+
+export type AemSourceApplyResult =
+	| { readonly status: 'applied' }
+	| { readonly status: 'failed'; readonly phase: 'build' | 'runtime'; readonly error: unknown };
+
+/** Apply one accepted source snapshot; rejected authoring never enters machine mutation. */
+export async function applyAemSourceRevision(
+	sources: RuntimeSourceState,
+	luaTooling: RuntimeLuaTooling,
+	runtime: Runtime,
+	runtimeTasks: RuntimeTaskQueue,
+	resource: RuntimeResource,
+	source: string,
+): Promise<AemSourceApplyResult> {
+	let result: AemSourceApplyResult;
+	await runtimeTasks.schedule(() => {
+		let built: BuiltAemSourceRevision;
+		try {
+			built = buildAemSourceRevision(sources, luaTooling, runtime, resource, source);
+		} catch (error) {
+			recordAemSourceApplyFailure(sources, resource);
+			result = { status: 'failed', phase: 'build', error };
+			return;
+		}
+		installAemSourceRevision(sources, luaTooling, runtime, built);
+		result = { status: 'applied' };
+	}, error => {
+		recordAemSourceApplyFailure(sources, resource);
+		result = { status: 'failed', phase: 'runtime', error };
+	});
+	return result;
+}
 
 function buildRuntimeAemValidationLookup(sources: RuntimeSourceState, domain: ResourceDomain) {
 	const resourcePackage = domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemPackage : sources.cartridgeSlots[domain]!.package;

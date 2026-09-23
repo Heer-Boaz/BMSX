@@ -1087,14 +1087,29 @@ checkpoints the still-live inputs before destroying controllers. See
 
 ### Working-copy save ownership
 
-`workbench/services/working_copy/text_file_save.ts` is the persistence and
-runtime-sync boundary for retained text working copies. It receives the
-resource-owned `EditorTextModel` explicitly, snapshots the exact state being
-written, persists through the workspace owner, and only then completes that
-snapshot. Lua and AEM keep their existing producer-specific runtime update
-semantics. A visual BT or FSM input participates through the Lua working copy
-and therefore uses the existing Lua Hot Resume path rather than a separate
-asset revision.
+`workbench/services/working_copy/text_file_save.ts` owns the workbench session's
+accepted Save operations. It receives the resource-owned `EditorTextModel`
+explicitly and captures its snapshot at admission, including when an older save
+is still pending. Concurrent saves of the same revision share one operation;
+later revisions of that resource wait for their predecessor, while unrelated
+files can proceed. Persistence completes only the captured saved identity, never
+newer edits. Shutdown closes admission and joins accepted operations before
+workspace recovery checkpoints, source replacement or model disposal.
+
+The result distinguishes failed source persistence from persisted source and
+its format-specific application. `runtime/aem.ts` owns AEM build/install results;
+build rejection leaves the runtime queue runnable, whereas machine/task failure
+remains a runtime failure. Lua Save does not install executable code and YAML
+Save does not rebuild assets. A visual BT or FSM input participates through the
+Lua working copy and uses the existing Lua Hot Resume path, not a separate asset
+revision. Persistence uses the existing workspace record contract: a local
+recovery record can be authoritative while remote replication remains pending.
+Save is therefore not evidence of remote filesystem acknowledgement.
+
+`commands/source_save.ts` projects these results into editor feedback; it cannot
+manufacture an operation outcome. Workspace recovery observes the model
+service's saved event, rather than making the persistence service depend on
+session composition or an active view.
 
 The ordinary Save command resolves the active `EditorInput` and participates
 only when that input is a `TextEditorInput`; it never reads the detached
@@ -1112,7 +1127,7 @@ Workbench actions that can replace executable media are
 different: Hot Resume and Reboot capture one stable batch of every dirty model
 retained by `EditorTextModelService`, and the prompt keeps that exact batch
 while the user decides. Save-and-continue writes the batch sequentially and
-stops on the first working copy that remains dirty. Neither prompting nor
+stops on a failed save or the first working copy that remains dirty. Neither prompting nor
 changing the IDE theme activates a code pane or changes the selected editor.
 
 This follows VS Code's distinction between active-editor Save, a resource-owned

@@ -49,6 +49,7 @@ import {
 	type WorkspaceAutosavePayload,
 } from './models';
 import { editorTabGroup } from '../ui/tab/group_model';
+import { editorTextModelService } from '../../editor/model/model_service';
 
 const WORKSPACE_AUTOSAVE_DELAY_MS = 2500;
 const WORKSPACE_RECONNECT_DELAY_MS = WORKSPACE_AUTOSAVE_DELAY_MS * 4;
@@ -62,6 +63,7 @@ let storage: KeyValueStorage = null;
 let clock: HostClock = null;
 let unsubscribeEditorGroup: (() => void) | undefined;
 let unsubscribeEditorPane: (() => void) | undefined;
+let unsubscribeModelSaved: (() => void) | undefined;
 
 function cancelWorkspaceReconnect(): void {
 	reconnectHandle?.cancel();
@@ -71,8 +73,10 @@ function cancelWorkspaceReconnect(): void {
 export async function shutdownWorkspaceStorage(): Promise<void> {
 	unsubscribeEditorGroup?.();
 	unsubscribeEditorPane?.();
+	unsubscribeModelSaved?.();
 	unsubscribeEditorGroup = undefined;
 	unsubscribeEditorPane = undefined;
+	unsubscribeModelSaved = undefined;
 	cancelWorkspaceAutosave();
 	cancelWorkspaceReconnect();
 	try {
@@ -346,6 +350,7 @@ export async function restoreWorkspaceStorageSession(
 	debuggerState = runtimeDebuggerState;
 	unsubscribeEditorGroup = editorTabGroup.onDidChange(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession));
 	unsubscribeEditorPane = editor.editorPanes.onDidClearEditor(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession));
+	unsubscribeModelSaved = editorTextModelService.onDidSaveModel(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles));
 	if (restorePayload !== payload) {
 		requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	}

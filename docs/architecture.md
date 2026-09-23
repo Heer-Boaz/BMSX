@@ -4961,6 +4961,19 @@ There is no session migration reader. Undo history, pending property drafts,
 workers, test executions/results, guest state, rewind and host pause are not
 serialized as editor context. See [workbench sessions](workbench_session.md).
 
+The session-owned text-file save service captures each accepted source revision,
+coalesces concurrent saves of that revision and sequences later saves of the
+same resource without blocking unrelated resources. Its result separates source
+persistence from AEM build/runtime application. Completing a snapshot cannot
+clear newer authored edits; Lua saves do not acknowledge installed executable
+code and YAML saves do not acknowledge cooked assets. Command UI consumes the
+result and recovery listens to resource-model save events. Normal shutdown
+closes Save admission and joins accepted operations before checkpointing and
+destroying source owners. Under the existing workspace record contract, saved
+source may be locally authoritative while remote replication is still pending;
+it is not a remote filesystem acknowledgement. The staged ownership audit and
+remaining pre-agent gates are in [Studio architecture foundation](studio_architecture_foundation.md).
+
 Pane detachment completes ordinary focus/capture cleanup while the input and its
 working copy still live. The code widget detaches its model/view on clear; other
 panes do not depend on a previously attached code document. Content bounds belong

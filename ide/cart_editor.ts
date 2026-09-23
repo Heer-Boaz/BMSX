@@ -110,6 +110,7 @@ import { BehaviorLensController } from './workbench/contrib/behavior_lens/contro
 import { BehaviorRegistrationIndex } from './workbench/contrib/behavior_lens/registration_index';
 import { ScenarioLabController } from './workbench/contrib/scenario_lab/controller';
 import type { ScenarioRunService } from './workbench/contrib/scenario_lab/run_service';
+import type { TextFileSaveService } from './workbench/services/working_copy/text_file_save';
 import type { ScenarioTestCollection } from './testing/scenario/test_collection';
 import { editorChromeState } from './workbench/ui/chrome_state';
 import { getActiveTab, getActiveTabId, initializeTabs, setActiveTab } from './workbench/ui/tabs';
@@ -252,6 +253,7 @@ export class RuntimeCartEditor implements CartEditor {
 		overlayRenderer: OverlayRenderer,
 		scenarioTests: ScenarioTestCollection,
 		scenarioRuns: ScenarioRunService,
+		private readonly textFileSaves: TextFileSaveService,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
 	) {
 		this.runtime = runtime;
@@ -283,6 +285,7 @@ export class RuntimeCartEditor implements CartEditor {
 			clock,
 			logOutput,
 			scenarioRuns,
+			textFileSaves,
 		);
 		this.completion = new EditorCompletionController(luaTooling, fault, runtime);
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
@@ -581,6 +584,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public async shutdown(): Promise<void> {
+		await this.textFileSaves.shutdown();
 		pointerHover.clear();
 		pointerCapture.cancel();
 		this.contextMenu.dispose();

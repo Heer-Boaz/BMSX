@@ -24,7 +24,8 @@ import { getActiveTab, isBehaviorLensActive, isCodeTabActive, isScenarioLabActiv
 import { executeEditorWorkspaceCommand, isEditorWorkspaceCommand } from './workspace';
 import { performEditorAction } from './actions';
 import { TextEditorInput } from '../workbench/common/editor_input';
-import { saveTextFileWorkingCopy } from '../workbench/services/working_copy/text_file_save';
+import type { TextFileSaveService } from '../workbench/services/working_copy/text_file_save';
+import { saveTextFileFromCommand } from './source_save';
 import type { EditorTextModel } from '../editor/model/text_model';
 import { resolveRuntimeLuaSource, type RuntimeSourceState } from '../runtime/sources';
 import type { ScenarioRunService } from '../workbench/contrib/scenario_lab/run_service';
@@ -72,6 +73,7 @@ export class IdeCommandController {
 		private readonly clock: HostClock,
 		private readonly logOutput: LogOutput,
 		private readonly scenarioRuns: ScenarioRunService,
+		private readonly textFileSaves: TextFileSaveService,
 	) {
 	}
 
@@ -235,6 +237,7 @@ export class IdeCommandController {
 				this.storage,
 				this.clock,
 				this.logOutput,
+				this.textFileSaves,
 				command,
 			);
 			return;
@@ -249,17 +252,8 @@ export class IdeCommandController {
 	): Promise<boolean> {
 		if (saveBeforeAction) {
 			for (let index = 0; index < workingCopies.length; index += 1) {
-				await saveTextFileWorkingCopy(
-					workingCopies[index],
-					this.storage,
-					this.clock,
-					this.editor,
-					this.sources,
-					this.luaTooling,
-					this.runtime,
-					this.runtimeTasks,
-				);
-				if (workingCopies[index].dirty) {
+				const result = await saveTextFileFromCommand(this.textFileSaves, workingCopies[index], this.editor, this.sources);
+				if (result.status === 'failed' || workingCopies[index].dirty) {
 					return false;
 				}
 			}
@@ -370,7 +364,7 @@ export class IdeCommandController {
 						|| this.runtime.machine.cpu.getFrameDepth() > 1);
 			case 'save': {
 				const activeInput = getActiveTab();
-				return activeInput instanceof TextEditorInput
+				return this.textFileSaves.acceptingSaves && activeInput instanceof TextEditorInput
 					&& (activeInput.canSave() || !activeInput.readOnly && context?.edit?.pending === true);
 			}
 			case 'symbolSearch':

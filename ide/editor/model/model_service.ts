@@ -24,6 +24,7 @@ export class EditorTextModelService {
 	private readonly contentChangeListeners = new Set<ModelContentChangeListener>();
 	private readonly modelAddedListeners = new Set<ModelListener>();
 	private readonly modelRemovedListeners = new Set<ModelListener>();
+	private readonly modelSavedListeners = new Set<ModelListener>();
 	private readonly pendingResolutions = new Map<string, Promise<EditorTextModel>>();
 	private generation = 0;
 
@@ -82,6 +83,9 @@ export class EditorTextModelService {
 	private register(model: EditorTextModel): void {
 		const key = resourceIdentityKey(model.resource);
 		this.modelsByResource.set(key, model);
+		model.onDidSave(() => {
+			for (const listener of this.modelSavedListeners) listener(model);
+		});
 		model.onDidApplyChanges(event => {
 			for (const listener of this.appliedChangesListeners) listener(model, event);
 		});
@@ -101,6 +105,11 @@ export class EditorTextModelService {
 	public onDidRemoveModel(listener: ModelListener): () => void {
 		this.modelRemovedListeners.add(listener);
 		return () => this.modelRemovedListeners.delete(listener);
+	}
+
+	public onDidSaveModel(listener: ModelListener): () => void {
+		this.modelSavedListeners.add(listener);
+		return () => this.modelSavedListeners.delete(listener);
 	}
 
 	/** Internal post-apply phase: track/invalidate deltas only, without queries or model writes. */

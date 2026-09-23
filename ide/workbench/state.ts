@@ -22,6 +22,7 @@ import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { ScenarioRunService } from './contrib/scenario_lab/run_service';
 import { ScenarioTestCollection } from '../testing/scenario/test_collection';
+import { TextFileSaveService } from './services/working_copy/text_file_save';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io';
 import { syncRuntimeSourceActivity } from '../runtime/sources';
 import { clearAllRuntimeErrorOverlays } from '../runtime_error/navigation';
@@ -39,6 +40,7 @@ export class RuntimeIdeState {
 	public readonly luaTooling: RuntimeLuaTooling;
 	public readonly scenarioTests: ScenarioTestCollection;
 	public readonly scenarioRuns: ScenarioRunService;
+	public readonly textFileSaves: TextFileSaveService;
 	public readonly fault: RuntimeFaultState = createRuntimeFaultState();
 
 	public constructor(
@@ -68,6 +70,7 @@ export class RuntimeIdeState {
 		);
 		this.scenarioTests = new ScenarioTestCollection(sources);
 		this.scenarioRuns = new ScenarioRunService(sources, this.luaTooling, storage, runtime.model);
+		this.textFileSaves = new TextFileSaveService(storage, clock, sources, this.luaTooling, runtime, runtimeTasks);
 		this.editor = new RuntimeCartEditor(
 			runtime,
 			presenter,
@@ -91,6 +94,7 @@ export class RuntimeIdeState {
 			this.overlayRenderer,
 			this.scenarioTests,
 			this.scenarioRuns,
+			this.textFileSaves,
 			createGraphLayoutEngine,
 		);
 		this.overlayRenderer.setViewportSize(viewport);

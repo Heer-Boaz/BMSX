@@ -1,112 +1,84 @@
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { HostClock } from '../../../../hosts/common/clock';
 import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
-import type { CartEditor } from '../../../cart_editor';
-import * as constants from '../../../common/constants';
-import { showEditorMessage, showEditorWarningBanner } from '../../../common/feedback_state';
-import type { EditorTextModel } from '../../../editor/model/text_model';
-import { extractErrorMessage } from '../../../language/lua/interpreter/value';
-import { buildAemSourceRevision, installAemSourceRevision, recordAemSourceApplyFailure, type BuiltAemSourceRevision } from '../../../runtime/aem';
+import type { EditorTextModel, EditorTextModelSnapshot } from '../../../editor/model/text_model';
+import { applyAemSourceRevision, type AemSourceApplyResult } from '../../../runtime/aem';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
-import {
-	runtimeSourceProjectRootPath,
-	type RuntimeSourceState,
-} from '../../../runtime/sources';
-import { showLuaErrorOverlay } from '../../../runtime_error/navigation';
+import { runtimeSourceProjectRootPath, type RuntimeSourceState } from '../../../runtime/sources';
 import { workspaceCanonicalSourceCache } from '../../../workspace/cache';
 import { persistWorkspaceSourceFile } from '../../../workspace/files';
 import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import { resolveWorkspacePath } from '../../../workspace/path';
 import { saveLuaResourceSource } from '../../../workspace/workspace';
-import { WorkspaceAutosaveChange } from '../../workspace/models';
-import { requestWorkspaceAutosave } from '../../workspace/storage';
-import { getTextFileRuntimeSourceStatus } from './runtime_source_status';
 
-/** Persists one retained text working copy and updates its runtime-sync state. */
-export async function saveTextFileWorkingCopy(
-	model: EditorTextModel,
-	storage: KeyValueStorage,
-	clock: HostClock,
-	editor: CartEditor,
-	sources: RuntimeSourceState,
-	luaTooling: RuntimeLuaTooling,
-	runtime: Runtime,
-	runtimeTasks: RuntimeTaskQueue,
-): Promise<void> {
-	const snapshot = model.createSnapshot();
-	const source = snapshot.source;
-	const targetPath = model.resource.path;
-	const title = model.resource.path;
-	let savedLuaProgramModule = false;
-	try {
-		switch (model.mode) {
-			case 'lua':
-				savedLuaProgramModule = await saveLuaResourceSource(
-					storage,
-					clock,
-					sources,
-					model.resource,
-					source,
-				);
-				break;
-			case 'yaml':
-			case 'aem': {
-				const projectRootPath = runtimeSourceProjectRootPath(
-					sources,
-					model.resource.domain,
-				);
-				const workspacePath = resolveWorkspacePath(targetPath, projectRootPath);
-				await persistWorkspaceSourceFile(
-					storage,
-					clock,
-					workspacePath,
-					source,
-					projectRootPath,
-				);
-				workspaceCanonicalSourceCache.set(workspacePath, source);
-				break;
+export type TextFileSaveResult = { readonly snapshot: EditorTextModelSnapshot } & (
+	| { readonly status: 'saved'; readonly application: AemSourceApplyResult | { readonly status: 'not-requested' } }
+	| { readonly status: 'failed'; readonly error: unknown }
+);
+
+type PendingSave = { readonly version: number; readonly result: Promise<TextFileSaveResult> };
+
+/** Owns accepted Save operations until persistence and format-specific application finish. */
+export class TextFileSaveService {
+	private readonly pending = new Map<EditorTextModel, PendingSave>();
+	private closing = false;
+
+	public constructor(
+		private readonly storage: KeyValueStorage,
+		private readonly clock: HostClock,
+		private readonly sources: RuntimeSourceState,
+		private readonly luaTooling: RuntimeLuaTooling,
+		private readonly runtime: Runtime,
+		private readonly runtimeTasks: RuntimeTaskQueue,
+	) {}
+
+	public get acceptingSaves(): boolean { return !this.closing; }
+
+	public save(model: EditorTextModel): Promise<TextFileSaveResult> {
+		if (this.closing) throw new Error('Cannot save after workbench shutdown has started.');
+		if (model.readOnly) throw new Error(`Source '${model.resource.path}' is read-only.`);
+		const previous = this.pending.get(model);
+		if (previous?.version === model.version) return previous.result;
+		const snapshot = model.createSnapshot();
+		// Admission captures the text now, not after the preceding write finishes.
+		const result = (previous === undefined ? this.performSave(model, snapshot)
+			: previous.result.then(() => this.performSave(model, snapshot))).finally(() => {
+			if (this.pending.get(model) === operation) this.pending.delete(model);
+		});
+		const operation = { version: snapshot.version, result };
+		this.pending.set(model, operation);
+		return result;
+	}
+
+	/** Drain source writes before recovery checkpoints, model disposal or workspace replacement. */
+	public async shutdown(): Promise<void> {
+		this.closing = true;
+		await Promise.all(Array.from(this.pending.values(), operation => operation.result));
+	}
+
+	private async performSave(model: EditorTextModel, snapshot: EditorTextModelSnapshot): Promise<TextFileSaveResult> {
+		const resource = model.resource;
+		try {
+			switch (model.mode) {
+				case 'lua':
+					await saveLuaResourceSource(this.storage, this.clock, this.sources, resource, snapshot.source);
+					break;
+				case 'yaml':
+				case 'aem': {
+					const root = runtimeSourceProjectRootPath(this.sources, resource.domain);
+					const path = resolveWorkspacePath(resource.path, root);
+					await persistWorkspaceSourceFile(this.storage, this.clock, path, snapshot.source, root);
+					workspaceCanonicalSourceCache.set(path, snapshot.source);
+					break;
+				}
 			}
+		} catch (error) {
+			return { status: 'failed', snapshot, error };
 		}
 		model.completeSave(snapshot);
-		requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
-		switch (model.mode) {
-			case 'yaml':
-				showEditorMessage(`${title} saved (asset rebuild required)`, constants.COLOR_STATUS_WARNING, 4.0);
-				return;
-			case 'lua':
-				if (savedLuaProgramModule && getTextFileRuntimeSourceStatus(sources, model) === 'pending') {
-					showEditorMessage(`${title} saved (runtime update pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
-				} else {
-					showEditorMessage(`${title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
-				}
-				return;
-			case 'aem': {
-				const reportApplyError = (applyError: unknown): void => {
-					const applyMessage = extractErrorMessage(applyError);
-					recordAemSourceApplyFailure(sources, model.resource);
-					showEditorMessage(`${title} saved, but runtime apply failed`, constants.COLOR_STATUS_WARNING, 4.0);
-					showEditorWarningBanner(`Saved, but runtime apply failed: ${applyMessage}`, 5.0);
-				};
-				await runtimeTasks.schedule(() => {
-					let built: BuiltAemSourceRevision;
-					try {
-						built = buildAemSourceRevision(sources, luaTooling, runtime, model.resource, source);
-					} catch (error) {
-						// Rejected authored input has not touched the machine. Keep it
-						// runnable, just as for a rejected Lua source build.
-						reportApplyError(error);
-						return;
-					}
-					installAemSourceRevision(sources, luaTooling, runtime, built);
-					showEditorMessage(`${title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
-				}, reportApplyError);
-				return;
-			}
-		}
-	} catch (error) {
-		if (model.mode === 'lua' && showLuaErrorOverlay(editor, model.resource, error)) {
-			return;
-		}
-		showEditorMessage(extractErrorMessage(error), constants.COLOR_STATUS_ERROR, 4.0);
+		const application = model.mode === 'aem'
+			? await applyAemSourceRevision(this.sources, this.luaTooling, this.runtime, this.runtimeTasks, resource, snapshot.source)
+			: { status: 'not-requested' } as const;
+		return { status: 'saved', snapshot, application };
 	}
 }

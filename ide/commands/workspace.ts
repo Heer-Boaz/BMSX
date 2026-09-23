@@ -3,7 +3,8 @@ import { getActiveTab } from '../workbench/ui/tabs';
 import { openCreateResourcePrompt } from '../workbench/contrib/resources/create/index';
 import { showActionPrompt } from '../workbench/contrib/modal/action_prompt';
 import { TextEditorInput } from '../workbench/common/editor_input';
-import { saveTextFileWorkingCopy } from '../workbench/services/working_copy/text_file_save';
+import type { TextFileSaveService } from '../workbench/services/working_copy/text_file_save';
+import { saveTextFileFromCommand } from './source_save';
 import { editorTextModelService } from '../editor/model/model_service';
 import { performEditorAction } from './actions';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -54,6 +55,7 @@ export function executeEditorWorkspaceCommand(
 	storage: KeyValueStorage,
 	clock: HostClock,
 	logOutput: LogOutput,
+	textFileSaves: TextFileSaveService,
 	command: EditorWorkspaceCommandId,
 ): void {
 	switch (command) {
@@ -64,16 +66,7 @@ export function executeEditorWorkspaceCommand(
 			const activeInput = getActiveTab();
 			if (activeInput instanceof TextEditorInput) for (const model of activeInput.getWorkingCopies()) {
 				if (!model.dirty || model.readOnly) continue;
-				void saveTextFileWorkingCopy(
-					model,
-					storage,
-					clock,
-					editor,
-					sources,
-					luaTooling,
-					runtime,
-					runtimeTasks,
-				);
+				void saveTextFileFromCommand(textFileSaves, model, editor, sources);
 			}
 			return;
 		}
