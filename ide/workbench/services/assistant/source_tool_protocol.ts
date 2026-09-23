@@ -5,10 +5,12 @@ export type SourceToolEdit = { offset: number; deleteLength: number; text: strin
 export type SourceToolRequest =
 	| { name: 'studio_list_sources' }
 	| { name: 'studio_read_source'; resource: string }
+	| { name: 'studio_read_diagnostics'; receipt: string }
 	| { name: 'studio_propose_edits'; title: string; files: { receipt: string; edits: SourceToolEdit[] }[] };
 
 const NO_FIELDS: string[] = [];
 const READ_FIELDS = ['resource'];
+const RECEIPT_FIELDS = ['receipt'];
 const PROPOSAL_FIELDS = ['title', 'files'];
 const FILE_FIELDS = ['receipt', 'edits'];
 const EDIT_FIELDS = ['offset', 'deleteLength', 'text', 'expectedText'];
@@ -18,6 +20,8 @@ export const STUDIO_SOURCE_TOOLS = [
 		inputSchema: { type: 'object', properties: {}, required: NO_FIELDS, additionalProperties: false } },
 	{ name: 'studio_read_source', description: 'Read the exact current working copy, including unsaved edits, without opening a tab or saving. Returns a receipt required for proposals. Offsets use UTF-16 code units, not UTF-8 bytes or visual columns.',
 		inputSchema: { type: 'object', properties: { resource: { type: 'string' } }, required: READ_FIELDS, additionalProperties: false } },
+	{ name: 'studio_read_diagnostics', description: 'Read Studio Problems diagnostics for a source receipt from this prompt context. Uses the shared language service, not a build or guest execution. Rows and columns are zero-based UTF-16 source positions, not visual columns. Only ready status with an empty diagnostics array means no reported problems; unsupported, pending or failed is not a clean result. Source changes retire this context.',
+		inputSchema: { type: 'object', properties: { receipt: { type: 'string' } }, required: RECEIPT_FIELDS, additionalProperties: false } },
 	{ name: 'studio_propose_edits', description: 'Offer one multi-file edit for explicit Studio review. Does NOT apply, save, build or run anything. Every file must use a receipt read in this context. Edits use original UTF-16 offsets, strictly ascending, non-overlapping; expectedText must exactly match the deleted source. A changed context cannot be refreshed by another tool call.',
 		inputSchema: { type: 'object', properties: { title: { type: 'string', minLength: 1 }, files: { type: 'array', minItems: 1,
 			items: { type: 'object', properties: { receipt: { type: 'string' }, edits: { type: 'array', minItems: 1,
@@ -35,6 +39,11 @@ export function decodeSourceToolRequest(name: string, input: unknown): SourceToo
 			const value = object(input, READ_FIELDS);
 			if (typeof value.resource !== 'string') throw new SourceToolInputError('resource must be a Studio resource handle');
 			return { name, resource: value.resource };
+		}
+		case 'studio_read_diagnostics': {
+			const value = object(input, RECEIPT_FIELDS);
+			if (typeof value.receipt !== 'string') throw new SourceToolInputError('Diagnostics require a source receipt');
+			return { name, receipt: value.receipt };
 		}
 		case 'studio_propose_edits': {
 			const value = object(input, PROPOSAL_FIELDS);

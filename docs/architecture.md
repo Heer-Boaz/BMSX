@@ -4697,7 +4697,10 @@ authoring-tool responsibilities under `toolchain/ts/lua`. Native machine code
 executes the already-linked physical BLua32 image and therefore has no parallel
 C++ source lexer, parser, AST, or runtime source-compilation path.
 
-The editor owns one long-lived semantic project per resource domain. Runtime
+The editor owns one long-lived semantic project per document-model owner and
+resource domain. Lookup/reset requires that explicit owner; matching paths in
+another model service cannot supply source. Model-owner clear disposes only its
+projects, so reopened paths/version numbers cannot revive old project identity. Runtime
 source registries form its installed base and editor documents replace the
 corresponding file records without creating a second semantic model. Each
 project publishes immutable program snapshots that retain unchanged file
@@ -5015,6 +5018,11 @@ conversation receives a platform connection capability from browser composition;
 the Node adapter owns the isolated Codex account/process, fixed operation
 protocol and process lease. Each prompt captures ordinary source authority;
 proposed edits require the same explicit multi-file review and shared history.
+Diagnostic reads require those exact source receipts and consume the ordinary
+resource diagnostics service. Problems and the assistant share results for the
+same source revision; unsupported/pending/failed coverage is never an empty
+successful analysis. Repeated reads retain their diagnostic projection, and
+dependency changes retire the source context even if the queried file is unchanged.
 The proposal owner publishes one terminal review outcome after retiring edit
 authority and finishing history admission. Clients observe that state rather
 than polling source or maintaining a second edit lifecycle; transcript status
@@ -5026,6 +5034,9 @@ reserved for submitting prompts. Closing/disconnecting, account changes and
 workspace teardown retire source rights. Device-code login does not open a local
 OAuth callback listener or borrow the user's CLI profile. See
 [assistant contribution](studio_assistant_contribution.md).
+The Node process owner closes prompt/login/logout admission before publishing an
+account-refresh notification, independently of browser event delivery; only the
+latest completed account read reopens it.
 The staged ownership audit and
 remaining integration limits are in [Studio architecture foundation](studio_architecture_foundation.md).
 

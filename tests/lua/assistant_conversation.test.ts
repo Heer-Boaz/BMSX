@@ -7,6 +7,11 @@ import { AssistantConversation } from '../../ide/workbench/services/assistant/co
 import { AssistantInput } from '../../ide/workbench/contrib/assistant/editor_input';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { ResourceDiagnosticsService } from '../../ide/workbench/services/diagnostics/resource_diagnostics';
+import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
+import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
 
 class Connection implements AssistantConnection {
 	public readonly lifetime = new AbortController();
@@ -28,10 +33,12 @@ function fixture(t: TestContext) {
 	const connections: Connection[] = [];
 	const model = models.retain(sources.luaResources[0], 'lua', 'return old\n');
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved\n' }]);
-	const conversation = new AssistantConversation(models, sources, storage, async (_signal, emit) => {
+	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload())));
+	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
+	const conversation = new AssistantConversation(models, sources, storage, diagnostics, async (_signal, emit) => {
 		const connection = new Connection(emit); connections.push(connection); return connection;
 	});
-	t.after(() => { conversation.dispose(); models.clear(); });
+	t.after(() => { conversation.dispose(); diagnostics.dispose(); models.clear(); });
 	return { conversation, model, models, connections };
 }
 async function propose(f: ReturnType<typeof fixture>) {

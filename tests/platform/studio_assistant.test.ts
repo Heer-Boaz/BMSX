@@ -23,7 +23,8 @@ for (const backend of backends) test(`Studio ${backend}: actual browser, HTTP le
 			return [catalog.find(resource => resource.domain === 0 && resource.path === 'cart.lua'), catalog.find(resource => resource.domain === 0 && resource.path.endsWith('nemesis_s_stage.yaml'))]
 				.map((resource, index) => ({ ...call('studio_read_source', { resource: resource.resource }), call_id: `read:${index}` }));
 		},
-		body => [call('studio_propose_edits', { title: 'Reviewed Lua and YAML comments', files: outputs(body).slice(1).map((read, index) => ({ receipt: read.receipt,
+		body => outputs(body).slice(1).map((read, index) => ({ ...call('studio_read_diagnostics', { receipt: read.receipt }), call_id: `diagnostics:${index}` })),
+		body => [call('studio_propose_edits', { title: 'Reviewed Lua and YAML comments', files: outputs(body).slice(1, 3).map((read, index) => ({ receipt: read.receipt,
 			edits: [{ offset: 0, deleteLength: 0, expectedText: '', text: index === 0 ? '-- Codex reviewed\n' : '# Codex reviewed\n' }] })) })],
 		CODEX_FIXTURE_DONE,
 	];
@@ -38,11 +39,17 @@ for (const backend of backends) test(`Studio ${backend}: actual browser, HTTP le
 		return module.runAssistant(backend, document.querySelector('canvas'), globalThis.capture, globalThis.waitForModel);
 	}, backend);
 	assert.equal(result.assistant, 'pass'); assert.equal(result.sourceFiles, 2);
-	assert.equal(observations.connects, 1); assert.equal(model.requests.length, 17); assert.deepEqual(observations.errors, []);
+	assert.equal(observations.connects, 1); assert.equal(model.requests.length, 21); assert.deepEqual(observations.errors, []);
 	const reads = outputs(model.requests[2]).slice(1);
-	assert.equal(reads[0].source, '-- UNSAVED ASSISTANT FIXTURE\n' + await readFile('carts/nemesis_s/cart.lua', 'utf8'));
+	const mainSource = await readFile('carts/nemesis_s/cart.lua', 'utf8');
+	assert.equal(reads[0].source, '-- UNSAVED ASSISTANT FIXTURE\n' + mainSource.replace('\n', '\nlocal studio_diagnostic_probe = missing_from_assistant_context\n'));
 	assert.equal(reads[1].source, await readFile('carts/nemesis_s/res/data/nemesis_s_stage.yaml', 'utf8'));
 	assert.ok(JSON.stringify(outputs(model.requests[2])[0]).length > 16000, 'real catalog exceeds the old lossy truncation budget');
+	const diagnostics = outputs(model.requests[3]).slice(3);
+	assert.deepEqual(diagnostics.map(result => result.status), ['ready', 'unsupported']);
+	assert.equal(diagnostics[0].receipt, reads[0].receipt); assert.equal(diagnostics[0].version, reads[0].version);
+	assert.ok(diagnostics[0].diagnostics.some(marker => marker.message.includes('missing_from_assistant_context')));
+	assert.equal(diagnostics[1].diagnostics, undefined, 'unsupported YAML does not pretend to have zero problems');
 	for (const path of ['carts/nemesis_s/cart.lua', 'carts/nemesis_s/res/data/nemesis_s_stage.yaml']) {
 		assert.equal(await readFile(join(root, path), 'utf8'), await readFile(path, 'utf8'), 'review never writes authored source files');
 	}

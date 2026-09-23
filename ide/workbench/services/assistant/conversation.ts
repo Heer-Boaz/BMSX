@@ -4,6 +4,7 @@ import { PieceTreeBuffer } from '../../../editor/text/piece_tree_buffer';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import type { WorkspaceEditProposal } from '../working_copy/workspace_edit';
+import type { ResourceDiagnosticsService } from '../diagnostics/resource_diagnostics';
 import { WorkspaceSourceTools } from './source_tools';
 
 export type AssistantState = 'disconnected' | 'connecting' | 'ready' | 'running' | 'stopping' | 'signing-in' | 'cancelling-sign-in' | 'signing-out';
@@ -34,7 +35,7 @@ export class AssistantConversation {
 	private disposed = false;
 
 	public constructor(private readonly models: EditorTextModelService, private readonly sources: RuntimeSourceState,
-		private readonly storage: KeyValueStorage, private readonly openConnection?: AssistantConnectionFactory) {
+		private readonly storage: KeyValueStorage, private readonly diagnostics: ResourceDiagnosticsService, private readonly openConnection?: AssistantConnectionFactory) {
 		this.unbindWorkspace = models.onWillClear(() => this.clearConversation());
 	}
 	public get available(): boolean { return this.openConnection !== undefined && !this.disposed; }
@@ -81,7 +82,7 @@ export class AssistantConversation {
 	/** Capture source authority before any asynchronous prompt submission. Never retry an accepted prompt. */
 	public async sendPrompt(prompt: string): Promise<void> {
 		if (!this.canSend || prompt.trim().length === 0) return;
-		const turn: ActiveTurn = { tools: new WorkspaceSourceTools(this.models, this.sources, this.storage, this.sourceLifetime!.signal),
+		const turn: ActiveTurn = { tools: new WorkspaceSourceTools(this.models, this.sources, this.storage, this.diagnostics, this.sourceLifetime!.signal),
 			requests: new Set(), messages: new Map() };
 		this.turn = turn; this.state = 'running';
 		this.append('user', prompt);

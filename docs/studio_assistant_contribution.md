@@ -21,6 +21,11 @@ contracts, not as a second editor or a browser tunnel to Codex RPC.
    edits working copies. Apply is not Save, build or installation. Ordinary
    source Undo/Redo spans all files in the proposal.
 
+The assistant can also request the same source-bound diagnostics as Problems
+after reading a file. These are shared language-service results, not a build or
+test run. Unsupported coverage (including YAML) is explicit rather than reported
+as a clean file. Source changes retire those receipts along with edit authority.
+
 Pointer selection and Copy operate on transcript messages. With transcript
 focus, Up/Down select messages, Enter opens the selected proposal, Ctrl/Meta+C
 copies, and Page Up/Down/Home/End scroll. Tab moves between controls. The composer
@@ -109,6 +114,10 @@ enlarge the provider's context window or hide context-limit failures.
   unchanged. Copy is checked against the browser clipboard with explicit clipboard
   permission, not just the editor's cached clipboard. Selected-message, composer,
   account-code (both fonts) and review screenshots were inspected.
+  The real process also requests Lua/YAML diagnostics before each review: the
+  unsaved Lua error is visible in ordinary Problems, while YAML reports unsupported.
+  The shared-diagnostics screenshot was inspected; source bytes and guest code
+  remain unchanged by analysis.
   The account workflow covers pending polling, Copy code, the fixed login
   destination with popup blocking enabled and no opener/referrer, cancel after
   the code, actual polling failure, cancel before a held start response, close
@@ -143,7 +152,7 @@ enlarge the provider's context window or hide context-limit failures.
   proposal cases verify one notification after authority retirement, including
   history conflict/failure. A detached-view teardown case replaces the transcript
   before another frame and verifies that no old offsets or edit state survive.
-- Regression bundle: **2344 Lua tests passed, 1 skipped**; process/stdio **19**,
+- Regression bundle: **2354 Lua tests passed, 1 skipped**; process/stdio **19**,
   independent Codex contract **5**, assistant HTTP **12**, workspace HTTP **6**,
   process/workbench **1**, and account **9** pass. Actual WebGL2 cold-page session
   restoration passes. Source-save/local-only/reconnect workflows pass on all

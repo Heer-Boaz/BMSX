@@ -147,7 +147,9 @@ Validation:
 - The actual resource-context browser workflow passes on software, WebGL2 and
   WebGPU: visual-only diagnostics, Problems navigation, shared Undo and shutdown,
   with unchanged guest state. This is automated browser evidence, not UI-only
-  authoring.
+  authoring. The full ordinary Studio workflow also passes on all three renderers,
+  including code/visual source edits, Rename, test execution and pointer/input
+  ownership. The visual-diagnostics screenshot was inspected.
 - The existing model-sync/behavior-index size probe at 1/64/256/1024 models
   measured warm retained reads at **0.016/0.031/0.037/0.036 microseconds**, and
   edit-plus-Undo queries at **0.37/0.94/0.86/7.14 ms**. These are one-run scaling

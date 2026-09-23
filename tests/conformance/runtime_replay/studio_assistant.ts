@@ -3,6 +3,7 @@ import { AssistantHttpConnection } from '../../../ide/browser/assistant_connecti
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { editorTabGroup } from '../../../ide/workbench/ui/tab/group_model';
+import { problemsPanel } from '../../../ide/workbench/contrib/problems/panel/controller';
 import { check, createStudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
@@ -22,6 +23,8 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	harness.openLuaSource('cart.lua'); await frame();
 	const main = harness.getActiveEditorDocument().model, mainTab = getActiveTab();
 	await press('ControlLeft', 'Home'); test.clipboard.text = '-- UNSAVED ASSISTANT FIXTURE\n'; await press('ControlLeft', 'KeyV');
+	await press('ArrowDown'); // Keep module<entry> before the first executable statement.
+	test.clipboard.text = 'local studio_diagnostic_probe = missing_from_assistant_context\n'; await press('ControlLeft', 'KeyV');
 	const before = main.buffer.getText(), saved = main.lastSavedSource, media = ide.sources.currentBlua32Media;
 	await test.runPaletteCommand('View: Codex Assistant');
 	const view = getActiveTab();
@@ -49,6 +52,16 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	test.execution.setPauseReason(HostPauseReason.Requested, true);
 	const proposal = conversation.entries.find(entry => entry.kind === 'proposal')!.proposal!;
 	check(proposal.state === 'pending' && proposal.files.length === 2 && main.buffer.getText() === before, 'assistant cannot apply its own edits');
+	const diagnostic = ide.diagnostics.diagnostics.find(marker => marker.model === main && marker.message.includes('missing_from_assistant_context'))!;
+	check(diagnostic !== undefined && diagnostic.version === main.version, 'assistant diagnostics use the actual unsaved model result: ' + JSON.stringify({
+		status: ide.diagnostics.get(main.identity)!.status, version: main.version,
+		markers: ide.diagnostics.diagnostics.filter(marker => marker.model === main).map(marker => marker.message),
+	}));
+	await test.runPaletteCommand('View: Problems Panel');
+	check(problemsPanel.isVisible && problemsPanel.getDiagnostics().includes(diagnostic), 'ordinary Problems shares the exact diagnostic owner');
+	await frame(); await capture('shared-diagnostics');
+	await test.runPaletteCommand('View: Problems Panel');
+	await test.click(view.composerBounds);
 	check(conversation.entries.some(entry => entry.kind === 'assistant' && entry.text.getText() === 'Contract fixture finished.'), 'real message reaches transcript');
 	await frame(); const rows = view.transcript.rows.slice(); await frame();
 	check(view.transcript.rows.every((row, index) => row === rows[index]), 'unchanged frames retain text layout');

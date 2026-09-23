@@ -20,7 +20,7 @@ Enabling the endpoint alone starts no Codex process or model request.
   killing an in-flight source-save socket.
 - `CodexHttpApi` owns one process/stream lease. The platform chooses the private
   profile under `$XDG_STATE_HOME/bmsx/studio-codex` (or the normal per-user local
-  state directory), and fixes the three source tools. No browser-supplied cwd,
+  state directory), and fixes the four source/diagnostic/review tools. No browser-supplied cwd,
   provider, executable, configuration, permissions or method name is forwarded.
 - `AssistantHttpConnection` owns the browser lease's AbortSignal. Workspace/view
   composition must bind its lifetime before connecting. Closing it retires

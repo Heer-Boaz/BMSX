@@ -271,7 +271,7 @@ export class RuntimeCartEditor implements CartEditor {
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
 		connectAssistant?: AssistantConnectionFactory,
 	) {
-		this.assistant = new AssistantConversation(editorTextModelService, sources, storage, connectAssistant);
+		this.assistant = new AssistantConversation(editorTextModelService, sources, storage, diagnostics, connectAssistant);
 		this.runtime = runtime;
 		this.presenter = presenter;
 		this.display = display;

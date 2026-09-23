@@ -26,7 +26,9 @@ Rules:
 The workbench session owns `ResourceDiagnosticsService`, not code-editor inputs.
 It retains results for actual text-model identities and revisions. Lua queries
 use the shared incremental semantic projects, with one snapshot per affected
-domain. Model deltas and source-registry revisions invalidate dependent results;
+domain and explicit document-model owner. Project lookup/reset cannot silently
+substitute global editor documents. Model-owner clear disposes only its projects.
+Model deltas and source-registry revisions invalidate dependent results;
 system globals affect both cartridges. Unopened source discovery also invalidates
 consumers. Retained working copies take precedence over saved/installed bases.
 
@@ -67,6 +69,10 @@ ordinary review. External argument/range/text checks stay at that protocol
 boundary; text models consume native edits directly. Reads include unsaved
 working copies without code views or history boundaries. A completed turn may
 leave a review pending; a disconnected connection may not leave edit rights.
+Diagnostic reads require those source receipts and consume the same retained
+resource results as Problems. They carry explicit coverage and exact zero-based
+UTF-16 coordinates, without a second parser, build or guest execution. Source or
+dependency changes retire those receipts; reading again does not refresh them.
 Text-file resolution takes the actual model service explicitly, including for
 ordinary restoration. See [source tool contract](../docs/studio_source_tools.md).
 

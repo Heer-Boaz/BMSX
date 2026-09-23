@@ -11,6 +11,11 @@ import type { WorkspaceEditProposal } from '../../ide/workbench/services/working
 import { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createCodexModelFixture, CODEX_FIXTURE_DONE } from '../helpers/codex_model_fixture.mjs';
+import { ResourceDiagnosticsService } from '../../ide/workbench/services/diagnostics/resource_diagnostics';
+import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
+import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
 
 test('real Codex tool exchange reads unsaved models and hands off a shared review, never a filesystem patch', { timeout: 15000 }, async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-codex-workbench-'));
@@ -20,9 +25,11 @@ test('real Codex tool exchange reads unsaved models and hands off a shared revie
 	const main = models.retain(sources.luaResources.find(resource => resource.path === 'cart.lua')!, 'lua', 'return old\n');
 	main.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- UNSAVED COMMENT\n' }]);
 	const before = main.buffer.getText();
+	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload())));
+	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
 	const sourceTools = new WorkspaceSourceTools(models, sources, {
 		getItem: () => null, setItem: () => assert.fail('not Save'), removeItem: () => assert.fail('not Delete'),
-	}, connection.signal);
+	}, diagnostics, connection.signal);
 	const proposals: WorkspaceEditProposal[] = [];
 	let completed!: () => void;
 	const done = new Promise<void>(resolve => { completed = resolve; });
@@ -31,7 +38,8 @@ test('real Codex tool exchange reads unsaved models and hands off a shared revie
 	const model = await createCodexModelFixture(t, [
 		[call('list', 'studio_list_sources', {})],
 		body => outputs(body)[0].map((resource: { resource: string }, index: number) => call(`read:${index}`, 'studio_read_source', { resource: resource.resource })),
-		body => [call('proposal', 'studio_propose_edits', { title: 'Codex fixture: old to new', files: outputs(body).slice(1).map(
+		body => outputs(body).slice(1).map((read: { receipt: string }, index: number) => call(`diagnostics:${index}`, 'studio_read_diagnostics', { receipt: read.receipt })),
+		body => [call('proposal', 'studio_propose_edits', { title: 'Codex fixture: old to new', files: outputs(body).slice(1, 3).map(
 			(read: { receipt: string; source: string }) => ({ receipt: read.receipt,
 				edits: [{ offset: read.source.indexOf('old'), deleteLength: 3, text: 'new', expectedText: 'old' }] })) })],
 		CODEX_FIXTURE_DONE,
@@ -41,7 +49,7 @@ test('real Codex tool exchange reads unsaved models and hands off a shared revie
 		connection.abort();
 		if (session) { const exit = await session.closed; assert.equal(exit.forced, false); assert.equal(exit.code, 0); }
 		for (const proposal of proposals) proposal.dispose();
-		sourceTools.dispose(); models.clear(); await rm(root, { recursive: true });
+		sourceTools.dispose(); diagnostics.dispose(); models.clear(); await rm(root, { recursive: true });
 	});
 	session = await CodexSession.open({ signal: connection.signal, profileDirectory: root,
 		provider: { name: 'Offline workbench fixture', model: 'mock-model', baseUrl: `${model.url}/v1` }, tools: STUDIO_SOURCE_TOOLS,
@@ -63,7 +71,10 @@ test('real Codex tool exchange reads unsaved models and hands off a shared revie
 	assert.equal(models.get({ domain: 0, path: 'helper.lua' })!.dirty, false);
 	assert.ok(JSON.stringify(model.requests[2]).includes('UNSAVED COMMENT'));
 	assert.deepEqual(model.requests[0].tools.map(tool => tool.name), STUDIO_SOURCE_TOOLS.map(tool => tool.name));
-	assert.deepEqual(outputs(model.requests[3]).at(-1), { status: 'review-required', files: 2 });
+	const evidence = outputs(model.requests[3]).slice(3);
+	assert.deepEqual(evidence.map(result => result.status), ['ready', 'ready']);
+	assert.ok(evidence.every(result => result.diagnostics.some(marker => marker.message.includes("'old' is not defined"))));
+	assert.deepEqual(outputs(model.requests[4]).at(-1), { status: 'review-required', files: 2 });
 	review.proposal.apply();
 	assert.equal(main.buffer.getText(), before.replace('old', 'new'));
 	assert.equal(main.lastSavedSource, 'return old\n');

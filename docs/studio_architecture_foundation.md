@@ -451,3 +451,10 @@ Semantic project identity now includes its model owner; clear/reset retires only
 that owner's projects. Ordinary analysis, visual views, Rename and highlighting
 consume the same explicit owner contract, with retained incremental snapshots
 and no assistant-only analyzer or new frame-time work.
+
+The [source diagnostic capability](studio_source_tools.md#diagnostic-capability-evidence)
+now consumes that corrected resource owner through exact read receipts. Ordinary
+Problems and the assistant see the same source version and markers; unsupported
+and failed analysis remain explicit. Receipt invalidation and the existing shared
+review/history boundary are unchanged. The actual process/browser workflow reads
+diagnostics before proposing edits, without building or running guest code.
