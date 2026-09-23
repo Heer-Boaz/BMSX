@@ -967,7 +967,9 @@ audits distinguish these execution services from host presentation and product
 composition instead of admitting all host imports into IDE features.
 
 Workbench suspension is a host pause reason, not an OverlayRenderer execution
-branch. Editor panes normally hold it; Actor Lab can explicitly release it
+branch. Authoring panes hold it, including host-only Codex and edit review;
+not borrowing guest state is not permission to run gameplay behind the IDE.
+Network/model work continues independently. Actor Lab can explicitly release it
 while remaining visible. Normal ICU samples exclude workbench input; supervisor
 sampling stays physical. Actor Lab borrows actual world/component instances
 between CPU slices and retains only display identity across them. Reset/restore

@@ -19,7 +19,7 @@ import type { ResourcePanelController } from '../resources/panel/controller';
 import type { WorkspaceEditReviewInput } from './editor_input';
 import { layoutEditReviewRows } from './projection';
 
-/** Host source review does not borrow suspended guest state or hold execution. */
+/** Source review shares the ordinary authoring pause, without borrowing guest state. */
 export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<WorkspaceEditReviewInput> {
 	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget);
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
@@ -34,7 +34,6 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 			this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 		}
 	}
-	public override get suspendsRuntime(): boolean { return false; }
 	public override focus(): void { this.scroll.focusTarget.focus(); }
 	protected override activate(): void {
 		super.activate();

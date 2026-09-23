@@ -627,3 +627,34 @@ cold session restoration pass on WebGL2 through the production server. Lua
 **2381 passed, 1 skipped**; IDE/browser/Node typechecks, browser Studio build and
 strict architecture audit pass (zero issues). Tests-project typechecking retains
 the same 96 existing diagnostics. No paid inference or physical phone was used.
+
+### Authoring pause also covers host-only panes
+
+On 2026-09-24 the user reported gameplay continuing behind Studio. The assistant
+and shared edit-review panes had explicit `suspendsRuntime = false` overrides;
+both regressions were reproduced in actual WebGL2 Studio before removing them.
+Not borrowing guest state does not authorize background gameplay. They now
+inherit the ordinary authoring hold from `EditorPane`, through
+`RuntimeCartEditor.executionSuspended` and `HostPauseReason.Workbench`. No
+machine/runtime flag, extra pause latch, guest clock change or audio workaround
+was introduced. Explicit Game/Actor Lab playback and debugger operations retain
+their existing execution owners.
+
+Model/tool IO, account actions and review continue while guest cycles and audio
+stay paused. Stop cancels Codex, not the workbench pause. Hiding Studio releases
+only its workbench hold, reopening the retained pane pauses again, and a separate
+user-requested pause survives both transitions. The browser workflow verifies
+these cases without using requested pause to mask a missing workbench hold.
+
+Reference studied before this correction: MAME's
+[UI pause ownership](https://github.com/mamedev/mame/blob/ae2141f9a43e13f048be9a30a178d45066c30f6b/src/frontend/mame/ui/ui.cpp#L1734-L1745)
+keeps the UI-triggered hold distinct from ordinary pause and explicit execution.
+BMSX already has independent host pause reasons, so restoring the existing pane
+contract is the correct boundary, not copying MAME's machine API into Studio.
+
+Validation: all **12** assistant browser/account workflows pass, ordinary edit
+review passes on **software/WebGL2/WebGPU**, Lua **2381 passed, 1 skipped**,
+IDE/browser/Node typechecks and browser Studio build pass, strict architecture
+audit reports **0 issues**, tests-project typechecking retains **96** existing
+diagnostics. Changed-file indentation and `git diff --check` pass. These are
+automated runtime/browser assertions, not physical-phone or UI-only evidence.

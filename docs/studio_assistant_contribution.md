@@ -144,7 +144,11 @@ enlarge the provider's context window or hide context-limit failures.
   one-shot historical outcome remains applied. The request count proves that no
   review action triggers another model request and acknowledged outcomes are not
   repeated after Stop.
-  Guest cycles advance while the pane waits. Authored project files remain
+  Guest cycles and audio stay paused while the pane waits, without a separate
+  requested pause. Model/tool IO, reviews and Stop remain usable. Hiding Studio
+  releases its hold and reopening the retained pane pauses again; neither action
+  clears an independent user pause. This corrects the original live-guest policy
+  on 2026-09-24. Authored project files remain
   unchanged. Copy is checked against the browser clipboard with explicit clipboard
   permission, not just the editor's cached clipboard. Selected-message, composer,
   account-code (both fonts) and review screenshots were inspected.

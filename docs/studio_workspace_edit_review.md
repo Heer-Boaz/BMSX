@@ -40,8 +40,9 @@ route.
 - `workbench/contrib/edit_review` owns the transient input, scroll/action focus
   and rendered hunk rows. Apply uses shared history; Save/build/install remain
   separate explicit operations. Source Undo/Redo works from either edited file.
-  The pane explicitly does **not** hold guest execution; user/debugger pauses
-  still belong to their existing owners.
+  The pane uses the ordinary workbench game pause, even though it does not borrow
+  guest state. Review/Apply remain host operations and work while the guest and
+  audio are paused. Independent user/debugger pauses retain their existing owners.
 
 The review input is not a persistence format. The group producer excludes it and
 maps active/preview indices into the actual persisted sequence. When review was
@@ -86,8 +87,10 @@ database, service locator or generic operation bus was copied.
   pointer Discard, shared source Undo/Redo, stale proposal after editing another
   tab, Close retirement and session exclusion. Forty-four replacements cover
   offscreen changes, keyboard scrolling and both fonts. The pending, final-file,
-  MSX-font and stale screenshots were inspected. The real guest advances while
-  the review is open; no source is saved or installed by review/Apply.
+  MSX-font and stale screenshots were inspected. The original live-guest policy
+  was corrected on 2026-09-24: the real guest and audio now stay paused while
+  review is open, without a requested pause. No source is saved or installed by
+  review/Apply.
 - The final forty-four-replacement workflow also passes on **software and
   WebGPU**, including both fonts, scrolling and the captured-context owner.
 - The full WebGL2 Studio workflow and cold session reload pass. They cover normal

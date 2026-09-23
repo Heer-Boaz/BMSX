@@ -6,7 +6,7 @@ import type { EditorInput } from '../../ui/tab/model';
 
 /** Retained workbench control for one editor-input kind. */
 export abstract class EditorPane<TInput extends EditorInput> {
-	/** Most panes borrow suspended state; a live tool explicitly releases this hold. */
+	/** Authoring pauses gameplay, including host-only tools. Live preview panes explicitly release this hold. */
 	public get suspendsRuntime(): boolean { return true; }
 
 	/** Optional selection capability; editors without one still have an input identity. */

@@ -1,4 +1,3 @@
-import { HostPauseReason } from '../../../hosts/common/execution_control';
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
@@ -32,6 +31,10 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	if (view.kind !== 'assistant') throw new Error('Assistant pane expected');
 	const conversation = ide.editor.assistant;
 	check(conversation.state === 'disconnected', 'opening a pane never starts the process or account');
+	const position = cycles();
+	for (let index = 0; index < 12; index++) await frame();
+	check(cycles() === position && test.execution.paused && !test.execution.userPaused && test.observations.suspended,
+		'assistant: ordinary workbench pause holds the guest and audio without a requested pause');
 	await capture('disconnected');
 	await test.click(view.accountActions.items.find(item => item.command === 'assistant.connect')!.bounds);
 	await until(() => conversation.state === 'ready', 'assistant: connect actual private Codex process');
@@ -46,11 +49,9 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	check(view.accountActions.items[0].bounds.left >= 0, 'MSX font keeps account controls on screen');
 	await capture('composer-msx');
 	ide.editor.setFontVariant('tiny'); await frame();
-	const position = cycles(); test.execution.setPauseReason(HostPauseReason.Requested, false);
 	await press('ControlLeft', 'Enter');
 	await until(() => conversation.entries.some(entry => entry.kind === 'proposal') && conversation.state === 'ready', 'assistant: real source tools return a review');
-	check(cycles() > position, 'assistant waiting does not hold guest execution');
-	test.execution.setPauseReason(HostPauseReason.Requested, true);
+	check(cycles() === position && test.observations.suspended, 'assistant: model/tool progress continues while the game and audio stay paused');
 	const proposal = conversation.entries.find(entry => entry.kind === 'proposal')!.proposal!;
 	check(proposal.state === 'pending' && proposal.files.length === 2 && main.buffer.getText() === before, 'assistant cannot apply its own edits');
 	const diagnostic = ide.diagnostics.diagnostics.find(marker => marker.model === main && marker.message.includes('missing_from_assistant_context'))!;
@@ -76,6 +77,7 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	await test.click(view.turnActions.items.find(item => item.command === 'assistant.review')!.bounds);
 	const review = getActiveTab(); if (review.kind !== 'workspace_edit_review') throw new Error('Shared review expected');
 	await frame(); await capture('review');
+	check(cycles() === position && !test.execution.userPaused, 'assistant: opening edit review never releases the workbench hold');
 	await test.click(review.actionBar.items.find(item => item.command === 'workspaceEditReview.apply')!.bounds);
 	check(proposal.state === 'applied' && main.buffer.getText().startsWith('-- Codex reviewed\n'), 'visible Apply edits ordinary model');
 	check(main.lastSavedSource === saved && ide.sources.currentBlua32Media === media, 'Apply does not Save or install');
@@ -91,6 +93,7 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	await test.click(view.turnActions.items.find(item => item.command === 'assistant.stop')!.bounds);
 	await until(() => conversation.state === 'ready', 'assistant: Stop retires the actual provider wait');
 	check(conversation.entries.at(-1)!.text.getText() === 'Turn interrupted.', 'Stop is not reported as successful completion');
+	check(cycles() === position && test.observations.suspended, 'assistant: stopping Codex does not resume the game');
 	await test.click(view.composerBounds);
 	test.clipboard.text = 'Offer a new review so I can discard it.'; await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'Enter');
 	await until(() => conversation.state === 'ready' && conversation.entries.filter(entry => entry.kind === 'proposal').length === 2, 'assistant: new prompt has fresh source rights');
@@ -129,6 +132,20 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	await test.runPaletteCommand('View: Codex Assistant');
 	check(conversation.state === 'disconnected', 'reopening does not replay a prompt');
 	await frame(); await capture('closed-reopened');
+	check(cycles() === position && !test.execution.userPaused, 'assistant: pane switches and disconnect preserve the workbench pause');
+	await press('ControlRight', 'ShiftRight');
+	check(!ide.editor.isActive && !test.execution.paused, 'assistant: hiding Studio releases only its own pause reason');
+	await until(() => cycles() > position, 'assistant: game resumes after hiding Studio');
+	await press('ControlRight', 'ShiftRight');
+	const returnedPosition = cycles();
+	for (let index = 0; index < 12; index++) await frame();
+	check(cycles() === returnedPosition && test.observations.suspended, 'assistant: reopening the retained assistant pane pauses again');
+	await test.runMenuCommand('pause');
+	check(test.execution.userPaused, 'assistant: independent user pause can be requested while Studio is open');
+	await press('ControlRight', 'ShiftRight');
+	for (let index = 0; index < 12; index++) await frame();
+	check(cycles() === returnedPosition && test.execution.userPaused && test.observations.suspended,
+		'assistant: hiding Studio must not clear the independent user pause');
 	await renderer.finish();
 	await ide.editor.shutdown();
 	return { assistant: 'pass', sourceFiles: proposal.files.length, frames: test.observations.hostFrames };

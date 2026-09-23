@@ -1,4 +1,3 @@
-import { HostPauseReason } from '../../../hosts/common/execution_control';
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { getActiveTab, openEditorTab } from '../../../ide/workbench/ui/tabs';
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
@@ -16,7 +15,6 @@ export async function runStudioEditReview(test: StudioFixture) {
 	await reachNemesisTitle(test);
 	harness.openLuaSource('cart.lua');
 	await frame();
-	await test.runMenuCommand('pause');
 	const main = harness.getActiveEditorDocument().model, mainTab = getActiveTab();
 	const originalMain = main.buffer.getText();
 	const record = runtimeLuaSourceRegistry(ide.sources, 0)!.records.find(record => record.program_module
@@ -55,9 +53,9 @@ export async function runStudioEditReview(test: StudioFixture) {
 	const rows = review.rows;
 	const identities = rows.slice();
 	const position = cycles();
-	test.execution.setPauseReason(HostPauseReason.Requested, false);
-	await until(() => cycles() > position, 'edit review: host-only review lets guest execution continue');
-	test.execution.setPauseReason(HostPauseReason.Requested, true);
+	for (let index = 0; index < 12; index++) await frame();
+	check(cycles() === position && test.execution.paused && !test.execution.userPaused && test.observations.suspended,
+		'edit review: ordinary workbench pause holds the guest and audio without a requested pause');
 	check(rows.every((row, index) => row === identities[index]), 'edit review: unchanged frames reuse all projected rows');
 	await runPaletteCommand('Review: Apply Workspace Edit');
 	check(review.proposal.state === 'applied' && main.buffer.getText() === mainText.replaceAll('fixture_rename', 'fixture_reviewed')

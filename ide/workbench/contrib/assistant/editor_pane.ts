@@ -33,7 +33,7 @@ import type { AssistantInput } from './editor_input';
 const COMMANDS = ['assistant.connect', 'assistant.disconnect', 'assistant.signIn', 'assistant.cancelLogin', 'assistant.signOut',
 	'assistant.openLogin', 'assistant.copyCode', 'assistant.send', 'assistant.stop', 'assistant.review', 'assistant.copy'] as const;
 
-/** A host-only conversation view. Neither reading, waiting nor switching panes suspends the cart. */
+/** Host-only conversation work continues under the ordinary workbench game pause. */
 export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> {
 	private readonly account = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget);
 	private readonly login = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget);
@@ -46,7 +46,6 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		this.scroll.focusTarget.commandContext = this.focusTarget;
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 	}
-	public override get suspendsRuntime(): boolean { return false; }
 	public override focus(): void { this.input.draft.focusTarget.focus(); }
 	protected override activate(): void {
 		super.activate();
