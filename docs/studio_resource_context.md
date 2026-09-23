@@ -27,6 +27,13 @@ target belongs to this live history before the first invalidation/write. Model
 disposal retires review/control observers synchronously, without rollback,
 path-based resurrection, a second source store or runtime metadata.
 
+Save has the same resource-lifetime admission: its concrete session model owner
+must still hold the exact model instance before snapshot capture or persistence.
+Matching resource paths and version numbers cannot admit a retired/foreign copy.
+Already accepted writes still drain before teardown; they are not cancelled or
+rolled back midway. Two probes failed before this correction; all 16 Save tests
+and the IDE/browser/Node typechecks pass afterwards.
+
 Diagnostics belong to a session-owned resource service above the shared
 semantic project. Results name resource and model revision; unsupported,
 pending and unrequested coverage must not be presented as a clean workspace.

@@ -58,7 +58,7 @@ async function fixture(t: TestContext) {
 		{ backend: { async finishGxGpuReadbacks() { if (readbackFailure) throw readbackFailure; } } } as VideoPresenter);
 	// These tests reject AEM input before compilation. Any use of machine/tooling
 	// in a source-only save is an unwanted dependency and fails immediately.
-	const saves = new TextFileSaveService(storage, clock, sources, {} as RuntimeLuaTooling, {} as Runtime, tasks);
+	const saves = new TextFileSaveService(models, storage, clock, sources, {} as RuntimeLuaTooling, {} as Runtime, tasks);
 	await openWorkspaceRecords(storage, clock, root, files);
 	t.after(async () => {
 		await saves.shutdown();
@@ -312,6 +312,39 @@ test('read-only resources are rejected at save admission, before writes or snaps
 	model.refreshResource({ ...model.resource, source: { ...model.resource.source, generated: true } });
 	assert.throws(() => f.saves.save(model), /read-only/);
 	assert.equal(f.files.writes.length, 0);
+});
+
+test('Save cannot reacquire a retired model through a reopened path and matching version', async t => {
+	const f = await fixture(t);
+	const retired = f.yaml();
+	setSource(retired, 'value: old-session');
+	f.models.clear();
+	const current = f.yaml();
+	setSource(current, 'value: current-session');
+	assert.equal(current.version, retired.version);
+	const capture = t.mock.method(retired, 'createSnapshot');
+	assert.throws(() => f.saves.save(retired), /no longer belongs to this workspace/);
+	assert.equal(capture.mock.callCount(), 0, 'retired admission cannot even break the model undo sequence');
+	assert.equal(f.files.records.has(`${f.root}/${retired.resource.path}`), false);
+	assert.equal(readLocalWorkspaceRecord(f.storage, f.root, `${f.root}/${retired.resource.path}`), null);
+	assert.equal(current.dirty, true);
+	assert.equal((await f.saves.save(current)).status, 'saved');
+	assert.equal(f.files.records.get(`${f.root}/${current.resource.path}`)!.contents, 'value: current-session');
+});
+
+test('Save admits only the session owner model, not a foreign copy of the same resource', async t => {
+	const f = await fixture(t);
+	const current = f.yaml();
+	const other = new EditorTextModelService();
+	t.after(() => other.clear());
+	const foreign = other.retain(current.resource, current.mode, 'value: foreign');
+	assert.equal(current.version, foreign.version);
+	const capture = t.mock.method(foreign, 'createSnapshot');
+	assert.throws(() => f.saves.save(foreign), /no longer belongs to this workspace/);
+	assert.equal(capture.mock.callCount(), 0);
+	assert.equal(f.files.records.has(`${f.root}/${current.resource.path}`), false);
+	assert.equal(readLocalWorkspaceRecord(f.storage, f.root, `${f.root}/${current.resource.path}`), null);
+	assert.equal(current.dirty, false);
 });
 
 test('the source save owner cannot depend on editor views, feedback or workspace-session composition', () => {

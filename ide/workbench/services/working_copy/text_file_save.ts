@@ -2,6 +2,7 @@ import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { HostClock } from '../../../../hosts/common/clock';
 import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
 import type { EditorTextModel, EditorTextModelSnapshot } from '../../../editor/model/text_model';
+import type { EditorTextModelService } from '../../../editor/model/model_service';
 import { applyAemSourceRevision, type AemSourceApplyResult } from '../../../runtime/aem';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import { runtimeSourceProjectRootPath, type RuntimeSourceState } from '../../../runtime/sources';
@@ -26,6 +27,7 @@ export class TextFileSaveService {
 	private closing = false;
 
 	public constructor(
+		private readonly models: EditorTextModelService,
 		private readonly storage: KeyValueStorage,
 		private readonly clock: HostClock,
 		private readonly sources: RuntimeSourceState,
@@ -38,6 +40,7 @@ export class TextFileSaveService {
 
 	public save(model: EditorTextModel): Promise<TextFileSaveResult> {
 		if (this.closing) throw new Error('Cannot save after workbench shutdown has started.');
+		if (this.models.get(model.identity) !== model) throw new Error(`Source '${model.resource.path}' no longer belongs to this workspace.`);
 		if (model.readOnly) throw new Error(`Source '${model.resource.path}' is read-only.`);
 		const previous = this.pending.get(model);
 		if (previous?.version === model.version) return previous.result;
