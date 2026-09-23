@@ -15,7 +15,7 @@ type Connection = {
 	done: Promise<void>;
 };
 
-/** The HTTP composition must authorize local Host/origin/capability BEFORE calling this owner. */
+/** The HTTP composition must authorize Host/origin/capability BEFORE calling this owner. */
 export class CodexHttpApi {
 	private connection: Connection | undefined;
 	private closing = false;

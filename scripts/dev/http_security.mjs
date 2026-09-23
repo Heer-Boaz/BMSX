@@ -1,27 +1,33 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { isIP } from 'node:net';
+import { hostname } from 'node:os';
 
 export class HttpError extends Error {
 	constructor(status, message) { super(message); this.status = status; }
 }
 
-/** Local workspace authority belongs to one listening process, never the static LAN product. */
+/** Same-origin workspace authority belongs to one development server, including its trusted LAN clients. */
 export class WorkspaceHttpSession {
 	#token = randomBytes(32).toString('base64url');
 	#authorization = Buffer.from(`Bearer ${this.#token}`);
+	#hostnames;
 
 	constructor(host) {
-		this.enabled = host === '127.0.0.1' || host === '::1' || host === 'localhost';
+		const machine = hostname().toLowerCase();
+		this.#hostnames = new Set(['localhost', host.toLowerCase(), machine, `${machine}.local`]);
 	}
 
 	admitOrigin(req) {
-		if (!this.enabled) throw new HttpError(403, 'Workspace access requires a loopback-bound server.');
 		const port = req.socket.localPort;
 		const host = req.headers.host;
-		if (host !== `localhost:${port}` && host !== `127.0.0.1:${port}` && host !== `[::1]:${port}`
-			&& !(port === 80 && (host === 'localhost' || host === '127.0.0.1' || host === '[::1]'))) {
-			throw new HttpError(403, 'Workspace Host is not a local server address.');
+		const origin = new URL(`http://${host}`);
+		const name = origin.hostname;
+		// Literal addresses support LAN/WSL forwarding without admitting arbitrary DNS names.
+		if ((!this.#hostnames.has(name) && isIP(name[0] === '[' ? name.slice(1, -1) : name) === 0)
+			|| (host !== `${name}:${port}` && !(port === 80 && host === name))) {
+			throw new HttpError(403, 'Workspace Host is not an admitted server address.');
 		}
-		if (req.headers.origin !== undefined && req.headers.origin !== new URL(`http://${host}`).origin) {
+		if (req.headers.origin !== undefined && req.headers.origin !== origin.origin) {
 			throw new HttpError(403, 'Cross-origin workspace access is forbidden.');
 		}
 		const site = req.headers['sec-fetch-site'];

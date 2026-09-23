@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Local Studio server; explicit non-loopback binding serves static products only.
+// Development server for the player and Studio, including workspace and Codex access over the LAN.
 // Usage: node scripts/serve-dist.mjs [--dir dist] [--port 8080] [--host 127.0.0.1] [--spa] [--cache <seconds|no-store>]
 
 import { createServer } from 'node:http';
@@ -23,15 +23,14 @@ function getArg(name, short, def) {
 }
 
 if (args.includes('--help') || args.includes('-h')) {
-	console.log(`Static server for ./dist
+	console.log(`Local development server for ./dist
 Usage: node scripts/serve-dist.mjs [options]
 Options:
 	-d, --dir <path>      Directory to serve (default: dist)
 	-p, --port <number>   Port to listen on (default: 8080)
-	-H, --host <address>  Host address (default: 127.0.0.1; LAN bindings disable workspace API)
+	-H, --host <address>  Host address (default: 127.0.0.1; use 0.0.0.0 for trusted LAN access)
 			--spa             Fallback to index.html for unknown routes
 			--cache <secs|no-store>  Cache-Control (default: no-store)
-			--assistant       Enable the owned local Codex adapter (run via npm run serve:studio)
 	-h, --help            Show this help
 `);
 	process.exit(0);
@@ -77,15 +76,14 @@ const MIME = new Map(Object.entries({
 
 const projectRoot = await realpath(process.cwd());
 const workspaceSession = new WorkspaceHttpSession(host);
-let assistant;
-if (args.includes('--assistant')) {
-	if (!workspaceSession.enabled) throw new Error('The Studio assistant requires a loopback-bound server.');
-	const { CodexHttpApi } = await import('../hosts/node/codex/http_api.ts');
-	const { STUDIO_SOURCE_TOOLS } = await import('../ide/workbench/services/assistant/source_tool_protocol.ts');
-	const { STUDIO_TEST_TOOLS } = await import('../ide/workbench/services/assistant/test_tool_protocol.ts');
-	assistant = new CodexHttpApi({ tools: [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS],
-		profileDirectory: path.join(process.env.XDG_STATE_HOME ?? path.join(os.homedir(), '.local', 'state'), 'bmsx', 'studio-codex') });
-}
+// The existing plain-Node entry owns its TypeScript support, not a separate launch mode.
+// Constructing the endpoint starts no process and opens no account profile.
+await import('tsx');
+const { CodexHttpApi } = await import('../hosts/node/codex/http_api.ts');
+const { STUDIO_SOURCE_TOOLS } = await import('../ide/workbench/services/assistant/source_tool_protocol.ts');
+const { STUDIO_TEST_TOOLS } = await import('../ide/workbench/services/assistant/test_tool_protocol.ts');
+const assistant = new CodexHttpApi({ tools: [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS],
+	profileDirectory: path.join(process.env.XDG_STATE_HOME ?? path.join(os.homedir(), '.local', 'state'), 'bmsx', 'studio-codex') });
 
 async function handleCartsApi(req, res, url) {
 	if (url.pathname !== '/__bmsx__/carts') {
@@ -165,7 +163,6 @@ const server = createServer(async (req, res) => {
 		}
 		if (requestUrl.pathname.startsWith('/__bmsx__/assistant/')) {
 			workspaceSession.authorize(req);
-			if (!assistant) throw new HttpError(503, 'Studio assistant is not enabled on this server.');
 			await assistant.handle(req, res, requestUrl.pathname);
 			return;
 		}
@@ -239,10 +236,11 @@ server.listen(port, host, () => {
 	if (defaultFile) {
 		console.log(`Default file: /${defaultFile}`);
 	}
-	console.log(workspaceSession.enabled ? 'Workspace API: local, session-authorized' : 'Static-only: workspace API disabled on non-loopback binding');
-	if (!workspaceSession.enabled && ips.length) {
+	console.log('Studio APIs: same-origin, session-authorized; Codex starts on Connect');
+	if ((host === '0.0.0.0' || host === '::') && ips.length) {
 		console.log('On your LAN:');
 		for (const ip of ips) console.log(`  http://${ip}:${port}/`);
+		console.log('LAN clients can access workspace sources and the Studio Codex profile.');
 	}
 	if (defaultFile) {
 		console.log(`\nTip: open http://localhost:${port}/${defaultFile}`);
@@ -251,15 +249,13 @@ server.listen(port, host, () => {
 	}
 });
 
-if (assistant) {
-	let shutdown;
-	const stop = () => {
-		// Stop admission, then join both the assistant process and accepted HTTP IO.
-		// Killing every socket here would interrupt an already accepted source save.
-		shutdown ??= Promise.all([assistant.close(), new Promise((resolve, reject) => {
-			server.close(error => error ? reject(error) : resolve());
-		})]).catch(error => { console.error(error); process.exitCode = 1; });
-	};
-	process.once('SIGTERM', stop);
-	process.once('SIGINT', stop);
-}
+let shutdown;
+const stop = () => {
+	// Stop admission, then join both the assistant process and accepted HTTP IO.
+	// Killing every socket here would interrupt an already accepted source save.
+	shutdown ??= Promise.all([assistant.close(), new Promise((resolve, reject) => {
+		server.close(error => error ? reject(error) : resolve());
+	})]).catch(error => { console.error(error); process.exitCode = 1; });
+};
+process.once('SIGTERM', stop);
+process.once('SIGINT', stop);

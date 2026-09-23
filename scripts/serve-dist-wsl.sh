@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Serve static products on the LAN; workspace authoring requires npm run serve:dist instead.
-# This command intentionally has no workspace file API.
+# Serve the player and Studio on the trusted LAN, with the ordinary workspace and Codex APIs.
 # Usage: bash scripts/serve-dist-wsl.sh [--port 8080] [--dir dist] [--spa] [--cache no-store]
 
 PORT=8080
@@ -62,7 +61,7 @@ else
 fi
 
 echo "Serving ${DIR} on port ${PORT} (WSL: ${is_wsl})"
-echo "Static-only LAN presentation. For local Studio project writes: npm run serve:dist"
+echo "Studio workspace and Codex access are available to clients on this LAN."
 if [[ -n "${WIN_IPS}" ]]; then
 	echo "Windows LAN IP(s): ${WIN_IPS}"
 	echo "Try on iPhone: http://<one-of-these>:${PORT}/index.html?rom=<your-rom>.rom"

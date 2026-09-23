@@ -83,21 +83,27 @@ result-owner revision. They neither execute tests nor assert correspondence with
 current sources/dependencies. Source edits do not invalidate historical evidence
 or renew source/edit receipts. See [test evidence](../docs/studio_test_evidence.md).
 
-## Local HTTP workspace capability
+## HTTP workspace capability
 
-`StudioHttpSession` owns coalesced admission to the loopback server and holds its
+`StudioHttpSession` owns coalesced admission to the development server and holds its
 per-process capability only in memory. `HttpWorkspaceRecordProvider` renews once after a 401,
 which means no filesystem operation was admitted. Other failures flow into the
 existing local/project persistence distinction; writes are not blindly replayed.
-The server admits local Host/origin/capability before touching the workspace,
-and its filesystem boundary rejects traversal and symlinks. Non-loopback serving
-is static-only, with no workspace capability. See [platform boundary](../docs/studio_platform_boundary.md).
+The server admits Host/origin/capability before touching the workspace,
+and its filesystem boundary rejects traversal and symlinks. Local and trusted
+LAN bindings expose the same workspace and Codex endpoints; the network binding
+does not select a lesser Studio mode. This is not LAN-user authentication. See
+[platform boundary](../docs/studio_platform_boundary.md), including the browser's
+separate secure-context requirement.
 
-The opt-in assistant transport shares platform admission, not the file provider's
+The assistant transport shares platform admission, not the file provider's
 retry policy. A distinct stream lease owns its process/tool rights; disconnect
 retires them and no command or prompt is automatically replayed. Only fixed Studio
 operations cross HTTP, never provider RPC/configuration. Account/credential and
 process ownership stay in Node; source context/history stay in the workbench.
+The ordinary server owns its TypeScript loading and endpoint composition. No
+separate command or assistant flag exists; Connect starts the process, not server
+startup, page loading or workspace admission.
 See [assistant transport](../docs/studio_assistant_transport.md).
 
 `AssistantConversation` owns a workspace's connection epoch, per-prompt source

@@ -1,4 +1,4 @@
-/** Per-client local-platform admission. Capabilities stay in memory, never URLs or persisted state. */
+/** Per-client same-origin server admission. Capabilities stay in memory, never URLs or persisted state. */
 export class StudioHttpSession {
 	private pending: Promise<string> | undefined;
 	public constructor(public readonly baseUrl = '') {}

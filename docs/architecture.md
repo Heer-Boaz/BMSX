@@ -5030,7 +5030,13 @@ Reconnect synchronizes the saved record, not newer model text, and does not
 rewrite the original Save receipt. See [source save acknowledgements](studio_source_save_acknowledgements.md).
 The optional Studio assistant is host tooling only. Its workspace-owned
 conversation receives a platform connection capability from browser composition;
-the Node adapter owns the isolated Codex account/process, fixed operation
+the existing development server exposes its fixed endpoints alongside source IO
+on both local and trusted LAN bindings. There is no separate assistant launch
+command or server. Host/origin/session admission remains shared; LAN reachability
+does not identify individual users. Server startup starts no Codex process;
+only the explicit Connect operation does. The browser runtime's secure-context
+requirements remain independent of network API admission.
+The Node adapter owns the isolated Codex account/process, fixed operation
 protocol and process lease. Each prompt captures ordinary source authority;
 proposed edits require the same explicit multi-file review and shared history.
 Diagnostic reads require those exact source receipts and consume the ordinary

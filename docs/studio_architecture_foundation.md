@@ -63,12 +63,12 @@ Codex view <-> secured local transport <-> Codex App Server process
   own results. A queued request or a status message is never proof of success.
 - Conversation reconnect cannot revive retired proposals. Process lifecycle,
   authentication/origin checks and capability limits precede any privileged
-  transport. The loopback server's explicit admission and process owners are
-  the boundary; static/LAN presentation has no process capability.
+  transport. The existing development server's explicit admission and process
+  owners are the boundary, including trusted LAN access.
 
 The locally inspected Codex App Server is the pinned local process, not an SDK
 embedded in Studio. Gates 5c-5g record actual protocol/tool/transport/UI evidence.
-The process endpoint is opt-in and exposes only fixed Studio operations; no
+The process starts on explicit Connect through the ordinary server and exposes only fixed Studio operations; no
 general provider RPC or direct file writer is exposed by the account and
 conversation contribution.
 
@@ -306,7 +306,8 @@ the platform/security gate remain open; no agent integration is admitted yet.
 
 The development server now defaults to loopback. A per-process capability and
 Host/origin admission protect file IO; traversal/symlink escapes and wildcard
-CORS are removed. Explicit LAN presentation has no workspace capability.
+CORS are removed. That initial LAN restriction was superseded by the
+existing-server/LAN correction below.
 The browser file provider coalesces admission and renews only explicitly rejected
 sessions; ordinary source-save acknowledgements and reconnect keep their owners.
 
@@ -405,8 +406,8 @@ the next composition boundary, not permission to expose raw Codex methods.
 process with the authorized local server and a single browser lease. File and
 assistant clients share platform admission but retain distinct retry policies.
 Prompts/tool answers never replay automatically; interrupt/disconnect retires
-reply rights and remote shutdown joins actual process exit. Production opt-in,
-LAN rejection and a real Chromium/source-IO round trip are tested without account
+reply rights and remote shutdown joins actual process exit. The original opt-in
+and LAN restriction were superseded by the correction below. A real Chromium/source-IO round trip is tested without account
 credentials or paid inference. Account connection and conversation UI remain open.
 
 
@@ -590,3 +591,39 @@ product typechecks/builds and strict architecture audit pass. Tests-project
 typechecking retains the same 96 existing diagnostics.
 Pinned VS Code result-owner/result-service references and exact coverage limits
 are recorded in the capability contract above.
+
+### Existing development server, including trusted LAN access
+
+On 2026-09-24 the user rejected a separate assistant launch command and the
+static-only LAN restriction. Both were integration mistakes, not requirements of
+the process model. The ordinary plain-Node server now owns TypeScript loading and
+composes the same source/test tool schemas and Codex HTTP owner on every binding.
+The separate command/flag is removed; existing local and WSL/LAN launchers remain
+the entrypoints. Server/page/platform admission starts no process or model call;
+explicit Connect still owns that transition and shutdown joins the actual lease.
+
+The shared HTTP owner admits literal IPv4/IPv6 addresses and known machine/bind
+names while retaining exact origin, Fetch Metadata, process-local capability and
+rooted-path admission. No separate login requirement was introduced: this is a
+trusted-network development server, not per-LAN-user authentication. The previous
+default-server failure and LAN 403 were reproduced before the correction. Real
+local/LAN process tests now connect the pinned CLI with an empty profile, save
+source while connected and release the lease on shutdown. Mobile-viewport
+Chromium shares one admission between the actual browser clients through the
+production LAN listener, without secure-origin overrides.
+
+That is not physical-phone or full mobile Studio evidence. A separate check of
+the production Studio page at the actual HTTP LAN address reports no secure
+context, isolation, SharedArrayBuffer or secure UUID API. The existing browser
+runtime therefore still needs its secure-context requirement addressed for that
+route; API success must not be presented as a successful phone boot. No runtime
+fallback, forced HTTPS, certificate installation or second server was added in
+this correction. See [platform boundary](studio_platform_boundary.md) for the
+reference implementations and exact scope.
+
+Validation: assistant HTTP/entry **16 passed**, workspace HTTP **7 passed**, all
+twelve assistant browser workflows pass, and ordinary source-save/recovery plus
+cold session restoration pass on WebGL2 through the production server. Lua
+**2381 passed, 1 skipped**; IDE/browser/Node typechecks, browser Studio build and
+strict architecture audit pass (zero issues). Tests-project typechecking retains
+the same 96 existing diagnostics. No paid inference or physical phone was used.

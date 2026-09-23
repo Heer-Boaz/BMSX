@@ -5,8 +5,10 @@ contracts, not as a second editor or a browser tunnel to Codex RPC.
 
 ## Use
 
-1. Build the browser Studio and debug BIOS/cart normally. Start
-   `npm run serve:studio` (requires the admitted `codex-cli 0.156.1`).
+1. Build the browser Studio and debug BIOS/cart normally. Use the existing
+   development server (`npm run serve:dist` or the LAN/WSL launcher).
+   Codex is part of that server, without an assistant flag or separate command.
+   Connect requires the admitted `codex-cli 0.156.1` on the server machine.
 2. Open **View → Codex Assistant** or the command palette's
    **View: Codex Assistant**. Opening the pane starts no process or model call.
 3. **Connect** opens a private local process lease. **Sign in** requests a device
@@ -20,6 +22,12 @@ contracts, not as a second editor or a browser tunnel to Codex RPC.
 5. Select a proposal and use **Review**. Only the ordinary review's **Apply**
    edits working copies. Apply is not Save, build or installation. Ordinary
    source Undo/Redo spans all files in the proposal.
+
+LAN clients use those same endpoints and the server's Studio account profile;
+there is still one active process lease, not one account per device. The server
+binding controls network reachability, not whether Studio functionality exists.
+See [platform boundary](studio_platform_boundary.md) for the trusted-network
+scope and the separate secure-context requirements of the browser runtime.
 
 The assistant can also request the same source-bound diagnostics as Problems
 after reading a file. These are shared language-service results, not a build or

@@ -3,7 +3,7 @@
 Audit at `52a655924`; local executable **codex-cli 0.156.1**. The source/context/
 review foundation and the Node process adapter below are implemented. The later
 [browser transport](studio_assistant_transport.md) exposes fixed Studio operations
-through an explicitly enabled local endpoint, not provider RPC. The subsequent
+through fixed endpoints on the existing development server, not provider RPC. The subsequent
 [contribution](studio_assistant_contribution.md) implements account connection and
 the visible workbench assistant; the sections below retain the original audit
 and record its account follow-through separately.
@@ -169,7 +169,7 @@ The [workbench source tools](studio_source_tools.md) are now exercised through
 this adapter with the real process and an offline model fixture. The secured
 [browser lease transport](studio_assistant_transport.md) now has its own real
 HTTP/Chromium evidence. The [conversation contribution](studio_assistant_contribution.md)
-now composes the pane and fixed device-code account actions; the loopback
+now composes the pane and fixed device-code account actions; the workspace
 capability never admits a general process proxy.
 The fixed [test-evidence tools](studio_test_evidence.md) now read the same retained
 results as Scenario Lab through this chain, without adding execution authority.

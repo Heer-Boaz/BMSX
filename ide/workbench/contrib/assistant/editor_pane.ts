@@ -130,7 +130,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			this.account.focusTarget.next = model.loginCode === undefined ? input.draft.focusTarget : this.login.focusTarget;
 			input.draft.focusTarget.previous = model.loginCode === undefined ? this.account.focusTarget : this.login.focusTarget;
 			if (model.loginCode === undefined && this.login.focusTarget.hasFocus) input.draft.focusTarget.focus();
-			input.status = truncateMeasuredText(!model.available ? 'Start the local Studio server with --assistant.'
+			input.status = truncateMeasuredText(!model.available ? 'Codex requires browser Studio on the development server.'
 				: `${model.accountRefreshing ? 'Refreshing account' : model.state}${model.account?.email ? ` | ${model.account.email}` : ''}${model.account?.requiresLogin ? ' | Sign in to the private Studio profile' : ''}`,
 				layout.right - 8, measureTextRange);
 			const atEnd = viewport.scrollTop + viewport.height >= viewport.contentHeight;

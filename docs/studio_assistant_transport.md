@@ -1,14 +1,17 @@
 # Studio assistant connection: a local lease, not an RPC proxy
 
 The browser and Node transport are composed with the
-[workspace conversation and account controls](studio_assistant_contribution.md). `npm run serve:studio` explicitly enables the
-adapter on the loopback Studio server. Ordinary `serve:dist` does not enable it;
-`--assistant` on a non-loopback binding fails before opening a profile/process.
-Enabling the endpoint alone starts no Codex process or model request.
+[workspace conversation and account controls](studio_assistant_contribution.md)
+in the existing development server. Ordinary `serve:dist`, direct
+`node scripts/serve-dist.mjs` and the LAN/WSL launcher expose the same endpoints.
+There is no separate assistant command or flag. The entry loads its existing
+TypeScript dependency itself; no extra Node loader argument is required.
+Starting the server opens no account profile, checks no Codex executable and
+sends no model request. Explicit Connect owns process admission.
 
 ## Owners and authority
 
-- `StudioHttpSession` owns one coalesced local-platform admission and keeps its
+- `StudioHttpSession` owns one coalesced same-origin server admission and keeps its
   capability in memory. Files and assistant transport can share that instance.
   A late rejection cannot expire a newer admission. The existing file provider
   retains its single retry after an explicit pre-operation 401; assistant
@@ -16,11 +19,11 @@ Enabling the endpoint alone starts no Codex process or model request.
 - `scripts/serve-dist.mjs` authorizes Host, origin, Fetch Metadata and capability
   with the existing platform owner **before** invoking `CodexHttpApi`. There is
   no CORS, URL token, alternate unauthenticated listener or public Codex stdio.
-  Its opt-in shutdown joins both the process and accepted HTTP IO, rather than
+  Its shutdown joins both the process and accepted HTTP IO, rather than
   killing an in-flight source-save socket.
 - `CodexHttpApi` owns one process/stream lease. The platform chooses the private
   profile under `$XDG_STATE_HOME/bmsx/studio-codex` (or the normal per-user local
-  state directory), and fixes the four source/diagnostic/review tools. No browser-supplied cwd,
+  state directory), and fixes the source/diagnostic/review and test-evidence tools. No browser-supplied cwd,
   provider, executable, configuration, permissions or method name is forwarded.
 - `AssistantHttpConnection` owns the browser lease's AbortSignal. Workspace/view
   composition must bind its lifetime before connecting. Closing it retires
@@ -68,7 +71,7 @@ and [ordinary review](studio_workspace_edit_review.md), not by transport IDs.
 
 ## Evidence and limits
 
-- `npm run test:assistant-http`: **13 passing tests**, including the actual CLI
+- `npm run test:assistant-http`: **16 passing tests**, covering the actual CLI
   with an offline Responses fixture, real listeners and a real Chromium client.
   They cover origin/lease admission, tool exchange, interruption, disconnect and
   explicit replacement, duplicate replies, lost headers/body, expired capability,
@@ -76,14 +79,20 @@ and [ordinary review](studio_workspace_edit_review.md), not by transport IDs.
   admission with ordinary file IO and saves after assistant disconnect.
   Structured review observations and the unchanged Unicode/multiline prompt are
   verified in the actual Responses request produced by the pinned process.
-- The actual production entry is separately spawned: LAN opt-in is rejected;
-  unauthorized requests cannot touch the profile; an intentionally wrong private
-  executable is rejected and the entry completes joined shutdown. Default static
-  serving still rejects authorized assistant access as disabled.
+- The actual plain-Node production entry is separately spawned without an
+  assistant/loader flag, from a disposable workspace. Local and advertised LAN
+  addresses connect the real CLI using an empty private profile, save source
+  alongside the live stream, enforce a single lease and join shutdown. Merely
+  serving a page or requesting platform admission starts no process. Unauthorized
+  requests cannot touch the profile; an intentionally wrong executable is rejected.
+- Mobile-viewport Chromium uses the real browser file/assistant clients through
+  that production LAN listener, sharing one admission and saving after disconnect.
+  This is transport coverage, not a full phone Studio boot. No secure-origin
+  override is used; plain LAN HTTP remains an insecure browser context.
 - Three framing/admission unit cases cover fragmented Unicode, malformed EOF
   and cancellation during delayed platform admission. Existing process tests
   (**19**), independent contract tests (**5**), source-workbench exchange (**1**)
-  and workspace HTTP tests (**6**) remain green.
+  and workspace HTTP tests remain green.
 - Full Lua suite: **2322 passed, 1 skipped**. IDE/browser/Node typechecks and both
   Studio product builds pass; strict architecture audit reports **0 issues**.
   The full tests-project typecheck still has its **96 baseline diagnostics**,

@@ -5,7 +5,7 @@ import { once } from 'node:events';
 import { request as httpRequest } from 'node:http';
 import { mkdtemp, mkdir, readFile, writeFile, symlink, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 
 async function fixture(t, host) {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-http-boundary-'));
@@ -30,8 +30,8 @@ async function fixture(t, host) {
 		child.stderr.on('data', bytes => { output += bytes; });
 		child.stdout.on('data', bytes => {
 			output += bytes;
-			const match = /http:\/\/localhost:(\d+)/.exec(output);
-			if (match) resolveAddress(`http://127.0.0.1:${match[1]}`);
+			const match = (host === '0.0.0.0' ? /On your LAN:\n\s+(http:\/\/[\d.]+:\d+)/ : /(http:\/\/localhost:\d+)/).exec(output);
+			if (match) resolveAddress(match[1].replace('localhost', '127.0.0.1'));
 		});
 	});
 	const request = (route, init = {}) => fetch(address + route, init);
@@ -59,7 +59,7 @@ test('workspace API rejects unauthenticated reads, enumeration and writes before
 test('authorized source CRUD preserves timestamps and exclusive creation', async t => {
 	const { request, session } = await fixture(t);
 	const headers = await session();
-	assert.equal((await request('/__bmsx__/assistant/connect', { method: 'POST', headers })).status, 503, 'ordinary static serving does not enable a process endpoint');
+	assert.equal((await request('/__bmsx__/assistant/command', { method: 'POST', headers })).status, 410, 'the ordinary server owns the endpoint, but only Connect opens a process lease');
 	const put = (contents, extra = {}) => request('/__bmsx__/lua', { method: 'PUT',
 		headers: { ...headers, 'Content-Type': 'application/json', ...extra },
 		body: JSON.stringify({ path: 'new/nested/source.lua', contents, updatedAt: 1234567890000 }) });
@@ -84,7 +84,7 @@ test('cross-origin, opaque-origin, rebinding and preflight requests cannot acqui
 		assert.equal((await request('/__bmsx__/lua?path=source.lua', { method: 'DELETE', headers: { ...authorized, Origin: origin } })).status, 403);
 	}
 	const rebindingStatus = await new Promise((resolveStatus, reject) => {
-		const req = httpRequest(address + '/__bmsx__/session', { headers: { 'X-BMSX-Client': 'studio', Host: 'rebinding.example' } }, res => {
+		const req = httpRequest(address + '/__bmsx__/session', { headers: { 'X-BMSX-Client': 'studio', Host: `rebinding.example:${new URL(address).port}` } }, res => {
 			res.resume(); resolveStatus(res.statusCode);
 		});
 		req.on('error', reject); req.end();
@@ -110,13 +110,33 @@ test('workspace and static paths reject traversal and symlink escapes, including
 	assert.equal(await readFile(join(directory, 'outside.lua'), 'utf8'), 'outside');
 });
 
-test('LAN presentation has no workspace capability even through a loopback client', async t => {
-	const { request } = await fixture(t, '0.0.0.0');
+test('LAN Studio shares source and Codex admission through the actual advertised network interface', async t => {
+	const { request, session, root } = await fixture(t, '0.0.0.0');
 	assert.equal((await request('/index.html')).status, 200);
 	assert.equal((await request('/__bmsx__/carts')).status, 200);
-	assert.equal((await request('/__bmsx__/session', { headers: { 'X-BMSX-Client': 'studio' } })).status, 403);
-	assert.equal((await request('/__bmsx__/lua?path=source.lua')).status, 403);
-	assert.equal((await request('/__bmsx__/assistant/connect', { method: 'POST' })).status, 403);
+	assert.equal((await request('/__bmsx__/lua?path=source.lua')).status, 401);
+	assert.equal((await request('/__bmsx__/assistant/connect', { method: 'POST' })).status, 401);
+	const headers = await session();
+	assert.equal((await request('/__bmsx__/lua', { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' },
+		body: JSON.stringify({ path: 'source.lua', contents: 'return 9', updatedAt: 1234567890000 }) })).status, 204);
+	assert.equal(await readFile(join(root, 'source.lua'), 'utf8'), 'return 9');
+	assert.equal((await request('/__bmsx__/assistant/command', { method: 'POST', headers })).status, 410, 'only an explicit Connect creates the Codex process');
+	assert.equal((await request('/__bmsx__/session', { headers: { 'X-BMSX-Client': 'studio', Origin: 'https://hostile.example' } })).status, 403);
+	assert.equal((await request('/__bmsx__/lua?path=source.lua', { headers: { ...headers, Origin: 'https://hostile.example' } })).status, 403);
+});
+
+test('server host admission accepts literal LAN/IPv6 addresses and its machine name, not rebinding or mismatched ports', async t => {
+	const { address } = await fixture(t, '0.0.0.0'), port = new URL(address).port;
+	for (const [host, status] of [[`192.0.2.10:${port}`, 200], [`[2001:db8::10]:${port}`, 200], [`${hostname().toLowerCase()}:${port}`, 200], [`${hostname().toLowerCase()}.local:${port}`, 200],
+		[`rebinding.example:${port}`, 403], ['192.0.2.10:1', 403]]) {
+		const actual = await new Promise((resolveStatus, reject) => {
+			const req = httpRequest(address + '/__bmsx__/session', { headers: { 'X-BMSX-Client': 'studio', Host: host, Origin: `http://${host}` } }, res => {
+				res.resume(); resolveStatus(res.statusCode);
+			});
+			req.on('error', reject); req.end();
+		});
+		assert.equal(actual, status, host);
+	}
 });
 
 test('capabilities are process-local; static presentation has no cross-origin or embedding permission', async t => {
