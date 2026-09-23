@@ -1,3 +1,4 @@
+import { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { VirtualHeadlessClock } from '../../../hosts/node/headless/clock';
 import { configureFontVariant } from '../../../ide/editor/ui/view/view';
 import { ProblemsPanelController } from '../../../ide/workbench/contrib/problems/panel/controller';
@@ -10,11 +11,12 @@ import { medianMilliseconds } from '../../helpers/performance';
 // Retained painter and actual GPU-quad submission only; not a browser frame or raster budget.
 for (const font of ['tiny', 'msx'] as const) for (const diagnosticCount of [0, 16, 1024]) {
 	configureFontVariant(new VirtualHeadlessClock(), font, null);
+	const model = new EditorTextModel({ domain: 0, path: 'probe.lua', source: { type: 'lua', resid: 'probe' } }, 'lua', 'x');
 	const diagnostics: EditorDiagnostic[] = Array.from({ length: diagnosticCount }, (_, index) => ({
-		row: index, startColumn: 0, endColumn: 1, severity: 'error', contextId: 'code:0\0probe.lua', path: 'probe.lua',
+		row: index, startColumn: 0, endColumn: 1, severity: 'error', model, version: 1,
 		message: `Undefined name in authored callback ${index}; a wrapped source diagnostic.`,
 	}));
-	const controller = new ProblemsPanelController(); controller.show(); controller.setDiagnostics(diagnostics);
+	const controller = new ProblemsPanelController(); controller.show(); controller.setDiagnostics(diagnostics, { ready: 1, pending: 0, unsupported: 0, failed: 0 });
 	const { renderer, presenter, queue } = createHostOverlayFixture(256, 212);
 	const bounds = { left: 0, top: 100, right: 256, bottom: 200 };
 	const draw = () => {
@@ -34,4 +36,5 @@ for (const font of ['tiny', 'msx'] as const) for (const diagnosticCount of [0, 1
 	}) * 10;
 	console.log(JSON.stringify({ font, diagnosticCount, drawMicroseconds, drawAndQuadsMicroseconds,
 		commands: draw().commandCount, quadBatches: stream.batchCount }));
+	model.dispose();
 }

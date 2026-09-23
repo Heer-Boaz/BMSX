@@ -3,47 +3,18 @@ import type { ResourceDomain } from '../../../common/resource';
 import type { CartEditor } from '../../../cart_editor';
 import type { CodeTabContext } from './model';
 import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
-import { editorDiagnosticsState } from '../../../editor/contrib/diagnostics/state';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { syncRuntimeErrorOverlayFromContext } from '../../../runtime_error/navigation';
 import type { LuaDefinitionLocation } from '../../../../toolchain/ts/lua/semantic_contracts';
 import { ensureCursorVisible, updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
-import { refreshActiveDiagnostics } from '../../contrib/code_editor/diagnostics/controller';
-import { markDiagnosticsDirty } from '../../../editor/contrib/diagnostics/state';
 import { clearGotoHoverHighlight, clearReferenceHighlights, requestSemanticRefresh } from '../../../editor/contrib/intellisense/engine';
 import { clearHoverTooltip } from '../../../editor/contrib/hover/controller';
 import { resetBlink } from '../../../editor/render/caret';
-import { getTextSnapshot } from '../../../editor/text/source_text';
 import { clearEditorPointerSelectionState } from '../../../input/pointer/state';
 import { runtimeErrorState } from '../../../editor/contrib/runtime_error/state';
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/state';
 import type { CodeEditorInput } from '../tab/model';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
-
-function setCodeTabDiagnosticsState(context: CodeTabContext): void {
-	const model = context.model;
-	switch (model.mode) {
-		case 'lua': {
-			const cached = editorDiagnosticsState.diagnosticsCache.get(context.id);
-			const path = model.resource.path;
-			if (!cached || cached.version !== model.version || cached.path !== path) {
-				markDiagnosticsDirty(context.id);
-			}
-			return;
-		}
-		case 'yaml':
-		case 'aem':
-			editorDiagnosticsState.dirtyDiagnosticContexts.delete(context.id);
-			editorDiagnosticsState.diagnosticsCache.set(context.id, {
-				contextId: context.id,
-				path: model.resource.path,
-				diagnostics: [],
-				version: model.version,
-				source: getTextSnapshot(model.buffer),
-			});
-			return;
-	}
-}
 
 export function storeCodeTabContext(context: CodeTabContext): void {
 	context.runtimeErrorOverlay = runtimeErrorState.activeOverlay;
@@ -66,7 +37,6 @@ export function activateCodeEditorTab(tab: CodeEditorInput, selection?: EditorTe
 	editorViewState.layout.setDocumentMode(context.model.mode);
 	editorViewState.layout.markVisualLinesDirty();
 	editorViewState.layout.invalidateAllHighlights();
-	setCodeTabDiagnosticsState(context);
 	syncRuntimeErrorOverlayFromContext(context);
 	requestSemanticRefresh();
 	updateDesiredColumn();
@@ -76,7 +46,6 @@ export function activateCodeEditorTab(tab: CodeEditorInput, selection?: EditorTe
 		applyActiveCodeTabSelection(selection);
 	}
 	navigationSelection?.restore(tab);
-	refreshActiveDiagnostics();
 }
 
 export function navigateToLuaDefinition(

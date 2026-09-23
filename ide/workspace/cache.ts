@@ -1,4 +1,4 @@
-import type { LuaSourceRegistry } from '../runtime/source_registry';
+import { advanceLuaSourceRevision, type LuaSourceRegistry } from '../runtime/source_registry';
 
 export const workspaceCanonicalSourceCache = new Map<string, string>();
 
@@ -25,7 +25,7 @@ export function setWorkspaceLuaSourceOverride(
 		return;
 	}
 	overrides.set(path, source);
-	registry.revision += 1;
+	advanceLuaSourceRevision(registry, path);
 }
 
 export function deleteWorkspaceLuaSourceOverride(
@@ -39,7 +39,7 @@ export function deleteWorkspaceLuaSourceOverride(
 	if (!overrides.delete(path)) {
 		return;
 	}
-	registry.revision += 1;
+	advanceLuaSourceRevision(registry, path);
 	if (overrides.size === 0) {
 		luaSourceOverrides.delete(registry);
 	}
@@ -53,7 +53,7 @@ export function releaseWorkspaceSourceOverrides(registry: LuaSourceRegistry): vo
 export function clearWorkspaceSourceCaches(): void {
 	workspaceCanonicalSourceCache.clear();
 	for (const registry of luaSourceOverrides.keys()) {
-		registry.revision += 1;
+		luaSourceOverrides.delete(registry);
+		advanceLuaSourceRevision(registry);
 	}
-	luaSourceOverrides.clear();
 }

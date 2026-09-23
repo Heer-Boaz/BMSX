@@ -1,40 +1,20 @@
-import type { EditorDiagnostic, DiagnosticsCacheEntry } from '../../../common/models';
-import { editorRuntimeState } from '../../common/runtime_state';
-import type { CodeEditorInputId } from '../../../common/editor_context';
+import type { EditorDiagnostic } from '../../../common/models';
+import type { EditorTextModel } from '../../model/text_model';
 
-export const EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
+const EMPTY_DIAGNOSTICS: readonly EditorDiagnostic[] = [];
+const diagnosticsByRow = new Map<number, EditorDiagnostic[]>();
 
-export const diagnosticsDebounceMs = 200;
-
-type EditorDiagnosticsState = {
-	diagnostics: EditorDiagnostic[];
-	diagnosticsByRow: Map<number, EditorDiagnostic[]>;
-	diagnosticsDirty: boolean;
-	diagnosticsCache: Map<CodeEditorInputId, DiagnosticsCacheEntry>;
-	dirtyDiagnosticContexts: Set<CodeEditorInputId>;
-	diagnosticsDueAtMs: number;
-	diagnosticsComputationScheduled: boolean;
-	diagnosticsTaskPending: boolean;
-};
-
-export const editorDiagnosticsState: EditorDiagnosticsState = {
-	diagnostics: [],
-	diagnosticsByRow: new Map<number, EditorDiagnostic[]>(),
-	diagnosticsDirty: true,
-	diagnosticsCache: new Map<CodeEditorInputId, DiagnosticsCacheEntry>(),
-	dirtyDiagnosticContexts: new Set<CodeEditorInputId>(),
-	diagnosticsDueAtMs: null,
-	diagnosticsComputationScheduled: false,
-	diagnosticsTaskPending: false,
-};
-
-export function markDiagnosticsDirty(contextId: CodeEditorInputId): void {
-	editorDiagnosticsState.diagnosticsDirty = true;
-	editorDiagnosticsState.dirtyDiagnosticContexts.add(contextId);
-	editorDiagnosticsState.diagnosticsDueAtMs = editorRuntimeState.currentTimeMs + diagnosticsDebounceMs;
+/** Active-editor projection only. Resource results and scheduling live in the workbench service. */
+export function setActiveDiagnostics(model: EditorTextModel | null, diagnostics: readonly EditorDiagnostic[]): void {
+	diagnosticsByRow.clear();
+	for (const diagnostic of diagnostics) {
+		if (diagnostic.model !== model) continue;
+		let bucket = diagnosticsByRow.get(diagnostic.row);
+		if (bucket === undefined) diagnosticsByRow.set(diagnostic.row, bucket = []);
+		bucket.push(diagnostic);
+	}
 }
 
 export function getDiagnosticsForRow(row: number): readonly EditorDiagnostic[] {
-	const bucket = editorDiagnosticsState.diagnosticsByRow.get(row);
-	return bucket ?? EMPTY_DIAGNOSTICS;
+	return diagnosticsByRow.get(row) ?? EMPTY_DIAGNOSTICS;
 }

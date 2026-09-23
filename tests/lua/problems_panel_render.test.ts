@@ -14,18 +14,19 @@ import { beginHeadlessHost2D, renderHeadlessHost2DEntry } from '../../machine/ts
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { HostOverlayQuadStream } from '../../machine/ts/render/host_overlay/quad_stream';
 import { createTestEditorPanes } from '../helpers/editor_panes';
+import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { PointerButton } from '../../ide/input/pointer/buttons';
 
 const diagnostic: EditorDiagnostic = { row: 0, startColumn: 0, endColumn: 1,
 	message: 'The authored source contains an undefined name and remains editable.', severity: 'error',
-	contextId: 'code:0\0diagnostics.lua', path: 'diagnostics.lua' };
+	model: new EditorTextModel({ domain: 0, path: 'diagnostics.lua', source: { type: 'lua', resid: 'diagnostics' } }, 'lua', 'x'), version: 1 };
 
 for (const font of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark'] as const) {
 	test(`Problems inactive selection preserves legible row geometry (${font}, ${theme})`, t => {
 		configureFontVariant(new VirtualHeadlessClock(), font, null);
 		const previousTheme = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme);
 		t.after(() => colors.setIdeThemeVariant(previousTheme));
-		const controller = new ProblemsPanelController(); controller.show(); controller.setDiagnostics([diagnostic]); controller.setSelectionIndex(0);
+		const controller = new ProblemsPanelController(); controller.show(); controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(0);
 		t.after(() => controller.setFocused(false));
 		const overlay = createHostOverlayFixture(256, 192);
 		const bounds = { left: 8, top: 8, right: 248, bottom: 168 };
@@ -84,7 +85,7 @@ for (const font of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark
 
 for (const empty of [false, true]) test(`Problems owns its panel/content clips (empty: ${empty})`, t => {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
-	const controller = new ProblemsPanelController(); controller.show(); controller.setDiagnostics(empty ? [] : [diagnostic]); controller.setSelectionIndex(empty ? -1 : 0);
+	const controller = new ProblemsPanelController(); controller.show(); controller.setDiagnostics(empty ? [] : [diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(empty ? -1 : 0);
 	t.after(() => controller.setFocused(false));
 	const overlay = createHostOverlayFixture(160, 96);
 	const bounds = { left: 8, top: 8, right: 112, bottom: 8 + editorViewState.lineHeight * 3 + 12 };
@@ -110,7 +111,7 @@ for (const empty of [false, true]) test(`Problems owns its panel/content clips (
 test('Problems restores a nested caller clip and retains warm paint/layout storage', t => {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	const controller = new ProblemsPanelController();
-	controller.show(); controller.setDiagnostics([diagnostic]); controller.setSelectionIndex(0);
+	controller.show(); controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(0);
 	t.after(() => controller.setFocused(false));
 	const overlay = createHostOverlayFixture(160, 96);
 	const bounds = { left: 8, top: 8, right: 112, bottom: 48 };
@@ -156,7 +157,7 @@ test('Problems restores a nested caller clip and retains warm paint/layout stora
 test('Problems padding and header cannot hover clipped row geometry', t => {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	const controller = new ProblemsPanelController();
-	controller.show(); controller.setDiagnostics([diagnostic]); controller.setSelectionIndex(-1);
+	controller.show(); controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(-1);
 	t.after(() => controller.setFocused(false));
 	const panes = createTestEditorPanes(); t.after(() => panes.dispose());
 	const bounds = { left: 8, top: 8, right: 112, bottom: 38 };

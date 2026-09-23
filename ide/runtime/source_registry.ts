@@ -54,6 +54,23 @@ export type LuaSourceMatch = {
 	record: LuaSourceRecord;
 };
 
+type SourceChangeListener = (path: string | undefined) => void;
+const sourceChangeListeners = new WeakMap<LuaSourceRegistry, Set<SourceChangeListener>>();
+
+/** A source revision may change without a retained editor model (discovery, reload, generated sources). */
+export function onDidChangeLuaSourceRegistry(registry: LuaSourceRegistry, listener: SourceChangeListener): () => void {
+	let listeners = sourceChangeListeners.get(registry);
+	if (listeners === undefined) sourceChangeListeners.set(registry, listeners = new Set());
+	listeners.add(listener);
+	return () => listeners.delete(listener);
+}
+
+export function advanceLuaSourceRevision(registry: LuaSourceRegistry, path?: string): void {
+	registry.revision += 1;
+	const listeners = sourceChangeListeners.get(registry);
+	if (listeners !== undefined) for (const listener of listeners) listener(path);
+}
+
 export function registerLuaSourceRecord(registry: LuaSourceRegistry, record: LuaSourceRecord): void {
 	const previous = registry.path2lua[record.source_path];
 	if (previous) {
@@ -63,7 +80,7 @@ export function registerLuaSourceRecord(registry: LuaSourceRegistry, record: Lua
 	}
 	registry.path2lua[record.source_path] = record;
 	registry.module2lua[record.module_path] = record;
-	registry.revision += 1;
+	advanceLuaSourceRevision(registry, record.source_path);
 }
 
 export function resolveLuaSourceRecord(registry: LuaSourceRegistry, path: string): LuaSourceRecord | null {

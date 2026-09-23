@@ -7,7 +7,7 @@ import type { ProgramObjectImage } from '../../toolchain/ts/lua/compiler/program
 import { resolveLuaEntryModuleIndex } from '../../toolchain/ts/lua/entry_module';
 import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_graph';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
-import type { LuaSourceRegistry } from './source_registry';
+import { advanceLuaSourceRevision, type LuaSourceRegistry } from './source_registry';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { resetHandledLuaErrors } from './fault_state';
 import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
@@ -259,7 +259,7 @@ function commitInstalledBlua32Sources(
 		changed = true;
 	}
 	if (changed) {
-		registry.revision += 1;
+		advanceLuaSourceRevision(registry);
 	}
 }
 

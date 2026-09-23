@@ -73,8 +73,8 @@ import { clearGotoHoverHighlight } from './editor/contrib/intellisense/engine';
 import { resetSemanticProjects } from './editor/contrib/intellisense/semantic/workspace/state';
 import { activeCodeEditor } from './editor/ui/code_editor_state';
 import { editorTextModelService } from './editor/model/model_service';
-import { editorDiagnosticsState, markDiagnosticsDirty } from './editor/contrib/diagnostics/state';
-import { processDiagnosticsQueue } from './workbench/contrib/code_editor/diagnostics/controller';
+import { setActiveDiagnostics } from './editor/contrib/diagnostics/state';
+import type { ResourceDiagnosticsService } from './workbench/services/diagnostics/resource_diagnostics';
 import { applyLineJumpFieldText } from './workbench/contrib/code_editor/find/line_jump';
 import { EditorSearchController, applySearchFieldText, cancelGlobalSearchJob, cancelSearchJob, startSearchJob, searchHover } from './workbench/contrib/code_editor/find/search';
 import { editorSearchState, lineJumpState } from './workbench/contrib/code_editor/find/widget_state';
@@ -89,7 +89,7 @@ import { clearEditorPointerSelectionState, editorPointerState } from './input/po
 import { handleEditorWheelInput } from './input/pointer/wheel';
 import {
 	clearCodeEditorInputs,
-	findCodeTabContext,
+	getActiveCodeTabContext,
 	retainEntryTabContext,
 } from './workbench/ui/code_tab/contexts';
 import {
@@ -141,6 +141,7 @@ const EDITOR_TARGET_WIDTH = 384;
 const EDITOR_TARGET_HEIGHT = 288;
 
 export type CartEditor = {
+	readonly diagnostics: ResourceDiagnosticsService;
 	readonly executionSuspended: boolean;
 	readonly isAvailable: boolean;
 	readonly completion: EditorCompletionController;
@@ -218,6 +219,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly overlayRenderer: OverlayRenderer;
 	private readonly unsubscribeWorkspaceCursorMoved: () => void;
 	private readonly unsubscribeTextModelChanged: () => void;
+	private readonly unsubscribeDiagnosticsChanged: () => void;
 	private readonly unbindQuickInputFields: () => void;
 	private readonly unbindProblemsPanel: () => void;
 	private readonly chromeRenderContext: ChromeRenderContext = {
@@ -258,6 +260,7 @@ export class RuntimeCartEditor implements CartEditor {
 		private readonly textFileSaves: TextFileSaveService,
 		private readonly hotResumes: HotResumeService,
 		private readonly boots: BootService,
+		public readonly diagnostics: ResourceDiagnosticsService,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
 	) {
 		this.runtime = runtime;
@@ -382,18 +385,21 @@ export class RuntimeCartEditor implements CartEditor {
 		this.unsubscribeTextModelChanged = editorTextModelService.onDidChangeContent((model, event) => {
 			this.sceneEditor.onDidChangeContent(model, event);
 			this.behaviorLens.onDidChangeContent(model, event);
-			const context = findCodeTabContext(model.resource);
 			if (model.mode === 'lua') {
 				invalidateLuaCommentContextFromRow(model.buffer, event.startRow);
-			}
-			if (context !== null && model.mode === 'lua') {
-				markDiagnosticsDirty(context.id);
 			}
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 			if (activeCodeEditor.model === model && editorSearchState.query.length > 0) {
 				startSearchJob();
 			}
 		});
+		const publishDiagnostics = () => {
+			const active = getActiveCodeTabContext();
+			setActiveDiagnostics(active === null ? null : active.model, diagnostics.diagnostics);
+			problemsPanel.setDiagnostics(diagnostics.diagnostics, diagnostics.coverage);
+		};
+		this.unsubscribeDiagnosticsChanged = diagnostics.onDidChange(publishDiagnostics);
+		publishDiagnostics();
 	}
 
 	public get isActive(): boolean { return editorRuntimeState.active; }
@@ -414,6 +420,7 @@ export class RuntimeCartEditor implements CartEditor {
 		editorCaretState.blinkTimer = 0;
 		if (!wasActive) this.enterRenderTargets();
 		editorRuntimeState.active = true;
+		this.diagnostics.setEnabled(true);
 		this.overlayRenderer.active = true;
 		setEditorFeedbackActive(true);
 		editorPointerState.pointerSelecting = false;
@@ -499,7 +506,7 @@ export class RuntimeCartEditor implements CartEditor {
 		cancelGlobalSearchJob();
 		this.resetGlobalSearchView();
 		clearBackgroundTasks();
-		editorDiagnosticsState.diagnosticsTaskPending = false;
+		this.diagnostics.setEnabled(false);
 		editorRuntimeState.lastReportedSemanticError = null;
 		if (wasActive) this.leaveRenderTargets();
 		if (wasActive) for (const listener of this.activeListeners) listener(false);
@@ -551,13 +558,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.quickInput.update();
 		layoutContextMenu(this.contextMenu);
 		this.contextMenu.update();
-		if (editorDiagnosticsState.diagnosticsDirty) {
-			processDiagnosticsQueue(
-				this.luaTooling,
-				this.clock,
-				editorRuntimeState.currentTimeMs,
-			);
-		}
 	}
 
 	public updateViewport(viewport: Viewport): void {
@@ -589,6 +589,8 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public async shutdown(): Promise<void> {
+		this.diagnostics.dispose();
+		this.unsubscribeDiagnosticsChanged();
 		const executionDrained = this.hotResumes.shutdown();
 		const bootsDrained = this.boots.shutdown();
 		discardRuntimeDebuggerPlans(this.debuggerState);
@@ -625,6 +627,8 @@ export class RuntimeCartEditor implements CartEditor {
 				this.unsubscribeWorkspaceCursorMoved();
 				this.unsubscribeTextModelChanged();
 				editorTabGroup.clear();
+				resetSemanticProjects();
+				editorTextModelService.clear();
 			}
 		}
 		clearEditorPointerSelectionState();
@@ -657,7 +661,6 @@ export class RuntimeCartEditor implements CartEditor {
 				this.clock,
 				variant,
 				activeTab.context.model.mode,
-				activeTab.id,
 			);
 		} else {
 			configureFontVariant(this.clock, variant, null);
@@ -777,7 +780,7 @@ export class RuntimeCartEditor implements CartEditor {
 		applyLineJumpFieldText(lineJumpState.value, true);
 		this.completion.closeSession();
 		this.completion.enterCommitsCompletion = false;
-		problemsPanel.setDiagnostics(editorDiagnosticsState.diagnostics);
+		problemsPanel.setDiagnostics(this.diagnostics.diagnostics, this.diagnostics.coverage);
 		editorViewState.codeVerticalScrollbarVisible = false;
 		editorViewState.codeHorizontalScrollbarVisible = false;
 		editorViewState.cachedVisibleRowCount = 1;

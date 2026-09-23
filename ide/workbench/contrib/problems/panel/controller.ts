@@ -3,7 +3,7 @@ import type { EditorDiagnostic, PointerSnapshot } from '../../../../common/model
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { ScratchBuffer } from '../../../../../machine/ts/common/scratchbuffer';
 import * as constants from '../../../../common/constants';
-import { markAllDiagnosticsDirty } from '../../code_editor/diagnostics/analysis';
+import type { DiagnosticsCoverage } from '../../../services/diagnostics/resource_diagnostics';
 import { resetBlink } from '../../../../editor/render/caret';
 import {
 	clampProblemsPanelScrollIndex,
@@ -37,7 +37,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	public onPointerLeave(): void { this.hoverIndex = -1; }
 	private visible = false;
 	public readonly focusTarget = inputFocus.createTarget();
-	private diagnostics: EditorDiagnostic[] = EMPTY_DIAGNOSTICS;
+	private diagnostics: readonly EditorDiagnostic[] = EMPTY_DIAGNOSTICS;
 	private selectionIndex = -1;
 	private hoverIndex = -1;
 	private scrollIndex = 0;
@@ -47,6 +47,7 @@ export class ProblemsPanelController implements PointerHoverTarget {
 	private fixedHeightPx: number = null;
 	private lastAvailableWidth = 1;
 	private headerLabel = 'PROBLEMS (0)';
+	public emptyMessage = 'No resources checked.';
 
 	public get isVisible(): boolean {
 		return this.visible;
@@ -142,9 +143,13 @@ export class ProblemsPanelController implements PointerHoverTarget {
 		return writeProblemsPanelItemLayout(itemLayout, this.diagnostics[index], this.resolvePanelWidth(availableWidth));
 	}
 
-	public setDiagnostics(diagnostics: readonly EditorDiagnostic[]): void {
-		this.diagnostics = diagnostics as EditorDiagnostic[];
-		this.headerLabel = `PROBLEMS (${diagnostics.length})`;
+	public setDiagnostics(diagnostics: readonly EditorDiagnostic[], coverage: DiagnosticsCoverage): void {
+		this.diagnostics = diagnostics;
+		this.headerLabel = `PROBLEMS (${diagnostics.length}) / ${coverage.ready} CHECKED, ${coverage.pending} PENDING, ${coverage.unsupported} UNSUPPORTED, ${coverage.failed} FAILED`;
+		this.emptyMessage = coverage.failed > 0 ? 'Diagnostic computation failed.'
+			: coverage.pending > 0 ? 'Diagnostics pending.'
+				: coverage.ready === 0 ? 'No resources checked.'
+					: 'No problems in checked resources. Unopened files are not checked.';
 		this.itemLayouts.clear();
 		this.ensureSelectionValidity();
 		this.hoverIndex = -1;
@@ -267,8 +272,6 @@ export function toggleProblemsPanel(editorPanes: EditorPanes): void {
 
 export function showProblemsPanel(): void {
 	problemsPanel.show();
-	markAllDiagnosticsDirty();
-	// problemsPanel.setFocused(true);
 }
 
 export function hideProblemsPanel(editorPanes: EditorPanes): void {

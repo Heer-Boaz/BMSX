@@ -8,9 +8,7 @@ export function buildStatusLeftInfo(): string {
 			if (selection) {
 				const parts: string[] = [];
 				parts.push(`Ln ${selection.row + 1}, Col ${selection.startColumn + 1}`);
-				if (selection.path.length > 0) {
-					parts.push(selection.path);
-				}
+				parts.push(selection.model.identity.path);
 				return parts.join(' • ');
 			}
 		}

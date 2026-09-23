@@ -11,7 +11,6 @@ import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui
 import { splitText } from '../../machine/ts/common/text_lines';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import type { DiagnosticContextInput } from '../../ide/workbench/contrib/code_editor/diagnostics/analysis';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -56,7 +55,7 @@ const workspaceModulePromise = import('../../ide/editor/contrib/intellisense/sem
 const workspaceStateModulePromise = import('../../ide/editor/contrib/intellisense/semantic/workspace/state');
 const referenceNavigationModulePromise = import('../../ide/editor/contrib/references/lookup');
 const intellisenseEngineModulePromise = import('../../ide/editor/contrib/intellisense/engine');
-const editorDiagnosticsModulePromise = import('../../ide/workbench/contrib/code_editor/diagnostics/analysis');
+const editorDiagnosticsModulePromise = import('../../ide/workbench/services/diagnostics/lua');
 
 const EMPTY_ROM_PAYLOAD = createTestRuntimeRomPayload();
 const EMPTY_TOOLING_RUNTIME = createTestRuntime(EMPTY_ROM_PAYLOAD);
@@ -377,7 +376,7 @@ test('intellisense rejects host-published machine word globals', async () => {
 });
 
 test('editor diagnostics share one retained project snapshot across open documents', async () => {
-	const { computeAggregatedEditorDiagnostics } = await editorDiagnosticsModulePromise;
+	const { computeResourceDiagnostics } = await editorDiagnosticsModulePromise;
 	const { getOrCreateSemanticProject, resetSemanticProject } = await workspaceStateModulePromise;
 	const readerSource = 'return shared.value';
 	const declarationSource = 'shared = { value = 1 }';
@@ -386,76 +385,58 @@ test('editor diagnostics share one retained project snapshot across open documen
 		'declaration.lua': declarationSource,
 	});
 	resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
-	const contexts: DiagnosticContextInput[] = [
-		{
-			id: 'code:system\0reader.lua',
-			domain: SYSTEM_RESOURCE_DOMAIN,
-			path: 'reader.lua',
-			source: readerSource,
-			version: 1,
-		},
-		{
-			id: 'code:system\0declaration.lua',
-			domain: SYSTEM_RESOURCE_DOMAIN,
-			path: 'declaration.lua',
-			source: declarationSource,
-			version: 1,
-		},
-	];
+	const contexts = Object.entries({ 'reader.lua': readerSource, 'declaration.lua': declarationSource }).map(([path, source]) =>
+		new EditorTextModel({ domain: SYSTEM_RESOURCE_DOMAIN, path, source: { resid: path, type: 'lua' } }, 'lua', source));
 
-	const initial = computeAggregatedEditorDiagnostics(bridge, contexts);
+	const initial = computeResourceDiagnostics(bridge, contexts);
 	assert.ok(!initial.some(diagnostic => diagnostic.message.includes("'shared' is not defined")));
 	const project = getOrCreateSemanticProject(SYSTEM_RESOURCE_DOMAIN);
 	const initialSnapshot = project.getSnapshot();
 
-	computeAggregatedEditorDiagnostics(bridge, contexts);
+	computeResourceDiagnostics(bridge, contexts);
 	assert.equal(project.getSnapshot(), initialSnapshot, 'unchanged diagnostic pass retains the program snapshot');
 
-	contexts[1] = {
-		...contexts[1],
-		source: 'replacement = { value = 1 }',
-		version: 2,
-	};
-	const updated = computeAggregatedEditorDiagnostics(bridge, contexts);
+	contexts[1].pushEditOperations([{ offset: 0, deleteLength: contexts[1].buffer.length, text: 'replacement = { value = 1 }' }]);
+	const updated = computeResourceDiagnostics(bridge, contexts);
 	assert.ok(updated.some(diagnostic => diagnostic.message.includes("'shared' is not defined")));
 });
 
 test('diagnostics over more than 24 documents parse each generation once, including recovery', async t => {
-	const { computeAggregatedEditorDiagnostics } = await editorDiagnosticsModulePromise;
+	const { computeResourceDiagnostics } = await editorDiagnosticsModulePromise;
 	const { resetSemanticProject } = await workspaceStateModulePromise;
 	const files: Record<string, string> = {};
-	const contexts: DiagnosticContextInput[] = [];
+	const contexts: EditorTextModel[] = [];
 	for (let index = 0; index < 40; index++) {
 		const path = `document_${index}.lua`;
 		const source = `return ${index}`;
 		files[path] = source;
-		contexts.push({ id: `code:system\0${path}`, domain: SYSTEM_RESOURCE_DOMAIN, path, source, version: 1 });
+		contexts.push(new EditorTextModel({ domain: SYSTEM_RESOURCE_DOMAIN, path, source: { resid: path, type: 'lua' } }, 'lua', source));
 	}
 	const bridge = createIntellisenseBridge(files);
 	const project = resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
 	const parse = t.mock.method(LuaParser.prototype, 'parseChunkWithRecovery');
-	assert.deepEqual(computeAggregatedEditorDiagnostics(bridge, contexts), []);
+	assert.deepEqual(computeResourceDiagnostics(bridge, contexts), []);
 	assert.equal(parse.mock.callCount(), contexts.length);
 	const old = project.getSnapshot();
-	for (let pass = 0; pass < 3; pass++) assert.deepEqual(computeAggregatedEditorDiagnostics(bridge, contexts), []);
+	for (let pass = 0; pass < 3; pass++) assert.deepEqual(computeResourceDiagnostics(bridge, contexts), []);
 	assert.equal(parse.mock.callCount(), contexts.length, 'document lifetime, not cache capacity, determines reuse');
 	assert.equal(project.getSnapshot(), old);
-	contexts[0] = { ...contexts[0], source: 'local value =', version: 2 };
-	const diagnostics = computeAggregatedEditorDiagnostics(bridge, contexts);
+	contexts[0].pushEditOperations([{ offset: 0, deleteLength: contexts[0].buffer.length, text: 'local value =' }]);
+	const diagnostics = computeResourceDiagnostics(bridge, contexts);
 	assert.equal(diagnostics.length, 1);
-	assert.equal(diagnostics[0].path, contexts[0].path);
+	assert.equal(diagnostics[0].model, contexts[0]);
 	assert.equal(parse.mock.callCount(), contexts.length + 1);
-	const invalid = project.getFileData(contexts[0].path)!;
+	const invalid = project.getFileData(contexts[0].identity.path)!;
 	assert.equal(invalid.syntaxError, invalid.chunk.syntaxError);
-	assert.equal(invalid.chunk.source, contexts[0].source);
-	computeAggregatedEditorDiagnostics(bridge, contexts);
-	assert.equal(project.getFileData(contexts[0].path)!.chunk, invalid.chunk);
+	assert.equal(invalid.chunk.source, contexts[0].buffer.getText());
+	computeResourceDiagnostics(bridge, contexts);
+	assert.equal(project.getFileData(contexts[0].identity.path)!.chunk, invalid.chunk);
 	assert.equal(parse.mock.callCount(), contexts.length + 1, 'incomplete source is retained, not reparsed on each diagnostic read');
-	contexts[0] = { ...contexts[0], source: files[contexts[0].path], version: 3 };
-	assert.deepEqual(computeAggregatedEditorDiagnostics(bridge, contexts), []);
+	contexts[0].pushEditOperations([{ offset: 0, deleteLength: contexts[0].buffer.length, text: files[contexts[0].identity.path] }]);
+	assert.deepEqual(computeResourceDiagnostics(bridge, contexts), []);
 	assert.equal(parse.mock.callCount(), contexts.length + 2);
-	assert.equal(old.getFileData(contexts[0].path)!.chunk.source, contexts[0].source);
-	assert.equal(old.getFileData(contexts[0].path)!.syntaxError, null);
+	assert.equal(old.getFileData(contexts[0].identity.path)!.chunk.source, contexts[0].buffer.getText());
+	assert.equal(old.getFileData(contexts[0].identity.path)!.syntaxError, null);
 });
 
 test('static definition lookup preserves one-based source coordinates at an identifier boundary', async () => {

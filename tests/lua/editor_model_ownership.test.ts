@@ -4,15 +4,11 @@ import { test } from 'node:test';
 import type { CodeEditorViewSnapshot } from '../../ide/common/models';
 import { EditorEditStateType } from '../../ide/editor/model/edit_state';
 import type { RuntimeResource } from '../../ide/common/resource';
-import { editorDiagnosticsState } from '../../ide/editor/contrib/diagnostics/state';
 import {
 	EditorTextModel,
 	type EditorTextModelContentChangeEvent,
 } from '../../ide/editor/model/text_model';
-import {
-	EditorTextModelService,
-	editorTextModelService,
-} from '../../ide/editor/model/model_service';
+import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import {
 	codeEditorEditState,
 	ActiveCodeEditorState,
@@ -20,12 +16,10 @@ import {
 	createCodeEditorViewState,
 	type CodeEditorViewState,
 } from '../../ide/editor/ui/code_editor_state';
-import { collectDiagnosticsBatch } from '../../ide/workbench/contrib/code_editor/diagnostics/controller';
-import { CodeEditorInputManager, codeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
+import { CodeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
 import type { CodeTabContext } from '../../ide/workbench/ui/code_tab/model';
-import { EditorTabGroupModel, editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
+import { EditorTabGroupModel } from '../../ide/workbench/ui/tab/group_model';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
-import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
 import { clearBackgroundTasks, runBackgroundTasks } from '../../ide/common/background_tasks';
 import { startSearchJob } from '../../ide/workbench/contrib/code_editor/find/search';
 import { editorSearchState } from '../../ide/workbench/contrib/code_editor/find/widget_state';
@@ -393,42 +387,4 @@ test('a local search job cannot continue against another model with the same ver
 
 	assert.equal(editorSearchState.job, null);
 	assert.deepEqual(editorSearchState.matches, []);
-});
-
-test('diagnostics select a retained dirty input while a non-code input is active', (t) => {
-	editorTabGroup.clear();
-	codeEditorInputManager.clear();
-	editorTextModelService.clear();
-	editorDiagnosticsState.dirtyDiagnosticContexts.clear();
-	const resource = luaResource('background.lua');
-	const model = editorTextModelService.retain(resource, 'lua', 'return true');
-	model.pushEditOperations([{ offset: 11, deleteLength: 0, text: '!' }]);
-	const context = codeContext(model, createCodeEditorViewState());
-	const resourceTab = new ResourceViewerInput({
-			resource: {
-				domain: 0,
-				path: 'image.png',
-				source: {
-					resid: 'image',
-					type: 'image',
-					source_path: 'image.png',
-					generated: false,
-				},
-			},
-			lines: [],
-			error: '',
-			title: 'image.png',
-	});
-	assert.equal(resourceTab.isDirty(), false);
-	codeEditorInputManager.register(context);
-	editorTabGroup.initialize(resourceTab);
-	editorDiagnosticsState.dirtyDiagnosticContexts.add(context.id);
-	t.after(() => {
-		editorTabGroup.clear();
-		codeEditorInputManager.clear();
-		editorTextModelService.clear();
-		editorDiagnosticsState.dirtyDiagnosticContexts.clear();
-	});
-
-	assert.deepEqual(collectDiagnosticsBatch(), [context.id]);
 });

@@ -68,6 +68,7 @@ export class EditorTextModel {
 	private readonly dirtyChangeListeners = new Set<WorkingCopyListener>();
 	private readonly saveListeners = new Set<WorkingCopyListener>();
 	private readonly revertListeners = new Set<WorkingCopyListener>();
+	private readonly disposeListeners = new Set<WorkingCopyListener>();
 	private readonly trackedRangeSets = new Set<ReadonlyMap<unknown, TrackedTextRange>>();
 	private versionValue = 1;
 	private nextStateId = 1;
@@ -431,7 +432,14 @@ export class EditorTextModel {
 		}
 	}
 
+	public onWillDispose(listener: WorkingCopyListener): () => void {
+		this.disposeListeners.add(listener);
+		return () => this.disposeListeners.delete(listener);
+	}
+
 	public dispose(): void {
+		for (const listener of this.disposeListeners) listener();
+		this.disposeListeners.clear();
 		this.history.remove(this);
 		this.appliedChangesListeners.clear();
 		this.contentChangeListeners.clear();

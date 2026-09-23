@@ -69,6 +69,7 @@ export class WorkbenchSourceEditReview {
 		this.tree.textDirty = true;
 		this.layoutDirty = true;
 		lifetime.add({ dispose: input.model.onDidChangeContent(() => this.clear()) });
+		lifetime.add({ dispose: input.model.onWillDispose(() => this.clear()) });
 		this.focusTarget.focus();
 		return lifetime;
 	}

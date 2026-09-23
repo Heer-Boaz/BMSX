@@ -4,8 +4,8 @@ import type {
 } from '../../toolchain/ts/lua/semantic_contracts';
 import type { RuntimeResource } from './resource';
 import type { LuaMemberCompletionContext } from '../../toolchain/ts/lua/semantic/completion';
-import type { CodeEditorInputId } from './editor_context';
 import type { TextField } from '../editor/ui/inline/text_field_model';
+import type { EditorTextModel } from '../editor/model/text_model';
 export type { RuntimeResource } from './resource';
 
 export type Position = { row: number; column: number };
@@ -150,8 +150,8 @@ export type EditorDiagnostic = {
 	endColumn: number;
 	message: string;
 	severity: EditorDiagnosticSeverity;
-	contextId: CodeEditorInputId;
-	path: string;
+	readonly model: EditorTextModel;
+	readonly version: number;
 };
 
 export type VisualLineSegment = {
@@ -224,14 +224,6 @@ export type InlineInputOptions = {
 	singleLine?: boolean;
 	characterFilter?: (value: string) => boolean;
 	maxLength?: number;
-};
-
-export type DiagnosticsCacheEntry = {
-	contextId: CodeEditorInputId;
-	path: string;
-	diagnostics: EditorDiagnostic[];
-	version: number;
-	source: string;
 };
 
 export type SearchComputationJob = {

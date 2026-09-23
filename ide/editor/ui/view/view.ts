@@ -10,7 +10,6 @@ import {
 } from '../../../../machine/ts/render/video_output';
 import * as constants from '../../../common/constants';
 import { CodeLayout } from '../code/layout';
-import { markDiagnosticsDirty } from '../../contrib/diagnostics/state';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { editorPointerState } from '../../../input/pointer/state';
 import { editorCaretState } from './caret/state';
@@ -24,7 +23,6 @@ import {
 } from '../../common/text/layout';
 import { rewrapRuntimeErrorOverlays } from '../../../runtime_error/navigation';
 import type { InlineFieldMetrics } from '../inline/text_field';
-import type { CodeEditorInputId } from '../../../common/editor_context';
 
 function advanceInlineFieldChar(ch: string): number {
 	return editorViewState.font.advance(ch);
@@ -340,7 +338,6 @@ export function setFontVariant(
 	clock: HostClock,
 	variant: FontVariant,
 	activeDocumentMode: EditorDocumentMode,
-	activeContextId: CodeEditorInputId,
 ): void {
 	configureFontVariant(clock, variant, activeDocumentMode);
 	ensureVisualLines();
@@ -348,7 +345,6 @@ export function setFontVariant(
 	ensureCursorVisible();
 	rewrapRuntimeErrorOverlays();
 	requestSemanticRefresh();
-	markDiagnosticsDirty(activeContextId);
 }
 
 export function toggleWordWrap(): void {

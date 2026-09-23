@@ -21,6 +21,29 @@ Rules:
 - If a new module is mainly owned by one surface, place it with that surface even if other modules import it.
 - Prefer moving code to the real owner over adding wrapper layers or generic host/facade abstractions.
 
+## Resource diagnostics and document lifetime
+
+The workbench session owns `ResourceDiagnosticsService`, not code-editor inputs.
+It retains results for actual text-model identities and revisions. Lua queries
+use the shared incremental semantic projects, with one snapshot per affected
+domain. Model deltas and source-registry revisions invalidate dependent results;
+system globals affect both cartridges. Unopened source discovery also invalidates
+consumers. Retained working copies take precedence over saved/installed bases.
+
+Coverage distinguishes ready, pending, unsupported and failed resources. An
+unrequested resource has no result: it is not a successful empty analysis. The
+Problems panel and code squiggles only project these results. A Scene Editor or
+Behavior Lens working copy does not need a hidden code input to receive them.
+Diagnostic navigation opens the exact live model; closing a tab does not dispose
+its document. No per-frame diagnostic poller, parser or context capture exists.
+
+Shutdown cancels diagnostic timers/queued callbacks immediately, drains accepted
+source/execution operations and workspace persistence, then releases semantic
+projects and text models. `onWillDispose` retires source reviews. Shared history
+admits membership of every target before any pre-edit notification or mutation;
+matching resource paths and resettable version numbers cannot revive an edit
+proposal from a disposed workspace. See [resource context](../docs/studio_resource_context.md).
+
 ## Execution, view lifetime, and restored inspection
 
 Host execution is independent of editor focus. `hosts/common/execution_control.ts`

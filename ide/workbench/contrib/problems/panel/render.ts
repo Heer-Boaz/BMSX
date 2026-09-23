@@ -8,9 +8,8 @@ import type { PanelLayout } from './layout';
 import type { ProblemsPanelController } from './controller';
 import { editorViewState } from '../../../../editor/ui/view/state';
 
-const EMPTY_PROBLEMS_MESSAGE = 'No problems detected.';
-
-let emptyProblemsMessage = EMPTY_PROBLEMS_MESSAGE;
+let emptyProblemsMessage = '';
+let emptyProblemsSource = '';
 let emptyProblemsMessageWidth = 0;
 let emptyProblemsMessageFont: EditorFont = null;
 
@@ -23,11 +22,12 @@ function severityColor(severity: 'error' | 'warning'): number {
 	}
 }
 
-function getEmptyProblemsMessage(availableWidth: number): string {
-	if (emptyProblemsMessageWidth !== availableWidth || emptyProblemsMessageFont !== editorViewState.font) {
+function getEmptyProblemsMessage(source: string, availableWidth: number): string {
+	if (emptyProblemsSource !== source || emptyProblemsMessageWidth !== availableWidth || emptyProblemsMessageFont !== editorViewState.font) {
+		emptyProblemsSource = source;
 		emptyProblemsMessageWidth = availableWidth;
 		emptyProblemsMessageFont = editorViewState.font;
-		emptyProblemsMessage = truncateTextToWidth(EMPTY_PROBLEMS_MESSAGE, availableWidth);
+		emptyProblemsMessage = truncateTextToWidth(source, availableWidth);
 	}
 	return emptyProblemsMessage;
 }
@@ -57,7 +57,7 @@ export function drawProblemsPanelSurface(
 
 	api.pushClipRect(bounds.left, layout.contentTop, bounds.right, layout.contentBottom);
 	if (diagnostics.length === 0) {
-		drawEditorText(editorViewState.font, getEmptyProblemsMessage(availableWidth), contentLeft, layout.contentTop, 0, constants.COLOR_PROBLEMS_PANEL_TEXT);
+		drawEditorText(editorViewState.font, getEmptyProblemsMessage(controller.emptyMessage, availableWidth), contentLeft, layout.contentTop, 0, constants.COLOR_PROBLEMS_PANEL_TEXT);
 	}
 
 	let cursorY = layout.contentTop;

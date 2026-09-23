@@ -26,6 +26,8 @@ import type { TestTargetFactory } from '../testing/target';
 import { TextFileSaveService } from './services/working_copy/text_file_save';
 import { HotResumeService } from './services/execution/hot_resume';
 import { BootService } from './services/execution/boot';
+import { ResourceDiagnosticsService } from './services/diagnostics/resource_diagnostics';
+import { editorTextModelService } from '../editor/model/model_service';
 import type { WorkspaceRecord } from '../workspace/records';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io';
 import { syncRuntimeSourceActivity } from '../runtime/sources';
@@ -47,6 +49,7 @@ export class RuntimeIdeState {
 	public readonly textFileSaves: TextFileSaveService;
 	public readonly hotResumes: HotResumeService;
 	public readonly boots: BootService;
+	public readonly diagnostics: ResourceDiagnosticsService;
 	public readonly fault: RuntimeFaultState = createRuntimeFaultState();
 
 	public constructor(
@@ -83,6 +86,7 @@ export class RuntimeIdeState {
 			input, runtime, runtimeTasks, storage, workspaceDirtyRecords);
 		this.boots = new BootService(sources, this.luaTooling, this.fault, runtime, runtimeTasks,
 			execution, audioOutput, storage, workspaceDirtyRecords);
+		this.diagnostics = new ResourceDiagnosticsService(editorTextModelService, this.luaTooling, clock);
 		this.editor = new RuntimeCartEditor(
 			runtime,
 			presenter,
@@ -109,6 +113,7 @@ export class RuntimeIdeState {
 			this.textFileSaves,
 			this.hotResumes,
 			this.boots,
+			this.diagnostics,
 			createGraphLayoutEngine,
 		);
 		this.overlayRenderer.setViewportSize(viewport);

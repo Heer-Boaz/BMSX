@@ -50,6 +50,7 @@ import { clearReferenceHighlights, requestSemanticRefresh } from '../../../edito
 import { CodeEditorNavigationSelection } from './navigation_selection';
 import { closeSearch } from './find/search';
 import { closeLineJump } from './find/line_jump';
+import { setActiveDiagnostics } from '../../../editor/contrib/diagnostics/state';
 
 const CODE_SCROLLBARS = ['codeVertical', 'codeHorizontal'] as const;
 
@@ -97,6 +98,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		this.editor.resourcePanel.hide();
 		editorChromeState.resourcePanelResizing = false;
 		activateCodeEditorTab(this.input, selection, navigationSelection);
+		setActiveDiagnostics(this.input.context.model, this.editor.diagnostics.diagnostics);
 		this.unsubscribeContentChange = this.input.context.model.onDidChangeContent(event => {
 			editorViewState.layout.onDidChangeContent(this.input.context.model.buffer, event);
 			editorViewState.maxLineLengthDirty = true;
@@ -121,6 +123,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		this.unsubscribeContentChange();
 		storeCodeTabContext(this.input.context);
 		activeCodeEditor.detach();
+		setActiveDiagnostics(null, []);
 		super.clearInput();
 	}
 

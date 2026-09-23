@@ -490,10 +490,10 @@ test('queued edits for multiple models publish one workspace batch and full-sour
 	assert.equal(project.getFileData('left.lua')!.source, 'return 4', 'model deltas are not applied to an explicit replacement baseline');
 });
 
-test('diagnostics distinguish model-buffer analysis from explicit source input', async t => {
+test('diagnostics consume model deltas without replacing incremental baselines with explicit strings', async t => {
 	const { editorTextModelService } = await import('../../ide/editor/model/model_service');
 	const { resetSemanticProject, resetSemanticProjects } = await import('../../ide/editor/contrib/intellisense/semantic/workspace/state');
-	const { computeAggregatedEditorDiagnostics } = await import('../../ide/workbench/contrib/code_editor/diagnostics/analysis');
+	const { computeResourceDiagnostics } = await import('../../ide/workbench/services/diagnostics/lua');
 	const { RuntimeLuaTooling } = await import('../../ide/runtime/lua_tooling');
 	const { SuspendedGuestSession } = await import('../../ide/runtime/suspended_guest');
 	const { createTestRuntime, createTestRuntimeRomPayload } = await import('../helpers/runtime_sources');
@@ -509,11 +509,11 @@ test('diagnostics distinguish model-buffer analysis from explicit source input',
 	const retained = before.chunk.tokens.get(before.chunk.tokens.length - 2);
 	const explicit = t.mock.method(project, 'updateDocuments');
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- diagnostics\n' }]);
-	computeAggregatedEditorDiagnostics(bridge, [{ id: `code:0\0${path}`, domain: 0, path, buffer: model.buffer, version: model.version }]);
+	computeResourceDiagnostics(bridge, [model]);
 	assert.equal(explicit.mock.callCount(), 0);
 	assert.ok(Array.from(project.getFileData(path)!.chunk.tokens).includes(retained));
-	computeAggregatedEditorDiagnostics(bridge, [{ id: `code:0\0${path}`, domain: 0, path, source: model.buffer.getText(), version: model.version }]);
-	assert.equal(explicit.mock.callCount(), 1, 'explicit source diagnostics remain a distinct full-source input mode');
+	computeResourceDiagnostics(bridge, [model]);
+	assert.equal(explicit.mock.callCount(), 0, 'repeated diagnostics preserve the model-owned baseline');
 });
 
 test('scheduled syntax highlighting consumes current model deltas and invalidates a superseded request', async t => {

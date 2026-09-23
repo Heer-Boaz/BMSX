@@ -280,3 +280,19 @@ tests-project diagnostics and broad behavior-source fixture debt remain visible.
 **Gate 3's scoped operation/source-result work is implemented.** Gates 4 and 5
 remain open. Codex integration is not yet admitted; resource/context lifetime and
 platform security do not follow from successful Save/Reboot operations.
+
+### Gate 4a: resource diagnostics and document disposal
+
+The session-owned diagnostics service now covers working copies independently
+of code tabs, retaining exact model/revision results and explicit missing,
+pending, unsupported and failed coverage. Source-registry/model events retire
+dependent results, including unchanged consumers. Shared history rejects foreign
+or disposed models before any source invalidation; reviews observe document
+disposal. Shutdown releases model/semantic owners after persistence drains.
+
+[Resource context evidence](studio_resource_context.md) records 2290 Lua passes
+(1 skip), 158 ROM passes, green product typechecks/builds, zero architecture
+issues, real visual-only diagnostics/Problems/navigation/Undo/shutdown browser
+evidence, cold session reload and rebuilt Node operation regressions. The
+tests-project baseline remains 112 diagnostics. General multi-file review and
+the platform/security gate remain open; no agent integration is admitted yet.

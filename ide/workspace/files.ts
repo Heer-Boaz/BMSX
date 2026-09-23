@@ -1,4 +1,4 @@
-import type { LuaSourceRecord, LuaSourceRegistry } from '../runtime/source_registry';
+import { advanceLuaSourceRevision, type LuaSourceRecord, type LuaSourceRegistry } from '../runtime/source_registry';
 import type { HostClock } from '../../hosts/common/clock';
 import type { KeyValueStorage } from './key_value_storage';
 import {
@@ -108,7 +108,6 @@ export async function applyWorkspaceSourceOverrides(params: {
 	const rejectedDirtyPaths = new Set<string>();
 	const registry = params.registry;
 	const root = params.projectRootPath;
-	const revision = registry.revision;
 	const records = registry.records;
 	const canonicalPaths = new Array<string>(records.length);
 	const canonicalRecords = new Array<WorkspaceRecord | null>(records.length);
@@ -187,8 +186,6 @@ export async function applyWorkspaceSourceOverrides(params: {
 		}
 	}
 
-	if (changed && registry.revision === revision) {
-		registry.revision += 1;
-	}
+	if (changed) advanceLuaSourceRevision(registry);
 	return { rejectedDirtyPaths, programChanged };
 }

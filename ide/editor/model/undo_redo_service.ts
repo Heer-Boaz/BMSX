@@ -13,8 +13,8 @@ export type EditorHistoryDirection = 'undo' | 'redo';
 
 /** A proposal outlived its source generation, or now includes a read-only source. */
 export class EditorWorkspaceEditConflict extends Error {
-	public constructor(model: EditorTextModel) {
-		super(`Source edit cancelled: ${model.resource.path} ${model.readOnly ? 'is read-only' : 'changed since the proposal was made'}.`);
+	public constructor(model: EditorTextModel, reason = model.readOnly ? 'is read-only' : 'changed since the proposal was made') {
+		super(`Source edit cancelled: ${model.resource.path} ${reason}.`);
 	}
 }
 
@@ -66,6 +66,7 @@ export class EditorUndoRedoService {
 	public applyEdits(edits: ReadonlyMap<EditorTextModel, EditorModelEdit>): void {
 		const participants = [...edits].filter(([, edit]) => edit.edits.length > 0);
 		for (const [model, { version }] of participants) {
+			if (!this.stacks.has(model)) throw new EditorWorkspaceEditConflict(model, 'no longer belongs to this workspace');
 			if (model.version !== version || model.readOnly) throw new EditorWorkspaceEditConflict(model);
 		}
 		if (participants.length === 0) return;
