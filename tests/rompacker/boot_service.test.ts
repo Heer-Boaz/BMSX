@@ -21,7 +21,7 @@ import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { BootService } from '../../ide/workbench/services/execution/boot';
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
-import { editorTextModelService } from '../../ide/editor/model/model_service';
+import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
 
 async function fixture(t: TestContext) {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-boot-'));
@@ -38,14 +38,17 @@ async function fixture(t: TestContext) {
 	const execution = new HostExecutionControl(audio);
 	const tasks = new RuntimeTaskQueue(audio, target.presenter);
 	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
-	const service = new BootService(sources, tooling, createRuntimeFaultState(), runtime,
+	const models = new EditorTextModelService();
+	const service = new BootService(models, sources, tooling, createRuntimeFaultState(), runtime,
 		tasks, execution, audio, new MemoryStorage(), new Map());
 	let resets = 0;
 	runtime.onStateReset = () => { resets++; service.didReplaceMachine(); };
-	const model = editorTextModelService.retain({ domain: 0, path: 'entry.lua', source: { resid: 'entry', type: 'lua' } }, 'lua', source);
+	const model = models.retain({ domain: 0, path: 'entry.lua', source: { resid: 'entry', type: 'lua' } }, 'lua', source);
+	// Same resource/version in a different document owner must not enter this build.
+	editorTextModelService.retain(model.resource, 'lua', 'end end -- foreign workspace');
 	t.after(async () => {
 		await service.shutdown();
-		editorTextModelService.clear();
+		models.clear(); editorTextModelService.clear();
 		clearWorkspaceSourceCaches();
 		target.dispose();
 		await rm(directory, { recursive: true, force: true });

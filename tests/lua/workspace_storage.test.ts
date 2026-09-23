@@ -1710,7 +1710,7 @@ test('YAML dirty session recovery restores exact unsaved source into a fresh wor
 	assert.equal(await resolveTextFileModel(editorTextModelService, storage, sources, resource), restored);
 	assert.equal(readLocalWorkspaceRecord(storage, 'offline-cart', canonicalPath)!.contents, original);
 	assert.equal(getTextFileRuntimeSourceStatus(sources, restored), 'untracked');
-	assert.deepEqual(captureLuaTextModelSources(sources), []);
+	assert.deepEqual(captureLuaTextModelSources(editorTextModelService, sources), []);
 });
 
 test('workspace override arbitration keeps dirty and canonical namespaces separate', async (t) => {
@@ -1777,7 +1777,7 @@ test('runtime source capture reads the resource model independently of the activ
 	const context = installCodeContext('src/foo.lua', '-- tab buffer');
 	const codeTab = createCodeEditorInput(context);
 	editorTabGroup.initialize(codeTab);
-	assert.equal(captureCurrentLuaSource(sources, context.model.resource).source, '-- tab buffer');
+	assert.equal(captureCurrentLuaSource(editorTextModelService, sources, context.model.resource).source, '-- tab buffer');
 	const resource = testResource('image.png', TEST_DOMAIN, 'image');
 	const resourceTab = new ResourceViewerInput({
 			resource,
@@ -1787,7 +1787,7 @@ test('runtime source capture reads the resource model independently of the activ
 	});
 	editorTabGroup.add(resourceTab);
 	editorTabGroup.activate(resourceTab);
-	assert.equal(captureCurrentLuaSource(sources, context.model.resource).source, '-- tab buffer');
+	assert.equal(captureCurrentLuaSource(editorTextModelService, sources, context.model.resource).source, '-- tab buffer');
 });
 
 test('runtime source capture retains documents whose buffer differs from installed media', (t) => {
@@ -1797,7 +1797,7 @@ test('runtime source capture retains documents whose buffer differs from install
 	const registry = sourceRegistry('-- revision 2', 'offline-cart', 'src/foo.lua');
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- system source'), [registry, null], TEST_DOMAIN);
 	sources.cartridgeSlots[TEST_DOMAIN]!.installedBlua32Sources = new Map([['src.foo', '-- revision 1']]);
-	assert.deepEqual(captureLuaTextModelSources(sources), [{
+	assert.deepEqual(captureLuaTextModelSources(editorTextModelService, sources), [{
 		version: context.model.version,
 		stateId: context.model.createSnapshot().stateId,
 		domain: TEST_DOMAIN,
@@ -1818,7 +1818,7 @@ test('runtime source capture excludes source-only Lua documents', (t) => {
 		TEST_DOMAIN,
 	);
 
-	assert.deepEqual(captureLuaTextModelSources(sources), []);
+	assert.deepEqual(captureLuaTextModelSources(editorTextModelService, sources), []);
 	assert.equal(getTextFileRuntimeSourceStatus(sources, editorTextModelService.get({ domain: TEST_DOMAIN, path: 'tests/example_assert.lua' })!), 'source_only');
 });
 
@@ -1828,7 +1828,7 @@ test('captured program documents remain authoritative over a later workspace ref
 	const context = installCodeContext('src/foo.lua', '-- installed source');
 	const registry = sourceRegistry('-- installed source', 'offline-cart', 'src/foo.lua');
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- system source'), [registry, null], TEST_DOMAIN);
-	const snapshots = captureLuaTextModelSources(sources);
+	const snapshots = captureLuaTextModelSources(editorTextModelService, sources);
 	assert.equal(snapshots.length, 1, 'unchanged open models must also pin the request source');
 	applyLuaTextModelSources(sources, snapshots);
 	assert.equal(sources.cartridgeBlua32MediaDirty[TEST_DOMAIN], false, 'unchanged input must not request a rebuild');
@@ -1869,7 +1869,7 @@ test('installed source status follows actual media rather than model epochs or s
 	assert.equal(model.dirty, false);
 	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending');
 
-	const captured = captureLuaTextModelSources(sources);
+	const captured = captureLuaTextModelSources(editorTextModelService, sources);
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n-- newer edit' }]);
 	sources.cartridgeSlots[TEST_DOMAIN]!.installedBlua32Sources = new Map([['src.foo', captured[0].source]]);
 	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending');
@@ -2087,7 +2087,7 @@ test('YAML data opens one authored working copy with shared edit history and no 
 	assert.equal(project.getSnapshot(), semanticSnapshot, 'YAML edits do not invalidate Lua semantics');
 	assert.equal(registry.revision, registryRevision);
 	assert.equal(registry.records.length, 1);
-	assert.deepEqual(captureLuaTextModelSources(sources), []);
+	assert.deepEqual(captureLuaTextModelSources(editorTextModelService, sources), []);
 	assert.equal(sources.cartridgeBlua32MediaDirty[0], false);
 });
 

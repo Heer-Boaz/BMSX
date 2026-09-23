@@ -478,3 +478,26 @@ races, known rejection and late acknowledgements have separate owner tests. See
 the [contribution contract](studio_assistant_contribution.md#owners-and-lifetimes)
 for semantics and evidence; this is still offline, automated evidence rather than
 paid-model or personal-account verification.
+
+### Execution capture uses the actual document owner
+
+Before extending execution context, two regressions reproduced source capture
+reading an unrelated global working copy at the same resource identity/version.
+The shared Lua capture functions now require their `EditorTextModelService`;
+Hot Resume/Reboot retain it explicitly, and Scenario Lab's ordinary discovery/run
+capture passes the same owner. This fixes the producer, not a Codex-only filter.
+The existing 20 physical-media Hot Resume/Reboot service tests now use private
+document owners while an invalid foreign global `entry.lua` remains open.
+The unopened-source case also proves that a foreign model cannot shadow the
+workspace's own source record. Source snapshots, history and guest scheduling
+keep their existing representations; no new hot-path work was introduced.
+Validation: Lua **2367 passed, 1 skipped**, ROM packer **158 passed**; actual
+Hot Resume, Reboot and isolated-test browser workflows pass on software, WebGL2
+and WebGPU (nine workflows). Product typechecks and the architecture audit pass
+(zero issues); the tests-project typecheck retains 96 pre-existing diagnostics.
+These are automated owner/runtime/browser checks, not UI-only authoring.
+
+Reference: VS Code's pinned
+[text-file save owner](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/services/textfile/common/textFileEditorModel.ts#L926-L962)
+captures from the resolved model and admits completion against that model's
+version, rather than treating a matching path as document identity.

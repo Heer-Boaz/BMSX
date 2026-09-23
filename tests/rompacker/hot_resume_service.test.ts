@@ -22,7 +22,7 @@ import { createRuntimeDebuggerState, discardRuntimeDebuggerPlans } from '../../i
 import { HotResumeService } from '../../ide/workbench/services/execution/hot_resume';
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
-import { editorTextModelService } from '../../ide/editor/model/model_service';
+import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
 
 async function fixture(t: TestContext, init = '') {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-hot-resume-'));
@@ -41,13 +41,16 @@ async function fixture(t: TestContext, init = '') {
 	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
 	const debuggerState = createRuntimeDebuggerState(runtime, sources);
 	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput, target.presenter);
-	const service = new HotResumeService(sources, tooling, createRuntimeFaultState(), debuggerState,
+	const models = new EditorTextModelService();
+	const service = new HotResumeService(models, sources, tooling, createRuntimeFaultState(), debuggerState,
 		input, runtime, tasks, new MemoryStorage(), new Map());
-	const model = editorTextModelService.retain({ domain: 0, path: 'entry.lua', source: { resid: 'entry', type: 'lua' } }, 'lua', source);
+	const model = models.retain({ domain: 0, path: 'entry.lua', source: { resid: 'entry', type: 'lua' } }, 'lua', source);
+	// Same resource/version in a different document owner must not enter this build.
+	editorTextModelService.retain(model.resource, 'lua', 'end end -- foreign workspace');
 	t.after(async () => {
 		await service.shutdown();
 		discardRuntimeDebuggerPlans(debuggerState);
-		editorTextModelService.clear();
+		models.clear(); editorTextModelService.clear();
 		clearWorkspaceSourceCaches();
 		target.dispose();
 		await rm(directory, { recursive: true, force: true });

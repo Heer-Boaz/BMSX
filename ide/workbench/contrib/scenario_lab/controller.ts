@@ -77,7 +77,7 @@ export class ScenarioLabController {
 		if (!this.sourcesDirty && !membershipChanged) return;
 		for (const root of this.collection.roots) {
 			for (const module of root.children) {
-				const snapshot = captureCurrentLuaSource(this.sources, module.resource);
+				const snapshot = captureCurrentLuaSource(editorTextModelService, this.sources, module.resource);
 				this.collection.updateSource(module, snapshot.source, snapshot.revision);
 			}
 		}
@@ -243,14 +243,14 @@ export class ScenarioLabController {
 		const testSources = new Array<ScenarioRunTestSource>(tests.length);
 		for (let index = 0; index < tests.length; index += 1) {
 			const test = tests[index];
-			const snapshot = captureCurrentLuaSource(this.sources, test.resource);
+			const snapshot = captureCurrentLuaSource(editorTextModelService, this.sources, test.resource);
 			testSources[index] = {
 				test,
 				source: snapshot.source,
 				sourceRevision: snapshot.revision,
 			};
 		}
-		const programSources = captureLuaTextModelSources(this.sources, true);
+		const programSources = captureLuaTextModelSources(editorTextModelService, this.sources, true);
 		view.runActive = true;
 		updateScenarioLabStatus(view);
 		void this.runs.start(

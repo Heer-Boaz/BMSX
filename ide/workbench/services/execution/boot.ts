@@ -1,4 +1,5 @@
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { HostAudioOutput } from '../../../../hosts/common/audio_output';
 import { HostPauseReason, type HostExecutionControl } from '../../../../hosts/common/execution_control';
 import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
@@ -66,6 +67,7 @@ export class BootService {
 	private closing = false;
 
 	public constructor(
+		private readonly models: EditorTextModelService,
 		private readonly sources: RuntimeSourceState,
 		private readonly tooling: RuntimeLuaTooling,
 		private readonly fault: RuntimeFaultState,
@@ -124,7 +126,7 @@ export class BootService {
 	private accept(kind: BootOperation['kind'], entry?: Blua32CartridgeEntry): PendingBoot {
 		if (this.closing) throw new Error('Cannot boot after workbench shutdown has started.');
 		this.cancelPending('superseded');
-		const operation = new PendingBoot(kind, captureLuaTextModelSources(this.sources),
+		const operation = new PendingBoot(kind, captureLuaTextModelSources(this.models, this.sources),
 			entry === undefined ? undefined : { ...entry });
 		this.latest = operation;
 		return operation;

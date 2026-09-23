@@ -1,4 +1,5 @@
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { Input } from '../../../../hosts/common/input/manager';
 import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
 import type { RuntimeSourceState } from '../../../runtime/sources';
@@ -75,6 +76,7 @@ export class HotResumeService {
 	private closing = false;
 
 	public constructor(
+		private readonly models: EditorTextModelService,
 		private readonly sources: RuntimeSourceState,
 		private readonly tooling: RuntimeLuaTooling,
 		private readonly fault: RuntimeFaultState,
@@ -91,7 +93,7 @@ export class HotResumeService {
 
 	public resume(): HotResumeOperation {
 		if (this.closing) throw new Error('Cannot Hot Resume after workbench shutdown has started.');
-		const operation = new PendingHotResume(captureLuaTextModelSources(this.sources));
+		const operation = new PendingHotResume(captureLuaTextModelSources(this.models, this.sources));
 		this.latest = operation;
 		this.pending.add(operation);
 		void operation.completion.then(() => this.pending.delete(operation));

@@ -59,6 +59,13 @@ toast from an earlier request on screen.
 
 ## Representation and performance boundary
 
+Source capture takes the concrete document owner explicitly. Hot Resume and
+Reboot receive that owner at composition, and Scenario Lab passes its own owner
+to the same capture functions. Matching path/version numbers in another model
+service cannot supply the accepted source. An unopened source resolves from its
+own workspace record, not an unrelated open global document. No process/tool
+adapter chooses a document owner after asynchronous admission.
+
 Source snapshots and operation outcomes remain IDE data. The IDE observes the
 existing `Thread`, its physical completion-root
 frames, execution domains/PCs and raw supervisor sequence. The CPU owns all of

@@ -1,5 +1,5 @@
 import type { ResourceIdentity } from '../../../common/resource';
-import { editorTextModelService } from '../../../editor/model/model_service';
+import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModelSnapshot } from '../../../editor/model/text_model';
 import { getTextSnapshot } from '../../../editor/text/source_text';
 import { resolveRuntimeLuaSource, type RuntimeSourceState } from '../../../runtime/sources';
@@ -13,8 +13,8 @@ export type CurrentLuaSourceSnapshot = {
 };
 
 /** Reads the retained document, including source-only tests, or its workspace record. */
-export function captureCurrentLuaSource(sources: RuntimeSourceState, resource: ResourceIdentity): CurrentLuaSourceSnapshot {
-	const model = editorTextModelService.get(resource);
+export function captureCurrentLuaSource(models: EditorTextModelService, sources: RuntimeSourceState, resource: ResourceIdentity): CurrentLuaSourceSnapshot {
+	const model = models.get(resource);
 	if (model !== undefined) {
 		return { source: getTextSnapshot(model.buffer), revision: model.version };
 	}
@@ -26,9 +26,9 @@ export function captureCurrentLuaSource(sources: RuntimeSourceState, resource: R
 }
 
 /** Pins all retained program documents before asynchronous workspace/build work. */
-export function captureLuaTextModelSources(sources: RuntimeSourceState, includeSourceOnly = false): LuaTextModelSourceSnapshot[] {
+export function captureLuaTextModelSources(models: EditorTextModelService, sources: RuntimeSourceState, includeSourceOnly = false): LuaTextModelSourceSnapshot[] {
 	const snapshots: LuaTextModelSourceSnapshot[] = [];
-	for (const model of editorTextModelService.models) {
+	for (const model of models.models) {
 		if (model.mode !== 'lua' || model.readOnly || (!includeSourceOnly && !resolveRuntimeLuaSource(sources, model.resource)!.record.program_module)) {
 			continue;
 		}
