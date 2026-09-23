@@ -1,3 +1,4 @@
+import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { readActorMethods } from '../../ide/workbench/contrib/actor_lab/methods';
 import { ActorTimelineTransport } from '../../ide/workbench/contrib/actor_lab/timeline';
 import type { ActorNode } from '../../ide/workbench/contrib/actor_lab/runtime';
@@ -384,20 +385,20 @@ test('editor diagnostics share one retained project snapshot across open documen
 		'reader.lua': readerSource,
 		'declaration.lua': declarationSource,
 	});
-	resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
+	resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
 	const contexts = Object.entries({ 'reader.lua': readerSource, 'declaration.lua': declarationSource }).map(([path, source]) =>
 		new EditorTextModel({ domain: SYSTEM_RESOURCE_DOMAIN, path, source: { resid: path, type: 'lua' } }, 'lua', source));
 
-	const initial = computeResourceDiagnostics(bridge, contexts);
+	const initial = computeResourceDiagnostics(editorTextModelService, bridge, contexts);
 	assert.ok(!initial.some(diagnostic => diagnostic.message.includes("'shared' is not defined")));
-	const project = getOrCreateSemanticProject(SYSTEM_RESOURCE_DOMAIN);
+	const project = getOrCreateSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
 	const initialSnapshot = project.getSnapshot();
 
-	computeResourceDiagnostics(bridge, contexts);
+	computeResourceDiagnostics(editorTextModelService, bridge, contexts);
 	assert.equal(project.getSnapshot(), initialSnapshot, 'unchanged diagnostic pass retains the program snapshot');
 
 	contexts[1].pushEditOperations([{ offset: 0, deleteLength: contexts[1].buffer.length, text: 'replacement = { value = 1 }' }]);
-	const updated = computeResourceDiagnostics(bridge, contexts);
+	const updated = computeResourceDiagnostics(editorTextModelService, bridge, contexts);
 	assert.ok(updated.some(diagnostic => diagnostic.message.includes("'shared' is not defined")));
 });
 
@@ -413,27 +414,27 @@ test('diagnostics over more than 24 documents parse each generation once, includ
 		contexts.push(new EditorTextModel({ domain: SYSTEM_RESOURCE_DOMAIN, path, source: { resid: path, type: 'lua' } }, 'lua', source));
 	}
 	const bridge = createIntellisenseBridge(files);
-	const project = resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
+	const project = resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
 	const parse = t.mock.method(LuaParser.prototype, 'parseChunkWithRecovery');
-	assert.deepEqual(computeResourceDiagnostics(bridge, contexts), []);
+	assert.deepEqual(computeResourceDiagnostics(editorTextModelService, bridge, contexts), []);
 	assert.equal(parse.mock.callCount(), contexts.length);
 	const old = project.getSnapshot();
-	for (let pass = 0; pass < 3; pass++) assert.deepEqual(computeResourceDiagnostics(bridge, contexts), []);
+	for (let pass = 0; pass < 3; pass++) assert.deepEqual(computeResourceDiagnostics(editorTextModelService, bridge, contexts), []);
 	assert.equal(parse.mock.callCount(), contexts.length, 'document lifetime, not cache capacity, determines reuse');
 	assert.equal(project.getSnapshot(), old);
 	contexts[0].pushEditOperations([{ offset: 0, deleteLength: contexts[0].buffer.length, text: 'local value =' }]);
-	const diagnostics = computeResourceDiagnostics(bridge, contexts);
+	const diagnostics = computeResourceDiagnostics(editorTextModelService, bridge, contexts);
 	assert.equal(diagnostics.length, 1);
 	assert.equal(diagnostics[0].model, contexts[0]);
 	assert.equal(parse.mock.callCount(), contexts.length + 1);
 	const invalid = project.getFileData(contexts[0].identity.path)!;
 	assert.equal(invalid.syntaxError, invalid.chunk.syntaxError);
 	assert.equal(invalid.chunk.source, contexts[0].buffer.getText());
-	computeResourceDiagnostics(bridge, contexts);
+	computeResourceDiagnostics(editorTextModelService, bridge, contexts);
 	assert.equal(project.getFileData(contexts[0].identity.path)!.chunk, invalid.chunk);
 	assert.equal(parse.mock.callCount(), contexts.length + 1, 'incomplete source is retained, not reparsed on each diagnostic read');
 	contexts[0].pushEditOperations([{ offset: 0, deleteLength: contexts[0].buffer.length, text: files[contexts[0].identity.path] }]);
-	assert.deepEqual(computeResourceDiagnostics(bridge, contexts), []);
+	assert.deepEqual(computeResourceDiagnostics(editorTextModelService, bridge, contexts), []);
 	assert.equal(parse.mock.callCount(), contexts.length + 2);
 	assert.equal(old.getFileData(contexts[0].identity.path)!.chunk.source, contexts[0].buffer.getText());
 	assert.equal(old.getFileData(contexts[0].identity.path)!.syntaxError, null);
@@ -448,7 +449,7 @@ test('static definition lookup preserves one-based source coordinates at an iden
 	].join('\n');
 	const usageLine = source.split('\n')[1];
 	const usageColumn = usageLine.indexOf('target') + 'target'.length;
-	resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
+	resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
 
 	const location = findStaticDefinitionLocation(
 		createIntellisenseBridge({ 'main.lua': source }),
@@ -1148,7 +1149,7 @@ test('reference lookup resolves global definition across paths', async () => {
 	workspace.updateFile('global.lua', globalSource);
 
 	const usageLines = usageSource.split('\n');
-	resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
+	resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
 
 	const stateRow = usageLines.findIndex(line => line.includes('print(state'));
 	assert.ok(stateRow >= 0);
@@ -1193,7 +1194,7 @@ test('reference lookup retains all definitions of a value alternative', async ()
 	const lines = source.split('\n');
 	const cursorRow = 7;
 	const cursorColumn = lines[cursorRow]!.indexOf('run');
-	resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
+	resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
 
 	const result = resolveReferenceLookup(createIntellisenseBridge(), {
 		buffer: new PieceTreeBuffer(source),
@@ -1232,7 +1233,7 @@ test('reference lookup prefers local parameter over global', async () => {
 	workspace.updateFile('global.lua', globalSource);
 
 	const usageLines = usageSource.split('\n');
-	resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
+	resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
 
 	const helperLineIndex = usageLines.findIndex(line => line.includes('helper'));
 	assert.ok(helperLineIndex >= 0);
@@ -1276,7 +1277,7 @@ test('context tokens ignore retained comment trivia and resolve declaration name
 	const path = 'comment_context.lua';
 	const model = new EditorTextModel({ domain: SYSTEM_RESOURCE_DOMAIN, path,
 		source: { resid: path, type: 'lua', source_path: path, generated: false } }, 'lua', source);
-	resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
+	resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
 	activeCodeEditor.attach(model, createCodeEditorViewState());
 	context.after(() => { activeCodeEditor.detach(); model.dispose(); });
 	assert.equal(resolveContextMenuToken(0, 0, path)?.text, 'actual_name');

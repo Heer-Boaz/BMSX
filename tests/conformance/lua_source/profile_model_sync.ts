@@ -7,7 +7,7 @@ import { createTestRuntimeSourceState } from '../../helpers/runtime_sources';
 import { medianMilliseconds } from '../../helpers/performance';
 
 for (const modelCount of [1, 64, 256, 1024]) {
-	resetSemanticProjects();
+	resetSemanticProjects(editorTextModelService);
 	editorTextModelService.clear();
 	const registry: LuaSourceRegistry = {
 		records: [], path2lua: {}, module2lua: {}, entrySourcePath: 'module_0.lua',
@@ -48,5 +48,5 @@ for (const modelCount of [1, 64, 256, 1024]) {
 	console.log(JSON.stringify({ modelCount, retainedQueryMicroseconds, editAndUndoQueryMilliseconds: changedQueryMilliseconds,
 		boundary: 'retained real model service, semantic project and behavior registration index; 10000 warm reads per sample; edit+Undo includes two parses/binds/index rebuilds; no CPU or rendering' }));
 }
-resetSemanticProjects();
+resetSemanticProjects(editorTextModelService);
 editorTextModelService.clear();

@@ -1,3 +1,4 @@
+import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { getOrCreateSemanticProject } from '../../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { inputFocus } from '../../../ide/input/focus';
 import { editorFeedbackState } from '../../../ide/common/feedback_state';
@@ -43,7 +44,7 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	const { ide, harness, runtime, tasks, until, press, click, frame, runMenuCommand, cycles, title, guest } = test;
 	harness.openLuaSource('scenes/root.lua');
 	const model = harness.getActiveEditorDocument().model;
-	const project = getOrCreateSemanticProject(model.resource.domain);
+	const project = getOrCreateSemanticProject(editorTextModelService, model.resource.domain);
 	project.synchronizeRuntimeSources(ide.sources);
 	const titlePositionField = () => {
 		const document = buildSceneSourceDocument(model.resource, project.getSnapshot());

@@ -451,10 +451,10 @@ test('actual editor frontend and context token queries consume queued model edit
 	const path = 'frontend_incremental.lua';
 	const source = Array.from({ length: 90 }, (_, index) => `local value_${index} = ${index}\n`).join('') + 'return value_89';
 	const model = editorTextModelService.retain(resource(0, path), 'lua', source);
-	const project = resetSemanticProject(0);
+	const project = resetSemanticProject(editorTextModelService, 0);
 	const sources = runtimeSources(sourceRegistry([['system.lua', 'return 0']]), sourceRegistry([[path, source]]));
 	const bridge = { sources } as import('../../ide/runtime/lua_tooling').RuntimeLuaTooling;
-	t.after(() => { activeCodeEditor.detach(); resetSemanticProjects(); editorTextModelService.clear(); });
+	t.after(() => { activeCodeEditor.detach(); resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
 	const initial = buildEditorSemanticSnapshot(bridge, model.resource, model.buffer);
 	const retained = initial.getFileData(path)!.chunk.tokens.get(initial.getFileData(path)!.chunk.tokens.length - 2);
 	const explicit = t.mock.method(project, 'updateDocument');
@@ -500,19 +500,19 @@ test('diagnostics consume model deltas without replacing incremental baselines w
 	const path = 'diagnostics_incremental.lua';
 	const source = Array.from({ length: 90 }, (_, index) => `local value_${index} = ${index}\n`).join('') + 'return value_89';
 	const model = editorTextModelService.retain(resource(0, path), 'lua', source);
-	const project = resetSemanticProject(0);
+	const project = resetSemanticProject(editorTextModelService, 0);
 	const sources = runtimeSources(sourceRegistry([['system.lua', 'return 0']]), sourceRegistry([[path, source]]));
 	const bridge = new RuntimeLuaTooling(sources, new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload())));
-	t.after(() => { resetSemanticProjects(); editorTextModelService.clear(); });
+	t.after(() => { resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
 	project.synchronizeRuntimeSources(sources);
 	const before = project.getFileData(path)!;
 	const retained = before.chunk.tokens.get(before.chunk.tokens.length - 2);
 	const explicit = t.mock.method(project, 'updateDocuments');
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- diagnostics\n' }]);
-	computeResourceDiagnostics(bridge, [model]);
+	computeResourceDiagnostics(editorTextModelService, bridge, [model]);
 	assert.equal(explicit.mock.callCount(), 0);
 	assert.ok(Array.from(project.getFileData(path)!.chunk.tokens).includes(retained));
-	computeResourceDiagnostics(bridge, [model]);
+	computeResourceDiagnostics(editorTextModelService, bridge, [model]);
 	assert.equal(explicit.mock.callCount(), 0, 'repeated diagnostics preserve the model-owned baseline');
 });
 
@@ -524,14 +524,14 @@ test('scheduled syntax highlighting consumes current model deltas and invalidate
 	const { VirtualHeadlessClock } = await import('../../hosts/node/headless/clock');
 	const source = Array.from({ length: 90 }, (_, index) => `local value_${index} = ${index}\n`).join('') + 'return value_89';
 	const model = editorTextModelService.retain(resource(0, 'highlight_incremental.lua'), 'lua', source);
-	const project = resetSemanticProject(0);
+	const project = resetSemanticProject(editorTextModelService, 0);
 	const before = project.getFileData(model.resource.path)!;
 	const retained = before.chunk.tokens.get(before.chunk.tokens.length - 2);
 	const clock = new VirtualHeadlessClock();
 	const layout = new CodeLayout(new EditorFont('tiny'), { maxHighlightCache: 64, semanticDebounceMs: 0,
 		clock, getBuiltinIdentifiers: () => ({ epoch: 0, ids: [] }), computeWrapWidth: () => 320 });
 	model.onDidChangeContent(event => layout.onDidChangeContent(model.buffer, event));
-	t.after(() => { layout.invalidateAllHighlights(); resetSemanticProjects(); editorTextModelService.clear(); });
+	t.after(() => { layout.invalidateAllHighlights(); resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
 	const explicit = t.mock.method(project, 'updateDocument');
 	const analyze = t.mock.method(project, 'analyzeDocument');
 	layout.requestSemanticUpdate(model.buffer, model.version, model.resource);

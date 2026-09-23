@@ -58,7 +58,7 @@ test('Lua completion context distinguishes escaped and multiline strings from co
 test('completion sees a newly created module without editing the importer or rebooting', t => {
 	t.after(() => {
 		activeCodeEditor.detach();
-		resetSemanticProjects();
+		resetSemanticProjects(editorTextModelService);
 		editorTextModelService.clear();
 	});
 	const resource = (path: string) => ({ domain: 0 as const, path, source: { resid: path, type: 'lua', source_path: path } });

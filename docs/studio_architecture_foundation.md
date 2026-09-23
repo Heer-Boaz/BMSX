@@ -440,3 +440,14 @@ snapshot, independently of browser delivery timing. Shared browser renderer
 ownership also runs the ordinary source-save,
 local-only and reconnect regressions on all three backends. This is automated
 browser evidence, not UI-only authoring or paid-model verification.
+
+### Shared semantic-owner follow-through
+
+Before adding source-bound diagnostic context, a real owner mismatch was found:
+diagnostics accepted a concrete model service but queried semantic projects bound
+to global editor models. The [resource-context follow-through](studio_resource_context.md#follow-through-semantic-projects-belong-to-their-document-owner)
+records the failing foreign-working-copy regression and the shared correction.
+Semantic project identity now includes its model owner; clear/reset retires only
+that owner's projects. Ordinary analysis, visual views, Rename and highlighting
+consume the same explicit owner contract, with retained incremental snapshots
+and no assistant-only analyzer or new frame-time work.

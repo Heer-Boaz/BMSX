@@ -1,3 +1,4 @@
+import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { EditorDiagnostic } from '../../../common/models';
 import type { ResourceDomain } from '../../../common/resource';
 import type { EditorTextModel } from '../../../editor/model/text_model';
@@ -6,7 +7,7 @@ import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 
 /** One immutable semantic snapshot per domain; model deltas remain owned by the project. */
-export function computeResourceDiagnostics(bridge: RuntimeLuaTooling, models: readonly EditorTextModel[]): EditorDiagnostic[] {
+export function computeResourceDiagnostics(owner: EditorTextModelService, bridge: RuntimeLuaTooling, models: readonly EditorTextModel[]): EditorDiagnostic[] {
 	const batches = new Map<ResourceDomain, EditorTextModel[]>();
 	for (const model of models) {
 		let batch = batches.get(model.identity.domain);
@@ -15,7 +16,7 @@ export function computeResourceDiagnostics(bridge: RuntimeLuaTooling, models: re
 	}
 	const result: EditorDiagnostic[] = [];
 	for (const [domain, batch] of batches) {
-		const project = getOrCreateSemanticProject(domain);
+		const project = getOrCreateSemanticProject(owner, domain);
 		project.synchronizeRuntimeSources(bridge.sources);
 		for (const model of batch) project.analyzeDocument(model.identity.path, model.buffer);
 		const snapshot = project.getSnapshot();

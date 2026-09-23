@@ -639,7 +639,6 @@ export class RuntimeCartEditor implements CartEditor {
 				this.unsubscribeWorkspaceCursorMoved();
 				this.unsubscribeTextModelChanged();
 				editorTabGroup.clear();
-				resetSemanticProjects();
 				editorTextModelService.clear();
 			}
 		}
@@ -765,7 +764,7 @@ export class RuntimeCartEditor implements CartEditor {
 		editorRuntimeState.uppercaseDisplay = true;
 		setEditorCaseInsensitivity(editorRuntimeState.uppercaseDisplay);
 		applyViewportSize(viewport);
-		resetSemanticProjects();
+		resetSemanticProjects(editorTextModelService);
 		editorViewState.scrollbars = {
 			codeVertical: new Scrollbar('vertical'),
 			codeHorizontal: new Scrollbar('horizontal'),

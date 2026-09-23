@@ -1,3 +1,4 @@
+import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import type { RuntimeSourceState } from '../../../runtime/sources';
@@ -12,7 +13,7 @@ export class BehaviorSourceDocuments {
 
 	public get(model: EditorTextModel): BehaviorSourceDocument {
 		const resource = model.resource;
-		const project = getOrCreateSemanticProject(resource.domain);
+		const project = getOrCreateSemanticProject(editorTextModelService, resource.domain);
 		project.synchronizeRuntimeSources(this.sources);
 		const snapshot = project.getSnapshot();
 		let generation = this.generations.get(model);

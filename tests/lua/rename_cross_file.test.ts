@@ -56,7 +56,7 @@ test('cross file rename updates a retained background model without opening an e
 		SYSTEM_RESOURCE_DOMAIN,
 	);
 
-	const workspace = resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
+	const workspace = resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
 	workspace.synchronizeRuntimeSources(sources);
 
 	const usageResource = resolveRuntimeResource(sources, {
@@ -99,7 +99,7 @@ test('cross file rename updates a retained background model without opening an e
 	assert.equal(editorTabGroup.activeTab, resourceTab);
 	assert.equal(codeEditorInputManager.get(buildCodeTabId(usageResource)), undefined);
 
-	const updatedData = getOrCreateSemanticProject(SYSTEM_RESOURCE_DOMAIN).getFileData('usage.lua');
+	const updatedData = getOrCreateSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN).getFileData('usage.lua');
 	assert.ok(updatedData);
 	assert.equal(updatedData!.source.trim(), 'print(worldState.value)');
 

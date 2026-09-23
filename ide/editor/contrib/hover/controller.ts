@@ -1,3 +1,4 @@
+import { editorTextModelService } from '../../model/model_service';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import * as constants from '../../../common/constants';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
@@ -81,7 +82,7 @@ export function updateHoverTooltip(
 	const executionFrameDepth = fault.faultSnapshot === null
 		? cpu.getFrameDepth()
 		: fault.lastCpuFaultSnapshot.length;
-	const semanticProject = getOrCreateSemanticProject(context.model.resource.domain);
+	const semanticProject = getOrCreateSemanticProject(editorTextModelService, context.model.resource.domain);
 	semanticProject.synchronizeRuntimeSources(bridge.sources);
 	const semanticSnapshot = semanticProject.getSnapshot();
 	if (queryState.valid

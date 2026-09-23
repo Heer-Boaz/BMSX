@@ -105,7 +105,7 @@ export class SceneEditorController {
 
 	public refresh(input: SceneEditorInput): void {
 		const model = input.workingCopy;
-		const project = getOrCreateSemanticProject(model.resource.domain);
+		const project = getOrCreateSemanticProject(editorTextModelService, model.resource.domain);
 		project.synchronizeRuntimeSources(this.sources);
 		const snapshot = project.getSnapshot();
 		if (input.sourceRevision === snapshot.revision) return;

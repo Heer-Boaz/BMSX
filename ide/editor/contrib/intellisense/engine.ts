@@ -1,3 +1,4 @@
+import { editorTextModelService } from '../../model/model_service';
 import type { LuaChunk } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
@@ -250,7 +251,7 @@ type ContextMenuTokenMatch = {
 };
 
 function findContextMenuTokenMatch(row: number, column: number, path: string, buffer: TextBuffer): ContextMenuTokenMatch {
-	const chunk = getOrCreateSemanticProject(activeCodeEditor.model.resource.domain)
+	const chunk = getOrCreateSemanticProject(editorTextModelService, activeCodeEditor.model.resource.domain)
 		.analyzeDocument(path, buffer).chunk;
 	const { tokens, locations } = chunk;
 	const targetLine = row + 1;
@@ -493,7 +494,7 @@ export function listLuaSymbols(bridge: RuntimeLuaTooling, domain: ResourceDomain
 	if (!source) {
 		return [];
 	}
-	const project = getOrCreateSemanticProject(domain);
+	const project = getOrCreateSemanticProject(editorTextModelService, domain);
 	project.synchronizeRuntimeSources(bridge.sources);
 	const analysis = project.getFileData(source.record.source_path);
 	if (!analysis) {
@@ -525,7 +526,7 @@ export function listLuaSymbols(bridge: RuntimeLuaTooling, domain: ResourceDomain
 }
 
 export function listGlobalLuaSymbols(bridge: RuntimeLuaTooling, domain: ResourceDomain): LuaSymbolEntry[] {
-	const project = getOrCreateSemanticProject(domain);
+	const project = getOrCreateSemanticProject(editorTextModelService, domain);
 	project.synchronizeRuntimeSources(bridge.sources);
 	const snapshot = project.getSnapshot();
 	const cached = globalSymbolsCache.get(snapshot);
@@ -577,7 +578,7 @@ export function findStaticDefinitionLocation(
 		return null;
 	}
 	const sourcePath = source.record.source_path;
-	const project = getOrCreateSemanticProject(activeContext.model.resource.domain);
+	const project = getOrCreateSemanticProject(editorTextModelService, activeContext.model.resource.domain);
 	project.synchronizeRuntimeSources(bridge.sources);
 	if (activeContext.model.resource.path === sourcePath) {
 		project.analyzeDocument(sourcePath, activeContext.model.buffer);

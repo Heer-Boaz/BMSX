@@ -1,3 +1,4 @@
+import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import type { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
@@ -30,7 +31,7 @@ export async function testSourceViewsBeforeApply(
 	await frame();
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('W04: source lens command must open a visual view');
-	check(lens.view.source.isCurrent && lens.view.document.files[0].revision === getOrCreateSemanticProject(model.identity.domain).getSnapshot().getFileData(model.identity.path)!.revision,
+	check(lens.view.source.isCurrent && lens.view.document.files[0].revision === getOrCreateSemanticProject(editorTextModelService, model.identity.domain).getSnapshot().getFileData(model.identity.path)!.revision,
 		'W04: source lens projects the edited working-copy generation');
 	check(lens.view.document.definitions.length > 0, 'W04: actual title FSM registration is visible');
 	harness.openLuaSource(model.resource.path);
@@ -45,7 +46,7 @@ export async function testSourceViewsBeforeApply(
 	harness.executeCommand('behaviorLens');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
 	await frame();
-	check(getActiveTab() === lens && lens.view.source.isCurrent && lens.view.document.files[0].revision === getOrCreateSemanticProject(model.identity.domain).getSnapshot().getFileData(model.identity.path)!.revision,
+	check(getActiveTab() === lens && lens.view.source.isCurrent && lens.view.document.files[0].revision === getOrCreateSemanticProject(editorTextModelService, model.identity.domain).getSnapshot().getFileData(model.identity.path)!.revision,
 		'W04: the retained source lens refreshes after undo and redo');
 	closeTab(ide.editor.editorPanes, ide.sources, sourceTab.id);
 	await frame();

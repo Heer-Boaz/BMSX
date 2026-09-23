@@ -459,7 +459,7 @@ async function startAutosaveSession(t: TestContext, storage: MockStorage, root =
 		restored,
 		new Set(),
 	);
-	t.after(() => resetSemanticProjects());
+	t.after(() => resetSemanticProjects(editorTextModelService));
 	return sources;
 }
 
@@ -480,7 +480,7 @@ test('resource identity keeps identical cartridge paths isolated by slot', (t) =
 		editorTabGroup.clear();
 		codeEditorInputManager.clear();
 		editorTextModelService.clear();
-		resetSemanticProjects();
+		resetSemanticProjects(editorTextModelService);
 		clearWorkspaceSourceCaches();
 	});
 
@@ -493,8 +493,8 @@ test('resource identity keeps identical cartridge paths isolated by slot', (t) =
 		buildWorkspaceDirtyEntryPath('offline-cart', 0, 'entry.lua'),
 		buildWorkspaceDirtyEntryPath('offline-cart', 1, 'entry.lua'),
 	);
-	const slot0Project = getOrCreateSemanticProject(0);
-	const slot1Project = getOrCreateSemanticProject(1);
+	const slot0Project = getOrCreateSemanticProject(editorTextModelService, 0);
+	const slot1Project = getOrCreateSemanticProject(editorTextModelService, 1);
 	slot0Project.synchronizeRuntimeSources(sources);
 	slot1Project.synchronizeRuntimeSources(sources);
 	assert.notEqual(slot0Project, slot1Project);
@@ -2042,10 +2042,10 @@ test('YAML data opens one authored working copy with shared edit history and no 
 	const storage = new MockStorage();
 	const { server } = installWorkspaceServer(t, storage);
 	workspaceRecordState.connected = true;
-	t.after(() => resetSemanticProjects());
+	t.after(() => resetSemanticProjects(editorTextModelService));
 	const registry = sourceRegistry('-- cart');
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [registry, null], 0);
-	const project = getOrCreateSemanticProject(0);
+	const project = getOrCreateSemanticProject(editorTextModelService, 0);
 	project.synchronizeRuntimeSources(sources);
 	const semanticSnapshot = project.getSnapshot();
 	const registryRevision = registry.revision;

@@ -64,7 +64,7 @@ export class CrossFileRenameManager {
 	}
 
 	public prepareRename(domain: ResourceDomain, info: ReferenceMatchInfo, newName: string): Map<EditorTextModel, EditorModelEdit> {
-		const project = getOrCreateSemanticProject(domain);
+		const project = getOrCreateSemanticProject(editorTextModelService, domain);
 		project.synchronizeRuntimeSources(this.sources);
 		const currentSnapshot = project.getSnapshot();
 		const ranges = new Map<string, LuaSourceRange[]>();

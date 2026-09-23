@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { editorTextModelService as models } from '../../ide/editor/model/model_service';
+import { EditorTextModelService, editorTextModelService as models } from '../../ide/editor/model/model_service';
 import { getOrCreateSemanticProject, resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { ResourceDiagnosticsService } from '../../ide/workbench/services/diagnostics/resource_diagnostics';
 import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
@@ -13,16 +13,17 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { clearBackgroundTasks, runBackgroundTasks } from '../../ide/common/background_tasks';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { createTestRuntime, createTestRuntimeRomPayload, createTestRuntimeSourceState } from '../helpers/runtime_sources';
+import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 function fixture(t: TestContext) {
-	models.clear(); resetSemanticProjects(); clearBackgroundTasks();
+	models.clear(); resetSemanticProjects(models); clearBackgroundTasks();
 	const registries: LuaSourceRegistry[] = [-1, 0, 1].map(() => ({ records: [], path2lua: {}, module2lua: {},
 		entrySourcePath: 'entry.lua', projectRootPath: '', can_boot_from_source: true, revision: 0 }));
 	const sources = createTestRuntimeSourceState(registries[0], [registries[1], registries[2]], 0);
 	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload())));
 	const clock = new VirtualHeadlessClock();
 	const service = new ResourceDiagnosticsService(models, tooling, clock);
-	t.after(() => { service.dispose(); resetSemanticProjects(); models.clear(); clearBackgroundTasks(); });
+	t.after(() => { service.dispose(); resetSemanticProjects(models); models.clear(); clearBackgroundTasks(); });
 	const retain = (domain: ResourceDomain, path: string, source: string) => models.retain({ domain, path,
 		source: { type: 'lua', resid: path } }, 'lua', source);
 	return { service, clock, retain, registries };
@@ -40,6 +41,21 @@ test('diagnostics cover retained resources without code inputs; unknown and unsu
 	const diagnostic = service.diagnostics.find(item => item.message.includes('missing_from_visual_source'))!;
 	assert.equal(diagnostic.model, model);
 	assert.equal(diagnostic.version, model.version);
+});
+
+test('resource diagnostics never import matching working copies from another model owner', t => {
+	const f = fixture(t);
+	f.retain(0, 'provider.lua', 'foreign_workspace_global = 1');
+	const ownedModels = new EditorTextModelService();
+	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('provider.lua', 1, 'owned_global = 1'),
+		createScenarioTestSourceRecord('reader.lua', 1, 'return owned_global')]);
+	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload())));
+	const service = new ResourceDiagnosticsService(ownedModels, tooling, new VirtualHeadlessClock());
+	t.after(() => { service.dispose(); ownedModels.clear(); });
+	const reader = ownedModels.retain(sources.luaResources.find(resource => resource.path === 'reader.lua')!, 'lua', 'return owned_global');
+	service.computePending();
+	assert.equal(service.get(reader.identity)!.status, 'ready');
+	assert.deepEqual(service.diagnostics, [], 'unopened dependencies belong to this workspace, not the global editor model service');
 });
 
 test('dependency edits invalidate same-project diagnostics even when the consumer version did not change', t => {
@@ -146,7 +162,7 @@ test('provider failure is explicit coverage and a later source change can be ana
 	const { service, retain } = fixture(t);
 	const model = retain(0, 'failed.lua', 'return 1');
 	const error = new Error('semantic query failed');
-	const method = t.mock.method(getOrCreateSemanticProject(0), 'getSnapshot', () => { throw error; });
+	const method = t.mock.method(getOrCreateSemanticProject(models, 0), 'getSnapshot', () => { throw error; });
 	service.computePending();
 	assert.deepEqual(service.get(model.identity), { status: 'failed', model, version: 1, error });
 	assert.equal(service.coverage.failed, 1);

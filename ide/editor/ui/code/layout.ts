@@ -1,3 +1,4 @@
+import { editorTextModelService } from '../../model/model_service';
 // start hot-path -- visual line layout and syntax highlight caching are editor-frame hot paths.
 // start required-state activeCodeEditor,editorViewState -- editor model/view and layout roots are owned singletons in their modules.
 import type { HostClock, TimerHandle } from '../../../../hosts/common/clock';
@@ -930,7 +931,7 @@ export class CodeLayout {
 		let fileData: FileSemanticData = null;
 		let errorMessage: string = null;
 		try {
-			fileData = getOrCreateSemanticProject(pending.domain).analyzeDocument(pending.path, pending.buffer);
+			fileData = getOrCreateSemanticProject(editorTextModelService, pending.domain).analyzeDocument(pending.path, pending.buffer);
 		} catch (error) {
 			fileData = null;
 			errorMessage = error instanceof Error ? error.message : String(error);

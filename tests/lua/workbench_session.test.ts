@@ -80,7 +80,7 @@ function fixture(t: TestContext) {
 	const unsubscribe = editorTextModelService.onDidChangeContent((model, event) => {
 		behavior.onDidChangeContent(model, event); scene.onDidChangeContent(model, event);
 	});
-	t.after(() => { panes.dispose(); scenario.dispose(); unsubscribe(); editorTabGroup.clear(); clearCodeEditorInputs(); editorTextModelService.clear(); resetSemanticProjects(); workspaceDirtyRecords.clear(); });
+	t.after(() => { panes.dispose(); scenario.dispose(); unsubscribe(); editorTabGroup.clear(); clearCodeEditorInputs(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); workspaceDirtyRecords.clear(); });
 	const resource = resolveRuntimeResource(sources, { domain: 0, path: 'definitions.lua' })!;
 	const model = editorTextModelService.retain(resource, 'lua', SOURCE);
 	return { sources, panes, behavior, scene, scenario, serializers, model, runtime };
@@ -140,7 +140,7 @@ test('changed canonical bytes retain topology but cannot adopt a same-length nam
 	const record = f.sources.cartridgeSlots[0]!.luaSources.records[0];
 	record.src = record.base_src = SOURCE.replaceAll('fixture.second', 'another.second');
 	f.sources.cartridgeSlots[0]!.luaSources.revision += 1;
-	f.panes.clearEditor(); editorTabGroup.clear(); clearCodeEditorInputs(); editorTextModelService.clear(); resetSemanticProjects();
+	f.panes.clearEditor(); editorTabGroup.clear(); clearCodeEditorInputs(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService);
 	await editorTabGroup.deserialize(value, f.serializers);
 	const restored = editorTabGroup.activeTab;
 	assert.ok(restored?.kind === 'behavior_lens');
@@ -173,7 +173,7 @@ for (const changeProvider of [false, true]) test(`behavior mementos fingerprint 
 		record.src = record.base_src = '-- test two';
 		f.sources.cartridgeSlots[0]!.luaSources.revision += 1;
 	}
-	editorTabGroup.clear(); editorTextModelService.clear(); resetSemanticProjects();
+	editorTabGroup.clear(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService);
 	const restored = await f.serializers.behavior_lens.deserialize(serialized);
 	t.after(() => restored.dispose());
 	assert.equal(restored.workingCopy.buffer.getText(), SOURCE);

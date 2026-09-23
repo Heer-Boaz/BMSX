@@ -139,7 +139,7 @@ export class ResourceDiagnosticsService {
 		const batch = [...this.dirty];
 		this.dirty.clear();
 		try {
-			const diagnostics = computeResourceDiagnostics(this.tooling, batch);
+			const diagnostics = computeResourceDiagnostics(this.models, this.tooling, batch);
 			const byModel = new Map<EditorTextModel, EditorDiagnostic[]>();
 			for (const diagnostic of diagnostics) {
 				let bucket = byModel.get(diagnostic.model);

@@ -63,7 +63,7 @@ test('API-provider edits and Undo update the catalogue and open documents withou
 	const bridge = "return require('cartlib/fsm/library').register";
 	const sources = createTestRuntimeSourceState(sourceRegistry('machine/bios', [luaSource('system.lua', '')]),
 		[sourceRegistry('carts/fixture', [luaSource('actors.lua', source), luaSource('bridge.lua', bridge)]), null], 0);
-	t.after(() => { clearCodeEditorInputs(); editorTextModelService.clear(); resetSemanticProjects(); });
+	t.after(() => { clearCodeEditorInputs(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); });
 	const main = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path: 'actors.lua' })!, 'lua', source);
 	const provider = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path: 'bridge.lua' })!, 'lua', bridge);
 	const index = new BehaviorRegistrationIndex(sources);
@@ -71,7 +71,7 @@ test('API-provider edits and Undo update the catalogue and open documents withou
 	assert.deepEqual(index.getRegistrations(0).map(entry => entry.label), ['FSM one', 'FSM two']);
 	const document = documents.get(main);
 	assert.equal(document.definitions.length, 2);
-	const project = getOrCreateSemanticProject(0);
+	const project = getOrCreateSemanticProject(editorTextModelService, 0);
 	const analysis = project.getFileData(main.resource.path);
 	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: 'return replacement' }]);
 	assert.deepEqual(index.getRegistrations(0), []);
@@ -110,7 +110,7 @@ test('behavior picks preserve registration occurrences, kinds, domains and unres
 	t.after(() => {
 		clearCodeEditorInputs();
 		editorTextModelService.clear();
-		resetSemanticProjects();
+		resetSemanticProjects(editorTextModelService);
 	});
 	const index = new BehaviorRegistrationIndex(sources);
 	const registrations = index.getRegistrations(0);
@@ -155,7 +155,7 @@ test('behavior picks preserve registration occurrences, kinds, domains and unres
 	assert.equal(index.getRegistrations(0)[0].label, 'FSM renamed');
 	assert.deepEqual(index.resolve(0, 'state_machine', 'shared'), []);
 	assert.equal(index.resolve(1, 'state_machine', 'shared').length, 1);
-	resetSemanticProjects();
+	resetSemanticProjects(editorTextModelService);
 	assert.equal(index.getRegistrations(0)[0].label, 'FSM renamed', 'a new semantic project still consumes dirty retained models');
 	model.undo();
 	assert.equal(index.getRegistrations(0)[0].label, 'FSM shared');
@@ -181,7 +181,7 @@ test('behavior registration index resolves separate FSM ids in the same Lua docu
 	t.after(() => {
 		clearCodeEditorInputs();
 		editorTextModelService.clear();
-		resetSemanticProjects();
+		resetSemanticProjects(editorTextModelService);
 	});
 	const index = new BehaviorRegistrationIndex(sources);
 	const player = index.resolve(0, 'state_machine', 'player');
@@ -215,7 +215,7 @@ test('kind-specific behavior picks select producer kinds, not names, files or qu
 	t.after(() => {
 		clearCodeEditorInputs();
 		editorTextModelService.clear();
-		resetSemanticProjects();
+		resetSemanticProjects(editorTextModelService);
 	});
 	const index = new BehaviorRegistrationIndex(sources);
 	const all = buildBehaviorQuickPickItems(sources, index);
@@ -265,7 +265,7 @@ test('behavior registration index isolates domains and rebuilds on an authored d
 	t.after(() => {
 		clearCodeEditorInputs();
 		editorTextModelService.clear();
-		resetSemanticProjects();
+		resetSemanticProjects(editorTextModelService);
 	});
 	const index = new BehaviorRegistrationIndex(sources);
 	const slot0Initial = index.resolve(0, 'action_effect', 'shared');
@@ -312,7 +312,7 @@ test('definition views share one lazy source generation and immutable FSM index 
 		"fsm.register('first', { states = { idle = {} } })\nfsm.register('second', { states = { idle = {} } })";
 	const sources = createTestRuntimeSourceState(sourceRegistry('machine/bios', [luaSource('system.lua', 'return true')]),
 		[sourceRegistry('carts/fixture', [luaSource(path, source)]), null], 0);
-	t.after(() => { editorTextModelService.clear(); resetSemanticProjects(); });
+	t.after(() => { editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); });
 	const model = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path })!, 'lua', source);
 	const documents = new BehaviorSourceDocuments(sources);
 	const first = documents.get(model);
@@ -334,13 +334,13 @@ test('definition views share one lazy source generation and immutable FSM index 
 	assert.notEqual(indexStateMachineSource(second), fsm);
 	assert.equal(second.definitions[1].occurrenceRange.start.line, first.definitions[1].occurrenceRange.start.line + 1);
 	assert.deepEqual(Object.keys(second.files[0]).sort(), ['file', 'revision'], 'source proofs do not pin complete binder tables');
-	resetSemanticProjects();
+	resetSemanticProjects(editorTextModelService);
 	const replacement = documents.get(model);
 	assert.notEqual(replacement.files[0].revision, second.files[0].revision, 'binder revisions do not collide after resetting the project');
-	const generation = getOrCreateSemanticProject(0).getSnapshot();
-	resetSemanticProjects();
+	const generation = getOrCreateSemanticProject(editorTextModelService, 0).getSnapshot();
+	resetSemanticProjects(editorTextModelService);
 	assert.notEqual(documents.get(model), replacement, 'equal workspace version numbers cannot reuse another project generation');
-	assert.equal(getOrCreateSemanticProject(0).getSnapshot().version, generation.version);
+	assert.equal(getOrCreateSemanticProject(editorTextModelService, 0).getSnapshot().version, generation.version);
 });
 
 test('an added module export refreshes cached behavior ids and topology without editing the registration', t => {
@@ -349,7 +349,7 @@ test('an added module export refreshes cached behavior ids and topology without 
 	const initial = 'local unpublished = {}';
 	const sources = createTestRuntimeSourceState(sourceRegistry('machine/bios', [luaSource('system.lua', 'return true')]),
 		[sourceRegistry('carts/fixture', [luaSource(path, source), luaSource('id.lua', initial), luaSource('definition.lua', initial)]), null], 0);
-	t.after(() => { editorTextModelService.clear(); resetSemanticProjects(); });
+	t.after(() => { editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); });
 	const main = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path })!, 'lua', source);
 	const id = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path: 'id.lua' })!, 'lua', initial);
 	const provider = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path: 'definition.lua' })!, 'lua', initial);

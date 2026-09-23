@@ -1,3 +1,4 @@
+import { editorTextModelService } from '../../../editor/model/model_service';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { ResourceDomain } from '../../../common/resource';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
@@ -40,7 +41,7 @@ export class BehaviorRegistrationIndex {
 	}
 
 	private getGeneration(executionDomain: ResourceDomain): BehaviorRegistrationGeneration {
-		const project = getOrCreateSemanticProject(executionDomain);
+		const project = getOrCreateSemanticProject(editorTextModelService, executionDomain);
 		project.synchronizeRuntimeSources(this.sources);
 		const snapshot = project.getSnapshot();
 		let generation = this.generations.get(executionDomain);

@@ -1,3 +1,4 @@
+import { editorTextModelService } from '../../../editor/model/model_service';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { ResourceDomain, ResourceIdentity, RuntimeResource } from '../../../common/resource';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
@@ -28,7 +29,7 @@ export function openSourceView(
 	const snapshotFor = (domain: ResourceDomain): LuaSemanticWorkspaceSnapshot => {
 		let snapshot = snapshots.get(domain);
 		if (snapshot === undefined) {
-			const project = getOrCreateSemanticProject(domain);
+			const project = getOrCreateSemanticProject(editorTextModelService, domain);
 			project.synchronizeRuntimeSources(sources);
 			snapshot = project.getSnapshot();
 			snapshots.set(domain, snapshot);

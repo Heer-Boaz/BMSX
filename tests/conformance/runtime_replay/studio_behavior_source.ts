@@ -1,3 +1,4 @@
+import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { testStudioBehaviorGraphControls } from './studio_behavior_graph';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
@@ -93,7 +94,7 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	await click(graph.actionBar.items[0].bounds, 6);
 	check(activeCodeEditor.view.cursorRow === sourceRow + 1 && activeCodeEditor.view.cursorColumn === sourceColumn
 		&& !hasSelection(), 'source graph: Source uses the new generation, including the UTF-16 insertion');
-	const parsed = getOrCreateSemanticProject(model.resource.domain).getFileData(model.resource.path)!.chunk;
+	const parsed = getOrCreateSemanticProject(editorTextModelService, model.resource.domain).getFileData(model.resource.path)!.chunk;
 	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.locations, parsed.tokens, nextEntries[2].field));
 	await test.clickTab(lens.id);
 	check(view.selection === null && viewport.selection === null, 'source graph: deleting the selected occurrence does not choose its namesake');

@@ -1,3 +1,4 @@
+import { editorTextModelService } from '../../model/model_service';
 import {
 	createLuaSemanticFrontendFromSnapshot,
 	type LuaSemanticFrontendEnvironment,
@@ -23,7 +24,7 @@ export function buildEditorSemanticSnapshot(
 	identity: ResourceIdentity,
 	buffer: TextBuffer,
 ): LuaSemanticWorkspaceSnapshot {
-	const project = getOrCreateSemanticProject(identity.domain);
+	const project = getOrCreateSemanticProject(editorTextModelService, identity.domain);
 	project.synchronizeRuntimeSources(bridge.sources);
 	project.analyzeDocument(identity.path, buffer);
 	return project.getSnapshot();
