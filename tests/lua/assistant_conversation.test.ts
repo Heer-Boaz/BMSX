@@ -5,6 +5,7 @@ import type { AssistantAccount, AssistantCommand, AssistantConnection, Assistant
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { AssistantConversation } from '../../ide/workbench/services/assistant/conversation';
 import { AssistantInput } from '../../ide/workbench/contrib/assistant/editor_input';
+import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 class Connection implements AssistantConnection {
@@ -65,6 +66,36 @@ test('conversation hands off a source-backed proposal; completion preserves revi
 	assert.equal(f.model.lastSavedSource, 'return old\n');
 });
 
+for (const outcome of ['applied', 'discarded', 'stale'] as const) {
+	test(`conversation observes ${outcome} reviews without rereading transcript text or stealing selection`, async t => {
+		const f = fixture(t), c = f.conversation;
+		const input = new AssistantInput(c); t.after(() => input.dispose());
+		await c.connect(); await c.sendPrompt('Review'); const proposal = await propose(f);
+		f.connections[0].emit({ type: 'turn-completed', turnId: 'turn', status: 'completed' });
+		// A settled old proposal must not rewrap the much larger, unchanged later transcript.
+		c.entries.push({ kind: 'assistant', index: c.entries.length, text: new PieceTreeBuffer('later '.repeat(10000)), resetRevision: 0 });
+		const font = {}, measure = (_text: string, start: number, end: number) => end - start;
+		input.transcript.update(c.entries, 40, measure, font);
+		const index = c.entries.findIndex(entry => entry.proposal === proposal);
+		const heading = input.transcript.rows.findIndex(row => row.entry === index && row.heading);
+		assert.equal(input.transcript.rows[heading].text, 'REVIEW: PENDING');
+		const rows = input.transcript.rows.slice();
+		for (const entry of c.entries) entry.text.getTextRange = () => assert.fail('settlement cannot read unchanged message text');
+		input.selectedEntry = 0;
+		const revision = c.revision;
+		if (outcome === 'applied') proposal.apply();
+		else if (outcome === 'discarded') proposal.dispose();
+		else f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- user\n' }]);
+		assert.equal(c.revision, revision + 1);
+		assert.equal(input.selectedEntry, 0);
+		input.transcript.update(c.entries, 40, () => assert.fail('no body text measurement'), font);
+		assert.equal(input.transcript.rows[heading].text, `REVIEW: ${outcome.toUpperCase()}`);
+		assert.ok(input.transcript.rows.every((row, index) => index === heading || row === rows[index]));
+		for (let frame = 0; frame < 1000; frame++) assert.equal(input.transcript.update(c.entries, 40, measure, font), false);
+		if (outcome === 'applied') { f.model.undo(); assert.equal(c.revision, revision + 1, 'Undo does not rearm a one-shot proposal'); }
+	});
+}
+
 test('closing the transient input invalidates handed-off rights; reopening does not replay the conversation', async t => {
 	const f = fixture(t), c = f.conversation;
 	await c.connect(); await c.sendPrompt('Read'); const proposal = await propose(f);
@@ -81,6 +112,22 @@ test('workspace clear retires an active connection synchronously', async t => {
 	const f = fixture(t); await f.conversation.connect(); await f.conversation.sendPrompt('Read');
 	f.models.clear(); assert.equal(f.conversation.state, 'disconnected'); assert.equal(f.connections[0].signal.aborted, true);
 	assert.equal(f.conversation.entries.length, 0, 'no transcript or source proposals cross workspace teardown');
+});
+
+test('workspace clear resets detached projection identity before a same-sized replacement transcript', async t => {
+	const f = fixture(t), c = f.conversation;
+	const input = new AssistantInput(c); t.after(() => input.dispose());
+	await c.connect(); await c.sendPrompt('Old workspace '.repeat(100)); await propose(f);
+	f.connections[0].emit({ type: 'turn-completed', turnId: 'old', status: 'completed' });
+	const font = {}, measure = (_text: string, start: number, end: number) => end - start;
+	input.transcript.update(c.entries, 40, measure, font);
+	f.models.clear(); // No intervening view frame before new entries occupy the same indices.
+	await c.connect(); await c.sendPrompt('New');
+	f.connections[1].emit({ type: 'message', turnId: 'new', itemId: 'new', text: 'New reply' });
+	f.connections[1].emit({ type: 'turn-completed', turnId: 'new', status: 'completed' });
+	input.transcript.update(c.entries, 40, measure, font);
+	assert.deepEqual(input.transcript.rows.map(row => row.text), ['USER', 'New', 'ASSISTANT', 'New reply', 'STATUS', 'Turn completed.']);
+	assert.equal(input.selectedEntry, -1);
 });
 
 test('old stream and delayed prompt failure cannot mutate a replacement conversation', async t => {

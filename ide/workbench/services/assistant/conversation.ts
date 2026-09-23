@@ -15,6 +15,7 @@ export type AssistantEntry = {
 	resetRevision: number;
 };
 type ActiveTurn = { tools: WorkspaceSourceTools; requests: Set<string>; messages: Map<string, AssistantEntry> };
+type ConversationChange = 'state' | 'text' | 'proposal' | 'reset';
 
 /** Workspace-owned conversation and accepted prompt context, independent of an attached pane. */
 export class AssistantConversation {
@@ -24,7 +25,7 @@ export class AssistantConversation {
 	public accountRefreshing = false;
 	public loginCode: string | undefined;
 	public revision = 0;
-	private readonly listeners = new Set<(entry: number) => void>();
+	private readonly listeners = new Set<(entry: number, kind: ConversationChange) => void>();
 	private readonly unbindWorkspace: () => void;
 	private lifetime: AbortController | undefined;
 	private sourceLifetime: AbortController | undefined;
@@ -38,14 +39,16 @@ export class AssistantConversation {
 	}
 	public get available(): boolean { return this.openConnection !== undefined && !this.disposed; }
 	public get canSend(): boolean { return this.state === 'ready' && !this.accountRefreshing && !this.account!.requiresLogin; }
-	public onDidChange(listener: (entry: number) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
-	private changed(entry = this.entries.length): void {
+	public onDidChange(listener: (entry: number, kind: ConversationChange) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
+	private changed(entry = this.entries.length, kind: ConversationChange = 'state'): void {
 		this.revision++;
-		for (const listener of this.listeners) listener(entry);
+		for (const listener of this.listeners) listener(entry, kind);
 	}
 	private append(kind: AssistantEntry['kind'], text: string, proposal?: WorkspaceEditProposal): AssistantEntry {
 		const entry = { kind, text: new PieceTreeBuffer(text), index: this.entries.length, resetRevision: 0, proposal };
-		this.entries.push(entry); this.changed(entry.index); return entry;
+		// Settlement drains the observer; workspace clear disposes every pending proposal.
+		proposal?.onDidSettle(() => this.changed(entry.index, 'proposal'));
+		this.entries.push(entry); this.changed(entry.index, 'text'); return entry;
 	}
 
 	public async connect(): Promise<void> {
@@ -151,7 +154,7 @@ export class AssistantConversation {
 				else if (entry.text.getText() !== event.text) {
 					entry.text.replace(0, entry.text.length, event.text); entry.resetRevision++;
 				}
-				this.changed(entry.index); break;
+				this.changed(entry.index, 'text'); break;
 			}
 			case 'tool-request': void this.executeTool(event); break;
 			case 'tool-cancelled': this.turn?.requests.delete(event.requestId); break;
@@ -196,7 +199,7 @@ export class AssistantConversation {
 	private clearConversation(): void {
 		this.disconnect();
 		for (const entry of this.entries) entry.proposal?.dispose();
-		this.entries.length = 0; this.changed(0);
+		this.entries.length = 0; this.changed(0, 'reset');
 	}
 	public dispose(): void {
 		this.disposed = true; this.unbindWorkspace(); this.clearConversation(); this.listeners.clear();

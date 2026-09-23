@@ -26,6 +26,13 @@ route.
   before submitting one shared history operation. There is no capture/rollback
   around writes. Unexpected operation failures are not called source conflicts
   or success. Discard/Close never mutate authored source.
+  `onDidSettle` publishes its single terminal outcome after edit authority is
+  retired and, for Apply, shared history has completed or failed. Settlement
+  drops executable edit payloads and observer references while retaining the
+  immutable review preview. Source Undo does not make the proposal pending again.
+  Clients can observe this owner directly; they need no polling or second review
+  state machine. The assistant uses it to update only the affected transcript
+  heading, without rereading/reflowing message bodies or changing selection.
 - `editor/text/edit_preview.ts` projects ordered text edits into exact before/
   after line-context hunks. It does not parse, invent another editable model,
   serialize canonical YAML, or run a quadratic full-file diff. Shared text layout
@@ -58,12 +65,15 @@ Studied VS Code 1.104.0 before implementation:
   source/model changes retire captured edit context, not just an active tab.
 - [`BulkTextEdits`](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/contrib/bulkEdit/browser/bulkTextEdits.ts):
   actual model references/version admission precede shared history writes.
+- [`ChatEditingModifiedDocumentEntry`](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/contrib/chat/browser/chatEditing/chatEditingModifiedDocumentEntry.ts):
+  the edit entry, not its rendered transcript, publishes acceptance/rejection.
+  BMSX retains explicit one-shot review rather than copying live auto-application.
 
 BMSX retains its own smaller source/model representation, input lifecycle and
 host execution policy. No extension DTO compatibility layer, alternate source
 database, service locator or generic operation bus was copied.
 
-## Validation
+## Original slice validation
 
 - Fourteen new context/proposal/preview/session cases plus live-owner Rename,
   save and disposal regressions: **34 focused passes**. Full Lua suite:
@@ -98,11 +108,27 @@ BMSX_TEST_BACKEND=webgl2 node tests/conformance/runtime_replay/browser.mjs --stu
 node --import tsx --import ./tests/lua/test_setup.ts tests/conformance/runtime_replay/profile_workspace_edit_review.ts
 ```
 
-## Remaining integration boundary
+## Settlement follow-through
+
+The shared review/conversation/projection bundle now has **33 focused passes**;
+the full Lua suite has **2344 passes and 1 skip**. Real-browser assistant review
+and ordinary multi-file Rename review pass on software, WebGL2 and WebGPU.
+Applied/discarded/stale transcript status is checked through visible commands;
+stale Apply remains disabled and ordinary source Undo cannot restore edit rights.
+Status-only updates preserve every body row, read/measure zero text and retain
+selection, including a 60,000-code-unit later message and 1,000 unchanged frames.
+
+Workspace teardown now explicitly resets retained transcript projection identity
+before another frame or new entries can reuse old indices. The regression first
+reproduced an old piece-tree offset being used against a new short message; no
+range clamp, fallback or old-history reconstruction was introduced.
+
+## External integration boundary
 
 Resource context and multi-file review are now ordinary workbench capabilities.
-An external protocol still needs pinned schemas, explicit tool admission,
-process shutdown/disconnect fencing and proof that it cannot write behind these
-models. Neither the development HTTP capability nor this review pane grants that
-authority. Agent/context serialization belongs to that future external boundary,
-not to these internal model APIs.
+The [Codex process](studio_codex_process_contract.md) and
+[conversation](studio_assistant_contribution.md) now provide pinned schemas,
+explicit tool admission and process shutdown/disconnect fencing without writing
+behind these models. Neither the development HTTP capability nor this review pane
+grants arbitrary file or guest authority. Agent/context serialization belongs to
+the external boundary, not to these internal model APIs.

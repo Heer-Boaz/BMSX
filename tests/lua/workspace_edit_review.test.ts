@@ -62,6 +62,34 @@ test('closing a review discards its proposal without acquiring source ownership'
 	assert.equal(f.models.get(f.a.identity), f.a);
 });
 
+for (const outcome of ['applied', 'discarded', 'stale', 'conflict', 'failed'] as const) {
+	test(`proposal settlement publishes the final ${outcome} outcome once, after retiring edit authority`, t => {
+		const f = fixture(t), states: string[] = [];
+		const removed = f.proposal.onDidSettle(() => assert.fail('detached observer'));
+		removed();
+		f.proposal.onDidSettle(() => {
+			assert.equal(f.proposal.lifetime.isDisposed, true);
+			if (f.proposal.state === 'applied') {
+				assert.equal(f.a.buffer.getText(), 'return new, new');
+				assert.equal(f.b.buffer.getText(), '# trivia\r\nvalue: new\r\n');
+			}
+			states.push(f.proposal.state);
+		});
+		if (outcome === 'applied') { f.proposal.apply(); f.a.undo(); }
+		else if (outcome === 'discarded') f.proposal.dispose();
+		else if (outcome === 'stale') f.a.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- later\n' }]);
+		else if (outcome === 'conflict') {
+			f.b.refreshResource({ ...f.b.resource, source: { ...f.b.resource.source, generated: true } });
+			assert.throws(() => f.proposal.apply(), EditorWorkspaceEditConflict);
+		} else {
+			f.models.history.applyEdits = () => { throw new Error('Injected history failure'); };
+			assert.throws(() => f.proposal.apply(), /Injected history failure/);
+		}
+		f.proposal.dispose(); f.proposal.invalidate('Later retirement');
+		assert.deepEqual(states, [outcome === 'conflict' ? 'stale' : outcome]);
+	});
+}
+
 test('target edits and dependency edits both retire pending workspace context, even after Undo', t => {
 	const f = fixture(t);
 	const dependency = f.models.retain({ domain: 0, path: 'dep.lua', source: { resid: 'dep', type: 'lua' } }, 'lua', 'x');

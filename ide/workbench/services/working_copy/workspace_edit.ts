@@ -18,6 +18,7 @@ export class WorkspaceEditProposal {
 	private readonly edits = new Map<EditorTextModel, EditorModelEdit>();
 	private stateValue: WorkspaceEditProposalState = 'pending';
 	private reasonValue = '';
+	private readonly settlementListeners = new Set<() => void>();
 
 	/** The caller transfers its captured context on successful construction. */
 	public constructor(public readonly title: string, private readonly context: WorkspaceSourceContext,
@@ -37,11 +38,24 @@ export class WorkspaceEditProposal {
 	public get state(): WorkspaceEditProposalState { return this.stateValue; }
 	public get reason(): string { return this.reasonValue; }
 
+	/** One terminal outcome, after source/history admission and authority retirement. */
+	public onDidSettle(listener: () => void): () => void {
+		if (this.stateValue === 'pending' || this.stateValue === 'applying') this.settlementListeners.add(listener);
+		return () => this.settlementListeners.delete(listener);
+	}
+
+	private publishSettlement(): void {
+		this.edits.clear(); // Retain the review preview, not executable edit payloads.
+		for (const listener of this.settlementListeners) listener();
+		this.settlementListeners.clear();
+	}
+
 	public invalidate(reason: string): void {
 		if (this.stateValue !== 'pending') return;
 		this.reasonValue = reason;
 		this.stateValue = 'stale';
 		this.lifetime.dispose();
+		this.publishSettlement();
 	}
 
 	public apply(): void {
@@ -57,11 +71,14 @@ export class WorkspaceEditProposal {
 			this.stateValue = error instanceof EditorWorkspaceEditConflict ? 'stale' : 'failed';
 			this.reasonValue = error instanceof Error ? error.message : String(error);
 			throw error;
-		}
+		} finally { this.publishSettlement(); }
 	}
 
 	public dispose(): void {
-		if (this.stateValue === 'pending') this.stateValue = 'discarded';
-		this.lifetime.dispose();
+		if (this.stateValue === 'pending') {
+			this.stateValue = 'discarded';
+			this.lifetime.dispose();
+			this.publishSettlement();
+		} else this.lifetime.dispose();
 	}
 }

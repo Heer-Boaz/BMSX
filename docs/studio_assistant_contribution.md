@@ -45,6 +45,11 @@ There are no globally reserved gameplay keys or automatic guest evaluation.
   admission remains closed during that asynchronous read.
   Workspace clear also releases retained transcripts/proposals. Shutdown retires
   these rights before waiting for unrelated accepted saves.
+- Review status is published by the ordinary `WorkspaceEditProposal` owner.
+  Applied, discarded, stale and failed outcomes update the retained transcript
+  even when the assistant pane was detached. Review state does not wait for a
+  provider notification, and Undo does not rearm a proposal. Settlement releases
+  executable edit payloads; only the inspectable preview survives.
 - The assistant and review inputs are deliberately absent from session
   serialization. They cannot restore a conversation or resurrect edit rights.
 - `hosts/common/assistant_protocol.ts` is a narrow platform contract, with no
@@ -69,6 +74,11 @@ the changed entry's final wrapped row on streaming append; completed rows remain
 retained. Authoritative final-message replacement and font/width changes reflow
 the affected content. Unchanged frames neither reread nor rewrap history. Drawing
 visits visible rows only; explicit Copy may materialize the selected message.
+Review settlement replaces only its heading row: it performs zero message-text
+reads/measurements and retains every other row and the user's selection. Workspace
+clear explicitly resets projection identity immediately, not at the next draw;
+a new same-sized transcript cannot inherit offsets or pending heading updates
+from an old workspace.
 
 The shared multiline control is independent of the assistant. It uses the
 existing field history/clipboard/cursor owners, retained wrap geometry and normal
@@ -88,7 +98,9 @@ enlarge the provider's context window or hide context-limit failures.
   Visible keyboard and
   pointer routes exercise the multiline composer and its Undo/Redo, both fonts,
   Lua/YAML proposal, review Apply and joint source Undo, pane switching, Stop of
-  a waiting provider stream, a second proposal and close/reopen retirement.
+  a waiting provider stream, Discard, stale review after an ordinary source edit,
+  disabled stale Apply, and close/reopen retirement. Applied/discarded/stale
+  headings are asserted and captured on all three backends.
   Guest cycles advance while the pane waits. Authored project files remain
   unchanged. Copy is checked against the browser clipboard with explicit clipboard
   permission, not just the editor's cached clipboard. Selected-message, composer,
@@ -108,7 +120,12 @@ enlarge the provider's context window or hide context-limit failures.
   (50,000 source code units) with less than 450,000 units reread, then 1,000
   unchanged updates with zero additional reads/measurements. This is a bounded-
   work assertion, not a whole-application latency claim.
-- Regression bundle: **2335 Lua tests passed, 1 skipped**; process/stdio **19**,
+  Settlement tests retain a later 60,000-code-unit message and forbid any text
+  read or measurement while updating an earlier proposal's heading. Five shared
+  proposal cases verify one notification after authority retirement, including
+  history conflict/failure. A detached-view teardown case replaces the transcript
+  before another frame and verifies that no old offsets or edit state survive.
+- Regression bundle: **2344 Lua tests passed, 1 skipped**; process/stdio **19**,
   independent Codex contract **5**, assistant HTTP **12**, workspace HTTP **6**,
   process/workbench **1**, and account **5** pass. Actual WebGL2 cold-page session
   restoration passes. Source-save/local-only/reconnect workflows pass on all
@@ -130,7 +147,7 @@ provider picker, background multi-agent workflow or OS-wide sandbox claim.
 - VS Code's [chat widget](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/contrib/chat/browser/chatWidget.ts)
   and Codex's [account contract tests](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server/tests/suite/v2/account.rs):
   separate view/model lifetimes and exercise device-code failures/cancellation
-  at the real issuer boundary, rather than inventing a replacement account server.
+  at the real issuer boundary, rather than replacing Codex's account RPC implementation.
 - Codex's pinned [account processor](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server/src/request_processors/account_processor.rs),
   [device-code owner](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/login/src/device_code_auth.rs)
   and [browser OAuth listener](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/login/src/server.rs):

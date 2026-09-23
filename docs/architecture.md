@@ -5015,6 +5015,11 @@ conversation receives a platform connection capability from browser composition;
 the Node adapter owns the isolated Codex account/process, fixed operation
 protocol and process lease. Each prompt captures ordinary source authority;
 proposed edits require the same explicit multi-file review and shared history.
+The proposal owner publishes one terminal review outcome after retiring edit
+authority and finishing history admission. Clients observe that state rather
+than polling source or maintaining a second edit lifecycle; transcript status
+updates do not reflow message bodies. Workspace teardown explicitly resets
+retained projection identity before indices can be reused by a new conversation.
 Neither the transcript nor source-tool execution owns Save, installation or guest
 execution. The pane does not suspend the cart; no normal guest shortcut is
 reserved for submitting prompts. Closing/disconnecting, account changes and

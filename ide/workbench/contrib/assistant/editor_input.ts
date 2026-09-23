@@ -34,10 +34,12 @@ export class AssistantInput extends ReadonlyEditorInput<'assistant', 'assistant'
 	public constructor(public readonly conversation: AssistantConversation) {
 		super('assistant', 'assistant', 'CODEX', true);
 		this.disposables.add({ dispose: this.draft.onDidChangeText(() => { this.draftHasText = this.draft.text.trim().length > 0; }) });
-		this.disposables.add({ dispose: conversation.onDidChange(index => {
-			this.transcript.invalidate(index);
+		this.disposables.add({ dispose: conversation.onDidChange((index, kind) => {
+			if (kind === 'reset') this.transcript.reset();
+			else if (kind === 'proposal') this.transcript.invalidateHeading(index);
+			else if (kind === 'text') this.transcript.invalidate(index);
 			if (conversation.entries.length === 0) this.selectedEntry = -1;
-			if (conversation.entries[index]?.kind === 'proposal') this.selectedEntry = index;
+			if (kind === 'text' && conversation.entries[index]?.kind === 'proposal') this.selectedEntry = index;
 		}) });
 		this.disposables.add({ dispose: () => conversation.disconnect() });
 	}

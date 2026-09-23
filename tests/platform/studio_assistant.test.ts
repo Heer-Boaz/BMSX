@@ -26,7 +26,7 @@ for (const backend of backends) test(`Studio ${backend}: actual browser, HTTP le
 			edits: [{ offset: 0, deleteLength: 0, expectedText: '', text: index === 0 ? '-- Codex reviewed\n' : '# Codex reviewed\n' }] })) })],
 		CODEX_FIXTURE_DONE,
 	];
-	const model = await createCodexModelFixture(t, [...reviewSteps, () => { modelStarted(); return CODEX_FIXTURE_WAIT; }, ...reviewSteps]);
+	const model = await createCodexModelFixture(t, [...reviewSteps, () => { modelStarted(); return CODEX_FIXTURE_WAIT; }, ...reviewSteps, ...reviewSteps, ...reviewSteps]);
 	const f = await createAssistantStudioFixture(t, `conversation-${backend}`, {
 		provider: { name: 'Offline Studio UI fixture', model: 'mock-model', baseUrl: `${model.url}/v1` } });
 	const { page, root, observations, evidence } = f;
@@ -37,7 +37,7 @@ for (const backend of backends) test(`Studio ${backend}: actual browser, HTTP le
 		return module.runAssistant(backend, document.querySelector('canvas'), globalThis.capture, globalThis.waitForModel);
 	}, backend);
 	assert.equal(result.assistant, 'pass'); assert.equal(result.sourceFiles, 2);
-	assert.equal(observations.connects, 1); assert.equal(model.requests.length, 9); assert.deepEqual(observations.errors, []);
+	assert.equal(observations.connects, 1); assert.equal(model.requests.length, 17); assert.deepEqual(observations.errors, []);
 	const reads = outputs(model.requests[2]).slice(1);
 	assert.equal(reads[0].source, '-- UNSAVED ASSISTANT FIXTURE\n' + await readFile('carts/nemesis_s/cart.lua', 'utf8'));
 	assert.equal(reads[1].source, await readFile('carts/nemesis_s/res/data/nemesis_s_stage.yaml', 'utf8'));
