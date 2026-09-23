@@ -2,6 +2,7 @@ import { testStudioScenarioExecution } from './studio_scenario_execution';
 import { testStudioScenarioOutput } from './studio_scenario_output';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
+import { ScenarioLabEditorPane } from '../../../ide/workbench/contrib/scenario_lab/editor_pane';
 
 /** Real Studio commands, source models and isolated physical execution targets. */
 export async function runStudioTestRunner(test: StudioFixture) {
@@ -55,6 +56,23 @@ export async function runStudioTestRunner(test: StudioFixture) {
 	check(ide.scenarioRuns.session!.failedExecution === null, 'new run releases the previous failed target');
 	await frame();
 	check(cycles() === authoringCycles, 'Studio remains paused after completion');
+	const failedIndex = tab.view.resultPane.rows.findIndex(row => row.id === run.items[0].id);
+	check(failedIndex >= 0, 'earlier result remains inspectable after rerun');
+	await press('Tab'); await press('Home');
+	for (let index = 0; index < failedIndex; index++) await press('ArrowDown');
+	await runPaletteCommand('Scenario Lab: Inspect Test Result');
+	const pane = ide.editor.editorPanes.activePane;
+	if (!(pane instanceof ScenarioLabEditorPane)) throw new Error('Scenario Lab result pane expected');
+	check(pane.inspector.visible && pane.inspector.model.rows[0].element.value === 'failed', 'Details observes the recorded outcome');
+	check(pane.inspector.model.rows[1].element.value === authored, 'Details reads the failed suite, not the passing rerun source');
+	check(!pane.inspector.isEnabled('propertyInspector.source'), 'historical suite inspection cannot substitute current source navigation');
+	const measured = pane.inspector.model.rows[1];
+	for (let index = 0; index < 20; index++) await frame();
+	check(pane.inspector.model.rows[1] === measured && cycles() === authoringCycles, 'source evidence has retained layout and no guest execution');
+	await test.capture?.('captured-suite-source');
+	await press('Escape');
+	await press('ShiftLeft', 'Tab');
+	check(tab.view.focus === 'tests', 'result inspection returns through normal focus navigation before selecting the next test');
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: original }]);
 	await runPaletteCommand('Run: Pause');
 	await testStudioScenarioExecution(test);

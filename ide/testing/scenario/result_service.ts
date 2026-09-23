@@ -119,6 +119,8 @@ export type ScenarioActionEffectTrace = {
 export type ScenarioTestResult = {
 	readonly id: string;
 	readonly test: ScenarioTestItem;
+	/** Exact accepted suite bytes, not the current workspace source or dependency provenance. */
+	readonly source: string;
 	readonly sourceRevision: number;
 	state: ScenarioTestResultState;
 	startTick: number | null;
@@ -146,6 +148,7 @@ export type ScenarioRun = {
 
 export type ScenarioRunItemSource = {
 	readonly test: ScenarioTestItem;
+	readonly source: string;
 	readonly sourceRevision: number;
 };
 
@@ -211,6 +214,7 @@ export class ScenarioResultService {
 			items[index] = {
 				id: `${runId}:item:${index}`,
 				test: source.test,
+				source: source.source,
 				sourceRevision: source.sourceRevision,
 				state: 'queued',
 				startTick: null,

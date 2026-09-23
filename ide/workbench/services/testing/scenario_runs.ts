@@ -6,9 +6,9 @@ import type { WorkspaceRecord } from '../../../workspace/records';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { captureCurrentLuaSource, captureLuaTextModelSources, type LuaTextModelSourceSnapshot } from '../working_copy/lua_sources';
-import { TestRun, type TestSource } from '../../../testing/run';
+import { TestRun } from '../../../testing/run';
 import type { TestTargetFactory } from '../../../testing/target';
-import { ScenarioResultService, type ScenarioRun } from '../../../testing/scenario/result_service';
+import { ScenarioResultService, type ScenarioRun, type ScenarioRunItemSource } from '../../../testing/scenario/result_service';
 import { ScenarioTestCollection, type ScenarioTestModule, type ScenarioTestNodeId } from '../../../testing/scenario/test_collection';
 import { isScenarioTestAsset } from '../../../../toolchain/ts/rompack/scenario_test';
 import { scenarioFailureFromError } from '../../../testing/scenario/failure';
@@ -85,7 +85,7 @@ export class ScenarioRunService {
 		return this.prepare(run, tests, programSources);
 	}
 
-	private async prepare(run: ScenarioRun, tests: readonly TestSource[], programSources: readonly LuaTextModelSourceSnapshot[]): Promise<void> {
+	private async prepare(run: ScenarioRun, tests: readonly ScenarioRunItemSource[], programSources: readonly LuaTextModelSourceSnapshot[]): Promise<void> {
 		try {
 			const media = await buildTestRunMedia(this.sources, this.tooling, this.storage, this.dirtyRecords, programSources,
 				tests[0].test.resource.domain, this.model);

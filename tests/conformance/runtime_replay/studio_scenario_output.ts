@@ -37,7 +37,7 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	if (view.actionBar.hasFocus) await press('Tab');
 	await press('Home');
 	for (let n = 0; n < view.testPane.rows.indexOf(testRow); n += 1) await press('ArrowDown');
-	const run = service.beginRun(testRow.test.id, [{ test: testRow.test, sourceRevision: 1 }]);
+	const run = service.beginRun(testRow.test.id, [{ test: testRow.test, source: ide.scenarioRuns.collection.findModuleBySourcePath(testRow.test.resource.domain, testRow.test.resource.path).source, sourceRevision: 1 }]);
 	const result = service.startItem(run, 0, 50);
 	service.appendLog(result, 51, MESSAGE);
 	service.appendLog(result, 52, 'real source message', { resource: model.resource, line: 4, column: 1 });
@@ -75,7 +75,7 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	check(!inspector.visible && view.resultPane.rows[view.resultPane.selectionIndex].id === selectedId,
 		'A05: Back returns focus and the exact result selection');
 	await select(row => row.kind === 'failure');
-	await runPaletteCommand('Scenario Lab: Inspect Result Message');
+	await runPaletteCommand('Scenario Lab: Inspect Test Result');
 	check(inspector.visible && inspector.model.rows[0].element.value === MESSAGE, 'A05: shared Details command inspects failures too');
 	for (const variant of ['msx', 'tiny'] as const) {
 		ide.editor.setFontVariant(variant); await frame(); await frame();

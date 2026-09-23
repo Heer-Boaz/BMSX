@@ -1489,6 +1489,11 @@ Testing separates discovery, case policy, physical resources and results:
 - `testing/scenario/result_service.ts` retains bounded runs, ordered items,
   logs, captures, multiple phase failures and semantic facts. Test failure
   retains its own machine and failed threads, not an authoring fault snapshot.
+  Each item also retains the accepted suite string, shared without copying with
+  other cases from that suite. Case-result Details reads this historical source,
+  not the current collection/model. It claims neither dependency provenance nor
+  current-workspace correspondence, and never opens a historical source as an
+  editable working copy. Layout is retained by the shared property inspector.
 
 `workbench/services/testing/scenario_runs.ts` owns workspace discovery and run
 admission. It receives the concrete document service and dirty-record map at

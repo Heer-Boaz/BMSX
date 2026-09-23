@@ -48,7 +48,7 @@ test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained fail
 			kind: 'test', id: `scenario:0:${test.name}`, parentId: 'scenario-module:0:fixture', label: test.name,
 			caseName: test.name, resource: { domain: 0, path: testSource.path }, assetId: 'fixture', sourceTimestamp: 0, range: test.range,
 		}));
-		const run = results.beginRun('scenario-root:0', items.map(test => ({ test, sourceRevision: 0 })));
+		const run = results.beginRun('scenario-root:0', items.map(test => ({ test, source, sourceRevision: 0 })));
 		let previous: TestTarget | null = null;
 		for (let index = 0; index < items.length; index += 1) {
 			const target = new OffscreenMachine(fixture.systemRom, [program.layer.bytes, null], PSX_MACHINE_SPEC, new TestInput());
@@ -92,7 +92,7 @@ test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained fail
 			test: { sourcePath: testSource.path, source: setupSource }, ramByteCount: PSX_MACHINE_SPEC.ramBytes, optLevel });
 		const setupTarget = new OffscreenMachine(fixture.systemRom, [setupProgram.layer.bytes, null], PSX_MACHINE_SPEC, new TestInput());
 		const setupItem = { ...items[0], caseName: 'never' };
-		const setupRun = results.beginRun(setupItem.id, [{ test: setupItem, sourceRevision: 1 }]);
+		const setupRun = results.beginRun(setupItem.id, [{ test: setupItem, source: setupSource, sourceRevision: 1 }]);
 		const setupResult = results.startItem(setupRun, 0, 0);
 		const setupExecution = new TestExecution(setupTarget, setupProgram, results, setupResult);
 		for (let grant = 0; setupExecution.active && grant < 1000; grant++) setupExecution.advance();
@@ -154,7 +154,7 @@ end`,
 		const item: ScenarioTestItem = { kind: 'test', id: 'scenario:0:integration', caseName: 'input_and_boundary',
 			parentId: 'scenario-module:0:fixture', label: 'input_and_boundary', assetId: 'fixture', sourceTimestamp: 0,
 			resource: { domain: 0, path: SCENARIO_FIXTURE_TEST_SOURCE_PATH }, range: program.suite.tests[0].range };
-		const run = results.beginRun(item.id, [{ test: item, sourceRevision: 0 }]);
+		const run = results.beginRun(item.id, [{ test: item, source, sourceRevision: 0 }]);
 		const result = results.startItem(run, 0, 0);
 		let captures = 0;
 		const execution = new TestExecution(target, program, results, result, DEFAULT_TEST_BUDGETS, (captured, label) => {
@@ -209,7 +209,7 @@ end`,
 			const item: ScenarioTestItem = { kind: 'test', id: `scenario:0:${caseName}`, caseName,
 				parentId: 'scenario-module:0:fixture', label: caseName, assetId: 'fixture', sourceTimestamp: 0,
 				resource: { domain: 0, path: SCENARIO_FIXTURE_TEST_SOURCE_PATH }, range: declaration.range };
-			const run = results.beginRun(item.id, [{ test: item, sourceRevision: 0 }]);
+			const run = results.beginRun(item.id, [{ test: item, source, sourceRevision: 0 }]);
 			const result = results.startItem(run, 0, 0);
 			const execution = new TestExecution(target, program, results, result);
 			// Setup's log yield, setup return, then a body yield or one busy CPU grant.

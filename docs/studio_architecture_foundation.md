@@ -538,3 +538,29 @@ separates collection/selection admission from presentation, while its
 keeps source retirement distinct from a recorded outcome. BMSX does not import
 the extension-host/service registry or claim historical results certify current
 workspace dependencies.
+
+### Historical suite evidence is result-owned
+
+An owner regression reproduced the result history losing accepted suite text:
+only its revision number survived. Results now retain the exact accepted suite
+string alongside the original case identity/range, using the same input consumed
+by `TestRun`. The string is shared, not re-read or copied per case. Scenario Lab
+exposes it through the existing Details inspector after edits/reruns and target
+disposal; no historical working copy, invented Source link or second text history
+is created. It is explicitly suite-only historical evidence, not certification
+of current source or dependencies. Preparation failure does not imply execution.
+
+Validation: Lua **2374 passed, 1 skipped**, ROM packer **158 passed**; actual
+named-run, changed-source rerun and old-result inspection workflows pass on all
+three renderers. The captured-suite screenshot was inspected. Both product builds
+and typechecks pass; strict architecture audit reports zero issues. Tests-project
+typechecking retains the same 96 existing diagnostics. The first extended browser
+fixture exposed its own assumption that a previous operation left test-list
+focus; it now navigates back from result inspection using ordinary Shift+Tab.
+
+The pinned VS Code
+[result owner](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/contrib/testing/common/testResult.ts#L354-L390)
+keeps original output separate from a compact preview and
+[retirement](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/contrib/testing/common/testResult.ts#L510-L519)
+separate from outcome. BMSX applies that distinction to its accepted suite bytes,
+without importing VS Code's persistence or extension-host protocol.

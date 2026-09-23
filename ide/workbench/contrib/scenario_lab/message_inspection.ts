@@ -1,8 +1,21 @@
-import type { ScenarioSourceLocation } from '../../../testing/scenario/result_service';
+import type { ScenarioSourceLocation, ScenarioTestResult } from '../../../testing/scenario/result_service';
 import type { InspectedProperty } from '../../ui/property_inspector/model';
 import type { ScenarioLabMessageRow } from './view_model';
 
 export type ScenarioMessageProperty = InspectedProperty & { readonly location: ScenarioSourceLocation | undefined };
+
+/** Historical suite evidence is readable even after edits, reruns or target disposal. */
+export function describeScenarioTestResult(result: ScenarioTestResult): ScenarioMessageProperty[] {
+	return [{
+		label: 'RECORDED RESULT', value: result.state,
+		description: `${result.test.resource.path} / ${result.test.caseName} / REV ${result.sourceRevision}`,
+		location: undefined, warning: result.state === 'failed',
+	}, {
+		label: 'CAPTURED SUITE SOURCE', value: result.source,
+		description: 'Accepted test declaration only. This does not certify current workspace or dependency sources.',
+		location: undefined, warning: false,
+	}];
+}
 
 /** Original stored message, not the truncated row label or a reconstructed failure. */
 export function describeScenarioMessage(row: ScenarioLabMessageRow): ScenarioMessageProperty {

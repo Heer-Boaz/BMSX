@@ -118,6 +118,7 @@ export type ScenarioLabResultRow = ScenarioLabResultRowBase & ({
 });
 
 export type ScenarioLabMessageRow = Extract<ScenarioLabResultRow, { kind: 'log' | 'failure' }>;
+export type ScenarioLabInspectableRow = Extract<ScenarioLabResultRow, { kind: 'result' | 'log' | 'failure' }>;
 
 export type ScenarioLabPaneLayout = WorkbenchListLayout & {
 	headerTop: number;

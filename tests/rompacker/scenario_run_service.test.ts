@@ -69,6 +69,7 @@ return { kind = 'unit', tests = {
 		const suite = models.retain(sources.luaResources.find(resource => resource.path === SCENARIO_FIXTURE_TEST_SOURCE_PATH)!, 'lua', source);
 		suite.pushEditOperations([{ offset: source.indexOf('first ='), deleteLength: 5, text: 'captured' }]);
 		const capturedVersion = suite.version;
+		const capturedSource = suite.buffer.getText();
 		editorTextModelService.retain(suite.resource, 'lua', 'end end -- foreign document');
 		const helperModel = models.retain(sources.luaResources.find(resource => resource.path === helper.source_path)!, 'lua', helper.src);
 		const originalState = captureRuntimeMachineState(authoring.runtime);
@@ -86,6 +87,8 @@ return { kind = 'unit', tests = {
 		assert.deepEqual(runs.results.runs[0].items.map(item => item.state), ['passed', 'failed', 'passed']);
 		assert.equal(runs.results.runs[0].items[0].test.caseName, 'captured');
 		assert.equal(runs.results.runs[0].items[0].sourceRevision, capturedVersion);
+		const recorded = runs.results.runs[0].items[0];
+		assert.equal(recorded.source, capturedSource);
 		suite.undo(); helperModel.undo();
 		assert.equal(targets.length, 3, 'product construction runs once per case');
 		assert.equal(new Set(targets.map(target => target.input)).size, 3, 'each case supplies its own input');
@@ -134,6 +137,7 @@ return { kind = 'unit', tests = {
 		assert.equal(targets.length, targetCount + 1, 'shutdown cannot publish a pending target');
 		assert.throws(() => runs.start(addedModule.id), /closed/);
 		models.clear(); editorTextModelService.clear();
+		assert.equal(recorded.source, capturedSource, 'target and document disposal cannot rewrite recorded suite evidence');
 		assert.equal(disposed.size, targets.length);
 		authoring.dispose();
 	} finally { await rm(directory, { recursive: true, force: true }); }

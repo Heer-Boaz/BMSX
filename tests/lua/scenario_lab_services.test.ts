@@ -81,7 +81,7 @@ test('scenario result service retains current-first runs and bounded ordered out
 	]));
 	const item = collection.resolveNode(collection.roots[0])[0];
 	const service = new ScenarioResultService();
-	const firstRun = service.beginRun(item.id, [{ test: item, sourceRevision: 7 }]);
+	const firstRun = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 7 }]);
 	const first = service.startItem(firstRun, 0, 100);
 	service.markRunning(first);
 	for (let index = 0; index < SCENARIO_RESULT_LOG_RETAIN_COUNT + 2; index += 1) {
@@ -168,7 +168,7 @@ test('scenario result service retains current-first runs and bounded ordered out
 	assert.equal(firstRun.passedCount, 1);
 
 	for (let index = 0; index < SCENARIO_RUN_RETAIN_COUNT; index += 1) {
-		const run = service.beginRun(item.id, [{ test: item, sourceRevision: index }]);
+		const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: index }]);
 		const result = service.startItem(run, 0, index);
 		service.cancel(result, index + 1);
 		service.cancelRun(run);
@@ -185,6 +185,25 @@ test('scenario result service retains current-first runs and bounded ordered out
 	assert.equal(service.latestResultForTest(item.id), service.runs[0].items[0]);
 });
 
+test('recorded results retain the accepted suite bytes, not a later declaration with the same revision', () => {
+	const source = "-- captured 🐉\r\nreturn { kind = 'unit', tests = { sample = function() assert(false) end } }\r\n";
+	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
+		createScenarioTestSourceRecord('suite_assert.lua', 7, source),
+	]));
+	const module = collection.roots[0].children[0], item = module.children[0];
+	const results = new ScenarioResultService();
+	const run = results.beginRun(module.id, [{ test: item, source, sourceRevision: 7 }]);
+	const result = results.startItem(run, 0, 0);
+	results.fail(result, 1, { message: 'assertion failed', phase: 'body' }, null);
+	results.completeRun(run);
+	collection.updateSource(module, source.replace('false', 'true'), 7);
+	assert.equal(result.source, source);
+	assert.equal(result.test, item);
+	assert.notEqual(result.test, module.children[0]);
+	assert.equal(result.state, 'failed');
+	assert.equal(result.sourceRevision, module.sourceTimestamp, 'revision numbers alone do not certify source correspondence');
+});
+
 test('scenario result service retains aggregate failure and cancellation item states', () => {
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
@@ -196,6 +215,7 @@ test('scenario result service retains aggregate failure and cancellation item st
 	const service = new ScenarioResultService();
 	const run = service.beginRun(root.id, tests.map((item, index) => ({
 		test: item,
+		source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source,
 		sourceRevision: index + 1,
 	})));
 	const failed = service.startItem(run, 0, 0);
@@ -217,6 +237,7 @@ test('scenario result service retains aggregate failure and cancellation item st
 
 	const cancelled = service.beginRun(root.id, tests.map(item => ({
 		test: item,
+		source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source,
 		sourceRevision: 1,
 	})));
 	const active = service.startItem(cancelled, 0, 0);
@@ -258,7 +279,7 @@ test('scenario FSM observation consumes the fixed guest channel and fails on ove
 	]));
 	const service = new ScenarioResultService();
 	const item = collection.resolveNode(collection.roots[0])[0];
-	const run = service.beginRun(item.id, [{ test: item, sourceRevision: 1 }]);
+	const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 1 }]);
 	const result = service.startItem(run, 0, 10);
 	const observation = new ScenarioFsmTransitionObservation(
 		channel,
@@ -314,7 +335,7 @@ test('scenario ActionEffect observation consumes ordered producer facts and fail
 	]));
 	const service = new ScenarioResultService();
 	const item = collection.resolveNode(collection.roots[0])[0];
-	const run = service.beginRun(item.id, [{ test: item, sourceRevision: 1 }]);
+	const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 1 }]);
 	const result = service.startItem(run, 0, 10);
 	const observation = new ScenarioActionEffectObservation(
 		channel,
@@ -355,7 +376,7 @@ test('scenario failure retains authored fault navigation', () => {
 	]));
 	const item = collection.resolveNode(collection.roots[0])[0];
 	const service = new ScenarioResultService();
-	const run = service.beginRun(item.id, [{ test: item, sourceRevision: 10 }]);
+	const run = service.beginRun(item.id, [{ test: item, source: collection.findModuleBySourcePath(item.resource.domain, item.resource.path).source, sourceRevision: 10 }]);
 	const result = service.startItem(run, 0, 1);
 	const fault = {
 		message: 'assertion failed',

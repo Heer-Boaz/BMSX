@@ -7,7 +7,6 @@ import type { TestTarget, TestTargetFactory } from './target';
 import { TestInput } from './input';
 import { ScenarioResultService, type ScenarioRun, type ScenarioRunItemSource } from './scenario/result_service';
 
-export type TestSource = ScenarioRunItemSource & { readonly source: string };
 export type TestRunMedia = {
 	readonly sourceOnlyModules?: readonly ScenarioTestSource[];
 	readonly systemRom: Uint8Array;
@@ -24,11 +23,11 @@ export class TestRun {
 	private index = 0;
 	private cancelled = false;
 	private program: BuiltTestCartridge | null = null;
-	private programSource: TestSource | null = null;
+	private programSource: ScenarioRunItemSource | null = null;
 
 	public constructor(
 		public readonly result: ScenarioRun,
-		private readonly sources: readonly TestSource[],
+		private readonly sources: readonly ScenarioRunItemSource[],
 		private readonly media: TestRunMedia,
 		private readonly results: ScenarioResultService,
 		private readonly createTarget: TestTargetFactory,

@@ -1,7 +1,7 @@
 import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
-import { describeScenarioMessageDetails, type ScenarioMessageProperty } from './message_inspection';
-import type { ScenarioLabMessageRow } from './view_model';
+import { describeScenarioMessageDetails, describeScenarioTestResult, type ScenarioMessageProperty } from './message_inspection';
+import type { ScenarioLabInspectableRow } from './view_model';
 import { selectedScenarioResultRow } from './projection';
 import { prepareScenarioLabLayout } from './layout';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
@@ -45,7 +45,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		updateScenarioLabStatus(this.input.view);
 	});
 	public readonly inspector = new WorkbenchPropertyInspector<ScenarioMessageProperty>(inputFocus, pointerCapture, pointerHover, this.resultsFocus);
-	private inspectedMessage: ScenarioLabMessageRow | undefined;
+	private inspectedMessage: ScenarioLabInspectableRow | undefined;
 	private readonly inspectionLifetime = { dispose: () => { this.inspectedMessage = undefined; } };
 	private readonly navigate = (command: ScenarioLabNavigationCommand): void => {
 		const view = this.input.view;
@@ -68,8 +68,8 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		super(resourcePanel);
 		this.resultsFocus.registerCommand('scenarioLab.details', {
 			isEnabled: () => !this.inspector.visible && this.input.view.focus === 'results'
-				&& this.selectedMessage() !== undefined,
-			run: () => this.openDetails(this.selectedMessage()!),
+				&& this.selectedDetailsRow() !== undefined,
+			run: () => this.openDetails(this.selectedDetailsRow()!),
 		});
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		this.focusTarget.next = this.resultsFocus;
@@ -118,13 +118,14 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		this.inspector.update();
 	}
 
-	private selectedMessage(): ScenarioLabMessageRow | undefined {
+	private selectedDetailsRow(): ScenarioLabInspectableRow | undefined {
 		const row = selectedScenarioResultRow(this.input.view);
-		return row !== null && (row.kind === 'log' || row.kind === 'failure') ? row : undefined;
+		return row !== null && (row.kind === 'result' || row.kind === 'log' || row.kind === 'failure') ? row : undefined;
 	}
 
-	private openDetails(row: ScenarioLabMessageRow): void {
-		const lifetime = this.inspector.show({ title: row.result.test.label, items: describeScenarioMessageDetails(row),
+	private openDetails(row: ScenarioLabInspectableRow): void {
+		const lifetime = this.inspector.show({ title: row.result.test.label,
+			items: row.kind === 'result' ? describeScenarioTestResult(row.result) : describeScenarioMessageDetails(row),
 			canOpenSource: item => item.location !== undefined,
 			openSource: item => this.controller.openSource(item.location!),
 		});

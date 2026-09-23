@@ -91,6 +91,14 @@ reports actual completion. Disposing a view leaves this workspace owner alive.
 Working-copy restoration retires pending execution and permits new requests;
 workbench shutdown closes admission before asynchronous source saves.
 
+Result history retains the exact accepted suite text alongside its case identity,
+range and source revision. Scenario Lab's **Details / Inspect Test Result** on a
+case result reads that captured text, even after a rerun or disposal of its target
+and working copy. This is historical suite evidence, not an editable source or
+proof that the current workspace/dependencies match. A preparation failure may
+not have executed the captured suite at all. Revision numbers are labels within
+their source owner, not globally unique content identities.
+
 Machine construction is supplied by Studio/CLI composition through
 `TestTargetFactory`. The run owns test input and case/result policy; the concrete
 `OffscreenMachine` owns physical boot, lazy rendering and disposal. The host
