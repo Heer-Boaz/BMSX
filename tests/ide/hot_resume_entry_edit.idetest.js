@@ -82,7 +82,7 @@ t.replaceActiveCodeSource(entryRecord.base_src.replace(
 	'\trepeat\n\t\thalt_until_irq\n\tuntil vblank_count ~= 0\n\tvblank_count = vblank_count - 1\n',
 	'\tvblank_count = 0\n',
 ));
-await t.performHotResume();
+await t.performHotResume().admission;
 await t.frames(60);
 
 t.assert(sourceState.currentBlua32Media === originalMedia, 'rejected edit replaced tooling media');
@@ -111,7 +111,7 @@ t.replaceActiveCodeSource(entryRecord.base_src.replace(
 	'local function init<init>()',
 	'local function init()',
 ));
-await t.performHotResume();
+await t.performHotResume().admission;
 await t.frames(60);
 
 t.assert(sourceState.currentBlua32Media === originalMedia, 'init annotation removal replaced tooling media');
@@ -128,7 +128,7 @@ const installRevision = async (revision) => {
 	t.replaceActiveCodeSource(moduleRevisionSource(valueRecord, revision));
 	t.openLuaSource('base.lua');
 	t.replaceActiveCodeSource(systemRevisionSource(baseRecord, revision));
-	await t.performHotResume();
+	await t.performHotResume().admission;
 };
 
 const firstRevisionLogStart = t.logMessageCount();
@@ -184,7 +184,7 @@ cpu.setGlobalByKey(
 );
 t.openLuaSource('base.lua');
 t.replaceActiveCodeSource(systemRevisionSource(baseRecord, 3));
-await t.performHotResume();
+await t.performHotResume().admission;
 await t.frames(60);
 
 t.assert(
@@ -204,7 +204,7 @@ t.assert(
 	'dual-cart setup did not select the data-only socket',
 );
 t.toggleBreakpoint('entry.lua', initPrintBreakpointLine);
-await t.performHotResume();
+await t.performHotResume().admission;
 
 t.assert(!t.debuggerStopped(), 'Hot Resume tooling task executed guest init outside the frame scheduler');
 t.assert(
@@ -232,7 +232,7 @@ t.assert(
 );
 
 const stoppedInitFrameDepth = cpu.getFrameDepth();
-await t.performHotResume();
+await t.performHotResume().admission;
 
 t.assert(!t.debuggerStopped(), 'nested Hot Resume did not release the stopped init frame');
 t.assert(
@@ -275,7 +275,7 @@ await t.frames(60);
 t.assert(t.debuggerStopped(), 'cart did not reach the loop breakpoint before stopped Hot Resume');
 const loopCountAtStoppedHotResume = cpu.getGlobalByKey(loopCountKey);
 const initCountAtStoppedHotResume = cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count'));
-await t.performHotResume();
+await t.performHotResume().admission;
 
 t.assert(!t.debuggerStopped(), 'Hot Resume did not release the relocated debugger stop');
 t.assert(
@@ -328,7 +328,7 @@ t.replaceActiveCodeSource(revisionSource(entryRecord, 2).replace(
 	"\tprint('hot-resume-init')\n\thot_resume_module_probe()\n",
 ));
 const faultLogStart = t.logMessageCount();
-await t.performHotResume();
+await t.performHotResume().admission;
 
 const faultSequenceAddress = 0x08010428;
 let faultSequence = 0;
@@ -374,7 +374,7 @@ const loopCountAtFault = 0;
 t.assert(rebootedRuntime.completionCallPending(), 'faulted init completion root is not physically pending');
 t.openLuaSource('entry.lua');
 t.replaceActiveCodeSource(revisionSource(entryRecord, 2));
-await t.performHotResume();
+await t.performHotResume().admission;
 
 t.assert(sourceState.currentBlua32Media === faultedMedia, 'supervisor Hot Resume installed media during phase one');
 t.assert(!rebootedCpu.isUserMode(), 'supervisor Hot Resume left firmware during phase one');

@@ -230,6 +230,7 @@ export function runWorkbenchHostFrame(
 			if (supervisorFaultSequence !== ide.fault.supervisorFaultSequence) {
 				session.execution.finishFrameStep();
 				ide.fault.supervisorFaultSequence = supervisorFaultSequence;
+				ide.debugger.plans.faultCompletionBatches(supervisorFaultSequence);
 				handleSupervisorFault(
 					logOutput,
 					ide.fault,
@@ -240,10 +241,10 @@ export function runWorkbenchHostFrame(
 				if (ide.debugger.plans.controlActive) {
 					didFaultRuntimeDebuggerPlan(ide.debugger);
 				}
-			} else if (ide.debugger.plans.controlActive) {
-				didExecuteRuntimeDebuggerPlan(ide.debugger);
+			} else {
+				if (ide.debugger.plans.controlActive) didExecuteRuntimeDebuggerPlan(ide.debugger);
+				ide.debugger.plans.pruneCompletedCompletionBatches();
 			}
-			ide.debugger.plans.pruneCompletedCompletionBatches();
 			if (ide.debugger.stopPresentationPending) {
 				session.execution.finishFrameStep();
 				activateEditor(

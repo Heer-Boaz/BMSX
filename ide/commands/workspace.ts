@@ -9,7 +9,7 @@ import { editorTextModelService } from '../editor/model/model_service';
 import { performEditorAction } from './actions';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import type { Input } from '../../hosts/common/input/manager';
+import type { HotResumeService } from '../workbench/services/execution/hot_resume';
 import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
@@ -46,7 +46,7 @@ export function executeEditorWorkspaceCommand(
 	fault: RuntimeFaultState,
 	luaTooling: RuntimeLuaTooling,
 	debuggerState: RuntimeDebuggerState,
-	input: Input,
+	hotResumes: HotResumeService,
 	runtimeTasks: RuntimeTaskQueue,
 	execution: HostExecutionControl,
 	overlayRenderer: OverlayRenderer,
@@ -82,7 +82,7 @@ export function executeEditorWorkspaceCommand(
 					return;
 				}
 				performEditorAction(editor, sources, fault, luaTooling, debuggerState,
-					input, runtimeTasks, execution, overlayRenderer, runtime, audioOutput,
+					hotResumes, runtimeTasks, execution, overlayRenderer, runtime, audioOutput,
 					storage, logOutput, request);
 			};
 			if (command === 'runCurrentFile' || command === 'runProject') {

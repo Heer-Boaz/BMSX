@@ -100,8 +100,9 @@ export async function testCapturedSourceApply(test: StudioFixture): Promise<void
 	check(cycles() === position && getTextFileRuntimeSourceStatus(ide.sources, model) === 'pending', 'W04: waiting source build does not acknowledge or execute edited code');
 	releaseTask();
 	await blockedTask;
-	await pendingApply;
+	await pendingApply.admission;
 	await until(() => tasks.ready && !ide.debugger.plans.mutationActive && !runtime.completionCallPending(), 'W04: captured source apply completes');
+	check((await pendingApply.completion).status === 'completed', 'W04: operation result follows the actual init roots');
 	check(title() === actor, 'W04: an asynchronous source install retains the real actor');
 	check(ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('title_screen') === captured, 'W04: only the captured source is compiled, not later typing');
 	check(getTextFileRuntimeSourceStatus(ide.sources, model) === 'pending', 'W04: later typing stays visibly unapplied after installation');

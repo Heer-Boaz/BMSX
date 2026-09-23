@@ -1,11 +1,8 @@
 import { captureLuaTextModelSources } from '../workbench/services/working_copy/lua_sources';
-import { buildBlua32Revision, hotResume } from '../runtime/hot_resume';
-import { blua32MediaRequiresRebuild } from '../runtime/lua_pipeline';
 import { performHotResume } from '../commands/actions';
 import { rebootPreparedRuntime } from '../workbench/blua32_boot';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import type { Input } from '../../hosts/common/input/manager';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import { openLuaCodeTab } from '../workbench/ui/code_tab/io';
 import { activeCodeEditor, type CodeEditorContext } from '../editor/ui/code_editor_state';
@@ -22,7 +19,7 @@ import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_m
 import type { EditorCommandId } from '../common/commands';
 import type { LuaSignatureHelp } from '../../toolchain/ts/lua/semantic/signature_help';
 import { toggleBreakpoint } from '../workbench/contrib/debugger/controller';
-import { handleLuaError } from '../workbench/runtime_errors';
+import type { HotResumeOperation } from '../workbench/services/execution/hot_resume';
 import { getActiveCodeTabContext } from '../workbench/ui/code_tab/contexts';
 import { updateHoverTooltip } from '../editor/contrib/hover/controller';
 import { hoverState, type CodeHoverTooltip } from '../editor/contrib/hover/state';
@@ -58,10 +55,8 @@ export type HeadlessIdeHarness = {
 	getActiveCodeContext(): Readonly<CodeTabContext> | null;
 	getActiveEditorDocument(): Readonly<CodeEditorContext>;
 	getWorkbenchTabs(): readonly EditorInput[];
-	/** Execute Hot Resume directly against the source registry's current dirty state. */
-	hotResumeCore(): void;
-	/** Full IDE hot-resume action, completed after its queued rebuild settles. */
-	performHotResume(): Promise<void>;
+	/** Full IDE operation: admission releases the queue; completion waits for physical init. */
+	performHotResume(): HotResumeOperation;
 	toggleLuaBreakpoint(path: string, line: number): void;
 	isDebuggerStopped(): boolean;
 	reboot(): Promise<void>;
@@ -86,23 +81,10 @@ export type HeadlessIdeHeapStats = {
 export function createHeadlessIdeHarness(
 	ide: RuntimeIdeState,
 	runtime: Runtime,
-	input: Input,
 	audioOutput: HostAudioOutput,
 	storage: KeyValueStorage,
 	logOutput: RecordingLogOutput,
 ): HeadlessIdeHarness {
-	const handleHotResumeError = (error: unknown): void => {
-		console.error(error);
-		handleLuaError(
-			logOutput,
-			ide.fault,
-			ide.sources,
-			runtime,
-			ide.luaTooling.suspendedGuest,
-			error,
-		);
-		ide.editor.handleRuntimeTaskError(error, 'Failed to resume game');
-	};
 	return {
 		getRuntime: () => runtime,
 		getSourceState: () => ide.sources,
@@ -128,39 +110,9 @@ export function createHeadlessIdeHarness(
 			);
 			return hoverState.tooltip;
 		},
-		hotResumeCore: () => {
-			hotResume(
-				ide.sources,
-				ide.luaTooling,
-				ide.fault,
-				ide.debugger,
-				input,
-				ide.runtimeTasks,
-				runtime,
-				blua32MediaRequiresRebuild(ide.sources)
-					? buildBlua32Revision(ide.sources, ide.luaTooling, runtime,
-						ide.sources.systemBlua32MediaDirty, ide.sources.cartridgeBlua32MediaDirty)
-					: null,
-				handleHotResumeError,
-				null,
-			);
-		},
-		performHotResume: () =>
-			performHotResume(
-				ide.editor,
-				ide.sources,
-				ide.fault,
-				ide.luaTooling,
-				ide.debugger,
-				input,
-				ide.runtimeTasks,
-				ide.execution,
-				ide.overlayRenderer,
-				runtime,
-				audioOutput,
-				storage,
-				logOutput,
-			),
+		performHotResume: () => performHotResume(
+			ide.hotResumes, ide.editor, ide.execution, ide.overlayRenderer, audioOutput, logOutput,
+		),
 		toggleLuaBreakpoint: (path: string, line: number) => {
 			const resource = resolveRuntimeResourceForContext(
 				ide.sources,

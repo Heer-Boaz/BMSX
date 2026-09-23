@@ -14,7 +14,9 @@ t.log(`warm ${fmt(warm)}`);
 const RESUMES = 8;
 let baseline;
 for (let i = 0; i < RESUMES; i += 1) {
-	await t.hotResume();
+	const resume = t.performHotResume();
+	const result = await resume.completion;
+	t.assert(result.status === 'completed', `no-op resume ${i + 1}: ${result.status}`);
 	await t.frames(8);
 	const s = t.debugStats();
 	t.log(`resume ${i + 1}/${RESUMES}: ${fmt(s)}`);

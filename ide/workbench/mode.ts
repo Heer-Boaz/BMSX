@@ -104,6 +104,7 @@ export async function initializeIdeFeatures(
 		resourcePanelWidthRatio,
 		viewport,
 		sources,
+		workspaceDirtyRecords,
 		createGraphLayoutEngine,
 		createTestTarget,
 	);
@@ -182,6 +183,7 @@ export function surfaceHostFrameError(
 ): void {
 	state.overlayRenderer.abandonFrame();
 	state.fault.hostFrameFailed = true;
+	state.hotResumes.failPending(error);
 	handleLuaError(
 		logOutput,
 		state.fault,

@@ -5,7 +5,7 @@ import type { HostRewind } from '../../hosts/common/rewind';
 import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import type { Input } from '../../hosts/common/input/manager';
+import type { HotResumeService } from '../workbench/services/execution/hot_resume';
 import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
@@ -62,7 +62,7 @@ export class IdeCommandController {
 		private readonly fault: RuntimeFaultState,
 		private readonly luaTooling: RuntimeLuaTooling,
 		private readonly debuggerState: RuntimeDebuggerState,
-		private readonly input: Input,
+		private readonly hotResumes: HotResumeService,
 		private readonly runtimeTasks: RuntimeTaskQueue,
 		private readonly execution: HostExecutionControl,
 		private readonly rewind: HostRewind,
@@ -228,7 +228,7 @@ export class IdeCommandController {
 				this.fault,
 				this.luaTooling,
 				this.debuggerState,
-				this.input,
+				this.hotResumes,
 				this.runtimeTasks,
 				this.execution,
 				this.overlayRenderer,
@@ -264,7 +264,7 @@ export class IdeCommandController {
 			this.fault,
 			this.luaTooling,
 			this.debuggerState,
-			this.input,
+			this.hotResumes,
 			this.runtimeTasks,
 			this.execution,
 			this.overlayRenderer,
@@ -280,7 +280,7 @@ export class IdeCommandController {
 		const context = focus?.commandContext;
 		switch (command) {
 			case 'hot-resume':
-				return !this.execution.launchPending;
+				return this.hotResumes.acceptingRequests && !this.execution.launchPending;
 			case 'runCurrentFile': {
 				const resource = getActiveTab().resource;
 				if (!this.runtimeTasks.ready || !resource || resource.domain === -1) return false;

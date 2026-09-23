@@ -86,7 +86,6 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 		frames: waitFrames,
 		postInput: (event: InputEvt) => options.input.post(event),
 		capture: (description: string) => options.capture.captureNow(description, `ide:${label}`),
-		hotResume: () => options.ide.hotResumeCore(),
 		performHotResume: () => options.ide.performHotResume(),
 		toggleBreakpoint: (path: string, line: number) => options.ide.toggleLuaBreakpoint(path, line),
 		debuggerStopped: () => options.ide.isDebuggerStopped(),

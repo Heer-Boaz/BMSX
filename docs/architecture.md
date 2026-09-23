@@ -2217,8 +2217,15 @@ state; the CPU, system controller, firmware, and normal scheduler contain no Hot
 Resume state or branch.
 
 Successful installation clears obsolete runtime-error adornments as well as
-the fault/inspection snapshot; the source-applied marker and status report
-installation, not successful completion of the still-pending guest init.
+the fault/inspection snapshot. The source-applied marker reports installation,
+not successful completion of the still-pending guest init. Studio's session-owned
+operation distinguishes admission, installation and completion. Its completion
+toast follows the actual init roots; a breakpoint leaves it pending. The
+IDE-owned batch observes its retained thread across coroutine switches. Physical
+fault notification settles pending observers once without deleting recovery
+roots; completed roots are pruned before attributing a later same-slice fault.
+Reset/shutdown cancel outstanding requests, and retired queued installations
+cannot publish into the replaced session. No operation state enters the CPU.
 An init fault remains a real visible fault and is repaired through the existing
 completion/supervisor route. Combined workflow evidence and remaining Studio
 scope are recorded in [Studio development workflows](studio_development_workflows.md).

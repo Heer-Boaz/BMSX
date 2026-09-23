@@ -1,4 +1,4 @@
-import type { CPU } from '../../machine/ts/machine/cpu/cpu';
+import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import type {
 	ExecutionDomainId,
 	ExecutionDomainMask,
@@ -27,22 +27,34 @@ export type RuntimeDebuggerCompletionBatch = {
 	readonly executionDomains: readonly ExecutionDomainId[];
 };
 
+export type RuntimeDebuggerCompletionResult =
+	| { readonly status: 'completed' | 'discarded' }
+	| { readonly status: 'faulted'; readonly sequence: number };
+
 class RuntimeDebuggerCompletionBatchRecord implements RuntimeDebuggerCompletionBatch {
 	public constructor(
-		private readonly cpu: CPU,
+		public readonly thread: Thread,
 		public readonly firstFrameIndex: number,
 		public readonly executionDomains: readonly ExecutionDomainId[],
+		private settled: ((result: RuntimeDebuggerCompletionResult) => void) | null,
 	) {
 	}
 
 	public isPending(): boolean {
-		return this.cpu.getFrameDepth() > this.firstFrameIndex
-			&& this.cpu.readFrameReturnsToCompletionLatch(this.firstFrameIndex);
+		return this.thread.frames.length > this.firstFrameIndex
+			&& this.thread.frames[this.firstFrameIndex].returnToCompletionLatch;
 	}
 
-	public containsFrame(frameIndex: number): boolean {
-		return frameIndex >= this.firstFrameIndex
+	public containsFrame(thread: Thread, frameIndex: number): boolean {
+		return thread === this.thread && frameIndex >= this.firstFrameIndex
 			&& frameIndex < this.firstFrameIndex + this.executionDomains.length;
+	}
+
+	public settle(result: RuntimeDebuggerCompletionResult): void {
+		// A fault retires the observer, not the physical roots needed by recovery.
+		const settled = this.settled;
+		this.settled = null;
+		settled?.(result);
 	}
 }
 
@@ -122,44 +134,54 @@ export class RuntimeDebuggerPlanManager {
 	}
 
 	public pushCompletionBatch(
-		cpu: CPU,
+		thread: Thread,
 		firstFrameIndex: number,
 		executionDomains: readonly ExecutionDomainId[],
+		settled: (result: RuntimeDebuggerCompletionResult) => void,
 	): void {
 		this.completionBatches.push(new RuntimeDebuggerCompletionBatchRecord(
-			cpu,
+			thread,
 			firstFrameIndex,
 			executionDomains,
+			settled,
 		));
 	}
 
 	public pruneCompletedCompletionBatches(): void {
-		while (this.completionBatches.length !== 0) {
-			const batch = this.completionBatches[this.completionBatches.length - 1];
-			if (batch.isPending()) {
-				return;
-			}
-			this.completionBatches.length -= 1;
+		// Roots are LIFO within one thread, not across suspended coroutines.
+		for (let index = this.completionBatches.length - 1; index >= 0; index -= 1) {
+			const batch = this.completionBatches[index];
+			if (batch.isPending()) continue;
+			this.completionBatches.splice(index, 1);
+			batch.settle({ status: 'completed' });
 		}
 	}
 
-	public completionBatchAtFrame(frameIndex: number): RuntimeDebuggerCompletionBatch | null {
+	public faultCompletionBatches(sequence: number): void {
+		// Init may have returned before an ordinary gameplay fault in this slice.
+		this.pruneCompletedCompletionBatches();
+		for (const batch of this.completionBatches) batch.settle({ status: 'faulted', sequence });
+	}
+
+	public completionBatchAtFrame(thread: Thread, frameIndex: number): RuntimeDebuggerCompletionBatch | null {
 		for (let batchIndex = this.completionBatches.length - 1;
 			batchIndex >= 0;
 			batchIndex -= 1) {
 			const batch = this.completionBatches[batchIndex];
-			if (batch.containsFrame(frameIndex)) {
+			if (batch.containsFrame(thread, frameIndex)) {
 				return batch;
 			}
 		}
 		return null;
 	}
 
-	public discardCompletionBatchesFrom(frameIndex: number): void {
-		while (this.completionBatches.length !== 0
-			&& this.completionBatches[this.completionBatches.length - 1].firstFrameIndex
-				>= frameIndex) {
-			this.completionBatches.length -= 1;
+	public discardCompletionBatchesFrom(thread: Thread, frameIndex: number): void {
+		for (let index = this.completionBatches.length - 1; index >= 0; index -= 1) {
+			const batch = this.completionBatches[index];
+			if (batch.thread === thread && batch.firstFrameIndex >= frameIndex) {
+				this.completionBatches.splice(index, 1);
+				batch.settle({ status: 'discarded' });
+			}
 		}
 	}
 
@@ -168,6 +190,6 @@ export class RuntimeDebuggerPlanManager {
 			this.controlPlan.discard();
 			this.controlPlan = null;
 		}
-		this.completionBatches.length = 0;
+		while (this.completionBatches.length !== 0) this.completionBatches.pop()!.settle({ status: 'discarded' });
 	}
 }

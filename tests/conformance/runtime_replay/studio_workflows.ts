@@ -269,7 +269,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	const checkpointsBeforeRejected = history.checkpointCount;
 	const earliestBeforeRejected = history.earliestCycles;
 	harness.replaceActiveCodeSource(source + '\nend end\n');
-	await harness.performHotResume();
+	await harness.performHotResume().admission;
 	for (let index = 0; index < 5; index += 1) await frame();
 	check(cycles() === beforeRejected && execution.userPaused && ide.editor.isActive,
 		'compile error keeps the selected execution and visible editor');
@@ -285,7 +285,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	harness.toggleLuaBreakpoint('title_screen.lua', initLine);
 	harness.replaceActiveCodeSource(source.replace(originalRule, "pattern = 'down[jp]'"));
 	const thirdActor = title();
-	await harness.performHotResume();
+	await harness.performHotResume().admission;
 	await until(() => ide.debugger.stopped && ide.editor.isActive, 'breakpoint inside init is visible');
 	check(runtime.completionCallPending() && title() === thirdActor, 'init stop retains real completion call and actor');
 	check(history.mode === HistoryMode.Disabled, 'host-controlled init is not recorded as ordinary replay input');
@@ -309,14 +309,14 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	check(faultSource.includes("error('studio init fault')"), 'real init edit point');
 	harness.replaceActiveCodeSource(faultSource);
 	observations.expectedFaultSequence = 1;
-	await harness.performHotResume();
+	await harness.performHotResume().admission;
 	await until(() => runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) === observations.expectedFaultSequence
 		&& ide.fault.lastLuaCallStack.length !== 0, 'guest init fault exposes actual stack');
 	check(runtime.completionCallPending() && history.mode === HistoryMode.Disabled, 'failed init retains completion ownership');
 	const faultActor = title();
 	harness.openLuaSource('title_screen.lua');
 	harness.replaceActiveCodeSource(source.replace(originalRule, "pattern = 'up[jp]'"));
-	await harness.performHotResume();
+	await harness.performHotResume().admission;
 	await until(() => tasks.ready && !runtime.completionCallPending() && !ide.debugger.plans.mutationActive
 		&& history.checkpointCount !== 0, 'fault repair follows existing supervisor return and init route');
 	check(title() === faultActor, 'fault repair keeps the retained actor');

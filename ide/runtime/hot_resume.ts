@@ -23,6 +23,7 @@ import {
 	IO_SYS_STATUS,
 	SYS_STATUS_SUPERVISOR_ACTIVE,
 	SYS_STATUS_SUPERVISOR_RESUMABLE,
+	IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
 } from '../../machine/ts/spec/bmsx/io';
 import type { RuntimeSourceState } from './sources';
 import type { Blua32SourceMedia } from './sources';
@@ -54,6 +55,14 @@ export type BuiltBlua32Revision = {
 	mediaInstallation: Blua32MediaInstallation;
 	revisions: HotResumeRevisions;
 };
+
+/** Runtime evidence, distinct from source preparation and command presentation. */
+export type HotResumeEvent =
+	| { readonly kind: 'applied' | 'initializing' | 'completed' | 'discarded' }
+	| { readonly kind: 'rejected' | 'failed'; readonly error: unknown }
+	| { readonly kind: 'faulted'; readonly sequence: number };
+
+export type HotResumeAdmission = 'applied' | 'deferred' | 'rejected';
 
 type PreparedHotResume = {
 	readonly built: BuiltBlua32Revision | null;
@@ -87,7 +96,8 @@ class HotResumeSupervisorPlan implements RuntimeDebuggerControlPlan {
 		private readonly targetPc: number,
 		supervisorActive: boolean,
 		private readonly installation: () => void,
-		private readonly onError: (error: unknown) => void,
+		private readonly isCurrent: () => boolean,
+		private readonly report: (event: HotResumeEvent) => void,
 	) {
 		this.phase = supervisorActive
 			? HotResumeSupervisorPlanPhase.AwaitingSupervisorReady
@@ -141,17 +151,22 @@ class HotResumeSupervisorPlan implements RuntimeDebuggerControlPlan {
 			return RuntimeDebuggerPlanResult.Active;
 		}
 		this.input.setProgrammaticSupervisorRequestLine(false);
-		this.runtimeTasks.schedule(this.installation, this.onError);
+		this.runtimeTasks.schedule(() => {
+			// Reset/shutdown may retire the request after the plan queues this write.
+			if (this.isCurrent()) this.installation();
+		}, error => this.report({ kind: 'failed', error }));
 		return RuntimeDebuggerPlanResult.Complete;
 	}
 
 	public didFault(): RuntimeDebuggerPlanResult {
 		this.input.setProgrammaticSupervisorRequestLine(false);
+		this.report({ kind: 'faulted', sequence: this.runtime.machine.memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) });
 		return RuntimeDebuggerPlanResult.Complete;
 	}
 
 	public discard(): void {
 		this.input.setProgrammaticSupervisorRequestLine(false);
+		this.report({ kind: 'discarded' });
 	}
 }
 
@@ -246,8 +261,8 @@ export function installBlua32Revision(
 	applyHotResumeRelocation(cpu, relocation);
 }
 
-/** Returns whether installation completed or a supervisor-return plan was admitted. */
-export function hotResume(
+/** Admit installation or a supervisor-return plan; init completion is reported by its physical roots. */
+export function admitHotResume(
 	sources: RuntimeSourceState,
 	luaTooling: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
@@ -256,9 +271,9 @@ export function hotResume(
 	runtimeTasks: RuntimeTaskQueue,
 	runtime: Runtime,
 	built: BuiltBlua32Revision | null,
-	onError: (error: unknown) => void,
-	installationCompleted: (() => void) | null,
-): boolean {
+	isCurrent: () => boolean,
+	report: (event: HotResumeEvent) => void,
+): HotResumeAdmission {
 	try {
 		const sourceEditDomains = built === null ? 0 : built.sourceEditDomains;
 		const rebuildSystem = (sourceEditDomains & executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID)) !== 0;
@@ -300,6 +315,7 @@ export function hotResume(
 						completionFrameIndex -= 1;
 					}
 					const failedBatch = debuggerState.plans.completionBatchAtFrame(
+						cpu.activeThread,
 						completionFrameIndex,
 					);
 					if (failedBatch === null) {
@@ -350,7 +366,7 @@ export function hotResume(
 			initCalls,
 			failedCompletionFrameIndex,
 		};
-		const installation = (): boolean => {
+		const installation = (): HotResumeAdmission => {
 			const retainedFrameCount = prepared.failedCompletionFrameIndex >= 0
 				? prepared.failedCompletionFrameIndex
 				: cpu.getFrameDepth();
@@ -362,8 +378,8 @@ export function hotResume(
 			} catch (error) {
 				// Unsupported live edits reject before any media/CPU write. They
 				// must not fault the mutation queue or stop the installed program.
-				onError(error);
-				return false;
+				report({ kind: 'rejected', error });
+				return 'rejected';
 			}
 			applyPreparedHotResume(
 				sources,
@@ -373,11 +389,10 @@ export function hotResume(
 				runtime,
 				prepared,
 				relocation,
+				report,
 			);
-			if (installationCompleted !== null) {
-				installationCompleted();
-			}
-			return true;
+			report({ kind: prepared.initCalls.length === 0 ? 'completed' : 'initializing' });
+			return 'applied';
 		};
 		if (deferUntilUserExecution) {
 			const targetFrameIndex = userFrameDepth - 1;
@@ -395,10 +410,11 @@ export function hotResume(
 					cpu.readFramePc(targetFrameIndex),
 					supervisorActive,
 					installation,
-					onError,
+					isCurrent,
+					report,
 				),
 			);
-			return true;
+			return 'deferred';
 		}
 		return installation();
 	} catch (error) {
@@ -414,6 +430,7 @@ function applyPreparedHotResume(
 	runtime: Runtime,
 	prepared: PreparedHotResume,
 	relocation: Uint32Array | null,
+	report: (event: HotResumeEvent) => void,
 ): void {
 	const cpu = runtime.machine.cpu;
 	// Preparation (including relocation rejection) leaves history untouched.
@@ -422,6 +439,7 @@ function applyPreparedHotResume(
 	if (prepared.failedCompletionFrameIndex >= 0) {
 		cpu.abortCompletionCall(prepared.failedCompletionFrameIndex);
 		debuggerState.plans.discardCompletionBatchesFrom(
+			cpu.activeThread,
 			prepared.failedCompletionFrameIndex,
 		);
 		discardRuntimeDebuggerFramesFrom(
@@ -437,6 +455,7 @@ function applyPreparedHotResume(
 			relocation!,
 		);
 	}
+	report({ kind: 'applied' });
 	luaTooling.luaInterpreter.clearLastFaultEnvironment();
 	clearFaultSnapshot(fault);
 	resetHandledLuaErrors(fault);
@@ -456,9 +475,12 @@ function applyPreparedHotResume(
 	}
 	if (stagedExecutionDomains.length !== 0) {
 		debuggerState.plans.pushCompletionBatch(
-			cpu,
+			cpu.activeThread,
 			firstFrameIndex,
 			stagedExecutionDomains,
+			result => report(result.status === 'faulted'
+				? { kind: 'faulted', sequence: result.sequence }
+				: { kind: result.status }),
 		);
 	}
 }

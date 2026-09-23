@@ -1,3 +1,4 @@
+import type { HotResumeService } from './workbench/services/execution/hot_resume';
 import { ActorLabController } from './workbench/contrib/actor_lab/controller';
 import { GameViewInput } from './workbench/contrib/game_view/editor_input';
 import { GameViewEditorPane } from './workbench/contrib/game_view/editor_pane';
@@ -35,7 +36,7 @@ import * as constants from './common/constants';
 import type { FaultSnapshot, RuntimeErrorDetails, RuntimeFaultState } from './runtime/fault_state';
 import type { ResourceIdentity } from './common/resource';
 import type { RuntimeLuaTooling } from './runtime/lua_tooling';
-import type { RuntimeDebuggerState } from './runtime/debugger_state';
+import { discardRuntimeDebuggerPlans, type RuntimeDebuggerState } from './runtime/debugger_state';
 import type { OverlayRenderer } from './runtime/overlay_renderer';
 import type { RuntimeTaskQueue } from '../hosts/common/runtime_task_queue';
 import { showEditorMessage, updateEditorMessage, setEditorFeedbackActive, editorFeedbackState } from './common/feedback_state';
@@ -254,6 +255,7 @@ export class RuntimeCartEditor implements CartEditor {
 		scenarioTests: ScenarioTestCollection,
 		scenarioRuns: ScenarioRunService,
 		private readonly textFileSaves: TextFileSaveService,
+		private readonly hotResumes: HotResumeService,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
 	) {
 		this.runtime = runtime;
@@ -274,7 +276,7 @@ export class RuntimeCartEditor implements CartEditor {
 			fault,
 			luaTooling,
 			debuggerState,
-			input,
+			hotResumes,
 			runtimeTasks,
 			execution,
 			rewind,
@@ -584,7 +586,10 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public async shutdown(): Promise<void> {
+		const executionDrained = this.hotResumes.shutdown();
+		discardRuntimeDebuggerPlans(this.debuggerState);
 		await this.textFileSaves.shutdown();
+		await executionDrained;
 		pointerHover.clear();
 		pointerCapture.cancel();
 		this.contextMenu.dispose();

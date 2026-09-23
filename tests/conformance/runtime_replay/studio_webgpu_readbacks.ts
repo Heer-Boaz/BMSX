@@ -43,10 +43,11 @@ export async function testStudioWebGpuReadbacks(test: StudioFixture, backend: We
 	check(ide.sources.currentBlua32Media === mappingMedia && cycles() === mappingAt,
 		'apply waits for old callbacks; no replay or code mutation while mapping is held');
 	releaseReadback();
-	await pendingApply;
+	await pendingApply.admission;
 	readbackBuffer.mapAsync = mapAsync;
 	await until(() => tasks.ready && !ide.debugger.plans.mutationActive && !runtime.completionCallPending()
 		&& history.checkpointCount !== 0, 'pending apply completes at retained position');
+	check((await pendingApply.completion).status === 'completed', 'readback lifetime reports actual initialization completion');
 	check(history.earliestCycles >= mappingAt, 'superseded seeks cannot win after code apply');
 
 	await press('ControlRight', 'ShiftRight');

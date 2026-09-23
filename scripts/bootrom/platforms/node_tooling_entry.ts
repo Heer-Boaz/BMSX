@@ -326,7 +326,6 @@ async function main(): Promise<void> {
 								ide: createHeadlessIdeHarness(
 									ide,
 									runtime,
-									input,
 									audioOutput,
 									storage,
 									ideTestLogOutput,

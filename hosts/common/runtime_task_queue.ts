@@ -24,6 +24,9 @@ export class RuntimeTaskQueue {
 		return this.mutationPending === 0 && !this.failed;
 	}
 
+	/** Join already admitted work. The caller must close its own admission first. */
+	public join(): Promise<void> { return this.tail; }
+
 	public schedule(
 		task: () => void | Promise<void>,
 		onError: (error: unknown) => void,

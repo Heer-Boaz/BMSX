@@ -24,6 +24,8 @@ import { ScenarioRunService } from './contrib/scenario_lab/run_service';
 import { ScenarioTestCollection } from '../testing/scenario/test_collection';
 import type { TestTargetFactory } from '../testing/target';
 import { TextFileSaveService } from './services/working_copy/text_file_save';
+import { HotResumeService } from './services/execution/hot_resume';
+import type { WorkspaceRecord } from '../workspace/records';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io';
 import { syncRuntimeSourceActivity } from '../runtime/sources';
 import { clearAllRuntimeErrorOverlays } from '../runtime_error/navigation';
@@ -42,6 +44,7 @@ export class RuntimeIdeState {
 	public readonly scenarioTests: ScenarioTestCollection;
 	public readonly scenarioRuns: ScenarioRunService;
 	public readonly textFileSaves: TextFileSaveService;
+	public readonly hotResumes: HotResumeService;
 	public readonly fault: RuntimeFaultState = createRuntimeFaultState();
 
 	public constructor(
@@ -61,6 +64,7 @@ export class RuntimeIdeState {
 		resourcePanelWidthRatio: number,
 		viewport: Viewport,
 		public readonly sources: RuntimeSourceState,
+		workspaceDirtyRecords: ReadonlyMap<string, WorkspaceRecord>,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
 		createTestTarget: TestTargetFactory,
 	) {
@@ -73,6 +77,8 @@ export class RuntimeIdeState {
 		this.scenarioTests = new ScenarioTestCollection(sources);
 		this.scenarioRuns = new ScenarioRunService(sources, this.luaTooling, storage, runtime.model, createTestTarget);
 		this.textFileSaves = new TextFileSaveService(storage, clock, sources, this.luaTooling, runtime, runtimeTasks);
+		this.hotResumes = new HotResumeService(sources, this.luaTooling, this.fault, this.debugger,
+			input, runtime, runtimeTasks, storage, workspaceDirtyRecords);
 		this.editor = new RuntimeCartEditor(
 			runtime,
 			presenter,
@@ -97,11 +103,13 @@ export class RuntimeIdeState {
 			this.scenarioTests,
 			this.scenarioRuns,
 			this.textFileSaves,
+			this.hotResumes,
 			createGraphLayoutEngine,
 		);
 		this.overlayRenderer.setViewportSize(viewport);
 		this.editor.updateViewport(viewport);
 		runtime.onStateRestored = () => {
+			this.hotResumes.cancelPending('machine-reset');
 			this.execution.setPauseReason(HostPauseReason.AwaitingLaunch, false);
 			// A restored heap is a new inspection context, not the previous stop.
 			this.luaTooling.suspendedGuest.invalidate('heap-replaced');

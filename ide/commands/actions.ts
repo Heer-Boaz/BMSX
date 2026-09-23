@@ -1,14 +1,11 @@
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import { editorRuntimeState } from '../editor/common/runtime_state';
-import { applyAllWorkspaceSourceOverrides, applyLuaTextModelSources } from '../workspace/workspace';
-import { workspaceDirtyRecords } from '../workbench/workspace/state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import type { Input } from '../../hosts/common/input/manager';
 import { LogLevel, type LogOutput } from '../../hosts/common/log';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
-import { buildBlua32Revision, hotResume, type BuiltBlua32Revision } from '../runtime/hot_resume';
-import { blua32MediaRequiresRebuild, type Blua32CartridgeEntry } from '../runtime/lua_pipeline';
+import type { HotResumeService, HotResumeOperation } from '../workbench/services/execution/hot_resume';
+import type { Blua32CartridgeEntry } from '../runtime/lua_pipeline';
 import { deactivateEditor } from '../workbench/overlay_modes';
 import { handleLuaError } from '../workbench/runtime_errors';
 import { rebootPreparedRuntime } from '../workbench/blua32_boot';
@@ -33,7 +30,7 @@ export function performEditorAction(
 	fault: RuntimeFaultState,
 	luaTooling: RuntimeLuaTooling,
 	debuggerState: RuntimeDebuggerState,
-	input: Input,
+	hotResumes: HotResumeService,
 	runtimeTasks: RuntimeTaskQueue,
 	execution: HostExecutionControl,
 	overlayRenderer: OverlayRenderer,
@@ -45,21 +42,7 @@ export function performEditorAction(
 ): boolean {
 	switch (request.action) {
 		case 'hot-resume':
-			performHotResume(
-				editor,
-				sources,
-				fault,
-				luaTooling,
-				debuggerState,
-				input,
-				runtimeTasks,
-				execution,
-				overlayRenderer,
-				runtime,
-				audioOutput,
-				storage,
-				logOutput,
-			);
+			performHotResume(hotResumes, editor, execution, overlayRenderer, audioOutput, logOutput);
 			return true;
 		case 'reboot':
 		case 'run':
@@ -90,62 +73,43 @@ export function performEditorAction(
 }
 
 export function performHotResume(
+	hotResumes: HotResumeService,
 	editor: CartEditor,
-	sources: RuntimeSourceState,
-	fault: RuntimeFaultState,
-	luaTooling: RuntimeLuaTooling,
-	debuggerState: RuntimeDebuggerState,
-	input: Input,
-	runtimeTasks: RuntimeTaskQueue,
 	execution: HostExecutionControl,
 	overlayRenderer: OverlayRenderer,
-	runtime: Runtime,
 	audioOutput: HostAudioOutput,
-	storage: KeyValueStorage,
 	logOutput: LogOutput,
-): Promise<void> {
-	console.log('Performing hot resume.');
-	const sourceSnapshots = captureLuaTextModelSources(sources);
+): HotResumeOperation {
 	persistWorkspaceSessionLocally();
-	const handleHotResumeError = (error: unknown): void => {
-		console.error(error);
-		logOutput.log(LogLevel.Error, error instanceof Error ? error.message : String(error));
-		editor.handleRuntimeTaskError(error, 'Failed to resume game');
-	};
-	return runtimeTasks.schedule(async () => {
-		let built: BuiltBlua32Revision | null;
-		try {
-			await applyAllWorkspaceSourceOverrides(storage, sources, workspaceDirtyRecords);
-			applyLuaTextModelSources(sources, sourceSnapshots);
-			built = blua32MediaRequiresRebuild(sources)
-				? buildBlua32Revision(sources, luaTooling, runtime,
-					sources.systemBlua32MediaDirty, sources.cartridgeBlua32MediaDirty)
-				: null;
-		} catch (error) {
-			// Source/build rejection precedes machine mutation. Keep the installed
-			// execution available; the operation queue must not latch a host fault.
-			handleHotResumeError(error);
-			return;
-		}
-		const accepted = hotResume(
-			sources,
-			luaTooling,
-			fault,
-			debuggerState,
-			input,
-			runtimeTasks,
-			runtime,
-			built,
-			handleHotResumeError,
-			() => {
+	const operation = hotResumes.resume();
+	showEditorMessage('Hot Resume: pending', constants.COLOR_STATUS_TEXT, 2.0);
+	void operation.admission.then(admission => {
+		if (hotResumes.latestOperation !== operation || admission.status !== 'accepted'
+			|| operation.result !== null && operation.result.status !== 'completed') return;
+		execution.requestExecution(true);
+		deactivateEditor(editor, overlayRenderer, audioOutput);
+	});
+	void operation.completion.then(result => {
+		if (hotResumes.latestOperation !== operation) return;
+		switch (result.status) {
+			case 'completed':
 				showEditorMessage('Hot Resume: code applied', constants.COLOR_STATUS_TEXT, 2.0);
-			},
-		);
-		if (accepted) {
-			execution.requestExecution(true);
-			deactivateEditor(editor, overlayRenderer, audioOutput);
+				return;
+			case 'rejected':
+			case 'failed':
+				logOutput.log(LogLevel.Error, result.error instanceof Error ? result.error.message : String(result.error));
+				editor.handleRuntimeTaskError(result.error, 'Failed to resume game');
+				return;
+			case 'faulted':
+				// The stack/overlay remains owned by the supervisor observation.
+				showEditorMessage('Hot Resume: guest fault', constants.COLOR_STATUS_ERROR, 2.0);
+				return;
+			case 'cancelled':
+				showEditorMessage('Hot Resume: cancelled', constants.COLOR_STATUS_TEXT, 2.0);
+				return;
 		}
-	}, handleHotResumeError);
+	});
+	return operation;
 }
 
 export function performReboot(

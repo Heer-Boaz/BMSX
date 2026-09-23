@@ -145,6 +145,10 @@ parsers or duplicated authored databases. Stable-frame UI reads retained state.
 No TS/C++ machine representation change is part of these foundation gates; a
 later proposal requiring one must supply the mirrored representation/callsite
 audit before editing.
+Gate 3's audit found a prerequisite violation of the existing physical completion
+call contract. Its separately audited TS/C++ correction uses existing frame
+bits and boundary scans, not a new representation or IDE state in the machine;
+see [completion-call boundaries](completion_call_boundaries.md).
 
 ## Implementation evidence
 
@@ -211,3 +215,31 @@ Validation:
 Gates 3-5 remain open. In particular, zero forbidden imports does not prove
 correct operation completion, resource-context lifetime or platform security,
 and does not admit Codex integration.
+
+### Gate 3a: Hot Resume results (partial gate 3)
+
+`HotResumeService` now owns captured inputs and request lifetime; the existing
+runtime/debugger owners report admission, installation, completion, rejection,
+physical fault, infrastructure failure and cancellation. Init batches follow
+their actual thread, including nested requests and coroutine switches. No second
+scheduler or agent-specific route exists. Reset/shutdown retire open operations;
+command feedback follows the latest request rather than stale callbacks.
+
+The audit also found completion errors escaping through the interrupted game's
+`pcall`/coroutine boundary. That generic TS/C++ prerequisite was fixed separately
+using existing physical return-route bits, with eight previously failing O0/O3
+probes and 28 full TS/C++ snapshot-parity vectors. The CPU has no source revision
+or operation metadata.
+
+Validation and reproduction are recorded in
+[Studio execution operation results](studio_execution_operations.md): focused
+software/WebGL2/WebGPU Studio workflows, source-capture and real supervisor
+fault/recovery checks, Node no-op heap probe (47 assertions), 2275 Lua passes
+(1 skip), 147 ROM packer passes, successful product builds/typechecks, and zero
+architecture boundary issues. The tests-project baseline remains exactly 112
+diagnostics; the broad behavior-source browser fixture is still a separate
+known failure. This is automated runtime/UI evidence, not UI-only development.
+
+**Still open in gate 3:** Reboot/startup operation results and explicit
+local-versus-remote persistence acknowledgement. Gates 4 and 5 remain open.
+Codex integration is not yet admitted.

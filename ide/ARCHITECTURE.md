@@ -49,16 +49,27 @@ Discard; the command or accepted media owner chooses timeline takeover. Input
 reset and modal departure stay in the existing host-menu lifecycle. Features
 do not reach back into that composition to implement their own transitions.
 
-Hot Resume captures text-model versions, applies workspace sources and builds
-the candidate revision inside the shared exclusive operation queue. Build
+The session-owned `HotResumeService` captures text-model versions, applies
+workspace sources and builds the candidate revision inside the shared exclusive
+operation queue. Its operation exposes separate `admission` and `completion`
+promises: admitting a BIOS-return plan is not installing code, and installing
+code is not completing its guest init. Commands project these results; headless
+tests use the same route, not a second source-registry bypass. Build
 diagnostics do not fabricate a guest stack or prevent resuming the installed
 program. The built revision retains which source domains were explicitly edited;
 mechanically relinked media do not imply another cart's init should run.
 Only the installed-source maps establish which code is applied. They are
 compared with the current text, including undo/redo and edits made while a
-build was queued; no model-side acknowledgement guesses that state. Installation clears old
-runtime-error adornments and reports code installation, not a premature claim
-that guest init has finished.
+build was queued; no model-side acknowledgement guesses that state. Installation
+clears old runtime-error adornments. The operation remains pending at an init
+breakpoint; completion batches observe the thread on which they were staged,
+not whichever coroutine is currently active. Physical fault notification retires
+the observer once while preserving the roots for recovery. Reset and shutdown
+cancel outstanding requests; shutdown joins queued work, never guest progress.
+The latest request owns command feedback, so older asynchronous results cannot
+replace it. Source-applied markers still report installation; the completion
+toast follows actual init completion. See
+[execution operation results](../docs/studio_execution_operations.md).
 
 History is invalidated at accepted mutation, not queue admission. Supervisor
 return and annotated-init batches run through the existing ordinary debugger
