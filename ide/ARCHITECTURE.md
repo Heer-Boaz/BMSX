@@ -1338,84 +1338,76 @@ contract. A general picker does not justify guessing constructor options.
 
 ## Scenario runs
 
-Scenario testing keeps four boundaries distinct:
+Testing separates discovery, case policy, physical resources and results:
 
-- `ide/testing/scenario/test_collection.ts` owns stable suite/test identities,
-  lazy discovery and resolution of one selected collection node to ordered
-  leaves;
-- `ide/testing/scenario/execution_service.ts` owns one packaged guest protocol
-  and deterministic input at logical-tick boundaries, without host time or media
-  lifecycle;
-- `ide/testing/scenario/result_service.ts` owns bounded retained runs, ordered
-  test items and their logs, captures, failures and semantic facts;
-- `workbench/contrib/scenario_lab/run_service.ts` owns the browser-only media
-  session and serializes canonical build, per-item derived build/install/cold
-  boot, cancellation and final canonical restore through `RuntimeTaskQueue`.
+- `testing/scenario/test_collection.ts` owns stable suite/case identities and
+  lazy source discovery. A run pins accepted sources; rerun resolves current
+  declarations for the previous scope.
+- `testing/run.ts` compiles the current suite and owns a serial batch, with at
+  most one current physical target and the most recent failed target. Every
+  case supplies a new `TestInput` and requests a fresh machine. Immutable media
+  may be shared; CPU, heap, devices, input and output may not.
+- `testing/execution.ts` advances compiled setup/body/teardown coroutines with
+  bounded CPU grants. The Lua test library owns phase threads and fixture state.
+  Integration waits schedule ordinary game execution, ICU samples, publication
+  receipts and accepted presentations. Unit bodies never enter the game loop.
+- `testing/target.ts` declares the construction/operation contract, not a
+  frontend implementation. Workbench product composition and the Node CLI
+  supply a factory returning the actual `hosts/common/offscreen_machine.ts`
+  resource owner. There is no target wrapper or forwarding layer. This host
+  owner consumes ordinary ICU input, decodes socket media through the shared
+  cartridge-media owner, and owns machine boot, backend service, tick/output
+  coordination and disposal. It knows nothing about test cases, results,
+  workspace documents or Studio. Rendering remains lazy.
+- `testing/scenario/result_service.ts` retains bounded runs, ordered items,
+  logs, captures, multiple phase failures and semantic facts. Test failure
+  retains its own machine and failed threads, not an authoring fault snapshot.
 
-Result activation is pane-owned UI navigation. Logs and failures open the shared
-`WorkbenchPropertyInspector` with their complete original text, not clipped row
-labels. `scenarioLab.details` belongs to the physical result control; the toolbar
-uses that explicit command context, not parent-command inheritance. Message source
-locations are optional and separate from test context. Retained row identity keeps
-inspection stable during new output and closes it on eviction. Multiple recognized
-ActionEffect origins use the existing Quick Input controller; model changes or
-detach close the choice before old source ranges can be accepted. The broader
-semantic origin/authoring contract remains open.
+`workbench/contrib/scenario_lab/run_service.ts` builds an independent source
+state from accepted workspace revisions, including saved/edited source-only
+helpers, then drives the shared run. It never installs test media into the
+authoring machine, captures/restores authoring state, borrows debugger plans or
+changes authoring pause reasons. The old canonical/derived-media session and
+callback protocol are gone. Preparation or construction failure terminates the
+run without manufacturing a target. Starting another run or disposing the
+service releases the previously retained failed target.
 
-Workbench deactivation detaches the visible editor via `EditorPanes.clearEditor`.
-Pane-owned `clearInput` persists codeview state and ends transient interactions;
-the editor input, document and tab identity remain retained. Activation attaches
-that input again. No feature-specific editor-active cleanup is needed for a local
-inspector. See [the result/visibility contract](../docs/scenario_result_inspection.md).
+`ScenarioLabController` resolves selection, captures sources and invokes the
+service. It does not build a second execution queue or cancellation route.
+Studio advances at most sixteen CPU grants per host frame, keeping UI work
+bounded while its authoring machine remains independently paused/runnable.
+The CLI drives the same run owner without wall-clock pacing and applies capture
+write backpressure before the next grant. Neither execution path reconstructs
+hardware options in the test feature. Native/libretro hosts remain separate
+products; no TypeScript test feature enters the mirrored machine core.
 
-`scenario_lab/media_build.ts` prepares dirty canonical ROM layers and the first
-derived test cartridge without machine writes. The run service publishes them
-only after both builds succeed and the request remains uncancelled, then opens
-the media session. Failed initial preparation cannot reboot the existing game
-or acknowledge uninstalled source. Later-item failure restores canonical media
-because that session really has installed a derived cartridge. The existing
-IDE `installBlua32Media` coordinates physical ROM-byte publication and source
-bookkeeping; it is not an execution-image or source-revision API on the CPU.
+Cooperative cancellation closes the yielded coroutine and permits bounded
+teardown. An uncooperative continuation, outstanding physical exception or
+machine fault cannot be unwound to manufacture cleanup. Test policy releases
+held input and its execution hook; the machine owner disposes presentation
+resources. Runner infrastructure failure stops the batch and skips remaining
+cases. Failed-case debugging is currently retained-stack/source inspection,
+not interactive attachment to that separate machine.
 
-Scenario protocol calls execute outside outstanding exception frames. The
-shared execution service uses the CPU-owned outer return depth and existing
-suspended executor before admitting a new callback. Other `Runtime.callClosure`
-callers keep their explicit current-context semantics. No cartlib hook, IRQ-mode
-rewrite or host DMA loop is introduced.
+Result activation remains pane-owned navigation. Logs and failures use the
+shared `WorkbenchPropertyInspector` with complete text. `scenarioLab.details`
+belongs to the result control; retained row identity keeps inspection stable
+and closes it on eviction. Multiple semantic source origins use the existing
+Quick Input owner; source changes or pane detachment retire the choice.
+Workbench deactivation clears the visible pane while its input and working
+copy remain retained. See [result inspection](../docs/scenario_result_inspection.md)
+and [guest testing](../docs/guest_testing.md) for current execution, cancellation
+and evidence contracts; historical same-machine execution descriptions in older
+proposal documents are not the implemented contract.
 
-`ScenarioLabController` only resolves the current view selection, captures the
-source batch and invokes that service. It does not loop over tests, retain an
-execution queue, write cartridge media, aggregate result state or implement a
-second cancellation path. One request and one retained run represent either a
-leaf or the complete selected suite. A failed item does not stop later items;
-cancellation marks unfinished items skipped. Rerun preserves the previous
-resolved request. The service publishes `started` only after the first item
-actually starts; the controller then releases user-requested pause through
-`HostExecutionControl`. Failed preparation and subsequent batch items preserve
-pause, and other host pause reasons retain their independent ownership.
+Production references separate the same responsibilities without importing
+those projects' frameworks:
 
-Pacing belongs above the execution service. The browser workbench host consumes
-wall time through the frame scheduler's scheduled bounded-tick operation;
-headless tooling uses the explicit bounded operation without wall time and runs
-as fast as possible. Both call the same execution service before and after every
-completed logical tick. The direct libretro input-timeline host is a separate
-native host workflow and remains unpaced by default; neither it nor the C++ core
-imports Scenario Lab.
-
-The blocking workbench and physical BIOS monitor are also different suspension
-boundaries. Opening the workbench stops machine progress through existing editor
-policy. Supervisor entry keeps the machine running but routes physical ICU input
-to firmware and pauses only scenario tick/protocol progress. The contextual
-Cancel command is exposed after the existing physical IDE chord reopens the
-workbench; no Scenario-specific global hotkey or emergency control is added.
-
-This follows VS Code's ownership of one live result for a resolved multi-item
-request rather than issuing one UI command per leaf:
-
-- <https://github.com/microsoft/vscode/blob/4290bede3cbc24e3fe9c979b655cebdf3b4e5f6b/src/vs/workbench/contrib/testing/browser/testExplorerActions.ts#L164-L182>
-- <https://github.com/microsoft/vscode/blob/4290bede3cbc24e3fe9c979b655cebdf3b4e5f6b/src/vs/workbench/contrib/testing/browser/testExplorerActions.ts#L626-L650>
-- <https://github.com/microsoft/vscode/blob/4290bede3cbc24e3fe9c979b655cebdf3b4e5f6b/src/vs/workbench/contrib/testing/common/testServiceImpl.ts#L251-L294>
-- <https://github.com/microsoft/vscode/blob/4290bede3cbc24e3fe9c979b655cebdf3b4e5f6b/src/vs/workbench/contrib/testing/common/testResult.ts#L276-L348>
+- [VS Code test requests/controllers](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/contrib/testing/common/testService.ts)
+  separate run requests from contributed execution and retained results.
+- [MAME frontend machine lifetime](https://github.com/mamedev/mame/blob/mame0280/src/frontend/mame/mame.cpp#L279-L312)
+  constructs and releases each physical machine at frontend composition, rather
+  than putting application policy into an emulated CPU/device.
 
 ## Commands, keybindings, and menus
 

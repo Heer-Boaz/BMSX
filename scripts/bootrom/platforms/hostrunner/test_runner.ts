@@ -9,6 +9,7 @@ import { TestRun } from '../../../../ide/testing/run';
 import { PSX_MACHINE_SPEC } from '../../../../machine/ts/spec/bmsx/model';
 import { loadRomToolingMedia } from '../../../../toolchain/ts/rompack/media';
 import { encodeScreenshotPng } from '../../../../hosts/node/headless/screenshot';
+import { OffscreenMachine } from '../../../../hosts/common/offscreen_machine';
 import { deriveHeadlessCaptureOutputDir } from '../headless_capture';
 
 /** The CLI and Studio drive the same isolated run owner, not separate guest protocols. */
@@ -28,7 +29,8 @@ export async function runGuestTests(systemRom: Uint8Array, cartridgeSlots: reado
 	const writes: Promise<void>[] = [];
 	let captureIndex = 0;
 	const outputDir = deriveHeadlessCaptureOutputDir(testPath);
-	const run = new TestRun(result, sources, { systemRom, cartridgeSlots, machineModel: PSX_MACHINE_SPEC, optLevel: 3 }, results, () => {}, undefined,
+	const run = new TestRun(result, sources, { systemRom, cartridgeSlots, machineModel: PSX_MACHINE_SPEC, optLevel: 3 }, results,
+		(systemRom, cartridgeSlots, model, input) => new OffscreenMachine(systemRom, cartridgeSlots, model, input), () => {}, undefined,
 		(target, label) => {
 			const frame = target.backend.latestPresentedFrame!;
 			const png = encodeScreenshotPng(frame.width, frame.height, target.backend.borrowPresentedPixels());

@@ -22,6 +22,7 @@ import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { ScenarioRunService } from './contrib/scenario_lab/run_service';
 import { ScenarioTestCollection } from '../testing/scenario/test_collection';
+import type { TestTargetFactory } from '../testing/target';
 import { TextFileSaveService } from './services/working_copy/text_file_save';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io';
 import { syncRuntimeSourceActivity } from '../runtime/sources';
@@ -61,6 +62,7 @@ export class RuntimeIdeState {
 		viewport: Viewport,
 		public readonly sources: RuntimeSourceState,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
+		createTestTarget: TestTargetFactory,
 	) {
 		this.debugger = createRuntimeDebuggerState(runtime, sources);
 		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue);
@@ -69,7 +71,7 @@ export class RuntimeIdeState {
 			new SuspendedGuestSession(runtime),
 		);
 		this.scenarioTests = new ScenarioTestCollection(sources);
-		this.scenarioRuns = new ScenarioRunService(sources, this.luaTooling, storage, runtime.model);
+		this.scenarioRuns = new ScenarioRunService(sources, this.luaTooling, storage, runtime.model, createTestTarget);
 		this.textFileSaves = new TextFileSaveService(storage, clock, sources, this.luaTooling, runtime, runtimeTasks);
 		this.editor = new RuntimeCartEditor(
 			runtime,

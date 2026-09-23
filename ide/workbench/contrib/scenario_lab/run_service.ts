@@ -4,6 +4,7 @@ import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import type { LuaTextModelSourceSnapshot } from '../../services/working_copy/lua_sources';
 import { TestRun, type TestSource } from '../../../testing/run';
+import type { TestTargetFactory } from '../../../testing/target';
 import { ScenarioResultService, type ScenarioRun } from '../../../testing/scenario/result_service';
 import type { ScenarioTestNodeId } from '../../../testing/scenario/test_collection';
 import { scenarioFailureFromError } from '../../../testing/scenario/failure';
@@ -24,6 +25,7 @@ export class ScenarioRunService {
 		private readonly tooling: RuntimeLuaTooling,
 		private readonly storage: KeyValueStorage,
 		private readonly model: MachineModelSpec,
+		private readonly createTarget: TestTargetFactory,
 	) {}
 
 	public get active(): boolean { return this.preparing !== null || (this.session !== null && this.session.active); }
@@ -39,7 +41,7 @@ export class ScenarioRunService {
 			const media = await buildTestRunMedia(this.sources, this.tooling, this.storage, programSources,
 				tests[0].test.resource.domain, this.model);
 			if (this.preparing !== run) return; // Cancelled while the workspace build was pending.
-			this.session = new TestRun(run, tests, media, this.results, () => this.emit({ type: 'complete' }));
+			this.session = new TestRun(run, tests, media, this.results, this.createTarget, () => this.emit({ type: 'complete' }));
 			this.preparing = null;
 			await this.session.prepare();
 		} catch (error) {

@@ -1,4 +1,5 @@
 import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
+import type { TestTargetFactory } from '../testing/target';
 import type { HostRewind } from '../../hosts/common/rewind';
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
@@ -62,6 +63,7 @@ export async function initializeIdeFeatures(
 	viewport: Viewport,
 	sources: RuntimeSourceState,
 	createGraphLayoutEngine: GraphLayoutEngineFactory,
+	createTestTarget: TestTargetFactory,
 ): Promise<RuntimeIdeState> {
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 	const editorAvailable = runtimeSourcesSupportIde(sources);
@@ -103,6 +105,7 @@ export async function initializeIdeFeatures(
 		viewport,
 		sources,
 		createGraphLayoutEngine,
+		createTestTarget,
 	);
 	seedDefaultLuaBuiltins();
 	audioOutput.muteUi(state.editor.executionSuspended);

@@ -15,10 +15,9 @@ import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { ScenarioTestCollection } from '../../ide/testing/scenario/test_collection';
 import { ScenarioRunService } from '../../ide/workbench/contrib/scenario_lab/run_service';
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
-import { TestTarget } from '../../ide/testing/target';
+import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
+import { TestInput } from '../../ide/testing/input';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { cartridgeMediaFromPackage } from '../../hosts/common/cartridge_media';
-import { parseCartridgePackage } from '../../machine/ts/rompack/image';
 import { captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
 
 test('Studio runs fresh targets and current sources without touching the authoring machine, sources or debugger', async () => {
@@ -40,10 +39,21 @@ return { kind = 'unit', tests = {
 		});
 		const media = await loadRomToolingMedia(fixture.systemRom, [fixture.cartRom, null]);
 		const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
-		const authoring = new TestTarget({ systemRomBytes: fixture.systemRom,
-			cartridgeSlots: [cartridgeMediaFromPackage(parseCartridgePackage(fixture.cartRom)), null], machineModel: PSX_MACHINE_SPEC });
+		const authoring = new OffscreenMachine(fixture.systemRom, [fixture.cartRom, null], PSX_MACHINE_SPEC, new TestInput());
 		const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(authoring.runtime));
-		const runs = new ScenarioRunService(sources, tooling, new MemoryStorage(), PSX_MACHINE_SPEC);
+		const targets: OffscreenMachine<TestInput>[] = [];
+		const disposed = new Set<OffscreenMachine<TestInput>>();
+		let constructionFailure: Error | undefined;
+		const runs = new ScenarioRunService(sources, tooling, new MemoryStorage(), PSX_MACHINE_SPEC,
+			(systemRom, cartridges, model, input) => {
+				if (constructionFailure) throw constructionFailure;
+				const target = new OffscreenMachine(systemRom, cartridges, model, input);
+				assert.notEqual(input, authoring.input);
+				const dispose = target.dispose.bind(target);
+				target.dispose = () => { assert.equal(disposed.has(target), false); disposed.add(target); dispose(); };
+				targets.push(target);
+				return target;
+			});
 		const collection = new ScenarioTestCollection(sources);
 		const module = collection.findModuleBySourcePath(0, SCENARIO_FIXTURE_TEST_SOURCE_PATH);
 		const cases = collection.resolveNode(module);
@@ -61,6 +71,9 @@ return { kind = 'unit', tests = {
 		}
 		assert.equal(runs.active, false);
 		assert.deepEqual(runs.results.runs[0].items.map(item => item.state), ['passed', 'failed', 'passed']);
+		assert.equal(targets.length, 3, 'product construction runs once per case');
+		assert.equal(new Set(targets.map(target => target.input)).size, 3, 'each case supplies its own input');
+		assert.deepEqual([...disposed], [targets[0], targets[2]], 'only the failed machine remains retained');
 		assert.equal(runs.session!.failedExecution!.result.test.caseName, 'second');
 		assert.notEqual(runs.session!.failedExecution!.target.runtime, authoring.runtime);
 		assert.deepEqual(captureRuntimeMachineState(authoring.runtime), originalState);
@@ -74,13 +87,21 @@ return { kind = 'unit', tests = {
 		collection.refresh();
 		const addedModule = collection.findModuleBySourcePath(0, added.source_path);
 		await runs.start(addedModule.id, collection.resolveNode(addedModule).map(test => ({ test, source: addedSource, sourceRevision: 99 })), []);
+		assert.equal(disposed.has(targets[1]), true, 'a new run releases the previous failed machine');
 		for (let grant = 0; runs.active && grant < 10000; grant++) { runs.advance(); await setImmediate(); }
 		assert.equal(runs.active, false);
 		assert.equal(runs.results.runs[0].state, 'passed', JSON.stringify(runs.results.runs[0].items[0].failures));
 		assert.deepEqual(captureRuntimeMachineState(authoring.runtime), originalState);
 		assert.equal(sources.currentBlua32Media, originalMedia);
 		assert.equal(added.src, addedSource);
+		constructionFailure = new Error('offscreen machine could not be constructed');
+		await runs.start(addedModule.id, collection.resolveNode(addedModule).map(test => ({ test, source: addedSource, sourceRevision: 100 })), []);
+		assert.equal(runs.active, false);
+		assert.equal(runs.results.runs[0].items[0].failures[0].phase, 'prepare');
+		assert.equal(runs.results.runs[0].items[0].failures[0].message, constructionFailure.message);
+		assert.deepEqual(captureRuntimeMachineState(authoring.runtime), originalState);
 		runs.dispose();
+		assert.equal(disposed.size, targets.length);
 		authoring.dispose();
 	} finally { await rm(directory, { recursive: true, force: true }); }
 });
@@ -108,10 +129,10 @@ test('both authoring domains retain companion ROM data and source identity; runn
 		});
 		const media = await loadRomToolingMedia(fixture.systemRom, [fixture.cartRom, fixture.cartRom]);
 		const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
-		const authoring = new TestTarget({ systemRomBytes: fixture.systemRom,
-			cartridgeSlots: [cartridgeMediaFromPackage(parseCartridgePackage(fixture.cartRom)), null], machineModel: PSX_MACHINE_SPEC });
+		const authoring = new OffscreenMachine(fixture.systemRom, [fixture.cartRom, null], PSX_MACHINE_SPEC, new TestInput());
 		const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(authoring.runtime));
-		const runs = new ScenarioRunService(sources, tooling, new MemoryStorage(), PSX_MACHINE_SPEC);
+		const runs = new ScenarioRunService(sources, tooling, new MemoryStorage(), PSX_MACHINE_SPEC,
+			(systemRom, cartridges, model, input) => new OffscreenMachine(systemRom, cartridges, model, input));
 		const collection = new ScenarioTestCollection(sources);
 		for (const slot of [0, 1] as const) {
 			enterCartridgeSources(sources, slot);

@@ -24,6 +24,41 @@ contribution will have the same rights and boundaries; it does not get an
 exception or an alternative source-writing route. This is not a generic plugin
 framework, service locator or wholesale singleton-to-DI rewrite.
 
+## Eventual Codex position (design only)
+
+The workbench remains authoritative; an agent is another client, not a second
+editor or an emulator extension:
+
+```text
+Code / Scene Editor / Behavior Lens / Scenario Lab / future Codex view
+                             |
+      resource models + shared history + explicit workbench operations
+                    /                         \
+    canonical workspace storage         runtime and test owners
+
+future Codex view <-> secured local transport <-> Codex App Server process
+```
+
+- A local process belongs to the Node/platform composition, never the machine
+  or a guest Lua runtime. The browser view owns conversation presentation only.
+  An agent request must not inherit the default blocking-pane pause policy.
+- Context comes from resource/revision-aware workbench owners: selected source,
+  diagnostics, current view and explicit runtime/test evidence. Missing semantic
+  coverage stays missing; an empty code-tab cache is not a clean workspace.
+- Proposed edits are reviewed and admitted against the workspace lifetime and
+  exact model versions, then use existing shared history. Codex must not write
+  files behind the models or invent a separate authored-data representation.
+- Save, build, actual installation, guest initialization and tests expose their
+  own results. A queued request or a status message is never proof of success.
+- Conversation reconnect cannot revive retired proposals. Process lifecycle,
+  authentication/origin checks and capability limits precede any privileged
+  transport. The existing development server is not that security boundary.
+
+The locally inspected Codex App Server is the candidate transport, not an SDK
+embedded in Studio. Its protocol/tool support must be pinned and exercised when
+integration is admitted. No process endpoint, agent pane, tool dispatcher or
+network permission has been added by this groundwork.
+
 ## Live baseline
 
 Inspected at `c55bf6d24` on `master`, with a clean checkout:
@@ -98,6 +133,9 @@ into unrelated cartlib, CPU, renderer or hardware changes.
   isolation remains a physical machine per case, not editor-state rollback.
 - VS Code [`BulkTextEdits`](https://github.com/microsoft/vscode/blob/1fe7285a1162756215a684ee702b16d0ce42bdb4/src/vs/workbench/contrib/bulkEdit/browser/bulkTextEdits.ts)
   admits model versions and uses shared history; BMSX already has this boundary.
+- MAME [`mame_machine_manager::execute`](https://github.com/mamedev/mame/blob/mame0280/src/frontend/mame/mame.cpp#L279-L312)
+  constructs/runs/releases each physical machine at frontend composition. BMSX
+  keeps its existing bounded scheduler and raw ICU input, not MAME's framework.
 
 ## Performance and representation constraints
 
@@ -132,3 +170,44 @@ Validation:
   The full browser workflow is **not green** and remains a gate-5 issue.
 - Changed-file indentation and `git diff --check` passed. The four pre-existing
   test/composition architecture violations remain for gate 2.
+
+### Gate 2: physical test-target construction
+
+Implemented a type-only test-target contract and injected creation at Studio/CLI
+composition. `OffscreenMachine` owns real machine/render resources; `TestRun`
+owns case input and policy. The concrete machine is returned directly, without
+a wrapper. Player and offscreen construction share socket-image decoding at its
+existing media owner. The boundary rules are unchanged, and the strict audit is
+now **0 issues** rather than four.
+
+Updated the obsolete Scenario-run section of `ide/ARCHITECTURE.md`: it still
+described the deleted callback protocol and same-authoring-machine restore path.
+The live isolated-run owners, not that old prose, determined this slice.
+
+Validation:
+
+- IDE, browser-host and Node-host typechecks pass. Lua suite **2264 passed,
+  1 skipped**; ROM packer suite **138 passed**. The latter covers O0/O3 real
+  execution, ICU waits/capture, cancellation, both sockets, failed-target
+  lifetime and product-construction failure. Unit-case probes reject renderer
+  or presenter access.
+- Browser Studio and Node tooling product builds pass. Through rebuilt Node
+  tooling, five empty-cart BIOS unit cases and Nemesis
+  `held_fire_cadence` pass through the actual CLI.
+- Actual WebGL2 Studio test-runner workflow passes: named failures/successes,
+  teardown, source rerun, retained isolated failure, cinematic execution and
+  cancellation. The named-results screenshot was inspected. This is automated
+  browser evidence, not a manual-only claim.
+- One serial 24-case profile per checkout: baseline `c55bf6d24` **5.812 s**, new
+  owner **5.905 s**; median case **230.76 / 235.13 ms**, peak process RSS
+  **284.85 / 265.87 MiB**. Both use **35,091,168 boot cycles** per case and pass
+  the existing 512 MiB gate. This small sample is not a general performance
+  guarantee or a statistically significant regression estimate.
+- The full tests-project typecheck has **112 pre-existing diagnostics**,
+  confirmed by comparison with the unchanged baseline. The normalized diagnostic
+  list is identical after this slice. It remains a validation debt alongside
+  the broad browser fixture failure above, not a passed typecheck.
+
+Gates 3-5 remain open. In particular, zero forbidden imports does not prove
+correct operation completion, resource-context lifetime or platform security,
+and does not admit Codex integration.

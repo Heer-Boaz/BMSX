@@ -1,4 +1,5 @@
 import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
+import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
 import { activateEditor } from './overlay_modes';
 import type { HostRewind } from '../../hosts/common/rewind';
 import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
@@ -70,6 +71,7 @@ export async function prepareWorkbenchRuntime(
 		{ width: viewport.x, height: viewport.y },
 		sources,
 		createGraphLayoutEngine,
+		(systemRom, cartridgeSlots, model, input) => new OffscreenMachine(systemRom, cartridgeSlots, model, input),
 	);
 	ide.editor.onDidChangeActive(active => {
 		if (active) hostMenu.dismiss();

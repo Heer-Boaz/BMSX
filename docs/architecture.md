@@ -915,6 +915,14 @@ ICU samples, owner-published mutation receipts and accepted presentations.
 Unit bodies do not enter the game loop. CPU faults and uncooperative timeouts
 quarantine the continuation rather than truncating it to manufacture cleanup.
 
+`TestTargetFactory` is supplied by product composition. The test run supplies
+case-owned ICU input and immutable media; `hosts/common/offscreen_machine.ts`
+owns the actual Runtime, lazy renderer/presenter, physical stepping/output and
+disposal, without importing tests or Studio. The returned machine satisfies the
+test contract directly, without a wrapper. Socket-image conversion is shared
+with the ordinary player construction in `hosts/common/cartridge_media.ts`;
+neither test execution nor test preparation decodes hardware manifests.
+
 Studio's `ScenarioRunService` builds in an independently owned source state,
 including saved/edited source-only helpers, and drives the shared run owner.
 It never installs test ROMs into the authoring Runtime, restores authoring state,

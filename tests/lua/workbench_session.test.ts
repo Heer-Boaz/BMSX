@@ -68,7 +68,7 @@ function fixture(t: TestContext) {
 	const behavior = new BehaviorLensController(sources, null, panes, null, null, () => assert.fail('metadata must not start an FSM layout worker'), null);
 	const scene = new SceneEditorController(sources, panes, null);
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
-	const runs = new ScenarioRunService(sources, null, null, runtime.model);
+	const runs = new ScenarioRunService(sources, null, null, runtime.model, () => assert.fail('session recovery must not create test machines'));
 	const scenario = new ScenarioLabController(null, sources, null, panes, null, new ScenarioTestCollection(sources), runs);
 	const serializers: EditorInputSerializers = {
 		code_editor: new CodeEditorInputSerializer(null, sources),
@@ -239,7 +239,7 @@ test('Scenario Lab persists only test identity and scope expansion, not run/resu
 	assert.deepEqual(JSON.parse(value), captureScenarioLabTestView(input.view));
 	assert.doesNotMatch(value, /results|runActive|focus|previous/);
 	const next = new ScenarioLabController(null, f.sources, null, f.panes, null, new ScenarioTestCollection(f.sources),
-		new ScenarioRunService(f.sources, null, null, f.runtime.model));
+		new ScenarioRunService(f.sources, null, null, f.runtime.model, () => assert.fail('session recovery must not create test machines')));
 	const fresh = new ScenarioLabInputSerializer(next).deserialize(value);
 	assert.deepEqual(captureScenarioLabTestView(fresh.view), captureScenarioLabTestView(input.view));
 	assert.equal(fresh.view.runActive, false); assert.equal(fresh.view.focus, 'tests'); assert.equal(fresh.view.resultPane.rows.length, 0);

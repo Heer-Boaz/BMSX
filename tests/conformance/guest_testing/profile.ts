@@ -5,6 +5,7 @@ import { loadRomToolingMedia } from '../../../toolchain/ts/rompack/media';
 import { createRuntimeSourceState } from '../../../ide/runtime/sources';
 import { ScenarioTestCollection } from '../../../ide/testing/scenario/test_collection';
 import { ScenarioResultService } from '../../../ide/testing/scenario/result_service';
+import { OffscreenMachine } from '../../../hosts/common/offscreen_machine';
 import { TestRun } from '../../../ide/testing/run';
 import type { TestExecution } from '../../../ide/testing/execution';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -22,7 +23,8 @@ async function main(): Promise<void> {
 	const sources = collection.resolveNode(module).map(test => ({ test, source, sourceRevision: 1 }));
 	const results = new ScenarioResultService();
 	const result = results.beginRun(module.id, sources);
-	const run = new TestRun(result, sources, { systemRom, cartridgeSlots: [cartridge, null], machineModel: PSX_MACHINE_SPEC, optLevel: 3 }, results, () => {});
+	const run = new TestRun(result, sources, { systemRom, cartridgeSlots: [cartridge, null], machineModel: PSX_MACHINE_SPEC, optLevel: 3 }, results,
+		(systemRom, cartridges, model, input) => new OffscreenMachine(systemRom, cartridges, model, input), () => {});
 	let peakRss = 0;
 	const records: { ms: number; bootCycles: number; cycles: number; rss: number }[] = [];
 	const started = performance.now();

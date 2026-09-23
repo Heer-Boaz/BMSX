@@ -1,11 +1,10 @@
-import { parseCartridgePackage } from '../../machine/ts/rompack/image';
 import type { MachineModelSpec } from '../../machine/ts/spec/bmsx/model';
-import { cartridgeMediaFromPackage } from '../../hosts/common/cartridge_media';
 import { buildTestCartridge, type BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
 import type { ScenarioTestSource } from '../../toolchain/ts/rompack/scenario_test';
 import { LuaError } from '../../toolchain/ts/lua/errors';
 import { TestExecution, DEFAULT_TEST_BUDGETS, type TestBudgets } from './execution';
-import { TestTarget } from './target';
+import type { TestTarget, TestTargetFactory } from './target';
+import { TestInput } from './input';
 import { ScenarioResultService, type ScenarioRun, type ScenarioRunItemSource } from './scenario/result_service';
 
 export type TestSource = ScenarioRunItemSource & { readonly source: string };
@@ -32,6 +31,7 @@ export class TestRun {
 		private readonly sources: readonly TestSource[],
 		private readonly media: TestRunMedia,
 		private readonly results: ScenarioResultService,
+		private readonly createTarget: TestTargetFactory,
 		private readonly finished: () => void,
 		private readonly budgets: TestBudgets = DEFAULT_TEST_BUDGETS,
 		private readonly captured?: (target: TestTarget, label: string) => void,
@@ -51,9 +51,7 @@ export class TestRun {
 				this.programSource = source;
 			}
 			if (!this.active) { this.program = null; return; }
-			const target = new TestTarget({ systemRomBytes: this.media.systemRom, machineModel: this.media.machineModel,
-				cartridgeSlots: [cartridgeMediaFromPackage(parseCartridgePackage(this.program!.layer.bytes)),
-					companion === null ? null : cartridgeMediaFromPackage(parseCartridgePackage(companion))] });
+			const target = this.createTarget(this.media.systemRom, [this.program!.layer.bytes, companion], this.media.machineModel, new TestInput());
 			this.execution = new TestExecution(target, this.program!, this.results, result, this.budgets, this.captured);
 		} catch (error) {
 			if (!this.active) return;

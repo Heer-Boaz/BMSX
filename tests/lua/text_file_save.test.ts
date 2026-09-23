@@ -49,7 +49,7 @@ async function fixture(t: TestContext) {
 	const sources = createScenarioTestSourceState([lua]);
 	const models = new EditorTextModelService();
 	let readbackFailure: Error | undefined;
-	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as HostAudioOutput,
+	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
 		{ backend: { async finishGxGpuReadbacks() { if (readbackFailure) throw readbackFailure; } } } as VideoPresenter);
 	// These tests reject AEM input before compilation. Any use of machine/tooling
 	// in a source-only save is an unwanted dependency and fails immediately.

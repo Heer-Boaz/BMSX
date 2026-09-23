@@ -80,6 +80,14 @@ resolves the current selection and current sources. Test builds own editable
 source records, including saved source-only helpers. They never install media,
 restore state or attach a test continuation to the authoring Runtime.
 
+Machine construction is supplied by Studio/CLI composition through
+`TestTargetFactory`. The run owns test input and case/result policy; the concrete
+`OffscreenMachine` owns physical boot, lazy rendering and disposal. The host
+owner accepts ordinary ICU input and has no dependency on testing or Studio.
+It directly satisfies the target contract, with no wrapper around the machine.
+Socket media is decoded once at host construction through the shared player
+media owner, not by the test feature.
+
 At most one current target and one most-recent failed target are retained.
 A fixture places the selected suite cartridge in physical socket 0 and the other
 loaded cartridge in socket 1. Both media inputs are retained, including CLI
