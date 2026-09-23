@@ -20,6 +20,8 @@ import { BehaviorLensInputSerializer } from '../../../ide/workbench/contrib/beha
 import { SceneEditorInputSerializer } from '../../../ide/workbench/contrib/scene_editor/editor_serializer';
 import { ScenarioLabInputSerializer } from '../../../ide/workbench/contrib/scenario_lab/editor_serializer';
 import { ResourceViewerInputSerializer } from '../../../ide/workbench/contrib/resources/editor_serializer';
+import { ActorLabInput } from '../../../ide/workbench/contrib/actor_lab/editor_input';
+import { GameViewInput } from '../../../ide/workbench/contrib/game_view/editor_input';
 
 // Capture-only probe: real contribution serializers, no resolver, renderer, worker or storage IO.
 // Run with node --expose-gc --import tsx --import ./tests/lua/test_setup.ts <this file>.
@@ -29,6 +31,8 @@ const serializers: EditorInputSerializers = {
 	scene_editor: new SceneEditorInputSerializer(null, null, null),
 	scenario_lab: new ScenarioLabInputSerializer(null),
 	resource_view: new ResourceViewerInputSerializer(null),
+	actor_lab: { serialize: () => '', deserialize: () => new ActorLabInput() },
+	game_view: { serialize: () => '', deserialize: () => new GameViewInput() },
 };
 editorViewState.font = new EditorFont('tiny');
 const source = BT_TRANSFER_SOURCE + '-- ' + 'source snapshot '.repeat(2048) + '\n';

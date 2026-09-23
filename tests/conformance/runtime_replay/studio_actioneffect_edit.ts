@@ -83,7 +83,7 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 	const handler = await select('handler');
 	await runPaletteCommand('Behavior Lens: Edit Authored Property');
 	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.model === model
-		&& activeCodeEditor.view.cursorRow === handler.field.value.range.start.line - 1 && !editor.active,
+		&& activeCodeEditor.view.cursorRow === handler.source.occurrenceRange.start.line - 1 && !editor.active,
 		'effect: multiline code uses the full source editor, not a flattened cell');
 	await press('AltLeft', 'ArrowLeft');
 	await select('period_ms'); await open(); await paste('45');

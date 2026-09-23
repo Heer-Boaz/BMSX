@@ -1,7 +1,6 @@
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
-import { getOrCreateSemanticProject } from '../../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { BehaviorTreeTransferAnalysis } from '../../../ide/workbench/contrib/behavior_lens/behavior_tree_transfer';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { BT_TRANSFER_SOURCE, transferBehaviorFixtureSelection } from '../../helpers/behavior_transfer_fixture';
@@ -39,8 +38,7 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	const target = children.entries[2].node.branches[0];
 	if (target.role !== 'children') throw new Error('bookmark: destination list required');
 	let version = model.version;
-	const semantic = getOrCreateSemanticProject(model.resource.domain).updateDocument(model.resource.path, model.buffer.getText());
-	const admission = new BehaviorTreeTransferAnalysis(view.document, semantic, selected.member);
+	const admission = new BehaviorTreeTransferAnalysis(view.document, selected.member);
 	const candidate = admission.checkTarget(target);
 	check(candidate.kind === 'available' && candidate.targetUses.length === 4 && admission.sourceUses.length === 2,
 		'bookmark: transfer admission sees both registrations and every shared destination use, not just visible cards');

@@ -68,7 +68,7 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 		&& activeCodeEditor.view.cursorColumn === sourceColumn && !hasSelection(),
 		'source graph: a held Source gesture opens the initializer reference without starting a code drag');
 	const oldDocument = view.document;
-	const insertion = luaSourceRangeToTextRange(model.buffer, entries[0].field.range);
+	const insertion = luaSourceRangeToTextRange(model.buffer, entries[0].file.chunk.locations.range(entries[0].field.span));
 	const prefix = '-- 🐉 source insertion\n';
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: prefix }]);
 	model.pushEditOperations([{ offset: insertion.start + prefix.length, deleteLength: 0, text: "{ type = 'wait' }, " }]);
@@ -94,7 +94,7 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	check(activeCodeEditor.view.cursorRow === sourceRow + 1 && activeCodeEditor.view.cursorColumn === sourceColumn
 		&& !hasSelection(), 'source graph: Source uses the new generation, including the UTF-16 insertion');
 	const parsed = getOrCreateSemanticProject(model.resource.domain).getFileData(model.resource.path)!.chunk;
-	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, nextEntries[2].field));
+	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.locations, parsed.tokens, nextEntries[2].field));
 	await test.clickTab(lens.id);
 	check(view.selection === null && viewport.selection === null, 'source graph: deleting the selected occurrence does not choose its namesake');
 	await press('Enter');

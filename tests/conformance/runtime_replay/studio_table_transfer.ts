@@ -28,8 +28,8 @@ export async function testStudioTableTransfer(test: StudioFixture): Promise<void
 			throw new Error('transfer: expected independent source constructors');
 		}
 		const field = from.values[0].fields[1];
-		const expected = readLuaSourceRange(model.buffer, field.range);
-		const result = createLuaTableFieldTransfer(model.buffer, model.resource.path, field, to.values[0], 1);
+		const expected = readLuaSourceRange(model.buffer, parsed.chunk!.locations.range(field.span));
+		const result = createLuaTableFieldTransfer(model.buffer, parsed.chunk!, field, to.values[0], 1);
 		let version = model.version;
 		model.pushEditOperations(result.edits);
 		await frame();

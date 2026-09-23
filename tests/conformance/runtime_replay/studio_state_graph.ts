@@ -3,6 +3,7 @@ import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { inputFocus } from '../../../ide/input/focus';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
+import { stateMachineSourceRange } from '../../../ide/workbench/contrib/behavior_lens/state_machine_selection';
 import { chooseBehavior } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
 
@@ -43,7 +44,7 @@ export async function testStudioStateGraph(test: StudioFixture): Promise<void> {
 		&& !ide.editor.commands.isEnabled('behaviorLens.setInitialState'),
 		'FSM entry: marker selects authored initial, not a fictitious child state');
 	await press('Home'); await press('Enter');
-	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === marker.reference.field.range.start.line - 1
+	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === stateMachineSourceRange(marker.reference).start.line - 1
 		&& model.version === version && !hasSelection(), 'FSM entry: Source opens the exact initial field without editing');
 	await press('AltLeft', 'ArrowLeft');
 	check(getActiveTab() === lens && viewport.selection === marker && model.version === version,

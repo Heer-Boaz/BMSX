@@ -311,3 +311,35 @@ product typechecks/browser build, zero import-boundary issues and actual Save,
 resource-context, cold-session and isolated-test browser regressions. This is
 not a process sandbox or permission to attach Codex: general multi-file review
 and whole-workbench validation remain open.
+
+### Gate 5b: whole-workbench browser regression
+
+Repaired the broad Studio test fixtures to consume the current snapshot-owned
+AST locations and source-edit APIs. The fixtures no longer fabricate a second
+semantic document. Session checks and the capture profile now account for all
+actual editor input kinds. No product behavior or authored cart was changed.
+
+Validation against the owners from gates 1-5a:
+
+- The complete `--studio` browser workflow passes on **software, WebGL2 and
+  WebGPU**, including code/visual shared-source edits, cross-file Rename and
+  Undo/Redo, Behavior Lens, Scene Editor, real test-target execution/cancellation,
+  debugger/Run controls, pointer ownership and both Studio fonts. WebGPU also
+  passes actual asynchronous VRAM readback checkpoints. The final WebGL2
+  screenshot was inspected. These are automated browser workflows, not UI-only
+  authoring evidence.
+- Rebuilt Node classic entry-edit/Hot Resume workflow: **93 assertions passed**.
+  Its supervisor probe uses the current TS hardware specification, not a
+  remembered address from a different hardware layout.
+- Tests-project typecheck debt drops from **112 to 99 diagnostics**, with none
+  remaining in `tests/conformance/runtime_replay`. The whole tests-project
+  typecheck is still not green.
+- Session capture profile at 4/32/128 source documents (12/96/384 inputs) reads
+  each source snapshot once. Unchanged capture measured 12.3/78.2/307.6 us;
+  capture plus encoding 17.5/108.5/543.6 us. This is a single size-scaling probe,
+  not a before/after or universal performance claim.
+- Changed-file indentation and `git diff --check` pass.
+
+The earlier broad-workflow fixture failure is resolved. General multi-file
+review and remaining lifetime admission still precede agent integration; browser
+coverage alone does not establish those architectural contracts.

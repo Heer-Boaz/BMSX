@@ -40,7 +40,7 @@ export async function testSceneFieldInsertion(test: StudioFixture): Promise<void
 		} else if (revision === 1) {
 			await selectMember(test, scene, 2);
 			// Explicit language operation under test; no synthetic Add command.
-			model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, model.resource.path,
+			model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, scene.parsed,
 				scene.outline.roots[0].element.scene.objectsTable, 2, fieldSource));
 			await frame();
 			const inserted = model.buffer.getText();

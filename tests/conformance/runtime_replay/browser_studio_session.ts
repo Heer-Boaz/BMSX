@@ -113,7 +113,8 @@ async function restore(test: StudioFixture, expected: SessionExpectation): Promi
 	const model = active.workingCopy;
 	check(model.buffer.getText() === expected.source && model.dirty && !model.canUndo, 'session: exact dirty bytes, fresh working copy, no fabricated Undo history');
 	const siblings = editorTabGroup.tabs.filter(tab => tab.kind === 'behavior_lens' || tab.kind === 'scene_editor' || (tab.kind === 'code_editor' && tab.workingCopy.resource.path === model.resource.path));
-	check(siblings.every(tab => tab.kind !== 'resource_view' && tab.kind !== 'scenario_lab' && tab.workingCopy === model), 'session: views share one resource-owned working copy');
+	check(siblings.every(tab => (tab.kind === 'behavior_lens' || tab.kind === 'scene_editor' || tab.kind === 'code_editor')
+		&& tab.workingCopy === model), 'session: views share one resource-owned working copy');
 	check([...editorTextModelService.models].filter(candidate => candidate.resource.path === model.resource.path).length === 1, 'session: no shadow editor model');
 	check(activeCodeEditor.model === null && activeCodeEditor.view === null, 'session: reload of active visual pane leaves code widget detached');
 	test.execution.setPauseReason(HostPauseReason.Requested, true);
