@@ -151,7 +151,7 @@ export async function testCapturedSourceReboot(test: StudioFixture): Promise<voi
 	const captured = model.buffer.getText();
 	const rebooting = harness.reboot();
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '-- W04 edit after reboot admission\n' }]);
-	await rebooting;
+	check((await rebooting.completion).status === 'reset', 'W04: physical reboot completed explicitly');
 	// Supervisor counters restart with the machine; the earlier intentional init fault is no longer allowed.
 	test.observations.expectedFaultSequence = 0;
 	check(ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('title_screen') === captured,

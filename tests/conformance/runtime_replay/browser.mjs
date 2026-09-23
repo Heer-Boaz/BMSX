@@ -10,6 +10,7 @@ import { join, parse, resolve } from 'node:path';
 const { chromium } = await import(process.env.BMSX_PLAYWRIGHT_MODULE || 'playwright');
 const navigation = process.argv[2] === '--studio-navigation' ? process.argv[3] : null;
 const fsm = process.argv[2] === '--studio-fsm-retarget-imported' ? 'retarget-imported' : process.argv[2] === '--studio-fsm-retarget' ? 'retarget' : process.argv[2] === '--studio-fsm-initial' ? 'initial' : null;
+const bootOperations = process.argv[2] === '--studio-boot-operations';
 const sourceSaves = process.argv[2] === '--studio-source-saves';
 const executionOperations = process.argv[2] === '--studio-execution-operations';
 const testRunner = process.argv[2] === '--studio-test-runner';
@@ -20,11 +21,11 @@ const reparent = process.argv[2] === '--studio-bt-reparent';
 const session = process.argv[2] === '--studio-session';
 const sceneCart = process.argv[2] === '--studio-cart-scenes' ? process.argv[3] : null;
 const nemesisScenes = process.argv[2] === '--studio-nemesis-scenes';
-const scenario = sourceSaves ? { kind: 'source-saves' } : executionOperations ? { kind: 'execution-operations' } : testRunner ? { kind: 'test-runner' } : sceneViewport ? { kind: 'scene-viewport' } : sceneCart !== null ? { kind: 'cart-scenes', cart: sceneCart } : nemesisScenes ? { kind: 'nemesis-scenes' } : preload ? { kind: 'preload' } : inspection ? { kind: 'runtime-inspection' } : navigation !== null ? { kind: 'navigation', cart: navigation } : fsm !== null ? { kind: `fsm-${fsm}` } : reparent ? { kind: 'bt-reparent' } : { kind: 'workflows' };
-const studio = sourceSaves || executionOperations || testRunner || sceneViewport || sceneCart !== null || nemesisScenes || preload || inspection || session || process.argv[2] === '--studio' || navigation !== null || fsm !== null || reparent;
-const studioLabel = sourceSaves ? 'STUDIO-SOURCE-SAVES' : executionOperations ? 'STUDIO-EXECUTION-OPERATIONS' : sceneViewport ? 'STUDIO-SCENE-VIEWPORT' : sceneCart !== null ? `STUDIO-${sceneCart}-SCENES` : nemesisScenes ? 'STUDIO-NEMESIS-SCENES' : preload ? 'STUDIO-PRELOAD' : inspection ? 'STUDIO-RUNTIME-INSPECTION' : session ? 'STUDIO-SESSION' : reparent ? 'STUDIO-BT-REPARENT' : fsm !== null ? `STUDIO-FSM-${fsm.toUpperCase()}` : navigation === null ? 'STUDIO-WORKFLOWS' : 'STUDIO-NAVIGATION';
+const scenario = bootOperations ? { kind: 'boot-operations' } : sourceSaves ? { kind: 'source-saves' } : executionOperations ? { kind: 'execution-operations' } : testRunner ? { kind: 'test-runner' } : sceneViewport ? { kind: 'scene-viewport' } : sceneCart !== null ? { kind: 'cart-scenes', cart: sceneCart } : nemesisScenes ? { kind: 'nemesis-scenes' } : preload ? { kind: 'preload' } : inspection ? { kind: 'runtime-inspection' } : navigation !== null ? { kind: 'navigation', cart: navigation } : fsm !== null ? { kind: `fsm-${fsm}` } : reparent ? { kind: 'bt-reparent' } : { kind: 'workflows' };
+const studio = bootOperations || sourceSaves || executionOperations || testRunner || sceneViewport || sceneCart !== null || nemesisScenes || preload || inspection || session || process.argv[2] === '--studio' || navigation !== null || fsm !== null || reparent;
+const studioLabel = bootOperations ? 'STUDIO-BOOT-OPERATIONS' : sourceSaves ? 'STUDIO-SOURCE-SAVES' : executionOperations ? 'STUDIO-EXECUTION-OPERATIONS' : sceneViewport ? 'STUDIO-SCENE-VIEWPORT' : sceneCart !== null ? `STUDIO-${sceneCart}-SCENES` : nemesisScenes ? 'STUDIO-NEMESIS-SCENES' : preload ? 'STUDIO-PRELOAD' : inspection ? 'STUDIO-RUNTIME-INSPECTION' : session ? 'STUDIO-SESSION' : reparent ? 'STUDIO-BT-REPARENT' : fsm !== null ? `STUDIO-FSM-${fsm.toUpperCase()}` : navigation === null ? 'STUDIO-WORKFLOWS' : 'STUDIO-NAVIGATION';
 const [bios, cart, screenshot] = process.argv.slice(navigation !== null || sceneCart !== null ? 4 : studio ? 3 : 2);
-if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio-source-saves | --studio-cart-scenes CART_FOLDER | --studio-execution-operations | --studio-test-runner | --studio-scene-viewport | --studio | --studio-nemesis-scenes | --studio-preload | --studio-runtime-inspection | --studio-session | --studio-fsm-initial | --studio-fsm-retarget | --studio-fsm-retarget-imported | --studio-bt-reparent | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
+if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio-boot-operations | --studio-source-saves | --studio-cart-scenes CART_FOLDER | --studio-execution-operations | --studio-test-runner | --studio-scene-viewport | --studio | --studio-nemesis-scenes | --studio-preload | --studio-runtime-inspection | --studio-session | --studio-fsm-initial | --studio-fsm-retarget | --studio-fsm-retarget-imported | --studio-bt-reparent | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
 let inspectionPixels;
 const backends = studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu'];
 const requestedBackend = process.env.BMSX_TEST_BACKEND;
@@ -54,6 +55,10 @@ for (const backend of requestedBackend === undefined ? backends : [requestedBack
 				await cp(root, join(directory, root), { recursive: true,
 					filter: async path => (await stat(path)).isDirectory() || path.endsWith('.lua') || path.endsWith('.aem.yaml') || (sourceSaves && /\.ya?ml$/.test(path)) });
 			}
+		}
+		if (bootOperations) {
+			const path = join(directory, 'carts/nemesis_s/title_screen.lua');
+			await writeFile(path, (await readFile(path, 'utf8')) + '\nend end -- rejected startup source\n');
 		}
 		// The actual product file API, rooted in an isolated workspace. No recovery
 		// fallback, API mock, or writes to the developer's cart sources.

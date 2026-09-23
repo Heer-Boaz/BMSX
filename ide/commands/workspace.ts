@@ -7,8 +7,8 @@ import type { TextFileSaveService } from '../workbench/services/working_copy/tex
 import { saveTextFileFromCommand } from './source_save';
 import { editorTextModelService } from '../editor/model/model_service';
 import { performEditorAction } from './actions';
-import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
+import type { BootService } from '../workbench/services/execution/boot';
 import type { HotResumeService } from '../workbench/services/execution/hot_resume';
 import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
@@ -16,11 +16,7 @@ import type { KeyValueStorage } from '../workspace/key_value_storage';
 import type { EditorCommandId, EditorWorkspaceCommandId } from '../common/commands';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
-import type { RuntimeFaultState } from '../runtime/fault_state';
-import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
-import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
-import type { RuntimeDebuggerState } from '../runtime/debugger_state';
 import type { EditorActionRequest } from './action_request';
 import { CARTRIDGE_RESOURCE_DOMAINS } from '../common/resource';
 import { TextQuickPickProvider } from '../workbench/services/quick_input/text_provider';
@@ -43,14 +39,10 @@ export function isEditorWorkspaceCommand(command: EditorCommandId): command is E
 export function executeEditorWorkspaceCommand(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
-	fault: RuntimeFaultState,
-	luaTooling: RuntimeLuaTooling,
-	debuggerState: RuntimeDebuggerState,
 	hotResumes: HotResumeService,
-	runtimeTasks: RuntimeTaskQueue,
+	boots: BootService,
 	execution: HostExecutionControl,
 	overlayRenderer: OverlayRenderer,
-	runtime: Runtime,
 	audioOutput: HostAudioOutput,
 	storage: KeyValueStorage,
 	clock: HostClock,
@@ -81,9 +73,7 @@ export function executeEditorWorkspaceCommand(
 					showActionPrompt(request, dirtyWorkingCopies);
 					return;
 				}
-				performEditorAction(editor, sources, fault, luaTooling, debuggerState,
-					hotResumes, runtimeTasks, execution, overlayRenderer, runtime, audioOutput,
-					storage, logOutput, request);
+				performEditorAction(editor, hotResumes, boots, execution, overlayRenderer, audioOutput, logOutput, request);
 			};
 			if (command === 'runCurrentFile' || command === 'runProject') {
 				const resource = getActiveTab().resource;

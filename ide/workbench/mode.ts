@@ -184,6 +184,7 @@ export function surfaceHostFrameError(
 	state.overlayRenderer.abandonFrame();
 	state.fault.hostFrameFailed = true;
 	state.hotResumes.failPending(error);
+	state.boots.failPending(error);
 	handleLuaError(
 		logOutput,
 		state.fault,

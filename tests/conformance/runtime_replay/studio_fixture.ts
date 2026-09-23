@@ -84,7 +84,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const ide = await prepareWorkbenchRuntime(bios, [cart, null], runtime, presenter, display, input,
 		audio, tasks, execution, rewind, menu, localStorage, new HttpWorkspaceRecordProvider(), clock, clipboard, new IdeMicrotaskQueue(), log, 0.3, () => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')));
 	const output = new SystemOutputLog();
-	const harness = createHeadlessIdeHarness(ide, runtime, audio, localStorage, log);
+	const harness = createHeadlessIdeHarness(ide, runtime, audio, log);
 	const history = runtime.history;
 	const cycles = () => runtime.machine.scheduler.currentNowCycles();
 	const frame = async () => {

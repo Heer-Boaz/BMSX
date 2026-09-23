@@ -297,7 +297,7 @@ t.command('debugContinue');
 await t.frames(20);
 
 t.toggleBreakpoint('entry.lua', initPrintBreakpointLine);
-await t.reboot();
+t.assert((await t.reboot().completion).status === 'reset', 'cold reboot operation failed');
 await t.frames(60);
 
 t.assert(t.debuggerStopped(), 'cold reboot did not stop at the init print breakpoint');

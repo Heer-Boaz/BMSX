@@ -5,6 +5,7 @@ import type { HostRewind } from '../../hosts/common/rewind';
 import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
+import type { BootService } from '../workbench/services/execution/boot';
 import type { HotResumeService } from '../workbench/services/execution/hot_resume';
 import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
@@ -63,6 +64,7 @@ export class IdeCommandController {
 		private readonly luaTooling: RuntimeLuaTooling,
 		private readonly debuggerState: RuntimeDebuggerState,
 		private readonly hotResumes: HotResumeService,
+		private readonly boots: BootService,
 		private readonly runtimeTasks: RuntimeTaskQueue,
 		private readonly execution: HostExecutionControl,
 		private readonly rewind: HostRewind,
@@ -225,14 +227,10 @@ export class IdeCommandController {
 			executeEditorWorkspaceCommand(
 				this.editor,
 				this.sources,
-				this.fault,
-				this.luaTooling,
-				this.debuggerState,
 				this.hotResumes,
-				this.runtimeTasks,
+				this.boots,
 				this.execution,
 				this.overlayRenderer,
-				this.runtime,
 				this.audioOutput,
 				this.storage,
 				this.clock,
@@ -260,17 +258,11 @@ export class IdeCommandController {
 		}
 		return performEditorAction(
 			this.editor,
-			this.sources,
-			this.fault,
-			this.luaTooling,
-			this.debuggerState,
 			this.hotResumes,
-			this.runtimeTasks,
+			this.boots,
 			this.execution,
 			this.overlayRenderer,
-			this.runtime,
 			this.audioOutput,
-			this.storage,
 			this.logOutput,
 			request,
 		);
@@ -281,14 +273,16 @@ export class IdeCommandController {
 		switch (command) {
 			case 'hot-resume':
 				return this.hotResumes.acceptingRequests && !this.execution.launchPending;
+			case 'reboot':
+				return this.boots.acceptingRequests;
 			case 'runCurrentFile': {
 				const resource = getActiveTab().resource;
-				if (!this.runtimeTasks.ready || !resource || resource.domain === -1) return false;
+				if (!this.boots.acceptingRequests || !this.runtimeTasks.ready || !resource || resource.domain === -1) return false;
 				const source = resolveRuntimeLuaSource(this.sources, resource);
 				return source !== null && source.record.program_module && !source.record.generated;
 			}
 			case 'runProject':
-				return this.runtimeTasks.ready
+				return this.boots.acceptingRequests && this.runtimeTasks.ready
 					&& this.sources.cartridgeSlots.some(cart => cart?.luaSources.can_boot_from_source);
 			case 'keepEditor':
 				return editorTabGroup.previewTab !== null && editorTabGroup.previewTab === editorTabGroup.activeTab;

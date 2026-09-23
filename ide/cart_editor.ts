@@ -112,6 +112,7 @@ import { BehaviorRegistrationIndex } from './workbench/contrib/behavior_lens/reg
 import { ScenarioLabController } from './workbench/contrib/scenario_lab/controller';
 import type { ScenarioRunService } from './workbench/contrib/scenario_lab/run_service';
 import type { TextFileSaveService } from './workbench/services/working_copy/text_file_save';
+import type { BootService } from './workbench/services/execution/boot';
 import type { ScenarioTestCollection } from './testing/scenario/test_collection';
 import { editorChromeState } from './workbench/ui/chrome_state';
 import { getActiveTab, getActiveTabId, initializeTabs, setActiveTab } from './workbench/ui/tabs';
@@ -256,6 +257,7 @@ export class RuntimeCartEditor implements CartEditor {
 		scenarioRuns: ScenarioRunService,
 		private readonly textFileSaves: TextFileSaveService,
 		private readonly hotResumes: HotResumeService,
+		private readonly boots: BootService,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
 	) {
 		this.runtime = runtime;
@@ -277,6 +279,7 @@ export class RuntimeCartEditor implements CartEditor {
 			luaTooling,
 			debuggerState,
 			hotResumes,
+			boots,
 			runtimeTasks,
 			execution,
 			rewind,
@@ -587,9 +590,11 @@ export class RuntimeCartEditor implements CartEditor {
 
 	public async shutdown(): Promise<void> {
 		const executionDrained = this.hotResumes.shutdown();
+		const bootsDrained = this.boots.shutdown();
 		discardRuntimeDebuggerPlans(this.debuggerState);
 		await this.textFileSaves.shutdown();
 		await executionDrained;
+		await bootsDrained;
 		pointerHover.clear();
 		pointerCapture.cancel();
 		this.contextMenu.dispose();

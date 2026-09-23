@@ -1,8 +1,9 @@
 # Studio architecture foundation before agent integration
 
-Status: implementation preparation, 2026-09-23. Codex integration is **not
-admitted** by this work. The user requested the whole IDE/Studio ownership model
-to be corrected first, rather than adapting an agent to accidental UI internals.
+Status: foundation work in progress, 2026-09-23; gates 1-3 implemented, gates 4-5
+open. Codex integration is **not admitted** by this work. The user requested the
+whole IDE/Studio ownership model to be corrected first, rather than adapting an
+agent to accidental UI internals.
 
 ## Target architecture
 
@@ -257,5 +258,25 @@ unsaved model edits. No extra storage layer, retry worker or frame-time work was
 introduced. Contract, production references and validation are recorded in
 [source save acknowledgements](studio_source_save_acknowledgements.md).
 
-**Still open in gate 3:** Reboot/startup operation results. Gates 4 and 5 remain open.
-Codex integration is not yet admitted.
+### Gate 3c: startup and Reboot results
+
+`BootService` now owns captured inputs, preparation, installation, physical reset
+and request lifetime. Run-menu, quick-menu and headless Reboot share the existing
+queue and result. Source rejection preserves stopped execution; newer queued
+requests, external reset/restore and shutdown retire old work. Startup source
+rejection now retains the independent launch hold when the editor closes,
+repairing a reproduced reset-observer ownership bug. Successful startup performs
+one physical reset instead of two. Reset completion deliberately says nothing
+about arbitrary, potentially non-terminating guest initialization.
+
+The [boot contract and validation](studio_boot_operations.md) record eleven
+real-runtime service tests, software/WebGL2/WebGPU browser workflows including
+ordinary Run/quick-menu input, a nine-assertion rebuilt Node workflow, Hot Resume
+and source-save regressions, 2280 Lua passes (1 skip), 158 ROM packer passes,
+successful product builds/typechecks and zero architecture issues. Automated
+runtime/UI evidence remains distinct from UI-only authoring. The 112
+tests-project diagnostics and broad behavior-source fixture debt remain visible.
+
+**Gate 3's scoped operation/source-result work is implemented.** Gates 4 and 5
+remain open. Codex integration is not yet admitted; resource/context lifetime and
+platform security do not follow from successful Save/Reboot operations.

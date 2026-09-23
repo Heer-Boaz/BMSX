@@ -1,9 +1,7 @@
-import { captureLuaTextModelSources } from '../workbench/services/working_copy/lua_sources';
-import { performHotResume } from '../commands/actions';
-import { rebootPreparedRuntime } from '../workbench/blua32_boot';
+import { performHotResume, performReboot } from '../commands/actions';
+import type { BootOperation } from '../workbench/services/execution/boot';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
-import type { KeyValueStorage } from '../workspace/key_value_storage';
 import { openLuaCodeTab } from '../workbench/ui/code_tab/io';
 import { activeCodeEditor, type CodeEditorContext } from '../editor/ui/code_editor_state';
 import { activateEditor } from '../workbench/overlay_modes';
@@ -59,7 +57,7 @@ export type HeadlessIdeHarness = {
 	performHotResume(): HotResumeOperation;
 	toggleLuaBreakpoint(path: string, line: number): void;
 	isDebuggerStopped(): boolean;
-	reboot(): Promise<void>;
+	reboot(): BootOperation;
 	executeCommand(command: EditorCommandId): void;
 	openLuaSource(path: string): void;
 	replaceActiveCodeSource(source: string): void;
@@ -82,7 +80,6 @@ export function createHeadlessIdeHarness(
 	ide: RuntimeIdeState,
 	runtime: Runtime,
 	audioOutput: HostAudioOutput,
-	storage: KeyValueStorage,
 	logOutput: RecordingLogOutput,
 ): HeadlessIdeHarness {
 	return {
@@ -122,19 +119,9 @@ export function createHeadlessIdeHarness(
 			toggleBreakpoint(ide.debugger, resource, line);
 		},
 		isDebuggerStopped: () => ide.debugger.stopped,
-		reboot: async () => { await rebootPreparedRuntime(
-			ide.sources,
-			ide.fault,
-			ide.luaTooling,
-			ide.debugger,
-			ide.editor,
-			ide.overlayRenderer,
-			runtime,
-			audioOutput,
-			ide.execution,
-			storage,
-			captureLuaTextModelSources(ide.sources),
-		); },
+		reboot: () => performReboot(
+			ide.boots, ide.editor, ide.execution, ide.overlayRenderer, audioOutput, logOutput,
+		),
 		executeCommand: command => ide.editor.commands.execute(command),
 		openLuaSource: (path: string) => {
 			activateEditor(

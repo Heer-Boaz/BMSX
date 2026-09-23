@@ -8,7 +8,6 @@ import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { createRuntimeSourceState } from '../runtime/sources';
 import type { RuntimeIdeState } from './state';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
-import { startPreparedRuntime } from './blua32_boot';
 import * as workbenchMode from './mode';
 import type { Clipboard } from '../../hosts/common/clipboard';
 import type { MicrotaskQueue } from '../common/microtask_queue';
@@ -79,8 +78,9 @@ export async function prepareWorkbenchRuntime(
 		input.setGuestInputCaptured(active);
 		audioOutput.muteUi(ide.editor.executionSuspended);
 	});
-	execution.setPauseReason(HostPauseReason.AwaitingLaunch, true);
-	if (!startPreparedRuntime(ide, runtime)) {
+	const startup = ide.boots.start().result!;
+	if (startup.status === 'rejected' || startup.status === 'failed') {
+		ide.editor.handleRuntimeTaskError(startup.error, 'Startup failed');
 		activateEditor(ide.editor, sources, runtime, audioOutput);
 	}
 	return ide;

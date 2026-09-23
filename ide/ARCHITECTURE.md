@@ -71,6 +71,27 @@ replace it. Source-applied markers still report installation; the completion
 toast follows actual init completion. See
 [execution operation results](../docs/studio_execution_operations.md).
 
+The session-owned `BootService` owns startup/Reboot input capture and lifetime.
+Reboot uses the same exclusive queue from the Run menu, quick menu and headless
+harness. Startup prepares recovered sources before the first host frame. Its
+physical reset initializes inspection even when a build is rejected, but the
+independent `AwaitingLaunch` hold remains until accepted source resets the
+machine. Editor visibility, Continue and frame-step requests cannot release it.
+Successful startup resets once. Explicit Reboot rejection retains installed
+media, any debugger/init stop and the user's pause policy; it is not a guest fault.
+
+Boot completion reports actual `reset`, rejected preparation, infrastructure
+failure or cancellation, including completed install/reset effects. BIOS and
+cartridge entries can run forever: physical reset is not guest initialization
+completion. New Reboot requests supersede older preparation; external
+reset/restore and shutdown retire pending operations and their feedback. The
+operation's own synchronous reset belongs to it, not an external cancellation.
+Commands request playback and hide the editor after successful reset, while
+shutdown closes admission and joins queued work. The existing physical reset
+observer, not a preparation callback, clears debugger/fault/inspection state.
+No CPU state, frame poller or parallel scheduler is introduced. See
+[startup and Reboot results](../docs/studio_boot_operations.md).
+
 History is invalidated at accepted mutation, not queue admission. Supervisor
 return and annotated-init batches run through the existing ordinary debugger
 and scheduler but are not admitted as replayable physical-input execution.

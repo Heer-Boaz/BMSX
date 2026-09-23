@@ -327,7 +327,6 @@ async function main(): Promise<void> {
 									ide,
 									runtime,
 									audioOutput,
-									storage,
 									ideTestLogOutput,
 								),
 								logger: inputLogger,

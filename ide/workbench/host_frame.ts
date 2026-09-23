@@ -1,5 +1,4 @@
 import { HostPauseReason } from '../../hosts/common/execution_control';
-import { captureLuaTextModelSources } from './services/working_copy/lua_sources';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import {
 	beginHostFrame,
@@ -20,7 +19,7 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { syncRuntimeSourceActivity } from '../runtime/sources';
 import type { RuntimeIdeState } from './state';
-import { rebootPreparedRuntime } from './blua32_boot';
+import { performReboot } from '../commands/actions';
 import { activateEditor } from './overlay_modes';
 import { handleSupervisorFault } from './runtime_errors';
 import { presentRuntimeDebuggerStop } from './contrib/debugger/controller';
@@ -45,33 +44,13 @@ function executeWorkbenchHostMenuAction(
 		case HostMenuInput.Inactive:
 		case HostMenuInput.Active:
 			return false;
-		case HostMenuInput.RebootCart:
-			screen.clearPresentation();
-			const sourceSnapshots = captureLuaTextModelSources(ide.sources);
-			ide.runtimeTasks.schedule(async () => {
-				const booted = await rebootPreparedRuntime(
-					ide.sources,
-					ide.fault,
-					ide.luaTooling,
-					ide.debugger,
-					ide.editor,
-					ide.overlayRenderer,
-					runtime,
-					audioOutput,
-					ide.execution,
-					ide.storage,
-					sourceSnapshots,
-				);
-				if (booted) screen.reset(presenter, runtime);
-			}, (error) => {
-				workbenchMode.surfaceHostFrameError(
-					ide,
-					ide.logOutput,
-					runtime,
-					error,
-				);
-			});
+		case HostMenuInput.RebootCart: {
+			const operation = performReboot(ide.boots, ide.editor, ide.execution, ide.overlayRenderer, audioOutput, ide.logOutput);
+			void operation.completion.then(result => {
+				if (result.status === 'reset' && ide.boots.latestOperation === operation) screen.reset(presenter, runtime);
+			}).catch(error => workbenchMode.surfaceHostFrameError(ide, ide.logOutput, runtime, error));
 			return true;
+		}
 		case HostMenuInput.ExitGame:
 			return true;
 	}

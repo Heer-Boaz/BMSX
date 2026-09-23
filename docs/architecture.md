@@ -1188,7 +1188,16 @@ the BIOS first-bootable-socket policy: it must not claim
 to start socket 1 when socket 0 boots first. Reboot and Hot Resume
 retain the installed entry. A rejected build leaves an existing execution untouched.
 Cold startup initializes real reset registers but holds the host execution clock
-until launch succeeds; a source error leaves the workbench available for repair.
+until source preparation and physical reset succeed; a source error leaves the
+workbench available for repair and keeps the launch hold even when the editor
+closes. Studio's session-owned `BootService` captures source/entry requests,
+queues explicit Reboot through the existing exclusive task queue, and reports
+actual reset, rejection, infrastructure failure or cancellation. Its own reset
+notification cannot release the startup hold prematurely. Reset acknowledges
+physical reset state, not completion of potentially non-terminating BIOS/cart
+initialization. External reset/restore and shutdown retire pending requests;
+Run-menu, quick-menu and headless commands share this owner. See
+[startup and Reboot results](studio_boot_operations.md).
 Source revisions publish matching text and parsed Lua assets in the same ROM
 as their executable and diagnostics, including newly authored files.
 
@@ -2208,9 +2217,10 @@ output and then reads the BIOS-published supervisor-fault sequence before
 consuming the internal user fence. A different sequence cancels the pending
 plan, lowers only its programmatic supervisor-request source, and leaves the new
 physical fault visible through the BIOS terminal before tooling diagnostics.
-Reboot actions likewise cancel the pending plan and clear the IDE-owned batch
-list before starting the
-ordinary cold-boot path. Dirty editor sources are marked installed only after
+An accepted physical Reboot reset likewise cancels the pending plan and clears
+the IDE-owned batch list through the existing reset observer. Reboot preparation
+alone does not discard a stopped init or replace installed media; rejected
+authored source leaves them available for repair. Dirty editor sources are marked installed only after
 phase two has successfully installed them. The queued plan, source revision,
 batch list, frame fence, and breakpoint policy live entirely in IDE/debugger
 state; the CPU, system controller, firmware, and normal scheduler contain no Hot
