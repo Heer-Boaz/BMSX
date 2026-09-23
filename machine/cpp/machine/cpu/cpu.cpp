@@ -1749,7 +1749,7 @@ Thread* CPU::createThread(Closure* entry) {
 
 bool CPU::coroutineYieldable(const Thread& thread) const {
 	if (&thread == m_rootThread) return false;
-	for (const auto& frame : thread.frames) if (frame->isExceptionFrame) return false;
+	for (const auto& frame : thread.frames) if (frame->isExceptionFrame || frame->returnToCompletionLatch) return false;
 	for (size_t i = 0; i < thread.protectedCallDepth; ++i) {
 		if (thread.protectedCallContinuations.get(i).kind == ProtectedCallKind::XPCallHandler) return false;
 	}
@@ -1819,7 +1819,7 @@ bool CPU::handleThreadError(Value error) {
 	if (handleProtectedCallError(error)) return true;
 	Thread* thread = m_activeThread;
 	if (thread->resumer == nullptr) return false;
-	for (const auto& frame : thread->frames) if (frame->isExceptionFrame) return false;
+	for (const auto& frame : thread->frames) if (frame->isExceptionFrame || frame->returnToCompletionLatch) return false;
 	thread->status = ThreadStatus::Failed;
 	thread->error = error;
 	returnToResumer(&thread->error, 1, false);
@@ -2027,7 +2027,9 @@ bool CPU::handleProtectedCallError(Value errorValue) {
 			callerIndex += 1;
 		}
 		for (int frameIndex = static_cast<int>(m_activeThread->frames.size()) - 1; frameIndex > callerIndex; --frameIndex) {
-			if (m_activeThread->frames[static_cast<size_t>(frameIndex)]->isExceptionFrame) {
+			// Completion roots return to their latch, not the interrupted caller.
+			const auto& frame = *m_activeThread->frames[static_cast<size_t>(frameIndex)];
+			if (frame.isExceptionFrame || frame.returnToCompletionLatch) {
 				return false;
 			}
 		}

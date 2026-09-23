@@ -2347,6 +2347,14 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
   boundary array which is cleared at call entry, reset, and restore. The route
   bit and latch are save-state data; neither CPU uses a host result buffer as
   guest state or a heap root.
+  That route is also a non-yieldable error boundary: an unhandled error cannot
+  unwind to a protected caller below the completion root or fail the interrupted
+  coroutine to its resumer. It takes the existing physical Lua-fault exception
+  path. Protected calls and child coroutine transfers inside the completion root
+  retain ordinary semantics. Both CPUs use the existing frame bit in their
+  existing boundary scans, with no additional dispatch hook or saved state. See
+  [completion-call boundaries](completion_call_boundaries.md) for the mirrored
+  representation/callsite audit and executable regression vectors.
 - Emulator tooling may inspect or edit a suspended CPU through allocation-free
   scalar primitives for raw frame domains, function-record addresses,
   continuation and callsite PCs, exception-frame flags, live registers,

@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { compileCoroutineTest, coroutineVectors } from '../../helpers/coroutine';
+import { completionBoundaryVectors, exerciseCompletionBoundary } from '../../helpers/completion_boundary';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
@@ -20,7 +21,7 @@ for (const [command, args] of [
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-coroutines-'));
 try {
 	for (const level of [0, 3] as const) {
-		for (const [name, body] of Object.entries(coroutineVectors)) {
+		for (const [name, body] of Object.entries({ ...coroutineVectors, ...completionBoundaryVectors })) {
 			const path = join(directory, `${name}-O${level}.rom`);
 			const image = compileCoroutineTest(body, level);
 			writeFileSync(path, image.romBytes);
@@ -29,42 +30,46 @@ try {
 			});
 			runtime.boot();
 			const cpu = runtime.machine.cpu;
-			if (name === 'halted_tooling_call') {
-				assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-				assert.equal(cpu.isHaltedUntilIrq(), true);
-				const depth = cpu.getFrameDepth();
-				cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.intern('probe')) as Closure);
-				for (let grant = 0; grant < 10000; grant++) {
-					const status = cpu.runUntilDepth(depth, 17, cpu.rootThread);
-					const snapshot = cpu.captureRuntimeState();
-					cpu.restoreRuntimeState(snapshot);
-					assert.deepEqual(cpu.captureRuntimeState(), snapshot, 'HALT owner survives suspended tooling call');
-					if (status !== RunResult.Yielded) break;
+			if (name.startsWith('completion_')) {
+				exerciseCompletionBoundary(cpu, name);
+			} else {
+				if (name === 'halted_tooling_call') {
+					assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+					assert.equal(cpu.isHaltedUntilIrq(), true);
+					const depth = cpu.getFrameDepth();
+					cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.intern('probe')) as Closure);
+					for (let grant = 0; grant < 10000; grant++) {
+						const status = cpu.runUntilDepth(depth, 17, cpu.rootThread);
+						const snapshot = cpu.captureRuntimeState();
+						cpu.restoreRuntimeState(snapshot);
+						assert.deepEqual(cpu.captureRuntimeState(), snapshot, 'HALT owner survives suspended tooling call');
+						if (status !== RunResult.Yielded) break;
+					}
+					assert.equal(cpu.activeThread, cpu.rootThread);
+					assert.equal(cpu.getFrameDepth(), depth);
+					assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('entered')), true);
+					assert.equal(cpu.isHaltedUntilIrq(), true, 'returning from tooling preserves the root HALT');
+					applyRuntimeSaveState(runtime, decodeRuntimeSaveState(encodeRuntimeSaveState(captureRuntimeSaveState(runtime)), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
+					assert.equal(cpu.isHaltedUntilIrq(), true, 'HALT owner survives the full codec');
+					cpu.clearHaltUntilIrq();
 				}
-				assert.equal(cpu.activeThread, cpu.rootThread);
-				assert.equal(cpu.getFrameDepth(), depth);
-				assert.equal(cpu.getGlobalByKey(cpu.stringPool.intern('entered')), true);
-				assert.equal(cpu.isHaltedUntilIrq(), true, 'returning from tooling preserves the root HALT');
-				applyRuntimeSaveState(runtime, decodeRuntimeSaveState(encodeRuntimeSaveState(captureRuntimeSaveState(runtime)), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
-				assert.equal(cpu.isHaltedUntilIrq(), true, 'HALT owner survives the full codec');
-				cpu.clearHaltUntilIrq();
-			}
-			let result = RunResult.Yielded;
-			let interrupted = false;
-			for (let grant = 0; grant < 10000 && result === RunResult.Yielded; grant += 1) {
-				if (name === 'interrupted' && !interrupted && cpu.activeThread !== cpu.rootThread
-					&& cpu.getGlobalByKey(cpu.stringPool.intern('interrupt_ready')) === true) {
-					cpu.requestNonMaskableInterrupt();
-					assert.equal(cpu.enterPendingInterrupt(), true);
+				let result = RunResult.Yielded;
+				let interrupted = false;
+				for (let grant = 0; grant < 10000 && result === RunResult.Yielded; grant += 1) {
+					if (name === 'interrupted' && !interrupted && cpu.activeThread !== cpu.rootThread
+						&& cpu.getGlobalByKey(cpu.stringPool.intern('interrupt_ready')) === true) {
+						cpu.requestNonMaskableInterrupt();
+						assert.equal(cpu.enterPendingInterrupt(), true);
+						cpu.restoreRuntimeState(cpu.captureRuntimeState());
+						interrupted = true;
+					}
+					result = cpu.runUntilDepth(0, 17);
 					cpu.restoreRuntimeState(cpu.captureRuntimeState());
-					interrupted = true;
+					if (name !== 'interrupted') assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
 				}
-				result = cpu.runUntilDepth(0, 17);
-				cpu.restoreRuntimeState(cpu.captureRuntimeState());
-				if (name !== 'interrupted') assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
+				assert.equal(result, RunResult.Halted);
+				assert.deepEqual(runtime.readCompletionValues(), [true]);
 			}
-			assert.equal(result, RunResult.Halted);
-			assert.deepEqual(runtime.readCompletionValues(), [true]);
 			const bytes = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 			const decoded = decodeRuntimeSaveState(bytes, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
 			assert.deepEqual(decodeRuntimeSaveState(encodeRuntimeSaveState(decoded), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes), decoded);

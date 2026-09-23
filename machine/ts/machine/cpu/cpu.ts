@@ -3672,7 +3672,7 @@ export class CPU implements MappedPageInvalidator {
 
 	private coroutineYieldable(thread: Thread): boolean {
 		if (thread === this.rootThread) return false;
-		for (const frame of thread.frames) if (frame.isExceptionFrame) return false;
+		for (const frame of thread.frames) if (frame.isExceptionFrame || frame.returnToCompletionLatch) return false;
 		for (let index = 0; index < thread.protectedCallDepth; index += 1) {
 			if (thread.protectedCallContinuations.peek(index).kind === ProtectedCallKind.XPCallHandler) return false;
 		}
@@ -3745,7 +3745,7 @@ export class CPU implements MappedPageInvalidator {
 		if (this.handleProtectedCallError(tag, scalar, reference)) return true;
 		const thread = this.activeThread;
 		if (thread.resumer === null) return false;
-		for (const frame of thread.frames) if (frame.isExceptionFrame) return false;
+		for (const frame of thread.frames) if (frame.isExceptionFrame || frame.returnToCompletionLatch) return false;
 		thread.status = ThreadStatus.Failed;
 		thread.error.setEncoded(0, tag, scalar, reference);
 		this.returnToResumer(thread.error, 0, 1, false);
@@ -4040,7 +4040,9 @@ export class CPU implements MappedPageInvalidator {
 			const caller = continuation.caller!;
 			const callerIndex = this.activeThread.frames.indexOf(caller);
 			for (let frameIndex = this.activeThread.frames.length - 1; frameIndex > callerIndex; frameIndex -= 1) {
-				if (this.activeThread.frames[frameIndex].isExceptionFrame) {
+				// Completion roots return to their latch, not the interrupted caller.
+				const frame = this.activeThread.frames[frameIndex];
+				if (frame.isExceptionFrame || frame.returnToCompletionLatch) {
 					return false;
 				}
 			}
