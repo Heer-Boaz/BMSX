@@ -45,7 +45,7 @@ test('adapter exposes only the user code, cancels by process-owned login ID and 
 	const f = await sessionFixture(t, 'normal');
 	await f.session.startLogin();
 	assert.deepEqual(f.events.find(event => event.type === 'login-started'), { type: 'login-started', code: 'ABCD-EFGH' });
-	await assert.rejects(f.session.startTurn('Not while authenticating'), /account operation/);
+	await assert.rejects(f.session.startTurn('Not while authenticating', []), /account operation/);
 	await f.session.cancelLogin(); await f.session.signOut();
 	await f.accountChanged; // Notification refresh is independent of command-response ordering.
 	const commands = (await readFile(f.trace, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
@@ -126,7 +126,7 @@ for (const operation of ['startTurn', 'startLogin', 'signOut'] as const) {
 				if (event.type !== 'account-refreshing' || checked) return;
 				checked = true;
 				// A command can arrive before the browser receives this notification.
-				admission.resolve(assert.rejects(operation === 'startTurn' ? session!.startTurn('Do not submit during an account transition')
+				admission.resolve(assert.rejects(operation === 'startTurn' ? session!.startTurn('Do not submit during an account transition', [])
 					: session![operation](), message));
 			} });
 		await session.startLogin(); f.authorize();

@@ -458,3 +458,23 @@ Problems and the assistant see the same source version and markers; unsupported
 and failed analysis remain explicit. Receipt invalidation and the existing shared
 review/history boundary are unchanged. The actual process/browser workflow reads
 diagnostics before proposing edits, without building or running guest code.
+
+### Review feedback follows the shared owner
+
+Review settlement now reaches the provider on the next explicit user prompt,
+through typed observations of the ordinary proposal owner. The proposal tool
+returns an opaque review identifier; it still completes immediately and cannot
+apply its own edits. No model turn is started by Apply/Discard, and no provider
+wait or polling loop controls review lifetime. Pending/applying observations and
+historical applied/discarded/stale/failed outcomes are distinct. Apply followed by
+Undo remains an applied review outcome, while fresh source reads see Undo.
+
+The conversation retains only outstanding observations, retires acknowledged
+terminal ones, and clears them on account/connection replacement. The Node owner
+encodes this data beside the unchanged user prompt, not in a private source or
+history database. The actual browser/HTTP/CLI workflow verifies model request
+bodies after Apply + Undo, Discard and staleness on all three renderers. Admission
+races, known rejection and late acknowledgements have separate owner tests. See
+the [contribution contract](studio_assistant_contribution.md#owners-and-lifetimes)
+for semantics and evidence; this is still offline, automated evidence rather than
+paid-model or personal-account verification.

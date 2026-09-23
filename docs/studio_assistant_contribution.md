@@ -55,6 +55,21 @@ There are no globally reserved gameplay keys or automatic guest evaluation.
   even when the assistant pane was detached. Review state does not wait for a
   provider notification, and Undo does not rearm a proposal. Settlement releases
   executable edit payloads; only the inspectable preview survives.
+- Provider feedback is separate from settlement. The proposal tool returns an
+  opaque review identifier, not approval. At the next **explicit user prompt**,
+  the conversation snapshots outstanding reviews directly from their owners.
+  The Node adapter supplies these typed observations beside the unchanged prompt.
+  Apply/Discard/staleness never starts inference, and no polling tool or provider
+  wait holds the review open. Applied is a historical working-copy operation,
+  not Save/build/run or a claim about source after Undo. Further edits require
+  fresh source receipts.
+  Only terminal observations included in an acknowledged prompt are released.
+  Pending/applying reviews remain outstanding; settlement during asynchronous
+  admission is reported on a subsequent prompt, not silently acknowledged.
+  A known rejection retains the observations without retrying the prompt; an
+  uncertain transport loss retires the connection. Account/connection replacement
+  clears observations along with source authority. Old acknowledgements cannot
+  consume replacement-session evidence. No full-transcript scan is involved.
 - The assistant and review inputs are deliberately absent from session
   serialization. They cannot restore a conversation or resurrect edit rights.
 - `hosts/common/assistant_protocol.ts` is a narrow platform contract, with no
@@ -110,6 +125,12 @@ enlarge the provider's context window or hide context-limit failures.
   a waiting provider stream, Discard, stale review after an ordinary source edit,
   disabled stale Apply, and close/reopen retirement. Applied/discarded/stale
   headings are asserted and captured on all three backends.
+  Actual subsequent Responses request bodies contain the corresponding applied,
+  discarded and stale review observations; the applied case includes ordinary
+  joint Undo before submission. Fresh reads see that Undo, while the proposal's
+  one-shot historical outcome remains applied. The request count proves that no
+  review action triggers another model request and acknowledged outcomes are not
+  repeated after Stop.
   Guest cycles advance while the pane waits. Authored project files remain
   unchanged. Copy is checked against the browser clipboard with explicit clipboard
   permission, not just the editor's cached clipboard. Selected-message, composer,
@@ -152,8 +173,13 @@ enlarge the provider's context window or hide context-limit failures.
   proposal cases verify one notification after authority retirement, including
   history conflict/failure. A detached-view teardown case replaces the transcript
   before another frame and verifies that no old offsets or edit state survive.
-- Regression bundle: **2354 Lua tests passed, 1 skipped**; process/stdio **19**,
-  independent Codex contract **5**, assistant HTTP **12**, workspace HTTP **6**,
+- Review-feedback tests cover all four terminal states, pending settlement during
+  admission, applying-state observation during ordinary content publication,
+  competing proposals, known rejection, and connection/account replacement with
+  delayed acknowledgements. The real HTTP/CLI test verifies structured data and
+  the unchanged multiline Unicode prompt in the actual provider request.
+- Regression bundle: **2365 Lua tests passed, 1 skipped**; process/stdio **19**,
+  independent Codex contract **5**, assistant HTTP **13**, workspace HTTP **6**,
   process/workbench **1**, and account **9** pass. Actual WebGL2 cold-page session
   restoration passes. Source-save/local-only/reconnect workflows pass on all
   three renderers through the same shared renderer fixture used by the assistant.
@@ -171,6 +197,12 @@ provider picker, background multi-agent workflow or OS-wide sandbox claim.
 
 - VS Code's pinned [chat model](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/contrib/chat/common/chatModel.ts):
   retained request/response state, independent of view attachment.
+- VS Code's [editing session](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/contrib/chat/browser/chatEditing/chatEditingSession.ts)
+  delegates decisions to retained edit owners; Codex's pinned
+  [dynamic-tool roundtrip](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server/tests/suite/v2/dynamic_tools.rs)
+  verifies the tool result in actual subsequent model input. BMSX keeps its own
+  preview-before-Apply semantics rather than copying speculative writes/restore,
+  and submits later review observations only with an explicit prompt.
 - VS Code's [chat widget](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/contrib/chat/browser/chatWidget.ts)
   and Codex's [account contract tests](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server/tests/suite/v2/account.rs):
   separate view/model lifetimes and exercise device-code failures/cancellation

@@ -23,7 +23,7 @@ export type SourceToolResult =
 	| { kind: 'sources'; data: readonly ToolSourceResource[] }
 	| { kind: 'source'; data: ToolSourceReceipt }
 	| { kind: 'diagnostics'; data: ToolSourceDiagnostics }
-	| { kind: 'proposal'; data: { status: 'review-required'; files: number }; proposal: WorkspaceEditProposal };
+	| { kind: 'proposal'; data: { status: 'review-required'; review: string; files: number }; proposal: WorkspaceEditProposal };
 
 /** One prompt's source authority. Call before model IO; reads never manufacture a fresh context. */
 export class WorkspaceSourceTools {
@@ -128,7 +128,7 @@ export class WorkspaceSourceTools {
 				// The review outlives turn completion, but never the connection that proposed it.
 				proposal.lifetime.add({ dispose: this.unlinkConnection });
 				this.resources.clear(); this.receipts.clear(); this.catalog = [];
-				return { kind: 'proposal', data: { status: 'review-required', files: proposal.files.length }, proposal };
+				return { kind: 'proposal', data: { status: 'review-required', review: `${this.id}/review`, files: proposal.files.length }, proposal };
 			}
 		}
 	}

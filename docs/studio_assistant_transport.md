@@ -47,6 +47,13 @@ Each tool request receives a new one-shot reply identity, not the external
 provider's RPC/call ID. Interrupt/disconnect removes pending reply rights; a late,
 duplicate, foreign-connection or retargeted reply is rejected.
 
+Start carries the user's prompt plus typed review observations captured by the
+workbench. The process owner converts those observations to a separate text input
+item beside the unchanged prompt, with explicit historical-outcome versus current
+source/Save semantics. These are not injected provider methods or edit rights.
+Review actions never send start; only an explicit prompt can submit observations.
+Acknowledgement means prompt admission, not proof that the model used that context.
+
 There is no reconnect/replay queue. Even a 401 does not automatically renew and
 repeat an assistant command. A lost response **or interrupted response body**
 may follow an accepted prompt; the client retires its lease rather than guessing
@@ -61,12 +68,14 @@ and [ordinary review](studio_workspace_edit_review.md), not by transport IDs.
 
 ## Evidence and limits
 
-- `npm run test:assistant-http`: **12 passing tests**, including the actual CLI
+- `npm run test:assistant-http`: **13 passing tests**, including the actual CLI
   with an offline Responses fixture, real listeners and a real Chromium client.
   They cover origin/lease admission, tool exchange, interruption, disconnect and
   explicit replacement, duplicate replies, lost headers/body, expired capability,
   stream-budget termination and process/profile shutdown. Chromium shares one
   admission with ordinary file IO and saves after assistant disconnect.
+  Structured review observations and the unchanged Unicode/multiline prompt are
+  verified in the actual Responses request produced by the pinned process.
 - The actual production entry is separately spawned: LAN opt-in is rejected;
   unauthorized requests cannot touch the profile; an intentionally wrong private
   executable is rejected and the entry completes joined shutdown. Default static

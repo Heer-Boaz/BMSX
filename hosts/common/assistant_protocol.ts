@@ -1,8 +1,14 @@
 /** Studio operations/events, not a tunnel for a provider's methods or configuration. */
 export const STUDIO_ACCOUNT_LOGIN_URL = 'https://auth.openai.com/codex/device';
 export type AssistantAccount = { connected: boolean; requiresLogin: boolean; email?: string; plan?: string };
+/** Review observations at prompt submission, not source receipts or Save acknowledgements. */
+export type AssistantReviewUpdate = {
+	readonly review: string;
+	readonly state: 'pending' | 'applying' | 'applied' | 'discarded' | 'stale' | 'failed';
+	readonly reason: string;
+};
 export type AssistantCommand =
-	| { type: 'start'; prompt: string }
+	| { type: 'start'; prompt: string; reviews: readonly AssistantReviewUpdate[] }
 	| { type: 'interrupt' }
 	| { type: 'login-start' | 'login-cancel' | 'sign-out' }
 	| { type: 'tool-result'; requestId: string; success: boolean; text: string };

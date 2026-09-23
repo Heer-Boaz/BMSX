@@ -52,7 +52,7 @@ test('owned process serves a live Studio receipt, has no builtin tool surface an
 	});
 	const session = await f.open();
 	assert.equal((await session.readAccount()).account, null);
-	const turnId = await session.startTurn('Read my Studio working copy');
+	const turnId = await session.startTurn('Read my Studio working copy', []);
 	const completed = await f.wait(event => event.type === 'turn-completed');
 	assert.equal(completed.turn.id, turnId); assert.equal(completed.turn.status, 'completed');
 	assert.equal(signal.aborted, true, 'completed turns no longer carry source/tool rights');
@@ -66,7 +66,7 @@ test('owned process serves a live Studio receipt, has no builtin tool surface an
 	await closed;
 	await assert.rejects(access(join(f.profileDirectory, 'lease')), { code: 'ENOENT' });
 	assert.equal(f.events.filter(event => event.type === 'closed').length, 1);
-	await assert.rejects(session.startTurn('Late prompt'), /closed/);
+	await assert.rejects(session.startTurn('Late prompt', []), /closed/);
 });
 
 test('late tool results cannot answer an interrupted turn or acquire the next turn rights', { timeout: 15000 }, async t => {
@@ -78,12 +78,12 @@ test('late tool results cannot answer an interrupted turn or acquire the next tu
 		return new Promise(resolve => { resolveTool = resolve; });
 	});
 	const session = await f.open();
-	await session.startTurn('Wait at source read'); await toolStarted;
-	await assert.rejects(session.startTurn('Concurrent prompt'), /already active/);
+	await session.startTurn('Wait at source read', []); await toolStarted;
+	await assert.rejects(session.startTurn('Concurrent prompt', []), /already active/);
 	await session.interrupt();
 	assert.equal(signal.aborted, true);
 	assert.equal((await f.wait(event => event.type === 'turn-completed')).turn.status, 'interrupted');
-	const second = await session.startTurn('New turn, new rights');
+	const second = await session.startTurn('New turn, new rights', []);
 	resolveTool({ success: true, text: 'FORBIDDEN LATE SOURCE' });
 	await f.wait(event => event.type === 'turn-completed' && event.turn.id === second);
 	assert.equal(f.model.requests.length, 2);
@@ -98,7 +98,7 @@ test('disconnect cancels an unanswered tool immediately and drains EOF without a
 		return new Promise(resolve => { resolveTool = resolve; });
 	});
 	const session = await f.open();
-	await session.startTurn('Wait for source'); await toolStarted;
+	await session.startTurn('Wait for source', []); await toolStarted;
 	const closed = session.close();
 	assert.equal(signal.aborted, true, 'retirement must not wait for the process');
 	resolveTool({ success: true, text: 'LATE' });
@@ -109,7 +109,7 @@ test('disconnect cancels an unanswered tool immediately and drains EOF without a
 test('interrupt during turn admission cannot race into a later model request', { timeout: 15000 }, async t => {
 	const f = await fixture(t, [], () => assert.fail());
 	const session = await f.open();
-	const starting = assert.rejects(session.startTurn('Cancel before admission completes'), /interrupted/);
+	const starting = assert.rejects(session.startTurn('Cancel before admission completes', []), /interrupted/);
 	await session.interrupt();
 	await starting;
 	assert.equal(f.model.requests.length, 0);
@@ -141,7 +141,7 @@ test('configuration changed after connection is readmitted before a turn, withou
 	const f = await fixture(t, [], () => assert.fail());
 	const session = await f.open();
 	await writeFile(join(f.profileDirectory, 'account', 'config.toml'), 'developer_instructions="Unowned context"\n');
-	await assert.rejects(session.startTurn('Do not admit this'), /Unowned Codex configuration layer/);
+	await assert.rejects(session.startTurn('Do not admit this', []), /Unowned Codex configuration layer/);
 	assert.equal(f.model.requests.length, 0);
 });
 
@@ -189,7 +189,7 @@ test('unadvertised shell, patch, skills and permission attempts cannot bypass St
 	];
 	const f = await fixture(t, [attempts, CODEX_FIXTURE_DONE], () => assert.fail('These are not Studio tools'));
 	const session = await f.open();
-	await session.startTurn('Adversarial fixture');
+	await session.startTurn('Adversarial fixture', []);
 	await f.wait(event => event.type === 'turn-completed');
 	const outputs = f.model.requests[1].input.filter(item => item.type.endsWith('call_output'));
 	assert.equal(outputs.length, attempts.length);

@@ -57,7 +57,127 @@ async function propose(f: ReturnType<typeof fixture>) {
 	assert.match(read.source, /unsaved/);
 	await tool('studio_propose_edits', { title: 'Ordinary review', files: [{ receipt: read.receipt,
 		edits: [{ offset: read.source.indexOf('old'), deleteLength: 3, text: 'new', expectedText: 'old' }] }] });
-	return f.conversation.entries.find(entry => entry.kind === 'proposal')!.proposal!;
+	return f.conversation.entries.findLast(entry => entry.kind === 'proposal')!.proposal!;
+}
+
+for (const outcome of ['applied', 'discarded', 'stale', 'failed'] as const) {
+	test(`the next explicit prompt reports the owner's ${outcome} outcome, not a new automatic turn`, async t => {
+		const f = fixture(t), c = f.conversation; await c.connect(); await c.sendPrompt('Propose');
+		const connection = f.connections[0], proposal = await propose(f);
+		const reply = connection.commands.at(-1)!; assert.ok(reply.type === 'tool-result');
+		const receipt = JSON.parse(reply.text).review;
+		assert.equal(typeof receipt, 'string');
+		connection.emit({ type: 'turn-completed', turnId: 't', status: 'completed' });
+		const commands = connection.commands.length;
+		if (outcome === 'applied') { proposal.apply(); f.model.undo(); }
+		else if (outcome === 'discarded') proposal.dispose();
+		else if (outcome === 'stale') f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- user\n' }]);
+		else {
+			t.mock.method(f.models.history, 'applyEdits', () => { throw new Error('History failure'); });
+			assert.throws(() => proposal.apply(), /History failure/);
+		}
+		assert.equal(connection.commands.length, commands, 'review settlement cannot start inference or send provider commands');
+		await c.sendPrompt('Continue 🐉');
+		assert.deepEqual(connection.commands.at(-1), { type: 'start', prompt: 'Continue 🐉', reviews: [{ review: receipt, state: outcome, reason: proposal.reason }] });
+		connection.emit({ type: 'turn-completed', turnId: 'next', status: 'completed' });
+		await c.sendPrompt('Another explicit prompt');
+		assert.deepEqual(connection.commands.at(-1), { type: 'start', prompt: 'Another explicit prompt', reviews: [] }, 'acknowledged outcomes are not replayed');
+	});
+}
+
+test('a prompt snapshots pending reviews; settlement during admission remains for the following explicit prompt', async t => {
+	const f = fixture(t), c = f.conversation; await c.connect(); await c.sendPrompt('Propose');
+	const connection = f.connections[0], proposal = await propose(f);
+	connection.emit({ type: 'turn-completed', turnId: 't', status: 'completed' });
+	let release!: () => void;
+	connection.pending = new Promise(resolve => { release = () => resolve(undefined); });
+	const sending = c.sendPrompt('While pending');
+	const command = connection.commands.at(-1)!; assert.ok(command.type === 'start');
+	assert.equal(command.reviews[0].state, 'pending');
+	proposal.dispose();
+	assert.equal(command.reviews[0].state, 'pending', 'the submitted snapshot cannot mutate behind the transport');
+	release(); await sending; connection.pending = undefined;
+	connection.emit({ type: 'turn-completed', turnId: 'next', status: 'completed' });
+	await c.sendPrompt('After Discard');
+	const next = connection.commands.at(-1)!; assert.ok(next.type === 'start');
+	assert.deepEqual(next.reviews, [{ review: command.reviews[0].review, state: 'discarded', reason: '' }]);
+});
+
+test('known prompt rejection retains outcome evidence without automatically retrying the prompt', async t => {
+	const f = fixture(t), c = f.conversation; await c.connect(); await c.sendPrompt('Propose');
+	const connection = f.connections[0], proposal = await propose(f);
+	connection.emit({ type: 'turn-completed', turnId: 't', status: 'completed' }); proposal.dispose();
+	connection.pending = Promise.reject(new Error('Admission denied'));
+	await c.sendPrompt('Rejected prompt');
+	const rejected = connection.commands.at(-1)!; assert.ok(rejected.type === 'start');
+	assert.equal(connection.commands.filter(command => command.type === 'start').length, 2);
+	connection.pending = undefined; await c.sendPrompt('Different, explicit prompt');
+	const admitted = connection.commands.at(-1)!; assert.ok(admitted.type === 'start');
+	assert.equal(admitted.reviews.length, 1); assert.deepEqual(admitted.reviews, rejected.reviews);
+});
+
+test('source-change publication during Apply is not prematurely reported as a successful review', async t => {
+	const f = fixture(t), c = f.conversation; await c.connect(); await c.sendPrompt('Propose');
+	const connection = f.connections[0], proposal = await propose(f);
+	connection.emit({ type: 'turn-completed', turnId: 't', status: 'completed' });
+	let submitted!: Promise<void>;
+	const unbind = f.model.onDidChangeContent(() => { submitted = c.sendPrompt('Observe during history publication'); });
+	proposal.apply(); unbind(); await submitted;
+	const during = connection.commands.at(-1)!; assert.ok(during.type === 'start');
+	assert.equal(during.reviews[0].state, 'applying');
+	connection.emit({ type: 'turn-completed', turnId: 'next', status: 'completed' });
+	await c.sendPrompt('Observe completed history');
+	const after = connection.commands.at(-1)!; assert.ok(after.type === 'start');
+	assert.deepEqual(after.reviews, [{ review: during.reviews[0].review, state: 'applied', reason: '' }]);
+});
+
+test('late admission acknowledgement cannot consume a replacement connection\'s outstanding review', async t => {
+	const f = fixture(t), c = f.conversation; await c.connect(); await c.sendPrompt('Old proposal');
+	const connection = f.connections[0], old = await propose(f);
+	connection.emit({ type: 'turn-completed', turnId: 'old', status: 'completed' }); old.dispose();
+	let release!: () => void;
+	connection.pending = new Promise(resolve => { release = () => resolve(undefined); });
+	const oldPrompt = c.sendPrompt('Old outcome');
+	c.disconnect(); await c.connect(); await c.sendPrompt('Replacement proposal');
+	const current = await propose(f); current.dispose();
+	f.connections[1].emit({ type: 'turn-completed', turnId: 'current', status: 'completed' });
+	release(); await oldPrompt;
+	await c.sendPrompt('Replacement outcome');
+	const update = f.connections[1].commands.at(-1)!; assert.ok(update.type === 'start');
+	assert.equal(update.reviews.length, 1); assert.equal(update.reviews[0].state, 'discarded');
+	const previous = connection.commands.at(-1)!; assert.ok(previous.type === 'start');
+	assert.notEqual(update.reviews[0].review, previous.reviews[0].review);
+});
+
+test('applying one outstanding proposal reports its success and the competing proposal\'s actual staleness', async t => {
+	const f = fixture(t), c = f.conversation; await c.connect(); await c.sendPrompt('First proposal');
+	const connection = f.connections[0], first = await propose(f);
+	connection.emit({ type: 'turn-completed', turnId: 'first', status: 'completed' });
+	await c.sendPrompt('Second proposal, leave the first pending');
+	const second = await propose(f);
+	connection.emit({ type: 'turn-completed', turnId: 'second', status: 'completed' });
+	first.apply();
+	assert.equal(second.state, 'stale');
+	await c.sendPrompt('Both review outcomes');
+	const command = connection.commands.at(-1)!; assert.ok(command.type === 'start');
+	assert.deepEqual(command.reviews.map(review => [review.state, review.reason]), [['applied', ''], ['stale', second.reason]]);
+	assert.notEqual(command.reviews[0].review, command.reviews[1].review);
+});
+
+for (const transition of ['disconnect', 'account'] as const) {
+	test(`${transition} retires review feedback along with source authority`, async t => {
+		const f = fixture(t), c = f.conversation; await c.connect(); await c.sendPrompt('Propose');
+		const connection = f.connections[0], proposal = await propose(f);
+		connection.emit({ type: 'turn-completed', turnId: 't', status: 'completed' });
+		if (transition === 'disconnect') { c.disconnect(); await c.connect(); }
+		else {
+			connection.emit({ type: 'account-refreshing' });
+			connection.emit({ type: 'account-changed', account: { connected: false, requiresLogin: false } });
+		}
+		assert.equal(proposal.state, 'stale');
+		await c.sendPrompt('New authority');
+		assert.deepEqual(f.connections.at(-1)!.commands.at(-1), { type: 'start', prompt: 'New authority', reviews: [] });
+	});
 }
 
 test('conversation hands off a source-backed proposal; completion preserves review and ordinary Undo', async t => {

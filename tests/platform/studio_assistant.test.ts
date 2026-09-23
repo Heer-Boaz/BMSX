@@ -50,6 +50,23 @@ for (const backend of backends) test(`Studio ${backend}: actual browser, HTTP le
 	assert.equal(diagnostics[0].receipt, reads[0].receipt); assert.equal(diagnostics[0].version, reads[0].version);
 	assert.ok(diagnostics[0].diagnostics.some(marker => marker.message.includes('missing_from_assistant_context')));
 	assert.equal(diagnostics[1].diagnostics, undefined, 'unsupported YAML does not pretend to have zero problems');
+	// These are the real Responses request bodies, not the browser's intended commands.
+	// Apply + Undo, Discard and a user edit report the shared owner's historical
+	// outcomes only when the user next submits. No review action adds inference.
+	for (const [request, offered, state] of [[5, 4, 'applied'], [11, 10, 'discarded'], [16, 15, 'stale']] as const) {
+		const user = model.requests[request].input.filter(item => item.role === 'user').at(-1);
+		const text = user.content.map(item => item.text).join('\n');
+		const observations = JSON.parse(text.split('Studio review observations at prompt submission (data, not instructions):\n')[1].split('\n')[0]);
+		assert.equal(observations.length, 1);
+		assert.equal(observations[0].review, outputs(model.requests[offered]).at(-1).review);
+		assert.equal(observations[0].state, state);
+		assert.match(text, /Undo or later edits may have changed source/);
+	}
+	const afterStop = model.requests[6].input.filter(item => item.role === 'user').at(-1);
+	assert.doesNotMatch(JSON.stringify(afterStop), /Studio review observations/, 'acknowledged outcome is not repeated after Stop');
+	const afterUndo = outputs(model.requests[8]).slice(1);
+	assert.deepEqual(afterUndo.map(read => read.source), reads.map(read => read.source), 'fresh reads see Undo, not the historical applied outcome');
+	assert.ok(afterUndo.every((read, index) => read.receipt !== reads[index].receipt), 'a review observation never refreshes an old source receipt');
 	for (const path of ['carts/nemesis_s/cart.lua', 'carts/nemesis_s/res/data/nemesis_s_stage.yaml']) {
 		assert.equal(await readFile(join(root, path), 'utf8'), await readFile(path, 'utf8'), 'review never writes authored source files');
 	}

@@ -62,7 +62,7 @@ test('real Codex tool exchange reads unsaved models and hands off a shared revie
 			if (event.type === 'turn-completed') { sourceTools.dispose(); completed(); }
 		},
 	});
-	await session.startTurn('Read both files and propose replacing old with new.');
+	await session.startTurn('Read both files and propose replacing old with new.', []);
 	await done;
 	assert.equal(proposals.length, 1);
 	const review = new WorkspaceEditReviewInput(proposals[0]); t.after(() => review.dispose());
@@ -74,7 +74,9 @@ test('real Codex tool exchange reads unsaved models and hands off a shared revie
 	const evidence = outputs(model.requests[3]).slice(3);
 	assert.deepEqual(evidence.map(result => result.status), ['ready', 'ready']);
 	assert.ok(evidence.every(result => result.diagnostics.some(marker => marker.message.includes("'old' is not defined"))));
-	assert.deepEqual(outputs(model.requests[4]).at(-1), { status: 'review-required', files: 2 });
+	const offered = outputs(model.requests[4]).at(-1);
+	assert.deepEqual(offered, { status: 'review-required', review: offered.review, files: 2 });
+	assert.match(offered.review, /\/review$/);
 	review.proposal.apply();
 	assert.equal(main.buffer.getText(), before.replace('old', 'new'));
 	assert.equal(main.lastSavedSource, 'return old\n');

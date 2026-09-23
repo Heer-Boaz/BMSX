@@ -1,4 +1,4 @@
-import type { AssistantAccount, AssistantConnection, AssistantConnectionFactory, AssistantEvent } from '../../../../hosts/common/assistant_protocol';
+import type { AssistantAccount, AssistantConnection, AssistantConnectionFactory, AssistantEvent, AssistantReviewUpdate } from '../../../../hosts/common/assistant_protocol';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import { PieceTreeBuffer } from '../../../editor/text/piece_tree_buffer';
 import type { RuntimeSourceState } from '../../../runtime/sources';
@@ -30,6 +30,9 @@ export class AssistantConversation {
 	private readonly unbindWorkspace: () => void;
 	private lifetime: AbortController | undefined;
 	private sourceLifetime: AbortController | undefined;
+	// Only outstanding reviews: terminal observations leave after prompt admission.
+	// The proposal remains the state owner; this is not a second review/history model.
+	private readonly outstandingReviews = new Map<string, WorkspaceEditProposal>();
 	private connection: AssistantConnection | undefined;
 	private turn: ActiveTurn | undefined;
 	private disposed = false;
@@ -82,12 +85,20 @@ export class AssistantConversation {
 	/** Capture source authority before any asynchronous prompt submission. Never retry an accepted prompt. */
 	public async sendPrompt(prompt: string): Promise<void> {
 		if (!this.canSend || prompt.trim().length === 0) return;
-		const turn: ActiveTurn = { tools: new WorkspaceSourceTools(this.models, this.sources, this.storage, this.diagnostics, this.sourceLifetime!.signal),
+		const authority = this.sourceLifetime!;
+		const reviews: AssistantReviewUpdate[] = Array.from(this.outstandingReviews, ([review, proposal]) => ({ review, state: proposal.state, reason: proposal.reason }));
+		const turn: ActiveTurn = { tools: new WorkspaceSourceTools(this.models, this.sources, this.storage, this.diagnostics, authority.signal),
 			requests: new Set(), messages: new Map() };
 		this.turn = turn; this.state = 'running';
 		this.append('user', prompt);
-		try { await this.connection!.send({ type: 'start', prompt }); }
-		catch (error) {
+		try {
+			await this.connection!.send({ type: 'start', prompt, reviews });
+			// Pending reviews can settle while admission is in flight. Acknowledge
+			// only terminal observations actually submitted, never their newer state.
+			if (this.sourceLifetime === authority) for (const review of reviews) {
+				if (review.state !== 'pending' && review.state !== 'applying') this.outstandingReviews.delete(review.review);
+			}
+		} catch (error) {
 			if (this.turn === turn) { this.append('status', `Prompt failed: ${String(error)}`); this.finishTurn(); }
 		}
 	}
@@ -135,6 +146,7 @@ export class AssistantConversation {
 			case 'connected': this.account = event.account; break;
 			case 'account-refreshing':
 				this.sourceLifetime?.abort(new Error('Studio account changed')); this.sourceLifetime = undefined;
+				this.outstandingReviews.clear();
 				this.accountRefreshing = true; this.changed(); break;
 			case 'account-changed':
 				this.sourceLifetime = new AbortController();
@@ -178,7 +190,10 @@ export class AssistantConversation {
 				if (result.kind === 'proposal') result.proposal.dispose();
 				return;
 			}
-			if (result.kind === 'proposal') this.append('proposal', result.proposal.title, result.proposal);
+			if (result.kind === 'proposal') {
+				this.outstandingReviews.set(result.data.review, result.proposal);
+				this.append('proposal', result.proposal.title, result.proposal);
+			}
 			text = JSON.stringify(result.data);
 		} catch (error) { success = false; text = String(error); }
 		if (this.turn !== turn || !turn.requests.delete(event.requestId)) return;
@@ -193,6 +208,7 @@ export class AssistantConversation {
 		const lifetime = this.lifetime, connection = this.connection;
 		this.lifetime = undefined; this.connection = undefined;
 		this.sourceLifetime?.abort(new Error('Assistant connection closed')); this.sourceLifetime = undefined;
+		this.outstandingReviews.clear();
 		lifetime?.abort(); connection?.close();
 		this.account = undefined; this.accountRefreshing = false; this.loginCode = undefined;
 		this.finishTurn();

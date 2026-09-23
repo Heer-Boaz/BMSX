@@ -54,7 +54,7 @@ export class CodexHttpApi {
 		try {
 			switch (command.type) {
 				case 'start': {
-					const turnId = await connection.session!.startTurn(command.prompt);
+					const turnId = await connection.session!.startTurn(command.prompt, command.reviews);
 					response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }).end(JSON.stringify({ turnId }));
 					return;
 				}

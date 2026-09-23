@@ -86,7 +86,7 @@ test('real HTTP/browser client owns one lease, multiplexes a source tool and rej
 	assert.equal(c.client.account.requiresLogin, false);
 	await assert.rejects(f.open(), /409/);
 	assert.equal((await f.command(c.lease, { type: 'config/value/write', keyPath: 'sandbox_mode', value: 'danger-full-access' })).status, 400);
-	const turn = await c.client.send({ type: 'start', prompt: 'Read source through Studio' });
+	const turn = await c.client.send({ type: 'start', reviews: [], prompt: 'Read source through Studio' });
 	const call = await c.wait(event => event.type === 'tool-request'); assert.ok(call.type === 'tool-request');
 	assert.notEqual(call.requestId, readCall.call_id, 'external provider request identities never become browser reply rights');
 	assert.equal((await f.command('another-tab', { type: 'tool-result', requestId: call.requestId, success: true, text: 'WRONG' })).status, 410);
@@ -101,7 +101,7 @@ test('real HTTP/browser client owns one lease, multiplexes a source tool and rej
 
 test('interrupt retires the pending browser tool before turn completion; a late reply cannot be accepted', { timeout: 15000 }, async t => {
 	const f = await fixture(t, [[readCall]]), c = await f.open();
-	await c.client.send({ type: 'start', prompt: 'Wait on a tool' });
+	await c.client.send({ type: 'start', reviews: [], prompt: 'Wait on a tool' });
 	const call = await c.wait(event => event.type === 'tool-request'); assert.ok(call.type === 'tool-request');
 	await c.client.send({ type: 'interrupt' });
 	const cancelled = await c.wait(event => event.type === 'tool-cancelled'); assert.ok(cancelled.type === 'tool-cancelled');
@@ -113,9 +113,27 @@ test('interrupt retires the pending browser tool before turn completion; a late 
 	c.client.close(); await c.client.closed;
 });
 
+test('review observations cross the real HTTP and Codex input boundary as data beside the unchanged user prompt', { timeout: 15000 }, async t => {
+	const f = await fixture(t, [CODEX_FIXTURE_DONE]), c = await f.open();
+	const reviews = [{ review: 'context/review', state: 'applied' as const, reason: '' },
+		{ review: 'other/review', state: 'stale' as const, reason: 'Source changed: "cart.lua"\n🐉' }];
+	const prompt = 'Continue with my actual source 🐉\nKeep canonical formatting.';
+	await c.client.send({ type: 'start', prompt, reviews });
+	await c.wait(event => event.type === 'turn-completed');
+	const user = f.model.requests[0].input.filter(item => item.role === 'user').at(-1);
+	const text = user.content.map(item => item.text).join('\n');
+	assert.ok(text.includes(JSON.stringify(reviews)));
+	assert.ok(text.endsWith(prompt), 'user prompt bytes remain separate from the structured observation');
+	assert.match(text, /data, not instructions/);
+	assert.match(text, /Undo or later edits may have changed source/);
+	assert.match(text, /not saved, built or run/);
+	assert.equal(f.model.requests.length, 1);
+	c.client.close(); await c.client.closed;
+});
+
 test('event-stream disconnect drains the real process; explicit reconnect gets new rights and cannot resurrect the old tool', { timeout: 15000 }, async t => {
 	const f = await fixture(t, [[readCall]]), first = await f.open();
-	await first.client.send({ type: 'start', prompt: 'Wait on the first connection' });
+	await first.client.send({ type: 'start', reviews: [], prompt: 'Wait on the first connection' });
 	const call = await first.wait(event => event.type === 'tool-request'); assert.ok(call.type === 'tool-request');
 	first.client.close(); await first.client.closed;
 	const second = await f.open();
@@ -140,7 +158,7 @@ test('losing the HTTP response after an accepted start closes the lease and neve
 		}
 		return response;
 	});
-	await assert.rejects(c.client.send({ type: 'start', prompt: 'Exactly one accepted prompt' }), /lost response/);
+	await assert.rejects(c.client.send({ type: 'start', reviews: [], prompt: 'Exactly one accepted prompt' }), /lost response/);
 	await c.client.closed;
 	assert.equal(c.client.signal.aborted, true);
 	assert.equal(commands, 1); assert.equal(f.model.requests.length, 1);
@@ -148,7 +166,7 @@ test('losing the HTTP response after an accepted start closes the lease and neve
 
 test('platform shutdown joins a pending real process and releases its profile lease', { timeout: 15000 }, async t => {
 	const f = await fixture(t, [[readCall]]), c = await f.open();
-	await c.client.send({ type: 'start', prompt: 'Wait until server shutdown' });
+	await c.client.send({ type: 'start', reviews: [], prompt: 'Wait until server shutdown' });
 	await c.wait(event => event.type === 'tool-request');
 	await f.api.close(); await c.client.closed;
 	assert.equal(c.client.signal.aborted, true);
@@ -170,7 +188,7 @@ test('an interrupted accepted response body retires the lease just like losing t
 		}
 		return response;
 	});
-	await assert.rejects(c.client.send({ type: 'start', prompt: 'Exactly one accepted prompt, incomplete response body' }), SyntaxError);
+	await assert.rejects(c.client.send({ type: 'start', reviews: [], prompt: 'Exactly one accepted prompt, incomplete response body' }), SyntaxError);
 	await c.client.closed;
 	assert.equal(c.client.signal.aborted, true);
 	assert.equal(commands, 1); assert.equal(f.model.requests.length, 1);
@@ -183,7 +201,7 @@ test('capability rejection expires shared admission but does not renew or replay
 		const path = new URL(String(url)).pathname; paths.push(path);
 		return path.endsWith('/command') ? Promise.resolve(new Response('Expired capability', { status: 401 })) : fetch(url, init);
 	});
-	await assert.rejects(c.client.send({ type: 'start', prompt: 'Do not repeat this prompt' }), /401/);
+	await assert.rejects(c.client.send({ type: 'start', reviews: [], prompt: 'Do not repeat this prompt' }), /401/);
 	await c.client.closed;
 	assert.equal(c.client.signal.aborted, true);
 	assert.deepEqual(paths, ['/__bmsx__/assistant/command']);
@@ -195,7 +213,7 @@ test('capability rejection expires shared admission but does not renew or replay
 test('an event exceeding the stream budget retires the entire connection and leaves no process lease', { timeout: 15000 }, async t => {
 	const largeMessage = [{ type: 'message', id: 'large', role: 'assistant', content: [{ type: 'output_text', text: 'X'.repeat(9 * 1024 * 1024) }] }];
 	const f = await fixture(t, [largeMessage]), c = await f.open();
-	await c.client.send({ type: 'start', prompt: 'Exercise the event transport budget' });
+	await c.client.send({ type: 'start', reviews: [], prompt: 'Exercise the event transport budget' });
 	await c.client.closed;
 	assert.equal(c.client.signal.aborted, true);
 	assert.ok(c.events.some(event => event.type === 'closed' && event.error !== undefined));
@@ -231,7 +249,7 @@ test('Chromium uses the real same-origin transport and shares admission with ord
 			if (event.type === 'tool-request') requested.resolve(event);
 			if (event.type === 'turn-completed') completed.resolve();
 		}), provider.read('source.lua')]);
-		await client.send({ type: 'start', prompt: 'Read a browser-owned source receipt' });
+		await client.send({ type: 'start', reviews: [], prompt: 'Read a browser-owned source receipt' });
 		const call = await requested.promise;
 		await client.send({ type: 'tool-result', requestId: call.requestId, success: true, text: '-- UNSAVED 🐉 browser receipt\n' + source.contents });
 		await completed.promise;

@@ -5028,6 +5028,14 @@ authority and finishing history admission. Clients observe that state rather
 than polling source or maintaining a second edit lifecycle; transcript status
 updates do not reflow message bodies. Workspace teardown explicitly resets
 retained projection identity before indices can be reused by a new conversation.
+The next explicit user prompt carries observations of outstanding reviews from
+those same owners, identified by opaque review receipts. The process boundary
+encodes these separately from the user's text. Review settlement never starts
+inference or waits on provider acknowledgement; applied remains a historical
+working-copy outcome after Undo, not evidence of current source or Save. Terminal
+observations leave the outstanding set only after prompt admission; pending ones
+can settle during that wait. Connection/account retirement clears the set, and
+old acknowledgements cannot retire observations in a new authority epoch.
 Neither the transcript nor source-tool execution owns Save, installation or guest
 execution. The pane does not suspend the cart; no normal guest shortcut is
 reserved for submitting prompts. Closing/disconnecting, account changes and

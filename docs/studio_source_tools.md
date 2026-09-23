@@ -36,10 +36,18 @@ client of this capability, not a second document/history implementation.
   It never searches for a near match, coerces offsets, repairs source or falls
   back to cooked data. These checks do **not** enter the text model/history path.
 - The complete admitted edit set produces one `WorkspaceEditProposal`. The tool
-  response says **review-required**, never applied/saved/installed. The caller
+  response says **review-required** with an opaque review identifier, never
+  applied/saved/installed. This identifier grants no source authority. The caller
   hands the proposal to the ordinary `WorkspaceEditReviewInput`. Only visible
   explicit Apply owns the shared-history mutation; Save/build/run/test are not
   tools in this capability set.
+- The conversation snapshots outstanding review states on the next explicit
+  user prompt. The provider sees actual owner observations, not a guessed result
+  or another automatic inference turn. The tool itself completes immediately;
+  review does not depend on a waiting model/tool call. Applied does not mean
+  saved or still present after Undo. The next prompt must read fresh source
+  receipts before proposing further changes. Account/connection retirement clears
+  these observations; retained transcript previews are not replay authority.
 - Proposal construction transfers the captured context exactly once. Ending the
   inference turn releases reading rights but leaves an already offered review
   pending. The connection's AbortSignal remains linked to that review until

@@ -74,7 +74,9 @@ test('tools read unsaved working copies and propose exact multi-file review with
 	] });
 	assert.ok(proposed.kind === 'proposal');
 	const input = new WorkspaceEditReviewInput(proposed.proposal); t.after(() => input.dispose());
-	assert.deepEqual(proposed.data, { status: 'review-required', files: 2 });
+	assert.deepEqual(proposed.data, { status: 'review-required', review: proposed.data.review, files: 2 });
+	assert.match(proposed.data.review, /\/review$/);
+	assert.notEqual(proposed.data.review, reads[0].data.receipt, 'observing a review does not grant source rights');
 	assert.equal(lua.buffer.getText(), 'return unsaved -- saved\n');
 	assert.equal(f.models.get(f.yaml)!.dirty, false);
 	assert.equal(proposed.proposal.state, 'pending');
