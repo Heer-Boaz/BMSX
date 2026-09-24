@@ -802,6 +802,14 @@ if(BMSX_BUILD_TESTS)
 		${BMSX_LIBRETRO_DIR}
 	)
 
+	add_executable(bmsx_terminal_conformance_runner
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/terminal_conformance_runner.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/common/mmap_file.cpp
+		${BMSX_LIBRETRO_DIR}/cartridge_media.cpp
+	)
+	target_link_libraries(bmsx_terminal_conformance_runner PRIVATE bmsx_host_support bmsx_rom_image)
+	target_include_directories(bmsx_terminal_conformance_runner PRIVATE ${BMSX_LIBRETRO_DIR})
+
 	add_executable(bmsx_runtime_replay_conformance_runner
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/runtime_replay_conformance_runner.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/common/mmap_file.cpp

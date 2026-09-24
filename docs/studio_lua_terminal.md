@@ -91,12 +91,71 @@ appended rows; font/width changes reflow retained entries.
 
 ## Codex boundary
 
-The session service is independent of the pane and exposes an operation with a
-completion result. **This slice adds no Codex execution tool.** A later adapter
-must use this same admission/completion owner and explicit execution authority,
-not the source-edit receipt or a server-side evaluator. Source proposals do not
-become permission to run Lua. No operating-system shell, extra server, polling
-or account controls are involved.
+The ordinary server advertises `studio_terminal_status`, `studio_evaluate_lua`
+and `studio_control_lua`. They invoke this same session service without opening
+a pane, synthesizing a click or adding a Codex-specific Terminal button. Tool
+arguments must select the listed authoring target and explicit `session`
+context. `cart` and `frame` are rejected rather than silently substituted.
+As with the other dynamically admitted Studio tools, start a new Studio
+conversation to obtain tools added since an older thread was created. The
+installed native resume contract does not rebind that thread's tool definitions;
+see [conversation compatibility](studio_assistant_conversations.md).
+
+Evaluation and Continue wait until a real return, protected Lua error,
+breakpoint/pause, interruption or host error. Results include the evaluation
+identity, formatted return values and bounded input/output/result entries;
+retention or Clear loss is explicit (`outputTruncated`). Status reads are on
+demand, not a provider polling loop. A debugger pause releases the tool waiter
+so the conversation can issue a subsequent Continue with the same identity.
+
+Conversation Stop, disconnection and request retirement revoke queued admission
+or suspend the owned call. The suspended physical evaluation survives the
+prompt, appears in the normal Terminal, and is controllable by a later prompt.
+Settled waiters detach their cancellation listeners. Late cancellation does not
+override newer manual Continue intent. A new evaluation cannot replace a paused
+one, and source-edit approval is not interpreted as execution authority.
+
+## Physical BIOS Terminal and native parity
+
+The BIOS monitor accepts `LUA <source>` and uses the same `shell/repl.evaluate`
+and guest environment. Expressions/statements, captures, nested load, protected
+errors and retained mutations therefore have one firmware implementation on
+TypeScript and C++. `HELP LUA` describes the command. The command word remains
+case-insensitive; source preserves lowercase and Shift input. The firmware's
+existing uppercase-identifier restriction still applies; string contents retain
+case. The monitor keeps its ordinary command completion/history and bounded
+single-line input; Studio's multiline editor is a different frontend.
+
+The physical monitor evaluates on its actual BIOS call stack. It has no native
+source-debugger frontend or Studio pause/Continue buttons. An infinite command
+retains its ordinary CPU execution; this change adds neither an in-guest unwind
+facility nor a native Codex server. Native parity here is firmware evaluation
+and namespace semantics, not feature parity with an IDE that native does not
+have. The TypeScript/C++ CPU, value and closure representations are unchanged.
+
+### Implementation gate: conversation execution and physical monitor
+
+| Representation | TypeScript machine | C++ machine |
+| --- | --- | --- |
+| Submitted source | Guest StringId, interned at admitted call / BIOS input boundary | Same guest string through BIOS input boundary |
+| Compiled chunk and captures | Firmware RAM function records and ordinary guest closures/upvalues | Identical firmware records and guest closures/upvalues |
+| Session bindings | `shell/repl` guest environment table, not CPU global registers | Same firmware-owned table |
+| Results / print | Completion values formatted by suspended guest inspection; debug TX drained once | BIOS formats protected call results; ordinary debug TX |
+| Call control | Existing workbench debugger plan, ordinary frame scheduler | Monitor's actual BIOS call stack, ordinary frame scheduler |
+
+No CPU/VM representation or hot-path opcode changes are needed. The affected
+execution callsites are `runWorkbenchHostFrame` (one idle scalar check for
+Terminal stop observation), `scheduleRuntimeGuestCall` (unchanged scheduled
+admission), and BIOS monitor command submission / HID key translation. The
+compiler and REPL run only on explicit evaluation. The physical monitor has no
+host-side source debugger: parity here means the same firmware evaluation and
+namespace semantics, not a fabricated native IDE.
+
+Cart-register and selected-frame bindings remain a separate compiler/debugger
+contract. In particular, the CPU's ordinary globals table is not the live
+global registerfile, and a RAM chunk inherits its caller's execution image.
+Copying that table or compiling cart slot indices under the BIOS caller would
+give incorrect semantics. This slice does neither.
 
 ## Production references studied before implementation
 
@@ -109,6 +168,16 @@ or account controls are involved.
   and [view](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/repl.ts):
   session-owned input/results/output, bounded scrollback and input history;
   the view requests execution rather than implementing an interpreter.
+- [DAP evaluate context](https://github.com/microsoft/debug-adapter-protocol/blob/main/specification.md)
+  and [LLDB expression declaration resolution](https://github.com/llvm/llvm-project/blob/main/lldb/source/Plugins/ExpressionParser/Clang/ClangExpressionDeclMap.cpp):
+  source/frame bindings are a debugger/compiler responsibility. These are design
+  references for the still-open cart/frame context work, not a justification to
+  add source-aware CPU state or a copied global table.
+- [Playwright target stability](https://github.com/microsoft/playwright/blob/main/packages/injected/src/injectedScript.ts):
+  the shared canvas UI test helper waits for the actual target rectangle, not
+  merely the outer canvas. The conversation workflow deterministically expires
+  a status row during hover, reproducing a formerly timing-dependent missed
+  Stop click without changing application cancellation semantics.
 
 ## Validation
 
@@ -139,3 +208,25 @@ npm run build:toolchain:cart -- nemesis_s --debug
 node tests/conformance/runtime_replay/browser.mjs --studio-terminal \
   dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/studio-terminal.png
 ```
+
+Conversation/monitor slice (2026-09-24):
+
+- The real browser -> authorized HTTP -> Codex app-server -> deterministic
+  Responses fixture executes firmware Lua, receives a real BIOS breakpoint,
+  continues the same call, reads print/nil/false results and protected errors,
+  and rejects an unsupported context. Manual Terminal input observes the same
+  namespace. Visible conversation Stop suspends an infinite call, a new prompt
+  observes it, and stale evaluation identities are rejected. Explicit Reboot
+  ends the retained call. Software, WebGL2 and WebGPU pass; screenshots inspected.
+  This is transport/execution evidence, not live-model reasoning or phone proof.
+- `npm run test:terminal-parity` sends identical physical HID input to the actual
+  BIOS monitor on TypeScript and native C++. The complete debug-transmit output
+  is byte-identical, including captures, case handling, nil/false, nested load,
+  syntax/runtime errors and pre-error mutation. No IDE evaluator or CPU-global
+  injection is involved. It is native runtime/firmware evidence, not native UI
+  interaction or selected-frame binding proof.
+- Full assistant suite: 24 pass. Lua suite: 2429 pass, one skip. Product IDE,
+  common/browser/Node typechecks pass; tests-project diagnostics remain the same
+  96 pre-existing errors. Focused lifecycle tests cover listener cleanup, queued
+  cancellation, bounded output, replacement and newer execution intent. Actual
+  queued admission cancellation is also exercised against the browser CPU.

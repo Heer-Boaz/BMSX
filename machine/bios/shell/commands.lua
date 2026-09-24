@@ -18,6 +18,7 @@ local action_none<const> = 0
 local action_output<const> = 1
 local action_clear<const> = 2
 local action_continue<const> = 3
+local action_evaluate<const> = 4
 local fault_section_registers<const> = 0
 local fault_section_source<const> = 1
 
@@ -41,6 +42,7 @@ local command_memory<const> = 4
 local command_reboot<const> = 5
 local command_registers<const> = 6
 local command_continue<const> = 7
+local command_lua<const> = 8
 
 local cause_code_mask<const> = 0x0000007c
 local cause_nmi<const> = 0x00010000
@@ -65,6 +67,7 @@ rodata command_registry: monitor_command[] = {
 	{ name = 'CONT', usage = 'CONT', description = 'RESUME CART AT EPC', kind = command_continue },
 	{ name = 'FAULT', usage = 'FAULT [CLEAR]', description = 'SHOW OR CLEAR SAVED FAULT STATE', kind = command_fault },
 	{ name = 'HELP', usage = 'HELP [COMMAND]', description = 'LIST COMMANDS OR SHOW HELP', kind = command_help },
+	{ name = 'LUA', usage = 'LUA <SOURCE>', description = 'EVALUATE IN THE LUA TERMINAL SESSION', kind = command_lua },
 	{ name = 'MEM', usage = 'MEM <HEX ADDRESS> [WORDS]', description = 'READ MEMORY WORDS', kind = command_memory },
 	{ name = 'REBOOT', usage = 'REBOOT', description = 'RESET THE MACHINE', kind = command_reboot },
 	{ name = 'REGS', usage = 'REGS', description = 'SHOW CP0 AND IRQ STATE', kind = command_registers },
@@ -122,6 +125,7 @@ monitor_commands.action_none = action_none
 monitor_commands.action_output = action_output
 monitor_commands.action_clear = action_clear
 monitor_commands.action_continue = action_continue
+monitor_commands.action_evaluate = action_evaluate
 monitor_commands.row_done = row_done
 monitor_commands.row_more = row_more
 
@@ -513,6 +517,11 @@ function monitor_commands.start(line, length)
 	end
 
 	local entry<const>: *monitor_command = &command_registry[command]
+	if entry.kind == command_lua then
+		local first<const> = skip_spaces(line, argument_index, length)
+		if first == length then return start_usage(command) end
+		return action_evaluate, first
+	end
 	if entry.kind == command_clear then
 		if not arguments_end(line, argument_index, length) then
 			return start_usage(command)

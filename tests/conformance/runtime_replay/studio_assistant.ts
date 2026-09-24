@@ -13,6 +13,7 @@ export { runAssistantTestEvidence } from './studio_assistant_test_evidence';
 export { runAssistantHistory } from './studio_assistant_history';
 export { runAssistantRuntime } from './studio_assistant_runtime';
 export { runAssistantNavigation } from './studio_assistant_frame_navigation';
+export { runAssistantTerminal } from './studio_assistant_terminal';
 
 /** Automated fixture setup; prompt, review and Undo use the production keyboard/pointer route. */
 export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasElement, capture: (name: string) => Promise<void>, waitForModel: () => Promise<void>) {

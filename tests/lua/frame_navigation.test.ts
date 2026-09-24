@@ -193,7 +193,7 @@ test('a retained replay-stop flag is not the outcome of a later live step', asyn
 
 test('tool lifetime owns navigation, validates only model arguments and never accepts a foreign target', async t => {
 	const f = await fixture(t), lifetime = new AbortController();
-	const tools = new WorkspaceRuntimeTools(f.inspection, f.navigation, f.gameCapture, lifetime.signal);
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.navigation, f.gameCapture, f.terminal, lifetime.signal);
 	const args = { target: f.inspection.target, direction: 'forward', count: 3 };
 	assert.throws(() => tools.execute('studio_step_frames', { ...args, target: 'test-machine' }), /not this Studio/);
 	for (const count of [0, -1, 1.5, '1']) assert.throws(() => decodeRuntimeToolRequest('studio_step_frames', { ...args, count }));

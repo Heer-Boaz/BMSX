@@ -150,8 +150,16 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 			console.info(`STUDIO: pointer waits for canvas layout ${previous.x},${previous.y} ${previous.width}x${previous.height} -> ${current.x},${current.y} ${current.width}x${current.height}`);
 			previous = current;
 		}
-		movePointer(bounds);
-		await frame();
+		// A stable canvas is not a stable canvas-rendered target. For example,
+		// expiry of the status message moves a pane's action bar by one row.
+		// Follow the actual target through hover layout before pressing it.
+		for (let stableFrames = 0; stableFrames < 2;) {
+			const { left, top, right, bottom } = bounds;
+			movePointer(bounds);
+			await frame();
+			if (bounds.left === left && bounds.top === top && bounds.right === right && bounds.bottom === bottom) stableFrames++;
+			else { stableFrames = 0; console.info('STUDIO: pointer waits for workbench target layout'); }
+		}
 		setPointerButton(button, true);
 		for (let index = 0; index < heldFrames; index += 1) await frame();
 		setPointerButton(button, false);

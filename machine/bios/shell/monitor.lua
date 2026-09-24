@@ -3,6 +3,7 @@ local console<const> = require('tty/console')
 local layout<const> = require('tty/layout')
 local monitor_editor<const> = require('shell/editor')
 local monitor_commands<const> = require('shell/commands')
+local repl<const> = require('shell/repl')
 local source_location<const> = require('shell/source_location')
 local vblank<const> = require('kernel/vblank')
 local dma_transfer<const> = require('kernel/dma')
@@ -39,6 +40,7 @@ local ascii_newline<const> = 10
 local ascii_space<const> = 32
 local ascii_digit_0<const> = 48
 local ascii_upper_a<const> = 65
+local ascii_lower_a<const> = 97
 
 local monitor_mode_edit<const> = 0
 local monitor_mode_pager<const> = 1
@@ -99,7 +101,7 @@ end
 
 local map_hid_key<const> = function(usage, shift)
 	if usage >= 4 and usage <= 29 then
-		return ascii_upper_a + usage - 4
+		return (shift and ascii_upper_a or ascii_lower_a) + usage - 4
 	end
 	if usage >= 30 and usage <= 38 then
 		if shift then
@@ -151,7 +153,16 @@ local pump_output<const> = function(line_limit)
 	terminal.show_status('-- MORE --  ENTER LINE  SPACE PAGE  UP/DOWN SCROLL  Q QUIT', palette_prompt)
 end
 
-local handle_command_action<const> = function(action)
+local print_evaluation<const> = function(succeeded, ...)
+	if succeeded then
+		if select('#', ...) ~= 0 then print(...) end
+	else
+		console.flush()
+		console.write_line(tostring((...)), terminal.palette_error)
+	end
+end
+
+local handle_command_action<const> = function(action, source_first)
 	if action == monitor_commands.action_clear then
 		terminal.clear()
 		write_prompt()
@@ -159,6 +170,10 @@ local handle_command_action<const> = function(action)
 		pump_output(terminal.page_rows)
 	elseif action == monitor_commands.action_continue then
 		return true
+	elseif action == monitor_commands.action_evaluate then
+		print_evaluation(repl.evaluate(monitor_editor.source(source_first), '=terminal:monitor'))
+		console.flush()
+		write_prompt()
 	else
 		write_prompt()
 	end

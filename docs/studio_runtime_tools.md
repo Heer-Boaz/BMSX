@@ -17,7 +17,8 @@ unimplemented rows below are not advertised capabilities.
 | Game image | presentation owner + image-capable tool transport | pixels from each renderer, target/time provenance | implemented for paused authoring target; browser and native pixel evidence below |
 | Pause, finite video stepping, retained-history seek | execution/history owners + RuntimeFrameNavigation | actual completion, retained-range and cancellation tests | implemented for the authoring target; validation below |
 | Continue and source stepping | execution/debugger owners | execution intent, actual stops and source locations | tools open |
-| Cart globals and frame-context Lua Terminal | firmware compiler/REPL, debugger call plans | real guest calls; TS/C++ parity; conversation invocation | open |
+| Session-context Lua Terminal | firmware compiler/REPL, shared Terminal session and debugger plans | real conversation calls, stops and TS/C++ BIOS parity | implemented; see [Terminal contract](studio_lua_terminal.md) |
+| Cart globals and frame-context Lua Terminal | compiler/debugger binding contract | live register/frame reads and writes, not copied globals | open |
 | Discover/run/wait/cancel scenarios | TestRun/ScenarioRunService | real isolated targets, cancellation and completion | open |
 | Debug retained failed test target | target-bound debugger and composed execution hooks | no reads/writes through authoring target | open |
 | Object/FSM/BT/ActionEffect semantic inspection and editing | Actor Lab / source-backed behavior models | canonical-source edits and live-state readback | open |
@@ -74,7 +75,7 @@ restore operations or rollback around guest mutations.
 | Table keys/values | Table stored entries, ValueTag | Table stored entries, guest tags | none |
 | Time | scheduler machine cycles; frameScheduler video sequence | scheduler machine cycles; frame scheduler | none |
 | Inspection handles | IDE-only borrowed-value registry | no IDE registry required | new tooling only |
-| Terminal compilation/execution | BIOS load/pcall + CPU | same BIOS + native CPU | later mirrored slice, not yet parity |
+| Terminal compilation/execution | BIOS load/pcall + CPU | same BIOS + native CPU | session parity proven by physical-monitor conformance; cart/frame bindings still open |
 
 First-slice hot-path callsites: `runWorkbenchHostFrame` invalidates outstanding
 borrows before normal execution and rewind replay, including with the editor
@@ -272,6 +273,11 @@ update per video tick and is distinct from source/instruction stepping.
   provider tools; no new global gameplay keybinding or Codex-specific control was
   added.
 
-Still open: unbounded Continue and source-debugger tools, contextual Lua Terminal
-tools with native parity, scenario discovery/execution/attachment, canonical
+The subsequent [Terminal slice](studio_lua_terminal.md) adds actual conversation
+execution, stopped/completed observations, request cancellation and physical
+BIOS-monitor parity. It explicitly supports the Terminal's own session namespace,
+not cart global registers or selected-frame locals.
+
+Still open: unbounded Continue and source-debugger tools, cart/frame Lua Terminal
+bindings, scenario discovery/execution/attachment, canonical
 semantic-builder operations and the complete reproduce/fix/rerun acceptance flow.

@@ -281,5 +281,6 @@ export function runWorkbenchHostFrame(
 	if (!systemOutputDrained) {
 		systemOutput.flush(runtime, logOutput, ide.terminal.receiveOutput);
 	}
+	ide.terminal.afterHostFrame();
 	return HostFrameRunResult.Continue;
 }

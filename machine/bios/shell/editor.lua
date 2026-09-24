@@ -9,6 +9,7 @@ local history_capacity<const> = layout.history_capacity
 local palette_text<const> = terminal.palette_text
 local palette_ghost<const> = terminal.palette_ghost
 local ascii_space<const> = 32
+local source_bytes<const> = {}
 
 bss monitor_editor_line: u8[input_capacity]
 bss monitor_editor_length: word
@@ -155,6 +156,14 @@ function monitor_editor.submit()
 	remember_line()
 	reset_navigation()
 	return monitor_editor_line, *monitor_editor_length
+end
+
+-- Materialize source only on submission, at the owner of the raw input buffer.
+function monitor_editor.source(first)
+	local line<const>: *u8 = monitor_editor_line
+	local count<const> = *monitor_editor_length - first
+	for index = 1, count do source_bytes[index] = line[first + index - 1] end
+	return string.char(table.unpack(source_bytes, 1, count))
 end
 
 function monitor_editor.insert(code)

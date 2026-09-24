@@ -230,8 +230,12 @@ not a projection of cart global registers or debugger locals. Studio's
 [Lua Terminal](studio_lua_terminal.md) schedules its explicit calls through the
 existing guest-call/debugger boundary and observes physical debug-transmit
 output. It does not parse/execute Lua in the host, run gameplay merely because
-the pane is open, or replace the BIOS monitor. Terminal execution authority is
-separate from Codex source-edit authority; no Codex execution tool is added.
+the pane is open, or replace the BIOS monitor. The monitor's `LUA <source>`
+command invokes the same firmware session on TypeScript and native C++.
+Codex's explicit Terminal tools use Studio's existing admission/completion
+owner, not a server evaluator or source-edit authority. They await a real return
+or pause; cancellation revokes queued admission or suspends the actual call,
+without unwinding guest frames or rolling back mutations.
 
 `math.sin`, `math.cos`, and `math.tan` use the same firmware quarter-wave LUT
 and Q16.16 turn helper as direct fixed-point firmware code. Their precision is
