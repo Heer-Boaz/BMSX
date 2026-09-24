@@ -98,7 +98,7 @@ async function sourceToolReview(test: StudioFixture, mainPath: string): Promise<
 	const { ide, frame, press } = test;
 	const connection = new AbortController();
 	const offer = async () => {
-		const tools = new WorkspaceSourceTools(editorTextModelService, ide.sources, ide.storage, ide.diagnostics, connection.signal, ide.editor.behaviorLens.documents);
+		const tools = new WorkspaceSourceTools(editorTextModelService, ide.sources, ide.storage, ide.diagnostics, connection.signal, ide.editor.behaviorLens.documents, ide.textFileSaves);
 		try {
 			const catalog = await tools.execute('studio_list_sources', {});
 			if (catalog.kind !== 'sources') throw new Error('source tools: catalog expected');

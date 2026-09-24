@@ -17,6 +17,8 @@ import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
+import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
+import { TextFileSaveService } from '../../ide/workbench/services/working_copy/text_file_save';
 
 test('real Codex tool exchange reads unsaved models and hands off a shared review, never a filesystem patch', { timeout: 15000 }, async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-codex-workbench-'));
@@ -26,11 +28,15 @@ test('real Codex tool exchange reads unsaved models and hands off a shared revie
 	const main = models.retain(sources.luaResources.find(resource => resource.path === 'cart.lua')!, 'lua', 'return old\n');
 	main.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- UNSAVED COMMENT\n' }]);
 	const before = main.buffer.getText();
-	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload())));
+	const runtime = createTestRuntime(createTestRuntimeRomPayload());
+	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
+	const { tasks, presenter } = createRuntimeInspectionFixture(runtime, sources, tooling.suspendedGuest);
 	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
-	const sourceTools = new WorkspaceSourceTools(models, sources, {
+	const storage = {
 		getItem: () => null, setItem: () => assert.fail('not Save'), removeItem: () => assert.fail('not Delete'),
-	}, diagnostics, connection.signal, new BehaviorSourceDocuments(models, sources));
+	};
+	const saves = new TextFileSaveService(models, storage, new VirtualHeadlessClock(), sources, tooling, runtime, tasks);
+	const sourceTools = new WorkspaceSourceTools(models, sources, storage, diagnostics, connection.signal, new BehaviorSourceDocuments(models, sources), saves);
 	const proposals: WorkspaceEditProposal[] = [];
 	let completed!: () => void;
 	const done = new Promise<void>(resolve => { completed = resolve; });
@@ -50,7 +56,7 @@ test('real Codex tool exchange reads unsaved models and hands off a shared revie
 		connection.abort();
 		if (session) { const exit = await session.closed; assert.equal(exit.forced, false); assert.equal(exit.code, 0); }
 		for (const proposal of proposals) proposal.dispose();
-		sourceTools.dispose(); diagnostics.dispose(); models.clear(); await rm(root, { recursive: true });
+		sourceTools.dispose(); await saves.shutdown(); presenter.dispose(); diagnostics.dispose(); models.clear(); await rm(root, { recursive: true });
 	});
 	session = await CodexSession.open({ signal: connection.signal, profileDirectory: root,
 		provider: { name: 'Offline workbench fixture', model: 'mock-model', baseUrl: `${model.url}/v1` }, tools: STUDIO_SOURCE_TOOLS,

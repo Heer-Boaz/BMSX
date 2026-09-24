@@ -17,6 +17,8 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
 import { getOrCreateSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
+import { TextFileSaveService } from '../../ide/workbench/services/working_copy/text_file_save';
+import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 
 function fixture(t: TestContext) {
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1, 'return old -- saved\n')]);
@@ -28,10 +30,13 @@ function fixture(t: TestContext) {
 	const yamlPath = 'carts/nemesis_s/res/data/stage.yaml';
 	const yamlSource = '# exact 🐉\r\nvalue: old\r\n';
 	workspaceCanonicalSourceCache.set(yamlPath, yamlSource);
-	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload())));
+	const runtime = createTestRuntime(createTestRuntimeRomPayload());
+	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
+	const { tasks, presenter } = createRuntimeInspectionFixture(runtime, sources, tooling.suspendedGuest);
 	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
-	const tools = new WorkspaceSourceTools(models, sources, storage, diagnostics, connection.signal, new BehaviorSourceDocuments(models, sources));
-	t.after(() => { tools.dispose(); connection.abort(); diagnostics.dispose(); models.clear(); workspaceCanonicalSourceCache.delete(yamlPath); });
+	const saves = new TextFileSaveService(models, storage, new VirtualHeadlessClock(), sources, tooling, runtime, tasks);
+	const tools = new WorkspaceSourceTools(models, sources, storage, diagnostics, connection.signal, new BehaviorSourceDocuments(models, sources), saves);
+	t.after(async () => { tools.dispose(); connection.abort(); await saves.shutdown(); presenter.dispose(); diagnostics.dispose(); models.clear(); workspaceCanonicalSourceCache.delete(yamlPath); });
 	const list = async () => {
 		const result = await tools.execute('studio_list_sources', {});
 		assert.ok(result.kind === 'sources'); return result.data;
@@ -41,7 +46,7 @@ function fixture(t: TestContext) {
 		const result = await tools.execute('studio_read_source', { resource: resource.resource });
 		assert.ok(result.kind === 'source'); return result.data;
 	};
-	return { models, sources, connection, storage, diagnostics, tools, yaml, yamlSource, list, read };
+	return { models, sources, connection, storage, diagnostics, saves, tools, yaml, yamlSource, list, read };
 }
 
 test('source tools resolve unopened authored Lua/YAML into the supplied owner, never global models or cooked data', async t => {
@@ -64,7 +69,7 @@ test('tools read unsaved working copies and propose exact multi-file review with
 	f.tools.dispose();
 	const lua = f.models.retain(f.sources.luaResources[0], 'lua', 'return old -- saved\n');
 	lua.pushEditOperations([{ offset: 7, deleteLength: 3, text: 'unsaved' }]);
-	const tools = new WorkspaceSourceTools(f.models, f.sources, f.storage, f.diagnostics, f.connection.signal, new BehaviorSourceDocuments(f.models, f.sources)); t.after(() => tools.dispose());
+	const tools = new WorkspaceSourceTools(f.models, f.sources, f.storage, f.diagnostics, f.connection.signal, new BehaviorSourceDocuments(f.models, f.sources), f.saves); t.after(() => tools.dispose());
 	const catalog = await tools.execute('studio_list_sources', {}); assert.ok(catalog.kind === 'sources');
 	const reads = await Promise.all(catalog.data.map(resource => tools.execute('studio_read_source', { resource: resource.resource })));
 	assert.ok(reads[0].kind === 'source'); assert.ok(reads[1].kind === 'source');
@@ -121,7 +126,7 @@ test('source changes retire the original prompt context even before its first re
 
 test('resource handles and read receipts from another connection/context cannot retarget matching paths and versions', async t => {
 	const f = fixture(t), first = await f.read('cart.lua'), catalog = await f.list();
-	const other = new WorkspaceSourceTools(f.models, f.sources, f.storage, f.diagnostics, new AbortController().signal, new BehaviorSourceDocuments(f.models, f.sources)); t.after(() => other.dispose());
+	const other = new WorkspaceSourceTools(f.models, f.sources, f.storage, f.diagnostics, new AbortController().signal, new BehaviorSourceDocuments(f.models, f.sources), f.saves); t.after(() => other.dispose());
 	await assert.rejects(other.execute('studio_read_source', { resource: catalog[0].resource }), /does not belong/);
 	await assert.rejects(other.execute('studio_read_source', { resource: '../../etc/passwd' }), /does not belong/);
 	await assert.rejects(other.execute('studio_propose_edits', { title: 'Old rights', files: [{ receipt: first.receipt,
@@ -200,7 +205,7 @@ test('diagnostic receipts preserve exact unsaved source coordinates and reuse th
 	const prefix = "local before = '🐉'; return ";
 	lua.pushEditOperations([{ offset: 0, deleteLength: lua.buffer.length, text: `-- 🐉\r\n${prefix}missing_after_unicode\r\n` }]);
 	f.tools.dispose();
-	const tools = new WorkspaceSourceTools(f.models, f.sources, f.storage, f.diagnostics, f.connection.signal, new BehaviorSourceDocuments(f.models, f.sources)); t.after(() => tools.dispose());
+	const tools = new WorkspaceSourceTools(f.models, f.sources, f.storage, f.diagnostics, f.connection.signal, new BehaviorSourceDocuments(f.models, f.sources), f.saves); t.after(() => tools.dispose());
 	const catalog = await tools.execute('studio_list_sources', {}); assert.ok(catalog.kind === 'sources');
 	const read = await tools.execute('studio_read_source', { resource: catalog.data[0].resource }); assert.ok(read.kind === 'source');
 	const result = await tools.execute('studio_read_diagnostics', { receipt: read.data.receipt }); assert.ok(result.kind === 'diagnostics');
@@ -250,7 +255,7 @@ test('diagnostics reject external malformed, unread and foreign receipts before 
 	for (const input of [{}, { receipt: 0 }, { receipt: read.receipt, path: 'cart.lua' }, { receipt: 'cart.lua' }, { receipt: read.resource }]) {
 		await assert.rejects(f.tools.execute('studio_read_diagnostics', input), StudioToolInputError);
 	}
-	const other = new WorkspaceSourceTools(f.models, f.sources, f.storage, f.diagnostics, f.connection.signal, new BehaviorSourceDocuments(f.models, f.sources)); t.after(() => other.dispose());
+	const other = new WorkspaceSourceTools(f.models, f.sources, f.storage, f.diagnostics, f.connection.signal, new BehaviorSourceDocuments(f.models, f.sources), f.saves); t.after(() => other.dispose());
 	await assert.rejects(other.execute('studio_read_diagnostics', { receipt: read.receipt }), /this source context/);
 	assert.equal(compute.mock.callCount(), 0);
 });

@@ -19,11 +19,18 @@ export type TextFileSaveResult = { readonly snapshot: EditorTextModelSnapshot } 
 	| { readonly status: 'failed'; readonly error: unknown }
 );
 
-type PendingSave = { readonly version: number; readonly result: Promise<TextFileSaveResult> };
+export type TextFileSaveOperation = {
+	readonly id: number;
+	readonly snapshot: EditorTextModelSnapshot;
+	readonly completion: Promise<TextFileSaveResult>;
+	readonly result: TextFileSaveResult | undefined;
+};
 
 /** Owns accepted Save operations until persistence and format-specific application finish. */
 export class TextFileSaveService {
-	private readonly pending = new Map<EditorTextModel, PendingSave>();
+	private readonly pending = new Map<EditorTextModel, TextFileSaveOperation>();
+	private readonly latest = new WeakMap<EditorTextModel, TextFileSaveOperation>();
+	private serial = 0;
 	private closing = false;
 
 	public constructor(
@@ -37,28 +44,34 @@ export class TextFileSaveService {
 	) {}
 
 	public get acceptingSaves(): boolean { return !this.closing; }
+	/** Historical acknowledgement of this model's latest Save, never inferred from connectivity. */
+	public latestOperation(model: EditorTextModel): TextFileSaveOperation | undefined { return this.latest.get(model); }
 
-	public save(model: EditorTextModel): Promise<TextFileSaveResult> {
+	public save(model: EditorTextModel): TextFileSaveOperation {
 		if (this.closing) throw new Error('Cannot save after workbench shutdown has started.');
 		if (this.models.get(model.identity) !== model) throw new Error(`Source '${model.resource.path}' no longer belongs to this workspace.`);
 		if (model.readOnly) throw new Error(`Source '${model.resource.path}' is read-only.`);
 		const previous = this.pending.get(model);
-		if (previous?.version === model.version) return previous.result;
+		if (previous?.snapshot.version === model.version) return previous;
 		const snapshot = model.createSnapshot();
 		// Admission captures the text now, not after the preceding write finishes.
-		const result = (previous === undefined ? this.performSave(model, snapshot)
-			: previous.result.then(() => this.performSave(model, snapshot))).finally(() => {
+		const completion = (previous === undefined ? this.performSave(model, snapshot)
+			: previous.completion.then(() => this.performSave(model, snapshot))).then(result => {
+			operation.result = result;
+			return result;
+		}).finally(() => {
 			if (this.pending.get(model) === operation) this.pending.delete(model);
 		});
-		const operation = { version: snapshot.version, result };
+		const operation = { id: ++this.serial, snapshot, completion, result: undefined as TextFileSaveResult | undefined };
 		this.pending.set(model, operation);
-		return result;
+		this.latest.set(model, operation);
+		return operation;
 	}
 
 	/** Drain source writes before recovery checkpoints, model disposal or workspace replacement. */
 	public async shutdown(): Promise<void> {
 		this.closing = true;
-		await Promise.all(Array.from(this.pending.values(), operation => operation.result));
+		await Promise.all(Array.from(this.pending.values(), operation => operation.completion));
 	}
 
 	private async performSave(model: EditorTextModel, snapshot: EditorTextModelSnapshot): Promise<TextFileSaveResult> {

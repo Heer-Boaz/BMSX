@@ -15,6 +15,8 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { BT_ORDER_SOURCE } from '../helpers/behavior_order_fixture';
+import { TextFileSaveService } from '../../ide/workbench/services/working_copy/text_file_save';
+import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 
 function fixture(t: TestContext, files: Record<string, string>, generated: string[] = []) {
 	const records = Object.entries(files).map(([path, source]) => ({ ...createScenarioTestSourceRecord(path, 1, source), generated: generated.includes(path) }));
@@ -24,8 +26,11 @@ function fixture(t: TestContext, files: Record<string, string>, generated: strin
 	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
 	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
 	const storage = { getItem: () => null, setItem: () => assert.fail('not Save'), removeItem: () => assert.fail('not Delete') };
+	const { tasks, presenter } = createRuntimeInspectionFixture(runtime, sources, tooling.suspendedGuest);
+	const saves = new TextFileSaveService(models, storage, new VirtualHeadlessClock(), sources, tooling, runtime, tasks);
+	t.after(async () => { await saves.shutdown(); presenter.dispose(); });
 	const tools = () => {
-		const result = new WorkspaceSourceTools(models, sources, storage, diagnostics, connection.signal, documents);
+		const result = new WorkspaceSourceTools(models, sources, storage, diagnostics, connection.signal, documents, saves);
 		t.after(() => result.dispose()); return result;
 	};
 	t.after(() => { connection.abort(); diagnostics.dispose(); models.clear(); });

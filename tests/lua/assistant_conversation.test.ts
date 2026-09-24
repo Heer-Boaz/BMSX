@@ -9,6 +9,7 @@ import { AssistantInput } from '../../ide/workbench/contrib/assistant/editor_inp
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { ResourceDiagnosticsService } from '../../ide/workbench/services/diagnostics/resource_diagnostics';
+import { TextFileSaveService } from '../../ide/workbench/services/working_copy/text_file_save';
 import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
@@ -55,12 +56,13 @@ function fixture(t: TestContext, waitForConnection?: (connection: Connection) =>
 	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
 	const testRuns = new ScenarioRunService(models, sources, tooling, storage, new Map(), runtime.model, () => assert.fail('this fixture cannot create test targets'));
 	const testResults = testRuns.results;
-	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testRuns, inspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, new BehaviorSourceDocuments(models, sources), async (_signal, emit) => {
+	const saves = new TextFileSaveService(models, storage, new VirtualHeadlessClock(), sources, tooling, runtime, tasks);
+	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testRuns, inspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, new BehaviorSourceDocuments(models, sources), saves, async (_signal, emit) => {
 		const connection = new Connection(emit); connections.push(connection);
 		await waitForConnection?.(connection);
 		return connection;
 	});
-	t.after(() => { conversation.dispose(); testRuns.dispose(); presenter.dispose(); diagnostics.dispose(); models.clear(); });
+	t.after(async () => { conversation.dispose(); await saves.shutdown(); testRuns.dispose(); presenter.dispose(); diagnostics.dispose(); models.clear(); });
 	return { conversation, model, models, connections, testResults, testRuns, inspection, frameNavigation, runtime, presenter, backend, tasks, presentation };
 }
 

@@ -8,7 +8,9 @@ import type { ResourceDiagnostics, ResourceDiagnosticsService } from '../diagnos
 import { WorkspaceSourceContext, type CapturedWorkspaceSource } from '../working_copy/source_context';
 import { resolveTextFileModel, textFileMode } from '../working_copy/text_file_model';
 import { WorkspaceEditProposal } from '../working_copy/workspace_edit';
-import { decodeSourceToolRequest } from './source_tool_protocol';
+import { decodeSourceToolRequest, encodeSourceSaveResult } from './source_tool_protocol';
+import type { TextFileSaveService } from '../working_copy/text_file_save';
+import { getTextFileRuntimeSourceStatus } from '../working_copy/runtime_source_status';
 import { StudioToolInputError } from './tool_input';
 import type { BehaviorSourceDocuments } from '../../contrib/behavior_lens/source_documents';
 import { STUDIO_BEHAVIOR_TOOL_NAMES } from './behavior_tool_protocol';
@@ -28,6 +30,9 @@ export type SourceToolResult =
 	| { kind: 'sources'; data: readonly ToolSourceResource[] }
 	| { kind: 'source'; data: ToolSourceReceipt }
 	| { kind: 'diagnostics'; data: ToolSourceDiagnostics }
+	| { kind: 'source-save'; data: { receipt: string; operation: number } & ReturnType<typeof encodeSourceSaveResult> }
+	| { kind: 'source-status'; data: { receipt: string; version: number; dirty: boolean; runtime: ReturnType<typeof getTextFileRuntimeSourceStatus>;
+		latestSave?: { operation: number; version: number; matchesCurrentSource: boolean; result: ReturnType<typeof encodeSourceSaveResult> | { status: 'pending' } } } }
 	| { kind: 'proposal'; data: { status: 'review-required'; review: string; files: number }; proposal: WorkspaceEditProposal };
 
 /** One prompt's source authority. Call before model IO; reads never manufacture a fresh context. */
@@ -53,6 +58,7 @@ export class WorkspaceSourceTools {
 		private readonly diagnostics: ResourceDiagnosticsService,
 		private readonly connection: AbortSignal,
 		private readonly behaviorSources: BehaviorSourceDocuments,
+		private readonly saves: TextFileSaveService,
 	) {
 		connection.throwIfAborted();
 		this.context = new WorkspaceSourceContext(models, sources);
@@ -67,7 +73,8 @@ export class WorkspaceSourceTools {
 		connection.addEventListener('abort', this.onDisconnect, { once: true });
 	}
 
-	public async execute(name: string, argumentsValue: unknown): Promise<SourceToolResult> {
+	public async execute(name: string, argumentsValue: unknown, signal?: AbortSignal): Promise<SourceToolResult> {
+		signal?.throwIfAborted();
 		this.assertReading();
 		if (STUDIO_BEHAVIOR_TOOL_NAMES.has(name)) {
 			this.behaviors ??= new WorkspaceBehaviorTools(this.id, this.context, this.sources, this.behaviorSources);
@@ -77,6 +84,22 @@ export class WorkspaceSourceTools {
 		}
 		const request = decodeSourceToolRequest(name, argumentsValue);
 		switch (request.name) {
+			case 'studio_read_source_status': case 'studio_save_source': {
+				const receipt = this.receipts.get(request.receipt);
+				if (receipt === undefined) throw new StudioToolInputError('Source status and Save require a receipt read in this prompt.');
+				const { model, source, version } = receipt.captured;
+				if (request.name === 'studio_save_source') {
+					const operation = this.saves.save(model);
+					// The accepted Save owns its captured snapshot even after later typing
+					// or prompt retirement. Do not replace its receipt with current state.
+					return { kind: 'source-save', data: { receipt: request.receipt, operation: operation.id, ...encodeSourceSaveResult(await operation.completion) } };
+				}
+				const operation = this.saves.latestOperation(model);
+				return { kind: 'source-status', data: { receipt: request.receipt, version, dirty: model.dirty,
+					runtime: getTextFileRuntimeSourceStatus(this.sources, model), latestSave: operation === undefined ? undefined : {
+						operation: operation.id, version: operation.snapshot.version, matchesCurrentSource: operation.snapshot.source === source,
+						result: operation.result === undefined ? { status: 'pending' } : encodeSourceSaveResult(operation.result) } } };
+			}
 			case 'studio_list_sources': return { kind: 'sources', data: this.catalog };
 			case 'studio_read_source': {
 				const resource = this.resources.get(request.resource);

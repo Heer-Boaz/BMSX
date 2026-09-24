@@ -15,7 +15,7 @@ export async function saveTextFileFromCommand(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 ): Promise<TextFileSaveResult> {
-	const result = await saves.save(model);
+	const result = await saves.save(model).completion;
 	const title = model.resource.path;
 	if (result.status === 'failed') {
 		if (model.mode !== 'lua' || !showLuaErrorOverlay(editor, model.resource, result.error)) {

@@ -87,7 +87,7 @@ test('Save captures and coalesces one revision, while newer edits remain dirty',
 	await setImmediate();
 	assert.equal(f.files.writes.length, 1);
 	f.files.writes[0].complete();
-	const result = await first;
+	const result = await first.completion;
 	assert.equal(result.status, 'saved');
 	if (result.status !== 'saved') assert.fail('expected a saved source');
 	assert.deepEqual(result.persistence, { status: 'workspace' });
@@ -114,14 +114,14 @@ test('Save serializes each resource, captures queued text at admission and lets 
 	await setImmediate();
 	assert.equal(f.files.writes.length, 2, 'only the first source write waits; the other resource is independent');
 	f.files.writes[1].complete();
-	await independent;
+	await independent.completion;
 	assert.equal(other.dirty, false);
 	f.files.writes[0].complete();
-	await first;
+	await first.completion;
 	await setImmediate();
 	assert.equal(f.files.writes[2].record.contents, 'value: 3');
 	f.files.writes[2].complete();
-	assert.equal((await second).snapshot.source, 'value: 3');
+	assert.equal((await second.completion).snapshot.source, 'value: 3');
 	assert.equal(model.lastSavedSource, 'value: 3');
 	assert.equal(model.buffer.getText(), 'value: 4');
 	assert.equal(model.dirty, true);
@@ -142,11 +142,11 @@ test('shutdown joins every accepted source save before its callers may tear down
 	await setImmediate();
 	assert.equal(stopped, false);
 	f.files.writes[0].complete();
-	await first;
+	await first.completion;
 	await setImmediate();
 	assert.equal(stopped, false);
 	f.files.writes[1].complete();
-	await second;
+	await second.completion;
 	await closing;
 	assert.equal(stopped, true);
 	assert.equal(model.dirty, false);
@@ -158,14 +158,14 @@ test('source persistence failure is an explicit outcome, does not complete the s
 	setSource(model, 'value: 2');
 	const error = new Error('local storage unavailable');
 	f.storage.failure = error;
-	const result = await f.saves.save(model);
+	const result = await f.saves.save(model).completion;
 	assert.equal(result.status, 'failed');
 	if (result.status !== 'failed') assert.fail('expected failed source persistence');
 	assert.equal(result.error, error);
 	assert.equal(model.dirty, true);
 	assert.equal(model.lastSavedSource, '# untouched\nvalue: 1\n');
 	f.storage.failure = undefined;
-	assert.equal((await f.saves.save(model)).status, 'saved');
+	assert.equal((await f.saves.save(model).completion).status, 'saved');
 	assert.equal(model.dirty, false);
 });
 
@@ -178,7 +178,7 @@ test('a failed project write acknowledges local storage and reconnect persists t
 	f.models.onDidSaveModel(model => saved.push(model));
 	setSource(model, 'value: 2');
 	f.files.failure = error;
-	const result = await f.saves.save(model);
+	const result = await f.saves.save(model).completion;
 	if (result.status !== 'saved') assert.fail('expected locally saved source');
 	assert.deepEqual(result.persistence, { status: 'local-only', reason: 'write-failed', error });
 	assert.equal(result.application.status, 'not-requested');
@@ -193,7 +193,7 @@ test('a failed project write acknowledges local storage and reconnect persists t
 	assert.equal(model.dirty, true);
 	assert.deepEqual(saved, [model], 'remote synchronization cannot acknowledge newer document content');
 	assert.equal(result.persistence.status, 'local-only', 'the receipt describes the original save, not later connectivity');
-	const retried = await f.saves.save(model);
+	const retried = await f.saves.save(model).completion;
 	if (retried.status !== 'saved') assert.fail('expected workspace save');
 	assert.equal(retried.persistence.status, 'workspace');
 	assert.equal(f.files.records.get(path)!.contents, 'value: 3');
@@ -205,7 +205,7 @@ test('disconnected Lua save carries the local-only acknowledgement through its s
 	const model = f.models.retain({ domain: 0, path: f.lua.source_path, source: f.lua }, 'lua', f.lua.src);
 	closeWorkspaceRecords();
 	setSource(model, 'return false');
-	const result = await f.saves.save(model);
+	const result = await f.saves.save(model).completion;
 	if (result.status !== 'saved') assert.fail('expected locally saved Lua');
 	assert.deepEqual(result.persistence, { status: 'local-only', reason: 'disconnected' });
 	assert.equal(f.lua.src, result.snapshot.source);
@@ -223,7 +223,7 @@ test('an acknowledged write stays a workspace save even when another operation d
 	await setImmediate();
 	disconnectWorkspaceRecords(new Error('another resource failed'));
 	f.files.writes[0].complete();
-	const result = await pending;
+	const result = await pending.completion;
 	if (result.status !== 'saved') assert.fail('expected saved source');
 	assert.equal(workspaceRecordState.connected, false);
 	assert.deepEqual(result.persistence, { status: 'workspace' });
@@ -267,7 +267,7 @@ test('AEM build rejection reports saved source separately and does not poison th
 	const f = await fixture(t);
 	const model = f.models.retain({ domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
 	setSource(model, '[');
-	const result = await f.saves.save(model);
+	const result = await f.saves.save(model).completion;
 	if (result.status !== 'saved' || result.application.status !== 'failed') assert.fail('expected saved source and rejected AEM');
 	assert.equal(result.application.phase, 'build');
 	assert.equal(model.lastSavedSource, '[');
@@ -282,7 +282,7 @@ test('runtime synchronization failure cannot be reported as a failed source writ
 	setSource(model, 'events: {}');
 	const error = new Error('readback failed');
 	f.failReadback(error);
-	const result = await f.saves.save(model);
+	const result = await f.saves.save(model).completion;
 	if (result.status !== 'saved' || result.application.status !== 'failed') assert.fail('expected runtime failure after source save');
 	assert.equal(result.application.phase, 'runtime');
 	assert.equal(result.application.error, error);
@@ -296,7 +296,7 @@ test('source-only Lua uses its catalog owner and publishes one model-service sav
 	setSource(model, 'return false');
 	const saved: EditorTextModel[] = [];
 	const dispose = f.models.onDidSaveModel(model => saved.push(model));
-	const result = await f.saves.save(model);
+	const result = await f.saves.save(model).completion;
 	assert.equal(result.status, 'saved');
 	assert.deepEqual(saved, [model]);
 	assert.equal(f.lua.src, 'return false');
@@ -328,7 +328,7 @@ test('Save cannot reacquire a retired model through a reopened path and matching
 	assert.equal(f.files.records.has(`${f.root}/${retired.resource.path}`), false);
 	assert.equal(readLocalWorkspaceRecord(f.storage, f.root, `${f.root}/${retired.resource.path}`), null);
 	assert.equal(current.dirty, true);
-	assert.equal((await f.saves.save(current)).status, 'saved');
+	assert.equal((await f.saves.save(current).completion).status, 'saved');
 	assert.equal(f.files.records.get(`${f.root}/${current.resource.path}`)!.contents, 'value: current-session');
 });
 

@@ -5122,6 +5122,14 @@ global connectivity. Local persistence still establishes the document's saved
 identity; UI explicitly warns when the project file was not acknowledged.
 Reconnect synchronizes the saved record, not newer model text, and does not
 rewrite the original Save receipt. See [source save acknowledgements](studio_source_save_acknowledgements.md).
+The Save owner retains its latest accepted operation per model, including the
+captured snapshot and actual terminal acknowledgement. A later Save cannot be
+overwritten by an older completion. Conversation Save uses that same owner and
+requires a current source receipt; review Apply and Save remain separate.
+Admitted writes outlive tool observers, and retired conversations cannot publish
+late replies. On-demand source status compares current text with both installed
+source and the historical Save snapshot; it never infers project acknowledgement
+from dirty state or global connectivity. See [source lifecycle](studio_source_lifecycle.md).
 The optional Studio assistant is host tooling only. Its workspace-owned
 conversation receives a platform connection capability from browser composition;
 the existing development server exposes its fixed endpoints alongside source IO

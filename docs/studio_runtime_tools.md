@@ -28,7 +28,8 @@ unimplemented rows below are not advertised capabilities.
 | FSM/BT/ActionEffect source queries and reviewed edits | shared Behavior Lens documents and syntax-edit producers | canonical-source review, builder readback and Undo | implemented for initial-state, child-list and property edits; [behavior source tools](studio_behavior_tools.md) |
 | Live Object/FSM/BT/ActionEffect/timeline inspection | shared Actor Lab runtime tree and suspended value owner | typed instance identity, nested values and execution/restore expiry | implemented for authoring/history; [Actor tools](studio_actor_tools.md) |
 | Live Actor mutation | shared ActorExecutionService + World rendezvous | explicit operation lifetime, admission, cancellation and live-state readback | authoring actions/stored methods implemented; [Actor tools](studio_actor_tools.md) |
-| Apply/save/build/install lifecycle | working-copy, Save, boot and Hot Resume owners | distinct receipts, rerun against installed code | open |
+| Reviewed source Save/status | working-copy review + TextFileSaveService | exact revision, project/local acknowledgement, installed-source distinction | implemented; [source lifecycle](studio_source_lifecycle.md) |
+| Build/install/rerun lifecycle | boot, Hot Resume and test target owners | distinct captured-source/installation outcomes, rerun against installed code | open |
 
 ## Reference implementations
 
@@ -102,8 +103,10 @@ added. Values and pages are constructed only on explicit inspection requests.
    Selected-frame recovery now has public-owner browser workflow coverage;
    native logical-frame navigation is still more limited than Studio's source UI.
 5. Test execution, target-bound debugging and basic source-backed builder actions
-   and authoring Actor actions/stored methods are implemented. Builder
-   transfer/retarget impact review and apply/save/install/rerun remain open.
+   and authoring Actor actions/stored methods are implemented. Reviewed Apply,
+   explicit Save and source status also share the ordinary working-copy owners.
+   Builder transfer/retarget impact review and the complete build/install/rerun
+   acceptance workflow remain open.
 
 Long operations wait on owner completion/events, not repeated provider polls.
 User Stop cancels owned work without undoing already performed guest writes.

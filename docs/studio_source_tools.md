@@ -39,8 +39,9 @@ client of this capability, not a second document/history implementation.
   response says **review-required** with an opaque review identifier, never
   applied/saved/installed. This identifier grants no source authority. The caller
   hands the proposal to the ordinary `WorkspaceEditReviewInput`. Only visible
-  explicit Apply owns the shared-history mutation; Save/build/run/test are not
-  tools in this capability set.
+  explicit Apply owns the shared-history mutation. Save is a separate explicit
+  operation requiring fresh source receipts after Apply, not a review bypass.
+  Build/run/test keep their own owners and outcomes.
 - The conversation snapshots outstanding review states on the next explicit
   user prompt. The provider sees actual owner observations, not a guessed result
   or another automatic inference turn. The tool itself completes immediately;
@@ -54,6 +55,18 @@ client of this capability, not a second document/history implementation.
   Apply/Discard/Close/staleness. Disconnect retires pending edit rights, without
   disposing the shared source documents. Callers also dispose untransferred
   reading contexts on interruption or prompt completion.
+- `studio_save_source` uses the same `TextFileSaveService` as ordinary Ctrl+S.
+  It accepts only the exact current receipt's model. Local persistence, project
+  provider acknowledgement and format-specific application remain distinct.
+  Admitted writes finish even when a prompt is retired; no cancelled reply is
+  sent to a newer conversation. Later typing stays dirty.
+- `studio_read_source_status` reads dirty state, the shared installed-source
+  comparison and the Save owner's latest operation. Pending, failed, locally
+  saved and project-acknowledged are different evidence. `matchesCurrentSource`
+  compares the historical saved snapshot with the current receipt; neither a
+  saved model nor a connected provider implies current project-file equality.
+  The latest acknowledgement belongs to the model's Save owner, not the prompt,
+  and includes ordinary manual Saves. See [source lifecycle](studio_source_lifecycle.md).
 
 `source_tool_protocol.ts` owns the external schema/argument conversion, using the
 shared external argument-object admission in `tool_input.ts`. Consumers
