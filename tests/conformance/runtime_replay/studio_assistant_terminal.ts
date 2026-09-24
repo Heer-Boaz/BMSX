@@ -25,7 +25,8 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	const conversation = ide.editor.assistant, terminal = ide.terminal;
 	await test.runMenuCommand('pause');
 	const repl = { domain: -1 as const, path: 'shell/repl.lua' };
-	const line = resolveRuntimeLuaSource(ide.sources, repl)!.record.src.split('\n').findIndex(text => text.includes('return pcall(chunk)')) + 1;
+	const line = resolveRuntimeLuaSource(ide.sources, repl)!.record.src.split('\n').findIndex(text => text.includes('return protect(chunk)')) + 1;
+	check(line > 0, 'installed firmware has the protected invocation breakpoint');
 	ide.debugger.breakpoints.toggle(repl, line);
 	await submitAssistantText(test, 'Execute Lua, continue after the breakpoint, inspect the result and test errors without changing cart source.');
 	await until(() => ide.debugger.source.stopped && terminal.active !== undefined, 'terminal tools: actual BIOS breakpoint');

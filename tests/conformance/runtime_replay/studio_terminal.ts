@@ -105,7 +105,8 @@ export async function runStudioTerminal(test: StudioFixture) {
 	result = await evaluate('counter'); check(result.text === '43', 'busy draft was not queued or executed implicitly');
 	const replResource = { domain: -1 as const, path: 'shell/repl.lua' };
 	const replSource = resolveRuntimeLuaSource(ide.sources, replResource)!.record.src;
-	const line = replSource.split('\n').findIndex(line => line.includes('return pcall(chunk)')) + 1;
+	const line = replSource.split('\n').findIndex(line => line.includes('return protect(chunk)')) + 1;
+	check(line > 0, 'installed firmware has the protected invocation breakpoint');
 	ide.debugger.breakpoints.toggle(replResource, line);
 	await paste('counter + 10'); await press('Enter');
 	await until(() => ide.debugger.source.stopped && ide.editor.isActive, 'terminal: normal BIOS source breakpoint');

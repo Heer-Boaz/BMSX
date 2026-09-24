@@ -1,0 +1,165 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
+import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
+import { linkTestSystemBlua32 } from './blua32';
+
+/** Actual firmware compiler and REPL, with physical locations supplied by the fixture. */
+export function compileFrameEvaluationTest(body: string, optLevel: 0 | 3) {
+	const modules = [
+		...['base', 'table', 'coroutine', 'string/base', 'string/utf8', 'string/pattern', 'debug/frame', 'shell/repl'],
+		...readdirSync('machine/bios/compiler').filter(name => name.endsWith('.lua')).sort().map(name => `compiler/${name.slice(0, -4)}`),
+	].map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') }));
+	modules.push({ path: 'bmsx/blua32', source: BLUA32_FIRMWARE_MODULE_SOURCE },
+		{ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },
+		{ path: 'frame_test/primitives', source: `frame_count = __bmsx_frame_count
+running_thread = __bmsx_coroutine_running
+collectgarbage = __bmsx_collect_garbage` });
+	const source = `require('base')
+table = require('table')
+string = require('string/base')
+string.find = require('string/pattern').find
+coroutine = require('coroutine')
+lua_compiler = require('compiler/api')
+load = lua_compiler.load
+repl = require('shell/repl')
+frame_bindings = require('debug/frame')
+require('frame_test/primitives')
+escaped = false
+return pcall(function()
+${body}
+end)`;
+	return linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(source, 'frame_test').chunk!,
+		modules.map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path).chunk! })),
+		{ entrySource: source, optLevel, programDomain: 'system' }));
+}
+
+export const frameEvaluationCases = {
+	bindings: `
+local make = function(seed, open)
+ local captured = seed
+ local exercise = function(value, object, ...)
+  local index<const> = frame_count(running_thread()) - 1
+  local names<const> = {
+   value = { index = 0, upvalue = false, available = true, is_const = false },
+   object = { index = 1, upvalue = false, available = true, is_const = true },
+   captured = { index = 0, upvalue = true, available = true, is_const = false },
+   unavailable = { index = 9999, upvalue = false, available = false, is_const = false },
+  }
+  local ok, a, b, c, d, e = repl.evaluate(
+   'value = value + 2; captured = captured + 3; object.answer = value; return value, nil, false, captured, object',
+   '=frame', 'frame', index, names)
+  assert(ok and a == 42 and b == nil and c == false and d == 13 and e == object)
+  assert(value == 42 and captured == 13 and object.answer == 42)
+  local ok, a = repl.evaluate('captured = object; return captured', '=frame', 'frame', index, names)
+  assert(ok and a == object and captured == object)
+  local ok, a = repl.evaluate('captured = false; return captured', '=frame', 'frame', index, names)
+  assert(ok and a == false and captured == false)
+  local ok, a = repl.evaluate('captured = nil; return captured', '=frame', 'frame', index, names)
+  assert(ok and a == nil and captured == nil)
+  local ok, message = repl.evaluate('value = 43; error("retained frame write")', '=frame', 'frame', index, names)
+  assert(not ok and message == 'retained frame write' and value == 43)
+  ok, message = repl.evaluate('value = 999; object = nil', '=frame', 'frame', index, names)
+  assert(not ok and string.find(message, 'cannot assign to const local') ~= nil and value == 43)
+  unavailable = 100
+  ok, message = repl.evaluate('value = 999; return unavailable', '=frame', 'frame', index, names)
+  assert(not ok and string.find(message, 'no live location') ~= nil and value == 43)
+  ok, message = repl.evaluate('return function() return unavailable end', '=frame', 'frame', index, names)
+  assert(not ok and string.find(message, 'no live location') ~= nil)
+  local ok, copied = repl.evaluate('local value = value + 1; return function() return value end', '=frame', 'frame', index, names)
+  assert(ok and copied() == 44 and value == 43)
+  local ok, a = repl.evaluate('local inner = function(n) value = value + n; return value end; escaped = inner; return inner(2)', '=frame', 'frame', index, names)
+  assert(ok and a == 45 and value == 45)
+  ok, message = pcall(escaped, 1)
+  assert(not ok and message == 'Selected frame evaluation has ended.' and value == 45)
+  local ok, a, b = repl.evaluate('value = false; return value, object', '=frame', 'frame', index, names)
+  assert(ok and a == false and b == object)
+  local ok, a, b = repl.evaluate('value = nil; return value, false', '=frame', 'frame', index, names)
+  assert(ok and a == nil and b == false and value == nil)
+  assert(repl.evaluate('value = 50', '=frame', 'frame', index, names))
+  local ok, a = repl.evaluate('local value = 7; local fn = function(value) return value + 1 end; return fn(value)', '=frame', 'frame', index, names)
+  assert(ok and a == 8 and value == 50)
+  local ok, a = repl.evaluate('return load("return unavailable")()', '=frame', 'frame', index, names)
+  assert(ok and a == 100, 'nested load uses ordinary globals, not the external lexical scope')
+  return copied
+ end
+ if open then return exercise(40, {}) end
+ return exercise
+end
+local reader = make(10, true)
+assert(reader() == 44)
+reader = make(10, false)(40, {})
+assert(reader() == 44)
+return true`,
+	coroutine: `
+local co = coroutine.create(function(value)
+ local index<const> = frame_count(running_thread()) - 1
+ local names<const> = { value = { index = 0, upvalue = false, available = true, is_const = false } }
+ local ok, result = repl.evaluate('value = value + 1; coroutine.yield(value); value = value + 1; return value', '=thread-frame', 'frame', index, names)
+ assert(ok and result == 12 and value == 12)
+ return value
+end)
+local ok, value = coroutine.resume(co, 10)
+assert(ok and value == 11)
+collectgarbage()
+halt_until_irq
+ok, value = coroutine.resume(co)
+assert(ok and value == 12)
+return true`,
+	lexical_symbols: `
+local exercise = function(value, ...)
+ local index<const> = frame_count(running_thread()) - 1
+ local names<const> = { value = { index = 0, upvalue = false, available = true, is_const = false } }
+ local scope<const> = frame_bindings.open(index, names)
+ local f<const> = lua_compiler.syntax_factory
+ local source<const> = f.chunk(f.block({ f.return_statement({ f.identifier('value') }) }))
+ assert(lua_compiler.compile_syntax(source, '=frame-syntax', nil, scope)() == 17)
+ local env<const> = { value = 900, other = 12 }
+ assert(load('return value + other', '=frame-environment', 't', env, scope)() == 29)
+ assert(env.value == 900 and value == 17)
+ local symbol<const> = f.generated_symbol('value')
+ local missing<const> = f.chunk(f.block({ f.return_statement({ f.reference(symbol) }) }))
+ local ok, message = pcall(lua_compiler.compile_syntax, missing, '=missing-lexical', nil, scope)
+ assert(not ok and string.find(message, 'unknown local or function parameter') ~= nil)
+ scope.close()
+ return true
+end
+return exercise(17)`,
+	collection: `
+local weak<const> = setmetatable({}, { __mode = 'v' })
+local create = function(...)
+ local co<const> = coroutine.create(function(value)
+  local index<const> = frame_count(running_thread()) - 1
+  local names<const> = { value = { index = 0, upvalue = false, available = true, is_const = false } }
+  local ok, reader = repl.evaluate('return function() return value end', '=frame-release', 'frame', index, names)
+  assert(ok and value == 17)
+  escaped = reader
+ end)
+ weak[1] = co
+ assert(coroutine.resume(co, 17))
+end
+create()
+collectgarbage()
+assert(weak[1] == nil, 'an escaped accessor must not retain the completed thread')
+local ok, message = pcall(escaped)
+assert(not ok and message == 'Selected frame evaluation has ended.')
+return true`,
+	public_names: `
+local exercise = function(value, ...)
+ local index<const> = frame_count(running_thread()) - 1
+ local names<const> = { value = { index = 0, upvalue = false, available = true, is_const = false } }
+ local loader<const>, protected<const> = lua_compiler.load, pcall
+ lua_compiler.load = false
+ pcall = false
+ local ok, result = repl.evaluate('value = value + 1; return value', '=private-loader', 'frame', index, names)
+ assert(ok and result == 18 and value == 18)
+ local ok, message = repl.evaluate('escaped = function() return value end; value = value + 1; error("private protection")', '=private-protection', 'frame', index, names)
+ assert(not ok and message == 'private protection' and value == 19)
+ ok, message = protected(escaped)
+ assert(not ok and message == 'Selected frame evaluation has ended.')
+ lua_compiler.load = loader
+ pcall = protected
+ return true
+end
+return exercise(17)`,
+} as const;

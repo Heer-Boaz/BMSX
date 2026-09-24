@@ -6,13 +6,14 @@ local compiler_api<const> = {
 	syntax_factory = require('compiler/syntax_factory'),
 }
 
-function compiler_api.load(source, chunk_name, mode, environment)
+function compiler_api.load(source, chunk_name, mode, environment, external_scope)
 	local ok<const>, result<const> = vm_pcall(
 		load_compiler.compile,
 		source,
 		chunk_name,
 		mode,
-		environment
+		environment,
+		external_scope
 	)
 	if ok then
 		return result

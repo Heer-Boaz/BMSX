@@ -31,9 +31,14 @@ enum class BuiltinFunctionId : uint8_t {
 	CoroutineIsYieldable = 20,
 	GetGlobal = 21,
 	SetGlobal = 22,
+	FrameCount = 23,
+	GetFrameRegister = 24,
+	SetFrameRegister = 25,
+	GetFrameUpvalue = 26,
+	SetFrameUpvalue = 27,
 };
 
-constexpr size_t BUILTIN_FUNCTION_COUNT = 23u;
+constexpr size_t BUILTIN_FUNCTION_COUNT = 28u;
 
 struct LuaBootPrimitive {
 	std::string_view name;
@@ -64,6 +69,11 @@ inline constexpr std::array<LuaBootPrimitive, BUILTIN_FUNCTION_COUNT> LUA_BOOT_P
 	{ "__bmsx_coroutine_isyieldable", BuiltinFunctionId::CoroutineIsYieldable },
 	{ "__bmsx_getglobal", BuiltinFunctionId::GetGlobal },
 	{ "__bmsx_setglobal", BuiltinFunctionId::SetGlobal },
+	{ "__bmsx_frame_count", BuiltinFunctionId::FrameCount },
+	{ "__bmsx_get_frame_register", BuiltinFunctionId::GetFrameRegister },
+	{ "__bmsx_set_frame_register", BuiltinFunctionId::SetFrameRegister },
+	{ "__bmsx_get_frame_upvalue", BuiltinFunctionId::GetFrameUpvalue },
+	{ "__bmsx_set_frame_upvalue", BuiltinFunctionId::SetFrameUpvalue },
 }};
 
 } // namespace bmsx

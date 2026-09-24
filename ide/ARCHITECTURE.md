@@ -26,13 +26,18 @@ Rules:
 `workbench/services/terminal` owns admitted evaluations, input history and bounded
 scrollback; `workbench/contrib/terminal` owns the retained input and visible
 controls. They call the existing scheduled guest-call service. BIOS
-`shell/repl` owns a persistent Lua environment and uses its ordinary `load` and
-`pcall`; the host does not own an evaluator or a copied global table. The
+`shell/repl` owns protected invocation through its captured compiler/primitive
+functions. Cart context uses ordinary global registers; the isolated session
+owns a persistent guest environment. The host has no evaluator or copied globals. The
 Terminal follows workbench pause except during an explicit call, keeps user
 pause across completion and pause/continue, and keeps text history independent
 of guest save/restore. Closing the view does not destroy the firmware session.
-The native BIOS monitor is unchanged. This shared service is not yet exposed as
-a Codex tool. See [Lua Terminal](../docs/studio_lua_terminal.md).
+The native BIOS monitor executes the same firmware. Conversation tools call the
+ordinary Terminal service without opening a pane or adding a Codex-only control.
+The physical frame-binding compiler core also exists on both machines, but
+selected-stop admission is not yet a public Terminal context. See
+[Lua Terminal](../docs/studio_lua_terminal.md) and its
+[binding contract](../docs/studio_terminal_contexts.md).
 
 ## Resource diagnostics and document lifetime
 

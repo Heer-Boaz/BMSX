@@ -4655,6 +4655,8 @@ emulator runtime code. Its source tree follows the program's actual owners:
 - `gpu` owns only the private command path used by BIOS presentation;
 - `tty` owns the firmware console driver, terminal state and raster submission;
 - `shell` owns the resumable supervisor monitor;
+- `debug/frame` owns the firmware compiler scope for an explicitly pinned
+  ancestor frame; it has no source-symbol resolver or public frame selector;
 - the top-level `base.lua`, `table.lua`, `string.lua`, `math.lua`, and `os.lua`
   beneath `machine/bios`, with their `string/` and `math/` implementation
   modules, own the resident Lua libraries.
@@ -5187,7 +5189,16 @@ source mapping and the TS/native symbols codec. Suspended runtime/test value
 inspection reports it independently of register liveness; it describes the
 binding, not table-member mutability. No source mutability flag enters the CPU
 or normal execution path.
-Selected-frame evaluation, live Actor mutation and complete reviewed-source
+The shared firmware compiler also supports external lexical locations before
+ordinary globals/environment bindings. Private boot primitives transfer values
+directly from a specified guest thread's physical frame register or closure
+upvalue; neither CPU receives source names or declaration policy. Firmware owns
+the borrow scope and expires its accessors on protected evaluation completion.
+These primitives add no scope state, save-state format, or normal-dispatch work.
+The core is tested on both runtimes, but admitting installed locations at a
+Studio/native selected stop, including cancellation and frame retirement, is
+not yet exposed by a public Terminal context.
+Selected-frame evaluation admission, live Actor mutation and complete reviewed-source
 apply/save/install/rerun receipts remain work tracked in
 [Studio runtime tools](studio_runtime_tools.md).
 The proposal owner publishes one terminal review outcome after retiring edit

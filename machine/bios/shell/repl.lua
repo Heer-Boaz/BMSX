@@ -1,4 +1,6 @@
-local compiler<const> = require('compiler/api')
+local load_chunk<const> = require('compiler/api').load
+local protect<const> = __bmsx_pcall
+local frame_bindings<const> = require('debug/frame')
 
 -- A firmware-owned Lua session. Its environment is ordinary saved guest state,
 -- not a copy of the CPU's global registerfile or of a stopped stack frame.
@@ -21,12 +23,34 @@ local create_environment<const> = function()
 		if explicit_environment == nil then
 			explicit_environment = value
 		end
-		return compiler.load(source, chunk_name, mode, explicit_environment)
+		return load_chunk(source, chunk_name, mode, explicit_environment)
 	end
 	return value
 end
 
-function repl.evaluate(source, chunk_name, context)
+local evaluate<const> = function(source, chunk_name, bindings, external_scope)
+	-- Lua's interactive loader tries an expression before a statement. Neither
+	-- attempt executes input; only the successfully compiled chunk is called.
+	local chunk, message = load_chunk('return ' .. source, chunk_name, 't', bindings, external_scope)
+	if chunk == nil then
+		chunk, message = load_chunk(source, chunk_name, 't', bindings, external_scope)
+	end
+	if chunk == nil then
+		return false, message
+	end
+	return protect(chunk)
+end
+
+function repl.evaluate(source, chunk_name, context, frame_index, names)
+	if context == 'frame' then
+		local scope<const> = frame_bindings.open(frame_index, names)
+		-- Forward the exact protected tuple without packing or copying values.
+		local complete<const> = function(...)
+			scope.close()
+			return ...
+		end
+		return complete(evaluate(source, chunk_name, nil, scope))
+	end
 	local bindings
 	if context == 'session' then
 		if environment == nil then
@@ -34,16 +58,7 @@ function repl.evaluate(source, chunk_name, context)
 		end
 		bindings = environment
 	end
-	-- Lua's interactive loader tries an expression before a statement. Neither
-	-- attempt executes input; only the successfully compiled chunk is called.
-	local chunk, message = compiler.load('return ' .. source, chunk_name, 't', bindings)
-	if chunk == nil then
-		chunk, message = compiler.load(source, chunk_name, 't', bindings)
-	end
-	if chunk == nil then
-		return false, message
-	end
-	return pcall(chunk)
+	return evaluate(source, chunk_name, bindings)
 end
 
 return repl

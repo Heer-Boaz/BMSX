@@ -22,9 +22,14 @@ export const enum BuiltinFunctionId {
 	CoroutineIsYieldable = 20,
 	GetGlobal = 21,
 	SetGlobal = 22,
+	FrameCount = 23,
+	GetFrameRegister = 24,
+	SetFrameRegister = 25,
+	GetFrameUpvalue = 26,
+	SetFrameUpvalue = 27,
 }
 
-export const BUILTIN_FUNCTION_COUNT = 23;
+export const BUILTIN_FUNCTION_COUNT = 28;
 
 export interface LuaBootPrimitive {
 	readonly name: string;
@@ -55,4 +60,9 @@ export const LUA_BOOT_PRIMITIVES: ReadonlyArray<LuaBootPrimitive> = [
 	{ name: '__bmsx_coroutine_isyieldable', id: BuiltinFunctionId.CoroutineIsYieldable },
 	{ name: '__bmsx_getglobal', id: BuiltinFunctionId.GetGlobal },
 	{ name: '__bmsx_setglobal', id: BuiltinFunctionId.SetGlobal },
+	{ name: '__bmsx_frame_count', id: BuiltinFunctionId.FrameCount },
+	{ name: '__bmsx_get_frame_register', id: BuiltinFunctionId.GetFrameRegister },
+	{ name: '__bmsx_set_frame_register', id: BuiltinFunctionId.SetFrameRegister },
+	{ name: '__bmsx_get_frame_upvalue', id: BuiltinFunctionId.GetFrameUpvalue },
+	{ name: '__bmsx_set_frame_upvalue', id: BuiltinFunctionId.SetFrameUpvalue },
 ];

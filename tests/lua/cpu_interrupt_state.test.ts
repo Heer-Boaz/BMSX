@@ -1576,7 +1576,8 @@ mem[${continuedAddress}] = 1
 `;
 	for (const optLevel of [0, 3] as const) {
 		const { cpu, memory } = makeCompiledCartCpu(systemSource, cartSource, optLevel);
-		assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+		// Includes compiler startup/boot-slot retirement; this is not a cycle-count test.
+		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 
 		assert.equal(memory.readMappedU32LE(faultCauseAddress), CPU_CAUSE_CODE_COPROCESSOR_UNUSABLE);
 		assert.equal(memory.readMappedU32LE(continuedAddress), 1);

@@ -1682,6 +1682,25 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::Select:
 			runBuiltinSelect(args, out);
 			break;
+		case BuiltinFunctionId::FrameCount:
+			out.push_back(valueNumber(asThread(args[0])->frames.size()));
+			break;
+		case BuiltinFunctionId::GetFrameRegister:
+		case BuiltinFunctionId::SetFrameRegister: {
+			auto& frame = *asThread(args[0])->frames[toI32(args[1])];
+			const int index = toI32(args[2]);
+			if (fn.id == BuiltinFunctionId::GetFrameRegister) out.push_back(frame.registers[index]);
+			else frame.registers[index] = args[3];
+			break;
+		}
+		case BuiltinFunctionId::GetFrameUpvalue:
+		case BuiltinFunctionId::SetFrameUpvalue: {
+			const auto& frame = *asThread(args[0])->frames[toI32(args[1])];
+			Upvalue* upvalue = frame.closure->upvalues[toI32(args[2])];
+			if (fn.id == BuiltinFunctionId::SetFrameUpvalue) writeUpvalue(upvalue, args[3]);
+			else out.push_back(upvalue->open ? upvalue->frame->registers[upvalue->index] : upvalue->value);
+			break;
+		}
 		case BuiltinFunctionId::StringByte:
 			runBuiltinStringByte(args, out);
 			break;

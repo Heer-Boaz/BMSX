@@ -3610,6 +3610,30 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.Select:
 				this.runBuiltinSelect(args, out);
 				break;
+			case BuiltinFunctionId.FrameCount:
+				out.push(ValueTag.Number, (args.registers.getReference(args.base) as Thread).frames.length);
+				break;
+			case BuiltinFunctionId.GetFrameRegister:
+			case BuiltinFunctionId.SetFrameRegister: {
+				const thread = args.registers.getReference(args.base) as Thread;
+				const registers = thread.frames[args.registers.getScalar(args.base + 1)].registers;
+				const index = args.registers.getScalar(args.base + 2);
+				if (id === BuiltinFunctionId.GetFrameRegister) out.push(registers.getTag(index), registers.getScalar(index), registers.getReference(index));
+				else registers.copySlotFrom(args.registers, index, args.base + 3);
+				break;
+			}
+			case BuiltinFunctionId.GetFrameUpvalue:
+			case BuiltinFunctionId.SetFrameUpvalue: {
+				const thread = args.registers.getReference(args.base) as Thread;
+				const closure = thread.frames[args.registers.getScalar(args.base + 1)].closure;
+				const upvalue = closure.upvalues[args.registers.getScalar(args.base + 2)];
+				if (id === BuiltinFunctionId.SetFrameUpvalue) this.copyRegisterToUpvalue(upvalue, args.registers, args.base + 3);
+				else if (upvalue.open) {
+					const registers = upvalue.frame!.registers, index = upvalue.index;
+					out.push(registers.getTag(index), registers.getScalar(index), registers.getReference(index));
+				} else out.push(upvalue.valueTag, upvalue.valueScalar, upvalue.valueReference);
+				break;
+			}
 			case BuiltinFunctionId.StringByte:
 				this.runBuiltinStringByte(args, out);
 				break;

@@ -166,6 +166,16 @@ local bind_identifier<const> = function(state, expression)
 		return
 	end
 	if type(key) == 'string' then
+		if state.external_names ~= nil then
+			local external<const> = state.external_names[key]
+			if external ~= nil then
+				if not external.available then
+					fail(state.chunk_name, "no live location for '" .. key .. "'", expression)
+				end
+				expression.external_binding = external
+				return
+			end
+		end
 		if state.has_environment then
 			expression.environment_key = key
 		else
@@ -258,6 +268,9 @@ local bind_assignment<const> = function(state, statement)
 		local binding = target.binding
 		if binding == nil and target.upvalue ~= nil then
 			binding = target.upvalue.binding
+		end
+		if binding == nil then
+			binding = target.external_binding
 		end
 		if binding ~= nil and binding.is_const then
 			fail(
@@ -379,6 +392,7 @@ bind_function = function(parent, function_expression)
 		local_count = 0,
 		scope = nil,
 		has_environment = parent.has_environment,
+		external_names = parent.external_names,
 		loop_depth = 0,
 		upvalues = {},
 		upvalue_by_binding = {},
@@ -389,7 +403,7 @@ bind_function = function(parent, function_expression)
 	function_expression.local_count = state.local_count
 end
 
-function semantic.bind(chunk, chunk_name, has_environment)
+function semantic.bind(chunk, chunk_name, has_environment, external_names)
 	local root_function<const> = {
 		kind = syntax.function_expression,
 		parameters = {},
@@ -407,6 +421,7 @@ function semantic.bind(chunk, chunk_name, has_environment)
 		local_count = 0,
 		scope = nil,
 		has_environment = has_environment,
+		external_names = external_names,
 		loop_depth = 0,
 		upvalues = {},
 		upvalue_by_binding = {},

@@ -109,6 +109,73 @@ are monotonically allocated (`popScope` removes names, not slots), but repeated
 inline invocations and loop activations still make an indefinitely retained
 raw frame/register index an incorrect lexical capture model.
 
+## Physical frame-evaluation gate
+
+The next layer executes against a pinned ancestor on the evaluator's own guest
+thread. It is not evaluation on an independently resumable coroutine. Lua's
+[debug library](https://github.com/lua/lua/blob/master/ldblib.c) and
+[physical local access](https://github.com/lua/lua/blob/master/ldebug.c) read/write
+the real stack; VS Code JS Debug's
+[frame evaluator](https://github.com/microsoft/vscode-js-debug/blob/main/src/adapter/evaluator.ts)
+passes an explicit frame to the execution owner. BMSX keeps name resolution out
+of the CPU and does not copy their generic temporary-name or global-hoisting
+fallbacks.
+
+| Data | TypeScript | C++ | New owner behavior |
+| --- | --- | --- | --- |
+| Thread | Tagged `Thread`, `frames` | Tagged `Thread*`, `frames` | Existing guest/GC representation |
+| Local location | Physical frame index and register index; `ValueSlots` | Same indices; tagged `Value` register window | Boot get/set primitives transfer raw values directly |
+| Upvalue location | Selected frame closure cell, open or closed | Same closure cell | Existing open/closed cell datapath, no synthetic capture |
+| Frame count | `thread.frames.length` | `thread.frames.size()` | Raw stack depth, not a source stack |
+| External binding | Guest descriptor: index, upvalue, available, is_const | Identical guest table | Compiler resolves after own lexical names, before globals/environment |
+| Evaluation lifetime | Firmware scope holds guest thread until protected evaluation returns | Same firmware/GC | Expiration clears thread; escaped closures error, never access a reused frame |
+
+Affected runtime callsites are the five new cases in
+`CPU.callBuiltinFunction` / `CPU::callBuiltinFunction`: `FrameCount`,
+`GetFrameRegister`, `SetFrameRegister`, `GetFrameUpvalue`, `SetFrameUpvalue`.
+Upvalue writes reuse `copyRegisterToUpvalue` / `writeUpvalue`. Only generated
+external-binding accesses call them, through firmware scope accessors. They add
+no allocation to the primitive datapath. Compiler bind/prepare/emission and
+`shell/repl.evaluate` change at explicit submission. Scope/accessor closures are
+allocated once per frame evaluation; execution uses ordinary CALL/RET and the
+existing scheduler. Normal/debug dispatch loops, frame push/pop, GC traversal,
+save-state encoding and render loops gain no scope check or metadata lookup.
+Boot installation/retirement now includes five more private primitive slots;
+that cost is paid at startup, not per frame or instruction.
+
+These are trusted firmware primitives, captured before boot registers are
+cleared, not a public raw-slot debug API. The admission owner must supply valid
+installed locations for exactly the selected suspension. A scope owns references
+to locations, never copied local values or writeback. Const/unavailable binding
+errors are compilation errors, including inside a nested function. A nested
+public `load` still has its normal global/environment semantics. A closure may
+escape; only its later access to an expired frame binding fails. A value copied
+explicitly into a new evaluation-local variable has ordinary Lua lifetime.
+Pre-error writes remain real.
+The REPL captures its loader and protected-call primitive during firmware
+initialization. Assigning to the public `pcall` or `lua_compiler.load` binding
+changes that guest binding, not the evaluator's execution/protection mechanism.
+
+A physical slot is not a deoptimization promise: optimized caller instructions
+may no longer reload a source value, and an eliminated assignment has no
+writable source location to reconstruct. The eventual installed-symbol
+admission must respect this. Fixture-owned parameter locations below prove the
+datapath, not a native source resolver.
+
+The borrower must keep the selected activation pinned until scope closure.
+Protected return/error closes the scope; cancellation, abort, frame relocation,
+rewind and external coroutine closure require the execution admission owner to
+retire that borrow before changing the stack. This is an explicit owner
+obligation, not an instruction-loop stale-frame check. That public admission
+lifecycle is not implemented by the core scope alone. The coroutine fixture
+suspends and resumes a pinned activation; it does not authorize arbitrary
+concurrent execution against its frame.
+
+The firmware core alone does not admit a Studio frame handle or discover native
+frame names. Those consumers remain gated on at-stop admission, shared binding
+metadata, and target/lifetime tests; there is no public tool `frame` context
+until that full route exists.
+
 ## Validation (2026-09-24)
 
 - The actual browser -> authorized ordinary HTTP -> native Codex app-server ->
@@ -189,3 +256,55 @@ legacy-symbol default. Neither CPU implementation, BIOS evaluator nor machine
 state format changes in this slice. Native codec coverage is not native named
 frame evaluation. Selected-frame evaluation and its firmware metadata/lifetime
 contract remain open as described above.
+
+## Physical evaluator core validation (2026-09-24)
+
+- Twelve focused O0/O3 tests execute the actual firmware compiler and frame
+  accessors. They cover direct local and open/closed upvalue writes, table
+  identity, nil/false and exact multi-return tuples, retained pre-error writes,
+  const/unavailable compilation errors, lexical shadowing, generated-symbol
+  identity and explicit environment precedence. Escaped accessors reject reads
+  and writes after protected completion/error; explicitly copied lexical values
+  retain ordinary closure semantics. A weak-reference test verifies that an
+  expired accessor does not retain its completed guest thread.
+- `test:frame-evaluation-parity` runs ten of those firmware vectors natively
+  and on TypeScript, using identical O0/O3 ROMs. Full final runtime snapshots
+  match. A coroutine keeps a live frame scope across yield, collection and a
+  deliberate HALT; both runtimes encode/decode/apply the full save state there,
+  retain the exact CPU graph, then resume the same scope. The saved active
+  runtime states also match across TS/C++. Normal restore presentation
+  invalidation remains owned by the GPU, not normalized away in these tests.
+- Two O0/O3 allocation tests compile a frame-access loop once, warm the call
+  stack, and repeat 10,000 direct read/write iterations above its pinned
+  ancestor. Guest allocation accounting before collection and global register
+  count remain unchanged. This is a bounded guest-allocation measurement, not
+  an assertion about all host allocations or universal performance.
+- Mutation of public `pcall` and `lua_compiler.load` reproduced an evaluator
+  failure before the ownership fix. The REPL now captures its own compiler and
+  protection functions at initialization; both runtime vectors verify real
+  mutation/error handling and scope expiry while the public names are changed.
+- Full Lua: 2,525 pass, one skip; rompacker: 182 pass. The CP0 resume test still
+  asserts fault cause, continued execution and user-mode restoration, with a
+  1,000-cycle completion budget rather than the former 100-cycle startup cap
+  (the current O0/O3 fixture takes 109 cycles). Product typechecks pass; tests
+  retain the same 95 baseline diagnostics after source-position normalization.
+- The ordinary physical BIOS monitor parity test passes through real HID input
+  on TS/native C++. The keyboard/pointer-driven Studio Terminal workflow passes
+  on software/WebGL2/WebGPU, including the updated protected-invocation source
+  breakpoint, pause, retained draft, save/restore and reboot. WebGPU result and
+  paused screenshots were inspected. This is automated runtime/UI evidence,
+  not a UI-only development session or personal-phone test.
+- Full assistant/browser: 45 pass through the real app-server and deterministic
+  local Responses fixtures. Each of the three Terminal workflows still makes
+  exactly 16 expected model requests with one connection; frame context remains
+  explicitly rejected. Conversation-produced Terminal results and the retained
+  paused stack were also visually inspected. BIOS/linked Nemesis, browser
+  Studio and Node tooling builds pass. Strict architecture audit: zero issues;
+  core-parity audit, indentation and `git diff --check` pass.
+
+These fixtures supply their own exact physical locations. They do **not** prove
+installed-source frame admission, native frame-name resolution, cancellation
+retirement or frame-context conversation tools. Those gates remain open; the
+public Terminal still accepts only `cart` and `session`. There is no added
+Codex button, public raw-slot command, provider poller or new machine-state
+format.

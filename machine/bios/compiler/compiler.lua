@@ -89,6 +89,11 @@ prepare_path_operands = function(state, expression, writing)
 			expression.accessor_constant_index = add_constant(
 				state, writing and vm_setglobal or vm_getglobal
 			)
+		elseif expression.external_binding ~= nil then
+			expression.constant_index = add_constant(state, expression.external_binding)
+			expression.accessor_constant_index = add_constant(
+				state, writing and state.program.external_scope.write or state.program.external_scope.read
+			)
 		end
 		return
 	end
@@ -412,9 +417,9 @@ emit_path = function(
 			)
 			return target
 		end
-		if expression.global_key ~= nil then
+		if expression.accessor_constant_index ~= nil then
 			-- RAM chunks inherit the caller's execution image, so image-local
-			-- GETGL ordinals cannot represent their named global bindings.
+			-- GETGL ordinals cannot represent named globals or external locations.
 			local temporary_base<const> = state.free_register
 			local use_target<const> = target_is_temporary
 				and target >= state.temporary_register_base
@@ -908,7 +913,7 @@ end
 
 emit_value_register = function(state, instruction_words, expression)
 	if expression.kind == syntax.identifier_expression
-		and expression.environment_key == nil and expression.global_key == nil then
+		and expression.environment_key == nil and expression.accessor_constant_index == nil then
 		local upvalue<const> = expression.upvalue
 		if upvalue == nil then
 			return identifier_register(state, expression)
@@ -938,7 +943,7 @@ local emit_assignment<const> = function(
 )
 	local target<const> = statement.target
 	if target.kind == syntax.identifier_expression then
-		if target.global_key ~= nil then
+		if target.accessor_constant_index ~= nil then
 			local call_base<const> = reserve_register(state)
 			local name_register<const> = reserve_register(state)
 			local value_target<const> = reserve_register(state)
@@ -1852,11 +1857,12 @@ local build_upvalue_records<const> = function(state)
 	state.upvalue_records = records
 end
 
-function compiler.compile(chunk, chunk_name, root_const_pool_register, environment)
+function compiler.compile(chunk, chunk_name, root_const_pool_register, environment, external_scope)
 	local root_function<const> = semantic.bind(
 		chunk,
 		chunk_name,
-		environment ~= nil
+		environment ~= nil,
+		external_scope and external_scope.names
 	)
 	local function_expressions<const> = {}
 	collect_functions(root_function, function_expressions)
@@ -1864,6 +1870,7 @@ function compiler.compile(chunk, chunk_name, root_const_pool_register, environme
 		const_pool = {},
 		constant_index_by_value = {},
 		environment = environment,
+		external_scope = external_scope,
 	}
 	local states<const> = {}
 	local state_by_semantic<const> = {}
