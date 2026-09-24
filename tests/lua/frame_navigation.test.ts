@@ -27,7 +27,7 @@ async function fixture(t: TestContext) {
 	execution.setPauseReason(HostPauseReason.Workbench, true);
 	const frame = async () => {
 		rewind.service(true);
-		if (tasks.ready && !rewind.active && !execution.executionBlocked() && !f.debuggerState.stopped) {
+		if (tasks.ready && !rewind.active && !execution.executionBlocked() && !f.debuggerState.source.stopped) {
 			executeHostUpdate(session, runtime, presenter, input, audio, presentation, 30000);
 		}
 		presentation.presentPausedFrame(presenter, runtime, 100, 20);
@@ -181,7 +181,7 @@ test('debugger stops end a batch; initialization and active guest-call authority
 	assert.equal(f.navigation.available, false, 'suspending a guest call does not release its mutation authority');
 	f.debuggerState.plans.discardAll();
 	const operation = f.navigation.step(1, 10);
-	f.debuggerState.stopped = true; f.execution.finishFrameStep(); f.navigation.afterHostFrame();
+	f.debuggerState.source.stopped = true; f.execution.finishFrameStep(); f.navigation.afterHostFrame();
 	assert.equal((await operation.completion).status, 'stopped'); assert.equal(operation.result!.reason, 'debugger');
 	assert.equal(f.execution.frameStepPending, false); assert.equal(f.navigation.canStep(1), false);
 });

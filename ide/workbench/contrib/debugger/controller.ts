@@ -47,15 +47,15 @@ export async function presentRuntimeDebuggerStop(
 	state.stopPresentationPending = false;
 	const image = blua32ToolingImageForDomain(
 		state.sources.currentBlua32Media,
-		state.stopDomain,
+		state.source.stopDomain,
 	)!;
 	const range = blua32SourceRangeAtPc(
 		image.symbols!,
 		image.layout.header.textAddress,
-		state.stopPc,
+		state.source.stopPc,
 	)!;
 	const source = resolveRuntimeLuaSource(state.sources, {
-		domain: state.stopDomain,
+		domain: state.source.stopDomain,
 		path: range.path,
 	})!;
 	const generation = await focusExecutionStop(editor, {
@@ -64,7 +64,7 @@ export async function presentRuntimeDebuggerStop(
 	}, range.start.line, range.start.column);
 	if (generation !== editor.editorPanes.openGeneration) return;
 	showEditorMessage(
-		state.stopReason === RuntimeDebuggerStopReason.Breakpoint
+		state.source.stopReason === RuntimeDebuggerStopReason.Breakpoint
 			? 'Paused on breakpoint'
 			: 'Paused after step',
 		constants.COLOR_STATUS_TEXT,

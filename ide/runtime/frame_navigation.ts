@@ -60,7 +60,7 @@ export class RuntimeFrameNavigation {
 	public canStep(direction: -1 | 1): boolean {
 		return this.available && (direction < 0
 			? this.rewind.available && this.rewind.frameStepCycles(-1) < this.rewind.positionCycles
-			: !this.debuggerState.stopped && this.fault.faultSnapshot === null);
+			: !this.debuggerState.source.stopped && this.fault.faultSnapshot === null);
 	}
 	public historyState() {
 		const history = this.runtime.history;
@@ -154,9 +154,9 @@ export class RuntimeFrameNavigation {
 			if (!this.rewind.seeking) this.finish('interrupted', 'cancelled');
 			return;
 		}
-		if (this.debuggerState.stopped || this.fault.faultSnapshot !== null || operation.replay && this.rewind.stopped) {
+		if (this.debuggerState.source.stopped || this.fault.faultSnapshot !== null || operation.replay && this.rewind.stopped) {
 			this.execution.finishFrameStep();
-			this.finish('stopped', this.fault.faultSnapshot !== null ? 'guest-fault' : this.debuggerState.stopped ? 'debugger' : 'replay-stopped'); return;
+			this.finish('stopped', this.fault.faultSnapshot !== null ? 'guest-fault' : this.debuggerState.source.stopped ? 'debugger' : 'replay-stopped'); return;
 		}
 		if (this.execution.frameStepPending || this.rewind.seeking || this.rewind.playing) return;
 		if (operation.request.kind === 'seek') { this.finish('completed'); return; }

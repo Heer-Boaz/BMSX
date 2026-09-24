@@ -26,7 +26,7 @@ export async function runAssistantStack(kind: StudioRendererKind, canvas: HTMLCa
 	ide.debugger.breakpoints.toggle(resource, line);
 	check(ide.debugger.breakpoints.bindings.pcs[1].size !== 0, 'stack tools: breakpoint bound to installed code');
 	await submitAssistantText(test, 'Call active_definition_view in the real Lua Terminal, inspect its stopped stack, locals, upvalues and self, then continue. Keep my source uninstalled.');
-	await until(() => ide.debugger.stopped && ide.terminal.active !== undefined, 'stack tools: actual cart method breakpoint');
+	await until(() => ide.debugger.source.stopped && ide.terminal.active !== undefined, 'stack tools: actual cart method breakpoint');
 	const stoppedAt = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes();
 	const inspection = ide.inspection.open();
 	const stopped = inspection.readStack(0, 100);

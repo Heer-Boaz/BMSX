@@ -42,20 +42,20 @@ export class RuntimeInspectionService {
 	public get canInspect(): boolean {
 		return this.debuggerExecution.active === undefined && this.navigation.active === undefined && this.tasks.ready && !this.execution.launchPending && !this.execution.frameStepPending
 			&& !this.rewind.seeking && !this.rewind.playing && !this.fault.hostFrameFailed
-			&& (this.rewind.active || this.debuggerState.stopped || this.debuggerState.plans.controlSuspended
+			&& (this.rewind.active || this.debuggerState.source.stopped || this.debuggerState.plans.controlSuspended
 				|| this.execution.executionBlocked(runtimeDebuggerExecutionRequested(this.debuggerState)));
 	}
 
 	public status() {
-		const stop = this.debuggerState.stopped ? {
-			reason: this.debuggerState.stopReason === RuntimeDebuggerStopReason.Breakpoint ? 'breakpoint' as const : 'step' as const,
-			domain: this.debuggerState.stopDomain, pc: this.debuggerState.stopPc, inlineDepth: this.debuggerState.stopInlineDepth,
+		const stop = this.debuggerState.source.stopped ? {
+			reason: this.debuggerState.source.stopReason === RuntimeDebuggerStopReason.Breakpoint ? 'breakpoint' as const : 'step' as const,
+			domain: this.debuggerState.source.stopDomain, pc: this.debuggerState.source.stopPc, inlineDepth: this.debuggerState.source.stopInlineDepth,
 		} : undefined;
 		const fault = this.fault.faultSnapshot;
 		return { target: this.target, role: 'authoring' as const,
 			activeCartridge: this.runtime.machine.cpu.activeCartridgeSlot(),
 			cycles: this.runtime.machine.scheduler.currentNowCycles(), videoTick: this.runtime.frameScheduler.lastTickSequence,
-			paused: this.execution.paused, userPaused: this.execution.userPaused, debuggerStopped: this.debuggerState.stopped,
+			paused: this.execution.paused, userPaused: this.execution.userPaused, debuggerStopped: this.debuggerState.source.stopped,
 			stop, fault: fault === null ? undefined : { message: fault.message, resource: fault.resource, line: fault.line, column: fault.column },
 			operationActive: this.debuggerExecution.active !== undefined || this.navigation.active !== undefined || !this.tasks.ready || this.debuggerState.plans.controlActive,
 			history: this.navigation.historyState(),

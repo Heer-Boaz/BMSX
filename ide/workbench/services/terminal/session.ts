@@ -65,7 +65,7 @@ export class LuaTerminalSession {
 			&& this.runtime.machine.cpu.activeCartridgeSlot() !== -1
 			&& (this.runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_ACTIVE) === 0;
 	}
-	public get paused(): boolean { return this.debuggerState.plans.controlSuspended || this.debuggerState.stopped; }
+	public get paused(): boolean { return this.debuggerState.plans.controlSuspended || this.debuggerState.source.stopped; }
 	public get canToggleExecution(): boolean {
 		return this.active !== undefined && this.tasks.ready && this.debuggerState.plans.workbenchControlActive
 			&& this.fault.faultSnapshot === null;
@@ -84,7 +84,7 @@ export class LuaTerminalSession {
 		if (!paused && !this.canToggleExecution) throw new Error('Terminal control is unavailable during machine recovery.');
 		operation.controlVersion++;
 		const plans = this.debuggerState.plans;
-		if (!paused && this.debuggerState.stopped) {
+		if (!paused && this.debuggerState.source.stopped) {
 			resumeRuntimeDebugger(this.debuggerState, RuntimeDebuggerResumeMode.Continue);
 			clearExecutionStopHighlights();
 		} else plans.setControlSuspended(paused);

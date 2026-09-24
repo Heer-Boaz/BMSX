@@ -58,10 +58,10 @@ export class RuntimeDebuggerExecution {
 		return !this.closing && this.active === undefined && this.tasks.ready && !this.execution.frameStepBlocked
 			&& !this.execution.frameStepPending && this.navigation.active === undefined && !this.rewind.active
 			&& !this.fault.hostFrameFailed && this.fault.faultSnapshot === null
-			&& (!plans.controlActive || plans.honorUserStops && (state.stopped || plans.controlSuspended))
-			&& (state.stopped || this.execution.paused || plans.controlSuspended)
-			&& (mode === 'continue' || state.stopped)
-			&& (mode !== 'out' || state.stopInlineDepth > 0 || this.runtime.machine.cpu.getFrameDepth() > 1);
+			&& (!plans.controlActive || plans.honorUserStops && (state.source.stopped || plans.controlSuspended))
+			&& (state.source.stopped || this.execution.paused || plans.controlSuspended)
+			&& (mode === 'continue' || state.source.stopped)
+			&& (mode !== 'out' || state.source.canStepOut);
 	}
 	public resume(mode: SourceExecutionMode, context: RuntimeDebuggerExecutionContext, signal?: AbortSignal): SourceExecutionOperation {
 		signal?.throwIfAborted();
@@ -101,8 +101,8 @@ export class RuntimeDebuggerExecution {
 		this.releaseIntent(operation);
 		const state = this.state;
 		operation.outcome = { mode: operation.mode, status, reason, before: operation.before, after: this.position(),
-			stop: state.stopped ? { reason: state.stopReason === RuntimeDebuggerStopReason.Breakpoint ? 'breakpoint' : 'step',
-				domain: state.stopDomain, pc: state.stopPc, inlineDepth: state.stopInlineDepth } : undefined };
+			stop: state.source.stopped ? { reason: state.source.stopReason === RuntimeDebuggerStopReason.Breakpoint ? 'breakpoint' : 'step',
+				domain: state.source.stopDomain, pc: state.source.stopPc, inlineDepth: state.source.stopInlineDepth } : undefined };
 	}
 	public cancel(operation: SourceExecutionOperation): void {
 		if (this.active !== operation) return;
@@ -125,6 +125,7 @@ export class RuntimeDebuggerExecution {
 	}
 	/** A receipt follows the actual stop and outstanding GPU/history work, not resume acceptance. */
 	public afterHostFrame(): void {
+		this.state.source.didExecute();
 		this.beforeHostFrame();
 		const operation = this.active;
 		if (operation === undefined) return;
@@ -134,12 +135,14 @@ export class RuntimeDebuggerExecution {
 			this.finish(operation); return;
 		}
 		if (operation.outcome === undefined) {
-			if (this.state.stopped) this.stopped(operation, 'stopped', this.state.stopReason === RuntimeDebuggerStopReason.Breakpoint ? 'breakpoint' : 'step');
+			if (this.state.source.stopped) this.stopped(operation, 'stopped', this.state.source.stopReason === RuntimeDebuggerStopReason.Breakpoint ? 'breakpoint' : 'step');
 			else if (this.fault.faultSnapshot !== null) {
 				this.suspend(operation); this.stopped(operation, 'stopped', 'guest-fault');
 			} else if (operation.plan !== this.state.plans.activeControlPlan) {
 				// The call's own owner reports its result. Do not step into the suspended caller/game.
 				this.suspend(operation); this.stopped(operation, 'stopped', 'control-boundary');
+			} else if (this.state.source.stepThreadFinished) {
+				this.suspend(operation); this.stopped(operation, 'stopped', 'thread-completed');
 			} else if (this.state.plans.controlSuspended || this.runtime.machine.cpu.getFrameDepth() === 0) {
 				this.suspend(operation); this.stopped(operation, 'stopped', 'execution-paused');
 			} else if (operation.context === 'game' && this.execution.executionBlocked(true)) {

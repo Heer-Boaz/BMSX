@@ -24,6 +24,15 @@ Tool execution retains Requested pause and can run behind the workbench, except
 blocking workbench modals. Manual source commands use the same owner with their
 game presentation policy. No source operation silently seeks/bypasses history.
 
+The shared `SourceDebugger` matcher does not install CPU hooks or drive a
+Runtime. Its composition installs the binding. Steps select an actual CPU
+thread, not a depth that could belong to another coroutine. All three step modes
+stay on that thread; breakpoints can still stop other threads. Return/failure
+ends the operation before resumer code with `thread-completed`. Resume
+suppression identifies the actual thread and frame activation. Statement
+binding is shared with the isolated test-debugger kernel, not with its mutable
+breakpoint requests or execution policy.
+
 Cancellation releases only this operation's debugger intent. It pauses its own
 still-current execution but never newer manual transport or guest-call intent.
 Source-operation ownership, host transport revision and history revision are
@@ -130,7 +139,9 @@ thread's dynamic tools.
   observations. This is ownership/hot-path inspection evidence, not a new
   general throughput benchmark.
 
-Still open: selected-frame Terminal evaluation, scenario run/wait/cancel and
-failed-target attachment, semantic builder tools, and the complete
+Scenario run/wait/cancel and read-only retained failure inspection are now
+implemented in their separate shared services/tools. Still open: selected-frame
+Terminal evaluation, live test-debugger UI/tools (the
+[execution kernel](studio_test_debugger.md) is implemented), semantic builder tools, and the complete
 reproduce/fix/save/install/rerun workflow. Live-model reasoning and personal
 phone/LAN interaction are not demonstrated by these deterministic fixtures.

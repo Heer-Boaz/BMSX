@@ -49,6 +49,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	const f = await createAssistantStudioFixture(t, `debugger-tools-${backend}`, {
 		provider: { name: 'Offline source debugger fixture', model: 'mock-model', baseUrl: `${model.url}/v1` } });
 	t.after(() => writeFile(join(f.evidence, `debugger-tools-${backend}-requests.json`), JSON.stringify(model.requests)));
+	t.after(() => writeFile(join(f.evidence, `debugger-tools-${backend}-observations.json`), JSON.stringify(f.observations)));
 	const result = await f.page.evaluate(async backend => {
 		const entry = '/test.js', module = await import(entry);
 		return module.runAssistantDebugger(backend, document.querySelector('canvas'), globalThis.capture);

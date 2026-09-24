@@ -5240,7 +5240,11 @@ returns, interrupts, and domain changes remain inside the same machine slice
 instead of round-tripping through the host once per instruction. IDE tooling
 compiles `(domain, path, line)` breakpoints from the linked functions' statement
 points and owns breakpoint matching, resume suppression and source-level
-stepping. `RuntimeBreakpoints` owns requested lines, installed bindings and
+stepping. `SourceDebugger` consumes installed tooling media and physical PC maps;
+it owns source stops and thread-scoped stepping, not CPU hook installation,
+scheduling, working copies or host pause. `RuntimeDebuggerState` composes that
+matcher with authoring control plans and owns its CPU binding.
+`RuntimeBreakpoints` owns requested lines, installed bindings and
 change notifications shared by gutters, workspace persistence and tools. An
 unbound line stays explicitly unbound; it never moves to a guessed nearby line.
 `RuntimeDebuggerExecution` owns Continue/Into/Over/Out operations for commands
@@ -5249,13 +5253,17 @@ that cannot override newer transport intent. It observes ordinary host frames,
 not a private execution loop. Step-point maps are cached per installed media.
 Installed-source tool handles are distinct from working-copy edit receipts.
 See [the source debugger contract](studio_source_debugger.md).
-Each one-shot resume suppression is bound to the exact physical frame
-depth that was stopped, and nested stopped calls retain those identities in
-LIFO order; another invocation of the same domain/PC cannot consume the wrong
-frame's suppression. Statement points retain the optimizer's complete source
-call-site chain without changing the physical CPU stack. Step-in stops at the
-next point; step-over and step-out compare the logical `(physical frame depth,
-inline call-site chain length)` position. The full chain, rather than only its
+Each one-shot resume suppression belongs to the actual CPU `Thread`,
+`CallFrame` activation and depth that was stopped. Another thread at that depth,
+or another invocation of the same domain/PC, cannot consume it. Aborted/unwound
+activations release their suppression rather than keep instrumentation enabled.
+Statement points retain the optimizer's complete source call-site chain without
+changing the physical CPU stack. Step-in stops at the next point on the selected
+thread; step-over and step-out compare `(physical frame depth, inline call-site
+chain length)` only within that thread. Other threads still honor breakpoints.
+Thread return/failure ends a step before resumer instructions, even in a domain
+without symbols; it never substitutes a same-depth frame or revives a failed
+thread. The full chain, rather than only its
 length, owns virtual inlined stack frames, local-variable context and Hot Resume
 continuation identity. Runtime stack records distinguish source frames from
 instruction-only frames. Only an exact tooling source range creates a navigable
@@ -5270,6 +5278,15 @@ raw domain/PC hook before maskable-interrupt entry only for selected domains;
 NMI delivery remains first. IDE Hot Resume uses that opt-in boundary for its
 exact user-frame fence. With no such fence the mask is zero, and the normal
 uninstrumented specialization has no observation branch.
+
+`TestExecution` composes this same source matcher with its own admission and
+publication hook, on its isolated physical CPU. Its optional `TestDebugger`
+kernel stops before phase execution, owns source requests against the immutable
+derived images, and reports real source/thread/test boundaries. The existing
+runner still owns every grant, budget, phase coroutine and cancellation/cleanup
+decision. This kernel does not yet add live-debug admission, inspection or
+controls to Scenario Lab or conversation tools; those remain a separate slice.
+See [live test-debugger ownership](studio_test_debugger.md).
 
 Instruction profiling is an opt-in Node tooling-host feature. The TypeScript
 tool loads immutable BLua32 symbol media directly from the boot ROM layers and

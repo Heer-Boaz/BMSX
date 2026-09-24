@@ -371,11 +371,11 @@ end
 function stoppedSourceLine(harness: DebuggerHarness): number {
 	const result = harness.runtime.machine.cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET);
 	assert.equal(result, RunResult.ExecutionStopped);
-	assert.equal(harness.state.stopped, true);
+	assert.equal(harness.state.source.stopped, true);
 	return blua32SourceRangeAtPc(
 		harness.image.symbols,
 		harness.image.image.header.textAddress,
-		harness.state.stopPc,
+		harness.state.source.stopPc,
 	)!.start.line;
 }
 
@@ -394,7 +394,7 @@ test(`scheduled evaluation ${honorUserStops ? 'honors' : 'suppresses'} user brea
 	const result = cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET);
 	if (honorUserStops) {
 		assert.equal(result, RunResult.ExecutionStopped);
-		assert.equal(state.stopped, true);
+		assert.equal(state.source.stopped, true);
 		assert.equal(state.plans.controlSuspended, true);
 		assert.equal(state.plans.mutationActive, true);
 		assert.equal(runtimeDebuggerExecutionRequested(state), false);
@@ -406,7 +406,7 @@ test(`scheduled evaluation ${honorUserStops ? 'honors' : 'suppresses'} user brea
 		resumeRuntimeDebugger(state, RuntimeDebuggerResumeMode.Continue);
 		assert.equal(state.plans.controlSuspended, false);
 		cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET);
-	} else assert.equal(state.stopped, false);
+	} else assert.equal(state.source.stopped, false);
 	state.plans.didExecute();
 	cpu.readCompletionValues(values);
 	assert.equal(finished, 1);
@@ -489,12 +489,12 @@ test('statement stepping follows optimized inline call frames', () => {
 	startAtBreakpoint(stepOverHarness, 8);
 
 	assert.equal(stoppedSourceLine(stepOverHarness), 8);
-	assert.equal(stepOverHarness.state.stopInlineDepth, 1);
+	assert.equal(stepOverHarness.state.source.stopInlineDepth, 1);
 	assert.equal(
 		resumeAndStop(stepOverHarness, RuntimeDebuggerResumeMode.StepOver),
 		10,
 	);
-	assert.equal(stepOverHarness.state.stopInlineDepth, 1);
+	assert.equal(stepOverHarness.state.source.stopInlineDepth, 1);
 
 	const stepIntoHarness = createDebuggerHarness(source, 3);
 	startAtBreakpoint(stepIntoHarness, 8);
@@ -503,12 +503,12 @@ test('statement stepping follows optimized inline call frames', () => {
 		resumeAndStop(stepIntoHarness, RuntimeDebuggerResumeMode.StepInto),
 		3,
 	);
-	assert.equal(stepIntoHarness.state.stopInlineDepth, 2);
+	assert.equal(stepIntoHarness.state.source.stopInlineDepth, 2);
 	assert.equal(
 		resumeAndStop(stepIntoHarness, RuntimeDebuggerResumeMode.StepOut),
 		10,
 	);
-	assert.equal(stepIntoHarness.state.stopInlineDepth, 1);
+	assert.equal(stepIntoHarness.state.source.stopInlineDepth, 1);
 });
 
 for (const optLevel of [0, 3] as const) test(`completion-root identity survives a parked caller accepting IRQ (O${optLevel})`, () => {
@@ -539,7 +539,7 @@ while true do halt_until_irq end
 	assert.equal(cpu.readFrameReturnsToCompletionLatch(depth), false);
 	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
 	state.plans.didExecute();
-	assert.equal(completed, true); assert.equal(state.stopped, false);
+	assert.equal(completed, true); assert.equal(state.source.stopped, false);
 	assert.equal(memory.readMappedU32LE(irqCount), 0, 'completion stops before an unrelated IRQ instruction');
 	const values: Value[] = []; cpu.readCompletionValues(values); assert.deepEqual(values, [42]);
 });

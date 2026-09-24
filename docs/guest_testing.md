@@ -106,6 +106,13 @@ records. The separate [execution operations](studio_test_execution.md) use the
 shared run service to discover/start/wait/cancel, without installing authoring
 media or attaching a debugger.
 
+An optional live source-debugger **kernel** now belongs to `TestExecution` and
+composes with its admission/publication hook on the same isolated target. It
+does not yet expose live-debug admission, stack inspection or controls through
+Scenario Lab/conversation tools. The
+[test-debugger contract](studio_test_debugger.md) distinguishes this foundation
+from the already available retained post-mortem inspection.
+
 Machine construction is supplied by Studio/CLI composition through
 `TestTargetFactory`. The run owns test input and case/result policy; the concrete
 `OffscreenMachine` owns physical boot, lazy rendering and disposal. The host

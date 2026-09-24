@@ -189,7 +189,7 @@ export class IdeCommandController {
 				if (this.execution.userPaused) {
 					if (this.rewind.active) this.rewind.resumeHere();
 					this.execution.requestExecution(true);
-					if (!this.debuggerState.stopped) {
+					if (!this.debuggerState.source.stopped) {
 						deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
 					}
 				} else {
@@ -377,14 +377,14 @@ export class IdeCommandController {
 			case 'gameView.playback':
 				return this.runtimeTasks.ready && !this.execution.frameStepPending
 					&& !this.fault.hostFrameFailed && this.fault.faultSnapshot === null
-					&& !this.debuggerState.stopped && !this.debuggerState.plans.controlActive
+					&& !this.debuggerState.source.stopped && !this.debuggerState.plans.controlActive
 					&& !this.scenarioRuns.active && !this.rewind.seeking;
 			case 'scenarioLab.run':
 			case 'scenarioLab.rerun':
 			case 'scenarioLab.cancel':
 				return this.editor.scenarioLab.isCommandEnabled(command);
 			case 'debugContinue':
-				return this.debuggerState.stopped && this.debuggerExecution.canResume('continue');
+				return this.debuggerState.source.stopped && this.debuggerExecution.canResume('continue');
 			case 'debugStepInto':
 			case 'debugStepOver':
 			case 'debugStepOut':

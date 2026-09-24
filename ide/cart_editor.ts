@@ -197,7 +197,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public get executionSuspended(): boolean {
 		return this.isActive && (this.quickInput.visible || this.contextMenu.visible
 			|| !this.debuggerState.plans.workbenchExecutionRequested
-			&& !(this.debuggerState.executionContext === 'workbench' && !this.debuggerState.stopped)
+			&& !(this.debuggerState.executionContext === 'workbench' && !this.debuggerState.source.stopped)
 			&& this.editorPanes.activePane?.suspendsRuntime !== false);
 	}
 	public readonly isAvailable: boolean;

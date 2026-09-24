@@ -68,13 +68,7 @@ export class TestRun {
 		try {
 			if (execution.active) execution.advance();
 		} catch (error) {
-			this.results.fail(execution.result, execution.target.runtime.frameScheduler.lastTickSequence, {
-				phase: 'runner', message: error instanceof Error ? error.message : String(error),
-				stackTrace: error instanceof Error ? error.stack : undefined,
-			}, null);
-			execution.target.input.reset();
-			execution.target.runtime.machine.cpu.setExecutionHook(null, 0, 0);
-			execution.active = false;
+			execution.failRunner(error);
 			this.failedExecution?.dispose();
 			this.failedExecution = execution;
 			this.execution = null;

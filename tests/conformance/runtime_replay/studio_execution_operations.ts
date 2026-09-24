@@ -35,7 +35,7 @@ export async function runStudioExecutionOperations(test: StudioFixture) {
 	harness.replaceActiveCodeSource(source + '\n-- first admitted init\n');
 	const first = harness.performHotResume();
 	check((await first.admission).status === 'accepted', 'operations: first init admitted');
-	await until(() => ide.debugger.stopped && first.applied && ide.editor.isActive, 'operations: actual init breakpoint');
+	await until(() => ide.debugger.source.stopped && first.applied && ide.editor.isActive, 'operations: actual init breakpoint');
 	check(first.status === 'initializing' && first.result === null && runtime.completionCallPending()
 		&& history.mode === HistoryMode.Disabled && title() === actor, 'operations: breakpoint is pending, not completion');
 	await until(() => harness.getActiveCodeContext()!.executionStopRow === initLine - 1, 'operations: breakpoint navigation finishes');
@@ -45,7 +45,7 @@ export async function runStudioExecutionOperations(test: StudioFixture) {
 	harness.replaceActiveCodeSource(source + '\n-- nested admitted init\n');
 	const nested = harness.performHotResume();
 	await nested.admission;
-	await until(() => ide.debugger.stopped && nested.applied && ide.editor.isActive, 'operations: nested init breakpoint');
+	await until(() => ide.debugger.source.stopped && nested.applied && ide.editor.isActive, 'operations: nested init breakpoint');
 	check(first.result === null && nested.result === null, 'operations: both init requests remain independently pending');
 	harness.toggleLuaBreakpoint('title_screen.lua', initLine);
 	await press('F5');

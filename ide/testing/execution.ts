@@ -15,6 +15,7 @@ import type { ScenarioResultService, ScenarioTestResult, ScenarioRunFailure } fr
 import type { TestTarget } from './target';
 import { TestFailureContext } from './failure_context';
 import { TestTargetInspection } from './inspection';
+import { TestDebugger, type TestPhase } from './debugger';
 
 export type TestBudgets = {
 	readonly quantumCycles: number;
@@ -24,6 +25,7 @@ export type TestBudgets = {
 	readonly caseTicks: number;
 	readonly caseCycles: number;
 };
+export type TestExecutionMode = 'run' | 'debug';
 export const DEFAULT_TEST_BUDGETS: TestBudgets = {
 	quantumCycles: 65536,
 	bootCycles: 67_737_600,
@@ -33,7 +35,7 @@ export const DEFAULT_TEST_BUDGETS: TestBudgets = {
 	caseCycles: 3_386_880_000,
 };
 
-type Phase = 'bind' | 'setup' | 'body' | 'teardown' | 'cancel';
+type Phase = Exclude<TestPhase, 'initialize'>;
 type Wait =
 	| { kind: 'ticks'; target: number }
 	| { kind: 'input'; target: number }
@@ -43,6 +45,7 @@ type Wait =
 /** Policy over ordinary compiled phase coroutines; never interprets a test's return value. */
 export class TestExecution {
 	public active = true;
+	public readonly debugger: TestDebugger | undefined;
 	public bootCycles = 0;
 	public phaseCycles = 0;
 	private readonly failures: TestFailureContext[] = [];
@@ -64,14 +67,15 @@ export class TestExecution {
 	private readonly callArgs: Value[] = [];
 	private startTick = 0;
 	private readonly reachedKey;
-	private readonly admission: ExecutionHook = (_domain, pc): boolean => {
+	private readonly executionHook: ExecutionHook = (domain, pc): boolean => {
 		const cpu = this.target.runtime.machine.cpu;
 		if (this.booting) {
 			this.entered = cpu.activeThread === cpu.rootThread
 				&& pc === this.program.entryCodeAddress;
 			return this.entered;
 		}
-		return this.wait?.kind === 'boundary' && this.wait.receipt.getStringKey(this.reachedKey) === true;
+		if (this.wait?.kind === 'boundary' && this.wait.receipt.getStringKey(this.reachedKey) === true) return true;
+		return !this.cancelling && this.debugger !== undefined && this.debugger.shouldStop(domain, pc);
 	};
 
 	public constructor(
@@ -81,17 +85,34 @@ export class TestExecution {
 		public readonly result: ScenarioTestResult,
 		private readonly budgets: TestBudgets = DEFAULT_TEST_BUDGETS,
 		private readonly captured?: (target: TestTarget, label: string) => void,
+		mode: TestExecutionMode = 'run',
 	) {
 		const cpu = target.runtime.machine.cpu;
 		this.reachedKey = cpu.stringPool.intern('reached');
-		cpu.setExecutionHook(this.admission, executionDomainBit(0), executionDomainBit(0));
+		if (mode === 'debug') this.debugger = new TestDebugger(target.runtime, program, result.test.resource.domain, () => this.bindExecutionHook());
+		this.bindExecutionHook();
+	}
+
+	/** The runner owns the instrumentation port; source matching cannot replace admission/publication. */
+	private bindExecutionHook(): void {
+		const runner = !this.active ? 0 : this.booting ? executionDomainBit(0)
+			: this.wait?.kind === 'boundary' ? ALL_EXECUTION_DOMAINS_MASK : 0;
+		const source = this.active && !this.booting && !this.cancelling ? this.debugger?.domainMask ?? 0 : 0;
+		const mask = runner | source;
+		this.target.runtime.machine.cpu.setExecutionHook(mask === 0 ? null : this.executionHook, mask, runner);
 	}
 
 	/** One bounded CPU grant or game grant. The host gets control between grants. */
 	public advance(): void {
+		this.target.serviceBackend();
+		if (this.debugger?.stopped) return;
+		const boundary = this.advanceExecution();
+		this.debugger?.didExecute(this.booting ? 'initialize' : this.phase, boundary);
+	}
+
+	private advanceExecution(): boolean {
 		const runtime = this.target.runtime;
 		const cpu = runtime.machine.cpu;
-		this.target.serviceBackend();
 		this.fsm?.drain(runtime.frameScheduler.lastTickSequence);
 		this.actioneffects?.drain(runtime.frameScheduler.lastTickSequence);
 		if (runtime.machine.memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) !== 0) {
@@ -100,7 +121,7 @@ export class TestExecution {
 				+ `cause ${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_CAUSE), 8)}, `
 				+ `PC ${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_EPC), 8)}, `
 				+ `address ${formatNumberAsHex(memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS), 8)}.`);
-			return;
+			return false;
 		}
 		if (this.booting) {
 			const before = runtime.machine.scheduler.nowCycles;
@@ -108,7 +129,7 @@ export class TestExecution {
 			this.bootCycles += runtime.machine.scheduler.nowCycles - before;
 			if (this.entered) {
 				this.booting = false;
-				cpu.setExecutionHook(null, 0, 0);
+				this.bindExecutionHook();
 				this.startTick = runtime.frameScheduler.lastTickSequence;
 				const pool = cpu.stringPool;
 				const suite = cpu.getGlobalByKey(pool.intern(buildModuleExportSlotName(this.program.suite.modulePath, []))) as Table;
@@ -116,31 +137,31 @@ export class TestExecution {
 				this.resume = execution.getStringKey(pool.intern('resume')) as Closure;
 				this.closePhase = execution.getStringKey(pool.intern('cancel')) as Closure;
 				this.beginCall(execution.getStringKey(pool.intern('bind')) as Closure, [suite, valueString(pool.intern(this.result.test.caseName))]);
+				this.debugger?.admit();
 			} else if (this.bootCycles >= this.budgets.bootCycles) this.stop('Module initialization exceeded its cycle budget');
-			return;
+			return false;
 		}
 		if (this.cleanupStartCycles !== 0 && runtime.machine.scheduler.nowCycles - this.cleanupStartCycles >= this.budgets.cleanupCycles) {
 			this.stop('Cleanup exceeded its cycle budget');
-			return;
+			return false;
 		}
 		if (!this.cancelling && runtime.machine.scheduler.nowCycles >= this.budgets.caseCycles) {
 			this.stop('Case exceeded its machine-cycle budget');
-			return;
+			return false;
 		}
 		if (!this.cancelling && runtime.frameScheduler.lastTickSequence - this.startTick >= this.budgets.caseTicks) {
 			this.stop('Case exceeded its logical-tick budget');
-			return;
+			return false;
 		}
 		if (this.wait !== null) {
-			this.advanceWait();
-			return;
+			return this.advanceWait();
 		}
 		if (!this.callPending) {
 			// A physical exception must return before a new external phase call.
 			const exceptionDepth = cpu.readExceptionReturnFrameDepth();
 			if (exceptionDepth !== -1) {
 				runtime.cpuExecution.runSuspendedUntilDepth(exceptionDepth, this.budgets.quantumCycles, cpu.activeThread);
-				return;
+				return false;
 			}
 			this.beginCall(this.resume, this.callArgs);
 		}
@@ -152,7 +173,7 @@ export class TestExecution {
 			if (this.phase === 'bind') {
 				this.results.markRunning(this.result);
 				this.nextPhase(this.program.suite.setup ? 'setup' : 'body');
-				return;
+				return true;
 			}
 			const values = runtime.readCompletionValues();
 			const outcome = cpu.stringPool.toString(asStringId(values[0] as StringValue));
@@ -165,7 +186,9 @@ export class TestExecution {
 				else if (this.phase !== 'teardown' && this.program.suite.teardown) this.nextPhase('teardown');
 				else this.complete();
 			}
+			return true;
 		} else if (this.phaseCycles >= this.budgets.phaseCycles) this.stop('Phase exceeded its cycle budget');
+		return false;
 	}
 
 	private beginCall(closure: Closure, args: readonly Value[]): void {
@@ -199,7 +222,7 @@ export class TestExecution {
 			case 'press': this.wait = { kind: 'input', target: this.target.input.press(pool.toString(asStringId(values[2] as StringValue)), values[3] as number, values[4] as number | null) }; break;
 			case 'boundary':
 				this.wait = { kind: 'boundary', receipt: values[2] as Table, deadline: tick + (values[3] as number) };
-				runtime.machine.cpu.setExecutionHook(this.admission, ALL_EXECUTION_DOMAINS_MASK, ALL_EXECUTION_DOMAINS_MASK);
+				this.bindExecutionHook();
 				break;
 			case 'capture':
 				this.results.requestCapture(this.result, tick, pool.toString(asStringId(values[2] as StringValue)));
@@ -209,7 +232,7 @@ export class TestExecution {
 		}
 	}
 
-	private advanceWait(): void {
+	private advanceWait(): boolean {
 		const runtime = this.target.runtime;
 		const wait = this.wait!;
 		let ready: boolean;
@@ -219,7 +242,6 @@ export class TestExecution {
 			case 'boundary':
 				ready = wait.receipt.getStringKey(this.reachedKey) === true || runtime.frameScheduler.lastTickSequence >= wait.deadline;
 				if (ready) {
-					runtime.machine.cpu.setExecutionHook(null, 0, 0);
 					this.callArgs[1] = wait.receipt.getStringKey(this.reachedKey);
 				}
 				break;
@@ -233,8 +255,12 @@ export class TestExecution {
 				}
 				break;
 		}
-		if (ready) this.wait = null;
+		if (ready) {
+			this.wait = null;
+			if (wait.kind === 'boundary') this.bindExecutionHook();
+		}
 		else this.target.advanceGame(this.budgets.quantumCycles);
+		return ready;
 	}
 
 	private failure(thread: Thread, message: string, origin: TestFailureContext['origin'] = 'failed-thread'): ScenarioRunFailure {
@@ -257,6 +283,7 @@ export class TestExecution {
 	}
 
 	public dispose(): void {
+		this.debugger?.dispose();
 		if (this.inspections !== undefined) for (const inspection of this.inspections) inspection.dispose();
 		this.failures.length = 0;
 		this.target.dispose();
@@ -267,26 +294,35 @@ export class TestExecution {
 		this.actioneffects?.drain(this.target.runtime.frameScheduler.lastTickSequence);
 		this.active = false;
 		this.target.input.reset();
-		this.target.runtime.machine.cpu.setExecutionHook(null, 0, 0);
 		if (this.cancelling) this.results.cancel(this.result, this.target.runtime.frameScheduler.lastTickSequence);
 		else this.results.complete(this.result, this.target.runtime.frameScheduler.lastTickSequence);
+		this.debugger?.finish(this.booting ? 'initialize' : this.phase);
+		this.bindExecutionHook();
 	}
 
 	private stop(message: string): void {
 		// An uncooperative continuation is quarantined, not unwound to fake cleanup.
 		this.results.recordFailure(this.result, this.failure(this.target.runtime.machine.cpu.activeThread, message, 'quarantined-cpu'));
-		this.target.runtime.machine.cpu.setExecutionHook(null, 0, 0);
 		this.complete();
+	}
+
+	public failRunner(error: unknown): void {
+		this.results.fail(this.result, this.target.runtime.frameScheduler.lastTickSequence, {
+			phase: 'runner', message: error instanceof Error ? error.message : String(error),
+			stackTrace: error instanceof Error ? error.stack : undefined,
+		}, null);
+		this.active = false;
+		this.target.input.reset(); this.debugger?.finish(this.booting ? 'initialize' : this.phase); this.bindExecutionHook();
 	}
 
 	public cancel(cooperative = true): void {
 		if (cooperative && this.cancelling) return;
 		this.cancelling = true;
+		this.debugger?.releaseForCleanup();
 		const runtime = this.target.runtime;
 		const cpu = runtime.machine.cpu;
 		if (cooperative && this.phase === 'teardown') return;
 		this.target.input.reset();
-		cpu.setExecutionHook(null, 0, 0);
 		if (!cooperative || this.booting || this.callPending || cpu.readExceptionReturnFrameDepth() !== -1) {
 			// There is no safe external call boundary: retain the continuation, never truncate it.
 			this.results.recordFailure(this.result, { phase: 'cancel', message: 'Cleanup incomplete: cancelled outside a cooperative phase boundary.' });
@@ -294,6 +330,7 @@ export class TestExecution {
 			return;
 		}
 		this.wait = null;
+		this.bindExecutionHook();
 		const phase = this.phase;
 		this.nextPhase('cancel');
 		this.cleanupStartCycles = runtime.machine.scheduler.nowCycles;

@@ -1,263 +1,76 @@
 import type { ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import {
-	ALL_EXECUTION_DOMAINS_MASK,
-	executionDomainBit,
-	type ExecutionDomainId,
-	type ExecutionDomainMask,
-} from '../../machine/ts/spec/blua32/execution_domain';
-import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
-import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { RuntimeSourceState } from './sources';
 import { RuntimeBreakpoints, type RuntimeBreakpointBindings } from './breakpoints';
-import type { Blua32SourceMedia } from './sources';
-import {
-	RuntimeDebuggerPlanManager,
-	type RuntimeDebuggerControlPlan,
-	type RuntimeDebuggerExecutionContext,
-} from './debugger_plans';
+import { SourceDebugger, RuntimeDebuggerResumeMode } from './source_debugger';
+import { RuntimeDebuggerPlanManager, type RuntimeDebuggerControlPlan, type RuntimeDebuggerExecutionContext } from './debugger_plans';
+export { RuntimeDebuggerResumeMode, RuntimeDebuggerStopReason } from './source_debugger';
 
-type RuntimeStepPcs = [Map<number, number>, Map<number, number>, Map<number, number>];
+export type RuntimeBreakpointState = { readonly breakpoints: RuntimeBreakpoints };
 
-const enum RuntimeDebuggerStepMode {
-	None,
-	Into,
-	Over,
-	Out,
-}
-
-export const enum RuntimeDebuggerResumeMode {
-	Continue,
-	StepInto,
-	StepOver,
-	StepOut,
-}
-
-export const enum RuntimeDebuggerStopReason {
-	Breakpoint,
-	Step,
-}
-
-export type RuntimeBreakpointState = {
-	readonly breakpoints: RuntimeBreakpoints;
-};
-
+/** Authoring execution policy composes source stops with its own control plans. */
 export type RuntimeDebuggerState = RuntimeBreakpointState & {
-	readonly stepPcs: RuntimeStepPcs;
-	stepMedia: Blua32SourceMedia | undefined;
+	readonly source: SourceDebugger;
 	executionRevision: number;
 	executionContext: RuntimeDebuggerExecutionContext | undefined;
 	readonly executionHook: ExecutionHook;
 	readonly plans: RuntimeDebuggerPlanManager;
 	readonly runtime: Runtime;
 	readonly sources: RuntimeSourceState;
-	stopped: boolean;
-	stopDomain: ExecutionDomainId;
-	stopPc: number;
-	stopInlineDepth: number;
-	stopReason: RuntimeDebuggerStopReason;
 	stopPresentationPending: boolean;
-	stepMode: RuntimeDebuggerStepMode;
-	stepDepth: number;
-	stepInlineDepth: number;
-	readonly resumeSuppressionFrameDepths: number[];
 };
 
-export function createRuntimeDebuggerState(
-	runtime: Runtime,
-	sources: RuntimeSourceState,
-): RuntimeDebuggerState {
+export function createRuntimeDebuggerState(runtime: Runtime, sources: RuntimeSourceState): RuntimeDebuggerState {
 	let state: RuntimeDebuggerState;
-	const executionHook: ExecutionHook = (executionDomainId, pc) => {
+	const executionHook: ExecutionHook = (domain, pc) => {
 		const controlActive = state.plans.controlActive;
-		if (state.stopped || controlActive && state.plans.shouldStop(executionDomainId, pc)) {
-			return true;
-		}
-		// A control plan can execute (and return from) the resumed frame too.
-		// Consume suppression at its first actual instruction, not only on Continue.
-		const suppressionCount = state.resumeSuppressionFrameDepths.length;
-		if (suppressionCount !== 0
-			&& state.resumeSuppressionFrameDepths[suppressionCount - 1]
-				=== state.runtime.machine.cpu.getFrameDepth()) {
-			state.resumeSuppressionFrameDepths.length = suppressionCount - 1;
-			updateExecutionHookBinding(state);
-			return false;
-		}
-		if (controlActive && !state.plans.honorUserStops) return false;
-		const domainIndex = executionDomainId + 1;
-		let stopReason: RuntimeDebuggerStopReason;
-		let stopInlineDepth: number;
-		if (state.stepMode !== RuntimeDebuggerStepMode.None) {
-			const stepInlineDepth = state.stepPcs[domainIndex].get(pc);
-			if (stepInlineDepth === undefined) {
-				return false;
-			}
-			let stopForStep = state.stepMode === RuntimeDebuggerStepMode.Into;
-			if (!stopForStep) {
-				const depth = state.runtime.machine.cpu.getFrameDepth();
-				const shallowerFrame = depth < state.stepDepth;
-				const sameFrame = depth === state.stepDepth;
-				stopForStep = state.stepMode === RuntimeDebuggerStepMode.Over
-					? shallowerFrame || (sameFrame && stepInlineDepth <= state.stepInlineDepth)
-					: shallowerFrame || (sameFrame && stepInlineDepth < state.stepInlineDepth);
-			}
-			if (stopForStep) {
-				stopReason = RuntimeDebuggerStopReason.Step;
-				stopInlineDepth = stepInlineDepth;
-			} else {
-				const breakpointInlineDepth = state.breakpoints.bindings.pcs[domainIndex].get(pc);
-				if (breakpointInlineDepth === undefined) {
-					return false;
-				}
-				stopReason = RuntimeDebuggerStopReason.Breakpoint;
-				stopInlineDepth = breakpointInlineDepth;
-			}
-		} else {
-			const breakpointInlineDepth = state.breakpoints.bindings.pcs[domainIndex].get(pc);
-			if (breakpointInlineDepth === undefined) {
-				return false;
-			}
-			stopReason = RuntimeDebuggerStopReason.Breakpoint;
-			stopInlineDepth = breakpointInlineDepth;
-		}
-		state.stopped = true;
+		if (state.source.stopped || state.source.stepThreadFinished || controlActive && state.plans.shouldStop(domain, pc)) return true;
+		if (!state.source.shouldStop(domain, pc, !controlActive || state.plans.honorUserStops)) return false;
 		if (controlActive) state.plans.setControlSuspended(true);
-		state.stopDomain = executionDomainId;
-		state.stopPc = pc;
-		state.stopInlineDepth = stopInlineDepth;
-		state.stopReason = stopReason;
 		state.stopPresentationPending = true;
-		state.stepMode = RuntimeDebuggerStepMode.None;
 		return true;
 	};
+	const breakpoints = new RuntimeBreakpoints(sources, () => state.source.install(sources.currentBlua32Media, state.breakpoints.bindings.pcs));
 	state = {
-		breakpoints: new RuntimeBreakpoints(sources, () => updateExecutionHookBinding(state)),
-		stepMedia: undefined,
-		executionRevision: 0,
-		executionContext: undefined,
-		stepPcs: [new Map(), new Map(), new Map()],
-		executionHook,
-		plans: new RuntimeDebuggerPlanManager(),
-		runtime,
-		sources,
-		stopped: false,
-		stopDomain: -1 as ExecutionDomainId,
-		stopPc: 0,
-		stopInlineDepth: 0,
-		stopReason: RuntimeDebuggerStopReason.Breakpoint,
-		stopPresentationPending: false,
-		stepMode: RuntimeDebuggerStepMode.None,
-		stepDepth: 0,
-		stepInlineDepth: 0,
-		resumeSuppressionFrameDepths: [],
+		source: new SourceDebugger(runtime.machine.cpu, sources.currentBlua32Media, breakpoints.bindings.pcs, () => updateExecutionHookBinding(state)),
+		breakpoints,
+		executionRevision: 0, executionContext: undefined, executionHook,
+		plans: new RuntimeDebuggerPlanManager(), runtime, sources, stopPresentationPending: false,
 	};
+	updateExecutionHookBinding(state);
 	return state;
 }
 
 function updateExecutionHookBinding(state: RuntimeDebuggerState): void {
-	let domainMask: ExecutionDomainMask = state.stopped
-		? ALL_EXECUTION_DOMAINS_MASK
-		: 0;
-	for (let domainIndex = 0; domainIndex < state.breakpoints.bindings.pcs.length; domainIndex += 1) {
-		if (state.breakpoints.bindings.pcs[domainIndex].size !== 0
-			|| (state.stepMode !== RuntimeDebuggerStepMode.None
-				&& state.stepPcs[domainIndex].size !== 0)) {
-			domainMask |= executionDomainBit((domainIndex - 1) as ExecutionDomainId);
-		}
-	}
-	for (const frameDepth of state.resumeSuppressionFrameDepths) {
-		domainMask |= executionDomainBit(
-			state.runtime.machine.cpu.readFrameExecutionDomain(frameDepth - 1),
-		);
-	}
-	domainMask |= state.plans.executionDomainMask;
-	state.runtime.machine.cpu.setExecutionHook(
-		domainMask !== 0 ? state.executionHook : null,
-		domainMask,
-		state.plans.preMaskableInterruptDomainMask,
-	);
+	const domainMask = state.source.domainMask | state.plans.executionDomainMask;
+	state.runtime.machine.cpu.setExecutionHook(domainMask === 0 ? null : state.executionHook,
+		domainMask, state.plans.preMaskableInterruptDomainMask);
 }
 
-function rebuildRuntimeStepPcs(state: RuntimeDebuggerState): void {
-	if (state.stepMedia === state.sources.currentBlua32Media) return;
-	state.stepMedia = state.sources.currentBlua32Media;
-	for (let domainIndex = 0; domainIndex < state.stepPcs.length; domainIndex += 1) {
-		const target = state.stepPcs[domainIndex];
-		target.clear();
-		const domain = (domainIndex - 1) as ExecutionDomainId;
-		const image = blua32ToolingImageForDomain(state.sources.currentBlua32Media, domain);
-		if (image === null || image.symbols === null) {
-			continue;
-		}
-		for (let functionIndex = 0; functionIndex < image.layout.functions.length; functionIndex += 1) {
-			const codeAddress = image.layout.functions[functionIndex].codeAddress;
-			const points = image.symbols!.metadata.statementPointsByFunction[functionIndex];
-			for (let pointIndex = 0; pointIndex < points.length; pointIndex += 1) {
-				const point = points[pointIndex];
-				target.set(
-					codeAddress + point.wordOffset * INSTRUCTION_BYTES,
-					point.inlineCallSites.length,
-				);
-			}
-		}
-	}
-}
-
-export function resumeRuntimeDebugger(
-	state: RuntimeDebuggerState,
-	mode: RuntimeDebuggerResumeMode,
-	context?: RuntimeDebuggerExecutionContext,
-): void {
+export function resumeRuntimeDebugger(state: RuntimeDebuggerState, mode: RuntimeDebuggerResumeMode, context?: RuntimeDebuggerExecutionContext): void {
 	state.executionRevision++;
 	state.executionContext = context;
-	switch (mode) {
-		case RuntimeDebuggerResumeMode.Continue:
-			state.stepMode = RuntimeDebuggerStepMode.None;
-			break;
-		case RuntimeDebuggerResumeMode.StepInto:
-			state.stepMode = RuntimeDebuggerStepMode.Into;
-			break;
-		case RuntimeDebuggerResumeMode.StepOver:
-			state.stepMode = RuntimeDebuggerStepMode.Over;
-			break;
-		case RuntimeDebuggerResumeMode.StepOut:
-			state.stepMode = RuntimeDebuggerStepMode.Out;
-			break;
-	}
-	if (state.stepMode !== RuntimeDebuggerStepMode.None) {
-		state.stepDepth = state.runtime.machine.cpu.getFrameDepth();
-		state.stepInlineDepth = state.stopInlineDepth;
-		rebuildRuntimeStepPcs(state);
-	}
-	if (state.stopped && (state.stepMode !== RuntimeDebuggerStepMode.None
-		|| state.breakpoints.bindings.pcs[state.stopDomain + 1].has(state.stopPc))) {
-		state.resumeSuppressionFrameDepths.push(state.runtime.machine.cpu.getFrameDepth());
-	}
-	state.stopped = false;
 	state.stopPresentationPending = false;
 	state.plans.setControlSuspended(false);
-	updateExecutionHookBinding(state);
+	state.source.resume(mode);
 }
 
 export function runtimeDebuggerExecutionRequested(state: RuntimeDebuggerState): boolean {
-	return !state.stopped && (state.executionContext !== undefined || state.stepMode !== RuntimeDebuggerStepMode.None)
+	return !state.source.stopped && (state.executionContext !== undefined || state.source.stepping)
 		|| state.plans.controlExecutionRequested;
 }
 
 export function interruptRuntimeDebuggerExecution(state: RuntimeDebuggerState): void {
 	state.executionRevision++;
 	state.executionContext = undefined;
-	state.stepMode = RuntimeDebuggerStepMode.None;
-	updateExecutionHookBinding(state);
+	state.source.interrupt();
 }
 
 export function resetRuntimeDebuggerExecution(state: RuntimeDebuggerState): void {
 	state.executionRevision++;
 	state.executionContext = undefined;
-	state.stopped = false;
 	state.stopPresentationPending = false;
-	state.stepMode = RuntimeDebuggerStepMode.None;
-	state.resumeSuppressionFrameDepths.length = 0;
+	state.source.reset();
 	state.plans.discardAll();
 	state.breakpoints.rebind();
 }
@@ -272,12 +85,12 @@ export function pushRuntimeDebuggerControlPlan(
 	plan: RuntimeDebuggerControlPlan,
 	context: RuntimeDebuggerExecutionContext = 'game',
 ): void {
-	if (state.stopped) {
+	if (state.source.stopped) {
 		resumeRuntimeDebugger(state, RuntimeDebuggerResumeMode.Continue);
 	} else {
 		state.executionRevision++;
 		state.executionContext = undefined;
-		state.stepMode = RuntimeDebuggerStepMode.None;
+		state.source.interrupt();
 		state.stopPresentationPending = false;
 	}
 	state.plans.pushControlPlan(plan, context);
@@ -302,37 +115,15 @@ export function didFaultRuntimeDebuggerPlan(state: RuntimeDebuggerState): void {
 	}
 }
 
-export function discardRuntimeDebuggerFramesFrom(
-	state: RuntimeDebuggerState,
-	frameIndex: number,
-): void {
-	while (state.resumeSuppressionFrameDepths.length !== 0
-		&& state.resumeSuppressionFrameDepths[state.resumeSuppressionFrameDepths.length - 1]
-			> frameIndex) {
-		state.resumeSuppressionFrameDepths.length -= 1;
-	}
+export function discardRuntimeDebuggerFramesFrom(state: RuntimeDebuggerState, frameIndex: number): void {
+	state.source.discardFrames(state.runtime.machine.cpu.activeThread, frameIndex);
 }
 
-export function applyRuntimeDebuggerHotResume(
-	state: RuntimeDebuggerState,
-	breakpoints: RuntimeBreakpointBindings,
-): void {
+export function applyRuntimeDebuggerHotResume(state: RuntimeDebuggerState, breakpoints: RuntimeBreakpointBindings): void {
 	state.executionRevision++;
 	state.executionContext = undefined;
-	const resumeStoppedExecution = state.stopped;
-	state.stopped = false;
+	const wasStopped = state.source.stopped;
 	state.stopPresentationPending = false;
-	state.stepMode = RuntimeDebuggerStepMode.None;
-	state.stepMedia = undefined;
-	if (resumeStoppedExecution) {
-		const cpu = state.runtime.machine.cpu;
-		const frameDepth = cpu.getFrameDepth();
-		const frameIndex = frameDepth - 1;
-		const resumeDomain = cpu.readFrameExecutionDomain(frameIndex);
-		const resumePc = cpu.readFramePc(frameIndex);
-		if (breakpoints.pcs[resumeDomain + 1].has(resumePc)) {
-			state.resumeSuppressionFrameDepths.push(frameDepth);
-		}
-	}
 	state.breakpoints.install(breakpoints);
+	state.source.resumeAfterRecompile(wasStopped);
 }

@@ -28,7 +28,7 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	const line = resolveRuntimeLuaSource(ide.sources, repl)!.record.src.split('\n').findIndex(text => text.includes('return pcall(chunk)')) + 1;
 	ide.debugger.breakpoints.toggle(repl, line);
 	await submitAssistantText(test, 'Execute Lua, continue after the breakpoint, inspect the result and test errors without changing cart source.');
-	await until(() => ide.debugger.stopped && terminal.active !== undefined, 'terminal tools: actual BIOS breakpoint');
+	await until(() => ide.debugger.source.stopped && terminal.active !== undefined, 'terminal tools: actual BIOS breakpoint');
 	check(terminal.active!.result === undefined, 'breakpoint retains the actual call');
 	ide.debugger.breakpoints.toggle(repl, line);
 	await until(() => conversation.state === 'ready', 'terminal tools: model receives pause, continues and finishes');
