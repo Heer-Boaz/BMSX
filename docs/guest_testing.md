@@ -85,9 +85,11 @@ not the Scenario Lab view. Clients pass a stable project/module/case identity;
 the service resolves current declarations and captures its own document models
 and source revisions before preparation yields. Later typing cannot alter an
 accepted run, and unrelated document services or dirty-record maps cannot supply
-its inputs. `start()` rejects stale/invalid selections synchronously; its promise
-settles preparation, **not** test completion. The retained result/run owner
-reports actual completion. Disposing a view leaves this workspace owner alive.
+its inputs. `start()` rejects stale/invalid selections synchronously and returns
+the accepted run identity, **not** test completion. `wait(run, signal?)` observes
+actual completion, including cancellation cleanup; aborting a wait only detaches
+that observer. `cancel(run)` targets that exact live run, never a newer one.
+Disposing a view leaves this workspace owner alive.
 Working-copy restoration retires pending execution and permits new requests;
 workbench shutdown closes admission before asynchronous source saves.
 
@@ -100,7 +102,9 @@ not have executed the captured suite at all. Revision numbers are labels within
 their source owner, not globally unique content identities.
 Details also reports retained log/capture counts and Studio-ring eviction.
 The [assistant evidence tools](studio_test_evidence.md) read these same historical
-records; they cannot run tests, install media or attach a debugger.
+records. The separate [execution operations](studio_test_execution.md) use the
+shared run service to discover/start/wait/cancel, without installing authoring
+media or attaching a debugger.
 
 Machine construction is supplied by Studio/CLI composition through
 `TestTargetFactory`. The run owns test input and case/result policy; the concrete

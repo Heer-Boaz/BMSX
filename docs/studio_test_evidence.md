@@ -18,7 +18,7 @@ the accepted suite source in ordinary result history.
   log/capture retention loss as well as the captured source. This counts only
   Studio's result-ring eviction, not gaps inside guest producer rings. Trace
   producer sequences and time words retain their original representations.
-- `WorkspaceTestTools` is a prompt-scoped read adapter over that result owner.
+- The evidence operations in `WorkspaceTestTools` read that result owner.
   It owns opaque handles and transport snapshots, not another run/history model,
   machine, source writer, debugger or polling loop.
 
@@ -33,8 +33,8 @@ persistence, source-location fallbacks or service registry.
 
 ## Capabilities
 
-1. `studio_list_test_runs` lists retained runs known when the explicit prompt
-   was admitted, newest first. It returns historical coverage and counts, not
+1. `studio_list_test_runs` lists currently retained runs on an explicit read,
+   newest first. It returns historical coverage and counts, not
    every source/log. An empty list does not certify a passing workspace.
 2. `studio_read_test_run` returns the selected run and its case summaries with
    prompt-local case handles. A running run may still be preparing; it is never
@@ -44,9 +44,10 @@ persistence, source-location fallbacks or service registry.
    frames, retained logs/capture metadata and FSM/ActionEffect facts. One-case
    reads avoid sending every suite and output record just to choose a failure.
 
-These are fixed read capabilities alongside the existing source tools. No
-Save, build, Run, Rerun, Cancel, shell, provider RPC or direct file-write tool has
-been added. A test handle cannot authorize an edit: proposals still require
+These remain fixed read capabilities. Separate [execution operations](studio_test_execution.md)
+now discover/start/wait/cancel through the shared run owner, not through an evidence
+read. No Save, install, shell, provider RPC or direct file-write capability is
+implied. A test handle cannot authorize an edit: proposals still require
 fresh source receipts and the ordinary explicit review/history route.
 
 `test_tool_protocol.ts` owns this external schema. The existing argument-object
@@ -55,8 +56,9 @@ consumed directly, without another runtime validation layer.
 
 ## Lifetime and correspondence
 
-Prompt admission captures bounded run membership, not copies of all evidence.
-New runs require a new explicit prompt. Each requested projection reports its
+An explicit catalog read admits currently retained run membership, not copies of
+all evidence or cancellation authority. Newly started runs are readable in the
+same prompt. Each requested projection reports its
 result-owner revision and observes the admitted run at read time. Prior returned
 snapshots stay unchanged when preparation ends, teardown adds a failure or a
 capture receives a presentation. Reads do not wait or poll for those events.
@@ -79,7 +81,7 @@ unimplemented and is not simulated by returning authoring-Runtime state.
 
 ## Work budget and validation
 
-Run admission retains at most the existing bounded history membership. No suite
+Each catalog projects the existing bounded history membership. No suite
 text, log or trace is materialized until that case is explicitly read. Unchanged
 projections reuse their cached data at the result owner's revision. Result rings
 still overwrite in place at fixed capacity, adding only an eviction counter at

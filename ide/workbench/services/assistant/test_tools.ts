@@ -1,11 +1,13 @@
-import type { ScenarioResultService, ScenarioRun, ScenarioTestResult, ScenarioRetainedSequence,
+import type { ScenarioRun, ScenarioTestResult, ScenarioRetainedSequence,
 	ScenarioResultLog, ScenarioResultCapture, ScenarioFsmTransitionTrace, ScenarioActionEffectTrace,
 	ScenarioFsmTransitionRecord, ScenarioActionEffectFact } from '../../../testing/scenario/result_service';
 import { decodeTestToolRequest } from './test_tool_protocol';
 import { StudioToolInputError } from './tool_input';
+import type { ScenarioRunService } from '../testing/scenario_runs';
+import type { ScenarioTestNodeId, ScenarioTestNode, ScenarioTestRoot, ScenarioTestModule } from '../../../testing/scenario/test_collection';
 
 type RunSummary = Readonly<Pick<ScenarioRun, 'sequence' | 'scopeId' | 'state' | 'completedCount' | 'passedCount' | 'failedCount' | 'cancelledCount' | 'skippedCount'>>
-	& { readonly run: string; readonly testCount: number };
+	& { readonly run: string; readonly testCount: number; readonly canCancel: boolean };
 type CaseSummary = Readonly<Pick<ScenarioTestResult, 'test' | 'sourceRevision' | 'state' | 'startTick' | 'endTick'>> & { readonly result: string };
 type RetainedOutput<T> = { readonly omitted: number; readonly entries: readonly T[] };
 export type ToolTestRun = RunSummary & { readonly revision: number; readonly cases: readonly CaseSummary[] };
@@ -17,63 +19,91 @@ export type ToolTestResult = CaseSummary & Pick<ScenarioTestResult, 'source' | '
 	readonly fsmTransitionTrace: (Omit<ScenarioFsmTransitionTrace, 'transitions'> & { transitions: RetainedOutput<ScenarioFsmTransitionRecord> }) | null;
 	readonly actionEffectTrace: (Omit<ScenarioActionEffectTrace, 'facts'> & { facts: RetainedOutput<ScenarioActionEffectFact> }) | null;
 };
+type TestDiscovery = {
+	readonly coverage: 'current-test-declarations';
+	readonly revision: number;
+	readonly roots: readonly (Pick<ScenarioTestRoot, 'domain' | 'label' | 'testCount'> & {
+		readonly scope: string;
+		readonly modules: readonly (Pick<ScenarioTestModule, 'label' | 'resource'> & {
+			readonly scope: string;
+			readonly sourceRevision: number;
+			readonly kind: 'unit' | 'integration' | null;
+			readonly diagnostic: { readonly message: string; readonly line: number; readonly column: number } | null;
+			readonly cases: readonly { readonly scope: string; readonly name: string; readonly range: ScenarioTestModule['children'][number]['range'] }[];
+		})[];
+	})[];
+};
 export type TestToolResult =
+	| { kind: 'tests'; data: TestDiscovery }
 	| { kind: 'test-runs'; data: { coverage: 'retained-studio-runs'; revision: number; runs: readonly RunSummary[] } }
 	| { kind: 'test-run'; data: ToolTestRun }
 	| { kind: 'test-result'; data: ToolTestResult };
-type RunEntry = { run: ScenarioRun; data?: ToolTestRun };
+type RunEntry = { run: ScenarioRun; owned: boolean; data?: ToolTestRun };
 type ResultEntry = { result: ScenarioTestResult; data?: ToolTestResult };
 
-/** Prompt-scoped, read-only access to the existing result owner; no machine or workspace writer. */
+/** Prompt-local discovery/evidence handles and cancellation authority; the workspace owns execution. */
 export class WorkspaceTestTools {
+	private readonly id = crypto.randomUUID();
 	private readonly runs = new Map<string, RunEntry>();
 	private readonly results = new Map<string, ResultEntry>();
+	private readonly scopes = new Map<string, ScenarioTestNodeId>();
+	private scopeRoot: ScenarioTestRoot | undefined;
+	private scopeGeneration = 0;
+	private discovery: TestDiscovery | undefined;
 	private catalog: Extract<TestToolResult, { kind: 'test-runs' }>['data'] | undefined;
 	private disposed = false;
+	private readonly lifetime = new AbortController();
 	private readonly onDisconnect = () => this.dispose();
 
-	public constructor(private readonly owner: ScenarioResultService, private readonly connection: AbortSignal) {
+	public constructor(private readonly owner: ScenarioRunService, private readonly connection: AbortSignal) {
 		connection.throwIfAborted();
-		const id = crypto.randomUUID();
-		for (const run of owner.runs) this.runs.set(`${id}/run/${run.sequence}`, { run });
 		connection.addEventListener('abort', this.onDisconnect, { once: true });
 	}
 
-	public execute(name: string, argumentsValue: unknown): TestToolResult {
-		if (this.disposed) throw new StudioToolInputError('Test evidence context is disposed');
+	public execute(name: string, argumentsValue: unknown, requestSignal?: AbortSignal): TestToolResult | Promise<TestToolResult> {
+		if (this.disposed) throw new StudioToolInputError('Test tool context is disposed');
+		requestSignal?.throwIfAborted();
 		const request = decodeTestToolRequest(name, argumentsValue);
 		switch (request.name) {
+			case 'studio_list_tests': return { kind: 'tests', data: this.discover() };
+			case 'studio_start_test_run': {
+				const scope = this.scopes.get(request.scope);
+				if (scope === undefined) throw new StudioToolInputError('Scope handle must be discovered in this prompt');
+				this.owner.refreshSources();
+				if (this.scopeRoot !== this.owner.collection.roots[0]) throw new StudioToolInputError('Test source owner changed; discover current scopes again');
+				const run = this.owner.start(scope);
+				this.pruneRuns();
+				return this.readRun(this.admit(run, true));
+			}
+			case 'studio_wait_test_run':
+			case 'studio_cancel_test_run': {
+				const entry = this.runEntry(request.run);
+				if (request.name === 'studio_cancel_test_run') {
+					if (!entry.owned) throw new StudioToolInputError('This prompt can cancel only runs it started');
+					this.owner.cancel(entry.run);
+				}
+				const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
+				return this.owner.wait(entry.run, signal).then(() => this.readRun(request.run));
+			}
 			case 'studio_list_test_runs': {
-				if (this.catalog?.revision !== this.owner.revision) {
-					const runs: RunSummary[] = [];
-					for (const [handle, entry] of this.runs) {
-						if (this.owner.hasRetainedResult(entry.run.id)) runs.push(runSummary(handle, entry.run));
-					}
-					this.catalog = { coverage: 'retained-studio-runs', revision: this.owner.revision, runs };
+				if (this.catalog?.revision !== this.owner.results.revision) {
+					this.pruneRuns();
+					const runs = this.owner.results.runs.map(run => {
+						const handle = this.admit(run);
+						return runSummary(handle, run, this.runs.get(handle)!.owned);
+					});
+					this.catalog = { coverage: 'retained-studio-runs', revision: this.owner.results.revision, runs };
 				}
 				return { kind: 'test-runs', data: this.catalog };
 			}
-			case 'studio_read_test_run': {
-				const entry = this.runs.get(request.run);
-				if (entry === undefined) throw new StudioToolInputError('Run handle does not belong to this prompt');
-				if (!this.owner.hasRetainedResult(entry.run.id)) throw new StudioToolInputError('Run is no longer retained');
-				if (entry.data?.revision !== this.owner.revision) {
-					const cases = entry.run.items.map((result, index) => {
-						const handle = `${request.run}/case/${index}`;
-						if (!this.results.has(handle)) this.results.set(handle, { result });
-						return caseSummary(handle, result);
-					});
-					entry.data = { ...runSummary(request.run, entry.run), revision: this.owner.revision, cases };
-				}
-				return { kind: 'test-run', data: entry.data };
-			}
+			case 'studio_read_test_run': return this.readRun(request.run);
 			case 'studio_read_test_result': {
 				const entry = this.results.get(request.result);
 				if (entry === undefined) throw new StudioToolInputError('Case handle must be read from a run in this prompt');
 				const result = entry.result;
-				if (!this.owner.hasRetainedResult(result.id)) throw new StudioToolInputError('Case result is no longer retained');
-				if (entry.data?.revision !== this.owner.revision) {
-					entry.data = { ...caseSummary(request.result, result), revision: this.owner.revision,
+				if (!this.owner.results.hasRetainedResult(result.id)) throw new StudioToolInputError('Case result is no longer retained');
+				if (entry.data?.revision !== this.owner.results.revision) {
+					entry.data = { ...caseSummary(request.result, result), revision: this.owner.results.revision,
 						sourceCoverage: 'accepted-suite-only', source: result.source, failures: result.failures.slice(), fault: result.fault,
 						logs: retainedOutput(result.logs),
 						captures: { omitted: result.captures.droppedCount, entries: Array.from({ length: result.captures.length }, (_, index) => ({ ...result.captures.at(index) })) },
@@ -86,15 +116,79 @@ export class WorkspaceTestTools {
 		}
 	}
 
+	private discover(): TestDiscovery {
+		this.owner.refreshSources();
+		const collection = this.owner.collection;
+		if (this.scopeRoot !== collection.roots[0]) {
+			this.scopeRoot = collection.roots[0];
+			this.scopeGeneration++;
+		}
+		if (this.discovery?.revision !== collection.revision) {
+			this.scopes.clear();
+			this.discovery = { coverage: 'current-test-declarations', revision: collection.revision,
+				roots: collection.roots.map(root => ({ scope: this.scope(root), domain: root.domain, label: root.label, testCount: root.testCount,
+					modules: root.children.map(module => ({ scope: this.scope(module), label: module.label, resource: module.resource,
+						sourceRevision: module.sourceTimestamp, kind: module.suite === null ? null : module.suite.kind,
+						diagnostic: module.diagnostic === null ? null : { message: module.diagnostic.message, line: module.diagnostic.line, column: module.diagnostic.column },
+						cases: module.children.map(test => ({ scope: this.scope(test), name: test.caseName, range: test.range })) })),
+				})),
+			};
+		}
+		return this.discovery;
+	}
+
+	private scope(node: ScenarioTestNode): string {
+		const handle = `${this.id}/scope/${this.scopeGeneration}/${node.id}`;
+		this.scopes.set(handle, node.id);
+		return handle;
+	}
+
+	private admit(run: ScenarioRun, owned = false): string {
+		const handle = `${this.id}/run/${run.sequence}`;
+		if (!this.runs.has(handle)) this.runs.set(handle, { run, owned });
+		return handle;
+	}
+
+	/** New admissions cannot extend result-owner retention through old cached tool snapshots. */
+	private pruneRuns(): void {
+		for (const [handle, entry] of this.runs) {
+			if (this.owner.results.hasRetainedResult(entry.run.id)) continue;
+			this.runs.delete(handle);
+			if (entry.data !== undefined) for (const item of entry.data.cases) this.results.delete(item.result);
+		}
+	}
+
+	private runEntry(handle: string): RunEntry {
+		const entry = this.runs.get(handle);
+		if (entry === undefined) throw new StudioToolInputError('Run handle does not belong to this prompt');
+		if (!this.owner.results.hasRetainedResult(entry.run.id)) throw new StudioToolInputError('Run is no longer retained');
+		return entry;
+	}
+
+	private readRun(handle: string): Extract<TestToolResult, { kind: 'test-run' }> {
+		const entry = this.runEntry(handle);
+		if (entry.data?.revision !== this.owner.results.revision) {
+			const cases = entry.run.items.map((result, index) => {
+				const caseHandle = `${handle}/case/${index}`;
+				if (!this.results.has(caseHandle)) this.results.set(caseHandle, { result });
+				return caseSummary(caseHandle, result);
+			});
+			entry.data = { ...runSummary(handle, entry.run, entry.owned), revision: this.owner.results.revision, cases };
+		}
+		return { kind: 'test-run', data: entry.data };
+	}
+
 	public dispose(): void {
 		this.disposed = true;
+		this.lifetime.abort();
+		for (const entry of this.runs.values()) if (entry.owned) this.owner.cancel(entry.run);
 		this.connection.removeEventListener('abort', this.onDisconnect);
-		this.runs.clear(); this.results.clear(); this.catalog = undefined;
+		this.runs.clear(); this.results.clear(); this.scopes.clear(); this.catalog = undefined; this.discovery = undefined; this.scopeRoot = undefined;
 	}
 }
 
-function runSummary(handle: string, run: ScenarioRun): RunSummary {
-	return { run: handle, sequence: run.sequence, scopeId: run.scopeId, state: run.state, testCount: run.items.length,
+function runSummary(handle: string, run: ScenarioRun, owned: boolean): RunSummary {
+	return { run: handle, sequence: run.sequence, scopeId: run.scopeId, state: run.state, testCount: run.items.length, canCancel: owned && run.state === 'running',
 		completedCount: run.completedCount, passedCount: run.passedCount, failedCount: run.failedCount,
 		cancelledCount: run.cancelledCount, skippedCount: run.skippedCount };
 }

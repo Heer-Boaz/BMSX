@@ -41,7 +41,7 @@
 		"test:codex-workbench": "node --import tsx --import ./tests/lua/test_setup.ts --test tests/platform/codex_workbench.test.ts",
 		"test:codex-account": "node --import tsx --test tests/platform/codex_account.test.ts",
 		"test:terminal-parity": "npx tsx --tsconfig tsconfig.base.json tests/conformance/terminal/run.ts",
-		"test:studio-assistant": "node --import tsx --test tests/platform/studio_assistant.test.ts tests/platform/studio_runtime_tools.test.ts tests/platform/studio_navigation_tools.test.ts tests/platform/studio_terminal_tools.test.ts tests/platform/studio_stack_tools.test.ts tests/platform/studio_debugger_tools.test.ts",
+		"test:studio-assistant": "node --import tsx --test tests/platform/studio_assistant.test.ts tests/platform/studio_runtime_tools.test.ts tests/platform/studio_navigation_tools.test.ts tests/platform/studio_terminal_tools.test.ts tests/platform/studio_stack_tools.test.ts tests/platform/studio_debugger_tools.test.ts tests/platform/studio_test_execution_tools.test.ts",
 		"test:assistant-http": "node --import tsx --test tests/platform/assistant_http.test.ts tests/platform/assistant_entry.test.mjs",
 		"test:lua": "npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts tests/lua/*.test.ts",
 		"test:rompacker": "npx tsx --test tests/rompacker/*.ts",

@@ -89,7 +89,7 @@ export class ScenarioLabController {
 				}
 				return;
 			case 'scenarioLab.cancel':
-				this.runs.cancel();
+				this.runs.cancel(this.runs.results.liveRun!);
 				return;
 		}
 	}
@@ -188,7 +188,7 @@ export class ScenarioLabController {
 	private runSelected(view: ScenarioLabViewState): void {
 		this.refreshSources();
 		const node = selectedScenarioTestNode(view)!;
-		void this.runs.start(node.id);
+		this.runs.start(node.id);
 	}
 
 	private rerunLast(view: ScenarioLabViewState): void {
@@ -200,7 +200,7 @@ export class ScenarioLabController {
 			view.status.dirty = true;
 			return;
 		}
-		void this.runs.start(scope.id);
+		this.runs.start(scope.id);
 	}
 
 	private handleRunChange(event: ScenarioRunEvent): void {

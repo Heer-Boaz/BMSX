@@ -11,7 +11,8 @@ import type { WorkspaceEditProposal } from '../working_copy/workspace_edit';
 import type { ResourceDiagnosticsService } from '../diagnostics/resource_diagnostics';
 import { WorkspaceSourceTools } from './source_tools';
 import { WorkspaceTestTools } from './test_tools';
-import type { ScenarioResultService } from '../../../testing/scenario/result_service';
+import type { ScenarioRunService } from '../testing/scenario_runs';
+import { STUDIO_TEST_TOOLS } from './test_tool_protocol';
 import type { RuntimeInspectionService } from '../../../runtime/inspection';
 import { WorkspaceRuntimeTools } from './runtime_tools';
 import { STUDIO_RUNTIME_TOOLS } from './runtime_tool_protocol';
@@ -56,7 +57,7 @@ export class AssistantConversation {
 
 	public constructor(private readonly models: EditorTextModelService, private readonly sources: RuntimeSourceState,
 		private readonly storage: KeyValueStorage, private readonly diagnostics: ResourceDiagnosticsService,
-		private readonly testResults: ScenarioResultService, private readonly runtimeInspection: RuntimeInspectionService,
+		private readonly testRuns: ScenarioRunService, private readonly runtimeInspection: RuntimeInspectionService,
 		private readonly frameNavigation: RuntimeFrameNavigation,
 		private readonly gameCapture: GameImageCapture,
 		private readonly terminal: LuaTerminalSession,
@@ -117,7 +118,7 @@ export class AssistantConversation {
 
 	private createTurn(): ActiveTurn {
 		return { tools: new WorkspaceSourceTools(this.models, this.sources, this.storage, this.diagnostics, this.sourceLifetime!.signal),
-			tests: new WorkspaceTestTools(this.testResults, this.sourceLifetime!.signal),
+			tests: new WorkspaceTestTools(this.testRuns, this.sourceLifetime!.signal),
 			runtime: new WorkspaceRuntimeTools(this.runtimeInspection, this.frameNavigation, this.gameCapture, this.terminal, this.debuggerExecution, this.sourceLifetime!.signal), requests: new Map(), messages: new Map() };
 	}
 
@@ -337,8 +338,8 @@ export class AssistantConversation {
 		let text: string, success = true, images: readonly string[] | undefined;
 		try {
 			const result = await (STUDIO_RUNTIME_TOOLS.some(tool => tool.name === event.name) ? turn.runtime.execute(event.name, event.arguments, request.signal)
-				: event.name === 'studio_list_test_runs' || event.name === 'studio_read_test_run' || event.name === 'studio_read_test_result'
-					? turn.tests.execute(event.name, event.arguments) : turn.tools.execute(event.name, event.arguments));
+				: STUDIO_TEST_TOOLS.some(tool => tool.name === event.name)
+					? turn.tests.execute(event.name, event.arguments, request.signal) : turn.tools.execute(event.name, event.arguments));
 			if (this.turn !== turn || !turn.requests.has(event.requestId)) {
 				if (result.kind === 'proposal') result.proposal.dispose();
 				return;

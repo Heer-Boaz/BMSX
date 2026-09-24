@@ -11,6 +11,7 @@ import { createStudioRenderer, type StudioRendererKind } from './studio_renderer
 export { runAssistantAccount } from './studio_assistant_account';
 export { runAssistantLogin } from './studio_assistant_login';
 export { runAssistantTestEvidence } from './studio_assistant_test_evidence';
+export { runAssistantTestExecution } from './studio_assistant_test_execution';
 export { runAssistantHistory } from './studio_assistant_history';
 export { runAssistantRuntime } from './studio_assistant_runtime';
 export { runAssistantNavigation } from './studio_assistant_frame_navigation';

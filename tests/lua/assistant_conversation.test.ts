@@ -12,7 +12,7 @@ import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { createTestRuntime } from '../helpers/runtime_sources';
-import { ScenarioResultService } from '../../ide/testing/scenario/result_service';
+import { ScenarioRunService } from '../../ide/workbench/services/testing/scenario_runs';
 import { ScenarioTestCollection } from '../../ide/testing/scenario/test_collection';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { compileLuaSource } from './cpu_test_harness';
@@ -52,14 +52,15 @@ function fixture(t: TestContext, waitForConnection?: (connection: Connection) =>
 	const tooling = new RuntimeLuaTooling(sources, guest);
 	const { debuggerExecution, terminal, inspection, frameNavigation, gameCapture, presenter, backend, tasks, presentation } = createRuntimeInspectionFixture(runtime, sources, guest);
 	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
-	const testResults = new ScenarioResultService();
-	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testResults, inspection, frameNavigation, gameCapture, terminal, debuggerExecution, async (_signal, emit) => {
+	const testRuns = new ScenarioRunService(models, sources, tooling, storage, new Map(), runtime.model, () => assert.fail('this fixture cannot create test targets'));
+	const testResults = testRuns.results;
+	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testRuns, inspection, frameNavigation, gameCapture, terminal, debuggerExecution, async (_signal, emit) => {
 		const connection = new Connection(emit); connections.push(connection);
 		await waitForConnection?.(connection);
 		return connection;
 	});
-	t.after(() => { conversation.dispose(); presenter.dispose(); diagnostics.dispose(); models.clear(); });
-	return { conversation, model, models, connections, testResults, inspection, frameNavigation, runtime, presenter, backend, tasks, presentation };
+	t.after(() => { conversation.dispose(); testRuns.dispose(); presenter.dispose(); diagnostics.dispose(); models.clear(); });
+	return { conversation, model, models, connections, testResults, testRuns, inspection, frameNavigation, runtime, presenter, backend, tasks, presentation };
 }
 
 for (const retire of ['stop', 'disconnect', 'completed', 'request-cancelled'] as const) test(`pending navigation after ${retire} retains pause and cannot answer a retired request`, async t => {

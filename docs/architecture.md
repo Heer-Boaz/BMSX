@@ -1136,7 +1136,14 @@ not establish exhaustive behavior origins or implement property authoring. See
 [Scenario result inspection](scenario_result_inspection.md).
 The weighted keybinding resolver chooses the applicable contextual command.
 Starting a test run pins source snapshots without leaving the workbench or
-resuming the authoring machine. Stop cancels the test target and queued cases,
+resuming the authoring machine. `ScenarioRunService.start` returns an admission
+identity; `wait(run, signal?)` observes terminal execution/cleanup by event.
+Aborting a wait detaches only that observer. `cancel(run)` targets the exact live
+run, so old clients cannot cancel newer work. Conversation tools share this owner
+and ordinary history without requiring a Scenario Lab pane; prompt retirement
+cancels only runs that prompt started. A history read does not grant cancellation
+authority. See [test execution tools](studio_test_execution.md).
+Scenario Lab Stop cancels the test target and queued cases,
 including while source inspection has focus. A bespoke
 Scenario stop hotkey or feature-rendered emergency button is not added. Source
 activation uses the existing navigation owner. The view renders with the current
@@ -5075,10 +5082,14 @@ dependency changes retire the source context even if the queried file is unchang
 Separate read-only test capabilities consume Scenario Lab's existing result owner.
 Prompt-local run/case handles expose historical outcomes, exact accepted suite
 text and explicitly bounded output; they authorize neither test execution nor
-edits. Prompt admission captures retained run membership, while explicit reads
+edits. An explicit catalog read admits retained run membership, while evidence reads
 observe its progress without waiting or polling. Result-source coverage is
 suite-only, not current workspace/dependency certification. See
 [test evidence](studio_test_evidence.md).
+Separate execution operations call `ScenarioRunService` to discover, admit, await
+and cancel isolated cases. Only runs started by the prompt grant it cancellation
+authority; waits are event-driven and independently abortable. Ordinary Scenario
+Lab uses the same run/result owners. See [test execution](studio_test_execution.md).
 Runtime inspection is a separate pane-independent owner. Tools identify the
 physical authoring target and can request an independent user pause, read its
 execution position, and inspect installed global bindings and stored table

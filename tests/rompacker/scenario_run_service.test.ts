@@ -75,15 +75,20 @@ return { kind = 'unit', tests = {
 		const originalState = captureRuntimeMachineState(authoring.runtime);
 		const originalMedia = sources.currentBlua32Media;
 		const originalSource = sources.cartridgeSlots[0]!.luaSources.module2lua['testlib/fixture'].src;
-		const prepared = runs.start(module.id);
+		const accepted = runs.start(module.id);
+		let completed = false;
+		const completion = runs.wait(accepted).then(run => { completed = true; return run; });
 		suite.pushEditOperations([{ offset: 0, deleteLength: suite.buffer.length, text: 'end end -- later typing' }]);
 		helperModel.pushEditOperations([{ offset: 0, deleteLength: helperModel.buffer.length, text: 'return "later helper"' }]);
-		await prepared;
+		for (let preparation = 0; runs.active && runs.session?.execution == null && preparation < 10000; preparation++) await setImmediate();
+		assert.equal(completed, false, 'preparation is not test completion');
 		for (let grants = 0; runs.active && grants < 10000; grants += 1) {
 			runs.advance();
 			await setImmediate();
 		}
 		assert.equal(runs.active, false);
+		assert.equal(await completion, accepted);
+		assert.equal(completed, true);
 		assert.deepEqual(runs.results.runs[0].items.map(item => item.state), ['passed', 'failed', 'passed']);
 		assert.equal(runs.results.runs[0].items[0].test.caseName, 'captured');
 		assert.equal(runs.results.runs[0].items[0].sourceRevision, capturedVersion);
@@ -105,7 +110,7 @@ return { kind = 'unit', tests = {
 		sources.cartridgeBlua32MediaDirty[0] = true; // The workspace admission owner marks this build input.
 		collection.refresh();
 		const addedModule = collection.findModuleBySourcePath(0, added.source_path);
-		await runs.start(addedModule.id);
+		runs.start(addedModule.id);
 		assert.equal(disposed.has(targets[1]), true, 'a new run releases the previous failed machine');
 		for (let grant = 0; runs.active && grant < 10000; grant++) { runs.advance(); await setImmediate(); }
 		assert.equal(runs.active, false);
@@ -114,7 +119,7 @@ return { kind = 'unit', tests = {
 		assert.equal(sources.currentBlua32Media, originalMedia);
 		assert.equal(added.src, addedSource);
 		constructionFailure = new Error('offscreen machine could not be constructed');
-		await runs.start(addedModule.id);
+		await runs.wait(runs.start(addedModule.id));
 		assert.equal(runs.active, false);
 		assert.equal(runs.results.runs[0].items[0].failures[0].phase, 'prepare');
 		assert.equal(runs.results.runs[0].items[0].failures[0].message, constructionFailure.message);
@@ -123,16 +128,18 @@ return { kind = 'unit', tests = {
 		const targetCount = targets.length;
 		const restoring = runs.start(addedModule.id);
 		models.clear(); // Autosave restoration replaces models without replacing the workbench.
-		await restoring;
+		await runs.wait(restoring);
+		await setImmediate();
 		assert.equal(runs.results.runs[0].state, 'cancelled');
 		assert.equal(runs.active, false); assert.equal(runs.session, null);
 		assert.equal(targets.length, targetCount, 'retired preparation cannot construct a target');
-		await runs.start(addedModule.id);
+		runs.start(addedModule.id);
 		for (let grant = 0; runs.active && grant < 10000; grant++) { runs.advance(); await setImmediate(); }
 		assert.equal(runs.results.runs[0].state, 'passed', 'rehydrated workspace can run again');
 		const shuttingDown = runs.start(addedModule.id);
 		runs.dispose();
-		await shuttingDown;
+		await runs.wait(shuttingDown);
+		await setImmediate();
 		assert.equal(runs.results.runs[0].state, 'cancelled');
 		assert.equal(targets.length, targetCount + 1, 'shutdown cannot publish a pending target');
 		assert.throws(() => runs.start(addedModule.id), /closed/);
@@ -178,13 +185,14 @@ test('both authoring domains retain companion ROM data and source identity; runn
 			assert.equal(collection.roots[0].domain, slot);
 			assert.equal(collection.refresh(), false);
 			const module = collection.findModuleBySourcePath(slot, SCENARIO_FIXTURE_TEST_SOURCE_PATH);
-			await runs.start(module.id);
+			runs.start(module.id);
 			for (let grant = 0; runs.active && grant < 10000; grant++) { runs.advance(); await setImmediate(); }
 			assert.equal(runs.active, false);
 			assert.deepEqual(runs.results.runs[0].items.map(item => item.state), ['passed', 'failed', 'passed']);
 			assert.equal(runs.results.runs[0].items[1].failures[0].location!.resource.domain, slot);
 			assert.equal(runs.results.runs[0].items[1].failures[0].location!.resource.path, SCENARIO_FIXTURE_TEST_SOURCE_PATH);
-			await runs.start(module.id);
+			runs.start(module.id);
+			for (let preparation = 0; runs.active && runs.session?.execution == null && preparation < 10000; preparation++) await setImmediate();
 			runs.session!.execution!.advance = () => { throw new Error('infrastructure failure'); };
 			runs.advance();
 			assert.equal(runs.active, false);

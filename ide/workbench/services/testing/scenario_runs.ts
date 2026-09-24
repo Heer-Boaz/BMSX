@@ -14,7 +14,8 @@ import { isScenarioTestAsset } from '../../../../toolchain/ts/rompack/scenario_t
 import { scenarioFailureFromError } from '../../../testing/scenario/failure';
 import { buildTestRunMedia } from './media_build';
 
-export type ScenarioRunEvent = { readonly type: 'started' | 'complete' } | { readonly type: 'error'; readonly error: unknown };
+export type ScenarioRunEvent = { readonly type: 'started' | 'complete'; readonly run: ScenarioRun }
+	| { readonly type: 'error'; readonly run: ScenarioRun; readonly error: unknown };
 export class ScenarioRunAdmissionError extends Error {}
 
 /** Captures workspace sources and owns an isolated run; authoring media is never installed or restored. */
@@ -43,7 +44,7 @@ export class ScenarioRunService {
 		};
 		this.sourceListeners = [models.onDidAddModel(changed), models.onDidChangeContent(changed), models.onDidRemoveModel(changed),
 			models.onWillClear(() => {
-				if (this.active) this.cancel();
+				if (this.active) this.cancel(this.results.liveRun!);
 				this.session?.dispose();
 				this.session = null;
 				this.sourcesDirty = true;
@@ -64,7 +65,7 @@ export class ScenarioRunService {
 	}
 
 	/** Resolve the selection and capture all working copies before any asynchronous build. */
-	public start(scopeId: ScenarioTestNodeId): Promise<void> {
+	public start(scopeId: ScenarioTestNodeId): ScenarioRun {
 		if (this.closed) throw new ScenarioRunAdmissionError('The workspace test service has closed.');
 		if (this.active) throw new ScenarioRunAdmissionError('A test run is already active.');
 		this.refreshSources();
@@ -81,8 +82,9 @@ export class ScenarioRunService {
 		this.session = null;
 		const run = this.results.beginRun(scopeId, tests);
 		this.preparing = run;
-		this.emit({ type: 'started' });
-		return this.prepare(run, programSources);
+		this.emit({ type: 'started', run });
+		void this.prepare(run, programSources);
+		return run;
 	}
 
 	private async prepare(run: ScenarioRun, programSources: readonly LuaTextModelSourceSnapshot[]): Promise<void> {
@@ -90,7 +92,7 @@ export class ScenarioRunService {
 			const media = await buildTestRunMedia(this.sources, this.tooling, this.storage, this.dirtyRecords, programSources,
 				run.items[0].test.resource.domain, this.model);
 			if (this.preparing !== run) return; // Cancelled while the workspace build was pending.
-			this.session = new TestRun(run, media, this.results, this.createTarget, () => this.emit({ type: 'complete' }));
+			this.session = new TestRun(run, media, this.results, this.createTarget, () => this.emit({ type: 'complete', run }));
 			this.preparing = null;
 			await this.session.prepare();
 		} catch (error) {
@@ -99,13 +101,28 @@ export class ScenarioRunService {
 			this.results.fail(result, 0, scenarioFailureFromError(this.sources, result.test.resource.domain, 'prepare', error), null);
 			this.results.failRun(run);
 			this.preparing = null;
-			this.emit({ type: 'error', error });
+			this.emit({ type: 'error', run, error });
 		}
 	}
 
 	public onDidChangeRun(listener: (event: ScenarioRunEvent) => void): () => void {
 		this.listeners.add(listener);
 		return () => this.listeners.delete(listener);
+	}
+
+	/** Observe this run's terminal outcome, including bounded cleanup. Aborting only detaches this waiter. */
+	public wait(run: ScenarioRun, signal?: AbortSignal): Promise<ScenarioRun> {
+		signal?.throwIfAborted();
+		if (run.state !== 'running') return Promise.resolve(run);
+		return new Promise((resolve, reject) => {
+			const dispose = this.onDidChangeRun(event => {
+				if (event.run !== run || event.type === 'started') return;
+				dispose(); signal?.removeEventListener('abort', abort);
+				resolve(run);
+			});
+			const abort = () => { dispose(); reject(signal!.reason); };
+			signal?.addEventListener('abort', abort, { once: true });
+		});
 	}
 
 	public advance(): void {
@@ -116,18 +133,21 @@ export class ScenarioRunService {
 		for (let grant = 0; grant < 16 && session.active && session.execution !== null; grant++) session.advance();
 	}
 
-	public cancel(): void {
+	/** A retained handle can never cancel a later run, including one started by another client. */
+	public cancel(run: ScenarioRun): boolean {
+		if (this.results.liveRun !== run) return false;
 		if (this.preparing !== null) {
-			this.results.cancelRun(this.preparing);
+			this.results.cancelRun(run);
 			this.preparing = null;
-			this.emit({ type: 'complete' });
+			this.emit({ type: 'complete', run });
 		} else this.session!.cancel();
+		return true;
 	}
 
 	public dispose(): void {
 		this.closed = true;
 		for (const dispose of this.sourceListeners) dispose();
-		if (this.active) this.cancel();
+		if (this.active) this.cancel(this.results.liveRun!);
 		this.session?.dispose();
 		this.session = null;
 		this.listeners.clear();

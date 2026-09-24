@@ -21,7 +21,7 @@ unimplemented rows below are not advertised capabilities.
 | Session-context Lua Terminal | firmware compiler/REPL, shared Terminal session and debugger plans | real conversation calls, stops and TS/C++ BIOS parity | implemented; see [Terminal contract](studio_lua_terminal.md) |
 | Explicit cart-global access from Lua Terminal | BIOS getglobal/setglobal + CPU registerfiles | real register/object writes, TS/C++ parity | implemented; see [named globals](global_register_access.md) |
 | Implicit cart bindings and frame-context Lua Terminal | compiler/debugger binding contract | actual selected binding writes, not copied scope tables | open |
-| Discover/run/wait/cancel scenarios | TestRun/ScenarioRunService | real isolated targets, cancellation and completion | open |
+| Discover/run/wait/cancel scenarios | TestRun/ScenarioRunService | real isolated targets, cancellation and completion | implemented; [test execution](studio_test_execution.md) |
 | Debug retained failed test target | target-bound debugger and composed execution hooks | no reads/writes through authoring target | open |
 | Object/FSM/BT/ActionEffect semantic inspection and editing | Actor Lab / source-backed behavior models | canonical-source edits and live-state readback | open |
 | Apply/save/build/install lifecycle | working-copy, Save, boot and Hot Resume owners | distinct receipts, rerun against installed code | open |
@@ -200,8 +200,9 @@ This proves automated pixel delivery, not a live model's visual reasoning or
 personal-account authentication. Images are requested observations, not a
 continuous video stream. At this slice boundary, execution/rewind tools were still
 open; the next section records frame navigation. Contextual Terminal invocation
-with native parity, Scenario Lab execution/debugging and semantic builder tools
-remain open acceptance work.
+with native parity and Scenario Lab execution were still open at that boundary;
+their later implementations are linked in the acceptance table. Failed-target
+debugging and semantic builder tools remain open acceptance work.
 
 ## Frame navigation: implementation gate
 
@@ -283,6 +284,7 @@ not implicit cart bindings or selected-frame locals. The subsequent
 `getglobal`/`setglobal` calls to the actual ordinary registerfile and live cart
 objects, including from a conversation.
 
-Still open: unbounded Continue and source-debugger tools, cart/frame Lua Terminal
-bindings, scenario discovery/execution/attachment, canonical
+Subsequent slices add [Continue/source-debugger operations](studio_source_debugger.md)
+and [scenario discovery/execution](studio_test_execution.md). Still open:
+cart/frame Lua Terminal bindings, failed-test target attachment, canonical
 semantic-builder operations and the complete reproduce/fix/rerun acceptance flow.

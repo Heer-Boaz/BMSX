@@ -90,11 +90,17 @@ Text-file resolution takes the actual model service explicitly, including for
 ordinary restoration. See [source tool contract](../docs/studio_source_tools.md).
 
 Its separate read-only test tools consume `ScenarioResultService`, the same
-history shown by Scenario Lab. A prompt captures retained run membership; targeted
+history shown by Scenario Lab. An explicit catalog read admits retained run handles; targeted
 reads expose recorded outcomes, accepted suite text and bounded output at the
 result-owner revision. They neither execute tests nor assert correspondence with
 current sources/dependencies. Source edits do not invalidate historical evidence
 or renew source/edit receipts. See [test evidence](../docs/studio_test_evidence.md).
+Execution tools use `ScenarioRunService` directly for current discovery, admission,
+event-driven completion waits and run-identified cancellation. A prompt may cancel
+only runs it started; observing a manual run confers no cancellation authority.
+Prompt retirement cancels its unfinished runs, not the workspace service or a newer
+manual run. Every case still uses an independent physical test target, not the
+authoring Runtime. See [test execution](../docs/studio_test_execution.md).
 
 ## HTTP workspace capability
 
