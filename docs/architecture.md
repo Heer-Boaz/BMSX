@@ -5182,6 +5182,11 @@ caller-image slot ordinals. Explicit environment tables retain table-backed
 bindings; the isolated Terminal session selects its own saved guest environment.
 Both frontends use the same firmware on TypeScript/C++. See
 [Terminal binding contexts](studio_terminal_contexts.md).
+Installed local/captured-declaration symbols carry `isConst` through inlining,
+source mapping and the TS/native symbols codec. Suspended runtime/test value
+inspection reports it independently of register liveness; it describes the
+binding, not table-member mutability. No source mutability flag enters the CPU
+or normal execution path.
 Selected-frame evaluation, live Actor mutation and complete reviewed-source
 apply/save/install/rerun receipts remain work tracked in
 [Studio runtime tools](studio_runtime_tools.md).

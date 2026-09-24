@@ -77,7 +77,7 @@ test('compiler reports mapped harness diagnostics at the authored source locatio
 
 test('captured-local provenance maps once to authored declarations and retains binding indices', () => {
 	const entrySource = `module<entry>\nrequire('${GENERATED_PATH}')`;
-	const mapped = buildMappedModule('local value = 1\nreturn function() return function() return value end end');
+	const mapped = buildMappedModule('local value<const> = {}\nreturn function() return function() return value end end');
 	const module = {
 		path: GENERATED_PATH,
 		source: mapped.source,
@@ -89,6 +89,8 @@ test('captured-local provenance maps once to authored declarations and retains b
 	assert.equal(authored.metadata.capturedLocals.length, 1);
 	const local = authored.metadata.capturedLocals[0];
 	assert.equal(local.name, 'value');
+	assert.equal(local.isConst, true);
+	assert.equal(authored.metadata.localSlotsByProto.flat().find(slot => slot.name === 'value')!.isConst, true);
 	assert.equal(local.functionId, generated.metadata.capturedLocals[0].functionId);
 	assert.deepEqual(local.definition, { path: TEST_RANGE_PATH, start: { line: 1, column: 7 }, end: { line: 1, column: 11 } });
 	assert.deepEqual(authored.metadata.upvalueBindingsByProto, generated.metadata.upvalueBindingsByProto);

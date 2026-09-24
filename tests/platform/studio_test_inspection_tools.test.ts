@@ -37,6 +37,8 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	assert.equal(value(final, 'attach').role, 'retained-test'); assert.equal(value(final, 'attach').heap, 'retained-at-case-end');
 	assert.equal(value(final, 'attach').canResume, false); assert.equal(value(final, 'stack').origin, 'failed-thread');
 	assert.equal(value(final, 'source').text, result.source);
+	assert.equal(value(final, 'locals').entries.find(entry => entry.key.display === 'probe').isConst, true);
 	assert.equal(value(final, 'probe').entries.find(entry => entry.key.display === 'answer').value.display, '99');
+	assert.ok(value(final, 'probe').entries.every(entry => !Object.hasOwn(entry, 'isConst')));
 	assert.equal(await readFile(join(f.root, result.path), 'utf8'), await readFile(result.path, 'utf8'));
 });

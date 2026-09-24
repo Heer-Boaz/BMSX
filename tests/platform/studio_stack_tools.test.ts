@@ -60,9 +60,14 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	const locals = value(final, 'locals').entries;
 	assert.equal(locals.find(entry => entry.key.display === 'definition_id').value.display, 'codex-stack-probe');
 	assert.equal(locals.find(entry => entry.key.display === 'created').value.kind, 'table');
+	assert.equal(locals.find(entry => entry.key.display === 'created').isConst, true);
+	assert.equal(locals.find(entry => entry.key.display === 'definition_id').isConst, false);
+	assert.equal(locals.find(entry => entry.key.display === 'self').isConst, false);
 	assert.ok(!locals.some(entry => entry.key.display === 'space_order'), 'uninitialized binding has no scope yet');
 	assert.equal(value(final, 'receiver').entries.find(entry => entry.key.display === 'active_space_id').value.display, 'title');
 	assert.equal(value(final, 'upvalues').entries.find(entry => entry.key.display === 'empty_object_bucket').value.kind, 'table');
+	assert.equal(value(final, 'upvalues').entries.find(entry => entry.key.display === 'empty_object_bucket').isConst, true);
+	assert.ok(value(final, 'receiver').entries.every(entry => !Object.hasOwn(entry, 'isConst')), 'table fields do not inherit binding immutability');
 	assert.deepEqual(value(final, 'ram-frame').scopes, [
 		{ kind: 'locals', status: 'function-unmapped' }, { kind: 'upvalues', status: 'function-unmapped' },
 	]);

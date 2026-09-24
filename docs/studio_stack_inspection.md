@@ -72,6 +72,12 @@ Terminal evaluation or source stepping.
    use installed module paths and one-based ranges. A local without a compiler
    location is `unavailable`, not a guest nil value. Unmapped RAM functions and
    missing symbol sets have explicit scope coverage, not guessed local names.
+   Each lexical binding also carries `isConst` from its installed declaration,
+   independently of liveness. A const table binding does not make its members
+   immutable; table/global entries do not carry this lexical flag. Scenario Lab
+   shows the same fact as `<const>`, including on retained failed-test frames.
+   See the [declaration contract](studio_terminal_contexts.md#selected-frame-declaration-contract)
+   for the compiler/native representation and frame-evaluation boundary.
 
 The existing server and conversation transport carry these tools. There is no
 new Codex control, background inspection feed, source install or hidden resume.
@@ -116,7 +122,8 @@ Studio binds this tool set at thread/start, not by rewriting stored history.
   evidence, not a new general throughput benchmark.
 
 Source-debugger control tools are now covered by [the shared source debugger](studio_source_debugger.md).
-Still open: selected-frame Terminal
-evaluation, scenario execution/attachment, semantic builder operations and the
-complete reproduce/fix/install/rerun workflow. Live-model reasoning and personal
+Scenario execution/attachments and basic source-backed builder tools are tracked
+in [the current toolset matrix](studio_runtime_tools.md). Still open:
+selected-frame Terminal evaluation and the complete reproduce/fix/install/rerun
+workflow. Live-model reasoning and personal
 account authentication are not established by deterministic provider fixtures.

@@ -51,10 +51,11 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 				{ wordOffset: 3, range: innerCallRange, op: OpCode.MOV, liveRegisters: [0, 1], uses: [0], defs: [1], inlineCallSites },
 				{ wordOffset: 4, range: innerCallRange, op: OpCode.RET, liveRegisters: [0], uses: [0], defs: [], inlineCallSites: [], resumeId: 'startup.entry.return' },
 			]],
-			localSlotsByFunction: [[{ name: 'value', registerIndex: 1, definition: innerCallRange,
+			localSlotsByFunction: [[{ name: 'value', isConst: true, registerIndex: 1, definition: innerCallRange,
 				scope: outerCallRange, inlineCallSites, liveWordRanges: [{ start: 2, end: 4 }, { start: 6, end: 8 }] }]],
 			capturedLocals: [{
 				kind: CapturedLocalKind.Local,
+				isConst: true,
 				functionId: 'module:cart/module', name: 'value',
 				definition: innerCallRange,
 			}],
@@ -71,6 +72,12 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 		assert.deepEqual(decodeBlua32SymbolsImage(encodeBlua32SymbolsImage({ ...symbols, metadata })).metadata, metadata);
 	}
 	assert.deepEqual(decoded.metadata.localSlotsByFunction, symbols.metadata.localSlotsByFunction);
+	for (const isConst of [false, true]) {
+		const metadata = { ...symbols.metadata,
+			localSlotsByFunction: [[{ ...symbols.metadata.localSlotsByFunction[0][0], isConst }]],
+			capturedLocals: [{ ...symbols.metadata.capturedLocals[0], isConst }] };
+		assert.deepEqual(decodeBlua32SymbolsImage(encodeBlua32SymbolsImage({ ...symbols, metadata })).metadata, metadata);
+	}
 	assert.deepEqual(decoded.metadata.resumePointsByFunction, symbols.metadata.resumePointsByFunction);
 	const slot = decoded.metadata.localSlotsByFunction[0][0];
 	for (let word = 0; word <= 9; word += 1) {

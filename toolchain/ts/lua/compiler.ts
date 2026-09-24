@@ -2333,6 +2333,7 @@ class FunctionBuilder {
 		const effectiveScopeRange = scopeRange ?? scope.range;
 		this.localDebugSlots.push({
 			name,
+			isConst: kind === 'const',
 			registerIndex: reg,
 			definition: definitionRange,
 			// The register can contain initializer temporaries before the binding
@@ -2415,6 +2416,7 @@ class FunctionBuilder {
 					name: local.name,
 					kind: parentLocal.kind === 'receiver' ? CapturedLocalKind.Receiver
 						: parentLocal.kind === 'parameter' ? CapturedLocalKind.Parameter : CapturedLocalKind.Local,
+					isConst: local.isConst,
 					definition: local.definition,
 				});
 			}

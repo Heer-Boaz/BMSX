@@ -19,7 +19,7 @@ export async function runAssistantTestInspection(kind: StudioRendererKind, canva
 	const source = `return { kind = 'unit',
  teardown = function() test_probe.answer = 99 end,
  tests = { codex_probe = function()
-  local probe = { answer = 41 }
+  local probe<const> = { answer = 41 }
   test_probe = probe
   error('inspect my failed thread')
   return probe
@@ -54,7 +54,7 @@ export async function runAssistantTestInspection(kind: StudioRendererKind, canva
 	check(model.tree.rows[model.tree.selectionIndex] === frameNode, 'keyboard selects failed frame');
 	await press('Enter'); await frame(); await renderer.capture!('compiled-source'); await press('Escape');
 	await press('ArrowRight'); await press('ArrowDown'); await press('ArrowRight');
-	const probe = model.tree.rows.find(node => node.element.label === 'probe [string]')!;
+	const probe = model.tree.rows.find(node => node.element.label === 'probe <const> [string]')!;
 	check(probe !== undefined && probe.expandable, 'actual failed frame local, not a historical string');
 	for (let remaining = model.tree.rows.indexOf(probe) - model.tree.selectionIndex; remaining > 0; remaining--) await press('ArrowDown');
 	check(model.tree.rows[model.tree.selectionIndex] === probe, 'keyboard selects local table');

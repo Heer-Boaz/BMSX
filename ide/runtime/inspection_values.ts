@@ -15,6 +15,8 @@ export type InspectedEntry = {
 	readonly value: InspectedValue | { readonly kind: 'unavailable'; readonly reason: 'no-live-location'; readonly display: string; readonly reference?: never };
 	readonly registerFile?: 'ordinary' | 'system';
 	readonly definition?: SourceRange | null;
+	/** Present for lexical bindings only; does not make the referenced object immutable. */
+	readonly isConst?: boolean;
 };
 type GlobalBinding = readonly [name: string, registerFile: Blua32GlobalRegisterFile];
 type Container =
@@ -86,7 +88,7 @@ export class InspectionValues {
 			total = container.bindings.length;
 			for (let index = start, end = Math.min(start + count, total); index < end; index++) {
 				const binding = container.bindings[index];
-				entries.push({ key: { kind: 'string', display: binding.name }, definition: binding.definition,
+				entries.push({ key: { kind: 'string', display: binding.name }, definition: binding.definition, isConst: binding.isConst,
 					value: binding.available
 						? this.describe(container.kind === 'locals' ? container.frame.registers.get(binding.index)
 							: guest.readClosureUpvalue(container.frame.closure, binding.index))

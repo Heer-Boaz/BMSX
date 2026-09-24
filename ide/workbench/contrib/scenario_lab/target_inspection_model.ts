@@ -53,7 +53,7 @@ export class TestTargetInspectionModel {
 			}
 			case 'values': {
 				const page = this.inspection.read(load.reference, load.start, PAGE_SIZE);
-				for (const entry of page.entries) this.append(node, `${entry.key.display} [${entry.key.kind}]`, entry.value.display,
+				for (const entry of page.entries) this.append(node, `${entry.key.display}${entry.isConst ? ' <const>' : ''} [${entry.key.kind}]`, entry.value.display,
 					`${entry.value.kind}${entry.definition === undefined || entry.definition === null ? '' : ` / ${entry.definition.path}:${entry.definition.start.line}`}. ${entry.value.display}`,
 					entry.value.reference === undefined ? undefined : { kind: 'values', reference: entry.value.reference, start: 0 });
 				this.more(node, load, page.total);

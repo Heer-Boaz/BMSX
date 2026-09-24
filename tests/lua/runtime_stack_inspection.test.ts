@@ -132,6 +132,64 @@ test('nil and false locals are real values, not missing bindings', t => {
 	assert.deepEqual(values.find(entry => entry.key.display === 'b')!.value, { kind: 'boolean', display: 'false' });
 });
 
+for (const level of [0, 3] as const) test(`O${level}: installed declarations distinguish const bindings, folded locations and mutable table fields`, t => {
+	const f = fixture(`local captured<const> = { answer = 42 }
+local function run(parameter)
+	local value<const> = { answer = 11 }
+	local folded = 17
+	do
+		local value = { answer = 22 }
+		halt_until_irq
+		result = value
+	end
+	return value, folded, captured, parameter
+end
+return run(false)`, level);
+	// Editing the declaration cannot alter the installed scope's meaning.
+	f.sources.systemLuaSources.records[0].src = f.sources.systemLuaSources.records[0].src.replaceAll('<const>', '');
+	const cpu = f.runtime.machine.cpu;
+	const before = [cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
+	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	const frame = inspection.readStack(0, 100).frames.find(frame => frame.functionName === 'run')!;
+	const scopes = inspection.frameScopes(frame.reference).scopes;
+	const reads = t.mock.method(cpu.activeThread.frames[frame.physicalFrameIndex].registers, 'get');
+	const locals = inspection.read(scopes[0].reference!, 0, 100).entries;
+	const shadowed = locals.filter(entry => entry.key.display === 'value');
+	assert.deepEqual(shadowed.map(entry => entry.isConst), [true, false]);
+	assert.deepEqual(shadowed.map(entry => entry.definition!.start.line), [3, 6]);
+	const folded = locals.find(entry => entry.key.display === 'folded')!;
+	assert.equal(folded.isConst, false, 'constant propagation is not a const declaration');
+	assert.equal(folded.value.kind, level === 0 ? 'number' : 'unavailable');
+	assert.equal(locals.find(entry => entry.key.display === 'parameter')!.isConst, false);
+	assert.equal(reads.mock.callCount(), locals.filter(entry => entry.value.kind !== 'unavailable').length);
+	const capture = inspection.read(scopes[1].reference!, 0, 100).entries.find(entry => entry.key.display === 'captured')!;
+	assert.equal(capture.isConst, true);
+	const field = inspection.read(capture.value.reference!, 0, 1).entries[0];
+	assert.equal(field.value.display, '42');
+	assert.equal(Object.hasOwn(field, 'isConst'), false, 'fields do not inherit declaration attributes');
+	assert.deepEqual([cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
+});
+
+test('inlining preserves declaration constness at the remapped local location', t => {
+	const f = fixture(`local inspect<const> = function(value)
+	local copy<const> = value + 1
+	return copy + value
+end
+local run<const> = function(seed, ...)
+	local result = inspect(seed)
+	return result + seed
+end
+return run(41)`, 3, 3);
+	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	const frame = inspection.readStack(0, 100).frames.find(frame => frame.functionName === 'inspect')!;
+	assert.equal(frame.inlineDepth, 1);
+	const scope = inspection.frameScopes(frame.reference).scopes[0];
+	const locals = inspection.read(scope.reference!, 0, 100).entries;
+	assert.equal(locals.find(entry => entry.key.display === 'value')!.isConst, false);
+	assert.equal(locals.find(entry => entry.key.display === 'copy')!.isConst, true);
+	assert.equal(locals.find(entry => entry.key.display === 'copy')!.value.display, '42');
+});
+
 for (const level of [0, 3] as const) test(`O${level}: an in-flight assignment never exposes its call target as the local value`, t => {
 	const f = fixture(`local function park()
 	halt_until_irq

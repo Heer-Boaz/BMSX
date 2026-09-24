@@ -32,6 +32,7 @@ export type Blua32InlineCallSite = {
 export type Blua32LocalSlotDebug = {
 	readonly liveWordRanges: readonly ProgramWordRange[];
 	name: string;
+	isConst: boolean;
 	registerIndex: number;
 	definition: SourceRange;
 	scope: SourceRange;
@@ -42,6 +43,7 @@ export type Blua32CapturedLocalDebug = {
 	functionId: string;
 	name: string;
 	kind: CapturedLocalKind;
+	isConst: boolean;
 	/** Current defining syntax, or null after that declaration was removed. */
 	definition: SourceRange | null;
 };

@@ -98,3 +98,31 @@ test('uncaptured locals do not allocate captured-local records', () => {
 	assert.deepEqual(compiled.metadata.capturedLocals, []);
 	assert.ok(compiled.metadata.upvalueBindingsByProto.every(bindings => bindings.length === 0));
 });
+
+for (const level of [0, 3] as const) test(`O${level}: captures retain defining constness, not the kind of the captured value`, () => {
+	const source = `local fixed<const> = { answer = 10 }
+local mutable = { answer = 20 }
+local function outer(parameter)
+	return function()
+		fixed.answer = fixed.answer + 1
+		return fixed, mutable, parameter
+	end
+end
+return outer(5)`;
+	const { metadata } = compileLuaSource(source, PATH, level);
+	for (const name of ['fixed', 'mutable', 'parameter']) {
+		const captureIndex = metadata.capturedLocals.findIndex(local => local.name === name);
+		assert.notEqual(captureIndex, -1);
+		const capture = metadata.capturedLocals[captureIndex];
+		assert.equal(capture.isConst, name === 'fixed');
+		const declaration = metadata.localSlotsByProto.flat().find(slot => slot.name === name)!;
+		assert.equal(declaration.isConst, capture.isConst);
+		assert.deepEqual(declaration.definition, capture.definition);
+		assert.equal(metadata.upvalueBindingsByProto.flat().filter(index => index === captureIndex).length,
+			name === 'parameter' ? 1 : 2, 'transitive captures share the defining record');
+	}
+	assert.deepEqual(runCompiledLua(`${source.replace('return outer(5)', 'local read = outer(5)')}
+local first, second, parameter = read()
+return first.answer, second.answer, parameter`, PATH, level), [11, 20, 5],
+		'a const binding does not freeze table members');
+});

@@ -988,13 +988,13 @@ test('BLua32 hot revision rejects captured-upvalue layout changes', () => {
 	const initial = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
 	initial.object.sections.text.protos[0].upvalueDescs = [{ inStack: true, index: 0 }];
 	const definition: SourceRange = { path: 'entry', start: { line: 1, column: 7 }, end: { line: 1, column: 11 } };
-	initial.metadata.capturedLocals = [{ kind: CapturedLocalKind.Local, functionId: 'parent', name: 'state', definition }];
+	initial.metadata.capturedLocals = [{ kind: CapturedLocalKind.Local, isConst: false, functionId: 'parent', name: 'state', definition }];
 	initial.metadata.upvalueBindingsByProto = [[0]];
 	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
 
 	const changed = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
 	changed.object.sections.text.protos[0].upvalueDescs = [{ inStack: true, index: 1 }];
-	changed.metadata.capturedLocals = [{ kind: CapturedLocalKind.Local, functionId: 'parent', name: 'replacement', definition }];
+	changed.metadata.capturedLocals = [{ kind: CapturedLocalKind.Local, isConst: false, functionId: 'parent', name: 'replacement', definition }];
 	changed.metadata.upvalueBindingsByProto = [[0]];
 	const linked = linkSystemBlua32Image(
 		changed.object,
@@ -1109,7 +1109,7 @@ test('BLua32 relinks live and tombstoned captures from their own declaration gen
 test('BLua32 capture-table reindexing is not a closure identity change', () => {
 	const range: SourceRange = { path: 'entry', start: { line: 1, column: 7 }, end: { line: 1, column: 11 } };
 	const declarationSources = new Map([['entry', 'local state = 0']]);
-	const local = { kind: CapturedLocalKind.Local, functionId: 'parent', name: 'state', definition: range };
+	const local = { kind: CapturedLocalKind.Local, isConst: false, functionId: 'parent', name: 'state', definition: range };
 	const initial = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
 	initial.object.sections.text.protos[0].upvalueDescs = [{ inStack: true, index: 0 }];
 	initial.metadata.capturedLocals = [local];
@@ -1198,7 +1198,7 @@ test('BLua32 Hot Resume rejects a static-closure identity change at a stable fun
 });
 
 test('BLua32 Hot Resume preserves function-record addresses across reorder, removal, and reinsertion', () => {
-	const declarationSources = new Map([['entry', 'local captured = 0']]);
+	const declarationSources = new Map([['entry', 'local captured<const> = 0']]);
 	const initial = makeSystemObject([
 		{ op: OpCode.WIDE, a: 0, b: 0, c: 0 },
 		{ op: OpCode.CLOSURE, a: 0, b: 0, c: 2 },
@@ -1220,7 +1220,7 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 		['entryName', 'middleName', 'tailName'],
 	);
 	const definition: SourceRange = { path: 'entry', start: { line: 1, column: 7 }, end: { line: 1, column: 14 } };
-	initial.metadata.capturedLocals = [{ kind: CapturedLocalKind.Local, functionId: 'entry', name: 'captured', definition }];
+	initial.metadata.capturedLocals = [{ kind: CapturedLocalKind.Local, isConst: true, functionId: 'entry', name: 'captured', definition }];
 	initial.metadata.upvalueBindingsByProto = [[], [0], []];
 	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
 

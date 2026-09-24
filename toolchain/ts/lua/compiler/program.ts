@@ -47,6 +47,8 @@ export type ProgramStatementPoint = {
 
 export type LocalSlotDebug = {
 	name: string;
+	/** Authored binding immutability, independent of value/location liveness. */
+	isConst: boolean;
 	registerIndex: number;
 	definition: SourceRange;
 	scope: SourceRange;
@@ -63,6 +65,7 @@ export type CapturedLocalDebug = {
 	functionId: string;
 	name: string;
 	kind: CapturedLocalKind;
+	isConst: boolean;
 	definition: SourceRange;
 };
 

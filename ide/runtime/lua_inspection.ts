@@ -17,6 +17,7 @@ import type { RuntimeStackFrame } from './stack_trace';
 
 export type RuntimeLuaFrameBinding = {
 	readonly name: string;
+	readonly isConst: boolean;
 	readonly definition: SourceRange | null;
 	readonly index: number;
 	readonly available: boolean;
@@ -46,7 +47,7 @@ export function runtimeLuaFrameScopes(frame: RuntimeStackFrame, inlineDepth: num
 			const context = resolveInlineLocalContextRange(slot, range, inlineSites);
 			if (context === null || context.path !== slot.scope.path
 				|| !sourcePositionInRange(context.start.line, context.start.column, slot.scope)) continue;
-			bindings.push({ name: slot.name, definition: slot.definition, index: slot.registerIndex,
+			bindings.push({ name: slot.name, isConst: slot.isConst, definition: slot.definition, index: slot.registerIndex,
 				available: blua32LocalSlotLiveAtPc(slot, image.layout.functions[functionIndex].codeAddress, frame.tracePc) });
 		}
 		scopes.push({ kind: 'locals', status: 'available', bindings });
@@ -55,7 +56,7 @@ export function runtimeLuaFrameScopes(frame: RuntimeStackFrame, inlineDepth: num
 	else {
 		const bindings = symbols.metadata.upvalueBindingsByFunction[functionIndex].map((capture, index): RuntimeLuaFrameBinding => {
 			const local = symbols.metadata.capturedLocals[capture];
-			return { name: local.name, definition: local.definition, index, available: true };
+			return { name: local.name, isConst: local.isConst, definition: local.definition, index, available: true };
 		});
 		scopes.push({ kind: 'upvalues', status: 'available', bindings });
 	}

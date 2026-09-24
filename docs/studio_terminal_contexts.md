@@ -64,6 +64,51 @@ compiler and REPL on TS and C++; there is no native host evaluator.
   frame declarations are a separate compiler/debugger binding contract. This is
   the reference for subsequent frame-context work, not evidence that it exists.
 
+## Selected-frame declaration contract
+
+Before adding frame evaluation, the installed compiler symbols must distinguish
+declaration mutability from physical location availability. `isConst` is a
+required declaration fact on local slots and captured-local origins. It means
+Lua `<const>` binding, not a frozen table, a constant-propagation result, or an
+assertion that an optimized register is writable. A mutable declaration may
+still have no live location. Inlining, source mapping and transitive captures
+preserve this fact from the defining declaration. Dirty editor text does not
+replace installed metadata.
+
+| Representation | TypeScript | C++ | Execution impact |
+| --- | --- | --- | --- |
+| Authored binding | `LocalBinding.kind` -> required `isConst` on `LocalSlotDebug` | Consumes the same compiled symbols; no second compiler | Emitted once during compilation |
+| Inline local | Remapped register and unchanged declaration flag | `Blua32LocalSlotDebug::isConst` | Tooling metadata only |
+| Captured binding | `CapturedLocalDebug.isConst`, shared by upvalue binding indices | `Blua32CapturedLocalDebug::isConst` | Cell representation unchanged |
+| Installed symbols | `Blua32SymbolsImage` binary serialization | Explicit symbols encoder/decoder | Read at tooling load, not by opcode dispatch |
+| Inspection entry | `RuntimeLuaFrameBinding.isConst` -> `InspectedEntry.isConst` | No native Studio inspection frontend | On-demand suspended reads only |
+
+Affected callsites: `FunctionBuilder.declareLocal` and `resolveUpvalue`, optimizer
+`buildInlineExpansion`, symbol encode/decode, `runtimeLuaFrameScopes`, and
+`InspectionValues.read`. Source-map and linker record propagation retain the
+field. There are **no affected gameplay hot-path callsites**: CPU normal/debug
+dispatch, closure allocation, upvalue closing, GC, scheduler, renderer, guest
+compiler and firmware monitor are unchanged. No per-instruction check, new
+runtime state, scope copy, or extra guest read is introduced.
+
+The ordinary Scenario Lab property tree displays `<const>` on bindings; shared
+runtime/test conversation results carry the boolean. Table children do not
+inherit it. Globals have no lexical declaration flag in this contract.
+This follows the separation in the
+[Debug Adapter Protocol variable hints](https://github.com/microsoft/debug-adapter-protocol/blob/main/specification.md#types_variablepresentationhint)
+and LLDB's declaration/location checks linked above, without adopting a second
+protocol or a host evaluator.
+
+This is a prerequisite, **not an implementation of selected-frame evaluation**.
+That evaluator must bind exact installed locations, respect shadowing and
+unavailable locals, and define escaped-closure lifetime. It must be admitted at
+the selected stop, not after silently finishing the active IRQ. Native named
+frame evaluation also needs firmware-readable binding metadata; host symbols
+alone are not native Terminal feature parity. Normal compiler named registers
+are monotonically allocated (`popScope` removes names, not slots), but repeated
+inline invocations and loop activations still make an indefinitely retained
+raw frame/register index an incorrect lexical capture model.
+
 ## Validation (2026-09-24)
 
 - The actual browser -> authorized ordinary HTTP -> native Codex app-server ->
@@ -112,3 +157,35 @@ complete apply/save/build/install/rerun acceptance remain open. Rebuild the BIOS
 and linked carts together; old BIOS firmware does not implement the new context
 argument. Existing conversations retain their original tool schemas as described
 in [conversation compatibility](studio_assistant_conversations.md).
+
+## Declaration metadata validation (2026-09-24)
+
+- The same browser -> ordinary authorized HTTP -> Codex app-server ->
+  deterministic Responses workflows now verify declaration flags on live
+  Nemesis receiver/parameter/local/upvalue entries on software, WebGL2 and
+  WebGPU. Each uses its existing 14 requests and one connection. A const local
+  can simultaneously be `unavailable`; no value is reconstructed.
+- The failed-test workflow verifies a `<const>` table binding and the actual
+  member changed by teardown, through both conversation tools and the ordinary
+  keyboard-driven Scenario Lab inspector. All three renderers pass (10 requests,
+  one connection each). The inspected WebGPU screenshot visibly shows
+  `probe <const> [string]` and mutable member `answer = 99`. This is automated
+  integration/UI evidence, not a UI-only development session or live-model test.
+- Fifty focused tests pass, including O0/O3 transitive captures, distinct
+  shadowed declarations, dirty-source independence, generated source mapping,
+  inline remapping, dead mutable locations and retained capture layouts.
+  Const table-member mutation remains ordinary Lua. Inspections leave guest
+  time/heap accounting unchanged and do not add register reads for metadata or
+  unavailable locations.
+- Full Lua: 2,513 pass, one skip. Rompacker: 182 pass. Full assistant/browser:
+  45 pass. Native C++ symbol-format tests round-trip both declaration flag
+  values. BIOS/Nemesis, browser Studio and Node tooling builds pass. Product
+  typechecks pass; the tests-project diagnostic multiset remains the same 95
+  pre-existing entries after source-position normalization. Strict architecture
+  audit: zero issues; core-parity, indentation and `git diff --check` pass.
+
+Debug ROMs must be rebuilt to carry the required symbol field; there is no
+legacy-symbol default. Neither CPU implementation, BIOS evaluator nor machine
+state format changes in this slice. Native codec coverage is not native named
+frame evaluation. Selected-frame evaluation and its firmware metadata/lifetime
+contract remain open as described above.

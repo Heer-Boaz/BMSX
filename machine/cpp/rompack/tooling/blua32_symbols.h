@@ -25,6 +25,7 @@ struct Blua32InlineCallSite {
 
 struct Blua32LocalSlotDebug {
 	std::string name;
+	bool isConst;
 	i32 registerIndex = 0;
 	SourceRange definition;
 	SourceRange scope;
@@ -36,6 +37,7 @@ struct Blua32CapturedLocalDebug {
 	std::string functionId;
 	std::string name;
 	CapturedLocalKind kind;
+	bool isConst;
 	std::optional<SourceRange> definition;
 };
 

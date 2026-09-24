@@ -124,6 +124,7 @@ auto encodeInlineCallSites(const std::vector<Blua32InlineCallSite>& callSites) -
 auto decodeLocalSlot(const BinValue& value) -> Blua32LocalSlotDebug {
 	Blua32LocalSlotDebug slot{
 		value.require("name").asString(),
+		value.require("isConst").asBool(),
 		value.require("registerIndex").toI32(),
 		decodeSourceRange(value.require("definition")),
 		decodeSourceRange(value.require("scope")),
@@ -141,6 +142,7 @@ auto decodeLocalSlot(const BinValue& value) -> Blua32LocalSlotDebug {
 auto encodeLocalSlot(const Blua32LocalSlotDebug& slot) -> BinValue {
 	BinObject value;
 	value["name"] = BinValue(slot.name);
+	value["isConst"] = BinValue(slot.isConst);
 	value["registerIndex"] = BinValue(slot.registerIndex);
 	value["definition"] = encodeSourceRange(slot.definition);
 	value["scope"] = encodeSourceRange(slot.scope);
@@ -290,6 +292,7 @@ auto decodeMetadata(const BinValue& value) -> Blua32DebugMetadata {
 			local.require("functionId").asString(),
 			local.require("name").asString(),
 			static_cast<CapturedLocalKind>(local.require("kind").toI32()),
+			local.require("isConst").asBool(),
 			definition.isNull() ? std::nullopt : std::optional<SourceRange>(decodeSourceRange(definition)),
 		});
 	}
@@ -389,6 +392,7 @@ auto encodeMetadata(const Blua32DebugMetadata& metadata) -> BinValue {
 		binding["functionId"] = BinValue(local.functionId);
 		binding["name"] = BinValue(local.name);
 		binding["kind"] = BinValue(static_cast<i32>(local.kind));
+		binding["isConst"] = BinValue(local.isConst);
 		binding["definition"] = local.definition.has_value() ? encodeSourceRange(local.definition.value()) : BinValue(nullptr);
 		capturedLocals.emplace_back(std::move(binding));
 	}

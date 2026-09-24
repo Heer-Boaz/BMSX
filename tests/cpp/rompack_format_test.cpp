@@ -50,11 +50,11 @@ int main() {
 		{4, innerCallRange, bmsx::OpCode::RET, {0}, {0}, {}, {}, "startup.entry.return"},
 	}};
 	symbols.metadata.localSlotsByFunction = {{
-		{"value", 1, innerCallRange, outerCallRange, inlineCallSites, {{2, 4}, {6, 8}}},
+		{"value", true, 1, innerCallRange, outerCallRange, inlineCallSites, {{2, 4}, {6, 8}}},
 	}};
 	symbols.metadata.functionDefinitions = {innerCallRange};
 	symbols.metadata.capturedLocals = {
-		{"module:cart/module", "value", bmsx::CapturedLocalKind::Local, innerCallRange},
+		{"module:cart/module", "value", bmsx::CapturedLocalKind::Local, true, innerCallRange},
 	};
 	symbols.metadata.upvalueBindingsByFunction = {{0u}};
 
@@ -81,6 +81,15 @@ int main() {
 		}
 	}
 	const auto& slot = decodedSymbols.metadata.localSlotsByFunction[0][0];
+	for (const bool isConst : {false, true}) {
+		symbols.metadata.localSlotsByFunction[0][0].isConst = isConst;
+		symbols.metadata.capturedLocals[0].isConst = isConst;
+		const auto decoded = bmsx::decodeBlua32SymbolsImage(bmsx::encodeBlua32SymbolsImage(symbols));
+		if (decoded.metadata.localSlotsByFunction[0][0].isConst != isConst
+			|| decoded.metadata.capturedLocals[0].isConst != isConst) {
+			throw std::runtime_error("BLua32 declaration immutability did not round-trip");
+		}
+	}
 	if (slot.liveWordRanges.size() != 2 || slot.liveWordRanges[0].start != 2 || slot.liveWordRanges[1].end != 8) {
 		throw std::runtime_error("BLua32 local word locations did not round-trip");
 	}
@@ -90,7 +99,7 @@ int main() {
 			throw std::runtime_error("BLua32 local word locations must be half-open with explicit gaps");
 		}
 	}
-	bmsx::Blua32LocalSlotDebug foldedSlot;
+	bmsx::Blua32LocalSlotDebug foldedSlot{};
 	if (bmsx::blua32LocalSlotLiveAtPc(foldedSlot, 0x2000, 0x2000)) {
 		throw std::runtime_error("BLua32 folded local must not invent a debug location");
 	}
