@@ -1,3 +1,4 @@
+import { RuntimeTaskKind } from '../../hosts/common/runtime_task_queue';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HostPauseReason } from '../../hosts/common/execution_control';
@@ -77,7 +78,7 @@ test('tool admission rejects unknown targets/fields, has prompt-local lifetimes 
 	assert.ok('scopes' in result.data);
 	const reference = result.data.scopes[0].reference!;
 	tools.execute('studio_read_runtime_values', { reference, start: 0, count: 100 });
-	tools.execute('studio_inspect_runtime', { target });
+	await tools.execute('studio_inspect_runtime', { target });
 	assert.throws(() => tools.execute('studio_read_runtime_values', { reference, start: 0, count: 1 }), /does not belong/);
 	lifetime.abort();
 	assert.throws(() => tools.execute('studio_runtime_status', {}), /disposed/);
@@ -105,4 +106,36 @@ test('inspection distinguishes running, pending step, machine mutation, independ
 	const inspection = f.inspection.open();
 	assert.deepEqual(inspection.scopes, [{ domain: -1, status: 'symbols-unavailable' }]);
 	inspection.dispose();
+});
+
+for (const cancelled of [false, true]) test(`explicit inspection awaits admitted history work without polling, cancelled=${cancelled}`, async () => {
+	const f = fixture(), pending = Promise.withResolvers<void>(), lifetime = new AbortController();
+	const task = f.tasks.schedule(() => pending.promise, assert.fail, RuntimeTaskKind.History);
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, lifetime.signal);
+	let settled = false;
+	const opened = Promise.resolve(tools.execute('studio_inspect_runtime', { target: f.inspection.target }));
+	void opened.then(() => { settled = true; }, () => { settled = true; });
+	await Promise.resolve(); await Promise.resolve();
+	assert.equal(settled, false); assert.equal(f.tasks.ready, false);
+	if (cancelled) lifetime.abort();
+	pending.resolve(); await task;
+	if (cancelled) await assert.rejects(opened, { name: 'AbortError' });
+	else { const result = await opened; assert.ok('inspection' in result.data); }
+	assert.equal(f.execution.userPaused, true);
+	tools.dispose(); f.presenter.dispose();
+});
+
+test('disconnect between inspection acquisition and publication releases the new borrow', async t => {
+	const f = fixture(), lifetime = new AbortController();
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, lifetime.signal);
+	const open = f.inspection.openAfterTasks.bind(f.inspection);
+	let acquired: Awaited<ReturnType<typeof open>>;
+	t.mock.method(f.inspection, 'openAfterTasks', async signal => {
+		acquired = await open(signal);
+		queueMicrotask(() => lifetime.abort());
+		return acquired;
+	});
+	t.after(() => { acquired?.dispose(); tools.dispose(); f.presenter.dispose(); });
+	await assert.rejects(Promise.resolve(tools.execute('studio_inspect_runtime', { target: f.inspection.target })), { name: 'AbortError' });
+	assert.equal(acquired!.lifetime.isDisposed, true);
 });

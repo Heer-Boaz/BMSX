@@ -111,8 +111,8 @@ export function scheduleRuntimeGuestCall(
 		const args = call.args();
 		let retained: RuntimeDebuggerSourceStop | undefined;
 		const plan = new RuntimeGuestCallPlan(runtime, depth, 'completion', honorUserStops, request.admission === 'at-stop' ? completed => {
-			if (completed && retained !== undefined) {
-				debuggerState.source.returnToStop(retained);
+			if (completed && retained !== undefined && retained.media === debuggerState.sources.currentBlua32Media
+				&& debuggerState.source.returnToStop(retained)) {
 				debuggerState.stopPresentationPending = true;
 			}
 			finish(completed);

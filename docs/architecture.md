@@ -5265,7 +5265,7 @@ preserve the same name precedence. Firmware evaluation reads a storage address
 through the active borrow and rejects type names as runtime expressions; storage
 bindings cannot be reassigned. This does not add typed-memory expression syntax
 to the limited BIOS loader. A private raw frame-header primitive exposes the existing function
-address, PC, call-site PC, completion flag and domain; injected completion calls
+address, PC, call-site PC, completion flag, domain and exception-frame bit; injected completion calls
 retain the ancestor's own PC. Firmware never switches cartridge bus selection to
 inspect an unmapped domain. Both runtimes execute the same resolver. BIOS
 `repl.evaluate_frame` resolves installed names itself; the caller supplies a
@@ -5276,12 +5276,20 @@ an active IRQ. Its source-debugger owner temporarily yields stop ownership to
 that call and republishes the same source stop only on actual completion. No
 ancestor PC or guest value is restored. Call admission precedes frame push so
 ordinary Continue suppression refers to the stopped caller, not the injected root.
-This [pinned-stop core](studio_terminal_contexts.md#pinned-stop-admission-gate)
-is not a public Terminal frame context: complete lexical coverage, cancellation/
-unwind borrow retirement, replacement/rewind, native selection and conversation
-admission still need their end-to-end gates.
-Selected-frame evaluation admission, live Actor mutation and complete reviewed-source
-apply/save/install/rerun receipts remain work tracked in
+The [public frame route](studio_terminal_contexts.md#current-public-route) now
+uses the same Terminal session from the ordinary context picker and
+`studio_evaluate_frame`. Manual selection retains a monotonic host stop ID and
+source location, never an old guest Thread/tooling image. Actual stop records
+remain with the source-debugger/call owners. Source install, Hot Resume and reset
+retire prior stop identities so late call completion cannot resurrect them.
+Inspection opens after pending history/GPU work rather than requiring tool retries.
+The BIOS monitor reads its retained stack boundary from the raw exception-frame
+bit before enabling IRQs; `FRAMES` and `LUA --FRAME` use that physical boundary.
+IDE source installation retires the firmware registry before changing locations;
+failed completion unwind retires matching thread/frame scopes before pop. No
+Lua cleanup executes after a fault, and restore does not clear saved guest scopes.
+Extended frame-recovery/restore workflow coverage, live Actor mutation and complete
+reviewed-source apply/save/install/rerun receipts remain tracked in
 [Studio runtime tools](studio_runtime_tools.md).
 The proposal owner publishes one terminal review outcome after retiring edit
 authority and finishing history admission. Clients observe that state rather

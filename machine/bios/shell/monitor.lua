@@ -1,3 +1,6 @@
+local frame_count<const> = __bmsx_frame_count
+local frame_header<const> = __bmsx_frame_header
+local running<const> = __bmsx_coroutine_running
 local terminal<const> = require('tty/terminal')
 local console<const> = require('tty/console')
 local layout<const> = require('tty/layout')
@@ -162,7 +165,7 @@ local print_evaluation<const> = function(succeeded, ...)
 	end
 end
 
-local handle_command_action<const> = function(action, source_first, context)
+local handle_command_action<const> = function(action, source_first, context, frame_index, inline_depth)
 	if action == monitor_commands.action_clear then
 		terminal.clear()
 		write_prompt()
@@ -171,7 +174,11 @@ local handle_command_action<const> = function(action, source_first, context)
 	elseif action == monitor_commands.action_continue then
 		return true
 	elseif action == monitor_commands.action_evaluate then
-		print_evaluation(repl.evaluate(monitor_editor.source(source_first), '=terminal:monitor', context))
+		if context == 'frame' then
+			print_evaluation(repl.evaluate_frame(monitor_editor.source(source_first), '=terminal:monitor', frame_index, inline_depth))
+		else
+			print_evaluation(repl.evaluate(monitor_editor.source(source_first), '=terminal:monitor', context))
+		end
 		console.flush()
 		write_prompt()
 	else
@@ -406,6 +413,13 @@ local leave_monitor<const> = function(saved_status, saved_epc, saved_cart_select
 end
 
 function monitor.enter(error_value)
+	local thread<const> = running()
+	local retained_frames = frame_count(thread) - 1
+	while true do
+		local _<const>, _<const>, _<const>, _<const>, _<const>, exception<const> = frame_header(thread, retained_frames)
+		if exception then break end
+		retained_frames = retained_frames - 1
+	end
 	-- Nested VBlank IRQ entry overwrites CP0 latches, so preserve the interrupted
 	-- context before the monitor enables maskable supervisor interrupts.
 	local saved_status<const> = cop0.status
@@ -453,7 +467,8 @@ function monitor.enter(error_value)
 		saved_lua_fault_reason,
 		saved_irq_mask,
 		error_value,
-		terminal.columns)
+		terminal.columns,
+		retained_frames)
 	dma_transfer.copy_to_gp0(assets.bin_gx_system_texture_addr, assets.bin_gx_system_texture_len >> 2)
 	console.write_line('BMSX BIOS MONITOR', palette_prompt)
 	console.flush()

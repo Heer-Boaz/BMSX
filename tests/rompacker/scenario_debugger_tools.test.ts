@@ -106,7 +106,7 @@ for (const [slot, optLevel] of [[0, 0], [1, 3]] as const) test(`socket ${slot}, 
 	assert.equal(second.data.reason, 'step');
 	const stopped = captureRuntimeMachineState(runtime);
 	const attached = await tools.execute('studio_inspect_test_stop', { run, revision: second.data.revision }); assert.ok(attached.kind === 'test-stop-inspection');
-	assert.equal(attached.data.heap, 'stopped'); assert.equal(attached.data.thread, debug.source.stopThread!.hashId);
+	assert.equal(attached.data.heap, 'stopped'); assert.equal(attached.data.thread, debug.source.stop!.thread!.hashId);
 	const stack = await tools.execute('studio_read_test_stack', { stack: attached.data.stack.reference, start: 0, count: 100 }); assert.ok(stack.kind === 'test-stack');
 	assert.equal(stack.data.origin, 'stopped-thread');
 	const frame = stack.data.frames[0]; assert.ok(frame.kind === 'source');

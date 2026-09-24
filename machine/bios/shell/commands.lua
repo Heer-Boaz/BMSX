@@ -3,6 +3,8 @@ local layout<const> = require('tty/layout')
 local source_location<const> = require('shell/source_location')
 
 local byte<const> = __bmsx_string_byte
+local running<const> = __bmsx_coroutine_running
+local frame_header<const> = __bmsx_frame_header
 
 local monitor_commands<const> = {}
 local system_control<const>: *word = 0x0801034c
@@ -43,6 +45,7 @@ local command_reboot<const> = 5
 local command_registers<const> = 6
 local command_continue<const> = 7
 local command_lua<const> = 8
+local command_frames<const> = 9
 
 local cause_code_mask<const> = 0x0000007c
 local cause_nmi<const> = 0x00010000
@@ -66,8 +69,9 @@ rodata command_registry: monitor_command[] = {
 	{ name = 'CLS', usage = 'CLS', description = 'CLEAR TERMINAL OUTPUT', kind = command_clear },
 	{ name = 'CONT', usage = 'CONT', description = 'RESUME CART AT EPC', kind = command_continue },
 	{ name = 'FAULT', usage = 'FAULT [CLEAR]', description = 'SHOW OR CLEAR SAVED FAULT STATE', kind = command_fault },
+	{ name = 'FRAMES', usage = 'FRAMES', description = 'RETAINED HEX INDICES, FUNCTION AND PC', kind = command_frames },
 	{ name = 'HELP', usage = 'HELP [COMMAND]', description = 'LIST COMMANDS OR SHOW HELP', kind = command_help },
-	{ name = 'LUA', usage = 'LUA [--SESSION] <SOURCE>', description = 'EVALUATE CART GLOBALS OR ISOLATED SESSION', kind = command_lua },
+	{ name = 'LUA', usage = 'LUA [--SESSION | --FRAME INDEX DEPTH] <SOURCE>', description = 'EVALUATE CART, SESSION OR RETAINED FRAME', kind = command_lua },
 	{ name = 'MEM', usage = 'MEM <HEX ADDRESS> [WORDS]', description = 'READ MEMORY WORDS', kind = command_memory },
 	{ name = 'REBOOT', usage = 'REBOOT', description = 'RESET THE MACHINE', kind = command_reboot },
 	{ name = 'REGS', usage = 'REGS', description = 'SHOW CP0 AND IRQ STATE', kind = command_registers },
@@ -96,6 +100,7 @@ bss monitor_command_value: word
 bss monitor_command_address: word
 bss monitor_command_remaining: word
 bss monitor_command_columns: word
+bss monitor_retained_frames: word
 bss monitor_command_fault_section: word
 bss monitor_completion_commands: word[#command_registry]
 bss monitor_completion_start: word
@@ -341,8 +346,9 @@ local arguments_end<const> = function(line, index, length)
 	return skip_spaces(line, index, length) == length
 end
 
-function monitor_commands.open(status, cause, epc, bad_address, lua_fault_reason, irq_mask, error_value, columns)
+function monitor_commands.open(status, cause, epc, bad_address, lua_fault_reason, irq_mask, error_value, columns, retained_frames)
 	*monitor_command_columns = columns
+	*monitor_retained_frames = retained_frames
 	*monitor_entry_status = status
 	*monitor_entry_cause = cause
 	*monitor_entry_epc = epc
@@ -520,15 +526,27 @@ function monitor_commands.start(line, length)
 	if entry.kind == command_lua then
 		local first = skip_spaces(line, argument_index, length)
 		local context = 'cart'
+		local frame_index = 0
+		local inline_depth = 0
 		local option_end<const> = first + #'--SESSION'
+		local frame_end<const> = first + #'--FRAME'
 		local source<const>: *u8 = line
 		if option_end <= length and matches_prefix('--SESSION', source, first, #'--SESSION')
 			and (option_end == length or source[option_end] == ascii_space) then
 			context = 'session'
 			first = skip_spaces(line, option_end, length)
+		elseif frame_end <= length and matches_prefix('--FRAME', source, first, #'--FRAME')
+			and (frame_end == length or source[frame_end] == ascii_space) then
+			local digits
+			frame_index, first, digits = parse_count(line, frame_end, length)
+			if digits == 0 or frame_index >= *monitor_retained_frames then return start_usage(command) end
+			inline_depth, first, digits = parse_count(line, first, length)
+			if digits == 0 then return start_usage(command) end
+			context = 'frame'
+			first = skip_spaces(line, first, length)
 		end
 		if first == length then return start_usage(command) end
-		return action_evaluate, first, context
+		return action_evaluate, first, context, frame_index, inline_depth
 	end
 	if entry.kind == command_clear then
 		if not arguments_end(line, argument_index, length) then
@@ -576,7 +594,7 @@ function monitor_commands.start(line, length)
 		source_location.clear()
 		return action_none
 	end
-	if entry.kind == command_registers then
+	if entry.kind == command_registers or entry.kind == command_frames then
 		if not arguments_end(line, argument_index, length) then
 			return start_usage(command)
 		end
@@ -649,6 +667,29 @@ function monitor_commands.next_row(row)
 		return row_done
 	end
 	local entry<const>: *monitor_command = &command_registry[producer]
+	if entry.kind == command_frames then
+		local cursor<const> = *monitor_command_cursor
+		if cursor == 0 then
+			write_text(row, 0, 'INDEX    FUNCTION PC (HEX; DEPTH 0)', palette_accent)
+			*monitor_command_cursor = 1
+			if *monitor_retained_frames == 0 then
+				*monitor_command_producer = producer_none
+				return row_done
+			end
+			return row_more
+		end
+		local index<const> = *monitor_retained_frames - cursor
+		local address<const>, pc<const> = frame_header(running(), index)
+		local column = write_hex(row, 0, index, palette_accent)
+		column = write_hex(row, column + 1, address, palette_text)
+		write_hex(row, column + 1, pc, palette_text)
+		*monitor_command_cursor = cursor + 1
+		if index == 0 then
+			*monitor_command_producer = producer_none
+			return row_done
+		end
+		return row_more
+	end
 	if entry.kind == command_fault or entry.kind == command_registers then
 		if entry.kind == command_fault and *monitor_command_fault_section == fault_section_source then
 			if source_location.next_row(row, *monitor_command_columns, palette_accent, palette_error) then

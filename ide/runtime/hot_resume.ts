@@ -1,3 +1,5 @@
+import { retireRuntimeFrameScopes } from './frame_scopes';
+import type { SuspendedGuestSession } from './suspended_guest';
 import { convertToError } from '../language/lua/interpreter/value';
 import type { Input } from '../../hosts/common/input/manager';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -238,12 +240,14 @@ export function buildBlua32Revision(
 export function installBlua32Revision(
 	sources: RuntimeSourceState,
 	runtime: Runtime,
+	guest: SuspendedGuestSession,
 	built: BuiltBlua32Revision,
 	relocation: Uint32Array,
 ): void {
 	const rebuilt = built.mediaInstallation.rebuilt;
 	const cpu = runtime.machine.cpu;
 	const executionAddressSpace = runtime.machine.executionAddressSpace;
+	retireRuntimeFrameScopes(runtime, sources, guest);
 	installBlua32Media(sources, runtime, built.mediaInstallation);
 	if (rebuilt.system !== null) {
 		cpu.replaceExecutionImage(executionAddressSpace.resolveSystemDomain());
@@ -437,6 +441,7 @@ function applyPreparedHotResume(
 	// A no-source-change resume still mutates the heap through its init calls.
 	if (prepared.built === null) runtime.history.stop();
 	if (prepared.failedCompletionFrameIndex >= 0) {
+		retireRuntimeFrameScopes(runtime, sources, luaTooling.suspendedGuest, cpu.activeThread, prepared.failedCompletionFrameIndex);
 		cpu.abortCompletionCall(prepared.failedCompletionFrameIndex);
 		debuggerState.plans.discardCompletionBatchesFrom(
 			cpu.activeThread,
@@ -451,6 +456,7 @@ function applyPreparedHotResume(
 		installBlua32Revision(
 			sources,
 			runtime,
+			luaTooling.suspendedGuest,
 			prepared.built,
 			relocation!,
 		);

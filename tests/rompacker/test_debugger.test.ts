@@ -43,8 +43,8 @@ async function fixture(t: TestContext, source: string, optLevel: 0 | 3, cartSour
 		assert.ok(!execution.active || debug.stopped, 'a bounded target reaches a real stop or terminal result');
 	};
 	const line = () => {
-		const image = program.debugImages[debug.source.stopDomain + 1]!.image;
-		return blua32SourceRangeAtPc(image.symbols!, image.layout.header.textAddress, debug.source.stopPc)!.start.line;
+		const image = program.debugImages[debug.source.stop!.domain + 1]!.image;
+		return blua32SourceRangeAtPc(image.symbols!, image.layout.header.textAddress, debug.source.stop!.pc)!.start.line;
 	};
 	return { media, program, target, result, execution, debug, advance, line };
 }
@@ -89,7 +89,7 @@ return { kind = 'unit',
 		const thread = target.runtime.machine.cpu.activeThread;
 		assert.notEqual(thread, target.runtime.machine.cpu.rootThread, 'the guest testlib owns a real phase coroutine');
 		debug.resume(Mode.StepInto); f.advance();
-		assert.equal(f.line(), 3); assert.equal(debug.source.stopThread, thread);
+		assert.equal(f.line(), 3); assert.equal(debug.source.stop!.thread, thread);
 		debug.resume(Mode.StepOver); f.advance(); assert.equal(f.line(), 4);
 		debug.resume(Mode.StepOut); f.advance(); assert.equal(f.line(), 12);
 		debug.sources.setBreakpoints(compiled.source, []);

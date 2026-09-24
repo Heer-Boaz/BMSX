@@ -14,6 +14,7 @@ export function compileFrameEvaluationTest(body: string, optLevel: 0 | 3, includ
 		{ path: 'tty/console', source: 'return { write = function() end, end_line = function() end }' },
 		{ path: 'frame_test/primitives', source: `frame_count = __bmsx_frame_count
 running_thread = __bmsx_coroutine_running
+frame_header = __bmsx_frame_header
 collectgarbage = __bmsx_collect_garbage` });
 	const source = `require('base')
 table = require('table')
@@ -37,6 +38,14 @@ end)`;
 }
 
 export const frameEvaluationCases = {
+	physical_header: `
+local thread<const> = running_thread()
+local index<const> = frame_count(thread) - 1
+local address<const>, pc<const>, site<const>, completion<const>, domain<const>, exception<const> = frame_header(thread, index)
+assert(select('#', frame_header(thread, index)) == 6)
+assert(address > 0 and pc > 0 and site > 0)
+assert(not completion and domain == 0xffffffff and not exception)
+return true`,
 	retired_scope_metadata: `
 local weak<const> = setmetatable({}, { __mode = 'v' })
 local exercise = function(value, ...)

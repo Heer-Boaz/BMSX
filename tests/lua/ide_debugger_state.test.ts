@@ -137,11 +137,12 @@ while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
 		cpu.reset(); assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Yielded);
 		irqController.raise(IRQ_VBLANK); assert.equal(cpu.enterPendingInterrupt(), true);
 		assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
-		assert.equal(state.source.stopped, true);
+		assert.equal(state.source.stop !== undefined, true);
 		const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1), thread = cpu.activeThread;
 		const exceptionDepth = cpu.readExceptionReturnFrameDepth();
 		assert.ok(exceptionDepth >= 0 && depth > exceptionDepth);
-		const domain = state.source.stopDomain, inlineDepth = state.source.stopInlineDepth, reason = state.source.stopReason;
+		const retainedStop = state.source.stop;
+		const domain = state.source.stop!.domain, inlineDepth = state.source.stop!.inlineDepth, reason = state.source.stop!.reason;
 		const gameBefore = memory.readMappedU32LE(gameCount);
 		const guest = new SuspendedGuestSession(runtime);
 		const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
@@ -153,18 +154,18 @@ while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
 			prepare: () => {
 				assert.equal(cpu.getFrameDepth(), depth);
 				assert.equal(cpu.readFramePc(depth - 1), pc);
-				assert.equal(state.source.stopped, true);
+				assert.equal(state.source.stop !== undefined, true);
 				return { domain: -1, closure: guest.global('operation') as Closure, args: () => [] };
 			},
 		}, () => { started++; }, completed => { finished = completed; if (completed) cpu.readCompletionValues(values); }, assert.fail);
 		assert.equal(started, 1);
 		assert.equal(cpu.getFrameDepth(), depth + 1, 'call starts above the selected IRQ instead of draining it');
 		assert.equal(cpu.readExceptionReturnFrameDepth(), exceptionDepth);
-		assert.equal(state.source.stopped, false, 'only the evaluation owns execution while the outer stop is retained');
+		assert.equal(state.source.stop !== undefined, false, 'only the evaluation owns execution while the outer stop is retained');
 		assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
 		if (pauseInCall) {
-			assert.equal(state.source.stopped, true);
-			assert.notEqual(state.source.stopPc, pc);
+			assert.equal(state.source.stop !== undefined, true);
+			assert.notEqual(state.source.stop!.pc, pc);
 			assert.equal(state.plans.controlSuspended, true);
 			didExecuteRuntimeDebuggerPlan(state);
 			assert.equal(finished, undefined);
@@ -178,10 +179,11 @@ while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
 		assert.equal(cpu.activeThread, thread); assert.equal(cpu.getFrameDepth(), depth);
 		assert.equal(cpu.readFramePc(depth - 1), pc); assert.equal(cpu.readExceptionReturnFrameDepth(), exceptionDepth);
 		assert.equal(memory.readMappedU32LE(irqTail), 0); assert.equal(memory.readMappedU32LE(gameCount), gameBefore);
-		assert.equal(state.source.stopped, true); assert.equal(state.source.stopThread, thread);
-		assert.equal(state.source.stopDomain, domain); assert.equal(state.source.stopPc, pc);
-		assert.equal(state.source.stopInlineDepth, inlineDepth); assert.equal(state.source.stopReason, reason);
+		assert.equal(state.source.stop !== undefined, true); assert.equal(state.source.stop!.thread, thread);
+		assert.equal(state.source.stop!.domain, domain); assert.equal(state.source.stop!.pc, pc);
+		assert.equal(state.source.stop!.inlineDepth, inlineDepth); assert.equal(state.source.stop!.reason, reason);
 		assert.equal(state.stopPresentationPending, true);
+		assert.equal(state.source.stop, retainedStop, 'completion republishes the same suspension identity');
 		resumeRuntimeDebugger(state, RuntimeDebuggerResumeMode.Continue);
 		assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Yielded);
 		assert.equal(memory.readMappedU32LE(irqTail), 42, 'ordinary Continue observes the retained mutation');
@@ -214,7 +216,7 @@ return loops
 	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
 	didExecuteRuntimeDebuggerPlan(state);
 	assert.equal(finished, true); assert.deepEqual(values, [42]);
-	assert.equal(state.source.stopped, false); assert.equal(guest.global('loops'), 0);
+	assert.equal(state.source.stop !== undefined, false); assert.equal(guest.global('loops'), 0);
 	resumeRuntimeDebugger(state, RuntimeDebuggerResumeMode.Continue);
 	assert.equal(stoppedSourceLine(harness), line);
 	assert.equal(guest.global('loops'), 1, 'Continue executes the original stopped instruction once before stopping on its next visit');
@@ -233,7 +235,7 @@ return work -- caller stop
 	const { cpu } = runtime.machine;
 	const line = source.split('\n').findIndex(line => line.includes('caller stop')) + 1;
 	startAtBreakpoint(harness, line); assert.equal(stoppedSourceLine(harness), line);
-	const outerPc = state.source.stopPc, depth = cpu.getFrameDepth(), guest = new SuspendedGuestSession(runtime);
+	const outerPc = state.source.stop!.pc, depth = cpu.getFrameDepth(), guest = new SuspendedGuestSession(runtime);
 	state.breakpoints.toggle({ domain: -1, path: DEBUG_SOURCE_PATH }, source.split('\n').findIndex(line => line.includes('inside call')) + 1);
 	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
 		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
@@ -245,11 +247,11 @@ return work -- caller stop
 	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
 	didExecuteRuntimeDebuggerPlan(state);
 	assert.deepEqual(outcomes, []);
-	const innerPc = state.source.stopPc;
+	const innerPc = state.source.stop!.pc;
 	assert.notEqual(innerPc, outerPc); assert.equal(cpu.getFrameDepth(), depth + 1);
 	discardRuntimeDebuggerPlans(state);
 	assert.deepEqual(outcomes, [false]); assert.equal(state.plans.controlActive, false);
-	assert.equal(state.source.stopped, true); assert.equal(state.source.stopPc, innerPc);
+	assert.equal(state.source.stop !== undefined, true); assert.equal(state.source.stop!.pc, innerPc);
 	assert.equal(cpu.getFrameDepth(), depth + 1, 'plan retirement is not an implicit stack unwind');
 	assert.equal(cpu.readFramePc(depth - 1), outerPc); assert.equal(guest.global('work'), 0);
 });
@@ -521,11 +523,11 @@ end
 function stoppedSourceLine(harness: DebuggerHarness): number {
 	const result = harness.runtime.machine.cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET);
 	assert.equal(result, RunResult.ExecutionStopped);
-	assert.equal(harness.state.source.stopped, true);
+	assert.equal(harness.state.source.stop !== undefined, true);
 	return blua32SourceRangeAtPc(
 		harness.image.symbols,
 		harness.image.image.header.textAddress,
-		harness.state.source.stopPc,
+		harness.state.source.stop!.pc,
 	)!.start.line;
 }
 
@@ -544,7 +546,7 @@ test(`scheduled evaluation ${honorUserStops ? 'honors' : 'suppresses'} user brea
 	const result = cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET);
 	if (honorUserStops) {
 		assert.equal(result, RunResult.ExecutionStopped);
-		assert.equal(state.source.stopped, true);
+		assert.equal(state.source.stop !== undefined, true);
 		assert.equal(state.plans.controlSuspended, true);
 		assert.equal(state.plans.mutationActive, true);
 		assert.equal(runtimeDebuggerExecutionRequested(state), false);
@@ -556,7 +558,7 @@ test(`scheduled evaluation ${honorUserStops ? 'honors' : 'suppresses'} user brea
 		resumeRuntimeDebugger(state, RuntimeDebuggerResumeMode.Continue);
 		assert.equal(state.plans.controlSuspended, false);
 		cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET);
-	} else assert.equal(state.source.stopped, false);
+	} else assert.equal(state.source.stop !== undefined, false);
 	state.plans.didExecute();
 	cpu.readCompletionValues(values);
 	assert.equal(finished, 1);
@@ -639,12 +641,12 @@ test('statement stepping follows optimized inline call frames', () => {
 	startAtBreakpoint(stepOverHarness, 8);
 
 	assert.equal(stoppedSourceLine(stepOverHarness), 8);
-	assert.equal(stepOverHarness.state.source.stopInlineDepth, 1);
+	assert.equal(stepOverHarness.state.source.stop!.inlineDepth, 1);
 	assert.equal(
 		resumeAndStop(stepOverHarness, RuntimeDebuggerResumeMode.StepOver),
 		10,
 	);
-	assert.equal(stepOverHarness.state.source.stopInlineDepth, 1);
+	assert.equal(stepOverHarness.state.source.stop!.inlineDepth, 1);
 
 	const stepIntoHarness = createDebuggerHarness(source, 3);
 	startAtBreakpoint(stepIntoHarness, 8);
@@ -653,12 +655,12 @@ test('statement stepping follows optimized inline call frames', () => {
 		resumeAndStop(stepIntoHarness, RuntimeDebuggerResumeMode.StepInto),
 		3,
 	);
-	assert.equal(stepIntoHarness.state.source.stopInlineDepth, 2);
+	assert.equal(stepIntoHarness.state.source.stop!.inlineDepth, 2);
 	assert.equal(
 		resumeAndStop(stepIntoHarness, RuntimeDebuggerResumeMode.StepOut),
 		10,
 	);
-	assert.equal(stepIntoHarness.state.source.stopInlineDepth, 1);
+	assert.equal(stepIntoHarness.state.source.stop!.inlineDepth, 1);
 });
 
 for (const optLevel of [0, 3] as const) test(`completion-root identity survives a parked caller accepting IRQ (O${optLevel})`, () => {
@@ -689,7 +691,33 @@ while true do halt_until_irq end
 	assert.equal(cpu.readFrameReturnsToCompletionLatch(depth), false);
 	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
 	state.plans.didExecute();
-	assert.equal(completed, true); assert.equal(state.source.stopped, false);
+	assert.equal(completed, true); assert.equal(state.source.stop !== undefined, false);
 	assert.equal(memory.readMappedU32LE(irqCount), 0, 'completion stops before an unrelated IRQ instruction');
 	const values: Value[] = []; cpu.readCompletionValues(values); assert.deepEqual(values, [42]);
+});
+
+for (const level of [0, 3] as const) for (const transition of ['source-install', 'hot-resume', 'reset'] as const) test(`O${level}: an evaluation cannot republish a source stop after ${transition}`, async () => {
+	const { runtime, state } = createDebuggerHarness(`operation = function() return 42 end\nlocal value = 17\nmem[${DYNAMIC_RAM_BASE}] = value\nreturn value`, level);
+	state.breakpoints.set({ domain: -1, path: DEBUG_SOURCE_PATH }, [3]);
+	const cpu = runtime.machine.cpu;
+	cpu.reset(); assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped);
+	const retained = state.source.stop;
+	const guest = new SuspendedGuestSession(runtime);
+	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
+		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
+	let completed = false;
+	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
+		admission: 'at-stop', honorUserStops: true, isCurrent: () => true,
+		prepare: () => ({ domain: -1, closure: guest.global('operation') as Closure, args: () => [] }),
+	}, () => {}, result => { completed = result; }, assert.fail);
+	if (transition === 'source-install') {
+		state.sources.currentBlua32Media = { ...state.sources.currentBlua32Media };
+		state.source.install(state.sources.currentBlua32Media, state.breakpoints.bindings.pcs);
+	} else if (transition === 'hot-resume') state.source.resumeAfterRecompile(false);
+	else state.source.reset();
+	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped);
+	didExecuteRuntimeDebuggerPlan(state);
+	assert.equal(completed, true);
+	assert.notEqual(state.source.stop, retained);
+	assert.equal(state.source.stop, undefined, 'the replacement ended that source suspension even if the guest call returned normally');
 });

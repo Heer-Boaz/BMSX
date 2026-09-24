@@ -1,3 +1,4 @@
+import { buildLuaStackFrames, createLuaSourceStackTraceFrame, readRuntimeStackFrames, type RuntimeStackTraceFrame } from '../../../runtime/stack_trace';
 import type { HostExecutionControl } from '../../../../hosts/common/execution_control';
 import type { HostRewind } from '../../../../hosts/common/rewind';
 import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
@@ -15,10 +16,12 @@ import { clearExecutionStopHighlights } from '../../../runtime_error/navigation'
 import { TerminalTranscript, type TerminalEntry } from './transcript';
 
 export type TerminalContext = 'cart' | 'session';
+export type TerminalFrameContext = { readonly kind: 'frame'; readonly stopId: number; readonly frame: RuntimeStackTraceFrame };
+export type TerminalInputContext = TerminalContext | TerminalFrameContext;
 export type TerminalResult = { readonly status: 'completed' | 'lua-error' | 'interrupted' | 'host-error'; readonly values: readonly string[] };
 export type TerminalObservation = {
 	readonly id: number;
-	readonly context: TerminalContext;
+	readonly context: TerminalContext | 'frame';
 	readonly status: 'queued' | 'running' | 'paused' | TerminalResult['status'];
 	readonly values: readonly string[];
 	readonly output: readonly TerminalEntry[];
@@ -32,7 +35,7 @@ export class TerminalEvaluation {
 	public outputEnd: number | undefined;
 	public controlVersion = 0;
 	public readonly listeners = new Set<() => void>();
-	public constructor(public readonly source: string, public readonly context: TerminalContext, public readonly id: number, public readonly outputStart: number,
+	public constructor(public readonly source: string, public readonly context: TerminalContext | 'frame', public readonly id: number, public readonly outputStart: number,
 		public executionRevision: number) {}
 	public finish(result: TerminalResult): void { this.result = result; this.settled.resolve(result); }
 }
@@ -41,7 +44,7 @@ export class TerminalEvaluation {
 export class LuaTerminalSession {
 	public readonly transcript = new TerminalTranscript();
 	public readonly history: string[] = [];
-	public inputContext: TerminalContext = 'cart';
+	public inputContext: TerminalInputContext = 'cart';
 	public active: TerminalEvaluation | undefined;
 	public lastResult: TerminalEvaluation | undefined;
 	private serial = 0;
@@ -67,7 +70,23 @@ export class LuaTerminalSession {
 			&& this.runtime.machine.cpu.activeCartridgeSlot() !== -1
 			&& (this.runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_ACTIVE) === 0;
 	}
-	public get paused(): boolean { return this.debuggerState.plans.controlSuspended || this.debuggerState.source.stopped; }
+	/** Frame choices are resolved only when requested, never in the pane's frame loop. */
+	public frameContexts(): TerminalFrameContext[] {
+		if (this.debuggerState.source.stop === undefined || this.debuggerState.source.stop.media !== this.sources.currentBlua32Media || !this.canEvaluate) return [];
+		return buildLuaStackFrames(readRuntimeStackFrames(this.runtime.machine.cpu, this.sources),
+			(domain, path, line, column, name) => createLuaSourceStackTraceFrame(this.sources, domain, path, line, column, name))
+			.filter(frame => frame.kind === 'source').map(frame => this.frameContext(frame));
+	}
+	public frameContext(frame: RuntimeStackTraceFrame): TerminalFrameContext {
+		const stop = this.debuggerState.source.stop;
+		if (stop === undefined || stop.media !== this.sources.currentBlua32Media || frame.kind !== 'source') throw new Error('Frame evaluation requires an installed source frame at the current debugger stop.');
+		return { kind: 'frame', stopId: stop.id, frame };
+	}
+	public contextAvailable(context: TerminalInputContext): boolean {
+		const stop = this.debuggerState.source.stop;
+		return context === 'cart' || context === 'session' || stop !== undefined && context.stopId === stop.id && stop.media === this.sources.currentBlua32Media;
+	}
+	public get paused(): boolean { return this.debuggerState.plans.controlSuspended || this.debuggerState.source.stop !== undefined; }
 	public get canToggleExecution(): boolean {
 		return this.active !== undefined && this.tasks.ready && this.debuggerState.plans.workbenchControlActive
 			&& this.fault.faultSnapshot === null;
@@ -86,7 +105,7 @@ export class LuaTerminalSession {
 		if (!paused && !this.canToggleExecution) throw new Error('Terminal control is unavailable during machine recovery.');
 		operation.controlVersion++;
 		const plans = this.debuggerState.plans;
-		if (!paused && this.debuggerState.source.stopped) {
+		if (!paused && this.debuggerState.source.stop !== undefined) {
 			resumeRuntimeDebugger(this.debuggerState, RuntimeDebuggerResumeMode.Continue);
 			clearExecutionStopHighlights();
 		} else plans.setControlSuspended(paused);
@@ -140,25 +159,31 @@ export class LuaTerminalSession {
 		});
 	}
 
-	public evaluate(source: string, context: TerminalContext): TerminalEvaluation {
+	public evaluate(source: string, context: TerminalInputContext): TerminalEvaluation {
 		if (!this.canEvaluate) throw new Error('Lua execution is unavailable while another machine operation or the BIOS monitor is active.');
-		const operation = new TerminalEvaluation(source, context, ++this.serial, this.transcript.next, this.execution.revision), generation = this.generation;
+		if (!this.contextAvailable(context)) throw new Error('Selected frame expired. Select a frame at the current debugger stop.');
+		const selected = context === 'cart' || context === 'session' ? undefined : context;
+		const name = selected === undefined ? context as TerminalContext : 'frame';
+		const operation = new TerminalEvaluation(source, name, ++this.serial, this.transcript.next, this.execution.revision), generation = this.generation;
 		this.active = operation;
 		if (this.history[this.history.length - 1] !== source) {
 			this.history.push(source);
 			if (this.history.length > 100) this.history.shift();
 		}
-		this.transcript.append('input', `[${context}] ${source}`);
+		this.transcript.append('input', `[${name}${selected === undefined ? '' : ` ${selected.frame.functionName} #${selected.frame.physicalFrameIndex}:${selected.frame.inlineDepth}`}] ${source}`);
 		void scheduleRuntimeGuestCall(this.runtime, this.guest, this.debuggerState, this.tasks, {
-			admission: 'quiescent', honorUserStops: true,
-			isCurrent: () => generation === this.generation && operation.result === undefined,
+			admission: selected === undefined ? 'quiescent' : 'at-stop', honorUserStops: true,
+			isCurrent: () => generation === this.generation && operation.result === undefined && this.contextAvailable(context),
 			prepare: () => {
 				const module = readRuntimeLuaModuleExport(this.sources, this.guest, -1, 'shell/repl');
 				if (module.kind !== 'value') throw new Error('The installed BIOS does not contain shell/repl. Rebuild and reboot the BIOS.');
-				return { domain: -1, closure: this.guest.readStringMember(module.value, 'evaluate') as Closure,
+				return { domain: -1, closure: this.guest.readStringMember(module.value, selected === undefined ? 'evaluate' : 'evaluate_frame') as Closure,
 					args: () => {
 						const pool = this.runtime.machine.cpu.stringPool;
-						return [valueString(pool.intern(source)), valueString(pool.intern(`=terminal:${operation.id}`)), valueString(pool.intern(context))];
+						const args: Value[] = [valueString(pool.intern(source)), valueString(pool.intern(`=terminal:${operation.id}`))];
+						if (selected === undefined) args.push(valueString(pool.intern(name)));
+						else args.push(selected.frame.physicalFrameIndex, selected.frame.inlineDepth);
+						return args;
 					} };
 			},
 		}, () => {

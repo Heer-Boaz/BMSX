@@ -49,13 +49,13 @@ export async function runStudioBootOperations(test: StudioFixture) {
 	ide.debugger.breakpoints.toggle(model.resource, initLine);
 	const initializer = harness.performHotResume();
 	await initializer.admission;
-	await until(() => ide.debugger.source.stopped && ide.editor.isActive, 'boot: real init breakpoint before Reboot rejection');
+	await until(() => ide.debugger.source.stop !== undefined && ide.editor.isActive, 'boot: real init breakpoint before Reboot rejection');
 	const media = ide.sources.currentBlua32Media, stopped = cycles();
 	harness.replaceActiveCodeSource(source + '\nend end\n');
 	const rejected = harness.reboot();
 	check((await rejected.completion).status === 'rejected', 'boot: compile rejection is an operation result');
 	await tasks.join();
-	check(ide.debugger.source.stopped && initializer.result === null && title() === actor && cycles() === stopped
+	check(ide.debugger.source.stop !== undefined && initializer.result === null && title() === actor && cycles() === stopped
 		&& ide.sources.currentBlua32Media === media && tasks.ready && ide.editor.isActive,
 		'boot: rejected Reboot preserves the actual stop, pending init, actor and installed media');
 	await frame();
@@ -82,7 +82,7 @@ export async function runStudioBootOperations(test: StudioFixture) {
 		'boot: reset acknowledgement precedes all BIOS and cartridge execution');
 	check(ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('title_screen') === captured && model.dirty,
 		'boot: only the admitted revision is installed; later edits remain authored and unsaved');
-	check((await initializer.completion).status === 'cancelled' && !ide.debugger.plans.mutationActive && !ide.debugger.source.stopped
+	check((await initializer.completion).status === 'cancelled' && !ide.debugger.plans.mutationActive && ide.debugger.source.stop === undefined
 		&& runtimeErrorState.activeOverlay === null, 'boot: accepted reset retires real init work and stale debugger/error projections');
 	ide.debugger.breakpoints.toggle(model.resource, initLine);
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'boot: captured source executes after reset');

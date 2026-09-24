@@ -117,7 +117,7 @@ export function installAemSourceRevision(
 ): void {
 	const { resource, source, eventMap } = built;
 	const assetId = resource.source.resid;
-	installBlua32Revision(sources, runtime, built.revision, built.relocation);
+	installBlua32Revision(sources, runtime, luaTooling.suspendedGuest, built.revision, built.relocation);
 	const runtimePackage = resource.domain === SYSTEM_RESOURCE_DOMAIN
 		? sources.systemPackage
 		: sources.cartridgeSlots[resource.domain]!.package;

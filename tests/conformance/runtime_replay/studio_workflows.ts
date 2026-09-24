@@ -217,22 +217,22 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	harness.toggleLuaBreakpoint('title_screen.lua', breakpointLine);
 	check(ide.debugger.breakpoints.bindings.pcs[model.resource.domain + 1].size !== 0, 'W03: breakpoint binds to installed code');
 	setKey('ArrowLeft', true);
-	await until(() => ide.debugger.source.stopped && ide.editor.isActive, 'W03: source breakpoint opens the real editor');
+	await until(() => ide.debugger.source.stop !== undefined && ide.editor.isActive, 'W03: source breakpoint opens the real editor');
 	setKey('ArrowLeft', false);
 	check(harness.getActiveCodeContext()!.model === model
 		&& harness.getActiveCodeContext()!.executionStopRow === breakpointRow, 'W03: debugger reveals the actual title-selection statement');
-	const stopPc = ide.debugger.source.stopPc;
+	const stopPc = ide.debugger.source.stop!.pc;
 	const inspected = harness.getHover(breakpointLine - 1, 12);
 	check(inspected !== null, 'current debugger stop can be inspected');
 	await runMenuCommand('pause');
 	check(execution.userPaused, 'pause command is available in debugger view');
 	const stoppedAt = cycles();
 	await runMenuCommand('pause');
-	check(!execution.userPaused && ide.debugger.source.stopped && ide.editor.isActive && cycles() === stoppedAt,
+	check(!execution.userPaused && ide.debugger.source.stop !== undefined && ide.editor.isActive && cycles() === stoppedAt,
 		'releasing host pause neither continues a debugger stop nor hides its inspector');
 	await runMenuCommand('pause');
 	await press('F10');
-	await until(() => ide.debugger.source.stopped && ide.debugger.source.stopPc !== stopPc && ide.editor.isActive,
+	await until(() => ide.debugger.source.stop !== undefined && ide.debugger.source.stop!.pc !== stopPc && ide.editor.isActive,
 		'explicit source step executes while host-paused');
 	check(execution.userPaused, 'step completion retains independent user pause');
 	const steppedAt = cycles();
@@ -247,7 +247,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	const oldActor = title();
 	rewind.seekTo(history.earliestCycles);
 	await settle();
-	check(!ide.debugger.source.stopped && !ide.debugger.stopPresentationPending, 'restore invalidates the old stop');
+	check(ide.debugger.source.stop === undefined && !ide.debugger.stopPresentationPending, 'restore invalidates the old stop');
 	check(hoverState.tooltip === null, 'restore invalidates cached inspection');
 	check(title() !== oldActor, 'inspection reacquires objects from restored heap');
 	check(execution.userPaused, 'explicit rewind is allowed without lifting user pause');
@@ -255,11 +255,11 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await runMenuCommand('pause');
 	await until(() => !rewind.active && tasks.ready, 'Continue takes over reviewed state');
 	setKey('ArrowLeft', true);
-	await until(() => ide.debugger.source.stopped && ide.editor.isActive, 'breakpoint remains installed after rewind');
+	await until(() => ide.debugger.source.stop !== undefined && ide.editor.isActive, 'breakpoint remains installed after rewind');
 	setKey('ArrowLeft', false);
 	harness.toggleLuaBreakpoint('title_screen.lua', breakpointLine);
 	await press('F5');
-	await until(() => !ide.debugger.source.stopped && !ide.editor.isActive, 'continue from restored stop');
+	await until(() => ide.debugger.source.stop === undefined && !ide.editor.isActive, 'continue from restored stop');
 	// Compile rejection is not a runtime mutation or a successful Continue.
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
@@ -286,13 +286,13 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	harness.replaceActiveCodeSource(source.replace(originalRule, "pattern = 'down[jp]'"));
 	const thirdActor = title();
 	await harness.performHotResume().admission;
-	await until(() => ide.debugger.source.stopped && ide.editor.isActive, 'breakpoint inside init is visible');
+	await until(() => ide.debugger.source.stop !== undefined && ide.editor.isActive, 'breakpoint inside init is visible');
 	check(runtime.completionCallPending() && title() === thirdActor, 'init stop retains real completion call and actor');
 	check(history.mode === HistoryMode.Disabled, 'host-controlled init is not recorded as ordinary replay input');
 	await runMenuCommand('pause');
-	const initStopPc = ide.debugger.source.stopPc;
+	const initStopPc = ide.debugger.source.stop!.pc;
 	await press('F10');
-	await until(() => ide.debugger.source.stopped && ide.debugger.source.stopPc !== initStopPc, 'source step inside init completes');
+	await until(() => ide.debugger.source.stop !== undefined && ide.debugger.source.stop!.pc !== initStopPc, 'source step inside init completes');
 	check(execution.userPaused, 'source step inside init retains host pause');
 	harness.toggleLuaBreakpoint('title_screen.lua', initLine);
 	await press('F5');

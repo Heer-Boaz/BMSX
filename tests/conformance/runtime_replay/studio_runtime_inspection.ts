@@ -36,7 +36,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	await runPaletteCommand('Run: Reboot');
 	check(actionPromptState.prompt?.request.action === 'reboot', 'inspection: independent fixture uses actual Save/Reboot');
 	await press('Enter');
-	await until(() => tasks.ready && ide.debugger.source.stopped && ide.editor.isActive, 'inspection: recursive callback stops before its inner return');
+	await until(() => tasks.ready && ide.debugger.source.stop !== undefined && ide.editor.isActive, 'inspection: recursive callback stops before its inner return');
 	check(harness.getActiveCodeContext()!.model === callbacks
 		&& harness.getActiveCodeContext()!.executionStopRow === recursiveStop - 1, 'inspection: stop belongs to the imported recursive callback');
 	const valueRow = callbackLines.findIndex(line => line.includes('return value + nested'));
@@ -48,14 +48,14 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 		'inspection: recursive hover does not execute guest code or write source');
 	harness.toggleLuaBreakpoint(callbacks.resource.path, recursiveStop);
 	await press('F5');
-	await until(() => tasks.ready && ide.debugger.source.stopped && ide.editor.isActive && guest.global('inspection_init_count') === 0,
+	await until(() => tasks.ready && ide.debugger.source.stop !== undefined && ide.editor.isActive && guest.global('inspection_init_count') === 0,
 		'inspection: initialized libraries before the first registration');
 	await testEmptyDefinitionCatalog(test);
 	await openRuntimeTreePicker(test, 0);
 	await press('Escape');
 	harness.toggleLuaBreakpoint(model.resource.path, beforeRegistration);
 	await press('F5');
-	await until(() => tasks.ready && ide.debugger.source.stopped && ide.editor.isActive && guest.global('inspection_init_count') === 1,
+	await until(() => tasks.ready && ide.debugger.source.stop !== undefined && ide.editor.isActive && guest.global('inspection_init_count') === 1,
 		'inspection: actual registrations before creating instances');
 	await testActorlessDefinitionCatalog(test);
 	await openRuntimeTreePicker(test, 0);
@@ -107,7 +107,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	harness.toggleLuaBreakpoint(btLibrary.source_path, btRebindStop);
 	const media = ide.sources.currentBlua32Media;
 	await runPaletteCommand('Run: Hot Resume');
-	await until(() => ide.debugger.source.stopped && ide.editor.isActive && guest.global('inspection_init_count') === 2, 'inspection: unchanged init stops inside first component rebind');
+	await until(() => ide.debugger.source.stop !== undefined && ide.editor.isActive && guest.global('inspection_init_count') === 2, 'inspection: unchanged init stops inside first component rebind');
 	check(!initialInspector.visible, 'inspection: execution ends the previous instance inspection');
 	check(ide.sources.currentBlua32Media === media, 'inspection: no-change init is not a new source installation');
 	check(harness.getActiveCodeContext()!.model.resource.path === library.source_path
@@ -120,14 +120,14 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 		'catalog: no-change init published 30 before either old instance has rebound');
 	await openRuntimeEffectInspector(test, 'first', 20);
 	await press('F5');
-	await until(() => ide.debugger.source.stopped && ide.editor.isActive, 'inspection: second component rebind stops');
+	await until(() => ide.debugger.source.stop !== undefined && ide.editor.isActive, 'inspection: second component rebind stops');
 	inspect('inspection_effect.definition.period_ms', 30);
 	inspect('inspection_other.definition.period_ms', 20);
 	await openRuntimeEffectInspector(test, 'first', 30);
 	await openRuntimeEffectInspector(test, 'second', 20);
 	harness.toggleLuaBreakpoint(library.source_path, rebindLine);
 	await press('F5');
-	await until(() => ide.debugger.source.stopped && ide.editor.isActive, 'inspection: FSM rebind stops after the first root definition write');
+	await until(() => ide.debugger.source.stop !== undefined && ide.editor.isActive, 'inspection: FSM rebind stops after the first root definition write');
 	await openRuntimeStateInspector(test, 'first', 20, '');
 	await openRuntimeStateInspector(test, 'first', 10);
 	await openRuntimeStateInspector(test, 'second', 10);
@@ -136,7 +136,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 		'catalog: published child differs from the old child still retained by both actors');
 	harness.toggleLuaBreakpoint(fsmLibrary.source_path, fsmRebindStop);
 	await press('F5');
-	await until(() => ide.debugger.source.stopped && ide.editor.isActive, 'inspection: first BT blackboard rebound, second retains its old layout');
+	await until(() => ide.debugger.source.stop !== undefined && ide.editor.isActive, 'inspection: first BT blackboard rebound, second retains its old layout');
 	await inspectRuntimeTreeBlackboard(test, 'first', 2);
 	await inspectRuntimeTreeBlackboard(test, 'second', 1);
 	harness.toggleLuaBreakpoint(btLibrary.source_path, btRebindStop);
@@ -145,10 +145,10 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	const valuesWrite = blackboard.src.split('\n').findIndex(line => line.includes('self._values = values')) + 1;
 	harness.toggleLuaBreakpoint(blackboard.source_path, layoutWrite);
 	await press('F5');
-	await until(() => ide.debugger.source.stopped && ide.editor.isActive, 'inspection: second BT before its layout publication');
+	await until(() => ide.debugger.source.stop !== undefined && ide.editor.isActive, 'inspection: second BT before its layout publication');
 	await inspectRuntimeTreeBlackboard(test, 'second', 1);
 	await press('F5');
-	await until(() => ide.debugger.source.stopped && ide.editor.isActive, 'inspection: first binding of a previously absent blackboard');
+	await until(() => ide.debugger.source.stop !== undefined && ide.editor.isActive, 'inspection: first binding of a previously absent blackboard');
 	const unbound = await openRuntimeTreeInspector(test, 'bare');
 	check(unbound.model.rows.find(row => row.element.label === 'BLACKBOARD LAYOUT')!.element.value === 'nil'
 		&& unbound.model.rows.find(row => row.element.label === 'BLACKBOARD STORAGE')!.element.value === 'nil',
@@ -156,7 +156,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	harness.toggleLuaBreakpoint(blackboard.source_path, layoutWrite);
 	harness.toggleLuaBreakpoint(blackboard.source_path, valuesWrite);
 	await press('F5');
-	await until(() => ide.debugger.source.stopped && ide.editor.isActive, 'inspection: blackboard layout exists before its values write');
+	await until(() => ide.debugger.source.stop !== undefined && ide.editor.isActive, 'inspection: blackboard layout exists before its values write');
 	const partial = await openRuntimeTreeInspector(test, 'bare');
 	check(partial.model.rows.find(row => row.element.label === 'BLACKBOARD LAYOUT')!.element.value.includes('bound_later')
 		&& partial.model.rows.find(row => row.element.label === 'BLACKBOARD STORAGE')!.element.value === 'nil'

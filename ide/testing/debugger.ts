@@ -40,11 +40,11 @@ export class TestDebugger {
 			cycles: this.runtime.machine.scheduler.nowCycles, videoTick: this.runtime.frameScheduler.lastTickSequence,
 			thread: (this.stopThread === undefined ? cpu.activeThread : this.stopThread).hashId,
 			canContinue: this.canResume(RuntimeDebuggerResumeMode.Continue), canStep: this.canResume(RuntimeDebuggerResumeMode.StepInto), canStepOut: this.canResume(RuntimeDebuggerResumeMode.StepOut),
-			stop: this.source.stopped ? { domain: this.source.stopDomain, pc: this.source.stopPc, inlineDepth: this.source.stopInlineDepth } : undefined };
+			stop: this.source.stop !== undefined ? { domain: this.source.stop!.domain, pc: this.source.stop!.pc, inlineDepth: this.source.stop!.inlineDepth } : undefined };
 	}
 	public admit(): void { this.phase = 'bind'; this.stop('entry'); }
 	public canResume(mode: RuntimeDebuggerResumeMode): boolean {
-		return this.stopped && (mode === RuntimeDebuggerResumeMode.Continue || this.source.stopped)
+		return this.stopped && (mode === RuntimeDebuggerResumeMode.Continue || this.source.stop !== undefined)
 			&& (mode !== RuntimeDebuggerResumeMode.StepOut || this.source.canStepOut);
 	}
 	public resume(mode: RuntimeDebuggerResumeMode): void {
@@ -77,7 +77,7 @@ export class TestDebugger {
 		this.phase = phase;
 		this.source.didExecute();
 		if (this.status !== 'running') return;
-		if (this.source.stopped) this.stop(this.source.stopReason === RuntimeDebuggerStopReason.Breakpoint ? 'breakpoint' : 'step');
+		if (this.source.stop !== undefined) this.stop(this.source.stop!.reason === RuntimeDebuggerStopReason.Breakpoint ? 'breakpoint' : 'step');
 		else if (this.source.stepThreadFinished) this.stop('thread-completed', this.source.stepThread!);
 		else if (boundary && this.source.stepping) this.stop('test-boundary');
 	}

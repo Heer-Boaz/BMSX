@@ -3621,6 +3621,7 @@ export class CPU implements MappedPageInvalidator {
 				out.push(ValueTag.Number, frame.callSitePc);
 				out.push(frame.returnToCompletionLatch ? ValueTag.True : ValueTag.False);
 				out.push(ValueTag.Number, frame.executionImage.executionDomainId >>> 0);
+				out.push(frame.isExceptionFrame ? ValueTag.True : ValueTag.False);
 				break;
 			}
 			case BuiltinFunctionId.GetFrameRegister:

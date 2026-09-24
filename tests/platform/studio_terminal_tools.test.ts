@@ -53,7 +53,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	assert.equal(value(model.requests[8], 'cart').context, 'cart');
 	assert.equal(value(model.requests[9], 'cart-error').status, 'lua-error');
 	assert.deepEqual(value(model.requests[10], 'isolation').values, ['43', '105', '2', '3']);
-	assert.match(text(model.requests[11], 'wrong-context'), /frame bindings are not available/);
+	assert.match(text(model.requests[11], 'wrong-context'), /use studio_evaluate_frame/);
 	const retained = value(model.requests[14], 'retained');
 	assert.equal(retained.active.status, 'paused'); assert.equal(retained.canEvaluate, false);
 	assert.equal(retained.canControl, true);

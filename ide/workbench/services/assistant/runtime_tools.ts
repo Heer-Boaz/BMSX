@@ -42,6 +42,7 @@ export class WorkspaceRuntimeTools {
 			}
 			case 'studio_terminal_status':
 			case 'studio_evaluate_lua':
+			case 'studio_evaluate_frame':
 			case 'studio_control_lua': {
 				if (request.target !== this.owner.target) throw new StudioToolInputError('Target is not this Studio authoring runtime');
 				if (request.name === 'studio_terminal_status') return { kind: 'runtime' as const, data: {
@@ -53,7 +54,11 @@ export class WorkspaceRuntimeTools {
 				signal.throwIfAborted();
 				let operation;
 				if (request.name === 'studio_evaluate_lua') operation = this.terminal.evaluate(request.source, request.context);
-				else {
+				else if (request.name === 'studio_evaluate_frame') {
+					if (this.inspection === undefined) throw new StudioToolInputError('Open a suspended inspection before evaluating a frame');
+					const frame = this.inspection.stackFrame(request.frame);
+					operation = this.terminal.evaluate(request.source, this.terminal.frameContext(frame));
+				} else {
 					operation = this.terminal.active;
 					if (operation === undefined || operation.id !== request.evaluation) throw new StudioToolInputError('Lua evaluation is no longer active');
 					this.terminal.setPaused(operation, request.action === 'pause');
@@ -97,12 +102,16 @@ export class WorkspaceRuntimeTools {
 							view: 'completed-game-before-crt-and-host-overlays' as const } }));
 				}
 				if (request.name === 'studio_pause_runtime') return { kind: 'runtime' as const, data: this.owner.pause() };
-				this.inspection?.dispose();
-				this.actors = undefined;
-				const inspection = this.owner.open();
-				this.inspection = inspection;
-				return { kind: 'runtime' as const, data: { ...inspection.state, inspection: inspection.id,
-					coverage: { globals: 'installed-bindings' as const, stack: 'current-cpu' as const }, scopes: inspection.scopes } };
+				const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
+				return this.owner.openAfterTasks(signal).then(inspection => {
+					// Cancellation can race the acquisition promise before this owner publishes it.
+					if (signal.aborted) { inspection.dispose(); signal.throwIfAborted(); }
+					this.inspection?.dispose();
+					this.actors = undefined;
+					this.inspection = inspection;
+					return { kind: 'runtime' as const, data: { ...inspection.state, inspection: inspection.id,
+						coverage: { globals: 'installed-bindings' as const, stack: 'current-cpu' as const }, scopes: inspection.scopes } };
+				});
 			}
 			case 'studio_read_runtime_values': {
 				if (this.inspection === undefined) throw new StudioToolInputError('Open a suspended inspection before reading values');

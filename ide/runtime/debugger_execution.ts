@@ -55,9 +55,9 @@ export class RuntimeDebuggerExecution {
 		return !this.closing && this.active === undefined && this.tasks.ready && !this.execution.frameStepBlocked
 			&& !this.execution.frameStepPending && this.navigation.active === undefined && !this.rewind.active
 			&& !this.fault.hostFrameFailed && this.fault.faultSnapshot === null
-			&& (!plans.controlActive || plans.honorUserStops && (state.source.stopped || plans.controlSuspended))
-			&& (state.source.stopped || this.execution.paused || plans.controlSuspended)
-			&& (mode === 'continue' || state.source.stopped)
+			&& (!plans.controlActive || plans.honorUserStops && (state.source.stop !== undefined || plans.controlSuspended))
+			&& (state.source.stop !== undefined || this.execution.paused || plans.controlSuspended)
+			&& (mode === 'continue' || state.source.stop !== undefined)
 			&& (mode !== 'out' || state.source.canStepOut);
 	}
 	public resume(mode: SourceExecutionMode, context: RuntimeDebuggerExecutionContext, signal?: AbortSignal): SourceExecutionOperation {
@@ -98,8 +98,8 @@ export class RuntimeDebuggerExecution {
 		this.releaseIntent(operation);
 		const state = this.state;
 		operation.outcome = { mode: operation.mode, status, reason, before: operation.before, after: this.position(),
-			stop: state.source.stopped ? { reason: state.source.stopReason === RuntimeDebuggerStopReason.Breakpoint ? 'breakpoint' : 'step',
-				domain: state.source.stopDomain, pc: state.source.stopPc, inlineDepth: state.source.stopInlineDepth } : undefined };
+			stop: state.source.stop !== undefined ? { reason: state.source.stop!.reason === RuntimeDebuggerStopReason.Breakpoint ? 'breakpoint' : 'step',
+				domain: state.source.stop!.domain, pc: state.source.stop!.pc, inlineDepth: state.source.stop!.inlineDepth } : undefined };
 	}
 	public cancel(operation: SourceExecutionOperation): void {
 		if (this.active !== operation) return;
@@ -132,7 +132,7 @@ export class RuntimeDebuggerExecution {
 			this.finish(operation); return;
 		}
 		if (operation.outcome === undefined) {
-			if (this.state.source.stopped) this.stopped(operation, 'stopped', this.state.source.stopReason === RuntimeDebuggerStopReason.Breakpoint ? 'breakpoint' : 'step');
+			if (this.state.source.stop !== undefined) this.stopped(operation, 'stopped', this.state.source.stop!.reason === RuntimeDebuggerStopReason.Breakpoint ? 'breakpoint' : 'step');
 			else if (this.fault.faultSnapshot !== null) {
 				this.suspend(operation); this.stopped(operation, 'stopped', 'guest-fault');
 			} else if (operation.plan !== this.state.plans.activeControlPlan) {

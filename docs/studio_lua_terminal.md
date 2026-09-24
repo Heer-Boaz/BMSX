@@ -24,7 +24,9 @@ supervisor monitor or during another machine operation.
   cart code. **Context** / `Terminal: Select Lua Context` also offers an
   **Isolated session** with its own persistent namespace. Both survive commands
   and closing the view. Locals last one input unless captured by a retained
-  closure. Neither context injects module-local or selected-frame variables.
+  closure. Neither context injects module-local or selected-frame variables. At a source
+  breakpoint, the same picker additionally offers explicit installed frames;
+  those evaluate live locals/captures before cart globals.
   There is no copied global registerfile, namespace proxy or writeback pass.
   Context is fixed per call and recorded in its receipt and historical input.
   History recalls source into the visibly selected context, not an old scope.
@@ -61,8 +63,9 @@ or `Terminal: Clear Output` clears scrollback, not the Lua namespace/history.
 
 Opening the Terminal inherits the ordinary workbench pause. Submission admits
 one explicit guest completion call after outstanding GPU readbacks finish.
-`scheduleRuntimeGuestCall` completes an already active IRQ before resolving the
-firmware module and materializing its arguments. Compilation and execution run
+`scheduleRuntimeGuestCall` completes an already active IRQ for cart/session
+admission. Selected-frame admission instead pins that IRQ and every ancestor,
+then invokes the named BIOS frame evaluator above them. Compilation and execution run
 on the ordinary scheduled CPU/device path, never inside a runtime mutation task.
 The game continuation is held again when that completion frame returns. A
 separate user pause is not cleared. Tool-directed execution stops rewind
@@ -112,12 +115,13 @@ appended rows; font/width changes reflow retained entries.
 
 ## Codex boundary
 
-The ordinary server advertises `studio_terminal_status`, `studio_evaluate_lua`
-and `studio_control_lua`. They invoke this same session service without opening
+The ordinary server advertises `studio_terminal_status`, `studio_evaluate_lua`,
+`studio_evaluate_frame` and `studio_control_lua`. They invoke this same session service without opening
 a pane, synthesizing a click or adding a Codex-specific Terminal button. Tool
 arguments must select the listed authoring target and explicit `cart` or
 `session` context. The manual selection is not changed by a conversation call.
-`frame` is still rejected rather than silently substituted. See the
+Use `studio_evaluate_frame` with a current source-stack handle for lexical frame
+bindings; a `frame` string passed to `studio_evaluate_lua` is rejected, never substituted. See the
 [binding contract](studio_terminal_contexts.md).
 The [shared source debugger](studio_source_debugger.md) can step a stopped
 Terminal call without replacing its execution plan. Terminal status exposes

@@ -1,5 +1,32 @@
 # Terminal binding contexts
 
+## Current public route
+
+The ordinary Terminal context picker now offers installed source frames at a
+source-debugger stop, alongside Cart globals and Isolated session. The same
+session accepts `studio_evaluate_frame(target, frame, source)` from a conversation;
+`frame` is an opaque handle from its current `studio_read_runtime_stack` result.
+No Codex button, copied namespace, second interpreter or separate server is involved.
+
+The BIOS monitor offers `FRAMES` (physical indices/function addresses/PCs in hex)
+and `LUA --FRAME INDEX DEPTH SOURCE`; prefix hex indices with `0x`. Inline depth
+0 means the physical function's scope. The monitor bounds indices to the actual
+retained exception-entry stack, excluding its own command/evaluation frames.
+Names and locations come from the same installed diagnostic directory on TS/C++.
+Release ROMs without that directory report missing symbols; they do not substitute
+globals. The limited loader still does not implement full typed-pointer syntax.
+
+A manual selection stores only a source-stop ID and an installed source location,
+not a guest Thread or tooling image. IDs are never recycled by reset. The debugger
+owns the complete stop record and retires older IDs at source install, Hot Resume
+(including unchanged-source init) and reset. A returning call cannot resurrect
+one of those retired stops. Frame evaluation at an ordinary host pause or rewind
+position is not admitted: use a current source-debugger stop.
+
+The sections below record successive prerequisite slices; statements that a
+former slice alone did not expose frame context describe that historical slice.
+Current admission and remaining validation limits are recorded at the end.
+
 ## Implementation gate
 
 The shared Terminal is an executor, not a second Lua interpreter. Context is
@@ -1083,3 +1110,94 @@ evaluations. A machine reset replaces the heap; a save-state restore must retain
 ordinary guest scopes as saved state, not indiscriminately revoke them merely
 because Studio exists. Those ownership distinctions must be tested at the real
 admission/replacement boundaries before exposing a frame-context Terminal tool.
+
+## Public frame admission and retirement
+
+Implementation contract, verified against the current owners before editing:
+
+| Representation | TypeScript Studio | C++ / native Terminal | Owner / affected callsite |
+| --- | --- | --- | --- |
+| Selected suspension | One immutable `SourceDebugger.stop` record; an injected call yields and republishes that same record | Physical BIOS exception entry pins its ancestors | Actual source stops and explicit evaluation admission only |
+| Selected frame | Installed `RuntimeStackTraceFrame`, physical index and inline depth, paired with the stop | Explicit physical index and inline depth within the exception-entry stack | Context picker / inspection handle / monitor command, never a copied namespace |
+| Execution | `LuaTerminalSession` admits shared `repl.evaluate_frame` at-stop | Monitor invokes the same firmware entry | Ordinary completion call or guest CALL; no alternate evaluator |
+| Active borrow | Firmware `debug/frame_scopes.active` weak-key table of guest records | Identical saved guest table | Completion and coroutine close already retire scopes |
+| Source replacement | IDE clears active scope threads before installing new locations | No native source installer | `installBlua32Revision`, including AEM installs |
+| Failed injected call unwind | Retire that thread's scopes at/above the removed physical frame | Firmware owns native protected return/close | `applyPreparedHotResume`, before `abortCompletionCall` |
+| Restore / reboot | Source selections expire; restored guest scopes remain ordinary saved state | Same guest save-state contract | Existing state replacement owners; no wholesale retirement on restore |
+
+There are no new CPU fields, opcodes, dispatch branches, per-access host lifetime
+checks, or renderer/scheduler hot-path callsites. The instrumented source matcher
+allocates a stop record only on a real hit, never on misses. Stack/name discovery
+is on-demand. Pause retains execution and borrows; it is not abort or rollback.
+Continue, source replacement and restore invalidate old source-stop selection.
+A successful frame evaluation returns to the same stop but invalidates all value
+inspection handles, because its writes are real.
+
+Production references: [VS Code JS Debug frame evaluator](https://github.com/microsoft/vscode-js-debug/blob/main/src/adapter/evaluator.ts)
+and [LLDB function-call plan](https://github.com/llvm/llvm-project/blob/main/lldb/source/Target/ThreadPlanCallFunction.cpp).
+We use explicit frame admission and plan-owned completion, not their global
+hoisting, register restoration or unwind rollback mechanisms.
+
+Native entry correction: hardware exception vectors use physical static function
+records, not closure captures from `main.lua`. The monitor must read its boundary
+itself. `FrameHeader` therefore also returns the existing `isExceptionFrame` bit
+as its sixth guest result (TS `boolean` tag, C++ `Value` boolean). Both
+`CPU.callBuiltinFunction(FrameHeader)` implementations expose the raw latch; no
+frame state, dispatch loop or save-state format changes. `monitor.enter` reads
+headers once, before enabling IRQs, and retains the nearest exception index.
+The physical monitor command accepts only ancestors below that boundary.
+
+
+### Public-route validation and limits
+
+- Actual Nemesis IRQ source stop: ordinary context picker and Terminal input
+  evaluate the IRQ local and an ancestor's static address on software, WebGL2
+  and WebGPU. Completion preserves every ancestor PC and the active IRQ. Manual
+  selection survives return to the same stop and expires on Continue.
+- The real native Codex app-server and ordinary authorized HTTP bridge execute
+  `studio_evaluate_frame` against that IRQ on all three backends. Tests check
+  actual local writes, pre-error mutations, exact result tuples and expired
+  inspection handles. Model responses are scripted locally: this proves the
+  tool route, not live-model reasoning or personal phone/LAN interaction.
+- Inspection requests await already admitted history/GPU tasks before opening
+  their borrow. A real WebGPU race reproduced the need; no retry/polling of Codex
+  or guest execution is used to make the target available.
+- Actual BIOS monitor/HID input produces byte-identical TS/C++ output for frame
+  read/write, protected Lua error and unavailable inline scope. `FRAMES` is a
+  physical listing, not a native source-debugger UI.
+- Unit/firmware tests cover monotonic stop identity, late completion after reset,
+  Hot Resume and source replacement, and retirement of real suspended firmware
+  accessors. Source installation clears the registry before replacing locations;
+  failed completion unwind clears only matching thread/frame scopes before pop.
+  Restoring saved guest scopes remains the firmware/CPU save-state contract.
+
+Still required for the larger toolset acceptance workflow: a full public
+frame-evaluation -> fault recovery/Hot Resume -> rewind/restore -> reevaluation
+scenario, richer native logical-frame navigation, live Actor mutations and the
+complete reviewed-source save/install/rerun chain. No claim of unrestricted Lua
+syntax or optimized-out value reconstruction is made here.
+
+Final validation for this public slice:
+
+- `npm run test:lua`: 2771 passed, 1 skipped; includes the reproduced/fixed
+  disconnect-after-acquisition race and real firmware-scope retirement tests.
+- `npm run test:studio-assistant`: 48 passed. The three frame conversation
+  tests also passed separately after the final cancellation-lifetime fix.
+- `npm run test:frame-evaluation-parity`: 42 O0/O3 TS/C++ cases, full snapshots.
+- `npm run test:terminal-parity`: actual BIOS/HID TS/C++ parity, including frame
+  mutations/errors. `npm run test:rompacker`: 185 passed.
+- Ordinary browser Terminal workflow passed on software, WebGL2 and WebGPU;
+  inspected screenshots show the frame picker, selected context and conversation
+  transcript. Evidence: `/tmp/public-frame-terminal-owned-*` and
+  `/tmp/bmsx-studio-chat/frame-tools-*-frame-terminal.png`.
+- Machine/toolchain/IDE/browser/Node product typechecks and release/debug browser
+  and Node builds passed; native libretro debug core rebuilt. Test-project
+  typecheck retains the same 95 normalized baseline errors, not new errors.
+- Strict architecture audit: zero issues; core-parity audit and `git diff --check`
+  passed. Indentation check retains its five existing file warnings.
+- Debug BIOS is 16,180,179 bytes, leaving 597,037 bytes under the unchanged
+  16 MiB hardware budget. Release BIOS also contains the new monitor command.
+
+These checks establish the named surfaces, not a general performance benchmark.
+No new work was added to normal CPU dispatch or rendering; frame-name discovery
+and context-label projection occur only on explicit selection/change.

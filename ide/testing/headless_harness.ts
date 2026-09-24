@@ -117,7 +117,7 @@ export function createHeadlessIdeHarness(
 			)!;
 			ide.debugger.breakpoints.toggle(resource, line);
 		},
-		isDebuggerStopped: () => ide.debugger.source.stopped,
+		isDebuggerStopped: () => ide.debugger.source.stop !== undefined,
 		reboot: () => performReboot(
 			ide.boots, ide.editor, ide.execution, ide.overlayRenderer, audioOutput, logOutput,
 		),

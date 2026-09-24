@@ -124,7 +124,7 @@ export async function runStudioTerminal(test: StudioFixture) {
 	check(line > 0, 'installed firmware has the protected invocation breakpoint');
 	ide.debugger.breakpoints.toggle(replResource, line);
 	await paste('counter + 10'); await press('Enter');
-	await until(() => ide.debugger.source.stopped && ide.editor.isActive, 'terminal: normal BIOS source breakpoint');
+	await until(() => ide.debugger.source.stop !== undefined && ide.editor.isActive, 'terminal: normal BIOS source breakpoint');
 	const breakpointCall = session.active!;
 	await until(() => editorTabGroup.activeTab?.kind === 'code_editor', 'terminal: debugger opens the actual BIOS source');
 	await test.runPaletteCommand('View: Lua Terminal');

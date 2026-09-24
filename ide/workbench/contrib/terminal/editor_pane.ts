@@ -1,3 +1,4 @@
+import type { TerminalInputContext } from '../../services/terminal/session';
 import type { Clipboard } from '../../../../hosts/common/clipboard';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import { point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
@@ -40,6 +41,8 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 	private readonly composer = new MultilineFieldControl();
 	private unbindDraft: (() => void) | undefined;
 	private status = '';
+	private context: TerminalInputContext | undefined;
+	private contextStatus = '';
 	public constructor(resources: ResourcePanelController, private readonly clipboard: Clipboard, private readonly quickInput: QuickInputController) {
 		super(resources);
 		this.scroll.focusTarget.commandContext = this.focusTarget;
@@ -68,7 +71,7 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 	public isEnabled(command: EditorCommandId): boolean {
 		const { session, selectedEntry, draftHasText } = this.input;
 		switch (command) {
-			case 'terminal.evaluate': return session.canEvaluate && draftHasText;
+			case 'terminal.evaluate': return session.canEvaluate && session.contextAvailable(session.inputContext) && draftHasText;
 			case 'terminal.context': return session.active === undefined;
 			case 'terminal.pause': return session.canToggleExecution && !session.paused;
 			case 'terminal.continue': return session.canToggleExecution && session.paused;
@@ -81,10 +84,21 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 		if (!this.isEnabled(command)) return;
 		const input = this.input, { session } = input;
 		switch (command) {
-			case 'terminal.context':
+			case 'terminal.context': {
+				const choices: { label: string; description: string; detail: string; context: TerminalInputContext }[] = [...CONTEXTS];
+				const current = session.inputContext;
+				let selected = current === 'cart' ? 0 : current === 'session' ? 1 : -1;
+				for (const context of session.frameContexts()) {
+					const frame = context.frame;
+					if (current !== 'cart' && current !== 'session' && current.stopId === context.stopId
+						&& current.frame.physicalFrameIndex === frame.physicalFrameIndex && current.frame.inlineDepth === frame.inlineDepth) selected = choices.length;
+					choices.push({ label: `Frame: ${frame.functionName}`, description: `#${frame.physicalFrameIndex}:${frame.inlineDepth}`,
+						detail: frame.kind === 'source' ? `${frame.workspacePath}:${frame.line}` : '', context });
+				}
 				this.quickInput.pick('Lua context', 'Select the namespace for manual input',
-					() => new TextQuickPickProvider(CONTEXTS, session.inputContext === 'cart' ? 0 : 1),
+					() => new TextQuickPickProvider(choices, selected),
 					item => { session.inputContext = item.context; }); break;
+			}
 			case 'terminal.evaluate':
 				session.evaluate(input.draft.text, session.inputContext); setFieldText(input.draft, '', true); input.draftHasText = false;
 				input.historyIndex = -1; input.savedDraft = ''; input.draft.focusTarget.focus(); break;
@@ -100,9 +114,15 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 			write_rect_bounds(input.composerBounds, 4, layout.bottom - row * 5 - 10, layout.right - 4, layout.bottom - row - 6);
 			this.scroll.lineStep = row; this.composer.rowHeight = editorViewState.lineHeight;
 		}
+		if (this.context !== session.inputContext) {
+			this.context = session.inputContext;
+			this.contextStatus = this.context === 'cart' ? 'Cart globals | assignments change the running cart'
+				: this.context === 'session' ? 'Isolated session | cart access: getglobal / setglobal'
+				: `Frame: ${this.context.frame.functionName} | live locals and globals`;
+		}
 		const status = session.active !== undefined ? session.paused ? 'Lua call paused. Mutations are retained.' : 'Executing Lua on the guest CPU...'
-			: session.canEvaluate ? session.inputContext === 'cart' ? 'Cart globals | assignments change the running cart'
-				: 'Isolated session | cart access: getglobal / setglobal' : 'Lua unavailable: start/resume cart or finish machine operation';
+			: !session.canEvaluate ? 'Lua unavailable: start/resume cart or finish machine operation'
+				: !session.contextAvailable(session.inputContext) ? 'Selected frame expired | choose Context again' : this.contextStatus;
 		if (changed || status !== this.status) { this.status = status; input.status = truncateMeasuredText(status, layout.right - 8, measureTextRange); }
 		if (changed || session.transcript.revision !== input.projectedRevision) {
 			input.projectedRevision = session.transcript.revision;

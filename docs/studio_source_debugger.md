@@ -140,8 +140,9 @@ thread's dynamic tools.
   general throughput benchmark.
 
 Scenario run/wait/cancel and read-only retained failure inspection are now
-implemented in their separate shared services/tools. Still open: selected-frame
-Terminal evaluation, live test-debugger UI/tools (the
-[execution kernel](studio_test_debugger.md) is implemented), semantic builder tools, and the complete
-reproduce/fix/save/install/rerun workflow. Live-model reasoning and personal
+implemented in their separate shared services/tools. Selected-frame
+[Terminal evaluation](studio_terminal_contexts.md), [live test debugging](studio_test_debugger.md)
+and selected [behavior source edits](studio_behavior_tools.md) now have their own
+public routes. Extended frame recovery/restore and the complete
+reproduce/fix/save/install/rerun workflow remain open. Live-model reasoning and personal
 phone/LAN interaction are not demonstrated by these deterministic fixtures.

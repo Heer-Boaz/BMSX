@@ -57,7 +57,7 @@ function fixture(t: TestContext, source = SOURCE, optLevel: 0 | 3 = 0, modules: 
 		if (runtimeDebuggerExecutionRequested(state) && !state.plans.controlSuspended) cpu.runUntilDepth(0, 100_000);
 		owner.afterHostFrame();
 	};
-	const line = () => blua32SourceRangeAtPc(image.symbols!, image.image.header.textAddress, state.source.stopPc)!.start.line;
+	const line = () => blua32SourceRangeAtPc(image.symbols!, image.image.header.textAddress, state.source.stop!.pc)!.start.line;
 	const stopped = () => { state.breakpoints.set(RESOURCE, [8]); assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped); };
 	return { ...f, state, owner, cpu, execute, stopped, line, image };
 }
@@ -138,7 +138,7 @@ test('older cancellation releases only its own source intent, not a newer manual
 
 test('manual pause retires an old step before the next CPU slice, without replacing the pause', async t => {
 	const f = fixture(t); f.stopped();
-	const pc = f.state.source.stopPc, op = f.owner.resume('into', 'workbench');
+	const pc = f.state.source.stop!.pc, op = f.owner.resume('into', 'workbench');
 	f.execution.setPauseReason(HostPauseReason.Requested, true); f.execute();
 	assert.equal((await op.completion).reason, 'superseded'); assert.equal(f.execution.userPaused, true);
 	assert.equal(f.cpu.readFramePc(f.cpu.getFrameDepth() - 1), pc); assert.equal(runtimeDebuggerExecutionRequested(f.state), false);
@@ -173,7 +173,7 @@ test('a source-stop receipt waits for outstanding history work without running f
 	const hold = Promise.withResolvers<void>();
 	const op = f.owner.resume('into', 'workbench');
 	f.tasks.schedule(() => hold.promise, assert.fail, RuntimeTaskKind.History);
-	f.execute(); assert.equal(f.state.source.stopped, true); assert.equal(op.result, undefined);
+	f.execute(); assert.equal(f.state.source.stop !== undefined, true); assert.equal(op.result, undefined);
 	assert.equal(runtimeDebuggerExecutionRequested(f.state), false);
 	hold.resolve(); await f.tasks.join(); f.owner.afterHostFrame();
 	assert.equal((await op.completion).reason, 'step'); assert.equal(f.inspection.canInspect, true);
@@ -226,7 +226,7 @@ root_value = 3`, optLevel, THREAD_PRIMITIVES);
 		const parent = f.cpu.activeThread;
 		const operation = f.owner.resume(mode, 'workbench'); f.execute();
 		assert.equal((await operation.completion).reason, 'step'); assert.equal(f.line(), 7);
-		assert.equal(f.state.source.stopThread, parent);
+		assert.equal(f.state.source.stop!.thread, parent);
 		assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('child_value')), 2);
 	});
 	for (const failure of [false, true]) for (const mode of ['over', 'out'] as const)
@@ -260,8 +260,8 @@ root_value = 3`, optLevel, THREAD_PRIMITIVES);
 		assert.equal(f.cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped); assert.equal(f.line(), 4);
 		const operation = f.owner.resume('over', 'workbench'); f.execute();
 		assert.equal((await operation.completion).reason, 'breakpoint'); assert.equal(f.line(), 2);
-		assert.equal(f.state.source.stopReason, RuntimeDebuggerStopReason.Breakpoint);
-		assert.equal(f.state.source.stopThread, f.cpu.getGlobalByKey(f.cpu.stringPool.intern('child')));
+		assert.equal(f.state.source.stop!.reason, RuntimeDebuggerStopReason.Breakpoint);
+		assert.equal(f.state.source.stop!.thread, f.cpu.getGlobalByKey(f.cpu.stringPool.intern('child')));
 	});
 	for (const recompile of [false, true]) test(`O${optLevel}: another thread cannot consume resume suppression at the same depth (Hot Resume ${recompile})`, t => {
 		const f = fixture(t, `require('thread_primitives'); other = function()
@@ -278,7 +278,7 @@ root_value = 1`, optLevel, THREAD_PRIMITIVES);
 		f.cpu.beginCompletionCall(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('invoke')) as Closure);
 		assert.equal(f.cpu.runUntilDepth(depth, 100_000, f.cpu.rootThread), RunResult.ExecutionStopped);
 		assert.equal(f.line(), 2); assert.equal(f.cpu.getFrameDepth(), depth);
-		assert.notEqual(f.state.source.stopThread, f.cpu.rootThread);
+		assert.notEqual(f.state.source.stop!.thread, f.cpu.rootThread);
 		if (recompile) applyRuntimeDebuggerHotResume(f.state, f.state.breakpoints.compile(f.sources.currentBlua32Media));
 		f.state.breakpoints.set(RESOURCE, recompile ? [6] : []);
 		resumeRuntimeDebugger(f.state, RuntimeDebuggerResumeMode.Continue);

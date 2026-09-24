@@ -13,7 +13,9 @@ export type SourceExecutionMode = keyof typeof SOURCE_EXECUTION_MODES;
 export const enum RuntimeDebuggerStopReason { Breakpoint, Step }
 /** A source stop retained while a completion call owns execution above it. */
 export type RuntimeDebuggerSourceStop = {
+	readonly id: number;
 	readonly thread: Thread;
+	readonly media: Blua32ToolingMedia;
 	readonly domain: ExecutionDomainId;
 	readonly pc: number;
 	readonly inlineDepth: number;
@@ -23,12 +25,10 @@ type Suppression = { thread: Thread; frame: CallFrame; depth: number };
 
 /** Physical source stops. Composition owns hook installation, scheduling and suspension lifetime. */
 export class SourceDebugger {
-	public stopped = false;
-	public stopDomain: ExecutionDomainId = -1;
-	public stopPc = 0;
-	public stopInlineDepth = 0;
-	public stopReason = RuntimeDebuggerStopReason.Breakpoint;
-	public stopThread: Thread | undefined;
+	public stop: RuntimeDebuggerSourceStop | undefined;
+	// Host suspension identities are never recycled, including after machine reset.
+	private stopSerial = 0;
+	private retiredStopId = 0;
 	private mode = RuntimeDebuggerResumeMode.Continue;
 	public stepThread: Thread | undefined;
 	private stepDepth = 0;
@@ -41,21 +41,21 @@ export class SourceDebugger {
 		private breakpoints: SourceLocationPcs, private readonly changed: () => void) {}
 
 	public install(media: Blua32ToolingMedia, breakpoints: SourceLocationPcs): void {
-		if (this.media !== media) this.stepMedia = undefined;
+		if (this.media !== media) { this.stepMedia = undefined; this.stop = undefined; this.retiredStopId = this.stopSerial; }
 		this.media = media; this.breakpoints = breakpoints;
 		if (this.stepping) this.prepareSteps();
 		this.changed();
 	}
 	public get stepping(): boolean { return this.mode !== RuntimeDebuggerResumeMode.Continue; }
 	public get canStepOut(): boolean {
-		return this.stopped && (this.stopInlineDepth > 0 || this.stopThread!.frames.length > 1 || this.stopThread!.resumer !== null);
+		return this.stop !== undefined && (this.stop.inlineDepth > 0 || this.stop.thread.frames.length > 1 || this.stop.thread.resumer !== null);
 	}
 	public get stepThreadFinished(): boolean {
 		return this.stepThread !== undefined && (this.stepThread.status === ThreadStatus.Dead || this.stepThread.status === ThreadStatus.Failed);
 	}
 	public get domainMask(): ExecutionDomainMask {
 		// Thread return/failure is a step boundary even when its resumer has no symbols.
-		if (this.stopped || this.stepping) return ALL_EXECUTION_DOMAINS_MASK;
+		if (this.stop !== undefined || this.stepping) return ALL_EXECUTION_DOMAINS_MASK;
 		let mask = 0;
 		for (let index = 0; index < 3; index++) if (this.breakpoints[index].size !== 0) {
 			mask |= executionDomainBit((index - 1) as ExecutionDomainId);
@@ -64,9 +64,9 @@ export class SourceDebugger {
 		return mask;
 	}
 
-	/** Called only by the already instrumented CPU path. No allocation or symbol traversal. */
+	/** Instrumented path only. Misses allocate nothing; a real hit owns one stop record. */
 	public shouldStop(domain: ExecutionDomainId, pc: number, honorStops = true): boolean {
-		if (this.stopped) return true;
+		if (this.stop !== undefined) return true;
 		const thread = this.cpu.activeThread, depth = thread.frames.length;
 		for (let index = this.suppression.length - 1; index >= 0; index--) {
 			const entry = this.suppression[index];
@@ -88,8 +88,7 @@ export class SourceDebugger {
 		// A selected-thread step never suppresses a breakpoint in another thread or domain.
 		if (inlineDepth === undefined) inlineDepth = this.breakpoints[index].get(pc);
 		if (inlineDepth === undefined) return false;
-		this.stopped = true; this.stopThread = thread; this.stopDomain = domain; this.stopPc = pc;
-		this.stopInlineDepth = inlineDepth; this.stopReason = reason;
+		this.stop = { id: ++this.stopSerial, thread, media: this.media, domain, pc, inlineDepth, reason };
 		this.mode = RuntimeDebuggerResumeMode.Continue; this.stepThread = undefined;
 		this.changed();
 		return true;
@@ -99,29 +98,29 @@ export class SourceDebugger {
 		this.mode = mode;
 		this.stepThread = this.stepping ? this.cpu.activeThread : undefined;
 		if (this.stepping) {
-			this.stepDepth = this.cpu.getFrameDepth(); this.stepInlineDepth = this.stopInlineDepth;
+			this.stepDepth = this.cpu.getFrameDepth(); this.stepInlineDepth = this.stop === undefined ? 0 : this.stop.inlineDepth;
 			this.prepareSteps();
 		}
-		if (this.stopped && (this.stepping || this.breakpoints[this.stopDomain + 1].has(this.stopPc))) this.suppressCurrentInstruction();
-		this.stopped = false; this.stopThread = undefined;
+		if (this.stop !== undefined && (this.stepping || this.breakpoints[this.stop.domain + 1].has(this.stop.pc))) this.suppressCurrentInstruction();
+		this.stop = undefined;
 		this.changed();
 	}
 
 	/** Unlike Continue, the call will not execute the stopped instruction. */
 	public suspendStopForCall(): RuntimeDebuggerSourceStop {
-		const stop = { thread: this.stopThread!, domain: this.stopDomain, pc: this.stopPc,
-			inlineDepth: this.stopInlineDepth, reason: this.stopReason };
-		this.stopped = false; this.stopThread = undefined;
+		const stop = this.stop!;
+		this.stop = undefined;
 		this.interrupt();
 		return stop;
 	}
 
 	/** The completion boundary has stopped before the retained caller can run. */
-	public returnToStop(stop: RuntimeDebuggerSourceStop): void {
-		this.stopped = true; this.stopThread = stop.thread; this.stopDomain = stop.domain;
-		this.stopPc = stop.pc; this.stopInlineDepth = stop.inlineDepth; this.stopReason = stop.reason;
+	public returnToStop(stop: RuntimeDebuggerSourceStop): boolean {
+		if (stop.id <= this.retiredStopId) return false;
+		this.stop = stop;
 		this.mode = RuntimeDebuggerResumeMode.Continue; this.stepThread = undefined;
 		this.changed();
+		return true;
 	}
 	private suppressCurrentInstruction(): void {
 		const thread = this.cpu.activeThread, depth = thread.frames.length;
@@ -131,14 +130,16 @@ export class SourceDebugger {
 		this.mode = RuntimeDebuggerResumeMode.Continue; this.stepThread = undefined; this.changed();
 	}
 	public reset(): void {
+		this.retiredStopId = this.stopSerial;
 		this.mode = RuntimeDebuggerResumeMode.Continue; this.stepThread = undefined;
-		this.stopped = false; this.stopThread = undefined; this.suppression.length = 0;
+		this.stop = undefined; this.suppression.length = 0;
 		this.changed();
 	}
 	/** Hot Resume has installed new code; suppression must refer to the relocated activation. */
 	public resumeAfterRecompile(wasStopped: boolean): void {
+		this.retiredStopId = this.stopSerial;
 		this.mode = RuntimeDebuggerResumeMode.Continue; this.stepThread = undefined;
-		this.stopped = false; this.stopThread = undefined;
+		this.stop = undefined;
 		// Relocation preserves actual activations. Pending parent suppressions survive nested init calls.
 		this.didExecute();
 		const depth = this.cpu.getFrameDepth();

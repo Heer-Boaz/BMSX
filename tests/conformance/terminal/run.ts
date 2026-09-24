@@ -70,6 +70,13 @@ const commands = [
 	'lua return pcall(fn)',
 	'lua local x=table.pack(select(2,7));return x.n',
 	'lua return string.find("abcd","bc")',
+	'lua print("FRAMES-BEGIN")',
+	'frames',
+	'lua --frame 0 0 vblank_count=37;return vblank_count,nil,false',
+	'lua --frame 0 0 vblank_count=38;error("frame error")',
+	'lua --frame 0 0 return vblank_count',
+	'lua --frame 0 999 return vblank_count',
+	'lua --frame 999 0 return 999',
 	'lua print("TERMINAL-END")',
 ];
 // Earlier cases exercise the explicitly isolated session; the same physical
@@ -111,6 +118,7 @@ try {
 	assert.match(result, /GLOBALS-BEGIN\nnil\n1\n41\nnil\nnil\n23\nfalse\nnil\nglobal error\n42\nInvalid argument\.\nInvalid argument\.\n/);
 	assert.match(result, /CART-BEGIN\nnil\nnil\n41\n50\n51\n80\n43\n81\n7\n80\nnil\n85\n95\ncart error\n91\n/);
 	assert.match(result, /TUPLES-BEGIN\nnil\nnil\n7\tnil\tfalse\t9\tnil\n1\t7\tnil\tfalse\t9\tnil\n7\n5\n6\ntrue\t7\tnil\tfalse\t9\tnil\n0\n2\t3\n/);
+	assert.match(result, /37\tnil\tfalse\nframe error\n38\nFrame source scope is unavailable/, 'selected native frame writes and pre-error side effects are real');
 	assert.ok(result.endsWith('TERMINAL-END\nnil\n'), 'syntax error does not kill the physical monitor');
 	console.log('TERMINAL-PARITY:PASS (real BIOS monitor, HID input, TypeScript and native C++)');
 	rmSync(directory, { recursive: true });

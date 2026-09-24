@@ -24,7 +24,7 @@ export function createRuntimeDebuggerState(runtime: Runtime, sources: RuntimeSou
 	let state: RuntimeDebuggerState;
 	const executionHook: ExecutionHook = (domain, pc) => {
 		const controlActive = state.plans.controlActive;
-		if (state.source.stopped || state.source.stepThreadFinished || controlActive && state.plans.shouldStop(domain, pc)) return true;
+		if (state.source.stop !== undefined || state.source.stepThreadFinished || controlActive && state.plans.shouldStop(domain, pc)) return true;
 		if (!state.source.shouldStop(domain, pc, !controlActive || state.plans.honorUserStops)) return false;
 		if (controlActive) state.plans.setControlSuspended(true);
 		state.stopPresentationPending = true;
@@ -56,7 +56,7 @@ export function resumeRuntimeDebugger(state: RuntimeDebuggerState, mode: Runtime
 }
 
 export function runtimeDebuggerExecutionRequested(state: RuntimeDebuggerState): boolean {
-	return !state.source.stopped && (state.executionContext !== undefined || state.source.stepping)
+	return state.source.stop === undefined && (state.executionContext !== undefined || state.source.stepping)
 		|| state.plans.controlExecutionRequested;
 }
 
@@ -87,7 +87,7 @@ export function pushRuntimeDebuggerControlPlan(
 	stopPolicy: 'resume' | 'retain' = 'resume',
 ): RuntimeDebuggerSourceStop | undefined {
 	let retained: RuntimeDebuggerSourceStop | undefined;
-	if (state.source.stopped) {
+	if (state.source.stop !== undefined) {
 		if (stopPolicy === 'retain') {
 			state.executionRevision++;
 			state.executionContext = undefined;
@@ -130,7 +130,7 @@ export function discardRuntimeDebuggerFramesFrom(state: RuntimeDebuggerState, fr
 export function applyRuntimeDebuggerHotResume(state: RuntimeDebuggerState, breakpoints: RuntimeBreakpointBindings): void {
 	state.executionRevision++;
 	state.executionContext = undefined;
-	const wasStopped = state.source.stopped;
+	const wasStopped = state.source.stop !== undefined;
 	state.stopPresentationPending = false;
 	state.breakpoints.install(breakpoints);
 	state.source.resumeAfterRecompile(wasStopped);

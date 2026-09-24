@@ -1692,6 +1692,7 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			out.push_back(valueNumber(frame.callSitePc));
 			out.push_back(valueBool(frame.returnToCompletionLatch));
 			out.push_back(valueNumber(static_cast<u32>(frame.executionImage->executionDomainId)));
+			out.push_back(valueBool(frame.isExceptionFrame));
 			break;
 		}
 		case BuiltinFunctionId::GetFrameRegister:

@@ -29,7 +29,7 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	check(line > 0, 'installed firmware has the protected invocation breakpoint');
 	ide.debugger.breakpoints.toggle(repl, line);
 	await submitAssistantText(test, 'Execute Lua, continue after the breakpoint, inspect the result and test errors without changing cart source.');
-	await until(() => ide.debugger.source.stopped && terminal.active !== undefined, 'terminal tools: actual BIOS breakpoint');
+	await until(() => ide.debugger.source.stop !== undefined && terminal.active !== undefined, 'terminal tools: actual BIOS breakpoint');
 	check(terminal.active!.result === undefined, 'breakpoint retains the actual call');
 	ide.debugger.breakpoints.toggle(repl, line);
 	await until(() => conversation.state === 'ready', 'terminal tools: model receives pause, continues and finishes');

@@ -21,6 +21,7 @@ export { runAssistantRuntime } from './studio_assistant_runtime';
 export { runAssistantNavigation } from './studio_assistant_frame_navigation';
 export { runAssistantTerminal } from './studio_assistant_terminal';
 export { runAssistantStack } from './studio_assistant_stack';
+export { runAssistantFrame } from './studio_assistant_frame';
 
 /** Automated fixture setup; prompt, review and Undo use the production keyboard/pointer route. */
 export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasElement, capture: (name: string) => Promise<void>, waitForModel: () => Promise<void>) {
