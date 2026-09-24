@@ -237,6 +237,7 @@ function createRawTestBlua32Object(
 		statementPointsByProto: functions.map(() => []),
 		resumePointsByProto: functions.map(() => []),
 		localSlotsByProto: functions.map(() => []),
+		captureSlotsByProto: functions.map(() => []),
 		functionDefinitionsByProto: functions.map(() => null),
 		capturedLocals: [],
 		upvalueBindingsByProto: functions.map(() => []),

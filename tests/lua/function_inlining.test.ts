@@ -138,6 +138,7 @@ test('inlining does not overwrite a caller register live above the CALL results'
 		}),
 		getProtoFunctionId: () => 'callee',
 		getProtoLocalSlots: () => [],
+		getProtoCaptureSlots: () => [],
 		relocatedConstIndices: new Set<number>(),
 		closureWrittenRegisters: new Set<number>(),
 	};
@@ -176,6 +177,7 @@ test('inlining does not overwrite a register retained by an open closure', () =>
 		} : null,
 		getProtoFunctionId: protoIndex => protoIndex === 0 ? 'callee' : 'capturing_closure',
 		getProtoLocalSlots: () => [],
+		getProtoCaptureSlots: () => [],
 		relocatedConstIndices: new Set<number>(),
 		closureWrittenRegisters: new Set<number>(),
 	};
@@ -213,6 +215,7 @@ test('inlining can reuse a future capture slot before its closure is opened', ()
 		} : null,
 		getProtoFunctionId: protoIndex => protoIndex === 0 ? 'callee' : 'capturing_closure',
 		getProtoLocalSlots: () => [],
+		getProtoCaptureSlots: () => [],
 		relocatedConstIndices: new Set<number>(),
 		closureWrittenRegisters: new Set<number>(),
 	};
@@ -321,7 +324,13 @@ return nested()
 	assert.equal(nestedParentCapture.index, 0);
 	assert.ok(compiled.metadata.capturedLocals.some(local => local.name === 'identity'));
 	const linked = linkTestSystemBlua32(compiled);
-	assert.ok(!linked.symbols.metadata.capturedLocals.some(local => local.name === 'identity'));
+	const debugCaptures = linked.symbols.metadata.captureSlotsByFunction[outerProtoIndex];
+	const identity = debugCaptures.find(slot => linked.symbols.metadata.capturedLocals[slot.captureIndex].name === 'identity')!;
+	assert.equal(identity.location, null, 'eliminated runtime captures retain their lexical identity');
+	assert.deepEqual(identity.liveWordRanges, []);
+	const retained = debugCaptures.find(slot => linked.symbols.metadata.capturedLocals[slot.captureIndex].name === 'retained')!;
+	assert.deepEqual(retained.location, { inStack: false, index: 0 });
+	assert.equal(linked.image.functions[outerProtoIndex].upvalues.length, 1, 'debug metadata does not retain an unused physical cell');
 });
 
 test('a nested closure write invalidates a mutable local call target', () => {
@@ -414,4 +423,29 @@ return 1
 	const optimized = compileLuaSource(source, INLINE_TEST_PATH, 3);
 
 	assert.match(disassembleEntry(optimized), /\bCALL\b/);
+});
+
+test('eliminated inline capture registers outside the final physical frame have no live interval', () => {
+	const source = `local run = function(seed, ...)
+	local outer<const> = function(value)
+		${Array.from({ length: 32 }, (_, index) => `local dead_${index} = ${index}`).join('\n')}
+		local captured = value
+		local inner<const> = function() return captured end
+		return inner()
+	end
+	return outer(seed)
+end
+return run(42)`;
+	const compiled = compileLuaSource(source, INLINE_TEST_PATH, 3);
+	const runIndex = compiled.metadata.protoDisplayNames.indexOf('run');
+	const maxStack = compiled.program.protos[runIndex].maxStack;
+	const captures = compiled.metadata.captureSlotsByProto[runIndex].filter(slot => slot.inlineCallSites.length === 2);
+	assert.equal(captures.length, 1);
+	assert.ok(captures[0].location!.inStack);
+	assert.ok(captures[0].location!.index >= maxStack, 'the optimizer removed the high numbered register');
+	assert.deepEqual(captures[0].liveWordRanges, [], 'a location outside the physical register window is not live');
+	for (const slot of compiled.metadata.localSlotsByProto[runIndex]) {
+		if (slot.registerIndex >= maxStack) assert.deepEqual(slot.liveWordRanges, [], 'the same rule applies to eliminated inline locals');
+	}
+	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [42]);
 });

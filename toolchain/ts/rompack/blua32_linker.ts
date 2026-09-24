@@ -267,40 +267,32 @@ function buildDebugInlineCallSiteTable(
 	return { debugInlineCallSiteChains, debugInlineCallSiteChainIds };
 }
 
-function relocateCapturedLocals(
-	bindings: ReadonlyArray<number>,
+function relocateCapturedLocal(
+	sourceIndex: number,
 	sourceLocals: ReadonlyArray<Blua32CapturedLocalDebug>,
 	remap: Int32Array,
 	capturedLocals: Blua32CapturedLocalDebug[],
 	previous?: Blua32LinkBaseline,
-): ReadonlyArray<number> {
-	if (bindings.length === 0) {
-		return bindings;
-	}
-	const relocated = new Array<number>(bindings.length);
-	for (let slot = 0; slot < bindings.length; slot += 1) {
-		const sourceIndex = bindings[slot];
-		let index = remap[sourceIndex];
-		if (index === -1) {
-			index = capturedLocals.length;
-			const local = sourceLocals[sourceIndex];
-			if (previous === undefined) {
-				capturedLocals.push(local);
-			} else {
-				let definition: SourceRange | null = null;
-				if (local.definition !== null && previous.captureSources !== undefined) {
-					const mapped = local.kind === CapturedLocalKind.Receiver
-						? previous.captureSources.functionRange(local.definition)
-						: previous.captureSources.declaration(local.definition);
-					if (mapped !== undefined) definition = mapped;
-				}
-				capturedLocals.push({ ...local, definition });
+): number {
+	let index = remap[sourceIndex];
+	if (index === -1) {
+		index = capturedLocals.length;
+		const local = sourceLocals[sourceIndex];
+		if (previous === undefined) {
+			capturedLocals.push(local);
+		} else {
+			let definition: SourceRange | null = null;
+			if (local.definition !== null && previous.captureSources !== undefined) {
+				const mapped = local.kind === CapturedLocalKind.Receiver
+					? previous.captureSources.functionRange(local.definition)
+					: previous.captureSources.declaration(local.definition);
+				if (mapped !== undefined) definition = mapped;
 			}
-			remap[sourceIndex] = index;
+			capturedLocals.push({ ...local, definition });
 		}
-		relocated[slot] = index;
+		remap[sourceIndex] = index;
 	}
-	return relocated;
+	return index;
 }
 
 function alignImageOffset(offset: number, imageAddress: number, alignment: number): number {
@@ -1013,6 +1005,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const statementPointsByFunction = new Array<Blua32DebugMetadata['statementPointsByFunction'][number]>(functionCount);
 	const resumePointsByFunction = new Array<Blua32DebugMetadata['resumePointsByFunction'][number]>(functionCount);
 	const localSlotsByFunction = new Array<Blua32DebugMetadata['localSlotsByFunction'][number]>(functionCount);
+	const captureSlotsByFunction = new Array<Blua32DebugMetadata['captureSlotsByFunction'][number]>(functionCount);
 	const upvalueBindingsByFunction = new Array<Blua32DebugMetadata['upvalueBindingsByFunction'][number]>(functionCount);
 	const capturedLocals: Blua32CapturedLocalDebug[] = [];
 	const captureRemap = new Int32Array(input.metadata.capturedLocals.length).fill(-1);
@@ -1030,14 +1023,9 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			statementPointsByFunction[slot] = noDebugRecords;
 			resumePointsByFunction[slot] = noDebugRecords;
 			localSlotsByFunction[slot] = noDebugRecords;
-			upvalueBindingsByFunction[slot]
-				= relocateCapturedLocals(
-					input.previous!.symbols.metadata.upvalueBindingsByFunction[slot],
-					input.previous!.symbols.metadata.capturedLocals,
-					previousCaptureRemap!,
-					capturedLocals,
-					input.previous!,
-				);
+			captureSlotsByFunction[slot] = noDebugRecords;
+			upvalueBindingsByFunction[slot] = input.previous!.symbols.metadata.upvalueBindingsByFunction[slot].map(capture =>
+				relocateCapturedLocal(capture, input.previous!.symbols.metadata.capturedLocals, previousCaptureRemap!, capturedLocals, input.previous!));
 			continue;
 		}
 		functionDisplayNames[slot] = input.metadata.protoDisplayNames[protoIndex];
@@ -1045,12 +1033,12 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		statementPointsByFunction[slot] = input.metadata.statementPointsByProto[protoIndex];
 		resumePointsByFunction[slot] = input.metadata.resumePointsByProto[protoIndex];
 		localSlotsByFunction[slot] = input.metadata.localSlotsByProto[protoIndex];
-		upvalueBindingsByFunction[slot] = relocateCapturedLocals(
-			input.metadata.upvalueBindingsByProto[protoIndex],
-			input.metadata.capturedLocals,
-			captureRemap,
-			capturedLocals,
-		);
+		upvalueBindingsByFunction[slot] = input.metadata.upvalueBindingsByProto[protoIndex].map(capture =>
+			relocateCapturedLocal(capture, input.metadata.capturedLocals, captureRemap, capturedLocals));
+		captureSlotsByFunction[slot] = input.metadata.captureSlotsByProto[protoIndex].map(capture => ({
+			...capture,
+			captureIndex: relocateCapturedLocal(capture.captureIndex, input.metadata.capturedLocals, captureRemap, capturedLocals),
+		}));
 	}
 	const debugInlineCallSiteTable = buildDebugInlineCallSiteTable(
 		input.metadata.debugInlineCallSites,
@@ -1074,6 +1062,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		statementPointsByFunction,
 		resumePointsByFunction,
 		localSlotsByFunction,
+		captureSlotsByFunction,
 		capturedLocals,
 		upvalueBindingsByFunction,
 	};

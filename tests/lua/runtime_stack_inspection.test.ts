@@ -115,7 +115,8 @@ return run(41)`, 3, 2);
 	assert.equal(callee.physicalFrameIndex, caller.physicalFrameIndex);
 	assert.notEqual(callee.reference, caller.reference);
 	const calleeScopes = inspection.frameScopes(callee.reference).scopes;
-	assert.equal(calleeScopes[1].status, 'inlined');
+	assert.equal(calleeScopes[1].status, 'available');
+	assert.equal(calleeScopes[1].count, 0);
 	const calleeLocals = inspection.read(calleeScopes[0].reference!, 0, 100).entries;
 	assert.ok(calleeLocals.every(entry => entry.key.display === 'value' || entry.key.display === 'copy'));
 	const callerLocals = inspection.read(inspection.frameScopes(caller.reference).scopes[0].reference!, 0, 100).entries;
@@ -264,4 +265,104 @@ test('tool stack/frame handles are prompt-local and external paging arguments ar
 	assert.throws(() => tools.execute('studio_read_frame_scopes', { frame }), /does not belong/);
 	lifetime.abort();
 	assert.throws(() => tools.execute('studio_read_frame_scopes', { frame }), /disposed/);
+});
+
+for (const level of [0, 3] as const) test(`O${level}: capture scopes follow register and closure locations through nested inlining`, t => {
+	const f = fixture(`local closed<const> = { answer = 42 }
+local run = function(seed, ...)
+	local register = seed
+	local outer<const> = function(value)
+		local middle_value<const> = value + seed
+		local inner<const> = function(bonus)
+			register = register + bonus
+			return register + closed.answer + middle_value
+		end
+		return inner(value)
+	end
+	local result = outer(2)
+	return result + outer(3)
+end
+return run(40)`, level, 8);
+	const cpu = f.runtime.machine.cpu;
+	const before = [cpu.luaHeap.usedBytes(), cpu.getFrameDepth(), f.runtime.machine.scheduler.currentNowCycles()];
+	const registers = cpu.activeThread.frames.map(frame => t.mock.method(frame.registers, 'get'));
+	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	const frames = inspection.readStack(0, 100).frames;
+	const inner = frames.find(frame => frame.functionName === 'inner')!;
+	const outer = frames.find(frame => frame.functionName === 'outer')!;
+	assert.equal(inner.inlineDepth, level === 0 ? 0 : 2);
+	assert.equal(outer.inlineDepth, level === 0 ? 0 : 1);
+	const scopes = inspection.frameScopes(inner.reference).scopes;
+	assert.ok(registers.every(read => read.mock.callCount() === 0), 'listing metadata does not read guest locations');
+	const captures = inspection.read(scopes[1].reference!, 0, 100).entries;
+	assert.deepEqual(captures.map(entry => entry.key.display), ['register', 'closed', 'middle_value']);
+	assert.deepEqual(captures.map(entry => entry.isConst), [false, true, true]);
+	assert.equal(captures[0].value.display, '42');
+	assert.equal(inspection.read(captures[1].value.reference!, 0, 10).entries[0].value.display, '42');
+	assert.equal(captures[2].value.display, '42');
+	assert.deepEqual(captures.map(entry => entry.definition!.start.line), [3, 1, 5]);
+	const outerCaptures = inspection.read(inspection.frameScopes(outer.reference).scopes[1].reference!, 0, 100).entries;
+	assert.ok(!outerCaptures.some(entry => entry.key.display === 'middle_value'), 'inner bindings never leak into their caller');
+	assert.deepEqual([cpu.luaHeap.usedBytes(), cpu.getFrameDepth(), f.runtime.machine.scheduler.currentNowCycles()], before);
+});
+
+test('eliminated captures stay explicitly unavailable instead of using a same-name global or reading a stale cell', t => {
+	const f = fixture(`identity = 999
+local identity<const> = function(value) return value end
+local retained = 42
+local outer<const> = function()
+	local answer = identity(2)
+	halt_until_irq
+	return retained + answer
+end
+return outer()`, 3);
+	const cpu = f.runtime.machine.cpu;
+	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	const frame = inspection.readStack(0, 100).frames.find(frame => frame.functionName === 'outer')!;
+	const physical = cpu.activeThread.frames[frame.physicalFrameIndex];
+	const reads = t.mock.method(physical.registers, 'get');
+	const captures = inspection.read(inspection.frameScopes(frame.reference).scopes[1].reference!, 0, 100).entries;
+	const identity = captures.find(entry => entry.key.display === 'identity')!;
+	assert.equal(identity.isConst, true);
+	assert.equal(identity.definition!.start.line, 2);
+	assert.deepEqual(identity.value, { kind: 'unavailable', reason: 'no-live-location', display: '<no live location>' });
+	assert.equal(captures.find(entry => entry.key.display === 'retained')!.value.display, '42');
+	assert.equal(reads.mock.callCount(), 0, 'eliminated captures do not read the selected frame registers');
+	assert.equal(physical.closure.upvalues.length, 1, 'debugging does not keep the eliminated closure cell alive');
+});
+
+test('conversation frame scopes expose an inlined capture through the same stopped inspection owner', async t => {
+	const f = fixture(`local captured<const> = { answer = 42 }
+local run = function(seed, ...)
+	local inspect<const> = function(value)
+		return captured.answer + value
+	end
+	return inspect(seed)
+end
+return run(1)`, 3, 4);
+	const lifetime = new AbortController();
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, lifetime.signal);
+	t.after(() => tools.dispose());
+	const before = [f.runtime.machine.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
+	const opened = await tools.execute('studio_inspect_runtime', { target: f.inspection.target });
+	assert.ok('inspection' in opened.data);
+	const stack = await tools.execute('studio_read_runtime_stack', { inspection: opened.data.inspection, start: 0, count: 100 });
+	assert.ok('frames' in stack.data);
+	const frame = stack.data.frames.find(frame => frame.functionName === 'inspect')!;
+	assert.equal(frame.inlineDepth, 1);
+	const scopes = await tools.execute('studio_read_frame_scopes', { frame: frame.reference });
+	assert.ok('frame' in scopes.data);
+	const scope = scopes.data.scopes.find(scope => scope.kind === 'upvalues')!;
+	assert.equal(scope.status, 'available');
+	const captures = await tools.execute('studio_read_runtime_values', { reference: scope.reference, start: 0, count: 100 });
+	assert.ok('entries' in captures.data);
+	assert.equal(captures.data.entries.length, 1);
+	const capture = captures.data.entries[0];
+	assert.equal(capture.key.display, 'captured');
+	assert.equal(capture.isConst, true);
+	assert.equal(capture.value.kind, 'table');
+	const fields = await tools.execute('studio_read_runtime_values', { reference: capture.value.reference, start: 0, count: 100 });
+	assert.ok('entries' in fields.data);
+	assert.equal(fields.data.entries[0].value.display, '42');
+	assert.deepEqual([f.runtime.machine.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
 });

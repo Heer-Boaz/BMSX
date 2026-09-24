@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rompack/tooling/capture_kind.h"
+#include "rompack/tooling/blua32_image.h"
 
 #include "common/primitives.h"
 #include "rompack/tooling/source_range.h"
@@ -29,6 +30,13 @@ struct Blua32LocalSlotDebug {
 	i32 registerIndex = 0;
 	SourceRange definition;
 	SourceRange scope;
+	std::vector<Blua32InlineCallSite> inlineCallSites;
+	std::vector<ProgramWordRange> liveWordRanges;
+};
+
+struct Blua32CaptureSlotDebug {
+	u32 captureIndex;
+	std::optional<Blua32UpvalueRecord> location;
 	std::vector<Blua32InlineCallSite> inlineCallSites;
 	std::vector<ProgramWordRange> liveWordRanges;
 };
@@ -73,6 +81,7 @@ struct Blua32DebugMetadata {
 	std::vector<std::vector<Blua32StatementPoint>> statementPointsByFunction;
 	std::vector<std::vector<Blua32ResumePoint>> resumePointsByFunction;
 	std::vector<std::vector<Blua32LocalSlotDebug>> localSlotsByFunction;
+	std::vector<std::vector<Blua32CaptureSlotDebug>> captureSlotsByFunction;
 	std::vector<Blua32CapturedLocalDebug> capturedLocals;
 	std::vector<std::vector<u32>> upvalueBindingsByFunction;
 };
@@ -105,7 +114,7 @@ struct Blua32SymbolsImage {
 
 auto decodeBlua32SymbolsImage(std::span<const u8> bytes) -> Blua32SymbolsImage;
 auto encodeBlua32SymbolsImage(const Blua32SymbolsImage& symbols) -> std::vector<u8>;
-auto blua32LocalSlotLiveAtPc(const Blua32LocalSlotDebug& slot, u32 codeAddress, u32 pc) -> bool;
+auto blua32SlotLiveAtPc(std::span<const ProgramWordRange> ranges, u32 codeAddress, u32 pc) -> bool;
 auto blua32SourceRangeAtPc(
 	const Blua32SymbolsImage& symbols,
 	u32 textAddress,

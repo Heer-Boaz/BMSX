@@ -110,6 +110,7 @@ function makeMetadata(
 		statementPointsByProto: protoIds.map(() => []),
 		resumePointsByProto: protoIds.map(() => []),
 		localSlotsByProto: protoIds.map(() => []),
+		captureSlotsByProto: protoIds.map(() => []),
 		functionDefinitionsByProto: protoIds.map(() => null),
 		capturedLocals: [],
 		upvalueBindingsByProto: protoIds.map(() => []),
@@ -193,6 +194,7 @@ function setFunctionIds(
 	metadata.statementPointsByProto = ids.map(() => []);
 	metadata.resumePointsByProto = ids.map(() => []);
 	metadata.localSlotsByProto = ids.map(() => []);
+	metadata.captureSlotsByProto = ids.map(() => []);
 	metadata.functionDefinitionsByProto = ids.map(() => null);
 	metadata.upvalueBindingsByProto = ids.map(() => []);
 }
@@ -1102,6 +1104,9 @@ test('BLua32 relinks live and tombstoned captures from their own declaration gen
 		assert.deepEqual(metadata.capturedLocals[freshBinding], compiled.metadata.capturedLocals[0]);
 		assert.equal(metadata.capturedLocals[oldBinding].functionId, metadata.capturedLocals[freshBinding].functionId);
 		assert.equal(metadata.localSlotsByFunction[removedIndex].length, 0);
+		assert.deepEqual(metadata.captureSlotsByFunction[removedIndex], [], 'removed functions have no current capture scope');
+		assert.equal(metadata.captureSlotsByFunction[freshIndex][0].captureIndex, freshBinding);
+		assert.deepEqual(metadata.captureSlotsByFunction[freshIndex][0].location, { inStack: false, index: 0 });
 	}
 	assert.equal(linked.symbols.metadata.capturedLocals.find(local => local.name === 'value')!.definition!.start.line, 3);
 });

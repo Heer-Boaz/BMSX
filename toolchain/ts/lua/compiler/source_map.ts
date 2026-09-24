@@ -278,6 +278,9 @@ export function mapProgramMetadataSourceRanges(
 		statementPointsByProto,
 		resumePointsByProto,
 		localSlotsByProto,
+		captureSlotsByProto: metadata.captureSlotsByProto.map(slots => slots.map(slot => ({
+			...slot, inlineCallSites: mapInlineCallSites(slot.inlineCallSites),
+		}))),
 		functionDefinitionsByProto: metadata.functionDefinitionsByProto.map(range => range === null ? null : mapLuaSourceRange(sourceMaps, range)),
 		capturedLocals: metadata.capturedLocals.map((local): CapturedLocalDebug => ({
 			...local,

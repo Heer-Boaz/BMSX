@@ -121,22 +121,38 @@ auto encodeInlineCallSites(const std::vector<Blua32InlineCallSite>& callSites) -
 	return BinValue(std::move(result));
 }
 
+auto decodeWordRanges(const BinValue& value) -> std::vector<ProgramWordRange> {
+	const BinArray& ranges = value.asArray();
+	std::vector<ProgramWordRange> result;
+	result.reserve(ranges.size());
+	for (const BinValue& range : ranges) {
+		result.push_back({range.require("start").toI32(), range.require("end").toI32()});
+	}
+	return result;
+}
+
+auto encodeWordRanges(std::span<const ProgramWordRange> ranges) -> BinValue {
+	BinArray result;
+	result.reserve(ranges.size());
+	for (const ProgramWordRange& range : ranges) {
+		BinObject entry;
+		entry["start"] = BinValue(range.start);
+		entry["end"] = BinValue(range.end);
+		result.emplace_back(std::move(entry));
+	}
+	return BinValue(std::move(result));
+}
+
 auto decodeLocalSlot(const BinValue& value) -> Blua32LocalSlotDebug {
-	Blua32LocalSlotDebug slot{
+	return Blua32LocalSlotDebug{
 		value.require("name").asString(),
 		value.require("isConst").asBool(),
 		value.require("registerIndex").toI32(),
 		decodeSourceRange(value.require("definition")),
 		decodeSourceRange(value.require("scope")),
 		decodeInlineCallSites(value.require("inlineCallSites")),
-		{},
+		decodeWordRanges(value.require("liveWordRanges")),
 	};
-	const BinArray& ranges = value.require("liveWordRanges").asArray();
-	slot.liveWordRanges.reserve(ranges.size());
-	for (const BinValue& range : ranges) {
-		slot.liveWordRanges.push_back({range.require("start").toI32(), range.require("end").toI32()});
-	}
-	return slot;
 }
 
 auto encodeLocalSlot(const Blua32LocalSlotDebug& slot) -> BinValue {
@@ -147,15 +163,35 @@ auto encodeLocalSlot(const Blua32LocalSlotDebug& slot) -> BinValue {
 	value["definition"] = encodeSourceRange(slot.definition);
 	value["scope"] = encodeSourceRange(slot.scope);
 	value["inlineCallSites"] = encodeInlineCallSites(slot.inlineCallSites);
-	BinArray ranges;
-	ranges.reserve(slot.liveWordRanges.size());
-	for (const ProgramWordRange& range : slot.liveWordRanges) {
-		BinObject entry;
-		entry["start"] = BinValue(range.start);
-		entry["end"] = BinValue(range.end);
-		ranges.emplace_back(std::move(entry));
+	value["liveWordRanges"] = encodeWordRanges(slot.liveWordRanges);
+	return BinValue(std::move(value));
+}
+
+auto decodeCaptureSlot(const BinValue& value) -> Blua32CaptureSlotDebug {
+	const BinValue& location = value.require("location");
+	return Blua32CaptureSlotDebug{
+		static_cast<u32>(value.require("captureIndex").toNumber()),
+		location.isNull() ? std::nullopt : std::optional<Blua32UpvalueRecord>({
+			location.require("inStack").asBool(), static_cast<u32>(location.require("index").toNumber()),
+		}),
+		decodeInlineCallSites(value.require("inlineCallSites")),
+		decodeWordRanges(value.require("liveWordRanges")),
+	};
+}
+
+auto encodeCaptureSlot(const Blua32CaptureSlotDebug& slot) -> BinValue {
+	BinObject value;
+	value["captureIndex"] = BinValue(static_cast<i64>(slot.captureIndex));
+	if (slot.location.has_value()) {
+		BinObject location;
+		location["inStack"] = BinValue(slot.location->inStack);
+		location["index"] = BinValue(static_cast<i64>(slot.location->index));
+		value["location"] = BinValue(std::move(location));
+	} else {
+		value["location"] = BinValue(nullptr);
 	}
-	value["liveWordRanges"] = BinValue(std::move(ranges));
+	value["inlineCallSites"] = encodeInlineCallSites(slot.inlineCallSites);
+	value["liveWordRanges"] = encodeWordRanges(slot.liveWordRanges);
 	return BinValue(std::move(value));
 }
 
@@ -279,6 +315,17 @@ auto decodeMetadata(const BinValue& value) -> Blua32DebugMetadata {
 		}
 	}
 
+	const BinArray& captureSlots = value.require("captureSlotsByFunction").asArray();
+	metadata.captureSlotsByFunction.resize(captureSlots.size());
+	for (size_t functionIndex = 0; functionIndex < captureSlots.size(); ++functionIndex) {
+		const BinArray& encodedSlots = captureSlots[functionIndex].asArray();
+		auto& decodedSlots = metadata.captureSlotsByFunction[functionIndex];
+		decodedSlots.reserve(encodedSlots.size());
+		for (const BinValue& slot : encodedSlots) {
+			decodedSlots.push_back(decodeCaptureSlot(slot));
+		}
+	}
+
 	const BinArray& upvalueBindings = value.require("upvalueBindingsByFunction").asArray();
 	metadata.upvalueBindingsByFunction.resize(upvalueBindings.size());
 	for (size_t functionIndex = 0; functionIndex < upvalueBindings.size(); ++functionIndex) {
@@ -379,6 +426,18 @@ auto encodeMetadata(const Blua32DebugMetadata& metadata) -> BinValue {
 	}
 	value["localSlotsByFunction"] = BinValue(std::move(localSlots));
 
+	BinArray captureSlots;
+	captureSlots.reserve(metadata.captureSlotsByFunction.size());
+	for (const auto& functionSlots : metadata.captureSlotsByFunction) {
+		BinArray slots;
+		slots.reserve(functionSlots.size());
+		for (const Blua32CaptureSlotDebug& slot : functionSlots) {
+			slots.push_back(encodeCaptureSlot(slot));
+		}
+		captureSlots.emplace_back(std::move(slots));
+	}
+	value["captureSlotsByFunction"] = BinValue(std::move(captureSlots));
+
 	BinArray upvalueBindings;
 	upvalueBindings.reserve(metadata.upvalueBindingsByFunction.size());
 	for (const std::vector<u32>& functionBindings : metadata.upvalueBindingsByFunction) {
@@ -460,9 +519,8 @@ auto encodeBlua32SymbolsImage(const Blua32SymbolsImage& symbols) -> std::vector<
 	return encodeBinary(BinValue(std::move(root)));
 }
 
-auto blua32LocalSlotLiveAtPc(const Blua32LocalSlotDebug& slot, u32 codeAddress, u32 pc) -> bool {
+auto blua32SlotLiveAtPc(std::span<const ProgramWordRange> ranges, u32 codeAddress, u32 pc) -> bool {
 	const i32 word = static_cast<i32>((pc - codeAddress) / INSTRUCTION_BYTES);
-	const auto& ranges = slot.liveWordRanges;
 	size_t low = 0, high = ranges.size();
 	while (low < high) {
 		const size_t middle = (low + high) >> 1;

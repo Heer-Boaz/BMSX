@@ -1,3 +1,4 @@
+import type { Blua32UpvalueRecord } from './blua32_image';
 import type { ProgramWordRange } from '../lua/compiler/word_range';
 import type { CapturedLocalKind } from '../lua/compiler/capture_kind';
 import { decodeBinary, encodeBinary } from '../../../machine/ts/common/serializer/binencoder';
@@ -37,6 +38,13 @@ export type Blua32LocalSlotDebug = {
 	definition: SourceRange;
 	scope: SourceRange;
 	inlineCallSites: ReadonlyArray<Blua32InlineCallSite>;
+};
+
+export type Blua32CaptureSlotDebug = {
+	captureIndex: number;
+	location: Blua32UpvalueRecord | null;
+	inlineCallSites: ReadonlyArray<Blua32InlineCallSite>;
+	readonly liveWordRanges: readonly ProgramWordRange[];
 };
 
 export type Blua32CapturedLocalDebug = {
@@ -80,6 +88,7 @@ export type Blua32DebugMetadata = {
 	statementPointsByFunction: ReadonlyArray<ReadonlyArray<Blua32StatementPoint>>;
 	resumePointsByFunction: ReadonlyArray<ReadonlyArray<Blua32ResumePoint>>;
 	localSlotsByFunction: ReadonlyArray<ReadonlyArray<Blua32LocalSlotDebug>>;
+	captureSlotsByFunction: ReadonlyArray<ReadonlyArray<Blua32CaptureSlotDebug>>;
 	capturedLocals: ReadonlyArray<Blua32CapturedLocalDebug>;
 	upvalueBindingsByFunction: ReadonlyArray<ReadonlyArray<number>>;
 };
@@ -110,9 +119,8 @@ export function blua32SourceRangeAtPc(
 	return symbols.metadata.debugRanges[(pc - textAddress) / INSTRUCTION_BYTES];
 }
 
-export function blua32LocalSlotLiveAtPc(slot: Blua32LocalSlotDebug, codeAddress: number, pc: number): boolean {
+export function blua32SlotLiveAtPc(ranges: readonly ProgramWordRange[], codeAddress: number, pc: number): boolean {
 	const word = (pc - codeAddress) / INSTRUCTION_BYTES;
-	const ranges = slot.liveWordRanges;
 	let low = 0, high = ranges.length;
 	while (low < high) {
 		const middle = (low + high) >>> 1;

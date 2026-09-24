@@ -89,9 +89,9 @@ export class InspectionValues {
 			for (let index = start, end = Math.min(start + count, total); index < end; index++) {
 				const binding = container.bindings[index];
 				entries.push({ key: { kind: 'string', display: binding.name }, definition: binding.definition, isConst: binding.isConst,
-					value: binding.available
-						? this.describe(container.kind === 'locals' ? container.frame.registers.get(binding.index)
-							: guest.readClosureUpvalue(container.frame.closure, binding.index))
+					value: binding.location !== null
+						? this.describe(binding.location.inStack ? container.frame.registers.get(binding.location.index)
+							: guest.readClosureUpvalue(container.frame.closure, binding.location.index))
 						: { kind: 'unavailable', reason: 'no-live-location', display: '<no live location>' } });
 			}
 		}

@@ -1,11 +1,12 @@
 import { OpCode } from '../../../../../machine/ts/spec/blua32/opcode';
-import type { UpvalueDesc } from '../program';
+import type { CaptureSlotDebug, UpvalueDesc } from '../program';
 import type { Instruction } from './index';
 
 export function compactUnusedUpvalues(
 	instructions: Instruction[],
 	descriptors: UpvalueDesc[],
 	bindings: number[],
+	captureSlots: ReadonlyArray<CaptureSlotDebug>,
 	closureUpvalues: (protoIndex: number) => UpvalueDesc[],
 	retainedCount = 0,
 ): void {
@@ -55,6 +56,7 @@ export function compactUnusedUpvalues(
 	let nextIndex = 0;
 	for (let index = 0; index < count; index += 1) {
 		if (remap[index] === 0) {
+			remap[index] = -1;
 			continue;
 		}
 		remap[index] = nextIndex;
@@ -64,6 +66,12 @@ export function compactUnusedUpvalues(
 	}
 	descriptors.length = liveCount;
 	bindings.length = liveCount;
+	for (const slot of captureSlots) {
+		if (slot.location === null || slot.location.inStack) continue;
+		const index = remap[slot.location.index];
+		if (index === -1) slot.location = null;
+		else slot.location.index = index;
+	}
 
 	for (let instructionIndex = 0; instructionIndex < instructions.length; instructionIndex += 1) {
 		const instruction = instructions[instructionIndex];

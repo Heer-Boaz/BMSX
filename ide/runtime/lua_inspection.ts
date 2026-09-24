@@ -1,8 +1,8 @@
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
-import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
+import { blua32FunctionIndexAtAddress, type Blua32UpvalueRecord } from '../../toolchain/ts/rompack/blua32_image';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
-import { blua32InlineCallSitesAtPc, blua32SourceRangeAtPc, blua32LocalSlotLiveAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
+import { blua32InlineCallSitesAtPc, blua32SourceRangeAtPc, blua32SlotLiveAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
 import { resolveInlineLocalContextRange } from '../../toolchain/ts/lua/compiler/inline_debug';
 import type { FileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 import { findLuaSemanticOccurrenceAt } from '../../toolchain/ts/lua/semantic/position_query';
@@ -19,14 +19,13 @@ export type RuntimeLuaFrameBinding = {
 	readonly name: string;
 	readonly isConst: boolean;
 	readonly definition: SourceRange | null;
-	readonly index: number;
-	readonly available: boolean;
+	readonly location: Blua32UpvalueRecord | null;
 };
 export type RuntimeLuaFrameScope = {
 	readonly kind: 'locals' | 'upvalues';
 } & (
 	| { readonly status: 'available'; readonly bindings: readonly RuntimeLuaFrameBinding[] }
-	| { readonly status: 'symbols-unavailable' | 'function-unmapped' | 'source-unmapped' | 'inlined' }
+	| { readonly status: 'symbols-unavailable' | 'function-unmapped' | 'source-unmapped' }
 );
 
 /** Installed locations for one logical frame, not a name lookup across recursive invocations. */
@@ -38,26 +37,31 @@ export function runtimeLuaFrameScopes(frame: RuntimeStackFrame, inlineDepth: num
 	}
 	const scopes: RuntimeLuaFrameScope[] = [];
 	const range = blua32SourceRangeAtPc(symbols, image.layout.header.textAddress, frame.tracePc);
+	const inlineSites = blua32InlineCallSitesAtPc(symbols, image.layout.header.textAddress, frame.tracePc);
 	if (range === null) scopes.push({ kind: 'locals', status: 'source-unmapped' });
 	else {
-		const inlineSites = blua32InlineCallSitesAtPc(symbols, image.layout.header.textAddress, frame.tracePc);
 		const bindings: RuntimeLuaFrameBinding[] = [];
 		for (const slot of symbols.metadata.localSlotsByFunction[functionIndex]) {
 			if (slot.inlineCallSites.length !== inlineDepth) continue;
 			const context = resolveInlineLocalContextRange(slot, range, inlineSites);
 			if (context === null || context.path !== slot.scope.path
 				|| !sourcePositionInRange(context.start.line, context.start.column, slot.scope)) continue;
-			bindings.push({ name: slot.name, isConst: slot.isConst, definition: slot.definition, index: slot.registerIndex,
-				available: blua32LocalSlotLiveAtPc(slot, image.layout.functions[functionIndex].codeAddress, frame.tracePc) });
+			bindings.push({ name: slot.name, isConst: slot.isConst, definition: slot.definition,
+				location: blua32SlotLiveAtPc(slot.liveWordRanges, image.layout.functions[functionIndex].codeAddress, frame.tracePc)
+					? { inStack: true, index: slot.registerIndex } : null });
 		}
 		scopes.push({ kind: 'locals', status: 'available', bindings });
 	}
-	if (inlineDepth !== 0) scopes.push({ kind: 'upvalues', status: 'inlined' });
+	if (range === null && inlineDepth !== 0) scopes.push({ kind: 'upvalues', status: 'source-unmapped' });
 	else {
-		const bindings = symbols.metadata.upvalueBindingsByFunction[functionIndex].map((capture, index): RuntimeLuaFrameBinding => {
-			const local = symbols.metadata.capturedLocals[capture];
-			return { name: local.name, isConst: local.isConst, definition: local.definition, index, available: true };
-		});
+		const bindings: RuntimeLuaFrameBinding[] = [];
+		for (const slot of symbols.metadata.captureSlotsByFunction[functionIndex]) {
+			if (slot.inlineCallSites.length !== inlineDepth) continue;
+			if (range !== null && resolveInlineLocalContextRange(slot, range, inlineSites) === null) continue;
+			const local = symbols.metadata.capturedLocals[slot.captureIndex];
+			bindings.push({ name: local.name, isConst: local.isConst, definition: local.definition,
+				location: blua32SlotLiveAtPc(slot.liveWordRanges, image.layout.functions[functionIndex].codeAddress, frame.tracePc) ? slot.location : null });
+		}
 		scopes.push({ kind: 'upvalues', status: 'available', bindings });
 	}
 	return scopes;
@@ -203,15 +207,19 @@ export function readRuntimeLuaValue(
 			// redirect the read to an older recursive call with the same declaration.
 			if (context === null || context.path !== definition.path
 				|| !sourcePositionInRange(context.start.line, context.start.column, slot.scope)
-				|| !blua32LocalSlotLiveAtPc(slot, image.layout.functions[functionIndex].codeAddress, pc)) return NOT_IN_SCOPE;
+				|| !blua32SlotLiveAtPc(slot.liveWordRanges, image.layout.functions[functionIndex].codeAddress, pc)) return NOT_IN_SCOPE;
 			const value = captured === undefined ? cpu.readFrameRegister(frameIndex, slot.registerIndex) : captured.registers[slot.registerIndex];
 			return guest.readStringPath(value, parts, 1);
 		}
-		const captures = symbols.metadata.upvalueBindingsByFunction[functionIndex];
-		for (let index = 0; index < captures.length; index += 1) {
-			const local = symbols.metadata.capturedLocals[captures[index]];
+		for (const slot of symbols.metadata.captureSlotsByFunction[functionIndex]) {
+			const local = symbols.metadata.capturedLocals[slot.captureIndex];
 			if (local.definition === null || !sourceRangesEqual(local.definition, definition)) continue;
-			const value = captured === undefined ? cpu.readFrameUpvalue(frameIndex, index) : captured.upvalues[index];
+			if (slot.inlineCallSites.length !== 0 && (range === null || resolveInlineLocalContextRange(slot, range, inlineSites) === null)) continue;
+			const location = slot.location;
+			if (location === null || !blua32SlotLiveAtPc(slot.liveWordRanges, image.layout.functions[functionIndex].codeAddress, pc)) return NOT_IN_SCOPE;
+			const value = location.inStack
+				? captured === undefined ? cpu.readFrameRegister(frameIndex, location.index) : captured.registers[location.index]
+				: captured === undefined ? cpu.readFrameUpvalue(frameIndex, location.index) : captured.upvalues[location.index];
 			return guest.readStringPath(value, parts, 1);
 		}
 	}

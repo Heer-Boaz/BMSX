@@ -52,6 +52,11 @@ int main() {
 	symbols.metadata.localSlotsByFunction = {{
 		{"value", true, 1, innerCallRange, outerCallRange, inlineCallSites, {{2, 4}, {6, 8}}},
 	}};
+	symbols.metadata.captureSlotsByFunction = {{
+		{0, bmsx::Blua32UpvalueRecord{true, 17}, inlineCallSites, {{2, 4}}},
+		{0, bmsx::Blua32UpvalueRecord{false, 0}, {}, {{0, 8}}},
+		{0, std::nullopt, inlineCallSites, {}},
+	}};
 	symbols.metadata.functionDefinitions = {innerCallRange};
 	symbols.metadata.capturedLocals = {
 		{"module:cart/module", "value", bmsx::CapturedLocalKind::Local, true, innerCallRange},
@@ -80,6 +85,22 @@ int main() {
 			throw std::runtime_error("BLua32 explicit erasure/emission/empty selection did not round-trip");
 		}
 	}
+	const auto& captures = decodedSymbols.metadata.captureSlotsByFunction[0];
+	if (captures.size() != 3 || captures[0].captureIndex != 0
+		|| !captures[0].location->inStack || captures[0].location->index != 17
+		|| captures[0].inlineCallSites.size() != 2 || captures[0].inlineCallSites[1].calleeFunctionId != "inner"
+		|| captures[0].liveWordRanges.size() != 1 || captures[0].liveWordRanges[0].start != 2 || captures[0].liveWordRanges[0].end != 4
+		|| captures[1].location->inStack || captures[1].location->index != 0 || !captures[1].inlineCallSites.empty()
+		|| captures[1].liveWordRanges[0].end != 8
+		|| captures[2].location.has_value() || !captures[2].liveWordRanges.empty()) {
+		throw std::runtime_error("BLua32 capture origins, inline chains and physical locations did not round-trip");
+	}
+	for (bmsx::u32 word = 0; word <= 9; ++word) {
+		if (bmsx::blua32SlotLiveAtPc(captures[0].liveWordRanges, 0x2000, 0x2000 + word * bmsx::INSTRUCTION_BYTES) != (word >= 2 && word < 4)
+			|| bmsx::blua32SlotLiveAtPc(captures[2].liveWordRanges, 0x2000, 0x2000 + word * bmsx::INSTRUCTION_BYTES)) {
+			throw std::runtime_error("BLua32 capture locations use the same half-open ranges as locals");
+		}
+	}
 	const auto& slot = decodedSymbols.metadata.localSlotsByFunction[0][0];
 	for (const bool isConst : {false, true}) {
 		symbols.metadata.localSlotsByFunction[0][0].isConst = isConst;
@@ -95,12 +116,12 @@ int main() {
 	}
 	for (bmsx::u32 word = 0; word <= 9; ++word) {
 		const bool expected = (word >= 2 && word < 4) || (word >= 6 && word < 8);
-		if (bmsx::blua32LocalSlotLiveAtPc(slot, 0x2000, 0x2000 + word * bmsx::INSTRUCTION_BYTES) != expected) {
+		if (bmsx::blua32SlotLiveAtPc(slot.liveWordRanges, 0x2000, 0x2000 + word * bmsx::INSTRUCTION_BYTES) != expected) {
 			throw std::runtime_error("BLua32 local word locations must be half-open with explicit gaps");
 		}
 	}
 	bmsx::Blua32LocalSlotDebug foldedSlot{};
-	if (bmsx::blua32LocalSlotLiveAtPc(foldedSlot, 0x2000, 0x2000)) {
+	if (bmsx::blua32SlotLiveAtPc(foldedSlot.liveWordRanges, 0x2000, 0x2000)) {
 		throw std::runtime_error("BLua32 folded local must not invent a debug location");
 	}
 	if (decodedSymbols.metadata.functionDefinitions.size() != 1u

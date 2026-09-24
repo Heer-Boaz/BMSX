@@ -147,3 +147,25 @@ test('explicit program entry selects a module without rewriting the project entr
 	assert.equal(resolveLuaEntryModuleIndex(modules), 0);
 	assert.throws(() => resolveLuaEntryModuleIndex(modules, 'missing'), /not in the program/);
 });
+
+test('inlined capture locations retain physical indices while their call chains map to authored source', () => {
+	const entrySource = `module<entry>\nrequire('${GENERATED_PATH}')`;
+	const mapped = buildMappedModule(`local capture = { answer = 42 }
+local run = function(seed, ...)
+	local inspect<const> = function(value) return capture.answer + value end
+	return inspect(seed)
+end
+return run(1)`);
+	const module = { path: GENERATED_PATH, source: mapped.source, chunk: parseLuaChunk(mapped.source, GENERATED_PATH).chunk! };
+	const entry = parseLuaChunk(entrySource, ENTRY_PATH).chunk!;
+	const generated = compileLuaChunkToProgram(entry, [module], { entrySource, optLevel: 3 });
+	const authored = compileLuaChunkToProgram(entry, [{ ...module, sourceMap: mapped.sourceMap }], { entrySource, optLevel: 3 });
+	const inlineCaptures = authored.metadata.captureSlotsByProto.flat().filter(slot => slot.inlineCallSites.length !== 0);
+	assert.ok(inlineCaptures.length > 0);
+	assert.ok(inlineCaptures.every(slot => slot.inlineCallSites.every(site => site.callRange.path === TEST_RANGE_PATH)));
+	assert.ok(inlineCaptures.some(slot => slot.inlineCallSites[0].callRange.start.line === 4));
+	assert.equal(authored.metadata.capturedLocals[inlineCaptures[0].captureIndex].definition.path, TEST_RANGE_PATH);
+	assert.deepEqual(authored.metadata.captureSlotsByProto.map(slots => slots.map(({ inlineCallSites, ...physical }) => physical)),
+		generated.metadata.captureSlotsByProto.map(slots => slots.map(({ inlineCallSites, ...physical }) => physical)));
+	assert.deepEqual(authored.program, generated.program, 'source mapping never changes code or closure layout');
+});

@@ -54,9 +54,15 @@ physical-frame index and inline depth. Local scope resolution uses the exact
 inline call chain and compiler live-word ranges. An unavailable register is
 reported explicitly, never read as nil or resolved in an older invocation.
 Shadowed bindings keep their declaration ranges instead of collapsing by name.
-Upvalue scopes belong to the physical closure; virtual inline frames do not
-pretend to own a separate closure. This is read-only inspection, not frame-context
-Terminal evaluation or source stepping.
+Capture scopes keep their lexical owner even after inlining: their installed
+location may be a register in the physical caller or a cell in its closure.
+The compiler records that lowering and any later upvalue compaction; the
+inspector never infers storage from the scope's `upvalues` presentation label.
+Virtual inline frames do not own synthetic closures. Eliminated captures retain
+their declaration with no live location, rather than disappearing and exposing
+a same-name global. This is read-only inspection, not frame-context Terminal
+evaluation. The producer and native symbol contract are described in
+[capture locations](studio_terminal_contexts.md#capture-location-producer-gate).
 
 ## Tools
 

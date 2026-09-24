@@ -176,6 +176,87 @@ frame names. Those consumers remain gated on at-stop admission, shared binding
 metadata, and target/lifetime tests; there is no public tool `frame` context
 until that full route exists.
 
+## Capture-location producer gate
+
+Live inspection found a missing producer fact: the optimizer lowers an inlined
+`GETUP`/`SETUP` to a caller register or caller upvalue, but previously retained
+only local-slot locations. Capture identity must survive that lowering and
+subsequent upvalue compaction. It is not valid for evaluation to reinterpret a
+missing captured name as an ordinary global.
+
+The existing physical diagnostic directory is the eventual firmware-readable
+metadata owner; no second source-symbol database belongs in the CPU. Before
+extending that directory, the compiler must emit correct capture locations for
+physical and logical inline frames. LLVM's
+[location-list producer](https://github.com/llvm/llvm-project/blob/main/llvm/lib/CodeGen/AsmPrinter/DwarfDebug.cpp)
+keeps declaration identity separate from optimized locations; Lua's
+[local lookup](https://github.com/lua/lua/blob/master/ldebug.c) consults the
+function's debug metadata at the selected PC. BMSX does not adopt synthetic
+temporary names or manufacture values for eliminated locations. VS Code JS
+Debug's [evaluator](https://github.com/microsoft/vscode-js-debug/blob/main/src/adapter/evaluator.ts)
+likewise selects an explicit frame rather than substituting global evaluation.
+
+| Representation | TypeScript/toolchain | C++ tooling | Execution effect |
+| --- | --- | --- | --- |
+| Capture origin | Existing `capturedLocals` declaration index | Same symbol index | Not a same-name search |
+| Located capture | `CaptureSlotDebug`: origin, register/upvalue location or explicit absence, inline call chain | Mirrored symbol record | Compiler remaps with GETUP/SETUP lowering and compaction |
+| Register availability | Final instruction-word liveness intervals | Same intervals | Reuses the existing liveness pass |
+| Inspection binding | Binding carries its physical location, independent of Locals/Upvalues presentation | No native Studio frontend | Reads the selected actual register/cell only on demand |
+
+Affected callsites are compiler `finalizeCode`, `buildInlineExpansion`,
+`compactUnusedUpvalues`, `buildProgramDebugPoints`, metadata source mapping,
+linker capture relocation, symbols encoding/decoding and explicit frame-scope
+inspection. CPU dispatch, frame push/pop, closure layout, GC, scheduler,
+save-state format, renderers and firmware execution receive no change. Debug
+metadata cannot keep an otherwise unused runtime upvalue alive.
+
+Implemented: required capture-slot metadata for physical and nested inline
+frames, exact call-chain mapping, final liveness, origin relocation and native
+symbol encoding/decoding. The ordinary inspector, hover and shared conversation
+frame/value tools consume these locations. Dead captures retain their names and
+constness without retaining cells. Removed functions have no current capture
+scopes, while their physical closure layout remains separately described for
+Hot Resume. Debug ROMs must be rebuilt; there is no old-symbol fallback.
+
+A regression also established that folding after inlining can remove the high
+end of the remapped register window. The liveness producer now leaves those
+locations empty instead of interpreting an out-of-window bitmap access as live.
+This corrects both ordinary inline locals and register-backed captures without
+enlarging the guest frame or running another liveness pass.
+
+These records describe lowered captures, not a deoptimization or complete
+source-language evaluator. They do not reconstruct compile-time constants that
+never acquired a captured cell. Firmware-readable named scopes and at-stop
+frame-evaluation admission remain separate gates, including that lexical
+coverage; the public Terminal still has only cart/session contexts.
+
+### Capture-location validation (2026-09-24)
+
+- Actual O0/O3 execution covers mutable/const captures, register-backed and
+  closure-backed locations through two inline levels, repeated inline calls,
+  eliminated capture cells and removed high registers. Shared conversation
+  scope/value requests read the same real table. Metadata reads do not touch
+  registers; inspection leaves guest heap usage and machine time unchanged.
+- Source-map tests preserve physical indices while mapping inline chains to
+  authored source. Relinking separates current and removed capture origins.
+  TS and native symbols round-trip register, upvalue and absent locations.
+- Full Lua: 2531 pass, one skip. Rompacker: 182 pass. The browser -> ordinary
+  authorized server -> Codex app-server -> deterministic Responses suite passes
+  all 45 tests on software/WebGL2/WebGPU, including actual stopped-cart scope
+  reads and ordinary Scenario Lab inspection. Stack conversation screenshots
+  were inspected. This is automated integration evidence, not live-model
+  reasoning, personal authentication or a new native frame-name frontend.
+- Native symbol-format test, ten TS/C++ physical frame-evaluation parity vectors
+  and the actual BIOS monitor Terminal parity all pass. BIOS/Nemesis and
+  browser/Node products were rebuilt. Product typechecks pass; the tests project
+  retains the same 95 baseline diagnostics after normalizing line positions.
+  Architecture boundaries report zero issues; core parity, indentation and
+  `git diff --check` pass.
+- Eight representative programs at O0 and O3 have identical complete `Program`
+  hashes against `6f28e0108`, including instructions, prototypes and constants.
+  The patch changes no machine or per-frame dispatch path. This is
+  code-generation/ownership evidence, not a general throughput benchmark.
+
 ## Validation (2026-09-24)
 
 - The actual browser -> authorized ordinary HTTP -> native Codex app-server ->

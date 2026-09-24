@@ -18,7 +18,7 @@ import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES, readInstructionWord } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { blua32LocalSlotLiveAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
+import { blua32SlotLiveAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import {
@@ -733,11 +733,11 @@ halt_until_irq`;
 		const codeAddress = layout.functions[functionIndex].codeAddress;
 		const slot = image.symbols.metadata.localSlotsByFunction[functionIndex].find(local => local.name === 'target')!;
 		assert.equal((readInstructionWord(layout.textBytes, (pc - layout.header.textAddress) / INSTRUCTION_BYTES) >>> 18) & 0x3f, OpCode.WIDE);
-		assert.equal(blua32LocalSlotLiveAtPc(slot, codeAddress, pc), true);
-		assert.equal(blua32LocalSlotLiveAtPc(slot, codeAddress, pc + INSTRUCTION_BYTES), true, 'prefix and following opcode describe the same live-in value');
+		assert.equal(blua32SlotLiveAtPc(slot.liveWordRanges, codeAddress, pc), true);
+		assert.equal(blua32SlotLiveAtPc(slot.liveWordRanges, codeAddress, pc + INSTRUCTION_BYTES), true, 'prefix and following opcode describe the same live-in value');
 		for (const range of slot.liveWordRanges) {
-			assert.equal(blua32LocalSlotLiveAtPc(slot, codeAddress, codeAddress + range.start * INSTRUCTION_BYTES), true);
-			assert.equal(blua32LocalSlotLiveAtPc(slot, codeAddress, codeAddress + range.end * INSTRUCTION_BYTES), false, 'interval end is exclusive');
+			assert.equal(blua32SlotLiveAtPc(slot.liveWordRanges, codeAddress, codeAddress + range.start * INSTRUCTION_BYTES), true);
+			assert.equal(blua32SlotLiveAtPc(slot.liveWordRanges, codeAddress, codeAddress + range.end * INSTRUCTION_BYTES), false, 'interval end is exclusive');
 		}
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
 			analysis, SYSTEM_RESOURCE_DOMAIN, ['target'], declarations.length + 4, 8);

@@ -1,6 +1,7 @@
 import { OpCode, decodeCallArgCount } from '../../../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../source_range';
 import type {
+	CaptureSlotDebug,
 	InlineCallSite,
 	LocalSlotDebug,
 	ProgramConstant,
@@ -75,6 +76,7 @@ export type OptimizationContext = {
 	getProtoInstructionSet: (protoIndex: number) => InstructionSet | null;
 	getProtoFunctionId: (protoIndex: number) => string;
 	getProtoLocalSlots: (protoIndex: number) => ReadonlyArray<LocalSlotDebug>;
+	getProtoCaptureSlots: (protoIndex: number) => ReadonlyArray<CaptureSlotDebug>;
 	relocatedConstIndices: ReadonlySet<number>;
 	closureWrittenRegisters: ReadonlySet<number>;
 };
@@ -83,6 +85,7 @@ export type InstructionSet = {
 	instructions: Instruction[];
 	ranges: Array<SourceRange | null>;
 	inlineLocalSlots?: LocalSlotDebug[];
+	inlineCaptureSlots?: CaptureSlotDebug[];
 };
 
 type InstructionRegisterOperand = 'a' | 'b' | 'c';
@@ -1217,6 +1220,7 @@ const cleanupControlFlow = (set: InstructionSet): InstructionSet => {
 type InlineCallee = {
 	functionId: string;
 	localSlots: ReadonlyArray<LocalSlotDebug>;
+	captureSlots: ReadonlyArray<CaptureSlotDebug>;
 	meta: OptimizationProtoMeta;
 	set: InstructionSet;
 };
@@ -1851,6 +1855,15 @@ const buildInlineExpansion = (
 			inlineCallSites: mapInlineCallSites(slot.inlineCallSites),
 		}));
 	}
+	if (callee.captureSlots.length !== 0) {
+		expansion.inlineCaptureSlots = callee.captureSlots.map(slot => ({
+			captureIndex: slot.captureIndex,
+			location: slot.location === null ? null
+				: slot.location.inStack ? { inStack: true, index: mapRegister(slot.location.index) }
+					: { ...callee.meta.upvalueDescs[slot.location.index] },
+			inlineCallSites: mapInlineCallSites(slot.inlineCallSites),
+		}));
+	}
 	return expansion;
 };
 
@@ -1917,6 +1930,7 @@ const inlineFunctionCalls = (
 	const initialCount = set.instructions.length;
 	const maxCount = initialCount + MAX_INLINE_GROWTH;
 	const inlineLocalSlots: LocalSlotDebug[] = [];
+	const inlineCaptureSlots: CaptureSlotDebug[] = [];
 	const calleeCache = new Map<number, InlineCallee | null>();
 	const getInlineCallee = (protoIndex: number): InlineCallee | null => {
 		const cached = calleeCache.get(protoIndex);
@@ -1968,6 +1982,7 @@ const inlineFunctionCalls = (
 		const callee: InlineCallee = {
 			functionId: context.getProtoFunctionId(protoIndex),
 			localSlots: context.getProtoLocalSlots(protoIndex),
+			captureSlots: context.getProtoCaptureSlots(protoIndex),
 			meta,
 			set: instructionSet,
 		};
@@ -2017,6 +2032,9 @@ const inlineFunctionCalls = (
 									if (expansion.inlineLocalSlots !== undefined) {
 										inlineLocalSlots.push(...expansion.inlineLocalSlots);
 									}
+									if (expansion.inlineCaptureSlots !== undefined) {
+										inlineCaptureSlots.push(...expansion.inlineCaptureSlots);
+									}
 									inlinedCalls += 1;
 									inlined = true;
 									break;
@@ -2042,9 +2060,9 @@ const inlineFunctionCalls = (
 			break;
 		}
 	}
-	return inlineLocalSlots.length === 0
+	return inlineLocalSlots.length === 0 && inlineCaptureSlots.length === 0
 		? current
-		: { ...current, inlineLocalSlots };
+		: { ...current, inlineLocalSlots, inlineCaptureSlots };
 };
 
 const runMidLevelOptimizations = (
@@ -2087,12 +2105,16 @@ export const optimizeInstructions = (
 		}
 		current = inlineFunctionCalls(current, context);
 		const inlineLocalSlots = current.inlineLocalSlots;
+		const inlineCaptureSlots = current.inlineCaptureSlots;
 		current = cleanupControlFlow(current);
 		current = applyGlobalOptimizations(current, context);
 		current = cleanupControlFlow(current);
 		current = runMidLevelOptimizations(current, context);
 		if (inlineLocalSlots !== undefined) {
 			current.inlineLocalSlots = inlineLocalSlots;
+		}
+		if (inlineCaptureSlots !== undefined) {
+			current.inlineCaptureSlots = inlineCaptureSlots;
 		}
 	}
 	return current;

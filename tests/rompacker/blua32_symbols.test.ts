@@ -6,7 +6,7 @@ import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_form
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import {
 	blua32InlineCallSitesAtPc,
-	blua32LocalSlotLiveAtPc,
+	blua32SlotLiveAtPc,
 	decodeBlua32SymbolsImage,
 	encodeBlua32SymbolsImage,
 	type Blua32SymbolsImage,
@@ -53,6 +53,11 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 			]],
 			localSlotsByFunction: [[{ name: 'value', isConst: true, registerIndex: 1, definition: innerCallRange,
 				scope: outerCallRange, inlineCallSites, liveWordRanges: [{ start: 2, end: 4 }, { start: 6, end: 8 }] }]],
+			captureSlotsByFunction: [[
+				{ captureIndex: 0, location: { inStack: true, index: 17 }, inlineCallSites, liveWordRanges: [{ start: 2, end: 4 }] },
+				{ captureIndex: 0, location: { inStack: false, index: 0 }, inlineCallSites: [], liveWordRanges: [{ start: 0, end: 8 }] },
+				{ captureIndex: 0, location: null, inlineCallSites, liveWordRanges: [] },
+			]],
 			capturedLocals: [{
 				kind: CapturedLocalKind.Local,
 				isConst: true,
@@ -81,10 +86,10 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 	assert.deepEqual(decoded.metadata.resumePointsByFunction, symbols.metadata.resumePointsByFunction);
 	const slot = decoded.metadata.localSlotsByFunction[0][0];
 	for (let word = 0; word <= 9; word += 1) {
-		assert.equal(blua32LocalSlotLiveAtPc(slot, 0x2000, 0x2000 + word * INSTRUCTION_BYTES),
+		assert.equal(blua32SlotLiveAtPc(slot.liveWordRanges, 0x2000, 0x2000 + word * INSTRUCTION_BYTES),
 			word >= 2 && word < 4 || word >= 6 && word < 8, 'word intervals are half-open with explicit gaps');
 	}
-	assert.equal(blua32LocalSlotLiveAtPc({ ...slot, liveWordRanges: [] }, 0x2000, 0x2000), false);
+	assert.equal(blua32SlotLiveAtPc([], 0x2000, 0x2000), false);
 	assert.deepEqual(decoded.metadata.capturedLocals, symbols.metadata.capturedLocals);
 	assert.deepEqual(decoded.metadata.upvalueBindingsByFunction, [[0]]);
 	assert.deepEqual(decoded.metadata.functionDisplayNames, ['invoke']);

@@ -69,6 +69,17 @@ export type CapturedLocalDebug = {
 	definition: SourceRange;
 };
 
+/** Lexical capture identity survives lowering even when its physical cell does not. */
+export type CaptureSlotDebug = {
+	captureIndex: number;
+	location: UpvalueDesc | null;
+	inlineCallSites: ReadonlyArray<InlineCallSite>;
+};
+
+export type LocatedCaptureSlotDebug = CaptureSlotDebug & {
+	readonly liveWordRanges: readonly ProgramWordRange[];
+};
+
 export type ProgramMetadata = ProgramRuntimeSymbols & {
 	traceStatements: TraceStatementSelection;
 	preloadModules: readonly string[];
@@ -79,6 +90,7 @@ export type ProgramMetadata = ProgramRuntimeSymbols & {
 	statementPointsByProto: ReadonlyArray<ReadonlyArray<ProgramStatementPoint>>;
 	resumePointsByProto: ReadonlyArray<ReadonlyArray<ProgramResumePoint>>;
 	localSlotsByProto: ReadonlyArray<ReadonlyArray<LocatedLocalSlotDebug>>;
+	captureSlotsByProto: ReadonlyArray<ReadonlyArray<LocatedCaptureSlotDebug>>;
 	capturedLocals: ReadonlyArray<CapturedLocalDebug>;
 	upvalueBindingsByProto: ReadonlyArray<ReadonlyArray<number>>;
 };

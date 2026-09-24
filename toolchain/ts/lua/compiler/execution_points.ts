@@ -1,8 +1,10 @@
 import type { SourceRange } from '../source_range';
 import type {
+	CaptureSlotDebug,
 	InlineCallSite,
 	LocalSlotDebug,
 	LocatedLocalSlotDebug,
+	LocatedCaptureSlotDebug,
 	ProgramResumePoint,
 	ProgramStatementPoint,
 } from './program';
@@ -81,15 +83,28 @@ export function buildProgramDebugPoints(
 	localSlots: ReadonlyArray<LocalSlotDebug>,
 	maxStack: number,
 	resolveClosureUpvalues: ClosureUpvalueResolver,
-): { resumePoints: ProgramResumePoint[]; localSlots: LocatedLocalSlotDebug[] } {
+	captureSlots: ReadonlyArray<CaptureSlotDebug>,
+): { resumePoints: ProgramResumePoint[]; localSlots: LocatedLocalSlotDebug[]; captureSlots: LocatedCaptureSlotDebug[] } {
 	// Named registers are not recycled within a function; inlining remaps its
 	// slots before this final pass. Dead/folded values have no readable location.
 	// Reuse the resume-point liveness pass, retaining intervals, not a bitmap
 	// for every instruction. Lexical/inline scope is a separate debugger gate.
 	const rangesByRegister = new Map<number, ProgramWordRange[]>();
 	for (const slot of localSlots) if (!rangesByRegister.has(slot.registerIndex)) rangesByRegister.set(slot.registerIndex, []);
-	const registers = Array.from(rangesByRegister.keys());
-	const locations = Array.from(rangesByRegister.values());
+	for (const slot of captureSlots) {
+		const location = slot.location;
+		if (location !== null && location.inStack && !rangesByRegister.has(location.index)) rangesByRegister.set(location.index, []);
+	}
+	const registers: number[] = [];
+	const locations: ProgramWordRange[][] = [];
+	for (const [register, ranges] of rangesByRegister) {
+		// Folding after inlining can remove the high end of the remapped frame.
+		// Those declarations keep empty intervals, outside the physical window.
+		if (register < maxStack) {
+			registers.push(register);
+			locations.push(ranges);
+		}
+	}
 	const emittedRanges = new Set<SourceRange>();
 	const candidateIndices: number[] = [];
 	for (let index = 0; index < instructions.length; index += 1) {
@@ -154,5 +169,15 @@ export function buildProgramDebugPoints(
 		});
 	}
 	for (const ranges of locations) ranges.reverse();
-	return { resumePoints: points, localSlots: localSlots.map(slot => ({ ...slot, liveWordRanges: rangesByRegister.get(slot.registerIndex)! })) };
+	const functionRange = [{ start: 0, end: wordCount }];
+	const noLocation: readonly ProgramWordRange[] = [];
+	return {
+		resumePoints: points,
+		localSlots: localSlots.map(slot => ({ ...slot, liveWordRanges: rangesByRegister.get(slot.registerIndex)! })),
+		captureSlots: captureSlots.map(slot => ({
+			...slot,
+			liveWordRanges: slot.location === null ? noLocation
+				: slot.location.inStack ? rangesByRegister.get(slot.location.index)! : functionRange,
+		})),
+	};
 }
