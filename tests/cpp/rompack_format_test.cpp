@@ -102,6 +102,14 @@ int main() {
 		}
 	}
 	const auto& slot = decodedSymbols.metadata.localSlotsByFunction[0][0];
+	std::vector<bmsx::ProgramWordRange> orderedRanges;
+	bmsx::appendProgramWordRange(orderedRanges, 2, 3);
+	bmsx::appendProgramWordRange(orderedRanges, 3, 4);
+	bmsx::appendProgramWordRange(orderedRanges, 6, 8);
+	if (orderedRanges.size() != 2 || orderedRanges[0].start != 2 || orderedRanges[0].end != 4
+		|| orderedRanges[1].start != 6 || orderedRanges[1].end != 8) {
+		throw std::runtime_error("BLua32 interval appends must coalesce adjacency but retain gaps");
+	}
 	for (const bool isConst : {false, true}) {
 		symbols.metadata.localSlotsByFunction[0][0].isConst = isConst;
 		symbols.metadata.capturedLocals[0].isConst = isConst;

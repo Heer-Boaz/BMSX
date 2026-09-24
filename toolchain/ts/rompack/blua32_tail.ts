@@ -288,9 +288,8 @@ export function buildBlua32Tail(
 		diagnosticDirectoryOffset = toolingNextOffset;
 		const diagnosticPayload = encodeBlua32DiagnosticDirectory({
 			directoryOffset: diagnosticDirectoryOffset,
-			textAddress: linked.layout.header.textAddress,
-			textByteCount: linked.layout.header.textByteCount,
-			debugRanges: linked.symbols.metadata.debugRanges,
+			image: linked.layout,
+			symbols: linked.symbols,
 			sources: diagnosticSources,
 			packedSources,
 		});

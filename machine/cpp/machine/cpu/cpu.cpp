@@ -1685,6 +1685,15 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 		case BuiltinFunctionId::FrameCount:
 			out.push_back(valueNumber(asThread(args[0])->frames.size()));
 			break;
+		case BuiltinFunctionId::FrameHeader: {
+			const auto& frame = *asThread(args[0])->frames[toI32(args[1])];
+			out.push_back(valueNumber(frame.functionAddress));
+			out.push_back(valueNumber(frame.pc));
+			out.push_back(valueNumber(frame.callSitePc));
+			out.push_back(valueBool(frame.returnToCompletionLatch));
+			out.push_back(valueNumber(static_cast<u32>(frame.executionImage->executionDomainId)));
+			break;
+		}
 		case BuiltinFunctionId::GetFrameRegister:
 		case BuiltinFunctionId::SetFrameRegister: {
 			auto& frame = *asThread(args[0])->frames[toI32(args[1])];

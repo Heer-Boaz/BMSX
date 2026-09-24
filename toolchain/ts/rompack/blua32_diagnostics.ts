@@ -1,6 +1,10 @@
+import { encodeBlua32DiagnosticScopes } from './blua32_diagnostic_scopes';
+import type { Blua32ImageLayout } from './blua32_image';
+import type { Blua32SymbolsImage } from './blua32_symbols';
 import { writeLE32 } from '../../../machine/ts/common/endian';
 import {
 	BLUA32_DIAGNOSTIC_DIRECTORY_FILE_COUNT_OFFSET,
+	BLUA32_DIAGNOSTIC_DIRECTORY_FUNCTION_COUNT_OFFSET,
 	BLUA32_DIAGNOSTIC_DIRECTORY_FILE_TABLE_OFFSET,
 	BLUA32_DIAGNOSTIC_DIRECTORY_HEADER_SIZE,
 	BLUA32_DIAGNOSTIC_DIRECTORY_LINE_OFFSET_COUNT_OFFSET,
@@ -39,9 +43,8 @@ export type PackedBlua32DiagnosticSource = {
 };
 
 export type Blua32DiagnosticImage = {
-	textAddress: number;
-	textByteCount: number;
-	debugRanges: ReadonlyArray<SourceRange | null>;
+	image: Blua32ImageLayout;
+	symbols: Blua32SymbolsImage;
 	sources: Blua32DiagnosticSourceMap;
 };
 
@@ -108,8 +111,8 @@ export function encodeBlua32DiagnosticDirectory(
 	input: Blua32DiagnosticDirectoryInput,
 ): Uint8Array {
 	const referencedRangePaths = new Set<string>();
-	for (let index = 0; index < input.debugRanges.length; index += 1) {
-		const range = input.debugRanges[index];
+	for (let index = 0; index < input.symbols.metadata.debugRanges.length; index += 1) {
+		const range = input.symbols.metadata.debugRanges[index];
 		if (range) {
 			referencedRangePaths.add(range.path);
 		}
@@ -159,12 +162,12 @@ export function encodeBlua32DiagnosticDirectory(
 		column: 0,
 	}];
 	let previousRange: SourceRange | null = null;
-	for (let index = 0; index < input.debugRanges.length; index += 1) {
-		const range = input.debugRanges[index];
+	for (let index = 0; index < input.symbols.metadata.debugRanges.length; index += 1) {
+		const range = input.symbols.metadata.debugRanges[index];
 		if (sourcePositionMatches(previousRange, range)) {
 			continue;
 		}
-		const pcStart = input.textAddress + index * INSTRUCTION_BYTES;
+		const pcStart = input.image.header.textAddress + index * INSTRUCTION_BYTES;
 		if (!range) {
 			ranges.push({ pcStart, lineFile: BLUA32_DIAGNOSTIC_NO_SOURCE, column: 0 });
 		} else {
@@ -181,7 +184,7 @@ export function encodeBlua32DiagnosticDirectory(
 		previousRange = range;
 	}
 	ranges.push({
-		pcStart: input.textAddress + input.textByteCount,
+		pcStart: input.image.header.textAddress + input.image.header.textByteCount,
 		lineFile: BLUA32_DIAGNOSTIC_NO_SOURCE,
 		column: 0,
 	});
@@ -189,9 +192,13 @@ export function encodeBlua32DiagnosticDirectory(
 	const rangeTableOffset = BLUA32_DIAGNOSTIC_DIRECTORY_HEADER_SIZE;
 	const fileTableOffset = rangeTableOffset + ranges.length * BLUA32_DIAGNOSTIC_RANGE_RECORD_SIZE;
 	const lineOffsetTableOffset = fileTableOffset + encodedSources.length * BLUA32_DIAGNOSTIC_FILE_RECORD_SIZE;
-	const pathTableOffset = lineOffsetTableOffset + lineOffsetCount * 4;
+	const scopeOffset = lineOffsetTableOffset + lineOffsetCount * 4;
+	const scopes = encodeBlua32DiagnosticScopes(input.image, input.symbols, scopeOffset);
+	const pathTableOffset = scopeOffset + scopes.bytes.length;
 	const embeddedSourceOffset = pathTableOffset + pathBytesCount;
 	const payload = new Uint8Array(embeddedSourceOffset + embeddedSourceBytesCount);
+	payload.set(scopes.header, BLUA32_DIAGNOSTIC_DIRECTORY_FUNCTION_COUNT_OFFSET);
+	payload.set(scopes.bytes, scopeOffset);
 
 	writeLE32(payload, BLUA32_DIAGNOSTIC_DIRECTORY_RANGE_COUNT_OFFSET, ranges.length);
 	writeLE32(payload, BLUA32_DIAGNOSTIC_DIRECTORY_RANGE_TABLE_OFFSET, rangeTableOffset);

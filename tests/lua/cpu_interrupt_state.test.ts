@@ -1475,7 +1475,8 @@ local nothing = nil
 nothing()
 `;
 	const { cpu, memory, images } = makeCompiledCartCpu(systemSource, cartSource);
-	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
+	// Includes compiler startup/boot-slot retirement; this is not a cycle-count test.
+	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	assert.equal(cpu.isHaltedUntilIrq(), true);
 	let exceptionFrameFound = false;
 	for (let frameIndex = 0; frameIndex < cpu.getFrameDepth(); frameIndex += 1) {

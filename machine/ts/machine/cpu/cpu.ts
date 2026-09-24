@@ -3613,6 +3613,16 @@ export class CPU implements MappedPageInvalidator {
 			case BuiltinFunctionId.FrameCount:
 				out.push(ValueTag.Number, (args.registers.getReference(args.base) as Thread).frames.length);
 				break;
+			case BuiltinFunctionId.FrameHeader: {
+				const thread = args.registers.getReference(args.base) as Thread;
+				const frame = thread.frames[args.registers.getScalar(args.base + 1)];
+				out.push(ValueTag.Number, frame.functionAddress);
+				out.push(ValueTag.Number, frame.pc);
+				out.push(ValueTag.Number, frame.callSitePc);
+				out.push(frame.returnToCompletionLatch ? ValueTag.True : ValueTag.False);
+				out.push(ValueTag.Number, frame.executionImage.executionDomainId >>> 0);
+				break;
+			}
 			case BuiltinFunctionId.GetFrameRegister:
 			case BuiltinFunctionId.SetFrameRegister: {
 				const thread = args.registers.getReference(args.base) as Thread;

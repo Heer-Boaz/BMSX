@@ -389,3 +389,79 @@ retirement or frame-context conversation tools. Those gates remain open; the
 public Terminal still accepts only `cart` and `session`. There is no added
 Codex button, public raw-slot command, provider poller or new machine-state
 format.
+
+## Firmware-readable scope gate
+
+The diagnostic directory in each physical ROM owns its packed names and
+locations. Extend that producer, not the CPU with host symbols or a source-name
+service. The firmware resolver consumes exact function address, PC and logical
+inline depth. Declaration visibility is distinct from register liveness: an
+unavailable inner declaration must still shadow an available outer one.
+
+References studied before implementation: Lua's `luaG_findlocal` in
+[ldebug.c](https://github.com/lua/lua/blob/master/ldebug.c) resolves an actual
+activation using prototype metadata; LLDB's
+[DWARFDebugInfo](https://github.com/llvm/llvm-project/blob/main/lldb/source/Plugins/SymbolFile/DWARF/DWARFDebugInfo.cpp)
+indexes debug information separately from execution; MAME's
+[debugcpu.cpp](https://github.com/mamedev/mame/blob/master/src/emu/debug/debugcpu.cpp)
+keeps debugger symbols outside CPU instruction execution. BMSX uses its existing
+ROM directory and boot-primitive mechanism instead of adding another VM.
+
+| Data | TypeScript producer/runtime | C++ / shared firmware | Hot-path effect |
+| --- | --- | --- | --- |
+| Function/frame/binding records | Installed linked symbols lowered to raw directory words | Identical offsets/constants; BIOS reads ordinary ROM | ROM construction only |
+| Visibility/live locations | Half-open function-relative word intervals; exact inline chains | Binary search of the same interval records | Explicit scope lookup only |
+| Names | Interned UTF-8 directory bytes | Existing BIOS UTF-8 decoder | Decode only for requested scope |
+| Frame header | Existing thread frame: function address, PC, call-site PC, completion-latch flag, execution domain | Same raw frame fields | One boot primitive, no metadata in CPU |
+| Scope descriptors | Firmware name -> index/upvalue/available/const | Same compiler external-scope records | No copied guest values or writeback |
+
+Affected callsites: ROM-builder and Hot Resume tail diagnostics production;
+`CPU.callBuiltinFunction` / `CPU::callBuiltinFunction` for one raw header read;
+BIOS scope resolution on explicit request. No opcode-loop branch, frame field,
+GC edge, snapshot field, scheduler work or renderer change. Boot retirement
+includes the new private primitive. Scope lookup must not change cartridge bus
+selection to inspect another domain. Public frame evaluation remains gated on
+complete lexical coverage and pinned-stop admission/cancellation.
+
+## Installed-name resolver validation (2026-09-24)
+
+- Twenty O0/O3 firmware tests cover actual named local/capture writes, const
+  rejection, unavailable shadowing, repeated inline invocations, physical
+  upvalues remapped to caller registers, missing diagnostics and RAM functions
+  without installed symbols. Completion-call injection resolves the retained
+  ancestor's own PC and changes its live parameter without advancing its PC,
+  frame depth or HALT state. The latter admission probe is a CPU test, not a
+  public debugger-stop evaluation feature.
+- Fourteen firmware vectors pass on TypeScript and native C++ with identical
+  full final snapshots; the live coroutine/save-restore vector also retains
+  identical suspended snapshots. Names in the new vectors come from the actual
+  packed directory, not fixture-supplied locations. Two ROM tests compare every
+  mapped instruction and logical inline depth against installed Studio scopes.
+  Native interval/metadata-format tests pass.
+- The raw fault test takes 101 cycles including boot-slot retirement. Its
+  non-timing completion limit is now 1,000 cycles; exception-root, trap-cause
+  and fault-reason assertions remain intact. Full Lua: 2,539 pass, one skip.
+  Rompacker: 184 pass. Product typechecks and browser/Node builds pass. The
+  tests-project diagnostic multiset is unchanged at 95 baseline entries after
+  source-position normalization. Strict architecture audit: zero issues;
+  core-parity, indentation and `git diff --check` pass.
+- The ordinary BIOS Terminal still produces byte-identical TS/native output
+  from real HID input. The manual Studio Terminal workflow and all 45 assistant
+  integration tests pass on software/WebGL2/WebGPU. WebGPU results, pause and
+  conversation screenshots were inspected. The rebuilt physical fault probe
+  still prints `entry.lua:15:3` and its actual source line; its six assertions
+  pass and the monitor/source-overlay captures were inspected. These are
+  automated runtime/UI checks, not live-model or personal-phone evidence.
+- Scope tables add 457,714 bytes to the debug BIOS and 1,117,968 bytes to the
+  debug Nemesis ROM. Twenty warmed re-encodings averaged about 23 ms and 60 ms
+  respectively on this workstation during validation. This is bounded tooling
+  cost, not a universal throughput benchmark. Resolution is explicit; no source
+  lookup, table construction or new hook is added to ordinary frame execution.
+
+Rebuild BIOS and linked debug carts together for the extended directory. The
+public Terminal still accepts only `cart` and `session`. Complete free-name
+coverage, stopped-cart/data-bus admission, borrow retirement on cancellation,
+rewind/replacement, native frame selection and conversation frame context remain
+open. The existing stack-conversation screenshot also retains a breakpoint
+status label after its completed Terminal result; this slice does not change
+that UI status owner. No Codex-only control or provider polling was introduced.

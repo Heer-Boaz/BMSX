@@ -1,3 +1,4 @@
+import { inlineCallSiteChainsEqual } from '../lua/compiler/inline_debug';
 import { CapturedLocalKind } from '../lua/compiler/capture_kind';
 import type { SourceRange } from '../lua/source_range';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
@@ -175,26 +176,6 @@ type StringRecord = {
 };
 
 const stringEncoder = new TextEncoder();
-
-function inlineCallSiteChainsEqual(
-	left: ReadonlyArray<Blua32InlineCallSite>,
-	right: ReadonlyArray<Blua32InlineCallSite>,
-): boolean {
-	if (left.length !== right.length) return false;
-	for (let index = 0; index < left.length; index += 1) {
-		const leftSite = left[index];
-		const rightSite = right[index];
-		if (leftSite.calleeFunctionId !== rightSite.calleeFunctionId
-			|| leftSite.callRange.path !== rightSite.callRange.path
-			|| leftSite.callRange.start.line !== rightSite.callRange.start.line
-			|| leftSite.callRange.start.column !== rightSite.callRange.start.column
-			|| leftSite.callRange.end.line !== rightSite.callRange.end.line
-			|| leftSite.callRange.end.column !== rightSite.callRange.end.column) {
-			return false;
-		}
-	}
-	return true;
-}
 
 function hashInlineCallSiteChain(
 	chain: ReadonlyArray<Blua32InlineCallSite>,

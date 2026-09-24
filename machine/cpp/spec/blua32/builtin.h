@@ -36,9 +36,10 @@ enum class BuiltinFunctionId : uint8_t {
 	SetFrameRegister = 25,
 	GetFrameUpvalue = 26,
 	SetFrameUpvalue = 27,
+	FrameHeader = 28,
 };
 
-constexpr size_t BUILTIN_FUNCTION_COUNT = 28u;
+constexpr size_t BUILTIN_FUNCTION_COUNT = 29u;
 
 struct LuaBootPrimitive {
 	std::string_view name;
@@ -74,6 +75,7 @@ inline constexpr std::array<LuaBootPrimitive, BUILTIN_FUNCTION_COUNT> LUA_BOOT_P
 	{ "__bmsx_set_frame_register", BuiltinFunctionId::SetFrameRegister },
 	{ "__bmsx_get_frame_upvalue", BuiltinFunctionId::GetFrameUpvalue },
 	{ "__bmsx_set_frame_upvalue", BuiltinFunctionId::SetFrameUpvalue },
+	{ "__bmsx_frame_header", BuiltinFunctionId::FrameHeader },
 }};
 
 } // namespace bmsx

@@ -41,3 +41,16 @@ export function resolveInlineLocalContextRange(
 		? currentRange
 		: currentInlineCallSites[localInlineCallSites.length].callRange;
 }
+
+export function inlineCallSiteChainsEqual(
+	left: ReadonlyArray<InlineCallSite>,
+	right: ReadonlyArray<InlineCallSite>,
+): boolean {
+	if (left.length !== right.length) return false;
+	for (let index = 0; index < left.length; index += 1) {
+		if (!inlineCallSitesEqual(left[index], right[index])) {
+			return false;
+		}
+	}
+	return true;
+}

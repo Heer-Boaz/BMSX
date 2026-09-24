@@ -27,9 +27,10 @@ export const enum BuiltinFunctionId {
 	SetFrameRegister = 25,
 	GetFrameUpvalue = 26,
 	SetFrameUpvalue = 27,
+	FrameHeader = 28,
 }
 
-export const BUILTIN_FUNCTION_COUNT = 28;
+export const BUILTIN_FUNCTION_COUNT = 29;
 
 export interface LuaBootPrimitive {
 	readonly name: string;
@@ -65,4 +66,5 @@ export const LUA_BOOT_PRIMITIVES: ReadonlyArray<LuaBootPrimitive> = [
 	{ name: '__bmsx_set_frame_register', id: BuiltinFunctionId.SetFrameRegister },
 	{ name: '__bmsx_get_frame_upvalue', id: BuiltinFunctionId.GetFrameUpvalue },
 	{ name: '__bmsx_set_frame_upvalue', id: BuiltinFunctionId.SetFrameUpvalue },
+	{ name: '__bmsx_frame_header', id: BuiltinFunctionId.FrameHeader },
 ];

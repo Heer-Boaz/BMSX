@@ -5195,9 +5195,18 @@ directly from a specified guest thread's physical frame register or closure
 upvalue; neither CPU receives source names or declaration policy. Firmware owns
 the borrow scope and expires its accessors on protected evaluation completion.
 These primitives add no scope state, save-state format, or normal-dispatch work.
-The core is tested on both runtimes, but admitting installed locations at a
-Studio/native selected stop, including cancellation and frame retirement, is
-not yet exposed by a public Terminal context.
+The same installed compiler metadata is packed into each ROM's diagnostic
+directory as function, logical-frame, binding and word-interval tables. Visibility
+and liveness remain distinct, so an unavailable inner declaration still shadows
+an outer name. Names are interned UTF-8; firmware resolves exact function/PC/inline
+depth using the existing ROM bus, not a host callback or another symbols database
+inside the CPU. A private raw frame-header primitive exposes the existing function
+address, PC, call-site PC, completion flag and domain; injected completion calls
+retain the ancestor's own PC. Firmware never switches cartridge bus selection to
+inspect an unmapped domain. Both runtimes execute the same resolver. Admitting
+these locations at a Studio/native selected stop, including complete lexical
+coverage, cancellation and frame retirement, is not yet exposed by a public
+Terminal context.
 Selected-frame evaluation admission, live Actor mutation and complete reviewed-source
 apply/save/install/rerun receipts remain work tracked in
 [Studio runtime tools](studio_runtime_tools.md).

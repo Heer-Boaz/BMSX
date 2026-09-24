@@ -4,10 +4,10 @@ import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import { linkTestSystemBlua32 } from './blua32';
 
-/** Actual firmware compiler and REPL, with physical locations supplied by the fixture. */
-export function compileFrameEvaluationTest(body: string, optLevel: 0 | 3) {
+/** Actual firmware compiler/REPL and the production packed diagnostic directory. */
+export function compileFrameEvaluationTest(body: string, optLevel: 0 | 3, includeDiagnostics = true) {
 	const modules = [
-		...['base', 'table', 'coroutine', 'string/base', 'string/utf8', 'string/pattern', 'debug/frame', 'shell/repl'],
+		...['base', 'table', 'coroutine', 'string/base', 'string/utf8', 'string/pattern', 'debug/scopes', 'debug/frame', 'shell/repl'],
 		...readdirSync('machine/bios/compiler').filter(name => name.endsWith('.lua')).sort().map(name => `compiler/${name.slice(0, -4)}`),
 	].map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') }));
 	modules.push({ path: 'bmsx/blua32', source: BLUA32_FIRMWARE_MODULE_SOURCE },
@@ -26,15 +26,81 @@ repl = require('shell/repl')
 frame_bindings = require('debug/frame')
 require('frame_test/primitives')
 escaped = false
+optimization_level = ${optLevel}
 return pcall(function()
 ${body}
 end)`;
 	return linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(source, 'frame_test').chunk!,
 		modules.map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path).chunk! })),
-		{ entrySource: source, optLevel, programDomain: 'system' }));
+		{ entrySource: source, optLevel, programDomain: 'system' }),
+		includeDiagnostics ? new Map([{ path: 'frame_test', source }, ...modules].map(module => [module.path, { displayPath: `${module.path}.lua`, source: module.source }])) : null);
 }
 
 export const frameEvaluationCases = {
+	named_scopes: `
+local make = function(seed)
+ local captured = seed
+ local exercise = function(value, ...)
+  local object<const> = { answer = 10 }
+  local shadow = { answer = 20 }
+  local folded = 17
+  local index<const> = frame_count(running_thread()) - 1
+  do
+   local shadow = 9
+   local names, label = frame_bindings.resolve(index, 0)
+   assert(names ~= nil and label == 'exercise')
+   assert(names.value.available and not names.value.upvalue and not names.value.is_const)
+   assert(names.captured.available and names.captured.upvalue)
+   assert(names.object.available and names.object.is_const)
+   assert(names.shadow ~= nil and names.shadow.available == (optimization_level == 0))
+   assert(names.folded ~= nil and names.folded.available == (optimization_level == 0))
+   local ok, a, b = repl.evaluate('value = value + 2; captured = captured + 3; object.answer = value; return value, captured', '=named-frame', 'frame', index, names)
+   assert(ok and a == 42 and b == 13 and value == 42 and captured == 13 and object.answer == 42)
+   ok, a = repl.evaluate('object = false', '=named-const', 'frame', index, names)
+   assert(not ok and string.find(a, 'cannot assign to const local') ~= nil)
+   setglobal('shadow', 999)
+   ok, a = repl.evaluate('return shadow', '=named-shadow', 'frame', index, names)
+   if optimization_level == 0 then assert(ok and a == 9)
+   else assert(not ok and string.find(a, 'no live location') ~= nil) end
+   assert(shadow == 9)
+   local absent, message = frame_bindings.resolve(index, 999)
+   assert(absent == nil and string.find(message, 'inline depth') ~= nil)
+  end
+  assert(shadow.answer == 20 and folded == 17)
+  local names = frame_bindings.resolve(index, 0)
+  assert(names.shadow.available)
+  local ok, result = repl.evaluate('return shadow.answer', '=outer-shadow', 'frame', index, names)
+  assert(ok and result == 20)
+  return shadow.answer == 20
+ end
+ return exercise
+end
+assert(make(10)(40))
+function verify_ram_frame(index)
+ local missing, message = frame_bindings.resolve(index, 0)
+ assert(missing == nil and message == 'Frame function has no installed symbols.')
+end
+local ram<const> = assert(load('verify_ram_frame(frame_count(running_thread()) - 1); return true'))
+assert(ram())
+return true`,
+	named_inline: `
+local run = function(seed, ...)
+ local captured = { answer = seed }
+ local inspect<const> = function(value)
+  local thread<const> = running_thread()
+  local names, label = frame_bindings.resolve(frame_count(thread) - 1, optimization_level == 3 and 1 or 0)
+  return names, label, captured.answer + value
+ end
+ local names, label, total = inspect(2)
+ assert(label == 'inspect' and total == 42)
+ assert(names.captured.available and names.value.available == (optimization_level == 0))
+ assert(names.captured.upvalue == (optimization_level == 0))
+ assert(names.seed == nil and names.inspect == nil, 'inline scopes do not inherit caller locals')
+ local names, label, total = inspect(3)
+ assert(label == 'inspect' and total == 43 and names.value.available == (optimization_level == 0))
+ return true
+end
+return run(40)`,
 	bindings: `
 local make = function(seed, open)
  local captured = seed

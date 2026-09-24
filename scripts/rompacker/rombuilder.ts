@@ -1320,9 +1320,8 @@ export function buildRomBlua32Tail(
 				nextOffset: tailLayout.nextOffset,
 			},
 			diagnostics: options.includeSymbols ? {
-				textAddress: linked.layout.header.textAddress,
-				textByteCount: linked.layout.header.textByteCount,
-				debugRanges: linked.symbols.metadata.debugRanges,
+				image: linked.layout,
+				symbols: linked.symbols,
 				sources: built.diagnosticSources,
 			} : null,
 			symbolsPayload,
@@ -1377,9 +1376,8 @@ export function buildRomBlua32Tail(
 		},
 		layout: layoutRomAssetPayloads(executableAssets, true, options.imageOffset),
 		diagnostics: options.includeSymbols ? {
-			textAddress: linked.layout.header.textAddress,
-			textByteCount: linked.layout.header.textByteCount,
-			debugRanges: linked.symbols.metadata.debugRanges,
+			image: linked.layout,
+			symbols: linked.symbols,
 			sources: built.diagnosticSources,
 		} : null,
 	};

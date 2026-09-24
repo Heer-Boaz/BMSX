@@ -62,3 +62,45 @@ return exercise(0)
 	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true]);
 });
+
+for (const optLevel of [0, 3] as const) test(`packed names O${optLevel}: completion-call injection retains the selected PC and activation`, () => {
+	const image = compileFrameEvaluationTest(`
+function named_completion_probe(index)
+ local names, label = frame_bindings.resolve(index, 0)
+ assert(names ~= nil and label == 'park' and names.value.available)
+ local ok, result = repl.evaluate('value = value + 1; return value', '=completion-frame', 'frame', index, names)
+ assert(ok and result == 43)
+ return true
+end
+local park = function(value, ...)
+ halt_until_irq
+ return value == 43
+end
+return park(42)
+`, optLevel);
+	const { cpu } = createTestSystemCpu(image);
+	cpu.installBootPrimitives();
+	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+	const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
+	cpu.beginCompletionCall(cpu.getGlobalByKey(cpu.stringPool.find('named_completion_probe')!) as Closure, [depth - 1]);
+	assert.equal(cpu.runUntilDepth(depth, 30_000_000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.equal(cpu.readFramePc(depth - 1), pc, 'lookup/evaluation did not advance the selected activation');
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+	cpu.clearHaltUntilIrq();
+	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true]);
+});
+
+for (const optLevel of [0, 3] as const) test(`packed names O${optLevel}: a ROM without diagnostics reports missing coverage`, () => {
+	const { cpu } = createTestSystemCpu(compileFrameEvaluationTest(`
+local names, message = frame_bindings.resolve(frame_count(running_thread()) - 1, 0)
+assert(names == nil and message == 'Frame symbols are unavailable.')
+return true
+`, optLevel, false));
+	cpu.installBootPrimitives();
+	assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true]);
+});

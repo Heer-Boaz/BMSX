@@ -1,3 +1,4 @@
+import type { Blua32DiagnosticSourceMap } from '../../toolchain/ts/rompack/blua32_diagnostics';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import assert from 'node:assert/strict';
 
@@ -133,7 +134,7 @@ type RawTestCartBlua32Object = {
 	metadata: ProgramMetadata;
 };
 
-export function writeTestBlua32Rom(linked: LinkedBlua32Image): Uint8Array {
+export function writeTestBlua32Rom(linked: LinkedBlua32Image, diagnosticSources: Blua32DiagnosticSourceMap | null = null): Uint8Array {
 	const rom = new Uint8Array(TEST_EXECUTABLE_OFFSET + linked.bytes.byteLength);
 	rom.set(linked.bytes, TEST_EXECUTABLE_OFFSET);
 	writeCartRomHeader(rom, {
@@ -161,8 +162,8 @@ export function writeTestBlua32Rom(linked: LinkedBlua32Image): Uint8Array {
 		cart_manifest: null,
 	};
 	return linked.domain === 'system'
-		? buildBlua32Tail({ id: 'system', index, bytes: rom }, linked, null).bytes
-		: buildBlua32Tail({ id: 'cart', index, bytes: rom }, linked, null).bytes;
+		? buildBlua32Tail({ id: 'system', index, bytes: rom }, linked, diagnosticSources).bytes
+		: buildBlua32Tail({ id: 'cart', index, bytes: rom }, linked, diagnosticSources).bytes;
 }
 
 function testVectors(compiled: CompiledProgram, linked: LinkedBlua32Image): TestBlua32Vectors {
@@ -394,6 +395,7 @@ export function linkRawTestBlua32Pair(
 
 export function linkTestSystemBlua32(
 	compiled: CompiledSystemProgram,
+	diagnosticSources: Blua32DiagnosticSourceMap | null = null,
 ): TestBlua32Image {
 	const linked = linkSystemBlua32Image(
 		encodeCompiledProgramObject(compiled),
@@ -408,7 +410,7 @@ export function linkTestSystemBlua32(
 		biosImports: linked.biosImports,
 		vectors: testVectors(compiled, linked),
 		staticModulePaths: compiled.staticModulePaths,
-		romBytes: writeTestBlua32Rom(linked),
+		romBytes: writeTestBlua32Rom(linked, diagnosticSources),
 	};
 }
 
