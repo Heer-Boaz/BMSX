@@ -34,6 +34,7 @@ import { syncRuntimeSourceActivity } from '../runtime/sources';
 import { clearAllRuntimeErrorOverlays } from '../runtime_error/navigation';
 import { clearHoverTooltip } from '../editor/contrib/hover/controller';
 import { LuaTerminalSession } from './services/terminal/session';
+import { RuntimeInspectionService } from '../runtime/inspection';
 
 export const DEFAULT_IDE_FONT_VARIANT: FontVariant = 'tiny';
 export type OverlayResolutionMode = 'offscreen' | 'viewport';
@@ -51,6 +52,7 @@ export class RuntimeIdeState {
 	public readonly boots: BootService;
 	public readonly diagnostics: ResourceDiagnosticsService;
 	public readonly terminal: LuaTerminalSession;
+	public readonly inspection: RuntimeInspectionService;
 	public readonly fault: RuntimeFaultState = createRuntimeFaultState();
 
 	public constructor(
@@ -90,6 +92,8 @@ export class RuntimeIdeState {
 		this.diagnostics = new ResourceDiagnosticsService(editorTextModelService, this.luaTooling, clock);
 		this.terminal = new LuaTerminalSession(runtime, sources, this.luaTooling.suspendedGuest, this.debugger,
 			this.fault, runtimeTasks, execution, rewind);
+		this.inspection = new RuntimeInspectionService(runtime, sources, this.luaTooling.suspendedGuest, this.debugger,
+			execution, runtimeTasks, rewind, this.fault);
 		this.editor = new RuntimeCartEditor(
 			runtime,
 			presenter,
@@ -117,6 +121,7 @@ export class RuntimeIdeState {
 			this.boots,
 			this.diagnostics,
 			this.terminal,
+			this.inspection,
 			createGraphLayoutEngine,
 			connectAssistant,
 		);

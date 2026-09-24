@@ -10,6 +10,7 @@ import { CodexHttpApi } from '../../hosts/node/codex/http_api';
 import type { CodexSessionOptions } from '../../hosts/node/codex/session';
 import { STUDIO_SOURCE_TOOLS } from '../../ide/workbench/services/assistant/source_tool_protocol';
 import { STUDIO_TEST_TOOLS } from '../../ide/workbench/services/assistant/test_tool_protocol';
+import { STUDIO_RUNTIME_TOOLS } from '../../ide/workbench/services/assistant/runtime_tool_protocol';
 import { WorkspaceHttpSession, HttpError } from '../../scripts/dev/http_security.mjs';
 import { handleWorkspaceRequest } from '../../scripts/dev/workspace_api.mjs';
 
@@ -27,7 +28,7 @@ export async function createAssistantStudioFixture(t: TestContext, evidenceName:
 	for (const path of ['carts/nemesis_s', 'cartlib', 'machine/bios', 'testlib', 'tests/carts/nemesis_s']) await cp(path, join(root, path), { recursive: true,
 		filter: async path => (await stat(path)).isDirectory() || /\.(lua|yaml|yml)$/.test(path) });
 	const profileDirectory = join(root, 'profile');
-	const api = new CodexHttpApi({ ...options, profileDirectory, tools: [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS] });
+	const api = new CodexHttpApi({ ...options, profileDirectory, tools: [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS, ...STUDIO_RUNTIME_TOOLS] });
 	const authority = new WorkspaceHttpSession('127.0.0.1');
 	const observations = { connects: 0, commands: [] as string[], errors: [] as Error[] };
 	const server = createServer(async (request, response) => {

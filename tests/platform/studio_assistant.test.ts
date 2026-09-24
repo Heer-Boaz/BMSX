@@ -10,6 +10,7 @@ import { createCodexAccountFixture } from '../helpers/codex_account_fixture';
 import { CODEX_ACCOUNT_FIXTURE, createCodexAccountProxy } from '../helpers/codex_account_proxy';
 import { STUDIO_SOURCE_TOOLS } from '../../ide/workbench/services/assistant/source_tool_protocol';
 import { STUDIO_TEST_TOOLS } from '../../ide/workbench/services/assistant/test_tool_protocol';
+import { STUDIO_RUNTIME_TOOLS } from '../../ide/workbench/services/assistant/runtime_tool_protocol';
 
 const backends = ['software', 'webgl2', 'webgpu'] as const;
 for (const backend of backends) test(`Studio ${backend}: Codex reads the ordinary isolated test evidence, not current-source success`, { timeout: 180000 }, async t => {
@@ -29,7 +30,7 @@ for (const backend of backends) test(`Studio ${backend}: Codex reads the ordinar
 	}, backend);
 	assert.equal(result.evidence, 'pass'); assert.equal(model.requests.length, 4);
 	assert.deepEqual(f.observations.errors, []); assert.equal(f.observations.connects, 1);
-	assert.deepEqual(model.requests[0].tools.map(tool => tool.name), [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS].map(tool => tool.name));
+	assert.deepEqual(model.requests[0].tools.map(tool => tool.name), [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS, ...STUDIO_RUNTIME_TOOLS].map(tool => tool.name));
 	const [catalog, run, ...cases] = outputs(model.requests[3]);
 	assert.equal(catalog.coverage, 'retained-studio-runs'); assert.equal(run.failedCount, 1); assert.equal(run.passedCount, 1);
 	assert.deepEqual(cases.map(item => item.state), ['failed', 'passed']);
@@ -212,7 +213,7 @@ for (const backend of backends) test(`Studio ${backend}: native history, editabl
 	assert.equal(outputs(model.requests[4])[1].source, result.source, 'native queued turn reads the source edited after enqueue');
 	assert.equal(outputs(model.requests[9])[1].source, result.source, 'cold resume asks Studio for current source again');
 	assert.notEqual(outputs(model.requests[4])[1].receipt, outputs(model.requests[9])[1].receipt, 'cold history never restores old source receipts');
-	assert.deepEqual(model.requests[7].tools.map(tool => tool.name), [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS].map(tool => tool.name), 'cold resume admits no filesystem or shell builtin');
+	assert.deepEqual(model.requests[7].tools.map(tool => tool.name), [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS, ...STUDIO_RUNTIME_TOOLS].map(tool => tool.name), 'cold resume admits no filesystem or shell builtin');
 	const commands = f.observations.commands;
 	assert.equal(commands.filter(command => command === 'start').length, 3);
 	assert.equal(commands.filter(command => command === 'queue').length, 4);

@@ -5070,6 +5070,19 @@ edits. Prompt admission captures retained run membership, while explicit reads
 observe its progress without waiting or polling. Result-source coverage is
 suite-only, not current workspace/dependency certification. See
 [test evidence](studio_test_evidence.md).
+Runtime inspection is a separate pane-independent owner. Tools identify the
+physical authoring target and can request an independent user pause, read its
+execution position, and inspect installed global bindings and stored table
+entries without executing guest code. Symbol coverage is explicit; active-cart
+and BIOS bindings do not imply separate ordinary-global banks. Typed table keys
+and guest identities survive paging without being reinterpreted as display
+paths. Borrowed handles expire before normal execution, rewind seek/replay,
+guest calls and machine replacement, including with the editor closed. Prompt
+retirement releases borrows but never implicitly resumes gameplay. Paused
+history is inspectable; a running seek is not. The bridge does not substitute
+authoring state for a test target. Image capture, runtime execution tools,
+Terminal evaluation, test-target debugging and semantic builder actions remain
+separate work tracked in [Studio runtime tools](studio_runtime_tools.md).
 The proposal owner publishes one terminal review outcome after retiring edit
 authority and finishing history admission. Clients observe that state rather
 than polling source or maintaining a second edit lifecycle; transcript status

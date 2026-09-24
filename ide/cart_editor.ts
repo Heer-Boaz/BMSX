@@ -29,6 +29,7 @@ import type { HostExecutionControl } from '../hosts/common/execution_control';
 import type { HostAudioOutput } from '../hosts/common/audio_output';
 import type { Input } from '../hosts/common/input/manager';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
+import type { RuntimeInspectionService } from './runtime/inspection';
 import type { Clipboard } from '../hosts/common/clipboard';
 import type { HostClock } from '../hosts/common/clock';
 import type { LogOutput } from '../hosts/common/log';
@@ -271,10 +272,11 @@ export class RuntimeCartEditor implements CartEditor {
 		private readonly boots: BootService,
 		public readonly diagnostics: ResourceDiagnosticsService,
 		public readonly terminal: LuaTerminalSession,
+		runtimeInspection: RuntimeInspectionService,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
 		connectAssistant?: AssistantConnectionFactory,
 	) {
-		this.assistant = new AssistantConversation(editorTextModelService, sources, storage, diagnostics, scenarioRuns.results, connectAssistant);
+		this.assistant = new AssistantConversation(editorTextModelService, sources, storage, diagnostics, scenarioRuns.results, runtimeInspection, connectAssistant);
 		this.runtime = runtime;
 		this.presenter = presenter;
 		this.display = display;

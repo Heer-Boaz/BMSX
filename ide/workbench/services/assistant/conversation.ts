@@ -9,6 +9,9 @@ import type { ResourceDiagnosticsService } from '../diagnostics/resource_diagnos
 import { WorkspaceSourceTools } from './source_tools';
 import { WorkspaceTestTools } from './test_tools';
 import type { ScenarioResultService } from '../../../testing/scenario/result_service';
+import type { RuntimeInspectionService } from '../../../runtime/inspection';
+import { WorkspaceRuntimeTools } from './runtime_tools';
+import { STUDIO_RUNTIME_TOOLS } from './runtime_tool_protocol';
 
 export type AssistantState = 'disconnected' | 'connecting' | 'loading' | 'starting' | 'ready' | 'running' | 'stopping' | 'signing-in' | 'cancelling-sign-in' | 'signing-out';
 export type AssistantEntry = {
@@ -18,7 +21,7 @@ export type AssistantEntry = {
 	readonly proposal?: WorkspaceEditProposal;
 	resetRevision: number;
 };
-type ActiveTurn = { id?: string; tools: WorkspaceSourceTools; tests: WorkspaceTestTools; requests: Set<string>; messages: Map<string, AssistantEntry> };
+type ActiveTurn = { id?: string; tools: WorkspaceSourceTools; tests: WorkspaceTestTools; runtime: WorkspaceRuntimeTools; requests: Set<string>; messages: Map<string, AssistantEntry> };
 type ConversationChange = 'state' | 'text' | 'proposal' | 'reset' | 'prepend';
 
 /** Workspace-owned conversation and accepted prompt context, independent of an attached pane. */
@@ -49,7 +52,8 @@ export class AssistantConversation {
 
 	public constructor(private readonly models: EditorTextModelService, private readonly sources: RuntimeSourceState,
 		private readonly storage: KeyValueStorage, private readonly diagnostics: ResourceDiagnosticsService,
-		private readonly testResults: ScenarioResultService, private readonly openConnection?: AssistantConnectionFactory) {
+		private readonly testResults: ScenarioResultService, private readonly runtimeInspection: RuntimeInspectionService,
+		private readonly openConnection?: AssistantConnectionFactory) {
 		this.unbindWorkspace = models.onWillClear(() => this.clearConversation());
 	}
 	public get available(): boolean { return this.openConnection !== undefined && !this.disposed; }
@@ -105,7 +109,8 @@ export class AssistantConversation {
 
 	private createTurn(): ActiveTurn {
 		return { tools: new WorkspaceSourceTools(this.models, this.sources, this.storage, this.diagnostics, this.sourceLifetime!.signal),
-			tests: new WorkspaceTestTools(this.testResults, this.sourceLifetime!.signal), requests: new Set(), messages: new Map() };
+			tests: new WorkspaceTestTools(this.testResults, this.sourceLifetime!.signal),
+			runtime: new WorkspaceRuntimeTools(this.runtimeInspection, this.sourceLifetime!.signal), requests: new Set(), messages: new Map() };
 	}
 
 	/** One explicit submission. Native Codex owns FIFO dispatch; no retries or client dequeue loop. */
@@ -152,7 +157,7 @@ export class AssistantConversation {
 		const turn = this.turn, connection = this.connection;
 		if (!connection || (!turn && this.queued.length === 0) || this.state === 'stopping') return;
 		this.queuePaused = true;
-		this.state = 'stopping'; turn?.tools.dispose(); turn?.tests.dispose(); turn?.requests.clear(); this.changed();
+		this.state = 'stopping'; turn?.tools.dispose(); turn?.tests.dispose(); turn?.runtime.dispose(); turn?.requests.clear(); this.changed();
 		try { await connection.send({ type: 'interrupt' }); }
 		catch (error) { if (this.connection === connection && this.turn === turn) this.append('status', `Stop failed: ${String(error)}`); }
 		if (!this.turn && this.connection === connection) { this.state = 'ready'; this.changed(); }
@@ -289,7 +294,7 @@ export class AssistantConversation {
 				if (!this.turn) this.turn = this.createTurn();
 				this.turn.id = event.turnId;
 				if (this.state !== 'stopping') { this.state = 'running'; this.queuePaused = false; }
-				else { this.turn.tools.dispose(); this.turn.tests.dispose(); }
+				else { this.turn.tools.dispose(); this.turn.tests.dispose(); this.turn.runtime.dispose(); }
 				this.changed(); break;
 			case 'user-message': this.append('user', event.text); break;
 			case 'text-delta':
@@ -320,8 +325,9 @@ export class AssistantConversation {
 		turn.requests.add(event.requestId);
 		let text: string, success = true;
 		try {
-			const result = await (event.name === 'studio_list_test_runs' || event.name === 'studio_read_test_run' || event.name === 'studio_read_test_result'
-				? turn.tests.execute(event.name, event.arguments) : turn.tools.execute(event.name, event.arguments));
+			const result = await (STUDIO_RUNTIME_TOOLS.some(tool => tool.name === event.name) ? turn.runtime.execute(event.name, event.arguments)
+				: event.name === 'studio_list_test_runs' || event.name === 'studio_read_test_run' || event.name === 'studio_read_test_result'
+					? turn.tests.execute(event.name, event.arguments) : turn.tools.execute(event.name, event.arguments));
 			if (this.turn !== turn || !turn.requests.has(event.requestId)) {
 				if (result.kind === 'proposal') result.proposal.dispose();
 				return;
@@ -337,7 +343,7 @@ export class AssistantConversation {
 		catch (error) { if (this.turn === turn) this.append('status', `Tool reply failed: ${String(error)}`); }
 	}
 	private finishTurn(): void {
-		this.turn?.tools.dispose(); this.turn?.tests.dispose(); this.turn?.requests.clear(); this.turn = undefined;
+		this.turn?.tools.dispose(); this.turn?.tests.dispose(); this.turn?.runtime.dispose(); this.turn?.requests.clear(); this.turn = undefined;
 		this.state = this.connection ? 'ready' : 'disconnected'; this.changed();
 	}
 	public disconnect(): void {

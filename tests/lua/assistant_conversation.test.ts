@@ -11,9 +11,12 @@ import { ResourceDiagnosticsService } from '../../ide/workbench/services/diagnos
 import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
-import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
+import { createTestRuntime } from '../helpers/runtime_sources';
 import { ScenarioResultService } from '../../ide/testing/scenario/result_service';
 import { ScenarioTestCollection } from '../../ide/testing/scenario/test_collection';
+import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
+import { compileLuaSource } from './cpu_test_harness';
+import { linkTestSystemBlua32 } from '../helpers/blua32';
 
 class Connection implements AssistantConnection {
 	public readonly lifetime = new AbortController();
@@ -42,17 +45,46 @@ function fixture(t: TestContext, waitForConnection?: (connection: Connection) =>
 	const connections: Connection[] = [];
 	const model = models.retain(sources.luaResources[0], 'lua', 'return old\n');
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved\n' }]);
-	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload())));
+	const image = linkTestSystemBlua32(compileLuaSource('return nil', 'conversation', 0));
+	const runtime = createTestRuntime(image.romBytes);
+	runtime.machine.cpu.reset();
+	const guest = new SuspendedGuestSession(runtime);
+	const tooling = new RuntimeLuaTooling(sources, guest);
+	const { inspection } = createRuntimeInspectionFixture(runtime, sources, guest);
 	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
 	const testResults = new ScenarioResultService();
-	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testResults, async (_signal, emit) => {
+	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testResults, inspection, async (_signal, emit) => {
 		const connection = new Connection(emit); connections.push(connection);
 		await waitForConnection?.(connection);
 		return connection;
 	});
 	t.after(() => { conversation.dispose(); diagnostics.dispose(); models.clear(); });
-	return { conversation, model, models, connections, testResults };
+	return { conversation, model, models, connections, testResults, inspection };
 }
+
+test('conversation dispatches runtime tools against its actual target without starting additional turns', async t => {
+	const f = fixture(t), conversation = f.conversation;
+	await conversation.connect(); await conversation.sendPrompt('Inspect the game');
+	const connection = f.connections[0];
+	async function call(name: string, args: unknown) {
+		const requestId = String(connection.commands.length);
+		connection.emit({ type: 'tool-request', requestId, name, arguments: args }); await setImmediate();
+		const reply = connection.commands.at(-1)!; assert.ok(reply.type === 'tool-result' && reply.requestId === requestId);
+		return reply;
+	}
+	const status = await call('studio_runtime_status', {});
+	assert.equal(status.success, true, status.text); assert.equal(JSON.parse(status.text).target, f.inspection.target);
+	const rejected = await call('studio_inspect_runtime', { target: 'failed-test-target' });
+	assert.equal(rejected.success, false); assert.match(rejected.text, /not this Studio authoring runtime/);
+	const paused = await call('studio_pause_runtime', { target: f.inspection.target });
+	assert.equal(paused.success, true); assert.equal(JSON.parse(paused.text).userPaused, true);
+	const inspected = await call('studio_inspect_runtime', { target: f.inspection.target });
+	assert.equal(inspected.success, true); assert.equal(JSON.parse(inspected.text).coverage, 'installed-global-bindings');
+	assert.equal(connection.commands.filter(command => command.type === 'start').length, 1);
+	assert.equal(conversation.entries.filter(entry => entry.kind === 'proposal').length, 0);
+	connection.emit({ type: 'turn-completed', turnId: 't', status: 'completed' });
+	assert.equal(f.inspection.status().userPaused, true, 'turn retirement never silently resumes gameplay');
+});
 
 test('conversation reads historical test evidence after source edits and retires its handles with the prompt/workspace', async t => {
 	const f = fixture(t), conversation = f.conversation;

@@ -168,6 +168,8 @@ export function runWorkbenchHostFrame(
 		ide.scenarioRuns.advance();
 		screen.clearPresentation();
 		if (!menuPaused) {
+			// Seek and recorded-frame stepping can execute inside service(), before the ordinary update.
+			if (session.rewind.seeking || session.rewind.playing) ide.luaTooling.suspendedGuest.invalidate();
 			session.rewind.service(!ide.debugger.plans.mutationActive);
 			if (session.rewind.playing && !session.execution.executionBlocked() && !ide.fault.hostFrameFailed) {
 				session.rewind.runPlayback(session.execution.consumeElapsedTime(hostDeltaMs));
@@ -199,7 +201,7 @@ export function runWorkbenchHostFrame(
 		);
 		if (action === HostFrameAction.Execute) {
 			if (ide.debugger.plans.controlActive) willExecuteRuntimeDebuggerPlan(ide.debugger);
-			if (ide.editor.isActive) ide.luaTooling.suspendedGuest.invalidate();
+			ide.luaTooling.suspendedGuest.invalidate();
 			executeHostUpdate(session, runtime, presenter, input, audioOutput, screen, hostDeltaMs);
 			systemOutput.flush(runtime, logOutput, ide.terminal.receiveOutput);
 			systemOutputDrained = true;

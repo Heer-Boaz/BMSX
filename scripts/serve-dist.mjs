@@ -82,7 +82,8 @@ await import('tsx');
 const { CodexHttpApi } = await import('../hosts/node/codex/http_api.ts');
 const { STUDIO_SOURCE_TOOLS } = await import('../ide/workbench/services/assistant/source_tool_protocol.ts');
 const { STUDIO_TEST_TOOLS } = await import('../ide/workbench/services/assistant/test_tool_protocol.ts');
-const assistant = new CodexHttpApi({ tools: [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS],
+const { STUDIO_RUNTIME_TOOLS } = await import('../ide/workbench/services/assistant/runtime_tool_protocol.ts');
+const assistant = new CodexHttpApi({ tools: [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS, ...STUDIO_RUNTIME_TOOLS],
 	profileDirectory: path.join(process.env.XDG_STATE_HOME ?? path.join(os.homedir(), '.local', 'state'), 'bmsx', 'studio-codex') });
 
 async function handleCartsApi(req, res, url) {
