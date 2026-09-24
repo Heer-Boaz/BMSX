@@ -6,6 +6,8 @@ import {
 	createRuntimeDebuggerState,
 	resumeRuntimeDebugger,
 	pushRuntimeDebuggerControlPlan,
+	didExecuteRuntimeDebuggerPlan,
+	discardRuntimeDebuggerPlans,
 	runtimeDebuggerExecutionRequested,
 	RuntimeDebuggerResumeMode,
 	type RuntimeDebuggerState,
@@ -85,7 +87,7 @@ function createDebuggerHarness(source: string, optLevel: 0 | 3): DebuggerHarness
 	};
 }
 
-test('a revoked evaluation never enters the CPU after asynchronous GPU admission', async () => {
+for (const admission of ['quiescent', 'at-stop'] as const) test(`a revoked ${admission} evaluation never enters the CPU after asynchronous GPU admission`, async () => {
 	const { runtime, state } = createDebuggerHarness('return function() return 42 end', 0);
 	const cpu = runtime.machine.cpu;
 	cpu.reset(); cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET);
@@ -97,11 +99,159 @@ test('a revoked evaluation never enters the CPU after asynchronous GPU admission
 		{ backend: { finishGxGpuReadbacks: () => readback.promise } } as VideoPresenter);
 	let current = true, cancelled = false;
 	const pending = scheduleRuntimeGuestCall(runtime, guest, state, tasks,
-		{ honorUserStops: false, isCurrent: () => current, prepare: () => ({ domain: -1, closure: values[0] as Closure, args: () => [] }) },
+		{ admission, honorUserStops: false, isCurrent: () => current, prepare: () => ({ domain: -1, closure: values[0] as Closure, args: () => [] }) },
 		() => assert.fail('cancelled evaluation started'), completed => { assert.equal(completed, false); cancelled = true; }, assert.fail);
 	current = false; readback.resolve(); await pending;
 	assert.equal(cancelled, true); assert.equal(state.plans.controlActive, false);
 	assert.equal(cpu.getFrameDepth(), depth);
+});
+
+for (const optLevel of [0, 3] as const) for (const pauseInCall of [false, true]) {
+	test(`at-stop call retains the selected IRQ activation and source stop O${optLevel}, nested stop=${pauseInCall}`, async () => {
+		const irqTail = DYNAMIC_RAM_BASE, gameCount = irqTail + 4;
+		const source = `
+function irq()
+ mem[${IO_IRQ_ACK}] = ${IRQ_VBLANK}
+ local parked = function(value, ...)
+  operation = function()
+   value = value + 2
+   evaluations = evaluations + 1 -- nested evaluation stop
+   return value, nil, false
+  end
+  mem[${irqTail}] = value -- selected IRQ local
+ end
+ parked(40)
+end
+evaluations = 0
+mem[${irqTail}] = 0
+mem[${gameCount}] = 0
+mem[${IO_IRQ_MASK}] = ${IRQ_VBLANK}
+cop0.status = ${CPU_STATUS_CART_ENTRY}
+while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
+`;
+		const { runtime, state } = createDebuggerHarness(source, optLevel);
+		const { cpu, memory, irqController } = runtime.machine;
+		const resource = { domain: -1 as const, path: DEBUG_SOURCE_PATH };
+		state.breakpoints.toggle(resource, source.split('\n').findIndex(line => line.includes('selected IRQ local')) + 1);
+		if (pauseInCall) state.breakpoints.toggle(resource, source.split('\n').findIndex(line => line.includes('nested evaluation stop')) + 1);
+		cpu.reset(); assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Yielded);
+		irqController.raise(IRQ_VBLANK); assert.equal(cpu.enterPendingInterrupt(), true);
+		assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
+		assert.equal(state.source.stopped, true);
+		const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1), thread = cpu.activeThread;
+		const exceptionDepth = cpu.readExceptionReturnFrameDepth();
+		assert.ok(exceptionDepth >= 0 && depth > exceptionDepth);
+		const domain = state.source.stopDomain, inlineDepth = state.source.stopInlineDepth, reason = state.source.stopReason;
+		const gameBefore = memory.readMappedU32LE(gameCount);
+		const guest = new SuspendedGuestSession(runtime);
+		const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
+			{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
+		const values: Value[] = [];
+		let finished: boolean | undefined, started = 0;
+		await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
+			admission: 'at-stop', honorUserStops: true, isCurrent: () => true,
+			prepare: () => {
+				assert.equal(cpu.getFrameDepth(), depth);
+				assert.equal(cpu.readFramePc(depth - 1), pc);
+				assert.equal(state.source.stopped, true);
+				return { domain: -1, closure: guest.global('operation') as Closure, args: () => [] };
+			},
+		}, () => { started++; }, completed => { finished = completed; if (completed) cpu.readCompletionValues(values); }, assert.fail);
+		assert.equal(started, 1);
+		assert.equal(cpu.getFrameDepth(), depth + 1, 'call starts above the selected IRQ instead of draining it');
+		assert.equal(cpu.readExceptionReturnFrameDepth(), exceptionDepth);
+		assert.equal(state.source.stopped, false, 'only the evaluation owns execution while the outer stop is retained');
+		assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
+		if (pauseInCall) {
+			assert.equal(state.source.stopped, true);
+			assert.notEqual(state.source.stopPc, pc);
+			assert.equal(state.plans.controlSuspended, true);
+			didExecuteRuntimeDebuggerPlan(state);
+			assert.equal(finished, undefined);
+			assert.equal(guest.global('evaluations'), 0, 'the nested breakpoint is before its write');
+			resumeRuntimeDebugger(state, RuntimeDebuggerResumeMode.Continue);
+			assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
+		}
+		didExecuteRuntimeDebuggerPlan(state);
+		assert.equal(finished, true); assert.deepEqual(values, [42, null, false]);
+		assert.equal(state.plans.controlActive, false);
+		assert.equal(cpu.activeThread, thread); assert.equal(cpu.getFrameDepth(), depth);
+		assert.equal(cpu.readFramePc(depth - 1), pc); assert.equal(cpu.readExceptionReturnFrameDepth(), exceptionDepth);
+		assert.equal(memory.readMappedU32LE(irqTail), 0); assert.equal(memory.readMappedU32LE(gameCount), gameBefore);
+		assert.equal(state.source.stopped, true); assert.equal(state.source.stopThread, thread);
+		assert.equal(state.source.stopDomain, domain); assert.equal(state.source.stopPc, pc);
+		assert.equal(state.source.stopInlineDepth, inlineDepth); assert.equal(state.source.stopReason, reason);
+		assert.equal(state.stopPresentationPending, true);
+		resumeRuntimeDebugger(state, RuntimeDebuggerResumeMode.Continue);
+		assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.Yielded);
+		assert.equal(memory.readMappedU32LE(irqTail), 42, 'ordinary Continue observes the retained mutation');
+		assert.equal(guest.global('evaluations'), 1);
+		assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
+	});
+}
+
+for (const optLevel of [0, 3] as const) test(`quiescent call suppresses the stopped caller instruction, not the injected root O${optLevel}`, async () => {
+	const source = `
+operation = function() return 42 end
+loops = 0
+while loops < 2 do
+ loops = loops + 1 -- caller stop
+end
+return loops
+`;
+	const harness = createDebuggerHarness(source, optLevel), { runtime, state } = harness;
+	const { cpu } = runtime.machine;
+	const line = source.split('\n').findIndex(line => line.includes('caller stop')) + 1;
+	startAtBreakpoint(harness, line); assert.equal(stoppedSourceLine(harness), line);
+	const guest = new SuspendedGuestSession(runtime), values: Value[] = [];
+	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
+		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
+	let finished = false;
+	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
+		admission: 'quiescent', honorUserStops: true, isCurrent: () => true,
+		prepare: () => ({ domain: -1, closure: guest.global('operation') as Closure, args: () => [] }),
+	}, () => {}, completed => { finished = completed; cpu.readCompletionValues(values); }, assert.fail);
+	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
+	didExecuteRuntimeDebuggerPlan(state);
+	assert.equal(finished, true); assert.deepEqual(values, [42]);
+	assert.equal(state.source.stopped, false); assert.equal(guest.global('loops'), 0);
+	resumeRuntimeDebugger(state, RuntimeDebuggerResumeMode.Continue);
+	assert.equal(stoppedSourceLine(harness), line);
+	assert.equal(guest.global('loops'), 1, 'Continue executes the original stopped instruction once before stopping on its next visit');
+});
+
+for (const optLevel of [0, 3] as const) test(`discarding an at-stop plan does not present an unreturned caller O${optLevel}`, async () => {
+	const source = `
+operation = function()
+ work = work + 1 -- inside call
+ return work
+end
+work = 0
+return work -- caller stop
+`;
+	const harness = createDebuggerHarness(source, optLevel), { runtime, state } = harness;
+	const { cpu } = runtime.machine;
+	const line = source.split('\n').findIndex(line => line.includes('caller stop')) + 1;
+	startAtBreakpoint(harness, line); assert.equal(stoppedSourceLine(harness), line);
+	const outerPc = state.source.stopPc, depth = cpu.getFrameDepth(), guest = new SuspendedGuestSession(runtime);
+	state.breakpoints.toggle({ domain: -1, path: DEBUG_SOURCE_PATH }, source.split('\n').findIndex(line => line.includes('inside call')) + 1);
+	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
+		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
+	const outcomes: boolean[] = [];
+	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
+		admission: 'at-stop', honorUserStops: true, isCurrent: () => true,
+		prepare: () => ({ domain: -1, closure: guest.global('operation') as Closure, args: () => [] }),
+	}, () => {}, completed => { outcomes.push(completed); }, assert.fail);
+	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
+	didExecuteRuntimeDebuggerPlan(state);
+	assert.deepEqual(outcomes, []);
+	const innerPc = state.source.stopPc;
+	assert.notEqual(innerPc, outerPc); assert.equal(cpu.getFrameDepth(), depth + 1);
+	discardRuntimeDebuggerPlans(state);
+	assert.deepEqual(outcomes, [false]); assert.equal(state.plans.controlActive, false);
+	assert.equal(state.source.stopped, true); assert.equal(state.source.stopPc, innerPc);
+	assert.equal(cpu.getFrameDepth(), depth + 1, 'plan retirement is not an implicit stack unwind');
+	assert.equal(cpu.readFramePc(depth - 1), outerPc); assert.equal(guest.global('work'), 0);
 });
 
 for (const optLevel of [0, 3] as const) for (const cancel of [false, true]) test(`evaluation ${cancel ? 'cancels' : 'admits fresh arguments'} after the physical IRQ return (O${optLevel})`, async () => {
@@ -138,7 +288,7 @@ while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
 	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
 		{ backend: { finishGxGpuReadbacks: async () => { readbacks++; } } } as VideoPresenter);
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
-		honorUserStops: false,
+		admission: 'quiescent', honorUserStops: false,
 		isCurrent: () => current,
 		prepare: () => {
 			prepared++;
@@ -266,7 +416,7 @@ end
 		{ backend: { finishGxGpuReadbacks: async () => { readbacks++; } } } as VideoPresenter);
 	irqController.raise(IRQ_VBLANK); assert.equal(cpu.enterPendingInterrupt(), true);
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
-		honorUserStops: false,
+		admission: 'quiescent', honorUserStops: false,
 		isCurrent: () => current,
 		boundary: () => {
 			boundaryCalls++;
@@ -352,7 +502,7 @@ end
 		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
 	let completed = false;
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
-		honorUserStops: false,
+		admission: 'quiescent', honorUserStops: false,
 		isCurrent: () => true,
 		boundary: () => ({ request: { domain: -1, closure: guest.global('request_boundary') as Closure, args: () => [] },
 			condition: values => { const receipt = values[0] as Table, key = cpu.stringPool.find('reached')!;

@@ -41,15 +41,28 @@ local evaluate<const> = function(source, chunk_name, bindings, external_scope)
 	return protect(chunk)
 end
 
+local evaluate_frame<const> = function(source, chunk_name, frame_index, names)
+	local scope<const> = frame_bindings.open(frame_index, names)
+	-- Forward the exact protected tuple without packing or copying values.
+	local complete<const> = function(...)
+		scope.close()
+		return ...
+	end
+	return complete(evaluate(source, chunk_name, nil, scope))
+end
+
+-- An admission owner supplies a pinned activation, not a host-built namespace.
+function repl.evaluate_frame(source, chunk_name, frame_index, inline_depth)
+	local names<const>, message<const> = frame_bindings.resolve(frame_index, inline_depth)
+	if names == nil then
+		return false, message
+	end
+	return evaluate_frame(source, chunk_name, frame_index, names)
+end
+
 function repl.evaluate(source, chunk_name, context, frame_index, names)
 	if context == 'frame' then
-		local scope<const> = frame_bindings.open(frame_index, names)
-		-- Forward the exact protected tuple without packing or copying values.
-		local complete<const> = function(...)
-			scope.close()
-			return ...
-		end
-		return complete(evaluate(source, chunk_name, nil, scope))
+		return evaluate_frame(source, chunk_name, frame_index, names)
 	end
 	local bindings
 	if context == 'session' then

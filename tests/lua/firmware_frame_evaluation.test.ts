@@ -11,11 +11,19 @@ for (const optLevel of [0, 3] as const) for (const [name, body] of Object.entrie
 		const { cpu } = createTestSystemCpu(compileFrameEvaluationTest(body, optLevel));
 		cpu.installBootPrimitives();
 		assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
-		if (name === 'coroutine') {
+		if (name === 'coroutine' || name === 'completion_injection') {
 			assert.equal(cpu.isHaltedUntilIrq(), true, 'a live frame scope is suspended in the coroutine');
 			const saved = cpu.captureRuntimeState();
 			cpu.restoreRuntimeState(saved);
 			assert.deepEqual(cpu.captureRuntimeState(), saved);
+			if (name === 'completion_injection') {
+				const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
+				cpu.beginCompletionClosureInExecutionDomain(-1, cpu.getGlobalByKey(cpu.stringPool.find('stopped_probe')!) as Closure, [depth - 1]);
+				assert.equal(cpu.runUntilDepth(depth, 30_000_000), RunResult.Halted);
+				assert.deepEqual(materializeCpuCompletionValues(cpu), [true, 43, null, false]);
+				assert.equal(cpu.getFrameDepth(), depth); assert.equal(cpu.readFramePc(depth - 1), pc);
+				assert.equal(cpu.isHaltedUntilIrq(), true, 'named evaluation does not consume the retained caller halt');
+			}
 			cpu.clearHaltUntilIrq();
 			assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
 		}
@@ -96,8 +104,11 @@ return park(42)
 
 for (const optLevel of [0, 3] as const) test(`packed names O${optLevel}: a ROM without diagnostics reports missing coverage`, () => {
 	const { cpu } = createTestSystemCpu(compileFrameEvaluationTest(`
-local names, message = frame_bindings.resolve(frame_count(running_thread()) - 1, 0)
+local index<const> = frame_count(running_thread()) - 1
+local names, message = frame_bindings.resolve(index, 0)
 assert(names == nil and message == 'Frame symbols are unavailable.')
+local ok, message = repl.evaluate_frame('unexpected_global_write = 1', '=no-symbols', index, 0)
+assert(not ok and message == 'Frame symbols are unavailable.' and getglobal('unexpected_global_write') == nil)
 return true
 `, optLevel, false));
 	cpu.installBootPrimitives();

@@ -1000,7 +1000,7 @@ Function evaluations run with the workbench visible, unlike foreground Hot
 Resume recovery. Their control-plan owner retains explicit running/suspended
 intent; Run > Pause/Continue Lua Call suspends the real call stack without
 unwinding mutations. Popups temporarily hold execution, and a retained faulted
-call requires recovery. An active IRQ/exception first executes its own return;
+call requires recovery. These quiescent operations first finish an active IRQ/exception;
 the caller's instruction stays parked. Call preparation then reacquires current
 guest values through GPU-synchronized mutation admission. Request lifetime is
 separate from borrowed values, so pane/target replacement can revoke the call
@@ -5253,10 +5253,19 @@ bindings cannot be reassigned. This does not add typed-memory expression syntax
 to the limited BIOS loader. A private raw frame-header primitive exposes the existing function
 address, PC, call-site PC, completion flag and domain; injected completion calls
 retain the ancestor's own PC. Firmware never switches cartridge bus selection to
-inspect an unmapped domain. Both runtimes execute the same resolver. Admitting
-these locations at a Studio/native selected stop, including complete lexical
-coverage, cancellation and frame retirement, is not yet exposed by a public
-Terminal context.
+inspect an unmapped domain. Both runtimes execute the same resolver. BIOS
+`repl.evaluate_frame` resolves installed names itself; the caller supplies a
+physical frame index and logical inline depth, never a copied namespace.
+The IDE guest-call owner distinguishes quiescent admission from at-stop admission.
+The latter pushes its completion root above the retained stack without draining
+an active IRQ. Its source-debugger owner temporarily yields stop ownership to
+that call and republishes the same source stop only on actual completion. No
+ancestor PC or guest value is restored. Call admission precedes frame push so
+ordinary Continue suppression refers to the stopped caller, not the injected root.
+This [pinned-stop core](studio_terminal_contexts.md#pinned-stop-admission-gate)
+is not a public Terminal frame context: complete lexical coverage, cancellation/
+unwind borrow retirement, replacement/rewind, native selection and conversation
+admission still need their end-to-end gates.
 Selected-frame evaluation admission, live Actor mutation and complete reviewed-source
 apply/save/install/rerun receipts remain work tracked in
 [Studio runtime tools](studio_runtime_tools.md).

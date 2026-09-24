@@ -7,6 +7,7 @@ import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/
 import type { TerminalInput } from '../../../ide/workbench/contrib/terminal/editor_input';
 import { check, type StudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
+import { testStudioPinnedFrameEvaluation } from './studio_frame_evaluation';
 
 /** Real input, BIOS compiler and ordinary scheduler, on all three renderers. */
 export async function runStudioTerminal(test: StudioFixture) {
@@ -24,6 +25,8 @@ export async function runStudioTerminal(test: StudioFixture) {
 	for (let index = 0; index < 5; index++) await frame();
 	check(cycles() === position, 'opening the terminal does not run the game');
 	await test.runMenuCommand('pause');
+	await testStudioPinnedFrameEvaluation(test);
+	await test.runPaletteCommand('View: Lua Terminal');
 	const paste = async (text: string) => {
 		await test.click(input.composerBounds);
 		clipboard.text = text;

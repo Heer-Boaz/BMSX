@@ -3,6 +3,7 @@
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
+#include <string_view>
 #include "machine/runtime/runtime.h"
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/save_state/codec.h"
@@ -17,7 +18,9 @@ public:
 
 int main(int argc, char** argv) {
 	try {
-		for (int index = 1; index < argc; ++index) {
+		// The conformance producer supplies ROM/mode pairs.
+		for (int index = 1; index < argc; index += 2) {
+			const bool injectCompletion = std::string_view(argv[index + 1]) == "completion";
 			std::ifstream file(argv[index], std::ios::binary);
 			if (!file) throw std::runtime_error("cannot read firmware frame fixture");
 			std::vector<bmsx::u8> rom{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
@@ -45,6 +48,24 @@ int main(int argc, char** argv) {
 					}
 					std::ofstream output(std::string(argv[index]) + ".suspended-" + std::to_string(suspensions++) + ".state", std::ios::binary);
 					output.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+					if (injectCompletion) {
+						const auto depth = cpu.getFrameDepth();
+						const auto pc = cpu.readFramePc(depth - 1);
+						const auto argument = bmsx::valueNumber(depth - 1);
+						cpu.beginCompletionClosureInExecutionDomain(-1,
+							*bmsx::asClosure(cpu.getGlobalByKey(*cpu.stringPool().find("stopped_probe"))), {&argument, 1});
+						const auto completion = cpu.runUntilDepth(depth, 30000000);
+						const auto values = runtime.readCompletionValues();
+						if (completion != bmsx::RunResult::Halted || values.size() != 4
+							|| values[0] != bmsx::valueBool(true) || values[1] != bmsx::valueNumber(43)
+							|| values[2] != bmsx::valueNil() || values[3] != bmsx::valueBool(false)
+							|| cpu.getFrameDepth() != depth || cpu.readFramePc(depth - 1) != pc || !cpu.isHaltedUntilIrq()) {
+							throw std::runtime_error("named completion evaluation advanced its retained caller");
+						}
+						const auto evaluated = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
+						std::ofstream evaluatedOutput(std::string(argv[index]) + ".suspended-" + std::to_string(suspensions++) + ".state", std::ios::binary);
+						evaluatedOutput.write(reinterpret_cast<const char*>(evaluated.data()), evaluated.size());
+					}
 					cpu.clearHaltUntilIrq();
 					result = bmsx::RunResult::Yielded;
 				}

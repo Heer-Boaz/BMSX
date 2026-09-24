@@ -150,7 +150,7 @@ export class LuaTerminalSession {
 		}
 		this.transcript.append('input', `[${context}] ${source}`);
 		void scheduleRuntimeGuestCall(this.runtime, this.guest, this.debuggerState, this.tasks, {
-			honorUserStops: true,
+			admission: 'quiescent', honorUserStops: true,
 			isCurrent: () => generation === this.generation && operation.result === undefined,
 			prepare: () => {
 				const module = readRuntimeLuaModuleExport(this.sources, this.guest, -1, 'shell/repl');

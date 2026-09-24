@@ -915,3 +915,87 @@ rewind borrow retirement, native frame selection, direct typed-memory expression
 in the limited BIOS loader, and conversation admission to that frame context.
 The installed-name layer is shared Studio infrastructure; no Codex-only control
 or alternate runtime evaluator was added.
+
+## Pinned-stop admission gate
+
+Ordinary guest mutations have a quiescent admission: finish active exception
+handlers, then optionally rendezvous with a guest-owned mutation boundary.
+Frame evaluation instead needs explicit at-stop admission. Finishing an IRQ
+before reading its selected locals changes the requested activation. The two
+contracts must not share an implicit exception-drain policy.
+
+References inspected before this implementation: VS Code JS Debug's
+[explicit call-frame evaluation](https://github.com/microsoft/vscode-js-debug/blob/main/src/adapter/evaluator.ts),
+LLDB's [call plan and controlling completion boundary](https://github.com/llvm/llvm-project/blob/main/lldb/source/Target/ThreadPlanCallFunction.cpp),
+and Lua's [physical local lookup](https://github.com/lua/lua/blob/master/ldebug.c).
+Only the ownership applies: no temporary global hoisting, machine snapshot
+rollback or copied locals. The debugger retains its outer stop presentation
+while its explicit completion call owns execution.
+
+| Representation | TypeScript | C++ / shared firmware | Hot-path effect |
+| --- | --- | --- | --- |
+| Admission | Explicit quiescent or at-stop guest-call request | Existing physical completion entry; native conformance injects the same named firmware call | Per submitted call only; no public native frame selection |
+| Pinned activation | Existing thread, physical frame index and inline depth | Same raw frame/header primitives | No new CPU/frame/save-state field |
+| Retained source stop | Tooling-owned thread/PC/domain/inline-depth/reason | No native source-debugger owner | Only call entry and completion |
+| Named evaluation | BIOS resolves installed names before compilation | Same firmware and diagnostic words | Explicit evaluation only |
+| Values and mutations | Actual frame registers/closure cells | Actual tagged registers/closure cells | Existing access primitives; no namespace copy or rollback |
+
+Affected callsites: `scheduleRuntimeGuestCall`, debugger control-plan admission
+and completion, explicit source-stop transitions, and the BIOS REPL entrypoint.
+Normal/instrumented opcode dispatch, frame push/pop, scheduler, GC and rendering
+gain no branch, symbol lookup or allocation. This gate is not public Terminal
+frame admission: cancellation/unwind borrow retirement, replacement/rewind,
+native selection and conversation/UI authority still need end-to-end proof.
+
+Call admission also now precedes the physical completion-root push. A quiescent
+call's Continue suppression belongs to the original stopped caller instruction.
+Previously it was bound to the newly pushed evaluator, so resuming afterwards
+could immediately stop again before advancing the caller. At-stop admission
+deliberately creates no such suppression: it retains the source stop, and only
+the user's subsequent Continue suppresses that instruction. An inner breakpoint
+belongs to the running call; discarding its plan cannot present an outer stop
+whose physical completion boundary has not returned.
+
+Validation:
+
+- Six new O0/O3 regression cases fail against `cfd7ea028`'s guest-call owner in an
+  isolated bundle, without reverting the checkout: four show exception-drain
+  admission instead of a call above the selected IRQ, and two show suppression
+  attached to the evaluator rather than the caller. All pass with this owner
+  correction. The focused debugger/Terminal/control-plan bundle has 48 passing
+  tests, also covering queued revocation, nested evaluation breakpoints and plan
+  discard without an implicit stack unwind. Evidence:
+  `/tmp/pinned-stop-negative.log` and `/tmp/pinned-stop-unit-final.log`.
+- The rebuilt BIOS and real Nemesis cartridge pass the ordinary Terminal browser
+  workflow on software, WebGL2 and WebGPU. The added admission-core probe stops
+  the cartridge's actual `cartlib/irq.lua` dispatcher, evaluates `flags` and a
+  retained cart ancestor's `cartlib_render_commands` through installed firmware
+  names, and checks every ancestor PC, active exception depth, exact result tuple,
+  inspection expiry and continued pause. An initial probe incorrectly targeted
+  the BIOS boot IRQ; the live cartridge installs its own IRQ vector. This was a
+  test-target correction, not a runtime retry/fallback. Captures at
+  `/tmp/pinned-stop-terminal-*-pinned-irq-stop.png` visibly retain the dispatcher
+  source stop. This is automated private-admission evidence, **not** a public
+  frame-context UI or conversation capability.
+- The 30 O0/O3 firmware vectors pass TS/C++ parity, including full retained states
+  before/after a named injected completion call and full final state. Protected
+  errors preserve earlier writes, escaped frame closures expire, and missing
+  symbols/wrong inline scope report explicit errors without trying cart globals.
+  The physical BIOS/HID Terminal parity workflow also passes. No C++ product
+  runtime, CPU dispatch, frame layout or save-state representation changed.
+- Full Lua: 2,745 pass, one skip; ROM suite: 185 pass. The 45-test assistant
+  bundle passes, including ordinary cart/session Terminal conversations,
+  source/debugger tools, Scenario Lab and behavior/Actor inspection. This uses
+  the real browser/server/Codex process with a scripted model fixture; it is not
+  live-model reasoning or evidence of a public selected-frame tool.
+- Product typechecks and browser/Node tooling release/debug builds pass. The
+  tests project retains the same 95 diagnostics after position normalization.
+  Strict architecture audit reports zero issues; core parity and
+  `git diff --check` pass. The indentation check still lists the same five
+  unchanged baseline files recorded in the preceding layout slice.
+- Ordinary quiescent calls keep their original completion observer; only
+  at-stop calls create a retained-stop observer/record. All changes are on
+  explicit admission/completion paths, with no CPU, scheduler, render or GC
+  hot-path edits. The BIOS debug image is 16,753,440 bytes, 13,232 bytes larger
+  than before this slice, within the unchanged 16 MiB limit. These are ownership
+  and representation costs, not an assertion of faster gameplay.

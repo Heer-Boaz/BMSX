@@ -37,6 +37,29 @@ end)`;
 }
 
 export const frameEvaluationCases = {
+	named_entry: `
+local exercise = function(value, ...)
+ local index<const> = frame_count(running_thread()) - 1
+ local ok, a, b, c = repl.evaluate_frame('value = value + 1; return value, nil, false', '=named-entry', index, 0)
+ assert(ok and a == 42 and b == nil and c == false and value == 42)
+ ok, a = repl.evaluate_frame('value = value + 1; escaped = function() return value end; error("named failure")', '=named-error', index, 0)
+ assert(not ok and a == 'named failure' and value == 43)
+ ok, a = pcall(escaped)
+ assert(not ok and a == 'Selected frame evaluation has ended.')
+ ok, a = repl.evaluate_frame('value = 900', '=wrong-depth', index, 999)
+ assert(not ok and a == 'Frame source scope is unavailable at this PC and inline depth.' and value == 43)
+ return true
+end
+return exercise(41)`,
+	completion_injection: `
+stopped_probe = function(index)
+ return repl.evaluate_frame('value = value + 1; return value, nil, false', '=completion-entry', index, 0)
+end
+local park = function(value, ...)
+ halt_until_irq
+ return value == 43
+end
+return park(42)`,
 	inline_static_names: `
 local run = function(seed, ...)
  data buffer: word = 17

@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RunResult } from '../../../machine/ts/machine/cpu/cpu';
+import type { Closure } from '../../../machine/ts/machine/cpu/closure';
 import { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { applyRuntimeSaveState, captureRuntimeSaveState, type RuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state/codec';
@@ -40,14 +41,23 @@ try {
 				applyRuntimeSaveState(runtime, state);
 				assert.deepEqual(cpu.captureRuntimeState(), state.cpuState);
 				suspended.push(state);
+				if (name === 'completion_injection') {
+					const depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
+					cpu.beginCompletionClosureInExecutionDomain(-1, cpu.getGlobalByKey(cpu.stringPool.find('stopped_probe')!) as Closure, [depth - 1]);
+					assert.equal(cpu.runUntilDepth(depth, 30_000_000), RunResult.Halted);
+					assert.deepEqual(runtime.readCompletionValues(), [true, 43, null, false]);
+					assert.equal(cpu.getFrameDepth(), depth); assert.equal(cpu.readFramePc(depth - 1), pc);
+					assert.equal(cpu.isHaltedUntilIrq(), true);
+					suspended.push(captureRuntimeSaveState(runtime));
+				}
 				cpu.clearHaltUntilIrq();
 				result = RunResult.Yielded;
 			}
 		}
 		assert.equal(result, RunResult.Halted);
 		assert.deepEqual(runtime.readCompletionValues(), [true, true]);
-		assert.equal(suspended.length, name === 'coroutine' ? 1 : 0);
-		assert.equal(spawnSync('build-cpp-tests/bmsx_frame_evaluation_runner', [path], { stdio: 'inherit' }).status, 0);
+		assert.equal(suspended.length, name === 'completion_injection' ? 2 : name === 'coroutine' ? 1 : 0);
+		assert.equal(spawnSync('build-cpp-tests/bmsx_frame_evaluation_runner', [path, name === 'completion_injection' ? 'completion' : 'run'], { stdio: 'inherit' }).status, 0);
 		for (let index = 0; index < suspended.length; index++) {
 			const native = decodeRuntimeSaveState(new Uint8Array(readFileSync(`${path}.suspended-${index}.state`)), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
 			assert.deepEqual(native, suspended[index], `${name} O${optLevel}: active scope full TS/C++ state parity`);

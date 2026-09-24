@@ -2,7 +2,7 @@ import type { ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { RuntimeSourceState } from './sources';
 import { RuntimeBreakpoints, type RuntimeBreakpointBindings } from './breakpoints';
-import { SourceDebugger, RuntimeDebuggerResumeMode } from './source_debugger';
+import { SourceDebugger, RuntimeDebuggerResumeMode, type RuntimeDebuggerSourceStop } from './source_debugger';
 import { RuntimeDebuggerPlanManager, type RuntimeDebuggerControlPlan, type RuntimeDebuggerExecutionContext } from './debugger_plans';
 export { RuntimeDebuggerResumeMode, RuntimeDebuggerStopReason } from './source_debugger';
 
@@ -84,9 +84,16 @@ export function pushRuntimeDebuggerControlPlan(
 	state: RuntimeDebuggerState,
 	plan: RuntimeDebuggerControlPlan,
 	context: RuntimeDebuggerExecutionContext = 'game',
-): void {
+	stopPolicy: 'resume' | 'retain' = 'resume',
+): RuntimeDebuggerSourceStop | undefined {
+	let retained: RuntimeDebuggerSourceStop | undefined;
 	if (state.source.stopped) {
-		resumeRuntimeDebugger(state, RuntimeDebuggerResumeMode.Continue);
+		if (stopPolicy === 'retain') {
+			state.executionRevision++;
+			state.executionContext = undefined;
+			state.stopPresentationPending = false;
+			retained = state.source.suspendStopForCall();
+		} else resumeRuntimeDebugger(state, RuntimeDebuggerResumeMode.Continue);
 	} else {
 		state.executionRevision++;
 		state.executionContext = undefined;
@@ -95,6 +102,7 @@ export function pushRuntimeDebuggerControlPlan(
 	}
 	state.plans.pushControlPlan(plan, context);
 	updateExecutionHookBinding(state);
+	return retained;
 }
 
 export function willExecuteRuntimeDebuggerPlan(state: RuntimeDebuggerState): void {

@@ -11,6 +11,14 @@ export const SOURCE_EXECUTION_MODES = { continue: RuntimeDebuggerResumeMode.Cont
 	over: RuntimeDebuggerResumeMode.StepOver, out: RuntimeDebuggerResumeMode.StepOut };
 export type SourceExecutionMode = keyof typeof SOURCE_EXECUTION_MODES;
 export const enum RuntimeDebuggerStopReason { Breakpoint, Step }
+/** A source stop retained while a completion call owns execution above it. */
+export type RuntimeDebuggerSourceStop = {
+	readonly thread: Thread;
+	readonly domain: ExecutionDomainId;
+	readonly pc: number;
+	readonly inlineDepth: number;
+	readonly reason: RuntimeDebuggerStopReason;
+};
 type Suppression = { thread: Thread; frame: CallFrame; depth: number };
 
 /** Physical source stops. Composition owns hook installation, scheduling and suspension lifetime. */
@@ -96,6 +104,23 @@ export class SourceDebugger {
 		}
 		if (this.stopped && (this.stepping || this.breakpoints[this.stopDomain + 1].has(this.stopPc))) this.suppressCurrentInstruction();
 		this.stopped = false; this.stopThread = undefined;
+		this.changed();
+	}
+
+	/** Unlike Continue, the call will not execute the stopped instruction. */
+	public suspendStopForCall(): RuntimeDebuggerSourceStop {
+		const stop = { thread: this.stopThread!, domain: this.stopDomain, pc: this.stopPc,
+			inlineDepth: this.stopInlineDepth, reason: this.stopReason };
+		this.stopped = false; this.stopThread = undefined;
+		this.interrupt();
+		return stop;
+	}
+
+	/** The completion boundary has stopped before the retained caller can run. */
+	public returnToStop(stop: RuntimeDebuggerSourceStop): void {
+		this.stopped = true; this.stopThread = stop.thread; this.stopDomain = stop.domain;
+		this.stopPc = stop.pc; this.stopInlineDepth = stop.inlineDepth; this.stopReason = stop.reason;
+		this.mode = RuntimeDebuggerResumeMode.Continue; this.stepThread = undefined;
 		this.changed();
 	}
 	private suppressCurrentInstruction(): void {

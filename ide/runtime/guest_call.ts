@@ -7,6 +7,7 @@ import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { RuntimeDebuggerPlanResult, type RuntimeDebuggerControlPlan } from './debugger_plans';
 import { pushRuntimeDebuggerControlPlan, type RuntimeDebuggerState } from './debugger_state';
 import type { SuspendedGuestSession } from './suspended_guest';
+import type { RuntimeDebuggerSourceStop } from './source_debugger';
 
 export type RuntimeGuestCall = {
 	readonly domain: ExecutionDomainId;
@@ -28,10 +29,15 @@ export type RuntimeGuestCallRequest = {
 	readonly honorUserStops: boolean;
 	/** Request lifetime is independent of any suspended-heap borrow. */
 	readonly isCurrent: () => boolean;
+	readonly prepare: () => RuntimeGuestCall | undefined;
+} & ({
+	readonly admission: 'quiescent';
 	/** The guest lifecycle, rather than debugger function names, admits this edit. */
 	readonly boundary?: () => RuntimeGuestCallBoundary | undefined;
-	readonly prepare: () => RuntimeGuestCall | undefined;
-};
+} | {
+	/** Call above the current suspended stack; never finish its exception first. */
+	readonly admission: 'at-stop';
+});
 
 /** A debugger function evaluation, executed by the ordinary scheduled CPU. */
 export class RuntimeGuestCallPlan implements RuntimeDebuggerControlPlan {
@@ -102,24 +108,36 @@ export function scheduleRuntimeGuestCall(
 		runtime.history.stop();
 		const cpu = runtime.machine.cpu;
 		const depth = cpu.getFrameDepth();
-		cpu.beginCompletionClosureInExecutionDomain(call.domain, call.closure, call.args());
-		pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, depth, 'completion', honorUserStops, finish), 'workbench');
+		const args = call.args();
+		let retained: RuntimeDebuggerSourceStop | undefined;
+		const plan = new RuntimeGuestCallPlan(runtime, depth, 'completion', honorUserStops, request.admission === 'at-stop' ? completed => {
+			if (completed && retained !== undefined) {
+				debuggerState.source.returnToStop(retained);
+				debuggerState.stopPresentationPending = true;
+			}
+			finish(completed);
+		} : finish);
+		// Source suppression belongs to the stopped caller, not the newly pushed root.
+		retained = pushRuntimeDebuggerControlPlan(debuggerState, plan, 'workbench', request.admission === 'at-stop' ? 'retain' : 'resume');
+		cpu.beginCompletionClosureInExecutionDomain(call.domain, call.closure, args);
 	};
 	const admitCall = (checkBoundary: boolean): boolean => {
 		if (!request.isCurrent()) { finished(false); return false; }
 		const cpu = runtime.machine.cpu;
-		const exceptionDepth = cpu.readExceptionReturnFrameDepth();
-		if (exceptionDepth !== -1) {
-			guest.invalidate();
-			runtime.history.stop();
-			pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, exceptionDepth, 'exception', false, completed => {
-				if (!completed) { finished(false); return; }
-				// The handler may have submitted GPU work or replaced inspected values.
-				void tasks.schedule(() => { admitCall(checkBoundary); }, failed);
-			}), 'workbench');
-			return true;
+		if (request.admission === 'quiescent') {
+			const exceptionDepth = cpu.readExceptionReturnFrameDepth();
+			if (exceptionDepth !== -1) {
+				guest.invalidate();
+				runtime.history.stop();
+				pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, exceptionDepth, 'exception', false, completed => {
+					if (!completed) { finished(false); return; }
+					// The handler may have submitted GPU work or replaced inspected values.
+					void tasks.schedule(() => { admitCall(checkBoundary); }, failed);
+				}), 'workbench');
+				return true;
+			}
 		}
-		const boundary = checkBoundary ? request.boundary?.() : undefined;
+		const boundary = checkBoundary && request.admission === 'quiescent' ? request.boundary?.() : undefined;
 		if (boundary !== undefined) {
 			beginCall(boundary.request, false, completed => {
 				if (!completed) { finished(false); return; }
