@@ -125,7 +125,7 @@ return *counter, state.counter
 		byteCount: 4,
 		alignment: 4,
 	}]);
-	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'bss_addr' && reloc.symbol === 'module:state/bss:counter'), true);
+	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'bss_addr' && reloc.symbolIndex === 0), true);
 	const disasm = disassembleEntryFunction(compiled);
 	assert.doesNotMatch(disasm, /\bCALL\b/);
 	assert.doesNotMatch(disasm, /\bNEWT\b/);
@@ -475,8 +475,8 @@ return *counter, &counter
 		byteCount: 4,
 		alignment: 4,
 	}]);
-	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'data_addr' && reloc.symbol === 'module:section_data.lua/data:counter'), true);
-	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'data_lma_addr' && reloc.symbol === 'module:section_data.lua/data:counter'), true);
+	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'data_addr' && reloc.symbolIndex === 0), true);
+	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'data_lma_addr' && reloc.symbolIndex === 0), true);
 
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	memory.writeMappedU32LE(DYNAMIC_RAM_BASE, 0x11223344);
@@ -535,7 +535,7 @@ return before, *counter, state.counter
 		byteCount: 4,
 		alignment: 4,
 	}]);
-	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'data_addr' && reloc.symbol === 'module:state/data:counter'), true);
+	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'data_addr' && reloc.symbolIndex === 0), true);
 	const disasm = disassembleEntryFunction(compiled);
 	assert.doesNotMatch(disasm, /\bCALL\b/);
 	assert.doesNotMatch(disasm, /\bNEWT\b/);
@@ -597,7 +597,7 @@ return values[0], values[1], values[2], values
 		alignment: 4,
 	}]);
 	assert.deepEqual(Array.from(image.sections.rodata.bytes), [11, 0, 0, 0, 22, 0, 0, 0, 33, 0, 0, 0]);
-	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'rodata_addr' && reloc.symbol === 'module:section_rodata.lua/rodata:values'), true);
+	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'rodata_addr' && reloc.symbolIndex === 0), true);
 	const result = runColdCompiled(compiled);
 	assert.deepEqual(result.values, [11, 22, 33, result.image.header.rodataAddress]);
 });
@@ -745,7 +745,7 @@ return values[0], values[1], data.values
 		byteCount: 8,
 		alignment: 4,
 	}]);
-	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'rodata_addr' && reloc.symbol === 'module:data/rodata:values'), true);
+	assert.equal(image.link.constValueRelocs.some(reloc => reloc.kind === 'rodata_addr' && reloc.symbolIndex === 0), true);
 	const disasm = disassembleEntryFunction(compiled);
 	assert.doesNotMatch(disasm, /\bCALL\b/);
 	assert.doesNotMatch(disasm, /\bNEWT\b/);

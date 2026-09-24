@@ -616,9 +616,9 @@ test('system and cartridge storage relocations resolve against physical ROM and 
 		symbols: [{ name: 'system_counter', offset: 0, byteCount: 4, alignment: 4 }],
 	};
 	system.object.link.constValueRelocs = [
-		{ constIndex: 0, kind: 'rodata_addr', symbol: 'system_lookup', addend: 0 },
-		{ constIndex: 1, kind: 'data_lma_addr', symbol: 'system_state', addend: 0 },
-		{ constIndex: 2, kind: 'bss_addr', symbol: 'system_counter', addend: 0 },
+		{ constIndex: 0, kind: 'rodata_addr', symbolIndex: 0, addend: 0 },
+		{ constIndex: 1, kind: 'data_lma_addr', symbolIndex: 0, addend: 0 },
+		{ constIndex: 2, kind: 'bss_addr', symbolIndex: 0, addend: 0 },
 	];
 	const linkedSystem = linkSystemBlua32Image(
 		system.object,
@@ -640,9 +640,9 @@ test('system and cartridge storage relocations resolve against physical ROM and 
 		symbols: [{ name: 'cart_counter', offset: 0, byteCount: 8, alignment: 4 }],
 	};
 	cart.object.link.constValueRelocs = [
-		{ constIndex: 0, kind: 'rodata_addr', symbol: 'cart_lookup', addend: 0 },
-		{ constIndex: 1, kind: 'data_lma_addr', symbol: 'cart_state', addend: 0 },
-		{ constIndex: 2, kind: 'bss_addr', symbol: 'cart_counter', addend: 4 },
+		{ constIndex: 0, kind: 'rodata_addr', symbolIndex: 0, addend: 0 },
+		{ constIndex: 1, kind: 'data_lma_addr', symbolIndex: 0, addend: 0 },
+		{ constIndex: 2, kind: 'bss_addr', symbolIndex: 0, addend: 4 },
 	];
 	const linkedCart = linkCartBlua32Image(
 		linkedSystem.biosImports,
@@ -668,6 +668,36 @@ test('system and cartridge storage relocations resolve against physical ROM and 
 	assert.equal(linkedCart.layout.header.bssAddress, DYNAMIC_RAM_BASE + 12);
 	assert.deepEqual(Array.from(linkedSystem.layout.dataLoadBytes), [1, 0, 0, 0]);
 	assert.deepEqual(Array.from(linkedCart.layout.dataLoadBytes), [2, 0, 0, 0]);
+});
+
+test('static relocations select section symbol indices even when display labels are equal', () => {
+	const system = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }], new Array(8).fill(0));
+	const symbols = [
+		{ name: 'same_label', offset: 0, byteCount: 8, alignment: 4 },
+		{ name: 'same_label', offset: 8, byteCount: 8, alignment: 4 },
+	];
+	system.object.sections.data = { bytes: new Uint8Array(16), symbols };
+	system.object.sections.rodata.bytes = new Uint8Array(16);
+	system.object.sections.rodata.symbols = symbols;
+	system.object.sections.bss = { byteCount: 16, symbols };
+	system.object.link.constValueRelocs = [
+		{ constIndex: 0, kind: 'data_addr', symbolIndex: 0, addend: 4 },
+		{ constIndex: 1, kind: 'data_addr', symbolIndex: 1, addend: 4 },
+		{ constIndex: 2, kind: 'data_lma_addr', symbolIndex: 0, addend: 4 },
+		{ constIndex: 3, kind: 'data_lma_addr', symbolIndex: 1, addend: 4 },
+		{ constIndex: 4, kind: 'bss_addr', symbolIndex: 0, addend: 4 },
+		{ constIndex: 5, kind: 'bss_addr', symbolIndex: 1, addend: 4 },
+		{ constIndex: 6, kind: 'rodata_addr', symbolIndex: 0, addend: 4 },
+		{ constIndex: 7, kind: 'rodata_addr', symbolIndex: 1, addend: 4 },
+	];
+	const linked = linkSystemBlua32Image(system.object, system.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
+	const { dataAddress, dataLoadAddress, bssAddress, rodataAddress } = linked.layout.header;
+	assert.deepEqual(linked.layout.constants, [
+		dataAddress + 4, dataAddress + 12,
+		dataLoadAddress + 4, dataLoadAddress + 12,
+		bssAddress + 4, bssAddress + 12,
+		rodataAddress + 4, rodataAddress + 12,
+	]);
 });
 
 test('BLua32 linker evaluates composite link-value expressions at initial and final layout', () => {
@@ -1446,7 +1476,7 @@ test('text-only BLua32 revisions keep physical rodata addresses stable', () => {
 	initial.object.link.constValueRelocs = [{
 		constIndex: 0,
 		kind: 'rodata_addr',
-		symbol: 'live_value',
+		symbolIndex: 0,
 		addend: 0,
 	}];
 	const initialImage = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);

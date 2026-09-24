@@ -410,6 +410,7 @@ type BssBinding = {
 	symbolHandle: string;
 	name: string;
 	symbol: string;
+	symbolIndex: number;
 	offset: number;
 	byteCount: number;
 	alignment: number;
@@ -420,6 +421,7 @@ type DataBinding = {
 	symbolHandle: string;
 	name: string;
 	symbol: string;
+	symbolIndex: number;
 	offset: number;
 	byteCount: number;
 	alignment: number;
@@ -430,6 +432,7 @@ type RodataBinding = {
 	symbolHandle: string;
 	name: string;
 	symbol: string;
+	symbolIndex: number;
 	offset: number;
 	byteCount: number;
 	alignment: number;
@@ -614,7 +617,7 @@ class ProgramBuilder {
 
 	public constValueRelocIndex(
 		kind: Exclude<ProgramConstValueReloc['kind'], 'link_value'>,
-		symbol: string,
+		symbolIndex: number,
 		addend: number,
 	): number {
 		const index = this.constPool.length;
@@ -623,7 +626,7 @@ class ProgramBuilder {
 		this.constValueRelocs.push({
 			constIndex: index,
 			kind,
-			symbol,
+			symbolIndex,
 			addend,
 		});
 		return index;
@@ -683,6 +686,7 @@ class ProgramBuilder {
 			symbolHandle,
 			name,
 			symbol: `${buildModuleRootId(moduleId)}/bss:${name}`,
+			symbolIndex: this.bssBindingsBySymbolHandle.size,
 			offset,
 			byteCount: type.size,
 			alignment: type.alignment,
@@ -708,6 +712,7 @@ class ProgramBuilder {
 			symbolHandle,
 			name,
 			symbol: `${buildModuleRootId(moduleId)}/data:${name}`,
+			symbolIndex: this.dataBindingsBySymbolHandle.size,
 			offset,
 			byteCount: type.size,
 			alignment: type.alignment,
@@ -737,6 +742,7 @@ class ProgramBuilder {
 			symbolHandle,
 			name,
 			symbol: `${buildModuleRootId(moduleId)}/rodata:${name}`,
+			symbolIndex: this.rodataBindingsBySymbolHandle.size,
 			offset,
 			byteCount: type.size,
 			alignment: type.alignment,
@@ -3402,22 +3408,22 @@ class FunctionBuilder {
 	}
 
 	private emitLoadBssAddress(target: number, binding: BssBinding, byteOffset: number): void {
-		const index = this.program.constValueRelocIndex('bss_addr', binding.symbol, byteOffset);
+		const index = this.program.constValueRelocIndex('bss_addr', binding.symbolIndex, byteOffset);
 		this.emitABx(OpCode.LOADK, target, index);
 	}
 
 	private emitLoadDataAddress(target: number, binding: DataBinding, byteOffset: number): void {
-		const index = this.program.constValueRelocIndex('data_addr', binding.symbol, byteOffset);
+		const index = this.program.constValueRelocIndex('data_addr', binding.symbolIndex, byteOffset);
 		this.emitABx(OpCode.LOADK, target, index);
 	}
 
 	private emitLoadDataLmaAddress(target: number, binding: DataBinding, byteOffset: number): void {
-		const index = this.program.constValueRelocIndex('data_lma_addr', binding.symbol, byteOffset);
+		const index = this.program.constValueRelocIndex('data_lma_addr', binding.symbolIndex, byteOffset);
 		this.emitABx(OpCode.LOADK, target, index);
 	}
 
 	private emitLoadRodataAddress(target: number, binding: RodataBinding, byteOffset: number): void {
-		const index = this.program.constValueRelocIndex('rodata_addr', binding.symbol, byteOffset);
+		const index = this.program.constValueRelocIndex('rodata_addr', binding.symbolIndex, byteOffset);
 		this.emitABx(OpCode.LOADK, target, index);
 	}
 

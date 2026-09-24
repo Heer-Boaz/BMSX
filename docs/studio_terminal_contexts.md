@@ -548,3 +548,63 @@ selected-stop/cart-bus admission, borrow retirement on cancellation and machine
 replacement/rewind, native frame selection, and conversation frame admission.
 The ordinary cart/session Terminal and source inspection are not gated on those
 unfinished frame-evaluation capabilities.
+
+## Static-storage identity gate
+
+The next coverage audit found an existing producer error: distinct lexical
+`.bss` declarations named `value` in one module produce two storage records but
+the same relocation spelling. The linker chooses the first record by name, so
+writing the inner declaration changes the outer one. `.data` and `.rodata` use
+the same faulty lookup. A static inspector must not encode these wrong addresses
+as authoritative locations.
+
+LLVM LLD resolves a relocation through its actual
+[symbol-table index](https://github.com/llvm/llvm-project/blob/main/lld/ELF/InputSection.cpp),
+not by searching for the first equal display name. BMSX's compiler now likewise
+retains each declaration's section-symbol ordinal through address lowering and
+constant relocation. A symbol's label is presentation/layout-token data, not a
+lookup key. Module export analysis already retains the binder's declaration
+identity and must keep doing so; no new name-mangling convention or fallback is
+needed. This does not migrate static memory during Hot Resume: static storage
+still follows the accepted physical section layout.
+
+| Representation | TypeScript owner | Native C++ contract | Execution effect |
+| --- | --- | --- | --- |
+| Static declaration | Compiler binder handle and section-symbol index | No native source compiler / unlinked object consumer | Compilation only |
+| Address relocation | `ProgramConstValueReloc.symbolIndex`, indexed within the named section | Native consumes the already linked image | Constant-time direct lookup at link time |
+| Final address | Existing numeric constant and raw memory instruction | Identical ROM constant/address words | No new CPU branch, metadata, allocation or save-state field |
+| Static placement | Existing section offsets, extents, alignment and layout token | Existing RAM/ROM windows | No migration or runtime repair |
+
+Affected callsites are `recordBss`/`recordData`/`recordRodata`, the four static
+address emitters (including `.data` load address), and `resolveConstValues` at
+link time. There are no changed CPU, firmware dispatch, scheduler, renderer or
+GC hot-path callsites. Validate actual shadowed storage on both runtimes, section
+initialization, module exports and unchanged linked ROM bytes for non-colliding
+programs before publishing static locations to Terminal/inspection.
+
+### Static-storage identity validation (2026-09-24)
+
+- Eight new O0/O3 guest tests failed before the fix. They now prove separate
+  same-name `.bss`, `.data` and `.rodata` addresses, cold initializers, and
+  persistent independent function-local storage. The linker test also covers
+  every address relocation kind, second-symbol indices and byte addends.
+- The shared firmware fixture evaluates a selected-frame callback which owns
+  shadowed static declarations. The full 18-vector O0/O3 suite passes on TS and
+  C++, including complete serialized-state equality. This proves linked storage
+  and callback execution, **not direct static-name evaluation**.
+- Full Lua suite: 2561 pass, one skip. ROM suite: 185 pass, including const-module
+  exports and system/cart initialization. Product typechecks pass; the tests
+  project retains exactly the same 95 baseline diagnostics after normalizing
+  shifted line/column positions. Architecture audit: zero issues; core parity,
+  changed-file indentation and `git diff --check` pass.
+- Eight non-colliding fixture ROMs and rebuilt BIOS/Nemesis debug ROMs have
+  byte-identical SHA-256 hashes before/after. The fix changes tooling address
+  resolution from a linear name search to direct indexing, with no added guest
+  execution cost. No new interactive UI proof is claimed for this compiler slice.
+
+The coverage audit also found two remaining compiler boundaries: source `struct`
+names currently fall through to global value lookup, and the firmware loader
+currently requests only one result from a call, even in a return-list tail.
+Neither is a valid basis for advertising full selected-frame Lua semantics.
+Static/type debug metadata and public frame admission remain separate unfinished
+work; this storage correction does not add a Terminal context or Codex-only UI.

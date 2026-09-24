@@ -347,21 +347,6 @@ function buildStaticLayoutToken(
 	return token;
 }
 
-function resolveStorageSymbolAddress(
-	symbols: ReadonlyArray<ProgramBssSymbol | ProgramDataSymbol | ProgramRodataSymbol>,
-	baseAddress: number,
-	symbolName: string,
-	addend: number,
-): number {
-	for (let index = 0; index < symbols.length; index += 1) {
-		const symbol = symbols[index];
-		if (symbol.name === symbolName) {
-			return baseAddress + symbol.offset + addend;
-		}
-	}
-	throw new Error(`BLua32 static symbol '${symbolName}' is undefined.`);
-}
-
 function resolveConstValueRelocation(
 	reloc: ProgramConstValueReloc,
 	dataSymbols: ReadonlyArray<ProgramDataSymbol>,
@@ -374,13 +359,13 @@ function resolveConstValueRelocation(
 ): number {
 	switch (reloc.kind) {
 		case 'data_addr':
-			return resolveStorageSymbolAddress(dataSymbols, dataAddress, reloc.symbol, reloc.addend);
+			return dataAddress + dataSymbols[reloc.symbolIndex].offset + reloc.addend;
 		case 'data_lma_addr':
-			return resolveStorageSymbolAddress(dataSymbols, dataLoadAddress, reloc.symbol, reloc.addend);
+			return dataLoadAddress + dataSymbols[reloc.symbolIndex].offset + reloc.addend;
 		case 'bss_addr':
-			return resolveStorageSymbolAddress(bssSymbols, bssAddress, reloc.symbol, reloc.addend);
+			return bssAddress + bssSymbols[reloc.symbolIndex].offset + reloc.addend;
 		case 'rodata_addr':
-			return resolveStorageSymbolAddress(rodataSymbols, rodataAddress, reloc.symbol, reloc.addend);
+			return rodataAddress + rodataSymbols[reloc.symbolIndex].offset + reloc.addend;
 		case 'link_value':
 			return evaluateProgramLinkValueExpression(reloc.expression);
 	}

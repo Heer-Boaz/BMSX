@@ -119,7 +119,8 @@ export type ProgramConstValueReloc =
 	| {
 		constIndex: number;
 		kind: 'bss_addr' | 'data_addr' | 'data_lma_addr' | 'rodata_addr';
-		symbol: string;
+		/** Declaration identity within the selected section's symbol table. */
+		symbolIndex: number;
 		addend: number;
 	}
 	| {

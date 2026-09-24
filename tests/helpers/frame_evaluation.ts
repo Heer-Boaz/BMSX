@@ -37,6 +37,31 @@ end)`;
 }
 
 export const frameEvaluationCases = {
+	static_storage_identity: `
+bss buffered: word
+data writable: word = 11
+rodata frozen: word = 17
+local nested = function(...)
+ bss buffered: word
+ data writable: word = 22
+ rodata frozen: word = 23
+ *buffered = *buffered + 1
+ return { buffered = buffered, writable = writable, frozen = frozen }
+end
+local exercise = function(...)
+ local index<const> = frame_count(running_thread()) - 1
+ local names<const> = frame_bindings.resolve(index, 0)
+ local ok, cells = repl.evaluate('return nested()', '=static-identity', 'frame', index, names)
+ assert(ok and cells.buffered ~= buffered and cells.writable ~= writable and cells.frozen ~= frozen)
+ assert(mem[cells.buffered] == 1 and mem[cells.writable] == 22 and mem[cells.frozen] == 23)
+ assert(*buffered == 40 and *writable == 11 and *frozen == 17)
+ local again = nested()
+ assert(again.buffered == cells.buffered and again.writable == cells.writable and again.frozen == cells.frozen)
+ assert(mem[cells.buffered] == 2)
+ return true
+end
+*buffered = 40
+return exercise()`,
 	lexical_names: `
 setglobal('folded', 999)
 setglobal('unreferenced', 999)
