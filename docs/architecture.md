@@ -1243,6 +1243,13 @@ Run-menu, quick-menu and headless commands share this owner. See
 [startup and Reboot results](studio_boot_operations.md).
 Source revisions publish matching text and parsed Lua assets in the same ROM
 as their executable and diagnostics, including newly authored files.
+The shared tooling syntax codec persists local span ordinals into one packed
+numeric directory of `(unit ordinal, relative start, relative end)` triples;
+it does not serialize intermediate per-span objects. Source text, tokens,
+recovery data and shared-span identity remain intact. Only the TypeScript
+source build/load owners consume that schema; neither machine runtime decodes
+it. This [storage representation](lua_syntax_storage.md) does not expand the
+physical ROM window or discard debugger coverage.
 
 The packer emits one immutable prefix: ordinary asset payload spans, per-entry
 metadata, and the manifest. It derives final TOC records from that layout

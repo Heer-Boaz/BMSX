@@ -11,7 +11,6 @@ import { LuaTokenSequence } from './token_sequence';
 /** Storage ordinals, not runtime occurrence identities or source coordinates. */
 type UnitOrdinal = number & { readonly __syntaxUnitOrdinal: unique symbol };
 type SpanOrdinal = number & { readonly __syntaxSpanOrdinal: unique symbol };
-type StoredSpan = { readonly unit: UnitOrdinal; readonly start: number; readonly end: number };
 type SyntaxData<T, Span, Unit, Statements> = T extends LuaSyntaxSpan ? Span
 	: T extends LuaStatementSequence ? Statements
 	: T extends LuaSkippedSyntax ? { readonly span: Span; readonly units: readonly Unit[] }
@@ -35,7 +34,8 @@ type StoredChunk = {
 	readonly path: string;
 	readonly lexical: readonly { readonly unit: UnitOrdinal; readonly items: readonly StoredToken[] }[];
 	readonly offsets: readonly number[];
-	readonly spans: readonly StoredSpan[];
+	/** Repeated (unit ordinal, relative start, relative end), indexed by SpanOrdinal. */
+	readonly spanData: readonly number[];
 	readonly error: { readonly line: number; readonly column: number; readonly message: string } | null;
 };
 
@@ -126,14 +126,14 @@ export function encodeLuaChunk(chunk: LuaChunk): Uint8Array {
 		ordinals.set(placement.unit, offsets.length as UnitOrdinal);
 		offsets.push(placement.offset);
 	}
-	const spans: StoredSpan[] = [];
+	const spanData: number[] = [];
 	const spanOrdinals = new Map<LuaSyntaxSpan, SpanOrdinal>();
 	const mapper: SyntaxUnits<LuaSyntaxSpan, LuaSourceUnit, LuaStatementSequence, SpanOrdinal, UnitOrdinal, StoredStatements> = new SyntaxUnits(span => {
 		let ordinal = spanOrdinals.get(span);
 		if (ordinal === undefined) {
-			ordinal = spans.length as SpanOrdinal;
+			ordinal = spanOrdinals.size as SpanOrdinal;
 			spanOrdinals.set(span, ordinal);
-			spans.push({ unit: ordinals.get(span.unit)!, start: span.start, end: span.end });
+			spanData.push(ordinals.get(span.unit)!, span.start, span.end);
 		}
 		return ordinal;
 	}, unit => ordinals.get(unit)!, body => ({
@@ -156,7 +156,7 @@ export function encodeLuaChunk(chunk: LuaChunk): Uint8Array {
 			return { ...data, span: mapper.span(token) };
 		}),
 	}));
-	const stored: StoredChunk = { syntax, lexical, path: chunk.locations.path, offsets, spans,
+	const stored: StoredChunk = { syntax, lexical, path: chunk.locations.path, offsets, spanData,
 		error: error === null ? null : { line: error.line, column: error.column, message: error.message } };
 	return encodeBinary(stored);
 }
@@ -171,7 +171,10 @@ export function decodeLuaChunk(bytes: Uint8Array): LuaChunk {
 		origins.set(unit, offset);
 		return { unit, offset };
 	});
-	const spans: LuaSyntaxSpan[] = stored.spans.map(span => ({ unit: units[span.unit], start: span.start, end: span.end }));
+	const spans: LuaSyntaxSpan[] = [];
+	for (let offset = 0; offset < stored.spanData.length; offset += 3) {
+		spans.push({ unit: units[stored.spanData[offset]], start: stored.spanData[offset + 1], end: stored.spanData[offset + 2] });
+	}
 	const mapper: SyntaxUnits<SpanOrdinal, UnitOrdinal, StoredStatements, LuaSyntaxSpan, LuaSourceUnit, LuaStatementSequence> = new SyntaxUnits(
 		ordinal => spans[ordinal], ordinal => units[ordinal], body => LuaStatementSequence.fromParts(body.context, body.parts.map(part => ({
 			statement: part.statement === null ? null : mapper.node(part.statement),

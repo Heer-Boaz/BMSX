@@ -1552,7 +1552,7 @@ export async function finalizeRompack(
 	const manifest = options.layout.manifest;
 	if (manifest === null) {
 		if (packageByteCount > SYSTEM_ROM_SIZE) {
-			throw new Error(`ROM payload exceeds the ${SYSTEM_ROM_SIZE}-byte system ROM window.`);
+			throw new Error(`ROM payload (${packageByteCount} bytes) exceeds the ${SYSTEM_ROM_SIZE}-byte system ROM window by ${packageByteCount - SYSTEM_ROM_SIZE} bytes.`);
 		}
 	} else {
 		assertCartridgePackageFitsHardware(
