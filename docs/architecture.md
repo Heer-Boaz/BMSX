@@ -2065,8 +2065,8 @@ remains an execution owner. Save-state retains only the current raw machine
 state and restores it against the media inserted at restore time.
 
 Runtime save-state also retains CPU allocation order, the hard-halt latch,
-the guest heap's collection schedule, the globals backing table and both
-global registerfiles. Slot keys remain raw string-pool ids. Capture does not
+the guest heap's collection schedule and both authoritative global
+registerfiles. Slot keys remain raw string-pool ids. Capture does not
 synchronize a registerfile into a Lua table or run guest GC. Restore replaces
 derived execution caches from the inserted media; canonical closure residency
 and object hashes come from the snapshot, not from the discarded future.
@@ -2699,7 +2699,9 @@ is explicit at every firmware, cartridge, and IDE media-build producer. Existing
 final-image metadata cannot grant a cart access to a system slot.
 
 The CPU stores system and ordinary global slots in distinct registerfiles.
-Ordinary slots synchronize with the Lua globals table; system slots do not.
+These registerfiles are the sole owners of their values. Named guest access
+uses the ordinary bank directly; there is no global-table copy or synchronization.
+See [named global-register access](global_register_access.md).
 Cartridge handoff and IDE media replacement preserve system slots by their
 image-declared names, and save-state
 serializes both registerfiles independently. This permits BIOS and cart code to

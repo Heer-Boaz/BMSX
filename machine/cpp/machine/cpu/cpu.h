@@ -70,7 +70,7 @@ struct ExecutionHookBinding {
 };
 
 // Saved values are u32 offsets into the snapshot word arena. Object references
-// (closureRef/globalTableRef/openUpvalues) are ordinals in its object index.
+// (closureRef/openUpvalues) are ordinals in its object index.
 struct CpuFrameState {
 	u32 functionAddress = 0;
 	u32 pc = 0;
@@ -118,7 +118,6 @@ struct CpuThreadState {
 struct CpuRuntimeState {
 	ExecutionDomainId executionCartridgeSlot = SYSTEM_EXECUTION_DOMAIN_ID;
 	std::vector<CpuRootValueState> systemGlobals;
-	int globalTableRef = -1;
 	std::vector<CpuRootValueState> globalSlots;
 	ExecutionDomainMask executionResidencyMask = 0;
 	u32 nextObjectHashId = 1;
@@ -247,7 +246,7 @@ public:
 	Value getSystemGlobalByKey(StringId key) const;
 	Value getGlobalByKey(StringId key) const;
 	void clearGlobalSlots();
-	void syncGlobalSlotsToTable();
+	size_t globalSlotCount() const { return m_globalNames.size(); }
 
 	Value createBuiltinFunction(BuiltinFunctionId id);
 	Table* createTable(int arraySize = 0, int hashSize = 0);
@@ -342,7 +341,6 @@ public:
 	// Current runUntilDepth grant; consumed by the caller, not checkpoint state.
 	int instructionBudgetRemaining = 0;
 	u32 lastPc = 0;
-	Table* globals = nullptr;
 
 private:
 	friend class BuiltinResultsScratchScope;

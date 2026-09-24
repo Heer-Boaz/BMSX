@@ -276,7 +276,10 @@ update per video tick and is distinct from source/instruction stepping.
 The subsequent [Terminal slice](studio_lua_terminal.md) adds actual conversation
 execution, stopped/completed observations, request cancellation and physical
 BIOS-monitor parity. It explicitly supports the Terminal's own session namespace,
-not cart global registers or selected-frame locals.
+not implicit cart bindings or selected-frame locals. The subsequent
+[named global-register access](global_register_access.md) slice permits explicit
+`getglobal`/`setglobal` calls to the actual ordinary registerfile and live cart
+objects, including from a conversation.
 
 Still open: unbounded Continue and source-debugger tools, cart/frame Lua Terminal
 bindings, scenario discovery/execution/attachment, canonical

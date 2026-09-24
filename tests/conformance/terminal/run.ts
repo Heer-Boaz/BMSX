@@ -11,8 +11,8 @@ function run(command: string, args: string[]): string {
 	assert.equal(result.status, 0, `${command} ${args.join(' ')}\n${result.stdout}\n${result.stderr}`);
 	return result.stdout;
 }
-run('npm', ['run', 'build:toolchain:bios', '--', '--debug']);
-run('npm', ['run', 'build:toolchain:cart', '--', 'emptycart', '--debug']);
+run('npm', ['run', 'build:toolchain:bios', '--', '--debug', '--force']);
+run('npm', ['run', 'build:toolchain:cart', '--', 'hot_resume_test', '--debug', '--force']);
 run('cmake', ['-S', 'machine/cpp', '-B', 'build-cpp-tests', '-G', 'Ninja', '-DBMSX_BUILD_TESTS=ON']);
 run('cmake', ['--build', 'build-cpp-tests', '--target', 'bmsx_terminal_conformance_runner', '--parallel', '2']);
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-terminal-parity-'));
@@ -32,12 +32,25 @@ const commands = [
 	'lua counter',
 	'lua load("return counter+1")()',
 	'lua local x=;',
+	'lua print("GLOBALS-BEGIN")',
+	'lua getglobal("hot_resume_new_game_count")',
+	'lua setglobal("hot_resume_new_game_count",40)',
+	'lua getglobal("new_game")();return getglobal("hot_resume_new_game_count")',
+	'lua hot_resume_new_game_count',
+	'lua object=table.pack(12);setglobal("shared",object)',
+	'lua local live=getglobal("shared");live.x=23;return object.x',
+	'lua setglobal("fresh",false);return getglobal("fresh")',
+	'lua setglobal("fresh");return getglobal("fresh")',
+	'lua setglobal("fresh",42);error("global error")',
+	'lua getglobal("fresh")',
+	'lua getglobal(3)',
+	'lua setglobal(false,1)',
 	'lua print("TERMINAL-END")',
 ];
 const punctuation: Record<string, [string, boolean]> = {
 	' ': ['Space', false], '(': ['Digit9', true], ')': ['Digit0', true],
 	'"': ['Quote', true], '=': ['Equal', false], '+': ['Equal', true],
-	'-': ['Minus', false], ';': ['Semicolon', false], ',': ['Comma', false],
+	'-': ['Minus', false], '_': ['Minus', true], '.': ['Period', false], ';': ['Semicolon', false], ',': ['Comma', false],
 };
 for (const command of commands) {
 	assert.ok(command.length <= 76, 'physical BIOS input capacity');
@@ -52,7 +65,7 @@ for (const command of commands) {
 }
 const input = join(directory, 'input.txt'); writeFileSync(input, events.join('\n'));
 try {
-	const args = ['dist/bmsx-bios.debug.rom', 'dist/emptycart.debug.rom', input];
+	const args = ['dist/bmsx-bios.debug.rom', 'dist/hot_resume_test.debug.rom', input];
 	const ts = run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json', 'tests/conformance/terminal/ts_runner.ts', ...args]);
 	const cpp = run('build-cpp-tests/bmsx_terminal_conformance_runner', args);
 	writeFileSync(join(directory, 'typescript.txt'), ts); writeFileSync(join(directory, 'cpp.txt'), cpp);
@@ -62,6 +75,7 @@ try {
 	assert.match(result, /upper-case identifiers are not allowed/, 'Shift reaches the case-sensitive firmware compiler');
 	assert.match(result, /\nMiXeD\t42\n9\nnil\nbefore error\nterminal error\n43\n44\n/);
 	assert.match(result, /\[load:/, 'syntax errors are protected by the shared firmware loader');
+	assert.match(result, /GLOBALS-BEGIN\nnil\n1\nnil\n41\nnil\nnil\n23\nfalse\nnil\nglobal error\n42\nInvalid argument\.\nInvalid argument\.\n/);
 	assert.ok(result.endsWith('TERMINAL-END\nnil\n'), 'syntax error does not kill the physical monitor');
 	console.log('TERMINAL-PARITY:PASS (real BIOS monitor, HID input, TypeScript and native C++)');
 	rmSync(directory, { recursive: true });

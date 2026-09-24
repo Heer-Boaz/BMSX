@@ -60,7 +60,7 @@ test('restored allocation words wrap identically to the native u32 allocator', (
 	assert.equal(cpu.createTable().hashId, 1);
 });
 
-test('checkpoint capture preserves global slot/backing-table state without synchronizing it', () => {
+test('checkpoint capture preserves the authoritative global registers without mutation', () => {
 	const code = new Uint8Array(3 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.K1, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.SETGL, 0, 0, 0);
@@ -72,16 +72,13 @@ test('checkpoint capture preserves global slot/backing-table state without synch
 	}));
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const key = cpu.stringPool.find('answer')!;
-	assert.equal(cpu.globals.getStringKey(key), null);
 	const heap = cpu.luaHeap.captureState();
 	const snapshot = cpu.captureRuntimeState();
-	assert.equal(cpu.globals.getStringKey(key), null);
 	assert.deepEqual(cpu.luaHeap.captureState(), heap);
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('answer')!), 1);
+	assert.equal(cpu.getGlobalByKey(key), 1);
 	cpu.restoreRuntimeState(snapshot);
 	assert.deepEqual(cpu.captureRuntimeState(), snapshot);
-	assert.equal(cpu.globals.getStringKey(key), null);
-	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('answer')!), 1);
+	assert.equal(cpu.getGlobalByKey(key), 1);
 });
 
 test('restore retains weak referents until the original allocation-triggered collection', () => {
@@ -94,13 +91,13 @@ test('restore retains weak referents until the original allocation-triggered col
 	metatable.setStringKey(cpu.stringPool.intern('__mode'), valueString(cpu.stringPool.intern('v')));
 	weak.metatable = metatable;
 	weak.set(1, cpu.createTable());
-	cpu.globals.setStringKey(weakKey, weak);
+	cpu.setGlobalByKey(weakKey, ValueTag.Table, NaN, weak);
 	// These allocations have left guest accounting debt but are unreachable.
 	for (let index = 0; index < 17; index += 1) cpu.createTable(256, 0);
 	const anchor = cpu.captureRuntimeState();
 	const strings = cpu.stringPool.captureState();
 	const allocateUntilCollected = (): number => {
-		const current = cpu.globals.getStringKey(weakKey) as Table;
+		const current = cpu.getGlobalByKey(weakKey) as Table;
 		assert.ok(current.get(1) instanceof Table);
 		for (let count = 1; count < 4096; count += 1) {
 			cpu.createTable(256, 0);
@@ -175,7 +172,7 @@ test('CPU snapshots reuse exclusive storage across graph growth, cycles and a sh
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'snapshot-storage.lua')));
 	const key = cpu.stringPool.intern('graph');
 	const root = cpu.createTable(130, 0);
-	cpu.globals.setStringKey(key, root);
+	cpu.setGlobalByKey(key, ValueTag.Table, NaN, root);
 	for (let index = 1; index <= 130; index += 1) {
 		const child = cpu.createTable(1, 0);
 		// Allocation ids can wrap. They must never be used as snapshot identities.
@@ -198,7 +195,7 @@ test('CPU snapshots reuse exclusive storage across graph growth, cycles and a sh
 		assert.equal(recycled.snapshot.capacityBytes, capacity);
 		assert.deepEqual(recycled, retained);
 	}
-	cpu.globals.setStringKey(key, null);
+	cpu.setGlobalByKey(key, ValueTag.Nil, NaN, null);
 	recycled = cpu.captureRuntimeState(recycled.snapshot);
 	assert.equal(recycled.snapshot.words.buffer, words);
 	assert.equal(recycled.snapshot.objectWords.buffer, objects);
@@ -209,7 +206,7 @@ test('CPU snapshots reuse exclusive storage across graph growth, cycles and a sh
 	assert.deepEqual(retained.snapshot.words, retainedWords, 'a different checkpoint must remain intact');
 	assert.deepEqual(retained.snapshot.objectWords, retainedObjects);
 	cpu.restoreRuntimeState(retained);
-	const restored = cpu.globals.getStringKey(key) as Table;
+	const restored = cpu.getGlobalByKey(key) as Table;
 	assert.notEqual(restored.get(1), restored.get(2), 'equal allocation ids do not merge objects');
 	assert.equal((restored.get(130) as Table).get(1), restored, 'cycle survives buffer growth and restore');
 	assert.deepEqual(cpu.captureRuntimeState(), retained);
@@ -224,11 +221,11 @@ test('snapshot words preserve f64 bits, primitive tags and interned ids', () => 
 		createBuiltinFunction(BuiltinFunctionId.Next), null,
 	];
 	const table = cpu.createTable(values.length, 0);
-	cpu.globals.setStringKey(key, table);
+	cpu.setGlobalByKey(key, ValueTag.Table, NaN, table);
 	for (let index = 0; index < values.length; index += 1) table.setInteger(index + 1, values[index]);
 	const state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
-	const restored = cpu.globals.getStringKey(key) as Table;
+	const restored = cpu.getGlobalByKey(key) as Table;
 	for (let index = 0; index < values.length; index += 1) assert.equal(restored.get(index + 1), values[index]);
 	assert.deepEqual(cpu.captureRuntimeState(), state);
 });
@@ -237,7 +234,7 @@ test('deep cyclic guest graphs do not consume the host serialization stack', () 
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compileLuaSource('return 0', 'snapshot-depth.lua')));
 	const key = cpu.stringPool.intern('deep');
 	const root = cpu.createTable(1, 0);
-	cpu.globals.setStringKey(key, root);
+	cpu.setGlobalByKey(key, ValueTag.Table, NaN, root);
 	let tail = root;
 	for (let index = 1; index < 4096; index += 1) {
 		const child = cpu.createTable(1, 0);
@@ -247,7 +244,7 @@ test('deep cyclic guest graphs do not consume the host serialization stack', () 
 	tail.setInteger(1, root);
 	const state = cpu.captureRuntimeState();
 	cpu.restoreRuntimeState(state);
-	const restored = cpu.globals.getStringKey(key) as Table;
+	const restored = cpu.getGlobalByKey(key) as Table;
 	let current = restored;
 	for (let index = 0; index < 4096; index += 1) current = current.get(1) as Table;
 	assert.equal(current, restored);

@@ -1500,7 +1500,6 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 			'cpuState.systemGlobals',
 			(entry) => decodeCpuRootValueState(entry, 'cpuState.systemGlobals[]'),
 		),
-		globalTableRef: requireI32(requireObjectKey(object, 'globalTableRef', label, 'cpuState.globalTableRef'), 'cpuState.globalTableRef'),
 		executionResidencyMask: requireBoundedU32(requireObjectKey(object, 'executionResidencyMask', label, 'cpuState.executionResidencyMask'), 'cpuState.executionResidencyMask', 0, 0xffffffff),
 		nextObjectHashId: requireBoundedU32(requireObjectKey(object, 'nextObjectHashId', label, 'cpuState.nextObjectHashId'), 'cpuState.nextObjectHashId', 0, 0xffffffff),
 		hardHalted: requireBooleanValue(requireObjectKey(object, 'hardHalted', label, 'cpuState.hardHalted'), 'cpuState.hardHalted'),

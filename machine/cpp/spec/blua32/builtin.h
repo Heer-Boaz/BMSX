@@ -29,9 +29,11 @@ enum class BuiltinFunctionId : uint8_t {
 	CoroutineRunning = 18,
 	CoroutineClose = 19,
 	CoroutineIsYieldable = 20,
+	GetGlobal = 21,
+	SetGlobal = 22,
 };
 
-constexpr size_t BUILTIN_FUNCTION_COUNT = 21u;
+constexpr size_t BUILTIN_FUNCTION_COUNT = 23u;
 
 struct LuaBootPrimitive {
 	std::string_view name;
@@ -60,6 +62,8 @@ inline constexpr std::array<LuaBootPrimitive, BUILTIN_FUNCTION_COUNT> LUA_BOOT_P
 	{ "__bmsx_coroutine_running", BuiltinFunctionId::CoroutineRunning },
 	{ "__bmsx_coroutine_close", BuiltinFunctionId::CoroutineClose },
 	{ "__bmsx_coroutine_isyieldable", BuiltinFunctionId::CoroutineIsYieldable },
+	{ "__bmsx_getglobal", BuiltinFunctionId::GetGlobal },
+	{ "__bmsx_setglobal", BuiltinFunctionId::SetGlobal },
 }};
 
 } // namespace bmsx

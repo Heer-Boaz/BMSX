@@ -132,6 +132,8 @@ export const BUILTIN_FUNCTIONS: readonly BuiltinFunction[] = [
 	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.CoroutineRunning, cost: BUILTIN_COST_TIER4 },
 	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.CoroutineClose, cost: BUILTIN_COST_TIER4 },
 	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.CoroutineIsYieldable, cost: BUILTIN_COST_TIER4 },
+	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.GetGlobal, cost: BUILTIN_COST_TIER1 },
+	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.SetGlobal, cost: BUILTIN_COST_TIER1 },
 ];
 
 export function createBuiltinFunction(id: BuiltinFunctionId): BuiltinFunction {

@@ -1,5 +1,4 @@
 import { THREAD_STACK_SLOT_BYTES } from '../../machine/ts/machine/cpu/thread';
-import { CPU_SNAPSHOT_VALUE_WORDS, CpuSnapshotObjectKind, CpuSnapshotTable } from '../../machine/ts/machine/cpu/snapshot';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -41,23 +40,23 @@ function collectHeapDeltaAfterRun(source: string): { before: number; after: numb
 
 test('tracked heap bytes include rooted tables', () => {
 	const { cpu } = createTestSystemCpu(EMPTY_TEST_IMAGE);
-	const key = valueString(cpu.stringPool.intern('state'));
+	const key = cpu.stringPool.intern('state');
 
 	const before = cpu.collectTrackedHeapBytes();
 
 	const table = cpu.createTable(2, 2);
 	table.set(1, 11);
 	table.set(valueString(cpu.stringPool.intern('hp')), 7);
-	cpu.globals.set(key, table);
+	cpu.setGlobalByKey(key, ValueTag.Table, NaN, table);
 
 	const afterTable = cpu.collectTrackedHeapBytes();
 	assert.ok(afterTable > before, `expected table bytes to increase heap usage (${afterTable} <= ${before})`);
 
-	cpu.globals.set(key, null);
+	cpu.setGlobalByKey(key, ValueTag.Nil, NaN, null);
 
 	const afterCleanup = cpu.collectTrackedHeapBytes();
 	assert.ok(afterCleanup < afterTable, `expected cleanup to drop rooted heap usage (${afterCleanup} >= ${afterTable})`);
-	assert.ok(afterCleanup >= before, `expected table capacity growth to remain tracked (${afterCleanup} < ${before})`);
+	assert.ok(afterCleanup >= before, `expected registered name to remain tracked (${afterCleanup} < ${before})`);
 });
 
 test('builtin primitives are static VM slots outside Lua heap accounting', () => {
@@ -71,25 +70,19 @@ test('builtin primitives are static VM slots outside Lua heap accounting', () =>
 
 test('builtin primitive save-state uses VM id instead of stable global path', () => {
 	const { cpu } = createTestSystemCpu(EMPTY_TEST_IMAGE);
-	cpu.globals.setStringKey(cpu.stringPool.intern('foo'), createBuiltinFunction(BuiltinFunctionId.Next));
+	cpu.setGlobalByKey(cpu.stringPool.intern('foo'), ValueTag.BuiltinFunction, BuiltinFunctionId.Next, null);
 
 	const state = cpu.captureRuntimeState();
 	const snapshot = state.snapshot;
-	const globals = snapshot.objectWord(state.globalTableRef);
-	assert.equal(snapshot.word(globals), CpuSnapshotObjectKind.Table);
-	const hashStart = globals + CpuSnapshotTable.Data + snapshot.word(globals + CpuSnapshotTable.ArrayCapacity) * CPU_SNAPSHOT_VALUE_WORDS;
-	let found = false;
-	for (let index = 0; index < snapshot.word(globals + CpuSnapshotTable.HashSize); index += 1) {
-		const value = hashStart + index * (2 * CPU_SNAPSHOT_VALUE_WORDS + 1) + CPU_SNAPSHOT_VALUE_WORDS;
-		if (snapshot.word(value) === ValueTag.BuiltinFunction && snapshot.word(value + 1) === BuiltinFunctionId.Next) found = true;
-	}
-	assert.equal(found, true);
+	const value = state.globalSlots.find(entry => entry.key === cpu.stringPool.find('foo'))!.value;
+	assert.equal(snapshot.word(value), ValueTag.BuiltinFunction);
+	assert.equal(snapshot.word(value + 1), BuiltinFunctionId.Next);
 
 	const restoredCpu = createTestSystemCpu(EMPTY_TEST_IMAGE).cpu;
 	restoredCpu.stringPool.restoreState(cpu.stringPool.captureState());
 	restoredCpu.restoreRuntimeState(state);
 	assert.equal(
-		restoredCpu.globals.getStringKey(restoredCpu.stringPool.intern('foo')),
+		restoredCpu.getGlobalByKey(restoredCpu.stringPool.intern('foo')),
 		createBuiltinFunction(BuiltinFunctionId.Next),
 	);
 });
@@ -115,8 +108,8 @@ test('runtime string materialization tracks RAM even when the same text exists i
 	// A materialized runtime string is always held somewhere live (here: a global).
 	// It must count as RAM even though the identical text already exists in ROM as
 	// an untracked literal.
-	const runtimeString = valueString(cpu.stringPool.intern('rom literal'));
-	cpu.globals.set(valueString(cpu.stringPool.intern('held', false)), runtimeString);
+	const runtimeString = cpu.stringPool.intern('rom literal');
+	cpu.setGlobalByKey(cpu.stringPool.intern('held', false), ValueTag.String, runtimeString, null);
 
 	assert.ok(cpu.collectTrackedHeapBytes() > before);
 });

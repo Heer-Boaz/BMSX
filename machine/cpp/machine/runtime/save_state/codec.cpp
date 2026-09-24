@@ -1607,7 +1607,6 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	snapshot["objectWords"] = BinValue(writeLE32Array(state.snapshot.objectWords()));
 	object["snapshot"] = BinValue(std::move(snapshot));
 	object["lastExecutionDomainId"] = static_cast<i64>(state.lastExecutionDomainId);
-	object["globalTableRef"] = static_cast<i64>(state.globalTableRef);
 	object["executionResidencyMask"] = static_cast<i64>(state.executionResidencyMask);
 	object["nextObjectHashId"] = static_cast<i64>(state.nextObjectHashId);
 	object["hardHalted"] = state.hardHalted;
@@ -1673,7 +1672,6 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 		requireField(object, "lastExecutionDomainId", label),
 		"cpuState.lastExecutionDomainId"
 	);
-	state.globalTableRef = requireI32(requireField(object, "globalTableRef", label), "cpuState.globalTableRef");
 	state.executionResidencyMask = requireU32(requireField(object, "executionResidencyMask", label), "cpuState.executionResidencyMask");
 	state.nextObjectHashId = requireU32(requireField(object, "nextObjectHashId", label), "cpuState.nextObjectHashId");
 	state.hardHalted = requireBool(requireField(object, "hardHalted", label), "cpuState.hardHalted");

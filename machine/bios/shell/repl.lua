@@ -11,6 +11,7 @@ local create_environment<const> = function()
 		type = type, tostring = tostring, tonumber = tonumber, print = print,
 		next = next, pairs = pairs, ipairs = ipairs, select = select,
 		rawget = rawget, rawset = rawset, rawequal = rawequal,
+		getglobal = getglobal, setglobal = setglobal,
 		getmetatable = getmetatable, setmetatable = setmetatable,
 		table = table, string = string, math = math, os = os,
 		coroutine = coroutine, lua_compiler = lua_compiler,

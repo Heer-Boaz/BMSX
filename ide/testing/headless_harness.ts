@@ -155,10 +155,6 @@ export function createHeadlessIdeHarness(
 			cpu.collectTrackedHeapBytes();
 			const tracked = cpu.luaHeap.usedBytes();
 			const stringBytes = cpu.stringPool.trackedLuaHeapBytes();
-			let globals = 0;
-			cpu.globals.forEachStoredEntry(() => {
-				globals += 1;
-			});
 			return {
 				tracked,
 				stringBytes,
@@ -167,7 +163,7 @@ export function createHeadlessIdeHarness(
 				functions: executable.layout.functions.length,
 				constants: executable.layout.constants.length,
 				codeBytes: executable.layout.header.textByteCount,
-				globals,
+				globals: cpu.globalSlotCount,
 			};
 		},
 	};

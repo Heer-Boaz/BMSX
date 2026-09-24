@@ -36,7 +36,6 @@ const auto RUNTIME_SAVE_STATE_PROP_NAME_STORAGE = std::to_array<std::string>({
 	"frameScheduler",
 	"frameState",
 	"frames",
-	"globalTableRef",
 	"globalSlots",
 	"executionResidencyMask",
 	"nextObjectHashId",

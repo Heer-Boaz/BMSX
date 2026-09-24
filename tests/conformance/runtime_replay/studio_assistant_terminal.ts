@@ -33,6 +33,9 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	check(terminal.active!.result === undefined, 'breakpoint retains the actual call');
 	toggleBreakpoint(ide.debugger, repl, line);
 	await until(() => conversation.state === 'ready', 'terminal tools: model receives pause, continues and finishes');
+	const guest = ide.luaTooling.suspendedGuest;
+	check(guest.global('terminal_probe') === 43 && guest.readStringMember(guest.global('cartlib__world__world'), 'terminal_probe') === 88,
+		'conversation Lua writes the real global register and the existing cart world object');
 	check(source.version === version && ide.sources.currentBlua32Media === media && test.execution.userPaused,
 		'Terminal neither saves nor installs source, and retains independent pause');
 	const stopped = cycles();

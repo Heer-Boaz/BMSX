@@ -393,7 +393,6 @@ CPU::CPU(
 	m_rootThread->status = ThreadStatus::Running;
 	m_activeThread = m_rootThread;
 	m_completionThread = m_rootThread;
-	globals = createTable();
 	m_memory.attachMappedPageInvalidator(*this);
 }
 
@@ -584,7 +583,7 @@ std::vector<u32> CPU::registerGlobalNames(
 			const size_t slotIndex = registeredNames.size();
 			slot = slotByKey.emplace(key, slotIndex).first;
 			registeredNames.push_back(key);
-			values.push_back(system ? valueNil() : globals->getStringKey(key));
+			values.push_back(valueNil());
 		}
 		slots[index] = static_cast<u32>(slot->second);
 	}
@@ -717,7 +716,6 @@ void CPU::clearExecutionEnvironment() {
 	m_completionValues.clear();
 	clearCallStack();
 	clearGlobalSlots();
-	globals->clear();
 }
 
 void CPU::clearGlobalSlots() {
@@ -730,10 +728,12 @@ void CPU::clearGlobalSlots() {
 }
 
 void CPU::setGlobalByKey(StringId key, const Value& value) {
-	globals->setStringKey(key, value);
-	const auto globalIt = m_globalSlotByKey.find(key);
-	if (globalIt != m_globalSlotByKey.end()) {
-		m_globalValues[globalIt->second] = value;
+	const auto [slot, inserted] = m_globalSlotByKey.try_emplace(key, m_globalNames.size());
+	if (inserted) {
+		m_globalNames.push_back(key);
+		m_globalValues.push_back(value);
+	} else {
+		m_globalValues[slot->second] = value;
 	}
 }
 
@@ -754,13 +754,7 @@ Value CPU::getGlobalByKey(StringId key) const {
 	if (globalIt != m_globalSlotByKey.end()) {
 		return m_globalValues[globalIt->second];
 	}
-	return globals->getStringKey(key);
-}
-
-void CPU::syncGlobalSlotsToTable() {
-	for (size_t index = 0; index < m_globalNames.size(); ++index) {
-		globals->setStringKey(m_globalNames[index], m_globalValues[index]);
-	}
+	return valueNil();
 }
 
 
@@ -1285,7 +1279,6 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 			captureValueState(value),
 		});
 	}
-	state.globalTableRef = captureObject(globals);
 	state.globalSlots.reserve(m_globalNames.size());
 	for (size_t index = 0; index < m_globalNames.size(); ++index) {
 		state.globalSlots.push_back(CpuRootValueState{
@@ -1429,15 +1422,10 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				break;
 			}
 			case CpuSnapshotObjectKind::Table: {
-				Table* table;
-				if (index == static_cast<size_t>(state.globalTableRef)) {
-					table = globals;
-				} else {
-					const u32 arrayCapacity = snapshot.word(offset + SNAP_TABLE_ARRAY_CAPACITY);
-					const u32 hashSize = snapshot.word(offset + SNAP_TABLE_HASH_SIZE);
-					m_luaHeap.restoreAllocate(Table::trackedHeapBytesForCapacities(arrayCapacity, hashSize));
-					table = m_heap.allocate<Table>(ObjType::Table, m_luaHeap, arrayCapacity, hashSize);
-				}
+				const u32 arrayCapacity = snapshot.word(offset + SNAP_TABLE_ARRAY_CAPACITY);
+				const u32 hashSize = snapshot.word(offset + SNAP_TABLE_HASH_SIZE);
+				m_luaHeap.restoreAllocate(Table::trackedHeapBytesForCapacities(arrayCapacity, hashSize));
+				Table* table = m_heap.allocate<Table>(ObjType::Table, m_luaHeap, arrayCapacity, hashSize);
 				table->marked = true;
 				table->hashId = snapshot.word(offset + SNAP_TABLE_HASH_ID);
 				restoredObjects[index] = table;
@@ -1682,6 +1670,14 @@ void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, Builtin
 			break;
 		case BuiltinFunctionId::RawSet:
 			runBuiltinRawSet(args, out);
+			break;
+		case BuiltinFunctionId::GetGlobal:
+			if (!valueIsString(args[0])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			out.push_back(getGlobalByKey(asStringId(args[0])));
+			break;
+		case BuiltinFunctionId::SetGlobal:
+			if (!valueIsString(args[0])) throw LuaExecutionError(LUA_FAULT_REASON_INVALID_ARGUMENT);
+			setGlobalByKey(asStringId(args[0]), args[1]);
 			break;
 		case BuiltinFunctionId::Select:
 			runBuiltinSelect(args, out);
@@ -3398,7 +3394,6 @@ void CPU::trackLocalRoot(Value value) {
 }
 
 void CPU::markRoots(GcHeap& heap) {
-	heap.markObject(globals);
 	// Keep the interned "__index" key tracked even while no live metatable uses it.
 	heap.markValue(m_indexKey);
 	heap.markObject(m_stringIndexTable);
@@ -3414,11 +3409,13 @@ void CPU::markRoots(GcHeap& heap) {
 	for (const Value value : m_localRoots) {
 		heap.markValue(value);
 	}
-	for (const auto& value : m_systemGlobalValues) {
-		heap.markValue(value);
+	for (size_t slot = 0; slot < m_systemGlobalNames.size(); ++slot) {
+		m_stringPool.markReachable(m_systemGlobalNames[slot]);
+		heap.markValue(m_systemGlobalValues[slot]);
 	}
-	for (const auto& value : m_globalValues) {
-		heap.markValue(value);
+	for (size_t slot = 0; slot < m_globalNames.size(); ++slot) {
+		m_stringPool.markReachable(m_globalNames[slot]);
+		heap.markValue(m_globalValues[slot]);
 	}
 	for (const std::unique_ptr<Blua32ExecutionImage>& executionImage : m_executionImagesByDomain) {
 		if (!executionImage) {

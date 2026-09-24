@@ -90,7 +90,7 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 			this.scroll.lineStep = row; this.composer.rowHeight = editorViewState.lineHeight;
 		}
 		const status = session.active !== undefined ? session.paused ? 'Lua call paused. Mutations are retained.' : 'Executing Lua on the guest CPU...'
-			: session.canEvaluate ? 'Lua session | own namespace, not cart globals' : 'Lua unavailable: start/resume cart or finish machine operation';
+			: session.canEvaluate ? 'Lua session | globals: getglobal / setglobal' : 'Lua unavailable: start/resume cart or finish machine operation';
 		if (changed || status !== this.status) { this.status = status; input.status = truncateMeasuredText(status, layout.right - 8, measureTextRange); }
 		if (changed || session.transcript.revision !== input.projectedRevision) {
 			input.projectedRevision = session.transcript.revision;

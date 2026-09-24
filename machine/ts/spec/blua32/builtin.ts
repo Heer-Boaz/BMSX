@@ -20,9 +20,11 @@ export const enum BuiltinFunctionId {
 	CoroutineRunning = 18,
 	CoroutineClose = 19,
 	CoroutineIsYieldable = 20,
+	GetGlobal = 21,
+	SetGlobal = 22,
 }
 
-export const BUILTIN_FUNCTION_COUNT = 21;
+export const BUILTIN_FUNCTION_COUNT = 23;
 
 export interface LuaBootPrimitive {
 	readonly name: string;
@@ -51,4 +53,6 @@ export const LUA_BOOT_PRIMITIVES: ReadonlyArray<LuaBootPrimitive> = [
 	{ name: '__bmsx_coroutine_running', id: BuiltinFunctionId.CoroutineRunning },
 	{ name: '__bmsx_coroutine_close', id: BuiltinFunctionId.CoroutineClose },
 	{ name: '__bmsx_coroutine_isyieldable', id: BuiltinFunctionId.CoroutineIsYieldable },
+	{ name: '__bmsx_getglobal', id: BuiltinFunctionId.GetGlobal },
+	{ name: '__bmsx_setglobal', id: BuiltinFunctionId.SetGlobal },
 ];

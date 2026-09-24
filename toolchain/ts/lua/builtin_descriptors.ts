@@ -30,6 +30,8 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 	{ name: 'assert', params: ['value', 'message?'], signature: 'assert(value [, message])' },
 	{ name: 'error', params: ['message', 'level?'], signature: 'error(message [, level])' },
 	{ name: 'getmetatable', params: ['object'], signature: 'getmetatable(object)' },
+	{ name: 'getglobal', params: ['name'], signature: 'getglobal(name)', description: 'Reads a live ordinary global register by name, not a Terminal variable or system register.' },
+	{ name: 'setglobal', params: ['name', 'value'], signature: 'setglobal(name, value)', description: 'Writes a live ordinary global register by name. Mutations are not rolled back on error.' },
 	{ name: 'ipairs', params: ['table'], signature: 'ipairs(t)' },
 	{ name: 'load', params: ['chunk', 'chunkname?', 'mode?', 'env?'], signature: 'load(chunk [, chunkname [, mode [, env]]])', description: 'Compiles supported Lua source into an executable BLua32 closure in RAM.' },
 	{ name: 'lua_compiler.compile_syntax', params: ['chunk', 'chunkname', 'env?'], signature: 'lua_compiler.compile_syntax(chunk, chunkname [, env])', description: 'Compiles a canonical firmware syntax tree into an executable BLua32 closure.' },

@@ -18,7 +18,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 		body => call('status', 'studio_terminal_status', { target: target(body) }),
 		body => call('continue', 'studio_control_lua', { target: target(body), evaluation: value(body, 'evaluate').id, action: 'continue' }),
 		body => call('error', 'studio_evaluate_lua', { target: target(body), context: 'session', source: 'counter = 43; error("expected terminal error")' }),
-		body => call('read', 'studio_evaluate_lua', { target: target(body), context: 'session', source: 'counter' }),
+		body => call('read', 'studio_evaluate_lua', { target: target(body), context: 'session', source: 'local world = getglobal("cartlib__world__world"); world.terminal_probe = 88; setglobal("terminal_probe", 43); return counter, getglobal("terminal_probe"), world.terminal_probe, type(getglobal("new_game"))' }),
 		body => call('syntax', 'studio_evaluate_lua', { target: target(body), context: 'session', source: 'local x = ;' }),
 		body => call('wrong-context', 'studio_evaluate_lua', { target: target(body), context: 'cart', source: 'counter' }),
 		CODEX_FIXTURE_DONE,
@@ -43,7 +43,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	assert.deepEqual(completed.output.map(entry => entry.kind), ['input', 'output', 'result']);
 	assert.equal(completed.output[1].text, 'from Codex');
 	assert.equal(value(model.requests[5], 'error').status, 'lua-error');
-	assert.deepEqual(value(model.requests[6], 'read').values, ['43']);
+	assert.deepEqual(value(model.requests[6], 'read').values, ['43', '43', '88', 'function']);
 	assert.equal(value(model.requests[7], 'syntax').status, 'lua-error');
 	assert.match(text(model.requests[8], 'wrong-context'), /cart\/frame bindings are not available/);
 	const retained = value(model.requests[11], 'retained');

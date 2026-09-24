@@ -19,6 +19,12 @@ supervisor monitor or during another machine operation.
   and closing the view. Locals last one input unless captured by a retained
   closure. These are not cart globals, module-local variables or selected-frame
   locals. There is no copied global registerfile and no writeback pass.
+- `getglobal(name)` and `setglobal(name, value)` access the **real ordinary
+  global registers**, including cart values and published module roots. Returned
+  tables/functions are live guest objects. These are explicit operations; an
+  unqualified `score` still names a Terminal variable. System registers and
+  frame/module locals are not exposed through this API. See
+  [named register access](global_register_access.md).
 - The environment initially binds the ordinary base functions and the live
   `table`, `string`, `math`, `os`, `coroutine` and `lua_compiler` libraries.
   Its `load` defaults to this session environment; an explicit fourth argument
@@ -82,10 +88,11 @@ stores only the Terminal tab, not a second copy of the guest environment.
 | Complete physical output lines | `hosts/common/system_output_log.ts`; optional observer does not consume the device twice |
 | Draft, selection, measured rows and attached controls | `ide/workbench/contrib/terminal/*` |
 
-There are **no TS/C++ machine changes**: the same firmware and raw RAM
-function-record format execute on both machines. No opcode, register, machine
-branch, global-table proxy, debugger heap root, or source-aware CPU state was
-introduced. Ordinary gameplay does no REPL work. Output is decoded once;
+Both machines execute the same firmware and raw RAM function-record format.
+Named global access adds two mirrored boot primitives and removes the obsolete
+CPU global-table duplicate; saved registers are authoritative (file schema 3).
+No opcode, global-table proxy, debugger heap root, source-aware CPU state or
+per-instruction Terminal branch is introduced. Ordinary gameplay does no REPL work. Output is decoded once;
 unchanged scrollback is not remeasured per frame. New output measures only its
 appended rows; font/width changes reflow retained entries.
 
@@ -143,7 +150,8 @@ have. The TypeScript/C++ CPU, value and closure representations are unchanged.
 | Results / print | Completion values formatted by suspended guest inspection; debug TX drained once | BIOS formats protected call results; ordinary debug TX |
 | Call control | Existing workbench debugger plan, ordinary frame scheduler | Monitor's actual BIOS call stack, ordinary frame scheduler |
 
-No CPU/VM representation or hot-path opcode changes are needed. The affected
+That initial tool/monitor slice needed no CPU/VM representation or hot-path
+opcode changes. The affected
 execution callsites are `runWorkbenchHostFrame` (one idle scalar check for
 Terminal stop observation), `scheduleRuntimeGuestCall` (unchanged scheduled
 admission), and BIOS monitor command submission / HID key translation. The
@@ -151,11 +159,13 @@ compiler and REPL run only on explicit evaluation. The physical monitor has no
 host-side source debugger: parity here means the same firmware evaluation and
 namespace semantics, not a fabricated native IDE.
 
-Cart-register and selected-frame bindings remain a separate compiler/debugger
-contract. In particular, the CPU's ordinary globals table is not the live
-global registerfile, and a RAM chunk inherits its caller's execution image.
-Copying that table or compiling cart slot indices under the BIOS caller would
-give incorrect semantics. This slice does neither.
+Implicit cart-register and selected-frame bindings remain a separate
+compiler/debugger contract. A RAM chunk inherits its caller's execution image,
+so emitting cart-local slot ordinals under the BIOS caller would be incorrect.
+The subsequent [named-access slice](global_register_access.md) removes the stale
+CPU global-table duplicate and exposes the real registerfile through firmware
+`getglobal`/`setglobal`. These do not depend on caller-image ordinals or pretend
+to supply a stopped frame's lexical scope.
 
 ## Production references studied before implementation
 

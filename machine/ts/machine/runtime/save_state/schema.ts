@@ -1,4 +1,4 @@
-export const RUNTIME_SAVE_STATE_VERSION = 2;
+export const RUNTIME_SAVE_STATE_VERSION = 3;
 
 export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'activeCpuUsedCycles',
@@ -29,7 +29,6 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'frameScheduler',
 	'frameState',
 	'frames',
-	'globalTableRef',
 	'globalSlots',
 	'executionResidencyMask',
 	'nextObjectHashId',

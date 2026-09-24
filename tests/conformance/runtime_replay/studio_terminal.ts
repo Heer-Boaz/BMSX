@@ -49,6 +49,11 @@ export async function runStudioTerminal(test: StudioFixture) {
 	result = await evaluate('counter = counter + 2; return counter');
 	check(result.text === '42', 'firmware session environment survives separate submissions');
 	check(ide.luaTooling.suspendedGuest.global('counter') === null, 'session assignments do not masquerade as CPU global writes');
+	result = await evaluate('local world = getglobal("cartlib__world__world"); world.terminal_probe = 70; setglobal("terminal_probe", 60); return world.terminal_probe, getglobal("terminal_probe"), type(getglobal("new_game"))');
+	check(result.text === '70\t60\tfunction', 'manual input reads existing cart bindings and mutates the real world');
+	const guest = ide.luaTooling.suspendedGuest;
+	check(guest.global('terminal_probe') === 60 && guest.readStringMember(guest.global('cartlib__world__world'), 'terminal_probe') === 70,
+		'no copied global table or writeback is involved');
 	result = await evaluate('local captured = 7; fn = function(x) return captured + x end');
 	result = await evaluate('fn(5)');
 	check(result.text === '12', 'RAM closures and their captures remain rooted by guest state');
@@ -120,10 +125,12 @@ export async function runStudioTerminal(test: StudioFixture) {
 		await test.presenter.backend.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
 		saved = captureRuntimeSaveState(runtime);
 	}, error => { throw error; });
-	await evaluate('counter = 99; fn = nil');
+	await evaluate('counter = 99; fn = nil; setglobal("terminal_probe", 999)');
 	await test.tasks.schedule(() => { applyRuntimeSaveState(runtime, saved); }, error => { throw error; });
 	result = await evaluate('counter, fn(8)');
 	check(result.text === '43\t15', 'restore uses the restored guest environment and RAM closures, not stale host references');
+	result = await evaluate('local world = getglobal("cartlib__world__world"); return getglobal("terminal_probe"), world.terminal_probe');
+	check(result.text === '60\t70', 'state restore retains dynamically registered globals and the real cart object');
 	await press('ControlLeft', 'KeyL');
 	check(session.transcript.start === session.transcript.next, 'Ctrl+L clears only scrollback');
 	result = await evaluate('counter'); check(result.text === '43', 'clearing output does not reset the guest namespace');

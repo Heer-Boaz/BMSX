@@ -497,7 +497,6 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			schedulerNowCycles: 1234,
 			},
 			cpuState: {
-				globalTableRef: 0,
 				executionResidencyMask: 3,
 				nextObjectHashId: 0xfedcba98,
 				hardHalted: true,
