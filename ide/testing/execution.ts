@@ -1,6 +1,5 @@
 import { ScenarioFsmTransitionObservation } from './scenario/fsm_transition_observation';
 import { ScenarioActionEffectObservation } from './scenario/actioneffect_observation';
-import type { ResourceDomain } from '../common/resource';
 import type { ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import type { Thread } from '../../machine/ts/machine/cpu/thread';
@@ -8,15 +7,14 @@ import type { Table } from '../../machine/ts/machine/cpu/table';
 import { asStringId, valueString, valueToString, type StringValue, type Value } from '../../machine/ts/machine/cpu/value';
 import { CpuSuspendedRunResult } from '../../machine/ts/machine/runtime/cpu_executor';
 import { ALL_EXECUTION_DOMAINS_MASK, executionDomainBit } from '../../machine/ts/spec/blua32/execution_domain';
-import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { formatNumberAsHex } from '../../machine/ts/common/byte_hex_string';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE, IO_SYS_SUPERVISOR_FAULT_CAUSE, IO_SYS_SUPERVISOR_FAULT_EPC, IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS, IO_SYS_SUPERVISOR_FAULT_DOMAIN } from '../../machine/ts/spec/bmsx/io';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
-import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
-import { buildLuaStackFrames } from '../runtime/stack_trace';
 import { TEST_EXECUTION_MODULE_PATH, type BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
 import type { ScenarioResultService, ScenarioTestResult, ScenarioRunFailure } from './scenario/result_service';
 import type { TestTarget } from './target';
+import { TestFailureContext } from './failure_context';
+import { TestTargetInspection } from './inspection';
 
 export type TestBudgets = {
 	readonly quantumCycles: number;
@@ -47,6 +45,9 @@ export class TestExecution {
 	public active = true;
 	public bootCycles = 0;
 	public phaseCycles = 0;
+	private readonly failures: TestFailureContext[] = [];
+	private inspections: Set<TestTargetInspection> | undefined;
+	private inspectionTarget: string | undefined;
 	private booting = true;
 	private entered = false;
 	private phase: Phase = 'bind';
@@ -236,28 +237,29 @@ export class TestExecution {
 		else this.target.advanceGame(this.budgets.quantumCycles);
 	}
 
-	private failure(thread: Thread, message: string): ScenarioRunFailure {
-		const frames = buildLuaStackFrames(thread.frames.map((frame, index, frames) => {
-			const domain = frame.executionImage.executionDomainId;
-			const image = this.program.debugImages[domain + 1]!.image;
-			return {
-				executionDomainId: domain, toolingImage: image, functionAddress: frame.functionAddress,
-				functionIndex: blua32FunctionIndexAtAddress(image.layout, frame.functionAddress),
-				tracePc: index === frames.length - 1 ? frame.pc - INSTRUCTION_BYTES : frames[index + 1].callSitePc,
-			};
-		}), (domain, source, line, column, functionName) => {
-			const path = this.program.debugImages[domain + 1]!.sourcePaths.get(source)!;
-			const sourceDomain: ResourceDomain = domain === -1 ? -1 : (domain ^ this.result.test.resource.domain) as 0 | 1;
-			return { kind: 'source', resource: { domain: sourceDomain, path }, workspacePath: path, line, column, functionName };
-		});
-		// Prefer the authored cartridge location over a BIOS assert/error implementation.
-		const source = frames.find(frame => frame.kind === 'source' && frame.resource.domain === this.result.test.resource.domain);
-		const location = source?.kind === 'source'
-			? { resource: source.resource, line: source.line, column: source.column } : undefined;
-		const stackTrace = frames.map(frame => frame.kind === 'source'
-			? `${frame.workspacePath}:${frame.line}:${frame.column} (${frame.functionName})`
-			: `${frame.functionName}@${frame.instructionAddress.toString(16)}`).join('\n');
-		return { phase: this.booting ? 'initialize' : this.phase, message, stackTrace, location };
+	private failure(thread: Thread, message: string, origin: TestFailureContext['origin'] = 'failed-thread'): ScenarioRunFailure {
+		const runtime = this.target.runtime;
+		const context = new TestFailureContext(thread, origin, runtime.machine.scheduler.nowCycles,
+			runtime.frameScheduler.lastTickSequence, this.program, this.result.test.resource.domain,
+			this.booting ? 'initialize' : this.phase, message);
+		this.failures.push(context);
+		return context.failure;
+	}
+
+	public inspect(): TestTargetInspection {
+		if (this.active) throw new Error('Test inspection requires a retained, inactive target.');
+		if (this.inspections === undefined) this.inspections = new Set();
+		if (this.inspectionTarget === undefined) this.inspectionTarget = crypto.randomUUID();
+		const inspection = new TestTargetInspection(this.inspectionTarget, this.target.runtime, this.program,
+			this.result, this.failures, () => this.inspections!.delete(inspection));
+		this.inspections.add(inspection);
+		return inspection;
+	}
+
+	public dispose(): void {
+		if (this.inspections !== undefined) for (const inspection of this.inspections) inspection.dispose();
+		this.failures.length = 0;
+		this.target.dispose();
 	}
 
 	private complete(): void {
@@ -272,7 +274,7 @@ export class TestExecution {
 
 	private stop(message: string): void {
 		// An uncooperative continuation is quarantined, not unwound to fake cleanup.
-		this.results.recordFailure(this.result, this.failure(this.target.runtime.machine.cpu.activeThread, message));
+		this.results.recordFailure(this.result, this.failure(this.target.runtime.machine.cpu.activeThread, message, 'quarantined-cpu'));
 		this.target.runtime.machine.cpu.setExecutionHook(null, 0, 0);
 		this.complete();
 	}

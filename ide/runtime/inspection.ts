@@ -3,35 +3,18 @@ import type { RuntimeFrameNavigation } from './frame_navigation';
 import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
 import type { HostRewind } from '../../hosts/common/rewind';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
-import type { Table } from '../../machine/ts/machine/cpu/table';
+import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ResourceDomain } from '../common/resource';
 import { runtimeDebuggerExecutionRequested, RuntimeDebuggerStopReason, type RuntimeDebuggerState } from './debugger_state';
 import type { RuntimeFaultState } from './fault_state';
-import { Blua32GlobalRegisterFile, type Blua32SourceImage, type RuntimeSourceState } from './sources';
-import { SuspendedGuestValueKind, type SuspendedGuestSession, type SuspendedGuestValue } from './suspended_guest';
+import type { Blua32SourceImage, RuntimeSourceState } from './sources';
+import type { SuspendedGuestSession } from './suspended_guest';
+import { InspectionValues } from './inspection_values';
+export type { InspectedEntry, InspectedValue } from './inspection_values';
 import { buildLuaStackFrames, createLuaSourceStackTraceFrame, readRuntimeStackFrames, type RuntimeStackFrame, type RuntimeStackTraceFrame } from './stack_trace';
-import { runtimeLuaFrameScopes, type RuntimeLuaFrameBinding, type RuntimeLuaFrameScope } from './lua_inspection';
-import type { SourceRange } from '../../toolchain/ts/lua/source_range';
+import { runtimeLuaFrameScopes, type RuntimeLuaFrameScope } from './lua_inspection';
 
-export type InspectedValue = {
-	readonly kind: 'nil' | 'boolean' | 'number' | 'string' | 'table' | 'function' | 'thread';
-	readonly display: string;
-	readonly reference?: string;
-};
-export type InspectedEntry = {
-	readonly key: InspectedValue;
-	readonly value: InspectedValue | { readonly kind: 'unavailable'; readonly reason: 'no-live-location'; readonly display: string; readonly reference?: never };
-	/** Present for global bindings; domain identifies symbol provenance, not a separate bank. */
-	readonly registerFile?: 'ordinary' | 'system';
-	/** Installed module-path range. Null means a retained capture whose declaration was removed. */
-	readonly definition?: SourceRange | null;
-};
-type GlobalBinding = readonly [name: string, registerFile: Blua32GlobalRegisterFile];
-type Container =
-	| { kind: 'globals'; names: ReadonlyMap<string, Blua32GlobalRegisterFile>; bindings?: readonly GlobalBinding[] }
-	| { kind: 'locals' | 'upvalues'; physicalFrameIndex: number; bindings: readonly RuntimeLuaFrameBinding[] }
-	| { kind: 'table'; value: SuspendedGuestValue; entries?: readonly (readonly [SuspendedGuestValue, SuspendedGuestValue])[] };
 type InspectedFrameScope = { readonly kind: RuntimeLuaFrameScope['kind']; readonly status: RuntimeLuaFrameScope['status']; readonly reference?: string; readonly count?: number };
 type InspectedFrame = RuntimeStackTraceFrame & { readonly reference: string; readonly functionAddress: number; readonly pc: number; readonly domain: ResourceDomain };
 export type InspectionScope = {
@@ -40,13 +23,6 @@ export type InspectionScope = {
 	readonly reference?: string;
 	readonly count?: number;
 };
-const VALUE_KINDS: Record<SuspendedGuestValueKind, InspectedValue['kind']> = {
-	[SuspendedGuestValueKind.Nil]: 'nil', [SuspendedGuestValueKind.Boolean]: 'boolean',
-	[SuspendedGuestValueKind.Number]: 'number', [SuspendedGuestValueKind.String]: 'string',
-	[SuspendedGuestValueKind.Table]: 'table', [SuspendedGuestValueKind.Function]: 'function',
-	[SuspendedGuestValueKind.Thread]: 'thread',
-};
-
 /** A physical authoring target, not the currently visible pane or selected source. */
 export class RuntimeInspectionService {
 	public readonly target = crypto.randomUUID();
@@ -107,16 +83,16 @@ export class RuntimeInspection {
 	public readonly id = crypto.randomUUID();
 	public readonly state: ReturnType<RuntimeInspectionService['status']>;
 	public readonly scopes: InspectionScope[] = [];
-	private readonly containers = new Map<string, Container>();
-	private readonly tables = new Map<number, string>();
-	private readonly frames = new Map<string, { physical: RuntimeStackFrame; trace: InspectedFrame; scopes?: readonly InspectedFrameScope[] }>();
+	private readonly values: InspectionValues;
+	private readonly frames = new Map<string, { physical: RuntimeStackFrame; frame: CallFrame; trace: InspectedFrame; scopes?: readonly InspectedFrameScope[] }>();
 	private stack: InspectedFrame[] | undefined;
 	private readonly unbind: () => void;
 	private retired = false;
 
 	public constructor(private readonly owner: RuntimeInspectionService, private readonly sources: RuntimeSourceState,
-		private readonly guest: SuspendedGuestSession, private readonly runtime: Runtime) {
+		guest: SuspendedGuestSession, private readonly runtime: Runtime) {
 		this.state = owner.status();
+		this.values = new InspectionValues(this.id, guest);
 		this.unbind = guest.onDidInvalidate(() => this.dispose());
 		this.addScope(-1, sources.currentBlua32Media.system);
 		const slot = this.state.activeCartridge;
@@ -133,7 +109,7 @@ export class RuntimeInspection {
 					const location = physical[frame.physicalFrameIndex];
 					const reference = `${this.id}/frame/${index}`;
 					const trace = { ...frame, reference, domain: location.executionDomainId, pc: location.tracePc, functionAddress: location.functionAddress };
-					this.frames.set(reference, { physical: location, trace });
+					this.frames.set(reference, { physical: location, frame: this.runtime.machine.cpu.activeThread.frames[frame.physicalFrameIndex], trace });
 					return trace;
 				});
 		}
@@ -149,7 +125,7 @@ export class RuntimeInspection {
 			frame.scopes = runtimeLuaFrameScopes(frame.physical, frame.trace.inlineDepth).map(scope => {
 				if (scope.status !== 'available') return { kind: scope.kind, status: scope.status };
 				return { kind: scope.kind, status: scope.status, count: scope.bindings.length,
-					reference: this.add({ kind: scope.kind, physicalFrameIndex: frame.trace.physicalFrameIndex, bindings: scope.bindings }) };
+					reference: this.values.frame(scope.kind, frame.frame, scope.bindings) };
 			});
 		}
 		return { inspection: this.id, frame: reference, scopes: frame.scopes };
@@ -161,27 +137,8 @@ export class RuntimeInspection {
 			return;
 		}
 		const names = image.globalRegisterFileByName;
-		const reference = this.add({ kind: 'globals', names });
+		const reference = this.values.globals(names);
 		this.scopes.push({ domain, status: 'available', reference, count: names.size });
-	}
-
-	private add(container: Container): string {
-		const reference = `${this.id}/${this.containers.size}`;
-		this.containers.set(reference, container);
-		return reference;
-	}
-
-	private describe(value: SuspendedGuestValue): InspectedValue {
-		const kind = this.guest.kind(value);
-		const display = this.guest.formatValue(value);
-		if (kind !== SuspendedGuestValueKind.Table) return { kind: VALUE_KINDS[kind], display };
-		const identity = (value as Table).hashId;
-		let reference = this.tables.get(identity);
-		if (reference === undefined) {
-			reference = this.add({ kind: 'table', value });
-			this.tables.set(identity, reference);
-		}
-		return { kind: 'table', display, reference };
 	}
 
 	private requireSuspended(): void {
@@ -194,49 +151,13 @@ export class RuntimeInspection {
 
 	public read(reference: string, start: number, count: number) {
 		this.requireSuspended();
-		const container = this.containers.get(reference);
-		if (container === undefined) throw new Error('Value reference does not belong to this inspection.');
-		const entries: InspectedEntry[] = [];
-		let total: number;
-		if (container.kind === 'globals') {
-			if (container.bindings === undefined) container.bindings = Array.from(container.names);
-			total = container.bindings.length;
-			for (let index = start, end = Math.min(start + count, total); index < end; index++) {
-				const [name, bank] = container.bindings[index];
-				const value = bank === Blua32GlobalRegisterFile.System ? this.guest.systemGlobal(name) : this.guest.global(name);
-				entries.push({ key: { kind: 'string', display: name }, value: this.describe(value),
-					registerFile: bank === Blua32GlobalRegisterFile.System ? 'system' : 'ordinary' });
-			}
-		} else if (container.kind === 'table') {
-			if (container.entries === undefined) {
-				const stored: [SuspendedGuestValue, SuspendedGuestValue][] = [];
-				this.guest.visitTableEntries(container.value, (key, value) => stored.push([key, value]));
-				container.entries = stored;
-			}
-			total = container.entries.length;
-			for (let index = start, end = Math.min(start + count, total); index < end; index++) {
-				const [key, value] = container.entries[index];
-				entries.push({ key: this.describe(key), value: this.describe(value) });
-			}
-		} else {
-			total = container.bindings.length;
-			const cpu = this.runtime.machine.cpu;
-			for (let index = start, end = Math.min(start + count, total); index < end; index++) {
-				const binding = container.bindings[index];
-				entries.push({ key: { kind: 'string', display: binding.name }, definition: binding.definition,
-					value: binding.available
-						? this.describe(container.kind === 'locals' ? cpu.readFrameRegister(container.physicalFrameIndex, binding.index)
-							: cpu.readFrameUpvalue(container.physicalFrameIndex, binding.index))
-						: { kind: 'unavailable', reason: 'no-live-location', display: '<no live location>' } });
-			}
-		}
-		return { inspection: this.id, reference, start, total, entries };
+		return this.values.read(reference, start, count);
 	}
 
 	public dispose(): void {
 		this.retired = true;
 		this.unbind();
-		this.containers.clear(); this.tables.clear();
+		this.values.dispose();
 		this.frames.clear(); this.stack = undefined;
 	}
 }

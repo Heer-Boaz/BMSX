@@ -22,7 +22,8 @@ unimplemented rows below are not advertised capabilities.
 | Explicit cart-global access from Lua Terminal | BIOS getglobal/setglobal + CPU registerfiles | real register/object writes, TS/C++ parity | implemented; see [named globals](global_register_access.md) |
 | Implicit cart bindings and frame-context Lua Terminal | compiler/debugger binding contract | actual selected binding writes, not copied scope tables | open |
 | Discover/run/wait/cancel scenarios | TestRun/ScenarioRunService | real isolated targets, cancellation and completion | implemented; [test execution](studio_test_execution.md) |
-| Debug retained failed test target | target-bound debugger and composed execution hooks | no reads/writes through authoring target | open |
+| Retained failed test inspection | TestExecution / TestTargetInspection | phase-thread locals/upvalues, compiled source, expiry; no authoring reads | implemented read-only; [test inspection](studio_test_inspection.md) |
+| Live test breakpoint/step/debug-rerun | target-bound debugger and composed execution hooks | actual stops/control on the test target | open |
 | Object/FSM/BT/ActionEffect semantic inspection and editing | Actor Lab / source-backed behavior models | canonical-source edits and live-state readback | open |
 | Apply/save/build/install lifecycle | working-copy, Save, boot and Hot Resume owners | distinct receipts, rerun against installed code | open |
 
@@ -286,5 +287,10 @@ objects, including from a conversation.
 
 Subsequent slices add [Continue/source-debugger operations](studio_source_debugger.md)
 and [scenario discovery/execution](studio_test_execution.md). Still open:
-cart/frame Lua Terminal bindings, failed-test target attachment, canonical
+cart/frame Lua Terminal bindings, live test debugging, canonical
 semantic-builder operations and the complete reproduce/fix/rerun acceptance flow.
+
+The subsequent [retained test inspection](studio_test_inspection.md) slice adds
+actual phase-thread stack/scopes/objects and compiled-source reads, shared with
+ordinary Scenario Lab. This is read-only post-mortem at case end, not a copied
+fault heap or live test execution control. Test pixel capture remains open.

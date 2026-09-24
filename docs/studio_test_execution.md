@@ -88,8 +88,10 @@ Historical `sourceCoverage: accepted-suite-only` remains unchanged. A rerun uses
 current source; an earlier failure still exposes its accepted text. A passing
 test does not certify a matching current dependency graph, successful source
 save/install, or an attached debugger. Test captures remain retained metadata,
-not pixels. [Failed-target debugger attachment and semantic builder tools remain
-open](studio_runtime_tools.md); authoring-runtime inspection is not substituted.
+not pixels. [Post-mortem test inspection](studio_test_inspection.md) now attaches
+the real retained target for frame/value/compiled-source reads. Live test
+breakpoint/step/debug-rerun and semantic builder tools remain
+[open](studio_runtime_tools.md); authoring-runtime inspection is not substituted.
 
 ## Validation surfaces
 

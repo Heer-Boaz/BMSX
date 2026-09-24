@@ -20,7 +20,7 @@ export function drawWorkbenchPropertyTree<Element extends WorkbenchPropertyEleme
 		if (index === state.hoverIndex) api.fill_rect(layout.contentLeft, y, layout.contentRight, y + layout.rowHeight, 0, colors.HIGHLIGHT_OVERLAY);
 		if (selected) api.fill_rect(layout.contentLeft, y, layout.contentRight, y + layout.rowHeight, 0, colors.SELECTION_OVERLAY);
 		const color = selected ? colors.COLOR_SELECTION_TEXT : element.warning ? colors.COLOR_STATUS_WARNING : colors.COLOR_RESOURCE_VIEWER_TEXT;
-		if (node.children.length > 0) api.blit_text_inline_with_font(node.collapsed ? '+' : '-', x + 2, y + 2, 0, color, font);
+		if (node.expandable) api.blit_text_inline_with_font(node.collapsed ? '+' : '-', x + 2, y + 2, 0, color, font);
 		api.blit_text_inline_with_font(element.displayLabel, x + layout.twistieWidth + 2, y + 2, 0, color, font);
 		api.blit_text_inline_with_font(element.displayValue, element.displayValueLeft, y + 2, 0, color, font);
 	}

@@ -145,6 +145,8 @@ export class IdeCommandController {
 			case 'behaviorLens.inspectRegisteredDefinitions':
 			case 'behaviorLens.editProperty':
 			case 'scenarioLab.details':
+			case 'scenarioLab.inspectTarget':
+			case 'scenarioLab.closeTarget':
 			case 'contextMenu':
 			case 'propertyInspector.source':
 			case 'propertyInspector.close':
@@ -328,6 +330,8 @@ export class IdeCommandController {
 			case 'behaviorLens.inspectRegisteredDefinitions':
 			case 'behaviorLens.editProperty':
 			case 'scenarioLab.details':
+			case 'scenarioLab.inspectTarget':
+			case 'scenarioLab.closeTarget':
 			case 'contextMenu':
 			case 'propertyInspector.source':
 			case 'propertyInspector.close':

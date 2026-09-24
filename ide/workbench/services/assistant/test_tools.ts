@@ -1,3 +1,4 @@
+import type { TestTargetInspection } from '../../../testing/inspection';
 import type { ScenarioRun, ScenarioTestResult, ScenarioRetainedSequence,
 	ScenarioResultLog, ScenarioResultCapture, ScenarioFsmTransitionTrace, ScenarioActionEffectTrace,
 	ScenarioFsmTransitionRecord, ScenarioActionEffectFact } from '../../../testing/scenario/result_service';
@@ -34,6 +35,11 @@ type TestDiscovery = {
 	})[];
 };
 export type TestToolResult =
+	| { kind: 'test-inspection'; data: TestTargetInspection['state'] }
+	| { kind: 'test-stack'; data: ReturnType<TestTargetInspection['readStack']> }
+	| { kind: 'test-frame-scopes'; data: ReturnType<TestTargetInspection['frameScopes']> }
+	| { kind: 'test-frame-source'; data: ReturnType<TestTargetInspection['frameSource']> }
+	| { kind: 'test-values'; data: ReturnType<TestTargetInspection['read']> }
 	| { kind: 'tests'; data: TestDiscovery }
 	| { kind: 'test-runs'; data: { coverage: 'retained-studio-runs'; revision: number; runs: readonly RunSummary[] } }
 	| { kind: 'test-run'; data: ToolTestRun }
@@ -52,6 +58,7 @@ export class WorkspaceTestTools {
 	private discovery: TestDiscovery | undefined;
 	private catalog: Extract<TestToolResult, { kind: 'test-runs' }>['data'] | undefined;
 	private disposed = false;
+	private inspection: TestTargetInspection | undefined;
 	private readonly lifetime = new AbortController();
 	private readonly onDisconnect = () => this.dispose();
 
@@ -65,6 +72,18 @@ export class WorkspaceTestTools {
 		requestSignal?.throwIfAborted();
 		const request = decodeTestToolRequest(name, argumentsValue);
 		switch (request.name) {
+			case 'studio_inspect_test_target': {
+				const entry = this.results.get(request.result);
+				if (entry === undefined) throw new StudioToolInputError('Case handle must be read from a run in this prompt');
+				const inspection = this.owner.inspect(entry.result);
+				this.inspection?.dispose();
+				this.inspection = inspection;
+				return { kind: 'test-inspection', data: inspection.state };
+			}
+			case 'studio_read_test_stack': return { kind: 'test-stack', data: this.currentInspection().readStack(request.failure, request.start, request.count) };
+			case 'studio_read_test_frame_scopes': return { kind: 'test-frame-scopes', data: this.currentInspection().frameScopes(request.frame) };
+			case 'studio_read_test_frame_source': return { kind: 'test-frame-source', data: this.currentInspection().frameSource(request.frame) };
+			case 'studio_read_test_values': return { kind: 'test-values', data: this.currentInspection().read(request.reference, request.start, request.count) };
 			case 'studio_list_tests': return { kind: 'tests', data: this.discover() };
 			case 'studio_start_test_run': {
 				const scope = this.scopes.get(request.scope);
@@ -114,6 +133,11 @@ export class WorkspaceTestTools {
 				return { kind: 'test-result', data: entry.data };
 			}
 		}
+	}
+
+	private currentInspection(): TestTargetInspection {
+		if (this.inspection === undefined) throw new StudioToolInputError('Open a retained test inspection first');
+		return this.inspection;
 	}
 
 	private discover(): TestDiscovery {
@@ -181,6 +205,7 @@ export class WorkspaceTestTools {
 	public dispose(): void {
 		this.disposed = true;
 		this.lifetime.abort();
+		this.inspection?.dispose(); this.inspection = undefined;
 		for (const entry of this.runs.values()) if (entry.owned) this.owner.cancel(entry.run);
 		this.connection.removeEventListener('abort', this.onDisconnect);
 		this.runs.clear(); this.results.clear(); this.scopes.clear(); this.catalog = undefined; this.discovery = undefined; this.scopeRoot = undefined;

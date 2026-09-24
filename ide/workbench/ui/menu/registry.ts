@@ -8,7 +8,7 @@ export type WorkbenchDropdownMenuId =
 
 export type WorkbenchContextMenuId = 'actorLab.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'terminal.input' | 'assistant.turn' | 'workspaceEditReview.title' | 'gameView.title' | 'actorLab.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'terminal.input' | 'assistant.turn' | 'workspaceEditReview.title' | 'gameView.title' | 'actorLab.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -34,6 +34,7 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'menubar.run': readonly WorkbenchMenuItem[];
 	readonly 'menubar.view': readonly WorkbenchMenuItem[];
 	readonly 'scenarioLab.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'scenarioLab.target': readonly WorkbenchMenuCommandItem[];
 	readonly 'behaviorLens.graph.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'behaviorLens.stateGraph.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'behaviorLens.title': readonly WorkbenchMenuCommandItem[];
@@ -168,11 +169,16 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'wrap' },
 		{ type: 'command', command: 'filter' },
 	],
+	'scenarioLab.target': [
+		{ type: 'command', command: 'scenarioLab.details' },
+		{ type: 'command', command: 'scenarioLab.closeTarget' },
+	],
 	'scenarioLab.title': [
 		{ type: 'command', command: 'scenarioLab.run' },
 		{ type: 'command', command: 'scenarioLab.rerun' },
 		{ type: 'command', command: 'scenarioLab.cancel' },
 		{ type: 'command', command: 'scenarioLab.details' },
+		{ type: 'command', command: 'scenarioLab.inspectTarget' },
 	],
 	'behaviorLens.graph.title': [
 		{ type: 'command', command: 'behaviorLens.source' },

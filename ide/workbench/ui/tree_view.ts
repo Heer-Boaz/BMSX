@@ -8,6 +8,8 @@ export type WorkbenchTreeNode<Element> = {
 	readonly children: WorkbenchTreeNode<Element>[];
 	readonly depth: number;
 	collapsed: boolean;
+	/** The owner can declare children before resolving them on explicit expansion. */
+	expandable: boolean;
 };
 
 export type WorkbenchTreeLayout = WorkbenchListLayout & { indentWidth: number; twistieWidth: number };
@@ -19,9 +21,9 @@ export type WorkbenchTreeState<Element> = WorkbenchListState<WorkbenchTreeNode<E
 export function appendWorkbenchTreeNode<Element>(
 	state: WorkbenchTreeState<Element>, parent: WorkbenchTreeNode<Element> | null, element: Element, collapsed = false,
 ): WorkbenchTreeNode<Element> {
-	const node: WorkbenchTreeNode<Element> = { element, parent, children: [], depth: parent === null ? 0 : parent.depth + 1, collapsed };
+	const node: WorkbenchTreeNode<Element> = { element, parent, children: [], depth: parent === null ? 0 : parent.depth + 1, collapsed, expandable: false };
 	if (parent === null) state.roots.push(node);
-	else parent.children.push(node);
+	else { parent.children.push(node); parent.expandable = true; }
 	return node;
 }
 
@@ -43,7 +45,7 @@ function appendVisibleNodes<Element>(nodes: readonly WorkbenchTreeNode<Element>[
 
 export function setWorkbenchTreeCollapsed<Element>(state: WorkbenchTreeState<Element>, index: number, collapsed: boolean): boolean {
 	const node = state.rows[index];
-	if (node.children.length === 0 || node.collapsed === collapsed) return false;
+	if (!node.expandable || node.collapsed === collapsed) return false;
 	let selected = state.selectionIndex < 0 ? null : state.rows[state.selectionIndex];
 	if (collapsed) {
 		// A hidden descendant cannot remain the active edit target.
@@ -104,5 +106,5 @@ export function navigateWorkbenchTree<Element>(state: WorkbenchTreeState<Element
 export function workbenchTreeTwistieContainsPosition<Element>(state: WorkbenchTreeState<Element>, index: number, viewportX: number): boolean {
 	const node = state.rows[index];
 	const left = state.layout.contentLeft + node.depth * state.layout.indentWidth;
-	return node.children.length > 0 && viewportX >= left && viewportX < left + state.layout.twistieWidth;
+	return node.expandable && viewportX >= left && viewportX < left + state.layout.twistieWidth;
 }

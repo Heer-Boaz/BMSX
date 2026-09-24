@@ -137,3 +137,14 @@ test('inspector rows and its header actions receive independent leave without cl
 	f.inspector.hide(); f.hover.clear();
 	assert.equal(f.inspector.actionBar.hoveredCommand, null);
 });
+
+test('read-only evidence without source destinations hides the unused Source action', t => {
+	const f = fixture(t);
+	f.inspector.show({ title: 'Compiled source', items: [{ label: 'Code', value: 'return 42', description: 'Read-only compiled source', warning: false }],
+		canOpenSource: () => false, openSource: () => assert.fail('No source navigation offered') });
+	assert.equal(f.inspector.actionBar.items[0].visible, false);
+	assert.equal(f.inspector.actionBar.items[1].visible, true);
+	f.layout(); assert.equal(f.inspector.title, 'Compiled source');
+	f.inspector.hide();
+	f.show(); assert.equal(f.inspector.actionBar.items[0].visible, true);
+});

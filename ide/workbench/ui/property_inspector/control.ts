@@ -61,6 +61,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		this.hide();
 		this.returnFocus = this.focus.target;
 		this.input = input;
+		this.actionBar.items[0].visible = input.items.some(item => input.canOpenSource(item));
 		this.lifetime = new DisposableStore();
 		this.model.setItems(input.items);
 		this.scroll.setInput(this.model.viewport);
@@ -99,7 +100,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 			write_rect_bounds(this.bounds, bounds.left, bounds.top, bounds.right, bounds.bottom);
 			const headerBottom = bounds.top + font.lineHeight + 8;
 			layoutWorkbenchActionBar(this.actionBar, bounds.right - 4, bounds.top + 2, headerBottom - 2, measureText);
-			this.title = truncateMeasuredText(this.input!.title, this.actionBar.items[0].bounds.left - bounds.left - 8, measure);
+			this.title = truncateMeasuredText(this.input!.title, this.actionBar.items.find(item => item.visible)!.bounds.left - bounds.left - 8, measure);
 			write_rect_bounds(this.content, bounds.left, headerBottom, bounds.right, bounds.bottom);
 			this.scroll.lineStep = font.lineHeight;
 			this.layoutDirty = false;

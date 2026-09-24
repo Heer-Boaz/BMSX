@@ -953,8 +953,14 @@ stays visible during a run and continues to offer ordinary authoring operations.
 Result history retains multiple phase failures; teardown does not erase a body
 failure. Failed threads remain on the failed target. Stack symbolization uses
 the common BIOS/cart/inline-frame owner, not a test-specific source mapper.
-Interactive debugger attachment to a separate test target is not yet supplied;
-the old command that debugged the authoring Runtime has been removed.
+Read-only `TestTargetInspection` attachments bind retained phase threads, actual
+frame register windows/closure upvalues, their compiled images and the case-end
+heap. `TestExecution` retires these borrowers before disposing its target. They
+never enter result-history records or reuse active authoring CPU indices. Guest
+cleanup that closes a phase reports `thread-closed`, without fabricating scopes.
+Both Scenario Lab and conversation tools use this owner, with lazy value/source
+reads. Interactive stop/step/debug-rerun control remains separate; failed Lua
+threads cannot be resumed. See [test inspection](studio_test_inspection.md).
 See [Guest testing](guest_testing.md) for the implemented API, cancellation
 boundaries, budgets, measured costs and validation.
 
@@ -5090,6 +5096,14 @@ Separate execution operations call `ScenarioRunService` to discover, admit, awai
 and cancel isolated cases. Only runs started by the prompt grant it cancellation
 authority; waits are event-driven and independently abortable. Ordinary Scenario
 Lab uses the same run/result owners. See [test execution](studio_test_execution.md).
+Separate post-mortem tools bind a listed result to the actual retained failed
+target. Failure, frame and value handles belong to that attachment, not to the
+current CPU or historical result strings. Compiled test sources remain separate
+from current working copies. Shared heap reads describe case end (including any
+cleanup mutations), not a copied heap at the throw. Prompt retirement detaches
+only its borrow; target replacement retires all UI/tool borrowers. No test
+Continue, step, evaluation or pixel-capture capability is implied. See
+[test inspection](studio_test_inspection.md).
 Runtime inspection is a separate pane-independent owner. Tools identify the
 physical authoring target and can request an independent user pause, read its
 execution position, and inspect installed global bindings and stored table

@@ -1,3 +1,4 @@
+import { ScenarioTargetInspection } from './target_inspection';
 import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
 import { describeScenarioMessageDetails, describeScenarioTestResult, type ScenarioMessageProperty } from './message_inspection';
@@ -45,6 +46,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		updateScenarioLabStatus(this.input.view);
 	});
 	public readonly inspector = new WorkbenchPropertyInspector<ScenarioMessageProperty>(inputFocus, pointerCapture, pointerHover, this.resultsFocus);
+	public readonly targetInspection = new ScenarioTargetInspection(this.resultsFocus);
 	private inspectedMessage: ScenarioLabInspectableRow | undefined;
 	private readonly inspectionLifetime = { dispose: () => { this.inspectedMessage = undefined; } };
 	private readonly navigate = (command: ScenarioLabNavigationCommand): void => {
@@ -66,8 +68,13 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		private readonly commands: IdeCommandController,
 	) {
 		super(resourcePanel);
+		this.resultsFocus.registerCommand('scenarioLab.inspectTarget', {
+			isEnabled: () => !this.inspector.visible && this.targetInspection.model === undefined
+				&& this.selectedDetailsRow() !== undefined && this.controller.runs.canInspect(this.selectedDetailsRow()!.result),
+			run: () => this.targetInspection.show(this.controller.runs.inspect(this.selectedDetailsRow()!.result)),
+		});
 		this.resultsFocus.registerCommand('scenarioLab.details', {
-			isEnabled: () => !this.inspector.visible && this.input.view.focus === 'results'
+			isEnabled: () => !this.inspector.visible && this.targetInspection.model === undefined && this.input.view.focus === 'results'
 				&& this.selectedDetailsRow() !== undefined,
 			run: () => this.openDetails(this.selectedDetailsRow()!),
 		});
@@ -82,6 +89,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 
 	protected override activate(_selection?: EditorTextSelection, navigationSelection?: ScenarioLabNavigationSelection): void {
 		this.inspector.hide();
+		this.targetInspection.hide();
 		super.activate();
 		navigationSelection?.restore(this.input.view);
 		this.controller.updateView(this.input.view);
@@ -95,6 +103,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 
 	public override clearInput(): void {
 		this.inspector.hide();
+		this.targetInspection.hide();
 		pointerHover.release(this);
 		this.actionBar.clearInput();
 		super.clearInput();
@@ -102,6 +111,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 
 	public override dispose(): void {
 		this.inspector.dispose();
+		this.targetInspection.dispose();
 		pointerHover.release(this);
 		this.actionBar.dispose();
 		this.unbindResultsKeyboard();
@@ -116,6 +126,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		this.actionBar.update();
 		if (this.inspectedMessage !== undefined && selectedScenarioResultRow(this.input.view)?.id !== this.inspectedMessage.id) this.inspector.hide();
 		this.inspector.update();
+		this.targetInspection.update();
 	}
 
 	private selectedDetailsRow(): ScenarioLabInspectableRow | undefined {
@@ -134,6 +145,10 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 	}
 
 	public draw(): void {
+		if (this.targetInspection.model !== undefined) {
+			prepareScenarioLabLayout(this.input.view);
+			this.targetInspection.draw(this.input.view.layout); return;
+		}
 		if (this.inspector.visible) {
 			prepareScenarioLabLayout(this.input.view);
 			this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, this.input.view.layout);
@@ -164,6 +179,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		justPressed: boolean,
 		now: number,
 	): boolean {
+		if (this.targetInspection.model !== undefined) return this.targetInspection.handlePointer(snapshot, justPressed, now);
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
 		const view = this.input.view;
 		if (this.actionBar.handlePointer(snapshot)) {
@@ -184,7 +200,9 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		activePointer: PointerSnapshot | null,
 		playerInput: PlayerInput,
 	): void {
-		if (this.inspector.visible) {
+		if (this.targetInspection.model !== undefined) {
+			if (activePointer === null || !this.targetInspection.handleWheel(activePointer, direction * steps * 3)) return;
+		} else if (this.inspector.visible) {
 			if (activePointer === null || !this.inspector.handleWheel(activePointer, direction * steps * editorViewState.font.lineHeight * 3)) return;
 		} else this.controller.handleWheel(this.input.view, direction, steps, activePointer);
 		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');

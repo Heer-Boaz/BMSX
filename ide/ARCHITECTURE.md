@@ -101,6 +101,13 @@ only runs it started; observing a manual run confers no cancellation authority.
 Prompt retirement cancels its unfinished runs, not the workspace service or a newer
 manual run. Every case still uses an independent physical test target, not the
 authoring Runtime. See [test execution](../docs/studio_test_execution.md).
+Post-mortem tools attach through the same service's exact retained failure
+identity. `TestTargetInspection` reads actual phase-thread frames, lazily reads
+locals/upvalues/tables, and serves the compiled source rather than a newer editor
+buffer. The shared `InspectionValues` binds real frame register windows, not an
+index into the currently active CPU thread. Target disposal expires every
+attachment before releasing the machine; prompt retirement does not retire
+another inspector or the retained target. See [test inspection](../docs/studio_test_inspection.md).
 
 ## HTTP workspace capability
 
@@ -1566,12 +1573,21 @@ teardown. An uncooperative continuation, outstanding physical exception or
 machine fault cannot be unwound to manufacture cleanup. Test policy releases
 held input and its execution hook; the machine owner disposes presentation
 resources. Runner infrastructure failure stops the batch and skips remaining
-cases. Failed-case debugging is currently retained-stack/source inspection,
-not interactive attachment to that separate machine.
+cases. Failed cases support read-only target attachments: phase stacks,
+compiler-backed locals/upvalues, stored tables and exact compiled sources.
+Values are the retained heap at case end, potentially changed by cleanup. Guest
+closed threads are labelled explicitly. Live stop/step/debug-rerun is not yet
+implemented; no authoring debugger is retargeted.
 
 Result activation remains pane-owned navigation. Logs and failures use the
 shared `WorkbenchPropertyInspector` with complete text. `scenarioLab.details`
-belongs to the result control; retained row identity keeps inspection stable
+belongs to the result control. `scenarioLab.inspectTarget` is enabled only for
+a result with its actual retained failed target. Its separate lazy property tree
+uses the same attachment as the conversation tools; Enter opens complete value
+text or read-only compiled frame source, never current editor text in its place.
+Tree owners advertise expandable nodes before loading children; pointer/keyboard
+expansion resolves explicit pages outside paint. Closing or detaching the pane
+releases its borrow, not the target. Result details' retained row identity keeps inspection stable
 and closes it on eviction. Multiple semantic source origins use the existing
 Quick Input owner; source changes or pane detachment retire the choice.
 Workbench deactivation clears the visible pane while its input and working

@@ -54,9 +54,29 @@ export type TestCartridgeBuildOptions = {
 	optLevel: 0 | 1 | 2 | 3;
 };
 
+export type TestDebugSource = {
+	readonly displayPath: string;
+	content: { kind: 'text'; text: string } | { kind: 'utf8'; bytes: Uint8Array };
+};
+
+/** Decode immutable ROM source only when an inspector actually requests it. */
+export function readTestDebugSource(source: TestDebugSource): string {
+	if (source.content.kind === 'utf8') source.content = { kind: 'text', text: utf8FatalDecoder.decode(source.content.bytes) };
+	return source.content.text;
+}
+
+function romDebugSources(bytes: Uint8Array, entries: readonly RomAsset[]): ReadonlyMap<string, TestDebugSource> {
+	const sources = new Map<string, TestDebugSource>();
+	for (const entry of entries) if (entry.type === 'lua') {
+		sources.set(toLuaModulePath(entry.source_path!), { displayPath: entry.source_path!,
+			content: { kind: 'utf8', bytes: bytes.subarray(entry.start, entry.end) } });
+	}
+	return sources;
+}
+
 export type TestDebugImage = {
 	readonly image: Blua32ToolingImage;
-	readonly sourcePaths: ReadonlyMap<string, string>;
+	readonly sources: ReadonlyMap<string, TestDebugSource>;
 };
 
 export type BuiltTestCartridge = {
@@ -230,17 +250,16 @@ export async function buildTestCartridge(
 	if (companionBytes !== undefined && companionBytes !== null) {
 		const companionIndex = await parseCartridgeIndex(companionBytes);
 		const image = loadBlua32ToolingImage(parseCartridgePackage(companionBytes), CART_ROM_BASE);
-		if (image !== null) companion = { image, sourcePaths: new Map(companionIndex.entries
-			.filter(entry => entry.type === 'lua').map(entry => [toLuaModulePath(entry.source_path!), entry.source_path!])) };
+		if (image !== null) companion = { image, sources: romDebugSources(companionBytes, companionIndex.entries) };
 	}
 	return {
 		suite,
 		debugImages: [
 			{ image: loadBlua32ToolingImage(parseSystemRomImage(options.systemRom), SYSTEM_ROM_BASE)!,
-				sourcePaths: new Map(systemIndex.entries.filter(entry => entry.type === 'lua')
-					.map(entry => [toLuaModulePath(entry.source_path!), entry.source_path!])) },
+				sources: romDebugSources(options.systemRom, systemIndex.entries) },
 			{ image: built.linked,
-				sourcePaths: new Map([...diagnosticSources].map(([module, source]) => [module, source.displayPath])) },
+				sources: new Map([...diagnosticSources].map(([module, source]) => [module,
+					{ displayPath: source.displayPath, content: { kind: 'text', text: source.source } }])) },
 			companion,
 		],
 		entryCodeAddress: built.entryCodeAddress,

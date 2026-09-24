@@ -74,11 +74,21 @@ test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained fail
 					assert.equal(result.logs.at(0).text, 'cleanup');
 					assert.ok(target.runtime.machine.cpu.captureRuntimeState().threads.some(thread => thread.status === ThreadStatus.Failed && thread.frames.length > 0));
 				} else if (index === 2) assert.deepEqual(result.failures.map(failure => failure.phase), ['body', 'teardown']);
-				else if (index === 3) assert.match(result.failures[0].message, /cycle budget/);
+				else if (index === 3) {
+					assert.match(result.failures[0].message, /cycle budget/);
+					const inspection = execution.inspect();
+					const failure = inspection.state.failures[0];
+					assert.equal(failure.origin, 'quarantined-cpu');
+					const frame = inspection.readStack(failure.reference!, 0, 1).frames[0];
+					assert.equal(frame.pc, target.runtime.machine.cpu.readFramePc(frame.physicalFrameIndex), 'quarantine describes next/current PC, not a throw');
+					const scopes = inspection.frameScopes(frame.reference).scopes;
+					assert.ok(scopes.some(scope => scope.status === 'available'));
+					inspection.dispose();
+				}
 				else assert.match(result.failures[0].message, /requires an integration test/);
 			}
 			previous = target;
-			target.dispose();
+			execution.dispose();
 		}
 		results.completeRun(run);
 		assert.equal(run.passedCount, 1);

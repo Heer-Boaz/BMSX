@@ -66,7 +66,7 @@ function writePropertyText<Element extends WorkbenchPropertyElement>(
 		const labelLeft = layout.contentLeft + node.depth * layout.indentWidth + layout.twistieWidth + 2;
 		element.displayValueLeft = element.label.length === 0 ? labelLeft : layout.valueLeft + 4;
 		element.displayLabel = truncateMeasuredText(element.label,
-			(element.kind === 'group' ? layout.contentRight : layout.valueLeft) - labelLeft - 4, measure);
+			(element.kind === 'group' && element.value.length === 0 ? layout.contentRight : layout.valueLeft) - labelLeft - 4, measure);
 		element.displayValue = truncateMeasuredText(element.value, layout.contentRight - element.displayValueLeft - 4, measure);
 		writePropertyText(node.children, layout, measure);
 	}

@@ -80,6 +80,8 @@ export type EditorCommandId =
 	| 'gameView.playback'
 	| 'actorLab.playback' | 'actorLab.select' | 'actorLab.spawn' | 'actorLab.emit' | 'actorLab.actions' | 'actorLab.call' | 'actorLab.details'
 	| 'scenarioLab.details'
+	| 'scenarioLab.inspectTarget'
+	| 'scenarioLab.closeTarget'
 	| 'graph.zoomIn'
 	| 'graph.zoomOut'
 	| 'graph.resetZoom'

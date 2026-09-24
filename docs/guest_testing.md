@@ -135,9 +135,14 @@ does not interrupt already-running cleanup. Host/runner infrastructure failures
 stop the batch and skip its remaining cases. Teardown cannot erase an earlier failure. Disposal releases held input
 and backend resources.
 
-**Current limitations:** failed targets and failed-thread source/inline stacks
-are retained, but interactive debugger attachment to the separate test target
-is not implemented. The former command that debugged the authoring Runtime was
+Failed targets support [read-only post-mortem attachments](studio_test_inspection.md)
+from Scenario Lab and conversation tools: original phase stacks, locals,
+upvalues, tables and compiled source. Values are retained at case end, including
+cleanup mutations; this is not a throw-time heap snapshot. Source and target
+identity do not depend on the authoring CPU or current editor contents.
+
+**Current limitations:** live breakpoint/step/debug-rerun attachment to the
+separate test target is not implemented. Failed Lua threads cannot be resumed. The former command that debugged the authoring Runtime was
 removed rather than preserved through a facade. No mid-case Hot Resume or test
 session checkpoint restore is offered. Ordinary cartridge coroutine save-state
 and TS/C++ replay are supported (see `lua_threads.md`). Native guest execution

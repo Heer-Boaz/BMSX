@@ -169,3 +169,19 @@ test('property tree hover is routed, releases replaced generations and ends at d
 	pointer.clear(); hover.clear();
 	assert.equal(second.state.hoverIndex, -1);
 });
+
+test('lazy tree owners advertise expansion before reading children, with separate label/value columns', () => {
+	const { state, group, font, layout } = fixture(0);
+	group.expandable = true; group.collapsed = true;
+	const ownerValue = { ...group.element, label: 'A VERY LONG FAILURE LOCATION WITH A VALUE', value: 'AVAILABLE' };
+	const node = appendWorkbenchTreeNode(state, null, ownerValue, true);
+	node.expandable = true;
+	rebuildWorkbenchTreeRows(state, node); state.textDirty = true; layout(240);
+	assert.ok(font.measure(node.element.displayLabel) <= state.layout.valueLeft - state.layout.contentLeft - state.layout.twistieWidth - 6);
+	assert.equal(navigateWorkbenchTree(state, 'right'), NavigationResult.Collapse);
+	assert.equal(node.collapsed, false); assert.equal(node.children.length, 0, 'tree control never invokes a data loader');
+	appendWorkbenchTreeNode(state, node, { ...group.element, kind: 'property', label: 'loaded by owner' });
+	rebuildWorkbenchTreeRows(state, node);
+	assert.equal(navigateWorkbenchTree(state, 'right'), NavigationResult.Selection);
+	assert.equal(state.rows[state.selectionIndex].parent, node);
+});

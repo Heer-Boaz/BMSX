@@ -44,7 +44,7 @@ export class ScenarioLabController {
 		private readonly navigation: EditorNavigationController,
 		private readonly editorPanes: EditorPanes,
 		private readonly behaviorRegistrations: BehaviorRegistrationIndex,
-		private readonly runs: ScenarioRunService,
+		public readonly runs: ScenarioRunService,
 	) {
 		this.disposeRunListener = this.runs.onDidChangeRun(
 			event => this.handleRunChange(event),

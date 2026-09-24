@@ -1,6 +1,8 @@
+import { decodeTestInspectionRequest, STUDIO_TEST_INSPECTION_TOOLS, type TestInspectionRequest } from './test_inspection_protocol';
 import { StudioToolInputError, toolArguments } from './tool_input';
 
 export type TestToolRequest =
+	| TestInspectionRequest
 	| { name: 'studio_list_tests' }
 	| { name: 'studio_start_test_run'; scope: string }
 	| { name: 'studio_wait_test_run' | 'studio_cancel_test_run'; run: string }
@@ -14,6 +16,7 @@ const RUN_FIELDS = ['run'];
 const RESULT_FIELDS = ['result'];
 
 export const STUDIO_TEST_TOOLS = [
+	...STUDIO_TEST_INSPECTION_TOOLS,
 	{ name: 'studio_list_tests', description: 'Discover current Scenario Lab project/module/named-case selections, including unsaved Lua declarations and declaration diagnostics, without executing guest code. Scope handles belong to this prompt and source owner. Source coordinates are one-based. Starting a scope resolves its current declarations and sources, not a cached discovery snapshot.',
 		inputSchema: { type: 'object', properties: {}, required: NO_FIELDS, additionalProperties: false } },
 	{ name: 'studio_start_test_run', description: 'Start a discovered scope through the ordinary Scenario Lab runner. Captures current workspace sources before asynchronous preparation; every case gets a separate physical test machine. Does not save, install or run the authoring game. Returns an admission receipt, NOT completion or a pass. Use studio_wait_test_run once, not read polling. One workspace run at a time; no hidden queue or retry. This prompt owns cancellation of runs it starts; prompt completion, Stop or disconnect cancels unfinished owned runs.',
@@ -51,6 +54,6 @@ export function decodeTestToolRequest(name: string, input: unknown): TestToolReq
 			if (typeof value.result !== 'string') throw new StudioToolInputError('result must be a listed Studio case handle');
 			return { name, result: value.result };
 		}
-		default: throw new StudioToolInputError(`Unknown Studio test tool: ${name}`);
+		default: return decodeTestInspectionRequest(name, input);
 	}
 }

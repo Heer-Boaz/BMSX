@@ -75,7 +75,7 @@ export class TestRun {
 			execution.target.input.reset();
 			execution.target.runtime.machine.cpu.setExecutionHook(null, 0, 0);
 			execution.active = false;
-			this.failedExecution?.target.dispose();
+			this.failedExecution?.dispose();
 			this.failedExecution = execution;
 			this.execution = null;
 			this.results.failRun(this.result);
@@ -84,9 +84,9 @@ export class TestRun {
 		}
 		if (execution.active) return;
 		if (execution.result.state === 'failed') {
-			this.failedExecution?.target.dispose();
+			this.failedExecution?.dispose();
 			this.failedExecution = execution;
-		} else execution.target.dispose();
+		} else execution.dispose();
 		this.execution = null;
 		this.index += 1;
 		if (this.cancelled) {
@@ -120,13 +120,13 @@ export class TestRun {
 		if (this.active) {
 			if (this.execution !== null) {
 				if (this.execution.active) this.execution.cancel(false);
-				this.execution.target.dispose();
+				this.execution.dispose();
 				this.execution = null;
 			} else this.results.cancel(this.result.items[this.index], 0);
 			this.results.cancelRun(this.result);
 			this.finish();
 		}
-		this.failedExecution?.target.dispose();
+		this.failedExecution?.dispose();
 		this.failedExecution = null;
 	}
 }

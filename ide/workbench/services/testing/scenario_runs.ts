@@ -8,7 +8,7 @@ import type { EditorTextModel } from '../../../editor/model/text_model';
 import { captureCurrentLuaSource, captureLuaTextModelSources, type LuaTextModelSourceSnapshot } from '../working_copy/lua_sources';
 import { TestRun } from '../../../testing/run';
 import type { TestTargetFactory } from '../../../testing/target';
-import { ScenarioResultService, type ScenarioRun } from '../../../testing/scenario/result_service';
+import { ScenarioResultService, type ScenarioRun, type ScenarioTestResult } from '../../../testing/scenario/result_service';
 import { ScenarioTestCollection, type ScenarioTestModule, type ScenarioTestNodeId } from '../../../testing/scenario/test_collection';
 import { isScenarioTestAsset } from '../../../../toolchain/ts/rompack/scenario_test';
 import { scenarioFailureFromError } from '../../../testing/scenario/failure';
@@ -103,6 +103,15 @@ export class ScenarioRunService {
 			this.preparing = null;
 			this.emit({ type: 'error', run, error });
 		}
+	}
+
+	public canInspect(result: ScenarioTestResult): boolean {
+		return this.session?.failedExecution?.result === result;
+	}
+
+	public inspect(result: ScenarioTestResult) {
+		if (!this.canInspect(result)) throw new Error('This case no longer has a retained failed test target. Historical evidence remains available.');
+		return this.session!.failedExecution!.inspect();
 	}
 
 	public onDidChangeRun(listener: (event: ScenarioRunEvent) => void): () => void {
