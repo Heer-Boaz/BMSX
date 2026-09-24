@@ -78,7 +78,7 @@ export function createRuntimeDebuggerState(
 	let state: RuntimeDebuggerState;
 	const executionHook: ExecutionHook = (executionDomainId, pc) => {
 		const controlActive = state.plans.controlActive;
-		if (controlActive ? state.plans.shouldStop(executionDomainId, pc) : state.stopped) {
+		if (state.stopped || controlActive && state.plans.shouldStop(executionDomainId, pc)) {
 			return true;
 		}
 		// A control plan can execute (and return from) the resumed frame too.
@@ -91,7 +91,7 @@ export function createRuntimeDebuggerState(
 			updateExecutionHookBinding(state);
 			return false;
 		}
-		if (controlActive) return false;
+		if (controlActive && !state.plans.honorUserStops) return false;
 		const domainIndex = executionDomainId + 1;
 		let stopReason: RuntimeDebuggerStopReason;
 		let stopInlineDepth: number;
@@ -129,6 +129,7 @@ export function createRuntimeDebuggerState(
 			stopInlineDepth = breakpointInlineDepth;
 		}
 		state.stopped = true;
+		if (controlActive) state.plans.setControlSuspended(true);
 		state.stopDomain = executionDomainId;
 		state.stopPc = pc;
 		state.stopInlineDepth = stopInlineDepth;
@@ -287,6 +288,7 @@ export function resumeRuntimeDebugger(
 	}
 	state.stopped = false;
 	state.stopPresentationPending = false;
+	state.plans.setControlSuspended(false);
 	updateExecutionHookBinding(state);
 }
 

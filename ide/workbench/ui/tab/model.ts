@@ -1,4 +1,5 @@
 import type { AssistantInput } from '../../contrib/assistant/editor_input';
+import type { TerminalInput } from '../../contrib/terminal/editor_input';
 import type { BehaviorLensInput } from '../../contrib/behavior_lens/editor_input';
 import type { CodeEditorInput } from '../../contrib/code_editor/editor_input';
 import type { ResourceViewerInput } from '../../contrib/resources/editor_input';
@@ -10,6 +11,7 @@ import type { GameViewInput } from '../../contrib/game_view/editor_input';
 import type { WorkspaceEditReviewInput } from '../../contrib/edit_review/editor_input';
 
 export type EditorInput =
+	| TerminalInput
 	| CodeEditorInput
 	| ResourceViewerInput
 	| BehaviorLensInput

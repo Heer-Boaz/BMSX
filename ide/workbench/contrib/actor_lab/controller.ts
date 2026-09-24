@@ -36,6 +36,7 @@ export class ActorLabController {
 		const input = this.current!;
 		const domain = input.domain, actorHashId = input.actorHashId;
 		this.schedule({
+			honorUserStops: false,
 			isCurrent: () => this.panes.openGeneration === generation && input.domain === domain && input.actorHashId === actorHashId,
 			boundary: () => {
 				const world = runtimeWorld(this.sources, this.guest, domain);

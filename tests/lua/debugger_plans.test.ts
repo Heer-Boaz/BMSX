@@ -22,6 +22,7 @@ function controlPlan(
 	result: RuntimeDebuggerPlanResult,
 ): RuntimeDebuggerControlPlan {
 	return {
+		honorUserStops: false,
 		executionDomainMask: 2,
 		preMaskableInterruptDomainMask: 2,
 		shouldStop: (domain, pc) => domain === 0 && pc === 12,
@@ -120,6 +121,7 @@ test('runtime debugger control plans own replacement, execution, and fault lifec
 test('completed control plan publishes a binding change after its hook drops the masks', () => {
 	let executionDomainMask = 2;
 	const plan: RuntimeDebuggerControlPlan = {
+		honorUserStops: false,
 		get executionDomainMask() {
 			return executionDomainMask;
 		},

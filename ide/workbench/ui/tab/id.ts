@@ -5,4 +5,4 @@ export type ResourceViewerTabId = `resource:${string}`;
 export type BehaviorLensTabId = `behavior:${string}`;
 export type ScenarioLabTabId = 'scenario-lab';
 export type SceneEditorTabId = `scene:${string}`;
-export type EditorTabId = CodeEditorTabId | ResourceViewerTabId | BehaviorLensTabId | ScenarioLabTabId | SceneEditorTabId | 'actor-lab' | 'game-view' | 'assistant' | `edit-review:${number}`;
+export type EditorTabId = CodeEditorTabId | ResourceViewerTabId | BehaviorLensTabId | ScenarioLabTabId | SceneEditorTabId | 'terminal' | 'actor-lab' | 'game-view' | 'assistant' | `edit-review:${number}`;

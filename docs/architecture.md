@@ -215,7 +215,7 @@ instruction or microcode operation with mirrored representation and timing.
 
 `load` is a BIOS-owned guest service. Its compiler, arena, lexer and BLua32
 emitter live under `machine/bios/compiler` and execute as firmware Lua. The
-current compiler accepts one returned function with lexical locals, path reads
+current compiler accepts ordinary chunks and function expressions with lexical locals, path reads
 and writes, call expressions and statements, length, arithmetic and comparison
 expressions, short-circuit `and`/`or`, block-scoped `if`/`elseif`/`else`,
 numeric `for`, and nested `while` loops with lexically bound `break`. The
@@ -223,6 +223,15 @@ firmware compiler emits ordinary function records, upvalue records and
 instruction words into system `.bss`; the CPU has no source parser, compiler
 callback, runtime-image installer or `load` branch. `loadstring` is not
 currently published.
+
+The BIOS `shell/repl` module uses this same loader for a persistent interactive
+Lua environment. Its namespace and captured closures are ordinary guest state,
+not a projection of cart global registers or debugger locals. Studio's
+[Lua Terminal](studio_lua_terminal.md) schedules its explicit calls through the
+existing guest-call/debugger boundary and observes physical debug-transmit
+output. It does not parse/execute Lua in the host, run gameplay merely because
+the pane is open, or replace the BIOS monitor. Terminal execution authority is
+separate from Codex source-edit authority; no Codex execution tool is added.
 
 `math.sin`, `math.cos`, and `math.tan` use the same firmware quarter-wave LUT
 and Q16.16 turn helper as direct fixed-point firmware code. Their precision is

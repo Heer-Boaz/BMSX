@@ -1,3 +1,4 @@
+import type { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import type { AssistantInput } from '../../ide/workbench/contrib/assistant/editor_input';
 import type { EditorPaneSelection } from '../../ide/workbench/services/editor/editor_selection';
 import { CodeEditorNavigationSelection } from '../../ide/workbench/contrib/code_editor/navigation_selection';
@@ -82,6 +83,7 @@ function activateViewInput(_input: EditorInput): void {
 /** Editor-group lifecycle used by tests that exercise workspace and navigation owners. */
 export function createTestEditorPanes(): EditorPanes {
 	return new EditorPanes({
+		terminal: () => new TestEditorPane<TerminalInput>(activateViewInput),
 		actor_lab: () => new TestEditorPane<ActorLabInput>(activateViewInput),
 		game_view: () => new TestEditorPane<GameViewInput>(activateViewInput),
 		assistant: () => new TestEditorPane<AssistantInput>(activateViewInput),

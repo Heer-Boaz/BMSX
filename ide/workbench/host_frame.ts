@@ -158,7 +158,7 @@ export function runWorkbenchHostFrame(
 			audioOutput,
 		)) {
 			runtime.frameScheduler.clearQueuedTime();
-			systemOutput.flush(runtime, logOutput);
+			systemOutput.flush(runtime, logOutput, ide.terminal.receiveOutput);
 			return HostFrameRunResult.Continue;
 		}
 		if (hostMenuInput !== HostMenuInput.Active) {
@@ -201,7 +201,7 @@ export function runWorkbenchHostFrame(
 			if (ide.debugger.plans.controlActive) willExecuteRuntimeDebuggerPlan(ide.debugger);
 			if (ide.editor.isActive) ide.luaTooling.suspendedGuest.invalidate();
 			executeHostUpdate(session, runtime, presenter, input, audioOutput, screen, hostDeltaMs);
-			systemOutput.flush(runtime, logOutput);
+			systemOutput.flush(runtime, logOutput, ide.terminal.receiveOutput);
 			systemOutputDrained = true;
 			const supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
 				IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
@@ -276,7 +276,7 @@ export function runWorkbenchHostFrame(
 		);
 	}
 	if (!systemOutputDrained) {
-		systemOutput.flush(runtime, logOutput);
+		systemOutput.flush(runtime, logOutput, ide.terminal.receiveOutput);
 	}
 	return HostFrameRunResult.Continue;
 }

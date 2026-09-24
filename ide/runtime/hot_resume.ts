@@ -85,6 +85,7 @@ const enum HotResumeSupervisorPlanPhase {
 }
 
 class HotResumeSupervisorPlan implements RuntimeDebuggerControlPlan {
+	public readonly honorUserStops = false;
 	private phase: HotResumeSupervisorPlanPhase;
 
 	public constructor(

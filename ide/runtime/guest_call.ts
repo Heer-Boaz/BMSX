@@ -25,6 +25,7 @@ export type RuntimeGuestCallBoundary = {
 	readonly condition: (values: readonly Value[]) => () => boolean;
 };
 export type RuntimeGuestCallRequest = {
+	readonly honorUserStops: boolean;
 	/** Request lifetime is independent of any suspended-heap borrow. */
 	readonly isCurrent: () => boolean;
 	/** The guest lifecycle, rather than debugger function names, admits this edit. */
@@ -41,6 +42,7 @@ export class RuntimeGuestCallPlan implements RuntimeDebuggerControlPlan {
 	public constructor(
 		runtime: Runtime,
 		private readonly returnDepth: number,
+		public readonly honorUserStops: boolean,
 		private readonly finish: (completed: boolean) => void,
 	) { this.thread = runtime.machine.cpu.activeThread; }
 
@@ -62,6 +64,7 @@ export class RuntimeGuestCallPlan implements RuntimeDebuggerControlPlan {
 
 /** A guest-owned rendezvous. Only an explicit evaluation installs this hook. */
 class RuntimeGuestBoundaryPlan implements RuntimeDebuggerControlPlan {
+	public readonly honorUserStops = false;
 	public readonly executionDomainMask = ALL_EXECUTION_DOMAINS_MASK;
 	public readonly preMaskableInterruptDomainMask = this.executionDomainMask;
 	public constructor(
@@ -88,13 +91,13 @@ export function scheduleRuntimeGuestCall(
 	finished: (completed: boolean) => void,
 	failed: (error: unknown) => void,
 ): Promise<void> {
-	const beginCall = (call: RuntimeGuestCall, finish: (completed: boolean) => void): void => {
+	const beginCall = (call: RuntimeGuestCall, honorUserStops: boolean, finish: (completed: boolean) => void): void => {
 		guest.invalidate();
 		runtime.history.stop();
 		const cpu = runtime.machine.cpu;
 		const depth = cpu.getFrameDepth();
 		cpu.beginCompletionClosureInExecutionDomain(call.domain, call.closure, call.args());
-		pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, depth, finish), 'workbench');
+		pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, depth, honorUserStops, finish), 'workbench');
 	};
 	const admitCall = (checkBoundary: boolean): boolean => {
 		if (!request.isCurrent()) { finished(false); return false; }
@@ -103,7 +106,7 @@ export function scheduleRuntimeGuestCall(
 		if (exceptionDepth !== -1) {
 			guest.invalidate();
 			runtime.history.stop();
-			pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, exceptionDepth, completed => {
+			pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, exceptionDepth, false, completed => {
 				if (!completed) { finished(false); return; }
 				// The handler may have submitted GPU work or replaced inspected values.
 				void tasks.schedule(() => { admitCall(checkBoundary); }, failed);
@@ -112,7 +115,7 @@ export function scheduleRuntimeGuestCall(
 		}
 		const boundary = checkBoundary ? request.boundary?.() : undefined;
 		if (boundary !== undefined) {
-			beginCall(boundary.request, completed => {
+			beginCall(boundary.request, false, completed => {
 				if (!completed) { finished(false); return; }
 				const values: Value[] = [];
 				cpu.readCompletionValues(values);
@@ -133,7 +136,7 @@ export function scheduleRuntimeGuestCall(
 		}
 		const call = request.prepare();
 		if (call === undefined) { finished(false); return false; }
-		beginCall(call, finished);
+		beginCall(call, request.honorUserStops, finished);
 		return true;
 	};
 	return tasks.schedule(() => {

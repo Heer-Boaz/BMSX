@@ -7,7 +7,7 @@ const systemOutputDecoder = new TextDecoder('utf-8', { fatal: true });
 export class SystemOutputLog {
 	private readonly bytes = new Uint8Array(SYS_PRINT_BUFFER_BYTES);
 
-	public flush(runtime: Runtime, logOutput: LogOutput): void {
+	public flush(runtime: Runtime, logOutput: LogOutput, onLine?: (text: string) => void): void {
 		const output = runtime.machine.systemDebugTransmit;
 		const byteCount = output.availableByteCount();
 		if (byteCount === 0) {
@@ -19,10 +19,9 @@ export class SystemOutputLog {
 		let lineStart = 0;
 		for (let index = 0; index < byteCount; index += 1) {
 			if (this.bytes[index] === 10) {
-				logOutput.log(
-					LogLevel.Info,
-					systemOutputDecoder.decode(this.bytes.subarray(lineStart, index)),
-				);
+				const text = systemOutputDecoder.decode(this.bytes.subarray(lineStart, index));
+				logOutput.log(LogLevel.Info, text);
+				onLine?.(text);
 				lineStart = index + 1;
 			}
 		}

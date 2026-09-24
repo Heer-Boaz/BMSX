@@ -70,6 +70,7 @@ function fixture(t: TestContext) {
 	const runs = new ScenarioRunService(editorTextModelService, sources, null, null, new Map(), runtime.model, () => assert.fail('session recovery must not create test machines'));
 	const scenario = new ScenarioLabController(null, null, panes, null, runs);
 	const serializers: EditorInputSerializers = {
+		terminal: { serialize: () => '', deserialize: () => { throw new Error('Terminal not used in this source-session fixture'); } },
 		code_editor: new CodeEditorInputSerializer(null, sources),
 		behavior_lens: new BehaviorLensInputSerializer(null, sources, behavior),
 		scene_editor: new SceneEditorInputSerializer(null, sources, scene),

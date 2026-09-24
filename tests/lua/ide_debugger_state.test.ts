@@ -99,7 +99,7 @@ test('a revoked evaluation never enters the CPU after asynchronous GPU admission
 		{ backend: { finishGxGpuReadbacks: () => readback.promise } } as VideoPresenter);
 	let current = true, cancelled = false;
 	const pending = scheduleRuntimeGuestCall(runtime, guest, state, tasks,
-		{ isCurrent: () => current, prepare: () => ({ domain: -1, closure: values[0] as Closure, args: () => [] }) },
+		{ honorUserStops: false, isCurrent: () => current, prepare: () => ({ domain: -1, closure: values[0] as Closure, args: () => [] }) },
 		() => assert.fail('cancelled evaluation started'), completed => { assert.equal(completed, false); cancelled = true; }, assert.fail);
 	current = false; readback.resolve(); await pending;
 	assert.equal(cancelled, true); assert.equal(state.plans.controlActive, false);
@@ -140,6 +140,7 @@ while true do mem[${gameCount}] = mem[${gameCount}] + 1 end
 	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
 		{ backend: { finishGxGpuReadbacks: async () => { readbacks++; } } } as VideoPresenter);
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
+		honorUserStops: false,
 		isCurrent: () => current,
 		prepare: () => {
 			prepared++;
@@ -207,7 +208,7 @@ return actor, advance
 	const depth = cpu.getFrameDepth();
 	let completed = false;
 	cpu.beginCompletionClosureInExecutionDomain(-1, closure, [actor, 100]);
-	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, depth, value => { completed = value; }), 'workbench');
+	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, depth, false, value => { completed = value; }), 'workbench');
 	cpu.runUntilDepth(depth, 80);
 	const partial = actor.getStringKey(key) as number;
 	assert.ok(partial > 0 && partial < 100);
@@ -267,6 +268,7 @@ end
 		{ backend: { finishGxGpuReadbacks: async () => { readbacks++; } } } as VideoPresenter);
 	irqController.raise(IRQ_VBLANK); assert.equal(cpu.enterPendingInterrupt(), true);
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
+		honorUserStops: false,
 		isCurrent: () => current,
 		boundary: () => {
 			boundaryCalls++;
@@ -352,6 +354,7 @@ end
 		{ backend: { finishGxGpuReadbacks: async () => {} } } as VideoPresenter);
 	let completed = false;
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
+		honorUserStops: false,
 		isCurrent: () => true,
 		boundary: () => ({ request: { domain: -1, closure: guest.global('request_boundary') as Closure, args: () => [] },
 			condition: values => { const receipt = values[0] as Table, key = cpu.stringPool.find('reached')!;
@@ -377,6 +380,42 @@ function stoppedSourceLine(harness: DebuggerHarness): number {
 		harness.state.stopPc,
 	)!.start.line;
 }
+
+for (const optLevel of [0, 3] as const) for (const honorUserStops of [false, true])
+test(`scheduled evaluation ${honorUserStops ? 'honors' : 'suppresses'} user breakpoints (O${optLevel})`, () => {
+	const { runtime, state } = createDebuggerHarness('return function(value)\n value = value + 1\n return value\nend', optLevel);
+	const cpu = runtime.machine.cpu, values: Value[] = [];
+	cpu.reset(); cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET); cpu.readCompletionValues(values);
+	state.breakpoints[0].set(DEBUG_SOURCE_PATH, new Set([2]));
+	rebuildRuntimeBreakpointPcs(state);
+	assert.ok(state.breakpointPcs[0].size > 0, 'the real source has an emitted breakpoint PC');
+	let finished = 0;
+	cpu.beginCompletionClosureInExecutionDomain(-1, values[0] as Closure, [1]);
+	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, 0, honorUserStops, completed => {
+		assert.equal(completed, true); finished++;
+	}), 'workbench');
+	const result = cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET);
+	if (honorUserStops) {
+		assert.equal(result, RunResult.ExecutionStopped);
+		assert.equal(state.stopped, true);
+		assert.equal(state.plans.controlSuspended, true);
+		assert.equal(state.plans.mutationActive, true);
+		assert.equal(runtimeDebuggerExecutionRequested(state), false);
+		state.plans.didExecute();
+		assert.equal(finished, 0, 'a source breakpoint does not complete or discard the call');
+		const pc = cpu.readFramePc(0);
+		assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
+		assert.equal(cpu.readFramePc(0), pc, 'stopped call remains held without CPU progress');
+		resumeRuntimeDebugger(state, RuntimeDebuggerResumeMode.Continue);
+		assert.equal(state.plans.controlSuspended, false);
+		cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET);
+	} else assert.equal(state.stopped, false);
+	state.plans.didExecute();
+	cpu.readCompletionValues(values);
+	assert.equal(finished, 1);
+	assert.equal(state.plans.mutationActive, false);
+	assert.deepEqual(values, [2]);
+});
 
 function startAtBreakpoint(harness: DebuggerHarness, line: number): void {
 	harness.state.breakpoints[SYSTEM_RESOURCE_DOMAIN + 1].set(

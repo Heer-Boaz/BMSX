@@ -8,7 +8,7 @@ export type WorkbenchDropdownMenuId =
 
 export type WorkbenchContextMenuId = 'actorLab.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'assistant.turn' | 'workspaceEditReview.title' | 'gameView.title' | 'actorLab.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'terminal.input' | 'assistant.turn' | 'workspaceEditReview.title' | 'gameView.title' | 'actorLab.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -26,6 +26,7 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'actorLab.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'propertyInspector.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'sourceEditReview.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'terminal.input': readonly WorkbenchMenuCommandItem[];
 	readonly 'assistant.turn': readonly WorkbenchMenuCommandItem[];
 	readonly 'workspaceEditReview.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'menubar.file': readonly WorkbenchMenuItem[];
@@ -111,6 +112,11 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'sourceEditReview.apply' },
 		{ type: 'command', command: 'sourceEditReview.discard' },
 	],
+	'terminal.input': [
+		{ type: 'command', command: 'terminal.evaluate' },
+		{ type: 'command', command: 'terminal.pause' },
+		{ type: 'command', command: 'terminal.continue' },
+	],
 	'assistant.turn': [
 		{ type: 'command', command: 'assistant.send' },
 		{ type: 'command', command: 'assistant.queue' },
@@ -151,6 +157,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'commandPalette' },
 		{ type: 'separator' },
 		{ type: 'command', command: 'assistant' },
+		{ type: 'command', command: 'terminal' },
 		{ type: 'command', command: 'gameView' },
 		{ type: 'command', command: 'actorLab' },
 		{ type: 'command', command: 'sceneEditor' },

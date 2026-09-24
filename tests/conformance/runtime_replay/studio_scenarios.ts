@@ -1,3 +1,4 @@
+import { runStudioTerminal } from './studio_terminal';
 import { runStudioExecutionOperations } from './studio_execution_operations';
 import { runStudioSourceSaves } from './studio_source_saves';
 import { runStudioBootOperations } from './studio_boot_operations';
@@ -25,13 +26,14 @@ import { testStudioPointerCapture } from './studio_pointer_capture';
 import { runStudioSceneViewport, testStudioSceneViewport } from './studio_scene_viewport';
 import type { StudioFixture } from './studio_fixture';
 
-export type StudioScenario = { kind: 'workflows' | 'edit-review' | 'resource-context' | 'boot-operations' | 'source-saves' | 'execution-operations' | 'test-runner' | 'scene-viewport' | 'fsm-initial' | 'fsm-retarget' | 'fsm-retarget-imported' | 'bt-reparent' | 'runtime-inspection' | 'preload' | 'nemesis-scenes' }
+export type StudioScenario = { kind: 'terminal' | 'workflows' | 'edit-review' | 'resource-context' | 'boot-operations' | 'source-saves' | 'execution-operations' | 'test-runner' | 'scene-viewport' | 'fsm-initial' | 'fsm-retarget' | 'fsm-retarget-imported' | 'bt-reparent' | 'runtime-inspection' | 'preload' | 'nemesis-scenes' }
 	| { kind: 'cart-scenes'; cart: '2025' | 'pietious' }
 	| { kind: 'navigation'; cart: NavigationCart };
 
 /** One scenario composition for every renderer project; backend checks remain in their project. */
 export function runStudioScenario(test: StudioFixture, scenario: StudioScenario) {
 	switch (scenario.kind) {
+		case 'terminal': return runStudioTerminal(test);
 		case 'resource-context': return runStudioResourceContext(test);
 		case 'edit-review': return runStudioEditReview(test);
 		case 'boot-operations': return runStudioBootOperations(test);

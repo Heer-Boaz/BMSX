@@ -1,3 +1,4 @@
+import type { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import type { AssistantInput } from '../../ide/workbench/contrib/assistant/editor_input';
 import type { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import type { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor_input';
@@ -137,6 +138,7 @@ function createEditorPanes() {
 	let codeFactoryCount = 0;
 	let resourceFactoryCount = 0;
 	const editorPanes = new EditorPanes({
+		terminal: () => new RecordingEditorPane<TerminalInput>(),
 		actor_lab: () => new RecordingEditorPane<ActorLabInput>(),
 		game_view: () => new RecordingEditorPane<GameViewInput>(),
 		assistant: () => new RecordingEditorPane<AssistantInput>(),

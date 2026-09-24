@@ -13,6 +13,8 @@ export const enum RuntimeDebuggerPlanResult {
 export type RuntimeDebuggerExecutionContext = 'game' | 'workbench';
 
 export interface RuntimeDebuggerControlPlan {
+	/** Internal rendezvous suppress user stops; an interactive evaluation can honor them. */
+	readonly honorUserStops: boolean;
 	readonly executionDomainMask: ExecutionDomainMask;
 	readonly preMaskableInterruptDomainMask: ExecutionDomainMask;
 	shouldStop(executionDomainId: ExecutionDomainId, pc: number): boolean;
@@ -67,6 +69,7 @@ export class RuntimeDebuggerPlanManager {
 	public get controlActive(): boolean {
 		return this.controlPlan !== null;
 	}
+	public get honorUserStops(): boolean { return this.controlPlan!.honorUserStops; }
 
 	public get controlSuspended(): boolean { return this.controlActive && this.suspended; }
 	public get controlExecutionRequested(): boolean { return this.controlActive && !this.suspended; }

@@ -1,4 +1,7 @@
 import { AssistantConversation } from './workbench/services/assistant/conversation';
+import type { LuaTerminalSession } from './workbench/services/terminal/session';
+import { TerminalPane } from './workbench/contrib/terminal/editor_pane';
+import { TerminalInput } from './workbench/contrib/terminal/editor_input';
 import { AssistantPane } from './workbench/contrib/assistant/editor_pane';
 import type { AssistantConnectionFactory } from '../hosts/common/assistant_protocol';
 import type { HotResumeService } from './workbench/services/execution/hot_resume';
@@ -144,6 +147,7 @@ const EDITOR_TARGET_WIDTH = 384;
 const EDITOR_TARGET_HEIGHT = 288;
 
 export type CartEditor = {
+	readonly terminal: LuaTerminalSession;
 	readonly assistant: AssistantConversation;
 	readonly diagnostics: ResourceDiagnosticsService;
 	readonly executionSuspended: boolean;
@@ -266,6 +270,7 @@ export class RuntimeCartEditor implements CartEditor {
 		private readonly hotResumes: HotResumeService,
 		private readonly boots: BootService,
 		public readonly diagnostics: ResourceDiagnosticsService,
+		public readonly terminal: LuaTerminalSession,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
 		connectAssistant?: AssistantConnectionFactory,
 	) {
@@ -311,6 +316,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources,
 		);
 		this.editorPanes = new EditorPanes({
+			terminal: () => new TerminalPane(this.resourcePanel, this.clipboard),
 			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.quickInput),
 			workspace_edit_review: () => new WorkspaceEditReviewPane(this.resourcePanel),
 			code_editor: () => new CodeEditorPane(
@@ -368,6 +374,7 @@ export class RuntimeCartEditor implements CartEditor {
 			scenarioRuns,
 		);
 		this.editorInputSerializers = {
+			terminal: { serialize: () => '', deserialize: () => new TerminalInput(this.terminal) },
 			actor_lab: { serialize: () => '', deserialize: () => this.actorLab.resolveInput() },
 			game_view: { serialize: () => '', deserialize: () => new GameViewInput() },
 			code_editor: new CodeEditorInputSerializer(storage, sources),
@@ -597,6 +604,7 @@ export class RuntimeCartEditor implements CartEditor {
 
 	public async shutdown(): Promise<void> {
 		this.assistant.dispose();
+		const terminalDrained = this.terminal.shutdown();
 		this.scenarioRuns.dispose();
 		this.diagnostics.dispose();
 		this.unsubscribeDiagnosticsChanged();
@@ -606,6 +614,7 @@ export class RuntimeCartEditor implements CartEditor {
 		await this.textFileSaves.shutdown();
 		await executionDrained;
 		await bootsDrained;
+		await terminalDrained;
 		pointerHover.clear();
 		pointerCapture.cancel();
 		this.contextMenu.dispose();

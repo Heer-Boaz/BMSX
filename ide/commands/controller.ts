@@ -147,6 +147,11 @@ export class IdeCommandController {
 			case 'propertyInspector.source':
 			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
+			case 'terminal.evaluate':
+			case 'terminal.pause':
+			case 'terminal.continue':
+			case 'terminal.clear':
+			case 'terminal.copy':
 			case 'assistant.signIn':
 			case 'assistant.cancelLogin':
 			case 'assistant.signOut':
@@ -337,6 +342,11 @@ export class IdeCommandController {
 			case 'propertyInspector.source':
 			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
+			case 'terminal.evaluate':
+			case 'terminal.pause':
+			case 'terminal.continue':
+			case 'terminal.clear':
+			case 'terminal.copy':
 			case 'assistant.signIn':
 			case 'assistant.cancelLogin':
 			case 'assistant.signOut':

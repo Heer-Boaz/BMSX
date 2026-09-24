@@ -16,6 +16,7 @@ export type EditorSymbolNavigationCommandId =
 	| 'callHierarchy';
 
 export type EditorViewCommandId =
+	| 'terminal'
 	| 'assistant'
 	| 'gameView'
 	| 'resources'
@@ -59,6 +60,7 @@ export type EditorScenarioLabCommandId =
 	| 'scenarioLab.cancel';
 
 export type EditorCommandId =
+	| 'terminal.evaluate' | 'terminal.pause' | 'terminal.continue' | 'terminal.clear' | 'terminal.copy'
 	| 'assistant.signIn'
 	| 'assistant.cancelLogin'
 	| 'assistant.signOut'

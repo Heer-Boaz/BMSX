@@ -33,6 +33,7 @@ import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io'
 import { syncRuntimeSourceActivity } from '../runtime/sources';
 import { clearAllRuntimeErrorOverlays } from '../runtime_error/navigation';
 import { clearHoverTooltip } from '../editor/contrib/hover/controller';
+import { LuaTerminalSession } from './services/terminal/session';
 
 export const DEFAULT_IDE_FONT_VARIANT: FontVariant = 'tiny';
 export type OverlayResolutionMode = 'offscreen' | 'viewport';
@@ -49,6 +50,7 @@ export class RuntimeIdeState {
 	public readonly hotResumes: HotResumeService;
 	public readonly boots: BootService;
 	public readonly diagnostics: ResourceDiagnosticsService;
+	public readonly terminal: LuaTerminalSession;
 	public readonly fault: RuntimeFaultState = createRuntimeFaultState();
 
 	public constructor(
@@ -86,6 +88,8 @@ export class RuntimeIdeState {
 		this.boots = new BootService(editorTextModelService, sources, this.luaTooling, this.fault, runtime, runtimeTasks,
 			execution, audioOutput, storage, workspaceDirtyRecords);
 		this.diagnostics = new ResourceDiagnosticsService(editorTextModelService, this.luaTooling, clock);
+		this.terminal = new LuaTerminalSession(runtime, sources, this.luaTooling.suspendedGuest, this.debugger,
+			this.fault, runtimeTasks, execution, rewind);
 		this.editor = new RuntimeCartEditor(
 			runtime,
 			presenter,
@@ -112,12 +116,14 @@ export class RuntimeIdeState {
 			this.hotResumes,
 			this.boots,
 			this.diagnostics,
+			this.terminal,
 			createGraphLayoutEngine,
 			connectAssistant,
 		);
 		this.overlayRenderer.setViewportSize(viewport);
 		this.editor.updateViewport(viewport);
 		runtime.onStateRestored = () => {
+			this.terminal.didReplaceMachine();
 			this.hotResumes.cancelPending('machine-reset');
 			this.boots.didReplaceMachine();
 			// A restored heap is a new inspection context, not the previous stop.

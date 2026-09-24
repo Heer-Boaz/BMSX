@@ -21,6 +21,19 @@ Rules:
 - If a new module is mainly owned by one surface, place it with that surface even if other modules import it.
 - Prefer moving code to the real owner over adding wrapper layers or generic host/facade abstractions.
 
+## Lua Terminal
+
+`workbench/services/terminal` owns admitted evaluations, input history and bounded
+scrollback; `workbench/contrib/terminal` owns the retained input and visible
+controls. They call the existing scheduled guest-call service. BIOS
+`shell/repl` owns a persistent Lua environment and uses its ordinary `load` and
+`pcall`; the host does not own an evaluator or a copied global table. The
+Terminal follows workbench pause except during an explicit call, keeps user
+pause across completion and pause/continue, and keeps text history independent
+of guest save/restore. Closing the view does not destroy the firmware session.
+The native BIOS monitor is unchanged. This shared service is not yet exposed as
+a Codex tool. See [Lua Terminal](../docs/studio_lua_terminal.md).
+
 ## Resource diagnostics and document lifetime
 
 The workbench session owns `ResourceDiagnosticsService`, not code-editor inputs.
@@ -58,7 +71,7 @@ cannot execute twice, and a failed operation is not called a successful edit.
 `workbench/contrib/edit_review` is a transient, resource-oriented review input,
 not an editable code widget. Ordered text-edit hunks are projected by the editor
 text owner; retained render rows only reflow on font/width changes. Its pane has
-an explicit non-suspending runtime policy. The group serializes only persistent
+the ordinary authoring runtime hold. The group serializes only persistent
 inputs and produces their actual selection indices; restoration never repairs
 failed inputs by selecting a different file. See [workspace edit review](../docs/studio_workspace_edit_review.md).
 

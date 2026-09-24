@@ -213,7 +213,7 @@ test('session producer excludes transient proposals and remaps selection before 
 	group.add(review); group.add(game, { pinned: false }); group.activate(review);
 	const unused = { serialize: () => assert.fail('unexpected serialization'), deserialize: () => assert.fail('unexpected reconstruction') };
 	const serializers: EditorInputSerializers = { game_view: { serialize: () => '', deserialize: () => new GameViewInput() },
-		actor_lab: unused, code_editor: unused, behavior_lens: unused, scene_editor: unused, scenario_lab: unused, resource_view: unused };
+		terminal: unused, actor_lab: unused, code_editor: unused, behavior_lens: unused, scene_editor: unused, scenario_lab: unused, resource_view: unused };
 	const data = group.serialize(serializers);
 	assert.deepEqual(data, { inputs: [{ kind: 'game_view', value: '' }], active: 0, preview: 0 });
 	assert.equal(group.serialize(serializers, data), data);
