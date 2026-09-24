@@ -68,6 +68,18 @@ export async function runStudioTerminal(test: StudioFixture) {
 	result = await evaluate('local captured = 7; fn = function(x) return captured + x end');
 	result = await evaluate('fn(5)');
 	check(result.text === '12', 'RAM closures and their captures remain rooted by guest state');
+	await evaluate('tuple = function() return 7, nil, false, 9, nil end');
+	result = await evaluate('tuple()');
+	check(result.text === '7\tnil\tfalse\t9\tnil', 'an expression tail forwards the complete guest tuple');
+	result = await evaluate('local x = table.pack(1, tuple()); return x.n, x[1], x[2], x[3], x[6]');
+	check(result.text === '6\t1\t7\tnil\tnil', 'argument tails retain their arity, including nil values');
+	result = await evaluate('return (tuple())');
+	check(result.text === '7', 'parenthesized calls deliberately return one value');
+	result = await evaluate('return pcall(tuple)');
+	check(result.text === 'true\t7\tnil\tfalse\t9\tnil', 'protected calls retain all results');
+	result = await evaluate('string.find("abcd", "bc")');
+	check(result.text === '2\t3', 'the Terminal receives both match positions');
+	await test.capture?.('lua-tuples');
 	result = await evaluate('local x = ;');
 	check(result.kind === 'error' && result.text.includes('[load:'), 'syntax errors appear in the terminal');
 	result = await evaluate('counter = 43; error("terminal error")');

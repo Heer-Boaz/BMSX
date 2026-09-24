@@ -177,6 +177,9 @@ local parse_primary_expression<const> = function(state)
 	if match(state, token.left_parenthesis) then
 		local expression<const> = parse_expression(state)
 		expect(state, token.right_parenthesis)
+		if expression.kind == syntax.call_expression then
+			expression.expands_results = false
+		end
 		return expression
 	end
 	fail(
@@ -229,6 +232,7 @@ local parse_prefix_expression<const> = function(state)
 			expect(state, token.right_parenthesis)
 			expression = {
 				kind = syntax.call_expression,
+				expands_results = true,
 				callee = expression,
 				arguments = arguments,
 				method_name = method_name,

@@ -14,15 +14,15 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	const target = (body: Body) => value(body, 'runtime').target;
 	const model = await createCodexModelFixture(t, [
 		call('runtime', 'studio_runtime_status', {}),
-		body => call('evaluate', 'studio_evaluate_lua', { target: target(body), context: 'session', source: 'counter = 40; print("from Codex"); return counter, nil, false' }),
+		body => call('evaluate', 'studio_evaluate_lua', { target: target(body), context: 'session', source: 'counter = 40; print("from Codex"); return counter, nil, false, pcall(function() return counter + 2, nil, false end)' }),
 		body => call('status', 'studio_terminal_status', { target: target(body) }),
 		body => call('continue', 'studio_control_lua', { target: target(body), evaluation: value(body, 'evaluate').id, action: 'continue' }),
 		body => call('error', 'studio_evaluate_lua', { target: target(body), context: 'session', source: 'counter = 43; error("expected terminal error")' }),
 		body => call('read', 'studio_evaluate_lua', { target: target(body), context: 'session', source: 'local world = getglobal("cartlib__world__world"); world.terminal_probe = 88; setglobal("terminal_probe", 43); return counter, getglobal("terminal_probe"), world.terminal_probe, type(getglobal("new_game"))' }),
 		body => call('syntax', 'studio_evaluate_lua', { target: target(body), context: 'session', source: 'local x = ;' }),
-		body => call('cart', 'studio_evaluate_lua', { target: target(body), context: 'cart', source: 'counter = 100; cartlib__world__world.terminal_probe = 89; return counter, cartlib__world__world.terminal_probe, type(new_game), load("return counter + 1")()' }),
+		body => call('cart', 'studio_evaluate_lua', { target: target(body), context: 'cart', source: 'counter = 100; cartlib__world__world.terminal_probe = 89; return counter, cartlib__world__world.terminal_probe, type(new_game), load("return counter + 1, nil, false")()' }),
 		body => call('cart-error', 'studio_evaluate_lua', { target: target(body), context: 'cart', source: 'counter = counter + 5; error("cart error")' }),
-		body => call('isolation', 'studio_evaluate_lua', { target: target(body), context: 'session', source: 'return counter, getglobal("counter")' }),
+		body => call('isolation', 'studio_evaluate_lua', { target: target(body), context: 'session', source: 'return counter, getglobal("counter"), string.find("abcd", "bc")' }),
 		body => call('wrong-context', 'studio_evaluate_lua', { target: target(body), context: 'frame', source: 'counter' }),
 		CODEX_FIXTURE_DONE,
 		body => call('loop', 'studio_evaluate_lua', { target: target(body), context: 'session', source: 'while true do end' }),
@@ -42,17 +42,17 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	assert.equal(value(model.requests[2], 'evaluate').status, 'paused');
 	assert.equal(value(model.requests[3], 'status').active.status, 'paused');
 	const completed = value(model.requests[4], 'continue');
-	assert.equal(completed.status, 'completed'); assert.deepEqual(completed.values, ['40', 'nil', 'false']);
+	assert.equal(completed.status, 'completed'); assert.deepEqual(completed.values, ['40', 'nil', 'false', 'true', '42', 'nil', 'false']);
 	assert.equal(completed.outputTruncated, false);
 	assert.deepEqual(completed.output.map(entry => entry.kind), ['input', 'output', 'result']);
 	assert.equal(completed.output[1].text, 'from Codex');
 	assert.equal(value(model.requests[5], 'error').status, 'lua-error');
 	assert.deepEqual(value(model.requests[6], 'read').values, ['43', '43', '88', 'function']);
 	assert.equal(value(model.requests[7], 'syntax').status, 'lua-error');
-	assert.deepEqual(value(model.requests[8], 'cart').values, ['100', '89', 'function', '101']);
+	assert.deepEqual(value(model.requests[8], 'cart').values, ['100', '89', 'function', '101', 'nil', 'false']);
 	assert.equal(value(model.requests[8], 'cart').context, 'cart');
 	assert.equal(value(model.requests[9], 'cart-error').status, 'lua-error');
-	assert.deepEqual(value(model.requests[10], 'isolation').values, ['43', '105']);
+	assert.deepEqual(value(model.requests[10], 'isolation').values, ['43', '105', '2', '3']);
 	assert.match(text(model.requests[11], 'wrong-context'), /frame bindings are not available/);
 	const retained = value(model.requests[14], 'retained');
 	assert.equal(retained.active.status, 'paused'); assert.equal(retained.canEvaluate, false);

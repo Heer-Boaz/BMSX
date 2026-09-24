@@ -62,6 +62,39 @@ local exercise = function(...)
 end
 *buffered = 40
 return exercise()`,
+	call_results: `
+local exercise = function(tuple, spread, receiver, wide, ...)
+ local index<const> = frame_count(running_thread()) - 1
+ local names<const> = frame_bindings.resolve(index, 0)
+ local verify<const> = function(source, ...)
+  local values<const> = table.pack(repl.evaluate(source, '=frame-results', 'frame', index, names))
+  assert(values[1] == true, source)
+  assert(values.n == select('#', ...) + 1, source)
+  for i = 2, values.n do assert(values[i] == select(i - 1, ...), source) end
+ end
+ verify('return tuple()', 7, nil, false, 9, nil)
+ verify('return 99, spread(1, tuple())', 99, 1, 7, nil, false, 9, nil)
+ verify('return (tuple())', 7)
+ verify('return (tuple)()', 7, nil, false, 9, nil)
+ verify('return spread(tuple(), 2)', 7, 2)
+ verify('return spread(1, (tuple()))', 1, 7)
+ verify('return receiver:spread(1, tuple())', 40, 1, 7, nil, false, 9, nil)
+ verify('return select(2, 7)')
+ verify('return 1, select(2, 7)', 1)
+ verify('return spread(1, select(2, 7))', 1)
+ verify('return (select(2, 7))', nil)
+ verify('return pcall(tuple)', true, 7, nil, false, 9, nil)
+ local values<const> = table.pack(repl.evaluate('return 999, wide()', '=wide-results', 'frame', index, names))
+ assert(values.n == 262 and values[1] == true and values[2] == 999)
+ for i = 0, 259 do assert(values[i + 3] == i) end
+ assert(tuple() == 7 and spread(true) == true and receiver.value == 40 and wide() == 0)
+ return true
+end
+return exercise(
+ function(...) return 7, nil, false, 9, nil end,
+ function(...) return ... end,
+ { value = 40, spread = function(self, ...) return self.value, ... end },
+ function(...) return ${Array.from({ length: 260 }, (_, index) => index).join(',')} end)`,
 	lexical_names: `
 setglobal('folded', 999)
 setglobal('unreferenced', 999)

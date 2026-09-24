@@ -590,7 +590,8 @@ local emit_call_expression<const> = function(
 	instruction_words,
 	expression,
 	target,
-	target_is_temporary
+	target_is_temporary,
+	result_count
 )
 	local temporary_base<const> = state.free_register
 	local use_target<const> = target_is_temporary
@@ -645,32 +646,41 @@ local emit_call_expression<const> = function(
 		end
 	end
 	local arguments<const> = expression.arguments
-	for index = 1, #arguments do
+	local argument_count<const> = #arguments
+	local argument_operand = argument_count + isa.fixed_call_arg_count_bias
+		+ (method_name ~= nil and 1 or 0)
+	for index = 1, argument_count do
 		local argument_target<const> = reserve_register(state)
-		local argument_register<const> = emit_value(
-			state,
-			instruction_words,
-			arguments[index],
-			argument_target,
-			true
-		)
-		if argument_register ~= argument_target then
-			bytecode.emit_abc(
+		local argument<const> = arguments[index]
+		if index == argument_count and argument.kind == syntax.call_expression
+			and argument.expands_results then
+			emit_call_expression(state, instruction_words, argument, argument_target, true, 0)
+			argument_operand = 0
+		else
+			local argument_register<const> = emit_value(
+				state,
 				instruction_words,
-				isa.op_mov,
+				argument,
 				argument_target,
-				argument_register,
-				0
+				true
 			)
+			if argument_register ~= argument_target then
+				bytecode.emit_abc(
+					instruction_words,
+					isa.op_mov,
+					argument_target,
+					argument_register,
+					0
+				)
+			end
 		end
 	end
 	bytecode.emit_abc(
 		instruction_words,
 		isa.op_call,
 		call_base,
-		#arguments + isa.fixed_call_arg_count_bias
-			+ (method_name ~= nil and 1 or 0),
-		1
+		argument_operand,
+		result_count
 	)
 	if not use_target then
 		bytecode.emit_abc(
@@ -852,7 +862,8 @@ emit_value = function(
 			instruction_words,
 			expression,
 			target,
-			target_is_temporary
+			target_is_temporary,
+			1
 		)
 	end
 	if kind == syntax.unary_expression
@@ -1139,10 +1150,19 @@ local emit_return_statement<const> = function(state, instruction_words, statemen
 	end
 	for index = 1, expression_count do
 		local target_register<const> = return_target + index - 1
+		local expression<const> = expressions[index]
+		if index == expression_count and expression.kind == syntax.call_expression
+			and expression.expands_results then
+			-- The final call owns the last temporary and sets the physical top.
+			-- RET forwards the prefix and tuple without moving or packing it.
+			emit_call_expression(state, instruction_words, expression, target_register, true, 0)
+			bytecode.emit_abc(instruction_words, isa.op_ret, return_target, 0, 0)
+			return
+		end
 		local value_register<const> = emit_value(
 			state,
 			instruction_words,
-			expressions[index],
+			expression,
 			target_register,
 			true
 		)
@@ -1601,7 +1621,8 @@ emit_statement = function(state, instruction_words, statement)
 			instruction_words,
 			statement.expression,
 			target,
-			true
+			true,
+			1
 		)
 	elseif kind == syntax.local_statement then
 		emit_local_statement(state, instruction_words, statement)

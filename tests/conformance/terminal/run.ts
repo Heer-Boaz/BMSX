@@ -60,6 +60,16 @@ const commands = [
 	'lua counter=90;return native_fn(5)',
 	'lua counter=91;error("cart error")',
 	'lua counter',
+	'lua print("TUPLES-BEGIN")',
+	'lua fn=function()return 7,nil,false,9,nil end',
+	'lua fn()',
+	'lua return 1,fn()',
+	'lua return (fn())',
+	'lua return select("#",fn())',
+	'lua return select("#",1,fn())',
+	'lua return pcall(fn)',
+	'lua local x=table.pack(select(2,7));return x.n',
+	'lua return string.find("abcd","bc")',
 	'lua print("TERMINAL-END")',
 ];
 // Earlier cases exercise the explicitly isolated session; the same physical
@@ -71,6 +81,7 @@ commands[commands.indexOf('lua hot_resume_new_game_count')] = 'lua --session hot
 const punctuation: Record<string, [string, boolean]> = {
 	' ': ['Space', false], '(': ['Digit9', true], ')': ['Digit0', true],
 	'"': ['Quote', true], '=': ['Equal', false], '+': ['Equal', true],
+	'#': ['Digit3', true],
 	'-': ['Minus', false], '_': ['Minus', true], '.': ['Period', false], ';': ['Semicolon', false], ',': ['Comma', false],
 };
 for (const command of commands) {
@@ -96,8 +107,10 @@ try {
 	assert.match(result, /upper-case identifiers are not allowed/, 'Shift reaches the case-sensitive firmware compiler');
 	assert.match(result, /\nMiXeD\t42\n9\nnil\nbefore error\nterminal error\n43\n44\n/);
 	assert.match(result, /\[load:/, 'syntax errors are protected by the shared firmware loader');
-	assert.match(result, /GLOBALS-BEGIN\nnil\n1\nnil\n41\nnil\nnil\n23\nfalse\nnil\nglobal error\n42\nInvalid argument\.\nInvalid argument\.\n/);
+	// setglobal has no results; expression evaluation must not manufacture nil.
+	assert.match(result, /GLOBALS-BEGIN\nnil\n1\n41\nnil\nnil\n23\nfalse\nnil\nglobal error\n42\nInvalid argument\.\nInvalid argument\.\n/);
 	assert.match(result, /CART-BEGIN\nnil\nnil\n41\n50\n51\n80\n43\n81\n7\n80\nnil\n85\n95\ncart error\n91\n/);
+	assert.match(result, /TUPLES-BEGIN\nnil\nnil\n7\tnil\tfalse\t9\tnil\n1\t7\tnil\tfalse\t9\tnil\n7\n5\n6\ntrue\t7\tnil\tfalse\t9\tnil\n0\n2\t3\n/);
 	assert.ok(result.endsWith('TERMINAL-END\nnil\n'), 'syntax error does not kill the physical monitor');
 	console.log('TERMINAL-PARITY:PASS (real BIOS monitor, HID input, TypeScript and native C++)');
 	rmSync(directory, { recursive: true });

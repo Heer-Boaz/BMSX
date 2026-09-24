@@ -602,9 +602,10 @@ programs before publishing static locations to Terminal/inspection.
   resolution from a linear name search to direct indexing, with no added guest
   execution cost. No new interactive UI proof is claimed for this compiler slice.
 
-The coverage audit also found two remaining compiler boundaries: source `struct`
-names currently fall through to global value lookup, and the firmware loader
-currently requests only one result from a call, even in a return-list tail.
-Neither is a valid basis for advertising full selected-frame Lua semantics.
+The coverage audit also found two compiler boundaries: source `struct` names
+fall through to global value lookup, and the firmware loader requested only one
+result from a call, even in a return-list tail. The latter is now corrected by
+the shared [call-result arity slice](studio_lua_terminal.md#firmware-call-result-arity-gate).
+The source-type lookup still needs correction before advertising frame semantics.
 Static/type debug metadata and public frame admission remain separate unfinished
 work; this storage correction does not add a Terminal context or Codex-only UI.

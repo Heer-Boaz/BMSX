@@ -12,6 +12,10 @@ supervisor monitor or during another machine operation.
   repeatedly submit. The visible Run action also works with a pointer.
 - Expressions return their values (`1 + 2`, `math.sqrt(9)`). Statements and
   explicit returns work too (`counter = 40; return counter + 2`).
+- A final call forwards all results in a return or argument list, including nil
+  and false (`return pcall(fn)`, `table.pack(fn())`). Parentheses deliberately
+  select one value (`return (fn())`). A zero-result builtin produces no result,
+  rather than a manufactured nil.
 - Up/Down at the input's first/last source line browse the last 100 commands and
   restore the unfinished draft when returning to the present. Multiline input
   uses the shared selection, clipboard and undo control.
@@ -258,3 +262,60 @@ Conversation/monitor slice (2026-09-24):
   96 pre-existing errors. Focused lifecycle tests cover listener cleanup, queued
   cancellation, bounded output, replacement and newer execution intent. Actual
   queued admission cancellation is also exercised against the browser CPU.
+
+## Firmware call-result arity gate
+
+The audit found that the firmware compiler emitted every call with one result.
+`return f()` therefore truncated real guest tuples, including `pcall` and
+`string.find`. Its parser also discarded parentheses. Lua's production
+[`retstat`, `funcargs` and `primaryexp`](https://github.com/lua/lua/blob/v5.4.8/lparser.c)
+distinguish an open final call from a call adjusted to one value. BMSX now keeps
+that distinction in its owned syntax and lowers it to the existing BLua32 arity
+operands. No packed result table, source rewriting or host evaluator belongs in
+this path.
+
+| Representation | TypeScript runtime | Native C++ runtime | Producer change |
+| --- | --- | --- | --- |
+| Call syntax | Shared BIOS parser / syntax factory | Same ROM firmware | Preserve whether parentheses suppress result expansion |
+| Value-position call | Existing `CALL C=1` | Same raw instruction | Unchanged single-value lowering |
+| Final return-list call | Existing `CALL C=0`, `RET B=0` and physical frame top | Same raw instruction/top | Request and forward the complete tuple |
+| Final argument-list call | Existing `CALL C=0`, enclosing `CALL B=0` | Same raw instruction/top | Consume all trailing results, including an empty tuple |
+| Return storage | Existing register window and ordinary growth for actual results | Same register window | No per-result wrapper, table or copy loop in emitted code |
+
+Changed callsites are BIOS `emit_call_expression`, `emit_return_statement`,
+parser parenthesis/call production and `syntax_factory.call_expression`.
+`emit_value` and statement-call lowering explicitly request one result. CPU
+CALL/RET, protected calls, GC, save state, scheduler and Terminal admission are
+unchanged. Only compile-time arity selection is new; there is no extra work per
+game instruction. Validate mixed prefix/tail returns and arguments, methods,
+parentheses, nil/false, actual empty tuples, large tuples and generated syntax
+on both runtimes and through ordinary Terminal/tool transport. The existing
+BLua implicit/empty-statement return convention is outside this slice.
+
+### Firmware call-result validation (2026-09-24)
+
+- The new O3 regression suite initially failed 15 of 21 cases. All 44 O0/O3
+  tests now pass: exact tuple arity, retained nil/false, parenthesized calls,
+  nested calls/methods, left-to-right evaluation, empty tails, 260-value tails
+  and generated syntax. Retained forwarding loops allocate no guest wrappers
+  between explicit collections after warmup.
+- Twenty shared firmware O0/O3 vectors pass on TS/C++, with full serialized-state
+  equality. The selected-frame fixture returns tuples through the real protected
+  REPL, not a host result adapter. Public selected-frame admission remains closed.
+- Identical HID input to the actual BIOS Terminal on TS and native C++ gives
+  byte-identical output. `string.find` returns both positions; `pcall` forwards
+  its complete tuple; a zero-result `setglobal` no longer prints a false nil.
+- Ordinary keyboard/pointer Terminal workflows pass on software, WebGL2 and
+  WebGPU, including visible tuple results and parenthesized calls. The real
+  browser -> authorized HTTP -> Codex app-server -> deterministic Responses
+  fixture receives full session/cart/protected/nested-load tuples and both
+  `string.find` positions. The workflow still uses one connection and 16 model
+  requests; no additional request, tool or button was introduced. Full assistant
+  suite: 45 pass. Inspected the WebGPU `lua-tuples` and
+  `terminal-tools-webgpu-conversation-results` screenshots. This is automated
+  UI/transport evidence, not live-model reasoning or personal-account login proof.
+- Full Lua suite: 2607 pass, one skip; ROM suite: 185 pass. Product typechecks
+  and BIOS/Nemesis/Studio/Node builds pass. Tests-project diagnostics remain the
+  same 95 baseline entries after normalizing positions. Strict architecture
+  audit: zero issues; core-parity, changed-file indentation and `git diff --check`
+  pass.

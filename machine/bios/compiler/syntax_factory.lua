@@ -131,6 +131,7 @@ end
 function syntax_factory.call_expression(callee, arguments, method_name)
 	return {
 		kind = syntax.call_expression,
+		expands_results = true,
 		callee = callee,
 		arguments = arguments,
 		method_name = method_name,
