@@ -1,3 +1,4 @@
+import type { RuntimeDebuggerExecution } from '../runtime/debugger_execution';
 import type { RuntimeFrameNavigation } from '../runtime/frame_navigation';
 import { navigationState } from '../navigation/navigation_history';
 import { openGameView } from '../workbench/contrib/game_view/editor_input';
@@ -36,8 +37,6 @@ import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import {
-	resumeRuntimeDebugger,
-	RuntimeDebuggerResumeMode,
 	type RuntimeDebuggerState,
 } from '../runtime/debugger_state';
 import { clearExecutionStopHighlights } from '../runtime_error/navigation';
@@ -78,6 +77,7 @@ export class IdeCommandController {
 		private readonly scenarioRuns: ScenarioRunService,
 		private readonly textFileSaves: TextFileSaveService,
 		private readonly frameNavigation: RuntimeFrameNavigation,
+		private readonly debuggerExecution: RuntimeDebuggerExecution,
 	) {
 	}
 
@@ -212,13 +212,8 @@ export class IdeCommandController {
 			case 'debugStepInto':
 			case 'debugStepOut':
 			case 'debugStepOver':
-				if (this.rewind.active) this.rewind.resumeHere();
-				this.execution.requestExecution(command === 'debugContinue');
-				resumeRuntimeDebugger(this.debuggerState,
-					command === 'debugStepInto' ? RuntimeDebuggerResumeMode.StepInto
-						: command === 'debugStepOut' ? RuntimeDebuggerResumeMode.StepOut
-							: command === 'debugStepOver' ? RuntimeDebuggerResumeMode.StepOver
-								: RuntimeDebuggerResumeMode.Continue);
+				this.debuggerExecution.resume(command === 'debugStepInto' ? 'into' : command === 'debugStepOut' ? 'out'
+					: command === 'debugStepOver' ? 'over' : 'continue', 'game');
 				clearExecutionStopHighlights();
 				deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
 				return;
@@ -385,14 +380,11 @@ export class IdeCommandController {
 			case 'scenarioLab.cancel':
 				return this.editor.scenarioLab.isCommandEnabled(command);
 			case 'debugContinue':
-				return this.runtimeTasks.ready && this.debuggerState.stopped;
+				return this.debuggerState.stopped && this.debuggerExecution.canResume('continue');
 			case 'debugStepInto':
 			case 'debugStepOver':
-				return this.runtimeTasks.ready && !this.rewind.seeking && this.debuggerState.stopped;
 			case 'debugStepOut':
-				return this.runtimeTasks.ready && !this.rewind.seeking && this.debuggerState.stopped
-					&& (this.debuggerState.stopInlineDepth > 0
-						|| this.runtime.machine.cpu.getFrameDepth() > 1);
+				return this.debuggerExecution.canResume(command === 'debugStepInto' ? 'into' : command === 'debugStepOver' ? 'over' : 'out');
 			case 'save': {
 				const activeInput = getActiveTab();
 				return this.textFileSaves.acceptingSaves && activeInput instanceof TextEditorInput

@@ -16,7 +16,6 @@ import type { StackTraceFrame } from '../runtime/stack_trace';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { EditorCommandId } from '../common/commands';
 import type { LuaSignatureHelp } from '../../toolchain/ts/lua/semantic/signature_help';
-import { toggleBreakpoint } from '../workbench/contrib/debugger/controller';
 import type { HotResumeOperation } from '../workbench/services/execution/hot_resume';
 import { getActiveCodeTabContext } from '../workbench/ui/code_tab/contexts';
 import { updateHoverTooltip } from '../editor/contrib/hover/controller';
@@ -116,7 +115,7 @@ export function createHeadlessIdeHarness(
 				ide.sources.activeCartridgeSlot,
 				path,
 			)!;
-			toggleBreakpoint(ide.debugger, resource, line);
+			ide.debugger.breakpoints.toggle(resource, line);
 		},
 		isDebuggerStopped: () => ide.debugger.stopped,
 		reboot: () => performReboot(

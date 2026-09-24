@@ -103,6 +103,11 @@ and `studio_control_lua`. They invoke this same session service without opening
 a pane, synthesizing a click or adding a Codex-specific Terminal button. Tool
 arguments must select the listed authoring target and explicit `session`
 context. `cart` and `frame` are rejected rather than silently substituted.
+The [shared source debugger](studio_source_debugger.md) can step a stopped
+Terminal call without replacing its execution plan. Terminal status exposes
+both the active call and the last settled evaluation with its identity and
+bounded historical output; a return reached through debugger controls therefore
+does not lose its result. This is formatted history, not a retained guest borrow.
 As with the other dynamically admitted Studio tools, start a new Studio
 conversation to obtain tools added since an older thread was created. The
 installed native resume contract does not rebind that thread's tool definitions;

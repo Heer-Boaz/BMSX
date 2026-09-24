@@ -1,6 +1,5 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
-import { toggleBreakpoint } from '../../../ide/workbench/contrib/debugger/controller';
 import { resolveRuntimeLuaSource } from '../../../ide/runtime/sources';
 import { check, createStudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
@@ -24,8 +23,8 @@ export async function runAssistantStack(kind: StudioRendererKind, canvas: HTMLCa
 	const version = model.version, media = ide.sources.currentBlua32Media;
 	await test.runPaletteCommand('View: Codex Assistant');
 	await test.runMenuCommand('pause');
-	toggleBreakpoint(ide.debugger, resource, line);
-	check(ide.debugger.breakpointPcs[1].size !== 0, 'stack tools: breakpoint bound to installed code');
+	ide.debugger.breakpoints.toggle(resource, line);
+	check(ide.debugger.breakpoints.bindings.pcs[1].size !== 0, 'stack tools: breakpoint bound to installed code');
 	await submitAssistantText(test, 'Call active_definition_view in the real Lua Terminal, inspect its stopped stack, locals, upvalues and self, then continue. Keep my source uninstalled.');
 	await until(() => ide.debugger.stopped && ide.terminal.active !== undefined, 'stack tools: actual cart method breakpoint');
 	const stoppedAt = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes();
@@ -40,7 +39,7 @@ export async function runAssistantStack(kind: StudioRendererKind, canvas: HTMLCa
 	check(cycles() === stoppedAt && runtime.machine.cpu.luaHeap.usedBytes() === heap, 'stack/scopes reads neither execute nor allocate guest state');
 	await until(() => harness.getActiveCodeContext()?.executionStopRow === line - 1, 'stack tools: ordinary debugger source navigation');
 	await renderer.capture!('paused-call');
-	toggleBreakpoint(ide.debugger, resource, line);
+	ide.debugger.breakpoints.toggle(resource, line);
 	await until(() => ide.editor.assistant.state === 'ready', 'stack tools: real model reads scopes and continues');
 	let expired = false;
 	try { inspection.frameScopes(method.reference); } catch (error) { expired = String(error).includes('expired'); }

@@ -27,7 +27,6 @@ import { editorInput } from './input/keyboard/text_input';
 import { renameController } from './rename/controller';
 import { referenceState } from '../../../editor/contrib/references/state';
 import { editorSearchState } from './find/widget_state';
-import { getBreakpointsForChunk } from '../debugger/controller';
 import { openCodeContextMenuAtCursor } from './context_menu';
 import { editorChromeState } from '../../ui/chrome_state';
 import {
@@ -149,8 +148,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 			this.editor.completion,
 			this.editor.completion.getInlineCompletionPreview(),
 			activeCodeEditor.focusTarget.hasFocus,
-			getBreakpointsForChunk(
-				this.debuggerState,
+			this.debuggerState.breakpoints.get(
 				this.input.context.model.resource,
 			),
 			renameActive ? renameController.getHighlightMatches() : referenceState.getMatches(),

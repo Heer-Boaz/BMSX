@@ -1,7 +1,9 @@
+import { decodeDebuggerToolRequest, STUDIO_DEBUGGER_TOOLS, type DebuggerToolRequest } from './debugger_tool_protocol';
 import { StudioToolInputError, toolArguments } from './tool_input';
 import { decodeTerminalToolRequest, STUDIO_TERMINAL_TOOLS, type TerminalToolRequest } from './terminal_tool_protocol';
 
 export type RuntimeToolRequest =
+	| DebuggerToolRequest
 	| TerminalToolRequest
 	| { name: 'studio_runtime_status' }
 	| { name: 'studio_pause_runtime' | 'studio_inspect_runtime' | 'studio_capture_game'; target: string }
@@ -21,6 +23,7 @@ const TARGET_SCHEMA = { type: 'object', properties: { target: { type: 'string' }
 
 export const STUDIO_RUNTIME_TOOLS = [
 	...STUDIO_TERMINAL_TOOLS,
+	...STUDIO_DEBUGGER_TOOLS,
 	{ name: 'studio_step_frames', description: 'Advance or rewind an explicit number of physical video boundaries on the authoring target. Awaits completed/stopped/interrupted/replaced/failed outcome with actual before/after cycles and video ticks; not merely command acceptance. Keeps the target paused and preserves recorded input/future. Forward stepping beyond the recording end executes live input. Stops at retained-history start, debugger stop or guest fault. Not source/instruction stepping or a guarantee that gameplay ran once per video tick. No polling is needed; conversation Stop cancels owned navigation.',
 		inputSchema: { type: 'object', properties: { target: { type: 'string' }, direction: { type: 'string', enum: ['forward', 'backward'] }, count: { type: 'integer', minimum: 1 } }, required: STEP_FIELDS, additionalProperties: false } },
 	{ name: 'studio_seek_history', description: 'Seek within the authoring target\'s retained cycle range from studio_runtime_status.history. Selects the retained video boundary at or before the requested cycles; returns requested and actual positions after reconstruction settles. Rejects cycles outside retention rather than silently clamping. Preserves the recorded future and leaves review paused. Awaits completion or an explicit stop/interruption/failure; do not poll.',
@@ -84,6 +87,8 @@ export function decodeRuntimeToolRequest(name: string, input: unknown): RuntimeT
 			}
 			return { name, reference: value.reference, start: value.start as number, count: value.count as number };
 		}
+		case 'studio_list_debug_sources': case 'studio_read_debug_source': case 'studio_set_breakpoints': case 'studio_resume_debugger':
+			return decodeDebuggerToolRequest(name, input);
 		default: return decodeTerminalToolRequest(name, input);
 	}
 }

@@ -5215,7 +5215,16 @@ returns, interrupts, and domain changes remain inside the same machine slice
 instead of round-tripping through the host once per instruction. IDE tooling
 compiles `(domain, path, line)` breakpoints from the linked functions' statement
 points and owns breakpoint matching, resume suppression and source-level
-stepping. Each one-shot resume suppression is bound to the exact physical frame
+stepping. `RuntimeBreakpoints` owns requested lines, installed bindings and
+change notifications shared by gutters, workspace persistence and tools. An
+unbound line stays explicitly unbound; it never moves to a guessed nearby line.
+`RuntimeDebuggerExecution` owns Continue/Into/Over/Out operations for commands
+and tools, with real stop/control-boundary/fault/reset receipts and cancellation
+that cannot override newer transport intent. It observes ordinary host frames,
+not a private execution loop. Step-point maps are cached per installed media.
+Installed-source tool handles are distinct from working-copy edit receipts.
+See [the source debugger contract](studio_source_debugger.md).
+Each one-shot resume suppression is bound to the exact physical frame
 depth that was stopped, and nested stopped calls retain those identities in
 LIFO order; another invocation of the same domain/PC cannot consume the wrong
 frame's suppression. Statement points retain the optimizer's complete source

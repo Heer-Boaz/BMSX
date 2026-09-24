@@ -42,11 +42,17 @@ export class RuntimeGuestCallPlan implements RuntimeDebuggerControlPlan {
 	public constructor(
 		runtime: Runtime,
 		private readonly returnDepth: number,
+		private readonly boundary: 'completion' | 'exception',
 		public readonly honorUserStops: boolean,
 		private readonly finish: (completed: boolean) => void,
 	) { this.thread = runtime.machine.cpu.activeThread; }
 
-	public shouldStop(): boolean { return this.thread.frames.length <= this.returnDepth; }
+	public shouldStop(): boolean {
+		// A parked caller can accept an IRQ before the next hook. That IRQ may
+		// reuse the returned call's depth, but it is not its completion root.
+		return this.thread.frames.length <= this.returnDepth
+			|| this.boundary === 'completion' && !this.thread.frames[this.returnDepth].returnToCompletionLatch;
+	}
 	public willExecute(): void {}
 	public didExecute(): RuntimeDebuggerPlanResult {
 		if (!this.shouldStop()) return RuntimeDebuggerPlanResult.Active;
@@ -97,7 +103,7 @@ export function scheduleRuntimeGuestCall(
 		const cpu = runtime.machine.cpu;
 		const depth = cpu.getFrameDepth();
 		cpu.beginCompletionClosureInExecutionDomain(call.domain, call.closure, call.args());
-		pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, depth, honorUserStops, finish), 'workbench');
+		pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, depth, 'completion', honorUserStops, finish), 'workbench');
 	};
 	const admitCall = (checkBoundary: boolean): boolean => {
 		if (!request.isCurrent()) { finished(false); return false; }
@@ -106,7 +112,7 @@ export function scheduleRuntimeGuestCall(
 		if (exceptionDepth !== -1) {
 			guest.invalidate();
 			runtime.history.stop();
-			pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, exceptionDepth, false, completed => {
+			pushRuntimeDebuggerControlPlan(debuggerState, new RuntimeGuestCallPlan(runtime, exceptionDepth, 'exception', false, completed => {
 				if (!completed) { finished(false); return; }
 				// The handler may have submitted GPU work or replaced inspected values.
 				void tasks.schedule(() => { admitCall(checkBoundary); }, failed);

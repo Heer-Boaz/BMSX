@@ -1,3 +1,4 @@
+import type { RuntimeDebuggerExecution } from '../../../runtime/debugger_execution';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 import type { GameImageCapture } from '../../../../hosts/common/image';
 import type { AssistantAccount, AssistantCommand, AssistantConnection, AssistantConnectionFactory, AssistantEvent, AssistantHistoryPage,
@@ -59,6 +60,7 @@ export class AssistantConversation {
 		private readonly frameNavigation: RuntimeFrameNavigation,
 		private readonly gameCapture: GameImageCapture,
 		private readonly terminal: LuaTerminalSession,
+		private readonly debuggerExecution: RuntimeDebuggerExecution,
 		private readonly openConnection?: AssistantConnectionFactory) {
 		this.unbindWorkspace = models.onWillClear(() => this.clearConversation());
 	}
@@ -116,7 +118,7 @@ export class AssistantConversation {
 	private createTurn(): ActiveTurn {
 		return { tools: new WorkspaceSourceTools(this.models, this.sources, this.storage, this.diagnostics, this.sourceLifetime!.signal),
 			tests: new WorkspaceTestTools(this.testResults, this.sourceLifetime!.signal),
-			runtime: new WorkspaceRuntimeTools(this.runtimeInspection, this.frameNavigation, this.gameCapture, this.terminal, this.sourceLifetime!.signal), requests: new Map(), messages: new Map() };
+			runtime: new WorkspaceRuntimeTools(this.runtimeInspection, this.frameNavigation, this.gameCapture, this.terminal, this.debuggerExecution, this.sourceLifetime!.signal), requests: new Map(), messages: new Map() };
 	}
 
 	/** One explicit submission. Native Codex owns FIFO dispatch; no retries or client dequeue loop. */

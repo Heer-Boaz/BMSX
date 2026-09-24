@@ -1,3 +1,4 @@
+import type { RuntimeDebuggerExecution } from './debugger_execution';
 import type { RuntimeFrameNavigation } from './frame_navigation';
 import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
 import type { HostRewind } from '../../hosts/common/rewind';
@@ -59,10 +60,11 @@ export class RuntimeInspectionService {
 		private readonly rewind: HostRewind,
 		private readonly fault: RuntimeFaultState,
 		private readonly navigation: RuntimeFrameNavigation,
+		private readonly debuggerExecution: RuntimeDebuggerExecution,
 	) {}
 
 	public get canInspect(): boolean {
-		return this.navigation.active === undefined && this.tasks.ready && !this.execution.launchPending && !this.execution.frameStepPending
+		return this.debuggerExecution.active === undefined && this.navigation.active === undefined && this.tasks.ready && !this.execution.launchPending && !this.execution.frameStepPending
 			&& !this.rewind.seeking && !this.rewind.playing && !this.fault.hostFrameFailed
 			&& (this.rewind.active || this.debuggerState.stopped || this.debuggerState.plans.controlSuspended
 				|| this.execution.executionBlocked(runtimeDebuggerExecutionRequested(this.debuggerState)));
@@ -79,14 +81,14 @@ export class RuntimeInspectionService {
 			cycles: this.runtime.machine.scheduler.currentNowCycles(), videoTick: this.runtime.frameScheduler.lastTickSequence,
 			paused: this.execution.paused, userPaused: this.execution.userPaused, debuggerStopped: this.debuggerState.stopped,
 			stop, fault: fault === null ? undefined : { message: fault.message, resource: fault.resource, line: fault.line, column: fault.column },
-			operationActive: this.navigation.active !== undefined || !this.tasks.ready || this.debuggerState.plans.controlActive,
+			operationActive: this.debuggerExecution.active !== undefined || this.navigation.active !== undefined || !this.tasks.ready || this.debuggerState.plans.controlActive,
 			history: this.navigation.historyState(),
 			rewindActive: this.rewind.active, canInspect: this.canInspect };
 	}
 
 	/** Does not resume a debugger, cancel a guest call or change any other pause reason. */
 	public pause(): ReturnType<RuntimeInspectionService['status']> {
-		if (this.navigation.active !== undefined || !this.tasks.ready || this.execution.launchPending || this.execution.frameStepPending
+		if (this.debuggerExecution.active !== undefined || this.navigation.active !== undefined || !this.tasks.ready || this.execution.launchPending || this.execution.frameStepPending
 			|| this.rewind.active || this.debuggerState.plans.controlActive || runtimeDebuggerExecutionRequested(this.debuggerState)) {
 			throw new Error('Finish or interrupt the active machine operation before pausing for inspection.');
 		}

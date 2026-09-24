@@ -1,3 +1,4 @@
+import { RuntimeBreakpoints } from '../../ide/runtime/breakpoints';
 import { semanticSnapshot } from './semantic_test_harness';
 import { resolveResourceViewerInput } from '../../ide/workbench/contrib/resources/view_tabs';
 import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
@@ -113,7 +114,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	workspaceDirtyRecords.set(buildWorkspaceDirtyEntryPath('game', 0, 'definitions.lua'), { contents: dirtySource, updatedAt: 50 });
 	const generation = JSON.parse(JSON.stringify({ dirtyFiles: [{ domain: 0, path: 'definitions.lua', updatedAt: 50 }], editorGroup: before, fontVariant: 'tiny', breakpoints: [] }));
 	await applyWorkspaceAutosavePayload({ editorPanes: f.panes, editorInputSerializers: f.serializers, setFontVariant() {} },
-		f.sources, { breakpoints: [new Map(), new Map(), new Map()] }, generation, null);
+		f.sources, { breakpoints: new RuntimeBreakpoints(f.sources, () => {}) }, generation, null);
 	const after = editorTabGroup.serialize(f.serializers);
 	assert.deepEqual(after, before);
 	assert.deepEqual(editorTabGroup.tabs.map(input => input.kind), ['code_editor', 'behavior_lens', 'behavior_lens', 'scene_editor', 'code_editor']);

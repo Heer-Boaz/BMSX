@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
 import {
 	createRuntimeDebuggerState,
-	rebuildRuntimeBreakpointPcs,
 	resumeRuntimeDebugger,
 	pushRuntimeDebuggerControlPlan,
 	runtimeDebuggerExecutionRequested,
@@ -30,7 +29,6 @@ import { RuntimeTaskKind, RuntimeTaskQueue } from '../../hosts/common/runtime_ta
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import { compileLuaSource } from './cpu_test_harness';
 import { blua32SourceRangeAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
 import { linkTestSystemBlua32, type TestBlua32Image } from '../helpers/blua32';
@@ -208,7 +206,7 @@ return actor, advance
 	const depth = cpu.getFrameDepth();
 	let completed = false;
 	cpu.beginCompletionClosureInExecutionDomain(-1, closure, [actor, 100]);
-	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, depth, false, value => { completed = value; }), 'workbench');
+	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, depth, 'completion', false, value => { completed = value; }), 'workbench');
 	cpu.runUntilDepth(depth, 80);
 	const partial = actor.getStringKey(key) as number;
 	assert.ok(partial > 0 && partial < 100);
@@ -386,12 +384,11 @@ test(`scheduled evaluation ${honorUserStops ? 'honors' : 'suppresses'} user brea
 	const { runtime, state } = createDebuggerHarness('return function(value)\n value = value + 1\n return value\nend', optLevel);
 	const cpu = runtime.machine.cpu, values: Value[] = [];
 	cpu.reset(); cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET); cpu.readCompletionValues(values);
-	state.breakpoints[0].set(DEBUG_SOURCE_PATH, new Set([2]));
-	rebuildRuntimeBreakpointPcs(state);
-	assert.ok(state.breakpointPcs[0].size > 0, 'the real source has an emitted breakpoint PC');
+	state.breakpoints.set({ domain: -1, path: DEBUG_SOURCE_PATH }, [2]);
+	assert.ok(state.breakpoints.bindings.pcs[0].size > 0, 'the real source has an emitted breakpoint PC');
 	let finished = 0;
 	cpu.beginCompletionClosureInExecutionDomain(-1, values[0] as Closure, [1]);
-	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, 0, honorUserStops, completed => {
+	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, 0, 'completion', honorUserStops, completed => {
 		assert.equal(completed, true); finished++;
 	}), 'workbench');
 	const result = cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET);
@@ -418,11 +415,7 @@ test(`scheduled evaluation ${honorUserStops ? 'honors' : 'suppresses'} user brea
 });
 
 function startAtBreakpoint(harness: DebuggerHarness, line: number): void {
-	harness.state.breakpoints[SYSTEM_RESOURCE_DOMAIN + 1].set(
-		DEBUG_SOURCE_PATH,
-		new Set([line]),
-	);
-	rebuildRuntimeBreakpointPcs(harness.state);
+	harness.state.breakpoints.set({ domain: SYSTEM_RESOURCE_DOMAIN, path: DEBUG_SOURCE_PATH }, [line]);
 	harness.runtime.machine.cpu.reset();
 }
 
@@ -435,15 +428,11 @@ function resumeAndStop(
 }
 
 test('runtime breakpoint state is owned by each IDE session', () => {
-	const runtime = {} as Runtime;
-	const sources = {} as RuntimeSourceState;
-	const first = createRuntimeDebuggerState(runtime, sources);
-	const second = createRuntimeDebuggerState(runtime, sources);
-
-	first.breakpoints[1].set('main.lua', new Set([2]));
-
-	assert.deepEqual(first.breakpoints[1].get('main.lua'), new Set([2]));
-	assert.deepEqual(second.breakpoints.map(breakpoints => breakpoints.size), [0, 0, 0]);
+	const first = createDebuggerHarness('return 1', 0).state;
+	const second = createDebuggerHarness('return 1', 0).state;
+	first.breakpoints.set({ domain: -1, path: DEBUG_SOURCE_PATH }, [1]);
+	assert.deepEqual(first.breakpoints.get({ domain: -1, path: DEBUG_SOURCE_PATH }), new Set([1]));
+	assert.deepEqual(second.breakpoints.serialize(), []);
 });
 
 test('statement stepping follows physical Lua call frames', () => {
@@ -520,4 +509,37 @@ test('statement stepping follows optimized inline call frames', () => {
 		10,
 	);
 	assert.equal(stepIntoHarness.state.stopInlineDepth, 1);
+});
+
+for (const optLevel of [0, 3] as const) test(`completion-root identity survives a parked caller accepting IRQ (O${optLevel})`, () => {
+	const irqCount = DYNAMIC_RAM_BASE;
+	const { runtime, state } = createDebuggerHarness(`
+function irq()
+	mem[${irqCount}] = mem[${irqCount}] + 1
+	mem[${IO_IRQ_ACK}] = ${IRQ_VBLANK}
+end
+function exception() end
+operation = function() return 42 end
+mem[${irqCount}] = 0
+mem[${IO_IRQ_MASK}] = ${IRQ_VBLANK}
+cop0.status = ${CPU_STATUS_CART_ENTRY}
+while true do halt_until_irq end
+`, optLevel);
+	const { cpu, memory, irqController } = runtime.machine;
+	cpu.reset(); cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET);
+	const depth = cpu.getFrameDepth(), guest = new SuspendedGuestSession(runtime);
+	cpu.beginCompletionClosureInExecutionDomain(-1, guest.global('operation') as Closure, []);
+	let completed = false;
+	pushRuntimeDebuggerControlPlan(state, new RuntimeGuestCallPlan(runtime, depth, 'completion', true, value => { completed = value; }), 'workbench');
+	cpu.runUntilDepth(depth, DEBUG_RUN_CYCLE_BUDGET);
+	assert.equal(cpu.isHaltedUntilIrq(), true);
+	// Ordinary scheduler wakeup can enter IRQ before didExecute observes the call.
+	irqController.raise(IRQ_VBLANK); assert.equal(cpu.enterPendingInterrupt(), true);
+	assert.equal(cpu.getFrameDepth(), depth + 1);
+	assert.equal(cpu.readFrameReturnsToCompletionLatch(depth), false);
+	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
+	state.plans.didExecute();
+	assert.equal(completed, true); assert.equal(state.stopped, false);
+	assert.equal(memory.readMappedU32LE(irqCount), 0, 'completion stops before an unrelated IRQ instruction');
+	const values: Value[] = []; cpu.readCompletionValues(values); assert.deepEqual(values, [42]);
 });

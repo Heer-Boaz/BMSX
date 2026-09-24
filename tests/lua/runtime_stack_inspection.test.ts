@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { rebuildRuntimeBreakpointPcs } from '../../ide/runtime/debugger_state';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { recordLuaError } from '../../ide/runtime/fault_state';
@@ -23,8 +22,7 @@ function fixture(source: string, optLevel: 0 | 3, breakpoint?: number) {
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports), cartridgeSlots: [null, null] };
 	const f = createRuntimeInspectionFixture(runtime, sources);
 	if (breakpoint !== undefined) {
-		f.debuggerState.breakpoints[0].set('stack_probe.lua', new Set([breakpoint]));
-		rebuildRuntimeBreakpointPcs(f.debuggerState);
+		f.debuggerState.breakpoints.set({ domain: -1, path: 'stack_probe.lua' }, [breakpoint]);
 	}
 	runtime.machine.cpu.reset();
 	assert.equal(runtime.machine.cpu.runUntilDepth(0, 100_000), breakpoint === undefined ? RunResult.Halted : RunResult.ExecutionStopped);
@@ -190,7 +188,7 @@ test('missing symbols are explicit and execution invalidates frame, scope and va
 
 test('tool stack/frame handles are prompt-local and external paging arguments are decoded only at the tool boundary', async t => {
 	const f = fixture('local x = 42\nhalt_until_irq\nreturn x', 0);
-	const lifetime = new AbortController(), tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, lifetime.signal);
+	const lifetime = new AbortController(), tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, lifetime.signal);
 	t.after(() => tools.dispose());
 	const opened = await tools.execute('studio_inspect_runtime', { target: f.inspection.target });
 	assert.ok('inspection' in opened.data);

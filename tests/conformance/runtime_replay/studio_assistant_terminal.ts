@@ -3,7 +3,6 @@ import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { showEditorMessage } from '../../../ide/common/feedback_state';
 import { COLOR_STATUS_TEXT } from '../../../ide/common/constants';
-import { toggleBreakpoint } from '../../../ide/workbench/contrib/debugger/controller';
 import { resolveRuntimeLuaSource } from '../../../ide/runtime/sources';
 import { check, createStudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
@@ -27,11 +26,11 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	await test.runMenuCommand('pause');
 	const repl = { domain: -1 as const, path: 'shell/repl.lua' };
 	const line = resolveRuntimeLuaSource(ide.sources, repl)!.record.src.split('\n').findIndex(text => text.includes('return pcall(chunk)')) + 1;
-	toggleBreakpoint(ide.debugger, repl, line);
+	ide.debugger.breakpoints.toggle(repl, line);
 	await submitAssistantText(test, 'Execute Lua, continue after the breakpoint, inspect the result and test errors without changing cart source.');
 	await until(() => ide.debugger.stopped && terminal.active !== undefined, 'terminal tools: actual BIOS breakpoint');
 	check(terminal.active!.result === undefined, 'breakpoint retains the actual call');
-	toggleBreakpoint(ide.debugger, repl, line);
+	ide.debugger.breakpoints.toggle(repl, line);
 	await until(() => conversation.state === 'ready', 'terminal tools: model receives pause, continues and finishes');
 	const guest = ide.luaTooling.suspendedGuest;
 	check(guest.global('terminal_probe') === 43 && guest.readStringMember(guest.global('cartlib__world__world'), 'terminal_probe') === 88,

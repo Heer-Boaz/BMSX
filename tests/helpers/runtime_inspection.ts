@@ -1,3 +1,4 @@
+import { RuntimeDebuggerExecution } from '../../ide/runtime/debugger_execution';
 import { LuaTerminalSession } from '../../ide/workbench/services/terminal/session';
 import { RuntimeFrameNavigation } from '../../ide/runtime/frame_navigation';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
@@ -29,8 +30,9 @@ export function createRuntimeInspectionFixture(runtime: Runtime, sources: Runtim
 	const fault = createRuntimeFaultState();
 	const rewind = new HostRewind(runtime, presenter, presentation, tasks, audio, { log() {} });
 	const frameNavigation = new RuntimeFrameNavigation(runtime, execution, rewind, tasks, debuggerState, fault, guest);
-	const inspection = new RuntimeInspectionService(runtime, sources, guest, debuggerState, execution, tasks, rewind, fault, frameNavigation);
+	const debuggerExecution = new RuntimeDebuggerExecution(runtime, debuggerState, execution, rewind, tasks, fault, guest, frameNavigation);
+	const inspection = new RuntimeInspectionService(runtime, sources, guest, debuggerState, execution, tasks, rewind, fault, frameNavigation, debuggerExecution);
 	const gameCapture = new GameCaptureService(presenter, presentation, tasks, encodePngImage);
 	const terminal = new LuaTerminalSession(runtime, sources, guest, debuggerState, fault, tasks, execution, rewind);
-	return { terminal, audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
+	return { debuggerExecution, terminal, audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
 }

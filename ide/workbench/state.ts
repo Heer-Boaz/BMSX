@@ -1,3 +1,4 @@
+import { RuntimeDebuggerExecution } from '../runtime/debugger_execution';
 import { RuntimeFrameNavigation } from '../runtime/frame_navigation';
 import type { GameImageCapture } from '../../hosts/common/image';
 import type { AssistantConnectionFactory } from '../../hosts/common/assistant_protocol';
@@ -56,6 +57,7 @@ export class RuntimeIdeState {
 	public readonly terminal: LuaTerminalSession;
 	public readonly inspection: RuntimeInspectionService;
 	public readonly frameNavigation: RuntimeFrameNavigation;
+	public readonly debuggerExecution: RuntimeDebuggerExecution;
 	public readonly fault: RuntimeFaultState = createRuntimeFaultState();
 
 	public constructor(
@@ -97,8 +99,9 @@ export class RuntimeIdeState {
 		this.terminal = new LuaTerminalSession(runtime, sources, this.luaTooling.suspendedGuest, this.debugger,
 			this.fault, runtimeTasks, execution, rewind);
 		this.frameNavigation = new RuntimeFrameNavigation(runtime, execution, rewind, runtimeTasks, this.debugger, this.fault, this.luaTooling.suspendedGuest);
+		this.debuggerExecution = new RuntimeDebuggerExecution(runtime, this.debugger, execution, rewind, runtimeTasks, this.fault, this.luaTooling.suspendedGuest, this.frameNavigation);
 		this.inspection = new RuntimeInspectionService(runtime, sources, this.luaTooling.suspendedGuest, this.debugger,
-			execution, runtimeTasks, rewind, this.fault, this.frameNavigation);
+			execution, runtimeTasks, rewind, this.fault, this.frameNavigation, this.debuggerExecution);
 		this.editor = new RuntimeCartEditor(
 			runtime,
 			presenter,
@@ -128,6 +131,7 @@ export class RuntimeIdeState {
 			this.terminal,
 			this.inspection,
 			this.frameNavigation,
+			this.debuggerExecution,
 			this.gameCapture,
 			createGraphLayoutEngine,
 			connectAssistant,
@@ -135,6 +139,7 @@ export class RuntimeIdeState {
 		this.overlayRenderer.setViewportSize(viewport);
 		this.editor.updateViewport(viewport);
 		const invalidateToolingState = () => {
+			this.debuggerExecution.didReset();
 			this.terminal.didReplaceMachine();
 			this.hotResumes.cancelPending('machine-reset');
 			this.boots.didReplaceMachine();

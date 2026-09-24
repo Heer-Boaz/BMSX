@@ -8,24 +8,14 @@ import {
 } from '../../machine/ts/spec/blua32/execution_domain';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
-import {
-	resolveRuntimeLuaSource,
-	type RuntimeSourceState,
-} from './sources';
+import type { RuntimeSourceState } from './sources';
+import { RuntimeBreakpoints, type RuntimeBreakpointBindings } from './breakpoints';
 import type { Blua32SourceMedia } from './sources';
 import {
 	RuntimeDebuggerPlanManager,
 	type RuntimeDebuggerControlPlan,
 	type RuntimeDebuggerExecutionContext,
 } from './debugger_plans';
-
-type RuntimeBreakpointLines = [
-	Map<string, Set<number>>,
-	Map<string, Set<number>>,
-	Map<string, Set<number>>,
-];
-
-export type RuntimeBreakpointPcs = [Map<number, number>, Map<number, number>, Map<number, number>];
 
 type RuntimeStepPcs = [Map<number, number>, Map<number, number>, Map<number, number>];
 
@@ -49,12 +39,14 @@ export const enum RuntimeDebuggerStopReason {
 }
 
 export type RuntimeBreakpointState = {
-	readonly breakpoints: RuntimeBreakpointLines;
+	readonly breakpoints: RuntimeBreakpoints;
 };
 
 export type RuntimeDebuggerState = RuntimeBreakpointState & {
-	readonly breakpointPcs: RuntimeBreakpointPcs;
 	readonly stepPcs: RuntimeStepPcs;
+	stepMedia: Blua32SourceMedia | undefined;
+	executionRevision: number;
+	executionContext: RuntimeDebuggerExecutionContext | undefined;
 	readonly executionHook: ExecutionHook;
 	readonly plans: RuntimeDebuggerPlanManager;
 	readonly runtime: Runtime;
@@ -113,7 +105,7 @@ export function createRuntimeDebuggerState(
 				stopReason = RuntimeDebuggerStopReason.Step;
 				stopInlineDepth = stepInlineDepth;
 			} else {
-				const breakpointInlineDepth = state.breakpointPcs[domainIndex].get(pc);
+				const breakpointInlineDepth = state.breakpoints.bindings.pcs[domainIndex].get(pc);
 				if (breakpointInlineDepth === undefined) {
 					return false;
 				}
@@ -121,7 +113,7 @@ export function createRuntimeDebuggerState(
 				stopInlineDepth = breakpointInlineDepth;
 			}
 		} else {
-			const breakpointInlineDepth = state.breakpointPcs[domainIndex].get(pc);
+			const breakpointInlineDepth = state.breakpoints.bindings.pcs[domainIndex].get(pc);
 			if (breakpointInlineDepth === undefined) {
 				return false;
 			}
@@ -139,8 +131,10 @@ export function createRuntimeDebuggerState(
 		return true;
 	};
 	state = {
-		breakpoints: [new Map(), new Map(), new Map()],
-		breakpointPcs: [new Map(), new Map(), new Map()],
+		breakpoints: new RuntimeBreakpoints(sources, () => updateExecutionHookBinding(state)),
+		stepMedia: undefined,
+		executionRevision: 0,
+		executionContext: undefined,
 		stepPcs: [new Map(), new Map(), new Map()],
 		executionHook,
 		plans: new RuntimeDebuggerPlanManager(),
@@ -164,8 +158,8 @@ function updateExecutionHookBinding(state: RuntimeDebuggerState): void {
 	let domainMask: ExecutionDomainMask = state.stopped
 		? ALL_EXECUTION_DOMAINS_MASK
 		: 0;
-	for (let domainIndex = 0; domainIndex < state.breakpointPcs.length; domainIndex += 1) {
-		if (state.breakpointPcs[domainIndex].size !== 0
+	for (let domainIndex = 0; domainIndex < state.breakpoints.bindings.pcs.length; domainIndex += 1) {
+		if (state.breakpoints.bindings.pcs[domainIndex].size !== 0
 			|| (state.stepMode !== RuntimeDebuggerStepMode.None
 				&& state.stepPcs[domainIndex].size !== 0)) {
 			domainMask |= executionDomainBit((domainIndex - 1) as ExecutionDomainId);
@@ -184,65 +178,15 @@ function updateExecutionHookBinding(state: RuntimeDebuggerState): void {
 	);
 }
 
-export function buildRuntimeBreakpointPcs(
-	state: RuntimeDebuggerState,
-	media: Blua32SourceMedia,
-): RuntimeBreakpointPcs {
-	const breakpointPcs: RuntimeBreakpointPcs = [new Map(), new Map(), new Map()];
-	for (let domainIndex = 0; domainIndex < breakpointPcs.length; domainIndex += 1) {
-		const target = breakpointPcs[domainIndex];
-		const breakpoints = state.breakpoints[domainIndex];
-		if (breakpoints.size === 0) {
-			continue;
-		}
-		const domain = (domainIndex - 1) as ExecutionDomainId;
-		const image = blua32ToolingImageForDomain(media, domain)!;
-		const symbols = image.symbols!;
-		for (const [path, lines] of breakpoints) {
-			const source = resolveRuntimeLuaSource(state.sources, { domain, path })!;
-			const modulePath = source.record.module_path;
-			for (let functionIndex = 0; functionIndex < image.layout.functions.length; functionIndex += 1) {
-				const points = symbols.metadata.statementPointsByFunction[functionIndex];
-				for (let pointIndex = 0; pointIndex < points.length; pointIndex += 1) {
-					const point = points[pointIndex];
-					if (point.range.path === modulePath && lines.has(point.range.start.line)) {
-						target.set(
-							image.layout.functions[functionIndex].codeAddress
-							+ point.wordOffset * INSTRUCTION_BYTES,
-							point.inlineCallSites.length,
-						);
-					}
-				}
-			}
-		}
-	}
-	return breakpointPcs;
-}
-
-function installRuntimeBreakpointPcs(
-	state: RuntimeDebuggerState,
-	breakpointPcs: RuntimeBreakpointPcs,
-): void {
-	for (let domainIndex = 0; domainIndex < breakpointPcs.length; domainIndex += 1) {
-		state.breakpointPcs[domainIndex] = breakpointPcs[domainIndex];
-	}
-	updateExecutionHookBinding(state);
-}
-
-export function rebuildRuntimeBreakpointPcs(state: RuntimeDebuggerState): void {
-	installRuntimeBreakpointPcs(
-		state,
-		buildRuntimeBreakpointPcs(state, state.sources.currentBlua32Media),
-	);
-}
-
 function rebuildRuntimeStepPcs(state: RuntimeDebuggerState): void {
+	if (state.stepMedia === state.sources.currentBlua32Media) return;
+	state.stepMedia = state.sources.currentBlua32Media;
 	for (let domainIndex = 0; domainIndex < state.stepPcs.length; domainIndex += 1) {
 		const target = state.stepPcs[domainIndex];
 		target.clear();
 		const domain = (domainIndex - 1) as ExecutionDomainId;
 		const image = blua32ToolingImageForDomain(state.sources.currentBlua32Media, domain);
-		if (image === null) {
+		if (image === null || image.symbols === null) {
 			continue;
 		}
 		for (let functionIndex = 0; functionIndex < image.layout.functions.length; functionIndex += 1) {
@@ -262,7 +206,10 @@ function rebuildRuntimeStepPcs(state: RuntimeDebuggerState): void {
 export function resumeRuntimeDebugger(
 	state: RuntimeDebuggerState,
 	mode: RuntimeDebuggerResumeMode,
+	context?: RuntimeDebuggerExecutionContext,
 ): void {
+	state.executionRevision++;
+	state.executionContext = context;
 	switch (mode) {
 		case RuntimeDebuggerResumeMode.Continue:
 			state.stepMode = RuntimeDebuggerStepMode.None;
@@ -282,8 +229,8 @@ export function resumeRuntimeDebugger(
 		state.stepInlineDepth = state.stopInlineDepth;
 		rebuildRuntimeStepPcs(state);
 	}
-	if (state.stepMode !== RuntimeDebuggerStepMode.None
-		|| state.breakpointPcs[state.stopDomain + 1].has(state.stopPc)) {
+	if (state.stopped && (state.stepMode !== RuntimeDebuggerStepMode.None
+		|| state.breakpoints.bindings.pcs[state.stopDomain + 1].has(state.stopPc))) {
 		state.resumeSuppressionFrameDepths.push(state.runtime.machine.cpu.getFrameDepth());
 	}
 	state.stopped = false;
@@ -293,16 +240,26 @@ export function resumeRuntimeDebugger(
 }
 
 export function runtimeDebuggerExecutionRequested(state: RuntimeDebuggerState): boolean {
-	return state.stepMode !== RuntimeDebuggerStepMode.None || state.plans.controlExecutionRequested;
+	return !state.stopped && (state.executionContext !== undefined || state.stepMode !== RuntimeDebuggerStepMode.None)
+		|| state.plans.controlExecutionRequested;
+}
+
+export function interruptRuntimeDebuggerExecution(state: RuntimeDebuggerState): void {
+	state.executionRevision++;
+	state.executionContext = undefined;
+	state.stepMode = RuntimeDebuggerStepMode.None;
+	updateExecutionHookBinding(state);
 }
 
 export function resetRuntimeDebuggerExecution(state: RuntimeDebuggerState): void {
-	discardRuntimeDebuggerPlans(state);
+	state.executionRevision++;
+	state.executionContext = undefined;
 	state.stopped = false;
 	state.stopPresentationPending = false;
 	state.stepMode = RuntimeDebuggerStepMode.None;
 	state.resumeSuppressionFrameDepths.length = 0;
-	rebuildRuntimeBreakpointPcs(state);
+	state.plans.discardAll();
+	state.breakpoints.rebind();
 }
 
 export function discardRuntimeDebuggerPlans(state: RuntimeDebuggerState): void {
@@ -318,8 +275,10 @@ export function pushRuntimeDebuggerControlPlan(
 	if (state.stopped) {
 		resumeRuntimeDebugger(state, RuntimeDebuggerResumeMode.Continue);
 	} else {
-		state.stopPresentationPending = false;
+		state.executionRevision++;
+		state.executionContext = undefined;
 		state.stepMode = RuntimeDebuggerStepMode.None;
+		state.stopPresentationPending = false;
 	}
 	state.plans.pushControlPlan(plan, context);
 	updateExecutionHookBinding(state);
@@ -356,24 +315,24 @@ export function discardRuntimeDebuggerFramesFrom(
 
 export function applyRuntimeDebuggerHotResume(
 	state: RuntimeDebuggerState,
-	breakpointPcs: RuntimeBreakpointPcs,
+	breakpoints: RuntimeBreakpointBindings,
 ): void {
+	state.executionRevision++;
+	state.executionContext = undefined;
 	const resumeStoppedExecution = state.stopped;
 	state.stopped = false;
 	state.stopPresentationPending = false;
 	state.stepMode = RuntimeDebuggerStepMode.None;
-	for (let domainIndex = 0; domainIndex < state.stepPcs.length; domainIndex += 1) {
-		state.stepPcs[domainIndex].clear();
-	}
+	state.stepMedia = undefined;
 	if (resumeStoppedExecution) {
 		const cpu = state.runtime.machine.cpu;
 		const frameDepth = cpu.getFrameDepth();
 		const frameIndex = frameDepth - 1;
 		const resumeDomain = cpu.readFrameExecutionDomain(frameIndex);
 		const resumePc = cpu.readFramePc(frameIndex);
-		if (breakpointPcs[resumeDomain + 1].has(resumePc)) {
+		if (breakpoints.pcs[resumeDomain + 1].has(resumePc)) {
 			state.resumeSuppressionFrameDepths.push(frameDepth);
 		}
 	}
-	installRuntimeBreakpointPcs(state, breakpointPcs);
+	state.breakpoints.install(breakpoints);
 }

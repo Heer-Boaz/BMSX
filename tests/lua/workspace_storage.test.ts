@@ -1,3 +1,4 @@
+import { RuntimeBreakpoints } from '../../ide/runtime/breakpoints';
 import { HttpWorkspaceRecordProvider } from '../../ide/browser/workspace_records';
 import { CodeEditorInputSerializer, type SerializedCodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_serializer';
 import { ResourceViewerInputSerializer } from '../../ide/workbench/contrib/resources/editor_serializer';
@@ -455,7 +456,7 @@ async function startAutosaveSession(t: TestContext, storage: MockStorage, root =
 	await restoreWorkspaceStorageSession(
 		editorStub(storage, sources) as any,
 		sources,
-		{ breakpoints: [new Map(), new Map(), new Map()] },
+		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) },
 		restored,
 		new Set(),
 	);
@@ -534,7 +535,7 @@ test('workspace restore preserves explicit tab order and an active dirty system 
 	await applyWorkspaceAutosavePayload(
 		editorStub(storage, sources) as any,
 		sources,
-		{ breakpoints: [new Map(), new Map(), new Map()] },
+		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) },
 		payload(
 			[{
 				domain: SYSTEM_RESOURCE_DOMAIN,
@@ -978,7 +979,7 @@ test('cold boot uses one manifest-indexed dirty snapshot for source arbitration 
 	await restoreWorkspaceStorageSession(
 		editorStub(storage, sources) as any,
 		sources,
-		{ breakpoints: [new Map(), new Map(), new Map()] },
+		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) },
 		restored,
 		rejected,
 	);
@@ -1050,7 +1051,7 @@ test('manifest dirty entry rejected by newer ROM is not hydrated', async (t) => 
 	await restoreWorkspaceStorageSession(
 		editorStub(storage, sources) as any,
 		sources,
-		{ breakpoints: [new Map(), new Map(), new Map()] },
+		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) },
 		restored,
 		rejected,
 	);
@@ -1154,7 +1155,7 @@ test('a dirty working copy can acquire its first code view after the content bac
 	const restored = await initializeWorkspaceStorage(storage, workspaceEnvironment.clock, 'offline-cart', sources, workspaceFiles, testLogOutput);
 	installWorkspaceRestoreView();
 	await restoreWorkspaceStorageSession(editorStub(storage, sources) as any, sources,
-		{ breakpoints: [new Map(), new Map(), new Map()] }, restored, new Set());
+		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) }, restored, new Set());
 	const restoredContext = findCodeTabContext(resource)!;
 	assert.notStrictEqual(restoredContext.model, model);
 	assert.equal(restoredContext.model.buffer.getText(), '-- cart source\n-- visual edit');
@@ -1603,12 +1604,9 @@ test('workspace restore resolves persisted identity to the retained runtime reso
 	workspaceDirtyRecords.set(dirtyPath, { contents: '-- restored edit', updatedAt: 1 });
 	installWorkspaceRestoreView();
 	const debuggerState: RuntimeBreakpointState = {
-		breakpoints: [
-			new Map(),
-			new Map(),
-			new Map([['stale.lua', new Set([1])]]),
-		],
+		breakpoints: new RuntimeBreakpoints(sources, () => {}),
 	};
+	debuggerState.breakpoints.set({ domain: 1, path: 'stale.lua' }, [1]);
 	const restoredPayload = payload([{
 		domain: TEST_DOMAIN,
 		path: retained.path,
@@ -1629,9 +1627,9 @@ test('workspace restore resolves persisted identity to the retained runtime reso
 	assert.strictEqual(model.resource, retained);
 	assert.equal(model.buffer.getText(), '-- restored edit');
 	assert.equal(findCodeTabContext(retained), null);
-	assert.deepEqual(debuggerState.breakpoints[0].get('base.lua'), new Set([4]));
-	assert.deepEqual(debuggerState.breakpoints[1].get(retained.path), new Set([3, 9]));
-	assert.equal(debuggerState.breakpoints[2].size, 0);
+	assert.deepEqual(debuggerState.breakpoints.get({ domain: -1, path: 'base.lua' }), new Set([4]));
+	assert.deepEqual(debuggerState.breakpoints.get(retained), new Set([3, 9]));
+	assert.equal(debuggerState.breakpoints.get({ domain: 1, path: 'stale.lua' }).size, 0);
 });
 
 test('workspace recovery hydrates a dirty working copy without creating an editor input', async (t) => {
@@ -1651,7 +1649,7 @@ test('workspace recovery hydrates a dirty working copy without creating an edito
 	await applyWorkspaceAutosavePayload(
 		editorStub(storage, sources) as any,
 		sources,
-		{ breakpoints: [new Map(), new Map(), new Map()] },
+		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) },
 		payload([{
 			domain: resource.domain,
 			path: resource.path,
@@ -1697,7 +1695,7 @@ test('YAML dirty session recovery restores exact unsaved source into a fresh wor
 	await restoreWorkspaceStorageSession(
 		editorStub(storage, sources) as any,
 		sources,
-		{ breakpoints: [new Map(), new Map(), new Map()] },
+		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) },
 		restoredPayload,
 		new Set(),
 	);

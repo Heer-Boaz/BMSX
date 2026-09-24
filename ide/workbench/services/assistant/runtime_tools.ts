@@ -1,3 +1,6 @@
+import type { RuntimeDebuggerExecution } from '../../../runtime/debugger_execution';
+import { DebuggerSourceContext } from './debugger_sources';
+import { clearExecutionStopHighlights } from '../../../runtime_error/navigation';
 import type { RuntimeInspection, RuntimeInspectionService } from '../../../runtime/inspection';
 import type { GameImageCapture } from '../../../../hosts/common/image';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
@@ -7,13 +10,15 @@ import { StudioToolInputError } from './tool_input';
 
 /** Prompt lifetime owns its borrows and finite operations, never the physical target. */
 export class WorkspaceRuntimeTools {
+	private readonly debugSources: DebuggerSourceContext;
 	private inspection: RuntimeInspection | undefined;
 	private disposed = false;
 	private readonly lifetime = new AbortController();
 	private readonly onDisconnect = () => this.dispose();
 	public constructor(private readonly owner: RuntimeInspectionService, private readonly navigation: RuntimeFrameNavigation,
-		private readonly gameCapture: GameImageCapture, private readonly terminal: LuaTerminalSession, private readonly connection: AbortSignal) {
+		private readonly gameCapture: GameImageCapture, private readonly terminal: LuaTerminalSession, private readonly debuggerExecution: RuntimeDebuggerExecution, private readonly connection: AbortSignal) {
 		connection.throwIfAborted();
+		this.debugSources = new DebuggerSourceContext(debuggerExecution.state);
 		connection.addEventListener('abort', this.onDisconnect, { once: true });
 	}
 	public execute(name: string, input: unknown, requestSignal?: AbortSignal) {
@@ -27,6 +32,7 @@ export class WorkspaceRuntimeTools {
 				if (request.name === 'studio_terminal_status') return { kind: 'runtime' as const, data: {
 					target: this.owner.target, canEvaluate: this.terminal.canEvaluate, canControl: this.terminal.canToggleExecution,
 					active: this.terminal.active === undefined ? undefined : this.terminal.observe(this.terminal.active),
+					lastResult: this.terminal.lastResult === undefined ? undefined : this.terminal.observe(this.terminal.lastResult),
 				} };
 				const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
 				signal.throwIfAborted();
@@ -40,7 +46,20 @@ export class WorkspaceRuntimeTools {
 				return this.terminal.waitForStop(operation, signal).then(result => ({ kind: 'runtime' as const,
 					data: { target: this.owner.target, ...result } }));
 			}
-			case 'studio_runtime_status': return { kind: 'runtime' as const, data: this.owner.status() };
+			case 'studio_runtime_status': return { kind: 'runtime' as const, data: { ...this.owner.status(),
+				debugger: { active: this.debuggerExecution.active?.mode, canContinue: this.debuggerExecution.canResume('continue'),
+					canStepInto: this.debuggerExecution.canResume('into'), canStepOver: this.debuggerExecution.canResume('over'), canStepOut: this.debuggerExecution.canResume('out') } } };
+			case 'studio_list_debug_sources':
+			case 'studio_resume_debugger': {
+				if (request.target !== this.owner.target) throw new StudioToolInputError('Target is not this Studio authoring runtime');
+				if (request.name === 'studio_list_debug_sources') return { kind: 'runtime' as const, data: this.debugSources.list() };
+				const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
+				const operation = this.debuggerExecution.resume(request.mode, 'workbench', signal);
+				clearExecutionStopHighlights();
+				return operation.completion.then(result => ({ kind: 'runtime' as const, data: { target: this.owner.target, ...result } }));
+			}
+			case 'studio_read_debug_source': return { kind: 'runtime' as const, data: this.debugSources.read(request.source) };
+			case 'studio_set_breakpoints': return { kind: 'runtime' as const, data: this.debugSources.setBreakpoints(request.source, request.lines) };
 			case 'studio_step_frames':
 			case 'studio_seek_history': {
 				if (request.target !== this.owner.target) throw new StudioToolInputError('Target is not this Studio authoring runtime');
@@ -86,6 +105,7 @@ export class WorkspaceRuntimeTools {
 	public dispose(): void {
 		this.disposed = true;
 		this.lifetime.abort();
+		this.debugSources.dispose();
 		this.connection.removeEventListener('abort', this.onDisconnect);
 		this.inspection?.dispose(); this.inspection = undefined;
 	}

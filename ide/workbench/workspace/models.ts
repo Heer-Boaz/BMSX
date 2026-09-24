@@ -1,5 +1,5 @@
 import type { FontVariant } from '../../../machine/ts/render/shared/bmsx_font';
-import type { SerializedBreakpoints } from '../contrib/debugger/controller';
+import type { SerializedBreakpoints } from '../../runtime/breakpoints';
 import type { ResourceDomain } from '../../common/resource';
 import type { WorkspaceRecord } from '../../workspace/records';
 import type { SerializedEditorGroup, SerializedEditorInput } from '../services/editor/editor_serialization';

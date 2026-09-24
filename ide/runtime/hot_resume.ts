@@ -30,7 +30,6 @@ import type { Blua32SourceMedia } from './sources';
 import type { RuntimeLuaTooling } from './lua_tooling';
 import {
 	applyRuntimeDebuggerHotResume,
-	buildRuntimeBreakpointPcs,
 	discardRuntimeDebuggerFramesFrom,
 	pushRuntimeDebuggerControlPlan,
 	type RuntimeDebuggerState,
@@ -463,7 +462,7 @@ function applyPreparedHotResume(
 	clearAllRuntimeErrorOverlays();
 	applyRuntimeDebuggerHotResume(
 		debuggerState,
-		buildRuntimeBreakpointPcs(debuggerState, prepared.media),
+		debuggerState.breakpoints.compile(prepared.media),
 	);
 	const firstFrameIndex = cpu.getFrameDepth();
 	const stagedExecutionDomains: ExecutionDomainId[] = [];

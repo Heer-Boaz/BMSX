@@ -115,7 +115,8 @@ Studio binds this tool set at thread/start, not by rewriting stored history.
   CPU loop nor host-frame loop changes. This is code-generation/ownership
   evidence, not a new general throughput benchmark.
 
-Still open: general source-debugger control tools, selected-frame Terminal
+Source-debugger control tools are now covered by [the shared source debugger](studio_source_debugger.md).
+Still open: selected-frame Terminal
 evaluation, scenario execution/attachment, semantic builder operations and the
 complete reproduce/fix/install/rerun workflow. Live-model reasoning and personal
 account authentication are not established by deterministic provider fixtures.

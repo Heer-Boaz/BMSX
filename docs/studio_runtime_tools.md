@@ -17,7 +17,7 @@ unimplemented rows below are not advertised capabilities.
 | Current CPU stack, frame locals and upvalues | installed symbols + RuntimeInspection | real source stop, recursive/inline frames, expired handles | implemented; see [stack inspection](studio_stack_inspection.md) |
 | Game image | presentation owner + image-capable tool transport | pixels from each renderer, target/time provenance | implemented for paused authoring target; browser and native pixel evidence below |
 | Pause, finite video stepping, retained-history seek | execution/history owners + RuntimeFrameNavigation | actual completion, retained-range and cancellation tests | implemented for the authoring target; validation below |
-| Continue and source stepping | execution/debugger owners | execution intent, actual stops and source locations | tools open |
+| Installed-source breakpoints, Continue and source stepping | RuntimeBreakpoints / RuntimeDebuggerExecution | exact bindings, execution intent, actual stops and cancellation | implemented for authoring target; see [source debugger](studio_source_debugger.md) |
 | Session-context Lua Terminal | firmware compiler/REPL, shared Terminal session and debugger plans | real conversation calls, stops and TS/C++ BIOS parity | implemented; see [Terminal contract](studio_lua_terminal.md) |
 | Explicit cart-global access from Lua Terminal | BIOS getglobal/setglobal + CPU registerfiles | real register/object writes, TS/C++ parity | implemented; see [named globals](global_register_access.md) |
 | Implicit cart bindings and frame-context Lua Terminal | compiler/debugger binding contract | actual selected binding writes, not copied scope tables | open |

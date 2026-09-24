@@ -5,7 +5,6 @@ import {
 	type RuntimeSourceState,
 } from '../../runtime/sources';
 import type { CartEditor } from '../../cart_editor';
-import { restoreBreakpointsFromPayload } from '../contrib/debugger/controller';
 import {
 	clearCodeEditorInputs,
 } from '../ui/code_tab/contexts';
@@ -37,7 +36,7 @@ export async function applyWorkspaceAutosavePayload(
 	await editorTabGroup.deserialize(payload.editorGroup, editor.editorInputSerializers);
 	const active = editorTabGroup.activeTab;
 	if (active !== null) editor.editorPanes.openEditor(active);
-	restoreBreakpointsFromPayload(debuggerState, payload.breakpoints);
+	debuggerState.breakpoints.restore(payload.breakpoints);
 }
 
 async function resolveDirtyFileModels(

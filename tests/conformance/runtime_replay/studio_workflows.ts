@@ -215,7 +215,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	check(breakpointRow >= 0, 'W03: actual title-selection statement exists');
 	const breakpointLine = breakpointRow + 1;
 	harness.toggleLuaBreakpoint('title_screen.lua', breakpointLine);
-	check(ide.debugger.breakpointPcs[model.resource.domain + 1].size !== 0, 'W03: breakpoint binds to installed code');
+	check(ide.debugger.breakpoints.bindings.pcs[model.resource.domain + 1].size !== 0, 'W03: breakpoint binds to installed code');
 	setKey('ArrowLeft', true);
 	await until(() => ide.debugger.stopped && ide.editor.isActive, 'W03: source breakpoint opens the real editor');
 	setKey('ArrowLeft', false);

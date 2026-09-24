@@ -14,7 +14,7 @@ function fixture(t: TestContext, running = true) {
 	f.terminal.active = operation;
 	if (running) {
 		operation.status = 'running';
-		f.debuggerState.plans.pushControlPlan(new RuntimeGuestCallPlan(f.runtime, 0, true, () => {}), 'workbench');
+		f.debuggerState.plans.pushControlPlan(new RuntimeGuestCallPlan(f.runtime, 0, 'completion', true, () => {}), 'workbench');
 	}
 	t.after(() => { f.terminal.didReplaceMachine(); f.presenter.dispose(); });
 	return { ...f, operation };

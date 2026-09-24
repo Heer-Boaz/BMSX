@@ -41,6 +41,7 @@ export class LuaTerminalSession {
 	public readonly transcript = new TerminalTranscript();
 	public readonly history: string[] = [];
 	public active: TerminalEvaluation | undefined;
+	public lastResult: TerminalEvaluation | undefined;
 	private serial = 0;
 	private generation = 0;
 	private closed = false;
@@ -58,7 +59,7 @@ export class LuaTerminalSession {
 	) {}
 
 	public get canEvaluate(): boolean {
-		return !this.closed && this.active === undefined && this.tasks.mutationReady && !this.execution.launchPending
+		return !this.closed && this.active === undefined && this.debuggerState.executionContext === undefined && this.tasks.mutationReady && !this.execution.launchPending
 			&& !this.debuggerState.plans.mutationActive && !this.rewind.active && !this.execution.frameStepPending
 			&& !this.fault.hostFrameFailed && this.fault.faultSnapshot === null
 			&& this.runtime.machine.cpu.activeCartridgeSlot() !== -1
@@ -176,6 +177,7 @@ export class LuaTerminalSession {
 	}
 	private finish(operation: TerminalEvaluation, status: TerminalResult['status'], values: readonly string[]): void {
 		operation.finish({ status, values });
+		this.lastResult = operation;
 		this.active = undefined;
 		if (values.length > 0) this.transcript.append(status === 'completed' ? 'result' : 'error', values.join('\t'));
 		operation.outputEnd = this.transcript.next;

@@ -50,10 +50,10 @@ function fixture(t: TestContext, waitForConnection?: (connection: Connection) =>
 	runtime.machine.cpu.reset();
 	const guest = new SuspendedGuestSession(runtime);
 	const tooling = new RuntimeLuaTooling(sources, guest);
-	const { terminal, inspection, frameNavigation, gameCapture, presenter, backend, tasks, presentation } = createRuntimeInspectionFixture(runtime, sources, guest);
+	const { debuggerExecution, terminal, inspection, frameNavigation, gameCapture, presenter, backend, tasks, presentation } = createRuntimeInspectionFixture(runtime, sources, guest);
 	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
 	const testResults = new ScenarioResultService();
-	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testResults, inspection, frameNavigation, gameCapture, terminal, async (_signal, emit) => {
+	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testResults, inspection, frameNavigation, gameCapture, terminal, debuggerExecution, async (_signal, emit) => {
 		const connection = new Connection(emit); connections.push(connection);
 		await waitForConnection?.(connection);
 		return connection;

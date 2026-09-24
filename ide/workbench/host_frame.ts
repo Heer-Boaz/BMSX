@@ -165,12 +165,14 @@ export function runWorkbenchHostFrame(
 			workbenchMode.tickIdeInput(ide, input);
 		}
 
+		ide.debuggerExecution.beforeHostFrame();
 		ide.scenarioRuns.advance();
 		screen.clearPresentation();
+		const collectHistory = !ide.debugger.plans.mutationActive;
 		if (!menuPaused) {
 			// Seek and recorded-frame stepping can execute inside service(), before the ordinary update.
 			if (session.rewind.seeking || session.rewind.playing) ide.luaTooling.suspendedGuest.invalidate();
-			session.rewind.service(!ide.debugger.plans.mutationActive);
+			session.rewind.service(collectHistory);
 			if (session.rewind.playing && !session.execution.executionBlocked() && !ide.fault.hostFrameFailed) {
 				session.rewind.runPlayback(session.execution.consumeElapsedTime(hostDeltaMs));
 				session.syncMachineOutput(runtime, input, audioOutput);
@@ -261,7 +263,10 @@ export function runWorkbenchHostFrame(
 			hostDeltaMs,
 		);
 
-		if (!menuPaused && runtime.history.checkpointPending && ide.runtimeTasks.ready) {
+		// A call/recovery can end in this slice. Admit its new recording checkpoint
+		// before stopped-operation observers settle, not a frame after their receipt.
+		if (!menuPaused && ide.runtimeTasks.ready && (runtime.history.checkpointPending
+			|| collectHistory !== !ide.debugger.plans.mutationActive)) {
 			session.rewind.service(!ide.debugger.plans.mutationActive);
 		}
 	} catch (error) {
@@ -278,6 +283,7 @@ export function runWorkbenchHostFrame(
 		);
 	}
 	ide.frameNavigation.afterHostFrame();
+	ide.debuggerExecution.afterHostFrame();
 	if (!systemOutputDrained) {
 		systemOutput.flush(runtime, logOutput, ide.terminal.receiveOutput);
 	}

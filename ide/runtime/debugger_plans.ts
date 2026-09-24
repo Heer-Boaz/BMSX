@@ -66,6 +66,8 @@ export class RuntimeDebuggerPlanManager {
 	private suspended = false;
 	private readonly completionBatches: RuntimeDebuggerCompletionBatchRecord[] = [];
 
+	public get activeControlPlan(): RuntimeDebuggerControlPlan | null { return this.controlPlan; }
+
 	public get controlActive(): boolean {
 		return this.controlPlan !== null;
 	}

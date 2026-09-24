@@ -1,6 +1,5 @@
 import { editorTabGroup } from '../../../ide/workbench/ui/tab/group_model';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
-import { toggleBreakpoint } from '../../../ide/workbench/contrib/debugger/controller';
 import { resolveRuntimeLuaSource } from '../../../ide/runtime/sources';
 import { captureRuntimeSaveState, applyRuntimeSaveState, type RuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
 import { HistoryMode } from '../../../machine/ts/machine/runtime/history/history';
@@ -95,7 +94,7 @@ export async function runStudioTerminal(test: StudioFixture) {
 	const replResource = { domain: -1 as const, path: 'shell/repl.lua' };
 	const replSource = resolveRuntimeLuaSource(ide.sources, replResource)!.record.src;
 	const line = replSource.split('\n').findIndex(line => line.includes('return pcall(chunk)')) + 1;
-	toggleBreakpoint(ide.debugger, replResource, line);
+	ide.debugger.breakpoints.toggle(replResource, line);
 	await paste('counter + 10'); await press('Enter');
 	await until(() => ide.debugger.stopped && ide.editor.isActive, 'terminal: normal BIOS source breakpoint');
 	const breakpointCall = session.active!;
@@ -103,7 +102,7 @@ export async function runStudioTerminal(test: StudioFixture) {
 	await test.runPaletteCommand('View: Lua Terminal');
 	await test.click(input.actions.items.find(item => item.command === 'terminal.continue')!.bounds);
 	await until(() => breakpointCall.result !== undefined, 'terminal: continue from a breakpoint without continuing gameplay');
-	toggleBreakpoint(ide.debugger, replResource, line);
+	ide.debugger.breakpoints.toggle(replResource, line);
 	check(breakpointCall.result!.values[0] === '53' && test.execution.userPaused && ide.editor.isActive,
 		'terminal continuation retains user pause and Studio rather than using game Continue');
 	await test.runPaletteCommand('View: Codex Assistant');

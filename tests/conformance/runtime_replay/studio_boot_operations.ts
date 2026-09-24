@@ -2,7 +2,6 @@ import { check, type StudioFixture } from './studio_fixture';
 import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { resolveRuntimeResource } from '../../../ide/runtime/sources';
-import { toggleBreakpoint } from '../../../ide/workbench/contrib/debugger/controller';
 import { runtimeErrorState } from '../../../ide/editor/contrib/runtime_error/state';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 
@@ -47,7 +46,7 @@ export async function runStudioBootOperations(test: StudioFixture) {
 	await runMenuCommand('pause');
 	const actor = title();
 	const initLine = source.split('\tfsm_library.register(')[0].split('\n').length;
-	toggleBreakpoint(ide.debugger, model.resource, initLine);
+	ide.debugger.breakpoints.toggle(model.resource, initLine);
 	const initializer = harness.performHotResume();
 	await initializer.admission;
 	await until(() => ide.debugger.stopped && ide.editor.isActive, 'boot: real init breakpoint before Reboot rejection');
@@ -85,7 +84,7 @@ export async function runStudioBootOperations(test: StudioFixture) {
 		'boot: only the admitted revision is installed; later edits remain authored and unsaved');
 	check((await initializer.completion).status === 'cancelled' && !ide.debugger.plans.mutationActive && !ide.debugger.stopped
 		&& runtimeErrorState.activeOverlay === null, 'boot: accepted reset retires real init work and stale debugger/error projections');
-	toggleBreakpoint(ide.debugger, model.resource, initLine);
+	ide.debugger.breakpoints.toggle(model.resource, initLine);
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'boot: captured source executes after reset');
 	await reachNemesisTitle(test);
 	harness.openLuaSource('title_screen.lua');

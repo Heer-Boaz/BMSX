@@ -6,7 +6,6 @@ import type { RuntimeBreakpointState } from '../../runtime/debugger_state';
 import { editorTabGroup } from '../ui/tab/group_model';
 import { editorTextModelService } from '../../editor/model/model_service';
 import { getTextSnapshot } from '../../editor/text/source_text';
-import { serializeBreakpoints } from '../contrib/debugger/controller';
 import {
 	buildWorkspaceDirtyEntryPath,
 	buildWorkspaceDirtyRecordPath,
@@ -91,7 +90,7 @@ export function commitWorkspaceSessionLocally(
 		: previousGeneration.payload.editorGroup;
 
 	const breakpoints = !previousGeneration || (changes & WorkspaceAutosaveChange.Breakpoints)
-		? serializeBreakpoints(debuggerState)
+		? debuggerState.breakpoints.serialize()
 		: previousGeneration.payload.breakpoints;
 	const fontVariant = !previousGeneration || (changes & WorkspaceAutosaveChange.Font)
 		? editor.fontVariant

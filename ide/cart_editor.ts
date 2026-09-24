@@ -1,3 +1,4 @@
+import type { RuntimeDebuggerExecution } from './runtime/debugger_execution';
 import type { RuntimeFrameNavigation } from './runtime/frame_navigation';
 import type { GameImageCapture } from '../hosts/common/image';
 import { AssistantConversation } from './workbench/services/assistant/conversation';
@@ -195,7 +196,9 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly activeListeners = new Set<(active: boolean) => void>();
 	public get executionSuspended(): boolean {
 		return this.isActive && (this.quickInput.visible || this.contextMenu.visible
-			|| !this.debuggerState.plans.workbenchExecutionRequested && this.editorPanes.activePane?.suspendsRuntime !== false);
+			|| !this.debuggerState.plans.workbenchExecutionRequested
+			&& !(this.debuggerState.executionContext === 'workbench' && !this.debuggerState.stopped)
+			&& this.editorPanes.activePane?.suspendsRuntime !== false);
 	}
 	public readonly isAvailable: boolean;
 	public readonly completion: EditorCompletionController;
@@ -233,6 +236,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly unsubscribeDiagnosticsChanged: () => void;
 	private readonly unbindQuickInputFields: () => void;
 	private readonly unbindProblemsPanel: () => void;
+	private readonly unbindBreakpoints: () => void;
 	private readonly chromeRenderContext: ChromeRenderContext = {
 		get viewportWidth(): number { return editorViewState.viewportWidth; },
 		get headerHeight(): number { return editorViewState.headerHeight; },
@@ -276,11 +280,12 @@ export class RuntimeCartEditor implements CartEditor {
 		public readonly terminal: LuaTerminalSession,
 		runtimeInspection: RuntimeInspectionService,
 		private readonly frameNavigation: RuntimeFrameNavigation,
+		private readonly debuggerExecution: RuntimeDebuggerExecution,
 		gameCapture: GameImageCapture,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
 		connectAssistant?: AssistantConnectionFactory,
 	) {
-		this.assistant = new AssistantConversation(editorTextModelService, sources, storage, diagnostics, scenarioRuns.results, runtimeInspection, frameNavigation, gameCapture, terminal, connectAssistant);
+		this.assistant = new AssistantConversation(editorTextModelService, sources, storage, diagnostics, scenarioRuns.results, runtimeInspection, frameNavigation, gameCapture, terminal, debuggerExecution, connectAssistant);
 		this.runtime = runtime;
 		this.presenter = presenter;
 		this.display = display;
@@ -313,6 +318,7 @@ export class RuntimeCartEditor implements CartEditor {
 			scenarioRuns,
 			textFileSaves,
 			frameNavigation,
+			debuggerExecution,
 		);
 		this.completion = new EditorCompletionController(luaTooling, fault, runtime);
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
@@ -399,6 +405,7 @@ export class RuntimeCartEditor implements CartEditor {
 			input => problemsPanel.handleKeyboard(input, this.editorPanes),
 		);
 		this.breakpoints = new BreakpointController(debuggerState);
+		this.unbindBreakpoints = debuggerState.breakpoints.onDidChange(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.Breakpoints));
 		this.initializeEditorGroup();
 		this.unsubscribeWorkspaceCursorMoved = activeCodeEditor.onDidMoveCursor(() => {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
@@ -539,7 +546,6 @@ export class RuntimeCartEditor implements CartEditor {
 		const codeView = activeCodeEditor.view;
 		const scrollRow = codeView?.scrollRow;
 		const scrollColumn = codeView?.scrollColumn;
-		const breakpointRevision = this.breakpoints.revision;
 		if (!hasBlockingWorkbenchModal()) {
 			handleEditorWheelInput(this, playerInput);
 		}
@@ -562,9 +568,6 @@ export class RuntimeCartEditor implements CartEditor {
 			this,
 			this.sources,
 		);
-		if (this.breakpoints.revision !== breakpointRevision) {
-			requestWorkspaceAutosave(WorkspaceAutosaveChange.Breakpoints);
-		}
 		if (codeView !== null && (codeView.scrollRow !== scrollRow || codeView.scrollColumn !== scrollColumn)) {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
 		}
@@ -612,6 +615,8 @@ export class RuntimeCartEditor implements CartEditor {
 	public async shutdown(): Promise<void> {
 		this.assistant.dispose();
 		this.frameNavigation.dispose();
+		this.debuggerExecution.dispose();
+		this.unbindBreakpoints();
 		const terminalDrained = this.terminal.shutdown();
 		this.scenarioRuns.dispose();
 		this.diagnostics.dispose();
