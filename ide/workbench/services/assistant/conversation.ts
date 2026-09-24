@@ -1,3 +1,4 @@
+import type { ActorExecutionService } from '../../contrib/actor_lab/execution';
 import type { RuntimeDebuggerExecution } from '../../../runtime/debugger_execution';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 import type { GameImageCapture } from '../../../../hosts/common/image';
@@ -63,6 +64,7 @@ export class AssistantConversation {
 		private readonly gameCapture: GameImageCapture,
 		private readonly terminal: LuaTerminalSession,
 		private readonly debuggerExecution: RuntimeDebuggerExecution,
+		private readonly actorExecution: ActorExecutionService,
 		private readonly behaviorSources: BehaviorSourceDocuments,
 		private readonly openConnection?: AssistantConnectionFactory) {
 		this.unbindWorkspace = models.onWillClear(() => this.clearConversation());
@@ -121,7 +123,7 @@ export class AssistantConversation {
 	private createTurn(): ActiveTurn {
 		return { tools: new WorkspaceSourceTools(this.models, this.sources, this.storage, this.diagnostics, this.sourceLifetime!.signal, this.behaviorSources),
 			tests: new WorkspaceTestTools(this.testRuns, this.sourceLifetime!.signal),
-			runtime: new WorkspaceRuntimeTools(this.runtimeInspection, this.frameNavigation, this.gameCapture, this.terminal, this.debuggerExecution, this.sourceLifetime!.signal), requests: new Map(), messages: new Map() };
+			runtime: new WorkspaceRuntimeTools(this.runtimeInspection, this.frameNavigation, this.gameCapture, this.terminal, this.debuggerExecution, this.actorExecution, this.sourceLifetime!.signal), requests: new Map(), messages: new Map() };
 	}
 
 	/** One explicit submission. Native Codex owns FIFO dispatch; no retries or client dequeue loop. */

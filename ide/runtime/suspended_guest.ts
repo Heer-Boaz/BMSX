@@ -1,6 +1,7 @@
 import { ScratchBuffer } from '../../machine/ts/common/scratchbuffer';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
+import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import type { StringId, StringPool } from '../../machine/ts/machine/cpu/string_pool';
 import {
 	TABLE_INDEX_CHAIN_LIMIT,
@@ -16,11 +17,15 @@ import {
 	valueToString,
 	valueTag,
 	ValueTag,
+	type StringValue,
+	type BuiltinFunction,
 } from '../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 
 export type SuspendedGuestValue = Value;
+/** Scalar identity within one physical heap; a requester must retire it on replacement. */
+export type SuspendedValueIdentity = { readonly tag: ValueTag; readonly scalar: number };
 type LinkedRuntimeFunctionLocation = { readonly domain: ExecutionDomainId; readonly address: number };
 /** RAM functions have a shared address, not a ROM socket or linked symbols. */
 export type RuntimeFunctionLocation = LinkedRuntimeFunctionLocation | { readonly domain: null; readonly address: number };
@@ -86,6 +91,23 @@ export class SuspendedGuestSession {
 
 	public invalidate(reason: GuestInvalidationReason = 'execution'): void {
 		for (const listener of this.invalidationListeners) listener(reason);
+	}
+
+	public identity(value: Value): SuspendedValueIdentity {
+		const tag = valueTag(value);
+		return { tag, scalar: this.identityScalar(value, tag) };
+	}
+	public matchesIdentity(value: Value, identity: SuspendedValueIdentity): boolean {
+		return valueTag(value) === identity.tag && this.identityScalar(value, identity.tag) === identity.scalar;
+	}
+	private identityScalar(value: Value, tag: ValueTag): number {
+		switch (tag) {
+			case ValueTag.Nil: case ValueTag.False: case ValueTag.True: return 0;
+			case ValueTag.Number: return value as number;
+			case ValueTag.String: return (value as StringValue).id;
+			case ValueTag.BuiltinFunction: return (value as BuiltinFunction).id;
+			case ValueTag.Table: case ValueTag.Closure: case ValueTag.Thread: return (value as Table | Closure | Thread).hashId;
+		}
 	}
 
 	/** The borrowed result view is invalidated by subsequent CPU execution, call entry, reset, or state restore. */

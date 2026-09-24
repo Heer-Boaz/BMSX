@@ -51,11 +51,11 @@ function fixture(t: TestContext, waitForConnection?: (connection: Connection) =>
 	runtime.machine.cpu.reset();
 	const guest = new SuspendedGuestSession(runtime);
 	const tooling = new RuntimeLuaTooling(sources, guest);
-	const { debuggerExecution, terminal, inspection, frameNavigation, gameCapture, presenter, backend, tasks, presentation } = createRuntimeInspectionFixture(runtime, sources, guest);
+	const { actorExecution, debuggerExecution, terminal, inspection, frameNavigation, gameCapture, presenter, backend, tasks, presentation } = createRuntimeInspectionFixture(runtime, sources, guest);
 	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
 	const testRuns = new ScenarioRunService(models, sources, tooling, storage, new Map(), runtime.model, () => assert.fail('this fixture cannot create test targets'));
 	const testResults = testRuns.results;
-	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testRuns, inspection, frameNavigation, gameCapture, terminal, debuggerExecution, new BehaviorSourceDocuments(models, sources), async (_signal, emit) => {
+	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testRuns, inspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, new BehaviorSourceDocuments(models, sources), async (_signal, emit) => {
 		const connection = new Connection(emit); connections.push(connection);
 		await waitForConnection?.(connection);
 		return connection;

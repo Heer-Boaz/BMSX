@@ -1,3 +1,4 @@
+import type { ActorExecutionService } from './workbench/contrib/actor_lab/execution';
 import type { RuntimeDebuggerExecution } from './runtime/debugger_execution';
 import type { RuntimeFrameNavigation } from './runtime/frame_navigation';
 import type { GameImageCapture } from '../hosts/common/image';
@@ -12,7 +13,6 @@ import { ActorLabController } from './workbench/contrib/actor_lab/controller';
 import { GameViewInput } from './workbench/contrib/game_view/editor_input';
 import { GameViewEditorPane } from './workbench/contrib/game_view/editor_pane';
 import { ActorLabEditorPane } from './workbench/contrib/actor_lab/editor_pane';
-import { scheduleRuntimeGuestCall } from './runtime/guest_call';
 import type { EditorInputSerializers } from './workbench/services/editor/editor_serialization';
 import { CodeEditorInputSerializer } from './workbench/contrib/code_editor/editor_serializer';
 import { BehaviorLensInputSerializer } from './workbench/contrib/behavior_lens/editor_serializer';
@@ -280,6 +280,7 @@ export class RuntimeCartEditor implements CartEditor {
 		private readonly boots: BootService,
 		public readonly diagnostics: ResourceDiagnosticsService,
 		public readonly terminal: LuaTerminalSession,
+		private readonly actorExecution: ActorExecutionService,
 		runtimeInspection: RuntimeInspectionService,
 		private readonly frameNavigation: RuntimeFrameNavigation,
 		private readonly debuggerExecution: RuntimeDebuggerExecution,
@@ -288,7 +289,7 @@ export class RuntimeCartEditor implements CartEditor {
 		connectAssistant?: AssistantConnectionFactory,
 	) {
 		const behaviorSources = new BehaviorSourceDocuments(editorTextModelService, sources);
-		this.assistant = new AssistantConversation(editorTextModelService, sources, storage, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, terminal, debuggerExecution, behaviorSources, connectAssistant);
+		this.assistant = new AssistantConversation(editorTextModelService, sources, storage, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, behaviorSources, connectAssistant);
 		this.runtime = runtime;
 		this.presenter = presenter;
 		this.display = display;
@@ -363,14 +364,7 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		this.sceneEditor = new SceneEditorController(this.sources, this.editorPanes, this.navigation);
 		this.actorLab = new ActorLabController(sources, luaTooling.suspendedGuest, runtime.machine.cpu,
-			this.quickInput, this.editorPanes, this.navigation,
-			(request, observer) => { void scheduleRuntimeGuestCall(runtime, luaTooling.suspendedGuest, debuggerState, runtimeTasks, request,
-				() => { execution.requestExecution(false); },
-				completed => {
-					this.actorLab.didFinishCall(completed, observer);
-				},
-				error => { this.actorLab.didFinishCall(false, observer); this.handleRuntimeTaskError(error, 'Actor operation failed'); }); },
-			() => runtimeTasks.mutationReady && !execution.launchPending && !debuggerState.plans.mutationActive && !rewind.active);
+			this.quickInput, this.editorPanes, this.navigation, actorExecution);
 
 		const behaviorRegistrations = behaviorSources.registrations;
 		this.behaviorLens = new BehaviorLensController(
@@ -623,6 +617,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.debuggerExecution.dispose();
 		this.unbindBreakpoints();
 		const terminalDrained = this.terminal.shutdown();
+		const actorsDrained = this.actorExecution.shutdown();
 		this.scenarioRuns.dispose();
 		this.diagnostics.dispose();
 		this.unsubscribeDiagnosticsChanged();
@@ -633,6 +628,7 @@ export class RuntimeCartEditor implements CartEditor {
 		await executionDrained;
 		await bootsDrained;
 		await terminalDrained;
+		await actorsDrained;
 		pointerHover.clear();
 		pointerCapture.cancel();
 		this.contextMenu.dispose();

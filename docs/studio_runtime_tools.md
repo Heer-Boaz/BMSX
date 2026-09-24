@@ -27,7 +27,7 @@ unimplemented rows below are not advertised capabilities.
 | Live test breakpoint/step/debug-rerun | target-bound debugger and composed execution hooks | actual stops/control on the test target | implemented for one named case; prompt-scoped control, [live test debugger](studio_test_debugger.md) |
 | FSM/BT/ActionEffect source queries and reviewed edits | shared Behavior Lens documents and syntax-edit producers | canonical-source review, builder readback and Undo | implemented for initial-state, child-list and property edits; [behavior source tools](studio_behavior_tools.md) |
 | Live Object/FSM/BT/ActionEffect/timeline inspection | shared Actor Lab runtime tree and suspended value owner | typed instance identity, nested values and execution/restore expiry | implemented for authoring/history; [Actor tools](studio_actor_tools.md) |
-| Live Actor mutation | World mutation rendezvous and runtime call owner | explicit operation lifetime, admission and live-state readback | open; inspection and source tools do not imply mutation |
+| Live Actor mutation | shared ActorExecutionService + World rendezvous | explicit operation lifetime, admission, cancellation and live-state readback | authoring actions/stored methods implemented; [Actor tools](studio_actor_tools.md) |
 | Apply/save/build/install lifecycle | working-copy, Save, boot and Hot Resume owners | distinct receipts, rerun against installed code | open |
 
 ## Reference implementations
@@ -102,8 +102,8 @@ added. Values and pages are constructed only on explicit inspection requests.
    Selected-frame recovery now has public-owner browser workflow coverage;
    native logical-frame navigation is still more limited than Studio's source UI.
 5. Test execution, target-bound debugging and basic source-backed builder actions
-   are implemented. Live semantic Actor operations and builder transfer/retarget
-   impact review remain open.
+   and authoring Actor actions/stored methods are implemented. Builder
+   transfer/retarget impact review and apply/save/install/rerun remain open.
 
 Long operations wait on owner completion/events, not repeated provider polls.
 User Stop cancels owned work without undoing already performed guest writes.
@@ -211,8 +211,9 @@ continuous video stream. At this slice boundary, execution/rewind tools were sti
 open; the next section records frame navigation. Contextual Terminal invocation
 with native parity and Scenario Lab execution were still open at that boundary;
 their later implementations are linked in the acceptance table. Later contracts
-record test-target debugging. Semantic builder tools and complete
-fix/save/install/rerun acceptance remain open.
+also record test-target debugging, basic semantic builder tools and Actor
+execution. Complex builder transfer/retarget and complete fix/save/install/rerun
+acceptance remain open.
 
 ## Frame navigation: implementation gate
 
@@ -297,11 +298,11 @@ objects, including from a conversation. The
 cart bindings through the same compiler and registers, on both machines.
 
 Subsequent slices add [Continue/source-debugger operations](studio_source_debugger.md)
-and [scenario discovery/execution](studio_test_execution.md). Still open:
-frame-context Lua Terminal bindings, cross-turn test-debugger handoff, live Actor
-mutation, complex builder transfer/retarget review and the complete
-reproduce/fix/rerun acceptance flow. Basic canonical-source builder operations
-are implemented as recorded in the acceptance table above.
+and [scenario discovery/execution](studio_test_execution.md). Frame-context Lua,
+cross-turn test-debugger handoff and authoring Actor actions/stored methods are
+also implemented as recorded in the acceptance table above. Complex builder
+transfer/retarget review and the complete reproduce/fix/rerun acceptance flow
+remain open.
 
 The subsequent [retained test inspection](studio_test_inspection.md) slice adds
 actual phase-thread stack/scopes/objects and compiled-source reads, shared with

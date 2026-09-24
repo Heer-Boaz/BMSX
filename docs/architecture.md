@@ -1038,6 +1038,19 @@ Background rewind checkpoints do not revoke Actor Lab input or Run Resume intent
 Those commands use the existing mutation-admission state; the task queue and host
 frame scheduler still wait for the outstanding GPU readback before executing code.
 
+`ActorExecutionService` owns explicit live-instance operations independently of
+Actor Lab selection or conversation presentation. Its admission retains scalar
+World/actor/typed-membership identities within one heap generation, then resolves
+the actual graph after World publishes its receipt. The pane is a UI controller;
+tools use the same domain catalog, stored-method reader and call preparation.
+Cancellation before invocation revokes it; cancellation after invocation pauses
+the physical call. A paused pre-entry tool reply does not abandon cancellation
+authority. Completed calls return their actual values/tags, not an inferred
+success of FSM guards, deferred lifecycle work or image refresh. See
+[Actor tools](studio_actor_tools.md) for the operation protocol and evidence.
+The generic guest scheduler reports final call entry separately from admission;
+no actor metadata, source metadata or new observer path enters either CPU.
+
 Actor Lab's live timeline slider calls the selected component's `scrub_time`;
 cartlib owns sampling and scrub-event policy. It does not advance a world clock,
 rewrite source or reconstruct authored curves from compiled playback data.

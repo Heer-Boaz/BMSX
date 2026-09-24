@@ -288,5 +288,6 @@ export function runWorkbenchHostFrame(
 		systemOutput.flush(runtime, logOutput, ide.terminal.receiveOutput);
 	}
 	ide.terminal.afterHostFrame();
+	ide.actorExecution.afterHostFrame();
 	return HostFrameRunResult.Continue;
 }

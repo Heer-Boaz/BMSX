@@ -1,3 +1,4 @@
+import { ActorExecutionService } from '../../ide/workbench/contrib/actor_lab/execution';
 import { RuntimeDebuggerExecution } from '../../ide/runtime/debugger_execution';
 import { LuaTerminalSession } from '../../ide/workbench/services/terminal/session';
 import { RuntimeFrameNavigation } from '../../ide/runtime/frame_navigation';
@@ -34,5 +35,6 @@ export function createRuntimeInspectionFixture(runtime: Runtime, sources: Runtim
 	const inspection = new RuntimeInspectionService(runtime, sources, guest, debuggerState, execution, tasks, rewind, fault, frameNavigation, debuggerExecution);
 	const gameCapture = new GameCaptureService(presenter, presentation, tasks, encodePngImage);
 	const terminal = new LuaTerminalSession(runtime, sources, guest, debuggerState, fault, tasks, execution, rewind);
-	return { debuggerExecution, terminal, audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
+	const actorExecution = new ActorExecutionService(runtime, sources, guest, debuggerState, fault, tasks, execution, rewind);
+	return { actorExecution, debuggerExecution, terminal, audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
 }

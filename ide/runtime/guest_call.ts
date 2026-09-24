@@ -16,9 +16,6 @@ export type RuntimeGuestCall = {
 	readonly args: () => readonly Value[];
 };
 
-export type RuntimeGuestCallObserver = (completed: boolean, values: readonly Value[]) => void;
-/** A requester can revoke a queued evaluation before it enters the CPU. */
-export type RuntimeGuestCallExecutor = (prepare: () => RuntimeGuestCall | undefined, observer?: RuntimeGuestCallObserver) => void;
 export type RuntimeGuestCallBoundary = {
 	/** Ask the guest owner for an admission receipt using its ordinary API. */
 	readonly request: RuntimeGuestCall;
@@ -30,6 +27,8 @@ export type RuntimeGuestCallRequest = {
 	/** Request lifetime is independent of any suspended-heap borrow. */
 	readonly isCurrent: () => boolean;
 	readonly prepare: () => RuntimeGuestCall | undefined;
+	/** Final requested closure entered the CPU; admission/exception calls do not count. */
+	readonly didEnter?: () => void;
 } & ({
 	readonly admission: 'quiescent';
 	/** The guest lifecycle, rather than debugger function names, admits this edit. */
@@ -161,6 +160,7 @@ export function scheduleRuntimeGuestCall(
 		const call = request.prepare();
 		if (call === undefined) { finished(false); return false; }
 		beginCall(call, request.honorUserStops, finished);
+		request.didEnter?.();
 		return true;
 	};
 	return tasks.schedule(() => {

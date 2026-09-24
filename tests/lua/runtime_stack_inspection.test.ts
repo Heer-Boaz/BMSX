@@ -72,7 +72,7 @@ return run(7)`;
 		assert.equal(Number(entry.value.display), declaration.address, 'display preserves every address bit');
 	}
 	const lifetime = new AbortController();
-	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, lifetime.signal);
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, lifetime.signal);
 	t.after(() => tools.dispose());
 	const opened = await tools.execute('studio_inspect_runtime', { target: f.inspection.target });
 	assert.ok('inspection' in opened.data);
@@ -314,7 +314,7 @@ test('missing symbols are explicit and execution invalidates frame, scope and va
 
 test('tool stack/frame handles are prompt-local and external paging arguments are decoded only at the tool boundary', async t => {
 	const f = fixture('local x = 42\nhalt_until_irq\nreturn x', 0);
-	const lifetime = new AbortController(), tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, lifetime.signal);
+	const lifetime = new AbortController(), tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, lifetime.signal);
 	t.after(() => tools.dispose());
 	const opened = await tools.execute('studio_inspect_runtime', { target: f.inspection.target });
 	assert.ok('inspection' in opened.data);
@@ -413,7 +413,7 @@ local run = function(seed, ...)
 end
 return run(1)`, 3, 4);
 	const lifetime = new AbortController();
-	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, lifetime.signal);
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, lifetime.signal);
 	t.after(() => tools.dispose());
 	const before = [f.runtime.machine.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
 	const opened = await tools.execute('studio_inspect_runtime', { target: f.inspection.target });

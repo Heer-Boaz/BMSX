@@ -411,7 +411,7 @@ end
 	startAtBreakpoint(harness, line); assert.equal(stoppedSourceLine(harness), line);
 	const guest = new SuspendedGuestSession(runtime);
 	const before = guest.global('actor');
-	let current = true, prepared = 0, started = 0, boundaryCalls = 0, readbacks = 0;
+	let current = true, prepared = 0, started = 0, entered = 0, boundaryCalls = 0, readbacks = 0;
 	let completed: boolean | undefined;
 	const results: Value[] = [];
 	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
@@ -420,6 +420,7 @@ end
 	await scheduleRuntimeGuestCall(runtime, guest, state, tasks, {
 		admission: 'quiescent', honorUserStops: false,
 		isCurrent: () => current,
+		didEnter: () => { entered++; assert.equal(runtime.completionCallPending(), true); },
 		boundary: () => {
 			boundaryCalls++;
 			return { request: { domain: -1, closure: guest.global('request_boundary') as Closure, args: () => [] },
@@ -442,7 +443,7 @@ end
 	};
 	await execute(); // IRQ, then request receipt.
 	await execute(); // Request returns; the original pass has not advanced.
-	assert.equal(boundaryCalls, 1); assert.equal(prepared, 0);
+	assert.equal(boundaryCalls, 1); assert.equal(prepared, 0); assert.equal(entered, 0, 'receipt call is not final invocation');
 	assert.equal(guest.global('actor'), before);
 	state.plans.setControlSuspended(true);
 	assert.equal(cpu.runUntilDepth(0, DEBUG_RUN_CYCLE_BUDGET), RunResult.ExecutionStopped);
@@ -456,12 +457,12 @@ end
 	assert.equal(started, 1);
 	assert.equal(guest.global('ordinary'), 1, 'stop at the owner boundary, before another game iteration');
 	if (cancel !== 'never') {
-		assert.equal(completed, false); assert.equal(prepared, 0);
+		assert.equal(completed, false); assert.equal(prepared, 0); assert.equal(entered, 0);
 		assert.equal(guest.global('calls'), 0, 'a revoked request leaves no queued edit in the guest');
 		assert.equal(state.plans.mutationActive, false);
 		return;
 	}
-	assert.equal(prepared, 1);
+	assert.equal(prepared, 1); assert.equal(entered, 1);
 	assert.equal(readbacks, 4, 'synchronize GPU work after IRQ, receipt submission and boundary');
 	await execute();
 	assert.equal(completed, true); assert.deepEqual(results, [101]);

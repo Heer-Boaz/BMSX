@@ -2,7 +2,7 @@ import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { readActorMethods } from '../../ide/workbench/contrib/actor_lab/methods';
 import { ActorTimelineTransport } from '../../ide/workbench/contrib/actor_lab/timeline';
 import type { ActorNode } from '../../ide/workbench/contrib/actor_lab/runtime';
-import type { RuntimeGuestCall, RuntimeGuestCallObserver } from '../../ide/runtime/guest_call';
+import type { RuntimeGuestCall } from '../../ide/runtime/guest_call';
 import type { Table } from '../../machine/ts/machine/cpu/table';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -198,24 +198,26 @@ end
 	const node: ActorNode = { kind: 'timeline', hashId: target.hashId, label: 'test', name: 'test', prefix: '', children: [],
 		value: target, receiver: component, component, key: null, active: false, stateKeys: [] };
 	const transport = new ActorTimelineTransport();
-	let call: RuntimeGuestCall | undefined, observer: RuntimeGuestCallObserver | undefined;
+	let call: RuntimeGuestCall | undefined, observer: ((completed: boolean) => void) | undefined;
 	const applied: number[] = [];
 	let checkpointPending = false;
 	const update = () => {
 		transport.refresh(node, false, guest, true, call === undefined);
-		transport.executePending(node, -1, guest, !checkpointPending && call === undefined, (prepare, finished) => {
+		transport.executePending(node, !checkpointPending && call === undefined, (selected, time, program, current, finished) => {
 			assert.equal(call, undefined, 'one admitted evaluation, not an input queue');
-			call = prepare(); observer = finished;
+			assert.equal(current(), true); assert.equal(program, (guest.readStringMember(target, 'program') as Table).hashId);
+			call = { domain: -1, closure: guest.readStringMember(selected.receiver, 'scrub_time') as Closure,
+				args: () => [component, selected.key, time] };
+			observer = finished;
 		});
 	};
 	const complete = (success: boolean) => {
-		const values = [];
 		if (success) {
 			const args = call!.args(); applied.push(args[2] as number);
 			guest.invalidate(); cpu.beginCompletionClosureInExecutionDomain(call!.domain, call!.closure, args);
-			cpu.runUntilDepth(0, 100_000); cpu.readCompletionValues(values);
+			cpu.runUntilDepth(0, 100_000);
 		}
-		call = undefined; observer!(success, values);
+		call = undefined; observer!(success);
 	};
 	update(); transport.request(100); update();
 	transport.request(200); update(); transport.request(300); update();
@@ -235,20 +237,11 @@ end
 	expired(false); complete(true); update();
 	assert.equal(transport.slider.value, 700, 'an expired call cannot clear a newer target session');
 	assert.equal(guest.readStringMember(target, 'sample'), 1400);
-	let queued: () => RuntimeGuestCall | undefined;
+	let queued: () => boolean;
 	transport.request(800);
-	transport.executePending(node, -1, guest, true, prepare => { queued = prepare; });
+	transport.executePending(node, true, (_node, _time, _program, current) => { queued = current; });
 	transport.clear();
-	assert.equal(queued!(), undefined, 'replacement before CPU admission revokes the queued evaluation');
-	update(); transport.request(900);
-	transport.executePending(node, -1, guest, true, prepare => { queued = prepare; });
-	node.receiver = null;
-	assert.equal(queued!(), undefined, 'an IRQ may have removed the selected component before admission');
-	node.receiver = component;
-	const previousProgram = guest.readStringMember(target, 'program');
-	target.setStringKey(cpu.stringPool.find('program')!, component);
-	assert.equal(queued!(), undefined, 'program replacement during IRQ return must not apply an old seek');
-	target.setStringKey(cpu.stringPool.find('program')!, previousProgram);
+	assert.equal(queued!(), false, 'replacement before CPU admission revokes the queued evaluation');
 });
 
 function runtimeWithPausedCpuLocal(source: string) {
@@ -696,8 +689,8 @@ halt_until_irq`;
 		const subject = guest.global('subject') as Table;
 		const bytes = cpu.luaHeap.usedBytes(), depth = cpu.getFrameDepth(), pc = cpu.readFramePc(depth - 1);
 		const methods = readActorMethods(bridge.sources, guest, subject);
-		assert.deepEqual(methods.map(method => method.label), ['inherited', 'overridden', 'own']);
-		assert.equal(methods[1].detail, 'cart.lua:7');
+		assert.deepEqual(methods.map(method => method.name), ['inherited', 'overridden', 'own']);
+		assert.equal(methods[1].source!.resource.path, 'cart.lua'); assert.equal(methods[1].source!.range.start.line, 7);
 		assert.deepEqual(readActorMethods(bridge.sources, guest, guest.global('dynamic') as Table), []);
 		assert.equal(guest.global('index_calls'), 0);
 		assert.equal(cpu.luaHeap.usedBytes(), bytes);

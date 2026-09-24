@@ -1,3 +1,4 @@
+import { ActorExecutionService } from './contrib/actor_lab/execution';
 import { RuntimeDebuggerExecution } from '../runtime/debugger_execution';
 import { RuntimeFrameNavigation } from '../runtime/frame_navigation';
 import type { GameImageCapture } from '../../hosts/common/image';
@@ -55,6 +56,7 @@ export class RuntimeIdeState {
 	public readonly boots: BootService;
 	public readonly diagnostics: ResourceDiagnosticsService;
 	public readonly terminal: LuaTerminalSession;
+	public readonly actorExecution: ActorExecutionService;
 	public readonly inspection: RuntimeInspectionService;
 	public readonly frameNavigation: RuntimeFrameNavigation;
 	public readonly debuggerExecution: RuntimeDebuggerExecution;
@@ -98,6 +100,7 @@ export class RuntimeIdeState {
 		this.diagnostics = new ResourceDiagnosticsService(editorTextModelService, this.luaTooling, clock);
 		this.terminal = new LuaTerminalSession(runtime, sources, this.luaTooling.suspendedGuest, this.debugger,
 			this.fault, runtimeTasks, execution, rewind);
+		this.actorExecution = new ActorExecutionService(runtime, sources, this.luaTooling.suspendedGuest, this.debugger, this.fault, runtimeTasks, execution, rewind);
 		this.frameNavigation = new RuntimeFrameNavigation(runtime, execution, rewind, runtimeTasks, this.debugger, this.fault, this.luaTooling.suspendedGuest);
 		this.debuggerExecution = new RuntimeDebuggerExecution(runtime, this.debugger, execution, rewind, runtimeTasks, this.fault, this.luaTooling.suspendedGuest, this.frameNavigation);
 		this.inspection = new RuntimeInspectionService(runtime, sources, this.luaTooling.suspendedGuest, this.debugger,
@@ -129,6 +132,7 @@ export class RuntimeIdeState {
 			this.boots,
 			this.diagnostics,
 			this.terminal,
+			this.actorExecution,
 			this.inspection,
 			this.frameNavigation,
 			this.debuggerExecution,
@@ -141,6 +145,7 @@ export class RuntimeIdeState {
 		const invalidateToolingState = () => {
 			this.debuggerExecution.didReset();
 			this.terminal.didReplaceMachine();
+			this.actorExecution.didReplaceMachine();
 			this.hotResumes.cancelPending('machine-reset');
 			this.boots.didReplaceMachine();
 			// A restored heap is a new inspection context, not the previous stop.

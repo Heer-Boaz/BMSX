@@ -1,3 +1,4 @@
+import type { ActorExecutionService } from '../../contrib/actor_lab/execution';
 import type { RuntimeDebuggerExecution } from '../../../runtime/debugger_execution';
 import { DebuggerSourceContext } from './debugger_sources';
 import { clearExecutionStopHighlights } from '../../../runtime_error/navigation';
@@ -18,7 +19,7 @@ export class WorkspaceRuntimeTools {
 	private readonly lifetime = new AbortController();
 	private readonly onDisconnect = () => this.dispose();
 	public constructor(private readonly owner: RuntimeInspectionService, private readonly navigation: RuntimeFrameNavigation,
-		private readonly gameCapture: GameImageCapture, private readonly terminal: LuaTerminalSession, private readonly debuggerExecution: RuntimeDebuggerExecution, private readonly connection: AbortSignal) {
+		private readonly gameCapture: GameImageCapture, private readonly terminal: LuaTerminalSession, private readonly debuggerExecution: RuntimeDebuggerExecution, private readonly actorExecution: ActorExecutionService, private readonly connection: AbortSignal) {
 		connection.throwIfAborted();
 		this.debugSources = new DebuggerSourceContext(debuggerExecution.state);
 		connection.addEventListener('abort', this.onDisconnect, { once: true });
@@ -27,6 +28,29 @@ export class WorkspaceRuntimeTools {
 		if (this.disposed) throw new StudioToolInputError('Runtime tool context is disposed');
 		const request = decodeRuntimeToolRequest(name, input);
 		switch (request.name) {
+			case 'studio_actor_execution_status': case 'studio_control_actor': {
+				if (request.target !== this.owner.target) throw new StudioToolInputError('Actor execution requires this authoring target.');
+				const service = this.actorExecution;
+				if (request.name === 'studio_actor_execution_status') return { kind: 'runtime' as const, data: { target: this.owner.target,
+					canExecute: service.canExecute, canControl: service.canControl, active: service.active === undefined ? undefined : service.observe(service.active),
+					lastResult: service.lastResult === undefined ? undefined : service.observe(service.lastResult) } };
+				const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
+				signal.throwIfAborted();
+				const operation = service.active;
+				if (operation === undefined || operation.id !== request.operation) throw new StudioToolInputError('Actor operation is no longer active.');
+				service.setPaused(operation, request.action === 'pause');
+				return service.waitForStop(operation, signal).then(data => ({ kind: 'runtime' as const, data: { target: this.owner.target, ...data } }));
+			}
+			case 'studio_list_actor_operations': case 'studio_actor_action': case 'studio_call_actor_method': {
+				if (this.actors === undefined) throw new StudioToolInputError('Inspect the actual actor tree before requesting its operations.');
+				if (request.name === 'studio_list_actor_operations') return { kind: 'runtime' as const,
+					data: { ...this.actors.operations(request.node), canExecute: this.actorExecution.canExecute } };
+				const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
+				signal.throwIfAborted();
+				const invocation = this.actors.invocation(request.node, request.name === 'studio_actor_action' ? 'action' : 'method', request.method, request.arguments);
+				const operation = this.actorExecution.start(invocation, { signal });
+				return this.actorExecution.waitForStop(operation, signal).then(data => ({ kind: 'runtime' as const, data: { target: this.owner.target, ...data } }));
+			}
 			case 'studio_list_actors': case 'studio_read_actor_tree': case 'studio_read_actor_node': {
 				const inspection = this.inspection;
 				if (inspection === undefined || request.name === 'studio_list_actors' && inspection.id !== request.inspection) {

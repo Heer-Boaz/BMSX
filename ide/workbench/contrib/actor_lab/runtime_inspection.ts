@@ -3,7 +3,13 @@ import type { RuntimeInspection } from '../../../runtime/inspection';
 import type { RuntimeLuaFunctionSource } from '../../../runtime/lua_inspection';
 import type { BehaviorInspectionProperty } from '../behavior_lens/inspection';
 import { inspectActorNode } from './inspection';
-import { ActorRuntimeTree, readRuntimeActors, type ActorNode } from './runtime';
+import { ActorRuntimeTree, readRuntimeActors, runtimeWorld, type ActorNode } from './runtime';
+import { actorActions } from './operations';
+import { readActorMethods } from './methods';
+import { captureActorTarget } from './target';
+import { prepareLuaArguments } from '../../../runtime/lua_literal';
+import { valueTag, ValueTag } from '../../../../machine/ts/machine/cpu/value';
+import type { ActorInvocation } from './execution';
 
 type InspectedActor = { readonly value: Table; tree?: ActorRuntimeTree; rows?: ActorInspectionRow[] };
 type ActorInspectionProperty = Pick<BehaviorInspectionProperty, 'label' | 'value' | 'description' | 'warning'> & {
@@ -66,6 +72,32 @@ export class ActorRuntimeInspection {
 		}
 		return { inspection: inspection.id, domain: this.roots!.domain, ...this.describe(row),
 			component: inspection.values.describe(node.component), receiver: inspection.values.describe(node.receiver), properties: row.properties };
+	}
+
+	public operations(reference: string) {
+		this.inspection.requireSuspended();
+		const row = this.nodes.get(reference);
+		if (row === undefined) throw new Error('List the current actor tree before requesting operations.');
+		return { node: reference, actions: actorActions(row.node).map(action => ({ name: action.method, label: action.label,
+			description: action.description, arguments: action.payload ?? '' })),
+			methods: readActorMethods(this.inspection.sources, this.inspection.guest, row.node.value!).map(method => ({ name: method.name,
+				source: method.source === undefined ? undefined : { resource: method.source.resource, range: method.source.range, origin: 'installed' as const } })) };
+	}
+	public invocation(reference: string, kind: 'action' | 'method', method: string, source: string): ActorInvocation {
+		const { inspection } = this;
+		inspection.requireSuspended();
+		const row = this.nodes.get(reference);
+		if (row === undefined) throw new Error('Actor node is not part of the current inspected tree.');
+		const args = prepareLuaArguments(source), guest = inspection.guest;
+		const target = captureActorTarget(this.roots!.domain, runtimeWorld(inspection.sources, guest, this.roots!.domain)!.hashId,
+			this.actors.get(row.actor)!.tree!.roots, row.node, guest);
+		if (kind === 'action') {
+			if (!actorActions(row.node).some(action => action.method === method)) throw new Error('Action is not available on this actor node.');
+			return { kind, target, method, args };
+		}
+		const closure = guest.readStringMember(row.node.value, method);
+		if (valueTag(closure) !== ValueTag.Closure) throw new Error('Selected member is not a stored Lua method.');
+		return { kind, target, method, args, identity: guest.identity(closure) };
 	}
 
 	private addNodes(actor: string, nodes: readonly ActorNode[], rows: ActorInspectionRow[], parent?: string): void {

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import { createBuiltinFunction, valueString, type Value } from '../../machine/ts/machine/cpu/value';
+import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_graph';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
@@ -8,6 +10,7 @@ import type { LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor_input';
 import { ActorProjection, readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
 import { ActorRuntimeInspection } from '../../ide/workbench/contrib/actor_lab/runtime_inspection';
+import { captureActorTarget, resolveActorTarget } from '../../ide/workbench/contrib/actor_lab/target';
 import { WorkspaceRuntimeTools } from '../../ide/workbench/services/assistant/runtime_tools';
 import { decodeActorToolRequest } from '../../ide/workbench/services/assistant/actor_tool_protocol';
 import { parseLuaChunk, runCompletionClosure } from './cpu_test_harness';
@@ -93,6 +96,54 @@ test('tree paging and repeated detail reads do not repeat semantic traversal or 
 	assert.equal(f.stop.read(data, 0, 100).entries[0].value.display, '42', 'human property summaries do not replace expandable values');
 });
 
+test('operation identities preserve guest tags and typed membership without retaining borrowed nodes', t => {
+	const f = fixture(); t.after(() => f.stop.dispose());
+	const cpu = f.runtime.machine.cpu, guest = f.guest;
+	const candidates: Value[] = [null, false, true, 1, valueString(cpu.stringPool.intern('1')),
+		guest.global('probe'), guest.global('rename'), cpu.activeThread, createBuiltinFunction(BuiltinFunctionId.Type)];
+	const heap = cpu.luaHeap.usedBytes(), identities = candidates.map(value => guest.identity(value));
+	for (let i = 0; i < candidates.length; i++) for (let j = 0; j < candidates.length; j++) {
+		assert.equal(guest.matchesIdentity(candidates[i], identities[j]), i === j);
+	}
+	const choices = readActorChoices(f.sources, guest, -1), input = new ActorLabInput();
+	input.domain = -1; input.actorHashId = choices[0].hashId;
+	const projection = new ActorProjection(input, f.sources, guest); projection.update();
+	const selected = input.runtime.roots[0].children[0].children[0].children[0];
+	const target = captureActorTarget(-1, 123, input.runtime.roots, selected, guest);
+	const original = JSON.stringify(target);
+	assert.equal(resolveActorTarget(input.runtime.roots, target, guest), selected);
+	input.runtime.roots[0].children.reverse();
+	assert.equal(resolveActorTarget(input.runtime.roots, target, guest), selected, 'membership is independent of sibling order');
+	selected.key = 1;
+	assert.equal(resolveActorTarget(input.runtime.roots, target, guest), undefined, 'another typed key cannot retarget a retained request');
+	input.invalidate(false); guest.invalidate();
+	assert.equal(JSON.stringify(target), original, 'clearing borrowed nodes cannot alter the scalar operation target');
+	projection.update();
+	assert.equal(resolveActorTarget(input.runtime.roots, target, guest)!.hashId, selected.hashId);
+	runCompletionClosure(cpu, guest.global('rename') as Closure, []);
+	projection.update();
+	assert.equal(resolveActorTarget(input.runtime.roots, target, guest), undefined, 'renamed membership must be selected again');
+	assert.equal(cpu.luaHeap.usedBytes(), heap, 'identity capture and discovery allocate no guest values');
+	input.dispose();
+});
+
+test('operation discovery is read-only and rejects absent actions, methods and executable arguments', t => {
+	const f = fixture(); t.after(() => f.stop.dispose());
+	const actor = f.actors.list(0, 1).actors![0].reference, nodes = f.actors.tree(actor, 0, 100).nodes;
+	const root = nodes[0], state = nodes.find(node => node.kind === 'state')!;
+	const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()];
+	assert.equal(f.actors.operations(root.reference).actions[0].name, 'set_pos');
+	assert.equal(f.actors.operations(state.reference).actions[0].name, 'transition_to');
+	assert.equal(f.actors.invocation(root.reference, 'action', 'set_pos', '1, 2, 3').kind, 'action');
+	assert.throws(() => f.actors.invocation(root.reference, 'action', 'transition_to', ''), /not available/);
+	assert.throws(() => f.actors.invocation(root.reference, 'method', 'absent', ''), /not a stored/);
+	assert.throws(() => f.actors.invocation(root.reference, 'action', 'set_pos', 'os.exit()'));
+	assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()], before);
+	f.guest.invalidate();
+	assert.throws(() => f.actors.operations(root.reference), /expired/);
+	assert.throws(() => f.actors.invocation(root.reference, 'action', 'set_pos', '1, 2, 3'), /expired/);
+});
+
 test('unloaded, uninitialized and actually empty World are distinct observations', () => {
 	for (const [entry, run, status] of [['return 0', true, 'not_loaded'], [ENTRY, false, 'uninitialized'],
 		[`${ENTRY.replace('return world', 'world._objects = {} return world')}`, true, 'available']] as const) {
@@ -146,7 +197,7 @@ test('ordinary pane retains stable rows, refreshes changed labels, releases deta
 
 test('conversation admission binds all actor handles to its own stop and prompt lifetime', async () => {
 	const f = fixture(), lifetime = new AbortController();
-	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, lifetime.signal);
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, lifetime.signal);
 	assert.throws(() => tools.execute('studio_list_actors', { inspection: 'foreign', start: 0, count: 1 }), /current suspended/);
 	const opened = await tools.execute('studio_inspect_runtime', { target: f.inspection.target });
 	assert.ok('inspection' in opened.data);

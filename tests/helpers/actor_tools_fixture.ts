@@ -48,3 +48,38 @@ while true do
 	world:render()
 end
 `;
+
+const ACTOR_EXECUTION_RACE = `	if actor_tool_race == 'remove' then
+		actor_tool_second:mark_for_disposal()
+	elseif actor_tool_race == 'method' then
+		actor_tool_first.probe = function(self) self.probe_count = 1000 end
+	elseif actor_tool_race == 'program' then
+		actor_tool_first.timelines:define('motion', { frames = { 8, 9 }, frame_duration = 2,
+			apply = function(target, value) target.timeline_value = value end })
+	elseif actor_tool_race == 'world' then
+		setglobal('cartlib__world__world', world.new())
+	end
+	actor_tool_race = nil
+`;
+
+/** Same real World fixture, with explicit guest-owned mutation races and bounded calls. */
+export const ACTOR_EXECUTION_SOURCE = ACTOR_TOOLS_SOURCE
+	.replace('class = {}', `class = {
+	probe_count = 0,
+	bind = function(self) self.events:on({ event = 'probe_event', handler = self.on_probe }) end,
+	on_probe = function(self, event_type, emitter, payload) self.event_value = payload.value end,
+	probe = function(self, count)
+		self.probe_count = self.probe_count + count
+		return self.id, nil, false, 'false', self.probe_count
+	end,
+	long_probe = function(self, count)
+		self.probe_count = self.probe_count + 1
+		for i = 1, count do actor_tool_progress = i end
+		return self.probe_count
+	end,
+	arm = function(self, mode) actor_tool_race = mode end,
+}`)
+	.replace('} }, parked = {},', '} }, parked = {}, blocked = { transition_guards = { can_enter = function() return false end } },')
+	.replace('while true do', `local function apply_actor_race()\n${ACTOR_EXECUTION_RACE}end\nwhile true do`)
+	.replace('\tworld:update()', '\tapply_actor_race()\n\tworld:update()')
+	.replace('\tworld:render()', '\tapply_actor_race()\n\tworld:render()');

@@ -26,11 +26,14 @@ import type { ContextMenuController } from '../../services/context_menu/controll
 import type { BehaviorInspectionProperty } from '../behavior_lens/inspection';
 import type { ActorLabController } from './controller';
 import type { ActorLabInput } from './editor_input';
+import type { ActorNode } from './runtime';
 import { drawActorLab } from './render';
 
 export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInput> {
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly timelineSlider: WorkbenchSliderControl;
+	private readonly scrub = (node: ActorNode, time: number, program: number, current: () => boolean, finished: (completed: boolean) => void) =>
+		this.controller.scrub(this.input, node, time, program, current, finished);
 	private timelineVisible = false;
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);
 	private readonly inspector = new WorkbenchPropertyInspector<BehaviorInspectionProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
@@ -83,7 +86,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		}
 		this.timelineSlider.update();
 		this.actions.focusTarget.next = input.timeline.slider.interactive ? this.timelineSlider.focusTarget : null;
-		input.timeline.executePending(this.controller.selected(input), input.domain, this.controller.guest, this.controller.canInteract(), this.controller.execute);
+		input.timeline.executePending(this.controller.selected(input), this.controller.canInteract(), this.scrub);
 		this.actions.update();
 		this.scrollbar.update();
 		this.inspector.update();

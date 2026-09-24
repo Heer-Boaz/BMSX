@@ -1,11 +1,8 @@
-import type { Closure } from '../../../../machine/ts/machine/cpu/closure';
 import type { Table } from '../../../../machine/ts/machine/cpu/table';
 import { formatNumber } from '../../../../machine/ts/common/number_format';
-import type { RuntimeGuestCallExecutor } from '../../../runtime/guest_call';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { WorkbenchSlider } from '../../ui/slider';
 import type { ActorNode } from './runtime';
-import type { ResourceDomain } from '../../../common/resource';
 
 /** Latest requested seek, not a playback clock or a queue of mouse samples. */
 export class ActorTimelineTransport {
@@ -71,21 +68,12 @@ export class ActorTimelineTransport {
 	}
 
 	/** Admit only after target refresh and control/layout cancellation for this frame. */
-	public executePending(node: ActorNode | undefined, domain: ResourceDomain, guest: SuspendedGuestSession,
-		canExecute: boolean, execute: RuntimeGuestCallExecutor): void {
+	public executePending(node: ActorNode | undefined, canExecute: boolean,
+		execute: (node: ActorNode, time: number, programHashId: number, current: () => boolean, finished: (completed: boolean) => void) => void): void {
 		if (this.pending === undefined || this.inFlight || !canExecute) return;
-		const time = this.pending;
-		const generation = this.generation;
+		const time = this.pending, generation = this.generation;
 		this.pending = undefined; this.inFlight = true;
-		execute(() => {
-			if (this.generation !== generation) return;
-			const receiver = node!.receiver;
-			if (receiver === null) return;
-			const program = guest.readStringMember(node!.value!, 'program') as Table;
-			if (program.hashId !== this.programHashId) return;
-			const key = node!.key;
-			return { domain, closure: guest.readStringMember(receiver, 'scrub_time') as Closure, args: () => [receiver, key, time] };
-		}, completed => {
+		execute(node!, time, this.programHashId, () => this.generation === generation, completed => {
 			if (this.generation !== generation) return;
 			this.inFlight = false;
 			if (!completed) this.cancelPending();

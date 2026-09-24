@@ -37,6 +37,7 @@ import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import {
+	resumeRuntimeDebugger, RuntimeDebuggerResumeMode,
 	type RuntimeDebuggerState,
 } from '../runtime/debugger_state';
 import { clearExecutionStopHighlights } from '../runtime_error/navigation';
@@ -184,7 +185,10 @@ export class IdeCommandController {
 				inputFocus.executeCommand(command);
 				return;
 			case 'debugEvaluation':
-				this.debuggerState.plans.setControlSuspended(!this.debuggerState.plans.controlSuspended);
+				if (this.debuggerState.plans.controlSuspended && this.debuggerState.source.stop !== undefined) {
+					resumeRuntimeDebugger(this.debuggerState, RuntimeDebuggerResumeMode.Continue);
+					clearExecutionStopHighlights();
+				} else this.debuggerState.plans.setControlSuspended(!this.debuggerState.plans.controlSuspended);
 				if (!this.debuggerState.plans.controlSuspended) this.execution.requestExecution(false);
 				return;
 			case 'pause':
