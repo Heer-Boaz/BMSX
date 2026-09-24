@@ -5132,6 +5132,17 @@ raw registers without evaluating code or inferring optimized-out values. An
 inlined frame does not own a separate closure/upvalue scope. Retained fault
 diagnostics are labelled separately from this live stack. See
 [stack inspection](studio_stack_inspection.md).
+Cartlib-specific [Actor inspection](studio_actor_tools.md) attaches to that same
+suspended lifetime and value-reference registry, without teaching the generic
+runtime owner about cartlib or workbench panes. Actor Lab's `ActorRuntimeTree`
+reads actual World/component class-index membership and retained instance state;
+`ActorProjection` owns widget topology, collapse, selection and measured labels.
+Conversation tools share the domain tree/property readers, not a fake UI input or
+source-derived scene database. Activity indicators expose their precise stored
+basis, and formatted properties are accompanied by expandable typed table roots.
+Actor references expire with globals/frames on execution or heap replacement.
+Inspection grants no mutation authority; conversational Actor calls still need
+an operation-owned World mutation-boundary rendezvous.
 Game capture reads the presenter's retained committed history texture, after
 device quantization and before CRT/host overlays. The TS and C++ backends emit
 owned top-down RGBA8 display/signal pixels, without a second gamma conversion;

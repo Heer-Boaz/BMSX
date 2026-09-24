@@ -25,7 +25,8 @@ unimplemented rows below are not advertised capabilities.
 | Retained failed test inspection | TestExecution / TestTargetInspection | phase-thread locals/upvalues, compiled source, expiry; no authoring reads | implemented read-only; [test inspection](studio_test_inspection.md) |
 | Live test breakpoint/step/debug-rerun | target-bound debugger and composed execution hooks | actual stops/control on the test target | implemented for one named case; prompt-scoped control, [live test debugger](studio_test_debugger.md) |
 | FSM/BT/ActionEffect source queries and reviewed edits | shared Behavior Lens documents and syntax-edit producers | canonical-source review, builder readback and Undo | implemented for initial-state, child-list and property edits; [behavior source tools](studio_behavior_tools.md) |
-| Live Object/FSM/BT/ActionEffect semantic inspection and mutation | Actor Lab / suspended runtime and World mutation boundaries | instance identity, runtime admission and live-state readback | open; not implied by source tools |
+| Live Object/FSM/BT/ActionEffect/timeline inspection | shared Actor Lab runtime tree and suspended value owner | typed instance identity, nested values and execution/restore expiry | implemented for authoring/history; [Actor tools](studio_actor_tools.md) |
+| Live Actor mutation | World mutation rendezvous and runtime call owner | explicit operation lifetime, admission and live-state readback | open; inspection and source tools do not imply mutation |
 | Apply/save/build/install lifecycle | working-copy, Save, boot and Hot Resume owners | distinct receipts, rerun against installed code | open |
 
 ## Reference implementations
@@ -90,7 +91,7 @@ added. Values and pages are constructed only on explicit inspection requests.
 ## Next implementation gates
 
 1. Live global/table and current-frame inspection have explicit suspended
-   lifetimes. Additional semantic runtime roots remain open; live and retained
+   lifetimes. Actor semantic roots share the authoring suspension; live and retained
    test attachments now have separate lifetimes.
 2. Image transport and presentation capture are implemented; target-bound test
    captures remain part of test-target integration.

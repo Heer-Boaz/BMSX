@@ -45,7 +45,8 @@ export class InspectionValues {
 		this.containers.set(reference, container);
 		return reference;
 	}
-	private describe(value: SuspendedGuestValue): InspectedValue {
+	/** Domain readers admit actual roots into the same alias/cycle registry as globals and frames. */
+	public describe(value: SuspendedGuestValue): InspectedValue {
 		const guest = this.guest!, kind = guest.kind(value), display = guest.formatValue(value);
 		if (kind !== SuspendedGuestValueKind.Table) return { kind: VALUE_KINDS[kind], display };
 		const identity = (value as Table).hashId;

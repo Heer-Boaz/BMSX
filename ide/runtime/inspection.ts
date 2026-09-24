@@ -6,6 +6,7 @@ import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ResourceDomain } from '../common/resource';
+import { DisposableStore } from '../common/lifecycle';
 import { runtimeDebuggerExecutionRequested, RuntimeDebuggerStopReason, type RuntimeDebuggerState } from './debugger_state';
 import type { RuntimeFaultState } from './fault_state';
 import type { Blua32SourceImage, RuntimeSourceState } from './sources';
@@ -83,16 +84,17 @@ export class RuntimeInspection {
 	public readonly id = crypto.randomUUID();
 	public readonly state: ReturnType<RuntimeInspectionService['status']>;
 	public readonly scopes: InspectionScope[] = [];
-	private readonly values: InspectionValues;
+	/** Domain readers share this lifetime/alias registry and requireSuspended() before borrowing. */
+	public readonly lifetime = new DisposableStore();
+	public readonly values: InspectionValues;
 	private readonly frames = new Map<string, { physical: RuntimeStackFrame; frame: CallFrame; trace: InspectedFrame; scopes?: readonly InspectedFrameScope[] }>();
 	private stack: InspectedFrame[] | undefined;
 	private readonly unbind: () => void;
-	private retired = false;
 
-	public constructor(private readonly owner: RuntimeInspectionService, private readonly sources: RuntimeSourceState,
-		guest: SuspendedGuestSession, private readonly runtime: Runtime) {
+	public constructor(private readonly owner: RuntimeInspectionService, public readonly sources: RuntimeSourceState,
+		public readonly guest: SuspendedGuestSession, private readonly runtime: Runtime) {
 		this.state = owner.status();
-		this.values = new InspectionValues(this.id, guest);
+		this.values = this.lifetime.add(new InspectionValues(this.id, guest));
 		this.unbind = guest.onDidInvalidate(() => this.dispose());
 		this.addScope(-1, sources.currentBlua32Media.system);
 		const slot = this.state.activeCartridge;
@@ -141,8 +143,8 @@ export class RuntimeInspection {
 		this.scopes.push({ domain, status: 'available', reference, count: names.size });
 	}
 
-	private requireSuspended(): void {
-		if (this.retired) throw new Error('Inspection expired. Open a new inspection of the current stopped target.');
+	public requireSuspended(): void {
+		if (this.lifetime.isDisposed) throw new Error('Inspection expired. Open a new inspection of the current stopped target.');
 		if (!this.owner.canInspect) {
 			this.dispose();
 			throw new Error('Target is no longer available for suspended inspection.');
@@ -155,9 +157,8 @@ export class RuntimeInspection {
 	}
 
 	public dispose(): void {
-		this.retired = true;
 		this.unbind();
-		this.values.dispose();
+		this.lifetime.dispose();
 		this.frames.clear(); this.stack = undefined;
 	}
 }

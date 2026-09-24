@@ -43,7 +43,7 @@ export async function testPietiousRoomReload(test: StudioFixture, castle: () => 
 	await press('Enter');
 	const lab = getActiveTab();
 	if (lab.kind !== 'actor_lab') throw new Error('Actor Lab did not open');
-	await until(() => lab.outline.rows.length > 0 && lab.outline.rows[0].element.label === 'd', 'inspect the actual director');
+	await until(() => lab.outline.rows.length > 0 && lab.outline.rows[0].element.node.label === 'd', 'inspect the actual director');
 	const reload = async () => {
 		await test.click(lab.actionBar.items.find(action => action.command === 'actorLab.call')!.bounds);
 		check(picker.visible && picker.title === 'CALL / d', `call picker opens: visible=${picker.visible} title=${picker.title} ready=${test.tasks.ready} dirty=${lab.dirty} status=${lab.status}`);

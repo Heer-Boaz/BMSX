@@ -195,7 +195,7 @@ end
 	const cpu = runtime.machine.cpu, guest = bridge.suspendedGuest;
 	cpu.reset(); cpu.runUntilDepth(0, 100_000);
 	const target = guest.global('target') as Table, component = guest.global('component') as Table;
-	const node: ActorNode = { kind: 'timeline', hashId: target.hashId, label: 'test', displayLabel: 'test',
+	const node: ActorNode = { kind: 'timeline', hashId: target.hashId, label: 'test', name: 'test', prefix: '', children: [],
 		value: target, receiver: component, component, key: null, active: false, stateKeys: [] };
 	const transport = new ActorTimelineTransport();
 	let call: RuntimeGuestCall | undefined, observer: RuntimeGuestCallObserver | undefined;

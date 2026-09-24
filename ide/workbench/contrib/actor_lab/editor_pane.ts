@@ -78,7 +78,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		if (contentsChanged || layoutChanged || timelineChanged) {
 			this.updateContentLayout();
 			layoutWorkbenchActionBar(input.actionBar, layout.right - 4, layout.top, layout.top + layout.rowHeight + 4, measureText);
-			for (const row of outline.rows) row.element.displayLabel = truncateTextToWidth(row.element.label,
+			for (const row of outline.rows) row.element.displayLabel = truncateTextToWidth(row.element.node.label,
 				outline.layout.contentRight - outline.layout.contentLeft - (row.depth + 2) * outline.layout.indentWidth - 4);
 		}
 		this.timelineSlider.update();

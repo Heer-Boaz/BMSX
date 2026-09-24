@@ -21,7 +21,8 @@ import { canOpenBehaviorInspectionSource } from '../behavior_lens/inspection_sou
 import { inspectActorNode } from './inspection';
 import { readActorMethods } from './methods';
 import { ActorLabInput } from './editor_input';
-import { ActorProjection, findRuntimeActor, readActorChoices, runtimeWorld, type ActorNode } from './runtime';
+import { findRuntimeActor, runtimeWorld, type ActorNode } from './runtime';
+import { ActorProjection, readActorChoices } from './projection';
 
 type ActorOperation = QuickPickItem & { readonly method: string; readonly payload?: string; readonly keyed?: boolean };
 
@@ -97,7 +98,7 @@ export class ActorLabController {
 		this.quickInput.pick('RUNNING ACTORS', 'Choose the actual instance to experiment with',
 			(_origin, lifetime) => {
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
-				return new TextQuickPickProvider(readActorChoices(this.sources, this.guest));
+				return new TextQuickPickProvider(readActorChoices(this.sources, this.guest, this.cpu.activeCartridgeSlot()));
 			}, choice => { input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = 0; input.dirty = true; });
 	}
 	public didFinishCall(completed: boolean, observer?: RuntimeGuestCallObserver): void {
@@ -111,7 +112,7 @@ export class ActorLabController {
 		this.completionValues.length = 0;
 	}
 
-	public selected(input: ActorLabInput): ActorNode | undefined { return input.outline.rows[input.outline.selectionIndex]?.element; }
+	public selected(input: ActorLabInput): ActorNode | undefined { return input.outline.rows[input.outline.selectionIndex]?.element.node; }
 
 	public inspect(input: ActorLabInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
 		const selected = this.selected(input)!;
@@ -200,7 +201,7 @@ export class ActorLabController {
 		const nameLifetime = this.quickInput.input('EMIT FROM ACTOR', 'Event name', '', async text => text, name => {
 			const payloadLifetime = this.quickInput.input(`PAYLOAD / ${name}`, 'Lua literal', '{}', async text => prepareLuaLiteral(text), payload => {
 				this.execute(() => {
-					const actor = findRuntimeActor(this.sources, this.guest, input)!;
+					const actor = findRuntimeActor(this.sources, this.guest, input.domain, input.actorHashId)!;
 					const events = this.guest.readStringMember(actor, 'events');
 					return { domain: input.domain, closure: this.guest.readStringMember(events, 'emit') as Closure,
 						args: () => [events, valueString(this.cpu.stringPool.intern(name)), payload(this.cpu)] };

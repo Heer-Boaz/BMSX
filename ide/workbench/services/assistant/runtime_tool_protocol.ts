@@ -1,8 +1,10 @@
 import { decodeDebuggerToolRequest, STUDIO_DEBUGGER_TOOLS, type DebuggerToolRequest } from './debugger_tool_protocol';
+import { decodeActorToolRequest, STUDIO_ACTOR_TOOLS, type ActorToolRequest } from './actor_tool_protocol';
 import { StudioToolInputError, toolArguments } from './tool_input';
 import { decodeTerminalToolRequest, STUDIO_TERMINAL_TOOLS, type TerminalToolRequest } from './terminal_tool_protocol';
 
 export type RuntimeToolRequest =
+	| ActorToolRequest
 	| DebuggerToolRequest
 	| TerminalToolRequest
 	| { name: 'studio_runtime_status' }
@@ -22,6 +24,7 @@ const FRAME_FIELDS = ['frame'];
 const TARGET_SCHEMA = { type: 'object', properties: { target: { type: 'string' } }, required: TARGET_FIELDS, additionalProperties: false };
 
 export const STUDIO_RUNTIME_TOOLS = [
+	...STUDIO_ACTOR_TOOLS,
 	...STUDIO_TERMINAL_TOOLS,
 	...STUDIO_DEBUGGER_TOOLS,
 	{ name: 'studio_step_frames', description: 'Advance or rewind an explicit number of physical video boundaries on the authoring target. Awaits completed/stopped/interrupted/replaced/failed outcome with actual before/after cycles and video ticks; not merely command acceptance. Keeps the target paused and preserves recorded input/future. Forward stepping beyond the recording end executes live input. Stops at retained-history start, debugger stop or guest fault. Not source/instruction stepping or a guarantee that gameplay ran once per video tick. No polling is needed; conversation Stop cancels owned navigation.',
@@ -32,7 +35,7 @@ export const STUDIO_RUNTIME_TOOLS = [
 	{ name: 'studio_runtime_status', description: 'Read the actual Studio authoring target identity, machine cycles/video tick, execution/inspection availability and retained-history range with frame-navigation availability. No screenshot, guest execution or test-target attachment. Use on demand, not polling.',
 		inputSchema: { type: 'object', properties: {}, required: NO_FIELDS, additionalProperties: false } },
 	{ name: 'studio_pause_runtime', description: 'Pause the listed authoring target without changing guest state or other pause reasons. Leaves it user-paused after the conversation. Refuses an active machine operation; does not interrupt Lua or rewind.', inputSchema: TARGET_SCHEMA },
-	{ name: 'studio_inspect_runtime', description: 'Open a suspended inspection of the listed authoring target. Returns installed BIOS and active-cartridge global binding scopes (not separate cartridge global banks), plus actual debugger stop/fault information. Names come from installed symbols, not unsaved source. Does not execute Lua. Replaces this prompt\'s prior inspection; all frame/value references expire on execution, restore/reset or prompt retirement. Use studio_read_runtime_stack for the current CPU stack and studio_read_runtime_values for globals/tables. Does not attach test targets or suspended coroutines.', inputSchema: TARGET_SCHEMA },
+	{ name: 'studio_inspect_runtime', description: 'Open a suspended inspection of the listed authoring target. Returns installed BIOS and active-cartridge global binding scopes (not separate cartridge global banks), plus actual debugger stop/fault information. Names come from installed symbols, not unsaved source. Does not execute Lua. Replaces this prompt\'s prior inspection; all frame/value references expire on execution, restore/reset or prompt retirement. Use studio_read_runtime_stack for the current CPU stack, studio_list_actors for actual cartlib World instances, and studio_read_runtime_values for globals/tables including Actor roots. Does not attach test targets or suspended coroutines.', inputSchema: TARGET_SCHEMA },
 	{ name: 'studio_read_runtime_stack', description: 'Read a page of the current CPU thread\'s stack in an open suspended inspection. Top frame first; start is zero-based, count positive. Frames have stop-scoped handles, physical frame indices and inline depths; recursive invocations remain distinct. Source locations are one-based and refer to installed code, NOT dirty working copies. RAM functions without installed symbols remain instruction frames. This is the live suspended stack, not a retained fault stack or coroutine enumeration. Does not execute Lua.',
 		inputSchema: { type: 'object', properties: { inspection: { type: 'string' }, start: { type: 'integer', minimum: 0 }, count: { type: 'integer', minimum: 1 } }, required: STACK_FIELDS, additionalProperties: false } },
 	{ name: 'studio_read_frame_scopes', description: 'Read named locals/upvalue scopes for a frame handle from this inspection\'s stack. Use studio_read_runtime_values on their references. Locals use installed lexical/inline scopes and register liveness; unavailable locations are explicitly unavailable, not nil or guessed constants. Shadowed names retain distinct declaration ranges. Upvalues belong to the physical closure; an inline frame has no separate closure. No Lua execution or frame-context evaluation.',
@@ -43,6 +46,7 @@ export const STUDIO_RUNTIME_TOOLS = [
 
 export function decodeRuntimeToolRequest(name: string, input: unknown): RuntimeToolRequest {
 	switch (name) {
+		case 'studio_list_actors': case 'studio_read_actor_tree': case 'studio_read_actor_node': return decodeActorToolRequest(name, input);
 		case 'studio_runtime_status': toolArguments(input, NO_FIELDS); return { name };
 		case 'studio_read_runtime_stack': {
 			const value = toolArguments(input, STACK_FIELDS);

@@ -122,6 +122,11 @@ export class SuspendedGuestSession {
 		return valueToString(value, this.stringPool);
 	}
 
+	/** Same guest predicate as ValueSlots.isTruthy: only nil and false are false. */
+	public isTruthy(value: SuspendedGuestValue): boolean {
+		return value !== null && value !== false;
+	}
+
 	/** A closure has no birth socket. Resolve its address on the current instruction bus. */
 	public functionLocation(value: SuspendedGuestValue): RuntimeFunctionLocation | undefined {
 		if (valueTag(value) !== ValueTag.Closure) return undefined;

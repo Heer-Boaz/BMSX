@@ -23,7 +23,7 @@ export function drawActorLab(input: ActorLabInput, commands: EditorCommandEnable
 		if (index === outline.selectionIndex) api.fill_rect(tree.contentLeft, top, tree.contentRight, top + tree.rowHeight, 0, colors.COLOR_RESOURCE_PANEL_HIGHLIGHT);
 		const left = tree.contentLeft + row.depth * tree.indentWidth;
 		if (row.children.length !== 0) api.blit_text_inline_with_font(row.collapsed ? '+' : '-', left, top + 2, 0, color, font);
-		if (row.element.active) api.fill_rect(left + tree.indentWidth, top + 3, left + tree.indentWidth + 3, top + 6, 0, colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING);
+		if (row.element.node.active) api.fill_rect(left + tree.indentWidth, top + 3, left + tree.indentWidth + 3, top + 6, 0, colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING);
 		api.blit_text_inline_with_font(row.element.displayLabel, left + tree.indentWidth * 2, top + 2, 0, color, font);
 	}
 	if (outline.rows.length === 0) api.blit_text_inline_with_font(input.status, 4, tree.contentTop + 3, 0, color, font);

@@ -7,11 +7,13 @@ import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 import type { LuaTerminalSession } from '../terminal/session';
 import { decodeRuntimeToolRequest } from './runtime_tool_protocol';
 import { StudioToolInputError } from './tool_input';
+import { ActorRuntimeInspection } from '../../contrib/actor_lab/runtime_inspection';
 
 /** Prompt lifetime owns its borrows and finite operations, never the physical target. */
 export class WorkspaceRuntimeTools {
 	private readonly debugSources: DebuggerSourceContext;
 	private inspection: RuntimeInspection | undefined;
+	private actors: ActorRuntimeInspection | undefined;
 	private disposed = false;
 	private readonly lifetime = new AbortController();
 	private readonly onDisconnect = () => this.dispose();
@@ -25,6 +27,19 @@ export class WorkspaceRuntimeTools {
 		if (this.disposed) throw new StudioToolInputError('Runtime tool context is disposed');
 		const request = decodeRuntimeToolRequest(name, input);
 		switch (request.name) {
+			case 'studio_list_actors': case 'studio_read_actor_tree': case 'studio_read_actor_node': {
+				const inspection = this.inspection;
+				if (inspection === undefined || request.name === 'studio_list_actors' && inspection.id !== request.inspection) {
+					throw new StudioToolInputError('Actor reads require the current suspended inspection');
+				}
+				if (this.actors === undefined) {
+					inspection.requireSuspended();
+					this.actors = inspection.lifetime.add(new ActorRuntimeInspection(inspection));
+				}
+				const data = request.name === 'studio_list_actors' ? this.actors.list(request.start, request.count)
+					: request.name === 'studio_read_actor_tree' ? this.actors.tree(request.actor, request.start, request.count) : this.actors.read(request.node);
+				return { kind: 'runtime' as const, data };
+			}
 			case 'studio_terminal_status':
 			case 'studio_evaluate_lua':
 			case 'studio_control_lua': {
@@ -83,6 +98,7 @@ export class WorkspaceRuntimeTools {
 				}
 				if (request.name === 'studio_pause_runtime') return { kind: 'runtime' as const, data: this.owner.pause() };
 				this.inspection?.dispose();
+				this.actors = undefined;
 				const inspection = this.owner.open();
 				this.inspection = inspection;
 				return { kind: 'runtime' as const, data: { ...inspection.state, inspection: inspection.id,
@@ -108,5 +124,6 @@ export class WorkspaceRuntimeTools {
 		this.debugSources.dispose();
 		this.connection.removeEventListener('abort', this.onDisconnect);
 		this.inspection?.dispose(); this.inspection = undefined;
+		this.actors = undefined;
 	}
 }
