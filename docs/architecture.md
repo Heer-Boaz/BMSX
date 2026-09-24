@@ -2318,6 +2318,18 @@ values or global registers. The shared semantic frontend diagnoses a resolved
 type used as an expression before compiler lowering or module export analysis;
 a local or parameter can still shadow that name. Static storage symbols remain
 address-valued declarations, distinct from the types describing their layout.
+Type syntax resolves the nearest lexical struct declaration with block-wide
+forward visibility, separately from source-ordered value names. Root types follow
+immutable workspace declaration precedence, not function/module code generation
+order. Layouts are cached by declaration identity, never by display spelling;
+fields and array dimensions resolve in the defining file and scope. Dimensions
+consume bound constant initializers and static module exports, not a caller's
+active codegen registers. Relocated values remain symbolic until linking and
+cannot be compared as literal tags to select an array length. The semantic
+static-declaration index is lazy and retained per immutable snapshot; the compiler
+owns resolved layouts and storage types. The CPU receives only the resulting
+ordinary address/offset words. See the scoped-layout gate in
+[Terminal binding contexts](studio_terminal_contexts.md#scoped-static-type-layout-gate).
 
 Const modules are the static symbol ABI. They export constants, section symbols,
 and function text-symbols without producing a runtime module table, module function,

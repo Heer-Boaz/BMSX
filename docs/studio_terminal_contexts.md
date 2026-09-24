@@ -606,8 +606,8 @@ The coverage audit also found two compiler boundaries: source `struct` names
 fall through to global value lookup, and the firmware loader requested only one
 result from a call, even in a return-list tail. The latter is now corrected by
 the shared [call-result arity slice](studio_lua_terminal.md#firmware-call-result-arity-gate).
-The source type/value boundary is corrected below; scoped type-layout identity
-still needs correction before advertising complete frame semantics.
+The source type/value boundary and scoped type-layout identity are corrected
+below; neither alone establishes complete frame semantics.
 Static/type debug metadata and public frame admission remain separate unfinished
 work; this storage correction does not add a Terminal context or Codex-only UI.
 
@@ -643,11 +643,11 @@ declaration index rather than rebuilding one. Normal/debug CPU dispatch, guest
 firmware compilation, frame accessors, scheduler, renderer, GC and save-state
 encoding have no changed hot-path callsites.
 
-This does not repair the separate layout cache keyed by struct spelling: an
-inner same-name type can still replace the layout used by an outer `sizeof`.
-Type layouts need lexical declaration identity and declaration-owned constant
-resolution, including forward type references, before static/type frame
-metadata can be authoritative. No new Terminal context is exposed by this slice.
+This diagnostic change did not repair the separate layout cache keyed by struct
+spelling. The scoped-layout slice below supplies lexical declaration identity
+and declaration-owned constant resolution, including forward type references.
+Static/type frame metadata remains separate work. No new Terminal context is
+exposed by the diagnostic change.
 
 ### Type/value boundary validation (2026-09-24)
 
@@ -677,3 +677,80 @@ metadata can be authoritative. No new Terminal context is exposed by this slice.
   hashes to the pre-slice artifacts. Browser Studio and Node tooling were rebuilt
   in release and debug configurations. No new frame-context capability or native
   source-type evaluator is claimed.
+
+## Scoped static type layout gate
+
+Clang's [record layout cache](https://github.com/llvm/llvm-project/blob/main/clang/lib/AST/RecordLayoutBuilder.cpp)
+is keyed by the defining declaration; its
+[name lookup](https://github.com/llvm/llvm-project/blob/main/clang/lib/Sema/SemaLookup.cpp)
+selects declarations in their lexical namespace before asking for a layout.
+The old BMSX program-wide spelling cache instead lets a nested `shape` replace
+its outer layout. Resolving an outer field with the consuming function's scope
+can also select that function's nested field type.
+
+`StructTypes` resolves type syntax through lexical struct declarations and
+caches layout by the binder's symbol identity. Type declarations retain their
+existing forward visibility throughout a body, now including block bodies;
+ordinary Lua value names remain source-ordered. Root type publication follows
+the immutable workspace's declaration order, not code generation order.
+Dimensions are compile-time source facts: `StaticConstants` reads their actual
+bound constant initializers and static module exports in the declaration's file,
+never the consumer's register bindings. It uses existing semantic source/import
+facts and numeric operations, not a runtime evaluator or temporary captures.
+Relocated addresses/link values cannot be compared as literal tags. Unknown
+call-result lanes remain unknown; explicit nil/false constants retain normal
+short-circuit semantics. This does not relax BLua's constant-initializer rule.
+
+| Representation | TypeScript/toolchain | Native C++ | Hot-path effect |
+| --- | --- | --- | --- |
+| Type identity | Bound `Decl.id`, lexical scope and defining syntax | No source compiler | None |
+| Array dimensions | Immutable source constant facts and existing module export values | Receives final address/offset words | No guest evaluation |
+| Layout | Declaration-keyed size/alignment/field table | Same linked data and instructions | None |
+| Storage | Existing section symbol ordinal and resolved declared type | Existing raw memory accesses | No ABI change |
+
+Changed callsites are compiler type/field/array lowering, storage declaration
+resolution and `sizeof`/`offsetof` folding, plus an on-demand semantic declaration
+index. CPU dispatch, debugger dispatch, firmware loader, registerfiles, GC,
+scheduler and renderer are not type consumers and receive no new work.
+Validate disjoint/nested scopes, forward dependencies, module ordering, constant
+ownership, actual typed-memory reads/writes and native ROM execution before
+publishing these layouts to frame inspection/evaluation.
+
+### Scoped-layout validation (2026-09-24)
+
+- The focused bundle passes 97 tests, including 47 scoped-layout/constant cases
+  and four semantic snapshot/index tests. The original 28-case repro bundle had
+  23 failures before the owner correction. O0/O3 cover nested/disjoint types,
+  declaration-owned field types/constants/imports, forward dependencies, inferred
+  storage lengths, typed memory reads/writes, recursion and unresolved dimensions.
+  Numeric comparisons against symbolic relocations are rejected in either order.
+- Shared syntax can belong to different files without merging declaration IDs.
+  Retained function bodies consume their snapshot's position/parent tables;
+  replacing/removing a global type does not alter older snapshots. Repeated
+  queries do not revisit declaration syntax or activate value-inference work.
+- All 22 O0/O3 firmware frame vectors pass on TS/C++, with identical complete
+  final states and suspended/save-restored coroutine states. The new vector
+  invokes a precompiled typed-storage callback through frame evaluation and
+  compares it with an ordinary guest call. This is **not direct type/static-name
+  evaluation**. Physical BIOS HID Terminal parity also passes.
+- Full Lua: 2,707 pass, one skip. ROM suite: 185 pass. The 45 assistant integration
+  tests pass on software/WebGL2/WebGPU. This is automated runtime/transport
+  evidence, not live-model reasoning, personal-phone testing or a newly exposed
+  frame-context UI.
+- Rebuilt BIOS/Nemesis debug ROMs and three non-colliding benchmark ROMs are
+  byte-identical to the committed compiler's output. Browser Studio and Node
+  tooling were rebuilt in release/debug configurations. Product typechecks pass;
+  the tests project retains the same 95 baseline diagnostics after position
+  normalization. Strict architecture audit reports zero issues; core parity,
+  changed-file indentation and `git diff --check` pass.
+- Ten alternating warmed fresh-source compile/link samples per version measured
+  9.09/9.12 ms for 256 primitive storage declarations, 26.17/28.57 ms for a
+  96-struct/typed-callback fixture, and 224.26/221.63 ms for the production firmware
+  fixture (before/after). The synthetic type-heavy case has measurable tooling
+  cost; this is not a universal compilation-speedup claim. Layout/storage caches
+  and the once-per-file syntax index add no normal guest execution work.
+
+Static/type diagnostic metadata, public selected-stop admission, cancellation
+and replacement/rewind borrow retirement, native frame selection, and ordinary
+conversation frame-context admission remain open. This slice corrects the source
+layout producer; it does not advertise those unfinished capabilities.

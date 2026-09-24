@@ -105,14 +105,7 @@ const buildModuleCompileInfo = (
 	if (returnStatement === undefined) return null;
 	const returnExpression = returnStatement.expressions[0];
 	const staticStorageDeclarations = collectStaticStorageDeclarations(chunk, semantics);
-	let hasStaticStorageDeclaration = false;
-	for (let index = 0; index < staticStorageDeclarations.length; index += 1) {
-		if (staticStorageDeclarations[index].kind !== 'struct') {
-			hasStaticStorageDeclaration = true;
-			break;
-		}
-	}
-	const moduleOwnsStaticStorage = staticStorage || hasStaticStorageDeclaration;
+	const moduleOwnsStaticStorage = staticStorage || staticStorageDeclarations.length !== 0;
 	const staticFunctionExportByPathKey = constModule
 		? collectStaticFunctionExportSymbolsByPathKey(modulePath, chunk, returnExpression, semantics)
 		: new Map<string, StaticFunctionExportSymbol>();

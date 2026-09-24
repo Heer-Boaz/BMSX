@@ -37,6 +37,45 @@ end)`;
 }
 
 export const frameEvaluationCases = {
+	scoped_types: `
+local width<const> = 2
+struct cell
+ words: word[width]
+ tail: word
+end
+data outer: cell = { words = { 11, 12 }, tail = 13 }
+local nested = function(...)
+ local width<const> = 4
+ struct cell
+  words: word[width]
+  tail: word
+ end
+ bss inner: cell
+ inner.words[3] = 41
+ inner.tail = 42
+ do
+  struct cell
+   tail: word
+  end
+  rodata smallest: cell = { tail = 7 }
+  assert(sizeof(cell) == 4 and smallest.tail == 7)
+ end
+ assert(sizeof(cell) == 20 and offsetof(cell.tail) == 16)
+ return inner.words[3], inner.tail, &inner.tail - inner
+end
+local exercise = function(...)
+ local index<const> = frame_count(running_thread()) - 1
+ local names<const> = frame_bindings.resolve(index, 0)
+ local ok, a, b, offset = repl.evaluate('return nested()', '=scoped-types', 'frame', index, names)
+ assert(ok and a == 41 and b == 42 and offset == 16)
+ local direct_a, direct_b, direct_offset = nested()
+ assert(a == direct_a and b == direct_b and offset == direct_offset)
+ local pointer: *cell = outer
+ assert(pointer.words[0] == 11 and pointer.words[1] == 12 and pointer.tail == 13)
+ assert(sizeof(cell) == 12 and offsetof(cell.tail) == 8)
+ return true
+end
+return exercise()`,
 	static_storage_identity: `
 bss buffered: word
 data writable: word = 11

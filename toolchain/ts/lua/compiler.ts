@@ -1,6 +1,5 @@
 // start repeated-sequence-acceptable -- Program codegen keeps opcode/slot emission direct; helper extraction would add dispatch in compile hot paths.
 // start normalized-body-acceptable -- Resolver/emitter specializations share shapes but preserve distinct compiler ownership.
-import type { LuaStatementSequence } from './syntax/statement_sequence';
 import { LexicalDeclarationKind } from './compiler/declaration_kind';
 import {
 	LuaAssignmentOperator,
@@ -33,12 +32,9 @@ import {
 	type LuaBooleanLiteralExpression,
 	type LuaSizeOfExpression,
 	type LuaStringLiteralExpression,
-	type LuaStructDeclarationStatement,
 	type LuaBssDeclarationStatement,
 	type LuaDataDeclarationStatement,
 	type LuaRodataDeclarationStatement,
-	type LuaStructFieldDeclaration,
-	type LuaTypeReference,
 	type LuaUnaryExpression,
 	type LuaSourceRange,
 	type LuaTableConstructorExpression,
@@ -130,6 +126,7 @@ import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_
 import { getMemoryAccessKindForName } from './memory_access_syntax';
 import { writeLE16, writeLE32 } from '../../../machine/ts/common/endian';
 import { utf8CodepointCount } from '../../../machine/ts/common/utf8';
+import { StructTypes, indexedStructType, type StructResolvedType } from './compiler/struct_types';
 import { isReservedIntrinsicName } from './semantic/common';
 import {
 	traceSinkFieldName,
@@ -364,44 +361,6 @@ type ModuleFunctionTarget =
 	| (ProgramFunctionSymbol & { kind: 'export_proto' })
 	| { kind: 'bios_function'; importIndex: number };
 
-type StructScalarAccess =
-	| { kind: 'memory'; memoryKind: MemoryAccessKind }
-	| { kind: 'const_pool' };
-
-type PrimitiveStructType = {
-	size: number;
-	alignment: number;
-	access: StructScalarAccess;
-};
-
-type StructResolvedType = {
-	name: string;
-	baseSize: number;
-	baseAlignment: number;
-	baseAccess: StructScalarAccess | null;
-	baseStruct: StructLayout | null;
-	size: number;
-	alignment: number;
-	access: StructScalarAccess | null;
-	struct: StructLayout | null;
-	dimensions: number[];
-};
-
-type StructFieldLayout = {
-	name: string;
-	type: StructResolvedType;
-	offset: number;
-	size: number;
-	access: StructScalarAccess | null;
-};
-
-type StructLayout = {
-	name: string;
-	size: number;
-	alignment: number;
-	fields: Map<string, StructFieldLayout>;
-};
-
 type StructView = {
 	type: StructResolvedType;
 };
@@ -495,20 +454,6 @@ const MAX_DISPLACED_MEMORY_BYTE_OFFSET = MAX_DISPLACED_MEMORY_WORD_OFFSET << 2;
 
 const MAX_SPECIALIZED_TABLE_OPERAND = MAX_EXT_REGISTER_BC;
 
-const PRIMITIVE_STRUCT_TYPES: ReadonlyMap<string, PrimitiveStructType> = new Map([
-	['u8', { size: 1, alignment: 1, access: { kind: 'memory', memoryKind: MemoryAccessKind.U8 } }],
-	['i8', { size: 1, alignment: 1, access: { kind: 'memory', memoryKind: MemoryAccessKind.U8 } }],
-	['u16', { size: 2, alignment: 2, access: { kind: 'memory', memoryKind: MemoryAccessKind.U16LE } }],
-	['i16', { size: 2, alignment: 2, access: { kind: 'memory', memoryKind: MemoryAccessKind.U16LE } }],
-	['u32', { size: 4, alignment: 4, access: { kind: 'memory', memoryKind: MemoryAccessKind.U32LE } }],
-	['i32', { size: 4, alignment: 4, access: { kind: 'memory', memoryKind: MemoryAccessKind.U32LE } }],
-	['f32', { size: 4, alignment: 4, access: { kind: 'memory', memoryKind: MemoryAccessKind.F32LE } }],
-	['f64', { size: 8, alignment: 4, access: { kind: 'memory', memoryKind: MemoryAccessKind.F64LE } }],
-	['addr', { size: 4, alignment: 4, access: { kind: 'memory', memoryKind: MemoryAccessKind.U32LE } }],
-	['word', { size: 4, alignment: 4, access: { kind: 'memory', memoryKind: MemoryAccessKind.Word } }],
-	['string', { size: 4, alignment: 4, access: { kind: 'const_pool' } }],
-]);
-
 const isSmallSignedImmediate = (value: number): boolean =>
 	Number.isInteger(value) && value >= MIN_SIGNED_BX && value <= MAX_SIGNED_BX;
 
@@ -540,10 +485,6 @@ class ProgramBuilder {
 	private readonly protoReturnsOneValue: boolean[] = [];
 	private readonly exportProtoIdBySlot: { [slotName: string]: string } = {};
 	private readonly biosFunctionImportIndexBySymbol = new Map<string, number>();
-	private readonly structDeclarationMap = new Map<string, LuaStructDeclarationStatement>();
-	private readonly structLayoutMap = new Map<string, StructLayout>();
-	public readonly structDeclarations: ReadonlyMap<string, LuaStructDeclarationStatement> = this.structDeclarationMap;
-	public readonly structLayouts: ReadonlyMap<string, StructLayout> = this.structLayoutMap;
 	public readonly bssBindingsBySymbolHandle = new Map<string, BssBinding>();
 	public readonly dataBindingsBySymbolHandle = new Map<string, DataBinding>();
 	public readonly rodataBindingsBySymbolHandle = new Map<string, RodataBinding>();
@@ -574,6 +515,7 @@ class ProgramBuilder {
 		programDomain: ProgramCompileDomain,
 		public readonly traceStatements: TraceStatementSelection,
 		public readonly preloadModules: readonly string[],
+		public readonly types: StructTypes,
 		public readonly captureLayout?: LuaCaptureLayout,
 	) {
 		this.constPool = [];
@@ -822,15 +764,6 @@ class ProgramBuilder {
 
 	private alignStorageOffset(offset: number, alignment: number): number {
 		return (offset + alignment - 1) & ~(alignment - 1);
-	}
-
-	public registerStructDeclaration(statement: LuaStructDeclarationStatement): void {
-		this.structDeclarationMap.set(statement.name.name, statement);
-		this.structLayoutMap.delete(statement.name.name);
-	}
-
-	public recordStructLayout(layout: StructLayout): void {
-		this.structLayoutMap.set(layout.name, layout);
 	}
 
 	public resolveSystemGlobalSlot(name: string): number {
@@ -1412,7 +1345,6 @@ class FunctionBuilder {
 	}
 
 	public compileChunk(chunk: LuaChunk): void {
-		this.registerStructDeclarations(chunk.body);
 		this.flowAnalysis = new ValueKindFlowAnalyzer(chunk.body, this.semantics);
 		this.pushScope(chunk.locations.range(chunk.span));
 		for (const cursor = chunk.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
@@ -1428,9 +1360,6 @@ class FunctionBuilder {
 		for (let index = 0; index < declarations.length; index += 1) {
 			const declaration = declarations[index];
 			switch (declaration.kind) {
-				case 'struct':
-					this.program.registerStructDeclaration(declaration.statement);
-					break;
 				case 'bss':
 					this.recordBssDeclaration(declaration.statement, declaration.declaration);
 					break;
@@ -1474,7 +1403,6 @@ class FunctionBuilder {
 	}
 
 	public compileStaticModuleScope(chunk: LuaChunk): void {
-		this.registerStructDeclarations(chunk.body);
 		this.pushScope(chunk.locations.range(chunk.span));
 		for (const cursor = chunk.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
 			const statement = cursor.statement;
@@ -1559,7 +1487,6 @@ class FunctionBuilder {
 			}
 			this.outerDeclarations.set(IMPLICIT_SELF_SYMBOL_HANDLE, owner.debugDeclarationIndex(binding));
 		}
-		this.registerStructDeclarations(expression.body.body);
 		this.flowAnalysis = new ValueKindFlowAnalyzer(expression.body.body, this.semantics);
 		this.pushScope(this.semantics.locations.range(expression.body.span));
 		if (implicitSelf) {
@@ -1745,163 +1672,6 @@ class FunctionBuilder {
 			this.code[this.code.length - 1].resumeRange = { path: range.path, start: range.end, end: range.end };
 		});
 		this.finalizeLabels();
-	}
-
-	private registerStructDeclarations(statements: LuaStatementSequence): void {
-		for (const cursor = statements.cursor(); cursor.statement !== undefined; cursor.advance()) {
-			const statement = cursor.statement;
-			if (statement.kind === LuaSyntaxKind.StructDeclarationStatement) {
-				this.program.registerStructDeclaration(statement as LuaStructDeclarationStatement);
-			}
-		}
-	}
-
-	private alignStructOffset(offset: number, alignment: number): number {
-		return (offset + alignment - 1) & ~(alignment - 1);
-	}
-
-	private requireStructArrayLength(expression: LuaExpression): number {
-		const value = this.evaluateCompileTimeNumber(expression);
-		if (value === undefined || !Number.isInteger(value) || value <= 0) {
-			throw new Error('Struct array length must be a positive compile-time integer.');
-		}
-		return value;
-	}
-
-	private makeStructResolvedType(
-		name: string,
-		baseSize: number,
-		baseAlignment: number,
-		baseAccess: StructScalarAccess | null,
-		baseStruct: StructLayout | null,
-		dimensions: ReadonlyArray<number>,
-	): StructResolvedType {
-		let size = baseSize;
-		for (let index = 0; index < dimensions.length; index += 1) {
-			size *= dimensions[index];
-		}
-		const isElement = dimensions.length === 0;
-		return {
-			name,
-			baseSize,
-			baseAlignment,
-			baseAccess,
-			baseStruct,
-			size,
-			alignment: baseAlignment,
-			access: isElement ? baseAccess : null,
-			struct: isElement ? baseStruct : null,
-			dimensions: Array.from(dimensions),
-		};
-	}
-
-	private resolveStructTypeReference(typeRef: LuaTypeReference, resolving: Set<string> = new Set(), inferredOuterLength?: number): StructResolvedType {
-		const primitive = PRIMITIVE_STRUCT_TYPES.get(typeRef.name);
-		let baseSize: number;
-		let baseAlignment: number;
-		let baseAccess: StructScalarAccess | null;
-		let baseStruct: StructLayout | null;
-		if (primitive !== undefined) {
-			baseSize = primitive.size;
-			baseAlignment = primitive.alignment;
-			baseAccess = primitive.access;
-			baseStruct = null;
-		} else {
-			const layout = this.resolveStructLayout(typeRef.name, resolving);
-			baseSize = layout.size;
-			baseAlignment = layout.alignment;
-			baseAccess = null;
-			baseStruct = layout;
-		}
-		const dimensions: number[] = [];
-		for (let index = 0; index < typeRef.arrayLengths.length; index += 1) {
-			const lengthExpression = typeRef.arrayLengths[index];
-			if (!lengthExpression) {
-				if (index !== 0 || !inferredOuterLength) {
-					throw new Error('An inferred array length is only valid for the outer dimension of an initialized .data or .rodata declaration.');
-				}
-				dimensions.push(inferredOuterLength);
-				continue;
-			}
-			dimensions.push(this.requireStructArrayLength(lengthExpression));
-		}
-		return this.makeStructResolvedType(typeRef.name, baseSize, baseAlignment, baseAccess, baseStruct, dimensions);
-	}
-
-	private resolveStructLayout(name: string, resolving: Set<string> = new Set()): StructLayout {
-		const existing = this.program.structLayouts.get(name);
-		if (existing) {
-			return existing;
-		}
-		const declaration = this.program.structDeclarations.get(name);
-		if (!declaration) {
-			throw new Error(`Unknown struct type '${name}'.`);
-		}
-		if (resolving.has(name)) {
-			throw new Error(`Recursive struct layout '${name}' is not supported.`);
-		}
-		resolving.add(name);
-		let offset = 0;
-		let alignment = 1;
-		const fields = new Map<string, StructFieldLayout>();
-		for (let index = 0; index < declaration.fields.length; index += 1) {
-			const field = declaration.fields[index] as LuaStructFieldDeclaration;
-			if (fields.has(field.name)) {
-				throw new Error(`Duplicate field '${field.name}' in struct '${name}'.`);
-			}
-			const type = this.resolveStructTypeReference(field.typeRef, resolving);
-			offset = this.alignStructOffset(offset, type.alignment);
-			fields.set(field.name, {
-				name: field.name,
-				type,
-				offset,
-				size: type.size,
-				access: type.access,
-			});
-			offset += type.size;
-			alignment = Math.max(alignment, type.alignment);
-		}
-		const layout: StructLayout = {
-			name,
-			size: this.alignStructOffset(offset, alignment),
-			alignment,
-			fields,
-		};
-		this.program.recordStructLayout(layout);
-		resolving.delete(name);
-		return layout;
-	}
-
-	private typeAfterStructIndex(type: StructResolvedType): StructResolvedType {
-		if (type.dimensions.length === 0) {
-			throw new Error(`Type '${type.name}' is not an array.`);
-		}
-		return this.makeStructResolvedType(
-			type.name,
-			type.baseSize,
-			type.baseAlignment,
-			type.baseAccess,
-			type.baseStruct,
-			type.dimensions.slice(1),
-		);
-	}
-
-	private resolveOffsetOf(typeName: string, fieldPath: ReadonlyArray<string>): number {
-		const layout = this.resolveStructLayout(typeName);
-		let offset = 0;
-		let current = this.makeStructResolvedType(typeName, layout.size, layout.alignment, null, layout, []);
-		for (let index = 0; index < fieldPath.length; index += 1) {
-			if (current.struct === null) {
-				throw new Error(`offsetof cannot select '${fieldPath[index]}' through non-struct type '${current.name}'.`);
-			}
-			const field = current.struct.fields.get(fieldPath[index]);
-			if (field === undefined) {
-				throw new Error(`Unknown field '${fieldPath[index]}' on struct '${current.struct.name}'.`);
-			}
-			offset += field.offset;
-			current = field.type;
-		}
-		return offset;
 	}
 
 	private resolveStructFieldAddress(base: StructAddress, fieldName: string): StructAddress {
@@ -3553,10 +3323,10 @@ class FunctionBuilder {
 			case LuaSyntaxKind.BinaryExpression:
 				return this.evaluateCompileTimeBinaryExpression(expression as LuaBinaryExpression);
 			case LuaSyntaxKind.SizeOfExpression:
-				return this.setCompileTimeNumberValue(this.resolveStructTypeReference((expression as LuaSizeOfExpression).typeRef).size);
+				return this.setCompileTimeNumberValue(this.program.types.resolve(this.moduleId, (expression as LuaSizeOfExpression).typeRef).size);
 			case LuaSyntaxKind.OffsetOfExpression: {
 				const offsetOf = expression as LuaOffsetOfExpression;
-				return this.setCompileTimeNumberValue(this.resolveOffsetOf(offsetOf.typeName, offsetOf.fieldPath));
+				return this.setCompileTimeNumberValue(this.program.types.offsetOf(this.moduleId, offsetOf));
 			}
 			default:
 				return false;
@@ -3669,10 +3439,10 @@ class FunctionBuilder {
 			case LuaSyntaxKind.BinaryExpression:
 				return this.evaluateCompileTimeNumericBinaryExpression(expression as LuaBinaryExpression);
 			case LuaSyntaxKind.SizeOfExpression:
-				return { kind: 'number', value: this.resolveStructTypeReference((expression as LuaSizeOfExpression).typeRef).size };
+				return { kind: 'number', value: this.program.types.resolve(this.moduleId, (expression as LuaSizeOfExpression).typeRef).size };
 			case LuaSyntaxKind.OffsetOfExpression: {
 				const offsetOf = expression as LuaOffsetOfExpression;
-				return { kind: 'number', value: this.resolveOffsetOf(offsetOf.typeName, offsetOf.fieldPath) };
+				return { kind: 'number', value: this.program.types.offsetOf(this.moduleId, offsetOf) };
 			}
 			default:
 				return;
@@ -3936,7 +3706,7 @@ class FunctionBuilder {
 	}
 
 	private recordBssDeclaration(statement: LuaBssDeclarationStatement, declaration: Decl): void {
-		const type = this.resolveStructTypeReference(statement.typeRef);
+		const type = this.program.types.storage(declaration);
 		this.program.recordBss(declaration.id, this.moduleId, statement.name.name, type);
 	}
 
@@ -3945,7 +3715,7 @@ class FunctionBuilder {
 	}
 
 	private recordDataDeclaration(statement: LuaDataDeclarationStatement, declaration: Decl): void {
-		const type = this.resolveInitializedStorageType(statement.typeRef, statement.initializer, '.data');
+		const type = this.program.types.storage(declaration);
 		const initializer = this.encodeStorageInitializer(type, statement.initializer, '.data');
 		this.program.recordData(declaration.id, this.moduleId, statement.name.name, type, initializer.bytes);
 	}
@@ -3955,22 +3725,8 @@ class FunctionBuilder {
 	}
 
 	private recordRodataDeclaration(statement: LuaRodataDeclarationStatement, declaration: Decl): void {
-		const type = this.resolveInitializedStorageType(statement.typeRef, statement.initializer, '.rodata');
+		const type = this.program.types.storage(declaration);
 		this.program.recordRodata(declaration.id, this.moduleId, statement.name.name, type, this.encodeStorageInitializer(type, statement.initializer, '.rodata'));
-	}
-
-	private resolveInitializedStorageType(typeRef: LuaTypeReference, initializer: LuaExpression, sectionName: '.data' | '.rodata'): StructResolvedType {
-		if (typeRef.arrayLengths.length === 0 || typeRef.arrayLengths[0]) {
-			return this.resolveStructTypeReference(typeRef);
-		}
-		if (initializer.kind !== LuaSyntaxKind.TableConstructorExpression) {
-			throw new Error(`${sectionName} inferred array storage requires a table initializer.`);
-		}
-		const elementCount = (initializer as LuaTableConstructorExpression).fields.length;
-		if (elementCount === 0) {
-			throw new Error(`${sectionName} inferred array storage requires at least one element.`);
-		}
-		return this.resolveStructTypeReference(typeRef, new Set(), elementCount);
 	}
 
 	private encodeStorageInitializer(type: StructResolvedType, expression: LuaExpression, sectionName: '.data' | '.rodata'): StaticStorageInitializer {
@@ -3986,7 +3742,7 @@ class FunctionBuilder {
 				throw new Error(`${sectionName} array '${type.name}' requires a table initializer.`);
 			}
 			const table = expression as LuaTableConstructorExpression;
-			const elementType = this.typeAfterStructIndex(type);
+			const elementType = indexedStructType(type);
 			let elementIndex = 0;
 			for (let index = 0; index < table.fields.length; index += 1) {
 				const field = table.fields[index];
@@ -4243,7 +3999,7 @@ class FunctionBuilder {
 			const pointerTypeRef = pointerTypeRefs[i];
 			if (pointerTypeRef) {
 				(this.localBindings.get(decl.id) as LocalBinding).structView = {
-					type: this.resolveStructTypeReference(pointerTypeRef),
+					type: this.program.types.resolve(this.moduleId, pointerTypeRef),
 				};
 			}
 			if (hasInitializerValue) {
@@ -4986,11 +4742,11 @@ class FunctionBuilder {
 					this.compileIndexExpression(expression, target);
 					return;
 				case LuaSyntaxKind.SizeOfExpression:
-					this.emitLoadConst(target, this.resolveStructTypeReference((expression as LuaSizeOfExpression).typeRef).size);
+					this.emitLoadConst(target, this.program.types.resolve(this.moduleId, (expression as LuaSizeOfExpression).typeRef).size);
 					return;
 				case LuaSyntaxKind.OffsetOfExpression: {
 					const offsetOf = expression as LuaOffsetOfExpression;
-					this.emitLoadConst(target, this.resolveOffsetOf(offsetOf.typeName, offsetOf.fieldPath));
+					this.emitLoadConst(target, this.program.types.offsetOf(this.moduleId, offsetOf));
 					return;
 				}
 				case LuaSyntaxKind.VarargExpression:
@@ -5229,7 +4985,7 @@ class FunctionBuilder {
 	private compileStructIndexAddress(base: StructAddress, indexExpression: LuaExpression): StructAddress {
 		let elementType: StructResolvedType;
 		if (base.type.dimensions.length > 0) {
-			elementType = this.typeAfterStructIndex(base.type);
+			elementType = indexedStructType(base.type);
 		} else {
 			if (!base.pointerIndex) {
 				throw new Error(`Type '${base.type.name}' is not an array.`);
@@ -6456,6 +6212,7 @@ export function compileLuaChunkToProgram(
 		programDomain,
 		options.traceStatements ?? 'erase',
 		options.preloadModules ?? [],
+		new StructTypes(frontend, moduleCompileContext),
 		options.captureLayout,
 	);
 	if (programDomain === 'cart') {

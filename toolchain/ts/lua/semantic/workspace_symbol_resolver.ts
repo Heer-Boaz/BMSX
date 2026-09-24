@@ -14,6 +14,7 @@ import { LuaWrittenSourceQuery } from './written_sources';
 import { getLuaWrittenDeclarations } from './written_declarations';
 import { LuaDefinitionTypes } from './definition_types';
 import { LuaModuleImportQuery } from './module_import_query';
+import { LuaStaticDeclarations } from './static_declarations';
 import type { LuaSourceCallGraph } from './source_call_graph';
 import type { LuaSourceValueQuery } from './source_value_query';
 
@@ -57,6 +58,7 @@ export class WorkspaceSymbolResolver {
 	private queryStore?: LuaSemanticQueryStore;
 	private sourceQuery?: LuaWrittenSourceQuery;
 	private moduleImportQuery?: LuaModuleImportQuery;
+	private staticDeclarationQuery?: LuaStaticDeclarations;
 	private readonly referenceTargets: Map<Ref, readonly SymbolID[]> = new Map();
 	private readonly definitionFunctionTargets: Map<SymbolID, readonly SymbolID[]> = new Map();
 	private definitionTypeQuery?: LuaDefinitionTypes;
@@ -98,6 +100,13 @@ export class WorkspaceSymbolResolver {
 	public get moduleImports(): LuaModuleImportQuery {
 		if (this.moduleImportQuery === undefined) this.moduleImportQuery = new LuaModuleImportQuery(this.files);
 		return this.moduleImportQuery;
+	}
+
+	public get staticDeclarations(): LuaStaticDeclarations {
+		if (this.staticDeclarationQuery === undefined) {
+			this.staticDeclarationQuery = new LuaStaticDeclarations(this.files, this.declarations);
+		}
+		return this.staticDeclarationQuery;
 	}
 
 	public callSources(callSite: LuaCallSite): LuaSourceCallGraph {

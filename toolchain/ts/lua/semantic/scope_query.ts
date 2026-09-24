@@ -10,7 +10,7 @@ export function findInnermostScope(
 	return findInnermostScopeAtOffset(source, source.chunk.locations.offsetAt({ line, column }));
 }
 
-function findInnermostScopeAtOffset(source: FileSemanticData, offset: number): SemanticScope | undefined {
+export function findInnermostScopeAtOffset(source: FileSemanticData, offset: number): SemanticScope | undefined {
 	const locations = source.chunk.locations;
 	const scopes = source.scopes;
 	let low = 0;

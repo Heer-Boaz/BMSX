@@ -4,14 +4,12 @@ import {
 	type LuaDataDeclarationStatement,
 	type LuaRodataDeclarationStatement,
 	type LuaChunk,
-	type LuaStructDeclarationStatement,
 } from '../../syntax/ast';
 import type { LuaSemanticFrontendFile } from '../../semantic/frontend';
 import type { Decl } from '../../semantic/model';
 import { getBoundDeclaration } from '../bound_reference';
 
 export type StaticStorageDeclaration =
-	| { kind: 'struct'; statement: LuaStructDeclarationStatement }
 	| { kind: 'bss'; declaration: Decl; statement: LuaBssDeclarationStatement }
 	| { kind: 'data'; declaration: Decl; statement: LuaDataDeclarationStatement }
 	| { kind: 'rodata'; declaration: Decl; statement: LuaRodataDeclarationStatement };
@@ -24,9 +22,6 @@ export const collectStaticStorageDeclarations = (
 	for (const cursor = chunk.body.cursor(); cursor.statement !== undefined; cursor.advance()) {
 		const statement = cursor.statement;
 		switch (statement.kind) {
-			case LuaSyntaxKind.StructDeclarationStatement:
-				declarations.push({ kind: 'struct', statement: statement as LuaStructDeclarationStatement });
-				break;
 			case LuaSyntaxKind.BssDeclarationStatement: {
 				const bssStatement = statement as LuaBssDeclarationStatement;
 				declarations.push({
