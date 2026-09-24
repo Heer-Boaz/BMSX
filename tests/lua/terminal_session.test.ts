@@ -10,7 +10,7 @@ import { decodeTerminalToolRequest } from '../../ide/workbench/services/assistan
 /** Lifecycle tests use a real plan manager; actual guest evaluation is covered in browser/native conformance. */
 function fixture(t: TestContext, running = true) {
 	const f = createRuntimeInspectionFixture(createFrameRuntime(), createScenarioTestSourceState([]));
-	const operation = new TerminalEvaluation('return 42', 1, f.terminal.transcript.next, f.execution.revision);
+	const operation = new TerminalEvaluation('return 42', 'session', 1, f.terminal.transcript.next, f.execution.revision);
 	f.terminal.active = operation;
 	if (running) {
 		operation.status = 'running';
@@ -70,10 +70,10 @@ test('machine replacement settles observers, reports bounded output loss and inv
 	assert.throws(() => f.terminal.setPaused(f.operation, false), /no longer active/);
 });
 
-test('Terminal tool boundary accepts only explicit session context and exact evaluation identities', () => {
-	assert.deepEqual(decodeTerminalToolRequest('studio_evaluate_lua', { target: 'runtime', context: 'session', source: '1 + 2' }),
-		{ name: 'studio_evaluate_lua', target: 'runtime', context: 'session', source: '1 + 2' });
-	for (const context of ['cart', 'frame', undefined]) assert.throws(() => decodeTerminalToolRequest('studio_evaluate_lua',
+test('Terminal tool boundary requires explicit supported context and exact evaluation identities', () => {
+	for (const context of ['cart', 'session']) assert.deepEqual(decodeTerminalToolRequest('studio_evaluate_lua', { target: 'runtime', context, source: '1 + 2' }),
+		{ name: 'studio_evaluate_lua', target: 'runtime', context, source: '1 + 2' });
+	for (const context of ['frame', 'unknown', undefined]) assert.throws(() => decodeTerminalToolRequest('studio_evaluate_lua',
 		{ target: 'runtime', context, source: 'x' }));
 	for (const evaluation of [-1, 0, 1.5, '1']) assert.throws(() => decodeTerminalToolRequest('studio_control_lua',
 		{ target: 'runtime', evaluation, action: 'continue' }));

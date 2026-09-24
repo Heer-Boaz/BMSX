@@ -67,7 +67,7 @@ rodata command_registry: monitor_command[] = {
 	{ name = 'CONT', usage = 'CONT', description = 'RESUME CART AT EPC', kind = command_continue },
 	{ name = 'FAULT', usage = 'FAULT [CLEAR]', description = 'SHOW OR CLEAR SAVED FAULT STATE', kind = command_fault },
 	{ name = 'HELP', usage = 'HELP [COMMAND]', description = 'LIST COMMANDS OR SHOW HELP', kind = command_help },
-	{ name = 'LUA', usage = 'LUA <SOURCE>', description = 'EVALUATE IN THE LUA TERMINAL SESSION', kind = command_lua },
+	{ name = 'LUA', usage = 'LUA [--SESSION] <SOURCE>', description = 'EVALUATE CART GLOBALS OR ISOLATED SESSION', kind = command_lua },
 	{ name = 'MEM', usage = 'MEM <HEX ADDRESS> [WORDS]', description = 'READ MEMORY WORDS', kind = command_memory },
 	{ name = 'REBOOT', usage = 'REBOOT', description = 'RESET THE MACHINE', kind = command_reboot },
 	{ name = 'REGS', usage = 'REGS', description = 'SHOW CP0 AND IRQ STATE', kind = command_registers },
@@ -518,9 +518,17 @@ function monitor_commands.start(line, length)
 
 	local entry<const>: *monitor_command = &command_registry[command]
 	if entry.kind == command_lua then
-		local first<const> = skip_spaces(line, argument_index, length)
+		local first = skip_spaces(line, argument_index, length)
+		local context = 'cart'
+		local option_end<const> = first + #'--SESSION'
+		local source<const>: *u8 = line
+		if option_end <= length and matches_prefix('--SESSION', source, first, #'--SESSION')
+			and (option_end == length or source[option_end] == ascii_space) then
+			context = 'session'
+			first = skip_spaces(line, option_end, length)
+		end
 		if first == length then return start_usage(command) end
-		return action_evaluate, first
+		return action_evaluate, first, context
 	end
 	if entry.kind == command_clear then
 		if not arguments_end(line, argument_index, length) then

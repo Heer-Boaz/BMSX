@@ -14,10 +14,11 @@ import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { clearExecutionStopHighlights } from '../../../runtime_error/navigation';
 import { TerminalTranscript, type TerminalEntry } from './transcript';
 
+export type TerminalContext = 'cart' | 'session';
 export type TerminalResult = { readonly status: 'completed' | 'lua-error' | 'interrupted' | 'host-error'; readonly values: readonly string[] };
 export type TerminalObservation = {
 	readonly id: number;
-	readonly context: 'session';
+	readonly context: TerminalContext;
 	readonly status: 'queued' | 'running' | 'paused' | TerminalResult['status'];
 	readonly values: readonly string[];
 	readonly output: readonly TerminalEntry[];
@@ -31,7 +32,7 @@ export class TerminalEvaluation {
 	public outputEnd: number | undefined;
 	public controlVersion = 0;
 	public readonly listeners = new Set<() => void>();
-	public constructor(public readonly source: string, public readonly id: number, public readonly outputStart: number,
+	public constructor(public readonly source: string, public readonly context: TerminalContext, public readonly id: number, public readonly outputStart: number,
 		public executionRevision: number) {}
 	public finish(result: TerminalResult): void { this.result = result; this.settled.resolve(result); }
 }
@@ -40,6 +41,7 @@ export class TerminalEvaluation {
 export class LuaTerminalSession {
 	public readonly transcript = new TerminalTranscript();
 	public readonly history: string[] = [];
+	public inputContext: TerminalContext = 'cart';
 	public active: TerminalEvaluation | undefined;
 	public lastResult: TerminalEvaluation | undefined;
 	private serial = 0;
@@ -111,7 +113,7 @@ export class LuaTerminalSession {
 	public observe(operation: TerminalEvaluation): TerminalObservation {
 		const output: TerminalEntry[] = [];
 		for (let id = Math.max(operation.outputStart, this.transcript.start); id < (operation.outputEnd ?? this.transcript.next); id++) output.push(this.transcript.entry(id));
-		return { id: operation.id, context: 'session', status: operation.result?.status ?? operation.status,
+		return { id: operation.id, context: operation.context, status: operation.result?.status ?? operation.status,
 			values: operation.result?.values ?? [], output, outputTruncated: this.transcript.start > operation.outputStart };
 	}
 
@@ -138,15 +140,15 @@ export class LuaTerminalSession {
 		});
 	}
 
-	public evaluate(source: string): TerminalEvaluation {
+	public evaluate(source: string, context: TerminalContext): TerminalEvaluation {
 		if (!this.canEvaluate) throw new Error('Lua execution is unavailable while another machine operation or the BIOS monitor is active.');
-		const operation = new TerminalEvaluation(source, ++this.serial, this.transcript.next, this.execution.revision), generation = this.generation;
+		const operation = new TerminalEvaluation(source, context, ++this.serial, this.transcript.next, this.execution.revision), generation = this.generation;
 		this.active = operation;
 		if (this.history[this.history.length - 1] !== source) {
 			this.history.push(source);
 			if (this.history.length > 100) this.history.shift();
 		}
-		this.transcript.append('input', source);
+		this.transcript.append('input', `[${context}] ${source}`);
 		void scheduleRuntimeGuestCall(this.runtime, this.guest, this.debuggerState, this.tasks, {
 			honorUserStops: true,
 			isCurrent: () => generation === this.generation && operation.result === undefined,
@@ -156,7 +158,7 @@ export class LuaTerminalSession {
 				return { domain: -1, closure: this.guest.readStringMember(module.value, 'evaluate') as Closure,
 					args: () => {
 						const pool = this.runtime.machine.cpu.stringPool;
-						return [valueString(pool.intern(source)), valueString(pool.intern(`=terminal:${operation.id}`))];
+						return [valueString(pool.intern(source)), valueString(pool.intern(`=terminal:${operation.id}`)), valueString(pool.intern(context))];
 					} };
 			},
 		}, () => {

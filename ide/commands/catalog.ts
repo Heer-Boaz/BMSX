@@ -39,6 +39,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	assistant: { category: 'View', title: 'Codex Assistant' },
 	terminal: { category: 'View', title: 'Lua Terminal' },
 	'terminal.evaluate': { category: 'Terminal', title: 'Execute Lua', shortTitle: 'Run' },
+	'terminal.context': { category: 'Terminal', title: 'Select Lua Context', shortTitle: 'Context' },
 	'terminal.pause': { category: 'Terminal', title: 'Pause Lua Call', shortTitle: 'Pause' },
 	'terminal.continue': { category: 'Terminal', title: 'Continue Lua Call', shortTitle: 'Continue' },
 	'terminal.clear': { category: 'Terminal', title: 'Clear Output' },

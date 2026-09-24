@@ -162,7 +162,7 @@ local print_evaluation<const> = function(succeeded, ...)
 	end
 end
 
-local handle_command_action<const> = function(action, source_first)
+local handle_command_action<const> = function(action, source_first, context)
 	if action == monitor_commands.action_clear then
 		terminal.clear()
 		write_prompt()
@@ -171,7 +171,7 @@ local handle_command_action<const> = function(action, source_first)
 	elseif action == monitor_commands.action_continue then
 		return true
 	elseif action == monitor_commands.action_evaluate then
-		print_evaluation(repl.evaluate(monitor_editor.source(source_first), '=terminal:monitor'))
+		print_evaluation(repl.evaluate(monitor_editor.source(source_first), '=terminal:monitor', context))
 		console.flush()
 		write_prompt()
 	else

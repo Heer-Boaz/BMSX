@@ -25,8 +25,14 @@ import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_vie
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { TerminalInput } from './editor_input';
+import type { QuickInputController } from '../../services/quick_input/controller';
+import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 
-const COMMANDS = ['terminal.evaluate', 'terminal.pause', 'terminal.continue', 'terminal.clear', 'terminal.copy'] as const;
+const COMMANDS = ['terminal.evaluate', 'terminal.context', 'terminal.pause', 'terminal.continue', 'terminal.clear', 'terminal.copy'] as const;
+const CONTEXTS = [
+	{ label: 'Cart globals', description: 'Read and write real global registers', detail: 'No debugger-frame or module-local bindings', context: 'cart' },
+	{ label: 'Isolated session', description: 'Persistent Terminal variables', detail: 'Use getglobal / setglobal for explicit cart access', context: 'session' },
+] as const;
 
 export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget);
@@ -34,7 +40,7 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 	private readonly composer = new MultilineFieldControl();
 	private unbindDraft: (() => void) | undefined;
 	private status = '';
-	public constructor(resources: ResourcePanelController, private readonly clipboard: Clipboard) {
+	public constructor(resources: ResourcePanelController, private readonly clipboard: Clipboard, private readonly quickInput: QuickInputController) {
 		super(resources);
 		this.scroll.focusTarget.commandContext = this.focusTarget;
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
@@ -63,6 +69,7 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 		const { session, selectedEntry, draftHasText } = this.input;
 		switch (command) {
 			case 'terminal.evaluate': return session.canEvaluate && draftHasText;
+			case 'terminal.context': return session.active === undefined;
 			case 'terminal.pause': return session.canToggleExecution && !session.paused;
 			case 'terminal.continue': return session.canToggleExecution && session.paused;
 			case 'terminal.clear': return session.transcript.next > session.transcript.start;
@@ -74,8 +81,12 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 		if (!this.isEnabled(command)) return;
 		const input = this.input, { session } = input;
 		switch (command) {
+			case 'terminal.context':
+				this.quickInput.pick('Lua context', 'Select the namespace for manual input',
+					() => new TextQuickPickProvider(CONTEXTS, session.inputContext === 'cart' ? 0 : 1),
+					item => { session.inputContext = item.context; }); break;
 			case 'terminal.evaluate':
-				session.evaluate(input.draft.text); setFieldText(input.draft, '', true); input.draftHasText = false;
+				session.evaluate(input.draft.text, session.inputContext); setFieldText(input.draft, '', true); input.draftHasText = false;
 				input.historyIndex = -1; input.savedDraft = ''; input.draft.focusTarget.focus(); break;
 			case 'terminal.pause': case 'terminal.continue': session.toggleExecution(); break;
 			case 'terminal.clear': session.transcript.clear(); input.selectedEntry = -1; break;
@@ -90,7 +101,8 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 			this.scroll.lineStep = row; this.composer.rowHeight = editorViewState.lineHeight;
 		}
 		const status = session.active !== undefined ? session.paused ? 'Lua call paused. Mutations are retained.' : 'Executing Lua on the guest CPU...'
-			: session.canEvaluate ? 'Lua session | globals: getglobal / setglobal' : 'Lua unavailable: start/resume cart or finish machine operation';
+			: session.canEvaluate ? session.inputContext === 'cart' ? 'Cart globals | assignments change the running cart'
+				: 'Isolated session | cart access: getglobal / setglobal' : 'Lua unavailable: start/resume cart or finish machine operation';
 		if (changed || status !== this.status) { this.status = status; input.status = truncateMeasuredText(status, layout.right - 8, measureTextRange); }
 		if (changed || session.transcript.revision !== input.projectedRevision) {
 			input.projectedRevision = session.transcript.revision;
@@ -104,7 +116,7 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 			Math.trunc((input.composerBounds.bottom - input.composerBounds.top - 4) / editorViewState.lineHeight), measureTextRange, layout.font!);
 		let actionsChanged = changed;
 		for (const item of input.actions.items) {
-			const visible = item.command === 'terminal.evaluate' ? session.active === undefined
+			const visible = item.command === 'terminal.evaluate' || item.command === 'terminal.context' ? session.active === undefined
 				: session.active !== undefined && (item.command === 'terminal.pause' ? !session.paused : session.paused);
 			if (item.visible !== visible) { item.visible = visible; actionsChanged = true; }
 		}

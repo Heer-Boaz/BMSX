@@ -33,14 +33,15 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	ide.debugger.breakpoints.toggle(repl, line);
 	await until(() => conversation.state === 'ready', 'terminal tools: model receives pause, continues and finishes');
 	const guest = ide.luaTooling.suspendedGuest;
-	check(guest.global('terminal_probe') === 43 && guest.readStringMember(guest.global('cartlib__world__world'), 'terminal_probe') === 88,
+	check(guest.global('terminal_probe') === 43 && guest.global('counter') === 105
+		&& guest.readStringMember(guest.global('cartlib__world__world'), 'terminal_probe') === 89,
 		'conversation Lua writes the real global register and the existing cart world object');
 	check(source.version === version && ide.sources.currentBlua32Media === media && test.execution.userPaused,
 		'Terminal neither saves nor installs source, and retains independent pause');
 	const stopped = cycles();
 	for (let i = 0; i < 6; i++) await frame();
 	check(cycles() === stopped, 'Lua completion does not continue gameplay');
-	const queued = terminal.evaluate('counter = 900'), lifetime = new AbortController();
+	const queued = terminal.evaluate('counter = 900', 'cart'), lifetime = new AbortController();
 	const waiting = terminal.waitForStop(queued, lifetime.signal);
 	lifetime.abort();
 	await waiting.then(() => { throw new Error('Queued evaluation must reject on abort'); }, error => {
@@ -50,11 +51,18 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	check(queued.result!.status === 'interrupted' && cycles() === stopped, 'cancellation revokes actual queued CPU admission');
 	await test.runPaletteCommand('View: Lua Terminal');
 	const input = getActiveTab(); if (input.kind !== 'terminal') throw new Error('Terminal pane required');
+	check(terminal.inputContext === 'cart', 'conversation context does not change the manual context selection');
 	await renderer.capture!('conversation-results');
 	await test.click(input.composerBounds); test.clipboard.text = 'counter';
 	await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => terminal.active === undefined && test.tasks.ready, 'terminal tools: ordinary manual evaluation');
-	check(terminal.transcript.entry(terminal.transcript.next - 1).text === '43', 'manual Terminal sees the same namespace and retained pre-error mutation');
+	check(terminal.transcript.entry(terminal.transcript.next - 1).text === '105', 'manual cart context sees the real implicit global mutation');
+	await test.click(input.actions.items.find(item => item.command === 'terminal.context')!.bounds);
+	await press('ArrowDown'); await press('Enter');
+	await test.click(input.composerBounds); test.clipboard.text = 'counter';
+	await press('ControlLeft', 'KeyV'); await press('Enter');
+	await until(() => terminal.active === undefined && test.tasks.ready, 'terminal tools: ordinary isolated context');
+	check(terminal.transcript.entry(terminal.transcript.next - 1).text === '43', 'manual isolated context sees the same session without changing cart globals');
 	await test.runPaletteCommand('View: Codex Assistant');
 	await submitAssistantText(test, 'Run until I press Stop.');
 	await until(() => terminal.active !== undefined && terminal.canToggleExecution && cycles() > stopped,

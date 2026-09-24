@@ -165,8 +165,12 @@ local bind_identifier<const> = function(state, expression)
 		expression.upvalue = upvalue
 		return
 	end
-	if state.has_environment and type(key) == 'string' then
-		expression.environment_key = expression.name
+	if type(key) == 'string' then
+		if state.has_environment then
+			expression.environment_key = key
+		else
+			expression.global_key = key
+		end
 		return
 	end
 	fail(

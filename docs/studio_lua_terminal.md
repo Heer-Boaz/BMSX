@@ -15,21 +15,31 @@ supervisor monitor or during another machine operation.
 - Up/Down at the input's first/last source line browse the last 100 commands and
   restore the unfinished draft when returning to the present. Multiline input
   uses the shared selection, clipboard and undo control.
-- The **session has its own persistent namespace**. Assignments survive commands
+- Manual input defaults to **Cart globals**. Free identifiers read/write the
+  ordinary registerfile: `score = score + 1` changes the binding read by compiled
+  cart code. **Context** / `Terminal: Select Lua Context` also offers an
+  **Isolated session** with its own persistent namespace. Both survive commands
   and closing the view. Locals last one input unless captured by a retained
-  closure. These are not cart globals, module-local variables or selected-frame
-  locals. There is no copied global registerfile and no writeback pass.
+  closure. Neither context injects module-local or selected-frame variables.
+  There is no copied global registerfile, namespace proxy or writeback pass.
+  Context is fixed per call and recorded in its receipt and historical input.
+  History recalls source into the visibly selected context, not an old scope.
 - `getglobal(name)` and `setglobal(name, value)` access the **real ordinary
   global registers**, including cart values and published module roots. Returned
-  tables/functions are live guest objects. These are explicit operations; an
-  unqualified `score` still names a Terminal variable. System registers and
+  tables/functions are live guest objects. In isolated-session context these
+  are explicit operations; an unqualified `score` names a Terminal variable.
+  In cart context the unqualified name already accesses that register. System registers and
   frame/module locals are not exposed through this API. See
   [named register access](global_register_access.md).
-- The environment initially binds the ordinary base functions and the live
+- The isolated environment initially binds the ordinary base functions and the live
   `table`, `string`, `math`, `os`, `coroutine` and `lua_compiler` libraries.
   Its `load` defaults to this session environment; an explicit fourth argument
   still selects an ordinary guest environment table. Library references are
   real guest objects, **not a sandbox** or read-only copies.
+- Cart-context `load` uses the ordinary BIOS loader: without an explicit fourth
+  argument, free names access ordinary globals, including the live standard
+  libraries. An explicit fourth argument selects an environment table in either
+  context.
 - The firmware `load` subset remains the language boundary. For example, it
   supports lexical closures, calls, assignments, conditionals, numeric loops
   and `while`; table-constructor syntax and dynamic `require` are not added by
@@ -101,15 +111,17 @@ appended rows; font/width changes reflow retained entries.
 The ordinary server advertises `studio_terminal_status`, `studio_evaluate_lua`
 and `studio_control_lua`. They invoke this same session service without opening
 a pane, synthesizing a click or adding a Codex-specific Terminal button. Tool
-arguments must select the listed authoring target and explicit `session`
-context. `cart` and `frame` are rejected rather than silently substituted.
+arguments must select the listed authoring target and explicit `cart` or
+`session` context. The manual selection is not changed by a conversation call.
+`frame` is still rejected rather than silently substituted. See the
+[binding contract](studio_terminal_contexts.md).
 The [shared source debugger](studio_source_debugger.md) can step a stopped
 Terminal call without replacing its execution plan. Terminal status exposes
 both the active call and the last settled evaluation with its identity and
 bounded historical output; a return reached through debugger controls therefore
 does not lose its result. This is formatted history, not a retained guest borrow.
 As with the other dynamically admitted Studio tools, start a new Studio
-conversation to obtain tools added since an older thread was created. The
+conversation to obtain tools added or extended since an older thread was created. The
 installed native resume contract does not rebind that thread's tool definitions;
 see [conversation compatibility](studio_assistant_conversations.md).
 
@@ -129,8 +141,9 @@ one, and source-edit approval is not interpreted as execution authority.
 
 ## Physical BIOS Terminal and native parity
 
-The BIOS monitor accepts `LUA <source>` and uses the same `shell/repl.evaluate`
-and guest environment. Expressions/statements, captures, nested load, protected
+The BIOS monitor accepts `LUA <source>` for ordinary globals and
+`LUA --session <source>` for isolated bindings. It uses the same
+`shell/repl.evaluate` and compiler. Expressions/statements, captures, nested load, protected
 errors and retained mutations therefore have one firmware implementation on
 TypeScript and C++. `HELP LUA` describes the command. The command word remains
 case-insensitive; source preserves lowercase and Shift input. The firmware's
@@ -151,7 +164,7 @@ have. The TypeScript/C++ CPU, value and closure representations are unchanged.
 | --- | --- | --- |
 | Submitted source | Guest StringId, interned at admitted call / BIOS input boundary | Same guest string through BIOS input boundary |
 | Compiled chunk and captures | Firmware RAM function records and ordinary guest closures/upvalues | Identical firmware records and guest closures/upvalues |
-| Session bindings | `shell/repl` guest environment table, not CPU global registers | Same firmware-owned table |
+| Session / cart bindings | `shell/repl` guest environment table / real ordinary global registers | Same firmware and registerfile ownership |
 | Results / print | Completion values formatted by suspended guest inspection; debug TX drained once | BIOS formats protected call results; ordinary debug TX |
 | Call control | Existing workbench debugger plan, ordinary frame scheduler | Monitor's actual BIOS call stack, ordinary frame scheduler |
 
@@ -164,13 +177,13 @@ compiler and REPL run only on explicit evaluation. The physical monitor has no
 host-side source debugger: parity here means the same firmware evaluation and
 namespace semantics, not a fabricated native IDE.
 
-Implicit cart-register and selected-frame bindings remain a separate
-compiler/debugger contract. A RAM chunk inherits its caller's execution image,
-so emitting cart-local slot ordinals under the BIOS caller would be incorrect.
-The subsequent [named-access slice](global_register_access.md) removes the stale
-CPU global-table duplicate and exposes the real registerfile through firmware
-`getglobal`/`setglobal`. These do not depend on caller-image ordinals or pretend
-to supply a stopped frame's lexical scope.
+The [binding-context implementation](studio_terminal_contexts.md) now compiles
+implicit ordinary globals using those named boot primitives. A RAM chunk
+inherits its caller's execution image, so emitting cart-local slot ordinals
+under the BIOS caller would be incorrect. The preceding
+[named-access slice](global_register_access.md) removed the stale CPU
+global-table duplicate. Selected-frame bindings remain a separate debugger/
+compiler contract; neither named access nor cart context supplies lexical locals.
 
 ## Production references studied before implementation
 
@@ -186,7 +199,7 @@ to supply a stopped frame's lexical scope.
 - [DAP evaluate context](https://github.com/microsoft/debug-adapter-protocol/blob/main/specification.md)
   and [LLDB expression declaration resolution](https://github.com/llvm/llvm-project/blob/main/lldb/source/Plugins/ExpressionParser/Clang/ClangExpressionDeclMap.cpp):
   source/frame bindings are a debugger/compiler responsibility. These are design
-  references for the still-open cart/frame context work, not a justification to
+  references for the still-open frame context work, not a justification to
   add source-aware CPU state or a copied global table.
 - [Playwright target stability](https://github.com/microsoft/playwright/blob/main/packages/injected/src/injectedScript.ts):
   the shared canvas UI test helper waits for the actual target rectangle, not

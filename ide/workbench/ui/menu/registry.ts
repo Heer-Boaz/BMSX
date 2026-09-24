@@ -123,6 +123,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'sourceEditReview.discard' },
 	],
 	'terminal.input': [
+		{ type: 'command', command: 'terminal.context' },
 		{ type: 'command', command: 'terminal.evaluate' },
 		{ type: 'command', command: 'terminal.pause' },
 		{ type: 'command', command: 'terminal.continue' },

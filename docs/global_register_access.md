@@ -19,7 +19,7 @@ not Lua's global table; copying Lua's storage shape would be the wrong boundary.
 | ROM global operand | Image-local ordinal decoded to register index | Same | Unchanged |
 | Named guest operation | Builtin ID, tagged arguments/results | Same ID, native tagged `Value` | Two boot primitives published by BIOS base library |
 | Saved globals | Name/value roots in CPU snapshot | Same | Remove duplicate table root; increment file schema version |
-| Terminal namespace | Firmware-owned ordinary environment table | Same firmware | Still isolated; explicit global access is not implicit cart/frame evaluation |
+| Terminal namespaces | Firmware-owned environment table or ordinary globals | Same firmware | Explicit context; selected-frame evaluation remains separate |
 
 Affected execution paths: `CPU.callBuiltinFunction` / `CPU::callBuiltinFunction` dispatch
 two additional builtin IDs. Existing-name reads/writes do one name lookup and
@@ -51,8 +51,11 @@ Lua Terminal and its conversation tool. For example,
 object. `setglobal("score", 100)` changes the register read by compiled cart
 code. Installed global names can be inspected through the existing runtime
 inspection tool. Module-local variables and selected-frame locals are not
-globals; this API does not pretend to expose them. Session assignments still
-belong to the Terminal environment.
+globals; this API does not pretend to expose them. Session-context assignments
+still belong to the Terminal environment. The subsequent
+[compiler binding-context implementation](studio_terminal_contexts.md) uses
+these same primitives for implicit globals in cart context and default `load`;
+it does not copy registers or inject debugger locals.
 
 Save/rewind owns the registerfile and referenced objects as normal machine
 state. File schema 3 removes the duplicate global-table root; old files are not

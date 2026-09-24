@@ -52,7 +52,7 @@ export class WorkspaceRuntimeTools {
 				const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
 				signal.throwIfAborted();
 				let operation;
-				if (request.name === 'studio_evaluate_lua') operation = this.terminal.evaluate(request.source);
+				if (request.name === 'studio_evaluate_lua') operation = this.terminal.evaluate(request.source, request.context);
 				else {
 					operation = this.terminal.active;
 					if (operation === undefined || operation.id !== request.evaluation) throw new StudioToolInputError('Lua evaluation is no longer active');

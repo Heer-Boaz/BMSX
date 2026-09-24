@@ -20,7 +20,8 @@ unimplemented rows below are not advertised capabilities.
 | Installed-source breakpoints, Continue and source stepping | RuntimeBreakpoints / RuntimeDebuggerExecution | exact bindings, execution intent, actual stops and cancellation | implemented for authoring target; see [source debugger](studio_source_debugger.md) |
 | Session-context Lua Terminal | firmware compiler/REPL, shared Terminal session and debugger plans | real conversation calls, stops and TS/C++ BIOS parity | implemented; see [Terminal contract](studio_lua_terminal.md) |
 | Explicit cart-global access from Lua Terminal | BIOS getglobal/setglobal + CPU registerfiles | real register/object writes, TS/C++ parity | implemented; see [named globals](global_register_access.md) |
-| Implicit cart bindings and frame-context Lua Terminal | compiler/debugger binding contract | actual selected binding writes, not copied scope tables | open |
+| Implicit cart bindings in Lua Terminal | BIOS compiler named-register lowering | real conversation/manual writes, TS/C++ monitor parity | implemented; [binding contexts](studio_terminal_contexts.md) |
+| Frame-context Lua Terminal | installed compiler/debugger binding contract | actual selected binding writes, liveness and frame lifetime, not copied scope tables | open; frame reads already exist, evaluation does not |
 | Discover/run/wait/cancel scenarios | TestRun/ScenarioRunService | real isolated targets, cancellation and completion | implemented; [test execution](studio_test_execution.md) |
 | Retained failed test inspection | TestExecution / TestTargetInspection | phase-thread locals/upvalues, compiled source, expiry; no authoring reads | implemented read-only; [test inspection](studio_test_inspection.md) |
 | Live test breakpoint/step/debug-rerun | target-bound debugger and composed execution hooks | actual stops/control on the test target | implemented for one named case; prompt-scoped control, [live test debugger](studio_test_debugger.md) |
@@ -80,7 +81,7 @@ restore operations or rollback around guest mutations.
 | Table keys/values | Table stored entries, ValueTag | Table stored entries, guest tags | none |
 | Time | scheduler machine cycles; frameScheduler video sequence | scheduler machine cycles; frame scheduler | none |
 | Inspection handles | IDE-only borrowed-value registry | no IDE registry required | new tooling only |
-| Terminal compilation/execution | BIOS load/pcall + CPU | same BIOS + native CPU | session parity proven by physical-monitor conformance; cart/frame bindings still open |
+| Terminal compilation/execution | BIOS load/pcall + CPU | same BIOS + native CPU | session and cart parity proven by physical-monitor conformance; selected-frame bindings still open |
 
 First-slice hot-path callsites: `runWorkbenchHostFrame` invalidates outstanding
 borrows before normal execution and rewind replay, including with the editor
@@ -97,7 +98,8 @@ added. Values and pages are constructed only on explicit inspection requests.
    captures remain part of test-target integration.
 3. Expose execution owners with completed/stopped/interrupted outcomes, not UI
    command dispatch. Logical video steps and source/instruction steps differ.
-4. Complete Terminal contexts and native parity before claiming cart evaluation.
+4. Cart-context evaluation now shares the BIOS compiler on TS/C++. Complete
+   selected-frame bindings and lifetime ownership before claiming local evaluation.
 5. Test execution, target-bound debugging and basic source-backed builder actions
    are implemented. Live semantic Actor operations and builder transfer/retarget
    impact review remain open.
@@ -285,16 +287,20 @@ update per video tick and is distinct from source/instruction stepping.
 
 The subsequent [Terminal slice](studio_lua_terminal.md) adds actual conversation
 execution, stopped/completed observations, request cancellation and physical
-BIOS-monitor parity. It explicitly supports the Terminal's own session namespace,
-not implicit cart bindings or selected-frame locals. The subsequent
+BIOS-monitor parity. That initial slice explicitly supported only the Terminal's
+own session namespace. The subsequent
 [named global-register access](global_register_access.md) slice permits explicit
 `getglobal`/`setglobal` calls to the actual ordinary registerfile and live cart
-objects, including from a conversation.
+objects, including from a conversation. The
+[binding-context slice](studio_terminal_contexts.md) now also supplies implicit
+cart bindings through the same compiler and registers, on both machines.
 
 Subsequent slices add [Continue/source-debugger operations](studio_source_debugger.md)
 and [scenario discovery/execution](studio_test_execution.md). Still open:
-cart/frame Lua Terminal bindings, cross-turn test-debugger handoff, canonical
-semantic-builder operations and the complete reproduce/fix/rerun acceptance flow.
+frame-context Lua Terminal bindings, cross-turn test-debugger handoff, live Actor
+mutation, complex builder transfer/retarget review and the complete
+reproduce/fix/rerun acceptance flow. Basic canonical-source builder operations
+are implemented as recorded in the acceptance table above.
 
 The subsequent [retained test inspection](studio_test_inspection.md) slice adds
 actual phase-thread stack/scopes/objects and compiled-source reads, shared with

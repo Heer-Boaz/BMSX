@@ -6,6 +6,10 @@ local syntax<const> = require('compiler/syntax')
 local compiler<const> = {}
 
 local op_getup<const> = isa.op_getup
+-- Boot-only registers are cleared after firmware initialization. Retain the
+-- primitives, not the mutable public getglobal/setglobal bindings.
+local vm_getglobal<const> = __bmsx_getglobal
+local vm_setglobal<const> = __bmsx_setglobal
 
 local opcode_by_binary_operator<const> = {
 	[syntax.binary_add] = isa.op_add,
@@ -69,7 +73,7 @@ end
 local prepare_path_operands
 local prepare_value_operands
 
-prepare_path_operands = function(state, expression)
+prepare_path_operands = function(state, expression, writing)
 	if expression.kind == syntax.identifier_expression then
 		if expression.environment_key ~= nil then
 			state.environment_constant_index = add_constant(
@@ -79,6 +83,11 @@ prepare_path_operands = function(state, expression)
 			expression.constant_index = add_constant(
 				state,
 				expression.environment_key
+			)
+		elseif expression.global_key ~= nil then
+			expression.constant_index = add_constant(state, expression.global_key)
+			expression.accessor_constant_index = add_constant(
+				state, writing and vm_setglobal or vm_getglobal
 			)
 		end
 		return
@@ -205,7 +214,7 @@ end
 prepare_statement_operands = function(state, statement)
 	local kind<const> = statement.kind
 	if kind == syntax.assignment_statement then
-		prepare_path_operands(state, statement.target)
+		prepare_path_operands(state, statement.target, true)
 		prepare_value_operands(state, statement.value)
 		return
 	end
@@ -401,6 +410,30 @@ emit_path = function(
 					expression.constant_index
 				)
 			)
+			return target
+		end
+		if expression.global_key ~= nil then
+			-- RAM chunks inherit the caller's execution image, so image-local
+			-- GETGL ordinals cannot represent their named global bindings.
+			local temporary_base<const> = state.free_register
+			local use_target<const> = target_is_temporary
+				and target >= state.temporary_register_base
+				and target + 1 == temporary_base
+			local call_base = target
+			if not use_target then
+				call_base = reserve_register(state)
+			end
+			local name_register<const> = reserve_register(state)
+			bytecode.emit_abc(instruction_words, isa.op_mov, call_base,
+				constant_register(state, expression.accessor_constant_index), 0)
+			bytecode.emit_abc(instruction_words, isa.op_mov, name_register,
+				constant_register(state, expression.constant_index), 0)
+			bytecode.emit_abc(instruction_words, isa.op_call, call_base,
+				1 + isa.fixed_call_arg_count_bias, 1)
+			if not use_target then
+				bytecode.emit_abc(instruction_words, isa.op_mov, target, call_base, 0)
+			end
+			state.free_register = temporary_base
 			return target
 		end
 		return identifier_register(state, expression)
@@ -875,7 +908,7 @@ end
 
 emit_value_register = function(state, instruction_words, expression)
 	if expression.kind == syntax.identifier_expression
-		and expression.environment_key == nil then
+		and expression.environment_key == nil and expression.global_key == nil then
 		local upvalue<const> = expression.upvalue
 		if upvalue == nil then
 			return identifier_register(state, expression)
@@ -905,6 +938,25 @@ local emit_assignment<const> = function(
 )
 	local target<const> = statement.target
 	if target.kind == syntax.identifier_expression then
+		if target.global_key ~= nil then
+			local call_base<const> = reserve_register(state)
+			local name_register<const> = reserve_register(state)
+			local value_target<const> = reserve_register(state)
+			bytecode.emit_abc(instruction_words, isa.op_mov, call_base,
+				constant_register(state, target.accessor_constant_index), 0)
+			bytecode.emit_abc(instruction_words, isa.op_mov, name_register,
+				constant_register(state, target.constant_index), 0)
+			local value_register<const> = emit_value(
+				state, instruction_words, statement.value, value_target, true
+			)
+			if value_register ~= value_target then
+				bytecode.emit_abc(instruction_words, isa.op_mov, value_target, value_register, 0)
+			end
+			bytecode.emit_abc(instruction_words, isa.op_call, call_base,
+				2 + isa.fixed_call_arg_count_bias, 0)
+			state.free_register = call_base
+			return
+		end
 		if target.upvalue ~= nil then
 			local value_register<const> = emit_value_register(
 				state,

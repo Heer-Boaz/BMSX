@@ -26,15 +26,19 @@ local create_environment<const> = function()
 	return value
 end
 
-function repl.evaluate(source, chunk_name)
-	if environment == nil then
-		environment = create_environment()
+function repl.evaluate(source, chunk_name, context)
+	local bindings
+	if context == 'session' then
+		if environment == nil then
+			environment = create_environment()
+		end
+		bindings = environment
 	end
 	-- Lua's interactive loader tries an expression before a statement. Neither
 	-- attempt executes input; only the successfully compiled chunk is called.
-	local chunk, message = compiler.load('return ' .. source, chunk_name, 't', environment)
+	local chunk, message = compiler.load('return ' .. source, chunk_name, 't', bindings)
 	if chunk == nil then
-		chunk, message = compiler.load(source, chunk_name, 't', environment)
+		chunk, message = compiler.load(source, chunk_name, 't', bindings)
 	end
 	if chunk == nil then
 		return false, message

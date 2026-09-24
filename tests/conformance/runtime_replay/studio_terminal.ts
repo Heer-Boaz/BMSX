@@ -19,6 +19,7 @@ export async function runStudioTerminal(test: StudioFixture) {
 	let input = editorTabGroup.activeTab as TerminalInput;
 	check(input.kind === 'terminal', 'terminal opens through the registered View command');
 	const session = ide.terminal;
+	check(session.inputContext === 'cart', 'manual input starts with explicit cart globals');
 	const position = cycles();
 	for (let index = 0; index < 5; index++) await frame();
 	check(cycles() === position, 'opening the terminal does not run the game');
@@ -40,7 +41,18 @@ export async function runStudioTerminal(test: StudioFixture) {
 		check(cycles() === stopped && !ide.debugger.plans.mutationActive, 'only the explicit Lua call runs, then the machine is held');
 		return session.transcript.entry(session.transcript.next - 1);
 	};
-	let result = await evaluate('1 + 2');
+	let result = await evaluate('terminal_counter = 20; return terminal_counter, type(new_game), type(cartlib__world__world)');
+	check(result.text === '20\tfunction\ttable' && session.lastResult!.context === 'cart', 'implicit names reach real cart globals');
+	check(ide.luaTooling.suspendedGuest.global('terminal_counter') === 20, 'cart assignment is immediate, not a writeback');
+	result = await evaluate('load("return terminal_counter + 1")()');
+	check(result.text === '21', 'default BIOS load resolves globals when called from a cart-context RAM function');
+	await test.capture?.('lua-cart-context');
+	await test.runPaletteCommand('Terminal: Select Lua Context');
+	await press('ArrowDown'); await press('Enter');
+	check(session.inputContext === 'session', 'ordinary context picker selects isolated session');
+	result = await evaluate('terminal_counter');
+	check(result.text === 'nil', 'isolated session does not implicitly see cart variables');
+	result = await evaluate('1 + 2');
 	check(result.kind === 'result' && result.text === '3', 'expression result comes from BIOS load and guest execution');
 	result = await evaluate('counter = 40; print("hello from Lua"); return counter, nil, false');
 	check(result.kind === 'result' && result.text === '40\tnil\tfalse', 'multiple return values retain nil and false');

@@ -62,7 +62,7 @@ export type EditorScenarioLabCommandId =
 	| 'scenarioLab.cancel';
 
 export type EditorCommandId =
-	| 'terminal.evaluate' | 'terminal.pause' | 'terminal.continue' | 'terminal.clear' | 'terminal.copy'
+	| 'terminal.evaluate' | 'terminal.context' | 'terminal.pause' | 'terminal.continue' | 'terminal.clear' | 'terminal.copy'
 	| 'assistant.signIn'
 	| 'assistant.cancelLogin'
 	| 'assistant.signOut'

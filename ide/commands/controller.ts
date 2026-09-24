@@ -153,6 +153,7 @@ export class IdeCommandController {
 			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
 			case 'terminal.evaluate':
+			case 'terminal.context':
 			case 'terminal.pause':
 			case 'terminal.continue':
 			case 'terminal.clear':
@@ -342,6 +343,7 @@ export class IdeCommandController {
 			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
 			case 'terminal.evaluate':
+			case 'terminal.context':
 			case 'terminal.pause':
 			case 'terminal.continue':
 			case 'terminal.clear':

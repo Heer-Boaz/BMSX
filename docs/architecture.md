@@ -5176,8 +5176,14 @@ tooling does not guess whether replacement was an external load or owned seek.
 Runtime task failure retains its cause and settles navigation as failed, rather
 than leaving a tool awaiting success forever. No provider polling is involved.
 Authoring Continue/source-step and live test debugging are implemented by their
-separate owners. Implicit cart/frame Terminal bindings and semantic builder
-actions remain work tracked in
+separate owners. Terminal `cart` context and default BIOS `load` lower free
+identifiers to the existing named ordinary-register primitives, not to
+caller-image slot ordinals. Explicit environment tables retain table-backed
+bindings; the isolated Terminal session selects its own saved guest environment.
+Both frontends use the same firmware on TypeScript/C++. See
+[Terminal binding contexts](studio_terminal_contexts.md).
+Selected-frame evaluation, live Actor mutation and complete reviewed-source
+apply/save/install/rerun receipts remain work tracked in
 [Studio runtime tools](studio_runtime_tools.md).
 The proposal owner publishes one terminal review outcome after retiring edit
 authority and finishing history admission. Clients observe that state rather

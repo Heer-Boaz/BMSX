@@ -45,8 +45,29 @@ const commands = [
 	'lua getglobal("fresh")',
 	'lua getglobal(3)',
 	'lua setglobal(false,1)',
+	'lua print("CART-BEGIN")',
+	'lua counter',
+	'lua hot_resume_new_game_count',
+	'lua hot_resume_new_game_count=50;return hot_resume_new_game_count',
+	'lua new_game();return hot_resume_new_game_count',
+	'lua counter=80;return counter',
+	'lua --session counter',
+	'lua load("return counter+1")()',
+	'lua local counter=7;return counter',
+	'lua counter',
+	'lua native_fn=function(x)return counter+x end',
+	'lua native_fn(5)',
+	'lua counter=90;return native_fn(5)',
+	'lua counter=91;error("cart error")',
+	'lua counter',
 	'lua print("TERMINAL-END")',
 ];
+// Earlier cases exercise the explicitly isolated session; the same physical
+// monitor also exercises implicit globals without adding a host evaluator.
+for (let index = 0; index < commands.indexOf('lua print("GLOBALS-BEGIN")'); index++) {
+	commands[index] = commands[index].replace('lua ', 'lua --session ');
+}
+commands[commands.indexOf('lua hot_resume_new_game_count')] = 'lua --session hot_resume_new_game_count';
 const punctuation: Record<string, [string, boolean]> = {
 	' ': ['Space', false], '(': ['Digit9', true], ')': ['Digit0', true],
 	'"': ['Quote', true], '=': ['Equal', false], '+': ['Equal', true],
@@ -76,6 +97,7 @@ try {
 	assert.match(result, /\nMiXeD\t42\n9\nnil\nbefore error\nterminal error\n43\n44\n/);
 	assert.match(result, /\[load:/, 'syntax errors are protected by the shared firmware loader');
 	assert.match(result, /GLOBALS-BEGIN\nnil\n1\nnil\n41\nnil\nnil\n23\nfalse\nnil\nglobal error\n42\nInvalid argument\.\nInvalid argument\.\n/);
+	assert.match(result, /CART-BEGIN\nnil\nnil\n41\n50\n51\n80\n43\n81\n7\n80\nnil\n85\n95\ncart error\n91\n/);
 	assert.ok(result.endsWith('TERMINAL-END\nnil\n'), 'syntax error does not kill the physical monitor');
 	console.log('TERMINAL-PARITY:PASS (real BIOS monitor, HID input, TypeScript and native C++)');
 	rmSync(directory, { recursive: true });
