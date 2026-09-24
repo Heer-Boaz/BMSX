@@ -7,12 +7,16 @@ export type RuntimeToolRequest =
 	| { name: 'studio_pause_runtime' | 'studio_inspect_runtime' | 'studio_capture_game'; target: string }
 	| { name: 'studio_step_frames'; target: string; direction: -1 | 1; count: number }
 	| { name: 'studio_seek_history'; target: string; cycles: number }
+	| { name: 'studio_read_runtime_stack'; inspection: string; start: number; count: number }
+	| { name: 'studio_read_frame_scopes'; frame: string }
 	| { name: 'studio_read_runtime_values'; reference: string; start: number; count: number };
 const NO_FIELDS: string[] = [];
 const TARGET_FIELDS = ['target'];
 const STEP_FIELDS = ['target', 'direction', 'count'];
 const SEEK_FIELDS = ['target', 'cycles'];
 const VALUES_FIELDS = ['reference', 'start', 'count'];
+const STACK_FIELDS = ['inspection', 'start', 'count'];
+const FRAME_FIELDS = ['frame'];
 const TARGET_SCHEMA = { type: 'object', properties: { target: { type: 'string' } }, required: TARGET_FIELDS, additionalProperties: false };
 
 export const STUDIO_RUNTIME_TOOLS = [
@@ -25,7 +29,11 @@ export const STUDIO_RUNTIME_TOOLS = [
 	{ name: 'studio_runtime_status', description: 'Read the actual Studio authoring target identity, machine cycles/video tick, execution/inspection availability and retained-history range with frame-navigation availability. No screenshot, guest execution or test-target attachment. Use on demand, not polling.',
 		inputSchema: { type: 'object', properties: {}, required: NO_FIELDS, additionalProperties: false } },
 	{ name: 'studio_pause_runtime', description: 'Pause the listed authoring target without changing guest state or other pause reasons. Leaves it user-paused after the conversation. Refuses an active machine operation; does not interrupt Lua or rewind.', inputSchema: TARGET_SCHEMA },
-	{ name: 'studio_inspect_runtime', description: 'Open a suspended inspection of the listed authoring target. Returns installed BIOS and active-cartridge global binding scopes (not separate cartridge global banks). Names come from installed symbols, not unsaved source. Does not execute Lua. Replaces this prompt\'s prior inspection; all value references expire on execution, restore/reset or prompt retirement. Read tables with studio_read_runtime_values. Does not provide frame locals or test-target attachment.', inputSchema: TARGET_SCHEMA },
+	{ name: 'studio_inspect_runtime', description: 'Open a suspended inspection of the listed authoring target. Returns installed BIOS and active-cartridge global binding scopes (not separate cartridge global banks), plus actual debugger stop/fault information. Names come from installed symbols, not unsaved source. Does not execute Lua. Replaces this prompt\'s prior inspection; all frame/value references expire on execution, restore/reset or prompt retirement. Use studio_read_runtime_stack for the current CPU stack and studio_read_runtime_values for globals/tables. Does not attach test targets or suspended coroutines.', inputSchema: TARGET_SCHEMA },
+	{ name: 'studio_read_runtime_stack', description: 'Read a page of the current CPU thread\'s stack in an open suspended inspection. Top frame first; start is zero-based, count positive. Frames have stop-scoped handles, physical frame indices and inline depths; recursive invocations remain distinct. Source locations are one-based and refer to installed code, NOT dirty working copies. RAM functions without installed symbols remain instruction frames. This is the live suspended stack, not a retained fault stack or coroutine enumeration. Does not execute Lua.',
+		inputSchema: { type: 'object', properties: { inspection: { type: 'string' }, start: { type: 'integer', minimum: 0 }, count: { type: 'integer', minimum: 1 } }, required: STACK_FIELDS, additionalProperties: false } },
+	{ name: 'studio_read_frame_scopes', description: 'Read named locals/upvalue scopes for a frame handle from this inspection\'s stack. Use studio_read_runtime_values on their references. Locals use installed lexical/inline scopes and register liveness; unavailable locations are explicitly unavailable, not nil or guessed constants. Shadowed names retain distinct declaration ranges. Upvalues belong to the physical closure; an inline frame has no separate closure. No Lua execution or frame-context evaluation.',
+		inputSchema: { type: 'object', properties: { frame: { type: 'string' } }, required: FRAME_FIELDS, additionalProperties: false } },
 	{ name: 'studio_read_runtime_values', description: 'Read a page from a scope/table reference in this prompt\'s current suspended inspection. Zero-based start, positive count. Values and table keys retain guest kinds; displays are not lookup keys. Tables expose stored entries only, without executing metamethods. Repeated/cyclic tables share a reference. Number displays preserve guest formatting. A page past the end is empty, not missing values. Expired references require a new inspection.',
 		inputSchema: { type: 'object', properties: { reference: { type: 'string' }, start: { type: 'integer', minimum: 0 }, count: { type: 'integer', minimum: 1 } }, required: VALUES_FIELDS, additionalProperties: false } },
 ];
@@ -33,6 +41,19 @@ export const STUDIO_RUNTIME_TOOLS = [
 export function decodeRuntimeToolRequest(name: string, input: unknown): RuntimeToolRequest {
 	switch (name) {
 		case 'studio_runtime_status': toolArguments(input, NO_FIELDS); return { name };
+		case 'studio_read_runtime_stack': {
+			const value = toolArguments(input, STACK_FIELDS);
+			if (typeof value.inspection !== 'string' || !Number.isSafeInteger(value.start) || (value.start as number) < 0
+				|| !Number.isSafeInteger(value.count) || (value.count as number) < 1) {
+				throw new StudioToolInputError('Stack reads require an inspection, non-negative integer start and positive integer count');
+			}
+			return { name, inspection: value.inspection, start: value.start as number, count: value.count as number };
+		}
+		case 'studio_read_frame_scopes': {
+			const value = toolArguments(input, FRAME_FIELDS);
+			if (typeof value.frame !== 'string') throw new StudioToolInputError('Frame scopes require a handle from the current suspended stack');
+			return { name, frame: value.frame };
+		}
 		case 'studio_step_frames': {
 			const value = toolArguments(input, STEP_FIELDS);
 			if (typeof value.target !== 'string' || value.direction !== 'forward' && value.direction !== 'backward'

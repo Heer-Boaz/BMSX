@@ -38,7 +38,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	for (const tool of STUDIO_RUNTIME_TOOLS) assert.ok(model.requests[0].tools.some(entry => entry.name === tool.name));
 	const values = outputs(model.requests.at(-1));
 	assert.equal(values[0].target, result.target); assert.equal(values[2].cycles, result.position); assert.equal(values[2].videoTick, result.videoTick);
-	assert.equal(values[2].coverage, 'installed-global-bindings');
+	assert.deepEqual(values[2].coverage, { globals: 'installed-bindings', stack: 'current-cpu' });
 	assert.equal(values[4].entries.find(entry => entry.key.display === 'active_space_id').value.display, 'title');
 	assert.ok(values[6].entries.some(entry => entry.key.display === 'id'));
 	assert.ok(values[6].entries.some(entry => entry.key.display === '_components' && entry.value.kind === 'table'));

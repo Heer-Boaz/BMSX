@@ -67,11 +67,19 @@ export class WorkspaceRuntimeTools {
 				const inspection = this.owner.open();
 				this.inspection = inspection;
 				return { kind: 'runtime' as const, data: { ...inspection.state, inspection: inspection.id,
-					coverage: 'installed-global-bindings' as const, scopes: inspection.scopes } };
+					coverage: { globals: 'installed-bindings' as const, stack: 'current-cpu' as const }, scopes: inspection.scopes } };
 			}
 			case 'studio_read_runtime_values': {
 				if (this.inspection === undefined) throw new StudioToolInputError('Open a suspended inspection before reading values');
 				return { kind: 'runtime' as const, data: this.inspection.read(request.reference, request.start, request.count) };
+			}
+			case 'studio_read_runtime_stack': {
+				if (this.inspection === undefined || this.inspection.id !== request.inspection) throw new StudioToolInputError('Stack reads require the current suspended inspection');
+				return { kind: 'runtime' as const, data: this.inspection.readStack(request.start, request.count) };
+			}
+			case 'studio_read_frame_scopes': {
+				if (this.inspection === undefined) throw new StudioToolInputError('Open a suspended inspection before reading frame scopes');
+				return { kind: 'runtime' as const, data: this.inspection.frameScopes(request.frame) };
 			}
 		}
 	}

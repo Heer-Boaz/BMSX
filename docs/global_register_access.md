@@ -104,5 +104,7 @@ general speedup claim or a native/cart workload benchmark. Native dispatch
 source is unchanged; native conformance above establishes correctness, not a
 native throughput comparison.
 
-Automatic cart-name binding, frame locals, Scenario Lab execution/debugging,
+Automatic cart-name binding, frame-context Terminal evaluation, Scenario Lab execution/debugging,
 semantic builder tools and the complete fix/rerun workflow remain open.
+Read-only frame locals/upvalues are exposed separately by
+[suspended stack inspection](studio_stack_inspection.md).

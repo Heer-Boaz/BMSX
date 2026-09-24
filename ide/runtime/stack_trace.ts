@@ -10,6 +10,9 @@ import {
 } from './sources';
 import type { ResourceDomain, ResourceIdentity } from '../common/resource';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
+import type { CPU } from '../../machine/ts/machine/cpu/cpu';
+import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
+import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 
 export type SourceStackTraceFrame = {
 	readonly kind: 'source';
@@ -63,16 +66,38 @@ export type RuntimeStackFrame = {
 	readonly tracePc: number;
 };
 
+/** Physical identity is meaningful only within the suspension that supplied these frames. */
+export type RuntimeStackTraceFrame = StackTraceFrame & {
+	readonly physicalFrameIndex: number;
+	readonly inlineDepth: number;
+};
+
+export function readRuntimeStackFrames(cpu: CPU, sources: RuntimeSourceState): RuntimeStackFrame[] {
+	const depth = cpu.getFrameDepth();
+	const frames = new Array<RuntimeStackFrame>(depth);
+	for (let index = 0; index < depth; index++) {
+		const executionDomainId = cpu.readFrameExecutionDomain(index);
+		const toolingImage = blua32ToolingImageForDomain(sources.currentBlua32Media, executionDomainId)!;
+		const functionAddress = cpu.readFrameFunctionAddress(index);
+		frames[index] = { executionDomainId, toolingImage, functionAddress,
+			functionIndex: blua32FunctionIndexAtAddress(toolingImage.layout, functionAddress),
+			tracePc: index + 1 < depth && !cpu.readFrameReturnsToCompletionLatch(index + 1)
+				? cpu.readFrameCallSitePc(index + 1) : cpu.readFramePc(index) };
+	}
+	return frames;
+}
+
 export function buildLuaStackFrames(
 	faultFrames: readonly RuntimeStackFrame[],
 	createSourceFrame: (domain: ResourceDomain, source: string, line: number, column: number, functionName: string) => SourceStackTraceFrame,
-): StackTraceFrame[] {
-	const frames: StackTraceFrame[] = [];
+): RuntimeStackTraceFrame[] {
+	const frames: RuntimeStackTraceFrame[] = [];
 	for (let index = faultFrames.length - 1; index >= 0; index -= 1) {
 		const entry = faultFrames[index];
 		const image = entry.toolingImage;
 		if (entry.functionIndex < 0 || image.symbols === null) {
 			frames.push({
+				physicalFrameIndex: index, inlineDepth: 0,
 				kind: 'instruction',
 				executionDomainId: entry.executionDomainId,
 				instructionAddress: entry.tracePc,
@@ -93,24 +118,25 @@ export function buildLuaStackFrames(
 				const inlineRange = inlineIndex === inlineCallSites.length - 1
 					? range
 					: inlineCallSites[inlineIndex + 1].callRange;
-				frames.push(createSourceFrame(
+				frames.push({ physicalFrameIndex: index, inlineDepth: inlineIndex + 1, ...createSourceFrame(
 					entry.executionDomainId,
 					inlineRange.path,
 					inlineRange.start.line,
 					inlineRange.start.column,
 					blua32FunctionDisplayNameById(symbols, inlineCallSites[inlineIndex].calleeFunctionId),
-				));
+				) });
 			}
 			const physicalRange = inlineCallSites.length === 0 ? range : inlineCallSites[0].callRange;
-			frames.push(createSourceFrame(
+			frames.push({ physicalFrameIndex: index, inlineDepth: 0, ...createSourceFrame(
 				entry.executionDomainId,
 				physicalRange.path,
 				physicalRange.start.line,
 				physicalRange.start.column,
 				physicalFunctionName,
-			));
+			) });
 		} else {
 			frames.push({
+				physicalFrameIndex: index, inlineDepth: 0,
 				kind: 'instruction',
 				executionDomainId: entry.executionDomainId,
 				instructionAddress: entry.tracePc,

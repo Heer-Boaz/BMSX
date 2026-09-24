@@ -14,11 +14,13 @@ unimplemented rows below are not advertised capabilities.
 | Working copies, diagnostics, reviewed edits | existing source tools | source receipts, review/history tests | implemented |
 | Historical test evidence | ScenarioResultService | retained-result tests | implemented |
 | Live globals, nested values, invalidation | SuspendedGuestSession + runtime inspection | real cartridge and bridge tests, no guest execution | implemented for installed global bindings; see validation below |
+| Current CPU stack, frame locals and upvalues | installed symbols + RuntimeInspection | real source stop, recursive/inline frames, expired handles | implemented; see [stack inspection](studio_stack_inspection.md) |
 | Game image | presentation owner + image-capable tool transport | pixels from each renderer, target/time provenance | implemented for paused authoring target; browser and native pixel evidence below |
 | Pause, finite video stepping, retained-history seek | execution/history owners + RuntimeFrameNavigation | actual completion, retained-range and cancellation tests | implemented for the authoring target; validation below |
 | Continue and source stepping | execution/debugger owners | execution intent, actual stops and source locations | tools open |
 | Session-context Lua Terminal | firmware compiler/REPL, shared Terminal session and debugger plans | real conversation calls, stops and TS/C++ BIOS parity | implemented; see [Terminal contract](studio_lua_terminal.md) |
-| Cart globals and frame-context Lua Terminal | compiler/debugger binding contract | live register/frame reads and writes, not copied globals | open |
+| Explicit cart-global access from Lua Terminal | BIOS getglobal/setglobal + CPU registerfiles | real register/object writes, TS/C++ parity | implemented; see [named globals](global_register_access.md) |
+| Implicit cart bindings and frame-context Lua Terminal | compiler/debugger binding contract | actual selected binding writes, not copied scope tables | open |
 | Discover/run/wait/cancel scenarios | TestRun/ScenarioRunService | real isolated targets, cancellation and completion | open |
 | Debug retained failed test target | target-bound debugger and composed execution hooks | no reads/writes through authoring target | open |
 | Object/FSM/BT/ActionEffect semantic inspection and editing | Actor Lab / source-backed behavior models | canonical-source edits and live-state readback | open |
@@ -85,8 +87,8 @@ added. Values and pages are constructed only on explicit inspection requests.
 
 ## Next implementation gates
 
-1. Live global/table inspection and tool lifetime are proven through real browser
-   execution. Frame locals and additional runtime roots remain to be exposed.
+1. Live global/table and current-frame inspection have explicit suspended
+   lifetimes. Additional runtime roots and test-target attachment remain open.
 2. Image transport and presentation capture are implemented; target-bound test
    captures remain part of test-target integration.
 3. Expose execution owners with completed/stopped/interrupted outcomes, not UI

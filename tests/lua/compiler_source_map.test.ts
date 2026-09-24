@@ -50,6 +50,10 @@ test('compiler maps generated harness debug metadata to authored source ranges',
 	);
 	assert.ok(authoredStatements.some(point => point.range.start.line === 1));
 	assert.ok(authoredStatements.some(point => point.range.start.line === 2));
+	const local = compiled.metadata.localSlotsByProto.flat().find(slot => slot.name === 'value')!;
+	assert.equal(local.scope.path, TEST_RANGE_PATH);
+	assert.deepEqual(local.scope.start, { line: 1, column: 'local value = 1'.length + 1 },
+		'the mapped local scope begins after its initializer, not at generated wrapper code');
 });
 
 test('compiler reports mapped harness diagnostics at the authored source location', () => {

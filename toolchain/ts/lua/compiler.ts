@@ -46,7 +46,7 @@ import {
 	type LuaGotoStatement,
 } from './syntax/ast';
 import { OpCode, encodeFixedCallArgCount } from '../../../machine/ts/spec/blua32/opcode';
-import type { SourceRange } from './source_range';
+import type { SourcePosition, SourceRange } from './source_range';
 import { sourceRangesEqual } from './source_range';
 import type { LuaCaptureLayout } from './compiler/capture_layout';
 import type {
@@ -1524,7 +1524,8 @@ class FunctionBuilder {
 		this.flowAnalysis = new ValueKindFlowAnalyzer(expression.body.body, this.semantics);
 		this.pushScope(this.semantics.locations.range(expression.body.span));
 		if (implicitSelf) {
-			this.declareLocal(IMPLICIT_SELF_SYMBOL_HANDLE, 'self', this.semantics.locations.range(expression.span), this.semantics.locations.range(expression.span), 'receiver');
+			const range = this.semantics.locations.range(expression.span);
+			this.declareLocal(IMPLICIT_SELF_SYMBOL_HANDLE, 'self', range, range.start, range, 'receiver');
 		}
 		for (let i = 0; i < expression.parameters.length; i += 1) {
 			const parameter = expression.parameters[i];
@@ -2278,6 +2279,7 @@ class FunctionBuilder {
 		symbolHandle: string,
 		name: string,
 		definitionRange: LuaSourceRange,
+		scopeStart: SourcePosition,
 		scopeRange?: LuaSourceRange,
 		kind: LocalBindingKind = 'local',
 		constValue: ProgramConstant | null = null,
@@ -2333,7 +2335,9 @@ class FunctionBuilder {
 			name,
 			registerIndex: reg,
 			definition: definitionRange,
-			scope: effectiveScopeRange,
+			// The register can contain initializer temporaries before the binding
+			// exists. Publish the binder's visibility boundary, not the whole block.
+			scope: { path: effectiveScopeRange.path, start: scopeStart, end: effectiveScopeRange.end },
 			inlineCallSites: ROOT_INLINE_CALL_SITES,
 		});
 		return reg;
@@ -2370,6 +2374,7 @@ class FunctionBuilder {
 			decl.id,
 			decl.name,
 			definitionRange,
+			this.semantics.locations.position(decl.visibleFrom.unit, decl.visibleFrom.offset + 1),
 			scopeRange,
 			kind,
 			constValue,
@@ -4159,6 +4164,7 @@ class FunctionBuilder {
 				decl.id,
 				decl.name,
 				this.semantics.locations.range(names[i].span),
+				this.semantics.locations.position(decl.visibleFrom.unit, decl.visibleFrom.offset + 1),
 				undefined,
 				attribute === 'const' ? 'const' : 'local',
 				constValue,

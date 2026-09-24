@@ -128,7 +128,7 @@ test('conversation dispatches runtime tools against its actual target without st
 	const paused = await call('studio_pause_runtime', { target: f.inspection.target });
 	assert.equal(paused.success, true); assert.equal(JSON.parse(paused.text).userPaused, true);
 	const inspected = await call('studio_inspect_runtime', { target: f.inspection.target });
-	assert.equal(inspected.success, true); assert.equal(JSON.parse(inspected.text).coverage, 'installed-global-bindings');
+	assert.equal(inspected.success, true); assert.deepEqual(JSON.parse(inspected.text).coverage, { globals: 'installed-bindings', stack: 'current-cpu' });
 	assert.equal(connection.commands.filter(command => command.type === 'start').length, 1);
 	assert.equal(conversation.entries.filter(entry => entry.kind === 'proposal').length, 0);
 	connection.emit({ type: 'turn-completed', turnId: 't', status: 'completed' });

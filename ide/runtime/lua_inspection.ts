@@ -13,6 +13,54 @@ import { SYSTEM_RESOURCE_DOMAIN, type ResourceDomain, type ResourceIdentity } fr
 import type { RuntimeFaultState } from './fault_state';
 import { Blua32GlobalRegisterFile, resolveRuntimeLuaSource, type RuntimeSourceState } from './sources';
 import type { SuspendedGuestRead, SuspendedGuestSession, SuspendedGuestValue } from './suspended_guest';
+import type { RuntimeStackFrame } from './stack_trace';
+
+export type RuntimeLuaFrameBinding = {
+	readonly name: string;
+	readonly definition: SourceRange | null;
+	readonly index: number;
+	readonly available: boolean;
+};
+export type RuntimeLuaFrameScope = {
+	readonly kind: 'locals' | 'upvalues';
+} & (
+	| { readonly status: 'available'; readonly bindings: readonly RuntimeLuaFrameBinding[] }
+	| { readonly status: 'symbols-unavailable' | 'function-unmapped' | 'source-unmapped' | 'inlined' }
+);
+
+/** Installed locations for one logical frame, not a name lookup across recursive invocations. */
+export function runtimeLuaFrameScopes(frame: RuntimeStackFrame, inlineDepth: number): RuntimeLuaFrameScope[] {
+	const image = frame.toolingImage, symbols = image.symbols, functionIndex = frame.functionIndex;
+	if (symbols === null || functionIndex < 0) {
+		const status = symbols === null ? 'symbols-unavailable' : 'function-unmapped';
+		return [{ kind: 'locals', status }, { kind: 'upvalues', status }];
+	}
+	const scopes: RuntimeLuaFrameScope[] = [];
+	const range = blua32SourceRangeAtPc(symbols, image.layout.header.textAddress, frame.tracePc);
+	if (range === null) scopes.push({ kind: 'locals', status: 'source-unmapped' });
+	else {
+		const inlineSites = blua32InlineCallSitesAtPc(symbols, image.layout.header.textAddress, frame.tracePc);
+		const bindings: RuntimeLuaFrameBinding[] = [];
+		for (const slot of symbols.metadata.localSlotsByFunction[functionIndex]) {
+			if (slot.inlineCallSites.length !== inlineDepth) continue;
+			const context = resolveInlineLocalContextRange(slot, range, inlineSites);
+			if (context === null || context.path !== slot.scope.path
+				|| !sourcePositionInRange(context.start.line, context.start.column, slot.scope)) continue;
+			bindings.push({ name: slot.name, definition: slot.definition, index: slot.registerIndex,
+				available: blua32LocalSlotLiveAtPc(slot, image.layout.functions[functionIndex].codeAddress, frame.tracePc) });
+		}
+		scopes.push({ kind: 'locals', status: 'available', bindings });
+	}
+	if (inlineDepth !== 0) scopes.push({ kind: 'upvalues', status: 'inlined' });
+	else {
+		const bindings = symbols.metadata.upvalueBindingsByFunction[functionIndex].map((capture, index): RuntimeLuaFrameBinding => {
+			const local = symbols.metadata.capturedLocals[capture];
+			return { name: local.name, definition: local.definition, index, available: true };
+		});
+		scopes.push({ kind: 'upvalues', status: 'available', bindings });
+	}
+	return scopes;
+}
 
 export type RuntimeLuaInspectionValue = SuspendedGuestRead | {
 	readonly kind: 'unavailable';
@@ -155,8 +203,6 @@ export function readRuntimeLuaValue(
 			if (context === null || context.path !== definition.path
 				|| !sourcePositionInRange(context.start.line, context.start.column, slot.scope)
 				|| !blua32LocalSlotLiveAtPc(slot, image.layout.functions[functionIndex].codeAddress, pc)) return NOT_IN_SCOPE;
-			if (binding.kind === 'declaration' && analysis.chunk.locations.offsetAt(context.start)
-				<= analysis.chunk.locations.offset(binding.declaration.visibleFrom.unit, binding.declaration.visibleFrom.offset)) return NOT_IN_SCOPE;
 			const value = captured === undefined ? cpu.readFrameRegister(frameIndex, slot.registerIndex) : captured.registers[slot.registerIndex];
 			return guest.readStringPath(value, parts, 1);
 		}

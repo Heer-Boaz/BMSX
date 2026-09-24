@@ -1976,7 +1976,10 @@ retain the ultimate defining local. `functionDefinitions` associates emitted
 functions with their current syntax, independently of their durable function id.
 TS and C++ tooling share the current symbols structure and numeric capture-kind enum.
 Local slots also carry finalized, half-open live word ranges, separate from
-their lexical/inline scopes. The compiler produces those locations from the
+their lexical/inline scopes. Each local's published scope begins at its binder
+visibility boundary, not the start of its containing block: an initializer's
+temporary in the future local register is not that binding's value.
+The compiler produces those locations from the
 existing liveness analysis; missing optimized locations are unavailable rather
 than stale register values. Source inspection chooses the innermost active
 invocation owning the written binding before testing location availability;
@@ -5086,7 +5089,14 @@ paths. Borrowed handles expire before normal execution, rewind seek/replay,
 guest calls and machine replacement, including with the editor closed. Prompt
 retirement releases borrows but never implicitly resumes gameplay. Paused
 history is inspectable; a running seek is not. The bridge does not substitute
-authoring state for a test target.
+authoring state for a test target. The same inspection owns paged current-CPU
+stack frames and lazy locals/upvalue scopes. Physical frame indices and virtual
+inline depths remain distinct; externally visible frame handles belong to that
+inspection and expire with its values. Installed scope/liveness metadata locates
+raw registers without evaluating code or inferring optimized-out values. An
+inlined frame does not own a separate closure/upvalue scope. Retained fault
+diagnostics are labelled separately from this live stack. See
+[stack inspection](studio_stack_inspection.md).
 Game capture reads the presenter's retained committed history texture, after
 device quantization and before CRT/host overlays. The TS and C++ backends emit
 owned top-down RGBA8 display/signal pixels, without a second gamma conversion;
