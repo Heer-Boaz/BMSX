@@ -78,7 +78,8 @@ int main(int argc, char** argv) {
 		auto& history = runtime.history;
 		u32 restoredStates = 0;
 		i64 restoredCycles = 0;
-		runtime.onStateRestored = [&]() {
+		runtime.onStateRestored = [&](bmsx::RuntimeRestoreOrigin origin) {
+			require(origin == bmsx::RuntimeRestoreOrigin::HistorySeek, "host rewind preserves restore provenance");
 			++restoredStates;
 			restoredCycles = runtime.machine.scheduler.currentNowCycles();
 		};

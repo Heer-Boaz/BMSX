@@ -15,7 +15,8 @@ unimplemented rows below are not advertised capabilities.
 | Historical test evidence | ScenarioResultService | retained-result tests | implemented |
 | Live globals, nested values, invalidation | SuspendedGuestSession + runtime inspection | real cartridge and bridge tests, no guest execution | implemented for installed global bindings; see validation below |
 | Game image | presentation owner + image-capable tool transport | pixels from each renderer, target/time provenance | implemented for paused authoring target; browser and native pixel evidence below |
-| Pause/run, frame/source step, rewind | execution/debugger/history owners | actual completion, retained-range and cancellation tests | pause implemented; other tool operations open |
+| Pause, finite video stepping, retained-history seek | execution/history owners + RuntimeFrameNavigation | actual completion, retained-range and cancellation tests | implemented for the authoring target; validation below |
+| Continue and source stepping | execution/debugger owners | execution intent, actual stops and source locations | tools open |
 | Cart globals and frame-context Lua Terminal | firmware compiler/REPL, debugger call plans | real guest calls; TS/C++ parity; conversation invocation | open |
 | Discover/run/wait/cancel scenarios | TestRun/ScenarioRunService | real isolated targets, cancellation and completion | open |
 | Debug retained failed test target | target-bound debugger and composed execution hooks | no reads/writes through authoring target | open |
@@ -194,6 +195,83 @@ presentation loop, and ordinary host callers can reuse capture without Codex.
 
 This proves automated pixel delivery, not a live model's visual reasoning or
 personal-account authentication. Images are requested observations, not a
-continuous video stream. Runtime execution/rewind tools, contextual Terminal
-invocation with native parity, Scenario Lab execution/debugging and semantic
-builder tools are still open acceptance work.
+continuous video stream. At this slice boundary, execution/rewind tools were still
+open; the next section records frame navigation. Contextual Terminal invocation
+with native parity, Scenario Lab execution/debugging and semantic builder tools
+remain open acceptance work.
+
+## Frame navigation: implementation gate
+
+References studied before this slice: VS Code `Thread`/`DebugSession` execution
+requests and stopped-event handling, the DAP Next/StepBack contract, and MAME
+`device_debug::single_step` / `go_vblank` in
+[debugcpu.cpp](https://github.com/mamedev/mame/blob/master/src/emu/debug/debugcpu.cpp).
+Command acceptance is not stopped-state completion. Video-boundary stepping is
+not source/instruction stepping. BMSX retains its real scheduler and input-journal
+owners rather than estimating frames from wall-clock time.
+
+The pane-independent frame-navigation owner serves both ordinary Studio
+commands and assistant tools. It accepts one finite operation, retains user pause,
+and resolves after actual host execution/presentation settles. It must report
+completed, stopped, interrupted, replaced or failed outcomes with actual machine
+position; no client/provider polling, timers, or simulated UI actions. Cancellation
+must not stop a newer user intent. History seeks select retained video boundaries,
+report any boundary selection, and preserve the recorded future.
+
+| Representation | TS owner | C++ owner | Change |
+| --- | --- | --- | --- |
+| Machine cycles / video sequence | scheduler / frame scheduler integer counters | same counters | none |
+| Retained timeline | RuntimeHistory / InputJournal | RuntimeHistory / InputJournal | none |
+| Restore provenance | RuntimeRestoreOrigin enum at applyRuntimeSaveState | same native enum | publish existing origin in restore callback rather than infer it from UI state |
+| Host navigation intent | HostExecutionControl / HostRewind | native frontend owns its own controls | retain command revisions; no emulated-state representation change |
+| Awaitable Studio operation | frame-navigation service | no native Studio service | owner lifecycle, not a new execution loop |
+
+Hot-path inventory: `runWorkbenchHostFrame` advances pending navigation completion
+once after the existing frame work; idle navigation returns immediately without
+allocations. `HostExecutionControl` and `HostRewind` change intent revisions only
+on explicit commands. `applyRuntimeSaveState` (TS/C++) forwards its already-owned
+restore origin on state replacement. No per-instruction hooks, new snapshot
+copies, register conversions, or extra guest evaluations are introduced.
+
+## Frame-navigation validation (2026-09-24)
+
+`studio_step_frames` takes a target, direction and positive count;
+`studio_seek_history` takes a target and retained machine cycles. Both await the
+owner's result. `studio_runtime_status.history` exposes range, review position
+and operation availability. The reported position is actual machine time, not
+the UI's requested seek destination. Frame navigation does not promise a gameplay
+update per video tick and is distinct from source/instruction stepping.
+
+* The real browser machine -> authorized HTTP -> Codex app-server -> deterministic
+  Responses workflow passes on software, WebGL2 and WebGPU. It inspects, advances
+  four video boundaries, rejects an expired borrowed handle, reinspects, rewinds
+  two, captures the game image, seeks and replays retained input. Actual receipts
+  match the machine, source remains dirty/uninstalled, and no tool changes panes.
+  A second prompt advances a long batch; the visible Stop control interrupts real
+  execution and leaves the target paused and inspectable. Ordinary Next/Previous
+  Frame commands then use the same owner. Exactly 13 model requests, two explicit
+  prompts, one connection and one interrupt per workflow; no background polling.
+* The 62-test focused bundle covers real scheduler progress, one restore for a
+  backward batch, replay-to-live transition, retained-start/range outcomes,
+  mutation and initialization admission, cancellation during a queued GPU fence,
+  failed task retirement, reset/external-load provenance and independent newer
+  execution/history intent. Conversation Stop/disconnect/completion discard late
+  results; a provider request cancellation aborts navigation/capture even before
+  turn completion, without retiring other tool requests. These are automated
+  integration/unit tests, not live-model reasoning.
+* Native frame-scheduler tests assert HistorySeek versus ExternalLoad provenance;
+  the real-cart native host-rewind conformance runner passes. This slice changes
+  callback provenance, not native scheduler/history semantics or Terminal parity.
+* Full assistant/browser suite: 21 pass. Full Lua suite: 2422 pass, one skip.
+  HTTP admission suite: 16 pass. Product Studio/Node tooling
+  builds and IDE/common/browser/Node typechecks pass. Architecture-boundary
+  audit: zero issues; core parity audit passes. The tests project retains its 96
+  pre-existing diagnostics; the new navigation tests introduce none.
+* Ordinary Studio workflows and runtime-inspection/Hot Resume/rewind workflows
+  also pass on WebGL2. These exercise the visible command routes separately from
+  provider tools; no new global gameplay keybinding or Codex-specific control was
+  added.
+
+Still open: unbounded Continue and source-debugger tools, contextual Lua Terminal
+tools with native parity, scenario discovery/execution/attachment, canonical
+semantic-builder operations and the complete reproduce/fix/rerun acceptance flow.

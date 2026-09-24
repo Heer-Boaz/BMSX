@@ -490,7 +490,13 @@ void testRuntimeCheckpointStorage() {
 		require(bmsx::encodeRuntimeSaveState(storage) == expected, "reused state equals independent capture");
 		require(bmsx::encodeRuntimeSaveState(anchor) == anchorBytes, "independent snapshot remains intact");
 	}
+	bool notified = false;
+	runtime.onStateRestored = [&](bmsx::RuntimeRestoreOrigin origin) {
+		require(origin == bmsx::RuntimeRestoreOrigin::ExternalLoad, "save-state load publishes its actual restore origin");
+		notified = true;
+	};
 	bmsx::applyRuntimeSaveState(runtime, anchor);
+	require(notified, "external restore notifies after applying state");
 	const auto restored = bmsx::captureRuntimeSaveState(runtime);
 	const auto& restoredMachine = restored.machineState.machine;
 	const auto& anchorMachine = anchor.machineState.machine;
@@ -637,7 +643,10 @@ void testPacedHistoryPlayback() {
 		fixture.input.keyDown = false;
 		fixture.input.rejectLiveInput = true;
 		int restores = 0;
-		runtime.onStateRestored = [&]() { ++restores; };
+		runtime.onStateRestored = [&](bmsx::RuntimeRestoreOrigin origin) {
+			require(origin == bmsx::RuntimeRestoreOrigin::HistorySeek, "history publishes its actual restore origin");
+			++restores;
+		};
 		history.beginSeek(history.earliestCycles());
 		history.beginPlayback();
 		history.advancePlayback(5.123);

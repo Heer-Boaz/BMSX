@@ -13,6 +13,8 @@ const REPLAY_WORK_MS = 8;
 
 /** Host operations/output policy. The runtime owns checkpoints and input replay. */
 export class HostRewind {
+	/** Advances only when a caller changes navigation intent. */
+	public revision = 0;
 	public active = false;
 	public stopped = false;
 	private request = RewindRequest.None;
@@ -45,16 +47,17 @@ export class HostRewind {
 	}
 
 	/** Adjacent recorded video boundary, never an estimate from nominal frame time. */
-	public frameStepCycles(direction: -1 | 1): number {
+	public frameStepCycles(direction: -1 | 1, count = 1): number {
 		const history = this.runtime.history;
 		const journal = history.inputJournal;
-		const sequence = journal.endAt(this.positionCycles) + (direction < 0 ? -2 : 0);
+		const sequence = journal.endAt(this.positionCycles) + (direction < 0 ? -1 - count : count - 1);
 		if (sequence < journal.firstSequence) return history.earliestCycles;
 		if (sequence >= journal.endSequence) return history.latestCycles;
 		return journal.cycleAt(sequence);
 	}
 
 	public stepFrame(direction: -1 | 1): void {
+		this.revision += 1;
 		const cycles = this.frameStepCycles(direction);
 		if (direction < 0) this.seekTo(cycles);
 		else {
@@ -87,6 +90,7 @@ export class HostRewind {
 	}
 
 	public seekTo(cycles: number): void {
+		this.revision += 1;
 		const history = this.runtime.history;
 		this.requestedCycles = clamp(cycles, history.earliestCycles, history.latestCycles);
 		this.request = RewindRequest.Seek;
@@ -106,15 +110,18 @@ export class HostRewind {
 	}
 
 	public resumeHere(): void {
+		this.revision += 1;
 		if (this.seeking) this.afterSeek = RewindRequest.Resume;
 		else this.request = RewindRequest.Resume;
 	}
 	public pauseSeek(): void {
+		this.revision += 1;
 		this.request = RewindRequest.Pause;
 		this.afterSeek = RewindRequest.None;
 	}
 
 	public togglePlayback(): void {
+		this.revision += 1;
 		if (this.playing) this.pauseSeek();
 		else if (this.seeking) this.afterSeek = RewindRequest.Play;
 		else if (!this.active) {

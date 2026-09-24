@@ -1,3 +1,4 @@
+import { RuntimeFrameNavigation } from '../../ide/runtime/frame_navigation';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import { HostExecutionControl } from '../../hosts/common/execution_control';
 import { RenderPresentationState } from '../../hosts/common/presentation_state';
@@ -16,7 +17,7 @@ import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 
 /** Real control/inspection/render owners; no audio device is needed for read-only tests. */
 export function createRuntimeInspectionFixture(runtime: Runtime, sources: RuntimeSourceState, guest = new SuspendedGuestSession(runtime)) {
-	const audio = { mutePause() {}, muteRuntimeTask() {} } as unknown as HostAudioOutput;
+	const audio = { mutePause() {}, muteRuntimeTask() {}, muteRewind() {}, muteSystem() {}, syncTiming() {} } as unknown as HostAudioOutput;
 	const { presenter, backend } = createHostOverlayFixture(4, 3);
 	presenter.initialize(new RenderPassLibrary(backend, presenter));
 	presenter.crt_postprocessing_enabled = false;
@@ -26,7 +27,8 @@ export function createRuntimeInspectionFixture(runtime: Runtime, sources: Runtim
 	const debuggerState = createRuntimeDebuggerState(runtime, sources);
 	const fault = createRuntimeFaultState();
 	const rewind = new HostRewind(runtime, presenter, presentation, tasks, audio, { log() {} });
-	const inspection = new RuntimeInspectionService(runtime, sources, guest, debuggerState, execution, tasks, rewind, fault);
+	const frameNavigation = new RuntimeFrameNavigation(runtime, execution, rewind, tasks, debuggerState, fault, guest);
+	const inspection = new RuntimeInspectionService(runtime, sources, guest, debuggerState, execution, tasks, rewind, fault, frameNavigation);
 	const gameCapture = new GameCaptureService(presenter, presentation, tasks, encodePngImage);
-	return { gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
+	return { audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
 }

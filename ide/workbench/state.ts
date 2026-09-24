@@ -1,3 +1,4 @@
+import { RuntimeFrameNavigation } from '../runtime/frame_navigation';
 import type { GameImageCapture } from '../../hosts/common/image';
 import type { AssistantConnectionFactory } from '../../hosts/common/assistant_protocol';
 import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
@@ -54,6 +55,7 @@ export class RuntimeIdeState {
 	public readonly diagnostics: ResourceDiagnosticsService;
 	public readonly terminal: LuaTerminalSession;
 	public readonly inspection: RuntimeInspectionService;
+	public readonly frameNavigation: RuntimeFrameNavigation;
 	public readonly fault: RuntimeFaultState = createRuntimeFaultState();
 
 	public constructor(
@@ -94,8 +96,9 @@ export class RuntimeIdeState {
 		this.diagnostics = new ResourceDiagnosticsService(editorTextModelService, this.luaTooling, clock);
 		this.terminal = new LuaTerminalSession(runtime, sources, this.luaTooling.suspendedGuest, this.debugger,
 			this.fault, runtimeTasks, execution, rewind);
+		this.frameNavigation = new RuntimeFrameNavigation(runtime, execution, rewind, runtimeTasks, this.debugger, this.fault, this.luaTooling.suspendedGuest);
 		this.inspection = new RuntimeInspectionService(runtime, sources, this.luaTooling.suspendedGuest, this.debugger,
-			execution, runtimeTasks, rewind, this.fault);
+			execution, runtimeTasks, rewind, this.fault, this.frameNavigation);
 		this.editor = new RuntimeCartEditor(
 			runtime,
 			presenter,
@@ -124,13 +127,14 @@ export class RuntimeIdeState {
 			this.diagnostics,
 			this.terminal,
 			this.inspection,
+			this.frameNavigation,
 			this.gameCapture,
 			createGraphLayoutEngine,
 			connectAssistant,
 		);
 		this.overlayRenderer.setViewportSize(viewport);
 		this.editor.updateViewport(viewport);
-		runtime.onStateRestored = () => {
+		const invalidateToolingState = () => {
 			this.terminal.didReplaceMachine();
 			this.hotResumes.cancelPending('machine-reset');
 			this.boots.didReplaceMachine();
@@ -144,7 +148,14 @@ export class RuntimeIdeState {
 			clearHoverTooltip();
 			syncRuntimeSourceActivity(this.sources, runtime.machine.cpu.activeCartridgeSlot());
 		};
-		runtime.onStateReset = runtime.onStateRestored;
+		runtime.onStateRestored = origin => {
+			this.frameNavigation.didRestore(origin);
+			invalidateToolingState();
+		};
+		runtime.onStateReset = () => {
+			this.frameNavigation.didReset();
+			invalidateToolingState();
+		};
 	}
 }
 

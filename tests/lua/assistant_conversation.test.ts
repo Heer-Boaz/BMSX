@@ -50,19 +50,45 @@ function fixture(t: TestContext, waitForConnection?: (connection: Connection) =>
 	runtime.machine.cpu.reset();
 	const guest = new SuspendedGuestSession(runtime);
 	const tooling = new RuntimeLuaTooling(sources, guest);
-	const { inspection, gameCapture, presenter, backend, tasks, presentation } = createRuntimeInspectionFixture(runtime, sources, guest);
+	const { inspection, frameNavigation, gameCapture, presenter, backend, tasks, presentation } = createRuntimeInspectionFixture(runtime, sources, guest);
 	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
 	const testResults = new ScenarioResultService();
-	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testResults, inspection, gameCapture, async (_signal, emit) => {
+	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testResults, inspection, frameNavigation, gameCapture, async (_signal, emit) => {
 		const connection = new Connection(emit); connections.push(connection);
 		await waitForConnection?.(connection);
 		return connection;
 	});
 	t.after(() => { conversation.dispose(); presenter.dispose(); diagnostics.dispose(); models.clear(); });
-	return { conversation, model, models, connections, testResults, inspection, runtime, presenter, backend, tasks, presentation };
+	return { conversation, model, models, connections, testResults, inspection, frameNavigation, runtime, presenter, backend, tasks, presentation };
 }
 
-for (const retire of ['stop', 'disconnect', 'completed'] as const) test(`pending game image after ${retire} cannot answer a retired tool request`, async t => {
+for (const retire of ['stop', 'disconnect', 'completed', 'request-cancelled'] as const) test(`pending navigation after ${retire} retains pause and cannot answer a retired request`, async t => {
+	const f = fixture(t);
+	await f.conversation.sendPrompt('Advance frames');
+	const connection = f.connections[0];
+	connection.emit({ type: 'tool-request', requestId: 'frames', name: 'studio_step_frames',
+		arguments: { target: f.inspection.target, direction: 'forward', count: 100 } });
+	await setImmediate();
+	const operation = f.frameNavigation.active!;
+	assert.ok(operation); assert.equal(operation.result, undefined);
+	if (retire === 'stop') await f.conversation.interrupt();
+	else if (retire === 'disconnect') f.conversation.disconnect();
+	else if (retire === 'request-cancelled') connection.emit({ type: 'tool-cancelled', requestId: 'frames' });
+	else connection.emit({ type: 'turn-completed', turnId: 't', status: 'completed' });
+	f.frameNavigation.afterHostFrame(); await operation.completion; await setImmediate();
+	assert.equal(operation.result!.status, 'interrupted');
+	assert.equal(f.inspection.status().userPaused, true); assert.equal(f.inspection.canInspect, true);
+	assert.equal(connection.commands.filter(command => command.type === 'tool-result').length, 0);
+	assert.equal(connection.commands.filter(command => command.type === 'start').length, 1);
+	if (retire === 'request-cancelled') {
+		assert.equal(f.conversation.state, 'running', 'tool cancellation settles before a later turn-completed event');
+		connection.emit({ type: 'tool-request', requestId: 'status', name: 'studio_runtime_status', arguments: {} });
+		await setImmediate();
+		assert.equal(connection.commands.at(-1)!.type, 'tool-result', 'one cancelled request does not dispose the whole tool context');
+	}
+});
+
+for (const retire of ['stop', 'disconnect', 'completed', 'request-cancelled'] as const) test(`pending game image after ${retire} cannot answer a retired tool request`, async t => {
 	const f = fixture(t); f.inspection.pause();
 	f.presentation.requestRestoredPresentation(); f.presentation.presentPending(f.presenter, f.runtime, 100, 20);
 	let entered!: () => void, finish!: () => void;
@@ -76,6 +102,7 @@ for (const retire of ['stop', 'disconnect', 'completed'] as const) test(`pending
 	await started;
 	if (retire === 'stop') await f.conversation.interrupt();
 	else if (retire === 'disconnect') f.conversation.disconnect();
+	else if (retire === 'request-cancelled') connection.emit({ type: 'tool-cancelled', requestId: 'image' });
 	else connection.emit({ type: 'turn-completed', turnId: 't', status: 'completed' });
 	finish(); await f.tasks.join(); await setImmediate();
 	assert.equal(f.tasks.ready, true);

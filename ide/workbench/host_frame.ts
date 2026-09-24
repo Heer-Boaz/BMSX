@@ -277,6 +277,7 @@ export function runWorkbenchHostFrame(
 			hostDeltaMs,
 		);
 	}
+	ide.frameNavigation.afterHostFrame();
 	if (!systemOutputDrained) {
 		systemOutput.flush(runtime, logOutput, ide.terminal.receiveOutput);
 	}

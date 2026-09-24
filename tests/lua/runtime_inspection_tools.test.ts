@@ -69,7 +69,7 @@ for (const reason of ['execution', 'heap-replaced'] as const) test(`${reason} re
 
 test('tool admission rejects unknown targets/fields, has prompt-local lifetimes and does not resume the machine on disconnect', async () => {
 	const f = fixture(), lifetime = new AbortController();
-	const tools = new WorkspaceRuntimeTools(f.inspection, f.gameCapture, lifetime.signal);
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, lifetime.signal);
 	assert.throws(() => tools.execute('studio_inspect_runtime', { target: 'test-target' }), /not this Studio/);
 	assert.throws(() => tools.execute('studio_read_runtime_values', { reference: 'x', start: 0, count: 1 }), /Open a suspended/);
 	const target = f.inspection.target;

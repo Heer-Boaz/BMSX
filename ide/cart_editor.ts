@@ -1,3 +1,4 @@
+import type { RuntimeFrameNavigation } from './runtime/frame_navigation';
 import type { GameImageCapture } from '../hosts/common/image';
 import { AssistantConversation } from './workbench/services/assistant/conversation';
 import type { LuaTerminalSession } from './workbench/services/terminal/session';
@@ -274,11 +275,12 @@ export class RuntimeCartEditor implements CartEditor {
 		public readonly diagnostics: ResourceDiagnosticsService,
 		public readonly terminal: LuaTerminalSession,
 		runtimeInspection: RuntimeInspectionService,
+		private readonly frameNavigation: RuntimeFrameNavigation,
 		gameCapture: GameImageCapture,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
 		connectAssistant?: AssistantConnectionFactory,
 	) {
-		this.assistant = new AssistantConversation(editorTextModelService, sources, storage, diagnostics, scenarioRuns.results, runtimeInspection, gameCapture, connectAssistant);
+		this.assistant = new AssistantConversation(editorTextModelService, sources, storage, diagnostics, scenarioRuns.results, runtimeInspection, frameNavigation, gameCapture, connectAssistant);
 		this.runtime = runtime;
 		this.presenter = presenter;
 		this.display = display;
@@ -310,6 +312,7 @@ export class RuntimeCartEditor implements CartEditor {
 			logOutput,
 			scenarioRuns,
 			textFileSaves,
+			frameNavigation,
 		);
 		this.completion = new EditorCompletionController(luaTooling, fault, runtime);
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
@@ -608,6 +611,7 @@ export class RuntimeCartEditor implements CartEditor {
 
 	public async shutdown(): Promise<void> {
 		this.assistant.dispose();
+		this.frameNavigation.dispose();
 		const terminalDrained = this.terminal.shutdown();
 		this.scenarioRuns.dispose();
 		this.diagnostics.dispose();

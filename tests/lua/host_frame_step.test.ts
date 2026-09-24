@@ -1,3 +1,4 @@
+import { createFrameRuntime } from '../helpers/frame_runtime';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { HostExecutionControl, HostPauseReason } from '../../hosts/common/execution_control';
@@ -12,11 +13,6 @@ import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
-import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
-import { OpCode } from '../../machine/ts/spec/blua32/opcode';
-import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
-import { createTestRuntime } from '../helpers/runtime_sources';
-import { linkRawTestSystemBlua32 } from '../helpers/blua32';
 
 test('frame advance bypasses inspection pause but keeps initialization blockers and audio muted', () => {
 	let muted = false;
@@ -52,20 +48,6 @@ test('continue and source-step replace pending frame advance instead of leaking 
 	assert.equal(execution.frameStepPending, false);
 });
 
-function createFrameRuntime() {
-	const code = new Uint8Array(2 * INSTRUCTION_BYTES);
-	writeInstruction(code, 0, OpCode.HALT, 0, 0, 0, 0);
-	writeInstruction(code, 1, OpCode.RFE, 0, 0, 0, 0);
-	const system = linkRawTestSystemBlua32({
-		text: code,
-		functions: [{ firstWord: 0, wordCount: 1 }, { firstWord: 1, wordCount: 1 }],
-		systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
-		startupFunctionIndex: 0, irqFunctionIndex: 1, exceptionFunctionIndex: 1,
-	});
-	const runtime = createTestRuntime(system.romBytes);
-	runtime.boot();
-	return runtime;
-}
 
 test('host frame advance reaches exactly one physical video boundary, independent of wall time', () => {
 	const runtime = createFrameRuntime();

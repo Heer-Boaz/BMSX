@@ -5095,8 +5095,27 @@ encoding then proceeds outside that boundary. Prompt cancellation discards the
 reply without poisoning the task queue or resuming gameplay. The existing
 authorized HTTP/Codex transport carries a typed image attachment, not base64
 inside tool prose. There is no second render, server, or background image feed.
-Runtime execution tools, Terminal evaluation, test-target debugging and semantic builder actions remain
-separate work tracked in [Studio runtime tools](studio_runtime_tools.md).
+Finite frame-navigation operations belong to `RuntimeFrameNavigation`, shared by
+ordinary Studio frame commands and target-bound tools. They use the existing
+host scheduler/history service, not another execution loop. Completion follows
+settled host execution, GPU work and presentation; receipts distinguish actual
+completion, stops, interruption, replacement and failure, with before/after
+machine cycles and video sequence. A backward batch reconstructs one destination;
+forward review consumes retained input without repeated checkpoint restores.
+Only a forward step beyond the recorded end returns to live execution. A seek
+selects a retained boundary and preserves the future. Pause remains explicit
+after completion or cancellation; ordinary guest input is not globally captured.
+Prompt retirement cancels only its operation. Host execution and history retain
+explicit command revisions so cleanup cannot revoke newer user intent in either
+owner. A provider tool-cancel notification also aborts that request's operation
+immediately, without awaiting turn completion or revoking other request rights.
+TS/C++ state-restored callbacks publish the existing restore origin;
+tooling does not guess whether replacement was an external load or owned seek.
+Runtime task failure retains its cause and settles navigation as failed, rather
+than leaving a tool awaiting success forever. No provider polling is involved.
+Unbounded Continue/source-step tools, contextual Terminal evaluation, test-target
+debugging and semantic builder actions remain separate work tracked in
+[Studio runtime tools](studio_runtime_tools.md).
 The proposal owner publishes one terminal review outcome after retiring edit
 authority and finishing history admission. Clients observe that state rather
 than polling source or maintaining a second edit lifecycle; transcript status

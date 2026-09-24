@@ -10,6 +10,8 @@ export const enum HostPauseReason {
 
 /** Execution policy, independent of frame pacing, presentation and focused views. */
 export class HostExecutionControl {
+	/** Explicit transport intent, not changes caused by opening/repainting a view. */
+	public revision = 0;
 	private pauseReasons = 0;
 	private elapsedTimeResetPending = false;
 	private pendingFrameStep = false;
@@ -21,6 +23,9 @@ export class HostExecutionControl {
 	public get userPaused(): boolean { return (this.pauseReasons & HostPauseReason.Requested) !== 0; }
 	public get launchPending(): boolean { return (this.pauseReasons & HostPauseReason.AwaitingLaunch) !== 0; }
 	public get frameStepPending(): boolean { return this.pendingFrameStep; }
+	public get frameStepBlocked(): boolean {
+		return (this.pauseReasons & ~(HostPauseReason.Requested | HostPauseReason.Workbench)) !== 0;
+	}
 	public get vibrationInitializationActive(): boolean {
 		return (this.pauseReasons & HostPauseReason.VibrationInitialization) !== 0;
 	}
@@ -38,6 +43,7 @@ export class HostExecutionControl {
 	}
 
 	public setPauseReason(reason: HostPauseReason, active: boolean): void {
+		if (reason === HostPauseReason.Requested) this.revision += 1;
 		if (reason === HostPauseReason.Requested && !active) this.pendingFrameStep = false;
 		const next = active ? this.pauseReasons | reason : this.pauseReasons & ~reason;
 		if (next === this.pauseReasons) return;
@@ -48,6 +54,7 @@ export class HostExecutionControl {
 
 	/** Explicit Continue/Step, not a view transition. A step retains requested pause. */
 	public requestExecution(continueRunning: boolean): void {
+		this.revision += 1;
 		this.pendingFrameStep = false;
 		if (continueRunning) this.setPauseReason(HostPauseReason.Requested, false);
 		this.elapsedTimeResetPending = true;

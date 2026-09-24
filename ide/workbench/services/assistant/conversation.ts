@@ -1,3 +1,4 @@
+import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 import type { GameImageCapture } from '../../../../hosts/common/image';
 import type { AssistantAccount, AssistantCommand, AssistantConnection, AssistantConnectionFactory, AssistantEvent, AssistantHistoryPage,
 	AssistantQueuedMessage, AssistantReviewUpdate, AssistantThread, AssistantTranscriptPage } from '../../../../hosts/common/assistant_protocol';
@@ -22,7 +23,7 @@ export type AssistantEntry = {
 	readonly proposal?: WorkspaceEditProposal;
 	resetRevision: number;
 };
-type ActiveTurn = { id?: string; tools: WorkspaceSourceTools; tests: WorkspaceTestTools; runtime: WorkspaceRuntimeTools; requests: Set<string>; messages: Map<string, AssistantEntry> };
+type ActiveTurn = { id?: string; tools: WorkspaceSourceTools; tests: WorkspaceTestTools; runtime: WorkspaceRuntimeTools; requests: Map<string, AbortController>; messages: Map<string, AssistantEntry> };
 type ConversationChange = 'state' | 'text' | 'proposal' | 'reset' | 'prepend';
 
 /** Workspace-owned conversation and accepted prompt context, independent of an attached pane. */
@@ -54,6 +55,7 @@ export class AssistantConversation {
 	public constructor(private readonly models: EditorTextModelService, private readonly sources: RuntimeSourceState,
 		private readonly storage: KeyValueStorage, private readonly diagnostics: ResourceDiagnosticsService,
 		private readonly testResults: ScenarioResultService, private readonly runtimeInspection: RuntimeInspectionService,
+		private readonly frameNavigation: RuntimeFrameNavigation,
 		private readonly gameCapture: GameImageCapture,
 		private readonly openConnection?: AssistantConnectionFactory) {
 		this.unbindWorkspace = models.onWillClear(() => this.clearConversation());
@@ -112,7 +114,7 @@ export class AssistantConversation {
 	private createTurn(): ActiveTurn {
 		return { tools: new WorkspaceSourceTools(this.models, this.sources, this.storage, this.diagnostics, this.sourceLifetime!.signal),
 			tests: new WorkspaceTestTools(this.testResults, this.sourceLifetime!.signal),
-			runtime: new WorkspaceRuntimeTools(this.runtimeInspection, this.gameCapture, this.sourceLifetime!.signal), requests: new Set(), messages: new Map() };
+			runtime: new WorkspaceRuntimeTools(this.runtimeInspection, this.frameNavigation, this.gameCapture, this.sourceLifetime!.signal), requests: new Map(), messages: new Map() };
 	}
 
 	/** One explicit submission. Native Codex owns FIFO dispatch; no retries or client dequeue loop. */
@@ -311,7 +313,9 @@ export class AssistantConversation {
 				this.changed(entry.index, 'text'); break;
 			}
 			case 'tool-request': void this.executeTool(event); break;
-			case 'tool-cancelled': this.turn?.requests.delete(event.requestId); break;
+			case 'tool-cancelled':
+				this.turn?.requests.get(event.requestId)?.abort();
+				this.turn?.requests.delete(event.requestId); break;
 			case 'turn-completed':
 				if (event.status !== 'completed') this.queuePaused = true;
 				this.append('status', event.status === 'failed' ? `Turn failed: ${event.error}` : `Turn ${event.status}.`);
@@ -324,10 +328,11 @@ export class AssistantConversation {
 
 	private async executeTool(event: Extract<AssistantEvent, { type: 'tool-request' }>): Promise<void> {
 		const turn = this.turn!, connection = this.connection!;
-		turn.requests.add(event.requestId);
+		const request = new AbortController();
+		turn.requests.set(event.requestId, request);
 		let text: string, success = true, images: readonly string[] | undefined;
 		try {
-			const result = await (STUDIO_RUNTIME_TOOLS.some(tool => tool.name === event.name) ? turn.runtime.execute(event.name, event.arguments)
+			const result = await (STUDIO_RUNTIME_TOOLS.some(tool => tool.name === event.name) ? turn.runtime.execute(event.name, event.arguments, request.signal)
 				: event.name === 'studio_list_test_runs' || event.name === 'studio_read_test_run' || event.name === 'studio_read_test_result'
 					? turn.tests.execute(event.name, event.arguments) : turn.tools.execute(event.name, event.arguments));
 			if (this.turn !== turn || !turn.requests.has(event.requestId)) {

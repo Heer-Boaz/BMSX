@@ -14,6 +14,7 @@ import type { InputControllerInputSource } from '../devices/input/contracts';
 import { Machine } from '../machine';
 import { Memory } from '../memory/memory';
 import { RuntimeHistory } from './history/history';
+import type { RuntimeRestoreOrigin } from './save_state';
 
 export class Runtime {
 	public readonly timing: TimingState;
@@ -40,7 +41,7 @@ export class Runtime {
 	public readonly machine: Machine;
 	public readonly history: RuntimeHistory;
 	/** Host/tooling observers must discard borrowed inspection state after a restore. */
-	public onStateRestored: (() => void) | null = null;
+	public onStateRestored: ((origin: RuntimeRestoreOrigin) => void) | null = null;
 	public onStateReset: (() => void) | null = null;
 	private readonly completionValues: Value[] = [];
 

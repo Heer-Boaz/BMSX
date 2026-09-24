@@ -7,7 +7,7 @@ export class RuntimeTaskQueue {
 	private tail = Promise.resolve();
 	private pending = 0;
 	private mutationPending = 0;
-	private failed = false;
+	public failure: { readonly error: unknown } | undefined;
 
 	public constructor(
 		private readonly audioOutput: HostAudioOutput,
@@ -16,12 +16,12 @@ export class RuntimeTaskQueue {
 	}
 
 	public get ready(): boolean {
-		return this.pending === 0 && !this.failed;
+		return this.pending === 0 && this.failure === undefined;
 	}
 
 	/** Background history work defers CPU admission, not the user's next edit intent. */
 	public get mutationReady(): boolean {
-		return this.mutationPending === 0 && !this.failed;
+		return this.mutationPending === 0 && this.failure === undefined;
 	}
 
 	/** Join already admitted work. The caller must close its own admission first. */
@@ -34,7 +34,7 @@ export class RuntimeTaskQueue {
 	): Promise<void> {
 		const muteAudio = kind === RuntimeTaskKind.Mutation;
 		if (this.pending === 0) {
-			this.failed = false;
+			this.failure = undefined;
 		}
 		if (muteAudio) {
 			this.mutationPending += 1;
@@ -48,13 +48,13 @@ export class RuntimeTaskQueue {
 				}
 				await task();
 			} catch (error) {
-				this.failed = true;
+				this.failure = { error };
 				this.audioOutput.muteRuntimeTask(true);
 				onError(error);
 			} finally {
 				this.pending -= 1;
 				if (muteAudio) this.mutationPending -= 1;
-				if (!this.failed && this.mutationPending === 0) {
+				if (this.failure === undefined && this.mutationPending === 0) {
 					this.audioOutput.muteRuntimeTask(false);
 				}
 			}

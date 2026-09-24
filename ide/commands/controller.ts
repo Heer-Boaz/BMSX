@@ -1,3 +1,4 @@
+import type { RuntimeFrameNavigation } from '../runtime/frame_navigation';
 import { navigationState } from '../navigation/navigation_history';
 import { openGameView } from '../workbench/contrib/game_view/editor_input';
 import { editorTabGroup } from '../workbench/ui/tab/group_model';
@@ -76,6 +77,7 @@ export class IdeCommandController {
 		private readonly logOutput: LogOutput,
 		private readonly scenarioRuns: ScenarioRunService,
 		private readonly textFileSaves: TextFileSaveService,
+		private readonly frameNavigation: RuntimeFrameNavigation,
 	) {
 	}
 
@@ -199,14 +201,7 @@ export class IdeCommandController {
 			case 'stepFrame':
 			case 'stepFrameBack':
 				openGameView(this.editor.editorPanes);
-				this.execution.setPauseReason(HostPauseReason.Requested, true);
-				if (command === 'stepFrameBack') this.rewind.stepFrame(-1);
-				else if (this.rewind.active && this.rewind.frameStepCycles(1) > this.rewind.positionCycles) {
-					this.rewind.stepFrame(1);
-				} else {
-					if (this.rewind.active) this.rewind.resumeHere();
-					this.execution.requestFrameStep();
-				}
+				this.frameNavigation.step(command === 'stepFrameBack' ? -1 : 1);
 				return;
 			case 'scenarioLab.run':
 			case 'scenarioLab.rerun':
@@ -379,12 +374,12 @@ export class IdeCommandController {
 				return !this.execution.userPaused || this.runtimeTasks.mutationReady;
 			case 'stepFrame':
 			case 'stepFrameBack':
+				return this.frameNavigation.canStep(command === 'stepFrameBack' ? -1 : 1);
 			case 'gameView.playback':
 				return this.runtimeTasks.ready && !this.execution.frameStepPending
 					&& !this.fault.hostFrameFailed && this.fault.faultSnapshot === null
 					&& !this.debuggerState.stopped && !this.debuggerState.plans.controlActive
-					&& !this.scenarioRuns.active && !this.rewind.seeking
-					&& (command !== 'stepFrameBack' || this.rewind.available && this.rewind.frameStepCycles(-1) < this.rewind.positionCycles);
+					&& !this.scenarioRuns.active && !this.rewind.seeking;
 			case 'scenarioLab.run':
 			case 'scenarioLab.rerun':
 			case 'scenarioLab.cancel':
