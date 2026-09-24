@@ -30,16 +30,16 @@ boundary.
 
 ## Measured evidence
 
-Using the same 44 current BIOS Lua sources with the old and new codec:
+Using the same 44 final BIOS Lua sources with the old and new codec:
 
-- Parsed source payload: 5,785,150 -> 5,075,077 bytes (710,073 bytes smaller).
-- Seven warmed local samples, excluding parsing: median encoding 156.53 ->
-  114.82 ms; decoding 62.35 -> 58.27 ms. This is a local tooling measurement,
-  not a gameplay performance claim. Raw samples: `/tmp/frame-span-bench.log`.
+- Parsed source payload: 5,785,505 -> 5,075,417 bytes (710,088 bytes smaller).
+- Seven warmed local Node 22.23.1 samples, excluding parsing: median encoding 159.43 ->
+  120.49 ms; decoding 62.61 -> 61.14 ms. This is a local tooling measurement,
+  not a gameplay performance claim. Raw samples: `/tmp/frame-span-bench-final.log`.
 - Full-fidelity syntax/statement/update tests and the firmware frame suite pass
   together (96 cases before the additional scope-retirement vectors). Existing
   syntax tests compare tokens, diagnostics, retained/shifted snapshots, shared
   identity, deterministic bytes and O0/O3 compiler output.
-- The BIOS with the new scope-lifetime firmware builds to 16,084,995 bytes,
-  leaving 692,221 bytes under the unchanged window. The same firmware with the
+- The final BIOS with the new scope-lifetime firmware builds to 16,085,471 bytes,
+  leaving 691,745 bytes under the unchanged window. The same firmware with the
   previous codec exceeded that window; no source/debug feature was disabled.

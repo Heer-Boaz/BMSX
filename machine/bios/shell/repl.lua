@@ -1,6 +1,8 @@
 local load_chunk<const> = require('compiler/api').load
 local protect<const> = __bmsx_pcall
 local frame_bindings<const> = require('debug/frame')
+local frame_count<const> = __bmsx_frame_count
+local running<const> = __bmsx_coroutine_running
 
 -- A firmware-owned Lua session. Its environment is ordinary saved guest state,
 -- not a copy of the CPU's global registerfile or of a stopped stack frame.
@@ -42,7 +44,8 @@ local evaluate<const> = function(source, chunk_name, bindings, external_scope)
 end
 
 local evaluate_frame<const> = function(source, chunk_name, frame_index, names)
-	local scope<const> = frame_bindings.open(frame_index, names)
+	local owner_frame<const> = frame_count(running()) - 1
+	local scope<const> = frame_bindings.open(frame_index, names, owner_frame)
 	-- Forward the exact protected tuple without packing or copying values.
 	local complete<const> = function(...)
 		scope.close()

@@ -1,7 +1,8 @@
+import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { getEventListeners } from 'node:events';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setImmediate } from 'node:timers/promises';
@@ -35,7 +36,7 @@ return { kind = 'integration',
 		systemSource: "module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]",
 		systemModules: [
 			{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = __bmsx_setmetatable' },
-			{ path: 'coroutine', source: await readFile('machine/bios/coroutine.lua', 'utf8') },
+			...COROUTINE_FIRMWARE_MODULES,
 		], cartSource: 'module<entry>\nwhile true do halt_until_irq end',
 	});
 	const loaded = await loadRomToolingMedia(media.systemRom, [media.cartRom, null]);

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import { valueToString } from '../../machine/ts/machine/cpu/value';
 import { createTestSystemCpu } from '../helpers/blua32';
 import { compileFrameEvaluationTest, frameEvaluationCases } from '../helpers/frame_evaluation';
 import { materializeCpuCompletionValues } from './cpu_test_harness';
@@ -28,16 +29,18 @@ for (const optLevel of [0, 3] as const) for (const [name, body] of Object.entrie
 			assert.equal(cpu.runUntilDepth(0, 30_000_000), RunResult.Halted);
 		}
 		assert.equal(cpu.readExceptionReturnFrameDepth(), -1, 'no unhandled guest fault');
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true]);
+		const values = materializeCpuCompletionValues(cpu);
+		assert.deepEqual(values, [true, true], values.map(value => valueToString(value, cpu.stringPool)).join('\t'));
 	});
 }
 
 for (const optLevel of [0, 3] as const) test(`retained frame accesses O${optLevel} allocate nothing after compilation`, () => {
 	const { cpu } = createTestSystemCpu(compileFrameEvaluationTest(`
 local exercise = function(value, ...)
- local scope<const> = frame_bindings.open(frame_count(running_thread()) - 1, {
+ local index<const> = frame_count(running_thread()) - 1
+ local scope<const> = frame_bindings.open(index, {
   value = { index = 0, upvalue = false, available = true, is_const = false },
- })
+ }, index)
  advance = assert(load('for i = 1, 10000 do value = value + 1 end; return value', '=frame-loop', 't', nil, scope))
  halt_until_irq
  assert(value == 20000)

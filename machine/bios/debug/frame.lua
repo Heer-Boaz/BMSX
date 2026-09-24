@@ -8,6 +8,7 @@ local set_upvalue<const> = __bmsx_set_frame_upvalue
 local frame_header<const> = __bmsx_frame_header
 local frame_count<const> = __bmsx_frame_count
 local scopes<const> = require('debug/scopes')
+local lifetimes<const> = require('debug/frame_scopes')
 local cart_select<const>: *word = 0x08010420
 local raise<const> = __bmsx_error
 
@@ -33,11 +34,13 @@ function frame.resolve(frame_index, inline_depth)
 	return scopes.resolve(rom_base, function_address, pc, inline_depth)
 end
 
-function frame.open(frame_index, names)
-	local thread = running()
+function frame.open(frame_index, names, owner_frame)
+	local scope<const> = lifetimes.open(running(), owner_frame)
+	-- The compiler's name index is not part of an escaped accessor's lifetime.
 	return {
 		names = names,
 		read = function(location)
+			local thread<const> = scope.thread
 			if thread == nil then
 				raise('Selected frame evaluation has ended.')
 			end
@@ -50,6 +53,7 @@ function frame.open(frame_index, names)
 			return get_register(thread, frame_index, location.index)
 		end,
 		write = function(location, value)
+			local thread<const> = scope.thread
 			if thread == nil then
 				raise('Selected frame evaluation has ended.')
 			end
@@ -61,7 +65,7 @@ function frame.open(frame_index, names)
 		end,
 		close = function()
 			-- Escaped compiled closures retain the accessors, not a live stack borrow.
-			thread = nil
+			lifetimes.close(scope)
 		end,
 	}
 end

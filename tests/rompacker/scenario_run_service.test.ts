@@ -1,8 +1,9 @@
+import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { IO_CART_SELECT, IO_CART_STATUS } from '../../machine/ts/spec/bmsx/io';
 import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setImmediate } from 'node:timers/promises';
@@ -36,7 +37,7 @@ return { kind = 'unit', tests = {
 			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]`,
 			systemModules: [
 				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = __bmsx_setmetatable` },
-				{ path: 'coroutine', source: await readFile('machine/bios/coroutine.lua', 'utf8') },
+				...COROUTINE_FIRMWARE_MODULES,
 			],
 			cartSource: `module<entry>\nerror('do not run the game for unit cases')`,
 		});
@@ -168,7 +169,7 @@ test('both authoring domains retain companion ROM data and source identity; runn
 			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]`,
 			systemModules: [
 				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = __bmsx_setmetatable` },
-				{ path: 'coroutine', source: await readFile('machine/bios/coroutine.lua', 'utf8') },
+				...COROUTINE_FIRMWARE_MODULES,
 			], cartSource: `module<entry>\nwhile true do halt_until_irq end`,
 		});
 		const media = await loadRomToolingMedia(fixture.systemRom, [fixture.cartRom, fixture.cartRom]);

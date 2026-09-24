@@ -1,6 +1,7 @@
+import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
@@ -23,7 +24,7 @@ async function fixture(t: TestContext, source: string, optLevel: 0 | 3, cartSour
 	const media = await buildScenarioMediaFixture(directory, [{ path: PATH, source }], {
 		systemSource: "module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]",
 		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = __bmsx_setmetatable' },
-			{ path: 'coroutine', source: await readFile('machine/bios/coroutine.lua', 'utf8') }],
+			...COROUTINE_FIRMWARE_MODULES],
 		cartSource, cartModules: [{ path: 'game', source: 'return { after_publication = 0 }' }],
 	});
 	const program = await buildTestCartridge({ systemRom: media.systemRom, cartridge: media.cartRom,

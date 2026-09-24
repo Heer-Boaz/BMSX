@@ -7,7 +7,7 @@ import { linkTestSystemBlua32 } from './blua32';
 /** Actual firmware compiler/REPL and the production packed diagnostic directory. */
 export function compileFrameEvaluationTest(body: string, optLevel: 0 | 3, includeDiagnostics = true) {
 	const modules = [
-		...['base', 'table', 'coroutine', 'string/base', 'string/utf8', 'string/pattern', 'debug/scopes', 'debug/frame', 'shell/repl'],
+		...['base', 'table', 'coroutine', 'string/base', 'string/utf8', 'string/pattern', 'debug/scopes', 'debug/frame_scopes', 'debug/frame', 'shell/repl'],
 		...readdirSync('machine/bios/compiler').filter(name => name.endsWith('.lua')).sort().map(name => `compiler/${name.slice(0, -4)}`),
 	].map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') }));
 	modules.push({ path: 'bmsx/blua32', source: BLUA32_FIRMWARE_MODULE_SOURCE },
@@ -37,6 +37,109 @@ end)`;
 }
 
 export const frameEvaluationCases = {
+	retired_scope_metadata: `
+local weak<const> = setmetatable({}, { __mode = 'v' })
+local exercise = function(value, ...)
+ local index<const> = frame_count(running_thread()) - 1
+ local names<const> = { value = { index = 0, upvalue = false, available = true, is_const = false } }
+ weak[1] = names
+ local scope<const> = frame_bindings.open(index, names, index)
+ escaped = assert(load('return value', '=retired-metadata', 't', nil, scope))
+ assert(escaped() == value)
+ scope.close()
+ return true
+end
+assert(exercise(17))
+collectgarbage()
+assert(weak[1] == nil, 'expired accessors cannot retain the compiler name index')
+local ok, message = pcall(escaped)
+assert(not ok and message == 'Selected frame evaluation has ended.')
+return true`,
+	abandoned_coroutine: `
+local weak<const> = setmetatable({}, { __mode = 'v' })
+local exercise = function(...)
+ local co = coroutine.create(function(value, ...)
+  local index<const> = frame_count(running_thread()) - 1
+  local ok, message = repl.evaluate_frame('coroutine.yield(42)', '=abandoned-scope', index, 0)
+  assert(ok, message)
+  return value
+ end)
+ weak[1] = co
+ local ok, value = coroutine.resume(co, 17)
+ assert(ok and value == 42)
+ co = nil
+ return true
+end
+assert(exercise())
+collectgarbage()
+assert(weak[1] == nil, 'scope registry cannot root an abandoned thread')
+assert(next(require('debug/frame_scopes').active) == nil)
+return true`,
+	coroutine_scope_isolation: `
+readers = {}
+writers = {}
+local create = function(...)
+ return coroutine.create(function(slot, value, ...)
+  local index<const> = frame_count(running_thread()) - 1
+  local ok, message = repl.evaluate_frame('readers[slot] = function() return value end; writers[slot] = function(v) value = v end; coroutine.yield(42)', '=isolated-scope', index, 0)
+  assert(ok, message)
+  return slot, value
+ end)
+end
+local a<const>, b<const> = create(), create()
+local ok, value = coroutine.resume(a, 1, 17)
+assert(ok and value == 42, 'first scope yield: ' .. tostring(value))
+ok, value = coroutine.resume(b, 2, 27)
+assert(ok and value == 42, 'second scope yield: ' .. tostring(value))
+collectgarbage()
+assert(readers[1]() == 17 and readers[2]() == 27, 'both scopes survive collection')
+assert(coroutine.close(a), 'first scope closes')
+for _, operation in pairs({ readers[1], writers[1] }) do
+ ok, value = pcall(operation, 99)
+ assert(not ok and value == 'Selected frame evaluation has ended.', 'first scope expired: ' .. tostring(value))
+end
+writers[2](28)
+assert(readers[2]() == 28, 'second scope remains writable')
+local slot
+ok, slot, value = coroutine.resume(b)
+assert(ok and slot == 2 and value == 28, 'second scope returns: ' .. tostring(slot) .. '/' .. tostring(value))
+for _, operation in pairs({ readers[2], writers[2] }) do
+ ok, value = pcall(operation, 99)
+ assert(not ok and value == 'Selected frame evaluation has ended.', 'second scope expired: ' .. tostring(value))
+end
+assert(next(require('debug/frame_scopes').active) == nil, 'both scopes retired')
+return true`,
+	close_running_coroutine: `
+local exercise = function(value, ...)
+ local index<const> = frame_count(running_thread()) - 1
+ local ok, result = repl.evaluate_frame('local closed = pcall(coroutine.close, coroutine.running()); assert(not closed); value = value + 1; return value', '=cannot-close-running', index, 0)
+ assert(ok and result == 18 and value == 18)
+ assert(next(require('debug/frame_scopes').active) == nil)
+ return true
+end
+return exercise(17)`,
+	closed_coroutine: `
+local weak<const> = setmetatable({}, { __mode = 'v' })
+local exercise = function(...)
+ local co = coroutine.create(function(value, ...)
+  local index<const> = frame_count(running_thread()) - 1
+  local ok, message = repl.evaluate_frame('escaped = function() return value end; coroutine.yield(42)', '=close-scope', index, 0)
+  assert(ok, message)
+  return value
+ end)
+ weak[1] = co
+ local ok, value = coroutine.resume(co, 17)
+ assert(ok and value == 42, 'scope body reaches yield: ' .. tostring(value))
+ assert(coroutine.close(co))
+ ok, value = pcall(escaped)
+ assert(not ok and value == 'Selected frame evaluation has ended.', 'closed scope result: ' .. tostring(value))
+ co = nil
+ return true
+end
+assert(exercise())
+collectgarbage()
+assert(weak[1] == nil, 'closed frame accessors cannot keep an abandoned thread alive')
+return true`,
 	named_entry: `
 local exercise = function(value, ...)
  local index<const> = frame_count(running_thread()) - 1
@@ -398,7 +501,7 @@ return true`,
 local exercise = function(value, ...)
  local index<const> = frame_count(running_thread()) - 1
  local names<const> = { value = { index = 0, upvalue = false, available = true, is_const = false } }
- local scope<const> = frame_bindings.open(index, names)
+ local scope<const> = frame_bindings.open(index, names, index)
  local f<const> = lua_compiler.syntax_factory
  local source<const> = f.chunk(f.block({ f.return_statement({ f.identifier('value') }) }))
  assert(lua_compiler.compile_syntax(source, '=frame-syntax', nil, scope)() == 17)

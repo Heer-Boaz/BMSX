@@ -1,5 +1,6 @@
+import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -37,7 +38,7 @@ test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained fail
 			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]`,
 			systemModules: [
 				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = __bmsx_setmetatable` },
-				{ path: 'coroutine', source: await readFile('machine/bios/coroutine.lua', 'utf8') },
+				...COROUTINE_FIRMWARE_MODULES,
 			],
 			cartSource: `module<entry>\nerror('game entry must never run in a unit target')`,
 		});
@@ -136,7 +137,7 @@ return { kind = 'integration', tests = {
 			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]`,
 			systemModules: [
 				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = __bmsx_setmetatable` },
-				{ path: 'coroutine', source: await readFile('machine/bios/coroutine.lua', 'utf8') },
+				...COROUTINE_FIRMWARE_MODULES,
 			],
 			cartModules: [{ path: 'game', source: `return { updates = 0, down_samples = 0, after_publication = 0 }` }],
 			cartSource: `module<entry>
@@ -201,7 +202,7 @@ test(`O${optLevel}: cooperative and uncooperative cancellation have bounded, ind
 			systemSource: `module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]`,
 			systemModules: [
 				{ path: 'base', source: `local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = __bmsx_setmetatable` },
-				{ path: 'coroutine', source: await readFile('machine/bios/coroutine.lua', 'utf8') },
+				...COROUTINE_FIRMWARE_MODULES,
 			], cartSource: `module<entry>
 function irq(flags) mem[0x08000004] = flags end
 mem[0x08000008] = 4

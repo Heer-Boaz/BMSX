@@ -5247,6 +5247,13 @@ ordinary globals/environment bindings. Private boot primitives transfer values
 directly from a specified guest thread's physical frame register or closure
 upvalue; neither CPU receives source names or declaration policy. Firmware owns
 the borrow scope and expires its accessors on protected evaluation completion.
+Its `debug/frame_scopes` registry holds weak keys to ordinary guest scope records
+containing the thread and owning physical frame index. Coroutine close retires
+that thread's scopes after the physical close returns, preserving its result
+tuple. Wrap-failure cleanup captures that private close function, not its mutable
+public table slot; rejection of a running-thread close preserves its scopes.
+The registry does not root abandoned suspended evaluations. Scope records survive ordinary
+save-state round trips as guest state, without a parallel host lifetime table.
 These primitives add no scope state, save-state format, or normal-dispatch work.
 The same installed compiler metadata is packed into each ROM's diagnostic
 directory as function, logical-frame, binding and word-interval tables. Visibility

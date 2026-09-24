@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { linkTestSystemBlua32 } from './blua32';
+import { COROUTINE_FIRMWARE_MODULES } from './firmware_modules';
 
-const coroutineSource = readFileSync('machine/bios/coroutine.lua', 'utf8');
 const testModules = ['context', 'execution'].map(name => ({ path: `testlib/${name}`, source: readFileSync(`testlib/${name}.lua`, 'utf8') }));
 const bootSource = `local raise<const> = __bmsx_error
 assert = function(value, message) if not value then raise(message) end end
@@ -19,12 +19,18 @@ export function compileCoroutineTest(body: string, optLevel: 0 | 3) {
 	const source = `require('boot')\ncoroutine = require('coroutine')\n${body}`;
 	return linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(source, 'test').chunk, [
 		{ path: 'boot', source: bootSource, chunk: parseLuaChunk(bootSource, 'boot').chunk },
-		{ path: 'coroutine', source: coroutineSource, chunk: parseLuaChunk(coroutineSource, 'coroutine').chunk },
+		...COROUTINE_FIRMWARE_MODULES.map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path).chunk })),
 		...testModules.map(module => ({ ...module, chunk: parseLuaChunk(module.source, module.path).chunk })),
 	], { entrySource: source, programDomain: 'system', optLevel }));
 }
 
 export const coroutineVectors = {
+	wrap_close_ownership: `
+local wrapped<const> = coroutine.wrap(function() error('original failure') end)
+coroutine.close = function() error('replaced public close') end
+local ok<const>, message<const> = pcall(wrapped)
+assert(not ok and message == 'original failure', message)
+return true`,
 	halted_tooling_call: `
 local rec
 rec = function(n)

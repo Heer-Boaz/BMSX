@@ -999,3 +999,87 @@ Validation:
   hot-path edits. The BIOS debug image is 16,753,440 bytes, 13,232 bytes larger
   than before this slice, within the unchanged 16 MiB limit. These are ownership
   and representation costs, not an assertion of faster gameplay.
+
+## Frame-scope retirement gate
+
+An evaluation's scope is a guest resource owned by that evaluation, not a
+property added to every CPU frame. Closing a coroutine bypasses the normal
+return continuation in `shell/repl`; its accessors must be retired before the
+closed activation can be reused. The previous captured-thread-only scope had no
+retirement endpoint for that path. The firmware now owns a weak-key registry of
+active scope records; public `coroutine.close`, including `coroutine.wrap`'s
+failure cleanup, retires that thread's scopes. Wrap retains the private close
+function, as in Lua's [coroutine library](https://github.com/lua/lua/blob/master/lcorolib.c),
+not a dispatch through the replaceable public `coroutine.close` table slot.
+A rejected close of a running thread does not retire its still-live scopes. Weak keys matter: the registry
+must not itself root an otherwise unreachable suspended coroutine.
+The accessors retain a separate lifetime record, not the compiler's scope/name
+index. Their lifetimes differ: a returned closure may retain an expired accessor
+long after compilation data should be collectible. A regression reproduced the
+retention when those records were combined; splitting them costs one small guest
+record per explicit evaluation, not per accessor call.
+
+References re-read before implementation: Lua's
+[upvalue and to-be-closed lifetime owners](https://github.com/lua/lua/blob/master/lfunc.c),
+LLDB's [call-plan teardown](https://github.com/llvm/llvm-project/blob/main/lldb/source/Target/ThreadPlanCallFunction.cpp),
+and VS Code's [frame-scoped evaluation](https://github.com/microsoft/vscode-js-debug/blob/main/src/adapter/evaluator.ts).
+These establish explicit ownership; they do not justify adding source metadata
+to CPU frames, polling frame identities on each accessor, or restoring machine
+snapshots. Lua's general `__close` language feature is not introduced merely to
+close a debugger resource. Nor is an unused closure/upvalue used as a synthetic
+frame-lifetime token.
+
+| Representation | TypeScript / IDE | C++ / shared firmware | Execution cost |
+| --- | --- | --- | --- |
+| Active scopes | Same BIOS-owned registry; no shadow host table | Ordinary saved weak-key guest table | No idle/per-frame scan |
+| Scope lifetime | Guest scope record: thread and owning physical frame index | Same raw thread/index and table fields | Registration and retirement only |
+| Accessor authority | Read the scope's thread field; nil means ended | Same firmware | No frame-count/identity/revision validation |
+| Coroutine close | Shared BIOS library retires that thread's scopes | Same library around the existing physical close primitive | Explicit close only |
+| Stack/source replacement (remaining) | Evaluation/debugger owner must retire the affected scopes before invalidating their locations | Native monitor remains firmware-owned | Cold ownership boundary, no rollback |
+
+Normal/instrumented opcode dispatch, call-frame push/pop, GC, upvalue closing,
+and snapshot words must remain unchanged. Registry records and accessors are
+ordinary guest state. Host-side scope retirement must consume that owning
+representation directly, not reconstruct local tables or execute arbitrary Lua
+cleanup after a fault.
+
+### Validated coroutine-retirement slice
+
+- The regression against the previous BIOS reproduces a host `TypeError` from
+  a frame-register accessor after `coroutine.close` (`/tmp/frame-lifetime-before.log`).
+  The new firmware returns the explicit ended-scope Lua error for both reads and
+  writes instead of reaching a removed physical frame.
+- The 46 focused firmware tests pass at O0/O3. New cases cover closing, isolation
+  between two suspended coroutines, a rejected close of the running coroutine,
+  collection with live accessors, collection of abandoned evaluations, and
+  releasing the compiler name index while an expired accessor remains reachable
+  (`/tmp/frame-lifetime-metadata-before.log` reproduces the initial retention).
+  The existing 10,000-iteration accessor tests retain zero guest allocations
+  after compilation. This is not a claim that a table lookup is free.
+- All 40 frame-evaluation vectors and 30 coroutine/completion vectors pass
+  TS/native C++ parity, including complete saved states. Actual BIOS/HID Terminal
+  output parity also passes. No CPU frame, opcode, GC or save-state field changed.
+- Full Lua: 2,757 pass, one skip. ROM suite: 185 pass. Product machine/toolchain/
+  IDE/host typechecks pass; tests retain the same 95 baseline diagnostics after
+  source-position normalization. The broader `scripts` typecheck still reports
+  its two existing diagnostics (unused import and model-resource `datatype`).
+- All 45 assistant integration tests pass with the real browser, ordinary HTTP
+  server and Codex app-server against a scripted local model fixture. The ordinary
+  Terminal workflow and private pinned-IRQ admission probe pass on software,
+  WebGL2 and WebGPU; screenshots visibly retain the source breakpoint. These are
+  automated integration tests, not live-model reasoning or public frame-context
+  UI proof. Browser Studio and Node tooling release/debug builds also pass.
+- Strict architecture audit reports zero issues; core parity and diff checks
+  pass. The indentation audit still names its five baseline files. Of those,
+  `tests/helpers/coroutine.ts` now has the firmware dependency and ownership test; the existing
+  embedded-source indentation findings are outside its changed lines.
+- Parsed syntax storage was the ROM-capacity obstruction, not a reason to remove
+  debug coverage. The owning codec now avoids intermediate per-span records;
+  see [storage representation and measurements](lua_syntax_storage.md).
+
+**Still gated:** public frame selection/evaluation and explicit host call/source
+retirement. Stop is a suspension, not permission to unwind or revoke all guest
+evaluations. A machine reset replaces the heap; a save-state restore must retain
+ordinary guest scopes as saved state, not indiscriminately revoke them merely
+because Studio exists. Those ownership distinctions must be tested at the real
+admission/replacement boundaries before exposing a frame-context Terminal tool.
