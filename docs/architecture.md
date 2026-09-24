@@ -1254,8 +1254,21 @@ physical reset state, not completion of potentially non-terminating BIOS/cart
 initialization. External reset/restore and shutdown retire pending requests;
 Run-menu, quick-menu and headless commands share this owner. See
 [startup and Reboot results](studio_boot_operations.md).
+The conversation uses the same owner for explicit Lua program Reboot, without
+closing the workbench or resuming execution. A request cancellation signal
+retires preparation before installation; completed physical effects are not
+rolled back. Operation IDs and captured document versions describe the accepted
+request, not subsequent guest readiness. Existing debugger/Terminal execution
+and isolated test outcomes establish that separately. See [program tools](studio_program_tools.md).
 Source revisions publish matching text and parsed Lua assets in the same ROM
 as their executable and diagnostics, including newly authored files.
+Derived tooling source layers publish their domain on every in-memory asset
+entry, including relocated/replaced sources and tooling payloads. Generic asset
+layout alone does not provide ROM-layer provenance. A source-build fork owns
+its layer containers, so another authoring installation can replace the latter's
+bytes/index/header without retargeting the fork. Backing ROM bytes and indexes
+are shared immutably; no duplicate ROM payload or reparative consumer validation
+is needed.
 The shared tooling syntax codec persists local span ordinals into one packed
 numeric directory of `(unit ordinal, relative start, relative end)` triples;
 it does not serialize intermediate per-span objects. Source text, tokens,
@@ -5210,6 +5223,11 @@ WebGPU owns staging alignment/channel conversion and asynchronous mapping.
 Graph replacement retires capture availability until a new frame is committed.
 Composition injects the host's `GameImageCapture` operation into Studio; IDE
 features do not import the presentation loop or the host capture implementation.
+RuntimeInspectionService admits image observation of a stopped target and can
+await its already admitted history readback. It does not open a heap inspection
+to do so. Execution/replacement during that wait invalidates the request, and
+new mutation intent or readback failure prevents capture. Observation and host
+GPU-copy admission then occur without an intervening yield.
 The host records publication cycles/video tick only on commits, independently
 of held UI repaints and of the current inspection position. Capture holds the
 existing runtime task admission boundary until GPU pixels are owned; host PNG

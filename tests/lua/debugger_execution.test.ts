@@ -193,7 +193,7 @@ test('fault, physical reset and target shutdown each settle pending operations h
 
 test('conversation lifecycle cancels its own execution and keeps persistent breakpoints', async t => {
 	const f = fixture(t), lifetime = new AbortController();
-	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.owner, f.actorExecution, lifetime.signal);
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.owner, f.actorExecution, f.boots, lifetime.signal);
 	const catalog = await tools.execute('studio_list_debug_sources', { target: f.inspection.target });
 	const source = (catalog.data as { source: string }[])[0].source;
 	await tools.execute('studio_set_breakpoints', { source, lines: [8] });

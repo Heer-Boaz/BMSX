@@ -9,6 +9,7 @@ import { createTestRuntime } from '../helpers/runtime_sources';
 import { compileLuaSource } from './cpu_test_harness';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { RuntimeTaskKind } from '../../hosts/common/runtime_task_queue';
 
 function fixture(t: TestContext) {
 	const image = linkTestSystemBlua32(compileLuaSource('return nil', 'capture', 0));
@@ -53,11 +54,11 @@ test('game capture owns pre-overlay native pixels and honest publication metadat
 
 test('capture admission requires pause, rejects foreign targets and never implicitly resumes', async t => {
 	const f = fixture(t); f.publish();
-	const lifetime = new AbortController(), tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, lifetime.signal);
+	const lifetime = new AbortController(), tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, f.boots, lifetime.signal);
 	t.after(() => tools.dispose());
 	assert.throws(() => tools.execute('studio_capture_game', { target: 'another-machine' }), /not this Studio/);
 	f.execution.requestExecution(true);
-	assert.throws(() => tools.execute('studio_capture_game', { target: f.inspection.target }), /paused, idle/);
+	await assert.rejects(Promise.resolve(tools.execute('studio_capture_game', { target: f.inspection.target })), /paused, idle/);
 	f.inspection.pause();
 	await tools.execute('studio_capture_game', { target: f.inspection.target });
 	lifetime.abort();
@@ -72,7 +73,7 @@ test('capture holds GPU-copy admission but prompt cancellation does not poison t
 	const pending = new Promise<void>(resolve => { finish = resolve; });
 	const entered = new Promise<void>(resolve => { started = resolve; });
 	t.mock.method(f.backend, 'readColorTexture', async (...args: Parameters<typeof read>) => { started(); await pending; return read(...args); });
-	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, new AbortController().signal);
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, f.boots, new AbortController().signal);
 	const capture = Promise.resolve(tools.execute('studio_capture_game', { target: f.inspection.target }));
 	assert.equal(f.tasks.ready, false);
 	await entered;
@@ -97,3 +98,40 @@ test('cancellation before admission performs no readback; GPU failures remain ex
 	await assert.rejects(f.gameCapture.capture(new AbortController().signal), backendFailure);
 	assert.equal(f.tasks.ready, false, 'GPU failures are not replaced with black or an old image');
 });
+
+for (const outcome of ['captured', 'prompt-cancelled', 'request-cancelled', 'replaced', 'resumed', 'mutation-queued', 'history-failed'] as const) {
+	test(`suspended capture waits for admitted history without advancing or retargeting: ${outcome}`, async t => {
+		const f = fixture(t); f.publish();
+		const pending = Promise.withResolvers<void>(), lifetime = new AbortController(), request = new AbortController();
+		const historyError = new Error('history readback failed');
+		f.tasks.schedule(() => pending.promise, error => assert.equal(error, historyError), RuntimeTaskKind.History);
+		const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, f.boots, lifetime.signal);
+		t.after(() => tools.dispose());
+		const read = t.mock.method(f.backend, 'readColorTexture');
+		const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes(), f.presenter.gameFrameSequence];
+		const capture = Promise.resolve(tools.execute('studio_capture_game', { target: f.inspection.target }, request.signal));
+		let settled = false;
+		void capture.then(() => { settled = true; }, () => { settled = true; });
+		await Promise.resolve(); await Promise.resolve();
+		assert.equal(settled, false); assert.equal(read.mock.callCount(), 0);
+		if (outcome === 'prompt-cancelled') lifetime.abort();
+		else if (outcome === 'request-cancelled') request.abort();
+		else if (outcome === 'replaced') f.guest.invalidate('heap-replaced');
+		else if (outcome === 'resumed') f.execution.requestExecution(true);
+		else if (outcome === 'mutation-queued') f.tasks.schedule(() => f.guest.invalidate('heap-replaced'), assert.fail);
+		if (outcome === 'history-failed') pending.reject(historyError); else pending.resolve();
+		if (outcome === 'captured') {
+			const result = await capture;
+			assert.equal(result.kind, 'image');
+			assert.ok('observation' in result.data && result.data.observation.canInspect && !result.data.observation.operationActive);
+			assert.equal(read.mock.callCount(), 1);
+		} else {
+			await assert.rejects(capture, outcome.endsWith('cancelled') ? { name: 'AbortError' } : /paused, idle|changed before capture/);
+			assert.equal(read.mock.callCount(), 0);
+		}
+		await f.tasks.join();
+		assert.equal(f.tasks.ready, outcome !== 'history-failed');
+		assert.equal(f.execution.userPaused, outcome !== 'resumed');
+		assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes(), f.presenter.gameFrameSequence], before);
+	});
+}

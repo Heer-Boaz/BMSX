@@ -374,6 +374,9 @@ export function buildBlua32Tail(
 		blua32StaticLayoutTokenHi: linked.symbols.staticLayoutToken.hi,
 		blua32DiagnosticDirectoryOffset: diagnosticDirectoryOffset,
 	});
+	// Layout emits domain-independent packed entries; this producer publishes
+	// a source layer whose entries address these ROM bytes directly.
+	for (const entry of entries) entry.payload_id = layer.id;
 	return {
 		id: layer.id,
 		index: {

@@ -6,7 +6,8 @@ import type { RuntimeInspection, RuntimeInspectionService } from '../../../runti
 import type { GameImageCapture } from '../../../../hosts/common/image';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 import type { LuaTerminalSession } from '../terminal/session';
-import { decodeRuntimeToolRequest } from './runtime_tool_protocol';
+import { decodeRuntimeToolRequest, encodeBootOperation } from './runtime_tool_protocol';
+import type { BootService } from '../execution/boot';
 import { StudioToolInputError } from './tool_input';
 import { ActorRuntimeInspection } from '../../contrib/actor_lab/runtime_inspection';
 
@@ -19,7 +20,7 @@ export class WorkspaceRuntimeTools {
 	private readonly lifetime = new AbortController();
 	private readonly onDisconnect = () => this.dispose();
 	public constructor(private readonly owner: RuntimeInspectionService, private readonly navigation: RuntimeFrameNavigation,
-		private readonly gameCapture: GameImageCapture, private readonly terminal: LuaTerminalSession, private readonly debuggerExecution: RuntimeDebuggerExecution, private readonly actorExecution: ActorExecutionService, private readonly connection: AbortSignal) {
+		private readonly gameCapture: GameImageCapture, private readonly terminal: LuaTerminalSession, private readonly debuggerExecution: RuntimeDebuggerExecution, private readonly actorExecution: ActorExecutionService, private readonly boots: BootService, private readonly connection: AbortSignal) {
 		connection.throwIfAborted();
 		this.debugSources = new DebuggerSourceContext(debuggerExecution.state);
 		connection.addEventListener('abort', this.onDisconnect, { once: true });
@@ -28,6 +29,12 @@ export class WorkspaceRuntimeTools {
 		if (this.disposed) throw new StudioToolInputError('Runtime tool context is disposed');
 		const request = decodeRuntimeToolRequest(name, input);
 		switch (request.name) {
+			case 'studio_reboot_runtime': {
+				if (request.target !== this.owner.target) throw new StudioToolInputError('Reboot requires this authoring target.');
+				const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
+				const operation = this.boots.reboot(undefined, signal);
+				return operation.completion.then(() => ({ kind: 'runtime' as const, data: { target: this.owner.target, ...encodeBootOperation(operation) } }));
+			}
 			case 'studio_actor_execution_status': case 'studio_control_actor': {
 				if (request.target !== this.owner.target) throw new StudioToolInputError('Actor execution requires this authoring target.');
 				const service = this.actorExecution;
@@ -91,6 +98,7 @@ export class WorkspaceRuntimeTools {
 					data: { target: this.owner.target, ...result } }));
 			}
 			case 'studio_runtime_status': return { kind: 'runtime' as const, data: { ...this.owner.status(),
+				boot: this.boots.latestOperation === null ? undefined : encodeBootOperation(this.boots.latestOperation),
 				debugger: { active: this.debuggerExecution.active?.mode, canContinue: this.debuggerExecution.canResume('continue'),
 					canStepInto: this.debuggerExecution.canResume('into'), canStepOver: this.debuggerExecution.canResume('over'), canStepOut: this.debuggerExecution.canResume('out') } } };
 			case 'studio_list_debug_sources':
@@ -118,11 +126,9 @@ export class WorkspaceRuntimeTools {
 			case 'studio_inspect_runtime': {
 				if (request.target !== this.owner.target) throw new StudioToolInputError('Target is not this Studio authoring runtime');
 				if (request.name === 'studio_capture_game') {
-					if (!this.owner.canInspect) throw new Error('Game capture requires a paused, idle target.');
-					const observation = this.owner.status();
 					const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
-					return this.gameCapture.capture(signal).then(image => ({ kind: 'image' as const, images: [image.imageUrl],
-						data: { observation, published: image.published, width: image.width, height: image.height,
+					return this.owner.capture(this.gameCapture, signal).then(image => ({ kind: 'image' as const, images: [image.imageUrl],
+						data: { observation: image.observation, published: image.published, width: image.width, height: image.height,
 							view: 'completed-game-before-crt-and-host-overlays' as const } }));
 				}
 				if (request.name === 'studio_pause_runtime') return { kind: 'runtime' as const, data: this.owner.pause() };

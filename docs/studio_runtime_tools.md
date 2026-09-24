@@ -29,7 +29,8 @@ unimplemented rows below are not advertised capabilities.
 | Live Object/FSM/BT/ActionEffect/timeline inspection | shared Actor Lab runtime tree and suspended value owner | typed instance identity, nested values and execution/restore expiry | implemented for authoring/history; [Actor tools](studio_actor_tools.md) |
 | Live Actor mutation | shared ActorExecutionService + World rendezvous | explicit operation lifetime, admission, cancellation and live-state readback | authoring actions/stored methods implemented; [Actor tools](studio_actor_tools.md) |
 | Reviewed source Save/status | working-copy review + TextFileSaveService | exact revision, project/local acknowledgement, installed-source distinction | implemented; [source lifecycle](studio_source_lifecycle.md) |
-| Build/install/rerun lifecycle | boot, Hot Resume and test target owners | distinct captured-source/installation outcomes, rerun against installed code | open |
+| Lua program build/Reboot/execute/retest | BootService, debugger/Terminal and isolated test owners | distinct captured-source/installation outcomes, actual installed execution and unchanged test rerun | implemented via Reboot; [program tools](studio_program_tools.md) |
+| Hot Resume and non-Lua asset rebuild integration | HotResumeService, debugger init batches and asset build owners | relocation, deferred installation, stopped initialization and independent asset outcomes | open |
 
 ## Reference implementations
 
@@ -105,8 +106,9 @@ added. Values and pages are constructed only on explicit inspection requests.
 5. Test execution, target-bound debugging and basic source-backed builder actions
    and authoring Actor actions/stored methods are implemented. Reviewed Apply,
    explicit Save and source status also share the ordinary working-copy owners.
-   Builder transfer/retarget impact review and the complete build/install/rerun
-   acceptance workflow remain open.
+   Lua Reboot installation, installed execution and unchanged-test rerun now have
+   end-to-end coverage. Hot Resume execution/control, non-Lua asset rebuild
+   orchestration and builder transfer/retarget impact review remain open.
 
 Long operations wait on owner completion/events, not repeated provider polls.
 User Stop cancels owned work without undoing already performed guest writes.
@@ -175,8 +177,12 @@ runtime task admission boundary; cancellation must not poison that queue or
 silently resume the target.
 
 Capture/PNG ownership lives in `hosts/common/game_capture.ts`, injected through
-the `GameImageCapture` contract. Runtime tools add authoring-target/paused-state
-admission and current observation metadata. Studio does not reach into the host
+the `GameImageCapture` contract. RuntimeInspectionService owns paused-target
+admission and current observation metadata. A paused request can await an
+already admitted history readback without borrowing globals or allocating an
+inspection tree. Execution/replacement invalidates that pending observation;
+new mutation intent or readback failure rejects it. When idle, observation and
+GPU-copy admission remain synchronous. Studio does not reach into the host
 presentation loop, and ordinary host callers can reuse capture without Codex.
 
 ## Game-image validation (2026-09-24)

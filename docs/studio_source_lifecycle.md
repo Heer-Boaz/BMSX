@@ -1,9 +1,11 @@
 # Studio source lifecycle tools
 
 The acceptance goal remains review -> Save -> build/install -> execute/retest
-with distinct evidence for each transition. This slice implements the review
-handoff, explicit Save and source/persistence/installation observations. It does
-**not** advertise a completed install/rerun workflow.
+with distinct evidence for each transition. This initial slice implements the
+review handoff, explicit Save and source/persistence/installation observations.
+The subsequent [program tools](studio_program_tools.md) implement and test the
+Lua Reboot/execute/retest route. Hot Resume and non-Lua asset rebuild integration
+remain open; Save alone is still not installation.
 
 ## Live owner audit and references
 

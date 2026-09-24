@@ -3,6 +3,7 @@ import type { RuntimeFrameNavigation } from './frame_navigation';
 import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
 import type { HostRewind } from '../../hosts/common/rewind';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
+import type { GameImageCapture } from '../../hosts/common/image';
 import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ResourceDomain } from '../common/resource';
@@ -41,7 +42,11 @@ export class RuntimeInspectionService {
 	) {}
 
 	public get canInspect(): boolean {
-		return this.debuggerExecution.active === undefined && this.navigation.active === undefined && this.tasks.ready && !this.execution.launchPending && !this.execution.frameStepPending
+		return this.tasks.ready && this.suspended;
+	}
+
+	private get suspended(): boolean {
+		return this.debuggerExecution.active === undefined && this.navigation.active === undefined && !this.execution.launchPending && !this.execution.frameStepPending
 			&& !this.rewind.seeking && !this.rewind.playing && !this.fault.hostFrameFailed
 			&& (this.rewind.active || this.debuggerState.source.stop !== undefined || this.debuggerState.plans.controlSuspended
 				|| this.execution.executionBlocked(runtimeDebuggerExecutionRequested(this.debuggerState)));
@@ -71,6 +76,25 @@ export class RuntimeInspectionService {
 		}
 		this.execution.setPauseReason(HostPauseReason.Requested, true);
 		return this.status();
+	}
+
+	/** Observe the same stopped target after its pending history readback, without borrowing its heap. */
+	public async capture(capture: GameImageCapture, signal: AbortSignal) {
+		signal.throwIfAborted();
+		if (!this.suspended || !this.tasks.mutationReady) throw new Error('Game capture requires a paused, idle target.');
+		if (!this.tasks.ready) {
+			let invalidated = false;
+			const unbind = this.guest.onDidInvalidate(() => { invalidated = true; });
+			try { await this.tasks.join(); } finally { unbind(); }
+			signal.throwIfAborted();
+			if (invalidated) throw new Error('Target changed before capture. Request an image of the new stopped state.');
+			if (!this.canInspect) throw new Error('Game capture requires a paused, idle target.');
+		}
+		// No yield between the observation and the host's synchronous GPU-copy
+		// admission. Later resets wait for owned pixels, not for PNG encoding.
+		const observation = this.status();
+		const image = await capture.capture(signal);
+		return { observation, ...image };
 	}
 
 	/** Explicit inspection can await already admitted GPU/history work, never poll or resume. */

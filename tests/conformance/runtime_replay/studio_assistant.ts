@@ -166,3 +166,4 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	await ide.editor.shutdown();
 	return { assistant: 'pass', sourceFiles: proposal.files.length, frames: test.observations.hostFrames };
 }
+export { runAssistantProgram } from './studio_assistant_program';

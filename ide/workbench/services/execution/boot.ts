@@ -14,7 +14,7 @@ import { applyAllWorkspaceSourceOverrides, applyLuaTextModelSources } from '../.
 import { captureLuaTextModelSources, type LuaTextModelSourceSnapshot } from '../working_copy/lua_sources';
 
 type BootPhase = 'queued' | 'reading-sources' | 'building' | 'installing' | 'resetting';
-type BootCancellation = 'superseded' | 'machine-reset' | 'shutdown';
+type BootCancellation = 'interrupted' | 'superseded' | 'machine-reset' | 'shutdown';
 type BootEffects = { readonly installed: boolean; readonly reset: boolean };
 
 /** Reset acknowledges physical reset registers, never completion of arbitrary guest initialization. */
@@ -26,6 +26,7 @@ export type BootResult = BootEffects & (
 );
 
 export interface BootOperation {
+	readonly id: number;
 	readonly kind: 'startup' | 'reboot';
 	readonly sourceSnapshots: readonly LuaTextModelSourceSnapshot[];
 	readonly entry: Blua32CartridgeEntry | undefined;
@@ -41,17 +42,21 @@ class PendingBoot implements BootOperation {
 	public result: BootResult | null = null;
 	private resolveCompletion!: (result: BootResult) => void;
 	public readonly completion = new Promise<BootResult>(resolve => { this.resolveCompletion = resolve; });
+	private readonly onAbort = () => this.finish({ status: 'cancelled', reason: 'interrupted', installed: this.installed, reset: this.reset });
 
 	public constructor(
+		public readonly id: number,
 		public readonly kind: 'startup' | 'reboot',
 		public readonly sourceSnapshots: readonly LuaTextModelSourceSnapshot[],
 		public readonly entry: Blua32CartridgeEntry | undefined,
-	) {}
+		private readonly signal?: AbortSignal,
+	) { signal?.addEventListener('abort', this.onAbort, { once: true }); }
 
 	public get status(): BootOperation['status'] { return this.result === null ? this.phase : this.result.status; }
 
 	public finish(result: BootResult): void {
 		if (this.result !== null) return;
+		this.signal?.removeEventListener('abort', this.onAbort);
 		this.result = result;
 		this.resolveCompletion(result);
 	}
@@ -64,6 +69,7 @@ class PendingBoot implements BootOperation {
 /** Owns accepted boot inputs, physical reset and lifetime, not editor views or guest readiness. */
 export class BootService {
 	private latest: PendingBoot | null = null;
+	private serial = 0;
 	private closing = false;
 
 	public constructor(
@@ -104,8 +110,9 @@ export class BootService {
 		return operation;
 	}
 
-	public reboot(entry?: Blua32CartridgeEntry): BootOperation {
-		const operation = this.accept('reboot', entry);
+	public reboot(entry?: Blua32CartridgeEntry, signal?: AbortSignal): BootOperation {
+		signal?.throwIfAborted();
+		const operation = this.accept('reboot', entry, signal);
 		void this.tasks.schedule(async () => {
 			if (operation.result !== null) return;
 			operation.phase = 'reading-sources';
@@ -123,11 +130,11 @@ export class BootService {
 		return operation;
 	}
 
-	private accept(kind: BootOperation['kind'], entry?: Blua32CartridgeEntry): PendingBoot {
+	private accept(kind: BootOperation['kind'], entry?: Blua32CartridgeEntry, signal?: AbortSignal): PendingBoot {
 		if (this.closing) throw new Error('Cannot boot after workbench shutdown has started.');
 		this.cancelPending('superseded');
-		const operation = new PendingBoot(kind, captureLuaTextModelSources(this.models, this.sources),
-			entry === undefined ? undefined : { ...entry });
+		const operation = new PendingBoot(++this.serial, kind, captureLuaTextModelSources(this.models, this.sources),
+			entry === undefined ? undefined : { ...entry }, signal);
 		this.latest = operation;
 		return operation;
 	}

@@ -14,6 +14,7 @@ import { buildRomAssetAddressLinkValuesFromSymbols } from '../../toolchain/ts/ro
 import type { CartManifest } from '../../machine/ts/rompack/manifest';
 import { parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
 import { BLUA32_SYMBOLS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_symbols';
+import { RomSourceStack } from '../../toolchain/ts/rompack/source';
 import {
 	buildBlua32Tail,
 	layoutBlua32PublicAssets,
@@ -170,6 +171,9 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 		const rebuiltHeader = parseCartHeader(rebuilt.bytes);
 		const rebuiltImageEntry = rebuilt.index.entries.find(entry => entry.resid === BLUA32_IMAGE_ID)!;
 		const rebuiltSymbolsEntry = rebuilt.index.entries.find(entry => entry.resid === BLUA32_SYMBOLS_IMAGE_ID)!;
+		assert.ok(rebuilt.index.entries.every(entry => entry.payload_id === 'system'));
+		const sourceStack = new RomSourceStack([rebuilt]);
+		assert.deepEqual(sourceStack.getBytesView(rebuiltSymbolsEntry), rebuilt.bytes.subarray(rebuiltSymbolsEntry.start, rebuiltSymbolsEntry.end));
 
 		assert.equal(rebuiltImageEntry.start, imageStart);
 		assert.equal(spriteEntry.metabuffer_start, metadataStart);

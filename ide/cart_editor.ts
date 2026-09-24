@@ -289,7 +289,7 @@ export class RuntimeCartEditor implements CartEditor {
 		connectAssistant?: AssistantConnectionFactory,
 	) {
 		const behaviorSources = new BehaviorSourceDocuments(editorTextModelService, sources);
-		this.assistant = new AssistantConversation(editorTextModelService, sources, storage, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, behaviorSources, textFileSaves, connectAssistant);
+		this.assistant = new AssistantConversation(editorTextModelService, sources, storage, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, behaviorSources, textFileSaves, boots, connectAssistant);
 		this.runtime = runtime;
 		this.presenter = presenter;
 		this.display = display;

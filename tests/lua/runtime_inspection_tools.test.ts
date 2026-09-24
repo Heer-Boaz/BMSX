@@ -70,7 +70,7 @@ for (const reason of ['execution', 'heap-replaced'] as const) test(`${reason} re
 
 test('tool admission rejects unknown targets/fields, has prompt-local lifetimes and does not resume the machine on disconnect', async () => {
 	const f = fixture(), lifetime = new AbortController();
-	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, lifetime.signal);
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, f.boots, lifetime.signal);
 	assert.throws(() => tools.execute('studio_inspect_runtime', { target: 'test-target' }), /not this Studio/);
 	assert.throws(() => tools.execute('studio_read_runtime_values', { reference: 'x', start: 0, count: 1 }), /Open a suspended/);
 	const target = f.inspection.target;
@@ -85,6 +85,29 @@ test('tool admission rejects unknown targets/fields, has prompt-local lifetimes 
 	assert.equal(f.execution.userPaused, true);
 	assert.throws(() => decodeRuntimeToolRequest('studio_runtime_status', { target }), /declared fields/);
 	for (const count of [0, -1, 1.5, '2']) assert.throws(() => decodeRuntimeToolRequest('studio_read_runtime_values', { reference, start: 0, count }));
+});
+
+for (const abortRequest of [false, true]) test(`Reboot tool retires queued installation on ${abortRequest ? 'request' : 'prompt'} cancellation`, async t => {
+	const f = fixture(), lifetime = new AbortController(), request = new AbortController(), gate = Promise.withResolvers<void>();
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, f.boots, lifetime.signal);
+	t.after(async () => { gate.resolve(); tools.dispose(); await f.boots.shutdown(); f.presenter.dispose(); });
+	const before = f.runtime.machine.scheduler.currentNowCycles(), media = f.sources.currentBlua32Media;
+	assert.throws(() => tools.execute('studio_reboot_runtime', { target: 'foreign' }), /authoring target/);
+	assert.throws(() => tools.execute('studio_reboot_runtime', { target: f.inspection.target, save: true }), /declared fields/);
+	assert.throws(() => tools.execute('studio_reboot_runtime', { target: f.inspection.target }, AbortSignal.abort()), { name: 'AbortError' });
+	assert.equal(f.boots.latestOperation, null);
+	void f.tasks.schedule(() => gate.promise, assert.ifError);
+	const reply = tools.execute('studio_reboot_runtime', { target: f.inspection.target }, request.signal);
+	const operation = f.boots.latestOperation!;
+	assert.equal(operation.status, 'queued');
+	if (abortRequest) request.abort(); else lifetime.abort();
+	const result = await reply;
+	assert.ok('result' in result.data);
+	assert.deepEqual(result.data.result, { status: 'cancelled', reason: 'interrupted', installed: false, reset: false });
+	assert.equal(f.boots.latestOperation, operation);
+	gate.resolve(); await f.tasks.join();
+	assert.equal(f.sources.currentBlua32Media, media); assert.equal(f.runtime.machine.scheduler.currentNowCycles(), before);
+	assert.equal(f.execution.userPaused, true);
 });
 
 test('inspection distinguishes running, pending step, machine mutation, independent pause and missing symbols', async () => {
@@ -111,7 +134,7 @@ test('inspection distinguishes running, pending step, machine mutation, independ
 for (const cancelled of [false, true]) test(`explicit inspection awaits admitted history work without polling, cancelled=${cancelled}`, async () => {
 	const f = fixture(), pending = Promise.withResolvers<void>(), lifetime = new AbortController();
 	const task = f.tasks.schedule(() => pending.promise, assert.fail, RuntimeTaskKind.History);
-	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, lifetime.signal);
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, f.boots, lifetime.signal);
 	let settled = false;
 	const opened = Promise.resolve(tools.execute('studio_inspect_runtime', { target: f.inspection.target }));
 	void opened.then(() => { settled = true; }, () => { settled = true; });
@@ -127,7 +150,7 @@ for (const cancelled of [false, true]) test(`explicit inspection awaits admitted
 
 test('disconnect between inspection acquisition and publication releases the new borrow', async t => {
 	const f = fixture(), lifetime = new AbortController();
-	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, lifetime.signal);
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, f.boots, lifetime.signal);
 	const open = f.inspection.openAfterTasks.bind(f.inspection);
 	let acquired: Awaited<ReturnType<typeof open>>;
 	t.mock.method(f.inspection, 'openAfterTasks', async signal => {

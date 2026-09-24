@@ -14,7 +14,7 @@ import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import { HostExecutionControl, HostPauseReason } from '../../hosts/common/execution_control';
 import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { createRuntimeSourceState } from '../../ide/runtime/sources';
+import { createRuntimeSourceState, forkRuntimeSourceState } from '../../ide/runtime/sources';
 import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
@@ -53,8 +53,34 @@ async function fixture(t: TestContext) {
 		target.dispose();
 		await rm(directory, { recursive: true, force: true });
 	});
-	return { service, sources, runtime, cpu, target, tasks, execution, audio, model, source, resets: () => resets };
+	return { service, sources, runtime, cpu, target, tasks, execution, audio, models, model, source, resets: () => resets };
 }
+
+test('rebuilt cart source layers support direct Scenario Lab forks as well as reload from bytes', async t => {
+	const f = await fixture(t), registry = f.sources.systemLuaSources;
+	f.model.pushEditOperations([{ offset: f.model.buffer.length, deleteLength: 0, text: '\n-- rebuilt source\n' }]);
+	assert.equal((await f.service.reboot().completion).status, 'reset');
+	const fork = forkRuntimeSourceState(f.sources);
+	assert.notEqual(fork.systemRom, f.sources.systemRom);
+	assert.equal(fork.systemRom.bytes, f.sources.systemRom.bytes, 'forking does not duplicate ROM backing bytes');
+	assert.equal(fork.cartridgeSlots[0]!.rom.bytes, f.sources.cartridgeSlots[0]!.rom.bytes);
+	const decoded = await loadRomToolingMedia(f.sources.systemRom.bytes, [f.sources.cartridgeSlots[0]!.rom.bytes, null]);
+	const reopened = createRuntimeSourceState(decoded.system, decoded.cartridgeSlots);
+	for (const state of [fork, reopened]) {
+		assert.deepEqual(state.systemInstalledBlua32Sources, f.sources.systemInstalledBlua32Sources);
+		assert.deepEqual(state.cartridgeSlots[0]!.installedBlua32Sources, f.sources.cartridgeSlots[0]!.installedBlua32Sources);
+		assert.notEqual(state.systemLuaSources.records[0], registry.records[0]);
+	}
+	for (const layer of [f.sources.systemRom, f.sources.cartridgeSlots[0]!.rom]) {
+		assert.ok(layer.index.entries.every(entry => entry.payload_id === layer.id), 'each derived entry names its owning ROM bytes');
+	}
+	const capturedBytes = fork.cartridgeSlots[0]!.rom.bytes, capturedIndex = fork.cartridgeSlots[0]!.rom.index;
+	f.model.pushEditOperations([{ offset: f.model.buffer.length, deleteLength: 0, text: '-- later authoring install\n' }]);
+	assert.equal((await f.service.reboot().completion).status, 'reset');
+	assert.notEqual(f.sources.cartridgeSlots[0]!.rom.bytes, capturedBytes);
+	assert.equal(fork.cartridgeSlots[0]!.rom.bytes, capturedBytes, 'an in-flight test build retains its admitted ROM backing');
+	assert.equal(fork.cartridgeSlots[0]!.rom.index, capturedIndex);
+});
 
 test('startup installs captured sources and performs one physical reset without executing guest code', async t => {
 	const f = await fixture(t);
@@ -148,6 +174,41 @@ test('a newer Reboot supersedes queued preparation without installing the older 
 	assert.equal(f.service.latestOperation, second);
 	assert.equal(f.resets(), 1);
 	assert.equal(f.sources.cartridgeSlots[0]!.installedBlua32Sources.get('entry'), second.sourceSnapshots[0].source);
+});
+
+test('pre-cancelled Reboot cannot supersede an already accepted operation', async t => {
+	const f = await fixture(t), pending = f.service.reboot();
+	assert.throws(() => f.service.reboot(undefined, AbortSignal.abort()), { name: 'AbortError' });
+	assert.equal(f.service.latestOperation, pending);
+	assert.equal((await pending.completion).status, 'reset');
+	assert.equal(f.resets(), 1);
+});
+
+test('cancelling queued Reboot prevents installation and cannot affect its replacement', async t => {
+	const f = await fixture(t), gate = Promise.withResolvers<void>(), signal = new AbortController();
+	void f.tasks.schedule(() => gate.promise, assert.ifError);
+	const media = f.sources.currentBlua32Media, operation = f.service.reboot(undefined, signal.signal);
+	f.model.pushEditOperations([{ offset: f.model.buffer.length, deleteLength: 0, text: '\n-- replacement\n' }]);
+	signal.abort();
+	assert.deepEqual(await operation.completion, { status: 'cancelled', reason: 'interrupted', installed: false, reset: false });
+	assert.equal(f.service.latestOperation, operation, 'the historical outcome is available to ordinary and tool observers');
+	assert.equal(f.resets(), 0); assert.equal(f.sources.currentBlua32Media, media);
+	const next = f.service.reboot();
+	assert.notEqual(operation.id, next.id);
+	gate.resolve();
+	assert.equal((await next.completion).status, 'reset');
+	assert.equal(f.resets(), 1);
+	assert.equal(f.sources.cartridgeSlots[0]!.installedBlua32Sources.get('entry'), next.sourceSnapshots[0].source);
+});
+
+test('late cancellation preserves completed physical effects and a newer pending Reboot', async t => {
+	const f = await fixture(t), signal = new AbortController();
+	const completed = f.service.reboot(undefined, signal.signal), result = await completed.completion;
+	const next = f.service.reboot();
+	signal.abort();
+	assert.equal(completed.result, result); assert.equal(result.status, 'reset');
+	assert.equal(f.service.latestOperation, next);
+	assert.equal((await next.completion).status, 'reset'); assert.equal(f.resets(), 2);
 });
 
 for (const reason of ['machine-reset', 'shutdown'] as const) test(`${reason} retires queued Reboot and prevents late installation`, async t => {

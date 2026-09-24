@@ -319,9 +319,11 @@ export function installRuntimeRomLayers(
 
 /** A build owns mutable source records; ROM bytes and installed source maps remain immutable. */
 export function forkRuntimeSourceState(source: RuntimeSourceState): RuntimeSourceState {
-	const fork = createRuntimeSourceState(source.systemRom,
-		[source.cartridgeSlots[0] === null ? null : source.cartridgeSlots[0].rom,
-		 source.cartridgeSlots[1] === null ? null : source.cartridgeSlots[1].rom]);
+	// Installation replaces a layer's bytes/index/header. The build owns those
+	// references while sharing the immutable backing bytes, not the mutable layer.
+	const fork = createRuntimeSourceState({ ...source.systemRom },
+		[source.cartridgeSlots[0] === null ? null : { ...source.cartridgeSlots[0].rom },
+			source.cartridgeSlots[1] === null ? null : { ...source.cartridgeSlots[1].rom }]);
 	for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
 		const registry = runtimeLuaSourceRegistry(source, domain);
 		if (registry === undefined) continue;

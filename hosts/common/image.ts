@@ -12,5 +12,6 @@ export type CapturedGameImage = {
 
 /** Injected host capture operation, independent of the visible IDE or provider. */
 export interface GameImageCapture {
+	/** Accepted readbacks reserve runtime task admission before returning; PNG encoding needs no machine lock. */
 	capture(signal: AbortSignal): Promise<CapturedGameImage>;
 }
