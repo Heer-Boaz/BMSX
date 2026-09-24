@@ -5101,8 +5101,9 @@ target. Failure, frame and value handles belong to that attachment, not to the
 current CPU or historical result strings. Compiled test sources remain separate
 from current working copies. Shared heap reads describe case end (including any
 cleanup mutations), not a copied heap at the throw. Prompt retirement detaches
-only its borrow; target replacement retires all UI/tool borrowers. No test
-Continue, step, evaluation or pixel-capture capability is implied. See
+only its borrow; target replacement retires all UI/tool borrowers. Those post-mortem tools imply no Continue, step, evaluation or pixels.
+Separate [live test-debugger tools](studio_test_debugger.md) operate a newly
+admitted, source-stopped test with explicit run/stop identity and control authority. See
 [test inspection](studio_test_inspection.md).
 Runtime inspection is a separate pane-independent owner. Tools identify the
 physical authoring target and can request an independent user pause, read its
@@ -5154,8 +5155,9 @@ TS/C++ state-restored callbacks publish the existing restore origin;
 tooling does not guess whether replacement was an external load or owned seek.
 Runtime task failure retains its cause and settles navigation as failed, rather
 than leaving a tool awaiting success forever. No provider polling is involved.
-Unbounded Continue/source-step tools, contextual Terminal evaluation, test-target
-debugging and semantic builder actions remain separate work tracked in
+Authoring Continue/source-step and live test debugging are implemented by their
+separate owners. Implicit cart/frame Terminal bindings and semantic builder
+actions remain work tracked in
 [Studio runtime tools](studio_runtime_tools.md).
 The proposal owner publishes one terminal review outcome after retiring edit
 authority and finishing history admission. Clients observe that state rather
@@ -5284,8 +5286,13 @@ publication hook, on its isolated physical CPU. Its optional `TestDebugger`
 kernel stops before phase execution, owns source requests against the immutable
 derived images, and reports real source/thread/test boundaries. The existing
 runner still owns every grant, budget, phase coroutine and cancellation/cleanup
-decision. This kernel does not yet add live-debug admission, inspection or
-controls to Scenario Lab or conversation tools; those remain a separate slice.
+decision. ScenarioRunService admits exactly one named case in debug mode. Both
+ordinary Scenario Lab and conversation tools use this debugger and its immutable
+compiled sources. TestInspection owns actual test-thread/frame/value borrows;
+live TestStopInspection retires before every resume/cleanup, whereas retained
+TestTargetInspection remains read-only case-end evidence. No failure handle
+becomes an executable debugger stop. Prompt-owned unfinished debug runs are
+cancelled at prompt retirement, not silently transferred to another turn.
 See [live test-debugger ownership](studio_test_debugger.md).
 
 Instruction profiling is an opt-in Node tooling-host feature. The TypeScript

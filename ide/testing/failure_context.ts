@@ -1,16 +1,12 @@
 import type { Thread } from '../../machine/ts/machine/cpu/thread';
-import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
-import type { BuiltTestCartridge, TestDebugSource } from '../../toolchain/ts/rompack/test_cartridge';
-import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
+import type { BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
 import type { ResourceDomain } from '../common/resource';
-import { buildLuaStackFrames, type RuntimeStackFrame, type RuntimeStackTraceFrame } from '../runtime/stack_trace';
 import type { ScenarioRunFailure } from './scenario/result_service';
+import { TestStack } from './stack';
 
-/** A borrowed, retained activation, not a copied fault heap or an authoring debugger stop. */
+/** A failure keeps its own phase thread and compiled stack, not the active/authoring CPU. */
 export class TestFailureContext {
-	public readonly physical: readonly RuntimeStackFrame[];
-	public readonly frames: readonly RuntimeStackTraceFrame[];
-	public readonly sources: ReadonlyMap<RuntimeStackTraceFrame, TestDebugSource>;
+	public readonly stack: TestStack;
 	public readonly failure: ScenarioRunFailure;
 
 	public constructor(
@@ -21,31 +17,11 @@ export class TestFailureContext {
 		program: BuiltTestCartridge, sourceDomain: ResourceDomain,
 		phase: ScenarioRunFailure['phase'], message: string,
 	) {
-		this.physical = thread.frames.map((frame, index, frames) => {
-			const domain = frame.executionImage.executionDomainId, image = program.debugImages[domain + 1]!.image;
-			const child = frames[index + 1];
-			return { executionDomainId: domain, toolingImage: image, functionAddress: frame.functionAddress,
-				functionIndex: blua32FunctionIndexAtAddress(image.layout, frame.functionAddress),
-				tracePc: child !== undefined && !child.returnToCompletionLatch ? child.callSitePc
-					: frame.pc - (origin === 'failed-thread' && child === undefined ? INSTRUCTION_BYTES : 0) };
-		});
-		// buildLuaStackFrames adds frame identity to its callback result; retain source by location order.
-		const sourceRecords: TestDebugSource[] = [];
-		this.frames = buildLuaStackFrames(this.physical, (domain, module, line, column, functionName) => {
-			const source = program.debugImages[domain + 1]!.sources.get(module)!;
-			sourceRecords.push(source);
-			const resourceDomain: ResourceDomain = domain === -1 ? -1 : (domain ^ sourceDomain) as 0 | 1;
-			return { kind: 'source', resource: { domain: resourceDomain, path: source.displayPath },
-				workspacePath: source.displayPath, line, column, functionName };
-		});
-		const sources = new Map<RuntimeStackTraceFrame, TestDebugSource>();
-		let index = 0;
-		for (const frame of this.frames) if (frame.kind === 'source') sources.set(frame, sourceRecords[index++]);
-		this.sources = sources;
-		const source = this.frames.find(frame => frame.kind === 'source' && frame.resource.domain === sourceDomain);
+		this.stack = new TestStack(thread, program, sourceDomain, origin);
+		const source = this.stack.frames.find(frame => frame.kind === 'source' && frame.resource.domain === sourceDomain);
 		this.failure = { phase, message,
 			location: source?.kind === 'source' ? { resource: source.resource, line: source.line, column: source.column } : undefined,
-			stackTrace: this.frames.map(frame => frame.kind === 'source'
+			stackTrace: this.stack.frames.map(frame => frame.kind === 'source'
 				? `${frame.workspacePath}:${frame.line}:${frame.column} (${frame.functionName})`
 				: `${frame.functionName}@${frame.instructionAddress.toString(16)}`).join('\n'),
 		};

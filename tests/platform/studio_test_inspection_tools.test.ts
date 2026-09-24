@@ -15,7 +15,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 		body => call('start', 'studio_start_test_run', { scope: value(body, 'discover').roots.flatMap(root => root.modules).flatMap(module => module.cases).find(item => item.name === 'codex_probe').scope }),
 		body => call('wait', 'studio_wait_test_run', { run: value(body, 'start').run }),
 		body => call('attach', 'studio_inspect_test_target', { result: value(body, 'wait').cases[0].result }),
-		body => call('stack', 'studio_read_test_stack', { failure: value(body, 'attach').failures[0].reference, start: 0, count: 50 }),
+		body => call('stack', 'studio_read_test_stack', { stack: value(body, 'attach').failures[0].reference, start: 0, count: 50 }),
 		body => call('scopes', 'studio_read_test_frame_scopes', { frame: frame(body).reference }),
 		body => call('locals', 'studio_read_test_values', { reference: value(body, 'scopes').scopes.find(scope => scope.kind === 'locals').reference, start: 0, count: 100 }),
 		body => call('probe', 'studio_read_test_values', { reference: value(body, 'locals').entries.find(entry => entry.key.display === 'probe').value.reference, start: 0, count: 100 }),

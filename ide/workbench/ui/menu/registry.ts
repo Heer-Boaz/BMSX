@@ -48,6 +48,15 @@ const GRAPH_ZOOM_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
 	{ type: 'command', command: 'graph.zoomIn' },
 ];
 
+const TEST_DEBUG_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
+	{ type: 'command', command: 'scenarioLab.continue' },
+	{ type: 'command', command: 'scenarioLab.stepInto' },
+	{ type: 'command', command: 'scenarioLab.stepOver' },
+	{ type: 'command', command: 'scenarioLab.stepOut' },
+	{ type: 'command', command: 'scenarioLab.pause' },
+	{ type: 'command', command: 'scenarioLab.breakpoints' },
+];
+
 /** Immutable built-in menu contributions; renderers only project these items. */
 export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'gameView.title': [
@@ -170,11 +179,16 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'filter' },
 	],
 	'scenarioLab.target': [
+		...TEST_DEBUG_ACTIONS,
+		{ type: 'command', command: 'scenarioLab.cancel' },
 		{ type: 'command', command: 'scenarioLab.details' },
 		{ type: 'command', command: 'scenarioLab.closeTarget' },
 	],
 	'scenarioLab.title': [
 		{ type: 'command', command: 'scenarioLab.run' },
+		{ type: 'command', command: 'scenarioLab.debug' },
+		...TEST_DEBUG_ACTIONS,
+		{ type: 'command', command: 'scenarioLab.inspectStop' },
 		{ type: 'command', command: 'scenarioLab.rerun' },
 		{ type: 'command', command: 'scenarioLab.cancel' },
 		{ type: 'command', command: 'scenarioLab.details' },

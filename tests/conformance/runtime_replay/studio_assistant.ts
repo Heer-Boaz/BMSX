@@ -1,3 +1,4 @@
+export { runAssistantTestDebugger } from './studio_assistant_test_debugger';
 export { runAssistantTestInspection } from './studio_assistant_test_inspection';
 export { runAssistantDebugger } from './studio_assistant_debugger';
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';

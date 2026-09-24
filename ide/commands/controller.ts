@@ -47,7 +47,7 @@ import { inputFocus, type InputFocusTarget } from '../input/focus';
 // model selection, prompts or asynchronous source capture (Godot EditorData).
 const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'navigateBack', 'navigateForward',
-	'save', 'hot-resume', 'reboot', 'runCurrentFile', 'runProject', 'scenarioLab.run', 'scenarioLab.rerun',
+	'save', 'hot-resume', 'reboot', 'runCurrentFile', 'runProject', 'scenarioLab.run', 'scenarioLab.rerun', 'scenarioLab.debug',
 	'sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown',
 	'behaviorLens.moveChildEarlier', 'behaviorLens.moveChildLater', 'behaviorLens.removeChild', 'behaviorLens.duplicateChild',
 	'behaviorLens.setInitialState', 'behaviorLens.editProperty',
@@ -146,6 +146,7 @@ export class IdeCommandController {
 			case 'behaviorLens.editProperty':
 			case 'scenarioLab.details':
 			case 'scenarioLab.inspectTarget':
+			case 'scenarioLab.inspectStop':
 			case 'scenarioLab.closeTarget':
 			case 'contextMenu':
 			case 'propertyInspector.source':
@@ -205,6 +206,9 @@ export class IdeCommandController {
 				openGameView(this.editor.editorPanes);
 				this.frameNavigation.step(command === 'stepFrameBack' ? -1 : 1);
 				return;
+			case 'scenarioLab.debug':
+			case 'scenarioLab.continue': case 'scenarioLab.stepInto': case 'scenarioLab.stepOver':
+			case 'scenarioLab.stepOut': case 'scenarioLab.pause': case 'scenarioLab.breakpoints':
 			case 'scenarioLab.run':
 			case 'scenarioLab.rerun':
 			case 'scenarioLab.cancel':
@@ -331,6 +335,7 @@ export class IdeCommandController {
 			case 'behaviorLens.editProperty':
 			case 'scenarioLab.details':
 			case 'scenarioLab.inspectTarget':
+			case 'scenarioLab.inspectStop':
 			case 'scenarioLab.closeTarget':
 			case 'contextMenu':
 			case 'propertyInspector.source':
@@ -379,6 +384,9 @@ export class IdeCommandController {
 					&& !this.fault.hostFrameFailed && this.fault.faultSnapshot === null
 					&& !this.debuggerState.source.stopped && !this.debuggerState.plans.controlActive
 					&& !this.scenarioRuns.active && !this.rewind.seeking;
+			case 'scenarioLab.debug':
+			case 'scenarioLab.continue': case 'scenarioLab.stepInto': case 'scenarioLab.stepOver':
+			case 'scenarioLab.stepOut': case 'scenarioLab.pause': case 'scenarioLab.breakpoints':
 			case 'scenarioLab.run':
 			case 'scenarioLab.rerun':
 			case 'scenarioLab.cancel':

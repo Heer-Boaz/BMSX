@@ -23,7 +23,7 @@ unimplemented rows below are not advertised capabilities.
 | Implicit cart bindings and frame-context Lua Terminal | compiler/debugger binding contract | actual selected binding writes, not copied scope tables | open |
 | Discover/run/wait/cancel scenarios | TestRun/ScenarioRunService | real isolated targets, cancellation and completion | implemented; [test execution](studio_test_execution.md) |
 | Retained failed test inspection | TestExecution / TestTargetInspection | phase-thread locals/upvalues, compiled source, expiry; no authoring reads | implemented read-only; [test inspection](studio_test_inspection.md) |
-| Live test breakpoint/step/debug-rerun | target-bound debugger and composed execution hooks | actual stops/control on the test target | open |
+| Live test breakpoint/step/debug-rerun | target-bound debugger and composed execution hooks | actual stops/control on the test target | implemented for one named case; prompt-scoped control, [live test debugger](studio_test_debugger.md) |
 | Object/FSM/BT/ActionEffect semantic inspection and editing | Actor Lab / source-backed behavior models | canonical-source edits and live-state readback | open |
 | Apply/save/build/install lifecycle | working-copy, Save, boot and Hot Resume owners | distinct receipts, rerun against installed code | open |
 
@@ -50,8 +50,8 @@ Tools call the same pane-independent owners as ordinary Studio features.
 The existing browser/server bridge carries requests and results; it does not
 create a replacement game on the server. Every runtime request identifies its
 target. Authoring, running tests and retained failed tests are different targets.
-Initially only the authoring target is exposed; unsupported test attachment must
-fail, never silently inspect the authoring machine.
+Authoring, live test and retained-test inspection have separate admissions; an
+unsupported/expired test attachment fails, never silently inspects authoring.
 
 Inspection reads actual guest values. Source metadata supplies names/locations,
 not guessed values. Globals scopes describe bindings in installed BIOS/active
@@ -89,13 +89,15 @@ added. Values and pages are constructed only on explicit inspection requests.
 ## Next implementation gates
 
 1. Live global/table and current-frame inspection have explicit suspended
-   lifetimes. Additional runtime roots and test-target attachment remain open.
+   lifetimes. Additional semantic runtime roots remain open; live and retained
+   test attachments now have separate lifetimes.
 2. Image transport and presentation capture are implemented; target-bound test
    captures remain part of test-target integration.
 3. Expose execution owners with completed/stopped/interrupted outcomes, not UI
    command dispatch. Logical video steps and source/instruction steps differ.
 4. Complete Terminal contexts and native parity before claiming cart evaluation.
-5. Add test execution and target-bound debugging, then semantic builder actions.
+5. Test execution and target-bound debugging are implemented; semantic builder
+   actions remain open.
 
 Long operations wait on owner completion/events, not repeated provider polls.
 User Stop cancels owned work without undoing already performed guest writes.
@@ -202,8 +204,9 @@ personal-account authentication. Images are requested observations, not a
 continuous video stream. At this slice boundary, execution/rewind tools were still
 open; the next section records frame navigation. Contextual Terminal invocation
 with native parity and Scenario Lab execution were still open at that boundary;
-their later implementations are linked in the acceptance table. Failed-target
-debugging and semantic builder tools remain open acceptance work.
+their later implementations are linked in the acceptance table. Later contracts
+record test-target debugging. Semantic builder tools and complete
+fix/save/install/rerun acceptance remain open.
 
 ## Frame navigation: implementation gate
 
@@ -287,7 +290,7 @@ objects, including from a conversation.
 
 Subsequent slices add [Continue/source-debugger operations](studio_source_debugger.md)
 and [scenario discovery/execution](studio_test_execution.md). Still open:
-cart/frame Lua Terminal bindings, live test debugging, canonical
+cart/frame Lua Terminal bindings, cross-turn test-debugger handoff, canonical
 semantic-builder operations and the complete reproduce/fix/rerun acceptance flow.
 
 The subsequent [retained test inspection](studio_test_inspection.md) slice adds

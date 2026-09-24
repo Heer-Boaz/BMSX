@@ -101,7 +101,7 @@ function resultSummaryText(row: ScenarioLabResultRow): string {
 	const result = row.result;
 	if (result === null) {
 		const run = row.run;
-		return `${row.expanded ? '-' : '+'} ${scenarioStateBadge(run.state)} RUN ${run.sequence}  ${run.completedCount}/${run.items.length}  OK ${run.passedCount} X ${run.failedCount} C ${run.cancelledCount} S ${run.skippedCount}`;
+		return `${row.expanded ? '-' : '+'} ${scenarioStateBadge(run.state)} ${run.mode.toUpperCase()} ${run.sequence}  ${run.completedCount}/${run.items.length}  OK ${run.passedCount} X ${run.failedCount} C ${run.cancelledCount} S ${run.skippedCount}`;
 	}
 	const startTick = result.startTick === null ? '...' : String(result.startTick);
 	const endTick = result.endTick === null ? '...' : String(result.endTick);
@@ -222,6 +222,12 @@ export function prepareScenarioLabLayout(state: ScenarioLabViewState): ScenarioL
 			layout.bottom,
 			layout.rowHeight,
 		);
+		state.actionsDirty = true;
+		state.testPane.textDirty = true;
+		state.resultPane.textDirty = true;
+		state.status.dirty = true;
+	}
+	if (state.actionsDirty) {
 		layoutWorkbenchActionBar(
 			state.actionBar,
 			layout.right - TOOLBAR_PADDING_X,
@@ -229,9 +235,7 @@ export function prepareScenarioLabLayout(state: ScenarioLabViewState): ScenarioL
 			layout.toolbarBottom - 1,
 			measureText,
 		);
-		state.testPane.textDirty = true;
-		state.resultPane.textDirty = true;
-		state.status.dirty = true;
+		state.actionsDirty = false;
 	}
 	if (state.testPane.textDirty) {
 		writeScenarioTestText(state);

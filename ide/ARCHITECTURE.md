@@ -1536,7 +1536,8 @@ Testing separates discovery, case policy, physical resources and results:
   editable working copy. Layout is retained by the shared property inspector.
   Output rings also own their eviction counts; omission is not manufactured by
   a view/transport truncator. The assistant's prompt-scoped test tools consume
-  the same results without a run service, Runtime or source writer. See
+  the same results; separate execution operations invoke ScenarioRunService,
+  never a Runtime or source writer directly. See
   [test evidence](../docs/studio_test_evidence.md) for lifetime/coverage and the
   distinction between historical suite evidence and current workspace source.
 
@@ -1576,8 +1577,12 @@ resources. Runner infrastructure failure stops the batch and skips remaining
 cases. Failed cases support read-only target attachments: phase stacks,
 compiler-backed locals/upvalues, stored tables and exact compiled sources.
 Values are the retained heap at case end, potentially changed by cleanup. Guest
-closed threads are labelled explicitly. Live stop/step/debug-rerun is not yet
-implemented; no authoring debugger is retargeted.
+closed threads are labelled explicitly. Live single-case debug admission, source
+breakpoints, step/control and stop-scoped inspection use a distinct TestDebugger
+on that physical target. The shared TestInspection owns borrowed handles for both
+live and retained policies; it does not turn failures into executable stops.
+Scenario Lab and conversation tools use these same owners. No authoring debugger
+is retargeted. See [test-debugger ownership](../docs/studio_test_debugger.md).
 
 Result activation remains pane-owned navigation. Logs and failures use the
 shared `WorkbenchPropertyInspector` with complete text. `scenarioLab.details`

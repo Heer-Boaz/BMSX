@@ -172,6 +172,15 @@ end } }`;
 		debug.resume(Mode.Continue); f.advance(); assert.equal(debug.reason, 'breakpoint');
 		debug.resume(Mode.StepOut); f.advance();
 		assert.equal(debug.reason, 'thread-completed'); assert.equal(f.result.state, 'running');
+		const completed = debug.inspect();
+		assert.equal(completed.state.stack.status, failure ? 'available' : 'thread-closed');
+		assert.equal(completed.state.thread, completed.state.stack.thread);
+		if (failure) {
+			const stack = completed.readStack(completed.state.stack.reference!, 0, 100);
+			assert.equal(stack.origin, 'failed-thread');
+			assert.ok(stack.frames.some(frame => frame.kind === 'source' && frame.workspacePath === PATH && frame.line === 3));
+		}
+		completed.dispose();
 		assert.equal(f.result.failures.length, 0, 'the guest runner has not consumed the phase outcome yet');
 		debug.resume(Mode.Continue); f.advance();
 		assert.equal(f.result.state, failure ? 'failed' : 'passed');

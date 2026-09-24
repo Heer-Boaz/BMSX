@@ -1,4 +1,4 @@
-import type { SourceExecutionMode } from '../../../runtime/debugger_execution';
+import type { SourceExecutionMode } from '../../../runtime/source_debugger';
 import { StudioToolInputError, toolArguments } from './tool_input';
 
 export type DebuggerToolRequest =

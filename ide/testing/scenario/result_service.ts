@@ -133,7 +133,10 @@ export type ScenarioTestResult = {
 	fault: FaultSnapshot | null;
 };
 
+export type ScenarioRunMode = 'run' | 'debug';
+
 export type ScenarioRun = {
+	readonly mode: ScenarioRunMode;
 	readonly id: string;
 	readonly sequence: number;
 	readonly scopeId: ScenarioTestNodeId;
@@ -207,6 +210,7 @@ export class ScenarioResultService {
 	public beginRun(
 		scopeId: ScenarioTestNodeId,
 		sources: readonly ScenarioRunItemSource[],
+		mode: ScenarioRunMode = 'run',
 	): ScenarioRun {
 		if (this._liveRun !== null) {
 			throw new Error('A scenario run is already active.');
@@ -232,6 +236,7 @@ export class ScenarioResultService {
 			};
 		}
 		const run: ScenarioRun = {
+			mode,
 			id: runId,
 			sequence: this.nextRunSequence,
 			scopeId,

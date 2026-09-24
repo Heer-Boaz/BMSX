@@ -1,3 +1,5 @@
+import { RuntimeDebuggerResumeMode as Mode } from '../../../runtime/source_debugger';
+import { openTestDebugSources } from './debugger_sources';
 import { LuaSyntaxError } from '../../../../toolchain/ts/lua/errors';
 import { subscribeToLuaModelChanges } from '../../../editor/contrib/intellisense/model_lifetime';
 import { createBehaviorQuickPickItem } from '../behavior_lens/quick_access';
@@ -78,15 +80,24 @@ export class ScenarioLabController {
 	public executeCommand(command: EditorScenarioLabCommandId): void {
 		const view = this.view!;
 		switch (command) {
+			case 'scenarioLab.debug':
 			case 'scenarioLab.run':
 			case 'scenarioLab.rerun':
 				try {
-					if (command === 'scenarioLab.run') this.runSelected(view);
+					if (command !== 'scenarioLab.rerun') this.runSelected(view, command === 'scenarioLab.debug' ? 'debug' : 'run');
 					else this.rerunLast(view);
 				} catch (error) {
 					if (!(error instanceof LuaSyntaxError) && !(error instanceof ScenarioRunAdmissionError)) throw error;
 					this.editor.handleRuntimeTaskError(error, 'Invalid test declaration');
 				}
+				return;
+			case 'scenarioLab.continue': this.runs.debugger!.resume(Mode.Continue); return;
+			case 'scenarioLab.stepInto': this.runs.debugger!.resume(Mode.StepInto); return;
+			case 'scenarioLab.stepOver': this.runs.debugger!.resume(Mode.StepOver); return;
+			case 'scenarioLab.stepOut': this.runs.debugger!.resume(Mode.StepOut); return;
+			case 'scenarioLab.pause': this.runs.debugger!.pause(); return;
+			case 'scenarioLab.breakpoints':
+				openTestDebugSources(this.editor.quickInput, this.runs.debugger!, text => { view.status.info = text; view.status.dirty = true; });
 				return;
 			case 'scenarioLab.cancel':
 				this.runs.cancel(this.runs.results.liveRun!);
@@ -144,6 +155,8 @@ export class ScenarioLabController {
 			this.runs.active,
 		);
 		this.view = view;
+		view.debugger = this.runs.debugger;
+		updateScenarioLabStatus(view);
 		return view;
 	}
 
@@ -185,10 +198,10 @@ export class ScenarioLabController {
 		);
 	}
 
-	private runSelected(view: ScenarioLabViewState): void {
+	private runSelected(view: ScenarioLabViewState, mode: 'run' | 'debug'): void {
 		this.refreshSources();
 		const node = selectedScenarioTestNode(view)!;
-		this.runs.start(node.id);
+		this.runs.start(node.id, mode);
 	}
 
 	private rerunLast(view: ScenarioLabViewState): void {
@@ -200,13 +213,14 @@ export class ScenarioLabController {
 			view.status.dirty = true;
 			return;
 		}
-		this.runs.start(scope.id);
+		this.runs.start(scope.id, previous.mode);
 	}
 
 	private handleRunChange(event: ScenarioRunEvent): void {
 		if (this.view === null) return;
 		const view = this.view;
 		view.runActive = this.runs.active;
+		view.debugger = this.runs.debugger;
 		if (event.type === 'error') this.editor.handleRuntimeTaskError(event.error, 'Test run failed');
 		refreshScenarioLabProjection(view);
 		updateScenarioLabStatus(view);

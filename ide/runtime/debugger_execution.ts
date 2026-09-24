@@ -1,16 +1,16 @@
+import { SOURCE_EXECUTION_MODES, type SourceExecutionMode } from './source_debugger';
 import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
 import type { HostRewind } from '../../hosts/common/rewind';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
-import { interruptRuntimeDebuggerExecution, resumeRuntimeDebugger, RuntimeDebuggerResumeMode, RuntimeDebuggerStopReason, type RuntimeDebuggerState } from './debugger_state';
+import { interruptRuntimeDebuggerExecution, resumeRuntimeDebugger, RuntimeDebuggerStopReason, type RuntimeDebuggerState } from './debugger_state';
 import type { RuntimeDebuggerControlPlan, RuntimeDebuggerExecutionContext } from './debugger_plans';
 import type { RuntimeFaultState } from './fault_state';
 import type { RuntimeFrameNavigation } from './frame_navigation';
 import type { SuspendedGuestSession } from './suspended_guest';
 
 type Position = { cycles: number; videoTick: number };
-export type SourceExecutionMode = 'continue' | 'into' | 'over' | 'out';
 export type SourceExecutionResult = {
 	mode: SourceExecutionMode;
 	status: 'stopped' | 'interrupted' | 'replaced' | 'failed';
@@ -19,9 +19,6 @@ export type SourceExecutionResult = {
 	after: Position;
 	stop?: { reason: 'breakpoint' | 'step'; domain: ExecutionDomainId; pc: number; inlineDepth: number };
 };
-const MODES = { continue: RuntimeDebuggerResumeMode.Continue, into: RuntimeDebuggerResumeMode.StepInto,
-	over: RuntimeDebuggerResumeMode.StepOver, out: RuntimeDebuggerResumeMode.StepOut };
-
 export class SourceExecutionOperation {
 	private readonly settled = Promise.withResolvers<SourceExecutionResult>();
 	public readonly completion = this.settled.promise;
@@ -69,7 +66,7 @@ export class RuntimeDebuggerExecution {
 		if (context === 'workbench') this.execution.setPauseReason(HostPauseReason.Requested, true);
 		this.execution.requestExecution(context === 'game' && mode === 'continue');
 		this.guest.invalidate();
-		resumeRuntimeDebugger(this.state, MODES[mode], context);
+		resumeRuntimeDebugger(this.state, SOURCE_EXECUTION_MODES[mode], context);
 		const operation = new SourceExecutionOperation(mode, context, this.position(), this.execution.revision,
 			this.state.executionRevision, this.rewind.revision, this.state.plans.activeControlPlan);
 		this.active = operation;

@@ -1,8 +1,9 @@
-import type { TestTargetInspection } from '../../../testing/inspection';
+import type { TestStopInspection } from '../../../testing/stop_inspection';
+import type { TestTargetInspection } from '../../../testing/retained_inspection';
 import { createWorkbenchPropertyTree, type WorkbenchPropertyElement } from '../../ui/property_tree';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
 
-type Load = { kind: 'failure' | 'values'; reference: string; start: number } | { kind: 'frame'; reference: string };
+type Load = { kind: 'stack' | 'values'; reference: string; start: number } | { kind: 'frame'; reference: string };
 export type TestInspectionElement = WorkbenchPropertyElement & { load?: Load; frame?: string };
 type Node = WorkbenchTreeNode<TestInspectionElement>;
 const PAGE_SIZE = 64;
@@ -10,12 +11,16 @@ const PAGE_SIZE = 64;
 /** Lazy projection of the same target attachment used by conversation tools. No guest reads during paint. */
 export class TestTargetInspectionModel {
 	public readonly tree = createWorkbenchPropertyTree<TestInspectionElement>();
-	public constructor(public readonly inspection: TestTargetInspection) {
-		for (const failure of inspection.state.failures) this.append(null, `${failure.phase}: ${failure.message}`, failure.status,
+	public constructor(public readonly inspection: TestTargetInspection | TestStopInspection) {
+		const state = inspection.state;
+		if (state.role === 'retained-test') for (const failure of state.failures) this.append(null, `${failure.phase}: ${failure.message}`, failure.status,
 			failure.status === 'available' ? `${failure.origin}; failure cycles ${failure.cycles}. Retained at case end; cleanup may have changed shared values.` : 'No retained guest activation for this failure.',
-			failure.reference === undefined ? undefined : { kind: 'failure', reference: failure.reference, start: 0 });
-		for (const scope of inspection.state.globals) this.append(null, `Globals / physical ${scope.domain} / source ${scope.sourceDomain}`,
-			scope.status, 'Installed binding names. Values belong to this test machine at case end, not the authoring game.',
+			failure.reference === undefined ? undefined : { kind: 'stack', reference: failure.reference, start: 0 });
+		else this.append(null, `Stopped thread ${state.stack.thread} / ${state.reason}`, state.stack.status,
+			'Current test stop. Continuing, stepping or cleanup expires every frame and value.',
+			state.stack.reference === undefined ? undefined : { kind: 'stack', reference: state.stack.reference, start: 0 });
+		for (const scope of state.globals) this.append(null, `Globals / physical ${scope.domain} / source ${scope.sourceDomain}`,
+			scope.status, 'Installed binding names. Values belong to this inspection of the test machine, not the authoring game.',
 			scope.reference === undefined ? undefined : { kind: 'values', reference: scope.reference, start: 0 });
 		rebuildWorkbenchTreeRows(this.tree, this.tree.roots[0]);
 	}
@@ -31,7 +36,7 @@ export class TestTargetInspectionModel {
 		const load = node.element.load;
 		if (node.collapsed || load === undefined) return;
 		switch (load.kind) {
-			case 'failure': {
+			case 'stack': {
 				const page = this.inspection.readStack(load.reference, load.start, PAGE_SIZE);
 				for (const frame of page.frames) this.append(node, frame.functionName,
 					frame.kind === 'source' ? `${frame.workspacePath}:${frame.line}:${frame.column}` : `PC ${frame.pc.toString(16)}`,

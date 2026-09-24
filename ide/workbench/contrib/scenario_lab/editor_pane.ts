@@ -46,7 +46,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		updateScenarioLabStatus(this.input.view);
 	});
 	public readonly inspector = new WorkbenchPropertyInspector<ScenarioMessageProperty>(inputFocus, pointerCapture, pointerHover, this.resultsFocus);
-	public readonly targetInspection = new ScenarioTargetInspection(this.resultsFocus);
+	public readonly targetInspection: ScenarioTargetInspection;
 	private inspectedMessage: ScenarioLabInspectableRow | undefined;
 	private readonly inspectionLifetime = { dispose: () => { this.inspectedMessage = undefined; } };
 	private readonly navigate = (command: ScenarioLabNavigationCommand): void => {
@@ -68,6 +68,13 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		private readonly commands: IdeCommandController,
 	) {
 		super(resourcePanel);
+		this.targetInspection = new ScenarioTargetInspection(this.resultsFocus, commands);
+		const inspectStop = {
+			isEnabled: () => this.controller.runs.debugger?.stopped === true && this.targetInspection.model === undefined,
+			run: () => { this.inspector.hide(); this.targetInspection.show(this.controller.runs.debugger!.inspect()); },
+		};
+		this.focusTarget.registerCommand('scenarioLab.inspectStop', inspectStop);
+		this.resultsFocus.registerCommand('scenarioLab.inspectStop', inspectStop);
 		this.resultsFocus.registerCommand('scenarioLab.inspectTarget', {
 			isEnabled: () => !this.inspector.visible && this.targetInspection.model === undefined
 				&& this.selectedDetailsRow() !== undefined && this.controller.runs.canInspect(this.selectedDetailsRow()!.result),

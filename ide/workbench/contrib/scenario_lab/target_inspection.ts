@@ -1,3 +1,5 @@
+import type { IdeCommandController } from '../../../commands/controller';
+import type { TestStopInspection } from '../../../testing/stop_inspection';
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
@@ -12,7 +14,7 @@ import { measureText, measureTextRange } from '../../../editor/common/text/layou
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { api } from '../../../runtime/overlay_api';
 import { COLOR_RESOURCE_VIEWER_BACKGROUND, COLOR_RESOURCE_VIEWER_TEXT } from '../../../common/constants';
-import type { TestTargetInspection } from '../../../testing/inspection';
+import type { TestTargetInspection } from '../../../testing/retained_inspection';
 import type { InspectedProperty } from '../../ui/property_inspector/model';
 import { truncateMeasuredText } from '../../../common/text';
 import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
@@ -42,7 +44,7 @@ export class ScenarioTargetInspection {
 	private headerFont: BFont | undefined;
 	private title = '';
 
-	public constructor(private readonly parent: InputFocusTarget) {
+	public constructor(private readonly parent: InputFocusTarget, private readonly commands: IdeCommandController) {
 		this.focus = inputFocus.createTarget(parent);
 		this.details = new WorkbenchPropertyInspector(inputFocus, pointerCapture, pointerHover, this.focus);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focus);
@@ -53,9 +55,12 @@ export class ScenarioTargetInspection {
 		this.focus.registerCommand('scenarioLab.details', { isEnabled: () => this.isEnabled('scenarioLab.details'), run: () => this.openDetails() });
 	}
 
-	public show(inspection: TestTargetInspection): void {
+	public show(inspection: TestTargetInspection | TestStopInspection): void {
 		this.hide();
 		this.model = new TestTargetInspectionModel(inspection);
+		this.headerFont = undefined;
+		for (const item of this.bar.items) item.visible = item.command === 'scenarioLab.details' || item.command === 'scenarioLab.closeTarget'
+			|| inspection.state.role === 'live-test' && this.commands.isEnabled(item.command);
 		this.unbindInspection = inspection.onDidDispose(() => this.hide());
 		this.actions.setInput(this.bar, this.focus);
 		this.focus.focus();
@@ -73,11 +78,12 @@ export class ScenarioTargetInspection {
 	}
 	public isEnabled(command: EditorCommandId): boolean {
 		return this.model !== undefined && (command === 'scenarioLab.closeTarget'
-			|| command === 'scenarioLab.details' && this.model.tree.selectionIndex >= 0);
+			|| (command === 'scenarioLab.details' ? this.model.tree.selectionIndex >= 0 : this.commands.isEnabled(command)));
 	}
 	public execute(command: EditorCommandId): void {
 		if (command === 'scenarioLab.closeTarget') this.hide();
 		else if (command === 'scenarioLab.details') this.openDetails();
+		else this.commands.execute(command);
 	}
 
 	private openDetails(): void {
@@ -85,7 +91,7 @@ export class ScenarioTargetInspection {
 		const source = element.frame === undefined ? undefined : model.inspection.frameSource(element.frame);
 		const items = source === undefined ? [{ label: element.label, value: element.value, description: element.description, warning: false }]
 			: [{ label: source.status === 'available' ? source.path : 'Source', value: source.status === 'available' ? source.text : source.status, description: 'Compiled test image, not the current editor buffer.', warning: false }];
-		this.details.show({ title: source === undefined ? 'Retained test value' : 'Compiled test source (read-only)', items,
+		this.details.show({ title: source === undefined ? 'Test value' : 'Compiled test source (read-only)', items,
 			canOpenSource: () => false, openSource: () => {} });
 	}
 
@@ -110,7 +116,8 @@ export class ScenarioTargetInspection {
 			this.headerFont = renderFont;
 			write_rect_bounds(this.header, bounds.left, bounds.top, bounds.right, top);
 			layoutWorkbenchActionBar(this.bar, bounds.right - 4, bounds.top + 2, top - 2, measureText);
-			this.title = truncateMeasuredText('TEST / POST-MORTEM / CASE-END HEAP', this.bar.items[0].bounds.left - bounds.left - 8, measureTextRange);
+			const state = this.model!.inspection.state, first = this.bar.items.find(item => item.visible)!;
+			this.title = truncateMeasuredText(state.role === 'retained-test' ? 'TEST / POST-MORTEM / CASE-END HEAP' : `TEST / STOPPED / ${state.reason}`, first.bounds.left - bounds.left - 8, measureTextRange);
 		}
 		api.fill_rect(bounds.left, bounds.top, bounds.right, top, 0, COLOR_RESOURCE_VIEWER_BACKGROUND);
 		drawEditorText(font, this.title, bounds.left + 4, bounds.top + 4, 0, COLOR_RESOURCE_VIEWER_TEXT);

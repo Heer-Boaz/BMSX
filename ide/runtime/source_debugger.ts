@@ -7,6 +7,9 @@ import { blua32ToolingImageForDomain, type Blua32ToolingMedia } from '../../tool
 import type { SourceLocationPcs } from './source_breakpoints';
 
 export const enum RuntimeDebuggerResumeMode { Continue, StepInto, StepOver, StepOut }
+export const SOURCE_EXECUTION_MODES = { continue: RuntimeDebuggerResumeMode.Continue, into: RuntimeDebuggerResumeMode.StepInto,
+	over: RuntimeDebuggerResumeMode.StepOver, out: RuntimeDebuggerResumeMode.StepOut };
+export type SourceExecutionMode = keyof typeof SOURCE_EXECUTION_MODES;
 export const enum RuntimeDebuggerStopReason { Breakpoint, Step }
 type Suppression = { thread: Thread; frame: CallFrame; depth: number };
 
@@ -19,7 +22,7 @@ export class SourceDebugger {
 	public stopReason = RuntimeDebuggerStopReason.Breakpoint;
 	public stopThread: Thread | undefined;
 	private mode = RuntimeDebuggerResumeMode.Continue;
-	private stepThread: Thread | undefined;
+	public stepThread: Thread | undefined;
 	private stepDepth = 0;
 	private stepInlineDepth = 0;
 	private stepMedia: Blua32ToolingMedia | undefined;

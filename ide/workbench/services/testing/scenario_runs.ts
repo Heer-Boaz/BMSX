@@ -6,15 +6,17 @@ import type { WorkspaceRecord } from '../../../workspace/records';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { captureCurrentLuaSource, captureLuaTextModelSources, type LuaTextModelSourceSnapshot } from '../working_copy/lua_sources';
+import type { TestDebugger } from '../../../testing/debugger';
 import { TestRun } from '../../../testing/run';
 import type { TestTargetFactory } from '../../../testing/target';
-import { ScenarioResultService, type ScenarioRun, type ScenarioTestResult } from '../../../testing/scenario/result_service';
+import { ScenarioResultService, type ScenarioRun, type ScenarioRunMode, type ScenarioTestResult } from '../../../testing/scenario/result_service';
 import { ScenarioTestCollection, type ScenarioTestModule, type ScenarioTestNodeId } from '../../../testing/scenario/test_collection';
 import { isScenarioTestAsset } from '../../../../toolchain/ts/rompack/scenario_test';
 import { scenarioFailureFromError } from '../../../testing/scenario/failure';
 import { buildTestRunMedia } from './media_build';
 
 export type ScenarioRunEvent = { readonly type: 'started' | 'complete'; readonly run: ScenarioRun }
+	| { readonly type: 'debugger'; readonly run: ScenarioRun; readonly debugger: TestDebugger }
 	| { readonly type: 'error'; readonly run: ScenarioRun; readonly error: unknown };
 export class ScenarioRunAdmissionError extends Error {}
 
@@ -65,12 +67,13 @@ export class ScenarioRunService {
 	}
 
 	/** Resolve the selection and capture all working copies before any asynchronous build. */
-	public start(scopeId: ScenarioTestNodeId): ScenarioRun {
+	public start(scopeId: ScenarioTestNodeId, mode: ScenarioRunMode = 'run'): ScenarioRun {
 		if (this.closed) throw new ScenarioRunAdmissionError('The workspace test service has closed.');
 		if (this.active) throw new ScenarioRunAdmissionError('A test run is already active.');
 		this.refreshSources();
 		const scope = this.collection.getNode(scopeId);
 		if (scope === undefined) throw new ScenarioRunAdmissionError('The test selection no longer exists.');
+		if (mode === 'debug' && scope.kind !== 'test') throw new ScenarioRunAdmissionError('Debug requires one named test case, not a module or project.');
 		const cases = this.collection.resolveNode(scope);
 		if (cases.length === 0) throw new ScenarioRunAdmissionError('The selection contains no test cases.');
 		const tests = cases.map(test => {
@@ -80,7 +83,7 @@ export class ScenarioRunService {
 		const programSources = captureLuaTextModelSources(this.models, this.sources, true);
 		this.session?.dispose();
 		this.session = null;
-		const run = this.results.beginRun(scopeId, tests);
+		const run = this.results.beginRun(scopeId, tests, mode);
 		this.preparing = run;
 		this.emit({ type: 'started', run });
 		void this.prepare(run, programSources);
@@ -92,7 +95,8 @@ export class ScenarioRunService {
 			const media = await buildTestRunMedia(this.sources, this.tooling, this.storage, this.dirtyRecords, programSources,
 				run.items[0].test.resource.domain, this.model);
 			if (this.preparing !== run) return; // Cancelled while the workspace build was pending.
-			this.session = new TestRun(run, media, this.results, this.createTarget, () => this.emit({ type: 'complete', run }));
+			this.session = new TestRun(run, media, this.results, this.createTarget, () => this.emit({ type: 'complete', run }),
+				undefined, undefined, debug => this.emit({ type: 'debugger', run, debugger: debug }));
 			this.preparing = null;
 			await this.session.prepare();
 		} catch (error) {
@@ -103,6 +107,25 @@ export class ScenarioRunService {
 			this.preparing = null;
 			this.emit({ type: 'error', run, error });
 		}
+	}
+
+	public get debugger(): TestDebugger | undefined { return this.session?.execution?.debugger; }
+
+	/** Preparation has no physical debugger yet. Observe its creation or preparation failure, without polling. */
+	public waitForDebugger(run: ScenarioRun, signal?: AbortSignal): Promise<TestDebugger | undefined> {
+		signal?.throwIfAborted();
+		if (run.mode !== 'debug') throw new ScenarioRunAdmissionError('This run was not started in debug mode.');
+		if (run.state !== 'running') return Promise.resolve(undefined);
+		if (this.session?.result === run && this.debugger !== undefined) return Promise.resolve(this.debugger);
+		return new Promise((resolve, reject) => {
+			const dispose = this.onDidChangeRun(event => {
+				if (event.run !== run || event.type === 'started') return;
+				dispose(); signal?.removeEventListener('abort', abort);
+				resolve(event.type === 'debugger' ? event.debugger : undefined);
+			});
+			const abort = () => { dispose(); reject(signal!.reason); };
+			signal?.addEventListener('abort', abort, { once: true });
+		});
 	}
 
 	public canInspect(result: ScenarioTestResult): boolean {
@@ -125,7 +148,7 @@ export class ScenarioRunService {
 		if (run.state !== 'running') return Promise.resolve(run);
 		return new Promise((resolve, reject) => {
 			const dispose = this.onDidChangeRun(event => {
-				if (event.run !== run || event.type === 'started') return;
+				if (event.run !== run || event.type !== 'complete' && event.type !== 'error') return;
 				dispose(); signal?.removeEventListener('abort', abort);
 				resolve(run);
 			});
@@ -139,7 +162,10 @@ export class ScenarioRunService {
 		if (session === null) return;
 		// Host-frame batching avoids tying each small CPU grant to a 20 ms UI tick.
 		// The grant count is bounded even under a virtual host clock.
-		for (let grant = 0; grant < 16 && session.active && session.execution !== null; grant++) session.advance();
+		for (let grant = 0; grant < 16 && session.active && session.execution !== null; grant++) {
+			session.advance();
+			if (session.execution?.debugger?.stopped) break;
+		}
 	}
 
 	/** A retained handle can never cancel a later run, including one started by another client. */

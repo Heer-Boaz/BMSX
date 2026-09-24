@@ -1,3 +1,4 @@
+import { RuntimeDebuggerResumeMode as Mode } from '../../../runtime/source_debugger';
 import {
 	refreshScenarioLabProjection,
 	selectedScenarioResultRow,
@@ -35,6 +36,26 @@ const NAVIGATION_NONE: ScenarioLabNavigationResult = { kind: 'none' };
 const NAVIGATION_CHANGED: ScenarioLabNavigationResult = { kind: 'changed' };
 
 export function updateScenarioLabStatus(state: ScenarioLabViewState): void {
+	const debug = state.debugger;
+	const live = debug !== undefined && (debug.status === 'stopped' || debug.status === 'running');
+	for (const item of state.actionBar.items) {
+		let visible: boolean;
+		switch (item.command) {
+			case 'scenarioLab.continue': case 'scenarioLab.inspectStop': visible = live && debug.stopped; break;
+			case 'scenarioLab.stepInto': case 'scenarioLab.stepOver': case 'scenarioLab.stepOut': visible = live && debug.canResume(Mode.StepInto); break;
+			case 'scenarioLab.pause': visible = live && !debug.stopped; break;
+			case 'scenarioLab.breakpoints': visible = live; break;
+			case 'scenarioLab.cancel': visible = state.runActive; break;
+			case 'scenarioLab.debug': visible = !state.runActive && selectedScenarioTestNode(state)?.kind === 'test'; break;
+			default: visible = !state.runActive;
+		}
+		if (item.visible !== visible) { item.visible = visible; state.actionsDirty = true; }
+	}
+	if (debug !== undefined && (debug.status === 'stopped' || debug.status === 'running')) {
+		state.status.info = `TEST DEBUG / ${debug.status.toUpperCase()} / ${debug.phase.toUpperCase()}${debug.reason === undefined ? '' : ` / ${debug.reason.toUpperCase()}`}`;
+		state.status.dirty = true;
+		return;
+	}
 	if (state.focus === 'results') {
 		const row = selectedScenarioResultRow(state);
 		if (row !== null && row.kind === 'fsm_transition') {
@@ -157,6 +178,13 @@ export function scenarioLabCommandEnabled(
 	command: EditorScenarioLabCommandId,
 ): boolean {
 	switch (command) {
+		case 'scenarioLab.debug': return !state.runActive && selectedScenarioTestNode(state)?.kind === 'test';
+		case 'scenarioLab.continue': return state.debugger?.canResume(Mode.Continue) === true;
+		case 'scenarioLab.stepInto': return state.debugger?.canResume(Mode.StepInto) === true;
+		case 'scenarioLab.stepOver': return state.debugger?.canResume(Mode.StepOver) === true;
+		case 'scenarioLab.stepOut': return state.debugger?.canResume(Mode.StepOut) === true;
+		case 'scenarioLab.pause': return state.debugger?.status === 'running';
+		case 'scenarioLab.breakpoints': return state.debugger?.stopped === true || state.debugger?.status === 'running';
 		case 'scenarioLab.run':
 			return !state.runActive && selectedScenarioTestNode(state) !== null;
 		case 'scenarioLab.rerun':

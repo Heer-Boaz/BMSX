@@ -55,6 +55,8 @@ export type EditorDebugCommandId =
 	| 'debugStepOver';
 
 export type EditorScenarioLabCommandId =
+	| 'scenarioLab.debug'
+	| 'scenarioLab.continue' | 'scenarioLab.stepInto' | 'scenarioLab.stepOver' | 'scenarioLab.stepOut' | 'scenarioLab.pause' | 'scenarioLab.breakpoints'
 	| 'scenarioLab.run'
 	| 'scenarioLab.rerun'
 	| 'scenarioLab.cancel';
@@ -81,6 +83,7 @@ export type EditorCommandId =
 	| 'actorLab.playback' | 'actorLab.select' | 'actorLab.spawn' | 'actorLab.emit' | 'actorLab.actions' | 'actorLab.call' | 'actorLab.details'
 	| 'scenarioLab.details'
 	| 'scenarioLab.inspectTarget'
+	| 'scenarioLab.inspectStop'
 	| 'scenarioLab.closeTarget'
 	| 'graph.zoomIn'
 	| 'graph.zoomOut'

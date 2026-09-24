@@ -78,7 +78,7 @@ return { kind = 'unit',
 	const sameTables: string[] = [];
 	for (const failure of attached.data.failures) {
 		assert.equal(failure.origin, 'failed-thread');
-		const stack = await tools.execute('studio_read_test_stack', { failure: failure.reference, start: 0, count: 100 }); assert.ok(stack.kind === 'test-stack');
+		const stack = await tools.execute('studio_read_test_stack', { stack: failure.reference, start: 0, count: 100 }); assert.ok(stack.kind === 'test-stack');
 		const frames = stack.data.frames.filter(frame => frame.kind === 'source' && frame.resource.domain === slot);
 		assert.ok(frames.length > 0); assert.ok(frames.every(frame => frame.domain === 0));
 		const bios = stack.data.frames.find(frame => frame.domain === -1)!;
@@ -124,11 +124,11 @@ return { kind = 'unit',
 	scopeNode.collapsed = false; model.resolve(scopeNode); assert.ok(scopeNode.children.length > 0);
 	const replaced = await tools.execute('studio_inspect_test_target', { result: run.data.cases[0].result }); assert.ok(replaced.kind === 'test-inspection');
 	assert.equal(replaced.data.target, attached.data.target); assert.notEqual(replaced.data.inspection, attached.data.inspection);
-	assert.throws(() => tools.execute('studio_read_test_stack', { failure: attached.data.failures[0].reference, start: 0, count: 1 }), /does not belong/);
+	assert.throws(() => tools.execute('studio_read_test_stack', { stack: attached.data.failures[0].reference, start: 0, count: 1 }), /does not belong/);
 	assert.throws(() => tools.execute('studio_read_test_values', { reference: sameTables[0], start: 0, count: 1 }), /does not belong/);
 	tools.dispose(); assert.equal(ordinary.available, true, 'prompt retirement does not release the UI borrow or physical target');
 	const newTools = new WorkspaceTestTools(service, new AbortController().signal);
-	assert.throws(() => newTools.execute('studio_read_test_stack', { failure: attached.data.failures[0].reference, start: 0, count: 1 }), /Open a retained/);
+	assert.throws(() => newTools.execute('studio_read_test_stack', { stack: attached.data.failures[0].reference, start: 0, count: 1 }), /Open a test/);
 	newTools.dispose();
 	let disposals = 0;
 	ordinary.onDidDispose(() => { disposals++; assert.equal(ordinary.available, false); });
@@ -152,7 +152,7 @@ return { kind = 'unit', teardown = function() execution.cancel('body') end,
 
 test('test inspection protocol admits only declared external handles and page coordinates', () => {
 	for (const name of ['studio_read_test_values', 'studio_read_test_stack']) {
-		const field = name.endsWith('stack') ? 'failure' : 'reference';
+		const field = name.endsWith('stack') ? 'stack' : 'reference';
 		for (const count of [0, -1, 1.5, '2']) assert.throws(() => decodeTestToolRequest(name, { [field]: 'x', start: 0, count }));
 		assert.throws(() => decodeTestToolRequest(name, { [field]: 'x', start: 0, count: 1, target: 'authoring' }), /declared/);
 	}

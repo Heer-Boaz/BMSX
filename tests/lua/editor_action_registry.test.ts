@@ -80,26 +80,17 @@ test('weighted command keybindings resolve the contextual Scenario Lab F5 action
 });
 
 test('named workbench menu materializes one retained generic action bar', () => {
-	assert.deepEqual(WORKBENCH_MENUS['scenarioLab.title'], [
-		{ type: 'command', command: 'scenarioLab.run' },
-		{ type: 'command', command: 'scenarioLab.rerun' },
-		{ type: 'command', command: 'scenarioLab.cancel' },
-		{ type: 'command', command: 'scenarioLab.details' },
-		{ type: 'command', command: 'scenarioLab.inspectTarget' },
-	]);
+	const expected: EditorCommandId[] = ['scenarioLab.run', 'scenarioLab.debug', 'scenarioLab.continue', 'scenarioLab.stepInto',
+		'scenarioLab.stepOver', 'scenarioLab.stepOut', 'scenarioLab.pause', 'scenarioLab.breakpoints', 'scenarioLab.inspectStop',
+		'scenarioLab.rerun', 'scenarioLab.cancel', 'scenarioLab.details', 'scenarioLab.inspectTarget'];
+	assert.deepEqual(WORKBENCH_MENUS['scenarioLab.title'], expected.map(command => ({ type: 'command', command })));
 	const actionBar = createWorkbenchActionBar('scenarioLab.title');
 	const firstBounds = actionBar.items[0].bounds;
 	layoutWorkbenchActionBar(actionBar, 200, 10, 20, text => text.length * 4);
 
-	assert.deepEqual(actionBar.items.map(item => item.command), [
-		'scenarioLab.run',
-		'scenarioLab.rerun',
-		'scenarioLab.cancel',
-		'scenarioLab.details',
-		'scenarioLab.inspectTarget',
-	]);
+	assert.deepEqual(actionBar.items.map(item => item.command), expected);
 	assert.equal(actionBar.items[0].bounds, firstBounds);
-	assert.equal(actionBar.items[4].bounds.right, 200);
+	assert.equal(actionBar.items.at(-1)!.bounds.right, 200);
 	assert.equal(actionBar.items[0].bounds.top, 10);
 	assert.equal(actionBar.items[0].bounds.bottom, 20);
 });

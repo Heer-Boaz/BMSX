@@ -36,6 +36,8 @@ export function createScenarioLabViewState(
 	runActive: boolean,
 ): ScenarioLabViewState {
 	const view: ScenarioLabViewState = {
+		debugger: undefined,
+		actionsDirty: true,
 		collection,
 		resultService: results,
 		testPane: {

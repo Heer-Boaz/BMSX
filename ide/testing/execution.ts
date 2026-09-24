@@ -11,10 +11,10 @@ import { formatNumberAsHex } from '../../machine/ts/common/byte_hex_string';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE, IO_SYS_SUPERVISOR_FAULT_CAUSE, IO_SYS_SUPERVISOR_FAULT_EPC, IO_SYS_SUPERVISOR_FAULT_BAD_ADDRESS, IO_SYS_SUPERVISOR_FAULT_DOMAIN } from '../../machine/ts/spec/bmsx/io';
 import { buildModuleExportSlotName } from '../../toolchain/ts/lua/module_path';
 import { TEST_EXECUTION_MODULE_PATH, type BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
-import type { ScenarioResultService, ScenarioTestResult, ScenarioRunFailure } from './scenario/result_service';
+import type { ScenarioResultService, ScenarioTestResult, ScenarioRunFailure, ScenarioRunMode } from './scenario/result_service';
 import type { TestTarget } from './target';
 import { TestFailureContext } from './failure_context';
-import { TestTargetInspection } from './inspection';
+import { TestTargetInspection } from './retained_inspection';
 import { TestDebugger, type TestPhase } from './debugger';
 
 export type TestBudgets = {
@@ -25,7 +25,7 @@ export type TestBudgets = {
 	readonly caseTicks: number;
 	readonly caseCycles: number;
 };
-export type TestExecutionMode = 'run' | 'debug';
+export type TestExecutionMode = ScenarioRunMode;
 export const DEFAULT_TEST_BUDGETS: TestBudgets = {
 	quantumCycles: 65536,
 	bootCycles: 67_737_600,

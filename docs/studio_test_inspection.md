@@ -3,9 +3,11 @@
 ## Design gate
 
 This slice binds read-only inspection to the physical failed test execution. It
-is not live test debugging: Lua rejects resume of a failed coroutine. A future
-stop-before-failure/debug-rerun slice must compose the test runner's admission
-hook with source-debugger control, not replace it or swap the authoring runtime.
+is not live test debugging: Lua rejects resume of a failed coroutine. The separate
+[live test debugger](studio_test_debugger.md) composes the test runner's
+admission hook with source control, without swapping the authoring runtime.
+Shared TestInspection/compiled TestStack machinery serves both lifetimes; this
+retained attachment does not acquire live execution authority.
 
 References studied before implementation:
 
@@ -80,7 +82,7 @@ resource domains map the derived test socket back to the authored socket.
 ## Conversation tools
 
 - `studio_inspect_test_target {result}` opens/replaces this prompt's attachment.
-- `studio_read_test_stack {failure,start,count}` reads one failure's own stack.
+- `studio_read_test_stack {stack,start,count}` reads one failure's own stack.
 - `studio_read_test_frame_scopes {frame}` exposes its locals/upvalue references.
 - `studio_read_test_values {reference,start,count}` pages scopes or stored tables.
 - `studio_read_test_frame_source {frame}` returns exact compiled source or explicit

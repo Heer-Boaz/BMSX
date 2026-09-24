@@ -1,3 +1,4 @@
+import type { TestDebugger } from '../../../testing/debugger';
 import type { EditorFont } from '../../../editor/ui/view/font';
 import type { WorkbenchActionBarState } from '../../ui/action_bar';
 import type {
@@ -165,6 +166,8 @@ export type ScenarioLabStatus = {
 
 /** Retained projection and interaction state for the one Scenario Lab editor input. */
 export type ScenarioLabViewState = {
+	debugger: TestDebugger | undefined;
+	actionsDirty: boolean;
 	readonly collection: ScenarioTestCollection;
 	readonly resultService: ScenarioResultService;
 	readonly testPane: ScenarioLabTestPaneState;

@@ -106,12 +106,15 @@ records. The separate [execution operations](studio_test_execution.md) use the
 shared run service to discover/start/wait/cancel, without installing authoring
 media or attaching a debugger.
 
-An optional live source-debugger **kernel** now belongs to `TestExecution` and
-composes with its admission/publication hook on the same isolated target. It
-does not yet expose live-debug admission, stack inspection or controls through
-Scenario Lab/conversation tools. The
-[test-debugger contract](studio_test_debugger.md) distinguishes this foundation
-from the already available retained post-mortem inspection.
+A named case can also be admitted in explicit `debug` mode from ordinary
+Scenario Lab or conversations. The isolated `TestDebugger` composes source
+breakpoint/step matching with the runner's admission/publication hook; the
+runner still owns every grant, budget and phase. Compiled-source breakpoints,
+Continue/Into/Over/Out, live stop inspection and debug-rerun use this shared owner,
+not the authoring debugger. Live handles expire before execution/cleanup;
+failed-target attachments remain read-only case-end inspection. See the
+[test-debugger contract](studio_test_debugger.md) for control authority,
+prompt-scoped cancellation and the separate live/retained lifetimes.
 
 Machine construction is supplied by Studio/CLI composition through
 `TestTargetFactory`. The run owns test input and case/result policy; the concrete
@@ -129,7 +132,7 @@ socket numbers: only tooling maps execution domains back to authoring source
 domains. Guest registers and ROM data are never rewritten for that mapping.
 Compiled media is cached only for the current module, not for every suite.
 Studio advances at most sixteen CPU grants per host frame, rather than pacing
-each small grant at UI refresh speed. Result/log/trace/capture histories are bounded. CLI screenshot writes apply
+each small grant at UI refresh speed. A debugger stop ends batching after one backend service, without CPU time. Result/log/trace/capture histories are bounded. CLI screenshot writes apply
 backpressure before another CPU grant.
 
 On cancellation at a yielded phase boundary, the suspended coroutine is closed

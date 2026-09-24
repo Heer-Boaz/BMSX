@@ -4,6 +4,7 @@ import type { ScenarioTestSource } from '../../toolchain/ts/rompack/scenario_tes
 import { LuaError } from '../../toolchain/ts/lua/errors';
 import { TestExecution, DEFAULT_TEST_BUDGETS, type TestBudgets } from './execution';
 import type { TestTarget, TestTargetFactory } from './target';
+import type { TestDebugger } from './debugger';
 import { TestInput } from './input';
 import { ScenarioResultService, type ScenarioRun, type ScenarioRunItemSource } from './scenario/result_service';
 
@@ -33,6 +34,7 @@ export class TestRun {
 		private readonly finished: () => void,
 		private readonly budgets: TestBudgets = DEFAULT_TEST_BUDGETS,
 		private readonly captured?: (target: TestTarget, label: string) => void,
+		private readonly debuggerChanged?: (debuggerState: TestDebugger) => void,
 	) {}
 
 	public async prepare(): Promise<void> {
@@ -49,7 +51,12 @@ export class TestRun {
 			}
 			if (!this.active) { this.program = null; return; }
 			const target = this.createTarget(this.media.systemRom, [this.program!.layer.bytes, companion], this.media.machineModel, new TestInput());
-			this.execution = new TestExecution(target, this.program!, this.results, result, this.budgets, this.captured);
+			this.execution = new TestExecution(target, this.program!, this.results, result, this.budgets, this.captured, this.result.mode);
+			const debug = this.execution.debugger;
+			if (debug !== undefined && this.debuggerChanged !== undefined) {
+				debug.onDidChange(() => this.debuggerChanged!(debug));
+				this.debuggerChanged(debug);
+			}
 		} catch (error) {
 			if (!this.active) return;
 			this.results.fail(result, 0, {

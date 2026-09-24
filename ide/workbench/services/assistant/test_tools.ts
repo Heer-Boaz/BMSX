@@ -1,4 +1,8 @@
-import type { TestTargetInspection } from '../../../testing/inspection';
+import type { TestInspection } from '../../../testing/inspection';
+import type { TestStopInspection } from '../../../testing/stop_inspection';
+import type { TestDebugger } from '../../../testing/debugger';
+import { SOURCE_EXECUTION_MODES } from '../../../runtime/source_debugger';
+import type { TestTargetInspection } from '../../../testing/retained_inspection';
 import type { ScenarioRun, ScenarioTestResult, ScenarioRetainedSequence,
 	ScenarioResultLog, ScenarioResultCapture, ScenarioFsmTransitionTrace, ScenarioActionEffectTrace,
 	ScenarioFsmTransitionRecord, ScenarioActionEffectFact } from '../../../testing/scenario/result_service';
@@ -7,7 +11,7 @@ import { StudioToolInputError } from './tool_input';
 import type { ScenarioRunService } from '../testing/scenario_runs';
 import type { ScenarioTestNodeId, ScenarioTestNode, ScenarioTestRoot, ScenarioTestModule } from '../../../testing/scenario/test_collection';
 
-type RunSummary = Readonly<Pick<ScenarioRun, 'sequence' | 'scopeId' | 'state' | 'completedCount' | 'passedCount' | 'failedCount' | 'cancelledCount' | 'skippedCount'>>
+type RunSummary = Readonly<Pick<ScenarioRun, 'mode' | 'sequence' | 'scopeId' | 'state' | 'completedCount' | 'passedCount' | 'failedCount' | 'cancelledCount' | 'skippedCount'>>
 	& { readonly run: string; readonly testCount: number; readonly canCancel: boolean };
 type CaseSummary = Readonly<Pick<ScenarioTestResult, 'test' | 'sourceRevision' | 'state' | 'startTick' | 'endTick'>> & { readonly result: string };
 type RetainedOutput<T> = { readonly omitted: number; readonly entries: readonly T[] };
@@ -35,11 +39,16 @@ type TestDiscovery = {
 	})[];
 };
 export type TestToolResult =
+	| { kind: 'test-debugger'; data: ReturnType<TestDebugger['snapshot']> }
+	| { kind: 'test-debug-sources'; data: { sources: TestDebugger['sources']['catalog'] } }
+	| { kind: 'test-debug-source'; data: ReturnType<TestDebugger['sources']['read']> }
+	| { kind: 'test-breakpoints'; data: { source: string; breakpoints: ReturnType<TestDebugger['sources']['setBreakpoints']> } }
+	| { kind: 'test-stop-inspection'; data: TestStopInspection['state'] }
 	| { kind: 'test-inspection'; data: TestTargetInspection['state'] }
-	| { kind: 'test-stack'; data: ReturnType<TestTargetInspection['readStack']> }
-	| { kind: 'test-frame-scopes'; data: ReturnType<TestTargetInspection['frameScopes']> }
-	| { kind: 'test-frame-source'; data: ReturnType<TestTargetInspection['frameSource']> }
-	| { kind: 'test-values'; data: ReturnType<TestTargetInspection['read']> }
+	| { kind: 'test-stack'; data: ReturnType<TestInspection['readStack']> }
+	| { kind: 'test-frame-scopes'; data: ReturnType<TestInspection['frameScopes']> }
+	| { kind: 'test-frame-source'; data: ReturnType<TestInspection['frameSource']> }
+	| { kind: 'test-values'; data: ReturnType<TestInspection['read']> }
 	| { kind: 'tests'; data: TestDiscovery }
 	| { kind: 'test-runs'; data: { coverage: 'retained-studio-runs'; revision: number; runs: readonly RunSummary[] } }
 	| { kind: 'test-run'; data: ToolTestRun }
@@ -58,7 +67,7 @@ export class WorkspaceTestTools {
 	private discovery: TestDiscovery | undefined;
 	private catalog: Extract<TestToolResult, { kind: 'test-runs' }>['data'] | undefined;
 	private disposed = false;
-	private inspection: TestTargetInspection | undefined;
+	private inspection: TestInspection | undefined;
 	private readonly lifetime = new AbortController();
 	private readonly onDisconnect = () => this.dispose();
 
@@ -80,19 +89,47 @@ export class WorkspaceTestTools {
 				this.inspection = inspection;
 				return { kind: 'test-inspection', data: inspection.state };
 			}
-			case 'studio_read_test_stack': return { kind: 'test-stack', data: this.currentInspection().readStack(request.failure, request.start, request.count) };
+			case 'studio_read_test_stack': return { kind: 'test-stack', data: this.currentInspection().readStack(request.stack, request.start, request.count) };
 			case 'studio_read_test_frame_scopes': return { kind: 'test-frame-scopes', data: this.currentInspection().frameScopes(request.frame) };
 			case 'studio_read_test_frame_source': return { kind: 'test-frame-source', data: this.currentInspection().frameSource(request.frame) };
 			case 'studio_read_test_values': return { kind: 'test-values', data: this.currentInspection().read(request.reference, request.start, request.count) };
 			case 'studio_list_tests': return { kind: 'tests', data: this.discover() };
+			case 'studio_debug_test':
 			case 'studio_start_test_run': {
 				const scope = this.scopes.get(request.scope);
 				if (scope === undefined) throw new StudioToolInputError('Scope handle must be discovered in this prompt');
 				this.owner.refreshSources();
 				if (this.scopeRoot !== this.owner.collection.roots[0]) throw new StudioToolInputError('Test source owner changed; discover current scopes again');
-				const run = this.owner.start(scope);
+				const run = this.owner.start(scope, request.name === 'studio_debug_test' ? 'debug' : 'run');
 				this.pruneRuns();
 				return this.readRun(this.admit(run, true));
+			}
+			case 'studio_wait_test_debugger': {
+				const entry = this.runEntry(request.run);
+				const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
+				return this.owner.waitForDebugger(entry.run, signal).then(async debug => debug === undefined
+					? this.readRun(request.run) : { kind: 'test-debugger', data: await debug.wait(signal) });
+			}
+			case 'studio_pause_test_debugger': {
+				const debug = this.debugger(request.run, true);
+				debug.pause(); return { kind: 'test-debugger', data: debug.snapshot() };
+			}
+			case 'studio_list_test_debug_sources': return { kind: 'test-debug-sources', data: { sources: this.debugger(request.run).sources.catalog } };
+			case 'studio_read_test_debug_source': return { kind: 'test-debug-source', data: this.debugger(request.run).sources.read(request.source) };
+			case 'studio_set_test_breakpoints': {
+				const debug = this.debugger(request.run, true);
+				return { kind: 'test-breakpoints', data: { source: request.source, breakpoints: debug.sources.setBreakpoints(request.source, request.lines) } };
+			}
+			case 'studio_inspect_test_stop': {
+				const debug = this.debugger(request.run, false, request.revision), inspection = debug.inspect();
+				this.inspection?.dispose(); this.inspection = inspection;
+				return { kind: 'test-stop-inspection', data: inspection.state };
+			}
+			case 'studio_resume_test_debugger': {
+				const debug = this.debugger(request.run, true, request.revision);
+				const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
+				const mode = SOURCE_EXECUTION_MODES[request.mode];
+				return debug.execute(mode, signal).then(data => ({ kind: 'test-debugger', data }));
 			}
 			case 'studio_wait_test_run':
 			case 'studio_cancel_test_run': {
@@ -135,8 +172,18 @@ export class WorkspaceTestTools {
 		}
 	}
 
-	private currentInspection(): TestTargetInspection {
-		if (this.inspection === undefined) throw new StudioToolInputError('Open a retained test inspection first');
+	/** Resolve run ownership before touching a physical debugger; revisions reject stale manual/conversation intent. */
+	private debugger(handle: string, control = false, revision?: number): TestDebugger {
+		const entry = this.runEntry(handle);
+		if (control && !entry.owned) throw new StudioToolInputError('This prompt can control only debug runs it started');
+		const debug = this.owner.debugger;
+		if (this.owner.session?.result !== entry.run || debug === undefined) throw new StudioToolInputError('This run has no live test debugger; wait for admission or read the terminal result');
+		if (revision !== undefined && debug.revision !== revision) throw new StudioToolInputError('Test debugger changed since the observed stop; read its current stop again');
+		return debug;
+	}
+
+	private currentInspection(): TestInspection {
+		if (this.inspection === undefined) throw new StudioToolInputError('Open a test inspection first');
 		return this.inspection;
 	}
 
@@ -213,7 +260,7 @@ export class WorkspaceTestTools {
 }
 
 function runSummary(handle: string, run: ScenarioRun, owned: boolean): RunSummary {
-	return { run: handle, sequence: run.sequence, scopeId: run.scopeId, state: run.state, testCount: run.items.length, canCancel: owned && run.state === 'running',
+	return { mode: run.mode, run: handle, sequence: run.sequence, scopeId: run.scopeId, state: run.state, testCount: run.items.length, canCancel: owned && run.state === 'running',
 		completedCount: run.completedCount, passedCount: run.passedCount, failedCount: run.failedCount,
 		cancelledCount: run.cancelledCount, skippedCount: run.skippedCount };
 }
