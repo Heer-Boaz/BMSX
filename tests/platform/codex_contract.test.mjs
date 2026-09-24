@@ -3,8 +3,26 @@ import test from 'node:test';
 import { readFile, access } from 'node:fs/promises';
 import { createCodexContractFixture } from '../helpers/codex_app_server.mjs';
 import { createCodexModelFixture, CODEX_FIXTURE_DONE } from '../helpers/codex_model_fixture.mjs';
+import { PNG } from 'pngjs';
 
 const readCall = { type: 'function_call', call_id: 'read-source', name: 'studio_read', arguments: '{"resource":"cart.lua"}' };
+
+test('pinned App Server preserves a tool PNG as model image input, not base64 tool prose', { timeout: 15000 }, async t => {
+	const model = await createCodexModelFixture(t, [[readCall], CODEX_FIXTURE_DONE]);
+	const codex = await createCodexContractFixture(t, model.url);
+	const threadId = await codex.startThread();
+	await codex.request('turn/start', { threadId, input: [{ type: 'text', text: 'Inspect the fixture image.', text_elements: [] }] });
+	const call = await codex.wait(message => message.method === 'item/tool/call');
+	const png = new PNG({ width: 2, height: 1 }); png.data.set([255, 0, 0, 255, 0, 0, 255, 255]);
+	const imageUrl = `data:image/png;base64,${PNG.sync.write(png).toString('base64')}`;
+	codex.write({ id: call.id, result: { success: true, contentItems: [
+		{ type: 'inputText', text: 'game frame metadata' }, { type: 'inputImage', imageUrl },
+	] } });
+	await codex.wait(message => message.method === 'turn/completed');
+	assert.equal(model.requests.length, 2);
+	const output = model.requests[1].input.find(item => item.type === 'function_call_output');
+	assert.deepEqual(output.output, [{ type: 'input_text', text: 'game frame metadata' }, { type: 'input_image', image_url: imageUrl, detail: 'high' }]);
+});
 
 test('pinned App Server with an isolated profile routes Studio tools without shell/patch capabilities', { timeout: 15000 }, async t => {
 	const model = await createCodexModelFixture(t, [[readCall], CODEX_FIXTURE_DONE]);

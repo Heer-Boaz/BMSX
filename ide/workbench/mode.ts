@@ -1,3 +1,4 @@
+import type { GameImageCapture } from '../../hosts/common/image';
 import type { AssistantConnectionFactory } from '../../hosts/common/assistant_protocol';
 import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
 import type { TestTargetFactory } from '../testing/target';
@@ -48,6 +49,7 @@ import {
 export async function initializeIdeFeatures(
 	runtime: Runtime,
 	presenter: VideoPresenter,
+	gameCapture: GameImageCapture,
 	display: EditorDisplay,
 	input: Input,
 	audioOutput: HostAudioOutput,
@@ -92,6 +94,7 @@ export async function initializeIdeFeatures(
 	const state = new RuntimeIdeState(
 		runtime,
 		presenter,
+		gameCapture,
 		display,
 		input,
 		audioOutput,

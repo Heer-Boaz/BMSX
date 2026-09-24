@@ -5080,8 +5080,22 @@ paths. Borrowed handles expire before normal execution, rewind seek/replay,
 guest calls and machine replacement, including with the editor closed. Prompt
 retirement releases borrows but never implicitly resumes gameplay. Paused
 history is inspectable; a running seek is not. The bridge does not substitute
-authoring state for a test target. Image capture, runtime execution tools,
-Terminal evaluation, test-target debugging and semantic builder actions remain
+authoring state for a test target.
+Game capture reads the presenter's retained committed history texture, after
+device quantization and before CRT/host overlays. The TS and C++ backends emit
+owned top-down RGBA8 display/signal pixels, without a second gamma conversion;
+WebGPU owns staging alignment/channel conversion and asynchronous mapping.
+Graph replacement retires capture availability until a new frame is committed.
+Composition injects the host's `GameImageCapture` operation into Studio; IDE
+features do not import the presentation loop or the host capture implementation.
+The host records publication cycles/video tick only on commits, independently
+of held UI repaints and of the current inspection position. Capture holds the
+existing runtime task admission boundary until GPU pixels are owned; host PNG
+encoding then proceeds outside that boundary. Prompt cancellation discards the
+reply without poisoning the task queue or resuming gameplay. The existing
+authorized HTTP/Codex transport carries a typed image attachment, not base64
+inside tool prose. There is no second render, server, or background image feed.
+Runtime execution tools, Terminal evaluation, test-target debugging and semantic builder actions remain
 separate work tracked in [Studio runtime tools](studio_runtime_tools.md).
 The proposal owner publishes one terminal review outcome after retiring edit
 authority and finishing history admission. Clients observe that state rather

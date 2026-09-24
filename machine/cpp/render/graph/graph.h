@@ -7,6 +7,7 @@
 
 #include "../backend/backend.h"
 #include "../shared/submissions.h"
+#include "../image.h"
 #include <array>
 #include <memory>
 #include <optional>
@@ -152,6 +153,7 @@ public:
 	void compile(FrameData* frame);
 	void execute(FrameData* frame, const GxGpuDeviceOutput& output);
 	void invalidate();
+	RgbaImage captureHistoryTexture(u8 index);
 
 	size_t passCount() const { return m_passes.size(); }
 

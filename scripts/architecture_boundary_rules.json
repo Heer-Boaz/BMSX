@@ -44,7 +44,7 @@
 		{ "name": "ts-host-tasks", "paths": ["hosts/common/runtime_task_queue.ts"] },
 		{ "name": "ts-host-audio", "paths": ["hosts/common/audio_output.ts"] },
 		{ "name": "ts-frontend-input", "paths": ["hosts/common/input/**"] },
-		{ "name": "ts-host-contracts", "paths": ["hosts/common/clock.ts", "hosts/common/frame_loop.ts", "hosts/common/log.ts", "hosts/common/clipboard.ts", "hosts/common/assistant_protocol.ts"] },
+		{ "name": "ts-host-contracts", "paths": ["hosts/common/clock.ts", "hosts/common/frame_loop.ts", "hosts/common/log.ts", "hosts/common/clipboard.ts", "hosts/common/assistant_protocol.ts", "hosts/common/image.ts"] },
 		{ "name": "ts-host-common", "paths": ["hosts/common/**"] },
 		{ "name": "ts-browser-host", "paths": ["hosts/browser/**"] },
 		{ "name": "ts-node-launch", "paths": ["scripts/bootrom/platforms/node_launch.ts", "scripts/bootrom/platforms/node_option_values.ts"] },

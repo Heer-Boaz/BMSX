@@ -50,17 +50,39 @@ function fixture(t: TestContext, waitForConnection?: (connection: Connection) =>
 	runtime.machine.cpu.reset();
 	const guest = new SuspendedGuestSession(runtime);
 	const tooling = new RuntimeLuaTooling(sources, guest);
-	const { inspection } = createRuntimeInspectionFixture(runtime, sources, guest);
+	const { inspection, gameCapture, presenter, backend, tasks, presentation } = createRuntimeInspectionFixture(runtime, sources, guest);
 	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
 	const testResults = new ScenarioResultService();
-	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testResults, inspection, async (_signal, emit) => {
+	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testResults, inspection, gameCapture, async (_signal, emit) => {
 		const connection = new Connection(emit); connections.push(connection);
 		await waitForConnection?.(connection);
 		return connection;
 	});
-	t.after(() => { conversation.dispose(); diagnostics.dispose(); models.clear(); });
-	return { conversation, model, models, connections, testResults, inspection };
+	t.after(() => { conversation.dispose(); presenter.dispose(); diagnostics.dispose(); models.clear(); });
+	return { conversation, model, models, connections, testResults, inspection, runtime, presenter, backend, tasks, presentation };
 }
+
+for (const retire of ['stop', 'disconnect', 'completed'] as const) test(`pending game image after ${retire} cannot answer a retired tool request`, async t => {
+	const f = fixture(t); f.inspection.pause();
+	f.presentation.requestRestoredPresentation(); f.presentation.presentPending(f.presenter, f.runtime, 100, 20);
+	let entered!: () => void, finish!: () => void;
+	const started = new Promise<void>(resolve => { entered = resolve; });
+	const pending = new Promise<void>(resolve => { finish = resolve; });
+	const read = f.backend.readColorTexture.bind(f.backend);
+	t.mock.method(f.backend, 'readColorTexture', async (...args: Parameters<typeof read>) => { entered(); await pending; return read(...args); });
+	await f.conversation.sendPrompt('See the game');
+	const connection = f.connections[0];
+	connection.emit({ type: 'tool-request', requestId: 'image', name: 'studio_capture_game', arguments: { target: f.inspection.target } });
+	await started;
+	if (retire === 'stop') await f.conversation.interrupt();
+	else if (retire === 'disconnect') f.conversation.disconnect();
+	else connection.emit({ type: 'turn-completed', turnId: 't', status: 'completed' });
+	finish(); await f.tasks.join(); await setImmediate();
+	assert.equal(f.tasks.ready, true);
+	assert.equal(f.inspection.status().userPaused, true);
+	assert.equal(connection.commands.filter(command => command.type === 'tool-result').length, 0);
+	assert.equal(connection.commands.filter(command => command.type === 'start').length, 1);
+});
 
 test('conversation dispatches runtime tools against its actual target without starting additional turns', async t => {
 	const f = fixture(t), conversation = f.conversation;

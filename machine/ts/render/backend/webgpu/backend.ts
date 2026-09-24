@@ -77,6 +77,35 @@ export class WebGPUBackend implements GPUBackend {
 		this.gxGpuVramPhysicalWordMask = (gxGpuVramBytes >>> 1) - 1;
 	}
 
+	async readColorTexture(texture: GPUTexture, width: number, height: number): Promise<Uint8Array<ArrayBuffer>> {
+		const stride = width * 4;
+		const bytesPerRow = (stride + 255) & ~255;
+		const buffer = this.device.createBuffer({ size: bytesPerRow * height, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+		try {
+			const encoder = this.device.createCommandEncoder();
+			encoder.copyTextureToBuffer({ texture }, { buffer, bytesPerRow }, { width, height });
+			this.device.queue.submit([encoder.finish()]);
+			await buffer.mapAsync(GPUMapMode.READ);
+			const source = new Uint8Array(buffer.getMappedRange());
+			const pixels = new Uint8Array(stride * height);
+			const bgra = texture.format === 'bgra8unorm';
+			for (let y = 0; y < height; y += 1) {
+				const from = y * bytesPerRow;
+				const to = y * stride;
+				for (let x = 0; x < stride; x += 4) {
+					pixels[to + x] = source[from + x + (bgra ? 2 : 0)];
+					pixels[to + x + 1] = source[from + x + 1];
+					pixels[to + x + 2] = source[from + x + (bgra ? 0 : 2)];
+					pixels[to + x + 3] = source[from + x + 3];
+				}
+			}
+			return pixels;
+		} finally {
+			buffer.unmap();
+			buffer.destroy();
+		}
+	}
+
 	resizePresentationTarget(width: number, height: number): void {
 		this._context.canvas.width = width;
 		this._context.canvas.height = height;

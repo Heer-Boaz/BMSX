@@ -14,7 +14,7 @@ unimplemented rows below are not advertised capabilities.
 | Working copies, diagnostics, reviewed edits | existing source tools | source receipts, review/history tests | implemented |
 | Historical test evidence | ScenarioResultService | retained-result tests | implemented |
 | Live globals, nested values, invalidation | SuspendedGuestSession + runtime inspection | real cartridge and bridge tests, no guest execution | implemented for installed global bindings; see validation below |
-| Game image | presentation owner + image-capable tool transport | pixels from each renderer, target/time provenance | open |
+| Game image | presentation owner + image-capable tool transport | pixels from each renderer, target/time provenance | implemented for paused authoring target; browser and native pixel evidence below |
 | Pause/run, frame/source step, rewind | execution/debugger/history owners | actual completion, retained-range and cancellation tests | pause implemented; other tool operations open |
 | Cart globals and frame-context Lua Terminal | firmware compiler/REPL, debugger call plans | real guest calls; TS/C++ parity; conversation invocation | open |
 | Discover/run/wait/cancel scenarios | TestRun/ScenarioRunService | real isolated targets, cancellation and completion | open |
@@ -85,7 +85,8 @@ added. Values and pages are constructed only on explicit inspection requests.
 
 1. Live global/table inspection and tool lifetime are proven through real browser
    execution. Frame locals and additional runtime roots remain to be exposed.
-2. Add image transport and presentation capture with honest frame provenance.
+2. Image transport and presentation capture are implemented; target-bound test
+   captures remain part of test-target integration.
 3. Expose execution owners with completed/stopped/interrupted outcomes, not UI
    command dispatch. Logical video steps and source/instruction steps differ.
 4. Complete Terminal contexts and native parity before claiming cart evaluation.
@@ -120,3 +121,79 @@ Image requests and inspection are on demand, never a continuous model feed.
 This is automated integration evidence, not live-model reasoning, personal
 account authentication, screenshot delivery to Codex, native Terminal parity or
 completion of the full acceptance workflow.
+
+## Game-image slice: design gate
+
+The image is the retained completed game frame, after device quantization and
+before CRT/host UI composition. It is not a browser screenshot, a second
+software render, or an image reconstructed from object data. Runtime observation
+position and the machine position at frame publication are separate metadata:
+a stopped CPU can be ahead of its last completed visual frame.
+
+Reference: MAME `video_manager::save_snapshot` / `create_snapshot_bitmap` in
+[video.cpp](https://github.com/mamedev/mame/blob/master/src/emu/video.cpp) keeps
+screen selection and native image production in video ownership, separate from
+encoding. BMSX already retains completed-frame textures, so it reads those rather
+than rendering a substitute. The installed Codex 0.156.1 generated
+`DynamicToolCallResponse` schema supports `inputImage` with `imageUrl`; the
+existing text result remains text and PNG attachments use that real content
+type, not base64 inside prose. A contract test must inspect the next actual
+Responses request.
+
+| Boundary | TS | C++ | Intended change |
+| --- | --- | --- | --- |
+| Retained frame | RenderPassLibrary history handles / RenderGraphRuntime textures | RenderGraphRuntime history handles / textures | read only the presenter's committed history index |
+| Pixels | software RGBA bytes; WebGL bottom-up RGBA; WebGPU padded BGRA/RGBA | software ARGB words; GLES2 bottom-up RGBA | backend emits tightly packed, top-down RGBA8; no gamma transform |
+| Capture | asynchronous texture readback (WebGPU mapping) | synchronous software/GLES2 readback | owned result buffer; no CPU/guest execution |
+| Provenance | VideoPresenter presentation sequence + RenderPresentationState publication cycles/tick | native presenter sequence; native host retains its time owner | committed frame, not UI refresh count |
+| PNG | browser image codec / Node PNG codec | existing native screenshot codec | host encoding, never guest/tool-local pixel conversion |
+| Provider | existing Studio HTTP + Codex session | no native IDE bridge | typed image attachment, no extra server |
+
+Hot-path callsites to audit before mirrored edits: TS/C++ VideoPresenter
+`finalizePresentation` / `resetPresentationHistory` and TS
+RenderPresentationState `presentFrame`. They retain scalar publication identity
+only. Texture readback, row/channel normalization, PNG encoding and transport
+occur solely on an explicit capture request. No extra render pass, per-frame
+pixel copy or model request is introduced. Outstanding reads use the existing
+runtime task admission boundary; cancellation must not poison that queue or
+silently resume the target.
+
+Capture/PNG ownership lives in `hosts/common/game_capture.ts`, injected through
+the `GameImageCapture` contract. Runtime tools add authoring-target/paused-state
+admission and current observation metadata. Studio does not reach into the host
+presentation loop, and ordinary host callers can reuse capture without Codex.
+
+## Game-image validation (2026-09-24)
+
+* The pinned Codex 0.156.1 app-server forwards an `inputImage` tool attachment
+  into the next Responses request as `input_image` with `detail: high`.
+  Existing text-only results remain text. Contract suite: 6 pass.
+* Actual browser machine -> authorized HTTP -> production CodexSession -> real
+  app-server -> deterministic Responses fixture: software, WebGL2 and WebGPU
+  deliver the same 256x192 Nemesis frame byte-for-byte. Native texture and decoded
+  delivered PNG hashes match. The image excludes the visible Studio/assistant
+  overlay. Current cycles/tick and publication identity remain explicit; guest
+  clock, heap and dirty source are unchanged. Nine expected model requests and
+  one connection per workflow, no background polling. Full assistant suite:
+  18 pass; all three runtime/image workflows also rerun after the ownership gate.
+* Independent 65x3 asymmetric texture vectors verify orientation, channels,
+  ownership and WebGPU row padding for both RGBA and BGRA textures. Native
+  software/GLES2 tests cover the same values, committed/partial history,
+  graph-rebuild unavailability, CRT/overlay exclusion and GL binding retention.
+  Native capture/presenter/overlay bundle: 3 pass.
+* Capture unit tests cover unavailable frames, task admission, foreign targets,
+  cancellation before/during readback, explicit GPU failures and retained pause.
+  Conversation Stop, disconnect and turn completion discard late image replies
+  without another model request or a poisoned task queue. Focused bundle:
+  42 pass. Full Lua suite: 2406 pass, one skip. HTTP suite: 16 pass.
+* Browser Studio and Node tooling builds plus IDE/common/browser/Node typechecks
+  pass. Strict architecture audit: zero issues; core parity audit passes.
+  Tests-project comparison against HEAD retains 96 existing diagnostic sites;
+  four messages only change their missing-member lists/counts for expanded
+  presenter/presentation types. No new diagnostic site or error code.
+
+This proves automated pixel delivery, not a live model's visual reasoning or
+personal-account authentication. Images are requested observations, not a
+continuous video stream. Runtime execution/rewind tools, contextual Terminal
+invocation with native parity, Scenario Lab execution/debugging and semantic
+builder tools are still open acceptance work.

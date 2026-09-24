@@ -4,10 +4,12 @@ import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, createStudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
+import { verifyColorReadback } from './color_readback';
 
 /** Actual browser machine -> HTTP bridge -> Codex app-server -> deterministic model fixture. */
 export async function runAssistantRuntime(kind: StudioRendererKind, canvas: HTMLCanvasElement, capture: (name: string) => Promise<void>) {
 	const renderer = await createStudioRenderer(kind, canvas, capture), http = new StudioHttpSession();
+	await verifyColorReadback(renderer.backend);
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
 	const { ide, runtime, frame, until, press, cycles } = test;
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'runtime tools: boot actual cart');
@@ -20,7 +22,7 @@ export async function runAssistantRuntime(kind: StudioRendererKind, canvas: HTML
 	const position = cycles(), videoTick = runtime.frameScheduler.lastTickSequence, heap = runtime.machine.cpu.luaHeap.usedBytes(), version = model.version;
 	const media = ide.sources.currentBlua32Media, conversation = ide.editor.assistant;
 	await test.click(view.composerBounds);
-	test.clipboard.text = 'Pause and inspect the real world and one object. Do not execute Lua or modify source.';
+	test.clipboard.text = 'Pause and inspect the real world and one object, then show the game frame. Do not execute Lua or modify source.';
 	await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'Enter');
 	await until(() => conversation.state === 'ready' && conversation.entries.some(entry => entry.kind === 'assistant'), 'runtime tools: real model tool round trip');
 	check(cycles() === position && runtime.frameScheduler.lastTickSequence === videoTick && runtime.machine.cpu.luaHeap.usedBytes() === heap,
@@ -28,6 +30,9 @@ export async function runAssistantRuntime(kind: StudioRendererKind, canvas: HTML
 	check(test.execution.userPaused && model.version === version && ide.sources.currentBlua32Media === media,
 		'runtime tools retain user pause and leave unsaved source/installed media alone');
 	await frame(); await renderer.capture!('runtime-inspection-response');
+	const image = await test.presenter.captureGameFrame();
+	const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', image.pixels)), byte => byte.toString(16).padStart(2, '0')).join('');
+	const capturedImage = { width: image.width, height: image.height, sha256, sequence: test.presenter.gameFrameSequence };
 
 	// With no editor attached, actual execution (not pane detachment) must revoke borrows.
 	await press('ControlRight', 'ShiftRight'); await frame();
@@ -57,5 +62,5 @@ export async function runAssistantRuntime(kind: StudioRendererKind, canvas: HTML
 	try { historical.read(historicalReference, 0, 1); } catch (error) { expired = String(error).includes('expired'); }
 	check(expired && ide.fault.faultSnapshot === null, 'recorded forward execution also retires historical borrows');
 	await renderer.finish(); await ide.editor.shutdown();
-	return { inspection: 'pass', position, videoTick, target: ide.inspection.target };
+	return { inspection: 'pass', position, videoTick, target: ide.inspection.target, image: capturedImage };
 }

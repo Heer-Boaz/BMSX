@@ -1,3 +1,6 @@
+import { GameCaptureService } from '../../hosts/common/game_capture';
+import type { RenderPresentationState } from '../../hosts/common/presentation_state';
+import type { PngImageEncoder } from '../../hosts/common/image';
 import type { AssistantConnectionFactory } from '../../hosts/common/assistant_protocol';
 import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
 import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
@@ -27,6 +30,8 @@ export async function prepareWorkbenchRuntime(
 	cartridgeSlots: readonly [Uint8Array | null, Uint8Array | null],
 	runtime: Runtime,
 	presenter: VideoPresenter,
+	presentation: RenderPresentationState,
+	encodePngImage: PngImageEncoder,
 	display: EditorDisplay,
 	input: Input,
 	audioOutput: HostAudioOutput,
@@ -56,6 +61,7 @@ export async function prepareWorkbenchRuntime(
 	const ide = await workbenchMode.initializeIdeFeatures(
 		runtime,
 		presenter,
+		new GameCaptureService(presenter, presentation, runtimeTasks, encodePngImage),
 		display,
 		input,
 		audioOutput,

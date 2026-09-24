@@ -1,3 +1,4 @@
+import type { GameImageCapture } from '../hosts/common/image';
 import { AssistantConversation } from './workbench/services/assistant/conversation';
 import type { LuaTerminalSession } from './workbench/services/terminal/session';
 import { TerminalPane } from './workbench/contrib/terminal/editor_pane';
@@ -273,10 +274,11 @@ export class RuntimeCartEditor implements CartEditor {
 		public readonly diagnostics: ResourceDiagnosticsService,
 		public readonly terminal: LuaTerminalSession,
 		runtimeInspection: RuntimeInspectionService,
+		gameCapture: GameImageCapture,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
 		connectAssistant?: AssistantConnectionFactory,
 	) {
-		this.assistant = new AssistantConversation(editorTextModelService, sources, storage, diagnostics, scenarioRuns.results, runtimeInspection, connectAssistant);
+		this.assistant = new AssistantConversation(editorTextModelService, sources, storage, diagnostics, scenarioRuns.results, runtimeInspection, gameCapture, connectAssistant);
 		this.runtime = runtime;
 		this.presenter = presenter;
 		this.display = display;

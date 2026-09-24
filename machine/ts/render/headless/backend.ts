@@ -331,6 +331,10 @@ export class HeadlessGPUBackend implements GPUBackend {
 		}
 	}
 
+	async readColorTexture(handle: TextureHandle, _width: number, _height: number): Promise<Uint8Array<ArrayBuffer>> {
+		return this.texturePixels(this.getTextureRecord(handle)).slice();
+	}
+
 	createSolidTexture2D(width: number, height: number, color: number, _desc: TextureParams): TextureHandle {
 		const pixels = createSolidRgba8Pixels(width, height, color);
 		this.accountUpload('texture', pixels.byteLength);

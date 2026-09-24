@@ -85,6 +85,7 @@ void VideoPresenter::setDeviceQuantizeMode(DeviceQuantizeMode mode) {
 }
 
 void VideoPresenter::resetPresentationHistory() {
+	m_committedSequence.reset();
 	presentationMode = PresentationMode::Completed;
 	commitPresentationFrame = false;
 	presentationHistorySourceIndex = 0;
@@ -95,6 +96,12 @@ void VideoPresenter::finalizePresentation() {
 		return;
 	}
 	presentationHistorySourceIndex = presentationHistoryDestinationIndex();
+	m_committedSequence = m_renderFrameIndex;
+}
+
+RgbaImage VideoPresenter::captureGameFrame() {
+	if (!m_committedSequence) throw std::runtime_error("No completed game frame is available.");
+	return m_renderGraph->captureHistoryTexture(presentationHistorySourceIndex);
 }
 
 /**

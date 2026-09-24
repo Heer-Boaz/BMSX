@@ -1,3 +1,4 @@
+import type { GameImageCapture } from '../../../../hosts/common/image';
 import type { AssistantAccount, AssistantCommand, AssistantConnection, AssistantConnectionFactory, AssistantEvent, AssistantHistoryPage,
 	AssistantQueuedMessage, AssistantReviewUpdate, AssistantThread, AssistantTranscriptPage } from '../../../../hosts/common/assistant_protocol';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
@@ -53,6 +54,7 @@ export class AssistantConversation {
 	public constructor(private readonly models: EditorTextModelService, private readonly sources: RuntimeSourceState,
 		private readonly storage: KeyValueStorage, private readonly diagnostics: ResourceDiagnosticsService,
 		private readonly testResults: ScenarioResultService, private readonly runtimeInspection: RuntimeInspectionService,
+		private readonly gameCapture: GameImageCapture,
 		private readonly openConnection?: AssistantConnectionFactory) {
 		this.unbindWorkspace = models.onWillClear(() => this.clearConversation());
 	}
@@ -110,7 +112,7 @@ export class AssistantConversation {
 	private createTurn(): ActiveTurn {
 		return { tools: new WorkspaceSourceTools(this.models, this.sources, this.storage, this.diagnostics, this.sourceLifetime!.signal),
 			tests: new WorkspaceTestTools(this.testResults, this.sourceLifetime!.signal),
-			runtime: new WorkspaceRuntimeTools(this.runtimeInspection, this.sourceLifetime!.signal), requests: new Set(), messages: new Map() };
+			runtime: new WorkspaceRuntimeTools(this.runtimeInspection, this.gameCapture, this.sourceLifetime!.signal), requests: new Set(), messages: new Map() };
 	}
 
 	/** One explicit submission. Native Codex owns FIFO dispatch; no retries or client dequeue loop. */
@@ -323,7 +325,7 @@ export class AssistantConversation {
 	private async executeTool(event: Extract<AssistantEvent, { type: 'tool-request' }>): Promise<void> {
 		const turn = this.turn!, connection = this.connection!;
 		turn.requests.add(event.requestId);
-		let text: string, success = true;
+		let text: string, success = true, images: readonly string[] | undefined;
 		try {
 			const result = await (STUDIO_RUNTIME_TOOLS.some(tool => tool.name === event.name) ? turn.runtime.execute(event.name, event.arguments)
 				: event.name === 'studio_list_test_runs' || event.name === 'studio_read_test_run' || event.name === 'studio_read_test_result'
@@ -337,9 +339,10 @@ export class AssistantConversation {
 				this.append('proposal', result.proposal.title, result.proposal);
 			}
 			text = JSON.stringify(result.data);
+			if (result.kind === 'image') images = result.images;
 		} catch (error) { success = false; text = String(error); }
 		if (this.turn !== turn || !turn.requests.delete(event.requestId)) return;
-		try { await connection.send({ type: 'tool-result', requestId: event.requestId, success, text }); }
+		try { await connection.send({ type: 'tool-result', requestId: event.requestId, success, text, images }); }
 		catch (error) { if (this.turn === turn) this.append('status', `Tool reply failed: ${String(error)}`); }
 	}
 	private finishTurn(): void {

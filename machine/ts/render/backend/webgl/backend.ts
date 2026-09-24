@@ -204,6 +204,27 @@ export class WebGLBackend implements GPUBackend {
 		gl.bindFramebuffer(gl.FRAMEBUFFER, prevFbo);
 	}
 
+	async readColorTexture(handle: WebGLTexture, width: number, height: number): Promise<Uint8Array<ArrayBuffer>> {
+		const gl = this.gl;
+		const pixels = new Uint8Array(width * height * 4);
+		const previous = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
+		gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.readbackFbo);
+		gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, handle, 0);
+		gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+		gl.bindFramebuffer(gl.READ_FRAMEBUFFER, previous);
+		const stride = width * 4;
+		for (let y = 0; y < (height >>> 1); y += 1) {
+			const top = y * stride;
+			const bottom = (height - y - 1) * stride;
+			for (let x = 0; x < stride; x += 1) {
+				const value = pixels[top + x];
+				pixels[top + x] = pixels[bottom + x];
+				pixels[bottom + x] = value;
+			}
+		}
+		return pixels;
+	}
+
 	createSolidTexture2D(width: number, height: number, color: number, desc: TextureParams): WebGLTexture {
 		const gl = this.gl;
 		const tex = gl.createTexture()!;

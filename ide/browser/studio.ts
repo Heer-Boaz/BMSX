@@ -1,3 +1,4 @@
+import { encodePngImage } from '../../hosts/browser/image';
 import { AssistantHttpConnection } from './assistant_connection';
 import { StudioHttpSession } from './http_session';
 import { BrowserGraphLayoutEngine } from './graph_layout';
@@ -81,6 +82,8 @@ async function startBrowserStudio(): Promise<void> {
 			options.cartridgeSlots,
 			runtime,
 			presenter,
+			presentation,
+			encodePngImage,
 			options.videoOutput,
 			options.input,
 			audioOutput,

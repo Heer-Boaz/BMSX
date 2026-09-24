@@ -7,7 +7,7 @@ import { CodexStdio, type CodexProcessExit } from './stdio';
 import { STUDIO_ACCOUNT_LOGIN_URL, type AssistantHistoryPage, type AssistantTranscriptPage, type AssistantReviewUpdate, type AssistantThread } from '../../common/assistant_protocol';
 import { CodexHistory } from './history';
 import { codexMessageInput, type CodexTextInput } from './input';
-import { CodexAdmissionError, CodexProtocolError, type CodexAccount, type CodexSessionEvent,
+import { CodexAdmissionError, CodexProtocolError, type Json, type CodexAccount, type CodexSessionEvent,
 	type CodexLogin, type CodexTool, type CodexToolCall, type CodexToolResult, type CodexTurn, type RpcId, type RpcMessage } from './protocol';
 
 type LoginCompletion = { loginId: string; success: boolean; error: string | null };
@@ -357,7 +357,9 @@ export class CodexSession {
 		try { result = await this.options.executeTool(call, turn.controller.signal); }
 		catch (error) { result = { success: false, text: String(error) }; }
 		if (this.retired || this.active !== turn || !turn.calls.delete(id)) return;
-		this.rpc.send({ id, result: { success: result.success, contentItems: [{ type: 'inputText', text: result.text }] } });
+		const contentItems: Json[] = [{ type: 'inputText', text: result.text }];
+		if (result.images !== undefined) for (const imageUrl of result.images) contentItems.push({ type: 'inputImage', imageUrl });
+		this.rpc.send({ id, result: { success: result.success, contentItems } });
 	}
 
 	private retireTurn(turn: TurnLifetime): void {

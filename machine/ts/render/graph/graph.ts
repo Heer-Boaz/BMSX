@@ -15,6 +15,7 @@ import type {
 	TextureHandle,
 } from '../backend/backend';
 import type { GxGpuDeviceOutput } from '../../machine/devices/gx/device_output';
+import type { RgbaImage } from '../image';
 
 // Internal graph texture handle, distinct from backend TextureHandle.
 export type RGTexHandle = number;
@@ -86,6 +87,11 @@ interface InternalTexResource {
 // Using unified GPUBackend abstraction (WebGLBackend) from backend/backend.ts
 
 export class RenderGraphRuntime {
+	async captureColorTexture(handle: RGTexHandle): Promise<RgbaImage> {
+		const { tex, desc: { width, height } } = this.texResources[handle];
+		return { width, height, pixels: await this.backend.readColorTexture(tex, width, height) };
+	}
+
 	public backend: GPUBackend;
 	private passes: RenderPass<unknown>[] = [];
 	private compiled = false;

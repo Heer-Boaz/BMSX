@@ -12,6 +12,8 @@
 #include "render/post/device_quantize/mode.h"
 #include "render/host_overlay/overlay_queue.h"
 #include "render/video_output.h"
+#include "render/image.h"
+#include <optional>
 #include <array>
 #include <memory>
 #include <unordered_map>
@@ -62,6 +64,8 @@ public:
 	void clearTextures();
 	void initializeDefaultTextures();
 	void present(const GxGpuDeviceOutput& output, f64 timeSeconds, f64 deltaSeconds);
+	RgbaImage captureGameFrame();
+	std::optional<u32> gameFrameSequence() const { return m_committedSequence; }
 	void configurePresentation(PresentationMode mode, bool commitFrame);
 	u8 presentationHistoryDestinationIndex() const { return presentationHistorySourceIndex == 0 ? 1 : 0; }
 
@@ -131,6 +135,7 @@ private:
 
 	// Frame timing
 	u32 m_renderFrameIndex = 0u;
+	std::optional<u32> m_committedSequence;
 };
 
 } // namespace bmsx

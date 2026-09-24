@@ -513,6 +513,12 @@ TextureHandle RenderGraphRuntime::getTexture(RenderGraphTexHandle handle) const 
 	return m_texResources[handle].tex;
 }
 
+RgbaImage RenderGraphRuntime::captureHistoryTexture(u8 index) {
+	const auto& resource = m_texResources[index == 0 ? m_frameHistoryAHandle : m_frameHistoryBHandle];
+	const auto& desc = resource.desc;
+	return {desc.width, desc.height, m_backend->readColorTexture(resource.tex, desc.width, desc.height)};
+}
+
 void* RenderGraphRuntime::getFBO(RenderGraphTexHandle color, RenderGraphTexHandle depth) {
 	if (depth < 0) {
 		return m_texResources[color].fboColorOnly;

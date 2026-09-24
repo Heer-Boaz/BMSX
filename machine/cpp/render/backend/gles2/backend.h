@@ -59,6 +59,7 @@ public:
 	~OpenGLES2Backend() override;
 
 	BackendType type() const override { return BackendType::OpenGLES2; }
+	std::vector<u8> readColorTexture(TextureHandle handle, i32 width, i32 height) override;
 
 	TextureHandle createTexture(const u8* data, i32 width, i32 height, const TextureParams& params) override;
 	void updateTexture(TextureHandle handle, const u8* data, i32 width, i32 height, const TextureParams& params) override;

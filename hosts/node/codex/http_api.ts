@@ -75,7 +75,7 @@ export class CodexHttpApi {
 					const tool = connection.tools.get(command.requestId);
 					if (!tool) { response.writeHead(409).end('Tool request has retired or was already answered'); return; }
 					connection.tools.delete(command.requestId); tool.detach();
-					tool.resolve({ success: command.success, text: command.text });
+					tool.resolve({ success: command.success, text: command.text, images: command.images });
 					break;
 				}
 				default: response.writeHead(400).end('Unknown Studio operation'); return;

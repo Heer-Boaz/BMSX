@@ -2,7 +2,7 @@ import { StudioToolInputError, toolArguments } from './tool_input';
 
 export type RuntimeToolRequest =
 	| { name: 'studio_runtime_status' }
-	| { name: 'studio_pause_runtime' | 'studio_inspect_runtime'; target: string }
+	| { name: 'studio_pause_runtime' | 'studio_inspect_runtime' | 'studio_capture_game'; target: string }
 	| { name: 'studio_read_runtime_values'; reference: string; start: number; count: number };
 const NO_FIELDS: string[] = [];
 const TARGET_FIELDS = ['target'];
@@ -10,6 +10,7 @@ const VALUES_FIELDS = ['reference', 'start', 'count'];
 const TARGET_SCHEMA = { type: 'object', properties: { target: { type: 'string' } }, required: TARGET_FIELDS, additionalProperties: false };
 
 export const STUDIO_RUNTIME_TOOLS = [
+	{ name: 'studio_capture_game', description: 'See the retained completed game frame of a paused, idle authoring target as an image. Native scanout size, after device quantization and before CRT/IDE overlays. Returns frame-publication cycles/video tick separately from the current machine observation: the last completed image can precede the stopped CPU. Does not run the guest, refresh the frame or capture the chat UI. Use on demand, not polling.', inputSchema: TARGET_SCHEMA },
 	{ name: 'studio_runtime_status', description: 'Read the actual Studio authoring target identity, machine cycles/video tick and execution/inspection availability. No screenshot, guest execution or test-target attachment. Use on demand, not polling.',
 		inputSchema: { type: 'object', properties: {}, required: NO_FIELDS, additionalProperties: false } },
 	{ name: 'studio_pause_runtime', description: 'Pause the listed authoring target without changing guest state or other pause reasons. Leaves it user-paused after the conversation. Refuses an active machine operation; does not interrupt Lua or rewind.', inputSchema: TARGET_SCHEMA },
@@ -22,6 +23,7 @@ export function decodeRuntimeToolRequest(name: string, input: unknown): RuntimeT
 	switch (name) {
 		case 'studio_runtime_status': toolArguments(input, NO_FIELDS); return { name };
 		case 'studio_pause_runtime':
+		case 'studio_capture_game':
 		case 'studio_inspect_runtime': {
 			const value = toolArguments(input, TARGET_FIELDS);
 			if (typeof value.target !== 'string') throw new StudioToolInputError('target must be the listed Studio runtime handle');

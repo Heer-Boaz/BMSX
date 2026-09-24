@@ -26,6 +26,7 @@ interface RegisteredPassRec {
 }
 
 export class RenderPassLibrary {
+	readonly frameHistoryHandles: [number, number] = [0, 0];
 	private passes: RenderPassDef[] = []; // Mutable list for ordering/scheduling
 	private passEnabled = new Map<string, boolean>();
 	private registered = new Map<string, RegisteredPassRec>();
@@ -197,6 +198,8 @@ export class RenderPassLibrary {
 				frameDepthHandle = depth;
 				frameHistoryAHandle = historyA;
 				frameHistoryBHandle = historyB;
+				this.frameHistoryHandles[0] = historyA;
+				this.frameHistoryHandles[1] = historyB;
 				return null;
 			},
 			execute: () => { },

@@ -1,3 +1,4 @@
+import { encodePngImage } from '../../../hosts/browser/image';
 import type { AssistantConnectionFactory } from '../../../hosts/common/assistant_protocol';
 import { HttpWorkspaceRecordProvider } from '../../../ide/browser/workspace_records';
 import { stripProjectRootPrefix } from '../../../ide/workspace/path';
@@ -82,7 +83,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const session = new HostFrameSession(runtime.timing.ufpsScaled, clock.now(), rewind, execution);
 	const menu = new HostOverlayMenu(presenter, runtime, input, rewind, execution);
 	const clipboard = new BrowserClipboard();
-	const ide = await prepareWorkbenchRuntime(bios, [cart, null], runtime, presenter, display, input,
+	const ide = await prepareWorkbenchRuntime(bios, [cart, null], runtime, presenter, screen, encodePngImage, display, input,
 		audio, tasks, execution, rewind, menu, localStorage, new HttpWorkspaceRecordProvider(), clock, clipboard, new IdeMicrotaskQueue(), log, 0.3, () => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')), connectAssistant);
 	const output = new SystemOutputLog();
 	const harness = createHeadlessIdeHarness(ide, runtime, audio, log);

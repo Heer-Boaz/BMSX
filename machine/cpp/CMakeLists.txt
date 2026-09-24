@@ -665,6 +665,9 @@ if(BMSX_BUILD_TESTS)
 		)
 		target_link_libraries(bmsx_host_overlay_gles2_tests PRIVATE bmsx_host_support PkgConfig::EGL)
 		add_test(NAME bmsx_host_overlay_gles2_tests COMMAND bmsx_host_overlay_gles2_tests)
+		add_executable(bmsx_game_capture_tests ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/game_capture_test.cpp)
+		target_link_libraries(bmsx_game_capture_tests PRIVATE bmsx_host_support PkgConfig::EGL)
+		add_test(NAME bmsx_game_capture_tests COMMAND bmsx_game_capture_tests)
 	endif()
 
 	add_executable(bmsx_glyph_runs_tests

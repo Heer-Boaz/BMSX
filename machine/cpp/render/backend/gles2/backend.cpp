@@ -14,6 +14,7 @@
 #include "spec/gx/vram.h"
 
 #include <array>
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstdio>
@@ -109,6 +110,26 @@ bool hasExtensionToken(const char* extensions, const char* needle) {
 }  // namespace
 
 namespace bmsx {
+
+std::vector<u8> OpenGLES2Backend::readColorTexture(TextureHandle handle, i32 width, i32 height) {
+	std::vector<u8> pixels(static_cast<size_t>(width) * height * 4u);
+	GLint previous;
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previous);
+	GLuint fbo;
+	glGenFramebuffers(1, &fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, static_cast<GLES2Texture*>(handle)->id, 0);
+	glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+	glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previous));
+	glDeleteFramebuffers(1, &fbo);
+	const size_t stride = static_cast<size_t>(width) * 4u;
+	for (i32 y = 0; y < height / 2; ++y) {
+		auto top = pixels.begin() + y * stride;
+		auto bottom = pixels.begin() + (height - y - 1) * stride;
+		std::swap_ranges(top, top + stride, bottom);
+	}
+	return pixels;
+}
 
 void applyGLES2TextureParams(const TextureParams& params) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, static_cast<GLint>(params.minFilter));

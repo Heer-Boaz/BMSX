@@ -13,6 +13,8 @@ export type AssistantHistoryEntry = { kind: 'user' | 'assistant' | 'status'; tex
 export type AssistantTranscriptPage = { thread: AssistantThread; entries: AssistantHistoryEntry[]; nextCursor: string | null };
 export type AssistantQueuedMessage = { id: string; text: string };
 export type AssistantReply = { turnId: string } | AssistantHistoryPage | AssistantTranscriptPage;
+/** Encoded host images are attachments, never JSON/base64 embedded in tool prose. */
+export type AssistantToolResult = { success: boolean; text: string; images?: readonly string[] };
 export type AssistantCommand =
 	| { type: 'start'; prompt: string; reviews: readonly AssistantReviewUpdate[] }
 	| { type: 'steer'; turnId: string; prompt: string; reviews: readonly AssistantReviewUpdate[] }
@@ -26,7 +28,7 @@ export type AssistantCommand =
 	| { type: 'new' }
 	| { type: 'interrupt' }
 	| { type: 'login-start' | 'login-cancel' | 'sign-out' }
-	| { type: 'tool-result'; requestId: string; success: boolean; text: string };
+	| ({ type: 'tool-result'; requestId: string } & AssistantToolResult);
 export type AssistantEvent =
 	| { type: 'connected'; lease: string; account: AssistantAccount }
 	| { type: 'thread'; thread: AssistantThread }

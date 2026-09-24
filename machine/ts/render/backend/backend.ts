@@ -53,9 +53,9 @@ export type TextureSource = {
  *   and ownership: BackendType, FrameStats, SoftwareTexture,
  *   SoftwareBackend, readyForTextureUpload(), and native render-target
  *   activation for the C++ render graph.
- * - TS synchronous texture readback is concrete-backend owned; headless keeps
- *   readTextureRegion for capture workflows, while WebGPU cannot expose that
- *   synchronous contract.
+ * - readColorTexture emits owned top-down RGBA8 on both sides, without gamma
+ *   conversion. TS returns a Promise for WebGPU mapping; native software/GLES2
+ *   readback is synchronous. Concrete TS sync backends also offer region reads.
  */
 
 export type TextureFormat = 'rgba8unorm' | 'bgra8unorm' | 'rgb8unorm' | 'depth24plus' | 'depth32float' | string | number;
@@ -219,6 +219,8 @@ export interface GPUBackend {
 	uploadCubemapFace(cubemap: TextureHandle, face: number, src: TextureSource): void;
 	destroyTexture(handle: TextureHandle): void;
 	createColorTexture(desc: { width: number; height: number; format?: TextureFormat; initialClearColor?: vec4arr }): TextureHandle;
+	/** Read an owned, top-down RGBA8 copy without a color-space conversion. */
+	readColorTexture(handle: TextureHandle, width: number, height: number): Promise<Uint8Array<ArrayBuffer>>;
 	createDepthTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
 	createRenderTarget(color?: TextureHandle, depth?: TextureHandle): RenderTargetHandle;
 	destroyRenderTarget(handle: RenderTargetHandle): void;

@@ -41,9 +41,9 @@
  *   ownership: BackendType, FrameStats, SoftwareTexture, SoftwareBackend,
  *   readyForTextureUpload(), and native render-target
  *   activation for the C++ render graph.
- * - C++ keeps synchronous readTextureRegion on GPUBackend because native
- *   software/GLES2 readback is synchronous; TS keeps synchronous readback on
- *   concrete sync backends instead of the WebGPU-capable common interface.
+ * - readColorTexture emits owned top-down RGBA8 on both sides, without gamma
+ *   conversion. TS returns a Promise for WebGPU mapping; native software/GLES2
+ *   readback is synchronous. Concrete TS sync backends also offer region reads.
  */
 
 #ifndef BMSX_BACKEND_H
@@ -178,6 +178,7 @@ public:
 	virtual TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params) = 0;
 	virtual void destroyTexture(TextureHandle handle) = 0;
 	virtual TextureHandle createColorTexture(i32 width, i32 height, const std::array<f32, 4>* initialClearColor) = 0;
+	virtual std::vector<u8> readColorTexture(TextureHandle handle, i32 width, i32 height) = 0;
 	virtual TextureHandle createDepthTexture(i32 width, i32 height) = 0;
 	virtual void destroyDepthTexture(TextureHandle handle) = 0;
 	virtual void* createRenderTarget(TextureHandle color, TextureHandle depth) = 0;
@@ -256,6 +257,7 @@ public:
 	TextureHandle createSolidTexture2D(i32 width, i32 height, u32 color, const TextureParams& params) override;
 	void destroyTexture(TextureHandle handle) override;
 	TextureHandle createColorTexture(i32 width, i32 height, const std::array<f32, 4>* initialClearColor) override;
+	std::vector<u8> readColorTexture(TextureHandle handle, i32 width, i32 height) override;
 	TextureHandle createDepthTexture(i32 width, i32 height) override;
 	void destroyDepthTexture(TextureHandle handle) override;
 	void* createRenderTarget(TextureHandle color, TextureHandle depth) override;

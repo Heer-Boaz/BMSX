@@ -1,4 +1,4 @@
-import type { AssistantQueuedMessage, AssistantThread } from '../../common/assistant_protocol';
+import type { AssistantQueuedMessage, AssistantThread, AssistantToolResult } from '../../common/assistant_protocol';
 
 /** The small subset of the pinned external protocol that the Studio process owner consumes. */
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -38,7 +38,7 @@ export function parseRpcMessage(line: string): RpcMessage {
 
 export type CodexTool = { name: string; description: string; inputSchema: Json };
 export type CodexToolCall = { threadId: string; turnId: string; callId: string; namespace: string | null; tool: string; arguments: Json };
-export type CodexToolResult = { success: boolean; text: string };
+export type CodexToolResult = AssistantToolResult;
 export type CodexTurn = { id: string; status: 'inProgress' | 'completed' | 'interrupted' | 'failed'; error: { message: string } | null };
 export type CodexAccount = { account: { type: string; email?: string; planType?: string } | null; requiresOpenaiAuth: boolean };
 export type CodexLogin = { type: 'chatgptDeviceCode'; loginId: string; verificationUrl: string; userCode: string };

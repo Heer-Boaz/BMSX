@@ -12,6 +12,7 @@ import {
 } from './video_output';
 import type { GxGpuDeviceOutput } from '../machine/devices/gx/device_output';
 import { HostOverlayQueue } from './host_overlay/overlay_queue';
+import type { RgbaImage } from './image';
 
 export class VideoPresenter {
 	public accessor default_font: BFont;
@@ -48,6 +49,7 @@ export class VideoPresenter {
 	private _deviceQuantizeMode = DeviceQuantizeMode.None;
 	private _deviceQuantizeConfigurationRevision = 0;
 	private fixedRenderTargetSize = false;
+	private committedSequence: number | undefined;
 
 	constructor(private readonly output: VideoOutput, backend: GPUBackend, viewportWidth: number, viewportHeight: number) {
 		this.backend = backend;
@@ -77,6 +79,13 @@ export class VideoPresenter {
 
 	public get presentationSequence(): number {
 		return this.frame.frameIndex;
+	}
+
+	public get gameFrameSequence(): number | undefined { return this.committedSequence; }
+
+	public captureGameFrame(): Promise<RgbaImage> {
+		if (this.committedSequence === undefined) throw new Error('No completed game frame is available.');
+		return this.renderGraph.captureColorTexture(this.pipelineRegistry.frameHistoryHandles[this.presentationHistorySourceIndex]);
 	}
 
 	public initialize(pipelineRegistry: RenderPassLibrary): void {
@@ -174,6 +183,7 @@ export class VideoPresenter {
 	}
 
 	private resetPresentationHistory(): void {
+		this.committedSequence = undefined;
 		this.presentationMode = 'completed';
 		this.commitPresentationFrame = false;
 		this.presentationHistorySourceIndex = 0;
@@ -184,5 +194,6 @@ export class VideoPresenter {
 			return;
 		}
 		this.presentationHistorySourceIndex = this.presentationHistoryDestinationIndex;
+		this.committedSequence = this.frame.frameIndex;
 	}
 }

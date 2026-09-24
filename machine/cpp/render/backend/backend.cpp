@@ -128,6 +128,12 @@ static void readSoftwareTextureRegionPixels(const SoftwareTexture& texture, u8* 
 	}
 }
 
+std::vector<u8> SoftwareBackend::readColorTexture(TextureHandle handle, i32 width, i32 height) {
+	std::vector<u8> pixels(static_cast<size_t>(width) * height * 4u);
+	readSoftwareTextureRegionPixels<false>(*static_cast<SoftwareTexture*>(handle), pixels.data(), width, height, 0, 0, nullptr);
+	return pixels;
+}
+
 /* ============================================================================
  * SoftwareBackend implementation
  * ============================================================================ */

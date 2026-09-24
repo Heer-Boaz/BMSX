@@ -14,6 +14,8 @@ type RenderPresentation = {
 };
 
 export class RenderPresentationState {
+	/** Machine position when a completed image was published, not each held UI repaint. */
+	public readonly gameFrame = { presentationSequence: undefined as number | undefined, cycles: 0, videoTick: 0 };
 	private pendingPresentation = false;
 	private restoredPresentationPending = false;
 	private presentationMode: RenderPresentationMode = 'completed';
@@ -52,6 +54,9 @@ export class RenderPresentationState {
 		presenter.configurePresentation(mode, commitFrame);
 		presenter.present(output, currentTimeMs / 1000, hostDeltaMs / 1000);
 		if (commitFrame) {
+			this.gameFrame.presentationSequence = presenter.gameFrameSequence;
+			this.gameFrame.cycles = runtime.machine.scheduler.currentNowCycles();
+			this.gameFrame.videoTick = runtime.frameScheduler.lastTickSequence;
 			runtime.machine.gxGpu.retirePresentedCommands();
 		}
 	}
@@ -92,6 +97,7 @@ export class RenderPresentationState {
 	}
 
 	public reset(presenter: VideoPresenter, runtime: Runtime): void {
+		this.gameFrame.presentationSequence = undefined;
 		this.restoredPresentationPending = false;
 		this.clearPresentation();
 		this.pcrtcScanoutRevision = 0;
