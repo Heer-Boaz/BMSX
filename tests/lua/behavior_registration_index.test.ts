@@ -66,8 +66,8 @@ test('API-provider edits and Undo update the catalogue and open documents withou
 	t.after(() => { clearCodeEditorInputs(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); });
 	const main = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path: 'actors.lua' })!, 'lua', source);
 	const provider = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path: 'bridge.lua' })!, 'lua', bridge);
-	const index = new BehaviorRegistrationIndex(sources);
-	const documents = new BehaviorSourceDocuments(sources);
+	const index = new BehaviorRegistrationIndex(editorTextModelService, sources);
+	const documents = new BehaviorSourceDocuments(editorTextModelService, sources);
 	assert.deepEqual(index.getRegistrations(0).map(entry => entry.label), ['FSM one', 'FSM two']);
 	const document = documents.get(main);
 	assert.equal(document.definitions.length, 2);
@@ -112,7 +112,7 @@ test('behavior picks preserve registration occurrences, kinds, domains and unres
 		editorTextModelService.clear();
 		resetSemanticProjects(editorTextModelService);
 	});
-	const index = new BehaviorRegistrationIndex(sources);
+	const index = new BehaviorRegistrationIndex(editorTextModelService, sources);
 	const registrations = index.getRegistrations(0);
 	const definitionKeys = buildBehaviorSourceDocument({ domain: 0, path }, semanticSnapshot(buildLuaFileSemanticData(source, path)))
 		.definitions.map(node => node.rowKey);
@@ -183,7 +183,7 @@ test('behavior registration index resolves separate FSM ids in the same Lua docu
 		editorTextModelService.clear();
 		resetSemanticProjects(editorTextModelService);
 	});
-	const index = new BehaviorRegistrationIndex(sources);
+	const index = new BehaviorRegistrationIndex(editorTextModelService, sources);
 	const player = index.resolve(0, 'state_machine', 'player');
 	const enemy = index.resolve(0, 'state_machine', 'enemy');
 	assert.equal(player.length, 1);
@@ -217,7 +217,7 @@ test('kind-specific behavior picks select producer kinds, not names, files or qu
 		editorTextModelService.clear();
 		resetSemanticProjects(editorTextModelService);
 	});
-	const index = new BehaviorRegistrationIndex(sources);
+	const index = new BehaviorRegistrationIndex(editorTextModelService, sources);
 	const all = buildBehaviorQuickPickItems(sources, index);
 	assert.equal(all.length, 5);
 	for (const kind of ['action_effect', 'state_machine', 'behavior_tree'] as const) {
@@ -267,7 +267,7 @@ test('behavior registration index isolates domains and rebuilds on an authored d
 		editorTextModelService.clear();
 		resetSemanticProjects(editorTextModelService);
 	});
-	const index = new BehaviorRegistrationIndex(sources);
+	const index = new BehaviorRegistrationIndex(editorTextModelService, sources);
 	const slot0Initial = index.resolve(0, 'action_effect', 'shared');
 	const slot1Initial = index.resolve(1, 'action_effect', 'shared');
 	assert.equal(slot0Initial.length, 1);
@@ -314,7 +314,7 @@ test('definition views share one lazy source generation and immutable FSM index 
 		[sourceRegistry('carts/fixture', [luaSource(path, source)]), null], 0);
 	t.after(() => { editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); });
 	const model = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path })!, 'lua', source);
-	const documents = new BehaviorSourceDocuments(sources);
+	const documents = new BehaviorSourceDocuments(editorTextModelService, sources);
 	const first = documents.get(model);
 	const fsm = indexStateMachineSource(first);
 	const positions = BehaviorSourceIndex.acquire(first, model, assert.fail);
@@ -353,7 +353,7 @@ test('an added module export refreshes cached behavior ids and topology without 
 	const main = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path })!, 'lua', source);
 	const id = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path: 'id.lua' })!, 'lua', initial);
 	const provider = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path: 'definition.lua' })!, 'lua', initial);
-	const documents = new BehaviorSourceDocuments(sources), index = new BehaviorRegistrationIndex(sources);
+	const documents = new BehaviorSourceDocuments(editorTextModelService, sources), index = new BehaviorRegistrationIndex(editorTextModelService, sources);
 	const before = documents.get(main);
 	assert.equal(before.definitions[0].resolution, 'unresolved');
 	assert.equal(index.getRegistrations(0)[0].semanticId, null);

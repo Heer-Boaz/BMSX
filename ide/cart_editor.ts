@@ -119,7 +119,7 @@ import { IdeCommandController } from './commands/controller';
 import { initializeNavigationState } from './navigation/navigation_history';
 import { EditorNavigationController } from './workbench/contrib/resources/navigation';
 import { BehaviorLensController } from './workbench/contrib/behavior_lens/controller';
-import { BehaviorRegistrationIndex } from './workbench/contrib/behavior_lens/registration_index';
+import { BehaviorSourceDocuments } from './workbench/contrib/behavior_lens/source_documents';
 import { ScenarioLabController } from './workbench/contrib/scenario_lab/controller';
 import type { ScenarioRunService } from './workbench/services/testing/scenario_runs';
 import type { TextFileSaveService } from './workbench/services/working_copy/text_file_save';
@@ -285,7 +285,8 @@ export class RuntimeCartEditor implements CartEditor {
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
 		connectAssistant?: AssistantConnectionFactory,
 	) {
-		this.assistant = new AssistantConversation(editorTextModelService, sources, storage, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, terminal, debuggerExecution, connectAssistant);
+		const behaviorSources = new BehaviorSourceDocuments(editorTextModelService, sources);
+		this.assistant = new AssistantConversation(editorTextModelService, sources, storage, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, terminal, debuggerExecution, behaviorSources, connectAssistant);
 		this.runtime = runtime;
 		this.presenter = presenter;
 		this.display = display;
@@ -369,13 +370,13 @@ export class RuntimeCartEditor implements CartEditor {
 				error => { this.actorLab.didFinishCall(false, observer); this.handleRuntimeTaskError(error, 'Actor operation failed'); }); },
 			() => runtimeTasks.mutationReady && !execution.launchPending && !debuggerState.plans.mutationActive && !rewind.active);
 
-		const behaviorRegistrations = new BehaviorRegistrationIndex(this.sources);
+		const behaviorRegistrations = behaviorSources.registrations;
 		this.behaviorLens = new BehaviorLensController(
 			this.sources,
 			this.navigation,
 			this.editorPanes,
 			this.quickInput,
-			behaviorRegistrations,
+			behaviorSources,
 			createGraphLayoutEngine,
 			luaTooling.suspendedGuest,
 		);

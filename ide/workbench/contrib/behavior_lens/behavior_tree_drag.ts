@@ -2,7 +2,7 @@ import { create_rect_bounds, write_rect_bounds } from '../../../../machine/ts/co
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { WorkbenchGraphNodeDragFeedback, WorkbenchGraphDragSession } from '../../ui/graph/drag';
 import type { WorkbenchGraphViewport } from '../../ui/graph/viewport';
-import { behaviorTreeEditTarget, moveBehaviorTreeChild } from './behavior_tree_edit';
+import { behaviorTreeEditTarget, createBehaviorTreeChildMoveEdits } from './behavior_tree_edit';
 import type { BehaviorTreeSourceList } from './behavior_tree_model';
 import { BehaviorTreeTransferAnalysis, type BehaviorTreeTransferCheck } from './behavior_tree_transfer';
 import type { BehaviorGraphModel, BehaviorGraphNode } from './graph_model';
@@ -91,7 +91,7 @@ class BehaviorTreeDrag implements WorkbenchGraphDragSession {
 
 	public drop(): void {
 		const member = this.analysis.member;
-		if (this.check === undefined) moveBehaviorTreeChild(this.model, member, this.insertion > member.index ? this.insertion - 1 : this.insertion);
+		if (this.check === undefined) this.model.pushEditOperations(createBehaviorTreeChildMoveEdits(this.model.buffer, member, this.insertion > member.index ? this.insertion - 1 : this.insertion));
 		else this.transfer(this.analysis, this.insertion, this.check);
 	}
 }

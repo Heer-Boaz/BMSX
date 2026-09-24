@@ -17,6 +17,7 @@ import type { RuntimeInspectionService } from '../../../runtime/inspection';
 import { WorkspaceRuntimeTools } from './runtime_tools';
 import { STUDIO_RUNTIME_TOOLS } from './runtime_tool_protocol';
 import type { LuaTerminalSession } from '../terminal/session';
+import type { BehaviorSourceDocuments } from '../../contrib/behavior_lens/source_documents';
 
 export type AssistantState = 'disconnected' | 'connecting' | 'loading' | 'starting' | 'ready' | 'running' | 'stopping' | 'signing-in' | 'cancelling-sign-in' | 'signing-out';
 export type AssistantEntry = {
@@ -62,6 +63,7 @@ export class AssistantConversation {
 		private readonly gameCapture: GameImageCapture,
 		private readonly terminal: LuaTerminalSession,
 		private readonly debuggerExecution: RuntimeDebuggerExecution,
+		private readonly behaviorSources: BehaviorSourceDocuments,
 		private readonly openConnection?: AssistantConnectionFactory) {
 		this.unbindWorkspace = models.onWillClear(() => this.clearConversation());
 	}
@@ -117,7 +119,7 @@ export class AssistantConversation {
 	}
 
 	private createTurn(): ActiveTurn {
-		return { tools: new WorkspaceSourceTools(this.models, this.sources, this.storage, this.diagnostics, this.sourceLifetime!.signal),
+		return { tools: new WorkspaceSourceTools(this.models, this.sources, this.storage, this.diagnostics, this.sourceLifetime!.signal, this.behaviorSources),
 			tests: new WorkspaceTestTools(this.testRuns, this.sourceLifetime!.signal),
 			runtime: new WorkspaceRuntimeTools(this.runtimeInspection, this.frameNavigation, this.gameCapture, this.terminal, this.debuggerExecution, this.sourceLifetime!.signal), requests: new Map(), messages: new Map() };
 	}

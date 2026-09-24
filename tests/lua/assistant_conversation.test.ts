@@ -1,3 +1,4 @@
+import { BehaviorSourceDocuments } from '../../ide/workbench/contrib/behavior_lens/source_documents';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { setImmediate } from 'node:timers/promises';
@@ -54,7 +55,7 @@ function fixture(t: TestContext, waitForConnection?: (connection: Connection) =>
 	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
 	const testRuns = new ScenarioRunService(models, sources, tooling, storage, new Map(), runtime.model, () => assert.fail('this fixture cannot create test targets'));
 	const testResults = testRuns.results;
-	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testRuns, inspection, frameNavigation, gameCapture, terminal, debuggerExecution, async (_signal, emit) => {
+	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testRuns, inspection, frameNavigation, gameCapture, terminal, debuggerExecution, new BehaviorSourceDocuments(models, sources), async (_signal, emit) => {
 		const connection = new Connection(emit); connections.push(connection);
 		await waitForConnection?.(connection);
 		return connection;

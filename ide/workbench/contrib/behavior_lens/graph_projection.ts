@@ -7,6 +7,7 @@ import type { BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorGraphDetail, BehaviorGraphProjection, BehaviorGraphNode } from './graph_model';
 import { appendBehaviorGraphFields, appendBehaviorGraphSourceDetails } from './graph_details';
 import { describeExpression, SourceTableIssue } from './source';
+import { indexBehaviorTreeMembers } from './behavior_tree_index';
 
 /** Cold projection from typed source relationships. No label parsing or execution inference. */
 export function projectBehaviorTreeGraph(
@@ -67,6 +68,7 @@ export function projectBehaviorTreeGraph(
 	}
 
 	if (definition !== null) {
+		const members = indexBehaviorTreeMembers(definition);
 		const details: BehaviorGraphDetail[] = [];
 		if (definition.blackboard !== null) appendBehaviorGraphSourceDetails(details, definition.blackboard, 'BLACKBOARD');
 		const root = card(definition, definition.label + (definition.root === null ? '\n? NO STATIC ROOT' : ''), null,
@@ -90,12 +92,12 @@ export function projectBehaviorTreeGraph(
 					for (let index = 0; index < branch.entries.length; index += 1) {
 						const entry = branch.entries[index];
 						behavior(entry.node, node, '', entry.file.chunk.locations.range(entry.field.value.span), [], entry.node,
-							{ file: branch.source.file, table: branch.source.table, branch, index });
+							members.get(entry.node.rowKey)!);
 					}
 				} else {
 					for (let index = 0; index < branch.entries.length; index += 1) {
 						const entry = branch.entries[index];
-						const member = { file: branch.source.file, table: branch.source.table, branch, index };
+						const member = members.get(entry.node.rowKey)!;
 						const choice = entry.node;
 						if (choice.kind === 'dynamic') {
 							behavior(choice, node, 'CHOICE', entry.file.chunk.locations.range(entry.field.value.span), [], choice, member);

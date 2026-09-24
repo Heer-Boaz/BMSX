@@ -1,6 +1,7 @@
 import { LuaSyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import { quoteLuaString } from '../../../../toolchain/ts/lua/syntax/string_literal';
-import type { EditorTextModel } from '../../../editor/model/text_model';
+import type { EditorTextEdit } from '../../../editor/model/text_model';
+import type { TextBuffer } from '../../../editor/text/text_buffer';
 import { createLuaStringValueEdit, type LuaScalarLiteral } from '../../../language/lua/source_edits';
 import { createLuaTableFieldInsertionEdits } from '../../../language/lua/table_field_insertion';
 import type { BehaviorSourceRowKey } from './model';
@@ -44,9 +45,8 @@ export function stateMachineInitialTarget(view: BehaviorLensViewState): StateMac
 	return selected?.kind === 'node' && selected.role === 'source' ? view.stateMachines.initialTargets.get(selected.source.rowKey) : undefined;
 }
 
-export function setStateMachineInitial(model: EditorTextModel, target: StateMachineInitialTarget): void {
-	const edits = target.literal === undefined
-		? createLuaTableFieldInsertionEdits(model.buffer, target.owner.file.chunk, target.owner.table, 0, 'initial = ' + quoteLuaString(target.name))
-		: [createLuaStringValueEdit(model.buffer, target.owner.file.chunk.locations, target.literal, target.name)];
-	model.pushEditOperations(edits);
+export function createStateMachineInitialEdits(buffer: TextBuffer, target: StateMachineInitialTarget): readonly EditorTextEdit[] {
+	return target.literal === undefined
+		? createLuaTableFieldInsertionEdits(buffer, target.owner.file.chunk, target.owner.table, 0, 'initial = ' + quoteLuaString(target.name))
+		: [createLuaStringValueEdit(buffer, target.owner.file.chunk.locations, target.literal, target.name)];
 }

@@ -24,7 +24,8 @@ unimplemented rows below are not advertised capabilities.
 | Discover/run/wait/cancel scenarios | TestRun/ScenarioRunService | real isolated targets, cancellation and completion | implemented; [test execution](studio_test_execution.md) |
 | Retained failed test inspection | TestExecution / TestTargetInspection | phase-thread locals/upvalues, compiled source, expiry; no authoring reads | implemented read-only; [test inspection](studio_test_inspection.md) |
 | Live test breakpoint/step/debug-rerun | target-bound debugger and composed execution hooks | actual stops/control on the test target | implemented for one named case; prompt-scoped control, [live test debugger](studio_test_debugger.md) |
-| Object/FSM/BT/ActionEffect semantic inspection and editing | Actor Lab / source-backed behavior models | canonical-source edits and live-state readback | open |
+| FSM/BT/ActionEffect source queries and reviewed edits | shared Behavior Lens documents and syntax-edit producers | canonical-source review, builder readback and Undo | implemented for initial-state, child-list and property edits; [behavior source tools](studio_behavior_tools.md) |
+| Live Object/FSM/BT/ActionEffect semantic inspection and mutation | Actor Lab / suspended runtime and World mutation boundaries | instance identity, runtime admission and live-state readback | open; not implied by source tools |
 | Apply/save/build/install lifecycle | working-copy, Save, boot and Hot Resume owners | distinct receipts, rerun against installed code | open |
 
 ## Reference implementations
@@ -96,8 +97,9 @@ added. Values and pages are constructed only on explicit inspection requests.
 3. Expose execution owners with completed/stopped/interrupted outcomes, not UI
    command dispatch. Logical video steps and source/instruction steps differ.
 4. Complete Terminal contexts and native parity before claiming cart evaluation.
-5. Test execution and target-bound debugging are implemented; semantic builder
-   actions remain open.
+5. Test execution, target-bound debugging and basic source-backed builder actions
+   are implemented. Live semantic Actor operations and builder transfer/retarget
+   impact review remain open.
 
 Long operations wait on owner completion/events, not repeated provider polls.
 User Stop cancels owned work without undoing already performed guest writes.

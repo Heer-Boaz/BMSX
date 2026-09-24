@@ -1,3 +1,4 @@
+import { BehaviorSourceDocuments } from '../../../ide/workbench/contrib/behavior_lens/source_documents';
 import { performance } from 'node:perf_hooks';
 import assert from 'node:assert/strict';
 import { EditorTextModelService } from '../../../ide/editor/model/model_service';
@@ -27,7 +28,7 @@ async function main(): Promise<void> {
 			const started = performance.now();
 			const tools = new WorkspaceSourceTools(models, sources, {
 				getItem: () => null, setItem: () => assert.fail(), removeItem: () => assert.fail(),
-			}, diagnostics, new AbortController().signal);
+			}, diagnostics, new AbortController().signal, new BehaviorSourceDocuments(models, sources));
 			const catalog = await tools.execute('studio_list_sources', {}); assert.ok(catalog.kind === 'sources');
 			const read = await tools.execute('studio_read_source', { resource: catalog.data[0].resource }); assert.ok(read.kind === 'source');
 			const captured = performance.now();

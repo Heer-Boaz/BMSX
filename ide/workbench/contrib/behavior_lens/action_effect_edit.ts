@@ -1,3 +1,4 @@
+import type { EffectPropertyWrite } from './action_effect_index';
 import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { Clipboard } from '../../../../hosts/common/clipboard';
 import { DisposableStore } from '../../../common/lifecycle';
@@ -9,7 +10,7 @@ import { PointerButton } from '../../../input/pointer/buttons';
 import { parseLuaFieldValueEdit, type LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
 import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../../language/lua/source_edits';
 import type { BehaviorLensInput } from './editor_input';
-import type { BehaviorLensEffectProperties, EffectPropertyElement, EffectPropertyWrite } from './action_effect_properties';
+import type { BehaviorLensEffectProperties, EffectPropertyElement } from './action_effect_properties';
 import type { BehaviorLensViewState } from './view_model';
 import type { WorkbenchTreeNode } from '../../ui/tree_view';
 import { revealWorkbenchListSelection } from '../../ui/list_view';

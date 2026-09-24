@@ -5,7 +5,7 @@ import { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
 import { buildBehaviorSourceDocument } from '../../../ide/workbench/contrib/behavior_lens/recognizer';
 import { indexStateMachineSource } from '../../../ide/workbench/contrib/behavior_lens/state_machine_index';
-import { setStateMachineInitial } from '../../../ide/workbench/contrib/behavior_lens/state_machine_initial';
+import { createStateMachineInitialEdits } from '../../../ide/workbench/contrib/behavior_lens/state_machine_initial';
 
 for (const states of [32, 1024]) {
 	for (const initial of ["initial='state0',", '']) {
@@ -25,7 +25,7 @@ machines.register('profile',{${initial}states={${Array.from({ length: states }, 
 			for (let operation = 0; operation < 10000; operation += 1) if (index.initialTargets.get(key) === target) observed += 1;
 		}) / 10;
 		const editAndUndoMicroseconds = medianMilliseconds(() => {
-			for (let operation = 0; operation < 100; operation += 1) { setStateMachineInitial(model, target); model.undo(); }
+			for (let operation = 0; operation < 100; operation += 1) { model.pushEditOperations(createStateMachineInitialEdits(model.buffer, target)); model.undo(); }
 		}) * 10;
 		assert.ok(observed > 0);
 		assert.equal(model.buffer.getText(), source);

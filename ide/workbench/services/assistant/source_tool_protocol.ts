@@ -1,4 +1,5 @@
 import { StudioToolInputError, toolArguments } from './tool_input';
+import { STUDIO_BEHAVIOR_TOOLS } from './behavior_tool_protocol';
 
 export type SourceToolEdit = { offset: number; deleteLength: number; text: string; expectedText: string };
 export type SourceToolRequest =
@@ -15,6 +16,7 @@ const FILE_FIELDS = ['receipt', 'edits'];
 const EDIT_FIELDS = ['offset', 'deleteLength', 'text', 'expectedText'];
 
 export const STUDIO_SOURCE_TOOLS = [
+	...STUDIO_BEHAVIOR_TOOLS,
 	{ name: 'studio_list_sources', description: 'List source resources in this captured Studio workspace. Handles belong only to this request context; paths are labels, not filesystem access.',
 		inputSchema: { type: 'object', properties: {}, required: NO_FIELDS, additionalProperties: false } },
 	{ name: 'studio_read_source', description: 'Read the exact current working copy, including unsaved edits, without opening a tab or saving. Returns a receipt required for proposals. Offsets use UTF-16 code units, not UTF-8 bytes or visual columns.',

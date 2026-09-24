@@ -1634,6 +1634,15 @@ composite input without admitting every callback dependency. Relocation between
 different files still requires its own admission; shared history alone does not
 establish preserved bindings.
 
+Behavior Lens documents and registration indices consume an explicit workspace
+model owner. The workspace shares one document service with conversation source
+tools; retained source-generation indices own BT list membership, ActionEffect
+written fields and FSM initial admission, independently of pixel layout or view
+selection. Ordinary commands apply their syntax-edit plans through model history;
+conversation tools transfer plans to the existing source-context/review owner.
+They never synthesize a Lens or mutate source directly. Source occurrence handles
+are not running instance identities. See [behavior source tools](studio_behavior_tools.md).
+
 Workbench navigation retains the concrete editor identity and a contribution-owned
 selection/viewstate, not just a code position. Source, definition and Back/Forward
 share that single host navigation history across Behavior Lens, Scene, Scenario

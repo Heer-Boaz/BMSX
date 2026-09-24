@@ -16,14 +16,14 @@ import { BT_MEMBERSHIP_SOURCE } from '../helpers/behavior_membership_fixture';
 import { BT_ORDER_SOURCE } from '../helpers/behavior_order_fixture';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { createLuaTableFieldMoveEdits } from '../../ide/language/lua/table_field_moves';
-import { duplicateBehaviorTreeChild, removeBehaviorTreeChild } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
+import { createBehaviorTreeChildDuplicateEdits, createBehaviorTreeChildRemovalEdits } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
 import { createLuaTableFieldTransfer } from '../../ide/language/lua/table_field_transfer';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 import { BehaviorTreeTransferAnalysis } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_transfer';
 import { FSM_INITIAL_SOURCE } from '../helpers/fsm_initial_fixture';
 import { indexStateMachineSource } from '../../ide/workbench/contrib/behavior_lens/state_machine_index';
-import { setStateMachineInitial } from '../../ide/workbench/contrib/behavior_lens/state_machine_initial';
+import { createStateMachineInitialEdits } from '../../ide/workbench/contrib/behavior_lens/state_machine_initial';
 import { FSM_RETARGET_EXECUTION_SOURCE, FSM_RETARGET_PATH_CASES, FSM_RETARGET_PATH_SOURCE } from '../helpers/fsm_retarget_fixture';
 import { StateMachineRetargetAnalysis } from '../../ide/workbench/contrib/behavior_lens/state_machine_retarget';
 import { quoteLuaString } from '../../toolchain/ts/lua/syntax/string_literal';
@@ -456,7 +456,7 @@ test('BT source removal changes actual compiled task order without deleting refe
 		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
 		const branch = definition.root.branches[0];
 		assert.ok((branch.role === 'children' || branch.role === 'choices') && branch.source.kind === 'section');
-		removeBehaviorTreeChild(model, { file: branch.source.file, table: branch.source.table, branch, index });
+		model.pushEditOperations(createBehaviorTreeChildRemovalEdits(model.buffer, { file: branch.source.file, table: branch.source.table, branch, index }));
 		const execution = definitionIndex === 0 ? `
 local program<const> = require('cartlib/behaviour_tree/program').compile('oracle', { root = root })
 assert(program.evaluate(target, { _execution_state = program.create_execution_state() }, program.operand) == result.success)
@@ -489,7 +489,7 @@ test('BT source duplication executes the copied Lua uses and keeps choice weight
 		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
 		const branch = definition.root.branches[0];
 		assert.ok((branch.role === 'children' || branch.role === 'choices') && branch.source.kind === 'section');
-		duplicateBehaviorTreeChild(model, { file: branch.source.file, table: branch.source.table, branch, index });
+		model.pushEditOperations(createBehaviorTreeChildDuplicateEdits(model.buffer, { file: branch.source.file, table: branch.source.table, branch, index }));
 		const execution = definitionIndex === 0 ? `
 local program<const> = require('cartlib/behaviour_tree/program').compile('oracle', { root = root })
 assert(program.evaluate(target, { _execution_state = program.create_execution_state() }, program.operand) == result.success)
@@ -603,7 +603,7 @@ test('visual initial edits rebind real cartlib definitions without forcing the l
 	const model = new EditorTextModel(resource, 'lua', FSM_INITIAL_SOURCE);
 	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(FSM_INITIAL_SOURCE, resource.path)));
 	const target = [...indexStateMachineSource(document).initialTargets.values()].find(target => target.name === 'active')!;
-	setStateMachineInitial(model, target);
+	model.pushEditOperations(createStateMachineInitialEdits(model.buffer, target));
 	const { cpu } = createCartlibProgramHarness(`
 local registry<const> = require('cartlib/registry')
 local events<const> = require('cartlib/event_emitter')

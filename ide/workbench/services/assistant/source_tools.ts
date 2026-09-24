@@ -10,6 +10,9 @@ import { resolveTextFileModel, textFileMode } from '../working_copy/text_file_mo
 import { WorkspaceEditProposal } from '../working_copy/workspace_edit';
 import { decodeSourceToolRequest } from './source_tool_protocol';
 import { StudioToolInputError } from './tool_input';
+import type { BehaviorSourceDocuments } from '../../contrib/behavior_lens/source_documents';
+import { STUDIO_BEHAVIOR_TOOL_NAMES } from './behavior_tool_protocol';
+import { WorkspaceBehaviorTools, type BehaviorToolReadResult } from './behavior_tools';
 
 export type ToolSourceResource = { readonly resource: string; readonly domain: ResourceDomain; readonly path: string; readonly mode: EditorDocumentMode; readonly readOnly: boolean };
 export type ToolSourceReceipt = { readonly receipt: string; readonly resource: string; readonly version: number; readonly source: string; readonly readOnly: boolean };
@@ -21,6 +24,7 @@ export type ToolSourceDiagnostics = { readonly receipt: string; readonly version
 type ToolResource = { resource: RuntimeResource; read?: Promise<ToolSourceReceipt> };
 type ToolReceipt = { captured: CapturedWorkspaceSource; diagnostics?: { entry: ResourceDiagnostics; data: ToolSourceDiagnostics } };
 export type SourceToolResult =
+	| BehaviorToolReadResult
 	| { kind: 'sources'; data: readonly ToolSourceResource[] }
 	| { kind: 'source'; data: ToolSourceReceipt }
 	| { kind: 'diagnostics'; data: ToolSourceDiagnostics }
@@ -34,6 +38,7 @@ export class WorkspaceSourceTools {
 	private catalog: ToolSourceResource[] = [];
 	private state: 'reading' | 'proposed' | 'disposed' = 'reading';
 	private proposal: WorkspaceEditProposal | undefined;
+	private behaviors: WorkspaceBehaviorTools | undefined;
 	private readonly id = crypto.randomUUID();
 	private readonly onDisconnect = () => {
 		if (this.proposal) this.proposal.invalidate('Assistant connection closed');
@@ -47,6 +52,7 @@ export class WorkspaceSourceTools {
 		private readonly storage: KeyValueStorage,
 		private readonly diagnostics: ResourceDiagnosticsService,
 		private readonly connection: AbortSignal,
+		private readonly behaviorSources: BehaviorSourceDocuments,
 	) {
 		connection.throwIfAborted();
 		this.context = new WorkspaceSourceContext(models, sources);
@@ -63,6 +69,12 @@ export class WorkspaceSourceTools {
 
 	public async execute(name: string, argumentsValue: unknown): Promise<SourceToolResult> {
 		this.assertReading();
+		if (STUDIO_BEHAVIOR_TOOL_NAMES.has(name)) {
+			this.behaviors ??= new WorkspaceBehaviorTools(this.id, this.context, this.sources, this.behaviorSources);
+			const result = this.behaviors.execute(name, argumentsValue);
+			if (result.kind !== 'edit') return result;
+			return this.propose(result.title, new Map([[result.model, { version: this.context.read(result.model).version, edits: result.edits }]]));
+		}
 		const request = decodeSourceToolRequest(name, argumentsValue);
 		switch (request.name) {
 			case 'studio_list_sources': return { kind: 'sources', data: this.catalog };
@@ -123,15 +135,20 @@ export class WorkspaceSourceTools {
 					});
 					edits.set(captured.model, { version: captured.version, edits: operations });
 				}
-				const proposal = new WorkspaceEditProposal(request.title, this.context, edits);
-				this.state = 'proposed';
-				this.proposal = proposal;
-				// The review outlives turn completion, but never the connection that proposed it.
-				proposal.lifetime.add({ dispose: this.unlinkConnection });
-				this.resources.clear(); this.receipts.clear(); this.catalog = [];
-				return { kind: 'proposal', data: { status: 'review-required', review: `${this.id}/review`, files: proposal.files.length }, proposal };
+				return this.propose(request.title, edits);
 			}
 		}
+	}
+
+	/** Both textual and semantic plans transfer the same authority to ordinary source review. */
+	private propose(title: string, edits: ReadonlyMap<EditorTextModel, EditorModelEdit>): SourceToolResult {
+		const proposal = new WorkspaceEditProposal(title, this.context, edits);
+		this.state = 'proposed';
+		this.proposal = proposal;
+		// The review outlives turn completion, but never the connection that proposed it.
+		proposal.lifetime.add({ dispose: this.unlinkConnection });
+		this.resources.clear(); this.receipts.clear(); this.catalog = []; this.behaviors = undefined;
+		return { kind: 'proposal', data: { status: 'review-required', review: `${this.id}/review`, files: proposal.files.length }, proposal };
 	}
 
 	private assertReading(): void {
@@ -145,6 +162,6 @@ export class WorkspaceSourceTools {
 		this.state = 'disposed';
 		this.unlinkConnection();
 		this.context.dispose();
-		this.resources.clear(); this.receipts.clear(); this.catalog = [];
+		this.resources.clear(); this.receipts.clear(); this.catalog = []; this.behaviors = undefined;
 	}
 }

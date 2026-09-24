@@ -5,7 +5,7 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { indexStateMachineSource } from '../../ide/workbench/contrib/behavior_lens/state_machine_index';
-import { setStateMachineInitial } from '../../ide/workbench/contrib/behavior_lens/state_machine_initial';
+import { createStateMachineInitialEdits } from '../../ide/workbench/contrib/behavior_lens/state_machine_initial';
 import { FSM_INITIAL_SOURCE, FSM_INITIAL_MODULE_SOURCE, fsmInitialImportedSource } from '../helpers/fsm_initial_fixture';
 import { createBehaviorEditFixture } from '../helpers/behavior_edit_fixture';
 
@@ -26,7 +26,7 @@ test('imported parent initial edits insert or replace in the provider and partic
 		const owner = f.view.source.models.get(target.owner.file.chunk.locations.range(target.owner.table.span).path)!;
 		assert.equal(owner, f.models.get('branch.lua'));
 		assert.deepEqual(new Set(f.input.getWorkingCopies()), new Set([f.model, owner]));
-		setStateMachineInitial(owner, target); f.refresh();
+		owner.pushEditOperations(createStateMachineInitialEdits(owner.buffer, target)); f.refresh();
 		assert.equal(f.model.version, 1); assert.equal(f.input.isDirty(), true);
 		assert.equal([...f.view.stateMachines.initialTargets.values()].filter(target => target.name === 'active').length, 0);
 		assert.equal(f.service.history.findModel(f.input.getWorkingCopies(), 'undo'), owner);
@@ -44,7 +44,7 @@ test('initial editing changes the real parent constructor, including all its sha
 	assert.equal(f.index.initialTargets.size, 4, 'three shared active states and the first registration right child');
 	let events = 0;
 	f.model.onDidChangeContent(() => { events += 1; });
-	setStateMachineInitial(f.model, active[0]);
+	f.model.pushEditOperations(createStateMachineInitialEdits(f.model.buffer, active[0]));
 	assert.equal(events, 1);
 	assert.equal(f.model.buffer.getText(), FSM_INITIAL_SOURCE.replace("'idle'),", "'active'),"));
 	const changed = buildBehaviorSourceDocument(f.model.resource, semanticSnapshot(buildLuaFileSemanticData(f.model.buffer.getText(), 'initial.lua')));
@@ -62,7 +62,7 @@ test('missing and scalar initial values are explicitly authored without inventin
 		const source = `local machines<const> = require('cartlib/fsm/library')\nmachines.register('empty',{${initial} states={a={}, b={}}})`;
 		const f = fixture(t, source);
 		assert.equal(f.index.initialTargets.size, 2);
-		setStateMachineInitial(f.model, [...f.index.initialTargets.values()].find(target => target.name === 'b')!);
+		f.model.pushEditOperations(createStateMachineInitialEdits(f.model.buffer, [...f.index.initialTargets.values()].find(target => target.name === 'b')!));
 		const result = buildBehaviorSourceDocument(f.model.resource, semanticSnapshot(buildLuaFileSemanticData(f.model.buffer.getText(), 'initial.lua')));
 		const definition = result.definitions[0];
 		assert.ok(definition.behaviorKind === 'state_machine');
@@ -80,7 +80,7 @@ test('initial uses exact arbitrary string keys rather than transition path synta
 		const f = fixture(t, source);
 		const target = [...f.index.initialTargets.values()].find(target => target.name === key)!;
 		assert.ok(target, JSON.stringify(key));
-		setStateMachineInitial(f.model, target);
+		f.model.pushEditOperations(createStateMachineInitialEdits(f.model.buffer, target));
 		const result = buildBehaviorSourceDocument(f.model.resource, semanticSnapshot(buildLuaFileSemanticData(f.model.buffer.getText(), 'initial.lua')));
 		const definition = result.definitions[0];
 		assert.ok(definition.behaviorKind === 'state_machine' && definition.entries[0].target.kind === 'state');
@@ -123,7 +123,7 @@ test('unrelated callbacks, numeric parent metadata and concurrency retain exact 
 machines.register('known',{[1]='metadata',states={a={update=callbacks.dynamic}, b={is_concurrent=true, states=make_states()}}})`);
 	assert.equal(f.index.initialTargets.size, 2);
 	const target = [...f.index.initialTargets.values()].find(target => target.name === 'b')!;
-	setStateMachineInitial(f.model, target);
+	f.model.pushEditOperations(createStateMachineInitialEdits(f.model.buffer, target));
 	assert.ok(f.model.buffer.getText().includes('is_concurrent=true'));
 	assert.ok(f.model.buffer.getText().includes("initial = 'b'"));
 });

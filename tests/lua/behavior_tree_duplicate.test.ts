@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
-import { behaviorTreeEditTarget, duplicateBehaviorTreeChild } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
+import { behaviorTreeEditTarget, createBehaviorTreeChildDuplicateEdits } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
 import { acceptBehaviorGraphSelection } from '../../ide/workbench/contrib/behavior_lens/graph_navigation';
 import { prepareBehaviorLensLayout, selectBehaviorLensDefinition } from '../../ide/workbench/contrib/behavior_lens/layout';
 import { selectedBehaviorLensSourceRange } from '../../ide/workbench/contrib/behavior_lens/navigation';
@@ -21,7 +21,7 @@ test('BT duplication inserts first/middle/last source entries, not metadata rank
 		assert.equal(readLuaSourceRange(f.model.buffer, member.file.chunk.locations.range(member.branch.entries[index].field.span)), field);
 		let events = 0;
 		f.model.onDidChangeContent(() => { events += 1; });
-		duplicateBehaviorTreeChild(f.model, member);
+		f.model.pushEditOperations(createBehaviorTreeChildDuplicateEdits(f.model.buffer, member));
 		assert.equal(events, 1);
 		const expected = BT_ORDER_SOURCE.replace(anchor, insertion + anchor);
 		assert.equal(f.model.buffer.getText(), expected, 'only complete field syntax is copied; exterior documentation stays put');
@@ -47,7 +47,7 @@ test('weighted cards and connections duplicate the complete choice and retain th
 		const f = fixture(t, BT_ORDER_SOURCE, 2);
 		f.select(1, edge);
 		const selectedSource = edge ? '{ weight = 9, child = nested }' : 'nested';
-		duplicateBehaviorTreeChild(f.model, behaviorTreeEditTarget(f.view)!);
+		f.model.pushEditOperations(createBehaviorTreeChildDuplicateEdits(f.model.buffer, behaviorTreeEditTarget(f.view)!));
 		f.refresh();
 		const field = '\t{ weight = 9, child = nested },';
 		assert.equal(f.model.buffer.getText(), BT_ORDER_SOURCE.replace(field, `${field}\n${field}`));
@@ -70,7 +70,7 @@ test('repeated copies remain fully expanded through hidden history, without grap
 	const f = fixture(t, BT_ORDER_SOURCE, 1);
 	f.select(1);
 	for (let count = 1; count <= 2; count += 1) {
-		duplicateBehaviorTreeChild(f.model, behaviorTreeEditTarget(f.view)!);
+		f.model.pushEditOperations(createBehaviorTreeChildDuplicateEdits(f.model.buffer, behaviorTreeEditTarget(f.view)!));
 		f.refresh();
 		assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
 		const children = f.viewport.model.nodes[0].children[0].children;
@@ -101,7 +101,7 @@ test('a duplicate inside a shared initializer edits that source once, not a priv
 	assert.ok(f.viewport.selection?.kind === 'node');
 	f.viewport.selection = f.viewport.selection.children[0];
 	acceptBehaviorGraphSelection(f.view, f.graph);
-	duplicateBehaviorTreeChild(f.model, behaviorTreeEditTarget(f.view)!);
+	f.model.pushEditOperations(createBehaviorTreeChildDuplicateEdits(f.model.buffer, behaviorTreeEditTarget(f.view)!));
 	f.refresh();
 	assert.equal(f.model.buffer.getText(), BT_ORDER_SOURCE.replace('children = { leaf, make_node(2) }', 'children = { leaf, leaf, make_node(2) }'));
 	assert.equal(behaviorTreeEditTarget(f.view)!.index, 1);
@@ -128,7 +128,7 @@ test('sole grouped and opaque members copy interior syntax byte-exactly with sou
 		const source = `local trees<const> = require('cartlib/behaviour_tree/library')\r\ntrees.register('sole', { root = { type = '${type}', ${list} = { ${fieldSource}; } } })`;
 		const f = fixture(t, source);
 		f.select(0);
-		duplicateBehaviorTreeChild(f.model, behaviorTreeEditTarget(f.view)!);
+		f.model.pushEditOperations(createBehaviorTreeChildDuplicateEdits(f.model.buffer, behaviorTreeEditTarget(f.view)!));
 		f.refresh();
 		assert.equal(f.model.buffer.getText(), source.replace(`${fieldSource};`, `${fieldSource}; ${fieldSource};`));
 		assert.equal(f.view.document.syntaxComplete, true);

@@ -29,7 +29,7 @@ for (const modelCount of [1, 64, 256, 1024]) {
 		editorTextModelService.retain({ domain: 0, path, source: record }, 'lua', source);
 	}
 	const sources = createTestRuntimeSourceState(system, [registry, null], 0);
-	const index = new BehaviorRegistrationIndex(sources);
+	const index = new BehaviorRegistrationIndex(editorTextModelService, sources);
 	const retained = index.getRegistrations(0);
 	assert.equal(retained.length, modelCount);
 	let total = 0;

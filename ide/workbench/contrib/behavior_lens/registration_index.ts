@@ -1,4 +1,4 @@
-import { editorTextModelService } from '../../../editor/model/model_service';
+import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { ResourceDomain } from '../../../common/resource';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
@@ -25,7 +25,7 @@ type BehaviorRegistrationGeneration = {
 export class BehaviorRegistrationIndex {
 	private readonly generations = new Map<ResourceDomain, BehaviorRegistrationGeneration>();
 
-	public constructor(private readonly sources: RuntimeSourceState) {}
+	public constructor(private readonly models: EditorTextModelService, private readonly sources: RuntimeSourceState) {}
 
 	public resolve(
 		executionDomain: 0 | 1,
@@ -41,7 +41,7 @@ export class BehaviorRegistrationIndex {
 	}
 
 	private getGeneration(executionDomain: ResourceDomain): BehaviorRegistrationGeneration {
-		const project = getOrCreateSemanticProject(editorTextModelService, executionDomain);
+		const project = getOrCreateSemanticProject(this.models, executionDomain);
 		project.synchronizeRuntimeSources(this.sources);
 		const snapshot = project.getSnapshot();
 		let generation = this.generations.get(executionDomain);

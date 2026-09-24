@@ -23,10 +23,9 @@ import {
 	selectedBehaviorLensSourceRange,
 	type BehaviorLensNavigationCommand,
 } from './navigation';
-import { BehaviorSourceDocuments } from './source_documents';
+import type { BehaviorSourceDocuments } from './source_documents';
 import { luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import type { BehaviorKind, BehaviorRegistrationSource } from './model';
-import type { BehaviorRegistrationIndex } from './registration_index';
 import { buildBehaviorQuickPickItems } from './quick_access';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { createBehaviorLensViewState, type BehaviorLensViewState } from './view_model';
@@ -35,9 +34,9 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import type { GraphLayoutEngineFactory } from '../../services/graph_layout/engine';
 import { acceptStateGraphSelection, stateGraphSelection } from './state_graph_navigation';
 import type { BehaviorInspectionProperty } from './inspection';
-import { behaviorTreeEditTarget, behaviorTreeMoveTarget, duplicateBehaviorTreeChild, moveBehaviorTreeChild, removeBehaviorTreeChild } from './behavior_tree_edit';
+import { behaviorTreeEditTarget, behaviorTreeMoveTarget, createBehaviorTreeChildDuplicateEdits, createBehaviorTreeChildMoveEdits, createBehaviorTreeChildRemovalEdits } from './behavior_tree_edit';
 import type { StateMachinePathUse } from './state_machine_retarget';
-import { setStateMachineInitial, stateMachineInitialTarget } from './state_machine_initial';
+import { createStateMachineInitialEdits, stateMachineInitialTarget } from './state_machine_initial';
 import { beginBehaviorTreeDrag, type BehaviorTreeTransferDrop } from './behavior_tree_drag';
 import type { WorkbenchGraphDragSession } from '../../ui/graph/drag';
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
@@ -57,20 +56,19 @@ const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 
 /** Workbench contribution for source-derived behavior topology. Inputs own every view. */
 export class BehaviorLensController {
-	private readonly documents: BehaviorSourceDocuments;
 	public constructor(
 		private readonly sources: RuntimeSourceState,
 		private readonly navigation: EditorNavigationController,
 		private readonly editorPanes: EditorPanes,
 		private readonly quickInput: QuickInputController,
-		private readonly registrations: BehaviorRegistrationIndex,
+		public readonly documents: BehaviorSourceDocuments,
 		private readonly createGraphLayoutEngine: GraphLayoutEngineFactory,
 		private readonly guest: SuspendedGuestSession,
-	) { this.documents = new BehaviorSourceDocuments(sources); }
+	) {}
 
 	public open(kind: BehaviorKind | null = null, options: EditorOpenOptions = {}): void {
 		this.quickInput.pick(kind === null ? 'BEHAVIOR LENS' : PICKER_TITLES[kind], 'Choose a definition',
-			() => new TextQuickPickProvider(buildBehaviorQuickPickItems(this.sources, this.registrations, kind)),
+			() => new TextQuickPickProvider(buildBehaviorQuickPickItems(this.sources, this.documents.registrations, kind)),
 			item => this.openDefinition(item.registration, options));
 	}
 
@@ -131,7 +129,7 @@ export class BehaviorLensController {
 	/** Review navigation keeps the actual consumer/return, not just the shared literal. */
 	public openStateMachineUseSource(input: BehaviorLensInput, use: StateMachinePathUse): void {
 		const target = input.view.definitionRowKey === use.definition.rowKey ? input
-			: this.openDefinition(this.registrations.getRegistrations(input.view.resource.domain)
+			: this.openDefinition(this.documents.registrations.getRegistrations(input.view.resource.domain)
 				.find(candidate => candidate.rowKey === use.definition.rowKey)!);
 		const view = target.view;
 		view.selection = selectStateMachineSource({ kind: 'state-outcome', rowKey: use.transition.slot.source.rowKey,
@@ -291,7 +289,7 @@ export class BehaviorLensController {
 		const model = input.view.source.models.get(target.owner.file.file)!;
 		if (model.readOnly) return;
 		this.editorPanes.activePane.focus();
-		setStateMachineInitial(model, target);
+		model.pushEditOperations(createStateMachineInitialEdits(model.buffer, target));
 		this.updateView(input);
 	}
 
@@ -304,7 +302,7 @@ export class BehaviorLensController {
 		const model = input.view.source.models.get(member.file.file)!;
 		if (model.readOnly) return;
 		this.editorPanes.activePane.focus();
-		duplicateBehaviorTreeChild(model, member);
+		model.pushEditOperations(createBehaviorTreeChildDuplicateEdits(model.buffer, member));
 		this.updateView(input);
 	}
 
@@ -317,7 +315,7 @@ export class BehaviorLensController {
 		const model = input.view.source.models.get(member.file.file)!;
 		if (model.readOnly) return;
 		this.editorPanes.activePane.focus();
-		removeBehaviorTreeChild(model, member);
+		model.pushEditOperations(createBehaviorTreeChildRemovalEdits(model.buffer, member));
 		// Ordinary source correspondence clears the deleted occurrence, including
 		// shared/identical uses. It must not select its former index or a namesake.
 		this.updateView(input);
@@ -332,7 +330,7 @@ export class BehaviorLensController {
 		const model = input.view.source.models.get(member.file.file)!;
 		if (model.readOnly) return;
 		this.editorPanes.activePane.focus();
-		moveBehaviorTreeChild(model, member, member.index + direction);
+		model.pushEditOperations(createBehaviorTreeChildMoveEdits(model.buffer, member, member.index + direction));
 		this.updateView(input);
 	}
 

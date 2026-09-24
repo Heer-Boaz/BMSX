@@ -1,3 +1,4 @@
+import { BehaviorSourceDocuments } from '../../ide/workbench/contrib/behavior_lens/source_documents';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -29,7 +30,7 @@ test('real Codex tool exchange reads unsaved models and hands off a shared revie
 	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
 	const sourceTools = new WorkspaceSourceTools(models, sources, {
 		getItem: () => null, setItem: () => assert.fail('not Save'), removeItem: () => assert.fail('not Delete'),
-	}, diagnostics, connection.signal);
+	}, diagnostics, connection.signal, new BehaviorSourceDocuments(models, sources));
 	const proposals: WorkspaceEditProposal[] = [];
 	let completed!: () => void;
 	const done = new Promise<void>(resolve => { completed = resolve; });

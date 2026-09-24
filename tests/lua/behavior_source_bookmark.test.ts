@@ -10,7 +10,7 @@ import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { createLuaTableFieldTransfer } from '../../ide/language/lua/table_field_transfer';
 import { BehaviorLensInput } from '../../ide/workbench/contrib/behavior_lens/editor_input';
 import { BehaviorLensNavigationSelection } from '../../ide/workbench/contrib/behavior_lens/navigation_selection';
-import { removeBehaviorTreeChild } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
+import { createBehaviorTreeChildRemovalEdits } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
 
 function fixture(t: TestContext, weighted = false, edge = false, definition = 1) {
 	const source = weighted ? BT_TRANSFER_SOURCE
@@ -175,7 +175,7 @@ test('a removed history occurrence does not select a surviving namesake, even af
 	t.after(() => input.dispose());
 	const selected = new BehaviorLensNavigationSelection(input);
 	t.after(() => selected.dispose());
-	removeBehaviorTreeChild(f.model, f.member);
+	f.model.pushEditOperations(createBehaviorTreeChildRemovalEdits(f.model.buffer, f.member));
 	f.refresh(); selected.restore(input); prepareBehaviorLensLayout(f.view);
 	assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
 	assert.equal(f.view.selection, null);

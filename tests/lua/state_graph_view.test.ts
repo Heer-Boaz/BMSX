@@ -21,7 +21,7 @@ import { buildStateMachineDetails } from '../../ide/workbench/contrib/behavior_l
 import { selectStateMachineSource } from '../../ide/workbench/contrib/behavior_lens/state_machine_selection';
 import { FSM_DIAGRAM_SOURCE, FSM_PROOF_SOURCE } from '../helpers/fsm_source_fixture';
 import { FSM_INITIAL_SOURCE } from '../helpers/fsm_initial_fixture';
-import { setStateMachineInitial, stateMachineInitialTarget } from '../../ide/workbench/contrib/behavior_lens/state_machine_initial';
+import { createStateMachineInitialEdits, stateMachineInitialTarget } from '../../ide/workbench/contrib/behavior_lens/state_machine_initial';
 import { retargetStateMachineTransition } from '../../ide/workbench/contrib/behavior_lens/state_machine_edit';
 import { StateMachineRetargetAnalysis } from '../../ide/workbench/contrib/behavior_lens/state_machine_retarget';
 import { FSM_RETARGET_SOURCE } from '../helpers/fsm_retarget_fixture';
@@ -156,7 +156,7 @@ test('FSM initial command updates real graph entry edges and retains selected st
 		const geometry = f.graph.viewport.model;
 		for (let index = 0; index < 1000; index += 1) assert.equal(stateMachineInitialTarget(f.view), target);
 		assert.equal(f.graph.viewport.model, geometry);
-		setStateMachineInitial(f.model, target);
+		f.model.pushEditOperations(createStateMachineInitialEdits(f.model.buffer, target));
 		assert.equal(f.graph.viewport.model.nodes.length, 0, 'source edit immediately revokes old geometry and hits');
 		assert.equal(stateMachineInitialTarget(f.view), undefined);
 		f.refresh(); await f.settle();

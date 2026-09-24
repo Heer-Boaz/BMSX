@@ -4,7 +4,7 @@ import type { TestContext } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { behaviorTreeMoveTarget, moveBehaviorTreeChild } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
+import { behaviorTreeMoveTarget, createBehaviorTreeChildMoveEdits } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
 import { acceptBehaviorGraphSelection } from '../../ide/workbench/contrib/behavior_lens/graph_navigation';
 import { installBehaviorLensDocument, prepareBehaviorLensLayout, selectBehaviorLensDefinition } from '../../ide/workbench/contrib/behavior_lens/layout';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
@@ -43,7 +43,7 @@ export function createBehaviorTreeEditFixture(t: TestContext, source = BT_ORDER_
 	};
 	const move = (direction: -1 | 1) => {
 		const member = behaviorTreeMoveTarget(view, direction)!;
-		moveBehaviorTreeChild(model, member, member.index + direction);
+		model.pushEditOperations(createBehaviorTreeChildMoveEdits(model.buffer, member, member.index + direction));
 		refresh();
 	};
 	t.after(() => { view.source.release(); model.dispose(); });

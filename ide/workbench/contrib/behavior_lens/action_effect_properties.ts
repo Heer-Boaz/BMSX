@@ -1,6 +1,6 @@
-import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
+import { indexActionEffectWrites, type EffectPropertyWrite } from './action_effect_index';
 import { ACTION_EFFECT_FIELDS, type EffectPropertyGroup } from './action_effect_fields';
-import { LuaSyntaxKind, type LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
+import { LuaSyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import { readLuaExpressionPreview, readLuaSourceLinePreview } from '../../../language/lua/source_edits';
 import { uppercaseOutsideStrings } from '../../../common/text';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
@@ -23,7 +23,6 @@ const GROUP_ORDER = Object.keys(GROUPS) as EffectPropertyGroup[];
 const UNKNOWN_FIELD = { group: 'unresolved' as const, label: 'UNRESOLVED FIELD', description: GROUPS.unresolved.description };
 
 
-export type EffectPropertyWrite = { readonly file: FileSemanticData; readonly field: LuaTableField; readonly sourceSelection: 'field' | 'value' };
 export type EffectPropertyElement = WorkbenchPropertyElement & (
 	{ readonly kind: 'group'; readonly group: EffectPropertyGroup }
 	| { readonly kind: 'property'; readonly source: BehaviorSourceNode; readonly write: EffectPropertyWrite | undefined }
@@ -65,10 +64,11 @@ export function projectActionEffectProperties(
 		rebuildWorkbenchTreeRows(tree, null);
 		return;
 	}
+	const writes = indexActionEffectWrites(definition);
 	const groups = new Map<EffectPropertyGroup, WorkbenchTreeNode<EffectPropertyElement>>();
-	function add(file: FileSemanticData, source: BehaviorSourceNode, parent: WorkbenchTreeNode<EffectPropertyElement>, label: string, value: string, description: string, field?: LuaTableField, sourceSelection: 'field' | 'value' = 'value') {
+	function add(source: BehaviorSourceNode, parent: WorkbenchTreeNode<EffectPropertyElement>, label: string, value: string, description: string) {
 		const node = appendWorkbenchTreeNode(tree, parent, {
-			kind: 'property', source, write: field === undefined ? undefined : { file, field, sourceSelection }, label: uppercaseOutsideStrings(label), value, description,
+			kind: 'property', source, write: writes.get(source.rowKey), label: uppercaseOutsideStrings(label), value, description,
 			warning: source.resolution !== 'complete', displayLabel: '', displayValue: '', displayValueLeft: 0,
 		}, properties.collapsedRowKeys.has(source.rowKey));
 		properties.nodesBySource.set(source.rowKey, node);
@@ -89,7 +89,7 @@ export function projectActionEffectProperties(
 			value = field.field.value.kind === LuaSyntaxKind.TableConstructorExpression ? count
 				: `${readLuaExpressionPreview(view.source.models.get(definition.body.file.file)!.buffer, definition.body.file.chunk.locations, field.field.value)} / ${count}`;
 		} else value = field.kind === 'unknown' ? readLuaSourceLinePreview(view.source.models.get(definition.body.file.file)!.buffer, definition.body.file.chunk.locations.range(field.field.span)) : readLuaExpressionPreview(view.source.models.get(definition.body.file.file)!.buffer, definition.body.file.chunk.locations, field.field.value);
-		const row = add(definition.body.file, field.source, group, metadata.label, value, metadata.description, field.kind === 'unknown' ? undefined : field.field, field.kind === 'value' ? 'field' : 'value');
+		const row = add(field.source, group, metadata.label, value, metadata.description);
 		if (field.kind !== 'list') continue;
 		const entries = new Map<BehaviorSourceNode, BehaviorSourceArrayEntry<BehaviorSourceNode>>();
 		for (const entry of field.entries) entries.set(entry.node, entry);
@@ -97,8 +97,8 @@ export function projectActionEffectProperties(
 			for (const child of source.children) {
 				const entry = entries.get(child);
 				const nested = entry === undefined
-					? add(definition.body!.file, child, parent, child.label, child.detail, 'PARTIAL REQUIREMENT SOURCE. NO DENSE RUNTIME INDEX IS INFERRED.')
-					: add(entry.file, child, parent, '', readLuaExpressionPreview(view.source.models.get(entry.file.file)!.buffer, entry.file.chunk.locations, entry.field.value), 'AUTHORED REQUIREMENT VALUE. SOURCE OPENS THIS EXPRESSION, NOT ITS PARENT LIST.', entry.field);
+					? add(child, parent, child.label, child.detail, 'PARTIAL REQUIREMENT SOURCE. NO DENSE RUNTIME INDEX IS INFERRED.')
+					: add(child, parent, '', readLuaExpressionPreview(view.source.models.get(entry.file.file)!.buffer, entry.file.chunk.locations, entry.field.value), 'AUTHORED REQUIREMENT VALUE. SOURCE OPENS THIS EXPRESSION, NOT ITS PARENT LIST.');
 				children(child, nested);
 			}
 		}

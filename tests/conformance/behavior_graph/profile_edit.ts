@@ -8,7 +8,7 @@ import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/mod
 import { buildBehaviorSourceDocument } from '../../../ide/workbench/contrib/behavior_lens/recognizer';
 import { createBehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { prepareBehaviorLensLayout, selectBehaviorLensDefinition } from '../../../ide/workbench/contrib/behavior_lens/layout';
-import { behaviorTreeEditTarget, duplicateBehaviorTreeChild, removeBehaviorTreeChild } from '../../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
+import { behaviorTreeEditTarget, createBehaviorTreeChildDuplicateEdits, createBehaviorTreeChildRemovalEdits } from '../../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
 import { createLuaTableFieldRemovalEdits, readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import { createLuaTableFieldInsertionEdits } from '../../../ide/language/lua/table_field_insertion';
 
@@ -52,7 +52,7 @@ for (const siblings of [24, 1024]) {
 	});
 	const removeUndoMicroseconds = medianMilliseconds(() => {
 		for (let index = 0; index < 1000; index += 1) {
-			removeBehaviorTreeChild(model, member, parsed);
+			model.pushEditOperations(createBehaviorTreeChildRemovalEdits(model.buffer, member));
 			model.undo();
 		}
 	});
@@ -75,7 +75,7 @@ for (const siblings of [24, 1024]) {
 	});
 	const duplicateUndoMicroseconds = medianMilliseconds(() => {
 		for (let index = 0; index < 100; index += 1) {
-			duplicateBehaviorTreeChild(model, member);
+			model.pushEditOperations(createBehaviorTreeChildDuplicateEdits(model.buffer, member));
 			model.undo();
 		}
 	}) * 10;

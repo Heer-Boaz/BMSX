@@ -23,6 +23,7 @@ import { BehaviorLensInputSerializer } from '../../ide/workbench/contrib/behavio
 import { SceneEditorInputSerializer } from '../../ide/workbench/contrib/scene_editor/editor_serializer';
 import { ResourceViewerInputSerializer } from '../../ide/workbench/contrib/resources/editor_serializer';
 import { BehaviorLensController } from '../../ide/workbench/contrib/behavior_lens/controller';
+import { BehaviorSourceDocuments } from '../../ide/workbench/contrib/behavior_lens/source_documents';
 import { BehaviorLensInput } from '../../ide/workbench/contrib/behavior_lens/editor_input';
 import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavior_lens/view_model';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
@@ -65,7 +66,7 @@ function fixture(t: TestContext) {
 	Object.assign(editorViewState, { font: new EditorFont('tiny'), lineHeight: 6, viewportWidth: 384, viewportHeight: 288, codeAreaTop: 24, codeAreaBottom: 120 });
 	const sources = createTestRuntimeSourceState(registry('system', '-- system'), [registry('game', SOURCE), registry('extension', '-- second slot')], 0);
 	const panes = createTestEditorPanes();
-	const behavior = new BehaviorLensController(sources, null, panes, null, null, () => assert.fail('metadata must not start an FSM layout worker'), null);
+	const behavior = new BehaviorLensController(sources, null, panes, null, new BehaviorSourceDocuments(editorTextModelService, sources), () => assert.fail('metadata must not start an FSM layout worker'), null);
 	const scene = new SceneEditorController(sources, panes, null);
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
 	const runs = new ScenarioRunService(editorTextModelService, sources, null, null, new Map(), runtime.model, () => assert.fail('session recovery must not create test machines'));
