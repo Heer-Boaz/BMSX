@@ -82,7 +82,8 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 		setPointerButton('pointer_primary', true); await frame();
 		movePointer(point(10, y)); await frame();
 		setPointerButton('pointer_primary', false); await frame();
-		await frame(); // Tab/chrome layout publication precedes pane reflow.
+		check(scene.layout.bottom === editorViewState.codeAreaBottom,
+			'A02: pane consumes resized parent bounds in the same frame');
 	};
 	const wheel = async (steps: number) => {
 		movePointer(scene.details.bounds); await frame();
@@ -94,9 +95,11 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 		check(field.top >= scene.details.bounds.top && field.bottom <= scene.details.bounds.bottom, `A02: focused ${index} is entirely inside the viewport`);
 	};
 	for (const variant of ['msx', 'tiny'] as const) {
-		ide.editor.setFontVariant(variant); await frame(); await frame();
+		ide.editor.setFontVariant(variant); await frame();
 		check(editorChromeState.tabScrollbar.isVisible() && editorViewState.tabBarTotalHeight === editorViewState.tabBarHeight + SCROLLBAR_WIDTH,
 			'A02/A04: overflowing tabs remain one bounded row at either font');
+		check(scene.layout.top === editorViewState.codeAreaTop && scene.layout.bottom === editorViewState.codeAreaBottom,
+			'A02/A04: font and tab-strip height reach the child layout in one update');
 		if (!problemsPanel.isVisible) await runPaletteCommand('View: Problems Panel');
 		await testStudioPointerHover(test, scene);
 		if (!problemsPanel.isVisible) await runPaletteCommand('View: Problems Panel');

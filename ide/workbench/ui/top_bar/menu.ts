@@ -1,6 +1,7 @@
 import { create_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { EditorCommandId } from '../../../common/commands';
-import type { IdeCommandController } from '../../../commands/controller';
+import { editorCommandTitle } from '../../../commands/catalog';
+import { EDITOR_COMMAND_KEYBINDING_LABELS } from '../../../input/keyboard/command_keybindings';
 import {
 	WORKBENCH_MENUS,
 	type WorkbenchDropdownMenuId,
@@ -9,11 +10,14 @@ import {
 export const MENU_IDS = ['file', 'edit', 'run', 'view'] as const;
 export type MenuId = typeof MENU_IDS[number];
 
-export type TopBarMenuSeparator = { readonly type: 'separator' };
+export type TopBarMenuSeparator = { readonly type: 'separator'; readonly bounds: RectBounds };
 export type TopBarMenuItem = {
 	readonly type: 'command';
 	readonly command: EditorCommandId;
 	readonly bounds: RectBounds;
+	readonly keybinding: string | undefined;
+	label: string;
+	keybindingWidth: number;
 	active: boolean;
 	disabled: boolean;
 };
@@ -29,11 +33,14 @@ function projectTopBarMenu(menuId: WorkbenchDropdownMenuId): Array<TopBarMenuIte
 	for (let index = 0; index < contributions.length; index += 1) {
 		const contribution = contributions[index];
 		items.push(contribution.type === 'separator'
-			? { type: 'separator' }
+			? { type: 'separator', bounds: create_rect_bounds() }
 			: {
 				type: 'command',
 				command: contribution.command,
 				bounds: create_rect_bounds(),
+				keybinding: EDITOR_COMMAND_KEYBINDING_LABELS.get(contribution.command),
+				label: editorCommandTitle(contribution.command, false, true),
+				keybindingWidth: 0,
 				active: false,
 				disabled: false,
 			});
@@ -75,16 +82,3 @@ export const TOP_BAR_MENU_ENTRIES: readonly TopBarMenuEntry[] = [
 	runMenu,
 	viewMenu,
 ];
-
-export function updateTopBarMenuEntries(commands: IdeCommandController): void {
-	for (let menuIndex = 0; menuIndex < TOP_BAR_MENU_ENTRIES.length; menuIndex += 1) {
-		const items = TOP_BAR_MENU_ENTRIES[menuIndex].items;
-		for (let itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
-			const item = items[itemIndex];
-			if (item.type === 'command') {
-				item.active = commands.isActive(item.command);
-				item.disabled = !commands.isEnabled(item.command);
-			}
-		}
-	}
-}

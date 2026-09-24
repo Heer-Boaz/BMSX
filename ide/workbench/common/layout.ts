@@ -11,6 +11,14 @@ import type { EditorFont } from '../../editor/ui/view/font';
 
 const editorBounds = create_rect_bounds();
 
+export type WorkbenchChromeLayout = {
+	readonly viewportWidth: number;
+	readonly headerHeight: number;
+	readonly lineHeight: number;
+	readonly tabBarHeight: number;
+	measureText(text: string): number;
+};
+
 /** Content geometry belongs to the workbench; a text gutter is a code-pane detail. */
 export function getWorkbenchEditorBounds(): RectBounds {
 	write_rect_bounds(editorBounds, editorViewState.codeAreaLeft, editorViewState.codeAreaTop,
@@ -59,6 +67,7 @@ const statusMessageLines: string[] = [];
 let statusMessageCachedVisible = false;
 let statusMessageCachedText = '';
 let statusMessageCachedMaxWidth = -1;
+let statusMessageCachedFont: EditorFont | undefined;
 
 export function topMargin(): number {
 	return editorViewState.headerHeight + editorViewState.tabBarTotalHeight + 2;
@@ -77,6 +86,7 @@ function writeStatusMessageLines(): void {
 		message.visible === statusMessageCachedVisible
 		&& message.text === statusMessageCachedText
 		&& maxWidth === statusMessageCachedMaxWidth
+		&& editorViewState.font === statusMessageCachedFont
 	) {
 		return;
 	}
@@ -84,6 +94,7 @@ function writeStatusMessageLines(): void {
 	statusMessageCachedVisible = message.visible;
 	statusMessageCachedText = message.text;
 	statusMessageCachedMaxWidth = maxWidth;
+	statusMessageCachedFont = editorViewState.font;
 	statusMessageLines.length = 0;
 
 	if (!message.visible) {

@@ -1,19 +1,8 @@
 import * as constants from '../../common/constants';
-import type { RectBounds } from '../../../machine/ts/common/rect';
-import { clear_rect_bounds, create_rect_bounds, write_rect_bounds } from '../../../machine/ts/common/rect';
 import { editorChromeState } from '../ui/chrome_state';
 import { api } from '../../runtime/overlay_api';
-import {
-	MENU_IDS,
-	TOP_BAR_MENU_ENTRIES,
-	TOP_BAR_MENUS,
-	type TopBarMenuEntry,
-	updateTopBarMenuEntries,
-} from '../ui/top_bar/menu';
-import type { IdeCommandController } from '../../commands/controller';
+import { TOP_BAR_MENU_ENTRIES, TOP_BAR_MENUS } from '../ui/top_bar/menu';
 import type { ChromeRenderContext } from './chrome_context';
-import { editorCommandTitle } from '../../commands/catalog';
-import { EDITOR_COMMAND_KEYBINDING_LABELS } from '../../input/keyboard/command_keybindings';
 
 const Z_TOP_BAR_BACKGROUND = 10;
 const Z_MENU_BUTTON = 14;
@@ -23,177 +12,54 @@ const Z_MENU_SHADOW = Z_MENU_DROPDOWN_BASE - 1;
 const Z_MENU_DROPDOWN = Z_MENU_DROPDOWN_BASE;
 const Z_MENU_DROPDOWN_TEXT = Z_MENU_DROPDOWN_BASE + 1;
 const Z_MENU_MARKER = Z_MENU_DROPDOWN_BASE + 2;
-const menuDropdownBoundsScratch: RectBounds = create_rect_bounds();
 
-export function renderTopBar(commands: IdeCommandController, context: ChromeRenderContext): void {
-	clearMenuBounds();
-	const primaryBarHeight = context.headerHeight;
-	const viewportWidth = context.viewportWidth;
-	write_rect_bounds(editorChromeState.topBarBounds, 0, 0, viewportWidth, primaryBarHeight);
-	api.fill_rect(0, 0, viewportWidth, primaryBarHeight, Z_TOP_BAR_BACKGROUND, constants.COLOR_TOP_BAR);
-
-	updateTopBarMenuEntries(commands);
-	renderMenuRow(TOP_BAR_MENU_ENTRIES, context);
-}
-
-export function renderTopBarDropdown(context: ChromeRenderContext): void {
-	const menuButtonHeight = context.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
-	renderOpenMenuDropdown(menuButtonHeight, context);
-}
-
-function renderMenuRow(menuEntries: readonly TopBarMenuEntry[], context: ChromeRenderContext): number {
-	const buttonTop = 1;
-	const buttonHeight = context.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
-	let buttonX = 4;
-	const availableRight = context.viewportWidth - 4;
-	for (let i = 0; i < menuEntries.length; i += 1) {
-		const entry = menuEntries[i];
-		const textWidth = context.measureText(entry.label);
-		const buttonWidth = textWidth + constants.HEADER_BUTTON_PADDING_X * 2;
-		const right = buttonX + buttonWidth;
+/** Chrome painting consumes layout and command presentation, without republishing either. */
+export function renderTopBar(context: ChromeRenderContext): void {
+	const bounds = editorChromeState.topBarBounds;
+	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, Z_TOP_BAR_BACKGROUND, constants.COLOR_TOP_BAR);
+	for (const entry of TOP_BAR_MENU_ENTRIES) {
 		const bounds = editorChromeState.menuEntryBounds[entry.id];
-		if (right > availableRight) {
-			clear_rect_bounds(bounds);
-			continue;
-		}
-		const bottom = buttonTop + buttonHeight;
-		write_rect_bounds(bounds, buttonX, buttonTop, right, bottom);
+		if (bounds.right === 0) continue;
 		const isOpen = editorChromeState.openMenuId === entry.id;
 		const fillColor = isOpen ? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND : constants.COLOR_HEADER_BUTTON_BACKGROUND;
 		const textColor = isOpen ? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT : constants.COLOR_HEADER_BUTTON_TEXT;
 		api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, Z_MENU_BUTTON, fillColor);
 		api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, Z_MENU_BUTTON, constants.COLOR_HEADER_BUTTON_BORDER);
 		context.drawText(entry.label, bounds.left + constants.HEADER_BUTTON_PADDING_X, bounds.top + constants.HEADER_BUTTON_PADDING_Y, Z_MENU_BUTTON_TEXT, textColor);
-		buttonX = right + constants.HEADER_BUTTON_SPACING;
 	}
-	editorChromeState.menuDropdownBounds = null;
-	return buttonHeight;
 }
 
-function renderOpenMenuDropdown(buttonHeight: number, context: ChromeRenderContext): void {
-	const openMenuId = editorChromeState.openMenuId;
-	if (openMenuId === null) {
-		editorChromeState.menuDropdownBounds = null;
-		return;
-	}
-	const openMenu = TOP_BAR_MENUS[openMenuId];
-	const anchor = editorChromeState.menuEntryBounds[openMenu.id];
-	if (anchor.right === 0 && anchor.bottom === 0) {
-		editorChromeState.menuDropdownBounds = null;
-		return;
-	}
-	renderMenuDropdown(openMenu, anchor, buttonHeight, context);
-}
-
-function renderMenuDropdown(menu: TopBarMenuEntry, anchor: RectBounds, itemHeight: number, context: ChromeRenderContext): void {
-	const halfLineHeight = context.lineHeight >> 1;
-	const markerSize = halfLineHeight > 2 ? halfLineHeight : 2;
+export function renderTopBarDropdown(context: ChromeRenderContext): void {
+	const dropdown = editorChromeState.menuDropdownBounds;
+	if (dropdown === null) return;
+	const menu = TOP_BAR_MENUS[editorChromeState.openMenuId!];
+	const markerSize = Math.max(context.lineHeight >> 1, 2);
 	const paddingX = constants.HEADER_BUTTON_PADDING_X;
-	const dropdownWidth = computeDropdownWidth(menu, markerSize, paddingX, anchor.right - anchor.left, context);
-	const separatorHeightBase = constants.HEADER_BUTTON_PADDING_Y + 1;
-	const separatorHeight = separatorHeightBase > 2 ? separatorHeightBase : 2;
-	const dropdownLeft = anchor.left;
-	const dropdownTop = context.headerHeight;
-	const dropdownRight = dropdownLeft + dropdownWidth;
-	const totalHeight = computeDropdownHeight(menu, itemHeight, separatorHeight);
-	const dropdownBottom = dropdownTop + totalHeight;
-	const shadowOffset = 2;
 	const borderColor = constants.COLOR_MENU_BORDER;
-	const shadowColor = constants.COLOR_MENU_SHADOW;
-
-	api.fill_rect(dropdownLeft + shadowOffset, dropdownTop + shadowOffset, dropdownRight + shadowOffset, dropdownBottom + shadowOffset, Z_MENU_SHADOW, shadowColor);
-	api.fill_rect(dropdownLeft, dropdownTop, dropdownRight, dropdownBottom, Z_MENU_DROPDOWN, constants.COLOR_MENU_BACKGROUND);
-	api.blit_rect(dropdownLeft, dropdownTop, dropdownRight, dropdownBottom, Z_MENU_DROPDOWN, borderColor);
-
-	let currentTop = dropdownTop;
-	for (let index = 0; index < menu.items.length; index += 1) {
-		const item = menu.items[index];
+	api.fill_rect(dropdown.left + 2, dropdown.top + 2, dropdown.right + 2, dropdown.bottom + 2, Z_MENU_SHADOW, constants.COLOR_MENU_SHADOW);
+	api.fill_rect(dropdown.left, dropdown.top, dropdown.right, dropdown.bottom, Z_MENU_DROPDOWN, constants.COLOR_MENU_BACKGROUND);
+	api.blit_rect(dropdown.left, dropdown.top, dropdown.right, dropdown.bottom, Z_MENU_DROPDOWN, borderColor);
+	for (const item of menu.items) {
+		const bounds = item.bounds;
 		if (item.type === 'separator') {
-			const halfSeparatorHeight = separatorHeight >> 1;
-			const separatorTop = currentTop + (halfSeparatorHeight > 1 ? halfSeparatorHeight : 1);
-			api.fill_rect(dropdownLeft + paddingX, separatorTop, dropdownRight - paddingX, separatorTop + 1, Z_MENU_DROPDOWN, borderColor);
-			currentTop += separatorHeight;
+			const separatorTop = bounds.top + Math.max((bounds.bottom - bounds.top) >> 1, 1);
+			api.fill_rect(bounds.left + paddingX, separatorTop, bounds.right - paddingX, separatorTop + 1, Z_MENU_DROPDOWN, borderColor);
 			continue;
 		}
-		const bounds = item.bounds;
-		write_rect_bounds(bounds, dropdownLeft, currentTop, dropdownRight, currentTop + itemHeight);
-		const fillColor = item.active
-			? constants.COLOR_MENU_SELECTION_BACKGROUND
-			: constants.COLOR_MENU_BACKGROUND;
-		const textColor = item.disabled
-			? constants.COLOR_MENU_DISABLED_TEXT
-			: (item.active ? constants.COLOR_MENU_SELECTION_TEXT : constants.COLOR_MENU_TEXT);
+		const fillColor = item.active ? constants.COLOR_MENU_SELECTION_BACKGROUND : constants.COLOR_MENU_BACKGROUND;
+		const textColor = item.disabled ? constants.COLOR_MENU_DISABLED_TEXT
+			: item.active ? constants.COLOR_MENU_SELECTION_TEXT : constants.COLOR_MENU_TEXT;
 		api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, Z_MENU_DROPDOWN, fillColor);
 		api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, Z_MENU_DROPDOWN, borderColor);
 		if (item.active) {
-			const markerOffset = (itemHeight - markerSize) >> 1;
-			const markerTop = bounds.top + (markerOffset > 1 ? markerOffset : 1);
+			const markerTop = bounds.top + Math.max((bounds.bottom - bounds.top - markerSize) >> 1, 1);
 			const markerLeft = bounds.left + paddingX;
 			api.fill_rect(markerLeft, markerTop, markerLeft + markerSize, markerTop + markerSize, Z_MENU_MARKER, borderColor);
 		}
-		const textX = bounds.left + paddingX * 2 + markerSize;
 		const textY = bounds.top + constants.HEADER_BUTTON_PADDING_Y;
-		const label = editorCommandTitle(item.command, item.active, true);
-		context.drawText(label, textX, textY, Z_MENU_DROPDOWN_TEXT, textColor);
-		const keybinding = EDITOR_COMMAND_KEYBINDING_LABELS.get(item.command);
-		if (keybinding !== undefined) {
-			context.drawText(
-				keybinding,
-				bounds.right - paddingX - context.measureText(keybinding),
-				textY,
-				Z_MENU_DROPDOWN_TEXT,
-				textColor,
-			);
-		}
-		currentTop = bounds.bottom;
-	}
-	write_rect_bounds(menuDropdownBoundsScratch, dropdownLeft, dropdownTop, dropdownRight, dropdownBottom);
-	editorChromeState.menuDropdownBounds = menuDropdownBoundsScratch;
-}
-
-function computeDropdownWidth(menu: TopBarMenuEntry, markerSize: number, paddingX: number, anchorWidth: number, context: ChromeRenderContext): number {
-	let maxLabelWidth = 0;
-	for (let index = 0; index < menu.items.length; index += 1) {
-		const item = menu.items[index];
-		if (item.type === 'separator') {
-			continue;
-		}
-		const labelWidth = context.measureText(editorCommandTitle(item.command, item.active, true));
-		const keybinding = EDITOR_COMMAND_KEYBINDING_LABELS.get(item.command);
-		const width = keybinding === undefined
-			? labelWidth
-			: labelWidth + paddingX * 2 + context.measureText(keybinding);
-		if (width > maxLabelWidth) {
-			maxLabelWidth = width;
+		context.drawText(item.label, bounds.left + paddingX * 2 + markerSize, textY, Z_MENU_DROPDOWN_TEXT, textColor);
+		if (item.keybinding !== undefined) {
+			context.drawText(item.keybinding, bounds.right - paddingX - item.keybindingWidth, textY, Z_MENU_DROPDOWN_TEXT, textColor);
 		}
 	}
-	const labelWidth = markerSize + paddingX * 3 + maxLabelWidth;
-	const anchorButtonWidth = anchorWidth + paddingX * 2;
-	return labelWidth > anchorButtonWidth ? labelWidth : anchorButtonWidth;
-}
-
-function computeDropdownHeight(menu: TopBarMenuEntry, itemHeight: number, separatorHeight: number): number {
-	let total = 0;
-	for (let index = 0; index < menu.items.length; index += 1) {
-		const item = menu.items[index];
-		total += item.type === 'separator' ? separatorHeight : itemHeight;
-	}
-	return total;
-}
-
-function clearMenuBounds(): void {
-	for (let i = 0; i < MENU_IDS.length; i += 1) {
-		const id = MENU_IDS[i];
-		clear_rect_bounds(editorChromeState.menuEntryBounds[id]);
-	}
-	for (let menuIndex = 0; menuIndex < TOP_BAR_MENU_ENTRIES.length; menuIndex += 1) {
-		const items = TOP_BAR_MENU_ENTRIES[menuIndex].items;
-		for (let itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
-			const item = items[itemIndex];
-			if (item.type === 'command') {
-				clear_rect_bounds(item.bounds);
-			}
-		}
-	}
-	editorChromeState.menuDropdownBounds = null;
 }

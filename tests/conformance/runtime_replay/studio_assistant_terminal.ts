@@ -58,8 +58,18 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => terminal.active === undefined && test.tasks.ready, 'terminal tools: ordinary manual evaluation');
 	check(terminal.transcript.entry(terminal.transcript.next - 1).text === '105', 'manual cart context sees the real implicit global mutation');
+	// Expire feedback in the last hover frame. Parent and child geometry must
+	// publish together, not move the action one update later during the click.
+	showEditorMessage('Select Lua context', COLOR_STATUS_TEXT, 1);
+	await frame(); await frame();
+	const contextTop = input.actions.items.find(item => item.command === 'terminal.context')!.bounds.top;
+	showEditorMessage('Select Lua context', COLOR_STATUS_TEXT, runtime.timing.frameDurationMs * 1.5 / 1000);
 	await test.click(input.actions.items.find(item => item.command === 'terminal.context')!.bounds);
+	check(input.actions.items.find(item => item.command === 'terminal.context')!.bounds.top > contextTop, 'expired status row publishes the new Terminal bounds');
+	check(ide.editor.quickInput.visible, 'manual Lua context picker opens after status expiry');
+	await renderer.capture!('context-picker');
 	await press('ArrowDown'); await press('Enter');
+	check(terminal.inputContext === 'session', 'manual Lua context selection uses the ordinary picker');
 	await test.click(input.composerBounds); test.clipboard.text = 'counter';
 	await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => terminal.active === undefined && test.tasks.ready, 'terminal tools: ordinary isolated context');

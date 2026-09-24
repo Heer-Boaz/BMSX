@@ -840,29 +840,75 @@ is already implemented.
 The context-button failure has a deterministic reproduction in
 `runAssistantTerminal`: after the manual cart evaluation, show a one-second
 status message and advance two host frames; reset its duration to 1.5 host frames,
-then use the ordinary pointer helper on `terminal.context`. The two hover frames
-still observe the old action bounds. Mouse-down observes top 256; the next pane
-update moves the same action to top 266, so release correctly cancels the gesture.
+then use the ordinary pointer helper on `terminal.context`. Before the correction,
+the two hover frames still observed the old action bounds. Mouse-down observed
+top 256; the next pane update moved the same action to top 266, so release
+correctly cancelled the gesture.
 The pointer and 768-by-576 canvas remain stationary. The diagnostic patch/log are
 `/tmp/static-names-terminal-context-expiry-repro.patch` and
 `/tmp/static-names-terminal-context-expiry.log`.
 
-`CartEditor.update` expires feedback and updates its pane before
-`CartEditor.draw` calls `refreshWorkbenchLayout`. The pane therefore sees the
-previous content bounds for one update. Tab-bar height/scrollbar layout is also
-currently produced inside painting. This is a shared layout-publication problem,
+`CartEditor.update` expired feedback and updated its pane before
+`CartEditor.draw` called `refreshWorkbenchLayout`. The pane therefore saw the
+previous content bounds for one update. Tab-bar height/scrollbar layout was also
+produced inside painting. This is a shared layout-publication problem,
 not a reason to retry clicks, relax matching-release semantics, pin stale hit
 rectangles or add a Terminal-specific workaround.
 
-Before the next implementation, separate tab/chrome measurement and layout from
-painting, then publish parent bounds before child controls consume them in that
-frame. Keep existing retained geometry, measurement caches and input ownership;
-do not duplicate a second geometry tree or perform a second layout per frame.
+The correction separates tab/chrome measurement and layout from painting.
+`CartEditor.update` now expires feedback, calls the tab layout owner, publishes
+shared content bounds and only then updates its pane. Visible menu state and
+geometry are also prepared before paint. The retained records reference the
+existing input-lifetime hit rectangles; no second geometry tree or input wrapper
+was added. Synchronous viewport changes use the same owner, with unchanged tab
+geometry retained on the next update. Dirty/clean presentation is observed even
+when an already-pinned input does not advance the tab-group revision. Label and
+keybinding measurements are retained, closed menus do no command queries, and
+feedback wrapping now includes the font in its cache key. Matching-release and
+pointer capture were not relaxed; the test click helper was not changed.
+
 VS Code's [Part layout and header/footer relayout](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/part.ts)
 is the ownership reference; Playwright's [stable-target actionability](https://github.com/microsoft/playwright/blob/main/packages/injected/src/injectedScript.ts)
-is the test reference. Validate transient feedback, tab overflow/font/viewport
-changes, pointer capture and the real Terminal conversation on all three backends.
-The deterministic regression above is not fixed by the installed-name commit.
+is the test reference. Both were inspected before implementation. This correction
+changes only host IDE layout, not the TS/C++ machine or BIOS Terminal contract.
+
+Validation:
+
+- The deterministic browser regression failed before the owner correction
+  (`/tmp/workbench-layout-terminal-before.log`) and passes afterwards. The
+  45-test assistant bundle passes, including the real Terminal conversation on
+  software, WebGL2 and WebGPU. Three further full-backend Terminal repetitions
+  also pass (nine conversations, `/tmp/workbench-layout-terminal-repeat-*.log`).
+  The context picker is visibly open in the inspected
+  `/tmp/bmsx-studio-chat/terminal-tools-*-context-picker.png` captures. This is
+  automated browser/server/Codex-process evidence with a scripted model fixture,
+  not live-model reasoning or personal-phone testing.
+- The ordinary Scene Editor viewport scenario passes on all three backends.
+  Font changes with overflowing tabs and Problems-panel resize now assert equal
+  parent/child bounds after one update, without the former extra reflow frame.
+  It also exercises hover, popup routing, capture cancellation and authored edits.
+  Evidence: `/tmp/workbench-layout-scene.log` and
+  `/tmp/workbench-layout-scene-*.png`.
+- Focused chrome/tab/scrollbar/context-menu tests: 28 pass. They test layout
+  without paint, paint without measurement/reveal/command queries, dirty-to-clean
+  changes without a membership revision, rename/font/viewport invalidation,
+  retained hits, menu retirement, keybinding alignment and feedback wrapping.
+  Full Lua: 2,732 pass, one skip. Product typechecks and browser/Node tooling
+  release/debug builds pass. Tests-project typecheck retains the same 95
+  diagnostics after location normalization. Strict architecture audit reports
+  zero issues; core parity and `git diff --check` pass. Repository indentation
+  check still reports five byte-identical-to-HEAD files outside this slice
+  (`ide/runtime/sources.ts`, `tests/helpers/coroutine.ts`,
+  `tests/lua/semantic_keyed_shapes.test.ts`, and `third_party/cjson/cJSON.{c,h}`).
+- Nine alternating warmed before/after samples (4,000 warmup and 20,000 measured
+  frames each) compare this chrome owner with `c6e707c90`. Median microseconds per
+  layout/overlay-command-emission frame are 0.578/0.319 with four tabs and no menu,
+  1.516/1.239 with 40 tabs and no menu, and 3.872/2.002 with 40 tabs and Run open.
+  Warm text measurements fall from 5/5/33 to zero; command queries from 58/58/58
+  to 0/0/24 respectively. The command-state fixture has constant answers, so this
+  measures chrome overhead, not actual command-service cost, GPU rendering or
+  overall gameplay speed. Probe and raw samples:
+  `/tmp/workbench-layout-profile{.ts,-build.mjs,.jsonl}`.
 
 Open gates remain: public selected-stop admission, cancellation and replacement/
 rewind borrow retirement, native frame selection, direct typed-memory expressions

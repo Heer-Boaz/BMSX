@@ -8,6 +8,7 @@ import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/edito
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { renderTabBar } from '../../ide/workbench/render/tab_bar';
+import { layoutTabBar, tabBarItems } from '../../ide/workbench/ui/tab/layout';
 import { beginTabDrag, endTabDrag } from '../../ide/workbench/ui/tab/drag';
 import { PointerButton } from '../../ide/input/pointer/buttons';
 import { pointerCapture } from '../../ide/input/pointer/capture';
@@ -37,26 +38,106 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384) 
 	const overlay = createHostOverlayFixture(width, 288);
 	let measuredLabels = 0, drawnLabels = 0;
 	const context = {
-		viewportWidth: width, headerHeight: editorViewState.headerHeight,
-		tabBarHeight: editorViewState.tabBarHeight, lineHeight: editorViewState.lineHeight,
+		get viewportWidth() { return editorViewState.viewportWidth; },
+		get headerHeight() { return editorViewState.headerHeight; },
+		get tabBarHeight() { return editorViewState.tabBarHeight; },
+		get lineHeight() { return editorViewState.lineHeight; },
 		measureText(text: string) { if (text !== 'x') measuredLabels += 1; return editorViewState.font.measure(text); },
 		drawText(text: string, x: number, y: number, z: number, color: number) {
 			drawnLabels += 1;
 			api.blit_text_inline_with_font(text, x, y, z, color, editorViewState.font.renderFont());
 		},
 	};
-	const draw = () => {
+	const layout = () => layoutTabBar(context);
+	const paint = () => {
 		drawnLabels = 0;
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-		const height = renderTabBar(context); overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
-		return height;
+		renderTabBar(context); overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
+	};
+	const draw = () => {
+		layout(); paint();
+		return editorViewState.tabBarTotalHeight;
 	};
 	t.after(() => {
 		endTabDrag(); pointerCapture.cancel(); editorTabGroup.clear();
 		for (const model of models) model.dispose();
 	});
-	return { add, draw, context, measured: () => measuredLabels, drawn: () => drawnLabels, bar: editorChromeState.tabScrollbar };
+	return { add, layout, paint, draw, context, measured: () => measuredLabels, drawn: () => drawnLabels, bar: editorChromeState.tabScrollbar };
 }
+
+test('tab layout publishes height and hits before paint; paint cannot measure or reveal', t => {
+	const f = fixture(t, 'tiny', 256);
+	const first = f.add('first');
+	for (let index = 0; index < 20; index++) f.add(`definition ${index}`);
+	const last = editorTabGroup.activeTab!;
+	editorChromeState.tabHoverId = last.id;
+	f.layout();
+	assert.equal(editorViewState.tabBarTotalHeight, f.context.tabBarHeight + SCROLLBAR_WIDTH);
+	const bounds = editorChromeState.tabButtonBounds.get(last.id)!;
+	const close = editorChromeState.tabCloseButtonBounds.get(last.id)!;
+	assert.ok(bounds.left >= 0 && bounds.right <= 256);
+	assert.ok(close.left > bounds.left && close.right === bounds.right);
+	const hits = [structuredClone(bounds), structuredClone(close)];
+	const scroll = f.bar.getScroll(), measurements = f.measured();
+	const record = tabBarItems.peek(20);
+	f.paint(); f.paint();
+	assert.deepEqual([bounds, close], hits);
+	assert.equal(f.bar.getScroll(), scroll);
+	assert.equal(f.measured(), measurements);
+	assert.equal(tabBarItems.peek(20), record);
+	// Even a new activation cannot make painting perform the next layout phase.
+	editorTabGroup.activate(first);
+	f.paint();
+	assert.equal(f.bar.getScroll(), scroll);
+	f.layout();
+	assert.equal(editorChromeState.tabButtonBounds.get(first.id)!.left, 0);
+	assert.equal(tabBarItems.peek(0).active, true);
+	t.after(() => { editorChromeState.tabHoverId = null; });
+});
+
+test('retained tab layout observes clean/dirty changes even without a group revision', t => {
+	const f = fixture(t);
+	const tab = f.add('working copy');
+	f.layout();
+	const revision = editorTabGroup.revision, record = tabBarItems.peek(0);
+	const bounds = record.bounds, rectangle = structuredClone(bounds);
+	tab.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty\n' }]);
+	assert.equal(editorTabGroup.revision, revision, 'already pinned input needs no membership change');
+	f.layout();
+	assert.equal(record.dirty, true);
+	tab.workingCopy.completeSave(tab.workingCopy.createSnapshot());
+	assert.equal(editorTabGroup.revision, revision);
+	f.layout();
+	assert.equal(record.dirty, false);
+	assert.equal(record.bounds, bounds);
+	assert.deepEqual(bounds, rectangle, 'dirty marker reserves the existing close-button slot');
+});
+
+test('tab layout invalidates measured labels on rename, font and viewport changes', t => {
+	const f = fixture(t, 'tiny', 256);
+	const tab = f.add('brief');
+	f.layout();
+	const record = tabBarItems.peek(0), bounds = record.bounds;
+	const measurements = f.measured();
+	tab.setLabel('a much longer authored definition name', tab.description);
+	f.layout();
+	assert.equal(f.measured(), measurements + 1);
+	assert.equal(record.text, 'a much longer authored definition name');
+	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
+	f.layout();
+	assert.equal(f.measured(), measurements + 2);
+	assert.equal(bounds.top, f.context.headerHeight + 1);
+	assert.equal(bounds.bottom, f.context.headerHeight + f.context.tabBarHeight - 1);
+	editorViewState.viewportWidth = 128;
+	f.layout();
+	assert.equal(f.measured(), measurements + 3);
+	assert.ok(record.text.length < tab.title.length, 'narrow viewport truncates the measured label');
+	const narrowed = structuredClone(bounds);
+	for (let index = 0; index < 100; index++) f.layout();
+	assert.equal(f.measured(), measurements + 3);
+	assert.equal(record.bounds, bounds);
+	assert.deepEqual(bounds, narrowed);
+});
 
 for (const variant of ['tiny', 'msx'] as const) for (const width of [256, 384]) {
 	test(`tabs use a bounded horizontal strip and retained labels at ${variant}/${width}`, t => {

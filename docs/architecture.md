@@ -1692,6 +1692,19 @@ labels, disposal, pointer capture and validation are specified in
 [`workbench_definition_inputs_design.md`](workbench_definition_inputs_design.md).
 No guest registration id, machine state or ROM representation is added.
 
+Workbench chrome layout precedes pane layout, not painting. Each editor update
+first advances feedback timers, publishes the measured tab-strip height and
+shared content bounds, then updates the active pane. The top-bar layout publishes
+the visible menu's command presentation and hit rectangles. Tab/menu painting
+consumes these retained records: it cannot measure, reveal an active tab, change
+hit geometry or query command enablement. Synchronous viewport transitions use
+the same tab layout; an unchanged next update observes dirty/active presentation
+without repeating tab geometry writes. Dirty state is not inferred from the
+group's membership revision. Label metrics retain their font/width dependencies,
+and feedback wrapping also invalidates on font changes. Closed menus query no
+commands; execution admission remains live in the command controller. See the
+[layout regression and evidence](studio_terminal_contexts.md#follow-up-workbench-layout-publication).
+
 BT and FSM diagrams are fully expanded over their recognized source structure.
 The host workbench graph owns finite padded canvas navigation and shared
 horizontal/vertical scrollbars, not guest input or authored geometry. Middle

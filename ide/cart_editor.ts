@@ -110,7 +110,7 @@ import {
 	shutdownWorkspaceStorage,
 } from './workbench/workspace/storage';
 import { WorkspaceAutosaveChange } from './workbench/workspace/models';
-import { refreshWorkbenchLayout } from './workbench/common/layout';
+import { refreshWorkbenchLayout, type WorkbenchChromeLayout } from './workbench/common/layout';
 import { BreakpointController } from './workbench/contrib/debugger/controller';
 import { closeBlockingWorkbenchModal, drawBlockingWorkbenchModal, handleBlockingWorkbenchModalInput, hasBlockingWorkbenchModal } from './workbench/contrib/modal/blocking_modal';
 import { drawProblemsPanel, problemsPanel } from './workbench/contrib/problems/panel/controller';
@@ -131,6 +131,8 @@ import { drawResourcePanel } from './workbench/render/resource_panel';
 import { renderStatusBar } from './workbench/render/status_bar';
 import { renderTabBar } from './workbench/render/tab_bar';
 import { renderTopBar, renderTopBarDropdown } from './workbench/render/top_bar';
+import { layoutTabBar } from './workbench/ui/tab/layout';
+import { layoutTopBar } from './workbench/ui/top_bar/layout';
 import type { ChromeRenderContext } from './workbench/render/chrome_context';
 import { createResourceEditorResolver } from './workbench/contrib/resources/editor_contributions';
 import type { ResourceEditorResolver } from './workbench/services/editor/resource_editor_resolver';
@@ -237,7 +239,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly unbindQuickInputFields: () => void;
 	private readonly unbindProblemsPanel: () => void;
 	private readonly unbindBreakpoints: () => void;
-	private readonly chromeRenderContext: ChromeRenderContext = {
+	private readonly chromeRenderContext: ChromeRenderContext & WorkbenchChromeLayout = {
 		get viewportWidth(): number { return editorViewState.viewportWidth; },
 		get headerHeight(): number { return editorViewState.headerHeight; },
 		get lineHeight(): number { return editorViewState.lineHeight; },
@@ -579,7 +581,10 @@ export class RuntimeCartEditor implements CartEditor {
 		runBackgroundTasks(this.clock);
 		updateBlink(deltaSeconds);
 		updateEditorMessage(deltaSeconds);
+		layoutTabBar(this.chromeRenderContext);
+		refreshWorkbenchLayout();
 		this.editorPanes.activePane.update(deltaSeconds);
+		layoutTopBar(this.commands, this.chromeRenderContext);
 		this.quickInput.update();
 		layoutContextMenu(this.contextMenu);
 		this.contextMenu.update();
@@ -587,6 +592,7 @@ export class RuntimeCartEditor implements CartEditor {
 
 	public updateViewport(viewport: Viewport): void {
 		applyViewportSize(viewport);
+		layoutTabBar(this.chromeRenderContext);
 		refreshWorkbenchLayout();
 		this.syncResourcePanelViewport();
 		this.editorPanes.activePane?.layout?.();
@@ -597,10 +603,8 @@ export class RuntimeCartEditor implements CartEditor {
 		editorViewState.codeHorizontalScrollbarVisible = false;
 		api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, 0, constants.COLOR_FRAME);
 
-		renderTopBar(this.commands, this.chromeRenderContext);
-
-		editorViewState.tabBarTotalHeight = renderTabBar(this.chromeRenderContext);
-		refreshWorkbenchLayout();
+		renderTopBar(this.chromeRenderContext);
+		renderTabBar(this.chromeRenderContext);
 		drawResourcePanel(this.resourcePanel);
 		this.editorPanes.activePane.draw();
 		drawProblemsPanel();
