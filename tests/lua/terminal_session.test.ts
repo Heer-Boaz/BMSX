@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { TerminalEvaluation } from '../../ide/workbench/services/terminal/session';
 import { RuntimeGuestCallPlan } from '../../ide/runtime/guest_call';
+import { applyRuntimeDebuggerHotResume } from '../../ide/runtime/debugger_state';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createFrameRuntime } from '../helpers/frame_runtime';
@@ -41,6 +42,16 @@ test('Stop suspends admitted execution and releases its waiter without discardin
 	controller.abort(); await assert.rejects(waiting, { name: 'AbortError' });
 	assert.equal(f.terminal.paused, true); assert.equal(f.operation.result, undefined);
 	assert.equal(f.debuggerState.plans.mutationActive, true); assert.equal(f.operation.listeners.size, 0);
+});
+
+test('accepted Hot Resume resumes a paused physical evaluation without discarding its observer', t => {
+	const f = fixture(t);
+	f.terminal.setPaused(f.operation, true);
+	const plan = f.debuggerState.plans.activeControlPlan;
+	applyRuntimeDebuggerHotResume(f.debuggerState, f.debuggerState.breakpoints.bindings);
+	assert.equal(f.debuggerState.plans.activeControlPlan, plan);
+	assert.equal(f.debuggerState.plans.controlExecutionRequested, true);
+	assert.equal(f.operation.result, undefined);
 });
 
 test('Stop before admission retires the call instead of leaving queued work', async t => {

@@ -55,6 +55,9 @@ export function buildHotResumeRelocation(
 			target.previousImage,
 			cpu.readFrameFunctionAddress(frameIndex),
 		);
+		// An execution domain also runs RAM-compiled Lua. Only records owned by
+		// the replaced linked image participate in its relocation.
+		if (functionIndex === -1) continue;
 		const functionAddress = target.revision.functionAddresses[functionIndex];
 		const pc = relocatedContinuationPc(
 			target.revision,
@@ -75,11 +78,9 @@ export function buildHotResumeRelocation(
 	for (let childFrameIndex = 1; childFrameIndex < frameCount; childFrameIndex += 1) {
 		// External completion roots have no guest CALL in the frame below them.
 		if (cpu.readFrameReturnsToCompletionLatch(childFrameIndex)) continue;
-		const parentExecutionDomain = cpu.readFrameExecutionDomain(childFrameIndex - 1);
-		const target = revisions[parentExecutionDomain + 1];
-		if (target === null) {
-			continue;
-		}
+		const parentDomainWord = relocation[(childFrameIndex - 1) * FRAME_EXECUTION_WORDS + FRAME_EXECUTION_DOMAIN];
+		if (parentDomainWord === 0) continue;
+		const target = revisions[parentDomainWord - 1]!;
 		const rawPc = cpu.readFrameCallSitePc(childFrameIndex);
 		const pc = cpu.isExceptionFrame(childFrameIndex)
 			? relocatedContinuationPc(target.revision, target.previousImage, rawPc)
@@ -101,21 +102,14 @@ export function buildHotResumeRelocation(
 		}
 	}
 	const epcOwnerFrameIndex = activeExceptionFrameIndex - 1;
-	if (epcOwnerFrameIndex >= 0) {
-		const executionDomain = cpu.readFrameExecutionDomain(epcOwnerFrameIndex);
-		const target = revisions[executionDomain + 1];
-		if (target !== null) {
-			const pc = relocatedContinuationPc(
-				target.revision,
-				target.previousImage,
-				cpu.readEpcWord(),
-			);
-			if (pc < 0) {
-				unmappedWords.push(`exception EPC 0x${cpu.readEpcWord().toString(16)}`);
-			} else {
-				relocation[latchBase + EPC_WRITE] = 1;
-				relocation[latchBase + EPC_WORD] = pc;
-			}
+	if (epcOwnerFrameIndex >= 0 && relocation[epcOwnerFrameIndex * FRAME_EXECUTION_WORDS + FRAME_EXECUTION_DOMAIN] !== 0) {
+		const target = revisions[relocation[epcOwnerFrameIndex * FRAME_EXECUTION_WORDS + FRAME_EXECUTION_DOMAIN] - 1]!;
+		const pc = relocatedContinuationPc(target.revision, target.previousImage, cpu.readEpcWord());
+		if (pc < 0) {
+			unmappedWords.push(`exception EPC 0x${cpu.readEpcWord().toString(16)}`);
+		} else {
+			relocation[latchBase + EPC_WRITE] = 1;
+			relocation[latchBase + EPC_WORD] = pc;
 		}
 	}
 
@@ -129,21 +123,14 @@ export function buildHotResumeRelocation(
 			}
 		}
 		const nmiReturnEpcOwnerFrameIndex = interruptedExceptionFrameIndex - 1;
-		if (nmiReturnEpcOwnerFrameIndex >= 0) {
-			const executionDomain = cpu.readFrameExecutionDomain(nmiReturnEpcOwnerFrameIndex);
-			const target = revisions[executionDomain + 1];
-			if (target !== null) {
-				const pc = relocatedContinuationPc(
-					target.revision,
-					target.previousImage,
-					cpu.readNmiReturnEpcWord(),
-				);
-				if (pc < 0) {
-					unmappedWords.push(`NMI return EPC 0x${cpu.readNmiReturnEpcWord().toString(16)}`);
-				} else {
-					relocation[latchBase + NMI_RETURN_EPC_WRITE] = 1;
-					relocation[latchBase + NMI_RETURN_EPC_WORD] = pc;
-				}
+		if (nmiReturnEpcOwnerFrameIndex >= 0 && relocation[nmiReturnEpcOwnerFrameIndex * FRAME_EXECUTION_WORDS + FRAME_EXECUTION_DOMAIN] !== 0) {
+			const target = revisions[relocation[nmiReturnEpcOwnerFrameIndex * FRAME_EXECUTION_WORDS + FRAME_EXECUTION_DOMAIN] - 1]!;
+			const pc = relocatedContinuationPc(target.revision, target.previousImage, cpu.readNmiReturnEpcWord());
+			if (pc < 0) {
+				unmappedWords.push(`NMI return EPC 0x${cpu.readNmiReturnEpcWord().toString(16)}`);
+			} else {
+				relocation[latchBase + NMI_RETURN_EPC_WRITE] = 1;
+				relocation[latchBase + NMI_RETURN_EPC_WORD] = pc;
 			}
 		}
 	}

@@ -130,6 +130,7 @@ export function discardRuntimeDebuggerFramesFrom(state: RuntimeDebuggerState, fr
 export function applyRuntimeDebuggerHotResume(state: RuntimeDebuggerState, breakpoints: RuntimeBreakpointBindings): void {
 	state.executionRevision++;
 	state.executionContext = undefined;
+	state.plans.setControlSuspended(false);
 	const wasStopped = state.source.stop !== undefined;
 	state.stopPresentationPending = false;
 	state.breakpoints.install(breakpoints);

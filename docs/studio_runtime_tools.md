@@ -21,7 +21,7 @@ unimplemented rows below are not advertised capabilities.
 | Session-context Lua Terminal | firmware compiler/REPL, shared Terminal session and debugger plans | real conversation calls, stops and TS/C++ BIOS parity | implemented; see [Terminal contract](studio_lua_terminal.md) |
 | Explicit cart-global access from Lua Terminal | BIOS getglobal/setglobal + CPU registerfiles | real register/object writes, TS/C++ parity | implemented; see [named globals](global_register_access.md) |
 | Implicit cart bindings in Lua Terminal | BIOS compiler named-register lowering | real conversation/manual writes, TS/C++ monitor parity | implemented; [binding contexts](studio_terminal_contexts.md) |
-| Frame-context Lua Terminal | installed compiler/debugger binding contract | actual selected binding writes, liveness and frame lifetime, not copied scope tables | implemented for installed source stops via the shared Terminal and conversation tool; native BIOS frame evaluation has TS/C++ HID parity; extended recovery/restore workflow remains; [binding contract](studio_terminal_contexts.md) |
+| Frame-context Lua Terminal | installed compiler/debugger binding contract | actual selected binding writes, liveness and frame lifetime, not copied scope tables | implemented for installed source stops via shared Terminal/conversation tools; public-owner recovery/restore/rewind workflow and native BIOS TS/C++ HID parity tested; [binding contract](studio_terminal_contexts.md) |
 | Discover/run/wait/cancel scenarios | TestRun/ScenarioRunService | real isolated targets, cancellation and completion | implemented; [test execution](studio_test_execution.md) |
 | Retained failed test inspection | TestExecution / TestTargetInspection | phase-thread locals/upvalues, compiled source, expiry; no authoring reads | implemented read-only; [test inspection](studio_test_inspection.md) |
 | Live test breakpoint/step/debug-rerun | target-bound debugger and composed execution hooks | actual stops/control on the test target | implemented for one named case; prompt-scoped control, [live test debugger](studio_test_debugger.md) |
@@ -81,7 +81,7 @@ restore operations or rollback around guest mutations.
 | Table keys/values | Table stored entries, ValueTag | Table stored entries, guest tags | none |
 | Time | scheduler machine cycles; frameScheduler video sequence | scheduler machine cycles; frame scheduler | none |
 | Inspection handles | IDE-only borrowed-value registry | no IDE registry required | new tooling only |
-| Terminal compilation/execution | BIOS load/pcall + CPU | same BIOS + native CPU | session and cart parity proven by physical-monitor conformance; selected-frame bindings still open |
+| Terminal compilation/execution | BIOS load/pcall + CPU | same BIOS + native CPU | session, cart and selected-frame bindings share firmware and physical-monitor conformance |
 
 First-slice hot-path callsites: `runWorkbenchHostFrame` invalidates outstanding
 borrows before normal execution and rewind replay, including with the editor
@@ -98,8 +98,9 @@ added. Values and pages are constructed only on explicit inspection requests.
    captures remain part of test-target integration.
 3. Expose execution owners with completed/stopped/interrupted outcomes, not UI
    command dispatch. Logical video steps and source/instruction steps differ.
-4. Cart-context evaluation now shares the BIOS compiler on TS/C++. Complete
-   selected-frame bindings and lifetime ownership before claiming local evaluation.
+4. Cart and selected-frame evaluation share the BIOS compiler on TS/C++.
+   Selected-frame recovery now has public-owner browser workflow coverage;
+   native logical-frame navigation is still more limited than Studio's source UI.
 5. Test execution, target-bound debugging and basic source-backed builder actions
    are implemented. Live semantic Actor operations and builder transfer/retarget
    impact review remain open.

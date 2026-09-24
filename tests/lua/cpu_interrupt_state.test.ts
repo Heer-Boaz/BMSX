@@ -57,14 +57,13 @@ import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, 
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { MemoryAccessKind } from '../../machine/ts/spec/blua32/memory_access_kind';
 import { CART_ROM_BASE, IO_WORD_SIZE, DYNAMIC_RAM_BASE, RAM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import type { Blua32ImageLayout } from '../../toolchain/ts/rompack/blua32_image';
+import { identityHotResumeRevision } from '../helpers/hot_resume';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import type { OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
 import {
 	applyHotResumeRelocation,
 	buildHotResumeRelocation,
-	type HotResumeRevision,
 } from '../../ide/runtime/hot_resume_relocation';
 import {
 	CpuExecutionResult,
@@ -142,21 +141,6 @@ function makeHaltTestImages(startupFunctionIndex: number): TestBlua32ImagePair {
 
 const HALT_TEST_IMAGES = makeHaltTestImages(0);
 const HALT_CLOSURE_TEST_IMAGES = makeHaltTestImages(3);
-
-function identityHotResumeRevision(image: Blua32ImageLayout): HotResumeRevision {
-	const functionAddresses = new Uint32Array(image.functions.length);
-	for (let index = 0; index < image.functions.length; index += 1) {
-		functionAddresses[index] = image.functions[index].address;
-	}
-	const pcAddresses = new Int32Array(image.header.textByteCount / INSTRUCTION_BYTES);
-	for (let index = 0; index < pcAddresses.length; index += 1) {
-		pcAddresses[index] = image.header.textAddress + index * INSTRUCTION_BYTES;
-	}
-	return {
-		previousImage: image,
-		revision: { functionAddresses, pcAddresses },
-	};
-}
 
 function makeHaltCpu(): {
 	memory: Memory;

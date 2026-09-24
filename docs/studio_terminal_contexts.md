@@ -1171,11 +1171,11 @@ The physical monitor command accepts only ancestors below that boundary.
   failed completion unwind clears only matching thread/frame scopes before pop.
   Restoring saved guest scopes remains the firmware/CPU save-state contract.
 
-Still required for the larger toolset acceptance workflow: a full public
-frame-evaluation -> fault recovery/Hot Resume -> rewind/restore -> reevaluation
-scenario, richer native logical-frame navigation, live Actor mutations and the
-complete reviewed-source save/install/rerun chain. No claim of unrestricted Lua
-syntax or optimized-out value reconstruction is made here.
+At this slice boundary, the public frame-evaluation -> fault recovery/Hot Resume
+-> rewind/restore -> reevaluation scenario was still required; the later recovery
+section below records it. Richer native logical-frame navigation, live Actor
+mutations and the complete reviewed-source save/install/rerun chain remain open.
+No claim of unrestricted Lua syntax or optimized-out value reconstruction is made.
 
 Final validation for this public slice:
 
@@ -1201,3 +1201,84 @@ Final validation for this public slice:
 These checks establish the named surfaces, not a general performance benchmark.
 No new work was added to normal CPU dispatch or rendering; frame-name discovery
 and context-label projection occur only on explicit selection/change.
+
+## Public recovery workflow: relocation ownership
+
+The real browser frame-evaluation/restore/Hot Resume workflow exposed a wrong
+owner assumption: the relocator treated every frame in an edited execution
+domain as linked ROM code. Firmware `load` emits RAM function records in that
+same domain. The existing `blua32FunctionIndexAtAddress` distinguishes them;
+only linked records get a relocation entry. Child callsites, exception EPC and
+nested-NMI saved EPC follow that already classified parent entry. An unmapped
+continuation in a linked function remains a rejection before any writes.
+
+| Representation | TypeScript | C++ | Change |
+| --- | --- | --- | --- |
+| Function / PC / callsite / EPC | raw physical words | same raw words | none |
+| Linked image membership | toolchain function-table index, or -1 for RAM records | no IDE relocator | consume the existing index in IDE relocation |
+| Frame evaluation lifetime | BIOS scope records in guest heap | same firmware and saved heap | no new metadata |
+
+Callsites are `admitHotResume` and ActionEffect source installation's existing
+relocation preparation. This is explicit-install work, not instruction dispatch,
+frame rendering, inspection polling or a new per-frame scan. No mirrored machine
+change is required. References reviewed: [VS Code frame evaluator](https://github.com/microsoft/vscode-js-debug/blob/main/src/adapter/evaluator.ts)
+and [LLDB call-plan lifetime](https://github.com/llvm/llvm-project/blob/main/lldb/source/Target/ThreadPlanCallFunction.cpp).
+BMSX keeps its physical call/firmware-scope ownership; it does not adopt LLDB's
+saved-register restore mechanism.
+
+The second reproduced failure was an accepted Hot Resume leaving its retained
+Terminal control plan suspended. `applyRuntimeDebuggerHotResume` now releases
+that pause, like the source stop, without discarding the plan or its observer.
+Rejected edits never reach this transition.
+
+`studio_frame_recovery.ts` exercises the actual installed Nemesis VBlank wait:
+
+1. Start a selected-frame evaluation, escape a reader of a live local, pause,
+   capture the machine, continue, pause again and restore the saved active call.
+   The old Terminal operation is interrupted and its frame selection expires;
+   the restored firmware borrow points at the restored physical thread.
+2. Continue to a new installed source stop. Ordinary return retires the restored
+   borrow; another evaluation reads the fresh frame and observes the old reader
+   rejecting access. The prior operation's result remains unchanged.
+3. Hot Resume a real canonical-source edit with another paused frame evaluation
+   still on the stack. Installation retires the old binding scope; init and the
+   original call finish independently, without resurrecting the old source stop.
+4. Call the installed cartlib metadata reader with an unmapped physical address.
+   The BIOS reports a real data-bus fault and nonzero supervisor sequence, not
+   a protected Lua error. Hot Resume unwinds the failed completion root, retires
+   its scope and preserves the write performed before the fault. Fresh frame
+   evaluation succeeds; the escaped failed-call reader stays expired.
+5. Record ordinary gameplay, seek retained history, inspect its actual stack,
+   advance exactly one recorded video frame, explicitly branch from history and
+   evaluate at a new source stop. Every replaced inspection expires.
+
+This is automated public-owner integration evidence with visible Terminal
+screenshots, not a UI-only authoring workflow or live-model reasoning. It does
+not add a new conversation command or continuous provider polling. Source edit
+and state capture/restore use the existing workbench/model/runtime owners.
+
+Recovery validation (2026-09-24):
+
+- The complete recovery workflow passes on software, WebGL2 and WebGPU:
+  `node tests/conformance/runtime_replay/browser.mjs --studio-frame-recovery dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/frame-recovery-final.png`.
+  Inspected screenshots include the real BIOS fault, preserved write `73`,
+  expired accessor and successful evaluation after history branching.
+- `hot_resume_ram.test.ts` uses real BIOS `load` on O0/O3, two active RAM call
+  frames, an NMI and nested IRQ/NMI. Full CPU snapshots retain all raw RAM
+  continuation/callsite/EPC words through ROM relocation. Existing rejection
+  tests still require unmapped linked continuations to reject before writes.
+- Full Lua suite: 2778 passed, 1 skipped. Assistant suite: 48 passed through the
+  real native app-server with a deterministic model fixture, not live inference.
+- Existing `--studio-execution-operations` passes on all three renderers too:
+  build rejection, nested init, physical init faults, deferred repair and reset.
+- Frame evaluation TS/C++ parity: 42 O0/O3 cases with full snapshots. Actual
+  BIOS/HID Terminal parity also passes. No C++/CPU/firmware change in this slice.
+- IDE/browser/Node typechecks and release/debug browser/Node tooling builds
+  pass. Tests-project typecheck has the same 95 normalized baseline diagnostics.
+- Strict architecture audit: zero issues; core parity audit passes. Indentation
+  check retains its five pre-existing file warnings; `git diff --check` passes.
+
+Failure evidence before the fixes: `/tmp/frame-recovery-first.log` (RAM code
+misclassified as a replaced ROM continuation) and `/tmp/frame-recovery-second.log`
+(accepted installation retained the old evaluation pause). Final workflow log:
+`/tmp/frame-recovery-all-backends.log`.
