@@ -2313,6 +2313,11 @@ dimension, not runtime length metadata.
 Scalar section symbols are pointers to one typed cell: firmware and cart code
 read/write them with `*symbol`. Indexing is for actual arrays and structs, not
 for pretending a scalar word is a one-element array.
+Struct declarations themselves are compile-time types, never Lua runtime
+values or global registers. The shared semantic frontend diagnoses a resolved
+type used as an expression before compiler lowering or module export analysis;
+a local or parameter can still shadow that name. Static storage symbols remain
+address-valued declarations, distinct from the types describing their layout.
 
 Const modules are the static symbol ABI. They export constants, section symbols,
 and function text-symbols without producing a runtime module table, module function,

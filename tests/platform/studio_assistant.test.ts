@@ -74,13 +74,14 @@ for (const backend of backends) test(`Studio ${backend}: actual browser, HTTP le
 	assert.equal(observations.connects, 1); assert.equal(model.requests.length, 21); assert.deepEqual(observations.errors, []);
 	const reads = outputs(model.requests[2]).slice(1);
 	const mainSource = await readFile('carts/nemesis_s/cart.lua', 'utf8');
-	assert.equal(reads[0].source, '-- UNSAVED ASSISTANT FIXTURE\n' + mainSource.replace('\n', '\nlocal studio_diagnostic_probe = missing_from_assistant_context\n'));
+	assert.equal(reads[0].source, '-- UNSAVED ASSISTANT FIXTURE\n' + mainSource.replace('\n', '\nlocal studio_diagnostic_probe = missing_from_assistant_context\nstruct studio_type_probe\n\tvalue: word\nend\nlocal invalid_type_value = studio_type_probe\n'));
 	assert.equal(reads[1].source, await readFile('carts/nemesis_s/res/data/nemesis_s_stage.yaml', 'utf8'));
 	assert.ok(JSON.stringify(outputs(model.requests[2])[0]).length > 16000, 'real catalog exceeds the old lossy truncation budget');
 	const diagnostics = outputs(model.requests[3]).slice(3);
 	assert.deepEqual(diagnostics.map(result => result.status), ['ready', 'unsupported']);
 	assert.equal(diagnostics[0].receipt, reads[0].receipt); assert.equal(diagnostics[0].version, reads[0].version);
 	assert.ok(diagnostics[0].diagnostics.some(marker => marker.message.includes('missing_from_assistant_context')));
+	assert.ok(diagnostics[0].diagnostics.some(marker => marker.message === "Struct type 'studio_type_probe' is not a runtime value."));
 	assert.equal(diagnostics[1].diagnostics, undefined, 'unsupported YAML does not pretend to have zero problems');
 	// These are the real Responses request bodies, not the browser's intended commands.
 	// Apply + Undo, Discard and a user edit report the shared owner's historical

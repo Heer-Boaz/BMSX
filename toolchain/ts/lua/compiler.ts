@@ -6425,11 +6425,11 @@ export function compileLuaChunkToProgram(
 		}
 	}
 	const frontend = buildCompilerSemanticFrontend(chunk, canonicalModules, options);
-	const moduleCompileContext = buildModuleCompileContext(canonicalModules, frontend);
 	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.locations.path, sourceMaps);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));
 	}
+	const moduleCompileContext = buildModuleCompileContext(canonicalModules, frontend);
 	const compileErrors: CompileError[] = [];
 	try {
 		validateInitParticipantPlacement(chunk);

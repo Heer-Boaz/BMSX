@@ -129,8 +129,8 @@ export function computeLuaDiagnosticsFromAnalysis(options: LuaAnalysisDiagnostic
 		options.extraGlobalNames,
 	);
 	const builtinLookup = getLuaBuiltinDescriptorLookup(options.builtinDescriptors);
-	addIdentifierDiagnosticsFromSemantic(diagnostics, options.analysis, globalKnownNames);
-	addConstLocalWriteDiagnosticsFromSemantic(diagnostics, options.analysis);
+	addIdentifierDiagnosticsFromSemantic(diagnostics, options.analysis, globalKnownNames, options.symbolResolver);
+	addConstLocalWriteDiagnosticsFromSemantic(diagnostics, options.analysis, options.symbolResolver);
 	addConstLocalInitializerDiagnostics(diagnostics, options.chunk);
 	addCallDiagnosticsFromSemantic(diagnostics, options.analysis, builtinLookup, options.symbolResolver);
 	addReservedMemoryDiagnosticsFromSemantic(diagnostics, options.analysis, options.chunk);
@@ -247,37 +247,42 @@ function addIdentifierDiagnosticsFromSemantic(
 	diagnostics: LuaStaticDiagnostic[],
 	analysis: FileSemanticData,
 	globalKnownNames: ReadonlySet<string>,
+	symbolResolver: WorkspaceSymbolResolver,
 ): void {
 	const refs = analysis.refs;
 	for (let index = 0; index < refs.length; index += 1) {
 		const ref = refs[index];
-		if (ref.isWrite || ref.target || ref.referenceKind !== 'identifier' || ref.namePath.length !== 1) {
+		if (ref.referenceKind !== 'identifier' || ref.namePath.length !== 1) {
 			continue;
 		}
-		if (globalKnownNames.has(ref.name)) {
+		const target = symbolResolver.resolveReference(ref);
+		const isType = target !== undefined && symbolResolver.getDeclaration(target).kind === 'type';
+		if (!isType && (ref.isWrite || target !== undefined || globalKnownNames.has(ref.name))) {
 			continue;
 		}
 		const start = analysis.chunk.locations.position(ref.span.unit, ref.span.start);
 		const row = start.line - 1;
 		const startColumn = start.column - 1;
 		const endColumn = startColumn + ref.name.length;
-		pushDiagnostic(diagnostics, row, startColumn, endColumn, `'${ref.name}' is not defined.`, 'error');
+		const message = isType
+			? `Struct type '${ref.name}' is not a runtime value.`
+			: `'${ref.name}' is not defined.`;
+		pushDiagnostic(diagnostics, row, startColumn, endColumn, message, 'error');
 	}
 }
 
-function addConstLocalWriteDiagnosticsFromSemantic(diagnostics: LuaStaticDiagnostic[], analysis: FileSemanticData): void {
-	const declById = new Map<string, Decl>();
-	for (let index = 0; index < analysis.decls.length; index += 1) {
-		const decl = analysis.decls[index];
-		declById.set(decl.id, decl);
-	}
+function addConstLocalWriteDiagnosticsFromSemantic(
+	diagnostics: LuaStaticDiagnostic[],
+	analysis: FileSemanticData,
+	symbolResolver: WorkspaceSymbolResolver,
+): void {
 	for (let index = 0; index < analysis.refs.length; index += 1) {
 		const ref = analysis.refs[index];
 		if (!ref.isWrite || !ref.target) {
 			continue;
 		}
-		const decl = declById.get(ref.target);
-		if (!decl || decl.kind !== 'constant') {
+		const decl = symbolResolver.getDeclaration(ref.target);
+		if (decl.kind !== 'constant') {
 			continue;
 		}
 		const start = analysis.chunk.locations.position(ref.span.unit, ref.span.start);

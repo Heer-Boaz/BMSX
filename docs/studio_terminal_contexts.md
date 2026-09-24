@@ -606,6 +606,74 @@ The coverage audit also found two compiler boundaries: source `struct` names
 fall through to global value lookup, and the firmware loader requested only one
 result from a call, even in a return-list tail. The latter is now corrected by
 the shared [call-result arity slice](studio_lua_terminal.md#firmware-call-result-arity-gate).
-The source-type lookup still needs correction before advertising frame semantics.
+The source type/value boundary is corrected below; scoped type-layout identity
+still needs correction before advertising complete frame semantics.
 Static/type debug metadata and public frame admission remain separate unfinished
 work; this storage correction does not add a Terminal context or Codex-only UI.
+
+## Type/value semantic boundary
+
+A bound `struct` declaration is a compile-time type, not a runtime global slot.
+Reading, writing, calling, exporting or selecting a member through that type as
+a Lua expression is a semantic error at the identifier's authored location.
+The shared semantic frontend owns this diagnostic for both ordinary Studio and
+the source compiler. A real local or parameter with the same spelling still
+shadows normally. Type syntax, static storage, table keys and strings are not
+runtime uses of a type declaration.
+
+Reference studied before this slice: Clang's
+[CheckDeclInExpr / BuildDeclarationNameExpr](https://github.com/llvm/llvm-project/blob/main/clang/lib/Sema/SemaExpr.cpp)
+reject non-value declarations at the semantic expression boundary, before
+lowering a value reference. BMSX uses its existing bound declaration kind and
+workspace resolver; it does not add spelling deny-lists, synthetic variables or
+runtime checks. Semantic errors precede static module export analysis so the
+same invalid identifier keeps its source-mapped diagnostic in either module lane.
+
+| Representation | TypeScript/toolchain owner | Native C++ contract | Execution effect |
+| --- | --- | --- | --- |
+| Declared type | Immutable binder `Decl.kind === 'type'` and symbol identity | Consumes already compiled ROMs, not source declarations | No runtime type object or register |
+| Expression name | Existing identifier reference and workspace declaration lookup | No native source compiler | Diagnose before lowering |
+| Diagnostic | Shared frontend source range; compiler applies existing source maps | No machine metadata change | None |
+
+Affected callsites are semantic identifier/constant-write diagnostics, scalar
+declaration resolution and the compiler's semantic-to-module-analysis boundary.
+Identifier resolution returns its existing symbol ID directly without allocating
+navigation target arrays; constant-write diagnostics reuse the resolver's
+declaration index rather than rebuilding one. Normal/debug CPU dispatch, guest
+firmware compilation, frame accessors, scheduler, renderer, GC and save-state
+encoding have no changed hot-path callsites.
+
+This does not repair the separate layout cache keyed by struct spelling: an
+inner same-name type can still replace the layout used by an outer `sizeof`.
+Type layouts need lexical declaration identity and declaration-owned constant
+resolution, including forward type references, before static/type frame
+metadata can be authoritative. No new Terminal context is exposed by this slice.
+
+### Type/value boundary validation (2026-09-24)
+
+- The focused suite has 47 tests covering root/lexical reads, writes, calls,
+  member/index bases, static initializers, array-length expressions, nested
+  closures, const-module exports and source mapping. Every negative source is
+  compiled at O0 and O3. Thirty-seven initial cases failed before the fix; the
+  positive shadowing cases continue to execute correctly on the real CPU.
+- Snapshot tests retain an old type diagnostic while a newer workspace version
+  publishes an ordinary same-name global. Identifier diagnostics allocate no
+  navigation target lists and activate no value-inference work; this is checked
+  through the resolver's public query surface.
+- Full Lua: 2,654 pass, one skip. ROM suite: 185 pass. Product typechecks pass;
+  the tests project retains the same 95 baseline diagnostics after normalizing
+  line/column shifts. Strict architecture audit: zero issues; core parity,
+  changed-file indentation and `git diff --check` pass.
+- The 45-test assistant integration bundle passes. The updated source/review
+  conversation additionally sends the type diagnostic through the actual
+  browser/HTTP/Codex-app-server route on software, WebGL2 and WebGPU. All three
+  keep 21 expected model requests and one connection. Ordinary Problems consumes
+  the same diagnostic object. The WebGPU shared-diagnostics screenshot was
+  visually inspected; it displays both the undefined-name and type/value errors.
+  This is deterministic model-fixture evidence, not live-model reasoning.
+- Physical BIOS HID Terminal parity and all 20 O0/O3 frame-evaluation vectors
+  pass on TS/C++, including complete final-state and suspended/save-restored
+  coroutine comparisons. Rebuilt BIOS/Nemesis debug ROMs have identical SHA-256
+  hashes to the pre-slice artifacts. Browser Studio and Node tooling were rebuilt
+  in release and debug configurations. No new frame-context capability or native
+  source-type evaluator is claimed.

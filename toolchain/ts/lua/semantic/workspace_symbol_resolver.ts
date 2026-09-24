@@ -109,6 +109,13 @@ export class WorkspaceSymbolResolver {
 	}
 
 	public resolveReference(ref: Ref): SymbolID | undefined {
+		// Identifier bindings already have scalar identity. Diagnostics and
+		// lowering need no navigation target list or retained per-reference array.
+		if (ref.referenceKind === 'identifier' || ref.referenceKind === 'self') {
+			if (ref.call?.module !== undefined) return undefined;
+			if (ref.target !== undefined) return ref.target;
+			return ref.referenceKind === 'identifier' ? this.globals.get(ref.symbolKey) : undefined;
+		}
 		const targets = this.resolveReferenceTargets(ref);
 		return targets.length === 1 ? targets[0] : undefined;
 	}
@@ -356,17 +363,8 @@ export class WorkspaceSymbolResolver {
 			if (ref.target !== undefined && !targets.includes(ref.target)) targets.push(ref.target);
 			return targets;
 		}
-		if (ref.target) {
-			return [ref.target];
-		}
-		if (ref.referenceKind === 'self') {
-			return EMPTY_SYMBOLS;
-		}
-		if (ref.symbolKey.length === 0) {
-			return EMPTY_SYMBOLS;
-		}
-		const global = this.globals.get(ref.symbolKey);
-		return global ? [global] : EMPTY_SYMBOLS;
+		const target = this.resolveReference(ref);
+		return target === undefined ? EMPTY_SYMBOLS : [target];
 	}
 
 	private resolveReferences(symbolIds: readonly SymbolID[]): void {

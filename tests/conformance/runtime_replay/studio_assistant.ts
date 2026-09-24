@@ -35,7 +35,7 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	const main = harness.getActiveEditorDocument().model, mainTab = getActiveTab();
 	await press('ControlLeft', 'Home'); test.clipboard.text = '-- UNSAVED ASSISTANT FIXTURE\n'; await press('ControlLeft', 'KeyV');
 	await press('ArrowDown'); // Keep module<entry> before the first executable statement.
-	test.clipboard.text = 'local studio_diagnostic_probe = missing_from_assistant_context\n'; await press('ControlLeft', 'KeyV');
+	test.clipboard.text = 'local studio_diagnostic_probe = missing_from_assistant_context\nstruct studio_type_probe\n\tvalue: word\nend\nlocal invalid_type_value = studio_type_probe\n'; await press('ControlLeft', 'KeyV');
 	const before = main.buffer.getText(), saved = main.lastSavedSource, media = ide.sources.currentBlua32Media;
 	await test.runPaletteCommand('View: Codex Assistant');
 	const view = getActiveTab();
@@ -68,8 +68,12 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 		status: ide.diagnostics.get(main.identity)!.status, version: main.version,
 		markers: ide.diagnostics.diagnostics.filter(marker => marker.model === main).map(marker => marker.message),
 	}));
+	const typeDiagnostic = ide.diagnostics.diagnostics.find(marker => marker.model === main
+		&& marker.message === "Struct type 'studio_type_probe' is not a runtime value.")!;
+	check(typeDiagnostic !== undefined && typeDiagnostic.version === main.version, 'the semantic type/value error reaches the ordinary diagnostics owner');
 	await test.runPaletteCommand('View: Problems Panel');
-	check(problemsPanel.isVisible && problemsPanel.getDiagnostics().includes(diagnostic), 'ordinary Problems shares the exact diagnostic owner');
+	check(problemsPanel.isVisible && problemsPanel.getDiagnostics().includes(diagnostic)
+		&& problemsPanel.getDiagnostics().includes(typeDiagnostic), 'ordinary Problems shares both exact diagnostics');
 	await frame(); await capture('shared-diagnostics');
 	await test.runPaletteCommand('View: Problems Panel');
 	await test.click(view.composerBounds);
