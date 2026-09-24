@@ -465,3 +465,86 @@ rewind/replacement, native frame selection and conversation frame context remain
 open. The existing stack-conversation screenshot also retains a breakpoint
 status label after its completed Terminal result; this slice does not change
 that UI status owner. No Codex-only control or provider polling was introduced.
+
+## Outer lexical-name ownership gate
+
+Physical capture layout is not a complete lexical environment. Lua's
+[`singlevaraux`](https://github.com/lua/lua/blob/master/lparser.c) distinguishes
+compile-time constants from values needing an upvalue, while LLVM retains
+[declarations without locations](https://github.com/llvm/llvm-project/blob/main/llvm/lib/CodeGen/AsmPrinter/DwarfDebug.cpp)
+for optimized-out variables. Installed frame evaluation must likewise distinguish
+an absent name (eligible for global resolution) from a lexical declaration with
+no physical location (not eligible). A debugger must not allocate extra captures
+or recover a value from an unrelated caller frame to close this gap.
+
+The compiler publishes binder-selected outer local/parameter/receiver
+declarations at each function's definition, independently of its machine upvalue list. Existing
+capture-origin metadata becomes lexical-declaration metadata; outer-binding
+locations refer to it, while physical `upvalueBindings` still describe only
+actual cells and retained Hot Resume prefixes. This is a representation change,
+not an alias or a second name-denial table. Source mapping, inline lowering,
+relinking, firmware diagnostics and ordinary inspection consume that owner.
+
+| Data | TypeScript/toolchain | C++ / firmware | Execution effect |
+| --- | --- | --- | --- |
+| Visible outer names | Binder visibility and declaration identity at function definition | Installed lexical declarations and outer locations | Compilation only; no source walk during execution |
+| Actual closure cells | Existing prototype descriptors and upvalue bindings | Unchanged physical closure descriptors | No new captures, GC edges, frame slots or heap values |
+| Missing location | Explicit null plus empty word intervals | Existing diagnostic unavailable descriptor | Firmware compiler rejects lexical access, never substitutes a global |
+| Name/source identity | Source-mapped declaration, independent of capture demand | Mirrored symbols codec and shared ROM directory | On-demand inspection only |
+
+Affected callsites: `FunctionBuilder.compileFunctionExpression`/`finalizeCode`,
+inline expansion/upvalue compaction, compiler source mapping, symbol relocation
+and encoding, diagnostic directory construction, and explicit frame inspection.
+No CPU, scheduler, save-state or renderer hot-path callsite changes. Complete
+`Program` comparisons must verify that metadata does not change emitted code,
+constants, stack requirements or physical captures.
+
+Static `.bss`/`.data`/`.rodata` and type names do not own local registers and are
+not included in this local/parameter/receiver representation. Their evaluation
+semantics and coverage remain an explicit gate before public frame context; do
+not infer full dialect coverage from the outer-local tests. The installed ROM
+and symbols consumers must be rebuilt together for the new metadata schema.
+
+## Outer lexical-name validation (2026-09-24)
+
+- O0/O3 compiler tests distinguish unused locals, folded constants, parameters,
+  implicit receivers, explicit `self` shadowing, recursive const-function names
+  and declarations that only become visible after the function definition.
+  Static-module predeclaration does not make later locals visible. Hot Resume
+  keeps the original physical cell prefix while reporting a newly shadowing,
+  uncaptured declaration as unavailable. Source mapping preserves this identity
+  and the existing physical locations.
+- The new firmware vector failed before the producer change on both O0 and O3.
+  It now rejects reads/writes of unavailable lexical names without reading or
+  changing same-name globals; a newly declared evaluation-local still shadows
+  normally. Sixteen firmware vectors pass with identical full TS/native final
+  snapshots, plus identical suspended/save-restored coroutine snapshots. Native
+  symbols tests also preserve declarations that have never owned a capture.
+- Full Lua: 2,551 pass, one skip. Rompacker: 184 pass, including failed Scenario
+  Lab threads where a callback's uncaptured name must not borrow another frame's
+  value. Sixteen complete `Program` hashes remain identical to the pre-slice
+  compiler, including instructions, constants, stack sizes and captures.
+- The shared BIOS Terminal remains byte-identical under actual TS/native HID
+  input. All 45 assistant integration tests and the manual Terminal workflow
+  pass on software/WebGL2/WebGPU. The conversation stack test additionally checks
+  the real cart's uncaptured `clear_color` binding through the tool transport on
+  all three renderers. Terminal results/cart-context and conversation screenshots
+  were inspected. This is automated runtime/UI evidence, not live-model or
+  personal-phone testing.
+- BIOS and Nemesis debug ROMs, browser Studio and Node tooling were rebuilt.
+  Product typechecks pass; the tests-project diagnostic multiset remains the same
+  95 baseline entries after position normalization. Strict architecture audit:
+  zero issues; core-parity, changed-file indentation and `git diff --check` pass.
+  Repository-wide indentation still flags five unchanged files in `ide/runtime`,
+  tests and `third_party/cjson`; this slice does not reformat them.
+- The broader names cost debug storage: the packed scope directories now occupy
+  1,273,585 bytes in BIOS and 2,647,762 bytes in Nemesis. Twenty warmed encodings
+  averaged about 40 ms and 86 ms respectively after the validation jobs finished.
+  No source lookup, capture allocation or new hook enters normal guest execution;
+  these figures measure tooling work, not universal throughput.
+
+Public frame context remains closed pending static-storage/type coverage,
+selected-stop/cart-bus admission, borrow retirement on cancellation and machine
+replacement/rewind, native frame selection, and conversation frame admission.
+The ordinary cart/session Terminal and source inspection are not gated on those
+unfinished frame-evaluation capabilities.

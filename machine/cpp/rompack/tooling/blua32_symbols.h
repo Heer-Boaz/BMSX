@@ -1,6 +1,6 @@
 #pragma once
 
-#include "rompack/tooling/capture_kind.h"
+#include "rompack/tooling/declaration_kind.h"
 #include "rompack/tooling/blua32_image.h"
 
 #include "common/primitives.h"
@@ -34,17 +34,17 @@ struct Blua32LocalSlotDebug {
 	std::vector<ProgramWordRange> liveWordRanges;
 };
 
-struct Blua32CaptureSlotDebug {
-	u32 captureIndex;
+struct Blua32OuterBindingDebug {
+	u32 declarationIndex;
 	std::optional<Blua32UpvalueRecord> location;
 	std::vector<Blua32InlineCallSite> inlineCallSites;
 	std::vector<ProgramWordRange> liveWordRanges;
 };
 
-struct Blua32CapturedLocalDebug {
+struct Blua32LexicalDeclarationDebug {
 	std::string functionId;
 	std::string name;
-	CapturedLocalKind kind;
+	LexicalDeclarationKind kind;
 	bool isConst;
 	std::optional<SourceRange> definition;
 };
@@ -81,8 +81,8 @@ struct Blua32DebugMetadata {
 	std::vector<std::vector<Blua32StatementPoint>> statementPointsByFunction;
 	std::vector<std::vector<Blua32ResumePoint>> resumePointsByFunction;
 	std::vector<std::vector<Blua32LocalSlotDebug>> localSlotsByFunction;
-	std::vector<std::vector<Blua32CaptureSlotDebug>> captureSlotsByFunction;
-	std::vector<Blua32CapturedLocalDebug> capturedLocals;
+	std::vector<std::vector<Blua32OuterBindingDebug>> outerBindingsByFunction;
+	std::vector<Blua32LexicalDeclarationDebug> lexicalDeclarations;
 	std::vector<std::vector<u32>> upvalueBindingsByFunction;
 };
 

@@ -1,4 +1,4 @@
-import type { CapturedLocalKind } from './capture_kind';
+import type { LexicalDeclarationKind } from './declaration_kind';
 import type { ProgramWordRange } from './word_range';
 import type { SourceRange } from '../source_range';
 import type { OpCode } from '../../../../machine/ts/spec/blua32/opcode';
@@ -59,24 +59,23 @@ export type LocatedLocalSlotDebug = LocalSlotDebug & {
 	readonly liveWordRanges: readonly ProgramWordRange[];
 };
 
-/** Lexical origin of a captured cell, independent of its creation route. */
-
-export type CapturedLocalDebug = {
+/** Defining declaration shared by source scopes and any physical capture routes. */
+export type LexicalDeclarationDebug = {
 	functionId: string;
 	name: string;
-	kind: CapturedLocalKind;
+	kind: LexicalDeclarationKind;
 	isConst: boolean;
 	definition: SourceRange;
 };
 
-/** Lexical capture identity survives lowering even when its physical cell does not. */
-export type CaptureSlotDebug = {
-	captureIndex: number;
+/** A visible outer declaration may never acquire a physical capture. */
+export type OuterBindingDebug = {
+	declarationIndex: number;
 	location: UpvalueDesc | null;
 	inlineCallSites: ReadonlyArray<InlineCallSite>;
 };
 
-export type LocatedCaptureSlotDebug = CaptureSlotDebug & {
+export type LocatedOuterBindingDebug = OuterBindingDebug & {
 	readonly liveWordRanges: readonly ProgramWordRange[];
 };
 
@@ -90,8 +89,8 @@ export type ProgramMetadata = ProgramRuntimeSymbols & {
 	statementPointsByProto: ReadonlyArray<ReadonlyArray<ProgramStatementPoint>>;
 	resumePointsByProto: ReadonlyArray<ReadonlyArray<ProgramResumePoint>>;
 	localSlotsByProto: ReadonlyArray<ReadonlyArray<LocatedLocalSlotDebug>>;
-	captureSlotsByProto: ReadonlyArray<ReadonlyArray<LocatedCaptureSlotDebug>>;
-	capturedLocals: ReadonlyArray<CapturedLocalDebug>;
+	outerBindingsByProto: ReadonlyArray<ReadonlyArray<LocatedOuterBindingDebug>>;
+	lexicalDeclarations: ReadonlyArray<LexicalDeclarationDebug>;
 	upvalueBindingsByProto: ReadonlyArray<ReadonlyArray<number>>;
 };
 

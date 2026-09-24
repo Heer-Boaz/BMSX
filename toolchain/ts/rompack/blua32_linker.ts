@@ -1,5 +1,5 @@
 import { inlineCallSiteChainsEqual } from '../lua/compiler/inline_debug';
-import { CapturedLocalKind } from '../lua/compiler/capture_kind';
+import { LexicalDeclarationKind } from '../lua/compiler/declaration_kind';
 import type { SourceRange } from '../lua/source_range';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
@@ -66,7 +66,7 @@ import {
 	type Blua32ImageLayout,
 } from './blua32_image';
 import {
-	type Blua32CapturedLocalDebug,
+	type Blua32LexicalDeclarationDebug,
 	type Blua32DebugMetadata,
 	type Blua32InlineCallSite,
 	type Blua32ModuleFunction,
@@ -248,28 +248,28 @@ function buildDebugInlineCallSiteTable(
 	return { debugInlineCallSiteChains, debugInlineCallSiteChainIds };
 }
 
-function relocateCapturedLocal(
+function relocateLexicalDeclaration(
 	sourceIndex: number,
-	sourceLocals: ReadonlyArray<Blua32CapturedLocalDebug>,
+	sourceLocals: ReadonlyArray<Blua32LexicalDeclarationDebug>,
 	remap: Int32Array,
-	capturedLocals: Blua32CapturedLocalDebug[],
+	lexicalDeclarations: Blua32LexicalDeclarationDebug[],
 	previous?: Blua32LinkBaseline,
 ): number {
 	let index = remap[sourceIndex];
 	if (index === -1) {
-		index = capturedLocals.length;
+		index = lexicalDeclarations.length;
 		const local = sourceLocals[sourceIndex];
 		if (previous === undefined) {
-			capturedLocals.push(local);
+			lexicalDeclarations.push(local);
 		} else {
 			let definition: SourceRange | null = null;
 			if (local.definition !== null && previous.captureSources !== undefined) {
-				const mapped = local.kind === CapturedLocalKind.Receiver
+				const mapped = local.kind === LexicalDeclarationKind.Receiver
 					? previous.captureSources.functionRange(local.definition)
 					: previous.captureSources.declaration(local.definition);
 				if (mapped !== undefined) definition = mapped;
 			}
-			capturedLocals.push({ ...local, definition });
+			lexicalDeclarations.push({ ...local, definition });
 		}
 		remap[sourceIndex] = index;
 	}
@@ -986,12 +986,12 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const statementPointsByFunction = new Array<Blua32DebugMetadata['statementPointsByFunction'][number]>(functionCount);
 	const resumePointsByFunction = new Array<Blua32DebugMetadata['resumePointsByFunction'][number]>(functionCount);
 	const localSlotsByFunction = new Array<Blua32DebugMetadata['localSlotsByFunction'][number]>(functionCount);
-	const captureSlotsByFunction = new Array<Blua32DebugMetadata['captureSlotsByFunction'][number]>(functionCount);
+	const outerBindingsByFunction = new Array<Blua32DebugMetadata['outerBindingsByFunction'][number]>(functionCount);
 	const upvalueBindingsByFunction = new Array<Blua32DebugMetadata['upvalueBindingsByFunction'][number]>(functionCount);
-	const capturedLocals: Blua32CapturedLocalDebug[] = [];
-	const captureRemap = new Int32Array(input.metadata.capturedLocals.length).fill(-1);
-	const previousCaptureRemap = functionLayout.hasTombstones
-		? new Int32Array(input.previous!.symbols.metadata.capturedLocals.length).fill(-1)
+	const lexicalDeclarations: Blua32LexicalDeclarationDebug[] = [];
+	const declarationRemap = new Int32Array(input.metadata.lexicalDeclarations.length).fill(-1);
+	const previousDeclarationRemap = functionLayout.hasTombstones
+		? new Int32Array(input.previous!.symbols.metadata.lexicalDeclarations.length).fill(-1)
 		: null;
 	const functionDisplayNames = new Array<string>(functionCount);
 	const functionDefinitions = new Array<SourceRange | null>(functionCount);
@@ -1004,9 +1004,9 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			statementPointsByFunction[slot] = noDebugRecords;
 			resumePointsByFunction[slot] = noDebugRecords;
 			localSlotsByFunction[slot] = noDebugRecords;
-			captureSlotsByFunction[slot] = noDebugRecords;
+			outerBindingsByFunction[slot] = noDebugRecords;
 			upvalueBindingsByFunction[slot] = input.previous!.symbols.metadata.upvalueBindingsByFunction[slot].map(capture =>
-				relocateCapturedLocal(capture, input.previous!.symbols.metadata.capturedLocals, previousCaptureRemap!, capturedLocals, input.previous!));
+				relocateLexicalDeclaration(capture, input.previous!.symbols.metadata.lexicalDeclarations, previousDeclarationRemap!, lexicalDeclarations, input.previous!));
 			continue;
 		}
 		functionDisplayNames[slot] = input.metadata.protoDisplayNames[protoIndex];
@@ -1015,10 +1015,10 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		resumePointsByFunction[slot] = input.metadata.resumePointsByProto[protoIndex];
 		localSlotsByFunction[slot] = input.metadata.localSlotsByProto[protoIndex];
 		upvalueBindingsByFunction[slot] = input.metadata.upvalueBindingsByProto[protoIndex].map(capture =>
-			relocateCapturedLocal(capture, input.metadata.capturedLocals, captureRemap, capturedLocals));
-		captureSlotsByFunction[slot] = input.metadata.captureSlotsByProto[protoIndex].map(capture => ({
-			...capture,
-			captureIndex: relocateCapturedLocal(capture.captureIndex, input.metadata.capturedLocals, captureRemap, capturedLocals),
+			relocateLexicalDeclaration(capture, input.metadata.lexicalDeclarations, declarationRemap, lexicalDeclarations));
+		outerBindingsByFunction[slot] = input.metadata.outerBindingsByProto[protoIndex].map(binding => ({
+			...binding,
+			declarationIndex: relocateLexicalDeclaration(binding.declarationIndex, input.metadata.lexicalDeclarations, declarationRemap, lexicalDeclarations),
 		}));
 	}
 	const debugInlineCallSiteTable = buildDebugInlineCallSiteTable(
@@ -1043,8 +1043,8 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		statementPointsByFunction,
 		resumePointsByFunction,
 		localSlotsByFunction,
-		captureSlotsByFunction,
-		capturedLocals,
+		outerBindingsByFunction,
+		lexicalDeclarations,
 		upvalueBindingsByFunction,
 	};
 	const symbols: Blua32SymbolsImage = {

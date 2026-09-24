@@ -55,10 +55,10 @@ export function runtimeLuaFrameScopes(frame: RuntimeStackFrame, inlineDepth: num
 	if (range === null && inlineDepth !== 0) scopes.push({ kind: 'upvalues', status: 'source-unmapped' });
 	else {
 		const bindings: RuntimeLuaFrameBinding[] = [];
-		for (const slot of symbols.metadata.captureSlotsByFunction[functionIndex]) {
+		for (const slot of symbols.metadata.outerBindingsByFunction[functionIndex]) {
 			if (slot.inlineCallSites.length !== inlineDepth) continue;
 			if (range !== null && resolveInlineLocalContextRange(slot, range, inlineSites) === null) continue;
-			const local = symbols.metadata.capturedLocals[slot.captureIndex];
+			const local = symbols.metadata.lexicalDeclarations[slot.declarationIndex];
 			bindings.push({ name: local.name, isConst: local.isConst, definition: local.definition,
 				location: blua32SlotLiveAtPc(slot.liveWordRanges, image.layout.functions[functionIndex].codeAddress, frame.tracePc) ? slot.location : null });
 		}
@@ -111,16 +111,16 @@ export function readRuntimeLuaModuleCapture(
 	const moduleIndex = blua32FunctionIndexAtAddress(image.layout, module.address);
 	const moduleId = symbols.metadata.functionIds[moduleIndex];
 	const bindings = symbols.metadata.upvalueBindingsByFunction[functionIndex];
-	let captureIndex = -1;
+	let upvalueIndex = -1;
 	for (let index = 0; index < bindings.length; index += 1) {
-		const local = symbols.metadata.capturedLocals[bindings[index]];
+		const local = symbols.metadata.lexicalDeclarations[bindings[index]];
 		if (local.functionId !== moduleId || local.name !== name || local.definition === null) continue;
 		// Preserved capture slots can outlive their use after Hot Resume. A name
 		// query cannot choose between distinct bindings in the defining function.
-		if (captureIndex !== -1) return NOT_IN_SCOPE;
-		captureIndex = index;
+		if (upvalueIndex !== -1) return NOT_IN_SCOPE;
+		upvalueIndex = index;
 	}
-	return captureIndex === -1 ? NOT_IN_SCOPE : { kind: 'value', value: guest.readClosureUpvalue(closure, captureIndex) };
+	return upvalueIndex === -1 ? NOT_IN_SCOPE : { kind: 'value', value: guest.readClosureUpvalue(closure, upvalueIndex) };
 }
 
 /** A closure's current mapped call target, never its presumed allocation/registration site. */
@@ -211,8 +211,8 @@ export function readRuntimeLuaValue(
 			const value = captured === undefined ? cpu.readFrameRegister(frameIndex, slot.registerIndex) : captured.registers[slot.registerIndex];
 			return guest.readStringPath(value, parts, 1);
 		}
-		for (const slot of symbols.metadata.captureSlotsByFunction[functionIndex]) {
-			const local = symbols.metadata.capturedLocals[slot.captureIndex];
+		for (const slot of symbols.metadata.outerBindingsByFunction[functionIndex]) {
+			const local = symbols.metadata.lexicalDeclarations[slot.declarationIndex];
 			if (local.definition === null || !sourceRangesEqual(local.definition, definition)) continue;
 			if (slot.inlineCallSites.length !== 0 && (range === null || resolveInlineLocalContextRange(slot, range, inlineSites) === null)) continue;
 			const location = slot.location;

@@ -216,6 +216,24 @@ end`;
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [7]);
 });
 
+for (const level of [0, 3] as const) test(`O${level}: static-module predeclaration does not leak later locals into a function's source scope`, () => {
+	const moduleSource = `module<const>
+local unused<const> = 17
+local read<const> = function(value) return value + 1 end
+local later<const> = 99
+return { read = read }`;
+	const { compiled } = compileWithModule('return require("probe").read(41)', 'probe', moduleSource, [], level);
+	const { metadata, program } = compiled;
+	const index = metadata.protoDisplayNames.indexOf('read');
+	assert.notEqual(index, -1);
+	const bindings = metadata.outerBindingsByProto[index];
+	assert.deepEqual(bindings.map(slot => metadata.lexicalDeclarations[slot.declarationIndex].name).sort(), ['read', 'unused']);
+	assert.ok(bindings.every(slot => slot.location === null && slot.liveWordRanges.length === 0));
+	assert.deepEqual(program.protos[index].upvalueDescs, []);
+	const cpu = runCompiledTestSystem(compiled, 100000);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [42]);
+});
+
 test('bare function modules publish ordinary runtime callbacks with captures, table operations and multiple results', () => {
 	for (const optLevel of [0, 3] as const) {
 		const moduleSource = `module_loads = (module_loads or 0) + 1

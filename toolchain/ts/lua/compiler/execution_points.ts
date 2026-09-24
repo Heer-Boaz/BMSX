@@ -1,10 +1,10 @@
 import type { SourceRange } from '../source_range';
 import type {
-	CaptureSlotDebug,
+	OuterBindingDebug,
 	InlineCallSite,
 	LocalSlotDebug,
 	LocatedLocalSlotDebug,
-	LocatedCaptureSlotDebug,
+	LocatedOuterBindingDebug,
 	ProgramResumePoint,
 	ProgramStatementPoint,
 } from './program';
@@ -83,15 +83,15 @@ export function buildProgramDebugPoints(
 	localSlots: ReadonlyArray<LocalSlotDebug>,
 	maxStack: number,
 	resolveClosureUpvalues: ClosureUpvalueResolver,
-	captureSlots: ReadonlyArray<CaptureSlotDebug>,
-): { resumePoints: ProgramResumePoint[]; localSlots: LocatedLocalSlotDebug[]; captureSlots: LocatedCaptureSlotDebug[] } {
+	outerBindings: ReadonlyArray<OuterBindingDebug>,
+): { resumePoints: ProgramResumePoint[]; localSlots: LocatedLocalSlotDebug[]; outerBindings: LocatedOuterBindingDebug[] } {
 	// Named registers are not recycled within a function; inlining remaps its
 	// slots before this final pass. Dead/folded values have no readable location.
 	// Reuse the resume-point liveness pass, retaining intervals, not a bitmap
 	// for every instruction. Lexical/inline scope is a separate debugger gate.
 	const rangesByRegister = new Map<number, ProgramWordRange[]>();
 	for (const slot of localSlots) if (!rangesByRegister.has(slot.registerIndex)) rangesByRegister.set(slot.registerIndex, []);
-	for (const slot of captureSlots) {
+	for (const slot of outerBindings) {
 		const location = slot.location;
 		if (location !== null && location.inStack && !rangesByRegister.has(location.index)) rangesByRegister.set(location.index, []);
 	}
@@ -174,7 +174,7 @@ export function buildProgramDebugPoints(
 	return {
 		resumePoints: points,
 		localSlots: localSlots.map(slot => ({ ...slot, liveWordRanges: rangesByRegister.get(slot.registerIndex)! })),
-		captureSlots: captureSlots.map(slot => ({
+		outerBindings: outerBindings.map(slot => ({
 			...slot,
 			liveWordRanges: slot.location === null ? noLocation
 				: slot.location.inStack ? rangesByRegister.get(slot.location.index)! : functionRange,

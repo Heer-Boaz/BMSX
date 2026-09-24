@@ -62,10 +62,10 @@ export function encodeBlua32DiagnosticScopes(image: Blua32ImageLayout, symbols: 
 						if (frame === undefined) {
 							frame = { chain: prefix, name: depth === 0 ? metadata.functionDisplayNames[functionIndex]
 								: functionNames.get(chain[depth - 1].calleeFunctionId)!, active: [], bindings: [] };
-							// Captures precede locals: later lexical declarations shadow even when unavailable.
-							for (const slot of metadata.captureSlotsByFunction[functionIndex]) {
+							// Outer names precede locals: later declarations shadow even when unavailable.
+							for (const slot of metadata.outerBindingsByFunction[functionIndex]) {
 								if (!inlineCallSiteChainsEqual(slot.inlineCallSites, prefix)) continue;
-								const origin = metadata.capturedLocals[slot.captureIndex];
+								const origin = metadata.lexicalDeclarations[slot.declarationIndex];
 								frame.bindings.push({ name: origin.name, flags: (origin.isConst ? D.BLUA32_DIAGNOSTIC_BINDING_CONST : 0)
 									| (slot.location !== null && !slot.location.inStack ? D.BLUA32_DIAGNOSTIC_BINDING_UPVALUE : 0),
 									index: slot.location === null ? D.BLUA32_DIAGNOSTIC_NO_LOCATION : slot.location.index,
@@ -99,7 +99,7 @@ export function encodeBlua32DiagnosticScopes(image: Blua32ImageLayout, symbols: 
 		frames.push(...functionFrames);
 		functions.push({ address: fn.address, codeAddress: fn.codeAddress, frameStart, frameCount: functionFrames.length });
 	}
-	// Shared capture visibility/live arrays are stored once, not once per binding.
+	// Shared outer visibility/live arrays are stored once, not once per binding.
 	const intervals = new Map<readonly ProgramWordRange[], number>();
 	let intervalCount = 0;
 	const internName = (name: string): void => {

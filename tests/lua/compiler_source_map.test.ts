@@ -86,12 +86,12 @@ test('captured-local provenance maps once to authored declarations and retains b
 	const entry = parseLuaChunk(entrySource, ENTRY_PATH).chunk!;
 	const generated = compileLuaChunkToProgram(entry, [module], { entrySource, optLevel: 0 });
 	const authored = compileLuaChunkToProgram(entry, [{ ...module, sourceMap: mapped.sourceMap }], { entrySource, optLevel: 0 });
-	assert.equal(authored.metadata.capturedLocals.length, 1);
-	const local = authored.metadata.capturedLocals[0];
+	assert.equal(authored.metadata.lexicalDeclarations.length, 1);
+	const local = authored.metadata.lexicalDeclarations[0];
 	assert.equal(local.name, 'value');
 	assert.equal(local.isConst, true);
 	assert.equal(authored.metadata.localSlotsByProto.flat().find(slot => slot.name === 'value')!.isConst, true);
-	assert.equal(local.functionId, generated.metadata.capturedLocals[0].functionId);
+	assert.equal(local.functionId, generated.metadata.lexicalDeclarations[0].functionId);
 	assert.deepEqual(local.definition, { path: TEST_RANGE_PATH, start: { line: 1, column: 7 }, end: { line: 1, column: 11 } });
 	assert.deepEqual(authored.metadata.upvalueBindingsByProto, generated.metadata.upvalueBindingsByProto);
 	assert.equal(authored.metadata.upvalueBindingsByProto.flat().length, 2);
@@ -160,12 +160,16 @@ return run(1)`);
 	const entry = parseLuaChunk(entrySource, ENTRY_PATH).chunk!;
 	const generated = compileLuaChunkToProgram(entry, [module], { entrySource, optLevel: 3 });
 	const authored = compileLuaChunkToProgram(entry, [{ ...module, sourceMap: mapped.sourceMap }], { entrySource, optLevel: 3 });
-	const inlineCaptures = authored.metadata.captureSlotsByProto.flat().filter(slot => slot.inlineCallSites.length !== 0);
+	const inlineCaptures = authored.metadata.outerBindingsByProto.flat().filter(slot => slot.inlineCallSites.length !== 0);
 	assert.ok(inlineCaptures.length > 0);
 	assert.ok(inlineCaptures.every(slot => slot.inlineCallSites.every(site => site.callRange.path === TEST_RANGE_PATH)));
 	assert.ok(inlineCaptures.some(slot => slot.inlineCallSites[0].callRange.start.line === 4));
-	assert.equal(authored.metadata.capturedLocals[inlineCaptures[0].captureIndex].definition.path, TEST_RANGE_PATH);
-	assert.deepEqual(authored.metadata.captureSlotsByProto.map(slots => slots.map(({ inlineCallSites, ...physical }) => physical)),
-		generated.metadata.captureSlotsByProto.map(slots => slots.map(({ inlineCallSites, ...physical }) => physical)));
+	assert.ok(authored.metadata.lexicalDeclarations.every(declaration => declaration.definition.path === TEST_RANGE_PATH));
+	const unusedParameter = inlineCaptures.find(slot => authored.metadata.lexicalDeclarations[slot.declarationIndex].name === 'seed')!;
+	assert.equal(unusedParameter.location, null);
+	assert.deepEqual(unusedParameter.liveWordRanges, []);
+	assert.equal(authored.metadata.lexicalDeclarations[unusedParameter.declarationIndex].definition.start.line, 2);
+	assert.deepEqual(authored.metadata.outerBindingsByProto.map(slots => slots.map(({ inlineCallSites, ...physical }) => physical)),
+		generated.metadata.outerBindingsByProto.map(slots => slots.map(({ inlineCallSites, ...physical }) => physical)));
 	assert.deepEqual(authored.program, generated.program, 'source mapping never changes code or closure layout');
 });

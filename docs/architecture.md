@@ -5184,11 +5184,19 @@ caller-image slot ordinals. Explicit environment tables retain table-backed
 bindings; the isolated Terminal session selects its own saved guest environment.
 Both frontends use the same firmware on TypeScript/C++. See
 [Terminal binding contexts](studio_terminal_contexts.md).
-Installed local/captured-declaration symbols carry `isConst` through inlining,
+Installed local/lexical-declaration symbols carry `isConst` through inlining,
 source mapping and the TS/native symbols codec. Suspended runtime/test value
 inspection reports it independently of register liveness; it describes the
 binding, not table-member mutability. No source mutability flag enters the CPU
 or normal execution path.
+The compiler records visible outer local/parameter/receiver declarations at the
+function definition, independently of actual upvalue demand. Folded constants
+and unreferenced outer names have explicit absent locations; they must not become
+globals or read some caller's register. Physical `upvalueBindings` still describe
+only real closure cells and retained Hot Resume prefixes. A hidden retained cell
+cannot override a newly shadowing source declaration. Inline lowering relocates
+existing locations without manufacturing new ones. Static-storage/type names
+and their firmware evaluation semantics remain a separate coverage gate.
 The shared firmware compiler also supports external lexical locations before
 ordinary globals/environment bindings. Private boot primitives transfer values
 directly from a specified guest thread's physical frame register or closure

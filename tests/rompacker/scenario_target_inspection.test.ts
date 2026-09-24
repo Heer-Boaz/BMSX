@@ -84,7 +84,7 @@ return { kind = 'unit',
 		const bios = stack.data.frames.find(frame => frame.domain === -1)!;
 		const biosSource = await tools.execute('studio_read_test_frame_source', { frame: bios.reference }); assert.ok(biosSource.kind === 'test-frame-source');
 		assert.equal(biosSource.data.status, 'available'); assert.match(biosSource.data.text!, /raise\(message\)/);
-		let foundSame = false;
+		let foundSame = false, uncapturedShared = 0;
 		for (const frame of frames) {
 			const compiled = await tools.execute('studio_read_test_frame_source', { frame: frame.reference }); assert.ok(compiled.kind === 'test-frame-source');
 			assert.equal(compiled.data.text, source);
@@ -94,6 +94,14 @@ return { kind = 'unit',
 				const values = await tools.execute('studio_read_test_values', { reference: scope.reference, start: 0, count: 100 }); assert.ok(values.kind === 'test-values');
 				for (const entry of values.data.entries) {
 					if (entry.key.display !== 'same' && entry.key.display !== 'shared') continue;
+					if (entry.value.kind === 'unavailable') {
+						assert.equal(entry.key.display, 'shared');
+						assert.equal(scope.kind, 'upvalues');
+						assert.equal(entry.definition!.start.line, 1);
+						assert.equal(entry.value.reason, 'no-live-location');
+						uncapturedShared++;
+						continue;
+					}
 					assert.equal(entry.value.kind, 'table');
 					const table = await tools.execute('studio_read_test_values', { reference: entry.value.reference, start: 0, count: 100 }); assert.ok(table.kind === 'test-values');
 					if (entry.key.display === 'same') {
@@ -107,6 +115,7 @@ return { kind = 'unit',
 			}
 		}
 		assert.ok(foundSame, `inspect ${failure.phase} own locals, not CPU's active root`);
+		assert.equal(uncapturedShared, failure.phase === 'body' ? 1 : 0, 'the body callback knows shared lexically but owns no physical cell for it');
 	}
 	assert.equal(new Set(sameTables).size, 2);
 	const globals = attached.data.globals.find(scope => scope.domain === 0)!;

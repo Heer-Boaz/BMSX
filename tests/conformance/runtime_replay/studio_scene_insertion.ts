@@ -26,7 +26,7 @@ export async function testSceneFieldInsertion(test: StudioFixture): Promise<void
 	const functionId = 'module:scenes/root/module/decl:root_scene.register';
 	const prior = ide.sources.currentBlua32Media.cartridgeSlots[0]!.symbols!;
 	const functionIndex = prior.metadata.functionIds.indexOf(functionId);
-	const names = prior.metadata.upvalueBindingsByFunction[functionIndex].map(slot => prior.metadata.capturedLocals[slot].name);
+	const names = prior.metadata.upvalueBindingsByFunction[functionIndex].map(slot => prior.metadata.lexicalDeclarations[slot].name);
 	check(names.includes('root_scene'), 'insert: registration captures its scene identity');
 	let removed = '';
 	for (let revision = 0; revision < 3; revision += 1) {
@@ -79,7 +79,7 @@ export async function testSceneFieldInsertion(test: StudioFixture): Promise<void
 			'insert: workspace and installed source agree for contraction, insertion and history restoration');
 		const fresh = ide.sources.currentBlua32Media.cartridgeSlots[0]!.symbols!;
 		const currentIndex = fresh.metadata.functionIds.indexOf(functionId);
-		check(fresh.metadata.upvalueBindingsByFunction[currentIndex].map(slot => fresh.metadata.capturedLocals[slot].name).join('|') === names.join('|'),
+		check(fresh.metadata.upvalueBindingsByFunction[currentIndex].map(slot => fresh.metadata.lexicalDeclarations[slot].name).join('|') === names.join('|'),
 			'insert: restored source uses the original capture layout without a new application path');
 		check(title() === actor && guest.readStringMember(actor, 'x') === actorX,
 			'insert: registration updates future composition, not the retained living actor');

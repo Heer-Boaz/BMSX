@@ -1,5 +1,5 @@
-import type { CapturedLocalDebug } from './program';
-import { CapturedLocalKind } from './capture_kind';
+import type { LexicalDeclarationDebug } from './program';
+import { LexicalDeclarationKind } from './declaration_kind';
 import { LuaSourceCorrespondence } from '../semantic/source_correspondence';
 import { sourceRangeKey } from '../semantic/source_range';
 import type { SourceRange } from '../source_range';
@@ -7,7 +7,7 @@ import type { SourceRange } from '../source_range';
 export type LuaCaptureBaseline = {
 	functionIds: readonly string[];
 	functionDefinitions: ReadonlyArray<SourceRange | null>;
-	capturedLocals: readonly (Omit<CapturedLocalDebug, 'definition'> & { definition: SourceRange | null })[];
+	lexicalDeclarations: readonly (Omit<LexicalDeclarationDebug, 'definition'> & { definition: SourceRange | null })[];
 	upvalueBindingsByFunction: ReadonlyArray<ReadonlyArray<number>>;
 };
 
@@ -47,11 +47,11 @@ export class LuaCaptureLayout {
 	public definition(index: number): SourceRange {
 		let definition = this.definitions.get(index);
 		if (definition === undefined) {
-			const local = this.baseline.capturedLocals[index];
+			const local = this.baseline.lexicalDeclarations[index];
 			if (local.definition === null) {
 				throw new Error(`Hot resume cannot retain capture '${local.name}': its defining declaration was removed.`);
 			}
-			definition = local.kind === CapturedLocalKind.Receiver
+			definition = local.kind === LexicalDeclarationKind.Receiver
 				? this.sources.functionRange(local.definition)
 				: this.sources.declaration(local.definition);
 			if (definition === undefined) {

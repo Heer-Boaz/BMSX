@@ -37,6 +37,32 @@ end)`;
 }
 
 export const frameEvaluationCases = {
+	lexical_names: `
+setglobal('folded', 999)
+setglobal('unreferenced', 999)
+local make = function(seed, ...)
+ local folded<const> = 17
+ local unreferenced = seed + 1
+ local captured = seed
+ return function(value, ...)
+  local index<const> = frame_count(running_thread()) - 1
+  local names = frame_bindings.resolve(index, 0)
+  assert(names.folded ~= nil and names.folded.is_const and not names.folded.available)
+  assert(names.unreferenced ~= nil and not names.unreferenced.is_const and not names.unreferenced.available)
+  assert(names.seed ~= nil and not names.seed.available)
+  assert(names.captured.available and names.captured.upvalue)
+  local ok, message = repl.evaluate('return folded', '=uncaptured-const', 'frame', index, names)
+  assert(not ok and string.find(message, 'no live location') ~= nil)
+  ok, message = repl.evaluate('unreferenced = 123', '=uncaptured-write', 'frame', index, names)
+  assert(not ok and string.find(message, 'no live location') ~= nil)
+  assert(getglobal('folded') == 999 and getglobal('unreferenced') == 999)
+  local ok, result = repl.evaluate('local folded = 2; return folded + captured + value', '=new-local', 'frame', index, names)
+  assert(ok and result == 45 and captured == 40 and value == 3)
+  return true
+ end
+end
+local callback<const> = make(40)
+return callback(3)`,
 	named_scopes: `
 local make = function(seed)
  local captured = seed
@@ -95,7 +121,9 @@ local run = function(seed, ...)
  assert(label == 'inspect' and total == 42)
  assert(names.captured.available and names.value.available == (optimization_level == 0))
  assert(names.captured.upvalue == (optimization_level == 0))
- assert(names.seed == nil and names.inspect == nil, 'inline scopes do not inherit caller locals')
+ assert(names.seed ~= nil and not names.seed.available)
+ assert(names.inspect ~= nil and not names.inspect.available, 'const function declarations are recursive in BLua')
+ assert(names.total == nil and names.names == nil, 'later caller locals are outside the definition scope')
  local names, label, total = inspect(3)
  assert(label == 'inspect' and total == 43 and names.value.available == (optimization_level == 0))
  return true

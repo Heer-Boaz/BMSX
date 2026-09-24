@@ -43,7 +43,7 @@ export async function testScenePlacementIdentity(test: StudioFixture): Promise<v
 	const functionIds = [...declarations.map(declaration => declaration[3]), 'module:scenes/root/module/decl:root_scene.register'];
 	const symbols = ide.sources.currentBlua32Media.cartridgeSlots[0]!.symbols!;
 	const captures = functionIds.map(id => symbols.metadata.upvalueBindingsByFunction[symbols.metadata.functionIds.indexOf(id)]
-		.map(slot => symbols.metadata.capturedLocals[slot].name).join('|'));
+		.map(slot => symbols.metadata.lexicalDeclarations[slot].name).join('|'));
 
 	for (let revision = 0; revision < 2; revision += 1) {
 		const before = cycles();
@@ -76,7 +76,7 @@ export async function testScenePlacementIdentity(test: StudioFixture): Promise<v
 		const fresh = ide.sources.currentBlua32Media.cartridgeSlots[0]!.symbols!;
 		for (let index = 0; index < functionIds.length; index += 1) {
 			const slots = fresh.metadata.upvalueBindingsByFunction[fresh.metadata.functionIds.indexOf(functionIds[index])];
-			check(slots.map(slot => fresh.metadata.capturedLocals[slot].name).join('|') === captures[index],
+			check(slots.map(slot => fresh.metadata.lexicalDeclarations[slot].name).join('|') === captures[index],
 				'identity: re-registration retains the real prefab/root capture layout');
 		}
 		const currentEntries = guest.readStringMember(guest.global(buildModuleExportSlotName('cartlib/registry', [])), '_entries_by_id');

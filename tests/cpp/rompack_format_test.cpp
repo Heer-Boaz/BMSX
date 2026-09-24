@@ -52,14 +52,16 @@ int main() {
 	symbols.metadata.localSlotsByFunction = {{
 		{"value", true, 1, innerCallRange, outerCallRange, inlineCallSites, {{2, 4}, {6, 8}}},
 	}};
-	symbols.metadata.captureSlotsByFunction = {{
+	symbols.metadata.outerBindingsByFunction = {{
 		{0, bmsx::Blua32UpvalueRecord{true, 17}, inlineCallSites, {{2, 4}}},
 		{0, bmsx::Blua32UpvalueRecord{false, 0}, {}, {{0, 8}}},
 		{0, std::nullopt, inlineCallSites, {}},
+		{1, std::nullopt, {}, {}},
 	}};
 	symbols.metadata.functionDefinitions = {innerCallRange};
-	symbols.metadata.capturedLocals = {
-		{"module:cart/module", "value", bmsx::CapturedLocalKind::Local, true, innerCallRange},
+	symbols.metadata.lexicalDeclarations = {
+		{"module:cart/module", "value", bmsx::LexicalDeclarationKind::Local, true, innerCallRange},
+		{"module:cart/module", "unused", bmsx::LexicalDeclarationKind::Local, true, outerCallRange},
 	};
 	symbols.metadata.upvalueBindingsByFunction = {{0u}};
 
@@ -85,8 +87,8 @@ int main() {
 			throw std::runtime_error("BLua32 explicit erasure/emission/empty selection did not round-trip");
 		}
 	}
-	const auto& captures = decodedSymbols.metadata.captureSlotsByFunction[0];
-	if (captures.size() != 3 || captures[0].captureIndex != 0
+	const auto& captures = decodedSymbols.metadata.outerBindingsByFunction[0];
+	if (captures.size() != 4 || captures[0].declarationIndex != 0
 		|| !captures[0].location->inStack || captures[0].location->index != 17
 		|| captures[0].inlineCallSites.size() != 2 || captures[0].inlineCallSites[1].calleeFunctionId != "inner"
 		|| captures[0].liveWordRanges.size() != 1 || captures[0].liveWordRanges[0].start != 2 || captures[0].liveWordRanges[0].end != 4
@@ -94,6 +96,10 @@ int main() {
 		|| captures[1].liveWordRanges[0].end != 8
 		|| captures[2].location.has_value() || !captures[2].liveWordRanges.empty()) {
 		throw std::runtime_error("BLua32 capture origins, inline chains and physical locations did not round-trip");
+	}
+	if (captures[3].declarationIndex != 1 || captures[3].location.has_value() || !captures[3].liveWordRanges.empty()
+		|| decodedSymbols.metadata.lexicalDeclarations[1].name != "unused") {
+		throw std::runtime_error("BLua32 uncaptured lexical declaration did not round-trip");
 	}
 	for (bmsx::u32 word = 0; word <= 9; ++word) {
 		if (bmsx::blua32SlotLiveAtPc(captures[0].liveWordRanges, 0x2000, 0x2000 + word * bmsx::INSTRUCTION_BYTES) != (word >= 2 && word < 4)
@@ -112,10 +118,10 @@ int main() {
 	}
 	for (const bool isConst : {false, true}) {
 		symbols.metadata.localSlotsByFunction[0][0].isConst = isConst;
-		symbols.metadata.capturedLocals[0].isConst = isConst;
+		symbols.metadata.lexicalDeclarations[0].isConst = isConst;
 		const auto decoded = bmsx::decodeBlua32SymbolsImage(bmsx::encodeBlua32SymbolsImage(symbols));
 		if (decoded.metadata.localSlotsByFunction[0][0].isConst != isConst
-			|| decoded.metadata.capturedLocals[0].isConst != isConst) {
+			|| decoded.metadata.lexicalDeclarations[0].isConst != isConst) {
 			throw std::runtime_error("BLua32 declaration immutability did not round-trip");
 		}
 	}
@@ -134,12 +140,12 @@ int main() {
 	}
 	if (decodedSymbols.metadata.functionDefinitions.size() != 1u
 		|| decodedSymbols.metadata.functionDefinitions[0]->start.line != 11
-		|| decodedSymbols.metadata.capturedLocals.size() != 1u
-		|| decodedSymbols.metadata.capturedLocals[0].functionId != "module:cart/module"
-		|| decodedSymbols.metadata.capturedLocals[0].name != "value"
-		|| decodedSymbols.metadata.capturedLocals[0].kind != bmsx::CapturedLocalKind::Local
-		|| decodedSymbols.metadata.capturedLocals[0].definition->path != "cart.lua"
-		|| decodedSymbols.metadata.capturedLocals[0].definition->start.line != 11
+		|| decodedSymbols.metadata.lexicalDeclarations.size() != 2u
+		|| decodedSymbols.metadata.lexicalDeclarations[0].functionId != "module:cart/module"
+		|| decodedSymbols.metadata.lexicalDeclarations[0].name != "value"
+		|| decodedSymbols.metadata.lexicalDeclarations[0].kind != bmsx::LexicalDeclarationKind::Local
+		|| decodedSymbols.metadata.lexicalDeclarations[0].definition->path != "cart.lua"
+		|| decodedSymbols.metadata.lexicalDeclarations[0].definition->start.line != 11
 		|| decodedSymbols.metadata.upvalueBindingsByFunction != std::vector<std::vector<bmsx::u32>>{{0u}}) {
 		throw std::runtime_error("BLua32 captured-local provenance did not round-trip");
 	}
@@ -164,12 +170,12 @@ int main() {
 	}
 
 	symbols.metadata.functionDefinitions[0].reset();
-	symbols.metadata.capturedLocals[0].definition.reset();
-	symbols.metadata.capturedLocals[0].kind = bmsx::CapturedLocalKind::Receiver;
+	symbols.metadata.lexicalDeclarations[0].definition.reset();
+	symbols.metadata.lexicalDeclarations[0].kind = bmsx::LexicalDeclarationKind::Receiver;
 	const auto removedSymbols = bmsx::decodeBlua32SymbolsImage(bmsx::encodeBlua32SymbolsImage(symbols));
 	if (removedSymbols.metadata.functionDefinitions[0].has_value()
-		|| removedSymbols.metadata.capturedLocals[0].definition.has_value()
-		|| removedSymbols.metadata.capturedLocals[0].kind != bmsx::CapturedLocalKind::Receiver) {
+		|| removedSymbols.metadata.lexicalDeclarations[0].definition.has_value()
+		|| removedSymbols.metadata.lexicalDeclarations[0].kind != bmsx::LexicalDeclarationKind::Receiver) {
 		throw std::runtime_error("BLua32 removed declaration did not round-trip");
 	}
 

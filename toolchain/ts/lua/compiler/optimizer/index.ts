@@ -1,7 +1,7 @@
 import { OpCode, decodeCallArgCount } from '../../../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../../source_range';
 import type {
-	CaptureSlotDebug,
+	OuterBindingDebug,
 	InlineCallSite,
 	LocalSlotDebug,
 	ProgramConstant,
@@ -76,7 +76,7 @@ export type OptimizationContext = {
 	getProtoInstructionSet: (protoIndex: number) => InstructionSet | null;
 	getProtoFunctionId: (protoIndex: number) => string;
 	getProtoLocalSlots: (protoIndex: number) => ReadonlyArray<LocalSlotDebug>;
-	getProtoCaptureSlots: (protoIndex: number) => ReadonlyArray<CaptureSlotDebug>;
+	getProtoOuterBindings: (protoIndex: number) => ReadonlyArray<OuterBindingDebug>;
 	relocatedConstIndices: ReadonlySet<number>;
 	closureWrittenRegisters: ReadonlySet<number>;
 };
@@ -85,7 +85,7 @@ export type InstructionSet = {
 	instructions: Instruction[];
 	ranges: Array<SourceRange | null>;
 	inlineLocalSlots?: LocalSlotDebug[];
-	inlineCaptureSlots?: CaptureSlotDebug[];
+	inlineOuterBindings?: OuterBindingDebug[];
 };
 
 type InstructionRegisterOperand = 'a' | 'b' | 'c';
@@ -1220,7 +1220,7 @@ const cleanupControlFlow = (set: InstructionSet): InstructionSet => {
 type InlineCallee = {
 	functionId: string;
 	localSlots: ReadonlyArray<LocalSlotDebug>;
-	captureSlots: ReadonlyArray<CaptureSlotDebug>;
+	outerBindings: ReadonlyArray<OuterBindingDebug>;
 	meta: OptimizationProtoMeta;
 	set: InstructionSet;
 };
@@ -1855,9 +1855,9 @@ const buildInlineExpansion = (
 			inlineCallSites: mapInlineCallSites(slot.inlineCallSites),
 		}));
 	}
-	if (callee.captureSlots.length !== 0) {
-		expansion.inlineCaptureSlots = callee.captureSlots.map(slot => ({
-			captureIndex: slot.captureIndex,
+	if (callee.outerBindings.length !== 0) {
+		expansion.inlineOuterBindings = callee.outerBindings.map(slot => ({
+			declarationIndex: slot.declarationIndex,
 			location: slot.location === null ? null
 				: slot.location.inStack ? { inStack: true, index: mapRegister(slot.location.index) }
 					: { ...callee.meta.upvalueDescs[slot.location.index] },
@@ -1930,7 +1930,7 @@ const inlineFunctionCalls = (
 	const initialCount = set.instructions.length;
 	const maxCount = initialCount + MAX_INLINE_GROWTH;
 	const inlineLocalSlots: LocalSlotDebug[] = [];
-	const inlineCaptureSlots: CaptureSlotDebug[] = [];
+	const inlineOuterBindings: OuterBindingDebug[] = [];
 	const calleeCache = new Map<number, InlineCallee | null>();
 	const getInlineCallee = (protoIndex: number): InlineCallee | null => {
 		const cached = calleeCache.get(protoIndex);
@@ -1982,7 +1982,7 @@ const inlineFunctionCalls = (
 		const callee: InlineCallee = {
 			functionId: context.getProtoFunctionId(protoIndex),
 			localSlots: context.getProtoLocalSlots(protoIndex),
-			captureSlots: context.getProtoCaptureSlots(protoIndex),
+			outerBindings: context.getProtoOuterBindings(protoIndex),
 			meta,
 			set: instructionSet,
 		};
@@ -2032,8 +2032,8 @@ const inlineFunctionCalls = (
 									if (expansion.inlineLocalSlots !== undefined) {
 										inlineLocalSlots.push(...expansion.inlineLocalSlots);
 									}
-									if (expansion.inlineCaptureSlots !== undefined) {
-										inlineCaptureSlots.push(...expansion.inlineCaptureSlots);
+									if (expansion.inlineOuterBindings !== undefined) {
+										inlineOuterBindings.push(...expansion.inlineOuterBindings);
 									}
 									inlinedCalls += 1;
 									inlined = true;
@@ -2060,9 +2060,9 @@ const inlineFunctionCalls = (
 			break;
 		}
 	}
-	return inlineLocalSlots.length === 0 && inlineCaptureSlots.length === 0
+	return inlineLocalSlots.length === 0 && inlineOuterBindings.length === 0
 		? current
-		: { ...current, inlineLocalSlots, inlineCaptureSlots };
+		: { ...current, inlineLocalSlots, inlineOuterBindings };
 };
 
 const runMidLevelOptimizations = (
@@ -2105,7 +2105,7 @@ export const optimizeInstructions = (
 		}
 		current = inlineFunctionCalls(current, context);
 		const inlineLocalSlots = current.inlineLocalSlots;
-		const inlineCaptureSlots = current.inlineCaptureSlots;
+		const inlineOuterBindings = current.inlineOuterBindings;
 		current = cleanupControlFlow(current);
 		current = applyGlobalOptimizations(current, context);
 		current = cleanupControlFlow(current);
@@ -2113,8 +2113,8 @@ export const optimizeInstructions = (
 		if (inlineLocalSlots !== undefined) {
 			current.inlineLocalSlots = inlineLocalSlots;
 		}
-		if (inlineCaptureSlots !== undefined) {
-			current.inlineCaptureSlots = inlineCaptureSlots;
+		if (inlineOuterBindings !== undefined) {
+			current.inlineOuterBindings = inlineOuterBindings;
 		}
 	}
 	return current;

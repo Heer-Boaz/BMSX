@@ -1,4 +1,4 @@
-import { CapturedLocalKind } from '../../toolchain/ts/lua/compiler/capture_kind';
+import { LexicalDeclarationKind } from '../../toolchain/ts/lua/compiler/declaration_kind';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -53,16 +53,20 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 			]],
 			localSlotsByFunction: [[{ name: 'value', isConst: true, registerIndex: 1, definition: innerCallRange,
 				scope: outerCallRange, inlineCallSites, liveWordRanges: [{ start: 2, end: 4 }, { start: 6, end: 8 }] }]],
-			captureSlotsByFunction: [[
-				{ captureIndex: 0, location: { inStack: true, index: 17 }, inlineCallSites, liveWordRanges: [{ start: 2, end: 4 }] },
-				{ captureIndex: 0, location: { inStack: false, index: 0 }, inlineCallSites: [], liveWordRanges: [{ start: 0, end: 8 }] },
-				{ captureIndex: 0, location: null, inlineCallSites, liveWordRanges: [] },
+			outerBindingsByFunction: [[
+				{ declarationIndex: 0, location: { inStack: true, index: 17 }, inlineCallSites, liveWordRanges: [{ start: 2, end: 4 }] },
+				{ declarationIndex: 0, location: { inStack: false, index: 0 }, inlineCallSites: [], liveWordRanges: [{ start: 0, end: 8 }] },
+				{ declarationIndex: 0, location: null, inlineCallSites, liveWordRanges: [] },
+				{ declarationIndex: 1, location: null, inlineCallSites: [], liveWordRanges: [] },
 			]],
-			capturedLocals: [{
-				kind: CapturedLocalKind.Local,
+			lexicalDeclarations: [{
+				kind: LexicalDeclarationKind.Local,
 				isConst: true,
 				functionId: 'module:cart/module', name: 'value',
 				definition: innerCallRange,
+			}, {
+				kind: LexicalDeclarationKind.Local, isConst: true,
+				functionId: 'module:cart/module', name: 'unused', definition: outerCallRange,
 			}],
 			upvalueBindingsByFunction: [[0]],
 		},
@@ -80,7 +84,7 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 	for (const isConst of [false, true]) {
 		const metadata = { ...symbols.metadata,
 			localSlotsByFunction: [[{ ...symbols.metadata.localSlotsByFunction[0][0], isConst }]],
-			capturedLocals: [{ ...symbols.metadata.capturedLocals[0], isConst }] };
+			lexicalDeclarations: symbols.metadata.lexicalDeclarations.map(local => ({ ...local, isConst })) };
 		assert.deepEqual(decodeBlua32SymbolsImage(encodeBlua32SymbolsImage({ ...symbols, metadata })).metadata, metadata);
 	}
 	assert.deepEqual(decoded.metadata.resumePointsByFunction, symbols.metadata.resumePointsByFunction);
@@ -90,7 +94,7 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 			word >= 2 && word < 4 || word >= 6 && word < 8, 'word intervals are half-open with explicit gaps');
 	}
 	assert.equal(blua32SlotLiveAtPc([], 0x2000, 0x2000), false);
-	assert.deepEqual(decoded.metadata.capturedLocals, symbols.metadata.capturedLocals);
+	assert.deepEqual(decoded.metadata.lexicalDeclarations, symbols.metadata.lexicalDeclarations);
 	assert.deepEqual(decoded.metadata.upvalueBindingsByFunction, [[0]]);
 	assert.deepEqual(decoded.metadata.functionDisplayNames, ['invoke']);
 	assert.deepEqual(decoded.metadata.debugInlineCallSiteChains, [[], inlineCallSites]);
@@ -102,7 +106,10 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 		metadata: {
 			...symbols.metadata,
 			functionDefinitions: [null],
-			capturedLocals: [{ ...symbols.metadata.capturedLocals[0], kind: CapturedLocalKind.Parameter, definition: null }],
+			lexicalDeclarations: [
+				{ ...symbols.metadata.lexicalDeclarations[0], kind: LexicalDeclarationKind.Parameter, definition: null },
+				symbols.metadata.lexicalDeclarations[1],
+			],
 		},
 	};
 	assert.deepEqual(decodeBlua32SymbolsImage(encodeBlua32SymbolsImage(removed)), removed);

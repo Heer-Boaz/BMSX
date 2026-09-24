@@ -1,9 +1,9 @@
-import { CapturedLocalKind } from '../lua/compiler/capture_kind';
+import { LexicalDeclarationKind } from '../lua/compiler/declaration_kind';
 import { LuaSourceCorrespondence } from '../lua/semantic/source_correspondence';
 import { sourceRangesEqual } from '../lua/source_range';
 import type { Blua32FunctionRecord, Blua32ImageLayout } from './blua32_image';
 import type {
-	Blua32CapturedLocalDebug,
+	Blua32LexicalDeclarationDebug,
 	Blua32InlineCallSite,
 	Blua32LocalSlotDebug,
 	Blua32ResumePoint,
@@ -161,10 +161,10 @@ function functionCodeMatches(
 function closureLayoutMatches(
 	previousFunction: Blua32FunctionRecord,
 	previousBindings: ReadonlyArray<number>,
-	previousLocals: ReadonlyArray<Blua32CapturedLocalDebug>,
+	previousLocals: ReadonlyArray<Blua32LexicalDeclarationDebug>,
 	freshFunction: Blua32FunctionRecord,
 	freshBindings: ReadonlyArray<number>,
-	freshLocals: ReadonlyArray<Blua32CapturedLocalDebug>,
+	freshLocals: ReadonlyArray<Blua32LexicalDeclarationDebug>,
 	correspondence: LuaSourceCorrespondence,
 ): boolean {
 	if (previousFunction.staticClosure !== freshFunction.staticClosure
@@ -176,7 +176,7 @@ function closureLayoutMatches(
 		const previousLocal = previousLocals[previousBindings[index]];
 		const freshLocal = freshLocals[freshBindings[index]];
 		if (previousLocal.definition === null || freshLocal.definition === null) return false;
-		const definition = previousLocal.kind === CapturedLocalKind.Receiver
+		const definition = previousLocal.kind === LexicalDeclarationKind.Receiver
 			? correspondence.functionRange(previousLocal.definition)
 			: correspondence.declaration(previousLocal.definition);
 		if (definition === undefined
@@ -309,10 +309,10 @@ export function buildBlua32ExecutionRevision(
 		if (linked.functionProtoIndices[freshIndex] >= 0 && !closureLayoutMatches(
 			previousFunction,
 			previousSymbols.metadata.upvalueBindingsByFunction[previousIndex],
-			previousSymbols.metadata.capturedLocals,
+			previousSymbols.metadata.lexicalDeclarations,
 			freshFunction,
 			linked.symbols.metadata.upvalueBindingsByFunction[freshIndex],
-			linked.symbols.metadata.capturedLocals,
+			linked.symbols.metadata.lexicalDeclarations,
 			correspondence,
 		)) {
 			throw new Error(`Hot resume cannot change closure identity for '${functionId}'.`);

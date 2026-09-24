@@ -67,6 +67,10 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	assert.equal(value(final, 'receiver').entries.find(entry => entry.key.display === 'active_space_id').value.display, 'title');
 	assert.equal(value(final, 'upvalues').entries.find(entry => entry.key.display === 'empty_object_bucket').value.kind, 'table');
 	assert.equal(value(final, 'upvalues').entries.find(entry => entry.key.display === 'empty_object_bucket').isConst, true);
+	const unusedConstant = value(final, 'upvalues').entries.find(entry => entry.key.display === 'clear_color');
+	assert.equal(unusedConstant.isConst, true);
+	assert.deepEqual(unusedConstant.value, { kind: 'unavailable', reason: 'no-live-location', display: '<no live location>' },
+		'the conversation sees an uncaptured lexical constant, not a missing name or a fabricated guest value');
 	assert.ok(value(final, 'receiver').entries.every(entry => !Object.hasOwn(entry, 'isConst')), 'table fields do not inherit binding immutability');
 	assert.deepEqual(value(final, 'ram-frame').scopes, [
 		{ kind: 'locals', status: 'function-unmapped' }, { kind: 'upvalues', status: 'function-unmapped' },

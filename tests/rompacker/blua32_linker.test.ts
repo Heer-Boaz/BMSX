@@ -1,4 +1,4 @@
-import { CapturedLocalKind } from '../../toolchain/ts/lua/compiler/capture_kind';
+import { LexicalDeclarationKind } from '../../toolchain/ts/lua/compiler/declaration_kind';
 import { LuaSourceCorrespondence } from '../../toolchain/ts/lua/semantic/source_correspondence';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -110,9 +110,9 @@ function makeMetadata(
 		statementPointsByProto: protoIds.map(() => []),
 		resumePointsByProto: protoIds.map(() => []),
 		localSlotsByProto: protoIds.map(() => []),
-		captureSlotsByProto: protoIds.map(() => []),
+		outerBindingsByProto: protoIds.map(() => []),
 		functionDefinitionsByProto: protoIds.map(() => null),
-		capturedLocals: [],
+		lexicalDeclarations: [],
 		upvalueBindingsByProto: protoIds.map(() => []),
 		globalNames,
 		systemGlobalNames,
@@ -194,7 +194,7 @@ function setFunctionIds(
 	metadata.statementPointsByProto = ids.map(() => []);
 	metadata.resumePointsByProto = ids.map(() => []);
 	metadata.localSlotsByProto = ids.map(() => []);
-	metadata.captureSlotsByProto = ids.map(() => []);
+	metadata.outerBindingsByProto = ids.map(() => []);
 	metadata.functionDefinitionsByProto = ids.map(() => null);
 	metadata.upvalueBindingsByProto = ids.map(() => []);
 }
@@ -990,13 +990,13 @@ test('BLua32 hot revision rejects captured-upvalue layout changes', () => {
 	const initial = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
 	initial.object.sections.text.protos[0].upvalueDescs = [{ inStack: true, index: 0 }];
 	const definition: SourceRange = { path: 'entry', start: { line: 1, column: 7 }, end: { line: 1, column: 11 } };
-	initial.metadata.capturedLocals = [{ kind: CapturedLocalKind.Local, isConst: false, functionId: 'parent', name: 'state', definition }];
+	initial.metadata.lexicalDeclarations = [{ kind: LexicalDeclarationKind.Local, isConst: false, functionId: 'parent', name: 'state', definition }];
 	initial.metadata.upvalueBindingsByProto = [[0]];
 	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
 
 	const changed = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
 	changed.object.sections.text.protos[0].upvalueDescs = [{ inStack: true, index: 1 }];
-	changed.metadata.capturedLocals = [{ kind: CapturedLocalKind.Local, isConst: false, functionId: 'parent', name: 'replacement', definition }];
+	changed.metadata.lexicalDeclarations = [{ kind: LexicalDeclarationKind.Local, isConst: false, functionId: 'parent', name: 'replacement', definition }];
 	changed.metadata.upvalueBindingsByProto = [[0]];
 	const linked = linkSystemBlua32Image(
 		changed.object,
@@ -1082,7 +1082,7 @@ test('BLua32 relinks live and tombstoned captures from their own declaration gen
 	let linked = linkSystemBlua32Image(
 		encodeCompiledProgramObject(initial), initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, [],
 	);
-	const oldLocal = linked.symbols.metadata.capturedLocals[0];
+	const oldLocal = linked.symbols.metadata.lexicalDeclarations[0];
 	const removedId = linked.symbols.metadata.functionIds.find(id => id.endsWith('/decl:removed'))!;
 	for (const source of sources.slice(1)) {
 		const compiled = compile(source);
@@ -1099,36 +1099,36 @@ test('BLua32 relinks live and tombstoned captures from their own declaration gen
 		const oldBinding = metadata.upvalueBindingsByFunction[removedIndex][0];
 		const freshBinding = metadata.upvalueBindingsByFunction[freshIndex][0];
 		assert.notEqual(oldBinding, freshBinding);
-		assert.equal(metadata.capturedLocals.length, 2);
-		assert.deepEqual(metadata.capturedLocals[oldBinding], { ...oldLocal, definition: null });
-		assert.deepEqual(metadata.capturedLocals[freshBinding], compiled.metadata.capturedLocals[0]);
-		assert.equal(metadata.capturedLocals[oldBinding].functionId, metadata.capturedLocals[freshBinding].functionId);
+		assert.equal(metadata.lexicalDeclarations.length, compiled.metadata.lexicalDeclarations.length + 1);
+		assert.deepEqual(metadata.lexicalDeclarations[oldBinding], { ...oldLocal, definition: null });
+		assert.deepEqual(metadata.lexicalDeclarations[freshBinding], compiled.metadata.lexicalDeclarations[0]);
+		assert.equal(metadata.lexicalDeclarations[oldBinding].functionId, metadata.lexicalDeclarations[freshBinding].functionId);
 		assert.equal(metadata.localSlotsByFunction[removedIndex].length, 0);
-		assert.deepEqual(metadata.captureSlotsByFunction[removedIndex], [], 'removed functions have no current capture scope');
-		assert.equal(metadata.captureSlotsByFunction[freshIndex][0].captureIndex, freshBinding);
-		assert.deepEqual(metadata.captureSlotsByFunction[freshIndex][0].location, { inStack: false, index: 0 });
+		assert.deepEqual(metadata.outerBindingsByFunction[removedIndex], [], 'removed functions have no current capture scope');
+		assert.equal(metadata.outerBindingsByFunction[freshIndex][0].declarationIndex, freshBinding);
+		assert.deepEqual(metadata.outerBindingsByFunction[freshIndex][0].location, { inStack: false, index: 0 });
 	}
-	assert.equal(linked.symbols.metadata.capturedLocals.find(local => local.name === 'value')!.definition!.start.line, 3);
+	assert.equal(linked.symbols.metadata.lexicalDeclarations.find(local => local.name === 'value')!.definition!.start.line, 3);
 });
 
 test('BLua32 capture-table reindexing is not a closure identity change', () => {
 	const range: SourceRange = { path: 'entry', start: { line: 1, column: 7 }, end: { line: 1, column: 11 } };
 	const declarationSources = new Map([['entry', 'local state = 0']]);
-	const local = { kind: CapturedLocalKind.Local, isConst: false, functionId: 'parent', name: 'state', definition: range };
+	const local = { kind: LexicalDeclarationKind.Local, isConst: false, functionId: 'parent', name: 'state', definition: range };
 	const initial = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
 	initial.object.sections.text.protos[0].upvalueDescs = [{ inStack: true, index: 0 }];
-	initial.metadata.capturedLocals = [local];
+	initial.metadata.lexicalDeclarations = [local];
 	initial.metadata.upvalueBindingsByProto = [[0]];
 	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
 	const changed = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
 	changed.object.sections.text.protos[0].upvalueDescs = [{ inStack: true, index: 0 }];
-	changed.metadata.capturedLocals = [{ ...local, name: 'unreferenced' }, local];
+	changed.metadata.lexicalDeclarations = [{ ...local, name: 'unreferenced' }, local];
 	changed.metadata.upvalueBindingsByProto = [[1]];
 	const linked = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
-	assert.deepEqual(linked.symbols.metadata.capturedLocals, [local]);
+	assert.deepEqual(linked.symbols.metadata.lexicalDeclarations, [local]);
 	assert.doesNotThrow(() => buildBlua32ExecutionRevision(previous.layout, previous.symbols, declarationSources, linked, declarationSources));
 
-	changed.metadata.capturedLocals = [{ ...local, functionId: 'anotherParent' }];
+	changed.metadata.lexicalDeclarations = [{ ...local, functionId: 'anotherParent' }];
 	changed.metadata.upvalueBindingsByProto = [[0]];
 	const replaced = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
 	assert.throws(
@@ -1225,7 +1225,7 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 		['entryName', 'middleName', 'tailName'],
 	);
 	const definition: SourceRange = { path: 'entry', start: { line: 1, column: 7 }, end: { line: 1, column: 14 } };
-	initial.metadata.capturedLocals = [{ kind: CapturedLocalKind.Local, isConst: true, functionId: 'entry', name: 'captured', definition }];
+	initial.metadata.lexicalDeclarations = [{ kind: LexicalDeclarationKind.Local, isConst: true, functionId: 'entry', name: 'captured', definition }];
 	initial.metadata.upvalueBindingsByProto = [[], [0], []];
 	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
 
@@ -1270,7 +1270,7 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 	assert.equal(linked.layout.functions[1].staticClosure, false);
 	assert.deepEqual(linked.layout.functions[1].upvalues, [{ inStack: true, index: 0 }]);
 	assert.deepEqual(linked.symbols.metadata.upvalueBindingsByFunction[1], [0]);
-	assert.deepEqual(linked.symbols.metadata.capturedLocals, initial.metadata.capturedLocals);
+	assert.deepEqual(linked.symbols.metadata.lexicalDeclarations, initial.metadata.lexicalDeclarations);
 	assert.equal(linked.layout.functions[1].codeByteCount, INSTRUCTION_BYTES);
 	assert.equal(
 		(readInstructionWord(
@@ -1320,7 +1320,7 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 		['entry', 'middle', 'tail', 'new'],
 		['entryName', 'middleName', 'tailName', 'newName'],
 	);
-	reinserted.metadata.capturedLocals = initial.metadata.capturedLocals;
+	reinserted.metadata.lexicalDeclarations = initial.metadata.lexicalDeclarations;
 	reinserted.metadata.upvalueBindingsByProto = [[], [0], [], []];
 	const restored = linkSystemBlua32Image(
 		reinserted.object,

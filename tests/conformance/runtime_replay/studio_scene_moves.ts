@@ -39,7 +39,7 @@ export async function testSceneMemberMoves(test: StudioFixture): Promise<void> {
 	const functionId = 'module:scenes/root/module/decl:root_scene.register';
 	const prior = media.cartridgeSlots[0]!.symbols!;
 	const functionIndex = prior.metadata.functionIds.indexOf(functionId);
-	const names = prior.metadata.upvalueBindingsByFunction[functionIndex].map(slot => prior.metadata.capturedLocals[slot].name);
+	const names = prior.metadata.upvalueBindingsByFunction[functionIndex].map(slot => prior.metadata.lexicalDeclarations[slot].name);
 	const parsed = scene.parsed;
 	const retained = scene.outline.roots[0].children[2];
 	for (let index = 0; index < 8; index += 1) await frame();
@@ -92,7 +92,7 @@ export async function testSceneMemberMoves(test: StudioFixture): Promise<void> {
 			'move: workspace and installed source agree after reordered capture uses');
 		const fresh = ide.sources.currentBlua32Media.cartridgeSlots[0]!.symbols!;
 		const currentIndex = fresh.metadata.functionIds.indexOf(functionId);
-		check(fresh.metadata.upvalueBindingsByFunction[currentIndex].map(slot => fresh.metadata.capturedLocals[slot].name).join('|') === names.join('|'),
+		check(fresh.metadata.upvalueBindingsByFunction[currentIndex].map(slot => fresh.metadata.lexicalDeclarations[slot].name).join('|') === names.join('|'),
 			'move: reordering first uses retains the installed capture slots');
 		check(title() === actor && guest.readStringMember(actor, 'x') === actorX,
 			'move: registration leaves the living title actor and its position intact');

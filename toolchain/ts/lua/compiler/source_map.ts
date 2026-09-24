@@ -1,6 +1,6 @@
 import type { SourcePosition, SourceRange } from '../source_range';
 import type {
-	CapturedLocalDebug,
+	LexicalDeclarationDebug,
 	InlineCallSite,
 	LocatedLocalSlotDebug,
 	ProgramMetadata,
@@ -278,11 +278,11 @@ export function mapProgramMetadataSourceRanges(
 		statementPointsByProto,
 		resumePointsByProto,
 		localSlotsByProto,
-		captureSlotsByProto: metadata.captureSlotsByProto.map(slots => slots.map(slot => ({
+		outerBindingsByProto: metadata.outerBindingsByProto.map(slots => slots.map(slot => ({
 			...slot, inlineCallSites: mapInlineCallSites(slot.inlineCallSites),
 		}))),
 		functionDefinitionsByProto: metadata.functionDefinitionsByProto.map(range => range === null ? null : mapLuaSourceRange(sourceMaps, range)),
-		capturedLocals: metadata.capturedLocals.map((local): CapturedLocalDebug => ({
+		lexicalDeclarations: metadata.lexicalDeclarations.map((local): LexicalDeclarationDebug => ({
 			...local,
 			definition: mapLuaSourceRange(sourceMaps, local.definition),
 		})),

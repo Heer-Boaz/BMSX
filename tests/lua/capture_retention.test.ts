@@ -1,6 +1,6 @@
 import { applyHotResumeRelocation, buildHotResumeRelocation } from '../../ide/runtime/hot_resume_relocation';
 import { executionDomainBit, SYSTEM_EXECUTION_DOMAIN_ID } from '../../machine/ts/spec/blua32/execution_domain';
-import { CapturedLocalKind } from '../../toolchain/ts/lua/compiler/capture_kind';
+import { LexicalDeclarationKind } from '../../toolchain/ts/lua/compiler/declaration_kind';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
@@ -127,7 +127,7 @@ function names(revision: ReturnType<typeof compile>, suffix: string) {
 	const metadata = revision.linked.symbols.metadata;
 	const index = metadata.functionIds.findIndex(id => id.endsWith(suffix));
 	assert.notEqual(index, -1, suffix);
-	return metadata.upvalueBindingsByFunction[index].map(slot => metadata.capturedLocals[slot].name);
+	return metadata.upvalueBindingsByFunction[index].map(slot => metadata.lexicalDeclarations[slot].name);
 }
 
 test('live capture prefixes survive removal, permutation, complete disuse and repeated undo', () => {
@@ -213,12 +213,43 @@ return object:make(7)`;
 	const initial = compile(before);
 	const fresh = compile('\n' + before.replace('return self.value, value', 'return value'), initial);
 	assert.doesNotThrow(() => prove(initial, fresh));
-	assert.deepEqual(fresh.compiled.metadata.capturedLocals.map(local => local.kind), [CapturedLocalKind.Receiver, CapturedLocalKind.Parameter]);
+	const { metadata } = fresh.compiled;
+	const capturedRoles = metadata.upvalueBindingsByProto.flat().map(index => metadata.lexicalDeclarations[index].kind);
+	assert.deepEqual(capturedRoles, [LexicalDeclarationKind.Receiver, LexicalDeclarationKind.Parameter]);
+	assert.equal(metadata.lexicalDeclarations.find(local => local.name === 'object')!.kind, LexicalDeclarationKind.Local);
 	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(fresh.compiled));
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	cpu.beginCompletionCall((materializeCpuCompletionValues(cpu) as Closure[])[0]);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [7]);
+});
+
+for (const level of [0, 3] as const) test(`O${level}: an old retained cell cannot substitute for a newly shadowing declaration`, () => {
+	const before = `local value = 10
+local read = function() return value end
+return read`;
+	const initial = compile(before, undefined, level);
+	const fresh = compile(before.replace('local read', 'local value = 20\nlocal read').replace('return value end', 'return 42 end'), initial, level);
+	assert.doesNotThrow(() => prove(initial, fresh));
+	const { metadata, program } = fresh.compiled;
+	const index = metadata.protoDisplayNames.indexOf('read');
+	const retained = metadata.upvalueBindingsByProto[index];
+	assert.equal(retained.length, 1);
+	assert.equal(metadata.lexicalDeclarations[retained[0]].definition.start.line, 1);
+	const outer = metadata.outerBindingsByProto[index];
+	assert.equal(outer.length, 1);
+	assert.equal(metadata.lexicalDeclarations[outer[0].declarationIndex].definition.start.line, 2);
+	assert.equal(outer[0].location, null);
+	assert.deepEqual(outer[0].liveWordRanges, []);
+	assert.equal(program.protos[index].upvalueDescs.length, 1);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const read = (materializeCpuCompletionValues(cpu) as Closure[])[0];
+	memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
+	cpu.replaceExecutionImage(executionAddressSpace.resolveSystemDomain());
+	cpu.beginCompletionCall(read);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [42]);
 });
 
 test('Hot Resume retains the shared implicit receiver cell used by a reader and a rebinding writer', () => {
@@ -235,8 +266,8 @@ return object:make()`;
 	const [read, write] = materializeCpuCompletionValues(cpu) as Closure[];
 	assert.deepEqual(names(initial, '/local:read'), ['self']);
 	assert.deepEqual(names(initial, '/local:write'), ['self']);
-	const receiver = initial.compiled.metadata.capturedLocals.find(local => local.name === 'self')!;
-	assert.equal(receiver.kind, CapturedLocalKind.Receiver);
+	const receiver = initial.compiled.metadata.lexicalDeclarations.find(local => local.name === 'self')!;
+	assert.equal(receiver.kind, LexicalDeclarationKind.Receiver);
 	cpu.beginCompletionCall(write, [40]);
 	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
 	const fresh = compile(before.replace('value = value }', 'value = value + 1 }'), initial);
@@ -298,10 +329,10 @@ test('tombstone declarations follow source shifts and can revive without reinter
 	const initial = compile(before);
 	const removed = compile('local extra = {}\nlocal state = 3', initial);
 	prove(initial, removed);
-	assert.equal(removed.linked.symbols.metadata.capturedLocals[0].definition!.start.line, 2);
+	assert.equal(removed.linked.symbols.metadata.lexicalDeclarations[0].definition!.start.line, 2);
 	const shifted = compile('\n' + removed.source, removed);
 	prove(removed, shifted);
-	assert.equal(shifted.linked.symbols.metadata.capturedLocals[0].definition!.start.line, 3);
+	assert.equal(shifted.linked.symbols.metadata.lexicalDeclarations[0].definition!.start.line, 3);
 	const revived = compile(shifted.source + '\nfunction read() return state + 1 end', shifted);
 	assert.doesNotThrow(() => prove(shifted, revived));
 });
@@ -310,10 +341,10 @@ test('a removed origin never aliases a later same-name local at its old source c
 	const initial = compile('local state = 3\nfunction read() return state end');
 	const removed = compile('local other = 4', initial);
 	prove(initial, removed);
-	assert.equal(removed.linked.symbols.metadata.capturedLocals[0].definition, null);
+	assert.equal(removed.linked.symbols.metadata.lexicalDeclarations[0].definition, null);
 	const replacement = compile('local state = 90', removed);
 	prove(removed, replacement);
-	assert.equal(replacement.linked.symbols.metadata.capturedLocals[0].definition, null);
+	assert.equal(replacement.linked.symbols.metadata.lexicalDeclarations[0].definition, null);
 	assert.throws(() => compile(replacement.source + '\nfunction read() return state end', replacement), /defining declaration was removed/);
 });
 

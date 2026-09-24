@@ -138,7 +138,7 @@ test('inlining does not overwrite a caller register live above the CALL results'
 		}),
 		getProtoFunctionId: () => 'callee',
 		getProtoLocalSlots: () => [],
-		getProtoCaptureSlots: () => [],
+		getProtoOuterBindings: () => [],
 		relocatedConstIndices: new Set<number>(),
 		closureWrittenRegisters: new Set<number>(),
 	};
@@ -177,7 +177,7 @@ test('inlining does not overwrite a register retained by an open closure', () =>
 		} : null,
 		getProtoFunctionId: protoIndex => protoIndex === 0 ? 'callee' : 'capturing_closure',
 		getProtoLocalSlots: () => [],
-		getProtoCaptureSlots: () => [],
+		getProtoOuterBindings: () => [],
 		relocatedConstIndices: new Set<number>(),
 		closureWrittenRegisters: new Set<number>(),
 	};
@@ -215,7 +215,7 @@ test('inlining can reuse a future capture slot before its closure is opened', ()
 		} : null,
 		getProtoFunctionId: protoIndex => protoIndex === 0 ? 'callee' : 'capturing_closure',
 		getProtoLocalSlots: () => [],
-		getProtoCaptureSlots: () => [],
+		getProtoOuterBindings: () => [],
 		relocatedConstIndices: new Set<number>(),
 		closureWrittenRegisters: new Set<number>(),
 	};
@@ -317,18 +317,18 @@ return nested()
 	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [22]);
 	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [22]);
 	const outerBindings = compiled.metadata.upvalueBindingsByProto[outerProtoIndex];
-	assert.deepEqual(outerBindings.map(index => compiled.metadata.capturedLocals[index].name), ['retained']);
+	assert.deepEqual(outerBindings.map(index => compiled.metadata.lexicalDeclarations[index].name), ['retained']);
 	const nestedBindings = compiled.metadata.upvalueBindingsByProto[nestedProtoIndex];
 	assert.ok(nestedBindings.includes(outerBindings[0]));
 	assert.equal(compiled.program.protos[outerProtoIndex].upvalueDescs.length, 1);
 	assert.equal(nestedParentCapture.index, 0);
-	assert.ok(compiled.metadata.capturedLocals.some(local => local.name === 'identity'));
+	assert.ok(compiled.metadata.lexicalDeclarations.some(local => local.name === 'identity'));
 	const linked = linkTestSystemBlua32(compiled);
-	const debugCaptures = linked.symbols.metadata.captureSlotsByFunction[outerProtoIndex];
-	const identity = debugCaptures.find(slot => linked.symbols.metadata.capturedLocals[slot.captureIndex].name === 'identity')!;
+	const debugCaptures = linked.symbols.metadata.outerBindingsByFunction[outerProtoIndex];
+	const identity = debugCaptures.find(slot => linked.symbols.metadata.lexicalDeclarations[slot.declarationIndex].name === 'identity')!;
 	assert.equal(identity.location, null, 'eliminated runtime captures retain their lexical identity');
 	assert.deepEqual(identity.liveWordRanges, []);
-	const retained = debugCaptures.find(slot => linked.symbols.metadata.capturedLocals[slot.captureIndex].name === 'retained')!;
+	const retained = debugCaptures.find(slot => linked.symbols.metadata.lexicalDeclarations[slot.declarationIndex].name === 'retained')!;
 	assert.deepEqual(retained.location, { inStack: false, index: 0 });
 	assert.equal(linked.image.functions[outerProtoIndex].upvalues.length, 1, 'debug metadata does not retain an unused physical cell');
 });
@@ -439,7 +439,8 @@ return run(42)`;
 	const compiled = compileLuaSource(source, INLINE_TEST_PATH, 3);
 	const runIndex = compiled.metadata.protoDisplayNames.indexOf('run');
 	const maxStack = compiled.program.protos[runIndex].maxStack;
-	const captures = compiled.metadata.captureSlotsByProto[runIndex].filter(slot => slot.inlineCallSites.length === 2);
+	const captures = compiled.metadata.outerBindingsByProto[runIndex].filter(slot => slot.inlineCallSites.length === 2
+		&& compiled.metadata.lexicalDeclarations[slot.declarationIndex].name === 'captured');
 	assert.equal(captures.length, 1);
 	assert.ok(captures[0].location!.inStack);
 	assert.ok(captures[0].location!.index >= maxStack, 'the optimizer removed the high numbered register');

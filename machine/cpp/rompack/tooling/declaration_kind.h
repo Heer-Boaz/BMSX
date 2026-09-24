@@ -4,7 +4,7 @@
 
 namespace bmsx {
 
-enum class CapturedLocalKind : u32 {
+enum class LexicalDeclarationKind : u32 {
 	Local,
 	Parameter,
 	Receiver,

@@ -167,10 +167,10 @@ auto encodeLocalSlot(const Blua32LocalSlotDebug& slot) -> BinValue {
 	return BinValue(std::move(value));
 }
 
-auto decodeCaptureSlot(const BinValue& value) -> Blua32CaptureSlotDebug {
+auto decodeOuterBinding(const BinValue& value) -> Blua32OuterBindingDebug {
 	const BinValue& location = value.require("location");
-	return Blua32CaptureSlotDebug{
-		static_cast<u32>(value.require("captureIndex").toNumber()),
+	return Blua32OuterBindingDebug{
+		static_cast<u32>(value.require("declarationIndex").toNumber()),
 		location.isNull() ? std::nullopt : std::optional<Blua32UpvalueRecord>({
 			location.require("inStack").asBool(), static_cast<u32>(location.require("index").toNumber()),
 		}),
@@ -179,9 +179,9 @@ auto decodeCaptureSlot(const BinValue& value) -> Blua32CaptureSlotDebug {
 	};
 }
 
-auto encodeCaptureSlot(const Blua32CaptureSlotDebug& slot) -> BinValue {
+auto encodeOuterBinding(const Blua32OuterBindingDebug& slot) -> BinValue {
 	BinObject value;
-	value["captureIndex"] = BinValue(static_cast<i64>(slot.captureIndex));
+	value["declarationIndex"] = BinValue(static_cast<i64>(slot.declarationIndex));
 	if (slot.location.has_value()) {
 		BinObject location;
 		location["inStack"] = BinValue(slot.location->inStack);
@@ -315,14 +315,14 @@ auto decodeMetadata(const BinValue& value) -> Blua32DebugMetadata {
 		}
 	}
 
-	const BinArray& captureSlots = value.require("captureSlotsByFunction").asArray();
-	metadata.captureSlotsByFunction.resize(captureSlots.size());
-	for (size_t functionIndex = 0; functionIndex < captureSlots.size(); ++functionIndex) {
-		const BinArray& encodedSlots = captureSlots[functionIndex].asArray();
-		auto& decodedSlots = metadata.captureSlotsByFunction[functionIndex];
+	const BinArray& outerBindings = value.require("outerBindingsByFunction").asArray();
+	metadata.outerBindingsByFunction.resize(outerBindings.size());
+	for (size_t functionIndex = 0; functionIndex < outerBindings.size(); ++functionIndex) {
+		const BinArray& encodedSlots = outerBindings[functionIndex].asArray();
+		auto& decodedSlots = metadata.outerBindingsByFunction[functionIndex];
 		decodedSlots.reserve(encodedSlots.size());
 		for (const BinValue& slot : encodedSlots) {
-			decodedSlots.push_back(decodeCaptureSlot(slot));
+			decodedSlots.push_back(decodeOuterBinding(slot));
 		}
 	}
 
@@ -331,14 +331,14 @@ auto decodeMetadata(const BinValue& value) -> Blua32DebugMetadata {
 	for (size_t functionIndex = 0; functionIndex < upvalueBindings.size(); ++functionIndex) {
 		metadata.upvalueBindingsByFunction[functionIndex] = decodeU32Array(upvalueBindings[functionIndex]);
 	}
-	const BinArray& capturedLocals = value.require("capturedLocals").asArray();
-	metadata.capturedLocals.reserve(capturedLocals.size());
-	for (const BinValue& local : capturedLocals) {
+	const BinArray& lexicalDeclarations = value.require("lexicalDeclarations").asArray();
+	metadata.lexicalDeclarations.reserve(lexicalDeclarations.size());
+	for (const BinValue& local : lexicalDeclarations) {
 		const BinValue& definition = local.require("definition");
-		metadata.capturedLocals.push_back(Blua32CapturedLocalDebug{
+		metadata.lexicalDeclarations.push_back(Blua32LexicalDeclarationDebug{
 			local.require("functionId").asString(),
 			local.require("name").asString(),
-			static_cast<CapturedLocalKind>(local.require("kind").toI32()),
+			static_cast<LexicalDeclarationKind>(local.require("kind").toI32()),
 			local.require("isConst").asBool(),
 			definition.isNull() ? std::nullopt : std::optional<SourceRange>(decodeSourceRange(definition)),
 		});
@@ -426,17 +426,17 @@ auto encodeMetadata(const Blua32DebugMetadata& metadata) -> BinValue {
 	}
 	value["localSlotsByFunction"] = BinValue(std::move(localSlots));
 
-	BinArray captureSlots;
-	captureSlots.reserve(metadata.captureSlotsByFunction.size());
-	for (const auto& functionSlots : metadata.captureSlotsByFunction) {
+	BinArray outerBindings;
+	outerBindings.reserve(metadata.outerBindingsByFunction.size());
+	for (const auto& functionSlots : metadata.outerBindingsByFunction) {
 		BinArray slots;
 		slots.reserve(functionSlots.size());
-		for (const Blua32CaptureSlotDebug& slot : functionSlots) {
-			slots.push_back(encodeCaptureSlot(slot));
+		for (const Blua32OuterBindingDebug& slot : functionSlots) {
+			slots.push_back(encodeOuterBinding(slot));
 		}
-		captureSlots.emplace_back(std::move(slots));
+		outerBindings.emplace_back(std::move(slots));
 	}
-	value["captureSlotsByFunction"] = BinValue(std::move(captureSlots));
+	value["outerBindingsByFunction"] = BinValue(std::move(outerBindings));
 
 	BinArray upvalueBindings;
 	upvalueBindings.reserve(metadata.upvalueBindingsByFunction.size());
@@ -444,18 +444,18 @@ auto encodeMetadata(const Blua32DebugMetadata& metadata) -> BinValue {
 		upvalueBindings.push_back(encodeU32Array(functionBindings));
 	}
 	value["upvalueBindingsByFunction"] = BinValue(std::move(upvalueBindings));
-	BinArray capturedLocals;
-	capturedLocals.reserve(metadata.capturedLocals.size());
-	for (const Blua32CapturedLocalDebug& local : metadata.capturedLocals) {
+	BinArray lexicalDeclarations;
+	lexicalDeclarations.reserve(metadata.lexicalDeclarations.size());
+	for (const Blua32LexicalDeclarationDebug& local : metadata.lexicalDeclarations) {
 		BinObject binding;
 		binding["functionId"] = BinValue(local.functionId);
 		binding["name"] = BinValue(local.name);
 		binding["kind"] = BinValue(static_cast<i32>(local.kind));
 		binding["isConst"] = BinValue(local.isConst);
 		binding["definition"] = local.definition.has_value() ? encodeSourceRange(local.definition.value()) : BinValue(nullptr);
-		capturedLocals.emplace_back(std::move(binding));
+		lexicalDeclarations.emplace_back(std::move(binding));
 	}
-	value["capturedLocals"] = BinValue(std::move(capturedLocals));
+	value["lexicalDeclarations"] = BinValue(std::move(lexicalDeclarations));
 	return BinValue(std::move(value));
 }
 

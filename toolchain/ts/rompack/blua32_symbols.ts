@@ -1,6 +1,6 @@
 import type { Blua32UpvalueRecord } from './blua32_image';
 import type { ProgramWordRange } from '../lua/compiler/word_range';
-import type { CapturedLocalKind } from '../lua/compiler/capture_kind';
+import type { LexicalDeclarationKind } from '../lua/compiler/declaration_kind';
 import { decodeBinary, encodeBinary } from '../../../machine/ts/common/serializer/binencoder';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import type { OpCode } from '../../../machine/ts/spec/blua32/opcode';
@@ -40,17 +40,17 @@ export type Blua32LocalSlotDebug = {
 	inlineCallSites: ReadonlyArray<Blua32InlineCallSite>;
 };
 
-export type Blua32CaptureSlotDebug = {
-	captureIndex: number;
+export type Blua32OuterBindingDebug = {
+	declarationIndex: number;
 	location: Blua32UpvalueRecord | null;
 	inlineCallSites: ReadonlyArray<Blua32InlineCallSite>;
 	readonly liveWordRanges: readonly ProgramWordRange[];
 };
 
-export type Blua32CapturedLocalDebug = {
+export type Blua32LexicalDeclarationDebug = {
 	functionId: string;
 	name: string;
-	kind: CapturedLocalKind;
+	kind: LexicalDeclarationKind;
 	isConst: boolean;
 	/** Current defining syntax, or null after that declaration was removed. */
 	definition: SourceRange | null;
@@ -88,8 +88,8 @@ export type Blua32DebugMetadata = {
 	statementPointsByFunction: ReadonlyArray<ReadonlyArray<Blua32StatementPoint>>;
 	resumePointsByFunction: ReadonlyArray<ReadonlyArray<Blua32ResumePoint>>;
 	localSlotsByFunction: ReadonlyArray<ReadonlyArray<Blua32LocalSlotDebug>>;
-	captureSlotsByFunction: ReadonlyArray<ReadonlyArray<Blua32CaptureSlotDebug>>;
-	capturedLocals: ReadonlyArray<Blua32CapturedLocalDebug>;
+	outerBindingsByFunction: ReadonlyArray<ReadonlyArray<Blua32OuterBindingDebug>>;
+	lexicalDeclarations: ReadonlyArray<Blua32LexicalDeclarationDebug>;
 	upvalueBindingsByFunction: ReadonlyArray<ReadonlyArray<number>>;
 };
 
