@@ -243,6 +243,32 @@ auto encodeResumePoint(const Blua32ResumePoint& point) -> BinValue {
 
 auto decodeMetadata(const BinValue& value) -> Blua32DebugMetadata {
 	Blua32DebugMetadata metadata;
+	const auto& statics = value.require("staticScopes");
+	metadata.staticScopes.globals = decodeU32Array(statics.require("globals"));
+	const auto& staticDeclarations = statics.require("declarations").asArray();
+	metadata.staticScopes.declarations.reserve(staticDeclarations.size());
+	for (const auto& record : staticDeclarations) {
+		Blua32StaticDeclarationDebug declaration{
+			record.require("name").asString(), decodeSourceRange(record.require("definition")),
+			static_cast<StaticDeclarationKind>(record.require("kind").toI32()),
+			std::nullopt,
+		};
+		if (declaration.kind != StaticDeclarationKind::Type) declaration.address = static_cast<u32>(record.require("address").toNumber());
+		metadata.staticScopes.declarations.push_back(std::move(declaration));
+	}
+	const auto& staticBindings = statics.require("bindingsByFunction").asArray();
+	metadata.staticScopes.bindingsByFunction.resize(staticBindings.size());
+	for (size_t index = 0; index < staticBindings.size(); ++index) {
+		const auto& records = staticBindings[index].asArray();
+		auto& bindings = metadata.staticScopes.bindingsByFunction[index];
+		bindings.reserve(records.size());
+		for (const auto& record : records) {
+			bindings.push_back({
+				static_cast<u32>(record.require("declarationIndex").toNumber()), static_cast<u32>(record.require("inlineDepth").toNumber()),
+				decodeWordRanges(record.require("visibleWordRanges")),
+			});
+		}
+	}
 	const BinValue& traceStatements = value.require("traceStatements");
 	if (traceStatements.isString()) {
 		metadata.traceStatements = traceStatements.asString();
@@ -348,6 +374,35 @@ auto decodeMetadata(const BinValue& value) -> Blua32DebugMetadata {
 
 auto encodeMetadata(const Blua32DebugMetadata& metadata) -> BinValue {
 	BinObject value;
+	BinObject statics;
+	statics["globals"] = encodeU32Array(metadata.staticScopes.globals);
+	BinArray staticDeclarations;
+	staticDeclarations.reserve(metadata.staticScopes.declarations.size());
+	for (const auto& declaration : metadata.staticScopes.declarations) {
+		BinObject record;
+		record["name"] = BinValue(declaration.name);
+		record["kind"] = BinValue(static_cast<i32>(declaration.kind));
+		record["definition"] = encodeSourceRange(declaration.definition);
+		if (declaration.kind != StaticDeclarationKind::Type) record["address"] = BinValue(static_cast<i64>(*declaration.address));
+		staticDeclarations.emplace_back(std::move(record));
+	}
+	statics["declarations"] = BinValue(std::move(staticDeclarations));
+	BinArray staticBindings;
+	staticBindings.reserve(metadata.staticScopes.bindingsByFunction.size());
+	for (const auto& function : metadata.staticScopes.bindingsByFunction) {
+		BinArray bindings;
+		bindings.reserve(function.size());
+		for (const auto& binding : function) {
+			BinObject record;
+			record["declarationIndex"] = BinValue(static_cast<i64>(binding.declarationIndex));
+			record["inlineDepth"] = BinValue(static_cast<i64>(binding.inlineDepth));
+			record["visibleWordRanges"] = encodeWordRanges(binding.visibleWordRanges);
+			bindings.emplace_back(std::move(record));
+		}
+		staticBindings.emplace_back(std::move(bindings));
+	}
+	statics["bindingsByFunction"] = BinValue(std::move(staticBindings));
+	value["staticScopes"] = BinValue(std::move(statics));
 	if (const auto* mode = std::get_if<std::string>(&metadata.traceStatements)) {
 		value["traceStatements"] = BinValue(*mode);
 	} else {

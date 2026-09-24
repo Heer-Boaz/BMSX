@@ -49,6 +49,26 @@ struct Blua32LexicalDeclarationDebug {
 	std::optional<SourceRange> definition;
 };
 
+struct Blua32StaticDeclarationDebug {
+	std::string name;
+	SourceRange definition;
+	StaticDeclarationKind kind;
+	// Present for storage sections; struct declarations have no runtime location.
+	std::optional<u32> address;
+};
+
+struct Blua32StaticBindingDebug {
+	u32 declarationIndex;
+	u32 inlineDepth;
+	std::vector<ProgramWordRange> visibleWordRanges;
+};
+
+struct Blua32StaticScopes {
+	std::vector<Blua32StaticDeclarationDebug> declarations;
+	std::vector<u32> globals;
+	std::vector<std::vector<Blua32StaticBindingDebug>> bindingsByFunction;
+};
+
 struct Blua32ResumePoint {
 	i32 wordOffset = 0;
 	SourceRange range;
@@ -67,6 +87,7 @@ struct Blua32StatementPoint {
 };
 
 struct Blua32DebugMetadata {
+	Blua32StaticScopes staticScopes;
 	TraceStatementSelection traceStatements = std::string("erase");
 	std::vector<std::string> preloadModules;
 	std::vector<std::string> functionIds;

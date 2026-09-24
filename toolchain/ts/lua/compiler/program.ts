@@ -3,6 +3,7 @@ import type { ProgramWordRange } from './word_range';
 import type { SourceRange } from '../source_range';
 import type { OpCode } from '../../../../machine/ts/spec/blua32/opcode';
 import type { TraceStatementSelection } from './trace_statement';
+import type { ProgramStaticScopes } from './static_debug';
 
 export type ProgramConstant = null | boolean | number | string;
 
@@ -80,6 +81,7 @@ export type LocatedOuterBindingDebug = OuterBindingDebug & {
 };
 
 export type ProgramMetadata = ProgramRuntimeSymbols & {
+	staticScopes: ProgramStaticScopes;
 	traceStatements: TraceStatementSelection;
 	preloadModules: readonly string[];
 	functionDefinitionsByProto: ReadonlyArray<SourceRange | null>;

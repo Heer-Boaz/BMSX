@@ -273,6 +273,9 @@ export function mapProgramMetadataSourceRanges(
 
 	return {
 		...metadata,
+		staticScopes: { ...metadata.staticScopes, declarations: metadata.staticScopes.declarations.map(declaration => ({
+			...declaration, definition: mapLuaSourceRange(sourceMaps, declaration.definition),
+		})) },
 		debugRanges,
 		debugInlineCallSites,
 		statementPointsByProto,

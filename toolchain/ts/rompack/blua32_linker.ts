@@ -1,5 +1,5 @@
 import { inlineCallSiteChainsEqual } from '../lua/compiler/inline_debug';
-import { LexicalDeclarationKind } from '../lua/compiler/declaration_kind';
+import { LexicalDeclarationKind, StaticDeclarationKind } from '../lua/compiler/declaration_kind';
 import type { SourceRange } from '../lua/source_range';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
@@ -71,6 +71,7 @@ import {
 	type Blua32InlineCallSite,
 	type Blua32ModuleFunction,
 	type Blua32StaticLayoutToken,
+	type Blua32StaticDeclarationDebug,
 	type Blua32SymbolsImage,
 } from './blua32_symbols';
 import type { LuaSourceCorrespondence } from '../lua/semantic/source_correspondence';
@@ -972,6 +973,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const resumePointsByFunction = new Array<Blua32DebugMetadata['resumePointsByFunction'][number]>(functionCount);
 	const localSlotsByFunction = new Array<Blua32DebugMetadata['localSlotsByFunction'][number]>(functionCount);
 	const outerBindingsByFunction = new Array<Blua32DebugMetadata['outerBindingsByFunction'][number]>(functionCount);
+	const staticBindingsByFunction = new Array<Blua32DebugMetadata['staticScopes']['bindingsByFunction'][number]>(functionCount);
 	const upvalueBindingsByFunction = new Array<Blua32DebugMetadata['upvalueBindingsByFunction'][number]>(functionCount);
 	const lexicalDeclarations: Blua32LexicalDeclarationDebug[] = [];
 	const declarationRemap = new Int32Array(input.metadata.lexicalDeclarations.length).fill(-1);
@@ -990,6 +992,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			resumePointsByFunction[slot] = noDebugRecords;
 			localSlotsByFunction[slot] = noDebugRecords;
 			outerBindingsByFunction[slot] = noDebugRecords;
+			staticBindingsByFunction[slot] = noDebugRecords;
 			upvalueBindingsByFunction[slot] = input.previous!.symbols.metadata.upvalueBindingsByFunction[slot].map(capture =>
 				relocateLexicalDeclaration(capture, input.previous!.symbols.metadata.lexicalDeclarations, previousDeclarationRemap!, lexicalDeclarations, input.previous!));
 			continue;
@@ -999,6 +1002,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		statementPointsByFunction[slot] = input.metadata.statementPointsByProto[protoIndex];
 		resumePointsByFunction[slot] = input.metadata.resumePointsByProto[protoIndex];
 		localSlotsByFunction[slot] = input.metadata.localSlotsByProto[protoIndex];
+		staticBindingsByFunction[slot] = input.metadata.staticScopes.bindingsByProto[protoIndex];
 		upvalueBindingsByFunction[slot] = input.metadata.upvalueBindingsByProto[protoIndex].map(capture =>
 			relocateLexicalDeclaration(capture, input.metadata.lexicalDeclarations, declarationRemap, lexicalDeclarations));
 		outerBindingsByFunction[slot] = input.metadata.outerBindingsByProto[protoIndex].map(binding => ({
@@ -1010,6 +1014,19 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		input.metadata.debugInlineCallSites,
 	);
 	const metadata: Blua32DebugMetadata = {
+		staticScopes: {
+			globals: input.metadata.staticScopes.globals,
+			bindingsByFunction: staticBindingsByFunction,
+			declarations: input.metadata.staticScopes.declarations.map((declaration): Blua32StaticDeclarationDebug => {
+				const { name, definition, kind } = declaration;
+				switch (kind) {
+					case StaticDeclarationKind.Type: return { name, definition, kind };
+					case StaticDeclarationKind.Bss: return { name, definition, kind, address: input.bssAddress + bss.symbols[declaration.symbolIndex].offset };
+					case StaticDeclarationKind.Data: return { name, definition, kind, address: input.dataAddress + data.symbols[declaration.symbolIndex].offset };
+					case StaticDeclarationKind.Rodata: return { name, definition, kind, address: rodataAddress + rodata.symbols[declaration.symbolIndex].offset };
+				}
+			}),
+		},
 		traceStatements: input.metadata.traceStatements,
 		preloadModules: input.metadata.preloadModules,
 		functionIds: functionLayout.functionIds,

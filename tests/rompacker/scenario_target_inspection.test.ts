@@ -128,7 +128,7 @@ return { kind = 'unit',
 	const root = model.tree.roots[0]; assert.equal(root.expandable, true); assert.equal(root.children.length, 0);
 	root.collapsed = false; model.resolve(root); assert.ok(root.children.length > 0);
 	const uiFrame = root.children.find(node => node.element.frame !== undefined)!;
-	uiFrame.collapsed = false; model.resolve(uiFrame); assert.equal(uiFrame.children.length, 2);
+	uiFrame.collapsed = false; model.resolve(uiFrame); assert.equal(uiFrame.children.length, 3);
 	const scopeNode = uiFrame.children.find(node => node.expandable)!;
 	scopeNode.collapsed = false; model.resolve(scopeNode); assert.ok(scopeNode.children.length > 0);
 	const replaced = await tools.execute('studio_inspect_test_target', { result: run.data.cases[0].result }); assert.ok(replaced.kind === 'test-inspection');

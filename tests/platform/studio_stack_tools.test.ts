@@ -24,6 +24,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 		body => call('locals', 'studio_read_runtime_values', { reference: value(body, 'scopes').scopes[0].reference, start: 0, count: 100 }),
 		body => call('receiver', 'studio_read_runtime_values', { reference: value(body, 'locals').entries.find(entry => entry.key.display === 'self').value.reference, start: 0, count: 1000 }),
 		body => call('upvalues', 'studio_read_runtime_values', { reference: value(body, 'scopes').scopes[1].reference, start: 0, count: 100 }),
+		body => call('statics', 'studio_read_runtime_values', { reference: value(body, 'scopes').scopes.find(scope => scope.kind === 'statics').reference, start: 0, count: 1000 }),
 		body => call('ram-frame', 'studio_read_frame_scopes', { frame: value(body, 'stack').frames.find(frame => frame.kind === 'instruction').reference }),
 		body => call('continue', 'studio_control_lua', { target: target(body), evaluation: value(body, 'evaluate').id, action: 'continue' }),
 		body => call('expired', 'studio_read_frame_scopes', { frame: value(body, 'stack').frames[0].reference }),
@@ -34,6 +35,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 			`definition_id = ${value(body, 'locals').entries.find(entry => entry.key.display === 'definition_id').value.display}`,
 			`self.active_space_id = ${value(body, 'receiver').entries.find(entry => entry.key.display === 'active_space_id').value.display}`,
 			`empty_object_bucket: ${value(body, 'upvalues').entries.find(entry => entry.key.display === 'empty_object_bucket').value.kind} upvalue`,
+			`cartlib_render_commands: ${value(body, 'statics').entries.find(entry => entry.key.display === 'cartlib_render_commands').value.display}; game_text_record: type, not a value`,
 			`Terminal: ${value(body, 'continue').status}; old frame: ${text(body, 'expired')}`,
 		].join('\n') }] }],
 	]);
@@ -46,7 +48,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	}, backend);
 	const final = model.requests.at(-1);
 	assert.equal(result.stack, 'pass'); assert.deepEqual(f.observations.errors, []);
-	assert.equal(model.requests.length, 14); assert.equal(f.observations.connects, 1);
+	assert.equal(model.requests.length, 15); assert.equal(f.observations.connects, 1);
 	assert.equal(f.observations.commands.filter(command => command === 'start').length, 1);
 	assert.equal(value(final, 'evaluate').status, 'paused');
 	assert.equal(value(final, 'inspection').stop.reason, 'breakpoint');
@@ -72,8 +74,15 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	assert.deepEqual(unusedConstant.value, { kind: 'unavailable', reason: 'no-live-location', display: '<no live location>' },
 		'the conversation sees an uncaptured lexical constant, not a missing name or a fabricated guest value');
 	assert.ok(value(final, 'receiver').entries.every(entry => !Object.hasOwn(entry, 'isConst')), 'table fields do not inherit binding immutability');
+	const statics = value(final, 'statics').entries;
+	const storage = statics.find(entry => entry.key.display === 'cartlib_render_commands');
+	assert.equal(storage.isConst, true); assert.equal(storage.value.kind, 'address');
+	assert.equal(storage.value.address, result.staticAddress, 'conversation and ordinary inspection share the exact linked address');
+	assert.equal(Number(storage.value.display), result.staticAddress, 'address display never rounds word bits');
+	assert.deepEqual(statics.find(entry => entry.key.display === 'game_text_record').value, { kind: 'type', display: '<struct game_text_record>' });
 	assert.deepEqual(value(final, 'ram-frame').scopes, [
 		{ kind: 'locals', status: 'function-unmapped' }, { kind: 'upvalues', status: 'function-unmapped' },
+		{ kind: 'statics', status: 'function-unmapped' },
 	]);
 	assert.equal(value(final, 'continue').status, 'completed');
 	assert.equal(value(final, 'after').stop, undefined, 'a continued target never advertises an earlier source stop');

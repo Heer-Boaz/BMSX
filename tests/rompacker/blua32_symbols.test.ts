@@ -1,4 +1,4 @@
-import { LexicalDeclarationKind } from '../../toolchain/ts/lua/compiler/declaration_kind';
+import { LexicalDeclarationKind, StaticDeclarationKind } from '../../toolchain/ts/lua/compiler/declaration_kind';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -69,6 +69,19 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 				functionId: 'module:cart/module', name: 'unused', definition: outerCallRange,
 			}],
 			upvalueBindingsByFunction: [[0]],
+			staticScopes: {
+				declarations: [
+					{ name: 'shape', definition: outerCallRange, kind: StaticDeclarationKind.Type },
+					{ name: 'buffer', definition: innerCallRange, kind: StaticDeclarationKind.Bss, address: 0x00400010 },
+					{ name: 'buffer', definition: outerCallRange, kind: StaticDeclarationKind.Data, address: 0x00400020 },
+					{ name: 'frozen', definition: innerCallRange, kind: StaticDeclarationKind.Rodata, address: 0x1fc00100 },
+				],
+				globals: [0, 2],
+				bindingsByFunction: [[
+					{ declarationIndex: 1, inlineDepth: 2, visibleWordRanges: [{ start: 2, end: 4 }, { start: 6, end: 8 }] },
+					{ declarationIndex: 3, inlineDepth: 0, visibleWordRanges: [{ start: 0, end: 8 }] },
+				]],
+			},
 		},
 	};
 
@@ -81,6 +94,7 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 		assert.deepEqual(decodeBlua32SymbolsImage(encodeBlua32SymbolsImage({ ...symbols, metadata })).metadata, metadata);
 	}
 	assert.deepEqual(decoded.metadata.localSlotsByFunction, symbols.metadata.localSlotsByFunction);
+	assert.deepEqual(decoded.metadata.staticScopes, symbols.metadata.staticScopes);
 	for (const isConst of [false, true]) {
 		const metadata = { ...symbols.metadata,
 			localSlotsByFunction: [[{ ...symbols.metadata.localSlotsByFunction[0][0], isConst }]],

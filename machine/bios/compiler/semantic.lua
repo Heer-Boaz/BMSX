@@ -169,6 +169,9 @@ local bind_identifier<const> = function(state, expression)
 		if state.external_names ~= nil then
 			local external<const> = state.external_names[key]
 			if external ~= nil then
+				if external.is_type then
+					fail(state.chunk_name, "Struct type '" .. key .. "' is not a runtime value.", expression)
+				end
 				if not external.available then
 					fail(state.chunk_name, "no live location for '" .. key .. "'", expression)
 				end

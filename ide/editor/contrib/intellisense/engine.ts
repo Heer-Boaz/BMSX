@@ -486,6 +486,7 @@ const RUNTIME_UNAVAILABLE_LABELS = {
 	source_changed: 'unavailable: source differs from installed code',
 	not_loaded: 'unavailable: not loaded',
 	not_in_scope: 'unavailable in the suspended stack',
+	not_runtime_value: 'struct type: not a runtime value',
 	not_a_table: 'unavailable: member parent is not a table',
 } as const;
 

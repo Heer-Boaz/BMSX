@@ -127,6 +127,7 @@ import { getMemoryAccessKindForName } from './memory_access_syntax';
 import { writeLE16, writeLE32 } from '../../../machine/ts/common/endian';
 import { utf8CodepointCount } from '../../../machine/ts/common/utf8';
 import { StructTypes, indexedStructType, type StructResolvedType } from './compiler/struct_types';
+import { buildStaticDebugScopes } from './compiler/static_debug';
 import { isReservedIntrinsicName } from './semantic/common';
 import {
 	traceSinkFieldName,
@@ -498,6 +499,7 @@ class ProgramBuilder {
 	private rodataByteCount = 0;
 	private rodataBytes = new Uint8Array(0);
 	private readonly protoIndexById = new Map<string, number>();
+	private readonly protoSemantics = new Map<string, LuaSemanticFrontendFile>();
 	private readonly moduleProtoEntries: ProgramModuleProto[] = [];
 	private readonly moduleProtoEntrySlotByPath = new Map<string, number>();
 	private readonly moduleExportEntries: ProgramModuleExport[] = [];
@@ -802,6 +804,7 @@ class ProgramBuilder {
 		protoId: string,
 		displayName: string,
 		instructionSet: InstructionSet,
+		semantics: LuaSemanticFrontendFile,
 		definition: SourceRange | null = null,
 	): number {
 		if (this.protoIndexById.has(protoId)) {
@@ -809,6 +812,7 @@ class ProgramBuilder {
 		}
 		const index = this.protos.length;
 		this.protoIndexById.set(protoId, index);
+		this.protoSemantics.set(protoId, semantics);
 		this.protos.push(proto);
 		this.protoCode.push(code);
 		this.protoRanges.push(ranges);
@@ -988,7 +992,7 @@ class ProgramBuilder {
 		return this.biosFunctionImportIndexBySymbol.get(programModuleExportKey(path, exportPathKey));
 	}
 
-	public buildProgram(initParticipants: ReadonlyArray<InitParticipantBinding>): { program: Program; metadata: ProgramMetadata; imageConstRelocs: ProgramImageConstReloc[]; biosFunctionConstRelocs: ProgramBiosFunctionConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; rodataConstRelocs: ProgramRodataConstReloc[]; data: ProgramObjectDataSection; bss: ProgramObjectBssSection; rodataBytes: Uint8Array; rodataSymbols: ProgramRodataSymbol[]; staticModulePaths: string[] } {
+	public buildProgram(initParticipants: ReadonlyArray<InitParticipantBinding>, frontend: LuaSemanticFrontend): { program: Program; metadata: ProgramMetadata; imageConstRelocs: ProgramImageConstReloc[]; biosFunctionConstRelocs: ProgramBiosFunctionConstReloc[]; constValueRelocs: ProgramConstValueReloc[]; rodataConstRelocs: ProgramRodataConstReloc[]; data: ProgramObjectDataSection; bss: ProgramObjectBssSection; rodataBytes: Uint8Array; rodataSymbols: ProgramRodataSymbol[]; staticModulePaths: string[] } {
 		let totalBytes = 0;
 		for (let i = 0; i < this.protoCode.length; i += 1) {
 			totalBytes += this.protos[i].codeLen;
@@ -1078,6 +1082,10 @@ class ProgramBuilder {
 			appendOffsetBytes += chunk.length;
 		}
 		const metadata: ProgramMetadata = {
+			staticScopes: buildStaticDebugScopes(protos, fullRanges, fullInlineCallSites, frontend,
+				{ protoIds: this.protoIds, localSlotsByProto: this.protoLocalSlots,
+					outerBindingsByProto: this.protoOuterBindings, lexicalDeclarations: this.lexicalDeclarations }, this.protoSemantics,
+				this.bssBindingsBySymbolHandle, this.dataBindingsBySymbolHandle, this.rodataBindingsBySymbolHandle),
 			traceStatements: this.traceStatements,
 			preloadModules: this.preloadModules,
 			functionDefinitionsByProto: this.functionDefinitions,
@@ -5999,7 +6007,7 @@ function compileFunctionExpression(
 			maxStack: builder.getMaxStack(),
 			upvalueDescs: builder.getUpvalueDescs(),
 			staticClosure: false,
-	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getOuterBindingDebug(), builder.getUpvalueBindings(), protoId, functionDisplayName, instructionSet, semantics.locations.range(expression.span));
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getOuterBindingDebug(), builder.getUpvalueBindings(), protoId, functionDisplayName, instructionSet, semantics, semantics.locations.range(expression.span));
 	return protoIndex;
 }
 
@@ -6026,7 +6034,7 @@ function compileSectionInitProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), builder.getOuterBindingDebug(), [], protoId, functionDisplayName, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), builder.getOuterBindingDebug(), [], protoId, functionDisplayName, instructionSet, semantics);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -6060,7 +6068,7 @@ function compileStartupProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), builder.getOuterBindingDebug(), [], protoId, functionDisplayName, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), builder.getOuterBindingDebug(), [], protoId, functionDisplayName, instructionSet, semantics);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -6089,7 +6097,7 @@ function compileInitProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), builder.getOuterBindingDebug(), [], protoId, functionDisplayName, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), builder.getOuterBindingDebug(), [], protoId, functionDisplayName, instructionSet, semantics);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -6117,7 +6125,7 @@ function compileInterruptProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), builder.getOuterBindingDebug(), [], protoId, functionDisplayName, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), builder.getOuterBindingDebug(), [], protoId, functionDisplayName, instructionSet, semantics);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -6145,7 +6153,7 @@ function compileExceptionProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), builder.getOuterBindingDebug(), [], protoId, functionDisplayName, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), builder.getOuterBindingDebug(), [], protoId, functionDisplayName, instructionSet, semantics);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -6326,7 +6334,7 @@ export function compileLuaChunkToProgram(
 			maxStack: entryBuilder.getMaxStack(),
 			upvalueDescs: entryBuilder.getUpvalueDescs(),
 			staticClosure: false,
-		}, entryCode, entryRanges, entryBuilder.getInlineCallSites(), entryConstRelocs, entryBuilder.getStatementPoints(), entryBuilder.getResumePoints(), entryLocalSlots, entryBuilder.getOuterBindingDebug(), entryBuilder.getUpvalueBindings(), entryProtoId, 'entry', entryInstructionSet);
+		}, entryCode, entryRanges, entryBuilder.getInlineCallSites(), entryConstRelocs, entryBuilder.getStatementPoints(), entryBuilder.getResumePoints(), entryLocalSlots, entryBuilder.getOuterBindingDebug(), entryBuilder.getUpvalueBindings(), entryProtoId, 'entry', entryInstructionSet, frontend.getFile(chunk.locations.path));
 	} catch (error) {
 		compileErrors.push(toCompileError(error, chunk.locations.path, 'entry', sourceMaps));
 	}
@@ -6363,7 +6371,7 @@ export function compileLuaChunkToProgram(
 				maxStack: builder.getMaxStack(),
 				upvalueDescs: builder.getUpvalueDescs(),
 				staticClosure: false,
-			}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getOuterBindingDebug(), builder.getUpvalueBindings(), moduleProtoId, 'module', instructionSet);
+			}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getOuterBindingDebug(), builder.getUpvalueBindings(), moduleProtoId, 'module', instructionSet, frontend.getFile(module.path));
 			programBuilder.recordModuleProto(module.path, protoIndex);
 		} catch (error) {
 			compileErrors.push(toCompileError(error, module.path, 'module', sourceMaps));
@@ -6414,7 +6422,7 @@ export function compileLuaChunkToProgram(
 		rodataBytes,
 		rodataSymbols,
 		staticModulePaths,
-	} = programBuilder.buildProgram(initParticipants);
+	} = programBuilder.buildProgram(initParticipants, frontend);
 	const metadata = mapProgramMetadataSourceRanges(generatedMetadata, sourceMaps);
 	if (programDomain === 'system') {
 		return {

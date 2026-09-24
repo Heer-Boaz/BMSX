@@ -10,4 +10,11 @@ enum class LexicalDeclarationKind : u32 {
 	Receiver,
 };
 
+enum class StaticDeclarationKind : u32 {
+	Type,
+	Bss,
+	Data,
+	Rodata,
+};
+
 } // namespace bmsx

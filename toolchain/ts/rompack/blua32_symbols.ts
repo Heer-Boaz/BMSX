@@ -1,6 +1,6 @@
 import type { Blua32UpvalueRecord } from './blua32_image';
 import type { ProgramWordRange } from '../lua/compiler/word_range';
-import type { LexicalDeclarationKind } from '../lua/compiler/declaration_kind';
+import type { LexicalDeclarationKind, StaticDeclarationKind } from '../lua/compiler/declaration_kind';
 import { decodeBinary, encodeBinary } from '../../../machine/ts/common/serializer/binencoder';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import type { OpCode } from '../../../machine/ts/spec/blua32/opcode';
@@ -73,7 +73,20 @@ export type Blua32StatementPoint = {
 	inlineCallSites: ReadonlyArray<Blua32InlineCallSite>;
 };
 
+export type Blua32StaticBindingDebug = {
+	declarationIndex: number;
+	inlineDepth: number;
+	visibleWordRanges: readonly ProgramWordRange[];
+};
+
+export type Blua32StaticScopes = {
+	declarations: readonly Blua32StaticDeclarationDebug[];
+	globals: readonly number[];
+	bindingsByFunction: readonly (readonly Blua32StaticBindingDebug[])[];
+};
+
 export type Blua32DebugMetadata = {
+	staticScopes: Blua32StaticScopes;
 	traceStatements: TraceStatementSelection;
 	preloadModules: readonly string[];
 	functionIds: string[];
@@ -91,6 +104,14 @@ export type Blua32DebugMetadata = {
 	outerBindingsByFunction: ReadonlyArray<ReadonlyArray<Blua32OuterBindingDebug>>;
 	lexicalDeclarations: ReadonlyArray<Blua32LexicalDeclarationDebug>;
 	upvalueBindingsByFunction: ReadonlyArray<ReadonlyArray<number>>;
+};
+
+export type Blua32StaticDeclarationDebug = {
+	name: string;
+	definition: SourceRange;
+	kind: StaticDeclarationKind;
+	/** Present for storage sections; struct declarations have no runtime location. */
+	address?: number;
 };
 
 export type Blua32SymbolsImage = {

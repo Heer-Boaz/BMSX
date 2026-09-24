@@ -41,6 +41,9 @@ function frame.open(frame_index, names)
 			if thread == nil then
 				raise('Selected frame evaluation has ended.')
 			end
+			if location.is_address then
+				return location.index
+			end
 			if location.upvalue then
 				return get_upvalue(thread, frame_index, location.index)
 			end

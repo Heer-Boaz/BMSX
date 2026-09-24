@@ -719,6 +719,48 @@ halt_until_irq`;
 			analysis, SYSTEM_RESOURCE_DOMAIN, ['target', 'missing', 'value'], 4, 8), { kind: 'unavailable', reason: 'not_a_table' });
 	});
 
+	test(`suspended inspection resolves static declarations by installed definition, never globals at O${optLevel}`, t => {
+		const source = `bss buffer: word
+struct shape
+ field: word
+end
+do
+ data buffer: word = 17
+ halt_until_irq
+ return buffer
+end
+return buffer`;
+		const { runtime, bridge, analysis, image } = createIntellisenseRuntime(source, optLevel);
+		runtime.machine.cpu.reset();
+		assert.equal(runtime.machine.cpu.runUntilDepth(0, 10000), RunResult.Halted);
+		const reads = t.mock.method(bridge.suspendedGuest, 'global');
+		const fault = createRuntimeFaultState();
+		for (const [line, column, address] of [[1, 5, image.image.header.bssAddress], [6, 7, image.image.header.dataAddress], [8, 9, image.image.header.dataAddress]]) {
+			assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis,
+				SYSTEM_RESOURCE_DOMAIN, ['buffer'], line, column), { kind: 'value', value: address });
+		}
+		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis,
+			SYSTEM_RESOURCE_DOMAIN, ['shape'], 2, 8), { kind: 'unavailable', reason: 'not_runtime_value' });
+		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis,
+			SYSTEM_RESOURCE_DOMAIN, ['buffer', 'field'], 8, 9), { kind: 'unavailable', reason: 'not_a_table' }, 'an address is not a Lua table');
+		assert.equal(reads.mock.callCount(), 0);
+	});
+
+	test(`suspended inspection consumes the installed static global publication across modules at O${optLevel}`, t => {
+		const source = "require('storage')\nhalt_until_irq\nreturn exported, sizeof(shape)";
+		const { runtime, bridge, analysis, image } = createIntellisenseRuntime(source, optLevel,
+			{ storage: 'bss exported: word\nstruct shape\n field: word\nend' });
+		runtime.machine.cpu.reset();
+		assert.equal(runtime.machine.cpu.runUntilDepth(0, 10000), RunResult.Halted);
+		const reads = t.mock.method(bridge.suspendedGuest, 'global');
+		const fault = createRuntimeFaultState();
+		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis,
+			SYSTEM_RESOURCE_DOMAIN, ['exported'], 3, 8), { kind: 'value', value: image.image.header.bssAddress });
+		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis,
+			SYSTEM_RESOURCE_DOMAIN, ['shape'], 3, 25), { kind: 'unavailable', reason: 'not_runtime_value' });
+		assert.equal(reads.mock.callCount(), 0);
+	});
+
 	test(`suspended inspection consumes final word locations across WIDE instructions at O${optLevel}`, () => {
 		const declarations = Array.from({ length: 260 }, (_, index) => `local unused_${index} = 0`);
 		const source = ['input_value = 42', ...declarations, 'local target = input_value', 'halt_until_irq', 'return target'].join('\n');

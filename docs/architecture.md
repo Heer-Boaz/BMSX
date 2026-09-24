@@ -5213,7 +5213,15 @@ globals or read some caller's register. Physical `upvalueBindings` still describ
 only real closure cells and retained Hot Resume prefixes. A hidden retained cell
 cannot override a newly shadowing source declaration. Inline lowering relocates
 existing locations without manufacturing new ones. Static-storage/type names
-and their firmware evaluation semantics remain a separate coverage gate.
+have a separate installed declaration catalog, keyed by bound source identity.
+The compiler retains each function's actual semantic file, not its display path,
+and publishes coalesced word intervals at each logical inline depth. The linker
+resolves storage section-symbol ordinals to raw addresses; types have no runtime
+location. Image-global names are published once. Ordinary frame declarations
+shadow those defaults, and exact lexical static overrides select the binder's
+answer. Shared runtime/test inspection exposes address words and non-value type
+records without reading registers or allocating guest values. This metadata adds
+no frame slot, capture or CPU hook.
 The shared firmware compiler also supports external lexical locations before
 ordinary globals/environment bindings. Private boot primitives transfer values
 directly from a specified guest thread's physical frame register or closure
@@ -5225,7 +5233,11 @@ directory as function, logical-frame, binding and word-interval tables. Visibili
 and liveness remain distinct, so an unavailable inner declaration still shadows
 an outer name. Names are interned UTF-8; firmware resolves exact function/PC/inline
 depth using the existing ROM bus, not a host callback or another symbols database
-inside the CPU. A private raw frame-header primitive exposes the existing function
+inside the CPU. Its shared static-global prefix and address/type binding flags
+preserve the same name precedence. Firmware evaluation reads a storage address
+through the active borrow and rejects type names as runtime expressions; storage
+bindings cannot be reassigned. This does not add typed-memory expression syntax
+to the limited BIOS loader. A private raw frame-header primitive exposes the existing function
 address, PC, call-site PC, completion flag and domain; injected completion calls
 retain the ancestor's own PC. Firmware never switches cartridge bus selection to
 inspect an unmapped domain. Both runtimes execute the same resolver. Admitting

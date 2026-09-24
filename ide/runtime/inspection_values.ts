@@ -2,7 +2,7 @@ import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import type { Table } from '../../machine/ts/machine/cpu/table';
 import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 import { Blua32GlobalRegisterFile } from './sources';
-import type { RuntimeLuaFrameBinding } from './lua_inspection';
+import type { RuntimeLuaFrameBinding, RuntimeLuaFrameScope } from './lua_inspection';
 import { SuspendedGuestValueKind, type SuspendedGuestSession, type SuspendedGuestValue } from './suspended_guest';
 
 export type InspectedValue = {
@@ -12,7 +12,9 @@ export type InspectedValue = {
 };
 export type InspectedEntry = {
 	readonly key: InspectedValue;
-	readonly value: InspectedValue | { readonly kind: 'unavailable'; readonly reason: 'no-live-location'; readonly display: string; readonly reference?: never };
+	readonly value: InspectedValue | { readonly kind: 'unavailable'; readonly reason: 'no-live-location'; readonly display: string; readonly reference?: never }
+		| { readonly kind: 'type'; readonly display: string; readonly reference?: never }
+		| { readonly kind: 'address'; readonly address: number; readonly display: string; readonly reference?: never };
 	readonly registerFile?: 'ordinary' | 'system';
 	readonly definition?: SourceRange | null;
 	/** Present for lexical bindings only; does not make the referenced object immutable. */
@@ -21,7 +23,7 @@ export type InspectedEntry = {
 type GlobalBinding = readonly [name: string, registerFile: Blua32GlobalRegisterFile];
 type Container =
 	| { kind: 'globals'; names: ReadonlyMap<string, Blua32GlobalRegisterFile>; bindings?: readonly GlobalBinding[] }
-	| { kind: 'locals' | 'upvalues'; frame: CallFrame; bindings: readonly RuntimeLuaFrameBinding[] }
+	| { kind: RuntimeLuaFrameScope['kind']; frame: CallFrame; bindings: readonly RuntimeLuaFrameBinding[] }
 	| { kind: 'table'; value: SuspendedGuestValue; entries?: readonly (readonly [SuspendedGuestValue, SuspendedGuestValue])[] };
 const VALUE_KINDS: Record<SuspendedGuestValueKind, InspectedValue['kind']> = {
 	[SuspendedGuestValueKind.Nil]: 'nil', [SuspendedGuestValueKind.Boolean]: 'boolean',
@@ -39,7 +41,7 @@ export class InspectionValues {
 	public globals(names: ReadonlyMap<string, Blua32GlobalRegisterFile>): string {
 		return this.add({ kind: 'globals', names });
 	}
-	public frame(kind: 'locals' | 'upvalues', frame: CallFrame, bindings: readonly RuntimeLuaFrameBinding[]): string {
+	public frame(kind: RuntimeLuaFrameScope['kind'], frame: CallFrame, bindings: readonly RuntimeLuaFrameBinding[]): string {
 		return this.add({ kind, frame, bindings });
 	}
 	private add(container: Container): string {
@@ -89,7 +91,9 @@ export class InspectionValues {
 			for (let index = start, end = Math.min(start + count, total); index < end; index++) {
 				const binding = container.bindings[index];
 				entries.push({ key: { kind: 'string', display: binding.name }, definition: binding.definition, isConst: binding.isConst,
-					value: binding.location !== null
+					value: binding.kind === 'type' ? { kind: 'type', display: `<struct ${binding.name}>` }
+						: binding.kind === 'address' ? { kind: 'address', address: binding.address, display: `0x${binding.address.toString(16).padStart(8, '0')}` }
+						: binding.location !== null
 						? this.describe(binding.location.inStack ? container.frame.registers.get(binding.location.index)
 							: guest.readClosureUpvalue(container.frame.closure, binding.location.index))
 						: { kind: 'unavailable', reason: 'no-live-location', display: '<no live location>' } });

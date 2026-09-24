@@ -7,12 +7,20 @@ import { runtimeLuaFrameScopes } from '../../ide/runtime/lua_inspection';
 import { compileLuaSource } from '../lua/cpu_test_harness';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 
-const source = `local shared<const> = { answer = 42 }
-local run = function(seed, ...)
+const source = `local published = 999
+bss published: word
+struct shape
+ words: word[3]
+end
+local shared<const> = { answer = 42 }
+local run = function(seed, published, ...)
+	data stored: word = 17
 	local captured = seed
 	local outer<const> = function(value)
+		rodata frozen: word = 23
 		local middle<const> = value + seed
 		local inner<const> = function(bonus)
+			bss seed: word
 			captured = captured + bonus
 			return captured + shared.answer + middle
 		end
@@ -20,12 +28,16 @@ local run = function(seed, ...)
 	end
 	local result = outer(2)
 	do
+		local stored = seed
+		struct shape
+		 unknown: unused_layout
+		end
 		local result = 99
-		result = result + seed
+		result = result + stored
 	end
 	return result + outer(3)
 end
-return run(40)`;
+return run(40, 41)`;
 
 for (const optLevel of [0, 3] as const) test(`O${optLevel}: packed firmware scopes agree with installed Studio scopes at every mapped PC`, () => {
 	const linked = linkTestSystemBlua32(compileLuaSource(source, 'scope_probe', optLevel),
@@ -37,6 +49,9 @@ for (const optLevel of [0, 3] as const) test(`O${optLevel}: packed firmware scop
 	const frames = field(0, D.BLUA32_DIAGNOSTIC_DIRECTORY_FRAME_TABLE_OFFSET);
 	const bindings = field(0, D.BLUA32_DIAGNOSTIC_DIRECTORY_BINDING_TABLE_OFFSET);
 	const intervals = field(0, D.BLUA32_DIAGNOSTIC_DIRECTORY_INTERVAL_TABLE_OFFSET);
+	const globalCount = field(0, D.BLUA32_DIAGNOSTIC_DIRECTORY_STATIC_GLOBAL_COUNT_OFFSET);
+	assert.equal(globalCount, linked.symbols.metadata.staticScopes.globals.length);
+	assert.equal(globalCount, 2, 'global declarations are packed once, not once per frame');
 	const decoder = new TextDecoder();
 	const nameAt = (record: number, nameOffset: number, bytesOffset: number) => {
 		const start = directory + field(record, nameOffset);
@@ -77,22 +92,25 @@ for (const optLevel of [0, 3] as const) test(`O${optLevel}: packed firmware scop
 				assert.equal(nameAt(frame, D.BLUA32_DIAGNOSTIC_FRAME_NAME_OFFSET, D.BLUA32_DIAGNOSTIC_FRAME_NAME_BYTES_OFFSET), expectedName);
 				const actual = new Map<string, unknown>();
 				const start = field(frame, D.BLUA32_DIAGNOSTIC_FRAME_BINDING_START_OFFSET), count = field(frame, D.BLUA32_DIAGNOSTIC_FRAME_BINDING_COUNT_OFFSET);
-				for (let index = start; index < start + count; index++) {
+				assert.ok(start >= globalCount);
+				for (const index of [...Array.from({ length: globalCount }, (_, index) => index), ...Array.from({ length: count }, (_, index) => start + index)]) {
 					const slot = bindings + index * D.BLUA32_DIAGNOSTIC_BINDING_RECORD_SIZE;
-					if (!contains(field(slot, D.BLUA32_DIAGNOSTIC_BINDING_VISIBLE_START_OFFSET), field(slot, D.BLUA32_DIAGNOSTIC_BINDING_VISIBLE_COUNT_OFFSET), word)) continue;
+					if (index >= globalCount && !contains(field(slot, D.BLUA32_DIAGNOSTIC_BINDING_VISIBLE_START_OFFSET), field(slot, D.BLUA32_DIAGNOSTIC_BINDING_VISIBLE_COUNT_OFFSET), word)) continue;
 					const flags = field(slot, D.BLUA32_DIAGNOSTIC_BINDING_FLAGS_OFFSET);
 					const live = contains(field(slot, D.BLUA32_DIAGNOSTIC_BINDING_LIVE_START_OFFSET), field(slot, D.BLUA32_DIAGNOSTIC_BINDING_LIVE_COUNT_OFFSET), word);
 					actual.set(nameAt(slot, D.BLUA32_DIAGNOSTIC_BINDING_NAME_OFFSET, D.BLUA32_DIAGNOSTIC_BINDING_NAME_BYTES_OFFSET), {
 						isConst: (flags & D.BLUA32_DIAGNOSTIC_BINDING_CONST) !== 0,
-						location: live ? { inStack: (flags & D.BLUA32_DIAGNOSTIC_BINDING_UPVALUE) === 0, index: field(slot, D.BLUA32_DIAGNOSTIC_BINDING_INDEX_OFFSET) } : null,
+						...((flags & D.BLUA32_DIAGNOSTIC_BINDING_TYPE) !== 0 ? { kind: 'type' }
+							: (flags & D.BLUA32_DIAGNOSTIC_BINDING_ADDRESS) !== 0 ? { kind: 'address', address: field(slot, D.BLUA32_DIAGNOSTIC_BINDING_INDEX_OFFSET) }
+								: { kind: 'slot', location: live ? { inStack: (flags & D.BLUA32_DIAGNOSTIC_BINDING_UPVALUE) === 0, index: field(slot, D.BLUA32_DIAGNOSTIC_BINDING_INDEX_OFFSET) } : null }),
 					});
 				}
 				const scopes = runtimeLuaFrameScopes({ executionDomainId: -1, toolingImage: { layout: linked.image, symbols: linked.symbols },
 					functionAddress: fn.address, functionIndex, tracePc: pc }, depth);
 				const expected = new Map<string, unknown>();
-				for (const scope of [scopes[1], scopes[0]]) {
+				for (const scope of [scopes[1], scopes[0], scopes[2]]) {
 					assert.equal(scope.status, 'available');
-					if (scope.status === 'available') for (const binding of scope.bindings) expected.set(binding.name, { isConst: binding.isConst, location: binding.location });
+					if (scope.status === 'available') for (const { name, definition, ...binding } of scope.bindings) expected.set(name, binding);
 				}
 				assert.deepEqual(actual, expected, `${expectedName} at ${pc}, depth ${depth}`);
 				compared++;

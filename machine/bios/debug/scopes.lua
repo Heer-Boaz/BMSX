@@ -8,11 +8,14 @@ local function_table_index<const> = 9
 local frame_table_index<const> = 11
 local binding_table_index<const> = 13
 local interval_table_index<const> = 15
+local static_global_count_index<const> = 18
 local function_words<const> = 4
 local frame_words<const> = 7
 local binding_words<const> = 8
 local binding_upvalue<const> = 1
 local binding_const<const> = 2
+local binding_address<const> = 4
+local binding_type<const> = 8
 
 local contains<const> = function(interval_address, start, count, word)
 	local intervals<const>: *word = interval_address
@@ -27,6 +30,20 @@ local contains<const> = function(interval_address, start, count, word)
 		end
 	end
 	return first < start + count and intervals[first * 2] <= word
+end
+
+local decode_binding<const> = function(base, binding_table, slot, interval_address, word)
+	local bindings<const>: *word = binding_table
+	local flags<const> = bindings[slot + 2]
+	local address<const> = flags & binding_address ~= 0
+	return decode_utf8(base + bindings[slot], bindings[slot + 1]), {
+		index = bindings[slot + 3],
+		upvalue = flags & binding_upvalue ~= 0,
+		is_const = flags & binding_const ~= 0,
+		is_address = address,
+		is_type = flags & binding_type ~= 0,
+		available = address or contains(interval_address, bindings[slot + 6], bindings[slot + 7], word),
+	}
 end
 
 function scopes.resolve(rom_base, function_address, pc, inline_depth)
@@ -66,17 +83,15 @@ function scopes.resolve(rom_base, function_address, pc, inline_depth)
 			local binding_start<const> = frames[at + 5]
 			local binding_end<const> = binding_start + frames[at + 6]
 			local names<const> = {}
+			for binding_index = 0, directory[static_global_count_index] - 1 do
+				local identifier<const>, binding<const> = decode_binding(base, bindings, binding_index * binding_words, intervals, word)
+				names[identifier] = binding
+			end
 			for binding_index = binding_start, binding_end - 1 do
 				local slot<const> = binding_index * binding_words
 				if contains(intervals, bindings[slot + 4], bindings[slot + 5], word) then
-					local flags<const> = bindings[slot + 2]
-					local identifier<const> = decode_utf8(base + bindings[slot], bindings[slot + 1])
-					names[identifier] = {
-						index = bindings[slot + 3],
-						upvalue = flags & binding_upvalue ~= 0,
-						is_const = flags & binding_const ~= 0,
-						available = contains(intervals, bindings[slot + 6], bindings[slot + 7], word),
-					}
+					local identifier<const>, binding<const> = decode_binding(base, bindings, slot, intervals, word)
+					names[identifier] = binding
 				end
 			end
 			return names, name

@@ -64,6 +64,16 @@ int main() {
 		{"module:cart/module", "unused", bmsx::LexicalDeclarationKind::Local, true, outerCallRange},
 	};
 	symbols.metadata.upvalueBindingsByFunction = {{0u}};
+	symbols.metadata.staticScopes = {
+		{
+			{"shape", outerCallRange, bmsx::StaticDeclarationKind::Type, std::nullopt},
+			{"buffer", innerCallRange, bmsx::StaticDeclarationKind::Bss, 0x00400010u},
+			{"buffer", outerCallRange, bmsx::StaticDeclarationKind::Data, 0x00400020u},
+			{"frozen", innerCallRange, bmsx::StaticDeclarationKind::Rodata, 0x1fc00100u},
+		},
+		{0, 2},
+		{{{1, 2, {{2, 4}, {6, 8}}}, {3, 0, {{0, 8}}}}},
+	};
 
 	const std::vector<bmsx::u8> encodedSymbols = bmsx::encodeBlua32SymbolsImage(symbols);
 	const bmsx::BinValue symbolsPayload = bmsx::decodeBinary(encodedSymbols.data(), encodedSymbols.size());
@@ -71,6 +81,24 @@ int main() {
 		throw std::runtime_error("BLua32 symbols must not carry a schema version");
 	}
 	const bmsx::Blua32SymbolsImage decodedSymbols = bmsx::decodeBlua32SymbolsImage(encodedSymbols);
+	const auto& statics = decodedSymbols.metadata.staticScopes;
+	if (statics.declarations.size() != 4 || statics.declarations[0].name != "shape"
+		|| statics.declarations[0].kind != bmsx::StaticDeclarationKind::Type
+		|| statics.declarations[0].address.has_value()
+		|| statics.declarations[1].kind != bmsx::StaticDeclarationKind::Bss || statics.declarations[1].address != 0x00400010u
+		|| statics.declarations[2].kind != bmsx::StaticDeclarationKind::Data || statics.declarations[2].address != 0x00400020u
+		|| statics.declarations[3].kind != bmsx::StaticDeclarationKind::Rodata || statics.declarations[3].address != 0x1fc00100u
+		|| statics.declarations[1].definition.start.line != 11 || statics.globals != std::vector<bmsx::u32>{0, 2}
+		|| statics.bindingsByFunction.size() != 1 || statics.bindingsByFunction[0].size() != 2
+		|| statics.bindingsByFunction[0][0].declarationIndex != 1 || statics.bindingsByFunction[0][0].inlineDepth != 2
+		|| statics.bindingsByFunction[0][0].visibleWordRanges.size() != 2
+		|| statics.bindingsByFunction[0][0].visibleWordRanges[0].start != 2
+		|| statics.bindingsByFunction[0][0].visibleWordRanges[1].end != 8) {
+		throw std::runtime_error("BLua32 static declarations, linked addresses and inline visibility did not round-trip");
+	}
+	if (symbolsPayload.require("metadata").require("staticScopes").require("declarations").asArray()[0].asObject().contains("address")) {
+		throw std::runtime_error("A struct declaration is not a storage address");
+	}
 	if (decodedSymbols.metadata.resumePointsByFunction[0][0].resumeId.has_value()
 		|| decodedSymbols.metadata.resumePointsByFunction[0][1].resumeId != "startup.entry.return") {
 		throw std::runtime_error("BLua32 generated continuation identity did not round-trip");

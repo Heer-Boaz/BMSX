@@ -10,6 +10,7 @@ import { compileLuaSource } from './cpu_test_harness';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
+import { StaticDeclarationKind } from '../../toolchain/ts/lua/compiler/declaration_kind';
 
 function fixture(source: string, optLevel: 0 | 3, breakpoint?: number) {
 	const compiled = compileLuaSource(source, 'stack_probe', optLevel), image = linkTestSystemBlua32(compiled);
@@ -29,6 +30,68 @@ function fixture(source: string, optLevel: 0 | 3, breakpoint?: number) {
 	f.inspection.pause();
 	return f;
 }
+
+for (const level of [0, 3] as const) test(`O${level}: ordinary and conversation scopes share real static addresses and non-value types`, async t => {
+	const source = `bss buffer: word
+bss published: word
+struct shape
+ field: word
+end
+local run = function(seed, ...)
+ data buffer: word = 17
+ local inspect<const> = function(value)
+  bss seed: word
+  rodata frozen: word = 23
+  local published = value + 1
+  return published + mem[buffer] + mem[frozen] + mem[seed]
+ end
+ return inspect(seed)
+end
+return run(7)`;
+	const f = fixture(source, level, 12), cpu = f.runtime.machine.cpu;
+	const before = [cpu.luaHeap.usedBytes(), cpu.getFrameDepth(), f.runtime.machine.scheduler.currentNowCycles()];
+	const registers = cpu.activeThread.frames.map(frame => t.mock.method(frame.registers, 'get'));
+	const globals = t.mock.method(f.guest, 'global');
+	const inspection = f.inspection.open(); t.after(() => inspection.dispose());
+	const frame = inspection.readStack(0, 100).frames.find(frame => frame.functionName === 'inspect')!;
+	assert.equal(frame.inlineDepth, level === 3 ? 1 : 0);
+	const statics = inspection.frameScopes(frame.reference).scopes.find(scope => scope.kind === 'statics')!;
+	const entries = inspection.read(statics.reference!, 0, 100).entries;
+	assert.deepEqual(entries.map(entry => entry.key.display).sort(), ['buffer', 'frozen', 'seed', 'shape']);
+	assert.ok(entries.every(entry => entry.isConst === true));
+	assert.deepEqual(entries.find(entry => entry.key.display === 'shape')!.value, { kind: 'type', display: '<struct shape>' });
+	const declarations = f.sources.currentBlua32Media.system!.symbols!.metadata.staticScopes.declarations;
+	for (const [name, line] of [['buffer', 7], ['seed', 9], ['frozen', 10]] as const) {
+		const entry = entries.find(entry => entry.key.display === name)!;
+		const declaration = declarations.find(declaration => declaration.definition.start.line === line)!;
+		assert.ok(declaration.kind !== StaticDeclarationKind.Type);
+		assert.equal(entry.definition!.start.line, line);
+		assert.ok(entry.value.kind === 'address');
+		assert.equal(entry.value.address, declaration.address);
+		assert.match(entry.value.display, /^0x[0-9a-f]{8}$/);
+		assert.equal(Number(entry.value.display), declaration.address, 'display preserves every address bit');
+	}
+	const lifetime = new AbortController();
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, lifetime.signal);
+	t.after(() => tools.dispose());
+	const opened = await tools.execute('studio_inspect_runtime', { target: f.inspection.target });
+	assert.ok('inspection' in opened.data);
+	const stack = await tools.execute('studio_read_runtime_stack', { inspection: opened.data.inspection, start: 0, count: 100 });
+	assert.ok('frames' in stack.data);
+	const selected = stack.data.frames.find(frame => frame.functionName === 'inspect')!;
+	const scopes = await tools.execute('studio_read_frame_scopes', { frame: selected.reference });
+	assert.ok('frame' in scopes.data);
+	const scope = scopes.data.scopes.find(scope => scope.kind === 'statics')!;
+	const result = await tools.execute('studio_read_runtime_values', { reference: scope.reference, start: 0, count: 100 });
+	assert.ok('entries' in result.data);
+	assert.deepEqual(result.data.entries, entries);
+	assert.ok(registers.every(read => read.mock.callCount() === 0));
+	assert.equal(globals.mock.callCount(), 0, 'static declarations never read same-name runtime globals');
+	assert.deepEqual([cpu.luaHeap.usedBytes(), cpu.getFrameDepth(), f.runtime.machine.scheduler.currentNowCycles()], before);
+	f.guest.invalidate('heap-replaced');
+	assert.throws(() => inspection.read(statics.reference!, 0, 1), /expired/);
+	assert.throws(() => tools.execute('studio_read_runtime_values', { reference: scope.reference, start: 0, count: 1 }), /expired|current suspended/);
+});
 
 for (const level of [0, 3] as const) test(`O${level}: scopes distinguish recursive frames, live locals and shared upvalues without execution`, t => {
 	const f = fixture(`local shared = { answer = 42 }
@@ -245,6 +308,7 @@ test('missing symbols are explicit and execution invalidates frame, scope and va
 	assert.equal(unlabelled.kind, 'instruction');
 	assert.deepEqual(inspection.frameScopes(unlabelled.reference).scopes, [
 		{ kind: 'locals', status: 'symbols-unavailable' }, { kind: 'upvalues', status: 'symbols-unavailable' },
+		{ kind: 'statics', status: 'symbols-unavailable' },
 	]);
 });
 

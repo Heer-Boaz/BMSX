@@ -111,6 +111,7 @@ function makeMetadata(
 		resumePointsByProto: protoIds.map(() => []),
 		localSlotsByProto: protoIds.map(() => []),
 		outerBindingsByProto: protoIds.map(() => []),
+		staticScopes: { declarations: [], globals: [], bindingsByProto: protoIds.map(() => []) },
 		functionDefinitionsByProto: protoIds.map(() => null),
 		lexicalDeclarations: [],
 		upvalueBindingsByProto: protoIds.map(() => []),
@@ -195,6 +196,7 @@ function setFunctionIds(
 	metadata.resumePointsByProto = ids.map(() => []);
 	metadata.localSlotsByProto = ids.map(() => []);
 	metadata.outerBindingsByProto = ids.map(() => []);
+	metadata.staticScopes = { declarations: [], globals: [], bindingsByProto: ids.map(() => []) };
 	metadata.functionDefinitionsByProto = ids.map(() => null);
 	metadata.upvalueBindingsByProto = ids.map(() => []);
 }

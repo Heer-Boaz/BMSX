@@ -104,7 +104,7 @@ export class WorkspaceSymbolResolver {
 
 	public get staticDeclarations(): LuaStaticDeclarations {
 		if (this.staticDeclarationQuery === undefined) {
-			this.staticDeclarationQuery = new LuaStaticDeclarations(this.files, this.declarations);
+			this.staticDeclarationQuery = new LuaStaticDeclarations(this.files, this.declarations, this.globals);
 		}
 		return this.staticDeclarationQuery;
 	}

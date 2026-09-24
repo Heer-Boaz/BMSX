@@ -37,6 +37,80 @@ end)`;
 }
 
 export const frameEvaluationCases = {
+	inline_static_names: `
+local run = function(seed, ...)
+ data buffer: word = 17
+ local inspect<const> = function(value)
+  bss seed: word
+  rodata frozen: word = 23
+  struct shape
+   field: word
+  end
+  local thread<const> = running_thread()
+  local names, label = frame_bindings.resolve(frame_count(thread) - 1, optimization_level == 3 and 1 or 0)
+  return names, label, seed + frozen
+ end
+ local names, label, address_sum = inspect(2)
+ assert(label == 'inspect' and names.seed.is_address and names.frozen.is_address, 'inlined static names')
+ assert(names.seed.index + names.frozen.index == address_sum and mem[names.frozen.index] == 23)
+ assert(names.buffer.is_address and names.buffer.index == buffer and mem[buffer] == 17)
+ assert(names.shape.is_type and not names.shape.available)
+ local names, label, address_sum = inspect(3)
+ assert(label == 'inspect' and names.seed.index + names.frozen.index == address_sum, 'second inline occurrence')
+ local thread<const> = running_thread()
+ local names, label = frame_bindings.resolve(frame_count(thread) - 1, 0)
+ assert(label == 'run' and not names.seed.is_address and names.shape == nil and names.frozen == nil)
+ return seed == 40
+end
+return run(40)`,
+	static_names: `
+setglobal('buffered', 999)
+setglobal('shape', 999)
+bss published: word
+local make = function(...)
+ data buffered: word = 17
+ rodata frozen: word = 23
+ struct shape
+  words: word[3]
+ end
+ local exercise = function(value, ...)
+  local index<const> = frame_count(running_thread()) - 1
+  local names<const> = frame_bindings.resolve(index, 0)
+  assert(names.buffered.available and names.buffered.is_address and names.buffered.is_const)
+  assert(names.shape.is_type and not names.shape.available)
+  local ok, a, b, c = repl.evaluate('return buffered, frozen, published', '=static-names', 'frame', index, names)
+  assert(ok and a == buffered and b == frozen and c == published)
+  assert(mem[a] == 17 and mem[b] == 23 and mem[c] == 40)
+  ok, a = repl.evaluate('buffered = 123', '=static-write', 'frame', index, names)
+  assert(not ok and string.find(a, 'cannot assign to const local') ~= nil)
+  ok, a = repl.evaluate('return shape', '=type-name', 'frame', index, names)
+  assert(not ok and string.find(a, 'is not a runtime value') ~= nil)
+  ok, a = repl.evaluate('local shape = 3; return shape', '=type-shadow', 'frame', index, names)
+  assert(ok and a == 3 and getglobal('shape') == 999 and getglobal('buffered') == 999)
+  do
+   bss value: word
+   *value = 31
+   local names<const> = frame_bindings.resolve(index, 0)
+   assert(names.value.is_address)
+   local ok, address = repl.evaluate('return value', '=static-over-local', 'frame', index, names)
+   assert(ok and address == value and mem[address] == 31)
+  end
+  do
+   local buffered = value + 1
+   local names<const> = frame_bindings.resolve(index, 0)
+   assert(not names.buffered.is_address)
+   local ok, result = repl.evaluate('return buffered', '=local-over-static', 'frame', index, names)
+   assert(ok and result == buffered and result == 8)
+  end
+  local names<const> = frame_bindings.resolve(index, 0)
+  local ok, result = repl.evaluate('return buffered', '=restored-static', 'frame', index, names)
+  assert(ok and result == buffered)
+  return true
+ end
+ return exercise
+end
+*published = 40
+return make()(7)`,
 	scoped_types: `
 local width<const> = 2
 struct cell

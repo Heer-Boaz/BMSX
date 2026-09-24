@@ -25,7 +25,7 @@ export async function runAssistantStack(kind: StudioRendererKind, canvas: HTMLCa
 	await test.runMenuCommand('pause');
 	ide.debugger.breakpoints.toggle(resource, line);
 	check(ide.debugger.breakpoints.bindings.pcs[1].size !== 0, 'stack tools: breakpoint bound to installed code');
-	await submitAssistantText(test, 'Call active_definition_view in the real Lua Terminal, inspect its stopped stack, locals, upvalues and self, then continue. Keep my source uninstalled.');
+	await submitAssistantText(test, 'Call active_definition_view in the real Lua Terminal, inspect its stopped stack, locals, upvalues, static addresses/types and self, then continue. Keep my source uninstalled.');
 	await until(() => ide.debugger.source.stopped && ide.terminal.active !== undefined, 'stack tools: actual cart method breakpoint');
 	const stoppedAt = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes();
 	const inspection = ide.inspection.open();
@@ -36,6 +36,11 @@ export async function runAssistantStack(kind: StudioRendererKind, canvas: HTMLCa
 	const locals = inspection.read(scopes[0].reference!, 0, scopes[0].count!);
 	check(locals.entries.some(entry => entry.key.display === 'self' && entry.value.kind === 'table'), 'actual method receiver is inspectable');
 	check(locals.entries.some(entry => entry.key.display === 'created' && entry.value.kind === 'table'), 'actual method local table is inspectable');
+	const statics = scopes.find(scope => scope.kind === 'statics')!;
+	const staticValues = inspection.read(statics.reference!, 0, statics.count!);
+	const storage = staticValues.entries.find(entry => entry.key.display === 'cartlib_render_commands')!;
+	if (storage.value.kind !== 'address') throw new Error('Static storage must be a linked address, not a register or guessed number');
+	const staticAddress = storage.value.address;
 	check(cycles() === stoppedAt && runtime.machine.cpu.luaHeap.usedBytes() === heap, 'stack/scopes reads neither execute nor allocate guest state');
 	await until(() => harness.getActiveCodeContext()?.executionStopRow === line - 1, 'stack tools: ordinary debugger source navigation');
 	await renderer.capture!('paused-call');
@@ -52,5 +57,5 @@ export async function runAssistantStack(kind: StudioRendererKind, canvas: HTMLCa
 	await test.runPaletteCommand('View: Codex Assistant'); await frame();
 	await renderer.capture!('conversation-inspection');
 	await renderer.finish(); await ide.editor.shutdown();
-	return { stack: 'pass', target: ide.inspection.target, stoppedAt, completedAt, line };
+	return { stack: 'pass', target: ide.inspection.target, stoppedAt, completedAt, line, staticAddress };
 }

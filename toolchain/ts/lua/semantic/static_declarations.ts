@@ -7,6 +7,11 @@ import type { ScopeID } from './scope_facts';
 import { findInnermostScopeAtOffset } from './scope_query';
 
 export type LuaStorageDeclaration = LuaBssDeclarationStatement | LuaDataDeclarationStatement | LuaRodataDeclarationStatement;
+export type LuaStaticDeclaration = Decl & { kind: 'type' | 'bss' | 'data' | 'rodata' };
+
+export function isLuaStaticDeclaration(declaration: Decl): declaration is LuaStaticDeclaration {
+	return declaration.kind === 'type' || declaration.kind === 'bss' || declaration.kind === 'data' || declaration.kind === 'rodata';
+}
 
 type StaticFileDeclarations = {
 	readonly structs: ReadonlyMap<SymbolID, LuaStructDeclarationStatement>;
@@ -16,11 +21,21 @@ type StaticFileDeclarations = {
 
 /** Static declaration syntax belongs to an immutable bind, not a codegen frame. */
 export class LuaStaticDeclarations {
+	public readonly valueGlobals: readonly LuaStaticDeclaration[];
 	private readonly files = new Map<string, FileSemanticData>();
 	private readonly globals = new Map<string, Decl>();
 	private readonly indices = new Map<FileSemanticData, StaticFileDeclarations>();
 
-	public constructor(files: readonly FileSemanticData[], private readonly declarations: HashLookup<SymbolID, Decl>) {
+	public constructor(files: readonly FileSemanticData[], private readonly declarations: HashLookup<SymbolID, Decl>,
+		globals: ReadonlyMap<string, SymbolID>) {
+		const valueGlobals: LuaStaticDeclaration[] = [];
+		for (const id of globals.values()) {
+			const declaration = declarations.get(id);
+			if (isLuaStaticDeclaration(declaration)) {
+				valueGlobals.push(declaration);
+			}
+		}
+		this.valueGlobals = valueGlobals;
 		for (const file of files) {
 			this.files.set(file.file, file);
 			for (const declaration of file.globalDecls) {

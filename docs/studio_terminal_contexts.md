@@ -750,7 +750,122 @@ publishing these layouts to frame inspection/evaluation.
   cost; this is not a universal compilation-speedup claim. Layout/storage caches
   and the once-per-file syntax index add no normal guest execution work.
 
-Static/type diagnostic metadata, public selected-stop admission, cancellation
-and replacement/rewind borrow retirement, native frame selection, and ordinary
+Remaining at that boundary: static/type diagnostic metadata, public selected-stop
+admission, cancellation and replacement/rewind borrow retirement, native frame selection, and ordinary
 conversation frame-context admission remain open. This slice corrects the source
 layout producer; it does not advertise those unfinished capabilities.
+
+## Installed static-name gate
+
+LLDB's [declaration lookup and variable locations](https://github.com/llvm/llvm-project/blob/main/lldb/source/Plugins/ExpressionParser/Clang/ClangExpressionDeclMap.cpp)
+and LLVM's [scoped static-variable DIEs](https://github.com/llvm/llvm-project/blob/main/llvm/lib/CodeGen/AsmPrinter/DwarfCompileUnit.cpp)
+keep a declaration, its scope and its linked location separate. BMSX must not
+pretend that `.bss`/`.data`/`.rodata` names occupy frame registers or that a struct
+name is a guest value. This slice publishes static names from the immutable
+binder and actual section-symbol indices. Final source/inline positions determine
+lexical visibility before source mapping; the linker alone supplies addresses.
+Each proto retains its actual bound semantic file through final metadata assembly.
+Display paths are not file identity: aliased paths and shared syntax do not select
+another module's declarations. The shared global publication is stored once, not
+repeated for every frame. Only actual frame-name collisions need a lexical override.
+Normal locals/outer bindings shadow that publication; exact lexical static names
+then select the binder's answer, including a static declaration shadowing a local.
+
+| Representation | TypeScript/tooling | Native C++ / shared firmware | Execution impact |
+| --- | --- | --- | --- |
+| Static declaration | Tagged type/storage declaration and source definition | Same required symbols record | No frame register/capture |
+| Storage location | Existing section symbol ordinal, linked to raw address; inspection returns the exact word and hexadecimal display | Same address word | No value copy or guest memory read during inspection |
+| Visibility | Coalesced instruction-word intervals and logical inline depth | Same symbols/packed intervals | Computed once by tooling |
+| Global static names | One declaration-index publication per image | One packed binding prefix | Resolved only on explicit frame inspection/evaluation |
+| Type name | Non-value declaration marker, no address field | Same absent optional location; compiler rejects a runtime expression use | Never falls through to an ordinary global |
+
+Changed callsites: final compiler metadata production, source-map propagation,
+linker address relocation, TS/native symbols codecs, diagnostic-directory packing,
+`runtimeLuaFrameScopes`/`InspectionValues`, and explicit firmware scope resolution
+and external-binding reads. CPU dispatch, frame layout, closure capture, GC,
+scheduler, renderer and save-state formats receive no new hook or state. Existing
+ROM/symbol producers and consumers must be rebuilt together, without an old-schema
+fallback. This is named-location coverage, not a promise that the limited BIOS
+loader accepts source-compiler typed-memory syntax or that public frame admission
+is already implemented.
+
+### Installed static-name validation (2026-09-24)
+
+- Compiler/linker tests cover all three storage sections, source remapping,
+  shared syntax with distinct semantic owners, repeated inline occurrences,
+  shadowing in either direction and removal/relinking. Static names create no
+  local register or closure capture. Allocated storage remains in the declaration
+  catalog even without an executable word in its scope. Unused type declarations
+  are described without forcing their layout to resolve.
+- The host inspector and packed firmware directory agree at every mapped PC and
+  logical depth in the O0/O3 scope fixture. Ordinary inspection and conversation
+  scope tools expose the same address/type records without register/global reads,
+  guest allocation or execution. Address words remain exact, rather than being
+  rounded by Lua's numeric display. Source hover resolves an installed static
+  definition/publication rather than falling through to a same-name global.
+- All 26 O0/O3 firmware frame vectors pass on TS/C++, including complete final
+  state parity and suspended/save-restored coroutine states. Address reads,
+  non-value type rejection, immutable name binding, local shadowing and repeated
+  inlining are exercised in real firmware. The native symbols codec and physical
+  BIOS/HID Terminal parity tests also pass. These are not public selected-frame
+  Terminal admission tests.
+- Global-only catalogs with no frame-name collisions need no per-PC visibility
+  pass. Ten alternating warmed fresh-source compile/link samples measured
+  9.25/9.32 ms for 256 primitive declarations, 27.89/27.40 ms for the 96-type
+  fixture, and 225.68/229.86 ms for the firmware fixture (before/after). Linked
+  instruction bytes are identical in each pair. Catalog/symbol/packed-directory
+  storage costs 15,984 / 11,020 / 884 extra ROM bytes respectively. This is a
+  measured tooling cost, not a guest execution speedup.
+- Full Lua: 2,725 pass, one skip; ROM suite: 185 pass. The 92-test focused
+  compiler/hover/stack bundle passes. Product typechecks pass; the tests project
+  retains its 95 baseline diagnostics after position normalization. Strict
+  architecture audit reports zero issues; core parity and the native codec pass.
+  BIOS/Nemesis debug ROMs and browser/Node tooling release/debug products were
+  rebuilt. BIOS debug is 16,740,208 bytes, 43,428 bytes larger than before this
+  slice, still within the unchanged 16 MiB image limit.
+- The 45 assistant integration tests passed together. The new stopped-Nemesis
+  conversation inspects the same `cartlib_render_commands` address and non-value
+  `game_text_record` type as ordinary Studio on software/WebGL2/WebGPU. Visible
+  transcript captures are under `/tmp/bmsx-studio-chat/stack-tools-*`. This uses
+  a scripted model fixture with the real browser, server and Codex process, not
+  evidence of live-model reasoning or personal-phone testing.
+- Repeated Terminal browser runs also exposed an independent intermittent
+  context-button gesture failure. It is reproducible when status-row expiry
+  moves the action after pointer-down but before release; no Lua namespace error
+  was established. Keep this UI layout issue separate from the installed-name
+  proof rather than treating a passing rerun as a fix.
+
+#### Follow-up: workbench layout publication
+
+The context-button failure has a deterministic reproduction in
+`runAssistantTerminal`: after the manual cart evaluation, show a one-second
+status message and advance two host frames; reset its duration to 1.5 host frames,
+then use the ordinary pointer helper on `terminal.context`. The two hover frames
+still observe the old action bounds. Mouse-down observes top 256; the next pane
+update moves the same action to top 266, so release correctly cancels the gesture.
+The pointer and 768-by-576 canvas remain stationary. The diagnostic patch/log are
+`/tmp/static-names-terminal-context-expiry-repro.patch` and
+`/tmp/static-names-terminal-context-expiry.log`.
+
+`CartEditor.update` expires feedback and updates its pane before
+`CartEditor.draw` calls `refreshWorkbenchLayout`. The pane therefore sees the
+previous content bounds for one update. Tab-bar height/scrollbar layout is also
+currently produced inside painting. This is a shared layout-publication problem,
+not a reason to retry clicks, relax matching-release semantics, pin stale hit
+rectangles or add a Terminal-specific workaround.
+
+Before the next implementation, separate tab/chrome measurement and layout from
+painting, then publish parent bounds before child controls consume them in that
+frame. Keep existing retained geometry, measurement caches and input ownership;
+do not duplicate a second geometry tree or perform a second layout per frame.
+VS Code's [Part layout and header/footer relayout](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/part.ts)
+is the ownership reference; Playwright's [stable-target actionability](https://github.com/microsoft/playwright/blob/main/packages/injected/src/injectedScript.ts)
+is the test reference. Validate transient feedback, tab overflow/font/viewport
+changes, pointer capture and the real Terminal conversation on all three backends.
+The deterministic regression above is not fixed by the installed-name commit.
+
+Open gates remain: public selected-stop admission, cancellation and replacement/
+rewind borrow retirement, native frame selection, direct typed-memory expressions
+in the limited BIOS loader, and conversation admission to that frame context.
+The installed-name layer is shared Studio infrastructure; no Codex-only control
+or alternate runtime evaluator was added.
