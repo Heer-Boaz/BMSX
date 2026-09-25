@@ -45,7 +45,7 @@ export async function createCodexAccountProxy(t: TestContext) {
 		requests.push({ host, path, method: request.method!, body });
 		let result: object;
 		if (host === 'auth.openai.com') {
-			assert.equal(request.method, 'POST');
+			assert.equal(request.method, 'POST', `Offline auth fixture serves token exchanges only: ${path}`);
 			switch (path) {
 				case '/api/accounts/deviceauth/usercode':
 					authorized = false;
@@ -56,9 +56,23 @@ export async function createCodexAccountProxy(t: TestContext) {
 					result = { authorization_code: 'fixture-code', code_challenge: 'fixture-challenge', code_verifier: 'fixture-verifier' }; break;
 				case '/oauth/token': {
 					const form = new URLSearchParams(body);
+					// Loopback sign-in exchanges its grant, then trades the ID token for an API key.
+					if (form.get('grant_type') === 'urn:ietf:params:oauth:grant-type:token-exchange') {
+						assert.equal(form.get('subject_token'), idToken);
+						result = { access_token: 'bmsx-offline-exchanged-key' }; break;
+					}
 					assert.equal(form.get('grant_type'), 'authorization_code');
-					assert.equal(form.get('code'), 'fixture-code'); assert.equal(form.get('code_verifier'), 'fixture-verifier');
-					assert.equal(form.get('redirect_uri'), 'https://auth.openai.com/deviceauth/callback');
+					assert.equal(form.get('code'), 'fixture-code');
+					const redirect = new URL(form.get('redirect_uri')!);
+					if (redirect.protocol === 'http:') {
+						// Loopback authorization: the CLI owns the PKCE pair, so only its binding is checked.
+						assert.equal(redirect.pathname, '/auth/callback');
+						assert.ok(['localhost', '127.0.0.1'].includes(redirect.hostname));
+						assert.ok((form.get('code_verifier') ?? '').length > 0, 'a loopback exchange proves possession of its verifier');
+					} else {
+						assert.equal(form.get('code_verifier'), 'fixture-verifier');
+						assert.equal(form.get('redirect_uri'), 'https://auth.openai.com/deviceauth/callback');
+					}
 					result = { id_token: idToken, access_token: CODEX_ACCOUNT_FIXTURE.accessToken, refresh_token: CODEX_ACCOUNT_FIXTURE.refreshToken }; break;
 				}
 				case '/oauth/revoke':

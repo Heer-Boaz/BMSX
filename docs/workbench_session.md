@@ -29,6 +29,7 @@ memento capacity in that application are not BMSX requirements.
 | Accepted source text, dirty baseline and Undo | `EditorTextModelService` / `EditorTextModel` | One working copy may have code, scene and several behavior inputs. Backups stay per resource, not per tab. |
 | Input identity / label / disposal | `AbstractEditorInput` and contribution input classes | A resource path alone cannot identify two FSM views in one file. Do not merge those inputs. |
 | Tab order, active and preview | `EditorTabGroupModel` | These must be restored as group state, not inferred from dirty files or the first code tab. |
+| Empty group | `EditorTabGroupModel` / `EditorPanes` | A group without inputs is valid state, as in VS Code (`EditorGroupWatermark`). Restore keeps it and closing the last input leaves it; neither fabricates the entry tab. The workbench draws the watermark while no pane is attached. |
 | Control attachment / focus | `EditorPanes` | Resolve inputs and their source models before attaching the chosen active pane. No host Lua calls or runtime replacement. |
 | Source selection and viewport | Existing contribution navigation selections | Their source bookmarks and view coordinates are useful, but the disposable navigation objects are not a storage format. |
 | Dirty record generation / local-remote publication | `workspace/storage.ts`, `autosave.ts`, source override owners | Preserve the existing generation/record arbitration; session metadata does not make stale source authoritative. |

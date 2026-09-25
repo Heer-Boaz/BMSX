@@ -54,7 +54,7 @@ export function handleEditorWheelInput(editor: CartEditor, playerInput: PlayerIn
 	if (handleProblemsPanelWheel(editor, direction, steps, activePointer, playerInput)) {
 		return;
 	}
-	editor.editorPanes.activePane.handleWheel(direction, steps, activePointer, playerInput);
+	editor.editorPanes.activePane?.handleWheel(direction, steps, activePointer, playerInput);
 }
 
 function handleHoverTooltipWheel(

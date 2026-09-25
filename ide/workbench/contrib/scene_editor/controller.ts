@@ -38,7 +38,7 @@ export class SceneEditorController {
 
 	public openSource(): void {
 		const input = getActiveTab();
-		if (input.kind !== 'scene_editor') return;
+		if (input?.kind !== 'scene_editor') return;
 		this.refresh(input);
 		const row = input.outline.rows[input.outline.selectionIndex]?.element;
 		const position = row === undefined ? null : {
@@ -52,7 +52,7 @@ export class SceneEditorController {
 	/** Current source-command target; definition roots and source-only rows are not members. */
 	private editableMember(): SceneMemberElement | undefined {
 		const input = getActiveTab();
-		if (input.kind !== 'scene_editor') return undefined;
+		if (input?.kind !== 'scene_editor') return undefined;
 		this.refresh(input);
 		if (input.workingCopy.readOnly || input.parsed.syntaxError !== null) return undefined;
 		const row = input.outline.rows[input.outline.selectionIndex]?.element;
@@ -63,7 +63,7 @@ export class SceneEditorController {
 
 	public removeSelectedMember(): void {
 		const input = getActiveTab();
-		if (input.kind !== 'scene_editor') return;
+		if (input?.kind !== 'scene_editor') return;
 		// Command admission may have accepted a property draft. Use its new source generation.
 		this.refresh(input);
 		const row = this.editableMember();
@@ -91,7 +91,7 @@ export class SceneEditorController {
 
 	public moveSelectedMember(direction: -1 | 1): void {
 		const input = getActiveTab();
-		if (input.kind !== 'scene_editor') return;
+		if (input?.kind !== 'scene_editor') return;
 		this.refresh(input); // Source-command admission may have accepted a property.
 		if (!this.canMoveSelectedMember(direction)) return;
 		const row = this.editableMember()!;

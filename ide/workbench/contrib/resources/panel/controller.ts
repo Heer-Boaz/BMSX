@@ -135,7 +135,9 @@ export class ResourcePanelController implements PointerHoverTarget {
 		if (focused) {
 			this.focusTarget.focus();
 		} else if (this.focusTarget.hasFocus) {
-			this.editor.editorPanes.activePane.focus();
+			const activePane = this.editor.editorPanes.activePane;
+			if (activePane === null) this.focusTarget.release();
+			else activePane.focus();
 		}
 	}
 	getFilterMode(): 'lua_only' | 'all' { return this.filterMode; }

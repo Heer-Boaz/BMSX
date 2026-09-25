@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { CODEX_VERSION, CodexPolicy, type CodexProvider } from './policy';
 import { CodexProfile } from './profile';
 import { CodexStdio, type CodexProcessExit } from './stdio';
-import { STUDIO_ACCOUNT_LOGIN_URL, type AssistantHistoryPage, type AssistantTranscriptPage, type AssistantReviewUpdate, type AssistantThread } from '../../common/assistant_protocol';
+import { STUDIO_ACCOUNT_LOGIN_URL, type AssistantHistoryPage, type AssistantLoginMethod, type AssistantTranscriptPage, type AssistantReviewUpdate, type AssistantThread } from '../../common/assistant_protocol';
 import { CodexHistory } from './history';
 import { codexMessageInput, type CodexTextInput } from './input';
 import { CodexAdmissionError, CodexProtocolError, type Json, type CodexAccount, type CodexSessionEvent,
@@ -12,6 +12,24 @@ import { CodexAdmissionError, CodexProtocolError, type Json, type CodexAccount, 
 
 type LoginCompletion = { loginId: string; success: boolean; error: string | null };
 type LoginLifetime = { started: Promise<CodexLogin>; id?: string; cancelled: boolean; completion?: LoginCompletion };
+
+/**
+ * A browser destination reaches the user from an external executable, so it is admitted by
+ * shape, not trusted. Loopback authorization carries a per-attempt PKCE challenge, state and
+ * a port the app-server picks (it steps off an occupied one), so only the parts that bound
+ * where the grant can travel are pinned: the issuer, and a callback on this host.
+ */
+function admitsAuthorizationUrl(raw: string): boolean {
+	let url: URL, callback: URL;
+	try {
+		url = new URL(raw);
+		callback = new URL(url.searchParams.get('redirect_uri') ?? '');
+	} catch { return false; }
+	// The port is the app-server's to choose, so it is deliberately not pinned here.
+	return url.origin === 'https://auth.openai.com' && url.pathname === '/oauth/authorize'
+		&& callback.protocol === 'http:' && (callback.hostname === 'localhost' || callback.hostname === '127.0.0.1')
+		&& callback.pathname === '/auth/callback';
+}
 
 type TurnLifetime = {
 	id?: string;
@@ -91,22 +109,33 @@ export class CodexSession {
 
 	public readAccount(): Promise<CodexAccount> { return this.rpc.request('account/read', { refreshToken: false }); }
 
-	/** Device authorization never binds or cancels another application's localhost OAuth listener. */
-	public async startLogin(): Promise<void> {
+	/**
+	 * The app-server owns the loopback listener and steps off a port another application
+	 * already holds, so Studio neither binds nor cancels a foreign OAuth listener here.
+	 */
+	public async startLogin(method: AssistantLoginMethod): Promise<void> {
 		if (this.retired) throw new CodexProtocolError('Codex connection closed');
 		if (this.active || this.login || this.signingOut || this.accountRefreshing || this.selecting) throw new Error('Finish the current account/conversation operation before signing in');
-		const attempt: LoginLifetime = { started: this.rpc.request<CodexLogin>('account/login/start', { type: 'chatgptDeviceCode' }), cancelled: false };
+		const tag = method.type === 'loopback' ? 'chatgpt' : 'chatgptDeviceCode';
+		const attempt: LoginLifetime = { started: this.rpc.request<CodexLogin>('account/login/start', { type: tag }), cancelled: false };
 		this.login = attempt;
 		try {
 			const result = await attempt.started;
-			// This URL comes from an external executable, not a model or a browser command.
-			if (result.type !== 'chatgptDeviceCode' || result.verificationUrl !== STUDIO_ACCOUNT_LOGIN_URL) {
+			if (result.type !== tag) {
+				const error = new CodexProtocolError('Codex answered with a different account authorization method');
+				await this.close(error); throw error;
+			}
+			// This destination comes from an external executable, not a model or a browser command.
+			// The device page is a fixed address; a loopback grant is admitted by shape.
+			const destination = result.type === 'chatgpt' ? result.authUrl : result.verificationUrl;
+			if (result.type === 'chatgptDeviceCode' ? destination !== STUDIO_ACCOUNT_LOGIN_URL : !admitsAuthorizationUrl(destination)) {
 				const error = new CodexProtocolError('Codex returned an unadmitted account authorization URL');
 				await this.close(error); throw error;
 			}
+			const code = result.type === 'chatgptDeviceCode' ? result.userCode : undefined;
 			attempt.id = result.loginId;
 			if (attempt.completion) this.completeLogin(attempt, attempt.completion);
-			if (!this.retired && this.login === attempt && !attempt.cancelled) this.options.onEvent({ type: 'login-started', code: result.userCode });
+			if (!this.retired && this.login === attempt && !attempt.cancelled) this.options.onEvent({ type: 'login-started', url: destination, code });
 		} catch (error) { if (this.login === attempt) this.login = undefined; throw error; }
 	}
 
@@ -262,7 +291,7 @@ export class CodexSession {
 				const messages = await this.history.queue(thread.id);
 				if (!this.retired && this.history.selected === thread) this.options.onEvent({ type: 'queue', messages });
 			}
-		}).catch(error => { void this.close(error); }).finally(() => { if (this.queueRefresh === refresh) this.queueRefresh = undefined; });
+		}).catch(error => { this.close(error); }).finally(() => { if (this.queueRefresh === refresh) this.queueRefresh = undefined; });
 	}
 
 	private receive(message: RpcMessage): void {
@@ -338,7 +367,7 @@ export class CodexSession {
 				const completed = message.params as LoginCompletion;
 				const attempt = this.login;
 				if (!attempt || attempt.cancelled) break;
-				// A failed device poll may finish in the same stdout chunk as the start response.
+				// A failed authorization may finish in the same stdout chunk as the start response.
 				if (attempt.id === undefined) attempt.completion = completed;
 				else this.completeLogin(attempt, completed);
 				break;

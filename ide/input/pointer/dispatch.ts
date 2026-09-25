@@ -6,7 +6,6 @@ import { clearEditorPointerSelectionState } from './state';
 import { isCtrlDown, isMetaDown } from '../keyboard/key_input';
 import { handleEditorChromePointerDispatch } from './chrome_dispatch';
 import type { CartEditor } from '../../cart_editor';
-import type { RuntimeSourceState } from '../../runtime/sources';
 import type { EditorDisplay } from '../../common/viewport';
 import { handleBlockingWorkbenchModalPointer, hasBlockingWorkbenchModal } from '../../workbench/contrib/modal/blocking_modal';
 import { pointerCapture, WORKBENCH_POINTER_SCOPE } from './capture';
@@ -18,7 +17,6 @@ export function handleTextEditorPointerInput(
 	playerInput: PlayerInput,
 	now: number,
 	editor: CartEditor,
-	sources: RuntimeSourceState,
 ): void {
 	pointerHover.beginDispatch();
 	try {
@@ -56,14 +54,14 @@ export function handleTextEditorPointerInput(
 			clearEditorPointerSelectionState();
 			return;
 		}
-		if (handleEditorChromePointerDispatch(editor, sources, snapshot, justPressed, pointerAuxJustPressed, playerInput)) {
+		if (handleEditorChromePointerDispatch(editor, snapshot, justPressed, pointerAuxJustPressed, playerInput)) {
 			return;
 		}
 		if (handleEditorPanelPointer(editor.resourcePanel, editor.editorPanes, snapshot, justPressed, justReleased)) {
 			return;
 		}
 
-		editor.editorPanes.activePane.handlePointer(
+		editor.editorPanes.activePane?.handlePointer(
 			snapshot,
 			justPressed,
 			pointerSecondaryJustPressed,

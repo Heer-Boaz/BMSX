@@ -26,8 +26,6 @@ import { inputFocus } from '../../ide/input/focus';
 import { closeTab } from '../../ide/workbench/ui/tabs';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import { codeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
-import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
-import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 
 class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 	public readonly focusTarget = inputFocus.createTarget();
@@ -166,13 +164,7 @@ function createEditorPanes() {
 	};
 }
 
-test('closing the last tab detaches its pane before disposal, then opens a fresh input on the retained context', () => {
-	const registry: LuaSourceRegistry = { records: [], path2lua: {}, module2lua: {},
-		entrySourcePath: 'a.lua', projectRootPath: 'tab-lifetime-fixture', can_boot_from_source: true, revision: 0 };
-	registerLuaSourceRecord(registry, { resid: 'a', type: 'lua', src: '', base_src: '', base_update_timestamp: 0,
-		source_path: 'a.lua', normalized_source_path: 'a.lua', module_path: 'a', update_timestamp: 0,
-		generated: false, program_module: true });
-	const sources = createTestRuntimeSourceState(registry, [registry, null], 0);
+test('closing the last tab detaches its pane before disposal and leaves the group empty', () => {
 	const harness = createEditorPanes();
 	const context = codeInput('code:0\0a.lua').context;
 	class ClosingInput extends CodeEditorInput {
@@ -188,15 +180,11 @@ test('closing the last tab detaches its pane before disposal, then opens a fresh
 	editorTabGroup.initialize(input);
 	harness.editorPanes.openEditor(input);
 	try {
-		closeTab(harness.editorPanes, sources, input.id);
+		closeTab(harness.editorPanes, input.id);
 		assert.equal(input.disposals, 1);
-		assert.equal(editorTabGroup.tabs.length, 1);
-		const reopened = editorTabGroup.activeTab;
-		assert.notEqual(reopened, input);
-		assert.equal(reopened.kind, 'code_editor');
-		if (reopened.kind !== 'code_editor') throw new Error('expected the entry source');
-		assert.equal(reopened.context, context);
-		assert.equal(harness.editorPanes.activePane.input, reopened);
+		assert.equal(editorTabGroup.tabs.length, 0);
+		assert.equal(editorTabGroup.activeTab, null);
+		assert.equal(harness.editorPanes.activePane, null);
 	} finally {
 		harness.editorPanes.dispose();
 		editorTabGroup.clear(); codeEditorInputManager.clear(); context.model.dispose();

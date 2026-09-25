@@ -298,7 +298,7 @@ export class IdeCommandController {
 			case 'reboot':
 				return this.boots.acceptingRequests;
 			case 'runCurrentFile': {
-				const resource = getActiveTab().resource;
+				const resource = getActiveTab()?.resource;
 				if (!this.boots.acceptingRequests || !this.runtimeTasks.ready || !resource || resource.domain === -1) return false;
 				const source = resolveRuntimeLuaSource(this.sources, resource);
 				return source !== null && source.record.program_module && !source.record.generated;
@@ -424,9 +424,9 @@ export class IdeCommandController {
 			case 'gameView':
 				return true;
 			case 'sceneEditor.source':
-				return getActiveTab().kind === 'scene_editor';
+				return getActiveTab()?.kind === 'scene_editor';
 			case 'behaviorLens.source':
-				return getActiveTab().kind === 'behavior_lens';
+				return getActiveTab()?.kind === 'behavior_lens';
 			case 'rename':
 			case 'renamePreview':
 				return isActiveLuaCodeTab() && !activeCodeEditor.model.readOnly;

@@ -76,7 +76,7 @@ export function executeEditorWorkspaceCommand(
 				performEditorAction(editor, hotResumes, boots, execution, overlayRenderer, audioOutput, logOutput, request);
 			};
 			if (command === 'runCurrentFile' || command === 'runProject') {
-				const resource = getActiveTab().resource;
+				const resource = getActiveTab()?.resource;
 				if (resource && resource.domain !== -1
 					&& (command === 'runCurrentFile' || sources.cartridgeSlots[resource.domain]!.luaSources.can_boot_from_source)) {
 					requestAction({ action: 'run', entry: command === 'runCurrentFile'

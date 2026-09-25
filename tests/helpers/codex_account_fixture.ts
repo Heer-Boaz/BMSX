@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
 /** Offline issuer for the real pinned CLI. It never authorizes an account or produces credentials. */
-export async function createCodexAccountFixture(t: TestContext, options: { relayMode?: string; attempts?: ('pending' | 'failure' | 'held-start')[] } = {}) {
+export async function createCodexAccountFixture(t: TestContext, options: { relayMode?: string; authUrl?: string; attempts?: ('pending' | 'failure' | 'held-start')[] } = {}) {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-codex-account-'));
 	const requests: string[] = [];
 	const attempts = options.attempts ?? ['pending'];
@@ -33,6 +33,6 @@ export async function createCodexAccountFixture(t: TestContext, options: { relay
 	t.after(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
 	const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 	const executable = join(root, 'relay'), trace = join(root, 'trace');
-	await writeFile(executable, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(resolve('tests/helpers/codex_account_relay.mjs'))} ${JSON.stringify(url)} ${JSON.stringify(options.relayMode ?? 'normal')} ${JSON.stringify(trace)} "$@"\n`, { mode: 0o700 });
+	await writeFile(executable, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(resolve('tests/helpers/codex_account_relay.mjs'))} ${JSON.stringify(url)} ${JSON.stringify(options.relayMode ?? 'normal')} ${JSON.stringify(trace)} ${JSON.stringify(options.authUrl ?? '')} "$@"\n`, { mode: 0o700 });
 	return { root, requests, url, executable, trace, heldStart: heldStart.promise, releaseStart: () => releaseStart() };
 }

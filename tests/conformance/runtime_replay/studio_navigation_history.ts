@@ -158,7 +158,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	check(getActiveTab() === scenario && scenario.view.testPane.selectedNodeId === testId && scenario.view.focus === 'tests',
 		'A03: Scenario source returns to its exact test selection');
 	check(test.cycles() === cycles && ide.sources.currentBlua32Media === media, 'A03: all history routes preserve the paused machine and installed media');
-	for (const input of [...editorTabGroup.tabs]) if (!initialTabs.has(input) && input.kind === 'behavior_lens') closeTab(ide.editor.editorPanes, ide.sources, input.id);
+	for (const input of [...editorTabGroup.tabs]) if (!initialTabs.has(input) && input.kind === 'behavior_lens') closeTab(ide.editor.editorPanes, input.id);
 	harness.openLuaSource('cart.lua'); await frame();
 	console.info('STUDIO A03: shared history routes passed');
 }

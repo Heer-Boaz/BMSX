@@ -1,6 +1,7 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { submitAssistantText } from './studio_assistant_navigation';
+import { setFieldText } from '../../../ide/editor/ui/inline/text_field';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, createStudioFixture } from './studio_fixture';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
@@ -22,8 +23,21 @@ export async function runAssistantLogin(kind: StudioRendererKind, canvas: HTMLCa
 	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant pane expected');
 	const conversation = ide.editor.assistant;
 	await submitAssistantText(test, 'Keep this draft; do not submit.');
+	// The implicit attempt is the ordinary browser method, and the destination it publishes is
+	// the one the real process produced: unrewritten, and admitted by production on its shape.
+	await until(() => conversation.loginUrl !== undefined, 'login: unchanged official loopback authorization');
+	check(conversation.loginCode === undefined && new URL(conversation.loginUrl!).origin === 'https://auth.openai.com',
+		'the real process supplied an admitted authorization destination with no code to carry');
+	check(view.draft.text === 'Keep this draft; do not submit.' && conversation.entries.every(entry => entry.kind !== 'user'),
+		'implicit connect and browser authorization retain the unsent prompt');
+	await submitAssistantText(test, '/cancel');
+	await until(() => conversation.state === 'ready', 'login: cancel the implicit browser attempt');
+	// This fixture authorizes through the device-code issuer, so the exchange below uses it.
+	await submitAssistantText(test, '/login device');
 	await until(() => conversation.loginCode !== undefined, 'login: unchanged official device-code protocol');
 	check(conversation.loginCode === 'TEST-CODE', 'the real process supplied the fixture device code');
+	// Typed while the attempt is pending: completing authorization must not consume or send it.
+	setFieldText(view.draft, 'Keep this draft; do not submit.', true);
 	await issuer.authorize();
 	await until(() => conversation.state === 'ready' && !conversation.accountRefreshing && conversation.account!.connected, 'login: OAuth exchange and authoritative account snapshot');
 	const account = { ...conversation.account! };

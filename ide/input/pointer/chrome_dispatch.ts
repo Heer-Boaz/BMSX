@@ -6,7 +6,6 @@ import type { PointerSnapshot } from '../../common/models';
 import { handleEditorPanelResizePointer } from './panel';
 import { handleTabBarMiddleClick, handleTabBarPointer, updateTabHoverState } from '../../workbench/input/pointer/tab_bar/pointer';
 import { handleTopBarPointer } from '../../workbench/input/pointer/top_bar/pointer';
-import type { RuntimeSourceState } from '../../runtime/sources';
 import { editorRuntimeState } from '../../editor/common/runtime_state';
 import { editorChromeState } from '../../workbench/ui/chrome_state';
 
@@ -14,7 +13,6 @@ const RESOURCE_SCROLLBARS = ['resourceVertical', 'resourceHorizontal'] as const;
 
 export function handleEditorChromePointerDispatch(
 	editor: CartEditor,
-	sources: RuntimeSourceState,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	pointerAuxJustPressed: boolean,
@@ -30,10 +28,10 @@ export function handleEditorChromePointerDispatch(
 	}
 	if (!snapshot.valid) return true;
 	const overTabs = updateTabHoverState(snapshot);
-	if (pointerAuxJustPressed && handleTabBarMiddleClick(editor.editorPanes, sources, snapshot, playerInput)) {
+	if (pointerAuxJustPressed && handleTabBarMiddleClick(editor.editorPanes, snapshot, playerInput)) {
 		return true;
 	}
-	if (justPressed && handleTabBarPointer(editor.editorPanes, sources, snapshot, editorRuntimeState.currentTimeMs)) {
+	if (justPressed && handleTabBarPointer(editor.editorPanes, snapshot, editorRuntimeState.currentTimeMs)) {
 		return true;
 	}
 	return overTabs;

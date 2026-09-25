@@ -143,8 +143,9 @@ for (const backend of backends) test(`Studio ${backend}: visible account control
 	assert.equal(result.account, 'pass'); assert.equal(f.observations.connects, 2); assert.equal(destinations, 1);
 	assert.deepEqual(f.observations.errors, []);
 	const commands = (await readFile(issuer.trace, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
-	assert.equal(commands.filter(command => command.method === 'account/login/start').length, 5);
-	assert.equal(commands.filter(command => command.method === 'account/login/cancel').length, 2);
+	// One implicit browser attempt, then five explicit device-code attempts.
+	assert.equal(commands.filter(command => command.method === 'account/login/start').length, 6);
+	assert.equal(commands.filter(command => command.method === 'account/login/cancel').length, 3);
 	assert.ok(commands.every(command => !['thread/start', 'turn/start'].includes(command.method)), 'unauthorized draft is never sent');
 	await assert.rejects(access(join(f.profileDirectory, 'account/auth.json')), { code: 'ENOENT' });
 	await writeFile(join(f.evidence, `account-${backend}-result.json`), JSON.stringify(result));

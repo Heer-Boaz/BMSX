@@ -7,6 +7,7 @@ import { CodexPolicy } from '../../hosts/node/codex/policy';
 import { CodexStdio } from '../../hosts/node/codex/stdio';
 import { CodexSession } from '../../hosts/node/codex/session';
 import type { CodexLogin, CodexSessionEvent } from '../../hosts/node/codex/protocol';
+import { STUDIO_ACCOUNT_LOGIN_URL } from '../../hosts/common/assistant_protocol';
 
 import { createCodexAccountFixture } from '../helpers/codex_account_fixture';
 import { CODEX_ACCOUNT_FIXTURE, createCodexAccountProxy } from '../helpers/codex_account_proxy';
@@ -31,8 +32,8 @@ test('real pinned device-code contract polls and cancels without credentials or 
 	await assert.rejects(access(join(profile.codexHome, 'auth.json')), { code: 'ENOENT' });
 });
 
-async function sessionFixture(t: TestContext, mode: string) {
-	const f = await createCodexAccountFixture(t, { relayMode: mode }), events: CodexSessionEvent[] = [];
+async function sessionFixture(t: TestContext, mode: string, authUrl?: string) {
+	const f = await createCodexAccountFixture(t, { relayMode: mode, authUrl }), events: CodexSessionEvent[] = [];
 	let changed!: () => void;
 	const accountChanged = new Promise<void>(resolve => { changed = resolve; });
 	const session = await CodexSession.open({ signal: t.signal, profileDirectory: join(f.root, 'profile'), executable: f.executable, tools: [],
@@ -43,8 +44,8 @@ async function sessionFixture(t: TestContext, mode: string) {
 
 test('adapter exposes only the user code, cancels by process-owned login ID and reads the updated account snapshot', { timeout: 15000 }, async t => {
 	const f = await sessionFixture(t, 'normal');
-	await f.session.startLogin();
-	assert.deepEqual(f.events.find(event => event.type === 'login-started'), { type: 'login-started', code: 'ABCD-EFGH' });
+	await f.session.startLogin({ type: 'device-code' });
+	assert.deepEqual(f.events.find(event => event.type === 'login-started'), { type: 'login-started', url: STUDIO_ACCOUNT_LOGIN_URL, code: 'ABCD-EFGH' });
 	await assert.rejects(f.session.startTurn('Not while authenticating', []), /account operation/);
 	await f.session.cancelLogin(); await f.session.signOut();
 	await f.accountChanged; // Notification refresh is independent of command-response ordering.
@@ -59,21 +60,68 @@ test('adapter exposes only the user code, cancels by process-owned login ID and 
 
 test('cancel while start is pending never publishes a code or restores a canceled attempt', { timeout: 15000 }, async t => {
 	const f = await sessionFixture(t, 'normal');
-	const started = f.session.startLogin(), canceled = f.session.cancelLogin();
+	const started = f.session.startLogin({ type: 'device-code' }), canceled = f.session.cancelLogin();
 	await started; await canceled;
 	assert.ok(!f.events.some(event => event.type === 'login-started' || event.type === 'login-completed'));
 });
 
 test('early external completion is correlated after its start response in the same stdout chunk', { timeout: 15000 }, async t => {
 	const f = await sessionFixture(t, 'early-completion');
-	await f.session.startLogin();
+	await f.session.startLogin({ type: 'device-code' });
 	assert.deepEqual(f.events.find(event => event.type === 'login-completed'), { type: 'login-completed', success: false, error: 'Fixture polling failure' });
 	assert.ok(!f.events.some(event => event.type === 'login-started'), 'completed attempt cannot expose an active code');
 });
 
+test('loopback authorization opens an admitted browser URL and completes from the callback the account process owns', { timeout: 30000 }, async t => {
+	let session: CodexSession | undefined;
+	t.after(async () => { if (session) assert.equal((await session.close()).forced, false); });
+	const f = await createCodexAccountProxy(t), events: CodexSessionEvent[] = [];
+	const changed = Promise.withResolvers<void>();
+	session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), tools: [],
+		executeTool: async () => assert.fail('No source tools while authenticating'),
+		onEvent: event => { events.push(event); if (event.type === 'account-changed') changed.resolve(); } });
+	assert.equal((await session.readAccount()).account, null);
+	await session.startLogin({ type: 'loopback' });
+	const started = events.at(-1);
+	assert.equal(started?.type, 'login-started');
+	assert.equal(started.code, undefined, 'a loopback sign-in has no code for the user to carry');
+	const authorize = new URL(started.url);
+	assert.equal(authorize.origin, 'https://auth.openai.com'); assert.equal(authorize.pathname, '/oauth/authorize');
+	// Stand in for the browser that the issuer redirects back to the process-owned listener.
+	const callback = new URL(authorize.searchParams.get('redirect_uri')!);
+	assert.equal(callback.pathname, '/auth/callback');
+	callback.searchParams.set('code', 'fixture-code');
+	callback.searchParams.set('state', authorize.searchParams.get('state')!);
+	// A real browser follows the issuer's redirect on to the listener's own success page,
+	// and the account process finalizes the grant only once that page is served.
+	assert.equal((await fetch(callback, { redirect: 'follow' })).status, 200);
+	await changed.promise;
+	assert.ok(events.some(event => event.type === 'login-completed' && event.success));
+	const account = await session.readAccount();
+	assert.equal(account.account?.email, CODEX_ACCOUNT_FIXTURE.email);
+	// The grant is exchanged and stored by the account process, never carried through the browser.
+	assert.ok(f.requests.some(request => request.host === 'auth.openai.com' && request.path === '/oauth/token'));
+	assert.ok(!JSON.stringify(events).includes(CODEX_ACCOUNT_FIXTURE.accessToken));
+	assert.ok(!JSON.stringify(events).includes(CODEX_ACCOUNT_FIXTURE.refreshToken));
+});
+
+for (const [name, authUrl] of [
+	['a foreign issuer', 'https://auth.openai.com.evil.invalid/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback'],
+	['an off-host callback', 'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Fevil.invalid%2Fauth%2Fcallback'],
+	['a callback that only mentions localhost', 'https://auth.openai.com/oauth/authorize?redirect_uri=https%3A%2F%2Fevil.invalid%2F%3Fhost%3Dlocalhost%2Fauth%2Fcallback'],
+	['no callback at all', 'https://auth.openai.com/oauth/authorize?response_type=code'],
+] as const) {
+	test(`loopback authorization to ${name} retires the process instead of opening a browser`, { timeout: 15000 }, async t => {
+		const f = await sessionFixture(t, 'normal', authUrl);
+		await assert.rejects(f.session.startLogin({ type: 'loopback' }), /unadmitted account authorization URL/);
+		assert.ok(!f.events.some(event => event.type === 'login-started'));
+		assert.match((await f.session.closed).error!.message, /unadmitted/);
+	});
+}
+
 test('an unadmitted authorization URL retires the process instead of forwarding a login destination', { timeout: 15000 }, async t => {
 	const f = await sessionFixture(t, 'unadmitted-url');
-	await assert.rejects(f.session.startLogin(), /unadmitted account authorization URL/);
+	await assert.rejects(f.session.startLogin({ type: 'device-code' }), /unadmitted account authorization URL/);
 	assert.ok(!f.events.some(event => event.type === 'login-started'));
 	assert.match((await f.session.closed).error!.message, /unadmitted/);
 });
@@ -87,8 +135,8 @@ test('successful real device-code exchange persists only the private profile and
 		executeTool: async () => assert.fail('No source tools while authenticating'),
 		onEvent: event => { events.push(event); if (event.type === 'account-changed') changed.resolve(); } });
 	assert.equal((await session.readAccount()).account, null);
-	await session.startLogin();
-	assert.deepEqual(events.at(-1), { type: 'login-started', code: 'TEST-CODE' });
+	await session.startLogin({ type: 'device-code' });
+	assert.deepEqual(events.at(-1), { type: 'login-started', url: STUDIO_ACCOUNT_LOGIN_URL, code: 'TEST-CODE' });
 	f.authorize(); await changed.promise;
 	assert.ok(events.some(event => event.type === 'login-completed' && event.success));
 	const account = await session.readAccount();
@@ -127,9 +175,9 @@ for (const operation of ['startTurn', 'startLogin', 'signOut'] as const) {
 				checked = true;
 				// A command can arrive before the browser receives this notification.
 				admission.resolve(assert.rejects(operation === 'startTurn' ? session!.startTurn('Do not submit during an account transition', [])
-					: session![operation](), message));
+					: operation === 'startLogin' ? session!.startLogin({ type: 'device-code' }) : session!.signOut(), message));
 			} });
-		await session.startLogin(); f.authorize();
+		await session.startLogin({ type: 'device-code' }); f.authorize();
 		await admission.promise; await changed.promise;
 		assert.ok((await session.readAccount()).account, 'the rejected operation leaves the successful account transition intact');
 		await session.signOut();

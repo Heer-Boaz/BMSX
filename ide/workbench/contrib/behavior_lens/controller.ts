@@ -140,7 +140,7 @@ export class BehaviorLensController {
 
 	public openSource(): void {
 		const input = getActiveTab();
-		if (input.kind !== 'behavior_lens') return;
+		if (input?.kind !== 'behavior_lens') return;
 		this.updateView(input);
 		if (selectedBehaviorLensSourceRange(input.view) === null) this.openDefinitionSource(input.view);
 		else this.openSelectedSource(input.view);
@@ -261,28 +261,28 @@ export class BehaviorLensController {
 
 	public canMoveSelectedChild(direction: -1 | 1): boolean {
 		const input = getActiveTab();
-		if (input.kind !== 'behavior_lens' || !input.view.source.isCurrent) return false;
+		if (input?.kind !== 'behavior_lens' || !input.view.source.isCurrent) return false;
 		const member = behaviorTreeMoveTarget(input.view, direction);
 		return member !== undefined && !input.view.source.models.get(member.file.file)!.readOnly;
 	}
 
 	public canEditSelectedChild(): boolean {
 		const input = getActiveTab();
-		if (input.kind !== 'behavior_lens' || !input.view.source.isCurrent) return false;
+		if (input?.kind !== 'behavior_lens' || !input.view.source.isCurrent) return false;
 		const member = behaviorTreeEditTarget(input.view);
 		return member !== null && !input.view.source.models.get(member.file.file)!.readOnly;
 	}
 
 	public canSetSelectedInitialState(): boolean {
 		const input = getActiveTab();
-		if (input.kind !== 'behavior_lens' || !input.view.source.isCurrent) return false;
+		if (input?.kind !== 'behavior_lens' || !input.view.source.isCurrent) return false;
 		const target = stateMachineInitialTarget(input.view);
 		return target !== undefined && !input.view.source.models.get(target.owner.file.file)!.readOnly;
 	}
 
 	public setSelectedInitialState(): void {
 		const input = getActiveTab();
-		if (input.kind !== 'behavior_lens') return;
+		if (input?.kind !== 'behavior_lens') return;
 		this.updateView(input);
 		const target = stateMachineInitialTarget(input.view);
 		if (target === undefined) return;
@@ -295,7 +295,7 @@ export class BehaviorLensController {
 
 	public duplicateSelectedChild(): void {
 		const input = getActiveTab();
-		if (input.kind !== 'behavior_lens') return;
+		if (input?.kind !== 'behavior_lens') return;
 		this.updateView(input);
 		const member = behaviorTreeEditTarget(input.view);
 		if (member === null) return;
@@ -308,7 +308,7 @@ export class BehaviorLensController {
 
 	public removeSelectedChild(): void {
 		const input = getActiveTab();
-		if (input.kind !== 'behavior_lens') return;
+		if (input?.kind !== 'behavior_lens') return;
 		this.updateView(input);
 		const member = behaviorTreeEditTarget(input.view);
 		if (member === null) return;
@@ -323,7 +323,7 @@ export class BehaviorLensController {
 
 	public moveSelectedChild(direction: -1 | 1): void {
 		const input = getActiveTab();
-		if (input.kind !== 'behavior_lens') return;
+		if (input?.kind !== 'behavior_lens') return;
 		this.updateView(input);
 		const member = behaviorTreeMoveTarget(input.view, direction);
 		if (member === undefined) return;
@@ -351,7 +351,7 @@ export class BehaviorLensController {
 		if (result === BehaviorLensNavigationResult.Changed) {
 			if (view.presentation.kind === 'state-graph') {
 				const input = getActiveTab();
-				if (input.kind === 'behavior_lens') acceptStateGraphSelection(view, view.presentation);
+				if (input?.kind === 'behavior_lens') acceptStateGraphSelection(view, view.presentation);
 			}
 			finishBehaviorLensNavigation(view);
 			return true;

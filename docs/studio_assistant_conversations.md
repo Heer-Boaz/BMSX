@@ -79,8 +79,8 @@ source reads before new proposals; it does not replay old tool results.
 
 Only Send is permanent. Queue/Direct/Stop and selected-proposal Review are
 contextual. Account operations are composer commands, not permanent toolbars.
-The first ordinary submission connects implicitly; if sign-in is needed its
-device-code instructions appear in the transcript and the draft stays unsent.
+The first ordinary submission connects implicitly; if sign-in is needed the
+browser opens on the admitted authorization page and the draft stays unsent.
 Authorization never automatically submits that draft. There is no reconnect loop.
 
 - `/history [title search]`: existing shared Quick Pick, native pages of 40.

@@ -16,7 +16,7 @@ import type { RuntimeDebuggerPlanManager } from '../../runtime/debugger_plans';
 export function renderStatusBar(
 	resourcePanel: ResourcePanelController,
 	fault: RuntimeFaultState,
-	editorPane: EditorPane<EditorInput>,
+	editorPane: EditorPane<EditorInput> | null,
 	plans: RuntimeDebuggerPlanManager,
 ): void {
 	const runtimeFaulted = !!fault.faultSnapshot;
@@ -73,5 +73,5 @@ export function renderStatusBar(
 		return;
 	}
 
-	editorPane.drawStatusBar(statusTop, statusTextColor);
+	editorPane?.drawStatusBar(statusTop, statusTextColor);
 }

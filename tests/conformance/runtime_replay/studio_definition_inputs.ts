@@ -156,7 +156,7 @@ export async function testStudioDefinitionInputs(test: StudioFixture): Promise<v
 	harness.openLuaSource('cart.lua');
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: original }]);
 	await runPaletteCommand('File: Save'); await test.until(() => !model.dirty, 'A04: restore authored source through ordinary Save');
-	for (const input of [...editorTabGroup.tabs]) if (!initialTabs.has(input) && input.kind === 'behavior_lens') closeTab(ide.editor.editorPanes, ide.sources, input.id);
+	for (const input of [...editorTabGroup.tabs]) if (!initialTabs.has(input) && input.kind === 'behavior_lens') closeTab(ide.editor.editorPanes, input.id);
 	harness.openLuaSource('cart.lua'); await frame();
 	console.info('STUDIO A04: definition/preview/dirty/Undo/source/close workflows passed');
 }

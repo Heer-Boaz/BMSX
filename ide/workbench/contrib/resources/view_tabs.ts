@@ -8,7 +8,7 @@ import { ResourceViewerInput } from './editor_input';
 
 export function getActiveResourceViewer(): ResourceViewerState | null {
 	const tab = editorTabGroup.activeTab;
-	return tab.kind === 'resource_view' ? tab.view : null;
+	return tab?.kind === 'resource_view' ? tab.view : null;
 }
 
 export function resolveResourceViewerInput(

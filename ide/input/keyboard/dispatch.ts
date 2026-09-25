@@ -1,4 +1,3 @@
-import type { RuntimeSourceState } from '../../runtime/sources';
 import type { CartEditor } from '../../cart_editor';
 import { handleEditorCommandBindings, handleEscapeBinding } from './global_bindings';
 import type { PlayerInput } from '../../../hosts/common/input/player';
@@ -10,7 +9,6 @@ import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isS
 export function handleEditorInput(
 	playerInput: PlayerInput,
 	editor: CartEditor,
-	sources: RuntimeSourceState,
 ): void {
 	if (editor.contextMenu.visible && editor.contextMenu.handleKeyboard(playerInput)) {
 		return;
@@ -26,7 +24,7 @@ export function handleEditorInput(
 	if (handleEditorCommandBindings(playerInput, editor.commands)) {
 		return;
 	}
-	if (handleWorkbenchTabInput(playerInput, editor.editorPanes, sources)) {
+	if (handleWorkbenchTabInput(playerInput, editor.editorPanes)) {
 		return;
 	}
 	if (isKeyJustPressed('Tab', playerInput) && !isCtrlDown(playerInput) && !isMetaDown(playerInput) && !isAltDown(playerInput)

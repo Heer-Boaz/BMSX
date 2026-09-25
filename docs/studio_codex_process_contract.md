@@ -127,7 +127,7 @@ process-launch service:
   Stderr retention is bounded. There is no notification backlog or automatic
   reconnect/replay queue.
 - `session.ts` owns one conversation and one active turn. Its public operations
-  include account inspection/device-code login/cancel/logout, fixed history and
+  include account inspection/loopback and device-code login/cancel/logout, fixed history and
   queue operations, turn start/steer, interrupt and close, not arbitrary Codex methods. Every tool request must match the current thread, turn and admitted
   tool. Other server requests (including approvals and token refresh) are denied.
   Cancellation aborts pending tool work immediately; late results cannot answer
@@ -170,16 +170,20 @@ The [workbench source tools](studio_source_tools.md) are now exercised through
 this adapter with the real process and an offline model fixture. The secured
 [browser lease transport](studio_assistant_transport.md) now has its own real
 HTTP/Chromium evidence. The [conversation contribution](studio_assistant_contribution.md)
-now composes the pane and fixed device-code account actions; the workspace
+now composes the pane and fixed account actions; the workspace
 capability never admits a general process proxy.
 The fixed [test-evidence tools](studio_test_evidence.md) now read the same retained
 results as Scenario Lab through this chain, without adding execution authority.
 
 ## Account and exact-output follow-through
 
-The adapter admits only `chatgptDeviceCode` login, with the pinned official
-`https://auth.openai.com/codex/device` verification destination. Ordinary browser
-login can cancel an existing listener on localhost:1455; Studio does not use it.
+The adapter admits two login methods. `chatgpt` is the ordinary browser sign-in:
+the app-server owns the loopback listener, steps off a port another application
+holds, and its authorization URL is admitted structurally -- `https://auth.openai.com`
+`/oauth/authorize` with an `http://localhost|127.0.0.1/auth/callback` redirect, with
+the port deliberately unpinned. `chatgptDeviceCode` keeps the pinned official
+`https://auth.openai.com/codex/device` destination, for a browser that cannot reach
+the loopback callback. An unadmitted destination retires the process.
 The process owns login IDs and cancellation, including cancellation before the
 start response and completion arriving before that response's continuation.
 Account changes invalidate the old conversation thread and publish a fresh
@@ -196,10 +200,13 @@ checks it. The actual-cart browser test verifies full JSON catalog/read receipts
 beyond the default truncation size. Context overflow still fails at the provider;
 Studio never repairs missing source bytes or treats a shortened receipt as exact.
 
-`test:codex-account` has nine passing cases. A real pinned process uses a local
+`test:codex-account` has fourteen passing cases. A real pinned process uses a local
 issuer to exercise device-code request/poll/cancel/logout with no credentials.
-An explicitly test-only relay rewrites that issuer's verification URL and injects
-notification ordering for the production session adapter tests. The unmodified
+An explicitly test-only relay rewrites that issuer's verification URL, substitutes
+unadmitted loopback authorization URLs, and injects notification ordering for the
+production session adapter tests. The loopback round trip is exercised end to end
+against the local TLS proxy: admitted URL, browser callback, grant and token
+exchange, the listener's success page, then a readable account. The unmodified
 local URL is rejected by production admission.
 
 Successful authorization is now tested separately through a non-forwarding local

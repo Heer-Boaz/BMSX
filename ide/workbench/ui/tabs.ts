@@ -6,13 +6,9 @@ import type { EditorTabId } from './tab/id';
 import type { EditorInput, EditorInputKind } from './tab/model';
 import type { CodeTabContext } from './code_tab/model';
 import { beginNavigationCapture, captureNavigation, completeNavigation } from '../../navigation/navigation_history';
-import {
-	createCodeEditorInput,
-	retainEntryTabContext,
-} from './code_tab/contexts';
+import { createCodeEditorInput } from './code_tab/contexts';
 import type { EditorTextSelection } from '../../editor/navigation/text_selection';
 import { endTabDrag } from './tab/drag';
-import type { RuntimeSourceState } from '../../runtime/sources';
 import { editorTabGroup, type EditorOpenOptions } from './tab/group_model';
 import type { EditorPanes } from '../services/editor/editor_panes';
 
@@ -29,11 +25,12 @@ export function initializeTabs(initialContext: CodeTabContext, editorPanes: Edit
 	editorPanes.openEditor(initialTab);
 }
 
-export function getActiveTabKind(): EditorInputKind {
-	return editorTabGroup.activeTab.kind;
+/** The group can be empty; no active input is a workbench state, not a missing value. */
+export function getActiveTabKind(): EditorInputKind | undefined {
+	return editorTabGroup.activeTab?.kind;
 }
 
-export function getActiveTab(): EditorInput {
+export function getActiveTab(): EditorInput | null {
 	return editorTabGroup.activeTab;
 }
 
@@ -114,23 +111,15 @@ export function getTabs(): readonly EditorInput[] {
 	return editorTabGroup.tabs;
 }
 
-export function getActiveTabId(): EditorTabId {
-	return editorTabGroup.activeTab.id;
-}
-
 export function findTabById(tabId: EditorTabId): EditorInput | undefined {
 	return editorTabGroup.findById(tabId);
 }
 
 export function isTabActive(tabId: EditorTabId): boolean {
-	return editorTabGroup.activeTab.id === tabId;
+	return editorTabGroup.activeTab?.id === tabId;
 }
 
-export function closeTab(
-	editorPanes: EditorPanes,
-	sources: RuntimeSourceState,
-	tabId: EditorTabId,
-): void {
+export function closeTab(editorPanes: EditorPanes, tabId: EditorTabId): void {
 	const tab = editorTabGroup.findById(tabId)!;
 	const index = editorTabGroup.indexOf(tab);
 	if (!tab.closable) {
@@ -148,9 +137,6 @@ export function closeTab(
 		setActiveTab(editorPanes, fallback.id);
 	} else if (isActive) editorPanes.clearEditor();
 	editorTabGroup.removeAt(index);
-	if (editorTabGroup.tabs.length === 0) {
-		initializeTabs(retainEntryTabContext(sources), editorPanes);
-	}
 }
 
 export function cycleTab(editorPanes: EditorPanes, direction: number): void {
@@ -173,9 +159,7 @@ export function isActive(): boolean {
 	return editorRuntimeState.active;
 }
 
-export function closeActiveTab(
-	editorPanes: EditorPanes,
-	sources: RuntimeSourceState,
-): void {
-	closeTab(editorPanes, sources, editorTabGroup.activeTab.id);
+export function closeActiveTab(editorPanes: EditorPanes): void {
+	const activeTab = editorTabGroup.activeTab;
+	if (activeTab !== null) closeTab(editorPanes, activeTab.id);
 }

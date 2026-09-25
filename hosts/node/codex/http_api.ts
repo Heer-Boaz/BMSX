@@ -68,7 +68,7 @@ export class CodexHttpApi {
 				case 'new': await connection.session!.selectThread(); break;
 				case 'older': result = await connection.session!.readOlder(command.cursor); break;
 				case 'interrupt': await connection.session!.interrupt(); break;
-				case 'login-start': await connection.session!.startLogin(); break;
+				case 'login-start': await connection.session!.startLogin(command.method); break;
 				case 'login-cancel': await connection.session!.cancelLogin(); break;
 				case 'sign-out': await connection.session!.signOut(); break;
 				case 'tool-result': {

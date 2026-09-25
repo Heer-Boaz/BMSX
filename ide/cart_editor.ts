@@ -125,10 +125,11 @@ import type { ScenarioRunService } from './workbench/services/testing/scenario_r
 import type { TextFileSaveService } from './workbench/services/working_copy/text_file_save';
 import type { BootService } from './workbench/services/execution/boot';
 import { editorChromeState } from './workbench/ui/chrome_state';
-import { getActiveTab, getActiveTabId, initializeTabs, setActiveTab } from './workbench/ui/tabs';
+import { getActiveTab, initializeTabs, setActiveTab } from './workbench/ui/tabs';
 import { editorTabGroup } from './workbench/ui/tab/group_model';
 import { drawResourcePanel } from './workbench/render/resource_panel';
 import { renderStatusBar } from './workbench/render/status_bar';
+import { drawEditorGroupWatermark } from './workbench/render/editor_group_watermark';
 import { renderTabBar } from './workbench/render/tab_bar';
 import { renderTopBar, renderTopBarDropdown } from './workbench/render/top_bar';
 import { layoutTabBar } from './workbench/ui/tab/layout';
@@ -438,9 +439,9 @@ export class RuntimeCartEditor implements CartEditor {
 			return;
 		}
 		editorInput.applyOverrides(this.input, true, captureKeys);
-		setActiveTab(this.editorPanes, getActiveTabId());
 		const activeTab = getActiveTab();
-		const codeTabActive = activeTab.kind === 'code_editor';
+		if (activeTab !== null) setActiveTab(this.editorPanes, activeTab.id);
+		const codeTabActive = activeTab?.kind === 'code_editor';
 		editorCaretState.cursorVisible = codeTabActive;
 		editorCaretState.blinkTimer = 0;
 		if (!wasActive) this.enterRenderTargets();
@@ -551,7 +552,6 @@ export class RuntimeCartEditor implements CartEditor {
 			playerInput,
 			editorRuntimeState.currentTimeMs,
 			this,
-			this.sources,
 		);
 		if (hasBlockingWorkbenchModal()) {
 			handleBlockingWorkbenchModalInput(
@@ -560,11 +560,7 @@ export class RuntimeCartEditor implements CartEditor {
 			);
 			return;
 		}
-		handleEditorInput(
-			playerInput,
-			this,
-			this.sources,
-		);
+		handleEditorInput(playerInput, this);
 		if (codeView !== null && (codeView.scrollRow !== scrollRow || codeView.scrollColumn !== scrollColumn)) {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
 		}
@@ -577,7 +573,7 @@ export class RuntimeCartEditor implements CartEditor {
 		updateEditorMessage(deltaSeconds);
 		layoutTabBar(this.chromeRenderContext);
 		refreshWorkbenchLayout();
-		this.editorPanes.activePane.update(deltaSeconds);
+		this.editorPanes.activePane?.update(deltaSeconds);
 		layoutTopBar(this.commands, this.chromeRenderContext);
 		this.quickInput.update();
 		layoutContextMenu(this.contextMenu);
@@ -600,9 +596,11 @@ export class RuntimeCartEditor implements CartEditor {
 		renderTopBar(this.chromeRenderContext);
 		renderTabBar(this.chromeRenderContext);
 		drawResourcePanel(this.resourcePanel);
-		this.editorPanes.activePane.draw();
+		const activePane = this.editorPanes.activePane;
+		if (activePane === null) drawEditorGroupWatermark();
+		else activePane.draw();
 		drawProblemsPanel();
-		renderStatusBar(this.resourcePanel, this.fault, this.editorPanes.activePane, this.debuggerState.plans);
+		renderStatusBar(this.resourcePanel, this.fault, activePane, this.debuggerState.plans);
 		renderTopBarDropdown(this.chromeRenderContext);
 		drawContextMenu(this.contextMenu);
 		this.quickInput.draw();

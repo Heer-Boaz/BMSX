@@ -48,7 +48,7 @@ export async function testSourceViewsBeforeApply(
 	await frame();
 	check(getActiveTab() === lens && lens.view.source.isCurrent && lens.view.document.files[0].revision === getOrCreateSemanticProject(editorTextModelService, model.identity.domain).getSnapshot().getFileData(model.identity.path)!.revision,
 		'W04: the retained source lens refreshes after undo and redo');
-	closeTab(ide.editor.editorPanes, ide.sources, sourceTab.id);
+	closeTab(ide.editor.editorPanes, sourceTab.id);
 	await frame();
 	check(getActiveTab() === lens, 'W04: closing the code tab does not close its source view');
 	harness.openLuaSource(model.resource.path);

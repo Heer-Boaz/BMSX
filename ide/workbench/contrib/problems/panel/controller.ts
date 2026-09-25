@@ -277,6 +277,6 @@ export function showProblemsPanel(): void {
 export function hideProblemsPanel(editorPanes: EditorPanes): void {
 	const restoreEditorFocus = problemsPanel.isFocused;
 	problemsPanel.hide();
-	if (restoreEditorFocus) editorPanes.activePane.focus();
+	if (restoreEditorFocus) editorPanes.activePane?.focus();
 	resetBlink();
 }

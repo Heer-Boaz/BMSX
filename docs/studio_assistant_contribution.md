@@ -12,9 +12,10 @@ contracts, not as a second editor or a browser tunnel to Codex RPC.
 2. Open **View → Codex Assistant** or the command palette's
    **View: Codex Assistant**. Opening the pane starts no process or model call.
 3. Type a prompt and use **Send** (Ctrl/Meta+Enter). The first submission opens
-   the private process connection. If authorization is needed, device sign-in
-   appears in the transcript and the draft stays unsent. `/open`, `/copy-code`
-   and `/cancel` handle that temporary sign-in. There are no permanent account,
+   the private process connection. If authorization is needed, the browser opens
+   on the admitted sign-in page and the draft stays unsent. `/open` reopens it and
+   `/cancel` aborts; `/login device` falls back to a code for a browser on another
+   machine, where `/copy-code` applies. There are no permanent account,
    Connect or Disconnect buttons. `/login` and `/logout` are explicit commands.
 4. Enter inserts a newline. While Codex works, Send becomes **Queue**; **Direct**
    (Ctrl/Meta+Shift+Enter) steers that exact active turn. **Stop** interrupts and
@@ -99,11 +100,16 @@ There are no globally reserved gameplay keys or automatic guest evaluation.
 
 ## Account boundary
 
-The pinned Codex browser OAuth implementation can cancel another login listener
-on localhost:1455. Studio instead uses the official device-code method, which
-needs no callback port. Only the Node session sees a login ID. The browser gets a
-code and public account availability, not credentials, arbitrary authorization
-URLs or provider RPC. Cancel-before-start-response and completion-before-start-
+Studio signs in through the browser, exactly as the Codex CLI does: the account
+process owns a loopback listener and the grant returns to it. The pinned app-server
+picks a free port rather than taking over one another application already holds, so
+this binds no foreign listener. Device-code login remains for a browser that cannot
+reach that listener, which is any Studio opened from another machine on the LAN.
+Only the Node session sees a login ID. The browser gets an admitted authorization
+destination and public account availability, not credentials, arbitrary URLs or
+provider RPC. A loopback destination is admitted by shape -- issuer origin and path,
+and an `http://localhost|127.0.0.1/auth/callback` redirect -- never by an exact
+string, because the port and the per-attempt PKCE challenge and state vary. Cancel-before-start-response and completion-before-start-
 continuation are explicitly handled by that process owner. Credentials remain
 in the private application profile; no global CLI credentials/config are copied.
 The Node session closes operation admission before publishing an account refresh;
@@ -174,7 +180,7 @@ enlarge the provider's context window or hide context-limit failures.
   and profile removal on Sign out, then reconnect requiring a new authorization.
   Authorization retains the unsent draft and never automatically submits it. Signed-in screenshots in
   both fonts and the signed-out screenshot were inspected.
-- `npm run test:codex-account`: nine passing device-code/adapter contract cases,
+- `npm run test:codex-account`: fourteen passing login/adapter contract cases,
   including actual local-issuer polling/cancel/logout and test-only protocol
   ordering injection. Successful login uses a **non-forwarding local TLS proxy**
   and synthetic account tokens, with unchanged official URLs, process configuration

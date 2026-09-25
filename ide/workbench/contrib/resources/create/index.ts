@@ -17,7 +17,7 @@ export function openCreateResourcePrompt(
 	storage: KeyValueStorage,
 	clock: HostClock,
 ): void {
-	const resource = getActiveTab().resource;
+	const resource = getActiveTab()?.resource;
 	if (resource) {
 		const root = runtimeSourceProjectRootPath(sources, resource.domain);
 		const path = stripProjectRootPrefix(resource.path, root);

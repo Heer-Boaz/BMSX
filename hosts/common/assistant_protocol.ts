@@ -1,5 +1,12 @@
 /** Studio operations/events, not a tunnel for a provider's methods or configuration. */
 export const STUDIO_ACCOUNT_LOGIN_URL = 'https://auth.openai.com/codex/device';
+/**
+ * How Studio authorizes an account. Loopback authorization is the ordinary path: the
+ * browser returns the grant to a listener the account process owns, exactly as the Codex
+ * CLI signs in. Device authorization is for a browser that cannot reach that listener,
+ * which is every Studio opened from another machine on the LAN.
+ */
+export type AssistantLoginMethod = { type: 'loopback' } | { type: 'device-code' };
 export type AssistantAccount = { connected: boolean; requiresLogin: boolean; email?: string; plan?: string };
 /** Review observations at prompt submission, not source receipts or Save acknowledgements. */
 export type AssistantReviewUpdate = {
@@ -27,7 +34,8 @@ export type AssistantCommand =
 	| { type: 'older'; cursor: string }
 	| { type: 'new' }
 	| { type: 'interrupt' }
-	| { type: 'login-start' | 'login-cancel' | 'sign-out' }
+	| { type: 'login-start'; method: AssistantLoginMethod }
+	| { type: 'login-cancel' | 'sign-out' }
 	| ({ type: 'tool-result'; requestId: string } & AssistantToolResult);
 export type AssistantEvent =
 	| { type: 'connected'; lease: string; account: AssistantAccount }
@@ -41,7 +49,8 @@ export type AssistantEvent =
 	| { type: 'tool-cancelled'; requestId: string }
 	| { type: 'account-refreshing' }
 	| { type: 'account-changed'; account: AssistantAccount }
-	| { type: 'login-started'; code: string }
+	// A device code is shown only when the browser cannot reach the loopback callback.
+	| { type: 'login-started'; url: string; code?: string }
 	| { type: 'login-completed'; success: boolean; error?: string }
 	| { type: 'closed'; error?: string };
 
@@ -51,7 +60,8 @@ export interface AssistantConnection {
 	readonly closed: Promise<void>;
 	readonly account: AssistantAccount;
 	send(command: AssistantCommand): Promise<AssistantReply | undefined>;
-	openLoginPage(): void;
+	/** The URL is the one the process owner admitted, not a browser-side constant. */
+	openLoginPage(url: string): void;
 	close(error?: Error): void;
 }
 export type AssistantConnectionFactory = (signal: AbortSignal, onEvent: (event: AssistantEvent) => void) => Promise<AssistantConnection>;

@@ -3,7 +3,7 @@ import type { RuntimeDebuggerExecution } from '../../../runtime/debugger_executi
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 import type { GameImageCapture } from '../../../../hosts/common/image';
 import type { AssistantAccount, AssistantCommand, AssistantConnection, AssistantConnectionFactory, AssistantEvent, AssistantHistoryPage,
-	AssistantQueuedMessage, AssistantReviewUpdate, AssistantThread, AssistantTranscriptPage } from '../../../../hosts/common/assistant_protocol';
+	AssistantLoginMethod, AssistantQueuedMessage, AssistantReviewUpdate, AssistantThread, AssistantTranscriptPage } from '../../../../hosts/common/assistant_protocol';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import { PieceTreeBuffer } from '../../../editor/text/piece_tree_buffer';
 import type { RuntimeSourceState } from '../../../runtime/sources';
@@ -40,6 +40,8 @@ export class AssistantConversation {
 	public account: AssistantAccount | undefined;
 	public accountRefreshing = false;
 	public loginCode: string | undefined;
+	public loginUrl: string | undefined;
+	private loginMethod: AssistantLoginMethod['type'] | undefined;
 	public thread: AssistantThread | undefined;
 	public queued: readonly AssistantQueuedMessage[] = [];
 	public queuePaused = false;
@@ -253,20 +255,23 @@ export class AssistantConversation {
 	}
 	public notice(text: string): void { this.append('status', text); }
 
-	public async startLogin(): Promise<void> {
+	public async startLogin(method: AssistantLoginMethod = { type: 'loopback' }): Promise<void> {
+		// Switching method supersedes a pending attempt: a user reaching for the device code is
+		// a user whose browser never returned the grant, and that attempt owns the session.
+		if (this.state === 'signing-in' && method.type !== this.loginMethod) await this.cancelLogin();
 		if (this.state !== 'ready' || this.accountRefreshing || this.account!.connected) return;
 		const connection = this.connection!;
-		this.state = 'signing-in'; this.changed();
-		try { await connection.send({ type: 'login-start' }); }
+		this.state = 'signing-in'; this.loginMethod = method.type; this.changed();
+		try { await connection.send({ type: 'login-start', method }); }
 		catch (error) {
 			if (this.connection === connection && this.state === 'signing-in') { this.state = 'ready'; this.append('status', `Sign-in failed: ${String(error)}`); }
 		}
 	}
-	public openLoginPage(): void { if (this.loginCode !== undefined) this.connection!.openLoginPage(); }
+	public openLoginPage(): void { if (this.loginUrl !== undefined) this.connection!.openLoginPage(this.loginUrl); }
 	public async cancelLogin(): Promise<void> {
 		if (this.state !== 'signing-in') return;
 		const connection = this.connection!;
-		this.state = 'cancelling-sign-in'; this.loginCode = undefined; this.changed();
+		this.state = 'cancelling-sign-in'; this.loginUrl = undefined; this.loginCode = undefined; this.loginMethod = undefined; this.changed();
 		try { await connection.send({ type: 'login-cancel' }); }
 		catch (error) { if (this.connection === connection) this.append('status', `Cancel sign-in failed: ${String(error)}`); }
 		if (this.connection === connection) { this.state = 'ready'; this.changed(); }
@@ -298,12 +303,16 @@ export class AssistantConversation {
 				this.account = event.account; this.accountRefreshing = false; this.changed(); break;
 			case 'login-started':
 				if (this.state === 'signing-in') {
-					this.loginCode = event.code;
-					this.append('status', `Sign in at https://auth.openai.com/codex/device\nCode: ${event.code}\n/open opens the page; /copy-code copies the code; /cancel cancels sign-in. Your draft has not been sent.`);
+					this.loginUrl = event.url; this.loginCode = event.code;
+					// The page opens from a user gesture only: a popup raised from this stream event
+					// is blocked, and reusing a handle across it would give the page an opener.
+					this.append('status', event.code === undefined
+						? 'Ready to sign in. /open opens the page in your browser; it returns here by itself once you approve.\n/cancel cancels sign-in.\nIf your browser runs on another machine, use /login device for a code instead. Your draft has not been sent.'
+						: `Sign in at ${event.url}\nCode: ${event.code}\n/open opens the page; /copy-code copies the code; /cancel cancels sign-in. Your draft has not been sent.`);
 				}
 				break;
 			case 'login-completed':
-				this.loginCode = undefined; this.state = 'ready';
+				this.loginUrl = undefined; this.loginCode = undefined; this.loginMethod = undefined; this.state = 'ready';
 				this.append('status', event.success ? 'Studio account connected.' : `Sign-in failed: ${event.error}`); break;
 			case 'turn-started':
 				// Native queued turns start here, not from a browser dequeue loop. Source
@@ -373,7 +382,8 @@ export class AssistantConversation {
 		this.sourceLifetime?.abort(new Error('Assistant connection closed')); this.sourceLifetime = undefined;
 		this.outstandingReviews.clear();
 		lifetime?.abort(); connection?.close();
-		this.account = undefined; this.accountRefreshing = false; this.loginCode = undefined; this.submitting = false; this.queuePaused = true;
+		this.account = undefined; this.accountRefreshing = false; this.loginUrl = undefined; this.loginCode = undefined;
+		this.loginMethod = undefined; this.submitting = false; this.queuePaused = true;
 		this.finishTurn();
 	}
 	private resetSourceAuthority(): void {

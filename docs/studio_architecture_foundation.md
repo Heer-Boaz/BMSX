@@ -2,7 +2,7 @@
 
 Status: foundation work in progress, 2026-09-23; gates 1-4 implemented, with local
 files, whole-workbench review, owned process/source tools and secured browser
-transport, device-code account operations and a visible conversation/review
+transport, browser and device-code account operations and a visible conversation/review
 contribution implemented under gate 5. Personal account authorization and paid-model
 use are not part of the automated evidence. The user requested the
 whole IDE/Studio ownership model to be corrected first, rather than adapting an
@@ -426,8 +426,8 @@ The real-cart browser probe exposed Codex's default lossy tool-output truncation
 it cut the JSON source catalog in half. The process policy now disables that
 text-log truncation for JS-representable results and verifies the effective
 setting. Model context exhaustion remains a provider error, not permission to
-truncate/repair source receipts. The production device-code flow avoids Codex's
-browser-login behavior of cancelling an existing localhost OAuth listener.
+truncate/repair source receipts. Browser sign-in uses the app-server's own loopback
+listener, which steps off a port another application holds rather than taking it.
 See the contribution document for commands, evidence and remaining limits.
 
 The follow-through browser matrix exercises conversation/review and account

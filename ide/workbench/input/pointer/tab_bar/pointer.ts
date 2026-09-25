@@ -7,14 +7,12 @@ import { closeTab, setActiveTab } from '../../../ui/tabs';
 import { beginTabDrag, endTabDrag } from '../../../ui/tab/drag';
 import { consumeChromePointerPress } from '../../../../input/pointer/chrome_press';
 import { editorTabGroup } from '../../../ui/tab/group_model';
-import type { RuntimeSourceState } from '../../../../runtime/sources';
 import type { EditorPanes } from '../../../services/editor/editor_panes';
 import type { EditorTabId } from '../../../ui/tab/id';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS } from '../../../../common/constants';
 
 export function handleTabBarPointer(
 	editorPanes: EditorPanes,
-	sources: RuntimeSourceState,
 	snapshot: PointerSnapshot,
 	now: number,
 ): boolean {
@@ -36,7 +34,7 @@ export function handleTabBarPointer(
 		if (closeBounds && point_in_rect(x, y, closeBounds)) {
 			editorChromeState.lastTabClickId = null;
 			endTabDrag();
-			closeTab(editorPanes, sources, tab.id);
+			closeTab(editorPanes, tab.id);
 			editorChromeState.tabHoverId = null;
 			consumeChromePointerPress();
 			return true;
@@ -60,7 +58,6 @@ export function handleTabBarPointer(
 
 export function handleTabBarMiddleClick(
 	editorPanes: EditorPanes,
-	sources: RuntimeSourceState,
 	snapshot: PointerSnapshot,
 	playerInput: PlayerInput,
 ): boolean {
@@ -80,7 +77,7 @@ export function handleTabBarMiddleClick(
 			continue;
 		}
 		if (point_in_rect(x, y, bounds)) {
-			closeTab(editorPanes, sources, tab.id);
+			closeTab(editorPanes, tab.id);
 			playerInput.inputHandlers.pointer?.consumeButton('pointer_aux');
 			consumeChromePointerPress();
 			return true;

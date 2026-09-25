@@ -79,7 +79,7 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 		'navigation: visible Lens Source action reveals the selected FSM source range');
 	await openView(test, 'behaviorLens');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
-	closeTab(ide.editor.editorPanes, ide.sources, code.id);
+	closeTab(ide.editor.editorPanes, code.id);
 	await frame();
 	check(getActiveTab() === lens, 'navigation: lens remains attached when its code tab closes');
 	await openView(test, 'scenarioLab');

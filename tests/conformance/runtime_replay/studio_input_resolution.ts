@@ -33,7 +33,7 @@ export async function testStudioInputResolution(test: StudioFixture): Promise<vo
 		'A07 admission: a concurrent candidate cannot duplicate or replace the admitted view');
 	check(!first.workingCopy.dirty && test.cycles() === cycles,
 		'A07 admission: opening source did not edit a document or advance the paused machine');
-	closeTab(editor.editorPanes, test.ide.sources, first.id);
+	closeTab(editor.editorPanes, first.id);
 	const aem = test.ide.sources.cartridgeSlots[0]!.dataResources.find(item => item.source.type === 'aem')!;
 	const pendingAem = editor.navigation.openResource(aem);
 	const opened = await editor.navigation.openResource(resource);
@@ -42,7 +42,7 @@ export async function testStudioInputResolution(test: StudioFixture): Promise<vo
 	check(editorTabGroup.activeTab.kind === 'code_editor' && editorTabGroup.activeTab.workingCopy.resource === resource
 		&& editorTabGroup.findById(`code:${resourceIdentityKey(aem)}`) === undefined,
 		'opening lifetime: cancelled I/O has no tab or focus side effect');
-	closeTab(editor.editorPanes, test.ide.sources, editorTabGroup.activeTab.id);
+	closeTab(editor.editorPanes, editorTabGroup.activeTab.id);
 	openEditorTab(editor.editorPanes, original); await test.frame();
 	const pendingSource = editor.navigation.openResource(resource);
 	editor.deactivate();

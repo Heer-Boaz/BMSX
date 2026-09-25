@@ -1,5 +1,4 @@
 import type { AssistantAccount, AssistantCommand, AssistantEvent, AssistantReply } from '../../hosts/common/assistant_protocol';
-import { STUDIO_ACCOUNT_LOGIN_URL } from '../../hosts/common/assistant_protocol';
 import { readJsonLines } from '../../hosts/common/json_lines';
 import type { StudioHttpSession } from './http_session';
 
@@ -77,7 +76,7 @@ export class AssistantHttpConnection {
 		throw failure;
 	}
 
-	public openLoginPage(): void { window.open(STUDIO_ACCOUNT_LOGIN_URL, '_blank', 'noopener,noreferrer'); }
+	public openLoginPage(url: string): void { window.open(url, '_blank', 'noopener,noreferrer'); }
 
 	/** Retire local source/review rights immediately. The server independently joins process exit. */
 	public close(error?: Error): void {

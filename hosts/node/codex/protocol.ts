@@ -41,7 +41,10 @@ export type CodexToolCall = { threadId: string; turnId: string; callId: string; 
 export type CodexToolResult = AssistantToolResult;
 export type CodexTurn = { id: string; status: 'inProgress' | 'completed' | 'interrupted' | 'failed'; error: { message: string } | null };
 export type CodexAccount = { account: { type: string; email?: string; planType?: string } | null; requiresOpenaiAuth: boolean };
-export type CodexLogin = { type: 'chatgptDeviceCode'; loginId: string; verificationUrl: string; userCode: string };
+/** The login variants Studio admits, named as the external app-server tags them. */
+export type CodexLogin =
+	| { type: 'chatgptDeviceCode'; loginId: string; verificationUrl: string; userCode: string }
+	| { type: 'chatgpt'; loginId: string; authUrl: string };
 export type CodexSessionEvent =
 	| { type: 'thread'; thread: AssistantThread }
 	| { type: 'queue'; messages: AssistantQueuedMessage[] }
@@ -52,6 +55,6 @@ export type CodexSessionEvent =
 	| { type: 'message'; turnId: string; itemId: string; text: string }
 	| { type: 'account-refreshing' }
 	| { type: 'account-changed'; account: CodexAccount }
-	| { type: 'login-started'; code: string }
+	| { type: 'login-started'; url: string; code?: string }
 	| { type: 'login-completed'; success: boolean; error?: string }
 	| { type: 'closed'; error?: Error };

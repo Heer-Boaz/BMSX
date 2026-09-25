@@ -13,10 +13,10 @@ const COMMANDS = [
 	{ label: '/continue', description: 'Continue the stopped queue', detail: 'Explicit execution' },
 	{ label: '/stop', description: 'Stop work and pause the queue', detail: 'Keep waiting messages' },
 	{ label: '/older', description: 'Load older messages', detail: 'Current conversation' },
-	{ label: '/login', description: 'Sign in to Codex', detail: 'Only when needed' },
+	{ label: '/login', description: 'Sign in to Codex', detail: 'Opens a browser; /login device for a code' },
 	{ label: '/logout', description: 'Sign out of Codex', detail: 'Keep conversation history' },
 	{ label: '/open', description: 'Open the sign-in page', detail: 'During sign-in' },
-	{ label: '/copy-code', description: 'Copy the sign-in code', detail: 'During sign-in' },
+	{ label: '/copy-code', description: 'Copy the sign-in code', detail: 'During /login device' },
 	{ label: '/cancel', description: 'Cancel sign-in or queue editing', detail: 'No model request' },
 	{ label: '/help', description: 'Message and command help', detail: '' },
 ];
@@ -88,12 +88,15 @@ export class AssistantChatCommands {
 				case '/queue': await this.queue(input); break;
 				case '/continue': await model.continueQueue(); break;
 				case '/stop': await model.interrupt(); break;
-				case '/login': await model.connect(); await model.startLogin(); break;
+				case '/login':
+					await model.connect();
+					await model.startLogin({ type: argument === 'device' ? 'device-code' : 'loopback' });
+					break;
 				case '/logout': await model.signOut(); break;
 				case '/open': model.openLoginPage(); break;
 				case '/copy-code': if (model.loginCode !== undefined) await writeClipboard(this.clipboard, model.loginCode, 'Copied sign-in code'); break;
 				case '/cancel': input.editingQueuedId = undefined; await model.cancelLogin(); break;
-				case '/help': model.notice('Ctrl+Enter sends a message, or queues it while Codex works. Ctrl+Shift+Enter / Direct steers the active turn. Stop pauses the queue without deleting it.\n/history, /new, /older, /queue, /continue, /stop, /login, /logout, /open, /copy-code, /cancel\nQueued messages capture fresh Studio source context when their turn starts. Direct messages keep the active turn context.'); break;
+				case '/help': model.notice('Ctrl+Enter sends a message, or queues it while Codex works. Ctrl+Shift+Enter / Direct steers the active turn. Stop pauses the queue without deleting it.\n/history, /new, /older, /queue, /continue, /stop, /login, /logout, /open, /copy-code, /cancel\n/login signs in through your browser; /login device shows a code instead, for a browser on another machine.\nQueued messages capture fresh Studio source context when their turn starts. Direct messages keep the active turn context.'); break;
 				default: model.notice(`Unknown command: ${command}. Use / for commands.`); accepted = false;
 			}
 		} else accepted = await model.sendPrompt(text, direct);
