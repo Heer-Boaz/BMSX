@@ -91,6 +91,8 @@ Authorization never automatically submits that draft. There is no reconnect loop
 - `/queue`: native waiting text; edit via the multiline composer or remove.
 - `/continue`, `/stop`: explicit native queue execution/cancellation.
 - `/login`, `/logout`, `/open`, `/copy-code`, `/cancel`: incidental account work.
+  A command runs on plain Enter; Ctrl+Enter stays for sending a message. Clicking a
+  transcript message selects it and takes focus, so Ctrl+C copies it.
 - `/` and `/help`: discover commands and submission semantics.
 
 Ctrl/Meta+Enter sends/queues, Ctrl/Meta+Shift+Enter steers, Enter inserts a newline.

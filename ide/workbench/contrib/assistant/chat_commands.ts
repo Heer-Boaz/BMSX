@@ -22,6 +22,15 @@ const COMMANDS = [
 ];
 
 /** Chat commands and explicit picker navigation, independent of rendering and provider RPC. */
+/**
+ * A draft that submit() dispatches as a command rather than as a prompt. The composer
+ * uses it to run commands on plain Enter, the way a conversation UI does, so the rule
+ * lives here with the dispatch instead of being restated at the keyboard.
+ */
+export function isAssistantCommand(input: AssistantInput): boolean {
+	return input.editingQueuedId === undefined ? input.draft.text.startsWith('/') : input.draft.text === '/cancel';
+}
+
 export class AssistantChatCommands {
 	public constructor(private readonly quickInput: QuickInputController, private readonly clipboard: Clipboard) {}
 
@@ -78,7 +87,7 @@ export class AssistantChatCommands {
 		} else if (input.editingQueuedId !== undefined) {
 			accepted = await model.changeQueued({ type: 'queue-update', id: input.editingQueuedId, prompt: text });
 			if (accepted) input.editingQueuedId = undefined;
-		} else if (text.startsWith('/') && !direct) {
+		} else if (!direct && isAssistantCommand(input)) {
 			const end = text.search(/\s/), command = end === -1 ? text : text.slice(0, end), argument = end === -1 ? undefined : text.slice(end).trim();
 			switch (command) {
 				case '/': this.commands(input); break;
@@ -96,7 +105,7 @@ export class AssistantChatCommands {
 				case '/open': model.openLoginPage(); break;
 				case '/copy-code': if (model.loginCode !== undefined) await writeClipboard(this.clipboard, model.loginCode, 'Copied sign-in code'); break;
 				case '/cancel': input.editingQueuedId = undefined; await model.cancelLogin(); break;
-				case '/help': model.notice('Ctrl+Enter sends a message, or queues it while Codex works. Ctrl+Shift+Enter / Direct steers the active turn. Stop pauses the queue without deleting it.\n/history, /new, /older, /queue, /continue, /stop, /login, /logout, /open, /copy-code, /cancel\n/login signs in through your browser; /login device shows a code instead, for a browser on another machine.\nQueued messages capture fresh Studio source context when their turn starts. Direct messages keep the active turn context.'); break;
+				case '/help': model.notice('Enter runs a command. Ctrl+Enter sends a message, or queues it while Codex works. Ctrl+Shift+Enter / Direct steers the active turn. Stop pauses the queue without deleting it.\n/history, /new, /older, /queue, /continue, /stop, /login, /logout, /open, /copy-code, /cancel\nClick a message and press Ctrl+C to copy it, including the sign-in address.\n/login signs in through your browser; /login device shows a code instead, for a browser on another machine.\nQueued messages capture fresh Studio source context when their turn starts. Direct messages keep the active turn context.'); break;
 				default: model.notice(`Unknown command: ${command}. Use / for commands.`); accepted = false;
 			}
 		} else accepted = await model.sendPrompt(text, direct);

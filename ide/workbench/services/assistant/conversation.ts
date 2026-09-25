@@ -306,10 +306,15 @@ export class AssistantConversation {
 					this.loginUrl = event.url; this.loginCode = event.code;
 					// The page opens from a user gesture only: a popup raised from this stream event
 					// is blocked, and reusing a handle across it would give the page an opener.
+					// The destination is always shown: it is what the user opens, pastes into another
+					// browser, or inspects when a sign-in misbehaves. Ctrl+C on the message copies it.
 					this.append('status', event.code === undefined
-						? 'Ready to sign in. /open opens the page in your browser; it returns here by itself once you approve.\n/cancel cancels sign-in.\nIf your browser runs on another machine, use /login device for a code instead. Your draft has not been sent.'
+						? `Opening your browser to sign in.\n${event.url}\nIt returns here by itself once you approve. /open reopens the page; /cancel cancels sign-in.\nIf your browser runs on another machine, use /login device instead. Your draft has not been sent.`
 						: `Sign in at ${event.url}\nCode: ${event.code}\n/open opens the page; /copy-code copies the code; /cancel cancels sign-in. Your draft has not been sent.`);
 				}
+				break;
+			case 'login-open-failed':
+				this.append('status', `Could not open your browser: ${event.error}\nOpen the address above yourself, or use /open to try again.`);
 				break;
 			case 'login-completed':
 				this.loginUrl = undefined; this.loginCode = undefined; this.loginMethod = undefined; this.state = 'ready';

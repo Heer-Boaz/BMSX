@@ -184,6 +184,13 @@ holds, and its authorization URL is admitted structurally -- `https://auth.opena
 the port deliberately unpinned. `chatgptDeviceCode` keeps the pinned official
 `https://auth.openai.com/codex/device` destination, for a browser that cannot reach
 the loopback callback. An unadmitted destination retires the process.
+
+A loopback grant can only return to this host, so the browser that must receive it runs
+here: Node composition supplies the opener and the process owner hands it the admitted
+address, the way the Codex CLI does. The browser page never opens it, because a popup
+raised from the event stream is outside a user gesture and a reusable handle would give
+the sign-in page an opener. A failed open is published; the address stays in the
+transcript with `/open` as the manual route.
 The process owns login IDs and cancellation, including cancellation before the
 start response and completion arriving before that response's continuation.
 Account changes invalidate the old conversation thread and publish a fresh

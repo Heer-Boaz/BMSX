@@ -173,6 +173,10 @@ for (const backend of backends) test(`Studio ${backend}: real successful account
 		});
 	}, backend);
 	assert.equal(result.login, 'pass'); assert.equal(f.observations.connects, 3);
+	// The implicit browser attempt is handed to the host opener, once, at an admitted address.
+	assert.equal(f.observations.opened.length, 1);
+	assert.equal(new URL(f.observations.opened[0]).origin, 'https://auth.openai.com');
+	assert.equal(new URL(f.observations.opened[0]).pathname, '/oauth/authorize');
 	assert.deepEqual(result.account, { connected: true, requiresLogin: false, email: CODEX_ACCOUNT_FIXTURE.email, plan: CODEX_ACCOUNT_FIXTURE.planType });
 	assert.deepEqual(f.observations.errors, []);
 	assert.equal(issuer.requests.filter(request => request.path === '/api/accounts/deviceauth/usercode').length, 1);

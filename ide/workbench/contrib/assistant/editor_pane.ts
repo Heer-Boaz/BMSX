@@ -29,7 +29,7 @@ import { WorkspaceEditReviewInput } from '../edit_review/editor_input';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { AssistantInput } from './editor_input';
 import type { QuickInputController } from '../../services/quick_input/controller';
-import { AssistantChatCommands } from './chat_commands';
+import { AssistantChatCommands, isAssistantCommand } from './chat_commands';
 
 const COMMANDS = ['assistant.history', 'assistant.new', 'assistant.commands', 'assistant.queue', 'assistant.direct', 'assistant.signIn', 'assistant.cancelLogin', 'assistant.signOut',
 	'assistant.openLogin', 'assistant.copyCode', 'assistant.send', 'assistant.stop', 'assistant.review', 'assistant.copy'] as const;
@@ -163,14 +163,16 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		drawMultilineField(input.draft, input.composer, bounds);
 	}
 	public drawStatusBar(top: number, color: number): void {
-		api.blit_text_inline_with_font('Ctrl+Enter: send/queue | Ctrl+Shift+Enter: direct', 4, top + 2, 0, color, editorViewState.font.renderFont());
+		api.blit_text_inline_with_font('Click a message + Ctrl+C: copy | Enter: command | Ctrl+Enter: send/queue', 4, top + 2, 0, color, editorViewState.font.renderFont());
 	}
 	protected override handleViewPointer(snapshot: PointerSnapshot): boolean {
 		if (this.actions.handlePointer(snapshot) || this.composer.handlePointer(snapshot)) return true;
 		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.viewport.bounds)) {
 			const index = Math.trunc((snapshot.viewportY - this.input.viewport.offsetTop) / this.input.layout.rowHeight);
 			const row = this.input.transcript.rows[index];
-			if (row) this.input.selectedEntry = row.entry;
+			// Selecting a message also takes focus, so Ctrl+C reaches the transcript instead of
+			// the composer. Without this the message is highlighted but cannot be copied.
+			if (row) { this.input.selectedEntry = row.entry; this.scroll.focusTarget.focus(); }
 		}
 		return this.scroll.handlePointer(snapshot);
 	}
@@ -198,6 +200,10 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	public handleKeyboard(input: PlayerInput): void {
 		if (!this.input.draft.focusTarget.hasFocus) return;
 		if ((isCtrlDown(input) || isMetaDown(input)) && isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); this.execute(isShiftDown(input) ? 'assistant.direct' : 'assistant.send'); return; }
+		// A command is a single line, so plain Enter runs it. Shift+Enter still opens a new line.
+		if (!isShiftDown(input) && isKeyJustPressed('Enter', input) && isAssistantCommand(this.input)) {
+			consumeIdeKey('Enter', input); this.execute('assistant.send'); return;
+		}
 		this.composer.handleKeyboard(input, this.clipboard);
 	}
 	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null): void {

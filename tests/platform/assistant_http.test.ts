@@ -22,7 +22,8 @@ async function fixture(t: TestContext, steps: unknown[], clientScript?: Uint8Arr
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-assistant-http-'));
 	const profile = join(root, 'profile');
 	const model = await createCodexModelFixture(t, steps);
-	const api = new CodexHttpApi({ profileDirectory: profile, provider: { name: 'Offline transport fixture', model: 'mock-model', baseUrl: `${model.url}/v1` }, tools });
+	const api = new CodexHttpApi({ profileDirectory: profile, openLoginPage: () => assert.fail('No browser is opened in the transport fixture'),
+		provider: { name: 'Offline transport fixture', model: 'mock-model', baseUrl: `${model.url}/v1` }, tools });
 	const authority = new WorkspaceHttpSession('127.0.0.1');
 	const requests = new Map<string, number>();
 	const server = createServer(async (request, response) => {

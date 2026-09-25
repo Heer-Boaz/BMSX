@@ -51,6 +51,8 @@ export type AssistantEvent =
 	| { type: 'account-changed'; account: AssistantAccount }
 	// A device code is shown only when the browser cannot reach the loopback callback.
 	| { type: 'login-started'; url: string; code?: string }
+	// The host could not hand the address to a browser; the address stays in the transcript.
+	| { type: 'login-open-failed'; error: string }
 	| { type: 'login-completed'; success: boolean; error?: string }
 	| { type: 'closed'; error?: string };
 

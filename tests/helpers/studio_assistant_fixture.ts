@@ -28,9 +28,12 @@ export async function createAssistantStudioFixture(t: TestContext, evidenceName:
 	for (const path of ['carts/nemesis_s', 'cartlib', 'machine/bios', 'testlib', 'tests/carts/nemesis_s']) await cp(path, join(root, path), { recursive: true,
 		filter: async path => (await stat(path)).isDirectory() || /\.(lua|yaml|yml)$/.test(path) });
 	const profileDirectory = join(root, 'profile');
-	const api = new CodexHttpApi({ ...options, profileDirectory, tools: [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS, ...STUDIO_RUNTIME_TOOLS] });
+	// No real browser is launched from a test; the request is recorded and asserted instead.
+	const opened: string[] = [];
+	const api = new CodexHttpApi({ ...options, profileDirectory, openLoginPage: url => { opened.push(url); },
+		tools: [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS, ...STUDIO_RUNTIME_TOOLS] });
 	const authority = new WorkspaceHttpSession('127.0.0.1');
-	const observations = { connects: 0, commands: [] as string[], errors: [] as Error[] };
+	const observations = { connects: 0, commands: [] as string[], errors: [] as Error[], opened };
 	const server = createServer(async (request, response) => {
 		try {
 			const url = new URL(request.url!, 'http://local');

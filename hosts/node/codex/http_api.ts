@@ -20,7 +20,9 @@ export class CodexHttpApi {
 	private connection: Connection | undefined;
 	private closing = false;
 
-	public constructor(private readonly options: Pick<CodexSessionOptions, 'profileDirectory' | 'executable' | 'provider' | 'tools'>) {}
+	/** Node composition supplies the browser opener; the browser transport never chooses one. */
+	public constructor(private readonly options: Pick<CodexSessionOptions, 'profileDirectory' | 'executable' | 'provider' | 'tools'>
+		& { openLoginPage: (url: string, onFailure: (error: Error) => void) => void }) {}
 
 	public async handle(request: IncomingMessage, response: ServerResponse, pathname: string): Promise<void> {
 		if (this.closing) { response.writeHead(503).end('Studio assistant is shutting down'); return; }
@@ -143,6 +145,13 @@ export class CodexHttpApi {
 			this.publish(connection, { type: 'account-changed', account: { connected: event.account.account !== null,
 				requiresLogin: event.account.requiresOpenaiAuth && event.account.account === null,
 				email: event.account.account?.email, plan: event.account.account?.planType } });
+		} else if (event.type === 'login-started' && event.code === undefined) {
+			// A loopback grant can only return to this host, so the browser that must receive it
+			// runs here: the account process owner opens it, exactly as the Codex CLI does. The
+			// device method publishes a code instead, for a browser this host cannot reach.
+			this.publish(connection, event);
+			this.options.openLoginPage(event.url, error => this.publish(connection,
+				{ type: 'login-open-failed', error: error.message }));
 		} else this.publish(connection, event);
 	}
 
