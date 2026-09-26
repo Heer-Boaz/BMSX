@@ -344,8 +344,13 @@ export class AssistantConversation {
 				this.turn?.requests.get(event.requestId)?.abort();
 				this.turn?.requests.delete(event.requestId); break;
 			case 'turn-completed':
-				if (event.status !== 'completed') this.queuePaused = true;
-				this.append('status', event.status === 'failed' ? `Turn failed: ${event.error}` : `Turn ${event.status}.`);
+				// An ordinary completion is already visible as the reply; only an interrupted or
+				// failed turn needs saying. finishTurn stays unconditional: it releases the turn's
+				// source/test/runtime authority and reopens sending.
+				if (event.status !== 'completed') {
+					this.queuePaused = true;
+					this.append('status', event.status === 'failed' ? `Turn failed: ${event.error}` : `Turn ${event.status}.`);
+				}
 				this.finishTurn(); break;
 			case 'closed':
 				if (event.error) this.append('status', `Disconnected: ${event.error}`);

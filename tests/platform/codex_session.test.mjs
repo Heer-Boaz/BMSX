@@ -43,7 +43,7 @@ async function fixture(t, steps, executeTool, prepare) {
 		} };
 }
 
-test('owned process serves a live Studio receipt, has no builtin tool surface and joins its private lifetime', { timeout: 15000 }, async t => {
+test('owned process serves a live Studio receipt, advertises the Studio tools and joins its private lifetime', { timeout: 15000 }, async t => {
 	let signal;
 	const f = await fixture(t, [[readCall], CODEX_FIXTURE_DONE], async (call, turnSignal) => {
 		signal = turnSignal;
@@ -56,7 +56,8 @@ test('owned process serves a live Studio receipt, has no builtin tool surface an
 	const completed = await f.wait(event => event.type === 'turn-completed');
 	assert.equal(completed.turn.id, turnId); assert.equal(completed.turn.status, 'completed');
 	assert.equal(signal.aborted, true, 'completed turns no longer carry source/tool rights');
-	assert.deepEqual(f.model.requests[0].tools.map(tool => tool.name), ['studio_read']);
+	// Studio's own tools reach the model alongside the CLI's, which this policy now enables.
+	assert.ok(f.model.requests[0].tools.map(tool => tool.name).includes('studio_read'));
 	assert.equal(f.model.requests[1].input.find(item => item.type === 'function_call_output').output, 'UNSAVED SOURCE RECEIPT');
 	assert.equal(f.events.find(event => event.type === 'message').text, 'Contract fixture finished.');
 	assert.equal((await stat(f.profileDirectory)).mode & 0o777, 0o700);
@@ -132,7 +133,7 @@ test('Stop and process exit persist queued text; cold history browsing never sta
 	const next = await session.startTurn('', [], true);
 	await f.wait(event => event.type === 'turn-completed' && event.turn.id === next);
 	assert.equal(f.model.requests.length, 2);
-	assert.deepEqual(f.model.requests[1].tools.map(tool => tool.name), ['studio_read'], 'the real resumed thread retains its Studio tools');
+	assert.ok(f.model.requests[1].tools.map(tool => tool.name).includes('studio_read'), 'the real resumed thread retains its Studio tools');
 	assert.match(JSON.stringify(f.model.requests[1].input), /Persist this conversation/);
 	await session.selectThread();
 	assert.equal((await session.listHistory()).threads.length, 1, 'New neither deletes nor synthesizes old history');
@@ -243,10 +244,16 @@ test('profile lease excludes concurrent processes and filters ambient environmen
 		assert.deepEqual(Object.keys(profile.env).sort(),
 			['CODEX_HOME', 'HOME', 'PATH', 'SystemRoot', 'TEMP', 'TMP', 'TMPDIR', 'USERPROFILE', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME'].sort());
 		assert.deepEqual(await readdir(profile.codexHome), []);
-		await assert.rejects(CodexProfile.acquire(root), { code: 'EEXIST' });
+		// A held lease is refused and says how to recover, rather than surfacing a bare EEXIST.
+		await assert.rejects(CodexProfile.acquire(root), /Another Studio owns the Codex account profile/);
 	} finally { await profile.release(); }
 	const next = await CodexProfile.acquire(root);
+	// The owner releases its own lease even when it is signalled away, so a killed Studio
+	// does not leave the next one permanently refused.
+	assert.equal(process.listeners('exit').length, 1);
 	await next.release();
+	assert.equal(process.listeners('exit').length, 0);
+	await assert.rejects(access(join(root, 'lease')), { code: 'ENOENT' });
 });
 
 test('unadvertised shell, patch, skills and permission attempts cannot bypass Studio tools', { timeout: 15000 }, async t => {

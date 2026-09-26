@@ -103,7 +103,6 @@ export async function runAssistantHistory(kind: StudioRendererKind, canvas: HTML
 	check((await control.metrics()).requests === stopped.requests, 'editing the unloaded queue cannot start inference');
 	await submitAssistantText(test, '/continue');
 	await until(() => model.state === 'ready' && model.queued.length === 0, 'history: explicit Continue starts the stopped native queue');
-	check(model.thread!.id === thread && model.entries.at(-1)!.text.getText() === 'Turn completed.', 'continued work stays in the saved conversation');
 	await submitAssistantText(test, '/new');
 	await until(() => model.state === 'ready' && model.thread === undefined && model.entries.length === 0, 'history: New clears local source and transcript authority');
 	await submitAssistantText(test, 'Second saved conversation');

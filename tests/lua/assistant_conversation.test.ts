@@ -383,7 +383,7 @@ test('workspace clear resets detached projection identity before a same-sized re
 	f.connections[1].emit({ type: 'message', turnId: 'new', itemId: 'new', text: 'New reply' });
 	f.connections[1].emit({ type: 'turn-completed', turnId: 'new', status: 'completed' });
 	input.transcript.update(c.entries, 40, measure, font);
-	assert.deepEqual(input.transcript.rows.map(row => row.text), ['USER', 'New', 'ASSISTANT', 'New reply', 'STATUS', 'Turn completed.']);
+	assert.deepEqual(input.transcript.rows.map(row => row.text), ['USER', 'New', 'ASSISTANT', 'New reply']);
 	assert.equal(input.selectedEntry, -1);
 });
 
@@ -404,7 +404,7 @@ test('login cancellation suppresses a late code; old sign-out completion cannot 
 	let release!: () => void;
 	f.connections[0].pending = new Promise(resolve => { release = () => resolve(undefined); });
 	const login = c.startLogin(); const cancel = c.cancelLogin();
-	f.connections[0].emit({ type: 'login-started', code: 'LATE' });
+	f.connections[0].emit({ type: 'login-started', url: 'https://login', code: 'LATE' });
 	assert.equal(c.loginCode, undefined); c.openLoginPage(); assert.equal(f.connections[0].openedLogin, 0);
 	release(); await login; await cancel; assert.equal(c.state, 'ready');
 	f.connections[0].account.connected = true;

@@ -1,5 +1,7 @@
 import { chmod, mkdir, realpath, rm } from 'node:fs/promises';
+import { rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { CodexAdmissionError } from './protocol';
 
 /** Persistent, separately connected account; exclusive, private process lifetime. No project cwd. */
 export class CodexProfile {
@@ -7,6 +9,7 @@ export class CodexProfile {
 	public readonly codexHome: string;
 	public readonly env: NodeJS.ProcessEnv;
 	private readonly lease: string;
+	private readonly releaseOnExit = () => { rmSync(this.lease, { recursive: true, force: true }); };
 
 	private constructor(root: string) {
 		this.lease = join(root, 'lease');
@@ -25,7 +28,15 @@ export class CodexProfile {
 		const profile = new CodexProfile(await realpath(directory));
 		await chmod(directory, 0o700);
 		// Exclusive ownership, not a stale-lock recovery heuristic. A concurrent owner fails.
-		await mkdir(profile.lease, { mode: 0o700 });
+		try { await mkdir(profile.lease, { mode: 0o700 }); }
+		catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+			throw new CodexAdmissionError(`Another Studio owns the Codex account profile, or one was killed before releasing it. `
+				+ `Close the other Studio, or remove ${profile.lease} to recover.`);
+		}
+		// The owner releases its own lease even when it is signalled away; a lease is only ever
+		// removed by the process holding it, never reclaimed from a live owner.
+		process.once('exit', profile.releaseOnExit);
 		try {
 			await mkdir(profile.codexHome, { recursive: true, mode: 0o700 });
 			for (const directory of [profile.cwd, profile.env.HOME, profile.env.TMPDIR]) {
@@ -39,5 +50,8 @@ export class CodexProfile {
 	}
 
 	/** Only call after joining process exit; account credentials are never copied or removed here. */
-	public async release(): Promise<void> { await rm(this.lease, { recursive: true }); }
+	public async release(): Promise<void> {
+		process.removeListener('exit', this.releaseOnExit);
+		await rm(this.lease, { recursive: true });
+	}
 }

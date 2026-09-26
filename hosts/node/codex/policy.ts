@@ -12,16 +12,29 @@ export class CodexPolicy {
 	public readonly args: string[];
 
 	public constructor(provider?: CodexProvider) {
-		const features: Record<string, Json> = { skip_host_skill_discovery: true };
-		for (const feature of ['shell_tool', 'unified_exec', 'code_mode_host', 'plugins', 'apps', 'browser_use', 'computer_use',
-			'multi_agent', 'memories', 'hooks', 'workspace_dependencies', 'image_generation', 'view_image', 'goals',
-			'shell_snapshot', 'skill_mcp_dependency_install']) features[feature] = false;
+		// Tool dispatch runs through the code-mode host in this Codex version: with the host off,
+		// `dispatch_tool_call_with_state` refuses every Studio tool call. It is the supported
+		// configuration, and the one the official editor integration launches with.
+		// Studio grants Codex the full capability set of the CLI it embeds. Approvals stay off:
+		// the session answers no approval request, so `never` lets Codex act on its own authority
+		// instead of asking a channel that would refuse it and stall the turn.
+		const features: Record<string, Json> = { skip_host_skill_discovery: true, code_mode_host: true };
+		for (const feature of ['shell_tool', 'unified_exec', 'plugins', 'apps', 'browser_use', 'computer_use',
+			'multi_agent', 'hooks', 'workspace_dependencies', 'image_generation', 'view_image', 'goals',
+			'shell_snapshot', 'skill_mcp_dependency_install']) features[feature] = true;
+		// `memories` runs a second Memory Writing Agent inference after every turn. That is billed
+		// work the user did not ask for, and it breaks the guarantee that browsing or editing the
+		// queue starts no inference. Capability features stay on; this one bills, so it stays off.
+		features.memories = false;
 		this.config = {
-			approval_policy: 'never', sandbox_mode: 'read-only', web_search: 'disabled',
+			approval_policy: 'never', sandbox_mode: 'danger-full-access', web_search: 'live',
 			// Disable Codex's lossy text truncation for every JS-representable tool result.
 			// These are exact JSON receipts, not shell logs. Provider context limits still apply.
 			tool_output_token_limit: Number.MAX_SAFE_INTEGER,
 			mcp_servers: {}, notify: [], features, project_doc_max_bytes: 0,
+			// A self-update check reaches api.github.com on startup. That is not a capability the
+			// session asked for, and it is the one remote call unrelated to running a turn.
+			check_for_update_on_startup: false,
 			cli_auth_credentials_store: 'file', mcp_oauth_credentials_store: 'file',
 			orchestrator: { skills: { enabled: false }, mcp: { enabled: false } },
 			tools: { experimental_request_user_input: { enabled: false }, update_plan: { enabled: false } },
@@ -50,7 +63,7 @@ export class CodexPolicy {
 			}
 		}
 		if (!sessionFlags || !isDeepStrictEqual(read.config.mcp_servers, {}) || read.config.approval_policy !== 'never'
-			|| read.config.sandbox_mode !== 'read-only' || read.config.web_search !== 'disabled'
+			|| read.config.sandbox_mode !== 'danger-full-access' || read.config.web_search !== 'live'
 			|| read.config.tool_output_token_limit !== this.config.tool_output_token_limit) {
 			throw new CodexAdmissionError('Codex did not admit the Studio capability policy');
 		}

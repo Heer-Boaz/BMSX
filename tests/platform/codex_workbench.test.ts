@@ -77,7 +77,8 @@ test('real Codex tool exchange reads unsaved models and hands off a shared revie
 	assert.equal(main.buffer.getText(), before);
 	assert.equal(models.get({ domain: 0, path: 'helper.lua' })!.dirty, false);
 	assert.ok(JSON.stringify(model.requests[2]).includes('UNSAVED COMMENT'));
-	assert.deepEqual(model.requests[0].tools.map(tool => tool.name), STUDIO_SOURCE_TOOLS.map(tool => tool.name));
+	const names = model.requests[0].tools.map(tool => tool.name);
+	for (const tool of STUDIO_SOURCE_TOOLS) assert.ok(names.includes(tool.name), tool.name);
 	const evidence = outputs(model.requests[3]).slice(3);
 	assert.deepEqual(evidence.map(result => result.status), ['ready', 'ready']);
 	assert.ok(evidence.every(result => result.diagnostics.some(marker => marker.message.includes("'old' is not defined"))));

@@ -56,12 +56,12 @@ export class CodexHistory {
 		if (this.loaded) return this.selected!;
 		const admission = this.selected
 			? await this.rpc.request<ThreadAdmission>('thread/resume', { threadId: this.selected.id,
-				cwd: this.cwd, sandbox: 'read-only', approvalPolicy: 'never', excludeTurns: true })
-			: await this.rpc.request<ThreadAdmission>('thread/start', { cwd: this.cwd, sandbox: 'read-only', approvalPolicy: 'never',
+				cwd: this.cwd, sandbox: 'danger-full-access', approvalPolicy: 'never', excludeTurns: true })
+			: await this.rpc.request<ThreadAdmission>('thread/start', { cwd: this.cwd, sandbox: 'danger-full-access', approvalPolicy: 'never',
 				ephemeral: false, environments: [], selectedCapabilityRoots: [],
 				dynamicTools: this.tools.map(tool => ({ type: 'function', ...tool })) });
 		if (admission.cwd !== this.cwd || admission.approvalPolicy !== 'never'
-			|| admission.sandbox.type !== 'readOnly' || admission.sandbox.networkAccess !== false) {
+			|| admission.sandbox.type !== 'dangerFullAccess') {
 			throw new CodexAdmissionError('Codex thread changed the admitted sandbox');
 		}
 		this.selected = threadSummary(admission.thread);

@@ -25,8 +25,8 @@ silent compatibility path or guessed SDK types. Generated files were inspected
 outside the checkout; the test does not import a whole external DTO tree into
 Studio.
 
-The real stdio process accepts initialize/initialized, an ephemeral read-only
-thread with experimental dynamic tools, and turn/start. A dynamic request names
+The real stdio process accepts initialize/initialized, a thread carrying the
+admitted sandbox and experimental dynamic tools, and turn/start. A dynamic request names
 the thread, turn, call and JSON-RPC request separately. Returning `inputText`
 content reaches the next model request. `turn/interrupt` completes a turn waiting
 for a client tool; EOF also drains that pending process without forced termination.
@@ -62,10 +62,18 @@ through Studio" would not repair this ownership error.
    rewrite existing CLI credentials as a shortcut.
 2. **Pinned capability set.** Before thread creation, inspect the external
    process's effective configuration and reject unowned MCP/process capabilities.
-   Disable shell/unified execution, code-mode host, plugins/apps, browser/computer
-   use, image generation, hooks, workspace dependencies, memories, multi-agent
-   and goal features for this profile. Admit only the measured version and
-   actual read-only/no-network sandbox result, with no permission escalation.
+   This profile grants the embedded CLI its full capability set: shell and unified
+   execution, the code-mode host, plugins/apps, browser/computer use, image
+   generation, hooks, workspace dependencies, multi-agent and goal features, with
+   a `danger-full-access` sandbox and live web search. Two exceptions are measured,
+   not stylistic: `memories` runs a second billed inference after every turn and
+   breaks the guarantee that browsing starts no inference, and the startup update
+   check reaches api.github.com for no capability the session asked for. Admission
+   still binds: the measured CLI version, the launch policy actually in effect with
+   no unowned configuration layer, and the sandbox the thread reports back.
+   Tool dispatch requires the code-mode host; with it off every Studio tool call
+   fails in `dispatch_tool_call_with_state`. Approvals stay `never` because the
+   session answers no approval request.
 3. **No arbitrary JSON-RPC forwarding.** Browser requests express Studio
    operations, not Codex method names/config/cwd/permissions. The Node owner
    constructs thread/turn parameters, owns request correlation and rejects
@@ -137,9 +145,11 @@ process-launch service:
 The actual adapter advertises only the supplied `studio_read` in the offline
 fixture: disabling orchestrator skills and host skill discovery removes the
 earlier `skills` namespace. This is the tested model metadata/version, **not** a
-claim that all model catalogs expose identical utility tools. No builtin that
-can write source is admitted. Unadvertised shell/patch/skills/permission attempts
-are rejected. There is no OS-wide protection against a hostile same-user process
+claim that all model catalogs expose identical utility tools. The CLI's own
+builtins are admitted alongside the Studio tools, so a turn can write source and
+run commands directly. What stays bounded is the browser boundary: the session
+forwards only `item/tool/call` for a registered Studio tool and refuses every
+other server request. There is no OS-wide protection against a hostile same-user process
 altering the binary or directories; this is process/capability ownership, not an
 OS sandbox certification.
 

@@ -83,7 +83,15 @@ export async function createCodexAccountProxy(t: TestContext) {
 			}
 		} else {
 			assert.equal(host, 'chatgpt.com'); assert.equal(request.method, 'GET');
-			assert.equal(request.headers.authorization, `Bearer ${CODEX_ACCOUNT_FIXTURE.accessToken}`);
+			// Account-scoped reads must carry the account token. The plugin catalogue is public,
+			// so it is served empty rather than asserted against a token it never carries.
+			if (path.startsWith('/backend-api/plugins/')) { response.writeHead(200,
+				{ 'Content-Type': 'application/json' }).end(JSON.stringify({ plugins: [], items: [] })); return; }
+			assert.equal(request.headers.authorization, `Bearer ${CODEX_ACCOUNT_FIXTURE.accessToken}`,
+				`account request without the account token: ${path}`);
+			// Account-scoped plugin state: authorized like any account read, and empty in this fixture.
+			if (path.startsWith('/backend-api/ps/plugins/')) { response.writeHead(200,
+				{ 'Content-Type': 'application/json' }).end(JSON.stringify({ plugins: [] })); return; }
 			switch (path) {
 				case '/backend-api/codex/models': result = { models: [] }; break; // Account-only fixture advertises no models.
 				case '/backend-api/wham/config/bundle': result = {}; break;
@@ -100,7 +108,11 @@ export async function createCodexAccountProxy(t: TestContext) {
 	proxy.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });
 	proxy.on('connect', (request, socket, head) => {
 		tunnels.push(request.url!);
-		assert.ok(['auth.openai.com:443', 'chatgpt.com:443'].includes(request.url!), `Unexpected proxy target: ${request.url}`);
+		// Anything outside the pinned account hosts is refused, not forwarded: a plugin catalogue
+		// or update probe may be attempted, but nothing leaves this fixture.
+		if (!['auth.openai.com:443', 'chatgpt.com:443'].includes(request.url!)) {
+			socket.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return;
+		}
 		socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
 		if (head.length > 0) socket.unshift(head);
 		server.emit('connection', socket);
