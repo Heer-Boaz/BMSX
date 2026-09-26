@@ -19,7 +19,10 @@ export async function createAssistantStudioFixture(t: TestContext, evidenceName:
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-studio-assistant-'));
 	let browser: Browser | undefined;
 	let closeServer: (() => Promise<void>) | undefined;
-	t.after(async () => { await browser?.close(); await closeServer?.(); await rm(root, { recursive: true }); });
+	// An enabled plugin feature clones into the profile's .tmp while the process winds down,
+	// so removal races a writer it does not own. Retry rather than fail the finished test.
+	t.after(async () => { await browser?.close(); await closeServer?.();
+		await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }); });
 	await build({ entryPoints: ['tests/conformance/runtime_replay/studio_assistant.ts'], bundle: true, platform: 'browser', format: 'esm', target: 'es2020',
 		outfile: join(root, 'test.js'), tsconfig: 'tsconfig.base.json', loader: { '.glsl': 'text', '.wgsl': 'text', '.png': 'dataurl' } });
 	await writeFile(join(root, 'index.html'), '<!doctype html><link rel="icon" href="data:,"><style>body{margin:0;background:#000}canvas{image-rendering:pixelated}</style><canvas width="256" height="212"></canvas>');
@@ -30,7 +33,7 @@ export async function createAssistantStudioFixture(t: TestContext, evidenceName:
 	const profileDirectory = join(root, 'profile');
 	// No real browser is launched from a test; the request is recorded and asserted instead.
 	const opened: string[] = [];
-	const api = new CodexHttpApi({ ...options, profileDirectory, openLoginPage: url => { opened.push(url); },
+	const api = new CodexHttpApi({ ...options, profileDirectory, workspaceRoot: root, openLoginPage: url => { opened.push(url); },
 		tools: [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS, ...STUDIO_RUNTIME_TOOLS] });
 	const authority = new WorkspaceHttpSession('127.0.0.1');
 	const observations = { connects: 0, commands: [] as string[], errors: [] as Error[], opened };

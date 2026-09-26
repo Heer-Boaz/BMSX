@@ -86,6 +86,9 @@ const { STUDIO_TEST_TOOLS } = await import('../ide/workbench/services/assistant/
 const { STUDIO_RUNTIME_TOOLS } = await import('../ide/workbench/services/assistant/runtime_tool_protocol.ts');
 const assistant = new CodexHttpApi({ tools: [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS, ...STUDIO_RUNTIME_TOOLS],
 	openLoginPage: openUrlInBrowser,
+	// The same root the workspace API serves sources from, so a Studio source path and a shell
+	// path name the same file.
+	workspaceRoot: projectRoot,
 	profileDirectory: path.join(process.env.XDG_STATE_HOME ?? path.join(os.homedir(), '.local', 'state'), 'bmsx', 'studio-codex') });
 
 async function handleCartsApi(req, res, url) {

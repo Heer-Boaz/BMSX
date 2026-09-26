@@ -40,6 +40,12 @@ type TurnLifetime = {
 export type CodexSessionOptions = {
 	signal: AbortSignal;
 	profileDirectory: string;
+	/**
+	 * Where a turn works. Studio source handles carry project-relative paths, so the thread
+	 * shares that origin and a shell command addresses the same files the tools expose.
+	 * The account profile stays elsewhere: this is the work tree, not the CLI's home.
+	 */
+	workspaceRoot: string;
 	executable?: string;
 	provider?: CodexProvider;
 	tools: readonly CodexTool[];
@@ -69,7 +75,7 @@ export class CodexSession {
 		this.toolNames = new Set(options.tools.map(tool => tool.name));
 		this.rpc = new CodexStdio(options.executable ?? 'codex', policy.args, profile.cwd, profile.env,
 			message => this.receive(message));
-		this.history = new CodexHistory(this.rpc, profile.cwd, options.tools);
+		this.history = new CodexHistory(this.rpc, options.workspaceRoot, options.tools);
 		this.rpc.signal.addEventListener('abort', () => this.retire(), { once: true });
 		options.signal.addEventListener('abort', this.onAbort, { once: true });
 		this.closed = this.rpc.closed.then(async exit => {

@@ -21,7 +21,7 @@ export class CodexHttpApi {
 	private closing = false;
 
 	/** Node composition supplies the browser opener; the browser transport never chooses one. */
-	public constructor(private readonly options: Pick<CodexSessionOptions, 'profileDirectory' | 'executable' | 'provider' | 'tools'>
+	public constructor(private readonly options: Pick<CodexSessionOptions, 'profileDirectory' | 'workspaceRoot' | 'executable' | 'provider' | 'tools'>
 		& { openLoginPage: (url: string, onFailure: (error: Error) => void) => void }) {}
 
 	public async handle(request: IncomingMessage, response: ServerResponse, pathname: string): Promise<void> {

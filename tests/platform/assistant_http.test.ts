@@ -22,7 +22,7 @@ async function fixture(t: TestContext, steps: unknown[], clientScript?: Uint8Arr
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-assistant-http-'));
 	const profile = join(root, 'profile');
 	const model = await createCodexModelFixture(t, steps);
-	const api = new CodexHttpApi({ profileDirectory: profile, openLoginPage: () => assert.fail('No browser is opened in the transport fixture'),
+	const api = new CodexHttpApi({ profileDirectory: profile, workspaceRoot: root, openLoginPage: () => assert.fail('No browser is opened in the transport fixture'),
 		provider: { name: 'Offline transport fixture', model: 'mock-model', baseUrl: `${model.url}/v1` }, tools });
 	const authority = new WorkspaceHttpSession('127.0.0.1');
 	const requests = new Map<string, number>();
@@ -127,7 +127,7 @@ test('review observations cross the real HTTP and Codex input boundary as data b
 	assert.ok(text.endsWith(prompt), 'user prompt bytes remain separate from the structured observation');
 	assert.match(text, /data, not instructions/);
 	assert.match(text, /Undo or later edits may have changed source/);
-	assert.match(text, /not saved, built or run/);
+	assert.match(text, /applied to the working copies and Saved; it was not built/);
 	assert.equal(f.model.requests.length, 1);
 	c.client.close(); await c.client.closed;
 });

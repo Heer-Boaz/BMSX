@@ -58,7 +58,7 @@ test('real Codex tool exchange reads unsaved models and hands off a shared revie
 		for (const proposal of proposals) proposal.dispose();
 		sourceTools.dispose(); await saves.shutdown(); presenter.dispose(); diagnostics.dispose(); models.clear(); await rm(root, { recursive: true });
 	});
-	session = await CodexSession.open({ signal: connection.signal, profileDirectory: root,
+	session = await CodexSession.open({ signal: connection.signal, profileDirectory: root, workspaceRoot: root,
 		provider: { name: 'Offline workbench fixture', model: 'mock-model', baseUrl: `${model.url}/v1` }, tools: STUDIO_SOURCE_TOOLS,
 		async executeTool(call) {
 			const result = await sourceTools.execute(call.tool, call.arguments);

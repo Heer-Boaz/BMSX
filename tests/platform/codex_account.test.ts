@@ -36,7 +36,7 @@ async function sessionFixture(t: TestContext, mode: string, authUrl?: string) {
 	const f = await createCodexAccountFixture(t, { relayMode: mode, authUrl }), events: CodexSessionEvent[] = [];
 	let changed!: () => void;
 	const accountChanged = new Promise<void>(resolve => { changed = resolve; });
-	const session = await CodexSession.open({ signal: t.signal, profileDirectory: join(f.root, 'profile'), executable: f.executable, tools: [],
+	const session = await CodexSession.open({ signal: t.signal, profileDirectory: join(f.root, 'profile'), workspaceRoot: f.root, executable: f.executable, tools: [],
 		executeTool: async () => assert.fail('No tools in account tests'), onEvent: event => { events.push(event); if (event.type === 'account-changed') changed(); } });
 	t.after(async () => { const exit = await session.close(); assert.equal(exit.forced, false); await rm(f.root, { recursive: true }); });
 	return { ...f, session, events, accountChanged };
@@ -77,7 +77,7 @@ test('loopback authorization opens an admitted browser URL and completes from th
 	t.after(async () => { if (session) assert.equal((await session.close()).forced, false); });
 	const f = await createCodexAccountProxy(t), events: CodexSessionEvent[] = [];
 	const changed = Promise.withResolvers<void>();
-	session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), tools: [],
+	session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), workspaceRoot: f.root, tools: [],
 		executeTool: async () => assert.fail('No source tools while authenticating'),
 		onEvent: event => { events.push(event); if (event.type === 'account-changed') changed.resolve(); } });
 	assert.equal((await session.readAccount()).account, null);
@@ -131,7 +131,7 @@ test('successful real device-code exchange persists only the private profile and
 	t.after(async () => { if (session) assert.equal((await session.close()).forced, false); });
 	const f = await createCodexAccountProxy(t), events: CodexSessionEvent[] = [];
 	const changed = Promise.withResolvers<void>();
-	session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), tools: [],
+	session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), workspaceRoot: f.root, tools: [],
 		executeTool: async () => assert.fail('No source tools while authenticating'),
 		onEvent: event => { events.push(event); if (event.type === 'account-changed') changed.resolve(); } });
 	assert.equal((await session.readAccount()).account, null);
@@ -148,7 +148,7 @@ test('successful real device-code exchange persists only the private profile and
 	assert.equal(saved.tokens.refresh_token, CODEX_ACCOUNT_FIXTURE.refreshToken);
 	assert.equal((await stat(path)).mode & 0o777, 0o600);
 	assert.equal((await session.close()).forced, false);
-	session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), tools: [],
+	session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), workspaceRoot: f.root, tools: [],
 		executeTool: async () => assert.fail('No source tools while authenticating'), onEvent: event => events.push(event) });
 	assert.deepEqual((await session.readAccount()).account, account.account, 'an explicit new process uses only the persisted Studio profile');
 	await session.signOut();
@@ -168,7 +168,7 @@ for (const operation of ['startTurn', 'startLogin', 'signOut'] as const) {
 		const f = await createCodexAccountProxy(t), admission = Promise.withResolvers<void>(), changed = Promise.withResolvers<void>();
 		const message = operation === 'startTurn' ? /Finish the current conversation\/account operation/ : operation === 'startLogin'
 			? /Finish the current account\/conversation/ : /Finish or cancel the current operation/;
-		session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), tools: [],
+		session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), workspaceRoot: f.root, tools: [],
 			executeTool: async () => assert.fail('No source tools while authenticating'), onEvent: event => {
 				if (event.type === 'account-changed') changed.resolve();
 				if (event.type !== 'account-refreshing' || checked) return;

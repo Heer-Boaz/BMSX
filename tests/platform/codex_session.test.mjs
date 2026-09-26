@@ -19,7 +19,7 @@ async function fixture(t, steps, executeTool, prepare) {
 	const model = await createCodexModelFixture(t, steps);
 	const events = [], waiters = [];
 	const lifetime = new AbortController();
-	const options = { profileDirectory, signal: lifetime.signal, provider: { name: 'Offline Studio fixture', model: 'mock-model', baseUrl: `${model.url}/v1` },
+	const options = { profileDirectory, workspaceRoot: root, signal: lifetime.signal, provider: { name: 'Offline Studio fixture', model: 'mock-model', baseUrl: `${model.url}/v1` },
 		tools, executeTool, onEvent(event) {
 			events.push(event);
 			for (let i = waiters.length - 1; i >= 0; --i) {
