@@ -203,7 +203,7 @@ export class CodexSession {
 		this.policy.admit(await this.rpc.request('config/read', { includeLayers: true, cwd: this.profile.cwd }));
 		if (this.history.selected !== thread || this.selecting || this.stopping || this.retired) throw new Error('The conversation changed before queue admission');
 		this.queueEnabled = true;
-		await this.rpc.request('thread/queue/add', { threadId: thread.id, clientUserMessageId: randomUUID(), input: codexMessageInput(prompt, reviews) });
+		await this.rpc.request('thread/queue/add', { threadId: thread.id, clientUserMessageId: randomUUID(), input: codexMessageInput(prompt, reviews, this.options.workspaceRoot) });
 		// An unloaded history selection has no native event subscription. Refresh
 		// after its explicit mutation without resuming the thread just to observe it.
 		if (this.history.selected === thread && !this.history.loaded) this.refreshQueue();
@@ -224,7 +224,7 @@ export class CodexSession {
 		const turn = this.active;
 		if (!turn || turn.id !== turnId || turn.controller.signal.aborted || this.stopping) throw new Error('The selected turn is no longer accepting direct messages');
 		const result = await this.rpc.request<{ turnId: string }>('turn/steer', {
-			threadId: this.history.selected!.id, expectedTurnId: turnId, input: codexMessageInput(prompt, reviews),
+			threadId: this.history.selected!.id, expectedTurnId: turnId, input: codexMessageInput(prompt, reviews, this.options.workspaceRoot),
 		});
 		return result.turnId;
 	}
@@ -259,7 +259,7 @@ export class CodexSession {
 		turn.controller.signal.throwIfAborted();
 		const result = queued
 			? await this.rpc.request<{ turn: CodexTurn }>('thread/queue/start', { threadId: this.history.selected!.id })
-			: await this.rpc.request<{ turn: CodexTurn }>('turn/start', { threadId: this.history.selected!.id, input: codexMessageInput(prompt, reviews) });
+			: await this.rpc.request<{ turn: CodexTurn }>('turn/start', { threadId: this.history.selected!.id, input: codexMessageInput(prompt, reviews, this.options.workspaceRoot) });
 		if (turn.id !== undefined && turn.id !== result.turn.id) throw new CodexProtocolError('Codex turn response changed its identity');
 		turn.id = result.turn.id;
 		return result;
