@@ -21,6 +21,9 @@ export class WorkspaceEditReviewInput extends ReadonlyEditorInput<`edit-review:$
 	public heading = '';
 	public status = '';
 	public renderedState: WorkspaceEditProposalState | undefined;
+	/** Save outcome for the applied edit: undefined until apply, then '' or the failure. */
+	public saveFailure: string | undefined;
+	public saving = false;
 	public projectedWidth = -1;
 	public projectedFont: EditorFont | null = null;
 	public constructor(public readonly proposal: WorkspaceEditProposal) {

@@ -102,8 +102,11 @@ for (const backend of backends) test(`Studio ${backend}: actual browser, HTTP le
 	const afterUndo = outputs(model.requests[8]).slice(1);
 	assert.deepEqual(afterUndo.map(read => read.source), reads.map(read => read.source), 'fresh reads see Undo, not the historical applied outcome');
 	assert.ok(afterUndo.every((read, index) => read.receipt !== reads[index].receipt), 'a review observation never refreshes an old source receipt');
+	// Apply now reaches disk for exactly the reviewed files. The later Undo is a buffer change,
+	// so what was approved stays written until something Saves again.
 	for (const path of ['carts/nemesis_s/cart.lua', 'carts/nemesis_s/res/data/nemesis_s_stage.yaml']) {
-		assert.equal(await readFile(join(root, path), 'utf8'), await readFile(path, 'utf8'), 'review never writes authored source files');
+		assert.notEqual(await readFile(join(root, path), 'utf8'), await readFile(path, 'utf8'),
+			'an approved review writes the authored source file');
 	}
 	await writeFile(join(evidence, `conversation-${backend}-result.json`), JSON.stringify(result));
 });

@@ -116,6 +116,7 @@ import { closeBlockingWorkbenchModal, drawBlockingWorkbenchModal, handleBlocking
 import { drawProblemsPanel, problemsPanel } from './workbench/contrib/problems/panel/controller';
 import { ResourcePanelController } from './workbench/contrib/resources/panel/controller';
 import { IdeCommandController } from './commands/controller';
+import { saveTextFileFromCommand } from './commands/source_save';
 import { initializeNavigationState } from './navigation/navigation_history';
 import { EditorNavigationController } from './workbench/contrib/resources/navigation';
 import { BehaviorLensController } from './workbench/contrib/behavior_lens/controller';
@@ -138,6 +139,8 @@ import type { ChromeRenderContext } from './workbench/render/chrome_context';
 import { createResourceEditorResolver } from './workbench/contrib/resources/editor_contributions';
 import type { ResourceEditorResolver } from './workbench/services/editor/resource_editor_resolver';
 import { EditorPanes } from './workbench/services/editor/editor_panes';
+import { openEditorTab } from './workbench/ui/tabs';
+import { resolveCodeEditorInput, retainModelCodeTabContext } from './workbench/ui/code_tab/contexts';
 import { CodeEditorPane } from './workbench/contrib/code_editor/editor_pane';
 import { ResourceViewerEditorPane } from './workbench/contrib/resources/editor_pane';
 import { BehaviorLensEditorPane } from './workbench/contrib/behavior_lens/editor_pane';
@@ -336,7 +339,19 @@ export class RuntimeCartEditor implements CartEditor {
 		this.editorPanes = new EditorPanes({
 			terminal: () => new TerminalPane(this.resourcePanel, this.clipboard, this.quickInput),
 			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.quickInput),
-			workspace_edit_review: () => new WorkspaceEditReviewPane(this.resourcePanel),
+			workspace_edit_review: () => new WorkspaceEditReviewPane(this.resourcePanel, {
+				// The editor owns the tab group and the ordinary Save service; the review pane asks.
+				reveal: models => {
+					for (const model of models) openEditorTab(this.editorPanes, resolveCodeEditorInput(retainModelCodeTabContext(model)));
+				},
+				save: async models => {
+					for (const model of models) {
+						const result = await saveTextFileFromCommand(this.textFileSaves, model, this, this.sources);
+						if (result.status === 'failed' || model.dirty) return `${model.resource.path} was not saved`;
+					}
+					return undefined;
+				},
+			}),
 			code_editor: () => new CodeEditorPane(
 				this,
 				this.clipboard,

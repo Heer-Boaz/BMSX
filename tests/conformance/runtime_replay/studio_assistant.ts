@@ -96,9 +96,13 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	check(cycles() === position && !test.execution.userPaused, 'assistant: opening edit review never releases the workbench hold');
 	await test.click(review.actionBar.items.find(item => item.command === 'workspaceEditReview.apply')!.bounds);
 	check(proposal.state === 'applied' && main.buffer.getText().startsWith('-- Codex reviewed\n'), 'visible Apply edits ordinary model');
-	check(main.lastSavedSource === saved && ide.sources.currentBlua32Media === media, 'Apply does not Save or install');
+	// Apply reveals each edited source, applies through the ordinary history and then Saves.
+	await until(() => review.saveFailure !== undefined, 'assistant: Apply saves every reviewed file');
+	check(review.saveFailure === '' && main.lastSavedSource !== saved, 'Apply Saves the reviewed sources');
+	check(ide.sources.currentBlua32Media === media, 'Apply still installs nothing');
 	await test.clickTab(mainTab.id); await press('ControlLeft', 'KeyZ');
-	check(main.buffer.getText() === before && proposal.files[1].model.dirty === false, 'Lua Undo restores both Lua and YAML');
+	// Undo walks back the saved edit, so both files are dirty against what Apply wrote.
+	check(main.buffer.getText() === before && proposal.files[1].model.dirty === true, 'Lua Undo restores both Lua and YAML');
 	await test.clickTab(view.id);
 	check(view.transcript.rows.some(row => row.text === 'REVIEW: APPLIED'), 'Apply settles the transcript heading even while its pane was detached');
 	await capture('applied');
