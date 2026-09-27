@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
-import { CODEX_VERSION, CodexPolicy, type CodexProvider } from './policy';
+import { CODEX_AUDITED_VERSION, CodexPolicy, type CodexProvider } from './policy';
 import { CodexProfile } from './profile';
 import { CodexStdio, type CodexProcessExit } from './stdio';
 import { STUDIO_ACCOUNT_LOGIN_URL, type AssistantHistoryPage, type AssistantLoginMethod, type AssistantTranscriptPage, type AssistantReviewUpdate, type AssistantThread } from '../../common/assistant_protocol';
@@ -92,9 +92,7 @@ export class CodexSession {
 		try {
 			const version = await promisify(execFile)(options.executable ?? 'codex', ['--version'],
 				{ cwd: profile.cwd, env: profile.env, timeout: 5000, windowsHide: true, signal: options.signal });
-			if (version.stdout.trim() !== `codex-cli ${CODEX_VERSION}`) {
-				throw new CodexAdmissionError(`Studio requires codex-cli ${CODEX_VERSION}; the installed protocol needs a new audit`);
-			}
+			const installed = version.stdout.trim();
 			const policy = new CodexPolicy(options.provider);
 			options.signal.throwIfAborted();
 			session = new CodexSession(profile, options, policy);
@@ -105,6 +103,12 @@ export class CodexSession {
 			if (initialized.codexHome !== profile.codexHome) throw new CodexAdmissionError('Codex did not use the Studio account profile');
 			session.rpc.send({ method: 'initialized', params: {} });
 			policy.admit(await session.rpc.request('config/read', { includeLayers: true, cwd: profile.cwd }));
+			// Said once the capability gates have accepted this process, so it reads as context
+			// rather than as a warning about something that might still refuse.
+			if (installed !== `codex-cli ${CODEX_AUDITED_VERSION}`) {
+				options.onEvent({ type: 'notice', text: `${installed} is running; Studio was last audited against `
+					+ `codex-cli ${CODEX_AUDITED_VERSION}. The capability and thread gates accepted it.` });
+			}
 			return session;
 		} catch (error) {
 			if (session) await session.close(error as Error);

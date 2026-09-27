@@ -88,7 +88,7 @@ evaluation. The producer and native symbol contract are described in
 The existing server and conversation transport carry these tools. There is no
 new Codex control, background inspection feed, source install or hidden resume.
 Use a new conversation to admit the additional tool names: the installed Codex
-0.156.1 thread/resume protocol retains the thread's original dynamic tools;
+0.157.1 thread/resume protocol retains the thread's original dynamic tools;
 Studio binds this tool set at thread/start, not by rewriting stored history.
 
 ## Validation (2026-09-24)

@@ -43,7 +43,9 @@ test('pinned App Server with an isolated profile routes Studio tools without she
 	const output = model.requests[1].input.find(item => item.type === 'function_call_output');
 	assert.equal(output.output, 'UNSAVED STUDIO SNAPSHOT');
 	const tools = model.requests[0].tools.map(tool => tool.name);
-	assert.deepEqual(tools, ['request_user_input', 'skills', 'studio_read']);
+	// 0.157.1 no longer advertises a `skills` builtin in this profile; the audited surface is
+	// the observation, so it moves with the pinned version rather than being asserted from memory.
+	assert.deepEqual(tools, ['request_user_input', 'studio_read']);
 	await assert.rejects(access(codex.ambientMarker), { code: 'ENOENT' });
 	assert.equal(await readFile(codex.sourcePath, 'utf8'), 'return 42\n');
 });

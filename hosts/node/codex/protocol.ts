@@ -55,6 +55,8 @@ export type CodexSessionEvent =
 	| { type: 'message'; turnId: string; itemId: string; text: string }
 	| { type: 'account-refreshing' }
 	| { type: 'account-changed'; account: CodexAccount }
+	// A non-fatal observation from the process owner, shown as an ordinary status line.
+	| { type: 'notice'; text: string }
 	| { type: 'login-started'; url: string; code?: string }
 	| { type: 'login-completed'; success: boolean; error?: string }
 	| { type: 'closed'; error?: Error };

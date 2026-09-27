@@ -313,6 +313,7 @@ export class AssistantConversation {
 						: `Sign in at ${event.url}\nCode: ${event.code}\n/open opens the page; /copy-code copies the code; /cancel cancels sign-in. Your draft has not been sent.`);
 				}
 				break;
+			case 'notice': this.append('status', event.text); break;
 			case 'login-open-failed':
 				this.append('status', `Could not open your browser: ${event.error}\nOpen the address above yourself, or use /open to try again.`);
 				break;

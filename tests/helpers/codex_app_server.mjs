@@ -6,7 +6,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-export const CODEX_CONTRACT_VERSION = '0.156.1';
+export const CODEX_CONTRACT_VERSION = '0.157.1';
 
 /** Actual CLI/stdio protocol, private test home and no user credentials/config. */
 export async function createCodexContractFixture(t, providerUrl, ambientMcpEnabled = false) {

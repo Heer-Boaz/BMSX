@@ -1,7 +1,14 @@
 import { isDeepStrictEqual } from 'node:util';
 import { CodexAdmissionError, type Json } from './protocol';
 
-export const CODEX_VERSION = '0.156.1';
+/**
+ * The Codex build whose app-server protocol this adapter was last audited against. It is a
+ * record, not a requirement: the CLI updates often, and refusing on a version number turns
+ * every update into an outage while saying nothing about behaviour. Real drift is caught by
+ * the gates that describe it -- `CodexPolicy.admit`, the thread admission in `CodexHistory`
+ * and the request gate in `CodexSession.receive`.
+ */
+export const CODEX_AUDITED_VERSION = '0.157.1';
 
 /** Node composition chooses the provider, never a browser RPC or model tool. */
 export type CodexProvider = { model: string; name: string; baseUrl: string };

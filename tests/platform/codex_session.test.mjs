@@ -224,12 +224,16 @@ test('lease cancellation closes an admitted process and a cancelled open never a
 	await assert.rejects(access(join(f.profileDirectory, 'lease')), { code: 'ENOENT' });
 });
 
-test('a different CLI version is rejected before launching App Server and releases its lease', { timeout: 15000 }, async t => {
+// A version difference no longer refuses; it is reported. What must still hold is that a
+// binary which cannot speak the protocol fails cleanly instead of stranding the profile.
+test('a CLI that does not speak App Server fails cleanly and releases its lease', { timeout: 15000 }, async t => {
 	const f = await fixture(t, [], () => assert.fail());
 	const executable = join(f.root, 'wrong-codex');
 	await writeFile(executable, '#!/bin/sh\necho "codex-cli 0.0.0"\n', { mode: 0o700 });
 	f.options.executable = executable;
-	await assert.rejects(f.open(), /requires codex-cli 0.156.1/);
+	// Which failure wins is a race between the child's exit and our first write, so the
+	// guarantee is the clean refusal and the released lease, not the message.
+	await assert.rejects(f.open());
 	await assert.rejects(access(join(f.profileDirectory, 'lease')), { code: 'ENOENT' });
 	assert.equal(f.model.requests.length, 0);
 });

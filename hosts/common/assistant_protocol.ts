@@ -49,6 +49,7 @@ export type AssistantEvent =
 	| { type: 'tool-cancelled'; requestId: string }
 	| { type: 'account-refreshing' }
 	| { type: 'account-changed'; account: AssistantAccount }
+	| { type: 'notice'; text: string }
 	// A device code is shown only when the browser cannot reach the loopback callback.
 	| { type: 'login-started'; url: string; code?: string }
 	// The host could not hand the address to a browser; the address stays in the transcript.

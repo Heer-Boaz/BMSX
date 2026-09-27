@@ -57,8 +57,12 @@ test('the ordinary server authorizes first and opens Codex only on explicit Conn
 	await assert.rejects(access(f.trace), { code: 'ENOENT' });
 	const response = await fetch(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${workspaceToken}` } });
 	assert.equal(response.status, 503);
-	assert.match(await response.text(), /requires codex-cli 0.156.1/);
-	assert.equal(await readFile(f.trace, 'utf8'), '--version\n');
+	assert.ok((await response.text()).length > 0, 'a CLI that cannot speak the protocol fails the connect with a reason');
+	// A version difference is reported, not refused, so the App Server is launched after the
+	// probe. The guarantee is the order and that neither runs before an explicit Connect.
+	const invocations = (await readFile(f.trace, 'utf8')).trim().split('\n');
+	assert.equal(invocations[0], '--version');
+	assert.ok(invocations[1]?.startsWith('app-server --stdio'), invocations[1]);
 	await access(join(f.state, 'bmsx', 'studio-codex', 'account'));
 	await assert.rejects(access(join(f.state, 'bmsx', 'studio-codex', 'lease')), { code: 'ENOENT' });
 	child.kill();

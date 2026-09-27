@@ -370,7 +370,7 @@ its capabilities, not another editor-specific source-writing path.
 ### Gate 5c: real external-process contract audit (adapter still open)
 
 [Codex process admission](studio_codex_process_contract.md) pins the locally
-generated 0.156.1 protocol and records five real-process/offline-model probes.
+generated 0.157.1 protocol and records five real-process/offline-model probes.
 They prove dynamic tool round-trip, rejected shell/patch calls, interruption and
 EOF teardown. The audit also disproved a security assumption: an empty MCP map
 override retains inherited servers and can still launch their processes. The
