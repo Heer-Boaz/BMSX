@@ -3,11 +3,12 @@ import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../..
 import { SCROLLBAR_MIN_THUMB_HEIGHT } from '../../common/constants';
 import { api } from '../../runtime/overlay_api';
 
-export type ScrollbarDragStart = { readonly pointer: number; readonly scroll: number };
+export type ScrollbarDragStart = { readonly pointer: number; readonly scroll: number; readonly scale: number };
 
 /** Retained thumb geometry. Content coordinates need not be pixels (code uses rows/columns). */
 export class Scrollbar {
 	public revision = 0;
+	public trackRevision = 0;
 	private readonly track = create_rect_bounds();
 	private readonly thumb = create_rect_bounds();
 	private visible = false;
@@ -25,10 +26,12 @@ export class Scrollbar {
 
 	/** Geometry changes recompute the range; repeated layout and position retain it. */
 	public layout(track: RectBounds, contentSize: number, viewportSize: number, scroll: number, minimum = 0): void {
+		const trackChanged = this.track.left !== track.left || this.track.top !== track.top
+			|| this.track.right !== track.right || this.track.bottom !== track.bottom;
 		if (this.contentSize !== contentSize || this.viewportSize !== viewportSize || this.minScrollValue !== minimum
-			|| this.track.left !== track.left || this.track.top !== track.top
-			|| this.track.right !== track.right || this.track.bottom !== track.bottom) {
+			|| trackChanged) {
 			this.revision += 1;
+			if (trackChanged) this.trackRevision++;
 			write_rect_bounds(this.track, track.left, track.top, track.right, track.bottom);
 			this.contentSize = contentSize;
 			this.viewportSize = viewportSize;
@@ -85,12 +88,14 @@ export class Scrollbar {
 			this.setScroll(this.minScrollValue + (pointer - this.trackStart - this.thumbLength / 2) * this.scrollTravel / this.thumbTravel);
 		}
 		// Capture the content position, not an inverse of the rounded display thumb.
-		return { pointer, scroll: this.scrollValue };
+		// Like VS Code's captured scrollbar state, gesture sensitivity stays fixed
+		// while virtual content refines its height underneath the pointer.
+		return { pointer, scroll: this.scrollValue, scale: this.scrollTravel / this.thumbTravel };
 	}
 
 	/** Capture owns the visible-track lifetime; this is the thumb/content datapath. */
 	public drag(pointer: number, start: ScrollbarDragStart): number {
-		this.setScroll(start.scroll + (pointer - start.pointer) * this.scrollTravel / this.thumbTravel);
+		this.setScroll(start.scroll + (pointer - start.pointer) * start.scale);
 		return this.scrollValue;
 	}
 }

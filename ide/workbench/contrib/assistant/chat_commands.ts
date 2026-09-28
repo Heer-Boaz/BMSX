@@ -79,7 +79,9 @@ export class AssistantChatCommands {
 			]), action => {
 				if (action.edit) {
 					input.editingQueuedId = item.message.id;
-					setFieldText(input.draft, item.message.text, true); input.draft.focusTarget.focus();
+					setFieldText(input.draft, item.message.text, true,
+						(item.message.references ?? []).map(ref => ({ from: ref.from, to: ref.to, data: ref.source })));
+					input.draft.focusTarget.focus();
 				} else void model.changeQueued({ type: 'queue-delete', id: item.message.id });
 			});
 		});
@@ -88,11 +90,12 @@ export class AssistantChatCommands {
 	public async submit(input: AssistantInput, direct = false): Promise<void> {
 		const text = input.draft.text, model = input.conversation;
 		if (input.commandPending || text.trim().length === 0) return;
+		const references = input.draft.annotations.map(span => ({ from: span.from, to: span.to, source: span.data }));
 		let accepted = true;
 		if (input.editingQueuedId !== undefined && text === '/cancel') {
 			input.editingQueuedId = undefined;
 		} else if (input.editingQueuedId !== undefined) {
-			accepted = await model.changeQueued({ type: 'queue-update', id: input.editingQueuedId, prompt: text });
+			accepted = await model.changeQueued({ type: 'queue-update', id: input.editingQueuedId, prompt: text, references });
 			if (accepted) input.editingQueuedId = undefined;
 		} else if (!direct && isAssistantCommand(input)) {
 			const end = text.search(/\s/), command = end === -1 ? text : text.slice(0, end), argument = end === -1 ? undefined : text.slice(end).trim();
@@ -118,7 +121,7 @@ export class AssistantChatCommands {
 				case '/help': model.notice('Enter runs a command. Ctrl+Enter sends a message, or queues it while Codex works. Ctrl+Shift+Enter / Direct steers the active turn. Stop pauses the queue without deleting it.\n/model, /effort, /fast, /history, /new, /older, /queue, /continue, /stop, /login, /logout, /open, /copy-code, /cancel\nClick a message and press Ctrl+C to copy it, including the sign-in address.\n/login signs in through your browser; /login device shows a code instead, for a browser on another machine.\nQueued messages capture fresh Studio source context when their turn starts. Direct messages keep the active turn context.'); break;
 				default: model.notice(`Unknown command: ${command}. Use / for commands.`); accepted = false;
 			}
-		} else accepted = await model.sendPrompt(text, direct);
+		} else accepted = await model.sendPrompt(text, direct, references);
 		// Never erase a draft that changed while a transport command was in flight.
 		if (accepted && !input.lifetime.signal.aborted && input.draft.text === text) setFieldText(input.draft, '', false);
 	}

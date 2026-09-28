@@ -1,4 +1,5 @@
-import type { AssistantConfiguration, AssistantHistoryEntry, AssistantHistoryPage, AssistantModelSelection, AssistantQueuedMessage, AssistantThread, AssistantTranscriptPage } from '../../common/assistant_protocol';
+import { codexPrompt, replaceCodexPrompt } from './input';
+import type { AssistantSourceReference, AssistantConfiguration, AssistantHistoryEntry, AssistantHistoryPage, AssistantModelSelection, AssistantQueuedMessage, AssistantThread, AssistantTranscriptPage } from '../../common/assistant_protocol';
 import type { CodexTextInput } from './input';
 import { CodexAdmissionError, type CodexTool, type CodexTurn } from './protocol';
 import type { CodexStdio } from './stdio';
@@ -38,7 +39,7 @@ export class CodexHistory {
 			for (const item of turn.items) {
 				switch (item.type) {
 					// Studio authors text-only inputs; review observations precede the unchanged user prompt.
-					case 'userMessage': entries.push({ kind: 'user', text: item.content.at(-1)!.text }); break;
+					case 'userMessage': entries.push({ kind: 'user', ...codexPrompt(item.content) }); break;
 					case 'agentMessage': entries.push({ kind: 'assistant', text: item.text }); break;
 					case 'dynamicToolCall': entries.push({ kind: 'status', text: `Historical tool: ${item.tool} (${item.status}). No active source/edit rights.` }); break;
 					case 'contextCompaction': entries.push({ kind: 'status', text: 'Conversation context compacted by Codex.' }); break;
@@ -89,15 +90,15 @@ export class CodexHistory {
 	}
 
 	public async queue(id: string): Promise<AssistantQueuedMessage[]> {
-		return (await this.readQueue(id)).map(item => ({ id: item.id, text: item.input.at(-1)!.text }));
+		return (await this.readQueue(id)).map(item => ({ id: item.id, ...codexPrompt(item.input) }));
 	}
 
-	public async updateQueued(threadId: string, id: string, prompt: string): Promise<void> {
+	public async updateQueued(threadId: string, id: string, prompt: string, references: readonly AssistantSourceReference[] = []): Promise<void> {
 		const item = (await this.readQueue(threadId)).find(item => item.id === id);
 		if (!item) throw new Error('That queued message has already been dispatched or removed');
 		// Editing the user prompt must not erase the review observations admitted
 		// with it. Native update replaces a full input, not just its final text.
-		item.input.at(-1)!.text = prompt;
+		replaceCodexPrompt(item.input, prompt, references);
 		await this.rpc.request('thread/queue/update', { threadId, queuedSubmissionId: id, input: item.input });
 	}
 

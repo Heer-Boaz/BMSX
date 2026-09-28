@@ -1,3 +1,4 @@
+import { FenwickPrefix } from '../../../common/fenwick';
 import { editorTextModelService } from '../../model/model_service';
 // start hot-path -- visual line layout and syntax highlight caching are editor-frame hot paths.
 // start required-state activeCodeEditor,editorViewState -- editor model/view and layout roots are owned singletons in their modules.
@@ -24,64 +25,6 @@ interface SliceResult {
 	endDisplay: number;
 }
 
-class FenwickPrefix {
-	private tree: number[] = [];
-	private treeSize = 0;
-
-	public reset(size: number): void {
-		this.treeSize = size;
-		this.tree.length = this.treeSize + 1;
-		for (let i = 0; i < this.tree.length; i += 1) {
-			this.tree[i] = 0;
-		}
-	}
-
-	public resizeOrClear(size: number): void {
-		if (this.treeSize !== size) {
-			this.reset(size);
-			return;
-		}
-		this.clear();
-	}
-
-	public clear(): void {
-		for (let i = 0; i < this.tree.length; i += 1) {
-			this.tree[i] = 0;
-		}
-	}
-
-	public get length(): number {
-		return this.treeSize;
-	}
-
-	public add(index: number, delta: number): void {
-		let i = index + 1;
-		while (i <= this.treeSize) {
-			this.tree[i] += delta;
-			i += i & -i;
-		}
-	}
-
-	public set(index: number, value: number): void {
-		const current = this.prefixSum(index + 1) - this.prefixSum(index);
-		this.add(index, value - current);
-	}
-
-	public prefixSum(endExclusive: number): number {
-		const clamped = clamp(endExclusive, 0, this.treeSize);
-		let i = clamped;
-		let sum = 0;
-		while (i > 0) {
-			sum += this.tree[i];
-			i -= i & -i;
-		}
-		return sum;
-	}
-
-	public getTotal(): number {
-		return this.prefixSum(this.treeSize);
-	}
-}
 
 type VisualLineSegmentTarget = VisualLineSegment[] | ScratchBuffer<VisualLineSegment>;
 

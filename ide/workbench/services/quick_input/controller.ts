@@ -90,7 +90,6 @@ export class QuickInputController implements PointerCaptureTarget {
 		this.model.setInput(provider);
 		this.labelsDirty = true;
 		setFieldText(this.field, '', true);
-		this.model.filter('');
 		this.scrollbarPointer.setInput(this.model.viewport.scrollbar);
 		this.update();
 		resetBlink();

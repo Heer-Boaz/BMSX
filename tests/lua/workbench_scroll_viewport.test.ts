@@ -73,6 +73,17 @@ test('thumb capture travels outside its track without focusing or accepting a dr
 	f.pointer(121, 65, 0, 0, PRIMARY);
 });
 
+test('virtual height refinement retains the gesture, its sensitivity and the corrected reading anchor', t => {
+	const f = fixture(t);
+	f.pointer(121, 35, PRIMARY, PRIMARY); f.pointer(121, 55, PRIMARY);
+	const scroll = f.view.scrollTop;
+	f.view.layout(20, 30, 123, 130, 800); f.view.scrollbar.setScroll(scroll + 10); f.control.update();
+	assert.equal(f.capture.active, true);
+	f.pointer(121, 55, PRIMARY); assert.equal(f.view.scrollTop, scroll + 10, 'a stationary pointer does not overwrite layout correction');
+	f.pointer(121, 65, PRIMARY); assert.equal(f.view.scrollTop, 120, 'sensitivity is the captured 300/75, not the refined content ratio');
+	f.pointer(121, 65, 0, 0, PRIMARY); assert.equal(f.capture.active, false);
+});
+
 test('geometry change, blocking, lost input, cancel and detach end capture without rollback', t => {
 	const f = fixture(t);
 	for (const cancel of [

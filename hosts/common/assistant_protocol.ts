@@ -25,17 +25,20 @@ export type AssistantReviewUpdate = {
 };
 export type AssistantThread = { id: string; title: string; updatedAt: number };
 export type AssistantHistoryPage = { threads: AssistantThread[]; nextCursor: string | null };
-export type AssistantHistoryEntry = { kind: 'user' | 'assistant' | 'status'; text: string };
+/** UTF-16 ranges in the authored prompt, bound to an exact Studio source identity.
+ * References are resolved by Studio source tools when used, not read from disk at queue time. */
+export type AssistantSourceReference = { from: number; to: number; source: { domain: -1 | 0 | 1; path: string } };
+export type AssistantHistoryEntry = { kind: 'user' | 'assistant' | 'status'; text: string; references?: readonly AssistantSourceReference[] };
 export type AssistantTranscriptPage = { thread: AssistantThread; configuration: AssistantConfiguration; entries: AssistantHistoryEntry[]; nextCursor: string | null };
-export type AssistantQueuedMessage = { id: string; text: string };
+export type AssistantQueuedMessage = { id: string; text: string; references?: readonly AssistantSourceReference[] };
 export type AssistantReply = { turnId: string } | AssistantHistoryPage | AssistantTranscriptPage | AssistantModels | AssistantConfiguration;
 /** Encoded host images are attachments, never JSON/base64 embedded in tool prose. */
 export type AssistantToolResult = { success: boolean; text: string; images?: readonly string[] };
 export type AssistantCommand =
-	| { type: 'start'; prompt: string; reviews: readonly AssistantReviewUpdate[] }
-	| { type: 'steer'; turnId: string; prompt: string; reviews: readonly AssistantReviewUpdate[] }
-	| { type: 'queue'; prompt: string; reviews: readonly AssistantReviewUpdate[] }
-	| { type: 'queue-update'; id: string; prompt: string }
+	| { type: 'start'; prompt: string; references?: readonly AssistantSourceReference[]; reviews: readonly AssistantReviewUpdate[] }
+	| { type: 'steer'; turnId: string; prompt: string; references?: readonly AssistantSourceReference[]; reviews: readonly AssistantReviewUpdate[] }
+	| { type: 'queue'; prompt: string; references?: readonly AssistantSourceReference[]; reviews: readonly AssistantReviewUpdate[] }
+	| { type: 'queue-update'; id: string; prompt: string; references?: readonly AssistantSourceReference[] }
 	| { type: 'queue-delete'; id: string }
 	| { type: 'queue-continue' }
 	| { type: 'history'; cursor?: string; search?: string }
@@ -55,7 +58,7 @@ export type AssistantEvent =
 	| { type: 'activity'; turnId: string; label: string }
 	| { type: 'thread'; thread: AssistantThread }
 	| { type: 'queue'; messages: AssistantQueuedMessage[] }
-	| { type: 'user-message'; turnId: string; itemId: string; text: string }
+	| { type: 'user-message'; turnId: string; itemId: string; text: string; references?: readonly AssistantSourceReference[] }
 	| { type: 'turn-started'; turnId: string }
 	| { type: 'turn-completed'; turnId: string; status: 'completed' | 'interrupted' | 'failed'; error?: string }
 	| { type: 'text-delta' | 'message'; turnId: string; itemId: string; text: string }

@@ -57,12 +57,12 @@ export class CodexHttpApi {
 			let result: AssistantReply | undefined;
 			switch (command.type) {
 				case 'start': {
-					const turnId = await connection.session!.startTurn(command.prompt, command.reviews);
+					const turnId = await connection.session!.startTurn(command.prompt, command.reviews, false, command.references);
 					result = { turnId }; break;
 				}
-				case 'steer': result = { turnId: await connection.session!.steer(command.turnId, command.prompt, command.reviews) }; break;
-				case 'queue': await connection.session!.enqueue(command.prompt, command.reviews); break;
-				case 'queue-update': await connection.session!.updateQueued(command.id, command.prompt); break;
+				case 'steer': result = { turnId: await connection.session!.steer(command.turnId, command.prompt, command.reviews, command.references) }; break;
+				case 'queue': await connection.session!.enqueue(command.prompt, command.reviews, command.references); break;
+				case 'queue-update': await connection.session!.updateQueued(command.id, command.prompt, command.references); break;
 				case 'queue-delete': await connection.session!.deleteQueued(command.id); break;
 				case 'queue-continue': result = { turnId: await connection.session!.startTurn('', [], true) }; break;
 				case 'history': result = await connection.session!.listHistory(command.cursor, command.search); break;

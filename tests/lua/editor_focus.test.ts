@@ -135,9 +135,10 @@ test('input history restores content and selection, replaces selection as one op
 	let changes = 0;
 	field.onDidChangeText(() => { changes += 1; });
 	setFieldText(field, 'original', true);
+	assert.equal(changes, 1, 'loading field content publishes its new state');
 	selectAll(field);
 	insertValue(field, 'replacement');
-	assert.equal(changes, 1);
+	assert.equal(changes, 2);
 	field.undo();
 	assert.equal(field.text, 'original');
 	assert.deepEqual(field.selectionAnchor, { row: 0, column: 0 });
@@ -149,11 +150,11 @@ test('input history restores content and selection, replaces selection as one op
 	field.undo();
 	insertValue(field, 'branch');
 	assert.equal(field.canRedo, false);
-	assert.equal(changes, 5);
+	assert.equal(changes, 6);
 	setFieldText(field, '', true);
 	assert.equal(backspace(field), false);
 	assert.equal(field.canUndo, false);
-	assert.equal(changes, 5, 'programmatic reset and no-op input create no edit event');
+	assert.equal(changes, 7, 'programmatic reset publishes state; no-op input does not');
 });
 
 test('multi-line clipboard text and cursor-only input preserve control-history boundaries', () => {

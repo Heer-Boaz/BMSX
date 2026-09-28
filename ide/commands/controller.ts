@@ -179,6 +179,7 @@ export class IdeCommandController {
 			case 'sourceEditReview.source':
 			case 'undo':
 			case 'redo':
+			case 'suggest.accept':
 			case 'behaviorLens.removeChild':
 			case 'behaviorLens.duplicateChild':
 			case 'behaviorLens.setInitialState':
@@ -372,6 +373,7 @@ export class IdeCommandController {
 			case 'sourceEditReview.source':
 			case 'undo':
 			case 'redo':
+			case 'suggest.accept':
 			case 'behaviorLens.removeChild':
 			case 'behaviorLens.duplicateChild':
 			case 'behaviorLens.setInitialState': {

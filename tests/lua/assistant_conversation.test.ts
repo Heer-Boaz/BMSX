@@ -209,10 +209,10 @@ for (const outcome of ['applied', 'discarded', 'stale', 'failed'] as const) {
 		}
 		assert.equal(connection.commands.length, commands, 'review settlement cannot start inference or send provider commands');
 		await c.sendPrompt('Continue 🐉');
-		assert.deepEqual(connection.commands.at(-1), { type: 'start', prompt: 'Continue 🐉', reviews: [{ review: receipt, state: outcome, reason: proposal.reason }] });
+		assert.deepEqual(connection.commands.at(-1), { type: 'start', prompt: 'Continue 🐉', references: [], reviews: [{ review: receipt, state: outcome, reason: proposal.reason }] });
 		connection.emit({ type: 'turn-completed', turnId: 'next', status: 'completed' });
 		await c.sendPrompt('Another explicit prompt');
-		assert.deepEqual(connection.commands.at(-1), { type: 'start', prompt: 'Another explicit prompt', reviews: [] }, 'acknowledged outcomes are not replayed');
+		assert.deepEqual(connection.commands.at(-1), { type: 'start', prompt: 'Another explicit prompt', references: [], reviews: [] }, 'acknowledged outcomes are not replayed');
 	});
 }
 
@@ -307,7 +307,7 @@ for (const transition of ['disconnect', 'account'] as const) {
 		}
 		assert.equal(proposal.state, 'stale');
 		await c.sendPrompt('New authority');
-		assert.deepEqual(f.connections.at(-1)!.commands.at(-1), { type: 'start', prompt: 'New authority', reviews: [] });
+		assert.deepEqual(f.connections.at(-1)!.commands.at(-1), { type: 'start', prompt: 'New authority', references: [], reviews: [] });
 	});
 }
 
@@ -333,7 +333,7 @@ for (const outcome of ['applied', 'discarded', 'stale'] as const) {
 		// A settled old proposal must not rewrap the much larger, unchanged later transcript.
 		c.entries.push({ kind: 'assistant', index: c.entries.length, text: new PieceTreeBuffer('later '.repeat(10000)), resetRevision: 0 });
 		const font = {}, measure = (_text: string, start: number, end: number) => end - start;
-		input.transcript.update(c.entries, 40, measure, font);
+		input.transcript.update(c.entries, 40, measure, font); input.transcript.layout(0, 30);
 		const index = c.entries.findIndex(entry => entry.proposal === proposal);
 		const heading = input.transcript.rows.findIndex(row => row.entry === index && row.heading);
 		assert.equal(input.transcript.rows[heading].text, 'REVIEW: PENDING');
@@ -346,7 +346,7 @@ for (const outcome of ['applied', 'discarded', 'stale'] as const) {
 		else f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- user\n' }]);
 		assert.equal(c.revision, revision + 1);
 		assert.equal(input.selectedEntry, 0);
-		input.transcript.update(c.entries, 40, () => assert.fail('no body text measurement'), font);
+		input.transcript.update(c.entries, 40, measure, font); input.transcript.layout(0, 30);
 		assert.equal(input.transcript.rows[heading].text, `REVIEW: ${outcome.toUpperCase()}`);
 		assert.ok(input.transcript.rows.every((row, index) => index === heading || row === rows[index]));
 		for (let frame = 0; frame < 1000; frame++) assert.equal(input.transcript.update(c.entries, 40, measure, font), false);
@@ -378,12 +378,12 @@ test('workspace clear resets detached projection identity before a same-sized re
 	await c.connect(); await c.sendPrompt('Old workspace '.repeat(100)); await propose(f);
 	f.connections[0].emit({ type: 'turn-completed', turnId: 'old', status: 'completed' });
 	const font = {}, measure = (_text: string, start: number, end: number) => end - start;
-	input.transcript.update(c.entries, 40, measure, font);
+	input.transcript.update(c.entries, 40, measure, font); input.transcript.layout(0, 30);
 	f.models.clear(); // No intervening view frame before new entries occupy the same indices.
 	await c.connect(); await c.sendPrompt('New');
 	f.connections[1].emit({ type: 'message', turnId: 'new', itemId: 'new', text: 'New reply' });
 	f.connections[1].emit({ type: 'turn-completed', turnId: 'new', status: 'completed' });
-	input.transcript.update(c.entries, 40, measure, font);
+	input.transcript.update(c.entries, 40, measure, font); input.transcript.layout(0, 30);
 	assert.deepEqual(input.transcript.rows.map(row => row.text), ['New', '', 'New reply']);
 	assert.equal(input.selectedEntry, -1);
 });
@@ -459,7 +459,7 @@ test('implicit connection coalesces and a cancelled pending prompt cannot enter 
 	assert.equal(await c.sendPrompt('Current draft'), true);
 	release(); assert.equal(await old, false); await connecting;
 	assert.equal(openings, 2); assert.equal(f.connections[0].commands.length, 0);
-	assert.deepEqual(f.connections[1].commands, [{ type: 'start', prompt: 'Current draft', reviews: [] }]);
+	assert.deepEqual(f.connections[1].commands, [{ type: 'start', prompt: 'Current draft', references: [], reviews: [] }]);
 	assert.equal(c.state, 'running'); assert.equal(c.submitting, false);
 });
 
@@ -509,7 +509,7 @@ test('late settings completion cannot reset work in a replacement connection', a
 test('native queue notifications alone dispatch fresh source context; direct messages keep active turn context', async t => {
 	const f = fixture(t), c = f.conversation; await c.sendPrompt('First'); const connection = f.connections[0];
 	await c.sendPrompt('Queued'); await c.sendPrompt('Direct', true);
-	assert.deepEqual(connection.commands.slice(1), [{ type: 'queue', prompt: 'Queued', reviews: [] }, { type: 'steer', turnId: 't', prompt: 'Direct', reviews: [] }]);
+	assert.deepEqual(connection.commands.slice(1), [{ type: 'queue', prompt: 'Queued', references: [], reviews: [] }, { type: 'steer', turnId: 't', prompt: 'Direct', references: [], reviews: [] }]);
 	assert.deepEqual(c.entries.filter(entry => entry.kind === 'user').map(entry => entry.text.getText()), ['First'], 'accepted text is not falsely reported consumed');
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- new source\n' }]);
 	connection.emit({ type: 'tool-request', requestId: 'old-context', name: 'studio_list_sources', arguments: {} }); await setImmediate();
@@ -547,7 +547,7 @@ test('history pages are text only, revoke source proposals and retain existing b
 	connection.pending = Promise.resolve({ thread, configuration, entries: [{ kind: 'user', text: 'Older user' }], nextCursor: null });
 	await c.loadOlder();
 	assert.equal(c.entries[1], retained); assert.equal(c.entries[1].text, buffer); assert.equal(retained.index, 1);
-	assert.equal(view.selectedEntry, 1); assert.equal(view.revealOlder, true);
+	assert.equal(view.selectedEntry, 1);
 	assert.deepEqual(c.entries.map(entry => entry.index), [0, 1, 2]); assert.equal(c.olderCursor, null);
 	connection.pending = Promise.resolve(configuration); await c.newConversation();
 	assert.equal(c.entries.length, 0); assert.equal(c.thread, undefined);

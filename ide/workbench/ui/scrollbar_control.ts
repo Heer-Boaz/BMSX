@@ -9,27 +9,32 @@ export class WorkbenchScrollbarControl implements PointerCaptureTarget {
 	private dragging = false;
 	private revision = 0;
 	private dragStart!: ScrollbarDragStart;
+	private pointer = 0;
 
 	public constructor(private readonly scrollbar: Scrollbar, private readonly capture: PointerCaptureService) {}
 
 	public begin(snapshot: PointerSnapshot): boolean {
 		const bar = this.scrollbar;
 		if (!bar.isVisible() || !point_in_rect(snapshot.viewportX, snapshot.viewportY, bar.getTrack())) return false;
-		this.dragStart = bar.beginDrag(bar.orientation === 'horizontal' ? snapshot.viewportX : snapshot.viewportY);
+		this.pointer = bar.orientation === 'horizontal' ? snapshot.viewportX : snapshot.viewportY;
+		this.dragStart = bar.beginDrag(this.pointer);
 		this.capture.capture(this);
-		this.revision = bar.revision;
+		this.revision = bar.trackRevision;
 		this.dragging = true;
 		if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
 		return true;
 	}
 
 	public update(): void {
-		if (this.dragging && this.revision !== this.scrollbar.revision) this.cancelPointer();
+		if (this.dragging && (this.revision !== this.scrollbar.trackRevision || !this.scrollbar.isVisible())) this.cancelPointer();
 	}
 
 	public handleCapturedPointer(snapshot: PointerSnapshot): void {
 		this.update();
-		if (this.dragging) this.scrollbar.drag(this.scrollbar.orientation === 'horizontal' ? snapshot.viewportX : snapshot.viewportY, this.dragStart);
+		if (this.dragging) {
+			const pointer = this.scrollbar.orientation === 'horizontal' ? snapshot.viewportX : snapshot.viewportY;
+			if (pointer !== this.pointer) { this.pointer = pointer; this.scrollbar.drag(pointer, this.dragStart); }
+		}
 	}
 
 	public releaseCapturedPointer(snapshot: PointerSnapshot): void { this.handleCapturedPointer(snapshot); this.cancelPointer(); }

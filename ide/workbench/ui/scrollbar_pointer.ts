@@ -10,13 +10,14 @@ export class ScrollbarPointerControl implements PointerCaptureTarget {
 	private revision = 0;
 	private dragging = false;
 	private dragStart!: ScrollbarDragStart;
+	private pointer = 0;
 
 	public constructor(private readonly capture: PointerCaptureService, private readonly scope: PointerCaptureScope = WORKBENCH_POINTER_SCOPE) {}
 
 	public setInput(input: Scrollbar): void {
 		this.cancelPointer();
 		this.input = input;
-		this.revision = input.revision;
+		this.revision = input.trackRevision;
 	}
 
 	public clearInput(): void {
@@ -30,9 +31,9 @@ export class ScrollbarPointerControl implements PointerCaptureTarget {
 	}
 
 	public update(): void {
-		if (this.input !== undefined && this.revision !== this.input.revision) {
+		if (this.input !== undefined && (this.revision !== this.input.trackRevision || this.dragging && !this.input.isVisible())) {
 			this.cancelPointer();
-			this.revision = this.input.revision;
+			this.revision = this.input.trackRevision;
 		}
 	}
 
@@ -41,7 +42,8 @@ export class ScrollbarPointerControl implements PointerCaptureTarget {
 		const bar = this.input!;
 		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, bar.getTrack())) return false;
 		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && bar.isVisible()) {
-			this.dragStart = bar.beginDrag(bar.orientation === 'vertical' ? snapshot.viewportY : snapshot.viewportX);
+			this.pointer = bar.orientation === 'vertical' ? snapshot.viewportY : snapshot.viewportX;
+			this.dragStart = bar.beginDrag(this.pointer);
 			this.capture.capture(this, PointerButton.Primary, this.scope);
 			this.dragging = true;
 			if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
@@ -53,7 +55,8 @@ export class ScrollbarPointerControl implements PointerCaptureTarget {
 		this.update();
 		if (this.dragging) {
 			const bar = this.input!;
-			bar.drag(bar.orientation === 'vertical' ? snapshot.viewportY : snapshot.viewportX, this.dragStart);
+			const pointer = bar.orientation === 'vertical' ? snapshot.viewportY : snapshot.viewportX;
+			if (pointer !== this.pointer) { this.pointer = pointer; bar.drag(pointer, this.dragStart); }
 		}
 	}
 

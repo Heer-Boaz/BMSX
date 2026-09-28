@@ -1,7 +1,10 @@
 import type { Position } from '../../../common/models';
 import { inputFocus, type InputFocusTarget } from '../../../input/focus';
 
-type TextFieldRevision = {
+export type TextFieldAnnotation<T = unknown> = { from: number; to: number; data: T };
+
+type TextFieldRevision<T> = {
+	annotations: readonly TextFieldAnnotation<T>[];
 	text: string;
 	cursorRow: number;
 	cursorColumn: number;
@@ -10,7 +13,8 @@ type TextFieldRevision = {
 };
 
 /** Small input-control history, independent of resource-owned document history. */
-export class TextField {
+export class TextField<T = unknown> {
+	public annotations: readonly TextFieldAnnotation<T>[] = [];
 	public readOnly = false;
 	public text = '';
 	/** Exact LF-delimited slices: CR bytes remain part of the field's UTF-16 positions. */
@@ -24,8 +28,8 @@ export class TextField {
 	public lastPointerClickTimeMs = 0;
 	public lastPointerClickColumn = -1;
 	public readonly focusTarget: InputFocusTarget;
-	private readonly undoStack: TextFieldRevision[] = [];
-	private readonly redoStack: TextFieldRevision[] = [];
+	private readonly undoStack: TextFieldRevision<T>[] = [];
+	private readonly redoStack: TextFieldRevision<T>[] = [];
 	private readonly changeListeners = new Set<() => void>();
 
 	public constructor(parent: InputFocusTarget | null = null) {
@@ -64,7 +68,18 @@ export class TextField {
 		this.redoStack.length = 0;
 	}
 
-	public didChangeText(): void {
+	public didChangeText(change?: { from: number; to: number; insertedLength: number }, inserted?: TextFieldAnnotation<T>): void {
+		if (change && this.annotations.length > 0) {
+			const shift = change.insertedLength - (change.to - change.from);
+			const mapped: TextFieldAnnotation<T>[] = [];
+			for (const annotation of this.annotations) {
+				if (annotation.to <= change.from) mapped.push(annotation);
+				else if (annotation.from >= change.to) mapped.push({ ...annotation, from: annotation.from + shift, to: annotation.to + shift });
+				// Editing through an inline reference removes its semantic attachment.
+			}
+			this.annotations = mapped;
+		}
+		if (inserted) this.annotations = [...this.annotations, inserted].sort((a, b) => a.from - b.from);
 		for (const listener of this.changeListeners) listener();
 	}
 
@@ -80,8 +95,9 @@ export class TextField {
 		this.restoreRevision(this.redoStack.pop()!);
 	}
 
-	private captureRevision(): TextFieldRevision {
+	private captureRevision(): TextFieldRevision<T> {
 		return {
+			annotations: this.annotations,
 			text: this.text,
 			cursorRow: this.cursorRow,
 			cursorColumn: this.cursorColumn,
@@ -90,8 +106,8 @@ export class TextField {
 		};
 	}
 
-	private restoreRevision(revision: TextFieldRevision): void {
-		this.text = revision.text;
+	private restoreRevision(revision: TextFieldRevision<T>): void {
+		this.text = revision.text; this.annotations = revision.annotations;
 		this.lines = revision.text.split('\n');
 		this.cursorRow = revision.cursorRow;
 		this.cursorColumn = revision.cursorColumn;

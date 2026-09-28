@@ -2,18 +2,17 @@ import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
 import { computeSourceLabel } from '../../../common/paths';
 import { CaseFoldedText } from '../../../common/search_text';
 import { FuzzyScorer } from '../../../common/fuzzy_scorer';
-import { appendQuickPickHighlights, appendQuickPickSourceRange } from '../../services/quick_input/highlights';
-import { QuickPickHighlightSet } from '../../services/quick_input/highlight_set';
-import type { QuickPickHighlight, QuickPickProjection, QuickPickProvider } from '../../services/quick_input/provider';
-import type { ResourceQuickPickItem } from './quick_access';
+import { appendQuickPickHighlights, appendQuickPickSourceRange } from './highlights';
+import { QuickPickHighlightSet } from './highlight_set';
+import type { QuickPickHighlight, QuickPickItem, QuickPickProjection, QuickPickProvider } from './provider';
 
 // File identity/name/path priorities from VS Code's file-item scorer.
 const PATH_IDENTITY_SCORE = 1 << 18;
 const LABEL_PREFIX_SCORE = 1 << 17;
 const LABEL_SCORE = 1 << 16;
 
-type FileMatch = {
-	readonly item: ResourceQuickPickItem;
+type FileMatch<T extends QuickPickItem = QuickPickItem> = {
+	readonly item: T;
 	readonly itemIndex: number;
 	readonly path: CaseFoldedText;
 	readonly name: CaseFoldedText;
@@ -27,14 +26,14 @@ type FileMatch = {
 };
 
 /** File names/paths are query data; kind/domain display metadata is not a second path. */
-export class FileQuickPickProvider implements QuickPickProvider<ResourceQuickPickItem> {
-	private readonly entries: FileMatch[];
+export class FileQuickPickProvider<T extends QuickPickItem> implements QuickPickProvider<T> {
+	private readonly entries: FileMatch<T>[];
 	private readonly scorer = new FuzzyScorer();
 	private readonly candidateRanges = new QuickPickHighlightSet();
-	private readonly projection = { matches: [] as FileMatch[], selectionIndex: -1,
+	private readonly projection = { matches: [] as FileMatch<T>[], selectionIndex: -1,
 		highlights: new ScratchBuffer<QuickPickHighlight>(() => ({ field: 'label', start: 0, end: 0 })) };
 
-	public constructor(public readonly items: readonly ResourceQuickPickItem[]) {
+	public constructor(public readonly items: readonly T[]) {
 		this.entries = items.map((item, itemIndex) => {
 			const path = new CaseFoldedText(item.label), name = computeSourceLabel(item.label);
 			const nameStart = item.label.length - name.length;

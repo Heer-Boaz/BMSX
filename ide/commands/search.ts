@@ -1,7 +1,7 @@
 import { showCommandPalette } from '../workbench/contrib/commands/quick_access';
 import { focusRuntimeErrorOverlay } from '../runtime_error/navigation';
 import { buildResourceQuickPickItems } from '../workbench/contrib/resources/quick_access';
-import { FileQuickPickProvider } from '../workbench/contrib/resources/quick_pick_provider';
+import { FileQuickPickProvider } from '../workbench/services/quick_input/file_provider';
 import { openLineJump } from '../workbench/contrib/code_editor/find/line_jump';
 import { openReferenceSearch } from '../workbench/contrib/code_editor/references/quick_access';
 import { openRenamePrompt } from '../workbench/contrib/code_editor/rename/prompt';

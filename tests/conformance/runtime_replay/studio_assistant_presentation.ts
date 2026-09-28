@@ -8,6 +8,7 @@ import { getCursorOffset } from '../../../ide/editor/ui/inline/text_field';
 import { check, createStudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
+import { exerciseLongAssistantHistory } from './studio_assistant_history_stress';
 import { submitAssistantText } from './studio_assistant_navigation';
 
 /** Real browser/HTTP/process; an offline provider supplies the Markdown and waits for Stop. */
@@ -19,6 +20,7 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'presentation: boot the cart');
 	await reachNemesisTitle(test);
 	harness.openLuaSource('cart.lua'); await frame();
+	await press('ControlLeft', 'Home'); test.clipboard.text = '-- REFERENCED WORKING COPY\n'; await press('ControlLeft', 'KeyV');
 	await test.runPaletteCommand('View: Codex Assistant');
 	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant expected');
 	const conversation = ide.editor.assistant, paused = cycles();
@@ -73,10 +75,22 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	await press('ControlLeft', 'KeyA'); await press('Backspace');
 	ide.editor.setFontVariant('tiny'); await frame();
 	await test.click(view.composerBounds);
-	test.clipboard.text = 'Inspect the mijter enemy, then explain the change.'; await press('ControlLeft', 'KeyV');
+	test.clipboard.text = 'Inspect the mijter enemy, then explain the change. @cart'; await press('ControlLeft', 'KeyV');
+	await capture('reference-suggestions');
+	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame();
+	// Returning to the composer restores suggestions without creating another prompt.
+	await press('ArrowLeft'); await press('ArrowRight'); await capture('reference-suggestions-dark');
+	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame();
+	await press('ArrowLeft'); await press('ArrowRight'); await press('Enter');
+	check(view.draft.annotations.length === 1, 'presentation: Enter accepts a source reference without sending a turn');
+	const references = view.draft.annotations.map(span => ({ from: span.from, to: span.to, source: span.data }));
+	const referencePrompt = view.draft.text;
+	await capture('reference-in-composer');
+	await press('ControlLeft', 'KeyZ'); check(view.draft.annotations.length === 0, 'presentation: Undo removes the reference insertion');
+	await press('ControlLeft', 'KeyY'); check(view.draft.annotations.length === 1, 'presentation: Redo restores its source identity');
 	await press('ControlLeft', 'Enter');
 	await until(() => conversation.entries.some(entry => entry.kind === 'assistant') && conversation.state === 'ready', 'presentation: actual Markdown reply');
-	await until(() => conversation.thread?.title === 'Inspect the mijter enemy, then explain the change.', 'presentation: persisted conversation title');
+	await until(() => conversation.thread?.title === Array.from(referencePrompt.trim()).slice(0, 80).join(''), 'presentation: persisted conversation title');
 	await frame();
 	const styles = view.transcript.rows.flatMap(row => row.runs.map(run => run.style));
 	for (const style of [TextStyle.Bold, TextStyle.Italic, TextStyle.Code]) check(styles.some(value => (value & style) !== 0), 'presentation: parsed Markdown style ' + style);
@@ -90,10 +104,10 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame();
 	const reply = conversation.entries.find(entry => entry.kind === 'assistant')!;
 	const codeRow = view.transcript.rows.findIndex((row, index) => row.entry === reply.index && row.code
-		&& view.viewport.offsetTop + index * view.layout.rowHeight >= view.viewport.bounds.top
-		&& view.viewport.offsetTop + (index + 1) * view.layout.rowHeight <= view.viewport.bounds.bottom);
+		&& view.viewport.offsetTop + (index + view.transcript.firstRow) * view.layout.rowHeight >= view.viewport.bounds.top
+		&& view.viewport.offsetTop + (index + view.transcript.firstRow + 1) * view.layout.rowHeight <= view.viewport.bounds.bottom);
 	check(codeRow >= 0, 'presentation: a formatted code row is visible for pointer selection');
-	const codeTop = view.viewport.offsetTop + codeRow * view.layout.rowHeight;
+	const codeTop = view.viewport.offsetTop + (codeRow + view.transcript.firstRow) * view.layout.rowHeight;
 	const codeBounds = { left: 12, right: 24, top: codeTop, bottom: codeTop + view.layout.rowHeight };
 	await test.click(codeBounds);
 	await press('ControlLeft', 'KeyC');
@@ -107,7 +121,7 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	await capture('deselected-beside-text');
 	await test.click(codeBounds);
 	const gap = view.transcript.rows.findIndex(row => row.runs.length === 0);
-	const gapTop = view.viewport.offsetTop + gap * view.layout.rowHeight;
+	const gapTop = view.viewport.offsetTop + (gap + view.transcript.firstRow) * view.layout.rowHeight;
 	await test.click({ left: 12, right: 24, top: gapTop, bottom: gapTop + view.layout.rowHeight });
 	check(view.selectedEntry === -1, 'presentation: an empty separator does not select its neighbouring message');
 	await test.click(codeBounds);
@@ -144,7 +158,10 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	await press('ControlLeft', 'KeyA'); await press('Backspace');
 	ide.editor.setFontVariant('tiny'); await frame();
 	await test.click(view.composerBounds);
-	test.clipboard.text = 'Keep investigating while I review the result.'; await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'Enter');
+	test.clipboard.text = 'Keep investigating while I review the result. @cart'; await press('ControlLeft', 'KeyV');
+	await capture('reference-suggestions-narrow'); await press('Tab');
+	check(view.draft.annotations.length === 1 && view.draft.focusTarget.hasFocus, 'presentation: Tab accepts a reference without moving focus');
+	await press('ControlLeft', 'Enter');
 	await waitForModel(); await frame();
 	check(conversation.state === 'running' && view.busySince !== undefined && view.activityText.length > 0, 'presentation: work indicator is visible before any response text');
 	await capture('working-a');
@@ -155,6 +172,11 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	await until(() => conversation.state === 'ready', 'presentation: Stop settles'); await frame();
 	check(view.busySince === undefined && view.activityText === '', 'presentation: activity disappears after Stop');
 	await capture('stopped');
+	await submitAssistantText(test, '/history'); await until(() => picker.visible, 'presentation: browse native history'); await press('Enter');
+	await until(() => conversation.state === 'ready' && conversation.entries.some(entry => entry.references?.length === 1), 'presentation: native history restores source references');
+	check(conversation.entries.some(entry => entry.text.getText() === referencePrompt && JSON.stringify(entry.references) === JSON.stringify(references)),
+		'presentation: history retains the original prompt and exact reference ranges');
+	const historyStress = await exerciseLongAssistantHistory(test, view, capture);
 	await renderer.finish();
-	return { presentation: 'pass', selectedModel, selectedEffort, footer: view.footer.lines, paused: cycles() === paused };
+	return { references, historyStress, presentation: 'pass', selectedModel, selectedEffort, footer: view.footer.lines, paused: cycles() === paused };
 }

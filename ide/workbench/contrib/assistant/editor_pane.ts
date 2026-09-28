@@ -1,3 +1,4 @@
+import { AssistantReferences } from './references';
 import type { Clipboard } from '../../../../hosts/common/clipboard';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import { point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
@@ -40,6 +41,7 @@ const COMMANDS = ['assistant.history', 'assistant.new', 'assistant.commands', 'a
 /** Host-only conversation work continues under the ordinary workbench game pause. */
 export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> {
 	private readonly chat: AssistantChatCommands;
+	private readonly references = new AssistantReferences();
 	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget);
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, input => this.handleTranscriptKeyboard(input));
 	private readonly composer = new MultilineFieldControl();
@@ -57,6 +59,10 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		this.scroll.setInput(this.input.viewport);
 		this.composer.setInput(this.input.draft, this.input.composer, this.input.composerBounds);
 		this.unbindDraft = this.input.draft.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
+		this.input.draft.focusTarget.registerCommand('suggest.accept', {
+			isEnabled: () => this.input.draft.focusTarget.hasFocus && this.references.suggestions.visible && this.references.suggestions.model.list.selectionIndex >= 0,
+			run: () => this.references.suggestions.acceptSelection(),
+		});
 		const ring = [this.input.draft.focusTarget, this.actions.focusTarget, this.scroll.focusTarget];
 		for (let index = 0; index < ring.length; index++) {
 			ring[index].next = ring[(index + 1) % ring.length];
@@ -68,7 +74,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	}
 	public override clearInput(): void {
 		this.unbindDraft?.(); this.unbindDraft = undefined;
-		this.composer.clearInput(); this.actions.clearInput(); this.scroll.clearInput();
+		this.references.clear(); this.composer.clearInput(); this.actions.clearInput(); this.scroll.clearInput();
 		super.clearInput();
 	}
 	public override dispose(): void { this.clearInput(); this.actions.dispose(); this.scroll.dispose(); super.dispose(); }
@@ -135,7 +141,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		// rows, then fit the composer to its content without measuring the draft twice.
 		// disable-next-line redundant_numeric_sanitization_pattern -- Layout constraint: reserve one editable row and at most a third of the pane, capped at six rows. This is the owning viewport boundary, not value sanitization.
 		const maxRows = Math.max(1, Math.min(6, Math.trunc((footerTop - layout.top) / (3 * editorViewState.lineHeight))));
-		input.draftMarkdown.update(input.draft.text);
+		input.draftMarkdown.update(input.draft.text, input.referenceStyles);
 		input.composer.update(input.draft, layout.right - 14 - editorViewState.spaceAdvance, maxRows, measureStyledText, layout.font!, input.draftMarkdown.styles);
 		const composerBottom = footerTop - row - 6;
 		const composerTop = composerBottom - Math.min(maxRows, input.composer.rows.length) * editorViewState.lineHeight - 4;
@@ -146,15 +152,18 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			input.activitySecond = second; input.activityLabel = activityLabel;
 			input.activityText = busy ? truncateMeasuredText(`${activityLabel}  ${second}s`, layout.right - 28, measureTextRange) : '';
 		}
+		const atEnd = viewport.scrollTop + viewport.height >= viewport.contentHeight;
 		if (changed || composerChanged || model.revision !== input.projectedRevision || editingQueue !== input.editingQueue) {
 			input.editingQueue = editingQueue;
 			input.projectedRevision = model.revision;
-			const atEnd = viewport.scrollTop + viewport.height >= viewport.contentHeight;
 			input.transcript.update(model.entries, layout.right - colors.SCROLLBAR_WIDTH - 16, measureStyledText, layout.font!);
-			viewport.layout(4, layout.top + 4, layout.right, input.composerBounds.top - 4 - (busy || input.editingQueuedId !== undefined ? row + 2 : 0), input.transcript.rows.length * row);
-			if (input.revealOlder) { viewport.scrollbar.setScroll(0); input.revealOlder = false; }
-			else if (atEnd) viewport.scrollbar.setScroll(viewport.contentHeight);
 		}
+		const transcriptBottom = input.composerBounds.top - 4 - (busy || input.editingQueuedId !== undefined ? row + 2 : 0);
+		const visibleRows = Math.max(1, (transcriptBottom - layout.top - 4) / row);
+		const scrollRow = input.transcript.layout(viewport.scrollTop / row, visibleRows, atEnd);
+		viewport.layout(4, layout.top + 4, layout.right, transcriptBottom, input.transcript.rowCount * row);
+		viewport.scrollbar.setScroll(scrollRow * row);
+
 		let actionsChanged = changed || footerChanged;
 		const queuedSend = (model.state === 'running' || model.queued.length > 0) && !input.draft.text.startsWith('/') && input.editingQueuedId === undefined;
 		for (const item of input.turnActions.items) {
@@ -164,7 +173,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			if (item.visible !== visible) { item.visible = visible; actionsChanged = true; }
 		}
 		if (actionsChanged) layoutWorkbenchActionBar(input.turnActions, layout.right - 4, footerTop - row - 4, footerTop, measureText);
-		this.actions.update(); this.scroll.update();
+		this.actions.update(); this.scroll.update(); this.references.update(input);
 	}
 	public draw(): void {
 		const input = this.input, { layout, viewport } = input;
@@ -185,10 +194,9 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			api.blit_text_inline_with_font('Editing queued message', 4, input.composerBounds.top - layout.rowHeight - 4, 0, textColor, font);
 		}
 		api.pushClipRect(viewport.bounds.left, viewport.bounds.top, viewport.bounds.right, viewport.bounds.bottom);
-		const rows = input.transcript.rows;
 		for (let index = Math.trunc(viewport.scrollTop / layout.rowHeight), top = viewport.offsetTop + index * layout.rowHeight;
-			index < rows.length && top < viewport.bounds.bottom; index++, top += layout.rowHeight) {
-			const row = rows[index];
+			index < input.transcript.rowCount && top < viewport.bounds.bottom; index++, top += layout.rowHeight) {
+			const row = input.transcript.rowAt(index)!;
 			const entry = input.conversation.entries[row.entry];
 			const selected = row.entry === input.selectedEntry;
 			if (entry.kind === 'user' && !row.heading) {
@@ -209,11 +217,13 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			api.popClipRect();
 		}
 		drawMultilineField(input.draft, input.composer, bounds);
+		this.references.suggestions.draw();
 	}
 	public drawStatusBar(top: number, color: number): void {
 		api.blit_text_inline_with_font(this.input.footer.lines.at(-1)!, 4, top + 2, 0, color, editorViewState.font.renderFont());
 	}
 	protected override handleViewPointer(snapshot: PointerSnapshot): boolean {
+		if (this.references.suggestions.handlePointer(snapshot)) return true;
 		// Actions act on the selected message; scrollbar capture preserves selection/focus.
 		if (this.actions.handlePointer(snapshot)) return true;
 		const { viewport, transcript, layout } = this.input;
@@ -221,7 +231,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		if (pressed && !(viewport.scrollbar.isVisible() && point_in_rect(snapshot.viewportX, snapshot.viewportY, viewport.scrollbar.getTrack()))) {
 			this.input.selectedEntry = -1;
 			if (point_in_rect(snapshot.viewportX, snapshot.viewportY, viewport.bounds)) {
-				const row = transcript.rows[Math.trunc((snapshot.viewportY - viewport.offsetTop) / layout.rowHeight)];
+				const row = transcript.rowAt(Math.trunc((snapshot.viewportY - viewport.offsetTop) / layout.rowHeight));
 				const x = snapshot.viewportX - viewport.bounds.left - 4;
 				if (row !== undefined) for (const run of row.runs) {
 					if (x >= run.x && x < run.x + run.width) { this.input.selectedEntry = row.entry; break; }
@@ -245,7 +255,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			const { conversation, transcript, viewport, layout } = this.input;
 			this.input.selectedEntry = Math.max(-1, Math.min(conversation.entries.length - 1,
 				Math.max(0, this.input.selectedEntry + (key === 'ArrowUp' ? -1 : 1))));
-			const row = transcript.rows.findIndex(row => row.entry === this.input.selectedEntry);
+			const row = this.input.selectedEntry < 0 ? -1 : transcript.entryTop(this.input.selectedEntry);
 			if (row >= 0) {
 				const top = row * layout.rowHeight;
 				if (top < viewport.scrollTop) viewport.scrollbar.setScroll(top);
@@ -257,6 +267,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	}
 	public handleKeyboard(input: PlayerInput): void {
 		if (!this.input.draft.focusTarget.hasFocus) return;
+		if (!(isCtrlDown(input) || isMetaDown(input)) && this.references.suggestions.handleKeyboard(input)) return;
 		if ((isCtrlDown(input) || isMetaDown(input)) && isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); this.execute(isShiftDown(input) ? 'assistant.direct' : 'assistant.send'); return; }
 		// A command is a single line, so plain Enter runs it. Shift+Enter still opens a new line.
 		if (!isShiftDown(input) && isKeyJustPressed('Enter', input) && isAssistantCommand(this.input)) {
@@ -265,6 +276,6 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		this.composer.handleKeyboard(input, this.clipboard);
 	}
 	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null): void {
-		if (pointer !== null) this.scroll.handleWheel(pointer, direction * steps * this.input.layout.rowHeight);
+		if (pointer !== null && !this.references.suggestions.handleWheel(pointer, direction * steps)) this.scroll.handleWheel(pointer, direction * steps * this.input.layout.rowHeight);
 	}
 }

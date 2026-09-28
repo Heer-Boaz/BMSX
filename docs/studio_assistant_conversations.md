@@ -21,10 +21,9 @@ Before implementation, the matching production owners were inspected:
   and [resume tests](https://github.com/openai/codex/blob/b4b055cfc8fccc0040d13aa4304cf9ba61c2e27e/codex-rs/app-server/tests/suite/v2/thread_resume.rs):
   exact active-turn steering, thread interruption and native persisted history.
 
-These are pinned source snapshots, **not a claim that GitHub's source commit is
-the installed release**. The actual admitted CLI is still exactly `0.156.1`.
-Its generated experimental TypeScript contract and executed real-process tests
-determine supported fields and semantics. In particular:
+These links identify the source studied, not a required CLI version. The adapter
+admits capabilities and protocol behaviour, not an executable version number.
+Real-process tests run the installed CLI. In particular:
 
 - Queue operations require a persisted, not ephemeral, thread.
 - New work on a running thread is `thread/queue/add`; native Codex dispatches FIFO.
@@ -38,11 +37,10 @@ determine supported fields and semantics. In particular:
   start inference. Selecting history does not call thread/resume. Execution
   resumes the actual selected thread only on explicit send/continue.
 - The process reports source `vscode`, not an invented `appServer` list filter.
-- Cold resume reintroduces a local default environment even if thread/start
-  used `environments: []`. The first resumed-request regression exposed builtin
-  `view_image`; launch policy now disables that feature explicitly. Actual fresh
-  and resumed requests advertise only the admitted Studio tools. We did not
-  relax the capability assertion or conceal the extra tool in the browser.
+- Studio source tools supplement the CLI's native capabilities. The launch policy
+  enables code-mode tool dispatch, shell, images and the other admitted native
+  tools; it does not restrict the model to Studio tools alone. Fresh and resumed
+  turns use the same policy. Reference completion does not change that policy.
 
 ## Ownership
 
@@ -86,7 +84,7 @@ Authorization never automatically submits that draft. There is no reconnect loop
 - `/history [title search]`: existing shared Quick Pick, native pages of 40.
   Filtering the open page is local; only explicit search/page navigation does IO.
 - `/older`: previous 20 turns; retains existing message buffers and selection
-  identity while revealing the newly loaded page.
+  identity and the message being read; scroll upward to read the newly loaded page.
 - `/new`: distinct conversation, without deleting the previous one.
 - `/queue`: native waiting text; edit via the multiline composer or remove.
 - `/continue`, `/stop`: explicit native queue execution/cancellation.
@@ -105,6 +103,30 @@ take no geometry, drawing, hit testing or keyboard focus. Hiding cancels a press
 gesture before release. This improves ordinary Studio controls too, without a
 second assistant-only button system. Quick Pick, multiline editing, clipboard,
 text buffers, review and Undo remain the existing shared implementations.
+
+## Explicit source references
+
+The composer completes `@filename` from the Studio source catalog. Completion is
+local, uses the shared file scorer and does not connect or read files. Accepting an
+item stores the exact source domain/path with its UTF-16 prompt range; a basename
+alone is never guessed into an attachment. User text and semantic references travel
+together through start, Direct, queue, queue editing and historical messages.
+
+The provider adapter in `hosts/node/codex/input.ts` owns their native representation:
+an optional structured-data text block before the unchanged final user-prompt block,
+alongside the existing workspace/review data. The installed Codex input's
+[Mention variant](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/user_input.rs)
+models app/plugin references, not Studio source handles or unsaved working copies;
+Studio does not invent native mention URLs or use a private protocol extension.
+The native queue and thread persist the ordinary input blocks. Reading/editing them
+goes through this same adapter, preserving review observations as well as references.
+
+References identify resources, **not frozen snapshots or edit permissions**. The model
+resolves them using `studio_list_sources` and `studio_read_source` with the active
+turn's ordinary source authority. These tools read the editor-owned working copy,
+including unsaved changes. A queued turn resolves at execution time, while Direct
+retains its active turn context. Historical references never revive old receipts.
+No parallel file store, filesystem-only attachment copy, or new source tool is added.
 
 ## Scope and evidence
 

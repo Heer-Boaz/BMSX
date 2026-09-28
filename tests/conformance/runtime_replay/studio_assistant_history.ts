@@ -106,7 +106,7 @@ export async function runAssistantHistory(kind: StudioRendererKind, canvas: HTML
 	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame(); await renderer.capture!('resumed-transcript-dark');
 	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame();
 	const promptRow = view.transcript.rows.findIndex(row => row.entry === prompt.index && row.runs.length > 0);
-	const promptTop = view.viewport.offsetTop + promptRow * view.layout.rowHeight;
+	const promptTop = view.viewport.offsetTop + (promptRow + view.transcript.firstRow) * view.layout.rowHeight;
 	await test.click({ left: 12, right: 24, top: promptTop, bottom: promptTop + view.layout.rowHeight });
 	await press('ControlLeft', 'KeyC');
 	check(view.selectedEntry === prompt.index && await navigator.clipboard.readText() === firstPrompt, 'history: Copy returns original user Markdown, not formatted text');

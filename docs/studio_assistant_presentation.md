@@ -14,8 +14,8 @@ separates the task clock/activity from transcript history. Studio follows those
 ownership boundaries, not a character-stripping Markdown approximation.
 
 Word wrapping belongs to `ide/common/text.ts`; styled document parsing/layout
-belongs to `ide/common/markdown`, not the assistant pane. Completed entries and
-blocks are retained; idle frames do not parse or measure transcript text.
+belongs to `ide/common/markdown`, not the assistant pane. Visible entries and
+their blocks are retained; idle frames do not parse or measure transcript text.
 An incomplete first line does not commit its preceding open block: a streamed
 `2` can still become `2. item` and join a list. Parser-confirmed code, headings
 and rules stay committed, so a long completed code listing is not reparsed while
@@ -74,6 +74,60 @@ same advances for wrapping, pointer hits, selection and the caret. The text fiel
 continues to own editing and Undo; the assistant only supplies style ranges.
 Idle frames and cursor/theme changes never reparse the draft. The ordinary Terminal
 keeps its undecorated multiline field, with no Markdown parser or syntax policy.
+
+## Large transcripts and source references
+
+The transcript follows VS Code's dynamic-height
+[virtual list](https://github.com/microsoft/vscode/blob/main/src/vs/base/browser/ui/list/listView.ts)
+and [range index](https://github.com/microsoft/vscode/blob/main/src/vs/base/browser/ui/list/rangeMap.ts):
+message identity and estimated/measured height are distinct from materialized views.
+`AssistantTranscriptProjection` indexes heights with the shared `FenwickPrefix`
+(also used by code-editor wrapping). Only exposed messages and one viewport of
+overscan acquire parsed Markdown/layout objects. Those objects are released when
+scrolled out; original message buffers remain in the conversation. Width/font changes
+invalidate geometry, but measure only the exposed messages. Previously measured
+offscreen heights are provisional until exposure. Idle frames do no transcript work.
+Prepending a history page preserves the entry and within-entry row being read;
+height refinement corrects the scrollbar without jumping to the newly loaded page.
+When already at the end, streamed output continues to follow the end.
+Content-height refinement does not cancel an active scrollbar drag. Like VS Code's
+[scrollbar gesture](https://github.com/microsoft/vscode/blob/main/src/vs/base/browser/ui/scrollbar/abstractScrollbar.ts),
+the shared scrollbar captures its pointer/content ratio at pointer-down; only track
+movement, loss of the drag affordance or input cancellation retires the gesture.
+Stationary pointer frames do not overwrite the corrected reading position.
+
+This bounds expensive retained presentation data by exposed **messages**, not by
+the conversation's age. A single exceptionally large visible message still needs
+its own Markdown layout; this is not a claim of constant cost for arbitrary input.
+Native history remains explicitly paged via `/older`; no messages are silently
+discarded to meet a local history cap.
+
+Typing `@` in prose opens file suggestions above the composer. The implementation
+follows VS Code's [chat file completions](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/chat/browser/widget/input/editor/chatInputCompletions.ts)
+and [tracked attachment ranges](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/chat/browser/attachments/chatAttachmentModel.ts).
+Studio reuses its file Quick Pick scorer (basename/path matching, not metadata),
+visible-row renderer, scrollbar capture and focused commands. Arrows select;
+Enter/Tab or a pointer release accept; Escape or an outside click dismiss.
+Tab acceptance is a focused `suggest.accept` binding before ordinary focus traversal,
+not a global assistant-specific key interception. Suggestions never open a source,
+connect to an assistant, or issue model requests.
+
+Selected mentions retain the exact Studio `{ domain, path }` resource and a UTF-16
+range in the unchanged draft. Link color/underline identifies the attachment.
+The shared `TextField` owns range adjustment from actual edits and atomic Undo/Redo;
+editing through a reference removes its semantic attachment. Identical text at another
+position cannot steal an attachment. Markdown source styling composes with these
+annotations without hiding or rewriting the prompt. Queue editing restores both text
+and ranges, and native history carries the same metadata. See
+[conversation lifecycle](studio_assistant_conversations.md#explicit-source-references).
+
+Validation includes an isolated browser/HTTP/native-process round trip: selecting
+`@cart`, sending it, resolving the selected domain/path through Studio source tools,
+and reading unsaved editor text while disk remains unchanged. Light/dark and narrow
+screenshots exercise suggestions and the existing Markdown UI on software, WebGL2 and
+WebGPU. A separate synthetic 5,000-message history exercises Home/End/PageDown,
+resize anchoring and typing/completion without making 5,000 model calls. This is an
+automated stress fixture, not personal account or paid-model evidence.
 
 Host glyph range representation (no guest or hardware ABI changes):
 

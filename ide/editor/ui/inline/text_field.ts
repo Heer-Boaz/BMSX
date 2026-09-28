@@ -2,7 +2,7 @@ import { CHARACTER_CODES, CHARACTER_MAP } from '../../../common/character_map';
 import * as constants from '../../../common/constants';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
 import type { InlineInputOptions, Position } from '../../../common/models';
-import type { TextField } from './text_field_model';
+import type { TextField, TextFieldAnnotation } from './text_field_model';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { LuaLexer } from '../../../../toolchain/ts/lua/syntax/lexer';
 import { advanceToggleBlink } from '../view/caret/blink';
@@ -78,9 +78,10 @@ export function setSelectionAnchorPosition(field: TextField, row: number, column
 	setSingleCursorSelectionAnchor(field, row, column);
 }
 
-const applyTextUpdate = (field: TextField, nextText: string, nextCursorOffset: number): boolean => {
+const applyTextUpdate = <T>(field: TextField<T>, nextText: string, nextCursorOffset: number, from: number, to: number, annotation?: TextFieldAnnotation<T>): boolean => {
 	if (field.readOnly) return false;
-	const changed = nextText !== field.text;
+	const previousLength = field.text.length;
+	const changed = nextText !== field.text || annotation !== undefined;
 	if (changed) field.recordEdit();
 	const lines = nextText.split('\n');
 	field.text = nextText;
@@ -88,7 +89,7 @@ const applyTextUpdate = (field: TextField, nextText: string, nextCursorOffset: n
 	offsetToPosition(lines, nextCursorOffset, scratchPosition);
 	setSingleCursorPosition(field, scratchPosition.row, scratchPosition.column);
 	clearSingleCursorSelection(field);
-	if (changed) field.didChangeText();
+	if (changed) field.didChangeText({ from, to, insertedLength: nextText.length - previousLength + to - from }, annotation);
 	return changed;
 };
 
@@ -161,7 +162,7 @@ export function deleteSelection(field: TextField): boolean {
 	const end = anchorOffset < cursorOffsetValue ? cursorOffsetValue : anchorOffset;
 	const text = field.text;
 	const nextText = text.slice(0, start) + text.slice(end);
-	return applyTextUpdate(field, nextText, start);
+	return applyTextUpdate(field, nextText, start, start, end);
 }
 
 export function selectionLength(field: TextField): number {
@@ -189,7 +190,16 @@ export function insertValue(field: TextField, value: string): boolean {
 	const end = anchor === null ? offset : Math.max(anchor, offset);
 	const nextText = text.slice(0, start) + value + text.slice(end);
 	const nextCursor = start + value.length;
-	return applyTextUpdate(field, nextText, nextCursor);
+	return applyTextUpdate(field, nextText, nextCursor, start, end);
+}
+
+/** Inline semantic objects participate in the text field's ordinary edit/Undo history. */
+export function insertAnnotatedValue<T>(field: TextField<T>, value: string, data: T, suffix = ''): void {
+	const cursor = getCursorOffset(field), anchor = selectionAnchorOffset(field);
+	const from = anchor === null ? cursor : Math.min(cursor, anchor);
+	const to = anchor === null ? cursor : Math.max(cursor, anchor);
+	applyTextUpdate(field, field.text.slice(0, from) + value + suffix + field.text.slice(to), from + value.length + suffix.length,
+		from, to, { from, to: from + value.length, data });
 }
 
 export function backspace(field: TextField): boolean {
@@ -202,7 +212,7 @@ export function backspace(field: TextField): boolean {
 	}
 	const text = field.text;
 	const nextText = text.slice(0, offset - 1) + text.slice(offset);
-	return applyTextUpdate(field, nextText, offset - 1);
+	return applyTextUpdate(field, nextText, offset - 1, offset - 1, offset);
 }
 
 export function deleteForward(field: TextField): boolean {
@@ -215,7 +225,7 @@ export function deleteForward(field: TextField): boolean {
 		return false;
 	}
 	const nextText = text.slice(0, offset) + text.slice(offset + 1);
-	return applyTextUpdate(field, nextText, offset);
+	return applyTextUpdate(field, nextText, offset, offset, offset + 1);
 }
 
 export function deleteWordBackward(field: TextField): boolean {
@@ -241,7 +251,7 @@ export function deleteWordBackward(field: TextField): boolean {
 		return false;
 	}
 	const nextText = text.slice(0, index) + text.slice(offset);
-	return applyTextUpdate(field, nextText, index);
+	return applyTextUpdate(field, nextText, index, index, offset);
 }
 
 export function deleteWordForward(field: TextField): boolean {
@@ -267,7 +277,7 @@ export function deleteWordForward(field: TextField): boolean {
 		return false;
 	}
 	const nextText = text.slice(0, offset) + text.slice(index);
-	return applyTextUpdate(field, nextText, offset);
+	return applyTextUpdate(field, nextText, offset, offset, index);
 }
 
 export function moveCursor(field: TextField, row: number, column: number, extendSelection: boolean): void {
@@ -381,8 +391,8 @@ export function registerPointerClick(field: TextField, column: number, doubleCli
 	return isDouble;
 }
 
-export function setFieldText(field: TextField, value: string, moveCursorToEnd: boolean): void {
-	field.clearHistory();
+export function setFieldText<T>(field: TextField<T>, value: string, moveCursorToEnd: boolean, annotations: readonly TextFieldAnnotation<T>[] = []): void {
+	field.clearHistory(); field.annotations = annotations;
 	const lines = value.split('\n');
 	field.text = value;
 	field.lines = lines;
@@ -397,6 +407,7 @@ export function setFieldText(field: TextField, value: string, moveCursorToEnd: b
 	field.pointerSelecting = false;
 	field.lastPointerClickTimeMs = 0;
 	field.lastPointerClickColumn = -1;
+	field.didChangeText();
 }
 
 export function applyInlineFieldEditing(

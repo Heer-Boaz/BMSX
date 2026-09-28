@@ -480,6 +480,27 @@ renderers. Dit sluit B03/B04, propertyauthoring of A08 niet.
 | `STUDIO-UX-A07` | Afgerond: contribution-owned input/viewserializers en group-topologie staan los van dirty-working-copybackup. | Echte browserreload, cold layout en shutdown op drie renderers; schone/visual inputs en gedeelde working copies. Zie `workbench_session.md`. Geen legacy/compatibility readers; geen sluiting van B03/B04/B06 of A08. |
 | `STUDIO-UX-A08` | Onafhankelijke workflowfixtures en gerichte volledige-hostmetingen, naast de bestaande microbenchmarks. | Werkelijke Studio-framekosten en rewind memory/latency per target; fysieke SNES Mini-resultaten niet afleiden uit een PC-run. |
 
+### Scrollbar-drag: eigenaarschap en levensduur
+
+Open reviewpunt uit de assistant-UI: de annulering in
+`ide/workbench/ui/scrollbar_pointer.ts` combineert optionele input,
+`trackRevision`, dragstate en zichtbaarheid in één conditie:
+
+```ts
+if (this.input !== undefined && (this.revision !== this.input.trackRevision || this.dragging && !this.input.isVisible())) {
+```
+
+Onderzoek samen met `scrollbar_control.ts`, `scrollbar.ts` en de gedeelde
+pointer-capture-owner wie de levensduur van een gesture bezit. Maak onderscheid
+tussen input-detach, verplaatsing van de fysieke track en verfijning van virtuele
+contenthoogten. De twee controls mogen niet elk een afwijkend lifecyclebeleid
+gaan onderhouden. Vergelijk de productiecontracten van VS Code voordat een
+oplossing wordt gekozen; een extra guard, helper of cosmetische herschrijving
+van deze conditie is geen architectuurcorrectie. Gate: drag over nog ongemeten
+content blijft coherent; detach, verbergen en trackverplaatsing beëindigen of
+herijken de gesture volgens één expliciet ownercontract. Dit punt blijft open,
+los van de implementatie van lange conversaties en bronreferenties.
+
 ### Aanvullende behavior-review na A04
 
 De [nieuwe gebruikersreview](behavior_authoring_ux_review.md) onderscheidt

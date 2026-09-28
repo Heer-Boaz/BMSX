@@ -1,3 +1,5 @@
+import { TextStyle, type SourceTextStyle } from '../../../common/markdown/model';
+import type { ResourceIdentity } from '../../../common/resource';
 import { create_rect_bounds } from '../../../../machine/ts/common/rect';
 import { TextField } from '../../../editor/ui/inline/text_field_model';
 import { MultilineFieldViewport } from '../../../editor/ui/inline/multiline_viewport';
@@ -20,9 +22,10 @@ export class AssistantInput extends ReadonlyEditorInput<'assistant', 'assistant'
 	public readonly lifetime = new AbortController();
 	public editingQueuedId: string | undefined;
 	public commandPending = false;
-	public readonly draft = new TextField();
+	public readonly draft = new TextField<ResourceIdentity>();
 	public readonly composer = new MultilineFieldViewport(true);
 	public readonly draftMarkdown = new MarkdownSource();
+	public referenceStyles: readonly SourceTextStyle[] = [];
 	public readonly composerBounds = create_rect_bounds();
 	public readonly viewport = new WorkbenchScrollViewport();
 	public readonly transcript = new AssistantTranscriptProjection();
@@ -33,7 +36,6 @@ export class AssistantInput extends ReadonlyEditorInput<'assistant', 'assistant'
 	public draftHasText = false;
 	public selectedEntry = -1;
 	public projectedRevision = -1;
-	public revealOlder = false;
 	public readonly footer = new AssistantFooter();
 	public footerTop = 0;
 	public editingQueue = false;
@@ -43,13 +45,13 @@ export class AssistantInput extends ReadonlyEditorInput<'assistant', 'assistant'
 	public activityLabel = '';
 	public constructor(public readonly conversation: AssistantConversation) {
 		super('assistant', 'assistant', 'CODEX', true);
-		this.disposables.add({ dispose: this.draft.onDidChangeText(() => { this.draftHasText = this.draft.text.trim().length > 0; }) });
+		this.disposables.add({ dispose: this.draft.onDidChangeText(() => { this.draftHasText = this.draft.text.trim().length > 0;
+			this.referenceStyles = this.draft.annotations.map(span => ({ from: span.from, to: span.to, style: TextStyle.Link })); }) });
 		this.disposables.add({ dispose: conversation.onDidChange((index, kind) => {
-			if (kind === 'reset' || kind === 'prepend') this.transcript.reset();
-			else if (kind === 'proposal') this.transcript.invalidateHeading(index);
-			else if (kind === 'text') this.transcript.invalidate(index);
-			if (kind === 'prepend') { this.revealOlder = true; if (this.selectedEntry >= 0) this.selectedEntry += index; }
-			if (kind === 'reset') { this.editingQueuedId = undefined; this.revealOlder = false; }
+			if (kind === 'reset') this.transcript.reset();
+			else if (kind === 'proposal' || kind === 'text') this.transcript.invalidate(index);
+			if (kind === 'prepend' && this.selectedEntry >= 0) this.selectedEntry += index;
+			if (kind === 'reset') { this.editingQueuedId = undefined; }
 			if (conversation.accountRefreshing) this.editingQueuedId = undefined;
 			if (conversation.entries.length === 0) this.selectedEntry = -1;
 			if (kind === 'text' && conversation.entries[index]?.kind === 'proposal') this.selectedEntry = index;

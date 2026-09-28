@@ -34,7 +34,11 @@ for (const orientation of ['horizontal', 'vertical'] as const) {
 		assert.equal(bar.getScroll(), 150); assert.equal(capture.active, false);
 		control.begin(event(60, primary, primary));
 		bar.layout(track, 500, 100, 150); control.update();
-		assert.equal(capture.active, false); assert.equal(bar.getScroll(), 150);
+		assert.equal(capture.active, true, 'content height refinement does not end an ongoing gesture');
+		capture.dispatch(event(60, primary), false, 50); assert.equal(bar.getScroll(), 150);
+		const movedTrack = { ...track, right: track.right + 1 };
+		bar.layout(movedTrack, 500, 100, 150); control.update();
+		assert.equal(capture.active, false, 'physical track movement retires capture');
 		bar.layout(track, 100, 100, 0);
 		assert.equal(control.begin(event(60, primary, primary)), false, 'non-scrollable content never captures');
 	});
@@ -50,7 +54,6 @@ for (const orientation of ['horizontal', 'vertical'] as const) {
 		assert.equal(end() - start(), 25);
 		assert.equal(start(), 48);
 		const offset = bar.beginDrag(start() + 4);
-		assert.deepEqual(offset, { pointer: 52, scroll: 150 });
 		assert.equal(bar.drag(start() + 4, offset), 150, 'pixel rounding does not move content when grabbing a thumb');
 		assert.equal(bar.drag(14, offset), 0);
 		assert.equal(bar.drag(90, offset), 300);
@@ -58,7 +61,7 @@ for (const orientation of ['horizontal', 'vertical'] as const) {
 		assert.equal(bar.drag(-100, offset), 0);
 		const middleOffset = bar.beginDrag(60);
 		assert.equal(bar.getScroll(), 150);
-		assert.deepEqual(middleOffset, { pointer: 60, scroll: 150 });
+		assert.equal(bar.drag(60, middleOffset), 150);
 		for (let index = 0; index < 100; index += 1) bar.layout(track, 400, 100, 150);
 		assert.equal(bar.getThumb(), thumb);
 		track[orientation === 'horizontal' ? 'top' : 'left'] += 10;

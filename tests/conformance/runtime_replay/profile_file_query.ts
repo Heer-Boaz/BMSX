@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import type { RuntimeResource } from '../../../ide/common/resource';
 import { buildResourceQuickPickItems } from '../../../ide/workbench/contrib/resources/quick_access';
-import { FileQuickPickProvider } from '../../../ide/workbench/contrib/resources/quick_pick_provider';
+import { FileQuickPickProvider } from '../../../ide/workbench/services/quick_input/file_provider';
 import { TextQuickPickProvider } from '../../../ide/workbench/services/quick_input/text_provider';
 import { QuickInputController } from '../../../ide/workbench/services/quick_input/controller';
 import { configureFontVariant } from '../../../ide/editor/ui/view/view';

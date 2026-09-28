@@ -1,4 +1,4 @@
-import type { AssistantConfiguration, AssistantModelSelection } from '../../common/assistant_protocol';
+import type { AssistantConfiguration, AssistantModelSelection, AssistantSourceReference } from '../../common/assistant_protocol';
 import { CodexModels } from './models';
 import { CodexUsage, type CodexRateLimits, type CodexRateLimitsRead } from './usage';
 import { execFile } from 'node:child_process';
@@ -9,7 +9,7 @@ import { CodexProfile } from './profile';
 import { CodexStdio, type CodexProcessExit } from './stdio';
 import { STUDIO_ACCOUNT_LOGIN_URL, type AssistantHistoryPage, type AssistantLoginMethod, type AssistantTranscriptPage, type AssistantReviewUpdate, type AssistantThread } from '../../common/assistant_protocol';
 import { CodexHistory } from './history';
-import { codexMessageInput, type CodexTextInput } from './input';
+import { codexMessageInput, codexPrompt, type CodexTextInput } from './input';
 import { CodexAdmissionError, CodexProtocolError, type Json, type CodexAccount, type CodexSessionEvent,
 	type CodexLogin, type CodexTool, type CodexToolCall, type CodexToolResult, type CodexTurn, type RpcId, type RpcMessage } from './protocol';
 
@@ -279,20 +279,20 @@ export class CodexSession {
 		} finally { this.selecting = false; }
 	}
 
-	public async enqueue(prompt: string, reviews: readonly AssistantReviewUpdate[]): Promise<void> {
+	public async enqueue(prompt: string, reviews: readonly AssistantReviewUpdate[], references: readonly AssistantSourceReference[] = []): Promise<void> {
 		if (!this.history.selected || this.selecting || this.stopping || this.login || this.signingOut || this.accountRefreshing) throw new Error('The conversation is not accepting queued messages');
 		const thread = this.history.selected;
 		this.policy.admit(await this.rpc.request('config/read', { includeLayers: true, cwd: this.profile.cwd }));
 		if (this.history.selected !== thread || this.selecting || this.stopping || this.retired) throw new Error('The conversation changed before queue admission');
 		this.queueEnabled = true;
-		await this.rpc.request('thread/queue/add', { threadId: thread.id, clientUserMessageId: randomUUID(), input: codexMessageInput(prompt, reviews, this.options.workspaceRoot) });
+		await this.rpc.request('thread/queue/add', { threadId: thread.id, clientUserMessageId: randomUUID(), input: codexMessageInput(prompt, reviews, this.options.workspaceRoot, references) });
 		// An unloaded history selection has no native event subscription. Refresh
 		// after its explicit mutation without resuming the thread just to observe it.
 		if (this.history.selected === thread && !this.history.loaded) this.refreshQueue();
 	}
-	public async updateQueued(id: string, prompt: string): Promise<void> {
+	public async updateQueued(id: string, prompt: string, references: readonly AssistantSourceReference[] = []): Promise<void> {
 		const thread = this.history.selected!;
-		await this.history.updateQueued(thread.id, id, prompt);
+		await this.history.updateQueued(thread.id, id, prompt, references);
 		if (this.history.selected === thread && !this.history.loaded) this.refreshQueue();
 	}
 	public async deleteQueued(id: string): Promise<void> {
@@ -302,23 +302,23 @@ export class CodexSession {
 		if (this.history.selected === thread && !this.history.loaded) this.refreshQueue();
 	}
 
-	public async steer(turnId: string, prompt: string, reviews: readonly AssistantReviewUpdate[]): Promise<string> {
+	public async steer(turnId: string, prompt: string, reviews: readonly AssistantReviewUpdate[], references: readonly AssistantSourceReference[] = []): Promise<string> {
 		const turn = this.active;
 		if (!turn || turn.id !== turnId || turn.controller.signal.aborted || this.stopping) throw new Error('The selected turn is no longer accepting direct messages');
 		const result = await this.rpc.request<{ turnId: string }>('turn/steer', {
-			threadId: this.history.selected!.id, expectedTurnId: turnId, input: codexMessageInput(prompt, reviews, this.options.workspaceRoot),
+			threadId: this.history.selected!.id, expectedTurnId: turnId, input: codexMessageInput(prompt, reviews, this.options.workspaceRoot, references),
 		});
 		return result.turnId;
 	}
 
-	public async startTurn(prompt: string, reviews: readonly AssistantReviewUpdate[], queued = false): Promise<string> {
+	public async startTurn(prompt: string, reviews: readonly AssistantReviewUpdate[], queued = false, references: readonly AssistantSourceReference[] = []): Promise<string> {
 		if (this.retired) throw new CodexProtocolError('Codex connection closed');
 		if (this.active) throw new Error('A Codex turn is already active');
 		if (this.login || this.signingOut || this.accountRefreshing || this.selecting || this.stopping) throw new Error('Finish the current conversation/account operation before starting a turn');
 		const turn: TurnLifetime = { started: undefined, controller: new AbortController(), calls: new Set() };
 		this.active = turn;
 		this.queueEnabled = true;
-		turn.started = this.start(turn, prompt, reviews, queued);
+		turn.started = this.start(turn, prompt, reviews, queued, references);
 		try { return (await turn.started).turn.id; }
 		catch (error) {
 			this.retireTurn(turn);
@@ -326,7 +326,7 @@ export class CodexSession {
 		}
 	}
 
-	private async start(turn: TurnLifetime, prompt: string, reviews: readonly AssistantReviewUpdate[], queued: boolean): Promise<{ turn: CodexTurn }> {
+	private async start(turn: TurnLifetime, prompt: string, reviews: readonly AssistantReviewUpdate[], queued: boolean, references: readonly AssistantSourceReference[]): Promise<{ turn: CodexTurn }> {
 		// Account/managed configuration can change between turns. Re-admit at the
 		// operation boundary, never in the notification/token hot path.
 		this.policy.admit(await this.rpc.request('config/read', { includeLayers: true, cwd: this.profile.cwd }));
@@ -345,7 +345,7 @@ export class CodexSession {
 		turn.controller.signal.throwIfAborted();
 		const result = queued
 			? await this.rpc.request<{ turn: CodexTurn }>('thread/queue/start', { threadId: this.history.selected!.id })
-			: await this.rpc.request<{ turn: CodexTurn }>('turn/start', { threadId: this.history.selected!.id, input: codexMessageInput(prompt, reviews, this.options.workspaceRoot) });
+			: await this.rpc.request<{ turn: CodexTurn }>('turn/start', { threadId: this.history.selected!.id, input: codexMessageInput(prompt, reviews, this.options.workspaceRoot, references) });
 		if (turn.id !== undefined && turn.id !== result.turn.id) throw new CodexProtocolError('Codex turn response changed its identity');
 		turn.id = result.turn.id;
 		return result;
@@ -443,7 +443,7 @@ export class CodexSession {
 					this.options.onEvent({ type: 'activity', turnId: params.turnId, label });
 				}
 				if (params.item.type === 'userMessage') {
-					this.options.onEvent({ type: 'user-message', turnId: params.turnId, itemId: params.item.id, text: params.item.content.at(-1)!.text });
+					this.options.onEvent({ type: 'user-message', turnId: params.turnId, itemId: params.item.id, ...codexPrompt(params.item.content) });
 				}
 				break;
 			case 'thread/queue/changed':

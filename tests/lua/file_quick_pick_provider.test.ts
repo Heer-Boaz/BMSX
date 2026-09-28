@@ -7,7 +7,7 @@ import { editorViewState } from '../../ide/editor/ui/view/state';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import type { QuickPickProjection } from '../../ide/workbench/services/quick_input/provider';
 import { buildResourceQuickPickItems } from '../../ide/workbench/contrib/resources/quick_access';
-import { FileQuickPickProvider } from '../../ide/workbench/contrib/resources/quick_pick_provider';
+import { FileQuickPickProvider } from '../../ide/workbench/services/quick_input/file_provider';
 
 function fixture(paths: string[]) {
 	const resources: RuntimeResource[] = paths.map(path => ({ domain: 0, path, source: { resid: path, type: 'lua' } }));

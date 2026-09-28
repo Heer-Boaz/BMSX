@@ -7,7 +7,7 @@ import { TextEditorInput } from '../../common/editor_input';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { getActiveTab } from '../../ui/tabs';
 import { buildResourceQuickPickItems } from '../resources/quick_access';
-import { FileQuickPickProvider } from '../resources/quick_pick_provider';
+import { FileQuickPickProvider } from '../../services/quick_input/file_provider';
 
 export type SourceViewContribution = {
 	readonly title: string;

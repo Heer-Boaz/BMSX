@@ -104,6 +104,7 @@ export type EditorCommandId =
 	| 'sourceEditReview.source'
 	| 'undo'
 	| 'redo'
+	| 'suggest.accept'
 	| 'behaviorLens.moveChildEarlier'
 	| 'behaviorLens.moveChildLater'
 	| 'behaviorLens.removeChild'

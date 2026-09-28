@@ -25,6 +25,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	commandPalette: { category: 'View', title: 'Command Palette' },
 	undo: { category: 'Edit', title: 'Undo' },
 	redo: { category: 'Edit', title: 'Redo' },
+	'suggest.accept': { category: 'Input', title: 'Accept Suggestion' },
 	symbolSearch: { category: 'Go', title: 'Go to Symbol' },
 	symbolSearchGlobal: { category: 'Go', title: 'Go to Symbol in Workspace' },
 	resourceSearch: { category: 'Go', title: 'Go to File' },

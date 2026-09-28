@@ -5171,6 +5171,16 @@ restored history; source text remains unchanged for transport, editing and Copy.
 The composer overlays source-range Markdown styles on the shared multiline field.
 Lezer owns incremental source syntax; the field owns source offsets, measured
 styled caret/selection geometry and Undo. It never edits rendered transcript text.
+The transcript separates retained message buffers, indexed estimated/measured heights
+and viewport-owned Markdown views. The shared Fenwick geometry index supports scroll
+lookup without flattening history; only exposed messages acquire layout objects.
+Prepending history and refining heights preserve the reading entry/row anchor.
+`@` completion consumes the existing source catalog and shared file Quick Pick scorer;
+it performs no account, model or source IO. Exact resource identities are attached to
+UTF-16 draft ranges owned by the shared text field and its Undo history. The Node
+input adapter carries references through native input/queue/history blocks. Reading
+the referenced source still belongs to the turn-scoped Studio source tools and
+resource-owned working copies, not an attachment snapshot or raw filesystem reader.
 Markdown's shared theme separates strong text, italic emphasis, links and tinted
 code surfaces. Code/link colors survive nested emphasis, selection owns its own
 contrast, and strong emphasis never changes bitmap glyphs or layout metrics.
