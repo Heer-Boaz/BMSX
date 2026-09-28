@@ -1,5 +1,5 @@
 import { closeLineJump } from '../workbench/contrib/code_editor/find/line_jump';
-import { closeSearch } from '../workbench/contrib/code_editor/find/search';
+import type { EditorSearchController } from '../workbench/contrib/code_editor/find/search';
 import { resetBlink } from '../editor/render/caret';
 import type { ResourcePanelController } from '../workbench/contrib/resources/panel/controller';
 
@@ -11,7 +11,7 @@ export function releaseResourcePanelFocus(resourcePanel: ResourcePanelController
 	resetBlink();
 }
 
-export function prepareEditorForSourceFocus(): void {
+export function prepareEditorForSourceFocus(search: EditorSearchController): void {
 	closeLineJump(true);
-	closeSearch(true);
+	search.closeSearch(true);
 }

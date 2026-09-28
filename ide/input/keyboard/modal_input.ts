@@ -1,13 +1,13 @@
 import { pointerHover } from '../pointer/hover';
 import { runtimeErrorOverlayPointer } from '../../editor/contrib/runtime_error/pointer';
-import { closeSearch } from '../../workbench/contrib/code_editor/find/search';
+import type { EditorSearchController } from '../../workbench/contrib/code_editor/find/search';
 import { editorFeedbackState } from '../../common/feedback_state';
 import { closeBlockingWorkbenchModal, hasBlockingWorkbenchModal } from '../../workbench/contrib/modal/blocking_modal';
 import { closeLineJump } from '../../workbench/contrib/code_editor/find/line_jump';
 import { runtimeErrorState } from '../../editor/contrib/runtime_error/state';
 import { editorSearchState, lineJumpState } from '../../workbench/contrib/code_editor/find/widget_state';
 
-export function handleEscapeKey(): boolean {
+export function handleEscapeKey(search: EditorSearchController): boolean {
 	if (hasBlockingWorkbenchModal()) {
 		closeBlockingWorkbenchModal();
 		return true;
@@ -18,7 +18,7 @@ export function handleEscapeKey(): boolean {
 		return true;
 	}
 	if (editorSearchState.field.focusTarget.hasFocus || editorSearchState.visible) {
-		closeSearch(false, true);
+		search.closeSearch(false);
 		return true;
 	}
 	if (overlay) {

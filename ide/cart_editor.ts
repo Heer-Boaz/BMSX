@@ -86,7 +86,7 @@ import { editorTextModelService } from './editor/model/model_service';
 import { setActiveDiagnostics } from './editor/contrib/diagnostics/state';
 import type { ResourceDiagnosticsService } from './workbench/services/diagnostics/resource_diagnostics';
 import { applyLineJumpFieldText } from './workbench/contrib/code_editor/find/line_jump';
-import { EditorSearchController, applySearchFieldText, cancelGlobalSearchJob, cancelSearchJob, startSearchJob, searchHover } from './workbench/contrib/code_editor/find/search';
+import { EditorSearchController, applySearchFieldText, startSearchJob } from './workbench/contrib/code_editor/find/search';
 import { editorSearchState, lineJumpState } from './workbench/contrib/code_editor/find/widget_state';
 import { renameController } from './workbench/contrib/code_editor/rename/controller';
 import { CrossFileRenameManager } from './workbench/contrib/code_editor/rename/operations';
@@ -372,11 +372,13 @@ export class RuntimeCartEditor implements CartEditor {
 				this.commands,
 			),
 		});
+		this.search = new EditorSearchController(this.sources, renameController);
 		this.navigation = new EditorNavigationController(
 			this.sources,
 			this.resourcePanel,
 			this.resourceEditors,
 			this.editorPanes,
+			this.search,
 		);
 		this.sceneEditor = new SceneEditorController(this.sources, this.editorPanes, this.navigation);
 		this.actorLab = new ActorLabController(sources, luaTooling.suspendedGuest, runtime.machine.cpu,
@@ -410,7 +412,6 @@ export class RuntimeCartEditor implements CartEditor {
 			resource_view: new ResourceViewerInputSerializer(sources),
 		};
 		this.crossFileRename = new CrossFileRenameManager(this.sources);
-		this.search = new EditorSearchController(this.sources, renameController);
 		this.unbindQuickInputFields = bindQuickInputFields(
 			this, this.sources, this.clipboard,
 		);
@@ -469,9 +470,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (codeTabActive) {
 			updateDesiredColumn();
 		}
-		pointerHover.release(searchHover);
-		editorSearchState.field.focusTarget.release();
-		editorSearchState.visible = false;
+		this.search.closeSearch(false);
 		lineJumpState.field.focusTarget.release();
 		lineJumpState.visible = false;
 		lineJumpState.value = '';
@@ -479,13 +478,7 @@ export class RuntimeCartEditor implements CartEditor {
 			syncRuntimeErrorOverlayFromContext(activeTab.context);
 		}
 		closeBlockingWorkbenchModal();
-		cancelSearchJob();
-		cancelGlobalSearchJob();
-		this.resetGlobalSearchView();
-		if (editorSearchState.query.length === 0) {
-			editorSearchState.matches = [];
-			editorSearchState.currentIndex = -1;
-		} else if (codeTabActive) {
+		if (codeTabActive && editorSearchState.query.length > 0) {
 			startSearchJob();
 		}
 		if (codeTabActive) {
@@ -536,16 +529,12 @@ export class RuntimeCartEditor implements CartEditor {
 		clearGotoHoverHighlight();
 		editorViewState.scrollbarController.cancel();
 		editorCaretState.cursorRevealSuspended = false;
-		editorSearchState.field.focusTarget.release();
-		editorSearchState.visible = false;
+		this.search.closeSearch(false);
 		lineJumpState.field.focusTarget.release();
 		lineJumpState.visible = false;
 		closeBlockingWorkbenchModal();
 		this.resourcePanel.hide();
 		editorChromeState.resourcePanelResizing = false;
-		cancelSearchJob();
-		cancelGlobalSearchJob();
-		this.resetGlobalSearchView();
 		clearBackgroundTasks();
 		this.diagnostics.setEnabled(false);
 		editorRuntimeState.lastReportedSemanticError = null;
@@ -678,14 +667,7 @@ export class RuntimeCartEditor implements CartEditor {
 		clearEditorPointerSelectionState();
 		clearGotoHoverHighlight();
 		editorCaretState.cursorRevealSuspended = false;
-		editorSearchState.field.focusTarget.release();
-		editorSearchState.visible = false;
-		cancelSearchJob();
-		cancelGlobalSearchJob();
-		editorSearchState.matches = [];
-		this.resetGlobalSearchView();
-		editorSearchState.currentIndex = -1;
-		applySearchFieldText('', true);
+		this.search.closeSearch(true);
 		lineJumpState.field.focusTarget.release();
 		lineJumpState.visible = false;
 		applyLineJumpFieldText('', true);
@@ -776,13 +758,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.activate();
 		const message = `${fallbackMessage}: ${errormsg}`;
 		showEditorMessage(message, constants.COLOR_STATUS_ERROR, 2.0);
-	}
-
-	private resetGlobalSearchView(): void {
-		editorSearchState.globalMatches = [];
-		editorSearchState.displayOffset = 0;
-		editorSearchState.hoverIndex = -1;
-		editorSearchState.scope = 'local';
 	}
 
 	private initialize(

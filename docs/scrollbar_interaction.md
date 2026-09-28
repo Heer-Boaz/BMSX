@@ -76,7 +76,21 @@ were also inspected.
 
 These are automated host workflows, not evidence of a physical phone or a real
 account/model session. Debug/release Studio builds, IDE typechecking, the targeted
-261 behavioural tests and the boundary audit pass. The broad Studio workflow
-stops separately in `testStudioNavigationHistory` with a null `selectionAnchor`;
-the same failure was reproduced on the unchanged parent `ed2e69090`. This is not
-a claim that the entire Studio regression suite is green.
+261 behavioural tests and the boundary audit pass.
+
+The separate `selectionAnchor` crash originally found in
+`testStudioNavigationHistory` (also reproduced on the unchanged parent
+`ed2e69090`) belonged to inline Find, not scrollbar capture or the guest CPU.
+Source navigation cleared a closed field whose permanent change listener still
+ran code-selection effects after its pane detached. The follow-up gives
+`EditorSearchController` the query subscription and closes it before field reset
+or pane detach. Navigation, Escape, Go to Line, Rename and workbench teardown all
+use that owner. Source selection seeds a reopened Find before the first query.
+
+Follow-up validation: the complete `browser.mjs --studio` workflow now passes on
+software, WebGL2 and WebGPU, including diagram Source/definition/Back/Forward and
+Find typing/Undo/Redo. The Find, Source and restored-diagram checkpoints were
+visually inspected. The 43 targeted search/model/focus/navigation unit tests,
+IDE and changed-test typechecks, debug/release Studio builds and boundary audit
+also pass. These remain isolated automated host workflows, not physical-device
+or real assistant-account evidence.

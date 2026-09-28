@@ -4,14 +4,15 @@ import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } 
 import { lineJumpState } from '../../../workbench/contrib/code_editor/find/widget_state';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { Clipboard } from '../../../../hosts/common/clipboard';
+import type { EditorSearchController } from '../../../workbench/contrib/code_editor/find/search';
 
-export function handleLineJumpInput(playerInput: PlayerInput, clipboard: Clipboard): void {
+export function handleLineJumpInput(playerInput: PlayerInput, clipboard: Clipboard, search: EditorSearchController): void {
 	const shiftDown = isShiftDown(playerInput);
 	const ctrlDown = isCtrlDown(playerInput);
 	const metaDown = isMetaDown(playerInput);
 	if ((ctrlDown || metaDown) && isKeyJustPressed('KeyL', playerInput)) {
 		consumeIdeKey('KeyL', playerInput);
-		openLineJump();
+		openLineJump(search);
 		return;
 	}
 	if (!shiftDown && (isKeyJustPressed('NumpadEnter', playerInput) || isKeyJustPressed('Enter', playerInput))) {

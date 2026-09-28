@@ -50,7 +50,6 @@ export function handleSearchPointer(editorPanes: EditorPanes, sources: RuntimeSo
 	if (snapshot.viewportY < fieldBottom) {
 		if (justPressed) {
 			closeLineJump(false);
-			editorSearchState.visible = true;
 			editorSearchState.field.focusTarget.focus();
 			activateQuickInputField(resourcePanel);
 		}

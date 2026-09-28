@@ -66,6 +66,8 @@ export function activeSearchMatchCount(): number {
 }
 
 export class EditorSearchController {
+	private unbindQueryChange: (() => void) | undefined;
+
 	public constructor(
 		private readonly sources: RuntimeSourceState,
 		private readonly renameController: RenameController,
@@ -73,46 +75,76 @@ export class EditorSearchController {
 	}
 
 	public openSearch(useSelection: boolean, scope: 'local' | 'global' = 'local'): void {
+		this.closeSearch(false);
 		clearReferenceHighlights();
 		closeLineJump(false);
 		this.renameController.cancel();
 
-		editorSearchState.scope = scope;
-		editorSearchState.displayOffset = 0;
-		editorSearchState.hoverIndex = -1;
-		editorSearchState.currentIndex = -1;
-
-		if (scope === 'global') {
-			cancelSearchJob();
-			editorSearchState.matches = [];
-			editorSearchState.globalMatches = [];
-		} else {
-			cancelGlobalSearchJob();
-			editorSearchState.globalMatches = [];
-		}
-
-		editorSearchState.visible = true;
-		editorSearchState.field.focusTarget.focus();
-
-		applySearchFieldText(editorSearchState.query, true);
-
+		let query = editorSearchState.query;
 		if (useSelection) {
 			const range = getSelectionRange();
 			const selected = getSelectionText();
 			if (range && selected.length > 0 && selected.indexOf('\n') === -1) {
-				applySearchFieldText(selected, true);
+				query = selected;
 				activeCodeEditor.view.cursorRow = range.start.row;
 				activeCodeEditor.view.cursorColumn = range.start.column;
 				activeCodeEditor.emitCursorMoved();
 			}
 		}
 
-		editorSearchState.query = editorSearchState.field.text;
+		// Seed before binding: one query, without clearing the source selection
+		// before it has been read. Only a live find session observes field edits.
+		applySearchFieldText(query, true);
+		editorSearchState.scope = scope;
+		editorSearchState.visible = true;
+		this.unbindQueryChange = editorSearchState.field.onDidChangeText(() => {
+			editorSearchState.query = editorSearchState.field.text;
+			this.onSearchQueryChanged();
+			resetBlink();
+		});
+		editorSearchState.field.focusTarget.focus();
 		this.onSearchQueryChanged();
 		resetBlink();
 	}
 
-	public onSearchQueryChanged(): void {
+	public closeSearch(clearQuery: boolean): void {
+		// End model-bound effects before resetting retained widget state. A source
+		// navigation can close Find after its code pane has already detached.
+		this.unbindQueryChange?.();
+		this.unbindQueryChange = undefined;
+		cancelSearchJob();
+		cancelGlobalSearchJob();
+		pointerHover.release(searchHover);
+		editorSearchState.field.focusTarget.release();
+		editorSearchState.field.selectionAnchor = null;
+		editorSearchState.field.pointerSelecting = false;
+		editorSearchState.visible = false;
+		editorSearchState.scope = 'local';
+		editorSearchState.matches = [];
+		editorSearchState.globalMatches = [];
+		editorSearchState.currentIndex = -1;
+		editorSearchState.hoverIndex = -1;
+		editorSearchState.displayOffset = 0;
+		if (clearQuery) {
+			applySearchFieldText('', true);
+		}
+		resetBlink();
+	}
+
+	public focusEditorFromSearch(): void {
+		if (editorSearchState.query.length === 0) {
+			this.closeSearch(false);
+			return;
+		}
+		pointerHover.release(searchHover);
+		editorSearchState.field.focusTarget.release();
+		editorSearchState.hoverIndex = -1;
+		editorSearchState.field.selectionAnchor = null;
+		editorSearchState.field.pointerSelecting = false;
+		resetBlink();
+	}
+
+	private onSearchQueryChanged(): void {
 		if (editorSearchState.scope === 'global') {
 			this.onGlobalSearchQueryChanged();
 			return;
@@ -134,58 +166,6 @@ export class EditorSearchController {
 }
 
 export const searchHover: PointerHoverTarget = { onPointerLeave: () => { editorSearchState.hoverIndex = -1; } };
-
-export function closeSearch(clearQuery: boolean, forceHide = false): void {
-	pointerHover.release(searchHover);
-	editorSearchState.field.focusTarget.release();
-	editorSearchState.hoverIndex = -1;
-	editorSearchState.displayOffset = 0;
-
-	if (clearQuery) {
-		applySearchFieldText('', true);
-	}
-	editorSearchState.query = editorSearchState.field.text;
-
-	const hide = forceHide || clearQuery || editorSearchState.query.length === 0;
-	if (hide) {
-		editorSearchState.visible = false;
-		editorSearchState.scope = 'local';
-		editorSearchState.matches = [];
-		editorSearchState.globalMatches = [];
-		editorSearchState.currentIndex = -1;
-		cancelSearchJob();
-		cancelGlobalSearchJob();
-	} else {
-		if (editorSearchState.scope !== 'local') {
-			editorSearchState.scope = 'local';
-			cancelGlobalSearchJob();
-			editorSearchState.globalMatches = [];
-		}
-		editorSearchState.matches = [];
-		editorSearchState.currentIndex = -1;
-		editorSearchState.visible = true;
-		onLocalSearchQueryChanged();
-	}
-
-	resetBlink();
-}
-
-export function focusEditorFromSearch(): void {
-	pointerHover.release(searchHover);
-	editorSearchState.field.focusTarget.release();
-	editorSearchState.hoverIndex = -1;
-	editorSearchState.field.selectionAnchor = null;
-	editorSearchState.field.pointerSelecting = false;
-	if (editorSearchState.query.length === 0) {
-		editorSearchState.visible = false;
-		editorSearchState.matches = [];
-		editorSearchState.globalMatches = [];
-		editorSearchState.currentIndex = -1;
-		cancelSearchJob();
-		cancelGlobalSearchJob();
-	}
-	resetBlink();
-}
 
 function onLocalSearchQueryChanged(): void {
 	if (editorSearchState.query.length === 0) {

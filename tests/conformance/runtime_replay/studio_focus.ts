@@ -40,6 +40,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	check(inputFocus.target === field.focusTarget, 'focus: Find owns keyboard input, not merely a pane-local flag');
 	for (const key of ['KeyW', 'KeyO', 'KeyR', 'KeyL', 'KeyD']) await press(key);
 	check(field.text === 'world' && editorSearchState.query === 'world', 'focus: real Find input updates its query');
+	await test.capture?.('find-input');
 	await press('ControlLeft', 'KeyZ');
 	check(field.text === 'worl' && editorSearchState.query === 'worl' && model.buffer.getText() === edited,
 		'focus: field Undo publishes query change without document Undo');

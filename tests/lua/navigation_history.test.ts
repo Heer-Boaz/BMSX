@@ -5,6 +5,8 @@ import test from 'node:test';
 import { NavigationHistoryEntry, areNavigationEntriesEqual, captureNavigation, createNavigationEntry, navigationState, pushUniqueNavigationEntry, resetNavigationHistoryState, takeBackwardNavigationEntry, takeForwardNavigationEntry } from '../../ide/navigation/navigation_history';
 import { EditorPaneSelection } from '../../ide/workbench/services/editor/editor_selection';
 import { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
+import { EditorSearchController } from '../../ide/workbench/contrib/code_editor/find/search';
+import { renameController } from '../../ide/workbench/contrib/code_editor/rename/controller';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { CodeEditorInput, WORKBENCH_TEXT_EDITOR_ID } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
@@ -119,7 +121,7 @@ test('history awaits the registered resource opener and restores a closed text i
 			id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: async actual => {
 				assert.equal(actual, resource); await openGate; return reopened;
 			},
-		}]), panes,
+		}]), panes, new EditorSearchController({} as RuntimeSourceState, renameController),
 	);
 	t.after(() => { panes.dispose(); editorTabGroup.clear(); });
 	const version = reopened.workingCopy.version;
@@ -145,7 +147,7 @@ test('Back activates a surviving visual preview without turning navigation into 
 	navigationState.back.push(target);
 	const navigation = new EditorNavigationController(
 		{} as RuntimeSourceState, { isFocused: () => false } as ResourcePanelController,
-		new ResourceEditorResolver([]), panes,
+		new ResourceEditorResolver([]), panes, new EditorSearchController({} as RuntimeSourceState, renameController),
 	);
 	t.after(() => { panes.dispose(); editorTabGroup.clear(); origin.workingCopy.dispose(); });
 	await navigation.goBackward();
@@ -173,7 +175,7 @@ for (const route of ['resource', 'history'] as const) for (const interruption of
 					if (resource === older.workingCopy.resource) { await openGate; return older; }
 					return newer;
 				},
-			}]), panes,
+			}]), panes, new EditorSearchController({} as RuntimeSourceState, renameController),
 		);
 		t.after(() => { panes.dispose(); editorTabGroup.clear(); });
 		const target = new NavigationHistoryEntry({ kind: 'resource', ...older.toResourceEditor() }, new CodeEditorNavigationSelection(older));
@@ -211,7 +213,7 @@ test('a debugger continuation cannot decorate a tab chosen after its source atta
 	const navigation = new EditorNavigationController(
 		{ resourceByIdentity: new Map([[`0\0${resource.path}`, resource]]) } as RuntimeSourceState,
 		{ queuePendingSelection() {}, isVisible: () => false, isFocused: () => false } as unknown as ResourcePanelController,
-		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: () => stopped }]), panes,
+		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: () => stopped }]), panes, new EditorSearchController({} as RuntimeSourceState, renameController),
 	);
 	t.after(() => { panes.dispose(); editorTabGroup.clear(); });
 	const pending = focusExecutionStop({ navigation, editorPanes: panes } as CartEditor, resource, 2, 7);
@@ -232,7 +234,7 @@ test('cancelled resolution does not dispose an input already owned by the group'
 	const navigation = new EditorNavigationController(
 		{} as RuntimeSourceState,
 		{ queuePendingSelection() {}, isVisible: () => false, isFocused: () => false } as unknown as ResourcePanelController,
-		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: () => input }]), panes,
+		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: () => input }]), panes, new EditorSearchController({} as RuntimeSourceState, renameController),
 	);
 	t.after(() => { panes.dispose(); editorTabGroup.clear(); });
 	const pending = navigation.openResource(input.workingCopy.resource);

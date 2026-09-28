@@ -1,6 +1,6 @@
 import { PointerButton } from '../../pointer/buttons';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
-import { closeSearch, processInlineFieldPointer } from '../../../workbench/contrib/code_editor/find/search';
+import { processInlineFieldPointer } from '../../../workbench/contrib/code_editor/find/search';
 import { getLineJumpBarBounds } from '../../../workbench/common/layout';
 import type { PointerSnapshot } from '../../../common/models';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
@@ -20,7 +20,6 @@ export function handleLineJumpPointer(resourcePanel: ResourcePanelController, sn
 		return false;
 	}
 	if (justPressed) {
-		closeSearch(false, true);
 		lineJumpState.field.focusTarget.focus();
 		activateQuickInputField(resourcePanel);
 	}

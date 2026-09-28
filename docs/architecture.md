@@ -1767,6 +1767,17 @@ not a revision poll in each control. The code-editor axis adapter only selects
 and publishes row/column positions; it has no parallel pointer-frame drag loop.
 See [scrollbar interaction ownership](scrollbar_interaction.md).
 
+`EditorSearchController` owns the inline Find session, including its text-change
+subscription and cancellation of local/workspace search jobs. Closing Find or
+detaching its code pane removes that subscription before clearing the retained
+query. Source navigation from a diagram can therefore reset a closed Find field
+without running code-selection effects against a detached editor. Reopening seeds
+from the source selection before subscribing and starts one query, not one query
+per programmatic field write. Generic Quick Input field wiring owns keyboard
+dispatch, not these model-bound effects. This follows the lifetime split between
+retained query state and the disposable editor-bound search model in
+[VS Code Find](https://github.com/microsoft/vscode/blob/main/src/vs/editor/contrib/find/browser/findController.ts).
+
 The Quick Input provider, not its control, owns query meaning and ranking.
 Providers retain admitted typed items and publish ordered match records plus a
 selected result index. The UI consumes that projection without re-filtering,

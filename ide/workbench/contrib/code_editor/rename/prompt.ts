@@ -1,5 +1,5 @@
 import type { RenameController } from './controller';
-import { closeSearch } from '../find/search';
+import type { EditorSearchController } from '../find/search';
 import { getActiveCodeTabContext, isEditableCodeTab } from '../../../ui/code_tab/contexts';
 import { closeLineJump } from '../find/line_jump';
 import { notifyReadOnlyEdit } from '../../../../editor/ui/view/view';
@@ -10,12 +10,12 @@ import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
 import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 import type { EditorPanes } from '../../../services/editor/editor_panes';
 
-export function openRenamePrompt(bridge: RuntimeLuaTooling, rename: RenameController, reviewPanes?: EditorPanes): void {
+export function openRenamePrompt(bridge: RuntimeLuaTooling, rename: RenameController, search: EditorSearchController, reviewPanes?: EditorPanes): void {
 	if (!isEditableCodeTab()) {
 		notifyReadOnlyEdit();
 		return;
 	}
-	closeSearch(false, true);
+	search.closeSearch(false);
 	closeLineJump(false);
 	const context = getActiveCodeTabContext();
 	switch (context.model.mode) {

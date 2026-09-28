@@ -17,15 +17,10 @@ export function bindQuickInputFields(
 		editorSearchState.field.focusTarget.bindKeyboard(
 			input => handleSearchInput(input, clipboard, editor, sources),
 		),
-		lineJumpState.field.focusTarget.bindKeyboard(input => handleLineJumpInput(input, clipboard)),
+		lineJumpState.field.focusTarget.bindKeyboard(input => handleLineJumpInput(input, clipboard, editor.search)),
 		renameController.getField().focusTarget.bindKeyboard(
 			input => renameController.handleInput(input, clipboard, editor.crossFileRename),
 		),
-		editorSearchState.field.onDidChangeText(() => {
-			editorSearchState.query = editorSearchState.field.text;
-			editor.search.onSearchQueryChanged();
-			resetBlink();
-		}),
 		lineJumpState.field.onDidChangeText(() => {
 			lineJumpState.value = lineJumpState.field.text;
 			resetBlink();

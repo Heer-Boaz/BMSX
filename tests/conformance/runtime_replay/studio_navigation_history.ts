@@ -44,6 +44,8 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	await click(graph.actionBar.items[0].bounds, 5);
 	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.view.cursorRow === source.start.line - 1 && !hasSelection(),
 		'A03: Source opens the selected proof without changing or selecting text');
+	await frame();
+	await test.capture?.('diagram-source');
 	for (let index = 0; index < 'return '.length; index += 1) await press('ArrowRight');
 	await press('F12');
 	const expected = { row: 0, column: 0 };
@@ -65,6 +67,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 		'A03: the mapped registration and second return survive source reprojection');
 	check(graph.viewport.scrollX === scrollX && graph.viewport.scrollY === scrollY,
 		'A03: asynchronous geometry publication preserves the saved viewport instead of running initial reveal');
+	await test.capture?.('diagram-return');
 	await press('AltLeft', 'ArrowRight');
 	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.view.cursorRow === source.start.line,
 		'A03: Forward is a workbench binding, including from a graph');

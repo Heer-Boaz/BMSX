@@ -47,7 +47,6 @@ import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import { undo, redo } from '../../../editor/editing/undo_controller';
 import { clearReferenceHighlights, requestSemanticRefresh } from '../../../editor/contrib/intellisense/engine';
 import { CodeEditorNavigationSelection } from './navigation_selection';
-import { closeSearch } from './find/search';
 import { closeLineJump } from './find/line_jump';
 import { setActiveDiagnostics } from '../../../editor/contrib/diagnostics/state';
 
@@ -114,7 +113,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	}
 
 	public override clearInput(): void {
-		closeSearch(false, true);
+		this.editor.search.closeSearch(false);
 		closeLineJump(false);
 		pointerHover.release(codeAreaHover);
 		pointerHover.release(runtimeErrorOverlayPointer);

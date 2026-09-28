@@ -7,9 +7,10 @@ import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from './ke
 import { handleEscapeKey } from './modal_input';
 import { ESCAPE_KEY } from '../../common/constants';
 import type { PlayerInput } from '../../../hosts/common/input/player';
+import type { EditorSearchController } from '../../workbench/contrib/code_editor/find/search';
 
-export function handleEscapeBinding(playerInput: PlayerInput): boolean {
-	if (!isKeyJustPressed(ESCAPE_KEY, playerInput) || !handleEscapeKey()) {
+export function handleEscapeBinding(playerInput: PlayerInput, search: EditorSearchController): boolean {
+	if (!isKeyJustPressed(ESCAPE_KEY, playerInput) || !handleEscapeKey(search)) {
 		return false;
 	}
 	consumeIdeKey(ESCAPE_KEY, playerInput);

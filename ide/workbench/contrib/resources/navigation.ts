@@ -19,6 +19,7 @@ import type { ResourceEditorResolver } from '../../services/editor/resource_edit
 import { openEditorTab, setActiveTab } from '../../ui/tabs';
 import type { EditorPanes } from '../../services/editor/editor_panes';
 import { editorTabGroup } from '../../ui/tab/group_model';
+import type { EditorSearchController } from '../code_editor/find/search';
 
 export class EditorNavigationController {
 	public constructor(
@@ -26,6 +27,7 @@ export class EditorNavigationController {
 		private readonly resourcePanel: ResourcePanelController,
 		private readonly editorResolver: ResourceEditorResolver,
 		private readonly editorPanes: EditorPanes,
+		private readonly search: EditorSearchController,
 	) {
 	}
 
@@ -47,7 +49,7 @@ export class EditorNavigationController {
 	}
 
 	public focusChunkSource(identity: ResourceIdentity, selection?: EditorTextSelection): Promise<number | undefined> {
-		prepareEditorForSourceFocus();
+		prepareEditorForSourceFocus(this.search);
 		return this.openResource(resolveRuntimeResource(this.sources, identity)!, selection);
 	}
 
@@ -56,7 +58,7 @@ export class EditorNavigationController {
 		path: string,
 		selection?: EditorTextSelection,
 	): void {
-		prepareEditorForSourceFocus();
+		prepareEditorForSourceFocus(this.search);
 		const resource = resolveRuntimeResourceForContext(this.sources, domain, path)!;
 		void this.openResource(resource, selection);
 	}

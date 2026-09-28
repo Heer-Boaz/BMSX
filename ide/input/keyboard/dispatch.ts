@@ -18,7 +18,7 @@ export function handleEditorInput(
 		pointerCapture.cancel();
 		return;
 	}
-	if (!editor.quickInput.visible && !editor.contextMenu.visible && handleEscapeBinding(playerInput)) {
+	if (!editor.quickInput.visible && !editor.contextMenu.visible && handleEscapeBinding(playerInput, editor.search)) {
 		return;
 	}
 	if (handleEditorCommandBindings(playerInput, editor.commands)) {

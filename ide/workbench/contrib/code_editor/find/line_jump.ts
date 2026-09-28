@@ -2,7 +2,7 @@ import * as constants from '../../../../common/constants';
 import { renameController } from '../rename/controller';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { clearReferenceHighlights } from '../../../../editor/contrib/intellisense/engine';
-import { closeSearch } from './search';
+import type { EditorSearchController } from './search';
 import { resetBlink } from '../../../../editor/render/caret';
 import { setFieldText } from '../../../../editor/ui/inline/text_field';
 import { beginNavigationCapture, completeNavigation } from '../../../../navigation/navigation_history';
@@ -12,9 +12,9 @@ import * as TextEditing from '../../../../editor/editing/text_editing_and_select
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
 import { lineJumpState } from './widget_state';
 
-export function openLineJump(): void {
+export function openLineJump(search: EditorSearchController): void {
 	clearReferenceHighlights();
-	closeSearch(false, true);
+	search.closeSearch(false);
 	renameController.cancel();
 	lineJumpState.visible = true;
 	lineJumpState.field.focusTarget.focus();

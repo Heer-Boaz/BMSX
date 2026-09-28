@@ -62,16 +62,16 @@ export function executeEditorSearchCommand(
 			editor.search.openSearch(true, 'local');
 			return;
 		case 'lineJump':
-			openLineJump();
+			openLineJump(editor.search);
 			return;
 		case 'referenceSearch':
 			openReferenceSearch(editor, luaTooling);
 			return;
 		case 'rename':
-			openRenamePrompt(luaTooling, rename);
+			openRenamePrompt(luaTooling, rename, editor.search);
 			return;
 		case 'renamePreview':
-			openRenamePrompt(luaTooling, rename, editor.editorPanes);
+			openRenamePrompt(luaTooling, rename, editor.search, editor.editorPanes);
 			return;
 	}
 }
