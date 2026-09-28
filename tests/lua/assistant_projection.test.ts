@@ -3,14 +3,24 @@ import test from 'node:test';
 import { AssistantTranscriptProjection } from '../../ide/workbench/contrib/assistant/projection';
 import type { AssistantEntry } from '../../ide/workbench/services/assistant/conversation';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
+import { TextStyle } from '../../ide/common/markdown/model';
 
 const measure = (_text: string, start: number, end: number) => end - start;
 
-test('user prompts and status are literal; only assistant responses interpret Markdown', () => {
+test('user and assistant messages share Markdown layout without changing source; status stays literal', () => {
+	const source = '**strong** *emphasis* &amp; `value`\n\n```lua\n  return value\n```';
 	const entries: AssistantEntry[] = (['user', 'status', 'assistant'] as const).map((kind, index) =>
-		({ kind, index, resetRevision: 0, text: new PieceTreeBuffer('**exact** &amp; `value`') }));
+		({ kind, index, resetRevision: 0, text: new PieceTreeBuffer(source) }));
 	const view = new AssistantTranscriptProjection(); view.update(entries, 80, measure, {});
-	assert.deepEqual(view.rows.filter(row => !row.heading).map(row => row.text), ['**exact** &amp; `value`', '**exact** &amp; `value`', 'exact & value']);
+	const user = view.rows.filter(row => row.entry === 0 && !row.heading);
+	const status = view.rows.filter(row => row.entry === 1 && !row.heading);
+	const assistant = view.rows.filter(row => row.entry === 2 && !row.heading);
+	assert.deepEqual(user.map(row => row.runs), assistant.map(row => row.runs));
+	for (const style of [TextStyle.Bold, TextStyle.Italic, TextStyle.Code]) assert.ok(user.some(row => row.runs.some(run => (run.style & style) !== 0)));
+	assert.ok(user.some(row => row.code));
+	assert.equal(status.map(row => row.text).join('\n'), source);
+	assert.ok(status.every(row => row.runs.every(run => run.style === TextStyle.Plain)));
+	assert.ok(entries.every(entry => entry.text.getText() === source));
 });
 
 test('streaming projection reads a bounded tail; unchanged frames neither read nor measure history', () => {

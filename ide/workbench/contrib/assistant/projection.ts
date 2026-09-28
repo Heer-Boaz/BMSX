@@ -39,7 +39,7 @@ export class AssistantTranscriptProjection {
 			const first = index === 0 ? 0 : this.entries[index - 1].end;
 			if (!retained || retained.reset !== entry.resetRevision) {
 				retained = { first, end: first, reset: entry.resetRevision, length: 0,
-					document: new MarkdownDocument(entry.kind === 'assistant' ? 'markdown' : 'text'),
+					document: new MarkdownDocument(entry.kind === 'user' || entry.kind === 'assistant' ? 'markdown' : 'text'),
 					separator: { text: '', runs: [], entry: index, heading: true, code: false, offset: 0, inset: 0 } };
 				this.entries[index] = retained;
 			}

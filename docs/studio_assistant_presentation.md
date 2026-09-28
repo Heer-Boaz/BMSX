@@ -33,8 +33,12 @@ input transitions, not a global blur listener or another text measurement pass,
 following the separation in VS Code's
 [list pointer/selection handling](https://github.com/microsoft/vscode/blob/main/src/vs/base/browser/ui/list/listWidget.ts).
 
-Only assistant replies are Markdown: user prompts, sign-in addresses and status
-messages remain literal text through the same shared layout. Nested list markers
+User prompts and assistant replies share Markdown parsing, layout and theme roles,
+including when reloaded from conversation history. Like VS Code's
+[request rendering](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/chat/browser/widget/chatListRenderer.ts),
+this is a view of the original message: sending, queue editing and copying retain
+the authored Markdown. The composer, sign-in addresses, status and review notices
+remain literal text. Nested list markers
 reserve their measured width for all continuation paragraphs, quotes and code
 blocks; quote bars repeat across wrapped rows. This follows Codex's
 [indent contexts](https://github.com/openai/codex/blob/main/codex-rs/tui/src/markdown_render.rs),
