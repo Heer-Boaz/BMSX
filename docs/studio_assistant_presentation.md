@@ -16,6 +16,11 @@ ownership boundaries, not a character-stripping Markdown approximation.
 Word wrapping belongs to `ide/common/text.ts`; styled document parsing/layout
 belongs to `ide/common/markdown`, not the assistant pane. Completed entries and
 blocks are retained; idle frames do not parse or measure transcript text.
+An incomplete first line does not commit its preceding open block: a streamed
+`2` can still become `2. item` and join a list. Parser-confirmed code, headings
+and rules stay committed, so a long completed code listing is not reparsed while
+the following explanation streams. Tests compare every split and character-wise
+streaming against a complete parse, including nested and loose lists.
 Plain streaming text only reflows its last visible row. Parsed lines within an
 unfinished code block/list also retain their unchanged layout. An unfinished formatted
 block must remain reparsable (a later delimiter can restyle earlier text).
@@ -28,6 +33,18 @@ blocks; quote bars repeat across wrapped rows. This follows Codex's
 [indent contexts](https://github.com/openai/codex/blob/main/codex-rs/tui/src/markdown_render.rs),
 not a per-feature approximation with a fixed number of spaces. Words ending
 exactly at the available width stay on that line in the shared text wrapper.
+
+Tables retain their cell structure and alignment, rather than flattening rows
+into unrelated strings separated by pipes. `line_layout.ts` owns styled word
+wrapping for paragraphs, code and cells; `table_layout.ts` owns measured column
+allocation and responsive records. Like Codex's
+[table renderer](https://github.com/openai/codex/blob/main/codex-rs/tui/src/markdown_render.rs),
+wide layouts align columns and wrap individual cells; when columns cannot retain
+whole words, narrow layouts show each record as header/value pairs. This is
+width-driven presentation, not missing-data substitution. Inline styles, empty
+cells, alignment and quote/list indentation survive both layouts. Unchanged
+cell metrics, wrapped cells and rows are retained during streaming. Copy still
+uses the original Markdown, not padded columns or generated labels.
 
 The composer uses its retained `MultilineFieldViewport` rows to grow from one
 to six visible lines (less on short surfaces). Deleting text returns space to
@@ -119,14 +136,15 @@ packing and VRAM layout are unchanged. Both host artifacts share the same pixels
 
 ## Validation and trying it
 
-- `test:lua`: 2,828 passing tests, one existing skip. Focused Markdown, composer,
+- `test:lua`: 2,836 passing tests, one existing skip. Focused Markdown, composer,
   conversation/footer and font tests also cover streamed delimiter/CRLF splits,
   preserved code whitespace, exact styled glyph pixels and idle cache identity.
 - Automated Chromium coverage: 18 assistant/presentation cases across software,
   WebGL2 and WebGPU, both font sizes, light/dark themes, narrow logical surfaces, pointer/keyboard
   Copy, history/queue/Direct/Stop, and the ordinary paused cart. The three
   presentation cases also exercise model/effort/speed pickers, cancellation and
-  draft growth/scrolling. They assert exactly two intentional model requests and
+  draft growth/scrolling, right-aligned table values and narrow labelled records
+  in both themes. They assert exactly two intentional model requests and
   one connection, and inspect the actual provider request's model/effort/tier;
   rendering, resizing and timers send none.
 - Real installed App Server with offline model/issuer fixtures: contract 6/6,
@@ -153,3 +171,17 @@ the debug product). Restart the existing development server to load the updated
 Node metadata events, then reload the same Studio URL. No extra server, login
 flow or access restrictions are introduced. Character coverage beyond the
 existing font maps is intentionally unchanged.
+
+## Requested UI checklist
+
+| Request | Implementation and check |
+| --- | --- |
+| Word wrap, reused from the IDE | Shared measured word ranges; ordinary words stay together across style spans. |
+| Markdown emphasis and code | Styled host font atlas, inline/fenced code surfaces, structured lists/quotes/tables; source-exact Copy. |
+| No repeated USER / ASSISTANT headings | User prompts have a subtle accent; assistant replies use the document layout. |
+| Useful footer | Actual status, title, provider/model, effort, service tier and weekly remaining quota; unknown stays explicit. |
+| Visible work while thinking | Native activity, animated indicator and elapsed time continue while the cart is paused. |
+| No wasteful top status/commands strip | Context is in the responsive footer; account/history/settings commands use transient Quick Pick. |
+| Model/effort/fast controls | Catalog-backed `/model`, `/effort`, `/fast`; independent native settings changes, not another inference. |
+| Professional compact layout | Growing composer, measured list/table alignment, semantic theme contrast; screenshots on all three renderbackends. |
+| Additional font characters | Deliberately unchanged, per the user's separate font-coverage investigation. |

@@ -71,6 +71,11 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	check(rows.every((row, index) => row === view.transcript.rows[index]), 'presentation: idle frames retain layout');
 	await capture('markdown-tiny');
 	ide.editor.setFontVariant('msx'); await frame(); await capture('markdown-msx');
+	const table = view.transcript.rows.find(row => row.text.startsWith('mijter_foe_velocity_x_q8 | -768 | -1024 |'))!;
+	const header = view.transcript.rows.find(row => row.text === 'Property | Before | After | Observation')!;
+	check(table !== undefined && header !== undefined, 'presentation: wide table retains its column structure');
+	const before = table.runs.find(run => run.text === '-768')!, beforeHeader = header.runs.find(run => run.text === 'Before')!;
+	check(before.x + before.width === beforeHeader.x + beforeHeader.width, 'presentation: styled numeric values align with their column');
 	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame(); await capture('markdown-dark-msx');
 	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame();
 	const reply = conversation.entries.find(entry => entry.kind === 'assistant')!;
@@ -85,6 +90,7 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	check(await navigator.clipboard.readText() === reply.text.getText(), 'presentation: formatted text Copy reaches the browser clipboard');
 	await capture('selected-code-msx');
 	await until(() => !editorFeedbackState.message.visible, 'presentation: shared clipboard confirmation expires without running the guest');
+	await press('ArrowUp'); await press('End');
 
 	// Exercise a phone-width logical surface, not CSS scaling of a wide screenshot.
 	presenter.setFixedRenderTargetSize(320, 384);
@@ -93,7 +99,10 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	check(view.footerTop + (view.footer.lines.length - 1) * view.layout.rowHeight + 2 <= view.layout.bottom, 'presentation: footer text is above the global status clip');
 	check(view.footer.lines.length > 1 && view.footer.lines.every(line => measureTextRange(line, 0, line.length) <= view.layout.right - 8), 'presentation: narrow footer keeps all settings in bounded rows');
 	for (const row of view.transcript.rows) for (const run of row.runs) check(run.x + run.width <= view.layout.right - 16, 'presentation: styles wrap within the narrow transcript');
+	check(view.transcript.rows.some(row => row.text.startsWith('Property: mijter_foe_velocity_x_q8')), 'presentation: narrow tables keep header/value associations as records');
 	await capture('narrow-msx');
+	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame(); await capture('narrow-dark-msx');
+	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame();
 	await submitAssistantText(test, '/model'); await until(() => picker.visible, 'presentation: narrow model picker');
 	await frame(); await capture('narrow-model-picker'); await press('Escape');
 	ide.editor.setFontVariant('tiny'); await frame(); await capture('narrow-tiny');

@@ -25,7 +25,8 @@ export function drawMarkdownRow(row: MarkdownRow, x: number, y: number, width: n
 		const left = x + run.x;
 		if ((run.style & TextStyle.Code) !== 0 && !row.code && !selected) api.fill_rect(left, y, left + run.width, y + height, 0, colors.COLOR_MARKDOWN_CODE_BACKGROUND);
 		const foreground = selected ? color : row.code || (run.style & TextStyle.Code) !== 0 ? colors.COLOR_MARKDOWN_CODE_TEXT
-			: (run.style & TextStyle.Link) !== 0 ? colors.COLOR_MARKDOWN_LINK_TEXT : color;
+			: (run.style & TextStyle.Link) !== 0 ? colors.COLOR_MARKDOWN_LINK_TEXT
+				: (run.style & TextStyle.Muted) !== 0 ? colors.COLOR_MARKDOWN_MUTED_TEXT : color;
 		api.blit_text_inline_with_font(run.text, left, y, 0, foreground, editorViewState.font.renderFont(FONT_STYLES[run.style & 3]));
 		if ((run.style & TextStyle.Strike) !== 0) api.fill_rect(left, y + (height >> 1), left + run.width, y + (height >> 1) + 1, 0, foreground);
 		if ((run.style & TextStyle.Link) !== 0) api.fill_rect(left, y + height - 1, left + run.width, y + height, 0, foreground);

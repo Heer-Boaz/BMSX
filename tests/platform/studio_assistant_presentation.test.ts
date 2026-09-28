@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { createCodexModelFixture, CODEX_FIXTURE_WAIT } from '../helpers/codex_model_fixture.mjs';
 import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixture';
 
-const markdown = '# Mijter steering\n\nUse **bold** for changes, *italic* for explanation, and `velocity_x_q8` for cart values. Ordinary words stay together when the window becomes narrower.\n\n- Read the current velocity.\n- Step **one frame**, then compare.\n\n```lua\nlocal previous = mijter_foe_velocity_x_q8\nreturn previous\n```\n\nThe runtime remains *paused*. This is **not** a source edit.';
+const markdown = '# Mijter steering\n\nUse **bold** for changes, *italic* for explanation, and `velocity_x_q8` for cart values. Ordinary words stay together when the window becomes narrower.\n\n- Read the current velocity.\n- Step **one frame**, then compare.\n\n```lua\nlocal previous = mijter_foe_velocity_x_q8\nreturn previous\n```\n\n| Property | Before | After | Observation |\n| :--- | ---: | ---: | :--- |\n| mijter_foe_velocity_x_q8 | `-768` | `-1024` | Faster steering |\n| tick | 195 | 199 | Four frames |\n\nThe runtime remains *paused*. This is **not** a source edit.';
 for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: styled Markdown, responsive footer and live work indicator`, { timeout: 180000 }, async t => {
 	let started!: () => void;
 	const waiting = new Promise<void>(resolve => { started = resolve; });

@@ -48,7 +48,7 @@ test('headings, paragraph gaps, nested lists, tasks, quotes and tables have stru
 	assert.equal(rows.find(row => row.text === 'done')!.runs[0].text, '[x] ');
 	assert.equal(rows.find(row => row.text === 'quoted')!.runs[0].text, '| ');
 	assert.equal(rows.find(row => row.text === 'quoted')!.runs[1].x, 2);
-	assert.equal(rows.at(-2)!.text, 'Name | Value');
+	assert.ok(rows.some(row => row.text === 'Name | Value'));
 	assert.equal(rows.at(-1)!.text, 'A | 7');
 });
 
@@ -89,7 +89,10 @@ test('long tokens and Unicode wrap on whole codepoints, even below a glyph width
 
 for (const source of ['**bold** and *italic*', '```lua\n  return "*raw*"\n```\n\nAfter.',
 	'# Heading\n\nOne\n\n- first\n- next', '[guide][id]\n\n[id]: https://example.com',
-	'a\r\n\r\nb', '***hello***\n\n> quote\n\n| A | B |\n| --- | --- |\n| 1 | 2 |']) {
+	'a\r\n\r\nb', '***hello***\n\n> quote\n\n| A | B |\n| --- | --- |\n| 1 | 2 |',
+	'1. outer\n   1. inner\n\n      para\n   2. next\n2. end',
+	'| Name | Value |\n| :--- | ---: |\n| A | `7` |\n| longer | 123456 |',
+	'> | Name | Value |\n> | --- | --- |\n> | **one** | description wraps here |']) {
 	test(`every streaming split equals complete Markdown: ${JSON.stringify(source)}`, () => {
 		const expected = render(source, 18).rows;
 		for (let split = 1; split < source.length; split++) {
@@ -99,8 +102,69 @@ for (const source of ['**bold** and *italic*', '```lua\n  return "*raw*"\n```\n\
 			document.append(source.slice(split));
 			assert.deepEqual(document.blocks.flatMap(block => [...layout.layout(block)]), expected, `split ${split}`);
 		}
+		const document = new MarkdownDocument(), layout = new MarkdownLayout(18, measure);
+		for (const char of source) { document.append(char); document.blocks.forEach(block => layout.layout(block)); }
+		assert.deepEqual(document.blocks.flatMap(block => [...layout.layout(block)]), expected, 'character-by-character streaming');
 	});
 }
+
+test('tables align measured columns, honor alignment, and retain inline styles', () => {
+	const { rows } = render('| Name | State | Count |\n| :--- | :---: | ---: |\n| A | **ok** | `7` |\n| longer | ready | 12345 |', 60);
+	const header = rows[0], first = rows[2], second = rows[3];
+	assert.equal(header.runs.find(run => run.text === 'Name')!.x, first.runs.find(run => run.text === 'A')!.x);
+	const a = first.runs.find(run => run.text === '7')!, b = second.runs.find(run => run.text === '12345')!;
+	assert.equal(a.x + a.width, b.x + b.width, 'numbers align on the right edge');
+	assert.equal(a.style, TextStyle.Code);
+	assert.equal(first.runs.find(run => run.text === 'ok')!.style, TextStyle.Bold);
+	assert.equal(first.runs.find(run => run.text === 'ok')!.x, second.runs.find(run => run.text === 'ready')!.x + 1, 'center alignment uses the cell width');
+	for (const row of rows) for (const run of row.runs) assert.ok(run.x + run.width <= 60);
+});
+
+test('tables wrap cells independently and do not repeat shorter cells on continuation lines', () => {
+	const { rows } = render('| Key | Description |\n| --- | --- |\n| A | first second third fourth fifth |\n| | last |', 24);
+	const body = rows.slice(2);
+	assert.equal(body.flatMap(row => row.runs).filter(run => run.text === 'A').length, 1);
+	assert.ok(body.length > 2);
+	const x = body[0].runs.find(run => run.text.startsWith('first'))!.x;
+	for (const row of body) {
+		assert.equal(row.runs.find(run => run.style !== TextStyle.Muted && run.text !== 'A')!.x, x);
+		for (const run of row.runs) assert.ok(run.x + run.width <= 24);
+	}
+});
+
+test('narrow tables become labelled records without losing values, styles or quote indentation', () => {
+	const source = '> | Property | Value |\n> | --- | --- |\n> | velocity_x_q8 | `-768` |\n> | position_x_q8 | **1024** |';
+	const { rows } = render(source, 20);
+	assert.ok(rows.some(row => row.text.startsWith('Property:')));
+	assert.ok(rows.some(row => row.text === 'Value: -768'));
+	assert.equal(rows.find(row => row.text === 'Value: -768')!.runs.at(-1)!.style, TextStyle.Code);
+	for (const row of rows) {
+		assert.equal(row.runs[0].text, '| ');
+		for (const run of row.runs) assert.ok(run.x + run.width <= 20);
+	}
+	const headerOnly = render('| Longer header | Other heading |\n| --- | --- |', 12).rows;
+	assert.equal(headerOnly.map(row => row.text).join(' '), 'Longer header Other heading');
+});
+
+test('streamed tables reuse stable rows and do no idle measurements', () => {
+	const document = new MarkdownDocument(); document.append('| Name | Value |\n| --- | --- |\n| retained | 123456789 |\n| next | 1');
+	let measured = 0;
+	const layout = new MarkdownLayout(40, (text, from, to, style) => { measured += to - from; return measure(text, from, to, style); });
+	const first = layout.layout(document.blocks[0])[2];
+	document.append('2');
+	assert.equal(layout.layout(document.blocks[0])[2], first, 'a changed value does not reallocate completed rows when columns keep their width');
+	const before = measured;
+	for (let frame = 0; frame < 1000; frame++) document.blocks.forEach(block => layout.layout(block));
+	assert.equal(measured, before);
+});
+
+test('a completed code listing is not reparsed while its following explanation streams', () => {
+	const document = new MarkdownDocument(); document.append('```lua\n' + '  local x = 7\n'.repeat(1000) + '```\n\nExplanation');
+	const code = document.blocks[0], revision = code.revision;
+	for (let chunk = 0; chunk < 200; chunk++) document.append(' **formatted** words.');
+	assert.equal(document.blocks[0], code);
+	assert.equal(code.revision, revision);
+});
 
 test('streaming retains committed blocks, plain wrapped prefixes and idle layout without remeasurement', () => {
 	const document = new MarkdownDocument(); document.append('**Committed**\n\nword ');
