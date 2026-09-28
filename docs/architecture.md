@@ -5162,8 +5162,9 @@ while direct steering keeps the current turn's context. Historical tool records
 carry no live edit rights. See [conversation lifecycle](studio_assistant_conversations.md).
 Model/effort/speed selection uses the ordinary workbench Quick Pick and the native
 account model catalog. Node owns catalog paging/admission and thread settings;
-pickers never create a conversation or start inference. The retained Markdown
-transcript, content-sized composer and notification-driven footer share existing
+connection startup joins pending native account refreshes before admitting commands
+or resolving catalog defaults. Pickers never create a conversation or start
+inference. The retained Markdown transcript, content-sized composer and notification-driven footer share existing
 text, font and view owners; see [assistant presentation](studio_assistant_presentation.md).
 All
 proposed edits require the same explicit multi-file review and shared history.

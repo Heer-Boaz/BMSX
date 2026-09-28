@@ -78,6 +78,7 @@ export class CodexSession {
 	private login: LoginLifetime | undefined;
 	private signingOut = false;
 	private accountRefreshing = false;
+	private accountRefresh: Promise<CodexAccount> | undefined;
 	private accountRevision = 0;
 	private readonly onAbort = () => { this.close(this.options.signal.reason); };
 
@@ -118,6 +119,7 @@ export class CodexSession {
 			session.defaults = { agent: 'Codex', model: read.config.model as string | null, provider: read.config.model_provider as string | null,
 				effort: read.config.model_reasoning_effort as string | null, serviceTier: read.config.service_tier as string | null };
 			await session.models.list();
+			while (session.accountRefresh) await session.accountRefresh;
 			session.configuration = session.models.resolve(session.defaults, true);
 			// Said once the capability gates have accepted this process, so it reads as context
 			// rather than as a warning about something that might still refuse.
@@ -133,7 +135,14 @@ export class CodexSession {
 		}
 	}
 
-	public readAccount(): Promise<CodexAccount> { return this.rpc.request('account/read', { refreshToken: false }); }
+	public async readAccount(): Promise<CodexAccount> {
+		let account = await this.rpc.request<CodexAccount>('account/read', { refreshToken: false });
+		// Startup can announce account/updated while this read is pending. Admission
+		// must join that account's catalog/settings publication, not expose a ready
+		// connection whose first command immediately loses its account lifetime.
+		while (this.accountRefresh) account = await this.accountRefresh;
+		return account;
+	}
 
 	/** One read per account connection/change, then native quota notifications. Never model polling. */
 	public async refreshUsage(account: CodexAccount): Promise<void> {
@@ -204,20 +213,19 @@ export class CodexSession {
 		this.options.onEvent({ type: 'login-completed', success: completed.success, error: completed.error === null ? undefined : completed.error });
 	}
 
-	private async refreshAccount(): Promise<void> {
+	private async refreshAccount(): Promise<CodexAccount> {
 		const revision = ++this.accountRevision;
-		try {
-			await this.history.select(undefined);
-			const account = await this.readAccount();
-			await this.models.list();
-			if (!this.retired && revision === this.accountRevision) {
-				this.accountRefreshing = false;
-				this.configuration = this.models.resolve(this.defaults, true);
-				this.options.onEvent({ type: 'configuration', configuration: this.configuration });
-				this.options.onEvent({ type: 'account-changed', account });
-				void this.refreshUsage(account);
-			}
-		} catch (error) { await this.close(error as Error); }
+		await this.history.select(undefined);
+		const account = await this.rpc.request<CodexAccount>('account/read', { refreshToken: false });
+		await this.models.list();
+		if (!this.retired && revision === this.accountRevision) {
+			this.accountRefreshing = false;
+			this.configuration = this.models.resolve(this.defaults, true);
+			this.options.onEvent({ type: 'configuration', configuration: this.configuration });
+			this.options.onEvent({ type: 'account-changed', account });
+			void this.refreshUsage(account);
+		}
+		return account;
 	}
 
 	public listHistory(cursor?: string, search?: string): Promise<AssistantHistoryPage> { return this.history.list(cursor, search); }
@@ -474,7 +482,7 @@ export class CodexSession {
 			case 'account/rateLimits/updated':
 				if (this.usage.update(params.rateLimits)) this.options.onEvent({ type: 'usage', usage: this.usage.snapshot() });
 				break;
-			case 'account/updated':
+			case 'account/updated': {
 				if (this.active) { void this.close(new Error('Codex account changed during a turn')); break; }
 				this.queueEnabled = false;
 				// Admission belongs to the process owner, before the browser sees the transition.
@@ -483,8 +491,12 @@ export class CodexSession {
 				this.usageRevision++; this.usage.clear();
 				this.options.onEvent({ type: 'usage', usage: this.usage.snapshot() });
 				this.options.onEvent({ type: 'account-refreshing' });
-				void this.refreshAccount();
+				const pending = this.refreshAccount();
+				this.accountRefresh = pending;
+				void pending.then(() => { if (this.accountRefresh === pending) this.accountRefresh = undefined; },
+					error => { void this.close(error as Error); });
 				break;
+			}
 			case 'account/login/completed': {
 				const completed = message.params as LoginCompletion;
 				const attempt = this.login;

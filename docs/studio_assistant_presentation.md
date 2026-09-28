@@ -107,6 +107,12 @@ Raw session defaults remain separate from their presentation, so account changes
 can resolve a different catalog default. Concurrent opens coalesce. An unsuccessful read is surfaced;
 only another explicit request retries it. Drawing, filtering, resizing and activity
 animation send no metadata or model requests. Account changes retire the catalog.
+Native startup can publish `account/updated` while the initial account/catalog
+reads are pending. The Node session joins that refresh before resolving defaults
+or admitting the browser connection, so the first `/model` does not race its own
+startup account publication. This is account-lifetime synchronization, not a
+picker retry, delay, or extra catalog poll. The upstream account owner also
+[publishes startup routing asynchronously](https://github.com/openai/codex/blob/main/codex-rs/app-server/src/request_processors/account_processor/workspace_routing.rs).
 
 Before the first prompt, an accepted choice supplies defaults for a future native
 thread; it does not create phantom history. Existing threads change through
