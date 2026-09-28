@@ -195,7 +195,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 				api.fill_rect(4, top, 5, top + layout.rowHeight, 0, colors.COLOR_STATUS_SUCCESS);
 			}
 			if (selected) api.fill_rect(4, top, viewport.bounds.right, top + layout.rowHeight, 0, colors.SELECTION_OVERLAY);
-			drawMarkdownRow(row, 8, top, viewport.bounds.right - 12, selected ? colors.COLOR_SELECTION_TEXT
+			drawMarkdownRow(row, viewport.bounds.left + 4, top, viewport.bounds.right - 12, selected ? colors.COLOR_SELECTION_TEXT
 				: entry.kind === 'status' ? colors.COLOR_MARKDOWN_MUTED_TEXT : textColor, selected);
 		}
 		api.popClipRect(); viewport.scrollbar.draw(colors.COLOR_CODE_BACKGROUND, textColor);
@@ -213,17 +213,27 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		api.blit_text_inline_with_font(this.input.footer.lines.at(-1)!, 4, top + 2, 0, color, editorViewState.font.renderFont());
 	}
 	protected override handleViewPointer(snapshot: PointerSnapshot): boolean {
-		if (this.actions.handlePointer(snapshot) || this.composer.handlePointer(snapshot)) return true;
-		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.viewport.bounds)) {
-			const index = Math.trunc((snapshot.viewportY - this.input.viewport.offsetTop) / this.input.layout.rowHeight);
-			const row = this.input.transcript.rows[index];
-			// Selecting a message also takes focus, so Ctrl+C reaches the transcript instead of
-			// the composer. Without this the message is highlighted but cannot be copied.
-			if (row) { this.input.selectedEntry = row.entry; this.scroll.focusTarget.focus(); }
+		// Actions act on the selected message; scrollbar capture preserves selection/focus.
+		if (this.actions.handlePointer(snapshot)) return true;
+		const { viewport, transcript, layout } = this.input;
+		const pressed = snapshot.insideViewport && (snapshot.justPressedButtons & PointerButton.Primary) !== 0;
+		if (pressed && !(viewport.scrollbar.isVisible() && point_in_rect(snapshot.viewportX, snapshot.viewportY, viewport.scrollbar.getTrack()))) {
+			this.input.selectedEntry = -1;
+			if (point_in_rect(snapshot.viewportX, snapshot.viewportY, viewport.bounds)) {
+				const row = transcript.rows[Math.trunc((snapshot.viewportY - viewport.offsetTop) / layout.rowHeight)];
+				const x = snapshot.viewportX - viewport.bounds.left - 4;
+				if (row !== undefined) for (const run of row.runs) {
+					if (x >= run.x && x < run.x + run.width) { this.input.selectedEntry = row.entry; break; }
+				}
+			}
 		}
-		return this.scroll.handlePointer(snapshot);
+		// Controls own focus: a transcript click still routes Ctrl+C to the message.
+		return this.composer.handlePointer(snapshot) || this.scroll.handlePointer(snapshot) || pressed;
 	}
 	private handleTranscriptKeyboard(input: PlayerInput): boolean {
+		if (this.input.selectedEntry >= 0 && isKeyJustPressed('Escape', input)) {
+			consumeIdeKey('Escape', input); this.input.selectedEntry = -1; return true;
+		}
 		if ((isCtrlDown(input) || isMetaDown(input)) && isKeyJustPressed('KeyC', input)) {
 			consumeIdeKey('KeyC', input); this.execute('assistant.copy'); return true;
 		}

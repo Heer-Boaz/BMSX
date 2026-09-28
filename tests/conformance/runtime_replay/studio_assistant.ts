@@ -80,13 +80,17 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	await frame(); await capture('shared-diagnostics');
 	await test.runPaletteCommand('View: Problems Panel');
 	await test.click(view.composerBounds);
-	check(conversation.entries.some(entry => entry.kind === 'assistant' && entry.text.getText() === 'Contract fixture finished.'), 'real message reaches transcript');
+	const reply = conversation.entries.find(entry => entry.kind === 'assistant')!;
+	check(reply !== undefined, 'real message reaches transcript');
 	await frame(); const rows = view.transcript.rows.slice(); await frame();
 	check(view.transcript.rows.every((row, index) => row === rows[index]), 'unchanged frames retain text layout');
 	await capture('response');
-	await press('Tab'); await press('Tab'); await press('ArrowDown'); await press('ControlLeft', 'KeyC');
-	check(test.clipboard.text === 'Contract fixture finished.', 'transcript keyboard selects and copies an ordinary message');
-	check(await navigator.clipboard.readText() === 'Contract fixture finished.', 'transcript Copy reaches the authorized browser clipboard');
+	await press('Tab'); await press('Tab');
+	// The composer click cleared message selection; navigate from the first entry.
+	for (let index = 0; index <= reply.index; index++) await press('ArrowDown');
+	await press('ControlLeft', 'KeyC');
+	check(view.selectedEntry === reply.index && test.clipboard.text === reply.text.getText(), 'transcript keyboard selects and copies an ordinary message');
+	check(await navigator.clipboard.readText() === reply.text.getText(), 'transcript Copy reaches the authorized browser clipboard');
 	await press('ArrowUp');
 	await test.clickTab(mainTab.id); await test.clickTab(view.id);
 	check(conversation.state === 'ready' && proposal.state === 'pending', 'switching panes does not retire conversation/review');

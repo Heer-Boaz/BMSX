@@ -25,6 +25,13 @@ Plain streaming text only reflows its last visible row. Parsed lines within an
 unfinished code block/list also retain their unchanged layout. An unfinished formatted
 block must remain reparsable (a later delimiter can restyle earlier text).
 Copy uses the original message, not rendered text. Code whitespace is preserved.
+Message selection hit-tests the retained styled runs, not an entire text row.
+Primary clicks in empty space, paragraph/message gaps or the composer clear it;
+Escape clears it while the transcript has focus. Actions retain their selected
+message, and scrollbar capture preserves selection and focus. These are pane-owned
+input transitions, not a global blur listener or another text measurement pass,
+following the separation in VS Code's
+[list pointer/selection handling](https://github.com/microsoft/vscode/blob/main/src/vs/base/browser/ui/list/listWidget.ts).
 
 Only assistant replies are Markdown: user prompts, sign-in addresses and status
 messages remain literal text through the same shared layout. Nested list markers

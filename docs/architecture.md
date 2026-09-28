@@ -5169,6 +5169,9 @@ text, font and view owners; see [assistant presentation](studio_assistant_presen
 Markdown's shared theme separates strong text, italic emphasis, links and tinted
 code surfaces. Code/link colors survive nested emphasis, selection owns its own
 contrast, and strong emphasis never changes bitmap glyphs or layout metrics.
+The assistant pane owns message selection using retained text-run hit geometry;
+background/composer clicks and transcript Escape deselect, while action and
+scrollbar controls retain their ordinary selection/focus ownership.
 All
 proposed edits require the same explicit multi-file review and shared history.
 Diagnostic reads require those exact source receipts and consume the ordinary

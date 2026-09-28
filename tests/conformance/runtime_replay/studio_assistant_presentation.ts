@@ -73,12 +73,34 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 		&& view.viewport.offsetTop + (index + 1) * view.layout.rowHeight <= view.viewport.bounds.bottom);
 	check(codeRow >= 0, 'presentation: a formatted code row is visible for pointer selection');
 	const codeTop = view.viewport.offsetTop + codeRow * view.layout.rowHeight;
-	await test.click({ left: 12, right: 24, top: codeTop, bottom: codeTop + view.layout.rowHeight });
+	const codeBounds = { left: 12, right: 24, top: codeTop, bottom: codeTop + view.layout.rowHeight };
+	await test.click(codeBounds);
 	await press('ControlLeft', 'KeyC');
 	check(view.selectedEntry === reply.index && test.clipboard.text === reply.text.getText(), 'presentation: click and Copy preserve the complete original Markdown');
 	check(await navigator.clipboard.readText() === reply.text.getText(), 'presentation: formatted text Copy reaches the browser clipboard');
 	await capture('selected-code-msx');
 	await until(() => !editorFeedbackState.message.visible, 'presentation: shared clipboard confirmation expires without running the guest');
+	await test.click({ ...codeBounds, left: view.viewport.bounds.right - 2, right: view.viewport.bounds.right - 1 });
+	check(view.selectedEntry === -1, 'presentation: whitespace beside text clears the message selection');
+	check(!ide.editor.commands.isEnabled('assistant.copy'), 'presentation: Copy is unavailable without a selected message');
+	await capture('deselected-beside-text');
+	await test.click(codeBounds);
+	const gap = view.transcript.rows.findIndex(row => row.runs.length === 0);
+	const gapTop = view.viewport.offsetTop + gap * view.layout.rowHeight;
+	await test.click({ left: 12, right: 24, top: gapTop, bottom: gapTop + view.layout.rowHeight });
+	check(view.selectedEntry === -1, 'presentation: an empty separator does not select its neighbouring message');
+	await test.click(codeBounds);
+	await test.click({ left: 12, right: 24, top: view.viewport.bounds.bottom - 2, bottom: view.viewport.bounds.bottom - 1 });
+	check(view.selectedEntry === -1, 'presentation: empty transcript space clears the message selection');
+	await capture('deselected-below-messages');
+	await test.click(codeBounds);
+	await test.click(view.composerBounds);
+	check(view.selectedEntry === -1 && view.draft.focusTarget.hasFocus, 'presentation: composer click clears message selection and retains field focus');
+	await capture('deselected-composer');
+	await test.click(codeBounds);
+	await press('Escape');
+	check(view.selectedEntry === -1, 'presentation: Escape clears transcript selection');
+	await test.click(codeBounds);
 	await press('ArrowUp'); await press('End');
 
 	// Exercise a phone-width logical surface, not CSS scaling of a wide screenshot.
