@@ -53,7 +53,7 @@ codepoints while retaining the text field's UTF-16 source offsets. Like Codex's
 [composer layout](https://github.com/openai/codex/blob/main/codex-rs/tui/src/bottom_pane/chat_composer/composer_layout.rs),
 height follows draft content, not a permanently reserved empty box. Placeholder
 and outline use the ordinary workbench field theme, not a hard-coded color.
-Markdown has shared theme roles for code surfaces, code/link text and muted
+Markdown has shared theme roles for code surfaces, code/link/emphasis text and muted
 status text, rather than borrowing the gutter's contrasting color pair. Tests
 measure at least 7:1 for code and 4.5:1 for links/status in light and dark themes.
 
@@ -153,6 +153,14 @@ Light-theme text is softened throughout the workbench, not only in chat; strong
 text uses near-black. Dark surfaces use softer light text and white emphasis.
 Selection foreground still takes precedence. Bold-italic Markdown keeps the
 italic face and uses the strong color; no bold atlas copies remain in either host.
+Code uses a teal foreground on a tinted surface, while italic emphasis uses a
+purple foreground and the existing italic face. Both roles have light/dark theme
+pairs. Code and link colors take precedence over nested bold/italic emphasis;
+links retain their underline. The shared Markdown renderer, not the assistant
+pane or host font renderer, applies these roles without changing retained layout
+or glyph metrics. This follows Codex's separate
+[code, emphasis, strong and link styles](https://github.com/openai/codex/blob/main/codex-rs/tui/src/markdown_render.rs)
+while adapting emphasis to Studio's bitmap font constraints.
 
 The host atlas uses Mapbox's [potpack](https://github.com/mapbox/potpack)
 rectangle packer, not the ROM encoder's GX transfer/page limits. Guest texture

@@ -5166,6 +5166,9 @@ connection startup joins pending native account refreshes before admitting comma
 or resolving catalog defaults. Pickers never create a conversation or start
 inference. The retained Markdown transcript, content-sized composer and notification-driven footer share existing
 text, font and view owners; see [assistant presentation](studio_assistant_presentation.md).
+Markdown's shared theme separates strong text, italic emphasis, links and tinted
+code surfaces. Code/link colors survive nested emphasis, selection owns its own
+contrast, and strong emphasis never changes bitmap glyphs or layout metrics.
 All
 proposed edits require the same explicit multi-file review and shared history.
 Diagnostic reads require those exact source receipts and consume the ordinary

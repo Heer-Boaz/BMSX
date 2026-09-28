@@ -21,10 +21,12 @@ export function drawMarkdownRow(row: MarkdownRow, x: number, y: number, width: n
 	for (const run of row.runs) {
 		const left = x + run.x;
 		if ((run.style & TextStyle.Code) !== 0 && !row.code && !selected) api.fill_rect(left, y, left + run.width, y + height, 0, colors.COLOR_MARKDOWN_CODE_BACKGROUND);
-		const foreground = selected ? color : (run.style & TextStyle.Bold) !== 0 ? colors.COLOR_TEXT_STRONG
+		const foreground = selected ? color
 			: row.code || (run.style & TextStyle.Code) !== 0 ? colors.COLOR_MARKDOWN_CODE_TEXT
 			: (run.style & TextStyle.Link) !== 0 ? colors.COLOR_MARKDOWN_LINK_TEXT
-				: (run.style & TextStyle.Muted) !== 0 ? colors.COLOR_MARKDOWN_MUTED_TEXT : color;
+			: (run.style & TextStyle.Bold) !== 0 ? colors.COLOR_TEXT_STRONG
+			: (run.style & TextStyle.Italic) !== 0 ? colors.COLOR_MARKDOWN_EMPHASIS_TEXT
+			: (run.style & TextStyle.Muted) !== 0 ? colors.COLOR_MARKDOWN_MUTED_TEXT : color;
 		api.blit_text_inline_with_font(run.text, left, y, 0, foreground, editorViewState.font.renderFont((run.style & TextStyle.Italic) !== 0 ? 'italic' : 'normal'));
 		if ((run.style & TextStyle.Strike) !== 0) api.fill_rect(left, y + (height >> 1), left + run.width, y + (height >> 1) + 1, 0, foreground);
 		if ((run.style & TextStyle.Link) !== 0) api.fill_rect(left, y + height - 1, left + run.width, y + height, 0, foreground);

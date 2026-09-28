@@ -8,7 +8,10 @@ import {
 	THEME_TOKEN_COMMENT_GREY,
 	THEME_TOKEN_CYAN_BLUE,
 	THEME_TOKEN_DARK_NAVY,
+	THEME_TOKEN_DARK_PURPLE,
+	THEME_TOKEN_DARK_TEAL,
 	THEME_TOKEN_DEEP_GREY,
+	THEME_TOKEN_DEEP_TEAL,
 	THEME_TOKEN_ERROR_OVERLAY_BACKGROUND,
 	THEME_TOKEN_ERROR_OVERLAY_BACKGROUND_HOVER,
 	THEME_TOKEN_ERROR_OVERLAY_LINE_HOVER,
@@ -17,11 +20,14 @@ import {
 	THEME_TOKEN_GENTLE_WHITE,
 	THEME_TOKEN_HINT_GREY,
 	THEME_TOKEN_KEYWORD_MAGENTA,
+	THEME_TOKEN_LIGHT_PURPLE,
+	THEME_TOKEN_LIGHT_TEAL,
 	THEME_TOKEN_LINE_HIGHLIGHT_OVERLAY,
 	THEME_TOKEN_MID_GREY,
 	THEME_TOKEN_MUTED_GREY,
 	THEME_TOKEN_NEAR_BLACK,
 	THEME_TOKEN_NUMBER_BROWN,
+	THEME_TOKEN_PALE_TEAL,
 	THEME_TOKEN_PANEL_GREY,
 	THEME_TOKEN_REFERENCES_MATCH_ACTIVE_OVERLAY,
 	THEME_TOKEN_REFERENCES_MATCH_OVERLAY,
@@ -107,6 +113,7 @@ type ThemeDefinition = {
 	markdown: {
 		codeBackground: number;
 		codeText: number;
+		emphasisText: number;
 		linkText: number;
 		mutedText: number;
 	};
@@ -183,8 +190,13 @@ type ThemeOverlays = {
 
 const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 	dark: {
-		markdown: { codeBackground: THEME_TOKEN_DEEP_GREY, codeText: THEME_TOKEN_GENTLE_WHITE,
-			linkText: THEME_TOKEN_TERMINAL_CYAN, mutedText: THEME_TOKEN_HINT_GREY },
+		markdown: {
+			codeBackground: THEME_TOKEN_DEEP_TEAL,
+			codeText: THEME_TOKEN_LIGHT_TEAL,
+			emphasisText: THEME_TOKEN_LIGHT_PURPLE,
+			linkText: THEME_TOKEN_TERMINAL_CYAN,
+			mutedText: THEME_TOKEN_HINT_GREY,
+		},
 		surfaces: {
 			frame: THEME_TOKEN_WHITE,
 			topBar: THEME_TOKEN_TERMINAL_GREY,
@@ -298,8 +310,13 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		},
 	},
 	light: {
-		markdown: { codeBackground: THEME_TOKEN_PANEL_GREY, codeText: THEME_TOKEN_DEEP_GREY,
-			linkText: THEME_TOKEN_TERMINAL_DARK_BLUE, mutedText: THEME_TOKEN_MUTED_GREY },
+		markdown: {
+			codeBackground: THEME_TOKEN_PALE_TEAL,
+			codeText: THEME_TOKEN_DARK_TEAL,
+			emphasisText: THEME_TOKEN_DARK_PURPLE,
+			linkText: THEME_TOKEN_TERMINAL_DARK_BLUE,
+			mutedText: THEME_TOKEN_MUTED_GREY,
+		},
 		surfaces: {
 			frame: THEME_TOKEN_SOFT_WHITE,
 			topBar: THEME_TOKEN_PANEL_GREY,
@@ -475,6 +492,7 @@ export let COLOR_GUTTER_BACKGROUND: number;
 export let COLOR_TEXT_STRONG: number;
 export let COLOR_MARKDOWN_CODE_BACKGROUND: number;
 export let COLOR_MARKDOWN_CODE_TEXT: number;
+export let COLOR_MARKDOWN_EMPHASIS_TEXT: number;
 export let COLOR_MARKDOWN_LINK_TEXT: number;
 export let COLOR_MARKDOWN_MUTED_TEXT: number;
 export let COLOR_BREAKPOINT_BORDER = 0;
@@ -642,6 +660,7 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_TEXT_STRONG = theme.text.strong;
 	COLOR_MARKDOWN_CODE_BACKGROUND = theme.markdown.codeBackground;
 	COLOR_MARKDOWN_CODE_TEXT = theme.markdown.codeText;
+	COLOR_MARKDOWN_EMPHASIS_TEXT = theme.markdown.emphasisText;
 	COLOR_MARKDOWN_LINK_TEXT = theme.markdown.linkText;
 	COLOR_MARKDOWN_MUTED_TEXT = theme.markdown.mutedText;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT = theme.text.primary;

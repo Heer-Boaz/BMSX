@@ -58,6 +58,12 @@ export const THEME_TOKEN_EXECUTION_STOP_OVERLAY = 56;
 export const THEME_TOKEN_ACTION_OVERLAY = 57;
 export const THEME_TOKEN_TEXT_GREY = 58;
 export const THEME_TOKEN_MUTED_GREY = 59;
+export const THEME_TOKEN_DARK_TEAL = 60;
+export const THEME_TOKEN_LIGHT_TEAL = 61;
+export const THEME_TOKEN_PALE_TEAL = 62;
+export const THEME_TOKEN_DEEP_TEAL = 63;
+export const THEME_TOKEN_DARK_PURPLE = 64;
+export const THEME_TOKEN_LIGHT_PURPLE = 65;
 
 export const THEME_TOKEN_COLORS: readonly number[] = [
 	0x00000000,
@@ -120,6 +126,12 @@ export const THEME_TOKEN_COLORS: readonly number[] = [
 	0xa5000000,
 	0xff484c54,
 	0xff666b74,
+	0xff075452,
+	0xff96dfce,
+	0xffdfeeeb,
+	0xff123939,
+	0xff704087,
+	0xffd5b0f2,
 ];
 
 export function resolveThemeTokenColor(token: number): number {
