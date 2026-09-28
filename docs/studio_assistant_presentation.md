@@ -166,6 +166,62 @@ The host atlas uses Mapbox's [potpack](https://github.com/mapbox/potpack)
 rectangle packer, not the ROM encoder's GX transfer/page limits. Guest texture
 packing and VRAM layout are unchanged. Both host artifacts share the same pixels.
 
+## Perceptual review, 2026-09-28
+
+Reviewed the software-rendered presentation captures from `5099312f6` at their
+original resolution: light/tiny, light/MSX and dark/MSX. Chromium 136.0.7103.25's
+ordinary DevTools
+[vision-deficiency emulation](https://developer.chrome.com/docs/devtools/rendering/apply-effects#emulate_vision_deficiencies)
+produced grayscale, protanopia, deuteranopia and tritanopia views; no custom color
+simulation or production UI changes were used. Fifteen captures were inspected.
+The palette was read from the live theme owner. Unfiltered and emulated palette
+swatches were sampled from browser screenshots, then measured in linear sRGB.
+These are rendered-fixture observations, not user research or a complete WCAG
+audit. In particular, simulated-pixel contrast is diagnostic, not a separate
+normative WCAG pass/fail calculation.
+
+Unfiltered contrast ratios:
+
+| Pair | Light | Dark |
+| --- | ---: | ---: |
+| Ordinary text / background | 8.25:1 | 12.68:1 |
+| Strong text / background | 17.68:1 | 19.55:1 |
+| Italic text / background | 7.26:1 | 10.54:1 |
+| Code text / code surface | 7.32:1 | 8.23:1 |
+| Strong text / ordinary text | **2.14:1** | **1.54:1** |
+| Code surface / surrounding surface | 1.15:1 | 1.55:1 |
+
+The review does **not** approve the hierarchy as fully accessible. Body/code/
+italic text has good foreground/background contrast, but that does not establish
+style recognition. Strong emphasis is weak in grayscale, especially on the dark
+surface. Its only cue is lightness; it does not reach the 3:1 distinction that
+[WCAG's use-of-color explanation](https://www.w3.org/WAI/WCAG22/Understanding/use-of-color.html)
+accepts as an additional lightness cue. Another hue alone cannot fix this.
+Code retains a rectangular surface and italics retain their slant, but the light
+code surface is subtle; the small bitmap italic needs human reading evaluation.
+Teal becomes largely neutral under protanopia/deuteranopia while purple remains
+bluish. This is not evidence of a psychologically optimal color association.
+
+There is a real design trade-off: with the current strong/background pair,
+achieving 3:1 strong/body contrast through lightness alone caps body/background
+contrast at 5.89:1 (light) or 6.52:1 (dark). Both exceed the
+[4.5:1 minimum](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html),
+but neither reaches the current 7:1 body target. Even pure black strong text on
+the light surface cannot satisfy both targets. Preserve readable text and add a
+non-color emphasis cue, or explicitly choose that contrast trade-off; do not
+claim a hue substitution solves it. Thickened bitmap glyphs remain excluded.
+
+Further observations from the simulations: light link text reaches 4.11:1 and
+dark selection text 4.29:1 in the protanopia view. Their unfiltered pairs remain
+5.10:1 and 5.32:1 respectively; these findings warrant review, not a claim that
+an emulated image determines WCAG conformance. No usability timing, participant
+study, dark/tiny capture or assistive-technology audit was performed.
+
+Scratch evidence: `/tmp/bmsx-markdown-accessibility/` contains `review.ts`, the
+self-contained `review.html`, `measurements.json` and the simulated captures.
+The active Studio/account session was untouched; no model requests or additional
+test contracts were added for this review.
+
 ## Validation and trying it
 
 - `test:lua`: 2,826 passing tests, one existing skip. Focused Markdown, composer,
