@@ -44,8 +44,9 @@ export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceVi
 	}
 
 	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
+		if (handleEditorScrollbarPointer(snapshot, VIEWER_SCROLLBARS)) return true;
 		if (justPressed) this.focus();
-		return handleEditorScrollbarPointer(snapshot, justPressed, VIEWER_SCROLLBARS);
+		return false;
 	}
 
 	public draw(): void {

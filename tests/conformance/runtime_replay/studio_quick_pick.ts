@@ -5,6 +5,7 @@ import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/top_bar/menu';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { inputFocus } from '../../../ide/input/focus';
+import { pointerCapture } from '../../../ide/input/pointer/capture';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import { WHEEL_SCROLL_STEP } from '../../../ide/common/constants';
 import { check, type StudioFixture } from './studio_fixture';
@@ -127,14 +128,14 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	await click(thumb);
 	setPointerButton('pointer_primary', true);
 	await frame();
-	check(editorViewState.scrollbarController.hasActiveDrag(), 'quick pick: real scrollbar drag is active before opening');
+	check(pointerCapture.active, 'quick pick: real scrollbar drag is active before opening');
 	await press('ControlLeft', 'Comma');
-	check(picker.visible && !editorViewState.scrollbarController.hasActiveDrag(), 'quick pick: exclusive input ends the lower pointer capture');
+	check(picker.visible && !pointerCapture.active, 'quick pick: exclusive input ends the lower pointer capture');
 	const scroll = activeCodeEditor.view.scrollRow;
 	setPointerButton('pointer_primary', false);
 	await frame();
 	await press('Escape');
-	check(!editorViewState.scrollbarController.hasActiveDrag() && activeCodeEditor.view.scrollRow === scroll,
+	check(!pointerCapture.active && activeCodeEditor.view.scrollRow === scroll,
 		'quick pick: release and dismissal do not revive a stale drag');
 }
 

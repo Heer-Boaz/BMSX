@@ -90,7 +90,6 @@ export class QuickInputController implements PointerCaptureTarget {
 		this.model.setInput(provider);
 		this.labelsDirty = true;
 		setFieldText(this.field, '', true);
-		this.scrollbarPointer.setInput(this.model.viewport.scrollbar);
 		this.update();
 		resetBlink();
 	}
@@ -144,7 +143,7 @@ export class QuickInputController implements PointerCaptureTarget {
 	public hide(restoreFocus = true): void {
 		pointerHover.release(this);
 		this.cancelPointer();
-		this.scrollbarPointer.clearInput();
+		this.scrollbarPointer.cancelPointer();
 		const session = this.session;
 		if (session === null) return;
 		this.session = null;
@@ -172,7 +171,6 @@ export class QuickInputController implements PointerCaptureTarget {
 	public update(): void {
 		if (!this.visible) return;
 		layoutQuickInput(this);
-		if (!this.inputBox) this.scrollbarPointer.update();
 		if (this.pressedRow !== undefined && this.pointerRevision !== this.model.viewport.revision) this.cancelPointer();
 		this.textViewport.update(this.field, this.layout.field.right - this.layout.field.left - 6,
 			editorViewState.inlineFieldMetricsRef, editorViewState.font);
@@ -228,7 +226,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		this.update();
 		if (!snapshot.valid || !snapshot.insideViewport) { pointerHover.release(this); return; }
 		this.model.list.hoverIndex = -1;
-		if (!this.inputBox && this.scrollbarPointer.handlePointer(snapshot)) { pointerHover.release(this); return; }
+		if (!this.inputBox && this.scrollbarPointer.handlePointer(snapshot, this.model.viewport.scrollbar)) { pointerHover.release(this); return; }
 		if (this.field.pointerSelecting || point_in_rect(snapshot.viewportX, snapshot.viewportY, this.layout.field)) {
 			this.pointer.textLeft = this.layout.field.left + 3 - this.textViewport.offset;
 			this.pointer.pointerX = snapshot.viewportX;

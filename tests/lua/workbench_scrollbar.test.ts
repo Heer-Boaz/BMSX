@@ -2,7 +2,7 @@ import { ScrollbarController } from '../../ide/editor/ui/scrollbar_controller';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
-import { WorkbenchScrollbarControl } from '../../ide/workbench/ui/scrollbar_control';
+import { ScrollbarPointerControl } from '../../ide/workbench/ui/scrollbar_pointer';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerButton } from '../../ide/input/pointer/buttons';
 import type { PointerSnapshot } from '../../ide/common/models';
@@ -10,7 +10,7 @@ import type { PointerSnapshot } from '../../ide/common/models';
 for (const orientation of ['horizontal', 'vertical'] as const) {
 	test(`${orientation} captured scrollbar releases outside its track and ends when geometry changes`, () => {
 		const bar = new Scrollbar(orientation), capture = new PointerCaptureService();
-		const control = new WorkbenchScrollbarControl(bar, capture);
+		const control = new ScrollbarPointerControl(capture);
 		const track = orientation === 'horizontal' ? { left: 10, top: 110, right: 110, bottom: 113 } : { left: 110, top: 10, right: 113, bottom: 110 };
 		bar.layout(track, 400, 100, 0);
 		const event = (position: number, held = 0, down = 0, up = 0): PointerSnapshot => ({
@@ -19,28 +19,29 @@ for (const orientation of ['horizontal', 'vertical'] as const) {
 			valid: true, insideViewport: true, pressedButtons: held, justPressedButtons: down, justReleasedButtons: up,
 		});
 		const primary = PointerButton.Primary;
-		assert.equal(control.begin(event(14, primary, primary)), true);
+		assert.equal(control.handlePointer(event(14, primary, primary), bar), true);
 		assert.equal(capture.active, true);
 		capture.dispatch(event(40, primary), false, 20);
 		const scroll = bar.getScroll(); assert.ok(scroll > 0);
 		const revision = bar.revision;
-		for (let i = 0; i < 100; i += 1) { bar.layout(track, 400, 100, scroll); control.update(); }
+		for (let i = 0; i < 100; i += 1) bar.layout(track, 400, 100, scroll);
 		assert.equal(bar.revision, revision); assert.equal(capture.active, true);
 		const release = event(89, 0, 0, primary);
 		if (orientation === 'horizontal') release.viewportY = 50; else release.viewportX = 50;
 		capture.dispatch(release, false, 40);
 		assert.equal(bar.getScroll(), 300); assert.equal(capture.active, false);
-		assert.equal(control.begin(event(60, 0, primary, primary)), true, 'a coalesced track click completes immediately');
+		assert.equal(control.handlePointer(event(60, 0, primary, primary), bar), true, 'a coalesced track click completes immediately');
 		assert.equal(bar.getScroll(), 150); assert.equal(capture.active, false);
-		control.begin(event(60, primary, primary));
-		bar.layout(track, 500, 100, 150); control.update();
+		control.handlePointer(event(60, primary, primary), bar);
+		bar.layout(track, 500, 100, 150);
 		assert.equal(capture.active, true, 'content height refinement does not end an ongoing gesture');
 		capture.dispatch(event(60, primary), false, 50); assert.equal(bar.getScroll(), 150);
 		const movedTrack = { ...track, right: track.right + 1 };
-		bar.layout(movedTrack, 500, 100, 150); control.update();
+		bar.layout(movedTrack, 500, 100, 150);
 		assert.equal(capture.active, false, 'physical track movement retires capture');
 		bar.layout(track, 100, 100, 0);
-		assert.equal(control.begin(event(60, primary, primary)), false, 'non-scrollable content never captures');
+		control.handlePointer(event(60, primary, primary), bar);
+		assert.equal(capture.active, false, 'non-scrollable content never captures');
 	});
 
 	test(`${orientation} scrollbar maps thumb travel to the full content range and retains geometry`, () => {
@@ -130,12 +131,39 @@ test('editor scrollbar routing only hits the attached owner list, not another pa
 	const track = { left: 100, right: 103, top: 10, bottom: 110 };
 	for (const bar of [bars.codeVertical, bars.resourceVertical, bars.viewerVertical]) bar.layout(track, 300, 100, 0);
 	const applied: string[] = [];
-	const controller = new ScrollbarController(bars, kind => applied.push(kind));
-	assert.equal(controller.begin(['viewerVertical'], 101, 100, true, 3), true);
-	controller.update(101, 70, true);
+	const capture = new PointerCaptureService();
+	const controller = new ScrollbarController(bars, kind => applied.push(kind), capture);
+	const pointer: PointerSnapshot = { viewportX: 101, viewportY: 100, valid: true, insideViewport: true,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
+	assert.equal(controller.begin(['viewerVertical'], pointer, 3), true);
+	pointer.viewportY = 70; pointer.justPressedButtons = 0;
+	capture.dispatch(pointer, false, 0);
 	assert.deepEqual(applied, ['viewerVertical', 'viewerVertical']);
 	controller.cancel();
 	assert.equal(bars.codeVertical.getScroll(), 0, 'hidden code geometry never steals the viewer press');
-	assert.equal(controller.begin(['resourceVertical'], 101, 100, true, 3), true);
+	pointer.viewportY = 100; pointer.justPressedButtons = PointerButton.Primary;
+	assert.equal(controller.begin(['resourceVertical'], pointer, 3), true);
 	assert.equal(applied.at(-1), 'resourceVertical');
+	controller.cancel();
+});
+
+test('only the current gesture subscribes to track lifetime, including loss of its drag affordance', () => {
+	const capture = new PointerCaptureService(), control = new ScrollbarPointerControl(capture);
+	const first = new Scrollbar('vertical'), second = new Scrollbar('vertical');
+	const track = { left: 100, right: 103, top: 10, bottom: 110 };
+	const pointer: PointerSnapshot = { viewportX: 101, viewportY: 15, valid: true, insideViewport: true,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
+	first.layout(track, 400, 100, 0); second.layout(track, 400, 100, 0);
+	control.handlePointer(pointer, first);
+	control.handlePointer(pointer, second);
+	first.layout({ ...track, bottom: 120 }, 400, 110, 0);
+	assert.equal(capture.active, true, 'the replaced track no longer owns cancellation');
+	pointer.viewportY = 30; pointer.justPressedButtons = 0;
+	capture.dispatch(pointer, false, 0);
+	assert.equal(first.getScroll(), 0); assert.equal(second.getScroll(), 60);
+	second.layout(track, 100, 100, 0);
+	assert.equal(capture.active, false, 'loss of scroll range releases immediately, without a control update');
+	pointer.viewportY = 60;
+	assert.equal(capture.dispatch(pointer, false, 1), false);
+	assert.equal(second.getScroll(), 0);
 });

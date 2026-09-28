@@ -805,7 +805,7 @@ export class RuntimeCartEditor implements CartEditor {
 			resourceHorizontal: new Scrollbar('horizontal'),
 			viewerVertical: new Scrollbar('vertical'),
 		};
-		editorViewState.scrollbarController = new ScrollbarController(editorViewState.scrollbars, (kind, scroll) => applyScrollbarScroll(this.resourcePanel, kind, scroll));
+		editorViewState.scrollbarController = new ScrollbarController(editorViewState.scrollbars, (kind, scroll) => applyScrollbarScroll(this.resourcePanel, kind, scroll), pointerCapture);
 		const resourcePanel = new ResourcePanelController(this, this.sources, {
 			resourceVertical: editorViewState.scrollbars.resourceVertical,
 			resourceHorizontal: editorViewState.scrollbars.resourceHorizontal,

@@ -27,12 +27,12 @@ export class WorkbenchScrollControl {
 	}
 
 	public setInput(input: WorkbenchScrollViewport): void {
+		this.pointer.cancelPointer();
 		this.input = input;
-		this.pointer.setInput(input.scrollbar);
 	}
 
 	public clearInput(): void {
-		this.pointer.clearInput();
+		this.pointer.cancelPointer();
 		this.focusTarget.release();
 		this.input = null;
 	}
@@ -43,14 +43,10 @@ export class WorkbenchScrollControl {
 		this.pointer.cancelPointer();
 	}
 
-	public update(): void {
-		this.pointer.update();
-	}
-
 	/** Child hits run first. Background focus is distinct from non-focusing scrollbar capture. */
 	public handlePointer(snapshot: PointerSnapshot): boolean {
 		const view = this.input!;
-		if (this.pointer.handlePointer(snapshot)) return true;
+		if (this.pointer.handlePointer(snapshot, view.scrollbar)) return true;
 		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)) return false;
 		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0) this.focusTarget.focus();
 		return true;

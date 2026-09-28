@@ -99,7 +99,7 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 			viewport.layout(4, layout.top + layout.rowHeight * 2 + 12, layout.right, layout.bottom, this.input.rows.length * layout.rowHeight);
 			this.scroll.lineStep = layout.rowHeight;
 		}
-		this.actions.update(); this.scroll.update();
+		this.actions.update();
 	}
 	public draw(): void {
 		const { layout, actionBar, viewport, rows } = this.input;

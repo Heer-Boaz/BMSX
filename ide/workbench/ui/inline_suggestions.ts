@@ -31,12 +31,12 @@ export class InlineSuggestions<T extends QuickPickItem> implements PointerCaptur
 	private pointerRevision = -1;
 	public constructor(private readonly accept: (item: T) => void) {}
 	public open(provider: QuickPickProvider<T>): void {
+		this.scrollbarPointer.cancelPointer();
 		this.provider = provider; this.model.setInput(provider); this.visible = true;
-		this.scrollbarPointer.setInput(this.model.viewport.scrollbar);
 	}
 	public hide(): void {
 		if (!this.visible) return;
-		this.visible = false; this.cancelPointer(); pointerHover.release(this); this.scrollbarPointer.clearInput();
+		this.visible = false; this.cancelPointer(); pointerHover.release(this); this.scrollbarPointer.cancelPointer();
 		this.model.clearInput(); this.rows.renderRows.length = 0;
 	}
 	public update(anchor: RectBounds, topLimit: number): void {
@@ -57,7 +57,6 @@ export class InlineSuggestions<T extends QuickPickItem> implements PointerCaptur
 			this.model.revealSelection();
 		}
 		layoutQuickPickRows(this.model, this.rows, changed);
-		this.scrollbarPointer.update();
 		if (this.pressedItem !== undefined && this.pointerRevision !== this.model.viewport.revision) this.cancelPointer();
 	}
 	public draw(): void {
@@ -82,7 +81,7 @@ export class InlineSuggestions<T extends QuickPickItem> implements PointerCaptur
 	}
 	public handlePointer(pointer: PointerSnapshot): boolean {
 		if (!this.visible || !pointer.insideViewport) return false;
-		if (this.scrollbarPointer.handlePointer(pointer)) return true;
+		if (this.scrollbarPointer.handlePointer(pointer, this.model.viewport.scrollbar)) return true;
 		const inside = point_in_rect(pointer.viewportX, pointer.viewportY, this.bounds);
 		this.handleCapturedPointer(pointer);
 		if ((pointer.justPressedButtons & PointerButton.Primary) !== 0) {

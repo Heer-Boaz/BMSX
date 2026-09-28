@@ -260,10 +260,10 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			return this.sourceEditReview.handlePointer(snapshot, justPressed, now);
 		}
 		if (this.actionBar.handlePointer(snapshot)) return true;
-		if (justPressed) this.focus();
 		const view = this.input.view;
 		prepareBehaviorLensLayout(view);
 		if (view.presentation.kind === 'properties') {
+			if (justPressed) this.focus();
 			const result = this.properties.handle(view.presentation.tree, snapshot, justPressed, now);
 			if (result === WorkbenchPropertyPointerResult.ContextMenu) {
 				if (view.presentation.tree.selectionIndex >= 0) acceptEffectPropertySelection(view, view.presentation, false);
@@ -289,6 +289,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			if (result === WorkbenchGraphPointerResult.Activate) this.controller.openSource();
 			return result !== WorkbenchGraphPointerResult.Outside;
 		}
+		if (justPressed) this.focus();
 		const result = this.pointer.handle(view, view.presentation, snapshot, justPressed, now);
 		if (result === BehaviorLensPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
 		if (result === BehaviorLensPointerResult.Activate) this.controller.openSource();

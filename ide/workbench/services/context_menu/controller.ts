@@ -82,7 +82,6 @@ export class ContextMenuController implements PointerCaptureTarget {
 		for (const row of this.model.rows) row.enabled = row.command !== undefined && this.session.commands.isEnabled(row.command);
 		if (this.pressedIndex >= 0 && !this.model.rows[this.pressedIndex].enabled) this.cancelPointer();
 		if (this.model.selectedIndex >= 0 && !this.model.rows[this.model.selectedIndex].enabled) this.model.selectNext(1);
-		this.scroll.update();
 	}
 
 	public accept(): void {

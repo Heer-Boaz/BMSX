@@ -124,7 +124,9 @@ test('both scrollbars capture independently of node hits, reach both ends and re
 		f.pointer.viewportY = (thumb.top + thumb.bottom) / 2;
 		f.pointer.pressedButtons = f.pointer.justPressedButtons = PointerButton.Primary;
 		assert.equal(f.view.hitTest(f.pointer.viewportX, f.pointer.viewportY), null, 'gutter is outside the graph clip/hit rectangle');
+		const focus = f.focus.target;
 		f.control.handlePointer(f.pointer, 0);
+		assert.equal(f.focus.target, focus, 'thumb capture never commits another control through a focus change');
 		assert.equal(f.view.selection, f.node);
 		f.pointer.justPressedButtons = 0;
 		if (axis === 'horizontal') f.pointer.viewportX = track.right + 20;
@@ -139,6 +141,14 @@ test('both scrollbars capture independently of node hits, reach both ends and re
 		assert.equal(bar.getScroll(), axis === 'horizontal' ? f.view.scrollBounds.left : f.view.scrollBounds.top,
 			'release coordinates finish the thumb drag in actual graph coordinates, without a source drop');
 		assert.equal(f.view.selection, f.node);
+		f.pointer.viewportX = (bar.getThumb()!.left + bar.getThumb()!.right) / 2;
+		f.pointer.viewportY = (bar.getThumb()!.top + bar.getThumb()!.bottom) / 2;
+		f.pointer.pressedButtons = f.pointer.justPressedButtons = PointerButton.Primary;
+		f.pointer.justReleasedButtons = 0;
+		f.control.handlePointer(f.pointer, 41);
+		assert.equal(f.capture.active, true);
+		f.view.layout(11, 21, 211, 181);
+		assert.equal(f.capture.active, false, 'the graph track producer ends the grab before another pointer frame');
 		f.control.dispose();
 	}
 });

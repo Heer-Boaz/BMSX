@@ -1,5 +1,4 @@
 import { pointerHover } from './hover';
-import { PointerButton } from './buttons';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../common/models';
@@ -22,26 +21,15 @@ export function handleResourcePanelPointer(
 		return false;
 	}
 	pointerHover.visit(resourcePanel);
-	resourcePanel.setFocused(true);
-	resetPointerClickTracking();
-	const margin = resourcePanel.lineHeight;
-	if (snapshot.viewportY < panelBounds.top + margin) {
-		resourcePanel.scrollBy(-1);
-	} else if (snapshot.viewportY >= panelBounds.bottom - margin) {
-		resourcePanel.scrollBy(1);
-	}
 	const hoverIndex = resourcePanel.indexAtPosition(snapshot.viewportX, snapshot.viewportY);
 	resourcePanel.hoverIndex = hoverIndex;
-	if (hoverIndex >= 0) {
-		if (hoverIndex !== resourcePanel.selectionIndex) {
+	if (justPressed) {
+		resourcePanel.setFocused(true);
+		resetPointerClickTracking();
+		if (hoverIndex >= 0) {
 			resourcePanel.setSelectionIndex(hoverIndex);
+			openResourcePanelSelection(resourcePanel, hoverIndex, snapshot.viewportX);
 		}
-			if (justPressed) {
-				openResourcePanelSelection(resourcePanel, hoverIndex, snapshot.viewportX);
-			}
-	}
-	if ((snapshot.pressedButtons & PointerButton.Primary) === 0 && hoverIndex === -1) {
-		resourcePanel.hoverIndex = -1;
 	}
 	editorPointerState.pointerSelecting = false;
 	return true;

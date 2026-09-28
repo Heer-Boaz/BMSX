@@ -40,7 +40,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	private padPressed = false;
 	private returnFocus: InputFocusTarget | null = null;
 
-	public constructor(private readonly focus: InputFocusService, capture: PointerCaptureService, private readonly hover: PointerHoverService, parent: InputFocusTarget) {
+	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService, private readonly hover: PointerHoverService, parent: InputFocusTarget) {
 		this.scroll = new WorkbenchScrollControl(focus, capture, parent, input => this.handleKeyboard(input) || this.handleGamepad(input));
 		this.focusTarget = this.scroll.focusTarget;
 		this.actions = new WorkbenchActionBarControl(focus, capture, hover, this, this.focusTarget);
@@ -59,6 +59,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 
 	public show(input: PropertyInspection<Element>): DisposableStore {
 		this.hide();
+		this.capture.cancel();
 		this.returnFocus = this.focus.target;
 		this.input = input;
 		this.actionBar.items[0].visible = input.items.some(item => input.canOpenSource(item));
@@ -90,7 +91,6 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 
 	public update(): void {
 		if (!this.visible) return;
-		this.scroll.update();
 		this.actions.update();
 	}
 

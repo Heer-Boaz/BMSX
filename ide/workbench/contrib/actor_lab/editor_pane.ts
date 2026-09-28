@@ -62,11 +62,10 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		super.activate();
 		this.actions.setInput(this.input.actionBar, this.focusTarget);
 		this.timelineSlider.setInput(this.input.timeline.slider);
-		this.scrollbar.setInput(this.input.outline.scrollbar);
 		this.update();
 	}
-	public override clearInput(): void { this.timelineSlider.clearInput(); this.input.timeline.clear(); this.input.running = false; this.input.invalidate(false); this.inspector.hide(); this.actions.clearInput(); this.scrollbar.clearInput(); super.clearInput(); }
-	public override dispose(): void { this.timelineSlider.dispose(); this.inspector.dispose(); this.actions.dispose(); this.scrollbar.clearInput(); super.dispose(); }
+	public override clearInput(): void { this.timelineSlider.clearInput(); this.input.timeline.clear(); this.input.running = false; this.input.invalidate(false); this.inspector.hide(); this.actions.clearInput(); this.scrollbar.cancelPointer(); super.clearInput(); }
+	public override dispose(): void { this.timelineSlider.dispose(); this.inspector.dispose(); this.actions.dispose(); this.scrollbar.cancelPointer(); super.dispose(); }
 	public override update(): void {
 		const input = this.input;
 		const readback = input.dirty;
@@ -88,7 +87,6 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.actions.focusTarget.next = input.timeline.slider.interactive ? this.timelineSlider.focusTarget : null;
 		input.timeline.executePending(this.controller.selected(input), this.controller.canInteract(), this.scrub);
 		this.actions.update();
-		this.scrollbar.update();
 		this.inspector.update();
 	}
 	public drawStatusBar(top: number, color: number): void {
@@ -124,7 +122,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
 		if (this.actions.handlePointer(snapshot) || this.input.timeline.visible && this.timelineSlider.handlePointer(snapshot)
-			|| this.scrollbar.handlePointer(snapshot)) return true;
+			|| this.scrollbar.handlePointer(snapshot, this.input.outline.scrollbar)) return true;
 		if (!snapshot.valid || !snapshot.insideViewport) return false;
 		const index = workbenchListRowIndexAtPosition(this.input.outline, snapshot.viewportX, snapshot.viewportY);
 		if (index < 0) return false;

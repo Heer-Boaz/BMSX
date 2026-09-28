@@ -1,6 +1,7 @@
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
 import { testStudioGraphZoom } from './studio_graph_zoom';
+import { inputFocus } from '../../../ide/input/focus';
 
 /** Same physical navigation on BT and FSM, in the actual Studio host/focus/input composition. */
 export async function testStudioGraphNavigation(test: StudioFixture): Promise<void> {
@@ -48,6 +49,8 @@ export async function testStudioGraphNavigation(test: StudioFixture): Promise<vo
 	movePointer(point(startX + 20, startY + 20)); await frame();
 	check(view.scrollX === x && view.scrollY === y, 'graph navigation: palette blur cancels middle capture');
 	setPointerButton('pointer_aux', false); await frame();
+	await press('Tab');
+	const scrollbarFocus = inputFocus.target;
 	for (const bar of [view.horizontalScrollbar, view.verticalScrollbar]) {
 		const thumb = bar.getThumb()!;
 		const track = bar.getTrack();
@@ -56,8 +59,10 @@ export async function testStudioGraphNavigation(test: StudioFixture): Promise<vo
 		movePointer(bar.orientation === 'horizontal' ? point(track.right - 1, track.top + 1) : point(track.left + 1, track.bottom - 1)); await frame();
 		setPointerButton('pointer_primary', false); await frame();
 		check(bar.getScroll() > 0 && (bar.orientation === 'horizontal' ? view.scrollX !== x : view.scrollY !== y), 'graph navigation: physical scrollbar drag moves its axis');
+		check(inputFocus.target === scrollbarFocus, 'graph navigation: scrollbar preserves action-bar keyboard focus');
 		view.scrollX = x; view.scrollY = y;
 	}
+	await press('ShiftLeft', 'Tab');
 	movePointer(point(startX, startY)); await frame();
 	setKey('ShiftLeft', true);
 	test.input.inputAxis1('pointer:0', 'pointer_wheel', 120, test.clock.now()); await frame();

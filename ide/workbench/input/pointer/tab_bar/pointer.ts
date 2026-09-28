@@ -22,7 +22,7 @@ export function handleTabBarPointer(
 		editorChromeState.lastTabClickId = null;
 		return false;
 	}
-	if (editorChromeState.tabScrollControl.begin(snapshot)) {
+	if (editorChromeState.tabScrollControl.handlePointer(snapshot, editorChromeState.tabScrollbar)) {
 		editorChromeState.lastTabClickId = null;
 		consumeChromePointerPress();
 		return true;

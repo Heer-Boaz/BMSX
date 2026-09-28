@@ -189,7 +189,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		if (handleQuickInputPointer(this.editor, this.sources, snapshot, justPressed)) {
 			return;
 		}
-		if (handleEditorScrollbarPointer(snapshot, justPressed, CODE_SCROLLBARS)) return;
+		if (handleEditorScrollbarPointer(snapshot, CODE_SCROLLBARS)) return;
 		handleCodeAreaPointerInput(
 			this.editor,
 			this.luaTooling,

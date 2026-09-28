@@ -4,64 +4,63 @@ import { PointerButton } from '../../input/pointer/buttons';
 import { WORKBENCH_POINTER_SCOPE, type PointerCaptureScope, type PointerCaptureService, type PointerCaptureTarget } from '../../input/pointer/capture';
 import type { Scrollbar, ScrollbarDragStart } from './scrollbar';
 
-/** Axis-only pointer capture. Scrolling a thumb never changes text/control focus. */
+type ScrollbarGesture = {
+	readonly scrollbar: Scrollbar;
+	readonly start: ScrollbarDragStart;
+	readonly unbindTrack: () => void;
+	readonly onScroll: ((scroll: number) => void) | undefined;
+	pointer: number;
+};
+
+/** One captured gesture, not an attachment to a pane's retained view model.
+ * The track owner invalidates geometry; the capture service owns physical input lifetime. */
 export class ScrollbarPointerControl implements PointerCaptureTarget {
-	private input: Scrollbar | undefined;
-	private revision = 0;
-	private dragging = false;
-	private dragStart!: ScrollbarDragStart;
-	private pointer = 0;
+	private gesture: ScrollbarGesture | undefined;
 
 	public constructor(private readonly capture: PointerCaptureService, private readonly scope: PointerCaptureScope = WORKBENCH_POINTER_SCOPE) {}
 
-	public setInput(input: Scrollbar): void {
-		this.cancelPointer();
-		this.input = input;
-		this.revision = input.trackRevision;
-	}
-
-	public clearInput(): void {
-		this.cancelPointer();
-		this.input = undefined;
-	}
-
-	public cancelPointer(): void {
+	public readonly cancelPointer = (): void => {
 		this.capture.release(this);
-		this.dragging = false;
-	}
+		this.gesture?.unbindTrack();
+		this.gesture = undefined;
+	};
 
-	public update(): void {
-		if (this.input !== undefined && (this.revision !== this.input.trackRevision || this.dragging && !this.input.isVisible())) {
-			this.cancelPointer();
-			this.revision = this.input.trackRevision;
-		}
-	}
-
-	public handlePointer(snapshot: PointerSnapshot): boolean {
-		this.update();
-		const bar = this.input!;
-		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, bar.getTrack())) return false;
-		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && bar.isVisible()) {
-			this.pointer = bar.orientation === 'vertical' ? snapshot.viewportY : snapshot.viewportX;
-			this.dragStart = bar.beginDrag(this.pointer);
-			this.capture.capture(this, PointerButton.Primary, this.scope);
-			this.dragging = true;
-			if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
-		}
+	/** Track hits consume pointer input without taking keyboard focus. */
+	public handlePointer(snapshot: PointerSnapshot, scrollbar: Scrollbar): boolean {
+		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, scrollbar.getTrack())) return false;
+		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && scrollbar.isVisible()) this.beginDrag(snapshot, scrollbar);
 		return true;
 	}
 
+	/** The owner has admitted a primary press, including an editor's extended track hit area. */
+	public beginDrag(snapshot: PointerSnapshot, scrollbar: Scrollbar, onScroll?: (scroll: number) => void): void {
+		this.capture.capture(this, PointerButton.Primary, this.scope);
+		const pointer = scrollbar.orientation === 'vertical' ? snapshot.viewportY : snapshot.viewportX;
+		const previous = scrollbar.getScroll();
+		const start = scrollbar.beginDrag(pointer);
+		this.gesture = { scrollbar, start, pointer, onScroll, unbindTrack: scrollbar.onDidChangeTrack(this.cancelPointer) };
+		// A coalesced click has its final coordinates already; it cannot leave a live grab.
+		if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.cancelPointer();
+		if (scrollbar.getScroll() !== previous) onScroll?.(scrollbar.getScroll());
+	}
+
 	public handleCapturedPointer(snapshot: PointerSnapshot): void {
-		this.update();
-		if (this.dragging) {
-			const bar = this.input!;
-			const pointer = bar.orientation === 'vertical' ? snapshot.viewportY : snapshot.viewportX;
-			if (pointer !== this.pointer) { this.pointer = pointer; bar.drag(pointer, this.dragStart); }
-		}
+		this.move(this.gesture!, snapshot);
 	}
 
 	public releaseCapturedPointer(snapshot: PointerSnapshot): void {
-		this.handleCapturedPointer(snapshot);
+		const gesture = this.gesture!;
 		this.cancelPointer();
+		this.move(gesture, snapshot);
+	}
+
+	private move(gesture: ScrollbarGesture, snapshot: PointerSnapshot): void {
+		const bar = gesture.scrollbar;
+		const pointer = bar.orientation === 'vertical' ? snapshot.viewportY : snapshot.viewportX;
+		if (pointer === gesture.pointer) return;
+		gesture.pointer = pointer;
+		const previous = bar.getScroll();
+		const scroll = bar.drag(pointer, gesture.start);
+		if (scroll !== previous) gesture.onScroll?.(scroll);
 	}
 }

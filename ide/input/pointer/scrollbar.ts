@@ -1,4 +1,3 @@
-import { PointerButton } from './buttons';
 import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
 import { clearHoverTooltip } from '../../editor/contrib/hover/controller';
 import { ensureVisualLines } from '../../editor/common/text/layout';
@@ -12,11 +11,8 @@ import { setResourceViewerScroll } from '../../workbench/contrib/resources/viewe
 import { getActiveResourceViewer } from '../../workbench/contrib/resources/view_tabs';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 
-export function handleEditorScrollbarPointer(snapshot: PointerSnapshot, justPressed: boolean, kinds: readonly ScrollbarKind[]): boolean {
-	if (!justPressed) {
-		return false;
-	}
-	if (!editorViewState.scrollbarController.begin(kinds, snapshot.viewportX, snapshot.viewportY, ((snapshot.pressedButtons & PointerButton.Primary) !== 0), bottomMargin())) {
+export function handleEditorScrollbarPointer(snapshot: PointerSnapshot, kinds: readonly ScrollbarKind[]): boolean {
+	if (!editorViewState.scrollbarController.begin(kinds, snapshot, bottomMargin())) {
 		return false;
 	}
 	editorPointerState.pointerSelecting = false;
@@ -44,12 +40,10 @@ export function applyScrollbarScroll(resourcePanel: ResourcePanelController, kin
 		}
 		case 'resourceVertical': {
 			resourcePanel.setScroll(scroll);
-			resourcePanel.setFocused(true);
 			break;
 		}
 		case 'resourceHorizontal': {
 			resourcePanel.setHScroll(scroll);
-			resourcePanel.setFocused(true);
 			break;
 		}
 		case 'viewerVertical': {

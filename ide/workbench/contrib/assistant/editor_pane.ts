@@ -173,7 +173,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			if (item.visible !== visible) { item.visible = visible; actionsChanged = true; }
 		}
 		if (actionsChanged) layoutWorkbenchActionBar(input.turnActions, layout.right - 4, footerTop - row - 4, footerTop, measureText);
-		this.actions.update(); this.scroll.update(); this.references.update(input);
+		this.actions.update(); this.references.update(input);
 	}
 	public draw(): void {
 		const input = this.input, { layout, viewport } = input;

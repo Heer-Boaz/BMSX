@@ -95,6 +95,9 @@ Content-height refinement does not cancel an active scrollbar drag. Like VS Code
 the shared scrollbar captures its pointer/content ratio at pointer-down; only track
 movement, loss of the drag affordance or input cancellation retires the gesture.
 Stationary pointer frames do not overwrite the corrected reading position.
+Track lifetime is published by the geometry owner and observed only during a
+gesture; the assistant has no polling or separate scrollbar policy. See
+[shared interaction ownership](scrollbar_interaction.md).
 
 This bounds expensive retained presentation data by exposed **messages**, not by
 the conversation's age. A single exceptionally large visible message still needs

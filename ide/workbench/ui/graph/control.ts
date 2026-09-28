@@ -1,6 +1,6 @@
 import { PointerButton } from '../../../input/pointer/buttons';
 import { dragScrollSpeed } from '../drag_scroll';
-import type { Scrollbar, ScrollbarDragStart } from '../scrollbar';
+import { ScrollbarPointerControl } from '../scrollbar_pointer';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS, POINTER_DRAG_ACTIVATION_THRESHOLD } from '../../../common/constants';
@@ -15,7 +15,7 @@ import type { WorkbenchGraphConnectionDragStart, WorkbenchGraphDragFeedback, Wor
 import { hitWorkbenchGraphConnectionHandle, type WorkbenchGraphConnectionEnd, type WorkbenchGraphConnectionHandles } from './connection';
 
 export const enum WorkbenchGraphPointerResult { Outside, Handled, Selection, Activate, ContextMenu }
-const enum Gesture { None, Pan, Scrollbar, PendingDrag, Drag }
+const enum Gesture { None, Pan, PendingDrag, Drag }
 
 /** Pane-owned control. Input/view state survives detachment; physical gestures do not. */
 export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHoverTarget {
@@ -30,8 +30,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 	private anchorScrollX = 0;
 	private anchorScrollY = 0;
 	private gesture = Gesture.None;
-	private scrollbar: Scrollbar | undefined;
-	private scrollbarDragStart!: ScrollbarDragStart;
+	private readonly scrollbarPointer: ScrollbarPointerControl;
 	private pressTarget: WorkbenchGraphItem | null = null;
 	private pressConnection: WorkbenchGraphConnectionDragStart | undefined;
 	private dragSource: WorkbenchGraphDragSource | undefined;
@@ -52,6 +51,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 
 	public constructor(focus: InputFocusService, private readonly capture: PointerCaptureService,
 		private readonly pointerHover: PointerHoverService, keyboard: (input: PlayerInput) => void = input => this.handleKeyboard(input), parent: InputFocusTarget | null = null) {
+		this.scrollbarPointer = new ScrollbarPointerControl(capture);
 		this.focusTarget = focus.createTarget(parent);
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => {
 			if (this.gesture !== Gesture.None && isKeyJustPressed('Escape', input)) {
@@ -104,8 +104,8 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 
 	public cancelPointer(): void {
 		this.capture.release(this);
+		this.scrollbarPointer.cancelPointer();
 		this.gesture = Gesture.None;
-		this.scrollbar = undefined;
 		this.pressTarget = null;
 		this.pressConnection = undefined;
 		this.drag = undefined;
@@ -156,12 +156,6 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		this.update();
 		if (this.gesture === Gesture.None) return;
 		const view = this.inputValue!;
-		if (this.gesture === Gesture.Scrollbar) {
-			const scrollbar = this.scrollbar!;
-			if (!scrollbar.isVisible()) this.cancelPointer();
-			else scrollbar.drag(scrollbar.orientation === 'horizontal' ? snapshot.viewportX : snapshot.viewportY, this.scrollbarDragStart);
-			return;
-		}
 		if (this.gesture === Gesture.Pan) {
 			view.scrollX = this.anchorScrollX - Math.round(snapshot.viewportX - this.anchorX);
 			view.scrollY = this.anchorScrollY - Math.round(snapshot.viewportY - this.anchorY);
@@ -191,7 +185,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 
 	public releaseCapturedPointer(snapshot: PointerSnapshot, now: number): void {
 		// A fast press/move/release may be coalesced into one host input interval.
-		if (this.gesture === Gesture.PendingDrag || this.gesture === Gesture.Pan || this.gesture === Gesture.Scrollbar) this.handleCapturedPointer(snapshot, now);
+		if (this.gesture === Gesture.PendingDrag || this.gesture === Gesture.Pan) this.handleCapturedPointer(snapshot, now);
 		else this.update();
 		if (this.gesture === Gesture.Drag) {
 			// Use the release coordinates, not the last accepted hover. No release-time scroll.
@@ -254,19 +248,8 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		const auxiliary = (snapshot.justPressedButtons & PointerButton.Auxiliary) !== 0;
 		if (!point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)) {
 			this.pointerHover.release(this);
-			if (primary) {
-				const scrollbar = point_in_rect(snapshot.viewportX, snapshot.viewportY, view.horizontalScrollbar.getTrack()) ? view.horizontalScrollbar
-					: point_in_rect(snapshot.viewportX, snapshot.viewportY, view.verticalScrollbar.getTrack()) ? view.verticalScrollbar : undefined;
-				if (scrollbar !== undefined && scrollbar.isVisible()) {
-					this.focusTarget.focus();
-					this.pressTarget = view.selection;
-					this.lastClick = null;
-					this.scrollbar = scrollbar;
-					this.scrollbarDragStart = scrollbar.beginDrag(scrollbar.orientation === 'horizontal' ? snapshot.viewportX : snapshot.viewportY);
-					this.gesture = Gesture.Scrollbar;
-					this.capture.capture(this);
-				}
-			}
+			if (this.scrollbarPointer.handlePointer(snapshot, view.horizontalScrollbar)
+				|| this.scrollbarPointer.handlePointer(snapshot, view.verticalScrollbar)) this.lastClick = null;
 			return WorkbenchGraphPointerResult.Handled;
 		}
 		this.pointerHover.visit(this);

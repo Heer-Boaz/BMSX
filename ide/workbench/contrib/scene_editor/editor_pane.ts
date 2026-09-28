@@ -98,7 +98,6 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 				if (this.options.controls[index].field.focusTarget.hasFocus) this.revealOption(this.input.optionProperties[index]);
 			}
 		}
-		this.details.update();
 		this.status = SOURCE_STATUS[getTextFileRuntimeSourceStatus(this.sources, this.input.workingCopy)];
 	}
 

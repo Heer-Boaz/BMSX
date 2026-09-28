@@ -227,14 +227,13 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 
 	// === Public helpers used by editor pointer logic ===
-	indexAtPosition(_x: number, y: number): number {
+	indexAtPosition(x: number, y: number): number {
 		const layout = this.prepareLayout();
 		if (!layout) {
 			return -1;
 		}
-		const relativeY = y - layout.contentTop;
-		if (relativeY < 0) return -1;
-		return resourcePanelIndexAtRelativeY(this.scroll, relativeY, this.lineHeight, this.items.length);
+		if (x < layout.contentLeft || x >= layout.contentRight || y < layout.contentTop || y >= layout.effectiveBottom) return -1;
+		return resourcePanelIndexAtRelativeY(this.scroll, y - layout.contentTop, this.lineHeight, this.items.length);
 	}
 
 	setSelectionIndex(index: number): void {

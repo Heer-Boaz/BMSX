@@ -1759,6 +1759,14 @@ generation, without limiting the catalog. These are host interaction owners,
 not guest input or machine state. See `quick_input_interaction.md`; provider
 query and match-presentation ownership is described below.
 
+All scrollbar gestures share `ScrollbarPointerControl`, including code/resource
+gutters, tab chrome and graphs. `Scrollbar` publishes physical track/availability
+changes at layout; only the active gesture subscribes. Content-height refinement
+does not end capture. Pane detach and the shared pointer service own teardown,
+not a revision poll in each control. The code-editor axis adapter only selects
+and publishes row/column positions; it has no parallel pointer-frame drag loop.
+See [scrollbar interaction ownership](scrollbar_interaction.md).
+
 The Quick Input provider, not its control, owns query meaning and ranking.
 Providers retain admitted typed items and publish ordered match records plus a
 selected result index. The UI consumes that projection without re-filtering,

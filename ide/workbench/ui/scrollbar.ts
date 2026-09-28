@@ -8,7 +8,7 @@ export type ScrollbarDragStart = { readonly pointer: number; readonly scroll: nu
 /** Retained thumb geometry. Content coordinates need not be pixels (code uses rows/columns). */
 export class Scrollbar {
 	public revision = 0;
-	public trackRevision = 0;
+	private readonly trackListeners = new Set<() => void>();
 	private readonly track = create_rect_bounds();
 	private readonly thumb = create_rect_bounds();
 	private visible = false;
@@ -24,14 +24,20 @@ export class Scrollbar {
 
 	public constructor(public readonly orientation: 'vertical' | 'horizontal') {}
 
+	/** Physical track bounds or drag availability changed, not content-height refinement. */
+	public onDidChangeTrack(listener: () => void): () => void {
+		this.trackListeners.add(listener);
+		return () => { this.trackListeners.delete(listener); };
+	}
+
 	/** Geometry changes recompute the range; repeated layout and position retain it. */
 	public layout(track: RectBounds, contentSize: number, viewportSize: number, scroll: number, minimum = 0): void {
 		const trackChanged = this.track.left !== track.left || this.track.top !== track.top
 			|| this.track.right !== track.right || this.track.bottom !== track.bottom;
 		if (this.contentSize !== contentSize || this.viewportSize !== viewportSize || this.minScrollValue !== minimum
 			|| trackChanged) {
+			const wasVisible = this.visible;
 			this.revision += 1;
-			if (trackChanged) this.trackRevision++;
 			write_rect_bounds(this.track, track.left, track.top, track.right, track.bottom);
 			this.contentSize = contentSize;
 			this.viewportSize = viewportSize;
@@ -48,6 +54,7 @@ export class Scrollbar {
 			}
 			this.scrollValue = clamp(scroll, minimum, this.maxScrollValue);
 			this.updateThumb();
+			if (trackChanged || wasVisible !== this.visible) for (const listener of this.trackListeners) listener();
 		} else this.setScroll(scroll);
 	}
 

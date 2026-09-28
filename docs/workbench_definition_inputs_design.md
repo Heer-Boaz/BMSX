@@ -63,14 +63,14 @@ test would hide the missing chrome contract rather than fix it.
 
 The workbench now gives the tab strip one clipped row and a horizontal track
 only when content overflows. The existing `Scrollbar` owns range, position,
-thumb geometry and minimal interval reveal. Its geometry revision invalidates
-captured thumb gestures, not stationary frames. Wheel over tabs moves that
-axis, never the active document. Active-tab reveal follows group or geometry
+thumb geometry and minimal interval reveal. Physical track/availability changes
+publish cancellation to the captured gesture; content refinement does not.
+Wheel over tabs moves that axis, never the active document. Active-tab reveal follows group or geometry
 changes; it does not undo manual scrolling every frame. Font, viewport width
 and label changes invalidate the measured label cache. Hidden tabs retain hit
 geometry but emit no glyphs; input disposal releases their geometry entries.
 
-`WorkbenchScrollbarControl` owns the physical thumb gesture without changing
+The shared `ScrollbarPointerControl` owns the physical thumb gesture without changing
 editor focus. The tab-drag owner uses the same pointer-capture service as pane
 controls: insertion feedback is not a group mutation, an accepted physical
 release moves the tab, and Escape, lost input, a blocking surface or a changed

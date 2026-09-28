@@ -1,5 +1,5 @@
 import { Scrollbar } from './scrollbar';
-import { WorkbenchScrollbarControl } from './scrollbar_control';
+import { ScrollbarPointerControl } from './scrollbar_pointer';
 import { pointerCapture } from '../../input/pointer/capture';
 import type { RectBounds } from '../../../machine/ts/common/rect';
 import { create_rect_bounds } from '../../../machine/ts/common/rect';
@@ -13,7 +13,7 @@ type EditorChromeState = {
 	menuDropdownBounds: RectBounds;
 	tabBarBounds: RectBounds;
 	tabScrollbar: Scrollbar;
-	tabScrollControl: WorkbenchScrollbarControl;
+	tabScrollControl: ScrollbarPointerControl;
 	openMenuId: MenuId | null;
 	tabButtonBounds: Map<EditorTabId, RectBounds>;
 	tabCloseButtonBounds: Map<EditorTabId, RectBounds>;
@@ -38,7 +38,7 @@ export const editorChromeState: EditorChromeState = {
 	menuDropdownBounds: null,
 	tabBarBounds: create_rect_bounds(),
 	tabScrollbar,
-	tabScrollControl: new WorkbenchScrollbarControl(tabScrollbar, pointerCapture),
+	tabScrollControl: new ScrollbarPointerControl(pointerCapture),
 	openMenuId: null,
 	tabButtonBounds: new Map<EditorTabId, RectBounds>(),
 	tabCloseButtonBounds: new Map<EditorTabId, RectBounds>(),

@@ -1413,8 +1413,12 @@ lifetime. Closing releases both catalog and render data, rather than retaining a
 second complete UI catalog. Queries run on field changes, not frames. Its pixel viewport uses
 the existing `WorkbenchScrollViewport` and `Scrollbar` as the sole range owner.
 The axis-only `ScrollbarPointerControl` is shared with focusable workbench scroll
-views; dragging the picker thumb retains query focus. A row press selects and
-captures the admitted row; only release on that same row accepts. Query changes,
+views, code/resource gutters, tab chrome and graphs; dragging the picker thumb
+retains query focus. It observes track/availability changes only for the active
+gesture; `Scrollbar.layout` publishes them without per-frame control polling.
+Input detach and physical release/cancellation remove that subscription.
+A row press selects and captures the admitted row; only release on that same
+row accepts. Query changes,
 new geometry, outside release and session end cancel, rather than accepting a
 replacement ordinal. Ctrl+Home/End navigate list boundaries; plain Home/End edit
 the query. Labels are prepared only for visible rows, retained per font/width

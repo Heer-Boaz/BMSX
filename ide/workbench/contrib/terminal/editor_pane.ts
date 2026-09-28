@@ -141,7 +141,7 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 			if (item.visible !== visible) { item.visible = visible; actionsChanged = true; }
 		}
 		if (actionsChanged) layoutWorkbenchActionBar(input.actions, layout.right - 4, layout.bottom - row - 4, layout.bottom, measureText);
-		this.actions.update(); this.scroll.update();
+		this.actions.update();
 	}
 	public draw(): void {
 		const input = this.input, { layout, viewport } = input, font = editorViewState.font.renderFont();

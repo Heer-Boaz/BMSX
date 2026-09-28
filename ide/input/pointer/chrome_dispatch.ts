@@ -22,7 +22,7 @@ export function handleEditorChromePointerDispatch(
 	if (handleTopBarPointer(editor.commands, snapshot, justPressed)) {
 		return true;
 	}
-	if (editor.resourcePanel.isVisible() && handleEditorScrollbarPointer(snapshot, justPressed, RESOURCE_SCROLLBARS)) return true;
+	if (editor.resourcePanel.isVisible() && handleEditorScrollbarPointer(snapshot, RESOURCE_SCROLLBARS)) return true;
 	if (handleEditorPanelResizePointer(editor.resourcePanel, snapshot, justPressed)) {
 		return true;
 	}

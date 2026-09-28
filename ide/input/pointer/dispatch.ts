@@ -31,10 +31,8 @@ export function handleTextEditorPointerInput(
 		const justReleased = (snapshot.justReleasedButtons & PointerButton.Primary) !== 0;
 		if (pointerCapture.dispatch(snapshot, blockingModal
 			|| (captureScope === WORKBENCH_POINTER_SCOPE && editorChromeState.openMenuId !== null), now, captureScope)) return;
-		if (prepareEditorPointerFrame(snapshot, gotoModifierActive, blockingModal || quickInputVisible
-			|| editor.contextMenu.visible || editorChromeState.openMenuId !== null)) {
-			return;
-		}
+		prepareEditorPointerFrame(snapshot, gotoModifierActive, blockingModal || quickInputVisible
+			|| editor.contextMenu.visible || editorChromeState.openMenuId !== null);
 		const justPressed = (snapshot.justPressedButtons & PointerButton.Primary) !== 0;
 		const pointerSecondaryJustPressed = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
 		const pointerAuxJustPressed = (snapshot.justPressedButtons & PointerButton.Auxiliary) !== 0;

@@ -1,67 +1,44 @@
-import type { ScrollbarKind } from '../../common/models';
+import type { PointerSnapshot, ScrollbarKind } from '../../common/models';
 import { point_in_rect } from '../../../machine/ts/common/rect';
-import type { Scrollbar, ScrollbarDragStart } from '../../workbench/ui/scrollbar';
+import { PointerButton } from '../../input/pointer/buttons';
+import type { PointerCaptureService } from '../../input/pointer/capture';
+import type { Scrollbar } from '../../workbench/ui/scrollbar';
+import { ScrollbarPointerControl } from '../../workbench/ui/scrollbar_pointer';
 
 export type ScrollbarMap = Record<ScrollbarKind, Scrollbar>;
 
+/** Chooses the active editor/resource axis and publishes its content-unit position. */
 export class ScrollbarController {
-	private active: { kind: ScrollbarKind; dragStart: ScrollbarDragStart } | null = null;
+	private readonly pointer: ScrollbarPointerControl;
 
-	constructor(private readonly scrollbars: ScrollbarMap, private readonly apply: (kind: ScrollbarKind, scroll: number) => void) { }
-
-	public hasActiveDrag(): boolean {
-		return this.active !== null;
+	constructor(private readonly scrollbars: ScrollbarMap, private readonly apply: (kind: ScrollbarKind, scroll: number) => void, capture: PointerCaptureService) {
+		this.pointer = new ScrollbarPointerControl(capture);
 	}
 
 	public cancel(): void {
-		this.active = null;
+		this.pointer.cancelPointer();
 	}
 
 	/**
 	 * Try to begin a drag on any visible scrollbar.
 	 * Returns true when a drag session starts. Invokes apply(kind, scroll) when paging via track clicks.
 	 */
-	public begin(kinds: readonly ScrollbarKind[], pointerX: number, pointerY: number, primaryPressed: boolean, bottomMargin: number): boolean {
-		if (!primaryPressed) return false;
+	public begin(kinds: readonly ScrollbarKind[], snapshot: PointerSnapshot, bottomMargin: number): boolean {
+		if (!snapshot.valid || !snapshot.insideViewport || (snapshot.justPressedButtons & PointerButton.Primary) === 0) return false;
+		const pointerX = snapshot.viewportX, pointerY = snapshot.viewportY;
 		for (let i = 0; i < kinds.length; i += 1) {
 			const kind = kinds[i];
 			const scrollbar = this.scrollbars[kind];
 			const track = scrollbar.getTrack();
 			if (!scrollbar.isVisible()) continue;
-			const pointerCoord = scrollbar.orientation === 'vertical' ? pointerY : pointerX;
 			const hitsTrack = point_in_rect(pointerX, pointerY, track);
 			const extendedHorizontalHit = scrollbar.orientation === 'horizontal'
 				&& pointerX >= track.left && pointerX < track.right
 				&& pointerY >= track.top && pointerY < track.top + bottomMargin;
 			if (!hitsTrack && !extendedHorizontalHit) continue;
-			const hitsThumb = point_in_rect(pointerX, pointerY, scrollbar.getThumb()!);
-			const dragStart = scrollbar.beginDrag(pointerCoord);
-			if (!hitsThumb) {
-				this.apply(kind, scrollbar.getScroll());
-			}
-			this.active = { kind, dragStart };
+			this.pointer.beginDrag(snapshot, scrollbar, scroll => this.apply(kind, scroll));
 			return true;
 		}
 		return false;
-	}
-
-	/**
-	 * Update the active drag session. Returns true if it updated scrolling.
-	 */
-	public update(pointerX: number, pointerY: number, primaryPressed: boolean): boolean {
-		if (!this.active) return false;
-		if (!primaryPressed) {
-			this.active = null;
-			return false;
-		}
-		const scrollbar = this.scrollbars[this.active.kind];
-		if (!scrollbar.isVisible()) {
-			this.active = null;
-			return false;
-		}
-		const pointerCoord = scrollbar.orientation === 'vertical' ? pointerY : pointerX;
-		const newScroll = scrollbar.drag(pointerCoord, this.active.dragStart);
-		this.apply(this.active.kind, newScroll);
-		return true;
 	}
 }

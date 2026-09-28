@@ -6,7 +6,6 @@ import { editorChromeState } from '../../workbench/ui/chrome_state';
 import { endTabDrag } from '../../workbench/ui/tab/drag';
 import type { PointerSnapshot } from '../../common/models';
 import { editorPointerState } from './state';
-import { editorViewState } from '../../editor/ui/view/state';
 import { editorSearchState, lineJumpState } from '../../workbench/contrib/code_editor/find/widget_state';
 import type { EditorDisplay } from '../../common/viewport';
 
@@ -30,7 +29,7 @@ export function prepareEditorPointerFrame(
 	snapshot: PointerSnapshot,
 	gotoModifierActive: boolean,
 	workbenchInputBlocked: boolean,
-): boolean {
+): void {
 	if (!gotoModifierActive) {
 		clearGotoHoverHighlight();
 	}
@@ -42,20 +41,11 @@ export function prepareEditorPointerFrame(
 	}
 	editorPointerState.lastPointerSnapshot = snapshot.valid ? snapshot : null;
 	if (!snapshot.valid || workbenchInputBlocked) {
-		editorViewState.scrollbarController.cancel();
 		editorPointerState.lastPointerRowResolution = null;
-	} else if (editorViewState.scrollbarController.hasActiveDrag() && (snapshot.pressedButtons & PointerButton.Primary) === 0) {
-		editorViewState.scrollbarController.cancel();
-	} else if (editorViewState.scrollbarController.hasActiveDrag() && ((snapshot.pressedButtons & PointerButton.Primary) !== 0)) {
-		if (editorViewState.scrollbarController.update(snapshot.viewportX, snapshot.viewportY, ((snapshot.pressedButtons & PointerButton.Primary) !== 0))) {
-			editorPointerState.pointerSelecting = false;
-			return true;
-		}
 	}
 	if ((snapshot.pressedButtons & PointerButton.Primary) === 0) {
 		editorPointerState.pointerSelecting = false;
 		editorSearchState.field.pointerSelecting = false;
 		lineJumpState.field.pointerSelecting = false;
 	}
-	return false;
 }

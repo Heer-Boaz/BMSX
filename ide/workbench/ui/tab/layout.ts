@@ -108,7 +108,6 @@ export function layoutTabBar(context: WorkbenchChromeLayout): void {
 	const scrollbar = editorChromeState.tabScrollbar;
 	const previousScrollbarRevision = scrollbar.revision;
 	scrollbar.layout(tabTrack, contentWidth, viewportWidth, scrollbar.getScroll());
-	editorChromeState.tabScrollControl.update();
 	if (revealedGroupRevision !== editorTabGroup.revision || revealedScrollbarRevision !== scrollbar.revision) {
 		if (!editorChromeState.tabDragState?.hasDragged) scrollbar.reveal(activeLeft, activeRight);
 		revealedGroupRevision = editorTabGroup.revision;
