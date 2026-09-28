@@ -1,4 +1,4 @@
-import { encodePngImage } from '../../../hosts/node/headless/screenshot';
+import { decodeImage, encodePngImage } from '../../../hosts/node/headless/screenshot';
 import { runGuestTests } from './hostrunner/test_runner';
 import { Worker } from 'node:worker_threads';
 import { NodeGraphLayoutEngine } from '../../../ide/node/graph_layout';
@@ -206,7 +206,7 @@ async function main(): Promise<void> {
 			const clipboard = new HeadlessClipboard();
 			const workspaceRoot = options.mode.workspaceRoot;
 			const ide = workspaceRoot === undefined ? undefined : await prepareWorkbenchRuntime(
-				systemRom, [slot0Rom, slot1Rom], runtime, presenter, presentation, encodePngImage, videoOutput, input, audioOutput,
+				systemRom, [slot0Rom, slot1Rom], runtime, presenter, presentation, encodePngImage, decodeImage, videoOutput, input, audioOutput,
 				runtimeTasks, execution, rewind, hostOverlayMenu,
 				new MemoryStorage(), new DiskWorkspaceRecordProvider(workspaceRoot), clock,
 				clipboard, new IdeMicrotaskQueue(), logOutput, RESOURCE_PANEL_DEFAULT_RATIO,
@@ -271,6 +271,7 @@ async function main(): Promise<void> {
 						presenter,
 						presentation,
 						encodePngImage,
+						decodeImage,
 						videoOutput,
 						input,
 						audioOutput,

@@ -1,3 +1,4 @@
+import { AssistantAttachments } from './attachments';
 import { TextStyle, type SourceTextStyle } from '../../../common/markdown/model';
 import type { ResourceIdentity } from '../../../common/resource';
 import { create_rect_bounds } from '../../../../machine/ts/common/rect';
@@ -22,6 +23,7 @@ export class AssistantInput extends ReadonlyEditorInput<'assistant', 'assistant'
 	public readonly lifetime = new AbortController();
 	public editingQueuedId: string | undefined;
 	public commandPending = false;
+	public readonly attachments = new AssistantAttachments();
 	public readonly draft = new TextField<ResourceIdentity>();
 	public readonly composer = new MultilineFieldViewport(true);
 	public readonly draftMarkdown = new MarkdownSource();
@@ -57,7 +59,7 @@ export class AssistantInput extends ReadonlyEditorInput<'assistant', 'assistant'
 			if (kind === 'text' && conversation.entries[index]?.kind === 'proposal') this.selectedEntry = index;
 		}) });
 		this.disposables.add({ dispose: () => conversation.disconnect() });
-		this.disposables.add({ dispose: () => this.lifetime.abort() });
+		this.disposables.add({ dispose: () => { this.lifetime.abort(); this.attachments.clear(); } });
 	}
 }
 

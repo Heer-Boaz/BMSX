@@ -15,3 +15,6 @@ export interface GameImageCapture {
 	/** Accepted readbacks reserve runtime task admission before returning; PNG encoding needs no machine lock. */
 	capture(signal: AbortSignal): Promise<CapturedGameImage>;
 }
+
+/** Decode and fit an external image into a preview box; never modifies the message bytes. */
+export type ImageDecoder = (url: string, width: number, height: number) => Promise<RgbaImage>;

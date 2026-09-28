@@ -1,3 +1,4 @@
+import { HostBitmapTextures, type HostBitmap } from '../bitmap';
 import type { RenderPassLibrary } from '../../backend/pass/library';
 import type {
 	Host2DPipelineState,
@@ -8,7 +9,7 @@ import type {
 	RenderPassStateRegistry,
 } from '../../backend/backend';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms, type FrameUniformState } from '../../backend/frame_uniforms';
-import { RGBA8_SRGB_TEXTURE_PARAMS } from '../../backend/texture_params';
+import { RGBA8_LINEAR_TEXTURE_PARAMS, RGBA8_SRGB_TEXTURE_PARAMS } from '../../backend/texture_params';
 import type { WebGLBackend } from '../../backend/webgl/backend';
 import {
 	HOST_OVERLAY_INSTANCE_FLOAT_BYTES,
@@ -23,6 +24,7 @@ import fragmentShaderCode from './shaders/host_overlay.frag.glsl';
 
 type HostOverlayRuntime = {
 	gl: WebGL2RenderingContext;
+	bitmaps: HostBitmapTextures<WebGLTexture>;
 	program: WebGLProgram;
 	vao: WebGLVertexArrayObject;
 	cornerBuffer: WebGLBuffer;
@@ -110,6 +112,7 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram, frameUnifor
 
 	return {
 		gl,
+		bitmaps: new HostBitmapTextures(image => backend.createTexture(image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS) as WebGLTexture, texture => backend.destroyTexture(texture)),
 		program,
 		vao,
 		cornerBuffer,
@@ -127,6 +130,7 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram, frameUnifor
 }
 
 function destroyRuntime(backend: WebGLBackend, runtimeToDestroy: HostOverlayRuntime): void {
+	runtimeToDestroy.bitmaps.dispose();
 	backend.destroyBuffer(runtimeToDestroy.cornerBuffer);
 	backend.destroyBuffer(runtimeToDestroy.instanceFloatBuffer);
 	backend.destroyBuffer(runtimeToDestroy.instanceTextureKindBuffer);
@@ -168,11 +172,17 @@ function renderStream(backend: WebGLBackend, state: HostOverlayRuntime, passStat
 	const clip = state.clip;
 	clip.reset(passState.overlayWidth, passState.overlayHeight, passState.width, passState.height);
 	gl.enable(gl.SCISSOR_TEST);
+	let bitmap: HostBitmap | undefined;
 	for (let index = 0; index < stream.batchCount; index += 1) {
 		const batch = stream.batches[index];
 		const end = index + 1 < stream.batchCount ? stream.batches[index + 1].start : count;
 		clip.set(batch.clip);
 		if (end === batch.start || clip.left === clip.right || clip.top === clip.bottom) continue;
+		if (bitmap !== batch.bitmap) {
+			bitmap = batch.bitmap;
+			backend.setActiveTexture(HOST_OVERLAY_TEXTURE_UNIT + 1);
+			backend.bindTexture2D(bitmap === undefined ? passState.frameTexture as WebGLTexture : state.bitmaps.get(bitmap));
+		}
 		gl.scissor(clip.left, passState.height - clip.bottom, clip.right - clip.left, clip.bottom - clip.top);
 		bindInstanceStart(backend, state, batch.start);
 		backend.drawInstanced(HOST_OVERLAY_DRAW_PASS, 6, end - batch.start, 0, 0);

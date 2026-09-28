@@ -32,6 +32,7 @@ export type AssistantEntry = {
 	index: number;
 	readonly proposal?: WorkspaceEditProposal;
 	readonly references?: readonly AssistantSourceReference[];
+	readonly images?: readonly string[];
 	resetRevision: number;
 };
 type ActiveTurn = { startedAt: number; id?: string; tools: WorkspaceSourceTools; tests: WorkspaceTestTools; runtime: WorkspaceRuntimeTools; requests: Map<string, AbortController>; messages: Map<string, AssistantEntry> };
@@ -102,8 +103,8 @@ export class AssistantConversation {
 		this.revision++;
 		for (const listener of this.listeners) listener(entry, kind);
 	}
-	private append(kind: AssistantEntry['kind'], text: string, proposal?: WorkspaceEditProposal, references?: readonly AssistantSourceReference[]): AssistantEntry {
-		const entry = { kind, text: new PieceTreeBuffer(text), index: this.entries.length, resetRevision: 0, proposal, references };
+	private append(kind: AssistantEntry['kind'], text: string, proposal?: WorkspaceEditProposal, references?: readonly AssistantSourceReference[], images?: readonly string[]): AssistantEntry {
+		const entry = { kind, text: new PieceTreeBuffer(text), index: this.entries.length, resetRevision: 0, proposal, references, images };
 		// Settlement drains the observer; workspace clear disposes every pending proposal.
 		proposal?.onDidSettle(() => this.changed(entry.index, 'proposal'));
 		this.entries.push(entry); this.changed(entry.index, 'text'); return entry;
@@ -150,8 +151,8 @@ export class AssistantConversation {
 	}
 
 	/** One explicit submission. Native Codex owns FIFO dispatch; no retries or client dequeue loop. */
-	public async sendPrompt(prompt: string, direct = false, references: readonly AssistantSourceReference[] = []): Promise<boolean> {
-		if (!this.canSubmit || prompt.trim().length === 0 || (direct && !this.canDirect)) return false;
+	public async sendPrompt(prompt: string, direct = false, references: readonly AssistantSourceReference[] = [], images: readonly string[] = []): Promise<boolean> {
+		if (!this.canSubmit || (prompt.trim().length === 0 && images.length === 0) || (direct && !this.canDirect)) return false;
 		this.submitting = true; this.changed();
 		if (this.state === 'disconnected') {
 			const connecting = this.connect(), lifetime = this.lifetime;
@@ -171,8 +172,8 @@ export class AssistantConversation {
 		let turn: ActiveTurn | undefined;
 		if (!direct && !queued) { this.turn = turn = this.createTurn(); this.state = 'starting'; this.changed(); }
 		try {
-			await connection.send(direct ? { type: 'steer', turnId: this.turn!.id!, prompt, reviews, references }
-				: { type: queued ? 'queue' : 'start', prompt, reviews, references });
+			await connection.send(direct ? { type: 'steer', turnId: this.turn!.id!, prompt, reviews, references, images }
+				: { type: queued ? 'queue' : 'start', prompt, reviews, references, images });
 			// Pending reviews can settle while admission is in flight. Acknowledge
 			// only terminal observations actually submitted, never their newer state.
 			if (this.sourceLifetime === authority) for (const review of reviews) {
@@ -221,7 +222,7 @@ export class AssistantConversation {
 			if (this.connection !== connection) return;
 			this.resetSourceAuthority(); this.resetTranscript(); this.configuration = page.configuration;
 			this.thread = page.thread; this.olderCursor = page.nextCursor; this.queuePaused = true;
-			for (const entry of page.entries) this.append(entry.kind, entry.text, undefined, entry.references);
+			for (const entry of page.entries) this.append(entry.kind, entry.text, undefined, entry.references, entry.images);
 		} catch (error) { if (this.connection === connection) this.append('status', `Could not open conversation: ${String(error)}`); }
 		finally { if (this.connection === connection) { this.state = 'ready'; this.changed(); } }
 	}
@@ -268,7 +269,7 @@ export class AssistantConversation {
 		try {
 			const page = await connection.send({ type: 'older', cursor: this.olderCursor }) as AssistantTranscriptPage;
 			if (this.connection !== connection) return;
-			this.entries.unshift(...page.entries.map(entry => ({ kind: entry.kind, text: new PieceTreeBuffer(entry.text), references: entry.references, index: 0, resetRevision: 0 })));
+			this.entries.unshift(...page.entries.map(entry => ({ kind: entry.kind, text: new PieceTreeBuffer(entry.text), references: entry.references, images: entry.images, index: 0, resetRevision: 0 })));
 			for (let index = 0; index < this.entries.length; index++) this.entries[index].index = index;
 			this.olderCursor = page.nextCursor; this.changed(page.entries.length, 'prepend');
 		} catch (error) { if (this.connection === connection) this.append('status', `Could not load older messages: ${String(error)}`); }
@@ -376,7 +377,7 @@ export class AssistantConversation {
 				if (this.state !== 'stopping') { this.state = 'running'; this.queuePaused = false; }
 				else { this.turn.tools.dispose(); this.turn.tests.dispose(); this.turn.runtime.dispose(); }
 				this.changed(); break;
-			case 'user-message': this.append('user', event.text, undefined, event.references); break;
+			case 'user-message': this.append('user', event.text, undefined, event.references, event.images); break;
 			case 'text-delta':
 			case 'message': {
 				const turn = this.turn!;

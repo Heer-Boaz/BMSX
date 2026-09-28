@@ -1,7 +1,7 @@
 import { ActorExecutionService } from './contrib/actor_lab/execution';
 import { RuntimeDebuggerExecution } from '../runtime/debugger_execution';
 import { RuntimeFrameNavigation } from '../runtime/frame_navigation';
-import type { GameImageCapture } from '../../hosts/common/image';
+import type { GameImageCapture, ImageDecoder } from '../../hosts/common/image';
 import type { AssistantConnectionFactory } from '../../hosts/common/assistant_protocol';
 import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
 import type { HostRewind } from '../../hosts/common/rewind';
@@ -66,6 +66,7 @@ export class RuntimeIdeState {
 		runtime: Runtime,
 		presenter: VideoPresenter,
 		public readonly gameCapture: GameImageCapture,
+		decodeImage: ImageDecoder,
 		display: EditorDisplay,
 		input: Input,
 		audioOutput: HostAudioOutput,
@@ -137,6 +138,7 @@ export class RuntimeIdeState {
 			this.frameNavigation,
 			this.debuggerExecution,
 			this.gameCapture,
+			decodeImage,
 			createGraphLayoutEngine,
 			connectAssistant,
 		);

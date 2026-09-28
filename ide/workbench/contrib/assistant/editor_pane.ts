@@ -1,3 +1,8 @@
+import type { ImageDecoder } from '../../../../hosts/common/image';
+import { ImagePreviewCache, drawImagePreview } from '../../ui/image_preview';
+import { ImagePreviewOverlay } from '../../ui/image_preview_overlay';
+import { AssistantAttachmentStrip } from './attachment_strip';
+import { TRANSCRIPT_IMAGE_ROWS } from './projection';
 import { AssistantReferences } from './references';
 import type { Clipboard } from '../../../../hosts/common/clipboard';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
@@ -41,14 +46,23 @@ const COMMANDS = ['assistant.history', 'assistant.new', 'assistant.commands', 'a
 /** Host-only conversation work continues under the ordinary workbench game pause. */
 export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> {
 	private readonly chat: AssistantChatCommands;
+	private readonly previews: ImagePreviewCache;
+	private readonly preview: ImagePreviewOverlay;
+	private readonly attachments: AssistantAttachmentStrip;
+	private imagesVisible = false;
+	private contentTop = 0;
 	private readonly references = new AssistantReferences();
 	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget);
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, input => this.handleTranscriptKeyboard(input));
 	private readonly composer = new MultilineFieldControl();
 	private unbindDraft: (() => void) | undefined;
-	public constructor(resources: ResourcePanelController, private readonly clipboard: Clipboard, private readonly panes: EditorPanes, quickInput: QuickInputController) {
+	private unbindAttachmentPaste: (() => void) | undefined;
+	public constructor(resources: ResourcePanelController, private readonly clipboard: Clipboard, private readonly panes: EditorPanes, quickInput: QuickInputController, decodeImage: ImageDecoder) {
 		super(resources);
 		this.chat = new AssistantChatCommands(quickInput, clipboard);
+		this.previews = new ImagePreviewCache(decodeImage);
+		this.preview = new ImagePreviewOverlay(this.previews);
+		this.attachments = new AssistantAttachmentStrip(this.previews, url => this.preview.open(url));
 		this.scroll.focusTarget.commandContext = this.focusTarget;
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 	}
@@ -57,7 +71,10 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		super.activate();
 		this.actions.setInput(this.input.turnActions, this.focusTarget);
 		this.scroll.setInput(this.input.viewport);
-		this.composer.setInput(this.input.draft, this.input.composer, this.input.composerBounds);
+		this.attachments.setInput(this.input.attachments);
+		const draftInput = this.input;
+		this.composer.setInput(draftInput.draft, draftInput.composer, draftInput.composerBounds, images => draftInput.attachments.add(images));
+		this.unbindAttachmentPaste = this.attachments.focusTarget.bindPaste(draftInput.draft.focusTarget.paste!);
 		this.unbindDraft = this.input.draft.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 		this.input.draft.focusTarget.registerCommand('suggest.accept', {
 			isEnabled: () => this.input.draft.focusTarget.hasFocus && this.references.suggestions.visible && this.references.suggestions.model.list.selectionIndex >= 0,
@@ -68,18 +85,26 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			ring[index].next = ring[(index + 1) % ring.length];
 			ring[index].previous = ring[(index + ring.length - 1) % ring.length];
 		}
+		this.imagesVisible = false;
+		this.attachments.focusTarget.commandContext = this.input.draft.focusTarget;
+		this.attachments.focusTarget.next = this.input.draft.focusTarget;
+		this.attachments.focusTarget.previous = this.scroll.focusTarget;
 		// Keep Undo/Redo in the draft's own history, not the pane's command context.
 		for (const command of COMMANDS) this.input.draft.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 		this.update();
 	}
 	public override clearInput(): void {
 		this.unbindDraft?.(); this.unbindDraft = undefined;
+		this.unbindAttachmentPaste?.(); this.unbindAttachmentPaste = undefined;
+		this.preview.close(); this.attachments.clearInput(); this.previews.dispose();
 		this.references.clear(); this.composer.clearInput(); this.actions.clearInput(); this.scroll.clearInput();
 		super.clearInput();
 	}
 	public override dispose(): void { this.clearInput(); this.actions.dispose(); this.scroll.dispose(); super.dispose(); }
 	public isEnabled(command: EditorCommandId): boolean {
-		const { conversation: model, selectedEntry, draftHasText } = this.input;
+		const { conversation: model, selectedEntry } = this.input;
+		const hasContent = this.input.draftHasText || this.input.attachments.images.length > 0;
+		const ready = this.input.attachments.ready;
 		switch (command) {
 			case 'assistant.history': case 'assistant.new': return model.canBrowse && !this.input.commandPending;
 			case 'assistant.commands': return !this.input.commandPending;
@@ -87,8 +112,8 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			case 'assistant.cancelLogin': return model.state === 'signing-in';
 			case 'assistant.signOut': return model.state === 'ready' && !model.accountRefreshing && model.account!.connected;
 			case 'assistant.openLogin': case 'assistant.copyCode': return model.loginCode !== undefined;
-			case 'assistant.send': case 'assistant.queue': return draftHasText && !this.input.commandPending && (this.input.draft.text.startsWith('/') || model.canSubmit);
-			case 'assistant.direct': return model.canDirect && draftHasText;
+			case 'assistant.send': case 'assistant.queue': return hasContent && !this.input.commandPending && (this.input.draft.text.startsWith('/') || ready && model.canSubmit);
+			case 'assistant.direct': return model.canDirect && ready && hasContent;
 			case 'assistant.stop': return model.state === 'running' || model.state === 'starting';
 			case 'assistant.review': return model.entries[selectedEntry]?.proposal !== undefined;
 			case 'assistant.copy': return selectedEntry >= 0;
@@ -158,7 +183,21 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			input.projectedRevision = model.revision;
 			input.transcript.update(model.entries, layout.right - colors.SCROLLBAR_WIDTH - 16, measureStyledText, layout.font!);
 		}
-		const transcriptBottom = input.composerBounds.top - 4 - (busy || input.editingQueuedId !== undefined ? row + 2 : 0);
+		const hasImages = input.attachments.images.length > 0;
+		this.contentTop = input.composerBounds.top - (hasImages ? row * 5 + 8 : 0);
+		if (hasImages) this.attachments.layout(4, this.contentTop, layout.right - 4, row);
+		if (hasImages !== this.imagesVisible) {
+			this.imagesVisible = hasImages;
+			const stripFocus = this.attachments.focusTarget;
+			input.draft.focusTarget.previous = hasImages ? stripFocus : this.scroll.focusTarget;
+			this.scroll.focusTarget.next = hasImages ? stripFocus : input.draft.focusTarget;
+			if (!hasImages) {
+				// Retire the preview before its return control leaves the focus ring.
+				this.preview.close();
+				if (stripFocus.hasFocus) input.draft.focusTarget.focus();
+			}
+		}
+		const transcriptBottom = this.contentTop - 4 - (busy || input.editingQueuedId !== undefined ? row + 2 : 0);
 		const visibleRows = Math.max(1, (transcriptBottom - layout.top - 4) / row);
 		const scrollRow = input.transcript.layout(viewport.scrollTop / row, visibleRows, atEnd);
 		viewport.layout(4, layout.top + 4, layout.right, transcriptBottom, input.transcript.rowCount * row);
@@ -177,6 +216,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	}
 	public draw(): void {
 		const input = this.input, { layout, viewport } = input;
+		this.previews.beginFrame();
 		const font = editorViewState.font.renderFont();
 		const textColor = colors.COLOR_RESOURCE_VIEWER_TEXT;
 		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
@@ -187,11 +227,11 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		}
 		renderWorkbenchActionBar(input.turnActions, this, font);
 		if (input.busySince !== undefined) {
-			const y = input.composerBounds.top - layout.rowHeight - 4;
+			const y = this.contentTop - layout.rowHeight - 4;
 			api.blit_text_inline_with_font(SPINNER[Math.trunc((performance.now() - input.busySince) / 150) & 3], 4, y, 0, colors.COLOR_STATUS_SUCCESS, font);
 			api.blit_text_inline_with_font(input.activityText, 16, y, 0, textColor, font);
 		} else if (input.editingQueuedId !== undefined) {
-			api.blit_text_inline_with_font('Editing queued message', 4, input.composerBounds.top - layout.rowHeight - 4, 0, textColor, font);
+			api.blit_text_inline_with_font('Editing queued message', 4, this.contentTop - layout.rowHeight - 4, 0, textColor, font);
 		}
 		api.pushClipRect(viewport.bounds.left, viewport.bounds.top, viewport.bounds.right, viewport.bounds.bottom);
 		for (let index = Math.trunc(viewport.scrollTop / layout.rowHeight), top = viewport.offsetTop + index * layout.rowHeight;
@@ -199,11 +239,24 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			const row = input.transcript.rowAt(index)!;
 			const entry = input.conversation.entries[row.entry];
 			const selected = row.entry === input.selectedEntry;
-			if (entry.kind === 'user' && !row.heading) {
+			if (entry.kind === 'user' && !row.heading && !row.image) {
 				api.fill_rect(4, top, viewport.bounds.right, top + layout.rowHeight, 0, colors.HIGHLIGHT_OVERLAY);
 				api.fill_rect(4, top, 5, top + layout.rowHeight, 0, colors.COLOR_STATUS_SUCCESS);
 			}
-			if (selected) api.fill_rect(4, top, viewport.bounds.right, top + layout.rowHeight, 0, colors.SELECTION_OVERLAY);
+			if (selected && !row.image) api.fill_rect(4, top, viewport.bounds.right, top + layout.rowHeight, 0, colors.SELECTION_OVERLAY);
+			if (row.image) {
+				if (row.image.line === 0 || index === Math.trunc(viewport.scrollTop / layout.rowHeight)) {
+					const imageTop = top - row.image.line * layout.rowHeight;
+					const imageBottom = imageTop + TRANSCRIPT_IMAGE_ROWS * layout.rowHeight - 2;
+					const right = Math.min(viewport.bounds.right - 12, viewport.bounds.left + 180);
+					const preview = this.previews.use(row.image.url);
+					api.fill_rect(8, imageTop + 2, right, imageBottom, 0, colors.COLOR_MARKDOWN_CODE_BACKGROUND);
+					if (preview.bitmap) drawImagePreview(preview.bitmap, 10, imageTop + 4, right - 2, imageBottom - layout.rowHeight);
+					else api.blit_text_inline_with_font(preview.error ? 'Image unavailable' : 'Loading image...', 12, imageTop + 8, 0, colors.COLOR_MARKDOWN_MUTED_TEXT, font);
+					api.blit_text_inline_with_font(row.image.label, 12, imageBottom - layout.rowHeight, 0, colors.COLOR_MARKDOWN_MUTED_TEXT, font);
+				}
+				continue;
+			}
 			drawMarkdownRow(row, viewport.bounds.left + 4, top, viewport.bounds.right - 12, selected ? colors.COLOR_SELECTION_TEXT
 				: entry.kind === 'status' ? colors.COLOR_MARKDOWN_MUTED_TEXT : textColor, selected);
 		}
@@ -217,12 +270,17 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			api.popClipRect();
 		}
 		drawMultilineField(input.draft, input.composer, bounds);
+		if (input.attachments.images.length > 0) this.attachments.draw();
 		this.references.suggestions.draw();
+		this.preview.draw(layout, layout.rowHeight);
+		this.previews.endFrame();
 	}
 	public drawStatusBar(top: number, color: number): void {
 		api.blit_text_inline_with_font(this.input.footer.lines.at(-1)!, 4, top + 2, 0, color, editorViewState.font.renderFont());
 	}
 	protected override handleViewPointer(snapshot: PointerSnapshot): boolean {
+		if (this.preview.handlePointer(snapshot)) return true;
+		if (this.input.attachments.images.length > 0 && this.attachments.handlePointer(snapshot)) return true;
 		if (this.references.suggestions.handlePointer(snapshot)) return true;
 		// Actions act on the selected message; scrollbar capture preserves selection/focus.
 		if (this.actions.handlePointer(snapshot)) return true;
@@ -233,6 +291,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			if (point_in_rect(snapshot.viewportX, snapshot.viewportY, viewport.bounds)) {
 				const row = transcript.rowAt(Math.trunc((snapshot.viewportY - viewport.offsetTop) / layout.rowHeight));
 				const x = snapshot.viewportX - viewport.bounds.left - 4;
+				if (row?.image && x >= 0 && x < 172) { this.preview.open(row.image.url); return true; }
 				if (row !== undefined) for (const run of row.runs) {
 					if (x >= run.x && x < run.x + run.width) { this.input.selectedEntry = row.entry; break; }
 				}
@@ -276,6 +335,8 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		this.composer.handleKeyboard(input, this.clipboard);
 	}
 	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null): void {
+		if (this.preview.visible) return;
+		if (pointer !== null && this.input.attachments.images.length > 0 && this.attachments.handleWheel(pointer, direction * steps)) return;
 		if (pointer !== null && !this.references.suggestions.handleWheel(pointer, direction * steps)) this.scroll.handleWheel(pointer, direction * steps * this.input.layout.rowHeight);
 	}
 }

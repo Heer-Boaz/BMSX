@@ -1,3 +1,4 @@
+import { pasteText } from '../../../editor/editing/text_editing_and_selection';
 import { runtimeErrorOverlayPointer } from '../../../editor/contrib/runtime_error/pointer';
 import { pointerHover } from '../../../input/pointer/hover';
 import { codeAreaHover } from '../../../input/pointer/code/feedback';
@@ -58,6 +59,10 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	}
 	private unsubscribeContentChange: () => void;
 	private readonly unbindKeyboard = activeCodeEditor.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
+	private readonly unbindPaste = activeCodeEditor.focusTarget.bindPaste(contents => {
+		if (contents.text.length > 0) pasteText(contents.text);
+		else if (contents.images.length > 0) showEditorMessage('Source files accept text, not images.', constants.COLOR_STATUS_WARNING, 4);
+	});
 	private readonly unbindBlur = activeCodeEditor.focusTarget.onDidBlur(() => activeCodeEditor.model.breakUndoSequence());
 	public constructor(
 		private readonly editor: CartEditor,
@@ -88,7 +93,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	}
 
 	public dispose(): void {
-		this.unbindKeyboard();
+		this.unbindKeyboard(); this.unbindPaste();
 		this.unbindBlur();
 	}
 

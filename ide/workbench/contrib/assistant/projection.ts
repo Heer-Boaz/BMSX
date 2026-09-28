@@ -4,9 +4,11 @@ import { FenwickPrefix } from '../../../common/fenwick';
 import { MarkdownDocument, TextStyle } from '../../../common/markdown/model';
 import { MarkdownLayout, type MarkdownRow, type StyledMeasure } from '../../../common/markdown/layout';
 
-export type AssistantRow = MarkdownRow & { readonly entry: number; readonly heading: boolean };
+export const TRANSCRIPT_IMAGE_ROWS = 6;
+type ContentRow = MarkdownRow & { readonly image?: { url: string; label: string; line: number } };
+export type AssistantRow = ContentRow & { readonly entry: number; readonly heading: boolean };
 type EntryGeometry = { entry: AssistantEntry; rows: number };
-type EntryView = { document: MarkdownDocument; layout: MarkdownLayout; rows: MarkdownRow[]; views: WeakMap<MarkdownRow, AssistantRow>;
+type EntryView = { document: MarkdownDocument; layout: MarkdownLayout; rows: ContentRow[]; views: WeakMap<MarkdownRow, AssistantRow>;
 	length: number; reset: number; generation: number; dirty: boolean; heading: AssistantRow };
 const REVIEW_HEADINGS: Record<WorkspaceEditProposalState, string> = {
 	pending: 'REVIEW: PENDING', applying: 'REVIEW: APPLYING', applied: 'REVIEW: APPLIED',
@@ -59,7 +61,7 @@ export class AssistantTranscriptProjection {
 			let geometry = this.geometry.get(entry);
 			if (!geometry) {
 				// Explicit unmeasured height, refined when exposed, as with dynamic-height lists.
-				geometry = { entry, rows: Math.max(1, entry.text.getLineCount(), Math.trunc((entry.text.length + columns - 1) / columns)) + 1 };
+				geometry = { entry, rows: Math.max(1, entry.text.getLineCount(), Math.trunc((entry.text.length + columns - 1) / columns)) + 1 + (entry.images?.length ?? 0) * TRANSCRIPT_IMAGE_ROWS };
 				this.geometry.set(entry, geometry);
 			}
 			this.sequence.push(geometry); this.heights.push(geometry.rows); changed = true;
@@ -159,6 +161,10 @@ export class AssistantTranscriptProjection {
 		if (entry.kind === 'proposal') {
 			const text = REVIEW_HEADINGS[entry.proposal!.state];
 			cached.heading = { ...cached.heading, text, runs: [{ text, x: 0, width: this.measure(text, 0, text.length, TextStyle.Bold), style: TextStyle.Bold }] };
+		}
+		if (entry.text.length === 0 && entry.images?.length) cached.rows.length = 0;
+		for (let index = 0; index < (entry.images?.length ?? 0); index++) for (let line = 0; line < TRANSCRIPT_IMAGE_ROWS; line++) {
+			cached.rows.push({ text: '', runs: [], offset: 0, inset: 0, code: false, image: { url: entry.images[index], label: `Image ${index + 1}`, line } });
 		}
 		if (cached.rows.length === 0) cached.rows.push({ text: '', runs: [], offset: 0, inset: 0, code: false });
 		cached.dirty = false;

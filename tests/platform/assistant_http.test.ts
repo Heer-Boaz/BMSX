@@ -1,3 +1,5 @@
+import { PNG } from 'pngjs';
+import { randomBytes } from 'node:crypto';
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -12,7 +14,7 @@ import { StudioHttpSession } from '../../ide/browser/http_session';
 import type { AssistantEvent } from '../../hosts/common/assistant_protocol';
 import { WorkspaceHttpSession, HttpError } from '../../scripts/dev/http_security.mjs';
 import { handleWorkspaceRequest } from '../../scripts/dev/workspace_api.mjs';
-import { createCodexModelFixture, CODEX_FIXTURE_DONE } from '../helpers/codex_model_fixture.mjs';
+import { createCodexModelFixture, CODEX_FIXTURE_DONE, CODEX_FIXTURE_WAIT } from '../helpers/codex_model_fixture.mjs';
 
 const readCall = { type: 'function_call', call_id: 'codex-private-id', name: 'studio_read', arguments: '{"resource":"cart.lua"}' };
 const tools = [{ name: 'studio_read', description: 'Read a Studio source', inputSchema: { type: 'object', properties: { resource: { type: 'string' } },
@@ -211,17 +213,16 @@ test('capability rejection expires shared admission but does not renew or replay
 	assert.deepEqual(paths, ['/__bmsx__/assistant/command', '/__bmsx__/session'], 'only a subsequent explicit operation renews platform admission');
 });
 
-test('an event exceeding the stream budget retires the entire connection and leaves no process lease', { timeout: 15000 }, async t => {
-	const largeMessage = [{ type: 'message', id: 'large', role: 'assistant', content: [{ type: 'output_text', text: 'X'.repeat(9 * 1024 * 1024) }] }];
+test('large framed messages backpressure the stream without revoking the lease', { timeout: 15000 }, async t => {
+	const text = 'X'.repeat(9 * 1024 * 1024);
+	const largeMessage = [{ type: 'message', id: 'large', role: 'assistant', content: [{ type: 'output_text', text }] }];
 	const f = await fixture(t, [largeMessage]), c = await f.open();
-	await c.client.send({ type: 'start', reviews: [], prompt: 'Exercise the event transport budget' });
-	await c.client.closed;
-	assert.equal(c.client.signal.aborted, true);
-	assert.ok(c.events.some(event => event.type === 'closed' && event.error !== undefined));
-	const replacement = await f.open();
-	assert.notEqual(replacement.lease, c.lease, 'a new process starts only after the overflowing connection drains');
+	await c.client.send({ type: 'start', reviews: [], prompt: 'Exercise a large framed event' });
+	await c.wait(event => event.type === 'turn-completed');
+	assert.equal(c.events.find(event => event.type === 'message').text, text);
+	assert.equal(c.client.signal.aborted, false);
 	assert.equal(f.model.requests.length, 1);
-	await f.api.close(); await replacement.client.closed;
+	await f.api.close(); await c.client.closed;
 	await assert.rejects(access(join(f.profile, 'lease')), { code: 'ENOENT' });
 });
 
@@ -273,4 +274,24 @@ test('Chromium uses the real same-origin transport and shares admission with ord
 	assert.equal(f.requests.get('/__bmsx__/session'), 1, 'simultaneous file and process admission share one capability request');
 	assert.equal(await readFile(join(f.root, 'source.lua'), 'utf8'), 'return 2');
 	assert.deepEqual(errors, []);
+});
+
+test('a large screenshot crosses HTTP, native inference and queue events without revoking the connection', { timeout: 30000 }, async t => {
+	const png = new PNG({ width: 2048, height: 1152 }); png.data.set(randomBytes(png.data.length));
+	for (let offset = 3; offset < png.data.length; offset += 4) png.data[offset] = 255;
+	const image = `data:image/png;base64,${PNG.sync.write(png).toString('base64')}`;
+	assert.ok(image.length > 8 * 1024 * 1024);
+	const requested = Promise.withResolvers<void>();
+	const f = await fixture(t, [() => { requested.resolve(); return CODEX_FIXTURE_WAIT; }]), c = await f.open();
+	await c.client.send({ type: 'start', reviews: [], prompt: '', images: [image] });
+	const message = await c.wait(event => event.type === 'user-message');
+	assert.ok(message.type === 'user-message'); assert.equal(message.images![0], image);
+	await c.client.send({ type: 'queue', reviews: [], prompt: 'Same screenshot later', images: [image] });
+	const queued = await c.wait(event => event.type === 'queue' && event.messages.length === 1);
+	assert.ok(queued.type === 'queue'); assert.equal(queued.messages[0].images![0], image);
+	assert.equal(c.client.signal.aborted, false);
+	await requested.promise;
+	await c.client.send({ type: 'interrupt' }); await c.wait(event => event.type === 'turn-completed');
+	assert.ok(f.model.requests[0].input.filter(item => item.role === 'user').flatMap(item => item.content).some(part => part.type === 'input_image'));
+	c.client.close(); await c.client.closed;
 });

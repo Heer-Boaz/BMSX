@@ -1,3 +1,4 @@
+export { startAssistantImageTest } from './studio_assistant_images';
 export { runAssistantTestDebugger } from './studio_assistant_test_debugger';
 export { runAssistantBehavior } from './studio_assistant_behavior';
 export { runAssistantActors } from './studio_assistant_actors';

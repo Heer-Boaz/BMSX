@@ -2,7 +2,7 @@ import { activeCodeEditor } from '../../editor/ui/code_editor_state';
 import { jumpToNextMatch, jumpToPreviousMatch } from '../../workbench/contrib/code_editor/find/search';
 import { notifyReadOnlyEdit } from '../../editor/ui/view/view';
 import { toggleLineComments } from '../../editor/editing/line_comments';
-import { applyDocumentFormatting, copySelectionToClipboard, cutLineToClipboard, cutSelectionToClipboard, pasteFromClipboard } from '../../editor/editing/text_editing_and_selection';
+import { applyDocumentFormatting, copySelectionToClipboard, cutLineToClipboard, cutSelectionToClipboard, pasteText } from '../../editor/editing/text_editing_and_selection';
 import * as TextEditing from '../../editor/editing/text_editing_and_selection';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 import { editorSearchState } from '../../workbench/contrib/code_editor/find/widget_state';
@@ -61,7 +61,7 @@ function handlePasteBinding(playerInput: PlayerInput, clipboard: Clipboard): boo
 		notifyReadOnlyEdit();
 		return true;
 	}
-	pasteFromClipboard(clipboard);
+	pasteText(clipboard.text);
 	return true;
 }
 

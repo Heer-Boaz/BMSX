@@ -1,7 +1,7 @@
 import type { ActorExecutionService } from './workbench/contrib/actor_lab/execution';
 import type { RuntimeDebuggerExecution } from './runtime/debugger_execution';
 import type { RuntimeFrameNavigation } from './runtime/frame_navigation';
-import type { GameImageCapture } from '../hosts/common/image';
+import type { GameImageCapture, ImageDecoder } from '../hosts/common/image';
 import { AssistantConversation } from './workbench/services/assistant/conversation';
 import type { LuaTerminalSession } from './workbench/services/terminal/session';
 import { TerminalPane } from './workbench/contrib/terminal/editor_pane';
@@ -289,6 +289,7 @@ export class RuntimeCartEditor implements CartEditor {
 		private readonly frameNavigation: RuntimeFrameNavigation,
 		private readonly debuggerExecution: RuntimeDebuggerExecution,
 		gameCapture: GameImageCapture,
+		decodeImage: ImageDecoder,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
 		connectAssistant?: AssistantConnectionFactory,
 	) {
@@ -338,7 +339,7 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		this.editorPanes = new EditorPanes({
 			terminal: () => new TerminalPane(this.resourcePanel, this.clipboard, this.quickInput),
-			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.quickInput),
+			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.quickInput, decodeImage),
 			workspace_edit_review: () => new WorkspaceEditReviewPane(this.resourcePanel, {
 				// The editor owns the tab group and the ordinary Save service; the review pane asks.
 				reveal: models => {

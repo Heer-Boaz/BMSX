@@ -57,12 +57,12 @@ export class CodexHttpApi {
 			let result: AssistantReply | undefined;
 			switch (command.type) {
 				case 'start': {
-					const turnId = await connection.session!.startTurn(command.prompt, command.reviews, false, command.references);
+					const turnId = await connection.session!.startTurn(command.prompt, command.reviews, false, command.references, command.images);
 					result = { turnId }; break;
 				}
-				case 'steer': result = { turnId: await connection.session!.steer(command.turnId, command.prompt, command.reviews, command.references) }; break;
-				case 'queue': await connection.session!.enqueue(command.prompt, command.reviews, command.references); break;
-				case 'queue-update': await connection.session!.updateQueued(command.id, command.prompt, command.references); break;
+				case 'steer': result = { turnId: await connection.session!.steer(command.turnId, command.prompt, command.reviews, command.references, command.images) }; break;
+				case 'queue': await connection.session!.enqueue(command.prompt, command.reviews, command.references, command.images); break;
+				case 'queue-update': await connection.session!.updateQueued(command.id, command.prompt, command.references, command.images); break;
 				case 'queue-delete': await connection.session!.deleteQueued(command.id); break;
 				case 'queue-continue': result = { turnId: await connection.session!.startTurn('', [], true) }; break;
 				case 'history': result = await connection.session!.listHistory(command.cursor, command.search); break;
@@ -94,6 +94,7 @@ export class CodexHttpApi {
 	private async connect(connection: Connection): Promise<void> {
 		const { response, lifetime } = connection;
 		const disconnect = () => lifetime.abort(new Error('Studio assistant event stream disconnected'));
+		const drain = () => connection.session!.setEventStreamPaused(false);
 		response.once('close', disconnect);
 		response.once('error', disconnect);
 		try {
@@ -115,6 +116,7 @@ export class CodexHttpApi {
 				onEvent: event => this.onEvent(connection, event),
 			});
 			connection.session = session;
+			response.on('drain', drain);
 			const account = await session.readAccount();
 			lifetime.signal.throwIfAborted();
 			response.writeHead(200, { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-store' });
@@ -130,6 +132,7 @@ export class CodexHttpApi {
 			lifetime.abort();
 			try { if (connection.session) await connection.session.close(); }
 			finally {
+				response.removeListener('drain', drain);
 				response.removeListener('close', disconnect);
 				response.removeListener('error', disconnect);
 				response.end();
@@ -161,14 +164,9 @@ export class CodexHttpApi {
 
 	private publish(connection: Connection, event: AssistantEvent): void {
 		if (!connection.ready || connection.lifetime.signal.aborted) return;
-		connection.response.write(`${JSON.stringify(event)}\n`);
-		// A stalled browser must not create an unbounded token-event queue or block
-		// Codex response processing. Overflow retires the entire connection; no events
-		// are silently dropped/replayed and no pending edit authority survives.
-		if (connection.response.writableLength > 8 * 1024 * 1024) {
-			connection.lifetime.abort(new Error('Studio assistant event queue exceeded its 8 MiB transport budget'));
-			connection.response.destroy();
-		}
+		// Native stream backpressure, as with Node's pipe: a large image is one valid
+		// message, not a reason to revoke the session. drain resumes the producer.
+		if (!connection.response.write(`${JSON.stringify(event)}\n`)) connection.session!.setEventStreamPaused(true);
 	}
 
 	public async close(): Promise<void> {

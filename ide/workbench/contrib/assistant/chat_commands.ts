@@ -71,14 +71,15 @@ export class AssistantChatCommands {
 		await model.connect();
 		input.commandPending = false;
 		if (input.lifetime.signal.aborted || getActiveTab() !== input || model.state === 'disconnected') return;
-		const items = model.queued.map((message, index) => ({ label: message.text, description: `Queued ${index + 1}`, detail: 'Edit or remove', message }));
+		const items = model.queued.map((message, index) => ({ label: message.text || 'Image message', description: `Queued ${index + 1}${message.images?.length ? ` | ${message.images.length} image(s)` : ''}`, detail: 'Edit or remove', message }));
 		this.quickInput.pick('Codex queue', model.queuePaused ? 'Paused; /continue resumes work' : 'Waiting for the active turn', () => new TextQuickPickProvider(items), item => {
-			this.quickInput.pick('Queued message', item.message.text, () => new TextQuickPickProvider([
-				{ label: 'Edit message', description: 'Change text in the composer', detail: '', edit: true },
+			this.quickInput.pick('Queued message', item.label, () => new TextQuickPickProvider([
+				{ label: 'Edit message', description: 'Change text or images in the composer', detail: '', edit: true },
 				{ label: 'Remove message', description: 'Do not send it', detail: '', edit: false },
 			]), action => {
 				if (action.edit) {
 					input.editingQueuedId = item.message.id;
+					input.attachments.set(item.message.images ?? []);
 					setFieldText(input.draft, item.message.text, true,
 						(item.message.references ?? []).map(ref => ({ from: ref.from, to: ref.to, data: ref.source })));
 					input.draft.focusTarget.focus();
@@ -89,15 +90,20 @@ export class AssistantChatCommands {
 
 	public async submit(input: AssistantInput, direct = false): Promise<void> {
 		const text = input.draft.text, model = input.conversation;
-		if (input.commandPending || text.trim().length === 0) return;
+		const command = !direct && isAssistantCommand(input);
+		if (input.commandPending || !command && !input.attachments.ready || text.trim().length === 0 && input.attachments.images.length === 0) return;
+		const imageRevision = input.attachments.revision, images = command ? [] : input.attachments.urls;
+		let submittedImages = false;
 		const references = input.draft.annotations.map(span => ({ from: span.from, to: span.to, source: span.data }));
 		let accepted = true;
 		if (input.editingQueuedId !== undefined && text === '/cancel') {
 			input.editingQueuedId = undefined;
+			submittedImages = true;
 		} else if (input.editingQueuedId !== undefined) {
-			accepted = await model.changeQueued({ type: 'queue-update', id: input.editingQueuedId, prompt: text, references });
+			accepted = await model.changeQueued({ type: 'queue-update', id: input.editingQueuedId, prompt: text, references, images });
+			submittedImages = accepted;
 			if (accepted) input.editingQueuedId = undefined;
-		} else if (!direct && isAssistantCommand(input)) {
+		} else if (command) {
 			const end = text.search(/\s/), command = end === -1 ? text : text.slice(0, end), argument = end === -1 ? undefined : text.slice(end).trim();
 			switch (command) {
 				case '/': this.commands(input); break;
@@ -118,11 +124,14 @@ export class AssistantChatCommands {
 				case '/open': model.openLoginPage(); break;
 				case '/copy-code': if (model.loginCode !== undefined) await writeClipboard(this.clipboard, model.loginCode, 'Copied sign-in code'); break;
 				case '/cancel': input.editingQueuedId = undefined; await model.cancelLogin(); break;
-				case '/help': model.notice('Enter runs a command. Ctrl+Enter sends a message, or queues it while Codex works. Ctrl+Shift+Enter / Direct steers the active turn. Stop pauses the queue without deleting it.\n/model, /effort, /fast, /history, /new, /older, /queue, /continue, /stop, /login, /logout, /open, /copy-code, /cancel\nClick a message and press Ctrl+C to copy it, including the sign-in address.\n/login signs in through your browser; /login device shows a code instead, for a browser on another machine.\nQueued messages capture fresh Studio source context when their turn starts. Direct messages keep the active turn context.'); break;
+				case '/help': model.notice('Paste screenshots with Ctrl+V / Cmd+V. Click a thumbnail to preview; select it and press Delete to remove it. Images can be sent without text.\nEnter runs a command. Ctrl+Enter sends a message, or queues it while Codex works. Ctrl+Shift+Enter / Direct steers the active turn. Stop pauses the queue without deleting it.\n/model, /effort, /fast, /history, /new, /older, /queue, /continue, /stop, /login, /logout, /open, /copy-code, /cancel\nClick a message and press Ctrl+C to copy it, including the sign-in address.\n/login signs in through your browser; /login device shows a code instead, for a browser on another machine.\nQueued messages capture fresh Studio source context when their turn starts. Direct messages keep the active turn context.'); break;
 				default: model.notice(`Unknown command: ${command}. Use / for commands.`); accepted = false;
 			}
-		} else accepted = await model.sendPrompt(text, direct, references);
+		} else { accepted = await model.sendPrompt(text, direct, references, images); submittedImages = accepted; }
 		// Never erase a draft that changed while a transport command was in flight.
-		if (accepted && !input.lifetime.signal.aborted && input.draft.text === text) setFieldText(input.draft, '', false);
+		if (accepted && !input.lifetime.signal.aborted && input.draft.text === text && input.attachments.revision === imageRevision) {
+			setFieldText(input.draft, '', false);
+			if (submittedImages) input.attachments.clear();
+		}
 	}
 }

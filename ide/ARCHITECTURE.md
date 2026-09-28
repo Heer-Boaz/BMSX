@@ -1782,3 +1782,29 @@ names or depend on cartlib. Explicit operations can advance to the next boundary
 under the workbench pause. Cancelling the requester leaves no deferred edit.
 References: [Godot runtime inspection and suspension](https://github.com/godotengine/godot/blob/4.5/scene/debugger/scene_debugger.cpp)
 and [LLDB scheduled function evaluation](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/lldb/source/Target/ThreadPlanCallFunction.cpp).
+
+### Pasted images
+
+Native paste is admitted by the focused host control, not by the emulated keyboard.
+The browser snapshots clipboard files during the paste event; the receiving draft
+owns pending reads, removal and submission. Encoded image URLs are message parts,
+never markdown text. Codex's native input, queue and history own their persistence.
+
+| Boundary | TypeScript representation | C++ counterpart |
+| --- | --- | --- |
+| Browser clipboard -> draft | Pending file decode, then PNG URL and preview pixels | None: Studio is host-only |
+| Provider message / history | Native image input plus authored text and source references | None |
+| Visible preview | Decoded RGBA8 host bitmap with explicit disposal | Existing native menus use atlas/frame commands; no image-attachment producer |
+| Software / WebGL2 / WebGPU overlay | Bitmap command, clipped quad, retained texture | Existing GLES2/software menu paths unchanged; bitmap commands are Studio-only |
+
+The frame-path consumers are `OverlayRenderer.drawBitmap`,
+`HostOverlayQuadStream.appendEntry`, the WebGL2/WebGPU overlay batch loops, and
+`renderHeadlessHost2DEntry`. Decoding occurs outside these paths. GPU resources
+are uploaded once per visible bitmap and released with that bitmap. Offscreen
+history does not retain decoded images. Guest memory, texture assets and scanout
+are not clipboard storage.
+
+Reference ownership: VS Code's `chatPasteProviders.ts` and
+`chatAttachmentModel.ts` separate pasted files from editor text; Dear ImGui's
+OpenGL renderer binds retained textures per draw batch. Studio uses the same
+separation, with its existing canvas focus and virtual transcript owners.

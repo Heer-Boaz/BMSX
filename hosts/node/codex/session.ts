@@ -9,7 +9,7 @@ import { CodexProfile } from './profile';
 import { CodexStdio, type CodexProcessExit } from './stdio';
 import { STUDIO_ACCOUNT_LOGIN_URL, type AssistantHistoryPage, type AssistantLoginMethod, type AssistantTranscriptPage, type AssistantReviewUpdate, type AssistantThread } from '../../common/assistant_protocol';
 import { CodexHistory } from './history';
-import { codexMessageInput, codexPrompt, type CodexTextInput } from './input';
+import { codexMessageInput, codexPrompt, type CodexUserInput } from './input';
 import { CodexAdmissionError, CodexProtocolError, type Json, type CodexAccount, type CodexSessionEvent,
 	type CodexLogin, type CodexTool, type CodexToolCall, type CodexToolResult, type CodexTurn, type RpcId, type RpcMessage } from './protocol';
 
@@ -279,20 +279,20 @@ export class CodexSession {
 		} finally { this.selecting = false; }
 	}
 
-	public async enqueue(prompt: string, reviews: readonly AssistantReviewUpdate[], references: readonly AssistantSourceReference[] = []): Promise<void> {
+	public async enqueue(prompt: string, reviews: readonly AssistantReviewUpdate[], references: readonly AssistantSourceReference[] = [], images: readonly string[] = []): Promise<void> {
 		if (!this.history.selected || this.selecting || this.stopping || this.login || this.signingOut || this.accountRefreshing) throw new Error('The conversation is not accepting queued messages');
 		const thread = this.history.selected;
 		this.policy.admit(await this.rpc.request('config/read', { includeLayers: true, cwd: this.profile.cwd }));
 		if (this.history.selected !== thread || this.selecting || this.stopping || this.retired) throw new Error('The conversation changed before queue admission');
 		this.queueEnabled = true;
-		await this.rpc.request('thread/queue/add', { threadId: thread.id, clientUserMessageId: randomUUID(), input: codexMessageInput(prompt, reviews, this.options.workspaceRoot, references) });
+		await this.rpc.request('thread/queue/add', { threadId: thread.id, clientUserMessageId: randomUUID(), input: codexMessageInput(prompt, reviews, this.options.workspaceRoot, references, images) });
 		// An unloaded history selection has no native event subscription. Refresh
 		// after its explicit mutation without resuming the thread just to observe it.
 		if (this.history.selected === thread && !this.history.loaded) this.refreshQueue();
 	}
-	public async updateQueued(id: string, prompt: string, references: readonly AssistantSourceReference[] = []): Promise<void> {
+	public async updateQueued(id: string, prompt: string, references: readonly AssistantSourceReference[] = [], images: readonly string[] = []): Promise<void> {
 		const thread = this.history.selected!;
-		await this.history.updateQueued(thread.id, id, prompt, references);
+		await this.history.updateQueued(thread.id, id, prompt, references, images);
 		if (this.history.selected === thread && !this.history.loaded) this.refreshQueue();
 	}
 	public async deleteQueued(id: string): Promise<void> {
@@ -302,23 +302,23 @@ export class CodexSession {
 		if (this.history.selected === thread && !this.history.loaded) this.refreshQueue();
 	}
 
-	public async steer(turnId: string, prompt: string, reviews: readonly AssistantReviewUpdate[], references: readonly AssistantSourceReference[] = []): Promise<string> {
+	public async steer(turnId: string, prompt: string, reviews: readonly AssistantReviewUpdate[], references: readonly AssistantSourceReference[] = [], images: readonly string[] = []): Promise<string> {
 		const turn = this.active;
 		if (!turn || turn.id !== turnId || turn.controller.signal.aborted || this.stopping) throw new Error('The selected turn is no longer accepting direct messages');
 		const result = await this.rpc.request<{ turnId: string }>('turn/steer', {
-			threadId: this.history.selected!.id, expectedTurnId: turnId, input: codexMessageInput(prompt, reviews, this.options.workspaceRoot, references),
+			threadId: this.history.selected!.id, expectedTurnId: turnId, input: codexMessageInput(prompt, reviews, this.options.workspaceRoot, references, images),
 		});
 		return result.turnId;
 	}
 
-	public async startTurn(prompt: string, reviews: readonly AssistantReviewUpdate[], queued = false, references: readonly AssistantSourceReference[] = []): Promise<string> {
+	public async startTurn(prompt: string, reviews: readonly AssistantReviewUpdate[], queued = false, references: readonly AssistantSourceReference[] = [], images: readonly string[] = []): Promise<string> {
 		if (this.retired) throw new CodexProtocolError('Codex connection closed');
 		if (this.active) throw new Error('A Codex turn is already active');
 		if (this.login || this.signingOut || this.accountRefreshing || this.selecting || this.stopping) throw new Error('Finish the current conversation/account operation before starting a turn');
 		const turn: TurnLifetime = { started: undefined, controller: new AbortController(), calls: new Set() };
 		this.active = turn;
 		this.queueEnabled = true;
-		turn.started = this.start(turn, prompt, reviews, queued, references);
+		turn.started = this.start(turn, prompt, reviews, queued, references, images);
 		try { return (await turn.started).turn.id; }
 		catch (error) {
 			this.retireTurn(turn);
@@ -326,7 +326,7 @@ export class CodexSession {
 		}
 	}
 
-	private async start(turn: TurnLifetime, prompt: string, reviews: readonly AssistantReviewUpdate[], queued: boolean, references: readonly AssistantSourceReference[]): Promise<{ turn: CodexTurn }> {
+	private async start(turn: TurnLifetime, prompt: string, reviews: readonly AssistantReviewUpdate[], queued: boolean, references: readonly AssistantSourceReference[], images: readonly string[]): Promise<{ turn: CodexTurn }> {
 		// Account/managed configuration can change between turns. Re-admit at the
 		// operation boundary, never in the notification/token hot path.
 		this.policy.admit(await this.rpc.request('config/read', { includeLayers: true, cwd: this.profile.cwd }));
@@ -345,7 +345,7 @@ export class CodexSession {
 		turn.controller.signal.throwIfAborted();
 		const result = queued
 			? await this.rpc.request<{ turn: CodexTurn }>('thread/queue/start', { threadId: this.history.selected!.id })
-			: await this.rpc.request<{ turn: CodexTurn }>('turn/start', { threadId: this.history.selected!.id, input: codexMessageInput(prompt, reviews, this.options.workspaceRoot, references) });
+			: await this.rpc.request<{ turn: CodexTurn }>('turn/start', { threadId: this.history.selected!.id, input: codexMessageInput(prompt, reviews, this.options.workspaceRoot, references, images) });
 		if (turn.id !== undefined && turn.id !== result.turn.id) throw new CodexProtocolError('Codex turn response changed its identity');
 		turn.id = result.turn.id;
 		return result;
@@ -408,7 +408,7 @@ export class CodexSession {
 		// acquire a turn or publish new UI work while the process is joining.
 		if (this.retired) return;
 		const params = message.params as { threadId: string; turnId: string; turn: CodexTurn; itemId: string; delta: string;
-			item: { type: string; id: string; text: string; tool: string; content: CodexTextInput[] };
+			item: { type: string; id: string; text: string; tool: string; content: CodexUserInput[] };
 			threadSettings: { model: string; modelProvider: string; effort: string | null; serviceTier: string | null };
 			rateLimits: CodexRateLimits; toModel: string; threadName?: string };
 		switch (message.method) {
@@ -541,10 +541,16 @@ export class CodexSession {
 		}
 	}
 
+	/** A stalled event consumer backpressures the owned process, not a growing JS event queue. */
+	public setEventStreamPaused(paused: boolean): void {
+		if (!this.retired) this.rpc.setOutputPaused(paused);
+	}
+
 	public close(error?: Error): Promise<CodexProcessExit> {
 		if (this.retired) return this.closed;
 		// Persist queue suspension before EOF. Transcript/queued text survive; tools
 		// and source receipts are revoked synchronously, never restored on reconnect.
+		this.rpc.setOutputPaused(false);
 		const stopping = this.interrupt();
 		this.retire();
 		void stopping.then(() => this.rpc.stop(error), stopError => this.rpc.stop(error ?? stopError));

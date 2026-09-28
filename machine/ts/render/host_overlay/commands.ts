@@ -1,3 +1,4 @@
+import type { HostBitmapRenderSubmission } from './bitmap';
 import type {
 	GlyphRenderSubmission,
 	HostImageRenderSubmission,
@@ -16,9 +17,11 @@ export const enum Host2DKind {
 	Clip,
 	Transform,
 	Frame,
+	Bitmap,
 }
 
 export type Host2DRef =
+	| HostBitmapRenderSubmission
 	| HostImageRenderSubmission
 	| HostFrameRenderSubmission
 	| PolyRenderSubmission

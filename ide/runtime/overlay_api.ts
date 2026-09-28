@@ -1,3 +1,4 @@
+import type { HostBitmap } from '../../machine/ts/render/host_overlay/bitmap';
 import type { BFont } from '../../machine/ts/render/shared/bitmap_font';
 import { type color } from '../../machine/ts/render/shared/submissions';
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
@@ -42,6 +43,10 @@ export class OverlayApi {
 
 	public blit_rect(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
 		this.renderer.strokeRect(x0, y0, x1, y1, z, resolveThemeTokenColor(colorindex), LAYER_2D_IDE);
+	}
+
+	public drawBitmap(bitmap: HostBitmap, left: number, top: number, right: number, bottom: number): void {
+		this.renderer.drawBitmap(bitmap, left, top, right, bottom);
 	}
 
 	public drawFrame(left: number, top: number, right: number, bottom: number): void {

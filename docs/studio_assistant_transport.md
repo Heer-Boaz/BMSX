@@ -64,10 +64,13 @@ repeat an assistant command. A lost response **or interrupted response body**
 may follow an accepted prompt; the client retires its lease rather than guessing
 whether it was accepted. Known operation rejection can leave the connection live.
 
-Stdio responses keep draining independently of tool waits and browser output.
-If the Node event writer's queued bytes exceed 8 MiB, the whole connection is
-retired. This also rejects a single oversized event; it is not a claim that the
-browser was necessarily slow. Events are neither silently dropped nor replayed.
+Tool waits do not block stdio dispatch. HTTP event backpressure pauses the owned
+process's stdout and `drain` resumes it, following Node's stream pipe contract.
+A large image is a valid frame, not an overflow that revokes the connection.
+Closing resumes stdout before interrupt/EOF so a vanished consumer cannot prevent
+queue suspension or process shutdown. Events are neither dropped nor replayed.
+This follows [Node's pipe backpressure](https://github.com/nodejs/node/blob/main/lib/internal/streams/legacy.js),
+not a larger arbitrary message-size budget or a secondary event queue.
 Source proposals remain governed by the [source-tool context](studio_source_tools.md)
 and [ordinary review](studio_workspace_edit_review.md), not by transport IDs.
 
@@ -77,10 +80,10 @@ and [ordinary review](studio_workspace_edit_review.md), not by transport IDs.
   with an offline Responses fixture, real listeners and a real Chromium client.
   They cover origin/lease admission, tool exchange, interruption, disconnect and
   explicit replacement, duplicate replies, lost headers/body, expired capability,
-  stream-budget termination and process/profile shutdown. Chromium shares one
+  large framed messages, stream backpressure and process/profile shutdown. Chromium shares one
   admission with ordinary file IO and saves after assistant disconnect.
   Structured review observations and the unchanged Unicode/multiline prompt are
-  verified in the actual Responses request produced by the pinned process.
+  verified in the actual Responses request produced by the installed process.
 - The actual plain-Node production entry is separately spawned without an
   assistant/loader flag, from a disposable workspace. Local and advertised LAN
   addresses connect the real CLI using an empty private profile, save source

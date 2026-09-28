@@ -1,3 +1,4 @@
+import type { HostBitmap, HostBitmapRenderSubmission } from '../../machine/ts/render/host_overlay/bitmap';
 import type { BFont } from '../../machine/ts/render/shared/bitmap_font';
 import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
 import type { HostOverlayClipRect } from '../../machine/ts/render/host_overlay/clip';
@@ -24,6 +25,8 @@ type OverlayCommandBuffer = {
 	rectPool: RectRenderSubmission[];
 	imagePool: HostImageRenderSubmission[];
 	framePool: HostFrameRenderSubmission[];
+	bitmapPool: HostBitmapRenderSubmission[];
+	bitmapCount: number;
 	itemPool: GlyphRenderSubmission[];
 	polyPool: PolyRenderSubmission[];
 	clipPool: HostOverlayClipRect[];
@@ -98,6 +101,8 @@ function createOverlayCommandBuffer(): OverlayCommandBuffer {
 		rectPool: [],
 		imagePool: [],
 		framePool: [],
+		bitmapPool: [],
+		bitmapCount: 0,
 		itemPool: [],
 		polyPool: [],
 		clipPool: [],
@@ -158,6 +163,8 @@ export class OverlayRenderer {
 		buffer.rectCount = 0;
 		buffer.imageCount = 0;
 		buffer.frameCount = 0;
+		for (let index = 0; index < buffer.bitmapCount; index++) buffer.bitmapPool[index].bitmap = undefined;
+		buffer.bitmapCount = 0;
 		buffer.itemCount = 0;
 		buffer.polyCount = 0;
 		buffer.clipCount = 0;
@@ -220,6 +227,20 @@ export class OverlayRenderer {
 		const buffer = this.activeBuffer;
 		buffer.transformDepth -= 1;
 		this.queueCommand(Host2DKind.Transform, buffer.transformStack[buffer.transformDepth - 1]);
+	}
+
+	public drawBitmap(bitmap: HostBitmap, left: number, top: number, right: number, bottom: number): void {
+		const buffer = this.activeBuffer;
+		let submission = buffer.bitmapPool[buffer.bitmapCount];
+		if (submission === undefined) {
+			submission = { bitmap, area: { left: 0, top: 0, right: 0, bottom: 0, z: 0 } };
+			buffer.bitmapPool.push(submission);
+		}
+		buffer.bitmapCount++;
+		submission.bitmap = bitmap;
+		const area = submission.area;
+		area.left = left; area.top = top; area.right = right; area.bottom = bottom;
+		this.queueCommand(Host2DKind.Bitmap, submission);
 	}
 
 	public drawFrame(left: number, top: number, right: number, bottom: number): void {

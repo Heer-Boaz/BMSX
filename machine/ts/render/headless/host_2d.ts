@@ -1,3 +1,4 @@
+import type { HostBitmapRenderSubmission } from '../host_overlay/bitmap';
 import {
 	HOST_SYSTEM_ATLAS,
 	hostSystemAtlasImage,
@@ -60,12 +61,32 @@ export function renderHeadlessHost2DEntry(context: HeadlessHost2DContext, kind: 
 		case Host2DKind.Img:
 			drawImage(context, item as HostImageRenderSubmission);
 			return;
+		case Host2DKind.Bitmap:
+			drawBitmap(context, item as HostBitmapRenderSubmission);
+			return;
 		case Host2DKind.Frame:
 			drawFrame(context, item as HostFrameRenderSubmission);
 			return;
 		case Host2DKind.Poly:
 			drawPoly(context, item as PolyRenderSubmission);
 			return;
+	}
+}
+
+function drawBitmap(context: HeadlessHost2DContext, command: HostBitmapRenderSubmission): void {
+	const { area, bitmap: { image } } = command, { scale, offsetX, offsetY } = context.transform;
+	const left = Math.trunc(area.left * scale + offsetX), top = Math.trunc(area.top * scale + offsetY);
+	const right = Math.trunc(area.right * scale + offsetX), bottom = Math.trunc(area.bottom * scale + offsetY);
+	const startX = Math.max(left, context.clip.left), endX = Math.min(right, context.clip.right);
+	const startY = Math.max(top, context.clip.top), endY = Math.min(bottom, context.clip.bottom);
+	const stepX = image.width / (right - left), stepY = image.height / (bottom - top);
+	const pixels = image.pixels;
+	for (let y = startY; y < endY; y++) {
+		const sourceRow = Math.trunc((y - top + 0.5) * stepY) * image.width;
+		for (let x = startX; x < endX; x++) {
+			const from = (sourceRow + Math.trunc((x - left + 0.5) * stepX)) * 4;
+			blendPixel(context.target, (y * context.width + x) * 4, pixels[from], pixels[from + 1], pixels[from + 2], pixels[from + 3]);
+		}
 	}
 }
 

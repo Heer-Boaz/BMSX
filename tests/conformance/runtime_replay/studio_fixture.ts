@@ -1,4 +1,6 @@
-import { encodePngImage } from '../../../hosts/browser/image';
+import { BrowserInputHub } from '../../../hosts/browser/input';
+import { HOST_SUPERVISOR_KEY_CODE } from '../../../hosts/common/input/shortcuts';
+import { decodeImage, encodePngImage } from '../../../hosts/browser/image';
 import type { AssistantConnectionFactory } from '../../../hosts/common/assistant_protocol';
 import { HttpWorkspaceRecordProvider } from '../../../ide/browser/workspace_records';
 import { stripProjectRootPrefix } from '../../../ide/workspace/path';
@@ -58,11 +60,12 @@ export function codePositionBounds(row: number, column: number) {
 }
 
 /** Actual Studio composition; backend selection belongs to the test project. */
-export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GPUBackend, capture?: (name: string) => Promise<void>, connectAssistant?: AssistantConnectionFactory) {
+export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GPUBackend, capture?: (name: string) => Promise<void>, connectAssistant?: AssistantConnectionFactory, nativeClipboard = false) {
 	const bios = new Uint8Array(await (await fetch('/bios.rom')).arrayBuffer());
 	const cart = new Uint8Array(await (await fetch('/cart.rom')).arrayBuffer());
 	const clock = new VirtualHeadlessClock();
-	const input = new Input(clock, new HeadlessInputHub(), -1);
+	const browserInput = nativeClipboard ? new BrowserInputHub(canvas, clock, null, HOST_SUPERVISOR_KEY_CODE) : undefined;
+	const input = new Input(clock, browserInput ?? new HeadlessInputHub(), -1);
 	const runtime = initializeMachineRuntime(bios, [cart, null], PSX_MACHINE_SPEC, input);
 	const display = new BrowserVideoOutput(canvas, null);
 	const presenter = initializeMachineVideoPresenter(runtime, display, backend);
@@ -83,8 +86,9 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const session = new HostFrameSession(runtime.timing.ufpsScaled, clock.now(), rewind, execution);
 	const menu = new HostOverlayMenu(presenter, runtime, input, rewind, execution);
 	const clipboard = new BrowserClipboard();
-	const ide = await prepareWorkbenchRuntime(bios, [cart, null], runtime, presenter, screen, encodePngImage, display, input,
+	const ide = await prepareWorkbenchRuntime(bios, [cart, null], runtime, presenter, screen, encodePngImage, decodeImage, display, input,
 		audio, tasks, execution, rewind, menu, localStorage, new HttpWorkspaceRecordProvider(), clock, clipboard, new IdeMicrotaskQueue(), log, 0.3, () => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')), connectAssistant);
+	if (browserInput) { clipboard.bindNativePaste(browserInput, () => ide.editor.isActive); browserInput.setKeyboardCapture(input.shouldCaptureKey); }
 	const output = new SystemOutputLog();
 	const harness = createHeadlessIdeHarness(ide, runtime, audio, log);
 	const history = runtime.history;

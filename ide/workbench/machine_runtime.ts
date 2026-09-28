@@ -1,6 +1,6 @@
 import { GameCaptureService } from '../../hosts/common/game_capture';
 import type { RenderPresentationState } from '../../hosts/common/presentation_state';
-import type { PngImageEncoder } from '../../hosts/common/image';
+import type { ImageDecoder, PngImageEncoder } from '../../hosts/common/image';
 import type { AssistantConnectionFactory } from '../../hosts/common/assistant_protocol';
 import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
 import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
@@ -32,6 +32,7 @@ export async function prepareWorkbenchRuntime(
 	presenter: VideoPresenter,
 	presentation: RenderPresentationState,
 	encodePngImage: PngImageEncoder,
+	decodeImage: ImageDecoder,
 	display: EditorDisplay,
 	input: Input,
 	audioOutput: HostAudioOutput,
@@ -62,6 +63,7 @@ export async function prepareWorkbenchRuntime(
 		runtime,
 		presenter,
 		new GameCaptureService(presenter, presentation, runtimeTasks, encodePngImage),
+		decodeImage,
 		display,
 		input,
 		audioOutput,

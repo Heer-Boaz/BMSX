@@ -5,7 +5,7 @@ import { CodexProtocolError, parseRpcMessage, type Json, type RpcMessage } from 
 export type CodexProcessExit = { code: number | null; signal: NodeJS.Signals | null; forced: boolean; error?: Error };
 type PendingRequest = { resolve: (result: Json) => void; reject: (error: Error) => void; timer: NodeJS.Timeout };
 
-/** One continuously drained stdio connection. Tool waits never block response dispatch. */
+/** One ordered stdio connection. Tool waits do not block response dispatch; consumers own backpressure. */
 export class CodexStdio {
 	private readonly child: ChildProcessWithoutNullStreams;
 	private readonly pending = new Map<string, PendingRequest>();
@@ -66,6 +66,11 @@ export class CodexStdio {
 		else request.resolve(message.result);
 	}
 
+	public setOutputPaused(paused: boolean): void {
+		if (paused) this.child.stdout.pause();
+		else this.child.stdout.resume();
+	}
+
 	public request<T>(method: string, params: Json): Promise<T> {
 		if (this.stopping) return Promise.reject(this.failure ?? new CodexProtocolError('Codex connection closed'));
 		const id = `studio:${++this.sequence}`;
@@ -98,6 +103,7 @@ export class CodexStdio {
 			this.failure = error;
 			this.rejectPending(error ?? new CodexProtocolError('Codex connection closed'));
 			this.lifetime.abort(error);
+			this.child.stdout.resume(); // EOF must drain even when the event consumer disappeared under pressure.
 			this.child.stdin.end();
 			this.killTimer = setTimeout(() => {
 				this.forced = true;

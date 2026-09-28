@@ -1,19 +1,19 @@
 import { codexPrompt, replaceCodexPrompt } from './input';
 import type { AssistantSourceReference, AssistantConfiguration, AssistantHistoryEntry, AssistantHistoryPage, AssistantModelSelection, AssistantQueuedMessage, AssistantThread, AssistantTranscriptPage } from '../../common/assistant_protocol';
-import type { CodexTextInput } from './input';
+import type { CodexUserInput } from './input';
 import { CodexAdmissionError, type CodexTool, type CodexTurn } from './protocol';
 import type { CodexStdio } from './stdio';
 import type { CodexModels } from './models';
 
 type StoredThread = { id: string; name: string | null; preview: string; updatedAt: number; model: string | null; modelProvider: string; reasoningEffort: string | null };
 type StoredItem =
-	| { type: 'userMessage'; content: CodexTextInput[] }
+	| { type: 'userMessage'; content: CodexUserInput[] }
 	| { type: 'agentMessage'; text: string }
 	| { type: 'dynamicToolCall'; tool: string; status: string }
 	| { type: 'reasoning' | 'contextCompaction' };
 type ThreadAdmission = { thread: StoredThread; cwd: string; approvalPolicy: string; sandbox: { type: string; networkAccess: boolean };
 	model: string; modelProvider: string; reasoningEffort: string | null; serviceTier: string | null };
-type QueuedSubmission = { id: string; input: CodexTextInput[] };
+type QueuedSubmission = { id: string; input: CodexUserInput[] };
 
 /** Codex owns durable transcripts and queues. Browsing is metadata IO, never thread resumption or inference. */
 export class CodexHistory {
@@ -38,7 +38,7 @@ export class CodexHistory {
 		for (const turn of page.data.reverse()) {
 			for (const item of turn.items) {
 				switch (item.type) {
-					// Studio authors text-only inputs; review observations precede the unchanged user prompt.
+					// Native image parts and reference metadata stay separate from prompt text.
 					case 'userMessage': entries.push({ kind: 'user', ...codexPrompt(item.content) }); break;
 					case 'agentMessage': entries.push({ kind: 'assistant', text: item.text }); break;
 					case 'dynamicToolCall': entries.push({ kind: 'status', text: `Historical tool: ${item.tool} (${item.status}). No active source/edit rights.` }); break;
@@ -79,7 +79,7 @@ export class CodexHistory {
 			// Native preview concatenates all user input blocks, including Studio workspace
 			// context. Give new conversations the actual prompt as a durable native name.
 			// disable-next-line newline_normalization_pattern -- A conversation name is the first prompt line; no prompt/source text is rewritten.
-			const name = Array.from(prompt.trim().split(/\r?\n/, 1)[0]).slice(0, 80).join('');
+			const name = Array.from(prompt.trim().split(/\r?\n/, 1)[0]).slice(0, 80).join('') || 'Image conversation';
 			await this.rpc.request('thread/name/set', { threadId: this.selected.id, name });
 			this.selected.title = name;
 		}
@@ -93,12 +93,12 @@ export class CodexHistory {
 		return (await this.readQueue(id)).map(item => ({ id: item.id, ...codexPrompt(item.input) }));
 	}
 
-	public async updateQueued(threadId: string, id: string, prompt: string, references: readonly AssistantSourceReference[] = []): Promise<void> {
+	public async updateQueued(threadId: string, id: string, prompt: string, references: readonly AssistantSourceReference[] = [], images: readonly string[] = []): Promise<void> {
 		const item = (await this.readQueue(threadId)).find(item => item.id === id);
 		if (!item) throw new Error('That queued message has already been dispatched or removed');
 		// Editing the user prompt must not erase the review observations admitted
 		// with it. Native update replaces a full input, not just its final text.
-		replaceCodexPrompt(item.input, prompt, references);
+		replaceCodexPrompt(item.input, prompt, references, images);
 		await this.rpc.request('thread/queue/update', { threadId, queuedSubmissionId: id, input: item.input });
 	}
 

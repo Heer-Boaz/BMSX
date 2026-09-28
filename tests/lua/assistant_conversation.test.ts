@@ -209,10 +209,14 @@ for (const outcome of ['applied', 'discarded', 'stale', 'failed'] as const) {
 		}
 		assert.equal(connection.commands.length, commands, 'review settlement cannot start inference or send provider commands');
 		await c.sendPrompt('Continue 🐉');
-		assert.deepEqual(connection.commands.at(-1), { type: 'start', prompt: 'Continue 🐉', references: [], reviews: [{ review: receipt, state: outcome, reason: proposal.reason }] });
+		const followup = connection.commands.at(-1)!;
+		assert.ok(followup.type === 'start'); assert.equal(followup.prompt, 'Continue 🐉');
+		assert.deepEqual(followup.reviews, [{ review: receipt, state: outcome, reason: proposal.reason }]);
 		connection.emit({ type: 'turn-completed', turnId: 'next', status: 'completed' });
 		await c.sendPrompt('Another explicit prompt');
-		assert.deepEqual(connection.commands.at(-1), { type: 'start', prompt: 'Another explicit prompt', references: [], reviews: [] }, 'acknowledged outcomes are not replayed');
+		const next = connection.commands.at(-1)!;
+		assert.ok(next.type === 'start'); assert.equal(next.prompt, 'Another explicit prompt');
+		assert.deepEqual(next.reviews, [], 'acknowledged outcomes are not replayed');
 	});
 }
 
@@ -307,7 +311,9 @@ for (const transition of ['disconnect', 'account'] as const) {
 		}
 		assert.equal(proposal.state, 'stale');
 		await c.sendPrompt('New authority');
-		assert.deepEqual(f.connections.at(-1)!.commands.at(-1), { type: 'start', prompt: 'New authority', references: [], reviews: [] });
+		const command = f.connections.at(-1)!.commands.at(-1)!;
+		assert.ok(command.type === 'start'); assert.equal(command.prompt, 'New authority');
+		assert.deepEqual(command.reviews, []);
 	});
 }
 
@@ -459,7 +465,9 @@ test('implicit connection coalesces and a cancelled pending prompt cannot enter 
 	assert.equal(await c.sendPrompt('Current draft'), true);
 	release(); assert.equal(await old, false); await connecting;
 	assert.equal(openings, 2); assert.equal(f.connections[0].commands.length, 0);
-	assert.deepEqual(f.connections[1].commands, [{ type: 'start', prompt: 'Current draft', references: [], reviews: [] }]);
+	assert.equal(f.connections[1].commands.length, 1);
+	const command = f.connections[1].commands[0];
+	assert.ok(command.type === 'start'); assert.equal(command.prompt, 'Current draft');
 	assert.equal(c.state, 'running'); assert.equal(c.submitting, false);
 });
 
@@ -509,7 +517,10 @@ test('late settings completion cannot reset work in a replacement connection', a
 test('native queue notifications alone dispatch fresh source context; direct messages keep active turn context', async t => {
 	const f = fixture(t), c = f.conversation; await c.sendPrompt('First'); const connection = f.connections[0];
 	await c.sendPrompt('Queued'); await c.sendPrompt('Direct', true);
-	assert.deepEqual(connection.commands.slice(1), [{ type: 'queue', prompt: 'Queued', references: [], reviews: [] }, { type: 'steer', turnId: 't', prompt: 'Direct', references: [], reviews: [] }]);
+	assert.equal(connection.commands.length, 3);
+	const queued = connection.commands[1], direct = connection.commands[2];
+	assert.ok(queued.type === 'queue'); assert.equal(queued.prompt, 'Queued');
+	assert.ok(direct.type === 'steer'); assert.equal(direct.prompt, 'Direct'); assert.equal(direct.turnId, 't');
 	assert.deepEqual(c.entries.filter(entry => entry.kind === 'user').map(entry => entry.text.getText()), ['First'], 'accepted text is not falsely reported consumed');
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- new source\n' }]);
 	connection.emit({ type: 'tool-request', requestId: 'old-context', name: 'studio_list_sources', arguments: {} }); await setImmediate();

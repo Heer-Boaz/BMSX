@@ -936,10 +936,9 @@ export async function cutLineToClipboard(clipboard: Clipboard): Promise<void> {
 }
 
 /**
- * Pastes text from the editor's internal clipboard.
+ * Pastes admitted clipboard text through the ordinary editor and Undo owner.
  */
-export function pasteFromClipboard(clipboard: Clipboard): void {
-	const text = clipboard.text;
+export function pasteText(text: string): void {
 	if (text.length === 0) {
 		showEditorMessage('Editor clipboard is empty', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
@@ -954,7 +953,7 @@ export function pasteFromClipboard(clipboard: Clipboard): void {
 	} else {
 		insertClipboardText(text);
 	}
-	showEditorMessage('Pasted from editor clipboard', constants.COLOR_STATUS_SUCCESS, 1.5);
+	showEditorMessage('Pasted text', constants.COLOR_STATUS_SUCCESS, 1.5);
 }
 
 export function applyDocumentFormatting(): void {

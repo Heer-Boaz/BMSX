@@ -1,3 +1,4 @@
+import type { ClipboardContents } from '../../hosts/common/clipboard';
 import type { EditorCommandId } from '../common/commands';
 import type { PlayerInput } from '../../hosts/common/input/player';
 
@@ -22,6 +23,7 @@ export class InputFocusTarget {
 	private readonly commands = new Map<EditorCommandId, FocusCommand>();
 	private readonly blurListeners = new Set<() => void>();
 	private readonly focusListeners = new Set<() => void>();
+	public paste: ((contents: ClipboardContents) => void) | undefined;
 	private keyboardHandler: ((input: PlayerInput) => void) | undefined;
 
 	public constructor(
@@ -67,6 +69,11 @@ export class InputFocusTarget {
 	public bindKeyboard(handler: (input: PlayerInput) => void): () => void {
 		this.keyboardHandler = handler;
 		return () => { this.keyboardHandler = undefined; };
+	}
+
+	public bindPaste(handler: (contents: ClipboardContents) => void): () => void {
+		this.paste = handler;
+		return () => { this.paste = undefined; };
 	}
 
 	public handleKeyboard(input: PlayerInput): void {

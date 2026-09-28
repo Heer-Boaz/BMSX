@@ -1,3 +1,4 @@
+import { HostBitmapTextures, type HostBitmap } from '../bitmap';
 import type {
 	ColorAttachmentSpec,
 	Host2DPipelineState,
@@ -9,7 +10,7 @@ import type {
 } from '../../backend/backend';
 import type { RenderPassLibrary } from '../../backend/pass/library';
 import type { WebGPUBackend, WebGPUPassEncoder } from '../../backend/webgpu/backend';
-import { RGBA8_SRGB_TEXTURE_PARAMS } from '../../backend/texture_params';
+import { RGBA8_LINEAR_TEXTURE_PARAMS, RGBA8_SRGB_TEXTURE_PARAMS } from '../../backend/texture_params';
 import {
 	HOST_OVERLAY_INSTANCE_FLOAT_BYTES,
 	HOST_OVERLAY_INSTANCE_FLOATS,
@@ -23,6 +24,7 @@ import fragmentShaderCode from './shaders/host_overlay.frag.wgsl';
 
 type HostOverlayRuntime = {
 	pipeline: GPURenderPipeline;
+	bitmaps: HostBitmapTextures<{ texture: GPUTexture; bindGroup: GPUBindGroup }>;
 	bindGroup: GPUBindGroup;
 	frameBindGroups: WeakMap<GPUTexture, GPUBindGroup>;
 	uniformBuffer: GPUBuffer;
@@ -129,6 +131,10 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 	const colorAttachment: ColorAttachmentSpec = { tex: null as TextureHandle };
 	return {
 		pipeline,
+		bitmaps: new HostBitmapTextures(image => {
+			const texture = backend.createTexture(image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS) as GPUTexture;
+			return { texture, bindGroup: device.createBindGroup({ layout: pipeline.getBindGroupLayout(1), entries: [{ binding: 0, resource: texture.createView() }] }) };
+		}, entry => entry.texture.destroy()),
 		bindGroup,
 		frameBindGroups: new WeakMap(),
 		uniformBuffer,
@@ -192,11 +198,16 @@ function renderStream(backend: WebGPUBackend, runtime: HostOverlayRuntime, state
 	pass.encoder.setVertexBuffer(1, runtime.instanceTextureKindBuffer);
 	const clip = runtime.clip;
 	clip.reset(state.overlayWidth, state.overlayHeight, state.width, state.height);
+	let bitmap: HostBitmap | undefined;
 	for (let index = 0; index < stream.batchCount; index += 1) {
 		const batch = stream.batches[index];
 		const end = index + 1 < stream.batchCount ? stream.batches[index + 1].start : count;
 		clip.set(batch.clip);
 		if (end === batch.start || clip.left === clip.right || clip.top === clip.bottom) continue;
+		if (bitmap !== batch.bitmap) {
+			bitmap = batch.bitmap;
+			pass.encoder.setBindGroup(1, bitmap === undefined ? frameBindGroup : runtime.bitmaps.get(bitmap).bindGroup);
+		}
 		pass.encoder.setScissorRect(clip.left, clip.top, clip.right - clip.left, clip.bottom - clip.top);
 		pass.encoder.draw(6, end - batch.start, 0, batch.start);
 	}
@@ -215,6 +226,7 @@ export function registerHostOverlayPassesWebGPU(registry: RenderPassLibrary): vo
 			runtime = createRuntime(backend as WebGPUBackend);
 		},
 		teardown: (backend) => {
+			runtime.bitmaps.dispose();
 			runtime.uniformBuffer.destroy();
 			runtime.instanceFloatBuffer.destroy();
 			runtime.instanceTextureKindBuffer.destroy();

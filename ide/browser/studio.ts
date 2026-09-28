@@ -1,4 +1,4 @@
-import { encodePngImage } from '../../hosts/browser/image';
+import { decodeImage, encodePngImage } from '../../hosts/browser/image';
 import { AssistantHttpConnection } from './assistant_connection';
 import { StudioHttpSession } from './http_session';
 import { BrowserGraphLayoutEngine } from './graph_layout';
@@ -77,6 +77,7 @@ async function startBrowserStudio(): Promise<void> {
 			execution,
 		);
 		const httpSession = new StudioHttpSession();
+		const clipboard = new BrowserClipboard();
 		const ide = await prepareWorkbenchRuntime(
 			options.systemRom,
 			options.cartridgeSlots,
@@ -84,6 +85,7 @@ async function startBrowserStudio(): Promise<void> {
 			presenter,
 			presentation,
 			encodePngImage,
+			decodeImage,
 			options.videoOutput,
 			options.input,
 			audioOutput,
@@ -94,13 +96,14 @@ async function startBrowserStudio(): Promise<void> {
 			window.localStorage,
 			new HttpWorkspaceRecordProvider(httpSession),
 			options.clock,
-			new BrowserClipboard(),
+			clipboard,
 			new IdeMicrotaskQueue(),
 			options.logOutput,
 			defaultResourcePanelRatio(window.innerWidth / window.screen.width),
 			() => new BrowserGraphLayoutEngine(new Worker(new URL('./graph-layout.worker.js', document.baseURI))),
 			(signal, onEvent) => AssistantHttpConnection.open(httpSession, signal, onEvent),
 		);
+		clipboard.bindNativePaste(options.browserInput, () => ide.editor.isActive);
 		systemOutput.flush(runtime, options.logOutput);
 		audioOutput.bootstrap();
 		bindBrowserFullscreenShortcut(

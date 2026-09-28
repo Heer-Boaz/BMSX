@@ -101,6 +101,52 @@ There are no globally reserved gameplay keys or automatic guest evaluation.
   connection factory and shares `StudioHttpSession` with ordinary file IO.
   File retry semantics are not inherited by assistant commands.
 
+## Screenshot attachments
+
+Paste screenshots into the composer with Ctrl+V / Cmd+V. The browser's native
+paste event also works over LAN HTTP; it does not require async clipboard-read
+permission. Text paste uses the same focused multiline/source editor controls.
+For text copying on HTTP, the browser clipboard owner uses the DOM copy capability
+when the async Clipboard API is absent or permission-denied, as VS Code does. It reports denied writes
+rather than silently claiming the private cache reached the system clipboard.
+Clipboard file decoding and PNG conversion belong to the browser image codec.
+A failed decode is visible and prevents sending that attachment; remove it with
+its contextual `x` or focus the thumbnail strip and press Delete.
+
+Thumbnails stay in a bounded strip; arrow keys or the wheel move through it.
+Click a thumbnail (or Enter on its selected tile) to inspect it at pane size;
+Escape/click closes the preview. Image-only messages are accepted. Normal,
+direct and queued input use native image parts, not base64 in Markdown. Queue
+editing can remove/replace images, and native saved history retains them.
+Commands leave draft attachments alone; cancelling a queued edit discards that edit.
+Ctrl/Meta+Enter also sends from the focused thumbnail strip; Shift adds Direct.
+
+Image decode and GPU upload are outside idle-frame work. Only visible history
+images keep decoded previews/textures. Software, WebGL2 and WebGPU consume the
+same display-space RGBA8 bitmap; GPU sampling must not apply an sRGB decode to
+these already display-space bytes. The host bitmap is not a guest texture asset.
+
+The browser image workflow drives actual clipboard paste and keyboard navigation,
+including multiple attachments, removal, image-only submission and reopened native
+history, on software, WebGL2 and WebGPU. Preview, narrow-composer and history
+screenshots were visually inspected. The software run also boots Studio and
+pastes over non-secure LAN-style HTTP with no async Clipboard API available.
+Studio host IDs use the shared `ide/common/uuid.ts` producer based on
+`getRandomValues`, not the secure-context-only `randomUUID` API.
+The real installed Codex app-server supplies inference input to a local offline
+Responses fixture: native image bytes, queue edits/dispatch, direct messages and
+an image exceeding 8 MiB are verified. This is not paid vision-model verification.
+
+The broader account browser suite still reports an extra quota read (3 versus 2)
+in the successful-login test. The same failure was reproduced in a clean source
+snapshot of `9d8de665e`; it is not reported as passing with this feature.
+
+References: [VS Code paste providers](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/chat/browser/widget/input/editor/chatPasteProviders.ts),
+[attachment ownership](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/chat/browser/attachments/chatAttachmentModel.ts),
+[browser clipboard writing](https://github.com/microsoft/vscode/blob/main/src/vs/platform/clipboard/browser/clipboardService.ts),
+[Codex native input](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/user_input.rs),
+and [VS Code UUID production](https://github.com/microsoft/vscode/blob/main/src/vs/base/common/uuid.ts).
+
 ## Account boundary
 
 Studio signs in through the browser, exactly as the Codex CLI does: the account

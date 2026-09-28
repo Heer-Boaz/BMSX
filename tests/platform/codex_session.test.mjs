@@ -1,3 +1,4 @@
+import { PNG } from 'pngjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { access, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
@@ -156,6 +157,8 @@ test('owned process serves a live Studio receipt, advertises the Studio tools an
 });
 
 test('native queue dispatch and direct steering preserve one thread and exact user message order', { timeout: 20000 }, async t => {
+	const png = new PNG({ width: 32, height: 16 }); png.data.fill(255);
+	const image = `data:image/png;base64,${PNG.sync.write(png).toString('base64')}`;
 	let release, called;
 	const requested = new Promise(resolve => { called = resolve; });
 	const f = await fixture(t, [[readCall], CODEX_FIXTURE_DONE, CODEX_FIXTURE_DONE], () => {
@@ -164,15 +167,15 @@ test('native queue dispatch and direct steering preserve one thread and exact us
 	const session = await f.open();
 	const reference = { from: 6, to: 15, source: { domain: 0, path: 'cart.lua' } };
 	const turn = await session.startTurn('First @cart.lua', [], false, [reference]); await requested;
-	await session.enqueue('First @cart.lua', [{ review: 'observed-review', state: 'discarded', reason: '' }], [reference]);
+	await session.enqueue('First @cart.lua', [{ review: 'observed-review', state: 'discarded', reason: '' }], [reference], [image]);
 	const queue = await f.wait(event => event.type === 'queue' && event.messages.length === 1);
 	assert.deepEqual(queue.messages[0].references, [reference]);
 	const editedReference = { ...reference, from: 17, to: 26 };
-	await session.updateQueued(queue.messages[0].id, 'Queued edited 🐉 @cart.lua', [editedReference]);
+	await session.updateQueued(queue.messages[0].id, 'Queued edited 🐉 @cart.lua', [editedReference], [image]);
 	await session.enqueue('Remove this message', []);
 	const two = await f.wait(event => event.type === 'queue' && event.messages.length === 2);
 	await session.deleteQueued(two.messages[1].id);
-	assert.equal(await session.steer(turn, 'First @cart.lua', [], [reference]), turn);
+	assert.equal(await session.steer(turn, 'First @cart.lua', [], [reference], [image]), turn);
 	release({ success: true, text: 'Fresh source result' });
 	const next = await f.wait(event => event.type === 'turn-started' && event.turnId !== turn);
 	await f.wait(event => event.type === 'turn-completed' && event.turn.id === next.turnId);
@@ -189,6 +192,8 @@ test('native queue dispatch and direct steering preserve one thread and exact us
 	const opened = await session.selectThread(history.threads[0].id);
 	assert.deepEqual(opened.entries.filter(entry => entry.kind === 'user').map(entry => entry.text), ['First @cart.lua', 'First @cart.lua', 'Queued edited 🐉 @cart.lua']);
 	assert.deepEqual(opened.entries.filter(entry => entry.kind === 'user').map(entry => entry.references), [[reference], [reference], [editedReference]]);
+	assert.deepEqual(opened.entries.filter(entry => entry.kind === 'user').map(entry => entry.images), [[], [image], [image]]);
+	assert.equal(f.model.requests[2].input.filter(item => item.role === 'user').flatMap(item => item.content).filter(part => part.type === 'input_image').length, 2);
 	assert.equal(f.model.requests.length, 3, 'history is not inference');
 });
 
@@ -423,4 +428,33 @@ test('history loads older turn pages explicitly without extra inference or dupli
 	assert.equal(older.nextCursor, null);
 	assert.deepEqual([...older.entries, ...current.entries].filter(entry => entry.kind === 'user').map(entry => entry.text), Array.from({ length: 22 }, (_, index) => `Page turn ${index}`));
 	assert.equal(f.model.requests.length, 22);
+});
+
+test('native image parts survive submission, cold history and queued editing without entering prompt text', { timeout: 20000 }, async t => {
+	const png = new PNG({ width: 32, height: 16 }); png.data.fill(255);
+	const image = `data:image/png;base64,${PNG.sync.write(png).toString('base64')}`;
+	let called;
+	const waiting = new Promise(resolve => { called = resolve; });
+	const f = await fixture(t, [CODEX_FIXTURE_DONE, () => { called(); return CODEX_FIXTURE_WAIT; }], async () => assert.fail('No tool calls'));
+	const session = await f.open();
+	const turn = await session.startTurn('', [], false, [], [image]);
+	await f.wait(event => event.type === 'turn-completed' && event.turn.id === turn);
+	const content = f.model.requests[0].input.filter(item => item.role === 'user').flatMap(item => item.content);
+	assert.equal(content.find(part => part.type === 'input_image').image_url, image);
+	assert.equal(content.some(part => part.type === 'input_text' && part.text.includes(image)), false);
+	const thread = (await session.listHistory()).threads[0];
+	const page = await session.selectThread(thread.id);
+	assert.deepEqual(page.entries.find(entry => entry.kind === 'user').images, [image]);
+	assert.equal(page.entries.find(entry => entry.kind === 'user').text, '');
+	const running = await session.startTurn('Wait for images', []); await waiting;
+	await session.enqueue('Queued screenshot', [], [], [image]);
+	const queued = (await f.wait(event => event.type === 'queue' && event.messages.length === 1)).messages[0];
+	assert.deepEqual(queued.images, [image]);
+	await session.updateQueued(queued.id, 'Image removed', [], []);
+	assert.deepEqual((await f.wait(event => event.type === 'queue' && event.messages[0]?.text === 'Image removed')).messages[0].images, []);
+	await session.updateQueued(queued.id, '', [], [image]);
+	await session.interrupt();
+	await f.wait(event => event.type === 'turn-completed' && event.turn.id === running);
+	await session.selectThread(thread.id);
+	assert.deepEqual(f.events.findLast(event => event.type === 'queue').messages[0].images, [image]);
 });
