@@ -8,7 +8,8 @@ contracts, not as a second editor or a browser tunnel to Codex RPC.
 1. Build the browser Studio and debug BIOS/cart normally. Use the existing
    development server (`npm run serve:dist` or the LAN/WSL launcher).
    Codex is part of that server, without an assistant flag or separate command.
-   The integration requires the admitted `codex-cli 0.156.1` on the server machine.
+   The installed Codex CLI supplies the app-server on the server machine;
+   admission checks capabilities and ownership, not a pinned version number.
 2. Open **View → Codex Assistant** or the command palette's
    **View: Codex Assistant**. Opening the pane starts no process or model call.
 3. Type a prompt and use **Send** (Ctrl/Meta+Enter). The first submission opens
@@ -17,7 +18,9 @@ contracts, not as a second editor or a browser tunnel to Codex RPC.
    `/cancel` aborts; `/login device` falls back to a code for a browser on another
    machine, where `/copy-code` applies. There are no permanent account,
    Connect or Disconnect buttons. `/login` and `/logout` are explicit commands.
-4. Enter inserts a newline. While Codex works, Send becomes **Queue**; **Direct**
+4. Enter runs slash commands and otherwise inserts a newline. `/model`, `/effort`
+   and `/fast` open catalog-backed choices for subsequent turns, without a model
+   request or permanent toolbar. While Codex works, Send becomes **Queue**; **Direct**
    (Ctrl/Meta+Shift+Enter) steers that exact active turn. **Stop** interrupts and
    pauses the native queue without deleting waiting messages. `/queue` inspects,
    edits or removes them; `/continue` resumes stopped work. `/history` lists saved

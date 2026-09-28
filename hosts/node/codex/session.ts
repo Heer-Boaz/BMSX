@@ -1,4 +1,5 @@
-import type { AssistantConfiguration } from '../../common/assistant_protocol';
+import type { AssistantConfiguration, AssistantModelSelection } from '../../common/assistant_protocol';
+import { CodexModels } from './models';
 import { CodexUsage, type CodexRateLimits, type CodexRateLimitsRead } from './usage';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -60,7 +61,10 @@ export class CodexSession {
 	private readonly rpc: CodexStdio;
 	private readonly toolNames: Set<string>;
 	private readonly history: CodexHistory;
+	public readonly models: CodexModels;
 	public configuration: AssistantConfiguration;
+	private defaults: AssistantConfiguration;
+	private newThreadSelection: AssistantModelSelection | undefined;
 	private readonly usage = new CodexUsage();
 	private readonly activity = new Map<string, string>();
 	private usageRevision = 0;
@@ -82,6 +86,7 @@ export class CodexSession {
 		this.rpc = new CodexStdio(options.executable ?? 'codex', policy.args, profile.cwd, profile.env,
 			message => this.receive(message));
 		this.history = new CodexHistory(this.rpc, options.workspaceRoot, options.tools);
+		this.models = new CodexModels(this.rpc);
 		this.rpc.signal.addEventListener('abort', () => this.retire(), { once: true });
 		options.signal.addEventListener('abort', this.onAbort, { once: true });
 		this.closed = this.rpc.closed.then(async exit => {
@@ -112,6 +117,7 @@ export class CodexSession {
 			policy.admit(read);
 			session.configuration = { agent: 'Codex', model: read.config.model as string | null, provider: read.config.model_provider as string | null,
 				effort: read.config.model_reasoning_effort as string | null, serviceTier: read.config.service_tier as string | null };
+			session.defaults = session.configuration;
 			// Said once the capability gates have accepted this process, so it reads as context
 			// rather than as a warning about something that might still refuse.
 			if (installed !== `codex-cli ${CODEX_AUDITED_VERSION}`) {
@@ -204,6 +210,8 @@ export class CodexSession {
 			const account = await this.readAccount();
 			if (!this.retired && revision === this.accountRevision) {
 				this.accountRefreshing = false;
+				this.configuration = this.defaults;
+				this.options.onEvent({ type: 'configuration', configuration: this.configuration });
 				this.options.onEvent({ type: 'account-changed', account });
 				void this.refreshUsage(account);
 			}
@@ -211,6 +219,39 @@ export class CodexSession {
 	}
 
 	public listHistory(cursor?: string, search?: string): Promise<AssistantHistoryPage> { return this.history.list(cursor, search); }
+	public async configure(selection: AssistantModelSelection): Promise<void> {
+		if (this.active || this.selecting || this.stopping || this.login || this.signingOut || this.accountRefreshing) throw new Error('Stop the current operation before changing model settings');
+		const accountRevision = this.accountRevision;
+		this.selecting = true;
+		try {
+			await this.models.admit(selection);
+			this.policy.admit(await this.rpc.request('config/read', { includeLayers: true, cwd: this.profile.cwd }));
+			if (this.active || this.retired || accountRevision !== this.accountRevision) throw new Error('The conversation changed while choosing model settings');
+			if (this.history.selected && !this.history.loaded) {
+				// History browsing never resumes a thread. An explicit settings change does,
+				// so the native owner can persist it without starting a model turn.
+				try { await this.history.load(''); }
+				catch (error) { void this.close(error as Error); throw error; }
+				this.configuration = this.history.configuration!;
+			}
+			if (this.retired || accountRevision !== this.accountRevision) throw new Error('The account changed before settings admission');
+			const configuration = { ...this.configuration, ...selection };
+			if (this.history.selected) {
+				await this.rpc.request('thread/settings/update', { threadId: this.history.selected.id,
+					model: selection.model, effort: selection.effort, serviceTier: selection.serviceTier });
+			} else {
+				// A model picker must not create an empty durable conversation. These are
+				// accepted session defaults; thread admission publishes its actual settings.
+				this.configuration = configuration;
+				this.options.onEvent({ type: 'configuration', configuration: this.configuration });
+			}
+			if (this.retired || accountRevision !== this.accountRevision) throw new Error('The account changed while applying model settings');
+			// Future threads inherit the applied settings. Unknown historical fields
+			// never act as overrides: resumption above obtains them from their owner.
+			this.newThreadSelection = { model: configuration.model, serviceTier: configuration.serviceTier };
+			if (configuration.effort !== null) this.newThreadSelection.effort = configuration.effort;
+		} finally { this.selecting = false; }
+	}
 	public readOlder(cursor: string): Promise<AssistantTranscriptPage> { return this.history.read(this.history.selected!.id, cursor); }
 	public async selectThread(id?: string): Promise<AssistantTranscriptPage | undefined> {
 		if (this.active || this.selecting || this.stopping || this.login || this.signingOut || this.accountRefreshing) throw new Error('Stop the current operation before changing conversations');
@@ -221,6 +262,7 @@ export class CodexSession {
 			const messages = id === undefined ? [] : await this.history.queue(id);
 			if (this.active || this.stopping || this.retired || this.accountRevision !== accountRevision) throw new Error('The conversation changed while loading history');
 			await this.history.select(page?.thread);
+			this.configuration = page === undefined ? { ...this.defaults, ...this.newThreadSelection } : page.configuration;
 			this.queueEnabled = false;
 			this.options.onEvent({ type: 'queue', messages });
 			return page;
@@ -284,7 +326,7 @@ export class CodexSession {
 			if (account.requiresOpenaiAuth && !account.account) throw new CodexAdmissionError('Connect the Studio Codex account before starting a turn');
 			turn.controller.signal.throwIfAborted();
 			try {
-				this.options.onEvent({ type: 'thread', thread: await this.history.load(prompt) });
+				this.options.onEvent({ type: 'thread', thread: await this.history.load(prompt, this.newThreadSelection) });
 				this.configuration = this.history.configuration!;
 				this.options.onEvent({ type: 'configuration', configuration: this.configuration });
 			}
@@ -435,6 +477,7 @@ export class CodexSession {
 				this.queueEnabled = false;
 				// Admission belongs to the process owner, before the browser sees the transition.
 				this.accountRefreshing = true;
+				this.models.clear(); this.newThreadSelection = undefined;
 				this.usageRevision++; this.usage.clear();
 				this.options.onEvent({ type: 'usage', usage: this.usage.snapshot() });
 				this.options.onEvent({ type: 'account-refreshing' });

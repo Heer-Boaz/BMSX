@@ -131,13 +131,21 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			footerChanged = count !== input.footer.lines.length;
 		}
 		const footerTop = input.footerTop = layout.bottom - (input.footer.lines.length > 1 ? (input.footer.lines.length - 1) * row + 2 : 0);
-		if (changed || footerChanged) write_rect_bounds(input.composerBounds, 4, footerTop - row * 5 - 10, layout.right - 4, footerTop - row - 6);
+		// The shared field owns wrapping/caret geometry. Give it the maximum visible
+		// rows, then fit the composer to its content without measuring the draft twice.
+		// disable-next-line redundant_numeric_sanitization_pattern -- Layout constraint: reserve one editable row and at most a third of the pane, capped at six rows. This is the owning viewport boundary, not value sanitization.
+		const maxRows = Math.max(1, Math.min(6, Math.trunc((footerTop - layout.top) / (3 * editorViewState.lineHeight))));
+		input.composer.update(input.draft, layout.right - 14 - editorViewState.spaceAdvance, maxRows, measureTextRange, layout.font!);
+		const composerBottom = footerTop - row - 6;
+		const composerTop = composerBottom - Math.min(maxRows, input.composer.rows.length) * editorViewState.lineHeight - 4;
+		const composerChanged = changed || input.composerBounds.top !== composerTop || input.composerBounds.bottom !== composerBottom;
+		if (composerChanged) write_rect_bounds(input.composerBounds, 4, composerTop, layout.right - 4, composerBottom);
 		const activityLabel = busy ? model.state === 'stopping' ? 'Stopping' : model.state === 'starting' ? 'Starting' : model.activity : '';
 		if (changed || activityLabel !== input.activityLabel || second !== input.activitySecond) {
 			input.activitySecond = second; input.activityLabel = activityLabel;
 			input.activityText = busy ? truncateMeasuredText(`${activityLabel}  ${second}s`, layout.right - 28, measureTextRange) : '';
 		}
-		if (changed || model.revision !== input.projectedRevision || editingQueue !== input.editingQueue) {
+		if (changed || composerChanged || model.revision !== input.projectedRevision || editingQueue !== input.editingQueue) {
 			input.editingQueue = editingQueue;
 			input.projectedRevision = model.revision;
 			const atEnd = viewport.scrollTop + viewport.height >= viewport.contentHeight;
@@ -146,8 +154,6 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			if (input.revealOlder) { viewport.scrollbar.setScroll(0); input.revealOlder = false; }
 			else if (atEnd) viewport.scrollbar.setScroll(viewport.contentHeight);
 		}
-		input.composer.update(input.draft, input.composerBounds.right - input.composerBounds.left - 6 - editorViewState.spaceAdvance,
-			Math.trunc((input.composerBounds.bottom - input.composerBounds.top - 4) / editorViewState.lineHeight), measureTextRange, layout.font!);
 		let actionsChanged = changed || footerChanged;
 		const queuedSend = (model.state === 'running' || model.queued.length > 0) && !input.draft.text.startsWith('/') && input.editingQueuedId === undefined;
 		for (const item of input.turnActions.items) {
@@ -190,11 +196,17 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			}
 			if (selected) api.fill_rect(4, top, viewport.bounds.right, top + layout.rowHeight, 0, colors.SELECTION_OVERLAY);
 			drawMarkdownRow(row, 8, top, viewport.bounds.right - 12, selected ? colors.COLOR_SELECTION_TEXT
-				: entry.kind === 'status' ? colors.COLOR_SEARCH_SECONDARY_TEXT : textColor, selected);
+				: entry.kind === 'status' ? colors.COLOR_MARKDOWN_MUTED_TEXT : textColor, selected);
 		}
 		api.popClipRect(); viewport.scrollbar.draw(colors.COLOR_CODE_BACKGROUND, textColor);
 		const bounds = input.composerBounds;
-		api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_RESOURCE_VIEWER_TEXT);
+		api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_QUICK_OPEN_OUTLINE);
+		if (input.draft.text.length === 0) {
+			const placeholder = input.conversation.state === 'running' ? 'Queue a message...' : 'Message your assistant...';
+			api.pushClipRect(bounds.left + 3, bounds.top + 1, bounds.right - 3, bounds.bottom - 1);
+			api.blit_text_inline_with_font(placeholder, bounds.left + 3, bounds.top + 2, 0, colors.COLOR_QUICK_OPEN_PLACEHOLDER, font);
+			api.popClipRect();
+		}
 		drawMultilineField(input.draft, input.composer, bounds);
 	}
 	public drawStatusBar(top: number, color: number): void {

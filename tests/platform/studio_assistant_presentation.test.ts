@@ -19,6 +19,9 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	}, backend);
 	assert.equal(result.presentation, 'pass'); assert.equal(result.paused, true);
 	assert.equal(model.requests.length, 2, 'render/resize/timers do not send extra model requests');
+	assert.equal(model.requests[0].model, result.selectedModel); assert.equal(model.requests[0].reasoning.effort, result.selectedEffort);
+	assert.equal(model.requests[0].service_tier, 'priority', 'the model turn uses the chosen speed, not just its UI label');
+	assert.equal(f.observations.commands.filter(command => command === 'configure').length, 3);
 	assert.equal(f.observations.connects, 1); assert.deepEqual(f.observations.errors, []);
 	await writeFile(join(f.evidence, `presentation-${backend}-result.json`), JSON.stringify(result));
 });

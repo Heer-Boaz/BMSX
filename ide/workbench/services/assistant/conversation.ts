@@ -1,4 +1,4 @@
-import type { AssistantConfiguration, AssistantUsage } from '../../../../hosts/common/assistant_protocol';
+import type { AssistantConfiguration, AssistantModels, AssistantModelSelection, AssistantUsage } from '../../../../hosts/common/assistant_protocol';
 import type { ActorExecutionService } from '../../contrib/actor_lab/execution';
 import type { RuntimeDebuggerExecution } from '../../../runtime/debugger_execution';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
@@ -23,7 +23,7 @@ import type { BehaviorSourceDocuments } from '../../contrib/behavior_lens/source
 import type { TextFileSaveService } from '../working_copy/text_file_save';
 import type { BootService } from '../execution/boot';
 
-export type AssistantState = 'disconnected' | 'connecting' | 'loading' | 'starting' | 'ready' | 'running' | 'stopping' | 'signing-in' | 'cancelling-sign-in' | 'signing-out';
+export type AssistantState = 'disconnected' | 'connecting' | 'loading' | 'configuring' | 'starting' | 'ready' | 'running' | 'stopping' | 'signing-in' | 'cancelling-sign-in' | 'signing-out';
 export type AssistantEntry = {
 	readonly kind: 'user' | 'assistant' | 'status' | 'proposal';
 	readonly text: PieceTreeBuffer;
@@ -63,6 +63,7 @@ export class AssistantConversation {
 	private connection: AssistantConnection | undefined;
 	private connecting: Promise<void> | undefined;
 	private historyRequest: Promise<AssistantHistoryPage> | undefined;
+	private modelRequest: Promise<AssistantModels> | undefined;
 	private turn: ActiveTurn | undefined;
 	private disposed = false;
 
@@ -84,7 +85,7 @@ export class AssistantConversation {
 	public get canSend(): boolean { return (this.state === 'ready' || this.state === 'running') && !this.submitting && !this.accountRefreshing && !this.account!.requiresLogin; }
 	public get canSubmit(): boolean { return this.available && !this.submitting && (this.state === 'disconnected' || this.state === 'ready' || this.state === 'running'); }
 	public get canDirect(): boolean { return this.canSend && this.state === 'running' && this.turn?.id !== undefined; }
-	public get canBrowse(): boolean { return this.available && !this.submitting && (this.state === 'disconnected' || this.state === 'ready' && (this.queued.length === 0 || this.queuePaused)); }
+	public get canBrowse(): boolean { return this.available && !this.submitting && !this.accountRefreshing && (this.state === 'disconnected' || this.state === 'ready' && (this.queued.length === 0 || this.queuePaused)); }
 	public onDidChange(listener: (entry: number, kind: ConversationChange) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 	private changed(entry = this.entries.length, kind: ConversationChange = 'state'): void {
 		this.revision++;
@@ -207,7 +208,7 @@ export class AssistantConversation {
 		try {
 			const page = await connection.send({ type: 'open', id }) as AssistantTranscriptPage;
 			if (this.connection !== connection) return;
-			this.resetSourceAuthority(); this.resetTranscript(); this.configuration = undefined;
+			this.resetSourceAuthority(); this.resetTranscript(); this.configuration = page.configuration;
 			this.thread = page.thread; this.olderCursor = page.nextCursor; this.queuePaused = true;
 			for (const entry of page.entries) this.append(entry.kind, entry.text);
 		} catch (error) { if (this.connection === connection) this.append('status', `Could not open conversation: ${String(error)}`); }
@@ -218,11 +219,36 @@ export class AssistantConversation {
 		const connection = this.connection;
 		this.state = connection ? 'loading' : 'disconnected'; this.changed();
 		try {
-			if (connection) await connection.send({ type: 'new' });
+			const configuration = connection ? await connection.send({ type: 'new' }) as AssistantConfiguration : undefined;
 			if (this.connection !== connection) return;
-			this.resetSourceAuthority(); this.resetTranscript(); this.configuration = undefined; this.thread = undefined; this.olderCursor = null; this.queued = []; this.queuePaused = false;
+			this.resetSourceAuthority(); this.resetTranscript(); this.configuration = configuration; this.thread = undefined; this.olderCursor = null; this.queued = []; this.queuePaused = false;
 		} catch (error) { if (this.connection === connection) this.append('status', `Could not create conversation: ${String(error)}`); }
 		finally { if (this.connection === connection) { this.state = connection ? 'ready' : 'disconnected'; this.changed(); } }
+	}
+	public async listModels(): Promise<AssistantModels> {
+		if (this.modelRequest) return this.modelRequest;
+		const pending = (async () => {
+			const connecting = this.connect(), lifetime = this.lifetime;
+			await connecting;
+			if (!this.connection || this.lifetime !== lifetime) throw new Error('Assistant connection closed');
+			const connection = this.connection, account = this.account;
+			const models = await connection.send({ type: 'models' }) as AssistantModels;
+			if (this.connection !== connection || this.account !== account || this.accountRefreshing) throw new Error('Account changed while loading models');
+			return models;
+		})();
+		this.modelRequest = pending;
+		try { return await pending; }
+		finally { if (this.modelRequest === pending) this.modelRequest = undefined; }
+	}
+	public async configure(selection: AssistantModelSelection): Promise<void> {
+		if (!this.canBrowse) throw new Error('Stop the current operation before changing model settings');
+		const connecting = this.connect(), lifetime = this.lifetime;
+		await connecting;
+		if (!this.connection || this.lifetime !== lifetime || !this.canBrowse) throw new Error('Conversation changed before model settings could be applied');
+		const connection = this.connection;
+		this.state = 'configuring'; this.changed();
+		try { await connection.send({ type: 'configure', selection }); }
+		finally { if (this.connection === connection) { this.state = 'ready'; this.changed(); } }
 	}
 	public async loadOlder(): Promise<void> {
 		if (this.state !== 'ready' || this.olderCursor === null) return;
@@ -304,7 +330,7 @@ export class AssistantConversation {
 			case 'thread': this.thread = event.thread; this.changed(); break;
 			case 'queue': this.queued = event.messages; this.changed(); break;
 			case 'account-refreshing':
-				this.usage = undefined;
+				this.usage = undefined; this.modelRequest = undefined;
 				this.sourceLifetime?.abort(new Error('Studio account changed')); this.sourceLifetime = undefined;
 				this.outstandingReviews.clear();
 				this.thread = undefined; this.queued = []; this.olderCursor = null;
@@ -400,7 +426,7 @@ export class AssistantConversation {
 	}
 	public disconnect(): void {
 		const lifetime = this.lifetime, connection = this.connection;
-		this.lifetime = undefined; this.connection = undefined; this.connecting = undefined; this.historyRequest = undefined;
+		this.lifetime = undefined; this.connection = undefined; this.connecting = undefined; this.historyRequest = undefined; this.modelRequest = undefined;
 		this.sourceLifetime?.abort(new Error('Assistant connection closed')); this.sourceLifetime = undefined;
 		this.outstandingReviews.clear();
 		lifetime?.abort(); connection?.close();

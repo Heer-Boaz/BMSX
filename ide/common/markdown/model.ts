@@ -3,11 +3,13 @@ import { Lexer, type Token, type Tokens } from 'marked';
 
 export const enum TextStyle { Plain = 0, Bold = 1, Italic = 2, Code = 4, Strike = 8, Link = 16 }
 export type StyledSpan = { text: string; style: TextStyle };
-export type MarkdownLine = { revision: number; spans: StyledSpan[]; indent: number; marker: string; code: boolean };
+export type MarkdownPrefix = { text: string; first: boolean; repeat: boolean };
+export type MarkdownLine = { revision: number; spans: StyledSpan[]; prefixes: readonly MarkdownPrefix[]; code: boolean };
 export type MarkdownBlock = { start: number; end: number; lines: MarkdownLine[]; plain: boolean; separated: boolean; revision: number };
 
 /** Source-backed, inert Markdown. Raw HTML is text; destinations are never loaded or executed. */
 export class MarkdownDocument {
+	public constructor(private readonly format: 'markdown' | 'text' = 'markdown') {}
 	public readonly blocks: MarkdownBlock[] = [];
 	public source = '';
 	private endedWithCR = false;
@@ -19,6 +21,13 @@ export class MarkdownDocument {
 		this.endedWithCR = raw.endsWith('\r');
 		this.source += text;
 		const last = this.blocks.at(-1);
+		if (this.format === 'text') {
+			if (last) {
+				last.lines[0].spans[0].text += text; last.lines[0].revision++; last.end += text.length; last.revision++;
+			} else this.blocks.push({ start: 0, end: text.length, plain: false, separated: false, revision: 0,
+				lines: [{ spans: [{ text, style: TextStyle.Plain }], prefixes: [], code: false, revision: 0 }] });
+			return;
+		}
 		// No Markdown delimiter, newline or punctuation can be introduced by this append.
 		// Keep the plain paragraph and its wrapped prefix; a delimiter takes the parser path.
 		if (last?.plain && last.end === this.source.length - text.length && /^[\p{L}\p{N}\p{M} \t]+$/u.test(text)) {
@@ -35,7 +44,7 @@ export class MarkdownDocument {
 		let offset = this.references ? 0 : start;
 		for (const token of tokens) {
 			const lines: MarkdownLine[] = [];
-			if (token.type !== 'space') blockLines(token, lines, 0);
+			if (token.type !== 'space') blockLines(token, lines, []);
 			if (lines.length > 0) {
 				const plain = token.type === 'paragraph' && /^[\p{L}\p{N}\p{M} \t]+$/u.test(token.raw);
 				// Retain unchanged parsed lines even inside an unfinished fenced block/list.
@@ -51,8 +60,12 @@ export class MarkdownDocument {
 }
 
 function retainLine(before: MarkdownLine, after: MarkdownLine): MarkdownLine {
-	if (before.indent !== after.indent || before.marker !== after.marker || before.code !== after.code
+	if (before.code !== after.code || before.prefixes.length !== after.prefixes.length
 		|| before.spans.length !== after.spans.length || before.spans.length === 0) return after;
+	for (let index = 0; index < before.prefixes.length; index++) {
+		const a = before.prefixes[index], b = after.prefixes[index];
+		if (a.text !== b.text || a.first !== b.first || a.repeat !== b.repeat) return after;
+	}
 	for (let index = 0; index < before.spans.length; index++) {
 		const a = before.spans[index], b = after.spans[index];
 		if (a.style !== b.style) return after;
@@ -87,27 +100,34 @@ function inlineSpans(tokens: readonly Token[], style: TextStyle = TextStyle.Plai
 	return spans;
 }
 
-function blockLines(token: Token, lines: MarkdownLine[], indent: number): void {
-	const line = (spans: StyledSpan[], marker = '', code = false) => lines.push({ spans, indent, marker, code, revision: 0 });
+function blockLines(token: Token, lines: MarkdownLine[], prefixes: readonly MarkdownPrefix[]): void {
+	const line = (spans: StyledSpan[], code = false) => lines.push({ spans, prefixes, code, revision: 0 });
 	switch (token.type) {
 		case 'space': line([]); break;
 		case 'heading': line(inlineSpans(token.tokens, TextStyle.Bold)); break;
 		case 'paragraph': line(inlineSpans(token.tokens)); break;
 		case 'text': line(inlineSpans([token])); break;
 		case 'code':
-			if (token.lang) line([{ text: token.lang, style: TextStyle.Italic }], '', true);
+			if (token.lang) line([{ text: token.lang, style: TextStyle.Italic }], true);
 			// disable-next-line newline_normalization_pattern -- Marked's code token is already normalized; preserve each authored code line, including empty lines.
-			for (const text of token.text.split('\n')) line([{ text, style: TextStyle.Code }], '', true);
+			for (const text of token.text.split('\n')) line([{ text, style: TextStyle.Code }], true);
 			break;
-		case 'blockquote':
-			for (const item of token.tokens) blockLines(item, lines, indent + 1);
+		case 'blockquote': {
+			const quote = [...prefixes, { text: '| ', first: true, repeat: true }];
+			for (const item of token.tokens) blockLines(item, lines, quote);
 			break;
+		}
 		case 'list':
 			for (let index = 0; index < token.items.length; index++) {
 				const item = token.items[index], first = lines.length;
-				for (const child of item.tokens) blockLines(child, lines, indent + 1);
-				if (lines.length > first) lines[first].marker = item.task ? item.checked ? '[x] ' : '[ ] '
-					: token.ordered ? `${Number(token.start) + index}. ` : '- ';
+				const text = item.task ? item.checked ? '[x] ' : '[ ] ' : token.ordered ? `${Number(token.start) + index}. ` : '- ';
+				const indent = { text, first: false, repeat: false };
+				const nested = [...prefixes, indent];
+				for (const child of item.tokens) blockLines(child, lines, nested);
+				// The first content line shows this item's marker. Every continuation,
+				// paragraph and child block reserves the same measured hanging indent.
+				if (lines.length === first) lines.push({ spans: [], prefixes: nested, code: false, revision: 0 });
+				lines[first].prefixes = lines[first].prefixes.map(prefix => prefix === indent ? { ...indent, first: true } : prefix);
 			}
 			break;
 		case 'table': {

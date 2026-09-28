@@ -40,7 +40,7 @@
 		"headless:forcebuildalltest": "sh -c 'rom=\"$1\"; test=\"$2\"; if [ -z \"$rom\" ] || [ -z \"$test\" ]; then echo \"Usage: npm run headless:forcebuildalltest -- <gameromname> <test-file>\"; exit 1; fi; shift 2; npm run build:product:node-headless-tooling -- --debug --force && npm run build:toolchain:bios -- --debug --force && npm run build:toolchain:cart -- \"$rom\" --debug --force && npm run headless:test -- \"$rom\" \"$test\" \"$@\"' --",
 		"test:workspace-http": "node --test tests/platform/workspace_http.test.mjs",
 		"test:codex-contract": "node --test tests/platform/codex_contract.test.mjs",
-		"test:codex-session": "node --import tsx --test tests/platform/codex_session.test.mjs tests/platform/codex_stdio.test.mjs tests/platform/codex_usage.test.ts",
+		"test:codex-session": "node --import tsx --test tests/platform/codex_session.test.mjs tests/platform/codex_stdio.test.mjs tests/platform/codex_usage.test.ts tests/platform/codex_models.test.ts",
 		"test:codex-workbench": "node --import tsx --import ./tests/lua/test_setup.ts --test tests/platform/codex_workbench.test.ts",
 		"test:codex-account": "node --import tsx --test tests/platform/codex_account.test.ts",
 		"test:terminal-parity": "npx tsx --tsconfig tsconfig.base.json tests/conformance/terminal/run.ts",

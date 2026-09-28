@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CodexSession } from '../../hosts/node/codex/session.ts';
 import { CodexProfile } from '../../hosts/node/codex/profile.ts';
-import { createCodexModelFixture, CODEX_FIXTURE_DONE } from '../helpers/codex_model_fixture.mjs';
+import { createCodexModelFixture, CODEX_FIXTURE_DONE, CODEX_FIXTURE_WAIT } from '../helpers/codex_model_fixture.mjs';
 
 const tools = [{ name: 'studio_read', description: 'Read the current Studio source context',
 	inputSchema: { type: 'object', properties: { resource: { type: 'string' } }, required: ['resource'], additionalProperties: false } }];
@@ -42,6 +42,66 @@ async function fixture(t, steps, executeTool, prepare) {
 			return existing ? Promise.resolve(existing) : new Promise(resolve => waiters.push({ predicate, resolve }));
 		} };
 }
+
+test('native model selection controls later turns without inference or phantom history from pickers', { timeout: 20000 }, async t => {
+	let started;
+	const working = new Promise(resolve => { started = resolve; });
+	const f = await fixture(t, [CODEX_FIXTURE_DONE, CODEX_FIXTURE_DONE, () => { started(); return CODEX_FIXTURE_WAIT; }], async () => assert.fail('No tool calls'));
+	const session = await f.open();
+	const firstRead = session.models.list(); assert.equal(session.models.list(), firstRead, 'catalog requests coalesce');
+	const { models } = await firstRead;
+	assert.ok(models.length > 0);
+	const model = models.find(model => model.efforts.length > 1 && model.serviceTiers.some(tier => tier.name.toLowerCase() === 'fast'));
+	assert.ok(model, 'installed native catalog exposes selectable effort and speed');
+	const fast = model.serviceTiers.find(tier => tier.name.toLowerCase() === 'fast');
+	const selection = { model: model.id, effort: model.efforts[0].id, serviceTier: 'default' };
+	await session.configure(selection);
+	assert.equal(session.configuration.model, model.id); assert.equal(session.configuration.effort, selection.effort);
+	assert.equal((await session.listHistory()).threads.length, 0, 'settings alone create no durable thread');
+	assert.equal(f.model.requests.length, 0, 'catalog and settings do not request a model');
+	const firstTurn = await session.startTurn('Chosen model settings', []);
+	await f.wait(event => event.type === 'turn-completed' && event.turn.id === firstTurn);
+	assert.equal(f.model.requests[0].model, model.id);
+	assert.equal(f.model.requests[0].reasoning.effort, selection.effort);
+	assert.equal(f.model.requests[0].service_tier, undefined, 'normal speed is not priority');
+	const thread = (await session.listHistory()).threads[0];
+	const next = { model: model.id, effort: model.efforts[1].id, serviceTier: fast.id };
+	await session.configure(next);
+	await f.wait(event => event.type === 'configuration' && event.configuration.effort === next.effort && event.configuration.serviceTier === fast.id);
+	const secondTurn = await session.startTurn('Use the updated settings', []);
+	await f.wait(event => event.type === 'turn-completed' && event.turn.id === secondTurn);
+	assert.equal(f.model.requests[1].reasoning.effort, next.effort); assert.equal(f.model.requests[1].service_tier, fast.id);
+	const saved = await session.selectThread(thread.id);
+	assert.equal(saved.configuration.model, model.id); assert.equal(saved.configuration.effort, next.effort);
+	assert.ok(saved.entries.every(entry => entry.text !== 'Turn completed.'), 'history does not reintroduce repeated completion labels');
+	assert.equal(f.model.requests.length, 2, 'history is metadata only');
+	await session.configure({ model: model.id, effort: selection.effort });
+	await f.wait(event => event.type === 'configuration' && event.configuration.effort === selection.effort && event.configuration.serviceTier === fast.id);
+	assert.equal(session.configuration.serviceTier, fast.id, 'changing effort from cold history preserves the native tier, which history metadata did not expose');
+	await session.configure({ model: model.id, serviceTier: 'default' });
+	assert.equal(session.configuration.effort, selection.effort, 'changing speed does not overwrite reasoning effort');
+	await session.configure(selection); // Explicit mutation resumes this selected thread, without inference.
+	assert.equal(f.model.requests.length, 2);
+	await session.selectThread();
+	assert.equal(session.configuration.effort, selection.effort, 'new conversations retain the explicit session choice');
+	await assert.rejects(session.configure({ ...selection, model: 'not-a-catalog-model' }), /catalog/);
+	await assert.rejects(session.configure({ ...selection, effort: 'not-an-effort' }), /reasoning effort/);
+	await assert.rejects(session.configure({ ...selection, serviceTier: 'not-a-tier' }), /service tier/);
+	assert.equal(session.configuration.effort, selection.effort);
+	const busyTurn = await session.startTurn('Busy settings test', []); await working;
+	await assert.rejects(session.configure(next), /Stop the current operation/);
+	await session.enqueue('Keep this message paused', []);
+	await session.interrupt();
+	await f.wait(event => event.type === 'turn-completed' && event.turn.id === busyTurn);
+	const pausedThread = (await session.listHistory()).threads.find(thread => thread.title === 'Busy settings test');
+	await session.selectThread(pausedThread.id);
+	const beforeSettings = f.events.length;
+	await session.configure(next);
+	await f.wait(event => f.events.indexOf(event) >= beforeSettings && event.type === 'configuration' && event.configuration.effort === next.effort);
+	await session.listHistory();
+	assert.equal(f.model.requests.length, 3, 'changing a cold paused conversation does not dispatch its queue');
+	assert.equal(f.events.findLast(event => event.type === 'queue').messages[0].text, 'Keep this message paused');
+});
 
 test('owned process serves a live Studio receipt, advertises the Studio tools and joins its private lifetime', { timeout: 15000 }, async t => {
 	let signal;

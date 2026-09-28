@@ -134,6 +134,9 @@ function findMeasuredWrapEnd(text: string, start: number, end: number, maxWidth:
 			if (cursor === start) {
 				return next;
 			}
+			// A word that fits exactly belongs on this row even when its following
+			// space does not. The range consumer decides whether to keep that space.
+			if (isHorizontalWhitespaceCode(text.charCodeAt(cursor))) return cursor;
 			return breakIndex > start ? breakIndex : cursor;
 		}
 		width += advance;

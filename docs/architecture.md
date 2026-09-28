@@ -5160,6 +5160,11 @@ Stop pauses waiting work. The browser never dequeues a server-managed queue.
 New turns capture ordinary source authority; queued turns capture it on dispatch,
 while direct steering keeps the current turn's context. Historical tool records
 carry no live edit rights. See [conversation lifecycle](studio_assistant_conversations.md).
+Model/effort/speed selection uses the ordinary workbench Quick Pick and the native
+account model catalog. Node owns catalog paging/admission and thread settings;
+pickers never create a conversation or start inference. The retained Markdown
+transcript, content-sized composer and notification-driven footer share existing
+text, font and view owners; see [assistant presentation](studio_assistant_presentation.md).
 All
 proposed edits require the same explicit multi-file review and shared history.
 Diagnostic reads require those exact source receipts and consume the ordinary

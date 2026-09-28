@@ -5,10 +5,14 @@ import { setFieldText } from '../../../editor/ui/inline/text_field';
 import { writeClipboard } from '../../../input/clipboard';
 import { getActiveTab } from '../../ui/tabs';
 import type { AssistantInput } from './editor_input';
+import { AssistantModelPicker } from './model_picker';
 
 const COMMANDS = [
 	{ label: '/history', description: 'Open a saved conversation', detail: 'No model request' },
 	{ label: '/new', description: 'Start a new conversation', detail: 'Keep previous history' },
+	{ label: '/model', description: 'Choose the model and reasoning effort', detail: 'Native account catalog; no model request' },
+	{ label: '/effort', description: 'Change reasoning effort', detail: 'Supported by the selected model' },
+	{ label: '/fast', description: 'Choose normal or fast mode', detail: 'When offered by the selected model' },
 	{ label: '/queue', description: 'Inspect, edit or remove queued messages', detail: 'Native Codex queue' },
 	{ label: '/continue', description: 'Continue the stopped queue', detail: 'Explicit execution' },
 	{ label: '/stop', description: 'Stop work and pause the queue', detail: 'Keep waiting messages' },
@@ -32,7 +36,10 @@ export function isAssistantCommand(input: AssistantInput): boolean {
 }
 
 export class AssistantChatCommands {
-	public constructor(private readonly quickInput: QuickInputController, private readonly clipboard: Clipboard) {}
+	private readonly models: AssistantModelPicker;
+	public constructor(private readonly quickInput: QuickInputController, private readonly clipboard: Clipboard) {
+		this.models = new AssistantModelPicker(quickInput);
+	}
 
 	public commands(input: AssistantInput): void {
 		this.quickInput.pick('Codex commands', 'Choose a command', () => new TextQuickPickProvider(COMMANDS), item => {
@@ -93,6 +100,9 @@ export class AssistantChatCommands {
 				case '/': this.commands(input); break;
 				case '/history': await this.history(input, undefined, argument); break;
 				case '/new': await model.newConversation(); break;
+				case '/model': await this.models.open(input, 'model'); break;
+				case '/effort': await this.models.open(input, 'effort'); break;
+				case '/fast': await this.models.open(input, 'fast'); break;
 				case '/older': await model.loadOlder(); break;
 				case '/queue': await this.queue(input); break;
 				case '/continue': await model.continueQueue(); break;
@@ -105,7 +115,7 @@ export class AssistantChatCommands {
 				case '/open': model.openLoginPage(); break;
 				case '/copy-code': if (model.loginCode !== undefined) await writeClipboard(this.clipboard, model.loginCode, 'Copied sign-in code'); break;
 				case '/cancel': input.editingQueuedId = undefined; await model.cancelLogin(); break;
-				case '/help': model.notice('Enter runs a command. Ctrl+Enter sends a message, or queues it while Codex works. Ctrl+Shift+Enter / Direct steers the active turn. Stop pauses the queue without deleting it.\n/history, /new, /older, /queue, /continue, /stop, /login, /logout, /open, /copy-code, /cancel\nClick a message and press Ctrl+C to copy it, including the sign-in address.\n/login signs in through your browser; /login device shows a code instead, for a browser on another machine.\nQueued messages capture fresh Studio source context when their turn starts. Direct messages keep the active turn context.'); break;
+				case '/help': model.notice('Enter runs a command. Ctrl+Enter sends a message, or queues it while Codex works. Ctrl+Shift+Enter / Direct steers the active turn. Stop pauses the queue without deleting it.\n/model, /effort, /fast, /history, /new, /older, /queue, /continue, /stop, /login, /logout, /open, /copy-code, /cancel\nClick a message and press Ctrl+C to copy it, including the sign-in address.\n/login signs in through your browser; /login device shows a code instead, for a browser on another machine.\nQueued messages capture fresh Studio source context when their turn starts. Direct messages keep the active turn context.'); break;
 				default: model.notice(`Unknown command: ${command}. Use / for commands.`); accepted = false;
 			}
 		} else accepted = await model.sendPrompt(text, direct);

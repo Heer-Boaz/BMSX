@@ -3,7 +3,7 @@ import { TextStyle, type MarkdownBlock, type MarkdownLine, type StyledSpan } fro
 
 export type StyledMeasure = (text: string, start: number, end: number, style: TextStyle) => number;
 export type MarkdownRun = { text: string; x: number; width: number; style: TextStyle };
-export type MarkdownRow = { text: string; runs: MarkdownRun[]; offset: number; code: boolean };
+export type MarkdownRow = { text: string; runs: MarkdownRun[]; offset: number; inset: number; code: boolean };
 type BlockLayout = { revision: number; rows: MarkdownRow[] };
 
 /** Layout lifetime is independent of source parsing: a resize remeasures, it does not reparse. */
@@ -18,7 +18,7 @@ export class MarkdownLayout {
 			cached.rows.length = block.separated ? 1 : 0;
 		} else {
 			cached = { revision: block.revision, rows: [] };
-			if (block.separated) cached.rows.push({ text: '', runs: [], offset: 0, code: false });
+			if (block.separated) cached.rows.push({ text: '', runs: [], offset: 0, inset: 0, code: false });
 			this.blocks.set(block, cached);
 		}
 		const rows = cached.rows;
@@ -38,9 +38,9 @@ export class MarkdownLayout {
 			this.lines.set(line, cached);
 		}
 		const rows = cached.rows;
-		const indent = line.indent * this.measure('  ', 0, 2, TextStyle.Plain);
-		const markerWidth = this.measure(line.marker, 0, line.marker.length, TextStyle.Plain);
-		const left = indent + markerWidth;
+		const prefixes = line.prefixes.map(prefix => ({ ...prefix, width: this.measure(prefix.text, 0, prefix.text.length, TextStyle.Plain) }));
+		let left = 0;
+		for (const prefix of prefixes) left += prefix.width;
 		const text = line.spans.length === 1 ? line.spans[0].text : line.spans.map(span => span.text).join('');
 		let lineOffset = start, first = start === 0;
 		const spans: { span: StyledSpan; start: number; end: number }[] = [];
@@ -56,8 +56,11 @@ export class MarkdownLayout {
 		const emit = (from: number, to: number) => {
 			from += lineOffset; to += lineOffset;
 			const runs: MarkdownRun[] = [];
-			let x = left;
-			if (first && line.marker) runs.push({ text: line.marker, x: indent, width: markerWidth, style: TextStyle.Plain });
+			let x = 0;
+			for (const prefix of prefixes) {
+				if (prefix.repeat || first && prefix.first) runs.push({ text: prefix.text, x, width: prefix.width, style: TextStyle.Plain });
+				x += prefix.width;
+			}
 			for (const part of spans) {
 				if (part.end <= from) continue;
 				if (part.start >= to) break;
@@ -65,7 +68,7 @@ export class MarkdownLayout {
 				const width = this.measure(text, a, b, part.span.style);
 				runs.push({ text: text.slice(a, b), x, width, style: part.span.style }); x += width;
 			}
-			rows.push({ text: text.slice(from, to), runs, offset: from, code: line.code });
+			rows.push({ text: text.slice(from, to), runs, offset: from, inset: left, code: line.code });
 			first = false;
 		};
 		// disable-next-line newline_normalization_pattern -- Parsed Markdown hard breaks create visual lines; source remains unchanged.

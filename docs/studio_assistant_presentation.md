@@ -21,6 +21,25 @@ unfinished code block/list also retain their unchanged layout. An unfinished for
 block must remain reparsable (a later delimiter can restyle earlier text).
 Copy uses the original message, not rendered text. Code whitespace is preserved.
 
+Only assistant replies are Markdown: user prompts, sign-in addresses and status
+messages remain literal text through the same shared layout. Nested list markers
+reserve their measured width for all continuation paragraphs, quotes and code
+blocks; quote bars repeat across wrapped rows. This follows Codex's
+[indent contexts](https://github.com/openai/codex/blob/main/codex-rs/tui/src/markdown_render.rs),
+not a per-feature approximation with a fixed number of spaces. Words ending
+exactly at the available width stay on that line in the shared text wrapper.
+
+The composer uses its retained `MultilineFieldViewport` rows to grow from one
+to six visible lines (less on short surfaces). Deleting text returns space to
+the transcript; longer drafts scroll to the caret. Geometry measures complete
+codepoints while retaining the text field's UTF-16 source offsets. Like Codex's
+[composer layout](https://github.com/openai/codex/blob/main/codex-rs/tui/src/bottom_pane/chat_composer/composer_layout.rs),
+height follows draft content, not a permanently reserved empty box. Placeholder
+and outline use the ordinary workbench field theme, not a hard-coded color.
+Markdown has shared theme roles for code surfaces, code/link text and muted
+status text, rather than borrowing the gutter's contrasting color pair. Tests
+measure at least 7:1 for code and 4.5:1 for links/status in light and dark themes.
+
 The footer consumes actual session settings and account quota observations from
 the app-server protocol. Unknown is not zero, not 100%, and not an inferred
 weekly window. No model request or quota polling is performed by drawing the UI.
@@ -45,6 +64,38 @@ wall clock. Switching editor panes or pausing the guest does not reset that cloc
 Ordinary workbench clipboard/fault feedback may temporarily occupy the shared
 status bar; when it expires, the assistant context returns without a server read.
 
+## Model, effort and speed
+
+`/model` opens the existing workbench Quick Pick, followed by reasoning effort;
+`/effort` and `/fast` change those choices independently. Choices and descriptions
+come from the installed app-server's `model/list`, not pinned model names or a
+locally invented effort range. The interaction follows Codex's
+[model pickers](https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/model_popups.rs)
+and [service-tier selection](https://github.com/openai/codex/blob/main/codex-rs/tui/src/chatwidget/service_tiers.rs).
+Known current choices are initially selected. Fast is offered only when the catalog
+advertises it; its usage description is visible before selection. Selecting a
+different model uses normal speed until the user explicitly chooses Fast.
+
+`hosts/node/codex/models.ts` owns catalog paging, account-lifetime caching and
+selection admission. Concurrent opens coalesce. An unsuccessful read is surfaced;
+only another explicit request retries it. Drawing, filtering, resizing and activity
+animation send no metadata or model requests. Account changes retire the catalog.
+
+Before the first prompt, an accepted choice supplies defaults for a future native
+thread; it does not create phantom history. Existing threads change through
+`thread/settings/update`. The session publishes native settings notifications,
+and subsequent turns use those settings. There is no global config/auth write,
+arbitrary RPC/config surface or permissions change. `/new` retains this session's
+explicit selection; reloading the process does not pretend those local defaults
+were saved. Native thread history still owns persisted choices. Merely opening
+history reads the stored model/effort without resuming; the service tier remains
+unknown until the native thread reports it. Stop active work before changing
+settings, so the footer never labels an in-flight turn with a different model.
+Effort and speed are independent named updates: omitted settings retain their
+native values. In particular, changing effort from cold history does not turn an
+unknown service tier into a request to clear it; explicit mutation resumes the
+thread and preserves its settings at the native owner.
+
 ## Representation audit before font edits
 
 | Representation | TypeScript | C++ | Change |
@@ -68,16 +119,18 @@ packing and VRAM layout are unchanged. Both host artifacts share the same pixels
 
 ## Validation and trying it
 
-- `test:lua`: 2,822 passing tests, one existing skip. Focused Markdown, composer,
+- `test:lua`: 2,828 passing tests, one existing skip. Focused Markdown, composer,
   conversation/footer and font tests also cover streamed delimiter/CRLF splits,
   preserved code whitespace, exact styled glyph pixels and idle cache identity.
 - Automated Chromium coverage: 18 assistant/presentation cases across software,
-  WebGL2 and WebGPU, both font sizes, narrow logical surfaces, pointer/keyboard
+  WebGL2 and WebGPU, both font sizes, light/dark themes, narrow logical surfaces, pointer/keyboard
   Copy, history/queue/Direct/Stop, and the ordinary paused cart. The three
-  presentation cases also assert exactly two intentional model requests and one
-  connection; rendering, resizing and timers send none.
+  presentation cases also exercise model/effort/speed pickers, cancellation and
+  draft growth/scrolling. They assert exactly two intentional model requests and
+  one connection, and inspect the actual provider request's model/effort/tier;
+  rendering, resizing and timers send none.
 - Real installed App Server with offline model/issuer fixtures: contract 6/6,
-  session 26/26, account 15/15, HTTP 16/16, workbench 1/1. Quota reads cover
+  session/catalog 30/30, account 15/15, HTTP 16/16, workbench 1/1. Quota reads cover
   successful login, unavailable remote usage, sparse updates and initial-read
   ordering. No personal credentials or paid model requests were used.
 - Native host font/atlas, clipping and GLES2 tests: 3/3. IDE/Node typechecks,

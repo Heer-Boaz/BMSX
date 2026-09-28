@@ -67,7 +67,9 @@ export class CodexHttpApi {
 				case 'queue-continue': result = { turnId: await connection.session!.startTurn('', [], true) }; break;
 				case 'history': result = await connection.session!.listHistory(command.cursor, command.search); break;
 				case 'open': result = await connection.session!.selectThread(command.id); break;
-				case 'new': await connection.session!.selectThread(); break;
+				case 'new': await connection.session!.selectThread(); result = connection.session!.configuration; break;
+				case 'models': result = await connection.session!.models.list(); break;
+				case 'configure': await connection.session!.configure(command.selection); break;
 				case 'older': result = await connection.session!.readOlder(command.cursor); break;
 				case 'interrupt': await connection.session!.interrupt(); break;
 				case 'login-start': await connection.session!.startLogin(command.method); break;

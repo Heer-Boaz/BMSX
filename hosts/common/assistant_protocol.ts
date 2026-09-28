@@ -8,9 +8,15 @@ export const STUDIO_ACCOUNT_LOGIN_URL = 'https://auth.openai.com/codex/device';
  */
 export type AssistantLoginMethod = { type: 'loopback' } | { type: 'device-code' };
 export type AssistantAccount = { connected: boolean; requiresLogin: boolean; email?: string; plan?: string };
-/** Observed settings, not UI guesses or requested overrides. Provider adapters own this projection. */
+/** Provider-observed thread settings, or host-accepted defaults before creating a thread. */
 export type AssistantConfiguration = { agent: string; model: string | null; provider: string | null; effort: string | null; serviceTier: string | null };
 export type AssistantUsage = { weeklyRemaining: number | null };
+export type AssistantModel = { id: string; name: string; description: string; isDefault: boolean;
+	efforts: { id: string; description: string }[]; defaultEffort: string;
+	serviceTiers: { id: string; name: string; description: string }[] };
+export type AssistantModels = { models: AssistantModel[] };
+/** Named user settings; omitted fields retain native values, never arbitrary config or permissions. */
+export type AssistantModelSelection = { model: string; effort?: string; serviceTier?: string | null };
 /** Review observations at prompt submission, not source receipts or Save acknowledgements. */
 export type AssistantReviewUpdate = {
 	readonly review: string;
@@ -20,9 +26,9 @@ export type AssistantReviewUpdate = {
 export type AssistantThread = { id: string; title: string; updatedAt: number };
 export type AssistantHistoryPage = { threads: AssistantThread[]; nextCursor: string | null };
 export type AssistantHistoryEntry = { kind: 'user' | 'assistant' | 'status'; text: string };
-export type AssistantTranscriptPage = { thread: AssistantThread; entries: AssistantHistoryEntry[]; nextCursor: string | null };
+export type AssistantTranscriptPage = { thread: AssistantThread; configuration: AssistantConfiguration; entries: AssistantHistoryEntry[]; nextCursor: string | null };
 export type AssistantQueuedMessage = { id: string; text: string };
-export type AssistantReply = { turnId: string } | AssistantHistoryPage | AssistantTranscriptPage;
+export type AssistantReply = { turnId: string } | AssistantHistoryPage | AssistantTranscriptPage | AssistantModels | AssistantConfiguration;
 /** Encoded host images are attachments, never JSON/base64 embedded in tool prose. */
 export type AssistantToolResult = { success: boolean; text: string; images?: readonly string[] };
 export type AssistantCommand =
@@ -36,6 +42,8 @@ export type AssistantCommand =
 	| { type: 'open'; id: string }
 	| { type: 'older'; cursor: string }
 	| { type: 'new' }
+	| { type: 'models' }
+	| { type: 'configure'; selection: AssistantModelSelection }
 	| { type: 'interrupt' }
 	| { type: 'login-start'; method: AssistantLoginMethod }
 	| { type: 'login-cancel' | 'sign-out' }

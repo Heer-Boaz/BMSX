@@ -101,6 +101,12 @@ type ThemeDefinition = {
 		error: number;
 		alert: number;
 	};
+	markdown: {
+		codeBackground: number;
+		codeText: number;
+		linkText: number;
+		mutedText: number;
+	};
 	input: {
 		text: number;
 		secondaryText: number;
@@ -174,6 +180,8 @@ type ThemeOverlays = {
 
 const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 	dark: {
+		markdown: { codeBackground: THEME_TOKEN_DEEP_GREY, codeText: THEME_TOKEN_GENTLE_WHITE,
+			linkText: THEME_TOKEN_TERMINAL_CYAN, mutedText: THEME_TOKEN_HINT_GREY },
 		surfaces: {
 			frame: THEME_TOKEN_WHITE,
 			topBar: THEME_TOKEN_TERMINAL_GREY,
@@ -286,6 +294,8 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		},
 	},
 	light: {
+		markdown: { codeBackground: THEME_TOKEN_PANEL_GREY, codeText: THEME_TOKEN_DEEP_GREY,
+			linkText: THEME_TOKEN_TERMINAL_DARK_BLUE, mutedText: THEME_TOKEN_STATUS_TEXT_GREY },
 		surfaces: {
 			frame: THEME_TOKEN_SOFT_WHITE,
 			topBar: THEME_TOKEN_PANEL_GREY,
@@ -457,6 +467,10 @@ export let COLOR_TOP_BAR: number;
 export let COLOR_TOP_BAR_TEXT: number;
 export let COLOR_CODE_BACKGROUND: number;
 export let COLOR_GUTTER_BACKGROUND: number;
+export let COLOR_MARKDOWN_CODE_BACKGROUND: number;
+export let COLOR_MARKDOWN_CODE_TEXT: number;
+export let COLOR_MARKDOWN_LINK_TEXT: number;
+export let COLOR_MARKDOWN_MUTED_TEXT: number;
 export let COLOR_BREAKPOINT_BORDER = 0;
 export let COLOR_BREAKPOINT_FILL = 0;
 export let COLOR_SYNTAX_HIGHLIGHTS = {
@@ -619,6 +633,10 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_TOP_BAR_TEXT = theme.text.topBar;
 	COLOR_CODE_BACKGROUND = theme.surfaces.editor;
 	COLOR_GUTTER_BACKGROUND = theme.surfaces.gutter;
+	COLOR_MARKDOWN_CODE_BACKGROUND = theme.markdown.codeBackground;
+	COLOR_MARKDOWN_CODE_TEXT = theme.markdown.codeText;
+	COLOR_MARKDOWN_LINK_TEXT = theme.markdown.linkText;
+	COLOR_MARKDOWN_MUTED_TEXT = theme.markdown.mutedText;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT = theme.text.primary;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_KEYWORD = theme.text.keyword;
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING = theme.text.string;

@@ -480,6 +480,34 @@ test('submission and history admission coalesce instead of spamming or retrying 
 	assert.equal(await history, page); assert.equal(await repeated, page);
 });
 
+test('model catalog coalesces; settings only change from host events and never enter the transcript', async t => {
+	const f = fixture(t), c = f.conversation; await c.connect(); const connection = f.connections[0];
+	let release!: (reply: AssistantReply | undefined) => void;
+	connection.pending = new Promise(resolve => { release = resolve; });
+	const a = c.listModels(), b = c.listModels(); await setImmediate();
+	assert.deepEqual(connection.commands, [{ type: 'models' }]);
+	const models = { models: [] }; release(models); assert.equal(await a, models); assert.equal(await b, models);
+	connection.pending = new Promise(resolve => { release = resolve; });
+	const selection = { model: 'catalog-model', effort: 'high', serviceTier: 'priority' };
+	const selected = c.configure(selection); await setImmediate();
+	assert.equal(c.state, 'configuring'); assert.equal(c.configuration, undefined);
+	assert.equal(await c.sendPrompt('Cannot race settings'), false); await assert.rejects(c.configure(selection), /Stop the current operation/);
+	assert.deepEqual(connection.commands.at(-1), { type: 'configure', selection });
+	connection.emit({ type: 'configuration', configuration: { agent: 'Codex', provider: 'openai', ...selection } });
+	release(undefined); await selected; assert.equal(c.state, 'ready');
+	assert.equal(c.configuration!.effort, 'high'); assert.equal(c.entries.length, 0);
+	assert.equal(connection.commands.filter(command => command.type === 'start').length, 0);
+});
+
+test('late settings completion cannot reset work in a replacement connection', async t => {
+	const f = fixture(t), c = f.conversation; await c.connect(); const old = f.connections[0];
+	let release!: () => void;
+	old.pending = new Promise(resolve => { release = () => resolve(undefined); });
+	const changing = c.configure({ model: 'catalog-model', effort: 'high', serviceTier: null }); await setImmediate();
+	c.disconnect(); await c.sendPrompt('Work in replacement connection'); release(); await changing;
+	assert.equal(c.state, 'running'); assert.equal(c.configuration, undefined);
+});
+
 test('native queue notifications alone dispatch fresh source context; direct messages keep active turn context', async t => {
 	const f = fixture(t), c = f.conversation; await c.sendPrompt('First'); const connection = f.connections[0];
 	await c.sendPrompt('Queued'); await c.sendPrompt('Direct', true);
@@ -510,19 +538,22 @@ test('history pages are text only, revoke source proposals and retain existing b
 	const proposal = await propose(f);
 	connection.emit({ type: 'turn-completed', turnId: 't', status: 'completed' });
 	const thread = { id: 'saved', title: 'Saved conversation', updatedAt: 1 };
-	connection.pending = Promise.resolve({ thread, entries: [{ kind: 'user', text: 'Saved user' }, { kind: 'status', text: 'Historical tool: studio_propose_edits. No active source/edit rights.' }], nextCursor: 'older' });
+	const configuration = { agent: 'Codex', model: 'saved-model', provider: 'openai', effort: 'high', serviceTier: null };
+	connection.pending = Promise.resolve({ thread, configuration, entries: [{ kind: 'user', text: 'Saved user' }, { kind: 'status', text: 'Historical tool: studio_propose_edits. No active source/edit rights.' }], nextCursor: 'older' });
 	await c.openConversation(thread.id);
+	assert.equal(c.configuration, configuration, 'history metadata supplies model/effort without a turn');
 	assert.equal(proposal.state, 'stale'); assert.equal(c.thread, thread); assert.equal(c.queuePaused, true);
 	assert.ok(c.entries.every(entry => entry.kind !== 'proposal')); assert.throws(() => proposal.apply(), /stale/);
 	const retained = c.entries[0], buffer = retained.text;
 	view.selectedEntry = 0;
-	connection.pending = Promise.resolve({ thread, entries: [{ kind: 'user', text: 'Older user' }], nextCursor: null });
+	connection.pending = Promise.resolve({ thread, configuration, entries: [{ kind: 'user', text: 'Older user' }], nextCursor: null });
 	await c.loadOlder();
 	assert.equal(c.entries[1], retained); assert.equal(c.entries[1].text, buffer); assert.equal(retained.index, 1);
 	assert.equal(view.selectedEntry, 1); assert.equal(view.revealOlder, true);
 	assert.deepEqual(c.entries.map(entry => entry.index), [0, 1, 2]); assert.equal(c.olderCursor, null);
-	connection.pending = undefined; await c.newConversation();
+	connection.pending = Promise.resolve(configuration); await c.newConversation();
 	assert.equal(c.entries.length, 0); assert.equal(c.thread, undefined);
+	assert.equal(c.configuration, configuration, 'New receives the process-owned defaults rather than clearing or guessing them');
 	assert.deepEqual(connection.commands.at(-1), { type: 'new' });
 });
 

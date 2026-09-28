@@ -7,6 +7,8 @@ import { measureTextRange } from '../../../ide/editor/common/text/layout';
 import { check, createStudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
+import { submitAssistantText } from './studio_assistant_navigation';
+import { editorViewState } from '../../../ide/editor/ui/view/state';
 
 /** Real browser/HTTP/process; an offline provider supplies the Markdown and waits for Stop. */
 export async function runAssistantPresentation(kind: StudioRendererKind, canvas: HTMLCanvasElement, capture: (name: string) => Promise<void>, waitForModel: () => Promise<void>) {
@@ -20,6 +22,37 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	await test.runPaletteCommand('View: Codex Assistant');
 	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant expected');
 	const conversation = ide.editor.assistant, paused = cycles();
+	const picker = ide.editor.quickInput;
+	check(view.composerBounds.bottom - view.composerBounds.top === editorViewState.lineHeight + 4, 'presentation: empty composer uses one row');
+	await capture('empty-composer');
+	await submitAssistantText(test, '/model');
+	await until(() => picker.visible && picker.title === 'Choose model', 'presentation: native model catalog picker');
+	await frame(); await capture('model-picker'); await press('Enter');
+	check(picker.title.endsWith(': reasoning effort'), 'presentation: model selection continues to supported effort');
+	await capture('effort-picker');
+	const initialEffort = picker.model.list.rows[picker.model.list.selectionIndex].item.label;
+	await press('Enter');
+	await until(() => conversation.state === 'ready' && conversation.configuration?.effort === initialEffort, 'presentation: session defaults accepted without a thread');
+	const selectedModel = conversation.configuration!.model!;
+	check(conversation.thread === undefined && conversation.entries.length === 0, 'presentation: settings create neither transcript noise nor phantom history');
+	await submitAssistantText(test, '/effort'); await until(() => picker.visible, 'presentation: effort picker');
+	await press('ArrowDown');
+	const selectedEffort = picker.model.list.rows[picker.model.list.selectionIndex].item.label;
+	await press('Enter');
+	await until(() => conversation.state === 'ready' && conversation.configuration?.effort === selectedEffort, 'presentation: effort changed through keyboard');
+	await submitAssistantText(test, '/fast'); await until(() => picker.visible, 'presentation: speed picker');
+	await press('ArrowDown'); await capture('speed-picker'); await press('Enter');
+	await until(() => conversation.state === 'ready' && view.footer.lines.join(' ').includes(' | fast | '), 'presentation: fast mode is reflected in the footer');
+	await submitAssistantText(test, '/model'); await until(() => picker.visible, 'presentation: cancel picker'); await press('Escape');
+	check(conversation.configuration!.model === selectedModel && conversation.thread === undefined, 'presentation: cancel keeps existing settings');
+	await test.click(view.composerBounds);
+	test.clipboard.text = 'One two three\n'.repeat(10); await press('ControlLeft', 'KeyV'); await frame();
+	check(view.composerBounds.bottom - view.composerBounds.top === 6 * editorViewState.lineHeight + 4, 'presentation: long draft grows to six rows');
+	check(view.composer.firstRow > 0, 'presentation: long draft scrolls to the caret');
+	await capture('expanded-composer');
+	await press('ControlLeft', 'Home'); check(view.composer.firstRow === 0, 'presentation: Home reveals the beginning');
+	await press('ControlLeft', 'KeyA'); await press('Backspace'); await frame();
+	check(view.composerBounds.bottom - view.composerBounds.top === editorViewState.lineHeight + 4, 'presentation: deleting the draft returns transcript space');
 	await test.click(view.composerBounds);
 	test.clipboard.text = 'Inspect the mijter enemy, then explain the change.'; await press('ControlLeft', 'KeyV');
 	await press('ControlLeft', 'Enter');
@@ -30,13 +63,16 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	for (const style of [TextStyle.Bold, TextStyle.Italic, TextStyle.Code]) check(styles.some(value => (value & style) !== 0), 'presentation: parsed Markdown style ' + style);
 	check(!view.transcript.rows.some(row => row.text === 'USER' || row.text === 'ASSISTANT'), 'presentation: no repetitive role headings');
 	check(view.viewport.bounds.top === view.layout.top + 4, 'presentation: no title/status/command strip above messages');
-	check(view.footer.lines.join(' ').includes('Codex mock-model') && view.footer.lines.join(' ').includes('week -- left'), 'presentation: observed model; absent quota stays unknown');
+	check(view.footer.lines.join(' ').includes(`Codex ${selectedModel}`) && view.footer.lines.join(' ').includes(selectedEffort)
+		&& view.footer.lines.join(' ').includes('week -- left'), 'presentation: observed model/effort; absent quota stays unknown');
 	check(cycles() === paused, 'presentation: host UI does not run the game');
 	const rows = view.transcript.rows.slice();
 	for (let index = 0; index < 20; index++) await frame();
 	check(rows.every((row, index) => row === view.transcript.rows[index]), 'presentation: idle frames retain layout');
 	await capture('markdown-tiny');
 	ide.editor.setFontVariant('msx'); await frame(); await capture('markdown-msx');
+	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame(); await capture('markdown-dark-msx');
+	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame();
 	const reply = conversation.entries.find(entry => entry.kind === 'assistant')!;
 	const codeRow = view.transcript.rows.findIndex((row, index) => row.entry === reply.index && row.code
 		&& view.viewport.offsetTop + index * view.layout.rowHeight >= view.viewport.bounds.top
@@ -58,6 +94,8 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	check(view.footer.lines.length > 1 && view.footer.lines.every(line => measureTextRange(line, 0, line.length) <= view.layout.right - 8), 'presentation: narrow footer keeps all settings in bounded rows');
 	for (const row of view.transcript.rows) for (const run of row.runs) check(run.x + run.width <= view.layout.right - 16, 'presentation: styles wrap within the narrow transcript');
 	await capture('narrow-msx');
+	await submitAssistantText(test, '/model'); await until(() => picker.visible, 'presentation: narrow model picker');
+	await frame(); await capture('narrow-model-picker'); await press('Escape');
 	ide.editor.setFontVariant('tiny'); await frame(); await capture('narrow-tiny');
 	await test.click(view.composerBounds);
 	test.clipboard.text = 'Keep investigating while I review the result.'; await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'Enter');
@@ -72,5 +110,5 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	check(view.busySince === undefined && view.activityText === '', 'presentation: activity disappears after Stop');
 	await capture('stopped');
 	await renderer.finish();
-	return { presentation: 'pass', footer: view.footer.lines, paused: cycles() === paused };
+	return { presentation: 'pass', selectedModel, selectedEffort, footer: view.footer.lines, paused: cycles() === paused };
 }

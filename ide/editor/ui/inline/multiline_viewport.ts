@@ -32,7 +32,12 @@ export class MultilineFieldViewport {
 				else writeWrappedSourceLine(wrapped, line, width, measure);
 				for (const text of wrapped) {
 					const advances = [0];
-					for (let index = 0; index < text.length; index++) advances.push(advances[index] + measure(text, index, index + 1));
+					for (let index = 0; index < text.length;) {
+						const step = text.codePointAt(index)! > 0xffff ? 2 : 1;
+						const next = advances[index] + measure(text, index, index + step);
+						if (step === 2) advances.push(advances[index]);
+						advances.push(next); index += step;
+					}
 					this.rows.push({ text, offset, advances });
 					offset += text.length;
 				}

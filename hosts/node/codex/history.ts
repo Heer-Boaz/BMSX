@@ -1,9 +1,9 @@
-import type { AssistantConfiguration, AssistantHistoryEntry, AssistantHistoryPage, AssistantQueuedMessage, AssistantThread, AssistantTranscriptPage } from '../../common/assistant_protocol';
+import type { AssistantConfiguration, AssistantHistoryEntry, AssistantHistoryPage, AssistantModelSelection, AssistantQueuedMessage, AssistantThread, AssistantTranscriptPage } from '../../common/assistant_protocol';
 import type { CodexTextInput } from './input';
 import { CodexAdmissionError, type CodexTool, type CodexTurn } from './protocol';
 import type { CodexStdio } from './stdio';
 
-type StoredThread = { id: string; name: string | null; preview: string; updatedAt: number };
+type StoredThread = { id: string; name: string | null; preview: string; updatedAt: number; model: string | null; modelProvider: string; reasoningEffort: string | null };
 type StoredItem =
 	| { type: 'userMessage'; content: CodexTextInput[] }
 	| { type: 'agentMessage'; text: string }
@@ -43,9 +43,11 @@ export class CodexHistory {
 					case 'contextCompaction': entries.push({ kind: 'status', text: 'Conversation context compacted by Codex.' }); break;
 				}
 			}
-			entries.push({ kind: 'status', text: turn.status === 'failed' ? `Turn failed: ${turn.error!.message}` : `Turn ${turn.status}.` });
+			// Match live presentation: a reply already shows ordinary completion.
+			if (turn.status !== 'completed') entries.push({ kind: 'status', text: turn.status === 'failed' ? `Turn failed: ${turn.error!.message}` : `Turn ${turn.status}.` });
 		}
-		return { thread: threadSummary(thread), entries, nextCursor: page.nextCursor };
+		return { thread: threadSummary(thread), configuration: { agent: 'Codex', model: thread.model, provider: thread.modelProvider,
+			effort: thread.reasoningEffort, serviceTier: null }, entries, nextCursor: page.nextCursor };
 	}
 
 	public async select(thread: AssistantThread | undefined): Promise<void> {
@@ -55,13 +57,15 @@ export class CodexHistory {
 		this.selected = thread;
 	}
 
-	public async load(prompt: string): Promise<AssistantThread> {
+	public async load(prompt: string, selection?: AssistantModelSelection): Promise<AssistantThread> {
 		if (this.loaded) return this.selected!;
 		const creating = this.selected === undefined;
 		const admission = this.selected
 			? await this.rpc.request<ThreadAdmission>('thread/resume', { threadId: this.selected.id,
 				cwd: this.cwd, sandbox: 'danger-full-access', approvalPolicy: 'never', excludeTurns: true })
 			: await this.rpc.request<ThreadAdmission>('thread/start', { cwd: this.cwd, sandbox: 'danger-full-access', approvalPolicy: 'never',
+				model: selection?.model, serviceTier: selection?.serviceTier,
+				config: selection?.effort === undefined ? undefined : { model_reasoning_effort: selection.effort },
 				ephemeral: false, environments: [], selectedCapabilityRoots: [],
 				dynamicTools: this.tools.map(tool => ({ type: 'function', ...tool })) });
 		if (admission.cwd !== this.cwd || admission.approvalPolicy !== 'never'

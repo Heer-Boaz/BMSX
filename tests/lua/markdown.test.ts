@@ -46,9 +46,34 @@ test('headings, paragraph gaps, nested lists, tasks, quotes and tables have stru
 	assert.deepEqual(rows.find(row => row.text === 'nested')!.runs.map(run => run.text), ['- ', 'nested']);
 	assert.ok(rows.find(row => row.text === 'nested')!.runs[0].x > rows.find(row => row.text === 'first')!.runs[0].x);
 	assert.equal(rows.find(row => row.text === 'done')!.runs[0].text, '[x] ');
-	assert.ok(rows.find(row => row.text === 'quoted')!.runs[0].x > 0);
+	assert.equal(rows.find(row => row.text === 'quoted')!.runs[0].text, '| ');
+	assert.equal(rows.find(row => row.text === 'quoted')!.runs[1].x, 2);
 	assert.equal(rows.at(-2)!.text, 'Name | Value');
 	assert.equal(rows.at(-1)!.text, 'A | 7');
+});
+
+test('lists hang continuation paragraphs, code and nested quotes under the content, not the marker', () => {
+	const { rows } = render('10. first words wrap here\n\n    second paragraph\n\n    ```lua\n    return 7\n    ```\n\n    > quoted words wrap here', 20);
+	for (const text of ['first words wrap', 'here', 'second paragraph', 'lua', 'return 7']) {
+		const row = rows.find(row => row.text === text)!;
+		assert.equal(row.inset, 4, text);
+		assert.equal(row.runs.at(-1)!.x, 4, text);
+	}
+	assert.equal(rows[0].runs[0].text, '10. ');
+	const quoted = rows.find(row => row.text === 'quoted words')!;
+	assert.equal(quoted.runs[0].text, '| '); assert.equal(quoted.runs[0].x, 4);
+	assert.equal(quoted.inset, 6);
+	assert.equal(rows.at(-1)!.runs[0].text, '| ', 'quote bar repeats across soft wrapping');
+});
+
+test('literal documents share word wrapping without interpreting source, entities or Markdown', () => {
+	const source = '**literal** _G.foo <tag> &amp;\n```lua\n  return 1\n```';
+	const document = new MarkdownDocument('text');
+	const layout = new MarkdownLayout(80, measure);
+	for (const char of source) { document.append(char); document.blocks.forEach(block => layout.layout(block)); }
+	const rows = layout.layout(document.blocks[0]);
+	assert.deepEqual(rows.map(row => row.text), source.split('\n'));
+	assert.ok(rows.every(row => !row.code && row.runs.every(run => run.style === TextStyle.Plain)));
 });
 
 test('raw HTML stays inert text and link destinations remain readable', () => {

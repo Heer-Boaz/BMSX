@@ -10,6 +10,14 @@ import { setCursorFromOffset, setFieldText } from '../../ide/editor/ui/inline/te
 
 const measure = (_text: string, start: number, end: number) => end - start;
 
+test('multiline geometry measures whole codepoints once and keeps UTF-16 source offsets', () => {
+	const field = new TextField(), view = new MultilineFieldViewport(true);
+	setFieldText(field, 'a🐉b', true);
+	view.update(field, 20, 6, (text, start, end) => [...text.slice(start, end)].length, {});
+	assert.deepEqual(view.rows[0].advances, [0, 1, 1, 2, 3]);
+	assert.equal(view.offsetAt(0, 1.4), 1); assert.equal(view.offsetAt(0, 1.6), 3);
+});
+
 test('multiline fields preserve soft wrapping, empty lines and whole-codepoint pointer hits', () => {
 	const field = new TextField(), view = new MultilineFieldViewport(), font = {};
 	setFieldText(field, 'abcde\n\n🐉z', true); view.update(field, 3, 2, measure, font);

@@ -6,6 +6,13 @@ import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 
 const measure = (_text: string, start: number, end: number) => end - start;
 
+test('user prompts and status are literal; only assistant responses interpret Markdown', () => {
+	const entries: AssistantEntry[] = (['user', 'status', 'assistant'] as const).map((kind, index) =>
+		({ kind, index, resetRevision: 0, text: new PieceTreeBuffer('**exact** &amp; `value`') }));
+	const view = new AssistantTranscriptProjection(); view.update(entries, 80, measure, {});
+	assert.deepEqual(view.rows.filter(row => !row.heading).map(row => row.text), ['**exact** &amp; `value`', '**exact** &amp; `value`', 'exact & value']);
+});
+
 test('streaming projection reads a bounded tail; unchanged frames neither read nor measure history', () => {
 	const buffer = new PieceTreeBuffer(''), entry: AssistantEntry = { kind: 'assistant', text: buffer, index: 0, resetRevision: 0 };
 	const view = new AssistantTranscriptProjection(), font = {};
