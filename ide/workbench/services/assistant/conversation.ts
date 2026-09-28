@@ -1,3 +1,4 @@
+import type { AssistantConfiguration, AssistantUsage } from '../../../../hosts/common/assistant_protocol';
 import type { ActorExecutionService } from '../../contrib/actor_lab/execution';
 import type { RuntimeDebuggerExecution } from '../../../runtime/debugger_execution';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
@@ -30,7 +31,7 @@ export type AssistantEntry = {
 	readonly proposal?: WorkspaceEditProposal;
 	resetRevision: number;
 };
-type ActiveTurn = { id?: string; tools: WorkspaceSourceTools; tests: WorkspaceTestTools; runtime: WorkspaceRuntimeTools; requests: Map<string, AbortController>; messages: Map<string, AssistantEntry> };
+type ActiveTurn = { startedAt: number; id?: string; tools: WorkspaceSourceTools; tests: WorkspaceTestTools; runtime: WorkspaceRuntimeTools; requests: Map<string, AbortController>; messages: Map<string, AssistantEntry> };
 type ConversationChange = 'state' | 'text' | 'proposal' | 'reset' | 'prepend';
 
 /** Workspace-owned conversation and accepted prompt context, independent of an attached pane. */
@@ -39,6 +40,10 @@ export class AssistantConversation {
 	public state: AssistantState = 'disconnected';
 	public account: AssistantAccount | undefined;
 	public accountRefreshing = false;
+	public configuration: AssistantConfiguration | undefined;
+	public usage: AssistantUsage | undefined;
+	public get workStartedAt(): number | undefined { return this.turn?.startedAt; }
+	public activity = 'Working';
 	public loginCode: string | undefined;
 	public loginUrl: string | undefined;
 	private loginMethod: AssistantLoginMethod['type'] | undefined;
@@ -127,7 +132,7 @@ export class AssistantConversation {
 	}
 
 	private createTurn(): ActiveTurn {
-		return { tools: new WorkspaceSourceTools(this.models, this.sources, this.storage, this.diagnostics, this.sourceLifetime!.signal, this.behaviorSources, this.saves),
+		return { startedAt: performance.now(), tools: new WorkspaceSourceTools(this.models, this.sources, this.storage, this.diagnostics, this.sourceLifetime!.signal, this.behaviorSources, this.saves),
 			tests: new WorkspaceTestTools(this.testRuns, this.sourceLifetime!.signal),
 			runtime: new WorkspaceRuntimeTools(this.runtimeInspection, this.frameNavigation, this.gameCapture, this.terminal, this.debuggerExecution, this.actorExecution, this.boots, this.sourceLifetime!.signal), requests: new Map(), messages: new Map() };
 	}
@@ -202,7 +207,7 @@ export class AssistantConversation {
 		try {
 			const page = await connection.send({ type: 'open', id }) as AssistantTranscriptPage;
 			if (this.connection !== connection) return;
-			this.resetSourceAuthority(); this.resetTranscript();
+			this.resetSourceAuthority(); this.resetTranscript(); this.configuration = undefined;
 			this.thread = page.thread; this.olderCursor = page.nextCursor; this.queuePaused = true;
 			for (const entry of page.entries) this.append(entry.kind, entry.text);
 		} catch (error) { if (this.connection === connection) this.append('status', `Could not open conversation: ${String(error)}`); }
@@ -215,7 +220,7 @@ export class AssistantConversation {
 		try {
 			if (connection) await connection.send({ type: 'new' });
 			if (this.connection !== connection) return;
-			this.resetSourceAuthority(); this.resetTranscript(); this.thread = undefined; this.olderCursor = null; this.queued = []; this.queuePaused = false;
+			this.resetSourceAuthority(); this.resetTranscript(); this.configuration = undefined; this.thread = undefined; this.olderCursor = null; this.queued = []; this.queuePaused = false;
 		} catch (error) { if (this.connection === connection) this.append('status', `Could not create conversation: ${String(error)}`); }
 		finally { if (this.connection === connection) { this.state = connection ? 'ready' : 'disconnected'; this.changed(); } }
 	}
@@ -291,9 +296,15 @@ export class AssistantConversation {
 	private receive(event: AssistantEvent): void {
 		switch (event.type) {
 			case 'connected': this.account = event.account; break;
+			case 'configuration': this.configuration = event.configuration; this.changed(); break;
+			case 'usage': this.usage = event.usage; this.changed(); break;
+			case 'activity':
+				if (this.turn?.id === event.turnId) { this.activity = event.label; this.changed(); }
+				break;
 			case 'thread': this.thread = event.thread; this.changed(); break;
 			case 'queue': this.queued = event.messages; this.changed(); break;
 			case 'account-refreshing':
+				this.usage = undefined;
 				this.sourceLifetime?.abort(new Error('Studio account changed')); this.sourceLifetime = undefined;
 				this.outstandingReviews.clear();
 				this.thread = undefined; this.queued = []; this.olderCursor = null;
@@ -324,7 +335,7 @@ export class AssistantConversation {
 				// Native queued turns start here, not from a browser dequeue loop. Source
 				// evidence is captured once at dispatch, never while text waits in the queue.
 				if (!this.turn) this.turn = this.createTurn();
-				this.turn.id = event.turnId;
+				this.turn.id = event.turnId; this.activity = 'Working';
 				if (this.state !== 'stopping') { this.state = 'running'; this.queuePaused = false; }
 				else { this.turn.tools.dispose(); this.turn.tests.dispose(); this.turn.runtime.dispose(); }
 				this.changed(); break;
@@ -393,7 +404,7 @@ export class AssistantConversation {
 		this.sourceLifetime?.abort(new Error('Assistant connection closed')); this.sourceLifetime = undefined;
 		this.outstandingReviews.clear();
 		lifetime?.abort(); connection?.close();
-		this.account = undefined; this.accountRefreshing = false; this.loginUrl = undefined; this.loginCode = undefined;
+		this.account = undefined; this.accountRefreshing = false; this.configuration = undefined; this.usage = undefined; this.activity = 'Working'; this.loginUrl = undefined; this.loginCode = undefined;
 		this.loginMethod = undefined; this.submitting = false; this.queuePaused = true;
 		this.finishTurn();
 	}

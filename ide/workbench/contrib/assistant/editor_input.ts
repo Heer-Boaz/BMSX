@@ -10,6 +10,7 @@ import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { openEditorTab } from '../../ui/tabs';
 import { AssistantTranscriptProjection } from './projection';
+import { AssistantFooter } from './footer';
 
 /** Ephemeral view state; the workspace owns the conversation across pane switches. */
 export class AssistantInput extends ReadonlyEditorInput<'assistant', 'assistant'> {
@@ -19,7 +20,7 @@ export class AssistantInput extends ReadonlyEditorInput<'assistant', 'assistant'
 	public editingQueuedId: string | undefined;
 	public commandPending = false;
 	public readonly draft = new TextField();
-	public readonly composer = new MultilineFieldViewport();
+	public readonly composer = new MultilineFieldViewport(true);
 	public readonly composerBounds = create_rect_bounds();
 	public readonly viewport = new WorkbenchScrollViewport();
 	public readonly transcript = new AssistantTranscriptProjection();
@@ -31,7 +32,13 @@ export class AssistantInput extends ReadonlyEditorInput<'assistant', 'assistant'
 	public selectedEntry = -1;
 	public projectedRevision = -1;
 	public revealOlder = false;
-	public status = '';
+	public readonly footer = new AssistantFooter();
+	public footerTop = 0;
+	public editingQueue = false;
+	public busySince: number | undefined;
+	public activitySecond = -1;
+	public activityText = '';
+	public activityLabel = '';
 	public constructor(public readonly conversation: AssistantConversation) {
 		super('assistant', 'assistant', 'CODEX', true);
 		this.disposables.add({ dispose: this.draft.onDidChangeText(() => { this.draftHasText = this.draft.text.trim().length > 0; }) });

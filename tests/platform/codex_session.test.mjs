@@ -60,6 +60,9 @@ test('owned process serves a live Studio receipt, advertises the Studio tools an
 	assert.ok(f.model.requests[0].tools.map(tool => tool.name).includes('studio_read'));
 	assert.equal(f.model.requests[1].input.find(item => item.type === 'function_call_output').output, 'UNSAVED SOURCE RECEIPT');
 	assert.equal(f.events.find(event => event.type === 'message').text, 'Contract fixture finished.');
+	assert.equal((await session.listHistory()).threads[0].title, 'Read my Studio working copy', 'native history stores a human title, not workspace scaffolding');
+	assert.equal(f.events.find(event => event.type === 'configuration').configuration.model, 'mock-model');
+	assert.ok(f.events.some(event => event.type === 'activity' && event.label === 'Using studio_read'));
 	assert.equal((await stat(f.profileDirectory)).mode & 0o777, 0o700);
 	assert.deepEqual(await readdir(join(f.profileDirectory, 'lease', 'workspace')), [], 'no filesystem copy of the source');
 	const closed = session.close();

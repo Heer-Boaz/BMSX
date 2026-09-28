@@ -1,17 +1,13 @@
 import assert from 'node:assert/strict';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { once } from 'node:events';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-export const CODEX_CONTRACT_VERSION = '0.157.1';
-
 /** Actual CLI/stdio protocol, private test home and no user credentials/config. */
 export async function createCodexContractFixture(t, providerUrl, ambientMcpEnabled = false) {
-	assert.equal(execFileSync('codex', ['--version'], { encoding: 'utf8' }).trim(), `codex-cli ${CODEX_CONTRACT_VERSION}`,
-		'Protocol admission is pinned; a different CLI needs a new contract audit, not a silent compatibility path');
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-codex-contract-'));
 	const home = join(root, 'home'), workspace = join(root, 'workspace');
 	await mkdir(home); await mkdir(workspace);

@@ -1,3 +1,4 @@
+import { assistantFooter, AssistantFooter } from '../../ide/workbench/contrib/assistant/footer';
 import { BehaviorSourceDocuments } from '../../ide/workbench/contrib/behavior_lens/source_documents';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -383,7 +384,7 @@ test('workspace clear resets detached projection identity before a same-sized re
 	f.connections[1].emit({ type: 'message', turnId: 'new', itemId: 'new', text: 'New reply' });
 	f.connections[1].emit({ type: 'turn-completed', turnId: 'new', status: 'completed' });
 	input.transcript.update(c.entries, 40, measure, font);
-	assert.deepEqual(input.transcript.rows.map(row => row.text), ['USER', 'New', 'ASSISTANT', 'New reply']);
+	assert.deepEqual(input.transcript.rows.map(row => row.text), ['New', '', 'New reply']);
 	assert.equal(input.selectedEntry, -1);
 });
 
@@ -534,4 +535,56 @@ test('late Stop of an idle queue cannot reset a replacement connection with acti
 	f.connections[1].emit({ type: 'queue', messages: [] });
 	await c.sendPrompt('Replacement work'); release(); await stopping;
 	assert.equal(c.state, 'running');
+});
+
+
+test('observed agent settings, weekly quota and activity reach the retained view without sending commands', async t => {
+	const f = fixture(t), c = f.conversation;
+	await c.connect(); const connection = f.connections[0];
+	const configuration = { agent: 'Codex', model: 'gpt-5.4', provider: 'openai', effort: 'high', serviceTier: 'priority' };
+	connection.emit({ type: 'configuration', configuration });
+	connection.emit({ type: 'usage', usage: { weeklyRemaining: 63 } });
+	connection.emit({ type: 'thread', thread: { id: 'thread', title: 'Steering the mijter enemy', updatedAt: 1 } });
+	const measure = (_text: string, start: number, end: number) => end - start;
+	const commands = connection.commands.length;
+	for (const width of [40, 60, 100]) {
+		const footer = assistantFooter(c, width, measure);
+		assert.ok(footer.every(line => line.length <= width));
+		const text = footer.join(' ');
+		for (const value of ['ready', 'Steering', 'Codex gpt-5.4', 'high', 'fast', 'week 63% left']) assert.ok(text.includes(value), `${width}: ${text}`);
+	}
+	assert.equal(assistantFooter(c, 100, measure).length, 1);
+	assert.equal(connection.commands.length, commands, 'layout never requests a model or polls quota');
+	const retained = new AssistantFooter(), font = {};
+	retained.update(c, 100, measure, font); const lines = retained.lines;
+	for (let frame = 0; frame < 1000; frame++) retained.update(c, 100, () => assert.fail('unchanged footer must not remeasure'), font);
+	assert.equal(retained.lines, lines);
+	connection.emit({ type: 'queue', messages: [{ id: 'waiting', text: 'Inspect the next frame' }] });
+	c.queuePaused = true; retained.update(c, 100, measure, font);
+	assert.match(retained.lines.join(' '), /1 queued \(paused\)/);
+	c.queuePaused = false; retained.update(c, 100, measure, font);
+	assert.doesNotMatch(retained.lines.join(' '), /paused/);
+	connection.emit({ type: 'queue', messages: [] });
+	await c.sendPrompt('Inspect actors');
+	const since = c.workStartedAt;
+	assert.notEqual(since, undefined);
+	connection.emit({ type: 'activity', turnId: 't', label: 'Thinking' }); assert.equal(c.activity, 'Thinking');
+	connection.emit({ type: 'activity', turnId: 'other', label: 'Stale' }); assert.equal(c.activity, 'Thinking');
+	connection.emit({ type: 'activity', turnId: 't', label: 'Using studio_read_actors' }); assert.equal(c.workStartedAt, since);
+	connection.emit({ type: 'turn-completed', turnId: 't', status: 'completed' });
+	assert.equal(c.workStartedAt, undefined);
+	c.disconnect();
+	connection.emit({ type: 'configuration', configuration }); connection.emit({ type: 'usage', usage: { weeklyRemaining: 0 } });
+	assert.equal(c.configuration, undefined); assert.equal(c.usage, undefined);
+	assert.match(assistantFooter(c, 100, measure).join(' '), /week -- left/);
+});
+
+test('footer uses provider data, does not invent fast mode or a weekly allowance', async t => {
+	const f = fixture(t), c = f.conversation; await c.connect();
+	for (const agent of ['Claude', 'Gemini']) {
+		f.connections[0].emit({ type: 'configuration', configuration: { agent, model: 'observed-model', provider: agent, effort: null, serviceTier: null } });
+		const text = assistantFooter(c, 100, (_text, start, end) => end - start).join(' ');
+		assert.match(text, new RegExp(agent + ' observed-model')); assert.match(text, /effort --/); assert.match(text, /week -- left/);
+		assert.doesNotMatch(text, /fast|100%|0%/);
+	}
 });

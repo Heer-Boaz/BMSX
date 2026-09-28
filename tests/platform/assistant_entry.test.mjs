@@ -125,7 +125,7 @@ test('mobile Chromium uses the ordinary LAN server and shared Studio browser cli
 	assert.equal(result.origin, f.address);
 	assert.equal(result.source, 'return 1'); assert.equal(result.saved, 'return 3');
 	assert.deepEqual(result.account, { connected: false, requiresLogin: true });
-	assert.deepEqual(result.events, ['connected']);
+	assert.deepEqual(result.events, ['connected', 'configuration', 'usage']);
 	assert.equal(admissions.length, 1); assert.deepEqual(errors, []);
 	assert.equal(await readFile(join(f.root, 'source.lua'), 'utf8'), 'return 3');
 	// This is transport evidence, not a full mobile Studio boot: plain LAN HTTP

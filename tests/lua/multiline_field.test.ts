@@ -33,3 +33,13 @@ test('multiline pointer selection retires on focus transfer and pane detachment'
 	control.clearInput(); assert.equal(pointerCapture.active, false);
 	inputFocus.setTarget(null);
 });
+
+test('chat composer reuses word wrapping without losing source spaces or caret offsets', () => {
+	const field = new TextField(), view = new MultilineFieldViewport(true), font = {};
+	setFieldText(field, 'alpha beta gamma\n🐉 last', true); view.update(field, 11, 8, measure, font);
+	assert.deepEqual(view.rows.map(row => [row.text, row.offset]), [['alpha beta ', 0], ['gamma', 11], ['🐉 last', 17]]);
+	assert.equal(view.rows.slice(0, 2).map(row => row.text).join(''), field.lines[0]);
+	assert.equal(view.offsetAt(2, 1.1), 19);
+	setCursorFromOffset(field, 11); view.update(field, 11, 8, measure, font);
+	assert.equal(view.cursorRow, 1);
+});

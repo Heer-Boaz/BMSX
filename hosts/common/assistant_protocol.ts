@@ -8,6 +8,9 @@ export const STUDIO_ACCOUNT_LOGIN_URL = 'https://auth.openai.com/codex/device';
  */
 export type AssistantLoginMethod = { type: 'loopback' } | { type: 'device-code' };
 export type AssistantAccount = { connected: boolean; requiresLogin: boolean; email?: string; plan?: string };
+/** Observed settings, not UI guesses or requested overrides. Provider adapters own this projection. */
+export type AssistantConfiguration = { agent: string; model: string | null; provider: string | null; effort: string | null; serviceTier: string | null };
+export type AssistantUsage = { weeklyRemaining: number | null };
 /** Review observations at prompt submission, not source receipts or Save acknowledgements. */
 export type AssistantReviewUpdate = {
 	readonly review: string;
@@ -39,6 +42,9 @@ export type AssistantCommand =
 	| ({ type: 'tool-result'; requestId: string } & AssistantToolResult);
 export type AssistantEvent =
 	| { type: 'connected'; lease: string; account: AssistantAccount }
+	| { type: 'configuration'; configuration: AssistantConfiguration }
+	| { type: 'usage'; usage: AssistantUsage }
+	| { type: 'activity'; turnId: string; label: string }
 	| { type: 'thread'; thread: AssistantThread }
 	| { type: 'queue'; messages: AssistantQueuedMessage[] }
 	| { type: 'user-message'; turnId: string; itemId: string; text: string }

@@ -1,3 +1,5 @@
+import type { AssistantConfiguration } from '../../common/assistant_protocol';
+import { CodexUsage, type CodexRateLimits, type CodexRateLimitsRead } from './usage';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
@@ -58,6 +60,10 @@ export class CodexSession {
 	private readonly rpc: CodexStdio;
 	private readonly toolNames: Set<string>;
 	private readonly history: CodexHistory;
+	public configuration: AssistantConfiguration;
+	private readonly usage = new CodexUsage();
+	private readonly activity = new Map<string, string>();
+	private usageRevision = 0;
 	private active: TurnLifetime | undefined;
 	private selecting = false;
 	private queueEnabled = false;
@@ -102,7 +108,10 @@ export class CodexSession {
 			});
 			if (initialized.codexHome !== profile.codexHome) throw new CodexAdmissionError('Codex did not use the Studio account profile');
 			session.rpc.send({ method: 'initialized', params: {} });
-			policy.admit(await session.rpc.request('config/read', { includeLayers: true, cwd: profile.cwd }));
+			const read = await session.rpc.request<Parameters<CodexPolicy['admit']>[0]>('config/read', { includeLayers: true, cwd: profile.cwd });
+			policy.admit(read);
+			session.configuration = { agent: 'Codex', model: read.config.model as string | null, provider: read.config.model_provider as string | null,
+				effort: read.config.model_reasoning_effort as string | null, serviceTier: read.config.service_tier as string | null };
 			// Said once the capability gates have accepted this process, so it reads as context
 			// rather than as a warning about something that might still refuse.
 			if (installed !== `codex-cli ${CODEX_AUDITED_VERSION}`) {
@@ -118,6 +127,22 @@ export class CodexSession {
 	}
 
 	public readAccount(): Promise<CodexAccount> { return this.rpc.request('account/read', { refreshToken: false }); }
+
+	/** One read per account connection/change, then native quota notifications. Never model polling. */
+	public async refreshUsage(account: CodexAccount): Promise<void> {
+		const revision = ++this.usageRevision;
+		this.usage.clear(); this.options.onEvent({ type: 'usage', usage: this.usage.snapshot() });
+		if (account.account?.type !== 'chatgpt') return;
+		try {
+			const read = await this.rpc.request<CodexRateLimitsRead>('account/rateLimits/read', {});
+			if (this.retired || revision !== this.usageRevision) return;
+			this.usage.initialize(read);
+			this.options.onEvent({ type: 'usage', usage: this.usage.snapshot() });
+		} catch {
+			if (!this.retired && revision === this.usageRevision) this.options.onEvent({ type: 'notice',
+				text: 'Codex account usage could not be read.' });
+		}
+	}
 
 	/**
 	 * The app-server owns the loopback listener and steps off a port another application
@@ -180,6 +205,7 @@ export class CodexSession {
 			if (!this.retired && revision === this.accountRevision) {
 				this.accountRefreshing = false;
 				this.options.onEvent({ type: 'account-changed', account });
+				void this.refreshUsage(account);
 			}
 		} catch (error) { await this.close(error as Error); }
 	}
@@ -257,7 +283,11 @@ export class CodexSession {
 			const account = await this.readAccount();
 			if (account.requiresOpenaiAuth && !account.account) throw new CodexAdmissionError('Connect the Studio Codex account before starting a turn');
 			turn.controller.signal.throwIfAborted();
-			try { this.options.onEvent({ type: 'thread', thread: await this.history.load() }); }
+			try {
+				this.options.onEvent({ type: 'thread', thread: await this.history.load(prompt) });
+				this.configuration = this.history.configuration!;
+				this.options.onEvent({ type: 'configuration', configuration: this.configuration });
+			}
 			catch (error) { void this.close(error as Error); throw error; }
 		}
 		turn.controller.signal.throwIfAborted();
@@ -285,7 +315,7 @@ export class CodexSession {
 			if (error === turn!.controller.signal.reason) return;
 			throw error;
 		}
-		// The pinned startup/thread interrupt pauses the native queue as well as
+		// The native startup/thread interrupt pauses the queue as well as
 		// its current turn, without retargeting a stale turn identity at the next one.
 		if (this.history.loaded) await this.rpc.request('turn/interrupt', { threadId: this.history.selected!.id, turnId: '' });
 	}
@@ -326,7 +356,9 @@ export class CodexSession {
 		// acquire a turn or publish new UI work while the process is joining.
 		if (this.retired) return;
 		const params = message.params as { threadId: string; turnId: string; turn: CodexTurn; itemId: string; delta: string;
-			item: { type: string; id: string; text: string; content: CodexTextInput[] } };
+			item: { type: string; id: string; text: string; tool: string; content: CodexTextInput[] };
+			threadSettings: { model: string; modelProvider: string; effort: string | null; serviceTier: string | null };
+			rateLimits: CodexRateLimits; toModel: string; threadName?: string };
 		switch (message.method) {
 			case 'turn/started':
 				if (!this.active && (this.queueEnabled || this.stopping) && params.threadId === this.history.selected?.id) {
@@ -351,8 +383,14 @@ export class CodexSession {
 				this.options.onEvent({ type: 'text-delta', turnId: params.turnId, itemId: params.itemId, text: params.delta });
 				break;
 			case 'item/started':
+				this.admitTurnEvent(params.threadId, params.turnId);
+				if (params.item.type !== 'userMessage') {
+					const label = params.item.type === 'reasoning' ? 'Thinking' : params.item.type === 'agentMessage' ? 'Writing'
+						: params.item.type === 'commandExecution' ? 'Running command' : params.item.type === 'dynamicToolCall' ? `Using ${params.item.tool}` : 'Working';
+					this.activity.set(params.item.id, label);
+					this.options.onEvent({ type: 'activity', turnId: params.turnId, label });
+				}
 				if (params.item.type === 'userMessage') {
-					this.admitTurnEvent(params.threadId, params.turnId);
 					this.options.onEvent({ type: 'user-message', turnId: params.turnId, itemId: params.item.id, text: params.item.content.at(-1)!.text });
 				}
 				break;
@@ -360,16 +398,45 @@ export class CodexSession {
 				if (params.threadId === this.history.selected?.id) this.refreshQueue();
 				break;
 			case 'item/completed':
+				if (this.activity.delete(params.item.id)) {
+					let label = 'Working';
+					for (const active of this.activity.values()) label = active;
+					this.options.onEvent({ type: 'activity', turnId: params.turnId, label });
+				}
 				if (params.item.type === 'agentMessage') {
 					this.admitTurnEvent(params.threadId, params.turnId);
 					this.options.onEvent({ type: 'message', turnId: params.turnId, itemId: params.item.id, text: params.item.text });
 				}
+				break;
+			case 'thread/name/updated':
+				if (this.history.loaded && params.threadId === this.history.selected?.id) {
+					// disable-next-line empty_string_fallback_pattern -- Omitting the native name explicitly clears it; an empty display title denotes an unnamed conversation.
+					this.history.selected.title = params.threadName ?? '';
+					this.options.onEvent({ type: 'thread', thread: this.history.selected });
+				}
+				break;
+			case 'model/rerouted':
+				this.admitTurnEvent(params.threadId, params.turnId);
+				this.configuration = { ...this.configuration, model: params.toModel };
+				this.options.onEvent({ type: 'configuration', configuration: this.configuration });
+				break;
+			case 'thread/settings/updated':
+				if (params.threadId === this.history.selected?.id) {
+					const settings = params.threadSettings;
+					this.configuration = { agent: 'Codex', model: settings.model, provider: settings.modelProvider, effort: settings.effort, serviceTier: settings.serviceTier };
+					this.options.onEvent({ type: 'configuration', configuration: this.configuration });
+				}
+				break;
+			case 'account/rateLimits/updated':
+				if (this.usage.update(params.rateLimits)) this.options.onEvent({ type: 'usage', usage: this.usage.snapshot() });
 				break;
 			case 'account/updated':
 				if (this.active) { void this.close(new Error('Codex account changed during a turn')); break; }
 				this.queueEnabled = false;
 				// Admission belongs to the process owner, before the browser sees the transition.
 				this.accountRefreshing = true;
+				this.usageRevision++; this.usage.clear();
+				this.options.onEvent({ type: 'usage', usage: this.usage.snapshot() });
 				this.options.onEvent({ type: 'account-refreshing' });
 				void this.refreshAccount();
 				break;
@@ -402,6 +469,7 @@ export class CodexSession {
 	}
 
 	private retireTurn(turn: TurnLifetime): void {
+		this.activity.clear();
 		turn.controller.abort(new Error('Codex turn retired'));
 		turn.calls.clear();
 		if (this.active === turn) this.active = undefined;

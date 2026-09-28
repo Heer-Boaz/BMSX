@@ -101,7 +101,7 @@ There are no globally reserved gameplay keys or automatic guest evaluation.
 ## Account boundary
 
 Studio signs in through the browser, exactly as the Codex CLI does: the account
-process owns a loopback listener and the grant returns to it. The pinned app-server
+process owns a loopback listener and the grant returns to it. The app-server
 picks a free port rather than taking over one another application already holds, so
 this binds no foreign listener. Device-code login remains for a browser that cannot
 reach that listener, which is any Studio opened from another machine on the LAN.
@@ -118,11 +118,16 @@ the authority for accepting a prompt, another login or logout during that read.
 
 ## Text and work budgets
 
-Transcript messages use the existing piece-tree buffer. Projection consumes only
-the changed entry's final wrapped row on streaming append; completed rows remain
-retained. Authoritative final-message replacement and font/width changes reflow
-the affected content. Unchanged frames neither reread nor rewrap history. Drawing
-visits visible rows only; explicit Copy may materialize the selected message.
+Transcript messages use the existing piece-tree buffer. The retained projection
+reads only appended source and delegates Markdown parsing/styled word wrapping
+to `ide/common/markdown` and the existing measured-text utilities. Completed
+blocks and unchanged lines (including streamed code) retain their glyph layout.
+The mutable final block is reparsed when delimiters can change its meaning;
+reference definitions can invalidate earlier Markdown. Font/width changes reflow
+without reparsing. Idle frames neither read, parse nor measure transcript text
+or footer context. Drawing visits visible rows only; Copy uses the original text.
+See [assistant presentation](studio_assistant_presentation.md) for style ownership,
+the mirrored font representation audit, reference implementations and evidence.
 Review settlement replaces only its heading row: it performs zero message-text
 reads/measurements and retains every other row and the user's selection. Workspace
 clear explicitly resets projection identity immediately, not at the next draw;
@@ -144,7 +149,7 @@ enlarge the provider's context window or hide context-limit failures.
 - `npm run test:studio-assistant`: fifteen cases, running native history/queue/steering, retained test evidence, the conversation,
   pending/failed account and successful login workflows on actual software,
   WebGL2 and WebGPU Studio presentation,
-  authorized HTTP leases and the pinned CLI, with offline Responses/issuer fixtures.
+  authorized HTTP leases and the installed CLI, with offline Responses/issuer fixtures.
   Visible keyboard and
   pointer routes exercise the multiline composer and its Undo/Redo, both fonts,
   Lua/YAML proposal, review Apply and joint source Undo, pane switching, Stop of

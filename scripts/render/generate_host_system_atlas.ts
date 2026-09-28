@@ -1,14 +1,17 @@
 import {
 	biosResPath,
-	createTextureAtlases,
 	getResMetaList,
 	getResourcesList,
 } from '../rompacker/rombuilder';
-import type { Resource, TextureAtlasResource } from '../rompacker/rompacker.rompack';
+import type { ImageResource, Resource } from '../rompacker/rompacker.rompack';
 import { GX_SYSTEM_TEXTURE_ATLAS_NAME } from '../rompacker/texture_atlas_contract';
+
+import { createCanvas } from 'canvas';
+import potpack from 'potpack';
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { addHostFontStyles } from './host_font_styles';
 
 type HostAtlasImage = {
 	id: string;
@@ -38,33 +41,26 @@ const GENERATED_FILE_HEADER = [
 ].join('\n');
 
 function buildHostAtlasFromResources(resources: readonly Resource[]): HostAtlasBuild {
-	const atlas = resources.find((resource): resource is TextureAtlasResource => (
-		resource.type === 'atlas' && resource.name === GX_SYSTEM_TEXTURE_ATLAS_NAME
-	))!;
-	const rgba = atlas.img!.getContext('2d').getImageData(0, 0, atlas.img!.width, atlas.img!.height).data;
+	// Host overlay pixels have no GX page/VRAM representation. Pack them directly;
+	// do not send fonts through the guest ROM texture encoder or its 256x64 limit.
+	const boxes = resources.filter((resource): resource is ImageResource => (
+		resource.type === 'image' && resource.targetAtlasName === GX_SYSTEM_TEXTURE_ATLAS_NAME
+	)).map(resource => ({ resource, w: resource.img!.width, h: resource.img!.height, x: 0, y: 0 }));
+	const { w, h } = potpack(boxes);
+	const atlas = createCanvas(w, h), context = atlas.getContext('2d');
 	const images: HostAtlasImage[] = [];
-	for (let index = 0; index < resources.length; index += 1) {
-		const resource = resources[index];
-		if (resource.type === 'image' && resource.targetAtlasName === GX_SYSTEM_TEXTURE_ATLAS_NAME) {
-			images.push({
-				id: resource.name,
-				width: resource.img!.width,
-				height: resource.img!.height,
-				u: resource.textureU!,
-				v: resource.textureV!,
-				w: resource.img!.width,
-				h: resource.img!.height,
-			});
-		}
+	for (const box of boxes) {
+		context.drawImage(box.resource.img!, box.x, box.y);
+		images.push({ id: box.resource.name, width: box.w, height: box.h, u: box.x, v: box.y, w: box.w, h: box.h });
 	}
 	images.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 	if (images.length === 0) {
 		throw new Error('[HostSystemAtlas] No system-atlas images were generated.');
 	}
 	return {
-		width: atlas.img!.width,
-		height: atlas.img!.height,
-		pixels: rgba,
+		width: w,
+		height: h,
+		pixels: context.getImageData(0, 0, w, h).data,
 		images,
 	};
 }
@@ -171,7 +167,7 @@ async function generateHostSystemAtlasArtifacts(): Promise<boolean> {
 		virtualRoot: biosVirtualRoot,
 	});
 	const resources = await getResourcesList(resMeta);
-	await createTextureAtlases(resources);
+	await addHostFontStyles(resources);
 	return writeHostSystemAtlasArtifacts(buildHostAtlasFromResources(resources));
 }
 

@@ -6,7 +6,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
-/** Offline issuer for the real pinned CLI. It never authorizes an account or produces credentials. */
+/** Offline issuer for the installed CLI. It never authorizes an account or produces credentials. */
 export async function createCodexAccountFixture(t: TestContext, options: { relayMode?: string; authUrl?: string; attempts?: ('pending' | 'failure' | 'held-start')[] } = {}) {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-codex-account-'));
 	const requests: string[] = [];

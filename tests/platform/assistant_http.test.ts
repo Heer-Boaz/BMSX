@@ -257,12 +257,18 @@ test('Chromium uses the real same-origin transport and shares admission with ord
 		lifetime.abort(); await client.closed;
 		// Assistant disconnect must not retire the shared file-transport capability.
 		await provider.write('source.lua', { contents: 'return 2', updatedAt: 1234567890000 }, true);
-		return { source: source.contents, account: client.account, events: events.map(event => event.type), closed: client.signal.aborted,
+		return { source: source.contents, account: client.account, events: events.map(event => event.type), configurations: events.filter(event => event.type === 'configuration'),
+			usage: events.find(event => event.type === 'usage'), activities: events.filter(event => event.type === 'activity'), closed: client.signal.aborted,
 			saved: (await provider.read('source.lua')).contents };
 	});
 	assert.equal(result.source, 'return 1'); assert.equal(result.saved, 'return 2'); assert.equal(result.closed, true);
 	assert.equal(result.account.requiresLogin, false);
-	assert.deepEqual(result.events, ['connected', 'thread', 'turn-started', 'user-message', 'tool-request', 'message', 'turn-completed']);
+	assert.deepEqual(result.events.filter(type => !['configuration', 'usage', 'activity', 'thread'].includes(type)), ['connected', 'turn-started', 'user-message', 'tool-request', 'message', 'turn-completed']);
+	assert.ok(result.events.includes('thread'));
+	assert.ok(result.configurations.length >= 2, 'connection settings are replaced by actual thread settings');
+	assert.equal(result.configurations.at(-1).configuration.model, 'mock-model');
+	assert.equal(result.usage.usage.weeklyRemaining, null);
+	assert.ok(result.activities.some(event => event.label === 'Using studio_read'));
 	assert.equal(f.model.requests[1].input.find(item => item.type === 'function_call_output').output, '-- UNSAVED 🐉 browser receipt\nreturn 1');
 	assert.equal(f.requests.get('/__bmsx__/session'), 1, 'simultaneous file and process admission share one capability request');
 	assert.equal(await readFile(join(f.root, 'source.lua'), 'utf8'), 'return 2');

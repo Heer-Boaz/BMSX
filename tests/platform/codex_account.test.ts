@@ -12,7 +12,7 @@ import { STUDIO_ACCOUNT_LOGIN_URL } from '../../hosts/common/assistant_protocol'
 import { createCodexAccountFixture } from '../helpers/codex_account_fixture';
 import { CODEX_ACCOUNT_FIXTURE, createCodexAccountProxy } from '../helpers/codex_account_proxy';
 
-test('real pinned device-code contract polls and cancels without credentials or an OAuth callback listener', { timeout: 15000 }, async t => {
+test('real device-code contract polls and cancels without credentials or an OAuth callback listener', { timeout: 15000 }, async t => {
 	const f = await createCodexAccountFixture(t), profile = await CodexProfile.acquire(join(f.root, 'profile'));
 	const policy = new CodexPolicy();
 	const messages: string[] = [];
@@ -76,10 +76,11 @@ test('loopback authorization opens an admitted browser URL and completes from th
 	let session: CodexSession | undefined;
 	t.after(async () => { if (session) assert.equal((await session.close()).forced, false); });
 	const f = await createCodexAccountProxy(t), events: CodexSessionEvent[] = [];
-	const changed = Promise.withResolvers<void>();
+	const changed = Promise.withResolvers<void>(), quota = Promise.withResolvers<void>();
 	session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), workspaceRoot: f.root, tools: [],
 		executeTool: async () => assert.fail('No source tools while authenticating'),
-		onEvent: event => { events.push(event); if (event.type === 'account-changed') changed.resolve(); } });
+		onEvent: event => { events.push(event); if (event.type === 'account-changed') changed.resolve();
+			if (event.type === 'usage' && event.usage.weeklyRemaining === 63) quota.resolve(); } });
 	assert.equal((await session.readAccount()).account, null);
 	await session.startLogin({ type: 'loopback' });
 	const started = events.at(-1);
@@ -95,7 +96,8 @@ test('loopback authorization opens an admitted browser URL and completes from th
 	// A real browser follows the issuer's redirect on to the listener's own success page,
 	// and the account process finalizes the grant only once that page is served.
 	assert.equal((await fetch(callback, { redirect: 'follow' })).status, 200);
-	await changed.promise;
+	await changed.promise; await quota.promise;
+	assert.equal(f.requests.filter(request => request.path === '/backend-api/wham/usage').length, 1, 'one initial quota read, then native notifications');
 	assert.ok(events.some(event => event.type === 'login-completed' && event.success));
 	const account = await session.readAccount();
 	assert.equal(account.account?.email, CODEX_ACCOUNT_FIXTURE.email);
@@ -130,14 +132,16 @@ test('successful real device-code exchange persists only the private profile and
 	let session: CodexSession | undefined;
 	t.after(async () => { if (session) assert.equal((await session.close()).forced, false); });
 	const f = await createCodexAccountProxy(t), events: CodexSessionEvent[] = [];
-	const changed = Promise.withResolvers<void>();
+	const changed = Promise.withResolvers<void>(), quota = Promise.withResolvers<void>();
 	session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), workspaceRoot: f.root, tools: [],
 		executeTool: async () => assert.fail('No source tools while authenticating'),
-		onEvent: event => { events.push(event); if (event.type === 'account-changed') changed.resolve(); } });
+		onEvent: event => { events.push(event); if (event.type === 'account-changed') changed.resolve();
+			if (event.type === 'usage' && event.usage.weeklyRemaining === 63) quota.resolve(); } });
 	assert.equal((await session.readAccount()).account, null);
 	await session.startLogin({ type: 'device-code' });
 	assert.deepEqual(events.at(-1), { type: 'login-started', url: STUDIO_ACCOUNT_LOGIN_URL, code: 'TEST-CODE' });
-	f.authorize(); await changed.promise;
+	f.authorize(); await changed.promise; await quota.promise;
+	assert.equal(f.requests.filter(request => request.path === '/backend-api/wham/usage').length, 1, 'one initial quota read, then native notifications');
 	assert.ok(events.some(event => event.type === 'login-completed' && event.success));
 	const account = await session.readAccount();
 	assert.deepEqual(account.account, { type: 'chatgpt', email: CODEX_ACCOUNT_FIXTURE.email, planType: CODEX_ACCOUNT_FIXTURE.planType });
@@ -159,6 +163,24 @@ test('successful real device-code exchange persists only the private profile and
 	assert.ok(f.tunnels.includes('auth.openai.com:443') && f.tunnels.includes('chatgpt.com:443'));
 	assert.ok(!JSON.stringify(events).includes(CODEX_ACCOUNT_FIXTURE.accessToken));
 	assert.ok(!JSON.stringify(events).includes(CODEX_ACCOUNT_FIXTURE.refreshToken));
+});
+
+test('unavailable remote quota is reported without revoking a successful account login or inventing an allowance', { timeout: 30000 }, async t => {
+	let session: CodexSession | undefined;
+	t.after(async () => { if (session) assert.equal((await session.close()).forced, false); });
+	const f = await createCodexAccountProxy(t, 403), events: CodexSessionEvent[] = [];
+	const unavailable = Promise.withResolvers<void>();
+	session = await CodexSession.open({ signal: t.signal, executable: f.executable, profileDirectory: join(f.root, 'profile'), workspaceRoot: f.root, tools: [],
+		executeTool: async () => assert.fail('No source tools while authenticating'), onEvent: event => {
+			events.push(event);
+			if (event.type === 'notice' && event.text === 'Codex account usage could not be read.') unavailable.resolve();
+		} });
+	await session.startLogin({ type: 'device-code' }); f.authorize(); await unavailable.promise;
+	assert.equal((await session.readAccount()).account?.email, CODEX_ACCOUNT_FIXTURE.email);
+	assert.ok(events.some(event => event.type === 'login-completed' && event.success));
+	assert.ok(events.filter(event => event.type === 'usage').every(event => event.usage.weeklyRemaining === null));
+	assert.ok(!events.some(event => event.type === 'closed'));
+	assert.equal(f.requests.filter(request => request.path === '/backend-api/wham/usage').length, 1);
 });
 
 for (const operation of ['startTurn', 'startLogin', 'signOut'] as const) {

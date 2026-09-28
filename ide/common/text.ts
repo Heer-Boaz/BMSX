@@ -122,21 +122,22 @@ function trimTrailingHorizontalWhitespace(text: string, start: number, end: numb
 
 function findMeasuredWrapEnd(text: string, start: number, end: number, maxWidth: number, measureRange: TextRangeMeasure): number {
 	if (maxWidth <= 0) {
-		return start + 1;
+		return start + (text.codePointAt(start)! > 0xffff ? 2 : 1);
 	}
 	let cursor = start;
 	let width = 0;
 	let breakIndex = start;
 	while (cursor < end) {
-		const advance = measureRange(text, cursor, cursor + 1);
+		const next = cursor + (text.codePointAt(cursor)! > 0xffff ? 2 : 1);
+		const advance = measureRange(text, cursor, next);
 		if (width + advance > maxWidth) {
 			if (cursor === start) {
-				return cursor + 1;
+				return next;
 			}
 			return breakIndex > start ? breakIndex : cursor;
 		}
 		width += advance;
-		cursor += 1;
+		cursor = next;
 		if (isHorizontalWhitespaceCode(text.charCodeAt(cursor - 1))) {
 			breakIndex = cursor;
 		}
@@ -217,55 +218,25 @@ export function writeWrappedMeasuredText(
 	}
 }
 
-export function writeWrappedMeasuredLine(
-	segments: string[],
-	line: string,
-	maxWidth: number,
-	measureRange: TextRangeMeasure,
+/** Word-wrap ranges let styled text retain its source spans without searching substrings. */
+export function forEachWrappedMeasuredRange(
+	line: string, maxWidth: number, measureRange: TextRangeMeasure,
+	emit: (start: number, end: number) => void,
+	preserveWhitespace = false,
 ): void {
-	const initialLength = segments.length;
-	if (line.length === 0) {
-		segments.push('');
-		return;
+	if (line.length === 0) { emit(0, 0); return; }
+	let start = 0;
+	while (start < line.length) {
+		const end = findMeasuredWrapEnd(line, start, line.length, maxWidth, measureRange);
+		emit(start, preserveWhitespace ? end : trimTrailingHorizontalWhitespace(line, start, end));
+		start = preserveWhitespace ? end : skipLeadingHorizontalWhitespace(line, end, line.length);
 	}
-	let segmentStart = 0;
-	let lastBreak = -1;
-	let segmentWidth = 0;
-	for (let index = 0; index < line.length; index += 1) {
-		const code = line.charCodeAt(index);
-		if (isHorizontalWhitespaceCode(code)) {
-			lastBreak = index;
-		}
-		segmentWidth += measureRange(line, index, index + 1);
-		if (segmentWidth <= maxWidth) {
-			continue;
-		}
-		if (lastBreak >= segmentStart) {
-			segments.push(line.slice(segmentStart, lastBreak));
-			segmentStart = lastBreak + 1;
-			lastBreak = -1;
-			index = segmentStart - 1;
-			segmentWidth = 0;
-			continue;
-		}
-		if (index === segmentStart) {
-			segments.push(line.charAt(index));
-			segmentStart = index + 1;
-			segmentWidth = 0;
-		} else {
-			segments.push(line.slice(segmentStart, index));
-			segmentStart = index;
-			index = segmentStart - 1;
-			segmentWidth = 0;
-		}
-		lastBreak = -1;
-	}
-	if (segmentStart < line.length) {
-		segments.push(line.slice(segmentStart));
-	}
-	if (segments.length === initialLength) {
-		segments.push('');
-	}
+}
+
+export function writeWrappedMeasuredLine(
+	segments: string[], line: string, maxWidth: number, measureRange: TextRangeMeasure,
+): void {
+	forEachWrappedMeasuredRange(line, maxWidth, measureRange, (start, end) => segments.push(line.slice(start, end)));
 }
 
 function measureWithWholeTextCallback(text: string, start: number, end: number, measure: (text: string) => number): number {

@@ -131,8 +131,15 @@ GlyphMap buildTinyCharMap() {
 
 } // namespace
 
-Font::Font(FontVariant variant)
-	: BFont(HOST_SYSTEM_FONT_SOURCE, variant == FontVariant::Tiny ? buildTinyCharMap() : buildMsxCharMap()) {
+Font::Font(FontVariant variant, FontStyle style)
+	: BFont(HOST_SYSTEM_FONT_SOURCE, [&] {
+		auto map = variant == FontVariant::Tiny ? buildTinyCharMap() : buildMsxCharMap();
+		const char* suffixes[] = { "", "_bold", "_italic", "_bold-italic" };
+		if (style != FontStyle::Normal) {
+			for (auto& [character, id] : map) id += suffixes[static_cast<unsigned>(style)];
+		}
+		return map;
+	}()) {
 }
 
 } // namespace bmsx

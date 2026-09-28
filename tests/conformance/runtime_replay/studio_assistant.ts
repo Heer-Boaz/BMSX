@@ -171,3 +171,4 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	return { assistant: 'pass', sourceFiles: proposal.files.length, frames: test.observations.hostFrames };
 }
 export { runAssistantProgram } from './studio_assistant_program';
+export { runAssistantPresentation } from './studio_assistant_presentation';

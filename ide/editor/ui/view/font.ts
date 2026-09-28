@@ -1,8 +1,9 @@
-import { DEFAULT_FONT_VARIANT, Font, type FontVariant } from '../../../../machine/ts/render/shared/bmsx_font';
+import { DEFAULT_FONT_VARIANT, Font, type FontVariant, type FontStyle } from '../../../../machine/ts/render/shared/bmsx_font';
 import type { FontGlyph } from 'bmsx/render/shared/bitmap_font';
 
 export class EditorFont {
 	private font: Font | null = null;
+	private readonly styles = new Map<FontStyle, Font>();
 	private readonly itemCache: Map<string, FontGlyph> = new Map();
 	private readonly _variant: FontVariant;
 
@@ -43,7 +44,10 @@ export class EditorFont {
 		return this._variant;
 	}
 
-	public renderFont(): Font {
-		return this.renderFontOwner();
+	public renderFont(style: FontStyle = 'normal'): Font {
+		if (style === 'normal') return this.renderFontOwner();
+		let font = this.styles.get(style);
+		if (!font) { font = new Font({ variant: this._variant, style }); this.styles.set(style, font); }
+		return font;
 	}
 }

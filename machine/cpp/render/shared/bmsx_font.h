@@ -16,9 +16,11 @@ enum class FontVariant {
 
 constexpr FontVariant DEFAULT_FONT_VARIANT = FontVariant::Msx;
 
+enum class FontStyle { Normal, Bold, Italic, BoldItalic };
+
 class Font : public BFont {
 public:
-	explicit Font(FontVariant variant = DEFAULT_FONT_VARIANT);
+	explicit Font(FontVariant variant = DEFAULT_FONT_VARIANT, FontStyle style = FontStyle::Normal);
 };
 
 } // namespace bmsx

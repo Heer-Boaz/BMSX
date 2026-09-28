@@ -5557,6 +5557,14 @@ caches and intermediate pixel copies are not part of this host-resource
 boundary. This atlas remains a host presentation resource, not cart ROM, GX
 local memory or an IMGDEC stream.
 
+Host font style is selected when a `Font` is constructed. The atlas producer
+bakes normal, bold, italic and bold-italic glyphs for both font variants, then
+packs host rectangles independently of guest GX page limits. TypeScript and
+C++ consume the same generated pixels and styled glyph IDs through the existing
+font and overlay datapaths. There is no draw-time glyph synthesis, extra shader
+field or change to guest fonts. The IDE's retained Markdown layout selects these
+fonts before measuring and wrapping; see [assistant presentation](studio_assistant_presentation.md).
+
 Quick-menu pause is host execution policy, independent of the guest's
 firmware, cartridge and supervisor state. SELECT+START opens/closes the menu;
 START alone remains guest input. `HostOverlayMenu` derives `HostMenuExecution`

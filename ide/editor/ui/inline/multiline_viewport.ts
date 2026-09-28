@@ -1,4 +1,4 @@
-import { writeWrappedSourceLine, type TextRangeMeasure } from '../../../common/text';
+import { forEachWrappedMeasuredRange, writeWrappedSourceLine, type TextRangeMeasure } from '../../../common/text';
 import { getCursorOffset } from './text_field';
 import type { TextField } from './text_field_model';
 
@@ -6,6 +6,7 @@ export type MultilineFieldRow = { readonly text: string; readonly offset: number
 
 /** Retained soft-wrap geometry for small multiline inputs, independent of document views. */
 export class MultilineFieldViewport {
+	public constructor(private readonly wordWrap = false) {}
 	public readonly rows: MultilineFieldRow[] = [];
 	public firstRow = 0;
 	public cursorRow = 0;
@@ -27,7 +28,8 @@ export class MultilineFieldViewport {
 			const wrapped: string[] = [];
 			for (const line of field.lines) {
 				wrapped.length = 0;
-				writeWrappedSourceLine(wrapped, line, width, measure);
+				if (this.wordWrap) forEachWrappedMeasuredRange(line, width, measure, (start, end) => wrapped.push(line.slice(start, end)), true);
+				else writeWrappedSourceLine(wrapped, line, width, measure);
 				for (const text of wrapped) {
 					const advances = [0];
 					for (let index = 0; index < text.length; index++) advances.push(advances[index] + measure(text, index, index + 1));

@@ -7,7 +7,7 @@ import { PNG } from 'pngjs';
 
 const readCall = { type: 'function_call', call_id: 'read-source', name: 'studio_read', arguments: '{"resource":"cart.lua"}' };
 
-test('pinned App Server preserves a tool PNG as model image input, not base64 tool prose', { timeout: 15000 }, async t => {
+test('App Server preserves a tool PNG as model image input, not base64 tool prose', { timeout: 15000 }, async t => {
 	const model = await createCodexModelFixture(t, [[readCall], CODEX_FIXTURE_DONE]);
 	const codex = await createCodexContractFixture(t, model.url);
 	const threadId = await codex.startThread();
@@ -24,7 +24,7 @@ test('pinned App Server preserves a tool PNG as model image input, not base64 to
 	assert.deepEqual(output.output, [{ type: 'input_text', text: 'game frame metadata' }, { type: 'input_image', image_url: imageUrl, detail: 'high' }]);
 });
 
-test('pinned App Server with an isolated profile routes Studio tools without shell/patch capabilities', { timeout: 15000 }, async t => {
+test('App Server with an isolated profile routes Studio tools without shell/patch capabilities', { timeout: 15000 }, async t => {
 	const model = await createCodexModelFixture(t, [[readCall], CODEX_FIXTURE_DONE]);
 	const codex = await createCodexContractFixture(t, model.url);
 	const config = await codex.request('config/read', { includeLayers: false });
@@ -44,7 +44,7 @@ test('pinned App Server with an isolated profile routes Studio tools without she
 	assert.equal(output.output, 'UNSAVED STUDIO SNAPSHOT');
 	const tools = model.requests[0].tools.map(tool => tool.name);
 	// 0.157.1 no longer advertises a `skills` builtin in this profile; the audited surface is
-	// the observation, so it moves with the pinned version rather than being asserted from memory.
+	// the observed capability contract, not a CLI version-number gate.
 	assert.deepEqual(tools, ['request_user_input', 'studio_read']);
 	await assert.rejects(access(codex.ambientMarker), { code: 'ENOENT' });
 	assert.equal(await readFile(codex.sourcePath, 'utf8'), 'return 42\n');

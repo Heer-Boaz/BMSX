@@ -150,7 +150,8 @@ also disposes transcript proposals, so old workspace data and capabilities do
 not cross teardown. Model output reaches only the existing explicit review.
 Multiline fields retain exact UTF-16/LF-delimited input slices (including CR),
 independent control history, cached wrap geometry and captured pointer selection.
-See [assistant contribution](../docs/studio_assistant_contribution.md).
+See [assistant contribution](../docs/studio_assistant_contribution.md) and
+[retained Markdown presentation](../docs/studio_assistant_presentation.md).
 
 ## Execution, view lifetime, and restored inspection
 

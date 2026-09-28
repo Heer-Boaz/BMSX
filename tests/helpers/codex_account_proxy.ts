@@ -16,11 +16,11 @@ export const CODEX_ACCOUNT_FIXTURE = {
 };
 
 /**
- * A non-forwarding TLS proxy for the pinned CLI's real, unchanged account URLs.
+ * A non-forwarding TLS proxy for the installed CLI's real, unchanged account URLs.
  * Only this test executable trusts its temporary CA. No host trust store, Codex
  * configuration or RPC response is changed, and no remote connection is made.
  */
-export async function createCodexAccountProxy(t: TestContext) {
+export async function createCodexAccountProxy(t: TestContext, usageStatus = 200) {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-codex-account-tls-'));
 	const run = promisify(execFile), ca = join(root, 'ca.pem');
 	await run('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-sha256', '-days', '1',
@@ -30,7 +30,7 @@ export async function createCodexAccountProxy(t: TestContext) {
 	await writeFile(join(root, 'server.ext'), 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=DNS:auth.openai.com,DNS:chatgpt.com\n');
 	await run('openssl', ['x509', '-req', '-in', join(root, 'server.csr'), '-CA', ca, '-CAkey', join(root, 'ca.key'),
 		'-set_serial', '1', '-days', '1', '-sha256', '-extfile', join(root, 'server.ext'), '-out', join(root, 'server.pem')]);
-	// Matches the pinned upstream auth fixture: synthetic claims, never a real bearer credential.
+	// Matches the upstream auth fixture: synthetic claims, never a real bearer credential.
 	const idToken = [JSON.stringify({ alg: 'none', typ: 'JWT' }), JSON.stringify({ email: CODEX_ACCOUNT_FIXTURE.email,
 		'https://api.openai.com/auth': { chatgpt_plan_type: CODEX_ACCOUNT_FIXTURE.planType,
 			chatgpt_account_id: CODEX_ACCOUNT_FIXTURE.accountId, chatgpt_user_id: 'studio-fixture-user' } }), 'signature']
@@ -94,6 +94,13 @@ export async function createCodexAccountProxy(t: TestContext) {
 				{ 'Content-Type': 'application/json' }).end(JSON.stringify({ plugins: [] })); return; }
 			switch (path) {
 				case '/backend-api/codex/models': result = { models: [] }; break; // Account-only fixture advertises no models.
+				case '/backend-api/wham/rate-limit-reset-credits': result = { available_count: 0, credits: [] }; break;
+				case '/backend-api/wham/usage':
+					if (usageStatus !== 200) { response.writeHead(usageStatus, { 'Content-Type': 'application/json' })
+						.end(JSON.stringify({ error: 'Account usage unavailable' })); return; }
+					result = { plan_type: 'pro', rate_limit: { allowed: true, limit_reached: false,
+					primary_window: { used_percent: 12, limit_window_seconds: 18000, reset_after_seconds: 1000, reset_at: 1800000000 },
+					secondary_window: { used_percent: 37, limit_window_seconds: 604800, reset_after_seconds: 100000, reset_at: 1800099000 } } }; break;
 				case '/backend-api/wham/config/bundle': result = {}; break;
 				case '/backend-api/wham/settings/user': result = { commit_attribution_enabled: false }; break;
 				case '/backend-api/wham/accounts/check': result = { accounts: [{ id: CODEX_ACCOUNT_FIXTURE.accountId,
@@ -108,7 +115,7 @@ export async function createCodexAccountProxy(t: TestContext) {
 	proxy.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });
 	proxy.on('connect', (request, socket, head) => {
 		tunnels.push(request.url!);
-		// Anything outside the pinned account hosts is refused, not forwarded: a plugin catalogue
+		// Anything outside the fixture's account hosts is refused, not forwarded: a plugin catalogue
 		// or update probe may be attempted, but nothing leaves this fixture.
 		if (!['auth.openai.com:443', 'chatgpt.com:443'].includes(request.url!)) {
 			socket.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return;

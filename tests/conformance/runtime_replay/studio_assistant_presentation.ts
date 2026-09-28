@@ -1,0 +1,76 @@
+import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
+import { StudioHttpSession } from '../../../ide/browser/http_session';
+import { getActiveTab } from '../../../ide/workbench/ui/tabs';
+import { TextStyle } from '../../../ide/common/markdown/model';
+import { editorFeedbackState } from '../../../ide/common/feedback_state';
+import { measureTextRange } from '../../../ide/editor/common/text/layout';
+import { check, createStudioFixture } from './studio_fixture';
+import { reachNemesisTitle } from './studio_nemesis_navigation';
+import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
+
+/** Real browser/HTTP/process; an offline provider supplies the Markdown and waits for Stop. */
+export async function runAssistantPresentation(kind: StudioRendererKind, canvas: HTMLCanvasElement, capture: (name: string) => Promise<void>, waitForModel: () => Promise<void>) {
+	const renderer = await createStudioRenderer(kind, canvas, capture), http = new StudioHttpSession();
+	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
+	const { ide, runtime, cycles, until, harness, press, frame, presenter } = test;
+	capture = renderer.capture!;
+	await until(() => cycles() > runtime.timing.cpuHz * 13, 'presentation: boot the cart');
+	await reachNemesisTitle(test);
+	harness.openLuaSource('cart.lua'); await frame();
+	await test.runPaletteCommand('View: Codex Assistant');
+	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant expected');
+	const conversation = ide.editor.assistant, paused = cycles();
+	await test.click(view.composerBounds);
+	test.clipboard.text = 'Inspect the mijter enemy, then explain the change.'; await press('ControlLeft', 'KeyV');
+	await press('ControlLeft', 'Enter');
+	await until(() => conversation.entries.some(entry => entry.kind === 'assistant') && conversation.state === 'ready', 'presentation: actual Markdown reply');
+	await until(() => conversation.thread?.title === 'Inspect the mijter enemy, then explain the change.', 'presentation: persisted conversation title');
+	await frame();
+	const styles = view.transcript.rows.flatMap(row => row.runs.map(run => run.style));
+	for (const style of [TextStyle.Bold, TextStyle.Italic, TextStyle.Code]) check(styles.some(value => (value & style) !== 0), 'presentation: parsed Markdown style ' + style);
+	check(!view.transcript.rows.some(row => row.text === 'USER' || row.text === 'ASSISTANT'), 'presentation: no repetitive role headings');
+	check(view.viewport.bounds.top === view.layout.top + 4, 'presentation: no title/status/command strip above messages');
+	check(view.footer.lines.join(' ').includes('Codex mock-model') && view.footer.lines.join(' ').includes('week -- left'), 'presentation: observed model; absent quota stays unknown');
+	check(cycles() === paused, 'presentation: host UI does not run the game');
+	const rows = view.transcript.rows.slice();
+	for (let index = 0; index < 20; index++) await frame();
+	check(rows.every((row, index) => row === view.transcript.rows[index]), 'presentation: idle frames retain layout');
+	await capture('markdown-tiny');
+	ide.editor.setFontVariant('msx'); await frame(); await capture('markdown-msx');
+	const reply = conversation.entries.find(entry => entry.kind === 'assistant')!;
+	const codeRow = view.transcript.rows.findIndex((row, index) => row.entry === reply.index && row.code
+		&& view.viewport.offsetTop + index * view.layout.rowHeight >= view.viewport.bounds.top
+		&& view.viewport.offsetTop + (index + 1) * view.layout.rowHeight <= view.viewport.bounds.bottom);
+	check(codeRow >= 0, 'presentation: a formatted code row is visible for pointer selection');
+	const codeTop = view.viewport.offsetTop + codeRow * view.layout.rowHeight;
+	await test.click({ left: 12, right: 24, top: codeTop, bottom: codeTop + view.layout.rowHeight });
+	await press('ControlLeft', 'KeyC');
+	check(view.selectedEntry === reply.index && test.clipboard.text === reply.text.getText(), 'presentation: click and Copy preserve the complete original Markdown');
+	check(await navigator.clipboard.readText() === reply.text.getText(), 'presentation: formatted text Copy reaches the browser clipboard');
+	await capture('selected-code-msx');
+	await until(() => !editorFeedbackState.message.visible, 'presentation: shared clipboard confirmation expires without running the guest');
+
+	// Exercise a phone-width logical surface, not CSS scaling of a wide screenshot.
+	presenter.setFixedRenderTargetSize(320, 384);
+	ide.overlayRenderer.setRenderingViewportType(presenter, 'viewport'); ide.editor.updateViewport(ide.overlayRenderer.viewportSize);
+	await frame();
+	check(view.footerTop + (view.footer.lines.length - 1) * view.layout.rowHeight + 2 <= view.layout.bottom, 'presentation: footer text is above the global status clip');
+	check(view.footer.lines.length > 1 && view.footer.lines.every(line => measureTextRange(line, 0, line.length) <= view.layout.right - 8), 'presentation: narrow footer keeps all settings in bounded rows');
+	for (const row of view.transcript.rows) for (const run of row.runs) check(run.x + run.width <= view.layout.right - 16, 'presentation: styles wrap within the narrow transcript');
+	await capture('narrow-msx');
+	ide.editor.setFontVariant('tiny'); await frame(); await capture('narrow-tiny');
+	await test.click(view.composerBounds);
+	test.clipboard.text = 'Keep investigating while I review the result.'; await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'Enter');
+	await waitForModel(); await frame();
+	check(conversation.state === 'running' && view.busySince !== undefined && view.activityText.length > 0, 'presentation: work indicator is visible before any response text');
+	await capture('working-a');
+	await new Promise(resolve => setTimeout(resolve, 180)); await frame(); await capture('working-b');
+	await new Promise(resolve => setTimeout(resolve, 1100)); await frame();
+	check(view.activitySecond >= 1, 'presentation: elapsed clock runs while the game is paused');
+	await test.click(view.turnActions.items.find(item => item.command === 'assistant.stop')!.bounds);
+	await until(() => conversation.state === 'ready', 'presentation: Stop settles'); await frame();
+	check(view.busySince === undefined && view.activityText === '', 'presentation: activity disappears after Stop');
+	await capture('stopped');
+	await renderer.finish();
+	return { presentation: 'pass', footer: view.footer.lines, paused: cycles() === paused };
+}

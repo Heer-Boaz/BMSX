@@ -1,4 +1,4 @@
-import type { AssistantHistoryEntry, AssistantHistoryPage, AssistantQueuedMessage, AssistantThread, AssistantTranscriptPage } from '../../common/assistant_protocol';
+import type { AssistantConfiguration, AssistantHistoryEntry, AssistantHistoryPage, AssistantQueuedMessage, AssistantThread, AssistantTranscriptPage } from '../../common/assistant_protocol';
 import type { CodexTextInput } from './input';
 import { CodexAdmissionError, type CodexTool, type CodexTurn } from './protocol';
 import type { CodexStdio } from './stdio';
@@ -9,13 +9,15 @@ type StoredItem =
 	| { type: 'agentMessage'; text: string }
 	| { type: 'dynamicToolCall'; tool: string; status: string }
 	| { type: 'reasoning' | 'contextCompaction' };
-type ThreadAdmission = { thread: StoredThread; cwd: string; approvalPolicy: string; sandbox: { type: string; networkAccess: boolean } };
+type ThreadAdmission = { thread: StoredThread; cwd: string; approvalPolicy: string; sandbox: { type: string; networkAccess: boolean };
+	model: string; modelProvider: string; reasoningEffort: string | null; serviceTier: string | null };
 type QueuedSubmission = { id: string; input: CodexTextInput[] };
 
 /** Codex owns durable transcripts and queues. Browsing is metadata IO, never thread resumption or inference. */
 export class CodexHistory {
 	public selected: AssistantThread | undefined;
 	public loaded = false;
+	public configuration: AssistantConfiguration | undefined;
 	public constructor(private readonly rpc: CodexStdio, private readonly cwd: string, private readonly tools: readonly CodexTool[]) {}
 
 	public async list(cursor?: string, search?: string): Promise<AssistantHistoryPage> {
@@ -49,11 +51,13 @@ export class CodexHistory {
 	public async select(thread: AssistantThread | undefined): Promise<void> {
 		if (this.loaded) await this.rpc.request('thread/unsubscribe', { threadId: this.selected!.id });
 		this.loaded = false;
+		this.configuration = undefined;
 		this.selected = thread;
 	}
 
-	public async load(): Promise<AssistantThread> {
+	public async load(prompt: string): Promise<AssistantThread> {
 		if (this.loaded) return this.selected!;
+		const creating = this.selected === undefined;
 		const admission = this.selected
 			? await this.rpc.request<ThreadAdmission>('thread/resume', { threadId: this.selected.id,
 				cwd: this.cwd, sandbox: 'danger-full-access', approvalPolicy: 'never', excludeTurns: true })
@@ -65,6 +69,16 @@ export class CodexHistory {
 			throw new CodexAdmissionError('Codex thread changed the admitted sandbox');
 		}
 		this.selected = threadSummary(admission.thread);
+		if (creating) {
+			// Native preview concatenates all user input blocks, including Studio workspace
+			// context. Give new conversations the actual prompt as a durable native name.
+			// disable-next-line newline_normalization_pattern -- A conversation name is the first prompt line; no prompt/source text is rewritten.
+			const name = Array.from(prompt.trim().split(/\r?\n/, 1)[0]).slice(0, 80).join('');
+			await this.rpc.request('thread/name/set', { threadId: this.selected.id, name });
+			this.selected.title = name;
+		}
+		this.configuration = { agent: 'Codex', model: admission.model, provider: admission.modelProvider,
+			effort: admission.reasoningEffort, serviceTier: admission.serviceTier };
 		this.loaded = true;
 		return this.selected;
 	}

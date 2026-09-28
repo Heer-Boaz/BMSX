@@ -5,6 +5,7 @@ import type { EditorCommandId } from '../../../common/commands';
 import * as colors from '../../../common/constants';
 import type { PointerSnapshot } from '../../../common/models';
 import { truncateMeasuredText } from '../../../common/text';
+import { drawMarkdownRow, measureStyledText } from '../../../editor/render/markdown';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { MultilineFieldControl } from '../../../editor/ui/inline/multiline_control';
 import { drawMultilineField } from '../../../editor/ui/inline/multiline_render';
@@ -30,6 +31,8 @@ import type { ResourcePanelController } from '../resources/panel/controller';
 import type { AssistantInput } from './editor_input';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { AssistantChatCommands, isAssistantCommand } from './chat_commands';
+
+const SPINNER = ['|', '/', '-', '\\'];
 
 const COMMANDS = ['assistant.history', 'assistant.new', 'assistant.commands', 'assistant.queue', 'assistant.direct', 'assistant.signIn', 'assistant.cancelLogin', 'assistant.signOut',
 	'assistant.openLogin', 'assistant.copyCode', 'assistant.send', 'assistant.stop', 'assistant.review', 'assistant.copy'] as const;
@@ -114,24 +117,38 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		const changed = updateFullWidthWorkbenchLayout(layout);
 		const row = layout.rowHeight;
 		if (changed) {
-			write_rect_bounds(input.composerBounds, 4, layout.bottom - row * 5 - 10, layout.right - 4, layout.bottom - row - 6);
 			this.scroll.lineStep = row;
 			this.composer.rowHeight = editorViewState.lineHeight;
 		}
+		input.busySince = model.workStartedAt;
+		const busy = input.busySince !== undefined;
+		const second = busy ? Math.trunc((performance.now() - input.busySince!) / 1000) : -1;
+		const editingQueue = input.editingQueuedId !== undefined;
+		let footerChanged = false;
 		if (changed || model.revision !== input.projectedRevision) {
+			const count = input.footer.lines.length;
+			input.footer.update(model, layout.right - 8, measureTextRange, layout.font!);
+			footerChanged = count !== input.footer.lines.length;
+		}
+		const footerTop = input.footerTop = layout.bottom - (input.footer.lines.length > 1 ? (input.footer.lines.length - 1) * row + 2 : 0);
+		if (changed || footerChanged) write_rect_bounds(input.composerBounds, 4, footerTop - row * 5 - 10, layout.right - 4, footerTop - row - 6);
+		const activityLabel = busy ? model.state === 'stopping' ? 'Stopping' : model.state === 'starting' ? 'Starting' : model.activity : '';
+		if (changed || activityLabel !== input.activityLabel || second !== input.activitySecond) {
+			input.activitySecond = second; input.activityLabel = activityLabel;
+			input.activityText = busy ? truncateMeasuredText(`${activityLabel}  ${second}s`, layout.right - 28, measureTextRange) : '';
+		}
+		if (changed || model.revision !== input.projectedRevision || editingQueue !== input.editingQueue) {
+			input.editingQueue = editingQueue;
 			input.projectedRevision = model.revision;
-			input.status = truncateMeasuredText(!model.available ? 'Codex requires browser Studio on the development server.'
-				: `${model.accountRefreshing ? 'Refreshing account' : model.state}${model.queued.length ? ` | ${model.queued.length} queued${model.queuePaused ? ' (paused)' : ''}` : ''}${model.thread?.title ? ` | ${model.thread.title}` : ''}`,
-				layout.right - 8, measureTextRange);
 			const atEnd = viewport.scrollTop + viewport.height >= viewport.contentHeight;
-			input.transcript.update(model.entries, layout.right - colors.SCROLLBAR_WIDTH - 8, measureTextRange, layout.font!);
-			viewport.layout(4, layout.top + row * 2 + 8, layout.right, input.composerBounds.top - 4, input.transcript.rows.length * row);
+			input.transcript.update(model.entries, layout.right - colors.SCROLLBAR_WIDTH - 16, measureStyledText, layout.font!);
+			viewport.layout(4, layout.top + 4, layout.right, input.composerBounds.top - 4 - (busy || input.editingQueuedId !== undefined ? row + 2 : 0), input.transcript.rows.length * row);
 			if (input.revealOlder) { viewport.scrollbar.setScroll(0); input.revealOlder = false; }
 			else if (atEnd) viewport.scrollbar.setScroll(viewport.contentHeight);
 		}
 		input.composer.update(input.draft, input.composerBounds.right - input.composerBounds.left - 6 - editorViewState.spaceAdvance,
 			Math.trunc((input.composerBounds.bottom - input.composerBounds.top - 4) / editorViewState.lineHeight), measureTextRange, layout.font!);
-		let actionsChanged = changed;
+		let actionsChanged = changed || footerChanged;
 		const queuedSend = (model.state === 'running' || model.queued.length > 0) && !input.draft.text.startsWith('/') && input.editingQueuedId === undefined;
 		for (const item of input.turnActions.items) {
 			const visible = item.command === 'assistant.send' ? !queuedSend : item.command === 'assistant.queue' ? queuedSend
@@ -139,31 +156,49 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 				: model.entries[input.selectedEntry]?.proposal !== undefined;
 			if (item.visible !== visible) { item.visible = visible; actionsChanged = true; }
 		}
-		if (actionsChanged) layoutWorkbenchActionBar(input.turnActions, layout.right - 4, layout.bottom - row - 4, layout.bottom, measureText);
+		if (actionsChanged) layoutWorkbenchActionBar(input.turnActions, layout.right - 4, footerTop - row - 4, footerTop, measureText);
 		this.actions.update(); this.scroll.update();
 	}
 	public draw(): void {
 		const input = this.input, { layout, viewport } = input;
 		const font = editorViewState.font.renderFont();
+		const textColor = colors.COLOR_RESOURCE_VIEWER_TEXT;
 		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
+		const footerTop = input.footerTop;
+		api.fill_rect(0, footerTop, layout.right, layout.bottom, 0, colors.COLOR_STATUS_BACKGROUND);
+		for (let index = 0; index + 1 < input.footer.lines.length; index++) {
+			api.blit_text_inline_with_font(input.footer.lines[index], 4, footerTop + index * layout.rowHeight + 2, 0, colors.COLOR_STATUS_TEXT, font);
+		}
 		renderWorkbenchActionBar(input.turnActions, this, font);
-		api.blit_text_inline_with_font(input.status, 4, layout.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
-		api.blit_text_inline_with_font(input.editingQueuedId === undefined ? '/: commands | /history: conversations | /queue: waiting' : 'Editing queued message. Send updates it; /cancel leaves it.', 4, layout.top + layout.rowHeight + 6, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
+		if (input.busySince !== undefined) {
+			const y = input.composerBounds.top - layout.rowHeight - 4;
+			api.blit_text_inline_with_font(SPINNER[Math.trunc((performance.now() - input.busySince) / 150) & 3], 4, y, 0, colors.COLOR_STATUS_SUCCESS, font);
+			api.blit_text_inline_with_font(input.activityText, 16, y, 0, textColor, font);
+		} else if (input.editingQueuedId !== undefined) {
+			api.blit_text_inline_with_font('Editing queued message', 4, input.composerBounds.top - layout.rowHeight - 4, 0, textColor, font);
+		}
 		api.pushClipRect(viewport.bounds.left, viewport.bounds.top, viewport.bounds.right, viewport.bounds.bottom);
 		const rows = input.transcript.rows;
 		for (let index = Math.trunc(viewport.scrollTop / layout.rowHeight), top = viewport.offsetTop + index * layout.rowHeight;
 			index < rows.length && top < viewport.bounds.bottom; index++, top += layout.rowHeight) {
 			const row = rows[index];
-			if (row.entry === input.selectedEntry) api.fill_rect(4, top, viewport.bounds.right, top + layout.rowHeight, 0, colors.SELECTION_OVERLAY);
-			api.blit_text_inline_with_font(row.text, 4, top, 0, row.entry === input.selectedEntry ? colors.COLOR_SELECTION_TEXT : row.heading ? colors.COLOR_STATUS_SUCCESS : colors.COLOR_RESOURCE_VIEWER_TEXT, font);
+			const entry = input.conversation.entries[row.entry];
+			const selected = row.entry === input.selectedEntry;
+			if (entry.kind === 'user' && !row.heading) {
+				api.fill_rect(4, top, viewport.bounds.right, top + layout.rowHeight, 0, colors.HIGHLIGHT_OVERLAY);
+				api.fill_rect(4, top, 5, top + layout.rowHeight, 0, colors.COLOR_STATUS_SUCCESS);
+			}
+			if (selected) api.fill_rect(4, top, viewport.bounds.right, top + layout.rowHeight, 0, colors.SELECTION_OVERLAY);
+			drawMarkdownRow(row, 8, top, viewport.bounds.right - 12, selected ? colors.COLOR_SELECTION_TEXT
+				: entry.kind === 'status' ? colors.COLOR_SEARCH_SECONDARY_TEXT : textColor, selected);
 		}
-		api.popClipRect(); viewport.scrollbar.draw(colors.COLOR_CODE_BACKGROUND, colors.COLOR_RESOURCE_VIEWER_TEXT);
+		api.popClipRect(); viewport.scrollbar.draw(colors.COLOR_CODE_BACKGROUND, textColor);
 		const bounds = input.composerBounds;
 		api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_RESOURCE_VIEWER_TEXT);
 		drawMultilineField(input.draft, input.composer, bounds);
 	}
 	public drawStatusBar(top: number, color: number): void {
-		api.blit_text_inline_with_font('Click a message + Ctrl+C: copy | Enter: command | Ctrl+Enter: send/queue', 4, top + 2, 0, color, editorViewState.font.renderFont());
+		api.blit_text_inline_with_font(this.input.footer.lines.at(-1)!, 4, top + 2, 0, color, editorViewState.font.renderFont());
 	}
 	protected override handleViewPointer(snapshot: PointerSnapshot): boolean {
 		if (this.actions.handlePointer(snapshot) || this.composer.handlePointer(snapshot)) return true;

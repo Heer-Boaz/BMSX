@@ -119,6 +119,8 @@ export class CodexHttpApi {
 			connection.ready = true;
 			this.publish(connection, { type: 'connected', lease: connection.id, account: { connected: account.account !== null,
 				requiresLogin: account.requiresOpenaiAuth && account.account === null, email: account.account?.email, plan: account.account?.planType } });
+			this.publish(connection, { type: 'configuration', configuration: session.configuration });
+			void session.refreshUsage(account);
 			await session.closed;
 		} catch (error) {
 			if (!response.headersSent && !response.destroyed) response.writeHead(503, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }).end((error as Error).message);

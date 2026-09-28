@@ -4,6 +4,7 @@ import { hostSystemAtlasImage } from '../host_overlay/atlas';
 export const DEFAULT_FONT_VARIANT = 'msx' as const;
 
 export type FontVariant = 'msx' | 'tiny';
+export type FontStyle = 'normal' | 'bold' | 'italic' | 'bold-italic';
 
 const FONT_PRESETS: Record<FontVariant, GlyphMap> = {
 	msx: buildMsxCharMap(),
@@ -114,15 +115,15 @@ function buildTinyCharMap(): GlyphMap {
 }
 
 export class Font extends BFont {
-	constructor(config?: { variant?: FontVariant }) {
+	constructor(config?: { variant?: FontVariant; style?: FontStyle }) {
 		const variant = config?.variant ?? DEFAULT_FONT_VARIANT;
 		const preset = FONT_PRESETS[variant];
-		super(HOST_SYSTEM_FONT_SOURCE, preset);
+		const style = config?.style ?? 'normal';
+		super(HOST_SYSTEM_FONT_SOURCE, style === 'normal' ? preset
+			: Object.fromEntries(Object.entries(preset).map(([char, id]) => [char, `${id}_${style}`])));
 	}
 }
 
 const HOST_SYSTEM_FONT_SOURCE = {
-	resolveGlyph(imgid: string) {
-		return hostSystemAtlasImage(imgid);
-	},
+	resolveGlyph: hostSystemAtlasImage,
 };
