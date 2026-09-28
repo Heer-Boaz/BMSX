@@ -1,4 +1,4 @@
-import type { AssistantModel, AssistantModels, AssistantModelSelection } from '../../common/assistant_protocol';
+import type { AssistantConfiguration, AssistantModel, AssistantModels, AssistantModelSelection } from '../../common/assistant_protocol';
 import type { CodexStdio } from './stdio';
 
 type CodexModel = { model: string; displayName: string; description: string; hidden: boolean; isDefault: boolean;
@@ -8,14 +8,26 @@ type CodexModel = { model: string; displayName: string; description: string; hid
 /** Native catalog per account lifetime. Opening pickers never starts inference or creates a thread. */
 export class CodexModels {
 	private catalog: Promise<AssistantModels> | undefined;
+	private snapshot: AssistantModels | undefined;
 	public constructor(private readonly rpc: Pick<CodexStdio, 'request'>) {}
-	public clear(): void { this.catalog = undefined; }
+	public clear(): void { this.catalog = undefined; this.snapshot = undefined; }
 	public list(): Promise<AssistantModels> {
 		if (this.catalog) return this.catalog;
 		const pending = this.read();
 		this.catalog = pending;
-		void pending.catch(() => { if (this.catalog === pending) this.catalog = undefined; });
+		void pending.then(catalog => { if (this.catalog === pending) this.snapshot = catalog; },
+			() => { if (this.catalog === pending) this.catalog = undefined; });
 		return pending;
+	}
+
+	/** After list(): resolve unset config defaults; a missing historical model stays unknown. */
+	public resolve(configuration: AssistantConfiguration, useDefaultModel = false): AssistantConfiguration {
+		if (configuration.model !== null && configuration.effort !== null) return configuration;
+		const model = this.snapshot!.models.find(model => configuration.model === null ? useDefaultModel && model.isDefault : model.id === configuration.model);
+		// Custom providers need not appear in the OpenAI inventory. Their unset effort
+		// remains a provider default; do not label it with another model's effort.
+		if (!model) return configuration;
+		return { ...configuration, model: configuration.model ?? model.id, effort: configuration.effort ?? model.defaultEffort };
 	}
 	private async read(): Promise<AssistantModels> {
 		const models: AssistantModel[] = [];

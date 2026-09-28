@@ -25,14 +25,14 @@ export function assistantFooter(model: AssistantConversation, width: number, mea
 	const state = !model.available ? 'unavailable' : model.accountRefreshing ? 'refreshing account' : model.state;
 	const configuration = model.configuration;
 	const agent = configuration?.agent ?? 'Codex';
-	const selected = configuration?.model ?? 'model --';
-	const effort = configuration?.effort ?? 'effort --';
+	const selected = configuration?.model ?? 'model unavailable';
+	const effort = configuration?.effort ?? 'effort default';
 	const tier = configuration?.serviceTier;
 	const fast = tier === 'fast' || tier === 'priority' ? ' | fast' : tier && tier !== 'default' ? ` | ${tier}` : '';
 	const quota = model.usage?.weeklyRemaining;
-	const weekly = `week ${quota == null ? '--' : `${quota}%`} left`;
+	const weekly = quota == null ? 'weekly quota unavailable' : `week ${quota}% left`;
 	const queue = model.queued.length ? ` | ${model.queued.length} queued${model.queuePaused ? ' (paused)' : ''}` : '';
-	const details = `${agent} ${selected} | ${effort}${fast} | ${weekly}`;
+	const details = configuration === undefined ? 'settings not loaded' : `${agent} ${selected} | ${effort}${fast} | ${weekly}`;
 	const prefix = `${state}${queue}`;
 	const title = model.thread === undefined ? 'New conversation' : model.thread.title || 'Untitled conversation';
 	const fixed = `${prefix} | ${details} | `;

@@ -42,6 +42,17 @@ async function sessionFixture(t: TestContext, mode: string, authUrl?: string) {
 	return { ...f, session, events, accountChanged };
 }
 
+test('an unconfigured native account publishes the catalog model and effort without starting a thread', { timeout: 15000 }, async t => {
+	const f = await sessionFixture(t, 'normal');
+	const model = (await f.session.models.list()).models.find(model => model.isDefault)!;
+	assert.equal(f.session.configuration.model, model.id);
+	assert.equal(f.session.configuration.effort, model.defaultEffort);
+	assert.equal((await f.session.listHistory()).threads.length, 0);
+	const commands = (await readFile(f.trace, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+	assert.equal(commands.filter(command => command.method === 'model/list').length, 1);
+	assert.ok(!commands.some(command => command.method === 'thread/start' || command.method === 'turn/start'));
+});
+
 test('adapter exposes only the user code, cancels by process-owned login ID and reads the updated account snapshot', { timeout: 15000 }, async t => {
 	const f = await sessionFixture(t, 'normal');
 	await f.session.startLogin({ type: 'device-code' });

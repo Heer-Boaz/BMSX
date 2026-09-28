@@ -7,6 +7,24 @@ const nativeModel = { model: 'catalog-model', displayName: 'Catalog Model', desc
 	supportedReasoningEfforts: [{ reasoningEffort: 'medium', description: 'Balanced' }, { reasoningEffort: 'high', description: 'More reasoning' }],
 	defaultReasoningEffort: 'medium', serviceTiers: [{ id: 'priority', name: 'Fast', description: 'Increased usage' }] };
 
+test('unset native configuration resolves catalog defaults without inventing historical or custom-provider settings', async () => {
+	let calls = 0;
+	const catalog = new CodexModels({ async request<T>(): Promise<T> {
+		calls++;
+		return { data: [nativeModel, { ...nativeModel, model: 'other', isDefault: false, defaultReasoningEffort: 'high' }], nextCursor: null } as T;
+	} });
+	await catalog.list();
+	const unset = { agent: 'Codex', model: null, effort: null, provider: 'openai', serviceTier: null };
+	assert.deepEqual(catalog.resolve(unset, true), { ...unset, model: nativeModel.model, effort: nativeModel.defaultReasoningEffort });
+	assert.equal(catalog.resolve(unset), unset, 'missing historical metadata is not the current catalog default');
+	assert.equal(catalog.resolve({ ...unset, model: 'other' }).effort, 'high');
+	const explicit = { ...unset, model: 'other', effort: 'medium' };
+	assert.equal(catalog.resolve(explicit), explicit, 'an explicit effort is not overwritten by the default');
+	const custom = { ...unset, model: 'custom-provider-model' };
+	assert.equal(catalog.resolve(custom), custom, 'an unlisted provider model does not borrow another model’s effort');
+	assert.equal(calls, 1, 'projection uses the same retained catalog as the pickers');
+});
+
 test('model catalog projects all native pages once, retaining supported effort and tier data', async () => {
 	const calls: Json[] = [];
 	const catalog = new CodexModels({ async request<T>(method: string, params: Json): Promise<T> {
@@ -31,6 +49,7 @@ test('an account change retires the cached catalog even when the previous read i
 	assert.equal((await current).models[0].id, 'current');
 	readers[0]({ data: [nativeModel], nextCursor: null }); await old;
 	assert.equal(catalog.list(), current); assert.equal(readers.length, 2);
+	assert.equal(catalog.resolve({ agent: 'Codex', model: null, provider: 'openai', effort: null, serviceTier: null }, true).model, 'current');
 });
 
 test('a failed catalog read does not poll or retry itself; the next explicit request may retry', async () => {

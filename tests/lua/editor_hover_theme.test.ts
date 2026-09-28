@@ -7,6 +7,10 @@ test('hover and Markdown text retain readable contrast on their actual surfaces 
 	for (const theme of ['dark', 'light']) {
 		constants.setIdeThemeVariant(theme);
 		for (const [name, foreground, background, minimum] of [
+			['editor', constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT, constants.COLOR_CODE_BACKGROUND, 7],
+			['workbench', constants.COLOR_RESOURCE_VIEWER_TEXT, constants.COLOR_RESOURCE_VIEWER_BACKGROUND, 7],
+			['status', constants.COLOR_STATUS_TEXT, constants.COLOR_STATUS_BACKGROUND, 4.5],
+			['strong emphasis', constants.COLOR_TEXT_STRONG, constants.COLOR_CODE_BACKGROUND, 7],
 			['hover', constants.HOVER_TOOLTIP_TEXT, constants.HOVER_TOOLTIP_BACKGROUND, 7],
 			['Markdown code', constants.COLOR_MARKDOWN_CODE_TEXT, constants.COLOR_MARKDOWN_CODE_BACKGROUND, 7],
 			['Markdown status', constants.COLOR_MARKDOWN_MUTED_TEXT, constants.COLOR_CODE_BACKGROUND, 4.5],

@@ -56,6 +56,8 @@ export const THEME_TOKEN_ERROR_OVERLAY_BACKGROUND_HOVER = 54;
 export const THEME_TOKEN_ERROR_OVERLAY_LINE_HOVER = 55;
 export const THEME_TOKEN_EXECUTION_STOP_OVERLAY = 56;
 export const THEME_TOKEN_ACTION_OVERLAY = 57;
+export const THEME_TOKEN_TEXT_GREY = 58;
+export const THEME_TOKEN_MUTED_GREY = 59;
 
 export const THEME_TOKEN_COLORS: readonly number[] = [
 	0x00000000,
@@ -116,6 +118,8 @@ export const THEME_TOKEN_COLORS: readonly number[] = [
 	0x2dffffff,
 	0x72f27219,
 	0xa5000000,
+	0xff484c54,
+	0xff666b74,
 ];
 
 export function resolveThemeTokenColor(token: number): number {

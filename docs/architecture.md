@@ -5563,12 +5563,14 @@ boundary. This atlas remains a host presentation resource, not cart ROM, GX
 local memory or an IMGDEC stream.
 
 Host font style is selected when a `Font` is constructed. The atlas producer
-bakes normal, bold, italic and bold-italic glyphs for both font variants, then
+bakes normal and italic glyphs for both font variants, then
 packs host rectangles independently of guest GX page limits. TypeScript and
 C++ consume the same generated pixels and styled glyph IDs through the existing
 font and overlay datapaths. There is no draw-time glyph synthesis, extra shader
-field or change to guest fonts. The IDE's retained Markdown layout selects these
-fonts before measuring and wrapping; see [assistant presentation](studio_assistant_presentation.md).
+field or change to guest fonts. Strong Markdown emphasis uses the shared theme's
+strong foreground rather than thicker bitmap glyphs, so it never changes advances
+or wrapping. The IDE's retained Markdown layout selects normal/italic fonts before
+measuring; see [assistant presentation](studio_assistant_presentation.md).
 
 Quick-menu pause is host execution policy, independent of the guest's
 firmware, cartridge and supervisor state. SELECT+START opens/closes the menu;

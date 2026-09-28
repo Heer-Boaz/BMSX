@@ -1,6 +1,5 @@
 #include "render/host_overlay/atlas.h"
 #include "render/shared/bmsx_font.h"
-#include <array>
 #include <vector>
 
 #include <cstddef>
@@ -46,30 +45,21 @@ int main() {
 	}
 	require(missingImageRejected, "host system atlas lookup should reject missing image ids");
 	for (auto variant : {bmsx::FontVariant::Msx, bmsx::FontVariant::Tiny}) {
-		bmsx::Font normal(variant);
-		const std::array<std::string, 3> suffixes{"_bold", "_italic", "_bold-italic"};
-		const std::array<bmsx::FontStyle, 3> styles{bmsx::FontStyle::Bold, bmsx::FontStyle::Italic, bmsx::FontStyle::BoldItalic};
-		for (std::size_t index = 0; index < styles.size(); ++index) {
-			bmsx::Font font(variant, styles[index]);
-			const bool bold = index != 1, italic = index != 0;
-			require(font.lineHeight() == normal.lineHeight(), "styled fonts preserve the baseline");
-			for (bmsx::u32 code = 32; code <= 126; ++code) {
-				const auto& base = normal.getGlyph(code);
-				const auto& glyph = font.getGlyph(code);
-				require(glyph.imgid == base.imgid + suffixes[index], "native styled font selects its baked glyph");
-				require(glyph.width == base.width + (bold ? 1 : 0) + (italic ? (base.height - 1) >> 2 : 0), "styled font width");
-				require(glyph.height == base.height, "styled font height");
-				for (int y = 0; y < glyph.height; ++y) {
-					std::vector<bmsx::u8> row(glyph.width);
-					const int shift = italic ? (base.height - 1 - y) >> 2 : 0;
-					for (int x = 0; x < base.width; ++x) {
-						const auto alpha = bmsx::HOST_SYSTEM_ATLAS.pixels[((base.rect.v + y) * bmsx::HOST_SYSTEM_ATLAS.width + base.rect.u + x) * 4u + 3u];
-						row[x + shift] |= alpha;
-						if (bold) row[x + shift + 1] |= alpha;
-					}
-					for (int x = 0; x < glyph.width; ++x) {
-						require(bmsx::HOST_SYSTEM_ATLAS.pixels[((glyph.rect.v + y) * bmsx::HOST_SYSTEM_ATLAS.width + glyph.rect.u + x) * 4u + 3u] == row[x], "native font style has the expected baked pixels");
-					}
+		bmsx::Font normal(variant), font(variant, bmsx::FontStyle::Italic);
+		require(font.lineHeight() == normal.lineHeight(), "italic fonts preserve the baseline");
+		for (bmsx::u32 code = 32; code <= 126; ++code) {
+			const auto& base = normal.getGlyph(code);
+			const auto& glyph = font.getGlyph(code);
+			require(glyph.width == base.width + ((base.height - 1) >> 2), "italic font width");
+			require(glyph.height == base.height, "italic font height");
+			for (int y = 0; y < glyph.height; ++y) {
+				std::vector<bmsx::u8> row(glyph.width);
+				const int shift = (base.height - 1 - y) >> 2;
+				for (int x = 0; x < base.width; ++x) {
+					row[x + shift] = bmsx::HOST_SYSTEM_ATLAS.pixels[((base.rect.v + y) * bmsx::HOST_SYSTEM_ATLAS.width + base.rect.u + x) * 4u + 3u];
+				}
+				for (int x = 0; x < glyph.width; ++x) {
+					require(bmsx::HOST_SYSTEM_ATLAS.pixels[((glyph.rect.v + y) * bmsx::HOST_SYSTEM_ATLAS.width + glyph.rect.u + x) * 4u + 3u] == row[x], "native italic glyph contains the sheared source pixels");
 				}
 			}
 		}

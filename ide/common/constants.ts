@@ -18,8 +18,9 @@ import {
 	THEME_TOKEN_HINT_GREY,
 	THEME_TOKEN_KEYWORD_MAGENTA,
 	THEME_TOKEN_LINE_HIGHLIGHT_OVERLAY,
-	THEME_TOKEN_LIST_TEXT_GREY,
 	THEME_TOKEN_MID_GREY,
+	THEME_TOKEN_MUTED_GREY,
+	THEME_TOKEN_NEAR_BLACK,
 	THEME_TOKEN_NUMBER_BROWN,
 	THEME_TOKEN_PANEL_GREY,
 	THEME_TOKEN_REFERENCES_MATCH_ACTIVE_OVERLAY,
@@ -44,6 +45,7 @@ import {
 	THEME_TOKEN_TERMINAL_LIGHT_YELLOW,
 	THEME_TOKEN_TERMINAL_MAGENTA,
 	THEME_TOKEN_TERMINAL_RED,
+	THEME_TOKEN_TEXT_GREY,
 	THEME_TOKEN_WARNING_AMBER,
 	THEME_TOKEN_WHITE,
 } from '../theme/tokens';
@@ -71,6 +73,7 @@ type ThemeDefinition = {
 	text: {
 		topBar: number;
 		primary: number;
+		strong: number;
 		secondary: number;
 		keyword: number;
 		string: number;
@@ -194,17 +197,18 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			tabActive: THEME_TOKEN_BLACK,
 		},
 		text: {
-			topBar: THEME_TOKEN_BLACK,
-			primary: THEME_TOKEN_WHITE,
-			secondary: THEME_TOKEN_BLACK,
+			topBar: THEME_TOKEN_TEXT_GREY,
+			primary: THEME_TOKEN_TERMINAL_GREY,
+			strong: THEME_TOKEN_WHITE,
+			secondary: THEME_TOKEN_TEXT_GREY,
 			keyword: THEME_TOKEN_BROWN,
 			string: THEME_TOKEN_TERMINAL_LIGHT_RED,
 			number: THEME_TOKEN_TERMINAL_CYAN,
 			comment: THEME_TOKEN_TERMINAL_DARK_GREEN,
-			operator: THEME_TOKEN_WHITE,
+			operator: THEME_TOKEN_TERMINAL_GREY,
 			dim: THEME_TOKEN_TERMINAL_LIGHT_RED,
 			builtin: THEME_TOKEN_TERMINAL_DARK_YELLOW,
-			functionName: THEME_TOKEN_WHITE,
+			functionName: THEME_TOKEN_TERMINAL_GREY,
 			parameter: THEME_TOKEN_TERMINAL_RED,
 			globalVar: THEME_TOKEN_TERMINAL_LIGHT_YELLOW,
 			label: THEME_TOKEN_TERMINAL_DARK_RED,
@@ -220,14 +224,14 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		},
 		status: {
 			background: THEME_TOKEN_TERMINAL_GREY,
-			text: THEME_TOKEN_BLACK,
+			text: THEME_TOKEN_TEXT_GREY,
 			warning: THEME_TOKEN_TERMINAL_LIGHT_RED,
 			success: THEME_TOKEN_TERMINAL_DARK_BLUE,
 			error: THEME_TOKEN_WHITE,
 			alert: THEME_TOKEN_TERMINAL_RED,
 		},
 		input: {
-			text: THEME_TOKEN_BLACK,
+			text: THEME_TOKEN_TEXT_GREY,
 			secondaryText: THEME_TOKEN_TERMINAL_MAGENTA,
 			placeholder: THEME_TOKEN_TERMINAL_LIGHT_RED,
 			outline: THEME_TOKEN_BLACK,
@@ -235,7 +239,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		tab: {
 			border: THEME_TOKEN_TERMINAL_DARK_BLUE,
 			activeText: THEME_TOKEN_TERMINAL_GREY,
-			inactiveText: THEME_TOKEN_BLACK,
+			inactiveText: THEME_TOKEN_TEXT_GREY,
 		},
 		server_status: {
 			connected: THEME_TOKEN_TERMINAL_DARK_GREEN,
@@ -251,11 +255,11 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			hover: {
 				background: THEME_TOKEN_DARK_NAVY,
 				border: THEME_TOKEN_MID_GREY,
-				text: THEME_TOKEN_WHITE,
+				text: THEME_TOKEN_TERMINAL_GREY,
 			},
 			search: {
 				background: THEME_TOKEN_TERMINAL_CYAN,
-				text: THEME_TOKEN_BLACK,
+				text: THEME_TOKEN_TEXT_GREY,
 				secondaryText: THEME_TOKEN_TERMINAL_MAGENTA,
 				placeholder: THEME_TOKEN_TERMINAL_LIGHT_RED,
 				outline: THEME_TOKEN_BLACK,
@@ -263,7 +267,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			completion: {
 				background: THEME_TOKEN_TERMINAL_CYAN,
 				border: THEME_TOKEN_BLACK,
-				text: THEME_TOKEN_BLACK,
+				text: THEME_TOKEN_TEXT_GREY,
 				detail: THEME_TOKEN_TERMINAL_MAGENTA,
 				previewText: THEME_TOKEN_COMMENT_GREY,
 				highlight: THEME_TOKEN_BLACK,
@@ -272,19 +276,19 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			parameterHint: {
 				background: THEME_TOKEN_TERMINAL_CYAN,
 				border: THEME_TOKEN_BLACK,
-				text: THEME_TOKEN_BLACK,
+				text: THEME_TOKEN_TEXT_GREY,
 				active: THEME_TOKEN_TERMINAL_LIGHT_RED,
 			},
 			action: {
 				dialogBackground: THEME_TOKEN_TERMINAL_CYAN,
 				dialogBorder: THEME_TOKEN_BLACK,
-				dialogText: THEME_TOKEN_BLACK,
+				dialogText: THEME_TOKEN_TEXT_GREY,
 				buttonBackground: THEME_TOKEN_TERMINAL_GREY,
-				buttonText: THEME_TOKEN_BLACK,
+				buttonText: THEME_TOKEN_TEXT_GREY,
 			},
 			quickOpen: {
 				background: THEME_TOKEN_DARK_NAVY,
-				text: THEME_TOKEN_WHITE,
+				text: THEME_TOKEN_TERMINAL_GREY,
 				placeholder: THEME_TOKEN_HINT_GREY,
 				outline: THEME_TOKEN_MID_GREY,
 				kind: THEME_TOKEN_GENTLE_WHITE,
@@ -295,7 +299,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 	},
 	light: {
 		markdown: { codeBackground: THEME_TOKEN_PANEL_GREY, codeText: THEME_TOKEN_DEEP_GREY,
-			linkText: THEME_TOKEN_TERMINAL_DARK_BLUE, mutedText: THEME_TOKEN_STATUS_TEXT_GREY },
+			linkText: THEME_TOKEN_TERMINAL_DARK_BLUE, mutedText: THEME_TOKEN_MUTED_GREY },
 		surfaces: {
 			frame: THEME_TOKEN_SOFT_WHITE,
 			topBar: THEME_TOKEN_PANEL_GREY,
@@ -308,18 +312,19 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			tabActive: THEME_TOKEN_SOFT_WHITE,
 		},
 		text: {
-			topBar: THEME_TOKEN_STATUS_TEXT_GREY,
-			primary: THEME_TOKEN_DEEP_GREY,
-			secondary: THEME_TOKEN_LIST_TEXT_GREY,
+			topBar: THEME_TOKEN_TEXT_GREY,
+			primary: THEME_TOKEN_TEXT_GREY,
+			strong: THEME_TOKEN_NEAR_BLACK,
+			secondary: THEME_TOKEN_TEXT_GREY,
 			keyword: THEME_TOKEN_KEYWORD_MAGENTA,
 			string: THEME_TOKEN_STRING_GREEN,
 			number: THEME_TOKEN_NUMBER_BROWN,
 			comment: THEME_TOKEN_COMMENT_GREY,
-			operator: THEME_TOKEN_DEEP_GREY,
+			operator: THEME_TOKEN_TEXT_GREY,
 			dim: THEME_TOKEN_COMMENT_GREY,
 			builtin: THEME_TOKEN_CYAN_BLUE,
 			functionName: THEME_TOKEN_FUNCTION_BLUE,
-			parameter: THEME_TOKEN_DEEP_GREY,
+			parameter: THEME_TOKEN_TEXT_GREY,
 			globalVar: THEME_TOKEN_NUMBER_BROWN,
 			label: THEME_TOKEN_ACCENT_RED,
 			localTop: THEME_TOKEN_CYAN_BLUE,
@@ -328,28 +333,28 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			selection: THEME_TOKEN_SELECTION_OVERLAY,
 			selectionText: THEME_TOKEN_GENTLE_WHITE,
 			inactiveSelection: THEME_TOKEN_BORDER_GREY,
-			inactiveSelectionText: THEME_TOKEN_DEEP_GREY,
+			inactiveSelectionText: THEME_TOKEN_TEXT_GREY,
 			selectionBorder: THEME_TOKEN_MID_GREY,
 			errorOverlayText: THEME_TOKEN_WHITE,
 		},
 		status: {
 			background: THEME_TOKEN_PANEL_GREY,
-			text: THEME_TOKEN_STATUS_TEXT_GREY,
+			text: THEME_TOKEN_TEXT_GREY,
 			warning: THEME_TOKEN_WARNING_AMBER,
 			success: THEME_TOKEN_SUCCESS_GREEN,
 			error: THEME_TOKEN_ACCENT_RED,
 			alert: THEME_TOKEN_ACCENT_RED,
 		},
 		input: {
-			text: THEME_TOKEN_DEEP_GREY,
+			text: THEME_TOKEN_TEXT_GREY,
 			secondaryText: THEME_TOKEN_COMMENT_GREY,
 			placeholder: THEME_TOKEN_COMMENT_GREY,
 			outline: THEME_TOKEN_BORDER_GREY,
 		},
 		tab: {
 			border: THEME_TOKEN_BORDER_GREY,
-			activeText: THEME_TOKEN_DEEP_GREY,
-			inactiveText: THEME_TOKEN_LIST_TEXT_GREY,
+			activeText: THEME_TOKEN_TEXT_GREY,
+			inactiveText: THEME_TOKEN_TEXT_GREY,
 		},
 		server_status: {
 			connected: THEME_TOKEN_SUCCESS_GREEN,
@@ -366,11 +371,11 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			hover: {
 				background: THEME_TOKEN_PANEL_GREY,
 				border: THEME_TOKEN_MID_GREY,
-				text: THEME_TOKEN_DEEP_GREY,
+				text: THEME_TOKEN_TEXT_GREY,
 			},
 			search: {
 				background: THEME_TOKEN_TERMINAL_CYAN,
-				text: THEME_TOKEN_BLACK,
+				text: THEME_TOKEN_TEXT_GREY,
 				secondaryText: THEME_TOKEN_TERMINAL_MAGENTA,
 				placeholder: THEME_TOKEN_TERMINAL_LIGHT_RED,
 				outline: THEME_TOKEN_BLACK,
@@ -378,7 +383,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			completion: {
 				background: THEME_TOKEN_TERMINAL_CYAN,
 				border: THEME_TOKEN_BLACK,
-				text: THEME_TOKEN_BLACK,
+				text: THEME_TOKEN_TEXT_GREY,
 				detail: THEME_TOKEN_TERMINAL_MAGENTA,
 				previewText: THEME_TOKEN_COMMENT_GREY,
 				highlight: THEME_TOKEN_BLACK,
@@ -387,19 +392,19 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			parameterHint: {
 				background: THEME_TOKEN_TERMINAL_CYAN,
 				border: THEME_TOKEN_BLACK,
-				text: THEME_TOKEN_BLACK,
+				text: THEME_TOKEN_TEXT_GREY,
 				active: THEME_TOKEN_TERMINAL_LIGHT_RED,
 			},
 			action: {
 				dialogBackground: THEME_TOKEN_TERMINAL_CYAN,
 				dialogBorder: THEME_TOKEN_BLACK,
-				dialogText: THEME_TOKEN_BLACK,
+				dialogText: THEME_TOKEN_TEXT_GREY,
 				buttonBackground: THEME_TOKEN_TERMINAL_GREY,
-				buttonText: THEME_TOKEN_BLACK,
+				buttonText: THEME_TOKEN_TEXT_GREY,
 			},
 			quickOpen: {
 				background: THEME_TOKEN_PANEL_GREY,
-				text: THEME_TOKEN_DEEP_GREY,
+				text: THEME_TOKEN_TEXT_GREY,
 				placeholder: THEME_TOKEN_STATUS_TEXT_GREY,
 				outline: THEME_TOKEN_MID_GREY,
 				kind: THEME_TOKEN_STATUS_TEXT_GREY,
@@ -467,6 +472,7 @@ export let COLOR_TOP_BAR: number;
 export let COLOR_TOP_BAR_TEXT: number;
 export let COLOR_CODE_BACKGROUND: number;
 export let COLOR_GUTTER_BACKGROUND: number;
+export let COLOR_TEXT_STRONG: number;
 export let COLOR_MARKDOWN_CODE_BACKGROUND: number;
 export let COLOR_MARKDOWN_CODE_TEXT: number;
 export let COLOR_MARKDOWN_LINK_TEXT: number;
@@ -633,6 +639,7 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_TOP_BAR_TEXT = theme.text.topBar;
 	COLOR_CODE_BACKGROUND = theme.surfaces.editor;
 	COLOR_GUTTER_BACKGROUND = theme.surfaces.gutter;
+	COLOR_TEXT_STRONG = theme.text.strong;
 	COLOR_MARKDOWN_CODE_BACKGROUND = theme.markdown.codeBackground;
 	COLOR_MARKDOWN_CODE_TEXT = theme.markdown.codeText;
 	COLOR_MARKDOWN_LINK_TEXT = theme.markdown.linkText;

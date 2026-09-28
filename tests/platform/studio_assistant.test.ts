@@ -178,6 +178,8 @@ for (const backend of backends) test(`Studio ${backend}: real successful account
 		});
 	}, backend);
 	assert.equal(result.login, 'pass'); assert.equal(f.observations.connects, 3);
+	assert.equal(result.weeklyRemaining, 63);
+	assert.equal(issuer.requests.filter(request => request.path === '/backend-api/wham/usage').length, 2, 'one quota read after login and one on explicit reconnect, never rendering polls');
 	// The implicit browser attempt is handed to the host opener, once, at an admitted address.
 	assert.equal(f.observations.opened.length, 1);
 	assert.equal(new URL(f.observations.opened[0]).origin, 'https://auth.openai.com');

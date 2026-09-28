@@ -102,6 +102,29 @@ test('native model selection controls later turns without inference or phantom h
 	assert.equal(f.events.findLast(event => event.type === 'queue').messages[0].text, 'Keep this message paused');
 });
 
+test('native implicit effort is projected from the selected catalog model for live and cold threads', { timeout: 15000 }, async t => {
+	const f = await fixture(t, [CODEX_FIXTURE_DONE, CODEX_FIXTURE_DONE], async () => assert.fail('No tool calls'));
+	let session = await f.open();
+	const model = (await session.models.list()).models.find(model => model.isDefault);
+	await session.close();
+	// Supply a real catalog model to the offline provider, but never set an effort.
+	// Native thread admission therefore reports null while inference uses its default.
+	f.options.provider.model = model.id;
+	session = await f.open();
+	assert.equal(session.configuration.model, model.id);
+	assert.equal(session.configuration.effort, model.defaultEffort);
+	const first = await session.startTurn('Use the catalog default effort', []);
+	await f.wait(event => event.type === 'turn-completed' && event.turn.id === first);
+	assert.equal(f.model.requests[0].reasoning.effort, session.configuration.effort);
+	const page = await session.selectThread((await session.listHistory()).threads[0].id);
+	assert.equal(page.configuration.model, model.id);
+	assert.equal(page.configuration.effort, model.defaultEffort);
+	assert.equal(f.model.requests.length, 1, 'reading settings never starts inference');
+	const second = await session.startTurn('Resume with the same default', []);
+	await f.wait(event => event.type === 'turn-completed' && event.turn.id === second);
+	assert.equal(f.model.requests[1].reasoning.effort, session.configuration.effort);
+});
+
 test('owned process serves a live Studio receipt, advertises the Studio tools and joins its private lifetime', { timeout: 15000 }, async t => {
 	let signal;
 	const f = await fixture(t, [[readCall], CODEX_FIXTURE_DONE], async (call, turnSignal) => {

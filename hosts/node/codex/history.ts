@@ -2,6 +2,7 @@ import type { AssistantConfiguration, AssistantHistoryEntry, AssistantHistoryPag
 import type { CodexTextInput } from './input';
 import { CodexAdmissionError, type CodexTool, type CodexTurn } from './protocol';
 import type { CodexStdio } from './stdio';
+import type { CodexModels } from './models';
 
 type StoredThread = { id: string; name: string | null; preview: string; updatedAt: number; model: string | null; modelProvider: string; reasoningEffort: string | null };
 type StoredItem =
@@ -18,7 +19,7 @@ export class CodexHistory {
 	public selected: AssistantThread | undefined;
 	public loaded = false;
 	public configuration: AssistantConfiguration | undefined;
-	public constructor(private readonly rpc: CodexStdio, private readonly cwd: string, private readonly tools: readonly CodexTool[]) {}
+	public constructor(private readonly rpc: CodexStdio, private readonly cwd: string, private readonly tools: readonly CodexTool[], private readonly models: CodexModels) {}
 
 	public async list(cursor?: string, search?: string): Promise<AssistantHistoryPage> {
 		const page = await this.rpc.request<{ data: StoredThread[]; nextCursor: string | null }>('thread/list', {
@@ -46,8 +47,8 @@ export class CodexHistory {
 			// Match live presentation: a reply already shows ordinary completion.
 			if (turn.status !== 'completed') entries.push({ kind: 'status', text: turn.status === 'failed' ? `Turn failed: ${turn.error!.message}` : `Turn ${turn.status}.` });
 		}
-		return { thread: threadSummary(thread), configuration: { agent: 'Codex', model: thread.model, provider: thread.modelProvider,
-			effort: thread.reasoningEffort, serviceTier: null }, entries, nextCursor: page.nextCursor };
+		return { thread: threadSummary(thread), configuration: this.models.resolve({ agent: 'Codex', model: thread.model, provider: thread.modelProvider,
+			effort: thread.reasoningEffort, serviceTier: null }), entries, nextCursor: page.nextCursor };
 	}
 
 	public async select(thread: AssistantThread | undefined): Promise<void> {
@@ -81,8 +82,8 @@ export class CodexHistory {
 			await this.rpc.request('thread/name/set', { threadId: this.selected.id, name });
 			this.selected.title = name;
 		}
-		this.configuration = { agent: 'Codex', model: admission.model, provider: admission.modelProvider,
-			effort: admission.reasoningEffort, serviceTier: admission.serviceTier };
+		this.configuration = this.models.resolve({ agent: 'Codex', model: admission.model, provider: admission.modelProvider,
+			effort: admission.reasoningEffort, serviceTier: admission.serviceTier });
 		this.loaded = true;
 		return this.selected;
 	}

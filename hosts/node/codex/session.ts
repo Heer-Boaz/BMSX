@@ -85,8 +85,8 @@ export class CodexSession {
 		this.toolNames = new Set(options.tools.map(tool => tool.name));
 		this.rpc = new CodexStdio(options.executable ?? 'codex', policy.args, profile.cwd, profile.env,
 			message => this.receive(message));
-		this.history = new CodexHistory(this.rpc, options.workspaceRoot, options.tools);
 		this.models = new CodexModels(this.rpc);
+		this.history = new CodexHistory(this.rpc, options.workspaceRoot, options.tools, this.models);
 		this.rpc.signal.addEventListener('abort', () => this.retire(), { once: true });
 		options.signal.addEventListener('abort', this.onAbort, { once: true });
 		this.closed = this.rpc.closed.then(async exit => {
@@ -115,9 +115,10 @@ export class CodexSession {
 			session.rpc.send({ method: 'initialized', params: {} });
 			const read = await session.rpc.request<Parameters<CodexPolicy['admit']>[0]>('config/read', { includeLayers: true, cwd: profile.cwd });
 			policy.admit(read);
-			session.configuration = { agent: 'Codex', model: read.config.model as string | null, provider: read.config.model_provider as string | null,
+			session.defaults = { agent: 'Codex', model: read.config.model as string | null, provider: read.config.model_provider as string | null,
 				effort: read.config.model_reasoning_effort as string | null, serviceTier: read.config.service_tier as string | null };
-			session.defaults = session.configuration;
+			await session.models.list();
+			session.configuration = session.models.resolve(session.defaults, true);
 			// Said once the capability gates have accepted this process, so it reads as context
 			// rather than as a warning about something that might still refuse.
 			if (installed !== `codex-cli ${CODEX_AUDITED_VERSION}`) {
@@ -208,9 +209,10 @@ export class CodexSession {
 		try {
 			await this.history.select(undefined);
 			const account = await this.readAccount();
+			await this.models.list();
 			if (!this.retired && revision === this.accountRevision) {
 				this.accountRefreshing = false;
-				this.configuration = this.defaults;
+				this.configuration = this.models.resolve(this.defaults, true);
 				this.options.onEvent({ type: 'configuration', configuration: this.configuration });
 				this.options.onEvent({ type: 'account-changed', account });
 				void this.refreshUsage(account);
@@ -235,7 +237,7 @@ export class CodexSession {
 				this.configuration = this.history.configuration!;
 			}
 			if (this.retired || accountRevision !== this.accountRevision) throw new Error('The account changed before settings admission');
-			const configuration = { ...this.configuration, ...selection };
+			const configuration = this.models.resolve({ ...this.configuration, ...selection });
 			if (this.history.selected) {
 				await this.rpc.request('thread/settings/update', { threadId: this.history.selected.id,
 					model: selection.model, effort: selection.effort, serviceTier: selection.serviceTier });
@@ -262,7 +264,7 @@ export class CodexSession {
 			const messages = id === undefined ? [] : await this.history.queue(id);
 			if (this.active || this.stopping || this.retired || this.accountRevision !== accountRevision) throw new Error('The conversation changed while loading history');
 			await this.history.select(page?.thread);
-			this.configuration = page === undefined ? { ...this.defaults, ...this.newThreadSelection } : page.configuration;
+			this.configuration = page === undefined ? this.models.resolve({ ...this.defaults, ...this.newThreadSelection }, true) : page.configuration;
 			this.queueEnabled = false;
 			this.options.onEvent({ type: 'queue', messages });
 			return page;
@@ -463,9 +465,9 @@ export class CodexSession {
 				this.options.onEvent({ type: 'configuration', configuration: this.configuration });
 				break;
 			case 'thread/settings/updated':
-				if (params.threadId === this.history.selected?.id) {
+				if (!this.accountRefreshing && params.threadId === this.history.selected?.id) {
 					const settings = params.threadSettings;
-					this.configuration = { agent: 'Codex', model: settings.model, provider: settings.modelProvider, effort: settings.effort, serviceTier: settings.serviceTier };
+					this.configuration = this.models.resolve({ agent: 'Codex', model: settings.model, provider: settings.modelProvider, effort: settings.effort, serviceTier: settings.serviceTier });
 					this.options.onEvent({ type: 'configuration', configuration: this.configuration });
 				}
 				break;

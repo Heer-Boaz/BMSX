@@ -41,6 +41,9 @@ export async function runAssistantLogin(kind: StudioRendererKind, canvas: HTMLCa
 	await issuer.authorize();
 	await until(() => conversation.state === 'ready' && !conversation.accountRefreshing && conversation.account!.connected, 'login: OAuth exchange and authoritative account snapshot');
 	const account = { ...conversation.account! };
+	await until(() => conversation.usage?.weeklyRemaining !== null && conversation.usage !== undefined, 'login: initial account quota reaches the UI');
+	check(conversation.configuration?.model != null && conversation.configuration.effort != null, 'login: native defaults are available without choosing a model or sending a prompt');
+	const weeklyRemaining = conversation.usage!.weeklyRemaining;
 	check(conversation.canSend && conversation.loginCode === undefined, 'only the completed account refresh opens prompt admission');
 	check(view.draft.text === 'Keep this draft; do not submit.' && conversation.entries.every(entry => entry.kind !== 'user'), 'account authorization does not consume or automatically send the draft');
 	await issuer.verifyProfile(true);
@@ -53,6 +56,7 @@ export async function runAssistantLogin(kind: StudioRendererKind, canvas: HTMLCa
 	await submitAssistantText(test, '/history');
 	await until(() => conversation.state === 'ready', 'login: new process resumes the private account, not conversation authority');
 	check(JSON.stringify(conversation.account) === JSON.stringify(account), 'the explicit reconnect reads the persisted account');
+	await until(() => conversation.usage?.weeklyRemaining === weeklyRemaining, 'login: reconnect refreshes the account quota without inference');
 	await until(() => !(getActiveTab() as typeof view).commandPending, 'login: history finished');
 	await press('Escape');
 	check(conversation.entries.every(entry => entry.kind !== 'user'), 'earlier drafts are not silently replayed');
@@ -68,5 +72,5 @@ export async function runAssistantLogin(kind: StudioRendererKind, canvas: HTMLCa
 	await press('Escape');
 	await press('ControlLeft', 'KeyW');
 	await renderer.finish(); await ide.editor.shutdown();
-	return { login: 'pass', account, frames: test.observations.hostFrames };
+	return { login: 'pass', account, weeklyRemaining, frames: test.observations.hostFrames };
 }

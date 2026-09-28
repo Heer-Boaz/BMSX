@@ -66,7 +66,9 @@ New native threads are named once from the first user prompt via `thread/name/se
 otherwise Codex's preview concatenates Studio workspace context into the title.
 Existing thread names and rename notifications stay authoritative. No title model
 or per-frame/per-turn metadata polling is added. A narrow footer gains rows instead
-of dropping the model/effort/quota. Unknown quota or effort is explicitly `--`.
+of dropping the model/effort/quota. Unavailable quota is labelled as unavailable,
+never substituted with a percentage. An unlisted custom model's unset effort
+remains a provider default, not a guessed reasoning level.
 `priority` (including the accepted config spelling `fast`) is the upstream
 [fast service tier](https://github.com/openai/codex/blob/rust-v0.157.1/codex-rs/protocol/src/config_types.rs).
 The reference URLs identify the code studied, not CLI version requirements.
@@ -93,8 +95,16 @@ Known current choices are initially selected. Fast is offered only when the cata
 advertises it; its usage description is visible before selection. Selecting a
 different model uses normal speed until the user explicitly chooses Fast.
 
-`hosts/node/codex/models.ts` owns catalog paging, account-lifetime caching and
-selection admission. Concurrent opens coalesce. An unsuccessful read is surfaced;
+`hosts/node/codex/models.ts` owns catalog paging, account-lifetime caching,
+default resolution and selection admission. Native `config/read` deliberately
+returns null for unset model/effort, and even `thread/start` can report an unset
+effort while inference uses the model default. On connection/account change,
+Studio reads the native catalog once and resolves its default model and the
+selected model's default effort. The same retained catalog serves the pickers
+and thread metadata; no fixed model names or reasoning levels are invented.
+Missing historical model metadata stays unknown, not today's default model.
+Raw session defaults remain separate from their presentation, so account changes
+can resolve a different catalog default. Concurrent opens coalesce. An unsuccessful read is surfaced;
 only another explicit request retries it. Drawing, filtering, resizing and activity
 animation send no metadata or model requests. Account changes retire the catalog.
 
@@ -117,18 +127,26 @@ thread and preserves its settings at the native owner.
 
 | Representation | TypeScript | C++ | Change |
 | --- | --- | --- | --- |
-| Host font variant/style | `Font`, `BFont` glyph map | `Font`, `BFont` glyph map | styled atlas ids selected at construction |
-| Host atlas pixels | `atlas.generated.ts` | `atlas.generated.cpp` | identical build-time bold/italic bitmap variants |
+| Host font variant/style | `Font`, `BFont` glyph map | `Font`, `BFont` glyph map | normal/italic atlas ids selected at construction; remove bold variants |
+| Host atlas pixels | `atlas.generated.ts` | `atlas.generated.cpp` | identical build-time normal/italic bitmap variants |
 | Guest register/VRAM/font assets | machine/guest/cart owners | same native owners | none |
 | Host glyph draw submission | `OverlayRenderer.itemRun` | native host glyph submission | unchanged |
-| Markdown tokens/layout | IDE common text owner | no native IDE transcript | host-only retained presentation |
+| Markdown tokens/layout | IDE common text owner | no native IDE transcript | strong emphasis selects the shared theme foreground, not a thicker glyph |
 
 Hot callsites: `AssistantPane.draw` submits visible styled runs through
 `OverlayApi.blit_text_inline_span_with_font` / `OverlayRenderer.itemRun`;
 existing host-overlay glyph expansion on software/WebGL2/WebGPU consumes ordinary
 `BFont` glyphs. No per-glyph shear, extra bold draw pass, style branch in the renderer,
-new shader/ABI field or guest-runtime hook is needed. Styles are baked by the host
-atlas producer. Character coverage is unchanged and remains a separate user task.
+new shader/ABI field or guest-runtime hook is needed. Italics are baked by the host
+atlas producer; strong emphasis does not affect glyph shape, advance or wrapping.
+Character coverage is unchanged and remains a separate user task.
+
+The shared IDE theme separates ordinary text from strong foreground, following
+VS Code's [foreground roles](https://github.com/microsoft/vscode/blob/main/src/vs/platform/theme/common/colors/baseColors.ts).
+Light-theme text is softened throughout the workbench, not only in chat; strong
+text uses near-black. Dark surfaces use softer light text and white emphasis.
+Selection foreground still takes precedence. Bold-italic Markdown keeps the
+italic face and uses the strong color; no bold atlas copies remain in either host.
 
 The host atlas uses Mapbox's [potpack](https://github.com/mapbox/potpack)
 rectangle packer, not the ROM encoder's GX transfer/page limits. Guest texture
@@ -136,9 +154,10 @@ packing and VRAM layout are unchanged. Both host artifacts share the same pixels
 
 ## Validation and trying it
 
-- `test:lua`: 2,825 passing tests, one existing skip. Focused Markdown, composer,
+- `test:lua`: 2,826 passing tests, one existing skip. Focused Markdown, composer,
   conversation/footer and font tests also cover streamed delimiter/CRLF splits,
-  preserved code whitespace, exact styled glyph pixels and idle cache identity.
+  preserved code whitespace, italic glyph pixels and idle cache identity. Strong
+  emphasis keeps the normal/italic glyph metrics and selection foreground.
 - Automated Chromium coverage: 18 assistant/presentation cases across software,
   WebGL2 and WebGPU, both font sizes, light/dark themes, narrow logical surfaces, pointer/keyboard
   Copy, history/queue/Direct/Stop, and the ordinary paused cart. The three
@@ -149,9 +168,12 @@ packing and VRAM layout are unchanged. Both host artifacts share the same pixels
   one connection, and inspect the actual provider request's model/effort/tier;
   rendering, resizing and timers send none.
 - Real installed App Server with offline model/issuer fixtures: contract 6/6,
-  session/catalog 30/30, account 15/15, HTTP 16/16, workbench 1/1. Quota reads cover
+  session/catalog 32/32, account 16/16, HTTP 16/16, workbench 1/1. Quota reads cover
   successful login, unavailable remote usage, sparse updates and initial-read
-  ordering. No personal credentials or paid model requests were used.
+  ordering. Unconfigured model/effort defaults are compared with the installed
+  catalog and actual offline inference requests. Login/reconnect browser captures
+  include the real account-quota projection without rendering polls. These fixtures
+  use no personal credentials or paid model requests.
 - Native host font/atlas, clipping and GLES2 tests: 3/3. IDE/Node typechecks,
   architecture-boundary audit, core-parity audit and both browser Studio builds
   pass. Generated atlas artifacts are shared with C++.
@@ -170,7 +192,11 @@ written to `/tmp/bmsx-studio-chat/presentation-<backend>-*.png`.
 Rebuild with the ordinary `build:product:browser-studio` (with `-- --debug` for
 the debug product). Restart the existing development server to load the updated
 Node metadata events, then reload the same Studio URL. No extra server, login
-flow or access restrictions are introduced. Character coverage beyond the
+flow or access restrictions are introduced. A metadata-only check against the
+existing authenticated server reproduced the stale-process failure (account events
+without configuration/usage), then verified model, effort, weekly quota and cold
+history settings after restart. No live inference was requested.
+Character coverage beyond the
 existing font maps is intentionally unchanged.
 
 ## Requested UI checklist
@@ -178,7 +204,7 @@ existing font maps is intentionally unchanged.
 | Request | Implementation and check |
 | --- | --- |
 | Word wrap, reused from the IDE | Shared measured word ranges; ordinary words stay together across style spans. |
-| Markdown emphasis and code | Styled host font atlas, inline/fenced code surfaces, structured lists/quotes/tables; source-exact Copy. |
+| Markdown emphasis and code | Strong theme foreground, italic host glyphs, inline/fenced code surfaces, structured lists/quotes/tables; source-exact Copy. |
 | No repeated USER / ASSISTANT headings | User prompts have a subtle accent; assistant replies use the document layout. |
 | Useful footer | Actual status, title, provider/model, effort, service tier and weekly remaining quota; unknown stays explicit. |
 | Visible work while thinking | Native activity, animated indicator and elapsed time continue while the cart is paused. |

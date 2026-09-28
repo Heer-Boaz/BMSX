@@ -10,16 +10,12 @@ export async function addHostFontStyles(resources: Resource[]): Promise<void> {
 		const image = resource.img!;
 		const source = createCanvas(image.width, image.height);
 		source.getContext('2d').drawImage(image, 0, 0);
-		for (const style of ['bold', 'italic', 'bold-italic'] as const) {
-			const bold = style !== 'italic', italic = style !== 'bold';
-			const canvas = createCanvas(image.width + (bold ? 1 : 0) + (italic ? (image.height - 1) >> 2 : 0), image.height);
-			const context = canvas.getContext('2d');
-			for (let y = 0; y < image.height; y++) {
-				const x = italic ? (image.height - 1 - y) >> 2 : 0;
-				context.drawImage(source, 0, y, image.width, 1, x, y, image.width, 1);
-				if (bold) context.drawImage(source, 0, y, image.width, 1, x + 1, y, image.width, 1);
-			}
-			resources.push({ ...resource, name: `${resource.name}_${style}`, img: await loadImage(canvas.toBuffer('image/png')) });
+		const canvas = createCanvas(image.width + ((image.height - 1) >> 2), image.height);
+		const context = canvas.getContext('2d');
+		for (let y = 0; y < image.height; y++) {
+			const x = (image.height - 1 - y) >> 2;
+			context.drawImage(source, 0, y, image.width, 1, x, y, image.width, 1);
 		}
+		resources.push({ ...resource, name: `${resource.name}_italic`, img: await loadImage(canvas.toBuffer('image/png')) });
 	}
 }

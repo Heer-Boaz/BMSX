@@ -4,7 +4,7 @@ import { hostSystemAtlasImage } from '../host_overlay/atlas';
 export const DEFAULT_FONT_VARIANT = 'msx' as const;
 
 export type FontVariant = 'msx' | 'tiny';
-export type FontStyle = 'normal' | 'bold' | 'italic' | 'bold-italic';
+export type FontStyle = 'normal' | 'italic';
 
 const FONT_PRESETS: Record<FontVariant, GlyphMap> = {
 	msx: buildMsxCharMap(),
