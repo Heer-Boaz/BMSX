@@ -5168,6 +5168,9 @@ inference. The retained Markdown transcript, content-sized composer and notifica
 text, font and view owners; see [assistant presentation](studio_assistant_presentation.md).
 User prompts and assistant replies use the same Markdown projection for live and
 restored history; source text remains unchanged for transport, editing and Copy.
+The composer overlays source-range Markdown styles on the shared multiline field.
+Lezer owns incremental source syntax; the field owns source offsets, measured
+styled caret/selection geometry and Undo. It never edits rendered transcript text.
 Markdown's shared theme separates strong text, italic emphasis, links and tinted
 code surfaces. Code/link colors survive nested emphasis, selection owns its own
 contrast, and strong emphasis never changes bitmap glyphs or layout metrics.

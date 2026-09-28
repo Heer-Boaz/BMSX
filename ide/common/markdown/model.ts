@@ -3,6 +3,8 @@ import { Lexer, type Token } from 'marked';
 
 export const enum TextStyle { Plain = 0, Bold = 1, Italic = 2, Code = 4, Strike = 8, Link = 16, Muted = 32 }
 export type StyledSpan = { text: string; style: TextStyle };
+/** Ordered, non-overlapping UTF-16 ranges covering an editable source, including its markup. */
+export type SourceTextStyle = { from: number; to: number; style: TextStyle };
 export type MarkdownPrefix = { text: string; first: boolean; repeat: boolean };
 export type MarkdownTextLine = { kind: 'text'; revision: number; spans: StyledSpan[]; prefixes: readonly MarkdownPrefix[]; code: boolean };
 export type MarkdownTable = { kind: 'table'; revision: number; prefixes: readonly MarkdownPrefix[];

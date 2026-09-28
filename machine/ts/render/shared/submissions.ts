@@ -78,6 +78,7 @@ export type GlyphRenderSubmission = {
 	y: number;
 	z: number;
 	items: string | string[];
+	/** UTF-16 source offsets for a single string; array items use each complete line. */
 	item_start: number;
 	item_end: number;
 	font: BFont | null;

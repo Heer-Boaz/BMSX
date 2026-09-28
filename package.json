@@ -4,6 +4,8 @@
 	"version": "1.0.0",
 	"description": "",
 	"devDependencies": {
+		"@lezer/common": "^1.5.3",
+		"@lezer/markdown": "^1.7.2",
 		"@node-minify/clean-css": "*",
 		"@node-minify/core": "*",
 		"@types/js-yaml": "*",

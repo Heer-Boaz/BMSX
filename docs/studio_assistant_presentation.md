@@ -37,8 +37,8 @@ User prompts and assistant replies share Markdown parsing, layout and theme role
 including when reloaded from conversation history. Like VS Code's
 [request rendering](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/chat/browser/widget/chatListRenderer.ts),
 this is a view of the original message: sending, queue editing and copying retain
-the authored Markdown. The composer, sign-in addresses, status and review notices
-remain literal text. Nested list markers
+the authored Markdown. The composer preserves and styles that source rather than
+hiding syntax; sign-in addresses, status and review notices remain literal text. Nested list markers
 reserve their measured width for all continuation paragraphs, quotes and code
 blocks; quote bars repeat across wrapped rows. This follows Codex's
 [indent contexts](https://github.com/openai/codex/blob/main/codex-rs/tui/src/markdown_render.rs),
@@ -64,6 +64,28 @@ codepoints while retaining the text field's UTF-16 source offsets. Like Codex's
 [composer layout](https://github.com/openai/codex/blob/main/codex-rs/tui/src/bottom_pane/chat_composer/composer_layout.rs),
 height follows draft content, not a permanently reserved empty box. Placeholder
 and outline use the ordinary workbench field theme, not a hard-coded color.
+Live composer styles come from Lezer's source-positioned CommonMark/GFM tree, as
+used by [CodeMirror's Markdown language](https://github.com/codemirror/lang-markdown/blob/main/src/markdown.ts).
+`MarkdownSource` retains incremental parser fragments and emits source style ranges;
+it never decodes entities, replaces list markers or removes delimiters. Rendering
+and source editing have different parser products: Marked still owns the transcript.
+The shared multiline viewport measures styled glyphs once per layout and uses the
+same advances for wrapping, pointer hits, selection and the caret. The text field
+continues to own editing and Undo; the assistant only supplies style ranges.
+Idle frames and cursor/theme changes never reparse the draft. The ordinary Terminal
+keeps its undecorated multiline field, with no Markdown parser or syntax policy.
+
+Host glyph range representation (no guest or hardware ABI changes):
+
+| Owner | Source and range representation | Datapath |
+| --- | --- | --- |
+| TS IDE overlay | JavaScript string, UTF-16 `item_start`/`item_end` | Decode codepoints starting at the source range, not by counting glyphs from the string start. |
+| C++ host overlay | UTF-8 strings, codepoint `item_start`/`item_end` | Existing UTF-8 decoder and codepoint range; no IDE source offsets enter this API. |
+
+The TS hot-path consumers are `HeadlessHost2D.drawBatchBlit` (software) and
+`HostOverlayQuadStream.appendGlyphRun` (WebGL2/WebGPU, foreground/background passes).
+The C++ mirrors are `drawGlyphsSoftware` and `drawGlyphsGLES2`; their native range
+contract is unchanged. Both feed the same positioned glyph/advance semantics.
 Markdown has shared theme roles for code surfaces, code/link/emphasis text and muted
 status text, rather than borrowing the gutter's contrasting color pair. Tests
 measure at least 7:1 for code and 4.5:1 for links/status in light and dark themes.

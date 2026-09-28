@@ -7,8 +7,33 @@ import test from 'node:test';
 import { MultilineFieldViewport } from '../../ide/editor/ui/inline/multiline_viewport';
 import { TextField } from '../../ide/editor/ui/inline/text_field_model';
 import { setCursorFromOffset, setFieldText } from '../../ide/editor/ui/inline/text_field';
+import { MarkdownSource } from '../../ide/common/markdown/source';
+import { TextStyle } from '../../ide/common/markdown/model';
 
 const measure = (_text: string, start: number, end: number) => end - start;
+
+test('styled source measures each codepoint once and shares advances with wrapping, pointer and caret', () => {
+	const field = new TextField(), view = new MultilineFieldViewport(true), source = new MarkdownSource(), font = {};
+	const text = '🐉 **bold** *wide italic* `code`\n\treturn';
+	setFieldText(field, text, false); source.update(text);
+	let measurements = 0;
+	const measure = (_text: string, _from: number, _to: number, style: TextStyle) => { measurements++; return style & TextStyle.Italic ? 2 : 1; };
+	view.update(field, 14, 8, measure, font, source.styles);
+	assert.equal(measurements, [...text].filter(char => char !== '\n').length);
+	for (let rowIndex = 0; rowIndex < view.rows.length; rowIndex++) {
+		const row = view.rows[rowIndex];
+		assert.equal(row.text, text.slice(row.offset, row.offset + row.text.length));
+		assert.equal(row.styles!.map(span => row.text.slice(span.from, span.to)).join(''), row.text);
+		for (let index = 0; index < row.text.length;) {
+			assert.equal(view.offsetAt(rowIndex, row.advances[index]), row.offset + index);
+			index += row.text.codePointAt(index)! > 0xffff ? 2 : 1;
+		}
+	}
+	const rows = view.rows.slice(), measured = measurements;
+	setCursorFromOffset(field, text.indexOf('italic')); view.update(field, 14, 8, measure, font, source.styles);
+	assert.equal(measurements, measured); assert.ok(view.rows.every((row, index) => row === rows[index]));
+	assert.ok(view.rows[view.cursorRow].offset <= text.indexOf('italic'));
+});
 
 test('multiline geometry measures whole codepoints once and keeps UTF-16 source offsets', () => {
 	const field = new TextField(), view = new MultilineFieldViewport(true);

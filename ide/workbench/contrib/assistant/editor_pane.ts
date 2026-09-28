@@ -135,7 +135,8 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		// rows, then fit the composer to its content without measuring the draft twice.
 		// disable-next-line redundant_numeric_sanitization_pattern -- Layout constraint: reserve one editable row and at most a third of the pane, capped at six rows. This is the owning viewport boundary, not value sanitization.
 		const maxRows = Math.max(1, Math.min(6, Math.trunc((footerTop - layout.top) / (3 * editorViewState.lineHeight))));
-		input.composer.update(input.draft, layout.right - 14 - editorViewState.spaceAdvance, maxRows, measureTextRange, layout.font!);
+		input.draftMarkdown.update(input.draft.text);
+		input.composer.update(input.draft, layout.right - 14 - editorViewState.spaceAdvance, maxRows, measureStyledText, layout.font!, input.draftMarkdown.styles);
 		const composerBottom = footerTop - row - 6;
 		const composerTop = composerBottom - Math.min(maxRows, input.composer.rows.length) * editorViewState.lineHeight - 4;
 		const composerChanged = changed || input.composerBounds.top !== composerTop || input.composerBounds.bottom !== composerBottom;

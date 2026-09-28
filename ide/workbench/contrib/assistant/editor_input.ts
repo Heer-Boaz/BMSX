@@ -10,6 +10,7 @@ import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { openEditorTab } from '../../ui/tabs';
 import { AssistantTranscriptProjection } from './projection';
+import { MarkdownSource } from '../../../common/markdown/source';
 import { AssistantFooter } from './footer';
 
 /** Ephemeral view state; the workspace owns the conversation across pane switches. */
@@ -21,6 +22,7 @@ export class AssistantInput extends ReadonlyEditorInput<'assistant', 'assistant'
 	public commandPending = false;
 	public readonly draft = new TextField();
 	public readonly composer = new MultilineFieldViewport(true);
+	public readonly draftMarkdown = new MarkdownSource();
 	public readonly composerBounds = create_rect_bounds();
 	public readonly viewport = new WorkbenchScrollViewport();
 	public readonly transcript = new AssistantTranscriptProjection();

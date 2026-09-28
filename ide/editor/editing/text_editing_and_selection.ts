@@ -12,6 +12,7 @@
  */
 
 import { showEditorMessage } from '../../common/feedback_state';
+import { changedTextRange } from '../../common/text';
 import type { EditContext, Position } from '../../common/models';
 import { revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';
 import { currentLine } from '../common/text/layout';
@@ -1001,23 +1002,12 @@ export function applyDocumentFormatting(): void {
 	}
 }
 export function computeEditContextFromSources(previous: string, next: string): EditContext {
-	if (previous === next) {
-		return null;
-	}
-	let start = 0;
-	while (start < previous.length && start < next.length && previous.charAt(start) === next.charAt(start)) {
-		start += 1;
-	}
-	let endPrev = previous.length;
-	let endNext = next.length;
-	while (endPrev > start && endNext > start && previous.charAt(endPrev - 1) === next.charAt(endNext - 1)) {
-		endPrev -= 1;
-		endNext -= 1;
-	}
+	const change = changedTextRange(previous, next);
+	if (change === undefined) return null;
 	if (next.length >= previous.length) {
-		const inserted = next.slice(start, endNext);
+		const inserted = next.slice(change.start, change.nextEnd);
 		return inserted.length > 0 ? { kind: 'insert', text: inserted } : null;
 	}
-	const deleted = previous.slice(start, endPrev);
+	const deleted = previous.slice(change.start, change.previousEnd);
 	return deleted.length > 0 ? { kind: 'delete', text: deleted } : null;
 }

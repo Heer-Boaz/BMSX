@@ -83,6 +83,15 @@ export function uppercaseOutsideStrings(text: string): string {
 
 export type TextRangeMeasure = (text: string, start: number, end: number) => number;
 
+/** Smallest contiguous replacement between two UTF-16 source snapshots. */
+export function changedTextRange(previous: string, next: string): { start: number; previousEnd: number; nextEnd: number } | undefined {
+	if (previous === next) return undefined;
+	let start = 0, previousEnd = previous.length, nextEnd = next.length;
+	while (start < previousEnd && start < nextEnd && previous.charCodeAt(start) === next.charCodeAt(start)) start++;
+	while (previousEnd > start && nextEnd > start && previous.charCodeAt(previousEnd - 1) === next.charCodeAt(nextEnd - 1)) { previousEnd--; nextEnd--; }
+	return { start, previousEnd, nextEnd };
+}
+
 /** Source previews must not trim indentation or omit whitespace at a wrap boundary. */
 export function writeWrappedSourceLine(lines: string[], text: string, maxWidth: number, measure: TextRangeMeasure): void {
 	let start = 0, width = 0;

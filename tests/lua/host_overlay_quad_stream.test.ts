@@ -63,7 +63,7 @@ for (const variant of ['msx', 'tiny'] satisfies FontVariant[]) {
 		const stream = new HostOverlayQuadStream();
 		stream.appendEntry(Host2DKind.Glyphs, {
 			x: 11, y: 17, z: 0,
-			items: '_A\tB\nC_', item_start: 1, item_end: 6,
+			items: '🐉A\tB\nC_', item_start: 2, item_end: 7,
 			font, color: 0xffffffff,
 			has_background_color: false, background_color: 0,
 			layer: LAYER_2D_IDE,

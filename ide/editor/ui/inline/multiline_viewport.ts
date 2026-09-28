@@ -1,8 +1,10 @@
-import { forEachWrappedMeasuredRange, writeWrappedSourceLine, type TextRangeMeasure } from '../../../common/text';
+import { forEachWrappedMeasuredRange, writeWrappedSourceLine } from '../../../common/text';
+import { TextStyle, type SourceTextStyle } from '../../../common/markdown/model';
+import type { StyledMeasure } from '../../../common/markdown/layout';
 import { getCursorOffset } from './text_field';
 import type { TextField } from './text_field_model';
 
-export type MultilineFieldRow = { readonly text: string; readonly offset: number; readonly advances: readonly number[] };
+export type MultilineFieldRow = { readonly text: string; readonly offset: number; readonly advances: readonly number[]; readonly styles?: readonly SourceTextStyle[] };
 
 /** Retained soft-wrap geometry for small multiline inputs, independent of document views. */
 export class MultilineFieldViewport {
@@ -16,32 +18,48 @@ export class MultilineFieldViewport {
 	private visibleRows = -1;
 	private width = -1;
 	private font: object | undefined;
+	private styles: readonly SourceTextStyle[] | undefined;
 
-	public update(field: TextField, width: number, visibleRows: number, measure: TextRangeMeasure, font: object): void {
-		const changed = this.text !== field.text || this.width !== width || this.font !== font;
+	public update(field: TextField, width: number, visibleRows: number, measure: StyledMeasure, font: object, styles?: readonly SourceTextStyle[]): void {
+		const changed = this.text !== field.text || this.width !== width || this.font !== font || this.styles !== styles;
 		if (!changed && this.cursorLogicalRow === field.cursorRow && this.cursorColumn === field.cursorColumn && this.visibleRows === visibleRows) return;
 		this.cursorLogicalRow = field.cursorRow; this.cursorColumn = field.cursorColumn; this.visibleRows = visibleRows;
 		if (changed) {
-			this.text = field.text; this.width = width; this.font = font;
+			this.text = field.text; this.width = width; this.font = font; this.styles = styles;
 			this.rows.length = 0;
-			let offset = 0;
+			let offset = 0, measuringStyle = 0, rowStyle = 0;
 			const wrapped: string[] = [];
 			for (const line of field.lines) {
-				wrapped.length = 0;
-				if (this.wordWrap) forEachWrappedMeasuredRange(line, width, measure, (start, end) => wrapped.push(line.slice(start, end)), true);
-				else writeWrappedSourceLine(wrapped, line, width, measure);
-				for (const text of wrapped) {
-					const advances = [0];
-					for (let index = 0; index < text.length;) {
-						const step = text.codePointAt(index)! > 0xffff ? 2 : 1;
-						const next = advances[index] + measure(text, index, index + step);
-						if (step === 2) advances.push(advances[index]);
-						advances.push(next); index += step;
-					}
-					this.rows.push({ text, offset, advances });
-					offset += text.length;
+				// One glyph measurement pass feeds wrapping, pointer hits and the caret.
+				const advances = [0];
+				for (let index = 0; index < line.length;) {
+					if (styles) while (styles[measuringStyle].to <= offset + index) measuringStyle++;
+					const step = line.codePointAt(index)! > 0xffff ? 2 : 1;
+					const next = advances[index] + measure(line, index, index + step, styles ? styles[measuringStyle].style : TextStyle.Plain);
+					if (step === 2) advances.push(advances[index]);
+					advances.push(next); index += step;
 				}
-				offset++;
+				const measureRange = (_text: string, start: number, end: number) => advances[end] - advances[start];
+				const emit = (from: number, to: number) => {
+					const positions = advances.slice(from, to + 1);
+					for (let index = 0; index < positions.length; index++) positions[index] -= advances[from];
+					const rowStyles: SourceTextStyle[] | undefined = styles ? [] : undefined;
+					if (styles) {
+						while (rowStyle < styles.length && styles[rowStyle].to <= offset + from) rowStyle++;
+						for (let index = rowStyle; index < styles.length && styles[index].from < offset + to; index++) {
+							const span = styles[index];
+							rowStyles!.push({ from: Math.max(from, span.from - offset) - from, to: Math.min(to, span.to - offset) - from, style: span.style });
+						}
+					}
+					this.rows.push({ text: line.slice(from, to), offset: offset + from, advances: positions, styles: rowStyles });
+				};
+				if (this.wordWrap) forEachWrappedMeasuredRange(line, width, measureRange, emit, true);
+				else {
+					wrapped.length = 0; writeWrappedSourceLine(wrapped, line, width, measureRange);
+					let from = 0;
+					for (const text of wrapped) { emit(from, from + text.length); from += text.length; }
+				}
+				offset += line.length + 1;
 			}
 		}
 		const cursor = getCursorOffset(field);
