@@ -1,3 +1,4 @@
+import { generateUuid } from '../common/uuid';
 import type { CallFrame } from '../../machine/ts/machine/cpu/call_state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { readTestDebugSource, type BuiltTestCartridge, type TestDebugSource } from '../../toolchain/ts/rompack/test_cartridge';
@@ -15,7 +16,7 @@ type FrameEntry = { frame: CallFrame; physical: RuntimeStackFrame; trace: Inspec
 
 /** Owns borrowed test stacks, frames and stored values for one attachment lifetime. */
 export abstract class TestInspection {
-	public readonly id = crypto.randomUUID();
+	public readonly id = generateUuid();
 	public readonly globals;
 	private readonly values: InspectionValues;
 	private readonly stacks = new Map<string, { context: TestStack; frames?: readonly InspectedTestFrame[] }>();

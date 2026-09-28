@@ -1,3 +1,4 @@
+import { generateUuid } from '../common/uuid';
 import type { RuntimeDebuggerExecution } from './debugger_execution';
 import type { RuntimeFrameNavigation } from './frame_navigation';
 import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
@@ -27,7 +28,7 @@ export type InspectionScope = {
 };
 /** A physical authoring target, not the currently visible pane or selected source. */
 export class RuntimeInspectionService {
-	public readonly target = crypto.randomUUID();
+	public readonly target = generateUuid();
 	public constructor(
 		private readonly runtime: Runtime,
 		private readonly sources: RuntimeSourceState,
@@ -112,7 +113,7 @@ export class RuntimeInspectionService {
 
 /** Lazy, stop-scoped guest borrows. This is neither a heap copy nor an evaluator. */
 export class RuntimeInspection {
-	public readonly id = crypto.randomUUID();
+	public readonly id = generateUuid();
 	public readonly state: ReturnType<RuntimeInspectionService['status']>;
 	public readonly scopes: InspectionScope[] = [];
 	/** Domain readers share this lifetime/alias registry and requireSuspended() before borrowing. */

@@ -1,3 +1,4 @@
+import { generateUuid } from '../../../common/uuid';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { EditorDocumentMode, EditorModelEdit, EditorTextModel } from '../../../editor/model/text_model';
 import type { ResourceDomain, RuntimeResource } from '../../../common/resource';
@@ -44,7 +45,7 @@ export class WorkspaceSourceTools {
 	private state: 'reading' | 'proposed' | 'disposed' = 'reading';
 	private proposal: WorkspaceEditProposal | undefined;
 	private behaviors: WorkspaceBehaviorTools | undefined;
-	private readonly id = crypto.randomUUID();
+	private readonly id = generateUuid();
 	private readonly onDisconnect = () => {
 		if (this.proposal) this.proposal.invalidate('Assistant connection closed');
 		else this.dispose();

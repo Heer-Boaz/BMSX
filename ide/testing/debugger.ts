@@ -1,3 +1,4 @@
+import { generateUuid } from '../common/uuid';
 import type { Thread } from '../../machine/ts/machine/cpu/thread';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { ALL_EXECUTION_DOMAINS_MASK, type ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
@@ -12,7 +13,7 @@ export type TestDebugStopReason = 'entry' | 'breakpoint' | 'step' | 'thread-comp
 
 /** A live test's control/stop lifecycle. TestExecution still owns every CPU grant and its one hook. */
 export class TestDebugger {
-	public readonly id = crypto.randomUUID();
+	public readonly id = generateUuid();
 	public readonly source: SourceDebugger;
 	public readonly sources: TestDebuggerSources;
 	public status: 'initializing' | 'running' | 'stopped' | 'cancelling' | 'finished' | 'closed' = 'initializing';

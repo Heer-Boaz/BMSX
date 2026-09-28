@@ -1,3 +1,4 @@
+import { generateUuid } from '../common/uuid';
 import { ScenarioFsmTransitionObservation } from './scenario/fsm_transition_observation';
 import { ScenarioActionEffectObservation } from './scenario/actioneffect_observation';
 import type { ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
@@ -275,7 +276,7 @@ export class TestExecution {
 	public inspect(): TestTargetInspection {
 		if (this.active) throw new Error('Test inspection requires a retained, inactive target.');
 		if (this.inspections === undefined) this.inspections = new Set();
-		if (this.inspectionTarget === undefined) this.inspectionTarget = crypto.randomUUID();
+		if (this.inspectionTarget === undefined) this.inspectionTarget = generateUuid();
 		const inspection = new TestTargetInspection(this.inspectionTarget, this.target.runtime, this.program,
 			this.result, this.failures, () => this.inspections!.delete(inspection));
 		this.inspections.add(inspection);

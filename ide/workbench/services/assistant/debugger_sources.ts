@@ -1,3 +1,4 @@
+import { generateUuid } from '../../../common/uuid';
 import type { ResourceDomain, ResourceIdentity } from '../../../common/resource';
 import type { RuntimeDebuggerState } from '../../../runtime/debugger_state';
 import { resolveRuntimeLuaSource } from '../../../runtime/sources';
@@ -8,7 +9,7 @@ type DebugSource = { resource: ResourceIdentity; modulePath: string; text: strin
 
 /** Prompt-owned authority to installed source, separate from working-copy edit receipts. */
 export class DebuggerSourceContext {
-	private readonly id = crypto.randomUUID();
+	private readonly id = generateUuid();
 	private serial = 0;
 	private readonly sources = new Map<string, DebugSource>();
 	public constructor(private readonly state: RuntimeDebuggerState) {}

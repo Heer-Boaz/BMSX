@@ -1,3 +1,4 @@
+import { generateUuid } from '../../../common/uuid';
 import type { TestInspection } from '../../../testing/inspection';
 import type { TestStopInspection } from '../../../testing/stop_inspection';
 import type { TestDebugger } from '../../../testing/debugger';
@@ -58,7 +59,7 @@ type ResultEntry = { result: ScenarioTestResult; data?: ToolTestResult };
 
 /** Prompt-local discovery/evidence handles and cancellation authority; the workspace owns execution. */
 export class WorkspaceTestTools {
-	private readonly id = crypto.randomUUID();
+	private readonly id = generateUuid();
 	private readonly runs = new Map<string, RunEntry>();
 	private readonly results = new Map<string, ResultEntry>();
 	private readonly scopes = new Map<string, ScenarioTestNodeId>();
