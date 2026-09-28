@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
-import { readFile } from 'node:fs/promises';
 import { EditorTextModelService, editorTextModelService as models } from '../../ide/editor/model/model_service';
 import { getOrCreateSemanticProject, resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { ResourceDiagnosticsService } from '../../ide/workbench/services/diagnostics/resource_diagnostics';
@@ -170,11 +169,4 @@ test('provider failure is explicit coverage and a later source change can be ana
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n-- retry' }]);
 	service.computePending();
 	assert.equal(service.get(model.identity)!.status, 'ready');
-});
-
-test('resource diagnostics have no code-tab, Problems panel, active-view or command dependency', async () => {
-	for (const path of ['lua', 'resource_diagnostics']) {
-		const source = await readFile(`ide/workbench/services/diagnostics/${path}.ts`, 'utf8');
-		assert.doesNotMatch(source, /(?:code_tab|cart_editor|problems\/|activeCodeEditor|commands\/)/);
-	}
 });

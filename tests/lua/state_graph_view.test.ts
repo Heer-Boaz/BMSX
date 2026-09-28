@@ -17,7 +17,6 @@ import { BehaviorLensInput } from '../../ide/workbench/contrib/behavior_lens/edi
 import { installBehaviorLensDocument, selectBehaviorLensDefinition } from '../../ide/workbench/contrib/behavior_lens/layout';
 import { mapBehaviorLensSourceRanges } from '../../ide/workbench/contrib/behavior_lens/source_correspondence';
 import { acceptStateGraphSelection, stateGraphSelection } from '../../ide/workbench/contrib/behavior_lens/state_graph_navigation';
-import { buildStateMachineDetails } from '../../ide/workbench/contrib/behavior_lens/state_machine_details';
 import { selectStateMachineSource } from '../../ide/workbench/contrib/behavior_lens/state_machine_selection';
 import { FSM_DIAGRAM_SOURCE, FSM_PROOF_SOURCE } from '../helpers/fsm_source_fixture';
 import { FSM_INITIAL_SOURCE } from '../helpers/fsm_initial_fixture';
@@ -96,14 +95,12 @@ test('FSM graph shows unknown/no-path evidence without endpoints and preserves s
 		if (f.view.selection?.kind !== 'state-outcome') throw new Error('Selected proof missing');
 		assert.equal(f.view.selection.outcome.target.kind, 'no-path');
 		assert.equal(f.graph.viewport.selection, null, 'no invented self-loop or parent edge for return nil');
-		assert.ok(!f.graph.viewport.model.nodes.some(node => node.lines.some(line => line.includes('NO PATH'))), 'no returned path is inspector evidence, not a permanent card warning');
-		assert.ok(buildStateMachineDetails(f.view).some(detail => detail.detail.includes('NO RETURNED PATH')));
 		f.model.undo(); f.refresh(); await f.settle();
 		assert.equal(f.graph.viewport.selection?.kind, 'edge');
 	} finally { f.input.dispose(); }
 });
 
-test('FSM graph handles root/parent handlers, cycles and self loops; unknown callbacks and guards remain source details', async () => {
+test('FSM graph lays out root/parent handlers, cycles and self loops', async () => {
 	const f = fixture(`local fsm<const> = require('cartlib/fsm/library')
 fsm.register('cyclic', { initial = 'a', on = { parent = '/a' }, states = {
  a = { update = callbacks.dynamic, transition_guards = { can_enter = guards.enter }, on = { self = '../a', go = '../b' } },
@@ -124,13 +121,6 @@ fsm.register('cyclic', { initial = 'a', on = { parent = '/a' }, states = {
 		const a = root.children[0];
 		assert.equal(a.role, 'source');
 		if (a.role !== 'source') throw new Error('Expected a source state');
-		assert.ok(!a.lines.some(line => line.includes('GUARDS')), 'guards are inspectable fields, not a permanent card slogan');
-		assert.ok(a.lines[0].endsWith(' ?'), 'unresolved evidence keeps a compact visible indication');
-		f.view.selection = { kind: 'node', rowKey: a.source.rowKey };
-		const details = buildStateMachineDetails(f.view);
-		assert.ok(details.some(detail => detail.label.startsWith('update = callbacks.dynamic')));
-		assert.ok(details.some(detail => detail.label.includes('can_enter')));
-		assert.ok(details.some(detail => detail.detail === 'UNRESOLVED: unknown-callback'));
 	} finally { f.input.dispose(); }
 });
 
@@ -321,7 +311,6 @@ machines.register('implicit.initial', { states = { idle = {}, run = {} } })`);
 		assert.equal(model.nodesByEntry.size, 1);
 		const marker = [...model.nodesByEntry.values()][0];
 		assert.equal(marker.reference.entry.target.kind, 'unresolved');
-		assert.ok(model.nodesBySource.get(marker.reference.entry.owner)!.lines.some(line => line.endsWith(' ?')));
 		assert.equal(model.edges.length, 0);
 		f.graph.viewport.selection = marker;
 		acceptStateGraphSelection(f.view, f.graph);

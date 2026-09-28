@@ -18,7 +18,7 @@ export async function testStudioContextMenu(test: StudioFixture): Promise<void> 
 	const dirty = model.dirty;
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_ORDER_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
-	await chooseBehavior(test, 'BT fixture.order', 'BEHAVIOR TREES');
+	await chooseBehavior(test, 'BT fixture.order');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('context menu: actual BT graph required');
 	const view = lens.view.presentation.viewport;

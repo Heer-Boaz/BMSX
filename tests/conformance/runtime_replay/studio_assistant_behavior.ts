@@ -20,7 +20,7 @@ export async function runAssistantBehavior(kind: StudioRendererKind, canvas: HTM
 	const code = getActiveTab(), position = cycles(), media = ide.sources.currentBlua32Media;
 	const conversation = ide.editor.assistant;
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
-	await chooseBehavior(test, 'FSM fixture.tools.machine', 'STATE MACHINES');
+	await chooseBehavior(test, 'FSM fixture.tools.machine');
 	const machine = getActiveTab(); if (machine.kind !== 'behavior_lens') throw new Error('FSM Lens required');
 	await machine.graphLayout.settled; await frame();
 	const generation = machine.view.document;
@@ -53,12 +53,12 @@ export async function runAssistantBehavior(kind: StudioRendererKind, canvas: HTM
 				edge.link.reference.kind === 'state-entry' && edge.link.target.source.label === 'active'), 'FSM graph reads the same changed initial edge');
 		} else if (index === 1) {
 			await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
-			await chooseBehavior(test, 'BT fixture.tools.tree', 'BEHAVIOR TREES');
+			await chooseBehavior(test, 'BT fixture.tools.tree');
 			const lens = getActiveTab(); if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('BT graph required');
 			await frame(); check(lens.view.presentation.viewport.model.nodes[0].children[0].children.length === 3, 'BT graph has the duplicated authored child');
 		} else {
 			await runPaletteCommand('Behavior Lens: Open ActionEffect');
-			await chooseBehavior(test, 'EFFECT fixture.tools.effect', 'ACTIONEFFECTS');
+			await chooseBehavior(test, 'EFFECT fixture.tools.effect');
 			const lens = getActiveTab(); if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'properties') throw new Error('Effect properties required');
 			await frame(); check(lens.view.presentation.tree.rows.some(row => row.element.kind === 'property' && row.element.value === '25'), 'ordinary effect property reads the proposed expression');
 		}

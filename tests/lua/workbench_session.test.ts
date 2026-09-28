@@ -148,7 +148,6 @@ test('changed canonical bytes retain topology but cannot adopt a same-length nam
 	assert.ok(restored?.kind === 'behavior_lens');
 	assert.equal(restored.view.definitionRowKey, null); assert.equal(restored.view.selection, null);
 	assert.equal(restored.workingCopy.dirty, false); assert.equal(editorTabGroup.tabs.length, 1);
-	assert.ok(!restored.title.includes('removed'), 'a fresh unresolved view never claimed to select the old definition');
 });
 
 for (const changeProvider of [false, true]) test(`behavior mementos fingerprint every source resource (provider changed: ${changeProvider})`, async t => {
@@ -261,7 +260,6 @@ test('a persisted behavior snapshot is immutable across later model edits', t =>
 	restoreBehaviorLensView(input, now);
 	assert.equal(input.view.definitionRowKey, input.view.document.definitions[1].rowKey);
 });
-
 
 test('resource refresh replaces content, not the retained viewport or group membership', t => {
 	const f = fixture(t);

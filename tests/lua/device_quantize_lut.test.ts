@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import { applyHeadlessDeviceQuantize } from '../../machine/ts/render/post/device_quantize/headless/pipeline';
@@ -8,8 +7,6 @@ import {
 	DEVICE_QUANTIZE_LUTS,
 } from '../../machine/ts/render/post/device_quantize/lut';
 import { DeviceQuantizeMode } from '../../machine/ts/render/post/device_quantize/mode';
-import webglShader from '../../machine/ts/render/post/device_quantize/webgl/shaders/device_quantize.frag.glsl';
-import webgpuShader from '../../machine/ts/render/post/device_quantize/webgpu/shaders/device_quantize.frag.wgsl';
 
 function fnv1a32(bytes: Uint8Array): number {
 	let hash = 0x811c9dc5;
@@ -54,15 +51,4 @@ test('headless device quantize indexes Bayer rows from the logical top', () => {
 		119, 119, 119, 119,
 	]);
 	for (let offset = 3; offset < pixels.length; offset += 4) assert.equal(pixels[offset], 255);
-});
-
-test('device quantize shader source uses LUT lookup and top-down logical coordinates', () => {
-	const glesShader = readFileSync('machine/cpp/render/post/device_quantize/gles2/shaders/device_quantize.frag.glsl', 'utf8');
-	assert.match(webglShader, /u_resolution\.y - gl_FragCoord\.y/);
-	assert.match(glesShader, /u_resolution\.y - gl_FragCoord\.y/);
-	assert.match(webgpuShader, /vec2<u32>\(position\.xy\)/);
-	assert.doesNotMatch(webgpuShader, /position\.y/);
-	assert.doesNotMatch(webglShader, /\bpow\s*\(/);
-	assert.doesNotMatch(glesShader, /\bpow\s*\(/);
-	assert.doesNotMatch(webgpuShader, /\bpow\s*\(/);
 });

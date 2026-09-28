@@ -35,7 +35,7 @@ export async function testPietiousRoomReload(test: StudioFixture, castle: () => 
 	const item = TOP_BAR_MENUS.view.items.find((entry): entry is TopBarMenuItem => entry.type === 'command' && entry.command === 'actorLab')!;
 	await test.click(item.bounds);
 	const picker = ide.editor.quickInput;
-	check(picker.visible && picker.title === 'RUNNING ACTORS', 'Actor Lab offers the actual running instances');
+	check(picker.visible, 'Actor Lab offers the actual running instances');
 	await typeSourceText(test, 'd');
 	const index = picker.model.list.rows.findIndex(row => row.item.label === 'd');
 	check(index >= 0, 'director is visible by its real runtime id');
@@ -46,12 +46,11 @@ export async function testPietiousRoomReload(test: StudioFixture, castle: () => 
 	await until(() => lab.outline.rows.length > 0 && lab.outline.rows[0].element.node.label === 'd', 'inspect the actual director');
 	const reload = async () => {
 		await test.click(lab.actionBar.items.find(action => action.command === 'actorLab.call')!.bounds);
-		check(picker.visible && picker.title === 'CALL / d', `call picker opens: visible=${picker.visible} title=${picker.title} ready=${test.tasks.ready} dirty=${lab.dirty} status=${lab.status}`);
+		check(picker.visible, `call picker opens: visible=${picker.visible} title=${picker.title} ready=${test.tasks.ready} dirty=${lab.dirty} status=${lab.status}`);
 		await typeSourceText(test, 'reload_room');
 		check(picker.visible && picker.model.list.rows[0]?.item.label === 'reload_room',
 			`method discovery finds the cart-owned room operation: visible=${picker.visible} title=${picker.title} query=${picker.field.text} ready=${test.tasks.ready}`);
 		await press('Enter');
-		check(picker.title === 'd:reload_room(...)', 'method arguments are shown by the real call dialog');
 		await press('Enter');
 		await until(() => {
 			check(!editorFeedbackState.message.text.startsWith('Actor operation failed:'), editorFeedbackState.message.text);

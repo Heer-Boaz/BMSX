@@ -19,7 +19,7 @@ export async function testStudioStateGraph(test: StudioFixture): Promise<void> {
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: FSM_DIAGRAM_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
-	await chooseBehavior(test, 'FSM fixture.diagram', 'STATE MACHINES');
+	await chooseBehavior(test, 'FSM fixture.diagram');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'state-graph') throw new Error('FSM diagram input missing');
 	await lens.graphLayout.settled;

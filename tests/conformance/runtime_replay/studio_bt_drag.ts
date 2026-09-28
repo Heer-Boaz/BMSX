@@ -20,7 +20,7 @@ export async function testStudioBtDrag(test: StudioFixture): Promise<void> {
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_ORDER_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
-	await chooseBehavior(test, 'BT fixture.order', 'BEHAVIOR TREES');
+	await chooseBehavior(test, 'BT fixture.order');
 	let lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('BT drag requires the concrete graph');
 	let graph = lens.view.presentation;
@@ -110,7 +110,7 @@ export async function testStudioBtDrag(test: StudioFixture): Promise<void> {
 	check(model.buffer.getText() === BT_ORDER_SOURCE, 'BT drag: wheel plus drop is one Undo');
 
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
-	await chooseBehavior(test, 'BT fixture.weighted-order', 'BEHAVIOR TREES');
+	await chooseBehavior(test, 'BT fixture.weighted-order');
 	const nextDefinition2 = getActiveTab();
 	if (nextDefinition2.kind !== 'behavior_lens' || nextDefinition2.view.presentation.kind !== 'graph') throw new Error('BT: separate definition graph missing');
 	check(nextDefinition2 !== lens && nextDefinition2.workingCopy === model, 'BT: another definition has its own input and the same working copy');
@@ -139,7 +139,7 @@ export async function testStudioBtDrag(test: StudioFixture): Promise<void> {
 		Array.from({ length: 12 }, (_, index) => `{ type = 'wait', duration_ticks = ${index + 1} }`).join(',\n')}\n} } })\n`;
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: wide }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
-	await chooseBehavior(test, 'BT fixture.wide', 'BEHAVIOR TREES');
+	await chooseBehavior(test, 'BT fixture.wide');
 	const nextDefinition3 = getActiveTab();
 	if (nextDefinition3.kind !== 'behavior_lens' || nextDefinition3.view.presentation.kind !== 'graph') throw new Error('BT: separate definition graph missing');
 	check(nextDefinition3 !== lens && nextDefinition3.workingCopy === model, 'BT: another definition has its own input and the same working copy');

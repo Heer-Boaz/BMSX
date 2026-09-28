@@ -42,7 +42,7 @@ async function runBookmarks(test: StudioFixture, imported: boolean): Promise<voi
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
-	await chooseBehavior(test, 'FSM fixture.two', 'STATE MACHINES');
+	await chooseBehavior(test, 'FSM fixture.two');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'state-graph') throw new Error('FSM bookmark: concrete input required');
 	const view = lens.view;

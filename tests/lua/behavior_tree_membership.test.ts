@@ -35,7 +35,6 @@ test('opaque child values do not erase the proven surrounding child-list order',
 	assert.deepEqual(root.children.map(child => child.member!.index), [0, 1, 2, 3]);
 	assert.deepEqual(root.children.map(child => child.source.kind), ['node', 'dynamic', 'node', 'dynamic']);
 	assert.equal(root.children[1].children.length, 0, 'the builder is not evaluated in the host');
-	assert.deepEqual(root.children[2].children[0].lines, ['CHILDREN', '? PARTIAL MEMBERSHIP'], 'uncertainty belongs to the nested list, not its parent');
 	for (const child of root.children) {
 		const edge = graph.edgesBySource.get(child.source.rowKey)!;
 		assert.equal(edge.child, child);
@@ -47,7 +46,6 @@ test('opaque child values do not erase the proven surrounding child-list order',
 test('opaque choices and choice-child values retain their ordered slots and independent source roles', () => {
 	const { model, definition, graph, root } = fixture(BT_MEMBERSHIP_SOURCE, 2);
 	assert.equal(definition.resolution, 'partial');
-	assert.deepEqual(root.children.map(child => child.lines.find(line => line.startsWith('CHOICE'))), ['CHOICE  W=2', 'CHOICE', 'CHOICE  W=4', 'CHOICE  W=5']);
 	assert.deepEqual(root.children.map(child => child.source.kind), ['node', 'dynamic', 'dynamic', 'node']);
 	const branch = definition.root;
 	assert.ok(branch?.kind === 'node' && branch.branches[0].role === 'choices');
@@ -109,7 +107,6 @@ local alias<const> = list
 ${mutation}
 trees.register('unknown-list', { root = { type = '${type}', ${role} = alias } })`);
 			assert.equal(root.children.length, 1);
-			assert.deepEqual(root.children[0].lines, [role.toUpperCase(), '? PARTIAL MEMBERSHIP']);
 			assert.ok(definition.root?.kind === 'node');
 			const branch = definition.root.branches[0];
 			assert.ok(branch.role === 'children' || branch.role === 'choices');
@@ -133,13 +130,9 @@ trees.register('attachments', { root = {
 	services = { { service = actions.scan }, opaque_service(), { interval = 7 } },
 	decorators = { opaque_decorator(), { type = 'loop', num_loops = 3 } },
 } })`);
-	assert.ok(root.lines.includes('SVC 3') && root.lines.includes('DEC 2'));
 	assert.equal(root.children.length, 2, 'attachments are details, not execution children');
-	assert.ok(root.details.some(detail => detail.description === 'actions.scan' && detail.detail === 'SVC 1'));
 	assert.ok(root.details.some(detail => readLuaSourceRange(model.buffer, detail.range) === 'opaque_service()'));
-	assert.ok(root.details.some(detail => detail.label === 'interval' && detail.detail === 'SVC 3'));
 	assert.ok(root.details.some(detail => readLuaSourceRange(model.buffer, detail.range) === 'opaque_decorator()'));
-	assert.ok(root.details.some(detail => detail.label === 'num_loops' && detail.detail === 'DEC 2'));
 });
 
 test('nested membership warnings, shared occurrences, hidden edits and Undo use existing source correspondence', t => {

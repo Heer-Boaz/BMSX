@@ -31,7 +31,7 @@ async function runInitial(test: StudioFixture, imported: boolean): Promise<void>
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
-	await chooseBehavior(test, 'FSM fixture.other', 'STATE MACHINES');
+	await chooseBehavior(test, 'FSM fixture.other');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'state-graph') throw new Error('initial: FSM graph required');
 	await lens.graphLayout.settled; await frame();

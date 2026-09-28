@@ -130,7 +130,7 @@ async function testScenarioEffectSourceChoice(
 		await press('Home');
 		for (let n = 0; n < index; n += 1) await press('ArrowDown');
 		await press('Enter');
-		check(ide.editor.quickInput.visible && ide.editor.quickInput.title === 'ACTIONEFFECT SOURCES', 'A05: ambiguous effect origin offers a source choice');
+		check(ide.editor.quickInput.visible, 'A05: ambiguous effect origin offers a source choice');
 	};
 	await choose();
 	const rows = ide.editor.quickInput.model.list.rows;

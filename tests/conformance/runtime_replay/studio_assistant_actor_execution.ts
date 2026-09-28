@@ -72,7 +72,6 @@ export async function runAssistantActorExecution(kind: StudioRendererKind, canva
 		'continuation completes the original bounded loop');
 	await test.clickTab(lab.id); await frame();
 	await test.click(lab.actionBar.items.find(item => item.command === 'actorLab.spawn')!.bounds); await press('Enter');
-	check(ide.editor.quickInput.title === 'SPAWN OPTIONS', 'ordinary prefab picker keeps the real spawn options');
 	await press('ControlLeft', 'KeyA'); test.clipboard.text = "{ id = 'manual', pos = { x = 123, y = 456 } }";
 	await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => service.active === undefined && test.tasks.ready && !ide.debugger.plans.mutationActive, 'Actor execution: ordinary spawn finishes');

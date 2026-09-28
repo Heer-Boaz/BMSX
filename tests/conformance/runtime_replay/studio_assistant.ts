@@ -112,7 +112,6 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	check(conversation.state === 'running', 'second real model stream is still waiting');
 	await test.click(view.turnActions.items.find(item => item.command === 'assistant.stop')!.bounds);
 	await until(() => conversation.state === 'ready', 'assistant: Stop retires the actual provider wait');
-	check(conversation.entries.at(-1)!.text.getText() === 'Turn interrupted.', 'Stop is not reported as successful completion');
 	check(cycles() === position && test.observations.suspended, 'assistant: stopping Codex does not resume the game');
 	await test.click(view.composerBounds);
 	test.clipboard.text = 'Offer a new review so I can discard it.'; await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'Enter');

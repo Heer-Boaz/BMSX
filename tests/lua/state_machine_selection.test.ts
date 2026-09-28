@@ -54,8 +54,6 @@ test('source evidence distinguishes identical returns, shared callbacks and regi
 	const details = buildStateMachineSourceDetails(left);
 	assert.deepEqual(details.map(item => item.label), ['return next_path', 'return next_path', 'return nil']);
 	assert.notEqual(details[0].description, details[1].description, 'equal return text is distinguished by its own source location');
-	assert.equal(details[0].detail, 'POSSIBLE PATH: ../active');
-	assert.equal(details[2].detail, 'NO RETURNED PATH: nil');
 	for (const reference of [left[0], left[1], right[1], second[1]]) {
 		f.choose(reference);
 		const selected = selectedOutcome(f);

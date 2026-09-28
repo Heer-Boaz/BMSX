@@ -35,7 +35,6 @@ import { testScenePlacementIdentity } from './studio_scene_identity';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getCodeTabContexts } from '../../../ide/workbench/ui/code_tab/contexts';
 import { runtimeErrorState } from '../../../ide/editor/contrib/runtime_error/state';
-import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { TOP_BAR_MENUS } from '../../../ide/workbench/ui/top_bar/menu';
 import { hoverState } from '../../../ide/editor/contrib/hover/state';
 import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
@@ -325,7 +324,6 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	for (const context of getCodeTabContexts()) {
 		check(context.runtimeErrorOverlay === null, 'repair removes error adornments from all retained code views');
 	}
-	check(editorFeedbackState.message.text === 'Hot Resume: code applied', 'status reports the new applied code, not the old fault');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
 	await click(editorChromeState.menuEntryBounds.run);

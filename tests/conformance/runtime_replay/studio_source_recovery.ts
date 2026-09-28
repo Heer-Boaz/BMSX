@@ -14,7 +14,7 @@ export async function testStudioSourceRecovery(test: StudioFixture): Promise<voi
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
-	await chooseBehavior(test, 'BT enemy_crossfoe', 'BEHAVIOR TREES');
+	await chooseBehavior(test, 'BT enemy_crossfoe');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('crossfoe: concrete BT graph required');
 	const model = lens.workingCopy;

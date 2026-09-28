@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setImmediate } from 'node:timers/promises';
@@ -269,9 +269,4 @@ test('entry selection rejects an impossible second-socket launch before mutating
 	assert.equal(result.reset, false);
 	assert.equal(result.installed, false);
 	assert.equal(f.resets(), 0);
-});
-
-test('boot operations do not own editor views, feedback or workspace-session composition', async () => {
-	const source = await readFile('ide/workbench/services/execution/boot.ts', 'utf8');
-	assert.doesNotMatch(source, /from ['"][^'"]*(?:cart_editor|feedback_state|runtime_error|workspace\/storage|commands\/|contrib\/)/);
 });

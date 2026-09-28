@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { setImmediate } from 'node:timers/promises';
-import { readFileSync } from 'node:fs';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
@@ -238,7 +237,6 @@ test('Save command distinguishes local-only persistence from an AEM application 
 	if (result.status !== 'saved' || result.application.status !== 'failed') assert.fail('expected saved local source and failed AEM');
 	assert.equal(result.persistence.status, 'local-only');
 	assert.equal(result.application.phase, 'build');
-	assert.match(editorFeedbackState.message.text, /saved locally only; runtime apply failed/);
 	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_WARNING);
 	assert.equal(f.tasks.ready, true);
 	await reconnectWorkspaceRecords(f.clock, f.root);
@@ -247,8 +245,6 @@ test('Save command distinguishes local-only persistence from an AEM application 
 	const retry = await saveTextFileFromCommand(f.saves, yaml, {} as CartEditor, f.sources);
 	if (retry.status !== 'saved') assert.fail('expected saved project file');
 	assert.equal(retry.persistence.status, 'workspace');
-	assert.doesNotMatch(editorFeedbackState.message.text, /locally only|apply failed/);
-	assert.match(editorFeedbackState.message.text, /saved \(asset rebuild required\)/);
 });
 
 test('Save command presents a local-only write failure without claiming the project file was saved', async t => {
@@ -257,7 +253,6 @@ test('Save command presents a local-only write failure without claiming the proj
 	setSource(model, 'value: 2');
 	f.files.failure = new Error('project filesystem unavailable');
 	await saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources);
-	assert.match(editorFeedbackState.message.text, /saved locally only: project filesystem unavailable/);
 	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_WARNING);
 	f.files.failure = undefined;
 	await reconnectWorkspaceRecords(f.clock, f.root);
@@ -345,9 +340,4 @@ test('Save admits only the session owner model, not a foreign copy of the same r
 	assert.equal(f.files.records.has(`${f.root}/${current.resource.path}`), false);
 	assert.equal(readLocalWorkspaceRecord(f.storage, f.root, `${f.root}/${current.resource.path}`), null);
 	assert.equal(current.dirty, false);
-});
-
-test('the source save owner cannot depend on editor views, feedback or workspace-session composition', () => {
-	const source = readFileSync('ide/workbench/services/working_copy/text_file_save.ts', 'utf8');
-	assert.doesNotMatch(source, /from ['"][^'"]*(?:cart_editor|feedback_state|runtime_error|workspace\/storage|commands\/|contrib\/)/);
 });

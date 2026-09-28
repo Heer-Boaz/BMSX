@@ -32,7 +32,7 @@ async function runReparent(test: StudioFixture, imported: boolean): Promise<void
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 	const mainVersion = main.version;
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
-	await chooseBehavior(test, 'BT fixture.reparent', 'BEHAVIOR TREES');
+	await chooseBehavior(test, 'BT fixture.reparent');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('BT reparent requires its graph input');
 	const viewport = lens.view.presentation.viewport;
@@ -60,7 +60,7 @@ async function runReparent(test: StudioFixture, imported: boolean): Promise<void
 	let version = model.version;
 	await drop(root().children[0], root().children[2], 0.5);
 	check(model.version === version, 'reparent: preview/drop does not edit before Apply');
-	check(review.tree.rows.some(row => row.element.value === 'leaf') && review.tree.rows.some(row => row.element.label === 'POTENTIAL READ'),
+	check(review.tree.rows.some(row => row.element.value === 'leaf'),
 		'reparent: review identifies the written reference and eager read');
 	console.info('STUDIO: BT reparent review ready for visual inspection');
 	await press('Escape');

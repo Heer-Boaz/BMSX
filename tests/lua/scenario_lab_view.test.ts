@@ -102,7 +102,6 @@ test('result Details reads the captured suite without substituting current decla
 	assert.equal(properties[0].value, 'failed');
 	assert.equal(properties[2].value, source);
 	assert.ok(properties.every(property => property.location === undefined));
-	assert.match(properties[2].description, /does not certify current workspace or dependency sources/);
 });
 
 test('scenario workbench view retains lazy test projection and contextual actions', (t) => {
@@ -208,7 +207,6 @@ test('scenario messages activate their complete stored text without inventing a 
 		const property = describeScenarioMessage(navigation.row);
 		assert.equal(property.value, text);
 		assert.equal(property.location, undefined, 'test context is not a message source location');
-		assert.match(property.description, /^TEST: /);
 		const inspector = new WorkbenchPropertyInspectorModel();
 		inspector.setItems([property]);
 		let measures = 0;
@@ -262,7 +260,6 @@ test('scenario Details exposes retained exception frames and phase, not only the
 	if (row.kind !== 'failure') throw new Error('failure row expected');
 	const property = describeScenarioMessage(row);
 	assert.equal(property.value, stackTrace);
-	assert.match(property.description, /PHASE: install/);
 	assert.equal(property.location, undefined);
 });
 

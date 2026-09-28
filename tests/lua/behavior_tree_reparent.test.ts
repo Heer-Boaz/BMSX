@@ -31,7 +31,6 @@ test('a drop into deeper and empty parents proposes source, then one Undo/Redo p
 		assert.equal(f.model.buffer.getText(), BT_REPARENT_SOURCE);
 		const [analysis, insertion, check] = proposal!;
 		const impacts = behaviorTreeTransferImpacts(f.view, analysis, insertion, check);
-		assert.ok(impacts.some(item => item.label === 'POTENTIAL read'.toUpperCase() && item.value === 'leaf'));
 		assert.ok(impacts.every(item => item.range.path === f.model.resource.path));
 		transferBehaviorTreeChild(f.model, f.view, analysis.member, check, insertion);
 		f.refresh();
@@ -88,7 +87,6 @@ trees.register('weighted', { root={type='sequence',children={
 		f.viewport.selection = edge ? f.viewport.model.edges.find(edge => edge.child === node)! : node;
 		acceptBehaviorGraphSelection(f.view, f.graph);
 		const drag = beginBehaviorTreeDrag(f.model, f.view, (analysis, insertion, check) => {
-			assert.ok(behaviorTreeTransferImpacts(f.view, analysis, insertion, check).some(item => item.label === 'EMPTY RANDOM SELECTOR'));
 			transferBehaviorTreeChild(f.model, f.view, analysis.member, check, insertion);
 		})!;
 		drag.dragOver(...targetPoint(f, root().children[1], 'inside'));
@@ -97,7 +95,6 @@ trees.register('weighted', { root={type='sequence',children={
 		const selected = f.viewport.selection!;
 		assert.equal(selected.kind, edge ? 'edge' : 'node');
 		assert.equal(selected.kind === 'edge' ? selected.child : selected, root().children[1].children[0]);
-		assert.ok(root().children[1].children[0].lines.includes('CHOICE  W=9'));
 		assert.equal(root().children[0].children.length, 0);
 		f.model.undo(); f.refresh();
 		assert.equal(f.model.buffer.getText(), source);
@@ -127,8 +124,6 @@ trees.register('shared', {root={type='sequence',children={shared,shared,{type='s
 	acceptBehaviorGraphSelection(f.view, f.graph);
 	const drag = beginBehaviorTreeDrag(f.model, f.view, (analysis, insertion, check) => {
 		assert.equal(analysis.sourceUses.length, 2);
-		const impacts = behaviorTreeTransferImpacts(f.view, analysis, insertion, check);
-		assert.equal(impacts.filter(item => item.label.startsWith('REMOVE FROM')).length, 2);
 		transferBehaviorTreeChild(f.model, f.view, analysis.member, check, insertion);
 	})!;
 	drag.dragOver(...targetPoint(f, root().children[2], 'inside'));

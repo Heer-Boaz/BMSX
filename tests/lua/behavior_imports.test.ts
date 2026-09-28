@@ -85,7 +85,6 @@ test('recovered provider syntax is incomplete even when the registering document
 	const document = buildBehaviorSourceDocument({ domain: 0, path: 'main.lua' }, project.getSnapshot());
 	assert.equal(document.syntaxComplete, false);
 	assert.equal(document.definitions[0].resolution, 'partial');
-	assert.match(document.definitions[0].detail, /syntax recovery/);
 });
 
 test('writes through another import or a captured alias retain source mutation evidence', () => {
@@ -97,7 +96,6 @@ test('writes through another import or a captured alias retain source mutation e
 		const project = workspace({ 'main.lua': main, 'definition.lua': provider, 'mutation.lua': mutation });
 		const definition = buildBehaviorSourceDocument({ domain: 0, path: 'main.lua' }, project.getSnapshot()).definitions[0];
 		assert.equal(definition.resolution, 'partial');
-		assert.match(definition.detail, /known table mutation/);
 		const query = project.getSnapshot().symbolResolver.writtenSources;
 		assert.equal(query.tableMutations(), query.tableMutations());
 	}

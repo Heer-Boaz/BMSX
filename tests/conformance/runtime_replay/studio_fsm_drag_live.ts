@@ -46,7 +46,7 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
-	await chooseBehavior(test, 'FSM fixture.drag.one', 'STATE MACHINES');
+	await chooseBehavior(test, 'FSM fixture.drag.one');
 	const lens = getActiveTab();
 	const pane = ide.editor.editorPanes.activePane;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'state-graph' || !(pane instanceof BehaviorLensEditorPane)) throw new Error('FSM drag: concrete FSM pane required');
@@ -174,7 +174,7 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	await press('ControlRight', 'ShiftRight'); await runMenuCommand('pause');
 	check(execution.userPaused, 'FSM drag: final view is paused without coupling pause to authoring');
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
-	await chooseBehavior(test, 'FSM fixture.drag.single', 'STATE MACHINES');
+	await chooseBehavior(test, 'FSM fixture.drag.single');
 	const single = getActiveTab();
 	if (single.kind !== 'behavior_lens' || single.view.presentation.kind !== 'state-graph') throw new Error('FSM drag: chosen direct registration requires its own graph');
 	graph = single.view.presentation; viewport = graph.viewport;
@@ -188,7 +188,7 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 	await runPaletteCommand('Edit: Undo'); await ready();
 	check(main.buffer.getText() === beforeSingle && model.buffer.getText() === changed, 'FSM drag: direct drop also has one ordinary Undo');
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
-	await chooseBehavior(test, 'FSM fixture.drag.one', 'STATE MACHINES');
+	await chooseBehavior(test, 'FSM fixture.drag.one');
 	check(getActiveTab() === lens, 'FSM drag: reopening the shared registration restores its own retained input');
 	graph = lens.view.presentation; viewport = graph.viewport;
 	await ready();

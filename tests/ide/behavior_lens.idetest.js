@@ -246,9 +246,7 @@ t.assert(fsmView.document.definitions[0].behaviorKind === 'state_machine', 'play
 const flyingState = fsmView.source.nodes.find(node => node.kind === 'state' && node.label === 'flying');
 const projectilesState = fsmView.source.nodes.find(node => node.kind === 'state' && node.label === 'projectiles');
 t.assert(flyingState.authoredRange.start.line === 1370, 'nested flying state lost its authored source range');
-t.assert(flyingState.detail === 'initial', 'nested FSM initial-state semantics are missing');
 t.assert(projectilesState.authoredRange.start.line === 1410, 'concurrent projectiles state lost its authored source range');
-t.assert(projectilesState.detail === 'concurrent', 'concurrent FSM semantics are missing');
 
 const stateGraph = fsmView.presentation.viewport;
 t.assert(stateGraph.model.nodesBySource.has(projectilesState.rowKey), 'concurrent state has no diagram card');

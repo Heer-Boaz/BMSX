@@ -120,7 +120,6 @@ test('full inspector paints only visible content using retained property text an
 	assert.equal(draw(), commands); assert.equal(f.inspector.model.rows, rows); assert.equal(rows[0].value, lines);
 });
 
-
 test('inspector rows and its header actions receive independent leave without clearing keyboard selection', t => {
 	const f = fixture(t), view = f.inspector.model.viewport;
 	const snapshot = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0,
@@ -144,7 +143,7 @@ test('read-only evidence without source destinations hides the unused Source act
 		canOpenSource: () => false, openSource: () => assert.fail('No source navigation offered') });
 	assert.equal(f.inspector.actionBar.items[0].visible, false);
 	assert.equal(f.inspector.actionBar.items[1].visible, true);
-	f.layout(); assert.equal(f.inspector.title, 'Compiled source');
+	f.layout();
 	f.inspector.hide();
 	f.show(); assert.equal(f.inspector.actionBar.items[0].visible, true);
 });

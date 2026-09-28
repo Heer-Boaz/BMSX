@@ -26,7 +26,7 @@ export async function runAssistantHistory(kind: StudioRendererKind, canvas: HTML
 	const model = ide.editor.assistant, picker = ide.editor.quickInput, position = test.cycles();
 	check(view.turnActions.items.filter(item => item.visible).length === 1, 'idle chat shows only Send, no account/connect/disconnect toolbar');
 	await submitAssistantText(test, '/');
-	check(picker.visible && picker.title === 'Codex commands', 'slash discovery uses the shared picker without a process');
+	check(picker.visible, 'slash discovery uses the shared picker without a process');
 	await frame(); await renderer.capture!('commands'); await press('Escape');
 	check((await control.metrics()).connects === 0, 'command discovery is local');
 	await submitAssistantText(test, 'First history message');
@@ -37,7 +37,7 @@ export async function runAssistantHistory(kind: StudioRendererKind, canvas: HTML
 	await until(() => model.queued.length === 2 && !model.submitting, 'history: native queue has two messages');
 	await submitAssistantText(test, '/queue');
 	await until(() => picker.visible, 'history: queue picker ready');
-	check(picker.visible && picker.title === 'Codex queue', 'slash queue opens the ordinary workbench picker');
+	check(picker.visible, 'slash queue opens the ordinary workbench picker');
 	await renderer.capture!('queue');
 	await press('Enter'); await press('Enter');
 	check(view.editingQueuedId === model.queued[0].id && view.draft.text === 'Queued original', 'Edit transfers the selected native message into the composer');
@@ -75,10 +75,10 @@ export async function runAssistantHistory(kind: StudioRendererKind, canvas: HTML
 	await test.runPaletteCommand('View: Codex Assistant');
 	view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant required');
 	await submitAssistantText(test, '/queue');
-	await until(() => picker.visible && picker.title === 'Codex queue', 'history: queue inspection reconnects without executing');
+	await until(() => picker.visible, 'history: queue inspection reconnects without executing');
 	check(picker.model.list.rows.length === 1, 'cold queue snapshot retains the pending message'); await press('Escape');
 	await submitAssistantText(test, '/history');
-	await until(() => picker.visible && picker.title === 'Codex history', 'history: cold private profile lists its persisted conversation');
+	await until(() => picker.visible, 'history: cold private profile lists its persisted conversation');
 	check(picker.model.list.rows.length === 1, 'one real thread, not copies for queued or direct inputs');
 	await frame(); await renderer.capture!('history');
 	const browsing = await control.metrics();
@@ -109,7 +109,7 @@ export async function runAssistantHistory(kind: StudioRendererKind, canvas: HTML
 	await until(() => model.state === 'ready' && model.thread !== undefined, 'history: only the new explicit message creates a second thread');
 	check(model.thread!.id !== thread, 'New changes actual native thread identity');
 	await submitAssistantText(test, '/history');
-	await until(() => picker.visible && picker.title === 'Codex history', 'history: both saved conversations remain available');
+	await until(() => picker.visible, 'history: both saved conversations remain available');
 	check(picker.model.list.rows.length === 2, 'New never deletes previous history');
 	await frame(); await renderer.capture!('two-conversations'); await press('Escape');
 	check(test.cycles() === position && test.observations.suspended, 'conversation IO never releases ordinary Studio pause');

@@ -99,7 +99,6 @@ test('inspection reads foreign evidence without opening a code tab or dirtying e
 	const items = buildBehaviorInspection(f.view);
 	const returned = items.find(item => item.source?.range.path === 'provider.lua')!;
 	assert.equal(returned.value, "RETURN '../active'");
-	assert.ok(returned.description.startsWith('provider.lua:3:2'));
 	assert.equal(f.main.version, 1); assert.equal(f.provider.version, 1);
 	assert.equal(f.main.canUndo, false); assert.equal(f.provider.canUndo, false);
 	assert.equal(f.main.dirty, false); assert.equal(f.provider.dirty, false);

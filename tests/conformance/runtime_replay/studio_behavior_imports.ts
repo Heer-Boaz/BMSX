@@ -26,7 +26,7 @@ return { root = { type = kind, children = { leaf, leaf } } }`;
 		text: `local trees<const> = require('cartlib/behaviour_tree/library')\ntrees.register('fixture.imported', require('${record.module_path}'))` }]);
 	const mainVersion = main.version, providerVersion = provider.version;
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
-	await chooseBehavior(test, 'BT fixture.imported', 'BEHAVIOR TREES');
+	await chooseBehavior(test, 'BT fixture.imported');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('imports: Behavior Lens input required');
 	const leaves = () => lens.view.source.nodes.filter(node => node.kind === 'node' && node.label === 'wait');
@@ -65,7 +65,7 @@ return { root = { type = kind, children = { leaf, leaf } } }`;
 	main.pushEditOperations([{ offset: 0, deleteLength: main.buffer.length,
 		text: `local effects<const> = require('cartlib/actioneffects')\neffects.register_effect('fixture.imported-effect', require('${record.module_path}'))` }]);
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
-	await chooseBehavior(test, 'EFFECT fixture.imported-effect', 'ACTIONEFFECTS');
+	await chooseBehavior(test, 'EFFECT fixture.imported-effect');
 	const effectLens = getActiveTab();
 	if (effectLens.kind !== 'behavior_lens') throw new Error('imports: effect input required');
 	const effect = effectLens.view.document.definitions[0];

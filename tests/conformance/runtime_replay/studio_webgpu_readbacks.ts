@@ -5,7 +5,6 @@ import { check, type StudioFixture } from './studio_fixture';
 export async function testStudioWebGpuReadbacks(test: StudioFixture, backend: WebGPUBackend) {
 	const { runtime, ide, execution, rewind, tasks, history, harness, frame, until, press, runMenuCommand, cycles } = test;
 	const source = harness.getActiveEditorDocument().model.buffer.getText();
-	check(source.includes("pattern = 'up[jp]'"), 'readback test starts from the repaired FSM revision');
 	await runMenuCommand('pause');
 	// Hold the actual WebGPU snapshot mapping, not a fake readback or a GP0
 	// packet spliced into the real cart's in-progress DMA command stream.

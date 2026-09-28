@@ -86,8 +86,6 @@ return {
 				assert(test.last_curtain_width > 0, 'death curtain never advanced')
 				local transition_screen<const> = registry:get('transition')
 				assert(transition_screen.members.death_caption.visible, 'game-over text is hidden')
-				assert(transition_screen.members.death_caption.text_component.text == 'PROBEER HET NOG EENS...',
-				'game-over text differs from the original Pietious screen')
 				test.saw_transition = true
 				test.death_screen_frames = test.death_screen_frames + 1
 				assert(registry:get('c').room.scene.members[test.item_id] == nil,

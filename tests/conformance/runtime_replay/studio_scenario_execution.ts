@@ -77,7 +77,7 @@ export async function testStudioScenarioExecution(test: StudioFixture): Promise<
 		'scenario: cancellation leaves authoring media and completion state untouched');
 	await runPaletteCommand('Scene Editor: Open');
 	const picker = ide.editor.quickInput;
-	check(picker.visible && picker.title === 'SCENE EDITOR', 'scenario: canonical source views remain available after Cancel');
+	check(picker.visible, 'scenario: canonical source views remain available after Cancel');
 	clipboard.text = 'scenes/root.lua';
 	await press('ControlLeft', 'KeyV');
 	check(picker.model.list.rows.length === 1 && picker.model.list.rows[0].item.label === clipboard.text,

@@ -38,7 +38,7 @@ export async function runStudioPreload(test: StudioFixture) {
 	check(registrations() === 1, 'preload: first registration occurred before entry');
 	let previousProgram = recorded('sequence'); configuration();
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
-	await chooseBehavior(test, 'BT preload.tree', 'BEHAVIOR TREES');
+	await chooseBehavior(test, 'BT preload.tree');
 	await runPaletteCommand('Behavior Tree: Inspect Runtime Instance');
 	check(ide.editor.quickInput.visible && ide.editor.quickInput.model.list.rows.length === 1,
 		'preload: ordinary Studio inspector attaches late to the actual indexed actor');

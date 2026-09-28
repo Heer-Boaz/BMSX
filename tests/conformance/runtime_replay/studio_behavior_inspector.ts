@@ -24,15 +24,13 @@ export async function testStudioBehaviorInspector(test: StudioFixture): Promise<
 	const model = activeCodeEditor.model, original = model.buffer.getText(), position = cycles();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
-	await chooseBehavior(test, 'BT fixture.inspection', 'BEHAVIOR TREES');
+	await chooseBehavior(test, 'BT fixture.inspection');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('inspection: actual BT graph required');
 	const graph = lens.view.presentation, viewport = graph.viewport;
 	await press('Home'); await press('ArrowDown');
 	const selected = viewport.selection;
 	if (selected?.kind !== 'node') throw new Error('inspection: authored task selection required');
-	check(selected.lines[0] === 'TASK' && selected.lines.some(line => line.includes('TASKS.WALK_FORWARD_OUT_OF_ROOM'))
-		&& !selected.lines.some(line => line.startsWith('CHILD ')), 'inspection: canvas identifies actual task, not its ordinal slot');
 	const hadProblems = problemsPanel.isVisible;
 	if (!hadProblems) await runPaletteCommand('View: Problems Panel');
 	const version = model.version, dirty = model.dirty, geometry = viewport.model, x = viewport.scrollX, y = viewport.scrollY;

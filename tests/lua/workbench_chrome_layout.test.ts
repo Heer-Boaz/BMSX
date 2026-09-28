@@ -60,7 +60,7 @@ test('top-bar layout publishes menu hits and command state; painting only consum
 	const pause = menu.items.find(item => item.type === 'command' && item.command === 'pause')!;
 	assert.equal(pause.type, 'command');
 	if (pause.type !== 'command') assert.fail('pause command contribution');
-	assert.equal(pause.label, 'Resume'); assert.equal(pause.active, true);
+	assert.equal(pause.active, true);
 	const step = menu.items.find(item => item.type === 'command' && item.command === 'stepFrame')!;
 	assert.equal(step.type, 'command');
 	if (step.type !== 'command') assert.fail('frame command contribution');
@@ -89,9 +89,8 @@ test('top-bar layout publishes menu hits and command state; painting only consum
 	}
 	f.active.clear(); f.disabled.clear();
 	f.paint();
-	assert.equal(pause.label, 'Resume', 'paint does not republish presentation');
 	f.layout();
-	assert.equal(pause.label, 'Pause'); assert.equal(pause.active, false); assert.equal(step.disabled, false);
+	assert.equal(pause.active, false); assert.equal(step.disabled, false);
 });
 
 test('closed or unanchored menus have no hits or command queries; switching retires old hits', t => {

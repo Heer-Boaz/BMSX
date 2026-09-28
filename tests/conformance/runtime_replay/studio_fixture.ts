@@ -192,7 +192,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const runPaletteCommand = async (label: string): Promise<void> => {
 		await press('ControlLeft', 'ShiftLeft', 'KeyP');
 		const picker = ide.editor.quickInput;
-		check(picker.visible && picker.title === 'COMMAND PALETTE', 'palette: the IDE shortcut opens the shared picker');
+		check(picker.visible, 'palette: the IDE shortcut opens the shared picker');
 		clipboard.text = label;
 		await press('ControlLeft', 'KeyV');
 		const commandIndex = picker.model.list.rows.findIndex(row => row.item.label === label);

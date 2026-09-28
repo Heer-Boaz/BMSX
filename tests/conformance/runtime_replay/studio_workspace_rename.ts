@@ -1,7 +1,6 @@
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { renameController } from '../../../ide/workbench/contrib/code_editor/rename/controller';
-import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { check, type StudioFixture } from './studio_fixture';
 
 /** Independent authored fixture; acceptance, history and conflicts use real focused controls. */
@@ -40,7 +39,7 @@ export async function testStudioWorkspaceRename(test: StudioFixture): Promise<vo
 	await test.clickTab(providerTab.id); await press('ControlLeft', 'End');
 	test.clipboard.text = '\n-- later'; await press('ControlLeft', 'KeyV');
 	await test.clickTab(mainTab.id); await press('ControlLeft', 'KeyZ');
-	check(editorFeedbackState.message.text.includes('Cannot undo across files') && main.buffer.getText().includes('fixture_renamed')
+	check(main.buffer.getText().includes('fixture_renamed')
 		&& provider.buffer.getText().endsWith('-- later'), 'workspace rename: focused Undo reports its actual dependency and changes neither source');
 	await test.clickTab(providerTab.id); await press('ControlLeft', 'KeyZ'); await press('ControlLeft', 'KeyZ');
 	check(main.buffer.getText() === mainText && provider.buffer.getText() === providerText, 'workspace rename: Undo succeeds after the intervening edit is undone');

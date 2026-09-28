@@ -1,5 +1,4 @@
 import { check, type StudioFixture } from './studio_fixture';
-import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { runtimeErrorState } from '../../../ide/editor/contrib/runtime_error/state';
@@ -73,7 +72,7 @@ export async function runStudioBootOperations(test: StudioFixture) {
 	check(superseded.status === 'cancelled' && superseded.reason === 'superseded' && !superseded.reset,
 		'boot: a newer request retires older queued preparation');
 	await frame();
-	check(latest.status === 'queued' && cycles() === stopped && editorFeedbackState.message.text === 'Reboot: pending',
+	check(latest.status === 'queued' && cycles() === stopped,
 		'boot: queue admission is neither reset nor a stale failure toast');
 	release();
 	const applied = await latest.completion;

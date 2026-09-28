@@ -74,7 +74,7 @@ export async function testStudioSourceChoices(test: StudioFixture): Promise<void
 
 	await press('ArrowUp'); await press('End'); await press('ArrowLeft');
 	await press('F12');
-	check(picker.visible && picker.model.list.rows.length === 2 && picker.title.startsWith('DEFINITIONS:'),
+	check(picker.visible && picker.model.list.rows.length === 2,
 		'A06: a factory with two authored member origins opens the shared definition chooser');
 	await press('ArrowDown'); await press('Enter');
 	check(activeCodeEditor.model === definitions && activeCodeEditor.view.cursorRow === 3 && activeCodeEditor.view.cursorColumn === 10,

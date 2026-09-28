@@ -37,7 +37,7 @@ export async function runStudioBtReparentLive(test: StudioFixture) {
 	await press('ControlRight', 'ShiftRight'); await runMenuCommand('pause');
 	const position = cycles(), media = ide.sources.currentBlua32Media;
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
-	await chooseBehavior(test, 'BT fixture.live', 'BEHAVIOR TREES');
+	await chooseBehavior(test, 'BT fixture.live');
 	const lens = getActiveTab();
 	const pane = ide.editor.editorPanes.activePane;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph' || !(pane instanceof BehaviorLensEditorPane)) {

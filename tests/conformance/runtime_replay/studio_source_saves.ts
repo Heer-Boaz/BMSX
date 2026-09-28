@@ -31,12 +31,11 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 	await until(() => !model.dirty, 'source saves: project acknowledges first source');
 	const firstSaved = model.lastSavedSource;
 	check((await files.read(path))!.contents === firstSaved, 'source saves: saved means actual project bytes');
-	check(!editorFeedbackState.message.text.includes('locally only'), 'source saves: acknowledged project save uses ordinary feedback');
 
 	await globalThis.setStudioWorkspaceWriteFailure(true);
 	harness.replaceActiveCodeSource(firstSaved + '-- local save acknowledged\n');
 	await press('ControlLeft', 'KeyS');
-	await until(() => !model.dirty && editorFeedbackState.message.text.includes('locally only'), 'source saves: rejected HTTP PUT reports local-only save');
+	await until(() => !model.dirty && !workspaceRecordState.connected, 'source saves: rejected HTTP PUT reports local-only save');
 	const localSaved = model.lastSavedSource;
 	check(readLocalWorkspaceRecord(localStorage, root, path)!.contents === localSaved, 'source saves: local record contains the accepted revision');
 	check((await files.read(path))!.contents === firstSaved, 'source saves: failed HTTP write did not update the project file');
@@ -53,7 +52,6 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 	await press('ControlLeft', 'KeyS');
 	await until(() => !model.dirty, 'source saves: later typing is explicitly saved');
 	check((await files.read(path))!.contents === model.buffer.getText(), 'source saves: next Save acknowledges the new project bytes');
-	check(!editorFeedbackState.message.text.includes('locally only'), 'source saves: successful retry replaces local-only warning');
 	check(ide.sources.currentBlua32Media === media && title() === actor && cycles() === position,
 		'source saves: source persistence does not install or run code');
 	check(getTextFileRuntimeSourceStatus(ide.sources, model) === 'pending', 'source saves: saved source remains separately unapplied');
@@ -72,7 +70,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 		await globalThis.setStudioWorkspaceWriteFailure(true);
 		document.pushEditOperations([{ offset: document.buffer.length, deleteLength: 0, text: '\n# source save acknowledgement\n' }]);
 		await press('ControlLeft', 'KeyS');
-		await until(() => tasks.ready && !document.dirty && editorFeedbackState.message.text.includes('locally only'),
+		await until(() => tasks.ready && !document.dirty && !workspaceRecordState.connected,
 			`source saves: ${kind} local acknowledgement reaches the command`);
 		check((await files.read(resourcePath))!.contents === before, `source saves: ${kind} project remains unchanged after failed PUT`);
 		check(readLocalWorkspaceRecord(localStorage, root, resourcePath)!.contents === document.buffer.getText(),

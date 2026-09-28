@@ -14,7 +14,7 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 	const original = model.buffer.getText(), position = cycles(), media = ide.sources.currentBlua32Media;
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: ACTIONEFFECT_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
-	await chooseBehavior(test, 'EFFECT fixture.second', 'ACTIONEFFECTS');
+	await chooseBehavior(test, 'EFFECT fixture.second');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'properties') throw new Error('Effect editing requires its property input.');
 	const pane = ide.editor.editorPanes.activePane;

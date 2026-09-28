@@ -56,7 +56,11 @@ test('weighted cards and incoming routes drag the whole choice, not a detached c
 		drag.dragOver(...over(f, f.viewport.model.nodes[0].children[0].children[0], true));
 		assert.equal(drag.feedback.accepted, true);
 		drag.drop(); f.refresh();
-		assert.deepEqual(f.viewport.model.nodes[0].children[0].children.map(node => node.lines.find(line => line.startsWith('CHOICE'))), ['CHOICE  W=3', 'CHOICE  W=1', 'CHOICE  W=9']);
+		assert.deepEqual(f.viewport.model.nodes[0].children[0].children.map(node => readLuaSourceRange(f.model.buffer, f.viewport.model.edges.find(edge => edge.child === node)!.range)), [
+			'{ weight = 3, child = make_node(3) }',
+			'{ weight = 1, child = leaf }',
+			'{ weight = 9, child = nested }'
+		]);
 		assert.equal(f.viewport.selection!.kind, edge ? 'edge' : 'node');
 		f.model.undo(); f.refresh();
 		assert.equal(f.model.buffer.getText(), BT_ORDER_SOURCE);

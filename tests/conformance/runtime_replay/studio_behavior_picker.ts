@@ -7,9 +7,9 @@ import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
 
 /** Accept a unique behavior through the actual shared query field and keyboard. */
-export async function chooseBehavior(test: StudioFixture, label: string, title = 'BEHAVIOR LENS'): Promise<void> {
+export async function chooseBehavior(test: StudioFixture, label: string): Promise<void> {
 	const picker = test.ide.editor.quickInput;
-	check(picker.visible && picker.title === title, 'behavior picker: the command offers registrations');
+	check(picker.visible, 'behavior picker: the command offers registrations');
 	test.clipboard.text = label;
 	await test.press('ControlLeft', 'KeyV');
 	check(picker.model.list.rows.length === 1 && picker.model.list.rows[0].item.label === label,
@@ -123,7 +123,7 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	await chooseBehavior(test, 'FSM picker.second');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('behavior picker: selected lens missing');
-	check(lens.workingCopy === model && lens.view.source.nodesByRowKey.get(lens.view.selection!.rowKey)!.label === 'FSM picker.second',
+	check(lens.workingCopy === model,
 		'behavior picker: selects the second registration, not the first definition or the current code cursor');
 	const secondKey = lens.view.source.nodesByRowKey.get(lens.view.selection!.rowKey)!.rowKey;
 	await click(lens.view.presentation.actionBar.items[0].bounds);
@@ -133,7 +133,7 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	await runPaletteCommand('Behavior Lens: Open');
 	await chooseBehavior(test, 'FSM picker.first');
 	const first = getActiveTab();
-	check(first.kind === 'behavior_lens' && first !== lens && first.workingCopy === model && first.title === 'FSM picker.first'
+	check(first.kind === 'behavior_lens' && first !== lens && first.workingCopy === model
 		&& lens.view.definitionRowKey === secondKey,
 		'behavior picker: separate FSM inputs share one model without overwriting the earlier definition');
 	await runPaletteCommand('Scenario Lab: Open');

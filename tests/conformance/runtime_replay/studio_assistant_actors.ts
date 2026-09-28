@@ -50,7 +50,6 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	await press('Home');
 	await test.click(lab.actionBar.items.find(item => item.command === 'actorLab.call')!.bounds);
 	test.clipboard.text = 'set_pos'; await press('ControlLeft', 'KeyV'); await press('Enter');
-	check(picker.title === 'first:set_pos(...)', 'ordinary method picker selected the actor receiver');
 	test.clipboard.text = '12, 34, 0'; await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => test.tasks.ready && !runtime.completionCallPending() && !ide.debugger.plans.mutationActive,
 		'actor tools: ordinary method completes at the World mutation rendezvous');

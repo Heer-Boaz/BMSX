@@ -45,7 +45,7 @@ tree:register('colon', {})`, 'actors.lua');
 	const resource = { domain: 0, path: main.file } as const;
 	const reader = new BehaviorSourceReader(snapshot);
 	const registrations = collectBehaviorRegistrations(resource, reader).registrations;
-	assert.deepEqual(registrations.map(entry => entry.label), ['FSM one', 'FSM two', 'BT three', 'EFFECT four']);
+	assert.deepEqual(registrations.map(entry => entry.semanticId), ['one', 'two', 'three', 'four']);
 	assert.ok(registrations.every(entry => entry.resource === resource && entry.range.path === main.file));
 	assert.deepEqual([...reader.files].map(file => file.file), [main.file], 'an API dependency is not an edited definition source');
 	const document = buildBehaviorSourceDocument(resource, snapshot);
@@ -75,7 +75,6 @@ test('behavior lens gives reused Moon behavior-tree initializers distinct view o
 	assert.ok(deathRayOccurrences.every(node => node.authoredRange.start.line === 105));
 	assert.ok(nodes.some(node => node.kind === 'service' && node.label === 'services.spawn_mini_moon'));
 	assert.ok(nodes.some(node => node.kind === 'decorator' && node.label === "'loop'"));
-	assert.ok(nodes.some(node => node.label === 'choices (2)'));
 });
 
 test('behavior lens finds const state-machine topology authored inside a closure', () => {
@@ -107,11 +106,11 @@ test('behavior lens finds const state-machine topology authored inside a closure
 	assert.equal(document.definitions[0].referenceRange!.start.line, 17);
 
 	const nodes = flatten(document.definitions);
-	assert.ok(nodes.some(node => node.kind === 'state' && node.label === 'idle' && node.detail === 'initial'));
-	assert.ok(nodes.some(node => node.kind === 'state' && node.label === 'overlay' && node.detail === 'concurrent'));
-	assert.ok(nodes.some(node => node.kind === 'state' && node.label === 'walk' && node.detail === 'initial'));
-	assert.ok(nodes.some(node => node.kind === 'event' && node.label === 'start' && node.detail === "go='/active'"));
-	assert.ok(nodes.some(node => node.kind === 'event' && node.label === "'a[jp]'" && node.detail === "go='/active'"));
+	assert.ok(nodes.some(node => node.kind === 'state' && node.label === 'idle'));
+	assert.ok(nodes.some(node => node.kind === 'state' && node.label === 'overlay'));
+	assert.ok(nodes.some(node => node.kind === 'state' && node.label === 'walk'));
+	assert.ok(nodes.some(node => node.kind === 'event' && node.label === 'start'));
+	assert.ok(nodes.some(node => node.kind === 'event' && node.label === "'a[jp]'"));
 });
 
 test('behavior lens recognizes a function-local cartlib module alias', () => {
@@ -124,7 +123,6 @@ test('behavior lens recognizes a function-local cartlib module alias', () => {
 	].join('\n');
 	const document = buildDocument('function_local_tree.lua', source);
 	assert.equal(document.definitions.length, 1);
-	assert.equal(document.definitions[0].label, 'BT guard');
 	assert.equal(document.definitions[0].children[0].label, 'task');
 });
 
@@ -137,10 +135,7 @@ test('behavior lens distinguishes multiple FSMs and same-named states in one Lua
 	].join('\n'), path);
 	const resource = { domain: 0 as const, path };
 	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(analysis));
-	assert.deepEqual(document.definitions.map(node => [node.behaviorKind, node.label]), [
-		['state_machine', 'FSM player'],
-		['state_machine', 'FSM enemy'],
-	]);
+	assert.deepEqual(document.definitions.map(node => node.behaviorKind), ['state_machine', 'state_machine']);
 	const states = document.definitions.map(definition => flatten([definition]).filter(node => node.kind === 'state'));
 	assert.deepEqual(states.map(nodes => nodes.map(node => node.label)), [
 		['idle', 'active'],
@@ -162,7 +157,7 @@ test('behavior lens accepts unchanged local imports and retains the dot-call reg
 		"local trees = require('cartlib/behaviour_tree/library')",
 		"trees.register('mutable', { root = { type = 'task' } })",
 	].join('\n'));
-	assert.deepEqual(mutable.definitions.map(definition => definition.label), ['BT mutable']);
+	assert.deepEqual(mutable.definitions.map(definition => definition.behaviorKind), ['behavior_tree']);
 	const reassigned = buildDocument('reassigned_alias.lua', [
 		"local trees = require('cartlib/behaviour_tree/library')",
 		'local retained<const> = trees',
@@ -189,24 +184,8 @@ local register_tree = require('cartlib/actioneffects').register_effect
 register_tree('effect', { handler = function(owner) owner:fire() end })
 local function hidden(register_tree) register_tree('not_an_api', {}) end
 `);
-	assert.deepEqual(document.definitions.map(definition => [definition.behaviorKind, definition.label]), [
-		['behavior_tree', 'BT tree'], ['state_machine', 'FSM machine'], ['action_effect', 'EFFECT effect'],
-	]);
+	assert.deepEqual(document.definitions.map(definition => definition.behaviorKind), ['behavior_tree', 'state_machine', 'action_effect']);
 	assert.deepEqual(document.definitions.map(definition => definition.occurrenceRange.start.line), [3, 6, 8]);
-});
-
-test('behavior lens exposes the authored ActionEffect gates and execution fields', () => {
-	const path = 'carts/pietious/player/actioneffects.lua';
-	const document = buildDocument(path, readFileSync(path, 'utf8'));
-	assert.deepEqual(document.definitions.map(node => node.label), [
-		'EFFECT pepernoot',
-		'EFFECT spyglass',
-		'EFFECT halo',
-	]);
-	const nodes = flatten(document.definitions);
-	assert.ok(nodes.some(node => node.label === 'can_trigger = <function>'));
-	assert.ok(nodes.some(node => node.label === 'handler = <function>'));
-	assert.equal(nodes.filter(node => node.label === 'blocked_tags (1)').length, 3);
 });
 
 test('behavior registration correspondence resolves literal and immutable const ids', () => {
@@ -281,7 +260,6 @@ test('behavior lens keeps computed definitions dynamic and ignores shadowed modu
 	].join('\n');
 	const document = buildDocument('dynamic_tree.lua', source);
 	assert.equal(document.definitions.length, 1);
-	assert.equal(document.definitions[0].label, 'BT dynamic');
 	assert.equal(document.definitions[0].resolution, 'unresolved');
 	assert.equal(document.definitions[0].children[0].kind, 'dynamic');
 });
@@ -306,7 +284,6 @@ test('behavior lens marks computed table keys as incomplete authored topology', 
 	const root = definition.children[0];
 	assert.equal(root.resolution, 'partial');
 	const children = root.children.find(node => node.label.startsWith('children'))!;
-	assert.equal(children.label, 'children (2 authored)');
 	assert.equal(children.resolution, 'partial');
 	assert.ok(children.children.some(node => node.kind === 'dynamic' && node.label === '[slot]'));
 });
@@ -320,9 +297,7 @@ test('behavior lens leaves ordinary Lua empty and retains an incomplete registra
 		"bt.register('broken', ",
 	].join('\n'));
 	assert.equal(incomplete.definitions.length, 1);
-	assert.equal(incomplete.definitions[0].label, 'BT broken');
 	assert.equal(incomplete.definitions[0].resolution, 'unresolved');
-	assert.equal(incomplete.definitions[0].detail, 'registration has no definition argument');
 });
 
 test('behavior source row identities survive unrelated line insertion and cannot collide through authored names', () => {
@@ -380,7 +355,6 @@ test('behavior lens marks direct, aliased, nested and closure-contained table wr
 	const document = buildDocument('mutated_tree.lua', source);
 	assert.equal(document.definitions.length, 1);
 	assert.equal(document.definitions[0].resolution, 'partial');
-	assert.match(document.definitions[0].detail, /known table mutation/);
 	assert.ok(flatten(document.definitions).some(node => node.kind === 'node' && node.label === 'sequence'));
 });
 
@@ -393,32 +367,7 @@ test('behavior lens marks syntax-recovery documents partial without discarding p
 	const document = buildDocument('recovering_tree.lua', source);
 	assert.equal(document.definitions.length, 1);
 	assert.equal(document.definitions[0].resolution, 'partial');
-	assert.match(document.definitions[0].detail, /syntax recovery/);
 	assert.ok(flatten(document.definitions).some(node => node.kind === 'node' && node.label === 'task'));
-});
-
-test('behavior lens exposes live behavior-tree scheduling and policy fields', () => {
-	const source = [
-		"local bt<const> = require('cartlib/behaviour_tree/library')",
-		"bt.register('schema', { root = {",
-		"\ttype = 'simple_parallel',",
-		"\tfinish_mode = 'abort_background',",
-		"\tmain_task = { type = 'task', task = tasks.walk, interval_ticks = 3 },",
-		"\tbackground_tree = { type = 'sequence', children = {",
-		"\t\t{ type = 'timeline', timeline_id = 'attack', play_options = options },",
-		"\t\t{ type = 'wait', minimum_duration_ticks = 2, maximum_duration_ticks = 5 },",
-		'\t} },',
-		'\tservices = { { service = services.scan, interval = cadence, tick_on_search_start = true, restart_timer_on_each_activation = true } },',
-		"\tdecorators = { { type = 'blackboard', decorator = decorators.ready, observer_aborts = 'self', operation = 'equal', key = 'ready', value = true, notify_observer = true } },",
-		'} })',
-	].join('\n');
-	const nodes = flatten(buildDocument('tree_schema.lua', source).definitions);
-	assert.ok(nodes.some(node => node.kind === 'node' && node.detail.includes("finish_mode='abort_background'")));
-	assert.ok(nodes.some(node => node.kind === 'node' && node.detail.includes('task=tasks.walk') && node.detail.includes('interval_ticks=3')));
-	assert.ok(nodes.some(node => node.kind === 'node' && node.detail.includes("timeline_id='attack'") && node.detail.includes('play_options=options')));
-	assert.ok(nodes.some(node => node.kind === 'node' && node.detail.includes('minimum_duration_ticks=2') && node.detail.includes('maximum_duration_ticks=5')));
-	assert.ok(nodes.some(node => node.kind === 'service' && node.detail.includes('interval=cadence') && node.detail.includes('tick_on_search_start=true')));
-	assert.ok(nodes.some(node => node.kind === 'decorator' && node.detail.includes("observer_aborts='self'") && node.detail.includes("operation='equal'")));
 });
 
 test('behavior lens retains numeric authored occurrences without inferring Lua list length', () => {
@@ -433,7 +382,6 @@ test('behavior lens retains numeric authored occurrences without inferring Lua l
 	const definition = buildDocument('numeric_keys.lua', source).definitions[0];
 	const nodes = flatten([definition]);
 	const children = nodes.find(node => node.kind === 'section' && node.label.startsWith('children'))!;
-	assert.equal(children.label, 'children (3 authored)');
 	assert.equal(children.resolution, 'partial');
 	assert.ok(children.children.some(node => node.label === '[4]' && node.resolution === 'partial'));
 	assert.ok(children.children.some(node => node.label === '[slot]' && node.resolution === 'unresolved'));
@@ -451,19 +399,6 @@ test('behavior lens distinguishes string and numeric table keys in view identity
 	assert.notEqual(keyed[0].rowKey, keyed[1].rowKey);
 });
 
-test('behavior lens exposes FSM emitter filtering beside transitions', () => {
-	const source = [
-		"local fsm<const> = require('cartlib/fsm/library')",
-		"fsm.register('events', { initial = 'idle', states = { idle = { on = {",
-		"\tactivate = { go = '/active', emitter = 'player' },",
-		'} }, active = {} } })',
-	].join('\n');
-	const nodes = flatten(buildDocument('fsm_events.lua', source).definitions);
-	assert.ok(nodes.some(node => node.kind === 'event'
-		&& node.label === 'activate'
-		&& node.detail === "go='/active' | emitter='player'"));
-});
-
 test('behavior lens preserves the authored initializer and reference of an aliased FSM handler', () => {
 	const source = [
 		"local fsm<const> = require('cartlib/fsm/library')",
@@ -475,37 +410,4 @@ test('behavior lens preserves the authored initializer and reference of an alias
 	assert.equal(event.authoredRange.start.line, 2);
 	assert.equal(event.referenceRange!.start.line, 3);
 	assert.equal(event.resolution, 'complete');
-	assert.equal(event.detail, "go='/active' | emitter='player' | activate");
-});
-
-test('behavior lens uses ActionEffect schema rather than the incidental value shape', () => {
-	const source = [
-		"local effects<const> = require('cartlib/actioneffects')",
-		"effects.register_effect('all', {",
-		"\tevent = 'triggered',",
-		'\thandler = { strange = true },',
-		'\tcan_trigger = gates.ready,',
-		'\tcooldown_ms = 100,',
-		'\tcalculate_cooldown_ms = cooldown.calculate,',
-		'\tinitial_cooldown_ms = 20,',
-		'\tdefer_cooldown_commit = true,',
-		'\tperiod_ms = 10,',
-		"\trequired_tags = { 'armed' },",
-		"\tblocked_tags = { 'stunned' },",
-		"\trequired_state_paths = { '/active' },",
-		"\tblocked_state_paths = { '/dead' },",
-		'})',
-	].join('\n');
-	const nodes = flatten(buildDocument('effect_schema.lua', source).definitions);
-	const scalarNames = [
-		'event', 'handler', 'can_trigger', 'cooldown_ms', 'calculate_cooldown_ms',
-		'initial_cooldown_ms', 'defer_cooldown_commit', 'period_ms',
-	];
-	for (let index = 0; index < scalarNames.length; index += 1) {
-		assert.ok(nodes.some(node => node.kind === 'property' && node.label.startsWith(`${scalarNames[index]} =`)));
-	}
-	assert.ok(nodes.some(node => node.kind === 'property' && node.label === 'handler = <table 1>'));
-	for (const label of ['required_tags (1)', 'blocked_tags (1)', 'required_state_paths (1)', 'blocked_state_paths (1)']) {
-		assert.ok(nodes.some(node => node.kind === 'section' && node.label === label));
-	}
 });

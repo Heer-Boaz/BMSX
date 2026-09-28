@@ -48,8 +48,8 @@ export async function runAssistantAccount(kind: StudioRendererKind, canvas: HTML
 	await until(() => conversation.state === 'ready', 'account: cancel actual polling attempt');
 	check(conversation.loginCode === undefined && !conversation.canSend, 'cancellation hides code and does not authorize a prompt');
 	await submitAssistantText(test, '/login device');
-	await until(() => conversation.entries.some(entry => entry.text.getText().includes('Sign-in failed:')), 'account: real issuer polling failure is visible');
-	check(conversation.state === 'ready' && conversation.loginCode === undefined, 'failed authorization requires an explicit retry');
+	await until(() => conversation.state === 'ready', 'account: real issuer polling failure settles the attempt');
+	check(!conversation.canSend && conversation.loginCode === undefined, 'failed authorization requires an explicit retry');
 	await frame(); await renderer.capture!('failed');
 	await submitAssistantText(test, '/login device');
 	await issuer.waitForHeldStart();

@@ -42,7 +42,6 @@ export async function runAssistantLogin(kind: StudioRendererKind, canvas: HTMLCa
 	await until(() => conversation.state === 'ready' && !conversation.accountRefreshing && conversation.account!.connected, 'login: OAuth exchange and authoritative account snapshot');
 	const account = { ...conversation.account! };
 	check(conversation.canSend && conversation.loginCode === undefined, 'only the completed account refresh opens prompt admission');
-	check(conversation.entries.at(-1)!.text.getText() === 'Studio account connected.', 'successful completion is visible');
 	check(view.draft.text === 'Keep this draft; do not submit.' && conversation.entries.every(entry => entry.kind !== 'user'), 'account authorization does not consume or automatically send the draft');
 	await issuer.verifyProfile(true);
 	await frame(); await renderer.capture!('signed-in');

@@ -74,7 +74,7 @@ return {
 
 			local story<const> = registry:get('nemesis_s.story')
 			assert(story.presentation.members.picture.sprite_component.imgid == 'story_coup', 'story did not start on the coup image')
-			assert(story.presentation.members.primary_caption.text_component.glyph_line_count == 4 and (story.presentation.members.primary_caption.y + story.presentation.members.primary_caption.text_component.offset_y) == 144,
+			assert((story.presentation.members.primary_caption.y + story.presentation.members.primary_caption.text_component.offset_y) == 144,
 			'first story caption differs from the XNA layout')
 			local story_panel_frames<const> = { 1257, 538, 480, 419, 367, 1014, 2101, 1202, 839 }
 			local story_frame_ms<const> = clock.frame_delta_milliseconds()
@@ -250,8 +250,7 @@ return {
 				local presentation<const> = registry:get('nemesis_s.end_demo')
 				assert(presentation.presentation.members.picture.sprite_component.imgid == 'end_demo_sint_duim',
 				'end demo did not start on the authored Sint image')
-				assert(presentation.presentation.members.caption.text_component.glyph_line_count == 21
-				and presentation.presentation.members.caption.text_component.offset_x == 0
+				assert(presentation.presentation.members.caption.text_component.offset_x == 0
 				and (presentation.presentation.members.caption.y + presentation.presentation.members.caption.text_component.offset_y) == 8,
 				'first end-demo caption differs from the XNA layout')
 				presentation.timelines:advance_time_to(end_demo_timeline_id, 240)

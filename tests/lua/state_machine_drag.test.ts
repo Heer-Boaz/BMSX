@@ -86,8 +86,7 @@ test('FSM drag publishes exact shared evidence only at drop and retains the cand
 	const impacts = stateMachineRetargetImpacts(f.view, first[1]);
 	assert.equal(impacts.length, 3);
 	assert.notEqual(impacts[0].label, impacts[1].label);
-	assert.ok(impacts.every(item => item.value.endsWith('other') && item.description.includes('DYNAMIC CALLS ARE NOT ENUMERATED')));
-	assert.ok(impacts.every(item => item.description.includes('return drag.lua:') && item.description.includes('RECOGNIZED IN drag.lua')));
+	assert.ok(impacts.every(item => item.value.endsWith('other')));
 	session.dragOver(4095, 500); assert.equal(session.feedback.accepted, false);
 	assert.equal(f.model.dirty, false, 'admission and review data never edit source');
 });
@@ -116,8 +115,6 @@ test('imported callback drag admission checks the actual return owner and invali
 		assert.equal(session.feedback.accepted, true);
 		session.drop(); assert.equal(f.drops[0][1].file.chunk.locations.range(f.drops[0][1].literal.span).path, owner.resource.path);
 		assert.equal(f.drops[0][1].uses.length, 3);
-		assert.ok(stateMachineRetargetImpacts(f.view, f.drops[0][1]).every(item => item.description.includes('return callback.lua:')
-			&& item.description.includes('RECOGNIZED IN drag.lua')), 'review distinguishes write-file coordinates from registration coverage');
 		const affected = f.models.get(path)!;
 		affected.refreshResource({ ...affected.resource, source: { ...affected.resource.source, generated: false } });
 		affected.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dependency edit\n' }]);

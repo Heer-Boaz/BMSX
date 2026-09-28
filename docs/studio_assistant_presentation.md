@@ -136,15 +136,16 @@ packing and VRAM layout are unchanged. Both host artifacts share the same pixels
 
 ## Validation and trying it
 
-- `test:lua`: 2,836 passing tests, one existing skip. Focused Markdown, composer,
+- `test:lua`: 2,825 passing tests, one existing skip. Focused Markdown, composer,
   conversation/footer and font tests also cover streamed delimiter/CRLF splits,
   preserved code whitespace, exact styled glyph pixels and idle cache identity.
 - Automated Chromium coverage: 18 assistant/presentation cases across software,
   WebGL2 and WebGPU, both font sizes, light/dark themes, narrow logical surfaces, pointer/keyboard
   Copy, history/queue/Direct/Stop, and the ordinary paused cart. The three
   presentation cases also exercise model/effort/speed pickers, cancellation and
-  draft growth/scrolling, right-aligned table values and narrow labelled records
-  in both themes. They assert exactly two intentional model requests and
+  draft growth/scrolling. Captures include wide and narrow tables in both themes;
+  captions and generated presentation strings are not frozen as test contracts.
+  They assert exactly two intentional model requests and
   one connection, and inspect the actual provider request's model/effort/tier;
   rendering, resizing and timers send none.
 - Real installed App Server with offline model/issuer fixtures: contract 6/6,

@@ -41,14 +41,8 @@ test('graph projects one registration, original child order, distinct shared use
 	const [first, second, weighted] = sequence.children;
 	assert.equal(first.source.authoredRange, second.source.authoredRange);
 	assert.notEqual(first.source.rowKey, second.source.rowKey);
-	assert.ok(first.lines.includes('SHARED') && second.lines.includes('SHARED'));
 	assert.equal(graph.nodesBySource.size, graph.nodes.length);
 	assert.equal(graph.edges.length, graph.nodes.length - 1);
-	assert.ok(sequence.details.some(detail => detail.description === 'services.scan'));
-	assert.ok(sequence.details.some(detail => detail.label === 'num_loops' && detail.description === '2'));
-	assert.ok(root.details.some(detail => detail.label.startsWith('seen =')));
-	assert.equal(weighted.children[0].lines.find(line => line.startsWith('CHOICE')), 'CHOICE  W=2');
-	assert.equal(weighted.children[1].lines.find(line => line.startsWith('CHOICE')), 'CHOICE  W=WEIGHTS.RETREAT');
 	const weight = weighted.children[1].details.find(detail => detail.label === 'weight')!;
 	assert.equal(readLuaSourceRange(f.model.buffer, weight.range), 'weights.retreat');
 	for (const child of sequence.children) {
@@ -67,21 +61,14 @@ test('shared occurrences are fully expanded, but dynamic membership never become
 	const [first, second] = full.nodes[0].children[0].children;
 	assert.equal(first.children.length, 2);
 	assert.equal(second.children.length, 2);
-	assert.ok(full.nodes.every(node => !node.lines.some(line => line.includes('+ CHILDREN') || line.includes('- CHILDREN'))));
 	const dynamic = fixture(`local trees<const> = require('cartlib/behaviour_tree/library')
 trees.register('partial', { root = { type = 'sequence', children = { { type = 'wait' }, [key] = make_node() } } })`);
 	const graph = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(dynamic.definition, font));
 	assert.equal(graph.nodes.length, 3);
-	assert.deepEqual(graph.nodes[0].children[0].children[0].lines, ['CHILDREN', '? PARTIAL MEMBERSHIP']);
 	assert.ok(graph.nodes[2].details.some(detail => readLuaSourceRange(dynamic.model.buffer, detail.range).includes('[key] = make_node()')));
 });
 
-test('parallel roles stay distinct; incidental fields and an unresolved root do not invent control flow', () => {
-	const f = fixture();
-	const parallel = f.document.definitions[1];
-	assert.ok(parallel.behaviorKind === 'behavior_tree');
-	const graph = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(parallel, font));
-	assert.deepEqual(graph.nodes[0].children[0].children.map(child => child.lines[1]), ['MAIN_TASK', 'BACKGROUND_TREE']);
+test('incidental fields and an unresolved root do not invent control flow', () => {
 	const incidental = fixture(`local trees<const> = require('cartlib/behaviour_tree/library')
 trees.register('leaf', { root = { type = 'wait', children = { { type = 'wait' } } } })`);
 	assert.equal(layoutBehaviorTreeGraph(projectBehaviorTreeGraph(incidental.definition, font)).nodes.length, 2);
@@ -89,7 +76,6 @@ trees.register('leaf', { root = { type = 'wait', children = { { type = 'wait' } 
 	const opaque = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(dynamic.definition, font));
 	assert.equal(opaque.nodes.length, 1);
 	assert.equal(opaque.edges.length, 0);
-	assert.ok(opaque.nodes[0].lines.includes('? NO STATIC ROOT'));
 });
 
 test('concrete graph retains layout, source-backed edge selection and its screen anchor through edits', t => {

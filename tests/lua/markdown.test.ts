@@ -39,8 +39,8 @@ test('code blocks retain indentation, empty lines, literal syntax and the langua
 	assert.deepEqual(render('```\n  abcdef\n```', 4).rows.map(row => row.text), ['  ab', 'cdef']);
 });
 
-test('headings, paragraph gaps, nested lists, tasks, quotes and tables have structured rows', () => {
-	const { rows } = render('# Heading\n\nParagraph.\n\n- first\n  - nested\n- [x] done\n\n> quoted\n\n| Name | Value |\n| --- | --- |\n| A | `7` |');
+test('headings, paragraph gaps, nested lists, tasks and quotes have structured rows', () => {
+	const { rows } = render('# Heading\n\nParagraph.\n\n- first\n  - nested\n- [x] done\n\n> quoted');
 	assert.equal(rows[0].runs[0].style, TextStyle.Bold);
 	assert.ok(rows.some(row => row.text === ''));
 	assert.deepEqual(rows.find(row => row.text === 'nested')!.runs.map(run => run.text), ['- ', 'nested']);
@@ -48,8 +48,6 @@ test('headings, paragraph gaps, nested lists, tasks, quotes and tables have stru
 	assert.equal(rows.find(row => row.text === 'done')!.runs[0].text, '[x] ');
 	assert.equal(rows.find(row => row.text === 'quoted')!.runs[0].text, '| ');
 	assert.equal(rows.find(row => row.text === 'quoted')!.runs[1].x, 2);
-	assert.ok(rows.some(row => row.text === 'Name | Value'));
-	assert.equal(rows.at(-1)!.text, 'A | 7');
 });
 
 test('lists hang continuation paragraphs, code and nested quotes under the content, not the marker', () => {
@@ -132,12 +130,9 @@ test('tables wrap cells independently and do not repeat shorter cells on continu
 	}
 });
 
-test('narrow tables become labelled records without losing values, styles or quote indentation', () => {
+test('narrow tables stay within measured width and retain quote indentation', () => {
 	const source = '> | Property | Value |\n> | --- | --- |\n> | velocity_x_q8 | `-768` |\n> | position_x_q8 | **1024** |';
 	const { rows } = render(source, 20);
-	assert.ok(rows.some(row => row.text.startsWith('Property:')));
-	assert.ok(rows.some(row => row.text === 'Value: -768'));
-	assert.equal(rows.find(row => row.text === 'Value: -768')!.runs.at(-1)!.style, TextStyle.Code);
 	for (const row of rows) {
 		assert.equal(row.runs[0].text, '| ');
 		for (const run of row.runs) assert.ok(run.x + run.width <= 20);

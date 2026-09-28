@@ -56,8 +56,11 @@ test('choice node and edge commands move the complete weighted wrapper and retai
 		assert.equal(f.viewport.selection!.kind, edge ? 'edge' : 'node');
 		assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(f.view)!),
 			edge ? '{ weight = 3, child = make_node(3) }' : 'make_node(3)');
-		assert.deepEqual(f.viewport.model.nodes[0].children[0].children.map(node => node.lines.find(line => line.startsWith('CHOICE'))),
-			['CHOICE  W=1', 'CHOICE  W=3', 'CHOICE  W=9']);
+		assert.deepEqual(f.viewport.model.nodes[0].children[0].children.map(node => readLuaSourceRange(f.model.buffer, f.viewport.model.edges.find(edge => edge.child === node)!.range)), [
+			'{ weight = 1, child = leaf }',
+			'{ weight = 3, child = make_node(3) }',
+			'{ weight = 9, child = nested }'
+		]);
 		f.model.undo(); f.refresh();
 		assert.equal(f.model.buffer.getText(), BT_ORDER_SOURCE, 'Undo restores the absent final separator too');
 		assert.equal(f.viewport.selection!.kind, edge ? 'edge' : 'node');
@@ -116,5 +119,5 @@ test('known list mutation is not admitted as an ordered source edit', t => {
 	f.select(0);
 	assert.equal(behaviorTreeMoveTarget(f.view, -1), undefined);
 	assert.equal(behaviorTreeMoveTarget(f.view, 1), undefined);
-	assert.ok(f.viewport.selection?.kind === 'node' && f.viewport.selection.lines[1] === '? PARTIAL MEMBERSHIP');
+	assert.ok(f.viewport.selection?.kind === 'node');
 });

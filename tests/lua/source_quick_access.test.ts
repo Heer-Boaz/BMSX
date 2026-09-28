@@ -92,12 +92,8 @@ test('symbol choices retain same-name declarations and match case-insensitively'
 	const provider = new SymbolQuickPickProvider(items, 'workspace');
 	assert.deepEqual(provider.getPicks('mixed_case').matches.map(match => match.item), items);
 	assert.equal(provider.getPicks('MIXED_CASE SECOND/SHARED.LUA').matches[0].item, items[1]);
-	assert.equal(items[1].detail, 'FUNC 7:4');
 	assert.deepEqual(items.map(item => item.description), ['first/shared.lua', 'second/shared.lua'],
 		'same-named files must remain distinguishable without a legacy status-bar popup');
-	const localItems = buildSymbolQuickPickItems(symbols, 'file');
-	assert.equal(localItems[0].description, 'FUNC 1:2'); assert.equal(localItems[0].detail, '',
-		'the document filename belongs once in the popup title, not on every local symbol');
 });
 
 test('definition choices keep module and declaration targets, including unqualified names', () => {
@@ -107,7 +103,7 @@ test('definition choices keep module and declaration targets, including unqualif
 	];
 	const items = buildDefinitionQuickPickItems(targets);
 	assert.equal(items[0].target, targets[0]); assert.equal(items[0].label, 'plain');
-	assert.equal(items[1].target, targets[1]); assert.equal(items[1].detail, 'MOD 1:1');
+	assert.equal(items[1].target, targets[1]);
 });
 
 test('initial source choice is revealed and accepted through the shared picker without index translation', t => {

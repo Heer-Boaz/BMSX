@@ -20,7 +20,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: NAVIGATION_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
-	await chooseBehavior(test, 'FSM navigation.fsm.one', 'STATE MACHINES');
+	await chooseBehavior(test, 'FSM navigation.fsm.one');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'state-graph') throw new Error('A03: FSM pane missing');
 	await lens.graphLayout.settled; await frame();
@@ -73,7 +73,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	await runPaletteCommand('Go: Back');
 	check(getActiveTab() === lens, 'A03: palette and shortcut share the navigation owner');
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
-	await chooseBehavior(test, 'FSM navigation.fsm.two', 'STATE MACHINES');
+	await chooseBehavior(test, 'FSM navigation.fsm.two');
 	await press('AltLeft', 'ArrowLeft');
 	check(getActiveTab() === lens && view.definitionRowKey === view.document.definitions[0].rowKey && view.selection?.kind === 'state-outcome',
 		'A03/A04: Back from another definition restores the original input and its exact selection');
@@ -82,7 +82,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 
 	console.info('STUDIO A03/A04: FSM history, mapped returns, async viewport and definition inputs passed');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
-	await chooseBehavior(test, 'BT navigation.tree.one', 'BEHAVIOR TREES');
+	await chooseBehavior(test, 'BT navigation.tree.one');
 	const treeInput = getActiveTab();
 	if (treeInput.kind !== 'behavior_lens') throw new Error('A04: BT input missing');
 	const treeView = treeInput.view;
@@ -95,7 +95,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	await press('AltLeft', 'ArrowLeft');
 	check(getActiveTab() === treeInput && treeView.selection!.rowKey === occurrence && treeView.presentation.kind === 'graph', 'A03: Back restores the second shared BT occurrence');
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
-	await chooseBehavior(test, 'EFFECT navigation.effect', 'ACTIONEFFECTS');
+	await chooseBehavior(test, 'EFFECT navigation.effect');
 	const effectInput = getActiveTab();
 	if (effectInput.kind !== 'behavior_lens' || effectInput.view.presentation.kind !== 'properties') throw new Error('A03: effect properties missing');
 	const effect = effectInput.view.document.definitions.find(definition => definition.behaviorKind === 'action_effect')!;

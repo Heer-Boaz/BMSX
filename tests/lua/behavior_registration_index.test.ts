@@ -68,7 +68,7 @@ test('API-provider edits and Undo update the catalogue and open documents withou
 	const provider = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path: 'bridge.lua' })!, 'lua', bridge);
 	const index = new BehaviorRegistrationIndex(editorTextModelService, sources);
 	const documents = new BehaviorSourceDocuments(editorTextModelService, sources);
-	assert.deepEqual(index.getRegistrations(0).map(entry => entry.label), ['FSM one', 'FSM two']);
+	assert.deepEqual(index.getRegistrations(0).map(entry => entry.semanticId), ['one', 'two']);
 	const document = documents.get(main);
 	assert.equal(document.definitions.length, 2);
 	const project = getOrCreateSemanticProject(editorTextModelService, 0);
@@ -79,7 +79,7 @@ test('API-provider edits and Undo update the catalogue and open documents withou
 	assert.equal(project.getFileData(main.resource.path), analysis);
 	assert.equal(main.dirty, false);
 	provider.undo();
-	assert.deepEqual(index.getRegistrations(0).map(entry => entry.label), ['FSM one', 'FSM two']);
+	assert.deepEqual(index.getRegistrations(0).map(entry => entry.semanticId), ['one', 'two']);
 	assert.deepEqual(documents.get(main).definitions.map(entry => entry.rowKey), document.definitions.map(entry => entry.rowKey));
 	assert.equal(project.getFileData(main.resource.path), analysis);
 	assert.equal(provider.dirty, false);
@@ -125,7 +125,6 @@ test('behavior picks preserve registration occurrences, kinds, domains and unres
 	assert.strictEqual(index.getRegistrations(0), registrations);
 	const items = buildBehaviorQuickPickItems(sources, index);
 	assert.equal(items.length, 6);
-	assert.equal(items[0].label, 'BT shared', 'picks sort by behavior label, not source-file or registration order');
 	assert.ok(items.every(item => item.description === path));
 	const firstFsm = items.find(item => item.registration === registrations[0])!;
 	const secondFsm = items.find(item => item.registration === registrations[1])!;
@@ -139,7 +138,6 @@ test('behavior picks preserve registration occurrences, kinds, domains and unres
 	picker.filter('BT shared');
 	assert.equal(picker.list.rows.length, 1);
 	assert.strictEqual(picker.list.rows[0].item, items[0]);
-	assert.equal(slot1Fsm.detail, 'SLOT 1 / 2:14');
 	picker.filter('actors.lua 2:14');
 	assert.equal(picker.list.rows.length, 1);
 	assert.strictEqual(picker.list.rows[0].item, slot1Fsm);
@@ -152,13 +150,13 @@ test('behavior picks preserve registration occurrences, kinds, domains and unres
 	assert.notStrictEqual(index.getRegistrations(0)[0], registrations[0], 'workspace source queries include dependencies outside the registering file');
 	const model = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path })!, 'lua', source);
 	model.pushEditOperations([{ offset: source.indexOf("'shared'"), deleteLength: 8, text: "'renamed'" }]);
-	assert.equal(index.getRegistrations(0)[0].label, 'FSM renamed');
+	assert.equal(index.getRegistrations(0)[0].semanticId, 'renamed');
 	assert.deepEqual(index.resolve(0, 'state_machine', 'shared'), []);
 	assert.equal(index.resolve(1, 'state_machine', 'shared').length, 1);
 	resetSemanticProjects(editorTextModelService);
-	assert.equal(index.getRegistrations(0)[0].label, 'FSM renamed', 'a new semantic project still consumes dirty retained models');
+	assert.equal(index.getRegistrations(0)[0].semanticId, 'renamed', 'a new semantic project still consumes dirty retained models');
 	model.undo();
-	assert.equal(index.getRegistrations(0)[0].label, 'FSM shared');
+	assert.equal(index.getRegistrations(0)[0].semanticId, 'shared');
 	// Finish the deliberately incomplete call, then introduce a real binding write.
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: ")\nfsm = replacement\n" }]);
 	assert.deepEqual(index.getRegistrations(0).map(registration => registration.behaviorKind), ['behavior_tree']);

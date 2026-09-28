@@ -57,7 +57,6 @@ fx.register_effect('values', { event = false, period_ms = cadence() * 2, handler
 	]);
 	assert.equal(effect.body.fields.length, 4, 'absent fields are not filled from runtime defaults');
 	assert.ok(effect.body.fields.every(field => field.kind === 'value' && field.source.children.length === 0));
-	assert.equal(effect.body.fields[2].source.label, 'handler = never');
 });
 
 test('computed effect keys and partial requirement lists stay source-visible without invented dense indices', () => {
@@ -95,7 +94,6 @@ fx.register_effect('empty', {})`).definitions;
 	assert.ok(first.body.issues & SourceTableIssue.KnownMutation);
 	assert.equal(first.body.fields.length, 1);
 	assert.equal(first.body.fields[0].field, first.body.table.fields[1]);
-	assert.equal(first.body.fields[0].source.label, 'period_ms = 20', 'retains initializer syntax, not a fabricated evaluated property');
 	const dynamic = definitions[1];
 	const empty = definitions[2];
 	assert.ok(dynamic.behaviorKind === 'action_effect' && empty.behaviorKind === 'action_effect');
@@ -123,11 +121,9 @@ test('effect fields in a reused initializer follow their own registration throug
 	installBehaviorLensDocument(view, document(model.buffer.getText()));
 	assert.equal(view.definitionRowKey, view.document.definitions[1].rowKey);
 	const selected = view.source.nodesByRowKey.get(view.selection!.rowKey)!;
-	assert.equal(selected.label, 'period_ms = 35');
 	assert.equal(selected.authoredRange.start.line, period.source.authoredRange.start.line + 1);
 	model.undo();
 	installBehaviorLensDocument(view, document(model.buffer.getText()));
-	assert.equal(view.source.nodesByRowKey.get(view.selection!.rowKey)!.label, 'period_ms = 20');
 	assert.equal(view.definitionRowKey, view.document.definitions[1].rowKey);
 });
 

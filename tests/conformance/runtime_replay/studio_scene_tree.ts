@@ -82,7 +82,7 @@ export async function testSceneSourceTree(test: StudioFixture): Promise<void> {
 	check(tree.roots.length === 4 && tree.rows.length === 5 && tree.roots[0].collapsed,
 		'tree: empty and keyed-only definitions remain actual roots alongside collapsed populated definitions');
 	await selectSceneRow(test, scene, 1);
-	check(tree.roots[1].element.kind === 'scene' && tree.roots[1].children.length === 0 && scene.detailsText.some(line => line.text === '0 MEMBERS')
+	check(tree.roots[1].element.kind === 'scene' && tree.roots[1].children.length === 0
 		&& tree.roots[1].element.label === tree.roots[0].element.label && x.field.readOnly,
 		'tree: an empty same-name scene is selectable without a fake member or editable position');
 	await press('ArrowRight');
@@ -90,8 +90,6 @@ export async function testSceneSourceTree(test: StudioFixture): Promise<void> {
 	await clickTwistie(test, scene, 1);
 	check(tree.selectionIndex === 1 && !tree.roots[1].collapsed, 'tree: childless roots have no expansion hit target');
 	await selectSceneRow(test, scene, 4);
-	check(scene.detailsText.some(line => line.text === '0 MEMBERS (PARTIAL)') && tree.roots[3].element.displayLabel.startsWith('* '),
-		'tree: a keyed-only definition reports its own partial projection instead of disappearing');
 	await selectSceneRow(test, scene, 2);
 	await clickTwistie(test, scene, 2);
 	check(tree.roots[2].collapsed && tree.roots[0].collapsed && tree.rows.length === 4,

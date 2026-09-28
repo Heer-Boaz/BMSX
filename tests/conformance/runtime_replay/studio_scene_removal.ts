@@ -175,7 +175,7 @@ export async function testSceneMemberRemoval(test: StudioFixture): Promise<void>
 	check(scene.outline.roots.length === 1 && scene.outline.rows.length === 1 && scene.outline.rows[0].element.kind === 'scene',
 		'remove: removing the last member preserves the actual empty definition in the outline');
 	await selectSceneRow(test, scene, 0);
-	check(scene.detailsText.some(line => line.text === '0 MEMBERS') && x.field.readOnly && !ide.editor.commands.isEnabled('sceneEditor.removeMember'),
+	check(x.field.readOnly && !ide.editor.commands.isEnabled('sceneEditor.removeMember'),
 		'remove: the remaining empty definition can be selected but not mistaken for a removable member');
 	for (let index = 0; index < 4; index += 1) await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && !model.dirty, 'remove: all admission fixtures leave the real saved document intact');

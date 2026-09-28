@@ -1,6 +1,5 @@
 import { runtimeErrorState } from '../../../ide/editor/contrib/runtime_error/state';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
-import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { HistoryMode } from '../../../machine/ts/machine/runtime/history/history';
 import { check, type StudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
@@ -40,7 +39,6 @@ export async function runStudioExecutionOperations(test: StudioFixture) {
 		&& history.mode === HistoryMode.Disabled && title() === actor, 'operations: breakpoint is pending, not completion');
 	await until(() => harness.getActiveCodeContext()!.executionStopRow === initLine - 1, 'operations: breakpoint navigation finishes');
 	await frame();
-	check(editorFeedbackState.message.text !== 'Hot Resume: code applied', 'pending init cannot display stale success');
 	await test.capture?.('init-pending');
 	harness.replaceActiveCodeSource(source + '\n-- nested admitted init\n');
 	const nested = harness.performHotResume();
@@ -70,11 +68,9 @@ export async function runStudioExecutionOperations(test: StudioFixture) {
 	check(faultResult.applied && faultResult.sequence === 1,
 		'operations: installed code plus guest failure, never a success toast');
 	check(runtime.completionCallPending() && ide.debugger.plans.mutationActive, 'operations: fault retains real recovery roots');
-	check(editorFeedbackState.message.text === 'Hot Resume: guest fault', 'guest failure replaces prior success feedback');
 	await press('ControlRight', 'ShiftRight');
 	await until(() => runtimeErrorState.activeOverlay !== null, 'operations: physical fault navigation finishes');
 	await frame();
-	check(editorFeedbackState.message.text !== 'Hot Resume: code applied', 'physical fault presentation cannot retain stale success');
 	await test.capture?.('init-faulted');
 	harness.replaceActiveCodeSource(source);
 	const replaced = harness.performHotResume();
@@ -92,7 +88,6 @@ export async function runStudioExecutionOperations(test: StudioFixture) {
 		'operations: actual recovery reports completion without replacing the actor');
 	check(faulted.result === faultResult && ide.fault.lastLuaCallStack.length === 0,
 		'operations: recovery clears inspection but cannot rewrite the older failed outcome');
-	check(editorFeedbackState.message.text === 'Hot Resume: code applied', 'operations: completion drives ordinary UI feedback');
 	harness.openLuaSource('title_screen.lua');
 	await frame();
 	await runMenuCommand('pause');

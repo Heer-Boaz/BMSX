@@ -25,7 +25,7 @@ export async function testStudioFsmSource(test: StudioFixture): Promise<void> {
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: FSM_BEHAVIOR_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
-	await chooseBehavior(test, 'FSM fixture.first', 'STATE MACHINES');
+	await chooseBehavior(test, 'FSM fixture.first');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('FSM source: expected the real Behavior Lens input');
 	const view = lens.view;

@@ -20,7 +20,7 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_TRANSFER_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
-	await chooseBehavior(test, 'BT fixture.second', 'BEHAVIOR TREES');
+	await chooseBehavior(test, 'BT fixture.second');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('bookmark: BT graph required');
 	const view = lens.view;

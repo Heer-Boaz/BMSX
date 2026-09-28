@@ -95,7 +95,6 @@ test('same-path files from two sockets retain distinct original resources throug
 	picker.pick('FILES', 'query', () => provider, item => { accepted = item.resource; });
 	picker.model.filter('src'); picker.update();
 	assert.deepEqual(picker.model.list.rows.map(row => row.item), items);
-	assert.equal(picker.model.list.rows[1].item.description, 'LUA / SLOT 1');
 	picker.model.list.selectionIndex = 1;
 	picker.accept();
 	assert.equal(accepted, resources[1]); assert.equal(accepted.source, resources[1].source);

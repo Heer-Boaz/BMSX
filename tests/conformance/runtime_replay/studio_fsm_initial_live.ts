@@ -39,7 +39,7 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	check(guest.formatValue(guest.readStringMember(machine, 'current_id')) === 'idle', 'initial live: cold default is idle');
 	check(guest.readStringMember(data, 'retained') === 73, 'initial live: actual mutable FSM data exists');
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
-	await chooseBehavior(test, 'FSM fixture.initial', 'STATE MACHINES');
+	await chooseBehavior(test, 'FSM fixture.initial');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'state-graph') throw new Error('initial live: FSM graph required');
 	await lens.graphLayout.settled; await frame();
@@ -103,7 +103,7 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	check(!execution.userPaused, 'initial live: explicit cold reboot is not an implicit pause');
 	await runMenuCommand('pause');
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
-	await chooseBehavior(test, 'FSM fixture.initial', 'STATE MACHINES');
+	await chooseBehavior(test, 'FSM fixture.initial');
 	await lens.graphLayout.settled; await frame();
 	await revealLensOccurrence(test, lens.view, Array.from(graph.viewport.model.nodesBySource.values()).find(node => node.source.label === 'idle')!.source.rowKey);
 	console.info('STUDIO: FSM initial live edit and three Hot Resume installs PASS');

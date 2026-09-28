@@ -1,7 +1,6 @@
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { getOrCreateSemanticProject } from '../../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { inputFocus } from '../../../ide/input/focus';
-import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import type { SceneEditorInput } from '../../../ide/workbench/contrib/scene_editor/editor_input';
 import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
@@ -118,7 +117,7 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	await click(scene.properties[0].bounds);
 	await press('Minus');
 	await selectMember(test, scene, 0);
-	check(model.buffer.getText() === expected && editorFeedbackState.message.text === 'Invalid integer edit cancelled; source unchanged.',
+	check(model.buffer.getText() === expected,
 		'scene: leaving an invalid value explicitly reports rejection without changing either member');
 	await selectMember(test, scene, 2);
 
