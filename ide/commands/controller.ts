@@ -43,6 +43,7 @@ import {
 import { clearExecutionStopHighlights } from '../runtime_error/navigation';
 import { deactivateEditor } from '../workbench/overlay_modes';
 import { inputFocus, type InputFocusTarget } from '../input/focus';
+import { openObservedConversation } from '../workbench/contrib/conversations/quick_access';
 
 // Source-consuming commands accept the concrete control's value before dirty
 // model selection, prompts or asynchronous source capture (Godot EditorData).
@@ -131,6 +132,20 @@ export class IdeCommandController {
 			case 'sceneEditor.removeMember':
 				this.editor.sceneEditor.removeSelectedMember();
 				return;
+			case 'assistant.signIn':
+			case 'assistant.cancelLogin':
+			case 'assistant.signOut':
+			case 'assistant.openLogin':
+			case 'assistant.copyCode':
+			case 'assistant.history':
+			case 'assistant.new':
+			case 'assistant.commands':
+			case 'assistant.stop':
+				this.editor.assistantCommands.execute(command);
+				return;
+			case 'conversations.history':
+				openObservedConversation(this.editor.editorPanes, this.editor.observedConversation, this.editor.quickInput);
+				return;
 			case 'graph.zoomIn':
 			case 'graph.zoomOut':
 			case 'graph.resetZoom':
@@ -155,7 +170,6 @@ export class IdeCommandController {
 			case 'propertyInspector.source':
 			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
-			case 'conversations.history':
 			case 'conversations.older':
 			case 'terminal.evaluate':
 			case 'terminal.context':
@@ -163,18 +177,9 @@ export class IdeCommandController {
 			case 'terminal.continue':
 			case 'terminal.clear':
 			case 'terminal.copy':
-			case 'assistant.signIn':
-			case 'assistant.cancelLogin':
-			case 'assistant.signOut':
-			case 'assistant.openLogin':
-			case 'assistant.copyCode':
 			case 'assistant.send':
 			case 'assistant.queue':
 			case 'assistant.direct':
-			case 'assistant.history':
-			case 'assistant.new':
-			case 'assistant.commands':
-			case 'assistant.stop':
 			case 'assistant.review':
 			case 'assistant.copy':
 			case 'workspaceEditReview.apply':
@@ -331,6 +336,18 @@ export class IdeCommandController {
 				return this.editor.sceneEditor.canMoveSelectedMember(1);
 			case 'sceneEditor.removeMember':
 				return this.editor.sceneEditor.canRemoveSelectedMember();
+			case 'assistant.signIn':
+			case 'assistant.cancelLogin':
+			case 'assistant.signOut':
+			case 'assistant.openLogin':
+			case 'assistant.copyCode':
+			case 'assistant.history':
+			case 'assistant.new':
+			case 'assistant.commands':
+			case 'assistant.stop':
+				return this.editor.assistantCommands.isEnabled(command);
+			case 'conversations.history':
+				return this.editor.observedConversation.available && !this.editor.observedConversation.pending;
 			case 'graph.zoomIn':
 			case 'graph.zoomOut':
 			case 'graph.resetZoom':
@@ -355,7 +372,6 @@ export class IdeCommandController {
 			case 'propertyInspector.source':
 			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
-			case 'conversations.history':
 			case 'conversations.older':
 			case 'terminal.evaluate':
 			case 'terminal.context':
@@ -363,18 +379,9 @@ export class IdeCommandController {
 			case 'terminal.continue':
 			case 'terminal.clear':
 			case 'terminal.copy':
-			case 'assistant.signIn':
-			case 'assistant.cancelLogin':
-			case 'assistant.signOut':
-			case 'assistant.openLogin':
-			case 'assistant.copyCode':
 			case 'assistant.send':
 			case 'assistant.queue':
 			case 'assistant.direct':
-			case 'assistant.history':
-			case 'assistant.new':
-			case 'assistant.commands':
-			case 'assistant.stop':
 			case 'assistant.review':
 			case 'assistant.copy':
 			case 'workspaceEditReview.apply':

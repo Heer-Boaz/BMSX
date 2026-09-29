@@ -63,6 +63,8 @@ export class AssistantInput extends ReadonlyEditorInput<'assistant', 'assistant'
 	}
 }
 
-export function openAssistant(panes: EditorPanes, conversation: AssistantConversation): void {
-	openEditorTab(panes, editorTabGroup.findById('assistant') ?? new AssistantInput(conversation));
+export function openAssistant(panes: EditorPanes, conversation: AssistantConversation): AssistantInput {
+	const input = editorTabGroup.tabs.find(input => input.kind === 'assistant') ?? new AssistantInput(conversation);
+	openEditorTab(panes, input);
+	return input;
 }

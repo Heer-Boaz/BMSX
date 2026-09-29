@@ -11,6 +11,7 @@ import type { LuaTerminalSession } from './workbench/services/terminal/session';
 import { TerminalPane } from './workbench/contrib/terminal/editor_pane';
 import { TerminalInput } from './workbench/contrib/terminal/editor_input';
 import { AssistantPane } from './workbench/contrib/assistant/editor_pane';
+import { AssistantChatCommands } from './workbench/contrib/assistant/chat_commands';
 import type { AssistantConnectionFactory } from '../hosts/common/assistant_protocol';
 import type { HotResumeService } from './workbench/services/execution/hot_resume';
 import { ActorLabController } from './workbench/contrib/actor_lab/controller';
@@ -164,6 +165,7 @@ export type CartEditor = {
 	readonly clipboardTarget: ClipboardTarget | undefined;
 	readonly terminal: LuaTerminalSession;
 	readonly assistant: AssistantConversation;
+	readonly assistantCommands: AssistantChatCommands;
 	readonly observedConversation: ObservedConversation;
 	readonly tools: WorkspaceToolService;
 	readonly diagnostics: ResourceDiagnosticsService;
@@ -263,6 +265,7 @@ export class RuntimeCartEditor implements CartEditor {
 	};
 
 	public readonly assistant: AssistantConversation;
+	public readonly assistantCommands: AssistantChatCommands;
 	public readonly observedConversation: ObservedConversation;
 	public readonly tools: WorkspaceToolService;
 
@@ -348,8 +351,8 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		this.editorPanes = new EditorPanes({
 			terminal: () => new TerminalPane(this.resourcePanel, this.clipboard, this.quickInput),
-			conversation_observer: () => new ConversationObserverPane(this.resourcePanel, this.quickInput, decodeImage),
-			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.quickInput, decodeImage),
+			conversation_observer: () => new ConversationObserverPane(this.resourcePanel, decodeImage),
+			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.assistantCommands, decodeImage),
 			workspace_edit_review: () => new WorkspaceEditReviewPane(this.resourcePanel, {
 				// The editor owns the tab group and the ordinary Save service; the review pane asks.
 				reveal: models => {
@@ -384,6 +387,7 @@ export class RuntimeCartEditor implements CartEditor {
 			),
 		});
 		this.search = new EditorSearchController(this.sources, renameController);
+		this.assistantCommands = new AssistantChatCommands(this.assistant, this.editorPanes, this.quickInput, this.clipboard);
 		this.navigation = new EditorNavigationController(
 			this.sources,
 			this.resourcePanel,

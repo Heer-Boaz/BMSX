@@ -5188,6 +5188,12 @@ command or server. Host/origin/session admission remains shared; LAN reachabilit
 does not identify individual users. Server startup starts no Codex process;
 explicit chat, history or account use admits one coalesced connection. The browser runtime's secure-context
 requirements remain independent of network API admission.
+Conversation history, new conversation, account actions and Stop are workbench
+commands gated by deployment capability and conversation state, not chat-pane
+focus. The shared chat-command owner reveals the assistant input for pickers and
+new conversations; draft submission and message selection remain pane-scoped.
+The CLI conversation-history action likewise opens its read-only viewer from any
+editor. Merely listing commands never connects to an agent or registers tools.
 The Node adapter owns the isolated Codex account/process, fixed operation
 protocol and process lease. Codex owns durable threads and queued text; native
 history browsing is separate from resuming execution. Studio reads paged history

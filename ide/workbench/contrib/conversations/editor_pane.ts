@@ -8,26 +8,22 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { PointerButton } from '../../../input/pointer/buttons';
 import { api } from '../../../runtime/overlay_api';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
-import type { QuickInputController } from '../../services/quick_input/controller';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { ImagePreviewCache } from '../../ui/image_preview';
 import { ImagePreviewOverlay } from '../../ui/image_preview_overlay';
 import { AssistantTranscriptControl } from '../assistant/transcript_control';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { ConversationObserverInput } from './editor_input';
-import { chooseObservedConversation } from './quick_access';
 
 /** Deliberately no composer, account controls, stop button or agent-tool authority. */
 export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<ConversationObserverInput> {
 	private readonly previews: ImagePreviewCache;
 	private readonly preview: ImagePreviewOverlay;
 	private readonly transcriptView: AssistantTranscriptControl;
-	public constructor(resources: ResourcePanelController, quickInput: QuickInputController, decodeImage: ImageDecoder) {
+	public constructor(resources: ResourcePanelController, decodeImage: ImageDecoder) {
 		super(resources);
 		this.previews = new ImagePreviewCache(decodeImage); this.preview = new ImagePreviewOverlay(this.previews);
 		this.transcriptView = new AssistantTranscriptControl(this.focusTarget, this.previews, this.preview);
-		this.focusTarget.registerCommand('conversations.history', { isEnabled: () => !this.input.conversation.pending,
-			run: () => { void chooseObservedConversation(this.input, quickInput); } });
 		this.focusTarget.registerCommand('conversations.older', { isEnabled: () => !this.input.conversation.pending && this.input.conversation.olderCursor !== null,
 			run: () => { void this.input.conversation.older(); } });
 	}

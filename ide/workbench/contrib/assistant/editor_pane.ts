@@ -34,17 +34,14 @@ import { openEditorTab } from '../../ui/tabs';
 import { WorkspaceEditReviewInput } from '../edit_review/editor_input';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { AssistantInput } from './editor_input';
-import type { QuickInputController } from '../../services/quick_input/controller';
-import { AssistantChatCommands, isAssistantCommand } from './chat_commands';
+import { isAssistantCommand, type AssistantChatCommands } from './chat_commands';
 
 const SPINNER = ['|', '/', '-', '\\'];
 
-const COMMANDS = ['assistant.history', 'assistant.new', 'assistant.commands', 'assistant.queue', 'assistant.direct', 'assistant.signIn', 'assistant.cancelLogin', 'assistant.signOut',
-	'assistant.openLogin', 'assistant.copyCode', 'assistant.send', 'assistant.stop', 'assistant.review', 'assistant.copy'] as const;
+const COMMANDS = ['assistant.queue', 'assistant.direct', 'assistant.send', 'assistant.review', 'assistant.copy'] as const;
 
 /** Host-only conversation work continues under the ordinary workbench game pause. */
 export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> {
-	private readonly chat: AssistantChatCommands;
 	private readonly previews: ImagePreviewCache;
 	private readonly preview: ImagePreviewOverlay;
 	private readonly attachments: AssistantAttachmentStrip;
@@ -56,9 +53,8 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	private readonly composer = new MultilineFieldControl();
 	private unbindDraft: (() => void) | undefined;
 	private unbindAttachmentClipboard: (() => void) | undefined;
-	public constructor(resources: ResourcePanelController, private readonly clipboard: Clipboard, private readonly panes: EditorPanes, quickInput: QuickInputController, decodeImage: ImageDecoder) {
+	public constructor(resources: ResourcePanelController, private readonly clipboard: Clipboard, private readonly panes: EditorPanes, private readonly chat: AssistantChatCommands, decodeImage: ImageDecoder) {
 		super(resources);
-		this.chat = new AssistantChatCommands(quickInput, clipboard);
 		this.previews = new ImagePreviewCache(decodeImage);
 		this.preview = new ImagePreviewOverlay(this.previews);
 		this.transcriptView = new AssistantTranscriptControl(this.focusTarget, this.previews, this.preview, () => this.execute('assistant.review'));
@@ -105,15 +101,9 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		const hasContent = this.input.draftHasText || this.input.attachments.images.length > 0;
 		const ready = this.input.attachments.ready;
 		switch (command) {
-			case 'assistant.history': case 'assistant.new': return model.canBrowse && !this.input.commandPending;
-			case 'assistant.commands': return !this.input.commandPending;
-			case 'assistant.signIn': return model.available && (model.state === 'disconnected' || model.state === 'ready' && !model.accountRefreshing && model.account!.requiresLogin);
-			case 'assistant.cancelLogin': return model.state === 'signing-in';
-			case 'assistant.signOut': return model.state === 'ready' && !model.accountRefreshing && model.account!.connected;
-			case 'assistant.openLogin': case 'assistant.copyCode': return model.loginCode !== undefined;
 			case 'assistant.send': case 'assistant.queue': return hasContent && !this.input.commandPending && (this.input.draft.text.startsWith('/') || ready && model.canSubmit);
 			case 'assistant.direct': return model.canDirect && ready && hasContent;
-			case 'assistant.stop': return model.state === 'running' || model.state === 'starting';
+			case 'assistant.stop': return this.chat.isEnabled(command);
 			case 'assistant.review': return model.entries[selectedEntry]?.proposal !== undefined;
 			case 'assistant.copy': return selectedEntry >= 0;
 			default: return false;
@@ -123,17 +113,9 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		if (!this.isEnabled(command)) return;
 		const { conversation: model, draft } = this.input;
 		switch (command) {
-			case 'assistant.history': void this.chat.history(this.input); break;
-			case 'assistant.new': void model.newConversation(); break;
-			case 'assistant.commands': this.chat.commands(this.input); break;
-			case 'assistant.signIn': void model.connect().then(() => model.startLogin()); break;
-			case 'assistant.cancelLogin': void model.cancelLogin(); break;
-			case 'assistant.signOut': void model.signOut(); break;
-			case 'assistant.openLogin': model.openLoginPage(); break;
-			case 'assistant.copyCode': void writeClipboard(this.clipboard, model.loginCode!, 'Copied sign-in code'); break;
 			case 'assistant.send': case 'assistant.queue': case 'assistant.direct':
 				draft.focusTarget.focus(); void this.chat.submit(this.input, command === 'assistant.direct'); break;
-			case 'assistant.stop': void model.interrupt(); break;
+			case 'assistant.stop': this.chat.execute(command); break;
 			case 'assistant.copy': void writeClipboard(this.clipboard, model.entries[this.input.selectedEntry].text.getText(), 'Copied message'); break;
 			case 'assistant.review': {
 				const proposal = model.entries[this.input.selectedEntry].proposal!;

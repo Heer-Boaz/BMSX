@@ -39,7 +39,8 @@ test('real Studio: choose the native conversation, follow work, resize and close
 	await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 	await page.keyboard.press('ControlRight+ShiftRight', { delay: 100 });
 	await page.keyboard.press('Control+Shift+p', { delay: 100 });
-	await page.keyboard.type('Codex CLI Conversations', { delay: 25 });
+	// History is a workbench action: the initial focus is still the Lua editor.
+	await page.keyboard.type('Codex CLI Choose Conversation', { delay: 25 });
 	await page.screenshot({ path: join(evidence, 'command.png') });
 	const history = page.waitForResponse(response => response.url().endsWith('/conversations/command') && response.request().postDataJSON().type === 'history');
 	await page.keyboard.press('Enter', { delay: 100 });

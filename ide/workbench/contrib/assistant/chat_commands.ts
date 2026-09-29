@@ -1,10 +1,14 @@
 import type { Clipboard } from '../../../../hosts/common/clipboard';
+import type { EditorCommandId } from '../../../common/commands';
+import type { AssistantConversation } from '../../services/assistant/conversation';
+import type { EditorPanes } from '../../services/editor/editor_panes';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { setFieldText } from '../../../editor/ui/inline/text_field';
 import { writeClipboard } from '../../../input/clipboard';
 import { getActiveTab } from '../../ui/tabs';
-import type { AssistantInput } from './editor_input';
+import { editorTabGroup } from '../../ui/tab/group_model';
+import { openAssistant, type AssistantInput } from './editor_input';
 import { AssistantModelPicker } from './model_picker';
 
 const COMMANDS = [
@@ -37,8 +41,46 @@ export function isAssistantCommand(input: AssistantInput): boolean {
 
 export class AssistantChatCommands {
 	private readonly models: AssistantModelPicker;
-	public constructor(private readonly quickInput: QuickInputController, private readonly clipboard: Clipboard) {
+	public constructor(private readonly conversation: AssistantConversation, private readonly panes: EditorPanes,
+		private readonly quickInput: QuickInputController, private readonly clipboard: Clipboard) {
 		this.models = new AssistantModelPicker(quickInput);
+	}
+
+	/** Workbench actions depend on the conversation, never on the currently focused pane. */
+	public isEnabled(command: EditorCommandId): boolean {
+		const model = this.conversation;
+		if (!model.available) return false;
+		switch (command) {
+			case 'assistant.history': case 'assistant.new': case 'assistant.commands': {
+				const input = editorTabGroup.tabs.find(input => input.kind === 'assistant');
+				return !input?.commandPending && (command === 'assistant.commands' || model.canBrowse);
+			}
+			case 'assistant.signIn': return model.state === 'disconnected' || model.state === 'ready' && !model.accountRefreshing && model.account!.requiresLogin;
+			case 'assistant.cancelLogin': return model.state === 'signing-in';
+			case 'assistant.signOut': return model.state === 'ready' && !model.accountRefreshing && model.account!.connected;
+			case 'assistant.openLogin': return model.loginUrl !== undefined;
+			case 'assistant.copyCode': return model.loginCode !== undefined;
+			case 'assistant.stop': return model.state === 'running' || model.state === 'starting';
+			default: return false;
+		}
+	}
+
+	public execute(command: EditorCommandId): void {
+		if (!this.isEnabled(command)) return;
+		const model = this.conversation;
+		switch (command) {
+			case 'assistant.history': void this.history(openAssistant(this.panes, model)); break;
+			case 'assistant.new': openAssistant(this.panes, model); void model.newConversation(); break;
+			case 'assistant.commands': this.commands(openAssistant(this.panes, model)); break;
+			case 'assistant.signIn':
+				openAssistant(this.panes, model);
+				void model.connect().then(() => model.startLogin()); break;
+			case 'assistant.cancelLogin': void model.cancelLogin(); break;
+			case 'assistant.signOut': void model.signOut(); break;
+			case 'assistant.openLogin': model.openLoginPage(); break;
+			case 'assistant.copyCode': void writeClipboard(this.clipboard, model.loginCode!, 'Copied sign-in code'); break;
+			case 'assistant.stop': void model.interrupt(); break;
+		}
 	}
 
 	public commands(input: AssistantInput): void {
