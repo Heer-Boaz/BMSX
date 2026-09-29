@@ -1,3 +1,4 @@
+import { chooseBuild, showBuildJobs } from '../workbench/contrib/builds/commands';
 import type { RuntimeDebuggerExecution } from '../runtime/debugger_execution';
 import { executeClipboardAction } from '../input/clipboard';
 import type { RuntimeFrameNavigation } from '../runtime/frame_navigation';
@@ -43,6 +44,7 @@ import {
 import { clearExecutionStopHighlights } from '../runtime_error/navigation';
 import { deactivateEditor } from '../workbench/overlay_modes';
 import { inputFocus, type InputFocusTarget } from '../input/focus';
+import { showServerConnection } from '../workbench/contrib/server/connection';
 import { openObservedConversation } from '../workbench/contrib/conversations/quick_access';
 
 // Source-consuming commands accept the concrete control's value before dirty
@@ -142,6 +144,11 @@ export class IdeCommandController {
 			case 'assistant.commands':
 			case 'assistant.stop':
 				this.editor.assistantCommands.execute(command);
+				return;
+			case 'builds.start': void chooseBuild(this.editor); return;
+			case 'builds.jobs': showBuildJobs(this.editor); return;
+			case 'server.connection':
+				showServerConnection(this.editor);
 				return;
 			case 'conversations.history':
 				openObservedConversation(this.editor.editorPanes, this.editor.observedConversation, this.editor.quickInput);
@@ -346,6 +353,9 @@ export class IdeCommandController {
 			case 'assistant.commands':
 			case 'assistant.stop':
 				return this.editor.assistantCommands.isEnabled(command);
+			case 'builds.start': return this.editor.builds !== undefined && this.editor.serverConnectionState === 'connected';
+			case 'builds.jobs': return this.editor.builds !== undefined;
+			case 'server.connection': return true;
 			case 'conversations.history':
 				return this.editor.observedConversation.available && !this.editor.observedConversation.pending;
 			case 'graph.zoomIn':

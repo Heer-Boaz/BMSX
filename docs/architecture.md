@@ -852,19 +852,31 @@ Owners:
   imports and external glTF dependencies are captured before conversion. Scan,
   lint, compile, packaging and diagnostic snippets consume those retained bytes;
   these consumers must not reopen the source paths.
-- Offline recipe/input/output receipts: `scripts/rompacker/build_state.ts`.
-  Effective compiler options, toolchain content, input membership/content and
-  actual output digests determine reuse, not relative file modification times.
-  Lua source timestamps remain captured metadata because source records emit
-  them. Receipts live in the output directory's ignored `.bmsx` state directory;
-  they are not an immutable artifact catalog or an installation identity.
+- Complete media production: `scripts/rompacker/build.ts` captures both BIOS and
+  cartridge inputs before either compilation. `compile.ts` consumes those inputs;
+  the CLI and server worker call the same producer. Effective recipes, toolchain
+  identity and the selected BIOS's actual output digests determine reuse. The cart
+  never links against a mutable export-directory sidecar. `build_state.ts` owns
+  recipe/output types and toolchain identity, not a second freshness planner.
+- Immutable publication: `scripts/rompacker/artifacts.ts` commits a complete
+  staged bundle by directory rename. Content-addressed artifacts and action
+  references live in `.bmsx/builds`, separate from mutable exports such as `dist`.
+  `scripts/products/deploy_builder.ts` packages an explicitly selected existing
+  artifact and host product; it does not silently rebuild either.
+- Workspace jobs: `hosts/node/builds/jobs.ts` owns durable admission, the bounded
+  queue, one child producer, cancellation and publication. `ledger.ts` owns SQLite
+  receipts and exclusive server ownership. A caller-supplied request ID reconciles
+  a lost acknowledgement without replay. Workers cannot publish; disconnected
+  observers cannot cancel jobs. Restart marks unfinished work interrupted unless
+  its recorded publication actually committed.
 
-The CLI compares prepared inputs before loading the compiler, linter and native
-asset converters. A no-op does not compile, convert or rewrite outputs. The
-writer hashes the actual emitted bytes while writing and records success only
-after output finalization. Complete multi-file artifact publication and managed
-build jobs are separate, still-unimplemented boundaries; see
-[producer input ownership](rom_build_inputs.md) for current scope and evidence.
+Reuse is decided before loading the compiler, linter and native asset converters.
+A no-op does not compile, convert or rewrite matching exports. The writer hashes
+emitted bytes during finalization. Lua source timestamps remain captured metadata
+because source records emit them, not because mtime establishes freshness. See
+[workspace builds](studio_build_jobs.md) for the current commands, ownership and
+evidence. Publication is not full-media installation into a running emulator;
+that boundary remains a separate design decision.
 
 The ROM package and BLua32 image use the current wire records only. There is no
 old-format reader and no decode path for obsolete records.
@@ -5449,7 +5461,7 @@ The packaged page uses browser-owned IndexedDB source storage and scoped local
 recovery without creating any development-server transport. IDE, Terminal and
 local Studio tools do not depend on an assistant connection. The existing server
 renders its two Studio application routes from a product-owned template and
-independently declares filesystem, assistant, conversation-viewer and MCP window
+independently declares filesystem, assistant, conversation-viewer and server
 capabilities through `StudioConfiguration`. Arbitrary static HTML is not
 rewritten. No endpoint probing or error-driven workspace replacement selects
 services. Providers expose canonical file operations; network admission belongs
@@ -5462,12 +5474,19 @@ recovery checkpoint. Recovery cannot be replayed into canonical source files.
 
 The workbench status bar reserves a permanent connection slot and supplies the
 remaining content bounds to every pane, including messages and resource status.
-Browser composition projects the existing live Studio tool channel's registration
-and closure into this display: connecting, connected or disconnected. Standalone
-composition is neutral, not a failed connection. This is not file-write authority,
-an account/login flag or a connectivity gate; it performs no probes or retries.
+Browser composition projects the general Studio window connection into this
+display: connecting, connected, reconnecting, suspended or disconnected.
+`StudioServerConnection` owns a single bounded recovery loop; `StudioSessions`
+owns the server incarnation, registration and heartbeat acknowledgements.
+Tool and build observation are independent capabilities on that registration.
+Lost tool authority is retired, never silently renewed or replayed. A replacement
+registration receives the current build snapshot rather than restarting jobs.
+Freeze/cached navigation releases registration; restoration registers afresh
+without replacing local models or drafts. Standalone composition is neutral and
+opens no transport. This is not file-write authority or an account/login flag.
 The indicator uses shapes as well as theme colors and remains visible when a
-pane replaces its status text. Connection events, rather than render-time IO,
+pane replaces its status text. Clicking the indicator opens details and contextual
+Retry. Connection events, rather than render-time IO,
 follow the same ownership principle as VS Code's
 [remote status indicator](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/remote/browser/remoteIndicator.ts).
 

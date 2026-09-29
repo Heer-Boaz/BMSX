@@ -53,7 +53,7 @@ test('CLI MCP uses a real Studio window without its chat: runtime, Lua, frames, 
 	assert.equal(forbidden.isError, true, 'MCP clients cannot borrow another client\'s tool contexts');
 	// Window registration publishes the tool endpoint, not completion of the boot operation.
 	let status = await call('studio_runtime_status', { toolContext });
-	while (status.operationActive) {
+	while (status.operationActive || status.activeCartridge < 0 || !status.history.canStepForward) {
 		await delay(50);
 		status = await call('studio_runtime_status', { toolContext });
 	}

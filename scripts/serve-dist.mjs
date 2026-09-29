@@ -26,6 +26,7 @@ if (args.includes('--help') || args.includes('-h')) {
 	console.log(`Local development server for ./dist
 Usage: node scripts/serve-dist.mjs [options]
 Options:
+  --build-store <path>  Artifact and job store (default: .bmsx/builds)
 	-d, --dir <path>      Directory to serve (default: dist)
 	-p, --port <number>   Port to listen on (default: 8080)
 	-H, --host <address>  Host address (default: 127.0.0.1; use 0.0.0.0 for trusted LAN access)
@@ -83,7 +84,7 @@ const { serveStudioPage, STUDIO_PAGE_ROUTES } = await import('./dev/studio_page.
 /** @type {import('../ide/common/studio_configuration.ts').StudioConfiguration} */
 const studioConfiguration = {
 	workspace: { kind: 'http', baseUrl: '' },
-	assistant: '', conversations: '', externalTools: '',
+	assistant: '', conversations: '', server: { baseUrl: '', tools: true, builds: true },
 };
 const { CodexObserverHttpApi } = await import('../hosts/node/codex/observer_http.ts');
 const { CodexHttpApi } = await import('../hosts/node/codex/http_api.ts');
@@ -92,14 +93,17 @@ const { StudioMcpApi } = await import('../hosts/node/studio/mcp.ts');
 const { openUrlInBrowser } = await import('../hosts/node/common/open_url.ts');
 const { STUDIO_TOOLS } = await import('../ide/workbench/services/assistant/tool_catalog.ts');
 const conversationViewers = new CodexObserverHttpApi(process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex'));
-const studioSessions = new StudioSessions();
-const studioMcp = new StudioMcpApi(studioSessions, STUDIO_TOOLS);
+const { StudioBuildJobs } = await import('../hosts/node/builds/jobs.ts');
+const { handleBuildRequest } = await import('../hosts/node/builds/api.ts');
+const buildJobs = await StudioBuildJobs.open(projectRoot, path.resolve(getArg('build-store', null, path.join(projectRoot, '.bmsx', 'builds'))));
+const studioSessions = new StudioSessions(buildJobs);
+const studioMcp = new StudioMcpApi(studioSessions, STUDIO_TOOLS, buildJobs);
 const assistant = new CodexHttpApi({ tools: STUDIO_TOOLS,
 	openLoginPage: openUrlInBrowser,
 	// The same root the workspace API serves sources from, so a Studio source path and a shell
 	// path name the same file.
 	workspaceRoot: projectRoot,
-	profileDirectory: path.join(process.env.XDG_STATE_HOME ?? path.join(os.homedir(), '.local', 'state'), 'bmsx', 'studio-codex') });
+	profileDirectory: path.join(process.env.XDG_STATE_HOME ?? path.join(os.homedir(), '.local', 'state'), 'bmsx', 'studio-codex') }, buildJobs);
 
 async function handleCartsApi(req, res, url) {
 	if (url.pathname !== '/__bmsx__/carts') {
@@ -190,6 +194,11 @@ const server = createServer(async (req, res) => {
 		if (requestUrl.pathname === '/__bmsx__/mcp') {
 			workspaceSession.authorize(req);
 			await studioMcp.handle(req, res);
+			return;
+		}
+		if (requestUrl.pathname === '/__bmsx__/builds' || requestUrl.pathname.startsWith('/__bmsx__/builds/')) {
+			workspaceSession.authorize(req);
+			await handleBuildRequest(buildJobs, req, res, requestUrl);
 			return;
 		}
 		if (requestUrl.pathname.startsWith('/__bmsx__/studio/')) {
@@ -290,7 +299,7 @@ let shutdown;
 const stop = () => {
 	// Stop admission, then join both the assistant process and accepted HTTP IO.
 	// Killing every socket here would interrupt an already accepted source save.
-	shutdown ??= Promise.all([conversationViewers.close(), studioMcp.close(), studioSessions.close(), assistant.close(), new Promise((resolve, reject) => {
+	shutdown ??= Promise.all([buildJobs.close(), conversationViewers.close(), studioMcp.close(), studioSessions.close(), assistant.close(), new Promise((resolve, reject) => {
 		server.close(error => error ? reject(error) : resolve());
 	})]).catch(error => { console.error(error); process.exitCode = 1; });
 };

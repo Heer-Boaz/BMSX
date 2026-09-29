@@ -27,6 +27,11 @@ to the CLI working directory, so the supplied configuration is for launching
 from this repository's root. Project configuration requires Codex's normal
 workspace trust. No user-wide configuration is modified.
 
+Browser-host startup still requires secure, cross-origin-isolated delivery for
+audio. A plain HTTP LAN URL does not meet that requirement; localhost does.
+This deployment limitation is separate from MCP/API LAN admission; see the
+[platform backlog](studio_architecture_foundation.md#open-platform-usability-work-2026-09-29).
+
 The helper obtains the existing server capability from `GET /__bmsx__/session`
 and returns it through Codex's native headers-helper interface. It never reads
 or copies `auth.json`, logs into OpenAI, or writes a token to configuration or
@@ -93,9 +98,28 @@ session termination. Server shutdown ends its MCP sessions and registered window
 
 The browser window stream is a workbench lease, independent of the assistant
 stream. Losing it retires its pending calls and releases browser-owned contexts.
-Reload Studio to register a new window, then select it explicitly. Commands are
-not queued for replay. Disconnecting Studio chat does not disconnect external
+The window connection recovers with a fresh registration; list and select it
+explicitly, then open a fresh tool context. Commands are not queued for replay.
+Disconnecting Studio chat does not disconnect external
 tools, and closing an external context does not disconnect chat.
+
+## Workspace builds without a window
+
+The same MCP server exposes `studio_build_targets`, `studio_build_cart`,
+`studio_list_builds`, `studio_read_build`, `studio_cancel_build` and
+`studio_read_artifact`. These are server-owned workspace operations and do not
+take `toolContext` or require a browser window, account or live emulator.
+
+Save authored changes first through their existing owner. Supply a fresh UUID as
+`requestId` when requesting a build; retain it if the response is lost. Read that
+ID to reconcile instead of submitting another build. Duplicate admission of the
+same request returns its receipt; it does not repeat compilation. Closing the
+MCP session or window does not cancel an accepted job. Cancellation is explicit.
+
+Completion publishes an exact artifact, **not** a reset or installation into any
+running game. Logs are bounded and requested on demand. See
+[workspace builds](studio_build_jobs.md) for CLI packaging, durability, limits and
+connection behavior.
 
 ## Owners
 

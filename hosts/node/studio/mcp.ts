@@ -1,3 +1,5 @@
+import { BUILD_TOOLS, callBuildTool } from '../builds/tools';
+import type { StudioBuildJobs } from '../builds/jobs';
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -9,7 +11,7 @@ import type { StudioSessions } from './sessions';
 
 const INSTRUCTIONS = 'BMSX Studio tools operate on live Studio windows, independently of this conversation. '
 	+ 'Successful results expose the domain value as structuredContent.result and matching JSON text. Images are separate image blocks. '
-	+ 'First call studio_list_sessions, then studio_open_context with the chosen session ID. Pass the returned toolContext to every domain tool. '
+	+ 'Workspace build tools need no toolContext and do not install media. For live window tools, first call studio_list_sessions, then studio_open_context with the chosen session ID. Pass the returned toolContext to every domain tool. '
 	+ 'Handles and source receipts belong to that context; never guess them. Close the context when finished. '
 	+ 'Open a new context after source changes, workspace replacement or disconnection; do not replay mutations. '
 	+ 'External context lifetime is explicit, not bound to CLI conversation turns. '
@@ -39,9 +41,9 @@ export class StudioMcpApi {
 	private readonly tools: Tool[];
 	private readonly names: Set<string>;
 	private closing = false;
-	public constructor(private readonly sessions: StudioSessions, definitions: readonly StudioToolDefinition[]) {
+	public constructor(private readonly sessions: StudioSessions, definitions: readonly StudioToolDefinition[], private readonly builds?: StudioBuildJobs) {
 		this.names = new Set(definitions.map(tool => tool.name));
-		this.tools = [...MANAGEMENT_TOOLS, ...definitions.map(tool => ({ name: tool.name, description: tool.description,
+		this.tools = [...MANAGEMENT_TOOLS, ...(builds === undefined ? [] : BUILD_TOOLS), ...definitions.map(tool => ({ name: tool.name, description: tool.description,
 			inputSchema: { ...tool.inputSchema, type: 'object' as const,
 				properties: { toolContext: { type: 'string', description: 'Context returned by studio_open_context.' }, ...tool.inputSchema.properties },
 				required: ['toolContext', ...tool.inputSchema.required] } }))];
@@ -80,6 +82,7 @@ export class StudioMcpApi {
 	private async call(client: Client, name: string, input: Record<string, unknown>, signal: AbortSignal): Promise<CallToolResult> {
 		try {
 			signal.throwIfAborted();
+			if (this.builds !== undefined && BUILD_TOOLS.some(tool => tool.name === name)) return toolResult({ success: true, data: await callBuildTool(this.builds, name, input) });
 			if (name === 'studio_list_sessions') return toolResult({ success: true, data: { sessions: this.sessions.list() } });
 			if (name === 'studio_open_context') {
 				if (typeof input.session !== 'string') throw new Error('session must be a listed Studio session ID');

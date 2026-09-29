@@ -13,10 +13,12 @@ const LOCAL_STAND = [3, 4, 3, 6, 1, 6, 5, 6];
 export function renderServerConnection(state: StudioServerConnectionState, top: number): void {
 	switch (state) {
 		case 'connected': api.polyline(CONNECTED, 3, top + 3, 0, 1, colors.COLOR_SERVER_CONNECTED); break;
+		case 'reconnecting':
 		case 'connecting': api.polyline(CONNECTING, 3, top + 3, 0, 1, colors.COLOR_SERVER_CONNECTING); break;
 		case 'disconnected':
 			api.polyline(DISCONNECTED, 3, top + 3, 0, 1, colors.COLOR_SERVER_DISCONNECTED);
 			api.polyline(DISCONNECTED_CROSS, 3, top + 3, 0, 1, colors.COLOR_SERVER_DISCONNECTED); break;
+		case 'suspended':
 		case 'standalone':
 			api.polyline(LOCAL, 3, top + 3, 0, 1, colors.COLOR_STATUS_TEXT);
 			api.polyline(LOCAL_STAND, 3, top + 3, 0, 1, colors.COLOR_STATUS_TEXT); break;

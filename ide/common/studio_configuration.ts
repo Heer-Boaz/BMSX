@@ -4,5 +4,6 @@ export type StudioConfiguration = {
 	/** Protocol base URLs. Absence means that the service is not installed. */
 	assistant?: string;
 	conversations?: string;
-	externalTools?: string;
+	/** One workspace observation channel; tools are an independent capability. */
+	server?: { baseUrl: string; tools: boolean; builds: boolean };
 };

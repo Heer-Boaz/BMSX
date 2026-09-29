@@ -21,6 +21,13 @@ agent to accidental UI internals.
   [Current visual evidence and limitation](studio_conversation_view.md#validation-and-references).
 - **Standalone operation:** [implemented without a development backend](studio_standalone.md);
   the IDE and local Studio capabilities stay available, not just the player.
+- **LAN browser delivery:** the current SharedArrayBuffer audio startup requires
+  a secure, cross-origin-isolated page. A real plain-HTTP LAN check on 2026-09-29
+  failed at that existing boundary before Studio started. The build/connection
+  owners separately work on that HTTP origin, but a full emulator/phone claim
+  requires trusted HTTPS delivery or a deliberate audio-transport redesign.
+  Do not disable browser security or silently drop audio to claim success.
+  [Evidence and scope](studio_build_jobs.md#evidence-and-limits).
 
 ### Ownership
 

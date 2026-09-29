@@ -1,16 +1,18 @@
 # Studio cartridge builds and exact-media installation
 
-Status: proposed end-to-end design; **only the first offline producer slice is
-implemented** ([scope and evidence](rom_build_inputs.md)). The user requested an
+Status: design record. **Offline production/packaging, immutable publication,
+server-owned jobs and window connection recovery are implemented**; see
+[current commands, owners and evidence](studio_build_jobs.md). Full-media
+installation remains proposed, not implied by successful publication. The user requested an
 independent, context-free design review followed by implementation on 2026-09-29.
 Initial audit against `8b64051de`; build/deploy and connection findings
 rechecked on 2026-09-29 against `407a6cd72`. This complements
 [program tools](studio_program_tools.md), [source lifecycle](studio_source_lifecycle.md)
 and [standalone Studio](studio_standalone.md). The
 [connection lifecycle review](studio_connection_lifecycle_review.md) covers the
-independent connection workstream and its integration with these builds. Server
-jobs, complete artifact publication, exact installation and connection recovery
-remain future work, not functionality implied by the producer slice.
+independent connection workstream and its integration with these builds. The
+audit below describes the historical implementation; current producer ownership
+supersedes the first slice's mutable-output receipts.
 
 Scope clarification: the existing build/deploy chain is **not a constraint**.
 Replacing its entrypoints, output layout or orchestration is permitted where

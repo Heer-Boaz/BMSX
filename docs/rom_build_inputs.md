@@ -1,8 +1,11 @@
 # Offline ROM producer: captured inputs and build receipts
 
-Implemented 2026-09-29 after the independent review of the
-[build design](studio_cart_build_design.md). This is the first producer slice,
-not a server build API, immutable artifact store or full-media installer.
+Historical first-slice record at `e119a95c3`, implemented 2026-09-29 after the
+independent review of the [build design](studio_cart_build_design.md). Input
+capture remains current. The mutable-output receipts described below have been
+superseded by the [complete media producer and immutable publication catalog](studio_build_jobs.md),
+which also documents server jobs and connection recovery. The old receipt files
+are not consulted by the current producer. Full-media installation remains separate.
 
 ## Ownership
 

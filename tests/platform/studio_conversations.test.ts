@@ -49,14 +49,14 @@ test('server status follows the live Studio channel independently of the Codex d
 	await command('Codex CLI Choose Conversation'); assert.equal((await unavailable).status(), 503);
 	await page.screenshot({ path: join(evidence, 'daemon-unavailable-server-connected.png') });
 	await command('Codex Assistant'); await page.screenshot({ path: join(evidence, 'connected-assistant.png') });
-	const disconnected = page.waitForEvent('console', { predicate: message => message.text().includes('Studio external tools unavailable:') });
-	server.process.kill('SIGKILL'); await disconnected;
-	await press('Escape'); await page.screenshot({ path: join(evidence, 'disconnected-assistant.png') });
-	await press('Control+Alt+t'); await page.screenshot({ path: join(evidence, 'disconnected-dark.png') }); await press('Control+Alt+t');
-	await command('Lua Terminal'); await page.screenshot({ path: join(evidence, 'disconnected-terminal.png') });
+	const reconnecting = page.waitForRequest(request => request.url().endsWith('/studio/connect'));
+	server.process.kill('SIGKILL'); await reconnecting;
+	await press('Escape'); await page.screenshot({ path: join(evidence, 'reconnecting-assistant.png') });
+	await press('Control+Alt+t'); await page.screenshot({ path: join(evidence, 'reconnecting-dark.png') }); await press('Control+Alt+t');
+	await command('Lua Terminal'); await page.screenshot({ path: join(evidence, 'reconnecting-terminal.png') });
 	assert.deepEqual(errors, []);
-	assert.deepEqual(requests, ['/__bmsx__/session', '/__bmsx__/studio/connect', '/__bmsx__/conversations/connect'],
-		'connection chrome and pane changes do not poll, retry, log in or start the embedded agent');
+	assert.equal(requests.filter(path => path.startsWith('/__bmsx__/assistant/')).length, 0);
+	assert.equal(requests.filter(path => path === '/__bmsx__/conversations/connect').length, 1);
 	await assert.rejects(access(server.trace), { code: 'ENOENT' });
 });
 

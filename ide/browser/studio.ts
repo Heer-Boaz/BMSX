@@ -1,10 +1,12 @@
+import { HttpWorkspaceBuilds } from './builds';
+import { showEditorMessage } from '../common/feedback_state';
+import { COLOR_STATUS_SUCCESS, COLOR_STATUS_ERROR } from '../common/constants';
 import { HttpConversationObserver } from './conversation_observer';
 import { decodeImage, encodePngImage } from '../../hosts/browser/image';
 import { AssistantHttpConnection } from './assistant_connection';
-import { StudioToolHttpConnection } from './tool_connection';
+import { StudioServerConnection } from './server_connection';
 import { WorkspaceEditReviewInput } from '../workbench/contrib/edit_review/editor_input';
 import { openEditorTab } from '../workbench/ui/tabs';
-import { LogLevel } from '../../hosts/common/log';
 import { StudioHttpSession } from './http_session';
 import { BrowserGraphLayoutEngine } from './graph_layout';
 import { HostExecutionControl } from '../../hosts/common/execution_control';
@@ -100,7 +102,6 @@ async function startBrowserStudio(): Promise<void> {
 		const storage = workspace.kind === 'browser'
 			? new ScopedKeyValueStorage(window.localStorage, 'bmsx.standalone:') : window.localStorage;
 		const clipboard = new BrowserClipboard();
-		const toolLifetime = new AbortController();
 		const ide = await prepareWorkbenchRuntime(
 			options.systemRom,
 			options.cartridgeSlots,
@@ -142,7 +143,6 @@ async function startBrowserStudio(): Promise<void> {
 			}
 		});
 		window.addEventListener('pagehide', (event) => {
-			toolLifetime.abort(new Error('Studio page closed'));
 			ide.editor.assistant.disconnect();
 			ide.editor.observedConversation.disconnect();
 			persistWorkspaceSessionLocally();
@@ -171,16 +171,28 @@ async function startBrowserStudio(): Promise<void> {
 				}
 			}
 		});
-		if (configuration.externalTools !== undefined) {
-			ide.editor.serverConnectionState = 'connecting';
-			const reportToolFailure = (error: unknown) => options.logOutput.log(LogLevel.Error, `Studio external tools unavailable: ${String(error)}`);
-			void StudioToolHttpConnection.open(httpSession(configuration.externalTools), ide.editor.tools, { title: document.title, url: location.href }, proposal => {
-				ide.editor.activate();
-				openEditorTab(ide.editor.editorPanes, new WorkspaceEditReviewInput(proposal));
-			}, toolLifetime.signal, reportToolFailure).then(async connection => {
-				ide.editor.serverConnectionState = 'connected';
-				await connection.closed;
-			}).catch(reportToolFailure).finally(() => { ide.editor.serverConnectionState = 'disconnected'; });
+		const server = configuration.server;
+		if (server !== undefined) {
+			const builds = server.builds ? new HttpWorkspaceBuilds(httpSession(server.baseUrl), job => {
+				showEditorMessage(`${job.request.target}: ${job.phase}. Studio: Build Jobs`, job.state === 'completed' ? COLOR_STATUS_SUCCESS : COLOR_STATUS_ERROR, 6);
+			}) : undefined;
+			ide.editor.builds = builds;
+			const connection = new StudioServerConnection(httpSession(server.baseUrl),
+				{ title: document.title, url: location.href, tools: server.tools, builds: server.builds }, ide.editor.tools, proposal => {
+					ide.editor.activate();
+					openEditorTab(ide.editor.editorPanes, new WorkspaceEditReviewInput(proposal));
+				}, (state, detail) => {
+					ide.editor.serverConnectionState = state;
+					ide.editor.serverConnectionDetail = detail;
+				}, builds);
+			ide.editor.retryServerConnection = () => connection.retry();
+			window.addEventListener('pagehide', event => { if (event.persisted) connection.suspend(); else connection.dispose(); });
+			window.addEventListener('pageshow', event => { if (event.persisted) connection.resume(); });
+			document.addEventListener('freeze', () => connection.suspend());
+			document.addEventListener('resume', () => connection.resume());
+			document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') connection.wake(); });
+			window.addEventListener('online', () => connection.wake());
+			connection.resume();
 		}
 		completeBrowserBoot();
 	} catch (error) {

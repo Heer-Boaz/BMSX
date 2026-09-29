@@ -56,7 +56,7 @@ test('only the Studio application route supplies services; static pages and pack
 	const page = await browser.newPage();
 	await page.setContent(html);
 	assert.deepEqual(await page.evaluate(() => JSON.parse(document.getElementById('bmsx-studio-configuration').dataset.settings)),
-		{ workspace: { kind: 'http', baseUrl: '' }, assistant: '', conversations: '', externalTools: '' });
+		{ workspace: { kind: 'http', baseUrl: '' }, assistant: '', conversations: '', server: { baseUrl: '', tools: true, builds: true } });
 	const standalone = await readFile(join(f.dist, 'studio.debug.html'), 'utf8');
 	await page.setContent(standalone);
 	assert.deepEqual(await page.evaluate(() => JSON.parse(document.getElementById('bmsx-studio-configuration').dataset.settings)), STANDALONE_STUDIO_CONFIGURATION);

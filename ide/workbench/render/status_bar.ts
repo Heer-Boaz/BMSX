@@ -43,7 +43,7 @@ export function renderStatusBar(
 		let textY = statusTop + 2;
 		const textX = bounds.left + 4;
 		for (let i = 0; i < lines.length; i += 1) {
-			drawEditorText(editorViewState.font, lines[i], textX, textY, 0, constants.COLOR_STATUS_ALERT);
+			drawEditorText(editorViewState.font, lines[i], textX, textY, 0, editorFeedbackState.message.color);
 			textY += editorViewState.lineHeight;
 		}
 	} else if (problemsPanel.isVisible && problemsPanel.isFocused) {

@@ -98,6 +98,8 @@ export type EditorCommandId =
 	| 'behaviorLens.editProperty'
 	| 'propertyInspector.source'
 	| 'propertyInspector.close'
+	| 'builds.start' | 'builds.jobs'
+	| 'server.connection'
 	| 'contextMenu'
 	| 'navigateBack'
 	| 'navigateForward'

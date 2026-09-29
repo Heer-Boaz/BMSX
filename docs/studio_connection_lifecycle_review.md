@@ -1,9 +1,11 @@
 # Studio connection lifetime and recovery: design review
 
-Status: proposal, not an implemented transport contract. Reviewed 2026-09-29
-against `407a6cd72`. The socket crash fix and permanent indicator remain
-valid; they do not provide reconnect, mobile lifecycle recovery or silent-link
-failure detection. No application behavior changes are part of this review.
+Status: design review record, initially reviewed 2026-09-29 against `407a6cd72`.
+The general window registration, heartbeat, bounded recovery and build observation
+are now implemented; see [current owners and evidence](studio_build_jobs.md).
+Embedded chat process/subscriber lifetime and exact-media installation remain
+separate work. Physical phone suspension/BFCache eligibility are not certified by
+the desktop lifecycle evidence.
 
 ## Three independent quality gates
 
@@ -19,7 +21,7 @@ Neither a server endpoint around the current packer nor a retry loop around the
 current chat stream meets these gates. Correct their actual ownership instead.
 These are separate workstreams, not an instruction to create three new layers.
 
-## Findings in the current implementation
+## Historical findings before implementation
 
 - `ide/browser/studio.ts` opens the external-tool channel once. Its registration
   and closure drive the status icon. There is no recovery after closure.

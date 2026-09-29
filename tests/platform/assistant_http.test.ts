@@ -1,5 +1,5 @@
 import { PNG } from 'pngjs';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -9,6 +9,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build } from 'esbuild';
 import { CodexHttpApi } from '../../hosts/node/codex/http_api';
+import { StudioBuildJobs } from '../../hosts/node/builds/jobs';
+import { isBuildTerminal, type StudioBuildJob } from '../../hosts/common/studio_builds';
 import { AssistantHttpConnection } from '../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../ide/browser/http_session';
 import type { AssistantEvent } from '../../hosts/common/assistant_protocol';
@@ -20,12 +22,12 @@ const readCall = { type: 'function_call', call_id: 'codex-private-id', name: 'st
 const tools = [{ name: 'studio_read', description: 'Read a Studio source', inputSchema: { type: 'object', properties: { resource: { type: 'string' } },
 	required: ['resource'], additionalProperties: false } }];
 
-async function fixture(t: TestContext, steps: unknown[], clientScript?: Uint8Array) {
+async function fixture(t: TestContext, steps: unknown[], clientScript?: Uint8Array, buildJobs?: StudioBuildJobs) {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-assistant-http-'));
 	const profile = join(root, 'profile');
 	const model = await createCodexModelFixture(t, steps);
 	const api = new CodexHttpApi({ profileDirectory: profile, workspaceRoot: root, openLoginPage: () => assert.fail('No browser is opened in the transport fixture'),
-		provider: { name: 'Offline transport fixture', model: 'mock-model', baseUrl: `${model.url}/v1` }, tools });
+		provider: { name: 'Offline transport fixture', model: 'mock-model', baseUrl: `${model.url}/v1` }, tools }, buildJobs);
 	const authority = new WorkspaceHttpSession('127.0.0.1');
 	const requests = new Map<string, number>();
 	const server = createServer(async (request, response) => {
@@ -294,4 +296,27 @@ test('a large screenshot crosses HTTP, native inference and queue events without
 	await c.client.send({ type: 'interrupt' }); await c.wait(event => event.type === 'turn-completed');
 	assert.ok(f.model.requests[0].input.filter(item => item.role === 'user').flatMap(item => item.content).some(part => part.type === 'input_image'));
 	c.client.close(); await c.client.closed;
+});
+
+test('embedded Codex calls server-owned build tools; disconnecting chat does not cancel the admitted producer', { timeout: 30000 }, async t => {
+	const root = await mkdtemp(join(tmpdir(), 'bmsx-codex-build-'));
+	const jobs = await StudioBuildJobs.open(process.cwd(), root);
+	t.after(async () => { await jobs.close(); await rm(root, { recursive: true, force: true }); });
+	const request = { requestId: randomUUID(), target: 'cpu_soak', debug: true, optLevel: 0 };
+	const completed = Promise.withResolvers<StudioBuildJob>();
+	jobs.subscribe(({ job }) => { if (job.request.requestId === request.requestId && isBuildTerminal(job.state)) completed.resolve(job); });
+	const observed = Promise.withResolvers<void>();
+	const f = await fixture(t, [[{ type: 'function_call', call_id: 'build', name: 'studio_build_cart', arguments: JSON.stringify(request) }],
+		(body: { input: { type: string; output: string }[] }) => {
+			const receipt = JSON.parse(body.input.find(item => item.type === 'function_call_output')!.output);
+			assert.deepEqual(receipt.request, request); observed.resolve(); return CODEX_FIXTURE_WAIT;
+		}], undefined, jobs);
+	const c = await f.open();
+	await c.client.send({ type: 'start', reviews: [], prompt: 'Build the saved cartridge without installing or resetting it.' });
+	await observed.promise;
+	assert.equal(c.events.some(event => event.type === 'tool-request'), false);
+	c.client.close(); await c.client.closed;
+	const job = await completed.promise;
+	assert.equal(job.state, 'completed', job.error);
+	assert.ok((await jobs.artifacts.read(job.artifact!)).cart);
 });

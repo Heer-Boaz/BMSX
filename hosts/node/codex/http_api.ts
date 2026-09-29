@@ -3,6 +3,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AssistantCommand, AssistantEvent, AssistantReply } from '../../common/assistant_protocol';
 import { CodexSession, type CodexSessionOptions } from './session';
 import type { CodexSessionEvent, CodexToolResult } from './protocol';
+import { BUILD_TOOLS, callBuildTool } from '../builds/tools';
+import type { StudioBuildJobs } from '../builds/jobs';
 
 type PendingTool = { resolve: (result: CodexToolResult) => void; detach: () => void };
 type Connection = {
@@ -22,7 +24,7 @@ export class CodexHttpApi {
 
 	/** Node composition supplies the browser opener; the browser transport never chooses one. */
 	public constructor(private readonly options: Pick<CodexSessionOptions, 'profileDirectory' | 'workspaceRoot' | 'executable' | 'provider' | 'tools'>
-		& { openLoginPage: (url: string, onFailure: (error: Error) => void) => void }) {}
+		& { openLoginPage: (url: string, onFailure: (error: Error) => void) => void }, private readonly builds?: StudioBuildJobs) {}
 
 	public async handle(request: IncomingMessage, response: ServerResponse, pathname: string): Promise<void> {
 		if (this.closing) { response.writeHead(503).end('Studio assistant is shutting down'); return; }
@@ -99,8 +101,14 @@ export class CodexHttpApi {
 		response.once('error', disconnect);
 		try {
 			const session = await CodexSession.open({ ...this.options, signal: lifetime.signal,
+				tools: [...this.options.tools, ...(this.builds === undefined ? [] : BUILD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })))],
 				executeTool: (call, signal) => {
 					signal.throwIfAborted(); lifetime.signal.throwIfAborted();
+					// Workspace jobs belong to the server, not the browser tool context or chat turn.
+					if (this.builds !== undefined && BUILD_TOOLS.some(tool => tool.name === call.tool)) {
+						return callBuildTool(this.builds, call.tool, call.arguments as Record<string, unknown>)
+							.then(data => ({ success: true, text: JSON.stringify(data) }));
+					}
 					const requestId = randomUUID();
 					return new Promise((resolve, reject) => {
 						const cancel = () => {
