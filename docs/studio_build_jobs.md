@@ -370,6 +370,54 @@ The broader scripts typecheck was also rerun: its sole error remains the existin
 unused `createRuntimeSourceState` import in `node_tooling_entry.ts:72`, not a new
 error in the changed producer or packaging code.
 
+### Native parity follow-up (2026-09-29)
+
+Scope: media export/admission, firmware Terminal, frame evaluation, runtime
+save/replay/rewind and native presentation. Studio/server availability is not a
+C++ machine feature. No machine representation or per-frame path was changed.
+
+The follow-up found another consumer of the old flat layout: the SNES Mini
+workflow passed `/inputs` as its frontend system directory, and its acceptance
+record hashed only top-level files. With newly exported media the ARM core failed
+to load `/inputs/bmsx-bios.rom`. The same core and media boot with
+`/inputs/system`, without a fallback or copying the BIOS back beside the cart.
+The Makefile default now agrees, and the acceptance record enumerates all input
+files in sorted root-relative path order, including BIOS sidecars under `system/`.
+Input read/hash failures terminate publication rather than recording an empty digest.
+
+References checked: [RetroArch's frontend system-directory configuration](https://github.com/libretro/RetroArch/blob/master/configuration.c)
+(also read in the local production checkout), and [Nix's sorted, named recursive
+archive entries](https://github.com/NixOS/nix/blob/master/src/libutil/archive.cc).
+The latter informs complete path-qualified input identity, not a new archive
+format or dependency.
+
+Actual validation, using existing runners:
+
+| Check | Result |
+| --- | --- |
+| `test:terminal-parity` | Byte-identical output from real BIOS monitor HID input in TS/C++; session/cart globals, closures, tuples, errors and frame locals |
+| `test:cartridge-conformance` | Both produce `READY\|STEP1\|STEP1`; immutable media hashes unchanged |
+| `test:frame-evaluation-parity` | 21 cases at O0 and O3; complete decoded states, including suspended scopes, match |
+| `test:runtime-replay` | Full states match for `nemesis_s` and preload fixture at three replay checkpoints and after history branching; host/native/libretro pause and rewind checks pass |
+| `test:render-parity` | `renderhwtest` (3) and `bare_metal_cart` (146) captures match pixel-for-pixel across TS software, C++ software and C++ GLES2 |
+| Native frontend checks | Libretro environment, save-state envelope and host UI input: 3/3 |
+| `build:platform:libretro-snesmini` | Fresh ARM core, target-root ABI audit and QEMU smoke: 16/16 video frames; actual cart boot; all four exported input hashes and both artifact hashes verified |
+
+**Open host-layer finding:** `audit:core-parity` still fails: TS
+`render/host_overlay/bitmap.ts` is unclassified, and its `Bitmap` command extends
+`Host2DKind`/`Host2DRef` without a C++ counterpart. Its only current production
+producer is Studio's image preview; native menus and firmware Terminal do not
+submit it. This is a host command-surface/audit-scope discrepancy, not a measured
+guest-machine divergence. It was neither hidden by an audit exclusion nor filled
+with unused native texture-lifetime machinery. Deciding whether arbitrary host
+bitmaps are a shared rendering capability is a separate owner-boundary change.
+
+Evidence: `/tmp/bmsx-native-parity-20260929/`, including the old/new ARM
+system-directory reproductions and final build/ABI logs. These checks do not
+certify every opcode, audible device output, browser WebGL/WebGPU presentation,
+or physical SNES Mini hardware. The ARM check is a boot smoke, not an ARM
+full-state parity comparison. No new tests or server dependencies were added.
+
 ### No-op cost
 
 Three warm CLI samples after publication, including Node/tsx startup, complete

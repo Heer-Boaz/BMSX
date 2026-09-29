@@ -136,7 +136,7 @@ docker run --rm \
 	--network=none \
 	--env HOME=/tmp \
 	--env SNESMINI_PUBLISH_DIR=/out \
-	--env SNESMINI_SYSTEM_DIR=/inputs \
+	--env SNESMINI_SYSTEM_DIR=/inputs/system \
 	--env SNESMINI_ROM=/inputs/bare_metal_cart.rom \
 	--env SNESMINI_BUILD_TYPE="$BUILD_TYPE" \
 	--env SNESMINI_SMOKE_FRAMES="$SMOKE_FRAMES" \
@@ -159,12 +159,16 @@ docker run --rm \
 	fi
 	printf 'runtime_manifest_sha256=%s\n' \
 		"$(sha256sum "$RUNTIME_ROOT/.bmsx-snesmini-runtime" | cut -d ' ' -f 1)"
-	for input in "$INPUT_ROOT"/*; do
-		[ -f "$input" ] || continue
-		printf 'input_sha256=%s %s\n' \
-			"$(sha256sum "$input" | cut -d ' ' -f 1)" \
-			"$(basename "$input")"
-	done
+	(
+		cd "$INPUT_ROOT"
+		find . -type f -printf '%P\0' | sort -z |
+			while IFS= read -r -d '' input; do
+				checksum="$(sha256sum < "$input")"
+				printf 'input_sha256=%s %s\n' \
+					"${checksum%% *}" \
+					"$input"
+			done
+	)
 	for artifact in "$STAGING_ROOT"/*; do
 		printf 'artifact_sha256=%s %s\n' \
 			"$(sha256sum "$artifact" | cut -d ' ' -f 1)" \
