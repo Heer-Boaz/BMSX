@@ -81,7 +81,10 @@ export class BootService {
 		private readonly execution: HostExecutionControl,
 		private readonly audioOutput: HostAudioOutput,
 		private readonly dirtyRecords: ReadonlyMap<string, WorkspaceRecord>,
-	) {}
+	) {
+		// Restored panes may query execution before start() can consume recovered sources.
+		this.execution.setPauseReason(HostPauseReason.AwaitingLaunch, true);
+	}
 
 	public get acceptingRequests(): boolean { return !this.closing; }
 	public get latestOperation(): BootOperation | null { return this.latest; }
@@ -89,7 +92,6 @@ export class BootService {
 	/** Composition calls this before the first host frame, after workspace recovery. */
 	public start(): BootOperation {
 		const operation = this.accept('startup');
-		this.execution.setPauseReason(HostPauseReason.AwaitingLaunch, true);
 		try {
 			let prepared: PreparedBlua32Boot;
 			try {

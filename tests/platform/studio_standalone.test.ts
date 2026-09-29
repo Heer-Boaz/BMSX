@@ -103,6 +103,18 @@ test('standalone product: Terminal, source creation, Save, reload and offline ed
 	await press('Control+c');
 	assert.equal(await page.evaluate(() => navigator.clipboard.readText()), '42');
 	await screenshot('terminal');
+	// Restore the actual active Terminal, before startup has initialized the CPU.
+	// Do not reopen it via a command: that would miss pane activation during recovery.
+	await page.reload(); await boot();
+	await page.waitForTimeout(15000); await press('ControlRight+ShiftRight');
+	await screenshot('terminal-restored');
+	await page.evaluate(() => navigator.clipboard.writeText('return 21 * 2')); await press('Control+v'); await press('Enter');
+	await page.waitForTimeout(1000);
+	await press('Shift+Tab');
+	for (let index = 0; index < 10; index++) await press('ArrowDown');
+	await press('Control+c');
+	assert.equal(await page.evaluate(() => navigator.clipboard.readText()), '42');
+	await screenshot('terminal-restored-evaluation');
 	await command('New Lua File'); await press('Enter');
 	await page.keyboard.type('standalone_probe.lua', { delay: 25 }); await press('Enter');
 	await page.waitForTimeout(300); await screenshot('created');

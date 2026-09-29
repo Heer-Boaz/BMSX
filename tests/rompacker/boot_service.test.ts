@@ -86,6 +86,9 @@ test('rebuilt cart source layers support direct Scenario Lab forks as well as re
 
 test('startup installs captured sources and performs one physical reset without executing guest code', async t => {
 	const f = await fixture(t);
+	assert.equal(f.execution.launchPending, true, 'workspace recovery begins with execution admission closed');
+	assert.equal(f.execution.executionBlocked(), true);
+	assert.equal(f.execution.frameStepBlocked, true);
 	f.model.pushEditOperations([{ offset: f.model.buffer.length, deleteLength: 0, text: '\n-- startup edit\n' }]);
 	const operation = f.service.start();
 	assert.equal(operation.kind, 'startup');

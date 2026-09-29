@@ -268,8 +268,11 @@ toast follows actual init completion. See
 
 The session-owned `BootService` owns startup/Reboot input capture and lifetime.
 Reboot uses the same exclusive queue from the Run menu, quick menu and headless
-harness. Startup prepares recovered sources before the first host frame. Its
-physical reset initializes inspection even when a build is rejected, but the
+harness. Construction sets `AwaitingLaunch` before workspace recovery can activate
+saved panes. Their capability queries consume that existing admission state;
+they must not probe uninitialized CPU execution. Startup still prepares recovered
+sources before the first host frame. Its physical reset initializes inspection
+even when a build is rejected, but the
 independent `AwaitingLaunch` hold remains until accepted source resets the
 machine. Editor visibility, Continue and frame-step requests cannot release it.
 Successful startup resets once. Explicit Reboot rejection retains installed

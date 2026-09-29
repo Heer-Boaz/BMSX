@@ -22,7 +22,9 @@ Status: implemented, 2026-09-23. Gate 3c of
 The session-owned `BootService` captures retained source revisions and the
 requested entry at admission. Reboot prepares/installs/resets through the existing
 exclusive queue. Startup runs synchronously after workspace recovery, before the
-first host frame; it has no active machine workload to join. The result
+first host frame; it has no active machine workload to join. Construction of the
+boot owner already sets `AwaitingLaunch`, so restored panes see closed execution
+admission while source recovery is still in progress. The result
 distinguishes physical `reset`, rejected preparation, failed
 infrastructure and cancellation, and records whether media installation and
 physical reset actually occurred. A reset result is **not** a passing game test
@@ -56,6 +58,67 @@ physical machine actually resets, not when preparation is requested.
 
 No CPU/firmware change, guest-ready latch, per-frame polling, second scheduler,
 source-to-machine metadata or rollback is part of this slice.
+
+## Workspace restoration review (2026-09-29)
+
+A persisted active Terminal reproduced a cold-start crash in
+`applyWorkspaceAutosavePayload -> TerminalPane.activate -> canEvaluate ->
+CPU.activeCartridgeSlot`. The boot owner existed, but did not set its launch
+hold until `start()`, **after** pane restoration. The capability query therefore
+reached an execution image that physical reset had not initialized. Server
+connection composition had not even started; this was not a network failure.
+
+`BootService` now sets its existing launch hold during construction. Recovery
+can restore tabs and source models while Terminal/Actor execution remains
+unavailable. Startup still consumes those recovered sources and releases the
+hold only through the existing accepted-reset path. Moving physical boot ahead
+of recovery would instead run stale packed sources. No extra readiness flag,
+CPU fallback, discarded session or per-frame check is introduced. The inspection
+test fixture explicitly acknowledges its already-reset runtime, rather than
+pretending it is a cold-start workbench. Browser and Node share this owner;
+native libretro already boots its runtime inside `LibretroContent` construction
+before exposing it and has no Studio-pane restoration. No TS/C++ machine or
+guest Terminal behavior changed.
+
+Production code studied before the change:
+
+- [VS Code TerminalService](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/terminal/browser/terminalService.ts)
+  starts in `Connecting`, completes backend reconnection before publishing
+  `Connected`, and awaits profile readiness where launch requires it. Restoring
+  a view and admitting execution are distinct lifecycle concerns.
+- [MAME running_machine](https://github.com/mamedev/mame/blob/master/src/emu/machine.cpp)
+  begins in `PREINIT`, initializes devices/settings/UI, and enters `RUNNING`
+  through actual reset. BMSX uses its existing launch hold for the analogous
+  host admission boundary, not MAME's framework or a new state machine.
+
+Validation of this correction:
+
+- Before the change, the real server-backed product failed with the saved
+  Terminal tab in an isolated workspace. The initial-admission assertion also
+  failed. After the change, the same saved workspace starts and survives a real
+  page reload without deleting the session or reopening Terminal by command.
+  Lua returns `42` after both starts and the server connection is established.
+- The standalone product repeats active-Terminal restoration using browser-owned
+  persistence, then evaluates Lua successfully. Source creation/save/recovery,
+  offline Lua/YAML/AEM edits and quota-failure recovery still pass with **zero**
+  Studio API requests. Screenshots from both products were opened and inspected:
+  `/tmp/bmsx-terminal-startup/after-*.png` and
+  `/tmp/bmsx-studio-standalone/terminal-restored*.png`. These are actual product
+  checks driven by Playwright keyboard/clipboard input, not a UI-only workflow
+  or an assertion that terminal scrollback/drafts persist across process restart.
+- ROM packer/boot checks: 186/186. Inspection-helper consumers: 187/187. The
+  focused boot/Terminal/actor/debugger/frame-navigation set: 84/84 (overlapping
+  the preceding suites). Standalone browser checks: 2/2. IDE/common-host
+  typechecks and the strict boundary audit pass. Browser debug/release and Node
+  tooling debug products were rebuilt. No native parity rerun is claimed.
+
+Reproduce the retained regression with a rebuilt debug Studio and debug
+BIOS/Nemesis ROMs:
+
+```sh
+node --import tsx --test tests/rompacker/boot_service.test.ts
+node --import tsx --test tests/platform/studio_standalone.test.ts
+```
 
 ## Production references studied before implementation
 

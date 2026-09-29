@@ -237,10 +237,11 @@ Follow-up review evidence (2026-09-29):
   remain outside this review.
 - Reopening a saved active Terminal exposed a separate startup failure before the
   connection owner is constructed: `canEvaluate` reaches `activeCartridgeSlot`
-  before the CPU owns an active execution image. This is tracked in the
-  [platform backlog](studio_architecture_foundation.md#open-platform-usability-work-2026-09-29),
-  not hidden by clearing sessions or adding a runtime fallback. The final
-  connection/build UI probe uses an isolated copied workspace with a fresh session.
+  before the CPU owns an active execution image. The follow-up
+  [boot-owner fix](studio_boot_operations.md#workspace-restoration-review-2026-09-29)
+  closes admission before pane restoration, without clearing sessions or adding
+  a CPU fallback. A saved active Terminal now survives cold opening and real
+  reload in the server-backed product; connection composition runs afterwards.
 
 ### No-op cost
 

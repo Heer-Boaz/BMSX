@@ -1287,9 +1287,11 @@ Project use this build/admission path, not a guest call. An explicit launch reta
 the BIOS first-bootable-socket policy: it must not claim
 to start socket 1 when socket 0 boots first. Reboot and Hot Resume
 retain the installed entry. A rejected build leaves an existing execution untouched.
-Cold startup initializes real reset registers but holds the host execution clock
-until source preparation and physical reset succeed; a source error leaves the
-workbench available for repair and keeps the launch hold even when the editor
+Cold startup closes execution admission when the workbench boot owner is
+constructed, before restoring panes that query machine capabilities. It initializes
+real reset registers but holds the host execution clock until source preparation
+and physical reset succeed; a source error leaves the workbench available for
+repair and keeps the launch hold even when the editor
 closes. Studio's session-owned `BootService` captures source/entry requests,
 queues explicit Reboot through the existing exclusive task queue, and reports
 actual reset, rejection, infrastructure failure or cancellation. Its own reset
