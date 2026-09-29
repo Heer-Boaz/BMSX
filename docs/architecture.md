@@ -5415,6 +5415,18 @@ Window disconnection retires authority rather than selecting another window.
 No second Codex account, chat session, guest ABI or mirrored runtime path is
 required. The embedded assistant remains an independent, supported consumer.
 
+The [CLI conversation view](studio_conversation_view.md) is a separate read-only
+consumer of Codex's native shared daemon, not another `AssistantConversation`.
+Node owns native WebSocket subscription and paged provider projection; the
+browser receives a bounded observation protocol, never arbitrary native RPC.
+Loaded threads are joined without configuration overrides; unloaded history is
+explicitly a saved snapshot, not a second agent runtime. No account/profile or
+rollout files are copied. `AssistantTranscript` and `AssistantTranscriptControl`
+share retained text, virtualized Markdown, selection and clipboard behavior
+between this view and embedded chat, without sharing prompt/tool authority.
+Closing a viewer releases only that subscriber. The existing trusted-LAN
+admission also covers this user's native conversation history across projects.
+
 Pane detachment completes ordinary focus/capture cleanup while the input and its
 working copy still live. The code widget detaches its model/view on clear; other
 panes do not depend on a previously attached code document. Content bounds belong

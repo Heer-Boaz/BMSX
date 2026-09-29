@@ -1,3 +1,4 @@
+import type { ConversationObserverFactory } from '../../hosts/common/conversation_observer';
 import { ActorExecutionService } from './contrib/actor_lab/execution';
 import { RuntimeDebuggerExecution } from '../runtime/debugger_execution';
 import { RuntimeFrameNavigation } from '../runtime/frame_navigation';
@@ -85,6 +86,7 @@ export class RuntimeIdeState {
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
 		createTestTarget: TestTargetFactory,
 		connectAssistant?: AssistantConnectionFactory,
+		observeConversation?: ConversationObserverFactory,
 	) {
 		this.debugger = createRuntimeDebuggerState(runtime, sources);
 		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue);
@@ -141,6 +143,7 @@ export class RuntimeIdeState {
 			decodeImage,
 			createGraphLayoutEngine,
 			connectAssistant,
+			observeConversation,
 		);
 		this.overlayRenderer.setViewportSize(viewport);
 		this.editor.updateViewport(viewport);

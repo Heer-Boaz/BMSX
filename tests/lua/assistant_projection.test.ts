@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AssistantTranscriptProjection } from '../../ide/workbench/contrib/assistant/projection';
-import type { AssistantEntry } from '../../ide/workbench/services/assistant/conversation';
+import type { AssistantEntry } from '../../ide/workbench/services/assistant/transcript';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { TextStyle } from '../../ide/common/markdown/model';
 

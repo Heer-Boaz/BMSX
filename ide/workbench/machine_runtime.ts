@@ -1,3 +1,4 @@
+import type { ConversationObserverFactory } from '../../hosts/common/conversation_observer';
 import { GameCaptureService } from '../../hosts/common/game_capture';
 import type { RenderPresentationState } from '../../hosts/common/presentation_state';
 import type { ImageDecoder, PngImageEncoder } from '../../hosts/common/image';
@@ -49,6 +50,7 @@ export async function prepareWorkbenchRuntime(
 	resourcePanelWidthRatio: number,
 	createGraphLayoutEngine: GraphLayoutEngineFactory,
 	connectAssistant?: AssistantConnectionFactory,
+	observeConversation?: ConversationObserverFactory,
 ): Promise<RuntimeIdeState> {
 	const media = await loadRomToolingMedia(
 		systemRom,
@@ -82,6 +84,7 @@ export async function prepareWorkbenchRuntime(
 		createGraphLayoutEngine,
 		(systemRom, cartridgeSlots, model, input) => new OffscreenMachine(systemRom, cartridgeSlots, model, input),
 		connectAssistant,
+		observeConversation,
 	);
 	ide.editor.onDidChangeActive(active => {
 		if (active) hostMenu.dismiss();

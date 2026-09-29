@@ -1,3 +1,6 @@
+import type { ConversationObserverFactory } from '../hosts/common/conversation_observer';
+import { ObservedConversation } from './workbench/services/assistant/observed_conversation';
+import { ConversationObserverPane } from './workbench/contrib/conversations/editor_pane';
 import { WorkspaceToolService } from './workbench/services/assistant/tool_service';
 import type { ActorExecutionService } from './workbench/contrib/actor_lab/execution';
 import type { RuntimeDebuggerExecution } from './runtime/debugger_execution';
@@ -162,6 +165,7 @@ export type CartEditor = {
 	readonly clipboardTarget: ClipboardTarget | undefined;
 	readonly terminal: LuaTerminalSession;
 	readonly assistant: AssistantConversation;
+	readonly observedConversation: ObservedConversation;
 	readonly tools: WorkspaceToolService;
 	readonly diagnostics: ResourceDiagnosticsService;
 	readonly executionSuspended: boolean;
@@ -260,6 +264,7 @@ export class RuntimeCartEditor implements CartEditor {
 	};
 
 	public readonly assistant: AssistantConversation;
+	public readonly observedConversation: ObservedConversation;
 	public readonly tools: WorkspaceToolService;
 
 	public constructor(
@@ -297,10 +302,12 @@ export class RuntimeCartEditor implements CartEditor {
 		decodeImage: ImageDecoder,
 		createGraphLayoutEngine: GraphLayoutEngineFactory,
 		connectAssistant?: AssistantConnectionFactory,
+		observeConversation?: ConversationObserverFactory,
 	) {
 		const behaviorSources = new BehaviorSourceDocuments(editorTextModelService, sources);
 		this.tools = new WorkspaceToolService(editorTextModelService, sources, storage, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, behaviorSources, textFileSaves, boots);
 		this.assistant = new AssistantConversation(editorTextModelService, sources, this.tools, connectAssistant);
+		this.observedConversation = new ObservedConversation(observeConversation);
 		this.runtime = runtime;
 		this.presenter = presenter;
 		this.display = display;
@@ -345,6 +352,7 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		this.editorPanes = new EditorPanes({
 			terminal: () => new TerminalPane(this.resourcePanel, this.clipboard, this.quickInput),
+			conversation_observer: () => new ConversationObserverPane(this.resourcePanel, this.quickInput, decodeImage),
 			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.quickInput, decodeImage),
 			workspace_edit_review: () => new WorkspaceEditReviewPane(this.resourcePanel, {
 				// The editor owns the tab group and the ordinary Save service; the review pane asks.
@@ -625,6 +633,7 @@ export class RuntimeCartEditor implements CartEditor {
 
 	public async shutdown(): Promise<void> {
 		this.assistant.dispose();
+		this.observedConversation.dispose();
 		this.tools.dispose();
 		this.frameNavigation.dispose();
 		this.debuggerExecution.dispose();

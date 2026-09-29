@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 /** Ordinary server/product, isolated project writes, and a canary against starting the embedded agent. */
-export async function createStudioServer(t) {
+export async function createStudioServer(t, { codexHome } = {}) {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-studio-mcp-'));
 	for (const path of ['carts/nemesis_s', 'cartlib', 'machine/bios', 'testlib', 'tests/carts/nemesis_s']) await cp(path, join(root, path), {
 		recursive: true, filter: async path => (await stat(path)).isDirectory() || /\.(lua|yaml|yml)$/.test(path),
@@ -14,7 +14,7 @@ export async function createStudioServer(t) {
 	await mkdir(bin);
 	await writeFile(join(bin, 'codex'), `#!/bin/sh\necho unexpected > ${JSON.stringify(trace)}\nexit 1\n`, { mode: 0o700 });
 	const child = spawn(process.execPath, [resolve('scripts/serve-dist.mjs'), '--dir', resolve('dist'), '--port', '0'], {
-		cwd: root, env: { ...process.env, NODE_OPTIONS: '', PATH: `${bin}:${process.env.PATH}`, XDG_STATE_HOME: join(root, 'state') },
+		cwd: root, env: { ...process.env, NODE_OPTIONS: '', PATH: `${bin}:${process.env.PATH}`, XDG_STATE_HOME: join(root, 'state'), CODEX_HOME: codexHome ?? join(root, 'external-codex') },
 		stdio: ['ignore', 'pipe', 'pipe'],
 	});
 	const exited = once(child, 'exit');

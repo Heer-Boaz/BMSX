@@ -168,6 +168,16 @@ contexts; accepted Saves retain their own lifecycle. MCP and embedded assistant
 connections do not close each other. See [Studio MCP](../docs/studio_mcp.md) for
 setup, trusted-LAN scope, explicit context lifetime and evidence limits.
 
+The read-only **Codex CLI Conversations** contribution follows the CLI's native
+shared daemon through `hosts/common/conversation_observer.ts`. Its
+`ObservedConversation` owns retained text and observation lifetime, not an
+assistant account, composer, queue or tool context. Native history and live
+subscription stay in Node. It shares `AssistantTranscript`, lazy Markdown
+projection and `AssistantTranscriptControl` with embedded chat; closing either
+pane does not terminate the other consumer. Unloaded threads are saved snapshots,
+not implicitly started agent runtimes. See
+[CLI conversation view](../docs/studio_conversation_view.md).
+
 ## Execution, view lifetime, and restored inspection
 
 Host execution is independent of editor focus. `hosts/common/execution_control.ts`

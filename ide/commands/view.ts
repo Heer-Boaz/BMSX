@@ -1,3 +1,4 @@
+import { openObservedConversation } from '../workbench/contrib/conversations/quick_access';
 import { openAssistant } from '../workbench/contrib/assistant/editor_input';
 import { openTerminal } from '../workbench/contrib/terminal/editor_input';
 import type { CartEditor } from '../cart_editor';
@@ -14,6 +15,7 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 	switch (command) {
 		case 'terminal':
 		case 'assistant':
+		case 'conversations':
 		case 'resources':
 		case 'problems':
 		case 'behaviorLens':
@@ -41,6 +43,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 		case 'terminal': openTerminal(editor.editorPanes, editor.terminal); return;
 		case 'actorLab': editor.actorLab.open(); return;
 		case 'gameView': openGameView(editor.editorPanes); return;
+		case 'conversations': openObservedConversation(editor.editorPanes, editor.observedConversation, editor.quickInput); return;
 		case 'assistant': openAssistant(editor.editorPanes, editor.assistant); return;
 		case 'resources':
 			editor.resourcePanel.togglePanel();

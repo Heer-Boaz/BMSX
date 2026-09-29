@@ -1,3 +1,4 @@
+import { HttpConversationObserver } from './conversation_observer';
 import { decodeImage, encodePngImage } from '../../hosts/browser/image';
 import { AssistantHttpConnection } from './assistant_connection';
 import { StudioToolHttpConnection } from './tool_connection';
@@ -108,6 +109,7 @@ async function startBrowserStudio(): Promise<void> {
 			defaultResourcePanelRatio(window.innerWidth / window.screen.width),
 			() => new BrowserGraphLayoutEngine(new Worker(new URL('./graph-layout.worker.js', document.baseURI))),
 			(signal, onEvent) => AssistantHttpConnection.open(httpSession, signal, onEvent),
+			(signal, onEvent) => HttpConversationObserver.open(httpSession, signal, onEvent),
 		);
 		clipboard.bindInput(options.browserInput, () => ide.editor.clipboardTarget, reportClipboardFailure);
 		systemOutput.flush(runtime, options.logOutput);
@@ -126,6 +128,7 @@ async function startBrowserStudio(): Promise<void> {
 		window.addEventListener('pagehide', () => {
 			toolLifetime.abort(new Error('Studio page closed'));
 			ide.editor.assistant.disconnect();
+			ide.editor.observedConversation.disconnect();
 			persistWorkspaceSessionLocally();
 		});
 		runtime.frameScheduler.clearQueuedTime();

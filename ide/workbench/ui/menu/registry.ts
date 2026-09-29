@@ -178,6 +178,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'commandPalette' },
 		{ type: 'separator' },
 		{ type: 'command', command: 'assistant' },
+		{ type: 'command', command: 'conversations' },
 		{ type: 'command', command: 'terminal' },
 		{ type: 'command', command: 'gameView' },
 		{ type: 'command', command: 'actorLab' },

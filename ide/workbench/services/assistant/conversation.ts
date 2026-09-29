@@ -1,3 +1,4 @@
+import { AssistantTranscript, type AssistantEntry } from './transcript';
 import type { WorkspaceToolService, WorkspaceToolContext } from './tool_service';
 import { textFileMode } from '../working_copy/text_file_model';
 import type { ResourceIdentity } from '../../../common/resource';
@@ -10,21 +11,10 @@ import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { WorkspaceEditProposal } from '../working_copy/workspace_edit';
 
 export type AssistantState = 'disconnected' | 'connecting' | 'loading' | 'configuring' | 'starting' | 'ready' | 'running' | 'stopping' | 'signing-in' | 'cancelling-sign-in' | 'signing-out';
-export type AssistantEntry = {
-	readonly kind: 'user' | 'assistant' | 'status' | 'proposal';
-	readonly text: PieceTreeBuffer;
-	index: number;
-	readonly proposal?: WorkspaceEditProposal;
-	readonly references?: readonly AssistantSourceReference[];
-	readonly images?: readonly string[];
-	resetRevision: number;
-};
 type ActiveTurn = { startedAt: number; id?: string; tools: WorkspaceToolContext; requests: Map<string, AbortController>; messages: Map<string, AssistantEntry> };
-type ConversationChange = 'state' | 'text' | 'proposal' | 'reset' | 'prepend';
 
 /** Workspace-owned conversation and accepted prompt context, independent of an attached pane. */
-export class AssistantConversation {
-	public readonly entries: AssistantEntry[] = [];
+export class AssistantConversation extends AssistantTranscript {
 	public state: AssistantState = 'disconnected';
 	public account: AssistantAccount | undefined;
 	public accountRefreshing = false;
@@ -40,8 +30,6 @@ export class AssistantConversation {
 	public queuePaused = false;
 	public olderCursor: string | null = null;
 	public submitting = false;
-	public revision = 0;
-	private readonly listeners = new Set<(entry: number, kind: ConversationChange) => void>();
 	private readonly unbindWorkspace: () => void;
 	private lifetime: AbortController | undefined;
 	private sourceLifetime: AbortController | undefined;
@@ -57,6 +45,7 @@ export class AssistantConversation {
 
 	public constructor(models: EditorTextModelService, private readonly sources: RuntimeSourceState,
 		private readonly tools: WorkspaceToolService, private readonly openConnection?: AssistantConnectionFactory) {
+		super();
 		this.unbindWorkspace = models.onWillClear(() => this.clearConversation());
 	}
 	/** Catalog identity only: completing a reference neither opens a document nor connects to Codex. */
@@ -72,18 +61,6 @@ export class AssistantConversation {
 	public get canSubmit(): boolean { return this.available && !this.submitting && (this.state === 'disconnected' || this.state === 'ready' || this.state === 'running'); }
 	public get canDirect(): boolean { return this.canSend && this.state === 'running' && this.turn?.id !== undefined; }
 	public get canBrowse(): boolean { return this.available && !this.submitting && !this.accountRefreshing && (this.state === 'disconnected' || this.state === 'ready' && (this.queued.length === 0 || this.queuePaused)); }
-	public onDidChange(listener: (entry: number, kind: ConversationChange) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
-	private changed(entry = this.entries.length, kind: ConversationChange = 'state'): void {
-		this.revision++;
-		for (const listener of this.listeners) listener(entry, kind);
-	}
-	private append(kind: AssistantEntry['kind'], text: string, proposal?: WorkspaceEditProposal, references?: readonly AssistantSourceReference[], images?: readonly string[]): AssistantEntry {
-		const entry = { kind, text: new PieceTreeBuffer(text), index: this.entries.length, resetRevision: 0, proposal, references, images };
-		// Settlement drains the observer; workspace clear disposes every pending proposal.
-		proposal?.onDidSettle(() => this.changed(entry.index, 'proposal'));
-		this.entries.push(entry); this.changed(entry.index, 'text'); return entry;
-	}
-
 	public connect(): Promise<void> {
 		if (this.connecting) return this.connecting;
 		const pending = this.establishConnection();
@@ -420,10 +397,6 @@ export class AssistantConversation {
 		this.sourceLifetime?.abort(new Error('Assistant conversation changed'));
 		this.outstandingReviews.clear();
 		this.sourceLifetime = this.connection ? new AbortController() : undefined;
-	}
-	private resetTranscript(): void {
-		for (const entry of this.entries) entry.proposal?.dispose();
-		this.entries.length = 0; this.changed(0, 'reset');
 	}
 	private clearConversation(): void {
 		this.disconnect(); this.resetTranscript(); this.thread = undefined; this.queued = []; this.olderCursor = null;

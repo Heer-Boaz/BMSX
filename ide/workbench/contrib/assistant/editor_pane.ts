@@ -1,24 +1,24 @@
 import type { ImageDecoder } from '../../../../hosts/common/image';
-import { ImagePreviewCache, drawImagePreview } from '../../ui/image_preview';
+import { ImagePreviewCache } from '../../ui/image_preview';
 import { ImagePreviewOverlay } from '../../ui/image_preview_overlay';
 import { AssistantAttachmentStrip } from './attachment_strip';
-import { TRANSCRIPT_IMAGE_ROWS } from './projection';
+import { AssistantTranscriptControl } from './transcript_control';
 import { AssistantReferences } from './references';
 import type { Clipboard } from '../../../../hosts/common/clipboard';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import { point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
+import { write_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { EditorCommandId } from '../../../common/commands';
 import * as colors from '../../../common/constants';
 import type { PointerSnapshot } from '../../../common/models';
 import { truncateMeasuredText } from '../../../common/text';
-import { drawMarkdownRow, measureStyledText } from '../../../editor/render/markdown';
+import { measureStyledText } from '../../../editor/render/markdown';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { MultilineFieldControl } from '../../../editor/ui/inline/multiline_control';
 import { drawMultilineField } from '../../../editor/ui/inline/multiline_render';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { writeClipboard } from '../../../input/clipboard';
 import { inputFocus } from '../../../input/focus';
-import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
+import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../input/pointer/buttons';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
@@ -29,7 +29,6 @@ import type { EditorPanes } from '../../services/editor/editor_panes';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
-import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { openEditorTab } from '../../ui/tabs';
 import { WorkspaceEditReviewInput } from '../edit_review/editor_input';
@@ -53,7 +52,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	private contentTop = 0;
 	private readonly references = new AssistantReferences();
 	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget);
-	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, input => this.handleTranscriptKeyboard(input));
+	private readonly transcriptView: AssistantTranscriptControl;
 	private readonly composer = new MultilineFieldControl();
 	private unbindDraft: (() => void) | undefined;
 	private unbindAttachmentClipboard: (() => void) | undefined;
@@ -62,16 +61,15 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		this.chat = new AssistantChatCommands(quickInput, clipboard);
 		this.previews = new ImagePreviewCache(decodeImage);
 		this.preview = new ImagePreviewOverlay(this.previews);
+		this.transcriptView = new AssistantTranscriptControl(this.focusTarget, this.previews, this.preview, () => this.execute('assistant.review'));
 		this.attachments = new AssistantAttachmentStrip(this.previews, url => this.preview.open(url));
-		this.scroll.focusTarget.commandContext = this.focusTarget;
-		this.scroll.focusTarget.clipboard = { copy: () => this.isEnabled('assistant.copy') ? this.input.conversation.entries[this.input.selectedEntry].text.getText() : null };
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 	}
 	public override focus(): void { this.input.draft.focusTarget.focus(); }
 	protected override activate(): void {
 		super.activate();
 		this.actions.setInput(this.input.turnActions, this.focusTarget);
-		this.scroll.setInput(this.input.viewport);
+		this.transcriptView.setInput(this.input);
 		this.attachments.setInput(this.input.attachments);
 		const draftInput = this.input;
 		this.composer.setInput(draftInput.draft, draftInput.composer, draftInput.composerBounds, images => draftInput.attachments.add(images));
@@ -81,7 +79,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 			isEnabled: () => this.input.draft.focusTarget.hasFocus && this.references.suggestions.visible && this.references.suggestions.model.list.selectionIndex >= 0,
 			run: () => this.references.suggestions.acceptSelection(),
 		});
-		const ring = [this.input.draft.focusTarget, this.actions.focusTarget, this.scroll.focusTarget];
+		const ring = [this.input.draft.focusTarget, this.actions.focusTarget, this.transcriptView.scroll.focusTarget];
 		for (let index = 0; index < ring.length; index++) {
 			ring[index].next = ring[(index + 1) % ring.length];
 			ring[index].previous = ring[(index + ring.length - 1) % ring.length];
@@ -89,7 +87,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		this.imagesVisible = false;
 		this.attachments.focusTarget.commandContext = this.input.draft.focusTarget;
 		this.attachments.focusTarget.next = this.input.draft.focusTarget;
-		this.attachments.focusTarget.previous = this.scroll.focusTarget;
+		this.attachments.focusTarget.previous = this.transcriptView.scroll.focusTarget;
 		// Keep Undo/Redo in the draft's own history, not the pane's command context.
 		for (const command of COMMANDS) this.input.draft.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 		this.update();
@@ -98,10 +96,10 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		this.unbindDraft?.(); this.unbindDraft = undefined;
 		this.unbindAttachmentClipboard?.(); this.unbindAttachmentClipboard = undefined;
 		this.preview.close(); this.attachments.clearInput(); this.previews.dispose();
-		this.references.clear(); this.composer.clearInput(); this.actions.clearInput(); this.scroll.clearInput();
+		this.references.clear(); this.composer.clearInput(); this.actions.clearInput(); this.transcriptView.clearInput();
 		super.clearInput();
 	}
-	public override dispose(): void { this.clearInput(); this.actions.dispose(); this.scroll.dispose(); super.dispose(); }
+	public override dispose(): void { this.clearInput(); this.actions.dispose(); this.transcriptView.dispose(); super.dispose(); }
 	public isEnabled(command: EditorCommandId): boolean {
 		const { conversation: model, selectedEntry } = this.input;
 		const hasContent = this.input.draftHasText || this.input.attachments.images.length > 0;
@@ -149,7 +147,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		const changed = updateFullWidthWorkbenchLayout(layout);
 		const row = layout.rowHeight;
 		if (changed) {
-			this.scroll.lineStep = row;
+			this.transcriptView.scroll.lineStep = row;
 			this.composer.rowHeight = editorViewState.lineHeight;
 		}
 		input.busySince = model.workStartedAt;
@@ -190,8 +188,8 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		if (hasImages !== this.imagesVisible) {
 			this.imagesVisible = hasImages;
 			const stripFocus = this.attachments.focusTarget;
-			input.draft.focusTarget.previous = hasImages ? stripFocus : this.scroll.focusTarget;
-			this.scroll.focusTarget.next = hasImages ? stripFocus : input.draft.focusTarget;
+			input.draft.focusTarget.previous = hasImages ? stripFocus : this.transcriptView.scroll.focusTarget;
+			this.transcriptView.scroll.focusTarget.next = hasImages ? stripFocus : input.draft.focusTarget;
 			if (!hasImages) {
 				// Retire the preview before its return control leaves the focus ring.
 				this.preview.close();
@@ -216,7 +214,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		this.actions.update(); this.references.update(input);
 	}
 	public draw(): void {
-		const input = this.input, { layout, viewport } = input;
+		const input = this.input, { layout } = input;
 		this.previews.beginFrame();
 		const font = editorViewState.font.renderFont();
 		const textColor = colors.COLOR_RESOURCE_VIEWER_TEXT;
@@ -234,34 +232,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		} else if (input.editingQueuedId !== undefined) {
 			api.blit_text_inline_with_font('Editing queued message', 4, this.contentTop - layout.rowHeight - 4, 0, textColor, font);
 		}
-		api.pushClipRect(viewport.bounds.left, viewport.bounds.top, viewport.bounds.right, viewport.bounds.bottom);
-		for (let index = Math.trunc(viewport.scrollTop / layout.rowHeight), top = viewport.offsetTop + index * layout.rowHeight;
-			index < input.transcript.rowCount && top < viewport.bounds.bottom; index++, top += layout.rowHeight) {
-			const row = input.transcript.rowAt(index)!;
-			const entry = input.conversation.entries[row.entry];
-			const selected = row.entry === input.selectedEntry;
-			if (entry.kind === 'user' && !row.heading && !row.image) {
-				api.fill_rect(4, top, viewport.bounds.right, top + layout.rowHeight, 0, colors.HIGHLIGHT_OVERLAY);
-				api.fill_rect(4, top, 5, top + layout.rowHeight, 0, colors.COLOR_STATUS_SUCCESS);
-			}
-			if (selected && !row.image) api.fill_rect(4, top, viewport.bounds.right, top + layout.rowHeight, 0, colors.SELECTION_OVERLAY);
-			if (row.image) {
-				if (row.image.line === 0 || index === Math.trunc(viewport.scrollTop / layout.rowHeight)) {
-					const imageTop = top - row.image.line * layout.rowHeight;
-					const imageBottom = imageTop + TRANSCRIPT_IMAGE_ROWS * layout.rowHeight - 2;
-					const right = Math.min(viewport.bounds.right - 12, viewport.bounds.left + 180);
-					const preview = this.previews.use(row.image.url);
-					api.fill_rect(8, imageTop + 2, right, imageBottom, 0, colors.COLOR_MARKDOWN_CODE_BACKGROUND);
-					if (preview.bitmap) drawImagePreview(preview.bitmap, 10, imageTop + 4, right - 2, imageBottom - layout.rowHeight);
-					else api.blit_text_inline_with_font(preview.error ? 'Image unavailable' : 'Loading image...', 12, imageTop + 8, 0, colors.COLOR_MARKDOWN_MUTED_TEXT, font);
-					api.blit_text_inline_with_font(row.image.label, 12, imageBottom - layout.rowHeight, 0, colors.COLOR_MARKDOWN_MUTED_TEXT, font);
-				}
-				continue;
-			}
-			drawMarkdownRow(row, viewport.bounds.left + 4, top, viewport.bounds.right - 12, selected ? colors.COLOR_SELECTION_TEXT
-				: entry.kind === 'status' ? colors.COLOR_MARKDOWN_MUTED_TEXT : textColor, selected);
-		}
-		api.popClipRect(); viewport.scrollbar.draw(colors.COLOR_CODE_BACKGROUND, textColor);
+		this.transcriptView.draw();
 		const bounds = input.composerBounds;
 		api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_QUICK_OPEN_OUTLINE);
 		if (input.draft.text.length === 0) {
@@ -285,43 +256,9 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		if (this.references.suggestions.handlePointer(snapshot)) return true;
 		// Actions act on the selected message; scrollbar capture preserves selection/focus.
 		if (this.actions.handlePointer(snapshot)) return true;
-		const { viewport, transcript, layout } = this.input;
-		const pressed = snapshot.insideViewport && (snapshot.justPressedButtons & PointerButton.Primary) !== 0;
-		if (pressed && !(viewport.scrollbar.isVisible() && point_in_rect(snapshot.viewportX, snapshot.viewportY, viewport.scrollbar.getTrack()))) {
-			this.input.selectedEntry = -1;
-			if (point_in_rect(snapshot.viewportX, snapshot.viewportY, viewport.bounds)) {
-				const row = transcript.rowAt(Math.trunc((snapshot.viewportY - viewport.offsetTop) / layout.rowHeight));
-				const x = snapshot.viewportX - viewport.bounds.left - 4;
-				if (row?.image && x >= 0 && x < 172) { this.preview.open(row.image.url); return true; }
-				if (row !== undefined) for (const run of row.runs) {
-					if (x >= run.x && x < run.x + run.width) { this.input.selectedEntry = row.entry; break; }
-				}
-			}
-		}
+		if (this.transcriptView.handleSelection(snapshot)) return true;
 		// Controls own focus: a transcript click still routes Ctrl+C to the message.
-		return this.composer.handlePointer(snapshot) || this.scroll.handlePointer(snapshot) || pressed;
-	}
-	private handleTranscriptKeyboard(input: PlayerInput): boolean {
-		if (this.input.selectedEntry >= 0 && isKeyJustPressed('Escape', input)) {
-			consumeIdeKey('Escape', input); this.input.selectedEntry = -1; return true;
-		}
-
-		if (isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); this.execute('assistant.review'); return true; }
-		for (const key of ['ArrowUp', 'ArrowDown'] as const) {
-			if (!shouldRepeatKeyFromPlayer(key, input)) continue;
-			consumeIdeKey(key, input);
-			const { conversation, transcript, viewport, layout } = this.input;
-			this.input.selectedEntry = Math.max(-1, Math.min(conversation.entries.length - 1,
-				Math.max(0, this.input.selectedEntry + (key === 'ArrowUp' ? -1 : 1))));
-			const row = this.input.selectedEntry < 0 ? -1 : transcript.entryTop(this.input.selectedEntry);
-			if (row >= 0) {
-				const top = row * layout.rowHeight;
-				if (top < viewport.scrollTop) viewport.scrollbar.setScroll(top);
-				else if (top + layout.rowHeight > viewport.scrollTop + viewport.height) viewport.scrollbar.setScroll(top + layout.rowHeight - viewport.height);
-			}
-			return true;
-		}
-		return false;
+		return this.composer.handlePointer(snapshot) || this.transcriptView.scroll.handlePointer(snapshot) || snapshot.insideViewport && (snapshot.justPressedButtons & PointerButton.Primary) !== 0;
 	}
 	public handleKeyboard(input: PlayerInput): void {
 		if (!this.input.draft.focusTarget.hasFocus) return;
@@ -336,6 +273,6 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null): void {
 		if (this.preview.visible) return;
 		if (pointer !== null && this.input.attachments.images.length > 0 && this.attachments.handleWheel(pointer, direction * steps)) return;
-		if (pointer !== null && !this.references.suggestions.handleWheel(pointer, direction * steps)) this.scroll.handleWheel(pointer, direction * steps * this.input.layout.rowHeight);
+		if (pointer !== null && !this.references.suggestions.handleWheel(pointer, direction * steps)) this.transcriptView.scroll.handleWheel(pointer, direction * steps * this.input.layout.rowHeight);
 	}
 }

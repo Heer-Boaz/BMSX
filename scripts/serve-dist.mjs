@@ -79,11 +79,13 @@ const workspaceSession = new WorkspaceHttpSession(host);
 // The existing plain-Node entry owns its TypeScript support, not a separate launch mode.
 // Constructing the endpoint starts no process and opens no account profile.
 await import('tsx');
+const { CodexObserverHttpApi } = await import('../hosts/node/codex/observer_http.ts');
 const { CodexHttpApi } = await import('../hosts/node/codex/http_api.ts');
 const { StudioSessions } = await import('../hosts/node/studio/sessions.ts');
 const { StudioMcpApi } = await import('../hosts/node/studio/mcp.ts');
 const { openUrlInBrowser } = await import('../hosts/node/common/open_url.ts');
 const { STUDIO_TOOLS } = await import('../ide/workbench/services/assistant/tool_catalog.ts');
+const conversationViewers = new CodexObserverHttpApi(process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex'));
 const studioSessions = new StudioSessions();
 const studioMcp = new StudioMcpApi(studioSessions, STUDIO_TOOLS);
 const assistant = new CodexHttpApi({ tools: STUDIO_TOOLS,
@@ -167,6 +169,11 @@ const server = createServer(async (req, res) => {
 		if (requestUrl.pathname === '/__bmsx__/lua') {
 			workspaceSession.authorize(req);
 			await handleWorkspaceRequest(projectRoot, req, res, requestUrl);
+			return;
+		}
+		if (requestUrl.pathname.startsWith('/__bmsx__/conversations/')) {
+			workspaceSession.authorize(req);
+			await conversationViewers.handle(req, res, requestUrl.pathname);
 			return;
 		}
 		if (requestUrl.pathname.startsWith('/__bmsx__/assistant/')) {
@@ -272,7 +279,7 @@ let shutdown;
 const stop = () => {
 	// Stop admission, then join both the assistant process and accepted HTTP IO.
 	// Killing every socket here would interrupt an already accepted source save.
-	shutdown ??= Promise.all([studioMcp.close(), studioSessions.close(), assistant.close(), new Promise((resolve, reject) => {
+	shutdown ??= Promise.all([conversationViewers.close(), studioMcp.close(), studioSessions.close(), assistant.close(), new Promise((resolve, reject) => {
 		server.close(error => error ? reject(error) : resolve());
 	})]).catch(error => { console.error(error); process.exitCode = 1; });
 };

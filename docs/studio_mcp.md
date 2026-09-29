@@ -133,9 +133,10 @@ embedded Codex or creates its account profile. Evidence images are written to
 `/tmp/bmsx-studio-mcp/` for visual inspection.
 
 This is protocol, real-runtime and visible-UI evidence, not paid-model inference
-or a physical-phone test. It does not make CLI conversations visible in the
-Studio transcript. Shared conversation presentation/control remains separate work;
-the existing embedded conversation functionality is not removed.
+or a physical-phone test. MCP exposes tools; the separate
+[CLI conversation view](studio_conversation_view.md) displays native history and
+live daemon-owned conversations. The existing embedded conversation functionality
+is not removed, and the external conversation view does not take over controls.
 
 Validation of this slice (2026-09-29): the MCP product test, Codex protocol/session/
 workbench tests, assistant HTTP tests and conversation tests passed. IDE, Node

@@ -1,3 +1,4 @@
+import type { ConversationObserverFactory } from '../../hosts/common/conversation_observer';
 import type { GameImageCapture, ImageDecoder } from '../../hosts/common/image';
 import type { AssistantConnectionFactory } from '../../hosts/common/assistant_protocol';
 import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
@@ -69,6 +70,7 @@ export async function initializeIdeFeatures(
 	createGraphLayoutEngine: GraphLayoutEngineFactory,
 	createTestTarget: TestTargetFactory,
 	connectAssistant?: AssistantConnectionFactory,
+	observeConversation?: ConversationObserverFactory,
 ): Promise<RuntimeIdeState> {
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 	const editorAvailable = runtimeSourcesSupportIde(sources);
@@ -115,6 +117,7 @@ export async function initializeIdeFeatures(
 		createGraphLayoutEngine,
 		createTestTarget,
 		connectAssistant,
+		observeConversation,
 	);
 	seedDefaultLuaBuiltins();
 	audioOutput.muteUi(state.editor.executionSuspended);

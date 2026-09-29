@@ -1,4 +1,4 @@
-import type { AssistantEntry } from '../../services/assistant/conversation';
+import type { AssistantEntry } from '../../services/assistant/transcript';
 import type { WorkspaceEditProposalState } from '../../services/working_copy/workspace_edit';
 import { FenwickPrefix } from '../../../common/fenwick';
 import { MarkdownDocument, TextStyle } from '../../../common/markdown/model';

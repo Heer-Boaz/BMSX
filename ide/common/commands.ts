@@ -17,6 +17,7 @@ export type EditorSymbolNavigationCommandId =
 
 export type EditorViewCommandId =
 	| 'terminal'
+	| 'conversations'
 	| 'assistant'
 	| 'gameView'
 	| 'resources'
@@ -62,6 +63,7 @@ export type EditorScenarioLabCommandId =
 	| 'scenarioLab.cancel';
 
 export type EditorCommandId =
+	| 'conversations.history' | 'conversations.older'
 	| 'terminal.evaluate' | 'terminal.context' | 'terminal.pause' | 'terminal.continue' | 'terminal.clear' | 'terminal.copy'
 	| 'assistant.signIn'
 	| 'assistant.cancelLogin'
