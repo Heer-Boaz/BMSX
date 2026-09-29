@@ -29,12 +29,13 @@ async function main(): Promise<void> {
 	}
 	if (values.mode !== 'bios' && values.mode !== 'rompack') throw new Error('Expected --mode bios or rompack');
 	if (!['0', '1', '2', '3'].includes(values.opt)) throw new Error('Expected optimizer level 0..3');
-	const target = values.mode === 'bios' ? 'system' : (values.romname ?? process.env.ROM_NAME ?? '').replace(/^\.\/carts\/|^carts\//, '').toLowerCase();
-	if (!/^[a-z0-9_-]+$/.test(target)) throw new Error('Specify -romname <cart-folder> (letters, digits, underscore or hyphen).');
+	const selection = values.mode === 'bios' ? { domain: 'system' as const }
+		: { domain: 'cart' as const, target: (values.romname ?? process.env.ROM_NAME ?? '').replace(/^\.\/carts\/|^carts\//, '').toLowerCase() };
+	if (selection.domain === 'cart' && !/^[a-z0-9_-]+$/.test(selection.target)) throw new Error('Specify -romname <cart-folder> (letters, digits, underscore or hyphen).');
 	const store = new RomArtifactStore(resolve(values['store-dir'])), stage = store.staging(randomUUID());
-	ui.printBanner(); ui.bullet('Target', target); ui.bullet('Recipe', `${values.debug ? 'debug' : 'release'} -O${values.opt}`);
+	ui.printBanner(); ui.bullet('Target', selection.domain === 'cart' ? selection.target : 'system'); ui.bullet('Recipe', `${values.debug ? 'debug' : 'release'} -O${values.opt}`);
 	try {
-		const result = await prepareMediaBuild({ target, debug: values.debug, optLevel: Number(values.opt) as 0 | 1 | 2 | 3, force: values.force,
+		const result = await prepareMediaBuild({ ...selection, debug: values.debug, optLevel: Number(values.opt) as 0 | 1 | 2 | 3, force: values.force,
 			respath: values.respath ?? process.env.RES_PATH }, store, stage, phase => ui.info(phase));
 		if (!result.reused) await store.publish(stage, result.artifact);
 		await store.export(result.artifact, resolve(values['output-dir']));

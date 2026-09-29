@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { isBuildTerminal, type StudioBuildRequest, type StudioBuildJob, type StudioBuildSnapshot, type StudioBuildChange } from '../../common/studio_builds';
 import { RomArtifactStore, type PreparedRomArtifact } from '../../../scripts/rompacker/artifacts';
+import type { MediaBuildOptions } from '../../../scripts/rompacker/build';
 
 const RECENT_JOBS = 50, QUEUE_LIMIT = 8, LOG_BYTES = 256 * 1024;
 type WorkerMessage = { type: 'progress'; phase: string } | { type: 'prepared'; result: PreparedRomArtifact } | { type: 'failed'; error: string };
@@ -63,9 +64,13 @@ export class StudioBuildJobs {
 
 	public async admit(request: StudioBuildRequest): Promise<StudioBuildJob> {
 		const pending = this.admitting.get(request.requestId);
-		if (pending !== undefined) {
-			if (JSON.stringify(pending.request) !== JSON.stringify(request)) throw new BuildRequestError(409, 'Request ID already names a different build');
-			return pending.result;
+		const previous = pending === undefined ? this.get(request.requestId) : undefined;
+		const accepted = pending?.request ?? previous?.request;
+		if (accepted !== undefined) {
+			if (accepted.target !== request.target || accepted.debug !== request.debug || accepted.optLevel !== request.optLevel) {
+				throw new BuildRequestError(409, 'Request ID already names a different build');
+			}
+			return pending === undefined ? previous! : pending.result;
 		}
 		const result = this.accept(request);
 		this.admitting.set(request.requestId, { request, result });
@@ -73,11 +78,6 @@ export class StudioBuildJobs {
 	}
 
 	private async accept(request: StudioBuildRequest): Promise<StudioBuildJob> {
-		const previous = this.get(request.requestId);
-		if (previous !== undefined) {
-			if (JSON.stringify(previous.request) !== JSON.stringify(request)) throw new BuildRequestError(409, 'Request ID already names a different build');
-			return previous;
-		}
 		if (!(await this.targets()).includes(request.target)) throw new BuildRequestError(404, 'Unknown cartridge target');
 		// Admission is synchronous from here: concurrent discovery cannot overfill the queue
 		// or admit new work after close() has stopped admission.
@@ -147,7 +147,8 @@ export class StudioBuildJobs {
 		});
 		try {
 			job = this.transition(job, { state: 'running', phase: 'Capture inputs' });
-			running.child.send({ request: job.request, root: this.root, stage });
+			const options: MediaBuildOptions = { domain: 'cart', target: job.request.target, debug: job.request.debug, optLevel: job.request.optLevel, force: false };
+			running.child.send({ options, root: this.root, stage });
 			await exited;
 			log.end(); await logClosed;
 			clearTimeout(progressTimer);

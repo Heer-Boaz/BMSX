@@ -38,6 +38,9 @@ full-media replacement inside a running emulator or change embedded chat lifetim
 `build_inputs.ts` captures file bytes, membership, metadata and model dependencies.
 `build.ts` resolves/captures both system and cart inputs before compilation;
 `compile.ts` consumes that snapshot and is loaded only for actual compilation.
+The producer takes an explicit system/cart domain. Cart names are labels, never
+hidden mode switches: a cartridge named `system` remains a cartridge. CLI modes
+and server jobs construct complete typed build options at their respective boundary.
 The cart key binds its effective recipe, source inputs and the **actual selected
 system output digests**, including the BIOS import library. It never reads a
 mutable `dist` sidecar. Diagnostics use the captured source, not a later disk edit.
@@ -61,7 +64,9 @@ is the reference for committed storage, and SQLite documents the precise
 `StudioBuildJobs` owns admission, the bounded queue and one worker. Large source
 buffers and CPU work stay in the worker. A caller supplies a UUID before admission;
 that ID plus the same request yields the same receipt. A different request with
-that ID is rejected. The server commits admission **before** acknowledging it.
+that ID is rejected. Equality compares target, debug and optimization values,
+independently of JSON property order, for pending admissions and retained receipts.
+The server commits admission **before** acknowledging it.
 A lost response is reconciled by that ID, not by creating another build.
 
 `StoredBuildRequests` commits each unacknowledged browser request under its own
@@ -116,7 +121,9 @@ stream. A subscriber disappearing never stops an admitted job.
 Liveness: one ping every 5 seconds, acknowledgement/silence deadlines of 15
 seconds, a 10-second registration deadline. Recovery uses jittered 250 ms to
 5-second delays with a 60-second retry window; a registration already in progress
-can take up to its 10-second deadline. Permanent admission/format errors stop
+can take up to its 10-second deadline. A completed heartbeat round trip resets
+backoff and renews the budget on subsequent loss; registration alone does neither.
+Permanent admission/format errors stop
 recovery. Timing is measured on the local desktop/LAN setup below, **not certified
 for phone background scheduling**. Visibility/online are wake hints, not evidence
 of health. Freeze/cached navigation retires the registration and restoration opens
@@ -153,6 +160,13 @@ publication. The existing media producer still follows that ownership split.
 Bazel additionally syncs files for machine-crash durability; BMSX's stated
 process-crash publication guarantee below has **not** silently become a power-loss
 guarantee as a result of this review.
+
+The [AWS MQTT client](https://github.com/awslabs/aws-c-mqtt/blob/main/source/client.c)
+also distinguishes a completed handshake from sufficiently stable recovery before
+resetting reconnect backoff. BMSX uses its existing heartbeat round trip as that
+evidence, not a new stability timer, MQTT session policy or command replay. The
+previous immediate reset on registration let a repeatedly closing stream defeat
+both backoff and the finite recovery budget.
 
 ## Evidence and limits
 
@@ -242,6 +256,57 @@ Follow-up review evidence (2026-09-29):
   closes admission before pane restoration, without clearing sessions or adding
   a CPU fallback. A saved active Terminal now survives cold opening and real
   reload in the server-backed product; connection composition runs afterwards.
+
+### Critical implementation review (2026-09-29)
+
+Three faults were reproduced before correction, rather than inferred from green
+typechecks or a desired architecture:
+
+- A server repeatedly accepted registration and immediately ended the stream.
+  The old client stayed reconnecting past its recovery budget. The real HTTP /
+  Chromium check now reaches disconnected and stops attempts; a heartbeat round
+  trip, not registration, is the reset boundary.
+- The real CLI treated a cart named `system` as a BIOS request, including using
+  its cart resource directory for BIOS compilation. Explicit build domains now
+  produce a cartridge for that name. A separate real `--mode bios` run still
+  produces only the BIOS and its sidecars.
+- Identical request fields in a different insertion order were rejected during
+  admission and receipt lookup. The real worker check now accepts both orders
+  as the same request while rejecting a changed recipe. Worker dispatch also
+  carries complete `MediaBuildOptions`, not a differently shaped request that
+  merely claimed that type at the receiving end.
+
+Validation: ROM packer 187/187; connection/build observation 8/8; socket and
+assistant HTTP/entry 22/22. IDE and Node typechecks and the strict architecture
+boundary audit pass; debug and release browser Studio products build. The actual
+keyboard-driven Studio build/reconnect workflow was rerun and its screenshots
+opened in both themes: an HTTP build completes while observation is denied, the
+red disconnected icon remains truthful, explicit Retry turns it green, and the
+Terminal draft survives. No assistant process or paid inference was used.
+Evidence: `/tmp/bmsx-critical-review/` (including `ui-review.json`, `ui-*.png`
+and the before/after reproduction logs). The page-lifecycle hints in that probe
+are synthetic, not physical phone suspension or a BFCache certification.
+
+**Open output-namespace defect:** system and cart compilation still share flat
+artifact filenames. A real cart build named `bmsx-bios` overwrote the staged BIOS
+ROM, then reported successful publication/export. Reading the published bytes
+back disagreed with the BIOS digest in that artifact's receipt; its cart digest
+matched. This also makes reusing that bundle as a BIOS result unsafe. The review
+used a private store, not the user's published artifacts. Reproduction:
+
+```sh
+node --import tsx scripts/rompacker/rompacker.ts --mode rompack \
+  -romname bmsx-bios -respath carts/cartridge_data_conformance/res --debug \
+  --store-dir /tmp/bmsx-output-collision-store \
+  --output-dir /tmp/bmsx-output-collision-export
+```
+
+This is not repaired by the `system` mode-dispatch fix. The corrective design must
+separate output identity by domain through staging, publication, export and media
+selection; its concrete layout needs review against the current consumers. A
+reserved-name exception, post-publication hash fallback or silently renamed cart
+would conceal the ownership defect. This broader layout change remains open,
+rather than being smuggled into the bounded connection/admission corrections.
 
 ### No-op cost
 

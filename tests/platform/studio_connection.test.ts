@@ -6,6 +6,41 @@ import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { StudioSessions } from '../../hosts/node/studio/sessions';
 
+test('flapping registrations retain backoff and exhaust the recovery budget', { timeout: 15000 }, async t => {
+	let attempts = 0;
+	const server = createServer((request, response) => {
+		if (request.url === '/') { response.end('<!doctype html>'); return; }
+		if (request.url === '/__bmsx__/session') { response.end(JSON.stringify({ workspaceToken: 'test' })); return; }
+		attempts++;
+		// Registration succeeds, but the observation channel dies before a heartbeat round trip.
+		response.end(JSON.stringify({ type: 'connected', session: `flapping-${attempts}`, server: 'test' }) + '\n');
+	});
+	server.listen(0, '127.0.0.1'); await once(server, 'listening');
+	const browser = await chromium.launch({ args: ['--no-sandbox'] });
+	t.after(async () => { await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
+	const page = await browser.newPage();
+	await page.clock.install({ time: new Date('2026-01-01T00:00:00Z') });
+	await page.clock.pauseAt(new Date('2026-01-01T00:00:01Z'));
+	await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}`);
+	const bundle = await build({ stdin: { resolveDir: process.cwd(), contents: `
+		import { StudioHttpSession } from './ide/browser/http_session';
+		import { StudioServerConnection } from './ide/browser/server_connection';
+		globalThis.channel = new StudioServerConnection(new StudioHttpSession(), {title:'Probe',url:location.href,tools:false,builds:false}, {}, () => {}, () => {});
+		globalThis.channel.resume();
+	` }, bundle: true, platform: 'browser', format: 'iife', write: false });
+	await page.addScriptTag({ content: bundle.outputFiles[0].text });
+	// Advance the browser's monotonic clock while allowing real HTTP replies to settle.
+	for (let seconds = 0; seconds < 75; seconds++) {
+		await page.clock.runFor(1000); await page.waitForTimeout(20);
+	}
+	assert.equal(await page.evaluate(() => (globalThis as any).channel.state), 'disconnected');
+	assert.ok(attempts < 20, `flapping caused ${attempts} registrations`);
+	const stopped = attempts;
+	await page.clock.runFor(30000); await page.waitForTimeout(50);
+	assert.equal(attempts, stopped);
+	await page.evaluate(() => (globalThis as any).channel.dispose());
+});
+
 // Real HTTP streaming and browser fetch cancellation. No assistant process or emulator needed.
 test('window registration recovers, expires authority, and retires on suspension without replay', { timeout: 45000 }, async t => {
 	let sessions = new StudioSessions(), token = 'first', attempts = 0, heartbeats = 0, silent = false;

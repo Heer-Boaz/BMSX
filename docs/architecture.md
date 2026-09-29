@@ -854,7 +854,10 @@ Owners:
   these consumers must not reopen the source paths.
 - Complete media production: `scripts/rompacker/build.ts` captures both BIOS and
   cartridge inputs before either compilation. `compile.ts` consumes those inputs;
-  the CLI and server worker call the same producer. Effective recipes, toolchain
+  the CLI and server worker call the same producer. Its discriminated build domain
+  selects system-only or cart production; a cart name never selects a domain.
+  The job owner constructs the worker's complete build options before dispatch.
+  Effective recipes, toolchain
   identity and the selected BIOS's actual output digests determine reuse. The cart
   never links against a mutable export-directory sidecar. `build_state.ts` owns
   recipe/output types and toolchain identity, not a second freshness planner.
@@ -866,7 +869,8 @@ Owners:
 - Workspace jobs: `hosts/node/builds/jobs.ts` owns durable admission, the bounded
   queue, one child producer, cancellation and publication. `ledger.ts` owns SQLite
   receipts and exclusive server ownership. A caller-supplied request ID reconciles
-  a lost acknowledgement without replay. Workers cannot publish; disconnected
+  a lost acknowledgement without replay. Request equivalence compares target and
+  recipe values, not serialized property order. Workers cannot publish; disconnected
   observers cannot cancel jobs. Restart marks unfinished work interrupted unless
   its recorded publication actually committed.
 
@@ -5480,6 +5484,8 @@ Browser composition projects the general Studio window connection into this
 display: connecting, connected, reconnecting, suspended or disconnected.
 `StudioServerConnection` owns a single bounded recovery loop; `StudioSessions`
 owns the server incarnation, registration and heartbeat acknowledgements.
+Only a completed heartbeat round trip resets retry backoff and renews the recovery
+budget; registrations that immediately fail cannot perpetually renew it.
 Tool and build observation are independent capabilities on that registration.
 Lost tool authority is retired, never silently renewed or replayed. A replacement
 registration receives the current build snapshot rather than restarting jobs.

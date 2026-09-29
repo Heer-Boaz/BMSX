@@ -80,11 +80,11 @@ export class StudioServerConnection {
 		this.update('connecting', 'Registering this Studio window.');
 		while (!signal.aborted) {
 			if (performance.now() >= recoveryEnds) { this.update('disconnected', this.detail); return; }
-			let registered = false;
-			try { await this.receive(signal, () => { registered = true; failures = 0; }); }
+			let healthy = false;
+			try { await this.receive(signal, () => { healthy = true; failures = 0; }); }
 			catch (error) {
 				if (signal.aborted) return;
-				if (registered) recoveryEnds = performance.now() + 60000;
+				if (healthy) recoveryEnds = performance.now() + 60000;
 				const reason = String(error);
 				if (error instanceof AdmissionFailure && error.permanent
 					|| error instanceof StudioAdmissionError && error.status >= 400 && error.status < 500
@@ -141,10 +141,15 @@ export class StudioServerConnection {
 					case 'connected':
 						if (this.builds !== undefined) this.builds.snapshot(event.builds!);
 						this.serverId = event.server; this.sessionId = event.session;
-						recovered(); this.update('connected', 'Window registered; heartbeat active.'); break;
+						this.update('connected', 'Window registered; heartbeat active.'); break;
 					case 'build-snapshot': this.builds!.snapshot(event.snapshot); break;
 					case 'build-change': this.builds!.change(event.change); break;
-					case 'heartbeat': void send('heartbeat', { sequence: event.sequence }).catch(failed); break;
+					case 'heartbeat':
+						// A flapping registration is not recovery. Only a completed liveness
+						// round trip renews the retry budget and resets exponential backoff.
+						void send('heartbeat', { sequence: event.sequence }).then(() => {
+							if (!signal.aborted) recovered();
+						}).catch(failed); break;
 					case 'request': void requests.execute(event.request, event.operation).then(reply => {
 						if (reply !== undefined && !signal.aborted) return send('reply', reply);
 					}).catch(failed); break;

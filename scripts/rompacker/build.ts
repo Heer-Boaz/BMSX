@@ -9,7 +9,8 @@ import { SYSTEM_ROM_NAME } from '../../toolchain/ts/rompack/system';
 import { BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import { LuaError } from '../../toolchain/ts/lua/errors';
 
-export type MediaBuildOptions = { target: string; debug: boolean; optLevel: 0 | 1 | 2 | 3; force: boolean; respath?: string };
+export type MediaBuildOptions = { debug: boolean; optLevel: 0 | 1 | 2 | 3; force: boolean; respath?: string }
+	& ({ domain: 'system' } | { domain: 'cart'; target: string });
 export type BuildProgress = (phase: string) => void;
 export type PreparedUnit = {
 	inputs: RomBuildInputs; recipe: RomBuildRecipe; sourceFiles: string[];
@@ -20,14 +21,15 @@ export type PreparedUnit = {
 export async function prepareMediaBuild(options: MediaBuildOptions, store: RomArtifactStore, stage: string, progress: BuildProgress): Promise<PreparedRomArtifact> {
 	progress('Capture inputs');
 	const toolchain = romToolchainIdentity();
-	const systemResources = options.target === 'system' && options.respath !== undefined ? options.respath : biosResPath;
+	const target = options.domain === 'cart' ? options.target : 'system';
+	const systemResources = options.domain === 'system' && options.respath !== undefined ? options.respath : biosResPath;
 	const systemSources = collectCartSourceFiles([biosSourcePath]);
 	const system: PreparedUnit = { inputs: await prepareRomInputs([systemResources], systemSources),
 		recipe: { domain: 'system', debug: options.debug, optLevel: options.optLevel, projectRoot: join(systemResources, '..'), toolchain },
 		sourceFiles: systemSources, librarySourceFiles: [], testLibraryFiles: [], allLibraryFiles: [], scenarioSourceFiles: [] };
 	let cart: PreparedUnit | undefined;
-	if (options.target !== 'system') {
-		const respath = options.respath ?? join('carts', options.target, 'res'), projectRoot = join(respath, '..');
+	if (options.domain === 'cart') {
+		const respath = options.respath ?? join('carts', target, 'res'), projectRoot = join(respath, '..');
 		const sourceFiles = collectCartSourceFiles([projectRoot]), librarySourceFiles = collectCartSourceFiles([cartlibLuaPath]);
 		const testLibraryFiles = options.debug ? collectCartSourceFiles([testlibLuaPath]) : [];
 		const testModuleFiles = options.debug ? collectCartSourceFiles([join('tests', projectRoot)]) : [];
@@ -51,7 +53,7 @@ export async function prepareMediaBuild(options: MediaBuildOptions, store: RomAr
 			outputs: await compileWithDiagnostics(system, () => compileSystem(system, stage, progress)) };
 	}
 	// Link identity includes the selected system's actual output bytes, not just its intended recipe.
-	const cartKey = cart === undefined ? undefined : romBuildKey({ name: options.target, recipe: cart.recipe,
+	const cartKey = cart === undefined ? undefined : romBuildKey({ name: target, recipe: cart.recipe,
 		inputs: cart.inputs.identity, system: systemKey, systemOutputs: systemUnit.outputs });
 	if (cart !== undefined && !options.force) {
 		const cached = await store.find(cartKey!);
@@ -65,10 +67,10 @@ export async function prepareMediaBuild(options: MediaBuildOptions, store: RomAr
 	if (cart !== undefined) {
 		const { compileCart } = await import('./compile');
 		const imports = await readFile(join(stage, `${SYSTEM_ROM_NAME}${options.debug ? '.debug' : ''}.rom${BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX}`));
-		cartUnit = { key: cartKey!, name: options.target, recipe: cart.recipe, inputs: cart.inputs.identity,
-			outputs: await compileWithDiagnostics(cart, () => compileCart(cart, stage, options.target, imports, progress)) };
+		cartUnit = { key: cartKey!, name: target, recipe: cart.recipe, inputs: cart.inputs.identity,
+			outputs: await compileWithDiagnostics(cart, () => compileCart(cart, stage, target, imports, progress)) };
 	}
-	const contents = { target: options.target, system: systemUnit, cart: cartUnit };
+	const contents = { target, system: systemUnit, cart: cartUnit };
 	const artifact: RomArtifact = { id: romBuildKey(contents), ...contents };
 	return { artifact, reused: false };
 }

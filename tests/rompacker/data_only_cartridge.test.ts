@@ -76,7 +76,7 @@ test('cartridge package bounds and executable metadata follow declared hardware'
 	), /requires an installed ROM device/);
 });
 
-test('normal cart production admits source-free hardware without BIOS artifacts', async () => {
+for (const name of ['cartridge_data_conformance', 'system']) test(`cart production: ${name} stays a cartridge, independently of BIOS selection`, async () => {
 	await rm(CLI_ROOT, { recursive: true, force: true });
 	try {
 		const result = spawnSync(process.execPath, [
@@ -87,7 +87,9 @@ test('normal cart production admits source-free hardware without BIOS artifacts'
 			'rompack',
 			'--skiptypecheck',
 			'-romname',
-			'cartridge_data_conformance',
+			name,
+			'-respath',
+			'carts/cartridge_data_conformance/res',
 			'--output-dir',
 			CLI_ROOT,
 			'--force',
@@ -98,7 +100,7 @@ test('normal cart production admits source-free hardware without BIOS artifacts'
 		assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 		const packageBytes = await readFile(join(
 			CLI_ROOT,
-			'cartridge_data_conformance.rom',
+			`${name}.rom`,
 		));
 		const packageImage = parseCartridgePackage(packageBytes);
 		assert.deepEqual(packageImage.manifest.hardware, MANIFEST.hardware);

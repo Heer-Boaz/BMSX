@@ -15,6 +15,7 @@ test('real worker builds, idempotent admission, cancellation and restart reconci
 	t.after(async () => { await jobs.close(); await rm(root, { recursive: true, force: true }); });
 	await assert.rejects(StudioBuildJobs.open(process.cwd(), root), /locked/);
 	const request: StudioBuildRequest = { requestId: randomUUID(), target: 'cpu_soak', debug: true, optLevel: 0 };
+	const reordered = { optLevel: request.optLevel, debug: request.debug, target: request.target, requestId: request.requestId };
 	let running = 0;
 	const versions: StudioBuildJob['version'][] = [];
 	const completed = Promise.withResolvers<StudioBuildJob>();
@@ -24,7 +25,7 @@ test('real worker builds, idempotent admission, cancellation and restart reconci
 		if (job.state === 'running') running++;
 		if (isBuildTerminal(job.state)) completed.resolve(job);
 	});
-	const [first, duplicate] = await Promise.all([jobs.admit(request), jobs.admit(request)]);
+	const [first, duplicate] = await Promise.all([jobs.admit(request), jobs.admit(reordered)]);
 	assert.deepEqual(first.request, duplicate.request);
 	await assert.rejects(jobs.admit({ ...request, optLevel: 3 }));
 	const queued = { ...request, requestId: randomUUID() };
@@ -38,7 +39,7 @@ test('real worker builds, idempotent admission, cancellation and restart reconci
 	assert.equal(artifact.cart!.name, request.target);
 	assert.ok(artifact.system.outputs.length > 1);
 	for (const unit of [artifact.system, artifact.cart!]) for (const output of unit.outputs) assert.ok((await readFile(join(jobs.artifacts.directory(artifact.id), output.file))).length > 0);
-	assert.equal((await jobs.admit(request)).artifact, result.artifact);
+	assert.equal((await jobs.admit(reordered)).artifact, result.artifact);
 	const interrupted = { ...request, requestId: randomUUID(), target: 'nemesis_s' };
 	await jobs.admit(interrupted);
 	assert.equal((await jobs.cancel(interrupted.requestId)).state, 'cancelled');
