@@ -32,11 +32,8 @@ test('real Codex tool exchange reads unsaved models and hands off a shared revie
 	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
 	const { tasks, presenter } = createRuntimeInspectionFixture(runtime, sources, tooling.suspendedGuest);
 	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
-	const storage = {
-		getItem: () => null, setItem: () => assert.fail('not Save'), removeItem: () => assert.fail('not Delete'),
-	};
-	const saves = new TextFileSaveService(models, storage, new VirtualHeadlessClock(), sources, tooling, runtime, tasks);
-	const sourceTools = new WorkspaceSourceTools(models, sources, storage, diagnostics, connection.signal, new BehaviorSourceDocuments(models, sources), saves);
+	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources, tooling, runtime, tasks);
+	const sourceTools = new WorkspaceSourceTools(models, sources, diagnostics, connection.signal, new BehaviorSourceDocuments(models, sources), saves);
 	const proposals: WorkspaceEditProposal[] = [];
 	let completed!: () => void;
 	const done = new Promise<void>(resolve => { completed = resolve; });

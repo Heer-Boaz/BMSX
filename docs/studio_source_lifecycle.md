@@ -19,8 +19,8 @@ Before implementation, the current owners were checked:
   an expired context; the next user prompt reads new receipts.
 - `TextFileSaveService` already captures exact revisions, coalesces a pending
   Save of the same revision, orders later revisions and drains on shutdown.
-  `records.ts` already distinguishes local-only persistence from provider write
-  acknowledgement. No assistant queue, file writer or retry policy is needed.
+  `WorkspaceRecords` acknowledges only canonical provider writes; recovery
+  checkpoints never establish saved identity. No assistant queue, file writer or retry policy is needed.
 - `getTextFileRuntimeSourceStatus` compares current source with actual installed
   source; a successful Save does not change Lua installation. YAML requires its
   asset build. AEM retains its separate Save-time application outcome.
@@ -47,10 +47,9 @@ without opening a tab, approving a proposal or installing Lua/YAML code. The
 ordinary source owner captures it before asynchronous IO. The reply names the
 source receipt, accepted version and Save operation ID and carries:
 
-- `saved` plus `workspace` or `local-only` persistence; local-only includes the
-  actual disconnected/write-failed reason;
+- `saved` plus `workspace` or `browser` persistence after the canonical write;
 - a separate AEM application result or `not-requested` for Lua/YAML;
-- `failed` if local persistence failed. It does not clean the model or fabricate
+- `failed` if canonical persistence failed. It does not clean the model or fabricate
   project acknowledgement. Error values become text at the tool wire boundary.
 
 Save admission and observer lifetime differ. A pre-cancelled request performs
@@ -92,7 +91,7 @@ bytes flow unchanged through existing source persistence.
 
 `source_save_tools.test.ts` covers exact source authority, current/foreign/stale
 receipts, pre-cancelled requests, read-only models, review handoff, shared Save
-coalescing, later typing and prompt retirement, pending/failed/local-only/project
+coalescing, later typing and prompt retirement, pending/failed/browser/project
 outcomes, separate AEM failure and out-of-order completion observations.
 
 `studio_source_save_tools.test.ts` uses the actual browser machine, HTTP project
@@ -112,13 +111,14 @@ This is automated integration with visible review/typing/Stop/Save actions, not
 UI-only authorship or live-model reasoning. Screenshots are retained under
 `/tmp/bmsx-studio-chat/source-save-*-{review,retired-save,manual-save}.png`.
 
-Validation at this slice boundary:
+Historical validation at the original slice boundary (current storage-revision
+results are in [source-save acknowledgements](studio_source_save_acknowledgements.md)):
 
 - Shared Save/source-tool owner tests: 22 pass. Full Lua suite: 2795 pass,
   one skip. Full native Codex/Studio assistant suite: 54 pass, including the
   source Save workflow on software, WebGL2 and WebGPU.
 - Ordinary Lua/YAML/AEM Save workflows pass on all three renderers, including
-  actual HTTP write failure and reconnect. This checks non-Codex consumers of
+  actual HTTP write failure and explicit Save retry. This checks non-Codex consumers of
   the changed Save API, not merely the new tools.
 - Browser/Node debug and release builds, product typechecks, strict architecture
   audit and core-parity audit pass. Tests-project typecheck retains the same

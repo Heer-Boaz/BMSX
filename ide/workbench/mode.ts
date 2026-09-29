@@ -85,15 +85,14 @@ export async function initializeIdeFeatures(
 			workspaceFiles,
 			logOutput,
 		);
-		await discoverWorkspaceLuaSources(storage, sources);
+		await discoverWorkspaceLuaSources(sources);
 	} else {
 		await shutdownWorkspaceStorage();
 	}
-	const rejectedDirtyPaths = await applyAllWorkspaceSourceOverrides(
-		storage,
+	const rejectedDirtyPaths = editorAvailable ? await applyAllWorkspaceSourceOverrides(
 		sources,
 		workspaceDirtyRecords,
-	);
+	) : new Set<string>();
 	const state = new RuntimeIdeState(
 		runtime,
 		presenter,
@@ -105,7 +104,6 @@ export async function initializeIdeFeatures(
 		runtimeTasks,
 		execution,
 		rewind,
-		storage,
 		clock,
 		clipboard,
 		microtasks,

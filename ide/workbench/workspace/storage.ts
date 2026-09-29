@@ -1,4 +1,4 @@
-import type { HostClock, TimerHandle } from '../../../hosts/common/clock';
+import type { HostClock } from '../../../hosts/common/clock';
 import { LogLevel, type LogOutput } from '../../../hosts/common/log';
 import { showEditorWarningBanner } from '../../common/feedback_state';
 import type { KeyValueStorage } from '../../workspace/key_value_storage';
@@ -12,17 +12,11 @@ import {
 	WORKSPACE_METADATA_DIR,
 	WORKSPACE_STATE_FILE,
 	closeWorkspaceRecords,
-	createWorkspaceRecord,
 	deleteLocalWorkspaceRecord,
-	deleteRemoteWorkspaceRecord,
-	disconnectWorkspaceRecords,
 	openWorkspaceRecords,
 	readLocalWorkspaceRecord,
-	readRemoteWorkspaceRecord,
-	readWorkspaceRecordVersion,
-	reconnectWorkspaceRecords,
 	selectNewestWorkspaceRecord,
-	workspaceRecordState,
+	workspaceRecords,
 	workspaceRecordsEqual,
 	writeLocalWorkspaceRecord,
 	type WorkspaceRecord,
@@ -45,18 +39,12 @@ import {
 import type { RuntimeBreakpointState } from '../../runtime/debugger_state';
 import {
 	WorkspaceAutosaveChange,
-	isWorkspaceAutosavePayload,
-	type PersistedDirtyEntry,
 	type WorkspaceAutosavePayload,
 } from './models';
 import { editorTabGroup } from '../ui/tab/group_model';
 import { editorTextModelService } from '../../editor/model/model_service';
 
 const WORKSPACE_AUTOSAVE_DELAY_MS = 2500;
-const WORKSPACE_RECONNECT_DELAY_MS = WORKSPACE_AUTOSAVE_DELAY_MS * 4;
-
-let reconnectHandle: TimerHandle = null;
-let reconnectTask: Promise<void> = null;
 let editor: CartEditor = null;
 let sources: RuntimeSourceState = null;
 let debuggerState: RuntimeBreakpointState = null;
@@ -67,11 +55,6 @@ let unsubscribeEditorGroup: (() => void) | undefined;
 let unsubscribeEditorPane: (() => void) | undefined;
 let unsubscribeModelSaved: (() => void) | undefined;
 
-function cancelWorkspaceReconnect(): void {
-	reconnectHandle?.cancel();
-	reconnectHandle = null;
-}
-
 export async function shutdownWorkspaceStorage(): Promise<void> {
 	unsubscribeEditorGroup?.();
 	unsubscribeEditorPane?.();
@@ -80,23 +63,17 @@ export async function shutdownWorkspaceStorage(): Promise<void> {
 	unsubscribeEditorPane = undefined;
 	unsubscribeModelSaved = undefined;
 	cancelWorkspaceAutosave();
-	cancelWorkspaceReconnect();
 	try {
 		if (workspaceState.autosaveTask) {
 			await workspaceState.autosaveTask;
 		}
-		if (reconnectTask) {
-			await reconnectTask;
-		}
 		cancelWorkspaceAutosave();
-		cancelWorkspaceReconnect();
 		const task = runWorkspaceAutosaveTick();
 		if (task) {
 			await task;
 		}
 	} finally {
 		cancelWorkspaceAutosave();
-		cancelWorkspaceReconnect();
 		try {
 			if (editor && workspaceState.requestedRevision !== workspaceState.localRevision) {
 				commitRequestedWorkspaceSessionLocally();
@@ -118,23 +95,23 @@ export async function shutdownWorkspaceStorage(): Promise<void> {
 			clock = null;
 			logOutput = null;
 			clearWorkspaceSourceCaches();
-			closeWorkspaceRecords();
+			await closeWorkspaceRecords();
 		}
 	}
 }
 
-/** Returns the record's payload, or null when it is corrupt or written by an incompatible payload shape. */
-function readWorkspaceAutosavePayload(record: WorkspaceRecord): WorkspaceAutosavePayload | null {
-	if (!record) {
-		return null;
+/** Recovery records reference immutable dirty versions, never canonical source files. */
+async function readWorkspaceRecordVersion(
+	storage: KeyValueStorage, projectRootPath: string, path: string,
+): Promise<WorkspaceRecord> {
+	const local = readLocalWorkspaceRecord(storage, projectRootPath, path);
+	if (local !== null) return local;
+	const record = await workspaceRecords.read(path);
+	if (record === null) {
+		throw new Error(`Incomplete editor recovery: missing '${path}'.`);
 	}
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(record.contents);
-	} catch {
-		return null;
-	}
-	return isWorkspaceAutosavePayload(parsed) ? parsed : null;
+	writeLocalWorkspaceRecord(storage, projectRootPath, path, record);
+	return record;
 }
 
 function loadWorkspaceDirtyRecords(
@@ -149,7 +126,6 @@ function loadWorkspaceDirtyRecords(
 			storage,
 			projectRootPath,
 			buildWorkspaceDirtyRecordPath(dirtyPath, entry.updatedAt),
-			entry.updatedAt,
 		).then(record => [dirtyPath, record] as const);
 	}));
 }
@@ -173,83 +149,25 @@ export async function initializeWorkspaceStorage(
 		WORKSPACE_METADATA_DIR,
 		WORKSPACE_STATE_FILE,
 	);
-	let localRecord = readLocalWorkspaceRecord(
-		storage,
-		projectRootPath,
-		statePath,
-	);
-	const localPayload = readWorkspaceAutosavePayload(localRecord);
-	if (localRecord && !localPayload) {
-		logOutput.log(
-			LogLevel.Warn,
-			`[WorkspaceStorage] Discarding unusable local session record '${statePath}'; starting from an empty editor session.`,
-		);
-		deleteLocalWorkspaceRecord(storage, projectRootPath, statePath);
-		localRecord = null;
+	const localRecord = readLocalWorkspaceRecord(storage, projectRootPath, statePath);
+	const localPayload: WorkspaceAutosavePayload | null = localRecord === null ? null : JSON.parse(localRecord.contents);
+	let remoteRecord: WorkspaceRecord | null = null;
+	let providerRead = false;
+	try {
+		remoteRecord = await workspaceRecords.read(statePath);
+		providerRead = true;
+	} catch (error) {
+		const message = `Could not read the workspace editor session: ${String(error)}`;
+		logOutput.log(LogLevel.Warn, `[WorkspaceStorage] ${message}`);
+		showEditorWarningBanner(message, 5.0);
 	}
-	let remoteRecord: WorkspaceRecord = null;
-	if (workspaceRecordState.connected) {
-		try {
-			remoteRecord = await readRemoteWorkspaceRecord(statePath);
-		} catch (error) {
-			disconnectWorkspaceRecords(error);
-		}
-	}
-	const remotePayload = readWorkspaceAutosavePayload(remoteRecord);
-	if (remoteRecord && !remotePayload) {
-		logOutput.log(
-			LogLevel.Warn,
-			`[WorkspaceStorage] Discarding unusable remote session record '${statePath}'; starting from an empty editor session.`,
-		);
-		try {
-			await deleteRemoteWorkspaceRecord(statePath);
-		} catch (error) {
-			disconnectWorkspaceRecords(error);
-		}
-		remoteRecord = null;
-	}
-	let record = selectNewestWorkspaceRecord(localRecord, remoteRecord);
-	let payload = record === null
-		? null
-		: record === remoteRecord ? remotePayload : localPayload;
-	let loadedRecords = payload
-		? await loadWorkspaceDirtyRecords(storage, runtimeSources, payload)
-		: [];
-	if (record === remoteRecord && localRecord && loadedRecords.some(([, dirtyRecord]) => !dirtyRecord)) {
-		// A manifest only commits a generation once all its referenced text is present.
-		// Do not retire the local generation for an incomplete remote publication.
-		logOutput.log(
-			LogLevel.Warn,
-			`[WorkspaceStorage] Remote session '${statePath}' is incomplete; retaining the local session and its unsaved changes.`,
-		);
-		record = localRecord;
-		payload = localPayload;
-		loadedRecords = await loadWorkspaceDirtyRecords(storage, runtimeSources, payload);
-	}
-	const replacedLocalPayload = record === remoteRecord && localRecord
-		? localPayload
-		: null;
-	const generationDirtyRecords = new Map<string, WorkspaceRecord>();
-	if (payload) {
-		const retainedDirtyFiles: PersistedDirtyEntry[] = [];
-		for (let index = 0; index < loadedRecords.length; index += 1) {
-			const [dirtyPath, dirtyRecord] = loadedRecords[index];
-			if (!dirtyRecord) {
-				logOutput.log(
-					LogLevel.Warn,
-					`[WorkspaceStorage] Removing the session reference to missing unsaved changes for '${dirtyPath}'.`,
-				);
-				continue;
-			}
-			generationDirtyRecords.set(dirtyPath, dirtyRecord);
-			retainedDirtyFiles.push(payload.dirtyFiles[index]);
-		}
-		if (retainedDirtyFiles.length !== payload.dirtyFiles.length) {
-			payload = { ...payload, dirtyFiles: retainedDirtyFiles };
-			record = createWorkspaceRecord(clock, JSON.stringify(payload));
-			writeLocalWorkspaceRecord(storage, projectRootPath, statePath, record);
-		}
-	}
+	const remotePayload: WorkspaceAutosavePayload | null = remoteRecord === null ? null : JSON.parse(remoteRecord.contents);
+	const record = selectNewestWorkspaceRecord(localRecord, remoteRecord);
+	const payload = record === null ? null : record === remoteRecord ? remotePayload : localPayload;
+	// An incomplete generation is an error, not permission to discard unsaved edits or rewrite the manifest.
+	const loadedRecords = payload ? await loadWorkspaceDirtyRecords(storage, runtimeSources, payload) : [];
+	const generationDirtyRecords = new Map<string, WorkspaceRecord>(loadedRecords);
+	const replacedLocalPayload = record === remoteRecord && localRecord ? localPayload : null;
 	const obsoleteLocalDirtyRecords: Array<readonly [string, string]> = [];
 	if (replacedLocalPayload) {
 		for (const entry of replacedLocalPayload.dirtyFiles) {
@@ -299,7 +217,7 @@ export async function initializeWorkspaceStorage(
 		&& workspaceRecordsEqual(record, remoteRecord)
 		? generationDirtyRecords
 		: null;
-	workspaceState.remoteRevision = workspaceRecordState.connected
+	workspaceState.remoteRevision = providerRead
 		&& workspaceRecordsEqual(record, remoteRecord)
 		? 0
 		: -1;
@@ -341,7 +259,6 @@ export async function restoreWorkspaceStorageSession(
 			runtimeSources,
 			runtimeDebuggerState,
 			restorePayload,
-			storage,
 		);
 	}
 	editor = workspaceEditor;
@@ -354,12 +271,8 @@ export async function restoreWorkspaceStorageSession(
 		requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	}
 	if (workspaceState.requestedRevision !== workspaceState.localRevision
-		|| (workspaceRecordState.connected
-			&& workspaceState.remoteRevision !== workspaceState.localRevision)) {
+		|| workspaceState.remoteRevision !== workspaceState.localRevision) {
 		scheduleWorkspaceAutosave();
-	}
-	if (!workspaceRecordState.connected) {
-		scheduleWorkspaceReconnect();
 	}
 }
 
@@ -395,13 +308,7 @@ export function runWorkspaceAutosaveTick(): Promise<void> | void {
 		return workspaceState.autosaveTask;
 	}
 	if (workspaceState.requestedRevision === workspaceState.localRevision
-		&& (!workspaceRecordState.connected
-			|| workspaceState.remoteRevision === workspaceState.localRevision)) {
-		if (!workspaceRecordState.connected) {
-			scheduleWorkspaceReconnect();
-		}
-		return;
-	}
+		&& workspaceState.remoteRevision === workspaceState.localRevision) return;
 	const targetRevision = workspaceState.requestedRevision;
 	if (targetRevision !== workspaceState.localRevision) {
 		const previousLocalRevision = workspaceState.localRevision;
@@ -422,10 +329,6 @@ export function runWorkspaceAutosaveTick(): Promise<void> | void {
 			&& workspaceState.remoteRevision === previousLocalRevision) {
 			workspaceState.remoteRevision = targetRevision;
 		}
-	}
-	if (!workspaceRecordState.connected) {
-		scheduleWorkspaceReconnect();
-		return;
 	}
 	if (workspaceState.remoteRevision === workspaceState.localRevision
 		|| !workspaceState.localGeneration) {
@@ -448,19 +351,13 @@ async function syncWorkspaceAutosave(): Promise<void> {
 	} catch (error) {
 		failed = true;
 		workspaceState.remoteRevision = -1;
-		if (workspaceRecordState.provider.connect === undefined) {
-			const message = `Could not persist the editor session: ${String(error)}`;
-			logOutput.log(LogLevel.Error, `[WorkspaceStorage] ${message}`);
-			showEditorWarningBanner(message, 5.0);
-		} else {
-			disconnectWorkspaceRecords(error);
-			scheduleWorkspaceReconnect();
-		}
+		const message = `Could not persist the editor session: ${String(error)}`;
+		logOutput.log(LogLevel.Error, `[WorkspaceStorage] ${message}`);
+		showEditorWarningBanner(message, 5.0);
 	} finally {
 		workspaceState.autosaveTask = null;
 		if (workspaceState.requestedRevision !== workspaceState.localRevision
-			|| (!failed && workspaceRecordState.connected
-				&& workspaceState.remoteRevision !== workspaceState.localRevision)) {
+			|| (!failed && workspaceState.remoteRevision !== workspaceState.localRevision)) {
 			scheduleWorkspaceAutosave();
 		}
 	}
@@ -486,30 +383,4 @@ function commitRequestedWorkspaceSessionLocally(): void {
 	);
 	workspaceState.localRevision = workspaceState.requestedRevision;
 	workspaceState.pendingChanges = WorkspaceAutosaveChange.None;
-}
-
-function scheduleWorkspaceReconnect(): void {
-	if (workspaceRecordState.provider.connect === undefined
-		|| workspaceRecordState.connected
-		|| reconnectHandle
-		|| reconnectTask
-		|| !workspaceState.projectRootPath) {
-		return;
-	}
-	reconnectHandle = clock.scheduleOnce(WORKSPACE_RECONNECT_DELAY_MS, () => {
-		reconnectHandle = null;
-		reconnectTask = reconnectAndSyncWorkspace();
-		void reconnectTask;
-	});
-}
-
-async function reconnectAndSyncWorkspace(): Promise<void> {
-	await reconnectWorkspaceRecords();
-	reconnectTask = null;
-	if (workspaceRecordState.connected) {
-		workspaceState.remoteRevision = -1;
-		scheduleWorkspaceAutosave(0);
-	} else {
-		scheduleWorkspaceReconnect();
-	}
 }

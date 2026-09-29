@@ -13,7 +13,6 @@ import { buildWorkspaceDirtyEntryPath } from '../../workspace/files';
 import { workspaceDirtyRecords } from './state';
 import { editorTabGroup } from '../ui/tab/group_model';
 import { resolveTextFileModel } from '../services/working_copy/text_file_model';
-import type { KeyValueStorage } from '../../workspace/key_value_storage';
 import {
 	type PersistedDirtyEntry,
 	type WorkspaceAutosavePayload,
@@ -24,14 +23,13 @@ export async function applyWorkspaceAutosavePayload(
 	sources: RuntimeSourceState,
 	debuggerState: RuntimeBreakpointState,
 	payload: WorkspaceAutosavePayload,
-	storage: KeyValueStorage,
 ): Promise<void> {
 	editor.editorPanes.clearEditor();
 	editorTabGroup.clear();
 	clearCodeEditorInputs();
 	editorTextModelService.clear();
 	editor.setFontVariant(payload.fontVariant);
-	await resolveDirtyFileModels(storage, sources, payload.dirtyFiles);
+	await resolveDirtyFileModels(sources, payload.dirtyFiles);
 	hydrateDirtyFiles(sources, payload.dirtyFiles);
 	await editorTabGroup.deserialize(payload.editorGroup, editor.editorInputSerializers);
 	const active = editorTabGroup.activeTab;
@@ -40,7 +38,6 @@ export async function applyWorkspaceAutosavePayload(
 }
 
 async function resolveDirtyFileModels(
-	storage: KeyValueStorage,
 	sources: RuntimeSourceState,
 	entries: PersistedDirtyEntry[],
 ): Promise<void> {
@@ -49,7 +46,7 @@ async function resolveDirtyFileModels(
 		if (!resource) {
 			throw new Error(`Workspace resource '${entry.path}' is not installed for domain '${entry.domain}'.`);
 		}
-		await resolveTextFileModel(editorTextModelService, storage, sources, resource);
+		await resolveTextFileModel(editorTextModelService, sources, resource);
 	}
 }
 

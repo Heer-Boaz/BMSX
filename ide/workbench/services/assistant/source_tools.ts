@@ -3,7 +3,6 @@ import type { EditorTextModelService } from '../../../editor/model/model_service
 import type { EditorDocumentMode, EditorModelEdit, EditorTextModel } from '../../../editor/model/text_model';
 import type { ResourceDomain, RuntimeResource } from '../../../common/resource';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import type { EditorDiagnostic } from '../../../common/models';
 import type { ResourceDiagnostics, ResourceDiagnosticsService } from '../diagnostics/resource_diagnostics';
 import { WorkspaceSourceContext, type CapturedWorkspaceSource } from '../working_copy/source_context';
@@ -55,7 +54,6 @@ export class WorkspaceSourceTools {
 	public constructor(
 		private readonly models: EditorTextModelService,
 		private readonly sources: RuntimeSourceState,
-		private readonly storage: KeyValueStorage,
 		private readonly diagnostics: ResourceDiagnosticsService,
 		private readonly connection: AbortSignal,
 		private readonly behaviorSources: BehaviorSourceDocuments,
@@ -106,7 +104,7 @@ export class WorkspaceSourceTools {
 				const resource = this.resources.get(request.resource);
 				if (!resource) throw new StudioToolInputError('Resource handle does not belong to this source context');
 				if (resource.read === undefined) {
-					resource.read = Promise.resolve(resolveTextFileModel(this.models, this.storage, this.sources, resource.resource)).then(model => {
+					resource.read = Promise.resolve(resolveTextFileModel(this.models, this.sources, resource.resource)).then(model => {
 						this.assertReading();
 						const captured = this.context.read(model);
 						const receipt = `${this.id}/source/${this.receipts.size}`;

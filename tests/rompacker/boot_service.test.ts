@@ -1,3 +1,6 @@
+import { beforeEach, afterEach } from 'node:test';
+import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
+import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -19,7 +22,6 @@ import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { BootService } from '../../ide/workbench/services/execution/boot';
-import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
 
@@ -40,7 +42,7 @@ async function fixture(t: TestContext) {
 	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
 	const models = new EditorTextModelService();
 	const service = new BootService(models, sources, tooling, createRuntimeFaultState(), runtime,
-		tasks, execution, audio, new MemoryStorage(), new Map());
+		tasks, execution, audio, new Map());
 	let resets = 0;
 	runtime.onStateReset = () => { resets++; service.didReplaceMachine(); };
 	const model = models.retain({ domain: 0, path: 'entry.lua', source: { resid: 'entry', type: 'lua' } }, 'lua', source);
@@ -270,3 +272,7 @@ test('entry selection rejects an impossible second-socket launch before mutating
 	assert.equal(result.installed, false);
 	assert.equal(f.resets(), 0);
 });
+
+// Source-refresh operations use a real workspace owner, separate from recovery.
+beforeEach(() => openWorkspaceRecords(new MemoryWorkspaceFiles()));
+afterEach(() => closeWorkspaceRecords());

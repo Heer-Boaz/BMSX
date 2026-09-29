@@ -25,12 +25,11 @@ function fixture(t: TestContext, files: Record<string, string>, generated: strin
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
 	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
 	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
-	const storage = { getItem: () => null, setItem: () => assert.fail('not Save'), removeItem: () => assert.fail('not Delete') };
 	const { tasks, presenter } = createRuntimeInspectionFixture(runtime, sources, tooling.suspendedGuest);
-	const saves = new TextFileSaveService(models, storage, new VirtualHeadlessClock(), sources, tooling, runtime, tasks);
+	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources, tooling, runtime, tasks);
 	t.after(async () => { await saves.shutdown(); presenter.dispose(); });
 	const tools = () => {
-		const result = new WorkspaceSourceTools(models, sources, storage, diagnostics, connection.signal, documents, saves);
+		const result = new WorkspaceSourceTools(models, sources, diagnostics, connection.signal, documents, saves);
 		t.after(() => result.dispose()); return result;
 	};
 	t.after(() => { connection.abort(); diagnostics.dispose(); models.clear(); });

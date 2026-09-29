@@ -1,6 +1,5 @@
 import type { CartEditor } from '../../../../cart_editor';
 import type { HostClock } from '../../../../../hosts/common/clock';
-import type { KeyValueStorage } from '../../../../workspace/key_value_storage';
 import { runtimeSourceProjectRootPath, type RuntimeSourceState } from '../../../../runtime/sources';
 import { createLuaResource } from '../../../../workspace/workspace';
 import { stripProjectRootPrefix } from '../../../../workspace/path';
@@ -14,14 +13,13 @@ import type { QuickPickItem } from '../../../services/quick_input/provider';
 export function openCreateResourcePrompt(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
-	storage: KeyValueStorage,
 	clock: HostClock,
 ): void {
 	const resource = getActiveTab()?.resource;
 	if (resource) {
 		const root = runtimeSourceProjectRootPath(sources, resource.domain);
 		const path = stripProjectRootPrefix(resource.path, root);
-		showNewLuaFileInput(editor, sources, storage, clock, resource.domain, path.slice(0, path.lastIndexOf('/') + 1));
+		showNewLuaFileInput(editor, sources, clock, resource.domain, path.slice(0, path.lastIndexOf('/') + 1));
 		return;
 	}
 	// Non-resource panes have no implicit file owner. Choose a workspace folder,
@@ -33,16 +31,16 @@ export function openCreateResourcePrompt(
 	}
 	projects.push({ domain: SYSTEM_RESOURCE_DOMAIN, label: sources.systemProjectRootPath, description: 'SYSTEM', detail: '' });
 	editor.quickInput.pick('NEW LUA FILE', 'Choose project folder', () => new TextQuickPickProvider(projects),
-		project => showNewLuaFileInput(editor, sources, storage, clock, project.domain, ''));
+		project => showNewLuaFileInput(editor, sources, clock, project.domain, ''));
 }
 
 function showNewLuaFileInput(
-	editor: CartEditor, sources: RuntimeSourceState, storage: KeyValueStorage, clock: HostClock,
+	editor: CartEditor, sources: RuntimeSourceState, clock: HostClock,
 	domain: ResourceDomain, directory: string,
 ): void {
 	const root = runtimeSourceProjectRootPath(sources, domain);
 	editor.quickInput.input(`NEW LUA FILE - ${root}`, 'Path relative to project folder', directory,
-		relativePath => createLuaResource(storage, clock, sources, {
+		relativePath => createLuaResource(clock, sources, {
 			domain, relativePath, contents: DEFAULT_NEW_LUA_RESOURCE_CONTENT,
 		}),
 		created => {

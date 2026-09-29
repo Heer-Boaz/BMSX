@@ -31,7 +31,7 @@ guess, runtime DTO validator or catch-and-switch fallback.
 | Recovery / editor session | Browser-local, standalone namespace | Existing local/project recovery |
 | Embedded assistant, native CLI history, external MCP window | Not connected; Codex view commands disabled | Existing independent transports |
 
-Server-backed transport loss keeps the original workspace and recovery semantics;
+Server-backed transport loss keeps the selected file authority;
 it does **not** silently switch Save to another project. Ordinary connection
 failures are still reported. This change neither copies accounts nor starts a
 native Codex daemon. Local and trusted-LAN server composition remain identical.
@@ -57,24 +57,23 @@ existing file does not re-walk its parent directories. The schema upgrade indexe
 the previous content store without rewriting or discarding its files. No
 frame-time storage or network work was added.
 
-Local stores are ready when constructed. Only the HTTP provider has network
-admission/reconnection. Workspace opening no longer writes a `~workspace` probe
-file; it performs admission only for a network provider. A failed local Save
-propagates to the ordinary save owner and leaves the model dirty, rather than
-being reclassified as an offline save. Reading local canonical files does not
-upload recovery copies. A failed local session checkpoint reports through the
-existing log and workbench warning surfaces; it retains the recovery generation
-but does not start a reconnect or blind-retry timer. Network-backed workspace
-recovery retains its existing explicit local-only acknowledgement and reconnect
-semantics. Queued operations capture their provider and pending replication is
-retired with its workspace, never transferred to a replacement provider.
+Every provider implements the same canonical file operations. HTTP admission
+belongs to its transport; the shared file owner has no global connected flag,
+probe file, reconnect timer or pending source-replay queue. `WorkspaceRecords`
+orders operations per path and drains them before workspace replacement. A
+failed Save remains failed for every provider and keeps the model dirty. A read
+never uploads recovery. The code-editor footer no longer represents a failed
+file operation as a disconnected server.
 
 Save says **in this browser**, and its acknowledgement has `status: browser`.
-This is distinct from `workspace` (project filesystem) and `local-only`
-(recovery after a failed/disconnected **network-backed** Save). Ordinary local recovery
-still checkpoints before page exit; its standalone namespace cannot be replayed
-into the filesystem when the same origin is later served by the development
-server. No implicit migration/import joins these two authorities.
+`workspace` acknowledges a project-file write. Recovery does not acknowledge
+Save at all: it checkpoints dirty documents and session state separately. A
+provider checkpoint failure reports through the existing log and workbench
+warning surfaces, retaining local recovery without a blind retry loop. A future
+mutation or explicit checkpoint can retry. Missing/corrupt recovery is reported,
+not silently discarded. Ordinary local recovery still checkpoints before page
+exit. Its standalone namespace remains separate from server-backed recovery;
+no implicit migration/import joins these two authorities.
 
 Browser files belong to this origin and browser profile, not a directory on the
 computer. Clearing site data removes them; browser quota/eviction rules apply.
@@ -117,15 +116,15 @@ the ordinary focus-scoped dispatch and enablement, instead of being globally
 available outside their pane.
 
 Targeted results (2026-09-29): standalone **2/2**, source Save/storage/provider
-regressions **91/91**, workspace HTTP **7/7**, ordinary-server entry **6/6**, native
+regressions **87/87**, workspace HTTP **7/7**, ordinary-server entry **6/6**, native
 conversation browser product **1/1**, and real MCP browser product **1/1**.
 The server-entry coverage also checks the actual application route, independent
 capability serialization, matching GET/HEAD bodies, and unchanged static files.
 Storage-failure coverage checks dirty-source retention and absence of reconnect
 timers, not exact presentation strings.
 The existing source-Save conformance workflow also passes on software, WebGL2
-and WebGPU, exercising real HTTP file writes, local-only acknowledgements after
-rejected writes, and explicit reconnection for Lua, YAML and AEM.
+and WebGPU, exercising real HTTP file writes, failed-Save acknowledgements after
+rejected writes and explicit Save retries for Lua, YAML and AEM.
 IDE/Node/common-host typechecks and Studio debug/release, player and headless
 tooling builds pass; the strict boundary audit reports zero issues.
 These do not imply paid-model inference or physical-phone coverage.
@@ -142,3 +141,8 @@ These do not imply paid-model inference or physical-phone coverage.
   browser storage behind the ordinary file boundary, transaction-completion
   acknowledgement. BMSX retains its smaller existing record contract; it does
   not copy upstream's fallback providers or introduce a second source model.
+
+- [Working-copy Save](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/services/workingCopy/common/storedFileWorkingCopy.ts)
+  and [browser backups](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/services/workingCopy/browser/workingCopyBackupService.ts):
+  canonical write acknowledgement and recovery have independent owners. See
+  [source-save contract](studio_source_save_acknowledgements.md).

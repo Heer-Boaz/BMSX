@@ -1,7 +1,7 @@
 import { editorFeedbackState } from '../../../ide/common/feedback_state';
-import { COLOR_STATUS_WARNING } from '../../../ide/common/constants';
+import { COLOR_STATUS_ERROR } from '../../../ide/common/constants';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
-import { readLocalWorkspaceRecord, reconnectWorkspaceRecords, workspaceRecordState } from '../../../ide/workspace/records';
+import { workspaceRecords } from '../../../ide/workspace/records';
 import { resolveWorkspacePath } from '../../../ide/workspace/path';
 import { runtimeSourceProjectRootPath } from '../../../ide/runtime/sources';
 import { check, type StudioFixture } from './studio_fixture';
@@ -25,7 +25,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 	const path = resolveWorkspacePath(model.resource.path, root);
 	const source = model.buffer.getText();
 	const actor = title(), position = cycles(), media = ide.sources.currentBlua32Media;
-	const files = workspaceRecordState.provider;
+	const files = workspaceRecords.provider;
 	harness.replaceActiveCodeSource(source + '\n-- project save acknowledged\n');
 	await press('ControlLeft', 'KeyS');
 	await until(() => !model.dirty, 'source saves: project acknowledges first source');
@@ -33,22 +33,18 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 	check((await files.read(path))!.contents === firstSaved, 'source saves: saved means actual project bytes');
 
 	await globalThis.setStudioWorkspaceWriteFailure(true);
-	harness.replaceActiveCodeSource(firstSaved + '-- local save acknowledged\n');
+	harness.replaceActiveCodeSource(firstSaved + '-- retain failed save\n');
 	await press('ControlLeft', 'KeyS');
-	await until(() => !model.dirty && !workspaceRecordState.connected, 'source saves: rejected HTTP PUT reports local-only save');
-	const localSaved = model.lastSavedSource;
-	check(readLocalWorkspaceRecord(localStorage, root, path)!.contents === localSaved, 'source saves: local record contains the accepted revision');
+	await until(() => ide.textFileSaves.latestOperation(model)?.result?.status === 'failed', 'source saves: rejected HTTP PUT reports failed save');
+	check(model.dirty && model.lastSavedSource === firstSaved, 'source saves: failed write retains dirty identity and previous canonical baseline');
 	check((await files.read(path))!.contents === firstSaved, 'source saves: failed HTTP write did not update the project file');
-	check(!workspaceRecordState.connected && editorFeedbackState.message.color === COLOR_STATUS_WARNING,
-		'source saves: missing project acknowledgement is a visible warning');
+	check(editorFeedbackState.message.color === COLOR_STATUS_ERROR, 'source saves: failed write is a visible error');
 	await frame();
-	await test.capture?.('lua-local-only');
-	harness.replaceActiveCodeSource(localSaved + '-- later unsaved typing\n');
+	await test.capture?.('lua-save-failed');
+	harness.replaceActiveCodeSource(model.buffer.getText() + '-- later unsaved typing\n');
 	await globalThis.setStudioWorkspaceWriteFailure(false);
-	await reconnectWorkspaceRecords();
-	check(workspaceRecordState.connected && (await files.read(path))!.contents === localSaved,
-		'source saves: reconnect writes the saved revision, not later typing');
-	check(model.dirty && model.lastSavedSource === localSaved, 'source saves: remote acknowledgement does not clean newer edits');
+	check((await files.read(path))!.contents === firstSaved, 'source saves: reading never replays a failed write');
+	check(model.dirty && model.lastSavedSource === firstSaved, 'source saves: availability cannot acknowledge unsaved edits');
 	await press('ControlLeft', 'KeyS');
 	await until(() => !model.dirty, 'source saves: later typing is explicitly saved');
 	check((await files.read(path))!.contents === model.buffer.getText(), 'source saves: next Save acknowledges the new project bytes');
@@ -70,19 +66,18 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 		await globalThis.setStudioWorkspaceWriteFailure(true);
 		document.pushEditOperations([{ offset: document.buffer.length, deleteLength: 0, text: '\n# source save acknowledgement\n' }]);
 		await press('ControlLeft', 'KeyS');
-		await until(() => tasks.ready && !document.dirty && !workspaceRecordState.connected,
-			`source saves: ${kind} local acknowledgement reaches the command`);
+		await until(() => ide.textFileSaves.latestOperation(document)?.result?.status === 'failed',
+			`source saves: ${kind} write failure reaches the command`);
+		check(document.dirty && tasks.ready, `source saves: ${kind} remains unsaved without running asset application`);
 		check((await files.read(resourcePath))!.contents === before, `source saves: ${kind} project remains unchanged after failed PUT`);
-		check(readLocalWorkspaceRecord(localStorage, root, resourcePath)!.contents === document.buffer.getText(),
-			`source saves: ${kind} saves authored bytes, not cooked data`);
-		if (kind === 'aem') check(getTextFileRuntimeSourceStatus(ide.sources, document) === 'applied',
-			'source saves: AEM can be applied while its project write is still pending');
-		else check(cycles() === position, 'source saves: YAML persistence does not advance the machine');
-		await frame();
-		await test.capture?.(`${kind}-local-only`);
+		check(cycles() === position, 'source saves: rejected persistence does not advance the machine');
+		await frame(); await test.capture?.(`${kind}-save-failed`);
 		await globalThis.setStudioWorkspaceWriteFailure(false);
-		await reconnectWorkspaceRecords();
-		check((await files.read(resourcePath))!.contents === document.buffer.getText(), `source saves: ${kind} reconnect persists exact authored source`);
+		await press('ControlLeft', 'KeyS');
+		await until(() => ide.textFileSaves.latestOperation(document)?.result?.status === 'saved', `source saves: ${kind} retry is acknowledged`);
+		check((await files.read(resourcePath))!.contents === document.buffer.getText(), `source saves: ${kind} explicit retry persists exact authored source`);
+		if (kind === 'aem') check(getTextFileRuntimeSourceStatus(ide.sources, document) === 'applied', 'source saves: AEM applies after successful persistence');
+
 	}
 	// AEM deliberately calls its real reload_from_rom function; that is guest
 	// work, unlike Lua/YAML persistence, but does not reboot or resume gameplay.

@@ -1,3 +1,6 @@
+import { beforeEach, afterEach } from 'node:test';
+import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
+import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -20,7 +23,6 @@ import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { createRuntimeDebuggerState, discardRuntimeDebuggerPlans } from '../../ide/runtime/debugger_state';
 import { HotResumeService } from '../../ide/workbench/services/execution/hot_resume';
-import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
 
@@ -43,7 +45,7 @@ async function fixture(t: TestContext, init = '') {
 	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput, target.presenter);
 	const models = new EditorTextModelService();
 	const service = new HotResumeService(models, sources, tooling, createRuntimeFaultState(), debuggerState,
-		input, runtime, tasks, new MemoryStorage(), new Map());
+		input, runtime, tasks, new Map());
 	const model = models.retain({ domain: 0, path: 'entry.lua', source: { resid: 'entry', type: 'lua' } }, 'lua', source);
 	// Same resource/version in a different document owner must not enter this build.
 	editorTextModelService.retain(model.resource, 'lua', 'end end -- foreign workspace');
@@ -200,3 +202,7 @@ test('relocation rejection preserves installed media and the real retained frame
 	assert.equal(f.sources.currentBlua32Media, media);
 	assert.equal(f.cpu.activeThread.frames.at(-1), frame);
 });
+
+// Source-refresh operations use a real workspace owner, separate from recovery.
+beforeEach(() => openWorkspaceRecords(new MemoryWorkspaceFiles()));
+afterEach(() => closeWorkspaceRecords());

@@ -23,15 +23,9 @@ export async function saveTextFileFromCommand(
 		}
 		return result;
 	}
-	const saved = `${title} saved${result.persistence.status === 'browser' ? ' in this browser'
-		: result.persistence.status === 'local-only' ? ' locally only' : ''}`;
+	const saved = `${title} saved${result.persistence.status === 'browser' ? ' in this browser' : ''}`;
 	if (result.application.status === 'failed') {
 		showEditorWarningBanner(`${saved}; runtime apply failed: ${extractErrorMessage(result.application.error)}`, 5.0);
-	} else if (result.persistence.status === 'local-only') {
-		const reason = result.persistence.reason === 'write-failed'
-			? extractErrorMessage(result.persistence.error)
-			: 'Workspace disconnected';
-		showEditorWarningBanner(`${saved}: ${reason}`, 5.0);
 	} else if (model.mode === 'yaml') {
 		showEditorMessage(`${saved} (asset rebuild required)`, constants.COLOR_STATUS_WARNING, 4.0);
 	} else if (model.mode === 'lua' && getTextFileRuntimeSourceStatus(sources, model) === 'pending') {

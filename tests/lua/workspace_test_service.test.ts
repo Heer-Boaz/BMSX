@@ -11,7 +11,7 @@ import { ScenarioLabController } from '../../ide/workbench/contrib/scenario_lab/
 function fixture(t: TestContext) {
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('suite_assert.lua', 12)]);
 	const models = new EditorTextModelService();
-	const runs = new ScenarioRunService(models, sources, null, null, new Map(), PSX_MACHINE_SPEC, () => assert.fail('discovery cannot create a machine'));
+	const runs = new ScenarioRunService(models, sources, null, new Map(), PSX_MACHINE_SPEC, () => assert.fail('discovery cannot create a machine'));
 	t.after(() => { runs.dispose(); models.clear(); editorTextModelService.clear(); });
 	return { sources, models, runs, module: runs.collection.roots[0].children[0] };
 }

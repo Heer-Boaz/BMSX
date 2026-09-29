@@ -43,6 +43,6 @@ export function createRuntimeInspectionFixture(runtime: Runtime, sources: Runtim
 	const terminal = new LuaTerminalSession(runtime, sources, guest, debuggerState, fault, tasks, execution, rewind);
 	const actorExecution = new ActorExecutionService(runtime, sources, guest, debuggerState, fault, tasks, execution, rewind);
 	const tooling = new RuntimeLuaTooling(sources, guest);
-	const boots = new BootService(models, sources, tooling, fault, runtime, tasks, execution, audio, storage, new Map());
+	const boots = new BootService(models, sources, tooling, fault, runtime, tasks, execution, audio, new Map());
 	return { boots, tooling, models, storage, actorExecution, debuggerExecution, terminal, audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
 }

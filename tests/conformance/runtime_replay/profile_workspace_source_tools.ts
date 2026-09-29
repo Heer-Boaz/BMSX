@@ -21,8 +21,7 @@ async function main(): Promise<void> {
 		const runtime = createTestRuntime(createTestRuntimeRomPayload());
 		const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
 		const { tasks, presenter } = createRuntimeInspectionFixture(runtime, sources, tooling.suspendedGuest);
-		const storage = { getItem: () => null, setItem: () => assert.fail(), removeItem: () => assert.fail() };
-		const saves = new TextFileSaveService(models, storage, new VirtualHeadlessClock(), sources, tooling, runtime, tasks);
+		const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources, tooling, runtime, tasks);
 		const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
 		const model = models.retain(sources.luaResources[0], 'lua', source.src);
 		let reads = 0;
@@ -32,7 +31,7 @@ async function main(): Promise<void> {
 		const capture: number[] = [], proposal: number[] = [];
 		for (let sample = 0; sample < 30; sample++) {
 			const started = performance.now();
-			const tools = new WorkspaceSourceTools(models, sources, storage, diagnostics, new AbortController().signal, new BehaviorSourceDocuments(models, sources), saves);
+			const tools = new WorkspaceSourceTools(models, sources, diagnostics, new AbortController().signal, new BehaviorSourceDocuments(models, sources), saves);
 			const catalog = await tools.execute('studio_list_sources', {}); assert.ok(catalog.kind === 'sources');
 			const read = await tools.execute('studio_read_source', { resource: catalog.data[0].resource }); assert.ok(read.kind === 'source');
 			const captured = performance.now();

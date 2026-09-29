@@ -1,7 +1,6 @@
 import type { MachineModelSpec } from '../../../../machine/ts/spec/bmsx/model';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import type { WorkspaceRecord } from '../../../workspace/records';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
@@ -35,7 +34,6 @@ export class ScenarioRunService {
 		private readonly models: EditorTextModelService,
 		private readonly sources: RuntimeSourceState,
 		private readonly tooling: RuntimeLuaTooling,
-		private readonly storage: KeyValueStorage,
 		private readonly dirtyRecords: ReadonlyMap<string, WorkspaceRecord>,
 		private readonly model: MachineModelSpec,
 		private readonly createTarget: TestTargetFactory,
@@ -92,7 +90,7 @@ export class ScenarioRunService {
 
 	private async prepare(run: ScenarioRun, programSources: readonly LuaTextModelSourceSnapshot[]): Promise<void> {
 		try {
-			const media = await buildTestRunMedia(this.sources, this.tooling, this.storage, this.dirtyRecords, programSources,
+			const media = await buildTestRunMedia(this.sources, this.tooling, this.dirtyRecords, programSources,
 				run.items[0].test.resource.domain, this.model);
 			if (this.preparing !== run) return; // Cancelled while the workspace build was pending.
 			this.session = new TestRun(run, media, this.results, this.createTarget, () => this.emit({ type: 'complete', run }),

@@ -12,7 +12,6 @@ import type { BootService } from '../workbench/services/execution/boot';
 import type { HotResumeService } from '../workbench/services/execution/hot_resume';
 import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
-import type { KeyValueStorage } from '../workspace/key_value_storage';
 import type { EditorCommandId, EditorWorkspaceCommandId } from '../common/commands';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
@@ -44,7 +43,6 @@ export function executeEditorWorkspaceCommand(
 	execution: HostExecutionControl,
 	overlayRenderer: OverlayRenderer,
 	audioOutput: HostAudioOutput,
-	storage: KeyValueStorage,
 	clock: HostClock,
 	logOutput: LogOutput,
 	textFileSaves: TextFileSaveService,
@@ -52,7 +50,7 @@ export function executeEditorWorkspaceCommand(
 ): void {
 	switch (command) {
 		case 'createResource':
-			openCreateResourcePrompt(editor, sources, storage, clock);
+			openCreateResourcePrompt(editor, sources, clock);
 			return;
 		case 'save': {
 			const activeInput = getActiveTab();

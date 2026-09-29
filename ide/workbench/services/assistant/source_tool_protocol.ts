@@ -19,9 +19,9 @@ const EDIT_FIELDS = ['offset', 'deleteLength', 'text', 'expectedText'];
 
 export const STUDIO_SOURCE_TOOLS = [
 	...STUDIO_BEHAVIOR_TOOLS,
-	{ name: 'studio_read_source_status', description: 'Read current working-copy dirty state, its relation to installed code and the latest ordinary Studio Save acknowledgement for a current source receipt. Save status is historical: workspace acknowledges the project filesystem, browser acknowledges the browser-owned workspace, and local-only acknowledges recovery storage only. A pending Save is not success. Runtime applied only compares source with the installed revision, not successful initialization. YAML assets require an asset rebuild; source-only Lua tests are not installed program modules. This does not save, build, execute or refresh expired source authority.',
+	{ name: 'studio_read_source_status', description: 'Read current working-copy dirty state, its relation to installed code and the latest ordinary Studio Save acknowledgement for a current source receipt. Save status is historical: workspace acknowledges the project filesystem, browser acknowledges the browser-owned workspace. A pending Save is not success. Runtime applied only compares source with the installed revision, not successful initialization. YAML assets require an asset rebuild; source-only Lua tests are not installed program modules. This does not save, build, execute or refresh expired source authority.',
 		inputSchema: { type: 'object', properties: { receipt: { type: 'string' } }, required: RECEIPT_FIELDS, additionalProperties: false } },
-	{ name: 'studio_save_source', description: 'Explicitly Save the exact working-copy revision read in this tool context, using the same service as Ctrl+S. Requires a current source receipt, not a review ID or path. Does not accept edits or approve a proposal. Lua and YAML Save persist source without building/installing it; AEM Save also performs its ordinary asset application, reported separately. Waits for the actual persistence/application outcome, not provider polling. Once admitted, the Save finishes even if its tool context retires; no writes are rolled back. Later edits stay dirty. Read fresh source/status in a new tool context after retirement. A local-only outcome is not a successful project-file write.',
+	{ name: 'studio_save_source', description: 'Explicitly Save the exact working-copy revision read in this tool context, using the same service as Ctrl+S. Requires a current source receipt, not a review ID or path. Does not accept edits or approve a proposal. Lua and YAML Save persist source without building/installing it; AEM Save also performs its ordinary asset application, reported separately. Waits for the actual persistence/application outcome, not provider polling. Once admitted, the Save finishes even if its tool context retires; no writes are rolled back. Later edits stay dirty. Read fresh source/status in a new tool context after retirement. A failed write leaves the document unsaved; recovery checkpoints never count as saved source.',
 		inputSchema: { type: 'object', properties: { receipt: { type: 'string' } }, required: RECEIPT_FIELDS, additionalProperties: false } },
 	{ name: 'studio_list_sources', description: 'List source resources in this captured Studio workspace. Handles belong only to this tool context; paths are labels, not filesystem access.',
 		inputSchema: { type: 'object', properties: {}, required: NO_FIELDS, additionalProperties: false } },
@@ -83,8 +83,7 @@ export function encodeSourceSaveResult(result: TextFileSaveResult) {
 	if (result.status === 'failed') return { status: result.status, version: result.snapshot.version, error: String(result.error) };
 	const { persistence, application } = result;
 	return { status: result.status, version: result.snapshot.version,
-		persistence: persistence.status === 'local-only' && persistence.reason === 'write-failed'
-			? { status: persistence.status, reason: persistence.reason, error: String(persistence.error) } : persistence,
+		persistence,
 		application: application.status === 'failed'
 			? { status: application.status, phase: application.phase, error: String(application.error) } : application };
 }

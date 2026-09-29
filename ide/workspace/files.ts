@@ -1,6 +1,5 @@
 import { advanceLuaSourceRevision, type LuaSourceRecord, type LuaSourceRegistry } from '../runtime/source_registry';
 import type { HostClock } from '../../hosts/common/clock';
-import type { KeyValueStorage } from './key_value_storage';
 import {
 	deleteWorkspaceLuaSourceOverride,
 	getWorkspaceLuaSourceOverride,
@@ -11,8 +10,7 @@ import {
 	WORKSPACE_DIRTY_DIR,
 	WORKSPACE_METADATA_DIR,
 	createWorkspaceRecord,
-	readWorkspaceRecord,
-	writeWorkspaceRecord,
+	workspaceRecords,
 	type WorkspaceRecord,
 	type WorkspaceRecordPersistence,
 } from './records';
@@ -61,36 +59,23 @@ export function readWorkspaceLuaSourceText(registry: LuaSourceRegistry, record: 
 }
 
 export async function persistWorkspaceSourceFile(
-	storage: KeyValueStorage,
 	clock: HostClock,
 	workspacePath: string,
 	source: string,
-	projectRootPath: string,
 ): Promise<WorkspaceSourceSaveResult> {
 	const record = createWorkspaceRecord(clock, source);
-	const persistence = await writeWorkspaceRecord(
-		storage,
-		projectRootPath,
-		workspacePath,
-		record,
-	);
+	const persistence = await workspaceRecords.write(workspacePath, record);
 	return { record, persistence };
 }
 
 export async function loadWorkspaceSourceFile(
-	storage: KeyValueStorage,
 	workspacePath: string,
-	projectRootPath: string,
 ): Promise<string | null> {
 	const cached = workspaceCanonicalSourceCache.get(workspacePath);
 	if (cached !== undefined) {
 		return cached;
 	}
-	const record = await readWorkspaceRecord(
-		storage,
-		projectRootPath,
-		workspacePath,
-	);
+	const record = await workspaceRecords.read(workspacePath);
 	if (!record) {
 		return null;
 	}
@@ -102,7 +87,6 @@ export async function applyWorkspaceSourceOverrides(params: {
 	dirtyRecords: ReadonlyMap<string, WorkspaceRecord>;
 	domain: ResourceDomain;
 	registry: LuaSourceRegistry;
-	storage: KeyValueStorage;
 	projectRootPath: string;
 }): Promise<{ rejectedDirtyPaths: Set<string>; programChanged: boolean }> {
 	const rejectedDirtyPaths = new Set<string>();
@@ -122,11 +106,7 @@ export async function applyWorkspaceSourceOverrides(params: {
 		}
 		const canonicalPath = asset.normalized_source_path;
 		canonicalPaths[index] = canonicalPath;
-		reads.push(readWorkspaceRecord(
-			params.storage,
-			root,
-			canonicalPath,
-		).then(canonicalRecord => {
+		reads.push(workspaceRecords.read(canonicalPath).then(canonicalRecord => {
 			canonicalRecords[index] = canonicalRecord;
 		}));
 	}

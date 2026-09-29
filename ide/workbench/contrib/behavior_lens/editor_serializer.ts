@@ -2,7 +2,6 @@ import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorInputSerializer } from '../../services/editor/editor_serialization';
 import { captureTextFileModel, resolveTextFileModelSnapshot, type TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import type { BehaviorLensController } from './controller';
 import type { BehaviorLensInput } from './editor_input';
 import type { BehaviorLensViewState } from './view_model';
@@ -16,7 +15,7 @@ export type SerializedBehaviorLensInput = {
 };
 
 export class BehaviorLensInputSerializer implements EditorInputSerializer<BehaviorLensInput> {
-	public constructor(private readonly storage: KeyValueStorage, private readonly sources: RuntimeSourceState,
+	public constructor(private readonly sources: RuntimeSourceState,
 		private readonly controller: BehaviorLensController) {}
 
 	public serialize(input: BehaviorLensInput): string {
@@ -31,10 +30,10 @@ export class BehaviorLensInputSerializer implements EditorInputSerializer<Behavi
 
 	public async deserialize(value: string): Promise<BehaviorLensInput> {
 		const state: SerializedBehaviorLensInput = JSON.parse(value);
-		const { model, sameSource } = await resolveTextFileModelSnapshot(editorTextModelService, this.storage, this.sources, state.source);
+		const { model, sameSource } = await resolveTextFileModelSnapshot(editorTextModelService, this.sources, state.source);
 		let sameDependencies = true;
 		for (const dependency of state.dependencies) {
-			const resolved = await resolveTextFileModelSnapshot(editorTextModelService, this.storage, this.sources, dependency);
+			const resolved = await resolveTextFileModelSnapshot(editorTextModelService, this.sources, dependency);
 			if (!resolved.sameSource) sameDependencies = false;
 		}
 		const input = this.controller.createInput(model, state.presentation);

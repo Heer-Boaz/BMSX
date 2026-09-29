@@ -12,7 +12,6 @@ import type { BootService } from '../workbench/services/execution/boot';
 import type { HotResumeService } from '../workbench/services/execution/hot_resume';
 import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
-import type { KeyValueStorage } from '../workspace/key_value_storage';
 import type { CartEditor } from '../cart_editor';
 import type { EditorCommandId } from '../common/commands';
 import type { EditorActionRequest } from './action_request';
@@ -73,7 +72,6 @@ export class IdeCommandController {
 		private readonly overlayRenderer: OverlayRenderer,
 		private readonly runtime: Runtime,
 		private readonly audioOutput: HostAudioOutput,
-		private readonly storage: KeyValueStorage,
 		private readonly clock: HostClock,
 		private readonly logOutput: LogOutput,
 		private readonly scenarioRuns: ScenarioRunService,
@@ -261,7 +259,6 @@ export class IdeCommandController {
 				this.execution,
 				this.overlayRenderer,
 				this.audioOutput,
-				this.storage,
 				this.clock,
 				this.logOutput,
 				this.textFileSaves,

@@ -128,10 +128,6 @@ type ThemeDefinition = {
 		activeText: number;
 		inactiveText: number;
 	};
-	server_status: {
-		connected: number;
-		disconnected: number;
-	};
 	searchBackground: number;
 	highlightOverlay: number;
 	scrollbarThumb?: number;
@@ -253,10 +249,6 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			activeText: THEME_TOKEN_TERMINAL_GREY,
 			inactiveText: THEME_TOKEN_TEXT_GREY,
 		},
-		server_status: {
-			connected: THEME_TOKEN_TERMINAL_DARK_GREEN,
-			disconnected: THEME_TOKEN_TERMINAL_RED,
-		},
 		searchBackground: THEME_TOKEN_TERMINAL_CYAN,
 		highlightOverlay: THEME_TOKEN_DARK_NAVY,
 		caret: {
@@ -372,10 +364,6 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			border: THEME_TOKEN_BORDER_GREY,
 			activeText: THEME_TOKEN_TEXT_GREY,
 			inactiveText: THEME_TOKEN_TEXT_GREY,
-		},
-		server_status: {
-			connected: THEME_TOKEN_SUCCESS_GREEN,
-			disconnected: THEME_TOKEN_ACCENT_RED,
 		},
 		searchBackground: THEME_TOKEN_PANEL_GREY,
 		highlightOverlay: THEME_TOKEN_LINE_HIGHLIGHT_OVERLAY,
@@ -577,8 +565,6 @@ export let HOVER_TOOLTIP_BORDER: number;
 export let HOVER_TOOLTIP_TEXT: number;
 export const HOVER_TOOLTIP_MAX_VISIBLE_LINES = 10;
 export const LINE_JUMP_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
-export let COLOR_SERVER_STATUS_CONNECTED: number;
-export let COLOR_SERVER_STATUS_DISCONNECTED: number;
 export let COLOR_HEADER_BUTTON_BACKGROUND: number;
 export let COLOR_HEADER_BUTTON_BORDER: number;
 export let COLOR_HEADER_BUTTON_DISABLED_BACKGROUND: number;
@@ -726,8 +712,6 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	HOVER_TOOLTIP_BACKGROUND = theme.overlays.hover.background;
 	HOVER_TOOLTIP_BORDER = theme.overlays.hover.border;
 	HOVER_TOOLTIP_TEXT = theme.overlays.hover.text;
-	COLOR_SERVER_STATUS_CONNECTED = theme.server_status.connected;
-	COLOR_SERVER_STATUS_DISCONNECTED = theme.server_status.disconnected;
 	COLOR_HEADER_BUTTON_BACKGROUND = headerButtons.background;
 	COLOR_HEADER_BUTTON_BORDER = headerButtons.border;
 	COLOR_HEADER_BUTTON_DISABLED_BACKGROUND = headerButtons.disabledBackground;

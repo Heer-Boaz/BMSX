@@ -11,7 +11,7 @@ import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '.
 function fixture(t: TestContext, empty = false) {
 	const sources = createScenarioTestSourceState(empty ? [] : [createScenarioTestSourceRecord('suite_assert.lua', 7)]);
 	const models = new EditorTextModelService(), connection = new AbortController();
-	const service = new ScenarioRunService(models, sources, null, null, new Map(), PSX_MACHINE_SPEC,
+	const service = new ScenarioRunService(models, sources, null, new Map(), PSX_MACHINE_SPEC,
 		() => assert.fail('discovery and rejected admission never construct a target'));
 	const tools = new WorkspaceTestTools(service, connection.signal);
 	t.after(() => { tools.dispose(); service.dispose(); models.clear(); });

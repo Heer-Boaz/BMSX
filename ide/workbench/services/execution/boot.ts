@@ -8,7 +8,6 @@ import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import { enterSystemSources, type RuntimeSourceState } from '../../../runtime/sources';
 import { blua32MediaRequiresRebuild, bootInstalledBlua32Media, installBlua32Media,
 	prepareBlua32MediaBoot, type Blua32CartridgeEntry, type PreparedBlua32Boot } from '../../../runtime/lua_pipeline';
-import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import type { WorkspaceRecord } from '../../../workspace/records';
 import { applyAllWorkspaceSourceOverrides, applyLuaTextModelSources } from '../../../workspace/workspace';
 import { captureLuaTextModelSources, type LuaTextModelSourceSnapshot } from '../working_copy/lua_sources';
@@ -81,7 +80,6 @@ export class BootService {
 		private readonly tasks: RuntimeTaskQueue,
 		private readonly execution: HostExecutionControl,
 		private readonly audioOutput: HostAudioOutput,
-		private readonly storage: KeyValueStorage,
 		private readonly dirtyRecords: ReadonlyMap<string, WorkspaceRecord>,
 	) {}
 
@@ -116,7 +114,7 @@ export class BootService {
 		void this.tasks.schedule(async () => {
 			if (operation.result !== null) return;
 			operation.phase = 'reading-sources';
-			await applyAllWorkspaceSourceOverrides(this.storage, this.sources, this.dirtyRecords);
+			await applyAllWorkspaceSourceOverrides(this.sources, this.dirtyRecords);
 			if (operation.result !== null) return;
 			let prepared: PreparedBlua32Boot;
 			try {

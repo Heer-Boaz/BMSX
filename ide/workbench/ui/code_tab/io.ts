@@ -6,7 +6,6 @@ import type { EditorTextSelection } from '../../../editor/navigation/text_select
 import { resolveCodeEditorInput, retainLuaCodeTabContext, retainModelCodeTabContext } from './contexts';
 import { resolveTextFileModel } from '../../services/working_copy/text_file_model';
 import type { EditorPanes } from '../../services/editor/editor_panes';
-import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import type { CodeEditorInput } from '../tab/model';
 
 export function resolveLuaCodeEditorInput(sources: RuntimeSourceState, resource: RuntimeResource): CodeEditorInput {
@@ -14,11 +13,10 @@ export function resolveLuaCodeEditorInput(sources: RuntimeSourceState, resource:
 }
 
 export async function resolveTextCodeEditorInput(
-	storage: KeyValueStorage,
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
 ): Promise<CodeEditorInput> {
-	const model = await resolveTextFileModel(editorTextModelService, storage, sources, resource);
+	const model = await resolveTextFileModel(editorTextModelService, sources, resource);
 	return resolveCodeEditorInput(retainModelCodeTabContext(model));
 }
 

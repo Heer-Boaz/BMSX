@@ -1,4 +1,3 @@
-import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { resolveTextCodeEditorInput, resolveLuaCodeEditorInput } from '../../ui/code_tab/io';
 import { resolveResourceViewerInput } from './view_tabs';
@@ -12,7 +11,6 @@ import { WORKBENCH_RESOURCE_VIEWER_ID } from './editor_input';
 
 /** Built-in resource editor contributions, ordered from specific to general. */
 export function createResourceEditorResolver(
-	storage: KeyValueStorage,
 	sources: RuntimeSourceState,
 ): ResourceEditorResolver {
 	const registrations: ResourceEditorRegistration[] = [
@@ -24,12 +22,12 @@ export function createResourceEditorResolver(
 		{
 			id: WORKBENCH_TEXT_EDITOR_ID,
 			selector: { kind: 'asset_type', assetType: 'aem' },
-			createEditorInput: resource => resolveTextCodeEditorInput(storage, sources, resource),
+			createEditorInput: resource => resolveTextCodeEditorInput(sources, resource),
 		},
 		...['.yaml', '.yml'].map(suffix => ({
 			id: WORKBENCH_TEXT_EDITOR_ID,
 			selector: { kind: 'filename_suffix' as const, suffix, assetType: 'data' as const },
-			createEditorInput: resource => resolveTextCodeEditorInput(storage, sources, resource),
+			createEditorInput: resource => resolveTextCodeEditorInput(sources, resource),
 		} satisfies ResourceEditorRegistration)),
 		{
 			id: WORKBENCH_RESOURCE_VIEWER_ID,

@@ -14,7 +14,7 @@ async function fixture(t: TestContext) {
 	const source = "-- captured 🐉\r\nreturn { kind = 'unit', tests = { sample = function() assert(false) end } }\r\n";
 	const models = new EditorTextModelService();
 	const service = new ScenarioRunService(models, createScenarioTestSourceState([createScenarioTestSourceRecord('suite_assert.lua', 7, source)]),
-		null, null, new Map(), PSX_MACHINE_SPEC, () => assert.fail('evidence reads cannot construct machines'));
+		null, new Map(), PSX_MACHINE_SPEC, () => assert.fail('evidence reads cannot construct machines'));
 	const collection = service.collection;
 	const module = collection.roots[0].children[0], item = module.children[0];
 	const owner = service.results, connection = new AbortController();

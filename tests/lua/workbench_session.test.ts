@@ -69,13 +69,13 @@ function fixture(t: TestContext) {
 	const behavior = new BehaviorLensController(sources, null, panes, null, new BehaviorSourceDocuments(editorTextModelService, sources), () => assert.fail('metadata must not start an FSM layout worker'), null);
 	const scene = new SceneEditorController(sources, panes, null);
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
-	const runs = new ScenarioRunService(editorTextModelService, sources, null, null, new Map(), runtime.model, () => assert.fail('session recovery must not create test machines'));
+	const runs = new ScenarioRunService(editorTextModelService, sources, null, new Map(), runtime.model, () => assert.fail('session recovery must not create test machines'));
 	const scenario = new ScenarioLabController(null, null, panes, null, runs);
 	const serializers: EditorInputSerializers = {
 		terminal: { serialize: () => '', deserialize: () => { throw new Error('Terminal not used in this source-session fixture'); } },
-		code_editor: new CodeEditorInputSerializer(null, sources),
-		behavior_lens: new BehaviorLensInputSerializer(null, sources, behavior),
-		scene_editor: new SceneEditorInputSerializer(null, sources, scene),
+		code_editor: new CodeEditorInputSerializer(sources),
+		behavior_lens: new BehaviorLensInputSerializer(sources, behavior),
+		scene_editor: new SceneEditorInputSerializer(sources, scene),
 		resource_view: new ResourceViewerInputSerializer(sources),
 		scenario_lab: new ScenarioLabInputSerializer(scenario),
 	};
@@ -115,7 +115,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	workspaceDirtyRecords.set(buildWorkspaceDirtyEntryPath('game', 0, 'definitions.lua'), { contents: dirtySource, updatedAt: 50 });
 	const generation = JSON.parse(JSON.stringify({ dirtyFiles: [{ domain: 0, path: 'definitions.lua', updatedAt: 50 }], editorGroup: before, fontVariant: 'tiny', breakpoints: [] }));
 	await applyWorkspaceAutosavePayload({ editorPanes: f.panes, editorInputSerializers: f.serializers, setFontVariant() {} },
-		f.sources, { breakpoints: new RuntimeBreakpoints(f.sources, () => {}) }, generation, null);
+		f.sources, { breakpoints: new RuntimeBreakpoints(f.sources, () => {}) }, generation);
 	const after = editorTabGroup.serialize(f.serializers);
 	assert.deepEqual(after, before);
 	assert.deepEqual(editorTabGroup.tabs.map(input => input.kind), ['code_editor', 'behavior_lens', 'behavior_lens', 'scene_editor', 'code_editor']);
@@ -239,7 +239,7 @@ test('Scenario Lab persists only test identity and scope expansion, not run/resu
 	const value = f.serializers.scenario_lab.serialize(input);
 	assert.deepEqual(JSON.parse(value), captureScenarioLabTestView(input.view));
 	assert.doesNotMatch(value, /results|runActive|focus|previous/);
-	const runs = new ScenarioRunService(editorTextModelService, f.sources, null, null, new Map(), f.runtime.model, () => assert.fail('session recovery must not create test machines'));
+	const runs = new ScenarioRunService(editorTextModelService, f.sources, null, new Map(), f.runtime.model, () => assert.fail('session recovery must not create test machines'));
 	const next = new ScenarioLabController(null, null, f.panes, null, runs);
 	const fresh = new ScenarioLabInputSerializer(next).deserialize(value);
 	assert.deepEqual(captureScenarioLabTestView(fresh.view), captureScenarioLabTestView(input.view));

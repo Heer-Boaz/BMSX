@@ -79,9 +79,9 @@ test('network loss retires admission without replaying a possibly executed write
 		writes++; throw new TypeError('connection lost');
 	});
 	const provider = new HttpWorkspaceRecordProvider();
-	await provider.connect();
 	await assert.rejects(provider.write('source.lua', { contents: 'return 1', updatedAt: 1 }, true));
-	await provider.connect();
+	assert.equal(admissions, 1); assert.equal(writes, 1);
+	await assert.rejects(provider.read('source.lua'));
 	assert.equal(admissions, 2);
-	assert.equal(writes, 1);
+	assert.equal(writes, 2);
 });

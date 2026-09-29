@@ -8,7 +8,6 @@ import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import { runtimeSourceProjectRootPath, type RuntimeSourceState } from '../../../runtime/sources';
 import { workspaceCanonicalSourceCache } from '../../../workspace/cache';
 import { persistWorkspaceSourceFile } from '../../../workspace/files';
-import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import { resolveWorkspacePath } from '../../../workspace/path';
 import { saveLuaResourceSource } from '../../../workspace/workspace';
 import type { WorkspaceRecordPersistence } from '../../../workspace/records';
@@ -35,7 +34,6 @@ export class TextFileSaveService {
 
 	public constructor(
 		private readonly models: EditorTextModelService,
-		private readonly storage: KeyValueStorage,
 		private readonly clock: HostClock,
 		private readonly sources: RuntimeSourceState,
 		private readonly luaTooling: RuntimeLuaTooling,
@@ -80,13 +78,13 @@ export class TextFileSaveService {
 		try {
 			switch (model.mode) {
 				case 'lua':
-					({ persistence } = await saveLuaResourceSource(this.storage, this.clock, this.sources, resource, snapshot.source));
+					({ persistence } = await saveLuaResourceSource(this.clock, this.sources, resource, snapshot.source));
 					break;
 				case 'yaml':
 				case 'aem': {
 					const root = runtimeSourceProjectRootPath(this.sources, resource.domain);
 					const path = resolveWorkspacePath(resource.path, root);
-					({ persistence } = await persistWorkspaceSourceFile(this.storage, this.clock, path, snapshot.source, root));
+					({ persistence } = await persistWorkspaceSourceFile(this.clock, path, snapshot.source));
 					workspaceCanonicalSourceCache.set(path, snapshot.source);
 					break;
 				}

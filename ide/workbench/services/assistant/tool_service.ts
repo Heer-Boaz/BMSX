@@ -1,6 +1,5 @@
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import type { ResourceDiagnosticsService } from '../diagnostics/resource_diagnostics';
 import type { ScenarioRunService } from '../testing/scenario_runs';
 import type { RuntimeInspectionService } from '../../../runtime/inspection';
@@ -23,7 +22,7 @@ export class WorkspaceToolService {
 	private readonly contexts = new Set<WorkspaceToolContext>();
 	private readonly unbindWorkspace: () => void;
 	public constructor(private readonly models: EditorTextModelService, private readonly sources: RuntimeSourceState,
-		private readonly storage: KeyValueStorage, private readonly diagnostics: ResourceDiagnosticsService,
+		private readonly diagnostics: ResourceDiagnosticsService,
 		private readonly testRuns: ScenarioRunService, private readonly inspection: RuntimeInspectionService,
 		private readonly navigation: RuntimeFrameNavigation, private readonly capture: GameImageCapture,
 		private readonly terminal: LuaTerminalSession, private readonly debuggerExecution: RuntimeDebuggerExecution,
@@ -36,7 +35,7 @@ export class WorkspaceToolService {
 	public open(connection: AbortSignal): WorkspaceToolContext {
 		connection.throwIfAborted();
 		const context = new WorkspaceToolContext(
-			new WorkspaceSourceTools(this.models, this.sources, this.storage, this.diagnostics, connection, this.behaviors, this.saves),
+			new WorkspaceSourceTools(this.models, this.sources, this.diagnostics, connection, this.behaviors, this.saves),
 			new WorkspaceTestTools(this.testRuns, connection),
 			new WorkspaceRuntimeTools(this.inspection, this.navigation, this.capture, this.terminal, this.debuggerExecution, this.actors, this.boots, connection),
 			connection, () => this.contexts.delete(context));

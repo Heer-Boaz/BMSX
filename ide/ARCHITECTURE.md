@@ -125,10 +125,10 @@ existing owners. Save acknowledgements identify browser storage explicitly.
 IndexedDB acknowledges transaction completion, not request success. Its indexed
 namespace and contents share one transaction for exclusive creation and
 file/directory admission, including concurrent windows. Directory enumeration
-reads immediate child metadata without loading source bodies. Local file
-failures remain failed Saves; they do not disconnect a fictitious server or
-enqueue network replication. Only network providers expose admission/reconnect.
-Opening storage writes no probe files.
+reads immediate child metadata without loading source bodies. File failures
+remain failed Saves for every provider; they do not disconnect other files or
+enqueue source replay. HTTP admission belongs to its transport, not the shared
+file interface. Opening storage writes no probe files.
 
 `StudioConfiguration` independently declares the workspace provider, assistant,
 native-conversation viewer and external-tool registration. The product builder
@@ -440,17 +440,16 @@ inputs without consulting an active-tab document copy. Completing an
 asynchronous save records the exact captured model state; an edit made while
 the write is outstanding remains dirty.
 
-The workspace record owner separately acknowledges local persistence and the
-project-file provider's write. `TextFileSaveService` carries that exact result
-for Lua, YAML and AEM alongside runtime application. A network-backed local-only save establishes
-the saved document identity but commands show a warning rather than claiming the
-project file was saved. Provider connectivity alone cannot acknowledge a file:
-another request can disconnect it while this write succeeds. Reconnection sends
-the saved record without acknowledging subsequent edits or rewriting the earlier
-Save result. See [source save acknowledgements](../docs/studio_source_save_acknowledgements.md).
-Local disk/IndexedDB write failures instead remain failed Saves with dirty text;
-recovery records are not a replacement local filesystem or an automatic write
-queue. Session-checkpoint failure is reported without a reconnect timer.
+`WorkspaceRecords` owns per-path canonical I/O and operation lifetime, not
+network state or recovery. `TextFileSaveService` carries a successful filesystem
+or browser acknowledgement for Lua, YAML and AEM alongside runtime application.
+Every failed write leaves source unsaved; recovery cannot establish saved/Undo
+identity, promote the catalog, or replay itself during a canonical read. A failed
+resource operation does not disconnect other resources. New Save is an explicit
+retry. HTTP admission belongs to its transport; there is no shared reconnect
+queue or capability-presence test. Recovery checkpoints are workbench-owned and
+fail visibly without a retry timer or discarded records. See
+[source save acknowledgements](../docs/studio_source_save_acknowledgements.md).
 
 This follows the production VS Code ownership pattern rather than its full
 service surface:

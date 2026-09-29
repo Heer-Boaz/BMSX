@@ -8,7 +8,6 @@ import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { RuntimeDebuggerState } from '../../../runtime/debugger_state';
 import { admitHotResume, buildBlua32Revision, type BuiltBlua32Revision, type HotResumeEvent } from '../../../runtime/hot_resume';
 import { blua32MediaRequiresRebuild } from '../../../runtime/lua_pipeline';
-import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import type { WorkspaceRecord } from '../../../workspace/records';
 import { applyAllWorkspaceSourceOverrides, applyLuaTextModelSources } from '../../../workspace/workspace';
 import { captureLuaTextModelSources, type LuaTextModelSourceSnapshot } from '../working_copy/lua_sources';
@@ -84,7 +83,6 @@ export class HotResumeService {
 		private readonly input: Input,
 		private readonly runtime: Runtime,
 		private readonly tasks: RuntimeTaskQueue,
-		private readonly storage: KeyValueStorage,
 		private readonly dirtyRecords: ReadonlyMap<string, WorkspaceRecord>,
 	) {}
 
@@ -102,7 +100,7 @@ export class HotResumeService {
 			operation.status = 'building';
 			let built: BuiltBlua32Revision | null;
 			try {
-				await applyAllWorkspaceSourceOverrides(this.storage, this.sources, this.dirtyRecords);
+				await applyAllWorkspaceSourceOverrides(this.sources, this.dirtyRecords);
 				if (!operation.isCurrent()) return;
 				applyLuaTextModelSources(this.sources, operation.sourceSnapshots);
 				built = blua32MediaRequiresRebuild(this.sources)

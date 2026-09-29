@@ -17,7 +17,6 @@ import type { Clipboard } from '../../hosts/common/clipboard';
 import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
 import type { MicrotaskQueue } from '../common/microtask_queue';
-import type { KeyValueStorage } from '../workspace/key_value_storage';
 import { RuntimeCartEditor, type CartEditor } from '../cart_editor';
 import { createRuntimeDebuggerState, resetRuntimeDebuggerExecution, type RuntimeDebuggerState } from '../runtime/debugger_state';
 import { clearFaultSnapshot, createRuntimeFaultState, type RuntimeFaultState } from '../runtime/fault_state';
@@ -74,7 +73,6 @@ export class RuntimeIdeState {
 		public readonly runtimeTasks: RuntimeTaskQueue,
 		public readonly execution: HostExecutionControl,
 		public readonly rewind: HostRewind,
-		public readonly storage: KeyValueStorage,
 		clock: HostClock,
 		clipboard: Clipboard,
 		public readonly microtasks: MicrotaskQueue,
@@ -94,12 +92,12 @@ export class RuntimeIdeState {
 			sources,
 			new SuspendedGuestSession(runtime),
 		);
-		this.scenarioRuns = new ScenarioRunService(editorTextModelService, sources, this.luaTooling, storage, workspaceDirtyRecords, runtime.model, createTestTarget);
-		this.textFileSaves = new TextFileSaveService(editorTextModelService, storage, clock, sources, this.luaTooling, runtime, runtimeTasks);
+		this.scenarioRuns = new ScenarioRunService(editorTextModelService, sources, this.luaTooling, workspaceDirtyRecords, runtime.model, createTestTarget);
+		this.textFileSaves = new TextFileSaveService(editorTextModelService, clock, sources, this.luaTooling, runtime, runtimeTasks);
 		this.hotResumes = new HotResumeService(editorTextModelService, sources, this.luaTooling, this.fault, this.debugger,
-			input, runtime, runtimeTasks, storage, workspaceDirtyRecords);
+			input, runtime, runtimeTasks, workspaceDirtyRecords);
 		this.boots = new BootService(editorTextModelService, sources, this.luaTooling, this.fault, runtime, runtimeTasks,
-			execution, audioOutput, storage, workspaceDirtyRecords);
+			execution, audioOutput, workspaceDirtyRecords);
 		this.diagnostics = new ResourceDiagnosticsService(editorTextModelService, this.luaTooling, clock);
 		this.terminal = new LuaTerminalSession(runtime, sources, this.luaTooling.suspendedGuest, this.debugger,
 			this.fault, runtimeTasks, execution, rewind);
@@ -114,7 +112,6 @@ export class RuntimeIdeState {
 			display,
 			input,
 			audioOutput,
-			storage,
 			clock,
 			clipboard,
 			logOutput,

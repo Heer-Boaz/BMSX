@@ -40,7 +40,6 @@ import type { RuntimeInspectionService } from './runtime/inspection';
 import type { Clipboard, ClipboardTarget } from '../hosts/common/clipboard';
 import type { HostClock } from '../hosts/common/clock';
 import type { LogOutput } from '../hosts/common/log';
-import type { KeyValueStorage } from './workspace/key_value_storage';
 import type { VideoPresenter } from '../machine/ts/render/video_presenter';
 import { runtimeSourcesSupportIde, type RuntimeSourceState } from './runtime/sources';
 import { blua32ToolingImageForDomain } from '../toolchain/ts/rompack/blua32_media';
@@ -273,7 +272,6 @@ export class RuntimeCartEditor implements CartEditor {
 		display: EditorDisplay,
 		input: Input,
 		audioOutput: HostAudioOutput,
-		storage: KeyValueStorage,
 		clock: HostClock,
 		clipboard: Clipboard,
 		logOutput: LogOutput,
@@ -305,7 +303,7 @@ export class RuntimeCartEditor implements CartEditor {
 		observeConversation?: ConversationObserverFactory,
 	) {
 		const behaviorSources = new BehaviorSourceDocuments(editorTextModelService, sources);
-		this.tools = new WorkspaceToolService(editorTextModelService, sources, storage, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, behaviorSources, textFileSaves, boots);
+		this.tools = new WorkspaceToolService(editorTextModelService, sources, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, behaviorSources, textFileSaves, boots);
 		this.assistant = new AssistantConversation(editorTextModelService, sources, this.tools, connectAssistant);
 		this.observedConversation = new ObservedConversation(observeConversation);
 		this.runtime = runtime;
@@ -334,7 +332,6 @@ export class RuntimeCartEditor implements CartEditor {
 			overlayRenderer,
 			runtime,
 			audioOutput,
-			storage,
 			clock,
 			logOutput,
 			scenarioRuns,
@@ -347,7 +344,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.quickInput = new QuickInputController();
 		this.contextMenu = new ContextMenuController(inputFocus, pointerCapture);
 		this.resourceEditors = createResourceEditorResolver(
-			storage,
 			this.sources,
 		);
 		this.editorPanes = new EditorPanes({
@@ -420,9 +416,9 @@ export class RuntimeCartEditor implements CartEditor {
 			terminal: { serialize: () => '', deserialize: () => new TerminalInput(this.terminal) },
 			actor_lab: { serialize: () => '', deserialize: () => this.actorLab.resolveInput() },
 			game_view: { serialize: () => '', deserialize: () => new GameViewInput() },
-			code_editor: new CodeEditorInputSerializer(storage, sources),
-			behavior_lens: new BehaviorLensInputSerializer(storage, sources, this.behaviorLens),
-			scene_editor: new SceneEditorInputSerializer(storage, sources, this.sceneEditor),
+			code_editor: new CodeEditorInputSerializer(sources),
+			behavior_lens: new BehaviorLensInputSerializer(sources, this.behaviorLens),
+			scene_editor: new SceneEditorInputSerializer(sources, this.sceneEditor),
 			scenario_lab: new ScenarioLabInputSerializer(this.scenarioLab),
 			resource_view: new ResourceViewerInputSerializer(sources),
 		};

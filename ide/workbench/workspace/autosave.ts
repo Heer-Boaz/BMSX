@@ -15,9 +15,8 @@ import {
 	WORKSPACE_STATE_FILE,
 	createWorkspaceRecord,
 	deleteLocalWorkspaceRecord,
-	deleteRemoteWorkspaceRecord,
 	writeLocalWorkspaceRecord,
-	writeRemoteWorkspaceRecord,
+	workspaceRecords,
 	type WorkspaceRecord,
 } from '../../workspace/records';
 import { joinWorkspacePaths } from '../../workspace/path';
@@ -170,7 +169,7 @@ export async function syncWorkspaceSessionRemotely(
 		}
 		for (const [dirtyPath, record] of generation.dirtyRecords) {
 			if (remoteDirtyVersions.get(dirtyPath) !== record.updatedAt) {
-				await writeRemoteWorkspaceRecord(
+				await workspaceRecords.write(
 					buildWorkspaceDirtyRecordPath(dirtyPath, record.updatedAt),
 					record,
 				);
@@ -183,12 +182,12 @@ export async function syncWorkspaceSessionRemotely(
 		WORKSPACE_METADATA_DIR,
 		WORKSPACE_STATE_FILE,
 	);
-	await writeRemoteWorkspaceRecord(statePath, generation.stateRecord);
+	await workspaceRecords.write(statePath, generation.stateRecord);
 
 	if (dirtyRecordsChanged) {
 		for (const [dirtyPath, updatedAt] of remoteDirtyVersions!) {
 			if (generation.dirtyRecords.get(dirtyPath)?.updatedAt !== updatedAt) {
-				await deleteRemoteWorkspaceRecord(
+				await workspaceRecords.delete(
 					buildWorkspaceDirtyRecordPath(dirtyPath, updatedAt),
 				);
 			}

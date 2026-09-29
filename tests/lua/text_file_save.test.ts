@@ -12,14 +12,13 @@ import type { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { TextFileSaveService } from '../../ide/workbench/services/working_copy/text_file_save';
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import type { WorkspaceRecord, WorkspaceRecordProvider } from '../../ide/workspace/record_provider';
-import { closeWorkspaceRecords, disconnectWorkspaceRecords, openWorkspaceRecords, readLocalWorkspaceRecord, readWorkspaceRecord, writeLocalWorkspaceRecord,
-	reconnectWorkspaceRecords, workspaceRecordState } from '../../ide/workspace/records';
+import { closeWorkspaceRecords, openWorkspaceRecords, readLocalWorkspaceRecord, writeLocalWorkspaceRecord, workspaceRecords } from '../../ide/workspace/records';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { saveTextFileFromCommand } from '../../ide/commands/source_save';
 import type { CartEditor } from '../../ide/cart_editor';
 import { editorFeedbackState } from '../../ide/common/feedback_state';
-import { COLOR_STATUS_WARNING } from '../../ide/common/constants';
+import { COLOR_STATUS_ERROR } from '../../ide/common/constants';
 
 class SaveStorage extends MemoryStorage {
 	public failure: Error | undefined;
@@ -31,7 +30,6 @@ class SaveStorage extends MemoryStorage {
 
 class SaveFiles implements WorkspaceRecordProvider {
 	public readonly persistence = 'workspace';
-	public connect: (() => Promise<void>) | undefined = async () => {};
 	public readonly records = new Map<string, WorkspaceRecord>();
 	public readonly writes: { path: string; record: WorkspaceRecord; complete(): void }[] = [];
 	public delayed = false;
@@ -46,10 +44,9 @@ class SaveFiles implements WorkspaceRecordProvider {
 	}
 }
 
-async function fixture(t: TestContext, local = false) {
+async function fixture(t: TestContext) {
 	const storage = new SaveStorage();
 	const files = new SaveFiles();
-	if (local) files.connect = undefined;
 	const clock = new VirtualHeadlessClock();
 	const root = 'carts/nemesis_s';
 	const lua = createScenarioTestSourceRecord(`${root}/tests/save.lua`, 1, 'return true');
@@ -60,12 +57,12 @@ async function fixture(t: TestContext, local = false) {
 		{ backend: { async finishGxGpuReadbacks() { if (readbackFailure) throw readbackFailure; } } } as VideoPresenter);
 	// These tests reject AEM input before compilation. Any use of machine/tooling
 	// in a source-only save is an unwanted dependency and fails immediately.
-	const saves = new TextFileSaveService(models, storage, clock, sources, {} as RuntimeLuaTooling, {} as Runtime, tasks);
+	const saves = new TextFileSaveService(models, clock, sources, {} as RuntimeLuaTooling, {} as Runtime, tasks);
 	await openWorkspaceRecords(files);
 	t.after(async () => {
 		await saves.shutdown();
 		models.clear();
-		closeWorkspaceRecords();
+		await closeWorkspaceRecords();
 		clearWorkspaceSourceCaches();
 	});
 	const yaml = (path = 'res/data/save.yaml') => models.retain({ domain: 0, path,
@@ -79,18 +76,17 @@ function setSource(model: EditorTextModel, source: string): void {
 }
 
 test('local storage failure keeps source dirty; recovery cannot masquerade as a saved file or replay on read', async t => {
-	const f = await fixture(t, true), model = f.yaml();
+	const f = await fixture(t), model = f.yaml();
 	assert.equal(f.files.records.size, 0, 'opening local storage performs no probe writes');
 	setSource(model, 'value: 2\n');
 	f.files.failure = new Error('local store write refused');
 	const failed = await f.saves.save(model).completion;
 	assert.equal(failed.status, 'failed');
 	assert.equal(model.dirty, true);
-	assert.equal(workspaceRecordState.connected, true, 'a file operation is not a network disconnection');
 	const path = `${f.root}/${model.resource.path}`;
 	assert.equal(readLocalWorkspaceRecord(f.storage, f.root, path), null);
 	writeLocalWorkspaceRecord(f.storage, f.root, path, { contents: 'newer recovery, not canonical source', updatedAt: 99999 });
-	assert.equal(await readWorkspaceRecord(f.storage, f.root, path), null);
+	assert.equal(await workspaceRecords.read(path), null);
 	assert.equal(f.files.records.size, 0);
 	f.files.failure = undefined;
 	assert.equal((await f.saves.save(model).completion).status, 'saved');
@@ -178,107 +174,74 @@ test('source persistence failure is an explicit outcome, does not complete the s
 	const f = await fixture(t);
 	const model = f.yaml();
 	setSource(model, 'value: 2');
-	const error = new Error('local storage unavailable');
-	f.storage.failure = error;
+	const error = new Error('filesystem unavailable');
+	f.files.failure = error;
 	const result = await f.saves.save(model).completion;
 	assert.equal(result.status, 'failed');
 	if (result.status !== 'failed') assert.fail('expected failed source persistence');
 	assert.equal(result.error, error);
 	assert.equal(model.dirty, true);
 	assert.equal(model.lastSavedSource, '# untouched\nvalue: 1\n');
-	f.storage.failure = undefined;
+	f.files.failure = undefined;
 	assert.equal((await f.saves.save(model).completion).status, 'saved');
 	assert.equal(model.dirty, false);
 });
 
-test('a failed project write acknowledges local storage and reconnect persists that exact source without saving later edits', async t => {
-	const f = await fixture(t);
-	const model = f.yaml();
-	const path = `${f.root}/${model.resource.path}`;
+test('a failed write keeps source dirty and cannot be replayed by reading; only a new Save commits it', async t => {
+	const f = await fixture(t), model = f.yaml(), path = `${f.root}/${model.resource.path}`;
 	const error = new Error('project filesystem unavailable');
 	const saved: EditorTextModel[] = [];
 	f.models.onDidSaveModel(model => saved.push(model));
-	setSource(model, 'value: 2');
-	f.files.failure = error;
+	setSource(model, 'value: 2'); f.files.failure = error;
 	const result = await f.saves.save(model).completion;
-	if (result.status !== 'saved') assert.fail('expected locally saved source');
-	assert.deepEqual(result.persistence, { status: 'local-only', reason: 'write-failed', error });
-	assert.equal(result.application.status, 'not-requested');
-	assert.equal(readLocalWorkspaceRecord(f.storage, f.root, path)!.contents, 'value: 2');
-	assert.equal(f.files.records.has(path), false);
-	assert.equal(model.dirty, false, 'dirty identity is relative to the actual local save');
-	setSource(model, 'value: 3');
-	f.files.failure = undefined;
-	await reconnectWorkspaceRecords();
-	assert.equal(f.files.records.get(path)!.contents, 'value: 2');
-	assert.equal(model.lastSavedSource, 'value: 2');
-	assert.equal(model.dirty, true);
-	assert.deepEqual(saved, [model], 'remote synchronization cannot acknowledge newer document content');
-	assert.equal(result.persistence.status, 'local-only', 'the receipt describes the original save, not later connectivity');
+	if (result.status !== 'failed') assert.fail('expected a failed canonical write');
+	assert.equal(result.error, error); assert.equal(model.dirty, true);
+	assert.equal(model.lastSavedSource, '# untouched\nvalue: 1\n');
+	setSource(model, 'value: 3'); f.files.failure = undefined;
+	assert.equal(await workspaceRecords.read(path), null);
+	assert.equal(f.files.records.has(path), false); assert.deepEqual(saved, []);
 	const retried = await f.saves.save(model).completion;
-	if (retried.status !== 'saved') assert.fail('expected workspace save');
+	if (retried.status !== 'saved') assert.fail('expected a workspace save');
 	assert.equal(retried.persistence.status, 'workspace');
-	assert.equal(f.files.records.get(path)!.contents, 'value: 3');
-	assert.equal(model.dirty, false);
+	assert.equal(f.files.records.get(path)!.contents, 'value: 3'); assert.equal(model.dirty, false);
+	assert.equal(result.status, 'failed', 'the original acknowledgement never changes');
 });
 
-test('disconnected Lua save carries the local-only acknowledgement through its source catalog', async t => {
-	const f = await fixture(t);
-	const model = f.models.retain({ domain: 0, path: f.lua.source_path, source: f.lua }, 'lua', f.lua.src);
-	closeWorkspaceRecords();
-	setSource(model, 'return false');
-	const result = await f.saves.save(model).completion;
-	if (result.status !== 'saved') assert.fail('expected locally saved Lua');
-	assert.deepEqual(result.persistence, { status: 'local-only', reason: 'disconnected' });
-	assert.equal(f.lua.src, result.snapshot.source);
-	assert.equal(model.dirty, false);
-	await reconnectWorkspaceRecords();
-	assert.equal(f.files.records.get(f.lua.normalized_source_path)!.contents, result.snapshot.source);
+test('failed Lua save cannot promote the source catalog or its saved baseline', async t => {
+	const f = await fixture(t), model = f.models.retain({ domain: 0, path: f.lua.source_path, source: f.lua }, 'lua', f.lua.src);
+	setSource(model, 'return false'); f.files.failure = new Error('write denied');
+	assert.equal((await f.saves.save(model).completion).status, 'failed');
+	assert.equal(f.lua.src, 'return true'); assert.equal(f.lua.base_src, 'return true'); assert.equal(model.dirty, true);
+	f.files.failure = undefined;
+	assert.equal((await f.saves.save(model).completion).status, 'saved'); assert.equal(f.lua.src, 'return false');
 });
 
-test('an acknowledged write stays a workspace save even when another operation disconnected the provider', async t => {
-	const f = await fixture(t);
-	const model = f.yaml();
-	setSource(model, 'value: 2');
-	f.files.delayed = true;
-	const pending = f.saves.save(model);
-	await setImmediate();
-	disconnectWorkspaceRecords(new Error('another resource failed'));
+test('a rejected file operation does not change an independent in-flight Save', async t => {
+	const f = await fixture(t), model = f.yaml();
+	setSource(model, 'value: 2'); f.files.delayed = true;
+	const pending = f.saves.save(model); await setImmediate();
+	f.files.failure = new Error('another resource failed');
+	await assert.rejects(workspaceRecords.write('other.lua', { contents: '', updatedAt: 1 }), /another resource/);
 	f.files.writes[0].complete();
 	const result = await pending.completion;
 	if (result.status !== 'saved') assert.fail('expected saved source');
-	assert.equal(workspaceRecordState.connected, false);
-	assert.deepEqual(result.persistence, { status: 'workspace' });
+	assert.deepEqual(result.persistence, { status: 'workspace' }); assert.equal(model.dirty, false);
 });
 
-test('Save command distinguishes local-only persistence from an AEM application failure and a successful retry', async t => {
-	const f = await fixture(t);
-	const model = f.models.retain({ domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
-	closeWorkspaceRecords();
-	setSource(model, '[');
-	const result = await saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources);
-	if (result.status !== 'saved' || result.application.status !== 'failed') assert.fail('expected saved local source and failed AEM');
-	assert.equal(result.persistence.status, 'local-only');
-	assert.equal(result.application.phase, 'build');
-	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_WARNING);
-	assert.equal(f.tasks.ready, true);
-	await reconnectWorkspaceRecords();
-	const yaml = f.yaml();
-	setSource(yaml, 'value: 2');
-	const retry = await saveTextFileFromCommand(f.saves, yaml, {} as CartEditor, f.sources);
-	if (retry.status !== 'saved') assert.fail('expected saved project file');
-	assert.equal(retry.persistence.status, 'workspace');
-});
-
-test('Save command presents a local-only write failure without claiming the project file was saved', async t => {
-	const f = await fixture(t);
-	const model = f.yaml();
-	setSource(model, 'value: 2');
+test('Save command reports a write failure as an error, with the unsaved source retained', async t => {
+	const f = await fixture(t), model = f.yaml(); setSource(model, 'value: 2');
 	f.files.failure = new Error('project filesystem unavailable');
-	await saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources);
-	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_WARNING);
-	f.files.failure = undefined;
-	await reconnectWorkspaceRecords();
+	const result = await saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources);
+	assert.equal(result.status, 'failed'); assert.equal(model.dirty, true);
+	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_ERROR);
+});
+
+test('recovery storage cannot turn an acknowledged canonical write into a failed Save', async t => {
+	const f = await fixture(t), model = f.yaml(); setSource(model, 'value: 2');
+	f.storage.failure = new Error('recovery quota exhausted');
+	assert.equal((await f.saves.save(model).completion).status, 'saved');
+	assert.equal(f.files.records.get(`${f.root}/${model.resource.path}`)!.contents, 'value: 2');
+	assert.equal(model.dirty, false);
 });
 
 test('AEM build rejection reports saved source separately and does not poison the runtime queue', async t => {
@@ -318,7 +281,7 @@ test('source-only Lua uses its catalog owner and publishes one model-service sav
 	assert.equal(result.status, 'saved');
 	assert.deepEqual(saved, [model]);
 	assert.equal(f.lua.src, 'return false');
-	assert.equal(readLocalWorkspaceRecord(f.storage, f.root, f.lua.normalized_source_path)!.contents, 'return false');
+	assert.equal(f.files.records.get(f.lua.normalized_source_path)!.contents, 'return false');
 	dispose();
 	model.completeSave(model.createSnapshot());
 	assert.deepEqual(saved, [model]);

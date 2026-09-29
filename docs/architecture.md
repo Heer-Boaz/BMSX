@@ -5151,14 +5151,14 @@ code and YAML saves do not acknowledge cooked assets. Command UI consumes the
 result and recovery listens to resource-model save events. Normal shutdown
 closes Save admission and joins accepted operations before checkpointing and
 destroying source owners. The record owner returns an exact write acknowledgement:
-`workspace` after a filesystem write, `browser` after an IndexedDB commit, or
-`local-only` after recovery persistence for a disconnected/failed network write.
-Local disk/IndexedDB failure rejects Save and leaves the source dirty.
-The source catalog and save service carry this result without inferring it from
-global connectivity. Network-workspace recovery persistence still establishes the document's saved
-identity; UI explicitly warns when the project file was not acknowledged.
-Reconnect synchronizes the saved record, not newer model text, and does not
-rewrite the original Save receipt. See [source save acknowledgements](studio_source_save_acknowledgements.md).
+`workspace` after a filesystem write or `browser` after an IndexedDB commit.
+A failed write remains failed for every provider; recovery cannot establish the
+document's saved identity or promote its source catalog. Canonical reads never
+upload recovery records. File operations are ordered and drained within their
+workspace lifetime; failure of one does not disable other files. HTTP admission
+stays in its transport, with no shared connection flag or reconnect queue.
+Only a new Save can retry source persistence, without rewriting any earlier
+receipt. See [source save acknowledgements](studio_source_save_acknowledgements.md).
 The Save owner retains its latest accepted operation per model, including the
 captured snapshot and actual terminal acknowledgement. A later Save cannot be
 overwritten by an older completion. Conversation Save uses that same owner and
@@ -5415,13 +5415,13 @@ renders its two Studio application routes from a product-owned template and
 independently declares filesystem, assistant, conversation-viewer and MCP window
 capabilities through `StudioConfiguration`. Arbitrary static HTML is not
 rewritten. No endpoint probing or error-driven workspace replacement selects
-services. Local providers are ready at construction; only network providers
-participate in admission/reconnect. Opening storage writes no probe files.
+services. Providers expose canonical file operations; network admission belongs
+to the HTTP transport. Opening storage writes no probe files.
 IndexedDB commits indexed file/directory metadata and contents atomically.
-Local write failures leave source dirty and report through existing Save/session
+Write failures leave source dirty and report through existing Save/session
 owners, without an offline acknowledgement or a background reconnect loop.
-Save acknowledges the actual storage owner (filesystem, browser or recovery),
-and standalone recovery cannot be replayed into the server workspace.
+Save acknowledges the actual canonical store (filesystem or browser), never a
+recovery checkpoint. Recovery cannot be replayed into canonical source files.
 
 External CLI conversations can use these same capabilities through
 [Studio MCP](studio_mcp.md), served by the existing development server. The
@@ -5465,8 +5465,11 @@ A commit writes changed dirty content locally, then the session record,
 then obsolete dirty records. Remote acknowledgement advances only after the
 same record-before-session sequence succeeds; metadata-only replication skips
 dirty-record indexing and transfer when the retained map is already remote.
-Remote failure leaves the local commit authoritative, schedules reconnect, and
-does not abort editor shutdown or workspace reconfiguration.
+Provider checkpoint failure reports the error, retains the local recovery commit
+and does not disable canonical file operations. It schedules no reconnect or
+blind retry; later mutations and explicit checkpoints can retry. Missing versions
+or unreadable recovery are surfaced rather than deleting records or silently
+substituting an older generation.
 
 Execution debugging is opt-in tooling policy over the scheduler's CPU executor.
 With no hook installed, the existing bulk interpreter loop remains the normal

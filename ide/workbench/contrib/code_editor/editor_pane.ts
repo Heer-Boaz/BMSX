@@ -41,7 +41,6 @@ import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { RuntimeDebuggerState } from '../../../runtime/debugger_state';
-import { workspaceRecordState } from '../../../workspace/records';
 import { buildStatusLeftInfo } from '../../render/status_bar_info';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
@@ -245,14 +244,9 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	public drawStatusBar(statusTop: number, textColor: number): void {
 		const leftX = 0;
 		const statusLeftInfo = buildStatusLeftInfo();
-		const itemSize = measureText('•');
-		const indicatorColor = workspaceRecordState.connected
-			? constants.COLOR_SERVER_STATUS_CONNECTED
-			: constants.COLOR_SERVER_STATUS_DISCONNECTED;
-		drawEditorText(editorViewState.font, '•', leftX, statusTop + 2, 0, indicatorColor);
-		const textX = leftX + itemSize;
+
 		if (statusLeftInfo && statusLeftInfo.length > 0) {
-			drawEditorText(editorViewState.font, statusLeftInfo, textX, statusTop + 2, 0, textColor);
+			drawEditorText(editorViewState.font, statusLeftInfo, leftX, statusTop + 2, 0, textColor);
 		}
 		const context = this.input.context;
 		let detail = '';

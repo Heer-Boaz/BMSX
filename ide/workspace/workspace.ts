@@ -1,7 +1,6 @@
 import { SCENARIO_TEST_SOURCE_SUFFIX, scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
 import { registerLuaSourceRecord, type LuaSourceRecord, type LuaSourceRegistry } from '../runtime/source_registry';
 import type { HostClock } from '../../hosts/common/clock';
-import type { KeyValueStorage } from './key_value_storage';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import { ROM_GENERATED_MODULE_PATHS } from '../../toolchain/ts/rompack/generated_modules';
 import { isRuntimeLuaSourcePath } from '../../toolchain/ts/lua/source_paths';
@@ -25,7 +24,7 @@ import {
 	setWorkspaceLuaSourceOverride,
 	workspaceCanonicalSourceCache,
 } from './cache';
-import { createWorkspaceFile, createWorkspaceRecord, readWorkspaceRecord, workspaceRecordState, type WorkspaceRecord } from './records';
+import { createWorkspaceRecord, workspaceRecords, type WorkspaceRecord } from './records';
 import { joinWorkspacePaths, normalizeRelativeWorkspacePath, stripProjectRootPrefix } from './path';
 import { discoverWorkspaceLuaFiles } from './source_files';
 import {
@@ -80,7 +79,6 @@ export function applyLuaTextModelSources(
 }
 
 export async function saveLuaResourceSource(
-	storage: KeyValueStorage,
 	clock: HostClock,
 	sources: RuntimeSourceState,
 	identity: ResourceIdentity,
@@ -95,11 +93,9 @@ export async function saveLuaResourceSource(
 	const sourcePath = asset.source_path;
 	const workspacePath = asset.normalized_source_path;
 	const result = await persistWorkspaceSourceFile(
-		storage,
 		clock,
 		workspacePath,
 		source,
-		registry.projectRootPath,
 	);
 	const { record } = result;
 	asset.src = source;
@@ -116,7 +112,6 @@ export async function saveLuaResourceSource(
 }
 
 export async function createLuaResource(
-	storage: KeyValueStorage,
 	clock: HostClock,
 	sources: RuntimeSourceState,
 	request: LuaResourceCreationRequest,
@@ -129,21 +124,20 @@ export async function createLuaResource(
 	const path = joinWorkspacePaths(registry.projectRootPath, relativePath);
 	const record = createWorkspaceRecord(clock, contents);
 	const asset = createWorkspaceLuaSourceRecord(registry, path, record);
-	await createWorkspaceFile(storage, registry.projectRootPath, path, record);
+	await workspaceRecords.write(path, record, false);
 	return admitWorkspaceLuaResource(sources, request.domain, asset);
 }
 
 /** Source files exist independently of ROM membership or the set of open tabs. */
-export async function discoverWorkspaceLuaSources(storage: KeyValueStorage, sources: RuntimeSourceState): Promise<void> {
-	if (!workspaceRecordState.connected) return; // Offline workspaces use their already admitted source set.
+export async function discoverWorkspaceLuaSources(sources: RuntimeSourceState): Promise<void> {
 	for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
 		const registry = runtimeLuaSourceRegistry(sources, domain);
 		if (registry === undefined) continue; // Empty physical cartridge socket.
-		const paths = await discoverWorkspaceLuaFiles(workspaceRecordState.provider, registry.projectRootPath);
+		const paths = await discoverWorkspaceLuaFiles(workspaceRecords.provider, registry.projectRootPath);
 		const knownPaths = new Set(registry.records.map(record => record.normalized_source_path));
 		for (const path of paths) {
 			if (knownPaths.has(path)) continue;
-			const record = await readWorkspaceRecord(storage, registry.projectRootPath, path);
+			const record = await workspaceRecords.read(path);
 			if (record === null) throw new Error(`Workspace source disappeared while opening the project: ${path}`);
 			admitWorkspaceLuaResource(sources, domain, createWorkspaceLuaSourceRecord(registry, path, record));
 		}
@@ -185,7 +179,6 @@ function admitWorkspaceLuaResource(sources: RuntimeSourceState, domain: Resource
 }
 
 export async function applyWorkspaceOverridesToRegistry(
-	storage: KeyValueStorage,
 	sources: RuntimeSourceState,
 	params: {
 		dirtyRecords: ReadonlyMap<string, WorkspaceRecord>;
@@ -197,7 +190,6 @@ export async function applyWorkspaceOverridesToRegistry(
 		dirtyRecords: params.dirtyRecords,
 		domain: runtimeLuaSourceDomain(sources, params.registry),
 		registry: params.registry,
-		storage,
 		projectRootPath: params.projectRootPath,
 	});
 	if (result.programChanged) {
@@ -207,7 +199,6 @@ export async function applyWorkspaceOverridesToRegistry(
 }
 
 export async function applyAllWorkspaceSourceOverrides(
-	storage: KeyValueStorage,
 	sources: RuntimeSourceState,
 	dirtyRecords: ReadonlyMap<string, WorkspaceRecord>,
 ): Promise<Set<string>> {
@@ -217,7 +208,7 @@ export async function applyAllWorkspaceSourceOverrides(
 		if (!cartridge || !cartridge.projectRootPath) {
 			continue;
 		}
-		const rejected = await applyWorkspaceOverridesToRegistry(storage, sources, {
+		const rejected = await applyWorkspaceOverridesToRegistry(sources, {
 			dirtyRecords,
 			registry: cartridge.luaSources,
 			projectRootPath: cartridge.projectRootPath,
@@ -226,7 +217,7 @@ export async function applyAllWorkspaceSourceOverrides(
 			rejectedDirtyPaths.add(path);
 		}
 	}
-	const rejectedSystemPaths = await applyWorkspaceOverridesToRegistry(storage, sources, {
+	const rejectedSystemPaths = await applyWorkspaceOverridesToRegistry(sources, {
 		dirtyRecords,
 		registry: sources.systemLuaSources,
 		projectRootPath: sources.systemProjectRootPath,

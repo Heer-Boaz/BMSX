@@ -1,3 +1,6 @@
+import { beforeEach, afterEach } from 'node:test';
+import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
+import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { IO_CART_SELECT, IO_CART_STATUS } from '../../machine/ts/spec/bmsx/io';
 import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
@@ -15,7 +18,6 @@ import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
 import { ScenarioRunService } from '../../ide/workbench/services/testing/scenario_runs';
-import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
 import { TestInput } from '../../ide/testing/input';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -49,7 +51,7 @@ return { kind = 'unit', tests = {
 		const disposed = new Set<OffscreenMachine<TestInput>>();
 		let constructionFailure: Error | undefined;
 		const models = new EditorTextModelService();
-		const runs = new ScenarioRunService(models, sources, tooling, new MemoryStorage(), new Map(), PSX_MACHINE_SPEC,
+		const runs = new ScenarioRunService(models, sources, tooling, new Map(), PSX_MACHINE_SPEC,
 			(systemRom, cartridges, model, input) => {
 				if (constructionFailure) throw constructionFailure;
 				const target = new OffscreenMachine(systemRom, cartridges, model, input);
@@ -177,7 +179,7 @@ test('both authoring domains retain companion ROM data and source identity; runn
 		const authoring = new OffscreenMachine(fixture.systemRom, [fixture.cartRom, null], PSX_MACHINE_SPEC, new TestInput());
 		const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(authoring.runtime));
 		const models = new EditorTextModelService();
-		const runs = new ScenarioRunService(models, sources, tooling, new MemoryStorage(), new Map(), PSX_MACHINE_SPEC,
+		const runs = new ScenarioRunService(models, sources, tooling, new Map(), PSX_MACHINE_SPEC,
 			(systemRom, cartridges, model, input) => new OffscreenMachine(systemRom, cartridges, model, input));
 		const collection = runs.collection;
 		for (const slot of [0, 1] as const) {
@@ -203,3 +205,7 @@ test('both authoring domains retain companion ROM data and source identity; runn
 		runs.dispose(); models.clear(); editorTextModelService.clear(); authoring.dispose();
 	} finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+// Source-refresh operations use a real workspace owner, separate from recovery.
+beforeEach(() => openWorkspaceRecords(new MemoryWorkspaceFiles()));
+afterEach(() => closeWorkspaceRecords());

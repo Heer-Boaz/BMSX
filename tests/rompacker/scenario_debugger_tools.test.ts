@@ -1,3 +1,6 @@
+import { beforeEach, afterEach } from 'node:test';
+import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
+import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -15,7 +18,6 @@ import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { ScenarioRunService } from '../../ide/workbench/services/testing/scenario_runs';
 import { WorkspaceTestTools } from '../../ide/workbench/services/assistant/test_tools';
-import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
 import { TestInput } from '../../ide/testing/input';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
@@ -55,7 +57,7 @@ async function fixture(t: TestContext, slot: 0 | 1 = 0, optLevel: 0 | 3 = 0) {
 	const authoring = new OffscreenMachine(media.systemRom, [media.cartRom, media.cartRom], PSX_MACHINE_SPEC, new TestInput());
 	const initial = captureRuntimeMachineState(authoring.runtime), installed = sources.currentBlua32Media;
 	const service = new ScenarioRunService(models, sources, new RuntimeLuaTooling(sources, new SuspendedGuestSession(authoring.runtime)),
-		new MemoryStorage(), new Map(), PSX_MACHINE_SPEC, (bios, carts, model, input) => new OffscreenMachine(bios, carts, model, input));
+		new Map(), PSX_MACHINE_SPEC, (bios, carts, model, input) => new OffscreenMachine(bios, carts, model, input));
 	const connection = new AbortController(), tools = new WorkspaceTestTools(service, connection.signal);
 	t.after(() => { tools.dispose(); service.dispose(); models.clear(); authoring.dispose(); });
 	async function settle<T>(work: T | Promise<T>): Promise<T> {
@@ -195,3 +197,7 @@ test('debug tools reject malformed external identity/coordinates instead of gues
 	for (const lines of [[0], [1, 1], [1.5], ['1']]) assert.throws(() => decodeTestToolRequest('studio_set_test_breakpoints', { run: 'run', source: 'source', lines }));
 	assert.throws(() => decodeTestToolRequest('studio_read_test_stack', { failure: 'not-a-stack', start: 0, count: 1 }));
 });
+
+// Source-refresh operations use a real workspace owner, separate from recovery.
+beforeEach(() => openWorkspaceRecords(new MemoryWorkspaceFiles()));
+afterEach(() => closeWorkspaceRecords());

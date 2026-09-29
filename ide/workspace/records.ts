@@ -8,26 +8,70 @@ export const WORKSPACE_METADATA_DIR = '.bmsx';
 export const WORKSPACE_DIRTY_DIR = 'dirty';
 export const WORKSPACE_STATE_FILE = 'session.json';
 
-export const workspaceRecordState: { connected: boolean; provider: WorkspaceRecordProvider } = {
-	connected: false,
-	provider: null,
-};
-
 let lastWorkspaceRecordTimestamp = 0;
-type PendingRemoteWorkspaceRecord = {
-	storage: KeyValueStorage;
-	projectRootPath: string;
-	record: WorkspaceRecord;
-};
 
-const pendingRemoteWorkspaceRecords = new Map<string, PendingRemoteWorkspaceRecord>();
-const remoteWorkspaceOperationTails = new Map<string, Promise<void>>();
+/** Acknowledgement of a completed canonical write, never of a recovery checkpoint. */
+export type WorkspaceRecordPersistence = { readonly status: 'workspace' | 'browser' };
 
-/** Acknowledgement for this write, not the provider's current connection state. */
-export type WorkspaceRecordPersistence =
-	| { readonly status: 'workspace' | 'browser' }
-	| { readonly status: 'local-only'; readonly reason: 'disconnected' }
-	| { readonly status: 'local-only'; readonly reason: 'write-failed'; readonly error: unknown };
+/** One workspace's file operations and lifetime. Recovery and network admission are separate owners. */
+export class WorkspaceRecords {
+	private readonly operations = new Map<string, Promise<void>>();
+	private closing = false;
+
+	public constructor(public readonly provider: WorkspaceRecordProvider) {}
+
+	public read(relativePath: string): Promise<WorkspaceRecord | null> {
+		return this.enqueue(relativePath, async () => {
+			const record = await this.provider.read(relativePath);
+			if (record && record.updatedAt > lastWorkspaceRecordTimestamp) lastWorkspaceRecordTimestamp = record.updatedAt;
+			return record;
+		});
+	}
+
+	/** overwrite=false admits a new file atomically in the owning filesystem. */
+	public write(relativePath: string, record: WorkspaceRecord, overwrite = true): Promise<WorkspaceRecordPersistence> {
+		return this.enqueue(relativePath, async () => {
+			await this.provider.write(relativePath, record, overwrite);
+			return { status: this.provider.persistence };
+		});
+	}
+
+	public delete(relativePath: string): Promise<void> {
+		return this.enqueue(relativePath, () => this.provider.delete(relativePath));
+	}
+
+	/** Stop admission, then join accepted operations before replacing the workspace. */
+	public async close(): Promise<void> {
+		this.closing = true;
+		await Promise.all(this.operations.values());
+	}
+
+	private enqueue<T>(relativePath: string, operation: () => Promise<T>): Promise<T> {
+		if (this.closing) throw new Error('Cannot access files after workspace shutdown has started.');
+		const previous = this.operations.get(relativePath);
+		const result = previous ? previous.then(operation) : operation();
+		// Failure belongs to the requesting operation, not to subsequent operations on this path.
+		const tail = result.then(() => undefined, () => undefined);
+		this.operations.set(relativePath, tail);
+		void tail.then(() => {
+			if (this.operations.get(relativePath) === tail) this.operations.delete(relativePath);
+		});
+		return result;
+	}
+}
+
+export let workspaceRecords: WorkspaceRecords | null = null;
+
+export async function openWorkspaceRecords(provider: WorkspaceRecordProvider): Promise<void> {
+	await closeWorkspaceRecords();
+	workspaceRecords = new WorkspaceRecords(provider);
+}
+
+export async function closeWorkspaceRecords(): Promise<void> {
+	const records = workspaceRecords;
+	workspaceRecords = null;
+	await records?.close();
+}
 
 export function buildWorkspaceStorageKey(projectRootPath: string, relativePath: string): string {
 	return `${WORKSPACE_STORAGE_PREFIX}:${projectRootPath}:${relativePath}`;
@@ -36,296 +80,31 @@ export function buildWorkspaceStorageKey(projectRootPath: string, relativePath: 
 export function createWorkspaceRecord(clock: HostClock, contents: string): WorkspaceRecord {
 	const clockTimestamp = clock.dateNow();
 	lastWorkspaceRecordTimestamp = clockTimestamp > lastWorkspaceRecordTimestamp
-		? clockTimestamp
-		: lastWorkspaceRecordTimestamp + 1;
-	return {
-		contents,
-		updatedAt: lastWorkspaceRecordTimestamp,
-	};
+		? clockTimestamp : lastWorkspaceRecordTimestamp + 1;
+	return { contents, updatedAt: lastWorkspaceRecordTimestamp };
 }
 
-function parseWorkspaceRecord(raw: string): WorkspaceRecord {
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch {
-		return null;
-	}
-	if (typeof parsed !== 'object' || parsed === null) {
-		return null;
-	}
-	const record = parsed as Partial<WorkspaceRecord>;
-	return typeof record.contents === 'string' && typeof record.updatedAt === 'number'
-		? record as WorkspaceRecord
-		: null;
-}
-
-export function readLocalWorkspaceRecord(
-	storage: KeyValueStorage,
-	projectRootPath: string,
-	relativePath: string,
-): WorkspaceRecord | null {
+/** Synchronous recovery storage, separate from the canonical file provider. */
+export function readLocalWorkspaceRecord(storage: KeyValueStorage, projectRootPath: string, relativePath: string): WorkspaceRecord | null {
 	const raw = storage.getItem(buildWorkspaceStorageKey(projectRootPath, relativePath));
-	if (raw === null) {
-		return null;
-	}
-	const record = parseWorkspaceRecord(raw);
-	if (!record) {
-		console.warn(`[WorkspaceStorage] Deleting unreadable workspace record '${relativePath}'.`);
-		deleteLocalWorkspaceRecord(storage, projectRootPath, relativePath);
-		return null;
-	}
-	if (record.updatedAt > lastWorkspaceRecordTimestamp) {
-		lastWorkspaceRecordTimestamp = record.updatedAt;
-	}
+	if (raw === null) return null;
+	const record: WorkspaceRecord = JSON.parse(raw);
+	if (record.updatedAt > lastWorkspaceRecordTimestamp) lastWorkspaceRecordTimestamp = record.updatedAt;
 	return record;
 }
 
-export function writeLocalWorkspaceRecord(
-	storage: KeyValueStorage,
-	projectRootPath: string,
-	relativePath: string,
-	record: WorkspaceRecord,
-): void {
-	storage.setItem(
-		buildWorkspaceStorageKey(projectRootPath, relativePath),
-		JSON.stringify(record),
-	);
+export function writeLocalWorkspaceRecord(storage: KeyValueStorage, projectRootPath: string, relativePath: string, record: WorkspaceRecord): void {
+	storage.setItem(buildWorkspaceStorageKey(projectRootPath, relativePath), JSON.stringify(record));
 }
 
-export function deleteLocalWorkspaceRecord(
-	storage: KeyValueStorage,
-	projectRootPath: string,
-	relativePath: string,
-): void {
+export function deleteLocalWorkspaceRecord(storage: KeyValueStorage, projectRootPath: string, relativePath: string): void {
 	storage.removeItem(buildWorkspaceStorageKey(projectRootPath, relativePath));
 }
 
-export async function writeWorkspaceRecord(
-	storage: KeyValueStorage,
-	projectRootPath: string,
-	relativePath: string,
-	record: WorkspaceRecord,
-): Promise<WorkspaceRecordPersistence> {
-	const provider = workspaceRecordState.provider;
-	if (workspaceRecordState.connected && provider.connect === undefined) {
-		// A local store failure is a failed Save, not an offline acknowledgement or a retry queue.
-		await writeRemoteWorkspaceRecord(relativePath, record);
-		writeLocalWorkspaceRecord(storage, projectRootPath, relativePath, record);
-		return { status: provider.persistence };
-	}
-	writeLocalWorkspaceRecord(storage, projectRootPath, relativePath, record);
-	const pendingRecord = { storage, projectRootPath, record };
-	pendingRemoteWorkspaceRecords.set(relativePath, pendingRecord);
-	if (!workspaceRecordState.connected) {
-		return { status: 'local-only', reason: 'disconnected' };
-	}
-	try {
-		await writeRemoteWorkspaceRecord(relativePath, record);
-		if (pendingRemoteWorkspaceRecords.get(relativePath) === pendingRecord) {
-			pendingRemoteWorkspaceRecords.delete(relativePath);
-		}
-		return { status: provider.persistence };
-	} catch (error) {
-		disconnectWorkspaceRecords(error);
-		return { status: 'local-only', reason: 'write-failed', error };
-	}
+export function selectNewestWorkspaceRecord(localRecord: WorkspaceRecord | null, remoteRecord: WorkspaceRecord | null): WorkspaceRecord | null {
+	return remoteRecord && (!localRecord || remoteRecord.updatedAt > localRecord.updatedAt) ? remoteRecord : localRecord;
 }
 
-export function selectNewestWorkspaceRecord(
-	localRecord: WorkspaceRecord | null,
-	remoteRecord: WorkspaceRecord | null,
-): WorkspaceRecord | null {
-	if (remoteRecord && (!localRecord || remoteRecord.updatedAt > localRecord.updatedAt)) {
-		return remoteRecord;
-	}
-	return localRecord;
-}
-
-export async function readWorkspaceRecord(
-	storage: KeyValueStorage,
-	projectRootPath: string,
-	relativePath: string,
-): Promise<WorkspaceRecord | null> {
-	if (!workspaceRecordState.connected) {
-		return readLocalWorkspaceRecord(storage, projectRootPath, relativePath);
-	}
-	if (workspaceRecordState.provider.connect === undefined) {
-		const record = await readRemoteWorkspaceRecord(relativePath);
-		if (record !== null) writeLocalWorkspaceRecord(storage, projectRootPath, relativePath, record);
-		return record;
-	}
-	try {
-		const remoteRecord = await readRemoteWorkspaceRecord(relativePath);
-		const localRecord = readLocalWorkspaceRecord(storage, projectRootPath, relativePath);
-		const record = selectNewestWorkspaceRecord(localRecord, remoteRecord);
-		if (record === remoteRecord && remoteRecord !== null) {
-			writeLocalWorkspaceRecord(storage, projectRootPath, relativePath, remoteRecord);
-		} else if (localRecord && !workspaceRecordsEqual(localRecord, remoteRecord)) {
-			const pendingRecord = pendingRemoteWorkspaceRecords.get(relativePath);
-			if (pendingRecord && workspaceRecordsEqual(pendingRecord.record, localRecord)) {
-				return record;
-			}
-			const localPendingRecord = { storage, projectRootPath, record: localRecord };
-			pendingRemoteWorkspaceRecords.set(relativePath, localPendingRecord);
-			await writeRemoteWorkspaceRecord(relativePath, localRecord);
-			if (pendingRemoteWorkspaceRecords.get(relativePath) === localPendingRecord) {
-				pendingRemoteWorkspaceRecords.delete(relativePath);
-			}
-		}
-		return record;
-	} catch (error) {
-		disconnectWorkspaceRecords(error);
-		return readLocalWorkspaceRecord(storage, projectRootPath, relativePath);
-	}
-}
-
-export async function readWorkspaceRecordVersion(
-	storage: KeyValueStorage,
-	projectRootPath: string,
-	relativePath: string,
-	updatedAt: number,
-): Promise<WorkspaceRecord | null> {
-	const localRecord = readLocalWorkspaceRecord(storage, projectRootPath, relativePath);
-	if (localRecord?.updatedAt === updatedAt) {
-		return localRecord;
-	}
-	if (!workspaceRecordState.connected) {
-		return null;
-	}
-	try {
-		const remoteRecord = await readRemoteWorkspaceRecord(relativePath);
-		if (remoteRecord?.updatedAt !== updatedAt) {
-			return null;
-		}
-		writeLocalWorkspaceRecord(storage, projectRootPath, relativePath, remoteRecord);
-		return remoteRecord;
-	} catch (error) {
-		disconnectWorkspaceRecords(error);
-		return null;
-	}
-}
-
-export function readRemoteWorkspaceRecord(relativePath: string): Promise<WorkspaceRecord | null> {
-	const provider = workspaceRecordState.provider;
-	return enqueueRemoteWorkspaceOperation(relativePath, async () => {
-		const record = await provider.read(relativePath);
-		if (record && record.updatedAt > lastWorkspaceRecordTimestamp) {
-			lastWorkspaceRecordTimestamp = record.updatedAt;
-		}
-		return record;
-	});
-}
-
-export function writeRemoteWorkspaceRecord(
-	relativePath: string,
-	record: WorkspaceRecord,
-): Promise<void> {
-	const provider = workspaceRecordState.provider;
-	return enqueueRemoteWorkspaceOperation(relativePath, () => provider.write(relativePath, record, true));
-}
-
-/** Publish a new source only after the filesystem has admitted its name. */
-export async function createWorkspaceFile(
-	storage: KeyValueStorage,
-	projectRootPath: string,
-	relativePath: string,
-	record: WorkspaceRecord,
-): Promise<void> {
-	const provider = workspaceRecordState.provider;
-	await enqueueRemoteWorkspaceOperation(relativePath, () => provider.write(relativePath, record, false));
-	writeLocalWorkspaceRecord(storage, projectRootPath, relativePath, record);
-}
-
-export function deleteRemoteWorkspaceRecord(relativePath: string): Promise<void> {
-	const provider = workspaceRecordState.provider;
-	return enqueueRemoteWorkspaceOperation(relativePath, () => provider.delete(relativePath));
-}
-
-export async function openWorkspaceRecords(provider: WorkspaceRecordProvider): Promise<void> {
-	pendingRemoteWorkspaceRecords.clear();
-	workspaceRecordState.provider = provider;
-	try {
-		await provider.connect?.();
-		workspaceRecordState.connected = true;
-	} catch (error) {
-		disconnectWorkspaceRecords(error);
-	}
-}
-
-export function closeWorkspaceRecords(): void {
-	workspaceRecordState.connected = false;
-	pendingRemoteWorkspaceRecords.clear();
-}
-
-export async function reconnectWorkspaceRecords(): Promise<void> {
-	try {
-		await workspaceRecordState.provider.connect!();
-		await syncPendingRemoteWorkspaceRecords();
-		workspaceRecordState.connected = true;
-	} catch (error) {
-		disconnectWorkspaceRecords(error);
-	}
-}
-
-async function syncPendingRemoteWorkspaceRecords(): Promise<void> {
-	while (pendingRemoteWorkspaceRecords.size !== 0) {
-		for (const [relativePath] of pendingRemoteWorkspaceRecords) {
-			const remoteRecord = await readRemoteWorkspaceRecord(relativePath);
-			const pendingRecord = pendingRemoteWorkspaceRecords.get(relativePath);
-			if (!pendingRecord) {
-				continue;
-			}
-			const record = selectNewestWorkspaceRecord(pendingRecord.record, remoteRecord);
-			if (record === remoteRecord && remoteRecord !== null) {
-				writeLocalWorkspaceRecord(
-					pendingRecord.storage,
-					pendingRecord.projectRootPath,
-					relativePath,
-					remoteRecord,
-				);
-			} else if (!workspaceRecordsEqual(pendingRecord.record, remoteRecord)) {
-				await writeRemoteWorkspaceRecord(relativePath, pendingRecord.record);
-			}
-			if (pendingRemoteWorkspaceRecords.get(relativePath) === pendingRecord) {
-				pendingRemoteWorkspaceRecords.delete(relativePath);
-			}
-		}
-	}
-}
-
-function enqueueRemoteWorkspaceOperation<T>(
-	relativePath: string,
-	operation: () => Promise<T>,
-): Promise<T> {
-	const previous = remoteWorkspaceOperationTails.get(relativePath);
-	const result = previous ? previous.then(operation) : operation();
-	const tail = result.then(
-		() => undefined,
-		() => undefined,
-	);
-	remoteWorkspaceOperationTails.set(relativePath, tail);
-	void tail.then(() => {
-		if (remoteWorkspaceOperationTails.get(relativePath) === tail) {
-			remoteWorkspaceOperationTails.delete(relativePath);
-		}
-	});
-	return result;
-}
-
-export function disconnectWorkspaceRecords(error: unknown): void {
-	if (workspaceRecordState.provider.connect === undefined) throw error;
-	workspaceRecordState.connected = false;
-	console.warn('[WorkspaceStorage] Remote workspace unavailable; local recovery remains active.', error);
-}
-
-export function workspaceRecordsEqual(
-	left: WorkspaceRecord | null,
-	right: WorkspaceRecord | null,
-): boolean {
-	return left === right
-		|| (left !== null
-			&& right !== null
-			&& left.updatedAt === right.updatedAt
-			&& left.contents === right.contents);
+export function workspaceRecordsEqual(left: WorkspaceRecord | null, right: WorkspaceRecord | null): boolean {
+	return left === right || (left !== null && right !== null && left.updatedAt === right.updatedAt && left.contents === right.contents);
 }

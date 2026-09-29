@@ -11,24 +11,27 @@ import { TextFileSaveService } from '../../ide/workbench/services/working_copy/t
 import { WorkspaceSourceTools } from '../../ide/workbench/services/assistant/source_tools';
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
-import { closeWorkspaceRecords, openWorkspaceRecords, readLocalWorkspaceRecord } from '../../ide/workspace/records';
+import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
+import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import type { WorkspaceRecordProvider } from '../../ide/workspace/record_provider';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
-function fixture(t: TestContext) {
+async function fixture(t: TestContext) {
+	const files = new MemoryWorkspaceFiles();
+	await openWorkspaceRecords(files);
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1, 'return 1\n')]);
 	const models = new EditorTextModelService(), storage = new MemoryStorage(), clock = new VirtualHeadlessClock();
 	const f = createRuntimeInspectionFixture(createTestRuntime(createTestRuntimeRomPayload()), sources);
 	const tooling = new RuntimeLuaTooling(sources, f.guest), diagnostics = new ResourceDiagnosticsService(models, tooling, clock);
-	const saves = new TextFileSaveService(models, storage, clock, sources, tooling, f.runtime, f.tasks);
+	const saves = new TextFileSaveService(models, clock, sources, tooling, f.runtime, f.tasks);
 	const model = models.retain(sources.luaResources[0], 'lua', 'return 1\n');
 	const yaml: RuntimeResource = { domain: 0, path: 'res/data/probe.yaml', source: { type: 'data', resid: 'probe' } };
 	sources.resourceByIdentity.set(resourceIdentityKey(yaml), yaml);
 	const data = models.retain(yaml, 'yaml', '# canonical 🐉\r\nvalue: 1\r\n');
 	const tools = () => {
-		const result = new WorkspaceSourceTools(models, sources, storage, diagnostics, new AbortController().signal,
+		const result = new WorkspaceSourceTools(models, sources, diagnostics, new AbortController().signal,
 			new BehaviorSourceDocuments(models, sources), saves);
 		t.after(() => result.dispose()); return result;
 	};
@@ -38,12 +41,12 @@ function fixture(t: TestContext) {
 		const read = await tools.execute('studio_read_source', { resource: catalog.data.find(source => source.path === path)!.resource });
 		if (read.kind !== 'source') assert.fail(); return read.data;
 	};
-	t.after(async () => { await saves.shutdown(); diagnostics.dispose(); f.presenter.dispose(); models.clear(); closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
-	return { ...f, models, storage, clock, saves, model, data, tools, read };
+	t.after(async () => { await saves.shutdown(); diagnostics.dispose(); f.presenter.dispose(); models.clear(); await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
+	return { ...f, files, models, storage, clock, saves, model, data, tools, read };
 }
 
 test('source Save uses the ordinary owner and reports local persistence separately from installation', async t => {
-	const f = fixture(t);
+	const f = await fixture(t);
 	f.model.pushEditOperations([{ offset: 7, deleteLength: 1, text: '2' }]);
 	f.data.pushEditOperations([{ offset: f.data.buffer.length, deleteLength: 0, text: '# added\r\n' }]);
 	const tools = f.tools(), read = await f.read(tools), data = await f.read(tools, f.data.resource.path);
@@ -56,11 +59,11 @@ test('source Save uses the ordinary owner and reports local persistence separate
 		const saved = await tools.execute('studio_save_source', { receipt: receipt.receipt });
 		if (saved.kind !== 'source-save' || saved.data.status !== 'saved') assert.fail();
 		assert.equal(saved.data.version, receipt.version);
-		assert.deepEqual(saved.data.persistence, { status: 'local-only', reason: 'disconnected' });
+		assert.deepEqual(saved.data.persistence, { status: 'browser' });
 		assert.equal(saved.data.application.status, 'not-requested');
 	}
 	assert.equal(f.model.dirty, false); assert.equal(f.data.dirty, false);
-	assert.equal(readLocalWorkspaceRecord(f.storage, 'carts/nemesis_s', 'carts/nemesis_s/res/data/probe.yaml')!.contents, data.source);
+	assert.equal(f.files.records.get('carts/nemesis_s/res/data/probe.yaml')!.contents, data.source);
 	assert.equal(f.runtime.machine.scheduler.currentNowCycles(), cycles); assert.equal(f.sources.currentBlua32Media, media);
 	const status = await tools.execute('studio_read_source_status', { receipt: data.receipt });
 	if (status.kind !== 'source-status') assert.fail();
@@ -69,7 +72,7 @@ test('source Save uses the ordinary owner and reports local persistence separate
 });
 
 test('an accepted tool Save survives retirement and later typing; newer prompts inspect its historical acknowledgement', async t => {
-	const f = fixture(t), write = Promise.withResolvers<void>();
+	const f = await fixture(t), write = Promise.withResolvers<void>();
 	let delayed = false;
 	const provider: WorkspaceRecordProvider = { persistence: 'workspace', async read() { return null; }, async readDirectory() { return []; }, async delete() {},
 		async write() { if (delayed) await write.promise; } };
@@ -99,7 +102,7 @@ test('an accepted tool Save survives retirement and later typing; newer prompts 
 });
 
 test('Save rejects unread, expired, read-only and cancelled authority before IO; it cannot approve a proposal', async t => {
-	const f = fixture(t), tools = f.tools(), read = await f.read(tools);
+	const f = await fixture(t), tools = f.tools(), read = await f.read(tools);
 	await assert.rejects(tools.execute('studio_save_source', { receipt: 'foreign' }), /receipt read/);
 	await assert.rejects(tools.execute('studio_save_source', { receipt: read.receipt, apply: true }));
 	await assert.rejects(tools.execute('studio_save_source', { receipt: read.receipt }, AbortSignal.abort()), { name: 'AbortError' });
@@ -119,10 +122,10 @@ test('Save rejects unread, expired, read-only and cancelled authority before IO;
 });
 
 test('project write failure and AEM build failure remain distinct textual wire outcomes', async t => {
-	const f = fixture(t);
+	const f = await fixture(t);
 	let rejectWrite = false;
 	await openWorkspaceRecords({
-		persistence: 'workspace', async connect() {},
+		persistence: 'workspace',
 		async read() { return null; }, async readDirectory() { return []; }, async delete() {},
 		async write() { if (rejectWrite) throw new Error('provider refused write'); },
 	});
@@ -132,16 +135,18 @@ test('project write failure and AEM build failure remain distinct textual wire o
 	f.models.retain(resource, 'aem', 'not: [valid');
 	const tools = f.tools(), read = await f.read(tools, resource.path);
 	const result = await tools.execute('studio_save_source', { receipt: read.receipt });
-	if (result.kind !== 'source-save' || result.data.status !== 'saved') assert.fail();
-	assert.deepEqual(result.data.persistence, { status: 'local-only', reason: 'write-failed', error: 'Error: provider refused write' });
-	assert.equal(result.data.application.status, 'failed');
-	if (result.data.application.status !== 'failed') assert.fail();
-	assert.equal(result.data.application.phase, 'build'); assert.match(result.data.application.error, /flow collection/);
+	if (result.kind !== 'source-save' || result.data.status !== 'failed') assert.fail();
+	assert.equal(result.data.error, 'Error: provider refused write');
+	rejectWrite = false;
+	const retry = await tools.execute('studio_save_source', { receipt: read.receipt });
+	if (retry.kind !== 'source-save' || retry.data.status !== 'saved' || retry.data.application.status !== 'failed') assert.fail();
+	assert.equal(retry.data.persistence.status, 'workspace');
+	assert.equal(retry.data.application.phase, 'build'); assert.match(retry.data.application.error, /flow collection/);
 	assert.equal(f.tasks.failure, undefined);
 });
 
 test('late Save completion cannot replace the acknowledgement of a newer accepted Save', async t => {
-	const f = fixture(t), gates: (() => void)[] = [];
+	const f = await fixture(t), gates: (() => void)[] = [];
 	let delayed = false;
 	await openWorkspaceRecords({
 		persistence: 'workspace',
@@ -159,9 +164,9 @@ test('late Save completion cannot replace the acknowledgement of a newer accepte
 });
 
 test('failed local persistence remains a failed Save with dirty source and an inspectable error', async t => {
-	const f = fixture(t);
+	const f = await fixture(t);
 	f.model.pushEditOperations([{ offset: 7, deleteLength: 1, text: '2' }]);
-	f.storage.setItem = () => { throw new Error('local storage denied'); };
+	f.files.write = async () => { throw new Error('local storage denied'); };
 	const tools = f.tools(), read = await f.read(tools);
 	const result = await tools.execute('studio_save_source', { receipt: read.receipt });
 	if (result.kind !== 'source-save') assert.fail();

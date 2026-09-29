@@ -58,7 +58,8 @@ uses browser-owned storage with agent commands disabled. See
 - `StudioHttpSession`: coalesced admission shared by browser platform consumers,
   capability held in memory. The file provider can renew/replay once after 401 because the server rejected it before
   any file operation; transport/500 errors are never automatically replayed.
-  Local-only persistence/reconnect feedback remains owned by workspace records.
+  Write failure belongs to that operation; only a new Save retries it. Recovery
+  checkpoints remain workbench-owned and cannot acknowledge source persistence.
 
 Use the existing `npm run serve:dist` (127.0.0.1 by default), its normal
 `--host 0.0.0.0` binding or `npm run serve:dist:wsl`. All use the same source and
@@ -93,7 +94,7 @@ physical-phone/Safari coverage.
   browser Studio product build pass; strict architecture audit **0 issues**.
   Full tests-project baseline remains **112 diagnostics**, not a green check.
 - Real WebGL2 source-save workflow passes Lua/YAML/AEM project acknowledgement,
-  HTTP write failure/local-only feedback and reconnect through the authorized
+  HTTP write failure/dirty-source feedback and explicit Save retry through the authorized
   provider. Visual-only resource context/Problems/navigation/shutdown, cold page
   session reload, and isolated test-runner workflows also pass. These are
   automated browser workflows, not UI-only authoring or remote-access proof.

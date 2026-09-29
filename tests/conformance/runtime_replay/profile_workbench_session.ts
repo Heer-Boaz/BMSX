@@ -27,9 +27,9 @@ import { GameViewInput } from '../../../ide/workbench/contrib/game_view/editor_i
 // Run with node --expose-gc --import tsx --import ./tests/lua/test_setup.ts <this file>.
 const serializers: EditorInputSerializers = {
 	terminal: { serialize: () => '', deserialize: () => { throw new Error('Capture-only probe'); } },
-	code_editor: new CodeEditorInputSerializer(null, null),
-	behavior_lens: new BehaviorLensInputSerializer(null, null, null),
-	scene_editor: new SceneEditorInputSerializer(null, null, null),
+	code_editor: new CodeEditorInputSerializer(null),
+	behavior_lens: new BehaviorLensInputSerializer(null, null),
+	scene_editor: new SceneEditorInputSerializer(null, null),
 	scenario_lab: new ScenarioLabInputSerializer(null),
 	resource_view: new ResourceViewerInputSerializer(null),
 	actor_lab: { serialize: () => '', deserialize: () => new ActorLabInput() },

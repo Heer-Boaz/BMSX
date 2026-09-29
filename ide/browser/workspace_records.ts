@@ -7,8 +7,6 @@ export class HttpWorkspaceRecordProvider implements WorkspaceRecordProvider {
 	public readonly persistence = 'workspace';
 	public constructor(private readonly session = new StudioHttpSession()) {}
 
-	public async connect(): Promise<void> { await this.session.connect(); }
-
 	/** Only a rejected capability permits replay: the server has performed no file operation. */
 	private async request(url: string, init: RequestInit): Promise<Response> {
 		let session = this.session.connect();
@@ -23,7 +21,7 @@ export class HttpWorkspaceRecordProvider implements WorkspaceRecordProvider {
 			headers.set('Authorization', `Bearer ${await session}`);
 			return await fetch(this.session.baseUrl + url, { ...init, headers });
 		} catch (error) {
-			// Retire admission after transport loss; the next reconnect reaches the server.
+			// Retire admission after transport loss; the next operation reaches the server.
 			this.session.expire(session);
 			throw error;
 		}
