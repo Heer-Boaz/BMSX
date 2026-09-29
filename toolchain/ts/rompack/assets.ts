@@ -67,6 +67,11 @@ export interface TextureMeta {
 	clut_word_count: number;
 }
 
+/** Authored text retained for tooling, separate from the cooked asset payload. */
+export interface SourceMeta {
+	readonly text: string;
+}
+
 export type RomAsset = Omit<RomTocEntry, 'id_token_lo' | 'id_token_hi'> & {
 	id_token_lo?: number;
 	id_token_hi?: number;
@@ -77,6 +82,7 @@ export type RomAsset = Omit<RomTocEntry, 'id_token_lo' | 'id_token_hi'> & {
 	imgmeta?: ImgMeta;
 	texturemeta?: TextureMeta;
 	audiometa?: AudioMeta;
+	sourcemeta?: SourceMeta;
 	payload_id?: RomImageDomain;
 };
 

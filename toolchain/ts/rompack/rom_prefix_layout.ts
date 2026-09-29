@@ -5,7 +5,7 @@ import {
 	romAssetIsPacked,
 	type RomAssetPayloadRange,
 } from './asset_layout';
-import type { AudioMeta, ImgMeta, RomAsset, TextureMeta } from './assets';
+import type { AudioMeta, ImgMeta, RomAsset, SourceMeta, TextureMeta } from './assets';
 import type { CartManifest } from '../../../machine/ts/rompack/manifest';
 import { buildRomMetadataSection } from './metadata_encode';
 
@@ -23,21 +23,22 @@ export type RomPrefixLayout = {
 
 export function layoutRomPrefix(
 	assetList: ReadonlyArray<RomAsset>,
-	includeLuaAssets: boolean,
+	includeSources: boolean,
 	manifest: CartManifest | null,
 	initialOffset?: number,
 ): RomPrefixLayout {
-	const assetLayout = layoutRomAssetPayloads(assetList, includeLuaAssets, initialOffset);
+	const assetLayout = layoutRomAssetPayloads(assetList, includeSources, initialOffset);
 	const ranges = assetLayout.ranges;
 	const metadataAssets: RomAsset[] = [];
-	const metadataValues: Array<ImgMeta | TextureMeta | AudioMeta> = [];
+	const metadataValues: Array<ImgMeta | TextureMeta | AudioMeta | SourceMeta> = [];
 	let entryIndex = 0;
 	for (let index = 0; index < assetList.length; index += 1) {
 		const source = assetList[index];
-		if (!romAssetIsPacked(source, includeLuaAssets)) {
+		if (!romAssetIsPacked(source, includeSources)) {
 			continue;
 		}
-		const metadata = source.imgmeta || source.texturemeta || source.audiometa;
+		const metadata = source.imgmeta || source.texturemeta || source.audiometa
+			|| (includeSources ? source.sourcemeta : undefined);
 		if (metadata !== undefined) {
 			metadataAssets.push(assetLayout.entries[entryIndex]);
 			metadataValues.push(metadata);

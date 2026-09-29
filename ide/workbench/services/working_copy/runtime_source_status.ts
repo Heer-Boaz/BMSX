@@ -55,10 +55,15 @@ export function getTextFileRuntimeSourceStatus(sources: RuntimeSourceState, mode
 		case 'aem': {
 			const application = sources.aemSourceApplications.get(cache.resourceKey);
 			if (application === undefined) {
-				return 'untracked';
+				// The producer retained the exact input to the packaged asset. A
+				// workspace file is not proof of installation; this metadata is.
+				const packagedSource = model.resource.source.sourcemeta;
+				if (packagedSource === undefined) return 'untracked';
+				installedSource = packagedSource.text;
+			} else {
+				installedSource = application.installedSource;
+				failed = application.failed;
 			}
-			installedSource = application.installedSource;
-			failed = application.failed;
 			break;
 		}
 	}

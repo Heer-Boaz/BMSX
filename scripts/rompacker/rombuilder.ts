@@ -1048,37 +1048,26 @@ export async function generateRomAssets(
 				romAssets.push(asset);
 				break;
 			}
-			case 'data':
-				// Encode the JSON-data via the binencoder
-				// Convert the buffer to a JSON string and then encode it
+			case 'data': {
+				const source = res.datatype === 'bin' ? undefined : res.buffer.toString('utf8');
 				switch (res.datatype) {
 					case 'yaml':
-						// If the data is a YAML file, we need to convert it to JSON first
-						const yamlContent = res.buffer.toString('utf8');
-						const jsonContent = yaml.load(yamlContent);
-						// res.buffer = jsonContent;
-						const encodedYamlData = encodeBinary(jsonContent);
-						// Ensure Buffer instance (encodeBinary returns Uint8Array)
-						// @ts-ignore
-						buffer = Buffer.from(encodedYamlData);
+						buffer = Buffer.from(encodeBinary(yaml.load(source)));
 						break;
 					case 'json':
-						// If the data is a JSON file, we need to convert it to a string first
-						const json = JSON.parse(res.buffer.toString('utf8'));
-						const encodedData = encodeBinary(json);
-
-						// @ts-ignore
-						buffer = Buffer.from(encodedData);
+						buffer = Buffer.from(encodeBinary(JSON.parse(source)));
 						break;
 					case 'bin':
-						// If the data is a binary file, we can use it as is
 						break;
 				}
-				romAssets.push({ resid, type, buffer, source_path: sourcePath });
+				romAssets.push({ resid, type, buffer, source_path: sourcePath,
+					sourcemeta: source === undefined ? undefined : { text: source } });
 				break;
+			}
 			case 'aem': {
 				buffer = Buffer.from(encodeBinary(res.eventMap));
-				romAssets.push({ resid, type, buffer, source_path: sourcePath });
+				romAssets.push({ resid, type, buffer, source_path: sourcePath,
+					sourcemeta: { text: res.buffer.toString('utf8') } });
 				break;
 			}
 			case 'bin':

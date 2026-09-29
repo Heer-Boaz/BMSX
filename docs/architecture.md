@@ -903,6 +903,16 @@ the entry with an empty unit harness; integration targets retain the actual game
 entry. Both stop after module initialization to select the named case. Test-only
 library dependencies are compiled from their ordinary source-only records.
 
+Debug ROM producers also retain original YAML/JSON/AEM text as `SourceMeta` in
+the existing per-asset metadata section, separate from cooked payloads. Release
+packing omits this authored text. This changes neither the TOC layout nor the
+TS/C++ machine's raw-media contract: source metadata is host tooling, not a guest
+asset or runtime representation. Workspace text overlays the packaged authored
+base only when a canonical file exists; I/O failures remain errors. Consumers
+never reconstruct authored text from cooked data. The complete loaded authoring
+catalog is independent of CPU execution-domain selection. See
+[standalone source ownership](studio_standalone.md#browser-source-persistence).
+
 The Scenario builder is also the only executable-image producer that emits
 BLua32 trace statements. Ordinary release ROMs, ordinary debug ROMs and live
 Hot Resume compile those statements in erase mode: neither their subject and
@@ -5147,8 +5157,11 @@ coalesces concurrent saves of that revision and sequences later saves of the
 same resource without blocking unrelated resources. Its result separates source
 persistence from AEM build/runtime application. Completing a snapshot cannot
 clear newer authored edits; Lua saves do not acknowledge installed executable
-code and YAML saves do not acknowledge cooked assets. Command UI consumes the
-result and recovery listens to resource-model save events. Normal shutdown
+code and YAML saves do not acknowledge cooked assets. AEM application requires
+its resource domain to be executing at runtime-task admission. An inactive domain
+leaves the acknowledged source saved but not applied, with no media mutation or
+automatic retry. Command UI consumes the result and recovery listens to
+resource-model save events. Normal shutdown
 closes Save admission and joins accepted operations before checkpointing and
 destroying source owners. The record owner returns an exact write acknowledgement:
 `workspace` after a filesystem write or `browser` after an IndexedDB commit.

@@ -48,6 +48,27 @@ source is the initial base. Saved overrides, new files and session records live
 in the `bmsx-studio-workspace` database. Source discovery admits newly created Lua
 files independently of restored tabs and ROM membership.
 
+Debug ROMs retain the original YAML, JSON and AEM text in the existing per-asset
+tooling metadata, separately from the cooked payload. Release ROMs omit it.
+Opening YAML/AEM resolves a canonical workspace file first, including an empty
+file; an absent file uses that packaged authored base. Read failures propagate,
+never select another authority. Opening does not seed IndexedDB, and consumers
+do not reconstruct source from cooked data. Both paths use the same retained
+text model, diagnostics, Undo/Redo and Save service.
+
+The resource picker/tree enumerate all loaded authoring domains, including cart
+data while the BIOS is executing. Resource identity remains `(domain, path)`;
+CPU execution-domain changes neither hide files nor rebuild/sort the catalog.
+AEM Save persists independently of runtime availability. Live application is
+admitted at the serialized runtime boundary only when that resource's domain is
+executing. Otherwise Save reports that application is pending, without changing
+media or calling another domain's globals. Once the cart is active, an explicit
+Save can request application; there is no background retry loop.
+
+Cart and BIOS incremental builds both track the packer/compiler/configuration
+inputs. An ordinary build therefore regenerates debug source metadata when its
+producer changes; it does not require a manual `--force`. Unchanged builds skip.
+
 Writes complete only when their IndexedDB transaction commits. File/directory
 admission and content writes use the **same** transaction, including competing
 windows. A path cannot be both a file and a directory. Namespace entries have a
@@ -108,6 +129,15 @@ limit lets an explicit Save commit it. Screenshots cover both outcomes. This
 found a native `QuotaExceededError` with an empty message; the storage boundary
 now translates that code into a visible failure instead of an empty status line.
 
+The same product workflow opens previously unopened YAML/AEM directly from the
+ROM with networking disabled, compares copied document text to the authored
+files, edits through the native clipboard, exercises Undo/Redo, saves and reloads
+the browser-owned documents. It also opens them during BIOS startup. Visual
+inspection found an AEM runtime-apply TypeError despite successful persistence;
+the runtime-domain admission above fixes that separately. The saved document now
+shows pending application, including after reload, rather than an internal error
+or a false installation acknowledgement.
+
 Screenshots in `/tmp/bmsx-studio-standalone/` cover the Terminal result, disabled
 Codex menu alongside active local tools, browser Save and restored/offline source.
 They are inspected visually, not asserted against exact message/row strings.
@@ -129,6 +159,19 @@ IDE/Node/common-host typechecks and Studio debug/release, player and headless
 tooling builds pass; the strict boundary audit reports zero issues.
 These do not imply paid-model inference or physical-phone coverage.
 
+Authored-source follow-through (2026-09-29): full rompacker **189/189**, targeted
+source/catalog/storage/build regressions **114/114**, server/history/MCP/assistant
+HTTP bundle **27/27**, and standalone Chromium **2/2** with the extended workflow
+above. Source-Save conformance passes on all three renderers; the screenshots
+show both rejected writes and the subsequent successful explicit retries.
+The full Studio workflow also passes on software, including source navigation,
+AEM application, Hot Resume, Scene Editor and Scenario Lab.
+The full Lua suite has **2846 passed, 1 skipped, 2 failed**; both existing
+menu-order failures also occur at the pre-change HEAD. Diagnostic comparison
+against that HEAD finds no additions: the tests project retains **98** diagnostics
+and scripts retains **2**. These pre-existing failures are not counted as
+successful validation.
+
 ## Production references studied before implementation
 
 - VS Code [web workbench bootstrap](https://github.com/microsoft/vscode/blob/main/src/vs/code/browser/workbench/workbench.ts)
@@ -146,3 +189,10 @@ These do not imply paid-model inference or physical-phone coverage.
   and [browser backups](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/services/workingCopy/browser/workingCopyBackupService.ts):
   canonical write acknowledgement and recovery have independent owners. See
   [source-save contract](studio_source_save_acknowledgements.md).
+- VS Code's [source-map source admission](https://github.com/microsoft/vscode-js-debug/blob/main/src/adapter/sourceContainer.ts)
+  and esbuild's [original-source representation](https://github.com/evanw/esbuild/blob/main/internal/sourcemap/sourcemap.go):
+  retain authored text at the producer instead of reconstructing it from output.
+- VS Code's [Explorer model](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/files/common/explorerModel.ts):
+  workspace membership is independent of the debugger's active execution scope.
+- esbuild's [build dependency tracking](https://github.com/evanw/esbuild/blob/main/internal/bundler/bundler.go):
+  producer file/directory inputs participate in incremental invalidation.

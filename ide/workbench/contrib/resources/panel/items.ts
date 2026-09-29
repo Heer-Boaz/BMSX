@@ -33,7 +33,7 @@ export function buildResourcePanelItems(
 	filterMode: ResourcePanelFilterMode,
 ): ResourceBrowserItem[] {
 	return buildResourceTreeItems(
-		filterMode === 'lua_only' ? sources.luaResources : sources.activeResources,
+		filterMode === 'lua_only' ? sources.luaResources : sources.resources,
 		filterMode,
 	);
 }

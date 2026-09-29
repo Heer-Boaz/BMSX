@@ -86,10 +86,10 @@ function romSource(entries: RomAsset[]): RawRomSource {
 	};
 }
 
-function activeDataResources(sources: ReturnType<typeof createTestRuntimeSourceState>): RuntimeResource[] {
+function dataResources(sources: ReturnType<typeof createTestRuntimeSourceState>): RuntimeResource[] {
 	const resources: RuntimeResource[] = [];
-	for (let index = 0; index < sources.activeResources.length; index += 1) {
-		const resource = sources.activeResources[index];
+	for (let index = 0; index < sources.resources.length; index += 1) {
+		const resource = sources.resources[index];
 		if (resource.source.type === 'data' || resource.source.type === 'aem') {
 			resources.push(resource);
 		}
@@ -147,7 +147,7 @@ test('resource panel, search, and code tabs consume the retained owner resource'
 		.find(item => item.resource?.path === retained.path && item.resource.domain === retained.domain)!;
 	assert.strictEqual(panelItem.resource, retained);
 
-	const searchEntry = buildResourceQuickPickItems(sources.activeResources)
+	const searchEntry = buildResourceQuickPickItems(sources.resources)
 		.find(entry => entry.resource.path === retained.path && entry.resource.domain === retained.domain)!;
 	assert.strictEqual(searchEntry.resource, retained);
 	assert.equal(searchEntry.label, retained.path);
@@ -186,7 +186,7 @@ test('workspace entry tab opens the development cartridge instead of the booting
 	assert.equal(retainEntryTabContext(sources).view.cursorRow, 7);
 });
 
-test('active resource catalog exposes source-backed data only from the active source domain', () => {
+test('authoring catalog keeps loaded data accessible while the BIOS or either cartridge executes', () => {
 	const systemRegistry = sourceRegistry('machine/ts', [
 		luaSource('system/main.lua', 'system-main', 'return 1'),
 	]);
@@ -195,7 +195,7 @@ test('active resource catalog exposes source-backed data only from the active so
 	]);
 	const sources = createTestRuntimeSourceState(
 		systemRegistry,
-		[cartridgeRegistry, null],
+		[cartridgeRegistry, sourceRegistry('carts/second', [])],
 		SYSTEM_RESOURCE_DOMAIN,
 	);
 	sources.systemRomSource = romSource([
@@ -207,6 +207,9 @@ test('active resource catalog exposes source-backed data only from the active so
 	sources.cartridgeSlots[0]!.romSource = romSource([
 		{ resid: 'cart-scene', type: 'aem', source_path: 'scenes/cart.aem' },
 		{ resid: 'enemy-guard', type: 'data', source_path: 'res/data/enemy_guard.yaml' },
+	]);
+	sources.cartridgeSlots[1]!.romSource = romSource([
+		{ resid: 'other-guard', type: 'data', source_path: 'res/data/enemy_guard.yaml' },
 	]);
 	rebuildRuntimeSourceResources(sources);
 
@@ -235,15 +238,26 @@ test('active resource catalog exposes source-backed data only from the active so
 		domain: SYSTEM_RESOURCE_DOMAIN,
 		path: 'compiled.image',
 	}), undefined);
-	assert.deepEqual(activeDataResources(sources), [systemData, systemAem]);
+	const otherData = resolveRuntimeResource(sources, { domain: 1, path: cartridgeData.path })!;
+	assert.notEqual(otherData, cartridgeData);
+	const catalog = [cartridgeData, otherData, cartridgeAem, systemData, systemAem];
+	assert.deepEqual(dataResources(sources), catalog);
+	const panelResources = buildResourcePanelItems(sources, 'all').map(item => item.resource);
+	const fileResources = buildResourceQuickPickItems(sources.resources).map(item => item.resource);
+	for (const resource of catalog) {
+		assert.ok(panelResources.includes(resource));
+		assert.ok(fileResources.includes(resource));
+	}
 
 	enterCartridgeSources(sources, 0);
-	assert.deepEqual(activeDataResources(sources), [cartridgeData, cartridgeAem]);
+	assert.deepEqual(dataResources(sources), catalog);
+	enterCartridgeSources(sources, 1);
+	assert.deepEqual(dataResources(sources), catalog);
 
 	enterSystemSources(sources);
 	assert.strictEqual(
 		resolveRuntimeResource(sources, { domain: SYSTEM_RESOURCE_DOMAIN, path: 'system/scene.aem' }),
 		systemAem,
 	);
-	assert.deepEqual(activeDataResources(sources), [systemData, systemAem]);
+	assert.deepEqual(dataResources(sources), catalog);
 });

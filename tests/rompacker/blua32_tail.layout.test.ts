@@ -67,6 +67,7 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 	try {
 		await mkdir(ROOT, { recursive: true });
 		const initialSource = 'return 1';
+		const authoredData = '# Tooling source, not a decoded runtime asset\nfont: "terminal"\n';
 		const assets: RomAsset[] = [
 			luaAsset(initialSource),
 			{
@@ -85,6 +86,7 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 				resid: 'terminal-font',
 				type: 'data',
 				buffer: Buffer.from([0x44, 0x55, 0x66, 0x77]),
+				sourcemeta: { text: authoredData },
 			},
 		];
 		const layout = layoutRomPrefix(assets, true, MANIFEST, SYSTEM_ROM_ASSET_OFFSET);
@@ -194,6 +196,7 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 		const rebuiltIndex = await parseCartridgeIndex(rebuilt.bytes);
 		const rebuiltSprite = rebuiltIndex.entries.find(entry => entry.resid === 'sprite')!;
 		assert.deepEqual(rebuiltSprite.imgmeta, spriteEntry.imgmeta);
+		assert.equal(rebuiltIndex.entries.find(entry => entry.resid === 'terminal-font')!.sourcemeta!.text, authoredData);
 
 		const assetEdited = buildBlua32Tail(
 			systemLayer,
@@ -235,6 +238,8 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 			editedSpriteBytes,
 		);
 		assert.deepEqual(batchEdited.bytes.subarray(sourceStart, sourceEnd), sourceBytes);
+		const editedIndex = await parseCartridgeIndex(batchEdited.bytes);
+		assert.equal(editedIndex.entries.find(entry => entry.resid === 'terminal-font')!.sourcemeta!.text, authoredData);
 	} finally {
 		await rm(ROOT, { recursive: true, force: true });
 	}

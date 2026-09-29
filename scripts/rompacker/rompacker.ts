@@ -36,7 +36,6 @@ import { buildRomAssetSymbolModuleSourceFromSymbols, collectRomAssetSymbols } fr
 import {
 	BLUA32_FIRMWARE_MODULE_PATH,
 	GX_DISPLAY_PRESET_MODULE_PATH,
-	GX_GENERATED_MODULE_BUILD_SOURCE_FILES,
 	GX_REGISTER_MODULE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 	SYSTEM_ASSET_SYMBOL_MODULE_PATH,
@@ -130,7 +129,7 @@ const biosBuildTasks: TaskName[] = [
 	TASK.DONE,
 ];
 const biosPipelineTasks: TaskName[] = biosBuildTasks.slice(1, -1);
-const BIOS_BUILD_SOURCE_DIRECTORIES = [
+const ROM_BUILD_SOURCE_DIRECTORIES = [
 	'./machine/ts/common',
 	'./machine/ts/rompack',
 	'./machine/ts/spec',
@@ -139,7 +138,7 @@ const BIOS_BUILD_SOURCE_DIRECTORIES = [
 	'./scripts/lib',
 	'./toolchain/ts',
 ] as const;
-const BIOS_BUILD_SOURCE_FILES = [
+const ROM_BUILD_SOURCE_FILES = [
 	'./package.json',
 	'./package-lock.json',
 	'./scripts/tsconfig.json',
@@ -392,8 +391,8 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 			return isRebuildRequired(BIOSRomName, BIOSResPath, {
 				domain: 'system',
 				extraLuaPaths: [biosSourcePath],
-				buildSourceDirectories: BIOS_BUILD_SOURCE_DIRECTORIES,
-				buildSourceFiles: BIOS_BUILD_SOURCE_FILES,
+				buildSourceDirectories: ROM_BUILD_SOURCE_DIRECTORIES,
+				buildSourceFiles: ROM_BUILD_SOURCE_FILES,
 				debug,
 				romFilePath: BIOSRomPath,
 			});
@@ -573,8 +572,9 @@ async function main() {
 			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, respath, {
 				domain: 'cart',
 				extraLuaPaths: [...extraLuaPathSet, ...libraryLuaPathSet],
+				buildSourceDirectories: ROM_BUILD_SOURCE_DIRECTORIES,
 				buildSourceFiles: [
-					...GX_GENERATED_MODULE_BUILD_SOURCE_FILES,
+					...ROM_BUILD_SOURCE_FILES,
 					...scenarioTestSources.sourceFiles,
 				],
 				debug,

@@ -109,15 +109,16 @@ test('standalone product: Terminal, source creation, Save, reload and offline ed
 	const source = 'local value = 6 * 7\nreturn value\n';
 	await page.evaluate(text => navigator.clipboard.writeText(text), source);
 	await press('Control+a'); await press('Control+v'); await press('Control+s');
-	const waitForSource = (contents: string) => page.waitForFunction(contents => new Promise(resolve => {
+	const waitForSource = (path: string, contents: string) => page.waitForFunction(({ path, contents }) => new Promise(resolve => {
 		const request = indexedDB.open('bmsx-studio-workspace');
 		request.onsuccess = () => {
 			const database = request.result, transaction = database.transaction('records');
-			const record = transaction.objectStore('records').get('carts/nemesis_s/standalone_probe.lua');
+			const record = transaction.objectStore('records').get(path);
 			transaction.oncomplete = () => { resolve(record.result?.contents === contents); database.close(); };
 		};
-	}), contents);
-	await waitForSource(source); await screenshot('saved');
+	}), { path, contents });
+	const probePath = 'carts/nemesis_s/standalone_probe.lua';
+	await waitForSource(probePath, source); await screenshot('saved');
 	// Browser-local recovery must not become server-file writes when the same origin hosts services later.
 	assert.equal(await page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith('bmsx.workspace.records:'))), false);
 	await page.reload(); await boot(); await press('ControlRight+ShiftRight');
@@ -126,7 +127,7 @@ test('standalone product: Terminal, source creation, Save, reload and offline ed
 	await screenshot('restored');
 	await page.context().setOffline(true);
 	await press('Control+End'); await page.keyboard.type('-- offline edit\n', { delay: 25 }); await press('Control+s');
-	await waitForSource(source + '-- offline edit\n'); await screenshot('offline-save');
+	await waitForSource(probePath, source + '-- offline edit\n'); await screenshot('offline-save');
 	await page.mouse.click(288, 36, { delay: 100 }); await frame(); await screenshot('view-menu'); await press('Escape');
 	await press('Control+Shift+p'); await page.keyboard.type('Codex', { delay: 25 });
 	await screenshot('codex-disabled'); await press('Enter'); await press('Escape');
@@ -139,9 +140,39 @@ test('standalone product: Terminal, source creation, Save, reload and offline ed
 	await storageControl.send('Storage.overrideQuotaForOrigin', { origin: address, quotaSize: 1 });
 	await press('Control+End'); await page.keyboard.type('-- retain after quota failure\n', { delay: 25 }); await press('Control+s');
 	await page.waitForTimeout(700); await screenshot('quota-failed-save');
-	await waitForSource(source + '-- offline edit\n');
+	await waitForSource(probePath, source + '-- offline edit\n');
 	await storageControl.send('Storage.overrideQuotaForOrigin', { origin: address });
 	await press('Control+s');
-	await waitForSource(source + '-- offline edit\n-- retain after quota failure\n'); await screenshot('quota-retry');
+	await waitForSource(probePath, source + '-- offline edit\n-- retain after quota failure\n'); await screenshot('quota-retry');
+	// Both documents are unopened and have no browser file yet. Their base must
+	// come from the ROM, not a preseeded fixture, reconstructed YAML or HTTP read.
+	const documents = [
+		{ name: 'nemesis_s_stage.yaml', format: 'yaml' },
+		{ name: 'events.aem.yaml', format: 'aem' },
+	];
+	const edited = new Map<string, string>();
+	for (const { name, format } of documents) {
+		const path = `carts/nemesis_s/res/data/${name}`;
+		const authored = await readFile(path, 'utf8');
+		await press('Control+,'); await page.evaluate(text => navigator.clipboard.writeText(text), name); await press('Control+v'); await press('Enter');
+		await press('Control+a'); await press('Control+c');
+		assert.equal(await page.evaluate(() => navigator.clipboard.readText()), authored);
+		await press('Escape'); await press('Control+Home'); await screenshot(`${format}-packaged-source`);
+		const comment = '# Browser-owned edit\n';
+		await page.evaluate(text => navigator.clipboard.writeText(text), comment); await press('Control+v');
+		await press('Control+z'); await press('Control+a'); await press('Control+c');
+		assert.equal(await page.evaluate(() => navigator.clipboard.readText()), authored);
+		await press('Control+Shift+z'); await press('Control+s');
+		edited.set(name, comment + authored);
+		await waitForSource(path, edited.get(name)!);
+		await page.waitForTimeout(1000); await press('ArrowRight'); await screenshot(`${format}-offline-save`);
+	}
+	await page.context().setOffline(false); await page.reload(); await boot(); await press('ControlRight+ShiftRight');
+	for (const { name, format } of documents) {
+		await press('Control+,'); await page.evaluate(text => navigator.clipboard.writeText(text), name); await press('Control+v'); await press('Enter');
+		await press('Control+a'); await press('Control+c');
+		assert.equal(await page.evaluate(() => navigator.clipboard.readText()), edited.get(name));
+		await press('Escape'); await press('Control+Home'); await screenshot(`${format}-restored`);
+	}
 	assert.deepEqual(requests, []); assert.deepEqual(errors, []);
 });

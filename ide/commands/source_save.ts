@@ -26,6 +26,8 @@ export async function saveTextFileFromCommand(
 	const saved = `${title} saved${result.persistence.status === 'browser' ? ' in this browser' : ''}`;
 	if (result.application.status === 'failed') {
 		showEditorWarningBanner(`${saved}; runtime apply failed: ${extractErrorMessage(result.application.error)}`, 5.0);
+	} else if (result.application.status === 'not-applied') {
+		showEditorMessage(`${saved} (runtime inactive; apply pending)`, constants.COLOR_STATUS_WARNING, 4.0);
 	} else if (model.mode === 'yaml') {
 		showEditorMessage(`${saved} (asset rebuild required)`, constants.COLOR_STATUS_WARNING, 4.0);
 	} else if (model.mode === 'lua' && getTextFileRuntimeSourceStatus(sources, model) === 'pending') {

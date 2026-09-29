@@ -49,7 +49,7 @@ export function executeEditorSearchCommand(
 			openSymbolSearch(editor, luaTooling, 'workspace');
 			return;
 		case 'resourceSearch':
-			editor.quickInput.pick('GO TO FILE', 'Type a file name or path', () => new FileQuickPickProvider(buildResourceQuickPickItems(sources.activeResources)),
+			editor.quickInput.pick('GO TO FILE', 'Type a file name or path', () => new FileQuickPickProvider(buildResourceQuickPickItems(sources.resources)),
 				item => { void editor.navigation.openResource(item.resource); });
 			return;
 		case 'runtimeErrorFocus':

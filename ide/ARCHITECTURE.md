@@ -41,6 +41,17 @@ selected-stop admission is not yet a public Terminal context. See
 
 ## Resource diagnostics and document lifetime
 
+`RuntimeSourceState.resources` retains the complete loaded authoring catalog,
+not the currently executing domain's files. The file picker and resource tree
+consume it directly. CPU domain switches only select execution sources; catalog
+sorting occurs on resource admission/replacement, not on those switches.
+Resource identity stays `(domain, path)` across system and cartridge packages.
+Debug asset metadata retains original YAML/JSON/AEM text beside cooked payloads;
+the text-model resolver uses it only when the canonical workspace file is absent.
+Workspace read errors remain errors, and opening a document never writes a file
+or reconstructs source from cooked assets. See
+[`docs/studio_standalone.md`](../docs/studio_standalone.md).
+
 The workbench session owns `ResourceDiagnosticsService`, not code-editor inputs.
 It retains results for actual text-model identities and revisions. Lua queries
 use the shared incremental semantic projects, with one snapshot per affected
@@ -495,10 +506,15 @@ AEM's existing save/apply owner records its installed authored source and apply
 failure in `RuntimeSourceState.aemSourceApplications`. Those are tooling-only
 operation records, not a second asset store or serialized device data. Opening
 an AEM file does not establish that its workspace text produced the loaded
-cooked asset; before an actual apply its source status is untracked, not synced.
+cooked asset. Packaged authored metadata is the initial installed baseline;
+without that metadata or an application record the status remains untracked.
+A different saved workspace source is pending, not installed.
 AEM preparation builds and relocates before installation and resolves assets
-in the resource's domain, not the active view's package. A rejected source build
-records an outcome without blocking the installed execution; failures after
+in the resource's domain, not the active view's package. At runtime-task admission,
+an inactive resource domain produces `not-applied: inactive-domain` independently
+of the successful source Save; it neither installs media nor invokes guest globals.
+An explicit Save while the domain is active can request application. A rejected
+source build records an outcome without blocking the installed execution; failures after
 installation retain the ordinary operational error boundary. No acknowledgement
 is rolled back.
 Source-only Lua documents do not claim executable-code apply status.

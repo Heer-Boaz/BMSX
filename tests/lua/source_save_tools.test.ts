@@ -123,6 +123,7 @@ test('Save rejects unread, expired, read-only and cancelled authority before IO;
 
 test('project write failure and AEM build failure remain distinct textual wire outcomes', async t => {
 	const f = await fixture(t);
+	t.mock.method(f.runtime.machine.cpu, 'activeCartridgeSlot', () => 0);
 	let rejectWrite = false;
 	await openWorkspaceRecords({
 		persistence: 'workspace',

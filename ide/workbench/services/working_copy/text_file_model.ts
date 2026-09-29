@@ -55,8 +55,11 @@ export function resolveTextFileModel(
 			return models.resolve(resource, mode, async () => {
 				const root = runtimeSourceProjectRootPath(sources, resource.domain);
 				const source = await loadWorkspaceSourceFile(resolveWorkspacePath(resource.path, root));
-				if (source === null) throw new Error(`Source for '${resource.path}' is unavailable.`);
-				return source;
+				// A workspace file overlays the packaged authored base, just as for Lua.
+				// IO errors propagate; they never select another source authority.
+				if (source !== null) return source;
+				if (resource.source.sourcemeta !== undefined) return resource.source.sourcemeta.text;
+				throw new Error(`Source for '${resource.path}' is unavailable.`);
 			});
 		}
 	}

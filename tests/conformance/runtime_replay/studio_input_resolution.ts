@@ -34,7 +34,7 @@ export async function testStudioInputResolution(test: StudioFixture): Promise<vo
 	check(!first.workingCopy.dirty && test.cycles() === cycles,
 		'A07 admission: opening source did not edit a document or advance the paused machine');
 	closeTab(editor.editorPanes, first.id);
-	const aem = test.ide.sources.cartridgeSlots[0]!.dataResources.find(item => item.source.type === 'aem')!;
+	const aem = test.ide.sources.resources.find(item => item.domain === 0 && item.source.type === 'aem')!;
 	const pendingAem = editor.navigation.openResource(aem);
 	const opened = await editor.navigation.openResource(resource);
 	check(opened === editor.editorPanes.openGeneration && await pendingAem === undefined,

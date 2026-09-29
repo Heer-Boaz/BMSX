@@ -35,6 +35,7 @@ export type BuiltAemSourceRevision = {
 
 export type AemSourceApplyResult =
 	| { readonly status: 'applied' }
+	| { readonly status: 'not-applied'; readonly reason: 'inactive-domain' }
 	| { readonly status: 'failed'; readonly phase: 'build' | 'runtime'; readonly error: unknown };
 
 /** Apply one accepted source snapshot; rejected authoring never enters machine mutation. */
@@ -48,6 +49,13 @@ export async function applyAemSourceRevision(
 ): Promise<AemSourceApplyResult> {
 	let result: AemSourceApplyResult;
 	await runtimeTasks.schedule(() => {
+		// Authoring spans every installed ROM; reload_from_rom belongs to the
+		// currently executing domain. Do not install media or invoke another
+		// cartridge's globals while the BIOS (or a different cartridge) runs.
+		if (runtime.machine.cpu.activeCartridgeSlot() !== resource.domain) {
+			result = { status: 'not-applied', reason: 'inactive-domain' };
+			return;
+		}
 		let built: BuiltAemSourceRevision;
 		try {
 			built = buildAemSourceRevision(sources, luaTooling, runtime, resource, source);

@@ -116,11 +116,12 @@ export async function testCapturedSourceApply(test: StudioFixture): Promise<void
 
 export async function testAemSourceApplication(test: StudioFixture): Promise<void> {
 	const { ide, harness, tasks, until, press, title } = test;
-	const resource = ide.sources.cartridgeSlots[0]!.dataResources.find(item => item.source.type === 'aem')!;
+	const resource = ide.sources.resources.find(item => item.domain === 0 && item.source.type === 'aem')!;
 	await ide.editor.navigation.openResource(resource);
 	const model = harness.getActiveEditorDocument().model;
 	const status = () => getTextFileRuntimeSourceStatus(ide.sources, model);
-	check(model.mode === 'aem' && status() === 'untracked', 'W04: opening real AEM source does not invent an installed-source acknowledgement');
+	check(model.mode === 'aem' && model.buffer.getText() === resource.source.sourcemeta!.text && status() === 'applied',
+		'W04: packaged authored metadata identifies the initial installed AEM source');
 	const actor = title();
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n# W04 actual asset source application\n' }]);
 	const applied = model.buffer.getText();

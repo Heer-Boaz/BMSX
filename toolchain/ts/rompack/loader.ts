@@ -5,6 +5,7 @@ import type {
 	RomToolingPackage,
 	CartridgeIndex,
 	TextureMeta,
+	SourceMeta,
 } from './assets';
 import type { GLTFMaterial, GLTFModel } from './gltf';
 import type { Polygon, RectBounds } from '../../../machine/ts/common/rect';
@@ -125,6 +126,9 @@ async function loadRomAssetListFromHeader(
 					asset.audiometa = decodedMeta as AudioMeta;
 					break;
 				case 'data':
+				case 'aem':
+					asset.sourcemeta = decodedMeta as SourceMeta;
+					break;
 				case 'bin':
 					break;
 				case 'model':

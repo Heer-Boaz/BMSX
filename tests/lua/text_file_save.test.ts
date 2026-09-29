@@ -55,9 +55,10 @@ async function fixture(t: TestContext) {
 	let readbackFailure: Error | undefined;
 	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
 		{ backend: { async finishGxGpuReadbacks() { if (readbackFailure) throw readbackFailure; } } } as VideoPresenter);
-	// These tests reject AEM input before compilation. Any use of machine/tooling
-	// in a source-only save is an unwanted dependency and fails immediately.
-	const saves = new TextFileSaveService(models, clock, sources, {} as RuntimeLuaTooling, {} as Runtime, tasks);
+	// AEM tests admit a domain then reject input before compilation. Other source
+	// Saves must not depend on the machine or compiler.
+	const runtime = { machine: { cpu: { activeCartridgeSlot: () => sources.activeCartridgeSlot } } } as Runtime;
+	const saves = new TextFileSaveService(models, clock, sources, {} as RuntimeLuaTooling, runtime, tasks);
 	await openWorkspaceRecords(files);
 	t.after(async () => {
 		await saves.shutdown();
@@ -255,6 +256,23 @@ test('AEM build rejection reports saved source separately and does not poison th
 	assert.equal(model.dirty, false);
 	assert.equal(f.tasks.ready, true);
 	assert.equal(f.sources.aemSourceApplications.get('0\0res/cue.aem.yaml')!.failed, true);
+});
+
+test('inactive AEM saves source without attempting another domain\'s build or guest reload', async t => {
+	const f = await fixture(t);
+	f.sources.activeCartridgeSlot = -1;
+	const model = f.models.retain({ domain: 0, path: 'res/cue.aem.yaml', source: { resid: 'cue', type: 'aem' } }, 'aem', '{}');
+	setSource(model, '[');
+	const media = f.sources.currentBlua32Media;
+	const result = await f.saves.save(model).completion;
+	assert.equal(result.status, 'saved');
+	if (result.status !== 'saved') assert.fail();
+	assert.deepEqual(result.application, { status: 'not-applied', reason: 'inactive-domain' });
+	assert.equal(f.files.records.get(`${f.root}/${model.resource.path}`)!.contents, '[');
+	assert.equal(model.dirty, false);
+	assert.equal(f.sources.currentBlua32Media, media);
+	assert.equal(f.sources.aemSourceApplications.size, 0);
+	assert.equal(f.tasks.ready, true);
 });
 
 test('runtime synchronization failure cannot be reported as a failed source write or an applied asset', async t => {

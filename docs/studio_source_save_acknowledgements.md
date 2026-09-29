@@ -32,10 +32,15 @@ or scheduling a reconnect loop. Another mutation or explicit checkpoint can try
 again. Corrupt JSON or a missing referenced generation is an error: recovery
 records are not deleted, pruned or silently replaced with an older generation.
 
-Lua/YAML Save does not execute or install code. AEM performs its normal
-build/install and `reload_from_rom` only after canonical persistence succeeds;
-application failure is reported separately from source persistence. Authored
-bytes are never reconstructed from cooked assets.
+Lua/YAML Save does not execute or install code. After canonical persistence,
+AEM's serialized runtime task admits build/install and `reload_from_rom` only
+when the resource's domain is executing. An inactive domain returns
+`not-applied: inactive-domain`, without media mutation or invoking guest globals;
+the file is still saved. An explicit later Save can request application. Build
+and runtime failures are also reported separately from source persistence.
+Packaged authored metadata supplies the initial AEM installation baseline, not
+the workspace file; a saved edit can therefore remain pending after reload.
+Authored bytes are never reconstructed from cooked assets.
 
 The [standalone composition](studio_standalone.md) selects browser files before
 starting the workbench, not after a network error. Browser quota failure follows
