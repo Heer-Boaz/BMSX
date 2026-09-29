@@ -1,5 +1,5 @@
 // npx tsx --tsconfig tsconfig.base.json scripts/analysis/profile_lua_compilation.ts \
-//   workspace.json dist/bmsx-bios.debug.rom.blua32-imports cart
+//   workspace.json dist/system/bmsx-bios.debug.rom.blua32-imports cart
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';

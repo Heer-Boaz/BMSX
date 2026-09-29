@@ -59,8 +59,9 @@ export async function handleBuildRequest(jobs: StudioBuildJobs, request: Incomin
 			if (route.length === 2) result = artifact;
 			else {
 				const outputs = [...artifact.system.outputs, ...(artifact.cart?.outputs ?? [])];
-				const output = outputs.find(output => output.file === route[2]);
-				if (route.length !== 3 || output === undefined) throw new BuildRequestError(404, 'Artifact file not found');
+				const path = route.slice(2).join('/');
+				const output = outputs.find(output => output.file === path);
+				if (output === undefined) throw new BuildRequestError(404, 'Artifact file not found');
 				const file = join(jobs.artifacts.directory(id), output.file), metadata = await stat(file);
 				response.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': metadata.size,
 					'Cache-Control': 'private, max-age=31536000, immutable', ETag: `"${output.digest}"` });

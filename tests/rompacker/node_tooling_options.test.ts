@@ -20,7 +20,7 @@ test('node tooling resolves artifact-owned ROM paths and mode defaults', () => {
 		slot1Path: '',
 		frameIntervalMs: 20,
 		ttlMs: 60_000,
-		systemRomPath: path.resolve('dist/bmsx-bios.debug.rom'),
+		systemRomPath: path.resolve('dist/system/bmsx-bios.debug.rom'),
 		mode: {
 			kind: 'timeline',
 			path: path.resolve('tests/carts/demo.json'),

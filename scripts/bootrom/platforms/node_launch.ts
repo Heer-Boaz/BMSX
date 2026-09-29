@@ -135,6 +135,7 @@ export function resolveNodeSystemRomPath(
 	}
 	return path.join(
 		path.dirname(romPath),
+		'system',
 		debug ? 'bmsx-bios.debug.rom' : 'bmsx-bios.rom',
 	);
 }

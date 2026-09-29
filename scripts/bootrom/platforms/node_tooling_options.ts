@@ -202,6 +202,7 @@ export function parseNodeToolingOptions(
 		? path.resolve(systemRomPath)
 		: path.join(
 			path.dirname(resolvedRomPath),
+			'system',
 			debug ? 'bmsx-bios.debug.rom' : 'bmsx-bios.rom',
 		);
 	if (!ttlMs && mode.kind !== 'control') {

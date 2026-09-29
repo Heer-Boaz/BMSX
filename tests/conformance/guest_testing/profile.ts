@@ -11,7 +11,7 @@ import type { TestExecution } from '../../../ide/testing/execution';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 
 async function main(): Promise<void> {
-	const systemRom = await readFile('dist/bmsx-bios.debug.rom');
+	const systemRom = await readFile('dist/system/bmsx-bios.debug.rom');
 	const cartridge = await readFile('dist/emptycart.debug.rom');
 	const media = await loadRomToolingMedia(systemRom, [cartridge, null]);
 	const collection = new ScenarioTestCollection(createRuntimeSourceState(media.system, media.cartridgeSlots));

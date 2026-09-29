@@ -195,6 +195,7 @@ function renderBrowserPage(
 	title: string,
 	scriptFilename: string,
 	defaultRom: string,
+	systemRom: string,
 	configuration: string,
 ): string {
 	const imagePrefix = 'data:image/png;base64,';
@@ -204,6 +205,7 @@ function renderBrowserPage(
 		'#title': title,
 		'#browserhostjs': scriptFilename,
 		'@@BMSX_DEFAULT_ROM@@': defaultRom,
+		'@@BMSX_SYSTEM_ROM@@': systemRom,
 		'@@BMSX_LOGO@@': `${imagePrefix}${inputs.images['./rom/bmsx.png']}`,
 		'@@DPAD_D@@': `${imagePrefix}${inputs.images['./rom/d-pad-d.png']}`,
 		'@@DPAD_L@@': `${imagePrefix}${inputs.images['./rom/d-pad-l.png']}`,
@@ -235,12 +237,13 @@ export async function buildBrowserPlayerPackage(options: BrowserPackageOptions):
 		options.title,
 		javascriptProductFilename('browser-player', options.debug),
 		defaultRom,
+		`system/bmsx-bios${options.debug ? '.debug' : ''}.rom`,
 		'',
 	);
 	await writeFile('./dist/index.html', html);
 	// A host product supplies its own ready-to-package page; deployment never rebuilds the host.
 	await writeFile(`./dist/player${options.debug ? '.debug' : ''}.template.html`, renderBrowserPage(
-		inputs, options.title, javascriptProductFilename('browser-player', options.debug), '{{BMSX_CARTRIDGE}}', '',
+		inputs, options.title, javascriptProductFilename('browser-player', options.debug), '{{BMSX_CARTRIDGE}}', '{{BMSX_SYSTEM_ROM}}', '',
 	));
 	await copyFile('./rom/bmsx.png', './dist/bmsx_icon.png');
 	await writeBrowserManifest(options.title, options.shortName);
@@ -254,6 +257,7 @@ export async function buildBrowserStudioPackage(debug: boolean): Promise<void> {
 		'BMSX',
 		javascriptProductFilename('browser-studio', debug),
 		'',
+		`system/bmsx-bios${debug ? '.debug' : ''}.rom`,
 		STUDIO_CONFIGURATION_ELEMENT,
 	);
 	await Promise.all([

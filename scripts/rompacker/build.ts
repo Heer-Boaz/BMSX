@@ -20,6 +20,7 @@ export type PreparedUnit = {
 /** Capture both domains before compiling either. The cart links to this build's system, never dist sidecars. */
 export async function prepareMediaBuild(options: MediaBuildOptions, store: RomArtifactStore, stage: string, progress: BuildProgress): Promise<PreparedRomArtifact> {
 	progress('Capture inputs');
+	const systemDirectory = join(stage, 'system');
 	const toolchain = romToolchainIdentity();
 	const target = options.domain === 'cart' ? options.target : 'system';
 	const systemResources = options.domain === 'system' && options.respath !== undefined ? options.respath : biosResPath;
@@ -47,10 +48,10 @@ export async function prepareMediaBuild(options: MediaBuildOptions, store: RomAr
 	let systemUnit: RomBuildUnit;
 	if (cachedSystem !== undefined) systemUnit = cachedSystem.system;
 	else {
-		await mkdir(stage, { recursive: true });
 		const { compileSystem } = await import('./compile');
+		const outputs = await compileWithDiagnostics(system, () => compileSystem(system, systemDirectory, progress));
 		systemUnit = { key: systemKey, name: SYSTEM_ROM_NAME, recipe: system.recipe, inputs: system.inputs.identity,
-			outputs: await compileWithDiagnostics(system, () => compileSystem(system, stage, progress)) };
+			outputs: outputs.map(output => ({ file: `system/${output.file}`, digest: output.digest })) };
 	}
 	// Link identity includes the selected system's actual output bytes, not just its intended recipe.
 	const cartKey = cart === undefined ? undefined : romBuildKey({ name: target, recipe: cart.recipe,
@@ -59,14 +60,14 @@ export async function prepareMediaBuild(options: MediaBuildOptions, store: RomAr
 		const cached = await store.find(cartKey!);
 		if (cached !== undefined) { progress('Unchanged inputs and recipe'); return { artifact: cached, reused: true }; }
 	}
-	await mkdir(stage, { recursive: true });
 	if (cachedSystem !== undefined) {
+		await mkdir(systemDirectory, { recursive: true });
 		for (const output of systemUnit.outputs) await copyFile(join(store.directory(cachedSystem.id), output.file), join(stage, output.file));
 	}
 	let cartUnit: RomBuildUnit | undefined;
 	if (cart !== undefined) {
 		const { compileCart } = await import('./compile');
-		const imports = await readFile(join(stage, `${SYSTEM_ROM_NAME}${options.debug ? '.debug' : ''}.rom${BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX}`));
+		const imports = await readFile(join(systemDirectory, `${SYSTEM_ROM_NAME}${options.debug ? '.debug' : ''}.rom${BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX}`));
 		cartUnit = { key: cartKey!, name: target, recipe: cart.recipe, inputs: cart.inputs.identity,
 			outputs: await compileWithDiagnostics(cart, () => compileCart(cart, stage, target, imports, progress)) };
 	}

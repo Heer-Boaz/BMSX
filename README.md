@@ -173,7 +173,7 @@ Important:
 
 - `headless:forcebuildallrun` and `headless:game` take the cart folder name
 - `test:render-parity` force-builds and compares the render test carts through TS headless and the C++ libretro host
-- headless runs `dist/host_headless.debug.js` with `dist/bmsx-bios.debug.rom`; it does not dynamically load `dist/libbmsx.debug.js`
+- headless runs `dist/host_headless.debug.js` with `dist/system/bmsx-bios.debug.rom`; it does not dynamically load `dist/libbmsx.debug.js`
 - `headless:tooling` runs the separate `dist/host_headless_tooling.debug.js` validation product
 - scenario tests are always explicit; `headless:game` does not auto-load assert modules
 - the ordinary player never scans `tests/` or auto-loads `<cart>_demo.json`
@@ -220,7 +220,7 @@ Important:
 - `run:libretro-host:wsl:headless` now runs silently by default with `SDL_VIDEODRIVER=dummy` and `SDL_AUDIODRIVER=dummy`
 - the headless libretro-host path also passes `--no-audio`, so bare-metal smoke runs do not depend on an SDL or ALSA audio sink
 - the silent SDL path uses the software backend on purpose
-- the libretro core loads `dist/bmsx-bios.rom`, not `dist/bmsx-bios.debug.rom`
+- the libretro core loads `dist/system/bmsx-bios.rom`, not `dist/system/bmsx-bios.debug.rom`
 - the ROM argument must be the non-debug cart ROM, for example `./dist/pietious.rom`
 - the custom libretro host falls back to `tests/carts/<cart>/<cart>_demo.json` when no explicit timeline is provided
 - libretro timelines also run unpaced while the input timeline is active

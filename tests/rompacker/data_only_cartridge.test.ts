@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import type { RomArtifact } from '../../scripts/rompacker/artifacts';
 
 import { parseCartHeader, type CartRomHeader } from '../../machine/ts/rompack/format';
 import {
@@ -76,7 +78,7 @@ test('cartridge package bounds and executable metadata follow declared hardware'
 	), /requires an installed ROM device/);
 });
 
-for (const name of ['cartridge_data_conformance', 'system']) test(`cart production: ${name} stays a cartridge, independently of BIOS selection`, async () => {
+for (const name of ['cartridge_data_conformance', 'system', 'bmsx-bios']) test(`cart production: ${name} stays a cartridge, independently of BIOS selection`, async () => {
 	await rm(CLI_ROOT, { recursive: true, force: true });
 	try {
 		const result = spawnSync(process.execPath, [
@@ -92,6 +94,8 @@ for (const name of ['cartridge_data_conformance', 'system']) test(`cart producti
 			'carts/cartridge_data_conformance/res',
 			'--output-dir',
 			CLI_ROOT,
+			'--store-dir',
+			join(CLI_ROOT, 'store'),
 			'--force',
 		], {
 			cwd: process.cwd(),
@@ -105,6 +109,14 @@ for (const name of ['cartridge_data_conformance', 'system']) test(`cart producti
 		const packageImage = parseCartridgePackage(packageBytes);
 		assert.deepEqual(packageImage.manifest.hardware, MANIFEST.hardware);
 		assert.equal(packageImage.header.blua32ImageByteCount, 0);
+		const artifacts = join(CLI_ROOT, 'store', 'artifacts');
+		const [id] = await readdir(artifacts);
+		const artifact: RomArtifact = JSON.parse(await readFile(join(artifacts, id, 'artifact.json'), 'utf8'));
+		for (const unit of [artifact.system, artifact.cart!]) for (const output of unit.outputs) {
+			const published = await readFile(join(artifacts, id, output.file));
+			assert.equal(createHash('sha256').update(published).digest('hex'), output.digest);
+			assert.deepEqual(await readFile(join(CLI_ROOT, output.file)), published);
+		}
 	} finally {
 		await rm(CLI_ROOT, { recursive: true, force: true });
 	}
@@ -142,7 +154,7 @@ test('normal cart production discovers external program source and resolves its 
 		assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 		const cart = parseCartridgePackage(await readFile(join(outputRoot, 'external_source_probe.rom')));
 		assert.ok(cart.header.blua32ImageByteCount > 0);
-		assert.ok((await readFile(join(outputRoot, 'bmsx-bios.rom.blua32-imports'))).length > 0);
+		assert.ok((await readFile(join(outputRoot, 'system', 'bmsx-bios.rom.blua32-imports'))).length > 0);
 	} finally {
 		await rm(externalRoot, { recursive: true, force: true });
 	}

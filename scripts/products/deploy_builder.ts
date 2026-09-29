@@ -19,6 +19,8 @@ async function main(): Promise<void> {
 	const store = new RomArtifactStore(resolve(values['store-dir'])), artifact = await store.read(values.artifact);
 	if (artifact.cart === undefined) throw new Error('A browser package requires a cartridge artifact, not a system-only build.');
 	const host = resolve(values['host-dir']), output = resolve(values['output-dir']), debug = artifact.cart.recipe.debug;
+	const systemRom = artifact.system.outputs.find(output => output.file.endsWith('.rom'))!.file;
+	const cartRom = artifact.cart.outputs.find(output => output.file.endsWith('.rom'))!.file;
 	const stage = join(dirname(output), `.bmsx-package-${randomUUID()}`);
 	const script = javascriptProductFilename('browser-player', debug), template = `player${debug ? '.debug' : ''}.template.html`;
 	// Retain selected host bytes before writing anything to the output. All are part of the package receipt.
@@ -29,7 +31,8 @@ async function main(): Promise<void> {
 		const files: { file: string; digest: string }[] = [];
 		for (const selected of hostFiles) {
 			const file = selected.file === template ? 'index.html' : selected.file;
-			const bytes = selected.file === template ? Buffer.from(selected.bytes.toString('utf8').replace('{{BMSX_CARTRIDGE}}', `${artifact.cart.name}${debug ? '.debug' : ''}.rom`)) : selected.bytes;
+			const bytes = selected.file === template ? Buffer.from(selected.bytes.toString('utf8')
+				.replace('{{BMSX_CARTRIDGE}}', cartRom).replace('{{BMSX_SYSTEM_ROM}}', systemRom)) : selected.bytes;
 			await writeFile(join(stage, file), bytes);
 			files.push({ file, digest: createHash('sha256').update(bytes).digest('hex') });
 		}

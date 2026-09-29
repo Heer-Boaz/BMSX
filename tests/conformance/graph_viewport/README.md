@@ -125,7 +125,7 @@ not restart a drag:
 
 ```sh
 node tests/conformance/runtime_replay/browser.mjs --studio \
-  dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/studio.png
+  dist/system/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/studio.png
 ```
 
 ## Shared connection control

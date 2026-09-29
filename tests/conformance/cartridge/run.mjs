@@ -55,7 +55,7 @@ try {
 	]);
 
 	await Promise.all([
-		copyFile(join(root, 'dist', 'bmsx-bios.rom'), systemRom),
+		copyFile(join(root, 'dist', 'system', 'bmsx-bios.rom'), systemRom),
 		copyFile(join(root, 'dist', 'cartridge_data_conformance.rom'), dataRom),
 		copyFile(join(root, 'dist', 'cartridge_conformance.rom'), bootableCartRom),
 	]);

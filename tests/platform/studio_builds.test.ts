@@ -116,8 +116,10 @@ test('existing server exposes the same durable jobs to HTTP and MCP without a br
 	const snapshot = await (await fetch(`${address}/__bmsx__/builds`, { headers })).json();
 	assert.equal(snapshot.jobs.length, 1);
 	const artifact = await (await fetch(`${address}/__bmsx__/builds/artifacts/${job.artifact}`, { headers })).json();
-	const media = await fetch(`${address}/__bmsx__/builds/artifacts/${job.artifact}/${artifact.cart.outputs[0].file}`, { headers });
-	assert.equal(media.status, 200); assert.ok((await media.arrayBuffer()).byteLength > 0);
+	for (const unit of [artifact.system, artifact.cart]) for (const output of unit.outputs) {
+		const media = await fetch(`${address}/__bmsx__/builds/artifacts/${job.artifact}/${output.file}`, { headers });
+		assert.equal(media.status, 200); assert.ok((await media.arrayBuffer()).byteLength > 0);
+	}
 	const malformed = await fetch(`${address}/__bmsx__/builds/jobs/${randomUUID()}`, { method: 'PUT', headers, body: JSON.stringify({ ...request, target: '../outside' }) });
 	assert.equal(malformed.status, 400);
 });

@@ -104,7 +104,7 @@ for (const command of commands) {
 }
 const input = join(directory, 'input.txt'); writeFileSync(input, events.join('\n'));
 try {
-	const args = ['dist/bmsx-bios.debug.rom', 'dist/hot_resume_test.debug.rom', input];
+	const args = ['dist/system/bmsx-bios.debug.rom', 'dist/hot_resume_test.debug.rom', input];
 	const ts = run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json', 'tests/conformance/terminal/ts_runner.ts', ...args]);
 	const cpp = run('build-cpp-tests/bmsx_terminal_conformance_runner', args);
 	writeFileSync(join(directory, 'typescript.txt'), ts); writeFileSync(join(directory, 'cpp.txt'), cpp);

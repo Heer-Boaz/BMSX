@@ -45,7 +45,7 @@ fi
 
 LOCAL_CFG="$ROOT_DIR/scripts/retroarch.local.cfg"
 
-export LIBRETRO_SYSTEM_DIRECTORY="${LIBRETRO_SYSTEM_DIRECTORY:-$ROOT_DIR/dist}"
+export LIBRETRO_SYSTEM_DIRECTORY="${LIBRETRO_SYSTEM_DIRECTORY:-$ROOT_DIR/dist/system}"
 export GALLIUM_DRIVER=d3d12
 
 # Run retroarch directly using the local core, no copying needed!

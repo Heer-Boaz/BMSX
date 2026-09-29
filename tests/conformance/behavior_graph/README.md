@@ -48,11 +48,11 @@ Playwright/Chromium is a host test tool. If installed outside this checkout, set
 ```sh
 mkdir -p /tmp/bmsx-bt-graph
 node tests/conformance/runtime_replay/browser.mjs --studio-navigation nemesis_s \
-  dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/bmsx-bt-graph/nemesis.png
+  dist/system/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/bmsx-bt-graph/nemesis.png
 node tests/conformance/runtime_replay/browser.mjs --studio-navigation pietious \
-  dist/bmsx-bios.debug.rom dist/pietious.debug.rom /tmp/bmsx-bt-graph/pietious.png
+  dist/system/bmsx-bios.debug.rom dist/pietious.debug.rom /tmp/bmsx-bt-graph/pietious.png
 node tests/conformance/runtime_replay/browser.mjs --studio \
-  dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/bmsx-bt-graph/studio.png
+  dist/system/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/bmsx-bt-graph/studio.png
 ```
 
 Each command runs software, WebGL2 and WebGPU independently. Accelerated tests
@@ -149,7 +149,7 @@ npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts 
 npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
   tests/conformance/behavior_graph/profile_initial.ts
 node tests/conformance/runtime_replay/browser.mjs --studio-fsm-initial \
-  dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/bmsx-bt-graph/initial.png
+  dist/system/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/bmsx-bt-graph/initial.png
 ```
 
 `fsm_initial_fixture.ts` supplies independent authored Lua, not game FSM golden
@@ -532,7 +532,7 @@ and remaining command/fold/live-install gates are in
 npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
   tests/lua/state_machine_drag.test.ts tests/lua/workbench_source_edit_review.test.ts
 node tests/conformance/runtime_replay/browser.mjs --studio-fsm-retarget \
-  dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/bmsx-fsm-drag/review.png
+  dist/system/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/bmsx-fsm-drag/review.png
 npx tsx --tsconfig tsconfig.base.json tests/conformance/behavior_graph/profile_fsm_drag.ts
 ```
 
@@ -560,7 +560,7 @@ retained between unchanged frames. See `docs/state_machine_connection_edit_desig
 
 ```sh
 node tests/conformance/runtime_replay/browser.mjs --studio-bt-reparent \
-  dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/bt-live.png
+  dist/system/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/bt-live.png
 ```
 
 `studio_bt_reparent_live.ts` uses the existing renderer projects, isolated real

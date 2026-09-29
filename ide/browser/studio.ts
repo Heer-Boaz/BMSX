@@ -45,7 +45,6 @@ import { runWorkbenchHostFrame } from '../workbench/host_frame';
 declare const BMSX_BROWSER_DEBUG: boolean;
 
 async function startBrowserStudio(): Promise<void> {
-	const systemRomPath = `./bmsx-bios${BMSX_BROWSER_DEBUG ? '.debug' : ''}.rom`;
 	let browserFiles: IndexedDbWorkspaceRecordProvider | undefined;
 	try {
 		const configuration: StudioConfiguration = JSON.parse(document.getElementById('bmsx-studio-configuration')!.dataset.settings!);
@@ -58,7 +57,7 @@ async function startBrowserStudio(): Promise<void> {
 		};
 		const options = await prepareBrowserStartup(
 			BMSX_BROWSER_DEBUG,
-			systemRomPath,
+			document.body.dataset.systemRom,
 			document.body.dataset.defaultRom,
 		);
 		const runtime = initializeMachineRuntime(

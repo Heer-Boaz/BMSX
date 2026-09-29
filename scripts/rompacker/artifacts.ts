@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { RomBuildRecord } from './build_state';
 
 export type RomBuildUnit = RomBuildRecord & { key: string; name: string };
@@ -46,12 +46,12 @@ export class RomArtifactStore {
 	}
 
 	public async export(artifact: RomArtifact, outputDirectory: string): Promise<void> {
-		await mkdir(outputDirectory, { recursive: true });
 		for (const unit of artifact.cart === undefined ? [artifact.system] : [artifact.system, artifact.cart]) {
 			for (const output of unit.outputs) {
 				const destination = join(outputDirectory, output.file);
 				try { if (await this.digest(destination) === output.digest) continue; }
 				catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+				await mkdir(dirname(destination), { recursive: true });
 				const temporary = `${destination}.${randomUUID()}.tmp`;
 				await copyFile(join(this.directory(artifact.id), output.file), temporary);
 				await rename(temporary, destination);

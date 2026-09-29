@@ -26,7 +26,7 @@ fs.writeFileSync(timelinePath, `${JSON.stringify([
 
 const result = spawnSync(process.execPath, [
 	'dist/host_headless_tooling.debug.js',
-	'--system-rom', 'dist/bmsx-bios.debug.rom',
+	'--system-rom', 'dist/system/bmsx-bios.debug.rom',
 	'--input-timeline', timelinePath,
 	'system_print_test',
 ], { cwd: process.cwd(), encoding: 'utf8' });

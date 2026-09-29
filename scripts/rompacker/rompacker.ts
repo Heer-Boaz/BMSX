@@ -24,6 +24,7 @@ async function main(): Promise<void> {
 			+ '  --output-dir <dir>  Export the exact published files (default: dist)\n'
 			+ '  --store-dir <dir>   Immutable artifact store (default: .bmsx/builds)\n'
 			+ '  -respath <dir>      Resource root override\n'
+			+ 'BIOS files live under <output-dir>/system; cartridges live directly under <output-dir>.\n'
 			+ 'Cart builds resolve and build their BIOS dependency automatically. No server is required.\n');
 		return;
 	}

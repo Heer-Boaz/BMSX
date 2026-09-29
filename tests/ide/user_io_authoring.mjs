@@ -13,7 +13,7 @@ import { PNG } from 'pngjs';
 test('author, run and live-edit a cart through headless Studio user I/O', { timeout: 180000 }, async t => {
 	const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'bmsx-authoring-'));
 	const host = spawn(process.execPath, [
-		'dist/host_headless_tooling.debug.js', '--system-rom', 'dist/bmsx-bios.debug.rom',
+		'dist/host_headless_tooling.debug.js', '--system-rom', 'dist/system/bmsx-bios.debug.rom',
 		'--control', '0', '--studio-workspace', workspace, 'hot_resume_test',
 	], { stdio: ['ignore', 'pipe', 'pipe'] });
 	const logs = [];

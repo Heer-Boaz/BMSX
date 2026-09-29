@@ -864,8 +864,13 @@ Owners:
 - Immutable publication: `scripts/rompacker/artifacts.ts` commits a complete
   staged bundle by directory rename. Content-addressed artifacts and action
   references live in `.bmsx/builds`, separate from mutable exports such as `dist`.
+  Media production places BIOS files under `system/`, separate from cartridge
+  filenames at the bundle root. Receipts carry complete bundle-relative paths;
+  export, packaging and artifact HTTP reads consume those paths without flattening.
   `scripts/products/deploy_builder.ts` packages an explicitly selected existing
-  artifact and host product; it does not silently rebuild either.
+  artifact and host product; it does not silently rebuild either. Its page selects
+  the actual system/cartridge ROM paths from that artifact. Browser entrypoints
+  consume the page's media selection rather than reconstructing BIOS filenames.
 - Workspace jobs: `hosts/node/builds/jobs.ts` owns durable admission, the bounded
   queue, one child producer, cancellation and publication. `ledger.ts` owns SQLite
   receipts and exclusive server ownership. A caller-supplied request ID reconciles

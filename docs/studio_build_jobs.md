@@ -12,6 +12,10 @@ full-media replacement inside a running emulator or change embedded chat lifetim
 - `--store-dir` selects the artifact store (default `.bmsx/builds`);
   `--output-dir` selects the mutable export. `--mode bios` publishes a system-only
   bundle. `-respath` still supports authored resources outside the worktree.
+- BIOS ROMs and sidecars live under `<output-dir>/system/`; cartridge files remain
+  at `<output-dir>/<name>[.debug].rom`. The conventional layout is also used inside
+  newly published bundles. Browser product pages and Node launch defaults use it;
+  libretro launch scripts pass `<output-dir>/system` as the frontend system directory.
 - Build the browser host separately with `npm run build:product:browser-player -- --debug`.
   Then package an **existing** artifact and host:
   ```sh
@@ -287,8 +291,8 @@ Evidence: `/tmp/bmsx-critical-review/` (including `ui-review.json`, `ui-*.png`
 and the before/after reproduction logs). The page-lifecycle hints in that probe
 are synthetic, not physical phone suspension or a BFCache certification.
 
-**Open output-namespace defect:** system and cart compilation still share flat
-artifact filenames. A real cart build named `bmsx-bios` overwrote the staged BIOS
+**Original output-namespace defect (corrected below):** system and cart compilation
+shared flat artifact filenames. A real cart build named `bmsx-bios` overwrote the staged BIOS
 ROM, then reported successful publication/export. Reading the published bytes
 back disagreed with the BIOS digest in that artifact's receipt; its cart digest
 matched. This also makes reusing that bundle as a BIOS result unsafe. The review
@@ -301,12 +305,70 @@ node --import tsx scripts/rompacker/rompacker.ts --mode rompack \
   --output-dir /tmp/bmsx-output-collision-export
 ```
 
-This is not repaired by the `system` mode-dispatch fix. The corrective design must
-separate output identity by domain through staging, publication, export and media
-selection; its concrete layout needs review against the current consumers. A
-reserved-name exception, post-publication hash fallback or silently renamed cart
-would conceal the ownership defect. This broader layout change remains open,
-rather than being smuggled into the bounded connection/admission corrections.
+The `system` mode-dispatch fix did not repair this. It was left explicit rather
+than concealing it with a reserved-name exception, post-publication hash fallback
+or silently renamed cart. The follow-up below corrects the output ownership.
+
+### Output ownership follow-up (2026-09-29)
+
+The review compared [Bazel artifact root-relative paths](https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/actions/Artifact.java)
+and [Meson's target directories and output filenames](https://github.com/mesonbuild/meson/blob/master/mesonbuild/backend/backends.py).
+The adopted principle is qualified output identity, not either build framework.
+
+The media producer gives BIOS compilation a `system/` directory, then qualifies
+its unit-local output receipts once when constructing the complete media receipt.
+Cartridge names remain cartridge names, including `system` and `bmsx-bios`.
+Cached BIOS copies and linker imports use that same directory. Publication still
+commits the whole directory; export preserves the receipt paths and creates parent
+directories only for files needing a write. HTTP downloads match the full relative
+path against the artifact's declared outputs, never an arbitrary filesystem path.
+
+Packaging selects both ROM paths from the chosen artifact, writes them into the
+host page, and copies its files without renaming or rebuilding. Browser hosts read
+the declared system-ROM URL, just as they read the declared cartridge URL. This
+also allows an intact previously published flat bundle to be explicitly packaged
+with a new host: its own receipt supplies its paths, with no legacy-layout branch.
+Published artifacts and old export files are not rewritten or deleted. Fresh builds
+get new action keys through the existing toolchain-content identity. Previously
+corrupted artifacts are not repaired or silently substituted.
+
+Startup consumers, outside the per-frame runtime:
+
+| Consumer | System media selection | Native/runtime impact |
+| --- | --- | --- |
+| Browser player / Studio | Product page's `data-system-rom`; deployment uses the selected artifact path | No machine or guest changes |
+| Node player / tooling | Explicit `--system-rom`, otherwise `system/` beside the cart | Once at launch, no frame-path lookup |
+| C++ libretro | Existing frontend system directory plus `bmsx-bios.rom` | Core unchanged; launch scripts select `dist/system` |
+
+The original corruption check failed before the fix and now verifies the actual
+published/exported bytes against both BIOS and cart digests. Real CLI probes cover
+cold compilation, three unchanged builds, system-only reuse after a colliding-name
+cart, and a second cart reusing that BIOS. All three resulting artifacts matched
+their receipts; no-op export timestamps remained unchanged (0.20-0.21 seconds per
+warm CLI invocation on this machine, not a cross-machine performance guarantee).
+The colliding-name executable cart boots in Node using the default BIOS path and
+in the freshly built C++/libretro core using the explicit frontend system directory.
+This is media-loading evidence, not a new full runtime-parity claim.
+
+Both a new qualified bundle and an intact earlier flat bundle were packaged with
+the newly built browser host, checked against their output digests, then run on an
+assets-only HTTP server. The browser fetched the exact distinct system/cart paths
+declared in each page, reached the running cart, and made no Studio API requests.
+The server-backed Studio build/reconnect workflow was driven through its actual
+keyboard UI and screenshots inspected in light/dark themes. Standalone Terminal
+evaluation, Save, real page reload and offline editing also passed, without a server.
+Evidence: `/tmp/bmsx-review-output/`, including the initial failing corruption
+check, CLI/cache measurements, Node/native boot logs, UI captures and package
+receipts/screenshots under `run-1tYZja/`.
+
+Follow-up checks: ROM packer 188/188, connection/build observation 8/8, entry 6/6
+and standalone browser 2/2; IDE/Node typechecks and strict architecture audit pass.
+Browser player/Studio debug and release, Node player/tooling debug and libretro
+release products were built. No C++ machine changes, second build service, runtime
+path fallback or cart-name restriction was introduced.
+The broader scripts typecheck was also rerun: its sole error remains the existing
+unused `createRuntimeSourceState` import in `node_tooling_entry.ts:72`, not a new
+error in the changed producer or packaging code.
 
 ### No-op cost
 

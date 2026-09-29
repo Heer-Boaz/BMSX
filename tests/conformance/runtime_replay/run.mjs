@@ -17,7 +17,7 @@ run('npm', ['run', 'build:toolchain:bios', '--', '--debug', '--force']);
 run('npm', ['run', 'build:toolchain:cart', '--', cart, '--debug', '--force']);
 run('cmake', ['-S', 'machine/cpp', '-B', 'build-cpp-tests', '-G', 'Ninja', '-DBMSX_BUILD_TESTS=ON', '-DCMAKE_BUILD_TYPE=Release']);
 run('cmake', ['--build', 'build-cpp-tests', '--target', 'bmsx_runtime_replay_conformance_runner', 'bmsx_host_rewind_conformance_runner', 'bmsx_libretro_rewind_conformance_runner', '--parallel', '4']);
-const media = ['dist/bmsx-bios.debug.rom', `dist/${cart}.debug.rom`];
+const media = ['dist/system/bmsx-bios.debug.rom', `dist/${cart}.debug.rom`];
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-runtime-replay-'));
 try {
 	run('npx', ['tsx', 'tests/conformance/runtime_replay/preload_cartridge.ts', directory, media[0]]);

@@ -21,7 +21,7 @@ for (const scenario of [
 		const target = path.join(workspace, relative);
 		await fs.mkdir(path.dirname(target), { recursive: true });
 		await fs.writeFile(target, source);
-		const host = spawn(process.execPath, ['dist/host_headless_tooling.debug.js', '--system-rom', 'dist/bmsx-bios.debug.rom',
+		const host = spawn(process.execPath, ['dist/host_headless_tooling.debug.js', '--system-rom', 'dist/system/bmsx-bios.debug.rom',
 			'--control', '0', '--studio-workspace', workspace, scenario.cart], { stdio: ['ignore', 'pipe', 'pipe'] });
 		const closed = once(host, 'close');
 		const logs = [];

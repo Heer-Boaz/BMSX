@@ -15,6 +15,7 @@ export type RomBuildRecipe = {
 	projectRoot: string;
 	toolchain: string;
 };
+/** file is relative to the receipt's output root, not necessarily a basename. */
 export type RomBuildOutput = { file: string; digest: string };
 export type RomBuildRecord = { recipe: RomBuildRecipe; inputs: string; outputs: readonly RomBuildOutput[] };
 

@@ -27,7 +27,7 @@ export async function createAssistantStudioFixture(t: TestContext, evidenceName:
 	await build({ entryPoints: ['tests/conformance/runtime_replay/studio_assistant.ts'], bundle: true, platform: 'browser', format: 'esm', target: 'es2020',
 		outfile: join(root, 'test.js'), tsconfig: 'tsconfig.base.json', loader: { '.glsl': 'text', '.wgsl': 'text', '.png': 'dataurl' } });
 	await writeFile(join(root, 'index.html'), '<!doctype html><link rel="icon" href="data:,"><style>body{margin:0;background:#000}canvas{image-rendering:pixelated}</style><canvas width="256" height="212"></canvas>');
-	await copyFile('dist/bmsx-bios.debug.rom', join(root, 'bios.rom')); await copyFile('dist/nemesis_s.debug.rom', join(root, 'cart.rom'));
+	await copyFile('dist/system/bmsx-bios.debug.rom', join(root, 'bios.rom')); await copyFile('dist/nemesis_s.debug.rom', join(root, 'cart.rom'));
 	await copyFile('dist/graph-layout.worker.js', join(root, 'graph-layout.worker.js'));
 	for (const path of ['carts/nemesis_s', 'cartlib', 'machine/bios', 'testlib', 'tests/carts/nemesis_s']) await cp(path, join(root, path), { recursive: true,
 		filter: async path => (await stat(path)).isDirectory() || /\.(lua|yaml|yml)$/.test(path) });
