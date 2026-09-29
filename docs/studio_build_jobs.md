@@ -403,20 +403,44 @@ Actual validation, using existing runners:
 | Native frontend checks | Libretro environment, save-state envelope and host UI input: 3/3 |
 | `build:platform:libretro-snesmini` | Fresh ARM core, target-root ABI audit and QEMU smoke: 16/16 video frames; actual cart boot; all four exported input hashes and both artifact hashes verified |
 
-**Open host-layer finding:** `audit:core-parity` still fails: TS
-`render/host_overlay/bitmap.ts` is unclassified, and its `Bitmap` command extends
-`Host2DKind`/`Host2DRef` without a C++ counterpart. Its only current production
-producer is Studio's image preview; native menus and firmware Terminal do not
-submit it. This is a host command-surface/audit-scope discrepancy, not a measured
-guest-machine divergence. It was neither hidden by an audit exclusion nor filled
-with unused native texture-lifetime machinery. Deciding whether arbitrary host
-bitmaps are a shared rendering capability is a separate owner-boundary change.
+**Host-layer finding (resolved below):** `audit:core-parity` reported unclassified
+TS `render/host_overlay/bitmap.ts` and differing `Host2DKind`/`Host2DRef` members.
+The bitmap's only current production producer is Studio's image preview; native
+menus and firmware Terminal do not submit it. This was a host command-surface /
+audit-scope discrepancy, not a measured guest-machine divergence.
 
 Evidence: `/tmp/bmsx-native-parity-20260929/`, including the old/new ARM
 system-directory reproductions and final build/ABI logs. These checks do not
 certify every opcode, audible device output, browser WebGL/WebGPU presentation,
 or physical SNES Mini hardware. The ARM check is a boot smoke, not an ARM
 full-state parity comparison. No new tests or server dependencies were added.
+
+### Host presentation audit scope (2026-09-29)
+
+The follow-up traced bitmap producers, retained command queues, renderer dispatch
+and texture lifetime in both hosts. Neither host serializes its `Host2DKind` or
+`Host2DRef`: these are process-local draw dispatch, not emulated GPU commands.
+The architecture now distinguishes that product-specific command vocabulary from
+shared rendering data and machine wire formats. The manifest classifies the TS
+bitmap owner explicitly as host code and no longer demands identical complete
+host dispatch enums/unions. The generic public-symbol comparator is unchanged;
+there is no special case that tolerates a missing `Bitmap` member.
+
+References checked: [DuckStation's ImGui draw-list consumer](https://github.com/stenzek/duckstation/blob/master/src/util/imgui_manager.cpp)
+and [MAME's host render primitives](https://github.com/mamedev/mame/blob/master/src/emu/render.h).
+Their process-local draw commands and texture references inform this ownership
+decision, not a requirement to adopt their renderer APIs. Shared submission
+geometry, colors, clipping, transforms, atlas data, GPU words and save-state
+checks remain in place. No runtime code, native bitmap implementation or new
+abstraction was added.
+
+Validation: `audit:core-parity` passes with the same 170 core-classified TS files;
+the strict architecture audit reports zero issues and the existing qualified
+method-parity regression passes. An isolated copy also passes unchanged, then
+rejects each of six independent mutations: GP1 opcode, GPU register table word,
+BLua32 opcode value, shared rectangle field, native save-state property and a
+new unclassified machine owner. Evidence: `/tmp/bmsx-parity-audit/` (before/after
+logs and `probe-results.json`). These are audit checks, not new runtime evidence.
 
 ### No-op cost
 

@@ -798,6 +798,20 @@ Rules:
   prove semantic parity; it only proves the mirrored surface is still accounted
   for.
 
+Host drawing dispatch is not a machine or cross-host wire format.
+`render/host_overlay/commands.*` selects process-local presentation operations;
+`Host2DRef` retains TS object references or C++ pointers, not serialized guest
+values. The complete `Host2DKind` enum and reference union therefore need not
+have identical members across products. In particular, Studio image previews
+own TS `HostBitmap` pixels and their backend texture lifetime; no native UI
+currently submits them. This does not require an unused C++ implementation or
+an exception for one enum member in the public-symbol comparator.
+
+Shared rendering data such as packed colors, submission geometry, clipping,
+transforms and atlas descriptors keep their existing mirrored checks. Guest GPU
+command words and machine save-state schemas remain strict cross-runtime
+contracts. Host presentation differences must not exempt those owners.
+
 ## ROM and BLua32 executable images
 
 ROM data is CPU-visible source material.

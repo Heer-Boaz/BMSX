@@ -108,7 +108,12 @@
 		{
 			"pattern": "machine/ts/render/host_overlay/commands.ts",
 			"category": "host",
-			"reason": "host_overlay_retained_command_stream"
+			"reason": "process_local_host_draw_dispatch_not_a_cross_runtime_wire_contract"
+		},
+		{
+			"pattern": "machine/ts/render/host_overlay/bitmap.ts",
+			"category": "host",
+			"reason": "ts_view_owned_bitmap_and_backend_texture_lifetime"
 		},
 		{
 			"pattern": "machine/ts/render/host_overlay/headless/**",
@@ -1509,12 +1514,6 @@
 			"ts": "machine/ts/render/shared/layers.ts",
 			"cpp_headers": [
 				"machine/cpp/render/shared/layers.h"
-			]
-		},
-		{
-			"ts": "machine/ts/render/host_overlay/commands.ts",
-			"cpp_headers": [
-				"machine/cpp/render/host_overlay/commands.h"
 			]
 		},
 		{
