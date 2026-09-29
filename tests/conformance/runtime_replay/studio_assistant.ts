@@ -1,4 +1,5 @@
 export { startAssistantImageTest } from './studio_assistant_images';
+export { startClipboardTest } from './studio_clipboard';
 export { runAssistantTestDebugger } from './studio_assistant_test_debugger';
 export { runAssistantBehavior } from './studio_assistant_behavior';
 export { runAssistantActors } from './studio_assistant_actors';
@@ -37,9 +38,9 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	await reachNemesisTitle(test);
 	harness.openLuaSource('cart.lua'); await frame();
 	const main = harness.getActiveEditorDocument().model, mainTab = getActiveTab();
-	await press('ControlLeft', 'Home'); test.clipboard.text = '-- UNSAVED ASSISTANT FIXTURE\n'; await press('ControlLeft', 'KeyV');
+	await press('ControlLeft', 'Home'); await test.clipboard.writeText('-- UNSAVED ASSISTANT FIXTURE\n'); await press('ControlLeft', 'KeyV');
 	await press('ArrowDown'); // Keep module<entry> before the first executable statement.
-	test.clipboard.text = 'local studio_diagnostic_probe = missing_from_assistant_context\nstruct studio_type_probe\n\tvalue: word\nend\nlocal invalid_type_value = studio_type_probe\n'; await press('ControlLeft', 'KeyV');
+	await test.clipboard.writeText('local studio_diagnostic_probe = missing_from_assistant_context\nstruct studio_type_probe\n\tvalue: word\nend\nlocal invalid_type_value = studio_type_probe\n'); await press('ControlLeft', 'KeyV');
 	const before = main.buffer.getText(), saved = main.lastSavedSource, media = ide.sources.currentBlua32Media;
 	await test.runPaletteCommand('View: Codex Assistant');
 	const view = getActiveTab();
@@ -52,8 +53,8 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 		'assistant: ordinary workbench pause holds the guest and audio without a requested pause');
 	await capture('disconnected');
 	await test.click(view.composerBounds);
-	test.clipboard.text = 'Read the unsaved Lua and authored YAML.'; await press('ControlLeft', 'KeyV');
-	await press('Enter'); test.clipboard.text = 'Propose comments for review; do not save.'; await press('ControlLeft', 'KeyV');
+	await test.clipboard.writeText('Read the unsaved Lua and authored YAML.'); await press('ControlLeft', 'KeyV');
+	await press('Enter'); await test.clipboard.writeText('Propose comments for review; do not save.'); await press('ControlLeft', 'KeyV');
 	check(view.draft.lines.length === 2 && conversation.entries.length === 0, 'Enter is a newline, not submission');
 	await press('ControlLeft', 'KeyZ'); check(view.draft.text.endsWith('\n'), 'composer Undo uses field history');
 	await press('ControlLeft', 'KeyY');
@@ -90,8 +91,7 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	// The composer click cleared message selection; navigate from the first entry.
 	for (let index = 0; index <= reply.index; index++) await press('ArrowDown');
 	await press('ControlLeft', 'KeyC');
-	check(view.selectedEntry === reply.index && test.clipboard.text === reply.text.getText(), 'transcript keyboard selects and copies an ordinary message');
-	check(await navigator.clipboard.readText() === reply.text.getText(), 'transcript Copy reaches the authorized browser clipboard');
+	check(view.selectedEntry === reply.index && (await test.clipboard.readText()) === reply.text.getText(), 'transcript keyboard selects and copies an ordinary message');
 	await press('ArrowUp');
 	await test.clickTab(mainTab.id); await test.clickTab(view.id);
 	check(conversation.state === 'ready' && proposal.state === 'pending', 'switching panes does not retire conversation/review');
@@ -112,14 +112,14 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	check(view.transcript.rows.some(row => row.text === 'REVIEW: APPLIED'), 'Apply settles the transcript heading even while its pane was detached');
 	await capture('applied');
 	await test.click(view.composerBounds);
-	test.clipboard.text = 'Wait so I can stop the response.'; await press('ControlLeft', 'KeyV');
+	await test.clipboard.writeText('Wait so I can stop the response.'); await press('ControlLeft', 'KeyV');
 	await press('ControlLeft', 'Enter'); await waitForModel(); await frame();
 	check(conversation.state === 'running', 'second real model stream is still waiting');
 	await test.click(view.turnActions.items.find(item => item.command === 'assistant.stop')!.bounds);
 	await until(() => conversation.state === 'ready', 'assistant: Stop retires the actual provider wait');
 	check(cycles() === position && test.observations.suspended, 'assistant: stopping Codex does not resume the game');
 	await test.click(view.composerBounds);
-	test.clipboard.text = 'Offer a new review so I can discard it.'; await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'Enter');
+	await test.clipboard.writeText('Offer a new review so I can discard it.'); await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'Enter');
 	await until(() => conversation.state === 'ready' && conversation.entries.filter(entry => entry.kind === 'proposal').length === 2, 'assistant: new prompt has fresh source rights');
 	const discarded = conversation.entries.filter(entry => entry.kind === 'proposal')[1].proposal!;
 	await test.click(view.turnActions.items.find(item => item.command === 'assistant.review')!.bounds);
@@ -130,11 +130,11 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	check(view.transcript.rows.some(row => row.text === 'REVIEW: DISCARDED'), 'Discard is visible in the retained conversation');
 	await capture('discarded');
 	await test.click(view.composerBounds);
-	test.clipboard.text = 'Offer a review before I edit the source myself.'; await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'Enter');
+	await test.clipboard.writeText('Offer a review before I edit the source myself.'); await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'Enter');
 	await until(() => conversation.state === 'ready' && conversation.entries.filter(entry => entry.kind === 'proposal').length === 3, 'assistant: user source edit will invalidate a pending review');
 	const stale = conversation.entries.filter(entry => entry.kind === 'proposal')[2].proposal!;
 	await test.clickTab(mainTab.id); await press('ControlLeft', 'Home');
-	test.clipboard.text = '-- Author correction\n'; await press('ControlLeft', 'KeyV');
+	await test.clipboard.writeText('-- Author correction\n'); await press('ControlLeft', 'KeyV');
 	const corrected = main.buffer.getText();
 	await test.clickTab(view.id);
 	check(stale.state === 'stale' && view.transcript.rows.some(row => row.text === 'REVIEW: STALE'), 'source invalidation settles the transcript without a network event');
@@ -146,7 +146,7 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	await test.clickTab(mainTab.id); await press('ControlLeft', 'KeyZ');
 	check(main.buffer.getText() === before && stale.state === 'stale', 'source Undo cannot rearm retired edit rights');
 	await test.clickTab(view.id); await test.click(view.composerBounds);
-	test.clipboard.text = 'Offer one last review so I can close it.'; await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'Enter');
+	await test.clipboard.writeText('Offer one last review so I can close it.'); await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'Enter');
 	await until(() => conversation.state === 'ready' && conversation.entries.filter(entry => entry.kind === 'proposal').length === 4, 'assistant: final pending review before disconnect');
 	const pending = conversation.entries.filter(entry => entry.kind === 'proposal')[3].proposal!;
 	check(pending.state === 'pending', 'new review stays pending until user action');

@@ -32,7 +32,7 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 		check(editor.active && editor.control.field.focusTarget.hasFocus, 'effect: held Edit opens one real focused cell');
 	};
 	const paste = async (text: string) => {
-		await press('ControlLeft', 'KeyA'); clipboard.text = text; await press('ControlLeft', 'KeyV');
+		await press('ControlLeft', 'KeyA'); await clipboard.writeText(text); await press('ControlLeft', 'KeyV');
 	};
 	await select('period_ms');
 	let version = model.version;

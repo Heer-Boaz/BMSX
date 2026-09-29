@@ -54,7 +54,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 		'A03: Go to Definition resolves the canonical Lua constant');
 	check(model.version === version && model.dirty === dirty, 'A03: the whole forward navigation leaves text/dirty/version untouched');
 	const prefix = '-- 🐉 navigation prefix\n';
-	await press('ControlLeft', 'Home'); test.clipboard.text = prefix; await press('ControlLeft', 'KeyV');
+	await press('ControlLeft', 'Home'); await test.clipboard.writeText(prefix); await press('ControlLeft', 'KeyV');
 	const editedVersion = model.version;
 	await press('AltLeft', 'ArrowLeft');
 	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.view.cursorRow === source.start.line

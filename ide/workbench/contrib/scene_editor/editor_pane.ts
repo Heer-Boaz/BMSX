@@ -5,7 +5,6 @@ import { SceneEditorNavigationSelection } from './navigation_selection';
 import { PointerButton } from '../../../input/pointer/buttons';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { Clipboard } from '../../../../hosts/common/clipboard';
 import type { PointerSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
 import type { RuntimeSourceState } from '../../../runtime/sources';
@@ -51,18 +50,17 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		private readonly controller: SceneEditorController,
 		private readonly commands: IdeCommandController,
 		private readonly sources: RuntimeSourceState,
-		clipboard: Clipboard,
 	) {
 		super(resourcePanel);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		this.details = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
 		this.details.focusTarget.commandContext = this.focusTarget;
-		this.controls = POSITION_AXES.map((_axis, index) => new ValueInput(this.focusTarget, clipboard, INTEGER_INPUT_FORMAT, value => {
+		this.controls = POSITION_AXES.map((_axis, index) => new ValueInput(this.focusTarget, INTEGER_INPUT_FORMAT, value => {
 			const property = this.input.properties[index];
 			this.input.workingCopy.pushEditOperations(createLuaTableFieldIntegerEdits(this.input.workingCopy.buffer, this.input.document.analysis.chunk.locations, property.field!, value)!);
 		}, () => this.update()));
 		this.unbindFieldFocus = this.controls.map((control, index) => control.field.focusTarget.onDidFocus(() => this.revealProperty(index)));
-		this.options = new SceneOptionEditor(this.focusTarget, clipboard, () => this.update(), property => this.revealOption(property));
+		this.options = new SceneOptionEditor(this.focusTarget, () => this.update(), property => this.revealOption(property));
 		this.focusTarget.registerCommand('undo', {
 			isEnabled: () => !this.input.workingCopy.readOnly && this.input.workingCopy.canUndo,
 			run: () => { executeTextHistoryCommand(this.input.workingCopy, 'undo'); },

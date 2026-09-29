@@ -1,4 +1,4 @@
-import { pasteText } from '../../../editor/editing/text_editing_and_selection';
+import { getClipboardText, cutClipboardText, pasteText } from '../../../editor/editing/text_editing_and_selection';
 import { runtimeErrorOverlayPointer } from '../../../editor/contrib/runtime_error/pointer';
 import { pointerHover } from '../../../input/pointer/hover';
 import { codeAreaHover } from '../../../input/pointer/code/feedback';
@@ -18,7 +18,7 @@ import { renderCodeArea } from '../../../editor/render/code_area/area';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText } from '../../../editor/common/text/layout';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
-import { handleEditorClipboardAndCommandBindings, handleCodeFormattingKeybinding, handleSearchNavigationKeybinding } from '../../../input/keyboard/edit_bindings';
+import { handleEditorEditingBindings, handleCodeFormattingKeybinding, handleSearchNavigationKeybinding } from '../../../input/keyboard/edit_bindings';
 import { handleEditorPromptBindings } from '../../input/keyboard/prompt_bindings';
 import { renderInlineWidgets } from '../../../quick_input/inline_widget';
 import { handleQuickInputPointer } from '../../../input/quick_input/pointer/dispatch';
@@ -59,9 +59,14 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	}
 	private unsubscribeContentChange: () => void;
 	private readonly unbindKeyboard = activeCodeEditor.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
-	private readonly unbindPaste = activeCodeEditor.focusTarget.bindPaste(contents => {
-		if (contents.text.length > 0) pasteText(contents.text);
-		else if (contents.images.length > 0) showEditorMessage('Source files accept text, not images.', constants.COLOR_STATUS_WARNING, 4);
+	private readonly unbindClipboard = activeCodeEditor.focusTarget.bindClipboard({
+		get readOnly() { return activeCodeEditor.model.readOnly; },
+		copy: getClipboardText,
+		cut: cutClipboardText,
+		paste: contents => {
+			if (contents.text.length > 0) pasteText(contents.text);
+			else if (contents.images.length > 0) showEditorMessage('Source files accept text, not images.', constants.COLOR_STATUS_WARNING, 4);
+		},
 	});
 	private readonly unbindBlur = activeCodeEditor.focusTarget.onDidBlur(() => activeCodeEditor.model.breakUndoSequence());
 	public constructor(
@@ -93,7 +98,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	}
 
 	public dispose(): void {
-		this.unbindKeyboard(); this.unbindPaste();
+		this.unbindKeyboard(); this.unbindClipboard();
 		this.unbindBlur();
 	}
 
@@ -170,7 +175,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		if (handleSearchNavigationKeybinding(playerInput)) {
 			return;
 		}
-		if (handleEditorClipboardAndCommandBindings(playerInput, this.clipboard)) {
+		if (handleEditorEditingBindings(playerInput)) {
 			return;
 		}
 		if (this.editor.completion.handleKeybindings(playerInput)) {

@@ -41,7 +41,7 @@ export async function exerciseLongAssistantHistory(test: StudioFixture, view: As
 		'stress: resizing preserves the message being read');
 	await capture('history-5000-resized');
 	await test.click(view.composerBounds);
-	test.clipboard.text = '**Still editable** with @cart';
+	await test.clipboard.writeText('**Still editable** with @cart');
 	const editAt = performance.now(); await test.press('ControlLeft', 'KeyV'); const editMs = performance.now() - editAt;
 	await capture('history-5000-reference');
 	// Click the bottom visible suggestion, leaving text focus in the composer.

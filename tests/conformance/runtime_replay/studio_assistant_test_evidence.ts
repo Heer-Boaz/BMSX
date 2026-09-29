@@ -45,7 +45,7 @@ export async function runAssistantTestEvidence(kind: StudioRendererKind, canvas:
 	await runPaletteCommand('View: Codex Assistant');
 	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant pane required');
 	const conversation = ide.editor.assistant;
-	await test.click(view.composerBounds); test.clipboard.text = 'Read the recorded test results. They predate my source edit; do not run or change anything.';
+	await test.click(view.composerBounds); await test.clipboard.writeText('Read the recorded test results. They predate my source edit; do not run or change anything.');
 	await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'Enter');
 	await until(() => conversation.state === 'ready' && conversation.entries.some(entry => entry.kind === 'assistant'), 'test evidence: real tool round trip');
 	check(ide.scenarioRuns.results.runs.length === 1 && !ide.scenarioRuns.active && run.state === 'failed', 'reads cannot manufacture a rerun or rewrite its outcome');

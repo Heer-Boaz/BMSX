@@ -3,11 +3,9 @@ import { isKeyJustPressed } from '../../../../input/keyboard/key_input';
 import type { RenameController } from './controller';
 import type { CrossFileRenameManager } from './operations';
 import type { PlayerInput } from '../../../../../hosts/common/input/player';
-import type { Clipboard } from '../../../../../hosts/common/clipboard';
 
 export function handleRenameControllerInput(
 	playerInput: PlayerInput,
-	clipboard: Clipboard,
 	controller: RenameController,
 	crossFileRename: CrossFileRenameManager,
 ): void {
@@ -26,5 +24,5 @@ export function handleRenameControllerInput(
 		controller.commit(crossFileRename);
 		return;
 	}
-	controller.applyFieldEditing(playerInput, clipboard);
+	controller.applyFieldEditing(playerInput);
 }

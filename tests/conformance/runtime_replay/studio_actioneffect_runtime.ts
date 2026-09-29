@@ -41,7 +41,7 @@ export async function openRuntimeEffectInspector(test: StudioFixture, component:
 	const model = editorTextModelService.get({ domain: 0, path: 'cart.lua' })!, version = model.version;
 	await openRuntimeEffectPicker(test);
 	const picker = ide.editor.quickInput;
-	test.clipboard.text = `inspection.${component}`;
+	await test.clipboard.writeText(`inspection.${component}`);
 	await press('ControlLeft', 'KeyV');
 	check(picker.model.list.rows.length === 1,
 		'runtime effect: same effect id on different components remains selectable');

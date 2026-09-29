@@ -2,12 +2,11 @@ import { activeCodeEditor } from '../../editor/ui/code_editor_state';
 import { jumpToNextMatch, jumpToPreviousMatch } from '../../workbench/contrib/code_editor/find/search';
 import { notifyReadOnlyEdit } from '../../editor/ui/view/view';
 import { toggleLineComments } from '../../editor/editing/line_comments';
-import { applyDocumentFormatting, copySelectionToClipboard, cutLineToClipboard, cutSelectionToClipboard, pasteText } from '../../editor/editing/text_editing_and_selection';
+import { applyDocumentFormatting } from '../../editor/editing/text_editing_and_selection';
 import * as TextEditing from '../../editor/editing/text_editing_and_selection';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 import { editorSearchState } from '../../workbench/contrib/code_editor/find/widget_state';
 import type { PlayerInput } from '../../../hosts/common/input/player';
-import type { Clipboard } from '../../../hosts/common/clipboard';
 
 export function handleSearchNavigationKeybinding(playerInput: PlayerInput): boolean {
 	if (editorSearchState.query.length === 0 || !isKeyJustPressed('F3', playerInput)) {
@@ -19,49 +18,6 @@ export function handleSearchNavigationKeybinding(playerInput: PlayerInput): bool
 	} else {
 		jumpToNextMatch();
 	}
-	return true;
-}
-
-function handleCopyBinding(playerInput: PlayerInput, clipboard: Clipboard): boolean {
-	if (!isCtrlDown(playerInput) || !isKeyJustPressed('KeyC', playerInput)) {
-		return false;
-	}
-	consumeIdeKey('KeyC', playerInput);
-	void copySelectionToClipboard(clipboard);
-	return true;
-}
-
-function handleCutBinding(playerInput: PlayerInput, clipboard: Clipboard): boolean {
-	if (!isCtrlDown(playerInput) || !isKeyJustPressed('KeyX', playerInput)) {
-		return false;
-	}
-	consumeIdeKey('KeyX', playerInput);
-	if (activeCodeEditor.model.readOnly) {
-		if (TextEditing.hasSelection()) {
-			void copySelectionToClipboard(clipboard);
-		} else {
-			notifyReadOnlyEdit();
-		}
-		return true;
-	}
-	if (TextEditing.hasSelection()) {
-		void cutSelectionToClipboard(clipboard);
-	} else {
-		void cutLineToClipboard(clipboard);
-	}
-	return true;
-}
-
-function handlePasteBinding(playerInput: PlayerInput, clipboard: Clipboard): boolean {
-	if (!isCtrlDown(playerInput) || isShiftDown(playerInput) || !isKeyJustPressed('KeyV', playerInput)) {
-		return false;
-	}
-	consumeIdeKey('KeyV', playerInput);
-	if (activeCodeEditor.model.readOnly) {
-		notifyReadOnlyEdit();
-		return true;
-	}
-	pasteText(clipboard.text);
 	return true;
 }
 
@@ -105,14 +61,10 @@ export function handleCodeFormattingKeybinding(playerInput: PlayerInput): boolea
 	return true;
 }
 
-export function handleEditorClipboardAndCommandBindings(
+export function handleEditorEditingBindings(
 	playerInput: PlayerInput,
-	clipboard: Clipboard,
 ): boolean {
-	return handleCopyBinding(playerInput, clipboard)
-		|| handleCutBinding(playerInput, clipboard)
-		|| handlePasteBinding(playerInput, clipboard)
-		|| handleToggleCommentBinding(playerInput, 'Slash')
+	return handleToggleCommentBinding(playerInput, 'Slash')
 		|| handleToggleCommentBinding(playerInput, 'NumpadDivide')
 		|| handleIndentationBinding(playerInput, 'BracketRight', TextEditing.indentSelectionOrLine)
 		|| handleIndentationBinding(playerInput, 'BracketLeft', TextEditing.unindentSelectionOrLine);

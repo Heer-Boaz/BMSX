@@ -20,7 +20,7 @@ function fixture(t: TestContext) {
 	const clock = new VirtualHeadlessClock(), input = new Input(clock, new HeadlessInputHub(), -1);
 	configureFontVariant(clock, 'tiny', null);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	const picker = new QuickInputController({ text: '', isSupported: () => false, writeText: async () => {} });
+	const picker = new QuickInputController();
 	const items = Array.from({ length: 100 }, (_, id) => ({ id, label: `row_${id}`, description: 'independent catalog', detail: `${id}` }));
 	let accepted: typeof items[number] | undefined, pressId = 0;
 	const open = () => picker.pick('Choose', 'Filter', () => new TextQuickPickProvider(items), item => { accepted = item; });

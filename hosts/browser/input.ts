@@ -1,3 +1,4 @@
+import { clipboardAction, type ClipboardAction } from '../common/clipboard';
 import {
 	type GamepadDevice as HostGamepadDevice,
 	type InputDevice,
@@ -139,8 +140,8 @@ export class BrowserInputHub implements InputSource {
 	private readonly clock: HostClock;
 	private readonly onscreenGamepad: BrowserOnscreenGamepad;
 	private keyboardCapture: ((code: string) => boolean) = null;
-	private nativePasteEnabled: (() => boolean) | undefined;
-	private readonly nativePasteKeys = new Set<string>();
+	private nativeClipboardEnabled: ((action: ClipboardAction) => boolean) | undefined;
+	private readonly nativeClipboardKeys = new Set<string>();
 	private nextPressId = 1;
 	private readonly activeKeyPressIds = new Map<string, number>();
 	private readonly activePointerIds: number[] = [];
@@ -211,12 +212,13 @@ export class BrowserInputHub implements InputSource {
 	}
 
 	/** Host controls may admit native clipboard events without injecting a guest key. */
-	setNativePasteEnabled(enabled: (() => boolean) | undefined): void { this.nativePasteEnabled = enabled; }
+	setNativeClipboardEnabled(enabled: ((action: ClipboardAction) => boolean) | undefined): void { this.nativeClipboardEnabled = enabled; }
 
 	private onKeyDown = (event: KeyboardEvent) => {
-		if (((event.ctrlKey || event.metaKey) && event.code === 'KeyV' || event.shiftKey && event.code === 'Insert') && this.nativePasteEnabled?.()) {
-			this.nativePasteKeys.add(event.code);
-			return; // The browser produces paste; do not also consume the cached clipboard.
+		const action = clipboardAction(event.code, event.ctrlKey, event.metaKey, event.shiftKey, event.altKey);
+		if (action !== undefined && this.nativeClipboardEnabled?.(action)) {
+			this.nativeClipboardKeys.add(event.code);
+			return; // Exactly one native action, never a duplicate polled editor/guest key.
 		}
 		const captured = event.code === this.supervisorRequestKeyCode
 			|| (this.keyboardCapture && this.keyboardCapture(event.code));
@@ -240,7 +242,7 @@ export class BrowserInputHub implements InputSource {
 	};
 
 	private onKeyUp = (event: KeyboardEvent) => {
-		if (this.nativePasteKeys.delete(event.code)) return;
+		if (this.nativeClipboardKeys.delete(event.code)) return;
 		const captured = event.code === this.supervisorRequestKeyCode
 			|| (this.keyboardCapture && this.keyboardCapture(event.code));
 		if (captured || this.shouldBlockBrowserShortcut(event)) {
@@ -266,7 +268,7 @@ export class BrowserInputHub implements InputSource {
 	};
 
 	private onWindowFocusChange = () => {
-		this.nativePasteKeys.clear();
+		this.nativeClipboardKeys.clear();
 		const supervisorRequestLineHigh = this.activeKeyPressIds.has(this.supervisorRequestKeyCode);
 		this.activeKeyPressIds.clear();
 		this.activePointerIds.length = 0;

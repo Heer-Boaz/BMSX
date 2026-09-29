@@ -12,11 +12,10 @@ export async function startAssistantImageTest(kind: StudioRendererKind, canvas: 
 	await test.until(() => test.cycles() > test.runtime.timing.cpuHz * 13, 'images: boot cart');
 	await reachNemesisTitle(test);
 	test.harness.openLuaSource('cart.lua'); await test.frame();
-	await test.runPaletteCommand('View: Codex Assistant');
+	test.ide.editor.commands.execute('assistant'); await test.frame();
 	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant expected');
 	await test.click(view.composerBounds);
 	const cycles = test.cycles();
-	test.clipboard.text = 'STALE INTERNAL CLIPBOARD';
 	return {
 		async frame() { await test.frame(); },
 		async capture(name: string) { for (let i = 0; i < 6; i++) await test.frame(); await renderer.capture!(name); },

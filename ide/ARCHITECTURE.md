@@ -1679,9 +1679,22 @@ enablement so an empty field consumes Undo without enabling the menu item.
 Menus retain the invoking editor control's command context. The existing
 blocking-modal scope intercepts **all** pointer, wheel and keyboard input before
 background menus, panels or controls; individual controls need no modal guards.
-The clipboard provider, not the active code widget, owns the shared text cache
-and the optional OS write. Input controls publish clipboard feedback through
-`input/clipboard.ts`.
+Clipboard is a host capability, not a code-widget cache. Each focus target
+contributes a `ClipboardTarget`: a side-effect-free selection query, synchronous
+Cut edit, and Paste receiver. The browser routes trusted native copy/cut/paste
+into that target; `CartEditor.clipboardTarget` applies the same active/modal scope
+as polled input. Source documents, text fields, transcript selections and the
+attachment strip all use this contract. Text-field constraints are retained on
+the field, so native paste cannot bypass Find/Rename/property-input rules.
+
+`hosts/browser/clipboard.ts` has no internal text cache. It hands native Cut data
+to the browser before invoking the edit. Programmatic clipboard commands check
+both the browser command result and event delivery before any Cut/Paste edit;
+there is no asynchronous deletion, target drift or rollback. Explicit Copy-only
+API writes reject on denied permission; the input feedback boundary preserves
+that failure. Headless owns a real in-memory clipboard with synchronous command
+semantics, not a browser fallback. See `docs/clipboard.md` for representations,
+platform limits and browser evidence.
 
 Save and Hot Resume remain document/source operations, not an implicit acceptance
 of every open input. Find text is a query, not source. Rename is an explicit
@@ -1746,7 +1759,7 @@ Production references for these specific boundaries:
 - [Godot LineEdit history](https://github.com/godotengine/godot/blob/34d06658a85845111a50db9e485ec4a0701d4298/scene/gui/line_edit.cpp#L1790-L1854)
   and [VS Code Rename input lifecycle](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/editor/contrib/rename/browser/renameWidget.ts#L467-L525).
 - [VS Code modal input containment](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/base/browser/ui/dialog/dialog.ts)
-  and [clipboard-service storage](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/platform/clipboard/browser/clipboardService.ts#L117-L155).
+  and [native editor clipboard commands](https://github.com/microsoft/vscode/blob/main/src/vs/editor/contrib/clipboard/browser/clipboard.ts).
 - [Godot value submission, focus loss and focus order](https://github.com/godotengine/godot/blob/34d06658a85845111a50db9e485ec4a0701d4298/editor/gui/editor_spin_slider.cpp#L630-L738)
   and [editor changes before scene save](https://github.com/godotengine/godot/blob/34d06658a85845111a50db9e485ec4a0701d4298/editor/editor_node.cpp#L2512-L2535).
   BMSX does not copy Godot's expression evaluator or silent invalid-input path.

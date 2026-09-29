@@ -35,7 +35,7 @@ function createPicker(t: TestContext): QuickInputController {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	editorViewState.viewportWidth = 384;
 	editorViewState.viewportHeight = 288;
-	const picker = new QuickInputController({ text: '', isSupported: () => false, writeText: async () => {} });
+	const picker = new QuickInputController();
 	t.after(() => { picker.dispose(); inputFocus.setTarget(null); });
 	return picker;
 }

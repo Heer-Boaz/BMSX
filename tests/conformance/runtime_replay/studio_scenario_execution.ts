@@ -78,9 +78,9 @@ export async function testStudioScenarioExecution(test: StudioFixture): Promise<
 	await runPaletteCommand('Scene Editor: Open');
 	const picker = ide.editor.quickInput;
 	check(picker.visible, 'scenario: canonical source views remain available after Cancel');
-	clipboard.text = 'scenes/root.lua';
+	await clipboard.writeText('scenes/root.lua');
 	await press('ControlLeft', 'KeyV');
-	check(picker.model.list.rows.length === 1 && picker.model.list.rows[0].item.label === clipboard.text,
+	check(picker.model.list.rows.length === 1 && picker.model.list.rows[0].item.label === (await clipboard.readText()),
 		'scenario: the canonical scene source is still discoverable');
 	await press('Enter');
 	check(getActiveTab().kind === 'scene_editor' && execution.userPaused,

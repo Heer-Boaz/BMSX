@@ -29,7 +29,7 @@ export async function runStudioTerminal(test: StudioFixture) {
 	await test.runPaletteCommand('View: Lua Terminal');
 	const paste = async (text: string) => {
 		await test.click(input.composerBounds);
-		clipboard.text = text;
+		await clipboard.writeText(text);
 		await press('ControlLeft', 'KeyA'); await press('ControlLeft', 'KeyV');
 		check(input.draft.text === text, 'terminal paste reaches the real multiline control');
 	};
@@ -164,8 +164,8 @@ export async function runStudioTerminal(test: StudioFixture) {
 	const lastRow = input.transcript.rows.findLastIndex(row => row.entry === result.id);
 	const rowTop = input.viewport.offsetTop + lastRow * input.layout.rowHeight;
 	await test.click({ left: 8, right: 9, top: rowTop + 1, bottom: rowTop + 2 });
-	clipboard.text = ''; await press('ControlLeft', 'KeyC');
-	check(clipboard.text === '43', 'transcript pointer selection and Copy use the retained entry text');
+	await clipboard.writeText(''); await press('ControlLeft', 'KeyC');
+	check((await clipboard.readText()) === '43', 'transcript pointer selection and Copy use the retained entry text');
 	await test.capture?.('lua-terminal');
 	await paste('while true do end'); await press('Enter');
 	await until(() => session.canToggleExecution, 'terminal: infinite input remains schedulable');

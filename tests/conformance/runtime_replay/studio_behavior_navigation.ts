@@ -10,7 +10,7 @@ export async function testStudioBehaviorNavigation(test: StudioFixture): Promise
 	harness.openLuaSource('cart.lua');
 	await runPaletteCommand('Behavior Lens: Open');
 	check(ide.editor.quickInput.visible, 'behavior navigation: palette offers behavior registrations');
-	clipboard.text = 'moon_death_ray';
+	await clipboard.writeText('moon_death_ray');
 	await press('ControlLeft', 'KeyV');
 	check(ide.editor.quickInput.model.list.rows.length === 1, 'behavior navigation: actual Moon source is selected');
 	await press('Enter');

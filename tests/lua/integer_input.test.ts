@@ -4,7 +4,6 @@ import { INTEGER_INPUT_FORMAT, parseIntegerInput } from '../../ide/editor/ui/inl
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { insertValue, selectAll } from '../../ide/editor/ui/inline/text_field';
 import { inputFocus } from '../../ide/input/focus';
-import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 
 test('integer control admits decimal signed words at the human-input boundary, not expressions', () => {
 	for (const [text, value] of [['0', 0], ['+17', 17], ['-0', -0], ['00017', 17],
@@ -20,7 +19,7 @@ test('integer control admits decimal signed words at the human-input boundary, n
 test('integer draft history is local; accepting or valid blur publishes exactly one value change', (t) => {
 	const parent = inputFocus.createTarget();
 	const accepted: number[] = [];
-	const input = new ValueInput(parent, new HeadlessClipboard(), INTEGER_INPUT_FORMAT, value => accepted.push(value));
+	const input = new ValueInput(parent, INTEGER_INPUT_FORMAT, value => accepted.push(value));
 	t.after(() => { inputFocus.setTarget(null); input.dispose(); });
 	input.setValue(5);
 	input.field.focusTarget.focus();
@@ -46,7 +45,7 @@ test('integer draft history is local; accepting or valid blur publishes exactly 
 
 test('invalid submission retains focused draft; leaving visibly cancels, never publishes invalid source', (t) => {
 	const parent = inputFocus.createTarget();
-	const input = new ValueInput(parent, new HeadlessClipboard(), INTEGER_INPUT_FORMAT, () => assert.fail('invalid value accepted'));
+	const input = new ValueInput(parent, INTEGER_INPUT_FORMAT, () => assert.fail('invalid value accepted'));
 	t.after(() => { inputFocus.setTarget(null); input.dispose(); });
 	input.setValue(17);
 	input.field.focusTarget.focus();
@@ -71,7 +70,7 @@ test('a source binding can revoke a pending draft before commit, including reent
 	const accepted: number[] = [];
 	let revoked = true;
 	let preparations = 0;
-	const input = new ValueInput(parent, new HeadlessClipboard(), INTEGER_INPUT_FORMAT, value => accepted.push(value), () => {
+	const input = new ValueInput(parent, INTEGER_INPUT_FORMAT, value => accepted.push(value), () => {
 		preparations += 1;
 		if (revoked) {
 			input.cancel();

@@ -32,7 +32,7 @@ export async function testStudioSourceChoices(test: StudioFixture): Promise<void
 	const usageVersion = usage.version, definitionVersion = definitions.version;
 
 	await press('ControlLeft', 'ShiftLeft', 'KeyO');
-	test.clipboard.text = 'SHDW'; await press('ControlLeft', 'KeyV');
+	await test.clipboard.writeText('SHDW'); await press('ControlLeft', 'KeyV');
 	check(picker.model.list.rows.length === 1 && picker.model.list.rows[0].item.label === 'shadow',
 		'A06: document symbol matching admits an abbreviation without changing Lua identifiers');
 	await checkQuickPickHighlightRuns(test, 'shadow', [[0, 2], [3, 4], [5, 6]]);
@@ -41,7 +41,7 @@ export async function testStudioSourceChoices(test: StudioFixture): Promise<void
 		'A06: accepting a symbol synchronously reveals its actual declaration');
 
 	await press('AltLeft', 'Comma');
-	test.clipboard.text = 'SOURCECHOICEBEACON cart.lua'; await press('ControlLeft', 'KeyV');
+	await test.clipboard.writeText('SOURCECHOICEBEACON cart.lua'); await press('ControlLeft', 'KeyV');
 	check(picker.visible && picker.model.list.rows.length === 1 && picker.model.list.rows[0].item.description === 'cart.lua',
 		'A06: workspace symbols distinguish the global declaration from same-named local parameters');
 	const row = picker.model.viewport.bounds;
@@ -62,7 +62,7 @@ export async function testStudioSourceChoices(test: StudioFixture): Promise<void
 		'A06: workspace reference selection uses path and cursor, not the current-file index');
 	check(referenceState.getMatches().length === 2 && referenceState.getActiveIndex() === 1,
 		'A06: file-local highlight state remains separate from workspace selection');
-	test.clipboard.text = 'beacon'; await press('ControlLeft', 'KeyV');
+	await test.clipboard.writeText('beacon'); await press('ControlLeft', 'KeyV');
 	await checkQuickPickHighlightRuns(test, 'return source_choice_beacon', [[21, 27]]);
 	await press('ControlLeft', 'KeyZ');
 	await press('ControlLeft', 'Home'); await press('Enter');
@@ -85,10 +85,10 @@ export async function testStudioSourceChoices(test: StudioFixture): Promise<void
 	check(activeCodeEditor.model === usage && activeCodeEditor.view.cursorRow === 4, 'A06: multi-definition Back restores the usage');
 
 	await press('ControlLeft', 'ShiftLeft', 'KeyO');
-	test.clipboard.text = 'no source choice'; await press('ControlLeft', 'KeyV'); await press('Enter');
+	await test.clipboard.writeText('no source choice'); await press('ControlLeft', 'KeyV'); await press('Enter');
 	check(picker.visible && picker.model.list.selectionIndex === -1 && !usage.dirty, 'A06: an empty choice does not invent a destination');
 	await press('Escape');
-	await press('ControlLeft', 'End'); test.clipboard.text = '-- source choice edit'; await press('ControlLeft', 'KeyV');
+	await press('ControlLeft', 'End'); await test.clipboard.writeText('-- source choice edit'); await press('ControlLeft', 'KeyV');
 	await press('ControlLeft', 'ShiftLeft', 'KeyO'); await press('KeyS'); await press('KeyH'); await press('ControlLeft', 'KeyZ');
 	check(picker.field.text === 's' && usage.dirty, 'A06: query Undo does not consume source Undo');
 	await press('Escape'); await press('ControlLeft', 'KeyZ');

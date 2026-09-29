@@ -72,14 +72,14 @@ export async function runAssistantActorExecution(kind: StudioRendererKind, canva
 		'continuation completes the original bounded loop');
 	await test.clickTab(lab.id); await frame();
 	await test.click(lab.actionBar.items.find(item => item.command === 'actorLab.spawn')!.bounds); await press('Enter');
-	await press('ControlLeft', 'KeyA'); test.clipboard.text = "{ id = 'manual', pos = { x = 123, y = 456 } }";
+	await press('ControlLeft', 'KeyA'); await test.clipboard.writeText("{ id = 'manual', pos = { x = 123, y = 456 } }");
 	await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => service.active === undefined && test.tasks.ready && !ide.debugger.plans.mutationActive, 'Actor execution: ordinary spawn finishes');
 	await frame();
 	check(lab.runtime.roots[0].label === 'manual' && guest.readStringMember(lab.runtime.roots[0].value, 'x') === 123,
 		'ordinary spawn uses the selected definition and returns the actual World member');
 	await test.click(lab.actionBar.items.find(item => item.command === 'actorLab.actions')!.bounds); await press('Enter');
-	await press('ControlLeft', 'KeyA'); test.clipboard.text = '124, 457, 0'; await press('ControlLeft', 'KeyV'); await press('Enter');
+	await press('ControlLeft', 'KeyA'); await test.clipboard.writeText('124, 457, 0'); await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => service.active === undefined && test.tasks.ready && !ide.debugger.plans.mutationActive, 'Actor execution: ordinary action returns');
 	await frame();
 	check(guest.readStringMember(lab.runtime.roots[0].value, 'x') === 124 && guest.readStringMember(lab.runtime.roots[0].value, 'y') === 457
@@ -87,8 +87,8 @@ export async function runAssistantActorExecution(kind: StudioRendererKind, canva
 	const eventLine = ACTOR_EXECUTION_SOURCE.split('\n').findIndex(line => line.includes('on_probe = function')) + 1;
 	ide.debugger.breakpoints.set({ domain: 0, path: 'cart.lua' }, [eventLine]);
 	await test.click(lab.actionBar.items.find(item => item.command === 'actorLab.emit')!.bounds);
-	test.clipboard.text = 'probe_event'; await press('ControlLeft', 'KeyV'); await press('Enter');
-	await press('ControlLeft', 'KeyA'); test.clipboard.text = '{ value = 77 }'; await press('ControlLeft', 'KeyV'); await press('Enter');
+	await test.clipboard.writeText('probe_event'); await press('ControlLeft', 'KeyV'); await press('Enter');
+	await press('ControlLeft', 'KeyA'); await test.clipboard.writeText('{ value = 77 }'); await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => service.paused && ide.debugger.source.stop !== undefined, 'Actor execution: ordinary event reaches its breakpoint');
 	ide.debugger.breakpoints.set({ domain: 0, path: 'cart.lua' }, []);
 	await test.runMenuCommand('debugEvaluation');

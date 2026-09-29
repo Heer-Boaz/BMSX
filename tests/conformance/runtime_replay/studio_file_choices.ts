@@ -22,7 +22,7 @@ export async function testStudioFileChoices(test: StudioFixture): Promise<void> 
 	await press('AltLeft', 'ArrowLeft');
 	check(activeCodeEditor.model === origin, 'A06: file navigation Back restores the original working copy');
 	await press('ControlLeft', 'Comma');
-	test.clipboard.text = 'TITLE_SCREEN.LUA'; await press('ControlLeft', 'KeyV');
+	await test.clipboard.writeText('TITLE_SCREEN.LUA'); await press('ControlLeft', 'KeyV');
 	check(picker.model.list.rows[0].item.label === target.path, 'A06: case-folded path identity preserves the original resource spelling');
 	await press('ControlLeft', 'KeyZ');
 	check(picker.field.text === '' && origin.version === version && origin.dirty === dirty,

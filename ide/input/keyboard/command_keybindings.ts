@@ -180,6 +180,10 @@ export function editorKeybindingLabel(binding: EditorCommandKeybinding): string 
 }
 
 const editorCommandKeybindingLabels = new Map<EditorCommandId, string>();
+// Clipboard shortcuts are dispatched by the host, not editor keybinding rules.
+editorCommandKeybindingLabels.set('cut', 'CTRL/CMD+X');
+editorCommandKeybindingLabels.set('copy', 'CTRL/CMD+C');
+editorCommandKeybindingLabels.set('paste', 'CTRL/CMD+V');
 for (let groupIndex = 0; groupIndex < EDITOR_DEFAULT_KEYBINDING_GROUPS.length; groupIndex += 1) {
 	const group = EDITOR_DEFAULT_KEYBINDING_GROUPS[groupIndex];
 	const bindings = group.bindings;

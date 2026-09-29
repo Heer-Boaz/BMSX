@@ -45,7 +45,7 @@ export async function testStudioQuickInputInteraction(test: StudioFixture): Prom
 	movePointer({ left: view.bounds.left + 2, right: view.bounds.left + 4, top: view.bounds.top + 2, bottom: view.bounds.top + 4 });
 	await frame(); setPointerButton('pointer_primary', true); await frame();
 	check(pointerCapture.active, 'A06: query-change proof starts with an actual held row');
-	clipboard.text = rows[0].item.label;
+	await clipboard.writeText(rows[0].item.label);
 	await press('ControlLeft', 'KeyV');
 	check(!pointerCapture.active && picker.visible, 'A06: a new query cancels held row acceptance immediately');
 	setPointerButton('pointer_primary', false); await frame();

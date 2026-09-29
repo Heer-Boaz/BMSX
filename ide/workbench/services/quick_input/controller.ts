@@ -3,7 +3,6 @@ import { PointerButton } from '../../../input/pointer/buttons';
 import { pointerCapture, type PointerCaptureTarget } from '../../../input/pointer/capture';
 import { create_rect_bounds, point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { Clipboard } from '../../../../hosts/common/clipboard';
 import { DisposableStore } from '../../../common/lifecycle';
 import type { PointerSnapshot } from '../../../common/models';
 import * as constants from '../../../common/constants';
@@ -29,7 +28,7 @@ type QuickInputSession = {
 /** One transient workbench surface, independent of editor panes and their documents. */
 export class QuickInputController implements PointerCaptureTarget {
 	public readonly pointerScope = Symbol('quick input');
-	public readonly field = new TextField();
+	public readonly field = new TextField(null, INPUT_OPTIONS);
 	public readonly model = new QuickPickModel();
 	public readonly textViewport = new SingleLineFieldViewport();
 	public readonly layout = {
@@ -55,7 +54,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		justPressed: false, pointerPressed: false, doubleClickInterval: constants.DOUBLE_CLICK_MAX_INTERVAL_MS,
 	};
 
-	public constructor(private readonly clipboard: Clipboard) {
+	public constructor() {
 		this.unbindKeyboard = this.field.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 		this.field.onDidChangeText(() => {
 			this.cancelPointer();
@@ -198,7 +197,7 @@ export class QuickInputController implements PointerCaptureTarget {
 			return;
 		}
 		if (this.inputBox) {
-			applyInlineFieldEditing(input, this.clipboard, this.field, INPUT_OPTIONS);
+			applyInlineFieldEditing(input, this.field);
 			return;
 		}
 		if (isCtrlDown(input) && (isKeyJustPressed('Home', input) || isKeyJustPressed('End', input))) {
@@ -217,7 +216,7 @@ export class QuickInputController implements PointerCaptureTarget {
 				return;
 			}
 		}
-		applyInlineFieldEditing(input, this.clipboard, this.field, INPUT_OPTIONS);
+		applyInlineFieldEditing(input, this.field);
 	}
 
 	public onPointerLeave(): void { this.model.list.hoverIndex = -1; }

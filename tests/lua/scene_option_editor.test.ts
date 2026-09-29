@@ -41,7 +41,7 @@ function fixture(source = SOURCE) {
 		selectSceneOutlineRow(input, 1);
 		editor.bind(input);
 	};
-	const editor = new SceneOptionEditor(inputFocus.createTarget(), { text: '', isSupported: () => false, writeText: async () => {} }, refresh, () => {});
+	const editor = new SceneOptionEditor(inputFocus.createTarget(), refresh, () => {});
 	refresh();
 	return { model, input, editor, refresh,
 		control: (label: string) => editor.controls[input.optionProperties.findIndex(property => property.label === label)] };

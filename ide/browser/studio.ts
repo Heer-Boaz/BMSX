@@ -10,7 +10,8 @@ import {
 	prepareBrowserStartup,
 	showBrowserBootError,
 } from '../../hosts/browser/boot';
-import { BrowserClipboard } from './clipboard';
+import { BrowserClipboard } from '../../hosts/browser/clipboard';
+import { reportClipboardFailure } from '../input/clipboard';
 import { HttpWorkspaceRecordProvider } from './workspace_records';
 import { IdeMicrotaskQueue } from '../common/microtask_queue';
 import { prepareWorkbenchRuntime } from '../workbench/machine_runtime';
@@ -103,7 +104,7 @@ async function startBrowserStudio(): Promise<void> {
 			() => new BrowserGraphLayoutEngine(new Worker(new URL('./graph-layout.worker.js', document.baseURI))),
 			(signal, onEvent) => AssistantHttpConnection.open(httpSession, signal, onEvent),
 		);
-		clipboard.bindNativePaste(options.browserInput, () => ide.editor.isActive);
+		clipboard.bindInput(options.browserInput, () => ide.editor.clipboardTarget, reportClipboardFailure);
 		systemOutput.flush(runtime, options.logOutput);
 		audioOutput.bootstrap();
 		bindBrowserFullscreenShortcut(

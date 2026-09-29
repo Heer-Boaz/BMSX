@@ -3,6 +3,7 @@ import { handleEditorCommandBindings, handleEscapeBinding } from './global_bindi
 import type { PlayerInput } from '../../../hosts/common/input/player';
 import { handleWorkbenchTabInput } from '../../workbench/input/keyboard/tab_input';
 import { inputFocus } from '../focus';
+import { handleClipboardBindings } from '../clipboard';
 import { pointerCapture } from '../pointer/capture';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 
@@ -18,6 +19,7 @@ export function handleEditorInput(
 		pointerCapture.cancel();
 		return;
 	}
+	if (handleClipboardBindings(playerInput, editor.clipboard, editor.clipboardTarget)) return;
 	if (!editor.quickInput.visible && !editor.contextMenu.visible && handleEscapeBinding(playerInput, editor.search)) {
 		return;
 	}

@@ -1,7 +1,5 @@
-import { showEditorMessage } from '../../../common/feedback_state';
-import { COLOR_STATUS_WARNING } from '../../../common/constants';
 import { resetBlink } from '../../render/caret';
-import type { Clipboard, ClipboardImage } from '../../../../hosts/common/clipboard';
+import type { ClipboardImage } from '../../../../hosts/common/clipboard';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../../common/models';
@@ -18,22 +16,20 @@ export class MultilineFieldControl implements PointerCaptureTarget {
 	public rowHeight = 0;
 	private verticalOffset = -1;
 	private desiredX = 0;
-	private unbindPaste: (() => void) | undefined;
+	private unbindChange: (() => void) | undefined;
 	private unbindBlur: (() => void) | undefined;
 	public setInput(field: TextField, view: MultilineFieldViewport, bounds: RectBounds, pasteImages?: (images: readonly ClipboardImage[]) => void): void {
 		this.clearInput(); this.input = { field, view, bounds };
-		this.unbindPaste = field.focusTarget.bindPaste(contents => {
-			if (contents.images.length > 0 && pasteImages !== undefined) pasteImages(contents.images);
-			else if (contents.text.length > 0) { insertValue(field, contents.text); this.verticalOffset = -1; resetBlink(); }
-			else if (contents.images.length > 0) showEditorMessage('This field accepts text, not images.', COLOR_STATUS_WARNING, 4);
-		});
+		field.pasteImages = pasteImages;
+		this.unbindChange = field.onDidChangeText(() => { this.verticalOffset = -1; resetBlink(); });
 		this.unbindBlur = field.focusTarget.onDidBlur(() => this.cancelPointer());
 	}
 	public clearInput(): void {
-		this.cancelPointer(); this.unbindPaste?.(); this.unbindPaste = undefined; this.unbindBlur?.(); this.unbindBlur = undefined;
+		this.cancelPointer(); this.unbindChange?.(); this.unbindChange = undefined; this.unbindBlur?.(); this.unbindBlur = undefined;
+		if (this.input !== undefined) this.input.field.pasteImages = undefined;
 		this.input?.field.focusTarget.release(); this.input = undefined; this.verticalOffset = -1;
 	}
-	public handleKeyboard(input: PlayerInput, clipboard: Clipboard): void {
+	public handleKeyboard(input: PlayerInput): void {
 		const { field, view } = this.input!;
 		for (const code of ['ArrowUp', 'ArrowDown', 'Home', 'End', 'Enter'] as const) {
 			if ((code === 'Home' || code === 'End') && (isCtrlDown(input) || isMetaDown(input))) continue;
@@ -57,7 +53,7 @@ export class MultilineFieldControl implements PointerCaptureTarget {
 			}
 			resetBlink(); return;
 		}
-		applyInlineFieldEditing(input, clipboard, field, { allowSpace: true });
+		applyInlineFieldEditing(input, field);
 		if (getCursorOffset(field) !== this.verticalOffset) this.verticalOffset = -1;
 	}
 	public handlePointer(snapshot: PointerSnapshot): boolean {

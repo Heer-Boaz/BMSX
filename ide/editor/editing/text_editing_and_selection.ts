@@ -37,8 +37,6 @@ import {
 	setSingleCursorSelectionAnchor,
 } from './cursor/state';
 import { findWordBoundsInLine, findWordLeftOffset, findWordRightOffset } from './cursor/words';
-import type { Clipboard } from '../../../hosts/common/clipboard';
-import { writeClipboard } from '../../input/clipboard';
 
 const tmpPosition: MutableTextPosition = { row: 0, column: 0 };
 const wordPositionScratch: MutableTextPosition = { row: 0, column: 0 };
@@ -851,88 +849,18 @@ export function unindentSelectionOrLine(): void {
 // CLIPBOARD OPERATIONS
 // ============================================================================
 
-/**
- * Copies the current selection to the clipboard.
- * Shows a message if nothing is selected.
- */
-export async function copySelectionToClipboard(clipboard: Clipboard): Promise<void> {
-	const text = getSelectionText();
-	if (text === null) {
-		showEditorMessage('Nothing selected to copy', constants.COLOR_STATUS_WARNING, 1.5);
-		return;
-	}
-	await writeClipboard(clipboard, text, 'Copied selection to clipboard');
+/** Source editors copy/cut the current line when no text is selected. */
+export function getClipboardText(): string {
+	const selected = getSelectionText();
+	if (selected !== null) return selected;
+	const line = currentLine();
+	return activeCodeEditor.view.cursorRow < activeCodeEditor.model.buffer.getLineCount() - 1 ? `${line}\n` : line;
 }
 
-/**
- * Cuts the current selection to the clipboard (copy + delete).
- * Shows a message if nothing is selected.
- */
-export async function cutSelectionToClipboard(clipboard: Clipboard): Promise<void> {
-	const text = getSelectionText();
-	if (text === null) {
-		showEditorMessage('Nothing selected to cut', constants.COLOR_STATUS_WARNING, 1.5);
-		return;
-	}
-	if (!editorAllowsMutation()) {
-		await writeClipboard(clipboard, text, 'Copied selection to clipboard');
-		return;
-	}
-	const write = writeClipboard(clipboard, text, 'Cut selection to clipboard');
-	prepareUndo('cut', false);
-	replaceSelectionWith('');
-	await write;
-}
-
-/**
- * Cuts the current line to the clipboard.
- * Used when no selection is active.
- */
-export async function cutLineToClipboard(clipboard: Clipboard): Promise<void> {
-	const buffer = activeCodeEditor.model.buffer;
-	const lineCount = buffer.getLineCount();
-	const row = activeCodeEditor.view.cursorRow;
-	const currentLineValue = currentLine();
-	const isLastLine = row >= lineCount - 1;
-	const text = isLastLine ? currentLineValue : `${currentLineValue}\n`;
-	if (!editorAllowsMutation()) {
-		await writeClipboard(clipboard, text, 'Copied line to clipboard');
-		return;
-	}
-	const write = writeClipboard(clipboard, text, 'Cut line to clipboard');
-
-	const lineStart = buffer.getLineStartOffset(row);
-	const lineEnd = buffer.getLineEndOffset(row);
-	let deleteStart = lineStart;
-	let deleteEnd = lineEnd;
-	if (lineCount > 1) {
-		if (!isLastLine) {
-			deleteStart = lineStart;
-			deleteEnd = buffer.getLineStartOffset(row + 1);
-		} else {
-			deleteStart = buffer.getLineEndOffset(row - 1);
-			deleteEnd = buffer.length;
-		}
-	}
-	const deleteLength = deleteEnd - deleteStart;
-	if (deleteLength === 0) {
-		await write;
-		return;
-	}
-	prepareUndo('cut-line', false);
-	applyUndoableReplace(deleteStart, deleteLength, '');
-
-	activeCodeEditor.view.cursorRow = editorViewState.layout.clampBufferRow(buffer, activeCodeEditor.view.cursorRow);
-	activeCodeEditor.view.cursorColumn = editorViewState.layout.clampBufferColumn(buffer, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
-
-	editorViewState.layout.invalidateHighlightsFromRow(Math.min(row, buffer.getLineCount() - 1));
-	editorViewState.layout.invalidateLine(activeCodeEditor.view.cursorRow);
-	activeCodeEditor.view.selectionAnchor = null;
-	markTextMutated();
-	resetBlink();
-	updateDesiredColumn();
-	revealCursor();
-	await write;
+/** Called only after the platform admitted a synchronous Cut. */
+export function cutClipboardText(): void {
+	if (hasSelection()) deleteSelection();
+	else deleteActiveLines();
 }
 
 /**

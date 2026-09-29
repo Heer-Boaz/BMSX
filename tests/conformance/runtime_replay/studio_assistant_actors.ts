@@ -49,8 +49,8 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	// The inspection refactor must preserve ordinary World-bound method execution.
 	await press('Home');
 	await test.click(lab.actionBar.items.find(item => item.command === 'actorLab.call')!.bounds);
-	test.clipboard.text = 'set_pos'; await press('ControlLeft', 'KeyV'); await press('Enter');
-	test.clipboard.text = '12, 34, 0'; await press('ControlLeft', 'KeyV'); await press('Enter');
+	await test.clipboard.writeText('set_pos'); await press('ControlLeft', 'KeyV'); await press('Enter');
+	await test.clipboard.writeText('12, 34, 0'); await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => test.tasks.ready && !runtime.completionCallPending() && !ide.debugger.plans.mutationActive,
 		'actor tools: ordinary method completes at the World mutation rendezvous');
 	check(guest.readStringMember(guest.global('actor_tool_first'), 'x') === 12 && guest.readStringMember(guest.global('actor_tool_first'), 'y') === 34,

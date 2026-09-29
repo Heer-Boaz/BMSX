@@ -106,9 +106,13 @@ There are no globally reserved gameplay keys or automatic guest evaluation.
 Paste screenshots into the composer with Ctrl+V / Cmd+V. The browser's native
 paste event also works over LAN HTTP; it does not require async clipboard-read
 permission. Text paste uses the same focused multiline/source editor controls.
-For text copying on HTTP, the browser clipboard owner uses the DOM copy capability
-when the async Clipboard API is absent or permission-denied, as VS Code does. It reports denied writes
-rather than silently claiming the private cache reached the system clipboard.
+Copy/Cut/Paste use the platform's focused-control contract throughout Studio,
+not assistant-specific key handlers or an editor-private clipboard. Native Cut
+and Copy do not use the async Clipboard API. Explicit Copy commands reject API
+permission failures; on HTTP they use the synchronous browser command capability.
+The browser command must succeed before Cut edits source or field history.
+See [platform clipboard ownership](clipboard.md) for the full contract and actual
+permission-denial checks.
 Clipboard file decoding and PNG conversion belong to the browser image codec.
 A failed decode is visible and prevents sending that attachment; remove it with
 its contextual `x` or focus the thumbnail strip and press Delete.
@@ -216,8 +220,9 @@ enlarge the provider's context window or hide context-limit failures.
   releases its hold and reopening the retained pane pauses again; neither action
   clears an independent user pause. This corrects the original live-guest policy
   on 2026-09-24. Authored project files remain
-  unchanged. Copy is checked against the browser clipboard with explicit clipboard
-  permission, not just the editor's cached clipboard. Selected-message, composer,
+  unchanged. These device-input fixtures now use the headless clipboard explicitly;
+  real OS clipboard behavior is checked separately with native browser input in
+  `tests/platform/studio_clipboard.test.ts` and `studio_assistant_images.test.ts`. Selected-message, composer,
   account-code (both fonts) and review screenshots were inspected.
   The real process also requests Lua/YAML diagnostics before each review: the
   unsaved Lua error is visible in ordinary Problems, while YAML reports unsupported.

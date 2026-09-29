@@ -1,4 +1,3 @@
-import type { Clipboard } from '../../../../hosts/common/clipboard';
 import { ValueInput } from '../../../editor/ui/inline/value_input';
 import type { InputFocusTarget } from '../../../input/focus';
 import { parseLuaFieldValueEdit, type LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
@@ -12,7 +11,7 @@ export class SceneOptionEditor {
 	private readonly unbindFocus: (() => void)[] = [];
 	private input: SceneEditorInput | undefined;
 
-	public constructor(private readonly parent: InputFocusTarget, private readonly clipboard: Clipboard,
+	public constructor(private readonly parent: InputFocusTarget,
 		private readonly beforeCommit: () => void, private readonly reveal: (property: SceneOptionProperty) => void) {}
 
 	public bind(input: SceneEditorInput): void {
@@ -41,7 +40,7 @@ export class SceneOptionEditor {
 	}
 
 	private append(index: number): void {
-		const control = new ValueInput<LuaFieldValueEdit>(this.parent, this.clipboard, {
+		const control = new ValueInput<LuaFieldValueEdit>(this.parent, {
 			options: { allowSpace: true, singleLine: true },
 			invalidBlurMessage: 'Invalid expression edit cancelled; source unchanged.',
 			format: value => value.edit.text,

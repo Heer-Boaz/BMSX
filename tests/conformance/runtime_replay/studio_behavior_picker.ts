@@ -10,7 +10,7 @@ import { check, type StudioFixture } from './studio_fixture';
 export async function chooseBehavior(test: StudioFixture, label: string): Promise<void> {
 	const picker = test.ide.editor.quickInput;
 	check(picker.visible, 'behavior picker: the command offers registrations');
-	test.clipboard.text = label;
+	await test.clipboard.writeText(label);
 	await test.press('ControlLeft', 'KeyV');
 	check(picker.model.list.rows.length === 1 && picker.model.list.rows[0].item.label === label,
 		`behavior picker: logical behavior ${label} is independently selectable`);
@@ -139,7 +139,7 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	await runPaletteCommand('Scenario Lab: Open');
 	await runPaletteCommand('Behavior Lens: Open');
 	const picker = ide.editor.quickInput;
-	clipboard.text = 'FSM picker.same';
+	await clipboard.writeText('FSM picker.same');
 	await press('ControlLeft', 'KeyV');
 	check(picker.model.list.rows.length === 2
 		&& picker.model.list.rows[0].item.description === 'title_screen.lua'
@@ -165,7 +165,7 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'behavior picker: ordinary source Undo removes the temporary authored definitions');
 	await runPaletteCommand('Behavior Lens: Open');
-	clipboard.text = 'picker.';
+	await clipboard.writeText('picker.');
 	await press('ControlLeft', 'KeyV');
 	check(picker.model.list.selectionIndex === -1, 'behavior picker: catalog consumes the undone source generation');
 	await press('Enter');

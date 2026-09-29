@@ -32,7 +32,7 @@ export async function runStudioEditReview(test: StudioFixture) {
 		await test.clickTab(mainTab.id);
 		await press('ControlLeft', 'End'); await press('ArrowLeft');
 		await runPaletteCommand('Edit: Rename Symbol with Preview');
-		test.clipboard.text = 'fixture_reviewed';
+		await test.clipboard.writeText('fixture_reviewed');
 		await press('ControlLeft', 'KeyV'); await press('Enter');
 		const input = getActiveTab();
 		if (input.kind !== 'workspace_edit_review') throw new Error('edit review: production review pane expected');
@@ -74,7 +74,7 @@ export async function runStudioEditReview(test: StudioFixture) {
 	check(discarded.proposal.state === 'discarded' && main.buffer.getText() === mainText, 'edit review: pointer Discard does not mutate source');
 	const stale = await show();
 	await test.clickTab(providerTab.id); await press('ControlLeft', 'End');
-	test.clipboard.text = '\n-- later edit'; await press('ControlLeft', 'KeyV');
+	await test.clipboard.writeText('\n-- later edit'); await press('ControlLeft', 'KeyV');
 	await test.clickTab(stale.id);
 	check(stale.proposal.state === 'stale' && !ide.editor.commands.isEnabled('workspaceEditReview.apply'),
 		'edit review: editing another tab retires the pending proposal');

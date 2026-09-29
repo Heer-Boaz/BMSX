@@ -38,8 +38,7 @@ export async function runAssistantAccount(kind: StudioRendererKind, canvas: HTML
 	ide.editor.setFontVariant('msx'); await frame(); await renderer.capture!('code-msx');
 	ide.editor.setFontVariant('tiny'); await frame();
 	await submitAssistantText(test, '/copy-code');
-	check(test.clipboard.text === 'ABCD-EFGH', 'Copy code copies exactly the public device code');
-	check(await navigator.clipboard.readText() === 'ABCD-EFGH', 'Copy code reaches the authorized browser clipboard');
+	check((await test.clipboard.readText()) === 'ABCD-EFGH', 'Copy code copies exactly the public device code');
 	// Supply native transient activation; popup blocking remains enabled in Chromium.
 	await issuer.openGesture();
 	await submitAssistantText(test, '/open');

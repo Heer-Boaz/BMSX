@@ -52,7 +52,7 @@ export async function runAssistantHistory(kind: StudioRendererKind, canvas: HTML
 	await submitAssistantText(test, 'Direct correction', true);
 	await until(() => !model.submitting, 'history: direct steering acknowledged without creating a second turn');
 	await test.clickTab(mainTab.id); await press('ControlLeft', 'Home');
-	test.clipboard.text = '-- Edited while queued\n'; await press('ControlLeft', 'KeyV');
+	await test.clipboard.writeText('-- Edited while queued\n'); await press('ControlLeft', 'KeyV');
 	const source = main.buffer.getText();
 	await test.clickTab(view.id); await frame(); await renderer.capture!('working');
 	const working = await control.metrics();
@@ -85,7 +85,7 @@ export async function runAssistantHistory(kind: StudioRendererKind, canvas: HTML
 	check(picker.model.list.rows.length === 1, 'one real thread, not copies for queued or direct inputs');
 	await frame(); await renderer.capture!('history');
 	const browsing = await control.metrics();
-	test.clipboard.text = 'First history'; await press('ControlLeft', 'KeyV');
+	await test.clipboard.writeText('First history'); await press('ControlLeft', 'KeyV');
 	for (let index = 0; index < 120; index++) await frame();
 	check(JSON.stringify(await control.metrics()) === JSON.stringify(browsing), 'history filtering uses retained data, not per-keystroke provider calls');
 	await press('Enter');
@@ -109,7 +109,7 @@ export async function runAssistantHistory(kind: StudioRendererKind, canvas: HTML
 	const promptTop = view.viewport.offsetTop + (promptRow + view.transcript.firstRow) * view.layout.rowHeight;
 	await test.click({ left: 12, right: 24, top: promptTop, bottom: promptTop + view.layout.rowHeight });
 	await press('ControlLeft', 'KeyC');
-	check(view.selectedEntry === prompt.index && await navigator.clipboard.readText() === firstPrompt, 'history: Copy returns original user Markdown, not formatted text');
+	check(view.selectedEntry === prompt.index && (await test.clipboard.readText()) === firstPrompt, 'history: Copy returns original user Markdown, not formatted text');
 	await press('Escape');
 	await submitAssistantText(test, '/queue'); await until(() => picker.visible, 'history: cold edit picker ready');
 	await press('Enter'); await press('Enter'); await submitAssistantText(test, 'Resume this edited queued message');

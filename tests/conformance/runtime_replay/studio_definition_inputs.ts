@@ -122,7 +122,7 @@ export async function testStudioDefinitionInputs(test: StudioFixture): Promise<v
 
 	const duplicates = [];
 	for (let occurrence = 0; occurrence < 2; occurrence += 1) {
-		await runPaletteCommand('Behavior Lens: Open'); test.clipboard.text = 'FSM navigation.same'; await press('ControlLeft', 'KeyV');
+		await runPaletteCommand('Behavior Lens: Open'); await test.clipboard.writeText('FSM navigation.same'); await press('ControlLeft', 'KeyV');
 		check(ide.editor.quickInput.model.list.rows.length === 2, 'A04: equal authored ids stay separate choices');
 		if (occurrence === 1) await press('ArrowDown');
 		await press('Enter');
@@ -137,7 +137,7 @@ export async function testStudioDefinitionInputs(test: StudioFixture): Promise<v
 	if (duplicate.kind !== 'behavior_lens') throw new Error('A04: active duplicate missing');
 	await click(duplicate.view.presentation.actionBar.items[0].bounds);
 	const prefix = '-- 🐉 preceding source\n';
-	await press('ControlLeft', 'Home'); test.clipboard.text = prefix; await press('ControlLeft', 'KeyV');
+	await press('ControlLeft', 'Home'); await test.clipboard.writeText(prefix); await press('ControlLeft', 'KeyV');
 	const beforeRename = model.buffer.getText();
 	const renameOffset = beforeRename.indexOf('navigation.fsm.one');
 	model.pushEditOperations([{ offset: renameOffset, deleteLength: 'navigation.fsm.one'.length, text: 'navigation.renamed' }]);

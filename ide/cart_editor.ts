@@ -33,7 +33,7 @@ import type { HostAudioOutput } from '../hosts/common/audio_output';
 import type { Input } from '../hosts/common/input/manager';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
 import type { RuntimeInspectionService } from './runtime/inspection';
-import type { Clipboard } from '../hosts/common/clipboard';
+import type { Clipboard, ClipboardTarget } from '../hosts/common/clipboard';
 import type { HostClock } from '../hosts/common/clock';
 import type { LogOutput } from '../hosts/common/log';
 import type { KeyValueStorage } from './workspace/key_value_storage';
@@ -157,6 +157,8 @@ const EDITOR_TARGET_WIDTH = 384;
 const EDITOR_TARGET_HEIGHT = 288;
 
 export type CartEditor = {
+	readonly clipboard: Clipboard;
+	readonly clipboardTarget: ClipboardTarget | undefined;
 	readonly terminal: LuaTerminalSession;
 	readonly assistant: AssistantConversation;
 	readonly diagnostics: ResourceDiagnosticsService;
@@ -231,7 +233,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly display: EditorDisplay;
 	private readonly input: Input;
 	private readonly clock: HostClock;
-	private readonly clipboard: Clipboard;
+	public readonly clipboard: Clipboard;
 	private readonly sources: RuntimeSourceState;
 	private readonly fault: RuntimeFaultState;
 	private readonly luaTooling: RuntimeLuaTooling;
@@ -331,7 +333,7 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		this.completion = new EditorCompletionController(luaTooling, fault, runtime);
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
-		this.quickInput = new QuickInputController(clipboard);
+		this.quickInput = new QuickInputController();
 		this.contextMenu = new ContextMenuController(inputFocus, pointerCapture);
 		this.resourceEditors = createResourceEditorResolver(
 			storage,
@@ -363,10 +365,10 @@ export class RuntimeCartEditor implements CartEditor {
 				this.debuggerState,
 			),
 			resource_view: () => new ResourceViewerEditorPane(),
-			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu, this.clipboard),
+			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu),
 			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.actorLab, this.commands, this.contextMenu),
 			game_view: () => new GameViewEditorPane(this.resourcePanel, this.commands, runtime),
-			scene_editor: () => new SceneEditorPane(this.resourcePanel, this.sceneEditor, this.commands, this.sources, this.clipboard),
+			scene_editor: () => new SceneEditorPane(this.resourcePanel, this.sceneEditor, this.commands, this.sources),
 			scenario_lab: () => new ScenarioLabEditorPane(
 				this.resourcePanel,
 				this.scenarioLab,
@@ -414,7 +416,7 @@ export class RuntimeCartEditor implements CartEditor {
 		};
 		this.crossFileRename = new CrossFileRenameManager(this.sources);
 		this.unbindQuickInputFields = bindQuickInputFields(
-			this, this.sources, this.clipboard,
+			this, this.sources,
 		);
 		this.unbindProblemsPanel = problemsPanel.focusTarget.bindKeyboard(
 			input => problemsPanel.handleKeyboard(input, this.editorPanes),
@@ -446,6 +448,9 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public get isActive(): boolean { return editorRuntimeState.active; }
+	public get clipboardTarget(): ClipboardTarget | undefined {
+		return this.isActive && !hasBlockingWorkbenchModal() ? inputFocus.target?.clipboard : undefined;
+	}
 	public get fontVariant(): Parameters<typeof setFontVariant>[1] { return editorViewState.fontVariant; }
 
 	public activate(): void {

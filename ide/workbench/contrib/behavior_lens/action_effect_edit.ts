@@ -1,6 +1,5 @@
 import type { EffectPropertyWrite } from './action_effect_index';
 import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
-import type { Clipboard } from '../../../../hosts/common/clipboard';
 import { DisposableStore } from '../../../common/lifecycle';
 import type { PointerSnapshot } from '../../../common/models';
 import { ValueInput } from '../../../editor/ui/inline/value_input';
@@ -35,8 +34,8 @@ export class ActionEffectPropertyEdit {
 	private lifetime: DisposableStore | undefined;
 	private readonly unbindBlur: () => void;
 
-	public constructor(parent: InputFocusTarget, clipboard: Clipboard) {
-		this.control = new ValueInput(parent, clipboard, {
+	public constructor(parent: InputFocusTarget) {
+		this.control = new ValueInput(parent, {
 			options: { allowSpace: true, singleLine: true },
 			invalidBlurMessage: 'Invalid expression edit cancelled; source unchanged.',
 			format: value => value.edit.text,

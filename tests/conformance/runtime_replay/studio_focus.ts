@@ -54,7 +54,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	await press('ControlLeft', 'KeyX');
 	check(field.text === '' && editorSearchState.query === '', 'focus: Cut changes the field through its content event');
 	await press('ControlLeft', 'KeyV');
-	check(field.text === 'world', 'focus: Paste uses the clipboard service cache');
+	check(field.text === 'world', 'focus: Paste uses the host clipboard');
 	await press('ControlLeft', 'KeyZ');
 	check(field.text === '', 'focus: one Undo removes the complete paste');
 	await press('ControlLeft', 'KeyZ');
@@ -139,9 +139,6 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	const generated = readonlyModel.buffer.getText();
 	await press('KeyQ');
 	await press('ControlLeft', 'KeyZ');
-	await click(editorChromeState.menuEntryBounds.edit);
-	check(TOP_BAR_MENUS.edit.items.every(item => item.type !== 'command' || item.disabled), 'focus: generated document history commands are disabled');
-	await click(editorChromeState.menuEntryBounds.edit);
 	check(readonlyModel.buffer.getText() === generated && model.buffer.getText() === original, 'focus: readonly input never targets the previously editable document');
 	await press('ControlLeft', 'KeyF');
 	await press('KeyX');

@@ -54,7 +54,7 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	const input = getActiveTab(); if (input.kind !== 'terminal') throw new Error('Terminal pane required');
 	check(terminal.inputContext === 'cart', 'conversation context does not change the manual context selection');
 	await renderer.capture!('conversation-results');
-	await test.click(input.composerBounds); test.clipboard.text = 'counter';
+	await test.click(input.composerBounds); await test.clipboard.writeText('counter');
 	await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => terminal.active === undefined && test.tasks.ready, 'terminal tools: ordinary manual evaluation');
 	check(terminal.transcript.entry(terminal.transcript.next - 1).text === '105', 'manual cart context sees the real implicit global mutation');
@@ -70,7 +70,7 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	await renderer.capture!('context-picker');
 	await press('ArrowDown'); await press('Enter');
 	check(terminal.inputContext === 'session', 'manual Lua context selection uses the ordinary picker');
-	await test.click(input.composerBounds); test.clipboard.text = 'counter';
+	await test.click(input.composerBounds); await test.clipboard.writeText('counter');
 	await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => terminal.active === undefined && test.tasks.ready, 'terminal tools: ordinary isolated context');
 	check(terminal.transcript.entry(terminal.transcript.next - 1).text === '43', 'manual isolated context sees the same session without changing cart globals');

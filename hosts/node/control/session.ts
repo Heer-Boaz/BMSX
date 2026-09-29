@@ -43,7 +43,7 @@ export class HostControlSession {
 				return {};
 			case 'clipboard-get':
 				if (!this.clipboard) throw new Error('This host has no clipboard.');
-				return { text: this.clipboard.text };
+				return { text: await this.clipboard.readText() };
 			case 'quit':
 				return {};
 			default:

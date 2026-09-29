@@ -58,7 +58,7 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	check(inputFocus.target === x.field.focusTarget, 'quick pick: cancelled draft still has a concrete return control');
 
 	await press('ControlLeft', 'Comma');
-	clipboard.text = 'long_query_'.repeat(100) + '\r\n\tend';
+	await clipboard.writeText('long_query_'.repeat(100) + '\r\n\tend');
 	await press('ControlLeft', 'KeyV');
 	check(picker.field.text === 'long_query_'.repeat(100) + 'end' && picker.field.lines.length === 1,
 		'quick pick: long external paste is not length-capped and remains a single-line query');

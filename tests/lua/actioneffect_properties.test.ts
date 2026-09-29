@@ -21,7 +21,6 @@ import { ACTIONEFFECT_PARTIAL_SOURCE, ACTIONEFFECT_SOURCE } from '../helpers/act
 import { ActionEffectPropertyEdit, selectedActionEffectProperty } from '../../ide/workbench/contrib/behavior_lens/action_effect_edit';
 import { inputFocus } from '../../ide/input/focus';
 import { insertValue, selectAll } from '../../ide/editor/ui/inline/text_field';
-import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 
 function fixture(source = ACTIONEFFECT_SOURCE, chosen = 0, imports: Readonly<Record<string, string>> = {}) {
 	editorViewState.font = new EditorFont('tiny');
@@ -60,7 +59,7 @@ fx.register_effect('other', require('other'))`;
 	const f = fixture(root, 0, { 'blueprint.lua': blueprint, 'tags.lua': "return { 'busy' }",
 		'other.lua': 'return { period_ms = 99 }', 'callback.lua': 'return function() error("not evaluated") end' });
 	const parent = inputFocus.createTarget();
-	const edit = new ActionEffectPropertyEdit(parent, new HeadlessClipboard());
+	const edit = new ActionEffectPropertyEdit(parent);
 	t.after(() => { edit.dispose(); inputFocus.setTarget(null); f.input.dispose(); });
 	const provider = f.models.get('blueprint.lua')!, tags = f.models.get('tags.lua')!, other = f.models.get('other.lua')!;
 	f.model.refreshResource({ ...f.model.resource, source: { ...f.model.resource.source, generated: true } });
@@ -122,7 +121,7 @@ fx.register_effect('other', require('other'))`;
 test('property drafts edit written expressions and retain ordinary source history in the chosen effect', t => {
 	const f = fixture(ACTIONEFFECT_SOURCE, 1);
 	const parent = inputFocus.createTarget();
-	const edit = new ActionEffectPropertyEdit(parent, new HeadlessClipboard());
+	const edit = new ActionEffectPropertyEdit(parent);
 	t.after(() => { edit.dispose(); inputFocus.setTarget(null); f.input.dispose(); });
 	for (const [name, value] of [['period_ms', '25 * 2 --[[kept]] '], ['event', " 'Different Event' "], ['defer_cooldown_commit', '(false)'], ['required_tags', "{ 'one', 'two' }"]]) {
 		const row = f.properties.tree.rows.find(row => row.element.kind === 'property' && (row.element.source.label === name || row.element.source.label.startsWith(name)))!;
@@ -153,7 +152,7 @@ test('property drafts edit written expressions and retain ordinary source histor
 test('property drafts cancel on invalidation and read-only; invalid Enter retains text and blur discards it', t => {
 	const f = fixture();
 	const parent = inputFocus.createTarget();
-	const edit = new ActionEffectPropertyEdit(parent, new HeadlessClipboard());
+	const edit = new ActionEffectPropertyEdit(parent);
 	t.after(() => { edit.dispose(); inputFocus.setTarget(null); f.input.dispose(); });
 	const open = () => {
 		f.properties.tree.selectionIndex = 1; acceptEffectPropertySelection(f.view, f.properties, false);

@@ -1,5 +1,9 @@
-import type { Position } from '../../../common/models';
+import type { InlineInputOptions, Position } from '../../../common/models';
+import type { ClipboardContents, ClipboardImage, ClipboardTarget } from '../../../../hosts/common/clipboard';
 import { inputFocus, type InputFocusTarget } from '../../../input/focus';
+import { deleteSelection, pasteFieldText, selectedText } from './text_field';
+import { showEditorMessage } from '../../../common/feedback_state';
+import { COLOR_STATUS_WARNING } from '../../../common/constants';
 
 export type TextFieldAnnotation<T = unknown> = { from: number; to: number; data: T };
 
@@ -13,7 +17,7 @@ type TextFieldRevision<T> = {
 };
 
 /** Small input-control history, independent of resource-owned document history. */
-export class TextField<T = unknown> {
+export class TextField<T = unknown> implements ClipboardTarget {
 	public annotations: readonly TextFieldAnnotation<T>[] = [];
 	public readOnly = false;
 	public text = '';
@@ -28,12 +32,14 @@ export class TextField<T = unknown> {
 	public lastPointerClickTimeMs = 0;
 	public lastPointerClickColumn = -1;
 	public readonly focusTarget: InputFocusTarget;
+	public pasteImages: ((images: readonly ClipboardImage[]) => void) | undefined;
 	private readonly undoStack: TextFieldRevision<T>[] = [];
 	private readonly redoStack: TextFieldRevision<T>[] = [];
 	private readonly changeListeners = new Set<() => void>();
 
-	public constructor(parent: InputFocusTarget | null = null) {
+	public constructor(parent: InputFocusTarget | null = null, public readonly options: InlineInputOptions = { allowSpace: true }) {
 		this.focusTarget = inputFocus.createTarget(parent);
+		this.focusTarget.clipboard = this;
 		this.focusTarget.registerCommand('undo', {
 			isEnabled: () => this.canUndo,
 			run: () => this.undo(),
@@ -43,6 +49,15 @@ export class TextField<T = unknown> {
 			run: () => this.redo(),
 		});
 		this.focusTarget.onDidBlur(() => { this.pointerSelecting = false; });
+	}
+
+	public copy(): string | null { return selectedText(this); }
+	public cut(): void { deleteSelection(this); }
+	public paste(contents: ClipboardContents): void {
+		if (this.readOnly) return;
+		if (contents.images.length > 0 && this.pasteImages !== undefined) this.pasteImages(contents.images);
+		else if (contents.text.length > 0) pasteFieldText(this, contents.text);
+		else if (contents.images.length > 0) showEditorMessage('This field accepts text, not images.', COLOR_STATUS_WARNING, 4);
 	}
 
 	public get canUndo(): boolean {

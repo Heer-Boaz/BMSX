@@ -33,7 +33,7 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	const original = model.buffer.getText();
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BEHAVIOR_SOURCE_FIXTURE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
-	clipboard.text = 'BT fixture.tree';
+	await clipboard.writeText('BT fixture.tree');
 	await press('ControlLeft', 'KeyV');
 	const picker = ide.editor.quickInput;
 	check(picker.model.list.rows.length === 2, 'source graph: the fixture contributes two independent registrations');

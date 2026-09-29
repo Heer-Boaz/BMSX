@@ -29,7 +29,7 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: FSM_PROOF_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	const picker = ide.editor.quickInput;
-	clipboard.text = 'FSM fixture.proofs';
+	await clipboard.writeText('FSM fixture.proofs');
 	await press('ControlLeft', 'KeyV');
 	check(picker.model.list.rows.length === 2, 'FSM proof: duplicate registrations stay independently selectable');
 	await press('Enter');

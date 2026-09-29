@@ -512,6 +512,10 @@ Current artifact roles:
   user-I/O session, optionally composing Studio over a real disk workspace.
   The control channel exposes input/clipboard/presented images, not IDE commands
   or machine inspection. See [interactive host control](interactive_host_control.md).
+  Clipboard access belongs to the host; controls own selection and synchronous
+  edits. Browser native actions and the headless memory clipboard share this
+  contract without a browser-private cache or speculative Cut deletion. See
+  [platform clipboard ownership and limits](clipboard.md).
 
 The shared player lifecycle and frame loop are owned by `hosts/common/`. The
 browser and Node player entrypoints import that lifecycle directly. Studio owns

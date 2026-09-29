@@ -46,6 +46,7 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 	public constructor(resources: ResourcePanelController, private readonly clipboard: Clipboard, private readonly quickInput: QuickInputController) {
 		super(resources);
 		this.scroll.focusTarget.commandContext = this.focusTarget;
+		this.scroll.focusTarget.clipboard = { copy: () => this.isEnabled('terminal.copy') ? this.input.session.transcript.entry(this.input.selectedEntry).text : null };
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 	}
 	public override focus(): void { this.input.draft.focusTarget.focus(); }
@@ -178,9 +179,7 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 		if ((isCtrlDown(input) || isMetaDown(input)) && isKeyJustPressed('KeyL', input)) {
 			consumeIdeKey('KeyL', input); this.execute('terminal.clear'); return true;
 		}
-		if ((isCtrlDown(input) || isMetaDown(input)) && isKeyJustPressed('KeyC', input)) {
-			consumeIdeKey('KeyC', input); this.execute('terminal.copy'); return true;
-		}
+
 		for (const key of ['ArrowUp', 'ArrowDown'] as const) {
 			if (!shouldRepeatKeyFromPlayer(key, input)) continue;
 			consumeIdeKey(key, input);
@@ -215,7 +214,7 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 				return;
 			}
 		}
-		this.composer.handleKeyboard(input, this.clipboard);
+		this.composer.handleKeyboard(input);
 	}
 	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null): void {
 		if (pointer !== null) this.scroll.handleWheel(pointer, direction * steps * this.input.layout.rowHeight);

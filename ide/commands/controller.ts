@@ -1,4 +1,5 @@
 import type { RuntimeDebuggerExecution } from '../runtime/debugger_execution';
+import { executeClipboardAction } from '../input/clipboard';
 import type { RuntimeFrameNavigation } from '../runtime/frame_navigation';
 import { navigationState } from '../navigation/navigation_history';
 import { openGameView } from '../workbench/contrib/game_view/editor_input';
@@ -108,6 +109,9 @@ export class IdeCommandController {
 		const edit = inputFocus.target?.commandContext.edit;
 		if (SOURCE_COMMANDS.has(command) && edit !== undefined && !edit.commit()) return;
 		switch (command) {
+			case 'copy': case 'cut': case 'paste':
+				executeClipboardAction(this.editor.clipboard, command, this.editor.clipboardTarget);
+				return;
 			case 'navigateBack':
 				void this.editor.navigation.goBackward();
 				return;
@@ -294,6 +298,8 @@ export class IdeCommandController {
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target): boolean {
 		const context = focus?.commandContext;
 		switch (command) {
+			case 'copy': case 'cut': case 'paste':
+				return focus?.clipboard?.[command] !== undefined && (command === 'copy' || !focus.clipboard.readOnly);
 			case 'hot-resume':
 				return this.hotResumes.acceptingRequests && !this.execution.launchPending;
 			case 'reboot':

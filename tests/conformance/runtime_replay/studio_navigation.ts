@@ -19,7 +19,7 @@ async function openView(test: StudioFixture, command: EditorViewCommandId): Prom
 async function chooseSource(test: StudioFixture, path: string): Promise<void> {
 	const picker = test.ide.editor.quickInput;
 	check(picker.visible, 'navigation: source choice uses the workbench picker');
-	test.clipboard.text = path;
+	await test.clipboard.writeText(path);
 	await test.press('ControlLeft', 'KeyV');
 	check(picker.model.list.rows.length === 1 && picker.model.list.rows[0].item.label === path,
 		'navigation: the actual source declaration is discoverable without an open code pane');

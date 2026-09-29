@@ -30,7 +30,7 @@ export async function testStudioQuickPickHighlights(test: StudioFixture): Promis
 		await press('ControlLeft', 'ShiftLeft', 'KeyP'); await press('KeyH'); await press('KeyR');
 		check(picker.model.list.rows.some(row => row.item.label === 'Run: Hot Resume'), 'Quick Pick: hr admits the actual Hot Resume command');
 		await checkQuickPickHighlightRuns(test, 'Run: Hot Resume', [[5, 6], [9, 10]]);
-		await press('ControlLeft', 'KeyA'); test.clipboard.text = 'hot res'; await press('ControlLeft', 'KeyV');
+		await press('ControlLeft', 'KeyA'); await test.clipboard.writeText('hot res'); await press('ControlLeft', 'KeyV');
 		await checkQuickPickHighlightRuns(test, 'Run: Hot Resume', [[5, 12]]);
 		await press('ControlLeft', 'KeyZ');
 		await press('Escape');

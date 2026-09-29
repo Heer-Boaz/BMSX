@@ -56,7 +56,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, input => this.handleTranscriptKeyboard(input));
 	private readonly composer = new MultilineFieldControl();
 	private unbindDraft: (() => void) | undefined;
-	private unbindAttachmentPaste: (() => void) | undefined;
+	private unbindAttachmentClipboard: (() => void) | undefined;
 	public constructor(resources: ResourcePanelController, private readonly clipboard: Clipboard, private readonly panes: EditorPanes, quickInput: QuickInputController, decodeImage: ImageDecoder) {
 		super(resources);
 		this.chat = new AssistantChatCommands(quickInput, clipboard);
@@ -64,6 +64,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		this.preview = new ImagePreviewOverlay(this.previews);
 		this.attachments = new AssistantAttachmentStrip(this.previews, url => this.preview.open(url));
 		this.scroll.focusTarget.commandContext = this.focusTarget;
+		this.scroll.focusTarget.clipboard = { copy: () => this.isEnabled('assistant.copy') ? this.input.conversation.entries[this.input.selectedEntry].text.getText() : null };
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 	}
 	public override focus(): void { this.input.draft.focusTarget.focus(); }
@@ -74,7 +75,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		this.attachments.setInput(this.input.attachments);
 		const draftInput = this.input;
 		this.composer.setInput(draftInput.draft, draftInput.composer, draftInput.composerBounds, images => draftInput.attachments.add(images));
-		this.unbindAttachmentPaste = this.attachments.focusTarget.bindPaste(draftInput.draft.focusTarget.paste!);
+		this.unbindAttachmentClipboard = this.attachments.focusTarget.bindClipboard({ paste: contents => draftInput.draft.paste(contents) });
 		this.unbindDraft = this.input.draft.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 		this.input.draft.focusTarget.registerCommand('suggest.accept', {
 			isEnabled: () => this.input.draft.focusTarget.hasFocus && this.references.suggestions.visible && this.references.suggestions.model.list.selectionIndex >= 0,
@@ -95,7 +96,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 	}
 	public override clearInput(): void {
 		this.unbindDraft?.(); this.unbindDraft = undefined;
-		this.unbindAttachmentPaste?.(); this.unbindAttachmentPaste = undefined;
+		this.unbindAttachmentClipboard?.(); this.unbindAttachmentClipboard = undefined;
 		this.preview.close(); this.attachments.clearInput(); this.previews.dispose();
 		this.references.clear(); this.composer.clearInput(); this.actions.clearInput(); this.scroll.clearInput();
 		super.clearInput();
@@ -304,9 +305,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		if (this.input.selectedEntry >= 0 && isKeyJustPressed('Escape', input)) {
 			consumeIdeKey('Escape', input); this.input.selectedEntry = -1; return true;
 		}
-		if ((isCtrlDown(input) || isMetaDown(input)) && isKeyJustPressed('KeyC', input)) {
-			consumeIdeKey('KeyC', input); this.execute('assistant.copy'); return true;
-		}
+
 		if (isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); this.execute('assistant.review'); return true; }
 		for (const key of ['ArrowUp', 'ArrowDown'] as const) {
 			if (!shouldRepeatKeyFromPlayer(key, input)) continue;
@@ -332,7 +331,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		if (!isShiftDown(input) && isKeyJustPressed('Enter', input) && isAssistantCommand(this.input)) {
 			consumeIdeKey('Enter', input); this.execute('assistant.send'); return;
 		}
-		this.composer.handleKeyboard(input, this.clipboard);
+		this.composer.handleKeyboard(input);
 	}
 	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null): void {
 		if (this.preview.visible) return;

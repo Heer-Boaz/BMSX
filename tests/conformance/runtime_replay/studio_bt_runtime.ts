@@ -35,7 +35,7 @@ export async function openRuntimeTreeInspector(test: StudioFixture, component: '
 	const position = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes(), calls = guest.global('inspection_bt_callback_count');
 	const model = editorTextModelService.get({ domain: 0, path: 'inspection_trees.lua' })!, version = model.version;
 	await openRuntimeTreePicker(test);
-	test.clipboard.text = `inspection.bt.${component}`;
+	await test.clipboard.writeText(`inspection.bt.${component}`);
 	await press('ControlLeft', 'KeyV');
 	check(test.ide.editor.quickInput.model.list.rows.length === 1, 'runtime BT: component choice disambiguates the shared tree id');
 	await press('Enter');

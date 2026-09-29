@@ -39,7 +39,7 @@ export async function runAssistantSourceSave(kind: StudioRendererKind, canvas: H
 	const operation = ide.textFileSaves.latestOperation(main)!;
 	check(operation.result === undefined && !yaml.dirty && main.dirty, 'Save is pending until its project acknowledgement arrives');
 	await test.clickTab(mainTab.id); await press('ControlLeft', 'Home');
-	test.clipboard.text = '-- later typing\n'; await press('ControlLeft', 'KeyV');
+	await test.clipboard.writeText('-- later typing\n'); await press('ControlLeft', 'KeyV');
 	await test.clickTab(view.id);
 	await test.click(view.turnActions.items.find(item => item.command === 'assistant.stop')!.bounds);
 	await until(() => conversation.state === 'ready', 'source Save: visible Stop retires the pending tool reply');

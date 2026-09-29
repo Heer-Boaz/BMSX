@@ -1,6 +1,6 @@
 import { resolveReferenceLookup, type ReferenceLookupOptions } from '../../../../editor/contrib/references/lookup';
 import { type ReferenceMatchInfo } from '../../../../editor/contrib/references/state';
-import type { InlineInputOptions, SearchMatch } from '../../../../common/models';
+import type { SearchMatch } from '../../../../common/models';
 import { TextField } from '../../../../editor/ui/inline/text_field_model';
 import { applyInlineFieldEditing, setFieldText } from '../../../../editor/ui/inline/text_field';
 import * as constants from '../../../../common/constants';
@@ -17,7 +17,6 @@ import { validateRenameIdentifier } from './validation';
 import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 import type { CrossFileRenameManager } from './operations';
 import type { PlayerInput } from '../../../../../hosts/common/input/player';
-import type { Clipboard } from '../../../../../hosts/common/clipboard';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
 import type { EditorPanes } from '../../../services/editor/editor_panes';
 import { WorkspaceEditReviewInput } from '../../edit_review/editor_input';
@@ -29,7 +28,7 @@ export type RenameStartOptions = ReferenceLookupOptions;
 const EMPTY_RENAME_MATCHES: SearchMatch[] = [];
 
 export class RenameController {
-	private readonly field = new TextField(activeCodeEditor.focusTarget);
+	private readonly field = new TextField(activeCodeEditor.focusTarget, { allowSpace: false, singleLine: true, characterFilter: value => LuaLexer.isIdentifierPart(value.charAt(0)) });
 	private visible = false;
 	private matches: SearchMatch[] = EMPTY_RENAME_MATCHES;
 	private info: ReferenceMatchInfo = null;
@@ -39,16 +38,6 @@ export class RenameController {
 	private originalName = '';
 	private activeIndex = -1;
 	private expressionLabel: string = null;
-	private readonly inlineInputOptions: InlineInputOptions = {
-		allowSpace: false,
-		characterFilter: (value: string): boolean => this.identifierFilter(value),
-	};
-	private readonly identifierFilter = (value: string): boolean => {
-		if (value.length === 0) {
-			return false;
-		}
-		return LuaLexer.isIdentifierPart(value.charAt(0));
-	};
 
 	public constructor() {
 		this.field.focusTarget.onDidFocus(() => {
@@ -101,13 +90,12 @@ export class RenameController {
 
 	public handleInput(
 		playerInput: PlayerInput,
-		clipboard: Clipboard,
 		crossFileRename: CrossFileRenameManager,
 	): void {
 		if (!this.isActive()) {
 			return;
 		}
-		handleRenameControllerInput(playerInput, clipboard, this, crossFileRename);
+		handleRenameControllerInput(playerInput, this, crossFileRename);
 	}
 
 	public getField(): TextField {
@@ -182,8 +170,8 @@ export class RenameController {
 		this.field.focusTarget.release();
 	}
 
-	public applyFieldEditing(playerInput: PlayerInput, clipboard: Clipboard): void {
-		applyInlineFieldEditing(playerInput, clipboard, this.field, this.inlineInputOptions);
+	public applyFieldEditing(playerInput: PlayerInput): void {
+		applyInlineFieldEditing(playerInput, this.field);
 	}
 
 	private resetInlineField(value: string): void {

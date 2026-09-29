@@ -120,7 +120,7 @@ export async function presentBehaviorTreeGraph(test: StudioFixture): Promise<voi
 	const model = activeCodeEditor.model;
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BEHAVIOR_SOURCE_FIXTURE }]);
 	await test.runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
-	test.clipboard.text = 'BT fixture.tree';
+	await test.clipboard.writeText('BT fixture.tree');
 	await test.press('ControlLeft', 'KeyV');
 	await test.press('Enter');
 	await test.press('ArrowDown');

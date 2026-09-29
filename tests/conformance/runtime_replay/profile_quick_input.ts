@@ -8,7 +8,7 @@ import { medianMilliseconds } from '../../helpers/performance';
 
 configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-const picker = new QuickInputController({ text: '', isSupported: () => false, writeText: async () => {} });
+const picker = new QuickInputController();
 const accept = () => assert.fail('measuring layout must not execute a choice');
 const FRAMES = 100000;
 for (const count of [128, 1024, 8192]) {

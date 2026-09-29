@@ -114,7 +114,7 @@ test('highlighted labels own prefix clipping and ellipsis, with retained proport
 test('shared picker consumes provider spans, updates them without text queries and renders each theme/font directly', t => {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	const picker = new QuickInputController({ text: '', isSupported: () => false, writeText: async () => {} });
+	const picker = new QuickInputController();
 	t.after(() => { picker.dispose(); constants.setIdeThemeVariant('light'); });
 	const item = { label: 'source_choice', description: 'independent.lua', detail: '7:1' };
 	const highlights = new ScratchBuffer<QuickPickHighlight>(() => ({ field: 'label', start: 0, end: 0 }));

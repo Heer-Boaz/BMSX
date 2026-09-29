@@ -20,7 +20,7 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'presentation: boot the cart');
 	await reachNemesisTitle(test);
 	harness.openLuaSource('cart.lua'); await frame();
-	await press('ControlLeft', 'Home'); test.clipboard.text = '-- REFERENCED WORKING COPY\n'; await press('ControlLeft', 'KeyV');
+	await press('ControlLeft', 'Home'); await test.clipboard.writeText('-- REFERENCED WORKING COPY\n'); await press('ControlLeft', 'KeyV');
 	await test.runPaletteCommand('View: Codex Assistant');
 	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant expected');
 	const conversation = ide.editor.assistant, paused = cycles();
@@ -47,7 +47,7 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	await submitAssistantText(test, '/model'); await until(() => picker.visible, 'presentation: cancel picker'); await press('Escape');
 	check(conversation.configuration!.model === selectedModel && conversation.thread === undefined, 'presentation: cancel keeps existing settings');
 	await test.click(view.composerBounds);
-	test.clipboard.text = 'One two three\n'.repeat(10); await press('ControlLeft', 'KeyV'); await frame();
+	await test.clipboard.writeText('One two three\n'.repeat(10)); await press('ControlLeft', 'KeyV'); await frame();
 	check(view.composerBounds.bottom - view.composerBounds.top > emptyComposerHeight, 'presentation: long draft grows the composer');
 	check(view.composer.firstRow > 0, 'presentation: long draft scrolls to the caret');
 	await capture('expanded-composer');
@@ -55,7 +55,7 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	await press('ControlLeft', 'KeyA'); await press('Backspace'); await frame();
 	check(view.composerBounds.bottom - view.composerBounds.top === emptyComposerHeight, 'presentation: deleting the draft returns transcript space');
 	const draftMarkdown = '**Bold** *italic* `velocity_x_q8` ~~previous~~\n- [x] Keep markers\n```lua\n\treturn 7\n```\n[Guide](https://example.com)';
-	test.clipboard.text = draftMarkdown; await press('ControlLeft', 'KeyV');
+	await test.clipboard.writeText(draftMarkdown); await press('ControlLeft', 'KeyV');
 	ide.editor.setFontVariant('msx'); await frame(); await capture('composer-markdown-msx');
 	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame(); await capture('composer-markdown-dark-msx');
 	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame();
@@ -65,7 +65,7 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	check(getCursorOffset(view.draft) === cursor, 'presentation: styled source pointer positions the raw-text caret');
 	for (let index = 0; index < 5; index++) await press('ShiftLeft', 'ArrowRight');
 	await capture('composer-markdown-selection'); await press('ControlLeft', 'KeyC');
-	check(await navigator.clipboard.readText() === draftMarkdown.slice(cursor, cursor + 5), 'presentation: selection Copy includes source Markdown delimiters');
+	check((await test.clipboard.readText()) === draftMarkdown.slice(cursor, cursor + 5), 'presentation: selection Copy includes source Markdown delimiters');
 	await press('ControlLeft', 'KeyX');
 	const editedDraft = view.draft.text;
 	check(editedDraft === draftMarkdown.slice(0, cursor) + draftMarkdown.slice(cursor + 5), 'presentation: Cut edits source, not the styled projection');
@@ -75,7 +75,7 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	await press('ControlLeft', 'KeyA'); await press('Backspace');
 	ide.editor.setFontVariant('tiny'); await frame();
 	await test.click(view.composerBounds);
-	test.clipboard.text = 'Inspect the mijter enemy, then explain the change. @cart'; await press('ControlLeft', 'KeyV');
+	await test.clipboard.writeText('Inspect the mijter enemy, then explain the change. @cart'); await press('ControlLeft', 'KeyV');
 	await capture('reference-suggestions');
 	await test.runPaletteCommand('Preferences: Toggle Theme'); await frame();
 	// Returning to the composer restores suggestions without creating another prompt.
@@ -111,8 +111,7 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	const codeBounds = { left: 12, right: 24, top: codeTop, bottom: codeTop + view.layout.rowHeight };
 	await test.click(codeBounds);
 	await press('ControlLeft', 'KeyC');
-	check(view.selectedEntry === reply.index && test.clipboard.text === reply.text.getText(), 'presentation: click and Copy preserve the complete original Markdown');
-	check(await navigator.clipboard.readText() === reply.text.getText(), 'presentation: formatted text Copy reaches the browser clipboard');
+	check(view.selectedEntry === reply.index && (await test.clipboard.readText()) === reply.text.getText(), 'presentation: click and Copy preserve the complete original Markdown');
 	await capture('selected-code-msx');
 	await until(() => !editorFeedbackState.message.visible, 'presentation: shared clipboard confirmation expires without running the guest');
 	await test.click({ ...codeBounds, left: view.viewport.bounds.right - 2, right: view.viewport.bounds.right - 1 });
@@ -151,14 +150,14 @@ export async function runAssistantPresentation(kind: StudioRendererKind, canvas:
 	await submitAssistantText(test, '/model'); await until(() => picker.visible, 'presentation: narrow model picker');
 	await frame(); await capture('narrow-model-picker'); await press('Escape');
 	ide.editor.setFontVariant('tiny'); await frame(); await capture('narrow-tiny');
-	await test.click(view.composerBounds); test.clipboard.text = draftMarkdown; await press('ControlLeft', 'KeyV');
+	await test.click(view.composerBounds); await test.clipboard.writeText(draftMarkdown); await press('ControlLeft', 'KeyV');
 	await capture('composer-markdown-narrow'); await press('ControlLeft', 'Home'); await capture('composer-markdown-narrow-start');
 	ide.editor.setFontVariant('msx'); await frame(); await capture('composer-markdown-narrow-msx-start');
 	await press('ControlLeft', 'End'); await capture('composer-markdown-narrow-msx-end');
 	await press('ControlLeft', 'KeyA'); await press('Backspace');
 	ide.editor.setFontVariant('tiny'); await frame();
 	await test.click(view.composerBounds);
-	test.clipboard.text = 'Keep investigating while I review the result. @cart'; await press('ControlLeft', 'KeyV');
+	await test.clipboard.writeText('Keep investigating while I review the result. @cart'); await press('ControlLeft', 'KeyV');
 	await capture('reference-suggestions-narrow'); await press('Tab');
 	check(view.draft.annotations.length === 1 && view.draft.focusTarget.hasFocus, 'presentation: Tab accepts a reference without moving focus');
 	await press('ControlLeft', 'Enter');

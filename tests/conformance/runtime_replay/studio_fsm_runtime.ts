@@ -40,7 +40,7 @@ export async function openRuntimeStateMachinePicker(test: StudioFixture): Promis
 export async function openRuntimeStatePicker(test: StudioFixture, component: 'first' | 'second'): Promise<void> {
 	await openRuntimeStateMachinePicker(test);
 	const picker = test.ide.editor.quickInput;
-	test.clipboard.text = `walker inspection.fsm.${component}`;
+	await test.clipboard.writeText(`walker inspection.fsm.${component}`);
 	await test.press('ControlLeft', 'KeyV');
 	check(picker.model.list.rows.length === 1,
 		'runtime FSM: selected component and owner distinguish equal machine ids');

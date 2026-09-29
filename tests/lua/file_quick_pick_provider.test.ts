@@ -89,7 +89,7 @@ test('same-path files from two sockets retain distinct original resources throug
 		source: { resid: `module_${domain}`, type: 'lua' } }));
 	const items = buildResourceQuickPickItems(resources);
 	const provider = new FileQuickPickProvider(items);
-	const picker = new QuickInputController({ text: '', isSupported: () => false, writeText: async () => {} });
+	const picker = new QuickInputController();
 	t.after(() => picker.dispose());
 	let accepted: RuntimeResource | undefined;
 	picker.pick('FILES', 'query', () => provider, item => { accepted = item.resource; });

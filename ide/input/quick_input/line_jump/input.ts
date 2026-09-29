@@ -3,10 +3,9 @@ import { applyLineJump, closeLineJump, openLineJump } from '../../../workbench/c
 import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../keyboard/key_input';
 import { lineJumpState } from '../../../workbench/contrib/code_editor/find/widget_state';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { Clipboard } from '../../../../hosts/common/clipboard';
 import type { EditorSearchController } from '../../../workbench/contrib/code_editor/find/search';
 
-export function handleLineJumpInput(playerInput: PlayerInput, clipboard: Clipboard, search: EditorSearchController): void {
+export function handleLineJumpInput(playerInput: PlayerInput, search: EditorSearchController): void {
 	const shiftDown = isShiftDown(playerInput);
 	const ctrlDown = isCtrlDown(playerInput);
 	const metaDown = isMetaDown(playerInput);
@@ -26,10 +25,5 @@ export function handleLineJumpInput(playerInput: PlayerInput, clipboard: Clipboa
 		closeLineJump(false);
 		return;
 	}
-	const digitFilter = (value: string): boolean => value >= '0' && value <= '9';
-	applyInlineFieldEditing(playerInput, clipboard, lineJumpState.field, {
-		allowSpace: false,
-		characterFilter: digitFilter,
-		maxLength: 6,
-	});
+	applyInlineFieldEditing(playerInput, lineJumpState.field);
 }

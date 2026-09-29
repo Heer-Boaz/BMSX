@@ -6,7 +6,6 @@ import { editorSearchState } from '../../../workbench/contrib/code_editor/find/w
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { Clipboard } from '../../../../hosts/common/clipboard';
 
 type SearchSelectionOptions = {
 	preview?: boolean;
@@ -49,7 +48,6 @@ function stepSearchSelectionFromInput(
 
 export function handleSearchInput(
 	playerInput: PlayerInput,
-	clipboard: Clipboard,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 ): void {
@@ -122,7 +120,5 @@ export function handleSearchInput(
 			return;
 		}
 	}
-	applyInlineFieldEditing(playerInput, clipboard, editorSearchState.field, {
-		allowSpace: true,
-	});
+	applyInlineFieldEditing(playerInput, editorSearchState.field);
 }

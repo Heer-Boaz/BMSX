@@ -50,7 +50,7 @@ export async function testStudioBehaviorKinds(test: StudioFixture): Promise<void
 	const focus = inputFocus.target;
 	const selected = lens.view.selection;
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
-	clipboard.text = 'EFFECT fire_salvo';
+	await clipboard.writeText('EFFECT fire_salvo');
 	await press('ControlLeft', 'KeyV');
 	await press('Enter');
 	check(picker.visible && picker.model.list.selectionIndex === -1, 'behavior kinds: an effect query cannot bypass the FSM kind');

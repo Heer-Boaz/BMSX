@@ -44,7 +44,7 @@ export async function testStudioPinnedFrameEvaluation(test: StudioFixture): Prom
 				&& context.frame.physicalFrameIndex === selected.physicalFrameIndex, 'manual picker selects the installed IRQ frame');
 			await test.capture?.('frame-context-selected');
 		} else ide.terminal.inputContext = ide.terminal.frameContext(selected);
-		await test.click(input.composerBounds); test.clipboard.text = expression;
+		await test.click(input.composerBounds); await test.clipboard.writeText(expression);
 		await test.press('ControlLeft', 'KeyV'); await test.press('Enter');
 		await until(() => ide.terminal.active === undefined && test.tasks.ready, `frame admission: ${target} named evaluation returns`);
 		const result = ide.terminal.lastResult!.result!;

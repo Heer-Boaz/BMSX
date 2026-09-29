@@ -26,7 +26,7 @@ export async function testStudioWorkspaceRename(test: StudioFixture): Promise<vo
 	await press('ControlLeft', 'End'); await press('ArrowLeft');
 	await runPaletteCommand('Edit: Rename Symbol');
 	check(renameController.isActive() && renameController.getOriginalName() === 'fixture_rename', 'workspace rename: actual semantic reference opens the prompt');
-	test.clipboard.text = 'fixture_renamed';
+	await test.clipboard.writeText('fixture_renamed');
 	await press('ControlLeft', 'KeyV'); await press('Enter');
 	check(main.buffer.getText() === mainText.replaceAll('fixture_rename', 'fixture_renamed')
 		&& provider.buffer.getText() === providerText.replaceAll('fixture_rename', 'fixture_renamed'), 'workspace rename: one command edits both actual source owners');
@@ -37,7 +37,7 @@ export async function testStudioWorkspaceRename(test: StudioFixture): Promise<vo
 	check(main.buffer.getText() === mainText && provider.buffer.getText() === providerText, 'workspace rename: provider Undo restores both sources');
 	await test.clickTab(mainTab.id); await press('ControlLeft', 'KeyY');
 	await test.clickTab(providerTab.id); await press('ControlLeft', 'End');
-	test.clipboard.text = '\n-- later'; await press('ControlLeft', 'KeyV');
+	await test.clipboard.writeText('\n-- later'); await press('ControlLeft', 'KeyV');
 	await test.clickTab(mainTab.id); await press('ControlLeft', 'KeyZ');
 	check(main.buffer.getText().includes('fixture_renamed')
 		&& provider.buffer.getText().endsWith('-- later'), 'workspace rename: focused Undo reports its actual dependency and changes neither source');

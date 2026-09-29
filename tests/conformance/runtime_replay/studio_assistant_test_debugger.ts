@@ -74,8 +74,8 @@ return { kind = 'unit',
 	await runPaletteCommand('Scenario Lab: Debug Selected Test Case');
 	await until(() => ide.scenarioRuns.debugger?.reason === 'entry', 'ordinary Debug admits one case and stops before bind');
 	await runPaletteCommand('Scenario Lab: Compiled Test Sources and Breakpoints');
-	test.clipboard.text = module.resource.path; await press('ControlLeft', 'KeyV'); await press('Enter');
-	test.clipboard.text = 'local result = child(20)'; await press('ControlLeft', 'KeyV'); await press('Enter');
+	await test.clipboard.writeText(module.resource.path); await press('ControlLeft', 'KeyV'); await press('Enter');
+	await test.clipboard.writeText('local result = child(20)'); await press('ControlLeft', 'KeyV'); await press('Enter');
 	await runPaletteCommand('Scenario Lab: Continue Test');
 	await until(() => ide.scenarioRuns.debugger?.reason === 'breakpoint', 'ordinary compiled breakpoint stops the test');
 	await frame(); await renderer.capture!('ordinary-breakpoint');

@@ -6,7 +6,7 @@ export async function submitAssistantText(test: StudioFixture, text: string, dir
 	const input = getActiveTab();
 	if (input.kind !== 'assistant') throw new Error('Assistant composer required');
 	await test.click(input.composerBounds);
-	await test.press('ControlLeft', 'KeyA'); test.clipboard.text = text;
+	await test.press('ControlLeft', 'KeyA'); await test.clipboard.writeText(text);
 	await test.press('ControlLeft', 'KeyV');
 	if (direct) await test.press('ControlLeft', 'ShiftLeft', 'Enter');
 	else await test.press('ControlLeft', 'Enter');

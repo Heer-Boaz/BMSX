@@ -25,7 +25,9 @@ import { HeadlessInputHub } from '../../../hosts/node/headless/input';
 import { prepareWorkbenchRuntime } from '../../../ide/workbench/machine_runtime';
 import { runWorkbenchHostFrame } from '../../../ide/workbench/host_frame';
 import { IdeMicrotaskQueue } from '../../../ide/common/microtask_queue';
-import { BrowserClipboard } from '../../../ide/browser/clipboard';
+import { BrowserClipboard } from '../../../hosts/browser/clipboard';
+import { HeadlessClipboard } from '../../../hosts/node/headless/clipboard';
+import { reportClipboardFailure } from '../../../ide/input/clipboard';
 import { createHeadlessIdeHarness } from '../../../ide/testing/headless_harness';
 import { RecordingLogOutput } from '../../../ide/testing/recording_log_output';
 import type { Table } from '../../../machine/ts/machine/cpu/table';
@@ -85,10 +87,11 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const rewind = new HostRewind(runtime, presenter, screen, tasks, audio, log);
 	const session = new HostFrameSession(runtime.timing.ufpsScaled, clock.now(), rewind, execution);
 	const menu = new HostOverlayMenu(presenter, runtime, input, rewind, execution);
-	const clipboard = new BrowserClipboard();
+	const browserClipboard = nativeClipboard ? new BrowserClipboard() : undefined;
+	const clipboard = nativeClipboard ? browserClipboard! : new HeadlessClipboard();
 	const ide = await prepareWorkbenchRuntime(bios, [cart, null], runtime, presenter, screen, encodePngImage, decodeImage, display, input,
 		audio, tasks, execution, rewind, menu, localStorage, new HttpWorkspaceRecordProvider(), clock, clipboard, new IdeMicrotaskQueue(), log, 0.3, () => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')), connectAssistant);
-	if (browserInput) { clipboard.bindNativePaste(browserInput, () => ide.editor.isActive); browserInput.setKeyboardCapture(input.shouldCaptureKey); }
+	if (browserInput) { browserClipboard!.bindInput(browserInput, () => ide.editor.clipboardTarget, reportClipboardFailure); browserInput.setKeyboardCapture(input.shouldCaptureKey); }
 	const output = new SystemOutputLog();
 	const harness = createHeadlessIdeHarness(ide, runtime, audio, log);
 	const history = runtime.history;
@@ -197,7 +200,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		await press('ControlLeft', 'ShiftLeft', 'KeyP');
 		const picker = ide.editor.quickInput;
 		check(picker.visible, 'palette: the IDE shortcut opens the shared picker');
-		clipboard.text = label;
+		await clipboard.writeText(label);
 		await press('ControlLeft', 'KeyV');
 		const commandIndex = picker.model.list.rows.findIndex(row => row.item.label === label);
 		check(commandIndex >= 0, `palette: ${label} is an enabled registered command`);
@@ -230,7 +233,7 @@ export async function createStudioLuaSource(test: StudioFixture, path: string, s
 	const root = runtimeSourceProjectRootPath(test.ide.sources, getActiveTab().resource!.domain);
 	await test.press('ControlLeft', 'KeyN');
 	await test.press('ControlLeft', 'KeyA');
-	test.clipboard.text = stripProjectRootPrefix(path, root);
+	await test.clipboard.writeText(stripProjectRootPrefix(path, root));
 	await test.press('ControlLeft', 'KeyV');
 	await test.press('Enter');
 	await test.until(() => !test.ide.editor.quickInput.visible, `New File creates ${path}`);

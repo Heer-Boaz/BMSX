@@ -1,4 +1,3 @@
-import type { Clipboard } from '../../../../hosts/common/clipboard';
 import * as constants from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { InlineInputOptions } from '../../../common/models';
@@ -31,10 +30,10 @@ export class ValueInput<Value> implements InputEdit {
 		justPressed: false, pointerPressed: false, doubleClickInterval: constants.DOUBLE_CLICK_MAX_INTERVAL_MS,
 	};
 
-	public constructor(parent: InputFocusTarget, private readonly clipboard: Clipboard,
+	public constructor(parent: InputFocusTarget,
 		private readonly format: ValueInputFormat<Value>, private readonly accept: (value: Value) => void,
 		private readonly beforeCommit?: () => void) {
-		this.field = new TextField(parent);
+		this.field = new TextField(parent, format.options);
 		this.field.focusTarget.edit = this;
 		this.unbindKeyboard = this.field.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 		this.field.focusTarget.onDidFocus(() => { selectAll(this.field); resetBlink(); });
@@ -106,7 +105,7 @@ export class ValueInput<Value> implements InputEdit {
 			consumeIdeKey('Enter', input); consumeIdeKey('NumpadEnter', input);
 			if (this.commit()) this.field.focusTarget.release();
 		} else {
-			applyInlineFieldEditing(input, this.clipboard, this.field, this.format.options);
+			applyInlineFieldEditing(input, this.field);
 		}
 	}
 }

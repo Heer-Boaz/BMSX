@@ -22,7 +22,7 @@ export async function runAssistantRuntime(kind: StudioRendererKind, canvas: HTML
 	const position = cycles(), videoTick = runtime.frameScheduler.lastTickSequence, heap = runtime.machine.cpu.luaHeap.usedBytes(), version = model.version;
 	const media = ide.sources.currentBlua32Media, conversation = ide.editor.assistant;
 	await test.click(view.composerBounds);
-	test.clipboard.text = 'Pause and inspect the real world and one object, then show the game frame. Do not execute Lua or modify source.';
+	await test.clipboard.writeText('Pause and inspect the real world and one object, then show the game frame. Do not execute Lua or modify source.');
 	await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'Enter');
 	await until(() => conversation.state === 'ready' && conversation.entries.some(entry => entry.kind === 'assistant'), 'runtime tools: real model tool round trip');
 	check(cycles() === position && runtime.frameScheduler.lastTickSequence === videoTick && runtime.machine.cpu.luaHeap.usedBytes() === heap,

@@ -44,7 +44,7 @@ export async function runAssistantProgram(kind: StudioRendererKind, canvas: HTML
 	await waitForProgramRead();
 	const pending = ide.boots.latestOperation!;
 	await test.clickTab(mainTab.id); await press('ControlLeft', 'Home');
-	test.clipboard.text = '-- typed during cancelled preparation\n'; await press('ControlLeft', 'KeyV');
+	await test.clipboard.writeText('-- typed during cancelled preparation\n'); await press('ControlLeft', 'KeyV');
 	await test.clickTab(view.id);
 	await test.click(view.turnActions.items.find(item => item.command === 'assistant.stop')!.bounds);
 	await until(() => conversation.state === 'ready', 'program: visible Stop retires the accepted Reboot before installation');

@@ -43,7 +43,6 @@ import type { WorkbenchGraphDragSource } from '../../ui/graph/drag';
 import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
 import { buildBehaviorInspection, type BehaviorInspectionProperty } from './inspection';
-import type { Clipboard } from '../../../../hosts/common/clipboard';
 import { ActionEffectPropertyEdit, selectedActionEffectProperty } from './action_effect_edit';
 
 export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<BehaviorLensInput> {
@@ -101,11 +100,10 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		private readonly controller: BehaviorLensController,
 		private readonly commands: IdeCommandController,
 		private readonly contextMenu: ContextMenuController,
-		clipboard: Clipboard,
 	) {
 		super(resourcePanel);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
-		this.propertyEdit = new ActionEffectPropertyEdit(this.focusTarget, clipboard);
+		this.propertyEdit = new ActionEffectPropertyEdit(this.focusTarget);
 		this.focusTarget.registerCommand('behaviorLens.editProperty', {
 			isEnabled: () => {
 				if (this.sourceEditReview.visible || this.inspector.visible) return false;

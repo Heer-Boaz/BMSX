@@ -11,7 +11,7 @@ export async function testStudioSyntaxHighlight(test: StudioFixture): Promise<vo
 	const media = ide.sources.currentBlua32Media;
 	const prefix = "do\n\tlocal states = { ['idle'] = {} }\n\tstates['idle'] = { note = 'stayHere' }\n\tstates.idle = states['idle']\nend\n\n";
 	await press('ControlLeft', 'Home');
-	clipboard.text = prefix;
+	await clipboard.writeText(prefix);
 	await press('ControlLeft', 'KeyV');
 	check(model.buffer.getText() === prefix + original, 'syntax: physical paste authors the independent string-key fixture');
 	const layout = editorViewState.layout;

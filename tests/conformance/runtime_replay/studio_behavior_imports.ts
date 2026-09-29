@@ -80,7 +80,7 @@ return { root = { type = kind, children = { leaf, leaf } } }`;
 	if (!(pane instanceof BehaviorLensEditorPane)) throw new Error('imports: effect property pane required');
 	check(getActiveTab() === effectLens && pane.propertyEdit.active && pane.propertyEdit.control.field.focusTarget.hasFocus,
 		'imports: Edit stays in the Lens with a real provider-owned value draft');
-	await press('ControlLeft', 'KeyA'); test.clipboard.text = '80'; await press('ControlLeft', 'KeyV');
+	await press('ControlLeft', 'KeyA'); await test.clipboard.writeText('80'); await press('ControlLeft', 'KeyV');
 	check(provider.buffer.getText() === effectSource && !effectLens.isDirty(), 'imports: a focused draft does not dirty either source');
 	await press('Enter');
 	check(provider.buffer.getText() === effectSource.replace('40', '80') && main.version === registrationVersion,
@@ -98,7 +98,7 @@ return { root = { type = kind, children = { leaf, leaf } } }`;
 	await press('ControlLeft', 'KeyZ');
 	check(provider.buffer.getText() === effectSource && effectLens.isDirty(), 'imports: Undo across Save restores real dirty state');
 	await test.clickTab(providerTab.id);
-	await press('ControlLeft', 'KeyA'); test.clipboard.text = 'return {'; await press('ControlLeft', 'KeyV');
+	await press('ControlLeft', 'KeyA'); await test.clipboard.writeText('return {'); await press('ControlLeft', 'KeyV');
 	await test.clickTab(effectLens.id);
 	check(effectLens.isDirty() && provider.buffer.getText() === 'return {', 'imports: incomplete provider still belongs to the Lens editing scope');
 	await press('ControlLeft', 'KeyZ');

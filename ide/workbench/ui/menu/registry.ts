@@ -79,8 +79,14 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'actorLab.details' },
 	],
 	'propertyInspector.title': [{ type: 'command', command: 'propertyInspector.source' }, { type: 'command', command: 'propertyInspector.close' }],
-	'code.context': [{ type: 'command', command: 'undo' }, { type: 'command', command: 'redo' }],
+	'code.context': [
+		{ type: 'command', command: 'undo' }, { type: 'command', command: 'redo' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'cut' }, { type: 'command', command: 'copy' }, { type: 'command', command: 'paste' },
+	],
 	'code.symbol.context': [
+		{ type: 'command', command: 'cut' }, { type: 'command', command: 'copy' }, { type: 'command', command: 'paste' },
+		{ type: 'separator' },
 		{ type: 'command', command: 'goToDefinition' },
 		{ type: 'command', command: 'referenceSearch' },
 		{ type: 'command', command: 'callHierarchy' },
@@ -148,6 +154,10 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'menubar.edit': [
 		{ type: 'command', command: 'undo' },
 		{ type: 'command', command: 'redo' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'cut' },
+		{ type: 'command', command: 'copy' },
+		{ type: 'command', command: 'paste' },
 	],
 	'menubar.run': [
 		{ type: 'command', command: 'pause' },

@@ -37,7 +37,7 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	await runPaletteCommand('Edit: Undo');
 	check(model.buffer.getText() === original, 'palette: selected Undo restores focus before executing the actual source command');
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
-	clipboard.text = 'Run: Resume';
+	await clipboard.writeText('Run: Resume');
 	await press('ControlLeft', 'KeyV');
 	check(picker.model.list.rows[0].item.label === 'Run: Resume', 'palette: exact Resume ranks before Hot Resume while the queue is available');
 	let releaseTask!: () => void;
@@ -59,7 +59,7 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
 	check(!picker.model.items.some(row => row.label === 'Edit: Undo' || row.label === 'Go: Go to Symbol'),
 		'palette: replacing file search does not inherit its query history or the last code pane');
-	clipboard.text = 'not_a_command';
+	await clipboard.writeText('not_a_command');
 	await press('ControlLeft', 'KeyV');
 	await press('Enter');
 	check(picker.visible && picker.model.list.selectionIndex === -1, 'palette: empty results have no synthetic command');
@@ -67,7 +67,7 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	check(inputFocus.target === scenarioFocus, 'palette: cancellation restores the actual non-code control');
 	await runPaletteCommand('Scene Editor: Open');
 	check(picker.visible, 'palette: command-to-picker handoff begins a new source-choice session');
-	clipboard.text = 'scenes/root.lua';
+	await clipboard.writeText('scenes/root.lua');
 	await press('ControlLeft', 'KeyV');
 	await press('Enter');
 	const scene = getActiveTab();
@@ -85,7 +85,7 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	check(!picker.model.items.some(row => row.label === 'Edit: Undo')
 		&& picker.model.items.some(row => row.label === 'File: Save'),
 		'palette: empty property history does not fall through to document Undo; accepted source enables Save');
-	clipboard.text = 'File: Save';
+	await clipboard.writeText('File: Save');
 	await press('ControlLeft', 'KeyV');
 	await press('Enter');
 	await until(() => !scene.workingCopy.dirty, 'palette: actual Save persists accepted scene source');

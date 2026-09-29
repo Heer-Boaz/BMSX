@@ -91,10 +91,10 @@ test('scene painting publishes nested content clips and reuses quad storage on s
 	const input = scene(); layoutSceneEditor(input, true);
 	const parent = inputFocus.createTarget();
 	const controls = input.properties.map(property => {
-		const field = new ValueInput(parent, { text: '', isSupported: () => false, writeText: async () => {} }, INTEGER_INPUT_FORMAT, () => assert.fail('paint accepted a value'));
+		const field = new ValueInput(parent, INTEGER_INPUT_FORMAT, () => assert.fail('paint accepted a value'));
 		field.setValue(property.value!); return field;
 	});
-	const options = new SceneOptionEditor(parent, { text: '', isSupported: () => false, writeText: async () => {} }, () => assert.fail('paint committed source'), () => {});
+	const options = new SceneOptionEditor(parent, () => assert.fail('paint committed source'), () => {});
 	options.bind(input);
 	t.after(() => { for (const control of controls) control.dispose(); options.clear(); });
 	const overlay = createHostOverlayFixture(384, 288); const stream = new HostOverlayQuadStream();
