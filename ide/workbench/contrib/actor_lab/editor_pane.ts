@@ -1,3 +1,4 @@
+import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { layoutGameFrame } from '../../common/game_frame';
 import { drawEditorText } from '../../../editor/render/text_renderer';
@@ -89,8 +90,8 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.actions.update();
 		this.inspector.update();
 	}
-	public drawStatusBar(top: number, color: number): void {
-		drawEditorText(editorViewState.font, this.input.status, 4, top + 2, 0, color);
+	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
+		drawEditorText(editorViewState.font, this.input.status, bounds.left + 4, bounds.top + 2, 0, color);
 	}
 	public draw(): void {
 		if (this.inspector.visible) {

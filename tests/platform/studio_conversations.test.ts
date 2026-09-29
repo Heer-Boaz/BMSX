@@ -9,6 +9,57 @@ import { createCodexModelFixture, CODEX_FIXTURE_WAIT } from '../helpers/codex_mo
 
 const reply = '# Shared conversation\n\n**One thread**, shown in the CLI and Studio. No copy or fork.\n\nThe CLI can use `studio_evaluate_lua`, inspect actors and step frames through MCP.\n\n```lua\nreturn 6 * 7\n```\n\n- Studio is *read only* here.\n- The existing Studio assistant remains available.\n- Ordinary words wrap without splitting.';
 
+test('an unavailable native Codex daemon cannot take down the Studio server', { timeout: 15000 }, async t => {
+	const server = await createStudioServer(t);
+	for (let attempt = 0; attempt < 2; attempt++) {
+		const viewer = await fetch(`${server.address}/__bmsx__/conversations/connect`, { method: 'POST', headers: server.headers });
+		assert.equal(viewer.status, 503);
+		await viewer.text();
+		const session = await fetch(`${server.address}/__bmsx__/session`, { headers: { 'X-BMSX-Client': 'studio' } });
+		assert.equal(session.status, 200);
+		await session.body!.cancel();
+	}
+	await assert.rejects(access(server.trace), { code: 'ENOENT' });
+});
+
+test('server status follows the live Studio channel independently of the Codex daemon and active pane', { timeout: 60000 }, async t => {
+	const server = await createStudioServer(t);
+	const browser = await chromium.launch({ args: ['--no-sandbox', '--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=vulkan',
+		'--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-surface', '--disable-dev-shm-usage'] });
+	t.after(() => browser.close());
+	const page = await browser.newPage({ viewport: { width: 1024, height: 768 } });
+	const errors: string[] = [], requests: string[] = [];
+	page.on('pageerror', error => errors.push(String(error)));
+	page.on('request', request => { if (request.url().includes('/__bmsx__/') && !request.url().includes('/lua')) requests.push(new URL(request.url()).pathname); });
+	const gate = Promise.withResolvers<void>(), opening = Promise.withResolvers<void>();
+	await page.route('**/__bmsx__/studio/connect', async route => { opening.resolve(); await gate.promise; await route.continue(); });
+	const registered = page.waitForResponse(response => response.url().endsWith('/studio/connect'));
+	await page.goto(`${server.address}/studio.debug.html?rom=nemesis_s.debug.rom`); await opening.promise;
+	const evidence = '/tmp/bmsx-studio-connection'; await mkdir(evidence, { recursive: true });
+	const press = async (keys: string) => { await page.keyboard.press(keys, { delay: 100 });
+		await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))); };
+	const command = async (title: string) => { await press('Control+Shift+p'); await page.keyboard.type(title, { delay: 25 }); await press('Enter'); };
+	await press('ControlRight+ShiftRight');
+	await page.screenshot({ path: join(evidence, 'connecting.png') });
+	gate.resolve(); assert.equal((await registered).status(), 200);
+	await press('Escape'); await page.screenshot({ path: join(evidence, 'connected-editor.png') });
+	await press('Control+Alt+t'); await page.screenshot({ path: join(evidence, 'connected-dark.png') }); await press('Control+Alt+t');
+	await press('Control+b'); await page.screenshot({ path: join(evidence, 'connected-resources.png') }); await press('Control+b');
+	const unavailable = page.waitForResponse(response => response.url().endsWith('/conversations/connect'));
+	await command('Codex CLI Choose Conversation'); assert.equal((await unavailable).status(), 503);
+	await page.screenshot({ path: join(evidence, 'daemon-unavailable-server-connected.png') });
+	await command('Codex Assistant'); await page.screenshot({ path: join(evidence, 'connected-assistant.png') });
+	const disconnected = page.waitForEvent('console', { predicate: message => message.text().includes('Studio external tools unavailable:') });
+	server.process.kill('SIGKILL'); await disconnected;
+	await press('Escape'); await page.screenshot({ path: join(evidence, 'disconnected-assistant.png') });
+	await press('Control+Alt+t'); await page.screenshot({ path: join(evidence, 'disconnected-dark.png') }); await press('Control+Alt+t');
+	await command('Lua Terminal'); await page.screenshot({ path: join(evidence, 'disconnected-terminal.png') });
+	assert.deepEqual(errors, []);
+	assert.deepEqual(requests, ['/__bmsx__/session', '/__bmsx__/studio/connect', '/__bmsx__/conversations/connect'],
+		'connection chrome and pane changes do not poll, retry, log in or start the embedded agent');
+	await assert.rejects(access(server.trace), { code: 'ENOENT' });
+});
+
 test('real Studio: choose the native conversation, follow work, resize and close without controlling CLI', { timeout: 90000 }, async t => {
 	let browser: Browser;
 	t.after(async () => { await browser?.close(); });

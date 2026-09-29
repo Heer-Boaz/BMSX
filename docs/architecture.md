@@ -5442,6 +5442,17 @@ owners, without an offline acknowledgement or a background reconnect loop.
 Save acknowledges the actual canonical store (filesystem or browser), never a
 recovery checkpoint. Recovery cannot be replayed into canonical source files.
 
+The workbench status bar reserves a permanent connection slot and supplies the
+remaining content bounds to every pane, including messages and resource status.
+Browser composition projects the existing live Studio tool channel's registration
+and closure into this display: connecting, connected or disconnected. Standalone
+composition is neutral, not a failed connection. This is not file-write authority,
+an account/login flag or a connectivity gate; it performs no probes or retries.
+The indicator uses shapes as well as theme colors and remains visible when a
+pane replaces its status text. Connection events, rather than render-time IO,
+follow the same ownership principle as VS Code's
+[remote status indicator](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/remote/browser/remoteIndicator.ts).
+
 External CLI conversations can use these same capabilities through
 [Studio MCP](studio_mcp.md), served by the existing development server. The
 workbench owns shared tool-context admission; embedded chat turns and explicitly
@@ -5462,6 +5473,11 @@ share retained text, virtualized Markdown, selection and clipboard behavior
 between this view and embedded chat, without sharing prompt/tool authority.
 Closing a viewer releases only that subscriber. The existing trusted-LAN
 admission also covers this user's native conversation history across projects.
+The native WebSocket owns handshake and closing states: receive flow control is
+only applied to an open connection. A failed handshake has no frame receiver;
+its viewer fails with HTTP 503 without taking down the Studio server or its
+other protocols. Shutdown resumes an established, backpressured receiver before
+the close handshake, but never fabricates a receiver or swallows socket errors.
 
 Pane detachment completes ordinary focus/capture cleanup while the input and its
 working copy still live. The code widget detaches its model/view on clear; other

@@ -1,3 +1,4 @@
+import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { getClipboardText, cutClipboardText, pasteText } from '../../../editor/editing/text_editing_and_selection';
 import { runtimeErrorOverlayPointer } from '../../../editor/contrib/runtime_error/pointer';
 import { pointerHover } from '../../../input/pointer/hover';
@@ -241,12 +242,12 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	}
 
-	public drawStatusBar(statusTop: number, textColor: number): void {
-		const leftX = 0;
+	public drawStatusBar(bounds: Readonly<RectBounds>, textColor: number): void {
+		const leftX = bounds.left + 4;
 		const statusLeftInfo = buildStatusLeftInfo();
 
 		if (statusLeftInfo && statusLeftInfo.length > 0) {
-			drawEditorText(editorViewState.font, statusLeftInfo, leftX, statusTop + 2, 0, textColor);
+			drawEditorText(editorViewState.font, statusLeftInfo, leftX, bounds.top + 2, 0, textColor);
 		}
 		const context = this.input.context;
 		let detail = '';
@@ -273,8 +274,8 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 			drawEditorText(
 				editorViewState.font,
 				detail,
-				editorViewState.viewportWidth - measureText(detail) - 4,
-				statusTop + 2,
+				bounds.right - measureText(detail) - 4,
+				bounds.top + 2,
 				0,
 				detailColor,
 			);

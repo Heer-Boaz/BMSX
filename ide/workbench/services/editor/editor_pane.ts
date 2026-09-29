@@ -1,4 +1,5 @@
 import type { PlayerInput } from '../../../../hosts/common/input/player';
+import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../../common/models';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { EditorPaneSelection } from './editor_selection';
@@ -63,5 +64,5 @@ export abstract class EditorPane<TInput extends EditorInput> {
 		playerInput: PlayerInput,
 	): void;
 
-	public abstract drawStatusBar(statusTop: number, textColor: number): void;
+	public abstract drawStatusBar(bounds: Readonly<RectBounds>, textColor: number): void;
 }

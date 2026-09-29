@@ -1,3 +1,4 @@
+import type { RectBounds } from '../../machine/ts/common/rect';
 import type { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import type { AssistantInput } from '../../ide/workbench/contrib/assistant/editor_input';
 import type { EditorPaneSelection } from '../../ide/workbench/services/editor/editor_selection';
@@ -73,7 +74,7 @@ class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 	): void {
 	}
 
-	public drawStatusBar(_statusTop: number, _textColor: number): void {
+	public drawStatusBar(_bounds: Readonly<RectBounds>, _textColor: number): void {
 	}
 }
 

@@ -6,7 +6,7 @@ import { AssistantTranscriptControl } from './transcript_control';
 import { AssistantReferences } from './references';
 import type { Clipboard } from '../../../../hosts/common/clipboard';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import { write_rect_bounds } from '../../../../machine/ts/common/rect';
+import { write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { EditorCommandId } from '../../../common/commands';
 import * as colors from '../../../common/constants';
 import type { PointerSnapshot } from '../../../common/models';
@@ -23,7 +23,7 @@ import { PointerButton } from '../../../input/pointer/buttons';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { api } from '../../../runtime/overlay_api';
-import { updateFullWidthWorkbenchLayout } from '../../common/layout';
+import { updateFullWidthWorkbenchLayout, STATUS_BAR_CONNECTION_WIDTH } from '../../common/layout';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import type { EditorPanes } from '../../services/editor/editor_panes';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
@@ -139,7 +139,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		let footerChanged = false;
 		if (changed || model.revision !== input.projectedRevision) {
 			const count = input.footer.lines.length;
-			input.footer.update(model, layout.right - 8, measureTextRange, layout.font!);
+			input.footer.update(model, layout.right - STATUS_BAR_CONNECTION_WIDTH - 8, measureTextRange, layout.font!);
 			footerChanged = count !== input.footer.lines.length;
 		}
 		const footerTop = input.footerTop = layout.bottom - (input.footer.lines.length > 1 ? (input.footer.lines.length - 1) * row + 2 : 0);
@@ -204,7 +204,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		const footerTop = input.footerTop;
 		api.fill_rect(0, footerTop, layout.right, layout.bottom, 0, colors.COLOR_STATUS_BACKGROUND);
 		for (let index = 0; index + 1 < input.footer.lines.length; index++) {
-			api.blit_text_inline_with_font(input.footer.lines[index], 4, footerTop + index * layout.rowHeight + 2, 0, colors.COLOR_STATUS_TEXT, font);
+			api.blit_text_inline_with_font(input.footer.lines[index], STATUS_BAR_CONNECTION_WIDTH + 4, footerTop + index * layout.rowHeight + 2, 0, colors.COLOR_STATUS_TEXT, font);
 		}
 		renderWorkbenchActionBar(input.turnActions, this, font);
 		if (input.busySince !== undefined) {
@@ -229,8 +229,8 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 		this.preview.draw(layout, layout.rowHeight);
 		this.previews.endFrame();
 	}
-	public drawStatusBar(top: number, color: number): void {
-		api.blit_text_inline_with_font(this.input.footer.lines.at(-1)!, 4, top + 2, 0, color, editorViewState.font.renderFont());
+	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
+		api.blit_text_inline_with_font(this.input.footer.lines.at(-1)!, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
 	}
 	protected override handleViewPointer(snapshot: PointerSnapshot): boolean {
 		if (this.preview.handlePointer(snapshot)) return true;

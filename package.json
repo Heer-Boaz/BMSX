@@ -115,7 +115,7 @@
 		"profile:libretro-cpu-soak-offscreen-wsl": "npm run build:product:libretro-wsl -- --force && npm run build:libretro-host && npm run build:toolchain:bios -- --force && npm run build:toolchain:cart -- cpu_soak --force && ./build-libretro-host-wsl/bmsx_libretro_host --core ./dist/libretro_bmsx.so --video sdl --backend software --hidden-window --system-dir ./dist --rom-folder cpu_soak --input-timeline tests/carts/cpu_soak/cpu_soak.json --no-audio --max-frames 2400 --timing-report --timing-warmup 300 ./dist/cpu_soak.rom",
 		"test:system-print-headless": "npm run build:product:node-headless-tooling -- --debug --force && npm run build:toolchain:bios -- --debug --force && npm run build:toolchain:cart -- system_print_test --debug --force && node tests/carts/system_print_test/run.mjs",
 		"test:quick-menu-headless": "npm run build:product:node-headless-tooling -- --debug --force && npm run build:toolchain:bios -- --debug --force && npm run build:toolchain:cart -- renderhwtest --debug --force && rm -rf tests/carts/renderhwtest/screenshots && npm run headless:tooling -- --input-timeline tests/carts/renderhwtest/quick_menu_demo.json renderhwtest && node tests/carts/renderhwtest/analyze_quick_menu.mjs tests/carts/renderhwtest/screenshots",
-		"test:codex-observer": "node --import tsx --test tests/platform/codex_observer.test.ts",
+		"test:codex-observer": "node --import tsx --test tests/platform/codex_socket.test.ts tests/platform/codex_observer.test.ts",
 		"test:studio-conversations": "playwright install chromium && npm run build:product:browser-studio -- --debug && npm run build:toolchain:bios -- --debug && npm run build:toolchain:cart -- nemesis_s --debug && node --import tsx --test tests/platform/studio_conversations.test.ts"
 	},
 	"repository": {

@@ -1,3 +1,4 @@
+import type { RectBounds } from '../../machine/ts/common/rect';
 import type { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import type { AssistantInput } from '../../ide/workbench/contrib/assistant/editor_input';
 import type { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
@@ -100,7 +101,7 @@ class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput>
 		this.wheelCount += 1;
 	}
 
-	public drawStatusBar(_statusTop: number, _textColor: number): void {
+	public drawStatusBar(_bounds: Readonly<RectBounds>, _textColor: number): void {
 		this.statusCount += 1;
 	}
 }
@@ -267,7 +268,7 @@ test('editor pane hot paths dispatch directly to the retained active pane', () =
 	activePane.handleKeyboard(playerInput);
 	activePane.handlePointer(snapshot, true, false, playerInput, 42, false);
 	activePane.handleWheel(1, 3, snapshot, playerInput);
-	activePane.drawStatusBar(280, 0xffffffff);
+	activePane.drawStatusBar({ left: 14, top: 280, right: 384, bottom: 288 }, 0xffffffff);
 
 	const pane = harness.resourcePane();
 	assert.equal(pane.updateCount, 1);

@@ -172,11 +172,15 @@ async function startBrowserStudio(): Promise<void> {
 			}
 		});
 		if (configuration.externalTools !== undefined) {
+			ide.editor.serverConnectionState = 'connecting';
 			const reportToolFailure = (error: unknown) => options.logOutput.log(LogLevel.Error, `Studio external tools unavailable: ${String(error)}`);
 			void StudioToolHttpConnection.open(httpSession(configuration.externalTools), ide.editor.tools, { title: document.title, url: location.href }, proposal => {
 				ide.editor.activate();
 				openEditorTab(ide.editor.editorPanes, new WorkspaceEditReviewInput(proposal));
-			}, toolLifetime.signal, reportToolFailure).catch(reportToolFailure);
+			}, toolLifetime.signal, reportToolFailure).then(async connection => {
+				ide.editor.serverConnectionState = 'connected';
+				await connection.closed;
+			}).catch(reportToolFailure).finally(() => { ide.editor.serverConnectionState = 'disconnected'; });
 		}
 		completeBrowserBoot();
 	} catch (error) {

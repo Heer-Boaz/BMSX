@@ -1,6 +1,6 @@
 import type { ResourcePanelController } from '../contrib/resources/panel/controller';
 import * as constants from '../../common/constants';
-import { statusAreaHeight, getStatusMessageLines } from '../common/layout';
+import { getWorkbenchStatusBounds, getStatusMessageLines } from '../common/layout';
 import { editorFeedbackState } from '../../common/feedback_state';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { measureText } from '../../editor/common/text/layout';
@@ -12,16 +12,19 @@ import type { EditorPane } from '../services/editor/editor_pane';
 import type { EditorInput } from '../ui/tab/model';
 import { buildStatusLeftInfo } from './status_bar_info';
 import type { RuntimeDebuggerPlanManager } from '../../runtime/debugger_plans';
+import type { StudioServerConnectionState } from '../common/server_connection';
+import { renderServerConnection } from './server_connection';
 
 export function renderStatusBar(
 	resourcePanel: ResourcePanelController,
 	fault: RuntimeFaultState,
 	editorPane: EditorPane<EditorInput> | null,
 	plans: RuntimeDebuggerPlanManager,
+	connection: StudioServerConnectionState,
 ): void {
 	const runtimeFaulted = !!fault.faultSnapshot;
-	const statusTop = editorViewState.viewportHeight - statusAreaHeight();
-	const statusBottom = editorViewState.viewportHeight;
+	const bounds = getWorkbenchStatusBounds();
+	const statusTop = bounds.top, statusBottom = bounds.bottom;
 	const statusBackground = constants.COLOR_STATUS_BACKGROUND;
 	api.fill_rect(0, statusTop, editorViewState.viewportWidth, statusBottom, 0, statusBackground);
 	if (runtimeFaulted) {
@@ -32,46 +35,36 @@ export function renderStatusBar(
 		api.fill_rect(0, statusTop, editorViewState.viewportWidth, accentBottom, 0, constants.COLOR_STATUS_WARNING);
 	}
 	const statusTextColor = runtimeFaulted ? constants.COLOR_STATUS_ALERT : constants.COLOR_STATUS_TEXT;
+	api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
 	if (!runtimeFaulted && plans.workbenchControlActive) {
-		drawEditorText(editorViewState.font, plans.controlSuspended ? 'LUA CALL PAUSED' : 'LUA CALL RUNNING', 4, statusTop + 2, 0, statusTextColor);
-		return;
-	}
-
-	if (editorFeedbackState.message.visible) {
+		drawEditorText(editorViewState.font, plans.controlSuspended ? 'LUA CALL PAUSED' : 'LUA CALL RUNNING', bounds.left + 4, statusTop + 2, 0, statusTextColor);
+	} else if (editorFeedbackState.message.visible) {
 		const lines = getStatusMessageLines();
 		let textY = statusTop + 2;
-		const textX = 4;
+		const textX = bounds.left + 4;
 		for (let i = 0; i < lines.length; i += 1) {
 			drawEditorText(editorViewState.font, lines[i], textX, textY, 0, constants.COLOR_STATUS_ALERT);
 			textY += editorViewState.lineHeight;
 		}
-		return;
-	}
-	// When Problems panel owns the status (focused), show its info and stop
-	if (problemsPanel.isVisible && problemsPanel.isFocused) {
+	} else if (problemsPanel.isVisible && problemsPanel.isFocused) {
 		const statusLeftInfo = buildStatusLeftInfo();
-		if (statusLeftInfo.length === 0) {
-			return;
+		if (statusLeftInfo.length > 0) {
+			drawEditorText(editorViewState.font, statusLeftInfo, bounds.left + 4, statusTop + 2, 0, statusTextColor);
 		}
-		drawEditorText(editorViewState.font, statusLeftInfo, 4, statusTop + 2, 0, statusTextColor);
-		return;
-	}
-
-	if (resourcePanel.isVisible()) {
+	} else if (resourcePanel.isVisible()) {
 		if (resourcePanel.getMode() === 'command') {
 			const info = 'CALL HIERARCHY';
 			const hint = 'ENTER toggle/open • LEFT/RIGHT collapse/expand';
-			drawEditorText(editorViewState.font, info, 4, statusTop + 2, 0, statusTextColor);
-			drawEditorText(editorViewState.font, hint, editorViewState.viewportWidth - measureText(hint) - 4, statusTop + 2, 0, statusTextColor);
-			return;
+			drawEditorText(editorViewState.font, info, bounds.left + 4, statusTop + 2, 0, statusTextColor);
+			drawEditorText(editorViewState.font, hint, bounds.right - measureText(hint) - 4, statusTop + 2, 0, statusTextColor);
+		} else {
+			const filterLabel = resourcePanel.getFilterMode() === 'lua_only' ? 'LUA' : 'ALL';
+			const fileInfo = `FILES ${resourcePanel.getFilterMode()} (${filterLabel})`;
+			const hint = 'CTRL+SHIFT+L TOGGLE FILTER';
+			drawEditorText(editorViewState.font, fileInfo, bounds.left + 4, statusTop + 2, 0, statusTextColor);
+			drawEditorText(editorViewState.font, hint, bounds.right - measureText(hint) - 4, statusTop + 2, 0, statusTextColor);
 		}
-		const filterLabel = resourcePanel.getFilterMode() === 'lua_only' ? 'LUA' : 'ALL';
-		const fileInfo = `FILES ${resourcePanel.getFilterMode()} (${filterLabel})`;
-		const hint = 'CTRL+SHIFT+L TOGGLE FILTER';
-		drawEditorText(editorViewState.font, fileInfo, 4, statusTop + 2, 0, statusTextColor);
-		drawEditorText(editorViewState.font, hint, editorViewState.viewportWidth - measureText(hint) - 4, statusTop + 2, 0, statusTextColor);
-		return;
-	}
-
-	editorPane?.drawStatusBar(statusTop, statusTextColor);
+	} else editorPane?.drawStatusBar(bounds, statusTextColor);
+	api.popClipRect();
+	renderServerConnection(connection, statusTop);
 }

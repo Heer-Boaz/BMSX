@@ -1,3 +1,4 @@
+import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { ScenarioTargetInspection } from './target_inspection';
 import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
@@ -215,12 +216,12 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	}
 
-	public drawStatusBar(statusTop: number, textColor: number): void {
+	public drawStatusBar(bounds: Readonly<RectBounds>, textColor: number): void {
 		drawEditorText(
 			editorViewState.font,
 			this.input.view.status.renderedInfo,
-			4,
-			statusTop + 2,
+			bounds.left + 4,
+			bounds.top + 2,
 			0,
 			textColor,
 		);

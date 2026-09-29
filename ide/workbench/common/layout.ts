@@ -10,6 +10,8 @@ import { renameController } from '../contrib/code_editor/rename/controller';
 import type { EditorFont } from '../../editor/ui/view/font';
 
 const editorBounds = create_rect_bounds();
+const statusBounds = create_rect_bounds();
+export const STATUS_BAR_CONNECTION_WIDTH = 14;
 
 export type WorkbenchChromeLayout = {
 	readonly viewportWidth: number;
@@ -24,6 +26,13 @@ export function getWorkbenchEditorBounds(): RectBounds {
 	write_rect_bounds(editorBounds, editorViewState.codeAreaLeft, editorViewState.codeAreaTop,
 		editorViewState.viewportWidth, editorViewState.codeAreaBottom);
 	return editorBounds;
+}
+
+/** Permanent connection chrome has its own slot, independent of the active editor or feedback. */
+export function getWorkbenchStatusBounds(): RectBounds {
+	write_rect_bounds(statusBounds, STATUS_BAR_CONNECTION_WIDTH, editorViewState.viewportHeight - statusAreaHeight(),
+		editorViewState.viewportWidth, editorViewState.viewportHeight);
+	return statusBounds;
 }
 
 export type FullWidthWorkbenchLayout = {
@@ -80,7 +89,7 @@ export function getStatusMessageLines(): string[] {
 
 function writeStatusMessageLines(): void {
 	const message = editorFeedbackState.message;
-	const maxWidthCandidate = editorViewState.viewportWidth - 8;
+	const maxWidthCandidate = editorViewState.viewportWidth - STATUS_BAR_CONNECTION_WIDTH - 8;
 	const maxWidth = maxWidthCandidate > editorViewState.charAdvance ? maxWidthCandidate : editorViewState.charAdvance;
 	if (
 		message.visible === statusMessageCachedVisible

@@ -110,6 +110,11 @@ type ThemeDefinition = {
 		error: number;
 		alert: number;
 	};
+	connection: {
+		connected: number;
+		disconnected: number;
+		connecting: number;
+	};
 	markdown: {
 		codeBackground: number;
 		codeText: number;
@@ -238,6 +243,11 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			error: THEME_TOKEN_WHITE,
 			alert: THEME_TOKEN_TERMINAL_RED,
 		},
+		connection: {
+			connected: THEME_TOKEN_SUCCESS_GREEN,
+			disconnected: THEME_TOKEN_ACCENT_RED,
+			connecting: THEME_TOKEN_WARNING_AMBER,
+		},
 		input: {
 			text: THEME_TOKEN_TEXT_GREY,
 			secondaryText: THEME_TOKEN_TERMINAL_MAGENTA,
@@ -353,6 +363,11 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			success: THEME_TOKEN_SUCCESS_GREEN,
 			error: THEME_TOKEN_ACCENT_RED,
 			alert: THEME_TOKEN_ACCENT_RED,
+		},
+		connection: {
+			connected: THEME_TOKEN_SUCCESS_GREEN,
+			disconnected: THEME_TOKEN_ACCENT_RED,
+			connecting: THEME_TOKEN_WARNING_AMBER,
 		},
 		input: {
 			text: THEME_TOKEN_TEXT_GREY,
@@ -520,6 +535,9 @@ export let COLOR_STATUS_WARNING: number;
 export let COLOR_STATUS_SUCCESS: number;
 export let COLOR_STATUS_ERROR: number;
 export let COLOR_STATUS_ALERT: number;
+export let COLOR_SERVER_CONNECTED: number;
+export let COLOR_SERVER_DISCONNECTED: number;
+export let COLOR_SERVER_CONNECTING: number;
 export let COLOR_DIAGNOSTIC_ERROR: number = THEME_TOKEN_TERMINAL_LIGHT_RED;
 export let COLOR_DIAGNOSTIC_WARNING: number;
 export let COLOR_PROBLEMS_PANEL_BACKGROUND: number;
@@ -684,6 +702,9 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_STATUS_SUCCESS = theme.status.success;
 	COLOR_STATUS_ERROR = theme.status.error;
 	COLOR_STATUS_ALERT = theme.status.alert;
+	COLOR_SERVER_CONNECTED = theme.connection.connected;
+	COLOR_SERVER_DISCONNECTED = theme.connection.disconnected;
+	COLOR_SERVER_CONNECTING = theme.connection.connecting;
 	COLOR_DIAGNOSTIC_WARNING = theme.status.warning;
 	COLOR_PROBLEMS_PANEL_BACKGROUND = panel.problems.background;
 	COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND = panel.problems.headerBackground;

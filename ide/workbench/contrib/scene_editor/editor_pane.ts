@@ -3,7 +3,7 @@ import { pointerHover } from '../../../input/pointer/hover';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { SceneEditorNavigationSelection } from './navigation_selection';
 import { PointerButton } from '../../../input/pointer/buttons';
-import { point_in_rect } from '../../../../machine/ts/common/rect';
+import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
@@ -227,8 +227,8 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		}
 	}
 
-	public drawStatusBar(top: number, color: number): void {
-		api.blit_text_inline_with_font(this.status, 4, top + 2, 0, color, editorViewState.font.renderFont());
+	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
+		api.blit_text_inline_with_font(this.status, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
 	}
 
 	public override dispose(): void {

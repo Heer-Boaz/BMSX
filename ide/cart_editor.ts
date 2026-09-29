@@ -12,6 +12,7 @@ import { TerminalPane } from './workbench/contrib/terminal/editor_pane';
 import { TerminalInput } from './workbench/contrib/terminal/editor_input';
 import { AssistantPane } from './workbench/contrib/assistant/editor_pane';
 import { AssistantChatCommands } from './workbench/contrib/assistant/chat_commands';
+import type { StudioServerConnectionState } from './workbench/common/server_connection';
 import type { AssistantConnectionFactory } from '../hosts/common/assistant_protocol';
 import type { HotResumeService } from './workbench/services/execution/hot_resume';
 import { ActorLabController } from './workbench/contrib/actor_lab/controller';
@@ -161,6 +162,7 @@ const EDITOR_TARGET_WIDTH = 384;
 const EDITOR_TARGET_HEIGHT = 288;
 
 export type CartEditor = {
+	serverConnectionState: StudioServerConnectionState;
 	readonly clipboard: Clipboard;
 	readonly clipboardTarget: ClipboardTarget | undefined;
 	readonly terminal: LuaTerminalSession;
@@ -265,6 +267,7 @@ export class RuntimeCartEditor implements CartEditor {
 	};
 
 	public readonly assistant: AssistantConversation;
+	public serverConnectionState: StudioServerConnectionState = 'standalone';
 	public readonly assistantCommands: AssistantChatCommands;
 	public readonly observedConversation: ObservedConversation;
 	public readonly tools: WorkspaceToolService;
@@ -622,7 +625,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (activePane === null) drawEditorGroupWatermark();
 		else activePane.draw();
 		drawProblemsPanel();
-		renderStatusBar(this.resourcePanel, this.fault, activePane, this.debuggerState.plans);
+		renderStatusBar(this.resourcePanel, this.fault, activePane, this.debuggerState.plans, this.serverConnectionState);
 		renderTopBarDropdown(this.chromeRenderContext);
 		drawContextMenu(this.contextMenu);
 		this.quickInput.draw();

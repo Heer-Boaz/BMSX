@@ -1,7 +1,7 @@
 import type { TerminalInputContext } from '../../services/terminal/session';
 import type { Clipboard } from '../../../../hosts/common/clipboard';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import { point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
+import { point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { EditorCommandId } from '../../../common/commands';
 import * as colors from '../../../common/constants';
 import type { PointerSnapshot } from '../../../common/models';
@@ -164,8 +164,8 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 		api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_RESOURCE_VIEWER_TEXT);
 		drawMultilineField(input.draft, input.composer, bounds);
 	}
-	public drawStatusBar(top: number, color: number): void {
-		api.blit_text_inline_with_font('Lua load subset | locals last one input | Ctrl+L: clear output', 4, top + 2, 0, color, editorViewState.font.renderFont());
+	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
+		api.blit_text_inline_with_font('Lua load subset | locals last one input | Ctrl+L: clear output', bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
 	}
 	protected override handleViewPointer(snapshot: PointerSnapshot): boolean {
 		if (this.actions.handlePointer(snapshot) || this.composer.handlePointer(snapshot)) return true;

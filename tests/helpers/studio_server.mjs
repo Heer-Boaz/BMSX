@@ -32,5 +32,5 @@ export async function createStudioServer(t, { codexHome } = {}) {
 	});
 	const admission = await fetch(`${address}/__bmsx__/session`, { headers: { 'X-BMSX-Client': 'studio' } });
 	const { workspaceToken } = await admission.json();
-	return { root, address, trace, headers: { Authorization: `Bearer ${workspaceToken}` } };
+	return { root, address, trace, process: child, headers: { Authorization: `Bearer ${workspaceToken}` } };
 }

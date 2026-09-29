@@ -1,3 +1,4 @@
+import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { executeTextHistoryCommand } from '../../../editor/editing/history_commands';
 import { pointerHover } from '../../../input/pointer/hover';
 import type { ContextMenuController } from '../../services/context_menu/controller';
@@ -378,17 +379,17 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	}
 
-	public drawStatusBar(statusTop: number, textColor: number): void {
+	public drawStatusBar(bounds: Readonly<RectBounds>, textColor: number): void {
 		// These controls replace the source graph; its selection is not their source target.
 		if (this.inspector.visible || this.sourceEditReview.visible) return;
 		const status = this.input.view.status;
-		drawEditorText(editorViewState.font, status.info, 4, statusTop + 2, 0, textColor);
+		drawEditorText(editorViewState.font, status.info, bounds.left + 4, bounds.top + 2, 0, textColor);
 		if (status.detail.length > 0) {
 			drawEditorText(
 				editorViewState.font,
 				status.detail,
-				editorViewState.viewportWidth - measureText(status.detail) - 4,
-				statusTop + 2,
+				bounds.right - measureText(status.detail) - 4,
+				bounds.top + 2,
 				0,
 				textColor,
 			);

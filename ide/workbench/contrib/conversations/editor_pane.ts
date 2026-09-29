@@ -1,3 +1,4 @@
+import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { ImageDecoder } from '../../../../hosts/common/image';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
@@ -7,7 +8,7 @@ import { measureStyledText } from '../../../editor/render/markdown';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { PointerButton } from '../../../input/pointer/buttons';
 import { api } from '../../../runtime/overlay_api';
-import { updateFullWidthWorkbenchLayout } from '../../common/layout';
+import { updateFullWidthWorkbenchLayout, STATUS_BAR_CONNECTION_WIDTH } from '../../common/layout';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { ImagePreviewCache } from '../../ui/image_preview';
 import { ImagePreviewOverlay } from '../../ui/image_preview_overlay';
@@ -38,7 +39,7 @@ export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<Conve
 			input.projectedRevision = conversation.revision;
 			this.transcriptView.scroll.lineStep = layout.rowHeight;
 			input.transcript.update(conversation.entries, layout.right - colors.SCROLLBAR_WIDTH - 16, measureStyledText, layout.font!);
-			input.footer.update(conversation, layout.right - 8, measureTextRange, layout.font!);
+			input.footer.update(conversation, layout.right - STATUS_BAR_CONNECTION_WIDTH - 8, measureTextRange, layout.font!);
 		}
 		const row = layout.rowHeight;
 		input.footerTop = layout.bottom - (input.footer.lines.length > 1 ? (input.footer.lines.length - 1) * row + 2 : 0);
@@ -53,7 +54,7 @@ export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<Conve
 		const font = editorViewState.font.renderFont();
 		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 		api.fill_rect(0, footerTop, layout.right, layout.bottom, 0, colors.COLOR_STATUS_BACKGROUND);
-		for (let index = 0; index + 1 < footer.lines.length; index++) api.blit_text_inline_with_font(footer.lines[index], 4, footerTop + index * layout.rowHeight + 2, 0, colors.COLOR_STATUS_TEXT, font);
+		for (let index = 0; index + 1 < footer.lines.length; index++) api.blit_text_inline_with_font(footer.lines[index], STATUS_BAR_CONNECTION_WIDTH + 4, footerTop + index * layout.rowHeight + 2, 0, colors.COLOR_STATUS_TEXT, font);
 		if (conversation.workStartedAt !== undefined) {
 			const elapsed = performance.now() - conversation.workStartedAt;
 			api.blit_text_inline_with_font('|/-\\'[Math.trunc(elapsed / 150) & 3], 4, footerTop - layout.rowHeight - 2, 0, colors.COLOR_STATUS_SUCCESS, font);
@@ -61,8 +62,8 @@ export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<Conve
 		}
 		this.previews.beginFrame(); this.transcriptView.draw(); this.preview.draw(layout, layout.rowHeight); this.previews.endFrame();
 	}
-	public drawStatusBar(top: number, color: number): void {
-		api.blit_text_inline_with_font(this.input.footer.lines.at(-1)!, 4, top + 2, 0, color, editorViewState.font.renderFont());
+	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
+		api.blit_text_inline_with_font(this.input.footer.lines.at(-1)!, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
 	}
 	protected override handleViewPointer(snapshot: PointerSnapshot): boolean {
 		return this.preview.handlePointer(snapshot) || this.transcriptView.handleSelection(snapshot) || this.transcriptView.scroll.handlePointer(snapshot)

@@ -35,12 +35,17 @@ export class CodexSocket extends CodexRpc {
 		this.signal.throwIfAborted();
 		this.socket.send(JSON.stringify(message), error => { if (error) void this.stop(error); });
 	}
-	public setOutputPaused(paused: boolean): void { if (paused) this.socket.pause(); else this.socket.resume(); }
+	public setOutputPaused(paused: boolean): void {
+		if (this.socket.readyState !== WebSocket.OPEN) return;
+		if (paused) this.socket.pause(); else this.socket.resume();
+	}
 	public stop(error = new CodexProtocolError('Shared Codex viewer closed')): Promise<void> {
 		if (!this.signal.aborted) {
 			this.rejectPending(error); this.lifetime.abort(error);
-			this.socket.resume();
 			if (this.socket.readyState === WebSocket.OPEN) {
+				// Only an established WebSocket has a receiver to resume. A failed
+				// handshake also emits error in CLOSING, before any receiver exists.
+				this.socket.resume();
 				this.socket.close();
 				this.deadline = setTimeout(() => this.socket.terminate(), 3_000);
 			} else if (this.socket.readyState !== WebSocket.CLOSED) this.socket.terminate();

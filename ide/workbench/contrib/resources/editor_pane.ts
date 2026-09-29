@@ -1,3 +1,4 @@
+import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { clearRuntimeErrorOverlay } from '../../../editor/contrib/runtime_error/navigation';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { ResourceViewerNavigationSelection } from './navigation_selection';
@@ -69,17 +70,17 @@ export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceVi
 		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	}
 
-	public drawStatusBar(statusTop: number, textColor: number): void {
+	public drawStatusBar(bounds: Readonly<RectBounds>, textColor: number): void {
 		const viewer = this.input.view;
 		const info = `${viewer.content.resource.source.type.toUpperCase()} ${viewer.content.resource.source.resid}`;
 		const detail = viewer.content.resource.path;
-		drawEditorText(editorViewState.font, info, 4, statusTop + 2, 0, textColor);
+		drawEditorText(editorViewState.font, info, bounds.left + 4, bounds.top + 2, 0, textColor);
 		if (detail.length > 0) {
 			drawEditorText(
 				editorViewState.font,
 				detail,
-				editorViewState.viewportWidth - measureText(detail) - 4,
-				statusTop + 2,
+				bounds.right - measureText(detail) - 4,
+				bounds.top + 2,
 				0,
 				textColor,
 			);
