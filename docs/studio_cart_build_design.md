@@ -10,6 +10,9 @@ Scope clarification: the existing build/deploy chain is **not a constraint**.
 Replacing its entrypoints, output layout or orchestration is permitted where
 ownership requires it. The recommendation must be justified by correctness and
 measured build behavior, not by minimizing the diff or maximizing a rewrite.
+This concerns the cartridge/media build and deployment chain, not choosing a
+build system for the native emulator. The earlier CMake/Ninja migration options
+were a scope error and are withdrawn.
 
 ## Conclusion
 
@@ -40,99 +43,61 @@ an agent-specific build engine or a guest service.
 | [Studio startup](../ide/browser/studio.ts), [tool sessions](../hosts/node/studio/sessions.ts) | The frame loop retains its runtime/workbench. Closing a window retires its tool channel and assistant connection. | Page reload loses session continuity. A browser tool stream must not own a workspace build job. |
 | [server composition](../scripts/serve-dist.mjs), [deployment configuration](../ide/common/studio_configuration.ts) | Workspace authorization and explicit optional capabilities already exist. | Build availability is its own server capability, independent of Codex login and external-tool connectivity. |
 
-## Whole-chain architecture, not just a cartridge endpoint
+## The relevant build/deploy chain
 
-The broader audit found related ownership problems outside the packer:
-
-- [npm workflows](../package.json) manually sequence product, BIOS, cartridge and
-  run/test commands. This repeats dependency ordering at each caller.
-- [Product builders](../scripts/products/product_builder.ts) already separate
-  browser, Node and native products, but [freshness checks](../scripts/products/rebuild.ts)
-  compare an output's mtime with the currently enumerated files. They retain
-  neither the previous input membership nor a recipe identity.
-- [Browser deployment](../scripts/products/deploy_builder.ts) reads an existing
-  cart from `dist`, builds a browser host, and writes packaging into that same
-  directory. It does not establish a BIOS/cart/host artifact set first.
-- [Browser packaging](../scripts/products/browser_build.ts) writes bundles,
-  worker assets, templates, pages and a shared webmanifest separately. `dist`
-  currently mixes build outputs, runtime lookup names and deployment contents.
-- [Host atlas generation](../scripts/render/generate_host_system_atlas.ts)
-  produces both TS and C++ source files in the source tree before product builds.
-  It avoids rewriting equal contents, but the dependency remains an npm-command
-  prefix rather than a product dependency declared once.
-- Native products already use [CMake/Ninja](../scripts/products/libretro_build.ts)
-  and the [repo-local cross-build setup](../Makefile). Their actual compilation
-  graph must not be duplicated as TypeScript file-by-file build logic.
-
-The proposed target model is therefore broader:
+The problem is the media pipeline:
 
 ```text
-BIOS source/assets ---------------------> system artifact + public link library
-cart source/assets + that link library -> cartridge artifact
-host source + generated host assets ---> browser / Node / native product artifact
-
-selected product + system + cartridges + deployment configuration
-                                        -> complete deployment description/export
-selected system + cartridges            -> media-install plan for a live target
+saved Lua/assets + selected BIOS link inputs
+    -> BMSX compiler and rompacker
+    -> complete, identified ROM/tooling result
+    -> publication through the existing server
+    -> explicit installation in the running Studio target
 ```
 
-Compiler options and toolchain dependencies belong to the relevant producer
-actions. The diagram is not an extra guest runtime or a universal build DSL.
-The same declared target/dependency plan must drive CLI, CI, Studio and agent
-requests. A normal media build resolves BIOS and cartridge dependencies rather
-than requiring every caller to remember an npm command sequence. A cart-only
-action can consume an explicitly selected existing system dependency; it must
-not silently ignore changed BIOS source while presenting itself as a full
-project build.
+The same compiler/packer operation must serve CLI, Studio and agent requests.
+There is no reason to rebuild the C++ emulator, move cartridge compilation into
+CMake/Ninja, or introduce a general-purpose build-system migration for this
+workflow. esbuild is a reference for job lifetime, not a replacement Lua/asset
+compiler.
 
-Separate **build**, **package/publish** and **activate**. Packaging an identified
-result must not rebuild its host or reread newer cart source. A user-facing
-Build-and-Deploy command may compose those operations explicitly. The build
-store, private scratch space and deployable product have different lifetimes;
-`clean:dist` must not implicitly destroy artifacts still referenced by a running
-Studio session. Existing filenames and npm aliases are not architectural
-requirements. If retained, they must select this single model, not preserve a
-second incompatible execution path.
+The existing scripts are first-class developer tools, not disposable scaffolding.
+Professionalizing them means consistent command/options behavior and deliberate
+boundaries between CLI presentation and build execution. The producer supplies
+structured progress, source diagnostics and a concrete result; the CLI renders
+those for a person, while the server consumes the same operation in its worker.
+This is not merely extracting `main()` into a wrapper: input, dependency and
+publication ownership must actually change where the current pipeline is wrong.
+Readable CLI output remains valuable and is never the server's data protocol.
 
-Publish a complete browser product including its worker and static dependencies.
-An already open page must not fetch an unversioned worker from a newer product
-generation. The server serves a selected deployment; standalone export selects
-the same product with browser-owned workspace configuration and no server
-capabilities. Neither mode needs a separately compiled fake Studio variant.
+The existing media chain can still need substantial redesign: input capture,
+BIOS dependency selection, compiler/asset pipeline boundaries, incremental
+invalidation, output layout and publication. Correct these owners rather than
+adding an endpoint around the current CLI. The size of that change is not
+limited by existing scripts or filenames.
 
-Cart-media activation and host-product activation are different operations. A
-cart build does not restart the IDE. Replacing Studio JavaScript or the emulator
-host cannot be disguised as a cart reload: activate that product through an
-explicit host restart/recovery flow. Likewise, if a media plan requires a changed
-machine/tooling contract, surface that requirement rather than promising it can
-run inside the old host. No new CPU version register is implied.
+Relevant deployment findings remain:
 
-### Build backend decision
+- [npm workflows](../package.json) repeatedly sequence BIOS and cart commands.
+  A full media build should resolve those dependencies itself. A cart-only build
+  instead consumes an explicitly selected existing BIOS link input.
+- [Browser deployment](../scripts/products/deploy_builder.ts) reads an existing
+  cart from `dist` and builds a browser host during packaging. Packaging a chosen
+  result should instead consume that result and an explicitly selected host
+  product. Building the host is a separate operation, not part of cart reload.
+- `dist` mixes build outputs and deployable contents. Scratch files, retained
+  build results and exported deployments have different lifetimes. Cleaning an
+  export must not remove a build result still referenced by a Studio session.
 
-The architecture and the choice of executor are separate decisions:
+Separate **build**, **publish/package** and **install**. A combined command can
+compose them, but packaging/installing a chosen result must not silently rebuild
+it from newer sources. Existing CLI entrypoints may change; retaining a second
+incompatible path merely for compatibility is not required.
 
-| Option | Assessment |
-| --- | --- |
-| Endpoint around existing scripts plus a dist watcher | Reject: preserves the missing input, dependency and publication contracts. |
-| Redesign the BMSX target/artifact/deployment model; use esbuild and CMake/Ninja for their native work | Current recommendation. Can be a substantial migration across scripts, packer and deployment, not a wrapper-only change. Keep BMSX-specific planning small and do not reproduce backend compilation graphs. |
-| Generate a unified Ninja/CMake graph for all products and media | Viable alternative. Gains a mature executor, but requires proper Node/asset actions and dependency generation; it does not supply immutable inputs or coherent publication by itself. Compare build setup, cancellation, no-op cost and invalidation before deciding. |
-| Adopt a broader hermetic system such as Bazel throughout | Not ruled out by migration size. Its action model is a useful reference, but its custom-toolchain/platform integration has not been evaluated here. This audit does not justify either adopting or rejecting that migration yet. |
-
-[Ninja's dependency scan](https://github.com/ninja-build/ninja/blob/master/src/graph.cc)
-tracks command changes as well as input/output timestamps; its
-[build executor](https://github.com/ninja-build/ninja/blob/master/src/build.cc)
-propagates unchanged outputs through `restat`. Those mechanisms are materially
-different from our current output-newer-than-files shortcut, but still are not
-filesystem snapshots. [VS Code CMake Tools](https://github.com/microsoft/vscode-cmake-tools/blob/main/src/drivers/cmakeFileApi.ts)
-uses CMake's structured target/artifact/dependency model. If Studio needs native
-target discovery, consume the [CMake File API](https://cmake.org/cmake/help/latest/manual/cmake-file-api.7.html)
-instead of scraping console text or reconstructing its graph.
-
-Do not run two competing freshness planners for the same action. Dependency
-membership changes, recipe changes and generated inputs must have one owner.
-Native and esbuild builds are not automatically hermetic because their outputs
-receive an artifact ID; input capture/reproducibility guarantees must be stated
-per producer. No universal snapshot or speedup is claimed here.
+The running Studio/emulator host remains in place during media installation.
+Standalone export may package an existing host with the selected media and
+browser-owned workspace configuration. Changes to the emulator or Studio program
+itself are a different development workflow, not a prerequisite for this one.
 
 ## Production references and their limits
 
@@ -374,10 +339,9 @@ Before implementation, resolve these remaining details against live owners:
   every installation edge that updates media provenance.
 - Choose the explicit connected-CLI publication path and artifact/log cleanup
   ownership. No reliable external-build notification claim precedes that work.
-- Compare the preferred backend composition with a unified Ninja/CMake plan on
-  real cold/no-op, changed-source, removed-input and changed-option builds. Include
-  generated TS/C++ assets, browser workers and native build configuration; do not
-  select a system from its feature list alone.
+- Measure the media pipeline on real cold/no-op, changed-Lua, changed-asset,
+  removed-input and changed-option builds. Verify dependency invalidation and
+  avoid unnecessary parsing, resource conversion and output rewriting.
 
 Acceptance must include observed output, not just typechecks or fixture tests:
 
@@ -393,7 +357,6 @@ Acceptance must include observed output, not just typechecks or fixture tests:
 | Run the configured connected CLI and an offline CLI build | Explicit publication drives live notification; offline discovery is not falsely described as guaranteed push. |
 | Shut down the server or use standalone Studio | Capability status is honest; local IDE/Terminal work and no retry spam occurs. |
 | Package a previously selected result after sources change | Deployment still contains the selected host/media, not a newly mixed build. |
-| Keep a page open while publishing a newer Studio product | Its worker/static dependencies stay with its product generation; media updates and host restarts remain distinct. |
 
 No runtime implementation, performance result or visible UI acceptance is claimed
 by this research document.
