@@ -10,6 +10,20 @@ agent to accidental UI internals.
 
 ## Target architecture
 
+### Open platform usability work (2026-09-29)
+
+- **Mobile canvas layout:** Studio still scales and letterboxes a fixed canvas.
+  Track responsive workbench sizing, readable text, usable touch targets and
+  soft-keyboard/viewport handling at the platform layout/input owners, not in
+  assistant-specific overlays. Both standalone and server-backed Studio need
+  the same solution. Desktop resize alone is not a phone acceptance test; require
+  fresh narrow-page, orientation and real-device keyboard/touch evidence.
+  [Current visual evidence and limitation](studio_conversation_view.md#validation-and-references).
+- **Standalone operation:** [implemented without a development backend](studio_standalone.md);
+  the IDE and local Studio capabilities stay available, not just the player.
+
+### Ownership
+
 | Owner | Owns | Must not own |
 | --- | --- | --- |
 | Product composition | Workspace/session lifetime, concrete browser/Node resources and isolated-machine construction | Source-edit or test-case semantics |

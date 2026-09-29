@@ -4,6 +4,7 @@ import { StudioHttpSession } from './http_session';
 const WORKSPACE_FILE_ENDPOINT = '/__bmsx__/lua';
 
 export class HttpWorkspaceRecordProvider implements WorkspaceRecordProvider {
+	public readonly persistence = 'workspace';
 	public constructor(private readonly session = new StudioHttpSession()) {}
 
 	/** Only a rejected capability permits replay: the server has performed no file operation. */

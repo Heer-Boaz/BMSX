@@ -5406,6 +5406,16 @@ latest completed account read reopens it.
 The staged ownership audit and
 remaining integration limits are in [Studio architecture foundation](studio_architecture_foundation.md).
 
+Studio also supports [standalone browser composition](studio_standalone.md).
+The packaged page uses browser-owned IndexedDB source storage and scoped local
+recovery without creating any development-server transport. IDE, Terminal and
+local Studio tools do not depend on an assistant connection. The existing server
+explicitly declares its services in the page bootstrap; only then are HTTP
+filesystem, assistant, conversation-viewer and MCP window transports installed.
+No endpoint probing or error-driven workspace replacement selects the mode.
+Save acknowledges the actual storage owner (filesystem, browser or recovery),
+and standalone recovery cannot be replayed into the server workspace.
+
 External CLI conversations can use these same capabilities through
 [Studio MCP](studio_mcp.md), served by the existing development server. The
 workbench owns shared tool-context admission; embedded chat turns and explicitly

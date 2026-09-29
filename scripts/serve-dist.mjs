@@ -3,7 +3,7 @@
 // Usage: node scripts/serve-dist.mjs [--dir dist] [--port 8080] [--host 127.0.0.1] [--spa] [--cache <seconds|no-store>]
 
 import { createServer } from 'node:http';
-import { stat, access, readdir, realpath } from 'node:fs/promises';
+import { stat, access, readdir, realpath, open } from 'node:fs/promises';
 import { createReadStream, constants } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -241,6 +241,19 @@ const server = createServer(async (req, res) => {
 
 		const type = getType(target);
 		res.setHeader('Content-Type', type);
+		if (type === 'text/html; charset=utf-8') {
+			// Built pages are standalone. Only this server supplies workspace/agent services;
+			// the browser never discovers them by sending speculative API requests.
+			const file = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
+			let html;
+			try { html = await file.readFile('utf8'); } finally { await file.close(); }
+			html = html.replace('<meta name="bmsx-studio-services" content="standalone">',
+				'<meta name="bmsx-studio-services" content="server">');
+			res.setHeader('Content-Length', Buffer.byteLength(html));
+			res.setHeader('Cache-Control', 'no-store');
+			res.end(req.method === 'HEAD' ? undefined : html);
+			return;
+		}
 		res.setHeader('Content-Length', st.size);
 		res.setHeader('Last-Modified', st.mtime.toUTCString());
 		res.setHeader('Cache-Control', cacheHeader);

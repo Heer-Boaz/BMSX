@@ -27,7 +27,7 @@ const remoteWorkspaceOperationTails = new Map<string, Promise<void>>();
 
 /** Acknowledgement for this write, not the provider's current connection state. */
 export type WorkspaceRecordPersistence =
-	| { readonly status: 'workspace' }
+	| { readonly status: 'workspace' | 'browser' }
 	| { readonly status: 'local-only'; readonly reason: 'disconnected' }
 	| { readonly status: 'local-only'; readonly reason: 'write-failed'; readonly error: unknown };
 
@@ -120,7 +120,7 @@ export async function writeWorkspaceRecord(
 		if (pendingRemoteWorkspaceRecords.get(relativePath) === pendingRecord) {
 			pendingRemoteWorkspaceRecords.delete(relativePath);
 		}
-		return { status: 'workspace' };
+		return { status: workspaceRecordState.provider.persistence };
 	} catch (error) {
 		disconnectWorkspaceRecords(error);
 		return { status: 'local-only', reason: 'write-failed', error };

@@ -18,6 +18,8 @@ import {
 import { BrowserClipboard } from '../../hosts/browser/clipboard';
 import { reportClipboardFailure } from '../input/clipboard';
 import { HttpWorkspaceRecordProvider } from './workspace_records';
+import { IndexedDbWorkspaceRecordProvider } from './indexeddb_workspace_records';
+import { ScopedKeyValueStorage } from '../workspace/key_value_storage';
 import { IdeMicrotaskQueue } from '../common/microtask_queue';
 import { prepareWorkbenchRuntime } from '../workbench/machine_runtime';
 import { bindBrowserFullscreenShortcut } from '../../hosts/browser/fullscreen';
@@ -82,7 +84,12 @@ async function startBrowserStudio(): Promise<void> {
 			rewind,
 			execution,
 		);
-		const httpSession = new StudioHttpSession();
+		const services = document.querySelector<HTMLMetaElement>('meta[name="bmsx-studio-services"]')!.content;
+		const httpSession = services === 'server' ? new StudioHttpSession() : undefined;
+		const browserFiles = httpSession === undefined ? await IndexedDbWorkspaceRecordProvider.open() : undefined;
+		const workspaceFiles = httpSession === undefined ? browserFiles! : new HttpWorkspaceRecordProvider(httpSession);
+		const storage = httpSession === undefined
+			? new ScopedKeyValueStorage(window.localStorage, 'bmsx.standalone:') : window.localStorage;
 		const clipboard = new BrowserClipboard();
 		const toolLifetime = new AbortController();
 		const ide = await prepareWorkbenchRuntime(
@@ -100,16 +107,16 @@ async function startBrowserStudio(): Promise<void> {
 			execution,
 			rewind,
 			hostOverlayMenu,
-			window.localStorage,
-			new HttpWorkspaceRecordProvider(httpSession),
+			storage,
+			workspaceFiles,
 			options.clock,
 			clipboard,
 			new IdeMicrotaskQueue(),
 			options.logOutput,
 			defaultResourcePanelRatio(window.innerWidth / window.screen.width),
 			() => new BrowserGraphLayoutEngine(new Worker(new URL('./graph-layout.worker.js', document.baseURI))),
-			(signal, onEvent) => AssistantHttpConnection.open(httpSession, signal, onEvent),
-			(signal, onEvent) => HttpConversationObserver.open(httpSession, signal, onEvent),
+			httpSession === undefined ? undefined : (signal, onEvent) => AssistantHttpConnection.open(httpSession, signal, onEvent),
+			httpSession === undefined ? undefined : (signal, onEvent) => HttpConversationObserver.open(httpSession, signal, onEvent),
 		);
 		clipboard.bindInput(options.browserInput, () => ide.editor.clipboardTarget, reportClipboardFailure);
 		systemOutput.flush(runtime, options.logOutput);
@@ -125,11 +132,12 @@ async function startBrowserStudio(): Promise<void> {
 				event.returnValue = 'Are you sure you want to exit this awesome game?';
 			}
 		});
-		window.addEventListener('pagehide', () => {
+		window.addEventListener('pagehide', (event) => {
 			toolLifetime.abort(new Error('Studio page closed'));
 			ide.editor.assistant.disconnect();
 			ide.editor.observedConversation.disconnect();
 			persistWorkspaceSessionLocally();
+			if (!event.persisted) browserFiles?.close();
 		});
 		runtime.frameScheduler.clearQueuedTime();
 		const frameLoop = options.frames.start((currentTime) => {
@@ -154,11 +162,13 @@ async function startBrowserStudio(): Promise<void> {
 				}
 			}
 		});
-		const reportToolFailure = (error: unknown) => options.logOutput.log(LogLevel.Error, `Studio external tools unavailable: ${String(error)}`);
-		void StudioToolHttpConnection.open(httpSession, ide.editor.tools, { title: document.title, url: location.href }, proposal => {
-			ide.editor.activate();
-			openEditorTab(ide.editor.editorPanes, new WorkspaceEditReviewInput(proposal));
-		}, toolLifetime.signal, reportToolFailure).catch(reportToolFailure);
+		if (httpSession !== undefined) {
+			const reportToolFailure = (error: unknown) => options.logOutput.log(LogLevel.Error, `Studio external tools unavailable: ${String(error)}`);
+			void StudioToolHttpConnection.open(httpSession, ide.editor.tools, { title: document.title, url: location.href }, proposal => {
+				ide.editor.activate();
+				openEditorTab(ide.editor.editorPanes, new WorkspaceEditReviewInput(proposal));
+			}, toolLifetime.signal, reportToolFailure).catch(reportToolFailure);
+		}
 		completeBrowserBoot();
 	} catch (error) {
 		showBrowserBootError(error);

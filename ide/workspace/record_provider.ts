@@ -1,8 +1,9 @@
-/** Filesystem transport. Ordering, recovery records and timestamps belong to records.ts. */
+/** Canonical storage. Ordering, recovery records and timestamps belong to records.ts. */
 export interface WorkspaceRecordProvider {
+	readonly persistence: 'workspace' | 'browser';
 	read(relativePath: string): Promise<WorkspaceRecord | null>;
 	readDirectory(relativePath: string): Promise<WorkspaceDirectoryEntry[] | null>;
-	/** overwrite=false is an exclusive filesystem create, not a read-before-write check. */
+	/** overwrite=false is an exclusive create in the owning store, not a read-before-write check. */
 	write(relativePath: string, record: WorkspaceRecord, overwrite: boolean): Promise<void>;
 	delete(relativePath: string): Promise<void>;
 }

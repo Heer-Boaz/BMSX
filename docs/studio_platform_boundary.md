@@ -30,6 +30,13 @@ checks prevent unrelated browser origins from reading it; they do not identify
 or isolate LAN users. No new login gate or public multi-user hosting is implied.
 Agent process permissions, review and lease lifetime remain separate owners.
 
+The server is optional for the IDE/Studio itself. Packaged HTML declares
+standalone operation; this server supplies the service declaration when serving
+HTML (with `no-store`, matching GET/HEAD lengths and the existing rooted,
+`O_NOFOLLOW` file admission). It does not edit deployed files. Static hosting
+leaves the declaration unchanged and Studio uses browser-owned storage with
+agent commands disabled. See [standalone Studio](studio_standalone.md).
+
 ## Implemented owners and use
 
 - `scripts/dev/http_security.mjs`: per-process random capability, constant-time

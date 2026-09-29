@@ -71,7 +71,7 @@ test('source Save uses the ordinary owner and reports local persistence separate
 test('an accepted tool Save survives retirement and later typing; newer prompts inspect its historical acknowledgement', async t => {
 	const f = fixture(t), write = Promise.withResolvers<void>();
 	let delayed = false;
-	const provider: WorkspaceRecordProvider = { async read() { return null; }, async readDirectory() { return []; }, async delete() {},
+	const provider: WorkspaceRecordProvider = { persistence: 'workspace', async read() { return null; }, async readDirectory() { return []; }, async delete() {},
 		async write() { if (delayed) await write.promise; } };
 	await openWorkspaceRecords(f.storage, f.clock, 'carts/nemesis_s', provider);
 	delayed = true;

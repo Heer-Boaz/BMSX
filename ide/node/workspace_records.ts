@@ -4,6 +4,7 @@ import type { WorkspaceDirectoryEntry, WorkspaceRecord, WorkspaceRecordProvider 
 
 /** The root is the directory against which packaged source paths are resolved. */
 export class DiskWorkspaceRecordProvider implements WorkspaceRecordProvider {
+	public readonly persistence = 'workspace';
 	public constructor(private readonly root: string) {}
 
 	public async readDirectory(relativePath: string): Promise<WorkspaceDirectoryEntry[] | null> {

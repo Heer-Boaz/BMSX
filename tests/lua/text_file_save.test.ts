@@ -30,6 +30,7 @@ class SaveStorage extends MemoryStorage {
 }
 
 class SaveFiles implements WorkspaceRecordProvider {
+	public readonly persistence = 'workspace';
 	public readonly records = new Map<string, WorkspaceRecord>();
 	public readonly writes: { path: string; record: WorkspaceRecord; complete(): void }[] = [];
 	public delayed = false;

@@ -157,6 +157,8 @@ export class IdeCommandController {
 			case 'propertyInspector.source':
 			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
+			case 'conversations.history':
+			case 'conversations.older':
 			case 'terminal.evaluate':
 			case 'terminal.context':
 			case 'terminal.pause':
@@ -298,6 +300,8 @@ export class IdeCommandController {
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target): boolean {
 		const context = focus?.commandContext;
 		switch (command) {
+			case 'assistant': return this.editor.assistant.available;
+			case 'conversations': return this.editor.observedConversation.available;
 			case 'copy': case 'cut': case 'paste':
 				return focus?.clipboard?.[command] !== undefined && (command === 'copy' || !focus.clipboard.readOnly)
 					&& (command !== 'paste' || this.editor.clipboard.canRead);
@@ -354,6 +358,8 @@ export class IdeCommandController {
 			case 'propertyInspector.source':
 			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
+			case 'conversations.history':
+			case 'conversations.older':
 			case 'terminal.evaluate':
 			case 'terminal.context':
 			case 'terminal.pause':

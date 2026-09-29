@@ -114,6 +114,26 @@ index into the currently active CPU thread. Target disposal expires every
 attachment before releasing the machine; prompt retirement does not retire
 another inspector or the retained target. See [test inspection](../docs/studio_test_inspection.md).
 
+## Optional browser services and workspace storage
+
+The packaged Studio page declares standalone composition. It uses
+`IndexedDbWorkspaceRecordProvider` for canonical source, with a separate
+recovery-storage namespace so browser edits cannot silently become filesystem
+writes when the same origin later serves a development workspace. Save, discovery,
+source models, history, the Terminal and all local Studio services keep their
+existing owners. Save acknowledgements identify browser storage explicitly.
+IndexedDB acknowledges transaction completion, not request success; exclusive
+creation is admitted by the store, including concurrent windows. Directory
+enumeration reads immediate child keys without loading source bodies.
+
+The ordinary development server declares its services in the HTML bootstrap;
+only that composition installs HTTP workspace, assistant, native-conversation
+and external-tool connections. Standalone has no speculative request, failed
+HTTP provider, retry loop or substitute agent. Agent commands follow factory
+availability through ordinary command enablement. Connection failure after a
+server-backed start remains a connection failure, not a workspace-authority
+switch. See [standalone Studio](../docs/studio_standalone.md).
+
 ## HTTP workspace capability
 
 `StudioHttpSession` owns coalesced admission to the development server and holds its

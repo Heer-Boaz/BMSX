@@ -15,6 +15,7 @@ export class ObservedConversation extends AssistantTranscript {
 	private lifetime: AbortController | undefined;
 	private connection: ConversationObserver | undefined;
 	public constructor(private readonly open?: ConversationObserverFactory) { super(); }
+	public get available(): boolean { return this.open !== undefined; }
 	/** UI operations report failures here, once; a failed history read has no page to open. */
 	private async command(command: ConversationObserverCommand): Promise<AssistantHistoryPage | undefined> {
 		if (this.pending) return;
