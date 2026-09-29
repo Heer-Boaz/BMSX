@@ -5151,10 +5151,11 @@ code and YAML saves do not acknowledge cooked assets. Command UI consumes the
 result and recovery listens to resource-model save events. Normal shutdown
 closes Save admission and joins accepted operations before checkpointing and
 destroying source owners. The record owner returns an exact write acknowledgement:
-`workspace` only after the provider accepts the project-file write, or
-`local-only` with a disconnected/write-failed reason after local persistence.
+`workspace` after a filesystem write, `browser` after an IndexedDB commit, or
+`local-only` after recovery persistence for a disconnected/failed network write.
+Local disk/IndexedDB failure rejects Save and leaves the source dirty.
 The source catalog and save service carry this result without inferring it from
-global connectivity. Local persistence still establishes the document's saved
+global connectivity. Network-workspace recovery persistence still establishes the document's saved
 identity; UI explicitly warns when the project file was not acknowledged.
 Reconnect synchronizes the saved record, not newer model text, and does not
 rewrite the original Save receipt. See [source save acknowledgements](studio_source_save_acknowledgements.md).
@@ -5410,9 +5411,15 @@ Studio also supports [standalone browser composition](studio_standalone.md).
 The packaged page uses browser-owned IndexedDB source storage and scoped local
 recovery without creating any development-server transport. IDE, Terminal and
 local Studio tools do not depend on an assistant connection. The existing server
-explicitly declares its services in the page bootstrap; only then are HTTP
-filesystem, assistant, conversation-viewer and MCP window transports installed.
-No endpoint probing or error-driven workspace replacement selects the mode.
+renders its two Studio application routes from a product-owned template and
+independently declares filesystem, assistant, conversation-viewer and MCP window
+capabilities through `StudioConfiguration`. Arbitrary static HTML is not
+rewritten. No endpoint probing or error-driven workspace replacement selects
+services. Local providers are ready at construction; only network providers
+participate in admission/reconnect. Opening storage writes no probe files.
+IndexedDB commits indexed file/directory metadata and contents atomically.
+Local write failures leave source dirty and report through existing Save/session
+owners, without an offline acknowledgement or a background reconnect loop.
 Save acknowledges the actual storage owner (filesystem, browser or recovery),
 and standalone recovery cannot be replayed into the server workspace.
 

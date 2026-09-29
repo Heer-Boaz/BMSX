@@ -12,7 +12,7 @@ import type { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { TextFileSaveService } from '../../ide/workbench/services/working_copy/text_file_save';
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import type { WorkspaceRecord, WorkspaceRecordProvider } from '../../ide/workspace/record_provider';
-import { closeWorkspaceRecords, disconnectWorkspaceRecords, openWorkspaceRecords, readLocalWorkspaceRecord,
+import { closeWorkspaceRecords, disconnectWorkspaceRecords, openWorkspaceRecords, readLocalWorkspaceRecord, readWorkspaceRecord, writeLocalWorkspaceRecord,
 	reconnectWorkspaceRecords, workspaceRecordState } from '../../ide/workspace/records';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
@@ -31,6 +31,7 @@ class SaveStorage extends MemoryStorage {
 
 class SaveFiles implements WorkspaceRecordProvider {
 	public readonly persistence = 'workspace';
+	public connect: (() => Promise<void>) | undefined = async () => {};
 	public readonly records = new Map<string, WorkspaceRecord>();
 	public readonly writes: { path: string; record: WorkspaceRecord; complete(): void }[] = [];
 	public delayed = false;
@@ -45,9 +46,10 @@ class SaveFiles implements WorkspaceRecordProvider {
 	}
 }
 
-async function fixture(t: TestContext) {
+async function fixture(t: TestContext, local = false) {
 	const storage = new SaveStorage();
 	const files = new SaveFiles();
+	if (local) files.connect = undefined;
 	const clock = new VirtualHeadlessClock();
 	const root = 'carts/nemesis_s';
 	const lua = createScenarioTestSourceRecord(`${root}/tests/save.lua`, 1, 'return true');
@@ -59,7 +61,7 @@ async function fixture(t: TestContext) {
 	// These tests reject AEM input before compilation. Any use of machine/tooling
 	// in a source-only save is an unwanted dependency and fails immediately.
 	const saves = new TextFileSaveService(models, storage, clock, sources, {} as RuntimeLuaTooling, {} as Runtime, tasks);
-	await openWorkspaceRecords(storage, clock, root, files);
+	await openWorkspaceRecords(files);
 	t.after(async () => {
 		await saves.shutdown();
 		models.clear();
@@ -75,6 +77,26 @@ async function fixture(t: TestContext) {
 function setSource(model: EditorTextModel, source: string): void {
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 }
+
+test('local storage failure keeps source dirty; recovery cannot masquerade as a saved file or replay on read', async t => {
+	const f = await fixture(t, true), model = f.yaml();
+	assert.equal(f.files.records.size, 0, 'opening local storage performs no probe writes');
+	setSource(model, 'value: 2\n');
+	f.files.failure = new Error('local store write refused');
+	const failed = await f.saves.save(model).completion;
+	assert.equal(failed.status, 'failed');
+	assert.equal(model.dirty, true);
+	assert.equal(workspaceRecordState.connected, true, 'a file operation is not a network disconnection');
+	const path = `${f.root}/${model.resource.path}`;
+	assert.equal(readLocalWorkspaceRecord(f.storage, f.root, path), null);
+	writeLocalWorkspaceRecord(f.storage, f.root, path, { contents: 'newer recovery, not canonical source', updatedAt: 99999 });
+	assert.equal(await readWorkspaceRecord(f.storage, f.root, path), null);
+	assert.equal(f.files.records.size, 0);
+	f.files.failure = undefined;
+	assert.equal((await f.saves.save(model).completion).status, 'saved');
+	assert.equal(f.files.records.get(path)!.contents, 'value: 2\n');
+	assert.equal(model.dirty, false);
+});
 
 test('Save captures and coalesces one revision, while newer edits remain dirty', async t => {
 	const f = await fixture(t);
@@ -187,7 +209,7 @@ test('a failed project write acknowledges local storage and reconnect persists t
 	assert.equal(model.dirty, false, 'dirty identity is relative to the actual local save');
 	setSource(model, 'value: 3');
 	f.files.failure = undefined;
-	await reconnectWorkspaceRecords(f.clock, f.root);
+	await reconnectWorkspaceRecords();
 	assert.equal(f.files.records.get(path)!.contents, 'value: 2');
 	assert.equal(model.lastSavedSource, 'value: 2');
 	assert.equal(model.dirty, true);
@@ -210,7 +232,7 @@ test('disconnected Lua save carries the local-only acknowledgement through its s
 	assert.deepEqual(result.persistence, { status: 'local-only', reason: 'disconnected' });
 	assert.equal(f.lua.src, result.snapshot.source);
 	assert.equal(model.dirty, false);
-	await reconnectWorkspaceRecords(f.clock, f.root);
+	await reconnectWorkspaceRecords();
 	assert.equal(f.files.records.get(f.lua.normalized_source_path)!.contents, result.snapshot.source);
 });
 
@@ -240,7 +262,7 @@ test('Save command distinguishes local-only persistence from an AEM application 
 	assert.equal(result.application.phase, 'build');
 	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_WARNING);
 	assert.equal(f.tasks.ready, true);
-	await reconnectWorkspaceRecords(f.clock, f.root);
+	await reconnectWorkspaceRecords();
 	const yaml = f.yaml();
 	setSource(yaml, 'value: 2');
 	const retry = await saveTextFileFromCommand(f.saves, yaml, {} as CartEditor, f.sources);
@@ -256,7 +278,7 @@ test('Save command presents a local-only write failure without claiming the proj
 	await saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources);
 	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_WARNING);
 	f.files.failure = undefined;
-	await reconnectWorkspaceRecords(f.clock, f.root);
+	await reconnectWorkspaceRecords();
 });
 
 test('AEM build rejection reports saved source separately and does not poison the runtime queue', async t => {

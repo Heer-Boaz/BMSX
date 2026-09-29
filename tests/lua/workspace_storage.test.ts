@@ -1,5 +1,6 @@
 import { RuntimeBreakpoints } from '../../ide/runtime/breakpoints';
 import { HttpWorkspaceRecordProvider } from '../../ide/browser/workspace_records';
+import type { WorkspaceRecordProvider } from '../../ide/workspace/record_provider';
 import { CodeEditorInputSerializer, type SerializedCodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_serializer';
 import { ResourceViewerInputSerializer } from '../../ide/workbench/contrib/resources/editor_serializer';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -33,7 +34,6 @@ import {
 } from '../../ide/workspace/files';
 import {
 	WORKSPACE_METADATA_DIR,
-	WORKSPACE_MARKER_FILE,
 	WORKSPACE_STATE_FILE,
 	buildWorkspaceStorageKey,
 	closeWorkspaceRecords,
@@ -446,13 +446,13 @@ function editorStub(
 	};
 }
 
-async function startAutosaveSession(t: TestContext, storage: MockStorage, root = 'offline-cart') {
+async function startAutosaveSession(t: TestContext, storage: MockStorage, root = 'offline-cart', files: WorkspaceRecordProvider = workspaceFiles) {
 	const sources = createTestRuntimeSourceState(
 		sourceRegistry('-- system source'),
 		[sourceRegistry('-- cart source', root), null],
 		TEST_DOMAIN,
 	);
-	const restored = await initializeWorkspaceStorage(storage, workspaceEnvironment.clock, root, sources, workspaceFiles, testLogOutput);
+	const restored = await initializeWorkspaceStorage(storage, workspaceEnvironment.clock, root, sources, files, testLogOutput);
 	await restoreWorkspaceStorageSession(
 		editorStub(storage, sources) as any,
 		sources,
@@ -697,7 +697,7 @@ test('reconnect drains a pending record replaced during its active PUT', async (
 	let releaseWrite: () => void;
 	const blocked = new Promise<void>(resolve => { releaseWrite = resolve; });
 	server.blockWrite(path, blocked);
-	const reconnect = reconnectWorkspaceRecords(workspaceEnvironment.clock, 'offline-cart');
+	const reconnect = reconnectWorkspaceRecords();
 	while (!server.requests.some(request => request.method === 'PUT' && request.path === path)) {
 		await Promise.resolve();
 	}
@@ -730,7 +730,7 @@ test('reconnect keeps a newer remote record over stale pending local work', asyn
 	);
 	server.files.set(path, { contents: '-- newer remote', updatedAt: 1001 });
 
-	await reconnectWorkspaceRecords(workspaceEnvironment.clock, 'offline-cart');
+	await reconnectWorkspaceRecords();
 
 	assert.equal(workspaceRecordState.connected, true);
 	assert.deepEqual(
@@ -757,8 +757,6 @@ test('required local workspace storage remains authoritative while remote is off
 
 	const restored = await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources, workspaceFiles, testLogOutput);
 	assert.deepEqual(restored, session);
-	const markerPath = joinWorkspacePaths('offline-cart', WORKSPACE_METADATA_DIR, WORKSPACE_MARKER_FILE);
-	assert.equal(readLocalWorkspaceRecord(storage, 'offline-cart', markerPath)!.contents, '');
 	assert.equal(workspaceRecordState.connected, false);
 });
 
@@ -1364,7 +1362,7 @@ test('failed dirty PUT retains the local generation and converges after reconnec
 	assert.equal(server.files.has(statePath), false);
 	assert.equal(workspaceRecordState.connected, false);
 
-	await reconnectWorkspaceRecords(workspaceEnvironment.clock, 'offline-cart');
+	await reconnectWorkspaceRecords();
 	await runWorkspaceAutosaveTick();
 	assert.equal(server.files.get(dirtyRecordPath)!.contents, '-- dirty edit');
 	assert.deepEqual(JSON.parse(server.files.get(statePath)!.contents).dirtyFiles, [{
@@ -1372,6 +1370,31 @@ test('failed dirty PUT retains the local generation and converges after reconnec
 		path: 'src/foo.lua',
 		updatedAt: server.files.get(dirtyRecordPath)!.updatedAt,
 	}]);
+});
+
+test('local session write failure reports once, keeps recovery and schedules no reconnect or blind retry', async t => {
+	const storage = new MockStorage(), clock = installOfflineWorkspace(t, storage);
+	let writes = 0;
+	const failure = new Error('local storage quota exhausted');
+	const files: WorkspaceRecordProvider = {
+		persistence: 'browser',
+		async read() { return null; }, async readDirectory() { return []; }, async delete() {},
+		async write() { writes++; throw failure; },
+	};
+	await startAutosaveSession(t, storage, 'offline-cart', files);
+	const context = installCodeContext('src/foo.lua', '-- keep this edit');
+	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
+	const previousErrors = testLogOutput.messages.filter(message => message.level === LogLevel.Error).length;
+	await flushRequestedAutosave();
+	assert.equal(writes, 1);
+	assert.equal(context.model.dirty, true);
+	assert.equal(workspaceRecordState.connected, true);
+	assert.equal(clock.activeCount, 0);
+	assert.equal(testLogOutput.messages.filter(message => message.level === LogLevel.Error).length, previousErrors + 1);
+	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', TEST_DOMAIN, 'src/foo.lua');
+	const record = workspaceDirtyRecords.get(dirtyPath)!;
+	assert.equal(readLocalWorkspaceRecord(storage, 'offline-cart', buildWorkspaceDirtyRecordPath(dirtyPath, record.updatedAt))!.contents, '-- keep this edit');
+	t.after(() => { workspaceRecordState.provider = workspaceFiles; });
 });
 
 test('failed state PUT leaves the previous remote generation recoverable and retries the new generation', async (t) => {
@@ -1403,7 +1426,7 @@ test('failed state PUT leaves the previous remote generation recoverable and ret
 	assert.equal(server.files.get(previousRecordPath)!.contents, '-- dirty A');
 	assert.strictEqual(server.files.get(statePath), previousStateRecord);
 
-	await reconnectWorkspaceRecords(workspaceEnvironment.clock, 'offline-cart');
+	await reconnectWorkspaceRecords();
 	await runWorkspaceAutosaveTick();
 	const remotePayload = JSON.parse(server.files.get(statePath)!.contents) as WorkspaceAutosavePayload;
 	assert.equal(remotePayload.dirtyFiles[0].updatedAt, dirtyRecord.updatedAt);
@@ -1479,7 +1502,7 @@ test('failed dirty DELETE retries after reconnect and stale orphan cannot resurr
 	assert.deepEqual(JSON.parse(server.files.get(statePath)!.contents).dirtyFiles, []);
 	assert.equal(server.files.has(dirtyRecordPath), true);
 
-	await reconnectWorkspaceRecords(workspaceEnvironment.clock, 'offline-cart');
+	await reconnectWorkspaceRecords();
 	await runWorkspaceAutosaveTick();
 	assert.equal(server.files.has(dirtyRecordPath), false);
 
@@ -1942,7 +1965,7 @@ test('offline canonical save remains local and replicates on reconnect', async (
 
 	const server = new MockWorkspaceServer();
 	globalThis.fetch = (input, init) => server.fetch(input, init);
-	await reconnectWorkspaceRecords(workspaceEnvironment.clock, 'offline-cart');
+	await reconnectWorkspaceRecords();
 	assert.equal(server.files.get(canonicalPath)!.contents, '-- saved offline');
 });
 

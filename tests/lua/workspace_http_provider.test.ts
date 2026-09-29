@@ -71,3 +71,17 @@ test('lost admission can reconnect; transport/write failures and repeated unauth
 	await assert.rejects(provider.write('a.lua', { contents: 'a', updatedAt: 1 }, true), /Failed to write/);
 	assert.equal(admissions, 3); assert.equal(files, 3, 'one rejected-session renewal, never unbounded replay');
 });
+
+test('network loss retires admission without replaying a possibly executed write', async t => {
+	let admissions = 0, writes = 0;
+	t.mock.method(globalThis, 'fetch', async (url: string) => {
+		if (url === '/__bmsx__/session') { admissions++; return Response.json({ workspaceToken: `session-${admissions}` }); }
+		writes++; throw new TypeError('connection lost');
+	});
+	const provider = new HttpWorkspaceRecordProvider();
+	await provider.connect();
+	await assert.rejects(provider.write('source.lua', { contents: 'return 1', updatedAt: 1 }, true));
+	await provider.connect();
+	assert.equal(admissions, 2);
+	assert.equal(writes, 1);
+});

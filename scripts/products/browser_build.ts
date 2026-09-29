@@ -6,6 +6,7 @@ import { glsl } from 'esbuild-plugin-glsl';
 import { assertPlayerBundleBoundary, assertStudioBundleBoundary } from '../analysis/product_bundle_boundary';
 import { productNeedsRebuild } from './rebuild';
 import { javascriptProductFilename } from './targets';
+import { renderStudioPage, STANDALONE_STUDIO_CONFIGURATION, STUDIO_CONFIGURATION_ELEMENT, STUDIO_PAGES } from './studio_page';
 
 const MACHINE_RUNTIME_SOURCE_ROOTS = [
 	'machine/ts',
@@ -194,9 +195,11 @@ function renderBrowserPage(
 	title: string,
 	scriptFilename: string,
 	defaultRom: string,
+	configuration: string,
 ): string {
 	const imagePrefix = 'data:image/png;base64,';
 	return applyTemplateValues(inputs.html, {
+		'@@BMSX_PRODUCT_CONFIGURATION@@': configuration,
 		'/*#css*/': inputs.css,
 		'#title': title,
 		'#browserhostjs': scriptFilename,
@@ -232,6 +235,7 @@ export async function buildBrowserPlayerPackage(options: BrowserPackageOptions):
 		options.title,
 		javascriptProductFilename('browser-player', options.debug),
 		defaultRom,
+		'',
 	);
 	await writeFile('./dist/index.html', html);
 	await writeBrowserManifest(options.title, options.shortName);
@@ -239,15 +243,17 @@ export async function buildBrowserPlayerPackage(options: BrowserPackageOptions):
 
 export async function buildBrowserStudioPackage(debug: boolean): Promise<void> {
 	const inputs = await loadBrowserPageInputs();
-	const pagePath = debug ? './dist/studio.debug.html' : './dist/studio.html';
-	const html = renderBrowserPage(
+	const product = STUDIO_PAGES.find(page => page.debug === debug)!;
+	const template = renderBrowserPage(
 		inputs,
 		'BMSX',
 		javascriptProductFilename('browser-studio', debug),
 		'',
+		STUDIO_CONFIGURATION_ELEMENT,
 	);
 	await Promise.all([
-		writeFile(pagePath, html),
+		writeFile(`./dist/${product.template}`, template),
+		writeFile(`./dist/${product.page}`, renderStudioPage(template, STANDALONE_STUDIO_CONFIGURATION)),
 		writeBrowserManifest('BMSX', 'BMSX'),
 	]);
 }

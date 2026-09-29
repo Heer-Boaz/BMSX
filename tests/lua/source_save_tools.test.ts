@@ -73,7 +73,7 @@ test('an accepted tool Save survives retirement and later typing; newer prompts 
 	let delayed = false;
 	const provider: WorkspaceRecordProvider = { persistence: 'workspace', async read() { return null; }, async readDirectory() { return []; }, async delete() {},
 		async write() { if (delayed) await write.promise; } };
-	await openWorkspaceRecords(f.storage, f.clock, 'carts/nemesis_s', provider);
+	await openWorkspaceRecords(provider);
 	delayed = true;
 	t.after(() => write.resolve());
 	f.model.pushEditOperations([{ offset: 7, deleteLength: 1, text: '2' }]);
@@ -121,7 +121,8 @@ test('Save rejects unread, expired, read-only and cancelled authority before IO;
 test('project write failure and AEM build failure remain distinct textual wire outcomes', async t => {
 	const f = fixture(t);
 	let rejectWrite = false;
-	await openWorkspaceRecords(f.storage, f.clock, 'carts/nemesis_s', {
+	await openWorkspaceRecords({
+		persistence: 'workspace', async connect() {},
 		async read() { return null; }, async readDirectory() { return []; }, async delete() {},
 		async write() { if (rejectWrite) throw new Error('provider refused write'); },
 	});
@@ -142,7 +143,8 @@ test('project write failure and AEM build failure remain distinct textual wire o
 test('late Save completion cannot replace the acknowledgement of a newer accepted Save', async t => {
 	const f = fixture(t), gates: (() => void)[] = [];
 	let delayed = false;
-	await openWorkspaceRecords(f.storage, f.clock, 'carts/nemesis_s', {
+	await openWorkspaceRecords({
+		persistence: 'workspace',
 		async read() { return null; }, async readDirectory() { return []; }, async delete() {},
 		async write() { if (delayed) await new Promise<void>(resolve => gates.push(resolve)); },
 	});

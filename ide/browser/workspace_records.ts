@@ -7,17 +7,26 @@ export class HttpWorkspaceRecordProvider implements WorkspaceRecordProvider {
 	public readonly persistence = 'workspace';
 	public constructor(private readonly session = new StudioHttpSession()) {}
 
+	public async connect(): Promise<void> { await this.session.connect(); }
+
 	/** Only a rejected capability permits replay: the server has performed no file operation. */
 	private async request(url: string, init: RequestInit): Promise<Response> {
-		const session = this.session.connect();
+		let session = this.session.connect();
 		const headers = new Headers(init.headers);
 		headers.set('Authorization', `Bearer ${await session}`);
-		const response = await fetch(this.session.baseUrl + url, { ...init, headers });
-		if (response.status !== 401) return response;
-		await response.body?.cancel();
-		this.session.expire(session);
-		headers.set('Authorization', `Bearer ${await this.session.connect()}`);
-		return fetch(this.session.baseUrl + url, { ...init, headers });
+		try {
+			const response = await fetch(this.session.baseUrl + url, { ...init, headers });
+			if (response.status !== 401) return response;
+			await response.body?.cancel();
+			this.session.expire(session);
+			session = this.session.connect();
+			headers.set('Authorization', `Bearer ${await session}`);
+			return await fetch(this.session.baseUrl + url, { ...init, headers });
+		} catch (error) {
+			// Retire admission after transport loss; the next reconnect reaches the server.
+			this.session.expire(session);
+			throw error;
+		}
 	}
 
 	public async readDirectory(relativePath: string): Promise<WorkspaceDirectoryEntry[] | null> {

@@ -51,7 +51,12 @@ test('CLI MCP uses a real Studio window without its chat: runtime, Lua, frames, 
 	const { toolContext } = await call('studio_open_context', { session: sessions[0].id });
 	const forbidden = await second.callTool({ name: 'studio_runtime_status', arguments: { toolContext } }) as CallToolResult;
 	assert.equal(forbidden.isError, true, 'MCP clients cannot borrow another client\'s tool contexts');
-	const status = await call('studio_runtime_status', { toolContext });
+	// Window registration publishes the tool endpoint, not completion of the boot operation.
+	let status = await call('studio_runtime_status', { toolContext });
+	while (status.operationActive) {
+		await delay(50);
+		status = await call('studio_runtime_status', { toolContext });
+	}
 	console.log('runtime status', JSON.stringify(status));
 	const { target } = status;
 	await call('studio_pause_runtime', { toolContext, target });

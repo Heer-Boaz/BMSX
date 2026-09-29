@@ -1,6 +1,5 @@
 import type { HostClock } from '../../hosts/common/clock';
 import type { KeyValueStorage } from './key_value_storage';
-import { joinWorkspacePaths } from './path';
 import type { WorkspaceRecord, WorkspaceRecordProvider } from './record_provider';
 export type { WorkspaceRecord } from './record_provider';
 
@@ -8,7 +7,6 @@ export const WORKSPACE_STORAGE_PREFIX = 'bmsx.workspace.records';
 export const WORKSPACE_METADATA_DIR = '.bmsx';
 export const WORKSPACE_DIRTY_DIR = 'dirty';
 export const WORKSPACE_STATE_FILE = 'session.json';
-export const WORKSPACE_MARKER_FILE = '~workspace';
 
 export const workspaceRecordState: { connected: boolean; provider: WorkspaceRecordProvider } = {
 	connected: false,
@@ -109,6 +107,13 @@ export async function writeWorkspaceRecord(
 	relativePath: string,
 	record: WorkspaceRecord,
 ): Promise<WorkspaceRecordPersistence> {
+	const provider = workspaceRecordState.provider;
+	if (workspaceRecordState.connected && provider.connect === undefined) {
+		// A local store failure is a failed Save, not an offline acknowledgement or a retry queue.
+		await writeRemoteWorkspaceRecord(relativePath, record);
+		writeLocalWorkspaceRecord(storage, projectRootPath, relativePath, record);
+		return { status: provider.persistence };
+	}
 	writeLocalWorkspaceRecord(storage, projectRootPath, relativePath, record);
 	const pendingRecord = { storage, projectRootPath, record };
 	pendingRemoteWorkspaceRecords.set(relativePath, pendingRecord);
@@ -120,7 +125,7 @@ export async function writeWorkspaceRecord(
 		if (pendingRemoteWorkspaceRecords.get(relativePath) === pendingRecord) {
 			pendingRemoteWorkspaceRecords.delete(relativePath);
 		}
-		return { status: workspaceRecordState.provider.persistence };
+		return { status: provider.persistence };
 	} catch (error) {
 		disconnectWorkspaceRecords(error);
 		return { status: 'local-only', reason: 'write-failed', error };
@@ -144,6 +149,11 @@ export async function readWorkspaceRecord(
 ): Promise<WorkspaceRecord | null> {
 	if (!workspaceRecordState.connected) {
 		return readLocalWorkspaceRecord(storage, projectRootPath, relativePath);
+	}
+	if (workspaceRecordState.provider.connect === undefined) {
+		const record = await readRemoteWorkspaceRecord(relativePath);
+		if (record !== null) writeLocalWorkspaceRecord(storage, projectRootPath, relativePath, record);
+		return record;
 	}
 	try {
 		const remoteRecord = await readRemoteWorkspaceRecord(relativePath);
@@ -197,8 +207,9 @@ export async function readWorkspaceRecordVersion(
 }
 
 export function readRemoteWorkspaceRecord(relativePath: string): Promise<WorkspaceRecord | null> {
+	const provider = workspaceRecordState.provider;
 	return enqueueRemoteWorkspaceOperation(relativePath, async () => {
-		const record = await workspaceRecordState.provider.read(relativePath);
+		const record = await provider.read(relativePath);
 		if (record && record.updatedAt > lastWorkspaceRecordTimestamp) {
 			lastWorkspaceRecordTimestamp = record.updatedAt;
 		}
@@ -210,7 +221,8 @@ export function writeRemoteWorkspaceRecord(
 	relativePath: string,
 	record: WorkspaceRecord,
 ): Promise<void> {
-	return enqueueRemoteWorkspaceOperation(relativePath, () => workspaceRecordState.provider.write(relativePath, record, true));
+	const provider = workspaceRecordState.provider;
+	return enqueueRemoteWorkspaceOperation(relativePath, () => provider.write(relativePath, record, true));
 }
 
 /** Publish a new source only after the filesystem has admitted its name. */
@@ -220,31 +232,21 @@ export async function createWorkspaceFile(
 	relativePath: string,
 	record: WorkspaceRecord,
 ): Promise<void> {
-	await enqueueRemoteWorkspaceOperation(relativePath, () => workspaceRecordState.provider.write(relativePath, record, false));
+	const provider = workspaceRecordState.provider;
+	await enqueueRemoteWorkspaceOperation(relativePath, () => provider.write(relativePath, record, false));
 	writeLocalWorkspaceRecord(storage, projectRootPath, relativePath, record);
 }
 
 export function deleteRemoteWorkspaceRecord(relativePath: string): Promise<void> {
-	return enqueueRemoteWorkspaceOperation(relativePath, () => workspaceRecordState.provider.delete(relativePath));
+	const provider = workspaceRecordState.provider;
+	return enqueueRemoteWorkspaceOperation(relativePath, () => provider.delete(relativePath));
 }
 
-export async function openWorkspaceRecords(
-	storage: KeyValueStorage,
-	clock: HostClock,
-	projectRootPath: string,
-	provider: WorkspaceRecordProvider,
-): Promise<void> {
+export async function openWorkspaceRecords(provider: WorkspaceRecordProvider): Promise<void> {
+	pendingRemoteWorkspaceRecords.clear();
 	workspaceRecordState.provider = provider;
-	const markerPath = joinWorkspacePaths(
-		projectRootPath,
-		WORKSPACE_METADATA_DIR,
-		WORKSPACE_MARKER_FILE,
-	);
-	const marker = createWorkspaceRecord(clock, '');
-	writeLocalWorkspaceRecord(storage, projectRootPath, markerPath, marker);
 	try {
-		await writeRemoteWorkspaceRecord(markerPath, marker);
-		await syncPendingRemoteWorkspaceRecords();
+		await provider.connect?.();
 		workspaceRecordState.connected = true;
 	} catch (error) {
 		disconnectWorkspaceRecords(error);
@@ -253,19 +255,12 @@ export async function openWorkspaceRecords(
 
 export function closeWorkspaceRecords(): void {
 	workspaceRecordState.connected = false;
+	pendingRemoteWorkspaceRecords.clear();
 }
 
-export async function reconnectWorkspaceRecords(
-	clock: HostClock,
-	projectRootPath: string,
-): Promise<void> {
-	const markerPath = joinWorkspacePaths(
-		projectRootPath,
-		WORKSPACE_METADATA_DIR,
-		WORKSPACE_MARKER_FILE,
-	);
+export async function reconnectWorkspaceRecords(): Promise<void> {
 	try {
-		await writeRemoteWorkspaceRecord(markerPath, createWorkspaceRecord(clock, ''));
+		await workspaceRecordState.provider.connect!();
 		await syncPendingRemoteWorkspaceRecords();
 		workspaceRecordState.connected = true;
 	} catch (error) {
@@ -319,6 +314,7 @@ function enqueueRemoteWorkspaceOperation<T>(
 }
 
 export function disconnectWorkspaceRecords(error: unknown): void {
+	if (workspaceRecordState.provider.connect === undefined) throw error;
 	workspaceRecordState.connected = false;
 	console.warn('[WorkspaceStorage] Remote workspace unavailable; local recovery remains active.', error);
 }

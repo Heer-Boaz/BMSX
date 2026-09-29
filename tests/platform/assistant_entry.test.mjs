@@ -6,12 +6,16 @@ import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { build } from 'esbuild';
+import { renderStudioPage, STUDIO_CONFIGURATION_ELEMENT, STANDALONE_STUDIO_CONFIGURATION } from '../../scripts/products/studio_page.ts';
 
 async function fixture(t, host = '127.0.0.1') {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-assistant-entry-'));
 	const dist = join(root, 'dist'), bin = join(root, 'bin'), state = join(root, 'state'), trace = join(root, 'codex-calls');
 	await mkdir(dist); await mkdir(bin);
 	await writeFile(join(dist, 'index.html'), '<!doctype html><p>Studio entry fixture</p>');
+	const template = `<!doctype html>${STUDIO_CONFIGURATION_ELEMENT}<p>Studio application</p>`;
+	await writeFile(join(dist, 'studio.debug.template.html'), template);
+	await writeFile(join(dist, 'studio.debug.html'), renderStudioPage(template, STANDALONE_STUDIO_CONFIGURATION));
 	await writeFile(join(root, 'source.lua'), 'return 1');
 	// Exercise the actual production entry without touching an account or opening a model connection.
 	await writeFile(join(bin, 'codex'), `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(trace)}\n[ "$1" = "--version" ] || exit 4\necho codex-cli 0.0.0\n`, { mode: 0o700 });
@@ -40,6 +44,29 @@ test('the ordinary LAN server exposes Studio admission without starting Codex or
 	assert.equal((await f.request('/__bmsx__/session', { headers: { 'X-BMSX-Client': 'studio', Origin: f.address } })).status, 200);
 	assert.equal((await f.request('/__bmsx__/assistant/connect', { method: 'POST' })).status, 401);
 	await assert.rejects(access(f.state), { code: 'ENOENT' });
+	await assert.rejects(access(f.trace), { code: 'ENOENT' });
+});
+
+test('only the Studio application route supplies services; static pages and packaged standalone configuration stay unchanged', async t => {
+	const f = await fixture(t);
+	const response = await f.request('/studio.debug.html'), html = await response.text();
+	const { chromium } = await import('playwright');
+	const browser = await chromium.launch({ args: ['--no-sandbox'] });
+	t.after(() => browser.close());
+	const page = await browser.newPage();
+	await page.setContent(html);
+	assert.deepEqual(await page.evaluate(() => JSON.parse(document.getElementById('bmsx-studio-configuration').dataset.settings)),
+		{ workspace: { kind: 'http', baseUrl: '' }, assistant: '', conversations: '', externalTools: '' });
+	const standalone = await readFile(join(f.dist, 'studio.debug.html'), 'utf8');
+	await page.setContent(standalone);
+	assert.deepEqual(await page.evaluate(() => JSON.parse(document.getElementById('bmsx-studio-configuration').dataset.settings)), STANDALONE_STUDIO_CONFIGURATION);
+	assert.equal((await f.request('/studio.debug.html', { method: 'HEAD' })).headers.get('Content-Length'), response.headers.get('Content-Length'));
+	await writeFile(join(f.dist, 'unrelated.html'), standalone);
+	assert.equal(await (await f.request('/unrelated.html')).text(), standalone);
+	// Quoted bootstrap data must stay data, not turn into HTML or another capability.
+	const configuration = { workspace: { kind: 'browser' }, conversations: '/history?x="<&$&' };
+	await page.setContent(renderStudioPage(`<!doctype html>${STUDIO_CONFIGURATION_ELEMENT}`, configuration));
+	assert.deepEqual(await page.evaluate(() => JSON.parse(document.getElementById('bmsx-studio-configuration').dataset.settings)), configuration);
 	await assert.rejects(access(f.trace), { code: 'ENOENT' });
 });
 

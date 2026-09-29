@@ -14,7 +14,7 @@ declare global {
 
 /** Automated source/command/UI evidence, not a claim of UI-only authoring. */
 export async function runStudioSourceSaves(test: StudioFixture) {
-	const { runtime, ide, execution, tasks, harness, clock, observations, frame, until, press, runMenuCommand, cycles, title } = test;
+	const { runtime, ide, execution, tasks, harness, observations, frame, until, press, runMenuCommand, cycles, title } = test;
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'source saves: boot real cartridge');
 	await reachNemesisTitle(test);
 	harness.openLuaSource('title_screen.lua');
@@ -45,7 +45,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 	await test.capture?.('lua-local-only');
 	harness.replaceActiveCodeSource(localSaved + '-- later unsaved typing\n');
 	await globalThis.setStudioWorkspaceWriteFailure(false);
-	await reconnectWorkspaceRecords(clock, root);
+	await reconnectWorkspaceRecords();
 	check(workspaceRecordState.connected && (await files.read(path))!.contents === localSaved,
 		'source saves: reconnect writes the saved revision, not later typing');
 	check(model.dirty && model.lastSavedSource === localSaved, 'source saves: remote acknowledgement does not clean newer edits');
@@ -81,7 +81,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 		await frame();
 		await test.capture?.(`${kind}-local-only`);
 		await globalThis.setStudioWorkspaceWriteFailure(false);
-		await reconnectWorkspaceRecords(clock, root);
+		await reconnectWorkspaceRecords();
 		check((await files.read(resourcePath))!.contents === document.buffer.getText(), `source saves: ${kind} reconnect persists exact authored source`);
 	}
 	// AEM deliberately calls its real reload_from_rom function; that is guest

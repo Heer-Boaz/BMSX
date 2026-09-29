@@ -122,13 +122,20 @@ recovery-storage namespace so browser edits cannot silently become filesystem
 writes when the same origin later serves a development workspace. Save, discovery,
 source models, history, the Terminal and all local Studio services keep their
 existing owners. Save acknowledgements identify browser storage explicitly.
-IndexedDB acknowledges transaction completion, not request success; exclusive
-creation is admitted by the store, including concurrent windows. Directory
-enumeration reads immediate child keys without loading source bodies.
+IndexedDB acknowledges transaction completion, not request success. Its indexed
+namespace and contents share one transaction for exclusive creation and
+file/directory admission, including concurrent windows. Directory enumeration
+reads immediate child metadata without loading source bodies. Local file
+failures remain failed Saves; they do not disconnect a fictitious server or
+enqueue network replication. Only network providers expose admission/reconnect.
+Opening storage writes no probe files.
 
-The ordinary development server declares its services in the HTML bootstrap;
-only that composition installs HTTP workspace, assistant, native-conversation
-and external-tool connections. Standalone has no speculative request, failed
+`StudioConfiguration` independently declares the workspace provider, assistant,
+native-conversation viewer and external-tool registration. The product builder
+renders standalone HTML; the ordinary development server renders its two Studio
+application routes from the same product template. Its generic static-file
+handler does not rewrite HTML. Protocols at the same base URL share admission.
+Standalone has no speculative request, failed
 HTTP provider, retry loop or substitute agent. Agent commands follow factory
 availability through ordinary command enablement. Connection failure after a
 server-backed start remains a connection failure, not a workspace-authority
@@ -435,12 +442,15 @@ the write is outstanding remains dirty.
 
 The workspace record owner separately acknowledges local persistence and the
 project-file provider's write. `TextFileSaveService` carries that exact result
-for Lua, YAML and AEM alongside runtime application. A local-only save establishes
+for Lua, YAML and AEM alongside runtime application. A network-backed local-only save establishes
 the saved document identity but commands show a warning rather than claiming the
 project file was saved. Provider connectivity alone cannot acknowledge a file:
 another request can disconnect it while this write succeeds. Reconnection sends
 the saved record without acknowledging subsequent edits or rewriting the earlier
 Save result. See [source save acknowledgements](../docs/studio_source_save_acknowledgements.md).
+Local disk/IndexedDB write failures instead remain failed Saves with dirty text;
+recovery records are not a replacement local filesystem or an automatic write
+queue. Session-checkpoint failure is reported without a reconnect timer.
 
 This follows the production VS Code ownership pattern rather than its full
 service surface:

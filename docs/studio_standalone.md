@@ -7,10 +7,21 @@ acquire the IDE or an agent dependency.
 
 ## Composition, not a failed connection
 
-The built page contains `bmsx-studio-services=standalone`. The existing
-`serve-dist.mjs` substitutes `server` in the response, without changing the file
-on disk. Browser startup consumes that declaration once; there is no server
-probe, heartbeat, hostname guess or catch-and-switch fallback.
+`StudioConfiguration` is the deployment contract. The product builder emits
+both a usable standalone page and a Studio application template. The existing
+server renders **only** `/studio.html` and `/studio.debug.html` from that template,
+with its configuration. Its generic static-file handler streams HTML unchanged;
+it neither searches for nor replaces a mode flag. The minimal player has no
+Studio configuration.
+
+The workspace provider, embedded assistant, native-conversation viewer and
+external-tool registration are declared independently. Missing agent services
+have no connection factory. Protocols at the same base URL share one admission
+session, not each other's availability or lifetime. Bootstrap values are JSON
+in an attribute encoded by the existing `entities` dependency. Both deployment
+producers use the same product-owned renderer; the browser consumes their typed
+representation directly, once. There is no endpoint probe, heartbeat, hostname
+guess, runtime DTO validator or catch-and-switch fallback.
 
 | Capability | Standalone Studio | Development-server Studio |
 | --- | --- | --- |
@@ -25,9 +36,9 @@ it does **not** silently switch Save to another project. Ordinary connection
 failures are still reported. This change neither copies accounts nor starts a
 native Codex daemon. Local and trusted-LAN server composition remain identical.
 
-Restart an already running development server once after updating the HTML
-bootstrap code. Otherwise that older process still serves the static standalone
-declaration. There is no new server command or assistant flag.
+Restart an already running development server after updating its application
+route. Build the normal Studio product, including its template, before using
+that route. There is no new server command or assistant flag.
 
 ## Browser source persistence
 
@@ -37,14 +48,30 @@ source is the initial base. Saved overrides, new files and session records live
 in the `bmsx-studio-workspace` database. Source discovery admits newly created Lua
 files independently of restored tabs and ROM membership.
 
-Writes complete only when their IndexedDB transaction commits. Exclusive create
-uses `add`, not a racy read-before-write. Indexed key cursors enumerate immediate
-children and skip descendants without reading their text. No frame-time storage
-or network work was added.
+Writes complete only when their IndexedDB transaction commits. File/directory
+admission and content writes use the **same** transaction, including competing
+windows. A path cannot be both a file and a directory. Namespace entries have a
+parent index: enumeration reads immediate child metadata, not descendants or
+source bodies. Empty directories survive file deletion. Ordinary Save of an
+existing file does not re-walk its parent directories. The schema upgrade indexes
+the previous content store without rewriting or discarding its files. No
+frame-time storage or network work was added.
+
+Local stores are ready when constructed. Only the HTTP provider has network
+admission/reconnection. Workspace opening no longer writes a `~workspace` probe
+file; it performs admission only for a network provider. A failed local Save
+propagates to the ordinary save owner and leaves the model dirty, rather than
+being reclassified as an offline save. Reading local canonical files does not
+upload recovery copies. A failed local session checkpoint reports through the
+existing log and workbench warning surfaces; it retains the recovery generation
+but does not start a reconnect or blind-retry timer. Network-backed workspace
+recovery retains its existing explicit local-only acknowledgement and reconnect
+semantics. Queued operations capture their provider and pending replication is
+retired with its workspace, never transferred to a replacement provider.
 
 Save says **in this browser**, and its acknowledgement has `status: browser`.
 This is distinct from `workspace` (project filesystem) and `local-only`
-(recovery after a failed/disconnected canonical Save). Ordinary local recovery
+(recovery after a failed/disconnected **network-backed** Save). Ordinary local recovery
 still checkpoints before page exit; its standalone namespace cannot be replayed
 into the filesystem when the same origin is later served by the development
 server. No implicit migration/import joins these two authorities.
@@ -68,13 +95,19 @@ The mobile fixed-canvas limitation remains explicit in the
 
 ## Validation
 
-`npm run test:studio-standalone` exercises real Chromium IndexedDB, concurrent
-exclusive creation, committed reads after reopen, directory discovery and
-delete. Its product workflow uses actual keyboard/native clipboard input to
+`npm run test:studio-standalone` exercises real Chromium IndexedDB, content-store
+upgrade, concurrent exclusive creation and file/directory conflicts, committed
+reads after reopen, indexed directory discovery and delete. Its product workflow
+uses actual keyboard/native clipboard input to
 execute Lua (`6 * 7` returns `42`), create/edit/Save source, reload and copy the
 restored source, then edit/Save with networking disabled. It records all browser
 attempts to reach Studio endpoints, including offline attempts, and waits beyond
 the previous reconnect interval: **zero requests and zero application errors**.
+It then applies a real Chromium storage-quota limit, edits and tries Save again:
+canonical bytes remain unchanged, the editor keeps the edit, and lifting the
+limit lets an explicit Save commit it. Screenshots cover both outcomes. This
+found a native `QuotaExceededError` with an empty message; the storage boundary
+now translates that code into a visible failure instead of an empty status line.
 
 Screenshots in `/tmp/bmsx-studio-standalone/` cover the Terminal result, disabled
 Codex menu alongside active local tools, browser Save and restored/offline source.
@@ -84,8 +117,15 @@ the ordinary focus-scoped dispatch and enablement, instead of being globally
 available outside their pane.
 
 Targeted results (2026-09-29): standalone **2/2**, source Save/storage/provider
-regressions **88/88**, workspace HTTP **7/7**, ordinary-server entry **5/5**, native
+regressions **91/91**, workspace HTTP **7/7**, ordinary-server entry **6/6**, native
 conversation browser product **1/1**, and real MCP browser product **1/1**.
+The server-entry coverage also checks the actual application route, independent
+capability serialization, matching GET/HEAD bodies, and unchanged static files.
+Storage-failure coverage checks dirty-source retention and absence of reconnect
+timers, not exact presentation strings.
+The existing source-Save conformance workflow also passes on software, WebGL2
+and WebGPU, exercising real HTTP file writes, local-only acknowledgements after
+rejected writes, and explicit reconnection for Lua, YAML and AEM.
 IDE/Node/common-host typechecks and Studio debug/release, player and headless
 tooling builds pass; the strict boundary audit reports zero issues.
 These do not imply paid-model inference or physical-phone coverage.

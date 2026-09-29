@@ -1,5 +1,6 @@
 import type { HostClock, TimerHandle } from '../../../hosts/common/clock';
 import { LogLevel, type LogOutput } from '../../../hosts/common/log';
+import { showEditorWarningBanner } from '../../common/feedback_state';
 import type { KeyValueStorage } from '../../workspace/key_value_storage';
 import type { WorkspaceRecordProvider } from '../../workspace/record_provider';
 import { clearWorkspaceSourceCaches } from '../../workspace/cache';
@@ -61,6 +62,7 @@ let sources: RuntimeSourceState = null;
 let debuggerState: RuntimeBreakpointState = null;
 let storage: KeyValueStorage = null;
 let clock: HostClock = null;
+let logOutput: LogOutput = null;
 let unsubscribeEditorGroup: (() => void) | undefined;
 let unsubscribeEditorPane: (() => void) | undefined;
 let unsubscribeModelSaved: (() => void) | undefined;
@@ -114,6 +116,7 @@ export async function shutdownWorkspaceStorage(): Promise<void> {
 			debuggerState = null;
 			storage = null;
 			clock = null;
+			logOutput = null;
 			clearWorkspaceSourceCaches();
 			closeWorkspaceRecords();
 		}
@@ -157,18 +160,14 @@ export async function initializeWorkspaceStorage(
 	projectRootPath: string,
 	runtimeSources: RuntimeSourceState,
 	workspaceFiles: WorkspaceRecordProvider,
-	logOutput: LogOutput,
+	workspaceLogOutput: LogOutput,
 ): Promise<WorkspaceAutosavePayload | null> {
 	await shutdownWorkspaceStorage();
 	storage = workspaceStorage;
 	clock = workspaceClock;
+	logOutput = workspaceLogOutput;
 	workspaceState.projectRootPath = projectRootPath;
-	await openWorkspaceRecords(
-		storage,
-		clock,
-		projectRootPath,
-		workspaceFiles,
-	);
+	await openWorkspaceRecords(workspaceFiles);
 	const statePath = joinWorkspacePaths(
 		projectRootPath,
 		WORKSPACE_METADATA_DIR,
@@ -438,6 +437,7 @@ export function runWorkspaceAutosaveTick(): Promise<void> | void {
 }
 
 async function syncWorkspaceAutosave(): Promise<void> {
+	let failed = false;
 	try {
 		const targetRevision = workspaceState.localRevision;
 		const generation = workspaceState.localGeneration;
@@ -446,13 +446,20 @@ async function syncWorkspaceAutosave(): Promise<void> {
 		workspaceState.remoteDirtyRecords = generation.dirtyRecords;
 		workspaceState.remoteRevision = targetRevision;
 	} catch (error) {
-		disconnectWorkspaceRecords(error);
+		failed = true;
 		workspaceState.remoteRevision = -1;
-		scheduleWorkspaceReconnect();
+		if (workspaceRecordState.provider.connect === undefined) {
+			const message = `Could not persist the editor session: ${String(error)}`;
+			logOutput.log(LogLevel.Error, `[WorkspaceStorage] ${message}`);
+			showEditorWarningBanner(message, 5.0);
+		} else {
+			disconnectWorkspaceRecords(error);
+			scheduleWorkspaceReconnect();
+		}
 	} finally {
 		workspaceState.autosaveTask = null;
 		if (workspaceState.requestedRevision !== workspaceState.localRevision
-			|| (workspaceRecordState.connected
+			|| (!failed && workspaceRecordState.connected
 				&& workspaceState.remoteRevision !== workspaceState.localRevision)) {
 			scheduleWorkspaceAutosave();
 		}
@@ -482,7 +489,8 @@ function commitRequestedWorkspaceSessionLocally(): void {
 }
 
 function scheduleWorkspaceReconnect(): void {
-	if (workspaceRecordState.connected
+	if (workspaceRecordState.provider.connect === undefined
+		|| workspaceRecordState.connected
 		|| reconnectHandle
 		|| reconnectTask
 		|| !workspaceState.projectRootPath) {
@@ -496,7 +504,7 @@ function scheduleWorkspaceReconnect(): void {
 }
 
 async function reconnectAndSyncWorkspace(): Promise<void> {
-	await reconnectWorkspaceRecords(clock, workspaceState.projectRootPath);
+	await reconnectWorkspaceRecords();
 	reconnectTask = null;
 	if (workspaceRecordState.connected) {
 		workspaceState.remoteRevision = -1;

@@ -20,6 +20,7 @@ import { reportClipboardFailure } from '../input/clipboard';
 import { HttpWorkspaceRecordProvider } from './workspace_records';
 import { IndexedDbWorkspaceRecordProvider } from './indexeddb_workspace_records';
 import { ScopedKeyValueStorage } from '../workspace/key_value_storage';
+import type { StudioConfiguration } from '../common/studio_configuration';
 import { IdeMicrotaskQueue } from '../common/microtask_queue';
 import { prepareWorkbenchRuntime } from '../workbench/machine_runtime';
 import { bindBrowserFullscreenShortcut } from '../../hosts/browser/fullscreen';
@@ -43,7 +44,16 @@ declare const BMSX_BROWSER_DEBUG: boolean;
 
 async function startBrowserStudio(): Promise<void> {
 	const systemRomPath = `./bmsx-bios${BMSX_BROWSER_DEBUG ? '.debug' : ''}.rom`;
+	let browserFiles: IndexedDbWorkspaceRecordProvider | undefined;
 	try {
+		const configuration: StudioConfiguration = JSON.parse(document.getElementById('bmsx-studio-configuration')!.dataset.settings!);
+		// Independent protocols on the same server share admission, not availability or lifetime.
+		const sessions = new Map<string, StudioHttpSession>();
+		const httpSession = (baseUrl: string): StudioHttpSession => {
+			let session = sessions.get(baseUrl);
+			if (session === undefined) { session = new StudioHttpSession(baseUrl); sessions.set(baseUrl, session); }
+			return session;
+		};
 		const options = await prepareBrowserStartup(
 			BMSX_BROWSER_DEBUG,
 			systemRomPath,
@@ -84,11 +94,10 @@ async function startBrowserStudio(): Promise<void> {
 			rewind,
 			execution,
 		);
-		const services = document.querySelector<HTMLMetaElement>('meta[name="bmsx-studio-services"]')!.content;
-		const httpSession = services === 'server' ? new StudioHttpSession() : undefined;
-		const browserFiles = httpSession === undefined ? await IndexedDbWorkspaceRecordProvider.open() : undefined;
-		const workspaceFiles = httpSession === undefined ? browserFiles! : new HttpWorkspaceRecordProvider(httpSession);
-		const storage = httpSession === undefined
+		const workspace = configuration.workspace;
+		if (workspace.kind === 'browser') browserFiles = await IndexedDbWorkspaceRecordProvider.open();
+		const workspaceFiles = workspace.kind === 'browser' ? browserFiles! : new HttpWorkspaceRecordProvider(httpSession(workspace.baseUrl));
+		const storage = workspace.kind === 'browser'
 			? new ScopedKeyValueStorage(window.localStorage, 'bmsx.standalone:') : window.localStorage;
 		const clipboard = new BrowserClipboard();
 		const toolLifetime = new AbortController();
@@ -115,8 +124,8 @@ async function startBrowserStudio(): Promise<void> {
 			options.logOutput,
 			defaultResourcePanelRatio(window.innerWidth / window.screen.width),
 			() => new BrowserGraphLayoutEngine(new Worker(new URL('./graph-layout.worker.js', document.baseURI))),
-			httpSession === undefined ? undefined : (signal, onEvent) => AssistantHttpConnection.open(httpSession, signal, onEvent),
-			httpSession === undefined ? undefined : (signal, onEvent) => HttpConversationObserver.open(httpSession, signal, onEvent),
+			configuration.assistant === undefined ? undefined : (signal, onEvent) => AssistantHttpConnection.open(httpSession(configuration.assistant), signal, onEvent),
+			configuration.conversations === undefined ? undefined : (signal, onEvent) => HttpConversationObserver.open(httpSession(configuration.conversations), signal, onEvent),
 		);
 		clipboard.bindInput(options.browserInput, () => ide.editor.clipboardTarget, reportClipboardFailure);
 		systemOutput.flush(runtime, options.logOutput);
@@ -162,15 +171,16 @@ async function startBrowserStudio(): Promise<void> {
 				}
 			}
 		});
-		if (httpSession !== undefined) {
+		if (configuration.externalTools !== undefined) {
 			const reportToolFailure = (error: unknown) => options.logOutput.log(LogLevel.Error, `Studio external tools unavailable: ${String(error)}`);
-			void StudioToolHttpConnection.open(httpSession, ide.editor.tools, { title: document.title, url: location.href }, proposal => {
+			void StudioToolHttpConnection.open(httpSession(configuration.externalTools), ide.editor.tools, { title: document.title, url: location.href }, proposal => {
 				ide.editor.activate();
 				openEditorTab(ide.editor.editorPanes, new WorkspaceEditReviewInput(proposal));
 			}, toolLifetime.signal, reportToolFailure).catch(reportToolFailure);
 		}
 		completeBrowserBoot();
 	} catch (error) {
+		browserFiles?.close();
 		showBrowserBootError(error);
 	}
 }

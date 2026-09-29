@@ -19,14 +19,16 @@ result flow, not in UI connectivity checks, another queue or a storage facade.
 
 ## Contract
 
-- The record owner acknowledges `workspace` only after the exact provider write
-  resolves. `local-only` means the source was persisted locally but the provider
-  was disconnected or that write failed; the latter carries its actual error.
-  A failed local write still rejects and cannot complete the model snapshot.
+- The record owner acknowledges `workspace` (filesystem) or `browser` (IndexedDB)
+  only after the exact provider write resolves. For a **network-backed** workspace,
+  `local-only` means recovery persisted the source but the provider was disconnected
+  or that write failed; the latter carries its actual error. A local disk/IndexedDB
+  failure instead rejects and cannot complete the model snapshot. It is not a
+  failed server, a network retry queue or permission to overwrite from recovery.
 - The result travels through source persistence and the Lua catalog unchanged.
   The text-file save result names the captured document snapshot, persistence
   acknowledgement and independent AEM application outcome.
-- Local persistence still establishes saved/undo identity. The Save command
+- Network-workspace recovery persistence still establishes saved/undo identity. The Save command
   explicitly warns "saved locally only" instead of implying project-file
   acknowledgement. An AEM build/application failure remains visible even when
   the source also failed to reach the provider.
@@ -39,10 +41,17 @@ result flow, not in UI connectivity checks, another queue or a storage facade.
   separate build/install and real `reload_from_rom` guest call. Canonical authored
   bytes are preserved; nothing is reconstructed from cooked data.
 
-No machine representation, idle-frame path, source scan, timer, retry policy,
+The original acknowledgement slice changed no machine representation, idle-frame path, source scan, timer, retry policy,
 conflict policy or session storage format changed. Small result objects are
 created only for explicit saves. This is not a new durable synchronization log
 or conflict-merging feature.
+
+The [standalone storage revision](studio_standalone.md) (2026-09-29) separates
+local providers from network admission and removes marker-file probes. Local
+canonical reads do not replay recovery copies; local write failures leave the
+model dirty. A real Chromium quota-denial check also caught an empty native
+error message: the IndexedDB boundary now reports the native error code through
+the ordinary Save UI. Lifting the quota and explicitly saving commits the edit.
 
 ## Production references studied before implementation
 
