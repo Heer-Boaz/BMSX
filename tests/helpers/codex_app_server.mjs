@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 /** Actual CLI/stdio protocol, private test home and no user credentials/config. */
-export async function createCodexContractFixture(t, providerUrl, ambientMcpEnabled = false) {
+export async function createCodexContractFixture(t, providerUrl, { ambientMcpEnabled = false, mcp } = {}) {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-codex-contract-'));
 	const home = join(root, 'home'), workspace = join(root, 'workspace');
 	await mkdir(home); await mkdir(workspace);
@@ -35,7 +35,8 @@ args = [${JSON.stringify(ambientMcp)}]
 required = true` : ''}
 `);
 	// These are the candidate admission settings under test, not a production endpoint.
-	const args = ['app-server', '--stdio', '-c', 'mcp_servers={}', '-c', 'notify=[]'];
+	const mcpServers = mcp === undefined ? '{}' : `{bmsx={url=${JSON.stringify(mcp.url)},http_headers_helper=${JSON.stringify(mcp.headersHelper)},required=true}}`;
+	const args = ['app-server', '--stdio', '-c', `mcp_servers=${mcpServers}`, '-c', 'notify=[]'];
 	for (const feature of ['shell_tool', 'unified_exec', 'code_mode_host', 'plugins', 'apps', 'browser_use', 'computer_use',
 		'multi_agent', 'memories', 'hooks', 'workspace_dependencies', 'image_generation', 'goals',
 		'shell_snapshot', 'skill_mcp_dependency_install', 'enable_request_compression']) args.push('--disable', feature);

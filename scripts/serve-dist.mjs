@@ -80,11 +80,13 @@ const workspaceSession = new WorkspaceHttpSession(host);
 // Constructing the endpoint starts no process and opens no account profile.
 await import('tsx');
 const { CodexHttpApi } = await import('../hosts/node/codex/http_api.ts');
+const { StudioSessions } = await import('../hosts/node/studio/sessions.ts');
+const { StudioMcpApi } = await import('../hosts/node/studio/mcp.ts');
 const { openUrlInBrowser } = await import('../hosts/node/common/open_url.ts');
-const { STUDIO_SOURCE_TOOLS } = await import('../ide/workbench/services/assistant/source_tool_protocol.ts');
-const { STUDIO_TEST_TOOLS } = await import('../ide/workbench/services/assistant/test_tool_protocol.ts');
-const { STUDIO_RUNTIME_TOOLS } = await import('../ide/workbench/services/assistant/runtime_tool_protocol.ts');
-const assistant = new CodexHttpApi({ tools: [...STUDIO_SOURCE_TOOLS, ...STUDIO_TEST_TOOLS, ...STUDIO_RUNTIME_TOOLS],
+const { STUDIO_TOOLS } = await import('../ide/workbench/services/assistant/tool_catalog.ts');
+const studioSessions = new StudioSessions();
+const studioMcp = new StudioMcpApi(studioSessions, STUDIO_TOOLS);
+const assistant = new CodexHttpApi({ tools: STUDIO_TOOLS,
 	openLoginPage: openUrlInBrowser,
 	// The same root the workspace API serves sources from, so a Studio source path and a shell
 	// path name the same file.
@@ -172,6 +174,16 @@ const server = createServer(async (req, res) => {
 			await assistant.handle(req, res, requestUrl.pathname);
 			return;
 		}
+		if (requestUrl.pathname === '/__bmsx__/mcp') {
+			workspaceSession.authorize(req);
+			await studioMcp.handle(req, res);
+			return;
+		}
+		if (requestUrl.pathname.startsWith('/__bmsx__/studio/')) {
+			workspaceSession.authorize(req);
+			await studioSessions.handle(req, res, requestUrl.pathname);
+			return;
+		}
 		if (await handleCartsApi(req, res, requestUrl)) {
 			return;
 		}
@@ -243,6 +255,7 @@ server.listen(port, host, () => {
 		console.log(`Default file: /${defaultFile}`);
 	}
 	console.log('Studio APIs: same-origin, session-authorized; Codex starts on Connect');
+	console.log(`Studio MCP: http://127.0.0.1:${port}/__bmsx__/mcp (existing CLI conversations; no Studio login required)`);
 	if ((host === '0.0.0.0' || host === '::') && ips.length) {
 		console.log('On your LAN:');
 		for (const ip of ips) console.log(`  http://${ip}:${port}/`);
@@ -259,7 +272,7 @@ let shutdown;
 const stop = () => {
 	// Stop admission, then join both the assistant process and accepted HTTP IO.
 	// Killing every socket here would interrupt an already accepted source save.
-	shutdown ??= Promise.all([assistant.close(), new Promise((resolve, reject) => {
+	shutdown ??= Promise.all([studioMcp.close(), studioSessions.close(), assistant.close(), new Promise((resolve, reject) => {
 		server.close(error => error ? reject(error) : resolve());
 	})]).catch(error => { console.error(error); process.exitCode = 1; });
 };

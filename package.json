@@ -6,6 +6,7 @@
 	"devDependencies": {
 		"@lezer/common": "^1.5.3",
 		"@lezer/markdown": "^1.7.2",
+		"@modelcontextprotocol/sdk": "^1.31.0",
 		"@node-minify/clean-css": "*",
 		"@node-minify/core": "*",
 		"@types/js-yaml": "*",
@@ -23,6 +24,7 @@
 		"js-yaml": "*",
 		"marked": "^16.3.0",
 		"picocolors": "*",
+		"playwright": "^1.63.0",
 		"pngjs": "*",
 		"potpack": "^2.1.0",
 		"string-width": "*",
@@ -51,6 +53,7 @@
 		"test:frame-evaluation-parity": "npx tsx --tsconfig tsconfig.base.json tests/conformance/frame_evaluation/run.ts",
 		"test:studio-assistant": "node --import tsx --test tests/platform/studio_assistant.test.ts tests/platform/studio_assistant_presentation.test.ts tests/platform/studio_assistant_images.test.ts tests/platform/studio_runtime_tools.test.ts tests/platform/studio_navigation_tools.test.ts tests/platform/studio_terminal_tools.test.ts tests/platform/studio_frame_tools.test.ts tests/platform/studio_stack_tools.test.ts tests/platform/studio_debugger_tools.test.ts tests/platform/studio_test_execution_tools.test.ts tests/platform/studio_test_inspection_tools.test.ts tests/platform/studio_test_debugger_tools.test.ts tests/platform/studio_behavior_tools.test.ts tests/platform/studio_actor_tools.test.ts tests/platform/studio_actor_execution_tools.test.ts tests/platform/studio_source_save_tools.test.ts tests/platform/studio_program_tools.test.ts",
 		"test:assistant-http": "node --import tsx --test tests/platform/assistant_http.test.ts tests/platform/assistant_entry.test.mjs",
+		"test:studio-mcp": "playwright install chromium && npm run build:product:browser-studio -- --debug && npm run build:toolchain:bios -- --debug && npm run build:toolchain:cart -- nemesis_s --debug && node --import tsx --test tests/platform/studio_mcp.test.ts",
 		"test:lua": "npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts tests/lua/*.test.ts",
 		"test:rompacker": "npx tsx --test tests/rompacker/*.ts",
 		"test:render-parity": "npm run build:product:node-headless-tooling -- --force && npm run build:product:libretro-wsl -- --force && npm run build:libretro-host && npm run build:toolchain:bios -- --force && npm run build:toolchain:cart -- renderhwtest --force && npm run build:toolchain:cart -- bare_metal_cart --force && node scripts/render/pixel_parity.mjs renderhwtest && node scripts/render/pixel_parity.mjs bare_metal_cart",

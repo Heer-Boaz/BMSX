@@ -137,8 +137,9 @@ separate command or assistant flag exists; Connect starts the process, not serve
 startup, page loading or workspace admission.
 See [assistant transport](../docs/studio_assistant_transport.md).
 
-`AssistantConversation` owns a workspace's connection epoch, per-prompt source
-authority and test-evidence handles, and retained transcript. The browser
+`WorkspaceToolService` owns the shared source/test/runtime tool contexts.
+`AssistantConversation` owns a workspace's connection epoch, its admitted turn
+contexts, and retained transcript. The browser
 composition injects the narrow `AssistantConnectionFactory` from the pure
 `hosts/common/assistant_protocol.ts`
 contract, like clipboard/clock contracts; no workbench feature imports a browser
@@ -152,6 +153,20 @@ Multiline fields retain exact UTF-16/LF-delimited input slices (including CR),
 independent control history, cached wrap geometry and captured pointer selection.
 See [assistant contribution](../docs/studio_assistant_contribution.md) and
 [retained Markdown presentation](../docs/studio_assistant_presentation.md).
+
+The existing server also exposes Streamable HTTP MCP, through the official SDK,
+for external CLI conversations. A separate `StudioSessions` registry owns live
+window streams, not assistant threads. Clients select a window explicitly and
+open context-local source/inspection/execution authority through the same
+`WorkspaceToolService`; no duplicate domain tool implementation exists. The pure
+`hosts/common/studio_tools.ts` contract crosses that boundary. Domain result data
+remains structured until the transport encodes it; MCP images are native image
+blocks. Source proposals open ordinary review without connecting an assistant.
+Window loss never reroutes an operation, request cancellation reaches its actual
+owner, and no mutation is automatically replayed. Workspace teardown retires
+contexts; accepted Saves retain their own lifecycle. MCP and embedded assistant
+connections do not close each other. See [Studio MCP](../docs/studio_mcp.md) for
+setup, trusted-LAN scope, explicit context lifetime and evidence limits.
 
 ## Execution, view lifetime, and restored inspection
 

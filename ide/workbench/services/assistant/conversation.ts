@@ -1,29 +1,13 @@
+import type { WorkspaceToolService, WorkspaceToolContext } from './tool_service';
 import { textFileMode } from '../working_copy/text_file_model';
 import type { ResourceIdentity } from '../../../common/resource';
 import type { AssistantSourceReference, AssistantConfiguration, AssistantModels, AssistantModelSelection, AssistantUsage } from '../../../../hosts/common/assistant_protocol';
-import type { ActorExecutionService } from '../../contrib/actor_lab/execution';
-import type { RuntimeDebuggerExecution } from '../../../runtime/debugger_execution';
-import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
-import type { GameImageCapture } from '../../../../hosts/common/image';
 import type { AssistantAccount, AssistantCommand, AssistantConnection, AssistantConnectionFactory, AssistantEvent, AssistantHistoryPage,
 	AssistantLoginMethod, AssistantQueuedMessage, AssistantReviewUpdate, AssistantThread, AssistantTranscriptPage } from '../../../../hosts/common/assistant_protocol';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import { PieceTreeBuffer } from '../../../editor/text/piece_tree_buffer';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import type { WorkspaceEditProposal } from '../working_copy/workspace_edit';
-import type { ResourceDiagnosticsService } from '../diagnostics/resource_diagnostics';
-import { WorkspaceSourceTools } from './source_tools';
-import { WorkspaceTestTools } from './test_tools';
-import type { ScenarioRunService } from '../testing/scenario_runs';
-import { STUDIO_TEST_TOOLS } from './test_tool_protocol';
-import type { RuntimeInspectionService } from '../../../runtime/inspection';
-import { WorkspaceRuntimeTools } from './runtime_tools';
-import { STUDIO_RUNTIME_TOOLS } from './runtime_tool_protocol';
-import type { LuaTerminalSession } from '../terminal/session';
-import type { BehaviorSourceDocuments } from '../../contrib/behavior_lens/source_documents';
-import type { TextFileSaveService } from '../working_copy/text_file_save';
-import type { BootService } from '../execution/boot';
 
 export type AssistantState = 'disconnected' | 'connecting' | 'loading' | 'configuring' | 'starting' | 'ready' | 'running' | 'stopping' | 'signing-in' | 'cancelling-sign-in' | 'signing-out';
 export type AssistantEntry = {
@@ -35,7 +19,7 @@ export type AssistantEntry = {
 	readonly images?: readonly string[];
 	resetRevision: number;
 };
-type ActiveTurn = { startedAt: number; id?: string; tools: WorkspaceSourceTools; tests: WorkspaceTestTools; runtime: WorkspaceRuntimeTools; requests: Map<string, AbortController>; messages: Map<string, AssistantEntry> };
+type ActiveTurn = { startedAt: number; id?: string; tools: WorkspaceToolContext; requests: Map<string, AbortController>; messages: Map<string, AssistantEntry> };
 type ConversationChange = 'state' | 'text' | 'proposal' | 'reset' | 'prepend';
 
 /** Workspace-owned conversation and accepted prompt context, independent of an attached pane. */
@@ -71,18 +55,8 @@ export class AssistantConversation {
 	private turn: ActiveTurn | undefined;
 	private disposed = false;
 
-	public constructor(private readonly models: EditorTextModelService, private readonly sources: RuntimeSourceState,
-		private readonly storage: KeyValueStorage, private readonly diagnostics: ResourceDiagnosticsService,
-		private readonly testRuns: ScenarioRunService, private readonly runtimeInspection: RuntimeInspectionService,
-		private readonly frameNavigation: RuntimeFrameNavigation,
-		private readonly gameCapture: GameImageCapture,
-		private readonly terminal: LuaTerminalSession,
-		private readonly debuggerExecution: RuntimeDebuggerExecution,
-		private readonly actorExecution: ActorExecutionService,
-		private readonly behaviorSources: BehaviorSourceDocuments,
-		private readonly saves: TextFileSaveService,
-		private readonly boots: BootService,
-		private readonly openConnection?: AssistantConnectionFactory) {
+	public constructor(models: EditorTextModelService, private readonly sources: RuntimeSourceState,
+		private readonly tools: WorkspaceToolService, private readonly openConnection?: AssistantConnectionFactory) {
 		this.unbindWorkspace = models.onWillClear(() => this.clearConversation());
 	}
 	/** Catalog identity only: completing a reference neither opens a document nor connects to Codex. */
@@ -145,9 +119,7 @@ export class AssistantConversation {
 	}
 
 	private createTurn(): ActiveTurn {
-		return { startedAt: performance.now(), tools: new WorkspaceSourceTools(this.models, this.sources, this.storage, this.diagnostics, this.sourceLifetime!.signal, this.behaviorSources, this.saves),
-			tests: new WorkspaceTestTools(this.testRuns, this.sourceLifetime!.signal),
-			runtime: new WorkspaceRuntimeTools(this.runtimeInspection, this.frameNavigation, this.gameCapture, this.terminal, this.debuggerExecution, this.actorExecution, this.boots, this.sourceLifetime!.signal), requests: new Map(), messages: new Map() };
+		return { startedAt: performance.now(), tools: this.tools.open(this.sourceLifetime!.signal), requests: new Map(), messages: new Map() };
 	}
 
 	/** One explicit submission. Native Codex owns FIFO dispatch; no retries or client dequeue loop. */
@@ -194,7 +166,7 @@ export class AssistantConversation {
 		const turn = this.turn, connection = this.connection;
 		if (!connection || (!turn && this.queued.length === 0) || this.state === 'stopping') return;
 		this.queuePaused = true;
-		this.state = 'stopping'; turn?.tools.dispose(); turn?.tests.dispose(); turn?.runtime.dispose(); turn?.requests.clear(); this.changed();
+		this.state = 'stopping'; turn?.tools.dispose(); turn?.requests.clear(); this.changed();
 		try { await connection.send({ type: 'interrupt' }); }
 		catch (error) { if (this.connection === connection && this.turn === turn) this.append('status', `Stop failed: ${String(error)}`); }
 		if (!this.turn && this.connection === connection) { this.state = 'ready'; this.changed(); }
@@ -375,7 +347,7 @@ export class AssistantConversation {
 				if (!this.turn) this.turn = this.createTurn();
 				this.turn.id = event.turnId; this.activity = 'Working';
 				if (this.state !== 'stopping') { this.state = 'running'; this.queuePaused = false; }
-				else { this.turn.tools.dispose(); this.turn.tests.dispose(); this.turn.runtime.dispose(); }
+				else { this.turn.tools.dispose(); }
 				this.changed(); break;
 			case 'user-message': this.append('user', event.text, undefined, event.references, event.images); break;
 			case 'text-delta':
@@ -414,9 +386,7 @@ export class AssistantConversation {
 		turn.requests.set(event.requestId, request);
 		let text: string, success = true, images: readonly string[] | undefined;
 		try {
-			const result = await (STUDIO_RUNTIME_TOOLS.some(tool => tool.name === event.name) ? turn.runtime.execute(event.name, event.arguments, request.signal)
-				: STUDIO_TEST_TOOLS.some(tool => tool.name === event.name)
-					? turn.tests.execute(event.name, event.arguments, request.signal) : turn.tools.execute(event.name, event.arguments, request.signal));
+			const result = await turn.tools.execute(event.name, event.arguments, request.signal);
 			if (this.turn !== turn || !turn.requests.has(event.requestId)) {
 				if (result.kind === 'proposal') result.proposal.dispose();
 				return;
@@ -433,7 +403,7 @@ export class AssistantConversation {
 		catch (error) { if (this.turn === turn) this.append('status', `Tool reply failed: ${String(error)}`); }
 	}
 	private finishTurn(): void {
-		this.turn?.tools.dispose(); this.turn?.tests.dispose(); this.turn?.runtime.dispose(); this.turn?.requests.clear(); this.turn = undefined;
+		this.turn?.tools.dispose(); this.turn?.requests.clear(); this.turn = undefined;
 		this.state = this.connection ? 'ready' : 'disconnected'; this.changed();
 	}
 	public disconnect(): void {

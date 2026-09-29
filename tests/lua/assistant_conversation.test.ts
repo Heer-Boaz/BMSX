@@ -1,3 +1,4 @@
+import { WorkspaceToolService } from '../../ide/workbench/services/assistant/tool_service';
 import { assistantFooter, AssistantFooter } from '../../ide/workbench/contrib/assistant/footer';
 import { BehaviorSourceDocuments } from '../../ide/workbench/contrib/behavior_lens/source_documents';
 import assert from 'node:assert/strict';
@@ -56,12 +57,13 @@ function fixture(t: TestContext, waitForConnection?: (connection: Connection) =>
 	const testRuns = new ScenarioRunService(models, sources, tooling, storage, new Map(), runtime.model, () => assert.fail('this fixture cannot create test targets'));
 	const testResults = testRuns.results;
 	const saves = new TextFileSaveService(models, storage, new VirtualHeadlessClock(), sources, tooling, runtime, tasks);
-	const conversation = new AssistantConversation(models, sources, storage, diagnostics, testRuns, inspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, new BehaviorSourceDocuments(models, sources), saves, boots, async (_signal, emit) => {
+	const tools = new WorkspaceToolService(models, sources, storage, diagnostics, testRuns, inspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, new BehaviorSourceDocuments(models, sources), saves, boots);
+	const conversation = new AssistantConversation(models, sources, tools, async (_signal, emit) => {
 		const connection = new Connection(emit); connections.push(connection);
 		await waitForConnection?.(connection);
 		return connection;
 	});
-	t.after(async () => { conversation.dispose(); await saves.shutdown(); await boots.shutdown(); testRuns.dispose(); presenter.dispose(); diagnostics.dispose(); models.clear(); });
+	t.after(async () => { conversation.dispose(); tools.dispose(); await saves.shutdown(); await boots.shutdown(); testRuns.dispose(); presenter.dispose(); diagnostics.dispose(); models.clear(); });
 	return { conversation, model, models, connections, testResults, testRuns, inspection, frameNavigation, runtime, presenter, backend, tasks, presentation };
 }
 

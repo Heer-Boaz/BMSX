@@ -1,5 +1,9 @@
 import { decodeImage, encodePngImage } from '../../hosts/browser/image';
 import { AssistantHttpConnection } from './assistant_connection';
+import { StudioToolHttpConnection } from './tool_connection';
+import { WorkspaceEditReviewInput } from '../workbench/contrib/edit_review/editor_input';
+import { openEditorTab } from '../workbench/ui/tabs';
+import { LogLevel } from '../../hosts/common/log';
 import { StudioHttpSession } from './http_session';
 import { BrowserGraphLayoutEngine } from './graph_layout';
 import { HostExecutionControl } from '../../hosts/common/execution_control';
@@ -79,6 +83,7 @@ async function startBrowserStudio(): Promise<void> {
 		);
 		const httpSession = new StudioHttpSession();
 		const clipboard = new BrowserClipboard();
+		const toolLifetime = new AbortController();
 		const ide = await prepareWorkbenchRuntime(
 			options.systemRom,
 			options.cartridgeSlots,
@@ -119,6 +124,7 @@ async function startBrowserStudio(): Promise<void> {
 			}
 		});
 		window.addEventListener('pagehide', () => {
+			toolLifetime.abort(new Error('Studio page closed'));
 			ide.editor.assistant.disconnect();
 			persistWorkspaceSessionLocally();
 		});
@@ -145,6 +151,11 @@ async function startBrowserStudio(): Promise<void> {
 				}
 			}
 		});
+		const reportToolFailure = (error: unknown) => options.logOutput.log(LogLevel.Error, `Studio external tools unavailable: ${String(error)}`);
+		void StudioToolHttpConnection.open(httpSession, ide.editor.tools, { title: document.title, url: location.href }, proposal => {
+			ide.editor.activate();
+			openEditorTab(ide.editor.editorPanes, new WorkspaceEditReviewInput(proposal));
+		}, toolLifetime.signal, reportToolFailure).catch(reportToolFailure);
 		completeBrowserBoot();
 	} catch (error) {
 		showBrowserBootError(error);

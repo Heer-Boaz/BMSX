@@ -5406,6 +5406,15 @@ latest completed account read reopens it.
 The staged ownership audit and
 remaining integration limits are in [Studio architecture foundation](studio_architecture_foundation.md).
 
+External CLI conversations can use these same capabilities through
+[Studio MCP](studio_mcp.md), served by the existing development server. The
+workbench owns shared tool-context admission; embedded chat turns and explicitly
+selected external window contexts consume the same source/test/runtime owners.
+Node owns MCP sessions and routing, not document history or machine execution.
+Window disconnection retires authority rather than selecting another window.
+No second Codex account, chat session, guest ABI or mirrored runtime path is
+required. The embedded assistant remains an independent, supported consumer.
+
 Pane detachment completes ordinary focus/capture cleanup while the input and its
 working copy still live. The code widget detaches its model/view on clear; other
 panes do not depend on a previously attached code document. Content bounds belong

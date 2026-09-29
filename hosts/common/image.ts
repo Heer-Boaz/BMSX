@@ -18,3 +18,9 @@ export interface GameImageCapture {
 
 /** Decode and fit an external image into a preview box; never modifies the message bytes. */
 export type ImageDecoder = (url: string, width: number, height: number) => Promise<RgbaImage>;
+
+/** Host encoders produce base64 data URLs; transports consume their media type and payload. */
+export function imageDataUrlContent(url: string): { mimeType: string; data: string } {
+	const separator = url.indexOf(';');
+	return { mimeType: url.slice(5, separator), data: url.slice(url.indexOf(',') + 1) };
+}

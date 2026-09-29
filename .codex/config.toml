@@ -5,3 +5,7 @@ personality = "pragmatic"
 
 [features]
 fast_mode = true
+
+[mcp_servers.bmsx]
+url = "http://127.0.0.1:8080/__bmsx__/mcp"
+http_headers_helper = "node scripts/dev/studio-mcp-headers.mjs http://127.0.0.1:8080"

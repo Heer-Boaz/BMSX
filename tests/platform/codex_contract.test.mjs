@@ -86,7 +86,7 @@ test('interrupt completes an actual turn waiting for a Studio tool result withou
 
 test('an empty MCP map override does NOT revoke inherited process capabilities', { timeout: 15000 }, async t => {
 	const model = await createCodexModelFixture(t, []);
-	const codex = await createCodexContractFixture(t, model.url, true);
+	const codex = await createCodexContractFixture(t, model.url, { ambientMcpEnabled: true });
 	const config = await codex.request('config/read', { includeLayers: false });
 	assert.ok(config.config.mcp_servers.ambient, 'the real config merge retains an inherited server despite -c mcp_servers={}');
 	await assert.rejects(access(codex.ambientMarker), { code: 'ENOENT' }, 'configuration inspection alone must not start the inherited process');

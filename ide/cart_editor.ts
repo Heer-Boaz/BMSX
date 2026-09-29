@@ -1,3 +1,4 @@
+import { WorkspaceToolService } from './workbench/services/assistant/tool_service';
 import type { ActorExecutionService } from './workbench/contrib/actor_lab/execution';
 import type { RuntimeDebuggerExecution } from './runtime/debugger_execution';
 import type { RuntimeFrameNavigation } from './runtime/frame_navigation';
@@ -161,6 +162,7 @@ export type CartEditor = {
 	readonly clipboardTarget: ClipboardTarget | undefined;
 	readonly terminal: LuaTerminalSession;
 	readonly assistant: AssistantConversation;
+	readonly tools: WorkspaceToolService;
 	readonly diagnostics: ResourceDiagnosticsService;
 	readonly executionSuspended: boolean;
 	readonly isAvailable: boolean;
@@ -258,6 +260,7 @@ export class RuntimeCartEditor implements CartEditor {
 	};
 
 	public readonly assistant: AssistantConversation;
+	public readonly tools: WorkspaceToolService;
 
 	public constructor(
 		runtime: Runtime,
@@ -296,7 +299,8 @@ export class RuntimeCartEditor implements CartEditor {
 		connectAssistant?: AssistantConnectionFactory,
 	) {
 		const behaviorSources = new BehaviorSourceDocuments(editorTextModelService, sources);
-		this.assistant = new AssistantConversation(editorTextModelService, sources, storage, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, behaviorSources, textFileSaves, boots, connectAssistant);
+		this.tools = new WorkspaceToolService(editorTextModelService, sources, storage, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, behaviorSources, textFileSaves, boots);
+		this.assistant = new AssistantConversation(editorTextModelService, sources, this.tools, connectAssistant);
 		this.runtime = runtime;
 		this.presenter = presenter;
 		this.display = display;
@@ -621,6 +625,7 @@ export class RuntimeCartEditor implements CartEditor {
 
 	public async shutdown(): Promise<void> {
 		this.assistant.dispose();
+		this.tools.dispose();
 		this.frameNavigation.dispose();
 		this.debuggerExecution.dispose();
 		this.unbindBreakpoints();
