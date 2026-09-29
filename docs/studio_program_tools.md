@@ -4,6 +4,10 @@ This extends the source lifecycle with ordinary Lua program Reboot. Hot Resume
 and non-Lua asset rebuild orchestration remain separate, open integration gates;
 Reboot must not impersonate either of them.
 
+Full cartridge rebuilding and exact-media loading are explored in the
+[proposed build design](studio_cart_build_design.md). That research does not
+change the implemented Reboot contract below.
+
 ## Owner audit and production references
 
 Before implementation, the live BootService, HotResumeService, runtime pipeline,
