@@ -91,7 +91,7 @@
 		"build:libretro-host-wsl:debug": "make libretro-host-wsl-debug",
 		"build:libretro-host": "sh -c 'cmake -S machine/cpp -B build-libretro-host-wsl -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DBMSX_BUILD_LIBRETRO_HOST=ON -DBMSX_BUILD_LIBRETRO=OFF -DCMAKE_BUILD_TYPE=Release && cmake --build build-libretro-host-wsl --config Release --parallel $(nproc) --target bmsx_libretro_host'",
 		"build:libretro-host:debug": "sh -c 'cmake -S machine/cpp -B build-libretro-host-wsl -G Ninja -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DBMSX_BUILD_LIBRETRO_HOST=ON -DBMSX_BUILD_LIBRETRO=OFF -DCMAKE_BUILD_TYPE=Debug && cmake --build build-libretro-host-wsl --config Debug --parallel $(nproc) --target bmsx_libretro_host'",
-		"deploy:browser": "npm run build:toolchain:host-system-atlas && npx tsx scripts/products/deploy_builder.ts",
+		"deploy:browser": "npx tsx scripts/products/deploy_builder.ts",
 		"serve:dist": "node scripts/serve-dist.mjs --dir dist --port 8080",
 		"serve:dist:wsl": "bash scripts/serve-dist-wsl.sh --port 8080 --dir dist",
 		"run:retroarch": "bash run-retroarch.sh",

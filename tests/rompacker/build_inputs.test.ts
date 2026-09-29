@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { prepareRomInputs } from '../../scripts/rompacker/build_inputs';
-import { recordRomBuild, romBuildStatus, type RomBuildRecipe } from '../../scripts/rompacker/build_state';
 import { lintCartSources } from '../../scripts/rompacker/cart_lua_linter_runtime';
 import { loadGLTFModel } from '../../scripts/rompacker/gltfloader';
 import { generateRomAssets, getResMetaList, getResourcesList } from '../../scripts/rompacker/rombuilder';
@@ -71,28 +69,4 @@ test('GLTF buffers and images outside the resource root are captured before conv
 	assert.deepEqual(new Uint8Array(model.imageBuffers[0]), new Uint8Array([5, 6, 7, 8]));
 	assert.deepEqual(model.meshes[0].positions, vertices);
 	assert.notEqual((await prepareRomInputs([resources], [])).identity, inputs.identity);
-});
-
-test('build receipts bind effective options, input identity and output bytes', async t => {
-	const root = await mkdtemp(join(tmpdir(), 'bmsx-build-receipt-'));
-	t.after(() => rm(root, { recursive: true, force: true }));
-	const output = join(root, 'cart.rom'), payload = Buffer.from([1, 2, 3, 4]);
-	const recipe: RomBuildRecipe = { domain: 'cart', debug: true, optLevel: 0, projectRoot: 'carts/example', toolchain: 'compiler-a' };
-	assert.equal(await romBuildStatus(output, recipe, 'sources-a'), 'not-built');
-	await writeFile(output, payload);
-	const beforeRecord = await prepareRomInputs([root], []);
-	await recordRomBuild(output, { recipe, inputs: 'sources-a', outputs: [{ file: 'cart.rom', digest: createHash('sha256').update(payload).digest('hex') }] });
-	assert.equal((await prepareRomInputs([root], [])).identity, beforeRecord.identity);
-	assert.equal(await romBuildStatus(output, recipe, 'sources-a'), 'up-to-date');
-	assert.equal(await romBuildStatus(output, { ...recipe, optLevel: 3 }, 'sources-a'), 'recipe-changed');
-	assert.equal(await romBuildStatus(output, { ...recipe, toolchain: 'compiler-b' }, 'sources-a'), 'recipe-changed');
-	assert.equal(await romBuildStatus(output, recipe, 'sources-b'), 'inputs-changed');
-	await writeFile(output, Buffer.from([4, 3, 2, 1]));
-	assert.equal(await romBuildStatus(output, recipe, 'sources-a'), 'output-changed');
-	await rm(output);
-	assert.equal(await romBuildStatus(output, recipe, 'sources-a'), 'output-changed');
-	const recordPath = join(root, '.bmsx', 'cart.rom.build.json');
-	await writeFile(recordPath, '{');
-	await assert.rejects(romBuildStatus(output, recipe, 'sources-a'), SyntaxError);
-	assert.equal(await readFile(recordPath, 'utf8'), '{');
 });

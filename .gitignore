@@ -106,3 +106,6 @@ carts/pietious/res/_ignore/**
 # !carts/pietious/res/_ignore/c++/gameinteractions.cpp
 # !carts/pietious/res/_ignore/**.py
 !tmp/**
+
+# Workspace artifact/job store, independent of dist exports
+/.bmsx/

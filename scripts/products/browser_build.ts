@@ -238,6 +238,11 @@ export async function buildBrowserPlayerPackage(options: BrowserPackageOptions):
 		'',
 	);
 	await writeFile('./dist/index.html', html);
+	// A host product supplies its own ready-to-package page; deployment never rebuilds the host.
+	await writeFile(`./dist/player${options.debug ? '.debug' : ''}.template.html`, renderBrowserPage(
+		inputs, options.title, javascriptProductFilename('browser-player', options.debug), '{{BMSX_CARTRIDGE}}', '',
+	));
+	await copyFile('./rom/bmsx.png', './dist/bmsx_icon.png');
 	await writeBrowserManifest(options.title, options.shortName);
 }
 

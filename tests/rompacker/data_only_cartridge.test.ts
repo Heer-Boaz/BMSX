@@ -108,7 +108,7 @@ test('normal cart production admits source-free hardware without BIOS artifacts'
 	}
 });
 
-test('normal cart production discovers program source outside the BMSX worktree', async () => {
+test('normal cart production discovers external program source and resolves its BIOS dependency', async () => {
 	const externalRoot = await mkdtemp(join(tmpdir(), 'bmsx-external-cart-'));
 	try {
 		const resourceRoot = join(externalRoot, 'res');
@@ -137,11 +137,10 @@ test('normal cart production discovers program source outside the BMSX worktree'
 			cwd: process.cwd(),
 			encoding: 'utf8',
 		});
-		assert.match(
-			`${result.stdout}\n${result.stderr}`,
-			/BIOS import library not found/,
-		);
-		await assert.rejects(readFile(join(outputRoot, 'external_source_probe.rom')));
+		assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+		const cart = parseCartridgePackage(await readFile(join(outputRoot, 'external_source_probe.rom')));
+		assert.ok(cart.header.blua32ImageByteCount > 0);
+		assert.ok((await readFile(join(outputRoot, 'bmsx-bios.rom.blua32-imports'))).length > 0);
 	} finally {
 		await rm(externalRoot, { recursive: true, force: true });
 	}

@@ -9,26 +9,6 @@ import type { AssetType } from '../../machine/ts/rompack/toc';
 import type { CookedAemEvent } from '../../toolchain/ts/rompack/aem';
 import type { GLTFDocument } from './gltfloader';
 
-export type RomPackerMode = 'rompack' | 'bios';
-
-export interface RomPackerOptions {
-	rom_name: string;
-	title: string;
-	respath: string;
-	outputDirectory: string;
-	force: boolean;
-	debug: boolean;
-	/** Accepted for CLI parity; rompack mode no longer type-checks TypeScript games. */
-	skipTypecheck?: boolean;
-	/** VM optimizer level. */
-	optLevel: 0 | 1 | 2 | 3;
-	mode: RomPackerMode;
-	/** Always false on this branch; carts are Lua/data only. */
-	shouldBundleCartCode: boolean;
-	extraLuaRoots: string[];
-	libraryLuaRoots: string[];
-}
-
 export type resourcetype = Exclude<AssetType, 'texture' | 'collision_shape'> | 'atlas' | 'collision_map';
 export type collisiontype = 'concave' | 'convex' | 'aabb';
 export type datatype = 'json' | 'yaml' | 'bin';
