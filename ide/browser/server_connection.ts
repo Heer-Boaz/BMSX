@@ -18,6 +18,7 @@ export class StudioServerConnection {
 	private active = false;
 	private disposed = false;
 	private restart = false;
+	private blocked: string | undefined;
 	private receivedAt = 0;
 	public state: StudioServerConnectionState = 'connecting';
 	public detail = '';
@@ -32,12 +33,14 @@ export class StudioServerConnection {
 		if (this.disposed) return;
 		if (this.active) { this.wake(); return; }
 		this.active = true;
+		if (this.blocked !== undefined) { this.update('disconnected', this.blocked); return; }
 		this.restart = true;
 		this.start();
 	}
 
 	public retry(): void {
 		if (this.disposed || !this.active) return;
+		this.blocked = undefined;
 		this.restart = true;
 		this.lifetime?.abort(new Error('Reconnect requested'));
 		this.start();
@@ -45,6 +48,7 @@ export class StudioServerConnection {
 
 	/** Visibility/online are hints. They neither establish liveness nor create another loop. */
 	public wake(): void {
+		if (this.blocked !== undefined) return;
 		if (this.state === 'disconnected' || this.state === 'connected' && performance.now() - this.receivedAt >= STUDIO_LIVENESS_MS) this.retry();
 	}
 
@@ -84,11 +88,12 @@ export class StudioServerConnection {
 				const reason = String(error);
 				if (error instanceof AdmissionFailure && error.permanent
 					|| error instanceof StudioAdmissionError && error.status >= 400 && error.status < 500
-					|| error instanceof SyntaxError || performance.now() >= recoveryEnds) {
+					|| error instanceof SyntaxError) this.blocked = reason;
+				if (this.blocked !== undefined || performance.now() >= recoveryEnds) {
 					this.update('disconnected', reason); return;
 				}
 				this.update('reconnecting', reason);
-				const delay = Math.min(5000, 250 * 2 ** failures++) * (0.8 + Math.random() * 0.4);
+				const delay = Math.min(5000, 250 * 2 ** failures++ * (0.8 + Math.random() * 0.4));
 				await new Promise<void>(resolve => {
 					const finish = () => { clearTimeout(timer); signal.removeEventListener('abort', finish); resolve(); };
 					const timer = setTimeout(finish, Math.min(delay, Math.max(0, recoveryEnds - performance.now())));

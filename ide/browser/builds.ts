@@ -1,7 +1,8 @@
-import { isBuildTerminal, type StudioBuildJob, type StudioBuildRequest, type StudioBuildSnapshot, type StudioBuildChange } from '../../hosts/common/studio_builds';
+import { compareBuildVersions, isBuildTerminal, type StudioBuildJob, type StudioBuildRequest, type StudioBuildSnapshot, type StudioBuildChange } from '../../hosts/common/studio_builds';
 import type { WorkspaceBuilds } from '../workbench/services/builds';
 import { generateUuid } from '../common/uuid';
 import type { StudioHttpSession } from './http_session';
+import { StoredBuildRequests } from './build_requests';
 
 class BuildHttpError extends Error {
 	public constructor(public readonly status: number, detail: string) { super(detail); }
@@ -10,44 +11,51 @@ class BuildHttpError extends Error {
 /** Browser owns observation and uncertain request receipts, never producer lifetime. */
 export class HttpWorkspaceBuilds implements WorkspaceBuilds {
 	public jobs: readonly StudioBuildJob[] = [];
-	public pending: readonly StudioBuildRequest[];
 	private revision = -1;
-	private readonly storageKey: string;
+	private readonly requests: StoredBuildRequests;
 	public constructor(private readonly session: StudioHttpSession, private readonly finished: (job: StudioBuildJob) => void) {
-		this.storageKey = `bmsx-build-requests:${session.baseUrl}`;
-		const saved = localStorage.getItem(this.storageKey);
-		this.pending = saved === null ? [] : JSON.parse(saved);
+		this.requests = new StoredBuildRequests(session.baseUrl);
 	}
+	public get pending(): readonly StudioBuildRequest[] { return this.requests.pending; }
+	public dispose(): void { this.requests.dispose(); }
 
 	public snapshot(snapshot: StudioBuildSnapshot): void {
+		const observed = new Map(this.jobs.map(job => [job.request.requestId, job]));
+		const jobs = new Map<string, StudioBuildJob>();
 		for (const job of snapshot.jobs) {
-			const previous = this.jobs.find(entry => entry.request.requestId === job.request.requestId);
-			if (previous !== undefined && !isBuildTerminal(previous.state) && isBuildTerminal(job.state)) this.finished(job);
+			const id = job.request.requestId, previous = observed.get(id);
+			if (previous !== undefined && compareBuildVersions(previous.version, job.version) >= 0) jobs.set(id, previous);
+			else {
+				jobs.set(id, job);
+				if (previous !== undefined && !isBuildTerminal(previous.state) && isBuildTerminal(job.state)) this.finished(job);
+			}
+			if (previous === undefined) this.requests.delete(job.request.requestId);
 		}
-		this.revision = snapshot.revision; this.jobs = snapshot.jobs;
-		this.pending = this.pending.filter(request => !this.jobs.some(job => job.request.requestId === request.requestId));
-		this.persist();
+		const version = { generation: snapshot.generation, sequence: snapshot.revision };
+		for (const job of observed.values()) {
+			// An HTTP receipt can overtake the stream's initial/backpressure snapshot.
+			if (compareBuildVersions(job.version, version) > 0) jobs.set(job.request.requestId, job);
+		}
+		this.revision = snapshot.revision; this.retain([...jobs.values()]);
 	}
 	public change(change: StudioBuildChange): void {
 		if (change.revision !== this.revision + 1) throw new Error('Build observation sequence interrupted; a fresh snapshot is required');
 		this.revision = change.revision;
 		const job = change.job, previous = this.jobs.find(entry => entry.request.requestId === job.request.requestId);
-		this.jobs = [job, ...this.jobs.filter(entry => entry.request.requestId !== job.request.requestId)].slice(0, 50);
-		if (this.pending.some(request => request.requestId === job.request.requestId)) {
-			this.pending = this.pending.filter(request => request.requestId !== job.request.requestId); this.persist();
-		}
+		if (previous !== undefined && compareBuildVersions(previous.version, job.version) >= 0) return;
+		this.retain([job, ...this.jobs.filter(entry => entry.request.requestId !== job.request.requestId)]);
+		if (previous === undefined) this.requests.delete(job.request.requestId);
 		if (isBuildTerminal(job.state) && previous?.state !== job.state) this.finished(job);
 	}
 
 	public async targets(): Promise<readonly string[]> { return (await this.request('/targets')).json(); }
 	public async submit(target: string, debug: boolean, optLevel: 0 | 1 | 2 | 3): Promise<StudioBuildJob> {
 		const request = { requestId: generateUuid(), target, debug, optLevel };
-		this.pending = [...this.pending, request]; this.persist(); // Survives a reload before the acknowledgement.
+		this.requests.add(request); // Commit recovery identity before making the request.
 		try {
 			const response = await this.request(`/jobs/${request.requestId}`, 'PUT', request);
 			const job = await response.json() as StudioBuildJob;
-			this.pending = this.pending.filter(entry => entry.requestId !== request.requestId); this.persist();
-			return job;
+			return this.acknowledge(job);
 		} catch (error) {
 			if (error instanceof BuildHttpError && error.status >= 400 && error.status < 500) {
 				this.forget(request.requestId); throw error;
@@ -58,15 +66,32 @@ export class HttpWorkspaceBuilds implements WorkspaceBuilds {
 		const response = await this.request(`/jobs/${id}`, 'GET', undefined, true);
 		if (response.status === 404) return undefined;
 		const job = await response.json() as StudioBuildJob;
-		this.pending = this.pending.filter(entry => entry.requestId !== id); this.persist();
-		return job;
+		return this.acknowledge(job);
 	}
-	public async cancel(id: string): Promise<StudioBuildJob> { return (await this.request(`/jobs/${id}/cancel`, 'POST')).json(); }
+	public async cancel(id: string): Promise<StudioBuildJob> {
+		const job = await (await this.request(`/jobs/${id}/cancel`, 'POST')).json() as StudioBuildJob;
+		return this.acknowledge(job);
+	}
 	public async log(id: string): Promise<string> { return (await this.request(`/jobs/${id}/log`)).json(); }
 
-	public forget(id: string): void { this.pending = this.pending.filter(request => request.requestId !== id); this.persist(); }
+	public forget(id: string): void { this.requests.delete(id); }
 
-	private persist(): void { localStorage.setItem(this.storageKey, JSON.stringify(this.pending)); }
+	private acknowledge(job: StudioBuildJob): StudioBuildJob {
+		const id = job.request.requestId, current = this.jobs.find(entry => entry.request.requestId === id);
+		if (current === undefined || compareBuildVersions(job.version, current.version) > 0) {
+			this.retain([job, ...this.jobs.filter(entry => entry !== current)]);
+		} else job = current;
+		this.requests.delete(id);
+		return job;
+	}
+	private retain(jobs: StudioBuildJob[]): void {
+		// Like the server, never evict a running/queued job to retain an older completed receipt.
+		if (jobs.length <= 50) { this.jobs = jobs; return; }
+		const active: StudioBuildJob[] = [], terminal: StudioBuildJob[] = [];
+		for (const job of jobs) (isBuildTerminal(job.state) ? terminal : active).push(job);
+		terminal.sort((a, b) => b.acceptedAt - a.acceptedAt);
+		this.jobs = [...active, ...terminal.slice(0, 50 - active.length)];
+	}
 	private async request(path: string, method = 'GET', body?: unknown, allowNotFound = false): Promise<Response> {
 		for (let attempt = 0; ; attempt++) {
 			const admission = this.session.connect();

@@ -64,6 +64,25 @@ that ID plus the same request yields the same receipt. A different request with
 that ID is rejected. The server commits admission **before** acknowledging it.
 A lost response is reconciled by that ID, not by creating another build.
 
+`StoredBuildRequests` commits each unacknowledged browser request under its own
+storage key before sending it. Other windows observe per-key storage changes;
+they never write an older whole-collection snapshot over another window's IDs.
+Storage events read the current committed key, so a delayed event cannot resurrect
+a receipt this window has already acknowledged. The previous array format is
+migrated once. Storage failure prevents submission; there is no in-memory-only
+substitute for the recovery record.
+
+HTTP receipts and the observation stream update the same bounded browser job
+view. The producer assigns each job observation a `(generation, sequence)` version.
+The ledger advances the generation once per server lifetime under its existing
+exclusive transaction. Coalesced progress advances only the in-memory sequence;
+durable state transitions persist their version along with the receipt. Recovery
+therefore supersedes even progress that was observed but never persisted. A late
+HTTP response, stream change or snapshot cannot overwrite a newer job observation.
+HTTP inspection also returns the newest known observation to its UI caller, not
+the older response it just reconciled. Original ledger records receive their
+initial version in a schema migration, never through read-time fallback values.
+
 Workers write only private staging files and report structured progress/results;
 they cannot publish. Disconnection from their process owner terminates them.
 Cancelling waits for worker termination. Once the owner enters publication,
@@ -108,6 +127,32 @@ and disconnected by shape/color. Click/tap it or run **Studio: Server Connection
 for details and contextual Retry. This reports workspace connectivity, not an
 assistant's login. Recovered build snapshots update availability without installing
 media, resetting a target, saving drafts or continuing gameplay.
+
+Permanent admission/protocol failure remains stopped across visibility, online
+and suspension/restoration hints; only explicit Retry clears it. A temporary
+network outage may still recover on those hints. The build capability does not
+depend on this observation channel: an explicit build or status read can succeed
+while the stream is unavailable. Its actual HTTP receipt remains visible in
+Build Jobs, while the connection indicator still reports disconnected. This is
+not an automatic HTTP polling fallback or a replay of the build request.
+
+### Focused production-code rereview
+
+The additional review used [VS Code's per-key browser storage and cross-window
+notifications](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/services/storage/browser/storageService.ts)
+and its [single reconnection loop and permanent-failure handling](https://github.com/microsoft/vscode/blob/main/src/vs/platform/remote/common/remoteAgentConnection.ts).
+The [Web Storage specification](https://html.spec.whatwg.org/multipage/webstorage.html)
+explicitly warns against assuming a lock across windows; replacing a shared JSON
+array was not an adequate request store. BMSX uses atomic independent keys for
+these small receipts, rather than adopting VS Code's entire database service or
+its in-memory fallback policy.
+
+[Bazel's disk cache](https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/remote/disk/DiskCacheClient.java)
+was also reread for immutable content, separate action references and temporary-file
+publication. The existing media producer still follows that ownership split.
+Bazel additionally syncs files for machine-crash durability; BMSX's stated
+process-crash publication guarantee below has **not** silently become a power-loss
+guarantee as a result of this review.
 
 ## Evidence and limits
 
@@ -161,12 +206,41 @@ atomic durability across the artifact store and SQLite. Full-media installation,
 embedded chat reconnection, cross-host caches and automatic artifact collection
 are not implied by this work.
 
-Validation totals: ROM packer 186/186; connection/build/entry 10/10; assistant HTTP
+Validation totals: ROM packer 186/186; connection/build/entry 13/13; assistant HTTP
 13/13; browser standalone/conversation/MCP 6/6. IDE, Node and common-host typechecks
 pass, architecture boundary audit reports zero, and `git diff --check` is clean.
 The broader scripts typecheck still reports the pre-existing unused
 `createRuntimeSourceState` import at `scripts/bootrom/platforms/node_tooling_entry.ts:72`;
 this is not a claim of an entirely green repository.
+The broader test-project typecheck also reports errors in untouched Lua/graph
+fixtures; the changed build/connection tests have no type errors in that output.
+
+Follow-up review evidence (2026-09-29):
+
+- Chromium reproduced a second window erasing an uncertain request, an accepted
+  HTTP receipt absent from Build Jobs, and repeated registration after a permanent
+  403. Targeted recovery/storage checks now pass, including independently delayed
+  HTTP replies and stream snapshots in both orders. No mutation is resubmitted.
+- Real worker/HTTP/MCP/restart coverage verifies increasing observation versions;
+  original ledger records migrate without losing request identity. A new server
+  generation supersedes unpersisted progress without persisting progress ticks.
+- The **actual product UI** exposed an additional command-availability bug during
+  the check: Build Cartridge was disabled by observation-channel failure. That
+  gate is removed. With only the stream deliberately denied (403), keyboard-driven
+  build admission, visible queued receipt, explicit inspection and completed
+  artifact retrieval now work. The icon stays disconnected. Wake/suspension hints
+  cause no extra registration; explicit Retry reconnects with the Terminal draft
+  intact. Screenshots were opened and inspected in light/dark themes:
+  `/tmp/bmsx-nareview/ui-*.png`, with receipts in `ui-review.json`.
+- This is an injected stream failure on localhost, not physical phone or LAN
+  acceptance. Full-media installation and the previously noted LAN audio boundary
+  remain outside this review.
+- Reopening a saved active Terminal exposed a separate startup failure before the
+  connection owner is constructed: `canEvaluate` reaches `activeCartridgeSlot`
+  before the CPU owns an active execution image. This is tracked in the
+  [platform backlog](studio_architecture_foundation.md#open-platform-usability-work-2026-09-29),
+  not hidden by clearing sessions or adding a runtime fallback. The final
+  connection/build UI probe uses an isolated copied workspace with a fresh session.
 
 ### No-op cost
 

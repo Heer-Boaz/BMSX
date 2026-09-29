@@ -38,16 +38,17 @@ export class StudioBuildJobs {
 					try { await owner.artifacts.read(previous.artifact!); committed = true; }
 					catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
 				}
-				ledger.record({ ...previous, state: committed ? 'completed' : 'interrupted',
-					phase: committed ? 'Published' : 'Server stopped before publication', updatedAt: Date.now() });
+				owner.transition(previous, { state: committed ? 'completed' : 'interrupted',
+					phase: committed ? 'Published' : 'Server stopped before publication' });
 				await rm(owner.artifacts.staging(previous.request.requestId), { recursive: true, force: true });
 			}
+			owner.jobs.clear();
 			for (const job of ledger.recent(RECENT_JOBS)) owner.jobs.set(job.request.requestId, job);
 			return owner;
 		} catch (error) { ledger.close(); throw error; }
 	}
 
-	public snapshot(): StudioBuildSnapshot { return { revision: this.revision, jobs: [...this.jobs.values()] }; }
+	public snapshot(): StudioBuildSnapshot { return { generation: this.ledger.generation, revision: this.revision, jobs: [...this.jobs.values()] }; }
 	public subscribe(listener: (change: StudioBuildChange) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 	public async targets(): Promise<string[]> {
 		const entries = await readdir(join(this.workspace, 'carts'), { withFileTypes: true });
@@ -82,9 +83,8 @@ export class StudioBuildJobs {
 		// or admit new work after close() has stopped admission.
 		if (this.closing) throw new BuildRequestError(503, 'Build service is shutting down');
 		if (this.queue.length >= QUEUE_LIMIT) throw new BuildRequestError(429, 'Build queue is full');
-		const job: StudioBuildJob = { request, state: 'queued', phase: 'Waiting to capture saved inputs', acceptedAt: Date.now(), updatedAt: Date.now() };
-		this.ledger.record(job); // Durable admission precedes acknowledgement and execution.
-		this.changed(job); this.queue.push(request.requestId); this.pump();
+		const job = this.changed({ request, state: 'queued', phase: 'Waiting to capture saved inputs', acceptedAt: Date.now(), updatedAt: Date.now() }, true);
+		this.queue.push(request.requestId); this.pump();
 		return job;
 	}
 
@@ -174,7 +174,9 @@ export class StudioBuildJobs {
 		}
 	}
 
-	private changed(job: StudioBuildJob): void {
+	private changed(value: Omit<StudioBuildJob, 'version'>, durable = false): StudioBuildJob {
+		const job: StudioBuildJob = { ...value, version: { generation: this.ledger.generation, sequence: this.revision + 1 } };
+		if (durable) this.ledger.record(job); // Commit admission/transitions before acknowledgement or publication.
 		this.jobs.set(job.request.requestId, job);
 		if (this.jobs.size > RECENT_JOBS) {
 			const oldest = [...this.jobs.values()].filter(job => isBuildTerminal(job.state)).sort((a, b) => a.acceptedAt - b.acceptedAt)[0];
@@ -182,9 +184,10 @@ export class StudioBuildJobs {
 		}
 		const change = { revision: ++this.revision, job };
 		for (const listener of this.listeners) listener(change);
+		return job;
 	}
 	private transition(job: StudioBuildJob, update: Partial<StudioBuildJob>): StudioBuildJob {
-		const next = { ...job, ...update, updatedAt: Date.now() }; this.ledger.record(next); this.changed(next); return next;
+		return this.changed({ ...job, ...update, updatedAt: Date.now() }, true);
 	}
 	public async close(): Promise<void> {
 		this.closing = true;

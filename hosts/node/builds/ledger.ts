@@ -7,7 +7,7 @@ import type { StudioBuildJob } from '../../common/studio_builds';
 export class BuildLedger {
 	private readonly readJob: StatementSync;
 	private readonly writeJob: StatementSync;
-	private constructor(private readonly database: DatabaseSync) {
+	private constructor(private readonly database: DatabaseSync, public readonly generation: number) {
 		this.readJob = database.prepare('SELECT record FROM jobs WHERE id = ?');
 		this.writeJob = database.prepare('INSERT INTO jobs(id, accepted_at, state, record) VALUES (?, ?, ?, ?) '
 			+ 'ON CONFLICT(id) DO UPDATE SET state = excluded.state, record = excluded.record');
@@ -22,8 +22,16 @@ export class BuildLedger {
 				CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, accepted_at INTEGER NOT NULL, state TEXT NOT NULL, record TEXT NOT NULL);
 				CREATE INDEX IF NOT EXISTS recent_jobs ON jobs(accepted_at DESC);
 				CREATE INDEX IF NOT EXISTS active_jobs ON jobs(state);
-				COMMIT;`);
-			return new BuildLedger(database);
+				CREATE TABLE IF NOT EXISTS build_generation(id INTEGER PRIMARY KEY CHECK(id = 1), generation INTEGER NOT NULL);
+				INSERT OR IGNORE INTO build_generation VALUES(1, 0);`);
+			if (database.prepare('PRAGMA user_version').get()!.user_version === 0) {
+				// Upgrade the original receipts once, not through a read-time compatibility path.
+				database.exec(`UPDATE jobs SET record = json_set(record, '$.version', json_object('generation', 0, 'sequence', 0));
+					PRAGMA user_version=1;`);
+			}
+			const row = database.prepare('UPDATE build_generation SET generation = generation + 1 WHERE id = 1 RETURNING generation').get()!;
+			database.exec('COMMIT');
+			return new BuildLedger(database, row.generation as number);
 		} catch (error) { database.close(); throw error; }
 	}
 	public read(id: string): StudioBuildJob | undefined {

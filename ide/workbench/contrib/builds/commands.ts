@@ -15,7 +15,7 @@ export async function chooseBuild(editor: CartEditor): Promise<void> {
 				})));
 				editor.quickInput.pick('Build recipe', 'Choose effective compiler options', () => new TextQuickPickProvider(recipes), recipe => {
 					void editor.builds!.submit(choice.target, recipe.debug, recipe.optLevel).then(job => {
-						showEditorMessage(`Build accepted: ${job.request.target}. Studio: Build Jobs shows progress.`, COLOR_STATUS_SUCCESS, 5);
+						showEditorMessage(`Build accepted: ${job.request.target}. See Studio: Build Jobs.`, COLOR_STATUS_SUCCESS, 5);
 					}).catch(reportBuildError);
 				});
 			});

@@ -45,7 +45,7 @@
 		"headless:forcebuildallrun": "sh -c 'rom=\"$1\"; if [ -z \"$rom\" ]; then echo \"Usage: npm run headless:forcebuildallrun -- <gameromname>\"; exit 1; fi; npm run build:product:node-headless-player -- --debug --force && npm run build:toolchain:bios -- --debug --force && npm run build:toolchain:cart -- \"$rom\" --debug --force && npm run headless:game -- \"$rom\"' --",
 		"headless:forcebuildalltest": "sh -c 'rom=\"$1\"; test=\"$2\"; if [ -z \"$rom\" ] || [ -z \"$test\" ]; then echo \"Usage: npm run headless:forcebuildalltest -- <gameromname> <test-file>\"; exit 1; fi; shift 2; npm run build:product:node-headless-tooling -- --debug --force && npm run build:toolchain:bios -- --debug --force && npm run build:toolchain:cart -- \"$rom\" --debug --force && npm run headless:test -- \"$rom\" \"$test\" \"$@\"' --",
 		"test:workspace-http": "node --test tests/platform/workspace_http.test.mjs",
-		"test:studio-connection": "node --import tsx --test tests/platform/studio_connection.test.ts tests/platform/studio_builds.test.ts",
+		"test:studio-connection": "node --import tsx --test tests/platform/studio_connection.test.ts tests/platform/studio_builds.test.ts tests/platform/studio_build_observation.test.ts",
 		"test:studio-standalone": "playwright install chromium && npm run build:product:browser-studio -- --debug && npm run build:toolchain:bios -- --debug && npm run build:toolchain:cart -- nemesis_s --debug && node --import tsx --test tests/platform/studio_standalone.test.ts",
 		"test:codex-contract": "node --test tests/platform/codex_contract.test.mjs",
 		"test:codex-session": "node --import tsx --test tests/platform/codex_session.test.mjs tests/platform/codex_stdio.test.mjs tests/platform/codex_usage.test.ts tests/platform/codex_models.test.ts",

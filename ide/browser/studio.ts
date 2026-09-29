@@ -186,7 +186,10 @@ async function startBrowserStudio(): Promise<void> {
 					ide.editor.serverConnectionDetail = detail;
 				}, builds);
 			ide.editor.retryServerConnection = () => connection.retry();
-			window.addEventListener('pagehide', event => { if (event.persisted) connection.suspend(); else connection.dispose(); });
+			window.addEventListener('pagehide', event => {
+				if (event.persisted) connection.suspend();
+				else { connection.dispose(); builds?.dispose(); }
+			});
 			window.addEventListener('pageshow', event => { if (event.persisted) connection.resume(); });
 			document.addEventListener('freeze', () => connection.suspend());
 			document.addEventListener('resume', () => connection.resume());

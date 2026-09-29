@@ -28,6 +28,15 @@ agent to accidental UI internals.
   requires trusted HTTPS delivery or a deliberate audio-transport redesign.
   Do not disable browser security or silently drop audio to claim success.
   [Evidence and scope](studio_build_jobs.md#evidence-and-limits).
+- **Restoring an active Terminal before machine startup:** a saved Terminal tab
+  reproduced `CPU.activeCartridgeSlot(): executionDomainId of undefined` during
+  `applyWorkspaceAutosavePayload -> TerminalPane.activate -> canEvaluate`.
+  This happens before browser server-connection composition starts. The Terminal
+  capability query currently assumes an active execution image too early.
+  Correct startup/restore admission at the lifecycle owner; do not turn an absent
+  CPU image into a fabricated cartridge slot or discard the saved session.
+  Captured during the build/connection rereview; runtime owners were unchanged.
+  Evidence: `/tmp/bmsx-nareview/ui-boot-failure.png`.
 
 ### Ownership
 

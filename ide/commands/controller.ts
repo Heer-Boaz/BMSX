@@ -353,7 +353,7 @@ export class IdeCommandController {
 			case 'assistant.commands':
 			case 'assistant.stop':
 				return this.editor.assistantCommands.isEnabled(command);
-			case 'builds.start': return this.editor.builds !== undefined && this.editor.serverConnectionState === 'connected';
+			case 'builds.start': return this.editor.builds !== undefined;
 			case 'builds.jobs': return this.editor.builds !== undefined;
 			case 'server.connection': return true;
 			case 'conversations.history':

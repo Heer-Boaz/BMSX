@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { StudioBuildJobs } from '../../hosts/node/builds/jobs';
-import { isBuildTerminal, type StudioBuildRequest, type StudioBuildJob } from '../../hosts/common/studio_builds';
+import { compareBuildVersions, isBuildTerminal, type StudioBuildRequest, type StudioBuildJob } from '../../hosts/common/studio_builds';
+import { BuildLedger } from '../../hosts/node/builds/ledger';
 
 test('real worker builds, idempotent admission, cancellation and restart reconciliation', { timeout: 120000 }, async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-build-jobs-'));
@@ -15,9 +16,11 @@ test('real worker builds, idempotent admission, cancellation and restart reconci
 	await assert.rejects(StudioBuildJobs.open(process.cwd(), root), /locked/);
 	const request: StudioBuildRequest = { requestId: randomUUID(), target: 'cpu_soak', debug: true, optLevel: 0 };
 	let running = 0;
+	const versions: StudioBuildJob['version'][] = [];
 	const completed = Promise.withResolvers<StudioBuildJob>();
 	const unwatch = jobs.subscribe(({ job }) => {
 		if (job.request.requestId !== request.requestId) return;
+		versions.push(job.version);
 		if (job.state === 'running') running++;
 		if (isBuildTerminal(job.state)) completed.resolve(job);
 	});
@@ -30,6 +33,7 @@ test('real worker builds, idempotent admission, cancellation and restart reconci
 	const result = await completed.promise; unwatch();
 	assert.equal(result.state, 'completed', result.error);
 	assert.ok(running > 0);
+	for (let index = 1; index < versions.length; index++) assert.ok(compareBuildVersions(versions[index], versions[index - 1]) > 0);
 	const artifact = await jobs.artifacts.read(result.artifact!);
 	assert.equal(artifact.cart!.name, request.target);
 	assert.ok(artifact.system.outputs.length > 1);
@@ -47,8 +51,33 @@ test('real worker builds, idempotent admission, cancellation and restart reconci
 	database.close();
 	jobs = await StudioBuildJobs.open(process.cwd(), root);
 	assert.equal((await jobs.get(request.requestId))!.state, 'completed');
+	assert.ok(compareBuildVersions(jobs.get(request.requestId)!.version, result.version) > 0);
 	assert.equal((await jobs.get(lost.request.requestId))!.state, 'interrupted');
 	console.log('artifact', result.artifact, 'system outputs', artifact.system.outputs.length, 'cart outputs', artifact.cart!.outputs.length);
+});
+
+test('ledger upgrades existing receipts and orders lifetimes without persisting progress ticks', async t => {
+	const root = await mkdtemp(join(tmpdir(), 'bmsx-build-ledger-'));
+	t.after(() => rm(root, { recursive: true, force: true }));
+	const request: StudioBuildRequest = { requestId: randomUUID(), target: 'cpu_soak', debug: true, optLevel: 0 };
+	const legacy = { request, state: 'running', phase: 'Compile', acceptedAt: 1, updatedAt: 2 };
+	const database = new DatabaseSync(join(root, 'jobs.sqlite'));
+	database.exec('CREATE TABLE jobs(id TEXT PRIMARY KEY, accepted_at INTEGER NOT NULL, state TEXT NOT NULL, record TEXT NOT NULL)');
+	database.prepare('INSERT INTO jobs VALUES(?, ?, ?, ?)').run(request.requestId, legacy.acceptedAt, legacy.state, JSON.stringify(legacy));
+	database.close();
+	const original = await BuildLedger.open(root);
+	const migrated = original.read(request.requestId)!;
+	assert.deepEqual(migrated.request, request);
+	assert.equal(migrated.state, legacy.state);
+	assert.deepEqual(migrated.version, { generation: 0, sequence: 0 });
+	const observedProgress = { generation: original.generation, sequence: 100 };
+	original.close();
+	const restarted = await StudioBuildJobs.open(process.cwd(), root);
+	try {
+		const recovered = restarted.get(request.requestId)!;
+		assert.equal(recovered.state, 'interrupted');
+		assert.ok(compareBuildVersions(recovered.version, observedProgress) > 0);
+	} finally { await restarted.close(); }
 });
 
 test('existing server exposes the same durable jobs to HTTP and MCP without a browser or account', { timeout: 120000 }, async t => {
@@ -99,7 +128,7 @@ test('a killed server releases ledger ownership and interrupts, rather than repl
 	const { pathToFileURL } = await import('node:url');
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-build-killed-'));
 	t.after(() => rm(root, { recursive: true, force: true }));
-	const request = { requestId: randomUUID(), target: 'cpu_soak', debug: true, optLevel: 2 };
+	const request: StudioBuildRequest = { requestId: randomUUID(), target: 'cpu_soak', debug: true, optLevel: 2 };
 	const program = `import { StudioBuildJobs } from ${JSON.stringify(pathToFileURL(resolve('hosts/node/builds/jobs.ts')).href)};
 		const jobs = await StudioBuildJobs.open(${JSON.stringify(process.cwd())}, ${JSON.stringify(root)});
 		jobs.subscribe(({job}) => { if(job.state === 'running') process.send('admitted'); });

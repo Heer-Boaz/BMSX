@@ -65,3 +65,50 @@ test('window registration recovers, expires authority, and retires on suspension
 	await page.waitForFunction(() => (globalThis as any).channel.sessionId === undefined);
 	assert.equal(sessions.list().length, 0);
 });
+
+test('permanent admission/protocol failures require explicit retry, including after suspension', { timeout: 15000 }, async t => {
+	const sessions = new StudioSessions();
+	let denial: 'admission' | 'registration' | 'format' | undefined, attempts = 0;
+	const server = createServer(async (req, res) => {
+		if (req.url === '/') { res.end('<!doctype html>'); return; }
+		if (req.url === '/__bmsx__/session') {
+			attempts++;
+			if (denial === 'admission') { res.writeHead(403).end('Denied'); return; }
+			res.end(JSON.stringify({ workspaceToken: 'test' })); return;
+		}
+		if (req.url === '/__bmsx__/studio/connect') {
+			attempts++;
+			if (denial === 'registration') { res.writeHead(403).end('Denied'); return; }
+			if (denial === 'format') { res.end('not-json\n'); return; }
+		}
+		await sessions.handle(req, res, req.url!);
+	});
+	server.listen(0, '127.0.0.1'); await once(server, 'listening');
+	const browser = await chromium.launch({ args: ['--no-sandbox'] });
+	t.after(async () => { await browser.close(); sessions.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
+	const bundle = await build({ stdin: { resolveDir: process.cwd(), contents: `
+		import { StudioHttpSession } from './ide/browser/http_session';
+		import { StudioServerConnection } from './ide/browser/server_connection';
+		globalThis.channel = new StudioServerConnection(new StudioHttpSession(), {title:'Probe',url:location.href,tools:false,builds:false}, {}, () => {}, () => {});
+		globalThis.channel.resume();
+	` }, bundle: true, platform: 'browser', format: 'iife', write: false });
+	for (const failure of ['admission', 'registration', 'format'] as const) {
+		denial = failure;
+		const page = await browser.newPage();
+		await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}`);
+		await page.addScriptTag({ content: bundle.outputFiles[0].text });
+		await page.waitForFunction(() => (globalThis as any).channel.state === 'disconnected');
+		const stopped = attempts;
+		await page.evaluate(() => {
+			const channel = (globalThis as any).channel;
+			channel.wake(); channel.resume(); channel.suspend(); channel.resume(); channel.wake();
+		});
+		await page.waitForTimeout(300);
+		assert.equal(attempts, stopped, failure);
+		denial = undefined;
+		await page.evaluate(() => (globalThis as any).channel.retry());
+		await page.waitForFunction(() => (globalThis as any).channel.state === 'connected');
+		await page.evaluate(() => (globalThis as any).channel.dispose());
+		await page.close();
+	}
+});
