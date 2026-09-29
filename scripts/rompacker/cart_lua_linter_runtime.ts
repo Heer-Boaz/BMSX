@@ -19,9 +19,7 @@ import { lintForbiddenRenderWrapperCall } from '../lint/rules/lua_cart/forbidden
 import { lintLocalFunctionConstPattern } from '../lint/rules/lua_cart/local_function_const_pattern';
 import { lintRequireCall } from '../lint/rules/lua_cart/require_lua_extension_pattern';
 import { lintUppercaseCode } from '../lint/rules/lua_cart/uppercase_code_pattern';
-import { readFile } from 'node:fs/promises';
 import { relative, sep } from 'node:path';
-import { collectCartSourceFiles } from './cart_source_files';
 import { lintActionTriggeredBoolChainPattern } from '../lint/rules/lua_cart/action_triggered_bool_chain_pattern';
 import { lintBool01DuplicatePattern } from '../lint/rules/lua_cart/bool01_duplicate_pattern';
 import { lintBranchUninitializedLocalPattern } from '../lint/rules/lua_cart/branch_uninitialized_local_pattern';
@@ -556,8 +554,7 @@ export function formatIssues(issues: CartLintIssue[], profile: CartLintProfile):
 export async function lintCartSources(options: CartLintOptions): Promise<void> {
 	const profile = options.profile ?? 'cart';
 	setActiveLintRules(resolveEnabledRules(profile));
-	const files = await collectCartSourceFiles(options.roots);
-	if (files.length === 0) {
+	if (options.sources.length === 0) {
 		setActiveLintRules(new Set(CART_LINT_RULES));
 		return;
 	}
@@ -566,9 +563,9 @@ export async function lintCartSources(options: CartLintOptions): Promise<void> {
 	const topLevelLocalStringConstants: TopLevelLocalStringConstant[] = [];
 	clearSuppressedLineRanges();
 	try {
-		for (const absolutePath of files) {
-			const source = await readFile(absolutePath, 'utf8');
-			const workspacePath = toWorkspaceRelativePath(absolutePath);
+		for (const file of options.sources) {
+			const source = file.text;
+			const workspacePath = toWorkspaceRelativePath(file.path);
 			setSuppressedLineRanges(workspacePath, collectSuppressedLineRanges(source));
 			const lexer = new Lexer(source, workspacePath);
 			const lexed = lexer.scanTokensWithRecovery();

@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { collectScenarioTestSourceAssets } from '../../scripts/rompacker/scenario_test_sources';
+import { buildScenarioTestSourceAssets, collectScenarioTestSourceFiles } from '../../scripts/rompacker/scenario_test_sources';
+import { prepareRomInputs } from '../../scripts/rompacker/build_inputs';
 import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
 
 const NEMESIS_SCENARIO_PATH = 'tests/carts/nemesis_s/nemesis_s_pause_assert.lua';
 
-test('debug scenario discovery packages each authored assertion as one source-only Lua asset', () => {
-	const collected = collectScenarioTestSourceAssets('carts/nemesis_s');
+test('debug scenario discovery packages each authored assertion as one source-only Lua asset', async () => {
+	const sourceFiles = collectScenarioTestSourceFiles('carts/nemesis_s');
+	const inputs = await prepareRomInputs([], sourceFiles);
+	const collected = { sourceFiles, assets: buildScenarioTestSourceAssets(sourceFiles.map(file => inputs.files.get(file)!)) };
 	const sourceIndex = collected.assets.findIndex(
 		asset => asset.source_path === NEMESIS_SCENARIO_PATH,
 	);

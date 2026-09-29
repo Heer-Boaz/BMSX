@@ -1,6 +1,4 @@
 import { encodeLuaChunk } from '../../toolchain/ts/lua/syntax/serialization';
-// @ts-ignore
-import type { Stats } from 'fs';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { assetIdFromSourceName } from '../../toolchain/ts/rompack/assets';
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
@@ -16,7 +14,6 @@ import type {
 } from '../../toolchain/ts/rompack/assets';
 import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
 import type { GLTFMesh } from '../../toolchain/ts/rompack/gltf';
-import { parseCartManifest, type CartManifest } from '../../machine/ts/rompack/manifest';
 import {
 	assertCartridgePackageFitsHardware,
 	type RomImageDomain,
@@ -73,9 +70,10 @@ import {
 	GX_SYSTEM_TEXTURE_Y,
 } from './system_texture';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
-import { collectGLTFExternalBufferFileSet, loadGLTFModel } from './gltfloader';
+import { loadGLTFModel } from './gltfloader';
+import type { RomBuildInputs } from './build_inputs';
+import type { RomBuildOutput } from './build_state';
 import type { TextureAtlasResource, ImageResource, Resource, resourcetype } from './rompacker.rompack';
-import { collectCartSourceFiles } from './cart_source_files';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import {
 	BLUA32_IMAGE_ID,
@@ -100,9 +98,9 @@ import { compileCollisionMap } from './collision_map_compiler';
 const { join, parse, relative, resolve, sep } = require('path');
 
 // @ts-ignore
-const { access, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, utimes, writeFile, open } = require('fs/promises');
+const { mkdir, mkdtemp, rename, rm, writeFile } = require('fs/promises');
 // @ts-ignore
-const { createWriteStream, readFileSync, statSync } = require('fs');
+const { createWriteStream } = require('fs');
 // @ts-ignore
 const { once } = require('events');
 // @ts-ignore
@@ -210,71 +208,6 @@ export function resolveVirtualSourcePath(filepath: string, virtualRoot: string):
 		return relative;
 	}
 	return workspacePath;
-}
-
-const WORKSPACE_STATE_DIR_NAME = '.bmsx';
-
-const RESOURCE_SCAN_EXCLUDE = new Set<string>([
-	'.rom',
-	'.js',
-	'.ts',
-	'.map',
-	'.tsbuildinfo',
-]);
-
-/**
- * Recursively gets all files in a directory and its subdirectories, optionally filtered by file extension.
- * @param {string} dirPath - The path of the directory to search.
- * @param {string[]} [_arrayOfFiles] - An optional array of files to append to.
- * @param {string} [filterExtension] - An optional file extension to filter by.
- */
-export async function getFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?: string): Promise<string[]> {
-	if (!(await access(dirPath).then(() => true).catch(() => false))) {
-		throw new Error(`Resource path "${dirPath}" does not exist.`);
-	}
-
-	const files = await readdir(dirPath);
-	let array = arrayOfFiles || [];
-	for (let file of files) {
-		if (file.indexOf('_ignore') > -1) continue;
-		if (isWorkspaceStateDirectory(file)) continue;
-
-		let fullpath = `${dirPath}/${file}`;
-
-		let stats = await stat(fullpath);
-		if (stats.isDirectory()) {
-			array = await getFiles(fullpath, array, filterExtension);
-		} else {
-			const ext = parse(file).ext.toLowerCase();
-			if (filterExtension) {
-				if (ext === filterExtension) {
-					array.push(fullpath);
-				}
-			} else if (!RESOURCE_SCAN_EXCLUDE.has(ext)) {
-				array.push(fullpath);
-			}
-		}
-	}
-	return array;
-}
-
-export async function getRomManifest(dirPath: string): Promise<CartManifest | null> {
-	const files = await getFiles(dirPath, [], '.rommanifest');
-
-	if (files.length > 1) {
-		throw new Error(`More than one rommanifest found in ${dirPath}.`);
-	}
-	else if (files.length === 1) {
-		const res = (await readFile(files[0])).toString();
-		let manifest: unknown;
-		try {
-			manifest = JSON.parse(res);
-		} catch {
-			manifest = yaml.load(res);
-		}
-		return parseCartManifest(manifest, `ROM manifest "${files[0]}"`);
-	}
-	else return null;
 }
 
 /**
@@ -481,9 +414,8 @@ export function compileLuaChunkBuffer(source: string, path: string): Buffer {
  * @param filepath The path of the resource file.
  * @returns An object containing the name, extension, and type of the resource file.
  */
-export function getResMetaByFilename(filepath: string): { name: string, ext: string, type: resourcetype, collisionType?: 'concave' | 'convex' | 'aabb', datatype?: 'json' | 'yaml' | 'bin', update_timestamp?: number } {
+export function getResMetaByFilename(filepath: string): { name: string, ext: string, type: resourcetype, collisionType?: 'concave' | 'convex' | 'aabb', datatype?: 'json' | 'yaml' | 'bin' } {
 	const parsed = parse(filepath);
-	const stats: Stats = statSync(filepath);
 	const rawName = parsed.name;
 	const normalizedName = assetIdFromSourceName(rawName);
 	let name = normalizedName;
@@ -491,7 +423,6 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 	let type: resourcetype;
 	let collisionType: 'concave' | 'convex' | 'aabb' = undefined;
 	let datatype: 'json' | 'yaml' | 'bin' = undefined;
-	let update_timestamp: number = undefined;
 
 	const getDataSubtype = (currentName: string): 'aem' | 'data' => {
 		if (currentName.includes('.aem')) return 'aem';
@@ -532,6 +463,7 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 			console.log(`JSON data file detected: "${name}${ext}" (name="${name}", ext="${ext}", type="${type}"), consider using YAML (.yaml or .yml) for better readability.`);
 			break;
 		case '.obj':
+			throw new Error(`Unsupported model format: "${filepath}". Export the model as glTF or GLB.`);
 		case '.gltf':
 		case '.glb':
 			type = 'model';
@@ -552,10 +484,9 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 			break;
 		case '.lua':
 			type = 'lua';
-			update_timestamp = stats.mtimeMs;
 			break;
 	}
-	return { name, ext, type, collisionType, datatype, update_timestamp };
+	return { name, ext, type, collisionType, datatype };
 }
 
 /**
@@ -565,39 +496,13 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
  */
 export type ResourceScanOptions = {
 	domain: RomImageDomain;
-	extraLuaPaths?: string[];
 	extraLuaFiles?: readonly string[];
 	virtualRoot?: string;
-	libraryLuaPaths?: string[];
+	libraryLuaFiles?: readonly string[];
 	/** Derived-build roots whose reachable library modules remain source-only in the base image. */
 	sourceOnlyLuaRootFiles: readonly string[];
 	sourceOnlyLuaModuleRoots: readonly string[];
 };
-
-export type RebuildOptions = {
-	domain: RomImageDomain;
-	extraLuaPaths?: readonly string[];
-	buildSourceDirectories?: readonly string[];
-	buildSourceFiles?: readonly string[];
-	/**
-	 * When set, rebuild checks use the debug ROM output (`dist/<romname>.debug.rom`).
-	 */
-	debug?: boolean;
-	/**
-	 * Optional override for the expected ROM output path used by rebuild checks.
-	 * Defaults to `dist/<romname>[.debug].rom` (based on `debug`).
-	 */
-	romFilePath?: string;
-	/**
-	 * BIOS import-library path used by executable cart rebuild checks. Omit it for
-	 * cartridges without program source.
-	 */
-	biosImportsFilePath?: string;
-};
-
-function isWorkspaceStateDirectory(name: string): boolean {
-	return name.toLowerCase() === WORKSPACE_STATE_DIR_NAME;
-}
 
 type LibraryLuaClosure = {
 	files: string[];
@@ -605,21 +510,17 @@ type LibraryLuaClosure = {
 };
 
 function collectLibraryLuaClosure(
+	inputs: RomBuildInputs,
 	programRootFiles: readonly string[],
 	sourceOnlyRootFiles: readonly string[],
 	sourceOnlyModuleRoots: readonly string[],
-	libraryRoots: readonly string[],
+	libraryFiles: readonly string[],
 	virtualRoot: string,
 ): LibraryLuaClosure {
 	const moduleFileByPath = new Map<string, string>();
-	for (const root of libraryRoots) {
-		if (!root || root.length === 0) {
-			continue;
-		}
-		for (const file of collectCartSourceFiles([root])) {
-			const sourcePath = resolveVirtualSourcePath(file, virtualRoot) ?? toWorkspaceRelativePath(file);
-			moduleFileByPath.set(toLuaModulePath(sourcePath), file);
-		}
+	for (const file of libraryFiles) {
+		const sourcePath = resolveVirtualSourcePath(file, virtualRoot) ?? toWorkspaceRelativePath(file);
+		moduleFileByPath.set(toLuaModulePath(sourcePath), file);
 	}
 	const chunksByFile = new Map<string, LuaChunk>();
 	const loadFileChunk = (file: string): LuaChunk => {
@@ -628,7 +529,7 @@ function collectLibraryLuaClosure(
 		if (cached !== undefined) {
 			return cached;
 		}
-		const source = readFileSync(file, 'utf8');
+		const source = inputs.files.get(key)!.text;
 		const lexer = new LuaLexer(source, file);
 		const tokens = lexer.scanTokens();
 		const chunk = new LuaParser(tokens, file, source).parseChunk();
@@ -665,13 +566,12 @@ function collectLibraryLuaClosure(
 }
 
 export async function getResMetaList(
-	respaths: readonly string[],
+	inputs: RomBuildInputs,
 	options: ResourceScanOptions,
 ): Promise<Resource[]> {
 	const arrayOfFiles: string[] = [];
 	const virtualRoot = normalizeVirtualRootPath(options.virtualRoot);
-	const extraLuaRoots = options.extraLuaPaths;
-	const systemResourceRoots = options.domain === 'system' ? respaths : [];
+	const systemResourceRoots = options.domain === 'system' ? inputs.resourceRoots : [];
 	const seenPaths = new Set<string>();
 
 	const pushFile = (filepath: string) => {
@@ -681,21 +581,7 @@ export async function getResMetaList(
 		arrayOfFiles.push(filepath);
 	};
 
-	for (const respath of respaths) {
-		const files = await getFiles(respath);
-		for (const file of files) {
-			pushFile(file);
-		}
-	}
-
-	if (extraLuaRoots) {
-		for (const luaRoot of extraLuaRoots) {
-			if (!luaRoot || luaRoot.length === 0) continue;
-			for (const file of collectCartSourceFiles([luaRoot])) {
-				pushFile(file);
-			}
-		}
-	}
+	for (const file of inputs.resourceFiles) pushFile(file);
 	const extraLuaFiles = options.extraLuaFiles;
 	if (extraLuaFiles) {
 		for (let index = 0; index < extraLuaFiles.length; index += 1) {
@@ -704,13 +590,14 @@ export async function getResMetaList(
 	}
 	const programRootFiles = arrayOfFiles.filter(file => file.toLowerCase().endsWith('.lua'));
 	let sourceOnlyLibraryFiles: ReadonlySet<string> = new Set();
-	const libraryLuaRoots = options.libraryLuaPaths;
-	if (libraryLuaRoots) {
+	const libraryLuaFiles = options.libraryLuaFiles;
+	if (libraryLuaFiles) {
 		const libraryClosure = collectLibraryLuaClosure(
+			inputs,
 			programRootFiles,
 			options.sourceOnlyLuaRootFiles,
 			options.sourceOnlyLuaModuleRoots,
-			libraryLuaRoots,
+			libraryLuaFiles,
 			virtualRoot,
 		);
 		sourceOnlyLibraryFiles = libraryClosure.sourceOnlyFiles;
@@ -718,8 +605,7 @@ export async function getResMetaList(
 			pushFile(libraryClosure.files[index]);
 		}
 	}
-	const gltfBufferFiles = collectGLTFExternalBufferFileSet(arrayOfFiles);
-	const resourceFiles = arrayOfFiles.filter(file => parse(file).ext.toLowerCase() !== '.bin' || !gltfBufferFiles.has(resolve(file)));
+	const resourceFiles = arrayOfFiles.filter(file => parse(file).ext.toLowerCase() !== '.bin' || !inputs.modelBufferFiles.has(resolve(file)));
 	resourceFiles.sort((a, b) => a.localeCompare(b));
 
 	const result: Array<Resource> = [];
@@ -816,12 +702,12 @@ export async function getResMetaList(
 					id: luaid,
 					programModule: !sourceOnlyLibraryFiles.has(resolve(filepath)),
 					sourcePath,
-					update_timestamp: meta.update_timestamp,
+					update_timestamp: inputs.files.get(resolve(filepath))!.modifiedMs,
 				});
 				++luaid;
 				break;
 			case 'model':
-				result.push({ filepath, name, ext, type, id: modelid, sourcePath });
+				result.push({ filepath, name, ext, type, id: modelid, sourcePath, document: inputs.models.get(resolve(filepath))! });
 				++modelid;
 				break;
 			case 'bin':
@@ -848,20 +734,9 @@ export async function getResMetaList(
 		return left.name.localeCompare(right.name);
 	});
 
-	// Validation: ensure no duplicate IDs within the same resource type (image or audio)
-	const checkDuplicateIds = (type: string) => {
-		const filtered = result.filter(r => r.type === type && typeof r.id === 'number');
-		const idMap = new Map<number, string[]>();
-		for (const r of filtered) {
-			if (!idMap.has(r.id)) idMap.set(r.id, []);
-			idMap.get(r.id)!.push(r.name);
-		}
-		const dups = Array.from(idMap.entries()).filter(([_id, names]) => names.length > 1);
-		if (dups.length > 0) {
-			const msg = dups.map(([id, names]) => `ID ${id} used by: ${names.join(', ')}`).join('\n');
-			throw new Error(`Duplicate ${type} resource IDs found!\n${msg}`);
-		}
-	};
+	for (const resource of result) {
+		if (resource.filepath !== undefined) resource.buffer = inputs.files.get(resolve(resource.filepath))!.bytes;
+	}
 
 	const checkDuplicateNames = (type: string) => {
 		const filtered = result.filter(r => r.type === type && typeof r.name === 'string');
@@ -879,11 +754,6 @@ export async function getResMetaList(
 		}
 	};
 
-	checkDuplicateIds('image');
-	checkDuplicateIds('audio');
-	checkDuplicateIds('data');
-	checkDuplicateIds('model');
-	checkDuplicateIds('bin');
 	checkDuplicateNames('data');
 	checkDuplicateNames('collision_map');
 	checkDuplicateNames('image');
@@ -903,9 +773,9 @@ export async function getResMetaList(
 export async function getResourcesList(resMetaList: Resource[]): Promise<Resource[]> {
 	let resources: Array<Resource> = [];
 
-	// Parallelize buffer and image loading
+	// Decoding consumes the captured bytes; no file is reopened here.
 	const resourcePromises = resMetaList.map(async (meta): Promise<Resource> => {
-		const buffer = meta.filepath ? await readFile(meta.filepath) : undefined;
+		const buffer = meta.buffer;
 		switch (meta.type) {
 			case 'image': {
 				if (!buffer) {
@@ -1088,17 +958,7 @@ export async function generateRomAssets(
 				break;
 			}
 			case 'model': {
-				const pathInfo = parse(res.filepath);
-				const dir = pathInfo.dir;
-				const ext = pathInfo.ext.toLowerCase();
-				let gltfSource: string | ArrayBuffer;
-				if (ext === '.glb') {
-					const bufView = res.buffer;
-					gltfSource = bufView.buffer.slice(bufView.byteOffset, bufView.byteOffset + bufView.byteLength) as ArrayBuffer;
-				} else {
-					gltfSource = res.buffer.toString('utf8');
-				}
-				const parsed = await loadGLTFModel(gltfSource, dir, resid);
+				const parsed = await loadGLTFModel(res.document, resid);
 
 				let texOffset = 0;
 				const imageOffsets: { start: number; end: number }[] = [];
@@ -1452,6 +1312,8 @@ export async function finalizeRompack(
 ) {
 	const outfileBasename = `${rom_name}${options.debug ? '.debug' : ''}.rom`;
 	const outputPath = join(options.outputDirectory, outfileBasename);
+	const outputs: RomBuildOutput[] = [];
+	const romDigest = createHash('sha256');
 	const status = options.status;
 	const blua32 = options.blua32;
 	const physicalSpans = blua32 === null
@@ -1565,6 +1427,7 @@ export async function finalizeRompack(
 
 		const writeBuffer = async (payload: Uint8Array) => {
 			if (payload.byteLength === 0) return;
+			romDigest.update(payload);
 			const ok = writer.write(payload);
 			offset += payload.byteLength;
 			if (!ok) {
@@ -1582,7 +1445,7 @@ export async function finalizeRompack(
 			}
 		};
 		try {
-			await writeBuffer(Buffer.alloc(CART_ROM_HEADER_SIZE));
+			await writeBuffer(headerBuffer);
 			status?.('write rom payloads');
 			for (let index = 0; index < physicalSpans.length; index += 1) {
 				const span = physicalSpans[index];
@@ -1597,12 +1460,6 @@ export async function finalizeRompack(
 		}
 
 		await finished(writer);
-		const file = await open(tempFile, 'r+');
-		try {
-			await file.write(headerBuffer, 0, headerBuffer.length, 0);
-		} finally {
-			await file.close();
-		}
 		if (blua32 !== null && blua32.domain === 'system') {
 			const symbolsOutputFile = `${outputPath}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`;
 			const biosImportsOutputFile = `${outputPath}${BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX}`;
@@ -1610,150 +1467,15 @@ export async function finalizeRompack(
 			await writeFile(biosImportsTempFile, blua32.biosImportsPayload);
 			await rename(symbolsTempFile, symbolsOutputFile);
 			await rename(biosImportsTempFile, biosImportsOutputFile);
-			const publicationTime = new Date(
-				Math.max(
-					(await stat(symbolsOutputFile)).mtimeMs,
-					(await stat(biosImportsOutputFile)).mtimeMs,
-				) + 1,
+			outputs.push(
+				{ file: `${outfileBasename}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`, digest: createHash('sha256').update(blua32.symbolsPayload).digest('hex') },
+				{ file: `${outfileBasename}${BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX}`, digest: createHash('sha256').update(blua32.biosImportsPayload).digest('hex') },
 			);
-			await utimes(tempFile, publicationTime, publicationTime);
 		}
 		await rename(tempFile, outputPath);
+		outputs.push({ file: outfileBasename, digest: romDigest.digest('hex') });
 	} finally {
 		await rm(tempDirectory, { recursive: true, force: true });
 	}
+	return outputs;
 }
-
-const codeFileExtensions = ['.ts', '.glsl', '.js', '.jsx', '.tsx', '.html', '.css', '.json', '.xml', '.lua'];
-const CODE_FILE_EXTENSION_SET = new Set(codeFileExtensions);
-
-function isCodeFile(filename: string): boolean {
-	return CODE_FILE_EXTENSION_SET.has(parse(filename).ext.toLowerCase());
-}
-
-function shouldCheckRebuildFile(filename: string, checkCodeFiles: boolean, checkAssets: boolean): boolean {
-	return (checkCodeFiles && isCodeFile(filename)) || checkAssets;
-}
-
-function shouldSkipRebuildDirectory(name: string, skipTestDirs: boolean): boolean {
-	return name === '_ignore' || isWorkspaceStateDirectory(name) || (skipTestDirs && name === 'test');
-}
-
-async function anyFileNewerThan(files: readonly string[], mtimeMs: number): Promise<boolean> {
-	for (const file of files) {
-		const fileStats = await stat(file);
-		if (fileStats.mtimeMs > mtimeMs) {
-			return true;
-		}
-	}
-	return false;
-}
-
-async function directoryHasRebuildInputNewerThan(dir: string, mtimeMs: number, checkCodeFiles: boolean, checkAssets: boolean, skipTestDirs = false): Promise<boolean> {
-	try {
-		await access(dir);
-	} catch {
-		throw new Error(`Directory "${dir}" can't be accessed!`);
-	}
-
-	const entries = await readdir(dir, { withFileTypes: true });
-	for (const entry of entries) {
-		const entryPath = join(dir, entry.name);
-		if (entry.isDirectory()) {
-			if (shouldSkipRebuildDirectory(entry.name, skipTestDirs)) {
-				continue;
-			}
-			if (await directoryHasRebuildInputNewerThan(entryPath, mtimeMs, checkCodeFiles, checkAssets, skipTestDirs)) {
-				return true;
-			}
-			continue;
-		}
-		if (!shouldCheckRebuildFile(entry.name, checkCodeFiles, checkAssets)) {
-			continue;
-		}
-		const entryStats = await stat(entryPath);
-		if (entryStats.mtimeMs > mtimeMs) {
-			return true;
-		}
-	}
-	return false;
-}
-
-/**
- * Determines whether a rebuild of the ROM is required based on its source and resource files.
- * @param {string} romname - The name of the ROM.
- * @param {string} resPath - The path to the resource files.
- * @returns {Promise<boolean>} A Promise that resolves with a boolean indicating whether a rebuild is required.
- */
-export async function isRebuildRequired(
-	romname: string,
-	resPath: string,
-	options: RebuildOptions,
-): Promise<boolean> {
-	let romFilePath = options.romFilePath;
-	if (romFilePath === undefined) {
-		romFilePath = `./dist/${romname}${options.debug ? '.debug' : ''}.rom`;
-	}
-	const biosImportsFilePath = options.biosImportsFilePath;
-	const extraLuaRoots = options.extraLuaPaths;
-	const includeExtraRootAssets = options.domain === 'cart';
-
-	async function checkPaths() {
-		try {
-			await access(romFilePath);
-			return false;
-		} catch {
-			return true;
-		}
-	}
-	if (await checkPaths()) {
-		return true;
-	}
-
-	const romStats = await stat(romFilePath);
-	const romMtimeMs = romStats.mtimeMs;
-	if (options.buildSourceFiles && await anyFileNewerThan(options.buildSourceFiles, romMtimeMs)) {
-		return true;
-	}
-	if (options.buildSourceDirectories) {
-		for (const directory of options.buildSourceDirectories) {
-			if (await directoryHasRebuildInputNewerThan(directory, romMtimeMs, true, false)) {
-				return true;
-			}
-		}
-	}
-	if (biosImportsFilePath !== undefined) {
-		let biosImportsStats: Stats;
-		try {
-			biosImportsStats = await stat(biosImportsFilePath);
-		} catch {
-			return true;
-		}
-		if (biosImportsStats.mtimeMs > romMtimeMs) {
-			return true;
-		}
-	}
-
-	const normalizedRes = resolve(resPath);
-	let extraNeedsRebuild = false;
-	if (extraLuaRoots) {
-		for (const root of extraLuaRoots) {
-			if (!root || root.length === 0) continue;
-			const normalized = resolve(root);
-			if (normalized === normalizedRes) continue;
-			if (await directoryHasRebuildInputNewerThan(root, romMtimeMs, true, includeExtraRootAssets, true)) {
-				extraNeedsRebuild = true;
-				break;
-			}
-		}
-	}
-
-	const resNeedsRebuild = await anyFileNewerThan(await getFiles(resPath), romMtimeMs);
-	return extraNeedsRebuild ||
-		resNeedsRebuild;
-}
-
-export const biosResPath = './machine/bios/res';
-export const biosSourcePath = './machine/bios';
-export const cartlibLuaPath = './cartlib';
-export const testlibLuaPath = './testlib';

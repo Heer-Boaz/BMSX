@@ -1,4 +1,3 @@
-import { readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
@@ -7,31 +6,30 @@ import {
 	scenarioTestAssetId,
 } from '../../toolchain/ts/rompack/scenario_test';
 import { collectSourceFiles } from '../lib/file_scan';
+import type { RomInputFile } from './build_inputs';
 
 const LUA_SOURCE_EXTENSIONS = new Set(['.lua']);
 
-export type ScenarioTestSourceAssets = {
-	sourceFiles: string[];
-	assets: RomAsset[];
-};
-
-export function collectScenarioTestSourceAssets(projectRootPath: string): ScenarioTestSourceAssets {
-	const sourceFiles = collectSourceFiles(
+export function collectScenarioTestSourceFiles(projectRootPath: string): string[] {
+	return collectSourceFiles(
 		[join('tests', projectRootPath)],
 		LUA_SOURCE_EXTENSIONS,
 	).filter(path => path.endsWith(SCENARIO_TEST_SOURCE_SUFFIX)).sort();
-	const assets = new Array<RomAsset>(sourceFiles.length);
-	for (let index = 0; index < sourceFiles.length; index += 1) {
-		const file = sourceFiles[index];
-		const sourcePath = relative(process.cwd(), file).replace(/\\/g, '/');
+}
+
+export function buildScenarioTestSourceAssets(sources: readonly RomInputFile[]): RomAsset[] {
+	const assets = new Array<RomAsset>(sources.length);
+	for (let index = 0; index < sources.length; index += 1) {
+		const file = sources[index];
+		const sourcePath = relative(process.cwd(), file.path).replace(/\\/g, '/');
 		assets[index] = {
 			resid: scenarioTestAssetId(sourcePath),
 			type: 'lua',
-			buffer: readFileSync(file),
+			buffer: file.bytes,
 			source_path: sourcePath,
 			normalized_source_path: sourcePath,
-			update_timestamp: statSync(file).mtimeMs,
+			update_timestamp: file.modifiedMs,
 		};
 	}
-	return { sourceFiles, assets };
+	return assets;
 }

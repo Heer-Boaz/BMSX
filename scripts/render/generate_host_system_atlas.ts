@@ -1,5 +1,5 @@
+import { biosResPath, prepareRomInputs } from '../rompacker/build_inputs';
 import {
-	biosResPath,
 	getResMetaList,
 	getResourcesList,
 } from '../rompacker/rombuilder';
@@ -159,11 +159,11 @@ async function generateHostSystemAtlasArtifacts(): Promise<boolean> {
 	const biosProjectRoot = join(biosResPath, '..');
 	const biosVirtualRoot = biosProjectRoot.replace(/^\.\//, '');
 	const resourceRoots = [biosResPath, HOST_RESOURCE_PATH];
-	const resMeta = await getResMetaList(resourceRoots, {
+	const inputs = await prepareRomInputs(resourceRoots, []);
+	const resMeta = await getResMetaList(inputs, {
 		domain: 'system',
 		sourceOnlyLuaRootFiles: [],
 		sourceOnlyLuaModuleRoots: [],
-		extraLuaPaths: [],
 		virtualRoot: biosVirtualRoot,
 	});
 	const resources = await getResourcesList(resMeta);

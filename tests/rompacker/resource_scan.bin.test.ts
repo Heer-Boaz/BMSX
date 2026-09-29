@@ -15,6 +15,8 @@ import { type RomAsset } from '../../toolchain/ts/rompack/assets';
 import { loadRomAssetList } from '../../toolchain/ts/rompack/loader';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import { SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
+import { prepareRomInputs } from '../../scripts/rompacker/build_inputs';
+import { collectCartSourceFiles } from '../../scripts/rompacker/cart_source_files';
 import {
 	buildRomBlua32Tail,
 	compileLuaChunkBuffer,
@@ -37,7 +39,7 @@ test('resource scan treats glTF buffer URIs as model-owned and keeps other .bin 
 		await writeFile(join(ROOT, 'models', 'mesh.bin'), Buffer.from([5, 6, 7, 8]));
 		await writeFile(join(ROOT, 'models', 'mesh.gltf'), JSON.stringify({ asset: { version: '2.0' }, buffers: [{ uri: 'mesh.bin', byteLength: 4 }] }));
 
-		const resources = await getResMetaList([ROOT], {
+		const resources = await getResMetaList(await prepareRomInputs([ROOT], []), {
 			domain: 'cart',
 			sourceOnlyLuaRootFiles: [],
 			sourceOnlyLuaModuleRoots: [],
@@ -55,7 +57,7 @@ test('Lua assets retain separate module-local and workspace source paths', async
 	try {
 		await mkdir(ROOT, { recursive: true });
 		await writeFile(join(ROOT, 'entry.lua'), 'module<entry>\nreturn true');
-		const metadata = await getResMetaList([ROOT], {
+		const metadata = await getResMetaList(await prepareRomInputs([ROOT], []), {
 			domain: 'cart',
 			sourceOnlyLuaRootFiles: [],
 			sourceOnlyLuaModuleRoots: [],
@@ -86,10 +88,12 @@ test('source-only scenario roots retain library source without base compilation'
 		await writeFile(join(libraryRoot, 'unused.lua'), 'return {}');
 		await writeFile(scenarioPath, "return require('cartlib/trace')");
 
-		const metadata = await getResMetaList([resourcesRoot], {
+		const libraryFiles = collectCartSourceFiles([libraryRoot]);
+		const inputs = await prepareRomInputs([resourcesRoot], [...libraryFiles, scenarioPath]);
+		const metadata = await getResMetaList(inputs, {
 			domain: 'cart',
 			virtualRoot: ROOT,
-			libraryLuaPaths: [libraryRoot],
+			libraryLuaFiles: libraryFiles,
 			sourceOnlyLuaRootFiles: [scenarioPath],
 			sourceOnlyLuaModuleRoots: [],
 		});

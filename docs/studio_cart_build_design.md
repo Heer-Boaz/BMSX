@@ -1,13 +1,16 @@
 # Studio cartridge builds and exact-media installation
 
-Status: research and proposed design, **not implemented or an approved migration
-contract**. Initial audit against `8b64051de`; build/deploy and connection findings
+Status: proposed end-to-end design; **only the first offline producer slice is
+implemented** ([scope and evidence](rom_build_inputs.md)). The user requested an
+independent, context-free design review followed by implementation on 2026-09-29.
+Initial audit against `8b64051de`; build/deploy and connection findings
 rechecked on 2026-09-29 against `407a6cd72`. This complements
 [program tools](studio_program_tools.md), [source lifecycle](studio_source_lifecycle.md)
 and [standalone Studio](studio_standalone.md). The
 [connection lifecycle review](studio_connection_lifecycle_review.md) covers the
-independent connection workstream and its integration with these builds. Existing
-contracts are not changed by either proposal.
+independent connection workstream and its integration with these builds. Server
+jobs, complete artifact publication, exact installation and connection recovery
+remain future work, not functionality implied by the producer slice.
 
 Scope clarification: the existing build/deploy chain is **not a constraint**.
 Replacing its entrypoints, output layout or orchestration is permitted where
@@ -32,7 +35,7 @@ These are responsibilities, not a mandate for three new facade classes. They
 do not require an additional server, a homegrown general-purpose build framework,
 an agent-specific build engine or a guest service.
 
-## Findings in the current owners
+## Audit findings before the first producer slice
 
 | Owner | Observed behavior | Consequence |
 | --- | --- | --- |
@@ -75,11 +78,12 @@ node --import tsx scripts/rompacker/rompacker.ts --mode rompack --skiptypecheck 
 sha256sum "$out/cpu_soak.debug.rom"
 ```
 
-This establishes a correctness defect in the existing CLI independently of any
+This established a correctness defect in the CLI independently of any
 Studio integration. The byte counts and hashes are observations of this checkout,
-not frozen test expectations or performance benchmarks. This review does not fix
-the defect. Making all server builds use `--force` would hide it, not improve the
-standalone producer.
+not frozen test expectations or performance benchmarks. The first producer slice
+now fixes this through recipe/input/output identity; the real `-O0` to `-O3`
+sequence without `--force` was rerun and its result matched a forced `-O3` control.
+Making all server builds use `--force` would merely have hidden the defect.
 
 ## The relevant build/deploy chain
 
@@ -150,6 +154,9 @@ itself are a different development workflow, not a prerequisite for this one.
   own active work; cancellation waits for that work to finish. Concurrent rebuild
   callers can share the active result. BMSX must not copy that last policy blindly:
   a request for newer sources cannot silently receive an older in-flight build.
+  Its [file/parse cache](https://github.com/evanw/esbuild/blob/main/internal/cache/cache.go)
+  and [filesystem owner](https://github.com/evanw/esbuild/blob/main/internal/fs/fs.go)
+  also inform retained source ownership and file/directory dependency tracking.
 - **Build Server Protocol:** [task lifecycle and compilation notifications](https://build-server-protocol.github.io/docs/specification)
   distinguish target, request correlation, progress, diagnostics and completion.
   Adopt those semantics; implementing the entire BSP protocol is unnecessary for
@@ -358,6 +365,18 @@ nor wrapping `BootService.reboot` nor changing only `installRuntimeRomLayers`
 meets it. Reuse preparation and reset primitives where they actually match;
 do not preserve source-overlay behavior in the exact-artifact route.
 
+The independent review found an additional physical constraint, verified in both
+runtime implementations: the cartridge manifest defines ROM presence, RAM size
+and mailbox presence. `hosts/common/cartridge_media.ts` derives that topology;
+`machine/{ts,cpp}/machine/devices/cartridge/card.*` and `controller.*` construct
+the cards and sockets once. Their current `installRom` only replaces bytes on an
+existing ROM device. A manifest change, newly occupied socket or removed card
+therefore cannot be implemented by that operation followed by reset. Exact-media
+installation needs card/socket replacement at the machine owner, including mapped
+page/device invalidation, or explicit pre-admission rejection of unsupported
+topology changes. Do not mask the mismatch by preserving old hardware. Complete
+the TS/C++ representation and hot-path callsite audit before that runtime slice.
+
 Preparation failure leaves the current target untouched. Once physical writes
 occur, report their actual effects; do not implement machine capture/rollback.
 "Installed and reset" does not mean guest initialization succeeded. Existing
@@ -404,10 +423,11 @@ standalone CLI. A prototype endpoint must not define incorrect lower-level behav
 as its permanent contract. A larger build/deploy migration is acceptable; a new
 generic framework is not a goal in itself.
 
-Before implementation, resolve these remaining details against live owners:
+Before each remaining slice, resolve these details against live owners:
 
-- Enumerate every file-reading asset/compiler/lint path and its reusable input
-  representation, including dependencies opened by third-party decoders.
+- Input capture, file-reading consumers and recipe invalidation are implemented
+  for the existing CLI; see [the first slice](rom_build_inputs.md). Recheck this
+  boundary when adding new producer types or conversion dependencies.
 - Specify the full package/resource refresh while retaining documents; identify
   every installation edge that updates media provenance.
 - Specify admission-receipt/publication storage and artifact/log cleanup ownership.

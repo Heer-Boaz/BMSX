@@ -10,6 +10,8 @@ import { GX_DISPLAY_PRESET_MODULE_PATH, GX_REGISTER_MODULE_PATH, ROM_ASSET_SYMBO
 import { GX_DISPLAY_PRESET_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_display_preset_module';
 import { GX_REGISTER_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_register_module';
 import { buildRomBlua32Tail, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList } from '../../scripts/rompacker/rombuilder';
+import { prepareRomInputs } from '../../scripts/rompacker/build_inputs';
+import { collectCartSourceFiles } from '../../scripts/rompacker/cart_source_files';
 
 /** Real source scan, library closure, compiler, linker and cartridge packager. */
 export async function buildSourceCartridgeFixture(
@@ -25,9 +27,12 @@ export async function buildSourceCartridgeFixture(
 		await mkdir(dirname(path), { recursive: true });
 		await writeFile(path, module.source);
 	}
-	const metadata = await getResMetaList([], {
-		domain: 'cart', extraLuaPaths: [root], virtualRoot: root,
-		libraryLuaPaths: ['cartlib', 'testlib'], sourceOnlyLuaRootFiles: [],
+	const programFiles = collectCartSourceFiles([root]);
+	const libraryFiles = collectCartSourceFiles(['cartlib', 'testlib']);
+	const inputs = await prepareRomInputs([], [...programFiles, ...libraryFiles]);
+	const metadata = await getResMetaList(inputs, {
+		domain: 'cart', extraLuaFiles: programFiles, virtualRoot: root,
+		libraryLuaFiles: libraryFiles, sourceOnlyLuaRootFiles: [],
 		sourceOnlyLuaModuleRoots: [],
 	});
 	const assets = await generateRomAssets(await getResourcesList(metadata));

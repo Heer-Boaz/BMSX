@@ -3,6 +3,8 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
+import { prepareRomInputs } from '../../scripts/rompacker/build_inputs';
+import { collectCartSourceFiles } from '../../scripts/rompacker/cart_source_files';
 import { lintCartSources } from '../../scripts/rompacker/cart_lua_linter_runtime';
 
 async function withCartLintFixture(name: string, source: string, run: (root: string) => Promise<void>): Promise<void> {
@@ -21,7 +23,7 @@ async function withCartLintFixture(name: string, source: string, run: (root: str
 test('cross-file constant diagnostics retain each source position without retaining syntax', async () => {
 	await withCartLintFixture('cart_lua_linter_source_owners', '-- 😀\r\nlocal shared_name<const> = "first"\r\nreturn shared_name', async root => {
 		await writeFile(join(root, 'other.lua'), '\n-- second source\n\nlocal shared_name<const> = "second"\nreturn shared_name');
-		await assert.rejects(lintCartSources({ roots: [root], profile: 'cart' }), error => {
+		await assert.rejects(lintCartSources({ sources: [...(await prepareRomInputs([], collectCartSourceFiles([root]))).files.values()], profile: 'cart' }), error => {
 			assert.ok(error instanceof Error);
 			assert.match(error.message, /sample\.lua:2:7: Cross-file duplicated local "global constant"/);
 			assert.match(error.message, /other\.lua:4:7: Cross-file duplicated local "global constant"/);
@@ -33,7 +35,7 @@ test('cross-file constant diagnostics retain each source position without retain
 test('duplicate-statement diagnostics preserve multiline token endpoints', async () => {
 	const source = 'local value = nil\r\nvalue = [=[x\r\ny]=]\r\nvalue = [=[x\r\ny]=]\r\nreturn value';
 	await withCartLintFixture('cart_lua_linter_multiline_positions', source, async root => {
-		await assert.rejects(lintCartSources({ roots: [root], profile: 'cart' }), /sample\.lua:4:1: Consecutive duplicate statement is forbidden/);
+		await assert.rejects(lintCartSources({ sources: [...(await prepareRomInputs([], collectCartSourceFiles([root]))).files.values()], profile: 'cart' }), /sample\.lua:4:1: Consecutive duplicate statement is forbidden/);
 	});
 });
 
@@ -46,7 +48,7 @@ test('cart lua linter rejects const copies from globals module aliases', async (
 		].join('\n'),
 		async root => {
 			await assert.rejects(
-				lintCartSources({ roots: [root], profile: 'cart' }),
+				lintCartSources({ sources: [...(await prepareRomInputs([], collectCartSourceFiles([root]))).files.values()], profile: 'cart' }),
 				/Local copies of constants are forbidden \("bg_id"\)\./,
 			);
 		},
@@ -68,7 +70,7 @@ test('cart lua linter rejects require inside function bodies in cart and bios pr
 		async root => {
 			for (const profile of ['cart', 'bios'] as const) {
 				await assert.rejects(
-					lintCartSources({ roots: [root], profile }),
+					lintCartSources({ sources: [...(await prepareRomInputs([], collectCartSourceFiles([root]))).files.values()], profile }),
 					/require\(\) inside function bodies is forbidden\. Hoist module imports to file scope with local <const> require bindings\./,
 				);
 			}
@@ -86,7 +88,7 @@ test('cart lua linter rejects math.floor references in cart and bios profiles', 
 		async root => {
 			for (const profile of ['cart', 'bios'] as const) {
 				await assert.rejects(
-					lintCartSources({ roots: [root], profile }),
+					lintCartSources({ sources: [...(await prepareRomInputs([], collectCartSourceFiles([root]))).files.values()], profile }),
 					/math\.floor is forbidden\. Use \/\/ instead of floor-based rounding or truncation\./,
 				);
 			}
@@ -105,7 +107,7 @@ test('cart lua linter rejects custom random helpers in cart and bios profiles', 
 		async root => {
 			for (const profile of ['cart', 'bios'] as const) {
 				await assert.rejects(
-					lintCartSources({ roots: [root], profile }),
+					lintCartSources({ sources: [...(await prepareRomInputs([], collectCartSourceFiles([root]))).files.values()], profile }),
 					/Custom random helper "random_int" is forbidden\. Use math\.random directly instead of inventing a random_int-style wrapper\./,
 				);
 			}
@@ -123,7 +125,7 @@ test('cart lua linter rejects chained const copies from constants module aliases
 		].join('\n'),
 		async root => {
 			await assert.rejects(
-				lintCartSources({ roots: [root], profile: 'cart' }),
+				lintCartSources({ sources: [...(await prepareRomInputs([], collectCartSourceFiles([root]))).files.values()], profile: 'cart' }),
 				error => {
 					assert.match(String(error), /Local copies of constants are forbidden \("room"\)\./);
 					assert.match(String(error), /Local copies of constants are forbidden \("tile_size"\)\./);
@@ -139,7 +141,7 @@ test('cart lua linter allows const module imports without member copies', async 
 		'cart_lua_linter_const_module_import',
 		"local globals<const> = require('globals')\nreturn globals",
 		async root => {
-			await lintCartSources({ roots: [root], profile: 'cart' });
+			await lintCartSources({ sources: [...(await prepareRomInputs([], collectCartSourceFiles([root]))).files.values()], profile: 'cart' });
 		},
 	);
 });
@@ -150,7 +152,7 @@ test('cart lua linter reserves local function declarations for init participants
 		'local function prepare() end',
 		async root => {
 			await assert.rejects(
-				lintCartSources({ roots: [root], profile: 'cart' }),
+				lintCartSources({ sources: [...(await prepareRomInputs([], collectCartSourceFiles([root]))).files.values()], profile: 'cart' }),
 				/Local function "prepare" is forbidden/,
 			);
 		},
@@ -159,7 +161,7 @@ test('cart lua linter reserves local function declarations for init participants
 		'cart_lua_linter_init_function',
 		'local function prepare<init>() print("prepared") end',
 		async root => {
-			await lintCartSources({ roots: [root], profile: 'cart' });
+			await lintCartSources({ sources: [...(await prepareRomInputs([], collectCartSourceFiles([root]))).files.values()], profile: 'cart' });
 		},
 	);
 });
@@ -176,7 +178,7 @@ test('cart lua linter rejects one-off assignment helpers', async () => {
 		async root => {
 			for (const profile of ['cart', 'bios'] as const) {
 				await assert.rejects(
-					lintCartSources({ roots: [root], profile }),
+					lintCartSources({ sources: [...(await prepareRomInputs([], collectCartSourceFiles([root]))).files.values()], profile }),
 					/Small one-off local helper "write_record" is forbidden\./,
 				);
 			}
@@ -190,7 +192,7 @@ test('cart lua linter rejects newline normalization calls', async () => {
 		'return text:split("\\n")',
 		async root => {
 			await assert.rejects(
-				lintCartSources({ roots: [root], profile: 'cart' }),
+				lintCartSources({ sources: [...(await prepareRomInputs([], collectCartSourceFiles([root]))).files.values()], profile: 'cart' }),
 				/Newline normalization is forbidden unless this boundary is explicitly marked with newline_normalization_pattern\./,
 			);
 		},
@@ -286,7 +288,7 @@ test('cart lua linter treats local const function expressions as named functions
 			testCase.source,
 			async root => {
 				await assert.rejects(
-					lintCartSources({ roots: [root], profile: 'cart' }),
+					lintCartSources({ sources: [...(await prepareRomInputs([], collectCartSourceFiles([root]))).files.values()], profile: 'cart' }),
 					testCase.expected,
 				);
 			},
@@ -303,7 +305,7 @@ test('cart lua linter explains direct guard alternative for or-nil fallback patt
 		].join('\n'),
 		async root => {
 			await assert.rejects(
-				lintCartSources({ roots: [root], profile: 'cart' }),
+				lintCartSources({ sources: [...(await prepareRomInputs([], collectCartSourceFiles([root]))).files.values()], profile: 'cart' }),
 				/"or nil" fallback pattern is forbidden[\s\S]*guard on that value directly[\s\S]*tracks and compile_tracks\(tracks\)[\s\S]*real if\/else/,
 			);
 		},
@@ -323,7 +325,7 @@ test('cart lua linter rejects locals that shadow outer require aliases', async (
 		].join('\n'),
 		async root => {
 			await assert.rejects(
-				lintCartSources({ roots: [root], profile: 'cart' }),
+				lintCartSources({ sources: [...(await prepareRomInputs([], collectCartSourceFiles([root]))).files.values()], profile: 'cart' }),
 				/Local "font" shadows outer module alias from require\('font'\)/,
 			);
 		},
@@ -342,7 +344,7 @@ test('cart lua linter allows renamed local handles next to require aliases', asy
 			'end',
 		].join('\n'),
 		async root => {
-			await lintCartSources({ roots: [root], profile: 'cart' });
+			await lintCartSources({ sources: [...(await prepareRomInputs([], collectCartSourceFiles([root]))).files.values()], profile: 'cart' });
 		},
 	);
 });

@@ -7,6 +7,7 @@ import type { NativeGxTexture } from '../../toolchain/ts/rompack/gx_texture_code
 import type { GxTexturePageTile } from '../../toolchain/ts/rompack/assets';
 import type { AssetType } from '../../machine/ts/rompack/toc';
 import type { CookedAemEvent } from '../../toolchain/ts/rompack/aem';
+import type { GLTFDocument } from './gltfloader';
 
 export type RomPackerMode = 'rompack' | 'bios';
 
@@ -76,7 +77,7 @@ export interface AemResource extends BaseResource<'aem'> {
 
 export interface ModelResource extends BaseResource<'model'> {
 	id: number;
-	datatype: datatype;
+	document: GLTFDocument;
 }
 
 export interface LuaResource extends BaseResource<'lua'> {

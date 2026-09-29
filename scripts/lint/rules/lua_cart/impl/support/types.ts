@@ -160,7 +160,7 @@ export type RuntimeTagLookupContext = {
 };
 
 export type CartLintOptions = {
-	readonly roots: ReadonlyArray<string>;
+	readonly sources: ReadonlyArray<{ readonly path: string; readonly text: string }>;
 	readonly profile?: CartLintProfile;
 };
 

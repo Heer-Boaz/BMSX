@@ -847,6 +847,24 @@ Owners:
   `toolchain/ts/rompack/header_encode.ts`.
 - Debug-ROM diagnostic-directory construction:
   `toolchain/ts/rompack/blua32_diagnostics.ts`.
+- Offline input preparation and manifest reading:
+  `scripts/rompacker/build_inputs.ts`. Resource inventory, Lua sources, BIOS
+  imports and external glTF dependencies are captured before conversion. Scan,
+  lint, compile, packaging and diagnostic snippets consume those retained bytes;
+  these consumers must not reopen the source paths.
+- Offline recipe/input/output receipts: `scripts/rompacker/build_state.ts`.
+  Effective compiler options, toolchain content, input membership/content and
+  actual output digests determine reuse, not relative file modification times.
+  Lua source timestamps remain captured metadata because source records emit
+  them. Receipts live in the output directory's ignored `.bmsx` state directory;
+  they are not an immutable artifact catalog or an installation identity.
+
+The CLI compares prepared inputs before loading the compiler, linter and native
+asset converters. A no-op does not compile, convert or rewrite outputs. The
+writer hashes the actual emitted bytes while writing and records success only
+after output finalization. Complete multi-file artifact publication and managed
+build jobs are separate, still-unimplemented boundaries; see
+[producer input ownership](rom_build_inputs.md) for current scope and evidence.
 
 The ROM package and BLua32 image use the current wire records only. There is no
 old-format reader and no decode path for obsolete records.

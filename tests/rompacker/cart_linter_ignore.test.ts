@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { test } from 'node:test';
 
+import { prepareRomInputs } from '../../scripts/rompacker/build_inputs';
 import { lintCartSources } from '../../scripts/rompacker/cart_lua_linter_runtime';
 import { collectCartSourceFiles } from '../../scripts/rompacker/cart_source_files';
 
@@ -18,7 +19,8 @@ test('cart linter ignores non-runtime source files', async () => {
 
 		const files = collectCartSourceFiles([root]);
 		assert.deepEqual(files.map(file => basename(file)), ['entry.lua']);
-		await lintCartSources({ roots: [root], profile: 'cart' });
+		const inputs = await prepareRomInputs([], files);
+		await lintCartSources({ sources: [...inputs.files.values()], profile: 'cart' });
 	} finally {
 		await rm(root, { recursive: true, force: true });
 	}

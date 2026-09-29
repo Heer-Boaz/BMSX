@@ -1,4 +1,3 @@
-import { TEST_EXECUTION_MODULE_PATH } from '../../toolchain/ts/rompack/test_cartridge';
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE BUILDER CANNOT HANDLE THIS!!!!!
 
 import pc from 'picocolors';
@@ -12,23 +11,7 @@ import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector } from '../lib/cli_arguments';
 import { createCliUi } from '../lib/cli_ui';
 import { compileAudioEventResources } from './audioeventcompiler';
-import { lintCartSources } from './cart_lua_linter_runtime';
-import {
-	biosSourcePath,
-	BLUA32_SYMBOLS_SIDECAR_SUFFIX,
-	buildRomBlua32Tail,
-	biosResPath,
-	cartlibLuaPath,
-	testlibLuaPath,
-	type CartRomBlua32Tail,
-	createTextureAtlases,
-	finalizeRompack,
-	generateRomAssets,
-	getResMetaList,
-	getResourcesList,
-	getRomManifest,
-	isRebuildRequired,
-} from './rombuilder';
+import type { CartRomBlua32Tail } from './rombuilder';
 import { collectCartSourceFiles } from './cart_source_files';
 import type { TaskProgressReporter as ProgressReporter } from '../lib/task_progress';
 import type { RomPackerOptions } from './rompacker.rompack';
@@ -49,10 +32,12 @@ import {
 	BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX,
 	decodeBlua32BiosImports,
 } from '../../toolchain/ts/rompack/blua32_bios_imports';
-import { collectScenarioTestSourceAssets } from './scenario_test_sources';
+import { buildScenarioTestSourceAssets, collectScenarioTestSourceFiles } from './scenario_test_sources';
+import { biosResPath, biosSourcePath, cartlibLuaPath, getRomManifest, prepareRomInputs, testlibLuaPath, type RomBuildInputs } from './build_inputs';
+import { recordRomBuild, romBuildStatus, romToolchainIdentity, type RomBuildRecipe } from './build_state';
 
-import { join } from 'node:path';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
 
 type ParsedOptions = RomPackerOptions;
 const ui = createCliUi({ bannerTitle: 'BMSX BUILDER', labelWidth: 14 });
@@ -129,27 +114,10 @@ const biosBuildTasks: TaskName[] = [
 	TASK.DONE,
 ];
 const biosPipelineTasks: TaskName[] = biosBuildTasks.slice(1, -1);
-const ROM_BUILD_SOURCE_DIRECTORIES = [
-	'./machine/ts/common',
-	'./machine/ts/rompack',
-	'./machine/ts/spec',
-	'./scripts/lint',
-	'./scripts/rompacker',
-	'./scripts/lib',
-	'./toolchain/ts',
-] as const;
-const ROM_BUILD_SOURCE_FILES = [
-	'./package.json',
-	'./package-lock.json',
-	'./scripts/tsconfig.json',
-	'./tsconfig.base.json',
-	'./tsconfig.json',
-] as const;
 // const webTasks: TaskName[] = [
 // 	'Platform-artifacts bouwen',
 // ];
 
-const rebuildCheckTasks: TaskName[] = [TASK.REBUILD_CHECK];
 
 function getOptionalParam(args: string[], flag: string, envVar: string): string {
 	const value = getParamOrEnv(args, flag, envVar, '', KNOWN_FLAGS);
@@ -306,48 +274,21 @@ function formatEsbuildErrors(err: any): string[] {
 	return result;
 }
 
-function resolveLuaSourcePath(candidate: string, virtualRoots: ReadonlyArray<string>): string {
-	const normalized = normalizePathKey(candidate);
-	if (existsSync(normalized)) {
-		return normalized;
-	}
-	for (const root of virtualRoots) {
-		const normalizedRoot = normalizePathKey(root);
-		const joined = normalizePathKey(join(normalizedRoot, normalized));
-		if (existsSync(joined)) {
-			return joined;
-		}
-	}
-	return normalized;
-}
-
-function formatLuaBuildError(err: LuaError, virtualRoots: ReadonlyArray<string>): string[] {
-	const lines: string[] = [];
-	const resolvedPath = resolveLuaSourcePath(err.path, virtualRoots);
-	const location = `${resolvedPath}:${err.line}:${err.column}`;
-	lines.push(`${location}: ${err.message}`);
-
-	try {
-		const source = readFileSync(resolvedPath, 'utf8');
-		// disable-next-line newline_normalization_pattern -- Lua build diagnostics map file text to one logical source line.
-		const sourceLines = source.split(/\r\n|\r|\n/);
-		const sourceLine = sourceLines[err.line - 1];
-		if (sourceLine === undefined) {
-			return lines;
-		}
+function formatLuaBuildError(err: LuaError, inputs: RomBuildInputs | undefined, virtualRoots: readonly string[]): string[] {
+	const candidates = [resolve(err.path), ...virtualRoots.map(root => resolve(root, err.path))];
+	const file = candidates.map(path => inputs?.files.get(path)).find(file => file !== undefined);
+	const lines = [`${file === undefined ? err.path : file.path}:${err.line}:${err.column}: ${err.message}`];
+	// Synthetic compiler modules have no filesystem input. Never reread newer source for a diagnostic.
+	if (file !== undefined) {
+		// disable-next-line newline_normalization_pattern -- Lua diagnostics address lines in captured source.
+		const sourceLine = file.text.split(/\r\n|\r|\n/)[err.line - 1];
 		const gutter = `${err.line} | `;
-		lines.push(`${gutter}${sourceLine}`);
-		const caretOffset = Math.max(0, err.column - 1);
-		lines.push(`${' '.repeat(gutter.length + caretOffset)}^`);
-		return lines;
-	} catch (readError) {
-		const message = readError instanceof Error ? readError.message : String(readError);
-		lines.push(`(unable to read ${resolvedPath}: ${message})`);
-		return lines;
+		lines.push(`${gutter}${sourceLine}`, `${' '.repeat(gutter.length + Math.max(0, err.column - 1))}^`);
 	}
+	return lines;
 }
 
-async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter): Promise<void> {
+async function runBIOSBuild(options: ParsedOptions, inputs: RomBuildInputs, sourceFiles: readonly string[], progress?: ProgressReporter): Promise<void> {
 	const { respath, outputDirectory, force, debug, optLevel } = options;
 
 	const BIOSResPath = respath || biosResPath;
@@ -356,8 +297,6 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 	}
 	const BIOSRomName = SYSTEM_ROM_NAME;
 	const BIOSRomPath = join(outputDirectory, `${BIOSRomName}${debug ? '.debug' : ''}.rom`);
-	const BIOSSymbolsPath = `${BIOSRomPath}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`;
-	const BIOSImportsPath = `${BIOSRomPath}${BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX}`;
 
 	const BIOSProjectRoot = normalizePathKey(join(BIOSResPath, '..'));
 	const BIOSVirtualRoot = BIOSProjectRoot.replace(/^\.\//, '');
@@ -370,38 +309,11 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		progress.showInitial();
 	}
 
-	let assetsNeedRebuild = false;
-	if (force) {
-		assetsNeedRebuild = true;
-		if (progress) {
-			await progress.taskCompleted();
-		}
-	} else {
-		const checkBuild = async () => {
-			if (!existsSync(BIOSRomPath)
-				|| !existsSync(BIOSSymbolsPath)
-				|| !existsSync(BIOSImportsPath)) {
-				return true;
-			}
-			const romMtimeMs = statSync(BIOSRomPath).mtimeMs;
-			if (statSync(BIOSSymbolsPath).mtimeMs > romMtimeMs
-				|| statSync(BIOSImportsPath).mtimeMs > romMtimeMs) {
-				return true;
-			}
-			return isRebuildRequired(BIOSRomName, BIOSResPath, {
-				domain: 'system',
-				extraLuaPaths: [biosSourcePath],
-				buildSourceDirectories: ROM_BUILD_SOURCE_DIRECTORIES,
-				buildSourceFiles: ROM_BUILD_SOURCE_FILES,
-				debug,
-				romFilePath: BIOSRomPath,
-			});
-		};
-		assetsNeedRebuild = progress ? await progress.runWithDetail(TASK.BIOS_REBUILD_CHECK, checkBuild) : await checkBuild();
-		if (progress) {
-			await progress.taskCompleted();
-		}
-	}
+	const recipe: RomBuildRecipe = { domain: 'system', debug, optLevel, projectRoot: BIOSVirtualRoot, toolchain: romToolchainIdentity() };
+	const buildStatus = force ? 'forced' : await romBuildStatus(BIOSRomPath, recipe, inputs.identity);
+	logBullet('Build reason', buildStatus);
+	const assetsNeedRebuild = buildStatus !== 'up-to-date';
+	if (progress) await progress.taskCompleted();
 	if (!assetsNeedRebuild) {
 		logInfo('BIOS assets up-to-date (use --force to rebuild)');
 		if (progress) {
@@ -410,6 +322,9 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		}
 		return;
 	}
+	const { buildRomBlua32Tail, createTextureAtlases, finalizeRompack, generateRomAssets,
+		getResMetaList, getResourcesList } = await import('./rombuilder');
+	const { lintCartSources } = await import('./cart_lua_linter_runtime');
 
 	const runBIOSStep = async <T>(task: string, action: () => Promise<T>): Promise<T> => {
 		const result = progress ? await progress.runWithDetail(task, action) : await action();
@@ -419,15 +334,15 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		return result;
 	};
 	await runBIOSStep(TASK.BIOS_LINT, () => lintCartSources({
-		roots: [normalizePathKey(biosSourcePath)],
+		sources: sourceFiles.map(file => inputs.files.get(resolve(file))!),
 		profile: 'bios',
 	}));
 
-	const BIOSResMetaList = await runBIOSStep(TASK.MANIFEST_SCAN, () => getResMetaList([BIOSResPath], {
+	const BIOSResMetaList = await runBIOSStep(TASK.MANIFEST_SCAN, () => getResMetaList(inputs, {
 		domain: 'system',
 		sourceOnlyLuaRootFiles: [],
 		sourceOnlyLuaModuleRoots: [],
-		extraLuaPaths: [biosSourcePath],
+		extraLuaFiles: sourceFiles,
 		virtualRoot: BIOSVirtualRoot,
 	}));
 	const BIOSResources = await runBIOSStep(TASK.RESOURCE_LIST, () => getResourcesList(BIOSResMetaList));
@@ -469,13 +384,12 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 		domain: 'system',
 	});
-	await runBIOSStep(TASK.BIOS_FINALIZE, () => finalizeRompack(BIOSRomName, {
-		projectRootPath: BIOSVirtualRoot,
-		debug,
-		blua32: BIOSBlua32,
-		layout: BIOSLayout,
-		outputDirectory,
-	}));
+	await runBIOSStep(TASK.BIOS_FINALIZE, async () => {
+		const outputs = await finalizeRompack(BIOSRomName, {
+			projectRootPath: BIOSVirtualRoot, debug, blua32: BIOSBlua32, layout: BIOSLayout, outputDirectory,
+		});
+		await recordRomBuild(BIOSRomPath, { recipe, inputs: inputs.identity, outputs });
+	});
 	if (progress) {
 		await progress.showDone();
 	}
@@ -486,6 +400,7 @@ async function main() {
 	let progress: ProgressReporter | undefined;
 	let romOutputPath = '';
 	let luaErrorVirtualRoots: string[] = [];
+	let inputs: RomBuildInputs | undefined;
 	const bufferedLogs: string[] = [];
 	try {
 		printBanner();
@@ -497,7 +412,10 @@ async function main() {
 
 		if (mode === 'bios') {
 			progress = ui.createProgress(biosBuildTasks);
-			await runBIOSBuild(options, progress);
+			const sourceFiles = collectCartSourceFiles([biosSourcePath]);
+			inputs = await prepareRomInputs([respath], sourceFiles);
+			luaErrorVirtualRoots = [join(respath, '..')];
+			await runBIOSBuild(options, inputs, sourceFiles, progress);
 			writeOut('\n');
 			return;
 		}
@@ -508,18 +426,21 @@ async function main() {
 		const virtualRoot = projectRootPath;
 		luaErrorVirtualRoots = [virtualRoot];
 
-		const resourceRoots = [respath];
-		const extraLuaPathSet = new Set<string>(extraLuaRoots.map(normalizePathKey));
-		const libraryLuaPathSet = new Set<string>(libraryLuaRoots.map(normalizePathKey));
-		if (romPackDebug) {
-			libraryLuaPathSet.add(normalizePathKey(testlibLuaPath));
-			libraryLuaPathSet.add(join('tests', projectRootPath));
-		}
 		const cartSourceFiles = collectCartSourceFiles(extraLuaRoots);
+		const librarySourceFiles = collectCartSourceFiles(libraryLuaRoots);
+		const testLibraryFiles = debug ? collectCartSourceFiles([testlibLuaPath]) : [];
+		const testModuleFiles = debug ? collectCartSourceFiles([join('tests', projectRootPath)]) : [];
+		const allLibraryFiles = [...librarySourceFiles, ...testLibraryFiles, ...testModuleFiles];
+		const scenarioSourceFiles = debug ? collectScenarioTestSourceFiles(projectRootPath) : [];
 		const cartHasProgramSource = cartSourceFiles.length !== 0;
-		const scenarioTestSources = romPackDebug
-			? collectScenarioTestSourceAssets(projectRootPath)
-			: { sourceFiles: [], assets: [] };
+		const biosImportsPath = cartHasProgramSource
+			? join(outputDirectory, `${SYSTEM_ROM_NAME}${debug ? '.debug' : ''}.rom${BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX}`)
+			: undefined;
+		if (biosImportsPath !== undefined && !existsSync(biosImportsPath)) {
+			throw new Error(`BIOS import library not found at "${biosImportsPath}". Build the BIOS ROM first.`);
+		}
+		inputs = await prepareRomInputs([respath], [...cartSourceFiles, ...allLibraryFiles, ...scenarioSourceFiles,
+			...(biosImportsPath === undefined ? [] : [biosImportsPath])]);
 
 		if (!rom_name) {
 			throw new Error('Missing required argument: --romname or ROM_NAME environment variable.');
@@ -531,7 +452,7 @@ async function main() {
 		rom_name = rom_name.toLowerCase();
 
 		if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
-		const romManifest = await getRomManifest(respath);
+		const romManifest = getRomManifest(inputs);
 		if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
 		title = romManifest.title ?? title;
 		romOutputPath = join(outputDirectory, `${rom_name}${romPackDebug ? '.debug' : ''}.rom`);
@@ -540,67 +461,41 @@ async function main() {
 		logBullet('ROM', pc.bold(pc.white(rom_name)));
 		logBullet('Title', pc.white(title));
 		logBullet('Mode', pc.magenta(mode));
-		logBullet('Resources', pc.white(resourceRoots[0]));
+		logBullet('Resources', pc.white(respath));
 
 		logDivider('Options');
-		logBullet('Rebuild', force ? pc.yellow('force') : pc.green('auto (mtime check)'));
+		logBullet('Rebuild', force ? pc.yellow('force') : pc.green('auto (recipe + input content)'));
 		logBullet('GX textures', pc.green('enabled'));
 		logBullet('Lua case', pc.green('lower-case identifiers required'));
 		logBullet('Build', debug ? pc.cyan('DEBUG') : pc.blue('NON-DEBUG'));
 		logBullet('Opt level', pc.white(`-O${optLevel}`));
-		const biosImportsPath = cartHasProgramSource
-			? join(
-				outputDirectory,
-				`${SYSTEM_ROM_NAME}${romPackDebug ? '.debug' : ''}.rom${BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX}`,
-			)
-			: undefined;
-		if (biosImportsPath !== undefined && !existsSync(biosImportsPath)) {
-			throw new Error(`BIOS import library not found at "${biosImportsPath}". Build the BIOS ROM first.`);
-		}
-
-		let rebuildRequired = true;
-		if (force) {
-			progress.removeTasks(rebuildCheckTasks);
-		}
-		else {
-			logInfo('Rebuild only if inputs are newer than outputs');
-		}
+		const recipe: RomBuildRecipe = { domain: 'cart', debug, optLevel, projectRoot: virtualRoot, toolchain: romToolchainIdentity() };
 		logDivider('Pipeline');
-		logInfo(`Starting for ${pc.bold(pc.blue(`${rom_name}`))}`);
-
-		if (!force) {
-			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, respath, {
-				domain: 'cart',
-				extraLuaPaths: [...extraLuaPathSet, ...libraryLuaPathSet],
-				buildSourceDirectories: ROM_BUILD_SOURCE_DIRECTORIES,
-				buildSourceFiles: [
-					...ROM_BUILD_SOURCE_FILES,
-					...scenarioTestSources.sourceFiles,
-				],
-				debug,
-				romFilePath: romOutputPath,
-				biosImportsFilePath: biosImportsPath,
-			}));
-			if (!rebuildRequired) {
-				logInfo('Rebuild skipped: cart rom is newer than sources/assets (use --force to override)');
-			}
-			progress.skipTasks(rebuildCheckTasks.length);
-		} else rebuildRequired = true;
+		logInfo(`Starting for ${pc.bold(pc.blue(rom_name))}`);
+		const buildStatus = force ? 'forced' : await progress.runWithDetail('Compare build inputs', () => romBuildStatus(romOutputPath, recipe, inputs.identity));
+		logBullet('Build reason', buildStatus);
+		const rebuildRequired = buildStatus !== 'up-to-date';
 		if (!rebuildRequired) {
+			logInfo('Rebuild skipped: recipe, captured inputs and output content are unchanged');
 			progress.removeTasks(romBuildTasks);
 		}
+
 		progress.showInitial();
 
 		await progress.taskCompleted();
 		romOutputPath = join(outputDirectory, `${rom_name}${romPackDebug ? '.debug' : ''}.rom`);
 
 		if (rebuildRequired) {
-			const romResMetaList = await progress.runWithDetail('Scan resources', () => getResMetaList(resourceRoots, {
+			const { TEST_EXECUTION_MODULE_PATH } = await import('../../toolchain/ts/rompack/test_cartridge');
+			const { buildRomBlua32Tail, createTextureAtlases, finalizeRompack, generateRomAssets,
+				getResMetaList, getResourcesList } = await import('./rombuilder');
+			const { lintCartSources } = await import('./cart_lua_linter_runtime');
+			const romResMetaList = await progress.runWithDetail('Scan resources', () => getResMetaList(inputs, {
 				domain: 'cart',
 				extraLuaFiles: cartSourceFiles,
-				libraryLuaPaths: Array.from(libraryLuaPathSet),
-				sourceOnlyLuaRootFiles: scenarioTestSources.sourceFiles,
-				sourceOnlyLuaModuleRoots: scenarioTestSources.sourceFiles.length === 0 ? [] : [TEST_EXECUTION_MODULE_PATH],
+				libraryLuaFiles: allLibraryFiles,
+				sourceOnlyLuaRootFiles: scenarioSourceFiles,
+				sourceOnlyLuaModuleRoots: scenarioSourceFiles.length === 0 ? [] : [TEST_EXECUTION_MODULE_PATH],
 				virtualRoot,
 			}));
 			await progress.taskCompleted();
@@ -619,13 +514,13 @@ async function main() {
 
 			const romAssets = await progress.runWithDetail('Generate ROM assets', async () => {
 				const assets = await generateRomAssets(resources, message => progress.setDetail(message));
-				assets.push(...scenarioTestSources.assets);
+				assets.push(...buildScenarioTestSourceAssets(scenarioSourceFiles.map(file => inputs.files.get(resolve(file))!)));
 				return assets;
 			});
 			const romLayout = layoutRomPrefix(romAssets, romPackDebug, romManifest);
 			let blua32: CartRomBlua32Tail | null = null;
 			if (biosImportsPath !== undefined) {
-				const biosImports = decodeBlua32BiosImports(readFileSync(biosImportsPath));
+				const biosImports = decodeBlua32BiosImports(inputs.files.get(resolve(biosImportsPath))!.bytes);
 				const assetSymbols = collectRomAssetSymbols(romLayout.entries, 'cart');
 				const assetSymbolModuleSource = buildRomAssetSymbolModuleSourceFromSymbols(assetSymbols);
 				blua32 = buildRomBlua32Tail(romAssets, {
@@ -652,26 +547,21 @@ async function main() {
 				});
 			}
 			await progress.taskCompleted();
-			const cartLuaRoots = Array.from(extraLuaPathSet);
-			const sharedLuaRoots = debug
-				? [...libraryLuaRoots, testlibLuaPath]
-				: libraryLuaRoots;
 			if (biosImportsPath !== undefined) {
 				await progress.runWithDetail('Lint cart + shared Lua', async () => {
-					await lintCartSources({ roots: cartLuaRoots, profile: 'cart' });
-					await lintCartSources({ roots: sharedLuaRoots, profile: 'bios' });
+					await lintCartSources({ sources: cartSourceFiles.map(file => inputs.files.get(resolve(file))!), profile: 'cart' });
+					await lintCartSources({ sources: [...librarySourceFiles, ...testLibraryFiles].map(file => inputs.files.get(resolve(file))!), profile: 'bios' });
 				});
 			}
 			await progress.taskCompleted();
 
-			await progress.runWithDetail('Finalize ROM pack', () => finalizeRompack(rom_name, {
-				projectRootPath,
-				status: message => progress.setDetail(message),
-				debug: romPackDebug,
-				blua32,
-				layout: romLayout,
-				outputDirectory,
-			}));
+			await progress.runWithDetail('Finalize ROM pack', async () => {
+				const outputs = await finalizeRompack(rom_name, {
+					projectRootPath, status: message => progress.setDetail(message),
+					debug: romPackDebug, blua32, layout: romLayout, outputDirectory,
+				});
+				await recordRomBuild(romOutputPath, { recipe, inputs: inputs.identity, outputs });
+			});
 			await progress.taskCompleted();
 		}
 
@@ -691,7 +581,7 @@ async function main() {
 			await progress.pulse();
 			const failedTask = progress.currentTask();
 			const summary = e instanceof LuaError
-				? `${resolveLuaSourcePath(e.path, luaErrorVirtualRoots)}:${e.line}:${e.column}: ${e.message}`
+				? `${e.path}:${e.line}:${e.column}: ${e.message}`
 				: detailLines[0] ?? String(e);
 			if (failedTask) {
 				progress.fail(failedTask, summary);
@@ -717,7 +607,7 @@ async function main() {
 		if (esErrors.length > 0) {
 			prettyErrors.push(...esErrors);
 		} else if (e instanceof LuaError) {
-			prettyErrors.push(...formatLuaBuildError(e, luaErrorVirtualRoots));
+			prettyErrors.push(...formatLuaBuildError(e, inputs, luaErrorVirtualRoots));
 		} else {
 				// Only add main error message if no esbuild errors were extracted
 				const mainMessage = (e as any)?.message as string;

@@ -1,44 +1,36 @@
 import { Buffer } from 'buffer';
 import type { GLTFIndexArray, GLTFMesh, GLTFModel, GLTFNode, GLTFScene, GLTFSkin } from '../../toolchain/ts/rompack/gltf';
-// @ts-ignore
-const { join, parse, resolve } = require('path');
-// @ts-ignore
-const { readFile } = require('fs/promises');
-// @ts-ignore
-const { readFileSync } = require('fs');
+import { dirname, extname, resolve } from 'node:path';
 
 type GLBParseResult = { json: any; bin?: Uint8Array };
 
-type GLTFBufferDefinition = {
-	uri?: string;
-};
-
-type GLTFJsonDefinition = {
-	buffers?: GLTFBufferDefinition[];
+export type GLTFDocument = GLBParseResult & {
+	readonly external: ReadonlyMap<string, Uint8Array>;
+	readonly bufferFiles: ReadonlySet<string>;
 };
 
 function isDataUri(uri: string): boolean {
 	return uri.startsWith('data:');
 }
 
-export function collectGLTFExternalBufferFileSet(files: readonly string[]): Set<string> {
-	const out = new Set<string>();
-	for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
-		const filepath = files[fileIndex];
-		if (parse(filepath).ext.toLowerCase() !== '.gltf') {
-			continue;
-		}
-		const json = JSON.parse(readFileSync(filepath, 'utf8')) as GLTFJsonDefinition;
-		const buffers = json.buffers || [];
-		const dir = parse(filepath).dir;
-		for (let bufferIndex = 0; bufferIndex < buffers.length; bufferIndex += 1) {
-			const uri = buffers[bufferIndex].uri;
-			if (uri && !isDataUri(uri)) {
-				out.add(resolve(join(dir, uri)));
-			}
+/** Resolve all external buffers and images before conversion, from one prepared input set. */
+export function prepareGLTFDocument(bytes: Buffer, path: string, capture: (path: string) => Uint8Array): GLTFDocument {
+	const parsed: GLBParseResult = extname(path).toLowerCase() === '.glb'
+		? parseGLB(bytes) : { json: JSON.parse(bytes.toString('utf8')) };
+	const external = new Map<string, Uint8Array>();
+	const bufferFiles = new Set<string>();
+	for (const definitions of [parsed.json.buffers ?? [], parsed.json.images ?? []]) {
+		for (const definition of definitions) {
+			const uri = definition.uri as string | undefined;
+			if (uri === undefined || external.has(uri)) continue;
+			if (isDataUri(uri)) external.set(uri, Buffer.from(uri.slice(uri.indexOf(',') + 1), 'base64'));
+			else external.set(uri, capture(resolve(dirname(path), uri)));
 		}
 	}
-	return out;
+	for (const definition of parsed.json.buffers ?? []) {
+		if (definition.uri !== undefined && !isDataUri(definition.uri)) bufferFiles.add(resolve(dirname(path), definition.uri));
+	}
+	return { ...parsed, external, bufferFiles };
 }
 
 type AccessorRawArray = Float32Array | Uint8Array | Uint16Array | Uint32Array | Int8Array | Int16Array;
@@ -55,8 +47,8 @@ type AccessorInfo = {
 	normalized: boolean;
 };
 
-function parseGLB(data: ArrayBuffer): GLBParseResult {
-	const dv = new DataView(data);
+function parseGLB(data: Uint8Array): GLBParseResult {
+	const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
 	if (dv.getUint32(0, true) !== 0x46546C67) throw new Error('bad GLB magic');
 	const version = dv.getUint32(4, true);
 	if (version !== 2) throw new Error(`unsupported GLB version ${version}`);
@@ -69,10 +61,10 @@ function parseGLB(data: ArrayBuffer): GLBParseResult {
 		const chunkLength = dv.getUint32(offset, true); offset += 4;
 		const chunkType = dv.getUint32(offset, true); offset += 4;
 		if (chunkType === 0x4E4F534A) { // JSON
-			const bytes = new Uint8Array(data, offset, chunkLength);
+			const bytes = data.subarray(offset, offset + chunkLength);
 			json = JSON.parse(decoder.decode(bytes));
 		} else if (chunkType === 0x004E4942) { // BIN
-			bin = new Uint8Array(data, offset, chunkLength);
+			bin = data.subarray(offset, offset + chunkLength);
 		}
 		offset += chunkLength;
 		const padding = chunkLength % 4;
@@ -82,27 +74,8 @@ function parseGLB(data: ArrayBuffer): GLBParseResult {
 	return { json, bin };
 }
 
-export async function loadGLTFModel(data: string | ArrayBuffer, dir: string, resname: string): Promise<GLTFModel> {
-	let json: any;
-	let glbBin: Uint8Array;
-
-	if (typeof data === 'string') {
-		json = JSON.parse(data);
-	} else {
-		const parsed = parseGLB(data);
-		json = parsed.json;
-		glbBin = parsed.bin;
-	}
-
-	async function getExternal(uri: string): Promise<Uint8Array> {
-		if (isDataUri(uri)) {
-			const base64 = uri.split(',')[1];
-			const buffer = Buffer.from(base64, 'base64');
-			return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-		}
-		const file = await readFile(join(dir, uri));
-		return new Uint8Array(file.buffer, file.byteOffset, file.byteLength);
-	}
+export async function loadGLTFModel(document: GLTFDocument, resname: string): Promise<GLTFModel> {
+	const { json, bin: glbBin, external } = document;
 
 	const buffers: Uint8Array[] = [];
 	if (glbBin) {
@@ -116,7 +89,7 @@ export async function loadGLTFModel(data: string | ArrayBuffer, dir: string, res
 		for (let i = 0; i < bufList.length; i++) {
 			const b = bufList[i];
 			if (!b?.uri) throw new Error(`buffer[${i}] missing uri and no GLB BIN chunk`);
-			buffers[i] = await getExternal(b.uri);
+			buffers[i] = external.get(b.uri)!;
 		}
 	}
 
@@ -522,7 +495,7 @@ export async function loadGLTFModel(data: string | ArrayBuffer, dir: string, res
 	if (Array.isArray(json.images)) {
 		const entries = await Promise.all(json.images.map(async (img: any) => {
 			if (img.uri) {
-				return { uri: img.uri, buffer: await getExternal(img.uri) };
+				return { uri: img.uri, buffer: external.get(img.uri)! };
 			}
 			if (img.bufferView !== undefined) {
 				const bufferView = bufferViews[img.bufferView];
