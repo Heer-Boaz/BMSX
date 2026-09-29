@@ -75,6 +75,29 @@ test('Studio clipboard: native actions, actual denied writes, focused controls a
 	assert.equal((await snapshot()).source, 'return clipboard_probe');
 	await press('Control', 'z'); assert.equal((await snapshot()).source, source);
 
+	// Programmatic Paste uses a real permission-controlled read, not execCommand('paste').
+	await press('Control', 'a'); await put('return 42');
+	await click((await page.evaluate(() => (globalThis as any).clipboardUI.menu())).header);
+	await click((await page.evaluate(() => (globalThis as any).clipboardUI.menu())).items.find(item => item.command === 'paste').bounds);
+	await page.waitForFunction(() => (globalThis as any).clipboardUI.snapshot().source === 'return 42');
+	await press('Control', 'z'); assert.equal((await snapshot()).source, source);
+	// Reject the read through Chromium's actual permission owner, not a mocked API.
+	const cdp = await page.context().newCDPSession(page);
+	const { targetInfo } = await cdp.send('Target.getTargetInfo');
+	await cdp.send('Browser.setPermission', { permission: { name: 'clipboard-read' }, setting: 'denied', origin: new URL(page.url()).origin,
+		browserContextId: targetInfo.browserContextId });
+	const beforeDeniedPaste = await snapshot();
+	await command('paste');
+	await page.waitForFunction(previous => {
+		const feedback = (globalThis as any).clipboardUI.snapshot().feedback;
+		return feedback.visible && feedback.text !== previous;
+	}, beforeDeniedPaste.feedback.text);
+	assert.equal((await snapshot()).source, beforeDeniedPaste.source);
+	assert.equal((await snapshot()).version, beforeDeniedPaste.version);
+	await cdp.detach();
+	await page.context().clearPermissions();
+	await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+
 	for (const name of ['findLocal', 'commandPalette', 'lineJump', 'terminal', 'assistant']) {
 		await page.evaluate(() => (globalThis as any).clipboardUI.source());
 		await command(name);

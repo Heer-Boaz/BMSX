@@ -8,6 +8,46 @@ import { KeyModifier } from '../../hosts/common/input/player';
 import { Input } from '../../hosts/common/input/manager';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
+import type { ClipboardContents } from '../../hosts/common/clipboard';
+import { executeClipboardAction } from '../../ide/input/clipboard';
+
+test('pending clipboard reads cannot edit a control after blur, even when the same target is refocused', async t => {
+	t.after(() => inputFocus.setTarget(null));
+	const field = new TextField();
+	const other = new TextField();
+	const clipboard = new HeadlessClipboard();
+	let resolve!: (contents: ClipboardContents) => void;
+	clipboard.read = () => new Promise(done => { resolve = done; });
+	field.focusTarget.focus();
+	const pending = executeClipboardAction(clipboard, 'paste', field);
+	other.focusTarget.focus();
+	field.focusTarget.focus();
+	resolve({ text: 'old request', images: [] });
+	await pending;
+	assert.equal(field.text, '');
+	assert.equal(field.canUndo, false);
+	assert.equal(other.text, '');
+	const current = executeClipboardAction(clipboard, 'paste', field);
+	resolve({ text: 'current request', images: [] });
+	await current;
+	assert.equal(field.text, 'current request');
+	field.undo();
+	assert.equal(field.text, '');
+});
+
+test('a clipboard read completing after the control becomes read-only cannot edit its value', async t => {
+	t.after(() => inputFocus.setTarget(null));
+	const field = new TextField();
+	const clipboard = new HeadlessClipboard();
+	clipboard.text = 'external text';
+	field.focusTarget.focus();
+	const pending = executeClipboardAction(clipboard, 'paste', field);
+	field.readOnly = true;
+	await pending;
+	assert.equal(field.text, '');
+	assert.equal(field.canUndo, false);
+});
 
 test('focus dispatch has one concrete keyboard owner and detaches before blur notification', () => {
 	const focus = new InputFocusService();

@@ -1,11 +1,14 @@
 import type { RgbaImage } from '../../machine/ts/render/image';
 
 export interface Clipboard {
+	/** Whether the host offers programmatic Paste. Native user Paste is independent. */
+	readonly canRead: boolean;
+	read(): Promise<ClipboardContents>;
 	/** Explicit, non-destructive access. Rejection never means a private copy succeeded. */
 	readText(): Promise<string>;
 	writeText(text: string): Promise<void>;
 	/** Synchronous user action. Cut may edit only after the platform admits the write. */
-	execute(action: ClipboardAction, target: ClipboardTarget): void;
+	execute(action: 'copy' | 'cut', target: ClipboardTarget): void;
 }
 
 export type ClipboardAction = 'copy' | 'cut' | 'paste';
@@ -41,7 +44,7 @@ export function clipboardAction(code: string, ctrl: boolean, meta: boolean, shif
 	return undefined;
 }
 
-/** Captured during a native paste event. File reads belong to the receiving control. */
+/** Captured from the system clipboard. Image decoding belongs to the receiving control. */
 export type ClipboardContents = {
 	text: string;
 	images: readonly ClipboardImage[];

@@ -2,6 +2,7 @@ import { clipboardAction, ClipboardAccessError, type Clipboard, type ClipboardAc
 import type { PlayerInput } from '../../hosts/common/input/player';
 import * as constants from '../common/constants';
 import { showEditorMessage } from '../common/feedback_state';
+import { inputFocus } from './focus';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './keyboard/key_input';
 
 export function reportClipboardFailure(error: ClipboardAccessError): void {
@@ -23,13 +24,28 @@ export async function writeClipboard(clipboard: Clipboard, text: string, success
 }
 
 /** Commands and non-browser shortcuts share permission failure feedback and admission. */
-export function executeClipboardAction(clipboard: Clipboard, action: ClipboardAction, target: ClipboardTarget | undefined): void {
+export function executeClipboardAction(clipboard: Clipboard, action: ClipboardAction, target: ClipboardTarget | undefined): void | Promise<void> {
 	if (target?.[action] === undefined || action !== 'copy' && target.readOnly) return;
+	if (action === 'paste') return pasteClipboard(clipboard, target);
 	try { clipboard.execute(action, target); }
 	catch (error) {
 		if (!(error instanceof ClipboardAccessError)) throw error;
 		reportClipboardFailure(error);
 	}
+}
+
+async function pasteClipboard(clipboard: Clipboard, target: ClipboardTarget): Promise<void> {
+	// Browser permission UI can outlive this control. Blur cancels the edit,
+	// including switching documents that share a retained source-editor target.
+	let cancelled = false;
+	const unbind = inputFocus.target!.onDidBlur(() => { cancelled = true; });
+	try {
+		const contents = await clipboard.read();
+		if (!cancelled && !target.readOnly) target.paste!(contents);
+	} catch (error) {
+		if (!(error instanceof ClipboardAccessError)) throw error;
+		reportClipboardFailure(error);
+	} finally { unbind(); }
 }
 
 /** Native browser gestures bypass polling; other hosts dispatch the same focused target. */
@@ -40,7 +56,7 @@ export function handleClipboardBindings(input: PlayerInput, clipboard: Clipboard
 		const action = clipboardAction(code, isCtrlDown(input), isMetaDown(input), isShiftDown(input), isAltDown(input));
 		if (action === undefined) continue;
 		consumeIdeKey(code, input);
-		executeClipboardAction(clipboard, action, target);
+		void executeClipboardAction(clipboard, action, target);
 		return true;
 	}
 	return false;

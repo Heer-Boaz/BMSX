@@ -110,7 +110,7 @@ export class IdeCommandController {
 		if (SOURCE_COMMANDS.has(command) && edit !== undefined && !edit.commit()) return;
 		switch (command) {
 			case 'copy': case 'cut': case 'paste':
-				executeClipboardAction(this.editor.clipboard, command, this.editor.clipboardTarget);
+				void executeClipboardAction(this.editor.clipboard, command, this.editor.clipboardTarget);
 				return;
 			case 'navigateBack':
 				void this.editor.navigation.goBackward();
@@ -299,7 +299,8 @@ export class IdeCommandController {
 		const context = focus?.commandContext;
 		switch (command) {
 			case 'copy': case 'cut': case 'paste':
-				return focus?.clipboard?.[command] !== undefined && (command === 'copy' || !focus.clipboard.readOnly);
+				return focus?.clipboard?.[command] !== undefined && (command === 'copy' || !focus.clipboard.readOnly)
+					&& (command !== 'paste' || this.editor.clipboard.canRead);
 			case 'hot-resume':
 				return this.hotResumes.acceptingRequests && !this.execution.launchPending;
 			case 'reboot':

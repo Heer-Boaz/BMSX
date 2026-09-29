@@ -39,6 +39,9 @@ export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (na
 			const tab = getActiveTab();
 			return {
 				text: field?.text, canUndo: field?.canUndo, canRedo: field?.canRedo,
+				canPaste: test.ide.editor.commands.isEnabled('paste'),
+				images: tab.kind === 'assistant' ? tab.attachments.urls : [],
+				imagesReady: tab.kind === 'assistant' && tab.attachments.ready,
 				selection: target?.copy?.(), source: source.buffer.getText(), version: source.version,
 				query: editorSearchState.query, line: lineJumpState.value,
 				rename: renameController.getField().text, feedback: editorFeedbackState.message,

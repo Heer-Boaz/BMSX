@@ -24,6 +24,7 @@ export async function startAssistantImageTest(kind: StudioRendererKind, canvas: 
 			queued: view.conversation.queued, paused: test.cycles() === cycles, composer: view.composerBounds, layout: view.layout }; },
 		async composer() { await test.click(view.composerBounds); },
 		async key(...keys: string[]) { await test.press(...keys); },
+		async paste() { test.ide.editor.commands.execute('paste'); await test.frame(); },
 		async submit() { await test.press('ControlLeft', 'Enter'); await test.until(() => view.conversation.state === 'ready', 'images: model completed'); },
 		async history() {
 			const thread = view.conversation.thread!.id;

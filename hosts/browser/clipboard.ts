@@ -1,9 +1,11 @@
-import { ClipboardAccessError, type Clipboard, type ClipboardAction, type ClipboardContents, type ClipboardImage, type ClipboardTarget } from '../common/clipboard';
+import { ClipboardAccessError, type Clipboard, type ClipboardContents, type ClipboardImage, type ClipboardTarget } from '../common/clipboard';
 import type { BrowserInputHub } from './input';
 import { readClipboardImage } from './image';
 
 /** OS clipboard access. There is no browser-private text clipboard. */
 export class BrowserClipboard implements Clipboard {
+	public get canRead(): boolean { return navigator.clipboard?.read !== undefined; }
+
 	/** Native events retain user activation and work on LAN HTTP without API permissions. */
 	public bindInput(input: BrowserInputHub, resolveTarget: () => ClipboardTarget | undefined,
 		reportFailure: (error: ClipboardAccessError) => void): () => void {
@@ -39,6 +41,33 @@ export class BrowserClipboard implements Clipboard {
 		};
 	}
 
+	/** Menus use the permission-controlled API, never the unsupported execCommand('paste'). */
+	public async read(): Promise<ClipboardContents> {
+		if (!this.canRead) throw new ClipboardAccessError('paste');
+		try {
+			const items = await navigator.clipboard.read();
+			// An item's MIME types are alternative representations, not separate attachments.
+			// Acquire every chosen blob now; decoding may happen later in the draft owner.
+			const contents = await Promise.all(items.map(async item => {
+				const imageType = item.types.includes('image/png') ? 'image/png' : item.types.find(type => type.startsWith('image/'));
+				const [text, image] = await Promise.all([
+					item.types.includes('text/plain') ? item.getType('text/plain').then(blob => blob.text()) : '',
+					imageType === undefined ? undefined : item.getType(imageType),
+				]);
+				return { text, image };
+			}));
+			const text: string[] = [], images: ClipboardImage[] = [];
+			for (const item of contents) {
+				if (item.text.length > 0) text.push(item.text);
+				if (item.image !== undefined) {
+					const blob = item.image;
+					images.push({ read: () => readClipboardImage(blob) });
+				}
+			}
+			return { text: text.join('\n'), images };
+		} catch (cause) { throw new ClipboardAccessError('paste', { cause }); }
+	}
+
 	public async readText(): Promise<string> {
 		if (navigator.clipboard === undefined) throw new ClipboardAccessError('paste');
 		try { return await navigator.clipboard.readText(); }
@@ -56,18 +85,16 @@ export class BrowserClipboard implements Clipboard {
 	}
 
 	/** Menus/commands must observe execCommand's result before editing. Never await Cut. */
-	public execute(action: ClipboardAction, target: ClipboardTarget): void {
-		const text = action === 'paste' ? null : target.copy!();
-		if (action !== 'paste' && text === null) return;
+	public execute(action: 'copy' | 'cut', target: ClipboardTarget): void {
+		const text = target.copy!();
+		if (text === null) return;
 		let handled = false;
 		let failure: ClipboardAccessError | undefined;
-		let contents: ClipboardContents | undefined;
 		const receive = (event: ClipboardEvent) => {
 			if (!event.isTrusted || event.clipboardData === null) return;
 			event.preventDefault(); event.stopImmediatePropagation();
 			try {
-				if (action === 'paste') contents = this.readEvent(event.clipboardData);
-				else event.clipboardData.setData('text/plain', text!);
+				event.clipboardData.setData('text/plain', text);
 				handled = true;
 			} catch (cause) { failure = new ClipboardAccessError(action, { cause }); }
 		};
@@ -79,7 +106,6 @@ export class BrowserClipboard implements Clipboard {
 		if (failure !== undefined) throw failure;
 		if (!accepted || !handled) throw new ClipboardAccessError(action);
 		if (action === 'cut') target.cut!();
-		else if (action === 'paste') target.paste!(contents!);
 	}
 
 	private readEvent(data: DataTransfer): ClipboardContents {

@@ -42,7 +42,11 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 		await ui.key('Escape');
 	});
 	// Preview returns to the attachment control; paste must still address this draft.
-	await f.page.keyboard.press('Control+V');
+	if (backend === 'software') await f.page.keyboard.press('Control+V');
+	else {
+		await f.page.context().grantPermissions(['clipboard-read']);
+		await f.page.evaluate(() => (globalThis as any).images.paste());
+	}
 	await f.page.waitForFunction(() => { const state = (globalThis as any).images.snapshot(); return state.images.length === 2 && state.ready; });
 	await f.page.evaluate(async () => {
 		const ui = (globalThis as any).images;
