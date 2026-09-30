@@ -427,12 +427,12 @@ larger gaps remain; the acceptance did **not** implement them indirectly:
 
 - New FSM/BT/effect registrations still start as canonical Lua, then have visual
   editing and live debugging. There is no complete graphical creation wizard.
-- The inline BT task's graph label is `TASK=<TABLE 1>`, not its callback name.
-  Live BT state still lacks compiler-owned source-node execution correspondence;
+- At this acceptance, the inline BT task label was `TASK=<TABLE 1>`; the
+  follow-through below fixes its source summary. Live BT state still lacks
+  compiler-owned source-node execution correspondence;
   execution slots must not be relabeled as authored node IDs.
-- Rewind correctly retires heap-scoped inspection, but also clears Actor Lab's
-  actor selection. This required reselecting the live actor; stable selection
-  needs a real identity/lifetime design, not retention of expired table handles.
+- Rewind initially required reselecting the actor. The follow-through below
+  separates the selection lifetime from expired heap-scoped inspection handles.
 - Forward frame navigation from an active source-debugger stop is rejected.
   Source stepping/Continue and history rewind have distinct execution owners.
   No silent continue, reset or forced frame advance was added.
@@ -488,3 +488,63 @@ effort and `week 63% left`, not placeholder quota. These account fixtures use
 synthetic credentials and a non-forwarding local issuer, not the user's login
 or paid inference. One intervening full rerun was terminated with SIGTERM;
 the completed rerun above, not that interrupted process, supplies the final count.
+
+## Selection and BT presentation follow-through (2026-09-30)
+
+Two bounded repairs address the observed authoring friction, without adding
+guest instrumentation or a second behavior representation:
+
+- Actor Lab preserves actor/child selection and collapse state across history
+  restore, while every guest borrow and public inspection handle still expires.
+  Reacquisition waits for the requested history position. Missing actors or
+  children lose selection instead of selecting a replacement row. A hidden pane
+  resolves pending selection before live execution can reuse discarded-future
+  allocation identities. Reset/external state loading still clears selection.
+- Inline BT task summaries show their actual authored callback expressions
+  (`EXECUTE=STAR.STEP_RIGHT` in this cart). Named task references remain named;
+  arbitrary/dynamic Lua is not evaluated to manufacture a label. During visual
+  inspection, the graph footer also incorrectly showed `0 CARDS` for four cards:
+  layout now updates status when publishing the graph, not only on navigation.
+
+The production references were [VS Code's retained debugger tree view state](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/variablesView.ts)
+and [LimboAI's task-tree model labels](https://github.com/limbonaut/limboai/blob/master/editor/task_tree.cpp).
+Only their separation of view identity, current runtime objects and model-owned
+labels is used; BMSX still consumes its own snapshot IDs and canonical Lua AST.
+
+The archived new-asset cart was reopened with the existing server and public
+Studio MCP, using physical keyboard/pointer input for the views. At tick 671,
+cycle 457,081,519, the selected BT and a collapsed FSM survived rewind to tick
+641 and replay to 671. The selected BT's restored properties opened directly,
+without another Actor picker. All 17 observed actor scalars matched, including
+x=192/y=96. Repeating the navigation while Actor Lab was hidden also retained
+its selection/collapse state. Physical Reboot cleared the view as intended.
+With Actor Lab hidden, another run sought from tick 200 to tick 0, before World
+was loaded, and resumed live execution. At tick 275 the recreated actor had
+reused hash 3897. Actor Lab still required a new selection, rather than silently
+retargeting the old one; cancelling its picker left selection empty.
+The graph's callback label and corrected `4 CARDS` footer were visually checked.
+Screenshots verify these UI details; frame/state claims come from tool receipts,
+not inferred sprite positions.
+
+One additional probe initially stopped at a different boundary: immediate frame
+navigation after a completed Reboot was unavailable. A subsequent status read
+showed boot `reset` alongside `operationActive: true` and `canStepForward: false`.
+The completed selection probe paused before Reboot and recorded status before
+stepping. This establishes the selection result, not guaranteed immediate
+Reboot-to-step admission. That readiness/tool-composition question is retained
+as separate follow-up; no automatic retry, sleep or admission bypass was added
+to the product.
+
+Validation: focused compiled-guest/source suites passed 60/60; the actual
+browser Actor inspection/execution, behavior and selected-frame workflows
+passed on software, WebGL2 and WebGPU. IDE/browser typechecks, browser Studio
+build and strict architecture audit passed. The actor identity probe includes
+actual reuse of a discarded child's hash on a new execution branch and verifies
+that this does not take over selection. No string-layout snapshot tests were
+introduced. No CPU/C++/cartlib or native Terminal semantics changed.
+
+Evidence: `.bmsx/authoring/selection-20260930/`, with public tool/UI action
+receipts, scalar comparison and inspected captures. This still does **not**
+claim semantic active-BT-node highlighting, graphical from-scratch definition
+creation, a graphical AEM designer or Studio audio-output inspection. Those
+remain separate owner/design work rather than hidden additions to this repair.

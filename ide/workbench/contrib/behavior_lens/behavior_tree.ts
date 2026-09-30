@@ -111,10 +111,17 @@ function buildBehaviorTreeNode(
 
 function behaviorTreeNodeDetail(table: LuaTableConstructorExpression, typeLabel: string): string {
 	let fieldNames: readonly string[] = [];
+	let taskDetail = '';
 	switch (typeLabel) {
-		case 'task':
-			fieldNames = ['task', 'interval_ticks'];
+		case 'task': {
+			const task = findNamedLuaTableField(table, 'task');
+			if (task?.value.kind === LuaSyntaxKind.TableConstructorExpression) {
+				// Inline task callbacks are the authored behavior, not a table-size label.
+				taskDetail = describePresentFields(task.value, ['execute', 'tick', 'abort', 'node_memory']);
+			}
+			fieldNames = taskDetail.length === 0 ? ['task', 'interval_ticks'] : ['interval_ticks'];
 			break;
+		}
 		case 'timeline':
 			fieldNames = ['timeline_id', 'play_options'];
 			break;
@@ -129,7 +136,8 @@ function behaviorTreeNodeDetail(table: LuaTableConstructorExpression, typeLabel:
 			fieldNames = ['key', 'value'];
 			break;
 	}
-	return describePresentFields(table, fieldNames);
+	const detail = describePresentFields(table, fieldNames);
+	return taskDetail.length === 0 ? detail : detail.length === 0 ? taskDetail : `${taskDetail} | ${detail}`;
 }
 
 function appendBehaviorTreeAttachments(

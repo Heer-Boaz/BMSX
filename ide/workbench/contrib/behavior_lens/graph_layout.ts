@@ -2,6 +2,7 @@ import { layoutBehaviorTreeGraph } from './graph_geometry';
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import type { BehaviorLensGraph, BehaviorLensViewState } from './view_model';
 import { projectBehaviorTreeGraph } from './graph_projection';
+import { updateBehaviorLensStatus } from './navigation';
 
 /** Rebuild only at a source/font boundary. Preserve the selected card's screen anchor. */
 export function prepareBehaviorGraphLayout(state: BehaviorLensViewState, graph: BehaviorLensGraph, font: BFont): void {
@@ -23,6 +24,7 @@ export function prepareBehaviorGraphLayout(state: BehaviorLensViewState, graph: 
 			}
 		}
 		graph.dirty = false;
+		updateBehaviorLensStatus(state);
 	}
 	if (graph.position === 'initial') {
 		viewport.scrollX = -Math.round((viewport.bounds.right - viewport.bounds.left) / 2);

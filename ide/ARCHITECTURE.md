@@ -910,7 +910,10 @@ The common source correspondence remaps either a node use or a connection use.
 In particular a weighted connection owns its choice occurrence, not the
 shared choice initializer's child field. Cards show the authored task, timeline
 or duration instead of CHILD ordinals; main/background roles and choice weights
-remain explicit. Details uses the full property reader and exact source ranges,
+remain explicit. Inline task summaries name their authored execute/tick/abort
+callbacks and memory declaration; referenced tasks retain their written names.
+Projection changes publish the graph's status count with its new model, not at
+the next navigation gesture. Details uses the full property reader and exact source ranges,
 not Quick Pick preview lines. FSM cards and edges keep names/roles rather than
 permanent proof statistics; partial source has a compact indication, with full
 callback/return/entry/guard evidence in Details. A callback that returns no path
