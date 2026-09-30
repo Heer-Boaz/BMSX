@@ -5561,6 +5561,12 @@ opener, which reports denial and never silently retries or replaces this window.
 An opened result acknowledges navigation, not successful boot. Cart/artifact
 window titles describe the opened media, not installed-source equality after
 Hot Resume.
+Build action picks carry their own execution handlers, not action-name strings
+dispatched through another command switch. Handlers capture their build-service
+owner and, for published navigation and Retry, the admitted opener and artifact.
+The existing Quick Pick closes before invoking the selected handler; opening is
+initiated synchronously rather than deferred to a promise continuation. Build
+errors remain command feedback, not silent retries or new service lifetimes.
 The indicator uses shapes as well as theme colors and remains visible when a
 pane replaces its status text. Clicking the indicator opens details and contextual
 Retry. Connection events, rather than render-time IO,

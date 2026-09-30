@@ -191,12 +191,31 @@ Bottom line: Studio already materially improves runtime understanding and
 debugging. The next productivity gain is less orchestration and more reusable
 observations, not more chat chrome or more screenshots.
 
-## Follow-up architecture review
+## Follow-up architecture review: build action handlers
 
-- Review the build quick-pick's string dispatch (`choice.action === 'open'`)
-  against the existing command/handler conventions. Prefer actions with their
-  own handlers over a growing central `if/else` chain; this is a maintainability
-  review, not a claim that comparing an action name is itself incorrect. Include
-  capability capture and Retry when reviewing it.
-  Recorded during the authoring-tool work; not a reason to expand that slice
-  into a general command-system rewrite.
+Completed the bounded review of `choice.action === 'open'`. Build details,
+unacknowledged receipts and blocked-popup recovery now declare each action with
+its own `run` handler. Target, recipe and job selection remain ordinary data
+choices; no general command registry, Quick Pick facade or second action service
+was introduced. The existing picker closes before dispatch. Handlers capture
+the build-service owner and, for opening/Retry, the same opener and immutable
+artifact ID instead of rereading optional composition fields later.
+
+References checked before implementation:
+[VS Code action-bearing picks](https://github.com/microsoft/vscode/blob/main/src/vs/platform/quickinput/browser/pickerQuickAccess.ts)
+and [browser opening/explicit Retry](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/services/host/browser/browserHostService.ts).
+The chosen handler starts immediately, preserving the existing browser activation
+timing. Both synchronous handler failures and asynchronous rejection reach the
+ordinary command feedback; selecting or dismissing a receipt never resubmits it.
+
+Validation: 29 existing Quick Pick checks and 6 build/browser checks pass;
+IDE/browser typechecks, browser product build and strict boundary audit pass.
+A local probe using the real Quick Input controller exercised Copy, log selection,
+Refresh, Cancel, Dismiss, recipe submission, denied writes, thrown openers and
+Retry with the originally captured opener. No exact UI-copy contracts were added.
+In the actual Studio UI, keyboard selection copied the exact published artifact
+ID to the browser clipboard, View Log made one explicit request (this job's log
+was empty), and a pointer click opened the exact artifact in a second registered
+Studio window without changing the first. Evidence is under
+`.bmsx/authoring/build-handlers/`; this is navigation/handler validation, not a
+new gameplay, physical-phone or all-browser popup certification.
