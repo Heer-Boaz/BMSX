@@ -1,0 +1,64 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Standalone WebGPU multi-window diagnostic</title>
+<button id="stop">Stop rendering</button>
+<canvas width="1920" height="1080"></canvas>
+<script type="module">
+const draws = Number(new URL(location.href).searchParams.get('draws'));
+document.body.dataset.stage = 'requestAdapter';
+console.log('requestAdapter');
+const adapter = await navigator.gpu.requestAdapter();
+console.log('adapter', JSON.stringify({
+	vendor: adapter.info.vendor,
+	architecture: adapter.info.architecture,
+	device: adapter.info.device,
+	description: adapter.info.description,
+}));
+document.body.dataset.stage = 'requestDevice';
+console.log('requestDevice');
+const device = await adapter.requestDevice();
+const context = document.querySelector('canvas').getContext('webgpu');
+const format = navigator.gpu.getPreferredCanvasFormat();
+context.configure({ device, format });
+const module = device.createShaderModule({ code: `
+	@vertex fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
+		let pos = array<vec2f, 3>(vec2f(-1, -1), vec2f(3, -1), vec2f(-1, 3));
+		return vec4f(pos[vertex], 0, 1);
+	}
+	@fragment fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
+		var v = pos.xy / 1024.0;
+		for (var i = 0; i < 20; i++) {
+			v = sin(v.yx + v.x * 1.01 + f32(i) * 0.02);
+		}
+		return vec4f(v * 0.5 + 0.5, 0.3, 1);
+	}
+` });
+const pipeline = device.createRenderPipeline({
+	layout: 'auto',
+	vertex: { module, entryPoint: 'vs' },
+	fragment: { module, entryPoint: 'fs', targets: [{ format }] },
+});
+let running = true;
+document.querySelector('#stop').onclick = () => {
+	running = false;
+	console.log('stopped rendering');
+};
+function draw() {
+	if (!running) return;
+	for (let repeat = 0; repeat < draws; repeat++) {
+		const encoder = device.createCommandEncoder();
+		const pass = encoder.beginRenderPass({ colorAttachments: [{
+			view: context.getCurrentTexture().createView(),
+			loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 },
+		}] });
+		pass.setPipeline(pipeline);
+		pass.draw(3);
+		pass.end();
+		device.queue.submit([encoder.finish()]);
+	}
+	requestAnimationFrame(draw);
+}
+draw();
+document.body.dataset.stage = 'ready';
+console.log('ready');
+</script>

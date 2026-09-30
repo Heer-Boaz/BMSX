@@ -173,8 +173,11 @@ not assumptions that existing UI features are absent.
 
 5. **Close reliability and verification gaps before expanding the surface.**
    The third concurrent Studio window stalled at `navigator.gpu.requestAdapter`
-   in this Chromium/SwiftShader environment. A minimal three-window WebGPU sample
-   did not hang; the exact cause is unresolved, not established as a browser limit.
+   in this Chromium/SwiftShader environment. The stall is now also reproduced
+   by three standalone WebGPU pages with sustained rendering and no BMSX code.
+   Stopping the first two pages' rendering released the third adapter request;
+   see the [browser reliability investigation](#multi-window-browser-reliability-investigation).
+   This is not an established window-count limit or a resolved product issue.
    The earlier PieceTree exception is now reproduced and fixed at its owner:
    text edits retired neither an empty Shift-selection anchor on a removed line
    nor, consistently, its recorded Undo state. Browser keyboard editing,
@@ -223,3 +226,69 @@ was empty), and a pointer click opened the exact artifact in a second registered
 Studio window without changing the first. Evidence is under
 `.bmsx/authoring/build-handlers/`; this is navigation/handler validation, not a
 new gameplay, physical-phone or all-browser popup certification.
+
+## Multi-window browser reliability investigation
+
+The original third-window stall is reproducible with Playwright's Chromium
+headless shell **153.0.8010.12** (browser revision 1243) in this WSL software-GPU
+environment. It remains at `navigator.gpu.requestAdapter()`, before device
+creation or Studio registration, with no outstanding application HTTP request.
+The actual WebGPU adapter is Google SwiftShader; the ANGLE renderer under the
+original launch flags is Mesa llvmpipe. Launch flags alone do not identify the
+driver actually selected.
+
+A standalone reproduction now separates this from Studio, cart contents,
+runtime state, authentication and the development server:
+
+```sh
+# Uses the installed Playwright browser; no ROM, build or BMSX server needed.
+node scripts/render/diagnostics/webgpu_multi_window.mjs
+# Control: initialize the same pages/devices without submitting draw work.
+node scripts/render/diagnostics/webgpu_multi_window.mjs --draws=0
+```
+
+The fixture renders a full-screen triangle at 1920×1080, ten submissions per
+animation callback, with a small arithmetic fragment shader. The first two
+pages initialize. In the loaded reproduction, the third adapter request remains
+pending for the 15-second observation interval. Stopping submission in the first
+two pages, without refocusing or closing them, then lets the third initialize
+(observed after about 1.3 seconds in both reduced runs). The no-draw control
+initializes all three pages. The earlier small clear-only
+sample did initialize all three; that did **not** rule out a load-dependent
+browser/GPU problem. Starvation is a working hypothesis, not an identified
+Chromium/Dawn source defect. The diagnostic reports observations, not a test
+pass/fail for Studio startup; its intervals are not application timeouts.
+This does not establish that BMSX's submission rate is optimal, or that ordinary
+hardware-accelerated browsers have the same limitation.
+
+The following experiments are **not fixes** and were not adopted:
+
+- Awaiting the whole GPU queue before every animation callback released the
+  stall, but inserts a global CPU/GPU synchronization point. Allowing two frames
+  in flight did not release it. No such pacing policy was added to the product.
+- Changing to Chromium's new headless mode initialized three Studio runtimes.
+  Public MCP pause, forward/backward stepping and replay worked, but separately
+  inspected browser captures were black. Successful tools or a boot marker are
+  not evidence of a correctly presented UI.
+- Other graphics-flag combinations produced missing shared-image backing,
+  readback failures or GPU-process crashes. A headed trial initialized three
+  windows and its third-window capture visibly showed the source editor, but
+  later reloading one did not finish startup within the observation
+  interval. None establishes reliable multi-window acceptance.
+
+The reduced page/driver are diagnostic-only and load no BMSX modules. This slice
+does not change the browser backend, frame loop, machine runtime, server,
+backend-selection policy or C++ implementation. No adapter retry, timeout-driven
+WebGL fallback or per-frame fence was introduced to turn the observation green.
+The outstanding work is identifying/fixing the browser/GPU behavior and then
+rerunning actual multi-window Studio presentation and reload acceptance.
+
+References inspected: Chromium's own
+[software-GPU pixel-test configurations](https://github.com/chromium/chromium/blob/main/content/test/gpu/gpu_tests/pixel_test_pages.py),
+[SwiftShader setup](https://github.com/chromium/chromium/blob/main/docs/gpu/swiftshader.md),
+[WebGPU command decoder](https://github.com/chromium/chromium/blob/main/gpu/command_buffer/service/webgpu_decoder_impl.cc),
+and Three.js's [animation lifecycle](https://github.com/mrdoob/three.js/blob/dev/src/renderers/common/Animation.js).
+Their implementations were used to check ownership and distinguish scheduling
+experiments from justified application fixes, not copied into the BMSX hot path.
+Local detailed logs, trace and inspected images are under
+`.bmsx/authoring/multi-window-reliability/`.
