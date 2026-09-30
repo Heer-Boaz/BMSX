@@ -292,3 +292,86 @@ Their implementations were used to check ownership and distinguish scheduling
 experiments from justified application fixes, not copied into the BMSX hot path.
 Local detailed logs, trace and inspected images are under
 `.bmsx/authoring/multi-window-reliability/`.
+
+## Visual behavior authoring and AEM acceptance
+
+Follow-up on `d82e6ed02`, using **one** real Nemesis Studio window and the
+ordinary server on port 8092. This extends the earlier Bricklane exercise; it
+does not claim that a second empty cart was turned into a complete game with
+all these features. The parked multi-window investigation was not resumed.
+
+All four source changes below were made through physical Studio keyboard or
+pointer input, then ordinary Save. Public MCP tools supplied source reads,
+runtime inspection, installation, debugger control and frame/history navigation.
+The boss setup additionally used the real Studio Terminal's frame evaluator.
+There was no private browser runtime access, direct text-model mutation,
+shell editing of cart source, heap injection or additional fixture suite.
+Screenshots were inspected for UI/artwork, not used to infer gameplay state.
+
+| Surface | Actual exercise and result | Limit of the evidence |
+| --- | --- | --- |
+| Audio/AEM | Typed a new `studio.audio_probe` event in `res/data/events.aem.yaml`, routing `sfx` to the existing `nemesis2_laser` asset. Ctrl+S persisted and applied it. Emitted the event from the living director through Actor Lab. A gutter breakpoint stopped in `aem.handle_event`; frame locals contained the new event name. F10 stepped line 855 to 856. | This is AEM **YAML text authoring**, not a graphical AEM designer or import of a new audio asset. |
+| Audio output | Captured this browser's output alone through a temporary isolated PulseAudio sink: 48 kHz stereo PCM, 42,761 nonzero samples, peak magnitude 11,920 in signed 16-bit samples. | External output measurement, **not a Studio audio-observation tool**. The recording was not listened to; no sound-quality or exact playback-timing claim. |
+| FSM | Selected the director's `title` state in Behavior Lens, used **Set Initial**, and saved. The only source change was `initial = 'boot'` to `'title'`. Reboot installed it; 180 explicit frames later the ordinary live FSM picker reported `CURRENT CHILD: title`. | Editing an existing state machine, not creating an entire new FSM visually. A reset receipt alone was not counted as successful initialization. |
+| ActionEffect | Edited `fire_salvo`'s period to `250` in the authored property cell, saved and completed Hot Resume. **Inspect Registered Definitions** displayed the actual retained period as 250. After ordinary title-completion handling created a player, Actor Lab **Trigger with payload** stopped at the effect handler's bound breakpoint. Physical F11 entered `player.fire_weapon_salvo`, line 790. Continue returned `true` from the trigger. | Existing effect definition and grant. The trigger/debug path and installed period are proven, not a timed periodic-fire comparison or a new visual effect-registration workflow. |
+| BT | Used the graph's **Duplicate** command on the moon's first `tasks.enter` child, saved the five-line source insertion and completed Hot Resume. Spawned the boss through its real scene using the existing last stage-spawn record. Its live BT appeared in Behavior Lens and Actor Lab. A source breakpoint stopped in `moon.tick_entering` with BT task/sequence frames beneath it. Physical F10 moved line 155 to 156; structured actor reads showed x changing from 280 to 272. | Boss setup used Terminal/debugger locals, not a literal-only Spawn dialog. Live BT inspection exposes compiler-owned execution memory, not a source-node execution highlight. |
+| History and artwork | After clearing the breakpoint, rewound out of the source stop and advanced explicit frames. A later 30-frame rewind/replay returned to tick 396, cycle 270,496,128; all 21 observed scalar moon fields matched, including x=200, y=32 and health=100. Actor Lab showed its existing sprite in the completed game frame. | This compares the named observations, not the entire machine heap. Existing graphics were displayed; no new artwork was imported or painted. |
+
+The boss setup was deliberate, observable domain execution rather than a
+fabricated actor table. At a real `stage.advance_actor_spawns` breakpoint,
+Terminal first reported that record 179 named `nemesis_s.enemy.moon`, column
+549. A second frame evaluation invoked:
+
+```lua
+return self.scene:spawn(
+    self.actor_spawns[self.actor_spawn_count].definition_id,
+    self.actor_spawns[self.actor_spawn_count].options)
+```
+
+This reused the scene, stage reference and authored spawn options. It produced
+actual actor 50. Frame evaluation retired prior history as documented; the
+rewind/replay evidence was recorded **after** this mutation, not across it.
+
+### Failures and practical gaps
+
+- An earlier **Go to state: gameplay** experiment skipped `game_start`, so the
+  director had no `status_bar` and faulted at `director.lua:155`. This was an
+  invalid direct state jump, not proof that ordinary game startup or AEM Save
+  was broken. It was recovered with explicit Reboot, without a fallback or
+  source patch. The successful later setup emitted `title_screen_done` from the
+  actual title actor with `{ player_count = 1 }`, letting the director execute
+  its existing initialization path.
+- AEM currently resolves to the shared text editor. Image resources resolve to
+  the resource viewer; audio resources expose metadata there. No end-to-end
+  **new graphics/audio asset import and assignment** workflow was established.
+  Assistant image attachments do not demonstrate cart asset import.
+- Existing behavior editing is useful, but this exercise does not establish
+  visual creation of complete new FSM/BT/effect registrations. Graphs were
+  wider than the viewport, and zooming out made labels impractical at this
+  font size. Keyboard node navigation and Details worked, but that is not a
+  claim of polished large-graph usability.
+- The live BT inspector reports real component/service/execution state, but
+  its execution-memory slot numbers are explicitly **not authored node IDs**.
+  A semantic active-node/transition trace would need genuine compiler/runtime
+  correspondence, not guessed highlights on the source graph.
+- There is still no demonstrated Studio tool for observing audio output. The
+  isolated OS recording was a measurement for this acceptance run, not a
+  proposed product integration or a workaround added to Studio.
+
+These gaps keep the verdict bounded: useful visual editing and real runtime
+debugging are now demonstrated for existing behaviors, including audio/AEM;
+**fully visual, from-scratch game/asset authoring is not certified**. No C++,
+physical-phone, all-renderer or paid-model coverage is implied by this run.
+
+All temporary source edits were undone through Studio and saved. Fresh public
+source reads exactly matched all four original documents. Their final status
+was clean, workspace-saved and runtime-applied after an explicit final Reboot.
+Only this run's breakpoints were added and removed. No cart change was retained.
+
+Local evidence: `.bmsx/authoring/visual-authoring-20260930/`, including
+`actions.jsonl`, `source-restoration.json`, `bt-replay-evidence.json`,
+`audio-evidence.json`, `aem-laser-output.wav` and the inspected UI captures.
+The audio recording was limited to the isolated test browser, not microphone
+input or other applications. The temporary audio sink, routing watcher,
+browser and server were released after acceptance; the default audio sink
+remained `RDPSink`. These are not application dependencies.
