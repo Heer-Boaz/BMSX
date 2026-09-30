@@ -1,5 +1,6 @@
 import { HttpWorkspaceBuilds } from './builds';
 import { HttpWorkspaceProjects } from './projects';
+import { importWorkspaceFiles } from './file_import';
 import { loadPublishedMedia, openPublishedBuild } from './published_media';
 import { showEditorMessage } from '../common/feedback_state';
 import { COLOR_STATUS_SUCCESS, COLOR_STATUS_ERROR } from '../common/constants';
@@ -133,6 +134,7 @@ async function startBrowserStudio(): Promise<void> {
 			artifact === null ? 'workspace' : 'installed',
 		);
 		clipboard.bindInput(options.browserInput, () => ide.editor.clipboardTarget, reportClipboardFailure);
+		if (workspace.kind === 'http') ide.editor.importFiles = (directory, signal) => importWorkspaceFiles(httpSession(workspace.baseUrl), directory, signal);
 		systemOutput.flush(runtime, options.logOutput);
 		audioOutput.bootstrap();
 		bindBrowserFullscreenShortcut(

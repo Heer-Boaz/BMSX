@@ -892,6 +892,13 @@ Owners:
   recipe values, not serialized property order. Workers cannot publish; disconnected
   observers cannot cancel jobs. Restart marks unfinished work interrupted unless
   its recorded publication actually committed.
+- Workspace file import: the browser composition owns native selection and
+  transfer of original file bodies. `scripts/dev/file_import.mjs` streams into
+  private, scanner-excluded `.bmsx` staging on the destination filesystem, then
+  exclusively publishes a complete new path. Import never replaces text working
+  copies or cooks/installs assets; ordinary builds consume the saved files.
+  See [file import](studio_file_import.md) for cancellation and acknowledgement
+  semantics. No binary asset store is fabricated for standalone Studio.
 
 Reuse is decided before loading the compiler, linter and native asset converters.
 A no-op does not compile, convert or rewrite matching exports. The writer hashes

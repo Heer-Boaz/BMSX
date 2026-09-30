@@ -1,5 +1,6 @@
 import { chooseBuild, showBuildJobs } from '../workbench/contrib/builds/commands';
 import { createCartridge } from '../workbench/contrib/projects/commands';
+import { importCartridgeFiles } from '../workbench/contrib/resources/import';
 import type { RuntimeDebuggerExecution } from '../runtime/debugger_execution';
 import { executeClipboardAction } from '../input/clipboard';
 import type { RuntimeFrameNavigation } from '../runtime/frame_navigation';
@@ -148,6 +149,7 @@ export class IdeCommandController {
 				return;
 			case 'builds.start': void chooseBuild(this.editor); return;
 			case 'projects.createCartridge': createCartridge(this.editor); return;
+			case 'resources.import': importCartridgeFiles(this.editor, this.sources); return;
 			case 'builds.jobs': showBuildJobs(this.editor); return;
 			case 'server.connection':
 				showServerConnection(this.editor);
@@ -358,6 +360,8 @@ export class IdeCommandController {
 				return this.editor.assistantCommands.isEnabled(command);
 			case 'builds.start': return this.editor.builds !== undefined;
 			case 'projects.createCartridge': return this.editor.projects !== undefined;
+			case 'resources.import': return this.editor.importFiles !== undefined
+				&& (this.sources.cartridgeSlots[0] !== null || this.sources.cartridgeSlots[1] !== null);
 			case 'builds.jobs': return this.editor.builds !== undefined;
 			case 'server.connection': return true;
 			case 'conversations.history':

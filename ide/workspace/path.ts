@@ -36,12 +36,12 @@ export function resolveWorkspacePath(path: string, projectRootPath: string | nul
 }
 
 /** User-entered path relative to a workspace folder, never outside that folder. */
-export function normalizeRelativeWorkspacePath(input: string): string {
+export function normalizeRelativeWorkspacePath(input: string, kind: 'file' | 'directory' = 'file'): string {
 	const path = input.replace(/\\/g, '/');
 	if (path.startsWith('/') || /^[A-Za-z]:/.test(path)) {
 		throw new Error('Enter a path relative to the project folder.');
 	}
-	if (path.length === 0 || path.endsWith('/')) throw new Error('Enter a file name.');
+	if (kind === 'file' && (path.length === 0 || path.endsWith('/'))) throw new Error('Enter a file name.');
 	const segments: string[] = [];
 	for (const segment of path.split('/')) {
 		if (segment === '' || segment === '.') continue;
@@ -53,6 +53,6 @@ export function normalizeRelativeWorkspacePath(input: string): string {
 			segments.push(segment);
 		}
 	}
-	if (segments.length === 0) throw new Error('Enter a file name.');
+	if (kind === 'file' && segments.length === 0) throw new Error('Enter a file name.');
 	return segments.join('/');
 }

@@ -33,6 +33,10 @@ full-media replacement inside a running emulator or change embedded chat lifetim
   overwritten and `.bmsx` recovery is not copied. Building is a separate choice.
   The same operation is `studio_create_cartridge {target}` in external and
   embedded tools. It needs the workspace project service, not a live runtime.
+- **File: Import Files into Cartridge** copies new files from the native browser
+  picker into a selected cartridge's workspace. It preserves bytes and never
+  overwrites existing paths. [Import](studio_file_import.md), build and opening
+  the published media are separate operations; import does not hot-install assets.
 - A completed job offers **Open published build in new Studio window**. That
   window loads both ROMs from the exact immutable artifact through the authorized
   API, without first exporting anything to `dist`. Its initial boot runs installed

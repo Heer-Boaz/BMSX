@@ -75,6 +75,25 @@ test('authorized source CRUD preserves timestamps and exclusive creation', async
 	assert.equal((await request('/__bmsx__/lua?path=new/nested/source.lua', { headers })).status, 404);
 });
 
+test('file imports preserve binary bytes, reject replacement and use the same workspace admission', async t => {
+	const { request, session, root } = await fixture(t);
+	const headers = { ...await session(), 'Content-Type': 'application/octet-stream', 'If-None-Match': '*' };
+	const bytes = Buffer.from([0, 255, 128, 13, 10, 1]);
+	const path = 'carts/new/res/picture.png';
+	const put = (destination, authorization = headers) => request('/__bmsx__/files?path=' + encodeURIComponent(destination), {
+		method: 'PUT', headers: authorization, body: bytes,
+	});
+	assert.equal((await put(path, {})).status, 401);
+	assert.equal((await put('../outside.png')).status, 403);
+	assert.equal((await put('escape/outside.png')).status, 403);
+	assert.equal((await put(path, { ...headers, 'If-None-Match': '' })).status, 428);
+	assert.equal((await put(path)).status, 201);
+	assert.deepEqual(await readFile(join(root, path)), bytes);
+	assert.equal((await put(path)).status, 412);
+	assert.equal((await put('source.lua')).status, 412);
+	assert.equal(await readFile(join(root, 'source.lua'), 'utf8'), 'return 1');
+});
+
 test('cross-origin, opaque-origin, rebinding and preflight requests cannot acquire or use workspace authority', async t => {
 	const { request, session, address, root } = await fixture(t);
 	const authorized = await session();

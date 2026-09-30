@@ -10,6 +10,7 @@ import os from 'node:os';
 import { HttpError, WorkspaceHttpSession } from './dev/http_security.mjs';
 import { resolveRootedPath } from './dev/rooted_path.mjs';
 import { handleWorkspaceRequest } from './dev/workspace_api.mjs';
+import { handleFileImport } from './dev/file_import.mjs';
 
 const args = process.argv.slice(2);
 function getArg(name, short, def) {
@@ -187,6 +188,11 @@ const server = createServer(async (req, res) => {
 		if (requestUrl.pathname.startsWith('/__bmsx__/projects/')) {
 			workspaceSession.authorize(req);
 			await handleProjectRequest(projects, req, res, requestUrl);
+			return;
+		}
+		if (requestUrl.pathname === '/__bmsx__/files') {
+			workspaceSession.authorize(req);
+			await handleFileImport(projectRoot, req, res, requestUrl);
 			return;
 		}
 		if (requestUrl.pathname.startsWith('/__bmsx__/conversations/')) {

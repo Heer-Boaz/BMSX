@@ -375,3 +375,75 @@ The audio recording was limited to the isolated test browser, not microphone
 input or other applications. The temporary audio sink, routing watcher,
 browser and server were released after acceptance; the default audio sink
 remained `RDPSink`. These are not application dependencies.
+
+## New assets and new behavior registrations
+
+The next acceptance used a **new** `studio_authoring` project created through
+`studio_create_cartridge`, not edits to Nemesis definitions. Its small playground
+was authored through public Studio source proposals, physical review approval
+and Save. New external files entered through the actual native file picker and
+the new [workspace import](studio_file_import.md). The external test PNG/WAV
+were generated outside the cart; no shell writes created cart source/assets.
+This is Studio **plus its public tools**, not a claim of exclusively manual
+typing or of a complete polished game. The parked multi-window issue was not
+reopened: exact published media were opened in the same browser tab.
+
+| Surface | Actual result |
+| --- | --- |
+| New graphics | Imported `studio_star@atlas=studio.png` byte-for-byte. The ordinary producer built atlas `studio`; a new sprite prefab with `imgid = 'studio_star'` appeared as a 24x24 gold star in the actual Actor Lab game frame. |
+| New audio/AEM | Imported a new PCM WAV and `studio_audio.aem.yaml`, with `studio.chimed` routing `sfx` to `studio_chime`. The new ActionEffect trigger stopped at `aem.handle_event`; public frame-local inspection reported `event_type = 'studio.chimed'`. Its shared operation completed with `true`. |
+| New FSM | Authored and registered `studio.motion` in Lua. Behavior Lens showed its two states/transitions. Actor Lab's actual `studio.started` event moved its live state from `rest` to `moving`. This test FSM did not gate BT movement; no such gameplay coupling is claimed. |
+| New BT | Authored/registered `studio.patrol`: looped task plus 30-tick wait. Behavior Lens displayed the source graph. Frame advancement stopped at the real `star:step_right` breakpoint; physical F10 advanced its source statement. |
+| New ActionEffect | Authored/registered and granted `studio.chime`, period 250 ms. Actor Lab **Trigger with payload** stopped at `star:chime`; physical F10 stepped the increment, then Continue reached AEM's breakpoint and completed. A subsequent fresh session's **Activate** plus ordinary Run produced 44 observed handler increments in approximately 11 seconds. |
+| Audio output | Only that second browser was routed to a temporary isolated output sink. Its captured 48 kHz stereo PCM contained 707,638 nonzero signed-16 samples, peak 6,007. No microphone or other applications were recorded. This proves nonzero playback, not auditioned quality, exact timing or a Studio audio-output inspection tool. |
+| Frame history | After the explicit trigger completed, advanced to tick 175, cycle 119,490,326; rewound 30 frames and replayed 30. All 17 observed scalar actor fields matched, including x=64, y=96, chimes=1, size=24 and image ID. This is not whole-heap equivalence or audio-history verification. |
+
+Successful saved-input build: request
+`3aa8328e-1195-4d98-a508-e31e7c3d4154`, artifact
+`4cb63da585d2f97d0ed62bddfc8e343814d0e473630038bed736026f64553b9e`.
+An earlier build correctly rejected the probe's verbose bare FSM `go` tables;
+Studio source review changed them to the existing required string shorthand.
+An initial Event dialog attempt appended to the prefilled `{}` and was rejected;
+replacing that text with `{}` completed the real operation. Neither was masked
+by a cart/runtime fallback or recorded as a successful first attempt.
+
+### Import reliability and remaining boundaries
+
+The import UI was inspected, including duplicate rejection and a partially
+completed two-file batch. The first file remained byte-identical; the existing
+second file was unchanged. The actual server interruption/concurrency probe
+proved private staging cleanup, absence of partial final files, and one winner
+for concurrent exclusive uploads. The final UI reports **confirmed** imports,
+not guessed success after a lost acknowledgement. The workspace HTTP suite
+passed 8/8, standalone browser suite 2/2, IDE typecheck and browser Studio build
+passed, architecture boundary audit reported zero, and the diff check was clean.
+Those checks support their own boundaries, not graphical authoring claims.
+The repository-wide indentation check still reports eight unchanged files
+outside this slice (including existing carts/tests and vendored cJSON); it is
+not being reported as clean or repaired by this work.
+
+The new file-import gap is now closed for server-backed Studio. These distinct
+larger gaps remain; the acceptance did **not** implement them indirectly:
+
+- New FSM/BT/effect registrations still start as canonical Lua, then have visual
+  editing and live debugging. There is no complete graphical creation wizard.
+- The inline BT task's graph label is `TASK=<TABLE 1>`, not its callback name.
+  Live BT state still lacks compiler-owned source-node execution correspondence;
+  execution slots must not be relabeled as authored node IDs.
+- Rewind correctly retires heap-scoped inspection, but also clears Actor Lab's
+  actor selection. This required reselecting the live actor; stable selection
+  needs a real identity/lifetime design, not retention of expired table handles.
+- Forward frame navigation from an active source-debugger stop is rejected.
+  Source stepping/Continue and history rewind have distinct execution owners.
+  No silent continue, reset or forced frame advance was added.
+- AEM authoring is YAML text, and output capture above is an external acceptance
+  measurement. A graphical AEM editor and Studio-owned audio observation remain
+  separate work. Existing binary files are not overwritten by the import command.
+
+Evidence is retained under `.bmsx/authoring/asset-import-20260930/`: public tool
+receipts and UI action log, inspected graphs/source stops/import feedback,
+`replay-evidence.json`, `import-boundaries.json`, `audio-evidence.json` and the
+isolated PCM recording. The temporary cart is archived there, not added as a
+production game. The run's browser, server, audio sink and breakpoints were
+released; the default output remained `RDPSink`. No C++, physical-phone,
+all-renderer or paid-model acceptance claim is made.
