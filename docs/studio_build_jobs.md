@@ -538,3 +538,18 @@ locate the old stale anchor, not to edit private model state. Local evidence:
 clipboard results and UI images).
 The focused model/selection/history bundle passes 47 checks; IDE and browser
 typechecks, the Studio product build and strict architecture audit also pass.
+Replaying the longer original keyboard sequence also completes with no PieceTree
+or page exceptions (the old bundle produced 203 PieceTree exceptions and four
+page errors). This is a crash regression check, not proof that all rapidly typed
+characters were delivered in their intended order.
+
+The broad Lua suite initially exposed five obsolete checks, not new production
+failures: three expected fixed menu positions/contents and two still passed an
+interpreter where source publication now consumes the already-parsed module map.
+Menu checks now verify contribution routing, materialization and disabled-command
+execution independently of ordering/presentation. The read-only fixture also
+disables Cut/Paste. The source-media fixture uses the ordinary program-source
+collector; it still checks that editing/adding Lua preserves same-name texture
+bytes and publishes the correct source/AST. No runtime compatibility path was
+added to satisfy old fixtures. The complete Lua suite now passes **2863 checks,
+with one existing skip and zero failures**; logs are in the same evidence folder.

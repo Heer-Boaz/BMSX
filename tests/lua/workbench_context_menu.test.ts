@@ -158,10 +158,16 @@ test('secondary press outside closes this popup and returns routing to the under
 
 test('a readonly contribution keeps navigation accessible but cannot arm its mutation commands', t => {
 	const f = fixture(t);
-	for (const command of ['rename', 'undo', 'redo'] as const) f.disabled.add(command);
+	const mutations = ['cut', 'paste', 'rename', 'undo', 'redo'] as const;
+	for (const command of mutations) f.disabled.add(command);
 	f.show(WORKBENCH_MENUS['code.symbol.context'], true);
-	assert.equal(f.menu.model.rows[f.menu.model.selectedIndex].command, 'goToDefinition');
-	f.pointer(f.row(3, PRIMARY, PRIMARY, PRIMARY));
-	assert.equal(f.menu.visible, true); assert.equal(f.capture.active, false); assert.deepEqual(f.executed, []);
-	f.press('Home'); f.press('Enter'); assert.deepEqual(f.executed, ['goToDefinition']);
+	assert.equal(f.disabled.has(f.menu.model.rows[f.menu.model.selectedIndex].command), false);
+	for (const command of mutations) {
+		const index = f.menu.model.rows.findIndex(row => row.command === command);
+		f.pointer(f.row(index, PRIMARY, PRIMARY, PRIMARY));
+		assert.equal(f.menu.visible, true); assert.equal(f.capture.active, false); assert.deepEqual(f.executed, []);
+	}
+	const definition = f.menu.model.rows.findIndex(row => row.command === 'goToDefinition');
+	f.pointer(f.row(definition)); f.press('Enter');
+	assert.deepEqual(f.executed, ['goToDefinition']);
 });

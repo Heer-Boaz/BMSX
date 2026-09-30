@@ -4,6 +4,7 @@ import { encodeLuaChunk } from '../../toolchain/ts/lua/syntax/serialization';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { LuaInterpreter } from '../../ide/language/lua/interpreter/interpreter';
 import { buildLuaSourceAssetChanges } from '../../ide/runtime/source_media';
+import { collectProgramSources } from '../../ide/runtime/program_sources';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { layoutRomAssetPayloads } from '../../toolchain/ts/rompack/asset_layout';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
@@ -56,8 +57,10 @@ function sourceLayer(includeLua: boolean): RomSourceLayer<'cart'> {
 for (const includeLua of [true, false]) {
 	test(`${includeLua ? 'editing' : 'adding'} Lua preserves a texture with the same asset name`, () => {
 		const layer = sourceLayer(includeLua);
+		const registry = sourceRegistry();
+		const selected = collectProgramSources(registry, interpreter, registry.entrySourcePath, []);
 		const changes = buildLuaSourceAssetChanges(
-			layer, sourceRegistry(), new Map(includeLua ? [['entry', originalSource]] : []), interpreter, undefined,
+			layer, registry, new Map(includeLua ? [['entry', originalSource]] : []), selected.parsed, undefined,
 		);
 		const layout = layoutBlua32PublicAssets(layer, 16, changes);
 		assert.deepEqual(layout.entries.map(entry => [entry.type, entry.resid]), [
