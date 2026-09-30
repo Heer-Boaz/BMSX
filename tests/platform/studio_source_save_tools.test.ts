@@ -31,20 +31,21 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	]);
 	const f = await createAssistantStudioFixture(t, `source-save-${backend}`, { provider: { name: 'Offline source Save fixture', model: 'mock-model', baseUrl: `${model.url}/v1` } });
 	const held = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
-	let intercepted = false;
+	let armed = false;
 	await f.page.route('**/__bmsx__/lua**', async route => {
-		if (!intercepted && route.request().method() === 'PUT' && route.request().postDataJSON().path === 'carts/nemesis_s/cart.lua') {
-			intercepted = true; held.resolve(); await release.promise;
+		if (armed && route.request().method() === 'PUT' && route.request().postDataJSON().path === 'carts/nemesis_s/cart.lua') {
+			armed = false; held.resolve(); await release.promise;
 		}
 		await route.continue();
 	});
+	await f.page.exposeFunction('armSave', () => { armed = true; });
 	await f.page.exposeFunction('waitForHeldSave', () => held.promise);
 	await f.page.exposeFunction('releaseHeldSave', () => release.resolve());
 	t.after(() => release.resolve());
 	t.after(() => writeFile(join(f.evidence, `source-save-${backend}-requests.json`), JSON.stringify(model.requests)));
 	const result = await f.page.evaluate(async backend => {
 		const entry = '/test.js', module = await import(entry);
-		return module.runAssistantSourceSave(backend, document.querySelector('canvas'), globalThis.capture, globalThis.waitForHeldSave, globalThis.releaseHeldSave);
+		return module.runAssistantSourceSave(backend, document.querySelector('canvas'), globalThis.capture, globalThis.armSave, globalThis.waitForHeldSave, globalThis.releaseHeldSave);
 	}, backend);
 	assert.equal(result.sourceSave, 'pass'); assert.deepEqual(f.observations.errors, []);
 	assert.equal(f.observations.connects, 1); assert.equal(f.observations.commands.filter(command => command === 'interrupt').length, 1);
@@ -63,6 +64,6 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	for (const [path, text] of [['cart.lua', result.main], ['res/data/nemesis_s_stage.yaml', result.yaml]]) {
 		assert.equal(await readFile(join(f.root, 'carts/nemesis_s', path), 'utf8'), text, 'actual project file contains acknowledged source bytes');
 	}
-	assert.equal(result.main, '-- later typing\n-- reviewed Lua save\n' + await readFile('carts/nemesis_s/cart.lua', 'utf8'));
+	assert.equal(result.main, '-- later typing\n-- unsaved follow-up\n-- reviewed Lua save\n' + await readFile('carts/nemesis_s/cart.lua', 'utf8'));
 	assert.equal(result.yaml, '# reviewed canonical save 🐉\r\n' + await readFile('carts/nemesis_s/res/data/nemesis_s_stage.yaml', 'utf8'));
 });

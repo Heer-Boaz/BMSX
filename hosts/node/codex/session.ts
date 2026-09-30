@@ -1,4 +1,4 @@
-import type { AssistantConfiguration, AssistantModelSelection, AssistantSourceReference } from '../../common/assistant_protocol';
+import type { AssistantConfiguration, AssistantModelSelection, AssistantSourceReference, AssistantUsage } from '../../common/assistant_protocol';
 import { CodexModels } from './models';
 import { CodexUsage, type CodexRateLimits, type CodexRateLimitsRead } from './usage';
 import { execFile } from 'node:child_process';
@@ -80,6 +80,8 @@ export class CodexSession {
 	private accountRefreshing = false;
 	private accountRefresh: Promise<CodexAccount> | undefined;
 	private accountRevision = 0;
+	/** A connecting transport publishes the retained observation, not a second quota read. */
+	public get accountUsage(): AssistantUsage { return this.usage.snapshot(); }
 	private readonly onAbort = () => { this.close(this.options.signal.reason); };
 
 	private constructor(private readonly profile: CodexProfile, private readonly options: CodexSessionOptions, private readonly policy: CodexPolicy) {
@@ -141,11 +143,18 @@ export class CodexSession {
 		// must join that account's catalog/settings publication, not expose a ready
 		// connection whose first command immediately loses its account lifetime.
 		while (this.accountRefresh) account = await this.accountRefresh;
+		// The first account observation initializes quota only when no native
+		// account/updated has already done so during startup. Later account reads
+		// do not create a new account lifetime or refresh its quota.
+		if (this.accountRevision === 0) {
+			this.accountRevision++;
+			void this.refreshUsage(account);
+		}
 		return account;
 	}
 
 	/** One read per account connection/change, then native quota notifications. Never model polling. */
-	public async refreshUsage(account: CodexAccount): Promise<void> {
+	private async refreshUsage(account: CodexAccount): Promise<void> {
 		const revision = ++this.usageRevision;
 		this.usage.clear(); this.options.onEvent({ type: 'usage', usage: this.usage.snapshot() });
 		if (account.account?.type !== 'chatgpt') return;

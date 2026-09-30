@@ -117,7 +117,7 @@ for (const backend of backends) test(`Studio ${backend}: visible account control
 	t.after(() => rm(issuer.root, { recursive: true }));
 	const { page } = f;
 	let popup!: Promise<Page>, destinations = 0;
-	await page.context().route('https://**', async route => {
+	await page.context().route(/^https:\/\//, async route => {
 		assert.equal(route.request().url(), STUDIO_ACCOUNT_LOGIN_URL);
 		assert.equal(route.request().headers().referer, undefined, 'authorization opens without a Studio referrer');
 		destinations++;

@@ -42,6 +42,17 @@ contains a new opaque connection lease and account availability, never tokens.
 A competing live connection gets 409. An explicitly requested replacement may
 wait for an already retired process to drain; it cannot take over a live lease.
 
+Account quota belongs to `CodexSession`, not the HTTP connection. Its first
+account observation or native `account/updated` transition initializes quota;
+subsequent account reads do not create another quota request. After publishing
+`connected`, HTTP publishes the session's retained usage snapshot, followed by
+ordinary live updates. This preserves observations received during startup
+without fetching them again merely because the browser stream became ready.
+The installed app-server can announce saved-account routing during startup, as
+documented in its [account lifecycle](https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md#selected-workspace-routing).
+An isolated real-process trace reproduced two Studio quota RPCs on reconnect;
+the corrected owner issues one, and the browser still receives the weekly value.
+
 `POST /__bmsx__/assistant/command` additionally requires that lease in
 `X-BMSX-Assistant-Lease`. Fixed operations are start, steer, queue, queue-update,
 queue-delete, queue-continue, history, open, older, new, interrupt, tool-result,

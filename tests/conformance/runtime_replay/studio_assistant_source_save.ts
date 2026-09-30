@@ -8,7 +8,7 @@ import { submitAssistantText } from './studio_assistant_navigation';
 
 /** Actual review/Save owners and HTTP IO, including an accepted write which outlives its prompt. */
 export async function runAssistantSourceSave(kind: StudioRendererKind, canvas: HTMLCanvasElement, capture: (name: string) => Promise<void>,
-	waitForHeldSave: () => Promise<void>, releaseHeldSave: () => Promise<void>) {
+	armSave: () => Promise<void>, waitForHeldSave: () => Promise<void>, releaseHeldSave: () => Promise<void>) {
 	const renderer = await createStudioRenderer(kind, canvas, capture), http = new StudioHttpSession();
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
 	const { ide, runtime, until, cycles, frame, press, harness, runPaletteCommand } = test;
@@ -19,7 +19,7 @@ export async function runAssistantSourceSave(kind: StudioRendererKind, canvas: H
 	await runPaletteCommand('View: Codex Assistant');
 	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant required');
 	const conversation = ide.editor.assistant;
-	await submitAssistantText(test, 'Read Lua and canonical YAML. Propose comments for review, without saving or installing.');
+	await submitAssistantText(test, 'Read Lua and canonical YAML. Propose comments for my review, without applying or installing.');
 	await until(() => conversation.state === 'ready' && conversation.entries.some(entry => entry.proposal !== undefined), 'source Save: model proposes exact source edits');
 	const proposal = conversation.entries.find(entry => entry.proposal !== undefined)!.proposal!;
 	const yamlEdit = proposal.files.find(file => file.kind === 'edit' && file.model.mode === 'yaml')!;
@@ -32,11 +32,19 @@ export async function runAssistantSourceSave(kind: StudioRendererKind, canvas: H
 	const review = getActiveTab(); if (review.kind !== 'workspace_edit_review') throw new Error('Shared review required');
 	await frame(); await renderer.capture!('review');
 	await test.click(review.actionBar.items.find(item => item.command === 'workspaceEditReview.apply')!.bounds);
-	check(proposal.state === 'applied' && main.dirty && yaml.dirty && main.lastSavedSource === original
-		&& yaml.lastSavedSource === originalYaml && ide.sources.currentBlua32Media === media, 'visible review Apply changes only working copies');
+	await until(() => ide.textFileSaves.latestOperation(main)?.result?.status === 'saved'
+		&& ide.textFileSaves.latestOperation(yaml)?.result?.status === 'saved', 'source Save: approved review finishes its ordinary Saves');
+	check(proposal.state === 'applied' && !main.dirty && !yaml.dirty && main.lastSavedSource !== original && yaml.lastSavedSource !== originalYaml
+		&& ide.sources.currentBlua32Media === media, 'review saves authored source but does not install it');
+	const reviewSave = ide.textFileSaves.latestOperation(main)!;
+	// A later working-copy edit is the explicit tool Save under test. Do not hold
+	// the review's own write and mistake it for the next conversation's operation.
+	await test.clickTab(mainTab.id); await press('ControlLeft', 'Home');
+	await test.clipboard.writeText('-- unsaved follow-up\n'); await press('ControlLeft', 'KeyV');
+	await armSave();
 	await test.clickTab(view.id);
-	await submitAssistantText(test, 'Read fresh receipts and status. Save the reviewed YAML, then Save the reviewed Lua. Do not install code.');
-	await until(() => ide.textFileSaves.latestOperation(main) !== undefined, 'source Save: conversation admits the actual Lua write');
+	await submitAssistantText(test, 'Read fresh receipts and status. Save YAML, then Save my edited Lua. Do not install code.');
+	await until(() => ide.textFileSaves.latestOperation(main) !== reviewSave, 'source Save: conversation admits the actual Lua write');
 	await waitForHeldSave();
 	const operation = ide.textFileSaves.latestOperation(main)!;
 	check(operation.result === undefined && !yaml.dirty && main.dirty, 'Save is pending until its project acknowledgement arrives');

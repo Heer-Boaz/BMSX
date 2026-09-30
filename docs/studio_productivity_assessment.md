@@ -447,3 +447,44 @@ isolated PCM recording. The temporary cart is archived there, not added as a
 production game. The run's browser, server, audio sink and breakpoints were
 released; the default output remained `RDPSink`. No C++, physical-phone,
 all-renderer or paid-model acceptance claim is made.
+
+### Broader regression follow-through
+
+The additional assistant suite initially passed 54/63. The nine failures were
+three cases repeated across the renderer fixtures, not nine new gameplay bugs:
+
+- The account popup fixture used the glob `https://**`, which the installed
+  Playwright resolved without matching the destination path. The intended offline
+  interception was absent; the browser followed the real device-page redirect.
+  A protocol regexp now intercepts HTTPS before navigation. This fixes the test's
+  isolation; no product login URL, browser security setting or account was changed.
+- A real product duplication occurred on reconnect: native startup
+  `account/updated` caused a quota read, then HTTP connection setup requested it
+  again. An isolated RPC/HTTP trace confirmed 1 read for login and 2 for reconnect.
+  Quota initialization now belongs only to the session's account observation;
+  HTTP publishes retained usage instead. The same trace now has 1+1 reads, with
+  the weekly value preserved. This is an owner fix, not a timer/debounce or a
+  relaxed request-count assertion.
+- The source-Save fixture still expected review Apply to leave both documents
+  unsaved. It held the review's write and then mistook that for a subsequent tool
+  Save. It now awaits actual review Save acknowledgements, makes a later ordinary
+  editor change and explicitly holds that next write. Stop must still retire
+  the tool response without cancelling the admitted write; later typing must
+  remain dirty until its own Ctrl+S. The product Save behavior was not changed.
+
+The references used for this repair were the actual installed protocol trace,
+upstream [account startup notifications](https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md#selected-workspace-routing),
+Playwright's [route tests](https://github.com/microsoft/playwright/blob/main/tests/page/page-route.spec.ts)
+and VS Code's [bulk edit/Save ownership](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/bulkEdit/browser/bulkEditService.ts).
+The latter keeps edit application and optional Save explicit. BMSX retains its
+own rule that an admitted Save outlives the tool observing it.
+
+After repair, the complete assistant suite passed **63/63**. The focused
+account/review/browser rerun passed 18/18; native account tests 16/16, session
+tests 33/33 and assistant HTTP tests 19/19. Node and IDE typechecks, browser
+Studio build, architecture audit and diff check passed. The repaired browser
+capture was also inspected: the footer displayed the actual fixture model,
+effort and `week 63% left`, not placeholder quota. These account fixtures use
+synthetic credentials and a non-forwarding local issuer, not the user's login
+or paid inference. One intervening full rerun was terminated with SIGTERM;
+the completed rerun above, not that interrupted process, supplies the final count.
