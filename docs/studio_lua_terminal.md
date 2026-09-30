@@ -323,3 +323,45 @@ BLua implicit/empty-statement return convention is outside this slice.
   same 95 baseline entries after normalizing positions. Strict architecture
   audit: zero issues; core-parity, changed-file indentation and `git diff --check`
   pass.
+
+## Completion boundary (2026-09-30)
+
+The Bricklane authoring session exposed an immediate `evaluate_frame` -> source
+Step Over failure: the first tool reported completion before the restarted
+history checkpoint finished. Waiting and retrying worked, but was not the fix.
+
+`LuaTerminalSession` and the equivalent `ActorExecutionService` now retain the
+formatted guest outcome separately from published completion. Their existing
+`afterHostFrame` observers settle it after the task queue and GPU service settle,
+as `RuntimeDebuggerExecution` already does. The physical return values are read
+once at return, before another completion can replace the latch. A late waiter
+abort does not turn an already returned call into an interruption. A failed
+checkpoint settles the observer as `host-error`, rather than hanging.
+
+The production reference was
+[LLDB DAP evaluation](https://github.com/llvm/llvm-project/blob/main/lldb/tools/lldb-dap/Handler/EvaluateRequestHandler.cpp):
+selected-frame evaluation is separate from variable-path inspection and its
+response follows the evaluator's completed result. LLDB has no BMSX GPU/history
+checkpoint; that asynchronous boundary belongs to BMSX's existing host owners.
+
+| Representation | TypeScript | Native C++ | Change |
+| --- | --- | --- | --- |
+| Guest values / completion latch | Existing CPU and BIOS | Same CPU contract and BIOS | None |
+| Terminal expression / frame binding | Shared BIOS loader | Same firmware | None |
+| IDE completion receipt | Terminal / Actor operation | No native IDE receipt | Publish after host work |
+
+Only the existing Terminal/Actor `afterHostFrame` callsites gain an active-outcome
+branch. Idle observers still return immediately; there is no new per-instruction
+or per-game-frame allocation, polling, scheduler, facade or serialization layer.
+
+Validation: 55 lifecycle/source-execution checks pass, including delayed and
+failed checkpoints and cancellation after return. More importantly, the same
+published Bricklane window completed eight consecutive selected-frame evaluations
+followed **immediately** by source Step Over, without sleeps, availability polling
+or retries. Frame values named the actual `game` local; it equalled `bricklane` and
+its update counter advanced normally. The source remained clean and applied.
+The twelve existing browser/authorized-HTTP/Codex-fixture workflows for Terminal,
+frame evaluation, source debugging and Actor execution also pass across software,
+WebGL2 and WebGPU. IDE/browser typechecks and the Studio build pass; the strict
+architecture audit reports zero issues. This is not new native-runtime evidence:
+neither the BIOS evaluator nor the TS/C++ CPU changed.

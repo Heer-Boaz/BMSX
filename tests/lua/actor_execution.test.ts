@@ -6,6 +6,7 @@ import { decodeActorToolRequest } from '../../ide/workbench/services/assistant/a
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createFrameRuntime } from '../helpers/frame_runtime';
+import { RuntimeTaskKind } from '../../hosts/common/runtime_task_queue';
 
 /** Operation lifecycle against the real plan manager; World admission runs in browser conformance. */
 function fixture(t: TestContext, phase: 'queued' | 'boundary' | 'invoked' = 'invoked') {
@@ -28,6 +29,34 @@ test('paused observation preserves the entered Actor call and detaches waiter ca
 	assert.equal(f.operation.result, undefined); assert.equal(f.operation.listeners.size, 0);
 	f.service.setPaused(f.operation, false); controller.abort();
 	assert.equal(f.service.paused, false); assert.equal(f.operation.revoked, false);
+});
+
+test('Actor completion waits for its checkpoint, even when the tool waiter is cancelled', async t => {
+	const f = fixture(t), controller = new AbortController(), hold = Promise.withResolvers<void>();
+	const waiting = f.service.waitForStop(f.operation, controller.signal);
+	f.operation.outcome = { status: 'completed', values: [], tags: [] };
+	f.debuggerState.plans.didExecute();
+	const checkpoint = f.tasks.schedule(() => hold.promise, assert.fail, RuntimeTaskKind.History);
+	f.service.afterHostFrame();
+	assert.equal(f.operation.result, undefined);
+	assert.equal(f.service.active, f.operation);
+	assert.equal(f.service.canExecute, false);
+	controller.abort(); await assert.rejects(waiting, { name: 'AbortError' });
+	assert.equal(f.service.active, f.operation);
+	hold.resolve(); await checkpoint;
+	f.service.afterHostFrame();
+	assert.equal((await f.operation.completion).status, 'completed');
+	assert.equal(f.service.active, undefined);
+});
+
+test('failed post-call history work settles Actor observers as host-error', async t => {
+	const f = fixture(t), waiting = f.service.waitForStop(f.operation, new AbortController().signal);
+	f.operation.outcome = { status: 'completed', values: [], tags: [] };
+	f.debuggerState.plans.didExecute();
+	await f.tasks.schedule(() => { throw new Error('capture failed'); }, () => {}, RuntimeTaskKind.History);
+	f.service.afterHostFrame();
+	assert.equal((await waiting).status, 'host-error');
+	assert.equal(f.service.active, undefined);
 });
 
 test('a newer pre-invocation control waiter retains cancellation authority after reporting pause', async t => {

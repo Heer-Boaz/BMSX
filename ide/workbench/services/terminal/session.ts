@@ -31,6 +31,7 @@ export class TerminalEvaluation {
 	private readonly settled = Promise.withResolvers<TerminalResult>();
 	public readonly completion = this.settled.promise;
 	public result: TerminalResult | undefined;
+	public outcome: TerminalResult | undefined;
 	public status: 'queued' | 'running' | 'paused' = 'queued';
 	public outputEnd: number | undefined;
 	public controlVersion = 0;
@@ -97,9 +98,10 @@ export class LuaTerminalSession {
 	}
 	public setPaused(operation: TerminalEvaluation, paused: boolean): void {
 		if (this.active !== operation) throw new Error('Terminal evaluation is no longer active.');
+		if (operation.outcome !== undefined) throw new Error('Terminal evaluation has returned and is settling machine work.');
 		if (!this.debuggerState.plans.workbenchControlActive) {
 			if (!paused) throw new Error('Terminal evaluation has not entered the CPU yet.');
-			this.finish(operation, 'interrupted', ['Lua admission cancelled before execution.']);
+			this.finish(operation, { status: 'interrupted', values: ['Lua admission cancelled before execution.'] });
 			return;
 		}
 		if (!paused && !this.canToggleExecution) throw new Error('Terminal control is unavailable during machine recovery.');
@@ -118,8 +120,16 @@ export class LuaTerminalSession {
 	public afterHostFrame(): void {
 		const operation = this.active;
 		if (operation === undefined) return;
-		if (this.fault.hostFrameFailed) {
-			this.finish(operation, 'host-error', ['Host execution failed; use the debugger recovery controls.']);
+		if (this.fault.hostFrameFailed || this.tasks.failure !== undefined) {
+			this.finish(operation, { status: 'host-error', values: [this.tasks.failure !== undefined
+				? String(this.tasks.failure.error) : 'Host execution failed; use the debugger recovery controls.'] });
+			return;
+		}
+		if (operation.outcome !== undefined) {
+			// Guest return precedes plan retirement and its new history checkpoint.
+			// Keep admission until the host has settled both, just like source stepping.
+			const gpu = this.runtime.machine.gxGpu;
+			if (this.tasks.ready && !gpu.backendServicePending() && !gpu.backendServiceBlocksMachine()) this.finish(operation, operation.outcome);
 			return;
 		}
 		if (operation.status === 'queued') return;
@@ -142,12 +152,12 @@ export class LuaTerminalSession {
 		return new Promise((resolve, reject) => {
 			const dispose = () => { signal.removeEventListener('abort', abort); operation.listeners.delete(changed); };
 			const changed = () => {
-				if (operation.result === undefined && operation.status !== 'paused') return;
+				if (operation.result === undefined && (operation.outcome !== undefined || operation.status !== 'paused')) return;
 				dispose(); resolve(this.observe(operation));
 			};
 			const abort = () => {
 				dispose();
-				if (this.active === operation && operation.controlVersion === version
+				if (this.active === operation && operation.outcome === undefined && operation.controlVersion === version
 					&& this.execution.revision === operation.executionRevision) {
 					this.setPaused(operation, true);
 				}
@@ -191,34 +201,34 @@ export class LuaTerminalSession {
 			operation.executionRevision = this.execution.revision;
 			operation.status = 'running';
 		}, completed => {
-			if (operation.result !== undefined) return;
-			if (!completed) { this.finish(operation, 'interrupted', ['Lua call interrupted; existing guest mutations are retained.']); return; }
+			if (operation.result !== undefined || operation.outcome !== undefined) return;
+			if (!completed) { this.finish(operation, { status: 'interrupted', values: ['Lua call interrupted; existing guest mutations are retained.'] }); return; }
 			this.runtime.machine.cpu.readCompletionValues(this.values);
 			const succeeded = this.values[0] === true;
 			const result: string[] = [];
 			for (let index = 1; index < this.values.length; index++) result.push(this.guest.previewValue(this.values[index], 2, 12));
 			this.values.length = 0;
-			this.finish(operation, succeeded ? 'completed' : 'lua-error', result);
-		}, error => { if (operation.result === undefined) this.finish(operation, 'host-error', [String(error)]); });
+			operation.outcome = { status: succeeded ? 'completed' : 'lua-error', values: result };
+		}, error => { if (operation.result === undefined) this.finish(operation, { status: 'host-error', values: [String(error)] }); });
 		return operation;
 	}
-	private finish(operation: TerminalEvaluation, status: TerminalResult['status'], values: readonly string[]): void {
-		operation.finish({ status, values });
+	private finish(operation: TerminalEvaluation, result: TerminalResult): void {
+		operation.finish(result);
 		this.lastResult = operation;
 		this.active = undefined;
-		if (values.length > 0) this.transcript.append(status === 'completed' ? 'result' : 'error', values.join('\t'));
+		if (result.values.length > 0) this.transcript.append(result.status === 'completed' ? 'result' : 'error', result.values.join('\t'));
 		operation.outputEnd = this.transcript.next;
 		for (const listener of operation.listeners) listener();
 	}
 	public didReplaceMachine(): void {
 		this.generation++;
-		if (this.active !== undefined) this.finish(this.active, 'interrupted', ['Machine state replaced; pending Lua call ended.']);
+		if (this.active !== undefined) this.finish(this.active, { status: 'interrupted', values: ['Machine state replaced; pending Lua call ended.'] });
 		this.transcript.append('notice', 'Machine state replaced. Lua session follows the guest state; scrollback is historical.');
 	}
 	public shutdown(): Promise<void> {
 		this.closed = true;
 		this.generation++;
-		if (this.active !== undefined) this.finish(this.active, 'interrupted', ['Terminal session closed.']);
+		if (this.active !== undefined) this.finish(this.active, { status: 'interrupted', values: ['Terminal session closed.'] });
 		return this.tasks.join();
 	}
 }

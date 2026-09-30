@@ -5404,6 +5404,14 @@ caller-image slot ordinals. Explicit environment tables retain table-backed
 bindings; the isolated Terminal session selects its own saved guest environment.
 Both frontends use the same firmware on TypeScript/C++. See
 [Terminal binding contexts](studio_terminal_contexts.md).
+Terminal and Actor execution distinguish guest return from published completion.
+They read and format the completion latch at return, retain admission, and publish
+the result from their existing end-of-host-frame observer only after GPU service
+and the post-call history checkpoint settle. A returned call cannot be continued
+or cancelled as if it were still executing. Cancelling its tool waiter detaches
+that waiter without replacing the eventual result; checkpoint failure reports a
+host error. This uses the same completion boundary as source stepping, with no
+tool-side retry, timer or extra CPU loop. Native BIOS execution is unchanged.
 Installed local/lexical-declaration symbols carry `isConst` through inlining,
 source mapping and the TS/native symbols codec. Suspended runtime/test value
 inspection reports it independently of register liveness; it describes the

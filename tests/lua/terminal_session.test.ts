@@ -7,6 +7,7 @@ import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createFrameRuntime } from '../helpers/frame_runtime';
 import { decodeTerminalToolRequest } from '../../ide/workbench/services/assistant/terminal_tool_protocol';
+import { RuntimeTaskKind } from '../../hosts/common/runtime_task_queue';
 
 /** Lifecycle tests use a real plan manager; actual guest evaluation is covered in browser/native conformance. */
 function fixture(t: TestContext, running = true) {
@@ -59,6 +60,46 @@ test('Stop before admission retires the call instead of leaving queued work', as
 	const waiting = f.terminal.waitForStop(f.operation, controller.signal);
 	controller.abort(); await assert.rejects(waiting, { name: 'AbortError' });
 	assert.equal(f.terminal.active, undefined); assert.equal(f.operation.result!.status, 'interrupted');
+});
+
+for (const status of ['completed', 'lua-error'] as const) test(`Terminal ${status} waits for the post-call checkpoint`, async t => {
+	const f = fixture(t), hold = Promise.withResolvers<void>();
+	const waiting = f.terminal.waitForStop(f.operation, new AbortController().signal);
+	f.operation.outcome = { status, values: ['42'] };
+	f.debuggerState.plans.didExecute();
+	const checkpoint = f.tasks.schedule(() => hold.promise, assert.fail, RuntimeTaskKind.History);
+	f.terminal.afterHostFrame();
+	assert.equal(f.operation.result, undefined);
+	assert.equal(f.terminal.active, f.operation);
+	assert.equal(f.terminal.canEvaluate, false);
+	hold.resolve(); await checkpoint;
+	f.terminal.afterHostFrame();
+	assert.equal((await waiting).status, status);
+	assert.equal(f.terminal.active, undefined);
+	assert.equal(f.tasks.ready, true);
+});
+
+test('cancelling the Terminal waiter after return does not discard the completed result', async t => {
+	const f = fixture(t), controller = new AbortController(), hold = Promise.withResolvers<void>();
+	const waiting = f.terminal.waitForStop(f.operation, controller.signal);
+	f.operation.outcome = { status: 'completed', values: ['42'] };
+	f.debuggerState.plans.didExecute();
+	const checkpoint = f.tasks.schedule(() => hold.promise, assert.fail, RuntimeTaskKind.History);
+	controller.abort(); await assert.rejects(waiting, { name: 'AbortError' });
+	assert.equal(f.terminal.active, f.operation);
+	hold.resolve(); await checkpoint;
+	f.terminal.afterHostFrame();
+	assert.deepEqual(await f.operation.completion, { status: 'completed', values: ['42'] });
+});
+
+test('failed post-call history work settles Terminal observers as host-error', async t => {
+	const f = fixture(t), waiting = f.terminal.waitForStop(f.operation, new AbortController().signal);
+	f.operation.outcome = { status: 'completed', values: ['42'] };
+	f.debuggerState.plans.didExecute();
+	await f.tasks.schedule(() => { throw new Error('capture failed'); }, () => {}, RuntimeTaskKind.History);
+	f.terminal.afterHostFrame();
+	assert.equal((await waiting).status, 'host-error');
+	assert.equal(f.terminal.active, undefined);
 });
 
 for (const intent of ['terminal-continue', 'debugger-continue'] as const) test(`late cancellation preserves newer ${intent} intent`, async t => {

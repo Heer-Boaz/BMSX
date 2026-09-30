@@ -35,6 +35,7 @@ export class ActorExecutionOperation {
 	public readonly completion = this.settled.promise;
 	public readonly listeners = new Set<() => void>();
 	public result: ActorExecutionResult | undefined;
+	public outcome: ActorExecutionResult | undefined;
 	public status: 'queued' | 'running' | 'paused' = 'queued';
 	public invoked = false;
 	public revoked = false;
@@ -117,13 +118,13 @@ export class ActorExecutionService {
 			clearExecutionStopHighlights(); this.execution.requestExecution(false);
 			operation.executionRevision = this.execution.revision; operation.status = 'running';
 		}, completed => {
-			if (operation.result !== undefined) return;
+			if (operation.result !== undefined || operation.outcome !== undefined) return;
 			if (!completed) { this.finish(operation, { status: 'interrupted', values: [], tags: [], reason: operation.invoked
 				? 'Lua call interrupted; performed mutations are retained.' : 'Actor invocation cancelled before entry.' }); return; }
 			this.runtime.machine.cpu.readCompletionValues(this.values);
 			const result: ActorExecutionResult = { status: 'completed', values: this.values.map(value => this.guest.previewValue(value, 1, 8)),
 				tags: this.values.map(valueTag), spawnedActorHashId: request.kind === 'spawn' ? (this.values[0] as Table).hashId : undefined };
-			this.values.length = 0; this.finish(operation, result);
+			this.values.length = 0; operation.outcome = result;
 		}, error => { if (operation.result === undefined) this.finish(operation, { status: 'host-error', values: [], tags: [], reason: String(error) }); });
 		return operation;
 	}
@@ -176,6 +177,7 @@ export class ActorExecutionService {
 	}
 	public setPaused(operation: ActorExecutionOperation, paused: boolean): void {
 		if (this.active !== operation) throw new Error('Actor operation is no longer active.');
+		if (operation.outcome !== undefined) throw new Error('Actor operation has returned and is settling machine work.');
 		if (!this.debuggerState.plans.workbenchControlActive) {
 			if (!paused) throw new Error('Actor operation has not entered the CPU.');
 			operation.revoked = true;
@@ -193,7 +195,16 @@ export class ActorExecutionService {
 	public afterHostFrame(): void {
 		const operation = this.active;
 		if (operation === undefined || operation.status === 'queued') return;
-		if (this.fault.hostFrameFailed) { this.finish(operation, { status: 'host-error', values: [], tags: [], reason: 'Host execution failed.' }); return; }
+		if (this.fault.hostFrameFailed || this.tasks.failure !== undefined) {
+			this.finish(operation, { status: 'host-error', values: [], tags: [], reason: this.tasks.failure !== undefined
+				? String(this.tasks.failure.error) : 'Host execution failed.' }); return;
+		}
+		if (operation.outcome !== undefined) {
+			// Publish return only after the host settles GPU work and the recording checkpoint.
+			const gpu = this.runtime.machine.gxGpu;
+			if (this.tasks.ready && !gpu.backendServicePending() && !gpu.backendServiceBlocksMachine()) this.finish(operation, operation.outcome);
+			return;
+		}
 		const status = this.paused ? 'paused' : 'running';
 		if (operation.status === status) return;
 		operation.status = status; for (const listener of operation.listeners) listener();
@@ -206,7 +217,7 @@ export class ActorExecutionService {
 				// Admission lifetime cancellation can retire the call before this
 				// waiter's abort listener runs. It is still cancellation, not a reply.
 				if (signal.aborted) { abort(); return; }
-				if (operation.result === undefined && operation.status !== 'paused') return;
+				if (operation.result === undefined && (operation.outcome !== undefined || operation.status !== 'paused')) return;
 				operation.listeners.delete(changed);
 				if (operation.invoked || operation.result !== undefined) signal.removeEventListener('abort', abort);
 				else {
@@ -226,7 +237,7 @@ export class ActorExecutionService {
 		});
 	}
 	private cancel(operation: ActorExecutionOperation, version: number): void {
-		if (this.active !== operation || operation.controlVersion !== version || operation.executionRevision !== this.execution.revision) return;
+		if (this.active !== operation || operation.outcome !== undefined || operation.controlVersion !== version || operation.executionRevision !== this.execution.revision) return;
 		if (!operation.invoked) operation.revoked = true;
 		this.setPaused(operation, true);
 	}
