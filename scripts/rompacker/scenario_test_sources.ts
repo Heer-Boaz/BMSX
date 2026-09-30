@@ -7,27 +7,31 @@ import {
 } from '../../toolchain/ts/rompack/scenario_test';
 import { collectSourceFiles } from '../lib/file_scan';
 import type { RomInputFile } from './build_inputs';
+import { normalizeVirtualRootPath, resolveVirtualSourcePath } from './rombuilder';
+import { isRuntimeLuaSourcePath } from '../../toolchain/ts/lua/source_paths';
 
 const LUA_SOURCE_EXTENSIONS = new Set(['.lua']);
 
 export function collectScenarioTestSourceFiles(projectRootPath: string): string[] {
 	return collectSourceFiles(
-		[join('tests', projectRootPath)],
+		[projectRootPath, join('tests', projectRootPath)],
 		LUA_SOURCE_EXTENSIONS,
-	).filter(path => path.endsWith(SCENARIO_TEST_SOURCE_SUFFIX)).sort();
+	).filter(path => isRuntimeLuaSourcePath(path) && path.endsWith(SCENARIO_TEST_SOURCE_SUFFIX)).sort();
 }
 
-export function buildScenarioTestSourceAssets(sources: readonly RomInputFile[]): RomAsset[] {
+export function buildScenarioTestSourceAssets(sources: readonly RomInputFile[], projectRootPath?: string): RomAsset[] {
 	const assets = new Array<RomAsset>(sources.length);
+	const virtualRoot = normalizeVirtualRootPath(projectRootPath);
 	for (let index = 0; index < sources.length; index += 1) {
 		const file = sources[index];
-		const sourcePath = relative(process.cwd(), file.path).replace(/\\/g, '/');
+		const workspacePath = relative(process.cwd(), file.path).replace(/\\/g, '/');
+		const sourcePath = resolveVirtualSourcePath(file.path, virtualRoot);
 		assets[index] = {
 			resid: scenarioTestAssetId(sourcePath),
 			type: 'lua',
 			buffer: file.bytes,
 			source_path: sourcePath,
-			normalized_source_path: sourcePath,
+			normalized_source_path: workspacePath,
 			update_timestamp: file.modifiedMs,
 		};
 	}

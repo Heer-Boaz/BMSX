@@ -10,6 +10,7 @@ import { collectScenarioTestSourceFiles } from './scenario_test_sources';
 import { SYSTEM_ROM_NAME } from '../../toolchain/ts/rompack/system';
 import { BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import { LuaError } from '../../toolchain/ts/lua/errors';
+import { SCENARIO_TEST_SOURCE_SUFFIX } from '../../toolchain/ts/rompack/scenario_test';
 
 export type MediaBuildOptions = { debug: boolean; optLevel: 0 | 1 | 2 | 3; force: boolean; respath?: string }
 	& ({ domain: 'system' } | { domain: 'cart'; target: string });
@@ -33,7 +34,8 @@ export async function prepareMediaBuild(options: MediaBuildOptions, store: RomAr
 	let cart: PreparedUnit | undefined;
 	if (options.domain === 'cart') {
 		const respath = options.respath ?? join('carts', target, 'res'), projectRoot = join(respath, '..');
-		const sourceFiles = collectCartSourceFiles([projectRoot]), librarySourceFiles = collectCartSourceFiles([CART_LIBRARY_ROOT]);
+		const sourceFiles = collectCartSourceFiles([projectRoot]).filter(path => !path.endsWith(SCENARIO_TEST_SOURCE_SUFFIX));
+		const librarySourceFiles = collectCartSourceFiles([CART_LIBRARY_ROOT]);
 		const testLibraryFiles = options.debug ? collectCartSourceFiles([testlibLuaPath]) : [];
 		const testModuleFiles = options.debug ? collectCartSourceFiles([join('tests', projectRoot)]) : [];
 		const scenarioSourceFiles = options.debug ? collectScenarioTestSourceFiles(projectRoot) : [];

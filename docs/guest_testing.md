@@ -5,6 +5,14 @@ proposal, not a statement that every proposed IDE capability exists.
 
 ## Authoring
 
+A suite can live beside cart source (for example `carts/bricklane/keyboard_assert.lua`)
+or under the corresponding `tests/carts/<cart>/` directory. Both are source-only
+debug assets, including suites under a cart's `res/` directory; neither enters
+gameplay compilation or release media. Debug production includes the test runner
+and recorder sources even before the first suite exists. Old immutable artifacts
+without those sources need a new debug build, not a runtime fallback or a network
+dependency injected into the isolated machine.
+
 A debug-packaged `*_assert.lua` module returns a statically discoverable suite:
 
 ```lua

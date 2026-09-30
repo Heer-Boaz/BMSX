@@ -1,6 +1,7 @@
 import { encodeLuaChunk } from '../../toolchain/ts/lua/syntax/serialization';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { assetIdFromSourceName } from '../../toolchain/ts/rompack/assets';
+import { SCENARIO_TEST_SOURCE_SUFFIX } from '../../toolchain/ts/rompack/scenario_test';
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
 import type { Polygon, RectBounds } from '../../machine/ts/common/rect';
 import type { vec2arr } from '../../machine/ts/common/vector';
@@ -183,7 +184,7 @@ function toWorkspaceRelativePath(filepath: string): string {
 	return normalizeWorkspacePath(workspacePath);
 }
 
-function normalizeVirtualRootPath(root?: string): string {
+export function normalizeVirtualRootPath(root?: string): string {
 	if (!root || root.length === 0) {
 		return null;
 	}
@@ -575,6 +576,8 @@ export async function getResMetaList(
 	const seenPaths = new Set<string>();
 
 	const pushFile = (filepath: string) => {
+		// Assertion suites are debug source assets, never gameplay modules (including res/).
+		if (options.domain === 'cart' && filepath.endsWith(SCENARIO_TEST_SOURCE_SUFFIX)) return;
 		const normalized = resolve(filepath);
 		if (seenPaths.has(normalized)) return;
 		seenPaths.add(normalized);

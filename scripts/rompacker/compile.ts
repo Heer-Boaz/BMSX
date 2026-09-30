@@ -24,6 +24,7 @@ import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import { decodeBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import { buildScenarioTestSourceAssets } from './scenario_test_sources';
 import { getRomManifest } from './build_inputs';
+import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 
 export async function compileSystem(prepared: PreparedUnit, outputDirectory: string, progress: BuildProgress): Promise<readonly RomBuildOutput[]> {
 	const { inputs, sourceFiles, recipe: { debug, optLevel, projectRoot: virtualRoot } } = prepared;
@@ -98,9 +99,8 @@ export async function compileCart(prepared: PreparedUnit, outputDirectory: strin
 	const romManifest = getRomManifest(inputs);
 	if (romManifest === null) throw new Error(`ROM manifest missing in ${virtualRoot}`);
 	const biosImports = cartSourceFiles.length === 0 ? undefined : decodeBlua32BiosImports(biosImportsBytes);
-	const { TEST_EXECUTION_MODULE_PATH } = await import('../../toolchain/ts/rompack/test_cartridge');
 	const { buildRomBlua32Tail, createTextureAtlases, finalizeRompack, generateRomAssets,
-		getResMetaList, getResourcesList } = await import('./rombuilder');
+		getResMetaList, getResourcesList, resolveVirtualSourcePath } = await import('./rombuilder');
 	const { lintCartSources } = await import('./cart_lua_linter_runtime');
 	progress('Scan resources');
 	const romResMetaList = await getResMetaList(inputs, {
@@ -108,7 +108,9 @@ export async function compileCart(prepared: PreparedUnit, outputDirectory: strin
 		extraLuaFiles: cartSourceFiles,
 		libraryLuaFiles: allLibraryFiles,
 		sourceOnlyLuaRootFiles: scenarioSourceFiles,
-		sourceOnlyLuaModuleRoots: scenarioSourceFiles.length === 0 ? [] : [TEST_EXECUTION_MODULE_PATH],
+		// Debug media supports authoring the first scenario, not only replaying packed suites.
+		// The runner and recorders remain source-only: no gameplay initialization or code cost.
+		sourceOnlyLuaModuleRoots: testLibraryFiles.map(file => toLuaModulePath(resolveVirtualSourcePath(file, virtualRoot))),
 		virtualRoot,
 	});
 	// Build resources
@@ -123,7 +125,7 @@ export async function compileCart(prepared: PreparedUnit, outputDirectory: strin
 
 	progress('Generate ROM assets');
 	const romAssets = await generateRomAssets(resources, progress);
-	romAssets.push(...buildScenarioTestSourceAssets(scenarioSourceFiles.map(file => inputs.files.get(resolve(file))!)));
+	romAssets.push(...buildScenarioTestSourceAssets(scenarioSourceFiles.map(file => inputs.files.get(resolve(file))!), virtualRoot));
 	const romLayout = layoutRomPrefix(romAssets, debug, romManifest);
 	let blua32: CartRomBlua32Tail | null = null;
 	if (biosImports !== undefined) {
