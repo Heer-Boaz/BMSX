@@ -4880,6 +4880,14 @@ text and parsed module are published together by the source-build owner.
 The workflow contract and production references are in
 [`studio_development_workflows.md`](studio_development_workflows.md).
 
+Code editing commands own their complete result selection before committing
+the edit, not just the new caret position. Typing, pasting and deletion collapse
+the selection through the shared cursor owner before history or content listeners
+observe it. An empty Shift-selection anchor must not survive at a removed row or
+become an unintended selection after typing. Line operations that preserve a
+selection move both endpoints. The text buffer does not clamp stale editor
+positions, and autosave/rendering do not repair them.
+
 The workbench observes the physical supervisor-fault sequence while the BIOS
 monitor remains visible and retains the corresponding tooling fault snapshot.
 It does not replace the monitor by activating the editor. On the next explicit

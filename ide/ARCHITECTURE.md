@@ -420,6 +420,17 @@ scroll rows are never treated as buffer rows. Widget activation/history reveal h
 the text model does not know cursor or graph representations. See
 [edit-associated source selection](../docs/editor_edit_bookmarks_design.md).
 
+Editing commands establish their whole result selection before `markTextMutated`
+captures history and publishes content. Ordinary insertion/deletion uses the
+existing `moveSingleCursor(..., false)` operation, including when Shift-navigation
+left an empty anchor. Clearing selection after publication is too late: Undo and
+model observers have already retained the incorrect range. Indentation without a
+selection also ends with a collapsed caret; selected-line transformations retain
+and move both endpoints. No repair/clamping belongs in PieceTree, rendering or
+workspace serialization. This follows the result-selection ownership in
+[VS Code's replacement commands](https://github.com/microsoft/vscode/blob/main/src/vs/editor/common/commands/replaceCommand.ts)
+and [cursor edit execution](https://github.com/microsoft/vscode/blob/main/src/vs/editor/common/cursor/cursor.ts).
+
 Workbench Back/Forward is a separate bounded navigation history, not document
 Undo or a visual-editor-local stack. `navigation/navigation_history.ts` captures
 the active pane's input identity and optional contribution-owned selection.

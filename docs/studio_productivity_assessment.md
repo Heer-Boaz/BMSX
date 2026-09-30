@@ -175,9 +175,13 @@ not assumptions that existing UI features are absent.
    The third concurrent Studio window stalled at `navigator.gpu.requestAdapter`
    in this Chromium/SwiftShader environment. A minimal three-window WebGPU sample
    did not hang; the exact cause is unresolved, not established as a browser limit.
-   The earlier PieceTree exception is also not proven fixed. Correct obsolete
-   verification expectations without replacing them with exact presentation-string
-   contracts. Mobile sizing and secure LAN delivery retain their separately
+   The earlier PieceTree exception is now reproduced and fixed at its owner:
+   text edits retired neither an empty Shift-selection anchor on a removed line
+   nor, consistently, its recorded Undo state. Browser keyboard editing,
+   Undo/Redo and Save/reload now pass the formerly failing sequence; see
+   [editor reliability evidence](studio_build_jobs.md#editor-reliability-follow-through-2026-09-30).
+   Correct obsolete verification expectations without replacing them with exact
+   presentation-string contracts. Mobile sizing and secure LAN delivery retain their separately
    [documented limitations](studio_architecture_foundation.md#open-platform-usability-work-2026-09-29).
 
 This running CLI request did not have native Studio tools in its negotiated tool

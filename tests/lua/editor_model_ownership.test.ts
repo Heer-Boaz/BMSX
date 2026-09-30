@@ -24,7 +24,8 @@ import { clearBackgroundTasks, runBackgroundTasks } from '../../ide/common/backg
 import { startSearchJob } from '../../ide/workbench/contrib/code_editor/find/search';
 import { editorSearchState } from '../../ide/workbench/contrib/code_editor/find/widget_state';
 import type { HostClock } from '../../hosts/common/clock';
-import { backspace } from '../../ide/editor/editing/text_editing_and_selection';
+import { backspace, deleteForward, deleteWordBackward, deleteWordForward, indentSelectionOrLine, insertLineBreak, insertText, pasteText, unindentSelectionOrLine } from '../../ide/editor/editing/text_editing_and_selection';
+import { getSingleCursorSelectionRange, setSingleCursorSelectionAnchor } from '../../ide/editor/editing/cursor/state';
 import { restoreCodeEditorViewSnapshot, undo as undoActiveEdit } from '../../ide/editor/editing/undo_controller';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
@@ -366,6 +367,74 @@ test('backspace over a selection commits one model-owned undo element', t => {
 	assert.equal(model.buffer.getText(), 'root');
 	assert.equal(view.cursorColumn, 4);
 	assert.deepEqual(view.selectionAnchor, { row: 0, column: 0 });
+});
+
+test('backspace after Shift+End on an empty line publishes a collapsed caret when that line is removed', t => {
+	const model = new EditorTextModel(luaResource('empty-selection.lua'), 'lua', 'head\n');
+	const view = createCodeEditorViewState();
+	view.cursorRow = 1;
+	setSingleCursorSelectionAnchor(view, 1, 0);
+	const inputs = new CodeEditorInputManager();
+	inputs.register(codeContext(model, view));
+	activeCodeEditor.attach(model, view);
+	configureFontVariant(editorTestClock, DEFAULT_FONT_VARIANT, 'lua');
+	t.after(() => { inputs.clear(); activeCodeEditor.detach(); model.dispose(); });
+
+	backspace();
+	insertText('!');
+	assert.equal(model.buffer.getText(), 'head!');
+	assert.equal(getSingleCursorSelectionRange(view), null);
+	model.undo();
+	assert.equal(model.buffer.getText(), 'head');
+	assert.equal(getSingleCursorSelectionRange(view), null);
+	model.undo();
+	assert.equal(model.buffer.getText(), 'head\n');
+	assert.equal(view.cursorRow, 1);
+	assert.equal(getSingleCursorSelectionRange(view), null);
+	model.redo(); model.redo();
+	assert.equal(model.buffer.getText(), 'head!');
+	assert.equal(getSingleCursorSelectionRange(view), null);
+});
+
+test('ordinary text edits publish and retain a collapsed result selection, including an initially empty anchor', t => {
+	const cases = [
+		{ run: () => insertText('x'), source: 'abc', column: 1, result: 'axbc' },
+		{ run: insertLineBreak, source: 'abc', column: 1, result: 'a\nbc' },
+		{ run: () => pasteText('x\ny'), source: 'abc', column: 1, result: 'ax\nybc' },
+		{ run: backspace, source: 'abc', column: 1, result: 'bc' },
+		{ run: deleteForward, source: 'a\nb', column: 1, result: 'ab' },
+		{ run: deleteWordBackward, source: 'one two', column: 4, result: 'two' },
+		{ run: deleteWordForward, source: 'one two', column: 0, result: 'two' },
+		{ run: indentSelectionOrLine, source: 'abc', column: 1, result: '\tabc' },
+		{ run: unindentSelectionOrLine, source: '\tabc', column: 2, result: 'abc' },
+	];
+	for (const entry of cases) {
+		const model = new EditorTextModel(luaResource('edit-selection.lua'), 'lua', entry.source);
+		const view = createCodeEditorViewState();
+		view.cursorColumn = entry.column;
+		setSingleCursorSelectionAnchor(view, 0, entry.column);
+		const inputs = new CodeEditorInputManager();
+		inputs.register(codeContext(model, view));
+		activeCodeEditor.attach(model, view);
+		configureFontVariant(editorTestClock, DEFAULT_FONT_VARIANT, 'lua');
+		t.after(() => { inputs.clear(); activeCodeEditor.detach(); model.dispose(); });
+		let events = 0;
+		model.onDidChangeContent(() => {
+			events += 1;
+			assert.equal(getSingleCursorSelectionRange(view), null);
+			model.buffer.offsetAt(view.cursorRow, view.cursorColumn);
+		});
+		entry.run();
+		assert.equal(model.buffer.getText(), entry.result);
+		const cursor = { row: view.cursorRow, column: view.cursorColumn };
+		model.undo();
+		assert.equal(model.buffer.getText(), entry.source);
+		assert.equal(view.cursorRow, 0); assert.equal(view.cursorColumn, entry.column);
+		model.redo();
+		assert.equal(model.buffer.getText(), entry.result);
+		assert.equal(view.cursorRow, cursor.row); assert.equal(view.cursorColumn, cursor.column);
+		assert.equal(events, 3);
+	}
 });
 
 test('a local search job cannot continue against another model with the same version', (t) => {

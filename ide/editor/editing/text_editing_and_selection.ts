@@ -33,6 +33,7 @@ import {
 	collapseSingleCursorSelection,
 	comparePositions,
 	getSingleCursorSelectionRange,
+	moveSingleCursor,
 	setSingleCursorPosition,
 	setSingleCursorSelectionAnchor,
 } from './cursor/state';
@@ -267,13 +268,11 @@ export function replaceSelectionWith(text: string): void {
 
 	const newOffset = startOffset + text.length;
 	buffer.positionAt(newOffset, tmpPosition);
-	activeCodeEditor.view.cursorRow = tmpPosition.row;
-	activeCodeEditor.view.cursorColumn = tmpPosition.column;
+	moveSingleCursor(activeCodeEditor.view, tmpPosition.row, tmpPosition.column, false);
 
 	recordEditContext(text.length === 0 ? 'delete' : 'replace', text);
 	invalidateLineRange(start.row, tmpPosition.row);
 	editorViewState.layout.invalidateHighlightsFromRow(start.row);
-	activeCodeEditor.view.selectionAnchor = null;
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -305,14 +304,12 @@ export function insertText(text: string): void {
 	applyUndoableReplace(offset, 0, text);
 	const newOffset = offset + text.length;
 	buffer.positionAt(newOffset, tmpPosition);
-	activeCodeEditor.view.cursorRow = tmpPosition.row;
-	activeCodeEditor.view.cursorColumn = tmpPosition.column;
+	moveSingleCursor(activeCodeEditor.view, tmpPosition.row, tmpPosition.column, false);
 	invalidateLineRange(startRow, tmpPosition.row);
 	recordEditContext('insert', text);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
-	clearSelection();
 	revealCursor();
 }
 
@@ -341,8 +338,7 @@ export function insertLineBreak(): void {
 	applyUndoableReplace(offset, 0, insertion);
 	const newOffset = offset + insertion.length;
 	buffer.positionAt(newOffset, tmpPosition);
-	activeCodeEditor.view.cursorRow = tmpPosition.row;
-	activeCodeEditor.view.cursorColumn = tmpPosition.column;
+	moveSingleCursor(activeCodeEditor.view, tmpPosition.row, tmpPosition.column, false);
 
 	invalidateLineRange(sourceRow, tmpPosition.row);
 	editorViewState.layout.invalidateHighlightsFromRow(sourceRow);
@@ -350,7 +346,6 @@ export function insertLineBreak(): void {
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
-	clearSelection();
 	revealCursor();
 }
 
@@ -369,8 +364,7 @@ export function insertClipboardText(text: string): void {
 	applyUndoableReplace(offset, 0, text);
 	const newOffset = offset + text.length;
 	buffer.positionAt(newOffset, tmpPosition);
-	activeCodeEditor.view.cursorRow = tmpPosition.row;
-	activeCodeEditor.view.cursorColumn = tmpPosition.column;
+	moveSingleCursor(activeCodeEditor.view, tmpPosition.row, tmpPosition.column, false);
 
 	invalidateLineRange(startRow, tmpPosition.row);
 	editorViewState.layout.invalidateHighlightsFromRow(startRow);
@@ -407,8 +401,7 @@ export function backspace(): void {
 	const removed = buffer.getTextRange(deleteOffset, cursorOffset);
 	applyUndoableReplace(deleteOffset, 1, '');
 	buffer.positionAt(deleteOffset, tmpPosition);
-	activeCodeEditor.view.cursorRow = tmpPosition.row;
-	activeCodeEditor.view.cursorColumn = tmpPosition.column;
+	moveSingleCursor(activeCodeEditor.view, tmpPosition.row, tmpPosition.column, false);
 	invalidateLineRange(tmpPosition.row, tmpPosition.row + 1);
 	editorViewState.layout.invalidateHighlightsFromRow(tmpPosition.row);
 	recordEditContext('delete', removed);
@@ -439,8 +432,7 @@ export function deleteForward(): void {
 	const removed = buffer.getTextRange(cursorOffset, cursorOffset + 1);
 	applyUndoableReplace(cursorOffset, 1, '');
 	buffer.positionAt(cursorOffset, tmpPosition);
-	activeCodeEditor.view.cursorRow = tmpPosition.row;
-	activeCodeEditor.view.cursorColumn = tmpPosition.column;
+	moveSingleCursor(activeCodeEditor.view, tmpPosition.row, tmpPosition.column, false);
 	invalidateLineRange(tmpPosition.row, tmpPosition.row + 1);
 	editorViewState.layout.invalidateHighlightsFromRow(tmpPosition.row);
 	recordEditContext('delete', removed);
@@ -478,8 +470,7 @@ export function deleteWordBackward(): void {
 	const removed = buffer.getTextRange(targetOffset, cursorOffset);
 	applyUndoableReplace(targetOffset, cursorOffset - targetOffset, '');
 	buffer.positionAt(targetOffset, tmpPosition);
-	activeCodeEditor.view.cursorRow = tmpPosition.row;
-	activeCodeEditor.view.cursorColumn = tmpPosition.column;
+	moveSingleCursor(activeCodeEditor.view, tmpPosition.row, tmpPosition.column, false);
 	invalidateLineRange(tmpPosition.row, tmpPosition.row + 1);
 	editorViewState.layout.invalidateHighlightsFromRow(tmpPosition.row);
 	recordEditContext('delete', removed);
@@ -517,8 +508,7 @@ export function deleteWordForward(): void {
 	const removed = buffer.getTextRange(cursorOffset, destinationOffset);
 	applyUndoableReplace(cursorOffset, destinationOffset - cursorOffset, '');
 	buffer.positionAt(cursorOffset, tmpPosition);
-	activeCodeEditor.view.cursorRow = tmpPosition.row;
-	activeCodeEditor.view.cursorColumn = tmpPosition.column;
+	moveSingleCursor(activeCodeEditor.view, tmpPosition.row, tmpPosition.column, false);
 	invalidateLineRange(tmpPosition.row, tmpPosition.row + 1);
 	editorViewState.layout.invalidateHighlightsFromRow(tmpPosition.row);
 	recordEditContext('delete', removed);
@@ -754,7 +744,7 @@ export function indentSelectionOrLine(): void {
 		const row = activeCodeEditor.view.cursorRow;
 		const offset = buffer.getLineStartOffset(row);
 		applyUndoableReplace(offset, 0, unit);
-		activeCodeEditor.view.cursorColumn += unit.length;
+		moveSingleCursor(activeCodeEditor.view, row, activeCodeEditor.view.cursorColumn + unit.length, false);
 		editorViewState.layout.invalidateLine(activeCodeEditor.view.cursorRow);
 		recordEditContext('insert', unit);
 		markTextMutated();
@@ -803,7 +793,7 @@ export function unindentSelectionOrLine(): void {
 		prepareUndo('unindent', false);
 		const offset = buffer.getLineStartOffset(row);
 		applyUndoableReplace(offset, length, '');
-		activeCodeEditor.view.cursorColumn = Math.max(0, activeCodeEditor.view.cursorColumn - length);
+		moveSingleCursor(activeCodeEditor.view, row, Math.max(0, activeCodeEditor.view.cursorColumn - length), false);
 		editorViewState.layout.invalidateLine(activeCodeEditor.view.cursorRow);
 		recordEditContext('delete', line.slice(0, length));
 		markTextMutated();

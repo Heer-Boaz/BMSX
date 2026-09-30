@@ -506,8 +506,35 @@ public `game-started` state without page errors; that is boot, not gameplay proo
 The broader `scripts` typecheck still reports the pre-existing unused
 `createRuntimeSourceState` import in `scripts/bootrom/platforms/node_tooling_entry.ts`.
 
-**Still open:** the earlier `[PieceTreeBuffer] nth LF out of range` exception was
-not reproduced while replacing the entry with `result = clock.FRAME` and taking
-the visible unsaved-Reboot path. The result was an ordinary compiler diagnostic.
-No speculative PieceTree guard was added, and this is not a claim that the
-original exception has been fixed.
+### Editor reliability follow-through (2026-09-30)
+
+The earlier `[PieceTreeBuffer] nth LF out of range` exception is now reproduced
+and fixed. Replaying the original keyboard actions **starting at the earlier
+whole-file replacement**, rather than the subsequent retry, exposed the missing
+case. Its minimal browser reproduction is: paste `module<entry>\n`, move to the
+last empty line, `Shift+End`, `Backspace`, then type a space. Shift+End left an
+empty anchor; Backspace removed the newline and moved only the caret. The next
+insertion interpreted the old anchor on removed row 1 as a selection. The same
+invalid selection could subsequently break workspace-session serialization.
+Reboot and the compiler were not the source of the stale row.
+
+The fix is in ordinary text editing: insertion, deletion and unselected
+indentation establish a collapsed result through the existing shared cursor
+operation **before** committing history/content events. Selected-line
+transformations still retain their selections. No buffer fallback, bounds repair,
+per-frame validation, extra text scan or new helper was added; these changes add
+only constant-time selection-state writes on the edit path, not allocations.
+The result-selection model was checked against VS Code's
+[replacement commands](https://github.com/microsoft/vscode/blob/main/src/vs/editor/common/commands/replaceCommand.ts)
+and [cursor execution](https://github.com/microsoft/vscode/blob/main/src/vs/editor/common/cursor/cursor.ts).
+
+The old browser bundle fails the minimal sequence; the rebuilt bundle completes
+it without exceptions. Actual keyboard Undo/Redo round-trips both the deleted
+newline and subsequent insertion. Copy through the platform clipboard confirms
+the exact source at each step. Save/reload restores the single-line document and
+caret, and the resulting UI was inspected. Diagnostic CDP inspection was used to
+locate the old stale anchor, not to edit private model state. Local evidence:
+`.bmsx/authoring/editor-reliability/` (before/after keyboard logs, exception stacks,
+clipboard results and UI images).
+The focused model/selection/history bundle passes 47 checks; IDE and browser
+typechecks, the Studio product build and strict architecture audit also pass.
