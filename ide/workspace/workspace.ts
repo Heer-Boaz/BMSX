@@ -125,6 +125,9 @@ export async function createLuaResource(
 	const record = createWorkspaceRecord(clock, contents);
 	const asset = createWorkspaceLuaSourceRecord(registry, path, record);
 	await workspaceRecords.write(path, record, false);
+	if (runtimeLuaSourceRegistry(sources, request.domain) !== registry) {
+		throw new Error(`Created '${path}', but its project was closed before catalog admission.`);
+	}
 	return admitWorkspaceLuaResource(sources, request.domain, asset);
 }
 

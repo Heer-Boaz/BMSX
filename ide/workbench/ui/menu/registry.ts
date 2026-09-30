@@ -203,6 +203,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		...TEST_DEBUG_ACTIONS,
 		{ type: 'command', command: 'scenarioLab.inspectStop' },
 		{ type: 'command', command: 'scenarioLab.rerun' },
+		{ type: 'command', command: 'scenarioLab.revealRun' },
 		{ type: 'command', command: 'scenarioLab.cancel' },
 		{ type: 'command', command: 'scenarioLab.details' },
 		{ type: 'command', command: 'scenarioLab.inspectTarget' },

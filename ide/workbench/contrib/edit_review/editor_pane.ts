@@ -63,18 +63,21 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 		// Reveal before applying, so the edit and its undo land in a visible editor rather than
 		// in a buffer with no view. Saving follows, because an applied edit nobody wrote to disk
 		// is the half-state this review is meant to resolve.
-		const input = this.input, models = input.proposal.files.map(file => file.model);
-		this.host.reveal(models);
-		try { input.proposal.apply(); }
-		catch (error) {
-			showEditorMessage(error instanceof Error ? error.message : String(error), colors.COLOR_STATUS_WARNING, 4);
-			return;
-		}
-		input.saving = true; input.renderedState = undefined;
-		void this.host.save(models).then(failure => {
-			input.saving = false; input.saveFailure = failure ?? ''; input.renderedState = undefined;
+		void this.apply(this.input);
+	}
+	private async apply(input: WorkspaceEditReviewInput): Promise<void> {
+		if (input.proposal.kind === 'edit') this.host.reveal(input.proposal.files.flatMap(file => file.kind === 'edit' ? [file.model] : []));
+		try {
+			const models = await input.proposal.apply();
+			// Creation already persisted its exact bytes before catalog admission.
+			if (input.proposal.kind === 'create') { this.host.reveal(models); input.saveFailure = ''; return; }
+			input.saving = true; input.renderedState = undefined;
+			const failure = await this.host.save(models);
+			input.saveFailure = failure ?? '';
 			if (failure !== undefined) showEditorMessage(failure, colors.COLOR_STATUS_WARNING, 4);
-		});
+		} catch (error) {
+			showEditorMessage(error instanceof Error ? error.message : String(error), colors.COLOR_STATUS_WARNING, 4);
+		} finally { input.saving = false; input.renderedState = undefined; }
 	}
 	public override update(): void {
 		const { layout, actionBar, viewport } = this.input;
@@ -82,8 +85,9 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 		const proposal = this.input.proposal;
 		if (changed || this.input.renderedState !== proposal.state) {
 			this.input.renderedState = proposal.state;
-			this.input.status = truncateMeasuredText(`${proposal.files.length} files | ${proposal.state === 'pending' ? 'Pending - Apply opens, applies and saves; it does not install'
-				: proposal.state === 'applied' ? this.input.saving ? 'Applied - saving'
+			this.input.status = truncateMeasuredText(`${proposal.files.length} ${proposal.files.length === 1 ? 'file' : 'files'} | ${proposal.state === 'pending' ? 'Pending - Apply opens, applies and saves; it does not install'
+				: proposal.state === 'applied' ? proposal.kind === 'create' ? 'New source created and saved - not installed'
+					: this.input.saving ? 'Applied - saving'
 					: this.input.saveFailure === undefined ? 'Applied - Undo in either source view'
 						: this.input.saveFailure === '' ? 'Applied and saved - not installed; assets need a rebuild. Undo in either source view'
 							: `Applied but NOT saved: ${this.input.saveFailure}`

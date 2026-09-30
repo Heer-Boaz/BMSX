@@ -81,7 +81,10 @@ proposal from a disposed workspace. See [resource context](../docs/studio_resour
 of an operation. Changes and teardown retire the entire accepted context,
 including an empty workspace; late results cannot refresh their own edit rights.
 `WorkspaceEditProposal` takes that context and admits exact edits through shared
-model history. Apply is distinct from Save/build/install. Terminal proposals
+model history. Its creation variant invokes exclusive `createLuaResource` only
+after approval; previewing a new path creates neither an empty model nor a file.
+Text-edit Undo and file creation are different operations. Apply is distinct from
+Save/build/install. Terminal proposals
 cannot execute twice, and a failed operation is not called a successful edit.
 
 `workbench/contrib/edit_review` is a transient, resource-oriented review input,

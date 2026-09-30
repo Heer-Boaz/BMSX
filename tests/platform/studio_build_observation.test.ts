@@ -5,8 +5,45 @@ import { once } from 'node:events';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import type { StudioBuildJob, StudioBuildRequest } from '../../hosts/common/studio_builds';
+import type { PublishedBuildOpenResult } from '../../ide/workbench/services/builds';
 
 // Exercise browser storage and independently ordered HTTP/stream observations, not UI copy.
+test('published navigation reports browser policy denial and an allowed gesture opens an isolated exact-artifact tab', { timeout: 30000 }, async t => {
+	const artifact = 'a'.repeat(64);
+	const bundle = await build({ stdin: { resolveDir: process.cwd(), contents: `
+		import { openPublishedBuild } from './ide/browser/published_media';
+		const open = () => { globalThis.result = openPublishedBuild('${artifact}'); };
+		document.querySelector('button').onclick = open;
+		if (location.search.includes('blocked=1')) open();
+	` }, bundle: true, platform: 'browser', format: 'iife', write: false });
+	const server = createServer((req, res) => {
+		if (req.url === '/probe.js') { res.setHeader('Content-Type', 'text/javascript'); res.end(bundle.outputFiles[0].text); }
+		else {
+			if (req.url!.includes('blocked=1')) res.setHeader('Content-Security-Policy', 'sandbox allow-scripts allow-same-origin');
+			res.end('<!doctype html><button>Open build</button><script src="/probe.js"></script>');
+		}
+	});
+	server.listen(0, '127.0.0.1'); await once(server, 'listening');
+	const browser = await chromium.launch({ args: ['--no-sandbox'], ignoreDefaultArgs: ['--disable-popup-blocking'] });
+	t.after(async () => { await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
+	const address = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+	const context = await browser.newContext(), page = await context.newPage();
+	const original = `${address}/studio.debug.html?rom=original.debug.rom#original`;
+	const published = `${address}/studio.debug.html?artifact=${artifact}`;
+	await page.goto(`${address}/studio.debug.html?rom=original.debug.rom&blocked=1`);
+	const denied: PublishedBuildOpenResult = await page.evaluate(() => (globalThis as any).result);
+	assert.deepEqual(denied, { status: 'blocked', url: published });
+	assert.equal(context.pages().length, 1, 'denied navigation is not retried or redirected into the current page');
+	await page.goto(original);
+	const opened = context.waitForEvent('page');
+	await page.getByRole('button').click();
+	const child = await opened;
+	await child.waitForURL(published);
+	assert.equal(await child.evaluate(() => window.opener), null);
+	assert.equal(page.url(), original);
+	assert.deepEqual(await page.evaluate(() => (globalThis as any).result), { status: 'opened', url: published });
+});
+
 test('build receipts survive multiple windows and HTTP/stream reordering', { timeout: 30000 }, async t => {
 	const bundle = await build({ stdin: { resolveDir: process.cwd(), contents: `
 		import { HttpWorkspaceBuilds } from './ide/browser/builds';

@@ -1,7 +1,7 @@
 # Studio execution operation results
 
-Status: Hot Resume implementation complete, 2026-09-23. **Only gate 3a** of
-[Studio foundation](studio_architecture_foundation.md), not permission to add Codex.
+Status: Hot Resume operation owner implemented 2026-09-23, with a bounded
+workbench/tool execution context added 2026-09-30.
 Reboot/startup has its own implemented [physical reset result](studio_boot_operations.md),
 not a Hot Resume init-completion result by analogy. Source-save acknowledgement
 is implemented at its own boundary; see
@@ -56,6 +56,32 @@ cannot overwrite a newer request's status. Reset/shutdown retire that projection
 without changing already returned terminal outcomes. A new request replaces
 old transient feedback with pending, and guest faults never leave a success
 toast from an earlier request on screen.
+
+### Workbench tool execution
+
+`studio_hot_resume` calls this same service with the debugger's existing
+`workbench` execution context. It establishes a requested host pause, including
+when invoked from a running Game pane. The supervisor-return plan runs through
+the normal host frame. Annotated init uses the existing physical completion-call
+fence, then relinquishes execution before ordinary gameplay continues. No new
+scheduler, polling timer, guest ABI, reset, snapshot restoration or CPU loop is
+introduced. Init breakpoints remain ordinary debugger stops: Continue/Step uses
+the same source debugger. The UI command retains its `game` context and normal
+resume-to-game behavior.
+
+A non-faulted active mutation rejects overlapping workbench admission before
+source application; recovery of faulted init retains the existing owner.
+Abort prevents queued preparation/admission, but cannot unapply an accepted
+physical mutation. The tool returns admission and an operation ID; status and
+completion are observed through `studio_runtime_status.hotResume`. A pending
+init is not reported as success. Frame/history navigation remains unavailable
+while the mutation owns physical roots.
+
+This extension touches IDE plans and host execution intent only. TypeScript and
+C++ CPU/frame/register/media representations and hot-path callsites are unchanged.
+`RuntimeGuestCallPlan`, `HotResumeSupervisorPlan`, and completion-batch pruning
+are the existing TypeScript IDE owners; there is no corresponding native IDE
+operation to mirror.
 
 ## Representation and performance boundary
 

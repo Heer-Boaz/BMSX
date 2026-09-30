@@ -1,3 +1,5 @@
+import { WorkbenchSplitControl } from '../../ui/split_control';
+import { drawWorkbenchSplit } from '../../render/split_view';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { ScenarioTargetInspection } from './target_inspection';
 import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
@@ -36,6 +38,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		return new ScenarioLabNavigationSelection(this.input.view);
 	}
 
+	private readonly split = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly resultsFocus = inputFocus.createTarget(this.focusTarget);
 	private readonly unbindResultsKeyboard = this.resultsFocus.bindKeyboard(input => this.handleKeyboard(input));
 	private readonly unbindTestsFocus = this.focusTarget.onDidFocus(() => {
@@ -89,8 +92,10 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		this.focusTarget.next = this.resultsFocus;
 		this.resultsFocus.previous = this.focusTarget;
-		this.resultsFocus.next = this.actionBar.focusTarget;
-		this.actionBar.focusTarget.previous = this.resultsFocus;
+		this.resultsFocus.next = this.split.focusTarget;
+		this.split.focusTarget.previous = this.resultsFocus;
+		this.split.focusTarget.next = this.actionBar.focusTarget;
+		this.actionBar.focusTarget.previous = this.split.focusTarget;
 		this.actionBar.focusTarget.next = this.focusTarget;
 		this.focusTarget.previous = this.actionBar.focusTarget;
 	}
@@ -102,6 +107,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		navigationSelection?.restore(this.input.view);
 		this.controller.updateView(this.input.view);
 		this.actionBar.setInput(this.input.view.actionBar, this.resultsFocus);
+		this.split.setInput(this.input.view.split);
 	}
 
 	public override focus(): void {
@@ -110,6 +116,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 	}
 
 	public override clearInput(): void {
+		this.split.clearInput();
 		this.inspector.hide();
 		this.targetInspection.hide();
 		pointerHover.release(this);
@@ -118,6 +125,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 	}
 
 	public override dispose(): void {
+		this.split.dispose();
 		this.inspector.dispose();
 		this.targetInspection.dispose();
 		pointerHover.release(this);
@@ -165,6 +173,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		}
 		const view = this.input.view;
 		drawScenarioLab(view, this.commands);
+		drawWorkbenchSplit(view.split, this.split.hovered || this.split.focusTarget.hasFocus);
 	}
 
 	public handleKeyboard(playerInput: PlayerInput): void {
@@ -190,7 +199,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		if (this.targetInspection.model !== undefined) return this.targetInspection.handlePointer(snapshot, justPressed, now);
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
 		const view = this.input.view;
-		if (this.actionBar.handlePointer(snapshot)) {
+		if (this.split.handlePointer(snapshot) || this.actionBar.handlePointer(snapshot)) {
 			if (justPressed) { view.lastPointerClickTimeMs = 0; view.lastPointerClickRowId = null; }
 			return true;
 		}
@@ -219,7 +228,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 	public drawStatusBar(bounds: Readonly<RectBounds>, textColor: number): void {
 		drawEditorText(
 			editorViewState.font,
-			this.input.view.status.renderedInfo,
+			this.split.focusTarget.hasFocus ? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET' : this.input.view.status.renderedInfo,
 			bounds.left + 4,
 			bounds.top + 2,
 			0,

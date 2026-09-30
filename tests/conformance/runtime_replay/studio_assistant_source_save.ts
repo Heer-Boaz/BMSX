@@ -22,7 +22,9 @@ export async function runAssistantSourceSave(kind: StudioRendererKind, canvas: H
 	await submitAssistantText(test, 'Read Lua and canonical YAML. Propose comments for review, without saving or installing.');
 	await until(() => conversation.state === 'ready' && conversation.entries.some(entry => entry.proposal !== undefined), 'source Save: model proposes exact source edits');
 	const proposal = conversation.entries.find(entry => entry.proposal !== undefined)!.proposal!;
-	const yaml = proposal.files.find(file => file.model.mode === 'yaml')!.model;
+	const yamlEdit = proposal.files.find(file => file.kind === 'edit' && file.model.mode === 'yaml')!;
+	if (yamlEdit.kind !== 'edit') throw new Error('Existing YAML source edit required');
+	const yaml = yamlEdit.model;
 	const originalYaml = yaml.buffer.getText();
 	check(main.buffer.getText() === original && !main.dirty && !yaml.dirty && ide.textFileSaves.latestOperation(main) === undefined,
 		'a proposal is neither Apply nor Save');

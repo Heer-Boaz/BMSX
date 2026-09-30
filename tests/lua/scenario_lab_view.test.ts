@@ -4,9 +4,10 @@ import { test, type TestContext } from 'node:test';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { api } from '../../ide/runtime/overlay_api';
-import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
+import { createHostOverlayFixture } from '../helpers/host_overlay';
 import {
 	executeScenarioLabNavigation,
+	revealScenarioRun,
 	scenarioLabCommandEnabled,
 	selectScenarioLabResultRow,
 } from '../../ide/workbench/contrib/scenario_lab/navigation';
@@ -23,7 +24,6 @@ import {
 import { ScenarioTestCollection } from '../../ide/testing/scenario/test_collection';
 import { createScenarioLabViewState } from '../../ide/workbench/contrib/scenario_lab/view_state';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
-import { HostOverlayQueue } from '../../machine/ts/render/host_overlay/overlay_queue';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import {
 	createScenarioTestSourceRecord,
@@ -451,12 +451,8 @@ test('scenario workbench renderer uses the active tiny IDE font and retained tex
 	]));
 	const results = new ScenarioResultService();
 	const view = createScenarioLabViewState(collection, results, false);
-	const queue = new HostOverlayQueue();
-	const renderer = new OverlayRenderer(queue);
-	renderer.beginFrame({
-		offscreenCanvasSize: { x: VIEWPORT_WIDTH, y: VIEWPORT_HEIGHT },
-		viewportSize: { x: VIEWPORT_WIDTH, y: VIEWPORT_HEIGHT },
-	});
+	const { queue, renderer, presenter } = createHostOverlayFixture(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+	renderer.beginFrame(presenter);
 	api.beginFrame(renderer);
 	drawScenarioLab(view, {
 		isEnabled: () => true,
@@ -480,4 +476,29 @@ test('scenario workbench renderer uses the active tiny IDE font and retained tex
 	}
 	assert.ok(glyphCount >= 8);
 	assert.equal(titleFound, true);
+});
+
+
+test('explicit run reveal expands ancestors; later results do not steal the selected test', t => {
+	const { collection, results, view } = createViewFixture(t);
+	const root = collection.roots[0], module = root.children[1], item = module.children[0];
+	const initial = view.testPane.selectedNodeId;
+	const run = results.beginRun(item.id, [{ test: item, source: module.source, sourceRevision: 1 }]);
+	view.testPane.collapsedNodeIds.add(root.id); view.testPane.collapsedNodeIds.add(module.id);
+	prepareScenarioLabLayout(view);
+	assert.equal(view.testPane.selectedNodeId, initial, 'background results do not navigate');
+	revealScenarioRun(view, run);
+	prepareScenarioLabLayout(view);
+	assert.equal(view.testPane.selectedNodeId, item.id);
+	assert.equal(view.resultPane.rows[view.resultPane.selectionIndex].run, run);
+	assert.equal(view.focus, 'results');
+	const beforeRows = view.testPane.rows.slice();
+	view.split.resize(0.7); prepareScenarioLabLayout(view);
+	assert.equal(view.testPane.layout.contentRight, view.split.position);
+	assert.ok(view.testPane.rows.every((row, i) => row === beforeRows[i]), 'resize lays out retained rows');
+	view.focus = 'tests'; executeScenarioLabNavigation(view, 'home');
+	const selection = view.testPane.selectedNodeId;
+	const result = results.startItem(run, 0, 0); results.complete(result, 1); results.completeRun(run);
+	prepareScenarioLabLayout(view);
+	assert.equal(view.testPane.selectedNodeId, selection);
 });

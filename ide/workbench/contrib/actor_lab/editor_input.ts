@@ -1,3 +1,4 @@
+import { WorkbenchSplitView } from '../../ui/split_view';
 import { ReadonlyEditorInput } from '../../common/editor_input';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
@@ -22,6 +23,7 @@ export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'>
 	public readonly outline = new ScrollableWorkbenchTree<ActorRow>();
 	public readonly timeline = new ActorTimelineTransport();
 	public readonly timelineLayout = new ActorTimelineLayout();
+	public readonly split = new WorkbenchSplitView(0.4);
 	public readonly previewBounds = create_rect_bounds();
 	public readonly actionBar = createWorkbenchActionBar('actorLab.title');
 	public readonly layout: FullWidthWorkbenchLayout = {

@@ -39,7 +39,9 @@ import {
 import {
 	RuntimeDebuggerPlanResult,
 	type RuntimeDebuggerControlPlan,
+	type RuntimeDebuggerExecutionContext,
 } from './debugger_plans';
+import { RuntimeGuestCallPlan } from './guest_call';
 import type { RuntimeFaultState } from './fault_state';
 import {
 	applyHotResumeRelocation,
@@ -277,6 +279,7 @@ export function admitHotResume(
 	built: BuiltBlua32Revision | null,
 	isCurrent: () => boolean,
 	report: (event: HotResumeEvent) => void,
+	context: RuntimeDebuggerExecutionContext = 'game',
 ): HotResumeAdmission {
 	try {
 		const sourceEditDomains = built === null ? 0 : built.sourceEditDomains;
@@ -394,6 +397,7 @@ export function admitHotResume(
 				prepared,
 				relocation,
 				report,
+				context,
 			);
 			report({ kind: prepared.initCalls.length === 0 ? 'completed' : 'initializing' });
 			return 'applied';
@@ -417,6 +421,7 @@ export function admitHotResume(
 					isCurrent,
 					report,
 				),
+				context,
 			);
 			return 'deferred';
 		}
@@ -435,6 +440,7 @@ function applyPreparedHotResume(
 	prepared: PreparedHotResume,
 	relocation: Uint32Array | null,
 	report: (event: HotResumeEvent) => void,
+	context: RuntimeDebuggerExecutionContext,
 ): void {
 	const cpu = runtime.machine.cpu;
 	// Preparation (including relocation rejection) leaves history untouched.
@@ -488,5 +494,13 @@ function applyPreparedHotResume(
 				? { kind: 'faulted', sequence: result.sequence }
 				: { kind: result.status }),
 		);
+		if (context === 'workbench') {
+			// The ordinary call fence stops before returning to gameplay, including
+			// a pending IRQ. Breakpoints can suspend init without losing its roots.
+			pushRuntimeDebuggerControlPlan(debuggerState,
+				new RuntimeGuestCallPlan(runtime, firstFrameIndex, 'completion', true, completed => {
+					if (completed) debuggerState.plans.pruneCompletedCompletionBatches();
+				}), context);
+		}
 	}
 }

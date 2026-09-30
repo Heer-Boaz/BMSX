@@ -95,7 +95,7 @@ export class RuntimeIdeState {
 		this.scenarioRuns = new ScenarioRunService(editorTextModelService, sources, this.luaTooling, workspaceDirtyRecords, runtime.model, createTestTarget);
 		this.textFileSaves = new TextFileSaveService(editorTextModelService, clock, sources, this.luaTooling, runtime, runtimeTasks);
 		this.hotResumes = new HotResumeService(editorTextModelService, sources, this.luaTooling, this.fault, this.debugger,
-			input, runtime, runtimeTasks, workspaceDirtyRecords);
+			input, runtime, runtimeTasks, execution, workspaceDirtyRecords);
 		this.boots = new BootService(editorTextModelService, sources, this.luaTooling, this.fault, runtime, runtimeTasks,
 			execution, audioOutput, workspaceDirtyRecords);
 		this.diagnostics = new ResourceDiagnosticsService(editorTextModelService, this.luaTooling, clock);

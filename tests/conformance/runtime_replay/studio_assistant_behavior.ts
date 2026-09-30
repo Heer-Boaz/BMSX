@@ -15,7 +15,7 @@ export async function runAssistantBehavior(kind: StudioRendererKind, canvas: HTM
 	await until(() => cycles() > test.runtime.timing.cpuHz * 13, 'behavior tools: boot authoring');
 	await press('ControlRight', 'ShiftRight');
 	harness.openLuaSource('cart.lua');
-	const document = harness.getActiveEditorDocument().model, saved = document.lastSavedSource;
+	const document = harness.getActiveEditorDocument().model;
 	document.pushEditOperations([{ offset: 0, deleteLength: document.buffer.length, text: BEHAVIOR_TOOLS_SOURCE }]);
 	const code = getActiveTab(), position = cycles(), media = ide.sources.currentBlua32Media;
 	const conversation = ide.editor.assistant;
@@ -38,7 +38,7 @@ export async function runAssistantBehavior(kind: StudioRendererKind, canvas: HTM
 		await until(() => conversation.state === 'ready' && conversation.entries.filter(entry => entry.kind === 'proposal').length === index + 1,
 			'behavior tools: semantic edit returned through real model transport');
 		const proposal = conversation.entries.filter(entry => entry.kind === 'proposal')[index].proposal!;
-		check(proposal.state === 'pending' && proposal.files[0].model === document && document.buffer.getText() === before,
+		check(proposal.state === 'pending' && proposal.files[0].kind === 'edit' && proposal.files[0].model === document && document.buffer.getText() === before,
 			'behavior tools: conversation planned a real source edit without applying it');
 		if (index === 0) check(machine.view.document === generation, 'tool reads do not refresh or replace the ordinary Lens generation');
 		await test.click(chat.turnActions.items.find(item => item.command === 'assistant.review')!.bounds);
@@ -68,8 +68,9 @@ export async function runAssistantBehavior(kind: StudioRendererKind, canvas: HTM
 		check(document.buffer.getText() === before, 'one ordinary Undo restores the semantic edit exactly');
 		await press('ControlLeft', 'KeyY'); check(document.buffer.getText() === changed, 'ordinary Redo reuses model history');
 		await test.clickTab(builder.id); await frame();
-		check(cycles() === position && ide.sources.currentBlua32Media === media && document.lastSavedSource === saved,
-			'semantic source tools and review never execute, install or save the authoring game');
+		await until(() => !review.saving && review.saveFailure !== undefined, 'review Save settled');
+		check(cycles() === position && ide.sources.currentBlua32Media === media, 'review never executes or installs the authoring game');
+		check(review.saveFailure === '' && document.lastSavedSource === changed, 'approved review persisted its exact source');
 	}
 	await runPaletteCommand('View: Codex Assistant'); await frame(); await renderer.capture!('conversation');
 	const source = document.buffer.getText();

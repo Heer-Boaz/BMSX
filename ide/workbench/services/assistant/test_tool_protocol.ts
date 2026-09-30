@@ -9,7 +9,7 @@ export type TestToolRequest =
 	| { name: 'studio_start_test_run'; scope: string }
 	| { name: 'studio_wait_test_run' | 'studio_cancel_test_run'; run: string }
 	| { name: 'studio_list_test_runs' }
-	| { name: 'studio_read_test_run'; run: string }
+	| { name: 'studio_read_test_run' | 'studio_reveal_test_run'; run: string }
 	| { name: 'studio_read_test_result'; result: string };
 
 const NO_FIELDS: string[] = [];
@@ -20,6 +20,8 @@ const RESULT_FIELDS = ['result'];
 export const STUDIO_TEST_TOOLS = [
 	...STUDIO_TEST_INSPECTION_TOOLS,
 	...STUDIO_TEST_DEBUGGER_TOOLS,
+	{ name: 'studio_reveal_test_run', description: 'Explicitly open Scenario Lab and select a listed or tool-started run, expanding its test ancestors and results. Does not execute, rerun or cancel anything or move selection on subsequent updates. Requires a retained run handle and its selection in the current test catalog.',
+		inputSchema: { type: 'object', properties: { run: { type: 'string' } }, required: RUN_FIELDS, additionalProperties: false } },
 	{ name: 'studio_list_tests', description: 'Discover current Scenario Lab project/module/named-case selections, including unsaved Lua declarations and declaration diagnostics, without executing guest code. Scope handles belong to this tool context and source owner. Source coordinates are one-based. Starting a scope resolves its current declarations and sources, not a cached discovery snapshot.',
 		inputSchema: { type: 'object', properties: {}, required: NO_FIELDS, additionalProperties: false } },
 	{ name: 'studio_start_test_run', description: 'Start a discovered scope through the ordinary Scenario Lab runner. Captures current workspace sources before asynchronous preparation; every case gets a separate physical test machine. Does not save, install or run the authoring game. Returns an admission receipt, NOT completion or a pass. Use studio_wait_test_run once, not read polling. One workspace run at a time; no hidden queue or retry. This tool context owns cancellation of runs it starts; context retirement or disconnect cancels unfinished owned runs.',
@@ -47,6 +49,7 @@ export function decodeTestToolRequest(name: string, input: unknown): TestToolReq
 		}
 		case 'studio_wait_test_run':
 		case 'studio_cancel_test_run':
+		case 'studio_reveal_test_run':
 		case 'studio_read_test_run': {
 			const value = toolArguments(input, RUN_FIELDS);
 			if (typeof value.run !== 'string') throw new StudioToolInputError('run must be a listed Studio run handle');

@@ -27,7 +27,7 @@ function fixture(t: TestContext) {
 		[b, { version: b.version, edits: [{ offset: 17, deleteLength: 3, text: 'new' }] }],
 	]);
 	const context = new WorkspaceSourceContext(models, sources);
-	const proposal = new WorkspaceEditProposal('Rename old to new', context, edits);
+	const proposal = new WorkspaceEditProposal('Rename old to new', context, { kind: 'edit', edits });
 	t.after(() => { proposal.dispose(); models.clear(); });
 	return { models, sources, a, b, proposal, edits, context };
 }
@@ -144,7 +144,7 @@ test('review admission rejects foreign models and leaves its reading context wit
 	const f = fixture(t), other = new EditorTextModelService();
 	const context = new WorkspaceSourceContext(other, f.sources);
 	t.after(() => { context.dispose(); other.clear(); });
-	assert.throws(() => new WorkspaceEditProposal('Foreign', context, f.edits), /no longer belongs to this workspace/);
+	assert.throws(() => new WorkspaceEditProposal('Foreign', context, { kind: 'edit', edits: f.edits }), /no longer belongs to this workspace/);
 	assert.equal(context.reason, undefined);
 });
 
@@ -157,7 +157,7 @@ test('a reading context starts before an asynchronous proposal, not when edits a
 	f.b.pushEditOperations([{ offset: 0, deleteLength: 0, text: '# external edit\n' }]);
 	assert.equal(read.source, 'return old, old', 'captured evidence remains immutable');
 	assert.throws(() => f.context.read(f.a), /Source changed/);
-	assert.throws(() => new WorkspaceEditProposal('Late result', f.context, f.edits), /Source changed/);
+	assert.throws(() => new WorkspaceEditProposal('Late result', f.context, { kind: 'edit', edits: f.edits }), /Source changed/);
 });
 
 test('workspace teardown retires contexts with no captured or retained models', t => {

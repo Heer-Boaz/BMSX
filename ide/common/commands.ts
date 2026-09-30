@@ -59,6 +59,7 @@ export type EditorScenarioLabCommandId =
 	| 'scenarioLab.debug'
 	| 'scenarioLab.continue' | 'scenarioLab.stepInto' | 'scenarioLab.stepOver' | 'scenarioLab.stepOut' | 'scenarioLab.pause' | 'scenarioLab.breakpoints'
 	| 'scenarioLab.run'
+	| 'scenarioLab.revealRun'
 	| 'scenarioLab.rerun'
 	| 'scenarioLab.cancel';
 

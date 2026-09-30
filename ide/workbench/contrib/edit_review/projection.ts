@@ -13,9 +13,9 @@ export function layoutEditReviewRows(input: WorkspaceEditReviewInput, width: num
 		writeWrappedSourceLine(wrapped, text, width, measure);
 		for (const text of wrapped) rows.push({ text, kind });
 	};
-	for (const { model, version, hunks } of input.proposal.files) {
-		append(`${model.identity.domain}: ${model.identity.path}  v${version}`, 'header');
-		for (const hunk of hunks) {
+	for (const file of input.proposal.files) {
+		append(`${file.identity.domain}: ${file.identity.path}  ${file.kind === 'create' ? 'NEW FILE' : `v${file.version}`}`, 'header');
+		for (const hunk of file.hunks) {
 			append(`@@ line ${hunk.line} @@`, 'header');
 			for (const kind of ['before', 'after'] as const) {
 				const lines = hunk[kind].split('\n');

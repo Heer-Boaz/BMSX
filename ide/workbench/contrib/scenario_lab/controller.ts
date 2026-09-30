@@ -20,6 +20,7 @@ import {
 } from '../../ui/list_view';
 import {
 	scenarioLabCommandEnabled,
+	revealScenarioRun,
 	updateScenarioLabStatus,
 } from './navigation';
 import {
@@ -29,7 +30,7 @@ import {
 import { ScenarioRunAdmissionError, type ScenarioRunService, type ScenarioRunEvent } from '../../services/testing/scenario_runs';
 import type { ScenarioLabViewState } from './view_model';
 import { createScenarioLabViewState } from './view_state';
-import type { ScenarioSourceLocation } from '../../../testing/scenario/result_service';
+import type { ScenarioRun, ScenarioSourceLocation } from '../../../testing/scenario/result_service';
 import type { BehaviorRegistrationIndex } from '../behavior_lens/registration_index';
 import { ScenarioLabInput } from './editor_input';
 
@@ -68,6 +69,13 @@ export class ScenarioLabController {
 		openEditorTab(this.editorPanes, this.resolveInput());
 	}
 
+	public revealRun(run: ScenarioRun): void {
+		this.refreshSources();
+		revealScenarioRun(this.getOrCreateView(), run);
+		this.editor.activate();
+		this.open();
+	}
+
 	public updateView(view: ScenarioLabViewState): void {
 		this.runs.refreshSources();
 		if (view.runActive !== this.runs.active) {
@@ -80,6 +88,7 @@ export class ScenarioLabController {
 	public executeCommand(command: EditorScenarioLabCommandId): void {
 		const view = this.view!;
 		switch (command) {
+			case 'scenarioLab.revealRun': this.revealRun(this.runs.results.liveRun ?? this.runs.results.runs[0]); return;
 			case 'scenarioLab.debug':
 			case 'scenarioLab.run':
 			case 'scenarioLab.rerun':
@@ -106,6 +115,7 @@ export class ScenarioLabController {
 	}
 
 	public isCommandEnabled(command: EditorScenarioLabCommandId): boolean {
+		if (command === 'scenarioLab.revealRun') return this.runs.results.runs.length !== 0;
 		if (command === 'scenarioLab.cancel') return this.runs.active;
 		return isScenarioLabActive()
 			&& this.view !== null

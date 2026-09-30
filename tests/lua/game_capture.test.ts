@@ -54,7 +54,7 @@ test('game capture owns pre-overlay native pixels and honest publication metadat
 
 test('capture admission requires pause, rejects foreign targets and never implicitly resumes', async t => {
 	const f = fixture(t); f.publish();
-	const lifetime = new AbortController(), tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, f.boots, lifetime.signal);
+	const lifetime = new AbortController(), tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, lifetime.signal);
 	t.after(() => tools.dispose());
 	assert.throws(() => tools.execute('studio_capture_game', { target: 'another-machine' }), /not this Studio/);
 	f.execution.requestExecution(true);
@@ -73,7 +73,7 @@ test('capture holds GPU-copy admission but prompt cancellation does not poison t
 	const pending = new Promise<void>(resolve => { finish = resolve; });
 	const entered = new Promise<void>(resolve => { started = resolve; });
 	t.mock.method(f.backend, 'readColorTexture', async (...args: Parameters<typeof read>) => { started(); await pending; return read(...args); });
-	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, f.boots, new AbortController().signal);
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, new AbortController().signal);
 	const capture = Promise.resolve(tools.execute('studio_capture_game', { target: f.inspection.target }));
 	assert.equal(f.tasks.ready, false);
 	await entered;
@@ -105,7 +105,7 @@ for (const outcome of ['captured', 'prompt-cancelled', 'request-cancelled', 'rep
 		const pending = Promise.withResolvers<void>(), lifetime = new AbortController(), request = new AbortController();
 		const historyError = new Error('history readback failed');
 		f.tasks.schedule(() => pending.promise, error => assert.equal(error, historyError), RuntimeTaskKind.History);
-		const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, f.boots, lifetime.signal);
+		const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, lifetime.signal);
 		t.after(() => tools.dispose());
 		const read = t.mock.method(f.backend, 'readColorTexture');
 		const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes(), f.presenter.gameFrameSequence];

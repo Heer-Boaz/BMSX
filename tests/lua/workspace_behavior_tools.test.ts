@@ -29,7 +29,7 @@ function fixture(t: TestContext, files: Record<string, string>, generated: strin
 	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources, tooling, runtime, tasks);
 	t.after(async () => { await saves.shutdown(); presenter.dispose(); });
 	const tools = () => {
-		const result = new WorkspaceSourceTools(models, sources, diagnostics, connection.signal, documents, saves);
+		const result = new WorkspaceSourceTools(models, sources, diagnostics, connection.signal, documents, saves, new VirtualHeadlessClock());
 		t.after(() => result.dispose()); return result;
 	};
 	t.after(() => { connection.abort(); diagnostics.dispose(); models.clear(); });
@@ -105,7 +105,7 @@ idle={on={go='../active'}}, active={update=function() return '../idle' end}
 	assert.equal(f.documents.get(main), documents.mock.calls[0].result, 'retaining imported models preserves the shared semantic generation');
 	const result = await tools.execute('studio_propose_fsm_initial', { state: state.node });
 	assert.ok(result.kind === 'proposal'); t.after(() => result.proposal.dispose());
-	assert.equal(result.proposal.files[0].model, owner); assert.equal(owner.buffer.getText(), body);
+	assert.ok(result.proposal.files[0].kind === 'edit'); assert.equal(result.proposal.files[0].model, owner); assert.equal(owner.buffer.getText(), body);
 	tools.dispose(); result.proposal.apply();
 	assert.equal(owner.buffer.getText(), body.replace("'idle'),", "'active'),"));
 	assert.equal(main.buffer.getText(), source); assert.equal(main.dirty, false); assert.equal(owner.lastSavedSource, body);

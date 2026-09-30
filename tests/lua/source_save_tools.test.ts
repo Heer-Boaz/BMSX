@@ -32,7 +32,7 @@ async function fixture(t: TestContext) {
 	const data = models.retain(yaml, 'yaml', '# canonical 🐉\r\nvalue: 1\r\n');
 	const tools = () => {
 		const result = new WorkspaceSourceTools(models, sources, diagnostics, new AbortController().signal,
-			new BehaviorSourceDocuments(models, sources), saves);
+			new BehaviorSourceDocuments(models, sources), saves, new VirtualHeadlessClock());
 		t.after(() => result.dispose()); return result;
 	};
 	const read = async (tools: WorkspaceSourceTools, path = 'cart.lua') => {

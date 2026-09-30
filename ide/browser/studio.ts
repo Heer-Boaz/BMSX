@@ -175,6 +175,8 @@ async function startBrowserStudio(): Promise<void> {
 				}
 			}
 		});
+		const projects = ide.sources.cartridgeSlots.filter(slot => slot !== null).map(slot => slot.projectRootPath);
+		document.title = `${projects.length === 0 ? ide.sources.systemProjectRootPath : projects.join(' + ')}${artifact === null ? '' : ` [opened ${artifact.slice(0, 12)}]`} - BMSX Studio`;
 		const server = configuration.server;
 		if (server !== undefined) {
 			if (server.projects) ide.editor.projects = new HttpWorkspaceProjects(httpSession(server.baseUrl));
@@ -182,7 +184,15 @@ async function startBrowserStudio(): Promise<void> {
 				showEditorMessage(`${job.request.target}: ${job.phase}. Studio: Build Jobs`, job.state === 'completed' ? COLOR_STATUS_SUCCESS : COLOR_STATUS_ERROR, 6);
 			}) : undefined;
 			ide.editor.builds = builds;
-			if (builds !== undefined) ide.editor.openPublishedBuild = openPublishedBuild;
+			if (builds !== undefined) {
+				ide.editor.openPublishedBuild = openPublishedBuild;
+				ide.editor.tools.openBuild = async (requestId, signal) => {
+					const job = await builds.get(requestId);
+					signal?.throwIfAborted();
+					if (job === undefined || job.state !== 'completed') throw new Error('Only a completed workspace build can be opened.');
+					return openPublishedBuild(job.artifact!);
+				};
+			}
 			const connection = new StudioServerConnection(httpSession(server.baseUrl),
 				{ title: document.title, url: location.href, tools: server.tools, builds: server.builds }, ide.editor.tools, proposal => {
 					ide.editor.activate();

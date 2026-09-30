@@ -196,10 +196,11 @@ function layoutScenarioLabPane<Row>(
 export function prepareScenarioLabLayout(state: ScenarioLabViewState): ScenarioLabLayout {
 	refreshScenarioLabProjection(state);
 	const layout = state.layout;
-	if (updateFullWidthWorkbenchLayout(layout)) {
+	if (updateFullWidthWorkbenchLayout(layout) || state.splitRevision !== state.split.revision) {
 		layout.toolbarBottom = layout.top + editorViewState.lineHeight + TOOLBAR_PADDING_Y * 2;
-		const paneWidth = (((layout.right - layout.left) * 5) / 12) | 0;
-		const testPaneRight = layout.left + paneWidth;
+		state.split.layout(layout.left, layout.toolbarBottom + 1, layout.right, layout.bottom);
+		state.splitRevision = state.split.revision;
+		const testPaneRight = state.split.position;
 		const headerTop = layout.toolbarBottom + 1;
 		const headerBottom = headerTop
 			+ editorViewState.lineHeight

@@ -1,3 +1,4 @@
+import type { HotResumeService } from '../execution/hot_resume';
 import type { ActorExecutionService } from '../../contrib/actor_lab/execution';
 import type { RuntimeDebuggerExecution } from '../../../runtime/debugger_execution';
 import { DebuggerSourceContext } from './debugger_sources';
@@ -6,7 +7,7 @@ import type { RuntimeInspection, RuntimeInspectionService } from '../../../runti
 import type { GameImageCapture } from '../../../../hosts/common/image';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 import type { LuaTerminalSession } from '../terminal/session';
-import { decodeRuntimeToolRequest, encodeBootOperation } from './runtime_tool_protocol';
+import { decodeRuntimeToolRequest, encodeHotResumeOperation, encodeBootOperation } from './runtime_tool_protocol';
 import type { BootService } from '../execution/boot';
 import { StudioToolInputError } from './tool_input';
 import { ActorRuntimeInspection } from '../../contrib/actor_lab/runtime_inspection';
@@ -20,7 +21,7 @@ export class WorkspaceRuntimeTools {
 	private readonly lifetime = new AbortController();
 	private readonly onDisconnect = () => this.dispose();
 	public constructor(private readonly owner: RuntimeInspectionService, private readonly navigation: RuntimeFrameNavigation,
-		private readonly gameCapture: GameImageCapture, private readonly terminal: LuaTerminalSession, private readonly debuggerExecution: RuntimeDebuggerExecution, private readonly actorExecution: ActorExecutionService, private readonly boots: BootService, private readonly connection: AbortSignal) {
+		private readonly gameCapture: GameImageCapture, private readonly terminal: LuaTerminalSession, private readonly debuggerExecution: RuntimeDebuggerExecution, private readonly actorExecution: ActorExecutionService, private readonly boots: BootService, private readonly hotResumes: HotResumeService, private readonly connection: AbortSignal) {
 		connection.throwIfAborted();
 		this.debugSources = new DebuggerSourceContext(debuggerExecution.state);
 		connection.addEventListener('abort', this.onDisconnect, { once: true });
@@ -29,6 +30,13 @@ export class WorkspaceRuntimeTools {
 		if (this.disposed) throw new StudioToolInputError('Runtime tool context is disposed');
 		const request = decodeRuntimeToolRequest(name, input);
 		switch (request.name) {
+			case 'studio_hot_resume': {
+				if (request.target !== this.owner.target) throw new StudioToolInputError('Hot Resume requires this authoring target.');
+				const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
+				const operation = this.hotResumes.resume('workbench', signal);
+				return operation.admission.then(admission => ({ kind: 'runtime' as const, data: { target: this.owner.target,
+					admission: admission.status, ...encodeHotResumeOperation(operation) } }));
+			}
 			case 'studio_reboot_runtime': {
 				if (request.target !== this.owner.target) throw new StudioToolInputError('Reboot requires this authoring target.');
 				const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
@@ -98,6 +106,7 @@ export class WorkspaceRuntimeTools {
 					data: { target: this.owner.target, ...result } }));
 			}
 			case 'studio_runtime_status': return { kind: 'runtime' as const, data: { ...this.owner.status(),
+				hotResume: this.hotResumes.latestOperation === null ? undefined : encodeHotResumeOperation(this.hotResumes.latestOperation),
 				boot: this.boots.latestOperation === null ? undefined : encodeBootOperation(this.boots.latestOperation),
 				debugger: { active: this.debuggerExecution.active?.mode, canContinue: this.debuggerExecution.canResume('continue'),
 					canStepInto: this.debuggerExecution.canResume('into'), canStepOver: this.debuggerExecution.canResume('over'), canStepOut: this.debuggerExecution.canResume('out') } } };

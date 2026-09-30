@@ -31,7 +31,7 @@ async function main(): Promise<void> {
 		const capture: number[] = [], proposal: number[] = [];
 		for (let sample = 0; sample < 30; sample++) {
 			const started = performance.now();
-			const tools = new WorkspaceSourceTools(models, sources, diagnostics, new AbortController().signal, new BehaviorSourceDocuments(models, sources), saves);
+			const tools = new WorkspaceSourceTools(models, sources, diagnostics, new AbortController().signal, new BehaviorSourceDocuments(models, sources), saves, new VirtualHeadlessClock());
 			const catalog = await tools.execute('studio_list_sources', {}); assert.ok(catalog.kind === 'sources');
 			const read = await tools.execute('studio_read_source', { resource: catalog.data[0].resource }); assert.ok(read.kind === 'source');
 			const captured = performance.now();

@@ -2,7 +2,8 @@ import { generateUuid } from '../../../common/uuid';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { EditorDocumentMode, EditorModelEdit, EditorTextModel } from '../../../editor/model/text_model';
 import type { ResourceDomain, RuntimeResource } from '../../../common/resource';
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import { runtimeLuaSourceRegistry, type RuntimeSourceState } from '../../../runtime/sources';
+import type { HostClock } from '../../../../hosts/common/clock';
 import type { EditorDiagnostic } from '../../../common/models';
 import type { ResourceDiagnostics, ResourceDiagnosticsService } from '../diagnostics/resource_diagnostics';
 import { WorkspaceSourceContext, type CapturedWorkspaceSource } from '../working_copy/source_context';
@@ -58,6 +59,7 @@ export class WorkspaceSourceTools {
 		private readonly connection: AbortSignal,
 		private readonly behaviorSources: BehaviorSourceDocuments,
 		private readonly saves: TextFileSaveService,
+		private readonly clock: HostClock,
 	) {
 		connection.throwIfAborted();
 		this.context = new WorkspaceSourceContext(models, sources);
@@ -79,10 +81,16 @@ export class WorkspaceSourceTools {
 			this.behaviors ??= new WorkspaceBehaviorTools(this.id, this.context, this.sources, this.behaviorSources);
 			const result = this.behaviors.execute(name, argumentsValue);
 			if (result.kind !== 'edit') return result;
-			return this.propose(result.title, new Map([[result.model, { version: this.context.read(result.model).version, edits: result.edits }]]));
+			return this.offer(new WorkspaceEditProposal(result.title, this.context, { kind: 'edit',
+				edits: new Map([[result.model, { version: this.context.read(result.model).version, edits: result.edits }]]) }));
 		}
 		const request = decodeSourceToolRequest(name, argumentsValue);
 		switch (request.name) {
+			case 'studio_propose_source': {
+				if (runtimeLuaSourceRegistry(this.sources, request.domain) === undefined) throw new StudioToolInputError('The selected source domain has no project.');
+				return this.offer(new WorkspaceEditProposal(request.title, this.context, { kind: 'create', clock: this.clock, sources: this.sources,
+					request: { domain: request.domain, relativePath: request.path, contents: request.source } }));
+			}
 			case 'studio_read_source_status': case 'studio_save_source': {
 				const receipt = this.receipts.get(request.receipt);
 				if (receipt === undefined) throw new StudioToolInputError('Source status and Save require a receipt read in this prompt.');
@@ -157,14 +165,12 @@ export class WorkspaceSourceTools {
 					});
 					edits.set(captured.model, { version: captured.version, edits: operations });
 				}
-				return this.propose(request.title, edits);
+				return this.offer(new WorkspaceEditProposal(request.title, this.context, { kind: 'edit', edits }));
 			}
 		}
 	}
 
-	/** Both textual and semantic plans transfer the same authority to ordinary source review. */
-	private propose(title: string, edits: ReadonlyMap<EditorTextModel, EditorModelEdit>): SourceToolResult {
-		const proposal = new WorkspaceEditProposal(title, this.context, edits);
+	private offer(proposal: WorkspaceEditProposal): SourceToolResult {
 		this.state = 'proposed';
 		this.proposal = proposal;
 		// The review outlives turn completion, but never the connection that proposed it.

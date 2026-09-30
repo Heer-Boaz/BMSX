@@ -66,7 +66,18 @@ function showBuildDetails(editor: CartEditor, job: StudioBuildJob): void {
 	if (!isBuildTerminal(job.state)) choices.push({ label: 'Cancel build', description: 'Wait for the producer to stop', detail: 'Already published results are not rolled back.', action: 'cancel' });
 	editor.quickInput.pick('Build details', 'Publication and runtime installation are separate', () => new TextQuickPickProvider(choices), choice => {
 		const run = async () => {
-			if (choice.action === 'open') editor.openPublishedBuild!(job.artifact!);
+			if (choice.action === 'open') {
+				const opened = editor.openPublishedBuild!(job.artifact!);
+				if (opened.status === 'blocked') {
+					editor.quickInput.pick('Browser blocked the new Studio tab', 'Allow pop-ups for this site, then retry', () => new TextQuickPickProvider([
+						{ label: 'Retry opening published build', description: job.request.target, detail: opened.url, action: 'retry' },
+						{ label: 'Copy published build URL', description: 'Open in a normal browser tab', detail: opened.url, action: 'copy' },
+					]), action => {
+						if (action.action === 'copy') void editor.clipboard.writeText(opened.url).catch(reportBuildError);
+						else if (editor.openPublishedBuild!(job.artifact!).status === 'blocked') reportBuildError('Browser still blocks the tab. Allow pop-ups or copy its URL.');
+					});
+				}
+			}
 			else if (choice.action === 'refresh') await inspectBuild(editor, id);
 			else if (choice.action === 'cancel') showBuildDetails(editor, await editor.builds!.cancel(id));
 			else if (choice.action === 'artifact' || choice.action === 'copy') await editor.clipboard.writeText(choice.action === 'copy' ? id : job.artifact!);

@@ -1,3 +1,4 @@
+import { WorkbenchSplitView } from '../../ui/split_view';
 import {
 	createScenarioLabLayout,
 	createScenarioLabPaneLayout,
@@ -56,6 +57,8 @@ export function createScenarioLabViewState(
 		},
 		focus: 'tests',
 		runActive,
+		split: new WorkbenchSplitView(5 / 12),
+		splitRevision: -1,
 		layout: createScenarioLabLayout(),
 		actionBar: createWorkbenchActionBar('scenarioLab.title'),
 		status: {

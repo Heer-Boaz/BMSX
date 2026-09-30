@@ -5306,6 +5306,11 @@ background/composer clicks and transcript Escape deselect, while action and
 scrollbar controls retain their ordinary selection/focus ownership.
 All
 proposed edits require the same explicit multi-file review and shared history.
+New Lua sources use that review with a distinct creation plan, not an empty
+working copy pretending to be an existing file. Apply delegates exclusive
+persistence and catalog admission to the ordinary workspace file owner, then
+opens its shared text model. The proposal grants no file-write authority before
+approval; creation is not represented as undoable text edits or installed code.
 Diagnostic reads require those exact source receipts and consume the ordinary
 resource diagnostics service. Problems and the assistant share results for the
 same source revision; unsupported/pending/failed coverage is never an empty
@@ -5322,6 +5327,12 @@ Separate execution operations call `ScenarioRunService` to discover, admit, awai
 and cancel isolated cases. Only runs started by the prompt grant it cancellation
 authority; waits are event-driven and independently abortable. Ordinary Scenario
 Lab uses the same run/result owners. See [test execution](studio_test_execution.md).
+Debug cart media includes source-only test infrastructure even before its first
+suite is authored; cart-local and external assertion suites remain excluded from
+gameplay compilation and release media. Explicit run reveal selects a retained
+run in the current Scenario catalog. Routine result updates never steal the
+user's selection. Actor/Scenario panes reuse the workbench's captured sash and
+focused keyboard resizing; resizing changes geometry, not their domain models.
 Separate post-mortem tools bind a listed result to the actual retained failed
 target. Failure, frame and value handles belong to that attachment, not to the
 current CPU or historical result strings. Compiled test sources remain separate
@@ -5473,6 +5484,12 @@ uses the same Terminal session from the ordinary context picker and
 source location, never an old guest Thread/tooling image. Actual stop records
 remain with the source-debugger/call owners. Source install, Hot Resume and reset
 retire prior stop identities so late call completion cannot resurrect them.
+The Hot Resume tool delegates to the same source-installation service as the
+ordinary command. It reports admission separately from actual initialization
+completion. Its workbench-context supervisor/init plans use the existing
+debugger scheduler and physical guest-call fence, honor init breakpoints and
+leave the game paused before returning to gameplay. Cancellation retires queued
+admission, not already admitted physical work. It neither saves nor reboots.
 Inspection opens after pending history/GPU work rather than requiring tool retries.
 The BIOS monitor reads its retained stack boundary from the raw exception-frame
 bit before enabling IRQs; `FRAMES` and `LUA --FRAME` use that physical boundary.
@@ -5538,6 +5555,12 @@ registration receives the current build snapshot rather than restarting jobs.
 Freeze/cached navigation releases registration; restoration registers afresh
 without replacing local models or drafts. Standalone composition is neutral and
 opens no transport. This is not file-write authority or an account/login flag.
+Published-build navigation resolves a completed workspace request to its exact
+immutable cartridge/BIOS artifact. Both the command and tool use the browser
+opener, which reports denial and never silently retries or replaces this window.
+An opened result acknowledges navigation, not successful boot. Cart/artifact
+window titles describe the opened media, not installed-source equality after
+Hot Resume.
 The indicator uses shapes as well as theme colors and remains visible when a
 pane replaces its status text. Clicking the indicator opens details and contextual
 Retry. Connection events, rather than render-time IO,

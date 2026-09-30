@@ -1,3 +1,4 @@
+import type { WorkbenchSplitView } from '../../ui/split_view';
 import type { TestDebugger } from '../../../testing/debugger';
 import type { EditorFont } from '../../../editor/ui/view/font';
 import type { WorkbenchActionBarState } from '../../ui/action_bar';
@@ -174,6 +175,8 @@ export type ScenarioLabViewState = {
 	readonly resultPane: ScenarioLabResultPaneState;
 	focus: ScenarioLabFocus;
 	runActive: boolean;
+	readonly split: WorkbenchSplitView;
+	splitRevision: number;
 	readonly layout: ScenarioLabLayout;
 	readonly actionBar: WorkbenchActionBarState;
 	readonly status: ScenarioLabStatus;

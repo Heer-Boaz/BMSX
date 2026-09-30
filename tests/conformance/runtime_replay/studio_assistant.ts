@@ -107,7 +107,7 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	check(ide.sources.currentBlua32Media === media, 'Apply still installs nothing');
 	await test.clickTab(mainTab.id); await press('ControlLeft', 'KeyZ');
 	// Undo walks back the saved edit, so both files are dirty against what Apply wrote.
-	check(main.buffer.getText() === before && proposal.files[1].model.dirty === true, 'Lua Undo restores both Lua and YAML');
+	check(main.buffer.getText() === before && proposal.files[1].kind === 'edit' && proposal.files[1].model.dirty === true, 'Lua Undo restores both Lua and YAML');
 	await test.clickTab(view.id);
 	check(view.transcript.rows.some(row => row.text === 'REVIEW: APPLIED'), 'Apply settles the transcript heading even while its pane was detached');
 	await capture('applied');

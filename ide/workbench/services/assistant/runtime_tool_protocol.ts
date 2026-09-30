@@ -3,13 +3,14 @@ import { decodeActorToolRequest, STUDIO_ACTOR_TOOLS, type ActorToolRequest } fro
 import { StudioToolInputError, toolArguments } from './tool_input';
 import { decodeTerminalToolRequest, STUDIO_TERMINAL_TOOLS, type TerminalToolRequest } from './terminal_tool_protocol';
 import type { BootOperation } from '../execution/boot';
+import type { HotResumeOperation } from '../execution/hot_resume';
 
 export type RuntimeToolRequest =
 	| ActorToolRequest
 	| DebuggerToolRequest
 	| TerminalToolRequest
 	| { name: 'studio_runtime_status' }
-	| { name: 'studio_pause_runtime' | 'studio_inspect_runtime' | 'studio_capture_game' | 'studio_reboot_runtime'; target: string }
+	| { name: 'studio_pause_runtime' | 'studio_inspect_runtime' | 'studio_capture_game' | 'studio_reboot_runtime' | 'studio_hot_resume'; target: string }
 	| { name: 'studio_step_frames'; target: string; direction: -1 | 1; count: number }
 	| { name: 'studio_seek_history'; target: string; cycles: number }
 	| { name: 'studio_read_runtime_stack'; inspection: string; start: number; count: number }
@@ -28,13 +29,14 @@ export const STUDIO_RUNTIME_TOOLS = [
 	...STUDIO_ACTOR_TOOLS,
 	...STUDIO_TERMINAL_TOOLS,
 	...STUDIO_DEBUGGER_TOOLS,
+	{ name: 'studio_hot_resume', description: 'Build and admit current Lua working copies through ordinary Hot Resume, preserving relocatable live state instead of physically resetting the game. Rejects unsupported edits rather than rebooting. Does not Save, rebuild assets, approve reviews, close the IDE or resume unrestricted gameplay. Returns after build/relocation admission, with operation ID, captured document versions, applied flag and actual completion if already available. The ordinary debugger scheduler runs any supervisor-return/init plan behind the workbench and stops before gameplay; init breakpoints remain active and can be continued with studio_resume_debugger. waiting-for-user/initializing are NOT completed: read studio_runtime_status.hotResume for the outcome. Frame/history navigation is unavailable during this mutation. Request cancellation prevents queued admission; an admitted physical plan remains workspace-owned on disconnect. History is retired at installation/supervisor admission. Use on explicit request, never as a retry loop.', inputSchema: TARGET_SCHEMA },
 	{ name: 'studio_reboot_runtime', description: 'Build/install current Lua program sources and physically reset this authoring target using the ordinary Studio Reboot service. Destructive to current gameplay state and retained history; this is NOT Hot Resume. Captures all retained writable program documents at admission, then reads remaining workspace source overrides. Later typing does not enter this build. Does not Save, approve a review, rebuild YAML assets, close the IDE or resume gameplay. Returns the actual build rejection, infrastructure failure, cancellation or physical reset, including captured document versions and whether installation/reset occurred. Reset is NOT successful game initialization or a passing test: inspect installed debug source, then use explicit debugger/frame execution or run an isolated scenario. Stop before installation prevents the queued reset; completed effects are never rolled back. Use on explicit request, not polling.', inputSchema: TARGET_SCHEMA },
 	{ name: 'studio_step_frames', description: 'Advance or rewind an explicit number of physical video boundaries on the authoring target. Awaits completed/stopped/interrupted/replaced/failed outcome with actual before/after cycles and video ticks; not merely command acceptance. Keeps the target paused and preserves recorded input/future. Forward stepping beyond the recording end executes live input. Stops at retained-history start, debugger stop or guest fault. Not source/instruction stepping or a guarantee that gameplay ran once per video tick. No polling is needed; request cancellation or context retirement cancels owned navigation.',
 		inputSchema: { type: 'object', properties: { target: { type: 'string' }, direction: { type: 'string', enum: ['forward', 'backward'] }, count: { type: 'integer', minimum: 1 } }, required: STEP_FIELDS, additionalProperties: false } },
 	{ name: 'studio_seek_history', description: 'Seek within the authoring target\'s retained cycle range from studio_runtime_status.history. Selects the retained video boundary at or before the requested cycles; returns requested and actual positions after reconstruction settles. Rejects cycles outside retention rather than silently clamping. Preserves the recorded future and leaves review paused. Awaits completion or an explicit stop/interruption/failure; do not poll.',
 		inputSchema: { type: 'object', properties: { target: { type: 'string' }, cycles: { type: 'integer', minimum: 0 } }, required: SEEK_FIELDS, additionalProperties: false } },
 	{ name: 'studio_capture_game', description: 'See the retained completed game frame of a paused authoring target as an image. Awaits already admitted history readback, but rejects active execution, mutation or a target changed before capture. Native scanout size, after device quantization and before CRT/IDE overlays. Returns frame-publication cycles/video tick separately from the current machine observation: the last completed image can precede the stopped CPU. Does not run the guest, refresh the frame or capture the chat UI. Use on demand, not polling.', inputSchema: TARGET_SCHEMA },
-	{ name: 'studio_runtime_status', description: 'Read the actual Studio authoring target identity, machine cycles/video tick, execution/inspection availability, retained-history range and latest ordinary Boot/Reboot operation. Boot acknowledgement is historical, not current initialization or project-file equality. No screenshot, guest execution or test-target attachment. Use on demand, not polling.',
+	{ name: 'studio_runtime_status', description: 'Read the actual Studio authoring target identity, machine cycles/video tick, execution/inspection availability, retained-history range and latest ordinary Boot/Reboot and Hot Resume operations. Operation outcomes are historical, not current project-file equality. No screenshot, guest execution or test-target attachment. Use on demand, not polling.',
 		inputSchema: { type: 'object', properties: {}, required: NO_FIELDS, additionalProperties: false } },
 	{ name: 'studio_pause_runtime', description: 'Pause the listed authoring target without changing guest state or other pause reasons. Leaves it user-paused after tool-context retirement. Refuses an active machine operation; does not interrupt Lua or rewind.', inputSchema: TARGET_SCHEMA },
 	{ name: 'studio_inspect_runtime', description: 'Open a suspended inspection of the listed authoring target. Returns installed BIOS and active-cartridge global binding scopes (not separate cartridge global banks), plus actual debugger stop/fault information. Names come from installed symbols, not unsaved source. Does not execute Lua. Replaces this tool context\'s prior inspection; all frame/value references expire on execution, restore/reset or context retirement. Use studio_read_runtime_stack for the current CPU stack, studio_list_actors for actual cartlib World instances, and studio_read_runtime_values for globals/tables including Actor roots. Does not attach test targets or suspended coroutines.', inputSchema: TARGET_SCHEMA },
@@ -79,6 +81,7 @@ export function decodeRuntimeToolRequest(name: string, input: unknown): RuntimeT
 			}
 			return { name, target: value.target, cycles: value.cycles as number };
 		}
+		case 'studio_hot_resume':
 		case 'studio_reboot_runtime':
 		case 'studio_pause_runtime':
 		case 'studio_capture_game':
@@ -105,6 +108,13 @@ export function decodeRuntimeToolRequest(name: string, input: unknown): RuntimeT
 export function encodeBootOperation(operation: BootOperation) {
 	const result = operation.result;
 	return { operation: operation.id, kind: operation.kind, status: operation.status,
+		capturedDocuments: operation.sourceSnapshots.map(({ domain, path, version }) => ({ domain, path, version })),
+		result: result !== null && (result.status === 'failed' || result.status === 'rejected') ? { ...result, error: String(result.error) } : result };
+}
+
+export function encodeHotResumeOperation(operation: HotResumeOperation) {
+	const result = operation.result;
+	return { operation: operation.id, status: operation.status, applied: operation.applied,
 		capturedDocuments: operation.sourceSnapshots.map(({ domain, path, version }) => ({ domain, path, version })),
 		result: result !== null && (result.status === 'failed' || result.status === 'rejected') ? { ...result, error: String(result.error) } : result };
 }

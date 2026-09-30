@@ -15,13 +15,14 @@ import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
+import { HostExecutionControl } from '../../hosts/common/execution_control';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createRuntimeSourceState } from '../../ide/runtime/sources';
 import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
-import { createRuntimeDebuggerState, discardRuntimeDebuggerPlans } from '../../ide/runtime/debugger_state';
+import { createRuntimeDebuggerState, discardRuntimeDebuggerPlans, willExecuteRuntimeDebuggerPlan, didExecuteRuntimeDebuggerPlan } from '../../ide/runtime/debugger_state';
 import { HotResumeService } from '../../ide/workbench/services/execution/hot_resume';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
@@ -42,10 +43,11 @@ async function fixture(t: TestContext, init = '') {
 	assert.equal(cpu.isUserMode(), true);
 	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
 	const debuggerState = createRuntimeDebuggerState(runtime, sources);
-	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput, target.presenter);
+	const audio = { muteRuntimeTask() {}, mutePause() {} } as unknown as HostAudioOutput;
+	const tasks = new RuntimeTaskQueue(audio, target.presenter), execution = new HostExecutionControl(audio);
 	const models = new EditorTextModelService();
 	const service = new HotResumeService(models, sources, tooling, createRuntimeFaultState(), debuggerState,
-		input, runtime, tasks, new Map());
+		input, runtime, tasks, execution, new Map());
 	const model = models.retain({ domain: 0, path: 'entry.lua', source: { resid: 'entry', type: 'lua' } }, 'lua', source);
 	// Same resource/version in a different document owner must not enter this build.
 	editorTextModelService.retain(model.resource, 'lua', 'end end -- foreign workspace');
@@ -57,7 +59,7 @@ async function fixture(t: TestContext, init = '') {
 		target.dispose();
 		await rm(directory, { recursive: true, force: true });
 	});
-	return { service, sources, runtime, cpu, target, tasks, debuggerState, model, source };
+	return { service, sources, runtime, cpu, target, tasks, execution, debuggerState, model, source };
 }
 
 test('Hot Resume captures admitted documents, not later typing; no-init installation completes explicitly', async t => {
@@ -135,6 +137,29 @@ test('fault evidence reports applied code and remains final when retained init i
 	assert.deepEqual(operation.result, { status: 'faulted', applied: true, sequence: 17 });
 });
 
+test('workbench Hot Resume runs init to its physical return without continuing the parked game', async t => {
+	const f = await fixture(t, 'local function refresh<init>() refreshed = 1 end');
+	const pcs = f.cpu.activeThread.frames.map((_, index) => f.cpu.readFramePc(index));
+	const first = f.service.resume('workbench');
+	await first.admission;
+	assert.equal(first.status, 'initializing');
+	assert.equal(f.debuggerState.plans.workbenchExecutionRequested, true);
+	const duplicate = f.service.resume('workbench');
+	assert.equal((await duplicate.admission).status, 'not-admitted');
+	assert.equal(duplicate.result!.status, 'rejected');
+	assert.equal(first.result, null, 'busy admission must not replace the admitted fence');
+	willExecuteRuntimeDebuggerPlan(f.debuggerState);
+	f.target.advanceGame(10000);
+	didExecuteRuntimeDebuggerPlan(f.debuggerState);
+	assert.deepEqual(await first.completion, { status: 'completed', applied: true });
+	assert.equal(f.cpu.getGlobalByKey(f.cpu.stringPool.intern('refreshed')), 1);
+	assert.deepEqual(f.cpu.activeThread.frames.map((_, index) => f.cpu.readFramePc(index)), pcs,
+		'retained caller frames and PCs have not advanced');
+	assert.equal(f.debuggerState.plans.workbenchExecutionRequested, false);
+	assert.equal(f.debuggerState.plans.mutationActive, false);
+	assert.equal(f.execution.userPaused, true, 'a formerly running game remains paused after bounded init');
+});
+
 for (const reason of ['machine-reset', 'shutdown'] as const) test(`${reason} cancels queued admission before any media write`, async t => {
 	const f = await fixture(t);
 	const media = f.sources.currentBlua32Media;
@@ -206,3 +231,22 @@ test('relocation rejection preserves installed media and the real retained frame
 // Source-refresh operations use a real workspace owner, separate from recovery.
 beforeEach(() => openWorkspaceRecords(new MemoryWorkspaceFiles()));
 afterEach(() => closeWorkspaceRecords());
+
+for (const admitted of [false, true]) test(`tool cancellation ${admitted ? 'after' : 'before'} Hot Resume admission`, async t => {
+	const f = await fixture(t, 'local function refresh<init>() refreshed = 1 end');
+	const request = new AbortController(), gate = Promise.withResolvers<void>();
+	const media = f.sources.currentBlua32Media;
+	if (!admitted) void f.tasks.schedule(() => gate.promise, assert.ifError);
+	const operation = f.service.resume('game', request.signal);
+	if (admitted) await operation.admission;
+	request.abort(); gate.resolve();
+	await operation.admission;
+	assert.equal(f.tasks.ready, true);
+	if (admitted) {
+		assert.equal(operation.result, null, 'an admitted physical initializer stays workspace-owned');
+		assert.equal(operation.status, 'initializing');
+	} else {
+		assert.deepEqual(operation.result, { status: 'cancelled', applied: false, reason: 'interrupted' });
+		assert.equal(f.sources.currentBlua32Media, media);
+	}
+});

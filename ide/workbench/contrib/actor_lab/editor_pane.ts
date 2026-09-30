@@ -1,3 +1,5 @@
+import { WorkbenchSplitControl } from '../../ui/split_control';
+import { drawWorkbenchSplit } from '../../render/split_view';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { layoutGameFrame } from '../../common/game_frame';
@@ -36,6 +38,8 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	private readonly scrub = (node: ActorNode, time: number, program: number, current: () => boolean, finished: (completed: boolean) => void) =>
 		this.controller.scrub(this.input, node, time, program, current, finished);
 	private timelineVisible = false;
+	private splitRevision = -1;
+	private readonly split = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);
 	private readonly inspector = new WorkbenchPropertyInspector<BehaviorInspectionProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	public constructor(resourcePanel: ResourcePanelController, private readonly controller: ActorLabController,
@@ -62,11 +66,12 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	protected override activate(): void {
 		super.activate();
 		this.actions.setInput(this.input.actionBar, this.focusTarget);
+		this.split.setInput(this.input.split);
 		this.timelineSlider.setInput(this.input.timeline.slider);
 		this.update();
 	}
-	public override clearInput(): void { this.timelineSlider.clearInput(); this.input.timeline.clear(); this.input.running = false; this.input.invalidate(false); this.inspector.hide(); this.actions.clearInput(); this.scrollbar.cancelPointer(); super.clearInput(); }
-	public override dispose(): void { this.timelineSlider.dispose(); this.inspector.dispose(); this.actions.dispose(); this.scrollbar.cancelPointer(); super.dispose(); }
+	public override clearInput(): void { this.split.clearInput(); this.timelineSlider.clearInput(); this.input.timeline.clear(); this.input.running = false; this.input.invalidate(false); this.inspector.hide(); this.actions.clearInput(); this.scrollbar.cancelPointer(); super.clearInput(); }
+	public override dispose(): void { this.split.dispose(); this.timelineSlider.dispose(); this.inspector.dispose(); this.actions.dispose(); this.scrollbar.cancelPointer(); super.dispose(); }
 	public override update(): void {
 		const input = this.input;
 		const readback = input.dirty;
@@ -78,26 +83,34 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.timelineVisible = input.timeline.visible;
 		const { layout, outline } = input;
 		if (this.timelineVisible) input.timelineLayout.update(input.timeline, layout);
-		if (contentsChanged || layoutChanged || timelineChanged) {
+		if (contentsChanged || layoutChanged || timelineChanged || this.splitRevision !== input.split.revision) {
 			this.updateContentLayout();
 			layoutWorkbenchActionBar(input.actionBar, layout.right - 4, layout.top, layout.top + layout.rowHeight + 4, measureText);
 			for (const row of outline.rows) row.element.displayLabel = truncateTextToWidth(row.element.node.label,
 				outline.layout.contentRight - outline.layout.contentLeft - (row.depth + 2) * outline.layout.indentWidth - 4);
 		}
 		this.timelineSlider.update();
-		this.actions.focusTarget.next = input.timeline.slider.interactive ? this.timelineSlider.focusTarget : null;
+		this.actions.focusTarget.next = input.timeline.slider.interactive ? this.timelineSlider.focusTarget : this.split.focusTarget;
+		this.timelineSlider.focusTarget.next = this.split.focusTarget;
+		this.split.focusTarget.previous = input.timeline.slider.interactive ? this.timelineSlider.focusTarget : this.actions.focusTarget;
+		this.split.focusTarget.next = this.focusTarget;
+		this.focusTarget.previous = this.split.focusTarget;
 		input.timeline.executePending(this.controller.selected(input), this.controller.canInteract(), this.scrub);
 		this.actions.update();
 		this.inspector.update();
 	}
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		drawEditorText(editorViewState.font, this.input.status, bounds.left + 4, bounds.top + 2, 0, color);
+		drawEditorText(editorViewState.font, this.split.focusTarget.hasFocus ? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET'
+			: this.controller.selected(this.input)?.label ?? this.input.status, bounds.left + 4, bounds.top + 2, 0, color);
 	}
 	public draw(): void {
 		if (this.inspector.visible) {
 			this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, this.input.layout);
 			drawWorkbenchPropertyInspector(this.inspector);
-		} else drawActorLab(this.input, this.commands, this.commands.gamePlaybackState, this.timelineSlider.focusTarget.hasFocus);
+		} else {
+			drawActorLab(this.input, this.commands, this.commands.gamePlaybackState, this.timelineSlider.focusTarget.hasFocus);
+			drawWorkbenchSplit(this.input.split, this.split.hovered || this.split.focusTarget.hasFocus);
+		}
 	}
 	public handleKeyboard(input: PlayerInput): void {
 		for (const [key, command] of NAVIGATION) {
@@ -113,7 +126,9 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		const { layout } = this.input;
 		const top = layout.top + layout.rowHeight + 7;
 		const bottom = layout.bottom - (this.input.timeline.visible ? this.input.timelineLayout.height : 0);
-		const divider = Math.trunc(layout.right * 0.4);
+		this.input.split.layout(layout.left, top, layout.right, bottom);
+		this.splitRevision = this.input.split.revision;
+		const divider = this.input.split.position;
 		const previewLeft = divider + 6;
 		const previewTop = top + layout.rowHeight + 4;
 		layoutGameFrame(this.input.previewBounds, previewLeft, previewTop, layout.right - 4, bottom - 4);
@@ -122,7 +137,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	}
 	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
-		if (this.actions.handlePointer(snapshot) || this.input.timeline.visible && this.timelineSlider.handlePointer(snapshot)
+		if (this.split.handlePointer(snapshot) || this.actions.handlePointer(snapshot) || this.input.timeline.visible && this.timelineSlider.handlePointer(snapshot)
 			|| this.scrollbar.handlePointer(snapshot, this.input.outline.scrollbar)) return true;
 		if (!snapshot.valid || !snapshot.insideViewport) return false;
 		const index = workbenchListRowIndexAtPosition(this.input.outline, snapshot.viewportX, snapshot.viewportY);

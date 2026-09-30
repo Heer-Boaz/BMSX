@@ -23,7 +23,7 @@ for (const count of [16, 256, 4096]) {
 	let rows = 0;
 	for (let sample = 0; sample < 30; sample++) {
 		const start = performance.now();
-		const proposal = new WorkspaceEditProposal('Rename old to new_name', new WorkspaceSourceContext(models, sources), edits);
+		const proposal = new WorkspaceEditProposal('Rename old to new_name', new WorkspaceSourceContext(models, sources), { kind: 'edit', edits });
 		const prepared = performance.now();
 		const input = new WorkspaceEditReviewInput(proposal);
 		layoutEditReviewRows(input, 376, measureTextRange);

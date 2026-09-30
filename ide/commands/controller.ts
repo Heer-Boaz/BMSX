@@ -234,6 +234,7 @@ export class IdeCommandController {
 			case 'scenarioLab.continue': case 'scenarioLab.stepInto': case 'scenarioLab.stepOver':
 			case 'scenarioLab.stepOut': case 'scenarioLab.pause': case 'scenarioLab.breakpoints':
 			case 'scenarioLab.run':
+			case 'scenarioLab.revealRun':
 			case 'scenarioLab.rerun':
 			case 'scenarioLab.cancel':
 				this.editor.scenarioLab.executeCommand(command);
@@ -426,6 +427,7 @@ export class IdeCommandController {
 			case 'scenarioLab.continue': case 'scenarioLab.stepInto': case 'scenarioLab.stepOver':
 			case 'scenarioLab.stepOut': case 'scenarioLab.pause': case 'scenarioLab.breakpoints':
 			case 'scenarioLab.run':
+			case 'scenarioLab.revealRun':
 			case 'scenarioLab.rerun':
 			case 'scenarioLab.cancel':
 				return this.editor.scenarioLab.isCommandEnabled(command);

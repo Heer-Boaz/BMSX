@@ -1,3 +1,7 @@
+import { HotResumeService } from '../../ide/workbench/services/execution/hot_resume';
+import { Input } from '../../hosts/common/input/manager';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { ActorExecutionService } from '../../ide/workbench/contrib/actor_lab/execution';
 import { RuntimeDebuggerExecution } from '../../ide/runtime/debugger_execution';
 import { LuaTerminalSession } from '../../ide/workbench/services/terminal/session';
@@ -44,7 +48,9 @@ export function createRuntimeInspectionFixture(runtime: Runtime, sources: Runtim
 	const actorExecution = new ActorExecutionService(runtime, sources, guest, debuggerState, fault, tasks, execution, rewind);
 	const tooling = new RuntimeLuaTooling(sources, guest);
 	const boots = new BootService(models, sources, tooling, fault, runtime, tasks, execution, audio, new Map());
+	const hotResumes = new HotResumeService(models, sources, tooling, fault, debuggerState,
+		new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1), runtime, tasks, execution, new Map());
 	// This fixture attaches inspection to an already reset runtime, not cold startup.
 	boots.didReplaceMachine();
-	return { boots, tooling, models, storage, actorExecution, debuggerExecution, terminal, audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
+	return { hotResumes, boots, tooling, models, storage, actorExecution, debuggerExecution, terminal, audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
 }

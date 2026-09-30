@@ -1,3 +1,4 @@
+import type { PublishedBuildOpenResult } from './workbench/services/builds';
 import type { WorkspaceBuilds } from './workbench/services/builds';
 import type { WorkspaceProjects } from './workbench/services/projects';
 import type { ConversationObserverFactory } from '../hosts/common/conversation_observer';
@@ -166,7 +167,7 @@ const EDITOR_TARGET_HEIGHT = 288;
 export type CartEditor = {
 	builds: WorkspaceBuilds | undefined;
 	projects: WorkspaceProjects | undefined;
-	openPublishedBuild: ((artifact: string) => void) | undefined;
+	openPublishedBuild: ((artifact: string) => PublishedBuildOpenResult) | undefined;
 	serverConnectionState: StudioServerConnectionState;
 	serverConnectionDetail: string;
 	retryServerConnection: (() => void) | undefined;
@@ -276,7 +277,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly assistant: AssistantConversation;
 	public builds: WorkspaceBuilds | undefined;
 	public projects: WorkspaceProjects | undefined;
-	public openPublishedBuild: ((artifact: string) => void) | undefined;
+	public openPublishedBuild: ((artifact: string) => PublishedBuildOpenResult) | undefined;
 	public serverConnectionState: StudioServerConnectionState = 'standalone';
 	public serverConnectionDetail = 'No workspace server is configured.';
 	public retryServerConnection: (() => void) | undefined;
@@ -321,7 +322,7 @@ export class RuntimeCartEditor implements CartEditor {
 		observeConversation?: ConversationObserverFactory,
 	) {
 		const behaviorSources = new BehaviorSourceDocuments(editorTextModelService, sources);
-		this.tools = new WorkspaceToolService(editorTextModelService, sources, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, behaviorSources, textFileSaves, boots);
+		this.tools = new WorkspaceToolService(editorTextModelService, sources, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, behaviorSources, textFileSaves, boots, hotResumes, clock, run => this.scenarioLab.revealRun(run));
 		this.assistant = new AssistantConversation(editorTextModelService, sources, this.tools, connectAssistant);
 		this.observedConversation = new ObservedConversation(observeConversation);
 		this.runtime = runtime;

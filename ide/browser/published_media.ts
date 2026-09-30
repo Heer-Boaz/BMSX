@@ -1,6 +1,7 @@
 import type { BrowserBootMedia } from '../../hosts/browser/boot';
 import type { RomArtifact, RomBuildUnit } from '../../toolchain/ts/rompack/build_manifest';
 import type { StudioHttpSession } from './http_session';
+import type { PublishedBuildOpenResult } from '../workbench/services/builds';
 
 /** Both ROMs come from one immutable manifest, never the mutable dist exports. */
 export async function loadPublishedMedia(session: StudioHttpSession, id: string): Promise<BrowserBootMedia> {
@@ -19,10 +20,16 @@ export async function loadPublishedMedia(session: StudioHttpSession, id: string)
 }
 
 /** Explicit new-window navigation preserves the current machine and all its unsaved working copies. */
-export function openPublishedBuild(id: string): void {
+export function openPublishedBuild(id: string): PublishedBuildOpenResult {
 	const url = new URL(location.href);
 	url.search = '';
 	url.hash = '';
 	url.searchParams.set('artifact', id);
-	window.open(url, '_blank', 'noopener');
+	// With the noopener feature, window.open returns null even on success. Open a
+	// blank same-origin tab, sever its opener before navigation, and report denial.
+	const opened = window.open('about:blank', '_blank');
+	if (opened === null) return { status: 'blocked', url: url.href };
+	opened.opener = null;
+	opened.location.replace(url.href);
+	return { status: 'opened', url: url.href };
 }

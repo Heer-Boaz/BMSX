@@ -72,7 +72,7 @@ export class WorkspaceTestTools {
 	private readonly lifetime = new AbortController();
 	private readonly onDisconnect = () => this.dispose();
 
-	public constructor(private readonly owner: ScenarioRunService, private readonly connection: AbortSignal) {
+	public constructor(private readonly owner: ScenarioRunService, private readonly connection: AbortSignal, private readonly revealRun?: (run: ScenarioRun) => void) {
 		connection.throwIfAborted();
 		connection.addEventListener('abort', this.onDisconnect, { once: true });
 	}
@@ -82,6 +82,13 @@ export class WorkspaceTestTools {
 		requestSignal?.throwIfAborted();
 		const request = decodeTestToolRequest(name, argumentsValue);
 		switch (request.name) {
+			case 'studio_reveal_test_run': {
+				const entry = this.runs.get(request.run);
+				if (entry === undefined) throw new StudioToolInputError('Run must be listed or started in this context.');
+				if (this.revealRun === undefined) throw new StudioToolInputError('This workspace has no Scenario Lab view.');
+				this.revealRun(entry.run);
+				return this.readRun(request.run);
+			}
 			case 'studio_inspect_test_target': {
 				const entry = this.results.get(request.result);
 				if (entry === undefined) throw new StudioToolInputError('Case handle must be read from a run in this prompt');

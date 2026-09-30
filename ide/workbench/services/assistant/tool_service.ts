@@ -1,3 +1,8 @@
+import type { ScenarioRun } from '../../../testing/scenario/result_service';
+import type { PublishedBuildOpenResult } from '../builds';
+import { decodeWorkspaceToolRequest } from './workspace_tool_protocol';
+import type { HotResumeService } from '../execution/hot_resume';
+import type { HostClock } from '../../../../hosts/common/clock';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { ResourceDiagnosticsService } from '../diagnostics/resource_diagnostics';
@@ -19,6 +24,7 @@ import { StudioToolInputError } from './tool_input';
 
 /** Workbench tool admission, independent of a chat, provider or transport. */
 export class WorkspaceToolService {
+	public openBuild: ((requestId: string, signal?: AbortSignal) => Promise<PublishedBuildOpenResult>) | undefined;
 	private readonly contexts = new Set<WorkspaceToolContext>();
 	private readonly unbindWorkspace: () => void;
 	public constructor(private readonly models: EditorTextModelService, private readonly sources: RuntimeSourceState,
@@ -27,7 +33,7 @@ export class WorkspaceToolService {
 		private readonly navigation: RuntimeFrameNavigation, private readonly capture: GameImageCapture,
 		private readonly terminal: LuaTerminalSession, private readonly debuggerExecution: RuntimeDebuggerExecution,
 		private readonly actors: ActorExecutionService, private readonly behaviors: BehaviorSourceDocuments,
-		private readonly saves: TextFileSaveService, private readonly boots: BootService) {
+		private readonly saves: TextFileSaveService, private readonly boots: BootService, private readonly hotResumes: HotResumeService, private readonly clock: HostClock, private readonly revealTestRun?: (run: ScenarioRun) => void) {
 		this.unbindWorkspace = models.onWillClear(() => this.clear());
 	}
 
@@ -35,10 +41,10 @@ export class WorkspaceToolService {
 	public open(connection: AbortSignal): WorkspaceToolContext {
 		connection.throwIfAborted();
 		const context = new WorkspaceToolContext(
-			new WorkspaceSourceTools(this.models, this.sources, this.diagnostics, connection, this.behaviors, this.saves),
-			new WorkspaceTestTools(this.testRuns, connection),
-			new WorkspaceRuntimeTools(this.inspection, this.navigation, this.capture, this.terminal, this.debuggerExecution, this.actors, this.boots, connection),
-			connection, () => this.contexts.delete(context));
+			new WorkspaceSourceTools(this.models, this.sources, this.diagnostics, connection, this.behaviors, this.saves, this.clock),
+			new WorkspaceTestTools(this.testRuns, connection, this.revealTestRun),
+			new WorkspaceRuntimeTools(this.inspection, this.navigation, this.capture, this.terminal, this.debuggerExecution, this.actors, this.boots, this.hotResumes, connection),
+			connection, () => this.contexts.delete(context), this.openBuild);
 		this.contexts.add(context);
 		return context;
 	}
@@ -52,13 +58,20 @@ export class WorkspaceToolContext {
 	private disposed = false;
 	private readonly onDisconnect = () => this.dispose();
 	public constructor(private readonly source: WorkspaceSourceTools, private readonly tests: WorkspaceTestTools,
-		private readonly runtime: WorkspaceRuntimeTools, private readonly connection: AbortSignal, private readonly release: () => void) {
+		private readonly runtime: WorkspaceRuntimeTools, private readonly connection: AbortSignal, private readonly release: () => void,
+		private readonly openBuild?: (requestId: string, signal?: AbortSignal) => Promise<PublishedBuildOpenResult>) {
 		connection.addEventListener('abort', this.onDisconnect, { once: true });
 	}
 
 	public execute(name: string, input: unknown, signal?: AbortSignal) {
 		if (this.disposed) throw new StudioToolInputError('Studio tool context has closed. Open a new context and read fresh evidence.');
 		signal?.throwIfAborted();
+		if (name === 'studio_open_build') {
+			const request = decodeWorkspaceToolRequest(name, input);
+			if (this.openBuild === undefined) throw new StudioToolInputError('This Studio window has no workspace build opener.');
+			return this.openBuild(request.requestId, signal === undefined ? this.connection : AbortSignal.any([signal, this.connection]))
+				.then(data => ({ kind: 'navigation' as const, data }));
+		}
 		if (!STUDIO_TOOL_NAMES.has(name)) throw new StudioToolInputError(`Unknown Studio tool: ${name}`);
 		if (STUDIO_RUNTIME_TOOL_NAMES.has(name)) return this.runtime.execute(name, input, signal);
 		if (STUDIO_TEST_TOOL_NAMES.has(name)) return this.tests.execute(name, input, signal);

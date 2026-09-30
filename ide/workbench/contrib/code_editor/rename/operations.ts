@@ -60,7 +60,7 @@ export class CrossFileRenameManager {
 	public proposeRename(context: WorkspaceSourceContext, domain: ResourceDomain, info: ReferenceMatchInfo, newName: string): WorkspaceEditProposal {
 		context.assertCurrent();
 		return new WorkspaceEditProposal(`Rename ${info.expression} to ${newName}`, context,
-			this.prepareRename(domain, info, newName));
+			{ kind: 'edit', edits: this.prepareRename(domain, info, newName) });
 	}
 
 	public prepareRename(domain: ResourceDomain, info: ReferenceMatchInfo, newName: string): Map<EditorTextModel, EditorModelEdit> {

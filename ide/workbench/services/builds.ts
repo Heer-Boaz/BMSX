@@ -1,5 +1,8 @@
 import type { StudioBuildJob, StudioBuildRequest } from '../../../hosts/common/studio_builds';
 
+/** Opening a tab is not successful boot or a registered live target. */
+export type PublishedBuildOpenResult = { readonly status: 'opened' | 'blocked'; readonly url: string };
+
 /** Build observations are workspace state, not runtime-installed state or editable source models. */
 export interface WorkspaceBuilds {
 	readonly jobs: readonly StudioBuildJob[];

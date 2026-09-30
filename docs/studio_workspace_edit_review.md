@@ -7,6 +7,15 @@ route.
 
 ## Ownership and admission
 
+- The proposal plan distinguishes ordinary versioned text edits from exclusive
+  creation of one Lua source. `studio_propose_source` offers the latter to the
+  same visible review. A new file has a path and preview, not a fabricated empty
+  model. Before approval there is no file or catalog entry. Apply invokes the
+  existing `createLuaResource` / `WorkspaceRecords.write(overwrite=false)` owner,
+  admits its canonical source, then opens its shared text model. An intervening
+  file creation fails rather than overwriting it. Discard/disconnect creates
+  nothing. Accepted creation is a file operation, not text Undo or runtime
+  installation; its status says so. The pane does not save the new file twice.
 - `WorkspaceSourceContext` starts an explicit reading operation **before** any
   asynchronous analysis/tool result. `read(model)` returns a retained immutable
   model/version/source receipt without creating a tab or a Save/Undo boundary.

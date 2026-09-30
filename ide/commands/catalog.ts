@@ -137,6 +137,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'scenarioLab.breakpoints': { category: 'Scenario Lab', title: 'Compiled Test Sources and Breakpoints', shortTitle: 'Breakpoints' },
 	'scenarioLab.inspectStop': { category: 'Scenario Lab', title: 'Inspect Stopped Test', shortTitle: 'Inspect' },
 	'scenarioLab.run': { category: 'Scenario Lab', title: 'Run Scenarios', shortTitle: 'Run' },
+	'scenarioLab.revealRun': { category: 'Scenario Lab', title: 'Reveal Active or Latest Run', shortTitle: 'Reveal Run' },
 	'scenarioLab.rerun': { category: 'Scenario Lab', title: 'Rerun Scenarios', shortTitle: 'Rerun' },
 	'scenarioLab.cancel': { category: 'Scenario Lab', title: 'Stop Scenarios', shortTitle: 'Stop' },
 };
