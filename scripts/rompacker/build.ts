@@ -1,8 +1,10 @@
 import { copyFile, mkdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { RomArtifactStore, romBuildKey, type RomArtifact, type RomBuildUnit, type PreparedRomArtifact } from './artifacts';
-import { romToolchainIdentity, type RomBuildRecipe } from './build_state';
-import { biosResPath, biosSourcePath, cartlibLuaPath, prepareRomInputs, testlibLuaPath, type RomBuildInputs } from './build_inputs';
+import { RomArtifactStore, romBuildKey, type PreparedRomArtifact } from './artifacts';
+import { romToolchainIdentity } from './build_state';
+import type { RomArtifact, RomBuildUnit, RomBuildRecipe } from '../../toolchain/ts/rompack/build_manifest';
+import { biosResPath, biosSourcePath, prepareRomInputs, testlibLuaPath, type RomBuildInputs } from './build_inputs';
+import { CART_LIBRARY_ROOT } from '../../toolchain/ts/lua/source_paths';
 import { collectCartSourceFiles } from './cart_source_files';
 import { collectScenarioTestSourceFiles } from './scenario_test_sources';
 import { SYSTEM_ROM_NAME } from '../../toolchain/ts/rompack/system';
@@ -31,7 +33,7 @@ export async function prepareMediaBuild(options: MediaBuildOptions, store: RomAr
 	let cart: PreparedUnit | undefined;
 	if (options.domain === 'cart') {
 		const respath = options.respath ?? join('carts', target, 'res'), projectRoot = join(respath, '..');
-		const sourceFiles = collectCartSourceFiles([projectRoot]), librarySourceFiles = collectCartSourceFiles([cartlibLuaPath]);
+		const sourceFiles = collectCartSourceFiles([projectRoot]), librarySourceFiles = collectCartSourceFiles([CART_LIBRARY_ROOT]);
 		const testLibraryFiles = options.debug ? collectCartSourceFiles([testlibLuaPath]) : [];
 		const testModuleFiles = options.debug ? collectCartSourceFiles([join('tests', projectRoot)]) : [];
 		const scenarioSourceFiles = options.debug ? collectScenarioTestSourceFiles(projectRoot) : [];

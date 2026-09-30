@@ -84,7 +84,7 @@ const { serveStudioPage, STUDIO_PAGE_ROUTES } = await import('./dev/studio_page.
 /** @type {import('../ide/common/studio_configuration.ts').StudioConfiguration} */
 const studioConfiguration = {
 	workspace: { kind: 'http', baseUrl: '' },
-	assistant: '', conversations: '', server: { baseUrl: '', tools: true, builds: true },
+	assistant: '', conversations: '', server: { baseUrl: '', tools: true, builds: true, projects: true },
 };
 const { CodexObserverHttpApi } = await import('../hosts/node/codex/observer_http.ts');
 const { CodexHttpApi } = await import('../hosts/node/codex/http_api.ts');
@@ -95,15 +95,18 @@ const { STUDIO_TOOLS } = await import('../ide/workbench/services/assistant/tool_
 const conversationViewers = new CodexObserverHttpApi(process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex'));
 const { StudioBuildJobs } = await import('../hosts/node/builds/jobs.ts');
 const { handleBuildRequest } = await import('../hosts/node/builds/api.ts');
+const { WorkspaceProjects } = await import('../hosts/node/workspace/projects.ts');
+const { handleProjectRequest } = await import('../hosts/node/workspace/projects_api.ts');
+const projects = new WorkspaceProjects(projectRoot);
 const buildJobs = await StudioBuildJobs.open(projectRoot, path.resolve(getArg('build-store', null, path.join(projectRoot, '.bmsx', 'builds'))));
 const studioSessions = new StudioSessions(buildJobs);
-const studioMcp = new StudioMcpApi(studioSessions, STUDIO_TOOLS, buildJobs);
+const studioMcp = new StudioMcpApi(studioSessions, STUDIO_TOOLS, buildJobs, projects);
 const assistant = new CodexHttpApi({ tools: STUDIO_TOOLS,
 	openLoginPage: openUrlInBrowser,
 	// The same root the workspace API serves sources from, so a Studio source path and a shell
 	// path name the same file.
 	workspaceRoot: projectRoot,
-	profileDirectory: path.join(process.env.XDG_STATE_HOME ?? path.join(os.homedir(), '.local', 'state'), 'bmsx', 'studio-codex') }, buildJobs);
+	profileDirectory: path.join(process.env.XDG_STATE_HOME ?? path.join(os.homedir(), '.local', 'state'), 'bmsx', 'studio-codex') }, buildJobs, projects);
 
 async function handleCartsApi(req, res, url) {
 	if (url.pathname !== '/__bmsx__/carts') {
@@ -179,6 +182,11 @@ const server = createServer(async (req, res) => {
 		if (requestUrl.pathname === '/__bmsx__/lua') {
 			workspaceSession.authorize(req);
 			await handleWorkspaceRequest(projectRoot, req, res, requestUrl);
+			return;
+		}
+		if (requestUrl.pathname.startsWith('/__bmsx__/projects/')) {
+			workspaceSession.authorize(req);
+			await handleProjectRequest(projects, req, res, requestUrl);
 			return;
 		}
 		if (requestUrl.pathname.startsWith('/__bmsx__/conversations/')) {

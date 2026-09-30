@@ -39,6 +39,7 @@ import {
 	applyAllWorkspaceSourceOverrides,
 	discoverWorkspaceLuaSources,
 } from '../workspace/workspace';
+import type { WorkspaceRecord } from '../workspace/records';
 import {
 	workspaceDirtyRecords,
 } from './workspace/state';
@@ -75,6 +76,7 @@ export async function initializeIdeFeatures(
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 	const editorAvailable = runtimeSourcesSupportIde(sources);
 	let workspacePayload = null;
+	let observedSources: ReadonlyMap<string, WorkspaceRecord> | undefined;
 	if (editorAvailable) {
 		const cartridge = developmentCartridgeSource(sources);
 		workspacePayload = await initializeWorkspaceStorage(
@@ -85,13 +87,14 @@ export async function initializeIdeFeatures(
 			workspaceFiles,
 			logOutput,
 		);
-		await discoverWorkspaceLuaSources(sources);
+		observedSources = await discoverWorkspaceLuaSources(sources);
 	} else {
 		await shutdownWorkspaceStorage();
 	}
 	const rejectedDirtyPaths = editorAvailable ? await applyAllWorkspaceSourceOverrides(
 		sources,
 		workspaceDirtyRecords,
+		observedSources,
 	) : new Set<string>();
 	const state = new RuntimeIdeState(
 		runtime,

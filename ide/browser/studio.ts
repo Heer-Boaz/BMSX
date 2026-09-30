@@ -1,4 +1,6 @@
 import { HttpWorkspaceBuilds } from './builds';
+import { HttpWorkspaceProjects } from './projects';
+import { loadPublishedMedia, openPublishedBuild } from './published_media';
 import { showEditorMessage } from '../common/feedback_state';
 import { COLOR_STATUS_SUCCESS, COLOR_STATUS_ERROR } from '../common/constants';
 import { HttpConversationObserver } from './conversation_observer';
@@ -15,6 +17,7 @@ import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import {
 	completeBrowserBoot,
 	prepareBrowserStartup,
+	loadBrowserMedia,
 	showBrowserBootError,
 } from '../../hosts/browser/boot';
 import { BrowserClipboard } from '../../hosts/browser/clipboard';
@@ -55,11 +58,12 @@ async function startBrowserStudio(): Promise<void> {
 			if (session === undefined) { session = new StudioHttpSession(baseUrl); sessions.set(baseUrl, session); }
 			return session;
 		};
-		const options = await prepareBrowserStartup(
-			BMSX_BROWSER_DEBUG,
-			document.body.dataset.systemRom,
-			document.body.dataset.defaultRom,
-		);
+		const artifact = new URL(location.href).searchParams.get('artifact');
+		if (artifact !== null && !configuration.server?.builds) throw new Error('Opening a published build requires the workspace build service.');
+		const media = artifact === null
+			? await loadBrowserMedia(document.body.dataset.systemRom, document.body.dataset.defaultRom)
+			: await loadPublishedMedia(httpSession(configuration.server!.baseUrl), artifact);
+		const options = await prepareBrowserStartup(BMSX_BROWSER_DEBUG, media);
 		const runtime = initializeMachineRuntime(
 			options.systemRom,
 			options.cartridgeSlots,
@@ -126,6 +130,7 @@ async function startBrowserStudio(): Promise<void> {
 			() => new BrowserGraphLayoutEngine(new Worker(new URL('./graph-layout.worker.js', document.baseURI))),
 			configuration.assistant === undefined ? undefined : (signal, onEvent) => AssistantHttpConnection.open(httpSession(configuration.assistant), signal, onEvent),
 			configuration.conversations === undefined ? undefined : (signal, onEvent) => HttpConversationObserver.open(httpSession(configuration.conversations), signal, onEvent),
+			artifact === null ? 'workspace' : 'installed',
 		);
 		clipboard.bindInput(options.browserInput, () => ide.editor.clipboardTarget, reportClipboardFailure);
 		systemOutput.flush(runtime, options.logOutput);
@@ -172,10 +177,12 @@ async function startBrowserStudio(): Promise<void> {
 		});
 		const server = configuration.server;
 		if (server !== undefined) {
+			if (server.projects) ide.editor.projects = new HttpWorkspaceProjects(httpSession(server.baseUrl));
 			const builds = server.builds ? new HttpWorkspaceBuilds(httpSession(server.baseUrl), job => {
 				showEditorMessage(`${job.request.target}: ${job.phase}. Studio: Build Jobs`, job.state === 'completed' ? COLOR_STATUS_SUCCESS : COLOR_STATUS_ERROR, 6);
 			}) : undefined;
 			ide.editor.builds = builds;
+			if (builds !== undefined) ide.editor.openPublishedBuild = openPublishedBuild;
 			const connection = new StudioServerConnection(httpSession(server.baseUrl),
 				{ title: document.title, url: location.href, tools: server.tools, builds: server.builds }, ide.editor.tools, proposal => {
 					ide.editor.activate();

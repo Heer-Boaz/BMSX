@@ -72,7 +72,7 @@ import {
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
 import type { RomBuildInputs } from './build_inputs';
-import type { RomBuildOutput } from './build_state';
+import type { RomBuildOutput } from '../../toolchain/ts/rompack/build_manifest';
 import type { TextureAtlasResource, ImageResource, Resource, resourcetype } from './rompacker.rompack';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import {

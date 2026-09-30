@@ -90,9 +90,14 @@ export class BootService {
 	public get latestOperation(): BootOperation | null { return this.latest; }
 
 	/** Composition calls this before the first host frame, after workspace recovery. */
-	public start(): BootOperation {
+	public start(source: 'workspace' | 'installed' = 'workspace'): BootOperation {
 		const operation = this.accept('startup');
 		try {
+			if (source === 'installed') {
+				// Opening a published bundle must not rebuild it from recovered or newer workspace text.
+				this.installAndReset(operation, { installation: null, interpreter: this.tooling.luaInterpreter });
+				return operation;
+			}
 			let prepared: PreparedBlua32Boot;
 			try {
 				prepared = this.prepare(operation);

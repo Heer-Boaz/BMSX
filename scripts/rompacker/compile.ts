@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import type { RomBuildOutput } from './build_state';
+import type { RomBuildOutput } from '../../toolchain/ts/rompack/build_manifest';
 import type { PreparedUnit, BuildProgress } from './build';
 import {
 	BIOS_FUNCTION_EXPORTS,

@@ -8,7 +8,6 @@ import { prepareGLTFDocument, type GLTFDocument } from './gltfloader';
 
 export const biosResPath = './machine/bios/res';
 export const biosSourcePath = './machine/bios';
-export const cartlibLuaPath = './cartlib';
 export const testlibLuaPath = './testlib';
 
 const RESOURCE_SCAN_EXCLUDE = new Set(['.rom', '.js', '.ts', '.map', '.tsbuildinfo']);

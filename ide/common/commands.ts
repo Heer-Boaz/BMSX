@@ -63,6 +63,7 @@ export type EditorScenarioLabCommandId =
 	| 'scenarioLab.cancel';
 
 export type EditorCommandId =
+	| 'projects.createCartridge'
 	| 'conversations.history' | 'conversations.older'
 	| 'terminal.evaluate' | 'terminal.context' | 'terminal.pause' | 'terminal.continue' | 'terminal.clear' | 'terminal.copy'
 	| 'assistant.signIn'

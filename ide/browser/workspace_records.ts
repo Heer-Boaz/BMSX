@@ -7,28 +7,8 @@ export class HttpWorkspaceRecordProvider implements WorkspaceRecordProvider {
 	public readonly persistence = 'workspace';
 	public constructor(private readonly session = new StudioHttpSession()) {}
 
-	/** Only a rejected capability permits replay: the server has performed no file operation. */
-	private async request(url: string, init: RequestInit): Promise<Response> {
-		let session = this.session.connect();
-		const headers = new Headers(init.headers);
-		headers.set('Authorization', `Bearer ${await session}`);
-		try {
-			const response = await fetch(this.session.baseUrl + url, { ...init, headers });
-			if (response.status !== 401) return response;
-			await response.body?.cancel();
-			this.session.expire(session);
-			session = this.session.connect();
-			headers.set('Authorization', `Bearer ${await session}`);
-			return await fetch(this.session.baseUrl + url, { ...init, headers });
-		} catch (error) {
-			// Retire admission after transport loss; the next operation reaches the server.
-			this.session.expire(session);
-			throw error;
-		}
-	}
-
 	public async readDirectory(relativePath: string): Promise<WorkspaceDirectoryEntry[] | null> {
-		const response = await this.request(`${WORKSPACE_FILE_ENDPOINT}?directory=${encodeURIComponent(relativePath)}`, {
+		const response = await this.session.request(`${WORKSPACE_FILE_ENDPOINT}?directory=${encodeURIComponent(relativePath)}`, {
 			method: 'GET', cache: 'no-store',
 		});
 		if (response.status === 404) return null;
@@ -37,7 +17,7 @@ export class HttpWorkspaceRecordProvider implements WorkspaceRecordProvider {
 	}
 
 	public async read(relativePath: string): Promise<WorkspaceRecord | null> {
-		const response = await this.request(`${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(relativePath)}`, {
+		const response = await this.session.request(`${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(relativePath)}`, {
 			method: 'GET', cache: 'no-store',
 		});
 		if (response.status === 404) return null;
@@ -46,7 +26,7 @@ export class HttpWorkspaceRecordProvider implements WorkspaceRecordProvider {
 	}
 
 	public async write(relativePath: string, record: WorkspaceRecord, overwrite: boolean): Promise<void> {
-		const response = await this.request(WORKSPACE_FILE_ENDPOINT, {
+		const response = await this.session.request(WORKSPACE_FILE_ENDPOINT, {
 			method: 'PUT',
 			headers: overwrite ? { 'Content-Type': 'application/json' }
 				: { 'Content-Type': 'application/json', 'If-None-Match': '*' },
@@ -57,7 +37,7 @@ export class HttpWorkspaceRecordProvider implements WorkspaceRecordProvider {
 	}
 
 	public async delete(relativePath: string): Promise<void> {
-		const response = await this.request(`${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(relativePath)}`, {
+		const response = await this.session.request(`${WORKSPACE_FILE_ENDPOINT}?path=${encodeURIComponent(relativePath)}`, {
 			method: 'DELETE',
 		});
 		if (!response.ok && response.status !== 404) {

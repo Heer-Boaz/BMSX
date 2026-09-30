@@ -38,21 +38,25 @@ export interface BrowserStartup {
 	logOutput: LogOutput;
 }
 
-export async function prepareBrowserStartup(
-	debug: boolean,
-	systemRomPath: string,
-	defaultRom: string,
-): Promise<BrowserStartup> {
+export type BrowserBootMedia = {
+	systemRom: Uint8Array;
+	cartridgeSlots: [Uint8Array | null, Uint8Array | null];
+};
+
+export async function loadBrowserMedia(systemRomPath: string, defaultRom: string): Promise<BrowserBootMedia> {
 	const romUrl = getRomFromUrlParameter() || defaultRom;
-	if (!romUrl) {
-		throw new Error('Missing required URL parameter: ?rom=<path-to-rom>');
-	}
-	const systemRom = await fetchBuffer(systemRomPath);
+	if (!romUrl) throw new Error('Missing required URL parameter: ?rom=<path-to-rom>');
 	const slot1Url = getRomFromUrlParameter(1);
-	const [slot0Rom, slot1Rom] = await Promise.all([
-		loadCart(`./${romUrl}`, 0, debug),
-		slot1Url ? loadCart(`./${slot1Url}`, 1, debug) : Promise.resolve(null),
+	const [systemRom, slot0Rom, slot1Rom] = await Promise.all([
+		fetchBuffer(systemRomPath), fetchBuffer(`./${romUrl}`),
+		slot1Url ? fetchBuffer(`./${slot1Url}`) : Promise.resolve(null),
 	]);
+	return { systemRom, cartridgeSlots: [slot0Rom, slot1Rom] };
+}
+
+/** Presentation and input startup consume selected media, independently of its storage or transport. */
+export async function prepareBrowserStartup(debug: boolean, media: BrowserBootMedia): Promise<BrowserStartup> {
+	await showCartridgeBoot(media.cartridgeSlots[0], debug);
 	createAudioContext(audioState);
 	const gamescreen = document.getElementById('gamescreen');
 	if (!(gamescreen instanceof HTMLCanvasElement)) {
@@ -83,8 +87,8 @@ export async function prepareBrowserStartup(
 		PSX_MACHINE_SPEC.gxGpuVramBytes,
 	);
 	return {
-		cartridgeSlots: [slot0Rom, slot1Rom],
-		systemRom,
+		cartridgeSlots: media.cartridgeSlots,
+		systemRom: media.systemRom,
 		machineModel: PSX_MACHINE_SPEC,
 		input,
 		browserInput: inputHub,
@@ -106,9 +110,9 @@ export function completeBrowserBoot(): void {
 	document.body.classList.add('game-started');
 }
 
-async function loadCart(url: string, slot: 0 | 1, debug: boolean): Promise<Uint8Array> {
+async function showCartridgeBoot(loadedRom: Uint8Array | null, debug: boolean): Promise<void> {
 	createAudioContext(audioState);
-	if (slot === 0 && !window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches) {
+	if (!window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches) {
 		const extraMessageElement = document.getElementById('extra-message');
 		const loadingElement = document.getElementById('loading');
 		loadingElement.style.display = 'block';
@@ -118,22 +122,15 @@ async function loadCart(url: string, slot: 0 | 1, debug: boolean): Promise<Uint8
 		window.addEventListener('resize', resizeLoaderMessage);
 	}
 
-	const loadedRom = await fetchBuffer(url);
-	if (slot === 1) {
-		return loadedRom;
-	}
-
-	const header = parseCartHeader(loadedRom);
-	const toc = decodeRomToc(loadedRom.subarray(
-		header.tocOffset,
-		header.tocOffset + header.tocLength,
-	));
 	let romLabelUrl = '';
-	for (let index = 0; index < toc.entries.length; index += 1) {
-		const entry = toc.entries[index];
-		if (entry.type === 'romlabel') {
-			romLabelUrl = getImageUrlFromBuffer(loadedRom.subarray(entry.start, entry.end));
-			break;
+	if (loadedRom !== null) {
+		const header = parseCartHeader(loadedRom);
+		const toc = decodeRomToc(loadedRom.subarray(header.tocOffset, header.tocOffset + header.tocLength));
+		for (const entry of toc.entries) {
+			if (entry.type === 'romlabel') {
+				romLabelUrl = getImageUrlFromBuffer(loadedRom.subarray(entry.start, entry.end));
+				break;
+			}
 		}
 	}
 	replaceBmsxImageWithRomLabel(romLabelUrl);
@@ -141,11 +138,10 @@ async function loadCart(url: string, slot: 0 | 1, debug: boolean): Promise<Uint8
 	replaceBmsxImageWithRomLabel(romLabelUrl);
 	if (debug) {
 		armAudioUnlock();
-		return loadedRom;
+		return;
 	}
 	setLoaderText('Press any key, button or touch screen to start...');
 	await awaitPressedAnyKey();
-	return loadedRom;
 }
 
 function replaceBmsxImageWithRomLabel(romLabelUrl: string): void {

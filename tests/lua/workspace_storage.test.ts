@@ -1993,7 +1993,9 @@ test('new Lua files belong to their explicit project and are published only afte
 		relativePath: 'experiments/simple_assert.lua', contents: "return { kind = 'unit', tests = { sample = function() end } }" });
 	assert.equal(second.path2lua[suite.path].program_module, false);
 	assert.equal(suite.source.resid, '__bmsx_scenario_test__/experiments/simple_assert.lua');
-	for (const relativePath of ['../outside.lua', '/absolute.lua', 'actor.txt', 'bmsx/assets.lua', 'test/ignored.lua', 'other/actor.lua']) {
+	const other = await createLuaResource(clock, sources, { ...request, relativePath: 'other/actor.lua' });
+	assert.notEqual(other.source.resid, resource.source.resid, 'different module paths have distinct ROM asset identities');
+	for (const relativePath of ['../outside.lua', '/absolute.lua', 'actor.txt', 'bmsx/assets.lua', 'test/ignored.lua']) {
 		await assert.rejects(createLuaResource(clock, sources, { ...request, relativePath }));
 	}
 });
@@ -2008,7 +2010,10 @@ test('workspace opening discovers saved Lua files without depending on open-tab 
 	server.files.set('carts/project/test/fixture.lua', { contents: '-- excluded by source rules', updatedAt: 20 });
 	const registry = sourceRegistry('-- cart', 'carts/project');
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- BIOS', 'machine/bios'), [registry, null], 0);
-	await discoverWorkspaceLuaSources(sources);
+	const observed = await discoverWorkspaceLuaSources(sources);
+	await applyAllWorkspaceSourceOverrides(sources, new Map(), observed);
+	assert.equal(server.requests.filter(request => request.method === 'GET' && request.path === 'carts/project/experiments/actor.lua').length, 1,
+		'workspace opening reuses discovery reads rather than refetching newly admitted source');
 	const resource = resolveRuntimeResource(sources, { domain: 0, path: 'experiments/actor.lua' })!;
 	assert.equal(resource.source.type, 'lua');
 	assert.equal(registry.module2lua['experiments/actor'].src, 'return { enabled = true }');

@@ -57,12 +57,17 @@ function showBuildDetails(editor: CartEditor, job: StudioBuildJob): void {
 		{ label: 'View build log', description: 'Bounded output; fetched only when requested', detail: job.error ?? '', action: 'log' },
 		{ label: 'Copy request ID', description: id, detail: '', action: 'copy' },
 	];
-	if (job.artifact !== undefined && job.state === 'completed') choices.push({ label: 'Copy published artifact ID', description: job.artifact,
-		detail: 'Published; not installed', action: 'artifact' });
+	if (job.artifact !== undefined && job.state === 'completed') {
+		if (editor.openPublishedBuild !== undefined) choices.unshift({ label: 'Open published build in new Studio window',
+			description: 'Exact cartridge and matching BIOS', detail: 'Current runtime and unsaved files stay in this window. Reboot applies workspace edits.', action: 'open' });
+		choices.push({ label: 'Copy published artifact ID', description: job.artifact,
+			detail: 'Published; not installed', action: 'artifact' });
+	}
 	if (!isBuildTerminal(job.state)) choices.push({ label: 'Cancel build', description: 'Wait for the producer to stop', detail: 'Already published results are not rolled back.', action: 'cancel' });
 	editor.quickInput.pick('Build details', 'Publication and runtime installation are separate', () => new TextQuickPickProvider(choices), choice => {
 		const run = async () => {
-			if (choice.action === 'refresh') await inspectBuild(editor, id);
+			if (choice.action === 'open') editor.openPublishedBuild!(job.artifact!);
+			else if (choice.action === 'refresh') await inspectBuild(editor, id);
 			else if (choice.action === 'cancel') showBuildDetails(editor, await editor.builds!.cancel(id));
 			else if (choice.action === 'artifact' || choice.action === 'copy') await editor.clipboard.writeText(choice.action === 'copy' ? id : job.artifact!);
 			else {

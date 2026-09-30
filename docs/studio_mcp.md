@@ -105,6 +105,11 @@ tools, and closing an external context does not disconnect chat.
 
 ## Workspace builds without a window
 
+`studio_create_cartridge {target}` creates a new saved cartridge from the
+workspace's canonical empty-cart template, without recovery metadata. An existing
+name is an error, not overwrite permission. UI **File: New Cartridge** uses the
+same owner. Creating neither builds nor replaces a running machine.
+
 The same MCP server exposes `studio_build_targets`, `studio_build_cart`,
 `studio_list_builds`, `studio_read_build`, `studio_cancel_build` and
 `studio_read_artifact`. These are server-owned workspace operations and do not
@@ -119,7 +124,9 @@ MCP session or window does not cancel an accepted job. Cancellation is explicit.
 Completion publishes an exact artifact, **not** a reset or installation into any
 running game. Logs are bounded and requested on demand. See
 [workspace builds](studio_build_jobs.md) for CLI packaging, durability, limits and
-connection behavior.
+connection behavior. **Studio: Build Jobs** can explicitly open that artifact
+with its matching BIOS in a new Studio window. Select its new session/context;
+existing tool handles continue to name only their original window.
 
 ## Owners
 

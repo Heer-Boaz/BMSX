@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { HttpWorkspaceRecordProvider } from '../../ide/browser/workspace_records';
+import { StudioAdmissionError } from '../../ide/browser/http_session';
 
 test('browser file provider coalesces session admission and keeps its capability out of URLs and file payloads', async t => {
 	let release!: () => void;
@@ -62,7 +63,7 @@ test('lost admission can reconnect; transport/write failures and repeated unauth
 		}
 		files++; return new Response(null, { status: fileStatus });
 	});
-	await assert.rejects(provider.read('a.lua'), /Session unavailable/);
+	await assert.rejects(provider.read('a.lua'), error => error instanceof StudioAdmissionError && error.status === 503);
 	assert.equal(files, 0);
 	admissionStatus = 200;
 	await assert.rejects(provider.write('a.lua', { contents: 'a', updatedAt: 1 }, true), /Failed to write/);

@@ -1,4 +1,5 @@
 import type { WorkspaceBuilds } from './workbench/services/builds';
+import type { WorkspaceProjects } from './workbench/services/projects';
 import type { ConversationObserverFactory } from '../hosts/common/conversation_observer';
 import { ObservedConversation } from './workbench/services/assistant/observed_conversation';
 import { ConversationObserverPane } from './workbench/contrib/conversations/editor_pane';
@@ -164,6 +165,8 @@ const EDITOR_TARGET_HEIGHT = 288;
 
 export type CartEditor = {
 	builds: WorkspaceBuilds | undefined;
+	projects: WorkspaceProjects | undefined;
+	openPublishedBuild: ((artifact: string) => void) | undefined;
 	serverConnectionState: StudioServerConnectionState;
 	serverConnectionDetail: string;
 	retryServerConnection: (() => void) | undefined;
@@ -272,6 +275,8 @@ export class RuntimeCartEditor implements CartEditor {
 
 	public readonly assistant: AssistantConversation;
 	public builds: WorkspaceBuilds | undefined;
+	public projects: WorkspaceProjects | undefined;
+	public openPublishedBuild: ((artifact: string) => void) | undefined;
 	public serverConnectionState: StudioServerConnectionState = 'standalone';
 	public serverConnectionDetail = 'No workspace server is configured.';
 	public retryServerConnection: (() => void) | undefined;

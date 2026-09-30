@@ -2,10 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { RomBuildRecord } from './build_state';
+import type { RomArtifact } from '../../toolchain/ts/rompack/build_manifest';
 
-export type RomBuildUnit = RomBuildRecord & { key: string; name: string };
-export type RomArtifact = { id: string; target: string; system: RomBuildUnit; cart?: RomBuildUnit };
 export type PreparedRomArtifact = { artifact: RomArtifact; reused: boolean };
 
 export function romBuildKey(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }

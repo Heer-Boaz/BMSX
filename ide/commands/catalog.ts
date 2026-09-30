@@ -34,6 +34,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	resourceSearch: { category: 'Go', title: 'Go to File' },
 	runtimeErrorFocus: { category: 'Go', title: 'Go to Runtime Error' },
 	createResource: { category: 'File', title: 'New Lua File' },
+	'projects.createCartridge': { category: 'File', title: 'New Cartridge' },
 	findGlobal: { category: 'Search', title: 'Find in Workspace' },
 	findLocal: { category: 'Search', title: 'Find' },
 	lineJump: { category: 'Go', title: 'Go to Line' },

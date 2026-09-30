@@ -147,6 +147,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	],
 	'menubar.file': [
 		{ type: 'command', command: 'createResource' },
+		{ type: 'command', command: 'projects.createCartridge' },
 		{ type: 'command', command: 'save' },
 		{ type: 'command', command: 'resources' },
 		{ type: 'command', command: 'keepEditor' },

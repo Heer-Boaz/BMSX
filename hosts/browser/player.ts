@@ -17,6 +17,7 @@ import { SystemOutputLog } from '../common/system_output_log';
 import {
 	completeBrowserBoot,
 	prepareBrowserStartup,
+	loadBrowserMedia,
 	showBrowserBootError,
 } from './boot';
 import { bindBrowserFullscreenShortcut } from './fullscreen';
@@ -27,8 +28,7 @@ async function startBrowserPlayer(): Promise<void> {
 	try {
 		const options = await prepareBrowserStartup(
 			BMSX_BROWSER_DEBUG,
-			document.body.dataset.systemRom,
-			document.body.dataset.defaultRom,
+			await loadBrowserMedia(document.body.dataset.systemRom, document.body.dataset.defaultRom),
 		);
 		const runtime = initializeMachineRuntime(
 			options.systemRom,

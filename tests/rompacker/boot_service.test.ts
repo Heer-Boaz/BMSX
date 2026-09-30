@@ -24,6 +24,8 @@ import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { BootService } from '../../ide/workbench/services/execution/boot';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
+import { discoverWorkspaceLuaSources } from '../../ide/workspace/workspace';
+import { workspaceRecords } from '../../ide/workspace/records';
 
 async function fixture(t: TestContext) {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-boot-'));
@@ -99,6 +101,37 @@ test('startup installs captured sources and performs one physical reset without 
 	assert.equal(f.cpu.isCartridgeExecutionActive(), false);
 	assert.equal(f.runtime.machine.scheduler.currentNowCycles(), 0);
 	assert.equal(f.sources.cartridgeSlots[0]!.installedBlua32Sources.get('entry'), operation.sourceSnapshots[0].source);
+});
+
+test('opening published media boots installed code without compiling newer drafts; Reboot applies them explicitly', async t => {
+	const f = await fixture(t), installed = f.sources.currentBlua32Media;
+	f.model.pushEditOperations([{ offset: f.source.length, deleteLength: 0, text: '\nend end -- invalid draft' }]);
+	assert.deepEqual(await f.service.start('installed').completion, { status: 'reset', installed: false, reset: true });
+	assert.equal(f.sources.currentBlua32Media, installed);
+	assert.equal(f.execution.launchPending, false);
+	assert.equal(f.sources.cartridgeSlots[0]!.installedBlua32Sources.get('entry'), f.source);
+	assert.equal((await f.service.reboot().completion).status, 'rejected');
+	assert.equal(f.resets(), 1);
+});
+
+test('Reboot links a newly imported workspace library without compiling or packing unrelated libraries', async t => {
+	const f = await fixture(t);
+	const files = workspaceRecords.provider as MemoryWorkspaceFiles;
+	files.records.set('cartlib/new_module.lua', { contents: 'return { value = 37 }', updatedAt: 1 });
+	files.records.set('cartlib/unrelated.lua', { contents: 'end end', updatedAt: 1 });
+	await discoverWorkspaceLuaSources(f.sources);
+	const cart = f.sources.cartridgeSlots[0]!;
+	assert.equal(cart.luaSources.module2lua['cartlib/new_module'].src, 'return { value = 37 }');
+	assert.equal(f.sources.cartridgeBlua32MediaDirty[0], false, 'catalog discovery does not change the installed program');
+	f.model.pushEditOperations([{ offset: f.source.indexOf('while'), deleteLength: 0,
+		text: "local dependency<const> = require('cartlib/new_module')\nresult = dependency.value\n" }]);
+	assert.equal((await f.service.reboot().completion).status, 'reset');
+	assert.equal(cart.installedBlua32Sources.get('cartlib/new_module'), 'return { value = 37 }');
+	assert.equal(cart.installedBlua32Sources.has('cartlib/unrelated'), false);
+	const decoded = await loadRomToolingMedia(f.sources.systemRom.bytes, [cart.rom.bytes, null]);
+	const reopened = createRuntimeSourceState(decoded.system, decoded.cartridgeSlots).cartridgeSlots[0]!;
+	assert.equal(reopened.luaSources.module2lua['cartlib/new_module'].src, 'return { value = 37 }');
+	assert.equal(reopened.luaSources.module2lua['cartlib/unrelated'], undefined);
 });
 
 test('rejected startup keeps an independent launch hold, including Continue and frame-step requests', async t => {

@@ -51,6 +51,7 @@ export async function prepareWorkbenchRuntime(
 	createGraphLayoutEngine: GraphLayoutEngineFactory,
 	connectAssistant?: AssistantConnectionFactory,
 	observeConversation?: ConversationObserverFactory,
+	startupSource: 'workspace' | 'installed' = 'workspace',
 ): Promise<RuntimeIdeState> {
 	const media = await loadRomToolingMedia(
 		systemRom,
@@ -92,7 +93,7 @@ export async function prepareWorkbenchRuntime(
 		input.setGuestInputCaptured(active);
 		audioOutput.muteUi(ide.editor.executionSuspended);
 	});
-	const startup = ide.boots.start().result!;
+	const startup = ide.boots.start(startupSource).result!;
 	if (startup.status === 'rejected' || startup.status === 'failed') {
 		ide.editor.handleRuntimeTaskError(startup.error, 'Startup failed');
 		activateEditor(ide.editor, sources, runtime, audioOutput);

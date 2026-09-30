@@ -5,5 +5,5 @@ export type StudioConfiguration = {
 	assistant?: string;
 	conversations?: string;
 	/** One workspace observation channel; tools are an independent capability. */
-	server?: { baseUrl: string; tools: boolean; builds: boolean };
+	server?: { baseUrl: string; tools: boolean; builds: boolean; projects: boolean };
 };

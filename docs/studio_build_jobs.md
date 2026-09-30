@@ -27,6 +27,19 @@ full-media replacement inside a running emulator or change embedded chat lifetim
   **Studio: Build Jobs**. Build means saved files, not implicit Save. Choose the
   cartridge and debug/release/optimization recipe. Job details offer current
   status, on-demand bounded logs, cancellation and the exact artifact ID.
+- **File: New Cartridge** creates a new saved project from the workspace's
+  `carts/emptycart/entry.lua` and ROM manifest, with the new target as its title.
+  Creation exclusively claims the directory; existing projects are never
+  overwritten and `.bmsx` recovery is not copied. Building is a separate choice.
+  The same operation is `studio_create_cartridge {target}` in external and
+  embedded tools. It needs the workspace project service, not a live runtime.
+- A completed job offers **Open published build in new Studio window**. That
+  window loads both ROMs from the exact immutable artifact through the authorized
+  API, without first exporting anything to `dist`. Its initial boot runs installed
+  media even if newer saved files or recovered drafts exist. They remain visible
+  as pending source changes; explicit **Reboot** applies them. The original window
+  and its machine/drafts remain untouched. This is cold startup, not in-place
+  full-media replacement or Hot Resume. The artifact URL contains no credential.
 - External agents use the same server's MCP tools: `studio_build_targets`,
   `studio_build_cart`, `studio_list_builds`, `studio_read_build`,
   `studio_cancel_build`, `studio_read_artifact`. They need neither a browser tool
@@ -36,6 +49,12 @@ full-media replacement inside a running emulator or change embedded chat lifetim
   through a browser runtime context. Closing a chat does not cancel admitted work.
 - Standalone Studio declares no server/build capability. Local source editing,
   Terminal and the IDE remain independent; they do not probe for missing services.
+
+The create/build/open separation follows VS Code's
+[workspace creation and entry lifecycle](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/services/workspaces/browser/abstractWorkspaceEditingService.ts)
+and MAME's explicit
+[image load/reset boundary](https://github.com/mamedev/mame/blob/master/src/emu/diimage.cpp),
+not an automatic reset whenever a producer publishes new bytes.
 
 ## Owners
 
@@ -457,3 +476,38 @@ first-slice `cpu_soak` cart-only baseline was 0.18-0.19 s / 87-94 MiB; it did no
 capture/resolve a complete BIOS build. This is a broader operation, not a claim
 that adding system ownership is free. Immutable local results are not redundantly
 rehashed. Logs: `/tmp/bmsx-artifacts-06v4SH/final-*.log`.
+
+### Studio authoring gap validation (2026-09-30)
+
+The actual browser UI created `studio_authoring_probe`, submitted its build, and
+opened the published result in a second window. The original machine remained
+separate. The official MCP transport then read the new window's source, proposed
+an import of previously unpacked `cartlib/util/clamp`, and the visible workspace
+edit review applied it. After Save and the ordinary Studio reboot tool, guest
+inspection returned `probe_value = 37`. Frame navigation moved video tick
+`120 -> 119 -> 120`, returning to the same machine-cycle count. These were runtime
+tools, not screenshot inference or private browser-state injection.
+
+Reloading that artifact with newer saved source and an invalid recovered draft
+still booted the original installed program: the draft remained editable, but
+`probe_value` was absent from installed globals. Explicit Reboot of the invalid
+draft rejected compilation without installing or resetting media. The final
+bundle was reloaded and this installed-media/draft separation checked again.
+External MCP creation also succeeded, and duplicate creation preserved files.
+
+The rompacker suite passed 190 cases; source/boot/workspace-HTTP checks passed 74.
+IDE, Node-host and browser-host project typechecks and the strict architecture
+audit passed. Browser Studio/player builds succeeded. These checks supplement,
+not replace, the UI and runtime evidence. Local evidence is under
+`.bmsx/studio-gaps/`, especially `live-actions.jsonl` and the named build/test logs.
+The final standalone/HTTP/project run passed 7 cases, including actual offline
+Terminal, source creation, Save and reload. A separate player smoke reached its
+public `game-started` state without page errors; that is boot, not gameplay proof.
+The broader `scripts` typecheck still reports the pre-existing unused
+`createRuntimeSourceState` import in `scripts/bootrom/platforms/node_tooling_entry.ts`.
+
+**Still open:** the earlier `[PieceTreeBuffer] nth LF out of range` exception was
+not reproduced while replacing the entry with `result = clock.FRAME` and taking
+the visible unsaved-Reboot path. The result was an ordinary compiler diagnostic.
+No speculative PieceTree guard was added, and this is not a claim that the
+original exception has been fixed.

@@ -5153,6 +5153,25 @@ resource metadata into descriptor DTOs. Workspace resource identity persists onl
 Lua files are discovered before restoring views, using the ROM packer's source
 membership rules; the ROM is not the workspace file catalog. New-file creation
 admits an exclusive filesystem write before publishing its domain-owned source.
+Cartridge catalogs also discover `cartlib` independently of ROM membership.
+Catalog admission alone does not dirty the installed program. Source compilation
+parses project sources and lazily loads library dependencies through the shared
+module graph; only the selected closure enters installed-source/diagnostic maps.
+Source media publication reuses those parsed chunks and does not pack unrelated
+libraries. Workspace resource IDs use the same module-relative path as rompacker,
+so equally named files in different folders remain distinct.
+
+Workspace project creation is a Node filesystem operation, injected into the IDE
+as `WorkspaceProjects`; its plain `studio_projects` result is a host contract,
+not a reach into application state. UI, HTTP and both assistant transports use
+that owner. It creates the canonical empty-cart entry/manifest in an exclusively
+new directory; compilation, publication and opening a machine remain separate.
+Browser startup consumes selected ROM bytes independently of their transport.
+Opening a published artifact fetches its paired system/cart media with existing
+session admission, then uses `BootService.start('installed')`: source recovery is
+not permission to rebuild an explicitly selected artifact. Ordinary startup and
+explicit Reboot retain their workspace-source policy. No machine/C++ ABI changes
+or server dependency enter the standalone/native players.
 Local workspace
 files have one owner representation, `{ contents, updatedAt }`; autosave,
 explicit source saves, cold-boot source arbitration, and the local transport

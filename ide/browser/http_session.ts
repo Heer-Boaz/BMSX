@@ -21,6 +21,24 @@ export class StudioHttpSession {
 		return this.pending;
 	}
 
+	/** Finite workspace operations may replay only a pre-operation admission rejection, never a transport failure. */
+	public async request(path: string, init: RequestInit = {}): Promise<Response> {
+		const headers = new Headers(init.headers);
+		for (let attempt = 0; ; attempt++) {
+			const admission = this.connect();
+			headers.set('Authorization', `Bearer ${await admission}`);
+			try {
+				const response = await fetch(this.baseUrl + path, { ...init, headers });
+				if (response.status !== 401 || attempt !== 0) return response;
+				await response.body?.cancel();
+				this.expire(admission);
+			} catch (error) {
+				this.expire(admission);
+				throw error;
+			}
+		}
+	}
+
 	/** A late rejection of an older admission must not clear a newer shared one. */
 	public expire(admission: Promise<string>): void { if (this.pending === admission) this.pending = undefined; }
 }

@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import type { RomArtifact } from '../../scripts/rompacker/artifacts';
+import type { RomArtifact } from '../../toolchain/ts/rompack/build_manifest';
 
 import { parseCartHeader, type CartRomHeader } from '../../machine/ts/rompack/format';
 import {

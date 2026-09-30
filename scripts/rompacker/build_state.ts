@@ -8,17 +8,6 @@ const TOOLCHAIN_ROOTS = ['machine/ts/common', 'machine/ts/rompack', 'machine/ts/
 	'scripts/lint', 'scripts/rompacker', 'scripts/lib', 'toolchain/ts',
 	'package.json', 'package-lock.json', 'scripts/tsconfig.json', 'tsconfig.base.json', 'tsconfig.json'];
 
-export type RomBuildRecipe = {
-	domain: 'system' | 'cart';
-	debug: boolean;
-	optLevel: 0 | 1 | 2 | 3;
-	projectRoot: string;
-	toolchain: string;
-};
-/** file is relative to the receipt's output root, not necessarily a basename. */
-export type RomBuildOutput = { file: string; digest: string };
-export type RomBuildRecord = { recipe: RomBuildRecipe; inputs: string; outputs: readonly RomBuildOutput[] };
-
 /** Recipe inputs are code, not resources: hash once without retaining a second code tree. */
 export function romToolchainIdentity(): string {
 	const hash = createHash('sha256');

@@ -93,14 +93,10 @@ export class HttpWorkspaceBuilds implements WorkspaceBuilds {
 		this.jobs = [...active, ...terminal.slice(0, 50 - active.length)];
 	}
 	private async request(path: string, method = 'GET', body?: unknown, allowNotFound = false): Promise<Response> {
-		for (let attempt = 0; ; attempt++) {
-			const admission = this.session.connect();
-			const response = await fetch(`${this.session.baseUrl}/__bmsx__/builds${path}`, { method, cache: 'no-store',
-				headers: { Authorization: `Bearer ${await admission}`, 'Content-Type': 'application/json' },
-				body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(15000) });
-			if (response.status === 401 && attempt === 0) { this.session.expire(admission); continue; } // Explicit pre-operation rejection only.
-			if (!response.ok && !(allowNotFound && response.status === 404)) throw new BuildHttpError(response.status, await response.text());
-			return response;
-		}
+		const response = await this.session.request(`/__bmsx__/builds${path}`, { method, cache: 'no-store',
+			headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body),
+			signal: AbortSignal.timeout(15000) });
+		if (!response.ok && !(allowNotFound && response.status === 404)) throw new BuildHttpError(response.status, await response.text());
+		return response;
 	}
 }

@@ -88,6 +88,8 @@ export async function applyWorkspaceSourceOverrides(params: {
 	domain: ResourceDomain;
 	registry: LuaSourceRegistry;
 	projectRootPath: string;
+	/** Bytes already read during this workspace-open operation, not a persistent file cache. */
+	observedSources?: ReadonlyMap<string, WorkspaceRecord>;
 }): Promise<{ rejectedDirtyPaths: Set<string>; programChanged: boolean }> {
 	const rejectedDirtyPaths = new Set<string>();
 	const registry = params.registry;
@@ -106,6 +108,11 @@ export async function applyWorkspaceSourceOverrides(params: {
 		}
 		const canonicalPath = asset.normalized_source_path;
 		canonicalPaths[index] = canonicalPath;
+		const observed = params.observedSources?.get(canonicalPath);
+		if (observed !== undefined) {
+			canonicalRecords[index] = observed;
+			continue;
+		}
 		reads.push(workspaceRecords.read(canonicalPath).then(canonicalRecord => {
 			canonicalRecords[index] = canonicalRecord;
 		}));

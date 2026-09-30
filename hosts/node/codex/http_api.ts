@@ -5,6 +5,8 @@ import { CodexSession, type CodexSessionOptions } from './session';
 import type { CodexSessionEvent, CodexToolResult } from './protocol';
 import { BUILD_TOOLS, callBuildTool } from '../builds/tools';
 import type { StudioBuildJobs } from '../builds/jobs';
+import type { WorkspaceProjects } from '../workspace/projects';
+import { PROJECT_TOOLS, decodeCartridgeTarget } from '../workspace/projects_api';
 
 type PendingTool = { resolve: (result: CodexToolResult) => void; detach: () => void };
 type Connection = {
@@ -24,7 +26,8 @@ export class CodexHttpApi {
 
 	/** Node composition supplies the browser opener; the browser transport never chooses one. */
 	public constructor(private readonly options: Pick<CodexSessionOptions, 'profileDirectory' | 'workspaceRoot' | 'executable' | 'provider' | 'tools'>
-		& { openLoginPage: (url: string, onFailure: (error: Error) => void) => void }, private readonly builds?: StudioBuildJobs) {}
+		& { openLoginPage: (url: string, onFailure: (error: Error) => void) => void }, private readonly builds?: StudioBuildJobs,
+		private readonly projects?: WorkspaceProjects) {}
 
 	public async handle(request: IncomingMessage, response: ServerResponse, pathname: string): Promise<void> {
 		if (this.closing) { response.writeHead(503).end('Studio assistant is shutting down'); return; }
@@ -101,9 +104,13 @@ export class CodexHttpApi {
 		response.once('error', disconnect);
 		try {
 			const session = await CodexSession.open({ ...this.options, signal: lifetime.signal,
-				tools: [...this.options.tools, ...(this.builds === undefined ? [] : BUILD_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })))],
+				tools: [...this.options.tools, ...(this.builds === undefined ? [] : BUILD_TOOLS), ...(this.projects === undefined ? [] : PROJECT_TOOLS)],
 				executeTool: (call, signal) => {
 					signal.throwIfAborted(); lifetime.signal.throwIfAborted();
+					if (call.tool === 'studio_create_cartridge' && this.projects !== undefined) {
+						return this.projects.createCartridge(decodeCartridgeTarget((call.arguments as Record<string, unknown>).target))
+							.then(data => ({ success: true, text: JSON.stringify(data) }));
+					}
 					// Workspace jobs belong to the server, not the browser tool context or chat turn.
 					if (this.builds !== undefined && BUILD_TOOLS.some(tool => tool.name === call.tool)) {
 						return callBuildTool(this.builds, call.tool, call.arguments as Record<string, unknown>)

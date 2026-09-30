@@ -1,4 +1,10 @@
 /** Project Lua source membership shared by ROM packing and workspace discovery. */
+export const CART_LIBRARY_ROOT = 'cartlib';
+
+export function isCartLibrarySource(path: string): boolean {
+	return path.startsWith(`${CART_LIBRARY_ROOT}/`);
+}
+
 export const LUA_SOURCE_EXCLUDED_DIRECTORIES: ReadonlySet<string> = new Set([
 	'.bmsx', '.git', '_ignore', 'node_modules', 'test',
 ]);

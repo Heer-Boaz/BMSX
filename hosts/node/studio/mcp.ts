@@ -1,5 +1,7 @@
 import { BUILD_TOOLS, callBuildTool } from '../builds/tools';
 import type { StudioBuildJobs } from '../builds/jobs';
+import type { WorkspaceProjects } from '../workspace/projects';
+import { PROJECT_TOOLS, decodeCartridgeTarget } from '../workspace/projects_api';
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -41,9 +43,10 @@ export class StudioMcpApi {
 	private readonly tools: Tool[];
 	private readonly names: Set<string>;
 	private closing = false;
-	public constructor(private readonly sessions: StudioSessions, definitions: readonly StudioToolDefinition[], private readonly builds?: StudioBuildJobs) {
+	public constructor(private readonly sessions: StudioSessions, definitions: readonly StudioToolDefinition[],
+		private readonly builds?: StudioBuildJobs, private readonly projects?: WorkspaceProjects) {
 		this.names = new Set(definitions.map(tool => tool.name));
-		this.tools = [...MANAGEMENT_TOOLS, ...(builds === undefined ? [] : BUILD_TOOLS), ...definitions.map(tool => ({ name: tool.name, description: tool.description,
+		this.tools = [...MANAGEMENT_TOOLS, ...(builds === undefined ? [] : BUILD_TOOLS), ...(projects === undefined ? [] : PROJECT_TOOLS), ...definitions.map(tool => ({ name: tool.name, description: tool.description,
 			inputSchema: { ...tool.inputSchema, type: 'object' as const,
 				properties: { toolContext: { type: 'string', description: 'Context returned by studio_open_context.' }, ...tool.inputSchema.properties },
 				required: ['toolContext', ...tool.inputSchema.required] } }))];
@@ -82,6 +85,9 @@ export class StudioMcpApi {
 	private async call(client: Client, name: string, input: Record<string, unknown>, signal: AbortSignal): Promise<CallToolResult> {
 		try {
 			signal.throwIfAborted();
+			if (name === 'studio_create_cartridge' && this.projects !== undefined) {
+				return toolResult({ success: true, data: await this.projects.createCartridge(decodeCartridgeTarget(input.target)) });
+			}
 			if (this.builds !== undefined && BUILD_TOOLS.some(tool => tool.name === name)) return toolResult({ success: true, data: await callBuildTool(this.builds, name, input) });
 			if (name === 'studio_list_sessions') return toolResult({ success: true, data: { sessions: this.sessions.list() } });
 			if (name === 'studio_open_context') {
