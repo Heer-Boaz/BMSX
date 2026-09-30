@@ -1,6 +1,7 @@
 import { COLOR_STATUS_TEXT } from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { CPU } from '../../../../machine/ts/machine/cpu/cpu';
+import type { HostRewind } from '../../../../hosts/common/rewind';
 import { readRuntimeLuaModuleCapture, readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
 import { prepareLuaArguments, prepareLuaLiteral } from '../../../runtime/lua_literal';
 import type { RuntimeSourceState } from '../../../runtime/sources';
@@ -27,6 +28,7 @@ import type { ActorExecutionService, ActorExecutionResult, ActorInvocation } fro
 export class ActorLabController {
 	private current: ActorLabInput | undefined;
 	private projection: ActorProjection;
+	private historyRestorePending = false;
 	public readonly canInteract = () => this.execution.canExecute;
 	public constructor(
 		private readonly sources: RuntimeSourceState,
@@ -36,15 +38,24 @@ export class ActorLabController {
 		private readonly panes: EditorPanes,
 		private readonly navigation: EditorNavigationController,
 		private readonly execution: ActorExecutionService,
+		private readonly rewind: HostRewind,
 	) {
-		guest.onDidInvalidate(reason => this.current?.invalidate(reason === 'heap-replaced'));
+		guest.onDidInvalidate(reason => {
+			const input = this.current;
+			if (input === undefined) return;
+			// A hidden pane must resolve its bookmark before a new branch can reuse
+			// identities from the discarded future. Replay itself is not that branch.
+			if (reason === 'execution' && this.historyRestorePending && !this.rewind.seeking && !this.rewind.playing) this.refresh(input);
+			input.invalidate(reason);
+			if (reason !== 'execution') this.historyRestorePending = reason === 'history-restored';
+		});
 	}
 
 	public resolveInput(): ActorLabInput {
 		if (this.current === undefined) {
 			const input = new ActorLabInput();
 			this.projection = new ActorProjection(input, this.sources, this.guest);
-			input.onWillDispose(() => { this.current = undefined; });
+			input.onWillDispose(() => { this.current = undefined; this.historyRestorePending = false; });
 			this.current = input;
 		}
 		return this.current;
@@ -55,9 +66,11 @@ export class ActorLabController {
 		if (input.actorHashId === 0) this.selectActor(input);
 	}
 	public refresh(input: ActorLabInput): boolean {
-		if (!input.dirty) return false;
+		// Read the requested history position, not an intermediate replay checkpoint.
+		if (!input.dirty || this.rewind.seeking) return false;
 		const changed = this.projection.update();
 		input.dirty = false;
+		this.historyRestorePending = false;
 		return changed;
 	}
 	public selectActor(input: ActorLabInput): void {
@@ -66,7 +79,7 @@ export class ActorLabController {
 			(_origin, lifetime) => {
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 				return new TextQuickPickProvider(readActorChoices(this.sources, this.guest, this.cpu.activeCartridgeSlot()));
-			}, choice => { input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = 0; input.dirty = true; });
+			}, choice => { input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = choice.hashId; input.dirty = true; });
 	}
 	private run(input: ActorLabInput, request: ActorInvocation, observer?: (result: ActorExecutionResult) => void, current: () => boolean = () => true): void {
 		const generation = this.panes.openGeneration, domain = input.domain, actor = input.actorHashId;
@@ -83,7 +96,9 @@ export class ActorLabController {
 		this.run(input, { kind: 'scrub', target, time, programHashId }, result => finished(result.status === 'completed'), current);
 	}
 
-	public selected(input: ActorLabInput): ActorNode | undefined { return input.outline.rows[input.outline.selectionIndex]?.element.node; }
+	public selected(input: ActorLabInput): ActorNode | undefined {
+		return input.dirty ? undefined : input.outline.rows[input.outline.selectionIndex]?.element.node;
+	}
 
 	public inspect(input: ActorLabInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
 		const selected = this.selected(input)!;

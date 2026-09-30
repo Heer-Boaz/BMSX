@@ -57,6 +57,9 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 		'ordinary Actor Lab reacquires its receiver after boundary execution');
 
 	// Actual execution/rewind retire the entire semantic borrow, not merely generic value handles.
+	await press('End'); await frame();
+	const selectedActor = lab.actorHashId, selectedNode = lab.outline.rows[lab.outline.selectionIndex].element.node;
+	const selectedHash = selectedNode.hashId, selectedValue = selectedNode.value;
 	const stop = ide.inspection.open(), actors = stop.lifetime.add(new ActorRuntimeInspection(stop));
 	const first = actors.list(0, 1).actors![0], node = actors.tree(first.reference, 0, 1).nodes[0];
 	await runPaletteCommand('Run: Next Frame');
@@ -70,13 +73,20 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	await until(() => ide.frameNavigation.active === undefined, 'actor tools: physical historical frame settles');
 	expired = false;
 	try { currentActors.tree(currentFirst.reference, 0, 1); } catch (error) { expired = String(error).includes('expired'); }
-	check(expired && lab.actorHashId === 0, 'heap restore invalidates both tool references and ordinary selected actor identity');
+	check(expired, 'heap restore retires tool references even when ordinary selection survives');
+	check(lab.actorHashId === selectedActor && lab.outline.rows[lab.outline.selectionIndex].element.node.hashId === selectedHash,
+		'history navigation retains the ordinary actor and child selection');
+	check(lab.outline.rows[lab.outline.selectionIndex].element.node.value !== selectedValue,
+		'ordinary selection borrows the restored heap, not the pre-rewind object');
+	await press('Enter'); await frame(); await renderer.capture!('historical-selection-properties'); await press('Escape');
 	const historical = ide.inspection.open(), historicalActors = historical.lifetime.add(new ActorRuntimeInspection(historical));
 	const historicalList = historicalActors.list(0, 10);
 	check(historicalList.total === 2, `fresh historical inspection reads restored World membership: ${JSON.stringify({ list: historicalList,
 		state: historical.state, sourceDomain: ide.sources.activeCartridgeSlot, ready: guest.formatValue(guest.global('actor_tool_ready')) })}`);
 	historical.dispose();
 	await runPaletteCommand('Actor Lab: Open');
+	check(!picker.visible, 'opening a selected historical actor needs no replacement selection');
+	await test.click(lab.actionBar.items.find(item => item.command === 'actorLab.select')!.bounds);
 	check(picker.visible && picker.model.list.rows.length === 2, 'ordinary Actor picker also selects the physical restored domain');
 	await press('ArrowDown'); await press('Enter'); await frame();
 	check(lab.outline.rows[0].element.node.label === 'second' && lab.outline.rows.find(row => row.element.node.label === 'nest')!.element.node.active,

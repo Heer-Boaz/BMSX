@@ -50,6 +50,17 @@ all-world tree per page. No model polling is introduced.
   models. `ActorProjection` owns ordinary Actor Lab collapse/selection/labels.
   A key/classification change refreshes the domain branch rather than leaving a
   stale label/path on a reused hash ID. UI collapse survives label-only changes.
+* History restore is distinct from reset/external state loading. Actor Lab keeps
+  its scalar selection and existing row/collapse state through history seeks,
+  then reacquires actual World membership and child tables at the requested
+  position. It does not inspect intermediate seek checkpoints. An absent actor
+  clears the selection; an absent child clears only the child selection. Neither
+  another row nor a later allocation replaces the missing selection.
+  A hidden pane resolves this pending selection before live execution can branch
+  from the reviewed state and reuse identities from the discarded future.
+  Reset/external load still clears the entire selection. Pending timeline actions
+  end on either kind of restore. While readback is pending, selection-dependent
+  properties/actions cannot consume the released guest objects.
 * The generic `RuntimeInspection` lifetime owns both generic `InspectionValues`
   and attached domain inspections. Actual execution, guest calls, reset/restore,
   inspection replacement and prompt retirement release **all** those borrows.
@@ -169,6 +180,33 @@ These tools admit the authoring target, not isolated Scenario Lab targets.
 Dedicated conversational prefab discovery/spawn and actor-event conveniences
 are not added here. This does not supply apply/save/build/install receipts or
 complete the reproduce/fix/rerun acceptance gate.
+
+### History-selection follow-through (2026-09-30)
+
+The implementation follows the separation in [VS Code's Variables view](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/variablesView.ts):
+tree identity/view state outlives suspended debugger references, but is retired
+at session replacement. BMSX uses the guest hash identities actually restored
+by its CPU snapshot, not variable-name matching, host object identity or a new
+actor-ID scheme. All public inspection handles still expire on every restore.
+
+Only IDE invalidation/composition and Actor Lab readback changed. TS/C++ CPU
+snapshot, World membership, history, guest calls and allocation remain unchanged.
+The existing visible-pane dirty refresh still owns tree traversal. A hidden
+pane additionally resolves once after restore, before its first live execution;
+there is no added per-instruction or ordinary hidden-pane traversal.
+
+The compiled-guest suite verifies fresh restored objects, preserved selection,
+absent actor/child clearing, actual discarded-ID reuse on a new branch, and
+tool-handle expiry. The real browser/World workflow
+passes on software, WebGL2 and WebGPU, including reopening selected properties
+after rewind. A separate ordinary Studio + public MCP acceptance retained the
+selected BT and collapsed FSM across tick 671 → 641 → 671, also while Actor Lab
+was hidden. All 17 observed actor scalars matched after replay. A physical
+Reboot cleared selection as intended. Another public-tool/UI run hid Actor Lab,
+sought from tick 200 to the pre-construction checkpoint at tick 0, then resumed
+live execution. The recreated actor reused hash 3897, but reopening Actor Lab
+required a fresh selection; cancelling that picker left the pane unselected.
+This is not whole-heap equivalence or a new native runtime feature.
 
 ## Evidence
 

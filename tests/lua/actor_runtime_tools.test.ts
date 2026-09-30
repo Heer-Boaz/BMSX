@@ -70,7 +70,7 @@ test('World pages retain typed identities; Actor Lab and tool trees consume real
 	assert.equal(tree.nodes.at(-1)!.children, 0, 'a class-shaped/named table is still a generic component');
 	assert.equal(tree.nodes.find(node => node.label === 'concurrent')!.activity.value, true);
 	const choices = readActorChoices(f.sources, f.guest, f.stop.state.activeCartridge), input = new ActorLabInput();
-	input.domain = choices[0].domain; input.actorHashId = choices[0].hashId;
+	input.domain = choices[0].domain; input.actorHashId = choices[0].hashId; input.selectionHashId = input.actorHashId;
 	const projection = new ActorProjection(input, f.sources, f.guest);
 	assert.equal(projection.update(), true);
 	assert.deepEqual(input.outline.rows.map(row => row.element.node.kind), tree.nodes.map(node => node.kind));
@@ -106,7 +106,7 @@ test('operation identities preserve guest tags and typed membership without reta
 		assert.equal(guest.matchesIdentity(candidates[i], identities[j]), i === j);
 	}
 	const choices = readActorChoices(f.sources, guest, -1), input = new ActorLabInput();
-	input.domain = -1; input.actorHashId = choices[0].hashId;
+	input.domain = -1; input.actorHashId = choices[0].hashId; input.selectionHashId = input.actorHashId;
 	const projection = new ActorProjection(input, f.sources, guest); projection.update();
 	const selected = input.runtime.roots[0].children[0].children[0].children[0];
 	const target = captureActorTarget(-1, 123, input.runtime.roots, selected, guest);
@@ -116,7 +116,7 @@ test('operation identities preserve guest tags and typed membership without reta
 	assert.equal(resolveActorTarget(input.runtime.roots, target, guest), selected, 'membership is independent of sibling order');
 	selected.key = 1;
 	assert.equal(resolveActorTarget(input.runtime.roots, target, guest), undefined, 'another typed key cannot retarget a retained request');
-	input.invalidate(false); guest.invalidate();
+	input.invalidate(); guest.invalidate();
 	assert.equal(JSON.stringify(target), original, 'clearing borrowed nodes cannot alter the scalar operation target');
 	projection.update();
 	assert.equal(resolveActorTarget(input.runtime.roots, target, guest)!.hashId, selected.hashId);
@@ -155,7 +155,7 @@ test('unloaded, uninitialized and actually empty World are distinct observations
 	}
 });
 
-for (const reason of ['execution', 'heap-replaced'] as const) test(`${reason} retires actor handles, typed roots and domain borrows together`, () => {
+for (const reason of ['execution', 'history-restored', 'heap-replaced'] as const) test(`${reason} retires actor handles, typed roots and domain borrows together`, () => {
 	const f = fixture(), actor = f.actors.list(0, 1).actors![0], node = f.actors.tree(actor.reference, 0, 1).nodes[0];
 	f.guest.invalidate(reason);
 	assert.throws(() => f.actors.list(0, 1), /expired/);
@@ -168,30 +168,77 @@ for (const reason of ['execution', 'heap-replaced'] as const) test(`${reason} re
 	next.dispose();
 });
 
-test('ordinary pane retains stable rows, refreshes changed labels, releases detached branches and clears identities after restore', () => {
+test('ordinary pane retains stable rows, refreshes changed labels, releases detached branches and clears identities after machine replacement', () => {
 	const f = fixture(), choice = readActorChoices(f.sources, f.guest, f.stop.state.activeCartridge)[0], input = new ActorLabInput();
-	input.domain = choice.domain; input.actorHashId = choice.hashId;
+	input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = input.actorHashId;
 	const projection = new ActorProjection(input, f.sources, f.guest);
 	projection.update();
 	const rows = input.outline.rows.slice();
 	assert.equal(projection.update(), false);
 	assert.ok(rows.every((row, index) => row === input.outline.rows[index]));
 	input.outline.roots[0].collapsed = true;
-	input.invalidate(false); f.guest.invalidate('execution');
+	input.invalidate(); f.guest.invalidate('execution');
 	assert.ok(rows.every(row => row.element.node.value === null && row.element.node.key === null));
 	runCompletionClosure(f.runtime.machine.cpu, f.guest.global('rename') as Closure, []);
 	assert.equal(projection.update(), true);
 	assert.equal(input.outline.roots[0].element.node.label, 'renamed');
 	assert.strictEqual(input.outline.roots[0], rows[0]); assert.equal(input.outline.roots[0].collapsed, true);
 	const removed = input.runtime.roots[0].children[1];
-	input.invalidate(false); f.guest.invalidate('execution');
+	input.invalidate(); f.guest.invalidate('execution');
 	runCompletionClosure(f.runtime.machine.cpu, f.guest.global('remove') as Closure, []);
 	projection.update();
 	assert.equal(removed.value, null); assert.equal(removed.receiver, null);
 	const root = input.runtime.roots[0];
-	input.invalidate(true);
+	input.invalidate('heap-replaced');
 	assert.equal(root.value, null); assert.equal(input.actorHashId, 0);
 	assert.equal(input.runtime.roots.length, 0); assert.equal(input.outline.rows.length, 0);
+	input.dispose(); f.stop.dispose();
+});
+
+test('history selection borrows restored objects and ends when its actor or child is absent', () => {
+	const f = fixture(ENTRY.replace('return world', `function add()
+	probe._components[3] = { id = 'late', enabled = true, _parent_component_index = 3 }
+end
+return world`), false), cpu = f.runtime.machine.cpu;
+	const beforeBirth = cpu.captureRuntimeState();
+	cpu.runUntilDepth(0, 100_000);
+	const input = new ActorLabInput(), choice = readActorChoices(f.sources, f.guest, -1)[0];
+	input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = input.actorHashId;
+	const projection = new ActorProjection(input, f.sources, f.guest);
+	projection.update();
+	input.outline.selectionIndex = 3;
+	const selected = input.outline.rows[3], original = selected.element.node.value;
+	const alive = cpu.captureRuntimeState();
+	input.invalidate('history-restored');
+	assert.equal(selected.element.node.value, null);
+	cpu.restoreRuntimeState(alive);
+	projection.update();
+	assert.strictEqual(input.outline.rows[input.outline.selectionIndex], selected);
+	assert.notStrictEqual(selected.element.node.value, original);
+	assert.equal(selected.element.node.value!.hashId, selected.element.node.hashId);
+	input.invalidate();
+	runCompletionClosure(cpu, f.guest.global('add') as Closure, []);
+	projection.update();
+	input.outline.selectionIndex = input.outline.rows.length - 1;
+	const futureHash = input.outline.rows[input.outline.selectionIndex].element.node.hashId;
+	input.invalidate('history-restored');
+	cpu.restoreRuntimeState(alive);
+	projection.update();
+	assert.equal(input.actorHashId, choice.hashId);
+	assert.equal(input.outline.selectionIndex, -1, 'the actor survives, but its missing child has no replacement selection');
+	input.invalidate();
+	runCompletionClosure(cpu, f.guest.global('add') as Closure, []);
+	projection.update();
+	assert.equal(input.outline.rows.at(-1)!.element.node.hashId, futureHash, 'the new branch actually reuses the discarded allocation identity');
+	assert.equal(input.outline.selectionIndex, -1);
+	input.invalidate('history-restored');
+	cpu.restoreRuntimeState(beforeBirth);
+	projection.update();
+	assert.equal(input.actorHashId, 0);
+	assert.equal(input.outline.rows.length, 0);
+	cpu.runUntilDepth(0, 100_000);
+	projection.update();
+	assert.equal(input.outline.rows.length, 0, 'a later allocation cannot take over the missing selection');
 	input.dispose(); f.stop.dispose();
 });
 

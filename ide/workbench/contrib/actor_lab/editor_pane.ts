@@ -70,7 +70,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.timelineSlider.setInput(this.input.timeline.slider);
 		this.update();
 	}
-	public override clearInput(): void { this.split.clearInput(); this.timelineSlider.clearInput(); this.input.timeline.clear(); this.input.running = false; this.input.invalidate(false); this.inspector.hide(); this.actions.clearInput(); this.scrollbar.cancelPointer(); super.clearInput(); }
+	public override clearInput(): void { this.split.clearInput(); this.timelineSlider.clearInput(); this.input.timeline.clear(); this.input.running = false; this.input.invalidate(); this.inspector.hide(); this.actions.clearInput(); this.scrollbar.cancelPointer(); super.clearInput(); }
 	public override dispose(): void { this.split.dispose(); this.timelineSlider.dispose(); this.inspector.dispose(); this.actions.dispose(); this.scrollbar.cancelPointer(); super.dispose(); }
 	public override update(): void {
 		const input = this.input;

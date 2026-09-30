@@ -9,6 +9,7 @@ import type { ResourceDomain } from '../../../common/resource';
 import { ActorTimelineTransport } from './timeline';
 import { ActorTimelineLayout } from './timeline_layout';
 import { create_rect_bounds } from '../../../../machine/ts/common/rect';
+import type { GuestInvalidationReason } from '../../../runtime/suspended_guest';
 
 /** View state only. Borrowed rows are released before guest execution. */
 export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'> {
@@ -34,14 +35,17 @@ export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'>
 		super('actor-lab', 'actor_lab', 'ACTOR LAB', true);
 		this.onWillDispose(() => this.runtime.dispose());
 	}
-	public invalidate(heapReplaced: boolean): void {
+	public invalidate(reason: GuestInvalidationReason = 'execution'): void {
 		const selected = this.outline.rows[this.outline.selectionIndex];
 		if (selected !== undefined) this.selectionHashId = selected.element.node.hashId;
 		this.runtime.release();
-		if (heapReplaced) {
-			this.runtime.roots.length = 0;
+		if (reason !== 'execution') {
 			this.timeline.clear();
-			this.actorHashId = 0; this.selectionHashId = 0; this.running = false;
+			this.running = false;
+		}
+		if (reason === 'heap-replaced') {
+			this.runtime.roots.length = 0;
+			this.actorHashId = 0; this.selectionHashId = 0;
 			this.outline.roots.length = 0; this.outline.rows.length = 0; this.outline.selectionIndex = -1;
 		}
 		this.dirty = true;

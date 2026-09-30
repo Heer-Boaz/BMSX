@@ -5380,6 +5380,12 @@ suspended lifetime and value-reference registry, without teaching the generic
 runtime owner about cartlib or workbench panes. Actor Lab's `ActorRuntimeTree`
 reads actual World/component class-index membership and retained instance state;
 `ActorProjection` owns widget topology, collapse, selection and measured labels.
+History restore retires guest borrows while preserving Actor Lab's scalar view
+selection until fresh World membership is read at the requested history position.
+Missing membership clears that selection; a hidden pane resolves it before live
+execution can reuse discarded-future identities. Reset/external state loading
+clears selection outright. This UI bookmark grants no persistent tool handle or
+mutation authority and changes no guest identity or TS/C++ snapshot representation.
 Conversation tools share the domain tree/property readers, not a fake UI input or
 source-derived scene database. Activity indicators expose their precise stored
 basis, and formatted properties are accompanied by expandable typed table roots.

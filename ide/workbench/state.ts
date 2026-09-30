@@ -9,6 +9,7 @@ import type { HostRewind } from '../../hosts/common/rewind';
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import type { EditorDisplay, Viewport } from '../common/viewport';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_state';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
@@ -21,7 +22,7 @@ import { RuntimeCartEditor, type CartEditor } from '../cart_editor';
 import { createRuntimeDebuggerState, resetRuntimeDebuggerExecution, type RuntimeDebuggerState } from '../runtime/debugger_state';
 import { clearFaultSnapshot, createRuntimeFaultState, type RuntimeFaultState } from '../runtime/fault_state';
 import { RuntimeLuaTooling } from '../runtime/lua_tooling';
-import { SuspendedGuestSession } from '../runtime/suspended_guest';
+import { SuspendedGuestSession, type GuestInvalidationReason } from '../runtime/suspended_guest';
 import { OverlayRenderer } from '../runtime/overlay_renderer';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
@@ -144,14 +145,14 @@ export class RuntimeIdeState {
 		);
 		this.overlayRenderer.setViewportSize(viewport);
 		this.editor.updateViewport(viewport);
-		const invalidateToolingState = () => {
+		const invalidateToolingState = (reason: GuestInvalidationReason) => {
 			this.debuggerExecution.didReset();
 			this.terminal.didReplaceMachine();
 			this.actorExecution.didReplaceMachine();
 			this.hotResumes.cancelPending('machine-reset');
 			this.boots.didReplaceMachine();
 			// A restored heap is a new inspection context, not the previous stop.
-			this.luaTooling.suspendedGuest.invalidate('heap-replaced');
+			this.luaTooling.suspendedGuest.invalidate(reason);
 			resetRuntimeDebuggerExecution(this.debugger);
 			clearFaultSnapshot(this.fault);
 			this.fault.supervisorFaultSequence = runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE);
@@ -162,11 +163,11 @@ export class RuntimeIdeState {
 		};
 		runtime.onStateRestored = origin => {
 			this.frameNavigation.didRestore(origin);
-			invalidateToolingState();
+			invalidateToolingState(origin === RuntimeRestoreOrigin.HistorySeek ? 'history-restored' : 'heap-replaced');
 		};
 		runtime.onStateReset = () => {
 			this.frameNavigation.didReset();
-			invalidateToolingState();
+			invalidateToolingState('heap-replaced');
 		};
 	}
 }

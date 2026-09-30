@@ -416,7 +416,7 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		this.sceneEditor = new SceneEditorController(this.sources, this.editorPanes, this.navigation);
 		this.actorLab = new ActorLabController(sources, luaTooling.suspendedGuest, runtime.machine.cpu,
-			this.quickInput, this.editorPanes, this.navigation, actorExecution);
+			this.quickInput, this.editorPanes, this.navigation, actorExecution, rewind);
 
 		const behaviorRegistrations = behaviorSources.registrations;
 		this.behaviorLens = new BehaviorLensController(

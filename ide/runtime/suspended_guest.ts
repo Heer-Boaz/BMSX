@@ -29,7 +29,8 @@ export type SuspendedValueIdentity = { readonly tag: ValueTag; readonly scalar: 
 type LinkedRuntimeFunctionLocation = { readonly domain: ExecutionDomainId; readonly address: number };
 /** RAM functions have a shared address, not a ROM socket or linked symbols. */
 export type RuntimeFunctionLocation = LinkedRuntimeFunctionLocation | { readonly domain: null; readonly address: number };
-export type GuestInvalidationReason = 'execution' | 'heap-replaced';
+/** History restores retain snapshot identities, never borrowed guest objects or tool handles. */
+export type GuestInvalidationReason = 'execution' | 'history-restored' | 'heap-replaced';
 
 export type SuspendedGuestRead = {
 	readonly kind: 'value';

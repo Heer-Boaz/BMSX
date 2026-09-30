@@ -33,7 +33,7 @@ export class ActorProjection {
 		const actor = findRuntimeActor(this.sources, guest, input.domain, input.actorHashId);
 		const changed = input.runtime.update(this.sources, guest, input.domain, actor);
 		if (actor === undefined) {
-			input.actorHashId = 0;
+			input.actorHashId = 0; input.selectionHashId = 0;
 			input.status = 'CHOOSE A RUNNING ACTOR';
 			this.statusDomain = undefined;
 		} else {
@@ -47,8 +47,8 @@ export class ActorProjection {
 			this.children(null, input.runtime.roots);
 			const outline = input.outline;
 			rebuildWorkbenchTreeRows(outline, null);
-			outline.selectionIndex = input.selectionHashId === 0 && outline.rows.length !== 0 ? 0
-				: outline.rows.findIndex(row => row.element.node.hashId === input.selectionHashId);
+			outline.selectionIndex = outline.rows.findIndex(row => row.element.node.hashId === input.selectionHashId);
+			if (outline.selectionIndex === -1) input.selectionHashId = 0;
 		}
 		return changed;
 	}
