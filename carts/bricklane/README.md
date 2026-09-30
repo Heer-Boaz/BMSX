@@ -67,6 +67,28 @@ The tested artifact was
 `a487e5b665cfc0d14a7aa70d052ac722f22873bedec1b13042507e882ba1df23`.
 These ignored local files are not build dependencies.
 
+### Reusable Scenario Lab reproduction
+
+`keyboard_assert.lua` was subsequently created through `studio_propose_source`
+and visible edit review. Build debug media, discover it in **Scenario Lab**, and
+run `keyboard_moves_paddle_releases_and_serves`. It uses the existing testlib
+physical input operations to hold Right, release it, and press Space, then
+asserts paddle movement, stopped movement and a fresh served game. Each run
+owns its own machine; it does not move the authoring target.
+
+The live run passed at tick 14 while the authoring machine stayed at cycle
+`3172263153`. `studio_reveal_test_run` visibly selected that run. In the same
+session, an approved temporary paddle-speed change was Hot Resumed without
+resetting tick, position, score or lives, then restored through another approved
+review and Hot Resume. An init breakpoint and ordinary debugger Continue also
+completed at the physical return boundary. These are recorded workflow evidence,
+not expected fixed ticks or cycles in the reusable scenario.
+
+The follow-up artifact is
+`a85e5e7c3b89276366cef07ec056854dd058cf76ee2e8bf1ed0240ece3eceb0a`.
+Older debug media without testlib must be rebuilt before adding its first suite;
+release media deliberately omits the runner and assertion suites.
+
 ## Open observation: multiple accelerated windows
 
 In the Playwright Chromium/SwiftShader environment, a third concurrent Studio

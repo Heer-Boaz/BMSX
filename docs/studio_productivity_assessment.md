@@ -1,9 +1,10 @@
 # Studio productivity assessment — 2026-09-30
 
 Scope: the cart-development workflow, not certification of every IDE feature,
-browser, native host or device. Product revision: `0b4233368` (including the
-guest-call completion fix in `14ba70a72`). This assessment adds no product code
-or new test contracts.
+browser, native host or device. Initial assessment revision: `0b4233368`
+(including the guest-call completion fix in `14ba70a72`). The initial assessment
+added no product code; subsequent authoring/navigation changes and their
+separate verification are recorded in the follow-up section below.
 
 ## Verdict
 
@@ -81,42 +82,94 @@ that the entire repository suite is green. Full C++ parity, login, clipboard,
 standalone, reconnection and physical-phone acceptance were not rerun in this
 assessment. Their earlier records remain separate evidence.
 
-## Most valuable remaining work
+## Follow-up implementation and live verification
+
+The next slice addresses authoring/navigation, not a second input, watch or
+execution system. The initial gap inventory below is historical; these parts
+have now been implemented through the existing owners:
+
+| Operation | Owner and observed result |
+| --- | --- |
+| `studio_propose_source` | Exclusive creation through ordinary edit review. `keyboard_assert.lua` did not exist before approval; visible Apply created/saved it and opened the shared working copy. Discovery immediately found its declared case. |
+| Scenario reproduction | The first live attempt exposed missing testlib in a cart built without tests. The ROM producer now includes source-only test infrastructure in debug media and handles cart-local suites consistently. After a real build, the new physical keyboard scenario passed at tick 14 while the authoring machine stayed at cycle `3172263153`. |
+| `studio_hot_resume` | A reviewed temporary speed change (4 to 5) was installed through the ordinary supervisor-return/init path. Actual completion and installed source were read back. `ready`, tick 4609, paddle x 136, score 0 and lives 3 were unchanged; the target stayed paused. Source was restored through another approved review and Hot Resume. An init breakpoint visibly paused line 19; the operation was correctly still incomplete. Continue stopped at the physical control boundary and completed that operation. A fresh, freely running target was also paused by Hot Resume and remained at cycle `10396912119` after init completion. |
+| `studio_open_build` | A completed build request opened its exact immutable cart/BIOS pair in another real Studio page. Navigation acknowledgement is not a boot receipt: the new page was separately observed via `studio_list_sessions`. |
+| Run navigation | `studio_reveal_test_run` and **Scenario Lab: Reveal Active or Latest Run** selected the requested retained run and expanded its case ancestry. Routine result updates do not change the user's selection. |
+| Window and pane identity | The two windows identify `carts/nemesis_s` and `carts/bricklane [opened <artifact>]`. “Opened” identifies origin, not proof of current installed-source equality after editing. Shared captured sashes resize Actor/Scenario panes by pointer or focused arrows/Home. Actual drags and keyboard resizing were inspected; the selected actor's full identifier is in the footer. |
+
+Source reads, review approval, Save, build publication, navigation, installation,
+init completion and scenario completion are still distinct operations. The
+published opener reports browser denial explicitly, does not silently retry,
+and severs the new window's opener before navigation. Standalone Studio has no
+workspace-build opener and reports that capability as unavailable.
+
+The relevant node/owner suites pass **144 checks**, including production of a
+debug cart with no tests, workspace creation/execution of its first suite, and
+debug/release repacking. The browser behavior-source, program-lifecycle and test
+debugger workflows pass **9/9** across software, WebGL2 and WebGPU. The
+published-build observation suite also passes **2/2**, including real browser
+policy denial and an allowed pointer gesture opening an exact-artifact page
+with a severed opener. These checks do not certify every browser's popup settings.
+The old behavior-source check described above now separately verifies that Apply leaves
+the machine unchanged and Save persists the approved source; it no longer
+contradicts the actual review owner. These are functional/state checks, not
+exact presentation-string contracts. IDE/browser/Node typechecks and the strict
+boundary audit pass; repository-wide test typechecking still has unrelated
+diagnostics and is not claimed clean. No paid model, native UI or physical phone
+was used for this follow-up.
+
+The production references studied before this slice were VS Code's
+[bulk file creation](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/bulkEdit/browser/bulkFileEdits.ts),
+[window title owner](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/titlebar/windowTitle.ts),
+[explicit test-result reveal](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/testing/browser/testingExplorerView.ts),
+[shared sash lifecycle](https://github.com/microsoft/vscode/blob/main/src/vs/base/browser/ui/sash/sash.ts)
+and [browser open failure handling](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/services/host/browser/browserHostService.ts).
+BMSX reuses its own model/history, capture/focus, execution and build owners;
+it does not import VS Code's service framework. Geometry/projection work occurs
+on layout/source revisions, not by rebuilding actor/test rows on every drag tick.
+
+Evidence is appended to `actions.jsonl`; visible checks are the `followup-*`
+images in the existing local evidence directory. The Scenario-enabled published
+artifact is `a85e5e7c3b89276366cef07ec056854dd058cf76ee2e8bf1ed0240ece3eceb0a`.
+
+## Initial gap inventory and remaining direction
 
 These priorities come from the observed workflow and current public tool catalog,
 not assumptions that existing UI features are absent.
 
-1. **Frame-scheduled input on the authoring target.** Studio can advance exact
+1. **Input and reusable reproductions belong in Scenario Lab.** Studio can advance exact
    frames, but the current tools cannot hold/release game controls at specified
    frame boundaries. Bricklane required browser key-down, a separate step call,
-   then key-up. Scenario Lab already drives test input; build on the existing
-   input/timeline owners rather than writing cart globals or adding a second loop.
+   then key-up. Scenario Lab already offers `press`, `down`, `up`, waits,
+   assertions and logs on isolated targets. The new Bricklane suite uses these
+   operations directly. This does not justify building a parallel input player
+   on the authoring target.
 
 2. **Focused observation and reusable reproductions.** Table pagination works,
    but repeatedly following globals → table → nested tables dominates simple
-   questions such as “what changed in this collision?”. Shared stored-value
-   watches/diffs, relevant stop conditions and recorded input/reproduction
-   export would reduce that work. Today there are no corresponding public tools;
+   questions such as “what changed in this collision?”. Terminal already executes
+   Lua against real cart globals and debugger locals; Scenario cases can retain
+   before/after observations and assert differences. Reuse those capabilities
+   first. Persistent read-only historical watches/diffs would be a distinct
+   evidence feature, not another Lua evaluator;
    inspections expire on execution and Terminal/actor calls clear prior retained
    history at the mutation boundary. Preserve those truthful lifetimes, do not keep stale table handles or
    evaluate arbitrary Lua on every frame as a shortcut. Frame/cycle seek already
    exists; the missing part is convenient, retained evidence and comparisons.
 
-3. **Complete the tool surface of existing authoring operations.** Creation of
-   a whole cart is exposed, but individual new Lua/test files still require UI or
-   workspace access. New-source review, ordinary Hot Resume and explicit opening
-   of a published artifact have no corresponding MCP operation. Reboot is exposed
+3. **Complete the tool surface of existing authoring operations.** New-source
+   review, ordinary Hot Resume and explicit opening of a published build are now
+   exposed, as recorded above. Reboot is exposed
    and is deliberately not Hot Resume. Source search/ranged reads would also
    avoid transferring whole catalogs/files for a small edit. Keep review approval,
    Save, compilation, installation and reset distinct rather than making a
    misleading “do everything” success receipt.
 
-4. **Make the active work easier to locate.** Both live windows were listed as
-   `BMSX`; artifact URLs distinguish them but not human intent. A cart/artifact
-   label, useful operation links and less truncation of actor/test identifiers
-   would help human and agent alike. Opening Scenario Lab initially selected a
-   different case from the active tool-started run: provide clear navigation to
-   that operation without stealing the user's selection on every update.
+4. **Make the active work easier to locate.** Cart/artifact titles, explicit run
+   reveal and shared pane resizing are now implemented and visibly checked.
+   Mobile sizing, full accessibility and identifiers wider than the entire
+   viewport are not certified by these desktop checks. Run reveal requires the
+   run to be retained and its selection to remain in the current test catalog.
 
 5. **Close reliability and verification gaps before expanding the surface.**
    The third concurrent Studio window stalled at `navigator.gpu.requestAdapter`
@@ -137,3 +190,13 @@ correct existing-server configuration to expose its tools directly.
 Bottom line: Studio already materially improves runtime understanding and
 debugging. The next productivity gain is less orchestration and more reusable
 observations, not more chat chrome or more screenshots.
+
+## Follow-up architecture review
+
+- Review the build quick-pick's string dispatch (`choice.action === 'open'`)
+  against the existing command/handler conventions. Prefer actions with their
+  own handlers over a growing central `if/else` chain; this is a maintainability
+  review, not a claim that comparing an action name is itself incorrect. Include
+  capability capture and Retry when reviewing it.
+  Recorded during the authoring-tool work; not a reason to expand that slice
+  into a general command-system rewrite.
