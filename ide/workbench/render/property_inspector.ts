@@ -11,7 +11,7 @@ export function drawWorkbenchPropertyInspector<Element extends InspectedProperty
 	const view = model.viewport;
 	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_RESOURCE_VIEWER_BACKGROUND);
 	api.fill_rect(bounds.left, bounds.top, bounds.right, view.bounds.top, 0, colors.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
-	api.blit_text_inline_with_font(inspector.title, bounds.left + 4, bounds.top + 4, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
+	api.blit_text_inline_with_font(inspector.title, bounds.left + 4, bounds.top + 4, 0, colors.COLOR_PROBLEMS_PANEL_HEADER_TEXT, font);
 	renderWorkbenchActionBar(inspector.actionBar, inspector, font);
 	api.pushClipRect(view.bounds.left, view.bounds.top, view.bounds.right, view.bounds.bottom);
 	const offset = view.offsetTop;
@@ -29,7 +29,7 @@ export function drawWorkbenchPropertyInspector<Element extends InspectedProperty
 		for (const field of FIELDS) {
 			const lines = row[field];
 			if (lines.length === 0) continue;
-			const color = field === 'label' && selected ? colors.COLOR_SELECTION_TEXT
+			const color = field === 'label' ? selected ? colors.COLOR_SELECTION_TEXT : colors.COLOR_PROBLEMS_PANEL_HEADER_TEXT
 				: field === 'description' ? colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM
 					: row.element.warning ? colors.COLOR_STATUS_WARNING : colors.COLOR_RESOURCE_VIEWER_TEXT;
 			const first = Math.max(0, Math.trunc((view.bounds.top - y) / font.lineHeight));

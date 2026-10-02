@@ -2,11 +2,11 @@ import type { Table } from '../../../../machine/ts/machine/cpu/table';
 import { valueIsString } from '../../../../machine/ts/machine/cpu/value';
 import type { ResourceDomain } from '../../../common/resource';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
+import type { SuspendedGuestSession, SuspendedGuestValue } from '../../../runtime/suspended_guest';
 import type { QuickPickItem } from '../../services/quick_input/provider';
 import { ACTION_EFFECT_FIELDS } from './action_effect_fields';
 import type { BehaviorInspectionProperty } from './inspection';
-import { visitRuntimeComponents } from './runtime_components';
+import { findRuntimeComponent, visitRuntimeComponents } from './runtime_components';
 import { inspectBehaviorRuntimeValue } from './runtime_properties';
 
 /** Borrowed only while the picker owns the suspended read. Never saved in an editor input. */
@@ -15,14 +15,28 @@ export type ActionEffectInstanceChoice = QuickPickItem & {
 	readonly effect: Table;
 };
 
+export function findActionEffectInstance(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, componentHashId: number, effectHashId: number): ActionEffectInstanceChoice | undefined {
+	const component = findRuntimeComponent(sources, guest, domain, 'cartlib/actioneffects/actioneffect_component', componentHashId);
+	if (component === undefined) return undefined;
+	let result: ActionEffectInstanceChoice | undefined;
+	guest.visitTableEntries(guest.readStringMember(component, 'effects'), (key, value) => {
+		const effect = value as Table;
+		if (effect.hashId === effectHashId) result = actionEffectInstanceChoice(guest, component, key, effect);
+	});
+	return result;
+}
+
+function actionEffectInstanceChoice(guest: SuspendedGuestSession, component: Table, key: SuspendedGuestValue, effect: Table): ActionEffectInstanceChoice {
+	return { label: guest.formatValue(key), description: `COMPONENT ${guest.formatValue(guest.readStringMember(component, 'id'))}`,
+		detail: `OWNER ${guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'parent'), 'id'))}`, component, effect };
+}
+
 /** The actual type index, not a source registration scan or a heap-wide discovery walk. */
 export function readActionEffectInstances(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain) {
 	const items: ActionEffectInstanceChoice[] = [];
 	const available = visitRuntimeComponents(sources, guest, domain, 'cartlib/actioneffects/actioneffect_component', component => {
-		const id = guest.formatValue(guest.readStringMember(component, 'id'));
-		const ownerId = guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'parent'), 'id'));
 		guest.visitTableEntries(guest.readStringMember(component, 'effects'), (key, effect) => {
-			items.push({ label: guest.formatValue(key), description: `COMPONENT ${id}`, detail: `OWNER ${ownerId}`, component, effect: effect as Table });
+			items.push(actionEffectInstanceChoice(guest, component, key, effect as Table));
 		});
 	});
 	return { available, items };

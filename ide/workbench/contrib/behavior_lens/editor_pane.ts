@@ -46,8 +46,11 @@ import { drawWorkbenchPropertyInspector } from '../../render/property_inspector'
 import { buildBehaviorInspection, type BehaviorInspectionProperty } from './inspection';
 import { ActionEffectPropertyEdit, selectedActionEffectProperty } from './action_effect_edit';
 import { addActionEffectProperty, editableActionEffect, removeActionEffectProperty } from './action_effect_authoring';
+import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 
 export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<BehaviorLensInput> {
+	public override get suspendsRuntime(): boolean { return this.input.runtimeInspection?.running !== true; }
+	public override get runtimeControlContext() { return this.input.runtimeInspection === undefined ? undefined : this.inspector.focusTarget; }
 	public override getSelection(): BehaviorLensNavigationSelection {
 		this.controller.updateView(this.input);
 		return new BehaviorLensNavigationSelection(this.input);
@@ -102,10 +105,30 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		private readonly controller: BehaviorLensController,
 		private readonly commands: IdeCommandController,
 		private readonly contextMenu: ContextMenuController,
+		private readonly frameNavigation: RuntimeFrameNavigation,
 	) {
 		super(resourcePanel);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		this.propertyEdit = new ActionEffectPropertyEdit(this.focusTarget);
+		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('behaviorLens.more', {
+			isEnabled: () => this.input.view.presentation.kind !== 'outline' && !this.inspector.visible && !this.sourceEditReview.visible,
+			run: () => {
+				this.focus();
+				const view = this.input.view, bounds = view.presentation.actionBar.items.find(item => item.command === 'behaviorLens.more')!.bounds;
+				const lifetime = this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS[BEHAVIOR_ACTION_MENUS[view.presentation.kind]], this.commands, true);
+				lifetime.add({ dispose: view.source.onDidInvalidate(() => this.contextMenu.hide()) });
+			},
+		});
+		for (const target of [this.focusTarget, this.inspector.focusTarget]) {
+			target.registerCommand('runtime.pause', { isEnabled: () => this.input.runtimeInspection !== undefined,
+				run: () => { this.input.runtimeInspection!.running = false; } });
+			target.registerCommand('pause', { isEnabled: () => this.input.runtimeInspection !== undefined && this.commands.isEnabled('gameView.playback'),
+				run: () => { this.input.runtimeInspection!.running = this.commands.toggleGamePlayback(); } });
+			for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) target.registerCommand(command, {
+				isEnabled: () => this.input.runtimeInspection !== undefined && this.frameNavigation.canStep(direction),
+				run: () => { this.input.runtimeInspection!.running = false; this.frameNavigation.step(direction); },
+			});
+		}
 		this.focusTarget.registerCommand('behaviorLens.addProperty', {
 			isEnabled: () => !this.inspector.visible && editableActionEffect(this.input.view) !== undefined,
 			run: () => addActionEffectProperty(this.input.view, this.controller.quickInput),
@@ -216,6 +239,8 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 
 	public override update(): void {
 		this.controller.updateView(this.input);
+		const items = this.input.runtimeInspection?.refresh();
+		if (items !== undefined) this.inspector.updateItems(items, inspectionPropertyIdentity);
 		this.propertyEdit.update();
 		this.sourceEditReview.update();
 		this.inspector.update();
@@ -406,3 +431,11 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		}
 	}
 }
+
+/** Runtime property labels name stored fields/slots/events, not rendered row positions. */
+function inspectionPropertyIdentity(property: BehaviorInspectionProperty): string { return property.label; }
+
+const BEHAVIOR_ACTION_MENUS = {
+	outline: 'behaviorLens.canvas.context', graph: 'behaviorLens.graph.actions',
+	'state-graph': 'behaviorLens.stateGraph.actions', properties: 'behaviorLens.properties.actions',
+} as const;

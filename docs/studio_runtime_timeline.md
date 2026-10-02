@@ -8,9 +8,49 @@ not substitutes for the machine history.
 
 In a live inspector this is navigation through recorded machine state, not a
 claim that the game image is visible. Game View shows that image; Actor Lab
-already pairs its inspection with a game preview. A general split/docking layout
-for an arbitrary FSM/BT editor next to Game View is separate work. Source-only
-editors and chat do not reserve space for this transport.
+already pairs its inspection with a game preview. The optional Game panel pairs
+any other editor with that same completed scanout. Source-only editors and chat
+do not reserve space for the runtime transport.
+
+## Game panel and live behavior inspection
+
+The workbench owns the right-hand Game panel and its resizable content inset.
+Tabs, menus, status and the single runtime timeline remain full width. Physical
+viewport dimensions and pointer coordinates do not change. Editors consume
+their actual content bounds; the panel does not open a second editor group,
+execute the guest, capture an image or own a playback clock. Game View and Actor
+Lab already display scanout, so the workbench suppresses the extra panel there
+without discarding the user's layout choice. View / Toggle Game Panel is the
+workbench action, not a permanent button in each module editor.
+
+This follows the content-only right inset in
+[VS Code EditorPart](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/editor/editorPart.ts)
+and the separate display/execution ownership of
+[Godot GameView](https://github.com/godotengine/godot/blob/4.4/editor/plugins/game_view_plugin.cpp).
+The split uses the existing workbench sash and common aspect-correct game-frame
+layout. Minimum sizes keep its sash from crushing either view. When the canvas
+cannot accommodate both, the editor keeps the space; widening restores the
+retained panel choice. It is session layout, not part of the authored cart or
+guest save state. Behavior source editors keep Source, Live and More as primary
+actions; secondary commands use their existing context-menu owner, following
+[VS Code WorkbenchToolBar](https://github.com/microsoft/vscode/blob/main/src/vs/platform/actions/browser/toolbar.ts).
+
+A live FSM, BT or ActionEffect inspector retains only selected table hash ids
+and its resource domain. Each suspended update reacquires that instance through
+the installed cartlib type index and selected hierarchy. It formats properties
+only after execution/history invalidation, never on stationary paint. The
+property widget updates values without stealing focus, resetting selection or
+scroll, or remeasuring unchanged text. No guest tables or closures survive in
+the retained selection. Registered-definition/source inspection remains a
+snapshot, not a pretend live instance.
+
+Heap replacement retires a selection. A restore that no longer contains the
+instance retires it before a new branch can reuse discarded identities; replay
+seeking itself is not a branch. The inspector reports this explicitly rather
+than silently selecting another actor. Closing or switching away disposes the
+live session and restores the ordinary authoring pause hold. Transport commands
+are available only within live inspection, and use existing finite frame
+navigation and host rewind.
 
 References: [Blender timeline controls](https://github.com/blender/blender/blob/main/scripts/startup/bl_ui/space_time.py),
 [VS Code debug toolbar](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/debugToolBar.ts),
@@ -69,3 +109,34 @@ usable without Studio or a server. Hot Resume relocation is out of scope.
 - Focused unit checks, TS project builds, native libretro builds and architecture
   and parity audits passed. These are separate from the live/visual evidence;
   performance on physical SNES Mini hardware was not measured.
+
+### Game panel follow-through (2026-10-02)
+
+- In a real WebGPU Studio window, the FSM inspector stayed attached while
+  Studio MCP stepped 1410 -> 1350 -> 1410. Keyboard stepping then used the
+  same transport. An Actor tool transitioned its actual machine from `rest`
+  to `moving`; the open inspector refreshed the selected property without
+  reopening. This mutation starts a new history recording: the check does
+  not claim rewind across a tool mutation.
+- BT readback stayed open across 4593 -> 4623 -> 4593. ActionEffect readback
+  refreshed gameplay time through keyboard navigation and MCP 127 -> 142 ->
+  127. Those requests awaited physical video-boundary completion, not command
+  acceptance. No screenshot was used to determine runtime state.
+- Visible UI checks exercised pointer/keyboard sash resizing, minimum editor
+  width, source wrapping and Find bounds, theme/font changes, game-frame focus,
+  closing the panel and returning keyboard selection to the inspector. The
+  shared property renderer's unselected headings used a content foreground on
+  a chrome background and disappeared in the dark theme; they now consume the
+  matching header foreground. The source-toolbar overflow found in the split
+  view was resolved with primary Source/Live/More and existing secondary menus;
+  test/input-binding actions remain available there.
+- 65 focused ownership/control checks passed, including real guest snapshot
+  identity reacquisition and rejection of discarded-future id reuse. IDE
+  typecheck, browser Studio build, architecture-boundary and core-parity audits
+  passed. This follow-through changes Studio only: no native execution/history,
+  guest save format, server endpoint or second playback engine was added.
+
+The game panel does not map optimized BT execution slots onto authored graph
+nodes. Live instance properties and source diagrams remain distinct surfaces.
+The existing fixed logical canvas still limits mobile presentation; browser
+resizing alone scales that canvas rather than creating a responsive DOM IDE.

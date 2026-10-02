@@ -4,19 +4,27 @@ import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { QuickPickItem } from '../../services/quick_input/provider';
 import type { BehaviorInspectionProperty } from './inspection';
-import { visitRuntimeComponents } from './runtime_components';
+import { findRuntimeComponent, visitRuntimeComponents } from './runtime_components';
 import { inspectBehaviorRuntimeValue } from './runtime_properties';
 
 export type BehaviorTreeInstanceChoice = QuickPickItem & { readonly component: Table };
+
+export function findBehaviorTreeInstance(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, componentHashId: number): BehaviorTreeInstanceChoice | undefined {
+	const component = findRuntimeComponent(sources, guest, domain, 'cartlib/behaviour_tree/bt_component', componentHashId);
+	if (component !== undefined) return behaviorTreeInstanceChoice(guest, component);
+}
+
+function behaviorTreeInstanceChoice(guest: SuspendedGuestSession, component: Table): BehaviorTreeInstanceChoice {
+	return { label: guest.formatValue(guest.readStringMember(component, 'tree_id')),
+		description: `COMPONENT ${guest.formatValue(guest.readStringMember(component, 'id'))}`,
+		detail: `OWNER ${guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'parent'), 'id'))}`, component };
+}
 
 /** Actual components, not registered programs or authored registrations with matching ids. */
 export function readBehaviorTreeInstances(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain) {
 	const items: BehaviorTreeInstanceChoice[] = [];
 	const available = visitRuntimeComponents(sources, guest, domain, 'cartlib/behaviour_tree/bt_component', component => {
-		const id = guest.formatValue(guest.readStringMember(component, 'id'));
-		const ownerId = guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'parent'), 'id'));
-		items.push({ label: guest.formatValue(guest.readStringMember(component, 'tree_id')),
-			description: `COMPONENT ${id}`, detail: `OWNER ${ownerId}`, component });
+		items.push(behaviorTreeInstanceChoice(guest, component));
 	});
 	return { available, items };
 }

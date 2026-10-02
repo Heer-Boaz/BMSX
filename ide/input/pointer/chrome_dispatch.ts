@@ -27,6 +27,10 @@ export function handleEditorChromePointerDispatch(
 	if (handleTopBarPointer(editor.commands, snapshot, justPressed)) {
 		return true;
 	}
+	if (editor.gamePanel.handlePointer(snapshot)) {
+		if (justPressed) playerInput.inputHandlers.pointer?.consumeButton('pointer_primary');
+		return true;
+	}
 	if (editor.resourcePanel.isVisible() && handleEditorScrollbarPointer(snapshot, RESOURCE_SCROLLBARS)) return true;
 	if (handleEditorPanelResizePointer(editor.resourcePanel, snapshot, justPressed)) {
 		return true;

@@ -1062,8 +1062,8 @@ composition instead of admitting all host imports into IDE features.
 Workbench suspension is a host pause reason, not an OverlayRenderer execution
 branch. Authoring panes hold it, including host-only Codex and edit review;
 not borrowing guest state is not permission to run gameplay behind the IDE.
-Network/model work continues independently. Actor Lab can explicitly release it
-while remaining visible. Normal ICU samples exclude workbench input; supervisor
+Network/model work continues independently. Live inspection panes can explicitly
+release it while remaining visible. Normal ICU samples exclude workbench input; supervisor
 sampling stays physical. Actor Lab borrows actual world/component instances
 between CPU slices and retains only display identity across them. Reset/restore
 notifications revoke identities from the replaced heap. Guest method evaluation
@@ -5416,6 +5416,11 @@ basis, and formatted properties are accompanied by expandable typed table roots.
 Actor references expire with globals/frames on execution or heap replacement.
 Inspection grants no mutation authority; conversational Actor calls still need
 an operation-owned World mutation-boundary rendezvous.
+Live Behavior Lens inspections likewise retain component/machine/state/effect
+table identities, never borrowed guest objects. Invalidation reacquires actual
+cartlib membership before formatting refreshed property documents; missing or
+replaced instances are explicitly retired. The property control retains focus,
+selection and its scroll anchor, and remeasures only changed fields.
 Game capture reads the presenter's retained committed history texture, after
 device quantization and before CRT/host overlays. The TS and C++ backends emit
 owned top-down RGBA8 display/signal pixels, without a second gamma conversion;
@@ -5874,6 +5879,13 @@ captured controls and finite `RuntimeFrameNavigation` owner. LB/RB select record
 video boundaries; Left/Right seek seconds. Forward stepping replays from the
 current machine state without restoring a checkpoint or discarding future input.
 See [runtime timeline ownership and representations](studio_runtime_timeline.md).
+
+The optional Studio Game panel displays that same completed scanout beside the
+active editor, independently of the shared runtime transport. The workbench
+publishes a content-only right inset; physical viewport/pointer coordinates,
+menus, tabs and status stay unchanged. Existing Game View/Actor Lab previews
+suppress the extra frame without discarding the session layout choice. This
+adds no capture path, second runtime, editor group or playback clock.
 
 `runHostFrame()`, `runWorkbenchHostFrame()` and `runLibretroFrame()` decide this policy after polling host input and before
 rewind service, backend execution or the live scheduler. While options are

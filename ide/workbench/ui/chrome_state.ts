@@ -11,6 +11,7 @@ import { createWorkbenchActionBar, type WorkbenchActionBarState } from './action
 type EditorChromeState = {
 	topBarBounds: RectBounds;
 	runtimeTimelineHeight: number;
+	editorRightInset: number;
 	menuEntryBounds: Record<MenuId, RectBounds>;
 	menuDropdownBounds: RectBounds;
 	tabBarBounds: RectBounds;
@@ -34,6 +35,7 @@ const tabScrollbar = new Scrollbar('horizontal');
 export const editorChromeState: EditorChromeState = {
 	topBarBounds: create_rect_bounds(),
 	runtimeTimelineHeight: 0,
+	editorRightInset: 0,
 	menuEntryBounds: {
 		file: create_rect_bounds(),
 		edit: create_rect_bounds(),

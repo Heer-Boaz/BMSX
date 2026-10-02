@@ -21,6 +21,7 @@ export class GameViewEditorPane extends FullWidthWorkbenchEditorPane<GameViewInp
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.isEnabled('gameView.playback'), run: () => { commands.toggleGamePlayback(); } });
 	}
 	public override get suspendsRuntime(): boolean { return false; }
+	public override get showsGameFrame(): boolean { return true; }
 	public override get runtimeControlContext() { return this.focusTarget; }
 	protected override activate(): void {
 		super.activate();

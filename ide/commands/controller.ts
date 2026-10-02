@@ -189,6 +189,7 @@ export class IdeCommandController {
 			case 'actorLab.call':
 			case 'actorLab.details':
 			case 'behaviorLens.details':
+			case 'behaviorLens.more':
 			case 'behaviorLens.inspectRuntimeEffect':
 			case 'behaviorLens.inspectRuntimeStateMachine':
 			case 'behaviorLens.inspectRuntimeTree':
@@ -266,6 +267,8 @@ export class IdeCommandController {
 			case 'gameView.playback':
 				this.toggleGamePlayback();
 				return;
+			case 'gameView.togglePanel': this.editor.gamePanel.toggle(); return;
+			case 'gameView.closePanel': this.editor.gamePanel.close(); return;
 			case 'stepFrame':
 			case 'stepFrameBack':
 				if (inputFocus.getCommand(command) !== undefined) { inputFocus.executeCommand(command); return; }
@@ -418,6 +421,7 @@ export class IdeCommandController {
 			case 'actorLab.call':
 			case 'actorLab.details':
 			case 'behaviorLens.details':
+			case 'behaviorLens.more':
 			case 'behaviorLens.inspectRuntimeEffect':
 			case 'behaviorLens.inspectRuntimeStateMachine':
 			case 'behaviorLens.inspectRuntimeTree':
@@ -474,6 +478,8 @@ export class IdeCommandController {
 				return this.frameNavigation.canStep(command === 'stepFrameBack' ? -1 : 1);
 			case 'runtime.pause': return this.runtimeTasks.ready;
 			case 'runtime.present': return this.rewind.available && this.frameNavigation.available;
+			case 'gameView.togglePanel': return this.editor.isActive;
+			case 'gameView.closePanel': return this.editor.gamePanel.visible;
 			case 'gameView.playback':
 				return this.runtimeTasks.ready && !this.execution.frameStepPending
 					&& !this.fault.hostFrameFailed && this.fault.faultSnapshot === null

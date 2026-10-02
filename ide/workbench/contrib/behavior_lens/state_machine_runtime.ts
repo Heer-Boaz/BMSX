@@ -1,10 +1,10 @@
 import type { Table } from '../../../../machine/ts/machine/cpu/table';
 import type { ResourceDomain } from '../../../common/resource';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
+import type { SuspendedGuestSession, SuspendedGuestValue } from '../../../runtime/suspended_guest';
 import type { QuickPickItem } from '../../services/quick_input/provider';
 import type { BehaviorInspectionProperty } from './inspection';
-import { visitRuntimeComponents } from './runtime_components';
+import { findRuntimeComponent, visitRuntimeComponents } from './runtime_components';
 import { inspectBehaviorRuntimeValue } from './runtime_properties';
 import type { BehaviorDefinitionChoice } from './runtime_definitions';
 
@@ -12,13 +12,41 @@ import type { BehaviorDefinitionChoice } from './runtime_definitions';
 export type StateMachineInstanceChoice = QuickPickItem & { readonly component: Table; readonly machine: Table };
 export type StateMachineStateChoice = QuickPickItem & { readonly state: Table };
 
+export function findStateMachineState(
+	sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain,
+	componentHashId: number, machineHashId: number, stateHashId: number,
+): { machine: StateMachineInstanceChoice; state: StateMachineStateChoice } | undefined {
+	const component = findRuntimeComponent(sources, guest, domain, 'cartlib/fsm/fsm_component', componentHashId);
+	if (component === undefined) return undefined;
+	let result: { machine: StateMachineInstanceChoice; state: StateMachineStateChoice } | undefined;
+	guest.visitTableEntries(guest.readStringMember(component, '_machines_by_id'), (key, value) => {
+		const machine = value as Table;
+		if (machine.hashId !== machineHashId) return;
+		visitStateMachineHierarchy(guest, machine, state => {
+			if (state.hashId === stateHashId) result = {
+				machine: stateMachineInstanceChoice(guest, component, key, machine), state: stateMachineStateChoice(guest, state),
+			};
+		});
+	});
+	return result;
+}
+
+function stateMachineInstanceChoice(guest: SuspendedGuestSession, component: Table, key: SuspendedGuestValue, machine: Table): StateMachineInstanceChoice {
+	return { label: guest.formatValue(key), description: `COMPONENT ${guest.formatValue(guest.readStringMember(component, 'id'))}`,
+		detail: `OWNER ${guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'parent'), 'id'))}`, component, machine };
+}
+
+function stateMachineStateChoice(guest: SuspendedGuestSession, state: Table): StateMachineStateChoice {
+	const current = guest.readStringMember(state, 'current_id');
+	return { label: guest.formatValue(guest.readStringMember(state, 'id')),
+		description: current === null ? '' : `CURRENT CHILD: ${guest.formatValue(current)}`, detail: '', state };
+}
+
 export function readStateMachineInstances(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain) {
 	const items: StateMachineInstanceChoice[] = [];
 	const available = visitRuntimeComponents(sources, guest, domain, 'cartlib/fsm/fsm_component', component => {
-		const id = guest.formatValue(guest.readStringMember(component, 'id'));
-		const ownerId = guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'parent'), 'id'));
 		guest.visitTableEntries(guest.readStringMember(component, '_machines_by_id'), (key, machine) => {
-			items.push({ label: guest.formatValue(key), description: `COMPONENT ${id}`, detail: `OWNER ${ownerId}`, component, machine: machine as Table });
+			items.push(stateMachineInstanceChoice(guest, component, key, machine as Table));
 		});
 	});
 	return { available, items };
@@ -27,11 +55,7 @@ export function readStateMachineInstances(sources: RuntimeSourceState, guest: Su
 /** Only the chosen machine's retained hierarchy. No traversal of other actors' states or parent/root links. */
 export function readStateMachineStates(guest: SuspendedGuestSession, machine: Table): StateMachineStateChoice[] {
 	const items: StateMachineStateChoice[] = [];
-	visitStateMachineHierarchy(guest, machine, state => {
-		const current = guest.readStringMember(state, 'current_id');
-		items.push({ label: guest.formatValue(guest.readStringMember(state, 'id')),
-			description: current === null ? '' : `CURRENT CHILD: ${guest.formatValue(current)}`, detail: '', state });
-	});
+	visitStateMachineHierarchy(guest, machine, state => items.push(stateMachineStateChoice(guest, state)));
 	return items;
 }
 

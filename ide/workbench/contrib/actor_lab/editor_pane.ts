@@ -73,6 +73,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.focusTarget.registerCommand('actorLab.details', { isEnabled: () => controller.selected(this.input) !== undefined, run: () => controller.inspect(this.input, this.inspector) });
 	}
 	public override get suspendsRuntime(): boolean { return !this.input.running; }
+	public override get showsGameFrame(): boolean { return !this.inspector.visible; }
 	public override get runtimeControlContext() { return this.focusTarget; }
 	protected override activate(): void {
 		super.activate();

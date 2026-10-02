@@ -87,6 +87,15 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		this.padPressed = false;
 	}
 
+	public updateItems(items: readonly Element[], identity: (element: Element) => string): void {
+		this.model.updateItems(items, identity);
+		const canOpenSource = items.some(item => this.input!.canOpenSource(item));
+		if (this.actionBar.items[0].visible !== canOpenSource) {
+			this.actionBar.items[0].visible = canOpenSource;
+			this.layoutDirty = true;
+		}
+	}
+
 	public dispose(): void { this.hide(); this.actions.dispose(); this.scroll.dispose(); this.unbindBlur(); }
 
 	public update(): void {

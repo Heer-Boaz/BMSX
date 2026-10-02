@@ -25,7 +25,7 @@ export type WorkbenchChromeLayout = {
 /** Content geometry belongs to the workbench; a text gutter is a code-pane detail. */
 export function getWorkbenchEditorBounds(): RectBounds {
 	write_rect_bounds(editorBounds, editorViewState.codeAreaLeft, editorViewState.codeAreaTop,
-		editorViewState.viewportWidth, editorViewState.codeAreaBottom);
+		editorViewState.viewportWidth - editorChromeState.editorRightInset, editorViewState.codeAreaBottom);
 	return editorBounds;
 }
 
@@ -57,12 +57,13 @@ export function updateFullWidthWorkbenchLayout(layout: FullWidthWorkbenchLayout)
 		|| layout.codeAreaBottom !== editorViewState.codeAreaBottom
 		|| layout.font !== editorViewState.font
 		|| layout.rowHeight !== editorViewState.lineHeight;
-	if (!changed) {
+	const contentRight = editorViewState.viewportWidth - editorChromeState.editorRightInset;
+	if (!changed && layout.right === contentRight) {
 		return false;
 	}
 	layout.left = 0;
 	layout.top = editorViewState.codeAreaTop;
-	layout.right = editorViewState.viewportWidth;
+	layout.right = contentRight;
 	layout.bottom = editorViewState.codeAreaBottom;
 	layout.rowHeight = editorViewState.lineHeight;
 	layout.font = editorViewState.font;
@@ -230,6 +231,7 @@ function addLayoutStamp(stamp: number, value: number): number {
 function computeInlineBarLayoutStamp(): number {
 	let stamp = 5381;
 	stamp = addLayoutStamp(stamp, editorViewState.viewportWidth);
+	stamp = addLayoutStamp(stamp, editorChromeState.editorRightInset);
 	stamp = addLayoutStamp(stamp, editorViewState.viewportHeight);
 	stamp = addLayoutStamp(stamp, editorViewState.headerHeight);
 	stamp = addLayoutStamp(stamp, editorViewState.tabBarHeight);
@@ -266,7 +268,7 @@ function writeInlineBarLayout(): void {
 		}
 		bounds.left = 0;
 		bounds.top = top;
-		bounds.right = editorViewState.viewportWidth;
+		bounds.right = editorViewState.viewportWidth - editorChromeState.editorRightInset;
 		bounds.bottom = top + height;
 		top = bounds.bottom;
 	}

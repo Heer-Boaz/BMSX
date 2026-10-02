@@ -31,6 +31,7 @@ import type { HotResumeService } from './workbench/services/execution/hot_resume
 import { ActorLabController } from './workbench/contrib/actor_lab/controller';
 import { GameViewInput } from './workbench/contrib/game_view/editor_input';
 import { GameViewEditorPane } from './workbench/contrib/game_view/editor_pane';
+import { GamePanel } from './workbench/contrib/game_view/game_panel';
 import { ActorLabEditorPane } from './workbench/contrib/actor_lab/editor_pane';
 import type { EditorInputSerializers } from './workbench/services/editor/editor_serialization';
 import { CodeEditorInputSerializer } from './workbench/contrib/code_editor/editor_serializer';
@@ -199,6 +200,7 @@ export type CartEditor = {
 	readonly commands: IdeCommandController;
 	readonly tabBar: WorkbenchActionBarControl;
 	readonly runtimeTimeline: RuntimeTimelineControl;
+	readonly gamePanel: GamePanel;
 	readonly resourceEditors: ResourceEditorResolver;
 	readonly editorPanes: EditorPanes;
 	readonly editorInputSerializers: EditorInputSerializers;
@@ -236,6 +238,7 @@ export type CartEditor = {
 export class RuntimeCartEditor implements CartEditor {
 	public readonly tabBar: WorkbenchActionBarControl;
 	public readonly runtimeTimeline: RuntimeTimelineControl;
+	public readonly gamePanel: GamePanel;
 	private readonly activeListeners = new Set<(active: boolean) => void>();
 	public get executionSuspended(): boolean {
 		return this.isActive && (this.quickInput.visible || this.contextMenu.visible
@@ -419,7 +422,7 @@ export class RuntimeCartEditor implements CartEditor {
 			resource_view: () => new ResourceViewerEditorPane(),
 			aem_editor: () => new AemEditorPane(this.resourcePanel, this.aemEditor, this.commands, this.contextMenu),
 			lua_program: () => new LuaProgramEditorPane(this.resourcePanel, this.luaPrograms, this.commands, this.actionStrings, frameNavigation, this.contextMenu),
-			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu),
+			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu, frameNavigation),
 			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.actorLab, this.commands, frameNavigation, this.contextMenu),
 			game_view: () => new GameViewEditorPane(this.resourcePanel, this.commands, runtime),
 			scene_editor: () => new SceneEditorPane(this.resourcePanel, this.sceneEditor, this.commands, this.sources),
@@ -429,6 +432,7 @@ export class RuntimeCartEditor implements CartEditor {
 				this.commands,
 			),
 		});
+		this.gamePanel = new GamePanel(this.editorPanes, this.commands);
 		this.search = new EditorSearchController(this.sources, renameController);
 		this.assistantCommands = new AssistantChatCommands(this.assistant, this.editorPanes, this.quickInput, this.clipboard);
 		this.navigation = new EditorNavigationController(
@@ -451,6 +455,7 @@ export class RuntimeCartEditor implements CartEditor {
 			behaviorSources,
 			createGraphLayoutEngine,
 			luaTooling.suspendedGuest,
+			rewind,
 		);
 		this.scenarioLab = new ScenarioLabController(
 			this,
@@ -647,6 +652,10 @@ export class RuntimeCartEditor implements CartEditor {
 		this.runtimeTimeline.setContext(this.editorPanes.activePane?.runtimeControlContext);
 		editorChromeState.runtimeTimelineHeight = this.runtimeTimeline.height;
 		refreshWorkbenchLayout();
+		if (this.gamePanel.update()) {
+			refreshWorkbenchLayout();
+			this.editorPanes.activePane?.layout?.();
+		}
 		this.editorPanes.activePane?.update(deltaSeconds);
 		this.runtimeTimeline.update();
 		layoutTopBar(this.commands, this.chromeRenderContext);
@@ -660,6 +669,7 @@ export class RuntimeCartEditor implements CartEditor {
 		layoutTabBar(this.chromeRenderContext);
 		refreshWorkbenchLayout();
 		this.syncResourcePanelViewport();
+		if (this.gamePanel.update()) refreshWorkbenchLayout();
 		this.editorPanes.activePane?.layout?.();
 	}
 
@@ -674,6 +684,7 @@ export class RuntimeCartEditor implements CartEditor {
 		const activePane = this.editorPanes.activePane;
 		if (activePane === null) drawEditorGroupWatermark();
 		else activePane.draw();
+		this.gamePanel.draw();
 		this.runtimeTimeline.draw(this.overlayRenderer);
 		drawProblemsPanel();
 		renderStatusBar(this.resourcePanel, this.fault, activePane, this.debuggerState.plans, this.serverConnectionState);
@@ -711,6 +722,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.contextMenu.dispose();
 		this.tabBar.dispose();
 		this.runtimeTimeline.dispose();
+		this.gamePanel.dispose();
 		this.quickInput.dispose();
 		this.unbindQuickInputFields();
 		this.unbindProblemsPanel();

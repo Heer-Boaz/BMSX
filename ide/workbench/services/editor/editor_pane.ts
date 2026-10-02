@@ -12,6 +12,8 @@ export abstract class EditorPane<TInput extends EditorInput> {
 	public get suspendsRuntime(): boolean { return true; }
 	/** A live inspector supplies the command scope for the shared runtime transport. */
 	public get runtimeControlContext(): InputFocusTarget | undefined { return undefined; }
+	/** Avoid a second scanout panel when this editor already presents the game. */
+	public get showsGameFrame(): boolean { return false; }
 
 	/** Optional selection capability; editors without one still have an input identity. */
 	public getSelection?(): EditorPaneSelection;

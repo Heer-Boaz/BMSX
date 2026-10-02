@@ -20,3 +20,14 @@ export function visitRuntimeComponents(
 	}
 	return true;
 }
+
+/** Reacquire a retained table identity through its owning cartlib type bucket. */
+export function findRuntimeComponent(
+	sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, modulePath: string, hashId: number,
+): Table | undefined {
+	let result: Table | undefined;
+	visitRuntimeComponents(sources, guest, domain, modulePath, component => {
+		if (component.hashId === hashId) result = component;
+	});
+	return result;
+}

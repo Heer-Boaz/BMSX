@@ -15,11 +15,14 @@ import { layoutWorkbenchPropertyTree } from '../../ui/property_tree';
 import { measureTextRange } from '../../../editor/common/text/layout';
 import { sourceTabDescription } from '../../ui/tab/titles';
 import type { BehaviorSourceNode } from './model';
+import type { BehaviorRuntimeInspection } from './runtime_inspection';
 
 let nextInputId = 0;
 
 /** Retained input for one source-derived behavior view. */
 export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabId, 'behavior_lens'> {
+	/** The attached pane owns/disposes this visible inspection; source identity stays separate. */
+	public runtimeInspection: BehaviorRuntimeInspection | undefined;
 	public readonly graphLayout: AsyncGraphLayout<StateGraphModel>;
 	private definitionTitle: string | undefined;
 	private ownedDefinition: BehaviorSourceNode | undefined;

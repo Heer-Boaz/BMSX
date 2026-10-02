@@ -6,9 +6,9 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.run'
 	| 'menubar.view';
 
-export type WorkbenchContextMenuId = 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
+export type WorkbenchContextMenuId = 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'runtime.title' | 'editorTabs.title' | 'terminal.input' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'terminal.input' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -40,6 +40,7 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'behaviorLens.properties.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'aem.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'luaProgram.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'gamePanel.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'runtime.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'editorTabs.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'sceneEditor.title': readonly WorkbenchMenuCommandItem[];
@@ -62,6 +63,28 @@ const TEST_DEBUG_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
 
 /** Immutable built-in menu contributions; renderers only project these items. */
 export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
+	'behaviorLens.graph.actions': [
+		{ type: 'command', command: 'behaviorLens.details' },
+		{ type: 'command', command: 'behaviorLens.duplicateChild' },
+		{ type: 'command', command: 'behaviorLens.removeChild' },
+		{ type: 'separator' }, ...GRAPH_ZOOM_ACTIONS,
+	],
+	'behaviorLens.stateGraph.actions': [
+		{ type: 'command', command: 'behaviorLens.details' },
+		{ type: 'command', command: 'behaviorLens.setInitialState' },
+		{ type: 'command', command: 'behaviorLens.inspectRegisteredDefinitions' },
+		{ type: 'separator' }, ...GRAPH_ZOOM_ACTIONS,
+	],
+	'behaviorLens.properties.actions': [
+		{ type: 'command', command: 'behaviorLens.testEffect' },
+		{ type: 'command', command: 'inputBindings' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'behaviorLens.details' },
+		{ type: 'command', command: 'behaviorLens.editProperty' },
+		{ type: 'command', command: 'behaviorLens.addProperty' },
+		{ type: 'command', command: 'behaviorLens.removeProperty' },
+		{ type: 'command', command: 'behaviorLens.inspectRegisteredDefinitions' },
+	],
 	'actorLab.context': [
 		{ type: 'command', command: 'actorLab.details' },
 		{ type: 'command', command: 'actorLab.actions' },
@@ -188,6 +211,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'conversations' },
 		{ type: 'command', command: 'terminal' },
 		{ type: 'command', command: 'gameView' },
+		{ type: 'command', command: 'gameView.togglePanel' },
 		{ type: 'command', command: 'actorLab' },
 		{ type: 'command', command: 'sceneEditor' },
 		{ type: 'command', command: 'behaviorLens' },
@@ -216,11 +240,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	],
 	'behaviorLens.graph.title': [
 		{ type: 'command', command: 'behaviorLens.source' },
-		{ type: 'command', command: 'behaviorLens.details' },
-		{ type: 'command', command: 'behaviorLens.duplicateChild' },
-		{ type: 'command', command: 'behaviorLens.removeChild' },
 		{ type: 'command', command: 'behaviorLens.inspectRuntimeTree' },
-		...GRAPH_ZOOM_ACTIONS,
+		{ type: 'command', command: 'behaviorLens.more' },
 	],
 	'behaviorLens.title': [
 		{ type: 'command', command: 'behaviorLens.source' },
@@ -228,10 +249,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	],
 	'behaviorLens.stateGraph.title': [
 		{ type: 'command', command: 'behaviorLens.source' },
-		{ type: 'command', command: 'behaviorLens.details' },
-		{ type: 'command', command: 'behaviorLens.setInitialState' },
 		{ type: 'command', command: 'behaviorLens.inspectRuntimeStateMachine' },
-		...GRAPH_ZOOM_ACTIONS,
+		{ type: 'command', command: 'behaviorLens.more' },
 	],
 	'aem.title': [
 		{ type: 'command', command: 'aem.add' },
@@ -248,6 +267,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'luaProgram.authoring' },
 		{ type: 'command', command: 'luaProgram.more' },
 	],
+	'gamePanel.title': [{ type: 'command', command: 'gameView.closePanel' }],
 	'runtime.title': [
 		{ type: 'command', command: 'stepFrameBack' },
 		{ type: 'command', command: 'pause' },
@@ -277,12 +297,9 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'luaProgram.testInput' },
 	],
 	'behaviorLens.properties.title': [
-		{ type: 'command', command: 'behaviorLens.testEffect' },
-		{ type: 'command', command: 'inputBindings' },
-		{ type: 'command', command: 'behaviorLens.addProperty' },
 		{ type: 'command', command: 'behaviorLens.source' },
-		{ type: 'command', command: 'behaviorLens.editProperty' },
 		{ type: 'command', command: 'behaviorLens.inspectRuntimeEffect' },
+		{ type: 'command', command: 'behaviorLens.more' },
 	],
 	'sceneEditor.title': [
 		{ type: 'command', command: 'sceneEditor.source' },

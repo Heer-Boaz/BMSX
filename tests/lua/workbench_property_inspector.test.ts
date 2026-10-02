@@ -70,6 +70,34 @@ test('inspector retains complete multiline text and exact pixel-row hit/reveal a
 	assert.ok(model.rows[1].value.length > 1, 'narrow space wraps instead of silently truncating');
 });
 
+test('live property updates retain focus, selection and scroll anchor and measure only changed text', t => {
+	const f = fixture(t), model = f.inspector.model;
+	f.press('ArrowDown');
+	const focus = f.focus.target, scroll = model.viewport.scrollTop, measured = f.measured();
+	const items = f.items.map(item => ({ ...item }));
+	f.inspector.updateItems(items, item => item.label);
+	f.layout();
+	assert.equal(f.focus.target, focus);
+	assert.equal(f.disposed(), 0);
+	assert.equal(model.rows[model.selectionIndex].element, items[1]);
+	assert.equal(model.viewport.scrollTop, scroll);
+	assert.equal(f.measured(), measured);
+
+	items[0] = { ...items[0], value: `${items[0].value}\nnew_line()` };
+	f.inspector.updateItems(items, item => item.label);
+	f.layout();
+	assert.equal(model.rows[model.selectionIndex].element, items[1]);
+	assert.equal(model.viewport.scrollTop, scroll, 'the first visible property retains its within-property offset');
+	assert.ok(f.measured() > measured);
+	const after = f.measured();
+	f.inspector.updateItems(items, item => item.label); f.layout();
+	assert.equal(f.measured(), after);
+	const inserted = [{ ...items[2], label: 'NEW PROPERTY' }, ...items];
+	f.inspector.updateItems(inserted, item => item.label); f.layout();
+	assert.equal(model.rows[model.selectionIndex].element, items[1]);
+	assert.equal(model.viewport.scrollTop - scroll, model.rows[0].bottom);
+});
+
 test('inspector controller selection, page scrolling, release Source and Back use its focused control', t => {
 	const f = fixture(t), model = f.inspector.model;
 	f.pad('rb', true); f.pad('rb', false); assert.ok(model.viewport.scrollTop > 0); assert.equal(model.selectionIndex, 0);

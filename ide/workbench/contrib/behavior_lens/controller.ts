@@ -43,10 +43,12 @@ import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { canOpenBehaviorInspectionSource } from './inspection_source';
 import type { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
-import { inspectActionEffectDefinition, inspectActionEffectInstance, readActionEffectInstances } from './action_effect_runtime';
-import { inspectStateMachineDefinition, inspectStateMachineState, readStateMachineDefinitionStates, readStateMachineInstances, readStateMachineStates } from './state_machine_runtime';
+import { inspectActionEffectDefinition, readActionEffectInstances } from './action_effect_runtime';
+import { inspectStateMachineDefinition, readStateMachineDefinitionStates, readStateMachineInstances, readStateMachineStates } from './state_machine_runtime';
 import { readBehaviorDefinitions, type BehaviorDefinitionChoice } from './runtime_definitions';
-import { inspectBehaviorTreeInstance, readBehaviorTreeInstances } from './behavior_tree_runtime';
+import { readBehaviorTreeInstances } from './behavior_tree_runtime';
+import type { HostRewind } from '../../../../hosts/common/rewind';
+import { BehaviorRuntimeInspection, type BehaviorRuntimeSelection } from './runtime_inspection';
 
 const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 	action_effect: 'ACTIONEFFECTS',
@@ -64,6 +66,7 @@ export class BehaviorLensController {
 		public readonly documents: BehaviorSourceDocuments,
 		private readonly createGraphLayoutEngine: GraphLayoutEngineFactory,
 		private readonly guest: SuspendedGuestSession,
+		private readonly rewind: HostRewind,
 	) {}
 
 	public open(kind: BehaviorKind | null = null, options: EditorOpenOptions = {}): void {
@@ -153,12 +156,9 @@ export class BehaviorLensController {
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 				return new TextQuickPickProvider(choices.items);
 			}, choice => {
-				const lifetime = inspector.show({ title: `LIVE EFFECT / ${choice.label}`,
-					items: inspectActionEffectInstance(this.sources, this.guest, choice),
-					canOpenSource: item => canOpenBehaviorInspectionSource(this.sources, item),
-					openSource: item => this.openInspectionSource(input, item),
+				this.showRuntimeInspection(input, inspector, `LIVE EFFECT / ${choice.label}`, {
+					kind: 'action_effect', componentHashId: choice.component.hashId, effectHashId: choice.effect.hashId,
 				});
-				lifetime.add({ dispose: this.guest.onDidInvalidate(() => inspector.hide()) });
 			});
 	}
 
@@ -173,12 +173,10 @@ export class BehaviorLensController {
 					lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 					return new TextQuickPickProvider(readStateMachineStates(this.guest, machine.machine));
 				}, state => {
-					const lifetime = inspector.show({ title: `LIVE FSM / ${state.label}`,
-						items: inspectStateMachineState(this.sources, this.guest, machine, state),
-						canOpenSource: item => canOpenBehaviorInspectionSource(this.sources, item),
-						openSource: item => this.openInspectionSource(input, item),
+					this.showRuntimeInspection(input, inspector, `LIVE FSM / ${state.label}`, {
+						kind: 'state_machine', componentHashId: machine.component.hashId,
+						machineHashId: machine.machine.hashId, stateHashId: state.state.hashId,
 					});
-					lifetime.add({ dispose: this.guest.onDidInvalidate(() => inspector.hide()) });
 				}));
 	}
 
@@ -189,13 +187,21 @@ export class BehaviorLensController {
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 				return new TextQuickPickProvider(choices.items);
 			}, choice => {
-				const lifetime = inspector.show({ title: `LIVE BT / ${choice.label}`,
-					items: inspectBehaviorTreeInstance(this.sources, this.guest, choice),
-					canOpenSource: item => canOpenBehaviorInspectionSource(this.sources, item),
-					openSource: item => this.openInspectionSource(input, item),
+				this.showRuntimeInspection(input, inspector, `LIVE BT / ${choice.label}`, {
+					kind: 'behavior_tree', componentHashId: choice.component.hashId,
 				});
-				lifetime.add({ dispose: this.guest.onDidInvalidate(() => inspector.hide()) });
 			});
+	}
+
+	private showRuntimeInspection(input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>, title: string, selection: BehaviorRuntimeSelection): void {
+		const inspection = new BehaviorRuntimeInspection(this.sources, this.guest, this.rewind, input.view.resource.domain, selection);
+		const lifetime = inspector.show({ title, items: inspection.refresh()!,
+			canOpenSource: item => canOpenBehaviorInspectionSource(this.sources, item),
+			openSource: item => this.openInspectionSource(input, item),
+		});
+		input.runtimeInspection = inspection;
+		lifetime.add(inspection);
+		lifetime.add({ dispose: () => { input.runtimeInspection = undefined; } });
 	}
 
 	public inspectRegisteredDefinitions(input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
