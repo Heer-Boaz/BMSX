@@ -32,6 +32,16 @@
   Add/Edit/Remove use syntax ranges and shared working copies for rules, writes,
   conditions, handlers, bindings and command maps. Dynamic/computed/mutated
   definitions are not reconstructed as editable defaults; Source stays available.
+- Nested filter lists add real `{ key, equals }` conditions. Input choices include
+  custom patterns, mode gates and ordered combos with actual `steps`; keyboard
+  sequence definitions expose their own fields. Placeholders are authored examples,
+  not substitutes for cart-owned tags, handlers, state paths or player mappings.
+  Reserved field names such as `not` use the shared Lua field writer.
+- A component record without a uniquely written `program` is explicitly unresolved,
+  not presented as an empty editable program. Later duplicate named fields win,
+  as in Lua; the original source is retained. Structured row paths distinguish
+  arbitrary string keys from anonymous list entries. Multiline values use the
+  shared source preview and are edited in Source rather than overflowing a cell.
 - **Source/Live** selects an actual mounted progression context or input component,
   not an inferred association with the open source. Progression shows values,
   state revision, event rules and once-only receipts. Input shows its compiled
@@ -76,6 +86,11 @@ The shared property-cell control owns draft/focus/pointer lifetime, not syntax,
 asset state or source history. Views use existing command, menu, tree and model
 services. Source-backed selection/collapse restoration requires matching source
 provenance; runtime identities are not persisted as editor-session data.
+Previously presented provider documents remain part of a program view's working
+copies when an import changes or the producer becomes incomplete. Dirty indication,
+Save and Undo therefore retain their actual document owners. Session deserialization
+reattaches those documents before projecting current syntax, including providers
+that are no longer reachable from that syntax.
 
 Source projection runs once per model/semantic generation. Runtime projection
 is invalidation-driven and retains rows across ordinary execution. Progression
@@ -88,6 +103,8 @@ heap scan, cartlib debug registry, or per-frame source reconstruction is added.
 
 - [VS Code debugger variables](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/variablesView.ts):
   stable tree identity, separately retained view state, contextual value editing.
+- [VS Code composite editor serialization](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/common/editor/sideBySideEditorInput.ts):
+  restore constituent document inputs before constructing the composite view.
 - [Unity Input Debugger](https://github.com/Unity-Technologies/InputSystem/blob/develop/Packages/com.unity.inputsystem/InputSystem/Editor/Debugger/InputDebuggerWindow.cs):
   input topology and activity are separate refresh responsibilities.
 - [Godot animation editor](https://github.com/godotengine/godot/blob/master/editor/animation/animation_player_editor_plugin.cpp)
@@ -117,3 +134,30 @@ reload with a restored Actor Lab tab succeeded after fixing premature CPU-domain
 access in its admission callback. Unit tests separately cover
 source preservation, actual compiled guest readback/lifetimes and unchanged-read
 work. Typechecks and audits are structural gates, not substitutes for live evidence.
+
+The follow-up source-boundary audit exercised an authored two-press combo in the
+isolated Scenario Lab machine: KeyX press/release/press/release matched at ticks
+3/4/6/7, and the combo's real emitted event changed progression on the second press.
+The first press emitted a different event, so an ActionEffect's immediate event
+could not masquerade as combo completion. A separate UI exercise edited an imported
+binding's priority without saving, removed the producer's `program` field through
+an approved source review, and saved the pending provider from the unresolved
+program view. Repeating that exercise across browser reload retained the dirty
+indicator and saved the exact pending priority after recovery. These are ordinary
+UI/model workflows, not assertions about rendered strings. Filter insertion is
+also exercised through Add on the filter's condition list, followed by shared
+Undo/Save, and compiled and executed against real cartlib in O0 and O3 guest machines.
+
+### Requested feature audit
+
+| Request | Delivered path | Observed result |
+| --- | --- | --- |
+| Build and test ActionEffects | New Effect, Behavior Lens Add/Edit/Remove, Test Effect | Actual granted instance accepted Trigger; shared source Undo/Redo/Save exercised |
+| Enter/read/test actionstrings | Input Bindings selection or Test Actionstring; Scenario Lab | Actual player mappings, press/release and ordered combo verified in isolated runs |
+| Edit and real-time debug progression | New/Open Program, Source/Live, Play/Pause, frame controls | Actual state and once-only receipts changed, rewound and replayed without leaving the inspector |
+| Missing AEM authoring | Audio Event Map structured editor, asset choices, Save, Audition | Real audio completion emitted `on_finished` into progression |
+
+General O0-to-O3 suspended-continuation relocation remains a separate Hot Resume
+limitation, as described above. These editors neither conceal it nor reboot the
+machine implicitly. They also do not replace living program instances on Save;
+that lifecycle remains owned by the cart.

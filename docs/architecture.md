@@ -1758,7 +1758,12 @@ Lua views resolve written producer arguments through the shared language source
 reader and retain every presented resource's text model. YAML/JSON views retain
 the parser's syntax tokens and patch only the edited collection/value. There is
 no editable cooked definition or second history stack. Dynamic Lua remains
-explicitly unresolved. Source/model changes close stale drafts and pickers.
+explicitly unresolved. Missing, mutated or computed input definitions are not
+treated as program tables; duplicate named fields follow Lua's last-written
+semantics. Structured source paths identify rows without delimiter collisions.
+Previously presented models retain Save/Undo participation after their import
+is removed; session restoration reattaches those working copies before projection.
+Source/model changes close stale drafts and pickers.
 Mounted progression contexts and input components are separate runtime choices;
 the readback retains typed scalar identities, not guest tables across execution.
 State revisions refresh progression values, while once-only receipts refresh

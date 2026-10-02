@@ -1,9 +1,9 @@
 import type { FileSemanticData, LuaCallSite, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import { getLuaModuleAliasTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
 import { LuaSyntaxKind, LuaTableFieldKind, type LuaExpression, type LuaTableConstructorExpression, type LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
-import { staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
+import { findNamedLuaTableField, staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import { LuaSourceReader } from '../../../language/lua/source_reader';
-import { readLuaSourceRange } from '../../../language/lua/source_edits';
+import { readLuaExpressionPreview, readLuaSourceRange } from '../../../language/lua/source_edits';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { ResourceIdentity } from '../../../common/resource';
 import type { WorkbenchPropertyElement, WorkbenchPropertyTree } from '../../ui/property_tree';
@@ -19,6 +19,7 @@ export type LuaProgramOccurrence = {
 export type LuaProgramTable = { readonly file: FileSemanticData; readonly table: LuaTableConstructorExpression; readonly structural: boolean };
 export type LuaProgramProperty = WorkbenchPropertyElement & {
 	readonly key: string;
+	readonly path: readonly (string | number)[];
 	readonly file: FileSemanticData;
 	readonly expression: LuaExpression;
 	readonly valueExpression?: LuaExpression;
@@ -50,12 +51,13 @@ export function collectLuaPrograms(resource: ResourceIdentity, snapshot: LuaSema
 export function luaProgramRoot(occurrence: LuaProgramOccurrence, reader: LuaSourceReader) {
 	const argument = occurrence.call.expression.arguments[0];
 	if (argument === undefined) return;
-	let source = reader.expression(occurrence.file, argument);
-	if (occurrence.kind === 'input' && source?.expression.kind === LuaSyntaxKind.TableConstructorExpression) {
-		const program = source.expression.fields.find(field => staticLuaTableFieldName(field) === 'program');
-		if (program !== undefined) source = reader.expression(source.file, program.value);
-	}
-	return source;
+	const source = reader.expression(occurrence.file, argument);
+	if (occurrence.kind === 'progression') return source;
+	if (source?.expression.kind !== LuaSyntaxKind.TableConstructorExpression) return;
+	if (reader.snapshot.symbolResolver.writtenSources.tableMutations().has(source.expression)) return;
+	if (source.expression.fields.some(field => field.kind === LuaTableFieldKind.ExpressionKey && staticLuaTableFieldName(field) === null)) return;
+	const program = findNamedLuaTableField(source.expression, 'program');
+	if (program !== null) return reader.expression(source.file, program.value);
 }
 
 /** Written tables only; recursive/ambiguous/mutated source remains explicit in the view. */
@@ -70,8 +72,9 @@ export function projectLuaProgram(tree: WorkbenchPropertyTree<LuaProgramProperty
 	let selected: WorkbenchTreeNode<LuaProgramProperty> | null = null;
 	tree.roots.length = 0;
 	const active = new Set<LuaTableConstructorExpression>();
-	const append = (file: FileSemanticData, expression: LuaExpression, label: string, key: string,
+	const append = (file: FileSemanticData, expression: LuaExpression, label: string, path: readonly (string | number)[],
 		parent: WorkbenchTreeNode<LuaProgramProperty> | null, field?: LuaTableField, container?: LuaProgramTable): void => {
+		const key = JSON.stringify(path);
 		const written = reader.expression(file, expression);
 		const value = written?.expression;
 		const table = value?.kind === LuaSyntaxKind.TableConstructorExpression && !active.has(value) ? value : undefined;
@@ -79,12 +82,12 @@ export function projectLuaProgram(tree: WorkbenchPropertyTree<LuaProgramProperty
 		const structural = table !== undefined && !reader.snapshot.symbolResolver.writtenSources.tableMutations().has(table)
 			&& table.fields.every(entry => entry.kind !== LuaTableFieldKind.ExpressionKey || staticLuaTableFieldName(entry) !== null);
 		const model = resolveModel(file);
-		const raw = readLuaSourceRange(model.buffer, file.chunk.locations.range(expression.span));
-		const element: LuaProgramProperty = { kind: table === undefined ? 'property' : 'group', key, label,
-			value: table === undefined ? raw : `${table.fields.length} fields`,
-			description: `${file.file}:${file.chunk.locations.range(expression.span).start.line}${table !== undefined && !structural ? ' / Dynamic table: edit written fields; structural editing unavailable.' : ''}`,
+		const range = file.chunk.locations.range(expression.span);
+		const element: LuaProgramProperty = { kind: table === undefined ? 'property' : 'group', key, path, label,
+			value: table === undefined ? readLuaExpressionPreview(model.buffer, file.chunk.locations, expression) : `${table.fields.length} fields`,
+			description: `${file.file}:${range.start.line}${table !== undefined && !structural ? ' / Dynamic table: edit written fields; structural editing unavailable.' : ''}`,
 			warning: written === undefined || table !== undefined && !structural, displayLabel: '', displayValue: '', displayValueLeft: 0,
-			file, expression, valueExpression: value, inlineEditable: !/[\r\n]/.test(raw), field, container,
+			file, expression, valueExpression: value, inlineEditable: range.start.line === range.end.line, field, container,
 			table: table === undefined ? undefined : { file: owner!, table, structural },
 		};
 		const node = appendWorkbenchTreeNode(tree, parent, element, collapsed.has(key));
@@ -92,18 +95,30 @@ export function projectLuaProgram(tree: WorkbenchPropertyTree<LuaProgramProperty
 		if (table === undefined) return;
 		resolveModel(owner!);
 		active.add(table);
+		const lastNamed = new Map<string, LuaTableField>();
+		for (const entry of table.fields) {
+			const name = staticLuaTableFieldName(entry);
+			if (name !== null) lastNamed.set(name, entry);
+		}
 		for (let index = 0; index < table.fields.length; index++) {
 			const entry = table.fields[index];
 			const name = staticLuaTableFieldName(entry);
+			if (name !== null && lastNamed.get(name) !== entry) continue;
 			const fieldLabel = name === null ? entry.kind !== LuaTableFieldKind.ExpressionKey ? `[${index + 1}]`
 				: readLuaSourceRange(resolveModel(owner!).buffer, owner!.chunk.locations.range(entry.key.span)) : name;
-			append(owner!, entry.value, fieldLabel, `${key}/${fieldLabel}`, node, entry, element.table);
+			append(owner!, entry.value, fieldLabel, [...path, name === null ? index + 1 : name], node, entry, element.table);
 		}
 		active.delete(table);
 	};
 	const root = luaProgramRoot(occurrence, reader);
-	if (root === undefined) append(occurrence.file, occurrence.call.expression.arguments[0] ?? occurrence.call.expression, 'DYNAMIC PROGRAM', 'root', null);
-	else append(root.file, root.expression, occurrence.kind === 'progression' ? 'PROGRESSION PROGRAM' : 'INPUT PROGRAM', 'root', null);
+	if (root === undefined) {
+		const file = occurrence.file, expression = occurrence.call.expression.arguments[0] ?? occurrence.call.expression;
+		const element: LuaProgramProperty = { kind: 'property', key: '[]', path: [], label: 'UNRESOLVED PROGRAM',
+			value: readLuaExpressionPreview(resolveModel(file).buffer, file.chunk.locations, expression),
+			description: 'No unique written program argument. Edit the producer definition in Source.', warning: true,
+			displayLabel: '', displayValue: '', displayValueLeft: 0, file, expression, inlineEditable: false };
+		appendWorkbenchTreeNode(tree, null, element);
+	} else append(root.file, root.expression, occurrence.kind === 'progression' ? 'PROGRESSION PROGRAM' : 'INPUT PROGRAM', [], null);
 	rebuildWorkbenchTreeRows(tree, selected);
 	tree.textDirty = true;
 }

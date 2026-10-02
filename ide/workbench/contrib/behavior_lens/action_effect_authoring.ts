@@ -1,6 +1,6 @@
 import type { BehaviorLensViewState } from './view_model';
 import type { ActionEffectSourceDefinition } from './action_effect_model';
-import { createLuaTableFieldInsertionEdits, validateLuaTableFieldExpression } from '../../../language/lua/table_field_insertion';
+import { createLuaTableFieldInsertionEdits, formatLuaTableFieldSource, validateLuaTableFieldExpression } from '../../../language/lua/table_field_insertion';
 import { createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
 import { selectedActionEffectProperty } from './action_effect_edit';
 import type { QuickInputController } from '../../services/quick_input/controller';
@@ -40,7 +40,7 @@ export function addActionEffectProperty(view: BehaviorLensViewState, quickInput:
 				async text => validateLuaTableFieldExpression(text), value => {
 				const model = view.source.models.get(body.file.file)!;
 				model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, body.file.chunk, body.table,
-					body.table.fields.length, `${choice.name} = ${value}`));
+					body.table.fields.length, formatLuaTableFieldSource(choice.name, value)));
 			});
 			lifetime.add({ dispose: view.source.onDidInvalidate(() => quickInput.hide()) });
 		});

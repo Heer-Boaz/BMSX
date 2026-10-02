@@ -7,6 +7,7 @@ import type { LuaProgramController } from './controller';
 import { LuaProgramInput } from './editor_input';
 import type { LuaProgramKind } from './source';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
+import type { EditorTextModel } from '../../../editor/model/text_model';
 
 type ProgramSnapshot = { readonly source: TextFileModelSnapshot; readonly dependencies: readonly TextFileModelSnapshot[];
 	readonly kind: LuaProgramKind; readonly occurrence: TrackedTextRange; readonly view: WorkbenchTreeViewSnapshot };
@@ -22,12 +23,16 @@ export class LuaProgramInputSerializer implements EditorInputSerializer<LuaProgr
 	public async deserialize(value: string): Promise<LuaProgramInput> {
 		const state: ProgramSnapshot = JSON.parse(value);
 		const { model, sameSource } = await resolveTextFileModelSnapshot(editorTextModelService, this.sources, state.source);
+		const dependencies: EditorTextModel[] = [];
 		let sameDependencies = true;
 		for (const dependency of state.dependencies) {
 			const resolved = await resolveTextFileModelSnapshot(editorTextModelService, this.sources, dependency);
+			dependencies.push(resolved.model);
 			if (!resolved.sameSource) sameDependencies = false;
 		}
 		const input = new LuaProgramInput(model, state.kind, state.occurrence, this.controller.guest);
+		for (const dependency of dependencies) input.sourceModels.set(dependency.resource.path, dependency);
+		input.publishModels();
 		this.controller.refresh(input);
 		if (sameSource && sameDependencies) {
 			restoreWorkbenchTreeView(input.tree, state.view, element => element.key);

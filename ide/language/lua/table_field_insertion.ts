@@ -7,6 +7,13 @@ import { extractIndentation } from '../../editor/text/indentation';
 import type { TextBuffer } from '../../editor/text/text_buffer';
 import { parseLuaExpressionSource } from '../../../toolchain/ts/lua/analysis/parse';
 import { LuaSyntaxError } from '../../../toolchain/ts/lua/errors';
+import { isLuaIdentifier } from '../../../toolchain/ts/lua/syntax/identifier';
+import { quoteLuaString } from '../../../toolchain/ts/lua/syntax/string_literal';
+
+/** Named fields include keywords and arbitrary string keys, not only identifiers. */
+export function formatLuaTableFieldSource(name: string, expression: string): string {
+	return `${isLuaIdentifier(name) ? name : `[${quoteLuaString(name)}]`} = ${expression}`;
+}
 
 /** Human-entered expressions must not swallow an untouched field separator. */
 export function validateLuaTableFieldExpression(text: string): string {

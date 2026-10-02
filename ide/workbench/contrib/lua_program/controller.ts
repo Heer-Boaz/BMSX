@@ -1,4 +1,4 @@
-import { LuaTableFieldKind } from '../../../../toolchain/ts/lua/syntax/ast';
+import { staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { RuntimeResource, ResourceDomain } from '../../../common/resource';
 import type { EditorTextModel, EditorTextModelContentChangeEvent } from '../../../editor/model/text_model';
@@ -6,7 +6,7 @@ import { editorTextModelService } from '../../../editor/model/model_service';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { LuaSourceReader } from '../../../language/lua/source_reader';
 import { luaSourceRangeToTextRange, createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
-import { createLuaTableFieldInsertionEdits, validateLuaTableFieldExpression } from '../../../language/lua/table_field_insertion';
+import { createLuaTableFieldInsertionEdits, formatLuaTableFieldSource, validateLuaTableFieldExpression } from '../../../language/lua/table_field_insertion';
 import { mapTrackedTextRange } from '../../../editor/text/text_change';
 import { resolveRuntimeResource, resolveRuntimeResourceForContext, type RuntimeSourceState } from '../../../runtime/sources';
 import { resourceSourceForChunk } from '../../../runtime/lua_pipeline';
@@ -110,7 +110,6 @@ export class LuaProgramController {
 			return;
 		}
 		const reader = new LuaSourceReader(snapshot);
-		const usedModels = new Set([input.workingCopy]);
 		projectLuaProgram(input.tree, input.occurrence, reader, file => {
 			let model = input.sourceModels.get(file.file);
 			if (model === undefined) {
@@ -118,10 +117,10 @@ export class LuaProgramController {
 				model = editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource));
 				input.sourceModels.set(file.file, model);
 			}
-			usedModels.add(model);
 			return model;
 		});
-		for (const [path, model] of input.sourceModels) if (!usedModels.has(model)) input.sourceModels.delete(path);
+		// Previously presented documents retain this view's Save / Undo ownership
+		// when an import is removed, including edits waiting to be saved or redone.
 		input.publishModels();
 		input.status = reader.syntaxComplete ? 'Authored Lua / Save and Hot Resume apply changes' : 'Incomplete syntax / source editing required';
 	}
@@ -148,7 +147,7 @@ export class LuaProgramController {
 		const target = property?.table;
 		if (target === undefined || !target.structural) return;
 		const model = input.sourceModels.get(target.file.file)!;
-		const entry = programEntryTemplate(input.programKind, property.key);
+		const entry = programEntryTemplate(input.programKind, property);
 		if (entry !== undefined) {
 			const lifetime = this.quickInput.input('ADD ENTRY', 'Authored Lua table', entry,
 				async text => validateLuaTableFieldExpression(text), value => model.pushEditOperations(
@@ -156,8 +155,8 @@ export class LuaProgramController {
 			lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.quickInput.hide()) });
 			return;
 		}
-		const existing = new Set(target.table.fields.map(field => field.kind === LuaTableFieldKind.IdentifierKey ? field.name : ''));
-		const choices = programFieldTemplates(input.programKind, property.key).filter(item => !existing.has(item.name))
+		const existing = new Set(target.table.fields.map(staticLuaTableFieldName));
+		const choices = programFieldTemplates(input.programKind, property).filter(item => !existing.has(item.name))
 			.map(item => ({ ...item, label: item.name, description: '', detail: item.value }));
 		choices.push({ name: '', value: '', label: 'Custom field', description: 'Lua table field', detail: 'Handlers, event matchers, custom commands and authored extensions' });
 		this.quickInput.pick('ADD PROPERTY', 'Canonical Lua table field', (_origin, lifetime) => {
@@ -166,7 +165,7 @@ export class LuaProgramController {
 		}, item => {
 			const lifetime = this.quickInput.input(item.label, item.name === '' ? 'Complete Lua field: name = expression or [key] = expression' : 'Lua expression', item.value,
 				async text => {
-					if (item.name !== '') return `${item.name} = ${validateLuaTableFieldExpression(text)}`;
+					if (item.name !== '') return formatLuaTableFieldSource(item.name, validateLuaTableFieldExpression(text));
 					// Admit a complete authored table field through the same Lua grammar as source insertion.
 					validateLuaTableFieldExpression(`{ ${text} }`);
 					return text;
