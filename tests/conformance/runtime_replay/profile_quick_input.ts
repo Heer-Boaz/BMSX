@@ -1,3 +1,6 @@
+import { ContextMenuController } from '../../../ide/workbench/services/context_menu/controller';
+import { inputFocus } from '../../../ide/input/focus';
+import { pointerCapture } from '../../../ide/input/pointer/capture';
 import { TextQuickPickProvider } from '../../../ide/workbench/services/quick_input/text_provider';
 import assert from 'node:assert/strict';
 import { VirtualHeadlessClock } from '../../../hosts/node/headless/clock';
@@ -8,7 +11,8 @@ import { medianMilliseconds } from '../../helpers/performance';
 
 configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-const picker = new QuickInputController();
+const menu = new ContextMenuController(inputFocus, pointerCapture);
+const picker = new QuickInputController(menu);
 const accept = () => assert.fail('measuring layout must not execute a choice');
 const FRAMES = 100000;
 for (const count of [128, 1024, 8192]) {
@@ -22,4 +26,4 @@ for (const count of [128, 1024, 8192]) {
 	console.log(JSON.stringify({ count, openMilliseconds, warmedMicrosecondsPerFrame: warm * 1000 / FRAMES,
 		presentedRows: picker.layout.renderRows.length }));
 }
-picker.dispose();
+picker.dispose(); menu.dispose();

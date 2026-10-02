@@ -1,3 +1,6 @@
+import { pointerCapture } from '../../ide/input/pointer/capture';
+import { inputFocus } from '../../ide/input/focus';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
@@ -89,8 +92,9 @@ test('same-path files from two sockets retain distinct original resources throug
 		source: { resid: `module_${domain}`, type: 'lua' } }));
 	const items = buildResourceQuickPickItems(resources);
 	const provider = new FileQuickPickProvider(items);
-	const picker = new QuickInputController();
-	t.after(() => picker.dispose());
+	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const picker = new QuickInputController(menu);
+	t.after(() => { picker.dispose(); menu.dispose(); });
 	let accepted: RuntimeResource | undefined;
 	picker.pick('FILES', 'query', () => provider, item => { accepted = item.resource; });
 	picker.model.filter('src'); picker.update();

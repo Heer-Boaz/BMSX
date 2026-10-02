@@ -1,3 +1,6 @@
+import { ContextMenuController } from '../../../ide/workbench/services/context_menu/controller';
+import { inputFocus } from '../../../ide/input/focus';
+import { pointerCapture } from '../../../ide/input/pointer/capture';
 import assert from 'node:assert/strict';
 import type { RuntimeResource } from '../../../ide/common/resource';
 import { buildResourceQuickPickItems } from '../../../ide/workbench/contrib/resources/quick_access';
@@ -11,7 +14,8 @@ import { medianMilliseconds } from '../../helpers/performance';
 
 configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-const picker = new QuickInputController();
+const menu = new ContextMenuController(inputFocus, pointerCapture);
+const picker = new QuickInputController(menu);
 const names = ['source_controller', 'workspace_query', 'state_machine', 'action_effect', 'source_index', 'code_editor', 'entry_point', 'sprite_view'];
 for (const count of [128, 1024, 8192]) {
 	const resources: RuntimeResource[] = Array.from({ length: count }, (_, index) => ({ domain: 0,
@@ -34,4 +38,4 @@ for (const count of [128, 1024, 8192]) {
 			warmMicrosecondsPerFrame: warmMilliseconds / 100, presentedRows: picker.layout.renderRows.length }));
 	}
 }
-picker.dispose();
+picker.dispose(); menu.dispose();

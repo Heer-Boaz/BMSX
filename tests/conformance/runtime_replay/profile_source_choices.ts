@@ -1,3 +1,6 @@
+import { ContextMenuController } from '../../../ide/workbench/services/context_menu/controller';
+import { inputFocus } from '../../../ide/input/focus';
+import { pointerCapture } from '../../../ide/input/pointer/capture';
 import assert from 'node:assert/strict';
 import { LuaSemanticWorkspace } from '../../../toolchain/ts/lua/semantic/model';
 import { buildLuaSemanticFrontendFromSnapshot } from '../../../toolchain/ts/lua/semantic/frontend';
@@ -11,7 +14,8 @@ import { medianMilliseconds } from '../../helpers/performance';
 
 configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-const picker = new QuickInputController();
+const menu = new ContextMenuController(inputFocus, pointerCapture);
+const picker = new QuickInputController(menu);
 const accept = () => assert.fail('profiling must not accept a source choice');
 for (const fileCount of [1, 16, 128]) {
 	const workspace = new LuaSemanticWorkspace();
@@ -41,4 +45,4 @@ for (const fileCount of [1, 16, 128]) {
 		openMilliseconds, queryMicroseconds, warmMicrosecondsPerFrame: warmMilliseconds / 100,
 		presentedRows: picker.layout.renderRows.length }));
 }
-picker.dispose();
+picker.dispose(); menu.dispose();

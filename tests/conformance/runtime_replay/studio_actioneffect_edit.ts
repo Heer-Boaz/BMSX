@@ -28,7 +28,8 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 		return field;
 	};
 	const open = async () => {
-		await click(properties.actionBar.items.find(item => item.command === 'behaviorLens.editProperty')!.bounds, 6);
+		await click(properties.actionBar.items.find(item => item.command === 'behaviorLens.more')!.bounds);
+		await test.clickContextCommand('behaviorLens.editProperty', 6);
 		check(editor.active && editor.control.field.focusTarget.hasFocus, 'effect: held Edit opens one real focused cell');
 	};
 	const paste = async (text: string) => {

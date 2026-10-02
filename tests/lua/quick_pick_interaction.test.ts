@@ -1,3 +1,4 @@
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -20,7 +21,8 @@ function fixture(t: TestContext) {
 	const clock = new VirtualHeadlessClock(), input = new Input(clock, new HeadlessInputHub(), -1);
 	configureFontVariant(clock, 'tiny', null);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	const picker = new QuickInputController();
+	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const picker = new QuickInputController(menu);
 	const items = Array.from({ length: 100 }, (_, id) => ({ id, label: `row_${id}`, description: 'independent catalog', detail: `${id}` }));
 	let accepted: typeof items[number] | undefined, pressId = 0;
 	const open = () => picker.pick('Choose', 'Filter', () => new TextQuickPickProvider(items), item => { accepted = item; });
@@ -35,7 +37,7 @@ function fixture(t: TestContext) {
 	};
 	const press = (code: string) => { key(code, true); key(code, false); };
 	open();
-	t.after(() => { picker.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
+	t.after(() => { picker.dispose(); menu.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
 	return { picker, items, open, pointer, key, press, clock, accepted: () => accepted };
 }
 

@@ -55,8 +55,8 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 	await editPosition(test, await openScene(test, 'story', 4), 1, 1, 148);
 	await editPosition(test, await openScene(test, 'end_demo', 3), 1, 1, 10);
 	await editPosition(test, await openScene(test, 'gameplay', 6), 3, 0, 88);
-	await editPosition(test, await openScene(test, 'stage_actors', 179), 0, 1, 24);
-	await test.capture?.('stage-actors-editor');
+	// Stage actors are authored by the YAML map, not scene-library registrations.
+	await test.capture?.('gameplay-editor');
 	await runMenuCommand('reboot');
 	await until(() => tasks.ready && harness.isCartActive() && world() !== null
 		&& (guest.readStringMember(world(), '_objects') as Table).arrayLength >= 4
@@ -98,9 +98,6 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 	check(guest.readStringMember(guest.readStringMember(player, 'start_point'), 'x') === 88,
 		'player admission and respawn share the edited scene start point');
 	const stage = registered('nemesis_s.stage');
-	const firstSpawn = (guest.readStringMember(stage, 'actor_spawns') as Table).get(1);
-	check(guest.readStringMember(guest.readStringMember(guest.readStringMember(firstSpawn, 'options'), 'pos'), 'y') === 24,
-		'streaming admission consumes the actor placement edited in Studio');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
 	harness.openLuaSource('title_screen.lua');
@@ -114,18 +111,7 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 	check(registered('nemesis_s.stage') === stage && registered('nemesis_s.player.1') === player,
 		'live source installation preserves the stage and player');
 	await until(() => (guest.readStringMember(stage, 'actor_spawn_index') as number) > 1
-		&& !runtime.completionCallPending(), 'ordinary play reaches the edited enemy formation');
-	const formation = guest.readStringMember(guest.readStringMember(firstSpawn, 'options'), 'formation');
-	const objects = guest.readStringMember(world(), '_objects') as Table;
-	let editedEnemy: Table | null = null;
-	for (let index = 1; index <= objects.arrayLength; index += 1) {
-		const object = objects.get(index);
-		if (guest.readStringMember(object, 'formation') === formation
-			&& guest.readStringMember(object, 'y') === 24) editedEnemy = object as Table;
-	}
-	check(editedEnemy !== null, 'the actual admitted enemy uses the scene position edited in Studio');
-	await until(() => (guest.readStringMember(editedEnemy, 'x') as number) < 240,
-		'the edited enemy moves from its admission gate into the visible playfield');
+		&& !runtime.completionCallPending(), 'ordinary play reaches the YAML-authored enemy formation');
 	await test.capture?.('gameplay');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
@@ -136,6 +122,6 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 	const endDemo = await openScene(test, 'end_demo');
 	await selectMember(test, endDemo, 1);
 	check(endDemo.properties[1].value === 10, 'end-demo scene edit persists through reboot and gameplay');
-	console.info('STUDIO: Nemesis presentation/gameplay/actor authoring, reboot and relative animation PASS');
+	console.info('STUDIO: Nemesis presentation/gameplay authoring, reboot and relative animation PASS');
 	return { hostFrames: test.observations.hostFrames, selectorX: 88, shipX: 56, shipY: 69 };
 }

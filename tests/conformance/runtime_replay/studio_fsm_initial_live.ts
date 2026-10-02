@@ -47,7 +47,8 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	await revealLensOccurrence(test, lens.view, active.source.rowKey);
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
-	await click(graph.actionBar.items[2].bounds, 6);
+	await click(graph.actionBar.items.find(item => item.command === 'behaviorLens.more')!.bounds);
+	await test.clickContextCommand('behaviorLens.setInitialState', 6);
 	await lens.graphLayout.settled; await frame();
 	const changed = source.replace("'idle'),", "'active'),");
 	check(model.buffer.getText() === changed && cycles() === position && ide.sources.currentBlua32Media === media,

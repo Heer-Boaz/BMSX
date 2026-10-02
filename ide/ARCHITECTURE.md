@@ -379,7 +379,10 @@ context is the invoking control, so admission matches toolbar and palette.
 Code-token positioning occurs only in the code contribution when an action is
 accepted. Graph right-click selects the hit occurrence without starting a drag;
 empty canvas is a separate context. Source change, focus loss and pane detach
-close the popup. Accept hides before execution. Both pointer and keyboard
+close the popup. Accept hides before execution. Quick Input retires the context
+menu before capturing its return focus and command origin, so cancelling a
+replacement picker returns to the invoking control rather than a hidden menu.
+Both pointer and keyboard
 activation wait for physical release so Source cannot turn into a held gesture
 in its destination. Menu colors are shared with the workbench menubar, not
 borrowed from completion. The same controller handles keyboard opening,

@@ -395,8 +395,8 @@ export class RuntimeCartEditor implements CartEditor {
 		this.tabBar.setInput(editorChromeState.tabActions, this.tabBar.focusTarget);
 		this.runtimeTimeline = new RuntimeTimelineControl(this.commands, runtime, rewind, frameNavigation);
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
-		this.quickInput = new QuickInputController();
 		this.contextMenu = new ContextMenuController(inputFocus, pointerCapture);
+		this.quickInput = new QuickInputController(this.contextMenu);
 		this.resourceEditors = createResourceEditorResolver(
 			this.sources,
 		);

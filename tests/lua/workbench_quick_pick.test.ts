@@ -1,3 +1,5 @@
+import { pointerCapture } from '../../ide/input/pointer/capture';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import { ScratchBuffer } from '../../machine/ts/common/scratchbuffer';
 import type { QuickPickHighlight } from '../../ide/workbench/services/quick_input/provider';
@@ -35,8 +37,9 @@ function createPicker(t: TestContext): QuickInputController {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	editorViewState.viewportWidth = 384;
 	editorViewState.viewportHeight = 288;
-	const picker = new QuickInputController();
-	t.after(() => { picker.dispose(); inputFocus.setTarget(null); });
+	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const picker = new QuickInputController(menu);
+	t.after(() => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); });
 	return picker;
 }
 

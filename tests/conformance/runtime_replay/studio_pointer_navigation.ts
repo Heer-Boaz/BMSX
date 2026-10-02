@@ -27,12 +27,12 @@ import { testStudioFsmSelection } from './studio_fsm_selection';
 export type NavigationCart = 'nemesis_s' | 'pietious';
 const CASES = {
 	nemesis_s: {
-		path: 'player/actioneffects.lua', identifier: 'fire_salvo_effect_id', useLine: 16, declarationLine: 7, declarationColumn: 7,
-		behavior: 'FSM nemesis_s.enemy.sneeuwpop.fsm', sourcePath: 'enemies/sneeuwpop.lua', sourceLine: 76, sourceColumn: 5,
+		path: 'player/actioneffects.lua', identifier: 'fire_salvo_effect_id', useStatement: 'actioneffects.register_effect(fire_salvo_effect_id, {',
+		behavior: 'FSM nemesis_s.enemy.sneeuwpop.fsm', sourcePath: 'enemies/sneeuwpop.lua', sourceStatement: 'update = sneeuwpop.update_idle,',
 	},
 	pietious: {
-		path: 'boss/world1_daemon_tree.lua', identifier: 'move_out_backward', useLine: 190, declarationLine: 21, declarationColumn: 8,
-		behavior: 'BT world1_daemon_tree.id', sourcePath: 'boss/world1_daemon_tree.lua', sourceLine: 190, sourceColumn: 14,
+		path: 'boss/world1_daemon_tree.lua', identifier: 'move_out_backward', useStatement: 'move_out_backward,',
+		behavior: 'BT world1_daemon_tree.id', sourcePath: 'boss/world1_daemon_tree.lua', sourceStatement: 'move_out_backward,',
 	},
 } as const;
 
@@ -55,13 +55,18 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 	await frame();
 	const model = activeCodeEditor.model;
 	const original = model.buffer.getText();
-	const useRow = spec.useLine - 1;
+	const useRow = original.split('\n').findIndex(line => line.trim() === spec.useStatement);
+	check(useRow >= 0, `${cart}: fixture use statement exists in the authored source`);
 	const useColumn = model.buffer.getLineContent(useRow).indexOf(spec.identifier);
 	check(useColumn >= 0, `${cart}: actual cart contains the reported identifier use`);
+	const declarationOffset = original.indexOf(`${spec.identifier}<const>`);
+	check(declarationOffset >= 0, `${cart}: fixture declaration exists in the authored source`);
+	const declaration = { row: 0, column: 0 };
+	model.buffer.positionAt(declarationOffset, declaration);
 	const definition = queryDefinitionsAt(ide.luaTooling, activeCodeEditor, useRow, useColumn)!;
 	check(definition.definitions.length === 1 && definition.definitions[0].location.path === spec.path
-		&& definition.definitions[0].location.range.startLine === spec.declarationLine
-		&& definition.definitions[0].location.range.startColumn === spec.declarationColumn,
+		&& definition.definitions[0].location.range.startLine === (declaration.row + 1)
+		&& definition.definitions[0].location.range.startColumn === (declaration.column + 1),
 		`${cart}: semantic source owner already returns the exact local declaration`);
 	console.info(`STUDIO: ${cart} source ranges and held keyboard/Ctrl-click/context-menu/lens navigation`);
 	for (const route of ['keyboard', 'ctrl-click', 'context-menu'] as const) {
@@ -84,12 +89,12 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 				top: menu.viewport.offsetTop + row.top, bottom: menu.viewport.offsetTop + row.bottom }, 6);
 		}
 		for (let index = 0; index < 3; index += 1) await frame();
-		assertSourcePosition(spec.path, spec.declarationLine, spec.declarationColumn, `${cart} ${route}`);
+		assertSourcePosition(spec.path, (declaration.row + 1), (declaration.column + 1), `${cart} ${route}`);
 	}
 	// A real subsequent gesture still selects text; navigation does not suppress
 	// the button until a guessed timeout or consume the next physical press.
-	const row = spec.declarationLine - 1;
-	const column = spec.declarationColumn - 1;
+	const row = declaration.row;
+	const column = declaration.column;
 	movePointer(codePositionBounds(row, column));
 	await frame();
 	setPointerButton('pointer_primary', true);
@@ -107,17 +112,22 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('navigation: actual behavior lens missing');
 	const view = lens.view;
+	const sourceLines = lens.workingCopy.buffer.getText().split('\n');
+	const sourceRow = sourceLines.findIndex(line => line.trim() === spec.sourceStatement);
+	check(sourceRow >= 0, `${cart}: fixture behavior statement exists in the authored source`);
+	const sourceLine = sourceRow + 1;
+	const sourceColumn = sourceLines[sourceRow].indexOf(spec.sourceStatement) + 1;
 	const node = view.source.nodes.find(node => cart === 'nemesis_s'
 		? node.label === 'update = sneeuwpop.update_idle'
-		: node.detail.startsWith('move_out_backward') && node.referenceRange!.start.line === spec.sourceLine)!;
+		: node.detail.startsWith('move_out_backward') && node.referenceRange!.start.line === sourceLine)!;
 	const source = node.referenceRange === null ? node.authoredRange : node.referenceRange;
-	check(source.path === spec.sourcePath && source.start.line === spec.sourceLine && source.start.column === spec.sourceColumn,
-		`${cart}: lens source owner expected ${spec.sourcePath}:${spec.sourceLine}:${spec.sourceColumn}, got ${source.path}:${source.start.line}:${source.start.column}`);
+	check(source.path === spec.sourcePath && source.start.line === sourceLine && source.start.column === sourceColumn,
+		`${cart}: lens source owner expected ${spec.sourcePath}:${sourceLine}:${sourceColumn}, got ${source.path}:${source.start.line}:${source.start.column}`);
 	await revealLensOccurrence(test, view, node.rowKey);
 	const presentation = view.presentation;
 	if (presentation.kind === 'state-graph') {
 		await click(presentation.actionBar.items[0].bounds, 6);
-		assertSourcePosition(spec.sourcePath, spec.sourceLine, spec.sourceColumn, `${cart} held FSM source action`);
+		assertSourcePosition(spec.sourcePath, sourceLine, sourceColumn, `${cart} held FSM source action`);
 	} else {
 		if (presentation.kind !== 'graph') throw new Error('navigation: this fixture requires the concrete BT graph');
 		const viewport = presentation.viewport;
@@ -128,7 +138,7 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 			bottom: card.bounds.bottom + viewport.bounds.top - viewport.scrollY };
 		await click(bounds);
 		await click(bounds, 6);
-		assertSourcePosition(spec.sourcePath, spec.sourceLine, spec.sourceColumn, `${cart} held lens double-click`);
+		assertSourcePosition(spec.sourcePath, sourceLine, sourceColumn, `${cart} held lens double-click`);
 	}
 	check(model.buffer.getText() === original && cycles() === position && ide.sources.currentBlua32Media === media,
 		`${cart}: navigation changes neither source nor paused machine/media`);

@@ -25,12 +25,7 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	let viewport = graph.viewport;
 	const children = () => viewport.model.nodes[0].children[0].children;
 	const duplicate = 'behaviorLens.duplicateChild';
-	const button = graph.actionBar.items.find(item => item.command === duplicate)!;
 	const sourceButton = graph.actionBar.items.find(item => item.command === 'behaviorLens.source')!;
-	for (const item of graph.actionBar.items) {
-		check(item.bounds.left >= viewport.bounds.left && item.bounds.right <= viewport.bounds.right,
-			'BT duplicate: all shared action-bar buttons fit the actual tiny-font viewport');
-	}
 	let version = model.version;
 	check(!ide.editor.commands.isEnabled(duplicate), 'BT duplicate: a registration is not a list member');
 	await press('ControlLeft', 'KeyD');
@@ -42,7 +37,8 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	check(viewport.selection === children()[1] && children()[1].children.length === 2 && ide.editor.commands.isEnabled(duplicate),
 		'BT duplicate: expanded source member is selected through physical navigation');
 	console.info('STUDIO: BT duplicate action ready for visual inspection');
-	await click(button.bounds, 6);
+	await click(graph.actionBar.items.find(item => item.command === 'behaviorLens.more')!.bounds);
+	await test.clickContextCommand(duplicate, 6);
 	const duplicated = BT_ORDER_SOURCE.replace('\t-- nested documentation', '\tnested;\n\t-- nested documentation');
 	check(model.version === version + 1 && model.buffer.getText() === duplicated && children().length === 4
 		&& viewport.selection === children()[2] && children()[2].children.length === 2 && children()[1].children.length === 2,

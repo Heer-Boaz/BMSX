@@ -54,11 +54,12 @@ for (const backend of requestedBackend === undefined ? backends : [requestedBack
 		}
 		if (studio) {
 			await copyFile('dist/graph-layout.worker.js', join(directory, 'graph-layout.worker.js'));
+			const cartFolder = sceneCart !== null ? sceneCart : navigation === null ? 'nemesis_s' : navigation;
 			const sourceRoots = preload ? ['cartlib', 'testlib', 'machine/bios']
-				: [`carts/${sceneCart !== null ? sceneCart : navigation === null ? 'nemesis_s' : navigation}`, 'cartlib', 'machine/bios'];
+				: [`carts/${cartFolder}`, `tests/carts/${cartFolder}`, 'cartlib', 'testlib', 'machine/bios'];
 			for (const root of sourceRoots) {
 				await cp(root, join(directory, root), { recursive: true,
-					filter: async path => (await stat(path)).isDirectory() || path.endsWith('.lua') || path.endsWith('.aem.yaml') || ((sourceSaves || resourceContext || editReview) && /\.ya?ml$/.test(path)) });
+					filter: async path => (await stat(path)).isDirectory() || path.endsWith('.lua') || /\.ya?ml$/.test(path) });
 			}
 		}
 		if (bootOperations) {

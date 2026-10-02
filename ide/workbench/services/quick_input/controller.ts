@@ -1,4 +1,5 @@
 import { pointerHover } from '../../../input/pointer/hover';
+import type { ContextMenuController } from '../context_menu/controller';
 import { PointerButton } from '../../../input/pointer/buttons';
 import { pointerCapture, type PointerCaptureTarget } from '../../../input/pointer/capture';
 import { create_rect_bounds, point_in_rect } from '../../../../machine/ts/common/rect';
@@ -54,7 +55,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		justPressed: false, pointerPressed: false, doubleClickInterval: constants.DOUBLE_CLICK_MAX_INTERVAL_MS,
 	};
 
-	public constructor() {
+	public constructor(private readonly contextMenu: ContextMenuController) {
 		this.unbindKeyboard = this.field.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 		this.field.onDidChangeText(() => {
 			this.cancelPointer();
@@ -76,6 +77,8 @@ export class QuickInputController implements PointerCaptureTarget {
 		accept: (item: T) => void,
 	): void {
 		this.hide();
+		// Retire the popup before retaining the invoking control for this session.
+		this.contextMenu.hide();
 		pointerCapture.cancel();
 		const returnFocus = inputFocus.target;
 		// A provider observes the invoking control after its ordinary blur policy,
@@ -102,6 +105,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		accept: (result: T) => void,
 	): DisposableStore {
 		this.hide();
+		this.contextMenu.hide();
 		pointerCapture.cancel();
 		const returnFocus = inputFocus.target;
 		this.field.focusTarget.focus();

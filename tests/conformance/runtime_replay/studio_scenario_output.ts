@@ -33,8 +33,7 @@ export async function testStudioScenarioOutput(test: StudioFixture): Promise<voi
 	const testRow = view.testPane.rows.find(row => row.kind === 'test')!;
 	if (testRow.kind !== 'test') throw new Error('A05: a test resource supplies context, not message content');
 	// Choose its context through the real test list, independent of the cart's test names/content.
-	if (view.focus === 'results') await press('Tab');
-	if (view.actionBar.hasFocus) await press('Tab');
+	if (view.focus === 'results') await press('ShiftLeft', 'Tab');
 	await press('Home');
 	for (let n = 0; n < view.testPane.rows.indexOf(testRow); n += 1) await press('ArrowDown');
 	const run = service.beginRun(testRow.test.id, [{ test: testRow.test, source: ide.scenarioRuns.collection.findModuleBySourcePath(testRow.test.resource.domain, testRow.test.resource.path).source, sourceRevision: 1 }]);

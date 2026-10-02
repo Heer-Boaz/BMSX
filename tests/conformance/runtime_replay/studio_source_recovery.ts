@@ -63,7 +63,7 @@ export async function testStudioSourceRecovery(test: StudioFixture): Promise<voi
 			await click(bounds);
 			await click(bounds, 8);
 		} else {
-			await click(graph.actionBar.items[1].bounds);
+			await test.runPaletteCommand('Behavior Lens: Open Source Details');
 			const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
 			check(inspector.visible && !ide.editor.quickInput.visible, 'crossfoe: Details opens full source content');
 			await click(inspector.actionBar.items[0].bounds, 8);

@@ -210,6 +210,15 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		check(picker.model.list.selectionIndex === commandIndex, `palette: keyboard selects ${label}`);
 		await press('Enter');
 	};
+	const clickContextCommand = async (command: EditorCommandId, heldFrames = 1) => {
+		const menu = ide.editor.contextMenu;
+		const row = menu.model.rows.find(row => row.command === command)!;
+		check(menu.visible && row !== undefined && row.enabled, `menu command must be available: ${command}`);
+		const viewport = menu.model.viewport;
+		const top = viewport.offsetTop + row.top, bottom = viewport.offsetTop + row.bottom;
+		check(top >= viewport.bounds.top && bottom <= viewport.bounds.bottom, `menu command must be visible: ${command}`);
+		await click({ left: viewport.bounds.left, right: viewport.bounds.right, top, bottom }, heldFrames);
+	};
 	const settle = () => until(() => tasks.ready && !rewind.seeking, 'seek/queue must settle');
 	const guest = ide.luaTooling.suspendedGuest;
 	// Diagnostic reads use the same raw guest representation as the inspector.
@@ -225,7 +234,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	};
 	audio.bootstrap();
 	return { runtime, presenter, ide, execution, rewind, tasks, history, harness, guest, clock, input, clipboard, observations,
-		frame, until, setKey, setPointerButton, press, releaseGuestKey, movePointer, click, clickTab, runMenuCommand, runPaletteCommand, settle, cycles, title, capture };
+		frame, until, setKey, setPointerButton, press, releaseGuestKey, movePointer, click, clickTab, runMenuCommand, runPaletteCommand, clickContextCommand, settle, cycles, title, capture };
 }
 
 export type StudioFixture = Awaited<ReturnType<typeof createStudioFixture>>;

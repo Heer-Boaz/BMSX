@@ -1,3 +1,5 @@
+import { pointerCapture } from '../../ide/input/pointer/capture';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
@@ -38,8 +40,9 @@ function referenceFixture() {
 function pickerFixture(t: TestContext) {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	const picker = new QuickInputController();
-	t.after(() => { picker.dispose(); inputFocus.setTarget(null); });
+	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const picker = new QuickInputController(menu);
+	t.after(() => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); });
 	return picker;
 }
 

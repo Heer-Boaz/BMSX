@@ -97,7 +97,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	await press('ArrowRight');
 	const choice = viewport.selection;
 	if (choice?.kind !== 'node') throw new Error('BT controls: weighted choice not selected');
-	await click(graph.actionBar.items.find(item => item.command === 'behaviorLens.details')!.bounds);
+	await test.runPaletteCommand('Behavior Lens: Open Source Details');
 	const weight = choice.details.find(item => item.label === 'weight')!;
 	check(inspector.model.rows.filter(row => row.element.source?.range === weight.range).length === 1,
 		'BT controls: choice weight has one source property, not a duplicated summary');

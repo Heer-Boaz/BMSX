@@ -1,3 +1,6 @@
+import { ContextMenuController } from '../../../ide/workbench/services/context_menu/controller';
+import { inputFocus } from '../../../ide/input/focus';
+import { pointerCapture } from '../../../ide/input/pointer/capture';
 import assert from 'node:assert/strict';
 import type { LuaSymbolEntry } from '../../../toolchain/ts/lua/semantic_contracts';
 import { buildSymbolQuickPickItems } from '../../../ide/workbench/contrib/code_editor/symbols/quick_access';
@@ -11,7 +14,8 @@ import { medianMilliseconds } from '../../helpers/performance';
 
 configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-const picker = new QuickInputController();
+const menu = new ContextMenuController(inputFocus, pointerCapture);
+const picker = new QuickInputController(menu);
 const names = ['spawn_enemy', 'update_scene', 'before_enter', 'apply_effect', 'start_timeline', 'select_target', 'execute_task', 'dispatch_event'];
 for (const count of [128, 1024, 8192]) {
 	const symbols: LuaSymbolEntry[] = Array.from({ length: count }, (_, index) => ({ name: names[index % names.length],
@@ -36,4 +40,4 @@ for (const count of [128, 1024, 8192]) {
 		}
 	}
 }
-picker.dispose();
+picker.dispose(); menu.dispose();

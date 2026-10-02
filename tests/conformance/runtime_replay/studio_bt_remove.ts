@@ -25,10 +25,7 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	let viewport = graph.viewport;
 	const children = () => viewport.model.nodes[0].children[0].children;
 	const remove = 'behaviorLens.removeChild';
-	const button = graph.actionBar.items.find(item => item.command === remove)!;
 	const sourceButton = graph.actionBar.items.find(item => item.command === 'behaviorLens.source')!;
-	check(button.bounds.left >= viewport.bounds.left && button.bounds.right <= viewport.bounds.right,
-		'BT removal: shared action-bar fits the actual tiny-font viewport');
 	let version = model.version;
 	check(!ide.editor.commands.isEnabled(remove), 'BT removal: registration is not a list member');
 	await press('Delete');
@@ -71,7 +68,12 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	version = model.version;
 	console.info('STUDIO: BT removal action ready for visual inspection');
 	for (const cancel of ['outside', 'escape', 'palette']) {
-		movePointer(button.bounds); await frame(); setPointerButton('pointer_primary', true); await frame();
+		await click(graph.actionBar.items.find(item => item.command === 'behaviorLens.more')!.bounds);
+		const menu = ide.editor.contextMenu.model;
+		const row = menu.rows.find(row => row.command === remove)!;
+		movePointer({ left: menu.viewport.bounds.left, right: menu.viewport.bounds.right,
+			top: menu.viewport.offsetTop + row.top, bottom: menu.viewport.offsetTop + row.bottom });
+		await frame(); setPointerButton('pointer_primary', true); await frame();
 		check(model.version === version, 'A01: Remove is only armed while held');
 		if (cancel === 'outside') movePointer(viewport.bounds);
 		else if (cancel === 'escape') await press('Escape');
@@ -79,17 +81,16 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 		setPointerButton('pointer_primary', false); await frame();
 		if (cancel === 'palette') await press('Escape');
 		check(model.version === version && viewport.selection === children()[1], 'A01: cancelled Remove preserves exact source/selection');
+		if (ide.editor.contextMenu.visible) await press('Escape');
 	}
 	await press('Tab'); await press('End');
-	check(graph.actionBar.items[graph.actionBar.focusedIndex].command === 'graph.zoomIn', 'A01: End reaches the last enabled title action, including graph zoom');
+	check(graph.actionBar.items[graph.actionBar.focusedIndex].command === 'behaviorLens.more', 'A01: End reaches the menu for secondary graph actions');
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
 	await press('Escape');
 	check(graph.actionBar.hasFocus, 'A01: palette dismissal returns to the toolbar');
 	await press('Escape');
-	movePointer(button.bounds); await frame(); setPointerButton('pointer_primary', true);
-	for (let index = 0; index < 6; index += 1) await frame();
-	check(model.version === version, 'A01: held destructive button does not write before release');
-	setPointerButton('pointer_primary', false); await frame();
+	await click(graph.actionBar.items.find(item => item.command === 'behaviorLens.more')!.bounds);
+	await test.clickContextCommand(remove, 6);
 	const removed = BT_ORDER_SOURCE.replace('\tnested; -- nested inline', '\t -- nested inline');
 	check(model.version === version + 1 && model.buffer.getText() === removed && children().length === 2
 		&& viewport.selection === null && lens.view.selection === null && !ide.editor.commands.isEnabled(remove),

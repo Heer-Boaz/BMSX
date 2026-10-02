@@ -79,6 +79,7 @@ export async function testStudioContextMenu(test: StudioFixture): Promise<void> 
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
 	check(!menu.visible && ide.editor.quickInput.visible, 'context menu: command palette replaces popup through normal focus ownership');
 	await press('Escape');
+	check(inputFocus.target === graphFocus, 'context menu: cancelling the replacing palette restores the invoking graph, not the retired popup');
 	await test.clickTab(code.id);
 	await press('ContextMenu');
 	check(menu.visible && inputFocus.target === menu.focusTarget, 'context menu: keyboard route also belongs to code control');

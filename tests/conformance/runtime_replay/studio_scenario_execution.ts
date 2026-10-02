@@ -37,6 +37,7 @@ export async function testStudioScenarioExecution(test: StudioFixture): Promise<
 	await runPaletteCommand('Scenario Lab: Open');
 	execution.setPauseReason(HostPauseReason.Fullscreen, true);
 	await press('Tab'); check(view.focus === 'results', 'A01: Scenario Tab focuses the result control');
+	await press('Tab'); // The shared pane divider is keyboard-resizable.
 	await press('Tab'); check(view.actionBar.hasFocus, 'A01: Scenario Tab reaches the toolbar');
 	await press('Home'); setKey('Enter', true); await frame();
 	check(!view.runActive && execution.userPaused, 'A01: Run is not started on toolbar key down');

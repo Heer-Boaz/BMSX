@@ -42,7 +42,7 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	if (definition.behaviorKind !== 'state_machine') throw new Error('FSM proof: expected the authored machine');
 	const right = definition.transitions.filter(transition => transition.slot.kind === 'update')[1];
 	await revealLensOccurrence(test, view, right.slot.source.rowKey);
-	await click(graph.actionBar.items[1].bounds);
+	await test.runPaletteCommand('Behavior Lens: Open Source Details');
 	const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
 	check(inspector.visible && !picker.visible, 'FSM proof: shared Details action opens readable source evidence');
 	const rows = inspector.model.rows;

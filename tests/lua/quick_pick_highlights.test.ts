@@ -1,3 +1,6 @@
+import { pointerCapture } from '../../ide/input/pointer/capture';
+import { inputFocus } from '../../ide/input/focus';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ScratchBuffer } from '../../machine/ts/common/scratchbuffer';
@@ -114,8 +117,9 @@ test('highlighted labels own prefix clipping and ellipsis, with retained proport
 test('shared picker consumes provider spans, updates them without text queries and renders each theme/font directly', t => {
 	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	const picker = new QuickInputController();
-	t.after(() => { picker.dispose(); constants.setIdeThemeVariant('light'); });
+	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const picker = new QuickInputController(menu);
+	t.after(() => { picker.dispose(); menu.dispose(); constants.setIdeThemeVariant('light'); });
 	const item = { label: 'source_choice', description: 'independent.lua', detail: '7:1' };
 	const highlights = new ScratchBuffer<QuickPickHighlight>(() => ({ field: 'label', start: 0, end: 0 }));
 	const match = { item, itemIndex: 0, highlightStart: 0, highlightEnd: 1 };
