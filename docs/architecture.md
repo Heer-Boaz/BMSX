@@ -1225,7 +1225,7 @@ outcomes do not certify current suite or dependency sources. See
 [test evidence](studio_test_evidence.md).
 Multiple recognized ActionEffect source occurrences use Quick Input with distinct
 resource/position labels, and model changes expire that source choice. This does
-not establish exhaustive behavior origins or implement property authoring. See
+not establish exhaustive behavior origins. See
 [Scenario result inspection](scenario_result_inspection.md).
 The weighted keybinding resolver chooses the applicable contextual command.
 Starting a test run pins source snapshots without leaving the workbench or
@@ -1751,6 +1751,24 @@ selection. Ordinary commands apply their syntax-edit plans through model history
 conversation tools transfer plans to the existing source-context/review owner.
 They never synthesize a Lens or mutate source directly. Source occurrence handles
 are not running instance identities. See [behavior source tools](studio_behavior_tools.md).
+
+[Module authoring](studio_module_authoring.md) extends these owners to
+ActionEffect structure, progression programs, input bindings and Audio Event Maps.
+Lua views resolve written producer arguments through the shared language source
+reader and retain every presented resource's text model. YAML/JSON views retain
+the parser's syntax tokens and patch only the edited collection/value. There is
+no editable cooked definition or second history stack. Dynamic Lua remains
+explicitly unresolved. Source/model changes close stale drafts and pickers.
+Mounted progression contexts and input components are separate runtime choices;
+the readback retains typed scalar identities, not guest tables across execution.
+State revisions refresh progression values, while once-only receipts refresh
+independently. Heap replacement retires choices; history restoration resolves
+bookmarks at the requested position before admitting a new branch.
+Source projections are generation-owned and runtime topology is identity-owned,
+not reconstructed during painting. ActionEffect tests and AEM auditions use
+Actor Lab's real World mutation rendezvous, with domain/readiness admission before
+CPU access. Actionstring experiments create ordinary rerunnable Scenario Lab
+sources and inject real machine input without replacing the cart's player map.
 
 Workbench navigation retains the concrete editor identity and a contribution-owned
 selection/viewstate, not just a code position. Source, definition and Back/Forward

@@ -1,3 +1,10 @@
+import { AemEditorController } from './workbench/contrib/aem/controller';
+import { AemEditorPane } from './workbench/contrib/aem/editor_pane';
+import { AemEditorInputSerializer } from './workbench/contrib/aem/editor_serializer';
+import { LuaProgramController } from './workbench/contrib/lua_program/controller';
+import { LuaProgramEditorPane } from './workbench/contrib/lua_program/editor_pane';
+import { LuaProgramInputSerializer } from './workbench/contrib/lua_program/editor_serializer';
+import { ActionStringTester } from './workbench/contrib/scenario_lab/actionstring';
 import type { PublishedBuildOpenResult } from './workbench/services/builds';
 import type { WorkspaceBuilds } from './workbench/services/builds';
 import type { WorkspaceProjects } from './workbench/services/projects';
@@ -197,6 +204,9 @@ export type CartEditor = {
 	readonly quickInput: QuickInputController;
 	readonly contextMenu: ContextMenuController;
 	readonly behaviorLens: BehaviorLensController;
+	readonly aemEditor: AemEditorController;
+	readonly luaPrograms: LuaProgramController;
+	readonly actionStrings: ActionStringTester;
 	readonly scenarioLab: ScenarioLabController;
 	readonly crossFileRename: CrossFileRenameManager;
 	isActive: boolean;
@@ -241,6 +251,9 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly quickInput: QuickInputController;
 	public readonly contextMenu: ContextMenuController;
 	public readonly behaviorLens: BehaviorLensController;
+	public readonly aemEditor: AemEditorController;
+	public readonly luaPrograms: LuaProgramController;
+	public readonly actionStrings: ActionStringTester;
 	public readonly scenarioLab: ScenarioLabController;
 	public readonly crossFileRename: CrossFileRenameManager;
 	public readonly editorInputSerializers: EditorInputSerializers;
@@ -395,6 +408,8 @@ export class RuntimeCartEditor implements CartEditor {
 				this.debuggerState,
 			),
 			resource_view: () => new ResourceViewerEditorPane(),
+			aem_editor: () => new AemEditorPane(this.resourcePanel, this.aemEditor, this.commands, this.contextMenu),
+			lua_program: () => new LuaProgramEditorPane(this.resourcePanel, this.luaPrograms, this.commands, this.actionStrings, frameNavigation, this.contextMenu),
 			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu),
 			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.actorLab, this.commands, this.contextMenu),
 			game_view: () => new GameViewEditorPane(this.resourcePanel, this.commands, runtime),
@@ -435,7 +450,12 @@ export class RuntimeCartEditor implements CartEditor {
 			behaviorRegistrations,
 			scenarioRuns,
 		);
+		this.aemEditor = new AemEditorController(sources, this.editorPanes, this.quickInput);
+		this.luaPrograms = new LuaProgramController(sources, luaTooling.suspendedGuest, this.editorPanes, this.navigation, this.quickInput, rewind);
+		this.actionStrings = new ActionStringTester(sources, clock, this.quickInput, scenarioRuns, this.scenarioLab);
 		this.editorInputSerializers = {
+			aem_editor: new AemEditorInputSerializer(sources),
+			lua_program: new LuaProgramInputSerializer(sources, this.luaPrograms),
 			terminal: { serialize: () => '', deserialize: () => new TerminalInput(this.terminal) },
 			actor_lab: { serialize: () => '', deserialize: () => this.actorLab.resolveInput() },
 			game_view: { serialize: () => '', deserialize: () => new GameViewInput() },
@@ -460,6 +480,7 @@ export class RuntimeCartEditor implements CartEditor {
 		});
 		this.unsubscribeTextModelChanged = editorTextModelService.onDidChangeContent((model, event) => {
 			this.sceneEditor.onDidChangeContent(model, event);
+			this.luaPrograms.onDidChangeContent(model, event);
 			this.behaviorLens.onDidChangeContent(model, event);
 			if (model.mode === 'lua') {
 				invalidateLuaCommentContextFromRow(model.buffer, event.startRow);
@@ -651,6 +672,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public async shutdown(): Promise<void> {
+		this.luaPrograms.dispose();
 		this.assistant.dispose();
 		this.observedConversation.dispose();
 		this.tools.dispose();

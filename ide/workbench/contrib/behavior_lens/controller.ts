@@ -60,7 +60,7 @@ export class BehaviorLensController {
 		private readonly sources: RuntimeSourceState,
 		private readonly navigation: EditorNavigationController,
 		private readonly editorPanes: EditorPanes,
-		private readonly quickInput: QuickInputController,
+		public readonly quickInput: QuickInputController,
 		public readonly documents: BehaviorSourceDocuments,
 		private readonly createGraphLayoutEngine: GraphLayoutEngineFactory,
 		private readonly guest: SuspendedGuestSession,

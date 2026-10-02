@@ -1,3 +1,4 @@
+import { openCreateResourcePrompt } from '../workbench/contrib/resources/create';
 import { chooseBuild, showBuildJobs } from '../workbench/contrib/builds/commands';
 import { createCartridge } from '../workbench/contrib/projects/commands';
 import { importCartridgeFiles } from '../workbench/contrib/resources/import';
@@ -48,6 +49,7 @@ import { deactivateEditor } from '../workbench/overlay_modes';
 import { inputFocus, type InputFocusTarget } from '../input/focus';
 import { showServerConnection } from '../workbench/contrib/server/connection';
 import { openObservedConversation } from '../workbench/contrib/conversations/quick_access';
+import { getTextFileRuntimeSourceStatus } from '../workbench/services/working_copy/runtime_source_status';
 
 // Source-consuming commands accept the concrete control's value before dirty
 // model selection, prompts or asynchronous source capture (Godot EditorData).
@@ -57,6 +59,11 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown',
 	'behaviorLens.moveChildEarlier', 'behaviorLens.moveChildLater', 'behaviorLens.removeChild', 'behaviorLens.duplicateChild',
 	'behaviorLens.setInitialState', 'behaviorLens.editProperty',
+	'progression.createProgram', 'input.createBindings', 'behaviorLens.createEffect',
+	'aem', 'aem.edit', 'aem.add', 'aem.remove', 'aem.source', 'aem.testEvent',
+	'luaProgram.edit', 'luaProgram.add', 'luaProgram.remove', 'luaProgram.source', 'progression', 'inputBindings',
+	'luaProgram.live', 'luaProgram.testInput', 'input.testActionString',
+	'behaviorLens.addProperty', 'behaviorLens.removeProperty',
 	'sceneEditor', 'behaviorLens', 'sceneEditor.source', 'behaviorLens.source', 'behaviorLens.details',
 	'behaviorLens.preview',
 	'behaviorLens.actionEffects', 'behaviorLens.stateMachines', 'behaviorLens.behaviorTrees',
@@ -147,6 +154,19 @@ export class IdeCommandController {
 			case 'assistant.stop':
 				this.editor.assistantCommands.execute(command);
 				return;
+			case 'aem.testEvent': {
+				const input = getActiveTab()!;
+				if (input.kind === 'aem_editor') {
+					const property = input.tree.rows[input.tree.selectionIndex].element;
+					this.editor.actorLab.auditionEvent(input.workingCopy.resource.domain, property.path[1] as string);
+				}
+				return;
+			}
+			case 'input.testActionString': this.editor.actionStrings.open(this.sources.activeCartridgeSlot); return;
+			case 'behaviorLens.testEffect': { const input = getActiveTab()!; if (input.kind === 'behavior_lens') this.editor.actorLab.testEffect(input.workingCopy.resource.domain); return; }
+			case 'progression.createProgram': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'progression'); return;
+			case 'input.createBindings': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'input'); return;
+			case 'behaviorLens.createEffect': openCreateResourcePrompt(this.editor, this.sources, this.clock, 'action_effect'); return;
 			case 'builds.start': void chooseBuild(this.editor); return;
 			case 'projects.createCartridge': createCartridge(this.editor); return;
 			case 'resources.import': importCartridgeFiles(this.editor, this.sources); return;
@@ -172,7 +192,12 @@ export class IdeCommandController {
 			case 'behaviorLens.inspectRuntimeStateMachine':
 			case 'behaviorLens.inspectRuntimeTree':
 			case 'behaviorLens.inspectRegisteredDefinitions':
+			case 'aem.edit': case 'aem.add': case 'aem.remove': case 'aem.source':
+			case 'luaProgram.edit': case 'luaProgram.add': case 'luaProgram.remove': case 'luaProgram.source':
+			case 'luaProgram.live': case 'luaProgram.selectInstance': case 'luaProgram.playback': case 'luaProgram.testInput':
+			case 'luaProgram.stepFrame': case 'luaProgram.stepFrameBack':
 			case 'behaviorLens.editProperty':
+			case 'behaviorLens.addProperty': case 'behaviorLens.removeProperty':
 			case 'scenarioLab.details':
 			case 'scenarioLab.inspectTarget':
 			case 'scenarioLab.inspectStop':
@@ -359,6 +384,7 @@ export class IdeCommandController {
 			case 'assistant.stop':
 				return this.editor.assistantCommands.isEnabled(command);
 			case 'builds.start': return this.editor.builds !== undefined;
+			case 'progression.createProgram': case 'input.createBindings': case 'behaviorLens.createEffect': return this.isEnabled('createResource');
 			case 'projects.createCartridge': return this.editor.projects !== undefined;
 			case 'resources.import': return this.editor.importFiles !== undefined
 				&& (this.sources.cartridgeSlots[0] !== null || this.sources.cartridgeSlots[1] !== null);
@@ -381,7 +407,12 @@ export class IdeCommandController {
 			case 'behaviorLens.inspectRuntimeStateMachine':
 			case 'behaviorLens.inspectRuntimeTree':
 			case 'behaviorLens.inspectRegisteredDefinitions':
+			case 'aem.edit': case 'aem.add': case 'aem.remove': case 'aem.source':
+			case 'luaProgram.edit': case 'luaProgram.add': case 'luaProgram.remove': case 'luaProgram.source':
+			case 'luaProgram.live': case 'luaProgram.selectInstance': case 'luaProgram.playback': case 'luaProgram.testInput':
+			case 'luaProgram.stepFrame': case 'luaProgram.stepFrameBack':
 			case 'behaviorLens.editProperty':
+			case 'behaviorLens.addProperty': case 'behaviorLens.removeProperty':
 			case 'scenarioLab.details':
 			case 'scenarioLab.inspectTarget':
 			case 'scenarioLab.inspectStop':
@@ -452,6 +483,22 @@ export class IdeCommandController {
 			case 'goToDefinition':
 			case 'callHierarchy':
 				return isActiveLuaCodeTab();
+			case 'aem.testEvent': {
+				const input = getActiveTab();
+				if (input?.kind !== 'aem_editor') return false;
+				const property = input.tree.rows[input.tree.selectionIndex]?.element;
+				return property !== undefined && property.path[0] === 'events' && property.path.length >= 2
+					&& getTextFileRuntimeSourceStatus(this.sources, input.workingCopy) === 'applied'
+					&& this.editor.actorLab.canInteract(input.workingCopy.resource.domain);
+			}
+			case 'aem': return true;
+			case 'input.testActionString': return this.editor.actionStrings.canStart(this.sources.activeCartridgeSlot);
+			case 'behaviorLens.testEffect': {
+				const input = getActiveTab();
+				return input?.kind === 'behavior_lens' && input.view.presentation.kind === 'properties'
+					&& this.editor.actorLab.canInteract(input.workingCopy.resource.domain);
+			}
+			case 'progression': case 'inputBindings':
 			case 'scenarioLab':
 			case 'behaviorLens':
 			case 'behaviorLens.preview':

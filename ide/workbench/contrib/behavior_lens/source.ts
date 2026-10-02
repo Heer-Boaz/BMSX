@@ -9,7 +9,7 @@ import {
 } from '../../../../toolchain/ts/lua/syntax/ast';
 import { staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import { resolveStaticLuaExpressionPath } from '../../../../toolchain/ts/lua/semantic/expression_path';
-import type { BehaviorSourceReader } from './source_reader';
+import type { LuaSourceReader } from '../../../language/lua/source_reader';
 import { resourceIdentityKey, type ResourceIdentity } from '../../../common/resource';
 import type {
 	BehaviorKind,
@@ -27,7 +27,7 @@ export const enum SourceTableIssue {
 }
 
 export type BehaviorRecognizerContext = {
-	readonly reader: BehaviorSourceReader;
+	readonly reader: LuaSourceReader;
 	readonly anchor: string;
 	readonly registrationRange: LuaSourceRange;
 	readonly sourceIncomplete: boolean;

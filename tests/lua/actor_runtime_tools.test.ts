@@ -195,6 +195,24 @@ test('ordinary pane retains stable rows, refreshes changed labels, releases deta
 	input.dispose(); f.stop.dispose();
 });
 
+test('explicit Actor Lab navigation reveals a retained child through collapsed ancestors', t => {
+	const f = fixture(); t.after(() => f.stop.dispose());
+	const choice = readActorChoices(f.sources, f.guest, -1)[0], input = new ActorLabInput();
+	input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = input.actorHashId;
+	const projection = new ActorProjection(input, f.sources, f.guest);
+	projection.update();
+	const root = input.outline.roots[0], selected = root.children[0].children[0].children[0];
+	root.collapsed = true; root.children[0].collapsed = true;
+	assert.equal(projection.update(), false, 'changing selection is independent of guest topology');
+	assert.equal(projection.reveal(selected.element.node.hashId), true);
+	assert.strictEqual(input.outline.rows[input.outline.selectionIndex], selected);
+	assert.equal(root.collapsed, false); assert.equal(root.children[0].collapsed, false);
+	assert.equal(input.selectionHashId, selected.element.node.hashId);
+	input.invalidate(); f.guest.invalidate('execution'); projection.update();
+	assert.strictEqual(input.outline.rows[input.outline.selectionIndex], selected);
+	input.dispose();
+});
+
 test('history selection borrows restored objects and ends when its actor or child is absent', () => {
 	const f = fixture(ENTRY.replace('return world', `function add()
 	probe._components[3] = { id = 'late', enabled = true, _parent_component_index = 3 }

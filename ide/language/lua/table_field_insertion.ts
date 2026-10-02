@@ -5,6 +5,21 @@ import { findLuaTokenAfterPosition, luaTokenLeadingTriviaStart } from '../../../
 import type { EditorTextEdit } from '../../editor/model/text_model';
 import { extractIndentation } from '../../editor/text/indentation';
 import type { TextBuffer } from '../../editor/text/text_buffer';
+import { parseLuaExpressionSource } from '../../../toolchain/ts/lua/analysis/parse';
+import { LuaSyntaxError } from '../../../toolchain/ts/lua/errors';
+
+/** Human-entered expressions must not swallow an untouched field separator. */
+export function validateLuaTableFieldExpression(text: string): string {
+	const fragment = parseLuaExpressionSource(text, '[property]');
+	const { tokens, locations } = fragment;
+	const eof = locations.range(tokens.get(tokens.length - 1)).start;
+	for (const cursor = tokens.cursor(); cursor.token !== undefined; cursor.advance()) {
+		if (cursor.token.type === LuaTokenType.SingleLineCommentTrivia && locations.range(cursor.token).end.line === eof.line) {
+			throw new LuaSyntaxError('End a line comment with a newline before the field separator.', locations.path, eof.line, eof.column);
+		}
+	}
+	return text;
+}
 
 /**
  * Places one complete field source (no exterior trivia/separator) in a current

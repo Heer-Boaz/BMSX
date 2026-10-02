@@ -45,6 +45,7 @@ import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control'
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
 import { buildBehaviorInspection, type BehaviorInspectionProperty } from './inspection';
 import { ActionEffectPropertyEdit, selectedActionEffectProperty } from './action_effect_edit';
+import { addActionEffectProperty, editableActionEffect, removeActionEffectProperty } from './action_effect_authoring';
 
 export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<BehaviorLensInput> {
 	public override getSelection(): BehaviorLensNavigationSelection {
@@ -105,6 +106,15 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		super(resourcePanel);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		this.propertyEdit = new ActionEffectPropertyEdit(this.focusTarget);
+		this.focusTarget.registerCommand('behaviorLens.addProperty', {
+			isEnabled: () => !this.inspector.visible && editableActionEffect(this.input.view) !== undefined,
+			run: () => addActionEffectProperty(this.input.view, this.controller.quickInput),
+		});
+		this.focusTarget.registerCommand('behaviorLens.removeProperty', {
+			isEnabled: () => !this.inspector.visible && editableActionEffect(this.input.view) !== undefined
+				&& selectedActionEffectProperty(this.input.view) !== undefined,
+			run: () => removeActionEffectProperty(this.input.view),
+		});
 		this.focusTarget.registerCommand('behaviorLens.editProperty', {
 			isEnabled: () => {
 				if (this.sourceEditReview.visible || this.inspector.visible) return false;

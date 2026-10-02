@@ -4,6 +4,7 @@ import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { QuickPickItem } from '../../services/quick_input/provider';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
+import { revealWorkbenchListSelection } from '../../ui/list_view';
 import type { ActorLabInput } from './editor_input';
 import { findRuntimeActor, readRuntimeActors, type ActorNode } from './runtime';
 
@@ -51,6 +52,24 @@ export class ActorProjection {
 			if (outline.selectionIndex === -1) input.selectionHashId = 0;
 		}
 		return changed;
+	}
+	/** Explicit navigation also selects retained nodes when runtime topology is unchanged. */
+	public reveal(hashId: number): boolean {
+		const outline = this.input.outline;
+		const find = (nodes: readonly WorkbenchTreeNode<ActorRow>[]): WorkbenchTreeNode<ActorRow> | undefined => {
+			for (const node of nodes) {
+				if (node.element.node.hashId === hashId) return node;
+				const child = find(node.children);
+				if (child !== undefined) return child;
+			}
+		};
+		const selected = find(outline.roots);
+		if (selected === undefined) return false;
+		for (let parent = selected.parent; parent !== null; parent = parent.parent) parent.collapsed = false;
+		rebuildWorkbenchTreeRows(outline, selected);
+		this.input.selectionHashId = hashId;
+		revealWorkbenchListSelection(outline);
+		return true;
 	}
 	private children(parent: WorkbenchTreeNode<ActorRow> | null, nodes: readonly ActorNode[]): void {
 		const siblings = parent === null ? this.input.outline.roots : parent.children;

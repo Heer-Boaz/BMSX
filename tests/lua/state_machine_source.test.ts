@@ -5,7 +5,7 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import type { BehaviorSourceNode } from '../../ide/workbench/contrib/behavior_lens/model';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
-import { BehaviorSourceReader } from '../../ide/workbench/contrib/behavior_lens/source_reader';
+import { LuaSourceReader } from '../../ide/language/lua/source_reader';
 import type { BehaviorRecognizerContext } from '../../ide/workbench/contrib/behavior_lens/source';
 import type { StateMachineSourceDefinition, StateMachineSourceState } from '../../ide/workbench/contrib/behavior_lens/state_machine_model';
 import { bindStateMachineSourcePath, indexStateMachineScopes } from '../../ide/workbench/contrib/behavior_lens/state_machine_scope';
@@ -38,7 +38,7 @@ function stateAt(root: StateMachineSourceDefinition | StateMachineSourceState, .
 }
 
 function context(f: ReturnType<typeof fixture>): BehaviorRecognizerContext {
-	return { reader: new BehaviorSourceReader(semanticSnapshot(f.analysis)),
+	return { reader: new LuaSourceReader(semanticSnapshot(f.analysis)),
 		anchor: '', registrationRange: f.definition.occurrenceRange, sourceIncomplete: f.analysis.syntaxError !== null, behaviorKind: 'state_machine' };
 }
 

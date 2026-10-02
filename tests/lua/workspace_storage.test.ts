@@ -1855,9 +1855,9 @@ test('built-in resolution admits source without opening tabs or stealing the pre
 	assert.equal(editorTabGroup.activeTab, entry);
 	assert.equal(panes.activePane!.input, entry);
 	assert.equal(editorTabGroup.tabs.length, 1);
-	assert.equal(first.kind, 'code_editor'); assert.equal(second.kind, 'code_editor');
-	if (first.kind !== 'code_editor' || second.kind !== 'code_editor') throw new Error('text contribution');
-	assert.equal(first.context, second.context, 'one code view binds the one admitted working copy');
+	assert.equal(first.kind, 'aem_editor'); assert.equal(second.kind, 'aem_editor');
+	if (first.kind !== 'aem_editor' || second.kind !== 'aem_editor') throw new Error('audio event map contribution');
+	assert.equal(first.workingCopy, second.workingCopy, 'both contributions bind the one admitted working copy');
 	openEditorTab(panes, first, { pinned: false });
 	assert.equal(editorTabGroup.previewTab, first);
 	let discarded = 0; second.onWillDispose(() => { discarded += 1; });

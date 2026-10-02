@@ -2,7 +2,7 @@ import { LuaSyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { FileSemanticData, LuaCallSite } from '../../../../toolchain/ts/lua/semantic/model';
 import { getLuaModuleAliasTarget, type ModuleAliasTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
 import type { LuaModuleImportQuery } from '../../../../toolchain/ts/lua/semantic/module_import_query';
-import type { BehaviorSourceReader } from './source_reader';
+import type { LuaSourceReader } from '../../../language/lua/source_reader';
 import type { ResourceIdentity } from '../../../common/resource';
 import type { BehaviorKind, BehaviorRegistrationSource } from './model';
 import { appendBehaviorSourcePath, createBehaviorSourceAnchor, describeExpression } from './source';
@@ -46,7 +46,7 @@ export type BehaviorRegistrationSet = {
 	readonly registrations: readonly BehaviorRegistration[];
 };
 
-export function collectBehaviorRegistrations(resource: ResourceIdentity, reader: BehaviorSourceReader): BehaviorRegistrationSet {
+export function collectBehaviorRegistrations(resource: ResourceIdentity, reader: LuaSourceReader): BehaviorRegistrationSet {
 	const analysis = reader.snapshot.getFileData(resource.path)!;
 	const occurrences = new Map<string, number>();
 	const registrations: BehaviorRegistration[] = [];

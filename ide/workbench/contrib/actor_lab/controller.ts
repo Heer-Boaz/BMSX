@@ -1,3 +1,5 @@
+import { readActionEffectInstances } from '../behavior_lens/action_effect_runtime';
+import type { ResourceDomain } from '../../../common/resource';
 import { COLOR_STATUS_TEXT } from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { CPU } from '../../../../machine/ts/machine/cpu/cpu';
@@ -29,7 +31,7 @@ export class ActorLabController {
 	private current: ActorLabInput | undefined;
 	private projection: ActorProjection;
 	private historyRestorePending = false;
-	public readonly canInteract = () => this.execution.canExecute;
+	public readonly canInteract = (domain?: ResourceDomain) => domain === undefined ? this.execution.canExecute : this.execution.canExecuteIn(domain);
 	public constructor(
 		private readonly sources: RuntimeSourceState,
 		public readonly guest: SuspendedGuestSession,
@@ -65,6 +67,32 @@ export class ActorLabController {
 		openEditorTab(this.panes, input);
 		if (input.actorHashId === 0) this.selectActor(input);
 	}
+	public auditionEvent(domain: ResourceDomain, name: string): void {
+		const input = this.resolveInput();
+		input.running = false;
+		openEditorTab(this.panes, input);
+		if (input.domain === domain) this.refresh(input);
+		if (input.domain !== domain || input.actorHashId === 0) this.selectActor(input, () => { this.refresh(input); this.emitEvent(input, name); }, domain);
+		else this.emitEvent(input, name);
+	}
+	public testEffect(domain: ResourceDomain): void {
+		this.quickInput.pick('TEST GRANTED EFFECT', 'Trigger gates, payload, cooldown and activation use the real instance', (_origin, lifetime) => {
+			lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+			return new TextQuickPickProvider(readActionEffectInstances(this.sources, this.guest, domain).items);
+		}, choice => {
+			const actorHashId = (this.guest.readStringMember(choice.component, 'parent') as import('../../../../machine/ts/machine/cpu/table').Table).hashId;
+			const effectHashId = choice.effect.hashId;
+			const input = this.resolveInput();
+			input.domain = domain;
+			input.actorHashId = actorHashId;
+			input.selectionHashId = actorHashId;
+			input.running = false; input.dirty = true;
+			openEditorTab(this.panes, input);
+			this.refresh(input);
+			if (!this.projection.reveal(effectHashId)) { showEditorMessage('Effect owner is not a mounted world actor.', COLOR_STATUS_TEXT, 4); return; }
+			this.actions(input);
+		});
+	}
 	public refresh(input: ActorLabInput): boolean {
 		// Read the requested history position, not an intermediate replay checkpoint.
 		if (!input.dirty || this.rewind.seeking) return false;
@@ -73,13 +101,13 @@ export class ActorLabController {
 		this.historyRestorePending = false;
 		return changed;
 	}
-	public selectActor(input: ActorLabInput): void {
+	public selectActor(input: ActorLabInput, accepted?: () => void, domain = this.cpu.activeCartridgeSlot()): void {
 		input.running = false;
 		this.quickInput.pick('RUNNING ACTORS', 'Choose the actual instance to experiment with',
 			(_origin, lifetime) => {
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
-				return new TextQuickPickProvider(readActorChoices(this.sources, this.guest, this.cpu.activeCartridgeSlot()));
-			}, choice => { input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = choice.hashId; input.dirty = true; });
+				return new TextQuickPickProvider(readActorChoices(this.sources, this.guest, domain));
+			}, choice => { input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = choice.hashId; input.dirty = true; accepted?.(); });
 	}
 	private run(input: ActorLabInput, request: ActorInvocation, observer?: (result: ActorExecutionResult) => void, current: () => boolean = () => true): void {
 		const generation = this.panes.openGeneration, domain = input.domain, actor = input.actorHashId;
@@ -157,10 +185,10 @@ export class ActorLabController {
 		return node !== undefined && (node.kind === 'actor' || node.kind === 'tree' || node.kind === 'timeline' || node.kind === 'effect'
 			|| node.kind === 'state' && node.path !== undefined);
 	}
-	public emitEvent(input: ActorLabInput): void {
+	public emitEvent(input: ActorLabInput, eventName = ''): void {
 		input.running = false;
 		const target = captureActorTarget(input.domain, runtimeWorld(this.sources, this.guest, input.domain)!.hashId, input.runtime.roots, input.runtime.roots[0], this.guest);
-		const nameLifetime = this.quickInput.input('EMIT FROM ACTOR', 'Event name', '', async text => text, name => {
+		const nameLifetime = this.quickInput.input('EMIT FROM ACTOR', 'Event name', eventName, async text => text, name => {
 			const payloadLifetime = this.quickInput.input(`PAYLOAD / ${name}`, 'Lua literal', '{}', async text => prepareLuaLiteral(text), payload => {
 				this.run(input, { kind: 'event', target, name, payload });
 			});

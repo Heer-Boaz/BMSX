@@ -1,5 +1,5 @@
 import type { LuaTableConstructorExpression } from '../../../toolchain/ts/lua/syntax/ast';
-import { BehaviorSourceReader } from '../../../ide/workbench/contrib/behavior_lens/source_reader';
+import { LuaSourceReader } from '../../../ide/language/lua/source_reader';
 import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
 import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
@@ -24,10 +24,10 @@ for (const registrations of [24, 1024]) {
 	const model = new EditorTextModel(resource, 'lua', source);
 	const view = createBehaviorLensViewState(document, model, 'outline', assert.fail);
 	const inputRefreshMs = medianMilliseconds(() => { installBehaviorLensDocument(view, document); });
-	const registrationSet = collectBehaviorRegistrations(resource, new BehaviorSourceReader(snapshot));
+	const registrationSet = collectBehaviorRegistrations(resource, new LuaSourceReader(snapshot));
 	const registration = registrationSet.registrations[0];
 	const context: BehaviorRecognizerContext = {
-		reader: new BehaviorSourceReader(snapshot),
+		reader: new LuaSourceReader(snapshot),
 		anchor: registration.anchor, registrationRange: registration.callSite.expression.range, sourceIncomplete: false, behaviorKind: 'action_effect',
 	};
 	const active = new Set<LuaTableConstructorExpression>();

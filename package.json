@@ -32,7 +32,8 @@
 		"ts-morph": "*",
 		"tsx": "*",
 		"typescript": "^6.0.3",
-		"ws": "^8.22.0"
+		"ws": "^8.22.0",
+		"yaml": "^2.9.1"
 	},
 	"scripts": {
 		"headless:game": "node dist/host_headless.debug.js --system-rom dist/system/bmsx-bios.debug.rom",

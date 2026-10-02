@@ -748,6 +748,11 @@ function input.stick_directions(stick, actuation_q16)
 	}
 end
 
+-- Membership is observable without creating/replacing a player's bindings.
+function input.has_player(index)
+	return players[index] ~= nil
+end
+
 function input.add_player(index)
 	local player<const> = new_player(index)
 	players[index] = player

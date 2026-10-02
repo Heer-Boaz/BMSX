@@ -21,6 +21,12 @@ export function parseLuaChunk(source: string, path: string): ParsedLuaChunk {
 	return { chunk, tokens, syntaxError: null };
 }
 
+/** The expression grammar, including its source locations, without a synthetic chunk. */
+export function parseLuaExpressionSource(source: string, path: string) {
+	const tokens = new LuaLexer(source, path).scanTokens();
+	return { ...new LuaParser(tokens, path, source).parseExpressionOnly(), tokens };
+}
+
 export function parseLuaChunkWithRecovery(source: string, path: string): ParsedLuaChunk {
 	const lexer = new LuaLexer(source, path);
 	const tokens = lexer.scanSequence();

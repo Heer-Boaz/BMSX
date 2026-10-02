@@ -24,6 +24,9 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 		case 'behaviorLens.actionEffects':
 		case 'behaviorLens.stateMachines':
 		case 'behaviorLens.behaviorTrees':
+		case 'aem':
+		case 'progression':
+		case 'inputBindings':
 		case 'scenarioLab':
 		case 'sceneEditor':
 		case 'actorLab':
@@ -69,6 +72,9 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 		case 'behaviorLens.behaviorTrees':
 			editor.behaviorLens.open('behavior_tree');
 			return;
+		case 'aem': editor.aemEditor.open(); return;
+		case 'progression': editor.luaPrograms.open('progression'); return;
+		case 'inputBindings': editor.luaPrograms.open('input'); return;
 		case 'scenarioLab':
 			editor.scenarioLab.open();
 			return;

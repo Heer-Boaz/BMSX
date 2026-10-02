@@ -1,9 +1,9 @@
-import type { LuaExpression } from '../../../../toolchain/ts/lua/syntax/ast';
-import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
-import { writtenSourceExpression, type LuaWrittenExpression, type LuaWrittenSourceTrace } from '../../../../toolchain/ts/lua/semantic/written_sources';
+import type { LuaExpression } from '../../../toolchain/ts/lua/syntax/ast';
+import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
+import { writtenSourceExpression, type LuaWrittenExpression, type LuaWrittenSourceTrace } from '../../../toolchain/ts/lua/semantic/written_sources';
 
 /** Source projection over one workspace, not an evaluator or a runtime instance resolver. */
-export class BehaviorSourceReader {
+export class LuaSourceReader {
 	public readonly files = new Set<FileSemanticData>();
 	public syntaxComplete = true;
 	private readonly traces = new Map<LuaExpression, LuaWrittenSourceTrace>();

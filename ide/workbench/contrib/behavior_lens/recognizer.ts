@@ -17,7 +17,7 @@ import {
 	type BehaviorRecognizerContext,
 	type SourceNodeInput,
 } from './source';
-import { BehaviorSourceReader } from './source_reader';
+import { LuaSourceReader } from '../../../language/lua/source_reader';
 import { buildStateMachineBody } from './state_machine';
 import { buildStateMachineRelations } from './state_machine_relations';
 
@@ -30,7 +30,7 @@ export function buildBehaviorSourceDocument(
 	snapshot: LuaSemanticWorkspaceSnapshot,
 ): BehaviorSourceDocument {
 	const analysis = snapshot.getFileData(resource.path)!;
-	const reader = new BehaviorSourceReader(snapshot);
+	const reader = new LuaSourceReader(snapshot);
 	reader.files.add(analysis);
 	const { registrations } = collectBehaviorRegistrations(resource, reader);
 	const definitions: BehaviorSourceDefinition[] = [];
@@ -46,7 +46,7 @@ export function buildBehaviorSourceDocument(
 }
 
 function buildDefinition(
-	reader: BehaviorSourceReader,
+	reader: LuaSourceReader,
 	registration: BehaviorRegistration,
 ): BehaviorSourceDefinition {
 	const file = registration.file;

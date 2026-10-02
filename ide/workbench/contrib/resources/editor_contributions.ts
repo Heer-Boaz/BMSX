@@ -1,3 +1,5 @@
+import { resolveAemEditorInput } from '../aem/controller';
+import { WORKBENCH_AEM_EDITOR_ID } from '../aem/editor_input';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { resolveTextCodeEditorInput, resolveLuaCodeEditorInput } from '../../ui/code_tab/io';
 import { resolveResourceViewerInput } from './view_tabs';
@@ -18,6 +20,11 @@ export function createResourceEditorResolver(
 			id: WORKBENCH_TEXT_EDITOR_ID,
 			selector: { kind: 'asset_type', assetType: 'lua' },
 			createEditorInput: resource => resolveLuaCodeEditorInput(sources, resource),
+		},
+		{
+			id: WORKBENCH_AEM_EDITOR_ID,
+			selector: { kind: 'asset_type', assetType: 'aem' },
+			createEditorInput: resource => resolveAemEditorInput(sources, resource),
 		},
 		{
 			id: WORKBENCH_TEXT_EDITOR_ID,

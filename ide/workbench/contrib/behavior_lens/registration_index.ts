@@ -7,7 +7,7 @@ import type {
 	BehaviorKind,
 	BehaviorRegistrationSource,
 } from './model';
-import { BehaviorSourceReader } from './source_reader';
+import { LuaSourceReader } from '../../../language/lua/source_reader';
 import { collectBehaviorRegistrations } from './registrations';
 
 const EMPTY_REGISTRATION_SOURCES: readonly BehaviorRegistrationSource[] = [];
@@ -56,7 +56,7 @@ export class BehaviorRegistrationIndex {
 		executionDomain: ResourceDomain,
 		snapshot: LuaSemanticWorkspaceSnapshot,
 	): BehaviorRegistrationGeneration {
-		const reader = new BehaviorSourceReader(snapshot);
+		const reader = new LuaSourceReader(snapshot);
 		const allRegistrations: BehaviorRegistrationSource[] = [];
 		const sourcesByKind = new Map<
 			BehaviorKind,

@@ -1,4 +1,4 @@
-import { BehaviorSourceReader } from '../../ide/workbench/contrib/behavior_lens/source_reader';
+import { LuaSourceReader } from '../../ide/language/lua/source_reader';
 import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -43,7 +43,7 @@ tree:register('colon', {})`, 'actors.lua');
 		buildLuaFileSemanticData("return require('cartlib/behaviour_tree/library')", 'tree_middle.lua'),
 		buildLuaFileSemanticData("local effects = require('cartlib/actioneffects'); return effects.register_effect", 'effect_bridge.lua'));
 	const resource = { domain: 0, path: main.file } as const;
-	const reader = new BehaviorSourceReader(snapshot);
+	const reader = new LuaSourceReader(snapshot);
 	const registrations = collectBehaviorRegistrations(resource, reader).registrations;
 	assert.deepEqual(registrations.map(entry => entry.semanticId), ['one', 'two', 'three', 'four']);
 	assert.ok(registrations.every(entry => entry.resource === resource && entry.range.path === main.file));
@@ -145,7 +145,7 @@ test('behavior lens distinguishes multiple FSMs and same-named states in one Lua
 	assert.notEqual(states[0][0].rowKey, states[1][0].rowKey);
 	assert.notEqual(states[0][1].rowKey, states[1][1].rowKey);
 	assert.deepEqual(
-		collectBehaviorRegistrations(resource, new BehaviorSourceReader(semanticSnapshot(analysis))).registrations.map(registration => [
+		collectBehaviorRegistrations(resource, new LuaSourceReader(semanticSnapshot(analysis))).registrations.map(registration => [
 			registration.semanticId, registration.range.start.line,
 		]),
 		[['player', 2], ['enemy', 3]],
@@ -192,7 +192,7 @@ test('behavior registration correspondence resolves literal and immutable const 
 	const nemesisPath = 'carts/nemesis_s/player/actioneffects.lua';
 	const nemesis = collectBehaviorRegistrations(
 		{ domain: 0, path: nemesisPath },
-		new BehaviorSourceReader(semanticSnapshot(buildLuaFileSemanticData(readFileSync(nemesisPath, 'utf8'), nemesisPath))),
+		new LuaSourceReader(semanticSnapshot(buildLuaFileSemanticData(readFileSync(nemesisPath, 'utf8'), nemesisPath))),
 	).registrations;
 	assert.equal(nemesis.length, 1);
 	assert.deepEqual({
@@ -210,7 +210,7 @@ test('behavior registration correspondence resolves literal and immutable const 
 	const pietiousPath = 'carts/pietious/player/actioneffects.lua';
 	const pietious = collectBehaviorRegistrations(
 		{ domain: 1, path: pietiousPath },
-		new BehaviorSourceReader(semanticSnapshot(buildLuaFileSemanticData(readFileSync(pietiousPath, 'utf8'), pietiousPath))),
+		new LuaSourceReader(semanticSnapshot(buildLuaFileSemanticData(readFileSync(pietiousPath, 'utf8'), pietiousPath))),
 	).registrations;
 	assert.deepEqual(
 		pietious.map(source => source.semanticId),
@@ -232,7 +232,7 @@ test('behavior registration discovery retains duplicates and leaves dynamic ids 
 	].join('\n');
 	const registrations = collectBehaviorRegistrations(
 		{ domain: 0, path },
-		new BehaviorSourceReader(semanticSnapshot(buildLuaFileSemanticData(source, path))),
+		new LuaSourceReader(semanticSnapshot(buildLuaFileSemanticData(source, path))),
 	).registrations;
 	assert.deepEqual(
 		registrations.map(registration => [

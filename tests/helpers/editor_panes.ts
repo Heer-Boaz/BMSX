@@ -4,6 +4,8 @@ import type { AssistantInput } from '../../ide/workbench/contrib/assistant/edito
 import type { EditorPaneSelection } from '../../ide/workbench/services/editor/editor_selection';
 import { CodeEditorNavigationSelection } from '../../ide/workbench/contrib/code_editor/navigation_selection';
 import type { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
+import type { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
+import type { LuaProgramInput } from '../../ide/workbench/contrib/lua_program/editor_input';
 import type { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor_input';
 import type { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import type { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
@@ -91,6 +93,8 @@ export function createTestEditorPanes(): EditorPanes {
 		workspace_edit_review: () => new TestEditorPane<WorkspaceEditReviewInput>(activateViewInput),
 		code_editor: () => new TestEditorPane<CodeEditorInput>(activateCodeEditorTab, input => new CodeEditorNavigationSelection(input)),
 		resource_view: () => new TestEditorPane<ResourceViewerInput>(activateViewInput),
+		aem_editor: () => new TestEditorPane<AemEditorInput>(activateViewInput),
+		lua_program: () => new TestEditorPane<LuaProgramInput>(activateViewInput),
 		behavior_lens: () => new TestEditorPane<BehaviorLensInput>(activateViewInput),
 		scenario_lab: () => new TestEditorPane<ScenarioLabInput>(activateViewInput),
 		scene_editor: () => new TestEditorPane<SceneEditorInput>(activateViewInput),

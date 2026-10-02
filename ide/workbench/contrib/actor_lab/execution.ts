@@ -68,6 +68,9 @@ export class ActorExecutionService {
 	public get canControl(): boolean {
 		return this.active !== undefined && this.tasks.ready && this.debuggerState.plans.workbenchControlActive && this.fault.faultSnapshot === null;
 	}
+	public canExecuteIn(domain: ResourceDomain): boolean {
+		return this.canExecute && domain === this.runtime.machine.cpu.activeCartridgeSlot();
+	}
 	public get paused(): boolean { return this.debuggerState.plans.controlSuspended || this.debuggerState.source.stop !== undefined; }
 	public observe(operation: ActorExecutionOperation) {
 		return { id: operation.id, invoked: operation.invoked, revoked: operation.revoked,

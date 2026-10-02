@@ -1,3 +1,5 @@
+import type { AemEditorInput } from '../../contrib/aem/editor_input';
+import type { LuaProgramInput } from '../../contrib/lua_program/editor_input';
 import type { ConversationObserverInput } from '../../contrib/conversations/editor_input';
 import type { AssistantInput } from '../../contrib/assistant/editor_input';
 import type { TerminalInput } from '../../contrib/terminal/editor_input';
@@ -22,7 +24,9 @@ export type EditorInput =
 	| GameViewInput
 	| AssistantInput
 	| WorkspaceEditReviewInput
-	| SceneEditorInput;
+	| SceneEditorInput
+	| LuaProgramInput
+	| AemEditorInput;
 
 export type EditorInputKind = EditorInput['kind'];
 

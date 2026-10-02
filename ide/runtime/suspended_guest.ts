@@ -101,7 +101,8 @@ export class SuspendedGuestSession {
 	public matchesIdentity(value: Value, identity: SuspendedValueIdentity): boolean {
 		return valueTag(value) === identity.tag && this.identityScalar(value, identity.tag) === identity.scalar;
 	}
-	private identityScalar(value: Value, tag: ValueTag): number {
+	/** Scalar part for retained, typed identity indexes; never retains a guest reference. */
+	public identityScalar(value: Value, tag: ValueTag): number {
 		switch (tag) {
 			case ValueTag.Nil: case ValueTag.False: case ValueTag.True: return 0;
 			case ValueTag.Number: return value as number;

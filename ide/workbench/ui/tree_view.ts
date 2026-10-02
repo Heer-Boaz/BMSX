@@ -108,3 +108,35 @@ export function workbenchTreeTwistieContainsPosition<Element>(state: WorkbenchTr
 	const left = state.layout.contentLeft + node.depth * state.layout.indentWidth;
 	return node.expandable && viewportX >= left && viewportX < left + state.layout.twistieWidth;
 }
+
+export type WorkbenchTreeViewSnapshot = {
+	readonly collapsed: readonly string[];
+	readonly selected?: string;
+	readonly scroll: number;
+};
+
+/** Persistent presentation state is keyed by the contribution's source identity, not row ordinals. */
+export function captureWorkbenchTreeView<Element>(state: WorkbenchTreeState<Element>, key: (element: Element) => string): WorkbenchTreeViewSnapshot {
+	const collapsed: string[] = [];
+	const visit = (nodes: readonly WorkbenchTreeNode<Element>[]) => {
+		for (const node of nodes) { if (node.collapsed) collapsed.push(key(node.element)); visit(node.children); }
+	};
+	visit(state.roots);
+	return { collapsed, selected: state.rows[state.selectionIndex] === undefined ? undefined : key(state.rows[state.selectionIndex].element), scroll: state.scroll };
+}
+
+export function restoreWorkbenchTreeView<Element>(state: WorkbenchTreeState<Element>, view: WorkbenchTreeViewSnapshot, key: (element: Element) => string): void {
+	const collapsed = new Set(view.collapsed);
+	let selected: WorkbenchTreeNode<Element> | null = null;
+	const visit = (nodes: readonly WorkbenchTreeNode<Element>[]) => {
+		for (const node of nodes) {
+			const id = key(node.element);
+			node.collapsed = collapsed.has(id);
+			if (id === view.selected) selected = node;
+			visit(node.children);
+		}
+	};
+	visit(state.roots);
+	rebuildWorkbenchTreeRows(state, selected);
+	state.scroll = view.scroll;
+}

@@ -1,5 +1,5 @@
 import type { LuaTableConstructorExpression } from '../../../toolchain/ts/lua/syntax/ast';
-import { BehaviorSourceReader } from '../../../ide/workbench/contrib/behavior_lens/source_reader';
+import { LuaSourceReader } from '../../../ide/language/lua/source_reader';
 import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
 import { indexStateMachineSource } from '../../../ide/workbench/contrib/behavior_lens/state_machine_index';
@@ -39,10 +39,10 @@ machines.register('profile', { initial = 'lane0', states = { ${Array.from({ leng
 	const selectedProofMapMs = medianMilliseconds(() => {
 		for (let index = 0; index < 1000; index += 1) mapStateMachineSourceSelection(selected, model.resource, roundtrip);
 	}) / 1000;
-	const registrationSet = collectBehaviorRegistrations(resource, new BehaviorSourceReader(snapshot));
+	const registrationSet = collectBehaviorRegistrations(resource, new LuaSourceReader(snapshot));
 	const registration = registrationSet.registrations[0];
 	const context: BehaviorRecognizerContext = {
-		reader: new BehaviorSourceReader(snapshot),
+		reader: new LuaSourceReader(snapshot),
 		anchor: registration.anchor, registrationRange: registration.callSite.expression.range, sourceIncomplete: false, behaviorKind: 'state_machine',
 	};
 	const active = new Set<LuaTableConstructorExpression>();
