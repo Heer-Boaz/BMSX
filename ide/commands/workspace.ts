@@ -1,7 +1,6 @@
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import { getActiveTab } from '../workbench/ui/tabs';
 import { openCreateResourcePrompt } from '../workbench/contrib/resources/create/index';
-import { showActionPrompt } from '../workbench/contrib/modal/action_prompt';
 import { TextEditorInput } from '../workbench/common/editor_input';
 import type { TextFileSaveService } from '../workbench/services/working_copy/text_file_save';
 import { saveTextFileFromCommand } from './source_save';
@@ -68,7 +67,9 @@ export function executeEditorWorkspaceCommand(
 			const requestAction = (request: EditorActionRequest): void => {
 				const dirtyWorkingCopies = editorTextModelService.dirtyWorkingCopies;
 				if (request.action !== 'theme-toggle' && dirtyWorkingCopies.length !== 0) {
-					showActionPrompt(request, dirtyWorkingCopies);
+					void editor.actionPrompt.show(request.action).then(choice => {
+						if (choice !== 'cancel') return editor.commands.executeConfirmedAction(request, dirtyWorkingCopies, choice === 'save-continue');
+					}).catch(error => editor.handleRuntimeTaskError(error, 'Source action failed'));
 					return;
 				}
 				performEditorAction(editor, hotResumes, boots, execution, overlayRenderer, audioOutput, logOutput, request);

@@ -1,5 +1,4 @@
 import { check, type StudioFixture } from './studio_fixture';
-import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { runtimeErrorState } from '../../../ide/editor/contrib/runtime_error/state';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
@@ -29,7 +28,7 @@ export async function runStudioBootOperations(test: StudioFixture) {
 	check(source !== model.buffer.getText(), 'boot: startup loaded the deliberately invalid project file');
 	harness.replaceActiveCodeSource(source);
 	await runMenuCommand('reboot');
-	check(actionPromptState.prompt?.request.action === 'reboot', 'boot: source repair enters the normal Save/Reboot prompt');
+	check(test.ide.editor.actionPrompt.visible, 'boot: source repair enters the normal Save/Reboot prompt');
 	await press('Enter');
 	await until(() => ide.boots.latestOperation !== startup && ide.boots.latestOperation!.result !== null && tasks.ready,
 		'boot: accepted repair completes the actual reset');

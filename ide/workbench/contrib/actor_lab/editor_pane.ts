@@ -32,10 +32,12 @@ import type { ActorLabController } from './controller';
 import type { ActorLabInput } from './editor_input';
 import type { ActorNode } from './runtime';
 import { drawActorLab } from './render';
+import { GameInputControl } from '../game_view/game_input';
 import { WorkbenchGraphControl, WorkbenchGraphPointerResult } from '../../ui/graph/control';
 import type { ActorStateGraph } from './state_graph';
 
 export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInput> {
+	private readonly gameInput = new GameInputControl(this.focusTarget);
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly timelineSlider: WorkbenchSliderControl;
 	private readonly scrub = (node: ActorNode, time: number, program: number, current: () => boolean, finished: (completed: boolean) => void) =>
@@ -102,16 +104,17 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.split.setInput(this.input.split);
 		this.timelineSlider.setInput(this.input.timeline.slider);
 		this.update();
+		this.gameInput.setInput(this.input.previewBounds);
 	}
 	public override clearInput(): void {
-		this.inspector.hide(); this.actions.clearInput();
+		this.inspector.hide(); this.gameInput.clearInput(); this.actions.clearInput();
 		this.graph.clearInput(); this.boundGraph = undefined;
 		this.focusTarget.commandContext = this.focusTarget;
 		this.split.focusTarget.commandContext = this.focusTarget;
 		this.timelineSlider.focusTarget.commandContext = this.focusTarget;
 		this.split.clearInput(); this.timelineSlider.clearInput(); this.input.timeline.clear(); this.input.running = false; this.input.invalidate(); this.scrollbar.cancelPointer(); super.clearInput();
 	}
-	public override dispose(): void { this.inspector.dispose(); this.actions.dispose(); this.graph.dispose(); this.split.dispose(); this.timelineSlider.dispose(); this.scrollbar.cancelPointer(); super.dispose(); }
+	public override dispose(): void { this.inspector.dispose(); this.gameInput.dispose(); this.actions.dispose(); this.graph.dispose(); this.split.dispose(); this.timelineSlider.dispose(); this.scrollbar.cancelPointer(); super.dispose(); }
 	public override update(): void {
 		const input = this.input;
 		const readback = input.dirty;
@@ -146,9 +149,12 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.actions.focusTarget.next = input.timeline.slider.interactive ? this.timelineSlider.focusTarget : this.split.focusTarget;
 		this.timelineSlider.focusTarget.next = this.split.focusTarget;
 		this.split.focusTarget.previous = input.timeline.slider.interactive ? this.timelineSlider.focusTarget : this.actions.focusTarget;
-		this.split.focusTarget.next = input.stateGraph === undefined ? this.focusTarget : this.graph.focusTarget;
+		this.split.focusTarget.next = input.stateGraph === undefined ? this.gameInput.focusTarget : this.graph.focusTarget;
 		this.split.focusTarget.next.previous = this.split.focusTarget;
-		this.graph.focusTarget.next = this.actions.focusTarget;
+		this.graph.focusTarget.next = this.gameInput.focusTarget;
+		this.gameInput.focusTarget.previous = input.stateGraph === undefined ? this.split.focusTarget : this.graph.focusTarget;
+		this.gameInput.focusTarget.next = this.focusTarget;
+		this.focusTarget.previous = this.gameInput.focusTarget;
 		input.timeline.executePending(this.controller.selected(input), this.controller.canInteract(), this.scrub);
 		this.actions.update();
 		this.inspector.update();
@@ -163,6 +169,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			drawWorkbenchPropertyInspector(this.inspector);
 		} else {
 			drawActorLab(this.input, this.commands.gamePlaybackState, this.timelineSlider.focusTarget.hasFocus, this.graph.hover, this.graph.focusTarget.hasFocus);
+			this.gameInput.draw();
 			drawWorkbenchSplit(this.input.split, this.split.hovered || this.split.focusTarget.hasFocus);
 		}
 	}
@@ -193,6 +200,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	}
 	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean, now: number): boolean {
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
+		if (this.gameInput.handlePointer(snapshot)) return false;
 		if (this.split.handlePointer(snapshot) || this.actions.handlePointer(snapshot) || this.input.timeline.visible && this.timelineSlider.handlePointer(snapshot)
 			|| this.input.stateGraph === undefined && this.scrollbar.handlePointer(snapshot, this.input.outline.scrollbar)) return true;
 		if (this.input.stateGraph !== undefined) {

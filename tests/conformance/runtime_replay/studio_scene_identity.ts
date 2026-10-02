@@ -1,4 +1,3 @@
-import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { resolveRuntimeLuaSource } from '../../../ide/runtime/sources';
 import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path';
 import { openSceneEditor } from './studio_scene_source';
@@ -60,12 +59,13 @@ export async function testScenePlacementIdentity(test: StudioFixture): Promise<v
 			}
 		}
 		check(cycles() === before, 'identity: moving authored names never mutates the paused machine');
+		const previousMedia = test.ide.sources.currentBlua32Media;
 		await press('ControlLeft', 'ShiftLeft', 'KeyS');
-		check(actionPromptState.prompt !== null && documents.every(document => actionPromptState.prompt!.workingCopies.includes(document.model)),
-			'identity: ordinary Save & Hot Resume owns all five changed working copies');
+		check(test.ide.editor.actionPrompt.visible,
+			'identity: changed sources require confirmation before applying');
 		await press('Enter');
 		await test.until(() => test.tasks.ready && !test.runtime.completionCallPending() && !ide.debugger.plans.mutationActive
-			&& actionPromptState.prompt === null, 'identity: five-document source application completes normal registration');
+			&& test.ide.sources.currentBlua32Media !== previousMedia, 'identity: five-document source application completes normal registration');
 		for (const document of documents) {
 			const expected = revision === 0 ? document.prototypeOwned : document.source;
 			const path = resolveRuntimeLuaSource(ide.sources, document.model.resource)!.record.module_path;

@@ -37,7 +37,6 @@ import { getCodeTabContexts } from '../../../ide/workbench/ui/code_tab/contexts'
 import { runtimeErrorState } from '../../../ide/editor/contrib/runtime_error/state';
 import { TOP_BAR_MENUS } from '../../../ide/workbench/ui/top_bar/menu';
 import { hoverState } from '../../../ide/editor/contrib/hover/state';
-import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { HistoryMode } from '../../../machine/ts/machine/runtime/history/history';
 import { IO_INP_KEYS, IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
 import { IO_WORD_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
@@ -127,12 +126,12 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await press('KeyQ');
 	const pendingQuery = editorSearchState.field.text;
 	await press('ControlLeft', 'ShiftLeft', 'KeyS');
-	check(actionPromptState.prompt?.request.action === 'hot-resume', 'real command opens dirty-source prompt');
+	check(test.ide.editor.actionPrompt.visible, 'real command opens dirty-source prompt');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === firstInstalledSource && editorSearchState.field.text === pendingQuery,
 		'focus: modal keyboard scope blocks both document and field history');
 	await click(editorChromeState.menuEntryBounds.edit);
-	check(editorChromeState.openMenuId === null && actionPromptState.prompt !== null,
+	check(editorChromeState.openMenuId === null && test.ide.editor.actionPrompt.visible,
 		'focus: modal pointer scope blocks underlying editor commands');
 	await press('Enter');
 	await until(() => tasks.ready && ide.sources.currentBlua32Media !== oldMedia && !ide.debugger.plans.controlActive,

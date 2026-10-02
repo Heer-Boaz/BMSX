@@ -87,9 +87,10 @@ export async function runStudioGameInput(test: StudioFixture) {
 	input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal);
 	check((sample.keyWords[usage >>> 5] & keyMask) !== 0, 'focused paused viewport still owns normal input routing');
 	ide.editor.gamePanel.close();
+	await frame();
 	input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal);
 	check(inputFocus.target?.guestInputBounds === undefined && sample.keyWords.every(word => word === 0),
-		'hiding a focused panel immediately revokes guest input, before another host frame');
+		'hiding a focused panel revokes guest input at the next host sampling boundary');
 	setKey('KeyZ', false);
 	await runPaletteCommand('View: Game');
 	await runPaletteCommand('Game: Play / Pause');
@@ -103,10 +104,70 @@ export async function runStudioGameInput(test: StudioFixture) {
 	setKey('KeyZ', true);
 	await frame();
 	harness.openLuaSource('cart.lua');
+	await frame();
 	input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal);
 	check(sample.keyWords.every(word => word === 0) && ide.editor.executionSuspended,
-		'opening another editor revokes viewport input immediately');
+		'opening another editor revokes viewport input before the guest samples again');
 	setKey('KeyZ', false);
+
+	await runPaletteCommand('Actor Lab: Open');
+	await press('Enter');
+	const actor = getActiveTab();
+	if (actor.kind !== 'actor_lab') throw new Error('Actor Lab required');
+	await click(actor.previewBounds);
+	check(inputFocus.target?.guestInputBounds === actor.previewBounds && !ide.editor.executionSuspended,
+		'Actor Lab preview shares guest focus and releases the authoring hold');
+	setKey('KeyZ', true);
+	await until(() => (runtime.machine.memory.readIoU32(keyAddress) & keyMask) !== 0, 'Actor Lab keyboard reaches the real ICU');
+	await test.releaseGuestKey('KeyZ');
+	await test.capture?.('actor-game-focused');
+	await press('ShiftLeft', 'F1');
+	const actorHeld = cycles();
+	await frame(); await frame();
+	check(cycles() === actorHeld && ide.editor.capturesGuestInput, 'leaving Actor Lab game focus restores its authoring hold');
+	await runPaletteCommand('Actor Lab: Inspect Instance');
+	check(!ide.editor.editorPanes.activePane!.showsGameFrame, 'instance inspection replaces the embedded preview');
+	await click(actor.previewBounds);
+	check(inputFocus.target?.guestInputBounds === undefined && ide.editor.capturesGuestInput,
+		'a hidden Actor Lab preview cannot take input through the inspector');
+	await press('Escape');
+	check(ide.editor.editorPanes.activePane!.showsGameFrame, 'closing inspection restores the preview');
+	await press('ShiftLeft', 'Tab');
+	check(inputFocus.target?.guestInputBounds === actor.previewBounds, 'Actor Lab keyboard navigation includes its viewport');
+
+	// A real dirty document requests a decision; cancellation must not save or reboot it.
+	const saved = model.lastSavedSource, boot = ide.boots.latestOperation;
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- input admission regression\n' }]);
+	ide.editor.commands.execute('reboot');
+	check(inputFocus.target === ide.editor.actionPrompt.focusTarget && ide.editor.executionSuspended,
+		'a command invoked over game focus transfers input to its confirmation dialog');
+	setKey('Escape', true);
+	for (let index = 0; index < 4; index++) await frame();
+	check(ide.editor.actionPrompt.visible && ide.editor.capturesGuestInput, 'held Escape stays owned by the modal');
+	setKey('Escape', false);
+	await frame();
+	check(!ide.editor.actionPrompt.visible && inputFocus.target?.guestInputBounds === actor.previewBounds,
+		'Escape release cancels and returns to the invoking viewport');
+	ide.editor.commands.execute('reboot');
+	const cancel = ide.editor.actionPrompt.view.buttons.find(button => button.choice === 'cancel')!;
+	await test.capture?.('game-action-prompt');
+	test.movePointer(cancel.bounds);
+	test.setPointerButton('pointer_primary', true);
+	for (let index = 0; index < 4; index++) await frame();
+	input.sampleInputControllerSnapshot(sample, InputControllerSampleContext.Normal);
+	check(ide.editor.actionPrompt.visible && sample.pointerButtons === 0,
+		'holding Cancel cannot close the dialog or leak its click into the guest');
+	test.setPointerButton('pointer_primary', false);
+	await frame();
+	check(!ide.editor.actionPrompt.visible && inputFocus.target?.guestInputBounds === actor.previewBounds
+		&& model.dirty && model.lastSavedSource === saved && ide.boots.latestOperation === boot,
+		'Cancel release restores focus without saving or rebooting');
+	ide.editor.commands.execute('reboot');
+	harness.openLuaSource('cart.lua');
+	await frame();
+	check(!ide.editor.actionPrompt.visible && inputFocus.target?.guestInputBounds === undefined,
+		'editor replacement cancels modal focus instead of restoring a detached viewport');
+	model.undo();
 	await press('ControlRight', 'ShiftRight');
 	setKey('KeyZ', true);
 	await frame();

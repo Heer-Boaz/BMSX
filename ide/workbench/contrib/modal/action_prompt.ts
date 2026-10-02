@@ -1,299 +1,141 @@
-import {
-	create_rect_bounds,
-	point_in_rect,
-	write_rect_bounds,
-	type RectBounds,
-} from '../../../../machine/ts/common/rect';
-import * as constants from '../../../common/constants';
-import { measureText } from '../../../editor/common/text/layout';
-import { drawEditorText } from '../../../editor/render/text_renderer';
-import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
-import type { PlayerInput } from '../../../../hosts/common/input/player';
-import { writeCenteredDialogBounds } from '../../../editor/render/dialog_layout';
-import { api } from '../../../runtime/overlay_api';
-import { editorViewState } from '../../../editor/ui/view/state';
+import { KeyModifier, type PlayerInput } from '../../../../hosts/common/input/player';
+import { point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../../common/models';
-import type { EditorActionRequest } from '../../../commands/action_request';
-import type { FontVariant } from '../../../../machine/ts/render/shared/bmsx_font';
-import type { CartEditor } from '../../../cart_editor';
-import type { EditorTextModel } from '../../../editor/model/text_model';
+import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
+import { consumeIdeKey, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
+import { PointerButton } from '../../../input/pointer/buttons';
+import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
+import { ActionPromptView, type ActionPromptAction, type ActionPromptChoice } from './action_prompt_view';
 
-type ActionPromptLayout = {
-	bounds: RectBounds;
-	saveAndContinue: RectBounds;
-	continue: RectBounds;
-	cancel: RectBounds;
-};
+const TRIGGER_KEYS = ['Enter', 'NumpadEnter', 'Space'] as const;
+const NAVIGATION_KEYS = ['Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'] as const;
 
-type ActionPromptState = {
-	request: EditorActionRequest;
-	workingCopies: readonly EditorTextModel[];
-	layout: ActionPromptLayout;
-};
+/** Owns modal focus and physical gestures. The workspace command awaits only the decision. */
+export class ActionPrompt implements PointerCaptureTarget {
+	public readonly focusTarget: InputFocusTarget;
+	public readonly pointerScope = Symbol('action-prompt');
+	public readonly view = new ActionPromptView();
+	private action: ActionPromptAction | undefined;
+	private resolve: ((choice: ActionPromptChoice) => void) | undefined;
+	private returnFocus: InputFocusTarget | null = null;
+	private focused = 0;
+	private hovered = -1;
+	private pointerButton = -1;
+	private triggerKey: string | undefined;
+	private readonly unbindKeyboard: () => void;
+	private readonly unbindBlur: () => void;
 
-type ActionPromptUiState = {
-	prompt: ActionPromptState | null;
-};
-
-type ActionPromptText = {
-	messageLines: readonly string[];
-	primaryLabel: string;
-	secondaryLabel: string;
-};
-
-export type ActionPromptChoice = 'save-continue' | 'continue' | 'cancel';
-
-const HOT_RESUME_MESSAGE_LINES = [
-	'UNSAVED CHANGES DETECTED.',
-	'SAVE CHANGES BEFORE HOT-RESUME?',
-] as const;
-
-const REBOOT_MESSAGE_LINES = [
-	'UNSAVED CHANGES DETECTED.',
-	'SAVE CHANGES BEFORE REBOOT?',
-] as const;
-
-const CLOSE_MESSAGE_LINES = [
-	'UNSAVED CHANGES DETECTED.',
-	'SAVE BEFORE HIDING THE EDITOR?',
-] as const;
-
-const CANCEL_LABEL = 'CANCEL';
-
-const HOT_RESUME_PROMPT_TEXT: ActionPromptText = {
-	messageLines: HOT_RESUME_MESSAGE_LINES,
-	primaryLabel: 'SAVE & RESUME',
-	secondaryLabel: 'RESUME WITHOUT SAVING',
-};
-
-const REBOOT_PROMPT_TEXT: ActionPromptText = {
-	messageLines: REBOOT_MESSAGE_LINES,
-	primaryLabel: 'SAVE & REBOOT',
-	secondaryLabel: 'REBOOT WITHOUT SAVING',
-};
-
-const RUN_PROMPT_TEXT: ActionPromptText = {
-	messageLines: ['UNSAVED CHANGES DETECTED.', 'SAVE CHANGES BEFORE RUNNING?'],
-	primaryLabel: 'SAVE & RUN',
-	secondaryLabel: 'RUN WITHOUT SAVING',
-};
-
-const CLOSE_PROMPT_TEXT: ActionPromptText = {
-	messageLines: CLOSE_MESSAGE_LINES,
-	primaryLabel: 'SAVE & HIDE',
-	secondaryLabel: 'HIDE WITHOUT SAVING',
-};
-
-export const ACTION_PROMPT_PADDING_X = 12;
-export const ACTION_PROMPT_PADDING_Y = 12;
-
-export const actionPromptState: ActionPromptUiState = {
-	prompt: null,
-};
-
-let actionPromptLayoutAction: EditorActionRequest['action'] = null;
-let actionPromptLayoutViewportWidth = -1;
-let actionPromptLayoutViewportHeight = -1;
-let actionPromptLayoutLineHeight = -1;
-let actionPromptLayoutFontVariant: FontVariant = null;
-
-function isActionPromptLayoutCurrent(action: EditorActionRequest['action']): boolean {
-	return actionPromptLayoutAction === action
-		&& actionPromptLayoutViewportWidth === editorViewState.viewportWidth
-		&& actionPromptLayoutViewportHeight === editorViewState.viewportHeight
-		&& actionPromptLayoutLineHeight === editorViewState.lineHeight
-		&& actionPromptLayoutFontVariant === editorViewState.fontVariant;
-}
-
-function markActionPromptLayoutCurrent(action: EditorActionRequest['action']): void {
-	actionPromptLayoutAction = action;
-	actionPromptLayoutViewportWidth = editorViewState.viewportWidth;
-	actionPromptLayoutViewportHeight = editorViewState.viewportHeight;
-	actionPromptLayoutLineHeight = editorViewState.lineHeight;
-	actionPromptLayoutFontVariant = editorViewState.fontVariant;
-}
-
-function createActionPromptLayout(): ActionPromptLayout {
-	return {
-		bounds: create_rect_bounds(),
-		saveAndContinue: create_rect_bounds(),
-		continue: create_rect_bounds(),
-		cancel: create_rect_bounds(),
-	};
-}
-
-const actionPromptLayout = createActionPromptLayout();
-export function hasActionPrompt(): boolean {
-	return actionPromptState.prompt !== null;
-}
-
-export function showActionPrompt(
-	request: EditorActionRequest,
-	workingCopies: readonly EditorTextModel[],
-): void {
-	actionPromptState.prompt = { request, workingCopies, layout: actionPromptLayout };
-	actionPromptLayoutAction = null;
-	updateActionPromptLayout();
-}
-
-export function closeActionPrompt(): void {
-	actionPromptState.prompt = null;
-	actionPromptLayoutAction = null;
-}
-
-export function getActionPromptText(action: EditorActionRequest['action']): ActionPromptText {
-	switch (action) {
-		case 'hot-resume':
-			return HOT_RESUME_PROMPT_TEXT;
-		case 'reboot':
-			return REBOOT_PROMPT_TEXT;
-		case 'run':
-			return RUN_PROMPT_TEXT;
-		case 'theme-toggle':
-		case 'close':
-			return CLOSE_PROMPT_TEXT;
+	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService) {
+		this.focusTarget = focus.createTarget();
+		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
+		this.unbindBlur = this.focusTarget.onDidBlur(() => this.close());
 	}
-}
 
-export function updateActionPromptLayout(): void {
-	const prompt = actionPromptState.prompt;
-	if (!prompt) {
-		return;
+	public get visible(): boolean { return this.action !== undefined; }
+
+	public show(action: ActionPromptAction): Promise<ActionPromptChoice> {
+		this.close();
+		this.capture.cancel();
+		this.returnFocus = this.focus.target;
+		this.action = action;
+		this.focused = 0;
+		this.view.update(action);
+		const result = new Promise<ActionPromptChoice>(resolve => { this.resolve = resolve; });
+		this.focusTarget.focus();
+		return result;
 	}
-	if (isActionPromptLayoutCurrent(prompt.request.action)) {
-		return;
+
+	public close(choice: ActionPromptChoice = 'cancel'): void {
+		if (!this.visible) return;
+		const resolve = this.resolve!, returnFocus = this.returnFocus;
+		this.action = undefined; this.resolve = undefined; this.returnFocus = null;
+		this.cancelPointer();
+		if (this.focusTarget.hasFocus) this.focus.setTarget(returnFocus);
+		resolve(choice);
 	}
-	const layout = prompt.layout;
-	const { messageLines, primaryLabel, secondaryLabel } = getActionPromptText(prompt.request.action);
-	let maxMessageWidth = 0;
-	for (let i = 0; i < messageLines.length; i += 1) {
-		const width = measureText(messageLines[i]);
-		if (width > maxMessageWidth) {
-			maxMessageWidth = width;
+
+	public dispose(): void { this.close(); this.unbindKeyboard(); this.unbindBlur(); }
+
+	public handlePointer(snapshot: PointerSnapshot): void {
+		const index = this.hitTest(snapshot);
+		this.hovered = index;
+		if (index < 0 || (snapshot.justPressedButtons & PointerButton.Primary) === 0) return;
+		this.cancelPointer();
+		this.capture.capture(this, PointerButton.Primary, this.pointerScope);
+		this.focused = this.pointerButton = this.hovered = index;
+		if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
+	}
+
+	public handleCapturedPointer(snapshot: PointerSnapshot): void { this.hovered = this.hitTest(snapshot); }
+
+	public releaseCapturedPointer(snapshot: PointerSnapshot): void {
+		const index = this.pointerButton;
+		const accept = index >= 0 && this.hitTest(snapshot) === index;
+		this.cancelPointer();
+		if (accept) this.close(this.view.buttons[index].choice);
+	}
+
+	public cancelPointer(): void {
+		this.capture.release(this);
+		this.pointerButton = this.hovered = -1;
+		this.triggerKey = undefined;
+	}
+
+	private hitTest(snapshot: PointerSnapshot): number {
+		if (!snapshot.valid || !snapshot.insideViewport) return -1;
+		const buttons = this.view.buttons;
+		for (let index = 0; index < buttons.length; index++) {
+			if (point_in_rect(snapshot.viewportX, snapshot.viewportY, buttons[index].bounds)) return index;
+		}
+		return -1;
+	}
+
+	private handleKeyboard(input: PlayerInput): void {
+		// Escape owns its down/up pair even if modifiers change before release.
+		const escape = input.inputHandlers.keyboard.getKeyState('Escape');
+		if (!escape.consumed) {
+			if (escape.justpressed) { this.cancelPointer(); this.triggerKey = 'Escape'; }
+			if (escape.pressed || escape.justpressed || escape.justreleased) consumeIdeKey('Escape', input);
+			if (this.triggerKey === 'Escape') {
+				if (escape.justreleased) this.close();
+				else if (!escape.pressed) this.cancelPointer();
+				return;
+			}
+		}
+		const modifiers = input.getModifiers();
+		if (modifiers !== KeyModifier.none && modifiers !== KeyModifier.shift) { this.cancelPointer(); return; }
+		for (const key of NAVIGATION_KEYS) if (shouldRepeatKeyFromPlayer(key, input)) {
+			consumeIdeKey(key, input);
+			this.cancelPointer();
+			const backward = key === 'ArrowLeft' || key === 'ArrowUp' || key === 'Tab' && modifiers === KeyModifier.shift;
+			this.focused = (this.focused + (backward ? -1 : 1) + this.view.buttons.length) % this.view.buttons.length;
+			return;
+		}
+		for (const key of TRIGGER_KEYS) {
+			const button = input.inputHandlers.keyboard.getKeyState(key);
+			if (button.consumed) continue;
+			if (button.justpressed && this.triggerKey === undefined) {
+				this.cancelPointer();
+				this.triggerKey = key;
+			}
+			if (button.pressed || button.justpressed || button.justreleased) consumeIdeKey(key, input);
+			if (key !== this.triggerKey) continue;
+			if (button.justreleased) {
+				this.close(this.view.buttons[this.focused].choice);
+				return;
+			}
+			if (!button.pressed) this.cancelPointer();
 		}
 	}
-	const primaryWidth = measureText(primaryLabel) + constants.HEADER_BUTTON_PADDING_X * 2;
-	const secondaryWidth = measureText(secondaryLabel) + constants.HEADER_BUTTON_PADDING_X * 2;
-	const cancelWidth = measureText(CANCEL_LABEL) + constants.HEADER_BUTTON_PADDING_X * 2;
-	const buttonSpacing = constants.HEADER_BUTTON_SPACING;
-	const buttonRowWidth = primaryWidth + secondaryWidth + cancelWidth + buttonSpacing * 2;
-	const buttonHeight = editorViewState.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
-	const messageSpacing = editorViewState.lineHeight + 2;
-	const messageDialogWidth = maxMessageWidth + ACTION_PROMPT_PADDING_X * 2;
-	const buttonDialogWidth = buttonRowWidth + ACTION_PROMPT_PADDING_X * 2;
-	const dialogWidth = messageDialogWidth > buttonDialogWidth ? messageDialogWidth : buttonDialogWidth;
-	const dialogHeight = ACTION_PROMPT_PADDING_Y * 2 + messageLines.length * messageSpacing + 6 + buttonHeight;
-	writeCenteredDialogBounds(layout.bounds, dialogWidth, dialogHeight, 4);
 
-	const buttonY = layout.bounds.bottom - ACTION_PROMPT_PADDING_Y - buttonHeight;
-	let buttonX = layout.bounds.left + ACTION_PROMPT_PADDING_X;
-	write_rect_bounds(layout.saveAndContinue, buttonX, buttonY, buttonX + primaryWidth, buttonY + buttonHeight);
-	buttonX = layout.saveAndContinue.right + buttonSpacing;
-	write_rect_bounds(layout.continue, buttonX, buttonY, buttonX + secondaryWidth, buttonY + buttonHeight);
-	buttonX = layout.continue.right + buttonSpacing;
-	write_rect_bounds(layout.cancel, buttonX, buttonY, buttonX + cancelWidth, buttonY + buttonHeight);
-	markActionPromptLayoutCurrent(prompt.request.action);
-}
-
-export function findActionPromptChoiceAt(x: number, y: number): ActionPromptChoice | null {
-	const prompt = actionPromptState.prompt;
-	if (!prompt) {
-		return null;
-	}
-	const layout = prompt.layout;
-	if (point_in_rect(x, y, layout.saveAndContinue)) {
-		return 'save-continue';
-	}
-	if (point_in_rect(x, y, layout.continue)) {
-		return 'continue';
-	}
-	if (point_in_rect(x, y, layout.cancel)) {
-		return 'cancel';
-	}
-	return null;
-}
-
-async function handleActionPromptSelection(
-	editor: CartEditor,
-	choice: ActionPromptChoice,
-): Promise<void> {
-	const prompt = actionPromptState.prompt;
-	if (!prompt) {
-		return;
-	}
-	if (choice === 'cancel') {
-		closeActionPrompt();
-		return;
-	}
-	if (await editor.commands.executeConfirmedAction(
-		prompt.request,
-		prompt.workingCopies,
-		choice === 'save-continue',
-	)) {
-		closeActionPrompt();
-	}
-}
-
-export function handleActionPromptInput(
-	playerInput: PlayerInput,
-	editor: CartEditor,
-): void {
-	if (!hasActionPrompt()) {
-		return;
-	}
-	if (isKeyJustPressed('Enter', playerInput) || isKeyJustPressed('NumpadEnter', playerInput)) {
-		consumeIdeKey('Enter', playerInput);
-		consumeIdeKey('NumpadEnter', playerInput);
-		void handleActionPromptSelection(
-			editor,
-			'save-continue',
-		);
-	}
-}
-
-export function handleActionPromptPointer(
-	editor: CartEditor,
-	snapshot: PointerSnapshot,
-): void {
-	const choice = findActionPromptChoiceAt(snapshot.viewportX, snapshot.viewportY);
-	if (choice) {
-		void handleActionPromptSelection(
-			editor,
-			choice,
-		);
-	}
-}
-
-export function drawActionPromptOverlay(): void {
-	const prompt = actionPromptState.prompt;
-	if (!prompt) {
-		return;
-	}
-	api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, 0, constants.ACTION_OVERLAY_COLOR);
-	const { messageLines, primaryLabel, secondaryLabel } = getActionPromptText(prompt.request.action);
-	updateActionPromptLayout();
-	const layout = prompt.layout;
-
-	api.fill_rect(layout.bounds.left, layout.bounds.top, layout.bounds.right, layout.bounds.bottom, 0, constants.ACTION_DIALOG_BACKGROUND_COLOR);
-	api.blit_rect(layout.bounds.left, layout.bounds.top, layout.bounds.right, layout.bounds.bottom, 0, constants.ACTION_DIALOG_BORDER_COLOR);
-
-	const buttonY = layout.bounds.bottom - ACTION_PROMPT_PADDING_Y - (editorViewState.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2);
-	let textY = layout.bounds.top + ACTION_PROMPT_PADDING_Y;
-	const textX = layout.bounds.left + ACTION_PROMPT_PADDING_X;
-	for (let i = 0; i < messageLines.length; i += 1) {
-		drawEditorText(editorViewState.font, messageLines[i], textX, textY, 0, constants.ACTION_DIALOG_TEXT_COLOR);
-		textY += editorViewState.lineHeight + 2;
+	public update(): void {
+		if (this.visible) this.view.update(this.action!);
 	}
 
-	api.fill_rect(layout.saveAndContinue.left, layout.saveAndContinue.top, layout.saveAndContinue.right, layout.saveAndContinue.bottom, 0, constants.ACTION_BUTTON_BACKGROUND);
-	api.blit_rect(layout.saveAndContinue.left, layout.saveAndContinue.top, layout.saveAndContinue.right, layout.saveAndContinue.bottom, 0, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(editorViewState.font, primaryLabel, layout.saveAndContinue.left + constants.HEADER_BUTTON_PADDING_X, buttonY + constants.HEADER_BUTTON_PADDING_Y, 0, constants.ACTION_BUTTON_TEXT);
-
-	api.fill_rect(layout.continue.left, layout.continue.top, layout.continue.right, layout.continue.bottom, 0, constants.ACTION_BUTTON_BACKGROUND);
-	api.blit_rect(layout.continue.left, layout.continue.top, layout.continue.right, layout.continue.bottom, 0, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(editorViewState.font, secondaryLabel, layout.continue.left + constants.HEADER_BUTTON_PADDING_X, buttonY + constants.HEADER_BUTTON_PADDING_Y, 0, constants.ACTION_BUTTON_TEXT);
-
-	api.fill_rect(layout.cancel.left, layout.cancel.top, layout.cancel.right, layout.cancel.bottom, 0, constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND);
-	api.blit_rect(layout.cancel.left, layout.cancel.top, layout.cancel.right, layout.cancel.bottom, 0, constants.ACTION_DIALOG_BORDER_COLOR);
-	drawEditorText(editorViewState.font, CANCEL_LABEL, layout.cancel.left + constants.HEADER_BUTTON_PADDING_X, buttonY + constants.HEADER_BUTTON_PADDING_Y, 0, constants.COLOR_HEADER_BUTTON_TEXT);
+	public draw(): void {
+		if (!this.visible) return;
+		const pressed = this.triggerKey !== undefined && this.triggerKey !== 'Escape' ? this.focused
+			: this.pointerButton === this.hovered ? this.pointerButton : -1;
+		this.view.draw(this.focused, pressed, this.hovered);
+	}
 }

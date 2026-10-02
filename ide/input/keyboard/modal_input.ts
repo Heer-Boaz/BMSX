@@ -2,16 +2,11 @@ import { pointerHover } from '../pointer/hover';
 import { runtimeErrorOverlayPointer } from '../../editor/contrib/runtime_error/pointer';
 import type { EditorSearchController } from '../../workbench/contrib/code_editor/find/search';
 import { editorFeedbackState } from '../../common/feedback_state';
-import { closeBlockingWorkbenchModal, hasBlockingWorkbenchModal } from '../../workbench/contrib/modal/blocking_modal';
 import { closeLineJump } from '../../workbench/contrib/code_editor/find/line_jump';
 import { runtimeErrorState } from '../../editor/contrib/runtime_error/state';
 import { editorSearchState, lineJumpState } from '../../workbench/contrib/code_editor/find/widget_state';
 
 export function handleEscapeKey(search: EditorSearchController): boolean {
-	if (hasBlockingWorkbenchModal()) {
-		closeBlockingWorkbenchModal();
-		return true;
-	}
 	const overlay = runtimeErrorState.activeOverlay;
 	if (lineJumpState.field.focusTarget.hasFocus || lineJumpState.visible) {
 		closeLineJump(false);

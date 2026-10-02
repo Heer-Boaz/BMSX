@@ -5906,7 +5906,7 @@ menus, tabs and status stay unchanged. Existing Game View/Actor Lab previews
 suppress the extra frame without discarding the session layout choice. This
 adds no capture path, second runtime, editor group or playback clock.
 
-Game View and the Game panel each bind the shared `GameInputControl` to their
+Game View, the Game panel and Actor Lab bind the shared `GameInputControl` to their
 retained scanout rectangle. Its concrete `InputFocusTarget.guestInputBounds`
 capability admits physical guest input; neither the active tab kind nor the
 workbench's visibility implies game focus. Clicking the image focuses it and
@@ -5914,9 +5914,14 @@ forwards that click. Ordinary keys, controller input and wheel input then bypass
 IDE bindings. Clicking outside the image or Shift+F1 returns focus to Studio;
 only the focused viewport draws its focus border. Hiding a viewport or opening
 another editor revokes that focus through ordinary control lifetimes.
-`RuntimeCartEditor` derives capture policy from focus and blocking modal state;
-focus changes synchronize the existing host capture latch immediately, and the
-host frame admits current modal policy before guest sampling. This releases
+`RuntimeCartEditor` derives capture policy from the concrete focus target. The
+host frame writes the existing capture latch once after input dispatch, before
+rewind/guest execution; focus events and activation do not maintain parallel
+copies of that policy. The retained `ActionPrompt` owns modal focus and gesture
+capture; it resolves a decision on matching key/pointer release. The workspace
+command retains the source request and dirty-working-copy batch across that
+decision, not the dialog. Blur, replacement and disposal cancel the decision
+without restoring focus over a departing editor. This releases
 only the Workbench execution hold. Requested pause, debugger stops and history
 remain owned by their existing execution services. Raw ICU words and the
 non-Studio/native input path are unchanged; no new per-frame input buffers,

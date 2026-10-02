@@ -1,6 +1,5 @@
 import { RUNTIME_INSPECTION_CALLBACKS_SOURCE, RUNTIME_INSPECTION_CART_SOURCE } from '../../helpers/runtime_inspection_fixture';
 import { RUNTIME_INSPECTION_TREES_SOURCE } from '../../helpers/runtime_inspection_bt_fixture';
-import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { hoverState } from '../../../ide/editor/contrib/hover/state';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
@@ -34,7 +33,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	harness.toggleLuaBreakpoint(model.resource.path, beforeRegistration);
 	harness.toggleLuaBreakpoint(model.resource.path, beforeInstances);
 	await runPaletteCommand('Run: Reboot');
-	check(actionPromptState.prompt?.request.action === 'reboot', 'inspection: independent fixture uses actual Save/Reboot');
+	check(test.ide.editor.actionPrompt.visible, 'inspection: independent fixture uses actual Save/Reboot');
 	await press('Enter');
 	await until(() => tasks.ready && ide.debugger.source.stop !== undefined && ide.editor.isActive, 'inspection: recursive callback stops before its inner return');
 	check(harness.getActiveCodeContext()!.model === callbacks
@@ -179,7 +178,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\nlocal broken = )\n' }]);
 	const beforeFailure = cycles();
 	await runPaletteCommand('Run: Hot Resume');
-	check(actionPromptState.prompt?.request.action === 'hot-resume', 'inspection: invalid source uses ordinary compilation gate');
+	check(test.ide.editor.actionPrompt.visible, 'inspection: invalid source uses ordinary compilation gate');
 	await press('Enter');
 	await until(() => tasks.ready, 'inspection: compile rejection completes');
 	check(cycles() === beforeFailure && guest.global('inspection_init_count') === 2 && ide.sources.currentBlua32Media === media,
@@ -191,7 +190,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 
 	model.pushEditOperations([{ offset: period + 2, deleteLength: 2, text: '12' }]);
 	await runPaletteCommand('Run: Hot Resume');
-	check(actionPromptState.prompt?.request.action === 'hot-resume', 'inspection: changed definition uses Save/Hot Resume');
+	check(test.ide.editor.actionPrompt.visible, 'inspection: changed definition uses Save/Hot Resume');
 	await press('Enter');
 	await until(() => tasks.ready && guest.global('inspection_init_count') === 3 && !runtime.completionCallPending(),
 		'inspection: changed source installs and rebinds both instances');

@@ -1,6 +1,5 @@
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import { createLuaTableFieldInsertionEdits } from '../../../ide/language/lua/table_field_insertion';
-import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import { openSceneEditor, selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
@@ -68,12 +67,13 @@ export async function testSceneFieldInsertion(test: StudioFixture): Promise<void
 		const expected = model.buffer.getText();
 		check(cycles() === before && title() === actor && ide.sources.currentBlua32Media === media,
 			'insert: source construction never runs or spawns an actor in the paused machine');
+		const previousMedia = test.ide.sources.currentBlua32Media;
 		await press('ControlLeft', 'ShiftLeft', 'KeyS');
-		check(actionPromptState.prompt !== null && actionPromptState.prompt.workingCopies.includes(model),
-			'insert: ordinary Save & Hot Resume captures the edited working copy');
+		check(test.ide.editor.actionPrompt.visible,
+			'insert: edited working copy requires confirmation before applying');
 		await press('Enter');
 		await test.until(() => test.tasks.ready && !test.runtime.completionCallPending() && !ide.debugger.plans.mutationActive
-			&& actionPromptState.prompt === null, 'insert: ordinary source application completes registration');
+			&& test.ide.sources.currentBlua32Media !== previousMedia, 'insert: ordinary source application completes registration');
 		check(!model.dirty && model.lastSavedSource === expected
 			&& ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('scenes/root') === expected,
 			'insert: workspace and installed source agree for contraction, insertion and history restoration');

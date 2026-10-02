@@ -1,5 +1,4 @@
 import { FSM_INITIAL_CART_SOURCE } from '../../helpers/fsm_initial_fixture';
-import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
@@ -25,7 +24,7 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	const source = FSM_INITIAL_CART_SOURCE.replace("require('cartlib/fsm/library')", `require('${record.module_path}')`);
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 	await runPaletteCommand('Run: Reboot');
-	check(actionPromptState.prompt?.request.action === 'reboot', 'initial live: fixture is authored through the ordinary Save/Reboot prompt');
+	check(test.ide.editor.actionPrompt.visible, 'initial live: fixture is authored through the ordinary Save/Reboot prompt');
 	await press('Enter');
 	await until(() => tasks.ready && ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('cart') === source,
 		'initial live: compiler and media owner install the authored source');
@@ -56,7 +55,7 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	check(guest.readStringMember(machine, 'current_state') === idle && getTextFileRuntimeSourceStatus(ide.sources, model) === 'pending',
 		'initial live: authored and installed definitions are distinct');
 	await runPaletteCommand('Run: Hot Resume');
-	check(actionPromptState.prompt?.request.action === 'hot-resume', 'initial live: graph edit enters the normal dirty-source prompt');
+	check(test.ide.editor.actionPrompt.visible, 'initial live: graph edit enters the normal dirty-source prompt');
 	await press('Enter');
 	await until(() => tasks.ready && !runtime.completionCallPending() && guest.global('fsm_initial_init_count') === 2,
 		'initial live: actual Hot Resume installs the edited initializer and executes it');
@@ -71,7 +70,7 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	await lens.graphLayout.settled; await frame();
 	check(model.buffer.getText() === source, 'initial live: ordinary graph Undo restores source');
 	await runPaletteCommand('Run: Hot Resume');
-	check(actionPromptState.prompt?.request.action === 'hot-resume', 'initial live: undone source has the same installation gate');
+	check(test.ide.editor.actionPrompt.visible, 'initial live: undone source has the same installation gate');
 	await press('Enter');
 	await until(() => tasks.ready && !runtime.completionCallPending() && guest.global('fsm_initial_init_count') === 3, 'initial live: Undo revision is installed');
 	check(guest.global('fsm_initial_machine') === machine
@@ -85,7 +84,7 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	await lens.graphLayout.settled; await frame();
 	check(model.buffer.getText() === changed, 'initial live: ordinary graph Redo restores authored edit');
 	await runPaletteCommand('Run: Hot Resume');
-	check(actionPromptState.prompt?.request.action === 'hot-resume', 'initial live: Redo revision enters the ordinary prompt');
+	check(test.ide.editor.actionPrompt.visible, 'initial live: Redo revision enters the ordinary prompt');
 	await press('Enter');
 	await until(() => tasks.ready && !runtime.completionCallPending() && guest.global('fsm_initial_init_count') === 4, 'initial live: Redo revision is installed');
 	check(guest.global('fsm_initial_machine') === machine && guest.readStringMember(machine, 'current_state') === idle, 'initial live: three installs do not restart the FSM');

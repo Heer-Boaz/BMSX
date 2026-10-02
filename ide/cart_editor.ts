@@ -131,7 +131,7 @@ import {
 import { WorkspaceAutosaveChange } from './workbench/workspace/models';
 import { getWorkbenchEditorBounds, refreshWorkbenchLayout, type WorkbenchChromeLayout } from './workbench/common/layout';
 import { BreakpointController } from './workbench/contrib/debugger/controller';
-import { closeBlockingWorkbenchModal, drawBlockingWorkbenchModal, handleBlockingWorkbenchModalInput, hasBlockingWorkbenchModal } from './workbench/contrib/modal/blocking_modal';
+import { ActionPrompt } from './workbench/contrib/modal/action_prompt';
 import { drawProblemsPanel, problemsPanel } from './workbench/contrib/problems/panel/controller';
 import { ResourcePanelController } from './workbench/contrib/resources/panel/controller';
 import { IdeCommandController } from './commands/controller';
@@ -208,6 +208,7 @@ export type CartEditor = {
 	readonly navigation: EditorNavigationController;
 	readonly sceneEditor: SceneEditorController;
 	readonly actorLab: ActorLabController;
+	readonly actionPrompt: ActionPrompt;
 	readonly quickInput: QuickInputController;
 	readonly contextMenu: ContextMenuController;
 	readonly behaviorLens: BehaviorLensController;
@@ -242,10 +243,10 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly gamePanel: GamePanel;
 	private readonly activeListeners = new Set<(active: boolean) => void>();
 	public get capturesGuestInput(): boolean {
-		return this.isActive && (hasBlockingWorkbenchModal() || inputFocus.target?.guestInputBounds === undefined);
+		return this.isActive && inputFocus.target?.guestInputBounds === undefined;
 	}
 	public get executionSuspended(): boolean {
-		return this.isActive && (hasBlockingWorkbenchModal() || this.quickInput.visible || this.contextMenu.visible
+		return this.isActive && (this.actionPrompt.visible || this.quickInput.visible || this.contextMenu.visible
 			|| !this.debuggerState.plans.workbenchExecutionRequested
 			&& !(this.debuggerState.executionContext === 'workbench' && this.debuggerState.source.stop === undefined)
 			&& this.editorPanes.activePane?.suspendsRuntime !== false
@@ -262,6 +263,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly navigation: EditorNavigationController;
 	public readonly sceneEditor: SceneEditorController;
 	public readonly actorLab: ActorLabController;
+	public readonly actionPrompt = new ActionPrompt(inputFocus, pointerCapture);
 	public readonly quickInput: QuickInputController;
 	public readonly contextMenu: ContextMenuController;
 	public readonly behaviorLens: BehaviorLensController;
@@ -291,7 +293,6 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly unbindQuickInputFields: () => void;
 	private readonly unbindProblemsPanel: () => void;
 	private readonly unbindBreakpoints: () => void;
-	private readonly unsubscribeInputFocusChanged: () => void;
 	private readonly chromeRenderContext: ChromeRenderContext & WorkbenchChromeLayout = {
 		get viewportWidth(): number { return editorViewState.viewportWidth; },
 		get headerHeight(): number { return editorViewState.headerHeight; },
@@ -470,7 +471,6 @@ export class RuntimeCartEditor implements CartEditor {
 			behaviorRegistrations,
 			scenarioRuns,
 		);
-		this.unsubscribeInputFocusChanged = inputFocus.onDidChange(() => input.setGuestInputCaptured(this.capturesGuestInput));
 		this.aemEditor = new AemEditorController(sources, this.editorPanes, this.quickInput);
 		this.luaPrograms = new LuaProgramController(sources, luaTooling.suspendedGuest, this.editorPanes, this.navigation, this.quickInput, rewind);
 		this.actionStrings = new ActionStringTester(sources, clock, this.quickInput, scenarioRuns, this.scenarioLab);
@@ -522,7 +522,7 @@ export class RuntimeCartEditor implements CartEditor {
 
 	public get isActive(): boolean { return editorRuntimeState.active; }
 	public get clipboardTarget(): ClipboardTarget | undefined {
-		return this.isActive && !hasBlockingWorkbenchModal() ? inputFocus.target?.clipboard : undefined;
+		return this.isActive ? inputFocus.target?.clipboard : undefined;
 	}
 	public get fontVariant(): Parameters<typeof setFontVariant>[1] { return editorViewState.fontVariant; }
 
@@ -556,7 +556,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (codeTabActive) {
 			syncRuntimeErrorOverlayFromContext(activeTab.context);
 		}
-		closeBlockingWorkbenchModal();
+		this.actionPrompt.close();
 		if (codeTabActive && editorSearchState.query.length > 0) {
 			startSearchJob();
 		}
@@ -611,7 +611,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.search.closeSearch(false);
 		lineJumpState.field.focusTarget.release();
 		lineJumpState.visible = false;
-		closeBlockingWorkbenchModal();
+		this.actionPrompt.close();
 		this.resourcePanel.hide();
 		editorChromeState.resourcePanelResizing = false;
 		clearBackgroundTasks();
@@ -627,7 +627,8 @@ export class RuntimeCartEditor implements CartEditor {
 		const codeView = activeCodeEditor.view;
 		const scrollRow = codeView?.scrollRow;
 		const scrollColumn = codeView?.scrollColumn;
-		if (!hasBlockingWorkbenchModal()) {
+		const modalInput = this.actionPrompt.visible;
+		if (!modalInput) {
 			handleEditorWheelInput(this, playerInput);
 		}
 		handleTextEditorPointerInput(
@@ -636,13 +637,12 @@ export class RuntimeCartEditor implements CartEditor {
 			editorRuntimeState.currentTimeMs,
 			this,
 		);
-		if (hasBlockingWorkbenchModal()) {
-			handleBlockingWorkbenchModalInput(
-				playerInput,
-				this,
-			);
+		if (this.actionPrompt.visible) {
+			this.actionPrompt.focusTarget.handleKeyboard(playerInput);
 			return;
 		}
+		// A dialog closed by this pointer batch must not dispatch its keys to the restored control.
+		if (modalInput) return;
 		handleEditorInput(playerInput, this);
 		if (codeView !== null && (codeView.scrollRow !== scrollRow || codeView.scrollColumn !== scrollColumn)) {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
@@ -667,6 +667,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.runtimeTimeline.update();
 		layoutTopBar(this.commands, this.chromeRenderContext);
 		this.quickInput.update();
+		this.actionPrompt.update();
 		layoutContextMenu(this.contextMenu);
 		this.contextMenu.update();
 	}
@@ -698,9 +699,7 @@ export class RuntimeCartEditor implements CartEditor {
 		renderTopBarDropdown(this.chromeRenderContext);
 		drawContextMenu(this.contextMenu);
 		this.quickInput.draw();
-		if (hasBlockingWorkbenchModal()) {
-			drawBlockingWorkbenchModal();
-		}
+		this.actionPrompt.draw();
 	}
 
 	public async shutdown(): Promise<void> {
@@ -710,7 +709,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.frameNavigation.dispose();
 		this.debuggerExecution.dispose();
 		this.unbindBreakpoints();
-		this.unsubscribeInputFocusChanged();
+		this.actionPrompt.dispose();
 		const terminalDrained = this.terminal.shutdown();
 		const actorsDrained = this.actorExecution.shutdown();
 		this.scenarioRuns.dispose();
@@ -768,7 +767,6 @@ export class RuntimeCartEditor implements CartEditor {
 		lineJumpState.field.focusTarget.release();
 		lineJumpState.visible = false;
 		applyLineJumpFieldText('', true);
-		closeBlockingWorkbenchModal();
 		this.resourcePanel.hide();
 		editorChromeState.resourcePanelResizing = false;
 	}

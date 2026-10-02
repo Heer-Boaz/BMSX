@@ -1486,8 +1486,8 @@ The pointer-frame owner keeps sampling snapshots/releases but ends lower
 scrollbar, tab and panel-resize gestures while an exclusive input surface is
 active. A gesture is cancelled, not suspended for the popup's later dismissal.
 Capture retains the admitting surface scope, independently of keyboard focus
-and hover. The router admits the topmost existing interactive surface (Quick
-Input, context menu, then workbench); a different scope or blocking modal cancels
+and hover. The router admits the topmost existing interactive surface (action
+prompt, Quick Input, context menu, then workbench); a different scope cancels
 the old grab. Thus a popup can drag its own scrollbar without admitting a
 background gesture. Both popups cancel the previous grab on opening.
 The popup owns Escape before a lower code widget. Shared command routing still
@@ -1766,14 +1766,20 @@ its focus-return destination, not command inheritance.
 The Edit menu and repeatable Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl/Cmd+Y bindings
 use these contributions. Keybinding applicability is distinct from command
 enablement so an empty field consumes Undo without enabling the menu item.
-Menus retain the invoking editor control's command context. The existing
-blocking-modal scope intercepts **all** pointer, wheel and keyboard input before
-background menus, panels or controls; individual controls need no modal guards.
+Menus retain the invoking editor control's command context. `RuntimeCartEditor`
+owns one retained `ActionPrompt`. It takes a concrete focus target and pointer
+scope, blocking background pointer, wheel and keyboard dispatch. Tab/arrows
+navigate its choices; Enter/Space/Escape and pointer clicks settle only on matching
+release, so a held closing gesture never transfers to the game. Replacement,
+blur and disposal resolve cancellation once. The dialog owns only the decision:
+workspace commands retain their captured source request and save batch and await
+it before saving/executing. No global prompt state or modal facade duplicates
+that lifetime. This follows [VS Code's dialog focus and release handling](https://github.com/microsoft/vscode/blob/main/src/vs/base/browser/ui/dialog/dialog.ts).
 Clipboard is a host capability, not a code-widget cache. Each focus target
 contributes a `ClipboardTarget`: a side-effect-free selection query, synchronous
 Cut edit, and Paste receiver. The browser routes trusted native copy/cut/paste
-into that target; `CartEditor.clipboardTarget` applies the same active/modal scope
-as polled input. Source documents, text fields, transcript selections and the
+into that target; `CartEditor.clipboardTarget` admits the active workbench's
+focused clipboard capability. A modal owns focus without a clipboard target. Source documents, text fields, transcript selections and the
 attachment strip all use this contract. Text-field constraints are retained on
 the field, so native paste cannot bypass Find/Rename/property-input rules.
 

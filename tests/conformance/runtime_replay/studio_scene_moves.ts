@@ -1,4 +1,3 @@
-import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import { openSceneEditor, selectMember, selectSceneRow } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
@@ -81,12 +80,13 @@ export async function testSceneMemberMoves(test: StudioFixture): Promise<void> {
 	for (const expected of [moved, original]) {
 		if (expected === original) for (let index = 0; index < 3; index += 1) await press('ControlLeft', 'KeyZ');
 		check(model.buffer.getText() === expected, 'move: shared history supplies the intended source revision');
+		const previousMedia = test.ide.sources.currentBlua32Media;
 		await press('ControlLeft', 'ShiftLeft', 'KeyS');
-		check(actionPromptState.prompt !== null && actionPromptState.prompt.workingCopies.includes(model),
-			'move: ordinary Save & Hot Resume prompt owns the edited Lua document');
+		check(test.ide.editor.actionPrompt.visible,
+			'move: edited Lua source requires confirmation before applying');
 		await press('Enter');
 		await test.until(() => test.tasks.ready && !test.runtime.completionCallPending() && !ide.debugger.plans.mutationActive
-			&& actionPromptState.prompt === null, 'move: Save & Hot Resume completes ordinary registration');
+			&& test.ide.sources.currentBlua32Media !== previousMedia, 'move: Save & Hot Resume completes ordinary registration');
 		check(!model.dirty && model.lastSavedSource === expected
 			&& ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('scenes/root') === expected,
 			'move: workspace and installed source agree after reordered capture uses');

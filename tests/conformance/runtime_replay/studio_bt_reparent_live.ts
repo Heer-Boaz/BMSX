@@ -1,5 +1,4 @@
 import { BT_REPARENT_LIVE_SOURCE } from '../../helpers/behavior_reparent_live_fixture';
-import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import type { BehaviorGraphNode } from '../../../ide/workbench/contrib/behavior_lens/graph_model';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
@@ -18,7 +17,7 @@ export async function runStudioBtReparentLive(test: StudioFixture) {
 	const model = harness.getActiveEditorDocument().model;
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_REPARENT_LIVE_SOURCE }]);
 	await runPaletteCommand('Run: Reboot');
-	check(actionPromptState.prompt?.request.action === 'reboot', 'BT live: fixture uses ordinary Save/Reboot admission');
+	check(test.ide.editor.actionPrompt.visible, 'BT live: fixture uses ordinary Save/Reboot admission');
 	await press('Enter');
 	await until(() => tasks.ready && guest.global('bt_live_init_count') === 1 && !runtime.completionCallPending(), 'BT live: authored fixture boots');
 	const actor = guest.global('bt_live_target'), tree = guest.global('bt_live_tree');

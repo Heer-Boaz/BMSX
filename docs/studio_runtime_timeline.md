@@ -25,7 +25,7 @@ Lab already display scanout, so the workbench suppresses the extra panel there
 without discarding the user's layout choice. View / Toggle Game Panel is the
 workbench action, not a permanent button in each module editor.
 
-Game View and the Game panel support explicit game input focus. Clicking the
+Game View, the Game panel and Actor Lab support explicit game input focus. Clicking the
 scanout forwards physical keys, controller and pointer input to the game, with
 a thin focus border instead of another toolbar button. Tab can enter the game
 from its surrounding workbench controls; once focused, Tab, Escape and ordinary

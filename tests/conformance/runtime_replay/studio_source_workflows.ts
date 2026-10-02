@@ -1,5 +1,4 @@
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
-import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import type { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 import { closeTab, getActiveTab } from '../../../ide/workbench/ui/tabs';
@@ -171,9 +170,9 @@ export async function testCapturedSourceReboot(test: StudioFixture): Promise<voi
 		'W04: source undo reaches the actual reboot revision');
 	await until(() => !editorFeedbackState.message.visible, 'W04: installed-source status is visible after transient feedback');
 	await test.runPaletteCommand('Run: Reboot');
-	check(actionPromptState.prompt?.request.action === 'reboot', 'palette: actual Reboot admits the ordinary dirty-source prompt');
+	check(test.ide.editor.actionPrompt.visible, 'palette: actual Reboot admits the ordinary dirty-source prompt');
 	await press('Enter');
-	await until(() => ide.runtimeTasks.ready && actionPromptState.prompt === null, 'palette: Save and Reboot completes the real command');
+	await until(() => ide.runtimeTasks.ready && !ide.editor.isActive, 'palette: Save and Reboot completes the real command');
 	check(!ide.editor.isActive && model.lastSavedSource === captured, 'palette: Reboot persisted the exact accepted source and returned to gameplay');
 	await press('ControlRight', 'ShiftRight');
 	check(ide.editor.isActive, 'palette: Studio reopens normally after command-driven Reboot');

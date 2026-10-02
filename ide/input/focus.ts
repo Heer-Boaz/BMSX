@@ -95,7 +95,6 @@ export class InputFocusTarget {
 /** Single canvas focus owner. Menus preserve the invoking control's command context. */
 export class InputFocusService {
 	private targetValue: InputFocusTarget | null = null;
-	private readonly changeListeners = new Set<() => void>();
 
 	public createTarget(parent: InputFocusTarget | null = null): InputFocusTarget {
 		return new InputFocusTarget(this, parent);
@@ -103,11 +102,6 @@ export class InputFocusService {
 
 	public get target(): InputFocusTarget | null {
 		return this.targetValue;
-	}
-
-	public onDidChange(listener: () => void): () => void {
-		this.changeListeners.add(listener);
-		return () => this.changeListeners.delete(listener);
 	}
 
 	public setTarget(target: InputFocusTarget | null): void {
@@ -118,7 +112,6 @@ export class InputFocusService {
 		if (previous !== null) previous.didBlur();
 		this.targetValue = target;
 		if (target !== null) target.didFocus();
-		for (const listener of this.changeListeners) listener();
 	}
 
 	public getCommand(command: EditorCommandId, target: InputFocusTarget | null = this.targetValue): FocusCommand | undefined {

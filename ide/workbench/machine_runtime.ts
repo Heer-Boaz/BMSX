@@ -90,7 +90,6 @@ export async function prepareWorkbenchRuntime(
 	ide.editor.onDidChangeActive(active => {
 		if (active) hostMenu.dismiss();
 		execution.setPauseReason(HostPauseReason.Workbench, ide.editor.executionSuspended);
-		input.setGuestInputCaptured(ide.editor.capturesGuestInput);
 		audioOutput.muteUi(ide.editor.executionSuspended);
 	});
 	const startup = ide.boots.start(startupSource).result!;

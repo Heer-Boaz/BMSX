@@ -2,7 +2,6 @@ import type { Table } from '../../../machine/ts/machine/cpu/table';
 import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path';
 import { traceSinkFieldName } from '../../../toolchain/ts/lua/compiler/trace_statement';
 import { PRELOAD_TRACE_CHANNELS } from '../../helpers/preload_source_fixture';
-import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 import { chooseBehavior } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
@@ -64,7 +63,7 @@ export async function runStudioPreload(test: StudioFixture) {
 	recorded('sequence');
 	model.undo();
 	await runPaletteCommand('Run: Hot Resume');
-	check(actionPromptState.prompt?.request.action === 'hot-resume', 'preload: changed source goes through Save/Hot Resume');
+	check(test.ide.editor.actionPrompt.visible, 'preload: changed source goes through Save/Hot Resume');
 	await press('Enter');
 	await until(() => tasks.ready && registrations() === 3 && !runtime.completionCallPending(), 'preload: changed module installed and rebound');
 	await press('ControlRight', 'ShiftRight'); await runMenuCommand('pause');
@@ -77,7 +76,7 @@ export async function runStudioPreload(test: StudioFixture) {
 	// Changed source forces the boot rebuild path, not merely reuse of existing code.
 	harness.openLuaSource('game.lua'); await press('ControlLeft', 'KeyZ');
 	await runPaletteCommand('Run: Reboot');
-	check(actionPromptState.prompt?.request.action === 'reboot', 'preload: source Undo requires Save/Reboot');
+	check(test.ide.editor.actionPrompt.visible, 'preload: source Undo requires Save/Reboot');
 	await press('Enter');
 	await until(() => tasks.ready && cycles() > runtime.timing.cpuHz * 13, 'preload: reboot completes');
 	await press('ControlRight', 'ShiftRight'); await runMenuCommand('pause');

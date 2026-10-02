@@ -3,7 +3,6 @@ import { getOrCreateSemanticProject } from '../../../ide/editor/contrib/intellis
 import { inputFocus } from '../../../ide/input/focus';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import type { SceneEditorInput } from '../../../ide/workbench/contrib/scene_editor/editor_input';
-import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/top_bar/menu';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
@@ -109,7 +108,7 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	check(x.field.text === '-' && x.field.focusTarget.hasFocus && x.error.length > 0, 'scene: invalid Enter retains the draft with an error');
 	await press('ControlLeft', 'KeyS');
 	await press('ControlLeft', 'ShiftLeft', 'KeyS');
-	check(x.field.text === '-' && x.field.focusTarget.hasFocus && actionPromptState.prompt === null
+	check(x.field.text === '-' && x.field.focusTarget.hasFocus && !test.ide.editor.actionPrompt.visible
 		&& model.buffer.getText() === expected && ide.sources.currentBlua32Media === media,
 		'scene: invalid input prevents Save/Hot Resume before source capture or prompt admission');
 	await press('Escape');
@@ -235,13 +234,14 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	await press('Digit1');
 	await press('Digit7');
 	check(x.pending && scene.properties[0].value === 18, 'scene: Hot Resume starts with an actual unsubmitted value');
+	const previousMedia = ide.sources.currentBlua32Media;
 	await test.runPaletteCommand('Run: Hot Resume');
-	check(actionPromptState.prompt !== null && actionPromptState.prompt.workingCopies.includes(model)
+	check(test.ide.editor.actionPrompt.visible
 		&& model.buffer.getText() === expected && !x.pending, 'scene: Hot Resume accepts the field before selecting dirty working copies');
 	await press('Enter');
 	// Save finishes before dispatch queues Hot Resume; initial runtime idleness
 	// does not mean that the accepted prompt has applied its source revision.
-	await until(() => actionPromptState.prompt === null
+	await until(() => ide.sources.currentBlua32Media !== previousMedia
 		&& tasks.ready && !runtime.completionCallPending() && !ide.debugger.plans.mutationActive,
 		'scene: edited root definition passes actual Hot Resume and init');
 	check(model.lastSavedSource === expected, 'scene: Save and Resume persisted the accepted field');

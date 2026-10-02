@@ -1,16 +1,16 @@
 import type { EditorTextModel } from '../../../ide/editor/model/text_model';
-import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import { openSceneEditor, selectMember, selectSceneRow } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
 
 async function saveAndResume(test: StudioFixture, model: EditorTextModel, expected: string): Promise<void> {
+	const previousMedia = test.ide.sources.currentBlua32Media;
 	await test.press('ControlLeft', 'ShiftLeft', 'KeyS');
-	check(actionPromptState.prompt !== null && actionPromptState.prompt.workingCopies.includes(model),
-		'remove: actual source-apply prompt owns the dirty root');
+	check(test.ide.editor.actionPrompt.visible,
+		'remove: dirty source requires confirmation before applying');
 	await test.press('Enter');
 	await test.until(() => test.tasks.ready && !test.runtime.completionCallPending() && !test.ide.debugger.plans.mutationActive
-		&& actionPromptState.prompt === null, 'remove: normal Save & Hot Resume completes registration');
+		&& test.ide.sources.currentBlua32Media !== previousMedia, 'remove: normal Save & Hot Resume completes registration');
 	check(!model.dirty && model.lastSavedSource === expected
 		&& test.ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('scenes/root') === expected,
 		'remove: workspace Save and installed source agree');
