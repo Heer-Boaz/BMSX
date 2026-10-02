@@ -69,6 +69,7 @@ test('restored absence retires a visible bookmark before a branch reuses table i
 	f.rewind.seeking = true;
 	assert.equal(f.inspection.refresh(), undefined);
 	f.rewind.seeking = false;
+	f.guest.willResumeHistory();
 	f.guest.invalidate();
 	f.cpu.runUntilDepth(0, 100_000);
 	const newChoice = readStateMachineInstances(f.sources, f.guest, -1).items[0];

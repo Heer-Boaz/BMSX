@@ -32,7 +32,6 @@ import type { ActorExecutionService, ActorExecutionResult, ActorInvocation } fro
 export class ActorLabController {
 	private current: ActorLabInput | undefined;
 	private projection: ActorProjection;
-	private historyRestorePending = false;
 	public readonly canInteract = (domain?: ResourceDomain) => domain === undefined ? this.execution.canExecute : this.execution.canExecuteIn(domain);
 	public constructor(
 		private readonly sources: RuntimeSourceState,
@@ -47,11 +46,15 @@ export class ActorLabController {
 		guest.onDidInvalidate(reason => {
 			const input = this.current;
 			if (input === undefined) return;
-			// A hidden pane must resolve its bookmark before a new branch can reuse
-			// identities from the discarded future. Replay itself is not that branch.
-			if (reason === 'execution' && this.historyRestorePending && !this.rewind.seeking && !this.rewind.playing) this.refresh(input);
 			input.invalidate(reason);
-			if (reason !== 'execution') this.historyRestorePending = reason === 'history-restored';
+		});
+		guest.onWillResumeHistory(() => {
+			const input = this.current;
+			if (input !== undefined && input.dirty) {
+				// Admission observes the physical position even after an interrupted seek.
+				this.projection.update();
+				input.dirty = false;
+			}
 		});
 	}
 
@@ -59,7 +62,7 @@ export class ActorLabController {
 		if (this.current === undefined) {
 			const input = new ActorLabInput();
 			this.projection = new ActorProjection(input, this.sources, this.guest);
-			input.onWillDispose(() => { this.current = undefined; this.historyRestorePending = false; });
+			input.onWillDispose(() => { this.current = undefined; });
 			this.current = input;
 		}
 		return this.current;
@@ -100,7 +103,6 @@ export class ActorLabController {
 		if (!input.dirty || this.rewind.seeking) return false;
 		const changed = this.projection.update();
 		input.dirty = false;
-		this.historyRestorePending = false;
 		return changed;
 	}
 	public selectActor(input: ActorLabInput, accepted?: () => void, domain = this.cpu.activeCartridgeSlot()): void {

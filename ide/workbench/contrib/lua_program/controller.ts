@@ -26,20 +26,9 @@ import type { HostRewind } from '../../../../hosts/common/rewind';
 /** Source ownership and runtime readback meet in a retained input, never in a second program database. */
 export class LuaProgramController {
 	private readonly projections = new WeakMap<LuaProgramInput, LuaProgramRuntimeProjection>();
-	private readonly unbindGuest: () => void;
 	public constructor(private readonly sources: RuntimeSourceState, public readonly guest: SuspendedGuestSession,
 		private readonly panes: EditorPanes, private readonly navigation: EditorNavigationController, public readonly quickInput: QuickInputController,
-		private readonly rewind: HostRewind) {
-		this.unbindGuest = guest.onDidInvalidate(reason => {
-			if (reason !== 'execution' || this.rewind.seeking || this.rewind.playing) return;
-			// Resolve snapshot bookmarks before a new branch can reuse discarded identities.
-			for (const input of editorTabGroup.tabs) if (input.kind === 'lua_program' && input.historyRestorePending) {
-				this.projections.get(input)?.refresh(input, true);
-				input.historyRestorePending = false;
-			}
-		});
-	}
-	public dispose(): void { this.unbindGuest(); }
+		private readonly rewind: HostRewind) {}
 	public open(kind: LuaProgramKind): void {
 		const choices: { label: string; description: string; detail: string; occurrence: LuaProgramOccurrence }[] = [];
 		const snapshots = new Map<ResourceDomain, LuaSemanticWorkspaceSnapshot>();
@@ -82,7 +71,12 @@ export class LuaProgramController {
 		// Reconcile at the requested position, not an intermediate replay checkpoint.
 		if (this.rewind.seeking) return;
 		let projection = this.projections.get(input);
-		if (projection === undefined) { projection = new LuaProgramRuntimeProjection(this.sources, this.guest); this.projections.set(input, projection); }
+		if (projection === undefined) {
+			const retained = new LuaProgramRuntimeProjection(this.sources, this.guest);
+			this.projections.set(input, retained);
+			input.onWillDispose(this.guest.onWillResumeHistory(() => retained.refresh(input, true)));
+			projection = retained;
+		}
 		projection.refresh(input);
 	}
 	public resolveRuntime(input: LuaProgramInput): void { this.projections.get(input)!.resolve(input); }

@@ -165,6 +165,7 @@ export class RuntimeIdeState {
 			this.frameNavigation.didRestore(origin);
 			invalidateToolingState(origin === RuntimeRestoreOrigin.HistorySeek ? 'history-restored' : 'heap-replaced');
 		};
+		runtime.history.onWillResumeRecording = () => this.luaTooling.suspendedGuest.willResumeHistory();
 		runtime.onStateReset = () => {
 			this.frameNavigation.didReset();
 			invalidateToolingState('heap-replaced');

@@ -69,6 +69,7 @@ export class SuspendedGuestSession {
 	private readonly previewVisited = new Set<number>();
 	private readonly indexKey: StringId;
 	private readonly invalidationListeners = new Set<(reason: GuestInvalidationReason) => void>();
+	private readonly historyResumeListeners = new Set<() => void>();
 
 	public constructor(private readonly runtime: Runtime) {
 		this.cpu = runtime.machine.cpu;
@@ -92,6 +93,16 @@ export class SuspendedGuestSession {
 
 	public invalidate(reason: GuestInvalidationReason = 'execution'): void {
 		for (const listener of this.invalidationListeners) listener(reason);
+	}
+
+	/** The history owner admits a live branch; replay invalidation alone never does. */
+	public onWillResumeHistory(listener: () => void): () => void {
+		this.historyResumeListeners.add(listener);
+		return () => this.historyResumeListeners.delete(listener);
+	}
+
+	public willResumeHistory(): void {
+		for (const listener of this.historyResumeListeners) listener();
 	}
 
 	public identity(value: Value): SuspendedValueIdentity {

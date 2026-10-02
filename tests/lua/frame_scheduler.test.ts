@@ -353,7 +353,15 @@ test('cancelled replay preserves future until takeover and discards its partial 
 	assert.equal(runtime.machine.scheduler.nowCycles, cancelledCycles);
 	assert.equal(history.latestCycles, end);
 	assert.equal(history.inputJournal.endSequence, 3);
+	let resumed = false;
+	history.onWillResumeRecording = () => {
+		assert.equal(history.mode, HistoryMode.Reviewing);
+		assert.equal(runtime.machine.scheduler.nowCycles, cancelledCycles);
+		assert.equal(history.inputJournal.endSequence, 3, 'bookmarks reconcile before future truncation');
+		resumed = true;
+	};
 	history.resumeRecording();
+	assert.equal(resumed, true);
 	assert.equal(history.inputJournal.endSequence, 0);
 	assert.equal(runtime.frameScheduler.captureState().logicalTickRunPending, false);
 	history.captureCheckpoint();

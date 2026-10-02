@@ -22,7 +22,6 @@ export class LuaProgramInput extends CompositeTextEditorInput<`program:${string}
 	public running = false;
 	public liveVisible = false;
 	public liveDirty = true;
-	public historyRestorePending = false;
 	public instance: SuspendedValueIdentity | undefined;
 	public instanceLabel = '';
 	public programHashId = 0;
@@ -41,7 +40,6 @@ export class LuaProgramInput extends CompositeTextEditorInput<`program:${string}
 			this.liveDirty = true;
 			if (reason !== 'execution') {
 				this.running = false;
-				this.historyRestorePending = reason === 'history-restored';
 				if (reason === 'heap-replaced') this.instance = undefined;
 				this.programHashId = 0; this.stateHashId = 0; this.stateRevision = -1;
 				this.live.roots.length = 0; this.live.rows.length = 0;

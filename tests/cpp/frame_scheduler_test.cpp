@@ -691,7 +691,15 @@ void testCancelledHistoryTakeover() {
 	runtime.frameScheduler.run(runtime, 80.0);
 	require(runtime.machine.scheduler.nowCycles() == cancelledCycles, "cancellation suspends machine time");
 	require(history.latestCycles() == end && history.inputJournal.endSequence == 3, "cancellation retains future");
+	bool resumed = false;
+	history.onWillResumeRecording = [&]() {
+		require(history.mode == bmsx::HistoryMode::Reviewing && runtime.machine.scheduler.nowCycles() == cancelledCycles,
+			"bookmarks reconcile the suspended review position");
+		require(history.inputJournal.endSequence == 3, "bookmarks reconcile before future truncation");
+		resumed = true;
+	};
 	history.resumeRecording();
+	require(resumed, "history publishes recording admission");
 	require(history.inputJournal.endSequence == 0 && !runtime.frameScheduler.captureState().logicalTickRunPending, "takeover branches and releases the replay scheduler target");
 	history.captureCheckpoint();
 	runtime.frameScheduler.run(runtime, runtime.timing.frameDurationMs * 2);

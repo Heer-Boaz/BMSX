@@ -77,7 +77,7 @@ or history restore, Actor Lab reacquires membership before copying scalar
 identities, labels and activity. No table, closure or borrowed Actor node enters
 the retained graph. Missing/renamed membership and heap replacement explicitly
 retire it; the user selects again through the Actor tree. Hidden-pane branch
-reconciliation uses the existing Actor Lab invalidation owner.
+reconciliation uses the suspended guest's explicit history-resume boundary.
 
 Geometry, edge routes, viewport, pan and zoom use the shared workbench graph
 controls, including Ctrl-wheel anchored zoom and Shift-wheel horizontal pan.
@@ -119,12 +119,24 @@ BT compilation or claim that mapping exists.
 | Finite forward replay | Step request + target video tick | Step request + i64 target video tick | HostRewind |
 | Labels, rectangles, hit regions | retained submissions/rectangles | fixed arrays/submissions | passive timeline view |
 | Glyph metrics | BFont reference | BitmapFont pointer | host font |
+| Before recording resumes | optional () => void | optional std::function<void()> | RuntimeHistory, host observer |
 
 Steady-state callers: TS/C++ HostOverlayMenu input/render; TS Studio chrome
 update/input/render; TS/C++ HostRewind.service replay loop and frame-boundary
 lookups. No guest values, machine save format or second playback clock are
 introduced. Labels are remeasured only on text/font changes. Native stepping
 must consume recorded video boundaries, not seconds or nominal frame time.
+
+The history-resume observer runs once in `resumeRecording`, before truncation
+and new live execution, not in instruction, render or input-sampling hot paths.
+Production callers are `hosts/common/rewind.ts` and `hosts/libretro/rewind.cpp`'s
+Resume service. Matching callers in TS/C++ frame-scheduler tests and the two
+runtime-replay conformance runners exercise pressure, rejoin and takeover.
+No save-state field or VM identity changes. Studio composition forwards this
+physical boundary to `SuspendedGuestSession`; hidden domain views reconcile
+their own bookmarks before discarded identities can be reused. Replay/seek
+invalidations alone do not admit a branch. Listeners on retained program inputs
+end at input disposal; branch admission does not scan the tab group.
 
 ## Boundaries
 
@@ -200,6 +212,17 @@ resizing alone scales that canvas rather than creating a responsive DOM IDE.
   wrapping and result clipping were checked visually, not inferred from tests.
 - Focused action, pane and layout checks passed separately from those visible
   checks. These changes add no machine/history representation or playback loop.
+
+### History lifetime correction (2026-10-02)
+
+- TS/C++ frame-scheduler checks verified that the resume observer sees the
+  suspended review position and retained future before takeover. The live
+  inspection check restored a pre-birth heap, reconciled its hidden bookmark,
+  and rejected the new branch's actual reuse of that allocation identity.
+- Real-cart runtime replay/history cross-core conformance, TS/native HostRewind
+  and libretro rewind/menu-pause ABI checks passed with Nemesis media. This is
+  physical replay evidence, not proof of every Studio editor or physical-device
+  performance.
 
 ### Live FSM graph follow-through (2026-10-02)
 

@@ -3,6 +3,7 @@
 #include "machine/runtime/save_state.h"
 #include "machine/runtime/history/input_journal.h"
 #include "machine/runtime/history/input_source.h"
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -22,6 +23,8 @@ class RuntimeHistory {
 public:
 	RuntimeHistory(Runtime& runtime, InputControllerInputSource& liveInput) : input(*this, liveInput), runtime(runtime) {}
 	HistoryMode mode = HistoryMode::Disabled;
+	// Host bookmarks reconcile the reviewed heap before live execution can reuse future identities.
+	std::function<void()> onWillResumeRecording;
 	bool checkpointPending = false;
 	InputJournal inputJournal;
 	HistoryInputSource input;

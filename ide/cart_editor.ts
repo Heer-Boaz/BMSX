@@ -697,7 +697,6 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public async shutdown(): Promise<void> {
-		this.luaPrograms.dispose();
 		this.assistant.dispose();
 		this.observedConversation.dispose();
 		this.tools.dispose();

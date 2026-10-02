@@ -22,31 +22,26 @@ type ResolvedBehavior = { kind: 'action_effect'; choice: ActionEffectInstanceCho
 export class BehaviorRuntimeInspection {
 	public running = false;
 	private dirty = true;
-	private historyRestorePending = false;
 	private retired: 'missing' | 'heap-replaced' | undefined;
 	private readonly unbindInvalidation: () => void;
+	private readonly unbindHistoryResume: () => void;
 
 	public constructor(private readonly sources: RuntimeSourceState, private readonly guest: SuspendedGuestSession,
 		private readonly rewind: HostRewind, private readonly domain: ResourceDomain, private selection: BehaviorRuntimeSelection | undefined) {
 		this.unbindInvalidation = guest.onDidInvalidate(reason => {
-			// Reconcile the restored heap before execution can reuse an id from the
-			// discarded future. Seeking/replay is not a new execution branch.
-			if (reason === 'execution' && this.historyRestorePending && !rewind.seeking && !rewind.playing) {
-				if (this.resolve() === undefined) this.retire('missing');
-				this.historyRestorePending = false;
-			}
 			if (reason === 'heap-replaced') this.retire(reason);
 			this.dirty = true;
-			if (reason !== 'execution') this.historyRestorePending = reason === 'history-restored';
+		});
+		this.unbindHistoryResume = guest.onWillResumeHistory(() => {
+			if (this.resolve() === undefined) this.retire('missing');
 		});
 	}
 
-	public dispose(): void { this.running = false; this.selection = undefined; this.unbindInvalidation(); }
+	public dispose(): void { this.running = false; this.selection = undefined; this.unbindInvalidation(); this.unbindHistoryResume(); }
 
 	public refresh(): readonly BehaviorInspectionProperty[] | undefined {
 		if (!this.dirty || this.rewind.seeking) return undefined;
 		this.dirty = false;
-		this.historyRestorePending = false;
 		const resolved = this.resolve();
 		if (resolved === undefined) {
 			if (this.retired === undefined) this.retire('missing');

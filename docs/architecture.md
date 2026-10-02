@@ -5407,7 +5407,14 @@ reads actual World/component class-index membership and retained instance state;
 History restore retires guest borrows while preserving Actor Lab's scalar view
 selection until fresh World membership is read at the requested history position.
 Missing membership clears that selection; a hidden pane resolves it before live
-execution can reuse discarded-future identities. Reset/external state loading
+execution can reuse discarded-future identities. `RuntimeHistory` publishes
+`onWillResumeRecording` before truncating future input or admitting live
+execution, mirrored in TS/C++. Studio composition forwards that boundary to
+`SuspendedGuestSession`; Actor Lab, live behavior inspection and retained Lua
+program inputs reconcile their own bookmarks there. They do not infer a branch
+from execution invalidation, rewind flags or per-editor restore-pending booleans.
+Ordinary replay still invalidates borrows without admitting a live branch.
+Reset/external state loading
 clears selection outright. This UI bookmark grants no persistent tool handle or
 mutation authority and changes no guest identity or TS/C++ snapshot representation.
 Actor Lab's live FSM graph projects that same selected instance hierarchy into
