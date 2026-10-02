@@ -5,7 +5,7 @@ import { editorTabGroup } from '../../ui/tab/group_model';
 import { openEditorTab } from '../../ui/tabs';
 import type { EditorPanes } from '../../services/editor/editor_panes';
 
-/** The existing machine display, with inspection controls rather than guest input. */
+/** The existing machine display, with shared inspection controls and explicit game focus. */
 export class GameViewInput extends ReadonlyEditorInput<'game-view', 'game_view'> {
 	public get resource(): undefined { return undefined; }
 	public readonly frameBounds = create_rect_bounds();

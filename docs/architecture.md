@@ -5906,6 +5906,22 @@ menus, tabs and status stay unchanged. Existing Game View/Actor Lab previews
 suppress the extra frame without discarding the session layout choice. This
 adds no capture path, second runtime, editor group or playback clock.
 
+Game View and the Game panel each bind the shared `GameInputControl` to their
+retained scanout rectangle. Its concrete `InputFocusTarget.guestInputBounds`
+capability admits physical guest input; neither the active tab kind nor the
+workbench's visibility implies game focus. Clicking the image focuses it and
+forwards that click. Ordinary keys, controller input and wheel input then bypass
+IDE bindings. Clicking outside the image or Shift+F1 returns focus to Studio;
+only the focused viewport draws its focus border. Hiding a viewport or opening
+another editor revokes that focus through ordinary control lifetimes.
+`RuntimeCartEditor` derives capture policy from focus and blocking modal state;
+focus changes synchronize the existing host capture latch immediately, and the
+host frame admits current modal policy before guest sampling. This releases
+only the Workbench execution hold. Requested pause, debugger stops and history
+remain owned by their existing execution services. Raw ICU words and the
+non-Studio/native input path are unchanged; no new per-frame input buffers,
+guest-value conversions or synthetic key releases are introduced.
+
 Live behavior property documents retain host rows, typed scalar display inputs
 and callback/source correspondence, separate from transient picker presentation.
 Execution invalidation rereads authoritative instance membership, mutable fields

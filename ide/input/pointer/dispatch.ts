@@ -11,6 +11,8 @@ import { handleBlockingWorkbenchModalPointer, hasBlockingWorkbenchModal } from '
 import { pointerCapture, WORKBENCH_POINTER_SCOPE } from './capture';
 import { pointerHover } from './hover';
 import { editorChromeState } from '../../workbench/ui/chrome_state';
+import { point_in_rect } from '../../../machine/ts/common/rect';
+import { inputFocus } from '../focus';
 
 export function handleTextEditorPointerInput(
 	display: EditorDisplay,
@@ -24,6 +26,11 @@ export function handleTextEditorPointerInput(
 		const metaDown = isMetaDown(playerInput);
 		const gotoModifierActive = ctrlDown || metaDown;
 		const snapshot = readEditorPointerSnapshot(display, playerInput);
+		const focused = inputFocus.target;
+		if (focused?.guestInputBounds !== undefined && snapshot.valid && snapshot.justPressedButtons !== 0
+			&& (!snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, focused.guestInputBounds))) {
+			focused.release();
+		}
 		const blockingModal = hasBlockingWorkbenchModal();
 		const quickInputVisible = editor.quickInput.visible;
 		const captureScope = quickInputVisible ? editor.quickInput.pointerScope

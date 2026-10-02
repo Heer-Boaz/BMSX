@@ -192,6 +192,7 @@ export type CartEditor = {
 	readonly tools: WorkspaceToolService;
 	readonly diagnostics: ResourceDiagnosticsService;
 	readonly executionSuspended: boolean;
+	readonly capturesGuestInput: boolean;
 	readonly isAvailable: boolean;
 	readonly completion: EditorCompletionController;
 	readonly resourcePanel: ResourcePanelController;
@@ -240,11 +241,15 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly runtimeTimeline: RuntimeTimelineControl;
 	public readonly gamePanel: GamePanel;
 	private readonly activeListeners = new Set<(active: boolean) => void>();
+	public get capturesGuestInput(): boolean {
+		return this.isActive && (hasBlockingWorkbenchModal() || inputFocus.target?.guestInputBounds === undefined);
+	}
 	public get executionSuspended(): boolean {
-		return this.isActive && (this.quickInput.visible || this.contextMenu.visible
+		return this.isActive && (hasBlockingWorkbenchModal() || this.quickInput.visible || this.contextMenu.visible
 			|| !this.debuggerState.plans.workbenchExecutionRequested
 			&& !(this.debuggerState.executionContext === 'workbench' && this.debuggerState.source.stop === undefined)
-			&& this.editorPanes.activePane?.suspendsRuntime !== false);
+			&& this.editorPanes.activePane?.suspendsRuntime !== false
+			&& inputFocus.target?.guestInputBounds === undefined);
 	}
 	public readonly isAvailable: boolean;
 	public readonly completion: EditorCompletionController;
@@ -286,6 +291,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly unbindQuickInputFields: () => void;
 	private readonly unbindProblemsPanel: () => void;
 	private readonly unbindBreakpoints: () => void;
+	private readonly unsubscribeInputFocusChanged: () => void;
 	private readonly chromeRenderContext: ChromeRenderContext & WorkbenchChromeLayout = {
 		get viewportWidth(): number { return editorViewState.viewportWidth; },
 		get headerHeight(): number { return editorViewState.headerHeight; },
@@ -464,6 +470,7 @@ export class RuntimeCartEditor implements CartEditor {
 			behaviorRegistrations,
 			scenarioRuns,
 		);
+		this.unsubscribeInputFocusChanged = inputFocus.onDidChange(() => input.setGuestInputCaptured(this.capturesGuestInput));
 		this.aemEditor = new AemEditorController(sources, this.editorPanes, this.quickInput);
 		this.luaPrograms = new LuaProgramController(sources, luaTooling.suspendedGuest, this.editorPanes, this.navigation, this.quickInput, rewind);
 		this.actionStrings = new ActionStringTester(sources, clock, this.quickInput, scenarioRuns, this.scenarioLab);
@@ -703,6 +710,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.frameNavigation.dispose();
 		this.debuggerExecution.dispose();
 		this.unbindBreakpoints();
+		this.unsubscribeInputFocusChanged();
 		const terminalDrained = this.terminal.shutdown();
 		const actorsDrained = this.actorExecution.shutdown();
 		this.scenarioRuns.dispose();
@@ -736,6 +744,7 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 		editorRuntimeState.active = false;
 		setEditorFeedbackActive(false);
+		this.input.setGuestInputCaptured(false);
 		requestWorkspaceAutosave(WorkspaceAutosaveChange.All);
 		cancelWorkspaceAutosave();
 		try {

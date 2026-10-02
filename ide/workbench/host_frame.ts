@@ -164,6 +164,7 @@ export function runWorkbenchHostFrame(
 		if (hostMenuInput !== HostMenuInput.Active) {
 			workbenchMode.tickIdeInput(ide, input);
 		}
+		input.setGuestInputCaptured(ide.editor.capturesGuestInput);
 
 		ide.debuggerExecution.beforeHostFrame();
 		ide.scenarioRuns.advance();

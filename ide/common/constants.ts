@@ -115,6 +115,7 @@ type ThemeDefinition = {
 		position: number;
 	};
 	graph: { active: number };
+	focusBorder: number;
 	connection: {
 		connected: number;
 		disconnected: number;
@@ -253,6 +254,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			position: THEME_TOKEN_TERMINAL_DARK_BLUE,
 		},
 		graph: { active: THEME_TOKEN_TERMINAL_LIGHT_GREEN },
+		focusBorder: THEME_TOKEN_TERMINAL_BLUE,
 		connection: {
 			connected: THEME_TOKEN_SUCCESS_GREEN,
 			disconnected: THEME_TOKEN_ACCENT_RED,
@@ -379,6 +381,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			position: THEME_TOKEN_ACCENT_BLUE,
 		},
 		graph: { active: THEME_TOKEN_SUCCESS_GREEN },
+		focusBorder: THEME_TOKEN_ACCENT_BLUE,
 		connection: {
 			connected: THEME_TOKEN_SUCCESS_GREEN,
 			disconnected: THEME_TOKEN_ACCENT_RED,
@@ -538,6 +541,7 @@ export let COLOR_SYNTAX_HIGHLIGHTS = {
 export let HIGHLIGHT_OVERLAY = 0;
 export let SELECTION_OVERLAY = 0;
 export let COLOR_SELECTION_TEXT = 0;
+export let COLOR_FOCUS_BORDER = 0;
 export let INACTIVE_SELECTION_OVERLAY = 0;
 export let COLOR_INACTIVE_SELECTION_TEXT = 0;
 export let CARET_COLOR = 0;
@@ -708,6 +712,7 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	HIGHLIGHT_OVERLAY = theme.highlightOverlay;
 	SELECTION_OVERLAY = theme.text.selection;
 	COLOR_SELECTION_TEXT = theme.text.selectionText;
+	COLOR_FOCUS_BORDER = theme.focusBorder;
 	INACTIVE_SELECTION_OVERLAY = theme.text.inactiveSelection;
 	COLOR_INACTIVE_SELECTION_TEXT = theme.text.inactiveSelectionText;
 	CARET_COLOR = theme.caret.editor;

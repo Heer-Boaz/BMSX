@@ -11,6 +11,10 @@ export function handleEditorInput(
 	playerInput: PlayerInput,
 	editor: CartEditor,
 ): void {
+	if (inputFocus.target?.guestInputBounds !== undefined) {
+		inputFocus.handleKeyboard(playerInput);
+		return;
+	}
 	if (editor.contextMenu.visible && editor.contextMenu.handleKeyboard(playerInput)) {
 		return;
 	}

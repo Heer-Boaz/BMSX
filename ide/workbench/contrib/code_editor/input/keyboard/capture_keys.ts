@@ -17,6 +17,7 @@ export const captureKeys: string[] = [...new Set([
 	'PageUp',
 	'Space',
 	'Tab',
+	'F1',
 	'F3',
 	'F5',
 	'F9',

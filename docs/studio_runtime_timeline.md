@@ -25,6 +25,24 @@ Lab already display scanout, so the workbench suppresses the extra panel there
 without discarding the user's layout choice. View / Toggle Game Panel is the
 workbench action, not a permanent button in each module editor.
 
+Game View and the Game panel support explicit game input focus. Clicking the
+scanout forwards physical keys, controller and pointer input to the game, with
+a thin focus border instead of another toolbar button. Tab can enter the game
+from its surrounding workbench controls; once focused, Tab, Escape and ordinary
+function keys belong to the game. Click outside or Shift+F1 to return to Studio.
+Game focus releases the source editor's automatic Workbench hold;
+explicit pause and debugger stops remain intact. Viewport hiding, editor changes
+and shutdown release this input lifetime, rather than keeping another capture
+flag in each editor. The focus owns the existing frame rectangle, not a new
+coordinate system or guest input ABI.
+
+References examined before this input change:
+[Godot embedded-process focus and focus-border ownership](https://github.com/godotengine/godot/blob/master/editor/run/embedded_process.cpp),
+[VS Code embedded webview focus](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/webview/browser/webviewElement.ts),
+[Unreal viewport input and Shift+F1 release](https://dev.epicgames.com/documentation/en-us/unreal-engine/playing-and-simulating-in-unreal-engine),
+and [VS Code's semantic focus border](https://github.com/microsoft/vscode/blob/main/src/vs/platform/theme/common/colors/baseColors.ts).
+The focus outline has its own central theme role, not a menu background color.
+
 This follows the content-only right inset in
 [VS Code EditorPart](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/editor/editorPart.ts)
 and the separate display/execution ownership of
@@ -371,3 +389,28 @@ Interaction validation:
   tests typecheck still reports 102 diagnostics in untouched fixtures/profiles.
   Repository-wide indentation also reports existing untouched cart/test/cJSON
   files, not this patch's files.
+
+### Embedded game input focus (2026-10-02)
+
+- The real-cart game-input scenario passes on software, WebGL2 and WebGPU.
+  Latched ICU words confirm keyboard, pointer and injected controller input;
+  Tab, Escape and function keys do not trigger editor navigation, breakpoints,
+  stepping or pause. Cartridge input handlers change the title selection and
+  start its actual sequence. Source versions remain unchanged.
+- Full Game View and the side panel exercise input release, explicit pause,
+  panel hiding, source-view replacement and leaving Studio. Capture changes
+  immediately on focus loss, before another host frame. Controller evidence is
+  the ordinary input-device test fixture, not a physical-device claim.
+- Product browser keyboard/pointer actions changed the running title's
+  `selected_player_count` from two to one; fresh Studio Actor inspection read
+  that state. Light and dark focus borders and the side-panel layout were
+  inspected visually. No additional permanent buttons or UI instructions were
+  added, and no source edits or guest mutation calls were used for this proof.
+- Thirty existing focus/pointer/input regression checks, IDE and focused
+  workflow typechecks, browser Studio build, strict boundaries and diff checks
+  pass. The global tests typecheck retains the same 102 preexisting diagnostics,
+  with no new diagnostics. The separate broad-suite zoom-toolbar automation
+  issue above remains outstanding; this is not a claim that that suite passes.
+- There are no machine, native runtime, ICU representation, replay-engine or
+  save-state changes. One retained control per viewport and one focus-change
+  listener replace visibility-only admission; sampling uses existing buffers.
