@@ -94,7 +94,7 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 				: proposal.state === 'stale' || proposal.state === 'failed' ? `${proposal.state}: ${proposal.reason}` : 'Discarded - no source changes'}`, layout.right - 8, measureTextRange);
 		}
 		if (changed) {
-			layoutWorkbenchActionBar(actionBar, layout.right - 4, layout.top, layout.top + layout.rowHeight + 4, measureText);
+			layoutWorkbenchActionBar(actionBar, layout.right - 4, layout.top, layout.top + layout.rowHeight + 4, measureText, editorViewState.font.renderFont());
 			this.input.heading = truncateMeasuredText(this.input.proposal.title, actionBar.items[0].bounds.left - 8, measureTextRange);
 			if (this.input.projectedWidth !== layout.right || this.input.projectedFont !== layout.font) {
 				layoutEditReviewRows(this.input, layout.right - colors.SCROLLBAR_WIDTH - 8, measureTextRange);

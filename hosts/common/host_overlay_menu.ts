@@ -15,9 +15,11 @@ import {
 	HOST_MENU_BUTTON,
 	HOST_ON_SCREEN_KEYBOARD_BUTTON,
 } from './input/shortcuts';
+import { Font } from '../../machine/ts/render/shared/bmsx_font';
+import { clamp } from '../../machine/ts/common/clamp';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostRewind } from './rewind';
-import { HostRewindTimeline, TimelineAction } from './rewind_timeline';
+import { HostRewindTimeline, TimelineAction, type TimelineState } from './rewind_timeline';
 import type { DeviceQuantizeMode } from '../../machine/ts/render/post/device_quantize/mode';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
@@ -384,6 +386,9 @@ export class HostOverlayMenu {
 	};
 	private readonly remapOptions: readonly HostMenuOption[];
 	private readonly timeline = new HostRewindTimeline();
+	private readonly timelineFont = new Font({ variant: 'tiny' });
+	private readonly timelineState: TimelineState = { earliestCycles: 0, latestCycles: 0, positionCycles: 0, cpuHz: 1,
+		status: 'PAUSED', enabledActions: 0, hoveredAction: TimelineAction.None, focusedAction: TimelineAction.None };
 	private options: readonly HostMenuOption[];
 
 	public constructor(
@@ -532,15 +537,22 @@ export class HostOverlayMenu {
 			if (!this.rewind.playing) this.execution.setPauseReason(HostPauseReason.Requested, false);
 			this.rewind.togglePlayback();
 		} else if (pointerAction === TimelineAction.Seek) {
-			this.timeline.seekAt(this.runtime, this.rewind, this.uiInput.pointerPosition.x);
+			this.rewind.seekTo(this.timeline.cyclesAt(this.uiInput.pointerPosition.x));
+		} else if (pointerAction === TimelineAction.Present) {
+			this.rewind.seekTo(this.runtime.history.latestCycles);
 		} else {
-			const leftBumper = this.uiInput.buttonRepeatEdge(BUTTON_LEFT_BUMPER);
-			const rightBumper = this.uiInput.buttonRepeatEdge(BUTTON_RIGHT_BUMPER);
+			const leftBumper = this.uiInput.buttonRepeatEdge(BUTTON_LEFT_BUMPER) || pointerAction === TimelineAction.Previous;
+			const rightBumper = this.uiInput.buttonRepeatEdge(BUTTON_RIGHT_BUMPER) || pointerAction === TimelineAction.Next;
 			const left = this.uiInput.buttonRepeatEdge(BUTTON_LEFT);
 			const right = this.uiInput.buttonRepeatEdge(BUTTON_RIGHT);
-			const backward = leftBumper || left;
-			const forward = rightBumper || right;
-			if (backward !== forward) this.timeline.moveCursor(this.runtime, this.rewind, backward ? -1 : 1);
+			if (leftBumper !== rightBumper && !this.rewind.seeking && !this.rewind.playing) {
+				const direction = leftBumper ? -1 : 1;
+				if (this.rewind.frameStepCycles(direction) !== this.rewind.positionCycles) this.rewind.stepFrame(direction);
+			} else if (left !== right) {
+				const history = this.runtime.history;
+				this.rewind.seekTo(clamp(this.rewind.positionCycles + (left ? -1 : 1) * this.runtime.timing.cpuHz,
+					history.earliestCycles, history.latestCycles));
+			}
 		}
 
 		return result;
@@ -571,7 +583,19 @@ export class HostOverlayMenu {
 			return;
 		}
 		if (this.page === HostOverlayPage.Rewind) {
-			this.timeline.queueRenderCommands(this.runtime, this.presenter, this.rewind);
+			const state = this.timelineState, history = this.runtime.history;
+			state.earliestCycles = history.earliestCycles; state.latestCycles = history.latestCycles;
+			state.positionCycles = this.rewind.positionCycles; state.cpuHz = this.runtime.timing.cpuHz;
+			state.status = this.rewind.stopped ? 'STOPPED' : this.rewind.seeking ? 'SEEKING' : this.rewind.playing ? 'REPLAY' : 'PAUSED';
+			state.enabledActions = (1 << TimelineAction.Seek) | (1 << TimelineAction.Playback)
+				| (1 << TimelineAction.Present) | (1 << TimelineAction.Resume) | (1 << TimelineAction.Cancel);
+			if (!this.rewind.seeking && !this.rewind.playing) {
+				if (this.rewind.frameStepCycles(-1) < state.positionCycles) state.enabledActions |= 1 << TimelineAction.Previous;
+				if (this.rewind.frameStepCycles(1) > state.positionCycles) state.enabledActions |= 1 << TimelineAction.Next;
+			}
+			this.timeline.update(state, 6, this.presenter.viewportSize.y - HostRewindTimeline.height(this.timelineFont) - 6,
+				this.presenter.viewportSize.x - 6, this.timelineFont);
+			this.presenter.hostOverlayQueue.publishHostMenuFrame(this.timeline.frame);
 			return;
 		}
 		this.clearRenderCommands();

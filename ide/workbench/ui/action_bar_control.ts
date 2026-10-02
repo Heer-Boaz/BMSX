@@ -25,7 +25,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 	private readonly cancelPress = () => this.cancelPointer();
 
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
-		private readonly hover: PointerHoverService, private readonly commands: EditorCommandRunner, parent: InputFocusTarget) {
+		private readonly hover: PointerHoverService, private readonly commands: EditorCommandRunner, parent: InputFocusTarget | null) {
 		this.focusTarget = focus.createTarget(parent);
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 		this.unbindFocus = this.focusTarget.onDidFocus(() => {
@@ -48,7 +48,8 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 	public clearInput(): void {
 		this.hover.release(this);
 		this.cancelPointer();
-		this.focusTarget.release();
+		if (this.focusTarget.hasFocus && this.focusTarget.commandContext !== this.focusTarget) this.focusTarget.commandContext.focus();
+		else this.focusTarget.release();
 		this.input = undefined;
 	}
 

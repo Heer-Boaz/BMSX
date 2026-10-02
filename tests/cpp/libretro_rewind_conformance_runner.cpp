@@ -212,7 +212,7 @@ int main(int argc, char** argv) {
 		// seek-completion observer. Detailed review assertions use the real
 		// HostRewind/Runtime owners in host_rewind_conformance_runner instead.
 		const auto reviewAudio = audioFrames;
-		press(1u << RETRO_DEVICE_ID_JOYPAD_L);
+		press(1u << RETRO_DEVICE_ID_JOYPAD_LEFT);
 		require(audioSuspended, "seeking suspends frontend audio");
 		require(audioFrames == reviewAudio, "seeking delivers no replay audio");
 		// The frontend API must also expose watch/pause, not only seek/takeover.

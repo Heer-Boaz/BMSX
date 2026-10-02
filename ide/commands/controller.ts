@@ -8,6 +8,7 @@ import type { RuntimeFrameNavigation } from '../runtime/frame_navigation';
 import { navigationState } from '../navigation/navigation_history';
 import { openGameView } from '../workbench/contrib/game_view/editor_input';
 import { editorTabGroup } from '../workbench/ui/tab/group_model';
+import { editorChromeState } from '../workbench/ui/chrome_state';
 import type { HostRewind } from '../../hosts/common/rewind';
 import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -62,7 +63,7 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'progression.createProgram', 'input.createBindings', 'behaviorLens.createEffect',
 	'aem', 'aem.edit', 'aem.add', 'aem.remove', 'aem.source', 'aem.testEvent',
 	'luaProgram.edit', 'luaProgram.add', 'luaProgram.remove', 'luaProgram.source', 'progression', 'inputBindings',
-	'luaProgram.live', 'luaProgram.testInput', 'input.testActionString',
+	'luaProgram.live', 'luaProgram.authoring', 'luaProgram.testInput', 'input.testActionString',
 	'behaviorLens.addProperty', 'behaviorLens.removeProperty',
 	'sceneEditor', 'behaviorLens', 'sceneEditor.source', 'behaviorLens.source', 'behaviorLens.details',
 	'behaviorLens.preview',
@@ -194,8 +195,7 @@ export class IdeCommandController {
 			case 'behaviorLens.inspectRegisteredDefinitions':
 			case 'aem.edit': case 'aem.add': case 'aem.remove': case 'aem.source':
 			case 'luaProgram.edit': case 'luaProgram.add': case 'luaProgram.remove': case 'luaProgram.source':
-			case 'luaProgram.live': case 'luaProgram.selectInstance': case 'luaProgram.playback': case 'luaProgram.testInput':
-			case 'luaProgram.stepFrame': case 'luaProgram.stepFrameBack':
+			case 'luaProgram.live': case 'luaProgram.authoring': case 'luaProgram.selectInstance': case 'luaProgram.more': case 'luaProgram.testInput':
 			case 'behaviorLens.editProperty':
 			case 'behaviorLens.addProperty': case 'behaviorLens.removeProperty':
 			case 'scenarioLab.details':
@@ -237,7 +237,12 @@ export class IdeCommandController {
 				} else this.debuggerState.plans.setControlSuspended(!this.debuggerState.plans.controlSuspended);
 				if (!this.debuggerState.plans.controlSuspended) this.execution.requestExecution(false);
 				return;
+			case 'tabs.scrollLeft': case 'tabs.scrollRight':
+				editorChromeState.tabScrollbar.setScroll(editorChromeState.tabScrollbar.getScroll()
+					+ (command === 'tabs.scrollLeft' ? -1 : 1) * editorChromeState.tabViewportBounds.right * 0.75);
+				return;
 			case 'pause':
+				if (inputFocus.getCommand(command) !== undefined) { inputFocus.executeCommand(command); return; }
 				if (this.execution.userPaused) {
 					if (this.rewind.active) this.rewind.resumeHere();
 					this.execution.requestExecution(true);
@@ -249,11 +254,21 @@ export class IdeCommandController {
 					this.execution.setPauseReason(HostPauseReason.Requested, true);
 				}
 				return;
+			case 'runtime.pause':
+				inputFocus.executeCommand(command);
+				if (this.rewind.active) this.rewind.pauseSeek();
+				this.execution.setPauseReason(HostPauseReason.Requested, true);
+				return;
+			case 'runtime.present':
+				this.execute('runtime.pause');
+				this.frameNavigation.seek(this.runtime.history.latestCycles);
+				return;
 			case 'gameView.playback':
 				this.toggleGamePlayback();
 				return;
 			case 'stepFrame':
 			case 'stepFrameBack':
+				if (inputFocus.getCommand(command) !== undefined) { inputFocus.executeCommand(command); return; }
 				openGameView(this.editor.editorPanes);
 				this.frameNavigation.step(command === 'stepFrameBack' ? -1 : 1);
 				return;
@@ -409,8 +424,7 @@ export class IdeCommandController {
 			case 'behaviorLens.inspectRegisteredDefinitions':
 			case 'aem.edit': case 'aem.add': case 'aem.remove': case 'aem.source':
 			case 'luaProgram.edit': case 'luaProgram.add': case 'luaProgram.remove': case 'luaProgram.source':
-			case 'luaProgram.live': case 'luaProgram.selectInstance': case 'luaProgram.playback': case 'luaProgram.testInput':
-			case 'luaProgram.stepFrame': case 'luaProgram.stepFrameBack':
+			case 'luaProgram.live': case 'luaProgram.authoring': case 'luaProgram.selectInstance': case 'luaProgram.more': case 'luaProgram.testInput':
 			case 'behaviorLens.editProperty':
 			case 'behaviorLens.addProperty': case 'behaviorLens.removeProperty':
 			case 'scenarioLab.details':
@@ -448,11 +462,18 @@ export class IdeCommandController {
 			}
 			case 'debugEvaluation':
 				return this.runtimeTasks.ready && this.debuggerState.plans.workbenchControlActive && this.fault.faultSnapshot === null;
+			case 'tabs.scrollLeft': return editorChromeState.tabScrollbar.getScroll() > 0;
+			case 'tabs.scrollRight': return editorChromeState.tabScrollbar.getScroll() < editorChromeState.tabScrollbar.getMaximumScroll();
+			case 'openEditors': return editorTabGroup.tabs.length > 0;
 			case 'pause':
+				if (context?.getCommand(command) !== undefined) return context.getCommand(command)!.isEnabled();
 				return !this.execution.userPaused || this.runtimeTasks.mutationReady;
 			case 'stepFrame':
 			case 'stepFrameBack':
+				if (context?.getCommand(command) !== undefined) return context.getCommand(command)!.isEnabled();
 				return this.frameNavigation.canStep(command === 'stepFrameBack' ? -1 : 1);
+			case 'runtime.pause': return this.runtimeTasks.ready;
+			case 'runtime.present': return this.rewind.available && this.frameNavigation.available;
 			case 'gameView.playback':
 				return this.runtimeTasks.ready && !this.execution.frameStepPending
 					&& !this.fault.hostFrameFailed && this.fault.faultSnapshot === null

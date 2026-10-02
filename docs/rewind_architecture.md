@@ -5,6 +5,12 @@ collection are implemented. TS player/Studio and libretro expose checkpoint
 navigation in the existing quick menu. Rewind is an emulator facility, not a
 Studio or cartlib service. Physical SNES Mini performance remains unmeasured.
 
+The current shared transport also docks in Studio's live inspectors and Game
+View. LB/RB step recorded video boundaries; Left/Right retain second-sized
+seeking. The earlier slice notes below describe their original controls. The
+timeline now owns only presentation, not cursor commands or replay execution;
+see [current timeline ownership](studio_runtime_timeline.md).
+
 ## References and ownership
 
 - [DuckStation memory states](https://github.com/stenzek/duckstation/blob/master/src/core/system.cpp):
@@ -908,8 +914,8 @@ References examined before this mirrored UI diff:
 | Recorded range / seek target | Existing integer cycle `number` | Existing `i64` | `RuntimeHistory`, `HostRewind.seekTo`; storage and journal unchanged |
 | Transport inputs | Normalized host LB/RB, A playback, START takeover, B; existing repeat state | Same controller bits and native repeat state | `HostOverlayMenu.tickInput`; consumed before live ICU input, including the exit frame |
 | Previous button state | Input owner keeps physical pressed state separate from consumption | Normalized physical button bits; keyboard navigation also includes its existing stick thresholds | `HostOverlayMenu.latchButtonStates` must not latch consumed output as a release; holding the opening button does not activate the destination page |
-| Timeline navigation | One emulated-second relative steps; pointer position mapped to range | Same integer-cycle target calculation | `HostRewindTimeline.moveCursor` / `seekAt`; existing replay snaps to a recorded PCRTC boundary |
-| Bottom bar | Retained rectangles, glyph submissions and host command arrays | Same retained submissions / arrays | `HostRewindTimeline.queueRenderCommands`; no per-frame buffer construction |
+| Timeline navigation | LB/RB recorded video boundaries; Left/Right second-sized seeks; pointer mapped to range | Same journal boundaries and integer-cycle targets | `HostOverlayMenu` maps input to `HostRewind.stepFrame` / `seekTo`; the passive view only maps pixels with `cyclesAt` |
+| Bottom bar | Retained rectangles, glyph submissions and host command arrays | Same retained submissions / arrays | `HostRewindTimeline.update`; the host publishes its retained frame; no per-frame buffer construction |
 | Pending live takeover/playback | Seek intent plus `afterSeek` request | Same | `HostRewind.resumeHere` / `togglePlayback` / `service`: START or A during seek waits for the selected target; Pause or a newer seek supersedes that intent |
 | Overlay transition | Page plus Accept/Cancel/Discard/Retain outcome | Same enums | `HostOverlayMenu.transitionTo` is the only page writer after construction; departure, pointer/repeat reset, exclusive input and destination activation are one lifecycle |
 
@@ -924,8 +930,8 @@ Every route uses this lifecycle, not destination-specific cleanup calls. This
 is a bounded state machine for the existing host overlays, not a new workbench
 navigation framework or a generic callback facade.
 
-LB/RB (or left/right) move through the recorded range; holding uses the existing
-host button-repeat cadence. A now toggles recorded playback/pause and START
+LB/RB step recorded video boundaries; Left/Right seek seconds through the range.
+Holding uses the existing host button-repeat cadence. A toggles recorded playback/pause and START
 takes live control, as specified in REWIND-PLAYBACK-01 above. B or the existing
 menu chord cancels and returns to the recorded end. Pointer hit targets expose
 the same actions. Seeking, playback and paused review are visibly distinct.
@@ -998,7 +1004,7 @@ References reviewed before the transport/phase diff:
 
 | State / operation | TypeScript | C++ | Owner and callsites |
 | --- | --- | --- | --- |
-| Selected transport coordinate | `HostRewind.requestedCycles: number` (integer cycles) | `HostRewind::requestedCycles: i64` | `seekTo`, `positionCycles`, timeline `moveCursor`/`seekAt`; retained throughout review, including pending/coalesced seeks |
+| Selected transport coordinate | `HostRewind.requestedCycles: number` (integer cycles) | `HostRewind::requestedCycles: i64` | `seekTo`, `positionCycles`, `stepFrame`; retained throughout review, including pending/coalesced seeks |
 | Resolved replay boundary | Existing `RuntimeHistory.targetCycles` | Same `i64` field | `beginSeek` resolves against the journal; no extra presentation copy |
 | Interrupted replay coordinate | Scheduler cycle count | Same `i64` count | `service` Pause/Stopped adopts the reached cycle as both resolved and selected position |
 | Frame phases | `runHostFrame`, `runWorkbenchHostFrame`, tooling `runCpuProfileHostFrame` | `runLibretroFrame` | Poll/route input; clear presentation once; service/update; queue current overlay; present; capture due checkpoint |

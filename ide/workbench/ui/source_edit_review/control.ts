@@ -134,7 +134,7 @@ export class WorkbenchSourceEditReview {
 			|| this.bounds.right !== bounds.right || this.bounds.bottom !== bounds.bottom) {
 			this.font = font;
 			write_rect_bounds(this.bounds, bounds.left, bounds.top, bounds.right, bounds.bottom);
-			layoutWorkbenchActionBar(this.actionBar, bounds.right - 4, bounds.top + 2, bounds.top + font.lineHeight + 4, measureText);
+			layoutWorkbenchActionBar(this.actionBar, bounds.right - 4, bounds.top + 2, bounds.top + font.lineHeight + 4, measureText, font);
 			this.title = truncateMeasuredText(this.input!.title, this.actionBar.items[0].bounds.left - bounds.left - 8, measure);
 			this.summary = truncateMeasuredText(this.input!.summary, bounds.right - bounds.left - 8, measure);
 			this.layoutDirty = false;

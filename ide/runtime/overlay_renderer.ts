@@ -13,7 +13,7 @@ import {
 	type color,
 } from '../../machine/ts/render/shared/submissions';
 import { LAYER_2D_IDE, type Layer2D } from '../../machine/ts/render/shared/layers';
-import type { HostOverlayFrame, HostOverlayQueue } from '../../machine/ts/render/host_overlay/overlay_queue';
+import type { HostMenuFrame, HostOverlayFrame, HostOverlayQueue } from '../../machine/ts/render/host_overlay/overlay_queue';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { Viewport } from '../common/viewport';
 
@@ -384,6 +384,11 @@ export class OverlayRenderer {
 			buffer.itemPool[index] = submission;
 		}
 		return submission;
+	}
+
+	/** Compose a retained sibling view in logical coordinates into this frame's command buffer. */
+	public appendFrame(frame: HostMenuFrame): void {
+		for (let index = 0; index < frame.commandCount; index++) this.queueCommand(frame.commandKinds[index], frame.commandRefs[index]);
 	}
 
 	public endFrame(): void {

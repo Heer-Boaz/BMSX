@@ -81,6 +81,7 @@ export class Scrollbar {
 	public getTrack(): RectBounds { return this.track; }
 	public getThumb(): RectBounds | null { return this.visible ? this.thumb : null; }
 	public getScroll(): number { return this.scrollValue; }
+	public getMaximumScroll(): number { return this.maxScrollValue; }
 
 	/** Reveal a content interval with minimal movement; oversized items lead-align. */
 	public reveal(start: number, end: number, margin = 0): void {

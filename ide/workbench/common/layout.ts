@@ -3,6 +3,7 @@ import { writeWrappedOverlayLine } from '../../editor/common/text/layout';
 import { editorViewState } from '../../editor/ui/view/state';
 import { editorFeedbackState } from '../../common/feedback_state';
 import { problemsPanel } from '../contrib/problems/panel/controller';
+import { editorChromeState } from '../ui/chrome_state';
 import * as constants from '../../common/constants';
 import { computeSearchPageStats } from '../contrib/code_editor/find/search';
 import { editorSearchState, lineJumpState } from '../contrib/code_editor/find/widget_state';
@@ -154,7 +155,7 @@ export function getVisibleProblemsPanelHeight(): number {
 }
 
 export function bottomMargin(): number {
-	return statusAreaHeight() + getVisibleProblemsPanelHeight();
+	return statusAreaHeight() + getVisibleProblemsPanelHeight() + editorChromeState.runtimeTimelineHeight;
 }
 
 export function searchVisibleResultCount(): number {

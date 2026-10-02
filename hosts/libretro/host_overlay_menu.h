@@ -70,6 +70,8 @@ private:
 	HostUiInput uiInput;
 
 	HostRewindTimeline timeline;
+	Font timelineFont{FontVariant::Tiny};
+	TimelineState timelineState;
 	Page m_page = Page::Closed;
 	HostOnScreenKeyboard m_keyboard;
 	bool m_showFps = false;

@@ -10,6 +10,7 @@ import { openSourceView } from '../workbench/contrib/source_views/quick_access';
 import { hasSceneSourceDefinitions } from '../workbench/contrib/scene_editor/source';
 import { editorTabGroup } from '../workbench/ui/tab/group_model';
 import { openGameView } from '../workbench/contrib/game_view/editor_input';
+import { showOpenEditors } from '../workbench/services/editor/open_editors';
 
 export function isEditorViewCommand(command: EditorCommandId): command is EditorViewCommandId {
 	switch (command) {
@@ -21,6 +22,7 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 		case 'behaviorLens':
 		case 'behaviorLens.preview':
 		case 'keepEditor':
+		case 'openEditors':
 		case 'behaviorLens.actionEffects':
 		case 'behaviorLens.stateMachines':
 		case 'behaviorLens.behaviorTrees':
@@ -63,6 +65,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 		case 'keepEditor':
 			editorTabGroup.pin(editorTabGroup.activeTab);
 			return;
+		case 'openEditors': showOpenEditors(editor.editorPanes, editor.quickInput); return;
 		case 'behaviorLens.actionEffects':
 			editor.behaviorLens.open('action_effect');
 			return;

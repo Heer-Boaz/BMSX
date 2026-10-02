@@ -73,7 +73,7 @@ export class AemEditorPane extends FullWidthWorkbenchEditorPane<AemEditorInput> 
 	public override update(): void {
 		projectAemSource(this.input); this.edit.update(); updateFullWidthWorkbenchLayout(this.input.layout);
 		const { layout, actionBar, tree } = this.input;
-		layoutWorkbenchActionBar(actionBar, layout.right - 4, layout.top, layout.top + layout.rowHeight + 4, measureText);
+		layoutWorkbenchActionBar(actionBar, layout.right - 4, layout.top, layout.top + layout.rowHeight + 4, measureText, editorViewState.font.renderFont());
 		layoutWorkbenchPropertyTree(tree, editorViewState.font.renderFont(), measureTextRange, layout.left + 4,
 			layout.top + layout.rowHeight + 7, layout.right - 4, layout.bottom);
 		this.actions.update();

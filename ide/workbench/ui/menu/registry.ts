@@ -8,7 +8,7 @@ export type WorkbenchDropdownMenuId =
 
 export type WorkbenchContextMenuId = 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'terminal.input' | 'assistant.turn' | 'workspaceEditReview.title' | 'gameView.title' | 'actorLab.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'runtime.title' | 'editorTabs.title' | 'terminal.input' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -22,7 +22,6 @@ export type WorkbenchMenuSeparator = {
 export type WorkbenchMenuItem = WorkbenchMenuCommandItem | WorkbenchMenuSeparator;
 
 type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly WorkbenchMenuItem[]> & {
-	readonly 'gameView.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'actorLab.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'propertyInspector.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'sourceEditReview.title': readonly WorkbenchMenuCommandItem[];
@@ -41,6 +40,8 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'behaviorLens.properties.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'aem.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'luaProgram.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'runtime.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'editorTabs.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'sceneEditor.title': readonly WorkbenchMenuCommandItem[];
 };
 
@@ -61,18 +62,12 @@ const TEST_DEBUG_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
 
 /** Immutable built-in menu contributions; renderers only project these items. */
 export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
-	'gameView.title': [
-		{ type: 'command', command: 'stepFrameBack' },
-		{ type: 'command', command: 'gameView.playback' },
-		{ type: 'command', command: 'stepFrame' },
-	],
 	'actorLab.context': [
 		{ type: 'command', command: 'actorLab.details' },
 		{ type: 'command', command: 'actorLab.actions' },
 		{ type: 'command', command: 'actorLab.call' },
 	],
 	'actorLab.title': [
-		{ type: 'command', command: 'actorLab.playback' },
 		{ type: 'command', command: 'actorLab.select' },
 		{ type: 'command', command: 'actorLab.spawn' },
 		{ type: 'command', command: 'actorLab.emit' },
@@ -250,11 +245,19 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'luaProgram.edit' },
 		{ type: 'command', command: 'luaProgram.source' },
 		{ type: 'command', command: 'luaProgram.live' },
-		{ type: 'command', command: 'luaProgram.selectInstance' },
-		{ type: 'command', command: 'luaProgram.stepFrameBack' },
-		{ type: 'command', command: 'luaProgram.playback' },
-		{ type: 'command', command: 'luaProgram.stepFrame' },
-		{ type: 'command', command: 'luaProgram.testInput' },
+		{ type: 'command', command: 'luaProgram.authoring' },
+		{ type: 'command', command: 'luaProgram.more' },
+	],
+	'runtime.title': [
+		{ type: 'command', command: 'stepFrameBack' },
+		{ type: 'command', command: 'pause' },
+		{ type: 'command', command: 'stepFrame' },
+		{ type: 'command', command: 'runtime.present' },
+	],
+	'editorTabs.title': [
+		{ type: 'command', command: 'tabs.scrollLeft' },
+		{ type: 'command', command: 'tabs.scrollRight' },
+		{ type: 'command', command: 'openEditors' },
 	],
 	'aem.context': [
 		{ type: 'command', command: 'aem.add' },
@@ -268,6 +271,9 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'luaProgram.edit' },
 		{ type: 'command', command: 'luaProgram.remove' },
 		{ type: 'command', command: 'luaProgram.source' },
+		{ type: 'command', command: 'luaProgram.live' },
+		{ type: 'command', command: 'luaProgram.authoring' },
+		{ type: 'command', command: 'luaProgram.selectInstance' },
 		{ type: 'command', command: 'luaProgram.testInput' },
 	],
 	'behaviorLens.properties.title': [

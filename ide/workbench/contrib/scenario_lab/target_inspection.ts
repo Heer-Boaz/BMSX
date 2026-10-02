@@ -115,7 +115,7 @@ export class ScenarioTargetInspection {
 		if (this.headerFont !== renderFont || this.header.left !== bounds.left || this.header.top !== bounds.top || this.header.right !== bounds.right) {
 			this.headerFont = renderFont;
 			write_rect_bounds(this.header, bounds.left, bounds.top, bounds.right, top);
-			layoutWorkbenchActionBar(this.bar, bounds.right - 4, bounds.top + 2, top - 2, measureText);
+			layoutWorkbenchActionBar(this.bar, bounds.right - 4, bounds.top + 2, top - 2, measureText, editorViewState.font.renderFont());
 			const state = this.model!.inspection.state, first = this.bar.items.find(item => item.visible)!;
 			this.title = truncateMeasuredText(state.role === 'retained-test' ? 'TEST / POST-MORTEM / CASE-END HEAP' : `TEST / STOPPED / ${state.reason}`, first.bounds.left - bounds.left - 8, measureTextRange);
 		}

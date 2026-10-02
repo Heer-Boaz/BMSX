@@ -9,6 +9,7 @@ import { editorChromeState } from '../chrome_state';
 import { editorTabGroup } from './group_model';
 import type { EditorTabId } from './id';
 import type { EditorInput } from './model';
+import { layoutWorkbenchActionBar } from '../action_bar';
 
 type TabItemLayout = {
 	bounds: RectBounds;
@@ -36,7 +37,7 @@ let closeButtonWidth = 0;
 let laidOutScroll = 0;
 let revealedGroupRevision = -1;
 let revealedScrollbarRevision = -1;
-const measuredLabels = new WeakMap<EditorInput, { label: string; font: BFont; availableWidth: number; text: string; width: number }>();
+const measuredLabels = new WeakMap<EditorInput, { label: string; font: BFont; naturalWidth: number; availableWidth: number; text: string; width: number }>();
 
 function getStoredTabBounds(boundsByTabId: Map<EditorTabId, RectBounds>, tab: EditorInput): RectBounds {
 	let bounds = boundsByTabId.get(tab.id);
@@ -73,19 +74,16 @@ export function layoutTabBar(context: WorkbenchChromeLayout): void {
 		const availableWidth = viewportWidth - constants.TAB_DIRTY_LEFT_MARGIN - constants.TAB_DIRTY_RIGHT_MARGIN
 			- constants.TAB_BUTTON_PADDING_X * 2 - indicatorWidth;
 		let measured = measuredLabels.get(tab);
-		if (measured === undefined || measured.label !== label || measured.font !== font || measured.availableWidth !== availableWidth) {
-			const text = truncateTextToWidth(label, availableWidth);
-			measured = { label, font, availableWidth, text, width: context.measureText(text) };
+		if (measured === undefined || measured.label !== label || measured.font !== font) {
+			measured = { label, font, naturalWidth: context.measureText(label), availableWidth: -1, text: '', width: 0 };
 			measuredLabels.set(tab, measured);
 		}
 		const bounds = getStoredTabBounds(editorChromeState.tabButtonBounds, tab);
 		const hovered = tab.id === editorChromeState.tabHoverId;
-		const tabWidth = measured.width + constants.TAB_BUTTON_PADDING_X * 2 + indicatorWidth;
-		itemsChanged ||= metric.bounds !== bounds || metric.tabWidth !== tabWidth
+		itemsChanged ||= metric.bounds !== bounds
 			|| metric.closeWidth !== closeWidth || metric.hovered !== hovered;
 		metric.bounds = bounds;
 		metric.closeBounds = getStoredTabBounds(editorChromeState.tabCloseButtonBounds, tab);
-		metric.text = measured.text;
 		metric.closeWidth = closeWidth;
 		metric.indicatorWidth = indicatorWidth;
 		metric.dirty = dirty;
@@ -94,20 +92,48 @@ export function layoutTabBar(context: WorkbenchChromeLayout): void {
 		metric.closable = closable;
 		metric.active = tab === editorTabGroup.activeTab;
 		metric.hovered = hovered;
-		metric.tabWidth = tabWidth;
-		if (metric.active) { activeLeft = contentWidth; activeRight = contentWidth + metric.tabWidth; }
-		contentWidth += metric.tabWidth + constants.TAB_BUTTON_SPACING;
+		contentWidth += Math.min(measured.naturalWidth, availableWidth) + constants.TAB_BUTTON_PADDING_X * 2 + indicatorWidth;
+		if (index + 1 < tabs.length) contentWidth += constants.TAB_BUTTON_SPACING;
 	}
 	contentWidth += constants.TAB_DIRTY_RIGHT_MARGIN;
 	const barTop = context.headerHeight, rowBottom = barTop + context.tabBarHeight;
-	const totalHeight = context.tabBarHeight + (contentWidth > viewportWidth ? constants.SCROLLBAR_WIDTH : 0);
+	const overflow = contentWidth > viewportWidth;
+	const actions = editorChromeState.tabActions;
+	for (const item of actions.items) item.visible = overflow;
+	let tabsRight = viewportWidth;
+	if (overflow) {
+		layoutWorkbenchActionBar(actions, viewportWidth - 1, barTop + 1, rowBottom - 1, context.measureText, font);
+		tabsRight = actions.items[0].bounds.left - constants.TAB_BUTTON_SPACING;
+	}
+	// Overflow actions own real strip space. Truncate against that final viewport,
+	// so a long active tab still exposes its close/dirty slot when revealed.
+	contentWidth = constants.TAB_DIRTY_LEFT_MARGIN;
+	for (let index = 0; index < tabs.length; index++) {
+		const metric = tabBarItems.peek(index), measured = measuredLabels.get(tabs[index])!;
+		const availableWidth = tabsRight - constants.TAB_DIRTY_LEFT_MARGIN - constants.TAB_DIRTY_RIGHT_MARGIN
+			- constants.TAB_BUTTON_PADDING_X * 2 - metric.indicatorWidth;
+		if (measured.availableWidth !== availableWidth) {
+			measured.availableWidth = availableWidth;
+			measured.text = truncateTextToWidth(measured.label, availableWidth);
+			measured.width = measured.text === measured.label ? measured.naturalWidth : context.measureText(measured.text);
+		}
+		const width = measured.width + constants.TAB_BUTTON_PADDING_X * 2 + metric.indicatorWidth;
+		itemsChanged ||= metric.tabWidth !== width;
+		metric.text = measured.text; metric.tabWidth = width;
+		if (metric.active) { activeLeft = contentWidth; activeRight = contentWidth + width; }
+		contentWidth += width;
+		if (index + 1 < tabs.length) contentWidth += constants.TAB_BUTTON_SPACING;
+	}
+	contentWidth += constants.TAB_DIRTY_RIGHT_MARGIN;
+	const totalHeight = context.tabBarHeight + (overflow ? constants.SCROLLBAR_WIDTH : 0);
 	editorViewState.tabBarTotalHeight = totalHeight;
 	const barBottom = barTop + totalHeight;
 	write_rect_bounds(editorChromeState.tabBarBounds, 0, barTop, viewportWidth, barBottom);
-	write_rect_bounds(tabTrack, 0, rowBottom, viewportWidth, barBottom);
+	write_rect_bounds(editorChromeState.tabViewportBounds, 0, barTop, tabsRight, rowBottom);
+	write_rect_bounds(tabTrack, 0, rowBottom, tabsRight, barBottom);
 	const scrollbar = editorChromeState.tabScrollbar;
 	const previousScrollbarRevision = scrollbar.revision;
-	scrollbar.layout(tabTrack, contentWidth, viewportWidth, scrollbar.getScroll());
+	scrollbar.layout(tabTrack, contentWidth, tabsRight, scrollbar.getScroll());
 	if (revealedGroupRevision !== editorTabGroup.revision || revealedScrollbarRevision !== scrollbar.revision) {
 		if (!editorChromeState.tabDragState?.hasDragged) scrollbar.reveal(activeLeft, activeRight);
 		revealedGroupRevision = editorTabGroup.revision;
@@ -122,7 +148,7 @@ export function layoutTabBar(context: WorkbenchChromeLayout): void {
 	for (let index = 0; index < tabBarItems.length; index++) {
 		const item = tabBarItems.peek(index), right = cursor + item.tabWidth;
 		write_rect_bounds(item.bounds, cursor, barTop + 1, right, rowBottom - 1);
-		if (right > 0 && cursor < viewportWidth && item.closable && item.hovered) {
+		if (right > 0 && cursor < tabsRight && item.closable && item.hovered) {
 			write_rect_bounds(item.closeBounds, right - item.closeWidth, barTop + 1, right, rowBottom - 1);
 		} else clear_rect_bounds(item.closeBounds);
 		cursor = right + constants.TAB_BUTTON_SPACING;

@@ -85,6 +85,7 @@ export class LuaProgramController {
 		if (projection === undefined) { projection = new LuaProgramRuntimeProjection(this.sources, this.guest); this.projections.set(input, projection); }
 		projection.refresh(input);
 	}
+	public resolveRuntime(input: LuaProgramInput): void { this.projections.get(input)!.resolve(input); }
 	public onDidChangeContent(model: EditorTextModel, event: EditorTextModelContentChangeEvent): void {
 		for (const input of editorTabGroup.tabs) {
 			if (input.kind !== 'lua_program') continue;

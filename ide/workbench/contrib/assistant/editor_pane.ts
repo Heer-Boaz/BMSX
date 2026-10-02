@@ -192,7 +192,7 @@ export class AssistantPane extends FullWidthWorkbenchEditorPane<AssistantInput> 
 				: model.entries[input.selectedEntry]?.proposal !== undefined;
 			if (item.visible !== visible) { item.visible = visible; actionsChanged = true; }
 		}
-		if (actionsChanged) layoutWorkbenchActionBar(input.turnActions, layout.right - 4, footerTop - row - 4, footerTop, measureText);
+		if (actionsChanged) layoutWorkbenchActionBar(input.turnActions, layout.right - 4, footerTop - row - 4, footerTop, measureText, editorViewState.font.renderFont());
 		this.actions.update(); this.references.update(input);
 	}
 	public draw(): void {

@@ -17,12 +17,31 @@ HostRewind::HostRewind(Runtime& runtime, VideoPresenter& presenter, RenderPresen
 		options{2, 1024, runtime.timing.cpuHz * 6} {}
 
 bool HostRewind::available() const { return runtime.history.checkpointCount() != 0; }
-bool HostRewind::seeking() const { return request == RewindRequest::Seek || (request != RewindRequest::Pause && !playbackActive && runtime.history.mode == HistoryMode::Replaying); }
+bool HostRewind::seeking() const { return request == RewindRequest::Seek || request == RewindRequest::Step || (request != RewindRequest::Pause && !playbackActive && runtime.history.mode == HistoryMode::Replaying); }
 bool HostRewind::playing() const { return request != RewindRequest::Pause && (playbackActive || request == RewindRequest::Play || afterSeek == RewindRequest::Play); }
 bool HostRewind::audioMuted() const { return active && !playbackActive; }
 i64 HostRewind::positionCycles() const {
 	if (playbackActive) return runtime.machine.scheduler.currentNowCycles();
 	return active ? requestedCycles : runtime.history.latestCycles();
+}
+
+i64 HostRewind::frameStepCycles(i32 direction, i32 count) const {
+	const auto& history = runtime.history;
+	const auto& journal = history.inputJournal;
+	const i64 sequence = journal.endAt(positionCycles()) + (direction < 0 ? -1 - count : count - 1);
+	if (sequence < journal.firstSequence) return history.earliestCycles();
+	if (sequence >= journal.endSequence) return history.latestCycles();
+	return journal.cycleAt(sequence);
+}
+
+void HostRewind::stepFrame(i32 direction) {
+	const i64 cycles = frameStepCycles(direction);
+	if (direction < 0) seekTo(cycles);
+	else {
+		requestedCycles = cycles; request = RewindRequest::Step;
+		afterSeek = RewindRequest::None; playbackActive = false;
+		presentationPending = false; stopped = false;
+	}
 }
 
 void HostRewind::stepCheckpoint(i32 direction) {
@@ -48,6 +67,7 @@ void HostRewind::seekTo(i64 cycles) {
 	afterSeek = RewindRequest::None;
 	playbackActive = false;
 	presentationPending = false;
+	stepTargetTick = 0;
 	active = true;
 	stopped = false;
 }
@@ -101,6 +121,7 @@ void HostRewind::service(bool collect) {
 		afterSeek = RewindRequest::None;
 		playbackActive = false;
 		presentationPending = false;
+		stepTargetTick = 0;
 		stopped = false;
 		return;
 	}
@@ -110,6 +131,7 @@ void HostRewind::service(bool collect) {
 		afterSeek = RewindRequest::None;
 		playbackActive = false;
 		presentationPending = false;
+		stepTargetTick = 0;
 		stopped = false;
 		history.start(options);
 	}
@@ -124,6 +146,7 @@ void HostRewind::service(bool collect) {
 			return;
 		case RewindRequest::Resume:
 			request = RewindRequest::None;
+			stepTargetTick = 0;
 			if (history.mode != HistoryMode::Recording) history.resumeRecording();
 			active = false;
 			afterSeek = RewindRequest::None;
@@ -135,10 +158,17 @@ void HostRewind::service(bool collect) {
 			playbackActive = history.mode == HistoryMode::Replaying;
 			playbackTimeResetPending = true;
 			requestedCycles = runtime.machine.scheduler.currentNowCycles();
+			stepTargetTick = 0;
 			stopped = false;
 			return;
+		case RewindRequest::Step:
+			request = RewindRequest::None;
+			stepTargetTick = runtime.frameScheduler.lastTickSequence + 1;
+			history.beginPlayback();
+			break;
 		case RewindRequest::Pause:
 			request = RewindRequest::None;
+			stepTargetTick = 0;
 			if (history.mode == HistoryMode::Recording) active = false;
 			else {
 				history.cancelSeek();
@@ -161,16 +191,21 @@ void HostRewind::service(bool collect) {
 		const i64 previousTick = runtime.frameScheduler.lastTickSequence;
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(REPLAY_WORK_MS);
 		while (history.mode == HistoryMode::Replaying) {
-			const auto result = history.advanceSeek(REPLAY_CYCLE_GRANT);
+			auto result = history.advanceSeek(REPLAY_CYCLE_GRANT);
 			while (gpu.backendServicePending()) {
 				if (gpu.backendCommandDrainPending()) backend.executeGxGpuCommandDrain(gpu);
 				else backend.executeGxGpuReadback(gpu);
+			}
+			if (stepTargetTick != 0 && runtime.frameScheduler.lastTickSequence == stepTargetTick) {
+				history.cancelSeek(); history.targetCycles = requestedCycles;
+				stepTargetTick = 0; result = HistorySeekResult::Complete;
 			}
 			if (result == HistorySeekResult::Stopped) {
 				history.cancelSeek();
 				history.targetCycles = runtime.machine.scheduler.currentNowCycles();
 				requestedCycles = history.targetCycles;
 				stopped = true;
+				stepTargetTick = 0;
 				afterSeek = RewindRequest::None;
 			}
 			if (result == HistorySeekResult::Complete || result == HistorySeekResult::Stopped) presentationPending = true;

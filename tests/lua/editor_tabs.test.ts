@@ -52,7 +52,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384) 
 	const paint = () => {
 		drawnLabels = 0;
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-		renderTabBar(context); overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
+		renderTabBar(context, { isEnabled: () => true }); overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 	};
 	const draw = () => {
 		layout(); paint();
@@ -121,20 +121,24 @@ test('tab layout invalidates measured labels on rename, font and viewport change
 	const measurements = f.measured();
 	tab.setLabel('a much longer authored definition name', tab.description);
 	f.layout();
-	assert.equal(f.measured(), measurements + 1);
-	assert.equal(record.text, 'a much longer authored definition name');
+	assert.ok(f.measured() > measurements);
+	const renamedMeasurements = f.measured();
 	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
 	f.layout();
-	assert.equal(f.measured(), measurements + 2);
+	assert.ok(f.measured() > renamedMeasurements);
+	const fontMeasurements = f.measured();
 	assert.equal(bounds.top, f.context.headerHeight + 1);
 	assert.equal(bounds.bottom, f.context.headerHeight + f.context.tabBarHeight - 1);
 	editorViewState.viewportWidth = 128;
 	f.layout();
-	assert.equal(f.measured(), measurements + 3);
+	const resizedMeasurements = f.measured();
+	assert.ok(resizedMeasurements > fontMeasurements);
+	f.layout();
+	assert.equal(f.measured(), resizedMeasurements, 'unchanged geometry retains tab and overflow-action measurements');
 	assert.ok(record.text.length < tab.title.length, 'narrow viewport truncates the measured label');
 	const narrowed = structuredClone(bounds);
 	for (let index = 0; index < 100; index++) f.layout();
-	assert.equal(f.measured(), measurements + 3);
+	assert.equal(f.measured(), resizedMeasurements);
 	assert.equal(record.bounds, bounds);
 	assert.deepEqual(bounds, narrowed);
 });

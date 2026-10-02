@@ -4,11 +4,14 @@ import type { PointerSnapshot } from '../../../common/models';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { EditorPaneSelection } from './editor_selection';
 import type { EditorInput } from '../../ui/tab/model';
+import type { InputFocusTarget } from '../../../input/focus';
 
 /** Retained workbench control for one editor-input kind. */
 export abstract class EditorPane<TInput extends EditorInput> {
 	/** Authoring pauses gameplay, including host-only tools. Live preview panes explicitly release this hold. */
 	public get suspendsRuntime(): boolean { return true; }
+	/** A live inspector supplies the command scope for the shared runtime transport. */
+	public get runtimeControlContext(): InputFocusTarget | undefined { return undefined; }
 
 	/** Optional selection capability; editors without one still have an input identity. */
 	public getSelection?(): EditorPaneSelection;

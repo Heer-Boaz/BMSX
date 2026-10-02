@@ -235,6 +235,7 @@ export function prepareScenarioLabLayout(state: ScenarioLabViewState): ScenarioL
 			layout.top + 1,
 			layout.toolbarBottom - 1,
 			measureText,
+			editorViewState.font.renderFont(),
 		);
 		state.actionsDirty = false;
 	}

@@ -141,7 +141,7 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 				: session.active !== undefined && (item.command === 'terminal.pause' ? !session.paused : session.paused);
 			if (item.visible !== visible) { item.visible = visible; actionsChanged = true; }
 		}
-		if (actionsChanged) layoutWorkbenchActionBar(input.actions, layout.right - 4, layout.bottom - row - 4, layout.bottom, measureText);
+		if (actionsChanged) layoutWorkbenchActionBar(input.actions, layout.right - 4, layout.bottom - row - 4, layout.bottom, measureText, editorViewState.font.renderFont());
 		this.actions.update();
 	}
 	public draw(): void {

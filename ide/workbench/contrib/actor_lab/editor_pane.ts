@@ -6,6 +6,7 @@ import { layoutGameFrame } from '../../common/game_frame';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
+import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 import type { IdeCommandController } from '../../../commands/controller';
 import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
@@ -43,7 +44,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);
 	private readonly inspector = new WorkbenchPropertyInspector<BehaviorInspectionProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	public constructor(resourcePanel: ResourcePanelController, private readonly controller: ActorLabController,
-		private readonly commands: IdeCommandController, private readonly contextMenu: ContextMenuController) {
+		private readonly commands: IdeCommandController, private readonly frameNavigation: RuntimeFrameNavigation, private readonly contextMenu: ContextMenuController) {
 		super(resourcePanel);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		this.timelineSlider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.focusTarget,
@@ -55,6 +56,15 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			isEnabled: () => commands.isEnabled('gameView.playback'),
 			run: () => { this.input.running = commands.toggleGamePlayback(); },
 		});
+		this.focusTarget.registerCommand('pause', {
+			isEnabled: () => commands.isEnabled('gameView.playback'),
+			run: () => { this.input.running = commands.toggleGamePlayback(); },
+		});
+		this.focusTarget.registerCommand('runtime.pause', { isEnabled: () => true, run: () => { this.input.running = false; } });
+		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) this.focusTarget.registerCommand(command, {
+			isEnabled: () => this.frameNavigation.canStep(direction),
+			run: () => { this.input.running = false; this.frameNavigation.step(direction); },
+		});
 		this.focusTarget.registerCommand('actorLab.select', { isEnabled: () => true, run: () => controller.selectActor(this.input) });
 		this.focusTarget.registerCommand('actorLab.spawn', { isEnabled: controller.canInteract, run: () => controller.spawn(this.input) });
 		this.focusTarget.registerCommand('actorLab.emit', { isEnabled: () => controller.canInteract() && this.input.actorHashId !== 0, run: () => controller.emitEvent(this.input) });
@@ -63,6 +73,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.focusTarget.registerCommand('actorLab.details', { isEnabled: () => controller.selected(this.input) !== undefined, run: () => controller.inspect(this.input, this.inspector) });
 	}
 	public override get suspendsRuntime(): boolean { return !this.input.running; }
+	public override get runtimeControlContext() { return this.focusTarget; }
 	protected override activate(): void {
 		super.activate();
 		this.actions.setInput(this.input.actionBar, this.focusTarget);
@@ -85,7 +96,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		if (this.timelineVisible) input.timelineLayout.update(input.timeline, layout);
 		if (contentsChanged || layoutChanged || timelineChanged || this.splitRevision !== input.split.revision) {
 			this.updateContentLayout();
-			layoutWorkbenchActionBar(input.actionBar, layout.right - 4, layout.top, layout.top + layout.rowHeight + 4, measureText);
+			layoutWorkbenchActionBar(input.actionBar, layout.right - 4, layout.top, layout.top + layout.rowHeight + 4, measureText, editorViewState.font.renderFont());
 			for (const row of outline.rows) row.element.displayLabel = truncateTextToWidth(row.element.node.label,
 				outline.layout.contentRight - outline.layout.contentLeft - (row.depth + 2) * outline.layout.indentWidth - 4);
 		}

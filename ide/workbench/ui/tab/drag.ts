@@ -51,7 +51,7 @@ function updateTabDrag(snapshot: PointerSnapshot, now: number, scroll: boolean):
 	const elapsed = (now - state.pointerTime) / 1000;
 	state.pointerTime = now;
 	state.targetIndex = -1;
-	if (!point_in_rect(x, y, editorChromeState.tabBarBounds)) return;
+	if (!point_in_rect(x, y, editorChromeState.tabViewportBounds)) return;
 	const tabs = editorTabGroup.tabs;
 	const scrollbar = editorChromeState.tabScrollbar;
 	// Hit the last published geometry; scrolling is applied after finding this drop target.
@@ -68,7 +68,7 @@ function updateTabDrag(snapshot: PointerSnapshot, now: number, scroll: boolean):
 		state.markerX = (insertion === tabs.length ? bounds.right : bounds.left) + Math.round(scrollbar.getScroll());
 		state.targetIndex = to;
 	}
-	if (scroll) scrollbar.setScroll(scrollbar.getScroll() + dragScrollSpeed(x, 0, editorChromeState.tabBarBounds.right) * elapsed);
+	if (scroll) scrollbar.setScroll(scrollbar.getScroll() + dragScrollSpeed(x, 0, editorChromeState.tabViewportBounds.right) * elapsed);
 }
 
 export function endTabDrag(): void {

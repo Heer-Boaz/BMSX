@@ -29,7 +29,7 @@ export function layoutSceneEditor(input: SceneEditorInput, contentChanged: boole
 		treeLayout.twistieWidth = treeLayout.indentWidth;
 		clampWorkbenchListScroll(input.outline);
 		if (changed || contentChanged) layoutSceneOutlineNodes(input.outline.roots, treeLayout);
-		layoutWorkbenchActionBar(input.actionBar, layout.right - PADDING, layout.top, layout.top + rowHeight, measureText);
+		layoutWorkbenchActionBar(input.actionBar, layout.right - PADDING, layout.top, layout.top + rowHeight, measureText, editorViewState.font.renderFont());
 		input.sourceText = truncateTextToWidth(input.workingCopy.resource.path, input.actionBar.items[0].bounds.left - PADDING * 2);
 		const width = layout.right - constants.SCROLLBAR_WIDTH - layout.detailsLeft;
 		const height = measureSceneDetails(input, width);

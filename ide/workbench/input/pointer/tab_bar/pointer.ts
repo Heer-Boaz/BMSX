@@ -27,6 +27,7 @@ export function handleTabBarPointer(
 		consumeChromePointerPress();
 		return true;
 	}
+	if (!point_in_rect(x, y, editorChromeState.tabViewportBounds)) return false;
 	const tabs = editorTabGroup.tabs;
 	for (let index = 0; index < tabs.length; index += 1) {
 		const tab = tabs[index];
@@ -63,7 +64,7 @@ export function handleTabBarMiddleClick(
 ): boolean {
 	const x = snapshot.viewportX;
 	const y = snapshot.viewportY;
-	if (!point_in_rect(x, y, editorChromeState.tabBarBounds)) {
+	if (!point_in_rect(x, y, editorChromeState.tabViewportBounds)) {
 		return false;
 	}
 	const tabs = editorTabGroup.tabs;
@@ -101,6 +102,7 @@ export function updateTabHoverState(snapshot: PointerSnapshot): boolean {
 	}
 	pointerHover.visit(tabBarHover);
 	let hovered: EditorTabId | null = null;
+	if (!point_in_rect(x, y, editorChromeState.tabViewportBounds)) { editorChromeState.tabHoverId = null; return true; }
 	const tabs = editorTabGroup.tabs;
 	for (let index = 0; index < tabs.length; index += 1) {
 		const tab = tabs[index];

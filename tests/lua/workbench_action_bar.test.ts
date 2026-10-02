@@ -24,7 +24,7 @@ function fixture(t: TestContext) {
 	const content = focus.createTarget();
 	content.bindKeyboard(() => {});
 	const state = createWorkbenchActionBar('sourceEditReview.title');
-	layoutWorkbenchActionBar(state, 240, 10, 22, text => text.length * 4);
+	layoutWorkbenchActionBar(state, 240, 10, 22, text => text.length * 4, null);
 	const enabled = new Set(state.items.map(item => item.command));
 	const calls: EditorCommandId[] = [];
 	let onExecute = (_command: EditorCommandId) => {};
@@ -227,7 +227,7 @@ test('tiny-font rendering distinguishes hover, keyboard focus, pressed and disab
 	const font = new Font({ variant: 'tiny' });
 	const overlay = createHostOverlayFixture(256, 212);
 	const stream = new HostOverlayQuadStream();
-	layoutWorkbenchActionBar(f.state, 240, 10, 22, text => font.measure(text));
+	layoutWorkbenchActionBar(f.state, 240, 10, 22, text => font.measure(text), font);
 	const draw = () => {
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
 		renderWorkbenchActionBar(f.state, f.commands, font); overlay.renderer.endFrame();
@@ -275,7 +275,7 @@ test('hidden actions occupy no layout and cannot be focused, pressed or released
 	const f = fixture(t), first = f.state.items[0], middle = f.state.items[1], last = f.state.items[2];
 	const oldLeft = first.bounds.left;
 	middle.visible = false;
-	layoutWorkbenchActionBar(f.state, 240, 10, 22, text => text.length * 4);
+	layoutWorkbenchActionBar(f.state, 240, 10, 22, text => text.length * 4, null);
 	assert.ok(first.bounds.left > oldLeft);
 	assert.equal(first.bounds.right + 2, last.bounds.left);
 	f.bar.focusTarget.focus(); f.press('ArrowRight'); assert.equal(f.state.focusedIndex, 2);

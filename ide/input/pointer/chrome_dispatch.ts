@@ -20,6 +20,10 @@ export function handleEditorChromePointerDispatch(
 	playerInput: PlayerInput
 ): boolean {
 	if (justPressed && !point_in_rect(snapshot.viewportX, snapshot.viewportY, editorChromeState.tabBarBounds)) editorChromeState.lastTabClickId = null;
+	if (editorChromeState.openMenuId === null && editor.runtimeTimeline.handlePointer(snapshot)) {
+		if (justPressed) playerInput.inputHandlers.pointer?.consumeButton('pointer_primary');
+		return true;
+	}
 	if (handleTopBarPointer(editor.commands, snapshot, justPressed)) {
 		return true;
 	}
@@ -34,6 +38,10 @@ export function handleEditorChromePointerDispatch(
 		return true;
 	}
 	const overTabs = updateTabHoverState(snapshot);
+	if (editor.tabBar.handlePointer(snapshot)) {
+		if (justPressed) playerInput.inputHandlers.pointer?.consumeButton('pointer_primary');
+		return true;
+	}
 	if (pointerAuxJustPressed && handleTabBarMiddleClick(editor.editorPanes, snapshot, playerInput)) {
 		return true;
 	}

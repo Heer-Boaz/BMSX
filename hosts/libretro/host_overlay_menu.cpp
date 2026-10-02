@@ -9,6 +9,7 @@
 #include "render/host_overlay/overlay_queue.h"
 #include "spec/bmsx/memory_map.h"
 #include <array>
+#include <algorithm>
 #include <cstdio>
 
 namespace bmsx {
@@ -355,15 +356,21 @@ HostMenuInput HostOverlayMenu::tickTimelineInput(Runtime& runtime, LibretroInput
 	if (uiInput.buttonJustPressed(InputControllerGamepadButtonBit::A) || pointerAction == TimelineAction::Playback) {
 		rewind.togglePlayback();
 	} else if (pointerAction == TimelineAction::Seek) {
-		timeline.seekAt(runtime, rewind, uiInput.pointerX);
+		rewind.seekTo(timeline.cyclesAt(uiInput.pointerX));
+	} else if (pointerAction == TimelineAction::Present) {
+		rewind.seekTo(runtime.history.latestCycles());
 	} else {
-		const bool leftBumper = uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::LeftBumper);
-		const bool rightBumper = uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::RightBumper);
+		const bool leftBumper = uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::LeftBumper) || pointerAction == TimelineAction::Previous;
+		const bool rightBumper = uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::RightBumper) || pointerAction == TimelineAction::Next;
 		const bool left = uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::Left);
 		const bool right = uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::Right);
-		const bool backward = leftBumper || left;
-		const bool forward = rightBumper || right;
-		if (backward != forward) timeline.moveCursor(runtime, rewind, backward ? -1 : 1);
+		if (leftBumper != rightBumper && !rewind.seeking() && !rewind.playing()) {
+			const i32 direction = leftBumper ? -1 : 1;
+			if (rewind.frameStepCycles(direction) != rewind.positionCycles()) rewind.stepFrame(direction);
+		} else if (left != right) {
+			rewind.seekTo(std::clamp(rewind.positionCycles() + (left ? -1 : 1) * runtime.timing.cpuHz,
+				runtime.history.earliestCycles(), runtime.history.latestCycles()));
+		}
 	}
 	return HostMenuInput::Active;
 }
@@ -378,7 +385,19 @@ void HostOverlayMenu::queueRenderCommands(Runtime& runtime, VideoPresenter& pres
 		return;
 	}
 	if (m_page == Page::Rewind) {
-		timeline.queueRenderCommands(runtime, presenter, rewind);
+		auto& state = timelineState;
+		state.earliestCycles = runtime.history.earliestCycles(); state.latestCycles = runtime.history.latestCycles();
+		state.positionCycles = rewind.positionCycles(); state.cpuHz = runtime.timing.cpuHz;
+		state.status = rewind.stopped ? TimelineStatus::Stopped : rewind.seeking() ? TimelineStatus::Seeking : rewind.playing() ? TimelineStatus::Replay : TimelineStatus::Paused;
+		state.enabledActions = (1u << static_cast<u32>(TimelineAction::Seek)) | (1u << static_cast<u32>(TimelineAction::Playback))
+			| (1u << static_cast<u32>(TimelineAction::Present)) | (1u << static_cast<u32>(TimelineAction::Resume)) | (1u << static_cast<u32>(TimelineAction::Cancel));
+		if (!rewind.seeking() && !rewind.playing()) {
+			if (rewind.frameStepCycles(-1) < state.positionCycles) state.enabledActions |= 1u << static_cast<u32>(TimelineAction::Previous);
+			if (rewind.frameStepCycles(1) > state.positionCycles) state.enabledActions |= 1u << static_cast<u32>(TimelineAction::Next);
+		}
+		timeline.update(state, 6, static_cast<i32>(presenter.viewportSize.y) - HostRewindTimeline::height(timelineFont) - 6,
+			static_cast<i32>(presenter.viewportSize.x) - 6, timelineFont);
+		presenter.hostOverlayQueue.publishHostMenuFrame(timeline.frame());
 		return;
 	}
 	clearRenderCommands(presenter);

@@ -9,11 +9,14 @@ import type { QuickPickItem } from '../../services/quick_input/provider';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows } from '../../ui/tree_view';
 import type { WorkbenchPropertyElement } from '../../ui/property_tree';
 import type { LuaProgramInput } from './editor_input';
+import { RuntimeValueTree } from '../debugger/runtime_value_tree';
 
 export type ProgramInstanceChoice = QuickPickItem & { readonly identity: SuspendedValueIdentity };
 type LiveProperty = WorkbenchPropertyElement & { value: string };
 type ReceiptRow = { readonly element: LiveProperty; applied: boolean };
 const INPUT_FIELDS = ['clock_source', 'source_program', 'program', 'binding_latch', 'last_frame', 'custom_matches', 'queued_command_count', 'queued_event_count'] as const;
+const INPUT_DESCRIPTIONS = ['Guest clock source.', 'Authored input program before runtime compilation.', 'Installed input evaluation program.',
+	'Current binding latch values.', 'Last evaluated guest input frame.', 'Custom matcher results.', 'Commands queued by input evaluation.', 'Events queued by input evaluation.'] as const;
 
 function progressionRuntimes(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain): Table | undefined {
 	const module = readRuntimeLuaModuleExport(sources, guest, domain, 'cartlib/progression');
@@ -42,8 +45,12 @@ export class LuaProgramRuntimeProjection {
 	private readonly stateRows: { readonly slot: number; readonly element: LiveProperty }[] = [];
 	private readonly receipts = new Map<ValueTag, Map<number, ReceiptRow[]>>();
 	private readonly receiptRows: ReceiptRow[] = [];
-	private readonly inputRows: { readonly element: LiveProperty; tag?: ValueTag; scalar?: number }[] = [];
+	private inputValues: RuntimeValueTree | undefined;
 	public constructor(private readonly sources: RuntimeSourceState, private readonly guest: SuspendedGuestSession) {}
+	public resolve(input: LuaProgramInput): void {
+		input.liveDirty = true;
+		this.refresh(input);
+	}
 	public refresh(input: LuaProgramInput, reconcileBookmark = false): void {
 		if (!reconcileBookmark && (!input.liveVisible || !input.liveDirty)) return;
 		input.liveDirty = false;
@@ -66,21 +73,12 @@ export class LuaProgramRuntimeProjection {
 		}
 		const guest = this.guest;
 		if (input.programKind === 'input') {
-			if (input.live.roots.length === 0) {
-				this.inputRows.length = 0;
-				for (const field of INPUT_FIELDS) this.inputRows.push({ element: this.append(input, field, '') });
-				rebuildWorkbenchTreeRows(input.live, null);
-				input.live.textDirty = true;
-			}
+			this.inputValues ??= new RuntimeValueTree(input.live, guest);
 			for (let i = 0; i < INPUT_FIELDS.length; i++) {
-				// Immutable programs are identified, not recursively rendered every frame.
-				// Latches and queued counts are the changing datapath state.
 				const value = guest.readStringMember(instance, INPUT_FIELDS[i]);
-				const row = this.inputRows[i], tag = valueTag(value), scalar = guest.identityScalar(value, tag);
-				if (row.tag === tag && row.scalar === scalar && (i < 3 || tag !== ValueTag.Table)) continue;
-				row.tag = tag; row.scalar = scalar;
-				this.setValue(input, row.element, i < 3 ? guest.formatValue(value) : guest.previewValue(value, 2, 32));
+				this.inputValues.updateRoot(i, INPUT_FIELDS[i], value, INPUT_DESCRIPTIONS[i]);
 			}
+			this.inputValues.finish(INPUT_FIELDS.length);
 			input.status = `LIVE INPUT / ${input.instanceLabel} / compiled program, latch state and queued commands`;
 			return;
 		}

@@ -176,25 +176,37 @@ int main(int argc, char** argv) {
 		openRewind();
 		const i64 latest = history.latestCycles();
 		const i64 oldest = history.earliestCycles();
+		const auto lastVideoTick = runtime.frameScheduler.lastTickSequence;
+		const auto journalEnd = history.inputJournal.endSequence;
+		for (int index = 0; index < 3; ++index) {
+			press(1u << RETRO_DEVICE_ID_JOYPAD_L); settle();
+			require(runtime.frameScheduler.lastTickSequence == lastVideoTick - 1, "LB selects the previous recorded video boundary");
+			const auto restores = restoredStates;
+			press(1u << RETRO_DEVICE_ID_JOYPAD_R); settle();
+			require(runtime.frameScheduler.lastTickSequence == lastVideoTick && runtime.machine.scheduler.currentNowCycles() == latest,
+				"RB replays exactly one recorded frame without rounding drift");
+			require(restoredStates == restores && history.inputJournal.endSequence == journalEnd && history.latestCycles() == latest,
+				"forward stepping neither restores a checkpoint nor branches recorded future");
+		}
 		const u32 capturesBeforeSeek = software.vramCaptures;
 		for (int roundTrip = 0; roundTrip < 3; ++roundTrip) {
-			press(1u << RETRO_DEVICE_ID_JOYPAD_L);
+			press(1u << RETRO_DEVICE_ID_JOYPAD_LEFT);
 			const i64 selected = settle();
 			require(software.vramCaptures == capturesBeforeSeek, "restore does not copy discarded VRAM");
-			require(rewind.positionCycles() == latest - runtime.timing.cpuHz, "LB retains the selected coordinate");
+			require(rewind.positionCycles() == latest - runtime.timing.cpuHz, "Left retains the selected coordinate");
 			require(selected <= rewind.positionCycles() && selected > rewind.positionCycles() - runtime.timing.cycleBudgetPerFrame, "machine resolves to the preceding PCRTC boundary");
 			const size_t reviewAudio = audioFrames;
 			for (int index = 0; index < 5; ++index) frame();
 			require(audioFrames == reviewAudio && runtime.machine.scheduler.currentNowCycles() == selected, "review holds machine time and mutes audio");
 			snapshot("rewind");
-			press(1u << RETRO_DEVICE_ID_JOYPAD_R);
-			require(settle() == latest && rewind.positionCycles() == latest, "LB/RB round trip has no rounding drift");
+			press(1u << RETRO_DEVICE_ID_JOYPAD_RIGHT);
+			require(settle() == latest && rewind.positionCycles() == latest, "Left/Right round trip has no rounding drift");
 		}
-		buttons = 1u << RETRO_DEVICE_ID_JOYPAD_L;
+		buttons = 1u << RETRO_DEVICE_ID_JOYPAD_LEFT;
 		for (int index = 0; index < 80; ++index) frame();
 		buttons = 0; frame();
-		require(settle() == oldest, "holding LB reaches the oldest boundary");
-		press(1u << RETRO_DEVICE_ID_JOYPAD_L);
+		require(settle() == oldest, "holding Left reaches the oldest boundary");
+		press(1u << RETRO_DEVICE_ID_JOYPAD_LEFT);
 		require(settle() == oldest, "oldest boundary never wraps");
 		snapshot("oldest");
 		require(restoredStates != 0 && restoredCycles == oldest, "post-restore notification observes installed machine state");
@@ -222,7 +234,7 @@ int main(int argc, char** argv) {
 		press(menuAccept);
 		for (int index = 0; index < 800 && rewind.playing(); ++index) frame();
 		require(runtime.machine.scheduler.currentNowCycles() == latest && !rewind.playing() && menu.active() && rewind.active, "recorded end pauses, not live takeover");
-		press(1u << RETRO_DEVICE_ID_JOYPAD_L); settle();
+		press(1u << RETRO_DEVICE_ID_JOYPAD_LEFT); settle();
 		const auto retained = runtime.machine.scheduler.currentNowCycles();
 		menu.dismiss(input, rewind);
 		for (int index = 0; index < 5; ++index) frame();
@@ -234,7 +246,7 @@ int main(int argc, char** argv) {
 		require(runtime.machine.scheduler.currentNowCycles() >= latest, "cancel preserves the recorded future");
 		openRewind();
 		const i64 branchEnd = history.latestCycles();
-		press(1u << RETRO_DEVICE_ID_JOYPAD_L);
+		press(1u << RETRO_DEVICE_ID_JOYPAD_LEFT);
 		settle();
 		clickTimeline("A PLAY", 5);
 		require(rewind.playing(), "pointer starts playback");
@@ -249,7 +261,7 @@ int main(int argc, char** argv) {
 		snapshot("branched");
 		openRewind();
 		const i64 beforeKeyboard = history.latestCycles();
-		press(1u << RETRO_DEVICE_ID_JOYPAD_L); settle();
+		press(1u << RETRO_DEVICE_ID_JOYPAD_LEFT); settle();
 		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | menuKeyboard); returnLive();
 		require(runtime.machine.scheduler.currentNowCycles() >= beforeKeyboard, "rewind -> keyboard preserves the recorded future");
 		std::cout << "RUNTIME-HOST-REWIND:PASS\n";

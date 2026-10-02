@@ -4,18 +4,22 @@ import type { RectBounds } from '../../../machine/ts/common/rect';
 import { editorChromeState } from '../ui/chrome_state';
 import { tabBarItems } from '../ui/tab/layout';
 import type { ChromeRenderContext } from './chrome_context';
+import type { EditorCommandEnablement } from '../../common/commands';
+import { renderWorkbenchActionBar } from './action_bar';
+import { editorViewState } from '../../editor/ui/view/state';
 
 /** Painting consumes the published strip; it never reveals tabs or changes hit geometry. */
-export function renderTabBar(context: ChromeRenderContext): void {
+export function renderTabBar(context: ChromeRenderContext, commands: EditorCommandEnablement): void {
 	const { top: barTop, bottom: barBottom, right: viewportWidth } = editorChromeState.tabBarBounds;
 	const rowBottom = barTop + context.tabBarHeight;
 	const borderColor = constants.COLOR_TAB_BORDER;
 	const scrollbar = editorChromeState.tabScrollbar;
 	api.fill_rect(0, barTop, viewportWidth, barBottom, 0, constants.COLOR_TAB_BAR_BACKGROUND);
-	api.pushClipRect(0, barTop, viewportWidth, rowBottom);
+	const tabsRight = editorChromeState.tabViewportBounds.right;
+	api.pushClipRect(0, barTop, tabsRight, rowBottom);
 	for (let index = 0; index < tabBarItems.length; index++) {
 		const entry = tabBarItems.peek(index), { bounds, closeBounds } = entry;
-		if (bounds.right <= 0 || bounds.left >= viewportWidth) continue;
+		if (bounds.right <= 0 || bounds.left >= tabsRight) continue;
 		const active = entry.active;
 		const fillColor = active ? constants.COLOR_TAB_ACTIVE_BACKGROUND : constants.COLOR_TAB_INACTIVE_BACKGROUND;
 		const textColor = active ? constants.COLOR_TAB_ACTIVE_TEXT : constants.COLOR_TAB_INACTIVE_TEXT;
@@ -66,6 +70,7 @@ export function renderTabBar(context: ChromeRenderContext): void {
 		api.fill_rect(x - 1, barTop, x + 1, rowBottom, 0, constants.COLOR_TAB_ACTIVE_TEXT);
 	}
 	api.popClipRect();
+	renderWorkbenchActionBar(editorChromeState.tabActions, commands, editorViewState.font.renderFont());
 	if (scrollbar.isVisible()) scrollbar.draw(constants.COLOR_TAB_BAR_BACKGROUND, constants.COLOR_TAB_BORDER);
 }
 

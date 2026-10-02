@@ -2279,6 +2279,8 @@
 			],
 			"cpp_class": "HostRewind",
 			"methods": [
+				"frameStepCycles",
+				"stepFrame",
 				"stepCheckpoint",
 				"seekTo",
 				"returnToPresent",
@@ -2295,8 +2297,8 @@
 				"hosts/libretro/rewind_timeline.cpp"
 			],
 			"cpp_class": "HostRewindTimeline",
-			"methods": ["moveCursor", "seekAt", "queueRenderCommands"],
-			"reason": "shared_host_rewind_timeline_transport_contract"
+			"methods": ["selectAt", "cyclesAt", "update"],
+			"reason": "shared_passive_rewind_timeline_presentation_contract"
 		},
 		{
 			"ts": "hosts/common/input/ui.ts",

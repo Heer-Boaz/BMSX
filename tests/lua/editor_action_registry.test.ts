@@ -83,7 +83,7 @@ test('named workbench menu materializes one retained generic action bar', () => 
 	const expected = WORKBENCH_MENUS['scenarioLab.title'].map(item => item.command);
 	const actionBar = createWorkbenchActionBar('scenarioLab.title');
 	const firstBounds = actionBar.items[0].bounds;
-	layoutWorkbenchActionBar(actionBar, 200, 10, 20, text => text.length * 4);
+	layoutWorkbenchActionBar(actionBar, 200, 10, 20, text => text.length * 4, null);
 
 	assert.deepEqual(actionBar.items.map(item => item.command), expected);
 	assert.equal(actionBar.items[0].bounds, firstBounds);
@@ -99,8 +99,8 @@ test('game frame controls share commands and use distinct non-repeating Studio k
 	assert.notEqual(resolveEditorCommandKeybinding('F7', KeyModifier.none, commands)?.repeat, true);
 	assert.notEqual(resolveEditorCommandKeybinding('F7', KeyModifier.shift, commands)?.repeat, true);
 	assert.equal(resolveEditorCommandKeybinding('F7', KeyModifier.ctrl, commands), null);
-	const actions = createWorkbenchActionBar('gameView.title').items;
-	assert.ok(actions.some(action => action.command === 'gameView.playback'));
+	const actions = createWorkbenchActionBar('runtime.title').items;
+	assert.ok(actions.some(action => action.command === 'pause'));
 	for (const command of ['stepFrameBack', 'stepFrame'] as const) {
 		assert.ok(actions.some(action => action.command === command));
 		assert.ok(WORKBENCH_MENUS['menubar.run'].some(item => item.type === 'command' && item.command === command));

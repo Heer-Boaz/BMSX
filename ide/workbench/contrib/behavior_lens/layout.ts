@@ -118,7 +118,7 @@ export function prepareBehaviorLensLayout(state: BehaviorLensViewState): Behavio
 	const presentation = state.presentation;
 	if (metricsChanged || state.headerDirty) {
 		layout.headerBottom = layout.top + editorViewState.lineHeight + HEADER_PADDING_Y * 2;
-		layoutWorkbenchActionBar(presentation.actionBar, layout.right - 4, layout.top, layout.headerBottom, measureText);
+		layoutWorkbenchActionBar(presentation.actionBar, layout.right - 4, layout.top, layout.headerBottom, measureText, editorViewState.font.renderFont());
 		const definition = state.definitionRowKey === null ? undefined : state.source.nodesByRowKey.get(state.definitionRowKey);
 		layout.headerText = truncateTextToWidth(uppercaseOutsideStrings(definition === undefined ? state.resource.path : definition.label),
 			presentation.actionBar.items[0].bounds.left - layout.left - HEADER_PADDING_X * 2);

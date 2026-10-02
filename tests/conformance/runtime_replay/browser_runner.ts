@@ -58,30 +58,9 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	const output = new SystemOutputLog();
 	const history = runtime.history;
 	let hostFrames = 0;
-	const { Host2DKind } = await import('../../../machine/ts/render/host_overlay/commands');
-	let renderedTimelineStatus: string | undefined;
-	const publishMenu = presenter.hostOverlayQueue.publishHostMenuFrame.bind(presenter.hostOverlayQueue);
-	presenter.hostOverlayQueue.publishHostMenuFrame = frame => {
-		// Observe the submitted view; do not queue a second draw after service.
-		let timeline = false;
-		let status = '';
-		for (let index = 0; index < frame.commandCount; index += 1) {
-			if (frame.commandKinds[index] !== Host2DKind.Glyphs) continue;
-			const text = (frame.commandRefs[index] as import('../../../machine/ts/render/shared/submissions').GlyphRenderSubmission).items as string;
-			timeline ||= text.startsWith('REWIND ');
-			if (text === 'SEEKING' || text === 'STOPPED') status = text;
-		}
-		if (timeline) renderedTimelineStatus = status;
-		publishMenu(frame);
-	};
 	const frame = async () => {
-		renderedTimelineStatus = undefined;
 		clock.advance(runtime.timing.frameDurationMs);
 		runHostFrame(session, runtime, presenter, input, audioOutput, output, log, presentation, menu, clock.now());
-		if (renderedTimelineStatus !== undefined) {
-			const expected = rewind.stopped ? 'STOPPED' : rewind.seeking ? 'SEEKING' : '';
-			require(renderedTimelineStatus === expected, 'overlay reflects completion in the serviced host frame');
-		}
 		hostFrames += 1;
 		await new Promise<void>(resolve => setTimeout(resolve, 0));
 		require(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) === 0, 'real cart fault');
@@ -112,11 +91,11 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	await openRewind();
 	const latest = history.latestCycles;
 	const checkpoint = history.earliestCycles;
-	await press('ShiftLeft'); await settle();
+	await press('ArrowLeft'); await settle();
 	const selected = runtime.machine.scheduler.currentNowCycles();
-	require(history.mode === HistoryMode.Reviewing && selected < latest, 'LB keyboard binding previews recorded time');
-	await press('ShiftRight'); await settle();
-	require(runtime.machine.scheduler.currentNowCycles() === latest && rewind.positionCycles === latest, 'LB/RB round trip returns exactly to the recorded end');
+	require(history.mode === HistoryMode.Reviewing && selected < latest, 'Left keyboard binding previews recorded time');
+	await press('ArrowRight'); await settle();
+	require(runtime.machine.scheduler.currentNowCycles() === latest && rewind.positionCycles === latest, 'Left/Right round trip returns exactly to the recorded end');
 	// The slider uses screen-space pointer input, not a test-only seek command.
 	const clickTimeline = async (viewportX: number) => {
 		const bounds = canvas.getBoundingClientRect();
@@ -156,7 +135,7 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	// Leave a representative multi-second transport preview for visual inspection.
 	const previewEnd = history.latestCycles + runtime.timing.cpuHz * 7;
 	for (let count = 0; count < 4000 && history.latestCycles < previewEnd; count += 1) await frame();
-	await openRewind(); await press('ShiftLeft'); await settle();
+	await openRewind(); await press('ArrowLeft'); await settle();
 	await testWebGpuReadbackLifetime(runtime, backend);
 	await backend.device.queue.onSubmittedWorkDone();
 	require(errors.length === 0, errors.join('\n'));

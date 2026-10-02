@@ -5,7 +5,7 @@
 
 namespace bmsx {
 
-enum class RewindRequest { None, Seek, Resume, Pause, Play };
+enum class RewindRequest { None, Seek, Resume, Pause, Play, Step };
 
 class Runtime;
 class VideoPresenter;
@@ -21,6 +21,8 @@ public:
 	bool playing() const;
 	bool audioMuted() const;
 	i64 positionCycles() const;
+	i64 frameStepCycles(i32 direction, i32 count = 1) const;
+	void stepFrame(i32 direction);
 	void stepCheckpoint(i32 direction);
 	void seekTo(i64 cycles);
 	void returnToPresent();
@@ -44,6 +46,7 @@ private:
 	bool playbackActive = false;
 	bool playbackTimeResetPending = false;
 	bool presentationPending = false;
+	i64 stepTargetTick = 0;
 };
 
 } // namespace bmsx

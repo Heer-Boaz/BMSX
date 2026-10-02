@@ -2301,8 +2301,9 @@ retained machine only after the batch completes, including when it was stopped
 at a breakpoint or repaired after a guest fault.
 
 The existing quick menu opens a compact rewind bar at the bottom of the game
-viewport, using the host tiny font. LB/RB or left/right seek through the recorded
-range, A toggles recorded playback/pause, START takes live control at the current
+viewport, using the host tiny font. LB/RB step recorded video boundaries;
+left/right seek seconds through the range. A toggles recorded playback/pause,
+START takes live control at the current
 position, and B or the menu chord cancels back to the recorded end. A pointer
 click seeks proportionally along the bar; the transport labels are also buttons.
 Playback uses normal host-time scheduling with the retained ICU journal and
@@ -5864,6 +5865,15 @@ from its current page in both hosts: options and controller remapping hold the m
 keyboard allows live execution, and the rewind page delegates explicit
 seek/playback to `HostRewind`. There is no second retained pause flag in the
 CPU, runtime, audio voices or save state.
+
+`HostRewindTimeline` is passive retained presentation in both hosts. It consumes
+cycle coordinates and admitted actions; it owns neither execution nor history.
+The host menu maps gamepad/pointer intent to `HostRewind`. Studio docks the same
+TypeScript view only for live inspection and Game View, using its ordinary
+captured controls and finite `RuntimeFrameNavigation` owner. LB/RB select recorded
+video boundaries; Left/Right seek seconds. Forward stepping replays from the
+current machine state without restoring a checkpoint or discarding future input.
+See [runtime timeline ownership and representations](studio_runtime_timeline.md).
 
 `runHostFrame()`, `runWorkbenchHostFrame()` and `runLibretroFrame()` decide this policy after polling host input and before
 rewind service, backend execution or the live scheduler. While options are

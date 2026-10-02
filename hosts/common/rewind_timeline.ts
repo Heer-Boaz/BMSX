@@ -1,147 +1,143 @@
 import { clamp } from '../../machine/ts/common/clamp';
-import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../machine/ts/common/rect';
-import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { clear_rect_bounds, create_rect_bounds, point_in_rect, write_rect_bounds } from '../../machine/ts/common/rect';
 import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
 import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
-import { Font } from '../../machine/ts/render/shared/bmsx_font';
+import type { BFont } from '../../machine/ts/render/shared/bitmap_font';
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import { RectRenderKind, type GlyphRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
-import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
-import type { HostRewind } from './rewind';
 
 const enum TimelineRect { Panel, Track, Fill, Cursor }
-const enum TimelineLabel { Range, Position, Status, Navigation, Playback, Resume, Cancel }
-export const enum TimelineAction { None = -1, Seek, Playback, Resume, Cancel }
-const RECT_COLORS = [0xe8070b10, 0xff46525e, 0xff5bc6ff, 0xffefefef] as const;
-const LABEL_TEXT = ['', '', '', 'LB <  RB >', 'A PLAY', 'START GAME', 'B CANCEL'] as const;
-const COLOR_TEXT = 0xffefefef;
-const COLOR_SEEKING = 0xffffce66;
+const enum TimelineLabel { Range, Position, Status, Previous, Playback, Next, Present, Resume, Cancel }
+export const enum TimelineAction { None = -1, Seek, Previous, Playback, Next, Present, Resume, Cancel }
 
-/** Host transport view. Snapshot storage and replay remain in their existing owners. */
+/** Published owner state in machine cycles; this view never runs or restores the machine. */
+export type TimelineState = {
+	earliestCycles: number; latestCycles: number; positionCycles: number; cpuHz: number;
+	status: 'LIVE' | 'PAUSED' | 'REPLAY' | 'SEEKING' | 'STOPPED';
+	enabledActions: number; hoveredAction: TimelineAction; focusedAction: TimelineAction;
+};
+export type TimelineStyle = {
+	panel: number; track: number; accent: number; text: number; disabled: number;
+	highlight: number; highlightText: number;
+	z: number; actions: readonly string[]; pauseLabel: string; visibleActions: number;
+};
+export const HOST_TIMELINE_STYLE: TimelineStyle = {
+	panel: 0xe8070b10, track: 0xff46525e, accent: 0xff5bc6ff, text: 0xffefefef, disabled: 0xff7d8790,
+	highlight: 0xff46525e, highlightText: 0xffefefef,
+	z: 920, actions: ['LB <|', 'A PLAY', '|> RB', 'NOW', 'START GAME', 'B CANCEL'], pauseLabel: 'A PAUSE', visibleActions: 0x7f,
+};
+
+/** Retained presentation shared by the host menu and the docked Studio timeline. */
 export class HostRewindTimeline {
-	private readonly hitRects = [create_rect_bounds(), create_rect_bounds(), create_rect_bounds(), create_rect_bounds()];
-	private readonly font = new Font({ variant: 'tiny' });
-	private readonly rects: RectRenderSubmission[] = new Array(RECT_COLORS.length);
-	private readonly labels: GlyphRenderSubmission[] = new Array(LABEL_TEXT.length);
-	private readonly labelWidths: number[] = new Array(LABEL_TEXT.length);
-	private readonly commandKinds: Host2DKind[] = new Array(RECT_COLORS.length + LABEL_TEXT.length);
-	private readonly commandRefs: Host2DRef[] = new Array(this.commandKinds.length);
-	private readonly renderFrame: HostMenuFrame = {
-		commandKinds: this.commandKinds,
-		commandRefs: this.commandRefs,
-		commandCount: this.commandKinds.length,
-	};
+	public readonly bounds = create_rect_bounds();
+	public readonly hitRects = Array.from({ length: 7 }, () => create_rect_bounds());
+	private readonly rects: RectRenderSubmission[];
+	private readonly labels: GlyphRenderSubmission[];
+	private readonly labelWidths = new Float64Array(9);
+	public readonly frame: HostMenuFrame;
+	private font: BFont | undefined;
+	private state!: TimelineState;
 	private rangeTenths = -1;
 	private offsetTenths = -1;
 	private statusText = '';
-	private playbackShown = false;
+	private playing = false;
 
-	public constructor() {
-		for (let index = 0; index < this.rects.length; index += 1) {
-			const rect: RectRenderSubmission = { kind: RectRenderKind.Fill, area: { left: 0, top: 0, right: 0, bottom: 0, z: 920 + index }, color: RECT_COLORS[index], layer: LAYER_2D_IDE };
-			this.rects[index] = rect;
-			this.commandKinds[index] = Host2DKind.Rect;
-			this.commandRefs[index] = rect;
-		}
-		for (let index = 0; index < this.labels.length; index += 1) {
-			const text = LABEL_TEXT[index];
-			const label: GlyphRenderSubmission = { x: 0, y: 0, z: 924, items: text, item_start: 0, item_end: text.length, font: this.font, color: COLOR_TEXT, has_background_color: false, background_color: 0, layer: LAYER_2D_IDE };
-			this.labels[index] = label;
-			this.labelWidths[index] = this.font.measure(text);
-			this.commandKinds[this.rects.length + index] = Host2DKind.Glyphs;
-			this.commandRefs[this.rects.length + index] = label;
-		}
-		this.labels[TimelineLabel.Status].color = COLOR_SEEKING;
+	public constructor(private readonly style: TimelineStyle = HOST_TIMELINE_STYLE) {
+		this.rects = Array.from({ length: 4 }, (_, index) => ({ kind: RectRenderKind.Fill,
+			area: { left: 0, top: 0, right: 0, bottom: 0, z: style.z + index }, color: 0, layer: LAYER_2D_IDE }));
+		this.labels = Array.from({ length: 9 }, (_, index) => {
+			const text = index < TimelineLabel.Previous ? '' : style.actions[index - TimelineLabel.Previous];
+			return { x: 0, y: 0, z: style.z + 4, items: text, item_start: 0, item_end: text.length, font: null,
+				color: style.text, has_background_color: false, background_color: style.track, layer: LAYER_2D_IDE };
+		});
+		const commandKinds = [...this.rects.map(() => Host2DKind.Rect), ...this.labels.map(() => Host2DKind.Glyphs)];
+		const commandRefs: Host2DRef[] = [...this.rects, ...this.labels];
+		this.frame = { commandKinds, commandRefs, commandCount: commandKinds.length };
 	}
-
+	public static height(font: BFont): number { return font.lineHeight * 2 + 18; }
 	public selectAt(x: number, y: number): TimelineAction {
-		for (let index = 0; index < this.hitRects.length; index += 1) {
-			if (point_in_rect(x, y, this.hitRects[index])) return index;
+		for (let index = 0; index < this.hitRects.length; index++) {
+			if ((this.state.enabledActions & (1 << index)) !== 0 && point_in_rect(x, y, this.hitRects[index])) return index;
 		}
 		return TimelineAction.None;
 	}
-
-	public moveCursor(runtime: Runtime, rewind: HostRewind, direction: number): void {
-		const history = runtime.history;
-		const cycles = clamp(rewind.positionCycles + direction * runtime.timing.cpuHz, history.earliestCycles, history.latestCycles);
-		if (cycles !== rewind.positionCycles) rewind.seekTo(cycles);
-	}
-
-	public seekAt(runtime: Runtime, rewind: HostRewind, x: number): void {
-		const history = runtime.history;
+	public cyclesAt(x: number): number {
 		const track = this.rects[TimelineRect.Track].area;
 		const offset = clamp(x, track.left, track.right) - track.left;
-		const cycles = history.earliestCycles + Math.trunc((history.latestCycles - history.earliestCycles) * offset / (track.right - track.left));
-		if (cycles !== rewind.positionCycles) rewind.seekTo(cycles);
+		return this.state.earliestCycles + Math.trunc((this.state.latestCycles - this.state.earliestCycles) * offset / (track.right - track.left));
 	}
-
-	public queueRenderCommands(runtime: Runtime, presenter: VideoPresenter, rewind: HostRewind): void {
-		const history = runtime.history;
-		const range = history.latestCycles - history.earliestCycles;
-		const position = rewind.positionCycles;
-		const rangeTenths = Math.trunc(range * 10 / runtime.timing.cpuHz);
-		const offsetTenths = Math.trunc((history.latestCycles - position) * 10 / runtime.timing.cpuHz);
+	private setLabel(index: TimelineLabel, text: string): void {
+		const label = this.labels[index];
+		label.items = text; label.item_end = text.length;
+		this.labelWidths[index] = this.font!.measure(text);
+	}
+	public update(state: TimelineState, left: number, top: number, right: number, font: BFont): void {
+		this.state = state;
+		const fontChanged = this.font !== font;
+		this.font = font;
+		if (fontChanged) for (let index = 0; index < this.labels.length; index++) {
+			const label = this.labels[index]; label.font = font;
+			this.labelWidths[index] = font.measure(label.items as string);
+		}
+		const range = state.latestCycles - state.earliestCycles;
+		const rangeTenths = Math.trunc(range * 10 / state.cpuHz);
+		const offsetTenths = Math.trunc((state.latestCycles - state.positionCycles) * 10 / state.cpuHz);
 		if (rangeTenths !== this.rangeTenths) {
-			this.rangeTenths = rangeTenths;
-			const label = this.labels[TimelineLabel.Range];
-			const text = `REWIND ${(rangeTenths / 10).toFixed(1)}S`;
-			label.items = text;
-			label.item_end = text.length;
-			this.labelWidths[TimelineLabel.Range] = this.font.measure(text);
+			this.rangeTenths = rangeTenths; this.setLabel(TimelineLabel.Range, 'HISTORY ' + (rangeTenths / 10).toFixed(1) + 'S');
 		}
 		if (offsetTenths !== this.offsetTenths) {
-			this.offsetTenths = offsetTenths;
-			const label = this.labels[TimelineLabel.Position];
-			const text = offsetTenths === 0 ? 'NOW' : `-${(offsetTenths / 10).toFixed(1)}S`;
-			label.items = text;
-			label.item_end = text.length;
-			this.labelWidths[TimelineLabel.Position] = this.font.measure(text);
+			this.offsetTenths = offsetTenths; this.setLabel(TimelineLabel.Position, offsetTenths === 0 ? 'NOW' : '-' + (offsetTenths / 10).toFixed(1) + 'S');
 		}
-		const status = rewind.stopped ? 'STOPPED' : rewind.seeking ? 'SEEKING' : rewind.playing ? 'REPLAY' : 'PAUSED';
-		if (status !== this.statusText) {
-			this.statusText = status;
-			this.labels[TimelineLabel.Status].items = status;
-			this.labels[TimelineLabel.Status].item_end = status.length;
-			this.labelWidths[TimelineLabel.Status] = this.font.measure(status);
+		if (state.status !== this.statusText) { this.statusText = state.status; this.setLabel(TimelineLabel.Status, state.status); }
+		const playing = state.status === 'LIVE' || state.status === 'REPLAY';
+		if (playing !== this.playing) {
+			this.playing = playing; this.setLabel(TimelineLabel.Playback, playing ? this.style.pauseLabel : this.style.actions[1]);
 		}
-		if (this.playbackShown !== rewind.playing) {
-			this.playbackShown = rewind.playing;
-			const text = rewind.playing ? 'A PAUSE' : 'A PLAY';
-			const label = this.labels[TimelineLabel.Playback];
-			label.items = text;
-			label.item_end = text.length;
-			this.labelWidths[TimelineLabel.Playback] = this.font.measure(text);
-		}
-		const left = 6;
-		const right = presenter.viewportSize.x - 6;
-		const top = presenter.viewportSize.y - 38;
-		const trackLeft = left + 6;
-		const trackRight = right - 6;
-		write_rect_bounds(this.hitRects[TimelineAction.Seek], left, top + 10, right, top + 22);
-		const cursor = range === 0 ? trackRight : trackLeft + Math.trunc((position - history.earliestCycles) * (trackRight - trackLeft) / range);
-		write_rect_bounds(this.rects[TimelineRect.Panel].area, left, top, right, top + 32);
-		write_rect_bounds(this.rects[TimelineRect.Track].area, trackLeft, top + 15, trackRight, top + 18);
-		write_rect_bounds(this.rects[TimelineRect.Fill].area, trackLeft, top + 15, cursor, top + 18);
-		write_rect_bounds(this.rects[TimelineRect.Cursor].area, cursor - 1, top + 12, cursor + 2, top + 21);
-		this.rects[TimelineRect.Cursor].color = rewind.seeking ? COLOR_SEEKING : COLOR_TEXT;
-		const center = Math.trunc(presenter.viewportSize.x / 2);
+		const bottom = top + HostRewindTimeline.height(font), trackLeft = left + 6, trackRight = right - 6;
+		write_rect_bounds(this.bounds, left, top, right, bottom);
+		write_rect_bounds(this.rects[TimelineRect.Panel].area, left, top, right, bottom);
+		const trackTop = top + font.lineHeight + 7;
+		write_rect_bounds(this.rects[TimelineRect.Track].area, trackLeft, trackTop, trackRight, trackTop + 3);
+		write_rect_bounds(this.hitRects[TimelineAction.Seek], trackLeft - 3, trackTop - 3, trackRight + 3, trackTop + 6);
+		const cursor = range === 0 ? trackRight : trackLeft + Math.trunc((state.positionCycles - state.earliestCycles) * (trackRight - trackLeft) / range);
+		write_rect_bounds(this.rects[TimelineRect.Fill].area, trackLeft, trackTop, cursor, trackTop + 3);
+		write_rect_bounds(this.rects[TimelineRect.Cursor].area, cursor - 1, trackTop - 3, cursor + 2, trackTop + 6);
+		this.rects[TimelineRect.Panel].color = this.style.panel;
+		this.rects[TimelineRect.Track].color = this.style.track;
+		this.rects[TimelineRect.Fill].color = this.style.accent;
+		this.rects[TimelineRect.Cursor].color = state.status === 'SEEKING' ? this.style.accent : this.style.text;
+		const rangeRight = trackLeft + this.labelWidths[TimelineLabel.Range];
 		this.labels[TimelineLabel.Range].x = trackLeft;
 		this.labels[TimelineLabel.Position].x = trackRight - this.labelWidths[TimelineLabel.Position];
-		this.labels[TimelineLabel.Status].x = center - Math.trunc(this.labelWidths[TimelineLabel.Status] / 2);
-		this.labels[TimelineLabel.Navigation].x = trackLeft;
-		this.labels[TimelineLabel.Cancel].x = trackRight - this.labelWidths[TimelineLabel.Cancel];
-		const resumeX = this.labels[TimelineLabel.Cancel].x - 8 - this.labelWidths[TimelineLabel.Resume];
-		this.labels[TimelineLabel.Resume].x = resumeX;
-		this.labels[TimelineLabel.Playback].x = Math.trunc((trackLeft + this.labelWidths[TimelineLabel.Navigation]
-			+ resumeX - this.labelWidths[TimelineLabel.Playback]) / 2);
-		for (let index = 0; index < this.labels.length; index += 1) {
-			this.labels[index].y = top + (index < TimelineLabel.Navigation ? 4 : 24);
+		this.labels[TimelineLabel.Status].x = Math.trunc((left + right - this.labelWidths[TimelineLabel.Status]) / 2);
+		for (let index = 0; index < TimelineLabel.Previous; index++) {
+			const label = this.labels[index]; label.y = top + 3; label.color = this.style.text;
+			label.item_end = (label.items as string).length;
 		}
-		for (let index = TimelineAction.Playback; index <= TimelineAction.Cancel; index += 1) {
-			const labelIndex = TimelineLabel.Playback + index - TimelineAction.Playback;
-			const label = this.labels[labelIndex];
-			write_rect_bounds(this.hitRects[index], label.x - 2, top + 22, label.x + this.labelWidths[labelIndex] + 2, top + 32);
+		const status = this.labels[TimelineLabel.Status];
+		if (status.x < rangeRight + 4 || status.x + this.labelWidths[TimelineLabel.Status] > this.labels[TimelineLabel.Position].x - 4) {
+			this.labels[TimelineLabel.Range].item_end = 0; status.x = trackLeft;
 		}
-		presenter.hostOverlayQueue.publishHostMenuFrame(this.renderFrame);
+		const actionTop = trackTop + 8;
+		let actionRight = trackRight;
+		for (let action = TimelineAction.Cancel; action >= TimelineAction.Present; action--) {
+			const index = TimelineLabel.Previous + action - TimelineAction.Previous;
+			const width = (this.style.visibleActions & (1 << action)) === 0 ? 0 : this.labelWidths[index] + 4;
+			this.labels[index].x = actionRight - width + 2;
+			if (width !== 0) actionRight -= width + 6;
+		}
+		let actionLeft = trackLeft;
+		for (let action = TimelineAction.Previous; action <= TimelineAction.Cancel; action++) {
+			const index = TimelineLabel.Previous + action - TimelineAction.Previous, label = this.labels[index];
+			label.y = actionTop; label.item_end = (label.items as string).length;
+			if (action <= TimelineAction.Next) { label.x = actionLeft + 2; actionLeft += this.labelWidths[index] + 10; }
+			const enabled = (state.enabledActions & (1 << action)) !== 0;
+			const highlighted = enabled && (action === state.hoveredAction || action === state.focusedAction);
+			label.color = highlighted ? this.style.highlightText : enabled ? this.style.text : this.style.disabled;
+			label.background_color = this.style.highlight;
+			label.has_background_color = highlighted;
+			if ((this.style.visibleActions & (1 << action)) === 0) { label.item_end = 0; clear_rect_bounds(this.hitRects[action]); }
+			else write_rect_bounds(this.hitRects[action], label.x - 2, actionTop - 2, label.x + this.labelWidths[index] + 2, bottom);
+		}
 	}
 }

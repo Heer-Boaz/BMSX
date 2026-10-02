@@ -99,7 +99,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 			|| this.bounds.right !== bounds.right || this.bounds.bottom !== bounds.bottom) {
 			write_rect_bounds(this.bounds, bounds.left, bounds.top, bounds.right, bounds.bottom);
 			const headerBottom = bounds.top + font.lineHeight + 8;
-			layoutWorkbenchActionBar(this.actionBar, bounds.right - 4, bounds.top + 2, headerBottom - 2, measureText);
+			layoutWorkbenchActionBar(this.actionBar, bounds.right - 4, bounds.top + 2, headerBottom - 2, measureText, font);
 			this.title = truncateMeasuredText(this.input!.title, this.actionBar.items.find(item => item.visible)!.bounds.left - bounds.left - 8, measure);
 			write_rect_bounds(this.content, bounds.left, headerBottom, bounds.right, bounds.bottom);
 			this.scroll.lineStep = font.lineHeight;
