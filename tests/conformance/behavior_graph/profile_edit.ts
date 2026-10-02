@@ -20,7 +20,7 @@ for (const siblings of [24, 1024]) {
 	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(analysis));
 	const state = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 	selectBehaviorLensDefinition(state, document.definitions[0].rowKey);
-	prepareBehaviorLensLayout(state);
+	prepareBehaviorLensLayout(state, { left: 0, top: 24, right: 384, bottom: 276 });
 	assert.ok(state.presentation.kind === 'graph');
 	const viewport = state.presentation.viewport;
 	const graph = viewport.model;
@@ -38,12 +38,12 @@ for (const siblings of [24, 1024]) {
 	let constructed = 0;
 	const constructMicroseconds = medianMilliseconds(() => {
 		for (let index = 0; index < 1000; index += 1) {
-			const edits = createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, field);
+			const edits = createLuaTableFieldRemovalEdits(model.buffer, parsed.locations, parsed.tokens, field);
 			constructed += edits[0].deleteLength + edits[1].deleteLength;
 		}
 	});
 	assert.ok(constructed > 0);
-	const edits = createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, field);
+	const edits = createLuaTableFieldRemovalEdits(model.buffer, parsed.locations, parsed.tokens, field);
 	const applyUndoMicroseconds = medianMilliseconds(() => {
 		for (let index = 0; index < 1000; index += 1) {
 			model.pushEditOperations(edits);
@@ -59,14 +59,14 @@ for (const siblings of [24, 1024]) {
 	let copied = 0;
 	const duplicateConstructMicroseconds = medianMilliseconds(() => {
 		for (let index = 0; index < 100; index += 1) {
-			const edits = createLuaTableFieldInsertionEdits(model.buffer, model.resource.path, member.table,
-				member.table.fields.indexOf(field), readLuaSourceRange(model.buffer, field.range));
+			const edits = createLuaTableFieldInsertionEdits(model.buffer, parsed, member.table,
+				member.table.fields.indexOf(field), readLuaSourceRange(model.buffer, parsed.locations.range(field.span)));
 			copied += edits[0].text.length;
 		}
 	}) * 10;
 	assert.ok(copied > 0);
-	const duplicateEdits = createLuaTableFieldInsertionEdits(model.buffer, model.resource.path, member.table,
-		member.table.fields.indexOf(field), readLuaSourceRange(model.buffer, field.range));
+	const duplicateEdits = createLuaTableFieldInsertionEdits(model.buffer, parsed, member.table,
+		member.table.fields.indexOf(field), readLuaSourceRange(model.buffer, parsed.locations.range(field.span)));
 	const duplicateApplyUndoMicroseconds = medianMilliseconds(() => {
 		for (let index = 0; index < 1000; index += 1) {
 			model.pushEditOperations(duplicateEdits);

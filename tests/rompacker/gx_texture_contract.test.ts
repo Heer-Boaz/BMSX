@@ -12,9 +12,6 @@ import { materializeCpuCompletionValues } from '../lua/cpu_test_harness';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import {
-	BLUA32_IMAGE_ID,
-} from '../../toolchain/ts/rompack/blua32_image';
-import {
 	BLUA32_BIOS_IMPORTS_IMAGE_ID,
 	decodeBlua32BiosImports,
 } from '../../toolchain/ts/rompack/blua32_bios_imports';

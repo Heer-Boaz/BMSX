@@ -61,7 +61,7 @@ test('completion sees a newly created module without editing the importer or reb
 		resetSemanticProjects(editorTextModelService);
 		editorTextModelService.clear();
 	});
-	const resource = (path: string) => ({ domain: 0 as const, path, source: { resid: path, type: 'lua', source_path: path } });
+	const resource = (path: string) => ({ domain: 0 as const, path, source: { resid: path, type: 'lua' as const, source_path: path } });
 	const importer = editorTextModelService.retain(resource('carts/example/main.lua'), 'lua', "local m = require('authoring/')");
 	const view = createCodeEditorViewState();
 	view.cursorColumn = importer.buffer.getText().indexOf("')");

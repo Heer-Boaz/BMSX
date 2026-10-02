@@ -27,7 +27,6 @@ import {
 	APU_PARAMETER_FILTER_CONTROL_INDEX,
 	APU_PARAMETER_REGISTER_COUNT,
 	APU_PARAMETER_GAIN_Q12_INDEX,
-	APU_PARAMETER_RATE_STEP_Q16_INDEX,
 	APU_PARAMETER_START_SAMPLE_INDEX,
 	APU_RATE_STEP_Q16_ONE,
 	APU_PARAMETER_SLOT_INDEX,
@@ -230,7 +229,7 @@ function createAudioMachine(): Machine {
 	return machine;
 }
 
-function restoreRealAudioHarness(state: AudioControllerState, nowCycles = 0): { memory: Memory; audio: AudioController; scheduler: DeviceScheduler; audioOutput: ApuOutputMixer; hostOutput: AudioOutputResampler } {
+function restoreRealAudioHarness(state: AudioControllerState, nowCycles = 0) {
 	const restored = createRealAudioHarness();
 	restored.scheduler.advanceTo(nowCycles);
 	restored.audio.restoreState(state, nowCycles);

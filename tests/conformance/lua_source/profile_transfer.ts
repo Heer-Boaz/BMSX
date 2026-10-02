@@ -19,12 +19,12 @@ for (const lines of [64, 4096]) {
 	let constructed = 0;
 	const constructMicroseconds = medianMilliseconds(() => {
 		for (let index = 0; index < 100; index += 1) {
-			const result = createLuaTableFieldTransfer(model.buffer, model.resource.path, field, target, 2);
+			const result = createLuaTableFieldTransfer(model.buffer, parsed, field, target, 2);
 			constructed += result.fieldRange.end - result.fieldRange.start;
 		}
 	}) * 10;
 	assert.ok(constructed > 0);
-	const result = createLuaTableFieldTransfer(model.buffer, model.resource.path, field, target, 2);
+	const result = createLuaTableFieldTransfer(model.buffer, parsed, field, target, 2);
 	const applyUndoMicroseconds = medianMilliseconds(() => {
 		for (let index = 0; index < 1000; index += 1) {
 			model.pushEditOperations(result.edits);
@@ -33,7 +33,7 @@ for (const lines of [64, 4096]) {
 	});
 	const transferUndoMicroseconds = medianMilliseconds(() => {
 		for (let index = 0; index < 100; index += 1) {
-			model.pushEditOperations(createLuaTableFieldTransfer(model.buffer, model.resource.path, field, target, 2).edits);
+			model.pushEditOperations(createLuaTableFieldTransfer(model.buffer, parsed, field, target, 2).edits);
 			model.undo();
 		}
 	}) * 10;

@@ -31,8 +31,8 @@ test('function summaries retain an uncalled receiver write', () => {
 	assert.equal(write.value, summary.parameters[0]);
 	assert.equal(summaries.terms.kind(write.base), TermKind.Member);
 	assert.equal(
-		summaries.terms.name(summaries.terms.operand(write.base)),
-		'parent',
+		summaries.terms.operand(write.base),
+		summaries.terms.nameId('parent'),
 	);
 	assert.equal(summaries.terms.base(write.base), summary.parameters[0]);
 });

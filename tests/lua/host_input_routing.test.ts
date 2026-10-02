@@ -1,7 +1,7 @@
-import { HostExecutionControl, HostPauseReason } from '../../hosts/common/execution_control';
-import type { HostAudioOutput } from '../../hosts/common/audio_output';
+import { HostPauseReason } from '../../hosts/common/execution_control';
+import { createHostFrameFixture } from '../helpers/host_frame';
 import type { HostRewind } from '../../hosts/common/rewind';
-import { RuntimeTaskKind, RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
+import { RuntimeTaskKind } from '../../hosts/common/runtime_task_queue';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -47,7 +47,7 @@ function createInput(): { input: Input; setTime(time: number): void } {
 }
 
 test('a pending launch holds execution independently of user pause and stepping', () => {
-	const execution = new HostExecutionControl({ mutePause() {} } as HostAudioOutput);
+	const { execution } = createHostFrameFixture();
 	execution.setPauseReason(HostPauseReason.AwaitingLaunch, true);
 	execution.requestExecution(true);
 	assert.equal(execution.launchPending, true);
@@ -61,8 +61,7 @@ test('a pending launch holds execution independently of user pause and stepping'
 });
 
 test('background history defers CPU admission without disabling edit intent', async () => {
-	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as HostAudioOutput,
-		{ backend: { async finishGxGpuReadbacks() {} } } as VideoPresenter);
+	const { tasks } = createHostFrameFixture();
 	const checkpoint = Promise.withResolvers<void>();
 	const history = tasks.schedule(() => checkpoint.promise, assert.fail, RuntimeTaskKind.History);
 	assert.equal(tasks.ready, false);
@@ -274,7 +273,7 @@ test('quick menu accepts navigation after consuming its opening frame', () => {
 	const presenter = {
 		show_resource_usage_gizmo: false,
 	} as VideoPresenter;
-	const menu = new HostOverlayMenu(presenter, {} as Runtime, input, { returnToPresent() {} } as HostRewind, new HostExecutionControl({} as HostAudioOutput));
+	const menu = new HostOverlayMenu(presenter, {} as Runtime, input, { returnToPresent() {} } as HostRewind, createHostFrameFixture().execution);
 
 	setTime(10);
 	input.inputButton('keyboard:0', 'ControlRight', true, 1, 10, 1);
@@ -315,7 +314,7 @@ test('quick menu reassigns an onscreen-style gamepad and remains controllable on
 	const presenter = {
 		show_resource_usage_gizmo: false,
 	} as VideoPresenter;
-	const menu = new HostOverlayMenu(presenter, {} as Runtime, input, { returnToPresent() {} } as HostRewind, new HostExecutionControl({} as HostAudioOutput));
+	const menu = new HostOverlayMenu(presenter, {} as Runtime, input, { returnToPresent() {} } as HostRewind, createHostFrameFixture().execution);
 
 	openMenuWithGamepad(input, menu, gamepad.id, currentTime, 1, 2);
 	currentTime += 1;
@@ -371,7 +370,7 @@ test('quick menu routes pointer taps through retained option actions', () => {
 			target,
 		) === DisplayPointMappingResult.Inside,
 	} as VideoPresenter;
-	const menu = new HostOverlayMenu(presenter, {} as Runtime, input, { returnToPresent() {} } as HostRewind, new HostExecutionControl({} as HostAudioOutput));
+	const menu = new HostOverlayMenu(presenter, {} as Runtime, input, { returnToPresent() {} } as HostRewind, createHostFrameFixture().execution);
 	const snapshot = createInputControllerSnapshot();
 	const pointerMask = 1 << INP_POINTER_BUTTON_PRIMARY;
 	let pressId = 1;
@@ -458,7 +457,7 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 			target,
 		) === DisplayPointMappingResult.Inside,
 	} as VideoPresenter;
-	const menu = new HostOverlayMenu(presenter, {} as Runtime, input, { returnToPresent() {} } as HostRewind, new HostExecutionControl({} as HostAudioOutput));
+	const menu = new HostOverlayMenu(presenter, {} as Runtime, input, { returnToPresent() {} } as HostRewind, createHostFrameFixture().execution);
 	const snapshot = createInputControllerSnapshot();
 	let pressId = 1;
 	const tickCaptured = (): HostMenuInput => {
@@ -631,7 +630,7 @@ test('quick menu edits the retained player-port control map', () => {
 	const clock = { now: () => currentTime } as HostClock;
 	const { input, gamepad } = createGamepadInput(clock);
 	const presenter = { show_resource_usage_gizmo: false } as VideoPresenter;
-	const menu = new HostOverlayMenu(presenter, {} as Runtime, input, { returnToPresent() {} } as HostRewind, new HostExecutionControl({} as HostAudioOutput));
+	const menu = new HostOverlayMenu(presenter, {} as Runtime, input, { returnToPresent() {} } as HostRewind, createHostFrameFixture().execution);
 	let pressId = 1;
 	const press = (button: string): HostMenuInput => {
 		input.inputButton(gamepad.id, button, true, 1, currentTime, pressId);

@@ -78,7 +78,7 @@ ${Array.from({ length: registrations }, (_, index) => `machines.register('fixtur
 			let measurements = 0;
 			const measure = (text: string, start: number, end: number) => { measurements += 1; return measureTextRange(text, start, end); };
 			const layout = () => review.layout(font, measure, measureText, viewport.bounds);
-			const open = () => review.show({ model: view.source.models.get(proposal.literal.range.path)!, title: 'RETARGET FSM', summary: `${registrations} RECOGNIZED USES: idle -> active`,
+			const open = () => review.show({ model: view.source.models.get(proposal.file.file)!, title: 'RETARGET FSM', summary: `${registrations} RECOGNIZED USES: idle -> active`,
 				items: stateMachineRetargetImpacts(view, proposal), apply() { throw new Error('Profile must not edit source.'); }, openSource() {} });
 			const impactOpenLayoutMicroseconds = medianMilliseconds(() => {
 				for (let i = 0; i < 10; i += 1) { open(); layout(); review.clear(); }

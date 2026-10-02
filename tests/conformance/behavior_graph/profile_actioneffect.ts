@@ -28,10 +28,10 @@ for (const registrations of [24, 1024]) {
 	const registration = registrationSet.registrations[0];
 	const context: BehaviorRecognizerContext = {
 		reader: new LuaSourceReader(snapshot),
-		anchor: registration.anchor, registrationRange: registration.callSite.expression.range, sourceIncomplete: false, behaviorKind: 'action_effect',
+		anchor: registration.anchor, registrationRange: semantic.chunk.locations.range(registration.callSite.expression.span), sourceIncomplete: false, behaviorKind: 'action_effect',
 	};
 	const active = new Set<LuaTableConstructorExpression>();
-	const table = resolveSourceTable(context, registration.callSite.expression.arguments[1], active)!;
+	const table = resolveSourceTable(context, semantic, registration.callSite.expression.arguments[1], active)!;
 	const singleBodyMs = medianMilliseconds(() => {
 		for (let index = 0; index < 1000; index += 1) buildActionEffectBody(context, table, active);
 	}) / 1000;

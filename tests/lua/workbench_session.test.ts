@@ -71,7 +71,9 @@ function fixture(t: TestContext) {
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
 	const runs = new ScenarioRunService(editorTextModelService, sources, null, new Map(), runtime.model, () => assert.fail('session recovery must not create test machines'));
 	const scenario = new ScenarioLabController(null, null, panes, null, runs);
+	const unused = { serialize: () => assert.fail('unexpected serialization'), deserialize: () => assert.fail('unexpected reconstruction') };
 	const serializers: EditorInputSerializers = {
+		aem_editor: unused, lua_program: unused, actor_lab: unused, game_view: unused,
 		terminal: { serialize: () => '', deserialize: () => { throw new Error('Terminal not used in this source-session fixture'); } },
 		code_editor: new CodeEditorInputSerializer(sources),
 		behavior_lens: new BehaviorLensInputSerializer(sources, behavior),

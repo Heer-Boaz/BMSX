@@ -1,23 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
-import { HostOverlayQueue, type HostOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
+import type { HostOverlayFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import * as constants from '../../ide/common/constants';
 import { drawCursor } from '../../ide/editor/render/caret';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { api } from '../../ide/runtime/overlay_api';
-import { OverlayRenderer } from '../../ide/runtime/overlay_renderer';
+import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { invertThemeToken, resolveThemeTokenColor } from '../../ide/theme/tokens';
 
 function renderActiveCursor(baseColor: number): HostOverlayFrame {
-	const queue = new HostOverlayQueue();
-	const renderer = new OverlayRenderer(queue);
-	renderer.beginFrame({
-		offscreenCanvasSize: { x: 64, y: 32 },
-		viewportSize: { x: 64, y: 32 },
-	});
+	const { presenter, queue, renderer } = createHostOverlayFixture(64, 32);
+	renderer.beginFrame(presenter);
 	api.beginFrame(renderer);
 	drawCursor({
 		row: 0,

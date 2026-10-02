@@ -1,3 +1,7 @@
+import { Input } from '../../hosts/common/input/manager';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
+import { HeadlessInputHub } from '../../hosts/node/headless/input';
+import type { FrameState } from '../../machine/ts/machine/runtime/frame/state';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
@@ -8,7 +12,7 @@ import { encodeFixedCallArgCount, OpCode } from '../../machine/ts/spec/blua32/op
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { Table } from '../../machine/ts/machine/cpu/table';
-import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
+import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import {
 	EMPTY_CALL_ARGS,
 	StringValue,
@@ -18,7 +22,6 @@ import {
 	INSTRUCTION_BYTES,
 	writeInstruction,
 } from '../../machine/ts/spec/blua32/instruction_format';
-import { BASE_CYCLES } from '../../machine/ts/spec/blua32/opcode';
 import {
 	COP0_CAUSE,
 	COP0_EXEC,
@@ -71,11 +74,8 @@ import {
 	CpuSuspendedRunResult,
 	runDueRuntimeTimers,
 } from '../../machine/ts/machine/runtime/cpu_executor';
-import { FrameLoopState } from '../../machine/ts/machine/runtime/frame/loop';
-import { FrameSchedulerState } from '../../machine/ts/machine/scheduler/frame';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
-import { Runtime, type FrameState } from '../../machine/ts/machine/runtime/runtime';
-import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
+import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
 	createTestBlua32PairCpu,
 	createTestSystemCpu,
@@ -83,7 +83,6 @@ import {
 	linkRawTestBlua32Pair,
 	linkRawTestSystemBlua32,
 	linkTestBlua32Pair,
-	linkTestSystemBlua32,
 	type TestBlua32Image,
 	type TestBlua32ImagePair,
 	type TestBlua32Source,
@@ -101,6 +100,7 @@ writeInstruction(CART_LAUNCHER_SYSTEM_CODE, 1, OpCode.LOAD_MEM, 0, 0, MemoryAcce
 writeInstruction(CART_LAUNCHER_SYSTEM_CODE, 2, OpCode.MTC0, 0, COP0_EXEC, 0, 0);
 writeInstruction(CART_LAUNCHER_SYSTEM_CODE, 3, OpCode.RFE, 0, 0, 0, 0);
 const CART_LAUNCHER_SYSTEM_IMAGE_SOURCE: TestBlua32Source = {
+	systemGlobalNames: LUA_BOOT_PRIMITIVES.map(primitive => primitive.name),
 	text: CART_LAUNCHER_SYSTEM_CODE,
 	functions: [
 		{ firstWord: 0, wordCount: 3 },
@@ -539,61 +539,16 @@ function makeMachine(
 }
 
 function makeHaltFrameRuntime(): Runtime {
-	const { memory, cpu, irqController } = createTestBlua32PairCpu(HALT_TEST_IMAGES);
-	assert.equal(cpu.runUntilDepth(0, 4), RunResult.Yielded);
-	const scheduler = {
-		nowCycles: 0,
-		hasDueTimer: () => false,
-		nextDeadline: () => Number.MAX_SAFE_INTEGER,
-		isCpuSliceActive: () => false,
-		beginCpuSlice: () => {},
-		endCpuSlice: () => {},
-		runCpuSlice: (targetDepth: number, sliceBudget: number) =>
-			cpu.runUntilDepth(targetDepth, sliceBudget),
-	};
-	const runtime = {
-		history: { mode: HistoryMode.Disabled, executionPaused: false },
-		machine: {
-			cpu,
-			memory,
-			irqController,
-			systemController: {
-				cpuHeld: () => false,
-				takeResetRequest: () => false,
-			},
-			gxGpu: { backendServiceBlocksMachine: () => false },
-			scheduler,
-			advanceDevices: (cycles: number) => {
-				scheduler.nowCycles += cycles;
-			},
-		},
-		vblank: {
-			tickCompleted: false,
-			beginTick: () => {},
-			abandonTick: () => {},
-			handleGpuRuntimeEdge: () => {},
-		},
-		frameScheduler: null as never,
-		frameLoop: null as never,
-		cpuExecution: null as never,
-		timing: {
-			cpuHz: 5_000,
-			cpuCyclesPerMillisecond: 5,
-			cycleBudgetPerFrame: 100,
-			frameDurationMs: 20,
-		},
-		pendingCall: 'entry' as const,
-	} as unknown as Runtime;
-	runtime.frameLoop = new FrameLoopState(runtime);
-	runtime.cpuExecution = new CpuExecutionState(runtime);
-	runtime.frameScheduler = {
-		lastTickSequence: 0,
-		startScheduledFrame: () => {
-			runtime.frameLoop.beginFrameState(runtime.timing.cycleBudgetPerFrame, 0);
-			return true;
-		},
-		refillFrameBudget: () => true,
-	} as never;
+	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
+	const runtime = new Runtime({
+		systemRomBytes: HALT_TEST_IMAGES.systemRomBytes,
+		cartridgeSlots: cartridgeSlots(HALT_TEST_IMAGES.cartRomBytes),
+		machineModel: { ...PSX_MACHINE_SPEC, cpuFreqHz: 5_000 },
+	}, input);
+	runtime.boot();
+	assert.equal(runtime.machine.cpu.runUntilDepth(0, 4), RunResult.Yielded);
+	// Isolate IRQ waiting from automatically scheduled peripheral interrupts.
+	runtime.machine.scheduler.nextDeadline = () => Number.MAX_SAFE_INTEGER;
 	return runtime;
 }
 
@@ -961,6 +916,7 @@ test('Runtime callClosure leaves its completion frame pending when the shared ex
 
 test('frame loop yields after HALT instead of continuing in the same host slice', () => {
 	const runtime = makeHaltFrameRuntime();
+	runtime.frameLoop.beginFrameState(runtime.timing.cycleBudgetPerFrame, 0);
 
 	const progressed = runtime.frameLoop.tickUpdate();
 
@@ -1516,7 +1472,7 @@ mem[${cartResumedAddress}] = 1
 	memory.mapIoWrite(IO_APU_TRANSFER_DATA, port, context => {
 		context.writes += 1;
 	});
-	memory.mapIoWriteReady(IO_APU_TRANSFER_DATA, context => context.ready);
+	memory.mapIoWriteReady(IO_APU_TRANSFER_DATA, () => port.ready);
 
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
 	irqController.raise(IRQ_VBLANK);
@@ -1843,7 +1799,6 @@ test('CPU runtime snapshot preserves nested table object identities', () => {
 
 test('frame scheduler does not burn active CPU budget while halted for IRQ without host time', () => {
 	const runtime = makeHaltFrameRuntime();
-	runtime.frameScheduler = new FrameSchedulerState(runtime);
 
 	runtime.frameScheduler.run(runtime.timing.frameDurationMs);
 	assert.equal(runtime.machine.cpu.isHaltedUntilIrq(), true);
@@ -1859,8 +1814,7 @@ test('frame scheduler does not burn active CPU budget while halted for IRQ witho
 test('frame scheduler discards host time spent waiting for GPU backend execution', () => {
 	const runtime = makeHaltFrameRuntime();
 	let backendBlocked = true;
-	(runtime.machine.gxGpu as unknown as { backendServiceBlocksMachine(): boolean }).backendServiceBlocksMachine = () => backendBlocked;
-	runtime.frameScheduler = new FrameSchedulerState(runtime);
+	runtime.machine.gxGpu.backendServiceBlocksMachine = () => backendBlocked;
 
 	runtime.frameScheduler.run(runtime.timing.frameDurationMs);
 	assert.equal(runtime.frameLoop.currentFrameState, null);

@@ -5,7 +5,7 @@ import { mapTrackedTextRange } from '../../ide/editor/text/text_change';
 import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { createLuaTableFieldInsertionEdits } from '../../ide/language/lua/table_field_insertion';
 import { createLuaTableFieldMoveEdits } from '../../ide/language/lua/table_field_moves';
-import { LuaStatementSequence } from '../../toolchain/ts/lua/syntax/statement_sequence';
+import { serializeLuaGrammar } from '../helpers/lua_syntax_snapshot';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { createLuaTableFieldTransfer } from '../../ide/language/lua/table_field_transfer';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
@@ -17,7 +17,6 @@ import { runCompiledLua } from './cpu_test_harness';
 const resource = { domain: 0 as const, path: 'transfer.lua', source: { type: 'lua' as const, resid: 'transfer' } };
 // Compare grammar structure: source text/tokens and locations necessarily change
 // when a field moves. The exact source/history checks below cover those bytes.
-const locationKeys = new Set(['span', 'locations', 'offset', 'skippedSyntax', 'range', 'startInclusive', 'endExclusive', 'line', 'column', 'source', 'tokens', 'syntaxError']);
 
 function applyTransfer(source: string, sourceTableIndex: number, fieldIndex: number, targetTableIndex: number, destination: number) {
 	const model = new EditorTextModel(resource, 'lua', source);
@@ -48,10 +47,10 @@ function applyTransfer(source: string, sourceTableIndex: number, fieldIndex: num
 	assert.equal(after.syntaxError, null, edited);
 	const targetFields = [...target.fields];
 	targetFields.splice(destination, 0, field);
-	const expected = JSON.stringify(parsed.chunk, (key, value) => value instanceof LuaStatementSequence ? Array.from(value) : locationKeys.has(key) ? undefined
-		: value === from ? { ...from, fields: from.fields.filter(candidate => candidate !== field) }
-			: value === target ? { ...target, fields: targetFields } : value);
-	assert.equal(JSON.stringify(after.chunk, (key, value) => value instanceof LuaStatementSequence ? Array.from(value) : locationKeys.has(key) ? undefined : value), expected,
+	const expected = serializeLuaGrammar(parsed.chunk, new Map([
+		[from, from.fields.filter(candidate => candidate !== field)], [target, targetFields],
+	]));
+	assert.equal(serializeLuaGrammar(after.chunk), expected,
 		'the entire AST changes only the two lists, including ancestor/descendant containers');
 	model.undo();
 	assert.equal(model.buffer.getText(), source);

@@ -137,7 +137,6 @@ import {
 	gxGpuCommandSemiTransparencyEnabled,
 	gxGpuCommandRectangleHeight,
 	gxGpuCommandRectangleWidth,
-	gxGpuDrawModeTexturePageBaseY,
 	gxGpuDrawingOffsetY,
 	gxGpuFillHeight,
 	gxGpuFillWidth,
@@ -2094,14 +2093,14 @@ test('GX-GPU GP1 clear completes accepted draws and cuts C0 at the execution fro
 	const activeCommands = active.gpu.readDeviceOutput().commandBuffer;
 	assert.equal(activeCommands.commandCount, 2);
 	assert.equal(activeCommands.executedCommandCount, 1);
-	assert.equal(activeCommands.readback.phase, GX_GPU_READBACK_IDLE);
+	assert.equal(active.gpu.readDeviceOutput().readbackPort.phase, GX_GPU_READBACK_IDLE);
 	assert.equal(active.scheduler.nextDeadline(), fillDeadline + 1);
 
 	active.gpu.writeGp1(GX_GPU_GP1_CLEAR_FIFO << 24);
 	assert.equal(activeCommands.commandCount, 1);
 	assert.equal(activeCommands.executedCommandCount, 1);
 	assert.equal(activeCommands.wordCount, 3);
-	assert.equal(activeCommands.readback.phase, GX_GPU_READBACK_IDLE);
+	assert.equal(active.gpu.readDeviceOutput().readbackPort.phase, GX_GPU_READBACK_IDLE);
 	assert.equal(active.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
 	assert.equal(active.gpu.readGp0(), GX_GPU_INFO_GPU_TYPE_V2);
 	const status = active.gpu.readStatus();
@@ -2123,7 +2122,7 @@ test('GX-GPU GP1 clear completes accepted draws and cuts C0 at the execution fro
 	assert.equal(queuedCommands.executedCommandCount, 1);
 	assert.equal(queued.gpu.captureState().gp0FifoWords.length, 0);
 	assert.equal(queued.scheduler.nextDeadline(), Number.MAX_SAFE_INTEGER);
-	assert.equal(queuedCommands.readback.phase, GX_GPU_READBACK_IDLE);
+	assert.equal(queued.gpu.readDeviceOutput().readbackPort.phase, GX_GPU_READBACK_IDLE);
 	assert.equal((queued.gpu.readStatus() & GX_GPU_STATUS_GPU_IDLE) >>> 0, GX_GPU_STATUS_GPU_IDLE);
 });
 
@@ -3193,7 +3192,6 @@ test('GX-GPU PCRTC composes source-alpha terminal cells over retained circuit-tw
 });
 
 test('GX-GPU PCRTC projects display signals and samples the source at circuit magnification', () => {
-	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	const pcrtcWords = GX_GPU_SOFTWARE_TEST_PCRTC_WORDS.slice();
 	pcrtcWords[GX_GPU_PCRTC_PMODE_LOW] = GX_GPU_PCRTC_PMODE_EN1
 		| GX_GPU_PCRTC_PMODE_MMOD
@@ -3251,7 +3249,6 @@ test('GX-GPU PCRTC projects display signals and samples the source at circuit ma
 });
 
 test('GX-GPU PCRTC keeps mixed-magnification circuits on one signal grid', () => {
-	const commandBuffer = new GxGpuCommandBuffer(standaloneCommandBufferDma);
 	const pcrtcWords = GX_GPU_SOFTWARE_TEST_PCRTC_WORDS.slice();
 	pcrtcWords[GX_GPU_PCRTC_PMODE_LOW] = GX_GPU_PCRTC_PMODE_EN1
 		| GX_GPU_PCRTC_PMODE_EN2

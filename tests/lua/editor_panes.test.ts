@@ -1,3 +1,6 @@
+import type { LuaProgramInput } from '../../ide/workbench/contrib/lua_program/editor_input';
+import type { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
+import type { ConversationObserverInput } from '../../ide/workbench/contrib/conversations/editor_input';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import type { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import type { AssistantInput } from '../../ide/workbench/contrib/assistant/editor_input';
@@ -140,6 +143,9 @@ function createEditorPanes() {
 		terminal: () => new RecordingEditorPane<TerminalInput>(),
 		actor_lab: () => new RecordingEditorPane<ActorLabInput>(),
 		game_view: () => new RecordingEditorPane<GameViewInput>(),
+		conversation_observer: () => new RecordingEditorPane<ConversationObserverInput>(),
+		aem_editor: () => new RecordingEditorPane<AemEditorInput>(),
+		lua_program: () => new RecordingEditorPane<LuaProgramInput>(),
 		assistant: () => new RecordingEditorPane<AssistantInput>(),
 		workspace_edit_review: () => new RecordingEditorPane<WorkspaceEditReviewInput>(),
 		code_editor: () => {

@@ -221,7 +221,7 @@ test('large framed messages backpressure the stream without revoking the lease',
 	const f = await fixture(t, [largeMessage]), c = await f.open();
 	await c.client.send({ type: 'start', reviews: [], prompt: 'Exercise a large framed event' });
 	await c.wait(event => event.type === 'turn-completed');
-	assert.equal(c.events.find(event => event.type === 'message').text, text);
+	assert.ok(c.events.some(event => event.type === 'message' && event.text === text));
 	assert.equal(c.client.signal.aborted, false);
 	assert.equal(f.model.requests.length, 1);
 	await f.api.close(); await c.client.closed;

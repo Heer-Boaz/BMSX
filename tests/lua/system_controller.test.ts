@@ -77,7 +77,7 @@ const CART_RESET_MARKER_ADDRESS = DYNAMIC_RAM_BASE + 0x1000;
 const CART_CLOSURE_GLOBAL_NAME = 'selected_cart_closure';
 const CART_CLOSURE_RESULT_GLOBAL_NAME = 'selected_cart_closure_result';
 
-function createSystemResetRuntime(systemRom: Uint8Array, cartRom: Uint8Array, cart1Rom = new Uint8Array(0)): Runtime {
+function createSystemResetRuntime(systemRom: Uint8Array, cartRom: Uint8Array, cart1Rom: Uint8Array = new Uint8Array(0)): Runtime {
 	return new Runtime({
 		systemRomBytes: systemRom,
 		cartridgeSlots: cartridgeSlots(cartRom, cart1Rom),

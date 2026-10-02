@@ -111,7 +111,7 @@ export async function testRuntimeTreeSource(test: StudioFixture): Promise<void> 
 		'runtime BT: same compiled evaluator, separate instance memory; no debug tree copy');
 	console.info(`STUDIO: BT read projection medians (ms) ${JSON.stringify({
 		instances: medianMilliseconds(() => { readBehaviorTreeInstances(test.ide.sources, guest, 0); }),
-		properties: medianMilliseconds(() => { inspectBehaviorTreeInstance(test.ide.sources, guest, first); }),
+		properties: medianMilliseconds(() => { inspectBehaviorTreeInstance(test.ide.sources, guest, first.component); }),
 		instanceCount: instances.items.length,
 	})}`);
 }

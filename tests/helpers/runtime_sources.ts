@@ -96,11 +96,11 @@ function emptyRomHeader(): CartRomHeader {
 	};
 }
 
-function romToolingLayer(
-	id: RomImageDomain,
+function romToolingLayer<TDomain extends RomImageDomain>(
+	id: TDomain,
 	projectRootPath: string,
 	payload: Uint8Array,
-): RomToolingLayer {
+): RomToolingLayer<TDomain> {
 	const header = parseCartHeader(payload);
 	const index = cartridgeIndex(projectRootPath);
 	if (header.tocLength !== 0) {
@@ -169,7 +169,7 @@ export function createTestRuntimeSourceState(
 	cartridgeLuaSources: readonly [LuaSourceRegistry | null, LuaSourceRegistry | null],
 	activeDomain: ResourceDomain,
 ): RuntimeSourceState {
-	const cartridgeLayers: [RomToolingLayer | null, RomToolingLayer | null] = [
+	const cartridgeLayers: [RomToolingLayer<'cart'> | null, RomToolingLayer<'cart'> | null] = [
 		cartridgeLuaSources[0]
 			? romToolingLayer('cart', cartridgeLuaSources[0].projectRootPath, createTestRuntimeRomPayload())
 			: null,

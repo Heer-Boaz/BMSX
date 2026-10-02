@@ -1,3 +1,5 @@
+import { LuaProgramInputSerializer } from '../../../ide/workbench/contrib/lua_program/editor_serializer';
+import { AemEditorInputSerializer } from '../../../ide/workbench/contrib/aem/editor_serializer';
 import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
@@ -26,6 +28,8 @@ import { GameViewInput } from '../../../ide/workbench/contrib/game_view/editor_i
 // Capture-only probe: real contribution serializers, no resolver, renderer, worker or storage IO.
 // Run with node --expose-gc --import tsx --import ./tests/lua/test_setup.ts <this file>.
 const serializers: EditorInputSerializers = {
+	aem_editor: new AemEditorInputSerializer(null),
+	lua_program: new LuaProgramInputSerializer(null, null),
 	terminal: { serialize: () => '', deserialize: () => { throw new Error('Capture-only probe'); } },
 	code_editor: new CodeEditorInputSerializer(null),
 	behavior_lens: new BehaviorLensInputSerializer(null, null),

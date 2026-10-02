@@ -25,7 +25,7 @@ for (const depth of [1, 4, 16]) {
 
 const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
 const parent = focus.createTarget(), state = createWorkbenchActionBar('sourceEditReview.title');
-layoutWorkbenchActionBar(state, 240, 10, 22, text => text.length * 4);
+layoutWorkbenchActionBar(state, 240, 10, 22, text => text.length * 4, null);
 const commands = { isEnabled: () => true, execute: () => assert.fail('hover must not execute') };
 const bar = new WorkbenchActionBarControl(focus, capture, hover, commands, parent);
 bar.setInput(state, parent);

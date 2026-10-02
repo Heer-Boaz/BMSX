@@ -131,7 +131,7 @@ export async function testRuntimeStateSource(test: StudioFixture): Promise<void>
 	console.info(`STUDIO: FSM read projection medians (ms) ${JSON.stringify({
 		roots: medianMilliseconds(() => { readStateMachineInstances(test.ide.sources, guest, 0); }),
 		states: medianMilliseconds(() => { readStateMachineStates(guest, machine.machine); }),
-		properties: medianMilliseconds(() => { inspectStateMachineState(test.ide.sources, guest, machine, state); }),
+		properties: medianMilliseconds(() => { inspectStateMachineState(test.ide.sources, guest, machine, state.state); }),
 		rootCount: instances.items.length, stateCount: states.length,
 	})}`);
 }

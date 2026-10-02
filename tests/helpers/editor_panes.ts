@@ -1,3 +1,4 @@
+import type { ConversationObserverInput } from '../../ide/workbench/contrib/conversations/editor_input';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import type { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
 import type { AssistantInput } from '../../ide/workbench/contrib/assistant/editor_input';
@@ -89,6 +90,7 @@ export function createTestEditorPanes(): EditorPanes {
 		terminal: () => new TestEditorPane<TerminalInput>(activateViewInput),
 		actor_lab: () => new TestEditorPane<ActorLabInput>(activateViewInput),
 		game_view: () => new TestEditorPane<GameViewInput>(activateViewInput),
+		conversation_observer: () => new TestEditorPane<ConversationObserverInput>(activateViewInput),
 		assistant: () => new TestEditorPane<AssistantInput>(activateViewInput),
 		workspace_edit_review: () => new TestEditorPane<WorkspaceEditReviewInput>(activateViewInput),
 		code_editor: () => new TestEditorPane<CodeEditorInput>(activateCodeEditorTab, input => new CodeEditorNavigationSelection(input)),

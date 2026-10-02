@@ -98,7 +98,6 @@ test('scene painting publishes nested content clips and reuses quad storage on s
 	options.bind(input);
 	t.after(() => { for (const control of controls) control.dispose(); options.clear(); });
 	const overlay = createHostOverlayFixture(384, 288); const stream = new HostOverlayQuadStream();
-	const commands = { isEnabled: () => true };
 	const draw = () => {
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
 		drawSceneEditor(input, controls, options.controls, true); overlay.renderer.endFrame();

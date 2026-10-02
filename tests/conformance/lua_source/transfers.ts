@@ -1,3 +1,4 @@
+import { serializeLuaGrammar } from '../../helpers/lua_syntax_snapshot';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -12,7 +13,6 @@ import { walkLuaAst } from '../../../toolchain/ts/lua/syntax/ast/traversal';
 // constructor. Whole-AST and PieceTree oracle; no hardcoded game names or lines.
 const paths = execFileSync('git', ['ls-files', 'cartlib', 'machine/bios', 'carts'], { encoding: 'utf8' })
 	.trim().split('\n').filter(path => path.endsWith('.lua'));
-const locations = new Set(['range', 'startInclusive', 'endExclusive', 'line', 'column']);
 let transfers = 0;
 let tables = 0;
 let bytes = 0;
@@ -25,14 +25,15 @@ for (const path of paths) {
 	const all: LuaTableConstructorExpression[] = [];
 	walkLuaAst(original.chunk!, node => { if (node.kind === LuaSyntaxKind.TableConstructorExpression) all.push(node); });
 	const model = new EditorTextModel({ domain: 0, path, source: { type: 'lua', resid: path } }, 'lua', source);
-	const spans = all.map(table => luaSourceRangeToTextRange(model.buffer, table.range));
+	const spans = all.map(table => luaSourceRangeToTextRange(model.buffer, original.chunk.locations.range(table.span)));
 	for (let fromIndex = 0; fromIndex < all.length; fromIndex += 1) {
 		const from = all[fromIndex];
 		if (from.fields.length === 0) continue;
 		tables += 1;
 		for (const index of new Set([0, from.fields.length >>> 1, from.fields.length - 1])) {
 			const field = from.fields[index];
-			const span = luaSourceRangeToTextRange(model.buffer, field.range);
+			const fieldRange = original.chunk.locations.range(field.span);
+			const span = luaSourceRangeToTextRange(model.buffer, fieldRange);
 			let target: LuaTableConstructorExpression | undefined;
 			for (let step = 1; step < all.length; step += 1) {
 				const candidate = (fromIndex + step) % all.length;
@@ -41,19 +42,20 @@ for (const path of paths) {
 				break;
 			}
 			if (target === undefined) continue; // No distinct destination outside the selected field exists.
+			const targetRange = original.chunk.locations.range(target.span);
 			for (const gap of new Set([0, target.fields.length])) {
-				const label = `${path}: ${field.range.start.line}:${field.range.start.column} -> ${target.range.start.line}:${target.range.start.column}/${gap}`;
-				const selected = readLuaSourceRange(model.buffer, field.range);
-				const transfer = createLuaTableFieldTransfer(model.buffer, path, field, target, gap);
+				const label = `${path}: ${fieldRange.start.line}:${fieldRange.start.column} -> ${targetRange.start.line}:${targetRange.start.column}/${gap}`;
+				const selected = readLuaSourceRange(model.buffer, fieldRange);
+				const transfer = createLuaTableFieldTransfer(model.buffer, original.chunk, field, target, gap);
 				model.pushEditOperations(transfer.edits);
 				const parsed = parseLuaChunk(model.buffer.getText(), path);
 				assert.equal(parsed.syntaxError, null, label);
 				const fields = [...target.fields];
 				fields.splice(gap, 0, field);
-				const expected = JSON.stringify(original.chunk, (key, value) => locations.has(key) ? undefined
-					: value === from ? { ...from, fields: from.fields.filter(candidate => candidate !== field) }
-						: value === target ? { ...target, fields } : value);
-				assert.equal(JSON.stringify(parsed.chunk, (key, value) => locations.has(key) ? undefined : value), expected, label);
+				const expected = serializeLuaGrammar(original.chunk, new Map([
+					[from, from.fields.filter(candidate => candidate !== field)], [target, fields],
+				]));
+				assert.equal(serializeLuaGrammar(parsed.chunk), expected, label);
 				assert.equal(model.buffer.getTextRange(transfer.fieldRange.start, transfer.fieldRange.end), selected, label);
 				model.undo();
 				assert.equal(model.buffer.getText(), source, label);

@@ -1,3 +1,4 @@
+import { createFrameRuntime } from '../helpers/frame_runtime';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -99,8 +100,9 @@ test('render graph realizes retained resources once and destroys them with the g
 		execute: () => { },
 	});
 
-	graph.execute({ frameIndex: 0, time: 0, delta: 0 });
-	graph.execute({ frameIndex: 1, time: 0.02, delta: 0.02 });
+	const output = createFrameRuntime().machine.gxGpu.readDeviceOutput();
+	graph.execute({ frameIndex: 0, time: 0, delta: 0 }, output);
+	graph.execute({ frameIndex: 1, time: 0.02, delta: 0.02 }, output);
 	assert.equal(createdTextures, 1);
 	assert.equal(createdRenderTargets, 1);
 	graph.dispose();

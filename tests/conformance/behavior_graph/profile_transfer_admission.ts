@@ -21,14 +21,14 @@ ${Array.from({ length: registrations }, (_, i) => `trees.register('target.${i}',
 	const branch = origin.root.branches[0];
 	const destination = target.root.branches[0];
 	assert.ok(branch.role === 'children' && branch.source.kind === 'section' && destination.role === 'children');
-	const member = { table: branch.source.table, branch, index: 0 };
-	const analysis = new BehaviorTreeTransferAnalysis(document, semantic, member);
+	const member = { file: branch.file, table: branch.source.table, branch, index: 0 };
+	const analysis = new BehaviorTreeTransferAnalysis(document, member);
 	const check = analysis.checkTarget(destination);
 	assert.ok(check.kind === 'available' && check.targetUses.length === registrations);
 	let observed = 0;
 	const constructionAndFirstCheckMicroseconds = medianMilliseconds(() => {
 		for (let i = 0; i < 100; i += 1) {
-			const probe = new BehaviorTreeTransferAnalysis(document, semantic, member);
+			const probe = new BehaviorTreeTransferAnalysis(document, member);
 			if (probe.checkTarget(destination).kind === 'available') observed += 1;
 		}
 	}) * 10;

@@ -1,5 +1,5 @@
 import { LuaStatementSequence } from '../../toolchain/ts/lua/syntax/statement_sequence';
-import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
+import type { LuaChunk, LuaTableConstructorExpression, LuaTableField } from '../../toolchain/ts/lua/syntax/ast';
 import type { LuaSyntaxSpan } from '../../toolchain/ts/lua/syntax/source_locations';
 
 /** Independent syntax oracle: occurrence identity and query caches are not grammar. */
@@ -20,4 +20,17 @@ export function luaSyntaxSnapshot(chunk: LuaChunk): unknown {
 			path: value.path, line: value.line, column: value.column };
 		return value;
 	}));
+}
+
+const sourceKeys = new Set(['span', 'locations', 'offset', 'skippedSyntax', 'range', 'startInclusive', 'endExclusive',
+	'line', 'column', 'source', 'tokens', 'syntaxError', 'separators']);
+
+/** Table-edit oracle: compare grammar independently of source positions and storage identity. */
+export function serializeLuaGrammar(chunk: LuaChunk, tableFields?: ReadonlyMap<LuaTableConstructorExpression, readonly LuaTableField[]>): string {
+	return JSON.stringify(chunk, (key, value) => {
+		if (value instanceof LuaStatementSequence) return Array.from(value);
+		if (sourceKeys.has(key)) return undefined;
+		const fields = tableFields?.get(value);
+		return fields === undefined ? value : { ...value, fields };
+	});
 }

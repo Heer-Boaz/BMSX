@@ -247,7 +247,7 @@ test('GX-GTE MMIO exposes PSX COP2 data/control registers and command execution'
 });
 
 test('GX-GTE+ VMAD3 executes three signed Q4.12 lanes through raw MMIO words', () => {
-	const { memory, gte, scheduler } = createGte();
+	const { memory, scheduler } = createGte();
 	const commandAddress = IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE;
 	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, pack16(10, -20));
 	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_Z * IO_WORD_SIZE, 0xa5a5001e);
@@ -279,7 +279,7 @@ test('GX-GTE+ VMAD3 executes three signed Q4.12 lanes through raw MMIO words', (
 });
 
 test('GX-GTE+ VMAD3 uses signed scalars, arithmetic shift and all lane saturation flags', () => {
-	const { memory, gte, scheduler } = createGte();
+	const { memory, scheduler } = createGte();
 	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, pack16(10, -20));
 	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_Z * IO_WORD_SIZE, 30);
 	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_MUL_XY * IO_WORD_SIZE, pack16(8, 12));
@@ -331,7 +331,7 @@ test('GX-GTE+ VMAD3 uses signed scalars, arithmetic shift and all lane saturatio
 });
 
 test('GX-GTE+ unknown command retains results and publishes an invalid-command latch', () => {
-	const { memory, gte, scheduler } = createGte();
+	const { memory, scheduler } = createGte();
 	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_ADD_XY * IO_WORD_SIZE, pack16(1, 2));
 	memory.writeMappedU32LE(IO_GX_GTE_PLUS_BASE + GX_GTE_PLUS_COMMAND * IO_WORD_SIZE, GX_GTE_PLUS_FN_VMAD3);
 	completeGtePlus(memory, scheduler, GX_GTE_PLUS_CYCLES_VMAD3);

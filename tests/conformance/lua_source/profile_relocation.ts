@@ -25,13 +25,13 @@ for (const functions of [32, 1024]) {
 	assert.ok(from.kind === LuaSyntaxKind.LocalAssignmentStatement && from.values[0].kind === LuaSyntaxKind.TableConstructorExpression);
 	assert.ok(target.kind === LuaSyntaxKind.LocalAssignmentStatement);
 	const field = from.values[0].fields[0];
-	const destination = target.values[0].range.start;
+	const destination = file.chunk.locations.range(target.values[0].span).start;
 	let dependencies = 0;
 	const collectionMicroseconds = medianMilliseconds(() => {
-		for (let index = 0; index < 1000; index += 1) dependencies += new LuaRelocationAnalysis(file, field.range).bindings.length;
+		for (let index = 0; index < 1000; index += 1) dependencies += new LuaRelocationAnalysis(file, file.chunk.locations.range(field.span)).bindings.length;
 	});
 	assert.ok(dependencies > 0);
-	const analysis = new LuaRelocationAnalysis(file, field.range);
+	const analysis = new LuaRelocationAnalysis(file, file.chunk.locations.range(field.span));
 	assert.equal(analysis.bindings.length, 1);
 	let changes = 0;
 	const destinationMicroseconds = medianMilliseconds(() => {

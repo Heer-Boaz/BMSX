@@ -574,17 +574,6 @@ test('canonical source cache keys identical resource paths by physical project p
 	globalThis.fetch = async (input: RequestInfo | URL) => {
 		if (String(input) === '/__bmsx__/session') return Response.json({ workspaceToken: 'workspace-storage-test' });
 		const url = new URL(String(input), 'http://workspace.local');
-		const directory = url.searchParams.get('directory');
-		if (directory !== null) {
-			const entries = new Map<string, 'file' | 'directory'>();
-			for (const path of this.files.keys()) {
-				if (!path.startsWith(`${directory}/`)) continue;
-				const tail = path.slice(directory.length + 1);
-				const slash = tail.indexOf('/');
-				entries.set(slash < 0 ? tail : tail.slice(0, slash), slash < 0 ? 'file' : 'directory');
-			}
-			return new Response(JSON.stringify([...entries].map(([name, type]) => ({ name, type }))));
-		}
 		requestedPaths.push(url.searchParams.get('path')!);
 		return new Response(JSON.stringify({ contents: 'return "slot 1"', updatedAt: 1 }), {
 			status: 200,

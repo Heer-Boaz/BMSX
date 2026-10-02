@@ -1,3 +1,4 @@
+import { serializeLuaGrammar } from '../../helpers/lua_syntax_snapshot';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -14,8 +15,6 @@ import { walkLuaAst } from '../../../toolchain/ts/lua/syntax/ast/traversal';
 // node --import tsx --import ./tests/lua/test_setup.ts tests/conformance/lua_source/moves.ts
 const paths = execFileSync('git', ['ls-files', 'cartlib', 'machine/bios', 'carts'], { encoding: 'utf8' })
 	.trim().split('\n').filter(path => path.endsWith('.lua'));
-const locations = new Set(['range', 'startInclusive', 'endExclusive', 'line', 'column']);
-const stripLocations = (key: string, value: unknown) => locations.has(key) ? undefined : value;
 let moves = 0;
 let tables = 0;
 let bytes = 0;
@@ -35,11 +34,12 @@ for (const path of paths) {
 		const pairs: [number, number][] = [];
 		for (let index = 1; index < table.fields.length; index += 1) pairs.push([index - 1, index], [index, index - 1]);
 		if (table.fields.length > 2) pairs.push([0, table.fields.length - 1], [table.fields.length - 1, 0]);
+		const range = original.chunk.locations.range(table.span);
 		for (const [index, destination] of pairs) {
-			const label = `${path}: move ${index} to ${destination} at table ${table.range.start.line}:${table.range.start.column}`;
-			span = luaSourceRangeToTextRange(model.buffer, table.fields[index].range);
+			const label = `${path}: move ${index} to ${destination} at table ${range.start.line}:${range.start.column}`;
+			span = luaSourceRangeToTextRange(model.buffer, original.chunk.locations.range(table.fields[index].span));
 			const selected = source.slice(span.start, span.end);
-			const edits = createLuaTableFieldMoveEdits(model.buffer, path, table, index, destination);
+			const edits = createLuaTableFieldMoveEdits(model.buffer, original.chunk, table, index, destination);
 			assert.ok(edits.length >= 2 && edits.length <= 3, label);
 			for (let editIndex = 1; editIndex < edits.length; editIndex += 1) {
 				assert.ok(edits[editIndex].offset > edits[editIndex - 1].offset, label);
@@ -50,9 +50,8 @@ for (const path of paths) {
 			assert.equal(parsed.syntaxError, null, label);
 			const fields = [...table.fields];
 			fields.splice(destination, 0, fields.splice(index, 1)[0]);
-			const expected = JSON.stringify(original.chunk, (key, value) => locations.has(key)
-				? undefined : value === table ? { ...table, fields } : value);
-			assert.equal(JSON.stringify(parsed.chunk, stripLocations), expected, label);
+			const expected = serializeLuaGrammar(original.chunk, new Map([[table, fields]]));
+			assert.equal(serializeLuaGrammar(parsed.chunk), expected, label);
 			assert.equal(model.buffer.getTextRange(span.start, span.end), selected, label);
 			model.undo();
 			assert.equal(model.buffer.getText(), source, label);
