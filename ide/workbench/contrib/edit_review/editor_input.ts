@@ -15,7 +15,6 @@ export class WorkspaceEditReviewInput extends ReadonlyEditorInput<`edit-review:$
 	public readonly viewport = new WorkbenchScrollViewport();
 	public readonly layout: FullWidthWorkbenchLayout = {
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
-		viewportWidth: -1, viewportHeight: -1, codeAreaTop: -1, codeAreaBottom: -1,
 	};
 	public readonly rows: EditReviewRow[] = [];
 	public heading = '';

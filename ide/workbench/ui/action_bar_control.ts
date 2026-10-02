@@ -63,9 +63,10 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 	/** Revoke disabled attempts even when there is no new pointer or key event. */
 	public update(): void {
 		const state = this.input!;
+		for (const item of state.items) item.enabled = item.visible && this.commands.isEnabled(item.command, this.focusTarget);
 		const command = this.pointerCommand === null ? state.pressedCommand : this.pointerCommand;
-		if (command !== null && (!state.items.some(item => item.command === command && item.visible) || !this.commands.isEnabled(command))) this.cancelPointer();
-		if (state.hasFocus && (state.focusedIndex < 0 || !state.items[state.focusedIndex].visible || !this.commands.isEnabled(state.items[state.focusedIndex].command))) {
+		if (command !== null && !state.items.some(item => item.command === command && item.enabled)) this.cancelPointer();
+		if (state.hasFocus && (state.focusedIndex < 0 || !state.items[state.focusedIndex].enabled)) {
 			this.moveFocus(1, state.focusedIndex);
 		}
 	}
@@ -91,7 +92,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		if (index < 0) { this.hover.release(this); return false; }
 		this.hover.visit(this);
 		const command = state.items[index].command;
-		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && this.commands.isEnabled(command)) {
+		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && this.commands.isEnabled(command, this.focusTarget)) {
 			this.cancelPointer();
 			this.capture.capture(this);
 			this.pointerCommand = command;
@@ -119,9 +120,10 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 	public releaseCapturedPointer(snapshot: PointerSnapshot): void {
 		const command = this.pointerCommand;
 		const index = this.hitTest(snapshot);
-		const accept = command !== null && index >= 0 && this.input!.items[index].command === command && this.commands.isEnabled(command);
+		const accept = command !== null && index >= 0 && this.input!.items[index].command === command && this.commands.isEnabled(command, this.focusTarget);
+		const context = this.focusTarget.commandContext;
 		this.cancelPointer(); // Execution may synchronously detach this pane/control.
-		if (accept) this.commands.execute(command);
+		if (accept) this.commands.execute(command, context);
 	}
 
 	private hitTest(snapshot: PointerSnapshot): number {
@@ -139,7 +141,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		let index = from;
 		for (let remaining = count; remaining > 0; remaining -= 1) {
 			index = (index + direction + count) % count;
-			if (state.items[index].visible && this.commands.isEnabled(state.items[index].command)) {
+			if (state.items[index].enabled) {
 				state.focusedIndex = index;
 				return;
 			}
@@ -180,7 +182,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 			const command = state.pressedCommand!;
 			if (button.justreleased) {
 				this.cancelPointer();
-				if (this.commands.isEnabled(command)) this.commands.execute(command);
+				if (this.commands.isEnabled(command, this.focusTarget)) this.commands.execute(command, this.focusTarget.commandContext);
 				return;
 			}
 			if (!button.pressed) this.cancelPointer(); // Lost input is not a release.

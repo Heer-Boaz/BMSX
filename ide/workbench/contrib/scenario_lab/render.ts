@@ -5,8 +5,6 @@ import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import {
 	renderWorkbenchActionBar,
 } from '../../render/action_bar';
-import type { EditorCommandEnablement } from '../../../common/commands';
-import { prepareScenarioLabLayout } from './layout';
 import type { ScenarioResultState } from '../../../testing/scenario/result_service';
 import {
 	type ScenarioLabResultRow,
@@ -63,7 +61,6 @@ function resultTextColor(row: ScenarioLabResultRow): number {
 
 function drawToolbar(
 	state: ScenarioLabViewState,
-	commands: EditorCommandEnablement,
 	renderFont: BFont,
 ): void {
 	const layout = state.layout;
@@ -85,7 +82,7 @@ function drawToolbar(
 		constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT,
 		renderFont,
 	);
-	renderWorkbenchActionBar(state.actionBar, commands, renderFont);
+	renderWorkbenchActionBar(state.actionBar, renderFont);
 }
 
 function drawPaneHeaders(state: ScenarioLabViewState, renderFont: BFont): void {
@@ -218,9 +215,8 @@ function drawResultRows(state: ScenarioLabViewState, renderFont: BFont): void {
 /** Draws the retained explorer/result projection using the active IDE font. */
 export function drawScenarioLab(
 	state: ScenarioLabViewState,
-	commands: EditorCommandEnablement,
 ): void {
-	const layout = prepareScenarioLabLayout(state);
+	const layout = state.layout;
 	const renderFont = editorViewState.font.renderFont();
 	api.fill_rect(
 		layout.left,
@@ -230,7 +226,7 @@ export function drawScenarioLab(
 		0,
 		constants.COLOR_RESOURCE_VIEWER_BACKGROUND,
 	);
-	drawToolbar(state, commands, renderFont);
+	drawToolbar(state, renderFont);
 	drawPaneHeaders(state, renderFont);
 	const borderColor = constants.COLOR_TAB_BORDER;
 	const testPaneLayout = state.testPane.layout;

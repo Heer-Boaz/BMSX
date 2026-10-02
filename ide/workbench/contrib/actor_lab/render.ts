@@ -1,4 +1,3 @@
-import type { EditorCommandEnablement } from '../../../common/commands';
 import * as colors from '../../../common/constants';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { api } from '../../../runtime/overlay_api';
@@ -8,14 +7,14 @@ import { drawWorkbenchSlider } from '../../render/slider';
 import { drawWorkbenchGraph } from '../../render/graph';
 import type { WorkbenchGraphItem } from '../../ui/graph/model';
 
-export function drawActorLab(input: ActorLabInput, commands: EditorCommandEnablement, playbackState: string, sliderFocused: boolean, graphHover: WorkbenchGraphItem | null, graphFocused: boolean): void {
+export function drawActorLab(input: ActorLabInput, playbackState: string, sliderFocused: boolean, graphHover: WorkbenchGraphItem | null, graphFocused: boolean): void {
 	const { layout, outline } = input;
 	const font = editorViewState.font.renderFont();
 	const color = colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
 	api.pushClipRect(layout.left, layout.top, layout.right, layout.bottom);
 	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 	const graph = input.stateGraph;
-	renderWorkbenchActionBar(graph === undefined ? input.actionBar : input.stateGraphActions, commands, font);
+	renderWorkbenchActionBar(graph === undefined ? input.actionBar : input.stateGraphActions, font);
 	api.blit_text_inline_with_font(graph === undefined ? playbackState : graph.titleLabel, 4, layout.top + 2, 0, color, font);
 	const tree = outline.layout;
 	if (graph !== undefined) {

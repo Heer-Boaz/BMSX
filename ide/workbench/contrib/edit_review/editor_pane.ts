@@ -81,7 +81,7 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 	}
 	public override update(): void {
 		const { layout, actionBar, viewport } = this.input;
-		const changed = updateFullWidthWorkbenchLayout(layout);
+		const changed = updateFullWidthWorkbenchLayout(layout, this.contentBounds);
 		const proposal = this.input.proposal;
 		if (changed || this.input.renderedState !== proposal.state) {
 			this.input.renderedState = proposal.state;
@@ -110,7 +110,7 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 		const { layout, actionBar, viewport, rows } = this.input;
 		const font = editorViewState.font.renderFont();
 		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
-		renderWorkbenchActionBar(actionBar, this, font);
+		renderWorkbenchActionBar(actionBar, font);
 		api.blit_text_inline_with_font(this.input.heading, 4, layout.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		api.blit_text_inline_with_font(this.input.status, 4, layout.top + layout.rowHeight + 6, 0,
 			this.input.proposal.state === 'stale' || this.input.proposal.state === 'failed' ? colors.COLOR_STATUS_WARNING : colors.COLOR_RESOURCE_VIEWER_TEXT, font);

@@ -1,9 +1,10 @@
+import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { write_rect_bounds } from '../../../../machine/ts/common/rect';
 import * as constants from '../../../common/constants';
 import { uppercaseOutsideStrings, writeWrappedMeasuredText } from '../../../common/text';
 import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { updateFullWidthWorkbenchLayout } from '../../common/layout';
+import { getWorkbenchEditorBounds, updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { clampWorkbenchListScroll, layoutWorkbenchList } from '../../ui/list_view';
 import type { WorkbenchTreeLayout, WorkbenchTreeNode } from '../../ui/tree_view';
@@ -13,8 +14,8 @@ import type { SceneOutlineElement } from './outline';
 const PADDING = 4;
 
 /** Measure content on invalidation; a scroll only projects the retained field rectangles. */
-export function layoutSceneEditor(input: SceneEditorInput, contentChanged: boolean, selectionChanged = false): boolean {
-	const changed = updateFullWidthWorkbenchLayout(input.layout);
+export function layoutSceneEditor(input: SceneEditorInput, contentChanged: boolean, selectionChanged = false, bounds: Readonly<RectBounds> = getWorkbenchEditorBounds()): boolean {
+	const changed = updateFullWidthWorkbenchLayout(input.layout, bounds);
 	const measured = changed || contentChanged || selectionChanged;
 	const layout = input.layout;
 	if (measured) {

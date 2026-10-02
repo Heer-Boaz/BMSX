@@ -25,8 +25,7 @@ export class AemEditorInput extends WorkingCopyEditorInput<`aem:${string}`, 'aem
 	public document: Document | undefined;
 	public source = '';
 	public status = '';
-	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
-		viewportWidth: -1, viewportHeight: -1, codeAreaTop: -1, codeAreaBottom: -1 };
+	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null, };
 	public constructor(public readonly workingCopy: EditorTextModel) {
 		super(`aem:${resourceIdentityKey(workingCopy.resource)}`, 'aem_editor', 'AUDIO EVENTS', true);
 		this.setLabel(this.title, sourceTabDescription(workingCopy.resource));

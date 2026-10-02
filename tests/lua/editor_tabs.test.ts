@@ -52,7 +52,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384) 
 	const paint = () => {
 		drawnLabels = 0;
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-		renderTabBar(context, { isEnabled: () => true }); overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
+		renderTabBar(context); overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 	};
 	const draw = () => {
 		layout(); paint();

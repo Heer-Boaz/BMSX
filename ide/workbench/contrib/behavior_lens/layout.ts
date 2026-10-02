@@ -1,7 +1,8 @@
+import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { uppercaseOutsideStrings } from '../../../common/text';
 import { measureText, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { updateFullWidthWorkbenchLayout } from '../../common/layout';
+import { getWorkbenchEditorBounds, updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { reconcileBehaviorLensSource } from './source_correspondence';
 import { resolveBehaviorSourceBookmark, type BehaviorSourceBookmark } from './source_bookmark';
 import { copyStateMachineSourceBookmark, reconcileStateMachineSourceSelection } from './state_machine_selection';
@@ -33,10 +34,6 @@ export function createBehaviorLensLayout(): BehaviorLensLayout {
 		rowHeight: 0,
 		headerText: '',
 		font: null,
-		viewportWidth: -1,
-		viewportHeight: -1,
-		codeAreaTop: -1,
-		codeAreaBottom: -1,
 	};
 }
 
@@ -112,9 +109,9 @@ export function selectBehaviorLensDefinition(state: BehaviorLensViewState, key: 
 }
 
 /** Writes the retained layout only when the tree, font, or viewport changed. */
-export function prepareBehaviorLensLayout(state: BehaviorLensViewState): BehaviorLensLayout {
+export function prepareBehaviorLensLayout(state: BehaviorLensViewState, bounds: Readonly<RectBounds> = getWorkbenchEditorBounds()): BehaviorLensLayout {
 	const layout = state.layout;
-	const metricsChanged = updateFullWidthWorkbenchLayout(layout);
+	const metricsChanged = updateFullWidthWorkbenchLayout(layout, bounds);
 	const presentation = state.presentation;
 	if (metricsChanged || state.headerDirty) {
 		layout.headerBottom = layout.top + editorViewState.lineHeight + HEADER_PADDING_Y * 2;

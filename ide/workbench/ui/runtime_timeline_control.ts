@@ -56,7 +56,7 @@ export class RuntimeTimelineControl {
 		}
 	}
 	private requestSeek(cycles: number): void {
-		if (this.seekOperation === undefined) this.commands.execute('runtime.pause');
+		if (this.seekOperation === undefined) this.commands.execute('runtime.pause', this.context);
 		this.requestedCycles = cycles;
 	}
 	public update(): void {
@@ -83,9 +83,10 @@ export class RuntimeTimelineControl {
 		state.enabledActions = this.rewind.available && (this.navigation.available || this.navigation.active === this.seekOperation && this.seekOperation !== undefined)
 			? 1 << TimelineAction.Seek : 0;
 		state.hoveredAction = TimelineAction.None;
+		this.actions.update();
 		for (let index = 0; index < ACTIONS.length; index++) {
 			const item = this.actionState.items[index];
-			if (this.commands.isEnabled(item.command)) state.enabledActions |= 1 << ACTIONS[index];
+			if (item.enabled) state.enabledActions |= 1 << ACTIONS[index];
 			if (item.command === this.actionState.hoveredCommand) state.hoveredAction = ACTIONS[index];
 		}
 		state.focusedAction = this.actionState.hasFocus && this.actionState.focusedIndex >= 0 ? ACTIONS[this.actionState.focusedIndex] : TimelineAction.None;
@@ -107,7 +108,7 @@ export class RuntimeTimelineControl {
 		this.range.setRange(state.earliestCycles, state.latestCycles, 1);
 		this.range.enabled = (state.enabledActions & (1 << TimelineAction.Seek)) !== 0;
 		if (this.requestedCycles === undefined && this.seekOperation === undefined) this.range.value = state.positionCycles;
-		this.actions.update(); this.slider.update();
+		this.slider.update();
 	}
 	public handlePointer(snapshot: PointerSnapshot): boolean {
 		return this.context !== undefined && (this.slider.handlePointer(snapshot) || this.actions.handlePointer(snapshot));

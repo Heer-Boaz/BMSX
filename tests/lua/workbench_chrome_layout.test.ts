@@ -7,7 +7,7 @@ import { editorFeedbackState, showEditorMessage, updateEditorMessage } from '../
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { api } from '../../ide/runtime/overlay_api';
-import { getStatusMessageLines, refreshWorkbenchLayout, updateFullWidthWorkbenchLayout, type FullWidthWorkbenchLayout } from '../../ide/workbench/common/layout';
+import { getWorkbenchEditorBounds, getStatusMessageLines, refreshWorkbenchLayout, updateFullWidthWorkbenchLayout, type FullWidthWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { renderTopBar, renderTopBarDropdown } from '../../ide/workbench/render/top_bar';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { layoutTopBar } from '../../ide/workbench/ui/top_bar/layout';
@@ -143,23 +143,22 @@ test('feedback expiry and font wrapping publish parent bounds before full-width 
 	fixture(t);
 	const child: FullWidthWorkbenchLayout = {
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
-		viewportWidth: -1, viewportHeight: -1, codeAreaTop: -1, codeAreaBottom: -1,
 	};
 	editorViewState.viewportWidth = 128;
 	showEditorMessage('This authored status message must wrap differently when the font changes', COLOR_STATUS_TEXT, 1);
 	refreshWorkbenchLayout();
-	assert.equal(updateFullWidthWorkbenchLayout(child), true);
+	assert.equal(updateFullWidthWorkbenchLayout(child, getWorkbenchEditorBounds()), true);
 	const tinyLines = [...getStatusMessageLines()];
 	configureFontVariant(new VirtualHeadlessClock(), 'msx', null);
 	refreshWorkbenchLayout();
-	assert.equal(updateFullWidthWorkbenchLayout(child), true);
+	assert.equal(updateFullWidthWorkbenchLayout(child, getWorkbenchEditorBounds()), true);
 	const msxLines = [...getStatusMessageLines()];
 	assert.ok(msxLines.length > tinyLines.length, 'same text and viewport do not imply same wrapping');
 	assert.equal(child.bottom, 288 - editorViewState.baseBottomMargin - msxLines.length * editorViewState.lineHeight - 4);
 	updateEditorMessage(1);
 	refreshWorkbenchLayout();
-	assert.equal(updateFullWidthWorkbenchLayout(child), true);
+	assert.equal(updateFullWidthWorkbenchLayout(child, getWorkbenchEditorBounds()), true);
 	assert.equal(child.bottom, 288 - editorViewState.baseBottomMargin);
 	assert.deepEqual(getStatusMessageLines(), []);
-	assert.equal(updateFullWidthWorkbenchLayout(child), false, 'unchanged parent layout has no child rebuild');
+	assert.equal(updateFullWidthWorkbenchLayout(child, getWorkbenchEditorBounds()), false, 'unchanged parent layout has no child rebuild');
 });

@@ -1,4 +1,3 @@
-import type { EditorCommandEnablement } from '../../../common/commands';
 import * as constants from '../../../common/constants';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { ValueInput } from '../../../editor/ui/inline/value_input';
@@ -8,7 +7,7 @@ import { renderWorkbenchActionBar } from '../../render/action_bar';
 import type { SceneEditorInput } from './editor_input';
 import type { LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
 
-export function drawSceneEditor(input: SceneEditorInput, controls: readonly ValueInput<number>[], optionControls: readonly ValueInput<LuaFieldValueEdit>[], commands: EditorCommandEnablement, detailsFocused: boolean): void {
+export function drawSceneEditor(input: SceneEditorInput, controls: readonly ValueInput<number>[], optionControls: readonly ValueInput<LuaFieldValueEdit>[], detailsFocused: boolean): void {
 	const { layout, outline } = input;
 	const font = editorViewState.font.renderFont();
 	const color = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
@@ -16,7 +15,7 @@ export function drawSceneEditor(input: SceneEditorInput, controls: readonly Valu
 	api.pushClipRect(layout.left, layout.top, layout.right, layout.bottom);
 	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, constants.COLOR_CODE_BACKGROUND);
 	api.blit_text_inline_with_font(input.sourceText, 4, layout.top + 2, 0, color, font);
-	renderWorkbenchActionBar(input.actionBar, commands, font);
+	renderWorkbenchActionBar(input.actionBar, font);
 	api.blit_text_inline_with_font('SCENES / MEMBERS', 4, layout.top + rowHeight + 2, 0, color, font);
 	api.fill_rect(layout.detailsLeft - 1, layout.top + rowHeight, layout.detailsLeft, layout.bottom, 0, constants.COLOR_HEADER_BUTTON_BORDER);
 	api.blit_text_inline_with_font('PROPERTIES', layout.detailsLeft + 4, layout.top + rowHeight + 2, 0, color, font);

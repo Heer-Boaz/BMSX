@@ -12,7 +12,7 @@ export function drawWorkbenchPropertyInspector<Element extends InspectedProperty
 	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_RESOURCE_VIEWER_BACKGROUND);
 	api.fill_rect(bounds.left, bounds.top, bounds.right, view.bounds.top, 0, colors.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
 	api.blit_text_inline_with_font(inspector.title, bounds.left + 4, bounds.top + 4, 0, colors.COLOR_PROBLEMS_PANEL_HEADER_TEXT, font);
-	renderWorkbenchActionBar(inspector.actionBar, inspector, font);
+	renderWorkbenchActionBar(inspector.actionBar, font);
 	api.pushClipRect(view.bounds.left, view.bounds.top, view.bounds.right, view.bounds.bottom);
 	const offset = view.offsetTop;
 	for (let index = Math.max(0, model.rowAt(view.bounds.top)); index < model.rows.length; index += 1) {

@@ -48,7 +48,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 
 	public constructor(resourcePanel: ResourcePanelController,
 		private readonly controller: SceneEditorController,
-		private readonly commands: IdeCommandController,
+		commands: IdeCommandController,
 		private readonly sources: RuntimeSourceState,
 	) {
 		super(resourcePanel);
@@ -78,7 +78,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		this.controller.refresh(this.input);
 		navigationSelection?.restore(this.input);
 		this.bindProperties();
-		layoutSceneEditor(this.input, true);
+		layoutSceneEditor(this.input, true, false, this.contentBounds);
 		this.details.lineStep = this.input.outline.layout.rowHeight;
 	}
 
@@ -87,7 +87,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		const changed = this.boundVersion !== this.input.version;
 		if (changed) this.bindProperties();
 		this.actionBar.update();
-		if (layoutSceneEditor(this.input, changed)) {
+		if (layoutSceneEditor(this.input, changed, false, this.contentBounds)) {
 			this.details.lineStep = this.input.outline.layout.rowHeight;
 			for (let index = 0; index < this.controls.length; index += 1) {
 				if (this.controls[index].field.focusTarget.hasFocus) this.revealProperty(index);
@@ -99,17 +99,17 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		this.status = SOURCE_STATUS[getTextFileRuntimeSourceStatus(this.sources, this.input.workingCopy)];
 	}
 
-	public draw(): void { drawSceneEditor(this.input, this.controls, this.options.controls, this.commands, this.details.focusTarget.hasFocus); }
+	public draw(): void { drawSceneEditor(this.input, this.controls, this.options.controls, this.details.focusTarget.hasFocus); }
 
 	private revealProperty(index: number): void {
 		const bounds = this.input.properties[index].contentBounds;
 		this.input.details.scrollbar.reveal(bounds.top, bounds.bottom, 2);
-		layoutSceneEditor(this.input, false);
+		layoutSceneEditor(this.input, false, false, this.contentBounds);
 	}
 
 	private revealOption(property: SceneOptionProperty): void {
 		this.input.details.scrollbar.reveal(property.contentBounds.top, property.contentBounds.bottom, 2);
-		layoutSceneEditor(this.input, false);
+		layoutSceneEditor(this.input, false, false, this.contentBounds);
 	}
 
 	private bindProperties(): void {
@@ -162,7 +162,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		const contentChanged = this.boundVersion !== this.input.version;
 		this.bindProperties();
 		revealWorkbenchListSelection(this.input.outline);
-		layoutSceneEditor(this.input, contentChanged, true);
+		layoutSceneEditor(this.input, contentChanged, true, this.contentBounds);
 	}
 
 	public handleKeyboard(input: PlayerInput): void {
@@ -219,7 +219,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null, input: PlayerInput): void {
 		if (pointer === null) return;
 		if (this.details.handleWheel(pointer, direction * steps * this.details.lineStep * 3)) {
-			layoutSceneEditor(this.input, false);
+			layoutSceneEditor(this.input, false, false, this.contentBounds);
 			input.inputHandlers.pointer?.consumeButton('pointer_wheel');
 		} else if (workbenchListContainsPosition(this.input.outline, pointer.viewportX, pointer.viewportY)) {
 			scrollWorkbenchList(this.input.outline, direction * steps * 3);

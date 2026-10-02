@@ -5,6 +5,7 @@ import type { EditorInput, EditorInputKind } from '../../ui/tab/model';
 import type { EditorPane } from './editor_pane';
 import { inputFocus } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
+import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 
 export type EditorPaneFactories = {
 	[TKind in EditorInputKind]: () => EditorPane<Extract<EditorInput, { kind: TKind }>>;
@@ -16,6 +17,14 @@ export class EditorPanes {
 	private activePaneValue: EditorPane<EditorInput> | null = null;
 	private readonly clearListeners = new Set<() => void>();
 	private openGenerationValue = 0;
+	private readonly contentBounds = create_rect_bounds();
+
+	public layout(bounds: Readonly<RectBounds>): void {
+		const current = this.contentBounds;
+		if (current.left === bounds.left && current.top === bounds.top && current.right === bounds.right && current.bottom === bounds.bottom) return;
+		write_rect_bounds(current, bounds.left, bounds.top, bounds.right, bounds.bottom);
+		this.activePaneValue?.layout(current);
+	}
 
 	/** Resolution can await storage; only the latest opening may attach its input. */
 	public beginOpen(): number { return ++this.openGenerationValue; }
@@ -45,7 +54,7 @@ export class EditorPanes {
 		this.clearEditor();
 		const pane = this.getOrCreatePane(input);
 		this.activePaneValue = pane;
-		pane.setInput(input, selection, navigationSelection);
+		pane.setInput(input, this.contentBounds, selection, navigationSelection);
 		pane.focus();
 	}
 

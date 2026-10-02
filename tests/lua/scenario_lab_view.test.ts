@@ -73,6 +73,7 @@ function createViewFixture(t: TestContext) {
 	]));
 	const results = new ScenarioResultService();
 	const view = createScenarioLabViewState(collection, results, false);
+	prepareScenarioLabLayout(view, { left: 0, top: CODE_AREA_TOP, right: VIEWPORT_WIDTH, bottom: CODE_AREA_BOTTOM });
 	return { collection, results, view };
 }
 
@@ -82,11 +83,11 @@ test('Scenario Lab observes shared discovery revisions even when another consume
 	const source = "return { kind = 'unit', tests = { newly_discovered = function() end } }";
 	collection.updateSource(module, source, 42);
 	assert.equal(view.testPane.rowsDirty, false, 'there is no controller-local invalidation');
-	prepareScenarioLabLayout(view);
+	prepareScenarioLabLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(view.testPane.projectedRevision, collection.revision);
 	assert.ok(view.testPane.rows.some(row => row.kind === 'test' && row.test.caseName === 'newly_discovered'));
 	const rows = view.testPane.rows.slice();
-	for (let frame = 0; frame < 1000; frame++) prepareScenarioLabLayout(view);
+	for (let frame = 0; frame < 1000; frame++) prepareScenarioLabLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.ok(view.testPane.rows.every((row, index) => row === rows[index]), 'unchanged frames retain rows');
 });
 
@@ -307,7 +308,7 @@ test('navigation restores a result by identity after log eviction and keeps the 
 	executeScenarioLabNavigation(view, 'down');
 	assert.notEqual(view.testPane.selectedNodeId, item.id);
 	results.appendLog(result, 999, 'shift visible ordinal');
-	selected.restore(view); prepareScenarioLabLayout(view);
+	selected.restore(view); prepareScenarioLabLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(view.focus, 'results');
 	assert.equal(view.testPane.selectedNodeId, item.id);
 	assert.equal(view.resultPane.rows[view.resultPane.selectionIndex].id, id);
@@ -320,12 +321,12 @@ test('navigation restores a result by identity after log eviction and keeps the 
 	t.after(() => collapsed.dispose());
 	view.focus = 'tests';
 	executeScenarioLabNavigation(view, 'down'); refreshScenarioLabProjection(view);
-	collapsed.restore(view); prepareScenarioLabLayout(view);
+	collapsed.restore(view); prepareScenarioLabLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(view.resultPane.rows.length, 1);
 	assert.equal(view.resultPane.rows[0].expanded, false);
 	// Once an old log is evicted, history must not silently adopt the next row.
 	for (let index = 0; index < SCENARIO_RESULT_LOG_RETAIN_COUNT; index += 1) results.appendLog(result, 1000 + index, `new ${index}`);
-	selected.restore(view); prepareScenarioLabLayout(view);
+	selected.restore(view); prepareScenarioLabLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(view.resultPane.selectionIndex, -1);
 });
 
@@ -371,7 +372,7 @@ test('scenario result projection retains FSM facts without inventing source navi
 		'committed',
 	);
 	refreshScenarioLabProjection(view);
-	prepareScenarioLabLayout(view);
+	prepareScenarioLabLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 
 	const factIndex = view.resultPane.rows.findIndex(row => row.kind === 'fsm_transition');
 	assert.ok(factIndex > 0);
@@ -411,7 +412,7 @@ test('scenario result projection retains ordered ActionEffect facts', (t) => {
 		'cooldown',
 	);
 	refreshScenarioLabProjection(view);
-	prepareScenarioLabLayout(view);
+	prepareScenarioLabLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 
 	const factIndices = view.resultPane.rows.reduce<number[]>(
 		(indices, row, index) => {
@@ -454,9 +455,7 @@ test('scenario workbench renderer uses the active tiny IDE font and retained tex
 	const { queue, renderer, presenter } = createHostOverlayFixture(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
 	renderer.beginFrame(presenter);
 	api.beginFrame(renderer);
-	drawScenarioLab(view, {
-		isEnabled: () => true,
-	});
+	drawScenarioLab(view);
 	renderer.endFrame();
 
 	const frame = queue.consumeOverlayFrame();
@@ -485,20 +484,20 @@ test('explicit run reveal expands ancestors; later results do not steal the sele
 	const initial = view.testPane.selectedNodeId;
 	const run = results.beginRun(item.id, [{ test: item, source: module.source, sourceRevision: 1 }]);
 	view.testPane.collapsedNodeIds.add(root.id); view.testPane.collapsedNodeIds.add(module.id);
-	prepareScenarioLabLayout(view);
+	prepareScenarioLabLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(view.testPane.selectedNodeId, initial, 'background results do not navigate');
 	revealScenarioRun(view, run);
-	prepareScenarioLabLayout(view);
+	prepareScenarioLabLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(view.testPane.selectedNodeId, item.id);
 	assert.equal(view.resultPane.rows[view.resultPane.selectionIndex].run, run);
 	assert.equal(view.focus, 'results');
 	const beforeRows = view.testPane.rows.slice();
-	view.split.resize(0.7); prepareScenarioLabLayout(view);
+	view.split.resize(0.7); prepareScenarioLabLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(view.testPane.layout.contentRight, view.split.position);
 	assert.ok(view.testPane.rows.every((row, i) => row === beforeRows[i]), 'resize lays out retained rows');
 	view.focus = 'tests'; executeScenarioLabNavigation(view, 'home');
 	const selection = view.testPane.selectedNodeId;
 	const result = results.startItem(run, 0, 0); results.complete(result, 1); results.completeRun(run);
-	prepareScenarioLabLayout(view);
+	prepareScenarioLabLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(view.testPane.selectedNodeId, selection);
 });

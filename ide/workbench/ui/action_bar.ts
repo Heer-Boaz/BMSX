@@ -13,6 +13,7 @@ export type WorkbenchActionBarItem = {
 	label: string;
 	readonly bounds: RectBounds;
 	visible: boolean;
+	enabled: boolean;
 	width: number;
 	measuredLabel: string;
 };
@@ -38,6 +39,7 @@ export function createWorkbenchActionBar(menuId: WorkbenchActionMenuId): Workben
 			label: editorCommandTitle(contribution.command, false, true),
 			bounds: create_rect_bounds(),
 			visible: true,
+			enabled: false,
 			width: 0,
 			measuredLabel: '',
 		};

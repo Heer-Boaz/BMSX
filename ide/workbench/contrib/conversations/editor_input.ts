@@ -11,8 +11,7 @@ export class ConversationObserverInput extends ReadonlyEditorInput<'codex-conver
 	public readonly lifetime = new AbortController();
 	public readonly viewport = new WorkbenchScrollViewport();
 	public readonly transcript = new AssistantTranscriptProjection();
-	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
-		viewportWidth: -1, viewportHeight: -1, codeAreaTop: -1, codeAreaBottom: -1 };
+	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null, };
 	public selectedEntry = -1;
 	public projectedRevision = -1;
 	public readonly footer = new ObservedConversationFooter();

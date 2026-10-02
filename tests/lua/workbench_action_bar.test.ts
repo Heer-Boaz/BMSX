@@ -33,7 +33,7 @@ function fixture(t: TestContext) {
 		execute: command => { calls.push(command); onExecute(command); },
 	};
 	const bar = new WorkbenchActionBarControl(focus, capture, hover, commands, content);
-	bar.setInput(state, content);
+	bar.setInput(state, content); bar.update();
 	content.next = bar.focusTarget; content.previous = bar.focusTarget;
 	bar.focusTarget.next = content; bar.focusTarget.previous = content;
 	content.focus();
@@ -212,6 +212,25 @@ test('a toolbar carries explicit command context, but children never inherit par
 	f.focus.executeCommand('undo'); assert.equal(undos, 1);
 });
 
+test('pointer admission and dispatch use the action context without blurring another control', t => {
+	const f = fixture(t);
+	const field = f.focus.createTarget(f.content);
+	let blurs = 0, calls = 0;
+	field.onDidBlur(() => { blurs += 1; });
+	field.focus();
+	f.commands.isEnabled = (_command, target) => target?.commandContext === f.content;
+	f.commands.execute = (_command, target) => {
+		assert.equal(target?.commandContext, f.content);
+		assert.equal(f.focus.target, field);
+		calls += 1;
+	};
+	f.bar.update();
+	assert.ok(f.state.items.every(item => item.enabled));
+	f.pointer(0, PRIMARY, PRIMARY); f.pointer(0, 0, 0, PRIMARY);
+	assert.equal(calls, 1);
+	assert.equal(blurs, 0);
+});
+
 test('unchanged frames keep item storage, geometry and focus identity', t => {
 	const f = fixture(t);
 	const items = f.state.items, bounds = items[0].bounds, focus = f.bar.focusTarget;
@@ -230,7 +249,7 @@ test('tiny-font rendering distinguishes hover, keyboard focus, pressed and disab
 	layoutWorkbenchActionBar(f.state, 240, 10, 22, text => font.measure(text), font);
 	const draw = () => {
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-		renderWorkbenchActionBar(f.state, f.commands, font); overlay.renderer.endFrame();
+		renderWorkbenchActionBar(f.state, font); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(); stream.reset(256, 212);
 		for (let index = 0; index < frame.commandCount; index += 1) stream.appendEntry(frame.commandKinds[index], frame.commandRefs[index]);
 	};

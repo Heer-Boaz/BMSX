@@ -55,7 +55,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 	private readonly inspectionLifetime = { dispose: () => { this.inspectedMessage = undefined; } };
 	private readonly navigate = (command: ScenarioLabNavigationCommand): void => {
 		const view = this.input.view;
-		prepareScenarioLabLayout(view);
+		prepareScenarioLabLayout(view, this.contentBounds);
 		const result = executeScenarioLabNavigation(view, command);
 		switch (result.kind) {
 			case 'none': case 'changed': return;
@@ -162,17 +162,17 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 
 	public draw(): void {
 		if (this.targetInspection.model !== undefined) {
-			prepareScenarioLabLayout(this.input.view);
+			prepareScenarioLabLayout(this.input.view, this.contentBounds);
 			this.targetInspection.draw(this.input.view.layout); return;
 		}
 		if (this.inspector.visible) {
-			prepareScenarioLabLayout(this.input.view);
+			prepareScenarioLabLayout(this.input.view, this.contentBounds);
 			this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, this.input.view.layout);
 			drawWorkbenchPropertyInspector(this.inspector);
 			return;
 		}
 		const view = this.input.view;
-		drawScenarioLab(view, this.commands);
+		drawScenarioLab(view);
 		drawWorkbenchSplit(view.split, this.split.hovered || this.split.focusTarget.hasFocus);
 	}
 

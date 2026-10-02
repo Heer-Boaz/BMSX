@@ -39,7 +39,6 @@ export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, '
 	public optionProperties: readonly SceneOptionProperty[] = [];
 	public readonly layout: FullWidthWorkbenchLayout & { detailsLeft: number; projectedOffsetTop: number } = {
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
-		viewportWidth: -1, viewportHeight: -1, codeAreaTop: -1, codeAreaBottom: -1,
 		detailsLeft: 0, projectedOffsetTop: 0,
 	};
 

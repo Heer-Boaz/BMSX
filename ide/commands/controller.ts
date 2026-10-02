@@ -116,7 +116,9 @@ export class IdeCommandController {
 		return playing;
 	}
 
-	public execute(command: EditorCommandId): void {
+	public execute(command: EditorCommandId, target: InputFocusTarget | null = inputFocus.target): void {
+		// Committing the focused draft and choosing an action's target are distinct.
+		// Pointer actions retain field focus but invoke their own explicit context.
 		const edit = inputFocus.target?.commandContext.edit;
 		if (SOURCE_COMMANDS.has(command) && edit !== undefined && !edit.commit()) return;
 		switch (command) {
@@ -230,7 +232,7 @@ export class IdeCommandController {
 			case 'behaviorLens.removeChild':
 			case 'behaviorLens.duplicateChild':
 			case 'behaviorLens.setInitialState':
-				inputFocus.executeCommand(command);
+				inputFocus.executeCommand(command, target);
 				return;
 			case 'debugEvaluation':
 				if (this.debuggerState.plans.controlSuspended && this.debuggerState.source.stop !== undefined) {
@@ -244,7 +246,7 @@ export class IdeCommandController {
 					+ (command === 'tabs.scrollLeft' ? -1 : 1) * editorChromeState.tabViewportBounds.right * 0.75);
 				return;
 			case 'pause':
-				if (inputFocus.getCommand(command) !== undefined) { inputFocus.executeCommand(command); return; }
+				if (inputFocus.getCommand(command, target) !== undefined) { inputFocus.executeCommand(command, target); return; }
 				if (this.execution.userPaused) {
 					if (this.rewind.active) this.rewind.resumeHere();
 					this.execution.requestExecution(true);
@@ -257,12 +259,12 @@ export class IdeCommandController {
 				}
 				return;
 			case 'runtime.pause':
-				inputFocus.executeCommand(command);
+				inputFocus.executeCommand(command, target);
 				if (this.rewind.active) this.rewind.pauseSeek();
 				this.execution.setPauseReason(HostPauseReason.Requested, true);
 				return;
 			case 'runtime.present':
-				this.execute('runtime.pause');
+				this.execute('runtime.pause', target);
 				this.frameNavigation.seek(this.runtime.history.latestCycles);
 				return;
 			case 'gameView.playback':
@@ -272,7 +274,7 @@ export class IdeCommandController {
 			case 'gameView.closePanel': this.editor.gamePanel.close(); return;
 			case 'stepFrame':
 			case 'stepFrameBack':
-				if (inputFocus.getCommand(command) !== undefined) { inputFocus.executeCommand(command); return; }
+				if (inputFocus.getCommand(command, target) !== undefined) { inputFocus.executeCommand(command, target); return; }
 				openGameView(this.editor.editorPanes);
 				this.frameNavigation.step(command === 'stepFrameBack' ? -1 : 1);
 				return;

@@ -110,7 +110,7 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 	}
 	public override update(): void {
 		const input = this.input, { layout, viewport, session } = input;
-		const changed = updateFullWidthWorkbenchLayout(layout), row = layout.rowHeight;
+		const changed = updateFullWidthWorkbenchLayout(layout, this.contentBounds), row = layout.rowHeight;
 		if (changed) {
 			write_rect_bounds(input.composerBounds, 4, layout.bottom - row * 5 - 10, layout.right - 4, layout.bottom - row - 6);
 			this.scroll.lineStep = row; this.composer.rowHeight = editorViewState.lineHeight;
@@ -147,7 +147,7 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 	public draw(): void {
 		const input = this.input, { layout, viewport } = input, font = editorViewState.font.renderFont();
 		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
-		renderWorkbenchActionBar(input.actions, this, font);
+		renderWorkbenchActionBar(input.actions, font);
 		api.blit_text_inline_with_font(input.status, 4, layout.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		api.blit_text_inline_with_font('Enter: run | Shift+Enter: newline | Up/Down: history', 4, layout.top + layout.rowHeight + 6, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		api.pushClipRect(viewport.bounds.left, viewport.bounds.top, viewport.bounds.right, viewport.bounds.bottom);

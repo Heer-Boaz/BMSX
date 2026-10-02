@@ -11,7 +11,6 @@ export class GameViewInput extends ReadonlyEditorInput<'game-view', 'game_view'>
 	public readonly frameBounds = create_rect_bounds();
 	public readonly layout: FullWidthWorkbenchLayout = {
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
-		viewportWidth: -1, viewportHeight: -1, codeAreaTop: -1, codeAreaBottom: -1,
 	};
 	public constructor() { super('game-view', 'game_view', 'GAME', true); }
 }

@@ -1,5 +1,4 @@
 import type { BFont } from '../../../machine/ts/render/shared/bitmap_font';
-import type { EditorCommandEnablement } from '../../common/commands';
 import * as constants from '../../common/constants';
 import { api } from '../../runtime/overlay_api';
 import {
@@ -9,13 +8,12 @@ import {
 
 export function renderWorkbenchActionBar(
 	state: WorkbenchActionBarState,
-	commands: EditorCommandEnablement,
 	font: BFont,
 ): void {
 	for (let index = 0; index < state.items.length; index += 1) {
 		const item = state.items[index];
 		if (!item.visible) continue;
-		const enabled = commands.isEnabled(item.command);
+		const enabled = item.enabled;
 		const hovered = state.hoveredCommand === item.command;
 		const pressed = state.pressedCommand === item.command;
 		const focused = state.hasFocus && state.focusedIndex === index;

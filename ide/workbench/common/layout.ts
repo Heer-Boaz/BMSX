@@ -23,11 +23,7 @@ export type WorkbenchChromeLayout = {
 };
 
 /** Content geometry belongs to the workbench; a text gutter is a code-pane detail. */
-export function getWorkbenchEditorBounds(): RectBounds {
-	write_rect_bounds(editorBounds, editorViewState.codeAreaLeft, editorViewState.codeAreaTop,
-		editorViewState.viewportWidth - editorChromeState.editorRightInset, editorViewState.codeAreaBottom);
-	return editorBounds;
-}
+export function getWorkbenchEditorBounds(): Readonly<RectBounds> { return editorBounds; }
 
 /** Permanent connection chrome has its own slot, independent of the active editor or feedback. */
 export function getWorkbenchStatusBounds(): RectBounds {
@@ -43,34 +39,21 @@ export type FullWidthWorkbenchLayout = {
 	bottom: number;
 	rowHeight: number;
 	font: EditorFont | null;
-	viewportWidth: number;
-	viewportHeight: number;
-	codeAreaTop: number;
-	codeAreaBottom: number;
 };
 
 /** Writes shared full-width editor-input geometry only when its owner metrics advance. */
-export function updateFullWidthWorkbenchLayout(layout: FullWidthWorkbenchLayout): boolean {
-	const changed = layout.viewportWidth !== editorViewState.viewportWidth
-		|| layout.viewportHeight !== editorViewState.viewportHeight
-		|| layout.codeAreaTop !== editorViewState.codeAreaTop
-		|| layout.codeAreaBottom !== editorViewState.codeAreaBottom
+export function updateFullWidthWorkbenchLayout(layout: FullWidthWorkbenchLayout, bounds: Readonly<RectBounds>): boolean {
+	const changed = layout.left !== bounds.left || layout.top !== bounds.top
+		|| layout.right !== bounds.right || layout.bottom !== bounds.bottom
 		|| layout.font !== editorViewState.font
 		|| layout.rowHeight !== editorViewState.lineHeight;
-	const contentRight = editorViewState.viewportWidth - editorChromeState.editorRightInset;
-	if (!changed && layout.right === contentRight) {
-		return false;
-	}
-	layout.left = 0;
-	layout.top = editorViewState.codeAreaTop;
-	layout.right = contentRight;
-	layout.bottom = editorViewState.codeAreaBottom;
+	if (!changed) return false;
+	layout.left = bounds.left;
+	layout.top = bounds.top;
+	layout.right = bounds.right;
+	layout.bottom = bounds.bottom;
 	layout.rowHeight = editorViewState.lineHeight;
 	layout.font = editorViewState.font;
-	layout.viewportWidth = editorViewState.viewportWidth;
-	layout.viewportHeight = editorViewState.viewportHeight;
-	layout.codeAreaTop = editorViewState.codeAreaTop;
-	layout.codeAreaBottom = editorViewState.codeAreaBottom;
 	return true;
 }
 
@@ -279,6 +262,8 @@ export function refreshWorkbenchLayout(): void {
 	writeInlineBarLayout();
 	editorViewState.codeAreaTop = inlineBarLayout.codeViewportTop;
 	editorViewState.codeAreaBottom = editorViewState.viewportHeight - bottomMargin();
+	write_rect_bounds(editorBounds, editorViewState.codeAreaLeft, editorViewState.codeAreaTop,
+		editorViewState.viewportWidth - editorChromeState.editorRightInset, editorViewState.codeAreaBottom);
 }
 
 function getInlineBarBounds(barIndex: number): BarBounds | null {

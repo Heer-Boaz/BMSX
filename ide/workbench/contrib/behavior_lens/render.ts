@@ -4,10 +4,8 @@ import { drawWorkbenchGraph } from '../../render/graph';
 import type { WorkbenchGraphItem } from '../../ui/graph/model';
 import type { WorkbenchGraphDragFeedback } from '../../ui/graph/drag';
 import { api } from '../../../runtime/overlay_api';
-import { prepareBehaviorLensLayout } from './layout';
 import type { BehaviorLensViewState } from './view_model';
 
-import type { EditorCommandEnablement } from '../../../common/commands';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import { drawWorkbenchPropertyTree } from '../../render/property_tree';
 
@@ -18,14 +16,14 @@ import { drawWorkbenchSourceEditReview } from '../../render/source_edit_review';
 const EMPTY_LENS_TEXT = 'NO STATIC BEHAVIOR REGISTRATIONS';
 
 /** Draws the retained presentation; source recognition and layout generation run elsewhere. */
-export function drawBehaviorLens(state: BehaviorLensViewState, commands: EditorCommandEnablement, hover: WorkbenchGraphItem | null, focused: boolean, drag?: WorkbenchGraphDragFeedback, handles?: WorkbenchGraphConnectionHandles, review?: WorkbenchSourceEditReview): void {
+export function drawBehaviorLens(state: BehaviorLensViewState, hover: WorkbenchGraphItem | null, focused: boolean, drag?: WorkbenchGraphDragFeedback, handles?: WorkbenchGraphConnectionHandles, review?: WorkbenchSourceEditReview): void {
 	if (review !== undefined) { drawWorkbenchSourceEditReview(review); return; }
-	const layout = prepareBehaviorLensLayout(state);
+	const layout = state.layout;
 	if (state.presentation.kind === 'outline') api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
 	api.fill_rect(layout.left, layout.top, layout.right, layout.headerBottom, 0, constants.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
 	api.fill_rect(layout.left, layout.headerBottom, layout.right, layout.headerBottom + 1, 0, constants.COLOR_TAB_BORDER);
 	const renderFont = editorViewState.font.renderFont();
-	renderWorkbenchActionBar(state.presentation.actionBar, commands, renderFont);
+	renderWorkbenchActionBar(state.presentation.actionBar, renderFont);
 	api.blit_text_inline_span_with_font(
 		layout.headerText,
 		0,

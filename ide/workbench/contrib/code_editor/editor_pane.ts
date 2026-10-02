@@ -135,7 +135,8 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		super.clearInput();
 	}
 
-	public override layout(): void {
+	public override layout(bounds: Readonly<RectBounds>): void {
+		super.layout(bounds);
 		refreshViewportLayout();
 	}
 

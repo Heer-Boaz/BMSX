@@ -16,8 +16,10 @@ do not reserve space for the runtime transport.
 
 The workbench owns the right-hand Game panel and its resizable content inset.
 Tabs, menus, status and the single runtime timeline remain full width. Physical
-viewport dimensions and pointer coordinates do not change. Editors consume
-their actual content bounds; the panel does not open a second editor group,
+viewport dimensions and pointer coordinates do not change. The workbench
+publishes content bounds through the editor group to its active pane; child
+layouts and Find result details consume those bounds, not physical canvas width.
+Painting consumes prepared layout. The panel does not open a second editor group,
 execute the guest, capture an image or own a playback clock. Game View and Actor
 Lab already display scanout, so the workbench suppresses the extra panel there
 without discarding the user's layout choice. View / Toggle Game Panel is the
@@ -86,6 +88,12 @@ fresh Actor tree, without adding a second inspector or execution service. Back
 and Details are the primary actions; graph opening and zoom stay in the command
 palette/context menu. The graph, title actions, sash and guest timeline slider
 use an explicit command context without replacing their keyboard handlers.
+Toolbar enablement and invocation both carry that context independently of
+keyboard focus, as in the
+[VS Code toolbar](https://github.com/microsoft/vscode/blob/main/src/vs/base/browser/ui/toolbar/toolbar.ts).
+Clicking a runtime action does not first blur a field to manufacture the correct
+target. Normal draft admission remains with the focused editor. The action
+control publishes retained enablement; painting does not resolve commands again.
 The existing game preview and the one machine-history transport remain beside
 and below the graph.
 
@@ -180,6 +188,18 @@ The game panel does not map optimized BT execution slots onto authored graph
 nodes. Live instance properties and source diagrams remain distinct surfaces.
 The existing fixed logical canvas still limits mobile presentation; browser
 resizing alone scales that canvas rather than creating a responsive DOM IDE.
+
+### Workbench boundary correction (2026-10-02)
+
+- A real browser session opened Actor Lab's FSM graph and Details, then clicked
+  Next frame and Play. Execution stayed in Actor Lab instead of switching to Game
+  or closing Studio. Details still closes on execution, as its snapshot lifetime
+  requires; the retained graph remains the runtime command target.
+- Global Find with the Game panel open displayed both result line numbers
+  (`:45`, `:69`) inside the editor content bounds. The actual panel, source
+  wrapping and result clipping were checked visually, not inferred from tests.
+- Focused action, pane and layout checks passed separately from those visible
+  checks. These changes add no machine/history representation or playback loop.
 
 ### Live FSM graph follow-through (2026-10-02)
 

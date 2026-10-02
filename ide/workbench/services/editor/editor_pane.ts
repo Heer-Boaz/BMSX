@@ -8,6 +8,7 @@ import type { InputFocusTarget } from '../../../input/focus';
 
 /** Retained workbench control for one editor-input kind. */
 export abstract class EditorPane<TInput extends EditorInput> {
+	protected contentBounds!: Readonly<RectBounds>;
 	/** Authoring pauses gameplay, including host-only tools. Live preview panes explicitly release this hold. */
 	public get suspendsRuntime(): boolean { return true; }
 	/** A live inspector supplies the command scope for the shared runtime transport. */
@@ -23,8 +24,9 @@ export abstract class EditorPane<TInput extends EditorInput> {
 		return this.inputValue!;
 	}
 
-	public setInput(input: TInput, selection?: EditorTextSelection, navigationSelection?: EditorPaneSelection): void {
+	public setInput(input: TInput, bounds: Readonly<RectBounds>, selection?: EditorTextSelection, navigationSelection?: EditorPaneSelection): void {
 		this.inputValue = input;
+		this.contentBounds = bounds;
 		this.activate(selection, navigationSelection);
 	}
 
@@ -46,8 +48,8 @@ export abstract class EditorPane<TInput extends EditorInput> {
 	public update(_deltaSeconds: number): void {
 	}
 
-	/** Attached controls can react to a workbench size change without a source-less widget. */
-	public layout?(): void;
+	/** The editor group publishes content geometry, distinct from the physical canvas. */
+	public layout(bounds: Readonly<RectBounds>): void { this.contentBounds = bounds; }
 
 	public abstract draw(): void;
 

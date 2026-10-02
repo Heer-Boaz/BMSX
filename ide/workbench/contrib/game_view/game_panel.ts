@@ -36,7 +36,7 @@ export class GamePanel {
 	private measuredFont = editorViewState.font;
 	private headerBottom = 0;
 
-	public constructor(private readonly panes: EditorPanes, private readonly commands: IdeCommandController) {
+	public constructor(private readonly panes: EditorPanes, commands: IdeCommandController) {
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(player => {
 			if (isKeyJustPressed('Escape', player)) { consumeIdeKey('Escape', player); this.close(); }
@@ -104,7 +104,7 @@ export class GamePanel {
 		api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 		api.fill_rect(bounds.left, bounds.top, bounds.right, this.headerBottom, 0, colors.COLOR_STATUS_BACKGROUND);
 		api.blit_text_inline_with_font('GAME', bounds.left + 4, bounds.top + 2, 0, colors.COLOR_STATUS_TEXT, font);
-		renderWorkbenchActionBar(this.actionBar, this.commands, font);
+		renderWorkbenchActionBar(this.actionBar, font);
 		api.drawFrame(this.frame.left, this.frame.top, this.frame.right, this.frame.bottom);
 		drawWorkbenchSplit(this.split, this.sash.hovered || this.sash.focusTarget.hasFocus);
 	}

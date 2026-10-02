@@ -1,3 +1,4 @@
+import { editorViewState } from '../../ide/editor/ui/view/state';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
@@ -90,10 +91,10 @@ test('shared list edits update all occurrences but keep the chosen registration;
 	assert.equal(readLuaSourceRange(f.model.buffer, survivor.source.occurrenceRange), 'nested');
 	assert.equal(survivor.children.length, 2, 'the survivor is fully visible without inheriting selection');
 	selectBehaviorLensDefinition(f.view, f.view.document.definitions[0].rowKey);
-	prepareBehaviorLensLayout(f.view);
+	prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(f.viewport.model.nodes[0].children[0].children.length, 2, 'shared constructor is edited once, not privately copied');
 	selectBehaviorLensDefinition(f.view, f.view.document.definitions[2].rowKey);
-	prepareBehaviorLensLayout(f.view);
+	prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(f.viewport.model.nodes[0].children[0].children.length, 3, 'referenced nested initializer remains available to the weighted tree');
 	f.model.undo(); f.refresh();
 	assert.equal(f.model.buffer.getText(), source);
@@ -113,7 +114,7 @@ test('deleting a child inside a shared initializer edits that one constructor, n
 	assert.equal(f.viewport.selection, null);
 	for (const definition of f.view.document.definitions) {
 		selectBehaviorLensDefinition(f.view, definition.rowKey);
-		prepareBehaviorLensLayout(f.view);
+		prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 		f.select(1);
 		const node = f.viewport.selection!;
 		assert.ok(node.kind === 'node');
@@ -186,7 +187,7 @@ test('hidden source history and warm admission use retained correspondence rathe
 	const document = f.view.document;
 	for (let index = 0; index < 1000; index += 1) {
 		assert.equal(behaviorTreeEditTarget(f.view), member);
-		prepareBehaviorLensLayout(f.view);
+		prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	}
 	assert.equal(f.viewport.model, graph);
 	assert.equal(f.view.document, document);

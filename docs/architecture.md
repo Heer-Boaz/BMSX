@@ -5890,7 +5890,11 @@ See [runtime timeline ownership and representations](studio_runtime_timeline.md)
 
 The optional Studio Game panel displays that same completed scanout beside the
 active editor, independently of the shared runtime transport. The workbench
-publishes a content-only right inset; physical viewport/pointer coordinates,
+publishes content bounds through the editor group to each pane and its child
+views, including Find. Painting consumes prepared layout and action enablement;
+it does not rediscover content geometry or command scope. Toolbar admission and
+execution carry their configured command target independently of keyboard focus;
+the focused draft still owns its normal commit step. Physical viewport/pointer coordinates,
 menus, tabs and status stay unchanged. Existing Game View/Actor Lab previews
 suppress the extra frame without discarding the session layout choice. This
 adds no capture path, second runtime, editor group or playback clock.

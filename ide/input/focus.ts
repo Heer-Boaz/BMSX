@@ -111,12 +111,12 @@ export class InputFocusService {
 		if (target !== null) target.didFocus();
 	}
 
-	public getCommand(command: EditorCommandId): FocusCommand | undefined {
-		return this.targetValue?.commandContext.getCommand(command);
+	public getCommand(command: EditorCommandId, target: InputFocusTarget | null = this.targetValue): FocusCommand | undefined {
+		return target?.commandContext.getCommand(command);
 	}
 
-	public executeCommand(command: EditorCommandId): void {
-		const implementation = this.getCommand(command);
+	public executeCommand(command: EditorCommandId, target: InputFocusTarget | null = this.targetValue): void {
+		const implementation = this.getCommand(command, target);
 		if (implementation !== undefined && implementation.isEnabled()) {
 			implementation.run();
 		}

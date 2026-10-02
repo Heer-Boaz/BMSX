@@ -1,3 +1,4 @@
+import { editorViewState } from '../../ide/editor/ui/view/state';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
@@ -89,7 +90,7 @@ test('repeated copies remain fully expanded through hidden history, without grap
 	assert.ok(f.viewport.selection?.kind === 'node');
 	assert.equal(f.viewport.selection.children.length, 2);
 	selectBehaviorLensDefinition(f.view, f.view.document.definitions[0].rowKey);
-	prepareBehaviorLensLayout(f.view);
+	prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(f.viewport.model.nodes[0].children[0].children.length, 5, 'both registrations read the one edited constructor');
 });
 
@@ -105,7 +106,7 @@ test('a duplicate inside a shared initializer edits that source once, not a priv
 	assert.equal(behaviorTreeEditTarget(f.view)!.index, 1);
 	for (const definition of f.view.document.definitions) {
 		selectBehaviorLensDefinition(f.view, definition.rowKey);
-		prepareBehaviorLensLayout(f.view);
+		prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 		f.select(1);
 		assert.ok(f.viewport.selection?.kind === 'node');
 

@@ -1,3 +1,4 @@
+import { editorViewState } from '../../ide/editor/ui/view/state';
 import { captureBehaviorLensView, restoreBehaviorLensView, type BehaviorLensViewSnapshot } from '../../ide/workbench/contrib/behavior_lens/view_snapshot';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -30,7 +31,7 @@ function fixture(t: TestContext, weighted = false, edge = false, definition = 1)
 	assert.ok(origin.source.kind === 'section');
 	const entry = origin.entries[1];
 	const node = weighted && !edge ? entry.node.children[0] : entry.node;
-	prepareBehaviorLensLayout(f.view);
+	prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	f.viewport.selection = edge ? f.viewport.model.edgesBySource.get(node.rowKey)! : f.viewport.model.nodesBySource.get(node.rowKey)!;
 	acceptBehaviorGraphSelection(f.view, f.graph);
 	const member = { file: origin.source.file, table: origin.source.table, branch: origin, index: 1 };
@@ -155,7 +156,7 @@ test('navigation restores a mapped occurrence and pan after choosing another reg
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉 shifted\n' }]);
 	f.refresh();
 	const version = f.model.version;
-	selected.restore(input); prepareBehaviorLensLayout(f.view);
+	selected.restore(input); prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
 	assert.ok(f.view.presentation.kind === 'graph');
 	const viewport = f.view.presentation.viewport;
@@ -176,17 +177,17 @@ test('a removed history occurrence does not select a surviving namesake, even af
 	const selected = new BehaviorLensNavigationSelection(input);
 	t.after(() => selected.dispose());
 	f.model.pushEditOperations(createBehaviorTreeChildRemovalEdits(f.model.buffer, f.member));
-	f.refresh(); selected.restore(input); prepareBehaviorLensLayout(f.view);
+	f.refresh(); selected.restore(input); prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
 	assert.equal(f.view.selection, null);
 	assert.equal(f.viewport.selection, null);
 	f.model.undo(); f.refresh();
-	selected.restore(input); prepareBehaviorLensLayout(f.view);
+	selected.restore(input); prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(f.view.selection, null, 'only an edit-associated Undo selection can explicitly restore a deleted occurrence');
 	assert.equal(f.viewport.selection, null);
 	const source = f.model.buffer.getText();
 	f.model.pushEditOperations([{ offset: 0, deleteLength: source.length, text: source }]);
-	f.refresh(); selected.restore(input); prepareBehaviorLensLayout(f.view);
+	f.refresh(); selected.restore(input); prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(f.view.definitionRowKey, null, 'a replaced registration cannot adopt another definition with the same id');
 	assert.equal(f.viewport.model.nodes.length, 0);
 });
@@ -209,7 +210,7 @@ test('session snapshots retain hidden transfer bookmarks without publishing a gr
 	const reopened = new BehaviorLensInput(restored.model, restored.view, () => assert.fail('BT never starts an FSM worker'));
 	t.after(() => reopened.dispose());
 	const value: BehaviorLensViewSnapshot = JSON.parse(serialized);
-	restoreBehaviorLensView(reopened, value); prepareBehaviorLensLayout(restored.view);
+	restoreBehaviorLensView(reopened, value); prepareBehaviorLensLayout(restored.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(restored.view.definitionRowKey, restored.view.document.definitions[1].rowKey);
 	const selected = restored.viewport.selection;
 	assert.ok(selected?.kind === 'node');

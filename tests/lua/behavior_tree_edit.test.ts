@@ -1,3 +1,4 @@
+import { editorViewState } from '../../ide/editor/ui/view/state';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
@@ -42,7 +43,7 @@ test('moves preserve the selected occurrence, fully expanded subtrees, source li
 	}
 	assert.equal(f.model.buffer.getText(), moved);
 	selectBehaviorLensDefinition(f.view, f.view.document.definitions[0].rowKey);
-	prepareBehaviorLensLayout(f.view);
+	prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(readLuaSourceRange(f.model.buffer, f.viewport.model.nodes[0].children[0].children[2].source.occurrenceRange), 'nested',
 		'editing a shared initializer changes every authored use, not a private copy of the selected occurrence');
 });
@@ -108,7 +109,7 @@ trees.register('admission', { root = ${root} })`);
 	const retained = f.viewport.model;
 	const target = behaviorTreeMoveTarget(f.view, -1);
 	for (let index = 0; index < 1000; index += 1) {
-		prepareBehaviorLensLayout(f.view);
+		prepareBehaviorLensLayout(f.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 		assert.equal(behaviorTreeMoveTarget(f.view, -1), target);
 	}
 	assert.equal(f.viewport.model, retained, 'warm admission returns retained provenance without reparse or graph work');

@@ -126,7 +126,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			this.actions.setInput(input.stateGraph === undefined ? input.actionBar : input.stateGraphActions, context);
 		}
 		input.stateGraph?.layout(editorViewState.font.renderFont());
-		const layoutChanged = updateFullWidthWorkbenchLayout(input.layout);
+		const layoutChanged = updateFullWidthWorkbenchLayout(input.layout, this.contentBounds);
 		if (!this.timelineSlider.focusTarget.hasFocus) input.timeline.cancelPending();
 		input.timeline.refresh(this.controller.selected(input), input.running, this.controller.guest, readback, this.controller.canInteract());
 		const timelineChanged = this.timelineVisible !== input.timeline.visible;
@@ -161,7 +161,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, this.input.layout);
 			drawWorkbenchPropertyInspector(this.inspector);
 		} else {
-			drawActorLab(this.input, this.commands, this.commands.gamePlaybackState, this.timelineSlider.focusTarget.hasFocus, this.graph.hover, this.graph.focusTarget.hasFocus);
+			drawActorLab(this.input, this.commands.gamePlaybackState, this.timelineSlider.focusTarget.hasFocus, this.graph.hover, this.graph.focusTarget.hasFocus);
 			drawWorkbenchSplit(this.input.split, this.split.hovered || this.split.focusTarget.hasFocus);
 		}
 	}

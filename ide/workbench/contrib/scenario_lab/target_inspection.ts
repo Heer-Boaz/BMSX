@@ -121,7 +121,7 @@ export class ScenarioTargetInspection {
 		}
 		api.fill_rect(bounds.left, bounds.top, bounds.right, top, 0, COLOR_RESOURCE_VIEWER_BACKGROUND);
 		drawEditorText(font, this.title, bounds.left + 4, bounds.top + 4, 0, COLOR_RESOURCE_VIEWER_TEXT);
-		renderWorkbenchActionBar(this.bar, this, renderFont);
+		renderWorkbenchActionBar(this.bar, renderFont);
 		layoutWorkbenchPropertyTree(this.model!.tree, renderFont, measureTextRange, bounds.left, top, bounds.right, bounds.bottom);
 		drawWorkbenchPropertyTree(this.model!.tree);
 	}

@@ -129,7 +129,7 @@ import {
 	shutdownWorkspaceStorage,
 } from './workbench/workspace/storage';
 import { WorkspaceAutosaveChange } from './workbench/workspace/models';
-import { refreshWorkbenchLayout, type WorkbenchChromeLayout } from './workbench/common/layout';
+import { getWorkbenchEditorBounds, refreshWorkbenchLayout, type WorkbenchChromeLayout } from './workbench/common/layout';
 import { BreakpointController } from './workbench/contrib/debugger/controller';
 import { closeBlockingWorkbenchModal, drawBlockingWorkbenchModal, handleBlockingWorkbenchModalInput, hasBlockingWorkbenchModal } from './workbench/contrib/modal/blocking_modal';
 import { drawProblemsPanel, problemsPanel } from './workbench/contrib/problems/panel/controller';
@@ -654,8 +654,8 @@ export class RuntimeCartEditor implements CartEditor {
 		refreshWorkbenchLayout();
 		if (this.gamePanel.update()) {
 			refreshWorkbenchLayout();
-			this.editorPanes.activePane?.layout?.();
 		}
+		this.editorPanes.layout(getWorkbenchEditorBounds());
 		this.editorPanes.activePane?.update(deltaSeconds);
 		this.runtimeTimeline.update();
 		layoutTopBar(this.commands, this.chromeRenderContext);
@@ -670,7 +670,7 @@ export class RuntimeCartEditor implements CartEditor {
 		refreshWorkbenchLayout();
 		this.syncResourcePanelViewport();
 		if (this.gamePanel.update()) refreshWorkbenchLayout();
-		this.editorPanes.activePane?.layout?.();
+		this.editorPanes.layout(getWorkbenchEditorBounds());
 	}
 
 	public draw(): void {
@@ -679,7 +679,7 @@ export class RuntimeCartEditor implements CartEditor {
 		api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, 0, constants.COLOR_FRAME);
 
 		renderTopBar(this.chromeRenderContext);
-		renderTabBar(this.chromeRenderContext, this.commands);
+		renderTabBar(this.chromeRenderContext);
 		drawResourcePanel(this.resourcePanel);
 		const activePane = this.editorPanes.activePane;
 		if (activePane === null) drawEditorGroupWatermark();

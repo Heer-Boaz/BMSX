@@ -98,7 +98,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	const lenses = [0, 1].map(index => {
 		const input = f.behavior.createInput(f.model, 'graph');
 		selectBehaviorLensDefinition(input.view, input.view.document.definitions[index].rowKey);
-		input.updateDefinition(); prepareBehaviorLensLayout(input.view);
+		input.updateDefinition(); prepareBehaviorLensLayout(input.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 		assert.ok(input.view.presentation.kind === 'graph');
 		input.view.presentation.position = { scrollX: 37 + index, scrollY: 25 + index, zoom: 0.75 };
 		editorTabGroup.add(input); return input;
@@ -128,7 +128,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	assert.equal(first.workingCopy.buffer.getText(), dirtySource); assert.equal(first.workingCopy.dirty, true);
 	assert.equal(first.workingCopy.canUndo, false, 'source backup is not an Undo journal');
 	assert.equal(newClean.workingCopy.dirty, false); assert.equal([...editorTextModelService.models].length, 2);
-	prepareBehaviorLensLayout(second.view);
+	prepareBehaviorLensLayout(second.view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.ok(second.view.presentation.kind === 'graph');
 	assert.equal(second.view.presentation.viewport.scrollX, 38); assert.equal(second.view.presentation.viewport.zoom, 0.75);
 });
@@ -205,12 +205,12 @@ test('source fingerprint is retained by buffer version and shared by views, not 
 
 test('scene memento survives first layout and retains pending coordinates before its pane is attached', t => {
 	const f = fixture(t);
-	const old = new SceneEditorInput(f.model); f.scene.refresh(old); selectSceneOutlineRow(old, 1); layoutSceneEditor(old, true);
+	const old = new SceneEditorInput(f.model); f.scene.refresh(old); selectSceneOutlineRow(old, 1); layoutSceneEditor(old, true, false, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	old.details.scrollbar.setScroll(17); old.outline.scroll = 1;
 	const snapshot = JSON.parse(JSON.stringify(captureSceneEditorView(old)));
 	const fresh = new SceneEditorInput(f.model); f.scene.refresh(fresh); restoreSceneEditorView(fresh, snapshot);
 	assert.deepEqual(captureSceneEditorView(fresh), snapshot, 'no hidden default geometry overwrites the pending memento');
-	layoutSceneEditor(fresh, true);
+	layoutSceneEditor(fresh, true, false, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(fresh.position, undefined); assert.equal(fresh.details.scrollTop, old.details.scrollTop);
 	assert.equal(fresh.outline.selectionIndex, 1); assert.deepEqual(fresh.properties.map(p => p.value), [11, -22, 33]);
 	assert.equal(f.model.dirty, false); old.dispose(); fresh.dispose();

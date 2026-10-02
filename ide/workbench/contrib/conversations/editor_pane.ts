@@ -34,7 +34,7 @@ export class ConversationObserverPane extends FullWidthWorkbenchEditorPane<Conve
 	public override dispose(): void { this.clearInput(); this.transcriptView.dispose(); super.dispose(); }
 	public override update(): void {
 		const input = this.input, { layout, viewport, conversation } = input;
-		const layoutChanged = updateFullWidthWorkbenchLayout(layout);
+		const layoutChanged = updateFullWidthWorkbenchLayout(layout, this.contentBounds);
 		if (layoutChanged || input.projectedRevision !== conversation.revision) {
 			input.projectedRevision = conversation.revision;
 			this.transcriptView.scroll.lineStep = layout.rowHeight;

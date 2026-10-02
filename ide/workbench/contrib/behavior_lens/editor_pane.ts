@@ -262,12 +262,12 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	public draw(): void {
 		const view = this.input.view;
 		if (this.inspector.visible) {
-			this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, prepareBehaviorLensLayout(view));
+			this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, prepareBehaviorLensLayout(view, this.contentBounds));
 			drawWorkbenchPropertyInspector(this.inspector);
 			return;
 		}
-		if (this.sourceEditReview.visible) this.sourceEditReview.layout(editorViewState.font.renderFont(), measureTextRange, measureText, prepareBehaviorLensLayout(view));
-		drawBehaviorLens(view, this.commands, this.graph.hover, this.graph.focusTarget.hasFocus, this.graph.dragFeedback,
+		if (this.sourceEditReview.visible) this.sourceEditReview.layout(editorViewState.font.renderFont(), measureTextRange, measureText, prepareBehaviorLensLayout(view, this.contentBounds));
+		drawBehaviorLens(view, this.graph.hover, this.graph.focusTarget.hasFocus, this.graph.dragFeedback,
 			this.graph.connectionHandles, this.sourceEditReview.visible ? this.sourceEditReview : undefined);
 		if (this.propertyEdit.active) this.propertyEdit.draw();
 	}
@@ -290,12 +290,12 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
 		if (this.propertyEdit.handlePointer(snapshot)) return true;
 		if (this.sourceEditReview.visible) {
-			this.sourceEditReview.layout(editorViewState.font.renderFont(), measureTextRange, measureText, prepareBehaviorLensLayout(this.input.view));
+			this.sourceEditReview.layout(editorViewState.font.renderFont(), measureTextRange, measureText, prepareBehaviorLensLayout(this.input.view, this.contentBounds));
 			return this.sourceEditReview.handlePointer(snapshot, justPressed, now);
 		}
 		if (this.actionBar.handlePointer(snapshot)) return true;
 		const view = this.input.view;
-		prepareBehaviorLensLayout(view);
+		prepareBehaviorLensLayout(view, this.contentBounds);
 		if (view.presentation.kind === 'properties') {
 			if (justPressed) this.focus();
 			const result = this.properties.handle(view.presentation.tree, snapshot, justPressed, now);
@@ -372,7 +372,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 
 	private openKeyboardContextMenu(): void {
 		const view = this.input.view;
-		prepareBehaviorLensLayout(view);
+		prepareBehaviorLensLayout(view, this.contentBounds);
 		const presentation = view.presentation;
 		if (presentation.kind === 'graph' || presentation.kind === 'state-graph') {
 			const viewport = presentation.viewport;
@@ -396,7 +396,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		playerInput: PlayerInput,
 	): void {
 		const view = this.input.view;
-		prepareBehaviorLensLayout(view);
+		prepareBehaviorLensLayout(view, this.contentBounds);
 		if (this.inspector.visible) {
 			if (activePointer === null || !this.inspector.handleWheel(activePointer, direction * steps * editorViewState.font.lineHeight * 3)) return;
 		} else if (this.sourceEditReview.visible) this.sourceEditReview.handleWheel(direction * steps * 3);

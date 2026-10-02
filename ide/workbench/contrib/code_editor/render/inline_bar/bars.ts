@@ -14,6 +14,7 @@ import {
 import { measureText } from '../../../../../editor/common/text/layout';
 import { renderInlineBarField, renderInlineBarFrame } from './common';
 import { renameController } from '../../rename/controller';
+import type { RectBounds } from '../../../../../../machine/ts/common/rect';
 
 type InlineSearchResultEntry = {
 	primary: string;
@@ -21,15 +22,15 @@ type InlineSearchResultEntry = {
 	detail?: string;
 };
 
-const drawSearchResultRow = (entry: InlineSearchResultEntry, rowTop: number): void => {
-	const paddingX = constants.QUICK_OPEN_RESULT_PADDING_X;
+const drawSearchResultRow = (entry: InlineSearchResultEntry, rowTop: number, bounds: Readonly<RectBounds>): void => {
+	const paddingX = bounds.left + constants.QUICK_OPEN_RESULT_PADDING_X;
 	const secondaryY = rowTop + editorViewState.lineHeight;
 	if (entry.primary) {
 		drawEditorText(editorViewState.font, entry.primary, paddingX, rowTop, 0, constants.COLOR_SEARCH_TEXT);
 	}
 	if (entry.detail) {
 		const detailWidth = measureText(entry.detail);
-		const detailX = editorViewState.viewportWidth - detailWidth - paddingX;
+		const detailX = bounds.right - detailWidth - constants.QUICK_OPEN_RESULT_PADDING_X;
 		drawEditorText(editorViewState.font, entry.detail, detailX, rowTop, 0, constants.COLOR_SEARCH_SECONDARY_TEXT);
 	}
 	if (entry.secondary) {
@@ -83,7 +84,7 @@ export function renderSearchBar(): void {
 	const resultsTop = separatorTop + constants.SEARCH_RESULT_SPACING;
 	const rowHeight = searchResultEntryHeight();
 
-	renderResultList(getVisibleSearchResultEntries(), visible, editorSearchState.displayOffset ?? 0, editorSearchState.displayOffset ?? 0, rowHeight, resultsTop, bounds.right, editorSearchState.currentIndex ?? -1, editorSearchState.hoverIndex ?? -1, drawSearchResultRow);
+	renderResultList(getVisibleSearchResultEntries(), visible, editorSearchState.displayOffset ?? 0, editorSearchState.displayOffset ?? 0, rowHeight, resultsTop, bounds, editorSearchState.currentIndex ?? -1, editorSearchState.hoverIndex ?? -1, drawSearchResultRow);
 }
 
 function renderResultList<T>(
@@ -93,14 +94,15 @@ function renderResultList<T>(
 	entriesBaseOffset: number,
 	rowHeight: number,
 	rowTop: number,
-	viewportWidth: number,
+	bounds: Readonly<RectBounds>,
 	selectionIndex: number,
 	hoverIndex: number,
-	drawRow: (entry: T, rowTop: number) => void,
+	drawRow: (entry: T, rowTop: number, bounds: Readonly<RectBounds>) => void,
 ): void {
 	if (visibleCount <= 0) {
 		return;
 	}
+	api.pushClipRect(bounds.left, rowTop, bounds.right, bounds.bottom);
 	for (let i = 0; i < visibleCount; i += 1) {
 		const matchIndex = displayOffset + i;
 		const entryIndex = matchIndex - entriesBaseOffset;
@@ -114,12 +116,13 @@ function renderResultList<T>(
 		const rowTopValue = rowTop + i * rowHeight;
 		const rowBottom = rowTopValue + rowHeight;
 		if (matchIndex === selectionIndex) {
-			api.fill_rect(0, rowTopValue, viewportWidth, rowBottom, 0, constants.SEARCH_RESULT_SELECTION_OVERLAY);
+			api.fill_rect(bounds.left, rowTopValue, bounds.right, rowBottom, 0, constants.SEARCH_RESULT_SELECTION_OVERLAY);
 		} else if (matchIndex === hoverIndex) {
-			api.fill_rect(0, rowTopValue, viewportWidth, rowBottom, 0, constants.SEARCH_RESULT_HOVER_OVERLAY);
+			api.fill_rect(bounds.left, rowTopValue, bounds.right, rowBottom, 0, constants.SEARCH_RESULT_HOVER_OVERLAY);
 		}
-		drawRow(entry, rowTopValue);
+		drawRow(entry, rowTopValue, bounds);
 	}
+	api.popClipRect();
 }
 
 export function renderRenameBar(): void {

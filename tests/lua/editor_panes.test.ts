@@ -50,9 +50,9 @@ class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput>
 		this.unbindKeyboard();
 	}
 
-	public override setInput(input: TInput, selection?: EditorTextSelection): void {
+	public override setInput(input: TInput, bounds: Readonly<RectBounds>, selection?: EditorTextSelection): void {
 		this.setInputCount += 1;
-		super.setInput(input, selection);
+		super.setInput(input, bounds, selection);
 	}
 
 	public override setOptions(selection?: EditorTextSelection): void {

@@ -153,10 +153,6 @@ export type ScenarioLabLayout = {
 	toolbarBottom: number;
 	rowHeight: number;
 	font: EditorFont | null;
-	viewportWidth: number;
-	viewportHeight: number;
-	codeAreaTop: number;
-	codeAreaBottom: number;
 };
 
 export type ScenarioLabStatus = {

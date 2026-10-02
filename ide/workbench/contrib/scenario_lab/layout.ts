@@ -1,7 +1,8 @@
+import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { uppercaseOutsideStrings } from '../../../common/text';
 import { measureText, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { updateFullWidthWorkbenchLayout } from '../../common/layout';
+import { getWorkbenchEditorBounds, updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import {
 	clampWorkbenchListScroll,
@@ -36,10 +37,6 @@ export function createScenarioLabLayout(): ScenarioLabLayout {
 		toolbarBottom: 0,
 		rowHeight: 0,
 		font: null,
-		viewportWidth: -1,
-		viewportHeight: -1,
-		codeAreaTop: -1,
-		codeAreaBottom: -1,
 	};
 }
 
@@ -193,10 +190,10 @@ function layoutScenarioLabPane<Row>(
 }
 
 /** Refreshes the retained projection and geometry only at owner revision boundaries. */
-export function prepareScenarioLabLayout(state: ScenarioLabViewState): ScenarioLabLayout {
+export function prepareScenarioLabLayout(state: ScenarioLabViewState, bounds: Readonly<RectBounds> = getWorkbenchEditorBounds()): ScenarioLabLayout {
 	refreshScenarioLabProjection(state);
 	const layout = state.layout;
-	if (updateFullWidthWorkbenchLayout(layout) || state.splitRevision !== state.split.revision) {
+	if (updateFullWidthWorkbenchLayout(layout, bounds) || state.splitRevision !== state.split.revision) {
 		layout.toolbarBottom = layout.top + editorViewState.lineHeight + TOOLBAR_PADDING_Y * 2;
 		state.split.layout(layout.left, layout.toolbarBottom + 1, layout.right, layout.bottom);
 		state.splitRevision = state.split.revision;

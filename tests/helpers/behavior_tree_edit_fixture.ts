@@ -28,13 +28,14 @@ export function createBehaviorTreeEditFixture(t: TestContext, source = BT_ORDER_
 	const view = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, model.resource, event));
 	selectBehaviorLensDefinition(view, document.definitions[definition].rowKey);
-	prepareBehaviorLensLayout(view);
+	const bounds = { left: 0, top: 24, right: 384, bottom: 276 };
+	prepareBehaviorLensLayout(view, bounds);
 	assert.ok(view.presentation.kind === 'graph');
 	const graph = view.presentation;
 	const viewport = graph.viewport;
 	const refresh = () => {
 		installBehaviorLensDocument(view, project());
-		prepareBehaviorLensLayout(view);
+		prepareBehaviorLensLayout(view, bounds);
 	};
 	const select = (index: number, edge = false) => {
 		const node = viewport.model.nodes[0].children[0].children[index];

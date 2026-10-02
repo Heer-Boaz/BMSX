@@ -144,7 +144,7 @@ test('nested membership warnings, shared occurrences, hidden edits and Undo use 
 	const view = createBehaviorLensViewState(f.document, f.model, 'graph', assert.fail);
 	f.model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, f.model.resource, event));
 	selectBehaviorLensDefinition(view, f.document.definitions[1].rowKey);
-	prepareBehaviorLensLayout(view);
+	prepareBehaviorLensLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.ok(view.presentation.kind === 'graph');
 	const viewport = view.presentation.viewport;
 	const nested = viewport.model.nodes[0].children[0].children[2];
@@ -157,14 +157,14 @@ test('nested membership warnings, shared occurrences, hidden edits and Undo use 
 	f.model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text: 'leaf' }]);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉 shifted source\n' }]);
 	assert.equal(view.document, hidden);
-	const refresh = () => { installBehaviorLensDocument(view, f.project()); prepareBehaviorLensLayout(view); };
+	const refresh = () => { installBehaviorLensDocument(view, f.project()); prepareBehaviorLensLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom }); };
 	refresh();
 	assert.equal(view.definitionRowKey, view.document.definitions[1].rowKey);
 	assert.ok(viewport.selection?.kind === 'edge');
 	assert.equal(viewport.selection.child.member?.index, 2);
 	assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(view)!), 'nested');
 	const retained = viewport.model;
-	for (let index = 0; index < 100; index += 1) prepareBehaviorLensLayout(view);
+	for (let index = 0; index < 100; index += 1) prepareBehaviorLensLayout(view, { left: 0, top: editorViewState.codeAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.codeAreaBottom });
 	assert.equal(viewport.model, retained, 'warnings introduce no warm layout work');
 	f.model.undo();
 	f.model.undo();

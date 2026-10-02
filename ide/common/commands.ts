@@ -1,3 +1,5 @@
+import type { InputFocusTarget } from '../input/focus';
+
 export type EditorSearchCommandId =
 	| 'commandPalette'
 	| 'symbolSearch'
@@ -140,9 +142,9 @@ export type EditorCommandId =
 	| EditorScenarioLabCommandId;
 
 export type EditorCommandEnablement = {
-	isEnabled(command: EditorCommandId): boolean;
+	isEnabled(command: EditorCommandId, target?: InputFocusTarget | null): boolean;
 };
 
 export interface EditorCommandRunner extends EditorCommandEnablement {
-	execute(command: EditorCommandId): void;
+	execute(command: EditorCommandId, target?: InputFocusTarget | null): void;
 }

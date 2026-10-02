@@ -29,7 +29,7 @@ export class GameViewEditorPane extends FullWidthWorkbenchEditorPane<GameViewInp
 	}
 	public override update(): void {
 		const { layout, frameBounds } = this.input;
-		if (updateFullWidthWorkbenchLayout(layout)) {
+		if (updateFullWidthWorkbenchLayout(layout, this.contentBounds)) {
 			layoutGameFrame(frameBounds, 4, layout.top + 4, layout.right - 4, layout.bottom - 4);
 		}
 		const frame = this.runtime.frameScheduler.lastTickSequence;

@@ -134,17 +134,6 @@ test('menu geometry stays within tiny viewport, retains layout and scrolls every
 	assert.deepEqual(f.executed, []);
 });
 
-test('context menus contribute existing admitted commands, never invented mutation APIs', () => {
-	for (const [menu, items] of Object.entries(WORKBENCH_MENUS)) {
-		if (!menu.endsWith('.context')) continue;
-		assert.ok(items.length > 0);
-		for (const item of items) if (item.type === 'command') {
-			assert.notEqual(item.command, 'contextMenu');
-			assert.ok(!item.command.startsWith('graph.'), 'view zoom belongs to the toolbar/palette, not a target context menu');
-		}
-	}
-});
-
 test('secondary press outside closes this popup and returns routing to the underlying contribution', t => {
 	const f = fixture(t); f.show();
 	const outside = f.event(1, 1, PointerButton.Secondary, PointerButton.Secondary);

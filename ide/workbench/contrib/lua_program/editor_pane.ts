@@ -120,7 +120,7 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 	public override update(): void {
 		this.controller.refresh(this.input); this.controller.refreshRuntime(this.input); this.edit.update();
 		const input = this.input;
-		updateFullWidthWorkbenchLayout(input.layout);
+		updateFullWidthWorkbenchLayout(input.layout, this.contentBounds);
 		for (const item of input.actionBar.items) {
 			item.visible = item.command === 'luaProgram.authoring' ? input.liveVisible
 				: item.command === 'luaProgram.live' ? !input.liveVisible
@@ -140,7 +140,7 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 	public draw(): void {
 		const input = this.input;
 		drawEditorText(editorViewState.font, this.headerLabel, input.layout.left + 4, input.layout.top + 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT);
-		renderWorkbenchActionBar(input.actionBar, this.commands, editorViewState.font.renderFont());
+		renderWorkbenchActionBar(input.actionBar, editorViewState.font.renderFont());
 		drawWorkbenchPropertyTree(input.liveVisible ? input.live : input.tree);
 		if (this.edit.active) this.edit.draw();
 	}
