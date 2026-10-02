@@ -53,7 +53,7 @@ export async function revealLensOccurrence(test: StudioFixture, view: BehaviorLe
 		for (let step = 0; step < ownerIndex; step += 1) await test.press('ArrowDown');
 		check(view.selection!.rowKey === owner, 'FSM navigation: traversal reaches the owning state');
 		if (owner === key) return;
-		await test.click(graph.actionBar.items[1].bounds);
+		await test.runPaletteCommand('Behavior Lens: Open Source Details');
 		const inspector = (test.ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
 		const index = inspector.model.rows.findIndex(row => {
 			const source = row.element.source?.stateSelection;

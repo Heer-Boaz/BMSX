@@ -357,9 +357,17 @@ Interaction validation:
 - IDE typecheck, browser Studio/player and native libretro product builds,
   strict architecture boundaries, core parity and `git diff --check` pass.
   This is functional/layout evidence, not physical Mini timing evidence.
-- The broad Studio workflow remains blocked outside this slice at
-  `testAemSourceApplication`: it opens the default AEM editor but reads
-  `activeCodeEditor.model`. The resolver already selected `AemEditorInput` before
-  this change. No fallback editor or fake document was added to pass that probe.
+- The subsequent AEM workflow repair opens the default `AemEditorInput`, then
+  invokes **Audio Events: Open Source** and verifies that the source editor
+  attaches that input's working copy. Save/apply, Undo/Redo, rejected source and
+  corrected reapplication pass on software, WebGL2 and WebGPU. No fallback editor,
+  fake document or production change was needed. The workflow's tab gesture now
+  uses the actual tab viewport, excluding overflow actions; FSM source Details
+  uses its registered command rather than an obsolete toolbar position.
+- The broad workflow now reaches `testStudioGraphZoom`, whose toolbar probes
+  still look for zoom buttons moved to More Actions. This separate automation
+  update remains outstanding; the full suite is not reported as passing. IDE
+  and the repaired workflow typechecks and strict boundaries pass. The global
+  tests typecheck still reports 102 diagnostics in untouched fixtures/profiles.
   Repository-wide indentation also reports existing untouched cart/test/cJSON
   files, not this patch's files.

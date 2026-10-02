@@ -176,17 +176,19 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const clickTab = async (id: EditorTabId, heldFrames = 1) => {
 		await frame();
 		const bounds = editorChromeState.tabButtonBounds.get(id)!;
-		const width = editorChromeState.tabBarBounds.right;
-		const delta = bounds.left < 0 ? bounds.left : bounds.right > width ? bounds.right - width : 0;
+		const viewport = editorChromeState.tabViewportBounds;
+		const delta = bounds.left < viewport.left ? bounds.left - viewport.left
+			: bounds.right > viewport.right ? bounds.right - viewport.right : 0;
 		if (delta !== 0) {
-			movePointer(editorChromeState.tabBarBounds); await frame();
+			movePointer(viewport); await frame();
 			const steps = Math.sign(delta) * Math.ceil(Math.abs(delta) / (editorViewState.charAdvance * 4));
 			input.inputAxis1('pointer:0', 'pointer_wheel', steps * WHEEL_SCROLL_STEP, clock.now());
 			await frame();
 		}
-		const left = Math.max(0, bounds.left), right = Math.min(width, bounds.right);
+		const left = Math.max(viewport.left, bounds.left), right = Math.min(viewport.right, bounds.right);
 		check(right > left, `tab ${id} is reachable through horizontal scrolling`);
 		await click({ left, right, top: bounds.top, bottom: bounds.bottom }, heldFrames);
+		check(getActiveTab().id === id, `tab ${id} opens through its visible label`);
 	};
 	const runMenuCommand = async (command: EditorCommandId) => {
 		check(ide.editor.isActive, 'Run-menu commands require editor focus');

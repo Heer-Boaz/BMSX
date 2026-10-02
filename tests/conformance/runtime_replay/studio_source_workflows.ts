@@ -115,10 +115,14 @@ export async function testCapturedSourceApply(test: StudioFixture): Promise<void
 }
 
 export async function testAemSourceApplication(test: StudioFixture): Promise<void> {
-	const { ide, harness, tasks, until, press, title } = test;
+	const { ide, harness, tasks, until, press, title, runPaletteCommand } = test;
 	const resource = ide.sources.resources.find(item => item.domain === 0 && item.source.type === 'aem')!;
 	await ide.editor.navigation.openResource(resource);
-	const model = harness.getActiveEditorDocument().model;
+	const aem = getActiveTab();
+	if (aem.kind !== 'aem_editor') throw new Error('W04: an AEM resource opens its visual editor');
+	const model = aem.workingCopy;
+	await runPaletteCommand('Audio Events: Open Source');
+	await until(() => harness.getActiveEditorDocument().model === model, 'W04: AEM source view attaches the visual editor working copy');
 	const status = () => getTextFileRuntimeSourceStatus(ide.sources, model);
 	check(model.mode === 'aem' && model.buffer.getText() === resource.source.sourcemeta!.text && status() === 'applied',
 		'W04: packaged authored metadata identifies the initial installed AEM source');
