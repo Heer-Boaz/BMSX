@@ -66,6 +66,7 @@ constexpr u8 ArrowRight = 79u;
 constexpr u8 ArrowLeft = 80u;
 constexpr u8 ArrowDown = 81u;
 constexpr u8 ArrowUp = 82u;
+constexpr u8 NumpadEnter = 88u;
 constexpr u8 ControlLeft = 224u;
 constexpr u8 ShiftLeft = 225u;
 constexpr u8 AltLeft = 226u;

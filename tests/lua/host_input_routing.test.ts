@@ -722,11 +722,41 @@ test('host UI pointer capture cannot activate the destination of a transition', 
 	input.inputButton('pointer:0', 'pointer_primary', true, 1, time, 1); tick();
 	assert.equal(ui.activatePointer(4), false);
 	ui.reset(HostUiInputSource.Pointer, 0); tick();
+	assert.equal(ui.pointerChanged, false, 'a page transition is not physical pointer movement');
 	input.inputButton('pointer:0', 'pointer_primary', false, 0, time, 1); tick();
 	assert.equal(ui.activatePointer(4), false, 'release over the same target id in a different page is not a click');
 	input.inputButton('pointer:0', 'pointer_primary', true, 1, time, 2); tick();
 	assert.equal(ui.activatePointer(4), false);
 	input.inputButton('pointer:0', 'pointer_primary', false, 0, time, 2); tick();
 	assert.equal(ui.activatePointer(4), true, 'a new press/release belongs to the new input owner');
+	input.dispose();
+});
+
+test('host UI keyboard actions are physical, scoped and blocked across transitions', async () => {
+	const { HostUiInput, HostUiInputSource } = await import('../../hosts/common/input/ui');
+	const { input, setTime } = createInput();
+	const ui = new HostUiInput(input, {} as VideoPresenter);
+	const actions = (1 << InputControllerGamepadButtonBit.A) | (1 << InputControllerGamepadButtonBit.B) | (1 << InputControllerGamepadButtonBit.X);
+	let time = 0, pressId = 0;
+	const tick = () => { setTime(++time); input.pollInput(); ui.update(time); };
+	const key = (code: string, down: boolean) => { input.inputButton('keyboard:0', code, down, down ? 1 : 0, time, ++pressId); tick(); };
+	ui.reset(HostUiInputSource.Keyboard, actions); tick();
+	for (const [code, action] of [['Enter', InputControllerGamepadButtonBit.A], ['NumpadEnter', InputControllerGamepadButtonBit.A],
+		['Escape', InputControllerGamepadButtonBit.B], ['Space', InputControllerGamepadButtonBit.X]] as const) {
+		key(code, true);
+		assert.equal(ui.buttonJustPressed(action), true);
+		ui.consume();
+		const snapshot = createInputControllerSnapshot();
+		input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
+		assert.equal(keyWordContains(snapshot.keyWords, code), false, 'the active UI owns its physical key');
+		ui.reset(HostUiInputSource.Keyboard, actions); tick();
+		assert.equal(ui.buttonJustPressed(action), false, 'a held action cannot accept a newly entered page');
+		key(code, false); key(code, true);
+		assert.equal(ui.buttonJustPressed(action), true);
+		key(code, false);
+	}
+	ui.reset(HostUiInputSource.None, 0);
+	key('Enter', true); ui.consume();
+	assert.equal(input.getPlayerInput(1).inputHandlers.keyboard.getKeyState('Enter').consumed, false, 'ordinary gameplay keeps Enter');
 	input.dispose();
 });

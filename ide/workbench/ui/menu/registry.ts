@@ -282,6 +282,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'stepFrameBack' },
 		{ type: 'command', command: 'pause' },
 		{ type: 'command', command: 'stepFrame' },
+		{ type: 'command', command: 'runtime.resume' },
 		{ type: 'command', command: 'runtime.present' },
 	],
 	'editorTabs.title': [

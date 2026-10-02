@@ -1,5 +1,4 @@
 import { Input } from './manager';
-import { GAMEPAD_BUTTON_IDS } from './gamepad_buttons';
 import { ButtonRepeat } from './button_repeat';
 import { INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT, InputControllerGamepadAxis, InputControllerGamepadButtonBit } from '../../../machine/ts/machine/devices/input/contracts';
 import type { VideoPresenter } from '../../../machine/ts/render/video_presenter';
@@ -8,12 +7,26 @@ export const enum HostUiInputSource { None = 0, Keyboard = 1, Gamepad = 2, LeftS
 const SOURCE_COUNT = Input.PLAYERS_MAX + 1;
 const BUTTON_COUNT = INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT;
 const ALL_BUTTONS = (1 << BUTTON_COUNT) - 1;
+// UI actions use physical keys, independently of the guest's console mapping.
+const KEYBOARD_BINDINGS = [
+	{ mask: 1 << InputControllerGamepadButtonBit.A, code: 'Enter' },
+	{ mask: 1 << InputControllerGamepadButtonBit.A, code: 'NumpadEnter' },
+	{ mask: 1 << InputControllerGamepadButtonBit.B, code: 'Escape' },
+	{ mask: 1 << InputControllerGamepadButtonBit.X, code: 'Space' },
+	{ mask: 1 << InputControllerGamepadButtonBit.LeftBumper, code: 'ShiftLeft' },
+	{ mask: 1 << InputControllerGamepadButtonBit.RightBumper, code: 'ShiftRight' },
+	{ mask: 1 << InputControllerGamepadButtonBit.Up, code: 'ArrowUp' },
+	{ mask: 1 << InputControllerGamepadButtonBit.Down, code: 'ArrowDown' },
+	{ mask: 1 << InputControllerGamepadButtonBit.Left, code: 'ArrowLeft' },
+	{ mask: 1 << InputControllerGamepadButtonBit.Right, code: 'ArrowRight' },
+] as const;
 
 /** Physical UI input lifetime, independent of page actions and guest ICU state. */
 export class HostUiInput {
 	public readonly pointerPosition = { x: 0, y: 0 };
 	public pointerValid = false;
 	public pointerChanged = false;
+	public activeSource = HostUiInputSource.Keyboard;
 	private pointerDown = false;
 	private pointerPressed = false;
 	private pointerReleased = false;
@@ -39,7 +52,6 @@ export class HostUiInput {
 		this.repeatEdges.fill(0);
 		for (const repeat of this.repeats) repeat.reset();
 		this.pointerTarget = -1;
-		this.pointerValid = false;
 		this.pointerChanged = false;
 		this.pointerDown = false;
 		this.pointerPressed = false;
@@ -53,9 +65,9 @@ export class HostUiInput {
 		let keyboardButtons = 0;
 		if ((this.sources & HostUiInputSource.Keyboard) !== 0) {
 			const keyboard = clock.inputHandlers.keyboard!;
-			for (let button = 0; button < BUTTON_COUNT; button += 1) {
-				const mask = 1 << button;
-				if ((this.keyboardButtons & mask) !== 0 && keyboard.getButtonState(GAMEPAD_BUTTON_IDS[button]).pressed) keyboardButtons |= mask;
+			for (let index = 0; index < KEYBOARD_BINDINGS.length; index += 1) {
+				const binding = KEYBOARD_BINDINGS[index];
+				if ((this.keyboardButtons & binding.mask) !== 0 && keyboard.getKeyState(binding.code).pressed) keyboardButtons |= binding.mask;
 			}
 		}
 		this.updateButtons(0, keyboardButtons, currentTimeMs, clock.frameDurationMs, clock.pollFrame);
@@ -92,10 +104,12 @@ export class HostUiInput {
 			this.pointerReleased = !down && this.pointerDown;
 			this.pointerDown = down;
 			this.pointerChanged = valid !== this.pointerValid || x !== this.pointerPosition.x || y !== this.pointerPosition.y || this.pointerPressed || this.pointerReleased;
+			if (this.pointerChanged && this.pointerValid && !down) this.activeSource = HostUiInputSource.Pointer;
 		}
 	}
 
 	private updateButtons(source: number, physicalButtons: number, now: number, frameDurationMs: number, frameId: number): void {
+		if ((physicalButtons & ~this.buttons[source]) !== 0) this.activeSource = source === 0 ? HostUiInputSource.Keyboard : HostUiInputSource.Gamepad;
 		this.blocked[source] &= physicalButtons;
 		const eligible = physicalButtons & ~this.blocked[source];
 		const edges = eligible & ~this.buttons[source];
@@ -133,6 +147,7 @@ export class HostUiInput {
 		this.pointerTarget = -1;
 		return activated;
 	}
+	public pointerCapturedBy(target: number): boolean { return this.pointerDown && this.pointerTarget === target; }
 
 	public consume(): void { this.consumeSources(this.sources, this.keyboardButtons); }
 
@@ -142,7 +157,10 @@ export class HostUiInput {
 		}
 		if ((sources & HostUiInputSource.Keyboard) !== 0) {
 			const keyboard = this.input.getPlayerInput(1).inputHandlers.keyboard!;
-			for (let button = 0; button < BUTTON_COUNT; button += 1) if ((keyboardButtons & (1 << button)) !== 0) keyboard.consumeButton(GAMEPAD_BUTTON_IDS[button]);
+			for (let index = 0; index < KEYBOARD_BINDINGS.length; index += 1) {
+				const binding = KEYBOARD_BINDINGS[index];
+				if ((keyboardButtons & binding.mask) !== 0) keyboard.consumeKey(binding.code);
+			}
 		}
 		if ((sources & HostUiInputSource.Pointer) !== 0) this.input.getPlayerInput(1).inputHandlers.pointer!.consumeButton('pointer_primary');
 	}

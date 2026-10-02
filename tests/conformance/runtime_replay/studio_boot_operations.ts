@@ -97,7 +97,7 @@ export async function runStudioBootOperations(test: StudioFixture) {
 	await press('ArrowUp'); // Wrap to Exit Game.
 	await press('ArrowUp'); // Reboot Cart.
 	await test.capture?.('quick-menu-reboot');
-	await press('KeyX');
+	await press('Enter');
 	const menuReboot = ide.boots.latestOperation!;
 	check(menuReboot !== latest && (await menuReboot.completion).status === 'reset',
 		'boot: actual quick-menu input uses the same operation owner');

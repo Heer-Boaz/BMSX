@@ -78,6 +78,7 @@ export class LuaProgramEditorPane extends FullWidthWorkbenchEditorPane<LuaProgra
 		this.focusTarget.registerCommand('luaProgram.selectInstance', { isEnabled: () => this.input.liveVisible,
 			run: () => this.controller.chooseInstance(this.input) });
 		this.focusTarget.registerCommand('runtime.pause', { isEnabled: () => this.input.liveVisible, run: () => { this.input.running = false; } });
+		this.focusTarget.registerCommand('runtime.resume', { isEnabled: () => this.input.liveVisible, run: () => { this.input.running = true; } });
 		this.focusTarget.registerCommand('pause', { isEnabled: () => this.input.liveVisible && this.commands.isEnabled('gameView.playback'),
 			run: () => { this.input.running = this.commands.toggleGamePlayback(); } });
 		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) {

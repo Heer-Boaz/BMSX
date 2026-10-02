@@ -80,21 +80,21 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	check(nemesisTitleState(test) === 'idle', 'history contains the idle title used by the source-edit workflow');
 	await press('ControlRight', 'AltRight');
 	for (let index = 0; index < 3; index += 1) await press('ArrowUp');
-	await press('KeyX');
-	await press('ShiftLeft');
+	await press('Enter');
+	await press('ArrowLeft');
 	await settle();
 	check(history.mode === HistoryMode.Reviewing, 'real timeline selects history');
 	const seekPosition = cycles();
 	const recordedEnd = history.latestCycles;
-	await press('KeyX');
-	check(rewind.playing, 'A starts recorded playback inside the timeline');
+	await press('Space');
+	check(rewind.playing, 'preview starts recorded playback inside the timeline');
 	for (let index = 0; index < 7; index += 1) await frame();
-	await press('KeyX');
+	await press('Space');
 	let selected = cycles();
 	check(!rewind.playing && selected > seekPosition && selected < recordedEnd,
-		'A pauses at the actual playback position, without takeover');
+		'preview pauses at the actual playback position, without takeover');
 	check(history.latestCycles === recordedEnd, 'watching history retains its future');
-	await press('KeyX');
+	await press('Space');
 	await frame();
 	await press('ControlRight', 'ShiftRight');
 	selected = cycles();
@@ -187,7 +187,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await until(() => cycles() > pausedAt + runtime.timing.cpuHz * 2 && tasks.ready, 'record new execution');
 	await press('ControlRight', 'AltRight');
 	for (let index = 0; index < 3; index += 1) await press('ArrowUp');
-	await press('KeyX');
+	await press('Enter');
 	await press('ShiftLeft');
 	await settle();
 	await press('ControlRight', 'ShiftRight');
@@ -242,7 +242,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await press('ControlRight', 'ShiftRight');
 	await press('ControlRight', 'AltRight');
 	for (let index = 0; index < 3; index += 1) await press('ArrowUp');
-	await press('KeyX');
+	await press('Enter');
 	const oldActor = title();
 	rewind.seekTo(history.earliestCycles);
 	await settle();

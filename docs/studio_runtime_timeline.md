@@ -298,3 +298,68 @@ without importing its immutable-tree assumption or a refresh throttle.
   and core-parity audits passed. These changes affect Studio presentation only;
   they add no guest values, save-state representation, native execution changes
   or independent history engine.
+
+### Compact rewind interaction (2026-10-02)
+
+The host transport shows only a track, its selected offset, OK and Back. Accept
+(A / Enter / numpad Enter) resumes live recording from the selected point;
+Cancel (B / Escape) rejoins the retained present. Preview (X / Space) never
+implicitly accepts a selection. Left/Right seek seconds; LB/RB step recorded
+video boundaries. These physical keyboard bindings belong to active host menus,
+not the guest's configurable controller map. Held entry inputs are blocked until
+release. A menu transition revokes capture and repeat edges, but does not invent
+physical pointer movement. Dragged targets use the existing latest-intent seek.
+Device hints change on actual input activity, without shifting a pressed target.
+
+Studio keeps compact previous-frame, play/pause and next-frame actions. OK/Back
+appear only during review. OK uses `runtime.resume` and the live pane's command
+context: it releases that pane's inspection hold and resumes at the chosen point
+without closing Studio. Back uses the existing `HostRewind.returnToPresent`
+cancellation path, retains Requested pause, and ends review at the recorded end.
+It is not a second finite seek left in review. Source/chat editors do not acquire
+these controls or free-running permission. Normal workbench focus navigation
+and action activation remain in the shared action-bar owner.
+
+References examined before this interaction change:
+
+- [Konami's Dominus rewind screen](https://www.konami.com/products_master/eu_publish/castlevania_dc/eu/es/images/rewind.jpg):
+  track, position, A OK / B Cancel; no second confirmation page.
+- [MAME menu.cpp](https://github.com/mamedev/mame/blob/master/src/frontend/mame/ui/menu.cpp):
+  semantic select/back, exclusive input edges and menu-lifetime reset.
+- [Godot InputMap](https://github.com/godotengine/godot/blob/master/core/input/input_map.cpp):
+  physical UI accept/cancel bindings separate from game actions.
+- [VS Code toolbar](https://github.com/microsoft/vscode/blob/main/src/vs/base/browser/ui/toolbar/toolbar.ts):
+  primary and secondary actions have separate presentation.
+
+The mirrored representation remains physical keys/HID usages, existing u32
+button/edge words, a retained input-source enum, capture target ids, cycle
+coordinates, action masks and fixed label/rectangle arrays. Affected hot-path
+callers are HostUiInput update/consume, host-menu input/render, passive timeline
+layout, and Studio timeline update/input/draw. No machine instruction work,
+save-state fields, independent clock, per-frame buffer construction or additional
+capture cadence is introduced. Text is measured only on text/font changes.
+
+Interaction validation:
+
+- Real product browser + Studio MCP: Actor Lab stayed open across 3451 -> 3421.
+  Pointer Back returned to 3451, ended review and kept Requested pause. OK after
+  a fresh 30-frame rewind resumed live execution (observed 3474). A later preview
+  advanced 7005 -> 7019 without changing the retained recorded end. Physical
+  Enter/Escape were also exercised in the host overlay, including held entry
+  Enter. Light/dark Studio, a narrower canvas, native overlay and browser host
+  presentation were inspected visually; tool observations, not screenshots,
+  determined execution/history state.
+- `test:runtime-replay` passes real Nemesis/preload TS/C++ state comparison, host
+  input/review/branch and libretro ABI runs. The WebGPU browser rewind run passes
+  complete restored VRAM comparison. Input-routing checks pass in both hosts;
+  Lua suite passes 2895 with one existing skip, and nine runtime/frame/actor tool
+  integration checks pass. Boot command workflows pass on software/WebGL2/WebGPU.
+- IDE typecheck, browser Studio/player and native libretro product builds,
+  strict architecture boundaries, core parity and `git diff --check` pass.
+  This is functional/layout evidence, not physical Mini timing evidence.
+- The broad Studio workflow remains blocked outside this slice at
+  `testAemSourceApplication`: it opens the default AEM editor but reads
+  `activeCodeEditor.model`. The resolver already selected `AemEditorInput` before
+  this change. No fallback editor or fake document was added to pass that probe.
+  Repository-wide indentation also reports existing untouched cart/test/cJSON
+  files, not this patch's files.

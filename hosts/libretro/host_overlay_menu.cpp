@@ -87,7 +87,7 @@ constexpr u32 menuKeyboardButtons = (1u << static_cast<u32>(InputControllerGamep
 	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::Right))
 	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::A))
 	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::B))
-	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::Start))
+	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::X))
 	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::LeftBumper))
 	| (1u << static_cast<u32>(InputControllerGamepadButtonBit::RightBumper));
 
@@ -349,13 +349,13 @@ HostMenuInput HostOverlayMenu::tickTimelineInput(Runtime& runtime, LibretroInput
 		transitionTo(Page::Closed, input, rewind);
 		return HostMenuInput::Inactive;
 	}
-	if (uiInput.buttonJustPressed(InputControllerGamepadButtonBit::Start) || pointerAction == TimelineAction::Resume) {
+	if (uiInput.buttonJustPressed(InputControllerGamepadButtonBit::A) || pointerAction == TimelineAction::Resume) {
 		transitionTo(Page::Closed, input, rewind, Outcome::Accept);
 		return HostMenuInput::Inactive;
 	}
-	if (uiInput.buttonJustPressed(InputControllerGamepadButtonBit::A) || pointerAction == TimelineAction::Playback) {
+	if (uiInput.buttonJustPressed(InputControllerGamepadButtonBit::X)) {
 		rewind.togglePlayback();
-	} else if (pointerAction == TimelineAction::Seek) {
+	} else if (pointerAction == TimelineAction::Seek || (uiInput.pointerChanged && uiInput.pointerCapturedBy(static_cast<i32>(TimelineAction::Seek)))) {
 		rewind.seekTo(timeline.cyclesAt(uiInput.pointerX));
 	} else if (pointerAction == TimelineAction::Present) {
 		rewind.seekTo(runtime.history.latestCycles());
@@ -385,6 +385,9 @@ void HostOverlayMenu::queueRenderCommands(Runtime& runtime, VideoPresenter& pres
 		return;
 	}
 	if (m_page == Page::Rewind) {
+		const auto source = uiInput.activeSource;
+		timeline.setActionLabel(TimelineAction::Resume, source == HostUiInputSource::Gamepad ? "A OK" : source == HostUiInputSource::Keyboard ? "ENTER OK" : "OK");
+		timeline.setActionLabel(TimelineAction::Cancel, source == HostUiInputSource::Gamepad ? "B BACK" : source == HostUiInputSource::Keyboard ? "ESC BACK" : "BACK");
 		auto& state = timelineState;
 		state.earliestCycles = runtime.history.earliestCycles(); state.latestCycles = runtime.history.latestCycles();
 		state.positionCycles = rewind.positionCycles(); state.cpuHz = runtime.timing.cpuHz;

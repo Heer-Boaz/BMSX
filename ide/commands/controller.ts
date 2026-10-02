@@ -265,7 +265,12 @@ export class IdeCommandController {
 				return;
 			case 'runtime.present':
 				this.execute('runtime.pause', target);
-				this.frameNavigation.seek(this.runtime.history.latestCycles);
+				this.rewind.returnToPresent();
+				return;
+			case 'runtime.resume':
+				inputFocus.executeCommand(command, this.editor.editorPanes.activePane!.runtimeControlContext!);
+				this.rewind.resumeHere();
+				this.execution.requestExecution(true);
 				return;
 			case 'gameView.playback':
 				this.toggleGamePlayback();
@@ -481,7 +486,10 @@ export class IdeCommandController {
 				if (context?.getCommand(command) !== undefined) return context.getCommand(command)!.isEnabled();
 				return this.frameNavigation.canStep(command === 'stepFrameBack' ? -1 : 1);
 			case 'runtime.pause': return this.runtimeTasks.ready;
-			case 'runtime.present': return this.rewind.available && this.frameNavigation.available;
+			case 'runtime.present':
+			case 'runtime.resume':
+				return this.editor.editorPanes.activePane?.runtimeControlContext !== undefined && this.rewind.active
+					&& this.frameNavigation.active === undefined && this.isEnabled('gameView.playback', focus);
 			case 'gameView.togglePanel': return this.editor.isActive;
 			case 'gameView.closePanel': return this.editor.gamePanel.visible;
 			case 'gameView.playback':

@@ -18,12 +18,12 @@ import { createWorkbenchActionBar } from './action_bar';
 import { WorkbenchSlider } from './slider';
 import { WorkbenchSliderControl } from './slider_control';
 
-const ACTIONS = [TimelineAction.Previous, TimelineAction.Playback, TimelineAction.Next, TimelineAction.Present] as const;
+const ACTIONS = [TimelineAction.Previous, TimelineAction.Playback, TimelineAction.Next, TimelineAction.Resume, TimelineAction.Cancel] as const;
 
 /** Docked host timeline. Ordinary controls feed the existing finite navigation owner. */
 export class RuntimeTimelineControl {
 	private readonly style: TimelineStyle = { panel: 0, track: 0, accent: 0, text: 0, disabled: 0, highlight: 0, highlightText: 0,
-		z: 0, actions: ['<|', 'PLAY', '|>', 'NOW', '', ''], pauseLabel: 'PAUSE', visibleActions: 0x1f };
+		z: 0, actions: ['<|', '>', '|>', '', 'OK', 'BACK'], pauseLabel: '||', visibleActions: 0x0f };
 	private readonly view = new HostRewindTimeline(this.style);
 	private readonly state: TimelineState = { earliestCycles: 0, latestCycles: 0, positionCycles: 0, cpuHz: 1,
 		status: 'PAUSED', enabledActions: 0, hoveredAction: TimelineAction.None, focusedAction: TimelineAction.None };
@@ -83,6 +83,8 @@ export class RuntimeTimelineControl {
 		state.enabledActions = this.rewind.available && (this.navigation.available || this.navigation.active === this.seekOperation && this.seekOperation !== undefined)
 			? 1 << TimelineAction.Seek : 0;
 		state.hoveredAction = TimelineAction.None;
+		for (let index = 0; index < ACTIONS.length; index++) this.actionState.items[index].visible = index < 3 || this.rewind.active;
+		this.style.visibleActions = this.rewind.active ? 0x6f : 0x0f;
 		this.actions.update();
 		for (let index = 0; index < ACTIONS.length; index++) {
 			const item = this.actionState.items[index];

@@ -94,9 +94,11 @@ async function main(): Promise<void> {
 		await frame();
 	};
 	const clickTimeline = async (labelText: string, heldFrames = 1) => {
+		const display = video.measureDisplay();
+		input.inputAxis2('pointer:0', 'pointer_position', display.left + 1, display.top + 1, clock.now());
+		await frame();
 		menu.queueRenderCommands();
 		const bar = presenter.hostOverlayQueue.consumeHostMenuFrame();
-		const display = video.measureDisplay();
 		let found = false;
 		for (let index = 0; index < bar.commandCount; index += 1) {
 			if (bar.commandKinds[index] !== Host2DKind.Glyphs) continue;
@@ -224,27 +226,27 @@ async function main(): Promise<void> {
 	audible = false;
 	execution.setPauseReason(HostPauseReason.Requested, true);
 	execution.setPauseReason(HostPauseReason.Fullscreen, true);
-	input.inputButton('gamepad:0', 'a', true, 1, clock.now() + 1, pressId++);
+	input.inputButton('gamepad:0', 'x', true, 1, clock.now() + 1, pressId++);
 	for (let index = 0; index < 3; index += 1) await frame();
 	assert.ok(rewind.playing && !execution.userPaused && execution.paused, 'Play releases user pause, not independent host reasons');
 	assert.equal(runtime.machine.scheduler.currentNowCycles(), oldest);
 	execution.setPauseReason(HostPauseReason.Fullscreen, false);
 	for (let index = 0; index < 21; index += 1) await frame();
-	assert.equal(rewind.playing, true, 'held A starts replay only once');
+	assert.equal(rewind.playing, true, 'held preview starts replay only once');
 	const replayedCycles = runtime.machine.scheduler.currentNowCycles() - oldest;
 	assert.ok(Math.abs(replayedCycles - runtime.timing.cpuHz * runtime.timing.frameDurationMs * 20 / 1000) <= runtime.timing.cycleBudgetPerFrame, 'replay obeys host/PCRTC pacing, not the fast seek budget');
-	input.inputButton('gamepad:0', 'a', false, 0, clock.now() + 1, pressId++);
+	input.inputButton('gamepad:0', 'x', false, 0, clock.now() + 1, pressId++);
 	await frame();
 	assert.ok(audible && audioFrames > playbackAudio, 'paced replay delivers fresh nonzero emulated audio');
 	snapshot('playing-before-pause');
 	const playingPixels = backend.borrowPresentedPixels().slice(0, backend.framebufferWidth * (backend.framebufferHeight - 38) * 4);
-	await press('a');
+	await press('x');
 	assert.ok(playingPixels.every((value, index) => value === backend.borrowPresentedPixels()[index]), 'pause retains the presented game image');
 	const previewPaused = runtime.machine.scheduler.currentNowCycles();
 	const previewAudio = audioFrames;
 	assert.ok(!rewind.playing && rewind.active && history.mode === HistoryMode.Reviewing);
 	for (let index = 0; index < 8; index += 1) await frame();
-	assert.equal(runtime.machine.scheduler.currentNowCycles(), previewPaused, 'A pauses at the actual playback position');
+	assert.equal(runtime.machine.scheduler.currentNowCycles(), previewPaused, 'preview pauses at the actual playback position');
 	assert.equal(rewind.positionCycles, previewPaused, 'cursor follows actual playback, not its destination');
 	assert.equal(audioFrames, previewAudio, 'paused replay drains no old audio');
 	assert.equal(history.latestCycles, playbackEnd);
@@ -253,14 +255,14 @@ async function main(): Promise<void> {
 	assert.equal(vramCaptures, playbackCaptures, 'Play/Pause never captures');
 	snapshot('playback-paused');
 	clock.advance(600_000);
-	await press('a');
+	await press('x');
 	assert.ok(runtime.machine.scheduler.currentNowCycles() - previewPaused <= runtime.timing.cycleBudgetPerFrame * 2, 'Play discards paused wall time');
 	for (let index = 0; index < 800 && rewind.playing; index += 1) await frame();
 	assert.equal(runtime.machine.scheduler.currentNowCycles(), playbackEnd, 'playback stops exactly at the recorded end');
 	assert.ok(!rewind.playing && rewind.active, 'end of replay does not silently take live control');
 	assert.equal(history.inputJournal.endSequence, playbackSequence);
 	// B cancels the transport; it is not a navigation item in a second menu.
-	await clickTimeline('B CANCEL'); await settle();
+	await clickTimeline('BACK'); await settle();
 	for (let index = 0; index < 12; index += 1) await frame();
 	assert.equal(rewind.active, false);
 	assert.equal(history.mode, HistoryMode.Recording);
@@ -269,18 +271,18 @@ async function main(): Promise<void> {
 
 	await openRewind();
 	await press('left'); await settle();
-	await clickTimeline('A PLAY', 5);
-	assert.equal(rewind.playing, true, 'pointer activates playback');
+	await press('x');
+	assert.equal(rewind.playing, true, 'preview activates recorded playback');
 	for (let index = 0; index < 7; index += 1) await frame();
-	await clickTimeline('A PAUSE', 4);
-	assert.equal(rewind.playing, false, 'pointer pauses playback');
+	await press('x');
+	assert.equal(rewind.playing, false, 'preview pauses without accepting');
 	const branchCycles = runtime.machine.scheduler.currentNowCycles();
 	const branchEnd = history.latestCycles;
-	await clickTimeline('START GAME'); await settle();
+	await clickTimeline('OK', 5); await settle();
 	for (let index = 0; index < 3; index += 1) await frame();
 	assert.equal(history.mode, HistoryMode.Recording);
 	assert.equal(rewind.active, false);
-	assert.ok(history.latestCycles < branchEnd, 'START branches from the selected position');
+	assert.ok(history.latestCycles < branchEnd, 'accept branches from the selected position');
 	assert.equal(history.checkpointCycles(history.checkpointCount - 1), branchCycles, 'takeover captures the exact paused playback position, not a nearby checkpoint');
 	for (let index = 0; index < 20; index += 1) await frame();
 	assert.ok(runtime.machine.scheduler.currentNowCycles() > branchCycles);
@@ -296,14 +298,14 @@ async function main(): Promise<void> {
 	await press('select', 'x');
 	for (let index = 0; index < 60; index += 1) await frame();
 
-	// START accepts the selected target even while its old GPU readback is in flight.
+	// Accept retains the selected target even while its old GPU readback is in flight.
 	await openRewind();
 	let releaseResume!: () => void;
 	const resumeGate = new Promise<void>(resolve => { releaseResume = resolve; });
 	const finishBeforeResume = backend.finishGxGpuReadbacks.bind(backend);
 	backend.finishGxGpuReadbacks = async () => { await resumeGate; finishBeforeResume(); };
 	await press('left');
-	await press('a');
+	await press('x');
 	assert.ok(rewind.playing && rewind.seeking, 'Play can be queued while a seek awaits a backend fence');
 	await press('left');
 	assert.equal(rewind.playing, false, 'a newer seek replaces queued playback');
@@ -311,7 +313,7 @@ async function main(): Promise<void> {
 	const intendedSequence = history.inputJournal.endAt(intended);
 	const intendedBoundary = history.inputJournal.cycleAt(intendedSequence - 1);
 	assert.equal(tasks.ready, false);
-	await press('start');
+	await press('a');
 	assert.equal(rewind.positionCycles, intended, 'accept must not replace the pending target with the recorded end');
 	releaseResume();
 	await settle();

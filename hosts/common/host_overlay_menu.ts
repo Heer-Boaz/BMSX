@@ -129,7 +129,7 @@ const BUTTON_LEFT_TRIGGER: HostMenuButton = InputControllerGamepadButtonBit.Left
 const BUTTON_RIGHT_TRIGGER: HostMenuButton = InputControllerGamepadButtonBit.RightTrigger;
 const BUTTON_SELECT: HostMenuButton = InputControllerGamepadButtonBit.Select;
 const MENU_KEYBOARD_BUTTONS = (1 << BUTTON_UP) | (1 << BUTTON_DOWN) | (1 << BUTTON_LEFT) | (1 << BUTTON_RIGHT)
-	| (1 << BUTTON_A) | (1 << BUTTON_B) | (1 << BUTTON_START) | (1 << BUTTON_LEFT_BUMPER) | (1 << BUTTON_RIGHT_BUMPER);
+	| (1 << BUTTON_A) | (1 << BUTTON_B) | (1 << BUTTON_X) | (1 << BUTTON_LEFT_BUMPER) | (1 << BUTTON_RIGHT_BUMPER);
 
 type OnScreenKeyboardCommandBinding = {
 	readonly button: HostMenuButton;
@@ -530,13 +530,13 @@ export class HostOverlayMenu {
 		if (this.uiInput.buttonJustPressed(BUTTON_B) || pointerAction === TimelineAction.Cancel) {
 			this.transitionTo(HostOverlayPage.Closed);
 			result = HostMenuInput.Inactive;
-		} else if (this.uiInput.buttonJustPressed(BUTTON_START) || pointerAction === TimelineAction.Resume) {
+		} else if (this.uiInput.buttonJustPressed(BUTTON_A) || pointerAction === TimelineAction.Resume) {
 			this.transitionTo(HostOverlayPage.Closed, HostOverlayOutcome.Accept);
 			result = HostMenuInput.Inactive;
-		} else if (this.uiInput.buttonJustPressed(BUTTON_A) || pointerAction === TimelineAction.Playback) {
+		} else if (this.uiInput.buttonJustPressed(BUTTON_X)) {
 			if (!this.rewind.playing) this.execution.setPauseReason(HostPauseReason.Requested, false);
 			this.rewind.togglePlayback();
-		} else if (pointerAction === TimelineAction.Seek) {
+		} else if (pointerAction === TimelineAction.Seek || this.uiInput.pointerChanged && this.uiInput.pointerCapturedBy(TimelineAction.Seek)) {
 			this.rewind.seekTo(this.timeline.cyclesAt(this.uiInput.pointerPosition.x));
 		} else if (pointerAction === TimelineAction.Present) {
 			this.rewind.seekTo(this.runtime.history.latestCycles);
@@ -583,6 +583,9 @@ export class HostOverlayMenu {
 			return;
 		}
 		if (this.page === HostOverlayPage.Rewind) {
+			const source = this.uiInput.activeSource;
+			this.timeline.setActionLabel(TimelineAction.Resume, source === HostUiInputSource.Gamepad ? 'A OK' : source === HostUiInputSource.Keyboard ? 'ENTER OK' : 'OK');
+			this.timeline.setActionLabel(TimelineAction.Cancel, source === HostUiInputSource.Gamepad ? 'B BACK' : source === HostUiInputSource.Keyboard ? 'ESC BACK' : 'BACK');
 			const state = this.timelineState, history = this.runtime.history;
 			state.earliestCycles = history.earliestCycles; state.latestCycles = history.latestCycles;
 			state.positionCycles = this.rewind.positionCycles; state.cpuHz = this.runtime.timing.cpuHz;

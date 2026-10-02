@@ -122,6 +122,8 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		for (const target of [this.focusTarget, this.inspector.focusTarget]) {
 			target.registerCommand('runtime.pause', { isEnabled: () => this.input.runtimeInspection !== undefined,
 				run: () => { this.input.runtimeInspection!.running = false; } });
+			target.registerCommand('runtime.resume', { isEnabled: () => this.input.runtimeInspection !== undefined,
+				run: () => { this.input.runtimeInspection!.running = true; } });
 			target.registerCommand('pause', { isEnabled: () => this.input.runtimeInspection !== undefined && this.commands.isEnabled('gameView.playback'),
 				run: () => { this.input.runtimeInspection!.running = this.commands.toggleGamePlayback(); } });
 			for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) target.registerCommand(command, {

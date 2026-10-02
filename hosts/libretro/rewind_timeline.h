@@ -21,18 +21,20 @@ struct TimelineStyle {
 	u32 panel = 0xe8070b10u, track = 0xff46525eu, accent = 0xff5bc6ffu, text = 0xffefefefu, disabled = 0xff7d8790u;
 	u32 highlight = 0xff46525eu, highlightText = 0xffefefefu;
 	i32 z = 920;
-	std::array<std::string_view, 6> actions{"LB <|", "A PLAY", "|> RB", "NOW", "START GAME", "B CANCEL"};
-	std::string_view pauseLabel = "A PAUSE";
-	u32 visibleActions = 0x7f;
+	std::array<std::string_view, 6> actions{"<|", ">", "|>", "", "OK", "BACK"};
+	std::string_view pauseLabel = "||";
+	u32 visibleActions = (1u << static_cast<u32>(TimelineAction::Seek))
+		| (1u << static_cast<u32>(TimelineAction::Resume)) | (1u << static_cast<u32>(TimelineAction::Cancel));
 };
 
 // Passive presentation. Neither host execution nor runtime objects belong here.
 class HostRewindTimeline final {
 public:
 	explicit HostRewindTimeline(const TimelineStyle& style = {});
-	static i32 height(const BFont& font) { return font.lineHeight() * 2 + 18; }
+	static i32 height(const BFont& font) { return font.lineHeight() + 22; }
 	TimelineAction selectAt(i32 x, i32 y) const;
 	i64 cyclesAt(i32 x) const;
+	void setActionLabel(TimelineAction action, std::string_view text);
 	void update(const TimelineState& state, i32 left, i32 top, i32 right, BFont& font);
 	const HostMenuFrame& frame() const { return renderFrame; }
 
@@ -42,14 +44,13 @@ private:
 	std::array<RectBounds, 7> hitRects{};
 	BFont* font = nullptr;
 	std::array<RectRenderSubmission, 4> rects;
-	std::array<GlyphRenderSubmission, 9> labels;
-	std::array<i32, 9> labelWidths{};
-	std::array<Host2DKind, 13> commandKinds;
-	std::array<Host2DRef, 13> commandRefs;
+	std::array<GlyphRenderSubmission, 7> labels;
+	std::array<i32, 7> labelWidths{};
+	std::array<Host2DKind, 11> commandKinds;
+	std::array<Host2DRef, 11> commandRefs;
 	HostMenuFrame renderFrame{commandKinds.data(), commandRefs.data(), commandKinds.size()};
-	i64 rangeTenths = -1, offsetTenths = -1;
-	TimelineStatus statusText = TimelineStatus::Paused;
-	bool statusShown = false, playing = false;
+	i64 offsetTenths = -1;
+	bool playing = false;
 	void setLabel(size_t index, std::string_view text);
 };
 

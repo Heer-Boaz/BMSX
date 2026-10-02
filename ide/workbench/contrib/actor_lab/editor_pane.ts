@@ -68,6 +68,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 				run: () => { this.input.running = commands.toggleGamePlayback(); },
 			});
 			target.registerCommand('runtime.pause', { isEnabled: () => true, run: () => { this.input.running = false; } });
+			target.registerCommand('runtime.resume', { isEnabled: () => true, run: () => { this.input.running = true; } });
 			for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) target.registerCommand(command, {
 				isEnabled: () => this.frameNavigation.canStep(direction),
 				run: () => { this.input.running = false; this.frameNavigation.step(direction); },

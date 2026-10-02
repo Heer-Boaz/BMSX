@@ -25,11 +25,11 @@ export async function testStudioWebGpuReadbacks(test: StudioFixture, backend: We
 	await press('ControlRight', 'ShiftRight');
 	await press('ControlRight', 'AltRight');
 	for (let index = 0; index < 3; index += 1) await press('ArrowUp');
-	await press('KeyX');
+	await press('Enter');
 	const mappingAt = cycles();
 	rewind.seekTo(history.earliestCycles);
 	rewind.seekTo(history.latestCycles);
-	await press('KeyX');
+	await press('Space');
 	check(rewind.playing && rewind.seeking, 'playback intent can wait for an actual WebGPU mapping');
 	await frame();
 	await press('ControlRight', 'ShiftRight');

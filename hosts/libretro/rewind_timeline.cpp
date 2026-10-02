@@ -5,8 +5,7 @@
 namespace bmsx {
 namespace {
 enum TimelineRect { Panel, Track, Fill, Cursor };
-enum TimelineLabel { Range, Position, Status, Previous, Playback, Next, Present, Resume, Cancel };
-constexpr std::array<const char*, 5> STATUS_TEXT{"LIVE", "PAUSED", "REPLAY", "SEEKING", "STOPPED"};
+enum TimelineLabel { Position, Previous, Playback, Next, Present, Resume, Cancel };
 }
 
 HostRewindTimeline::HostRewindTimeline(const TimelineStyle& style) : style(style) {
@@ -46,9 +45,12 @@ i64 HostRewindTimeline::cyclesAt(i32 x) const {
 }
 
 void HostRewindTimeline::setLabel(size_t index, std::string_view text) {
-	auto& label = labels[index]; label.items[0] = text;
-	label.item_end = static_cast<i32>(text.size()); labelWidths[index] = font->measure(label.items[0]);
+	auto& label = labels[index];
+	if (label.items[0] == text) return;
+	label.items[0] = text; label.item_end = static_cast<i32>(text.size());
+	if (font != nullptr) labelWidths[index] = font->measure(label.items[0]);
 }
+void HostRewindTimeline::setActionLabel(TimelineAction action, std::string_view text) { setLabel(static_cast<size_t>(action), text); }
 
 void HostRewindTimeline::update(const TimelineState& state, i32 left, i32 top, i32 right, BFont& font) {
 	this->state = state;
@@ -59,14 +61,8 @@ void HostRewindTimeline::update(const TimelineState& state, i32 left, i32 top, i
 		}
 	}
 	const i64 range = state.latestCycles - state.earliestCycles;
-	const i64 rangeTenths = range * 10 / state.cpuHz;
 	const i64 offsetTenths = (state.latestCycles - state.positionCycles) * 10 / state.cpuHz;
 	char text[32];
-	if (rangeTenths != this->rangeTenths) {
-		this->rangeTenths = rangeTenths;
-		std::snprintf(text, sizeof(text), "HISTORY %lld.%lldS", static_cast<long long>(rangeTenths / 10), static_cast<long long>(rangeTenths % 10));
-		setLabel(Range, text);
-	}
 	if (offsetTenths != this->offsetTenths) {
 		this->offsetTenths = offsetTenths;
 		if (offsetTenths == 0) setLabel(Position, "NOW");
@@ -75,14 +71,11 @@ void HostRewindTimeline::update(const TimelineState& state, i32 left, i32 top, i
 			setLabel(Position, text);
 		}
 	}
-	if (!statusShown || state.status != statusText) {
-		statusShown = true; statusText = state.status; setLabel(Status, STATUS_TEXT[static_cast<size_t>(state.status)]);
-	}
 	const bool playing = state.status == TimelineStatus::Live || state.status == TimelineStatus::Replay;
 	if (playing != this->playing) { this->playing = playing; setLabel(Playback, playing ? style.pauseLabel : style.actions[1]); }
 	const i32 bottom = top + height(font), trackLeft = left + 6, trackRight = right - 6;
 	write_rect_bounds(rects[Panel].area, left, top, right, bottom);
-	const i32 trackTop = top + font.lineHeight() + 7;
+	const i32 trackTop = top + 7;
 	write_rect_bounds(rects[Track].area, trackLeft, trackTop, trackRight, trackTop + 3);
 	write_rect_bounds(hitRects[0], trackLeft - 3, trackTop - 3, trackRight + 3, trackTop + 6);
 	const i32 cursor = range == 0 ? trackRight : trackLeft + static_cast<i32>((state.positionCycles - state.earliestCycles) * (trackRight - trackLeft) / range);
@@ -90,15 +83,6 @@ void HostRewindTimeline::update(const TimelineState& state, i32 left, i32 top, i
 	write_rect_bounds(rects[Cursor].area, cursor - 1, trackTop - 3, cursor + 2, trackTop + 6);
 	rects[Panel].color = style.panel; rects[Track].color = style.track; rects[Fill].color = style.accent;
 	rects[Cursor].color = state.status == TimelineStatus::Seeking ? style.accent : style.text;
-	const i32 rangeRight = trackLeft + labelWidths[Range];
-	labels[Range].x = trackLeft; labels[Position].x = trackRight - labelWidths[Position];
-	labels[Status].x = (left + right - labelWidths[Status]) / 2;
-	for (size_t index = 0; index < Previous; ++index) {
-		labels[index].y = top + 3; labels[index].color = style.text; labels[index].item_end = static_cast<i32>(labels[index].items[0].size());
-	}
-	if (labels[Status].x < rangeRight + 4 || labels[Status].x + labelWidths[Status] > labels[Position].x - 4) {
-		labels[Range].item_end = 0; labels[Status].x = trackLeft;
-	}
 	const i32 actionTop = trackTop + 8;
 	i32 actionRight = trackRight;
 	for (i32 action = 6; action >= 4; --action) {
@@ -111,7 +95,9 @@ void HostRewindTimeline::update(const TimelineState& state, i32 left, i32 top, i
 	for (i32 action = 1; action <= 6; ++action) {
 		const size_t index = Previous + action - 1;
 		auto& label = labels[index]; label.y = actionTop; label.item_end = static_cast<i32>(label.items[0].size());
-		if (action <= 3) { label.x = actionLeft + 2; actionLeft += labelWidths[index] + 10; }
+		if (action <= 3 && (style.visibleActions & (1u << action)) != 0) {
+			label.x = actionLeft + 2; actionLeft += labelWidths[index] + 10;
+		}
 		const bool enabled = (state.enabledActions & (1u << action)) != 0;
 		const bool highlighted = enabled && (static_cast<TimelineAction>(action) == state.hoveredAction || static_cast<TimelineAction>(action) == state.focusedAction);
 		label.color = highlighted ? style.highlightText : enabled ? style.text : style.disabled; label.background_color = style.highlight;
@@ -119,5 +105,10 @@ void HostRewindTimeline::update(const TimelineState& state, i32 left, i32 top, i
 		if ((style.visibleActions & (1u << action)) == 0) { label.item_end = 0; hitRects[action] = {}; }
 		else write_rect_bounds(hitRects[action], label.x - 2, actionTop - 2, label.x + labelWidths[index] + 2, bottom);
 	}
+	auto& position = labels[Position];
+	position.x = actionLeft == trackLeft ? trackLeft : (actionLeft + actionRight - labelWidths[Position]) / 2;
+	position.y = actionTop; position.color = style.text;
+	position.item_end = position.x >= actionLeft && position.x + labelWidths[Position] <= actionRight - 4
+		? static_cast<i32>(position.items[0].size()) : 0;
 }
 } // namespace bmsx

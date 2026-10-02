@@ -12,6 +12,7 @@ class HostUiInput {
 public:
 	i32 pointerX = 0, pointerY = 0;
 	bool pointerValid = false, pointerChanged = false;
+	u8 activeSource = HostUiInputSource::Keyboard;
 	explicit HostUiInput(LibretroInput& input);
 	void reset(u8 nextSources, u32 nextKeyboardButtons);
 	void update(f64 currentTimeMs);
@@ -21,6 +22,7 @@ public:
 	bool gamepadButtonJustPressed(u8 player, InputControllerGamepadButtonBit button) const;
 	bool gamepadButtonRepeatEdge(u8 player, InputControllerGamepadButtonBit button) const;
 	bool activatePointer(i32 target);
+	bool pointerCapturedBy(i32 target) const;
 	void consume() const;
 private:
 	static constexpr size_t SourceCount = INPUT_CONTROLLER_PAD_COUNT + 1;

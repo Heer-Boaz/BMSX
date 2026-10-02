@@ -5,14 +5,20 @@
 
 namespace bmsx {
 namespace {
-// Same normalized host controls as Input.DEFAULT_INPUT_MAPPING.keyboard.
-constexpr std::array<u8, INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT> keyboardUsages{
-	hid_key_usage::X, hid_key_usage::C, hid_key_usage::Z, hid_key_usage::S,
-	hid_key_usage::ShiftLeft, hid_key_usage::ShiftRight, hid_key_usage::ControlLeft, hid_key_usage::AltLeft,
-	hid_key_usage::ControlRight, hid_key_usage::AltRight, hid_key_usage::Q, hid_key_usage::E,
-	hid_key_usage::ArrowUp, hid_key_usage::ArrowDown, hid_key_usage::ArrowLeft, hid_key_usage::ArrowRight,
-	hid_key_usage::Escape, hid_key_usage::Space,
-};
+// UI actions use physical keys, independently of the guest's console mapping.
+struct KeyboardBinding { InputControllerGamepadButtonBit button; u8 usage; };
+constexpr auto keyboardBindings = std::to_array<KeyboardBinding>({
+	{InputControllerGamepadButtonBit::A, hid_key_usage::Enter},
+	{InputControllerGamepadButtonBit::A, hid_key_usage::NumpadEnter},
+	{InputControllerGamepadButtonBit::B, hid_key_usage::Escape},
+	{InputControllerGamepadButtonBit::X, hid_key_usage::Space},
+	{InputControllerGamepadButtonBit::LeftBumper, hid_key_usage::ShiftLeft},
+	{InputControllerGamepadButtonBit::RightBumper, hid_key_usage::ShiftRight},
+	{InputControllerGamepadButtonBit::Up, hid_key_usage::ArrowUp},
+	{InputControllerGamepadButtonBit::Down, hid_key_usage::ArrowDown},
+	{InputControllerGamepadButtonBit::Left, hid_key_usage::ArrowLeft},
+	{InputControllerGamepadButtonBit::Right, hid_key_usage::ArrowRight},
+});
 }
 HostUiInput::HostUiInput(LibretroInput& input) : input(input) {}
 void HostUiInput::reset(u8 nextSources, u32 nextKeyboardButtons) {
@@ -25,7 +31,6 @@ void HostUiInput::reset(u8 nextSources, u32 nextKeyboardButtons) {
 	repeatEdges.fill(0);
 	for (auto& repeat : repeats) repeat.reset();
 	pointerTarget = -1;
-	pointerValid = false;
 	pointerChanged = false;
 	pointerDown = false;
 	pointerPressed = false;
@@ -37,9 +42,9 @@ void HostUiInput::update(f64 currentTimeMs) {
 	++frameId;
 	u32 keyboard = 0;
 	if ((sources & HostUiInputSource::Keyboard) != 0) {
-		for (size_t button = 0; button < ButtonCount; ++button) {
-			const u32 mask = 1u << button;
-			if ((keyboardButtons & mask) != 0 && input.physicalKeyboardUsagePressed(keyboardUsages[button])) keyboard |= mask;
+		for (const auto& binding : keyboardBindings) {
+			const u32 mask = 1u << static_cast<u32>(binding.button);
+			if ((keyboardButtons & mask) != 0 && input.physicalKeyboardUsagePressed(binding.usage)) keyboard |= mask;
 		}
 	}
 	updateButtons(0, keyboard, currentTimeMs, input.frameDurationMs(), frameId);
@@ -69,9 +74,11 @@ void HostUiInput::update(f64 currentTimeMs) {
 		pointerReleased = !down && pointerDown;
 		pointerDown = down;
 		pointerChanged = valid != pointerValid || x != pointerX || y != pointerY || pointerPressed || pointerReleased;
+		if (pointerChanged && pointerValid && !down) activeSource = HostUiInputSource::Pointer;
 	}
 }
 void HostUiInput::updateButtons(size_t source, u32 physicalButtons, f64 now, f64 frameDurationMs, i64 frameId) {
+	if ((physicalButtons & ~buttons[source]) != 0) activeSource = source == 0 ? HostUiInputSource::Keyboard : HostUiInputSource::Gamepad;
 	blocked[source] &= physicalButtons;
 	const u32 eligible = physicalButtons & ~blocked[source];
 	const u32 edges = eligible & ~buttons[source];
@@ -107,13 +114,16 @@ bool HostUiInput::activatePointer(i32 target) {
 	pointerTarget = -1;
 	return activated;
 }
+bool HostUiInput::pointerCapturedBy(i32 target) const { return pointerDown && pointerTarget == target; }
 void HostUiInput::consume() const { consumeSources(sources, keyboardButtons); }
 void HostUiInput::consumeSources(u8 sources, u32 keyboardButtons) const {
 	if ((sources & HostUiInputSource::Gamepad) != 0) {
 		for (u8 player = 0; player < INPUT_CONTROLLER_PAD_COUNT; ++player) input.consumeGamepadInput(player);
 	}
 	if ((sources & HostUiInputSource::Keyboard) != 0) {
-		for (size_t button = 0; button < ButtonCount; ++button) if ((keyboardButtons & (1u << button)) != 0) input.consumePhysicalKeyboardUsage(keyboardUsages[button]);
+		for (const auto& binding : keyboardBindings) {
+			if ((keyboardButtons & (1u << static_cast<u32>(binding.button))) != 0) input.consumePhysicalKeyboardUsage(binding.usage);
+		}
 	}
 	if ((sources & HostUiInputSource::Pointer) != 0) input.consumePointerButton(INP_POINTER_BUTTON_PRIMARY);
 }

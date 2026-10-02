@@ -128,10 +128,11 @@ Browser Studio, Node headless tooling and native libretro products are rebuilt.
 ## Paced review playback: REWIND-PLAYBACK-01
 
 The original transport implements seeking and live takeover, not playback of
-retained history. This slice adds that missing operation. LB/RB still seek one
-emulated second; A toggles recorded playback/pause; START takes live control;
-B cancels back to the retained present. The pointer can select the timeline and
-activate those same transport actions. Controls exist only in the open host
+retained history. This slice adds that missing operation. With the current
+interaction mapping, LB/RB step recorded video frames and Left/Right seek
+seconds. A accepts the selected point; B cancels back to the retained present;
+X toggles recorded playback/pause. Pointer input scrubs and accepts/cancels.
+Controls exist only in the open host
 transport; no gameplay keyboard shortcut or cartlib worldtick stepping is added.
 
 The production reference is [openMSX ReverseManager](https://github.com/openMSX/openMSX/blob/master/src/ReverseManager.cc):
@@ -912,11 +913,11 @@ References examined before this mirrored UI diff:
 | State | TypeScript | C++ | Owner / callsites |
 | --- | --- | --- | --- |
 | Recorded range / seek target | Existing integer cycle `number` | Existing `i64` | `RuntimeHistory`, `HostRewind.seekTo`; storage and journal unchanged |
-| Transport inputs | Normalized host LB/RB, A playback, START takeover, B; existing repeat state | Same controller bits and native repeat state | `HostOverlayMenu.tickInput`; consumed before live ICU input, including the exit frame |
+| Transport inputs | Normalized host LB/RB, X playback, A takeover, B cancel; existing repeat state | Same controller bits and native repeat state | `HostOverlayMenu.tickInput`; consumed before live ICU input, including the exit frame |
 | Previous button state | Input owner keeps physical pressed state separate from consumption | Normalized physical button bits; keyboard navigation also includes its existing stick thresholds | `HostOverlayMenu.latchButtonStates` must not latch consumed output as a release; holding the opening button does not activate the destination page |
 | Timeline navigation | LB/RB recorded video boundaries; Left/Right second-sized seeks; pointer mapped to range | Same journal boundaries and integer-cycle targets | `HostOverlayMenu` maps input to `HostRewind.stepFrame` / `seekTo`; the passive view only maps pixels with `cyclesAt` |
 | Bottom bar | Retained rectangles, glyph submissions and host command arrays | Same retained submissions / arrays | `HostRewindTimeline.update`; the host publishes its retained frame; no per-frame buffer construction |
-| Pending live takeover/playback | Seek intent plus `afterSeek` request | Same | `HostRewind.resumeHere` / `togglePlayback` / `service`: START or A during seek waits for the selected target; Pause or a newer seek supersedes that intent |
+| Pending live takeover/playback | Seek intent plus `afterSeek` request | Same | `HostRewind.resumeHere` / `togglePlayback` / `service`: A or X during seek waits for the selected target; Pause or a newer seek supersedes that intent |
 | Overlay transition | Page plus Accept/Cancel/Discard/Retain outcome | Same enums | `HostOverlayMenu.transitionTo` is the only page writer after construction; departure, pointer/repeat reset, exclusive input and destination activation are one lifecycle |
 
 Opening the keyboard must not know about rewind. A transition deactivates its
@@ -931,10 +932,10 @@ is a bounded state machine for the existing host overlays, not a new workbench
 navigation framework or a generic callback facade.
 
 LB/RB step recorded video boundaries; Left/Right seek seconds through the range.
-Holding uses the existing host button-repeat cadence. A toggles recorded playback/pause and START
-takes live control, as specified in REWIND-PLAYBACK-01 above. B or the existing
+Holding uses the existing host button-repeat cadence. X toggles recorded
+playback/pause and A takes live control. B or the existing
 menu chord cancels and returns to the recorded end. Pointer hit targets expose
-the same actions. Seeking, playback and paused review are visibly distinct.
+scrubbing, accept and cancel; preview remains a secondary X/Space action.
 No new activation shortcut is introduced.
 
 The two-checkpoint capacity and six-second capture interval are unchanged.
@@ -944,12 +945,12 @@ capture every frame, increase capacity or expose guest objects to the UI.
 ### UI and lifecycle validation
 
 - Real BIOS/Nemesis TS and libretro host runs cover a held opening button,
-  LB/RB navigation between checkpoints, held-repeat bounds, B cancel, START
+  LB/RB navigation between checkpoints, held-repeat bounds, B cancel, A
   branch and rewind-to-keyboard cancellation. Native also covers external
   save/load and reboot. The native held-button regression failed before its
   latch was corrected to read physical input instead of consumed output.
 - TS accepts the intended journal boundary while a submitted GPU capture is
-  deliberately held; START cannot resume from an intermediate replay state.
+  deliberately held; accept cannot resume from an intermediate replay state.
   The input-routing test checks virtual-key release on the next input poll
   and consumption of the departing page's controller input on its exit frame.
 - The actual browser WebGPU test exercises both clickable track endpoints,

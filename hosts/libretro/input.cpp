@@ -121,7 +121,7 @@ constexpr std::array<i16, RETROK_LAST> makeRetroKeyHidUsages() {
 	usages[RETROK_KP_MULTIPLY] = 85;
 	usages[RETROK_KP_MINUS] = 86;
 	usages[RETROK_KP_PLUS] = 87;
-	usages[RETROK_KP_ENTER] = 88;
+	usages[RETROK_KP_ENTER] = hid_key_usage::NumpadEnter;
 	for (unsigned key = RETROK_KP1; key <= RETROK_KP9; key += 1u) {
 		usages[key] = static_cast<i16>(89u + key - RETROK_KP1);
 	}

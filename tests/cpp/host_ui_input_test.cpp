@@ -55,11 +55,28 @@ int main() {
 	pointerDown = true; tick();
 	require(!ui.activatePointer(4), "pointer activation waits for release");
 	ui.reset(HostUiInputSource::Pointer, 0); tick();
+	require(!ui.pointerChanged, "a page transition is not physical pointer movement");
 	pointerDown = false; tick();
 	require(!ui.activatePointer(4), "transition discards capture, even with the same destination target id");
 	pointerDown = true; tick();
 	require(!ui.activatePointer(4), "fresh pointer press");
 	pointerDown = false; tick();
 	require(ui.activatePointer(4), "fresh pointer release activates destination");
+	const u32 keyboardActions = (1u << static_cast<u32>(InputControllerGamepadButtonBit::A))
+		| (1u << static_cast<u32>(InputControllerGamepadButtonBit::B)) | (1u << static_cast<u32>(InputControllerGamepadButtonBit::X));
+	ui.reset(HostUiInputSource::Keyboard, keyboardActions); tick();
+	for (const auto [key, action] : std::array{
+		std::pair{RETROK_RETURN, InputControllerGamepadButtonBit::A},
+		std::pair{RETROK_KP_ENTER, InputControllerGamepadButtonBit::A},
+		std::pair{RETROK_ESCAPE, InputControllerGamepadButtonBit::B},
+		std::pair{RETROK_SPACE, InputControllerGamepadButtonBit::X}}) {
+		input.postKeyboardEvent(key, true); tick();
+		require(ui.buttonJustPressed(action), "physical keyboard UI action");
+		ui.reset(HostUiInputSource::Keyboard, keyboardActions); tick();
+		require(!ui.buttonJustPressed(action), "held keyboard action cannot accept a new page");
+		input.postKeyboardEvent(key, false); tick(); input.postKeyboardEvent(key, true); tick();
+		require(ui.buttonJustPressed(action), "new keyboard action after release");
+		input.postKeyboardEvent(key, false); tick();
+	}
 	std::cout << "HOST-UI-INPUT:PASS\n";
 }

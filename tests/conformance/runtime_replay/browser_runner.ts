@@ -81,7 +81,7 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	const openRewind = async () => {
 		await press('ControlRight', 'AltRight');
 		for (let index = 0; index < 3; index += 1) await press('ArrowUp');
-		await press('KeyX');
+		await press('Enter');
 	};
 	runtime.boot();
 	audioOutput.bootstrap();
@@ -118,7 +118,7 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	const reviewAudio = audioFrames;
 	for (let index = 0; index < 5; index += 1) await frame();
 	require(audioFrames === reviewAudio, 'review must suppress abandoned and replay audio');
-	await press('KeyC'); await settle();
+	await press('Escape'); await settle();
 	for (let index = 0; index < 12; index += 1) await frame();
 	require(!rewind.active && runtime.machine.scheduler.currentNowCycles() >= latest, 'B cancels and rejoins live recording');
 	require(audioFrames > reviewAudio, 'return resumes live audio');
@@ -129,9 +129,9 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	await backend.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
 	const actualVram = runtime.machine.gxGpu.readVramSnapshotBytes();
 	require(actualVram.every((byte, index) => byte === expectedVram[index]), 'asynchronous restore preserves every VRAM byte');
-	await press('AltRight'); await settle();
+	await press('Enter'); await settle();
 	for (let index = 0; index < 20; index += 1) await frame();
-	require(!rewind.active && history.latestCycles < branchEnd, 'START branches instead of returning to the future');
+	require(!rewind.active && history.latestCycles < branchEnd, 'accept branches instead of returning to the future');
 	// Leave a representative multi-second transport preview for visual inspection.
 	const previewEnd = history.latestCycles + runtime.timing.cpuHz * 7;
 	for (let count = 0; count < 4000 && history.latestCycles < previewEnd; count += 1) await frame();
