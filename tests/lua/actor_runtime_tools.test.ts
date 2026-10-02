@@ -17,6 +17,9 @@ import { parseLuaChunk, runCompletionClosure } from './cpu_test_harness';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
+import { ActorStateGraph } from '../../ide/workbench/contrib/actor_lab/state_graph';
+import { runtimeWorld } from '../../ide/workbench/contrib/actor_lab/runtime';
+import { Font } from '../../machine/ts/render/shared/bmsx_font';
 
 /** Compiled guest representations, not JS table mocks. Actual cartlib construction is tested in the browser workflow. */
 const WORLD_SOURCE = `local fsm<const> = require('cartlib/fsm/fsm_component')
@@ -52,6 +55,82 @@ function fixture(entry = ENTRY, run = true) {
 	const inspection = f.inspection.open(), actors = inspection.lifetime.add(new ActorRuntimeInspection(inspection));
 	return { ...f, stop: inspection, actors };
 }
+
+test('FSM graph consumes actual activity and typed membership, retains geometry through restore, and retires renamed instances', t => {
+	const f = fixture(ENTRY.replace('return world', `function move() probe._components[1]._machines_by_id.same.current_id = nil end
+function disable() probe._components[1].enabled = false end
+function rename_machine()
+	local machines = probe._components[1]._machines_by_id
+	machines.renamed = machines.same
+	machines.same = nil
+end
+return world`));
+	t.after(() => f.stop.dispose());
+	const input = new ActorLabInput(), choice = readActorChoices(f.sources, f.guest, -1)[0];
+	input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = choice.hashId;
+	const projection = new ActorProjection(input, f.sources, f.guest); projection.update();
+	const machine = input.runtime.roots[0].children[0].children[0], font = new Font({ variant: 'tiny' });
+	const target = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, input.runtime.roots, machine, f.guest);
+	const graph = input.stateGraph = new ActorStateGraph(target, font);
+	const cpu = f.runtime.machine.cpu, heap = cpu.luaHeap.usedBytes(), alive = cpu.captureRuntimeState();
+	graph.refresh(input.runtime.roots, f.guest); graph.layout(font);
+	const model = graph.viewport.model, nodes = model.nodes, active = nodes.map(node => node.active);
+	assert.equal(nodes.length, 3); assert.equal(model.edges.length, 2);
+	assert.ok(nodes.every(node => node.active), 'main and concurrent child follow their active ancestor');
+	graph.viewport.selection = nodes[1]; graph.viewport.pan(25, 30);
+	let measurements = 0;
+	t.mock.method(font, 'measure', () => { measurements++; return 1; });
+	graph.layout(font); assert.equal(measurements, 0);
+	input.invalidate(); f.guest.invalidate();
+	runCompletionClosure(cpu, f.guest.global('move') as Closure, []); projection.update(); graph.layout(font);
+	assert.strictEqual(graph.viewport.model, model); assert.equal(measurements, 0);
+	assert.strictEqual(graph.viewport.selection, nodes[1]);
+	assert.equal(nodes[1].active, false); assert.equal(nodes[2].active, true);
+	const scroll = [graph.viewport.scrollX, graph.viewport.scrollY];
+	input.invalidate(); f.guest.invalidate();
+	runCompletionClosure(cpu, f.guest.global('disable') as Closure, []); projection.update(); graph.layout(font);
+	assert.ok(nodes.every(node => !node.active), 'disabled owner masks retained child selections');
+	input.invalidate('history-restored'); cpu.restoreRuntimeState(alive); projection.update(); graph.layout(font);
+	assert.deepEqual(nodes.map(node => node.active), active); assert.strictEqual(graph.viewport.model, model);
+	assert.deepEqual([graph.viewport.scrollX, graph.viewport.scrollY], scroll);
+	assert.equal(cpu.luaHeap.usedBytes(), heap, 'graph projection allocates no guest values');
+	graph.viewport.selection = model.edges[0];
+	graph.layout(new Font({ variant: 'msx' }));
+	assert.equal(graph.viewport.selection!.kind, 'edge');
+	assert.equal(resolveActorTarget(input.runtime.roots, graph.selectedTarget!, f.guest)!.hashId, nodes[1].hashId,
+		'font relayout preserves the selected physical relationship');
+	input.invalidate(); f.guest.invalidate();
+	runCompletionClosure(cpu, f.guest.global('rename_machine') as Closure, []); projection.update(); graph.layout(font);
+	assert.equal(graph.status, 'missing'); assert.equal(graph.viewport.selection, null);
+	assert.equal(graph.viewport.model.nodes.length, 0, 'another key cannot take over the same physical table');
+	input.invalidate('history-restored'); cpu.restoreRuntimeState(alive); projection.update(); graph.layout(font);
+	assert.equal(graph.status, 'missing', 'retired membership needs an explicit new selection');
+	input.dispose();
+});
+
+test('FSM graph selection distinguishes two memberships of the same physical state table', t => {
+	const f = fixture(ENTRY.replace('return world', `local machine = probe._components[1]._machines_by_id.same
+machine.states.alias = machine.states.idle
+machine.state_ids[3] = 'alias'
+return world`));
+	t.after(() => f.stop.dispose());
+	const input = new ActorLabInput(), choice = readActorChoices(f.sources, f.guest, -1)[0];
+	input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = choice.hashId;
+	const projection = new ActorProjection(input, f.sources, f.guest); projection.update();
+	const machine = input.runtime.roots[0].children[0].children[0], font = new Font({ variant: 'tiny' });
+	const target = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, input.runtime.roots, machine, f.guest);
+	const graph = input.stateGraph = new ActorStateGraph(target, font);
+	graph.refresh(input.runtime.roots, f.guest); graph.layout(font);
+	const nodes = graph.viewport.model.nodes;
+	assert.equal(nodes[1].hashId, nodes[3].hashId);
+	assert.equal(nodes[1].active, true); assert.equal(nodes[3].active, false);
+	graph.viewport.selection = nodes[3];
+	const selected = graph.selectedTarget!;
+	assert.strictEqual(resolveActorTarget(input.runtime.roots, selected, f.guest), machine.children[2]);
+	graph.layout(new Font({ variant: 'msx' }));
+	assert.strictEqual(graph.selectedTarget, selected);
+	input.dispose();
+});
 
 test('World pages retain typed identities; Actor Lab and tool trees consume real class indices, not names', t => {
 	const f = fixture(); t.after(() => f.stop.dispose());

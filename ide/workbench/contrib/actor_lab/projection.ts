@@ -33,6 +33,7 @@ export class ActorProjection {
 		const { input, guest } = this;
 		const actor = findRuntimeActor(this.sources, guest, input.domain, input.actorHashId);
 		const changed = input.runtime.update(this.sources, guest, input.domain, actor);
+		input.stateGraph?.refresh(input.runtime.roots, guest);
 		if (actor === undefined) {
 			input.actorHashId = 0; input.selectionHashId = 0;
 			input.status = 'CHOOSE A RUNNING ACTOR';
@@ -65,6 +66,7 @@ export class ActorProjection {
 		};
 		const selected = find(outline.roots);
 		if (selected === undefined) return false;
+		this.input.stateGraph = undefined;
 		for (let parent = selected.parent; parent !== null; parent = parent.parent) parent.collapsed = false;
 		rebuildWorkbenchTreeRows(outline, selected);
 		this.input.selectionHashId = hashId;

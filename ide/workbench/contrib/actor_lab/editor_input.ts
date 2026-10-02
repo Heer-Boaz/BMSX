@@ -10,6 +10,7 @@ import { ActorTimelineTransport } from './timeline';
 import { ActorTimelineLayout } from './timeline_layout';
 import { create_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { GuestInvalidationReason } from '../../../runtime/suspended_guest';
+import type { ActorStateGraph } from './state_graph';
 
 /** View state only. Borrowed rows are released before guest execution. */
 export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'> {
@@ -21,12 +22,14 @@ export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'>
 	public dirty = true;
 	public status = 'CHOOSE A RUNNING ACTOR';
 	public readonly runtime = new ActorRuntimeTree();
+	public stateGraph: ActorStateGraph | undefined;
 	public readonly outline = new ScrollableWorkbenchTree<ActorRow>();
 	public readonly timeline = new ActorTimelineTransport();
 	public readonly timelineLayout = new ActorTimelineLayout();
 	public readonly split = new WorkbenchSplitView(0.4);
 	public readonly previewBounds = create_rect_bounds();
 	public readonly actionBar = createWorkbenchActionBar('actorLab.title');
+	public readonly stateGraphActions = createWorkbenchActionBar('actorLab.stateGraph.title');
 	public readonly layout: FullWidthWorkbenchLayout = {
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
 		viewportWidth: -1, viewportHeight: -1, codeAreaTop: -1, codeAreaBottom: -1,
@@ -44,6 +47,7 @@ export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'>
 			this.running = false;
 		}
 		if (reason === 'heap-replaced') {
+			this.stateGraph?.retire(reason);
 			this.runtime.roots.length = 0;
 			this.actorHashId = 0; this.selectionHashId = 0;
 			this.outline.roots.length = 0; this.outline.rows.length = 0; this.outline.selectionIndex = -1;

@@ -188,6 +188,7 @@ export class IdeCommandController {
 			case 'actorLab.actions':
 			case 'actorLab.call':
 			case 'actorLab.details':
+			case 'actorLab.stateGraph': case 'actorLab.outline':
 			case 'behaviorLens.details':
 			case 'behaviorLens.more':
 			case 'behaviorLens.inspectRuntimeEffect':
@@ -420,6 +421,7 @@ export class IdeCommandController {
 			case 'actorLab.actions':
 			case 'actorLab.call':
 			case 'actorLab.details':
+			case 'actorLab.stateGraph': case 'actorLab.outline':
 			case 'behaviorLens.details':
 			case 'behaviorLens.more':
 			case 'behaviorLens.inspectRuntimeEffect':

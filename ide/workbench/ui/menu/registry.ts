@@ -8,7 +8,7 @@ export type WorkbenchDropdownMenuId =
 
 export type WorkbenchContextMenuId = 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'terminal.input' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'terminal.input' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -23,6 +23,7 @@ export type WorkbenchMenuItem = WorkbenchMenuCommandItem | WorkbenchMenuSeparato
 
 type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly WorkbenchMenuItem[]> & {
 	readonly 'actorLab.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'actorLab.stateGraph.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'propertyInspector.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'sourceEditReview.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'terminal.input': readonly WorkbenchMenuCommandItem[];
@@ -86,9 +87,18 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.inspectRegisteredDefinitions' },
 	],
 	'actorLab.context': [
+		{ type: 'command', command: 'actorLab.stateGraph' },
 		{ type: 'command', command: 'actorLab.details' },
 		{ type: 'command', command: 'actorLab.actions' },
 		{ type: 'command', command: 'actorLab.call' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'graph.zoomIn' },
+		{ type: 'command', command: 'graph.zoomOut' },
+		{ type: 'command', command: 'graph.resetZoom' },
+	],
+	'actorLab.stateGraph.title': [
+		{ type: 'command', command: 'actorLab.outline' },
+		{ type: 'command', command: 'actorLab.details' },
 	],
 	'actorLab.title': [
 		{ type: 'command', command: 'actorLab.select' },

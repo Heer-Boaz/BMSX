@@ -120,6 +120,8 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'actorLab.actions': { category: 'Actor Lab', title: 'Instance Actions', shortTitle: 'Actions' },
 	'actorLab.call': { category: 'Actor Lab', title: 'Call Lua Method', shortTitle: 'Call' },
 	'actorLab.details': { category: 'Actor Lab', title: 'Inspect Instance', shortTitle: 'Details' },
+	'actorLab.stateGraph': { category: 'Actor Lab', title: 'Show Live FSM Graph', shortTitle: 'FSM Graph' },
+	'actorLab.outline': { category: 'Actor Lab', title: 'Return to Actor Tree', shortTitle: 'Back' },
 	'sceneEditor.source': { category: 'Scene Editor', title: 'Open Source', shortTitle: 'Source' },
 	'behaviorLens.details': { category: 'Behavior Lens', title: 'Open Source Details', shortTitle: 'Details' },
 	'behaviorLens.more': { category: 'Behavior Lens', title: 'More Actions', shortTitle: '...' },

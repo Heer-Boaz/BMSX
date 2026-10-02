@@ -21,9 +21,11 @@ import { inspectActorNode } from './inspection';
 import { readActorMethods } from './methods';
 import { ActorLabInput } from './editor_input';
 import { runtimeWorld, type ActorNode } from './runtime';
+import { ActorStateGraph } from './state_graph';
+import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import { ActorProjection, readActorChoices } from './projection';
 import { actorActions } from './operations';
-import { captureActorTarget } from './target';
+import { captureActorTarget, resolveActorTarget } from './target';
 import type { ActorExecutionService, ActorExecutionResult, ActorInvocation } from './execution';
 
 /** Actor Lab interaction and presentation; the shared domain service owns execution. */
@@ -107,7 +109,7 @@ export class ActorLabController {
 			(_origin, lifetime) => {
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 				return new TextQuickPickProvider(readActorChoices(this.sources, this.guest, domain));
-			}, choice => { input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = choice.hashId; input.dirty = true; accepted?.(); });
+			}, choice => { input.stateGraph = undefined; input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = choice.hashId; input.dirty = true; accepted?.(); });
 	}
 	private run(input: ActorLabInput, request: ActorInvocation, observer?: (result: ActorExecutionResult) => void, current: () => boolean = () => true): void {
 		const generation = this.panes.openGeneration, domain = input.domain, actor = input.actorHashId;
@@ -125,7 +127,19 @@ export class ActorLabController {
 	}
 
 	public selected(input: ActorLabInput): ActorNode | undefined {
-		return input.dirty ? undefined : input.outline.rows[input.outline.selectionIndex]?.element.node;
+		if (input.dirty) return undefined;
+		if (input.stateGraph === undefined) return input.outline.rows[input.outline.selectionIndex]?.element.node;
+		const target = input.stateGraph.selectedTarget;
+		return target === undefined ? undefined : resolveActorTarget(input.runtime.roots, target, this.guest);
+	}
+
+	public openStateGraph(input: ActorLabInput, font: BFont): void {
+		const selected = this.selected(input)!;
+		const target = captureActorTarget(input.domain, runtimeWorld(this.sources, this.guest, input.domain)!.hashId, input.runtime.roots, selected, this.guest);
+		let length = target.path.length;
+		while (target.path[length - 1].kind !== 'machine') length--;
+		input.stateGraph = new ActorStateGraph({ ...target, path: target.path.slice(0, length) }, font);
+		input.stateGraph.refresh(input.runtime.roots, this.guest);
 	}
 
 	public inspect(input: ActorLabInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {

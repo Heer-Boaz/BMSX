@@ -1,4 +1,4 @@
-import { createWorkbenchGraphEdge, createWorkbenchGraphModel } from '../../ui/graph/model';
+import { createWorkbenchTreeEdge, createWorkbenchGraphModel } from '../../ui/graph/model';
 import { layoutWorkbenchTree } from '../../ui/graph/tree_layout';
 import type { BehaviorSourceRowKey } from './model';
 import type { BehaviorGraphEdge, BehaviorGraphModel, BehaviorGraphProjection } from './graph_model';
@@ -11,12 +11,7 @@ export function layoutBehaviorTreeGraph(projection: BehaviorGraphProjection): Be
 	if (nodes.length > 0) layoutWorkbenchTree(nodes[0], 16, 24);
 	for (const { child, source, range } of links) {
 		const parent = child.parent!;
-		const x0 = Math.round((parent.bounds.left + parent.bounds.right) / 2);
-		const x1 = Math.round((child.bounds.left + child.bounds.right) / 2);
-		const y0 = parent.bounds.bottom;
-		const y1 = child.bounds.top;
-		const points = x0 === x1 ? [x0, y0, x1, y1] : [x0, y0, x0, y1 - 12, x1, y1 - 12, x1, y1];
-		const edge: BehaviorGraphEdge = { ...createWorkbenchGraphEdge(points), child, source, range };
+		const edge: BehaviorGraphEdge = { ...createWorkbenchTreeEdge(parent, child), child, source, range };
 		edges.push(edge);
 		edgesBySource.set(source.rowKey, edge);
 	}

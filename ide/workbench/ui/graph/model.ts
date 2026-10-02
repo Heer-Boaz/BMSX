@@ -11,6 +11,8 @@ export type WorkbenchGraphNode = {
 	readonly lines: readonly string[];
 	/** Measured title area. A compound layout extends the body below it. */
 	readonly headerHeight: number;
+	/** Runtime activity decoration, independent of keyboard/pointer selection. */
+	readonly active?: boolean;
 } & ({ readonly appearance: 'card' } | {
 	readonly appearance: 'disc';
 	/** Pixel-row insets, measured once. Layout routes to this shape's actual bounds. */
@@ -134,4 +136,12 @@ export function createWorkbenchGraphEdge(points: readonly number[], labels: read
 		bounds.bottom = Math.max(bounds.bottom, label.bounds.bottom);
 	}
 	return { kind: 'edge', directed, bounds, points, arrow, labels };
+}
+
+/** Orthogonal hierarchy route through the actual gap between measured levels. */
+export function createWorkbenchTreeEdge(parent: WorkbenchGraphNode, child: WorkbenchGraphNode): WorkbenchGraphEdge {
+	const x0 = Math.round((parent.bounds.left + parent.bounds.right) / 2);
+	const x1 = Math.round((child.bounds.left + child.bounds.right) / 2);
+	const y0 = parent.bounds.bottom, y1 = child.bounds.top, middle = (y0 + y1) / 2;
+	return createWorkbenchGraphEdge(x0 === x1 ? [x0, y0, x1, y1] : [x0, y0, x0, middle, x1, middle, x1, y1]);
 }

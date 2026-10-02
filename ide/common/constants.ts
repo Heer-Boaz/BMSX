@@ -114,6 +114,7 @@ type ThemeDefinition = {
 		track: number;
 		position: number;
 	};
+	graph: { active: number };
 	connection: {
 		connected: number;
 		disconnected: number;
@@ -251,6 +252,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			track: THEME_TOKEN_MID_GREY,
 			position: THEME_TOKEN_TERMINAL_DARK_BLUE,
 		},
+		graph: { active: THEME_TOKEN_TERMINAL_LIGHT_GREEN },
 		connection: {
 			connected: THEME_TOKEN_SUCCESS_GREEN,
 			disconnected: THEME_TOKEN_ACCENT_RED,
@@ -376,6 +378,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			track: THEME_TOKEN_MID_GREY,
 			position: THEME_TOKEN_ACCENT_BLUE,
 		},
+		graph: { active: THEME_TOKEN_SUCCESS_GREEN },
 		connection: {
 			connected: THEME_TOKEN_SUCCESS_GREEN,
 			disconnected: THEME_TOKEN_ACCENT_RED,
@@ -549,6 +552,7 @@ export let COLOR_STATUS_ERROR: number;
 export let COLOR_STATUS_ALERT: number;
 export let COLOR_TIMELINE_TRACK: number;
 export let COLOR_TIMELINE_POSITION: number;
+export let COLOR_GRAPH_ACTIVE: number;
 export let COLOR_SERVER_CONNECTED: number;
 export let COLOR_SERVER_DISCONNECTED: number;
 export let COLOR_SERVER_CONNECTING: number;
@@ -718,6 +722,7 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_STATUS_ALERT = theme.status.alert;
 	COLOR_TIMELINE_TRACK = theme.timeline.track;
 	COLOR_TIMELINE_POSITION = theme.timeline.position;
+	COLOR_GRAPH_ACTIVE = theme.graph.active;
 	COLOR_SERVER_CONNECTED = theme.connection.connected;
 	COLOR_SERVER_DISCONNECTED = theme.connection.disconnected;
 	COLOR_SERVER_CONNECTING = theme.connection.connecting;

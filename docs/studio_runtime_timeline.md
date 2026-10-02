@@ -60,6 +60,46 @@ the semantic component-color ownership in the
 [VS Code color registry](https://github.com/microsoft/vscode/blob/main/src/vs/platform/theme/common/colors/baseColors.ts),
 not a borrowed tab foreground that can equal the timeline background.
 
+## Live FSM instance graph
+
+Actor Lab's **Show Live FSM Graph** command opens the selected physical machine,
+or the machine owning a selected state. It is a hierarchy of actual instances,
+not the authored transition diagram. The existing Actor tree supplies class
+membership, child order and activity. Green side stripes mark its stored active
+path, including concurrent children and ancestor/owner admission; keyboard and
+pointer selection have a separate border/background. Neither indicator proves
+that a callback has completed or a future transition guard will pass.
+
+The graph bookmark uses the existing typed Actor target path. After execution
+or history restore, Actor Lab reacquires membership before copying scalar
+identities, labels and activity. No table, closure or borrowed Actor node enters
+the retained graph. Missing/renamed membership and heap replacement explicitly
+retire it; the user selects again through the Actor tree. Hidden-pane branch
+reconciliation uses the existing Actor Lab invalidation owner.
+
+Geometry, edge routes, viewport, pan and zoom use the shared workbench graph
+controls, including Ctrl-wheel anchored zoom and Shift-wheel horizontal pan.
+Activity-only updates change booleans, not measurements or layout.
+Topology/font changes relayout and rematch the selected node or relationship by
+physical identity. Details and method/action commands resolve through the same
+fresh Actor tree, without adding a second inspector or execution service. Back
+and Details are the primary actions; graph opening and zoom stay in the command
+palette/context menu. The graph, title actions, sash and guest timeline slider
+use an explicit command context without replacing their keyboard handlers.
+The existing game preview and the one machine-history transport remain beside
+and below the graph.
+
+Reference implementations separate runtime instance identities from source
+graphs: [LimboAI's debugger](https://github.com/limbonaut/limboai/blob/master/editor/debugger/limbo_debugger_plugin.cpp)
+and [retained runtime tree viewer](https://github.com/limbonaut/limboai/blob/master/editor/debugger/behavior_tree_view.cpp),
+and [BehaviorTree.CPP's Groot2 publisher](https://github.com/BehaviorTree/BehaviorTree.CPP/blob/master/src/loggers/groot2_publisher.cpp).
+Here, ordinary BT compilation lowers authored nodes into evaluator closures and
+compiler-owned execution slots. The optional test compilation recorder records
+lowering occurrences, not runtime status or proven authored-source provenance.
+BT source-node highlights therefore need explicit compilation metadata; source
+names, closures or slot indices are not a substitute. This slice does not change
+BT compilation or claim that mapping exists.
+
 ## Representation and callers (before mirrored edits)
 
 | Representation | TypeScript | C++ | Owner |
@@ -140,3 +180,30 @@ The game panel does not map optimized BT execution slots onto authored graph
 nodes. Live instance properties and source diagrams remain distinct surfaces.
 The existing fixed logical canvas still limits mobile presentation; browser
 resizing alone scales that canvas rather than creating a responsive DOM IDE.
+
+### Live FSM graph follow-through (2026-10-02)
+
+- Actual Studio MCP execution called the discovered machine `transition_to`
+  method and awaited completion. Fresh Actor tree readback confirmed `rest`
+  inactive and `moving` active; the already-open graph changed stripes without
+  reopening. This call starts a new recording, not rewind across a mutation.
+- Physical frame-navigation completions were 205 -> 235 -> 215 after the call.
+  A separate fresh browser load exercised 1850 -> 1838 -> 1850
+  through MCP and adjacent keyboard forward/back steps. The open graph retained
+  its selection and the shared history review stayed available.
+- Visible checks covered node Details/Back, command and Ctrl-wheel graph zoom,
+  Shift-wheel pan, sash dragging, font and
+  light/dark themes, and switching away with Details open before returning to
+  the graph. Sash focus originally disabled the graph's primary actions; the
+  pane now binds the sash and slider's explicit action context to the current
+  presentation. Graph card text uses the foreground belonging to its header
+  background, including in the dark theme.
+- 108 focused checks passed. The graph checks exercise compiled guest activity,
+  concurrent children, snapshot identity reacquisition, renamed membership,
+  retained geometry/selection and zero extra font measurements during ordinary
+  activity changes. Two memberships of the same physical state remain distinct
+  selections; target correspondence uses typed keys and ancestry, not a hash id
+  alone. IDE typecheck, browser Studio build, architecture-boundary
+  and core-parity audits passed. These changes affect Studio presentation only;
+  they add no guest values, save-state representation, native execution changes
+  or independent history engine.

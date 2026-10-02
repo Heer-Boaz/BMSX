@@ -5410,6 +5410,14 @@ Missing membership clears that selection; a hidden pane resolves it before live
 execution can reuse discarded-future identities. Reset/external state loading
 clears selection outright. This UI bookmark grants no persistent tool handle or
 mutation authority and changes no guest identity or TS/C++ snapshot representation.
+Actor Lab's live FSM graph projects that same selected instance hierarchy into
+the shared graph viewport. It retains scalar typed membership and display nodes,
+not guest tables or source-registration matches. Activity updates keep measured
+geometry, selection, pan and zoom; missing membership retires the graph rather
+than retargeting it. State activation is distinct from UI selection. Source
+transition diagrams and compiled BT execution slots remain separate;
+[runtime graph navigation](studio_runtime_timeline.md#live-fsm-instance-graph)
+does not manufacture source-node provenance.
 Conversation tools share the domain tree/property readers, not a fake UI input or
 source-derived scene database. Activity indicators expose their precise stored
 basis, and formatted properties are accompanied by expandable typed table roots.

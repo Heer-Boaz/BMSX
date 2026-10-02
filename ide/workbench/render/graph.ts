@@ -68,6 +68,7 @@ export function drawWorkbenchGraph(view: WorkbenchGraphViewport, hover: Workbenc
 		if (selected) api.fill_rect(left, top, right, bottom, 0, colors.SELECTION_OVERLAY);
 		if (node === hover && !selected) api.fill_rect(left, top, right, bottom, 0, colors.HIGHLIGHT_OVERLAY);
 		if (node.appearance === 'card' || selected || node === hover) api.blit_rect(left, top, right, bottom, 0, selected ? colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER : colors.COLOR_TAB_BORDER);
+		if (node.active) api.fill_rect(left + 1, top + 1, left + 3, bottom - 1, 0, colors.COLOR_GRAPH_ACTIVE);
 		if (node.appearance === 'disc') {
 			for (let row = 0; row < node.insets.length; row += 1) {
 				const inset = node.insets[row];
@@ -78,7 +79,7 @@ export function drawWorkbenchGraph(view: WorkbenchGraphViewport, hover: Workbenc
 		let y = top + GRAPH_NODE_PADDING;
 		for (const line of node.lines) {
 			api.blit_text_inline_with_font(line, left + GRAPH_NODE_PADDING, y, 0,
-				selected ? colors.COLOR_SELECTION_TEXT : colors.COLOR_RESOURCE_VIEWER_TEXT, model.font);
+				selected ? colors.COLOR_SELECTION_TEXT : node.appearance === 'card' ? colors.COLOR_PROBLEMS_PANEL_HEADER_TEXT : colors.COLOR_RESOURCE_VIEWER_TEXT, model.font);
 			y += model.font.lineHeight;
 		}
 	}
