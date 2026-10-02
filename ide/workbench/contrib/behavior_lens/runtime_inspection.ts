@@ -2,10 +2,13 @@ import type { HostRewind } from '../../../../hosts/common/rewind';
 import type { ResourceDomain } from '../../../common/resource';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
-import { findActionEffectInstance, inspectActionEffectInstance, type ActionEffectInstanceChoice } from './action_effect_runtime';
-import { findBehaviorTreeInstance, inspectBehaviorTreeInstance, type BehaviorTreeInstanceChoice } from './behavior_tree_runtime';
+import type { Table } from '../../../../machine/ts/machine/cpu/table';
+import { findActionEffectInstance, inspectActionEffectInstance, type ActionEffectInstance } from './action_effect_runtime';
+import { inspectBehaviorTreeInstance } from './behavior_tree_runtime';
 import type { BehaviorInspectionProperty } from './inspection';
-import { findStateMachineState, inspectStateMachineState, type StateMachineInstanceChoice, type StateMachineStateChoice } from './state_machine_runtime';
+import { findStateMachineState, inspectStateMachineState, type StateMachineInstance } from './state_machine_runtime';
+import { BehaviorRuntimeProperties } from './runtime_properties';
+import { findRuntimeComponent } from './runtime_components';
 
 /** Table identities within one heap, not borrowed picker results or authored definition ids. */
 export type BehaviorRuntimeSelection = { readonly componentHashId: number } & (
@@ -14,9 +17,9 @@ export type BehaviorRuntimeSelection = { readonly componentHashId: number } & (
 	| { readonly kind: 'behavior_tree' }
 );
 
-type ResolvedBehavior = { kind: 'action_effect'; choice: ActionEffectInstanceChoice }
-	| { kind: 'state_machine'; machine: StateMachineInstanceChoice; state: StateMachineStateChoice }
-	| { kind: 'behavior_tree'; choice: BehaviorTreeInstanceChoice };
+type ResolvedBehavior = { kind: 'action_effect'; choice: ActionEffectInstance }
+	| { kind: 'state_machine'; machine: StateMachineInstance; state: Table }
+	| { kind: 'behavior_tree'; component: Table };
 
 /** One visible inspection lifetime. Guest reads end before returning a property document. */
 export class BehaviorRuntimeInspection {
@@ -25,11 +28,14 @@ export class BehaviorRuntimeInspection {
 	private retired: 'missing' | 'heap-replaced' | undefined;
 	private readonly unbindInvalidation: () => void;
 	private readonly unbindHistoryResume: () => void;
+	private readonly properties: BehaviorRuntimeProperties;
 
 	public constructor(private readonly sources: RuntimeSourceState, private readonly guest: SuspendedGuestSession,
 		private readonly rewind: HostRewind, private readonly domain: ResourceDomain, private selection: BehaviorRuntimeSelection | undefined) {
+		this.properties = new BehaviorRuntimeProperties(sources, guest);
 		this.unbindInvalidation = guest.onDidInvalidate(reason => {
 			if (reason === 'heap-replaced') this.retire(reason);
+			if (reason !== 'execution') this.properties.invalidate();
 			this.dirty = true;
 		});
 		this.unbindHistoryResume = guest.onWillResumeHistory(() => {
@@ -42,17 +48,20 @@ export class BehaviorRuntimeInspection {
 	public refresh(): readonly BehaviorInspectionProperty[] | undefined {
 		if (!this.dirty || this.rewind.seeking) return undefined;
 		this.dirty = false;
+		const properties = this.properties;
+		properties.begin();
 		const resolved = this.resolve();
 		if (resolved === undefined) {
 			if (this.retired === undefined) this.retire('missing');
-			return [{ label: 'INSTANCE UNAVAILABLE', value: this.retired === 'heap-replaced' ? 'THE GUEST HEAP WAS REPLACED.' : 'THE SELECTED INSTANCE IS NOT IN THIS FRAME.',
-				description: 'SELECT A RUNTIME INSTANCE AGAIN. NO OTHER INSTANCE WAS SUBSTITUTED.', warning: true }];
+			properties.text('INSTANCE UNAVAILABLE', this.retired === 'heap-replaced' ? 'THE GUEST HEAP WAS REPLACED.' : 'THE SELECTED INSTANCE IS NOT IN THIS FRAME.',
+				'SELECT A RUNTIME INSTANCE AGAIN. NO OTHER INSTANCE WAS SUBSTITUTED.', true);
+		} else switch (resolved.kind) {
+			case 'action_effect': inspectActionEffectInstance(this.sources, this.guest, resolved.choice, properties); break;
+			case 'state_machine': inspectStateMachineState(this.sources, this.guest, resolved.machine, resolved.state, properties); break;
+			case 'behavior_tree': inspectBehaviorTreeInstance(this.sources, this.guest, resolved.component, properties); break;
 		}
-		switch (resolved.kind) {
-			case 'action_effect': return inspectActionEffectInstance(this.sources, this.guest, resolved.choice);
-			case 'state_machine': return inspectStateMachineState(this.sources, this.guest, resolved.machine, resolved.state);
-			case 'behavior_tree': return inspectBehaviorTreeInstance(this.sources, this.guest, resolved.choice);
-		}
+		const items = properties.finish();
+		return properties.changed ? items : undefined;
 	}
 
 	private retire(reason: 'missing' | 'heap-replaced'): void {
@@ -74,8 +83,8 @@ export class BehaviorRuntimeInspection {
 				break;
 			}
 			case 'behavior_tree': {
-				const choice = findBehaviorTreeInstance(this.sources, this.guest, this.domain, selection.componentHashId);
-				if (choice !== undefined) return { kind: selection.kind, choice };
+				const component = findRuntimeComponent(this.sources, this.guest, this.domain, 'cartlib/behaviour_tree/bt_component', selection.componentHashId);
+				if (component !== undefined) return { kind: selection.kind, component };
 				break;
 			}
 		}

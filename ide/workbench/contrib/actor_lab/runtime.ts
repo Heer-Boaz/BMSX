@@ -56,9 +56,11 @@ const NO_KEYS: readonly string[] = [];
 export class ActorRuntimeTree {
 	public readonly roots: ActorNode[] = [];
 	private changed = false;
+	private borrowed = false;
 	private readonly kinds: number[] = [];
 	public update(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, actor: Table | undefined): boolean {
 		this.changed = false;
+		this.borrowed = actor !== undefined;
 		if (actor === undefined) {
 			this.finishChildren(null, 0);
 		} else {
@@ -134,7 +136,11 @@ export class ActorRuntimeTree {
 		this.changed = true;
 	}
 
-	public release(): void { releaseActorBorrows(this.roots, 0); }
+	public release(): void {
+		if (!this.borrowed) return;
+		releaseActorBorrows(this.roots, 0);
+		this.borrowed = false;
+	}
 	public dispose(): void { this.release(); this.roots.length = 0; }
 
 	private states(guest: SuspendedGuestSession, parent: ActorNode, machine: Table, component: Table): void {

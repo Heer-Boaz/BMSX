@@ -14,7 +14,7 @@ import { sourceRangesEqual, type SourceRange } from '../../toolchain/ts/lua/sour
 import { SYSTEM_RESOURCE_DOMAIN, type ResourceDomain, type ResourceIdentity } from '../common/resource';
 import type { RuntimeFaultState } from './fault_state';
 import { Blua32GlobalRegisterFile, resolveRuntimeLuaSource, type RuntimeSourceState } from './sources';
-import type { SuspendedGuestRead, SuspendedGuestSession, SuspendedGuestValue } from './suspended_guest';
+import type { SuspendedGuestRead, SuspendedGuestSession, SuspendedGuestValue, RuntimeFunctionLocationBuffer } from './suspended_guest';
 import type { RuntimeStackFrame } from './stack_trace';
 
 export type RuntimeLuaFrameBinding = {
@@ -168,6 +168,33 @@ export function runtimeLuaFunctionSource(sources: RuntimeSourceState, guest: Sus
 	const installed = domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemInstalledBlua32Sources : sources.cartridgeSlots[domain]!.installedBlua32Sources;
 	return { resource: { domain, path: record.source_path }, range: { ...definition, path: record.source_path },
 		installedSource: installed.get(record.module_path)! };
+}
+
+/** Current address/bus and installed metadata own correspondence, not closure allocation identity. */
+export class RuntimeLuaFunctionSourceCache {
+	private readonly location: RuntimeFunctionLocationBuffer = { domain: null, address: 0 };
+	private media: RuntimeSourceState['currentBlua32Media'] | undefined;
+	private installed: ReadonlyMap<string, string> | undefined;
+	private registry: RuntimeSourceState['systemLuaSources'] | undefined;
+	private registryRevision: number | undefined;
+	private source: RuntimeLuaFunctionSource | undefined;
+
+	public constructor(private readonly sources: RuntimeSourceState, private readonly guest: SuspendedGuestSession) {}
+	public invalidate(): void { this.media = undefined; }
+	public update(value: SuspendedGuestValue): RuntimeLuaFunctionSource | undefined {
+		const previousDomain = this.location.domain, previousAddress = this.location.address;
+		const location = this.guest.functionLocation(value, this.location);
+		if (location === undefined || location.domain === null) return undefined;
+		const { sources } = this, domain = location.domain;
+		const registry = domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemLuaSources : sources.cartridgeSlots[domain]?.luaSources;
+		const installed = domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemInstalledBlua32Sources : sources.cartridgeSlots[domain]?.installedBlua32Sources;
+		if (previousDomain !== domain || previousAddress !== location.address || this.media !== sources.currentBlua32Media
+			|| this.installed !== installed || this.registry !== registry || this.registryRevision !== registry?.revision) {
+			this.media = sources.currentBlua32Media; this.installed = installed; this.registry = registry; this.registryRevision = registry?.revision;
+			this.source = runtimeLuaFunctionSource(sources, this.guest, value);
+		}
+		return this.source;
+	}
 }
 
 /** Read a written binding from its installed debug location; never evaluate Lua or infer a value. */

@@ -4,15 +4,10 @@ import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { QuickPickItem } from '../../services/quick_input/provider';
 import type { BehaviorInspectionProperty } from './inspection';
-import { findRuntimeComponent, visitRuntimeComponents } from './runtime_components';
-import { inspectBehaviorRuntimeValue } from './runtime_properties';
+import { visitRuntimeComponents } from './runtime_components';
+import { BehaviorRuntimeProperties } from './runtime_properties';
 
 export type BehaviorTreeInstanceChoice = QuickPickItem & { readonly component: Table };
-
-export function findBehaviorTreeInstance(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, componentHashId: number): BehaviorTreeInstanceChoice | undefined {
-	const component = findRuntimeComponent(sources, guest, domain, 'cartlib/behaviour_tree/bt_component', componentHashId);
-	if (component !== undefined) return behaviorTreeInstanceChoice(guest, component);
-}
 
 function behaviorTreeInstanceChoice(guest: SuspendedGuestSession, component: Table): BehaviorTreeInstanceChoice {
 	return { label: guest.formatValue(guest.readStringMember(component, 'tree_id')),
@@ -38,33 +33,35 @@ const EXECUTION_FIELDS = [
 
 /** This component's stored layout names its values, including nil slots. Never use programs_by_id. */
 export function inspectBehaviorTreeInstance(
-	sources: RuntimeSourceState, guest: SuspendedGuestSession, choice: BehaviorTreeInstanceChoice,
+	sources: RuntimeSourceState, guest: SuspendedGuestSession, component: Table,
+	properties = new BehaviorRuntimeProperties(sources, guest),
 ): BehaviorInspectionProperty[] {
-	const items: BehaviorInspectionProperty[] = [{ label: choice.description, value: choice.detail, description: '', warning: false }];
-	const board = guest.readStringMember(choice.component, 'blackboard');
+	properties.value('COMPONENT', guest.readStringMember(component, 'id'));
+	properties.value('OWNER', guest.readStringMember(guest.readStringMember(component, 'parent'), 'id'));
+	const board = guest.readStringMember(component, 'blackboard');
 	if (board === null) {
-		items.push(inspectBehaviorRuntimeValue(sources, guest, 'BLACKBOARD', board, 'THIS COMPONENT HAS NO BLACKBOARD.'));
+		properties.value('BLACKBOARD', board, 'THIS COMPONENT HAS NO BLACKBOARD.');
 	} else {
 		const layout = guest.readStringMember(board, '_layout');
 		const values = guest.readStringMember(board, '_values') as Table | null;
 		// new()/rebind() publish separate fields. At a stop before binding, show
 		// their actual nil/table values; do not manufacture named slot values.
 		if (layout === null || values === null) {
-			items.push(inspectBehaviorRuntimeValue(sources, guest, 'BLACKBOARD LAYOUT', layout, ''));
-			items.push(inspectBehaviorRuntimeValue(sources, guest, 'BLACKBOARD STORAGE', values, ''));
+			properties.value('BLACKBOARD LAYOUT', layout);
+			properties.value('BLACKBOARD STORAGE', values);
 		} else {
 			const keys = guest.readStringMember(layout, 'keys') as Table;
 			const defaults = guest.readStringMember(layout, 'initial_values') as Table;
-			if (keys.arrayLength === 0) items.push({ label: 'BLACKBOARD', value: '{}', description: 'NO DECLARED KEYS.', warning: false });
+			if (keys.arrayLength === 0) properties.text('BLACKBOARD', '{}', 'NO DECLARED KEYS.');
 			for (let slot = 1; slot <= keys.arrayLength; slot += 1) {
-				items.push(inspectBehaviorRuntimeValue(sources, guest, `BLACKBOARD / ${guest.formatValue(keys.getInteger(slot))}`,
-					values.getInteger(slot), `STORED SLOT ${slot}\nLOADED DEFAULT: ${guest.previewValue(defaults.getInteger(slot), 1, 8)}`));
+				properties.value(`BLACKBOARD / ${guest.formatValue(keys.getInteger(slot))}`,
+					values.getInteger(slot), `STORED SLOT ${slot}\nLOADED DEFAULT: `, defaults.getInteger(slot));
 			}
 		}
 	}
 	for (const [field, label] of EXECUTION_FIELDS) {
-		items.push(inspectBehaviorRuntimeValue(sources, guest, label, guest.readStringMember(choice.component, field),
-			field === '_execution_state' ? 'COMPILER-OWNED SLOTS, NOT AUTHORED NODE IDS.' : ''));
+		properties.value(label, guest.readStringMember(component, field),
+			field === '_execution_state' ? 'COMPILER-OWNED SLOTS, NOT AUTHORED NODE IDS.' : '');
 	}
-	return items;
+	return properties.finish();
 }

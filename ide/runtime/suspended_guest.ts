@@ -27,8 +27,10 @@ export type SuspendedGuestValue = Value;
 /** Scalar identity within one physical heap; a requester must retire it on replacement. */
 export type SuspendedValueIdentity = { readonly tag: ValueTag; readonly scalar: number };
 type LinkedRuntimeFunctionLocation = { readonly domain: ExecutionDomainId; readonly address: number };
+export type RuntimeFunctionLocationBuffer = { domain: ExecutionDomainId | null; address: number };
 /** RAM functions have a shared address, not a ROM socket or linked symbols. */
 export type RuntimeFunctionLocation = LinkedRuntimeFunctionLocation | { readonly domain: null; readonly address: number };
+export const STORED_ENTRIES_PREVIEW_LIMIT = 8;
 /** History restores retain snapshot identities, never borrowed guest objects or tool handles. */
 export type GuestInvalidationReason = 'execution' | 'history-restored' | 'heap-replaced';
 
@@ -67,6 +69,10 @@ export class SuspendedGuestSession {
 	private readonly entryScratch = new ScratchBuffer<ValueSlots>(() => new ValueSlots(2));
 	private readonly previewParts = new ScratchBuffer<string[]>(() => []);
 	private readonly previewVisited = new Set<number>();
+	private readonly storedParts: string[] = [];
+	private readonly formatStoredEntry = (key: Value, entry: Value): void => {
+		this.storedParts.push(`${this.formatValue(key)}: ${this.previewValue(entry, 1, STORED_ENTRIES_PREVIEW_LIMIT)}`);
+	};
 	private readonly indexKey: StringId;
 	private readonly invalidationListeners = new Set<(reason: GuestInvalidationReason) => void>();
 	private readonly historyResumeListeners = new Set<() => void>();
@@ -157,17 +163,29 @@ export class SuspendedGuestSession {
 		return valueToString(value, this.stringPool);
 	}
 
+	/** Stored keys and holes are preserved; nested entries use the bounded debugger preview. */
+	public formatStoredEntries(value: SuspendedGuestValue): string {
+		if (!valueIsTable(value)) return this.formatValue(value);
+		this.storedParts.length = 0;
+		this.visitTableEntries(value, this.formatStoredEntry);
+		const text = this.storedParts.length === 0 ? '{}' : this.storedParts.join('\n');
+		this.storedParts.length = 0;
+		return text;
+	}
+
 	/** Same guest predicate as ValueSlots.isTruthy: only nil and false are false. */
 	public isTruthy(value: SuspendedGuestValue): boolean {
 		return value !== null && value !== false;
 	}
 
 	/** A closure has no birth socket. Resolve its address on the current instruction bus. */
-	public functionLocation(value: SuspendedGuestValue): RuntimeFunctionLocation | undefined {
+	public functionLocation(value: SuspendedGuestValue, target?: RuntimeFunctionLocationBuffer): RuntimeFunctionLocation | undefined {
 		if (valueTag(value) !== ValueTag.Closure) return undefined;
 		const address = (value as Closure).functionAddress;
 		const domain = this.runtime.machine.executionAddressSpace.domainIdOnBus(address, this.cpu.readExecutionBusSignals());
-		return { domain, address };
+		if (target === undefined) return { domain, address };
+		target.domain = domain; target.address = address;
+		return target;
 	}
 
 	public linkedFunctionLocation(value: SuspendedGuestValue): LinkedRuntimeFunctionLocation | undefined {
@@ -268,6 +286,8 @@ export class SuspendedGuestSession {
 			return this.previewValueAtDepth(value, 0, maxDepth, maxEntries);
 		} finally {
 			this.previewVisited.clear();
+			for (let depth = 0; depth < this.entryScratch.size; depth++) this.entryScratch.peek(depth).clear(2);
+			this.entryScratch.clear();
 		}
 	}
 

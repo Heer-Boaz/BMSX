@@ -7,28 +7,30 @@ import type { QuickPickItem } from '../../services/quick_input/provider';
 import { ACTION_EFFECT_FIELDS } from './action_effect_fields';
 import type { BehaviorInspectionProperty } from './inspection';
 import { findRuntimeComponent, visitRuntimeComponents } from './runtime_components';
-import { inspectBehaviorRuntimeValue } from './runtime_properties';
+import { BehaviorRuntimeProperties } from './runtime_properties';
 
-/** Borrowed only while the picker owns the suspended read. Never saved in an editor input. */
-export type ActionEffectInstanceChoice = QuickPickItem & {
+/** Borrowed within one suspended read. Never saved in an editor input. */
+export type ActionEffectInstance = {
 	readonly component: Table;
 	readonly effect: Table;
+	readonly key: SuspendedGuestValue;
 };
+export type ActionEffectInstanceChoice = QuickPickItem & ActionEffectInstance;
 
-export function findActionEffectInstance(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, componentHashId: number, effectHashId: number): ActionEffectInstanceChoice | undefined {
+export function findActionEffectInstance(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, componentHashId: number, effectHashId: number): ActionEffectInstance | undefined {
 	const component = findRuntimeComponent(sources, guest, domain, 'cartlib/actioneffects/actioneffect_component', componentHashId);
 	if (component === undefined) return undefined;
-	let result: ActionEffectInstanceChoice | undefined;
+	let result: ActionEffectInstance | undefined;
 	guest.visitTableEntries(guest.readStringMember(component, 'effects'), (key, value) => {
 		const effect = value as Table;
-		if (effect.hashId === effectHashId) result = actionEffectInstanceChoice(guest, component, key, effect);
+		if (effect.hashId === effectHashId) result = { component, key, effect };
 	});
 	return result;
 }
 
 function actionEffectInstanceChoice(guest: SuspendedGuestSession, component: Table, key: SuspendedGuestValue, effect: Table): ActionEffectInstanceChoice {
 	return { label: guest.formatValue(key), description: `COMPONENT ${guest.formatValue(guest.readStringMember(component, 'id'))}`,
-		detail: `OWNER ${guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'parent'), 'id'))}`, component, effect };
+		detail: `OWNER ${guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'parent'), 'id'))}`, component, key, effect };
 }
 
 /** The actual type index, not a source registration scan or a heap-wide discovery walk. */
@@ -50,31 +52,33 @@ const INSTANCE_FIELDS = [
 
 /** One selected instance is formatted once. Paint/scroll never read the guest or evaluate a callback. */
 export function inspectActionEffectInstance(
-	sources: RuntimeSourceState, guest: SuspendedGuestSession, choice: ActionEffectInstanceChoice,
+	sources: RuntimeSourceState, guest: SuspendedGuestSession, choice: ActionEffectInstance,
+	properties = new BehaviorRuntimeProperties(sources, guest),
 ): BehaviorInspectionProperty[] {
-	const items: BehaviorInspectionProperty[] = [];
 	const parent = guest.readStringMember(choice.component, 'parent');
 	const world = guest.readStringMember(parent, 'world');
-	const state = [choice.detail, `GAMEPLAY TIME (MS): ${guest.formatValue(guest.readStringMember(world, 'gameplay_time_ms'))}`];
+	// Values remain independently refreshable; the definition follows in the same document.
+	properties.value('COMPONENT', guest.readStringMember(choice.component, 'id'));
+	properties.value('OWNER', guest.readStringMember(parent, 'id'));
+	properties.value('GAMEPLAY TIME (MS)', guest.readStringMember(world, 'gameplay_time_ms'));
 	for (const [field, label] of INSTANCE_FIELDS) {
 		const value = guest.readStringMember(choice.effect, field);
-		if (value !== null) state.push(`${label}: ${guest.formatValue(value)}`);
+		if (value !== null) properties.value(label, value);
 	}
-	items.push({ label: `INSTANCE / ${choice.description}`, value: state.join('\n'), description: '', warning: false });
-	return inspectActionEffectDefinition(sources, guest, guest.readStringMember(choice.effect, 'definition') as Table, choice.label, items);
+	return inspectActionEffectDefinition(sources, guest, guest.readStringMember(choice.effect, 'definition') as Table, guest.formatValue(choice.key), properties);
 }
 
 /** Shared property projection for a registry entry or an instance's own retained definition. */
 export function inspectActionEffectDefinition(
-	sources: RuntimeSourceState, guest: SuspendedGuestSession, definition: Table, id: string, items: BehaviorInspectionProperty[] = [],
+	sources: RuntimeSourceState, guest: SuspendedGuestSession, definition: Table, id: string, properties = new BehaviorRuntimeProperties(sources, guest),
 ): BehaviorInspectionProperty[] {
-	items.push({ label: 'LOADED DEFINITION', value: id,
-		description: 'THE SELECTED RETAINED DEFINITION. NOT A MATCH TO THE OPEN AUTHORED REGISTRATION.', warning: false });
+	properties.text('LOADED DEFINITION', id,
+		'THE SELECTED RETAINED DEFINITION. NOT A MATCH TO THE OPEN AUTHORED REGISTRATION.');
 	guest.visitTableEntries(definition, (key, value) => {
 		const name = guest.formatValue(key);
 		const metadata = valueIsString(key) ? ACTION_EFFECT_FIELDS.get(name) : undefined;
-		items.push(inspectBehaviorRuntimeValue(sources, guest, metadata === undefined ? name : metadata.label, value,
-			metadata === undefined ? '' : metadata.description));
+		properties.value(metadata === undefined ? name : metadata.label, value,
+			metadata === undefined ? '' : metadata.description);
 	});
-	return items;
+	return properties.finish();
 }

@@ -274,6 +274,27 @@ test('ordinary pane retains stable rows, refreshes changed labels, releases deta
 	input.dispose(); f.stop.dispose();
 });
 
+test('hidden Actor Lab releases borrows once, without revisiting an already released retained tree', t => {
+	const f = fixture(); t.after(() => f.stop.dispose());
+	const choice = readActorChoices(f.sources, f.guest, -1)[0], input = new ActorLabInput();
+	t.after(() => input.dispose());
+	input.domain = choice.domain; input.actorHashId = choice.hashId;
+	const projection = new ActorProjection(input, f.sources, f.guest);
+	projection.update();
+	const root = input.runtime.roots[0];
+	let value = root.value, releases = 0;
+	Object.defineProperty(root, 'value', { get: () => value, set: next => { value = next; if (next === null) releases++; } });
+	input.invalidate();
+	assert.equal(value, null);
+	assert.equal(releases, 1);
+	for (let update = 0; update < 1000; update++) input.invalidate();
+	assert.equal(releases, 1);
+	projection.update();
+	assert.notEqual(value, null);
+	input.invalidate();
+	assert.equal(releases, 2, 'reacquisition owns a new borrow lifetime');
+});
+
 test('explicit Actor Lab navigation reveals a retained child through collapsed ancestors', t => {
 	const f = fixture(); t.after(() => f.stop.dispose());
 	const choice = readActorChoices(f.sources, f.guest, -1)[0], input = new ActorLabInput();

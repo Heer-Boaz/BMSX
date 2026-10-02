@@ -39,10 +39,16 @@ actions; secondary commands use their existing context-menu owner, following
 
 A live FSM, BT or ActionEffect inspector retains only selected table hash ids
 and its resource domain. Each suspended update reacquires that instance through
-the installed cartlib type index and selected hierarchy. It formats properties
-only after execution/history invalidation, never on stationary paint. The
-property widget updates values without stealing focus, resetting selection or
-scroll, or remeasuring unchanged text. No guest tables or closures survive in
+the installed cartlib type index and selected hierarchy. Its retained property
+document rereads mutable fields after execution/history invalidation, never on
+stationary paint. Value presentation retains typed scalar inputs and the actual
+visible stored-entry sequence, not borrowed tables or an assumption that equal
+table ids imply equal contents. Unchanged values reuse their text and rows;
+definition/topology changes update the same document. Callback correspondence
+is keyed by the current address/bus and installed source metadata, not closure
+allocation identity. Empty cartridge sockets remain unmapped. The property
+widget receives changed documents without stealing focus, resetting selection
+or scroll, or remeasuring unchanged text. No guest tables or closures survive in
 the retained selection. Registered-definition/source inspection remains a
 snapshot, not a pretend live instance.
 
@@ -200,6 +206,48 @@ The game panel does not map optimized BT execution slots onto authored graph
 nodes. Live instance properties and source diagrams remain distinct surfaces.
 The existing fixed logical canvas still limits mobile presentation; browser
 resizing alone scales that canvas rather than creating a responsive DOM IDE.
+
+### Live-readback ownership correction (2026-10-02)
+
+Live instance resolution now returns borrowed runtime records, not QuickPick
+presentation. Pickers alone construct their labels/descriptions. The property
+document retains rows, value formatting and installed callback correspondence;
+it still reads the actual mutable definition, blackboard layout and nested
+preview entries on each admitted update. Preview limits are the existing
+debugger display limits, not a new runtime/query cap. Suspended guest scratch
+slots end their borrow before returning. A hidden Actor tree releases its
+borrows once per acquisition, not by recursively traversing an already released
+tree on every subsequent execution invalidation.
+
+This uses the retained-update boundary illustrated by
+[LimboAI's runtime tree viewer](https://github.com/limbonaut/limboai/blob/master/editor/debugger/behavior_tree_view.cpp),
+without importing its immutable-tree assumption or a refresh throttle.
+
+- Compiled guest checks performed 1,000 unchanged invalidation/readback updates:
+  authoritative fields were reread, rows retained their identity, no value text
+  was reformatted, and guest heap usage/scheduler cycles did not change. Mutable
+  nested entries, preview ellipsis, typed keys and definition topology were also
+  changed and read back. This measures specific repeated work, not frame rate
+  or total host allocations.
+- Callback correspondence was checked at O0 and O3, including a changed call
+  target on the same closure, replaced installed media and an empty cartridge
+  socket. Hidden Actor borrow release was exercised across 1,000 invalidations
+  and reacquisition. These are data/lifetime checks, not exact UI-text contracts.
+- A real WebGPU Studio session left the FSM inspector open during a completed
+  Actor `transition_to('/moving')` call. It visibly changed `rest` to `moving`;
+  fresh Actor-tree readback confirmed their changed activity. Physical tool
+  completions then navigated 91 -> 97 -> 93 -> 95 without reopening. BT stayed
+  attached through 95 -> 125 -> 95. ActionEffect stayed attached through
+  96 -> 111 -> 96; its displayed gameplay time changed and returned to 884.224,
+  also confirmed by fresh stored-value readback. Pointer previous/next retained
+  the scrolled document; the game panel and callback-source rows remained
+  readable. Screenshots verified presentation, not physical stepping completion.
+- The final browser build was reloaded and initialized through the real frame
+  tool, then checked again at 103 -> 113 -> 103 and pointer Play/Pause. The live
+  inspector remained in Studio. The full Lua suite passed 2,894 checks (one
+  skipped), separately from IDE typecheck, boundary/parity audits and browser
+  build. Native replay evidence remains in the history-lifetime section above;
+  no claim is made about every renderer backend or physical-device performance.
 
 ### Workbench boundary correction (2026-10-02)
 

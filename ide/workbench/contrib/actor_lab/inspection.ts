@@ -13,11 +13,10 @@ const TIMELINE_FIELDS = ['position_ms', 'head', 'playing', 'on_finished', 'bindi
 
 export function inspectActorNode(sources: RuntimeSourceState, guest: SuspendedGuestSession, node: ActorNode): BehaviorInspectionProperty[] {
 	const value = node.value!;
-	const choice = { label: node.label, description: '', detail: '', component: node.component! };
 	switch (node.kind) {
-		case 'state': case 'machine': return inspectStateMachineState(sources, guest, { ...choice, machine: node.receiver! }, { ...choice, state: value });
-		case 'tree': return inspectBehaviorTreeInstance(sources, guest, choice);
-		case 'effect': return inspectActionEffectInstance(sources, guest, { ...choice, effect: value });
+		case 'state': case 'machine': return inspectStateMachineState(sources, guest, { component: node.component!, machine: node.receiver! }, value);
+		case 'tree': return inspectBehaviorTreeInstance(sources, guest, node.component!);
+		case 'effect': return inspectActionEffectInstance(sources, guest, { component: node.component!, key: node.key, effect: value });
 	}
 	const items: BehaviorInspectionProperty[] = [];
 	if (node.kind === 'actor' || node.kind === 'timeline') {

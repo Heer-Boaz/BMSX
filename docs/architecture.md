@@ -5906,6 +5906,16 @@ menus, tabs and status stay unchanged. Existing Game View/Actor Lab previews
 suppress the extra frame without discarding the session layout choice. This
 adds no capture path, second runtime, editor group or playback clock.
 
+Live behavior property documents retain host rows, typed scalar display inputs
+and callback/source correspondence, separate from transient picker presentation.
+Execution invalidation rereads authoritative instance membership, mutable fields
+and visible stored table entries before reusing text. Closure source lookup uses
+its current address/bus and installed metadata, not its allocation identity;
+empty ROM sockets have no source correspondence. History/heap replacement
+invalidates display caches. Neither the document nor its value cache retains
+guest references across execution. Hidden Actor trees release borrows once per
+acquisition. There is no second inspection database or refresh throttle.
+
 `runHostFrame()`, `runWorkbenchHostFrame()` and `runLibretroFrame()` decide this policy after polling host input and before
 rewind service, backend execution or the live scheduler. While options are
 open, the host discards queued host time and only presents the retained scanout plus

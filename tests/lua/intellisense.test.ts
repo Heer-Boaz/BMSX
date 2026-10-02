@@ -16,6 +16,7 @@ import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
+import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { INSTRUCTION_BYTES, readInstructionWord } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { blua32SlotLiveAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
@@ -35,7 +36,7 @@ import {
 	type RuntimeResource,
 } from '../../ide/common/resource';
 import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
-import { readRuntimeLuaValue, readRuntimeLuaModuleExport, readRuntimeLuaModuleCapture, runtimeLuaFunctionSource } from '../../ide/runtime/lua_inspection';
+import { readRuntimeLuaValue, readRuntimeLuaModuleExport, readRuntimeLuaModuleCapture, runtimeLuaFunctionSource, RuntimeLuaFunctionSourceCache } from '../../ide/runtime/lua_inspection';
 import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
 import { SuspendedGuestSession, SuspendedGuestValueKind } from '../../ide/runtime/suspended_guest';
 import {
@@ -637,6 +638,7 @@ return {}`;
 
 	test(`suspended inspection reads stored key kinds and actual callback source at O${optLevel}`, () => {
 		const source = `callback = function() return 7 end
+other_callback = function() return 8 end
 entries = { [1] = 'numeric', ['1'] = 'string', [true] = 'boolean', [callback] = 'function' }
 halt_until_irq`;
 		const { runtime, bridge } = createIntellisenseRuntime(source, optLevel);
@@ -649,6 +651,24 @@ halt_until_irq`;
 		assert.deepEqual(location.resource, { domain: SYSTEM_RESOURCE_DOMAIN, path: 'cart.lua' });
 		assert.deepEqual(location.range.start, { line: 1, column: 12 });
 		assert.equal(location.installedSource, source);
+		const correspondence = new RuntimeLuaFunctionSourceCache(bridge.sources, guest);
+		const cached = correspondence.update(callback)!;
+		assert.deepEqual(cached, location);
+		for (let update = 0; update < 1000; update++) assert.strictEqual(correspondence.update(callback), cached);
+		// Hot Resume changes physical call targets without replacing the allocation identity.
+		const closure = callback as Closure, oldAddress = closure.functionAddress;
+		closure.functionAddress = (guest.global('other_callback') as Closure).functionAddress;
+		assert.notStrictEqual(correspondence.update(callback), cached);
+		assert.deepEqual(correspondence.update(callback), runtimeLuaFunctionSource(bridge.sources, guest, callback));
+		// A mapped cartridge address does not imply a cartridge is installed on that bus.
+		closure.functionAddress = CART_ROM_BASE;
+		assert.equal(correspondence.update(callback), undefined);
+		assert.equal(runtimeLuaFunctionSource(bridge.sources, guest, callback), undefined);
+		closure.functionAddress = oldAddress;
+		const restored = correspondence.update(callback);
+		bridge.sources.currentBlua32Media = { ...bridge.sources.currentBlua32Media };
+		assert.notStrictEqual(correspondence.update(callback), restored);
+		assert.deepEqual(correspondence.update(callback), location);
 		const entries = new Map<SuspendedGuestValueKind, string>();
 		guest.visitTableEntries(guest.global('entries'), (key, value) => {
 			entries.set(guest.kind(key), guest.formatValue(value));
