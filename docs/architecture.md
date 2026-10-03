@@ -5308,7 +5308,16 @@ new conversations; draft submission and message selection remain pane-scoped.
 The CLI conversation-history action likewise opens its read-only viewer from any
 editor. Merely listing commands never connects to an agent or registers tools.
 The Node adapter owns the isolated Codex account/process, fixed operation
-protocol and process lease. Codex owns durable threads and queued text; native
+protocol and process lease. On POSIX hosts (including WSL), the owned App Server
+starts in its own process group. Its exit is not a profile-release barrier:
+background Git/plugin children can outlive even a successful exit. The transport
+retires that group and joins both pipe closure and the absence of executing group
+members before releasing the lease. Abrupt host exit can signal the group but
+cannot join it, so it does not remove the lease. Process-group observation runs
+only during teardown, outside all emulation and conversation hot paths. Native
+Windows still joins only the direct child; Windows Job Object containment is a
+separate host implementation, not supplied by the POSIX group contract.
+Codex owns durable threads and queued text; native
 history browsing is separate from resuming execution. Studio reads paged history
 and notification-driven queue snapshots, not JSONL files or polling endpoints.
 Normal submission queues while busy; Direct steers the exact active turn and

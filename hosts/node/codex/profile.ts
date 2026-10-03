@@ -1,5 +1,4 @@
 import { chmod, mkdir, realpath, rm } from 'node:fs/promises';
-import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { CodexAdmissionError } from './protocol';
 
@@ -9,7 +8,6 @@ export class CodexProfile {
 	public readonly codexHome: string;
 	public readonly env: NodeJS.ProcessEnv;
 	private readonly lease: string;
-	private readonly releaseOnExit = () => { rmSync(this.lease, { recursive: true, force: true }); };
 
 	private constructor(root: string) {
 		this.lease = join(root, 'lease');
@@ -34,9 +32,6 @@ export class CodexProfile {
 			throw new CodexAdmissionError(`Another Studio owns the Codex account profile, or one was killed before releasing it. `
 				+ `Close the other Studio, or remove ${profile.lease} to recover.`);
 		}
-		// The owner releases its own lease even when it is signalled away; a lease is only ever
-		// removed by the process holding it, never reclaimed from a live owner.
-		process.once('exit', profile.releaseOnExit);
 		try {
 			await mkdir(profile.codexHome, { recursive: true, mode: 0o700 });
 			for (const directory of [profile.cwd, profile.env.HOME, profile.env.TMPDIR]) {
@@ -49,9 +44,12 @@ export class CodexProfile {
 		}
 	}
 
-	/** Only call after joining process exit; account credentials are never copied or removed here. */
+	/**
+	 * Only call after joining process shutdown. An abrupt host exit cannot await
+	 * that barrier and must leave the lease held, not permit a concurrent owner.
+	 * Account credentials are never copied or removed here.
+	 */
 	public async release(): Promise<void> {
-		process.removeListener('exit', this.releaseOnExit);
 		await rm(this.lease, { recursive: true });
 	}
 }

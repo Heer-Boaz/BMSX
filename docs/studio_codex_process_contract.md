@@ -237,3 +237,47 @@ old admission hole, and prompt/login/logout now all reject before any RPC is sen
 The proxy has no inference endpoint or remote-forwarding path. Successful browser
 login/reconnect/logout runs on all three renderers. This is not personal account
 authorization, token-refresh or paid-inference verification.
+
+## Background process shutdown
+
+A controlled native startup reproduced a Git checkout still running after
+`CodexStdio.stop()` had returned `{code: 0, signal: null, forced: false}`. The
+upstream plugin manager starts its curated-repository synchronization on a
+background OS thread; the Git subprocess can outlive the App Server. Retrying
+recursive directory removal would race that writer rather than join it.
+
+On POSIX, `stdio.ts` now starts the owned executable in a private process group.
+EOF remains the normal App Server shutdown request. Both natural exit and the
+shutdown deadline retire the group, including a CLI launcher and inherited
+background descendants. `closed` joins stream closure **and** the group exit
+barrier before `session.ts` releases the profile. A paused stdout is drained on
+exit, including when descendants inherited the pipe. `forced` records a timeout
+of the App Server itself; retiring background group members does not change its
+exit status. No plugins, capabilities, or account settings are disabled.
+
+`hosts/node/common/process_group.ts` owns POSIX signaling and exit observation.
+Only `ESRCH` means the group already exited. After a delivered kill, `ps` observes
+group members until none can execute; zombies have already exited and cannot
+write files. Observation occurs only during teardown, not during normal use.
+Signaling/observation failures reject shutdown instead of releasing the lease.
+An abrupt host exit can signal but cannot await shutdown, so no exit handler
+removes the profile lease. Ordinary server SIGINT/SIGTERM still joins shutdown.
+
+This is POSIX group ownership, not arbitrary daemon containment. A process that
+explicitly creates another group is outside it. Native Windows still uses the
+existing direct-child lifetime; equivalent Job Object ownership is separate work.
+
+References studied before implementation:
+- [Codex plugin startup owner](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/core-plugins/src/manager.rs)
+  and [Git subprocess lifetime](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/core-plugins/src/startup_sync.rs).
+- [Codex process-group ownership](https://github.com/openai/codex/blob/604061ce51d194a3aa6aad3b3170240d096e1725/codex-rs/utils/pty/src/process_group.rs)
+  and [VS Code process-tree termination](https://github.com/microsoft/vscode/blob/main/src/vs/base/node/processes.ts).
+- [Node child-process lifecycle](https://nodejs.org/api/child_process.html#subprocesskillsignal):
+  signaling is not proof of exit, and descendants are not joined by the parent's
+  close event when they do not inherit its stdio.
+
+The native regression uses a local Git repository and a controlled checkout
+filter, with ordinary native plugin startup still enabled. Separate peers cover
+graceful exit, a crash with inherited/paused stdout, forced shutdown, and abrupt
+host exit. No account login, public repository download, or paid inference is
+needed for that reproduction.

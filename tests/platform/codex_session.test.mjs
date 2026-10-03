@@ -346,11 +346,7 @@ test('profile lease excludes concurrent processes and filters ambient environmen
 		await assert.rejects(CodexProfile.acquire(root), /Another Studio owns the Codex account profile/);
 	} finally { await profile.release(); }
 	const next = await CodexProfile.acquire(root);
-	// The owner releases its own lease even when it is signalled away, so a killed Studio
-	// does not leave the next one permanently refused.
-	assert.equal(process.listeners('exit').length, 1);
 	await next.release();
-	assert.equal(process.listeners('exit').length, 0);
 	await assert.rejects(access(join(root, 'lease')), { code: 'ENOENT' });
 });
 
