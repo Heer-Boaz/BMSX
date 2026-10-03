@@ -85,11 +85,11 @@ test('the ordinary server authorizes first and opens Codex only on explicit Conn
 	const response = await fetch(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${workspaceToken}` } });
 	assert.equal(response.status, 503);
 	assert.ok((await response.text()).length > 0, 'a CLI that cannot speak the protocol fails the connect with a reason');
-	// A version difference is reported, not refused, so the App Server is launched after the
-	// probe. The guarantee is the order and that neither runs before an explicit Connect.
+	// initialize reports the native version; no unsupervised --version process
+	// runs alongside the owned App Server, nor before an explicit Connect.
 	const invocations = (await readFile(f.trace, 'utf8')).trim().split('\n');
-	assert.equal(invocations[0], '--version');
-	assert.ok(invocations[1]?.startsWith('app-server --stdio'), invocations[1]);
+	assert.equal(invocations.length, 1);
+	assert.ok(invocations[0].startsWith('app-server --stdio'), invocations[0]);
 	await access(join(f.state, 'bmsx', 'studio-codex', 'account'));
 	await assert.rejects(access(join(f.state, 'bmsx', 'studio-codex', 'lease')), { code: 'ENOENT' });
 	child.kill();
@@ -98,7 +98,7 @@ test('the ordinary server authorizes first and opens Codex only on explicit Conn
 
 for (const host of ['127.0.0.1', '0.0.0.0']) test(`ordinary server ${host}: real Codex, source IO and joined lease shutdown`, { timeout: 30000 }, async t => {
 	const f = await fixture(t, host);
-	await rm(join(f.bin, 'codex')); // Use the installed pinned CLI, with only the fixture's empty account profile.
+	await rm(join(f.bin, 'codex')); // Use the installed CLI, with only the fixture's empty account profile.
 	const admission = await f.request('/__bmsx__/session', { headers: { 'X-BMSX-Client': 'studio' } });
 	const { workspaceToken } = await admission.json(), headers = { Authorization: `Bearer ${workspaceToken}`, Origin: f.address };
 	const response = await f.request('/__bmsx__/assistant/connect', { method: 'POST', headers });

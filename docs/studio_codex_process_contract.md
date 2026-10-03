@@ -20,10 +20,11 @@ codex app-server generate-ts --experimental --out /tmp/bmsx-codex-protocol
 npm run test:codex-contract
 ```
 
-The version gate is exact. A changed CLI needs another contract audit, not a
-silent compatibility path or guessed SDK types. Generated files were inspected
-outside the checkout; the test does not import a whole external DTO tree into
-Studio.
+The original audit used an exact version gate; that gate has been removed.
+Current admission checks capabilities and effective configuration, not a CLI
+version pin. `initialize.userAgent` identifies the admitted process; startup no
+longer launches an independent `--version` process. Generated files are inspected
+outside the checkout, not imported as an external DTO tree into Studio.
 
 The real stdio process accepts initialize/initialized, a thread carrying the
 admitted sandbox and experimental dynamic tools, and turn/start. A dynamic request names
@@ -56,11 +57,12 @@ through Studio" would not repair this ownership error.
 
 1. **Owned profile and process directory.** Use a dedicated Studio Codex profile
    and a private non-project working directory. Do not import the user's global
-   or a cart's project MCP/hook/plugin configuration. Source arrives through
-   workbench tools, not direct reads of an out-of-date filesystem copy. Account
+   or a cart's project MCP/hook/plugin configuration. Studio tools expose the
+   current working copy; native filesystem tools operate on the workspace, not
+   a separate source mirror. Account
    connection is an explicit product capability of that profile; do not copy or
    rewrite existing CLI credentials as a shortcut.
-2. **Pinned capability set.** Before thread creation, inspect the external
+2. **Explicit capability set.** Before thread creation, inspect the external
    process's effective configuration and reject unowned MCP/process capabilities.
    This profile grants the embedded CLI its full capability set: shell and unified
    execution, the code-mode host, plugins/apps, browser/computer use, image
@@ -69,7 +71,7 @@ through Studio" would not repair this ownership error.
    not stylistic: `memories` runs a second billed inference after every turn and
    breaks the guarantee that browsing starts no inference, and the startup update
    check reaches api.github.com for no capability the session asked for. Admission
-   still binds: the measured CLI version, the launch policy actually in effect with
+   still binds: the launch policy actually in effect with
    no unowned configuration layer, and the sandbox the thread reports back.
    Tool dispatch requires the code-mode host; with it off every Studio tool call
    fails in `dispatch_tool_call_with_state`. Approvals stay `never` because the
@@ -84,11 +86,12 @@ through Studio" would not repair this ownership error.
    requests and captured contexts. Reconnect cannot reissue an old tool reply or
    revive an edit proposal from an old conversation. Token refresh and protocol
    reconnect are not source-edit authorization.
-5. **Models remain authoritative.** Reads create resource/version receipts from
+5. **Source owners remain authoritative.** Studio reads create resource/version receipts from
    `WorkspaceSourceContext`; proposed edits cross the external protocol's own
    boundary and produce `WorkspaceEditProposal`. Only explicit review Apply
    reaches shared history. Save/build/run/test retain their own operation rights
-   and results. No process gets a second source-writing route.
+   and results. The explicitly enabled CLI filesystem tools can also edit the
+   workspace; those writes enter Studio through its ordinary source observation.
 
 The isolated probe's actual advertised tools are `request_user_input`, `skills`
 and the supplied `studio_read`. Injecting unadvertised `apply_patch`,
@@ -113,20 +116,21 @@ must still be accounted for when composing a production profile.
 `hosts/node/codex` is the process boundary, not an IDE model owner or a general
 process-launch service:
 
-- `profile.ts` creates an exclusive private process lease with empty HOME/XDG
+- `profile.ts` acquires the supervisor-owned kernel lock and creates empty HOME/XDG
   directories, private cwd/tmp and a separate persistent Codex account directory.
   Environment inheritance is an explicit platform allowlist, not `process.env`
-  spread. Only the account directory (including native threads/queues) survives normal process exit. No user
-  credentials/configuration are copied; conflicting leases fail rather than
-  guessing that a lock is stale. The platform composition must choose this
+  spread. Account data (including native threads/queues) and the persistent lock
+  file survive normal process exit; scratch does not. No user credentials or
+  configuration are copied. Conflicting live locks fail rather than guessing
+  ownership from filesystem contents. The platform composition must choose this
   application-owned directory, never accept it from a browser or model.
-- `policy.ts` emits the pinned external TOML launch representation and admits
+- `policy.ts` emits the explicit external TOML launch representation and admits
   actual configuration layers. Every nonempty non-Studio layer is rejected,
   including otherwise harmless user or managed overrides. Empty-map merging is
   never treated as revocation. Admission repeats at turn start because account/
-  managed configuration can change after connection. Shell/patch environments,
-  MCP, skills discovery, plugins and other executable capabilities are absent
-  from the measured tool surface. No permissions can escalate.
+  managed configuration can change after connection. The explicitly enabled
+  native capabilities include shell/patch and plugin tools; this is lifetime
+  ownership and browser-operation admission, not an OS security sandbox.
 - `stdio.ts` continuously drains responses, notifications and server requests.
   Outstanding requests have independent correlation and deadlines; waiting for
   a Studio tool never blocks an interrupt or other response. Protocol failure,
@@ -142,9 +146,8 @@ process-launch service:
   a subsequent turn. A session-wide AbortSignal also covers startup. `closed`
   joins actual process exit and releases the lease, once.
 
-The actual adapter advertises only the supplied `studio_read` in the offline
-fixture: disabling orchestrator skills and host skill discovery removes the
-earlier `skills` namespace. This is the tested model metadata/version, **not** a
+The original isolated adapter audit supplied only `studio_read` in its offline
+fixture. This is historical tested model metadata/version, **not** a
 claim that all model catalogs expose identical utility tools. The CLI's own
 builtins are admitted alongside the Studio tools, so a turn can write source and
 run commands directly. What stays bounded is the browser boundary: the session
@@ -246,38 +249,97 @@ upstream plugin manager starts its curated-repository synchronization on a
 background OS thread; the Git subprocess can outlive the App Server. Retrying
 recursive directory removal would race that writer rather than join it.
 
-On POSIX, `stdio.ts` now starts the owned executable in a private process group.
-EOF remains the normal App Server shutdown request. Both natural exit and the
-shutdown deadline retire the group, including a CLI launcher and inherited
-background descendants. `closed` joins stream closure **and** the group exit
-barrier before `session.ts` releases the profile. A paused stdout is drained on
-exit, including when descendants inherited the pipe. `forced` records a timeout
-of the App Server itself; retiring background group members does not change its
-exit status. No plugins, capabilities, or account settings are disabled.
+The initial POSIX-group fix has been replaced, not wrapped. A separate native
+supervisor in `hosts/node/process_scope` owns both the kernel lock and all
+descendants. It is detached from Node's own process group/job so Node's abrupt
+exit or SIGKILL cannot release the profile ahead of its background writers.
+Request/status pipes belong only to Node and the supervisor; workload stdio
+passes directly through inherited handles. There is no RPC relay, notification
+polling, global `ps` scan or emulation-frame work.
 
-`hosts/node/common/process_group.ts` owns POSIX signaling and exit observation.
-Only `ESRCH` means the group already exited. After a delivered kill, `ps` observes
-group members until none can execute; zombies have already exited and cannot
-write files. Observation occurs only during teardown, not during normal use.
-Signaling/observation failures reject shutdown instead of releasing the lease.
-An abrupt host exit can signal but cannot await shutdown, so no exit handler
-removes the profile lease. Ordinary server SIGINT/SIGTERM still joins shutdown.
+- **Linux/WSL:** `PR_SET_CHILD_SUBREAPER` adopts orphaned descendants, including
+  `setsid`/double-fork children. The workload has its own process group so its
+  group signals cannot kill the supervisor. Shutdown kills unreaped direct children and
+  continues on `SIGCHLD` as further descendants are adopted. Only `waitpid`'s
+  `ECHILD` proves completion. `/proc/self/task/<tid>/children` names children of
+  this single-threaded owner; it is not a cross-process PID/ancestry heuristic.
+  A PID is never reused between discovery and kill because this owner has not
+  reaped it. `flock` retains exclusive ownership through the whole join.
+- **Windows:** a Job Object has `KILL_ON_JOB_CLOSE` and no breakaway flags. The
+  child is created suspended, assigned to that job and only then resumed.
+  Nested jobs/detached grandchildren remain in the outer job. Shutdown waits
+  for the kernel's active-process count to reach zero. Completion-port messages
+  wake the wait; periodic count observation during teardown handles Microsoft's
+  documented non-guaranteed notification delivery. `LockFileEx` retains the
+  profile lock until after that barrier. Separate request/status pipe handles
+  avoid synchronous Windows duplex-pipe serialization.
 
-This is POSIX group ownership, not arbitrary daemon containment. A process that
-explicitly creates another group is outside it. Native Windows still uses the
-existing direct-child lifetime; equivalent Job Object ownership is separate work.
+EOF remains normal App Server shutdown; a deadline requests forced scope
+termination. Natural main-process exit also retires residual descendants. A
+paused stdout is drained before RPC closure. `forced` records an App Server
+timeout, not the retirement of leftover children. No capabilities, plugins or
+account settings are disabled. `initialize` supplies version metadata without
+an extra unsupervised version probe.
+
+`owner.lock` is persistent and must **not** be unlinked to recover a session.
+Its existence says nothing about ownership. Normal release joins descendants,
+removes `lease/` scratch while still locked, then releases the supervisor. After
+Node host death, request-pipe EOF makes the supervisor join independently and
+release the lock. The next acquisition disposes of abandoned scratch under that
+same lock; `account/` is never removed. A live competing owner is refused.
+
+This is lifecycle ownership of descendants, not containment of a hostile
+administrator or an existing external service. Directly killing the native
+supervisor itself (rather than Node), changing workload credentials so they are
+no longer killable, or unlinking the lock file is outside this recovery contract.
+Stop old server versions before upgrading: their directory-only leases do not
+participate in the new kernel lock.
+
+### Native product and host support
+
+The helper is an optional **Node host** product, not machine/runtime C++ code.
+On first use, `build.mjs` compiles with the local C++17 compiler (Linux `CXX`/
+`c++`, Windows Visual Studio C++ Build Tools found through `vswhere`). It caches
+by source/platform/architecture under `.bmsx/host-process-scope`. Publication is
+atomic and never replaces a running helper's executable. Later acquisitions
+reuse the binary. Missing tools fail the Codex connection explicitly; no weaker
+process-tree fallback is substituted. Standalone player/Studio never loads this
+Node-only path. Supported scope hosts are Linux/WSL and native Windows; macOS
+does not yet have an implementation of this stronger lifetime contract.
 
 References studied before implementation:
 - [Codex plugin startup owner](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/core-plugins/src/manager.rs)
   and [Git subprocess lifetime](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/core-plugins/src/startup_sync.rs).
 - [Codex process-group ownership](https://github.com/openai/codex/blob/604061ce51d194a3aa6aad3b3170240d096e1725/codex-rs/utils/pty/src/process_group.rs)
   and [VS Code process-tree termination](https://github.com/microsoft/vscode/blob/main/src/vs/base/node/processes.ts).
+- [Tini's subreaper, signal and reaping implementation](https://github.com/krallin/tini/blob/master/src/tini.c).
+- [libuv's Windows process implementation](https://github.com/libuv/libuv/blob/v1.x/src/win/process.c):
+  its global job deliberately permits descendant breakaway, so it is not enough
+  for this profile ownership contract.
+- [Microsoft hcsshim Job Object owner](https://github.com/microsoft/hcsshim/blob/main/internal/jobobject/jobobject.go)
+  and [Windows completion-port guarantees](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_associate_completion_port).
 - [Node child-process lifecycle](https://nodejs.org/api/child_process.html#subprocesskillsignal):
   signaling is not proof of exit, and descendants are not joined by the parent's
   close event when they do not inherit its stdio.
 
 The native regression uses a local Git repository and a controlled checkout
-filter, with ordinary native plugin startup still enabled. Separate peers cover
-graceful exit, a crash with inherited/paused stdout, forced shutdown, and abrupt
-host exit. No account login, public repository download, or paid inference is
-needed for that reproduction.
+filter, with ordinary native plugin startup still enabled. Real OS peers cover
+graceful exit, a crash with inherited/paused stdout, forced shutdown, detached
+children, orphaned grandchildren, abrupt host exit and host SIGKILL. Reacquisition
+checks descendant death and retained account data, not just a missing directory.
+No personal account login, public repository download or paid inference is used.
+
+Validation on 2026-10-03:
+
+- 80 Linux/WSL process/session/account/HTTP/entry/socket/observer checks pass,
+  including a workload killing its own process group without killing its owner.
+- 17 lifecycle checks pass under native Windows Node, repeated three times.
+  The two POSIX-only cases (process-group signaling and the native Git fixture)
+  remain Linux evidence, not claimed Windows App Server/login coverage.
+- The actual `serve-dist.mjs` entry and installed Codex were also exercised with
+  a held local Git checkout: SIGKILL of Node, a new server using the same profile,
+  successful reconnect, confirmed old checkout exit, retained account sentinel
+  and normal joined shutdown. This is real server/process evidence, not a UI or
+  paid-model claim.
+- Node/tests typechecks, strict architecture boundaries and `git diff --check`
+  pass. Evidence is retained in `.bmsx/authoring/codex-process-scope-20261003/`.

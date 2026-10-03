@@ -1,8 +1,6 @@
 import type { AssistantConfiguration, AssistantModelSelection, AssistantSourceReference, AssistantUsage } from '../../common/assistant_protocol';
 import { CodexModels } from './models';
 import { CodexUsage, type CodexRateLimits, type CodexRateLimitsRead } from './usage';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { CODEX_AUDITED_VERSION, CodexPolicy, type CodexProvider } from './policy';
 import { CodexProfile } from './profile';
@@ -86,7 +84,7 @@ export class CodexSession {
 
 	private constructor(private readonly profile: CodexProfile, private readonly options: CodexSessionOptions, private readonly policy: CodexPolicy) {
 		this.toolNames = new Set(options.tools.map(tool => tool.name));
-		this.rpc = new CodexStdio(options.executable ?? 'codex', policy.args, profile.cwd, profile.env,
+		this.rpc = new CodexStdio(profile.scope, options.executable ?? 'codex', policy.args, profile.cwd, profile.env,
 			message => this.receive(message));
 		this.models = new CodexModels(this.rpc);
 		this.history = new CodexHistory(this.rpc, options.workspaceRoot, options.tools, this.models);
@@ -104,13 +102,10 @@ export class CodexSession {
 		const profile = await CodexProfile.acquire(options.profileDirectory);
 		let session: CodexSession | undefined;
 		try {
-			const version = await promisify(execFile)(options.executable ?? 'codex', ['--version'],
-				{ cwd: profile.cwd, env: profile.env, timeout: 5000, windowsHide: true, signal: options.signal });
-			const installed = version.stdout.trim();
 			const policy = new CodexPolicy(options.provider);
 			options.signal.throwIfAborted();
 			session = new CodexSession(profile, options, policy);
-			const initialized = await session.rpc.request<{ codexHome: string }>('initialize', {
+			const initialized = await session.rpc.request<{ codexHome: string; userAgent: string }>('initialize', {
 				clientInfo: { name: 'bmsx_studio', title: 'BMSX Studio', version: '1' },
 				capabilities: { experimentalApi: true, requestAttestation: false },
 			});
@@ -125,8 +120,8 @@ export class CodexSession {
 			session.configuration = session.models.resolve(session.defaults, true);
 			// Said once the capability gates have accepted this process, so it reads as context
 			// rather than as a warning about something that might still refuse.
-			if (installed !== `codex-cli ${CODEX_AUDITED_VERSION}`) {
-				options.onEvent({ type: 'notice', text: `${installed} is running; Studio was last audited against `
+			if (!initialized.userAgent.startsWith(`bmsx_studio/${CODEX_AUDITED_VERSION} `)) {
+				options.onEvent({ type: 'notice', text: `${initialized.userAgent} is running; Studio was last audited against `
 					+ `codex-cli ${CODEX_AUDITED_VERSION}. The capability and thread gates accepted it.` });
 			}
 			return session;

@@ -1,92 +1,78 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { killProcessGroup, waitForProcessGroupExit } from '../common/process_group';
+import { finished } from 'node:stream/promises';
+import type { ProcessScope, ProcessExit } from '../process_scope/scope';
 import { CodexProtocolError, parseRpcMessage, type RpcMessage } from './protocol';
 import { CodexRpc } from './rpc';
 
-/** forced records an App Server shutdown timeout, not retirement of leftover group members. */
-export type CodexProcessExit = { code: number | null; signal: NodeJS.Signals | null; forced: boolean; error?: Error };
+/** forced records an App Server shutdown timeout, not retirement of leftover descendants. */
+export type CodexProcessExit = ProcessExit & { forced: boolean };
 /** One ordered stdio connection. Tool waits do not block response dispatch; consumers own backpressure. */
 export class CodexStdio extends CodexRpc {
-	private readonly child: ChildProcessWithoutNullStreams;
 	public readonly closed: Promise<CodexProcessExit>;
 	private stopping = false;
 	private failure: Error | undefined;
 	private forced = false;
 	private killTimer: NodeJS.Timeout | undefined;
 	private stderr = '';
-	private readonly groupClosed = Promise.withResolvers<void>();
-	private terminatingGroup = false;
-	private readonly onHostExit = () => { killProcessGroup(this.child.pid!); };
 	private readonly lifetime = new AbortController();
 	public get signal(): AbortSignal { return this.lifetime.signal; }
 
 	public constructor(
+		private readonly scope: ProcessScope,
 		executable: string, args: string[], cwd: string, env: NodeJS.ProcessEnv,
 		receive: (message: RpcMessage) => void,
 		requestTimeoutMs = 30_000,
 		private readonly shutdownTimeoutMs = 3_000,
 	) {
 		super(receive, requestTimeoutMs);
-		this.child = spawn(executable, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
-			detached: process.platform !== 'win32' });
-		if (process.platform !== 'win32' && this.child.pid !== undefined) process.once('exit', this.onHostExit);
-		const lines = createInterface({ input: this.child.stdout, crlfDelay: Infinity });
+		const lines = createInterface({ input: scope.stdout, crlfDelay: Infinity });
 		lines.on('line', line => {
 			if (this.stopping) return;
 			try { this.dispatch(parseRpcMessage(line)); }
 			catch (error) { this.stop(error as Error); }
 		});
-		this.child.stderr.setEncoding('utf8');
-		this.child.stderr.on('data', (chunk: string) => { this.stderr = (this.stderr + chunk).slice(-8192); });
-		this.child.stdin.on('error', error => { this.stop(error); });
-		this.child.stdout.on('error', error => { this.stop(error); });
-		this.child.on('error', error => { this.stop(error); });
-		this.child.once('exit', (code, signal) => {
+		scope.stderr.setEncoding('utf8');
+		scope.stderr.on('data', (chunk: string) => { this.stderr = (this.stderr + chunk).slice(-8192); });
+		scope.stdin.on('error', error => { this.stop(error); });
+		void scope.exited.then(({ code, signal, error }) => {
 			clearTimeout(this.killTimer);
+			this.failure ??= error;
 			if (!this.stopping || code !== 0 || signal !== null) {
 				this.failure ??= new CodexProtocolError(`Codex exited (${code}, ${signal}): ${this.stderr}`);
 			}
 			this.retire(this.failure);
-			this.child.stdout.resume();
-			// Git's plugin checkout can outlive a successful App Server exit. Retire
-			// its group even when the leader exited gracefully, before releasing HOME.
-			if (process.platform !== 'win32') this.terminateGroup();
-			else this.groupClosed.resolve();
+			scope.stdout.resume();
 		});
-		const streamsClosed = new Promise<CodexProcessExit>(resolve => {
-			this.child.once('close', (code, signal) => {
-				clearTimeout(this.killTimer);
-				lines.close();
-				if (this.child.pid === undefined) this.groupClosed.resolve(); // Failed spawn has no group.
-				resolve({ code, signal, forced: this.forced, error: this.failure });
-			});
+		const streamsClosed = Promise.all([scope.stdout, scope.stderr].map(stream =>
+			finished(stream, { readable: true, writable: false, cleanup: true }).catch(error => { this.stop(error); })));
+		this.closed = Promise.all([scope.exited, scope.joined, streamsClosed]).then(([exit, join]) => {
+			lines.close();
+			if (join.error) throw join.error;
+			return { code: exit.code, signal: exit.signal, forced: this.forced, error: this.failure };
 		});
-		this.closed = Promise.all([streamsClosed, this.groupClosed.promise]).then(([exit]) => exit)
-			.finally(() => process.removeListener('exit', this.onHostExit));
+		scope.start(executable, args, cwd, env);
 	}
 
 	public setOutputPaused(paused: boolean): void {
-		if (paused) this.child.stdout.pause();
-		else this.child.stdout.resume();
+		if (paused) this.scope.stdout.pause();
+		else this.scope.stdout.resume();
 	}
 
 	public send(message: RpcMessage): void {
 		if (this.stopping) throw this.failure ?? new CodexProtocolError('Codex connection closed');
 		// Node owns stream buffering; all writes stay ordered on this single channel.
-		this.child.stdin.write(`${JSON.stringify(message)}\n`, error => { if (error) this.stop(error); });
+		this.scope.stdin.write(`${JSON.stringify(message)}\n`, error => { if (error) this.stop(error); });
 	}
 
 	/** Retirement is synchronous; joining OS exit is asynchronous. Never reconnect/replay. */
 	public stop(error?: Error): Promise<CodexProcessExit> {
 		if (!this.stopping) {
 			this.retire(error);
-			this.child.stdout.resume(); // EOF must drain even when the event consumer disappeared under pressure.
-			this.child.stdin.end();
+			this.scope.stdout.resume(); // EOF must drain even when the event consumer disappeared under pressure.
+			this.scope.stdin.end();
 			this.killTimer = setTimeout(() => {
 				this.forced = true;
-				if (process.platform === 'win32') this.child.kill('SIGKILL');
-				else this.terminateGroup();
+				this.scope.terminate();
 			}, this.shutdownTimeoutMs);
 		}
 		return this.closed;
@@ -98,15 +84,5 @@ export class CodexStdio extends CodexRpc {
 		this.failure = error;
 		this.rejectPending(error ?? new CodexProtocolError('Codex connection closed'));
 		this.lifetime.abort(error);
-	}
-
-	private terminateGroup(): void {
-		if (this.terminatingGroup) return;
-		this.terminatingGroup = true;
-		try {
-			if (killProcessGroup(this.child.pid!)) {
-				void waitForProcessGroupExit(this.child.pid!).then(this.groupClosed.resolve, this.groupClosed.reject);
-			} else this.groupClosed.resolve();
-		} catch (error) { this.groupClosed.reject(error); }
 	}
 }

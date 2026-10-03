@@ -5307,16 +5307,21 @@ focus. The shared chat-command owner reveals the assistant input for pickers and
 new conversations; draft submission and message selection remain pane-scoped.
 The CLI conversation-history action likewise opens its read-only viewer from any
 editor. Merely listing commands never connects to an agent or registers tools.
-The Node adapter owns the isolated Codex account/process, fixed operation
-protocol and process lease. On POSIX hosts (including WSL), the owned App Server
-starts in its own process group. Its exit is not a profile-release barrier:
-background Git/plugin children can outlive even a successful exit. The transport
-retires that group and joins both pipe closure and the absence of executing group
-members before releasing the lease. Abrupt host exit can signal the group but
-cannot join it, so it does not remove the lease. Process-group observation runs
-only during teardown, outside all emulation and conversation hot paths. Native
-Windows still joins only the direct child; Windows Job Object containment is a
-separate host implementation, not supplied by the POSIX group contract.
+The Node adapter owns the isolated Codex account, fixed operation protocol and
+scratch directory. `hosts/node/process_scope` owns the kernel profile lock and
+the complete descendant lifetime separately from the RPC transport. Its small
+native supervisor survives Node host departure: control-pipe EOF initiates
+cleanup, and ownership is not released until descendants have exited. Linux/WSL
+uses a private child subreaper and `waitpid` through `ECHILD`; Windows uses a
+non-breakaway Job Object, suspended-child admission and the job's active-process
+count. This includes detached grandchildren, not just one POSIX process group.
+The RPC streams are direct workload pipes, not a supervisor relay. A normal
+close joins process exit and drains output, removes scratch under the retained
+lock, then releases that lock. Reacquisition after a host crash removes abandoned
+scratch only after acquiring the same kernel lock; it never guesses from a pid,
+timestamp or lock-file presence. Account data is retained. The native product is
+built/cached locally on first use; no emulator/toolchain build is involved.
+See [process ownership and supported hosts](studio_codex_process_contract.md#background-process-shutdown).
 Codex owns durable threads and queued text; native
 history browsing is separate from resuming execution. Studio reads paged history
 and notification-driven queue snapshots, not JSONL files or polling endpoints.

@@ -18,7 +18,7 @@ test('real device-code contract polls and cancels without credentials or an OAut
 	const messages: string[] = [];
 	// The issuer override exists only in this contract test; production profile.env does not admit it.
 	assert.equal(profile.env.CODEX_APP_SERVER_LOGIN_ISSUER, undefined);
-	const rpc = new CodexStdio('codex', policy.args, profile.cwd, { ...profile.env, CODEX_APP_SERVER_LOGIN_ISSUER: f.url }, message => messages.push(message.method!));
+	const rpc = new CodexStdio(profile.scope, 'codex', policy.args, profile.cwd, { ...profile.env, CODEX_APP_SERVER_LOGIN_ISSUER: f.url }, message => messages.push(message.method!));
 	t.after(async () => { const exit = await rpc.stop(); assert.equal(exit.forced, false); assert.equal(exit.code, 0); await profile.release(); await rm(f.root, { recursive: true }); });
 	await rpc.request('initialize', { clientInfo: { name: 'bmsx_account_contract', version: '1' }, capabilities: { experimentalApi: true } });
 	rpc.send({ method: 'initialized', params: {} });

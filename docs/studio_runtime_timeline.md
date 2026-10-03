@@ -382,13 +382,14 @@ Interaction validation:
   fake document or production change was needed. The workflow's tab gesture now
   uses the actual tab viewport, excluding overflow actions; FSM source Details
   uses its registered command rather than an obsolete toolbar position.
-- The broad workflow now reaches `testStudioGraphZoom`, whose toolbar probes
-  still look for zoom buttons moved to More Actions. This separate automation
-  update remains outstanding; the full suite is not reported as passing. IDE
-  and the repaired workflow typechecks and strict boundaries pass. The global
-  tests typecheck still reports 102 diagnostics in untouched fixtures/profiles.
-  Repository-wide indentation also reports existing untouched cart/test/cJSON
-  files, not this patch's files.
+- Follow-through on 2026-10-03 (`e21d9071c`, `abdafb75e`) repaired the remaining
+  stale toolbar/menu/source fixtures, including `testStudioGraphZoom`, and the
+  quick-input popup focus return. The complete Studio workflow passed on
+  software, WebGL2 and WebGPU; retained execution evidence is in
+  `.bmsx/authoring/studio-suite-repair-20261003/studio-validated.log`.
+  The former 102 global test type errors were also resolved; tests and IDE
+  typechecks and strict architecture boundaries passed. These are completed
+  follow-through items, not current runtime limitations.
 
 ### Embedded game input focus (2026-10-02)
 
@@ -408,9 +409,8 @@ Interaction validation:
   added, and no source edits or guest mutation calls were used for this proof.
 - Thirty existing focus/pointer/input regression checks, IDE and focused
   workflow typechecks, browser Studio build, strict boundaries and diff checks
-  pass. The global tests typecheck retains the same 102 preexisting diagnostics,
-  with no new diagnostics. The separate broad-suite zoom-toolbar automation
-  issue above remains outstanding; this is not a claim that that suite passes.
+  passed in this slice. The later 2026-10-03 follow-through above also cleared
+  the global test type errors and completed the broad three-renderer workflow.
 - There are no machine, native runtime, ICU representation, replay-engine or
   save-state changes. One retained control per viewport and one focus-change
   listener replace visibility-only admission; sampling uses existing buffers.
