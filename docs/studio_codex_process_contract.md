@@ -116,15 +116,13 @@ must still be accounted for when composing a production profile.
 `hosts/node/codex` is the process boundary, not an IDE model owner or a general
 process-launch service:
 
-- `profile.ts` acquires the supervisor-owned kernel lock and creates empty HOME/XDG
-  directories, private cwd/tmp and a separate persistent Codex account directory.
-  Environment inheritance is an explicit platform allowlist, not `process.env`
-  spread. Account data (including native threads/queues) and the persistent lock
-  file survive normal process exit; scratch does not. Admission checks the
-  previous ownership interval as well as the kernel lock. No user credentials or
-  configuration are copied. Conflicting live locks fail rather than guessing
-  ownership from filesystem contents. The platform composition must choose this
-  application-owned directory, never accept it from a browser or model.
+- `profile.ts` prepares the persistent account directory and admits a native
+  process scope with private cwd/HOME/tmp directories. The scope owns their
+  creation/removal and kernel lock. Environment inheritance is an explicit
+  platform allowlist, not a `process.env` spread. No user credentials or global
+  configuration are copied. Account data and the lock file survive process exit;
+  scratch does not. The platform composition chooses these paths, never a
+  browser or model.
 - `policy.ts` emits the explicit external TOML launch representation and admits
   actual configuration layers. Every nonempty non-Studio layer is rejected,
   including otherwise harmless user or managed overrides. Empty-map merging is
@@ -244,172 +242,136 @@ authorization, token-refresh or paid-inference verification.
 
 ## Background process shutdown
 
-A controlled native startup reproduced a Git checkout still running after
-`CodexStdio.stop()` had returned `{code: 0, signal: null, forced: false}`. The
-upstream plugin manager starts its curated-repository synchronization on a
-background OS thread; the Git subprocess can outlive the App Server. Retrying
-recursive directory removal would race that writer rather than join it.
+A native startup probe reproduced a Git checkout still running after App Server
+EOF and a successful direct-child exit. The plugin startup thread does not join
+that checkout at main-process exit. A recursive-delete retry cannot establish
+that the writer has stopped. Likewise, a dead controller or an available file
+lock is not proof that all descendants are gone.
 
-The initial POSIX-group fix has been replaced, not wrapped. A separate native
-supervisor in `hosts/node/process_scope` owns both the kernel lock and all
-descendants. It is detached from Node's own process group/job so Node's abrupt
-exit or SIGKILL cannot release the profile ahead of its background writers.
-Request/status pipes belong only to Node and the supervisor; workload stdio
-passes directly through inherited handles. There is no RPC relay, notification
-polling, global `ps` scan or emulation-frame work.
+Ownership now uses a **named kernel process scope**, not a persistent
+"unfinished" flag. The native controller owns the OS lock and scratch filesystem
+mutations together. Node owns RPC and account/session policy; it no longer
+removes or creates disposable directories asynchronously after lock admission.
+This closes a second race: Node IO could otherwise continue deleting the fixed
+scratch path after controller death and race a new owner.
 
-- **Linux/WSL:** `PR_SET_CHILD_SUBREAPER` adopts orphaned descendants, including
-  `setsid`/double-fork children. The workload has its own process group so its
-  group signals cannot kill the supervisor. Shutdown kills unreaped direct children and
-  continues on `SIGCHLD` as further descendants are adopted. Only `waitpid`'s
-  `ECHILD` proves completion. `/proc/self/task/<tid>/children` names children of
-  this single-threaded owner; it is not a cross-process PID/ancestry heuristic.
-  A PID is never reused between discovery and kill because this owner has not
-  reaped it. `flock` retains exclusive ownership through the whole join.
-- **Windows:** a Job Object has `KILL_ON_JOB_CLOSE` and no breakaway flags. The
-  child is created suspended, assigned to that job and only then resumed.
-  Nested jobs/detached grandchildren remain in the outer job. Shutdown waits
-  for the kernel's active-process count to reach zero. Completion-port messages
-  wake the wait; periodic count observation during teardown handles Microsoft's
-  documented non-guaranteed notification delivery. `LockFileEx` retains the
-  profile lock until after that barrier. Separate request/status pipe handles
-  avoid synchronous Windows duplex-pipe serialization.
+| Responsibility | Node | Native / OS owner |
+| --- | --- | --- |
+| Account and explicit launch environment | `CodexProfile` | Account directory is never disposable |
+| Workload argv/cwd/env | Binary launch record | Direct `execvp` / `CreateProcessW`, no command shell |
+| Exclusive admission | Awaits `locked` | `flock` / `LockFileEx` on the persistent inode/file |
+| Descendant identity | No process-tree snapshots | Named systemd scope / named Job Object |
+| Disposable filesystem | Supplies root and directory names | Prepared and removed under the native lock |
+| RPC retirement | Synchronous pending-request rejection | Independent status pipe; no RPC relay |
+| Recovery | Next explicit connection | Join previous kernel membership before scratch reuse |
 
-EOF remains normal App Server shutdown; a deadline requests forced scope
-termination. Natural main-process exit also retires residual descendants. A
-paused stdout is drained before RPC closure. `forced` records an App Server
-timeout, not the retirement of leftover children. No capabilities, plugins or
-account settings are disabled. `initialize` supplies version metadata without
-an extra unsupervised version probe.
+### Linux / WSL
 
-`owner.lock` is persistent and must **not** be unlinked to recover a session.
-Its existence says nothing about ownership. The kernel lock serializes owners;
-its length records whether the previous ownership interval completed. Admission
-requires an empty file, then marks it nonempty and flushes it **before** reporting
-ownership. Normal release joins descendants, removes `lease/` scratch while still
-locked, then closes the supervisor's control pipe. Only joined release clears
-and flushes the file. After Node host death, control-pipe EOF makes the supervisor
-join independently and complete the same interval. The next acquisition can
-dispose of abandoned scratch; `account/` is never removed. A live competing
-owner is refused. EOF partway through a launch request creates no workload and
-also completes the interval. A termination signal cannot revive a late launch
-or release the lock while Node is still removing scratch.
+The controller uses the systemd user-manager API, as in `systemd-run` and runc's
+rootless cgroup owner. A scope name is derived from the locked file's device and
+inode, not a PID. Before reporting admission, it stops and joins any previous
+scope with that identity. Empty/collected scopes are already joined; systemd
+retains units that still have living cgroup members.
 
-The distinction matters: an actual supervisor-SIGKILL probe reproduced both a
-connection that never settled and profile reacquisition that erased scratch
-while the old workload was still running. An available OS lock did **not** prove
-that those descendants had exited. Now an interrupted interval refuses reuse,
-retaining account data and unjoined scratch. This is an explicit ownership
-failure, not automatic recovery by deleting a lock or guessing from process IDs.
-Unlike ordinary Node-server death, loss of the supervisor requires deliberate
-offline recovery; there is no claim of automatically joining orphaned Linux
-processes after their subreaper itself has died.
+A newly forked child waits on a launch pipe. `StartTransientUnit` admits that
+unreaped child to its cgroup before the controller permits exec. If the controller
+dies during admission, pipe EOF exits the still-blocked child without launching
+work. `setsid`, double-forking and stdio closure do not change cgroup membership.
+Normal App Server exit retires the same scope as forced shutdown. systemd job
+completion is correlated by the returned job object path. The controller also
+waits for `cgroup.events` to report no members (or for the kernel to remove that
+empty cgroup); a successful StopUnit reply alone does not prove that a task stuck
+in kernel IO has exited. Unit references pin metadata while it is being read.
+Bus subscriptions exist only during start/stop jobs, not throughout a chat.
 
-Offline recovery is a separate operator action, not a reconnect heuristic: stop
-Studio servers and establish that the old workload is gone (a full host reboot
-also establishes this). Then truncate **only** the existing `owner.lock` to zero
-bytes, without unlinking it; retain `account/`. The next normal acquisition
-removes abandoned scratch. Never clear the interval merely because the server
-PID is absent. Routine Node-server restart/SIGKILL needs none of this because
-the surviving supervisor completes the interval itself.
+Node death closes the control pipe and the controller completes cleanup. If the
+**controller itself** dies, RPC closes with an explicit error. The named scope
+survives it; the next connection kills/joins that scope before touching scratch
+or starting Codex. Remaining Linux tasks can run until that recovery is requested;
+this is not a claim that systemd immediately kills a scope when its controller
+disappears. No automatic prompt retry or additional inference is introduced.
 
-Node observes supervisor `exit` and the end of its exclusive status pipe, not
-the child-process `close` event (which waits on inherited workload pipes). It
-first consumes final status records, then retires the invalid RPC streams.
-Closure carries an error result through the session to the browser even when
-profile release fails. The main server stays available.
+### Windows
 
-This is lifecycle ownership of descendants, not containment of a hostile
-administrator or an existing external service. Changing workload credentials so
-they are no longer killable or unlinking the lock file is outside this contract.
-Stop old server versions before upgrading: their directory-only leases do not
-participate in the new kernel lock.
+The Job Object is named from the locked file's volume/file identity in the global
+object namespace. It has `KILL_ON_JOB_CLOSE` and no breakaway flags. The startup
+attribute `PROC_THREAD_ATTRIBUTE_JOB_LIST` assigns the workload as part of
+`CreateProcessW` itself, eliminating the former create-suspended/assign/resume
+crash window. Only the workload's three stdio handles are inherited.
 
-### Native product and host support
+After controller death, the kernel terminates job members. A new owner opens any
+remaining named job, terminates it and joins its active-process count before
+creating a fresh job and preparing scratch. Normal teardown uses completion-port
+notifications plus the authoritative count. Recovery cannot inherit the departed
+controller's completion port, so it observes the kernel count only while joining.
+This is not a PID scan or a timeout-based declaration of successful cleanup.
 
-The helper is an optional **Node host** product, not machine/runtime C++ code.
-`npm run build:product:node-host-tools` prepares it through the existing product
-builder. `serve:dist` and `serve:dist:wsl` npm pre-lifecycles run this preparation
-automatically; no new server command is required. The account/session/HTTP test
-entrypoints do the same. Direct `node scripts/serve-dist.mjs` is a runtime entry:
-it does not build. A missing artifact produces an explicit build instruction
-on Connect, without breaking the server's other services.
+### Release, upgrade and host requirements
 
-The build owner uses C++17 (Linux `CXX`/`c++`, Windows MSVC). Windows toolchain
-setup supplies an environment; source paths/arguments are passed directly to
-the compiler, not interpolated into a command shell. A source/recipe fingerprint
-avoids repeat compilation. Each completed executable generation is immutable
-under `.bmsx/host-process-scope`, outside the served browser product. An atomic
-platform/architecture publication selects the generation. Running supervisors
-are never overwritten, including on Windows. The runtime reads that publication;
-it has no build-module dependency and needs neither a compiler nor build sources.
+`owner.lock` must not be unlinked. Its kernel lock serializes admission; new code
+never writes an unfinished-state marker to it. Normal release removes scratch
+only after the process scope has drained, while still holding the lock. Account
+credentials, conversation history and queued messages are retained.
 
-Supported scope backends remain Linux/WSL and native Windows. macOS has no
-implementation of this stronger lifetime contract; it is not approximated with
-a process-group or PID-tree scan. Optional host-tool preparation skips that
-backend, and server composition omits the embedded assistant capability. Studio,
-workspace/build services, external CLI history and MCP remain separate. This is
-capability handling, **not** a claim that macOS process supervision was restored
-or validated. Standalone player/Studio never imports this Node-only product.
+Stop old server versions cleanly before upgrading. A **nonempty legacy lock**
+from the previous implementation has no named kernel scope to recover and is
+explicitly rejected, not silently treated as a new-format owner. Only that old
+format needs offline recovery: establish that its old workloads have stopped
+(a full reboot also establishes this), then truncate the existing lock without
+unlinking it. Crashes of the new implementation do not produce this condition.
 
-References studied before implementation:
-- [Codex plugin startup owner](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/core-plugins/src/manager.rs)
-  and [Git subprocess lifetime](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/core-plugins/src/startup_sync.rs).
-- [Codex process-group ownership](https://github.com/openai/codex/blob/604061ce51d194a3aa6aad3b3170240d096e1725/codex-rs/utils/pty/src/process_group.rs)
-  and [VS Code process-tree termination](https://github.com/microsoft/vscode/blob/main/src/vs/base/node/processes.ts).
-- [Tini's subreaper, signal and reaping implementation](https://github.com/krallin/tini/blob/master/src/tini.c).
-- [libuv's Windows process implementation](https://github.com/libuv/libuv/blob/v1.x/src/win/process.c):
-  its global job deliberately permits descendant breakaway, so it is not enough
-  for this profile ownership contract.
-- [Microsoft hcsshim Job Object owner](https://github.com/microsoft/hcsshim/blob/main/internal/jobobject/jobobject.go)
-  and [Windows completion-port guarantees](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_associate_completion_port).
-- [Node child-process lifecycle](https://nodejs.org/api/child_process.html#subprocesskillsignal):
-  signaling is not proof of exit, and descendants are not joined by the parent's
-  close event when they do not inherit its stdio.
-- [MongoDB's POSIX lock-file lifecycle](https://github.com/mongodb/mongo/blob/master/src/mongo/db/storage/storage_engine_lock_file_posix.cpp)
-  and [Windows counterpart](https://github.com/mongodb/mongo/blob/master/src/mongo/db/storage/storage_engine_lock_file_windows.cpp):
-  separate live mutual exclusion from evidence of incomplete shutdown. BMSX does
-  not infer safe reclamation from a stale PID or borrow database recovery logic.
-- [node-pty's native build targets](https://github.com/microsoft/node-pty/blob/main/binding.gyp)
-  and [installation/package boundary](https://github.com/microsoft/node-pty/blob/main/package.json):
-  native helpers are built/installed artifacts, not compiled when a user opens
-  a connection. This does not require adopting its PTY semantics or Node ABI.
-- [Node's exit-versus-close contract](https://nodejs.org/api/child_process.html#event-exit)
-  and [XNU's process-event interface](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/event.h):
-  distinguish direct process exit from stream lifetimes; do not invent a portable
-  descendant-ownership guarantee from generic process notifications.
+The helper is an optional Node-host product, built by
+`npm run build:product:node-host-tools`. Existing `serve:dist` and
+`serve:dist:wsl` pre-lifecycles prepare it automatically. Direct server execution
+and Connect never invoke a compiler. Immutable executable generations and an
+atomic publication keep running binaries separate from builds.
 
-The native regression uses a local Git repository and a controlled checkout
-filter, with ordinary native plugin startup still enabled. Real OS peers cover
-graceful exit, a crash with inherited/paused stdout, forced shutdown, detached
-children, orphaned grandchildren, abrupt host exit and host SIGKILL. Reacquisition
-checks descendant death and retained account data, not just a missing directory.
-No personal account login, public repository download or paid inference is used.
+- Linux/WSL: **cgroup v2, a running systemd user manager and libsystemd**.
+  Source builds additionally need a C++17 compiler and libsystemd development
+  headers/library (`libsystemd-dev` on Debian/Ubuntu). The controller receives
+  the host's XDG runtime/session-bus address; the admitted Codex environment does
+  not inherit those additions. An unavailable user manager is an explicit error,
+  not a weaker process-group fallback. This was exercised in the current WSL
+  user session without changing host services or permissions.
+- Windows: **Windows 10+**, built with MSVC. Runtime installations need the
+  published executable, not the compiler or source tree.
+- macOS: no backend yet. Other Studio, external CLI tools, build/workspace
+  services and standalone emulator features remain independent of this product.
 
-Validation on 2026-10-03 (ownership/build revision):
+This is process/resource lifetime ownership, not a hostile-code sandbox. It does
+not claim ownership of pre-existing external services or tasks deliberately
+moved out of the scope through a service manager. A stuck kernel task can prevent
+safe reuse; no timeout converts that into permission to erase its files.
 
-- 84 Linux/WSL checks pass. Regression coverage includes workload groups, detached orphans,
-  supervisor loss while running/after drain, partial launch EOF and termination
-  crossing startup, alongside account/session/HTTP/entry/socket/observer checks.
-- 20 checks pass under native Windows Node, exercising the same lifecycle
-  adapter and compiled MSVC supervisor; three POSIX-only cases are skipped.
-  Those remain Linux evidence, not claimed Windows App
-  Server/login coverage.
-- The actual `serve-dist.mjs` entry and installed Codex were also exercised with
-  a held local Git checkout: SIGKILL of Node, a new server using the same profile,
-  successful reconnect, confirmed old checkout exit, retained account sentinel
-  and normal joined shutdown. This is real server/process evidence, not a UI or
-  paid-model claim.
-- A separate actual-server/native-Codex probe kills the supervisor: the browser
-  stream receives its explicit closure error, the server still serves requests,
-  reacquisition returns 503 rather than touching the unfinished profile, and
-  account data is retained.
-- A relocated runtime bundle with **no build sources, no compiler and empty
-  PATH** launches the published supervisor, exchanges RPC and releases its
-  profile. Missing publication reports a build error without attempting a build.
-- `npm run test:codex-session` also exercises automatic product preparation
-  and passes all 48 checks. Node, tests and scripts typechecks, the strict
-  architecture-boundary audit and `git diff --check` pass.
-- Evidence is retained in `.bmsx/authoring/codex-scope-architecture-20261003/`;
-  the earlier `.bmsx/authoring/codex-process-scope-20261003/` records the original
-  implementation, not proof that supervisor-loss handling was already correct.
+### References and validation
+
+Production implementations studied before this revision:
+
+- [systemd transient-scope launch](https://github.com/systemd/systemd/blob/main/src/run/run.c),
+  [job-completion observation](https://github.com/systemd/systemd/blob/main/src/shared/bus-wait-for-jobs.c)
+  and [unit collection rules](https://github.com/systemd/systemd/blob/main/src/core/unit.c).
+- [runc/cgroups user-manager connection](https://github.com/opencontainers/cgroups/blob/main/systemd/user.go)
+  and [scope lifecycle](https://github.com/opencontainers/cgroups/blob/main/systemd/common.go).
+- [Microsoft hcsshim job ownership](https://github.com/microsoft/hcsshim/blob/main/internal/jobobject/jobobject.go)
+  and [atomic process/job startup](https://github.com/microsoft/hcsshim/blob/main/internal/exec/exec.go).
+- [Windows Job Object lifetime](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects),
+  [startup attributes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)
+  and [Node exit versus stream closure](https://nodejs.org/api/child_process.html#event-exit).
+
+Evidence for this revision is retained under
+`.bmsx/authoring/codex-kernel-ownership-20261003/`. Linux/WSL and native Windows
+checks exercise real OS processes, detached grandchildren, paused/inherited RPC
+pipes, shutdown, host/controller SIGKILL, and profile reuse after recovery.
+The actual existing server and installed Codex were exercised with a deliberately
+held **local** plugin Git checkout: controller SIGKILL, explicit stream error,
+server still available, successful reconnect, old checkout confirmed stopped,
+and account sentinel retained. No account login, token copy or paid inference
+was used. This is host/process evidence, not a visual Studio or model-quality
+claim. The separate runtime-product probe uses a relocated bundle without build
+sources/compiler and with an empty PATH.
+
+On 2026-10-03, 84 Linux/WSL integration checks and 20 native Windows checks passed
+(three POSIX-only cases skipped on Windows). A separate 250-cycle immediate-exit/
+reacquisition probe reused the same kernel-scope identity successfully. A missing
+user-manager probe rejected admission explicitly without a fallback or unfinished
+marker. Node/tests/scripts typechecks and the architecture-boundary audit passed.

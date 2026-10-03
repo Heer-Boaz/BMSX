@@ -15,7 +15,10 @@ export async function buildProcessScope(options: { debug: boolean; force: boolea
 	const source = join(native, process.platform === 'win32' ? 'scope_windows.cpp' : 'scope_linux.cpp');
 	const hash = createHash('sha256');
 	hash.update(JSON.stringify([process.platform, process.arch, options.debug, process.env.CXX]));
-	for (const file of [fileURLToPath(import.meta.url), fileURLToPath(new URL('../lib/msvc.ts', import.meta.url)), source, join(native, 'protocol.hpp')]) {
+	const inputs = [fileURLToPath(import.meta.url), fileURLToPath(new URL('../lib/msvc.ts', import.meta.url)),
+		source, join(native, 'protocol.hpp'), join(native, 'workspace.hpp')];
+	if (process.platform === 'linux') inputs.push(join(native, 'linux_unit.hpp'), join(native, 'linux_unit.cpp'));
+	for (const file of inputs) {
 		hash.update(await readFile(file));
 	}
 	const fingerprint = hash.digest('hex');
@@ -33,7 +36,8 @@ export async function buildProcessScope(options: { debug: boolean; force: boolea
 			await execute('cl.exe', ['/nologo', '/std:c++17', options.debug ? '/Od' : '/O2', '/EHsc', '/W4', '/WX', '/MT', source,
 				`/Fe:${binary}`, `/Fo:${join(output, 'scope.obj')}`], { env: await msvcEnvironment(), windowsHide: true });
 		} else {
-			await execute(process.env.CXX ?? 'c++', ['-std=c++17', options.debug ? '-O0' : '-O2', '-g', '-Wall', '-Wextra', '-Werror', source, '-o', binary]);
+			await execute(process.env.CXX ?? 'c++', ['-std=c++17', options.debug ? '-O0' : '-O2', '-g', '-Wall', '-Wextra', '-Werror',
+				source, join(native, 'linux_unit.cpp'), '-lsystemd', '-o', binary]);
 		}
 		const product: ProcessScopeProduct = { fingerprint, executable: join(basename(output), name) };
 		const publication = join(output, 'product.json');

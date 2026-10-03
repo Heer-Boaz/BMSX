@@ -12,6 +12,8 @@ export class ProcessScopeInterruptedError extends Error {}
 /** Signals retain their OS number, including signals without a Node name. */
 export type ProcessExit = { code: number | null; signal: number | null; error?: Error };
 type Join = { error?: Error };
+/** Native argv: disposable root followed by its profile-owned child directories. */
+type ScratchDirectories = [] | [root: string, ...directories: string[]];
 
 /** The supervisor owns the OS lock and descendants; Node owns the RPC streams. */
 export class ProcessScope {
@@ -30,11 +32,12 @@ export class ProcessScope {
 	public get stdout() { return this.child.stdout; }
 	public get stderr() { return this.child.stderr; }
 
-	private constructor(binary: string, lock: string) {
+	private constructor(binary: string, lock: string, scratch: ScratchDirectories) {
 		// Detached on both OSes: host death must close the control pipe, not kill
 		// the lock owner before it can join its workload. This is not a daemon.
-		const child: ChildProcess = spawn(binary, [lock], { stdio: ['pipe', 'pipe', 'pipe', 'pipe', 'pipe'],
-			detached: true, windowsHide: true, env: { SystemRoot: process.env.SystemRoot } });
+		const child: ChildProcess = spawn(binary, [lock, ...scratch], { stdio: ['pipe', 'pipe', 'pipe', 'pipe', 'pipe'],
+			detached: true, windowsHide: true, env: { SystemRoot: process.env.SystemRoot, XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR,
+				DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS } });
 		this.child = child as ChildProcessWithoutNullStreams;
 		this.control = child.stdio[3] as Writable;
 		const events = child.stdio[4] as Readable;
@@ -44,13 +47,15 @@ export class ProcessScope {
 			switch (type) {
 				case 'locked': this.state = 'owned'; this.acquired.resolve(); break;
 				case 'busy': this.acquired.reject(new ProcessScopeBusyError('Process scope is already owned')); break;
-				case 'interrupted': this.acquired.reject(new ProcessScopeInterruptedError('The previous process supervisor did not complete ownership release. The profile has not been reused.')); break;
+				case 'interrupted': this.acquired.reject(new ProcessScopeInterruptedError('A legacy Studio supervisor left an unfinished profile. Stop the old workloads before upgrading this profile.')); break;
 				case 'error': {
 					const number = Number(second);
 					const code = process.platform === 'win32'
 						? (first === 'exec' && (number === 2 || number === 3) ? 'ENOENT' : `OS_${number}`)
 						: (number === 0 ? 'EPIPE' : getSystemErrorName(-number));
-					this.failure = Object.assign(new Error(`Process scope ${first}: ${code}`), { code });
+					this.failure = Object.assign(new Error(first === 'systemd_user_scope'
+						? `Systemd user scope failed (${code}). Linux requires cgroup v2 and a running systemd user session.`
+						: `Process scope ${first}: ${code}`), { code });
 					break;
 				}
 				case 'exit': {
@@ -89,7 +94,7 @@ export class ProcessScope {
 		});
 	}
 
-	public static async acquire(lock: string): Promise<ProcessScope> {
+	public static async acquire(lock: string, scratch: ScratchDirectories = []): Promise<ProcessScope> {
 		if (!PROCESS_SCOPE_SUPPORTED) {
 			throw new Error(`Studio's owned process scope is not implemented on ${process.platform}.`);
 		}
@@ -99,7 +104,7 @@ export class ProcessScope {
 			if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
 			throw new Error('Node host tools are not built. Run npm run build:product:node-host-tools before starting the server.', { cause: error });
 		}
-		const scope = new ProcessScope(join(PROCESS_SCOPE_PRODUCT_DIRECTORY, product.executable), lock);
+		const scope = new ProcessScope(join(PROCESS_SCOPE_PRODUCT_DIRECTORY, product.executable), lock, scratch);
 		try { await scope.acquired.promise; return scope; }
 		catch (error) { await scope.closed; throw error; }
 	}
@@ -114,18 +119,12 @@ export class ProcessScope {
 
 	public terminate(): void { this.control.write('K'); }
 
-	/** Retain the lock after joining, until the profile owner has removed scratch. */
+	/** Release joins the workload and removes its workspace under the same native lock. */
 	public release(): Promise<void> {
 		return this.released ??= (async () => {
 			this.control.end();
 			const exit = await this.closed;
 			if (exit.error) throw exit.error;
 		})();
-	}
-
-	public async join(): Promise<void> {
-		if (this.state === 'owned') return;
-		const result = await this.joined;
-		if (result.error) throw result.error;
 	}
 }

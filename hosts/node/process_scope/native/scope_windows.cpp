@@ -5,6 +5,7 @@
 #include <process.h>
 
 #include "protocol.hpp"
+#include "workspace.hpp"
 
 class Handle {
 public:
@@ -14,7 +15,6 @@ public:
 	Handle(const Handle&) = delete;
 	Handle& operator=(const Handle&) = delete;
 };
-
 
 static std::wstring wide(const std::string& text) {
 	if (text.empty()) return {};
@@ -72,12 +72,14 @@ static PROCESS_INFORMATION launch(const Launch& command, HANDLE job) {
 	startup.StartupInfo.hStdError = reinterpret_cast<HANDLE>(_get_osfhandle(2));
 	HANDLE inherited[] = {startup.StartupInfo.hStdInput, startup.StartupInfo.hStdOutput, startup.StartupInfo.hStdError};
 	SIZE_T size = 0;
-	InitializeProcThreadAttributeList(nullptr, 1, 0, &size);
+	InitializeProcThreadAttributeList(nullptr, 2, 0, &size);
 	std::vector<unsigned char> storage(size);
 	startup.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(storage.data());
-	if (InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &size) == 0) throw ScopeError{"attributes", static_cast<int>(GetLastError())};
+	if (InitializeProcThreadAttributeList(startup.lpAttributeList, 2, 0, &size) == 0) throw ScopeError{"attributes", static_cast<int>(GetLastError())};
 	const bool inherited_ok = UpdateProcThreadAttribute(startup.lpAttributeList, 0,
-		PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, sizeof inherited, nullptr, nullptr) != 0;
+		PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, sizeof inherited, nullptr, nullptr) != 0
+		&& UpdateProcThreadAttribute(startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_JOB_LIST,
+			&job, sizeof job, nullptr, nullptr) != 0;
 	if (!inherited_ok) {
 		const int error = static_cast<int>(GetLastError());
 		DeleteProcThreadAttributeList(startup.lpAttributeList);
@@ -85,20 +87,13 @@ static PROCESS_INFORMATION launch(const Launch& command, HANDLE job) {
 	}
 	PROCESS_INFORMATION process{};
 	const bool created = CreateProcessW(application.c_str(), line.data(), nullptr, nullptr, TRUE,
-		CREATE_SUSPENDED | CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
+		CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
 		environment.data(), cwd.c_str(), &startup.StartupInfo, &process) != 0;
 	const DWORD error = GetLastError();
 	DeleteProcThreadAttributeList(startup.lpAttributeList);
 	if (!created) throw ScopeError{"exec", static_cast<int>(error)};
-	// The suspended child cannot spawn outside its job before admission.
-	if (!AssignProcessToJobObject(job, process.hProcess) || ResumeThread(process.hThread) == DWORD(-1)) {
-		const int code = static_cast<int>(GetLastError());
-		TerminateProcess(process.hProcess, 1);
-		WaitForSingleObject(process.hProcess, INFINITE);
-		CloseHandle(process.hThread);
-		CloseHandle(process.hProcess);
-		throw ScopeError{"job_assign", code};
-	}
+	// JOB_LIST makes assignment part of CreateProcess itself. Controller death
+	// cannot strand a suspended child in the old create/assign/resume gap.
 	return process;
 }
 
@@ -112,6 +107,7 @@ static void join_job(HANDLE job, HANDLE completion) {
 		LPOVERLAPPED overlapped;
 		// Notifications wake the join; the kernel's job count proves it. Microsoft
 		// explicitly does not guarantee delivery of ordinary job notifications.
+		if (completion == nullptr) { Sleep(10); continue; }
 		if (!GetQueuedCompletionStatus(completion, &message, &key, &overlapped, 100)) {
 			if (GetLastError() != WAIT_TIMEOUT) throw ScopeError{"job_notification", static_cast<int>(GetLastError())};
 		}
@@ -129,15 +125,10 @@ static unsigned __stdcall control_requests(void* stop) {
 	return 0;
 }
 
-static void run() {
+static void run(HANDLE job) {
 	char command;
 	if (!read_exact(&command, 1)) return;
 	Launch request;
-	Handle job(CreateJobObjectW(nullptr, nullptr));
-	if (job.value == nullptr) throw ScopeError{"job_create", static_cast<int>(GetLastError())};
-	JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
-	limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-	if (SetInformationJobObject(job.value, JobObjectExtendedLimitInformation, &limits, sizeof limits) == 0) throw ScopeError{"job_limits", static_cast<int>(GetLastError())};
 	Handle completion(CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 1));
 	if (completion.value == nullptr) throw ScopeError{"completion_port", static_cast<int>(GetLastError())};
 	Handle stop(CreateEventW(nullptr, TRUE, FALSE, nullptr));
@@ -147,7 +138,7 @@ static void run() {
 	Handle controller(reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, control_requests, stop.value, 0, nullptr)));
 	if (controller.value == nullptr) throw ScopeError{"controller_errno", errno};
 	PROCESS_INFORMATION process;
-	try { process = launch(request, job.value); }
+	try { process = launch(request, job); }
 	catch (const ScopeError& error) {
 		report_error(error);
 		workload_exit(-1, 0);
@@ -161,20 +152,20 @@ static void run() {
 	if (event != WAIT_OBJECT_0 && event != WAIT_OBJECT_0 + 1) throw ScopeError{"process_wait", static_cast<int>(GetLastError())};
 	// Subscribe only for retirement. A long conversation must not accumulate
 	// per-command job notifications that nobody needs during normal execution.
-	JOBOBJECT_ASSOCIATE_COMPLETION_PORT association{job.value, completion.value};
-	if (SetInformationJobObject(job.value, JobObjectAssociateCompletionPortInformation, &association, sizeof association) == 0) throw ScopeError{"job_port", static_cast<int>(GetLastError())};
-	if (TerminateJobObject(job.value, 1) == 0) throw ScopeError{"job_terminate", static_cast<int>(GetLastError())};
+	JOBOBJECT_ASSOCIATE_COMPLETION_PORT association{job, completion.value};
+	if (SetInformationJobObject(job, JobObjectAssociateCompletionPortInformation, &association, sizeof association) == 0) throw ScopeError{"job_port", static_cast<int>(GetLastError())};
+	if (TerminateJobObject(job, 1) == 0) throw ScopeError{"job_terminate", static_cast<int>(GetLastError())};
 	if (WaitForSingleObject(child.value, INFINITE) != WAIT_OBJECT_0) throw ScopeError{"process_join", static_cast<int>(GetLastError())};
 	DWORD code;
 	if (GetExitCodeProcess(child.value, &code) == 0) throw ScopeError{"exit_code", static_cast<int>(GetLastError())};
 	workload_exit(code, 0);
-	join_job(job.value, completion.value);
+	join_job(job, completion.value);
 	drained();
 	WaitForSingleObject(controller.value, INFINITE);
 }
 
 int wmain(int argc, wchar_t** argv) {
-	if (argc != 2) return 2;
+	if (argc < 2) return 2;
 	try {
 		Handle lock(CreateFileW(argv[1], GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
 			nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr));
@@ -186,20 +177,46 @@ int wmain(int argc, wchar_t** argv) {
 		}
 		LARGE_INTEGER size{};
 		if (!GetFileSizeEx(lock.value, &size)) throw ScopeError{"lock_state", static_cast<int>(GetLastError())};
+		// Old unfinished intervals did not have a recoverable named Job Object.
 		if (size.QuadPart != 0) { status("interrupted\n"); return 0; }
-		size.QuadPart = 1;
-		if (!SetFilePointerEx(lock.value, size, nullptr, FILE_BEGIN) || !SetEndOfFile(lock.value) || !FlushFileBuffers(lock.value)) {
-			throw ScopeError{"lock_begin", static_cast<int>(GetLastError())};
+		FILE_ID_INFO identity{};
+		if (!GetFileInformationByHandleEx(lock.value, FileIdInfo, &identity, sizeof identity)) {
+			throw ScopeError{"lock_identity", static_cast<int>(GetLastError())};
 		}
+		wchar_t name[128];
+		int end = std::swprintf(name, sizeof name / sizeof *name, L"Global\\BMSX-Codex-%llx-", identity.VolumeSerialNumber);
+		// Use the full native identity: ReFS does not guarantee unique 64-bit IDs.
+		constexpr wchar_t hex[] = L"0123456789abcdef";
+		for (const auto byte : identity.FileId.Identifier) { name[end++] = hex[byte >> 4]; name[end++] = hex[byte & 15]; }
+		name[end] = L'\0';
+		{
+			Handle previous(OpenJobObjectW(JOB_OBJECT_QUERY | JOB_OBJECT_TERMINATE, FALSE, name));
+			if (previous.value != nullptr) {
+				if (!TerminateJobObject(previous.value, 1)) throw ScopeError{"job_recover", static_cast<int>(GetLastError())};
+				// The previous completion port belonged to the departed controller.
+				// Its messages cannot prove recovery; observe the kernel membership.
+				join_job(previous.value, nullptr);
+			} else if (GetLastError() != ERROR_FILE_NOT_FOUND) {
+				throw ScopeError{"job_open", static_cast<int>(GetLastError())};
+			}
+		}
+		Handle job(CreateJobObjectW(nullptr, name));
+		if (job.value == nullptr) throw ScopeError{"job_create", static_cast<int>(GetLastError())};
+		JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+		limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+		if (!SetInformationJobObject(job.value, JobObjectExtendedLimitInformation, &limits, sizeof limits)) {
+			throw ScopeError{"job_limits", static_cast<int>(GetLastError())};
+		}
+		Workspace workspace(argc, argv);
 		if (status("locked\n")) {
-			try { run(); }
-			catch (const HostClosed&) { /* EOF while decoding launch: no child has been created. */ }
+			try { run(job.value); }
+			catch (const HostClosed&) { /* No child was created before launch decoding completed. */ }
 		}
-		size.QuadPart = 0;
-		if (!SetFilePointerEx(lock.value, size, nullptr, FILE_BEGIN) || !SetEndOfFile(lock.value) || !FlushFileBuffers(lock.value)) {
-			throw ScopeError{"lock_release", static_cast<int>(GetLastError())};
-		}
+		workspace.remove();
 		return 0;
+	} catch (const std::filesystem::filesystem_error& error) {
+		report_error({"workspace", error.code().value()});
+		return 1;
 	} catch (const ScopeError& error) {
 		report_error(error);
 		return 1;

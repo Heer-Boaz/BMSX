@@ -134,7 +134,7 @@ for (const mode of ['scope-eof', 'scope-crash', 'scope-group', 'scope-hang', 'sc
 		});
 }
 
-for (const phase of ['running', 'drained']) test(`supervisor loss while ${phase} settles RPC and prevents unsafe profile reuse`, { timeout: 10000 }, async t => {
+for (const phase of ['running', 'drained']) test(`supervisor loss while ${phase} settles RPC and recovers the kernel scope before profile reuse`, { timeout: 10000 }, async t => {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-supervisor-loss-'));
 	const observer = await backgroundObserver(t);
 	const profile = await CodexProfile.acquire(root);
@@ -162,9 +162,17 @@ for (const phase of ['running', 'drained']) test(`supervisor loss while ${phase}
 	assert.equal(exit.forced, false);
 	if (phase === 'running') assert.match(exit.error.message, /Process scope exited/);
 	await assert.rejects(profile.release(), /Process scope exited/);
-	await assert.rejects(CodexProfile.acquire(root), /did not complete ownership release/);
-	assert.equal(await readFile(join(profile.codexHome, 'account-sentinel'), 'utf8'), 'retain');
-	if (phase === 'running') assert.equal(await readFile(join(profile.cwd, 'owned-scratch'), 'utf8'), 'do not replace');
+	const next = await CodexProfile.acquire(root);
+	try {
+		await assertProcessExited(pid);
+		await assertProcessExited(identity.pid);
+		assert.equal(await readFile(join(next.codexHome, 'account-sentinel'), 'utf8'), 'retain');
+		assert.deepEqual(await readdir(next.cwd), []);
+		// The old Node profile can no longer mutate the new owner's scratch.
+		await writeFile(join(next.cwd, 'new-owner'), 'keep');
+		await assert.rejects(profile.release(), /Process scope exited/);
+		assert.equal(await readFile(join(next.cwd, 'new-owner'), 'utf8'), 'keep');
+	} finally { await next.release(); }
 });
 
 test('native plugin checkout has exited before its profile is removed, even after graceful App Server EOF',

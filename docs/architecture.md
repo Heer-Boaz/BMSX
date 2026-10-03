@@ -5307,31 +5307,31 @@ focus. The shared chat-command owner reveals the assistant input for pickers and
 new conversations; draft submission and message selection remain pane-scoped.
 The CLI conversation-history action likewise opens its read-only viewer from any
 editor. Merely listing commands never connects to an agent or registers tools.
-The Node adapter owns the isolated Codex account, fixed operation protocol and
-scratch directory. `hosts/node/process_scope` owns the kernel profile lock and
-the complete descendant lifetime separately from the RPC transport. Its small
-native supervisor survives Node host departure: control-pipe EOF initiates
-cleanup, and ownership is not released until descendants have exited. Linux/WSL
-uses a private child subreaper and `waitpid` through `ECHILD`; Windows uses a
-non-breakaway Job Object, suspended-child admission and the job's active-process
-count. This includes detached grandchildren, not just one POSIX process group.
-The RPC streams are direct workload pipes, not a supervisor relay. A normal
-close joins process exit and drains output, removes scratch under the retained
-lock, then releases that lock. Reacquisition requires both the kernel lock and a
-completed previous ownership interval. The supervisor marks the persistent lock
-nonempty before admission and clears it only on joined release. Node host death
-closes its control pipe and follows that same release path. Supervisor death
-instead leaves an unfinished interval: no automatic scratch/profile reuse and
-no guessing from a pid, timeout or directory existence. Account data is retained.
-Supervisor exit is observed independently of workload-inherited stdout/stderr;
-failed ownership retires RPC and is reported to the browser, not left hanging.
+The Node adapter owns the isolated Codex account and fixed operation protocol.
+`hosts/node/process_scope` owns the kernel lock, process membership and disposable
+workspace together. Linux/WSL uses a named systemd user scope backed by cgroup v2;
+Windows uses a named non-breakaway Job Object. Membership survives the native
+controller. Acquiring the lock first recovers any previous kernel scope and
+proves that it is empty, then prepares scratch. It never infers descendant exit
+from a dead controller, a PID/mtime, or a lock-file marker. A live lock remains
+exclusive; another Studio cannot take over a working session.
+Linux admits a blocked child to the cgroup before allowing exec. Windows assigns
+the job atomically as a CreateProcess attribute, not in a later assign/resume
+step. Normal EOF joins membership, drains output, then removes scratch and
+releases the lock. Scratch mutations run in the native lock owner, not in
+asynchronous Node IO which could continue after losing ownership. Account data
+is outside that disposable workspace and is retained.
+The RPC streams remain direct workload pipes. Controller exit is observed
+independently of workload-inherited stdout/stderr; it retires RPC and reports
+failure to Studio. The next explicit connection recovers the kernel scope before
+starting a new App Server. This does not replay prompts or tool operations.
 Native compilation belongs to `scripts/products/process_scope_build.ts` and the
-`node-host-tools` build target. Development-server/test npm lifecycles prepare
-the product before running the host. The runtime consumes its published immutable
-executable; Connect never invokes a compiler or reads build sources. This is not
-an emulator/toolchain build. Hosts without a scope backend omit the embedded
-assistant capability, without disabling Studio or the external CLI/tool bridge.
-See [process ownership and supported hosts](studio_codex_process_contract.md#background-process-shutdown).
+`node-host-tools` product. Development-server/test npm lifecycles prepare it;
+Connect only consumes the published executable. Linux requires cgroup v2,
+libsystemd and a running systemd user manager; Windows requires Windows 10 or
+later. There is no weaker process-tree fallback. Other Studio and standalone
+emulator features do not depend on these Node-only facilities. macOS still has
+no process-scope backend. See [process ownership and supported hosts](studio_codex_process_contract.md#background-process-shutdown).
 Codex owns durable threads and queued text; native
 history browsing is separate from resuming execution. Studio reads paged history
 and notification-driven queue snapshots, not JSONL files or polling endpoints.
