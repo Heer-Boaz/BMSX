@@ -1,11 +1,14 @@
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { getSystemErrorName } from 'node:util';
 import type { Readable, Writable } from 'node:stream';
-import { buildProcessScope } from './build.mjs';
+import { PROCESS_SCOPE_PRODUCT_DIRECTORY, PROCESS_SCOPE_PRODUCT_FILE, PROCESS_SCOPE_SUPPORTED, type ProcessScopeProduct } from './product';
 import { encodeLaunch } from './protocol';
 
 export class ProcessScopeBusyError extends Error {}
+export class ProcessScopeInterruptedError extends Error {}
 /** Signals retain their OS number, including signals without a Node name. */
 export type ProcessExit = { code: number | null; signal: number | null; error?: Error };
 type Join = { error?: Error };
@@ -21,8 +24,7 @@ export class ProcessScope {
 	public readonly joined = this.processJoin.promise;
 	private readonly closed: Promise<Join>;
 	private failure: Error | undefined;
-	private started = false;
-	private drained = false;
+	private state: 'acquiring' | 'owned' | 'running' | 'drained' | 'closed' = 'acquiring';
 	private released: Promise<void> | undefined;
 	public get stdin() { return this.child.stdin; }
 	public get stdout() { return this.child.stdout; }
@@ -40,8 +42,9 @@ export class ProcessScope {
 		lines.on('line', line => {
 			const [type, first, second] = line.split('\t');
 			switch (type) {
-				case 'locked': this.acquired.resolve(); break;
+				case 'locked': this.state = 'owned'; this.acquired.resolve(); break;
 				case 'busy': this.acquired.reject(new ProcessScopeBusyError('Process scope is already owned')); break;
+				case 'interrupted': this.acquired.reject(new ProcessScopeInterruptedError('The previous process supervisor did not complete ownership release. The profile has not been reused.')); break;
 				case 'error': {
 					const number = Number(second);
 					const code = process.platform === 'win32'
@@ -57,30 +60,55 @@ export class ProcessScope {
 						error: this.failure });
 					break;
 				}
-				case 'drained': this.drained = true; this.processJoin.resolve({}); break;
+				case 'drained': this.state = 'drained'; this.processJoin.resolve({}); break;
 			}
 		});
-		child.on('error', error => { this.failure = error; });
-		this.control.on('error', error => { this.failure = error; });
-		events.on('error', error => { this.failure = error; });
-		this.closed = new Promise(resolve => child.once('close', (code, signal) => {
-			lines.close();
+		this.control.on('error', error => { this.failure ??= error; });
+		events.on('error', error => { this.failure ??= error; });
+		const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolve => {
+			child.once('exit', (code, signal) => resolve({ code, signal }));
+			child.once('error', error => { this.failure ??= error; resolve({ code: null, signal: null }); });
+		});
+		const statusClosed = new Promise<void>(resolve => lines.once('close', resolve));
+		// Only the supervisor holds the status pipe. Drain its final records, but
+		// never wait for workload-inherited stdout/stderr to detect owner death.
+		this.closed = Promise.all([exited, statusClosed]).then(([{ code, signal }]) => {
 			const error = this.failure ?? new Error(`Process scope exited before releasing ownership (${code}, ${signal})`);
+			const joined = this.state !== 'running';
+			this.state = 'closed';
 			this.acquired.reject(error);
 			this.processExit.resolve({ code: null, signal: null, error });
-			this.processJoin.resolve(this.drained || !this.started ? {} : { error });
-			resolve({ error: code === 0 && signal === null ? undefined : error });
-		}));
+			this.processJoin.resolve(joined ? {} : { error });
+			// Once its owner is gone, these are no longer an admitted connection.
+			// An orphan may keep the OS pipes open; it cannot keep Studio hanging.
+			this.child.stdin.destroy();
+			this.child.stdout.destroy();
+			this.child.stderr.destroy();
+			this.control.destroy();
+			return { error: code === 0 && signal === null && joined ? undefined : error };
+		});
 	}
 
 	public static async acquire(lock: string): Promise<ProcessScope> {
-		const scope = new ProcessScope(await buildProcessScope(), lock);
+		if (!PROCESS_SCOPE_SUPPORTED) {
+			throw new Error(`Studio's owned process scope is not implemented on ${process.platform}.`);
+		}
+		let product: ProcessScopeProduct;
+		try { product = JSON.parse(await readFile(PROCESS_SCOPE_PRODUCT_FILE, 'utf8')); }
+		catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+			throw new Error('Node host tools are not built. Run npm run build:product:node-host-tools before starting the server.', { cause: error });
+		}
+		const scope = new ProcessScope(join(PROCESS_SCOPE_PRODUCT_DIRECTORY, product.executable), lock);
 		try { await scope.acquired.promise; return scope; }
 		catch (error) { await scope.closed; throw error; }
 	}
 
 	public start(executable: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): void {
-		this.started = true;
+		// OS exit/termination can arrive during asynchronous profile setup.
+		// Ownership cannot be resurrected by a later constructor/start call.
+		if (this.state !== 'owned') throw new Error(`Cannot start a workload in a ${this.state} process scope`);
+		this.state = 'running';
 		this.control.write(encodeLaunch(executable, args, cwd, env));
 	}
 
@@ -89,14 +117,14 @@ export class ProcessScope {
 	/** Retain the lock after joining, until the profile owner has removed scratch. */
 	public release(): Promise<void> {
 		return this.released ??= (async () => {
-			this.control.end('R');
+			this.control.end();
 			const exit = await this.closed;
 			if (exit.error) throw exit.error;
 		})();
 	}
 
 	public async join(): Promise<void> {
-		if (!this.started) return;
+		if (this.state === 'owned') return;
 		const result = await this.joined;
 		if (result.error) throw result.error;
 	}

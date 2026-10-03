@@ -69,7 +69,6 @@ import {
 } from './node_tooling_options';
 import { DiskWorkspaceRecordProvider } from '../../../ide/node/workspace_records';
 import { RecordingLogOutput } from '../../../ide/testing/recording_log_output';
-import { createRuntimeSourceState } from '../../../ide/runtime/sources';
 import { RemoteInput } from '../../../hosts/common/input/remote';
 import { HostControlServer } from '../../../hosts/node/control/server';
 import { HostControlSession } from '../../../hosts/node/control/session';

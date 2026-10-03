@@ -7,12 +7,13 @@ export type ProductBuildTarget =
 	| 'node-cli-player'
 	| 'node-headless-player'
 	| 'node-headless-tooling'
+	| 'node-host-tools'
 	| 'libretro-wsl'
 	| 'libretro-win';
 
 export type JavaScriptProductTarget = Exclude<
 	ProductBuildTarget,
-	'libretro-wsl' | 'libretro-win'
+	'libretro-wsl' | 'libretro-win' | 'node-host-tools'
 >;
 
 export function javascriptProductFilename(

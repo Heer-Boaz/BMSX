@@ -91,9 +91,11 @@ export class CodexSession {
 		this.rpc.signal.addEventListener('abort', () => this.retire(), { once: true });
 		options.signal.addEventListener('abort', this.onAbort, { once: true });
 		this.closed = this.rpc.closed.then(async exit => {
-			await this.profile.release();
-			this.options.onEvent({ type: 'closed', error: exit.error });
-			return exit;
+			let error = exit.error;
+			try { await this.profile.release(); }
+			catch (failure) { error ??= failure as Error; }
+			this.options.onEvent({ type: 'closed', error });
+			return { ...exit, error };
 		});
 	}
 

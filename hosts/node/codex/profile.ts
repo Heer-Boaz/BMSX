@@ -35,8 +35,8 @@ export class CodexProfile {
 		}
 		const profile = new CodexProfile(root, scope);
 		try {
-			// Scratch is not the lock. Once the OS grants ownership, a crashed
-			// session's descendants have been joined and its scratch is disposable.
+			// Admission requires BOTH the OS lock and a completed previous release.
+			// Lock availability alone says nothing about orphaned background writers.
 			await rm(profile.lease, { recursive: true, force: true });
 			await mkdir(profile.lease, { mode: 0o700 });
 			await mkdir(profile.codexHome, { recursive: true, mode: 0o700 });
@@ -57,8 +57,10 @@ export class CodexProfile {
 	 */
 	public release(): Promise<void> {
 		return this.released ??= (async () => {
-			await this.scope.join();
-			try { await rm(this.lease, { recursive: true, force: true }); }
+			try {
+				await this.scope.join();
+				await rm(this.lease, { recursive: true, force: true });
+			}
 			finally { await this.scope.release(); }
 		})();
 	}

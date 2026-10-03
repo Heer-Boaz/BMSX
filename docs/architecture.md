@@ -5317,10 +5317,20 @@ non-breakaway Job Object, suspended-child admission and the job's active-process
 count. This includes detached grandchildren, not just one POSIX process group.
 The RPC streams are direct workload pipes, not a supervisor relay. A normal
 close joins process exit and drains output, removes scratch under the retained
-lock, then releases that lock. Reacquisition after a host crash removes abandoned
-scratch only after acquiring the same kernel lock; it never guesses from a pid,
-timestamp or lock-file presence. Account data is retained. The native product is
-built/cached locally on first use; no emulator/toolchain build is involved.
+lock, then releases that lock. Reacquisition requires both the kernel lock and a
+completed previous ownership interval. The supervisor marks the persistent lock
+nonempty before admission and clears it only on joined release. Node host death
+closes its control pipe and follows that same release path. Supervisor death
+instead leaves an unfinished interval: no automatic scratch/profile reuse and
+no guessing from a pid, timeout or directory existence. Account data is retained.
+Supervisor exit is observed independently of workload-inherited stdout/stderr;
+failed ownership retires RPC and is reported to the browser, not left hanging.
+Native compilation belongs to `scripts/products/process_scope_build.ts` and the
+`node-host-tools` build target. Development-server/test npm lifecycles prepare
+the product before running the host. The runtime consumes its published immutable
+executable; Connect never invokes a compiler or reads build sources. This is not
+an emulator/toolchain build. Hosts without a scope backend omit the embedded
+assistant capability, without disabling Studio or the external CLI/tool bridge.
 See [process ownership and supported hosts](studio_codex_process_contract.md#background-process-shutdown).
 Codex owns durable threads and queued text; native
 history browsing is separate from resuming execution. Studio reads paged history

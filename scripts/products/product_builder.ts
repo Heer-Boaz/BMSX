@@ -11,6 +11,8 @@ import {
 } from './browser_build';
 import { buildLibretroProduct } from './libretro_build';
 import { buildNodeHeadlessTooling, buildNodePlayer } from './node_build';
+import { buildProcessScope } from './process_scope_build';
+import { PROCESS_SCOPE_SUPPORTED } from '../../hosts/node/process_scope/product';
 import {
 	javascriptProductFilename,
 	type ProductBuildTarget,
@@ -39,6 +41,7 @@ function productBuildTarget(value: string): ProductBuildTarget {
 		case 'node-cli-player':
 		case 'node-headless-player':
 		case 'node-headless-tooling':
+		case 'node-host-tools':
 			return normalized;
 		default:
 			throw new Error(`Unknown product build target "${value}".`);
@@ -61,6 +64,7 @@ function parseOptions(args: string[]): {
 		ui.writeOut('Products:\n', 'warning');
 		ui.writeOut('  machine-runtime, browser-player, browser-studio\n', 'warning');
 		ui.writeOut('  node-cli-player, node-headless-player, node-headless-tooling\n', 'warning');
+		ui.writeOut('  node-host-tools (optional Studio server native tools)\n', 'warning');
 		ui.writeOut('  libretro-wsl, libretro-win\n', 'warning');
 		ui.writeOut('Options:\n', 'warning');
 		ui.writeOut('  --debug                   Build debug artifacts\n', 'warning');
@@ -142,6 +146,11 @@ async function main(): Promise<void> {
 		case 'libretro-win': {
 			const filename = await buildLibretroProduct(target, debug);
 			ui.ok(`Libretro core → ${pc.white(`dist/${filename}`)}`);
+			break;
+		}
+		case 'node-host-tools': {
+			if (PROCESS_SCOPE_SUPPORTED) ui.ok(`Node process scope → ${pc.white(await buildProcessScope({ debug, force }))}`);
+			else ui.warn(`Owned Codex processes are unavailable on ${process.platform}; the remaining Studio server needs no native tool.`);
 			break;
 		}
 	}

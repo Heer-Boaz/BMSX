@@ -47,8 +47,7 @@ export class CodexStdio extends CodexRpc {
 			finished(stream, { readable: true, writable: false, cleanup: true }).catch(error => { this.stop(error); })));
 		this.closed = Promise.all([scope.exited, scope.joined, streamsClosed]).then(([exit, join]) => {
 			lines.close();
-			if (join.error) throw join.error;
-			return { code: exit.code, signal: exit.signal, forced: this.forced, error: this.failure };
+			return { code: exit.code, signal: exit.signal, forced: this.forced, error: join.error ?? this.failure };
 		});
 		scope.start(executable, args, cwd, env);
 	}

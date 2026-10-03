@@ -120,7 +120,8 @@ process-launch service:
   directories, private cwd/tmp and a separate persistent Codex account directory.
   Environment inheritance is an explicit platform allowlist, not `process.env`
   spread. Account data (including native threads/queues) and the persistent lock
-  file survive normal process exit; scratch does not. No user credentials or
+  file survive normal process exit; scratch does not. Admission checks the
+  previous ownership interval as well as the kernel lock. No user credentials or
   configuration are copied. Conflicting live locks fail rather than guessing
   ownership from filesystem contents. The platform composition must choose this
   application-owned directory, never accept it from a browser or model.
@@ -157,7 +158,7 @@ altering the binary or directories; this is process/capability ownership, not an
 OS sandbox certification.
 
 `npm run test:codex-session` covers the real adapter against local Responses SSE,
-unowned MCP and changed config, exact version rejection, profile exclusivity,
+unowned MCP and changed config, version metadata, profile exclusivity,
 turn interruption/admission/disconnect and late replies. Faulty stdio peers also
 cover out-of-order responses amid 10,000 notifications, nested requests, malformed
 frames, unknown response identities, process crash, launch failure and forced
@@ -282,30 +283,74 @@ account settings are disabled. `initialize` supplies version metadata without
 an extra unsupervised version probe.
 
 `owner.lock` is persistent and must **not** be unlinked to recover a session.
-Its existence says nothing about ownership. Normal release joins descendants,
-removes `lease/` scratch while still locked, then releases the supervisor. After
-Node host death, request-pipe EOF makes the supervisor join independently and
-release the lock. The next acquisition disposes of abandoned scratch under that
-same lock; `account/` is never removed. A live competing owner is refused.
+Its existence says nothing about ownership. The kernel lock serializes owners;
+its length records whether the previous ownership interval completed. Admission
+requires an empty file, then marks it nonempty and flushes it **before** reporting
+ownership. Normal release joins descendants, removes `lease/` scratch while still
+locked, then closes the supervisor's control pipe. Only joined release clears
+and flushes the file. After Node host death, control-pipe EOF makes the supervisor
+join independently and complete the same interval. The next acquisition can
+dispose of abandoned scratch; `account/` is never removed. A live competing
+owner is refused. EOF partway through a launch request creates no workload and
+also completes the interval. A termination signal cannot revive a late launch
+or release the lock while Node is still removing scratch.
+
+The distinction matters: an actual supervisor-SIGKILL probe reproduced both a
+connection that never settled and profile reacquisition that erased scratch
+while the old workload was still running. An available OS lock did **not** prove
+that those descendants had exited. Now an interrupted interval refuses reuse,
+retaining account data and unjoined scratch. This is an explicit ownership
+failure, not automatic recovery by deleting a lock or guessing from process IDs.
+Unlike ordinary Node-server death, loss of the supervisor requires deliberate
+offline recovery; there is no claim of automatically joining orphaned Linux
+processes after their subreaper itself has died.
+
+Offline recovery is a separate operator action, not a reconnect heuristic: stop
+Studio servers and establish that the old workload is gone (a full host reboot
+also establishes this). Then truncate **only** the existing `owner.lock` to zero
+bytes, without unlinking it; retain `account/`. The next normal acquisition
+removes abandoned scratch. Never clear the interval merely because the server
+PID is absent. Routine Node-server restart/SIGKILL needs none of this because
+the surviving supervisor completes the interval itself.
+
+Node observes supervisor `exit` and the end of its exclusive status pipe, not
+the child-process `close` event (which waits on inherited workload pipes). It
+first consumes final status records, then retires the invalid RPC streams.
+Closure carries an error result through the session to the browser even when
+profile release fails. The main server stays available.
 
 This is lifecycle ownership of descendants, not containment of a hostile
-administrator or an existing external service. Directly killing the native
-supervisor itself (rather than Node), changing workload credentials so they are
-no longer killable, or unlinking the lock file is outside this recovery contract.
+administrator or an existing external service. Changing workload credentials so
+they are no longer killable or unlinking the lock file is outside this contract.
 Stop old server versions before upgrading: their directory-only leases do not
 participate in the new kernel lock.
 
 ### Native product and host support
 
 The helper is an optional **Node host** product, not machine/runtime C++ code.
-On first use, `build.mjs` compiles with the local C++17 compiler (Linux `CXX`/
-`c++`, Windows Visual Studio C++ Build Tools found through `vswhere`). It caches
-by source/platform/architecture under `.bmsx/host-process-scope`. Publication is
-atomic and never replaces a running helper's executable. Later acquisitions
-reuse the binary. Missing tools fail the Codex connection explicitly; no weaker
-process-tree fallback is substituted. Standalone player/Studio never loads this
-Node-only path. Supported scope hosts are Linux/WSL and native Windows; macOS
-does not yet have an implementation of this stronger lifetime contract.
+`npm run build:product:node-host-tools` prepares it through the existing product
+builder. `serve:dist` and `serve:dist:wsl` npm pre-lifecycles run this preparation
+automatically; no new server command is required. The account/session/HTTP test
+entrypoints do the same. Direct `node scripts/serve-dist.mjs` is a runtime entry:
+it does not build. A missing artifact produces an explicit build instruction
+on Connect, without breaking the server's other services.
+
+The build owner uses C++17 (Linux `CXX`/`c++`, Windows MSVC). Windows toolchain
+setup supplies an environment; source paths/arguments are passed directly to
+the compiler, not interpolated into a command shell. A source/recipe fingerprint
+avoids repeat compilation. Each completed executable generation is immutable
+under `.bmsx/host-process-scope`, outside the served browser product. An atomic
+platform/architecture publication selects the generation. Running supervisors
+are never overwritten, including on Windows. The runtime reads that publication;
+it has no build-module dependency and needs neither a compiler nor build sources.
+
+Supported scope backends remain Linux/WSL and native Windows. macOS has no
+implementation of this stronger lifetime contract; it is not approximated with
+a process-group or PID-tree scan. Optional host-tool preparation skips that
+backend, and server composition omits the embedded assistant capability. Studio,
+workspace/build services, external CLI history and MCP remain separate. This is
+capability handling, **not** a claim that macOS process supervision was restored
+or validated. Standalone player/Studio never imports this Node-only product.
 
 References studied before implementation:
 - [Codex plugin startup owner](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/core-plugins/src/manager.rs)
@@ -321,6 +366,18 @@ References studied before implementation:
 - [Node child-process lifecycle](https://nodejs.org/api/child_process.html#subprocesskillsignal):
   signaling is not proof of exit, and descendants are not joined by the parent's
   close event when they do not inherit its stdio.
+- [MongoDB's POSIX lock-file lifecycle](https://github.com/mongodb/mongo/blob/master/src/mongo/db/storage/storage_engine_lock_file_posix.cpp)
+  and [Windows counterpart](https://github.com/mongodb/mongo/blob/master/src/mongo/db/storage/storage_engine_lock_file_windows.cpp):
+  separate live mutual exclusion from evidence of incomplete shutdown. BMSX does
+  not infer safe reclamation from a stale PID or borrow database recovery logic.
+- [node-pty's native build targets](https://github.com/microsoft/node-pty/blob/main/binding.gyp)
+  and [installation/package boundary](https://github.com/microsoft/node-pty/blob/main/package.json):
+  native helpers are built/installed artifacts, not compiled when a user opens
+  a connection. This does not require adopting its PTY semantics or Node ABI.
+- [Node's exit-versus-close contract](https://nodejs.org/api/child_process.html#event-exit)
+  and [XNU's process-event interface](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/event.h):
+  distinguish direct process exit from stream lifetimes; do not invent a portable
+  descendant-ownership guarantee from generic process notifications.
 
 The native regression uses a local Git repository and a controlled checkout
 filter, with ordinary native plugin startup still enabled. Real OS peers cover
@@ -329,17 +386,30 @@ children, orphaned grandchildren, abrupt host exit and host SIGKILL. Reacquisiti
 checks descendant death and retained account data, not just a missing directory.
 No personal account login, public repository download or paid inference is used.
 
-Validation on 2026-10-03:
+Validation on 2026-10-03 (ownership/build revision):
 
-- 80 Linux/WSL process/session/account/HTTP/entry/socket/observer checks pass,
-  including a workload killing its own process group without killing its owner.
-- 17 lifecycle checks pass under native Windows Node, repeated three times.
-  The two POSIX-only cases (process-group signaling and the native Git fixture)
-  remain Linux evidence, not claimed Windows App Server/login coverage.
+- 84 Linux/WSL checks pass. Regression coverage includes workload groups, detached orphans,
+  supervisor loss while running/after drain, partial launch EOF and termination
+  crossing startup, alongside account/session/HTTP/entry/socket/observer checks.
+- 20 checks pass under native Windows Node, exercising the same lifecycle
+  adapter and compiled MSVC supervisor; three POSIX-only cases are skipped.
+  Those remain Linux evidence, not claimed Windows App
+  Server/login coverage.
 - The actual `serve-dist.mjs` entry and installed Codex were also exercised with
   a held local Git checkout: SIGKILL of Node, a new server using the same profile,
   successful reconnect, confirmed old checkout exit, retained account sentinel
   and normal joined shutdown. This is real server/process evidence, not a UI or
   paid-model claim.
-- Node/tests typechecks, strict architecture boundaries and `git diff --check`
-  pass. Evidence is retained in `.bmsx/authoring/codex-process-scope-20261003/`.
+- A separate actual-server/native-Codex probe kills the supervisor: the browser
+  stream receives its explicit closure error, the server still serves requests,
+  reacquisition returns 503 rather than touching the unfinished profile, and
+  account data is retained.
+- A relocated runtime bundle with **no build sources, no compiler and empty
+  PATH** launches the published supervisor, exchanges RPC and releases its
+  profile. Missing publication reports a build error without attempting a build.
+- `npm run test:codex-session` also exercises automatic product preparation
+  and passes all 48 checks. Node, tests and scripts typechecks, the strict
+  architecture-boundary audit and `git diff --check` pass.
+- Evidence is retained in `.bmsx/authoring/codex-scope-architecture-20261003/`;
+  the earlier `.bmsx/authoring/codex-process-scope-20261003/` records the original
+  implementation, not proof that supervisor-loss handling was already correct.

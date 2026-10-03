@@ -36,6 +36,7 @@ inline int scope_write(int fd, const void* data, unsigned size) {
 // never inherited by the workload.
 // stdin/stdout/stderr belong directly to the workload, not to a JSON relay.
 struct ScopeError { const char* operation; int code; };
+struct HostClosed {};
 
 inline bool read_exact(void* data, uint32_t size) {
 	auto* bytes = static_cast<char*>(data);
@@ -74,13 +75,13 @@ inline void report_error(const ScopeError& error) {
 
 inline uint32_t read_word() {
 	unsigned char bytes[4];
-	if (!read_exact(bytes, sizeof bytes)) throw ScopeError{"host_closed", 0};
+	if (!read_exact(bytes, sizeof bytes)) throw HostClosed{};
 	return bytes[0] | uint32_t(bytes[1]) << 8 | uint32_t(bytes[2]) << 16 | uint32_t(bytes[3]) << 24;
 }
 
 inline std::string read_string() {
 	std::string value(read_word(), '\0');
-	if (!read_exact(value.data(), static_cast<uint32_t>(value.size()))) throw ScopeError{"host_closed", 0};
+	if (!read_exact(value.data(), static_cast<uint32_t>(value.size()))) throw HostClosed{};
 	return value;
 }
 

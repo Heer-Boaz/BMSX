@@ -82,10 +82,12 @@ const workspaceSession = new WorkspaceHttpSession(host);
 // Constructing the endpoint starts no process and opens no account profile.
 await import('tsx');
 const { serveStudioPage, STUDIO_PAGE_ROUTES } = await import('./dev/studio_page.ts');
+const { PROCESS_SCOPE_SUPPORTED } = await import('../hosts/node/process_scope/product.ts');
 /** @type {import('../ide/common/studio_configuration.ts').StudioConfiguration} */
 const studioConfiguration = {
 	workspace: { kind: 'http', baseUrl: '' },
-	assistant: '', conversations: '', server: { baseUrl: '', tools: true, builds: true, projects: true },
+	assistant: PROCESS_SCOPE_SUPPORTED ? '' : undefined,
+	conversations: '', server: { baseUrl: '', tools: true, builds: true, projects: true },
 };
 const { CodexObserverHttpApi } = await import('../hosts/node/codex/observer_http.ts');
 const { CodexHttpApi } = await import('../hosts/node/codex/http_api.ts');
@@ -295,7 +297,7 @@ server.listen(port, host, () => {
 	if (defaultFile) {
 		console.log(`Default file: /${defaultFile}`);
 	}
-	console.log('Studio APIs: same-origin, session-authorized; Codex starts on Connect');
+	console.log(`Studio APIs: same-origin, session-authorized; ${PROCESS_SCOPE_SUPPORTED ? 'Codex starts on Connect' : `embedded Codex unavailable on ${process.platform}`}`);
 	console.log(`Studio MCP: http://127.0.0.1:${port}/__bmsx__/mcp (existing CLI conversations; no Studio login required)`);
 	if ((host === '0.0.0.0' || host === '::') && ips.length) {
 		console.log('On your LAN:');

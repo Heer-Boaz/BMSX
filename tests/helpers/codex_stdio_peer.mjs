@@ -51,6 +51,11 @@ lines.on('line', line => {
 		case 'scope-detached':
 		case 'scope-orphan':
 		case 'scope-hang': {
+			if (request.method === 'identity') {
+				write({ id: request.id, result: { pid: process.pid, supervisor: process.ppid } });
+				break;
+			}
+			if (request.method === 'pending') break;
 			if (request.method === 'crash') {
 				if (mode === 'scope-group') process.kill(0, 'SIGKILL');
 				write({ method: 'exiting', params: {} });

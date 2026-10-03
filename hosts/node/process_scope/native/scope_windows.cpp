@@ -122,8 +122,7 @@ static unsigned __stdcall control_requests(void* stop) {
 	try {
 		char command;
 		while (read_exact(&command, 1)) {
-			if (command == 'K' || command == 'R') SetEvent(stop);
-			if (command == 'R') break;
+			if (command == 'K') SetEvent(stop);
 		}
 	} catch (const ScopeError&) { /* A failed control pipe is host departure. */ }
 	SetEvent(stop);
@@ -132,7 +131,7 @@ static unsigned __stdcall control_requests(void* stop) {
 
 static void run() {
 	char command;
-	if (!read_exact(&command, 1) || command == 'R') return;
+	if (!read_exact(&command, 1)) return;
 	Launch request;
 	Handle job(CreateJobObjectW(nullptr, nullptr));
 	if (job.value == nullptr) throw ScopeError{"job_create", static_cast<int>(GetLastError())};
@@ -185,7 +184,21 @@ int wmain(int argc, wchar_t** argv) {
 			if (GetLastError() == ERROR_LOCK_VIOLATION) { status("busy\n"); return 0; }
 			throw ScopeError{"lock", static_cast<int>(GetLastError())};
 		}
-		if (status("locked\n")) run();
+		LARGE_INTEGER size{};
+		if (!GetFileSizeEx(lock.value, &size)) throw ScopeError{"lock_state", static_cast<int>(GetLastError())};
+		if (size.QuadPart != 0) { status("interrupted\n"); return 0; }
+		size.QuadPart = 1;
+		if (!SetFilePointerEx(lock.value, size, nullptr, FILE_BEGIN) || !SetEndOfFile(lock.value) || !FlushFileBuffers(lock.value)) {
+			throw ScopeError{"lock_begin", static_cast<int>(GetLastError())};
+		}
+		if (status("locked\n")) {
+			try { run(); }
+			catch (const HostClosed&) { /* EOF while decoding launch: no child has been created. */ }
+		}
+		size.QuadPart = 0;
+		if (!SetFilePointerEx(lock.value, size, nullptr, FILE_BEGIN) || !SetEndOfFile(lock.value) || !FlushFileBuffers(lock.value)) {
+			throw ScopeError{"lock_release", static_cast<int>(GetLastError())};
+		}
 		return 0;
 	} catch (const ScopeError& error) {
 		report_error(error);

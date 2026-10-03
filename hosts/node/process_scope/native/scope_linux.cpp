@@ -6,6 +6,7 @@
 #include <sys/file.h>
 #include <sys/prctl.h>
 #include <sys/signalfd.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 
 extern char** environ;
@@ -94,7 +95,12 @@ static void run(int signals) {
 			if (!read_exact(&command, 1)) { retiring = true; releasing = true; }
 			else switch (command) {
 				case 'S': {
-					try { Launch request; main_child = launch(request); }
+					try {
+						Launch request;
+						// A host launch may cross a termination signal in flight.
+						if (!retiring) main_child = launch(request);
+					}
+					catch (const HostClosed&) { retiring = true; releasing = true; }
 					catch (const ScopeError& error) {
 						report_error(error);
 						workload_exit(-1, 0);
@@ -103,13 +109,17 @@ static void run(int signals) {
 					break;
 				}
 				case 'K': retiring = true; break;
-				case 'R': retiring = true; releasing = true; break;
 			}
 		}
 		if (events[1].revents) {
 			signalfd_siginfo info;
 			if (read(signals, &info, sizeof info) != sizeof info) throw ScopeError{"signal_read", errno};
-			if (info.ssi_signo != SIGCHLD) { retiring = true; releasing = true; }
+			// Signals retire the workload, but only host EOF releases ownership.
+			// Node can still be removing scratch after receiving 'drained'.
+			if (info.ssi_signo != SIGCHLD) {
+				if (main_child == -1 && !retiring) workload_exit(-1, static_cast<int>(info.ssi_signo));
+				retiring = true;
+			}
 		}
 		bool empty = false;
 		for (;;) {
@@ -152,7 +162,16 @@ int main(int argc, char** argv) {
 			if (errno == EWOULDBLOCK) { status("busy\n"); return 0; }
 			throw ScopeError{"lock", errno};
 		}
+		struct stat previous;
+		if (fstat(lock.value, &previous) != 0) throw ScopeError{"lock_state", errno};
+		if (previous.st_size != 0) { status("interrupted\n"); return 0; }
+		// A nonempty lock records an unfinished ownership interval, not a pid or
+		// timeout. Losing the supervisor must never make its scratch reusable.
+		if (ftruncate(lock.value, 1) != 0 || fsync(lock.value) != 0) throw ScopeError{"lock_begin", errno};
 		if (status("locked\n")) run(signals.value);
+		// Normal host release or host EOF, only after ECHILD. Exceptions/crashes
+		// deliberately leave the unfinished interval for the next acquisition.
+		if (ftruncate(lock.value, 0) != 0 || fsync(lock.value) != 0) throw ScopeError{"lock_release", errno};
 		return 0; // The lock outlives the last waitpid, even when Node was SIGKILLed.
 	} catch (const ScopeError& error) {
 		report_error(error);

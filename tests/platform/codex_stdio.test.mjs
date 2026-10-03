@@ -134,6 +134,39 @@ for (const mode of ['scope-eof', 'scope-crash', 'scope-group', 'scope-hang', 'sc
 		});
 }
 
+for (const phase of ['running', 'drained']) test(`supervisor loss while ${phase} settles RPC and prevents unsafe profile reuse`, { timeout: 10000 }, async t => {
+	const root = await mkdtemp(join(tmpdir(), 'bmsx-supervisor-loss-'));
+	const observer = await backgroundObserver(t);
+	const profile = await CodexProfile.acquire(root);
+	const rpc = new CodexStdio(profile.scope, process.execPath, [peer, 'scope-crash', String(observer.port)], profile.cwd, profile.env, () => {});
+	const identity = await rpc.request('identity', {});
+	const pid = await rpc.request('spawn', {});
+	await observer.connected;
+	t.after(async () => {
+		for (const child of [pid, identity.pid]) {
+			try { process.kill(child, 'SIGKILL'); }
+			catch (error) { assert.equal(error.code, 'ESRCH'); }
+		}
+		await rpc.closed;
+		await profile.release().catch(() => {});
+		await rm(root, { recursive: true });
+	});
+	await writeFile(join(profile.cwd, 'owned-scratch'), 'do not replace');
+	await writeFile(join(profile.codexHome, 'account-sentinel'), 'retain');
+	if (phase === 'drained') await rpc.stop();
+	else rpc.setOutputPaused(true);
+	const pending = phase === 'running' ? assert.rejects(rpc.request('pending', {}), /Process scope exited/) : undefined;
+	process.kill(identity.supervisor, 'SIGKILL');
+	await pending;
+	const exit = await rpc.closed;
+	assert.equal(exit.forced, false);
+	if (phase === 'running') assert.match(exit.error.message, /Process scope exited/);
+	await assert.rejects(profile.release(), /Process scope exited/);
+	await assert.rejects(CodexProfile.acquire(root), /did not complete ownership release/);
+	assert.equal(await readFile(join(profile.codexHome, 'account-sentinel'), 'utf8'), 'retain');
+	if (phase === 'running') assert.equal(await readFile(join(profile.cwd, 'owned-scratch'), 'utf8'), 'do not replace');
+});
+
 test('native plugin checkout has exited before its profile is removed, even after graceful App Server EOF',
 	{ skip: process.platform === 'win32', timeout: 15000 }, async t => {
 		const root = await mkdtemp(join(tmpdir(), 'bmsx-codex-plugin-'));
