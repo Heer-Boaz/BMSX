@@ -60,6 +60,32 @@ and MAME's explicit
 [image load/reset boundary](https://github.com/mamedev/mame/blob/master/src/emu/diimage.cpp),
 not an automatic reset whenever a producer publishes new bytes.
 
+## Build output
+
+The producer reports typed phases, item/detail updates and diagnostics through
+`scripts/lib/build_reporter.ts`. These are observations, not build-plan or job
+state transitions. The CLI and Studio worker consume the same events:
+
+- The CLI uses one width-bounded status line on an interactive terminal. Phase
+  numbers denote the current step, and asset/atlas counts come from the actual
+  resource lists; there is no estimated overall percentage or synthetic delay.
+- Redirected output, CI and `TERM=dumb` print one line per phase. `-v`/`--verbose`
+  explicitly includes individual assets and writer details, without overwriting
+  lines. Warnings and errors always remain visible; failures retain the complete
+  phase/item context even when the live line was shortened.
+- `scripts/lib/cli_terminal.ts` owns terminal line replacement and diagnostic
+  writes. `task_progress.ts` coalesces live detail updates at 50 ms; it does not
+  sleep between build operations or delay compilation for an animation.
+- The worker still sends progress over IPC and diagnostics to the job log.
+  Studio's job/version/cancellation/publication contracts are unchanged; it
+  neither parses terminal text nor receives terminal control sequences.
+
+This separation follows Ninja's
+[status reporter](https://github.com/ninja-build/ninja/blob/master/src/status_printer.cc)
+and [line printer](https://github.com/ninja-build/ninja/blob/master/src/line_printer.cc),
+without replacing the ROM build pipeline with Ninja or reviving its former
+CLI-only task list.
+
 ## Owners
 
 `build_inputs.ts` captures file bytes, membership, metadata and model dependencies.

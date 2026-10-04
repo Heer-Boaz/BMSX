@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import type { RomBuildOutput } from '../../toolchain/ts/rompack/build_manifest';
-import type { PreparedUnit, BuildProgress } from './build';
+import type { PreparedUnit } from './build';
+import type { BuildReporter } from '../lib/build_reporter';
 import {
 	BIOS_FUNCTION_EXPORTS,
 	SYSTEM_ROM_ASSET_OFFSET,
@@ -26,32 +27,33 @@ import { buildScenarioTestSourceAssets } from './scenario_test_sources';
 import { getRomManifest } from './build_inputs';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 
-export async function compileSystem(prepared: PreparedUnit, outputDirectory: string, progress: BuildProgress): Promise<readonly RomBuildOutput[]> {
+export async function compileSystem(prepared: PreparedUnit, outputDirectory: string, progress: BuildReporter): Promise<readonly RomBuildOutput[]> {
 	const { inputs, sourceFiles, recipe: { debug, optLevel, projectRoot: virtualRoot } } = prepared;
 	const { buildRomBlua32Tail, createTextureAtlases, finalizeRompack, generateRomAssets,
 		getResMetaList, getResourcesList } = await import('./rombuilder');
 	const { lintCartSources } = await import('./cart_lua_linter_runtime');
 
-	progress('Lint system');
+	progress({ type: 'phase', message: 'Lint system' });
 	await lintCartSources({
 		sources: sourceFiles.map(file => inputs.files.get(resolve(file))!),
 		profile: 'bios',
 	});
 
-	progress('Scan system resources');
+	progress({ type: 'phase', message: 'Scan system resources' });
 	const BIOSResMetaList = await getResMetaList(inputs, {
 		domain: 'system',
 		sourceOnlyLuaRootFiles: [],
 		sourceOnlyLuaModuleRoots: [],
 		extraLuaFiles: sourceFiles,
 		virtualRoot,
-	});
-	progress('Load system resources');
+	}, progress);
+	progress({ type: 'phase', message: 'Load system resources' });
 	const BIOSResources = await getResourcesList(BIOSResMetaList);
-	progress('Build system textures');
-	await createTextureAtlases(BIOSResources);
+	progress({ type: 'phase', message: 'Build system textures' });
+	await createTextureAtlases(BIOSResources, progress);
+	progress({ type: 'phase', message: 'Compile system audio events' });
 	compileAudioEventResources(BIOSResources);
-	progress('Build system assets');
+	progress({ type: 'phase', message: 'Build system assets' });
 	const BIOSRomAssets = await generateRomAssets(BIOSResources, progress);
 	const BIOSLayout = layoutRomPrefix(
 		BIOSRomAssets,
@@ -62,6 +64,7 @@ export async function compileSystem(prepared: PreparedUnit, outputDirectory: str
 	const BIOSAssetSymbolModuleSource = buildRomAssetSymbolModuleSourceFromSymbols(
 		collectRomAssetSymbols(BIOSLayout.entries, 'system'),
 	);
+	progress({ type: 'phase', message: 'Compile system Lua' });
 	const BIOSBlua32 = buildRomBlua32Tail(BIOSRomAssets, {
 		generatedLuaModules: [
 			{
@@ -88,11 +91,11 @@ export async function compileSystem(prepared: PreparedUnit, outputDirectory: str
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 		domain: 'system',
 	});
-	progress('Write system ROM');
-	return finalizeRompack(SYSTEM_ROM_NAME, { projectRootPath: virtualRoot, debug, blua32: BIOSBlua32, layout: BIOSLayout, outputDirectory });
+	progress({ type: 'phase', message: 'Write system ROM' });
+	return finalizeRompack(SYSTEM_ROM_NAME, { projectRootPath: virtualRoot, status: progress, debug, blua32: BIOSBlua32, layout: BIOSLayout, outputDirectory });
 }
 
-export async function compileCart(prepared: PreparedUnit, outputDirectory: string, name: string, biosImportsBytes: Buffer, progress: BuildProgress): Promise<readonly RomBuildOutput[]> {
+export async function compileCart(prepared: PreparedUnit, outputDirectory: string, name: string, biosImportsBytes: Buffer, progress: BuildReporter): Promise<readonly RomBuildOutput[]> {
 	const { inputs, sourceFiles: cartSourceFiles, librarySourceFiles, testLibraryFiles, scenarioSourceFiles,
 		recipe: { debug, optLevel, projectRoot: virtualRoot } } = prepared;
 	const allLibraryFiles = prepared.allLibraryFiles;
@@ -102,7 +105,7 @@ export async function compileCart(prepared: PreparedUnit, outputDirectory: strin
 	const { buildRomBlua32Tail, createTextureAtlases, finalizeRompack, generateRomAssets,
 		getResMetaList, getResourcesList, resolveVirtualSourcePath } = await import('./rombuilder');
 	const { lintCartSources } = await import('./cart_lua_linter_runtime');
-	progress('Scan resources');
+	progress({ type: 'phase', message: 'Scan resources' });
 	const romResMetaList = await getResMetaList(inputs, {
 		domain: 'cart',
 		extraLuaFiles: cartSourceFiles,
@@ -112,18 +115,19 @@ export async function compileCart(prepared: PreparedUnit, outputDirectory: strin
 		// The runner and recorders remain source-only: no gameplay initialization or code cost.
 		sourceOnlyLuaModuleRoots: testLibraryFiles.map(file => toLuaModulePath(resolveVirtualSourcePath(file, virtualRoot))),
 		virtualRoot,
-	});
+	}, progress);
 	// Build resources
-	progress('Load resources');
+	progress({ type: 'phase', message: 'Load resources' });
 	const resources = await getResourcesList(romResMetaList);
 
-	progress('Generate GX textures');
+	progress({ type: 'phase', message: 'Generate GX textures' });
 	await createTextureAtlases(resources, progress);
 
 	// Compile AEM resources against the loaded audio and data resources.
+	progress({ type: 'phase', message: 'Compile audio events' });
 	compileAudioEventResources(resources);
 
-	progress('Generate ROM assets');
+	progress({ type: 'phase', message: 'Generate ROM assets' });
 	const romAssets = await generateRomAssets(resources, progress);
 	romAssets.push(...buildScenarioTestSourceAssets(scenarioSourceFiles.map(file => inputs.files.get(resolve(file))!), virtualRoot));
 	const romLayout = layoutRomPrefix(romAssets, debug, romManifest);
@@ -131,6 +135,7 @@ export async function compileCart(prepared: PreparedUnit, outputDirectory: strin
 	if (biosImports !== undefined) {
 		const assetSymbols = collectRomAssetSymbols(romLayout.entries, 'cart');
 		const assetSymbolModuleSource = buildRomAssetSymbolModuleSourceFromSymbols(assetSymbols);
+		progress({ type: 'phase', message: 'Compile cartridge Lua' });
 		blua32 = buildRomBlua32Tail(romAssets, {
 			includeSymbols: debug,
 			optLevel,
@@ -155,11 +160,11 @@ export async function compileCart(prepared: PreparedUnit, outputDirectory: strin
 		});
 	}
 	if (biosImports !== undefined) {
-		progress('Lint cart + shared Lua');
+		progress({ type: 'phase', message: 'Lint cart + shared Lua' });
 			await lintCartSources({ sources: cartSourceFiles.map(file => inputs.files.get(resolve(file))!), profile: 'cart' });
 			await lintCartSources({ sources: [...librarySourceFiles, ...testLibraryFiles].map(file => inputs.files.get(resolve(file))!), profile: 'bios' });
 	}
 
-	progress('Write cartridge ROM');
+	progress({ type: 'phase', message: 'Write cartridge ROM' });
 	return finalizeRompack(name, { projectRootPath: virtualRoot, status: progress, debug, blua32, layout: romLayout, outputDirectory });
 }

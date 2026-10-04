@@ -72,6 +72,7 @@ import {
 } from './system_texture';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
+import { reportBuildDiagnostics, type BuildReporter } from '../lib/build_reporter';
 import type { RomBuildInputs } from './build_inputs';
 import type { RomBuildOutput } from '../../toolchain/ts/rompack/build_manifest';
 import type { TextureAtlasResource, ImageResource, Resource, resourcetype } from './rompacker.rompack';
@@ -128,7 +129,6 @@ export const BLUA32_SYMBOLS_SIDECAR_SUFFIX = '.blua32-symbols';
 // @ts-ignore
 const { createHash } = require('crypto');
 
-type ProgressNote = (message: string) => void;
 const ROM_ZERO_FILL_CHUNK = Buffer.alloc(64 * 1024);
 const ADPCM_NO_LOOP = 0xffffffff;
 type CompleteBoundingBoxPrecalc = BoundingBoxPrecalc & {
@@ -460,8 +460,6 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 			datatype = 'json';
 			type = getDataSubtype(name);
 			name = removeExtension(name);
-			// Warn about JSON files, because YAML is preferred for better readability
-			console.log(`JSON data file detected: "${name}${ext}" (name="${name}", ext="${ext}", type="${type}"), consider using YAML (.yaml or .yml) for better readability.`);
 			break;
 		case '.obj':
 			throw new Error(`Unsupported model format: "${filepath}". Export the model as glTF or GLB.`);
@@ -569,6 +567,7 @@ function collectLibraryLuaClosure(
 export async function getResMetaList(
 	inputs: RomBuildInputs,
 	options: ResourceScanOptions,
+	report: BuildReporter = reportBuildDiagnostics,
 ): Promise<Resource[]> {
 	const arrayOfFiles: string[] = [];
 	const virtualRoot = normalizeVirtualRootPath(options.virtualRoot);
@@ -624,6 +623,9 @@ export async function getResMetaList(
 	for (let i = 0; i < resourceFiles.length; i++) {
 		const filepath = resourceFiles[i];
 		const meta = getResMetaByFilename(filepath);
+		if (meta.datatype === 'json') {
+			report({ type: 'diagnostic', level: 'info', message: `JSON data file detected: "${filepath}"; consider YAML (.yaml or .yml) for better readability.` });
+		}
 
 		const type = meta.type;
 		let name = meta.name;
@@ -642,7 +644,7 @@ export async function getResMetaList(
 					const sameBaseLower = existingParsed.name.toLowerCase() === currentParsed.name.toLowerCase();
 					const casingDiffers = existingParsed.name !== currentParsed.name;
 					if (sameDirectory && sameBaseLower && casingDiffers) {
-						console.warn(`[RomPacker] Skipping case-variant image "${filepath}" (using "${existingImage.filepath}" as "${name}").`);
+						report({ type: 'diagnostic', level: 'warning', message: `[RomPacker] Skipping case-variant image "${filepath}" (using "${existingImage.filepath}" as "${name}").` });
 						break;
 					}
 					throw new Error(`[RomPacker] Duplicate image resource "${name}" defined by "${existingImage.filepath}" and "${filepath}".`);
@@ -834,7 +836,7 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
 
 export async function generateRomAssets(
 	resources: Resource[],
-	reportProgress?: ProgressNote,
+	report?: BuildReporter,
 ) {
 	const romAssets: RomAsset[] = [];
 	const compileErrors: string[] = [];
@@ -853,12 +855,13 @@ export async function generateRomAssets(
 			buffer: buildBiosTerminalGlyphTable(resources),
 		});
 	}
-	for (const res of resources) {
+	for (let index = 0; index < resources.length; index++) {
+		const res = resources[index];
 		const type = res.type;
 		const sourcePath = res.sourcePath || (res.filepath && toWorkspaceRelativePath(res.filepath));
 		let resid = res.name;
 		let buffer = res.buffer;
-		reportProgress?.(`asset ${res.type}:${resid}`);
+		report?.({ type: 'item', message: `asset ${res.type}:${resid}`, current: index + 1, total: resources.length });
 
 			switch (type) {
 			case 'romlabel':
@@ -961,7 +964,7 @@ export async function generateRomAssets(
 				break;
 			}
 			case 'model': {
-				const parsed = await loadGLTFModel(res.document, resid);
+				const parsed = await loadGLTFModel(res.document, resid, report);
 
 				let texOffset = 0;
 				const imageOffsets: { start: number; end: number }[] = [];
@@ -1238,7 +1241,7 @@ export function buildRomBlua32Tail(
 /** Builds producer-only atlases and destination-free GX texture payloads. */
 export async function createTextureAtlases(
 	resources: Resource[],
-	reportProgress?: ProgressNote,
+	report?: BuildReporter,
 ): Promise<void> {
 	const atlases: TextureAtlasResource[] = [];
 	const imagesByAtlas = new Map<string, ImageResource[]>();
@@ -1272,7 +1275,7 @@ export async function createTextureAtlases(
 				break;
 			}
 		}
-		reportProgress?.(`texture atlas ${atlas.name} (${atlasImages.length} images)`);
+		report?.({ type: 'item', message: `texture atlas ${atlas.name} (${atlasImages.length} images)`, current: atlasIndex + 1, total: atlases.length });
 		let canvas = createTextureAtlas(atlasImages, {
 			maxPixelWidth: systemTexture ? GX_SYSTEM_TEXTURE_WIDTH : GX_GPU_TRANSFER_MAX_WIDTH << 2,
 			maxHeight: systemTexture ? GX_SYSTEM_TEXTURE_HEIGHT : GX_GPU_TRANSFER_MAX_HEIGHT,
@@ -1304,7 +1307,7 @@ export async function finalizeRompack(
 	rom_name: string,
 	options: {
 		projectRootPath?: string,
-		status?: ProgressNote,
+		status?: BuildReporter,
 		debug: boolean,
 		layout: RomPrefixLayout,
 		outputDirectory: string,
@@ -1449,13 +1452,13 @@ export async function finalizeRompack(
 		};
 		try {
 			await writeBuffer(headerBuffer);
-			status?.('write rom payloads');
+			status?.({ type: 'detail', message: 'Write ROM payloads' });
 			for (let index = 0; index < physicalSpans.length; index += 1) {
 				const span = physicalSpans[index];
 				await writePaddingTo(span.start);
 				await writeBuffer(span.buffer);
 			}
-			status?.('write toc');
+			status?.({ type: 'detail', message: 'Write table of contents' });
 			await writePaddingTo(tocOffset);
 			await writeBuffer(tocBuffer);
 		} finally {

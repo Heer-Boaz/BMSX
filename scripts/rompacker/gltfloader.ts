@@ -1,6 +1,7 @@
 import { Buffer } from 'buffer';
 import type { GLTFIndexArray, GLTFMesh, GLTFModel, GLTFNode, GLTFScene, GLTFSkin } from '../../toolchain/ts/rompack/gltf';
 import { dirname, extname, resolve } from 'node:path';
+import { reportBuildDiagnostics, type BuildReporter } from '../lib/build_reporter';
 
 type GLBParseResult = { json: any; bin?: Uint8Array };
 
@@ -74,7 +75,7 @@ function parseGLB(data: Uint8Array): GLBParseResult {
 	return { json, bin };
 }
 
-export async function loadGLTFModel(document: GLTFDocument, resname: string): Promise<GLTFModel> {
+export async function loadGLTFModel(document: GLTFDocument, resname: string, report: BuildReporter = reportBuildDiagnostics): Promise<GLTFModel> {
 	const { json, bin: glbBin, external } = document;
 
 	const buffers: Uint8Array[] = [];
@@ -554,11 +555,11 @@ export async function loadGLTFModel(document: GLTFDocument, resname: string): Pr
 
 	model.imageBuffers = imageBuffers.map(buf => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)) as ArrayBuffer[];
 
-	validateGLTFModel(model);
+	validateGLTFModel(model, report);
 	return model;
 }
 
-function validateGLTFModel(model: GLTFModel): void {
+function validateGLTFModel(model: GLTFModel, report: BuildReporter): void {
 	if (!model.meshes || model.meshes.length === 0) {
 		throw new Error('GLTF model has no meshes');
 	}
@@ -577,7 +578,7 @@ function validateGLTFModel(model: GLTFModel): void {
 			throw new Error('Mesh normals length mismatch');
 		}
 		if (mesh.tangents && mesh.tangents.length !== vertexCount * 4) {
-			console.warn('Tangents array length mismatch, dropping tangents');
+			report({ type: 'diagnostic', level: 'warning', message: 'Tangents array length mismatch, dropping tangents' });
 			mesh.tangents = null;
 		}
 		if (mesh.indices) {

@@ -1,14 +1,15 @@
 import pc from 'picocolors';
+import stringWidth from 'string-width';
 
 import { TaskProgressReporter } from './task_progress';
-import { CliTerminal } from './cli_terminal';
+import { CliTerminal, truncateTerminalText } from './cli_terminal';
 
 export type LogEntryType = undefined | 'error' | 'warning';
 
 export interface CliUi {
 	writeOut(text: string, type?: LogEntryType): void;
 	printBanner(): void;
-	createProgress(tasks: string[]): TaskProgressReporter;
+	createProgress(verbose?: boolean): TaskProgressReporter;
 	info(message: string): void;
 	warn(message: string): void;
 	ok(message: string): void;
@@ -29,28 +30,29 @@ export function createCliUi(options: { bannerTitle: string; labelWidth?: number;
 
 	const writeOut = (text: string, type?: LogEntryType): void => {
 		if (type === 'error') {
-			terminal.write(pc.red(text));
+			terminal.write(pc.red(text), 'stderr');
 			return;
 		}
 		if (type === 'warning') {
-			terminal.write(pc.yellow(text));
+			terminal.write(pc.yellow(text), 'stderr');
 			return;
 		}
 		terminal.write(text);
 	};
 
 	const printBanner = (): void => {
-		const top = '╔════════════════════════════════════════════════════════════════════════════════╗';
-		const innerWidth = 78;
-		const text = `${options.bannerTitle} by Boaz©®℗™`;
-		const left = Math.max(0, (innerWidth - text.length) >> 1);
-		const right = Math.max(0, innerWidth - text.length - left);
+		const innerWidth = Math.max(0, Math.min(78, terminal.lineWidth - 2));
+		const top = `╔${'═'.repeat(innerWidth)}╗`;
+		const text = truncateTerminalText(`${options.bannerTitle} by Boaz©®℗™`, innerWidth);
+		const textWidth = stringWidth(text);
+		const left = (innerWidth - textWidth) >> 1;
+		const right = innerWidth - textWidth - left;
 		const middle = `║${' '.repeat(left)}${pc.white(text)}${' '.repeat(right)}║`;
-		const bottom = '╚════════════════════════════════════════════════════════════════════════════════╝';
+		const bottom = `╚${'═'.repeat(innerWidth)}╝`;
 		writeOut(pc.bold(pc.green(`${top}\n${middle}\n${bottom}\n`)));
 	};
 
-	const createProgress = (tasks: string[]): TaskProgressReporter => new TaskProgressReporter(tasks, terminal);
+	const createProgress = (verbose = false): TaskProgressReporter => new TaskProgressReporter(terminal, verbose);
 	const info = (message: string): void => writeOut(`${glyph.info} ${message}\n`);
 	const warn = (message: string): void => writeOut(`${glyph.warn} ${message}\n`, 'warning');
 	const ok = (message: string): void => writeOut(`${glyph.ok} ${message}\n`);

@@ -15,6 +15,7 @@ async function main(): Promise<void> {
 		romname: { type: 'string' }, respath: { type: 'string' }, title: { type: 'string' },
 		mode: { type: 'string', default: process.env.ROM_MODE ?? 'rompack' },
 		opt: { type: 'string', default: '3' }, debug: { type: 'boolean', default: false }, force: { type: 'boolean', default: false },
+		verbose: { type: 'boolean', short: 'v', default: false },
 		'output-dir': { type: 'string', default: process.env.ROM_OUTPUT_DIR ?? './dist' },
 		'store-dir': { type: 'string', default: './.bmsx/builds' },
 		skiptypecheck: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
@@ -24,6 +25,7 @@ async function main(): Promise<void> {
 			+ '  --output-dir <dir>  Export the exact published files (default: dist)\n'
 			+ '  --store-dir <dir>   Immutable artifact store (default: .bmsx/builds)\n'
 			+ '  -respath <dir>      Resource root override\n'
+			+ '  -v, --verbose      Print individual assets and build details\n'
 			+ 'BIOS files live under <output-dir>/system; cartridges live directly under <output-dir>.\n'
 			+ 'Cart builds resolve and build their BIOS dependency automatically. No server is required.\n');
 		return;
@@ -35,12 +37,21 @@ async function main(): Promise<void> {
 	if (selection.domain === 'cart' && !/^[a-z0-9_-]+$/.test(selection.target)) throw new Error('Specify -romname <cart-folder> (letters, digits, underscore or hyphen).');
 	const store = new RomArtifactStore(resolve(values['store-dir'])), stage = store.staging(randomUUID());
 	ui.printBanner(); ui.bullet('Target', selection.domain === 'cart' ? selection.target : 'system'); ui.bullet('Recipe', `${values.debug ? 'debug' : 'release'} -O${values.opt}`);
+	const progress = ui.createProgress(values.verbose);
 	try {
 		const result = await prepareMediaBuild({ ...selection, debug: values.debug, optLevel: Number(values.opt) as 0 | 1 | 2 | 3, force: values.force,
-			respath: values.respath ?? process.env.RES_PATH }, store, stage, phase => ui.info(phase));
-		if (!result.reused) await store.publish(stage, result.artifact);
+			respath: values.respath ?? process.env.RES_PATH }, store, stage, progress.report);
+		if (!result.reused) {
+			progress.report({ type: 'phase', message: 'Publish artifact' });
+			await store.publish(stage, result.artifact);
+		}
+		progress.report({ type: 'phase', message: 'Export artifact' });
 		await store.export(result.artifact, resolve(values['output-dir']));
-		ui.bullet('Artifact', result.artifact.id); ui.ok(result.reused ? 'Up to date; exact artifact exported' : 'Build published and exported');
+		progress.finish(result.reused ? 'Up to date; exact artifact exported' : 'Build published and exported');
+		ui.bullet('Artifact', result.artifact.id);
+	} catch (error) {
+		progress.fail();
+		throw error;
 	} finally { await rm(stage, { recursive: true, force: true }); }
 }
 

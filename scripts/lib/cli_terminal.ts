@@ -1,84 +1,72 @@
 import { clearLine, cursorTo } from 'node:readline';
+import type { Writable } from 'node:stream';
+import stringWidth from 'string-width';
 
+const graphemes = new Intl.Segmenter();
+
+/** Keep both the phase prefix and asset/path suffix, as Ninja does for long status lines. */
+export function truncateTerminalText(text: string, maxWidth: number): string {
+	if (stringWidth(text) <= maxWidth) return text;
+	if (maxWidth <= 1) return '…'.slice(0, maxWidth);
+	const leftWidth = (maxWidth - 1) >> 1;
+	const rightWidth = maxWidth - 1 - leftWidth;
+	const segments = graphemes.segment(text);
+	let left = '', right = '';
+	let width = 0;
+	for (const { segment: char } of segments) {
+		const charWidth = stringWidth(char);
+		if (width + charWidth > leftWidth) break;
+		left += char;
+		width += charWidth;
+	}
+	width = 0;
+	let end = text.length;
+	while (end > 0) {
+		const { segment, index } = segments.containing(end - 1)!;
+		const charWidth = stringWidth(segment);
+		if (width + charWidth > rightWidth) break;
+		right = segment + right;
+		width += charWidth;
+		end = index;
+	}
+	return `${left}…${right}`;
+}
+
+/** The CLI's sole writer owns the transient line; diagnostics always start on a clean line. */
 export class CliTerminal {
-	private progressLine = '';
-	private progressActive = false;
-	private progressVisible = false;
-	private progressSuspendDepth = 0;
-	private readonly progressEnabled = process.stdout.isTTY && !process.env.CI;
+	private progressLine: string | undefined;
+	public readonly interactiveProgress: boolean;
 
-	public get interactiveProgress(): boolean {
-		return this.progressEnabled;
+	constructor(private readonly output: Writable & { isTTY?: boolean; columns?: number } = process.stdout,
+		private readonly errors: Writable = process.stderr) {
+		this.interactiveProgress = !!output.isTTY && !process.env.CI && process.env.TERM !== 'dumb';
 	}
 
 	public get lineWidth(): number {
-		return Math.max(1, (process.stdout.columns || 80) - 1);
+		return Math.max(1, (this.output.columns || 80) - 1);
 	}
 
-	public write(text: string): void {
-		this.suspendProgress();
-		process.stdout.write(text);
-		this.resumeProgress();
+	public write(text: string, channel: 'stdout' | 'stderr' = 'stdout'): void {
+		if (this.progressLine !== undefined) {
+			cursorTo(this.output, 0);
+			clearLine(this.output, 0);
+		}
+		(channel === 'stderr' ? this.errors : this.output).write(text);
+		if (this.progressLine !== undefined) this.showProgress(this.progressLine);
 	}
 
 	public showProgress(line: string): void {
+		if (!this.interactiveProgress) return;
 		this.progressLine = line;
-		this.progressActive = true;
-		if (!this.progressEnabled || this.progressSuspendDepth > 0) {
-			return;
-		}
-		cursorTo(process.stdout, 0);
-		process.stdout.write(line);
-		clearLine(process.stdout, 1);
-		this.progressVisible = true;
-	}
-
-	public completeProgress(line: string): void {
-		this.progressLine = line;
-		this.progressActive = false;
-		this.progressSuspendDepth = 0;
-		if (this.progressEnabled) {
-			cursorTo(process.stdout, 0);
-			process.stdout.write(line);
-			clearLine(process.stdout, 1);
-			process.stdout.write('\n');
-			this.progressVisible = false;
-		}
+		cursorTo(this.output, 0);
+		this.output.write(truncateTerminalText(line, this.lineWidth));
+		clearLine(this.output, 1);
 	}
 
 	public stopProgress(): void {
-		this.progressActive = false;
-		this.progressSuspendDepth = 0;
-		this.clearVisibleProgress();
-		this.progressLine = '';
-	}
-
-	public suspendProgress(): void {
-		if (!this.progressEnabled || !this.progressActive) {
-			return;
-		}
-		if (this.progressSuspendDepth === 0) {
-			this.clearVisibleProgress();
-		}
-		this.progressSuspendDepth += 1;
-	}
-
-	public resumeProgress(redraw = true): void {
-		if (!this.progressActive || this.progressSuspendDepth === 0) {
-			return;
-		}
-		this.progressSuspendDepth -= 1;
-		if (redraw && this.progressSuspendDepth === 0) {
-			this.showProgress(this.progressLine);
-		}
-	}
-
-	private clearVisibleProgress(): void {
-		if (!this.progressEnabled || !this.progressVisible) {
-			return;
-		}
-		cursorTo(process.stdout, 0);
-		clearLine(process.stdout, 0);
-		this.progressVisible = false;
+		if (this.progressLine === undefined) return;
+		cursorTo(this.output, 0);
+		clearLine(this.output, 0);
+		this.progressLine = undefined;
 	}
 }

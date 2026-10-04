@@ -60,15 +60,15 @@ function parseOptions(args: string[]): {
 	}
 
 	if (seenFlags.has('-h') || seenFlags.has('--help')) {
-		ui.writeOut('Usage: <command> --target <product> [options]\n', 'warning');
-		ui.writeOut('Products:\n', 'warning');
-		ui.writeOut('  machine-runtime, browser-player, browser-studio\n', 'warning');
-		ui.writeOut('  node-cli-player, node-headless-player, node-headless-tooling\n', 'warning');
-		ui.writeOut('  node-host-tools (optional Studio server native tools)\n', 'warning');
-		ui.writeOut('  libretro-wsl, libretro-win\n', 'warning');
-		ui.writeOut('Options:\n', 'warning');
-		ui.writeOut('  --debug                   Build debug artifacts\n', 'warning');
-		ui.writeOut('  --force                   Force rebuild\n', 'warning');
+		ui.writeOut('Usage: <command> --target <product> [options]\n');
+		ui.writeOut('Products:\n');
+		ui.writeOut('  machine-runtime, browser-player, browser-studio\n');
+		ui.writeOut('  node-cli-player, node-headless-player, node-headless-tooling\n');
+		ui.writeOut('  node-host-tools (optional Studio server native tools)\n');
+		ui.writeOut('  libretro-wsl, libretro-win\n');
+		ui.writeOut('Options:\n');
+		ui.writeOut('  --debug                   Build debug artifacts\n');
+		ui.writeOut('  --force                   Force rebuild\n');
 		process.exit(0);
 	}
 
@@ -160,6 +160,6 @@ async function main(): Promise<void> {
 
 main().catch(error => {
 	const message = error instanceof Error ? error.message : String(error);
-	ui.writeOut(`${pc.red(message)}\n`);
+	ui.writeOut(`${message}\n`, 'error');
 	process.exit(1);
 });

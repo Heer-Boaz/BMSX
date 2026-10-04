@@ -1,3 +1,4 @@
+import type { BuildReporter } from '../lib/build_reporter';
 import { copyFile, mkdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { RomArtifactStore, romBuildKey, type PreparedRomArtifact } from './artifacts';
@@ -14,15 +15,14 @@ import { SCENARIO_TEST_SOURCE_SUFFIX } from '../../toolchain/ts/rompack/scenario
 
 export type MediaBuildOptions = { debug: boolean; optLevel: 0 | 1 | 2 | 3; force: boolean; respath?: string }
 	& ({ domain: 'system' } | { domain: 'cart'; target: string });
-export type BuildProgress = (phase: string) => void;
 export type PreparedUnit = {
 	inputs: RomBuildInputs; recipe: RomBuildRecipe; sourceFiles: string[];
 	librarySourceFiles: string[]; testLibraryFiles: string[]; allLibraryFiles: string[]; scenarioSourceFiles: string[];
 };
 
 /** Capture both domains before compiling either. The cart links to this build's system, never dist sidecars. */
-export async function prepareMediaBuild(options: MediaBuildOptions, store: RomArtifactStore, stage: string, progress: BuildProgress): Promise<PreparedRomArtifact> {
-	progress('Capture inputs');
+export async function prepareMediaBuild(options: MediaBuildOptions, store: RomArtifactStore, stage: string, progress: BuildReporter): Promise<PreparedRomArtifact> {
+	progress({ type: 'phase', message: 'Capture inputs' });
 	const systemDirectory = join(stage, 'system');
 	const toolchain = romToolchainIdentity();
 	const target = options.domain === 'cart' ? options.target : 'system';
@@ -47,7 +47,7 @@ export async function prepareMediaBuild(options: MediaBuildOptions, store: RomAr
 	const systemKey = romBuildKey({ name: SYSTEM_ROM_NAME, recipe: system.recipe, inputs: system.inputs.identity });
 	const cachedSystem = options.force ? undefined : await store.find(systemKey);
 	if (cart === undefined && cachedSystem !== undefined && cachedSystem.cart === undefined) {
-		progress('Unchanged inputs and recipe'); return { artifact: cachedSystem, reused: true };
+		progress({ type: 'phase', message: 'Unchanged inputs and recipe' }); return { artifact: cachedSystem, reused: true };
 	}
 	let systemUnit: RomBuildUnit;
 	if (cachedSystem !== undefined) systemUnit = cachedSystem.system;
@@ -62,7 +62,7 @@ export async function prepareMediaBuild(options: MediaBuildOptions, store: RomAr
 		inputs: cart.inputs.identity, system: systemKey, systemOutputs: systemUnit.outputs });
 	if (cart !== undefined && !options.force) {
 		const cached = await store.find(cartKey!);
-		if (cached !== undefined) { progress('Unchanged inputs and recipe'); return { artifact: cached, reused: true }; }
+		if (cached !== undefined) { progress({ type: 'phase', message: 'Unchanged inputs and recipe' }); return { artifact: cached, reused: true }; }
 	}
 	if (cachedSystem !== undefined) {
 		await mkdir(systemDirectory, { recursive: true });
