@@ -1,4 +1,5 @@
-import type { ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
+import { ExecutionHookPhase, type ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
+import { RuntimeEventCapture } from './event_capture';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { RuntimeSourceState } from './sources';
 import { RuntimeBreakpoints, type RuntimeBreakpointBindings } from './breakpoints';
@@ -11,6 +12,7 @@ export type RuntimeBreakpointState = { readonly breakpoints: RuntimeBreakpoints 
 /** Authoring execution policy composes source stops with its own control plans. */
 export type RuntimeDebuggerState = RuntimeBreakpointState & {
 	readonly source: SourceDebugger;
+	readonly events: RuntimeEventCapture;
 	executionRevision: number;
 	executionContext: RuntimeDebuggerExecutionContext | undefined;
 	readonly executionHook: ExecutionHook;
@@ -22,16 +24,20 @@ export type RuntimeDebuggerState = RuntimeBreakpointState & {
 
 export function createRuntimeDebuggerState(runtime: Runtime, sources: RuntimeSourceState): RuntimeDebuggerState {
 	let state: RuntimeDebuggerState;
-	const executionHook: ExecutionHook = (domain, pc) => {
+	const executionHook: ExecutionHook = (domain, pc, phase) => {
 		const controlActive = state.plans.controlActive;
 		if (state.source.stop !== undefined || state.source.stepThreadFinished || controlActive && state.plans.shouldStop(domain, pc)) return true;
-		if (!state.source.shouldStop(domain, pc, !controlActive || state.plans.honorUserStops)) return false;
+		if (!state.source.shouldStop(domain, pc, !controlActive || state.plans.honorUserStops)) {
+			if (phase === ExecutionHookPhase.Instruction) state.events.observe(domain, pc);
+			return false;
+		}
 		if (controlActive) state.plans.setControlSuspended(true);
 		state.stopPresentationPending = true;
 		return true;
 	};
 	const breakpoints = new RuntimeBreakpoints(sources, () => state.source.install(sources.currentBlua32Media, state.breakpoints.bindings.pcs));
 	state = {
+		events: new RuntimeEventCapture(runtime, sources, () => updateExecutionHookBinding(state)),
 		source: new SourceDebugger(runtime.machine.cpu, sources.currentBlua32Media, breakpoints.bindings.pcs, () => updateExecutionHookBinding(state)),
 		breakpoints,
 		executionRevision: 0, executionContext: undefined, executionHook,
@@ -42,7 +48,7 @@ export function createRuntimeDebuggerState(runtime: Runtime, sources: RuntimeSou
 }
 
 function updateExecutionHookBinding(state: RuntimeDebuggerState): void {
-	const domainMask = state.source.domainMask | state.plans.executionDomainMask;
+	const domainMask = state.source.domainMask | state.plans.executionDomainMask | state.events.domainMask;
 	state.runtime.machine.cpu.setExecutionHook(domainMask === 0 ? null : state.executionHook,
 		domainMask, state.plans.preMaskableInterruptDomainMask);
 }
@@ -67,6 +73,7 @@ export function interruptRuntimeDebuggerExecution(state: RuntimeDebuggerState): 
 }
 
 export function resetRuntimeDebuggerExecution(state: RuntimeDebuggerState): void {
+	state.events.stop('runtime-changed');
 	state.executionRevision++;
 	state.executionContext = undefined;
 	state.stopPresentationPending = false;
@@ -128,6 +135,7 @@ export function discardRuntimeDebuggerFramesFrom(state: RuntimeDebuggerState, fr
 }
 
 export function applyRuntimeDebuggerHotResume(state: RuntimeDebuggerState, breakpoints: RuntimeBreakpointBindings): void {
+	state.events.stop('runtime-changed');
 	state.executionRevision++;
 	state.executionContext = undefined;
 	state.plans.setControlSuspended(false);

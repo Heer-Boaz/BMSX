@@ -1,3 +1,4 @@
+import type { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';
 import type { LuaProgramInput } from '../../ide/workbench/contrib/lua_program/editor_input';
 import type { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
 import type { ConversationObserverInput } from '../../ide/workbench/contrib/conversations/editor_input';
@@ -140,6 +141,7 @@ function createEditorPanes() {
 	let codeFactoryCount = 0;
 	let resourceFactoryCount = 0;
 	const editorPanes = new EditorPanes({
+		event_viewer: () => new RecordingEditorPane<EventViewerInput>(),
 		terminal: () => new RecordingEditorPane<TerminalInput>(),
 		actor_lab: () => new RecordingEditorPane<ActorLabInput>(),
 		game_view: () => new RecordingEditorPane<GameViewInput>(),

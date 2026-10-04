@@ -236,9 +236,15 @@ export const enum RunResult {
 	ExecutionStopped,
 }
 
+export const enum ExecutionHookPhase {
+	Instruction,
+	BeforeMaskableInterrupt,
+}
+
 export type ExecutionHook = (
 	executionDomainId: ExecutionDomainId,
 	pc: number,
+	phase: ExecutionHookPhase,
 ) => boolean;
 
 const TABLE_WEAK_KEYS = 1;
@@ -1870,7 +1876,7 @@ export class CPU implements MappedPageInvalidator {
 						const interruptedImage = interruptedFrame.executionImage;
 						if ((preMaskableInterruptExecutionDomainMask
 							& executionDomainBit(interruptedImage.executionDomainId)) !== 0
-							&& executionHook(interruptedImage.executionDomainId, interruptedFrame.pc)) {
+							&& executionHook(interruptedImage.executionDomainId, interruptedFrame.pc, ExecutionHookPhase.BeforeMaskableInterrupt)) {
 							return RunResult.ExecutionStopped;
 						}
 						this.enterPendingInterrupt();
@@ -1880,7 +1886,7 @@ export class CPU implements MappedPageInvalidator {
 					const image = frame.executionImage;
 					const pc = frame.pc;
 					if ((executionDomainMask & executionDomainBit(image.executionDomainId)) !== 0
-						&& executionHook(image.executionDomainId, pc)) {
+						&& executionHook(image.executionDomainId, pc, ExecutionHookPhase.Instruction)) {
 						return RunResult.ExecutionStopped;
 					}
 					if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) {

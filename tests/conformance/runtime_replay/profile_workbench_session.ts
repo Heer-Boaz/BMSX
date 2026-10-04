@@ -30,6 +30,7 @@ import { GameViewInput } from '../../../ide/workbench/contrib/game_view/editor_i
 const serializers: EditorInputSerializers = {
 	aem_editor: new AemEditorInputSerializer(null),
 	lua_program: new LuaProgramInputSerializer(null, null),
+	event_viewer: { serialize: () => '', deserialize: () => { throw new Error('Capture-only probe'); } },
 	terminal: { serialize: () => '', deserialize: () => { throw new Error('Capture-only probe'); } },
 	code_editor: new CodeEditorInputSerializer(null),
 	behavior_lens: new BehaviorLensInputSerializer(null, null),

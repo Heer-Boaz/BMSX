@@ -1,3 +1,4 @@
+import type { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';
 import type { ConversationObserverInput } from '../../ide/workbench/contrib/conversations/editor_input';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import type { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
@@ -87,6 +88,7 @@ function activateViewInput(_input: EditorInput): void {
 /** Editor-group lifecycle used by tests that exercise workspace and navigation owners. */
 export function createTestEditorPanes(): EditorPanes {
 	return new EditorPanes({
+		event_viewer: () => new TestEditorPane<EventViewerInput>(activateViewInput),
 		terminal: () => new TestEditorPane<TerminalInput>(activateViewInput),
 		actor_lab: () => new TestEditorPane<ActorLabInput>(activateViewInput),
 		game_view: () => new TestEditorPane<GameViewInput>(activateViewInput),

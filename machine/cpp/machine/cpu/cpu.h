@@ -60,7 +60,12 @@ enum class RunResult {
 	ExecutionStopped,
 };
 
-using ExecutionHook = bool (*)(void*, ExecutionDomainId, u32);
+enum class ExecutionHookPhase {
+	Instruction,
+	BeforeMaskableInterrupt,
+};
+
+using ExecutionHook = bool (*)(void*, ExecutionDomainId, u32, ExecutionHookPhase);
 
 struct ExecutionHookBinding {
 	ExecutionHook hook;

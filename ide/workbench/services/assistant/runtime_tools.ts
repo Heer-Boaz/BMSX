@@ -30,6 +30,24 @@ export class WorkspaceRuntimeTools {
 		if (this.disposed) throw new StudioToolInputError('Runtime tool context is disposed');
 		const request = decodeRuntimeToolRequest(name, input);
 		switch (request.name) {
+			case 'studio_event_capture':
+			case 'studio_read_events': {
+				if (request.target !== this.owner.target) throw new StudioToolInputError('Event capture requires this authoring target.');
+				requestSignal?.throwIfAborted();
+				const capture = this.debuggerExecution.state.events;
+				if (request.name === 'studio_read_events') {
+					if (request.generation !== capture.generation) throw new StudioToolInputError('Event history was cleared; read the current capture generation.');
+					return { kind: 'runtime' as const, data: { target: this.owner.target, generation: capture.generation, total: capture.records.length,
+						events: capture.records.slice(request.start, request.start + request.count) } };
+				}
+				switch (request.action) {
+					case 'start': capture.start(); break;
+					case 'stop': capture.stop(); break;
+					case 'clear': capture.clear(); break;
+				}
+				return { kind: 'runtime' as const, data: { target: this.owner.target, status: capture.status,
+					generation: capture.generation, total: capture.records.length, capacity: capture.capacity } };
+			}
 			case 'studio_hot_resume': {
 				if (request.target !== this.owner.target) throw new StudioToolInputError('Hot Resume requires this authoring target.');
 				const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);

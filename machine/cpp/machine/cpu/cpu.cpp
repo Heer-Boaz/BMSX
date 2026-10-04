@@ -2407,7 +2407,8 @@ RunResult CPU::runLoop(
 						&& hookBinding.hook(
 							hookBinding.context,
 							interruptedImage->executionDomainId,
-							interruptedFrame->pc
+							interruptedFrame->pc,
+							ExecutionHookPhase::BeforeMaskableInterrupt
 						)) {
 						return RunResult::ExecutionStopped;
 					}
@@ -2428,7 +2429,7 @@ RunResult CPU::runLoop(
 			pc = frame->pc;
 			if constexpr (Instrumented) {
 				if ((hookBinding.domainMask & executionDomainBit(image->executionDomainId)) != 0u
-					&& hookBinding.hook(hookBinding.context, image->executionDomainId, pc)) {
+					&& hookBinding.hook(hookBinding.context, image->executionDomainId, pc, ExecutionHookPhase::Instruction)) {
 					return RunResult::ExecutionStopped;
 				}
 			}

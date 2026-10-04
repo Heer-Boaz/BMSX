@@ -1,3 +1,4 @@
+import type { EventViewerInput } from '../../contrib/events/editor_input';
 import type { AemEditorInput } from '../../contrib/aem/editor_input';
 import type { LuaProgramInput } from '../../contrib/lua_program/editor_input';
 import type { ConversationObserverInput } from '../../contrib/conversations/editor_input';
@@ -14,6 +15,7 @@ import type { GameViewInput } from '../../contrib/game_view/editor_input';
 import type { WorkspaceEditReviewInput } from '../../contrib/edit_review/editor_input';
 
 export type EditorInput =
+	| EventViewerInput
 	| ConversationObserverInput
 	| TerminalInput
 	| CodeEditorInput

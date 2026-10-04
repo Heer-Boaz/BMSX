@@ -555,12 +555,14 @@ struct InstrumentedExecutionProbe {
 	bmsx::ExecutionDomainId expectedDomain = bmsx::SYSTEM_EXECUTION_DOMAIN_ID;
 	bmsx::u32 stopPc = 0;
 	std::vector<bmsx::u32> pcs;
+	bmsx::ExecutionHookPhase lastPhase = bmsx::ExecutionHookPhase::Instruction;
 };
 
-bool stopInstrumentedExecution(void* context, bmsx::ExecutionDomainId executionDomainId, bmsx::u32 pc) {
+bool stopInstrumentedExecution(void* context, bmsx::ExecutionDomainId executionDomainId, bmsx::u32 pc, bmsx::ExecutionHookPhase phase) {
 	auto& probe = *static_cast<InstrumentedExecutionProbe*>(context);
 	require(executionDomainId == probe.expectedDomain, "instrumented hook receives only the selected raw domain");
 	probe.pcs.push_back(pc);
+	probe.lastPhase = phase;
 	return pc == probe.stopPc;
 }
 
@@ -569,14 +571,14 @@ struct SelfClearingExecutionProbe {
 	int calls = 0;
 };
 
-bool clearExecutionHook(void* context, bmsx::ExecutionDomainId, bmsx::u32) {
+bool clearExecutionHook(void* context, bmsx::ExecutionDomainId, bmsx::u32, bmsx::ExecutionHookPhase) {
 	auto& probe = *static_cast<SelfClearingExecutionProbe*>(context);
 	probe.calls += 1;
 	probe.cpu->setExecutionHook({});
 	return probe.calls == 2;
 }
 
-bool throwExecutionHook(void*, bmsx::ExecutionDomainId, bmsx::u32) {
+bool throwExecutionHook(void*, bmsx::ExecutionDomainId, bmsx::u32, bmsx::ExecutionHookPhase) {
 	throw std::runtime_error("execution hook failure");
 }
 
@@ -1022,6 +1024,7 @@ void testInstrumentedExecutionFenceStopsBeforePendingIrqDelivery() {
 	require(machine.cpu.getFrameDepth() == frameDepth, "pending IRQ did not push an exception frame");
 	require(machine.cpu.readFramePc(frameDepth - 1) == userPc, "user instruction remains unexecuted");
 	require(machine.cpu.canAcceptMaskableInterruptLine(), "pending IRQ remains asserted at the stopped boundary");
+	require(probe.lastPhase == bmsx::ExecutionHookPhase::BeforeMaskableInterrupt, "control fence is not an executed instruction");
 }
 
 void testInstrumentedMaskableInterruptFenceDoesNotDelayPendingNmi() {
@@ -1053,6 +1056,7 @@ void testInstrumentedMaskableInterruptFenceDoesNotDelayPendingNmi() {
 		"pending NMI is delivered before the maskable-interrupt fence"
 	);
 	require(machine.cpu.getFrameDepth() == frameDepth, "NMI handler returns to the user frame");
+	require(probe.lastPhase == bmsx::ExecutionHookPhase::Instruction, "ordinary instruction has its own phase after NMI return");
 	require(machine.cpu.readFramePc(frameDepth - 1) == userPc, "user instruction remains unexecuted");
 }
 

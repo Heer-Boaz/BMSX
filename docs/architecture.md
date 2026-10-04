@@ -5423,6 +5423,15 @@ raw registers without evaluating code or inferring optimized-out values. An
 inlined frame does not own a separate closure/upvalue scope. Retained fault
 diagnostics are labelled separately from this live stack. See
 [stack inspection](studio_stack_inspection.md).
+The [Event Viewer](studio_event_viewer.md) records immutable, bounded emission
+snapshots rather than retaining live inspection borrows. Its IDE-owned function
+probe binds installed event-emitter statement/argument metadata through the
+existing CPU instrumentation hook. Cartlib remains unchanged, with no logging,
+listener registration, extra instructions or guest allocations. Recording is
+opt-in; reset, history restore and code install retire the probe without erasing
+captured evidence. The shared UI and conversation tools control that same
+recording. Hook phases distinguish admitted instructions from pre-interrupt
+control fences in TS/C++; normal interpreter loops do not gain tracing checks.
 Cartlib-specific [Actor inspection](studio_actor_tools.md) attaches to that same
 suspended lifetime and value-reference registry, without teaching the generic
 runtime owner about cartlib or workbench panes. Actor Lab's `ActorRuntimeTree`

@@ -74,6 +74,7 @@ function fixture(t: TestContext) {
 	const unused = { serialize: () => assert.fail('unexpected serialization'), deserialize: () => assert.fail('unexpected reconstruction') };
 	const serializers: EditorInputSerializers = {
 		aem_editor: unused, lua_program: unused, actor_lab: unused, game_view: unused,
+		event_viewer: { serialize: () => '', deserialize: () => { throw new Error('Events not used by this session fixture'); } },
 		terminal: { serialize: () => '', deserialize: () => { throw new Error('Terminal not used in this source-session fixture'); } },
 		code_editor: new CodeEditorInputSerializer(sources),
 		behavior_lens: new BehaviorLensInputSerializer(sources, behavior),

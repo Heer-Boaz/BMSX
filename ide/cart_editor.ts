@@ -1,3 +1,6 @@
+import type { RuntimeEventCapture } from './runtime/event_capture';
+import { EventViewerInput } from './workbench/contrib/events/editor_input';
+import { EventViewerPane } from './workbench/contrib/events/editor_pane';
 import { AemEditorController } from './workbench/contrib/aem/controller';
 import { AemEditorPane } from './workbench/contrib/aem/editor_pane';
 import { AemEditorInputSerializer } from './workbench/contrib/aem/editor_serializer';
@@ -176,6 +179,7 @@ const EDITOR_TARGET_WIDTH = 384;
 const EDITOR_TARGET_HEIGHT = 288;
 
 export type CartEditor = {
+	readonly events: RuntimeEventCapture;
 	builds: WorkspaceBuilds | undefined;
 	projects: WorkspaceProjects | undefined;
 	importFiles: ImportWorkspaceFiles | undefined;
@@ -285,6 +289,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly sources: RuntimeSourceState;
 	private readonly fault: RuntimeFaultState;
 	private readonly luaTooling: RuntimeLuaTooling;
+	public readonly events: RuntimeEventCapture;
 	private readonly debuggerState: RuntimeDebuggerState;
 	private readonly overlayRenderer: OverlayRenderer;
 	private readonly unsubscribeWorkspaceCursorMoved: () => void;
@@ -367,6 +372,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.fault = fault;
 		this.luaTooling = luaTooling;
 		this.debuggerState = debuggerState;
+		this.events = debuggerState.events;
 		this.overlayRenderer = overlayRenderer;
 		this.isAvailable = runtimeSourcesSupportIde(this.sources);
 		this.commands = new IdeCommandController(
@@ -401,6 +407,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources,
 		);
 		this.editorPanes = new EditorPanes({
+			event_viewer: () => new EventViewerPane(this.resourcePanel, this.quickInput, this.commands, this.frameNavigation),
 			terminal: () => new TerminalPane(this.resourcePanel, this.clipboard, this.quickInput),
 			conversation_observer: () => new ConversationObserverPane(this.resourcePanel, decodeImage),
 			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.assistantCommands, decodeImage),
@@ -477,6 +484,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.editorInputSerializers = {
 			aem_editor: new AemEditorInputSerializer(sources),
 			lua_program: new LuaProgramInputSerializer(sources, this.luaPrograms),
+			event_viewer: { serialize: () => '', deserialize: () => new EventViewerInput(this.debuggerState.events) },
 			terminal: { serialize: () => '', deserialize: () => new TerminalInput(this.terminal) },
 			actor_lab: { serialize: () => '', deserialize: () => this.actorLab.resolveInput() },
 			game_view: { serialize: () => '', deserialize: () => new GameViewInput() },

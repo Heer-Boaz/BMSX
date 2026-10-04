@@ -110,7 +110,7 @@ void inspectOpenAndClosedClosure() {
 	auto& cpu = machine.runtime.machine.cpu;
 	auto stopPc = machine.rom.textAddress + 5u * bmsx::INSTRUCTION_BYTES;
 	cpu.setExecutionHook({
-		.hook = [](void* context, bmsx::ExecutionDomainId, bmsx::u32 pc) { return pc == *static_cast<bmsx::u32*>(context); },
+		.hook = [](void* context, bmsx::ExecutionDomainId, bmsx::u32 pc, bmsx::ExecutionHookPhase) { return pc == *static_cast<bmsx::u32*>(context); },
 		.context = &stopPc,
 		.domainMask = bmsx::SYSTEM_EXECUTION_DOMAIN_MASK,
 		.preMaskableInterruptDomainMask = 0u,

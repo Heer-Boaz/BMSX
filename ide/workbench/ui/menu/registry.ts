@@ -8,7 +8,7 @@ export type WorkbenchDropdownMenuId =
 
 export type WorkbenchContextMenuId = 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'terminal.input' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'events.title' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'terminal.input' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -26,6 +26,7 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'actorLab.stateGraph.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'propertyInspector.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'sourceEditReview.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'events.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'terminal.input': readonly WorkbenchMenuCommandItem[];
 	readonly 'assistant.turn': readonly WorkbenchMenuCommandItem[];
 	readonly 'workspaceEditReview.title': readonly WorkbenchMenuCommandItem[];
@@ -166,6 +167,12 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'sourceEditReview.apply' },
 		{ type: 'command', command: 'sourceEditReview.discard' },
 	],
+	'events.title': [
+		{ type: 'command', command: 'events.record' },
+		{ type: 'command', command: 'events.clear' },
+		{ type: 'command', command: 'events.filter' },
+		{ type: 'command', command: 'events.details' },
+	],
 	'terminal.input': [
 		{ type: 'command', command: 'terminal.context' },
 		{ type: 'command', command: 'terminal.evaluate' },
@@ -220,6 +227,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'assistant' },
 		{ type: 'command', command: 'conversations' },
 		{ type: 'command', command: 'terminal' },
+		{ type: 'command', command: 'events' },
 		{ type: 'command', command: 'gameView' },
 		{ type: 'command', command: 'gameView.togglePanel' },
 		{ type: 'command', command: 'actorLab' },
