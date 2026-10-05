@@ -1047,7 +1047,8 @@
 				"toolchain/ts/lua/compiler/passes",
 				"toolchain/ts/lua/compiler/optimizer",
 				"ide/runtime/source_registry.ts",
-				"ide/runtime/lua_tooling.ts",
+				"ide/runtime/program_sources.ts",
+				"ide/runtime/lua_pipeline.ts",
 				"ide/runtime/sources.ts",
 				"toolchain/ts/rompack/blua32_linker.ts",
 				"toolchain/ts/rompack/blua32_revision.ts",
@@ -1058,6 +1059,8 @@
 				"machine/cpp/lua/syntax",
 				"machine/ts/machine/program",
 				"machine/cpp/machine/program",
+				"ide/language/lua/interpreter",
+				"ide/runtime/lua_tooling.ts",
 				"ide/runtime/native_bridge.ts",
 				"machine/ts/machine/runtime/host/native_bridge.ts",
 				"machine/ts/machine/runtime/resume_snapshot.ts"

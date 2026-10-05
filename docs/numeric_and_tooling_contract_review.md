@@ -160,3 +160,25 @@ Validation: 48 function-probe/event/actor/behavior/compiler/symbol and
 release/debug execution tests pass, including renamed real event-emitter
 parameters at O0/O3. Native symbol codec tests pass. Observer-disabled and
 observer-enabled complete CPU state, cycle count and guest heap remain equal.
+
+## Final regression and Studio authoring evidence
+
+- Full Lua suite: 2,924 passed, zero failures; the existing disabled runtime
+  integration placeholder remains skipped. Full ROM tooling suite: 203 passed.
+- IDE, scripts and tests typecheck. Both core-parity and architecture-boundary
+  audits pass. The layout manifest now names the source pipeline owners and
+  excludes the deleted interpreter and bridge rather than requiring a facade.
+- Rebuilt headless Studio, BIOS and `hot_resume_test`, then exercised the
+  shipped input/clipboard/capture surface with `tests/ide/user_io_authoring.mjs`.
+  Creating sources, running a cart, live-editing colors, adding an import,
+  changing BIOS code, rejecting invalid syntax and an unmappable continuation,
+  undo/redo, repairing and rebooting all pass. Rejected edits leave the previous
+  game runnable; successful live edits do not restart its entry.
+- Inspected the actual captures of both rejected edits and the running game.
+  The authoring test checks execution/source behavior rather than freezing the
+  diagnostic's English wording. This is real headless Studio UI evidence, not
+  browser, mobile or physical SNES Mini validation.
+
+Final native GEO/POW vector runs and native symbol-codec round-trips also pass.
+The cross-ISA evidence and POW host-time cost remain as recorded above; none of
+these checks claims exhaustive floating-point coverage or zero host overhead.

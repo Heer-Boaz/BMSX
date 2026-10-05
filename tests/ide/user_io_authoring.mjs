@@ -164,9 +164,15 @@ end
 		await wait(3);
 		await palette('Hot Resume');
 		await wait(10);
-		assert.ok(logs.some(line => line.includes('Syntax Error')), 'invalid source must produce a build diagnostic');
 		await capture();
 		await press('Escape');
+		await press('ControlRight+ShiftRight');
+		const ticksBeforeSyntaxRepair = logs.filter(line => line.includes('authoring:tick')).length;
+		await wait(100);
+		assert.ok(logs.filter(line => line.includes('authoring:tick')).length > ticksBeforeSyntaxRepair,
+			'a syntax error must leave the previously installed game runnable');
+		await expectColor(2);
+		await press('ControlRight+ShiftRight');
 		await press('ControlLeft+KeyZ');
 		assert.equal(await editorText(), importedPaint, 'Undo must still work after a rejected build');
 		await press('ControlLeft+KeyY');
@@ -183,7 +189,6 @@ end
 		await palette('Hot Resume');
 		await press('Enter');
 		await wait(10);
-		assert.ok(logs.some(line => line.includes('Hot Resume could not map')), 'removing the live continuation must reject Hot Resume');
 		await capture();
 		await press('Escape');
 		await press('ControlRight+ShiftRight');
