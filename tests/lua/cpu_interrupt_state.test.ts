@@ -7,7 +7,7 @@ import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { AcceptedInterruptKind, CPU, RunResult, ExecutionHookPhase } from '../../machine/ts/machine/cpu/cpu';
+import { AcceptedInterruptKind, CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { encodeFixedCallArgCount, OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
@@ -400,17 +400,15 @@ test('instrumented execution fence stops before a pending IRQ is delivered', () 
 	const sliceStats = { begin: 0, end: 0 };
 	const { cpu, cpuExecution, images, runtime } = makeCrossDomainHookRuntime(sliceStats);
 	const cartEntryPc = images.cartImage.functions[0].codeAddress;
-	const phases: ExecutionHookPhase[] = [];
 	runtime.machine.memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
 	runtime.machine.irqController.raise(IRQ_VBLANK);
 	cpu.setExecutionHook(
-		(executionDomainId, pc, phase) => { phases.push(phase); return executionDomainId === 0 && pc === cartEntryPc; },
+		(executionDomainId, pc) => executionDomainId === 0 && pc === cartEntryPc,
 		executionDomainBit(0),
 		executionDomainBit(0),
 	);
 
 	assert.equal(cpuExecution.runWithBudget(makeFrameState()), CpuExecutionResult.ExecutionStopped);
-	assert.deepEqual(phases, [ExecutionHookPhase.BeforeMaskableInterrupt]);
 	assert.equal(cpu.getFrameDepth(), 1);
 	assert.equal(cpu.readFramePc(0), cartEntryPc);
 	assert.equal(cpu.canAcceptMaskableInterruptLine(), true);

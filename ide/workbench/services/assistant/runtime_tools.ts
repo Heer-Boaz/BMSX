@@ -30,23 +30,25 @@ export class WorkspaceRuntimeTools {
 		if (this.disposed) throw new StudioToolInputError('Runtime tool context is disposed');
 		const request = decodeRuntimeToolRequest(name, input);
 		switch (request.name) {
-			case 'studio_event_capture':
+			case 'studio_event_history':
 			case 'studio_read_events': {
-				if (request.target !== this.owner.target) throw new StudioToolInputError('Event capture requires this authoring target.');
+				if (request.target !== this.owner.target) throw new StudioToolInputError('Event history requires this authoring target.');
 				requestSignal?.throwIfAborted();
-				const capture = this.debuggerExecution.state.events;
+				const history = this.debuggerExecution.state.events;
 				if (request.name === 'studio_read_events') {
-					if (request.generation !== capture.generation) throw new StudioToolInputError('Event history was cleared; read the current capture generation.');
-					return { kind: 'runtime' as const, data: { target: this.owner.target, generation: capture.generation, total: capture.records.length,
-						events: capture.records.slice(request.start, request.start + request.count) } };
+					if (request.generation !== history.generation) throw new StudioToolInputError('Event history was cleared; read the current generation.');
+					if (request.sequence < history.firstSequence) throw new StudioToolInputError('Event sequence expired; read the retained sequence window.');
+					if (request.sequence > history.endSequence) throw new StudioToolInputError('Event sequence is beyond the published history.');
+					const end = Math.min(history.endSequence, request.sequence + request.count);
+					const events = [];
+					for (let sequence = request.sequence; sequence < end; sequence++) events.push(history.at(sequence));
+					return { kind: 'runtime' as const, data: { target: this.owner.target, generation: history.generation,
+						firstSequence: history.firstSequence, endSequence: history.endSequence, events } };
 				}
-				switch (request.action) {
-					case 'start': capture.start(); break;
-					case 'stop': capture.stop(); break;
-					case 'clear': capture.clear(); break;
-				}
-				return { kind: 'runtime' as const, data: { target: this.owner.target, status: capture.status,
-					generation: capture.generation, total: capture.records.length, capacity: capture.capacity } };
+				if (request.action === 'clear') history.clear();
+				return { kind: 'runtime' as const, data: { target: this.owner.target, status: history.status,
+					generation: history.generation, firstSequence: history.firstSequence, endSequence: history.endSequence,
+					total: history.count, capacity: history.capacity, expired: history.expired } };
 			}
 			case 'studio_hot_resume': {
 				if (request.target !== this.owner.target) throw new StudioToolInputError('Hot Resume requires this authoring target.');

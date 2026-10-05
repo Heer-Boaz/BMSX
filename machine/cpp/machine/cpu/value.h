@@ -90,6 +90,7 @@ inline constexpr std::array<BuiltinFunctionCost, BUILTIN_FUNCTION_COUNT> BUILTIN
 	{ 1, 0, 0 }, // GetFrameUpvalue
 	{ 1, 0, 0 }, // SetFrameUpvalue
 	{ 1, 0, 0 }, // FrameHeader
+	{ 1, 0, 0 }, // Trace
 }};
 
 constexpr uint64_t VALUE_QNAN_MASK = 0x7ff8000000000000ULL;

@@ -60,12 +60,10 @@ enum class RunResult {
 	ExecutionStopped,
 };
 
-enum class ExecutionHookPhase {
-	Instruction,
-	BeforeMaskableInterrupt,
-};
+// Read-only native span; the observer must not retain it or execute guest code.
+using TraceHook = void (*)(void*, ExecutionDomainId, BuiltinArgsView);
 
-using ExecutionHook = bool (*)(void*, ExecutionDomainId, u32, ExecutionHookPhase);
+using ExecutionHook = bool (*)(void*, ExecutionDomainId, u32);
 
 struct ExecutionHookBinding {
 	ExecutionHook hook;
@@ -286,6 +284,8 @@ public:
 	bool canAcceptMaskableInterruptLine() const;
 	AcceptedInterruptKind peekPendingInterrupt() const;
 	bool enterPendingInterrupt();
+	void setTraceHook(TraceHook hook, void* context) { m_traceHook = hook; m_traceContext = context; }
+
 	void setExecutionHook(ExecutionHookBinding binding);
 	RunResult runUntilDepth(int targetDepth, int instructionBudget, const Thread* target = nullptr);
 	void collectHeap();
@@ -517,6 +517,8 @@ private:
 	void closeThread(Thread& thread);
 
 	ExecutionHookBinding m_executionHookBinding{nullptr, nullptr, 0u, 0u};
+	TraceHook m_traceHook = nullptr;
+	void* m_traceContext = nullptr;
 	RunUntilDepthEntry m_runUntilDepthEntry = &CPU::runUntilDepthNormal;
 	Memory& m_memory;
 	IrqController& m_irqController;

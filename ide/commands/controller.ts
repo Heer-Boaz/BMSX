@@ -211,7 +211,7 @@ export class IdeCommandController {
 			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
 			case 'conversations.older':
-			case 'events.record': case 'events.clear': case 'events.filter': case 'events.details':
+			case 'events.clear': case 'events.filter': case 'events.details':
 			case 'terminal.evaluate':
 			case 'terminal.context':
 			case 'terminal.pause':
@@ -450,7 +450,7 @@ export class IdeCommandController {
 			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
 			case 'conversations.older':
-			case 'events.record': case 'events.clear': case 'events.filter': case 'events.details':
+			case 'events.clear': case 'events.filter': case 'events.details':
 			case 'terminal.evaluate':
 			case 'terminal.context':
 			case 'terminal.pause':

@@ -1,8 +1,8 @@
 import { LUA_BOOT_PRIMITIVES } from '../../../../machine/ts/spec/blua32/builtin';
 
-export const SYSTEM_ROM_BOOT_PRIMITIVE_NAMES: ReadonlyArray<string> = LUA_BOOT_PRIMITIVES.map((primitive) => primitive.name);
+export const SYSTEM_ROM_BOOT_PRIMITIVE_NAMES: ReadonlyArray<string> = LUA_BOOT_PRIMITIVES.filter(primitive => !primitive.retainAfterBoot).map(primitive => primitive.name);
 
-export const SYSTEM_ROM_BOOT_SYMBOL_NAMES: ReadonlyArray<string> = SYSTEM_ROM_BOOT_PRIMITIVE_NAMES;
+export const SYSTEM_ROM_BOOT_SYMBOL_NAMES: ReadonlyArray<string> = LUA_BOOT_PRIMITIVES.map(primitive => primitive.name);
 
 export const SYSTEM_ROM_BOOT_SYMBOL_NAME_SET: ReadonlySet<string> = new Set(SYSTEM_ROM_BOOT_SYMBOL_NAMES);
 

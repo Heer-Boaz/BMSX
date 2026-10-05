@@ -1,4 +1,4 @@
-import type { RuntimeEventCapture } from './runtime/event_capture';
+import type { RuntimeEventHistory } from './runtime/event_history';
 import { EventViewerInput } from './workbench/contrib/events/editor_input';
 import { EventViewerPane } from './workbench/contrib/events/editor_pane';
 import { AemEditorController } from './workbench/contrib/aem/controller';
@@ -179,7 +179,7 @@ const EDITOR_TARGET_WIDTH = 384;
 const EDITOR_TARGET_HEIGHT = 288;
 
 export type CartEditor = {
-	readonly events: RuntimeEventCapture;
+	readonly events: RuntimeEventHistory;
 	builds: WorkspaceBuilds | undefined;
 	projects: WorkspaceProjects | undefined;
 	importFiles: ImportWorkspaceFiles | undefined;
@@ -289,7 +289,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly sources: RuntimeSourceState;
 	private readonly fault: RuntimeFaultState;
 	private readonly luaTooling: RuntimeLuaTooling;
-	public readonly events: RuntimeEventCapture;
+	public readonly events: RuntimeEventHistory;
 	private readonly debuggerState: RuntimeDebuggerState;
 	private readonly overlayRenderer: OverlayRenderer;
 	private readonly unsubscribeWorkspaceCursorMoved: () => void;

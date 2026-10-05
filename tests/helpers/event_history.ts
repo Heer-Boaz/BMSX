@@ -7,7 +7,7 @@ import { createCartlibProgramHarness } from './cartlib_cpu';
 import { createTestRuntimeSourceState } from './runtime_sources';
 import { cartridgeSlots } from './cartridge';
 
-export function compileEventCaptureFixture() {
+export function compileEventHistoryFixture(hostTraceChannels: readonly string[] = ['event.emit'], optLevel: 0 | 3 = 3) {
 	return createCartlibProgramHarness(`
 local events<const> = require('cartlib/event_emitter')
 local port<const> = events.events_of({ id = 'fixture' })
@@ -19,11 +19,11 @@ function emit_for_viewer(count)
     for work = 1, 32 do payload.value = payload.value + work end
   end
 end
-return true`).images;
+return true`, { hostTraceChannels, optLevel }).images;
 }
 
 /** Actual runtime, compiler media and debugger owner; no guest observation mocks. */
-export function eventCaptureRuntime(images: ReturnType<typeof compileEventCaptureFixture>) {
+export function eventHistoryRuntime(images: ReturnType<typeof compileEventHistoryFixture>) {
 	const runtime = new Runtime({ systemRomBytes: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes), machineModel: PSX_MACHINE_SPEC }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
 	});

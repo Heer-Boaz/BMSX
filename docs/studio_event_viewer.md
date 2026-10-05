@@ -2,114 +2,190 @@
 
 ## Use
 
-Open **View > Event Viewer**, then **Record**. Run or frame-step the game with
-the existing central transport, or execute an explicit Terminal/Actor operation.
-The same rewind transport is docked in this viewer; the optional Game panel can
-show the live image alongside it. Starting a recording alone never resumes play.
-The `EVENTS (REC)` tab marks recording even while another editor is selected.
-**Stop** keeps the recording. Select an event and press Enter / **Details** for
-the wrapped, scrollable payload; Ctrl+C in the list copies the selected snapshot.
-**Filter** searches event/emitter text. **Clear** deletes the retained recording.
+Open **View > Event Viewer**. In Studio, debug carts automatically retain recent
+event emissions from startup, including while the IDE or viewer is closed. There is
+no Record/Stop step. Collection never resumes a paused game. Run, frame-step
+and rewind with the existing central transport; the optional Game panel can
+show the live image alongside it.
 
-The buffer holds 2048 emissions and stops when full; it never silently drops
-old events. Each emission shares a depth-3, 64-entry, 4096-string-code-unit
-snapshot budget. Omitted content is marked in both the inspector and copied
-text. Table identities/references describe a snapshot, not reusable live handles.
-Switching editors does not stop recording; closing the viewer does. The buffer
-is in memory, not persisted across a browser/host restart.
+Select an event and press Enter / **Details** for its wrapped, scrollable
+payload. Ctrl+C copies that historical snapshot. **Filter** searches event and
+emitter text. **Clear** deletes retained evidence without disabling collection.
+The viewer works without a server or assistant.
 
-Codex and external Studio/MCP clients use the same owner via
-`studio_event_capture` (status/start/stop/clear) and `studio_read_events`
-(generation-bound paging). Starting capture does not resume gameplay; tools
-can bracket an ordinary Terminal call, Actor operation or forward frame step.
-Ending a tool context does not discard workspace-owned evidence or recording.
-No server or assistant is required for the viewer itself.
+The circular buffer retains the latest **2048 emissions**. It expires the oldest
+rather than stopping at capacity; the footer reports the expired count. Each
+emission shares a depth-3, 64-entry, 4096-string-code-unit snapshot budget.
+Omitted contents are marked in the inspector, copied text and tool output.
+Table identities/references describe that snapshot, not reusable live handles.
+Closing a pane or ending a conversation does not stop collection. A host restart
+loses this in-memory history.
 
-## Ownership and capture
+A rewind seek keeps existing event evidence without emitting duplicates during
+replay. Reset, restore and code installation begin a new labelled timeline;
+subsequent live emissions remain distinguishable from the old evidence. Clear
+is the only in-session action which deletes all retained events. Rewind does
+not reconstruct events which have already expired from this bounded buffer.
 
-The viewer observes **emission**, before listener dispatch, including events with
-no subscribers. It does not install listeners, call Lua, modify cartlib, or
-recompile the cartridge. Recording is explicitly enabled; the normal CPU loop
-remains unchanged when neither recording nor debugging is active.
+## Tool access
 
-This follows MAME's opt-in debugger tracing and Unreal Insights' separation of
-capture, bounded storage, and analysis. Godot's profiler likewise enables capture
-explicitly rather than treating an open editor as a recording request.
+Codex and external Studio/MCP clients read the **same workspace-owned buffer**:
 
-- [MAME debugger](https://github.com/mamedev/mame/blob/master/src/emu/debug/debugcpu.cpp)
-- [Godot debugger](https://github.com/godotengine/godot/blob/master/editor/debugger/script_editor_debugger.cpp)
-- [Unreal tracing](https://dev.epicgames.com/documentation/en-us/unreal-engine/developer-guide-to-tracing-in-unreal-engine)
+- `studio_event_history`: `status` returns status, generation, firstSequence,
+  endSequence, total, capacity and expired count. `clear` clears the evidence and
+  advances generation, without changing playback or collection.
+- `studio_read_events`: pass that generation, an absolute sequence in the
+  advertised retained window, and count. A cleared generation or expired
+  sequence is rejected explicitly; it is never silently changed to another
+  position. A sequence equal to endSequence yields an empty page.
 
-An IDE-owned function probe binds the installed compiler symbols for
-`cartlib/event_emitter`'s `event_emitter.emit`. It binds the first statement of
-each physical/inlined invocation and its live argument locations, not hard-coded
-source lines or register numbers. Missing symbols or unavailable argument
-locations prevent capture; they never produce guessed/nil payloads.
+Read on demand around ordinary Terminal operations, Actor operations or frame
+steps. No polling, additional capture session or live guest handle is required.
+These tools target the authoring runtime, not a separate Scenario Lab machine.
 
-Snapshots contain stored values only. No metatable lookup, getters, or guest
-references survive the observation. Snapshot depth, entry and text budgets are
-explicit; omitted contents are marked. The recording stops when its bounded
-buffer fills. Inspection and filtering do not execute the guest.
+## Ownership and source instrumentation
 
-Reset, rewind restore, and code installation stop recording. Already captured
-snapshots remain readable, tagged by capture and execution domain; a new capture
-does not pretend it continues the old timeline. Central Studio playback/rewind
-controls remain the only runtime transport.
+The previous instruction-hook/function-symbol probe is **removed**, not hidden
+behind automatic recording. It made the entire interpreter use instruction
+instrumentation while capturing a small number of event calls.
 
-## Runtime representation gate (before mirrored edits)
+Cartlib now marks its actual semantic emission boundary, before dispatch and
+including events with no subscribers:
 
-| Data | TypeScript | C++ | Owner |
+```lua
+blua32.trace(self, 'event.emit', event_type, emitter_id, payload)
+```
+
+This reuses the statement intrinsic already used for FSM/BT/ActionEffect
+tracing. Existing guest scenario sinks remain independently selectable.
+Ordinary live FSM/BT inspectors largely read existing state; they are not
+justification for unlimited additional tracing cost.
+
+- The compiler's `hostTraceChannels` selects native observation. Debug cart
+  builds select `event.emit`; release cart builds erase the entire unselected
+  statement, including argument evaluation and constants. Host selection takes
+  precedence over a guest sink for the **same** channel; there is one destination
+  and one argument evaluation, not two notifications.
+- Selected statements lower to a normal native CALL with a borrowed
+  `(subject, channel, ...values)` register span. `BuiltinFunctionId.Trace` is a
+  runtime primitive retained in the system namespace after BIOS bootstrap.
+  Other bootstrap primitives keep their existing removal lifetime.
+- Only that native call invokes the optional read-only observer. Neither CPU
+  instruction loop gains trace polling; attaching the observer does not switch
+  to the instrumented interpreter. No emulated event device, event opcode,
+  cartlib-aware CPU code, injected listener or guest snapshot allocation exists.
+- The IDE-owned `RuntimeEventHistory` makes bounded immutable host copies at
+  emission. It never invokes Lua or metatables and retains no guest objects or
+  borrowed register views. UI filtering and payload inspection run on those
+  copies, not the machine. The filtered index updates incrementally; rendering
+  visits only visible rows and retains measured labels. Expiration preserves
+  the scrolled position unless following the live end.
+- Linker/tooling metadata preserves host channels through source rebuild and
+  Hot Resume. Rebuild BIOS and debug carts together after this primitive change;
+  stale images are not patched by guessing register slots or source positions.
+
+Unobserved **debug** code still executes its selected trace CALL and pays its
+actual guest cycles. Removing an observer does not magically erase installed
+instructions. Release builds erase the source instrumentation; both builds
+retain the native runtime service's fixed bootstrap presence.
+
+## Production references studied
+
+- [Unreal Trace](https://dev.epicgames.com/documentation/en-us/unreal-engine/developer-guide-to-tracing-in-unreal-engine):
+  explicit source channels and payloads, capture separate from analysis.
+- [BehaviorTree.CPP semantic state notifications](https://github.com/BehaviorTree/BehaviorTree.CPP/blob/master/src/tree_node.cpp)
+  and [logger lifetime](https://github.com/BehaviorTree/BehaviorTree.CPP/blob/master/include/behaviortree_cpp/loggers/abstract_logger.h):
+  observe a semantic transition, not every interpreter instruction.
+- [Godot EngineDebugger](https://github.com/godotengine/godot/blob/master/core/debugger/engine_debugger.cpp):
+  producer/debugger ownership independent of editor presentation.
+
+These are architectural references, not evidence that a particular BMSX cost is
+acceptable. The local measurements below determine that.
+
+## Representation gate (recorded before mirrored edits)
+
+| Value | TypeScript | C++ | Owner |
 | --- | --- | --- | --- |
-| Instruction PC | `number` address word | `u32` | CPU |
-| Domain | `ExecutionDomainId` (-1/0/1) | `ExecutionDomainId` | execution-domain spec |
-| Hook phase | `ExecutionHookPhase` enum | `ExecutionHookPhase` enum | CPU instrumentation |
-| Guest value | `ValueTag` / `Value` / `ValueSlots` | tagged `Value` | CPU value owner; no new wire format |
-| Event snapshot | immutable IDE data | no native Studio | IDE, not emulated state |
+| Native primitive | `BuiltinFunctionId.Trace` | same ID | VM primitive specification |
+| Bootstrap lifetime | descriptor `retainAfterBoot` | same flag | primitive specification/compiler |
+| Trace arguments | borrowed `BuiltinArgsView` / tagged `ValueSlots` | borrowed `BuiltinArgsView` / tagged `Value` | CPU native dispatch |
+| Execution domain | raw `ExecutionDomainId` | same enum | execution-domain specification |
+| Host channels | `readonly string[]` | `vector<string>` | compiler/linker tooling metadata |
+| Snapshot / sequence | immutable host history | no native Studio | IDE, not machine save-state |
 
-The only mirrored change makes the existing hook phase explicit. A
-pre-maskable-interrupt control fence is **not** an executed instruction and must
-not publish an event a second time. Hot-path callsites: TS
-`CPU.runUntilDepthInstrumented` and the instrumented C++ `CPU::runLoop` invoke
-the hook at the interrupt fence and before an instruction. Normal loops remain
-uninstrumented. Consumers: `ide/runtime/debugger_state.ts` and
-`ide/testing/execution.ts`; C++ consumers are CPU conformance tests. Existing
-stop/step control ignores the new phase; event observation only occurs after
-stop admission at an instruction boundary.
+Hot callsites: compiler-lowered CALL in `cartlib/event_emitter.lua:emit`, TS
+`CPU.callBuiltinFunction`, C++ `CPU::callBuiltinFunction`. The observer cannot
+execute guest code or retain the borrowed span. Costs and primitive IDs are
+mirrored. The old observation-only `ExecutionHookPhase` extension is removed;
+source breakpoints and interrupt fences keep their original control contract.
 
-Active recording uses the instrumented interpreter and allocates bounded host
-snapshots per event. It is not free: measure host throughput separately from
-unchanged guest instructions/cycles. No guest heap allocation or event dispatch
-changes are introduced. Native players continue using the normal CPU loop.
+## Validation (2026-10-05)
 
-## Validation and limits (2026-10-04)
+- Compiler/cartlib/CPU coverage: O0/O3, nested and unhandled emission, nil/false,
+  immutable snapshots after mutation, cyclic tables, snapshot budgets, selected
+  host/guest channels across BIOS/cart/module boundaries, breakpoint admission,
+  buffer wrap, reset/install/replay and generation/expiration-aware tool reads.
+- Actual browser Studio: startup events were visible on first opening. Closing
+  the tab, emitting through the Terminal, and reopening retained those events.
+  List/details/filter/copy were operated and visually inspected; `health=9`
+  remained readable after mutation to 0. A 2052-event burst retained payloads
+  5 through 2052, with four earlier records reported expired. Central transport
+  performed forward stepping, play/pause and rewind; after confirming the
+  reviewed point a new Terminal emission appeared in timeline 2, with payload 42.
+- The C++ primitive works in normal and instruction-debug loops with identical
+  guest costs. Supervisor/IRQ, CPU save-state/replay and ROM tooling tests pass.
+  The real newly instrumented Nemesis ROM also boots, executes, saves/restores
+  and replays in the native runtime conformance runner. Full saved TS/C++ state
+  matches after all three checkpoint windows and after history seeks/live branch,
+  including active BADP playback and non-empty game VRAM.
+- The focused runtime/editor/tool bundle passes 147 tests; the additional
+  behavior/trace/preload bundle passes. IDE, tests and scripts typechecks pass;
+  architecture-boundary audit reports zero issues and core-parity audit passes.
+  Browser Studio, headless tooling, BIOS and Nemesis debug products are rebuilt.
 
-- Real compiler/cartlib/CPU tests cover O0/O3, nested dispatch, no-listener
-  emission, nil/false payloads, mutation after emission, cycles, snapshot limits,
-  physical/inline symbol locations, optimized-away argument rejection,
-  breakpoint admission, interrupt phases, recording capacity, history/code
-  replacement, and shared Studio-tool paging/clear/lifetime.
-- A synthetic 1000-emission loop with 32 arithmetic iterations per emission
-  used exactly 263015 guest cycles with and without capture and retained the
-  same 79314 guest heap bytes after seven runs. Warm host medians across local
-  runs were roughly 67-69 ms disabled versus 77-78 ms recording (12-16% extra).
-  This is workload-specific throughput evidence, not a universal overhead bound.
-- Both actual browser and headless Studio products were operated through keyboard/clipboard
-  controls: record, emit through the Terminal, stop, select, inspect nested and
-  cyclic data, copy, and filter. Rendered list/details/filter views were inspected;
-  the copied historical payload still held `health=9` after it was changed to 0.
-- The browser also captured 240 emissions, scrolled the list, and copied its
-  first/last entries. The existing central transport was used for forward step,
-  live play/pause and previous frame. Restoring history stopped recording,
-  removed the recording marker and kept all 240 historical snapshots readable.
-- The focused runtime, editor lifecycle and tool regression bundle passed 132
-  tests; IDE/tests typechecks and the architecture boundary audit passed.
-- The CPU's matching C++ supervisor/IRQ and save-state/replay tests pass. C++
-  has no Studio event UI or cartlib logging changes.
+Performance distinguishes erased source, selected/unobserved source and active
+host history. Run the emission-heavy fixture alone (not during a parallel build):
 
-Capture covers the selected physical cartridge's common event-emitter dispatch,
-not every arbitrary callback, interrupt or private module notification. It
-records emission, not listener completion/duration. Installed debug symbols and
-available argument locations are required; stripped or incompatible symbols
-are reported instead of guessing values. Rewind review does not reconstruct
-events from before recording: restoring history stops capture and preserves its
-old snapshots as a separate capture timeline.
+```sh
+node --import tsx --import ./tests/lua/test_setup.ts --test \
+  --test-name-pattern='observer adds no guest work' tests/lua/event_history.test.ts
+```
+
+The fixture has 1000 emissions with 32 arithmetic iterations between each. Both
+selected variants use 272015 cycles versus 263015 erased: **9 extra guest cycles
+per emission**. Both selected variants use the same guest heap space. Host timing
+is reported separately; it is not inferred from these guest-cycle counts.
+
+The real-cart profiler alternates unobserved-debug and automatic-history runs
+from identical checkpoints with identical input. Restore/setup/state comparisons
+are outside timing. It compares the complete machine/CPU state and reports raw
+samples plus medians for 120 frames after ticks 400, 1200 and 2400:
+
+```sh
+node --import tsx tests/conformance/runtime_replay/profile_event_history.ts \
+  dist/system/bmsx-bios.debug.rom dist/nemesis_s.debug.rom
+```
+
+Local isolated measurements (11 alternating rounds, first 4 discarded):
+
+| Workload | Unobserved / erased | Automatic history | Interpretation |
+| --- | ---: | ---: | --- |
+| 1000-emission fixture, erased source | 66.14 ms | 68.87 ms | +4.12% host time, including selected guest work |
+| Same fixture, selected/unobserved | 68.35 ms | 68.87 ms | +0.76% for observation; source work already present |
+| Nemesis, 120 frames after tick 400; 5 events | 1223.80 ms | 1221.86 ms | -0.16%; sampling noise, not a speedup |
+| Nemesis, after tick 1200; 6 events | 532.22 ms | 533.27 ms | +0.20%; within sample variation |
+| Nemesis, after tick 2400; 8 events | 543.80 ms | 546.34 ms | +0.47%; within sample variation |
+
+An earlier isolated fixture run was 67.58 / 69.40 / 71.22 ms for erased,
+unobserved and observed variants (+5.38% total). The replacement lowers the
+previous 12-16% fixture overhead, not to zero. These real-cart windows have
+few events; event-heavy gameplay or large payloads require their own measurement.
+
+These headless measurements include real CPU/devices/audio/GPU command work,
+not browser presentation or an open viewer. They isolate observation cost over
+selected debug code, not the source trace's already-accounted guest cost.
+Results are workload-specific, not a universal overhead bound or FPS claim.
+
+Coverage is common cartlib event **emission**, not arbitrary private callbacks,
+interrupts, listener completion or duration. Full unbounded payload capture and
+persistent trace-file export are not implemented.

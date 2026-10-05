@@ -28,13 +28,16 @@ export const enum BuiltinFunctionId {
 	GetFrameUpvalue = 26,
 	SetFrameUpvalue = 27,
 	FrameHeader = 28,
+	Trace = 29,
 }
 
-export const BUILTIN_FUNCTION_COUNT = 29;
+export const BUILTIN_FUNCTION_COUNT = 30;
 
 export interface LuaBootPrimitive {
 	readonly name: string;
 	readonly id: BuiltinFunctionId;
+	/** Runtime services remain in the system namespace after bootstrap. */
+	readonly retainAfterBoot?: true;
 }
 
 export const LUA_BOOT_PRIMITIVES: ReadonlyArray<LuaBootPrimitive> = [
@@ -67,4 +70,5 @@ export const LUA_BOOT_PRIMITIVES: ReadonlyArray<LuaBootPrimitive> = [
 	{ name: '__bmsx_get_frame_upvalue', id: BuiltinFunctionId.GetFrameUpvalue },
 	{ name: '__bmsx_set_frame_upvalue', id: BuiltinFunctionId.SetFrameUpvalue },
 	{ name: '__bmsx_frame_header', id: BuiltinFunctionId.FrameHeader },
+	{ name: '__bmsx_trace', id: BuiltinFunctionId.Trace, retainAfterBoot: true },
 ];

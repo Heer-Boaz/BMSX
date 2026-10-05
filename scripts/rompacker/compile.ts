@@ -138,6 +138,7 @@ export async function compileCart(prepared: PreparedUnit, outputDirectory: strin
 		progress({ type: 'phase', message: 'Compile cartridge Lua' });
 		blua32 = buildRomBlua32Tail(romAssets, {
 			includeSymbols: debug,
+			hostTraceChannels: debug ? ['event.emit'] : [],
 			optLevel,
 			imageOffset: romLayout.nextOffset,
 			ramByteCount: PSX_MACHINE_SPEC.ramBytes,

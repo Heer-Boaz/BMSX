@@ -10,6 +10,7 @@ import { parseLuaChunk } from '../lua/cpu_test_harness';
 /** Real cartlib/compiler/CPU; no host, ICU, world scheduler or trigonometry proof. */
 type CartlibProgramOptions = {
 	traceStatements?: TraceStatementSelection;
+	hostTraceChannels?: readonly string[];
 	preloadModules?: readonly string[];
 	optLevel?: 0 | 3;
 	/** Additional or replacement cart modules, compiled normally by path. */
@@ -129,7 +130,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 
 export function createCartlibProgramHarness(
 	cartEntrySource: string,
-	{ traceStatements = 'erase', preloadModules = [], optLevel = 3, modules = [] }: CartlibProgramOptions = {},
+	{ traceStatements = 'erase', hostTraceChannels = [], preloadModules = [], optLevel = 3, modules = [] }: CartlibProgramOptions = {},
 ) {
 	const systemSources = new Map<string, string>(SYSTEM_MODULE_FILES.map(([path, file]) => [path, readFileSync(file, 'utf8')]));
 	for (const module of SYSTEM_STUB_MODULES) systemSources.set(module.path, module.source);
@@ -152,6 +153,7 @@ export function createCartlibProgramHarness(
 		optLevel,
 		programDomain: 'cart',
 		traceStatements,
+		hostTraceChannels,
 		preloadModules,
 	});
 	const images = linkTestBlua32Pair(systemCompiled, cartCompiled);

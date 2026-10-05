@@ -88,6 +88,7 @@ export type Blua32StaticScopes = {
 export type Blua32DebugMetadata = {
 	staticScopes: Blua32StaticScopes;
 	traceStatements: TraceStatementSelection;
+	hostTraceChannels: readonly string[];
 	preloadModules: readonly string[];
 	functionIds: string[];
 	functionDisplayNames: string[];

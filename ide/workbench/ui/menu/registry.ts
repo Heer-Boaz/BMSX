@@ -168,7 +168,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'sourceEditReview.discard' },
 	],
 	'events.title': [
-		{ type: 'command', command: 'events.record' },
 		{ type: 'command', command: 'events.clear' },
 		{ type: 'command', command: 'events.filter' },
 		{ type: 'command', command: 'events.details' },

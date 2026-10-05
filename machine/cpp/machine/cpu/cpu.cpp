@@ -1653,6 +1653,9 @@ void CPU::hardHalt() {
 
 void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out) {
 	switch (fn.id) {
+		case BuiltinFunctionId::Trace:
+			if (m_traceHook) m_traceHook(m_traceContext, m_lastExecutionDomainId, args);
+			break;
 		case BuiltinFunctionId::Next:
 			runBuiltinNextValue(args[0], args[1], out);
 			break;
@@ -2407,8 +2410,7 @@ RunResult CPU::runLoop(
 						&& hookBinding.hook(
 							hookBinding.context,
 							interruptedImage->executionDomainId,
-							interruptedFrame->pc,
-							ExecutionHookPhase::BeforeMaskableInterrupt
+							interruptedFrame->pc
 						)) {
 						return RunResult::ExecutionStopped;
 					}
@@ -2429,7 +2431,7 @@ RunResult CPU::runLoop(
 			pc = frame->pc;
 			if constexpr (Instrumented) {
 				if ((hookBinding.domainMask & executionDomainBit(image->executionDomainId)) != 0u
-					&& hookBinding.hook(hookBinding.context, image->executionDomainId, pc, ExecutionHookPhase::Instruction)) {
+					&& hookBinding.hook(hookBinding.context, image->executionDomainId, pc)) {
 					return RunResult::ExecutionStopped;
 				}
 			}

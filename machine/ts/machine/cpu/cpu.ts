@@ -236,15 +236,12 @@ export const enum RunResult {
 	ExecutionStopped,
 }
 
-export const enum ExecutionHookPhase {
-	Instruction,
-	BeforeMaskableInterrupt,
-}
+/** Read-only native trace span. The observer must not retain it or execute guest code. */
+export type TraceHook = (domain: ExecutionDomainId, args: BuiltinArgsView) => void;
 
 export type ExecutionHook = (
 	executionDomainId: ExecutionDomainId,
 	pc: number,
-	phase: ExecutionHookPhase,
 ) => boolean;
 
 const TABLE_WEAK_KEYS = 1;
@@ -291,6 +288,7 @@ export class CPU implements MappedPageInvalidator {
 	private yieldRequested = false;
 	private threadSwitchRequested = false;
 	private executionHook: ExecutionHook | null = null;
+	private traceHook: TraceHook | null = null;
 	private executionHookDomainMask: ExecutionDomainMask = 0;
 	private preMaskableInterruptExecutionHookDomainMask: ExecutionDomainMask = 0;
 	private runUntilDepthEntry = this.runUntilDepthNormal;
@@ -1578,6 +1576,8 @@ export class CPU implements MappedPageInvalidator {
 		this.yieldRequested = true;
 	}
 
+	public setTraceHook(hook: TraceHook | null): void { this.traceHook = hook; }
+
 	public setExecutionHook(
 		hook: ExecutionHook | null,
 		domainMask: ExecutionDomainMask,
@@ -1876,7 +1876,7 @@ export class CPU implements MappedPageInvalidator {
 						const interruptedImage = interruptedFrame.executionImage;
 						if ((preMaskableInterruptExecutionDomainMask
 							& executionDomainBit(interruptedImage.executionDomainId)) !== 0
-							&& executionHook(interruptedImage.executionDomainId, interruptedFrame.pc, ExecutionHookPhase.BeforeMaskableInterrupt)) {
+							&& executionHook(interruptedImage.executionDomainId, interruptedFrame.pc)) {
 							return RunResult.ExecutionStopped;
 						}
 						this.enterPendingInterrupt();
@@ -1886,7 +1886,7 @@ export class CPU implements MappedPageInvalidator {
 					const image = frame.executionImage;
 					const pc = frame.pc;
 					if ((executionDomainMask & executionDomainBit(image.executionDomainId)) !== 0
-						&& executionHook(image.executionDomainId, pc, ExecutionHookPhase.Instruction)) {
+						&& executionHook(image.executionDomainId, pc)) {
 						return RunResult.ExecutionStopped;
 					}
 					if ((pc & (INSTRUCTION_BYTES - 1)) !== 0) {
@@ -3574,6 +3574,9 @@ export class CPU implements MappedPageInvalidator {
 
 	private callBuiltinFunction(id: BuiltinFunctionId, args: BuiltinArgsView, out: BuiltinResults): void {
 		switch (id) {
+			case BuiltinFunctionId.Trace:
+				this.traceHook?.(this.lastExecutionDomainId, args);
+				break;
 			case BuiltinFunctionId.Next:
 				this.runBuiltinNextValue(args, out);
 				break;

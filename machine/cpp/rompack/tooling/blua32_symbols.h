@@ -89,6 +89,7 @@ struct Blua32StatementPoint {
 struct Blua32DebugMetadata {
 	Blua32StaticScopes staticScopes;
 	TraceStatementSelection traceStatements = std::string("erase");
+	std::vector<std::string> hostTraceChannels;
 	std::vector<std::string> preloadModules;
 	std::vector<std::string> functionIds;
 	std::vector<std::string> functionDisplayNames;

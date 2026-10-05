@@ -555,14 +555,12 @@ struct InstrumentedExecutionProbe {
 	bmsx::ExecutionDomainId expectedDomain = bmsx::SYSTEM_EXECUTION_DOMAIN_ID;
 	bmsx::u32 stopPc = 0;
 	std::vector<bmsx::u32> pcs;
-	bmsx::ExecutionHookPhase lastPhase = bmsx::ExecutionHookPhase::Instruction;
 };
 
-bool stopInstrumentedExecution(void* context, bmsx::ExecutionDomainId executionDomainId, bmsx::u32 pc, bmsx::ExecutionHookPhase phase) {
+bool stopInstrumentedExecution(void* context, bmsx::ExecutionDomainId executionDomainId, bmsx::u32 pc) {
 	auto& probe = *static_cast<InstrumentedExecutionProbe*>(context);
 	require(executionDomainId == probe.expectedDomain, "instrumented hook receives only the selected raw domain");
 	probe.pcs.push_back(pc);
-	probe.lastPhase = phase;
 	return pc == probe.stopPc;
 }
 
@@ -571,14 +569,14 @@ struct SelfClearingExecutionProbe {
 	int calls = 0;
 };
 
-bool clearExecutionHook(void* context, bmsx::ExecutionDomainId, bmsx::u32, bmsx::ExecutionHookPhase) {
+bool clearExecutionHook(void* context, bmsx::ExecutionDomainId, bmsx::u32) {
 	auto& probe = *static_cast<SelfClearingExecutionProbe*>(context);
 	probe.calls += 1;
 	probe.cpu->setExecutionHook({});
 	return probe.calls == 2;
 }
 
-bool throwExecutionHook(void*, bmsx::ExecutionDomainId, bmsx::u32, bmsx::ExecutionHookPhase) {
+bool throwExecutionHook(void*, bmsx::ExecutionDomainId, bmsx::u32) {
 	throw std::runtime_error("execution hook failure");
 }
 
@@ -1024,7 +1022,6 @@ void testInstrumentedExecutionFenceStopsBeforePendingIrqDelivery() {
 	require(machine.cpu.getFrameDepth() == frameDepth, "pending IRQ did not push an exception frame");
 	require(machine.cpu.readFramePc(frameDepth - 1) == userPc, "user instruction remains unexecuted");
 	require(machine.cpu.canAcceptMaskableInterruptLine(), "pending IRQ remains asserted at the stopped boundary");
-	require(probe.lastPhase == bmsx::ExecutionHookPhase::BeforeMaskableInterrupt, "control fence is not an executed instruction");
 }
 
 void testInstrumentedMaskableInterruptFenceDoesNotDelayPendingNmi() {
@@ -1056,7 +1053,6 @@ void testInstrumentedMaskableInterruptFenceDoesNotDelayPendingNmi() {
 		"pending NMI is delivered before the maskable-interrupt fence"
 	);
 	require(machine.cpu.getFrameDepth() == frameDepth, "NMI handler returns to the user frame");
-	require(probe.lastPhase == bmsx::ExecutionHookPhase::Instruction, "ordinary instruction has its own phase after NMI return");
 	require(machine.cpu.readFramePc(frameDepth - 1) == userPc, "user instruction remains unexecuted");
 }
 
@@ -1535,9 +1531,50 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 	require(bmsx::asNumber(machine.cpu.readCompletionValues()[2]) == 3.0 && bmsx::asNumber(machine.cpu.readCompletionValues()[3]) == 4.0, "nested pcall should preserve child results");
 }
 
+void testNativeTraceUsesBorrowedValuesInBothExecutionLoops() {
+	bmsx::test::Blua32TestImage image;
+	image.text.resize(7u * bmsx::INSTRUCTION_BYTES);
+	for (const auto& primitive : bmsx::LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
+	image.constants = {std::string("fixture"), 42.0};
+	std::span<bmsx::u8> code(image.text);
+	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::GETSYS), 0, 0, static_cast<bmsx::u8>(bmsx::BuiltinFunctionId::Trace));
+	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::KNIL), 1, 0, 0);
+	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 2, 0, 0);
+	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 3, 0, 1);
+	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, 4, 1);
+	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
+	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
+	image.functions = {{.firstWord = 0u, .wordCount = 6u, .maxStack = 4u}, {.firstWord = 6u, .wordCount = 1u}};
+	image.startupFunctionIndex = 0u;
+	image.irqFunctionIndex = image.exceptionFunctionIndex = 1u;
+	int cost = 0;
+	for (int variant = 0; variant < 3; ++variant) {
+		CpuTestMachine machine(image);
+		machine.cpu.installBootPrimitives();
+		int seen = 0;
+		if (variant != 0) machine.cpu.setTraceHook([](void* context, bmsx::ExecutionDomainId domain, bmsx::BuiltinArgsView args) {
+			++*static_cast<int*>(context);
+			require(domain == bmsx::SYSTEM_EXECUTION_DOMAIN_ID, "trace carries its native call domain");
+			require(args.size() == 3u && bmsx::isNil(args[0]), "trace receives subject and exact borrowed argument span");
+			require(bmsx::valueIsString(args[1]) && bmsx::asNumber(args[2]) == 42.0, "trace preserves tagged channel and payload");
+		}, &seen);
+		if (variant == 2) machine.cpu.setExecutionHook({
+			.hook = [](void*, bmsx::ExecutionDomainId, bmsx::u32) { return false; },
+			.context = nullptr,
+			.domainMask = bmsx::executionDomainBit(bmsx::SYSTEM_EXECUTION_DOMAIN_ID),
+			.preMaskableInterruptDomainMask = 0u,
+		});
+		require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "native trace returns normally");
+		require(seen == (variant == 0 ? 0 : 1), "trace emits once and needs no instruction hook");
+		if (variant == 0) cost = 100 - machine.cpu.instructionBudgetRemaining;
+		else require(cost == 100 - machine.cpu.instructionBudgetRemaining, "observer does not alter native instruction costs");
+	}
+}
+
 } // namespace
 
 int main() {
+	testNativeTraceUsesBorrowedValuesInBothExecutionLoops();
 	testManualNmiAndSaveStateReturn();
 	testPrivilegeVectorRoutingAndCp0Fault();
 	testSystemAndOrdinaryGlobalRegisterfilesStayDistinct();

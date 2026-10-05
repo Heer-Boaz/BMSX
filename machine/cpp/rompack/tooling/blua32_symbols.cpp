@@ -275,6 +275,7 @@ auto decodeMetadata(const BinValue& value) -> Blua32DebugMetadata {
 	} else {
 		metadata.traceStatements = decodeStringArray(traceStatements);
 	}
+	metadata.hostTraceChannels = decodeStringArray(value.require("hostTraceChannels"));
 	metadata.preloadModules = decodeStringArray(value.require("preloadModules"));
 	metadata.functionIds = decodeStringArray(value.require("functionIds"));
 	metadata.functionDisplayNames = decodeStringArray(value.require("functionDisplayNames"));
@@ -408,6 +409,7 @@ auto encodeMetadata(const Blua32DebugMetadata& metadata) -> BinValue {
 	} else {
 		value["traceStatements"] = encodeStringArray(std::get<std::vector<std::string>>(metadata.traceStatements));
 	}
+	value["hostTraceChannels"] = encodeStringArray(metadata.hostTraceChannels);
 	value["preloadModules"] = encodeStringArray(metadata.preloadModules);
 	value["functionIds"] = encodeStringArray(metadata.functionIds);
 	value["functionDisplayNames"] = encodeStringArray(metadata.functionDisplayNames);

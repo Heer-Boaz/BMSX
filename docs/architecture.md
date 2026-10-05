@@ -5423,15 +5423,18 @@ raw registers without evaluating code or inferring optimized-out values. An
 inlined frame does not own a separate closure/upvalue scope. Retained fault
 diagnostics are labelled separately from this live stack. See
 [stack inspection](studio_stack_inspection.md).
-The [Event Viewer](studio_event_viewer.md) records immutable, bounded emission
-snapshots rather than retaining live inspection borrows. Its IDE-owned function
-probe binds installed event-emitter statement/argument metadata through the
-existing CPU instrumentation hook. Cartlib remains unchanged, with no logging,
-listener registration, extra instructions or guest allocations. Recording is
-opt-in; reset, history restore and code install retire the probe without erasing
-captured evidence. The shared UI and conversation tools control that same
-recording. Hook phases distinguish admitted instructions from pre-interrupt
-control fences in TS/C++; normal interpreter loops do not gain tracing checks.
+The [Event Viewer](studio_event_viewer.md) automatically retains immutable,
+bounded emission snapshots in an IDE-owned sequence ring. A source
+`blua32.trace` at cartlib's emission boundary selects the compiler's native trace
+transport in debug carts and is erased in release carts. The generic TS/C++
+Trace primitive borrows tagged call arguments; only the IDE interprets
+`event.emit` and snapshots its values. No instruction polling, symbol-name
+probe, guest listener or guest snapshot allocation is involved. Linker metadata
+preserves channel selection through source rebuild/Hot Resume. Pane and
+conversation lifetime do not control collection. Full buffers expire oldest
+entries, clear invalidates tool generations, and reset/restore/install labels
+subsequent events with a new timeline. Replaying does not duplicate retained
+events. Native players share primitive semantics/costs, not the Studio UI.
 Cartlib-specific [Actor inspection](studio_actor_tools.md) attaches to that same
 suspended lifetime and value-reference registry, without teaching the generic
 runtime owner about cartlib or workbench panes. Actor Lab's `ActorRuntimeTree`

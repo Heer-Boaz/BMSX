@@ -83,6 +83,7 @@ export type LocatedOuterBindingDebug = OuterBindingDebug & {
 export type ProgramMetadata = ProgramRuntimeSymbols & {
 	staticScopes: ProgramStaticScopes;
 	traceStatements: TraceStatementSelection;
+	hostTraceChannels: readonly string[];
 	preloadModules: readonly string[];
 	functionDefinitionsByProto: ReadonlyArray<SourceRange | null>;
 	protoDisplayNames: string[];

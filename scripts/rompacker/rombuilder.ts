@@ -1044,6 +1044,7 @@ export async function generateRomAssets(
 type BuildRomBlua32TailOptions = {
 	generatedLuaModules: GeneratedLuaModule[];
 	traceStatements?: TraceStatementSelection;
+	hostTraceChannels?: readonly string[];
 	preloadModules?: readonly string[];
 	includeSymbols: boolean;
 	optLevel: 0 | 1 | 2 | 3;
@@ -1111,6 +1112,7 @@ export function buildRomBlua32Tail(
 			ramByteCount: options.ramByteCount,
 			optLevel: options.optLevel,
 			traceStatements: options.traceStatements ?? 'erase',
+			hostTraceChannels: options.hostTraceChannels,
 			preloadModules: options.preloadModules,
 			domain: 'system',
 			biosExports: options.biosExports,
@@ -1190,6 +1192,7 @@ export function buildRomBlua32Tail(
 		ramByteCount: options.ramByteCount,
 		optLevel: options.optLevel,
 		traceStatements: options.traceStatements ?? 'erase',
+		hostTraceChannels: options.hostTraceChannels,
 		preloadModules: options.preloadModules,
 		domain: 'cart',
 		biosImports: options.biosImports,

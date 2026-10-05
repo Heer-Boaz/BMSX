@@ -284,6 +284,7 @@ end
 -- Removal during dispatch takes effect before the listener's next call;
 -- listeners added during dispatch start with the next emission.
 function event_emitter:emit(event_type, emitter, payload, emitter_id)
+	blua32.trace(self, 'event.emit', event_type, emitter_id, payload)
 	local scopes<const> = self._scoped_listeners[event_type]
 	local scoped_list<const> = scopes and scopes[emitter_id]
 	local global_list<const> = self._global_listeners[event_type]

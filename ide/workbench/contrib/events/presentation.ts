@@ -1,47 +1,48 @@
-import type { CapturedEvent, EventCaptureStatus, RuntimeEventCapture } from '../../../runtime/event_capture';
+import type { HistoricalEvent, EventHistoryStatus, RuntimeEventHistory } from '../../../runtime/event_history';
 import type { ValueSnapshot } from '../../../runtime/value_snapshot';
 import type { InspectedProperty } from '../../ui/property_inspector/model';
 
-export const EVENT_CAPTURE_LABEL: Record<EventCaptureStatus, string> = {
-	idle: 'Idle', recording: 'Recording', stopped: 'Stopped',
-	full: 'Full - clear to record again',
-	'runtime-changed': 'Stopped - runtime changed',
-	'history-review': 'Resume live history before recording',
-	'image-unavailable': 'No installed cartridge',
-	'symbols-unavailable': 'Debug symbols required',
-	'function-unavailable': 'Cart has no event emitter',
-	'ambiguous-function': 'Event emitter binding is ambiguous',
-	'arguments-unavailable': 'Event argument locations unavailable',
+export const EVENT_HISTORY_LABEL: Record<EventHistoryStatus, string> = {
+	live: 'Live', replay: 'History review', uninstrumented: 'Debug build required for event history',
 };
 
 /** Incremental filtered index. Rendering visits only visible entries, never the guest. */
 export class EventProjection {
-	public readonly rows: CapturedEvent[] = [];
+	public readonly rows: HistoricalEvent[] = [];
+	public removed = 0;
 	private generation = -1;
 	private scanned = 0;
 	private query = '';
 	private filter = '';
-	public update(capture: RuntimeEventCapture, filter: string): boolean {
+	public update(history: RuntimeEventHistory, filter: string): boolean {
 		const query = this.filter === filter ? this.query : filter.toLowerCase();
 		this.filter = filter;
 		let changed = false;
-		if (this.generation !== capture.generation || this.query !== query) {
-			this.generation = capture.generation; this.query = query;
-			this.scanned = 0; this.rows.length = 0; changed = true;
+		this.removed = 0;
+		if (this.generation !== history.generation || this.query !== query) {
+			this.generation = history.generation;
+			this.query = query;
+			this.scanned = history.firstSequence;
+			this.rows.length = 0;
+			changed = true;
 		}
-		for (; this.scanned < capture.records.length; this.scanned++) {
-			const record = capture.records[this.scanned];
+		while (this.removed < this.rows.length && this.rows[this.removed].sequence < history.firstSequence) this.removed++;
+		if (this.removed > 0) { this.rows.splice(0, this.removed); changed = true; }
+		this.scanned = Math.max(this.scanned, history.firstSequence);
+		for (; this.scanned < history.endSequence; this.scanned++) {
+			const record = history.at(this.scanned);
 			if (query !== '' && !record.event.display.toLowerCase().includes(query) && !record.emitter.display.toLowerCase().includes(query)) continue;
-			this.rows.push(record); changed = true;
+			this.rows.push(record);
+			changed = true;
 		}
 		return changed;
 	}
 }
 
 /** Full wrapped snapshot properties use the existing inspector, including complex payloads. */
-export function eventProperties(event: CapturedEvent): InspectedProperty[] {
+export function eventProperties(event: HistoricalEvent): InspectedProperty[] {
 	const properties: InspectedProperty[] = [{ label: 'Emission',
-		value: `#${event.sequence} | capture ${event.capture} | slot ${event.domain} | tick ${event.completedTick} | cycle ${event.cycles}`,
+		value: `#${event.sequence} | timeline ${event.timeline} | slot ${event.domain} | tick ${event.completedTick} | cycle ${event.cycles}`,
 		description: 'Tick is the last completed tick at emission. Values are captured before listener dispatch.', warning: false }];
 	appendSnapshot(properties, 'Event', event.event);
 	appendSnapshot(properties, 'Emitter', event.emitter);
@@ -58,6 +59,6 @@ function appendSnapshot(properties: InspectedProperty[], path: string, value: Va
 	}
 }
 
-export function eventClipboardText(event: CapturedEvent): string {
+export function eventClipboardText(event: HistoricalEvent): string {
 	return eventProperties(event).map(property => `${property.label}: ${property.value}${property.warning ? ' [truncated]' : ''}`).join('\n');
 }

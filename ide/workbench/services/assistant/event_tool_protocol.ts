@@ -1,36 +1,36 @@
 import { StudioToolInputError, toolArguments } from './tool_input';
 
 export type EventToolRequest =
-	| { name: 'studio_event_capture'; target: string; action: 'status' | 'start' | 'stop' | 'clear' }
-	| { name: 'studio_read_events'; target: string; generation: number; start: number; count: number };
-const CAPTURE_FIELDS = ['target', 'action'];
-const READ_FIELDS = ['target', 'generation', 'start', 'count'];
+	| { name: 'studio_event_history'; target: string; action: 'status' | 'clear' }
+	| { name: 'studio_read_events'; target: string; generation: number; sequence: number; count: number };
+const HISTORY_FIELDS = ['target', 'action'];
+const READ_FIELDS = ['target', 'generation', 'sequence', 'count'];
 
 export const STUDIO_EVENT_TOOLS = [
-	{ name: 'studio_event_capture',
-		description: 'Control or inspect the shared Event Viewer recording on the authoring target. start observes cartlib/event_emitter emission before listener dispatch through installed debug symbols; it does not run or resume the game, add guest listeners, or modify cartlib. Recording has host overhead and stops at buffer capacity, code install, reset or history restore. History review cannot be recorded. stop retains immutable snapshots; clear deletes them and advances generation without stopping active recording. Recording is workspace-owned, survives tool-context retirement and stops when the viewer is closed. Returns status, generation, total and capacity. Use explicit start/stop around the operation being investigated, not polling.',
-		inputSchema: { type: 'object', properties: { target: { type: 'string' }, action: { type: 'string', enum: ['status', 'start', 'stop', 'clear'] } }, required: CAPTURE_FIELDS, additionalProperties: false } },
+	{ name: 'studio_event_history',
+		description: 'Read the automatic recent Event Viewer history status or clear retained evidence on the authoring target. No Record/Start is needed. Debug builds select the source event.emit trace channel; release builds erase it. History belongs to the workspace, not pane/conversation lifetime, and is a bounded circular buffer. status reports generation, firstSequence, endSequence, total, capacity and expired count. clear deletes snapshots and invalidates generation without disabling collection. Replay does not duplicate emissions; restore/install starts a new labelled timeline. No guest execution, playback change or instruction hook. Read on demand, not polling.',
+		inputSchema: { type: 'object', properties: { target: { type: 'string' }, action: { type: 'string', enum: ['status', 'clear'] } }, required: HISTORY_FIELDS, additionalProperties: false } },
 	{ name: 'studio_read_events',
-		description: 'Read a page of historical emission snapshots from the Event Viewer generation reported by studio_event_capture. start is a zero-based index; count is positive. A clear expires that generation. Each event has sequence, capture, domain, exact machine cycles, last completed tick, event name, emitter ID and stored-value payload. Snapshots survive later mutation/reset but are not live value handles. Tables are bounded to depth 3 and 64 total entries; string content to 4096 code units per emission. Omitted contents are explicitly marked. Captures have independent timelines; no inference of handler completion or unrecorded events. No guest execution or suspended inspection required.',
-		inputSchema: { type: 'object', properties: { target: { type: 'string' }, generation: { type: 'integer', minimum: 0 }, start: { type: 'integer', minimum: 0 }, count: { type: 'integer', minimum: 1 } }, required: READ_FIELDS, additionalProperties: false } },
+		description: 'Read historical event snapshots from the retained sequence window reported by studio_event_history. generation expires on clear. sequence is the first requested absolute sequence; count is positive. An expired sequence is reported, never substituted with different data. Events include sequence, timeline, execution domain, machine cycles, last completed tick, event, emitter and immutable payload. Tables are bounded to depth 3 and 64 stored entries, string content to 4096 code units per emission; omitted contents are marked. No live guest references, execution or inferred handler completion. Old timelines remain distinguishable after reset/rewind/install.',
+		inputSchema: { type: 'object', properties: { target: { type: 'string' }, generation: { type: 'integer', minimum: 0 }, sequence: { type: 'integer', minimum: 0 }, count: { type: 'integer', minimum: 1 } }, required: READ_FIELDS, additionalProperties: false } },
 ];
 
-/** External model arguments are decoded here; runtime capture consumes its own representation. */
+/** External model arguments are decoded here; runtime history consumes its own representation. */
 export function decodeEventToolRequest(name: string, input: unknown): EventToolRequest {
-	if (name === 'studio_event_capture') {
-		const value = toolArguments(input, CAPTURE_FIELDS);
-		if (typeof value.target !== 'string' || value.action !== 'status' && value.action !== 'start' && value.action !== 'stop' && value.action !== 'clear') {
-			throw new StudioToolInputError('Event capture requires the target and status/start/stop/clear action');
+	if (name === 'studio_event_history') {
+		const value = toolArguments(input, HISTORY_FIELDS);
+		if (typeof value.target !== 'string' || value.action !== 'status' && value.action !== 'clear') {
+			throw new StudioToolInputError('Event history requires the target and status/clear action');
 		}
 		return { name, target: value.target, action: value.action };
 	}
 	if (name === 'studio_read_events') {
 		const value = toolArguments(input, READ_FIELDS);
 		if (typeof value.target !== 'string' || !Number.isSafeInteger(value.generation) || (value.generation as number) < 0
-			|| !Number.isSafeInteger(value.start) || (value.start as number) < 0 || !Number.isSafeInteger(value.count) || (value.count as number) < 1) {
-			throw new StudioToolInputError('Event reads require the target, non-negative generation/start and positive count');
+			|| !Number.isSafeInteger(value.sequence) || (value.sequence as number) < 0 || !Number.isSafeInteger(value.count) || (value.count as number) < 1) {
+			throw new StudioToolInputError('Event reads require the target, non-negative generation/sequence and positive count');
 		}
-		return { name, target: value.target, generation: value.generation as number, start: value.start as number, count: value.count as number };
+		return { name, target: value.target, generation: value.generation as number, sequence: value.sequence as number, count: value.count as number };
 	}
 	throw new StudioToolInputError(`Unknown Studio event tool: ${name}`);
 }
