@@ -5432,9 +5432,14 @@ Trace primitive borrows tagged call arguments; only the IDE interprets
 probe, guest listener or guest snapshot allocation is involved. Linker metadata
 preserves channel selection through source rebuild/Hot Resume. Pane and
 conversation lifetime do not control collection. Full buffers expire oldest
-entries, clear invalidates tool generations, and reset/restore/install labels
-subsequent events with a new timeline. Replaying does not duplicate retained
-events. Native players share primitive semantics/costs, not the Studio UI.
+entries and clear invalidates tool generations. `RuntimeIdeState` owns the
+history, not `RuntimeDebuggerState`. Reset, external load, admitted installation
+and actual live history branches label subsequent events with a new timeline;
+seeking or returning to the recorded end does not. The mirrored history owner
+publishes its branch decision before truncating input. Replaying does not
+duplicate retained events. Snapshot values remain typed, detached data; UI
+formatting is deferred to reads instead of running on the event-emission path.
+Native players share primitive semantics/costs, not the Studio UI.
 Cartlib-specific [Actor inspection](studio_actor_tools.md) attaches to that same
 suspended lifetime and value-reference registry, without teaching the generic
 runtime owner about cartlib or workbench panes. Actor Lab's `ActorRuntimeTree`

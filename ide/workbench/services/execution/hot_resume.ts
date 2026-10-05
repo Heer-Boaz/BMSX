@@ -84,6 +84,8 @@ class PendingHotResume implements HotResumeOperation {
 
 /** Owns source admission and request lifetime, never guest scheduling or command UI. */
 export class HotResumeService {
+	/** Actual installation, before any init calls; not request admission or completion. */
+	public onDidApply: (() => void) | undefined;
 	private readonly pending = new Set<PendingHotResume>();
 	private latest: HotResumeOperation | null = null;
 	private closing = false;
@@ -136,7 +138,10 @@ export class HotResumeService {
 				return;
 			}
 			const admission = admitHotResume(this.sources, this.tooling, this.fault, this.debuggerState,
-				this.input, this.tasks, this.runtime, built, operation.isCurrent, operation.report, context);
+				this.input, this.tasks, this.runtime, built, operation.isCurrent, event => {
+					if (event.kind === 'applied') this.onDidApply?.();
+					operation.report(event);
+				}, context);
 			if (admission !== 'rejected') operation.accept(admission);
 		}, error => operation.finish({ status: 'failed', applied: operation.applied, error })).then(() =>
 			operation.acceptance === null

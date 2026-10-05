@@ -22,7 +22,8 @@ async function fixture(t: TestContext) {
 	const session = new HostFrameSession(runtime.timing.ufpsScaled, 0, rewind, execution);
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	let restores = 0;
-	runtime.onStateRestored = origin => { restores++; navigation.didRestore(origin); f.guest.invalidate('heap-replaced'); resetRuntimeDebuggerExecution(f.debuggerState); };
+	runtime.onStateRestored = origin => { restores++; f.events.didRestore(origin); navigation.didRestore(origin); f.guest.invalidate('heap-replaced'); resetRuntimeDebuggerExecution(f.debuggerState); };
+	runtime.history.onWillResumeRecording = branched => { if (branched) f.events.beginTimeline(); };
 	runtime.onStateReset = () => { navigation.didReset(); f.guest.invalidate('heap-replaced'); resetRuntimeDebuggerExecution(f.debuggerState); };
 	execution.setPauseReason(HostPauseReason.Workbench, true);
 	const frame = async () => {
@@ -194,7 +195,7 @@ test('a retained replay-stop flag is not the outcome of a later live step', asyn
 
 test('tool lifetime owns navigation, validates only model arguments and never accepts a foreign target', async t => {
 	const f = await fixture(t), lifetime = new AbortController();
-	const tools = new WorkspaceRuntimeTools(f.inspection, f.navigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, lifetime.signal);
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.navigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, lifetime.signal);
 	const args = { target: f.inspection.target, direction: 'forward', count: 3 };
 	assert.throws(() => tools.execute('studio_step_frames', { ...args, target: 'test-machine' }), /not this Studio/);
 	for (const count of [0, -1, 1.5, '1']) assert.throws(() => decodeRuntimeToolRequest('studio_step_frames', { ...args, count }));
@@ -203,4 +204,23 @@ test('tool lifetime owns navigation, validates only model arguments and never ac
 	await f.settle(f.navigation.active!);
 	const receipt = await result; assert.ok('status' in receipt.data); assert.equal(receipt.data.status, 'interrupted');
 	assert.equal(f.execution.userPaused, true);
+});
+
+test('event timelines branch on live resume, not on seeking or returning to present', async t => {
+	const f = await fixture(t);
+	const transitions = t.mock.method(f.events, 'beginTimeline');
+	await f.settle(f.navigation.step(1, 8));
+	await f.settle(f.navigation.step(-1, 3));
+	assert.equal(transitions.mock.callCount(), 0);
+	f.rewind.returnToPresent();
+	for (let tick = 0; tick < 100 && f.rewind.active; tick++) await f.frame();
+	assert.equal(f.rewind.active, false);
+	assert.equal(transitions.mock.callCount(), 0);
+	await f.settle(f.navigation.step(-1, 3));
+	f.rewind.resumeHere();
+	for (let tick = 0; tick < 100 && f.rewind.active; tick++) await f.frame();
+	assert.equal(f.rewind.active, false);
+	assert.equal(transitions.mock.callCount(), 1);
+	await f.settle(f.navigation.step(1, 2));
+	assert.equal(transitions.mock.callCount(), 1);
 });

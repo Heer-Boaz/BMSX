@@ -23,7 +23,7 @@ type Checkpoint = {
 /** Runtime timeline; deliberately excluded from machine/save-state capture. */
 export class RuntimeHistory {
 	/** Host bookmarks reconcile the reviewed heap before live execution can reuse future identities. */
-	public onWillResumeRecording: (() => void) | undefined;
+	public onWillResumeRecording: ((branched: boolean) => void) | undefined;
 	public mode = HistoryMode.Disabled;
 	public checkpointPending = false;
 	public readonly inputJournal = new InputJournal();
@@ -173,9 +173,9 @@ export class RuntimeHistory {
 
 	/** A branch needs a synchronized checkpoint; rejoining the recorded end keeps its capture schedule. */
 	public resumeRecording(): void {
-		this.onWillResumeRecording?.();
 		const cycles = this.runtime.machine.scheduler.currentNowCycles();
 		const rejoiningLatest = cycles === this.endCycles;
+		this.onWillResumeRecording?.(!rejoiningLatest);
 		while (this.count > 0) {
 			const index = (this.firstCheckpoint + this.count - 1) % this.checkpoints.length;
 			if (this.checkpoints[index]!.cycles <= cycles) break;

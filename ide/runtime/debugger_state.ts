@@ -1,5 +1,4 @@
 import type { ExecutionHook } from '../../machine/ts/machine/cpu/cpu';
-import { RuntimeEventHistory } from './event_history';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { RuntimeSourceState } from './sources';
 import { RuntimeBreakpoints, type RuntimeBreakpointBindings } from './breakpoints';
@@ -12,7 +11,6 @@ export type RuntimeBreakpointState = { readonly breakpoints: RuntimeBreakpoints 
 /** Authoring execution policy composes source stops with its own control plans. */
 export type RuntimeDebuggerState = RuntimeBreakpointState & {
 	readonly source: SourceDebugger;
-	readonly events: RuntimeEventHistory;
 	executionRevision: number;
 	executionContext: RuntimeDebuggerExecutionContext | undefined;
 	readonly executionHook: ExecutionHook;
@@ -34,7 +32,6 @@ export function createRuntimeDebuggerState(runtime: Runtime, sources: RuntimeSou
 	};
 	const breakpoints = new RuntimeBreakpoints(sources, () => state.source.install(sources.currentBlua32Media, state.breakpoints.bindings.pcs));
 	state = {
-		events: new RuntimeEventHistory(runtime, sources),
 		source: new SourceDebugger(runtime.machine.cpu, sources.currentBlua32Media, breakpoints.bindings.pcs, () => updateExecutionHookBinding(state)),
 		breakpoints,
 		executionRevision: 0, executionContext: undefined, executionHook,
@@ -70,7 +67,6 @@ export function interruptRuntimeDebuggerExecution(state: RuntimeDebuggerState): 
 }
 
 export function resetRuntimeDebuggerExecution(state: RuntimeDebuggerState): void {
-	state.events.beginTimeline();
 	state.executionRevision++;
 	state.executionContext = undefined;
 	state.stopPresentationPending = false;
@@ -132,7 +128,6 @@ export function discardRuntimeDebuggerFramesFrom(state: RuntimeDebuggerState, fr
 }
 
 export function applyRuntimeDebuggerHotResume(state: RuntimeDebuggerState, breakpoints: RuntimeBreakpointBindings): void {
-	state.events.beginTimeline();
 	state.executionRevision++;
 	state.executionContext = undefined;
 	state.plans.setControlSuspended(false);

@@ -1,6 +1,5 @@
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { createRuntimeDebuggerState } from '../../ide/runtime/debugger_state';
 import { createBlua32SourceImage, createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import type { LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { createCartlibProgramHarness } from './cartlib_cpu';
@@ -22,7 +21,7 @@ end
 return true`, { hostTraceChannels, optLevel }).images;
 }
 
-/** Actual runtime, compiler media and debugger owner; no guest observation mocks. */
+/** Actual runtime and compiler media; observers are explicitly owned by each test. */
 export function eventHistoryRuntime(images: ReturnType<typeof compileEventHistoryFixture>) {
 	const runtime = new Runtime({ systemRomBytes: images.systemRomBytes, cartridgeSlots: cartridgeSlots(images.cartRomBytes), machineModel: PSX_MACHINE_SPEC }, {
 		sampleInputControllerSnapshot() {}, supervisorRequestLineHigh: () => false, applyInputControllerVibrationEffect() {},
@@ -32,6 +31,5 @@ export function eventHistoryRuntime(images: ReturnType<typeof compileEventHistor
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(images.systemImage, images.systemSymbols, images.systemBiosImports),
 		cartridgeSlots: [createBlua32SourceImage(images.cartImage, images.cartSymbols), null] };
 	runtime.machine.cpu.reset(); runtime.machine.cpu.installBootPrimitives();
-	const debuggerState = createRuntimeDebuggerState(runtime, sources);
-	return { runtime, sources, debuggerState, events: debuggerState.events, cpu: runtime.machine.cpu };
+	return { runtime, sources, cpu: runtime.machine.cpu };
 }

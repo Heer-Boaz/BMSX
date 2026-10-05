@@ -557,7 +557,13 @@ void testHistoryRejoin() {
 			require(history.advanceSeek(16384) != bmsx::HistorySeekResult::Stopped, "rejoin replay advances");
 		}
 		require(history.mode == bmsx::HistoryMode::Reviewing, "rejoin reaches recorded end");
+		bool resumed = false;
+		history.onWillResumeRecording = [&](bool branched) {
+			require(!branched, "returning to the recorded end does not begin a new timeline");
+			resumed = true;
+		};
 		history.resumeRecording();
+		require(resumed, "rejoin publishes recording admission");
 		require(history.checkpointPending == test.pending, "rejoin preserves interval and input-pressure capture requests");
 		require(history.checkpointCount() == 1, "looking at history must not evict a checkpoint");
 		require(history.earliestCycles() == 0 && history.latestCycles() == end, "rejoin preserves retained range");
@@ -692,7 +698,8 @@ void testCancelledHistoryTakeover() {
 	require(runtime.machine.scheduler.nowCycles() == cancelledCycles, "cancellation suspends machine time");
 	require(history.latestCycles() == end && history.inputJournal.endSequence == 3, "cancellation retains future");
 	bool resumed = false;
-	history.onWillResumeRecording = [&]() {
+	history.onWillResumeRecording = [&](bool branched) {
+		require(branched, "taking over a partial replay begins a new timeline");
 		require(history.mode == bmsx::HistoryMode::Reviewing && runtime.machine.scheduler.nowCycles() == cancelledCycles,
 			"bookmarks reconcile the suspended review position");
 		require(history.inputJournal.endSequence == 3, "bookmarks reconcile before future truncation");

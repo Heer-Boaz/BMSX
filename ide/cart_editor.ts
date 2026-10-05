@@ -289,7 +289,6 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly sources: RuntimeSourceState;
 	private readonly fault: RuntimeFaultState;
 	private readonly luaTooling: RuntimeLuaTooling;
-	public readonly events: RuntimeEventHistory;
 	private readonly debuggerState: RuntimeDebuggerState;
 	private readonly overlayRenderer: OverlayRenderer;
 	private readonly unsubscribeWorkspaceCursorMoved: () => void;
@@ -338,6 +337,7 @@ export class RuntimeCartEditor implements CartEditor {
 		fault: RuntimeFaultState,
 		luaTooling: RuntimeLuaTooling,
 		debuggerState: RuntimeDebuggerState,
+		public readonly events: RuntimeEventHistory,
 		runtimeTasks: RuntimeTaskQueue,
 		execution: HostExecutionControl,
 		rewind: HostRewind,
@@ -359,7 +359,7 @@ export class RuntimeCartEditor implements CartEditor {
 		observeConversation?: ConversationObserverFactory,
 	) {
 		const behaviorSources = new BehaviorSourceDocuments(editorTextModelService, sources);
-		this.tools = new WorkspaceToolService(editorTextModelService, sources, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, behaviorSources, textFileSaves, boots, hotResumes, clock, run => this.scenarioLab.revealRun(run));
+		this.tools = new WorkspaceToolService(editorTextModelService, sources, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, behaviorSources, textFileSaves, boots, hotResumes, events, clock, run => this.scenarioLab.revealRun(run));
 		this.assistant = new AssistantConversation(editorTextModelService, sources, this.tools, connectAssistant);
 		this.observedConversation = new ObservedConversation(observeConversation);
 		this.runtime = runtime;
@@ -372,7 +372,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.fault = fault;
 		this.luaTooling = luaTooling;
 		this.debuggerState = debuggerState;
-		this.events = debuggerState.events;
 		this.overlayRenderer = overlayRenderer;
 		this.isAvailable = runtimeSourcesSupportIde(this.sources);
 		this.commands = new IdeCommandController(
@@ -484,7 +483,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.editorInputSerializers = {
 			aem_editor: new AemEditorInputSerializer(sources),
 			lua_program: new LuaProgramInputSerializer(sources, this.luaPrograms),
-			event_viewer: { serialize: () => '', deserialize: () => new EventViewerInput(this.debuggerState.events) },
+			event_viewer: { serialize: () => '', deserialize: () => new EventViewerInput(this.events) },
 			terminal: { serialize: () => '', deserialize: () => new TerminalInput(this.terminal) },
 			actor_lab: { serialize: () => '', deserialize: () => this.actorLab.resolveInput() },
 			game_view: { serialize: () => '', deserialize: () => new GameViewInput() },
@@ -714,6 +713,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.assistant.dispose();
 		this.observedConversation.dispose();
 		this.tools.dispose();
+		this.events.dispose();
 		this.frameNavigation.dispose();
 		this.debuggerExecution.dispose();
 		this.unbindBreakpoints();

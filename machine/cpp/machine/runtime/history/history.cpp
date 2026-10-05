@@ -115,9 +115,9 @@ void RuntimeHistory::advancePlayback(f64 hostDeltaMs) {
 }
 
 void RuntimeHistory::resumeRecording() {
-	if (onWillResumeRecording) onWillResumeRecording();
 	const i64 cycles = runtime.machine.scheduler.currentNowCycles();
 	const bool rejoiningLatest = cycles == endCycles;
+	if (onWillResumeRecording) onWillResumeRecording(!rejoiningLatest);
 	while (count > 0) {
 		const size_t index = (firstCheckpoint + count - 1) % checkpoints.size();
 		if (checkpoints[index]->cycles <= cycles) break;

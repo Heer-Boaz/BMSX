@@ -1,4 +1,5 @@
 import type { HotResumeService } from '../execution/hot_resume';
+import type { RuntimeEventHistory } from '../../../runtime/event_history';
 import type { ActorExecutionService } from '../../contrib/actor_lab/execution';
 import type { RuntimeDebuggerExecution } from '../../../runtime/debugger_execution';
 import { DebuggerSourceContext } from './debugger_sources';
@@ -21,7 +22,7 @@ export class WorkspaceRuntimeTools {
 	private readonly lifetime = new AbortController();
 	private readonly onDisconnect = () => this.dispose();
 	public constructor(private readonly owner: RuntimeInspectionService, private readonly navigation: RuntimeFrameNavigation,
-		private readonly gameCapture: GameImageCapture, private readonly terminal: LuaTerminalSession, private readonly debuggerExecution: RuntimeDebuggerExecution, private readonly actorExecution: ActorExecutionService, private readonly boots: BootService, private readonly hotResumes: HotResumeService, private readonly connection: AbortSignal) {
+		private readonly gameCapture: GameImageCapture, private readonly terminal: LuaTerminalSession, private readonly debuggerExecution: RuntimeDebuggerExecution, private readonly actorExecution: ActorExecutionService, private readonly boots: BootService, private readonly hotResumes: HotResumeService, private readonly events: RuntimeEventHistory, private readonly connection: AbortSignal) {
 		connection.throwIfAborted();
 		this.debugSources = new DebuggerSourceContext(debuggerExecution.state);
 		connection.addEventListener('abort', this.onDisconnect, { once: true });
@@ -34,7 +35,7 @@ export class WorkspaceRuntimeTools {
 			case 'studio_read_events': {
 				if (request.target !== this.owner.target) throw new StudioToolInputError('Event history requires this authoring target.');
 				requestSignal?.throwIfAborted();
-				const history = this.debuggerExecution.state.events;
+				const history = this.events;
 				if (request.name === 'studio_read_events') {
 					if (request.generation !== history.generation) throw new StudioToolInputError('Event history was cleared; read the current generation.');
 					if (request.sequence < history.firstSequence) throw new StudioToolInputError('Event sequence expired; read the retained sequence window.');

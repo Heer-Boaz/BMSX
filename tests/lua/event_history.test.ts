@@ -5,7 +5,9 @@ import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { compileEventHistoryFixture, eventHistoryRuntime } from '../helpers/event_history';
-import { resetRuntimeDebuggerExecution, applyRuntimeDebuggerHotResume, RuntimeDebuggerResumeMode } from '../../ide/runtime/debugger_state';
+import { createRuntimeDebuggerState, resetRuntimeDebuggerExecution, RuntimeDebuggerResumeMode } from '../../ide/runtime/debugger_state';
+import { RuntimeEventHistory } from '../../ide/runtime/event_history';
+import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';
 import { GuestValueSnapshot, VALUE_SNAPSHOT_ENTRIES, VALUE_SNAPSHOT_CHARACTERS } from '../../ide/runtime/value_snapshot';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
@@ -27,20 +29,23 @@ end })
 port:emit('outer', data)
 port:emit('unhandled', nil)
 return data.health`, { optLevel, hostTraceChannels: ['event.emit'] });
-	const { cpu, events } = eventHistoryRuntime(images);
+	const { cpu, runtime, sources } = eventHistoryRuntime(images);
+	const events = new RuntimeEventHistory(runtime, sources);
 	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
 	assert.equal(events.count, 3);
-	assert.deepEqual([0, 1, 2].map(index => events.at(index).event.display), ['"outer"', '"inner"', '"unhandled"']);
-	assert.equal(events.at(0).emitter.display, '"player"');
-	assert.equal(events.at(1).payload.display, 'false');
-	assert.equal(events.at(2).payload.display, 'nil');
+	assert.deepEqual([0, 1, 2].map(index => events.at(index).event), ['outer', 'inner', 'unhandled'].map(value => ({ kind: 'string', value, omitted: false })));
+	assert.deepEqual(events.at(0).emitter, { kind: 'string', value: 'player', omitted: false });
+	assert.deepEqual(events.at(1).payload, { kind: 'boolean', value: false });
+	assert.deepEqual(events.at(2).payload, { kind: 'nil' });
 	const data = events.at(0).payload;
-	assert.equal(data.entries.find(entry => entry.key.display === '"health"')!.value.display, '9');
-	assert.match(data.entries.find(entry => entry.key.display === '"self"')!.value.display, /^reference #/);
+	assert.ok(data.kind === 'table');
+	assert.deepEqual(data.entries.find(entry => entry.key.kind === 'string' && entry.key.value === 'health')!.value, { kind: 'number', value: 9 });
+	assert.deepEqual(data.entries.find(entry => entry.key.kind === 'string' && entry.key.value === 'self')!.value, { kind: 'reference', id: data.id });
 });
 
-test('automatic history wraps, survives closing its pane and resumes after reset/install without recording controls', () => {
-	const { cpu, events, runtime, debuggerState } = eventHistoryRuntime(compileEventHistoryFixture());
+test('automatic history wraps and survives pane closure and debugger reconfiguration', () => {
+	const { cpu, runtime, sources } = eventHistoryRuntime(compileEventHistoryFixture());
+	const events = new RuntimeEventHistory(runtime, sources);
 	cpu.runUntilDepth(0, BUDGET);
 	const fn = cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!) as Closure;
 	const pane = new EventViewerInput(events), projection = pane.projection;
@@ -56,16 +61,18 @@ test('automatic history wraps, survives closing its pane and resumes after reset
 	projection.update(events, 'fixture');
 	assert.equal(projection.rows[0].sequence, 4);
 	assert.equal(projection.rows.length, events.capacity);
-	assert.equal(first.payload.entries.find(entry => entry.key.display === '"value"')!.value.display, '1');
+	assert.ok(first.payload.kind === 'table');
+	assert.deepEqual(first.payload.entries.find(entry => entry.key.kind === 'string' && entry.key.value === 'value')!.value, { kind: 'number', value: 1 });
 	const end = events.endSequence;
 	runtime.history.mode = HistoryMode.Replaying;
 	cpu.beginCompletionCall(fn, [2]); cpu.runUntilDepth(0, BUDGET);
 	assert.equal(events.endSequence, end, 'replay does not duplicate historical emissions');
 	runtime.history.mode = HistoryMode.Disabled;
+	const debuggerState = createRuntimeDebuggerState(runtime, sources);
 	resetRuntimeDebuggerExecution(debuggerState);
 	cpu.beginCompletionCall(fn, [1]); cpu.runUntilDepth(0, BUDGET);
-	assert.ok(events.at(end).timeline > first.timeline);
-	applyRuntimeDebuggerHotResume(debuggerState, debuggerState.breakpoints.bindings);
+	assert.equal(events.at(end).timeline, first.timeline, 'debugger creation/reset must neither replace the observer nor split its timeline');
+	events.beginTimeline();
 	cpu.beginCompletionCall(fn, [1]); cpu.runUntilDepth(0, BUDGET);
 	assert.ok(events.at(end + 1).timeline > events.at(end).timeline);
 	events.clear(); projection.update(events, 'fixture');
@@ -77,7 +84,9 @@ test('automatic history wraps, survives closing its pane and resumes after reset
 });
 
 test('a source breakpoint stops before trace execution and continuing emits exactly once', () => {
-	const { cpu, events, sources, debuggerState: state } = eventHistoryRuntime(compileEventHistoryFixture());
+	const { cpu, sources, runtime } = eventHistoryRuntime(compileEventHistoryFixture());
+	const events = new RuntimeEventHistory(runtime, sources);
+	const state = createRuntimeDebuggerState(runtime, sources);
 	cpu.runUntilDepth(0, BUDGET);
 	const image = sources.currentBlua32Media.cartridgeSlots[0]!;
 	const fnIndex = image.symbols!.metadata.functionDisplayNames.indexOf('event_emitter.emit');
@@ -137,17 +146,21 @@ for i=1,100 do payload[i] = string.rep('x', 5000) end
 e:emit('large', nil, payload, 'fixture')`, { hostTraceChannels: ['event.emit'] });
 	const snapshots = new GuestValueSnapshot(cpu.stringPool);
 	let snapshot: ReturnType<GuestValueSnapshot['read']>;
-	cpu.setTraceHook((_domain, args) => { snapshots.begin(); snapshot = snapshots.read(args.registers.get(args.base + 4)); });
+	cpu.setTraceHook((_domain, args) => { snapshots.begin(); snapshot = snapshots.read(args.registers, args.base + 4); });
 	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
-	assert.equal(snapshot!.entries.length, VALUE_SNAPSHOT_ENTRIES);
-	assert.equal(snapshot!.omitted, true);
-	assert.equal(snapshot!.entries[0].value.display.length, VALUE_SNAPSHOT_CHARACTERS + 2);
-	assert.equal(snapshot!.entries[0].value.omitted, true);
+	assert.ok(snapshot!.kind === 'table');
+	assert.equal(snapshot.entries.length, VALUE_SNAPSHOT_ENTRIES);
+	assert.equal(snapshot.omitted, true);
+	const value = snapshot.entries[0].value;
+	assert.ok(value.kind === 'string');
+	assert.equal(value.value.length, VALUE_SNAPSHOT_CHARACTERS);
+	assert.equal(value.omitted, true);
 });
 
 test('observer adds no guest work; selected source instrumentation cost is measured separately', t => {
 	const enabled = compileEventHistoryFixture(), erased = compileEventHistoryFixture([]);
-	const variants = [eventHistoryRuntime(erased), eventHistoryRuntime(enabled), eventHistoryRuntime(enabled)];
+	const variants = [eventHistoryRuntime(erased), eventHistoryRuntime(enabled), eventHistoryRuntime(enabled)]
+		.map(f => ({ ...f, events: new RuntimeEventHistory(f.runtime, f.sources) }));
 	variants[1].cpu.setTraceHook(null);
 	const elapsed: number[][] = [[], [], []], costs: number[] = [], heapBytes: number[] = [];
 	const functions = variants.map(({cpu}) => {
@@ -171,4 +184,17 @@ test('observer adds no guest work; selected source instrumentation cost is measu
 	assert.ok(costs[1] > costs[0], 'source instrumentation has an honest, nonzero guest cost');
 	const medians = elapsed.map(samples => samples.slice(4).sort((a, b) => a - b)[3]);
 	t.diagnostic(JSON.stringify({ variants: ['erased', 'trace-unobserved', 'history'], cycles: costs, heapBytes, medianMs: medians }));
+});
+
+test('numeric snapshots preserve full precision and IEEE special values across JSON', () => {
+	const { cpu } = eventHistoryRuntime(compileEventHistoryFixture());
+	const snapshot = new GuestValueSnapshot(cpu.stringPool), slots = new ValueSlots(7);
+	const values = [1234567, 0.123456789012345, -0, Infinity, -Infinity, NaN, 0];
+	values.forEach((value, index) => slots.setNumber(index, value));
+	snapshot.begin();
+	const captured = values.map((_value, index) => snapshot.read(slots, index));
+	assert.deepEqual(captured, [1234567, 0.123456789012345, '-0', 'inf', '-inf', 'nan', 0]
+		.map(value => ({ kind: 'number', value })));
+	slots.clear(values.length);
+	assert.deepEqual(JSON.parse(JSON.stringify(captured)), captured);
 });

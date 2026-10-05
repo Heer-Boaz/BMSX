@@ -40,6 +40,7 @@ import { clearAllRuntimeErrorOverlays } from '../runtime_error/navigation';
 import { clearHoverTooltip } from '../editor/contrib/hover/controller';
 import { LuaTerminalSession } from './services/terminal/session';
 import { RuntimeInspectionService } from '../runtime/inspection';
+import { RuntimeEventHistory } from '../runtime/event_history';
 
 export const DEFAULT_IDE_FONT_VARIANT: FontVariant = 'tiny';
 export type OverlayResolutionMode = 'offscreen' | 'viewport';
@@ -49,6 +50,7 @@ export class RuntimeIdeState {
 	public readonly overlayRenderer: OverlayRenderer;
 	public lastIdeInputFrame = -1;
 	public readonly debugger: RuntimeDebuggerState;
+	public readonly events: RuntimeEventHistory;
 	public shortcutDisposers: Array<() => void> = [];
 	public readonly luaTooling: RuntimeLuaTooling;
 	public readonly scenarioRuns: ScenarioRunService;
@@ -87,6 +89,7 @@ export class RuntimeIdeState {
 		connectAssistant?: AssistantConnectionFactory,
 		observeConversation?: ConversationObserverFactory,
 	) {
+		this.events = new RuntimeEventHistory(runtime, sources);
 		this.debugger = createRuntimeDebuggerState(runtime, sources);
 		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue);
 		this.luaTooling = new RuntimeLuaTooling(
@@ -97,6 +100,7 @@ export class RuntimeIdeState {
 		this.textFileSaves = new TextFileSaveService(editorTextModelService, clock, sources, this.luaTooling, runtime, runtimeTasks);
 		this.hotResumes = new HotResumeService(editorTextModelService, sources, this.luaTooling, this.fault, this.debugger,
 			input, runtime, runtimeTasks, execution, workspaceDirtyRecords);
+		this.hotResumes.onDidApply = () => this.events.beginTimeline();
 		this.boots = new BootService(editorTextModelService, sources, this.luaTooling, this.fault, runtime, runtimeTasks,
 			execution, audioOutput, workspaceDirtyRecords);
 		this.diagnostics = new ResourceDiagnosticsService(editorTextModelService, this.luaTooling, clock);
@@ -123,6 +127,7 @@ export class RuntimeIdeState {
 			this.fault,
 			this.luaTooling,
 			this.debugger,
+			this.events,
 			this.runtimeTasks,
 			execution,
 			rewind,
@@ -162,11 +167,16 @@ export class RuntimeIdeState {
 			syncRuntimeSourceActivity(this.sources, runtime.machine.cpu.activeCartridgeSlot());
 		};
 		runtime.onStateRestored = origin => {
+			this.events.didRestore(origin);
 			this.frameNavigation.didRestore(origin);
 			invalidateToolingState(origin === RuntimeRestoreOrigin.HistorySeek ? 'history-restored' : 'heap-replaced');
 		};
-		runtime.history.onWillResumeRecording = () => this.luaTooling.suspendedGuest.willResumeHistory();
+		runtime.history.onWillResumeRecording = branched => {
+			if (branched) this.events.beginTimeline();
+			this.luaTooling.suspendedGuest.willResumeHistory();
+		};
 		runtime.onStateReset = () => {
+			this.events.beginTimeline();
 			this.frameNavigation.didReset();
 			invalidateToolingState('heap-replaced');
 		};

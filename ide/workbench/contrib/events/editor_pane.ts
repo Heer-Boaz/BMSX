@@ -12,6 +12,7 @@ import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../.
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { api } from '../../../runtime/overlay_api';
+import { formatValueSnapshot } from '../../../runtime/value_snapshot';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 import { STATUS_BAR_CONNECTION_WIDTH, updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
@@ -146,7 +147,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 			const event = rows[i], selected = i === input.selected;
 			let label = this.labels.get(event.sequence);
 			if (label === undefined) {
-				label = truncateMeasuredText(`${event.completedTick}  ${event.event.display} / ${event.emitter.display}`, viewport.bounds.right - viewport.bounds.left - 4, measureTextRange);
+				label = truncateMeasuredText(`${event.completedTick}  ${formatValueSnapshot(event.event)} / ${formatValueSnapshot(event.emitter)}`, viewport.bounds.right - viewport.bounds.left - 4, measureTextRange);
 				this.labels.set(event.sequence, label);
 			}
 			if (selected) api.fill_rect(viewport.bounds.left, top, viewport.bounds.right, top + layout.rowHeight, 0, colors.SELECTION_OVERLAY);

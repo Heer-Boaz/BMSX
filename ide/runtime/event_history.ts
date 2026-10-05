@@ -3,6 +3,7 @@ import type { BuiltinArgsView } from '../../machine/ts/machine/cpu/value_slots';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
+import { RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_state';
 import type { RuntimeSourceState } from './sources';
 import { GuestValueSnapshot, type ValueSnapshot } from './value_snapshot';
 
@@ -59,8 +60,12 @@ export class RuntimeEventHistory {
 		this.revision++;
 	}
 
-	/** Restores/installations do not turn old evidence into events from a new timeline. */
+	/** A physical reset or admitted program installation separates subsequent evidence. */
 	public beginTimeline(): void { this.timeline++; this.revision++; }
+
+	public didRestore(origin: RuntimeRestoreOrigin): void {
+		if (origin !== RuntimeRestoreOrigin.HistorySeek) this.beginTimeline();
+	}
 
 	public dispose(): void { this.runtime.machine.cpu.setTraceHook(null); }
 
@@ -71,9 +76,9 @@ export class RuntimeEventHistory {
 		// The compiler's host-trace transport is (subject, channel, ...values).
 		if (cpu.stringPool.toString(values.getScalar(base + 1)) !== 'event.emit') return;
 		this.snapshot.begin();
-		const event = this.snapshot.read(values.get(base + 2));
-		const emitter = this.snapshot.read(values.get(base + 3));
-		const payload = this.snapshot.read(values.get(base + 4));
+		const event = this.snapshot.read(values, base + 2);
+		const emitter = this.snapshot.read(values, base + 3);
+		const payload = this.snapshot.read(values, base + 4);
 		const sequence = this.endSequence++;
 		this.buffer[sequence % this.capacity] = {
 			sequence, timeline: this.timeline, domain,

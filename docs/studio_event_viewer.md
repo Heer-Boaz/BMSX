@@ -22,8 +22,10 @@ Closing a pane or ending a conversation does not stop collection. A host restart
 loses this in-memory history.
 
 A rewind seek keeps existing event evidence without emitting duplicates during
-replay. Reset, restore and code installation begin a new labelled timeline;
-subsequent live emissions remain distinguishable from the old evidence. Clear
+replay. A new labelled timeline starts on a physical reset, external save-state
+load, admitted Hot Resume installation, or continuing live from an earlier point.
+Seeking, playback and returning to the recorded end do not create timelines.
+Subsequent live emissions remain distinguishable from the old evidence. Clear
 is the only in-session action which deletes all retained events. Rewind does
 not reconstruct events which have already expired from this bounded buffer.
 
@@ -42,6 +44,15 @@ Codex and external Studio/MCP clients read the **same workspace-owned buffer**:
 Read on demand around ordinary Terminal operations, Actor operations or frame
 steps. No polling, additional capture session or live guest handle is required.
 These tools target the authoring runtime, not a separate Scenario Lab machine.
+
+Snapshots carry typed data, not preformatted UI text: `kind` identifies nil,
+boolean, number, string, table, reference, function, builtin or thread. Primitive
+`value` fields retain their values; strings also report `omitted`. Tables carry
+`id`, `entries` (typed keys and values) and `omitted`; references carry the
+snapshot-local table identity. The number kind uses numeric JSON values except
+for the explicit `'-0'`, `'nan'`, `'inf'` and `'-inf'` representations which JSON
+numbers cannot preserve. Finite numbers are not rounded to display precision.
+Identities are evidence inside the emission, never live inspection handles.
 
 ## Ownership and source instrumentation
 
@@ -74,10 +85,17 @@ justification for unlimited additional tracing cost.
   instruction loop gains trace polling; attaching the observer does not switch
   to the instrumented interpreter. No emulated event device, event opcode,
   cartlib-aware CPU code, injected listener or guest snapshot allocation exists.
+- `RuntimeIdeState` owns one `RuntimeEventHistory`, independent of source
+  debugger creation/reset, and injects it into the viewer and runtime tools.
+  Physical restore, rewind resume and Hot Resume notify it at their actual
+  lifecycle boundaries; debugger invalidation is not a substitute for those
+  notifications. Workbench shutdown detaches the CPU observer.
 - The IDE-owned `RuntimeEventHistory` makes bounded immutable host copies at
   emission. It never invokes Lua or metatables and retains no guest objects or
-  borrowed register views. UI filtering and payload inspection run on those
-  copies, not the machine. The filtered index updates incrementally; rendering
+  borrowed register views. It consumes tagged slots directly and copies typed
+  values without invoking number formatting or JSON string quoting. UI
+  filtering and payload inspection format those copies on demand, not the
+  machine. The filtered index updates incrementally; rendering
   visits only visible rows and retains measured labels. Expiration preserves
   the scrolled position unless following the live end.
 - Linker/tooling metadata preserves host channels through source rebuild and
@@ -96,6 +114,10 @@ retain the native runtime service's fixed bootstrap presence.
 - [BehaviorTree.CPP semantic state notifications](https://github.com/BehaviorTree/BehaviorTree.CPP/blob/master/src/tree_node.cpp)
   and [logger lifetime](https://github.com/BehaviorTree/BehaviorTree.CPP/blob/master/include/behaviortree_cpp/loggers/abstract_logger.h):
   observe a semantic transition, not every interpreter instruction.
+- [VS Code REPL model](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/replModel.ts):
+  stored values and their requested text/children are separate responsibilities.
+  BMSX detaches mutable guest values at emission rather than retaining live
+  JavaScript objects, because replay replaces heaps and evidence must not change.
 - [Godot EngineDebugger](https://github.com/godotengine/godot/blob/master/core/debugger/engine_debugger.cpp):
   producer/debugger ownership independent of editor presentation.
 
@@ -112,6 +134,15 @@ acceptable. The local measurements below determine that.
 | Execution domain | raw `ExecutionDomainId` | same enum | execution-domain specification |
 | Host channels | `readonly string[]` | `vector<string>` | compiler/linker tooling metadata |
 | Snapshot / sequence | immutable host history | no native Studio | IDE, not machine save-state |
+| Resume notification (review follow-up) | `branched: boolean` | `bool branched` | `RuntimeHistory::resumeRecording`, before truncating future input |
+
+The review follow-up changes only the existing resume notification payload in
+the mirrored runtimes. `RuntimeHistory` already decides whether resumption
+rejoins the recorded end; it publishes that decision rather than making the
+Event Viewer reconstruct it. Callsites: TS/C++ `resumeRecording`, the Studio
+composition root, and scheduler/navigation conformance tests. This runs on
+explicit resume, not on instructions, frames or event emissions. Guest state,
+checkpoint representation and native trace costs remain unchanged.
 
 Hot callsites: compiler-lowered CALL in `cartlib/event_emitter.lua:emit`, TS
 `CPU.callBuiltinFunction`, C++ `CPU::callBuiltinFunction`. The observer cannot
@@ -119,7 +150,7 @@ execute guest code or retain the borrowed span. Costs and primitive IDs are
 mirrored. The old observation-only `ExecutionHookPhase` extension is removed;
 source breakpoints and interrupt fences keep their original control contract.
 
-## Validation (2026-10-05)
+## Initial implementation validation (2026-10-05)
 
 - Compiler/cartlib/CPU coverage: O0/O3, nested and unhandled emission, nil/false,
   immutable snapshots after mutation, cyclic tables, snapshot budgets, selected
@@ -189,3 +220,51 @@ Results are workload-specific, not a universal overhead bound or FPS claim.
 Coverage is common cartlib event **emission**, not arbitrary private callbacks,
 interrupts, listener completion or duration. Full unbounded payload capture and
 persistent trace-file export are not implemented.
+
+
+## Ownership review follow-up (2026-10-05)
+
+Two actual defects were corrected rather than adding compatibility layers:
+
+1. Constructing/resetting a source debugger implicitly installed/relabelled the
+   event observer. In particular, ordinary history seeks created fictitious
+   timelines. The Studio session now owns history independently; physical
+   restore, admitted Hot Resume and the runtime's explicit branch notification
+   are the lifecycle boundaries. A seek/rejoin is not a new branch.
+2. The emission path stored only display strings, including six-digit runtime
+   number formatting. Tools lost the original types and numeric precision,
+   while every emission paid for quoting/formatting, even with the pane closed.
+   Snapshots now consume tagged slots into detached typed data; presentation is
+   on demand. Cycles, aliases, truncation and JSON-inexpressible IEEE values
+   remain explicit. No guest code or new per-instruction work was introduced.
+
+Validation after the fixes:
+
+- Browser Studio operated through keyboard, pointer and Terminal clipboard
+  input: startup capture, close/reopen, immutable nested/cyclic payloads,
+  details/filter/copy, 2052-event overflow, central stepping and playback.
+  The copied evidence stayed in timeline **1** after Back/return-to-present,
+  moved to **2** after resuming an earlier point, then **3** after Hot Resume.
+  The UI was visually inspected; these are not assertions about required prose.
+- 44 focused event/history/navigation tests and 165 broader debugger,
+  inspection, Terminal, assistant and Hot Resume tests passed. IDE/tests
+  typechecks and boundary/core-parity audits passed. Browser Studio and Node
+  headless tooling products were rebuilt.
+- Native frame-scheduler tests exercise both branch and rejoin notifications.
+  Full Nemesis TS/C++ save-state comparisons passed at the three checkpoint
+  windows and after history seeks/live branching, including GPU/audio state.
+- An isolated alternating A/B run compared the previous commit's observer with
+  typed snapshots: 31 rounds, 8 warmups, 1000 emissions per round. Medians were
+  **71.84 ms / 71.08 ms** (-1.05%). Both used **272015 guest cycles**, with equal
+  complete CPU state. This small timing difference is not a general speedup
+  claim; moving formatting also fixes the data representation independently.
+- Repeating erased / unobserved-debug / observed-debug measured
+  **66.53 / 67.93 / 69.17 ms**: about **4.0%** total source-plus-observation
+  overhead for this emission-heavy fixture, about **1.8%** for observation over
+  already instrumented debug code. The source still costs 9 guest cycles/event.
+- The three 120-frame Nemesis windows measured **+0.29%, -0.51%, -0.35%**
+  observed versus unobserved debug code (5/6/8 emissions). These differences are
+  within sample variation, not evidence of zero overhead in all workloads.
+
+Local logs, copied event values, screenshots and the A/B harness are under
+`.bmsx/authoring/event-history-review/` (ignored authoring evidence).

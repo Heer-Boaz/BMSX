@@ -24,7 +24,7 @@ public:
 	RuntimeHistory(Runtime& runtime, InputControllerInputSource& liveInput) : input(*this, liveInput), runtime(runtime) {}
 	HistoryMode mode = HistoryMode::Disabled;
 	// Host bookmarks reconcile the reviewed heap before live execution can reuse future identities.
-	std::function<void()> onWillResumeRecording;
+	std::function<void(bool branched)> onWillResumeRecording;
 	bool checkpointPending = false;
 	InputJournal inputJournal;
 	HistoryInputSource input;

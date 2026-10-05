@@ -232,7 +232,10 @@ test('history rejoining the recorded end preserves checkpoints and pending captu
 			assert.notEqual(history.advanceSeek(16384), HistorySeekResult.Stopped);
 		}
 		assert.equal(history.mode, HistoryMode.Reviewing);
+		let resumed = false;
+		history.onWillResumeRecording = branched => { assert.equal(branched, false); resumed = true; };
 		history.resumeRecording();
+		assert.equal(resumed, true);
 		assert.equal(history.checkpointPending, pending, 'rejoin preserves interval and input-pressure capture requests');
 		assert.equal(history.checkpointCount, 1, 'looking at history must not evict a checkpoint');
 		assert.equal(history.earliestCycles, 0);
@@ -354,7 +357,8 @@ test('cancelled replay preserves future until takeover and discards its partial 
 	assert.equal(history.latestCycles, end);
 	assert.equal(history.inputJournal.endSequence, 3);
 	let resumed = false;
-	history.onWillResumeRecording = () => {
+	history.onWillResumeRecording = branched => {
+		assert.equal(branched, true);
 		assert.equal(history.mode, HistoryMode.Reviewing);
 		assert.equal(runtime.machine.scheduler.nowCycles, cancelledCycles);
 		assert.equal(history.inputJournal.endSequence, 3, 'bookmarks reconcile before future truncation');

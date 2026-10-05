@@ -1,5 +1,5 @@
 import type { HistoricalEvent, EventHistoryStatus, RuntimeEventHistory } from '../../../runtime/event_history';
-import type { ValueSnapshot } from '../../../runtime/value_snapshot';
+import { formatValueSnapshot, type ValueSnapshot } from '../../../runtime/value_snapshot';
 import type { InspectedProperty } from '../../ui/property_inspector/model';
 
 export const EVENT_HISTORY_LABEL: Record<EventHistoryStatus, string> = {
@@ -31,7 +31,7 @@ export class EventProjection {
 		this.scanned = Math.max(this.scanned, history.firstSequence);
 		for (; this.scanned < history.endSequence; this.scanned++) {
 			const record = history.at(this.scanned);
-			if (query !== '' && !record.event.display.toLowerCase().includes(query) && !record.emitter.display.toLowerCase().includes(query)) continue;
+			if (query !== '' && !formatValueSnapshot(record.event).toLowerCase().includes(query) && !formatValueSnapshot(record.emitter).toLowerCase().includes(query)) continue;
 			this.rows.push(record);
 			changed = true;
 		}
@@ -51,10 +51,13 @@ export function eventProperties(event: HistoricalEvent): InspectedProperty[] {
 }
 
 function appendSnapshot(properties: InspectedProperty[], path: string, value: ValueSnapshot): void {
-	properties.push({ label: path, value: value.display + (value.entries.length > 0 ? ` (${value.entries.length} stored entries)` : ''),
-		description: value.omitted ? 'Snapshot budget reached; remaining contents were not captured.' : '', warning: value.omitted });
+	const omitted = (value.kind === 'string' || value.kind === 'table') && value.omitted;
+	properties.push({ label: path, value: formatValueSnapshot(value) + (value.kind === 'table' ? ` (${value.entries.length} stored entries)` : ''),
+		description: omitted ? 'Snapshot budget reached; remaining contents were not captured.' : '', warning: omitted });
+	if (value.kind !== 'table') return;
 	for (const entry of value.entries) {
-		const key = entry.key.display + (entry.key.omitted ? ' [truncated key]' : '');
+		const omittedKey = (entry.key.kind === 'string' || entry.key.kind === 'table') && entry.key.omitted;
+		const key = formatValueSnapshot(entry.key) + (omittedKey ? ' [truncated key]' : '');
 		appendSnapshot(properties, `${path}[${key}]`, entry.value);
 	}
 }

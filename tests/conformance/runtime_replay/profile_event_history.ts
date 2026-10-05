@@ -21,6 +21,7 @@ async function main(): Promise<void> {
 	const { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } = await import('../../../machine/ts/spec/bmsx/io');
 	const { InputControllerGamepadButtonBit: Button } = await import('../../../machine/ts/machine/devices/input/contracts');
 	const { captureRuntimeSaveState, applyRuntimeSaveState } = await import('../../../machine/ts/machine/runtime/save_state');
+	const { formatValueSnapshot } = await import('../../../ide/runtime/value_snapshot');
 	const { RuntimeEventHistory } = await import('../../../ide/runtime/event_history');
 	const { createRuntimeSourceState } = await import('../../../ide/runtime/sources');
 	const { loadRomToolingMedia } = await import('../../../toolchain/ts/rompack/media');
@@ -81,7 +82,7 @@ async function main(): Promise<void> {
 			samples[observed].push(performance.now() - start);
 			if (observed) {
 				events = history.endSequence;
-				names = [...new Set(Array.from({ length: history.count }, (_, index) => history.at(history.firstSequence + index).event.display))];
+				names = [...new Set(Array.from({ length: history.count }, (_, index) => formatValueSnapshot(history.at(history.firstSequence + index).event)))];
 			}
 			if (round === 0) {
 				const result = capture();

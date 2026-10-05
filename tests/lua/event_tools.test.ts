@@ -12,8 +12,8 @@ test('Studio tools share automatic history with the viewer, page snapshots and r
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	const f = createRuntimeInspectionFixture(runtime, sources), lifetime = new AbortController();
 	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal,
-		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, lifetime.signal);
-	const events = f.debuggerState.events, target = f.inspection.target;
+		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, lifetime.signal);
+	const events = f.events, target = f.inspection.target;
 	t.after(() => { lifetime.abort(); events.dispose(); });
 	assert.throws(() => tools.execute('studio_event_history', { target: 'foreign', action: 'status' }), /authoring target/);
 	const started = await tools.execute('studio_event_history', { target, action: 'status' });
@@ -26,7 +26,9 @@ test('Studio tools share automatic history with the viewer, page snapshots and r
 	const page = await tools.execute('studio_read_events', request);
 	assert.ok('events' in page.data);
 	assert.deepEqual(page.data.events, [events.at(1)]);
-	assert.equal(page.data.events[0].payload.entries.find(entry => entry.key.display === '"value"')!.value.display, '2');
+	const payload = page.data.events[0].payload;
+	assert.ok(payload.kind === 'table');
+	assert.deepEqual(payload.entries.find(entry => entry.key.kind === 'string' && entry.key.value === 'value')!.value, { kind: 'number', value: 2 });
 	await tools.execute('studio_event_history', { target, action: 'clear' });
 	assert.throws(() => tools.execute('studio_read_events', request), /cleared/);
 	assert.equal(events.count, 0);
