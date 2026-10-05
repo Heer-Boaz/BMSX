@@ -1,3 +1,4 @@
+import { luaPow } from '../../../../../machine/ts/spec/blua32/pow';
 // start normalized-body-acceptable -- Value-folding helpers mirror opcode cases; sharing them would hide the rewrite intent.
 import { OpCode } from '../../../../../machine/ts/spec/blua32/opcode';
 import { MAX_SIGNED_BX, MIN_SIGNED_BX } from '../../../../../machine/ts/spec/blua32/instruction_format';
@@ -197,7 +198,7 @@ export const evaluateBinary = (op: OpCode, left: ConstValue, right: ConstValue):
 		case OpCode.FLOORDIV:
 			return luaFloorDivide(left.value, right.value);
 		case OpCode.POW:
-			return Math.pow(left.value, right.value);
+			return luaPow(left.value, right.value);
 		case OpCode.BAND:
 			return left.value & right.value;
 		case OpCode.BOR:

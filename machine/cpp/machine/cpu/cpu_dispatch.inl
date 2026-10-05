@@ -215,7 +215,7 @@ DISPATCH_LABEL(FLOORDIV) {
 DISPATCH_LABEL(POW) {
 	const Value& left = readRK(IMAGE, registers, rkB);
 	const Value& right = readRK(IMAGE, registers, rkC);
-	SET_REGISTER_FAST(a, valueNumber(std::pow(asNumber(left), asNumber(right))));
+	SET_REGISTER_FAST(a, valueNumber(luaPow(asNumber(left), asNumber(right))));
 	DISPATCH_CONTINUE();
 }
 

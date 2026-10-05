@@ -2,6 +2,7 @@
 #include "common/endian.h"
 #include "machine/common/numeric.h"
 #include "spec/blua32/numeric.h"
+#include "spec/blua32/pow.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/blua32/builtin.h"
 #include "spec/blua32/image_format.h"

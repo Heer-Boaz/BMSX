@@ -253,6 +253,7 @@ add_library(bmsx_core STATIC
 	machine/cpu/table.cpp
 	machine/cpu/value.cpp
 	machine/execution_address_space.cpp
+	spec/blua32/pow.cpp
 	spec/blua32/opcode.cpp
 	spec/blua32/instruction_format.cpp
 	machine/devices/cartridge/card.cpp
@@ -563,6 +564,12 @@ endif()
 
 if(BMSX_BUILD_TESTS)
 	enable_testing()
+	add_executable(bmsx_pow_conformance_runner
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/pow_conformance_runner.cpp)
+	target_link_libraries(bmsx_pow_conformance_runner PRIVATE bmsx_core)
+	if(BMSX_SNESMINI_TARGET)
+		target_link_options(bmsx_pow_conformance_runner PRIVATE -static-libstdc++ -static-libgcc)
+	endif()
 	add_executable(bmsx_geometry_conformance_runner
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/geometry_conformance_runner.cpp)
 	target_link_libraries(bmsx_geometry_conformance_runner PRIVATE bmsx_core)

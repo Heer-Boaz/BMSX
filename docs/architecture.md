@@ -2555,6 +2555,14 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
   Ordering compares interned strings only when both tags are `String`. This is
   guest representation decode, not host-value classification or repeated
   validation.
+- BLua `POW` is the repository-owned fdlibm algorithm in
+  `spec/blua32/pow`, mirrored in TS and C++. Both compiler constant evaluators
+  use that same TS implementation. Host `Math.pow`/`std::pow` are not the
+  machine definition: folding, runtime execution, host ISA and libm upgrades
+  must not select different arithmetic. Binary64 operations retain their
+  written order, with contraction disabled; NaN results are canonical and
+  signed zero/subnormal results are preserved. The adopted source and license
+  are recorded in `third_party/fdlibm/LICENSE`.
 - `HALT` is an interrupt-event wait, not an unconditional sleep for a future
   edge. The CPU has one event latch. An asynchronous interrupt accepted while
   code is active sets it; `HALT` consumes a set latch without parking. If no

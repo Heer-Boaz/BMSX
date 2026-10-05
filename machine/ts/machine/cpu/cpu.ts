@@ -1,3 +1,4 @@
+import { luaPow } from '../../spec/blua32/pow';
 import { StringPool, type StringId } from './string_pool';
 import {
 	NO_BLOCKED_MAPPED_WRITE,
@@ -2584,7 +2585,7 @@ export class CPU implements MappedPageInvalidator {
 							this.setRegisterNumberFast(frame, registers, a, luaFloorDivide(left, right));
 							return;
 						case OpCode.POW:
-							this.setRegisterNumberFast(frame, registers, a, Math.pow(left, right));
+							this.setRegisterNumberFast(frame, registers, a, luaPow(left, right));
 							return;
 						case OpCode.BAND:
 							this.setRegisterNumberFast(frame, registers, a, left & right);

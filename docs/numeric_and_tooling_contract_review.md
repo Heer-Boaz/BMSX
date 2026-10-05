@@ -68,3 +68,26 @@ command plus its prefix arguments, for example `qemu-arm-static -cpu cortex-a7
 -L .snesmini/rootfs <arm-build>/bmsx_geometry_conformance_runner`. The script
 appends the generated vector path, compares every output word, and preserves
 its temporary input file on failure.
+
+## POW slice result
+
+`machine/{ts,cpp}/spec/blua32/pow` adopts the fdlibm POW algorithm from
+[V8 12.4.254](https://github.com/v8/v8/blob/12.4.254/src/base/ieee754.cc).
+The CPU dispatches and both compiler evaluators consume it directly. Binary64
+word access belongs to mirrored `common/float64`; no per-operation arrays,
+objects or typed views are allocated. The underflow path uses normal-range
+exponent adjustment followed by one subnormal rounding, without host `scalbn`.
+The original Sun notice and V8 license are retained.
+
+- `test:pow-parity`: 30,178 exact binary64 vectors agree in TS, native C++ and
+  the SNES Mini ARM build under QEMU. Coverage includes signed zero, NaNs,
+  infinities, underflow/overflow boundaries, negative/integral powers,
+  near-one/large-exponent inputs, AEM gain/pitch ranges and seeded raw words.
+- Lua execution tests compare dynamic POW with both constant evaluation paths
+  at O0 and O3, plus independently recorded fdlibm result words.
+- A bundled Node 22 microbenchmark of one million fractional powers measured
+  about 93 ms for the owned TS kernel versus 23 ms for native `Math.pow`
+  (warm runs, same sum). This is an explicit host-time cost of the portable
+  algorithm, not extra guest cycles or an end-to-end cart performance claim.
+  Integer shortcuts and square roots remain in the algorithm; no cache or
+  guest lookup tables change its semantics.

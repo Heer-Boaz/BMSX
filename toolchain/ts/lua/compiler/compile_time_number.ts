@@ -1,3 +1,4 @@
+import { luaPow } from '../../../../machine/ts/spec/blua32/pow';
 import { LuaBinaryOperator, LuaUnaryOperator } from '../syntax/ast';
 import { luaFloorDivide, luaModulo } from '../../../../machine/ts/spec/blua32/numeric';
 import type {
@@ -52,7 +53,7 @@ export function evaluateCompileTimeNumberBinaryOperator(operator: LuaBinaryOpera
 		case LuaBinaryOperator.Modulus:
 			return luaModulo(left, right);
 		case LuaBinaryOperator.Exponent:
-			return Math.pow(left, right);
+			return luaPow(left, right);
 	}
 }
 
