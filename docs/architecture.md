@@ -5439,6 +5439,11 @@ seeking or returning to the recorded end does not. The mirrored history owner
 publishes its branch decision before truncating input. Replaying does not
 duplicate retained events. Snapshot values remain typed, detached data; UI
 formatting is deferred to reads instead of running on the event-emission path.
+The table owner exposes constant-work reads of individual stored positions in
+both cores. Snapshots budget visited storage (including holes/dead nodes) as
+well as retained entries; they do not use Lua `next` for a supposedly bounded
+preview. Exhaustion is explicit incomplete evidence, never a fabricated empty
+table. No extra iteration index or counter is maintained on guest table writes.
 Native players share primitive semantics/costs, not the Studio UI.
 Cartlib-specific [Actor inspection](studio_actor_tools.md) attaches to that same
 suspended lifetime and value-reference registry, without teaching the generic

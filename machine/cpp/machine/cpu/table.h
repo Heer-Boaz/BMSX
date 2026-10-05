@@ -111,6 +111,11 @@ public:
 	}
 	int length() const;
 	void clear();
+	// Physical array positions followed by hash nodes, including vacant/dead slots.
+	size_t storedSlotCount() const { return m_array.size() + m_hashSize; }
+	// Constant-work inspection. Slot is in [0, storedSlotCount()); mutation invalidates
+	// positions. False leaves key/value untouched. Does not invoke guest code.
+	bool loadStoredEntry(size_t slot, Value& key, Value& value) const;
 	template <typename Fn>
 	void forEachEntry(Fn&& fn) const {
 		for (size_t i = 0; i < m_array.size(); ++i) {

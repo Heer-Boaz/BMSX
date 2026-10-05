@@ -517,6 +517,28 @@ export class Table {
 		this.luaHeap.release(previousBytes - this.getTrackedHeapBytes());
 	}
 
+	/** Physical array positions followed by hash nodes, including vacant/dead slots. */
+	public get storedSlotCount(): number { return this.arrayCapacity + this.hashSize; }
+
+	/**
+	 * Constant-work read for bounded inspection. Slot is in [0, storedSlotCount);
+	 * its identity is valid only until a table mutation. False leaves target untouched.
+	 */
+	public loadStoredEntry(slot: number, target: ValueWriteTarget, targetIndex: number): boolean {
+		if (slot < this.arrayCapacity) {
+			if (this.tags[slot] === ValueTag.Nil) return false;
+			target.setNumber(targetIndex, slot + 1);
+			target.setEncoded(targetIndex + 1, this.tags[slot], this.scalars[slot], this.references[slot]);
+			return true;
+		}
+		const hashIndex = slot - this.arrayCapacity;
+		const keySlot = this.hashKeySlot(hashIndex), valueSlot = this.hashValueSlot(hashIndex);
+		if (this.tags[keySlot] === ValueTag.Nil || this.tags[valueSlot] === ValueTag.Nil) return false;
+		target.setEncoded(targetIndex, this.tags[keySlot], this.scalars[keySlot], this.references[keySlot]);
+		target.setEncoded(targetIndex + 1, this.tags[valueSlot], this.scalars[valueSlot], this.references[valueSlot]);
+		return true;
+	}
+
 	public forEachStoredEntry(visitor: StoredEntryVisitor): void {
 		for (let index = 0; index < this.arrayCapacity; index += 1) {
 			const valueTag = this.tags[index];

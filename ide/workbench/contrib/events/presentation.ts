@@ -53,7 +53,7 @@ export function eventProperties(event: HistoricalEvent): InspectedProperty[] {
 function appendSnapshot(properties: InspectedProperty[], path: string, value: ValueSnapshot): void {
 	const omitted = (value.kind === 'string' || value.kind === 'table') && value.omitted;
 	properties.push({ label: path, value: formatValueSnapshot(value) + (value.kind === 'table' ? ` (${value.entries.length} stored entries)` : ''),
-		description: omitted ? 'Snapshot budget reached; remaining contents were not captured.' : '', warning: omitted });
+		description: omitted ? 'Snapshot budget reached; contents may be incomplete.' : '', warning: omitted });
 	if (value.kind !== 'table') return;
 	for (const entry of value.entries) {
 		const omittedKey = (entry.key.kind === 'string' || entry.key.kind === 'table') && entry.key.omitted;

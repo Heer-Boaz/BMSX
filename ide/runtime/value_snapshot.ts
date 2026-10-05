@@ -17,6 +17,7 @@ export type ValueSnapshotEntry = { readonly key: ValueSnapshot; readonly value: 
 export const VALUE_SNAPSHOT_DEPTH = 3;
 export const VALUE_SNAPSHOT_ENTRIES = 64;
 export const VALUE_SNAPSHOT_CHARACTERS = 4096;
+export const VALUE_SNAPSHOT_SLOTS = 1024;
 const NO_ENTRIES: readonly ValueSnapshotEntry[] = [];
 const NIL: ValueSnapshot = { kind: 'nil' };
 const FALSE: ValueSnapshot = { kind: 'boolean', value: false };
@@ -28,11 +29,13 @@ export class GuestValueSnapshot {
 	private readonly scratch = Array.from({ length: VALUE_SNAPSHOT_DEPTH }, () => new ValueSlots(2));
 	private remainingEntries = 0;
 	private remainingCharacters = 0;
+	private remainingSlots = 0;
 	public constructor(private readonly pool: StringPool) {}
 	public begin(): void {
 		this.visited.clear();
 		this.remainingEntries = VALUE_SNAPSHOT_ENTRIES;
 		this.remainingCharacters = VALUE_SNAPSHOT_CHARACTERS;
+		this.remainingSlots = VALUE_SNAPSHOT_SLOTS;
 	}
 	public read(values: ValueSlots, index: number, depth = 0): ValueSnapshot {
 		const tag = values.getTag(index);
@@ -64,15 +67,18 @@ export class GuestValueSnapshot {
 		if (depth === VALUE_SNAPSHOT_DEPTH) return { kind: 'table', id, entries: NO_ENTRIES, omitted: true };
 		this.visited.add(id);
 		const entries: ValueSnapshotEntry[] = [], scratch = this.scratch[depth];
-		let more = table.next(ValueTag.Nil, 0, null, scratch, 0);
-		while (more && this.remainingEntries > 0) {
+		let slot = 0, omitted = false;
+		const count = table.storedSlotCount;
+		while (slot < count && this.remainingSlots > 0) {
+			this.remainingSlots--;
+			if (!table.loadStoredEntry(slot++, scratch, 0)) continue;
+			if (this.remainingEntries === 0) { omitted = true; break; }
 			this.remainingEntries--;
 			// Table keys are identities, not a second traversal of the object graph.
 			entries.push({ key: this.read(scratch, 0, VALUE_SNAPSHOT_DEPTH), value: this.read(scratch, 1, depth + 1) });
-			more = table.next(scratch.getTag(0), scratch.getScalar(0), scratch.getReference(0), scratch, 0);
 		}
 		scratch.clear(2);
-		return { kind: 'table', id, entries, omitted: more };
+		return { kind: 'table', id, entries, omitted: omitted || slot < count };
 	}
 }
 

@@ -16,7 +16,11 @@ The viewer works without a server or assistant.
 The circular buffer retains the latest **2048 emissions**. It expires the oldest
 rather than stopping at capacity; the footer reports the expired count. Each
 emission shares a depth-3, 64-entry, 4096-string-code-unit snapshot budget.
-Omitted contents are marked in the inspector, copied text and tool output.
+At most 1024 physical table positions are visited across that emission,
+including vacant/dead storage; a sparse table cannot cause an unbounded search.
+Unvisited contents are marked in the inspector, copied text and tool output;
+`omitted` means completeness was not established, not that more entries are
+known to exist.
 Table identities/references describe that snapshot, not reusable live handles.
 Closing a pane or ending a conversation does not stop collection. A host restart
 loses this in-memory history.
@@ -93,7 +97,9 @@ justification for unlimited additional tracing cost.
 - The IDE-owned `RuntimeEventHistory` makes bounded immutable host copies at
   emission. It never invokes Lua or metatables and retains no guest objects or
   borrowed register views. It consumes tagged slots directly and copies typed
-  values without invoking number formatting or JSON string quoting. UI
+  values without invoking number formatting or JSON string quoting. Table
+  traversal uses the owner's constant-work stored-slot reader, not Lua `next`
+  (which can search arbitrarily many vacant slots). UI
   filtering and payload inspection format those copies on demand, not the
   machine. The filtered index updates incrementally; rendering
   visits only visible rows and retains measured labels. Expiration preserves
@@ -149,6 +155,41 @@ Hot callsites: compiler-lowered CALL in `cartlib/event_emitter.lua:emit`, TS
 execute guest code or retain the borrowed span. Costs and primitive IDs are
 mirrored. The old observation-only `ExecutionHookPhase` extension is removed;
 source breakpoints and interrupt fences keep their original control contract.
+
+### Storage-scan review gate (2026-10-05)
+
+The snapshot's entry limit did not bound observation work: Lua `next` searches
+through empty array/hash storage. A table with one entry in 65536 array slots
+took about 400 ms for 1000 snapshots in an isolated warm run, versus 0.24 ms
+for one slot. Neither the retained-entry limit nor the depth limit stops that
+search. The existing `forEachStoredEntry` also scans the entire storage, so it
+cannot provide bounded observation either.
+
+| Value / operation | TypeScript | C++ | Owner |
+| --- | --- | --- | --- |
+| Physical entry positions | array slots, then hash nodes | same order | `Table` |
+| Scan extent | `storedSlotCount: number` | `storedSlotCount(): size_t` | `Table` |
+| One-position read | `loadStoredEntry(slot, ValueWriteTarget, offset)` | `loadStoredEntry(slot, Value&, Value&)` | `Table`, constant work, false for a vacant/dead position |
+| Stored key/value | numeric `ValueTag`, scalar, reference columns | tagged `Value` | existing runtime representation |
+| Snapshot work budget | 1024 visited positions shared across one emission | no native Studio snapshotter | `GuestValueSnapshot` |
+
+Positions are borrowed during a synchronous read, not handles that survive table
+mutation. Reads perform no allocation, metatable lookup or guest execution.
+The observer uses a bounded physical scan instead of key-based Lua iteration;
+unvisited storage is explicitly marked `omitted`. Normal Lua `next`, table
+mutation, GC and save-state paths remain unchanged, with no extra maintained
+indexes or hot-path counters. Hot callsites affected: `GuestValueSnapshot.read`
+from `RuntimeEventHistory.observe`, and its direct `Table.loadStoredEntry`
+reads. The C++ primitive is mirrored and checked independently; it adds no calls
+to native gameplay. Preview limits with explicit overflow follow the
+[V8 inspector's preview accumulator](https://github.com/v8/v8/blob/main/src/inspector/value-mirror.cc);
+the physical scan budget is BMSX-specific and must be measured, not inferred
+from that reference.
+
+The 1024-position budget permits sixteen storage probes per retained entry at
+the 64-entry limit. It is a fixed observation-work limit, not an elapsed-time
+cutoff: the same table representation yields the same snapshot regardless of
+host speed. Sparse storage can exhaust it before any entries are captured.
 
 ## Initial implementation validation (2026-10-05)
 
@@ -268,3 +309,42 @@ Validation after the fixes:
 
 Local logs, copied event values, screenshots and the A/B harness are under
 `.bmsx/authoring/event-history-review/` (ignored authoring evidence).
+
+## Storage-scan review validation (2026-10-05)
+
+- 20 event/tool/table tests and 61 history/navigation/property-inspector/table
+  editing regressions pass. Cases include sparse nested storage, a budget shared
+  across arguments, dead hash slots, the exact entry-limit boundary, iteration
+  order, IEEE values and absence of guest mutations.
+- The mirrored C++ stored-slot reader, CPU save-state and frame-scheduler suites
+  pass. Actual Nemesis TS/C++ complete-state replay/history comparisons pass,
+  including GPU and audio. IDE/tests typechecks and architecture/core-parity
+  audits pass; Browser Studio and Node headless tooling were rebuilt.
+- Real Browser Studio was driven through keyboard/pointer/clipboard: normal
+  nested payload inspection and copy, filtered history, overflow/scrolling,
+  central frame-step/playback, return-to-present, live branch and Hot Resume.
+  Copied timeline labels remain **1 / 2 / 3** respectively. A Lua Terminal
+  emission of a sparse 8192-slot table shows a yellow incomplete payload and
+  an explicit warning in Details; its copied snapshot also marks truncation.
+  Screenshots were viewed, not asserted against exact UI prose. No browser
+  warnings/errors were reported.
+- The isolated sparse microbenchmark (1000 snapshots, 15 alternating rounds,
+  first 5 discarded) changed from **400.51 ms to 7.87 ms**. A one-slot table
+  remained **0.24 ms**. The sparse result is now explicitly incomplete: this is
+  bounded work, not a claim of faster equivalent full capture.
+- An alternating old/new observer comparison (31 rounds, 8 warmups, 1000
+  ordinary nested emissions per round) measured **67.68 / 67.57 ms** (-0.17%).
+  All captured events and the complete CPU state are equal; both use **272015
+  guest cycles**. The timing difference is sample variation, not a claimed
+  general speedup.
+- Isolated erased / unobserved / observed source measured **64.94 / 67.83 /
+  67.42 ms**. The selected source still costs **9 guest cycles/emission**;
+  observation changes neither guest cycles nor heap allocation. Real Nemesis
+  windows after ticks 400/1200/2400 measured **+0.50% / +0.34% / -0.68%**
+  observation overhead. These low-event windows do not establish an upper
+  bound for event-heavy carts.
+
+Reproduction scripts, raw timings, screenshots, copied payloads and logs are in
+`.bmsx/authoring/event-history-storage-review/`. This review changes only the
+read-side inspection boundary. It adds no per-write accounting, instruction
+hooks, guest listener or UI-specific behavior to the table implementation.

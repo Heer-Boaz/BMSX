@@ -9,7 +9,7 @@ import { createRuntimeDebuggerState, resetRuntimeDebuggerExecution, RuntimeDebug
 import { RuntimeEventHistory } from '../../ide/runtime/event_history';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';
-import { GuestValueSnapshot, VALUE_SNAPSHOT_ENTRIES, VALUE_SNAPSHOT_CHARACTERS } from '../../ide/runtime/value_snapshot';
+import { GuestValueSnapshot, VALUE_SNAPSHOT_ENTRIES, VALUE_SNAPSHOT_CHARACTERS, VALUE_SNAPSHOT_SLOTS } from '../../ide/runtime/value_snapshot';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { parseLuaChunk, materializeCpuCompletionValues } from './cpu_test_harness';
 import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
@@ -197,4 +197,50 @@ test('numeric snapshots preserve full precision and IEEE special values across J
 		.map(value => ({ kind: 'number', value })));
 	slots.clear(values.length);
 	assert.deepEqual(JSON.parse(JSON.stringify(captured)), captured);
+});
+
+test('snapshot work includes vacant storage and shares its scan budget across nested values', () => {
+	const { cpu } = eventHistoryRuntime(compileEventHistoryFixture());
+	const reader = new GuestValueSnapshot(cpu.stringPool), values = new ValueSlots(1);
+	const child = cpu.createTable(VALUE_SNAPSHOT_SLOTS, 0), root = cpu.createTable(2, 0);
+	child.set(VALUE_SNAPSHOT_SLOTS, 17);
+	root.set(1, child); root.set(2, 42);
+	values.set(0, root);
+	reader.begin();
+	const result = reader.read(values, 0);
+	assert.ok(result.kind === 'table');
+	assert.equal(result.omitted, true);
+	assert.equal(result.entries.length, 1);
+	const nested = result.entries[0].value;
+	assert.ok(nested.kind === 'table');
+	assert.equal(nested.entries.length, 0);
+	assert.equal(nested.omitted, true);
+	// This is one emission-wide budget, not a fresh allowance per argument.
+	values.set(0, cpu.createTable(1, 0));
+	const exhausted = reader.read(values, 0);
+	assert.ok(exhausted.kind === 'table');
+	assert.equal(exhausted.omitted, true);
+	reader.begin();
+	const empty = reader.read(values, 0);
+	assert.ok(empty.kind === 'table');
+	assert.equal(empty.omitted, false);
+});
+
+test('snapshot entry boundary distinguishes an exhausted budget from fully visited empty storage', () => {
+	const { cpu } = eventHistoryRuntime(compileEventHistoryFixture());
+	const reader = new GuestValueSnapshot(cpu.stringPool), values = new ValueSlots(1);
+	const table = cpu.createTable(VALUE_SNAPSHOT_ENTRIES + 1, 0);
+	for (let index = 1; index <= VALUE_SNAPSHOT_ENTRIES; index++) table.set(index, index);
+	values.set(0, table);
+	reader.begin();
+	const complete = reader.read(values, 0);
+	assert.ok(complete.kind === 'table');
+	assert.equal(complete.entries.length, VALUE_SNAPSHOT_ENTRIES);
+	assert.equal(complete.omitted, false);
+	table.set(VALUE_SNAPSHOT_ENTRIES + 1, false);
+	reader.begin();
+	const truncated = reader.read(values, 0);
+	assert.ok(truncated.kind === 'table');
+	assert.equal(truncated.entries.length, VALUE_SNAPSHOT_ENTRIES);
+	assert.equal(truncated.omitted, true);
 });

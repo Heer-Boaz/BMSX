@@ -557,6 +557,20 @@ void Table::clear() {
 	m_luaHeap.release(previousBytes - trackedHeapBytes());
 }
 
+bool Table::loadStoredEntry(size_t slot, Value& key, Value& value) const {
+	if (slot < m_array.size()) {
+		if (isNil(m_array[slot])) return false;
+		key = valueNumber(static_cast<double>(slot + 1));
+		value = m_array[slot];
+		return true;
+	}
+	const size_t hashIndex = slot - m_array.size();
+	if (isNil(m_hashKeys[hashIndex]) || isNil(m_hashValues[hashIndex])) return false;
+	key = m_hashKeys[hashIndex];
+	value = m_hashValues[hashIndex];
+	return true;
+}
+
 bool Table::nextEntry(const Value& after, Value& key, Value& value) const {
 	int hashIndex = -1;
 	if (isNil(after)) {

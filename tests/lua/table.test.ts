@@ -20,6 +20,7 @@ import {
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { runCompiledLua } from './cpu_test_harness';
+import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 
 test('runtime values expose one numeric representation tag', () => {
 	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
@@ -102,4 +103,30 @@ return -1 % 0x100000000, (0x84222325 ~ 0x61) % 0x100000000
 
 	assert.equal(negativeNormalized, 0xffffffff);
 	assert.equal(fnvXorNormalized, 0x84222344);
+});
+
+test('physical table inspection preserves Lua iteration order and tagged values without mutation', () => {
+	const memory = new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
+	const cpu = new CPU(memory, new IrqController(memory), new ExecutionAddressSpace(memory));
+	const table = cpu.createTable(8, 16), child = cpu.createTable(0, 0);
+	const removed = valueString(cpu.stringPool.intern('removed'));
+	table.set(1, -0); table.set(8, false); table.set(child, child);
+	table.set(valueString(cpu.stringPool.intern('number')), NaN);
+	table.set(false, Infinity); table.set(removed, 17); table.set(removed, null);
+	const before = table.getTrackedHeapBytes(), values = new ValueSlots(4);
+	values.setNumber(0, 123); values.setNumber(3, 456);
+	const physical: Value[][] = [];
+	for (let slot = 0; slot < table.storedSlotCount; slot++) {
+		if (table.loadStoredEntry(slot, values, 1)) physical.push([values.get(1), values.get(2)]);
+	}
+	const logical: Value[][] = [];
+	values.setNil(1);
+	while (table.next(values.getTag(1), values.getScalar(1), values.getReference(1), values, 1)) logical.push([values.get(1), values.get(2)]);
+	assert.deepEqual(physical, logical);
+	assert.equal(physical.length, 5);
+	assert.equal(values.get(0), 123);
+	assert.equal(values.get(3), 456);
+	assert.equal(table.getTrackedHeapBytes(), before);
+	assert.equal(table.loadStoredEntry(1, values, 1), false);
+	assert.deepEqual([values.get(1), values.get(2)], physical.at(-1));
 });
