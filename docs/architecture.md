@@ -2555,10 +2555,20 @@ values and calls consume the workbench-owned `SuspendedGuestSession` against
 the real machine. Their lifetimes are independent: reset/restore invalidates
 inspection without inventing a new interpreter environment for completion.
 
-IntelliSense uses language builtin descriptors, BIOS boot primitive names and
-source declarations in the semantic project. Compile-time forms such as
-`require` remain described as language forms, not guest globals. There is no
-`array` or `package` global inherited from an unused host Lua interpreter.
+Compiler analysis and IntelliSense use the same boot-global domain policy in
+`toolchain/ts/lua/compiler/system_boot_symbols.ts`. Only the system domain
+implicitly knows the boot primitive names: the system bootstrap clears all of
+them before cartridge execution. Neither cart0 nor cart1 inherits these names.
+An explicitly authored cart global with the same spelling remains an ordinary
+cart global; compiler lowering uses this policy too, not a name-only escape
+into the system global bank. The IDE retains a semantic environment per compile
+domain alongside the existing immutable resource-domain snapshots, so repeated
+queries reuse their frontend rather than reparsing or rebuilding the environment.
+
+Language builtin descriptors and source declarations remain shared analysis
+inputs. Compile-time forms such as `require` remain described as language forms,
+not guest globals. There is no `array` or `package` global inherited from an
+unused host Lua interpreter.
 
 ## Memory, CPU, and scheduler
 

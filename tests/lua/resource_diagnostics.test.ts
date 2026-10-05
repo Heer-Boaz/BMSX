@@ -11,6 +11,7 @@ import { clearBackgroundTasks, runBackgroundTasks } from '../../ide/common/backg
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 
 function fixture(t: TestContext) {
 	models.clear(); resetSemanticProjects(models); clearBackgroundTasks();
@@ -25,6 +26,31 @@ function fixture(t: TestContext) {
 		source: { type: 'lua', resid: path } }, 'lua', source);
 	return { service, clock, retain, registries };
 }
+
+test('boot primitive globals are known only in BIOS diagnostics, not either cartridge domain', t => {
+	const { service, retain } = fixture(t);
+	const source = LUA_BOOT_PRIMITIVES.map(primitive => `local capture_${primitive.id} = ${primitive.name}`).join('\n');
+	const bios = retain(-1, 'capture.lua', source);
+	const carts = [retain(0, 'capture.lua', source), retain(1, 'capture.lua', source)];
+	service.computePending();
+	assert.equal(service.get(bios.identity)!.status, 'ready');
+	assert.deepEqual(service.diagnostics.filter(diagnostic => diagnostic.model === bios), []);
+	for (const cart of carts) {
+		const diagnostics = service.diagnostics.filter(diagnostic => diagnostic.model === cart);
+		assert.equal(diagnostics.length, LUA_BOOT_PRIMITIVES.length);
+		assert.deepEqual(diagnostics.map(diagnostic => diagnostic.row), LUA_BOOT_PRIMITIVES.map((_, row) => row));
+	}
+
+	// An ordinary authored declaration remains legal; only ambient boot names
+	// are domain-specific. It must not change the other cartridge's diagnostics.
+	carts[0].pushEditOperations([{ offset: 0, deleteLength: 0, text: '__bmsx_next = 42\n' }]);
+	service.computePending();
+	assert.equal(service.diagnostics.filter(diagnostic => diagnostic.model === carts[0]).length, LUA_BOOT_PRIMITIVES.length - 1);
+	assert.equal(service.diagnostics.filter(diagnostic => diagnostic.model === carts[1]).length, LUA_BOOT_PRIMITIVES.length);
+	carts[0].undo();
+	service.computePending();
+	assert.equal(service.diagnostics.filter(diagnostic => diagnostic.model === carts[0]).length, LUA_BOOT_PRIMITIVES.length);
+});
 
 test('diagnostics cover retained resources without code inputs; unknown and unsupported coverage is not a clean result', t => {
 	const { service, retain } = fixture(t);

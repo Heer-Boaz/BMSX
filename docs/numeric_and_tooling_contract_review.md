@@ -216,16 +216,53 @@ SNES Mini toolchain and `BMSX_BUILD_TESTS=ON`. Change only
 to the existing `tests/conformance/geometry/run.ts` command. Regenerating CMake
 restores the production flag. No production relaxation option was introduced.
 
-## Remaining diagnostic-domain follow-up
+## Boot-global domain policy
 
-The live resource-diagnostics path accepts `__bmsx_next` in BIOS, cart0 and
-cart1 alike; an unrelated undefined name is correctly diagnosed in all three.
-`createEditorSemanticFrontend` currently has no domain parameter and shares
-one environment. The compiler's semantic frontend also unconditionally seeds
-the boot names, so the policy needs an owner shared by these consumers.
+The GEO follow-up reproduced a separate defect: resource diagnostics accepted
+`__bmsx_next` in BIOS, cart0 and cart1 alike. Both the compiler and the IDE
+unconditionally seeded boot names into their semantic environment. Compiler
+lowering also classified an explicitly declared cart global with that spelling
+as a system-bank access.
+
+References: TypeScript's [program construction](https://github.com/microsoft/TypeScript/blob/v5.9.3/src/compiler/program.ts)
+selects ambient libraries from compilation options; its [language service](https://github.com/microsoft/TypeScript/blob/v5.9.3/src/services/services.ts)
+uses those same settings and retains its program between unchanged queries.
+The adopted boundary is one program-domain policy consumed by the compiler and
+editor, not a separate IDE-only allowlist or a second runtime environment.
 
 There is no `retainAfterBoot` field in the current primitive representation.
 All 29 boot primitive globals are cleared by the compiled system bootstrap.
-A domain-aware correction must reflect that real producer contract: BIOS
-initialization knows these names, carts do not inherit them as known globals.
-That correction is not part of the GEO negative-control change.
+`PROGRAM_BOOT_GLOBAL_NAMES` in the existing `system_boot_symbols.ts` owner now
+reflects that producer contract: BIOS initialization knows these names, carts
+do not inherit them. Compiler analysis and global-bank lowering use this same
+table. Explicit cart declarations stay legal and address the cart bank. No
+runtime flag, primitive-retention rule or machine/CPU change is introduced.
+
+IDE diagnostics, completion, definitions, hover and call hierarchy select the
+policy using their resource domain. The two compile-domain environments are
+retained; cart0 and cart1 still have separate semantic project snapshots. The
+existing snapshot/environment frontend cache is preserved, including builtin
+descriptor invalidation, without new per-query filtering or allocation.
+
+Before the fix, five targeted checks failed on the accepted cart names and
+incorrect global bank. They now pass at O0 and O3. The tests cover every boot
+primitive in BIOS, explicit/default cart compilation and both IDE cartridge
+domains, including declaration edits and undo without cross-domain leakage.
+Real CPU execution verifies a declared cart global returns its own value while
+all system boot-primitive slots remain nil after bootstrap. Repeated semantic
+queries reuse the same domain-specific frontends and immutable syntax snapshot.
+
+Validation of this slice:
+
+- Full Lua suite: 2,930 passed, zero failures; the existing disabled runtime
+  integration placeholder remains skipped. Full ROM tooling suite: 203 passed.
+- IDE, scripts and tests typecheck; architecture-boundary and core-parity
+  audits pass. Machine TS/C++ representations and execution paths are unchanged.
+- Rebuilt headless Studio, BIOS and `hot_resume_test`; the complete shipped
+  user-I/O authoring/Hot Resume test passes, including a live BIOS source edit.
+- A separate keyboard/clipboard-only Studio check opened BIOS `base.lua` and
+  the Problems panel, then replaced the cart entry with `return __bmsx_next`
+  and requested Hot Resume. Actual captures show clean checked BIOS resources,
+  an undefined cart-global diagnostic, and compiler rejection of that cart
+  edit. This verifies the real headless Studio presentation, not browser/mobile
+  rendering. The temporary check does not add a UI-wording contract test.

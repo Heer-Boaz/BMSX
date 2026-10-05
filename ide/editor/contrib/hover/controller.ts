@@ -109,7 +109,7 @@ export function updateHoverTooltip(
 		context.model.resource,
 		context.model.buffer,
 	);
-	const frontend = createEditorSemanticFrontend(snapshot);
+	const frontend = createEditorSemanticFrontend(snapshot, context.model.resource.domain);
 	const semanticHover = frontend.provideHover(path, row + 1, column + 1);
 	const evaluatableExpression = frontend.provideEvaluatableExpression(path, row + 1, column + 1);
 	const runtimeInspection = evaluatableExpression === null

@@ -108,7 +108,7 @@ import {
 	evaluateCompileTimeNumberBinaryOperator,
 	resolveCompileTimeNumberBinaryOperator,
 } from './compiler/compile_time_number';
-import { SYSTEM_ROM_BOOT_PRIMITIVE_NAMES, SYSTEM_ROM_BOOT_SYMBOL_NAMES, SYSTEM_ROM_BOOT_SYMBOL_NAME_SET, SYSTEM_ROM_VECTOR_HANDLER_NAME_SET } from './compiler/system_boot_symbols';
+import { PROGRAM_BOOT_GLOBAL_NAMES, SYSTEM_ROM_BOOT_PRIMITIVE_NAMES, SYSTEM_ROM_VECTOR_HANDLER_NAME_SET, type ProgramCompileDomain } from './compiler/system_boot_symbols';
 import { LuaSyntaxError } from './errors';
 import { stringLiteralValue } from './syntax/literals';
 import { Decl } from './semantic/model';
@@ -144,8 +144,6 @@ import {
 	mapProgramMetadataSourceRanges,
 	type LuaSourceMap,
 } from './compiler/source_map';
-
-export type ProgramCompileDomain = 'cart' | 'system';
 
 type ProgramCompilerConstReloc =
 	| ProgramImageConstReloc
@@ -525,11 +523,9 @@ class ProgramBuilder {
 		this.programDomain = programDomain;
 		this.traceChannels = typeof traceStatements === 'string' ? undefined : new Set(traceStatements);
 		this.constSlotByValue = new Map<ProgramConstant, number>();
-		this.systemGlobalNameSet = new Set(SYSTEM_ROM_BOOT_SYMBOL_NAME_SET);
-		if (programDomain === 'system') {
-			for (let index = 0; index < SYSTEM_ROM_BOOT_SYMBOL_NAMES.length; index += 1) {
-				this.resolveSystemGlobalSlot(SYSTEM_ROM_BOOT_SYMBOL_NAMES[index]);
-			}
+		this.systemGlobalNameSet = new Set(PROGRAM_BOOT_GLOBAL_NAMES[programDomain]);
+		for (const name of this.systemGlobalNameSet) {
+			this.resolveSystemGlobalSlot(name);
 		}
 	}
 
@@ -5928,6 +5924,7 @@ function buildCompilerSemanticFrontend(
 	entryChunk: LuaChunk,
 	modules: ReadonlyArray<ProgramModule>,
 	options: CompileOptions,
+	programDomain: ProgramCompileDomain,
 ): LuaSemanticFrontend {
 	const sources = [{
 		path: entryChunk.locations.path,
@@ -5943,7 +5940,7 @@ function buildCompilerSemanticFrontend(
 		});
 	}
 	return buildLuaSemanticFrontend(sources, {
-		extraGlobalNames: SYSTEM_ROM_BOOT_SYMBOL_NAMES,
+		extraGlobalNames: PROGRAM_BOOT_GLOBAL_NAMES[programDomain],
 	});
 }
 
@@ -6191,7 +6188,7 @@ export function compileLuaChunkToProgram(
 			sourceMaps.set(sourceMap.generatedPath, sourceMap);
 		}
 	}
-	const frontend = buildCompilerSemanticFrontend(chunk, canonicalModules, options);
+	const frontend = buildCompilerSemanticFrontend(chunk, canonicalModules, options, programDomain);
 	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.locations.path, sourceMaps);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));

@@ -3,10 +3,10 @@ import { createLuaSemanticFrontendFromSnapshot, type LuaSemanticFrontendEnvironm
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import { getOrCreateSemanticProject } from './semantic/workspace/state';
 import type { TextBuffer } from '../../text/text_buffer';
-import type { ResourceIdentity } from '../../../common/resource';
+import { SYSTEM_RESOURCE_DOMAIN, type ResourceDomain, type ResourceIdentity } from '../../../common/resource';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { listLuaBuiltinDescriptors } from '../../../runtime/lua_builtins';
-import { SYSTEM_ROM_BOOT_SYMBOL_NAMES } from '../../../../toolchain/ts/lua/compiler/system_boot_symbols';
+import { PROGRAM_BOOT_GLOBAL_NAMES, type ProgramCompileDomain } from '../../../../toolchain/ts/lua/compiler/system_boot_symbols';
 
 export function buildEditorSemanticSnapshot(
 	sources: RuntimeSourceState,
@@ -19,12 +19,15 @@ export function buildEditorSemanticSnapshot(
 	return project.getSnapshot();
 }
 
-let semanticEnvironment: LuaSemanticFrontendEnvironment;
+const semanticEnvironments = new Map<ProgramCompileDomain, LuaSemanticFrontendEnvironment>();
 
-export function createEditorSemanticFrontend(snapshot: LuaSemanticWorkspaceSnapshot): ReturnType<typeof createLuaSemanticFrontendFromSnapshot> {
+export function createEditorSemanticFrontend(snapshot: LuaSemanticWorkspaceSnapshot, domain: ResourceDomain): ReturnType<typeof createLuaSemanticFrontendFromSnapshot> {
+	const programDomain = domain === SYSTEM_RESOURCE_DOMAIN ? 'system' : 'cart';
 	const builtinDescriptors = listLuaBuiltinDescriptors();
+	let semanticEnvironment = semanticEnvironments.get(programDomain);
 	if (semanticEnvironment === undefined || semanticEnvironment.builtinDescriptors !== builtinDescriptors) {
-		semanticEnvironment = { builtinDescriptors, extraGlobalNames: SYSTEM_ROM_BOOT_SYMBOL_NAMES };
+		semanticEnvironment = { builtinDescriptors, extraGlobalNames: PROGRAM_BOOT_GLOBAL_NAMES[programDomain] };
+		semanticEnvironments.set(programDomain, semanticEnvironment);
 	}
 	return createLuaSemanticFrontendFromSnapshot(snapshot, semanticEnvironment);
 }
@@ -34,5 +37,5 @@ export function buildEditorSemanticFrontend(
 	identity: ResourceIdentity,
 	buffer: TextBuffer,
 ): ReturnType<typeof createLuaSemanticFrontendFromSnapshot> {
-	return createEditorSemanticFrontend(buildEditorSemanticSnapshot(sources, identity, buffer));
+	return createEditorSemanticFrontend(buildEditorSemanticSnapshot(sources, identity, buffer), identity.domain);
 }

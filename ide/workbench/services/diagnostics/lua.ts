@@ -20,7 +20,7 @@ export function computeResourceDiagnostics(owner: EditorTextModelService, source
 		project.synchronizeRuntimeSources(sources);
 		for (const model of batch) project.analyzeDocument(model.identity.path, model.buffer);
 		const snapshot = project.getSnapshot();
-		const frontend = createEditorSemanticFrontend(snapshot);
+		const frontend = createEditorSemanticFrontend(snapshot, domain);
 		for (const model of batch) {
 			const path = model.identity.path;
 			const syntaxError = snapshot.getFileData(path)!.syntaxError;

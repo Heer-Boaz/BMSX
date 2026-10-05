@@ -12,7 +12,7 @@ export function resolveCallHierarchyAt(sources: RuntimeSourceState, row: number,
 	const resource = activeCodeEditor.model.resource;
 	const path = resource.path;
 	const snapshot = buildEditorSemanticSnapshot(sources, resource, activeCodeEditor.model.buffer);
-	const frontend = createEditorSemanticFrontend(snapshot);
+	const frontend = createEditorSemanticFrontend(snapshot, resource.domain);
 	const symbols = frontend.findSymbolsByPosition(path, row + 1, column + 1);
 	if (!symbols) {
 		return { kind: 'missing_definition' };

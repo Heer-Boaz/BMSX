@@ -587,7 +587,7 @@ export function findStaticDefinitionLocation(
 	if (activeContext.model.resource.path === sourcePath) {
 		project.analyzeDocument(sourcePath, activeContext.model.buffer);
 	}
-	const frontend = createEditorSemanticFrontend(project.getSnapshot());
+	const frontend = createEditorSemanticFrontend(project.getSnapshot(), activeContext.model.resource.domain);
 	const symbols = frontend.findSymbolsByPosition(sourcePath, usageRow, usageColumn);
 	return symbols && symbols.targets.length === 1
 		? definitionLocationFromSourceRange(symbols.targets[0].range)
