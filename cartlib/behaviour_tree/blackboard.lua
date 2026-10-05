@@ -1,3 +1,4 @@
+-- Studio read-only layout contract: docs/cartlib_inspection_contract.md.
 -- Behaviour-tree blackboard storage. Authored key names are resolved to dense
 -- slots when the tree is registered; compiled nodes use those slots directly.
 -- Program replacement remaps retained values by semantic key outside the frame

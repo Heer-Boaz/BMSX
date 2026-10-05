@@ -1262,6 +1262,7 @@ class FunctionBuilder {
 	private readonly closureWrittenRegisters = new Set<number>();
 	private readonly scopeStack: ScopeFrame[] = [];
 	private readonly localDebugSlots: LocalSlotDebug[] = [];
+	private nextArgumentIndex = 0;
 	private readonly upvalueDescs: UpvalueDesc[] = [];
 	private readonly upvalueBindings: number[] = [];
 	private readonly retainedUpvalueCount: number;
@@ -2168,6 +2169,7 @@ class FunctionBuilder {
 		scope.locals.push(binding);
 		const effectiveScopeRange = scopeRange ?? scope.range;
 		this.localDebugSlots.push({
+			argumentIndex: kind === 'parameter' || kind === 'receiver' ? this.nextArgumentIndex++ : -1,
 			name,
 			isConst: kind === 'const',
 			registerIndex: reg,

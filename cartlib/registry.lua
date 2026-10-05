@@ -1,3 +1,4 @@
+-- Studio read-only layout contract: docs/cartlib_inspection_contract.md.
 local dense_set<const> = require('cartlib/util/dense_set')
 
 local registry<const> = {

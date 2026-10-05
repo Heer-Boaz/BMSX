@@ -52,7 +52,7 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 				{ wordOffset: 3, range: innerCallRange, op: OpCode.MOV, liveRegisters: [0, 1], uses: [0], defs: [1], inlineCallSites },
 				{ wordOffset: 4, range: innerCallRange, op: OpCode.RET, liveRegisters: [0], uses: [0], defs: [], inlineCallSites: [], resumeId: 'startup.entry.return' },
 			]],
-			localSlotsByFunction: [[{ name: 'value', isConst: true, registerIndex: 1, definition: innerCallRange,
+			localSlotsByFunction: [[{ argumentIndex: 2, name: 'value', isConst: true, registerIndex: 1, definition: innerCallRange,
 				scope: outerCallRange, inlineCallSites, liveWordRanges: [{ start: 2, end: 4 }, { start: 6, end: 8 }] }]],
 			outerBindingsByFunction: [[
 				{ declarationIndex: 0, location: { inStack: true, index: 17 }, inlineCallSites, liveWordRanges: [{ start: 2, end: 4 }] },

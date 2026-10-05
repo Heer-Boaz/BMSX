@@ -17,7 +17,8 @@ The production references are [Godot's scene debugger](https://github.com/godote
 Their transport validation/compatibility policies are not copied into BMSX
 runtime reads.
 
-The live owners were checked before this change: World `_objects` is admitted
+The [cartlib inspection contract](cartlib_inspection_contract.md) governs these
+read-only field accesses. The live owners were checked before this change: World `_objects` is admitted
 membership, not a heap census; WorldObject owns component ordering and the
 class-table index; FSM instances retain their own states/definitions; BT retains
 its own blackboard layout and compiler-owned execution memory; ActionEffects

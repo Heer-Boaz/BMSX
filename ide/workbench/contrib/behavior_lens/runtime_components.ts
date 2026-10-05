@@ -1,3 +1,4 @@
+// Consumes the same-build cartlib layout in docs/cartlib_inspection_contract.md.
 import type { Table } from '../../../../machine/ts/machine/cpu/table';
 import type { ResourceDomain } from '../../../common/resource';
 import { readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';

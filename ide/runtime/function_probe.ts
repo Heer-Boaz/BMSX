@@ -10,8 +10,9 @@ export type FunctionProbeBinding =
 	| { readonly status: 'bound'; readonly points: readonly FunctionProbe[] }
 	| { readonly status: 'symbols-unavailable' | 'function-unavailable' | 'ambiguous-function' | 'arguments-unavailable' };
 
-/** Bind once per installed image. The hook only indexes PCs and reads compiler-owned locations. */
-export function bindFunctionProbe(image: Blua32ToolingImage, modulePath: string, name: string, arguments_: readonly string[]): FunctionProbeBinding {
+/** Bind formal argument positions once per installed image, never parameter spellings.
+ * The hook only indexes PCs and reads compiler-owned physical locations. */
+export function bindFunctionProbe(image: Blua32ToolingImage, modulePath: string, name: string, arguments_: readonly number[]): FunctionProbeBinding {
 	if (image.symbols === null) return { status: 'symbols-unavailable' };
 	const metadata = image.symbols.metadata;
 	const functions: number[] = [];
@@ -31,8 +32,8 @@ export function bindFunctionProbe(image: Blua32ToolingImage, modulePath: string,
 			if (seen.some(previous => inlineCallSiteChainsEqual(previous, chain))) continue;
 			seen.push(chain);
 			const pc = address + point.wordOffset * INSTRUCTION_BYTES, registers: number[] = [];
-			for (const name of arguments_) {
-				const slots = metadata.localSlotsByFunction[fn].filter(slot => slot.name === name
+			for (const argumentIndex of arguments_) {
+				const slots = metadata.localSlotsByFunction[fn].filter(slot => slot.argumentIndex === argumentIndex
 					&& inlineCallSiteChainsEqual(slot.inlineCallSites, chain) && blua32SlotLiveAtPc(slot.liveWordRanges, address, pc));
 				if (slots.length !== 1) return { status: 'arguments-unavailable' };
 				registers.push(slots[0].registerIndex);

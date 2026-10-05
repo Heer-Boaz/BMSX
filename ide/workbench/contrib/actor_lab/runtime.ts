@@ -1,3 +1,4 @@
+// Consumes the same-build cartlib layout in docs/cartlib_inspection_contract.md.
 import type { Table } from '../../../../machine/ts/machine/cpu/table';
 import type { Value } from '../../../../machine/ts/machine/cpu/value';
 import { createFsmStatePath } from '../../../../toolchain/ts/cartlib/fsm/state_path';

@@ -77,6 +77,7 @@ export class RuntimeEventHistory {
 
 	public dispose(): void { this.runtime.machine.cpu.setInstructionObserver(null); }
 
+	/** cartlib inspection ABI: emit(self, event, emitter, payload, emitterId). */
 	private bindSources(): void {
 		if (this.media === this.sources.currentBlua32Media) return;
 		this.media = this.sources.currentBlua32Media;
@@ -84,7 +85,7 @@ export class RuntimeEventHistory {
 		for (const domain of [-1, 0, 1] as const) {
 			const index = domain + 1, image = blua32ToolingImageForDomain(this.media, domain);
 			const binding = image === null ? { status: 'symbols-unavailable' } as const
-				: bindFunctionProbe(image, 'cartlib/event_emitter', 'event_emitter.emit', ['event_type', 'emitter_id', 'payload']);
+				: bindFunctionProbe(image, 'cartlib/event_emitter', 'event_emitter.emit', [1, 4, 3]);
 			this.bindings[index] = binding;
 			const locations = this.locations[index];
 			locations.clear();

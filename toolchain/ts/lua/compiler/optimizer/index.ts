@@ -1847,6 +1847,7 @@ const buildInlineExpansion = (
 	};
 	if (callee.localSlots.length !== 0) {
 		expansion.inlineLocalSlots = callee.localSlots.map(slot => ({
+			argumentIndex: slot.argumentIndex,
 			name: slot.name,
 			isConst: slot.isConst,
 			registerIndex: mapRegister(slot.registerIndex),

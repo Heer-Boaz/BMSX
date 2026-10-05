@@ -48,6 +48,8 @@ export type ProgramStatementPoint = {
 };
 
 export type LocalSlotDebug = {
+	/** Zero-based formal argument, including an implicit receiver; -1 for a local. */
+	argumentIndex: number;
 	name: string;
 	/** Authored binding immutability, independent of value/location liveness. */
 	isConst: boolean;

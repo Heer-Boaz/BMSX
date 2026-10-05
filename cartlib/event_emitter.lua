@@ -283,6 +283,8 @@ end
 -- is retained by the owning event port for filtering and downstream FSMs.
 -- Removal during dispatch takes effect before the listener's next call;
 -- listeners added during dispatch start with the next emission.
+-- Studio observes formal arguments, not their spellings: self=0, event=1,
+-- emitter=2, payload=3, emitter identity=4. See docs/cartlib_inspection_contract.md.
 function event_emitter:emit(event_type, emitter, payload, emitter_id)
 	blua32.trace(self, 'event.emit', event_type, emitter_id, payload)
 	local scopes<const> = self._scoped_listeners[event_type]

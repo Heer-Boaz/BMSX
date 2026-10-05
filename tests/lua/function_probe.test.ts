@@ -22,7 +22,7 @@ return value`, 'observer.lua', optLevel);
 	const linked = linkTestSystemBlua32(compiled), { cpu } = createTestSystemCpu(linked);
 	const image = { layout: linked.image, symbols: linked.symbols };
 	// The inline case observes entries without requiring optimized-away parameter copies.
-	const binding = bindFunctionProbe(image, 'observer', 'mix', optLevel === 0 ? ['left', 'right'] : []);
+	const binding = bindFunctionProbe(image, 'observer', 'mix', optLevel === 0 ? [0, 1] : []);
 	assert.equal(binding.status, 'bound');
 	if (optLevel === 3) assert.ok(binding.points.length > 1, 'the fixture actually includes inlined entry locations');
 	const locations = new Map(binding.points.map(point => [point.pc, point.registers]));
@@ -40,7 +40,7 @@ return value`, 'observer.lua', optLevel);
 	}
 	if (optLevel === 0) assert.deepEqual(seen, expected);
 	else assert.equal(seen.length, expected.length);
-	assert.equal(bindFunctionProbe({ layout: linked.image, symbols: null }, 'observer', 'mix', ['left']).status, 'symbols-unavailable');
+	assert.equal(bindFunctionProbe({ layout: linked.image, symbols: null }, 'observer', 'mix', [0]).status, 'symbols-unavailable');
 	assert.equal(bindFunctionProbe({ layout: linked.image, symbols: linked.symbols }, 'observer', 'absent', []).status, 'function-unavailable');
-	assert.equal(bindFunctionProbe({ layout: linked.image, symbols: linked.symbols }, 'observer', 'mix', ['missing']).status, 'arguments-unavailable');
+	assert.equal(bindFunctionProbe({ layout: linked.image, symbols: linked.symbols }, 'observer', 'mix', [9]).status, 'arguments-unavailable');
 });

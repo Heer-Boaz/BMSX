@@ -32,6 +32,8 @@ export type Blua32InlineCallSite = {
 };
 
 export type Blua32LocalSlotDebug = {
+	/** Zero-based formal argument, including an implicit receiver; -1 for a local. */
+	argumentIndex: number;
 	readonly liveWordRanges: readonly ProgramWordRange[];
 	name: string;
 	isConst: boolean;

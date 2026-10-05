@@ -1,3 +1,4 @@
+-- Studio read-only layout contract: docs/cartlib_inspection_contract.md.
 -- world_object.lua
 -- base class for all world objects (game entities)
 --

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -13,7 +14,7 @@ import { GuestValueSnapshot, VALUE_SNAPSHOT_ENTRIES, VALUE_SNAPSHOT_CHARACTERS, 
 
 const BUDGET = 10_000_000;
 
-for (const optLevel of [0, 3] as const) test(`source-bound observer captures real nested/unhandled events before mutation without source-debug stepping (O${optLevel})`, () => {
+for (const renamed of [false, true]) for (const optLevel of [0, 3] as const) test(`source-bound observer captures real nested/unhandled events before mutation without source-debug stepping (O${optLevel}, renamed ${renamed})`, () => {
 	const { images } = createCartlibProgramHarness(`
 local events<const> = require('cartlib/event_emitter')
 local port<const> = events.events_of({ id = 'player' })
@@ -25,7 +26,11 @@ events:on({ event = 'outer', subscriber = {}, handler = function(_, _, _, payloa
 end })
 port:emit('outer', data)
 port:emit('unhandled', nil)
-return data.health`, { optLevel });
+return data.health`, { optLevel, modules: renamed ? [{
+		path: 'cartlib/event_emitter',
+		source: readFileSync('cartlib/event_emitter.lua', 'utf8')
+			.replace(/\b(event_type|emitter|payload|emitter_id)\b/g, name => `renamed_${name}`),
+	}] : [] });
 	const { cpu, runtime, sources } = eventHistoryRuntime(images);
 	const events = new RuntimeEventHistory(runtime, sources);
 	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);

@@ -136,3 +136,27 @@ The recipe test builds mixed BIOS/cart0/cart1 combinations, rebuilds in both
 boot and live modes, republishes ROMs and reloads them before comparing levels.
 Native `bmsx_rompack_format_tests` verifies C++ symbol round-tripping, including
 nonzero optimization levels. Typecheck and boundary audit are clean.
+
+## Cartlib inspection contract and formal parameters
+
+References: [LLVM DILocalVariable argument identity](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/llvm/include/llvm/IR/DebugInfoMetadata.h)
+is distinct from variable name and physical location; [LLDB library formatters](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/lldb/examples/synthetic/gnu_libstdcpp.py)
+read known library layouts instead of injecting target calls. Only those owner
+boundaries are adopted, not LLDB's compatibility guesses and exception fallbacks.
+
+Representation before mirrored edits: TS local-slot debug metadata gains a
+formal `argumentIndex` (0 includes an implicit receiver; -1 is not a parameter),
+mirrored as `i32` in C++ symbols. The compiler declares it in parameter order;
+inlining retains it while independently relocating registers. Symbol codecs
+preserve it. None of these callsites executes on the guest hot path. The PC
+observer and guest instruction stream are unchanged; binding happens once per
+installed image and uses argument positions rather than source spellings.
+
+The cartlib-to-Studio read contract is now explicit in
+`docs/cartlib_inspection_contract.md` with links at the source owners. It is a
+same-build inspection ABI, not a second runtime DTO or a compatibility adapter.
+
+Validation: 48 function-probe/event/actor/behavior/compiler/symbol and
+release/debug execution tests pass, including renamed real event-emitter
+parameters at O0/O3. Native symbol codec tests pass. Observer-disabled and
+observer-enabled complete CPU state, cycle count and guest heap remain equal.

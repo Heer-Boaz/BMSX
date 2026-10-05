@@ -145,6 +145,7 @@ auto encodeWordRanges(std::span<const ProgramWordRange> ranges) -> BinValue {
 
 auto decodeLocalSlot(const BinValue& value) -> Blua32LocalSlotDebug {
 	return Blua32LocalSlotDebug{
+		value.require("argumentIndex").toI32(),
 		value.require("name").asString(),
 		value.require("isConst").asBool(),
 		value.require("registerIndex").toI32(),
@@ -157,6 +158,7 @@ auto decodeLocalSlot(const BinValue& value) -> Blua32LocalSlotDebug {
 
 auto encodeLocalSlot(const Blua32LocalSlotDebug& slot) -> BinValue {
 	BinObject value;
+	value["argumentIndex"] = BinValue(slot.argumentIndex);
 	value["name"] = BinValue(slot.name);
 	value["isConst"] = BinValue(slot.isConst);
 	value["registerIndex"] = BinValue(slot.registerIndex);

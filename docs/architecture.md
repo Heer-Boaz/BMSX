@@ -2526,6 +2526,21 @@ packer modules emit the same declaration at their producer. Packed builds and
 debug source recompilation therefore consume one source-owned contract; the
 rompacker, TOC and host do not maintain a second module-name or attribute list.
 
+## Cartlib inspection ABI
+
+The same-build, read-only layout contract between cartlib producers and Studio
+is [cartlib_inspection_contract.md](cartlib_inspection_contract.md). Private field
+names used by inspectors are part of that tooling contract, not arbitrary
+heuristics or a second emulated API. A layout change updates producer, inspector
+and behavioural evidence together; it does not acquire a compatibility fallback.
+
+Local debug slots retain formal `argumentIndex` independently of their display
+name and physical register. Position 0 includes a method's implicit receiver;
+-1 denotes a non-parameter local. Inlining preserves that identity. Function
+probes bind positions and current liveness once per installed image, so renaming
+an argument does not disable Event Viewer. No instructions, heap objects or
+additional guest cycles implement this metadata.
+
 ## Studio Lua tooling ownership
 
 Studio source compilation calls the toolchain parser directly. It does not

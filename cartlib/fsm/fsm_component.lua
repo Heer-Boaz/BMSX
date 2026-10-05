@@ -1,3 +1,4 @@
+-- Studio read-only layout contract: docs/cartlib_inspection_contract.md.
 local base_component<const> = require('cartlib/component/base_component')
 local clock<const> = require('cartlib/clock')
 local event_emitter<const> = require('cartlib/event_emitter')

@@ -1,3 +1,4 @@
+-- Studio read-only layout contract: docs/cartlib_inspection_contract.md.
 -- world.lua
 -- central world: owns all objects, spaces, and structural mutation barriers
 --

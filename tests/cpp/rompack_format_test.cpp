@@ -51,7 +51,7 @@ int main() {
 		{4, innerCallRange, bmsx::OpCode::RET, {0}, {0}, {}, {}, "startup.entry.return"},
 	}};
 	symbols.metadata.localSlotsByFunction = {{
-		{"value", true, 1, innerCallRange, outerCallRange, inlineCallSites, {{2, 4}, {6, 8}}},
+		{2, "value", true, 1, innerCallRange, outerCallRange, inlineCallSites, {{2, 4}, {6, 8}}},
 	}};
 	symbols.metadata.outerBindingsByFunction = {{
 		{0, bmsx::Blua32UpvalueRecord{true, 17}, inlineCallSites, {{2, 4}}},
@@ -138,6 +138,7 @@ int main() {
 		}
 	}
 	const auto& slot = decodedSymbols.metadata.localSlotsByFunction[0][0];
+	if (slot.argumentIndex != 2) throw std::runtime_error("BLua32 formal argument identity did not round-trip");
 	std::vector<bmsx::ProgramWordRange> orderedRanges;
 	bmsx::appendProgramWordRange(orderedRanges, 2, 3);
 	bmsx::appendProgramWordRange(orderedRanges, 3, 4);

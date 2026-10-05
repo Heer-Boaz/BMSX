@@ -25,6 +25,8 @@ struct Blua32InlineCallSite {
 };
 
 struct Blua32LocalSlotDebug {
+	// Formal position, including implicit receiver; independent of the register.
+	i32 argumentIndex = -1;
 	std::string name;
 	bool isConst;
 	i32 registerIndex = 0;
