@@ -321,6 +321,14 @@ target_include_directories(bmsx_core PUBLIC
 
 target_link_libraries(bmsx_core PUBLIC bmsx_binary_codec)
 
+# Machine arithmetic must not depend on the host's FMA support. PUBLIC also
+# applies the contract to inline machine code compiled by consumers.
+if(MSVC)
+	target_compile_options(bmsx_core PUBLIC /fp:strict)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+	target_compile_options(bmsx_core PUBLIC -fno-fast-math -ffp-contract=off)
+endif()
+
 # =============================================================================
 # Native host support (static)
 # =============================================================================
@@ -555,6 +563,12 @@ endif()
 
 if(BMSX_BUILD_TESTS)
 	enable_testing()
+	add_executable(bmsx_geometry_conformance_runner
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/geometry_conformance_runner.cpp)
+	target_link_libraries(bmsx_geometry_conformance_runner PRIVATE bmsx_core)
+	if(BMSX_SNESMINI_TARGET)
+		target_link_options(bmsx_geometry_conformance_runner PRIVATE -static-libstdc++ -static-libgcc)
+	endif()
 	set(BMSX_TEST_ROM_SOURCE
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/blua32_test_rom.cpp
 	)

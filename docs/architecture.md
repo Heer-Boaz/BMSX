@@ -167,6 +167,12 @@ an i64 multiply-accumulate, saturating i64 addition, arithmetic right shift by
 16, and saturating i32 narrowing. That shift semantics is the ABI; firmware math
 helpers must not introduce a second rounding rule for matrix/trig values.
 
+This does not make every GEO command fixed-point: `overlap2d_pass` uses f32
+geometry records as specified in `docs/geo_overlap2d_pass.md`. SAT2 keeps
+Q16.16 vertex/result words. Both collision datapaths evaluate intermediate
+arithmetic in binary64 without fused multiply/add contraction or fast-math.
+Native machine compilation enforces that policy, including inline consumers.
+
 Angles used by fixed-point firmware trig helpers are 32-bit binary turns: one
 full revolution wraps at `2^32`, `0x40000000` is 90 degrees, `0x80000000` is
 180 degrees, and arithmetic overflow is natural turn wrap. Firmware helpers may

@@ -27,8 +27,10 @@ The command uses the GEO register bank:
 | `sys_geo_processed` | Processed candidate/instance count. |
 | `sys_geo_fault` | Fault code and record index. |
 
-All source/result records are little-endian u32 words in RAM. Fixed-point fields
-use signed Q16.16 words.
+All source/result records are little-endian u32 words in RAM. Geometry fields
+encode IEEE-754 binary32 (f32), not Q16.16. Descriptor indexes, offsets, flags,
+counts and metadata remain raw integer words. This is the overlap command's
+ABI; SAT2 and XFORM2 retain their separate fixed-point formats.
 
 ## `param0` word
 
@@ -64,8 +66,8 @@ Supported shape kinds:
 - convex polygon: `GEO_PRIMITIVE_CONVEX_POLY`
 - compound: `GEO_OVERLAP2D_SHAPE_KIND_COMPOUND`
 
-AABB bounds records are four signed Q16.16 words: left, top, right, bottom.
-Convex polygon data is an array of Q16.16 vertex pairs. Convex polygons are
+AABB bounds records are four f32 words: left, top, right, bottom.
+Convex polygon data is an array of f32 vertex pairs. Convex polygons are
 limited to `GEO_OVERLAP2D_MAX_POLY_VERTICES` vertices.
 
 ## Instance record
@@ -75,8 +77,8 @@ limited to `GEO_OVERLAP2D_MAX_POLY_VERTICES` vertices.
 | Offset | Field |
 |---:|---|
 | 0 | shape index |
-| 4 | tx Q16.16 |
-| 8 | ty Q16.16 |
+| 4 | tx f32 |
+| 8 | ty f32 |
 | 12 | layer bits |
 | 16 | mask bits |
 
@@ -101,11 +103,11 @@ record index encoded in `sys_geo_fault`.
 
 | Offset | Field |
 |---:|---|
-| 0 | normal x Q16.16 |
-| 4 | normal y Q16.16 |
-| 8 | penetration depth Q16.16 |
-| 12 | contact x Q16.16 |
-| 16 | contact y Q16.16 |
+| 0 | normal x f32 |
+| 4 | normal y f32 |
+| 8 | penetration depth f32 |
+| 12 | contact x f32 |
+| 16 | contact y f32 |
 | 20 | piece A index or `GEO_INDEX_NONE` |
 | 24 | piece B index or `GEO_INDEX_NONE` |
 | 28 | feature metadata |
@@ -126,6 +128,17 @@ record index encoded in `sys_geo_fault`.
 result capacity.
 
 ## Timing and faults
+
+### Arithmetic
+
+The datapath widens f32 operands to binary64. Each addition, subtraction,
+multiplication, division and square root is separately rounded to nearest,
+ties to even; multiply/add contraction and fast-math transformations are not
+permitted. Results narrow to f32 only at the result-record boundary. Signed
+zero and subnormal inputs are not clamped away. Unordered comparisons follow
+IEEE-754; non-finite coordinates are not rejected or replaced with geometry.
+
+### Scheduling
 
 Command write latches the register bank. GEO enters BUSY or REJECTED. Scheduler
 service executes accepted work, writes result/summary records, updates
