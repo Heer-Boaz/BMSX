@@ -182,3 +182,50 @@ observer-enabled complete CPU state, cycle count and guest heap remain equal.
 Final native GEO/POW vector runs and native symbol-codec round-trips also pass.
 The cross-ISA evidence and POW host-time cost remain as recorded above; none of
 these checks claims exhaustive floating-point coverage or zero host overhead.
+
+## GEO FMA negative control
+
+The original 154 vectors also passed with contraction enabled on ARM. Their
+positive parity result did not demonstrate sensitivity to the FMA regression.
+A separate SNES Mini GCC 10.2.1 build now establishes the negative control:
+`-fno-fast-math` stays enabled and only `-ffp-contract=off` becomes
+`-ffp-contract=fast`. Disassembly contains eight FMA instructions in
+`overlap2d.cpp.o` and three in `sat2.cpp.o` in that build.
+
+Two concrete counterexamples are retained in `geometryVectors`, without the
+exploratory search generator:
+
+- `overlap-unfused-contact`: shared-edge triangles produce one contact with
+  separate operations and no contact with contraction. This checks observable
+  result publication, not just an intermediate double's last bit.
+- `sat-unfused-normal`: translating a triangle along its selected edge gives
+  a zero centre/normal dot product without contraction. With contraction its
+  sign changes the published Q16.16 normal from `(-55263, 35228)` to
+  `(55263, -35228)`. Hit and depth remain equal.
+
+All 156 vectors pass TS/native x86 and TS/ARM Cortex-A7 under QEMU. The
+FMA-enabled ARM build fails the same gate at the contact case; separate raw
+runner comparisons confirm that both retained cases independently differ.
+The strict ARM build agrees with native x86 on both.
+
+To repeat the mutation, configure a separate ARM Ninja build with the existing
+SNES Mini toolchain and `BMSX_BUILD_TESTS=ON`. Change only
+`-ffp-contract=off` to `-ffp-contract=fast` in that build's generated
+`build.ninja` (and its `compile_commands.json`), then build its
+`bmsx_geometry_conformance_runner` with Ninja. Supply that runner through QEMU
+to the existing `tests/conformance/geometry/run.ts` command. Regenerating CMake
+restores the production flag. No production relaxation option was introduced.
+
+## Remaining diagnostic-domain follow-up
+
+The live resource-diagnostics path accepts `__bmsx_next` in BIOS, cart0 and
+cart1 alike; an unrelated undefined name is correctly diagnosed in all three.
+`createEditorSemanticFrontend` currently has no domain parameter and shares
+one environment. The compiler's semantic frontend also unconditionally seeds
+the boot names, so the policy needs an owner shared by these consumers.
+
+There is no `retainAfterBoot` field in the current primitive representation.
+All 29 boot primitive globals are cleared by the compiled system bootstrap.
+A domain-aware correction must reflect that real producer contract: BIOS
+initialization knows these names, carts do not inherit them as known globals.
+That correction is not part of the GEO negative-control change.

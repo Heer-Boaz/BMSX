@@ -66,5 +66,16 @@ export function geometryVectors(): GeometryVector[] {
 			result.push(vector(`${sat ? 'sat' : 'overlap'}-oblique-${i}`, a.map(encode), b.map(encode), sat));
 		}
 	}
+	// ARM FMA negative controls: two triangles sharing an oblique edge can
+	// lose their tiny positive projected overlap when a dot product is fused.
+	result.push(vector('overlap-unfused-contact',
+		[-2146, 1913, 651, 7170, -7403, 4710].map(numberToF32Bits),
+		[-2146, 1913, 3111, -884, 651, 7170].map(numberToF32Bits), false));
+	// Raw Q16.16 words. The centre delta is parallel to the selected edge;
+	// contraction changes the sign of its zero normal projection and flips
+	// the published normal, even though the hit and rounded depth agree.
+	result.push(vector('sat-unfused-normal',
+		[-475, 112, 45437, 72136, 4475, 47602],
+		[3351, 6114, 49263, 78138, 8301, 53604], true));
 	return result;
 }
