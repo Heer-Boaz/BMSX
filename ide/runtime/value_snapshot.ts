@@ -27,6 +27,7 @@ const TRUE: ValueSnapshot = { kind: 'boolean', value: true };
 export class GuestValueSnapshot {
 	private readonly visited = new Set<number>();
 	private readonly scratch = Array.from({ length: VALUE_SNAPSHOT_DEPTH }, () => new ValueSlots(2));
+	private readonly textUnits: number[] = [];
 	private remainingEntries = 0;
 	private remainingCharacters = 0;
 	private remainingSlots = 0;
@@ -56,7 +57,12 @@ export class GuestValueSnapshot {
 				const text = this.pool.toString(values.getScalar(index));
 				const length = Math.min(text.length, this.remainingCharacters);
 				this.remainingCharacters -= length;
-				return { kind: 'string', value: text.slice(0, length), omitted: length < text.length };
+				// A substring can retain the entire guest string's backing storage,
+				// even after restoring the pool. Own only the budgeted UTF-16 units.
+				const units = this.textUnits;
+				units.length = length;
+				for (let offset = 0; offset < length; offset++) units[offset] = text.charCodeAt(offset);
+				return { kind: 'string', value: String.fromCharCode(...units), omitted: length < text.length };
 			}
 			case ValueTag.Closure: return { kind: 'function', id: values.getReference(index)!.hashId };
 			case ValueTag.Thread: return { kind: 'thread', id: values.getReference(index)!.hashId };

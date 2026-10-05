@@ -43,6 +43,10 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService, private readonly hover: PointerHoverService, parent: InputFocusTarget) {
 		this.scroll = new WorkbenchScrollControl(focus, capture, parent, input => this.handleKeyboard(input) || this.handleGamepad(input));
 		this.focusTarget = this.scroll.focusTarget;
+		this.focusTarget.clipboard = { readOnly: true, copy: () => {
+			const selected = this.model.selectionIndex;
+			return selected < 0 ? null : this.model.rows[selected].element.value;
+		} };
 		this.actions = new WorkbenchActionBarControl(focus, capture, hover, this, this.focusTarget);
 		this.focusTarget.next = this.actions.focusTarget;
 		this.focusTarget.previous = this.actions.focusTarget;

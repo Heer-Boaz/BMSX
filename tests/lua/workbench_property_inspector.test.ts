@@ -98,6 +98,25 @@ test('live property updates retain focus, selection and scroll anchor and measur
 	assert.equal(model.viewport.scrollTop - scroll, model.rows[0].bottom);
 });
 
+test('focused inspector copies the complete selected value, including live updates and empty values', t => {
+	const f = fixture(t);
+	const clipboard = f.focus.target!.clipboard!;
+	assert.equal(clipboard.readOnly, true);
+	assert.equal(clipboard.copy!(), f.items[0].value);
+	f.press('ArrowDown');
+	assert.equal(clipboard.copy!(), f.items[1].value);
+	const items = f.items.map(item => ({ ...item, value: `${item.value}\nupdated` }));
+	f.inspector.updateItems(items, item => item.label); f.layout();
+	assert.equal(clipboard.copy!(), items[1].value);
+	f.show(); f.layout(); f.press('End');
+	assert.equal(clipboard.copy!(), '');
+	f.inspector.updateItems([], item => item.label); f.layout();
+	assert.equal(clipboard.copy!(), null, 'no selection must not replace the system clipboard');
+	f.inspector.hide();
+	assert.equal(f.focus.target, f.parent);
+	assert.equal(f.focus.target!.clipboard, undefined, 'copy does not leak into the enclosing editor');
+});
+
 test('inspector controller selection, page scrolling, release Source and Back use its focused control', t => {
 	const f = fixture(t), model = f.inspector.model;
 	f.pad('rb', true); f.pad('rb', false); assert.ok(model.viewport.scrollTop > 0); assert.equal(model.selectionIndex, 0);

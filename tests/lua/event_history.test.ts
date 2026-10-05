@@ -199,6 +199,30 @@ test('numeric snapshots preserve full precision and IEEE special values across J
 	assert.deepEqual(JSON.parse(JSON.stringify(captured)), captured);
 });
 
+test('string snapshots retain exact UTF-16 units across pool restore and scratch reuse', () => {
+	const { cpu } = eventHistoryRuntime(compileEventHistoryFixture());
+	const pool = cpu.stringPool, saved = pool.captureState();
+	const reader = new GuestValueSnapshot(pool), values = new ValueSlots(1);
+	// Neither UTF-8 nor TextDecoder roundtrips preserve all of these code units.
+	const text = '\uFEFF\0\uD800z\uDC00\uD83D\uDE80é\r\n';
+	reader.begin();
+	values.setStringId(0, pool.intern(text));
+	const complete = reader.read(values, 0);
+	const remaining = VALUE_SNAPSHOT_CHARACTERS - text.length;
+	values.setStringId(0, pool.intern('x'.repeat(remaining - 1) + '\uD83D\uDE80'));
+	const truncated = reader.read(values, 0);
+	const exhausted = reader.read(values, 0);
+	values.clear(1);
+	pool.restoreState(saved);
+	reader.begin();
+	values.setStringId(0, pool.intern('new value'));
+	reader.read(values, 0);
+	assert.deepEqual(complete, { kind: 'string', value: text, omitted: false });
+	assert.deepEqual(truncated, { kind: 'string', value: 'x'.repeat(remaining - 1) + '\uD83D', omitted: true });
+	assert.deepEqual(exhausted, { kind: 'string', value: '', omitted: true });
+	assert.deepEqual(JSON.parse(JSON.stringify([complete, truncated])), [complete, truncated]);
+});
+
 test('snapshot work includes vacant storage and shares its scan budget across nested values', () => {
 	const { cpu } = eventHistoryRuntime(compileEventHistoryFixture());
 	const reader = new GuestValueSnapshot(cpu.stringPool), values = new ValueSlots(1);

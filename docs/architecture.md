@@ -5444,6 +5444,10 @@ both cores. Snapshots budget visited storage (including holes/dead nodes) as
 well as retained entries; they do not use Lua `next` for a supposedly bounded
 preview. Exhaustion is explicit incomplete evidence, never a fabricated empty
 table. No extra iteration index or counter is maintained on guest table writes.
+Snapshot strings own their budgeted UTF-16 code units; substring views must not
+keep arbitrarily large backing strings alive across runtime/pool restoration.
+This copying belongs to the IDE snapshot boundary, not normal guest string
+interning, table mutation or the native trace primitive.
 Native players share primitive semantics/costs, not the Studio UI.
 Cartlib-specific [Actor inspection](studio_actor_tools.md) attaches to that same
 suspended lifetime and value-reference registry, without teaching the generic

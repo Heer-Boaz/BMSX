@@ -9,7 +9,8 @@ and rewind with the existing central transport; the optional Game panel can
 show the live image alongside it.
 
 Select an event and press Enter / **Details** for its wrapped, scrollable
-payload. Ctrl+C copies that historical snapshot. **Filter** searches event and
+payload. Ctrl+C in the event list copies that historical snapshot; in Details
+it copies the selected stored property value. **Filter** searches event and
 emitter text. **Clear** deletes retained evidence without disabling collection.
 The viewer works without a server or assistant.
 
@@ -312,7 +313,7 @@ Local logs, copied event values, screenshots and the A/B harness are under
 
 ## Storage-scan review validation (2026-10-05)
 
-- 20 event/tool/table tests and 61 history/navigation/property-inspector/table
+- 20 event/tool/table tests and 61 history/navigation/table
   editing regressions pass. Cases include sparse nested storage, a budget shared
   across arguments, dead hash slots, the exact entry-limit boundary, iteration
   order, IEEE values and absence of guest mutations.
@@ -348,3 +349,64 @@ Reproduction scripts, raw timings, screenshots, copied payloads and logs are in
 `.bmsx/authoring/event-history-storage-review/`. This review changes only the
 read-side inspection boundary. It adds no per-write accounting, instruction
 hooks, guest listener or UI-specific behavior to the table implementation.
+
+## Snapshot lifetime and focused-copy review (2026-10-05)
+
+Two further defects were reproduced before changing their owners:
+
+- A 4096-code-unit substring was not necessarily a bounded allocation. V8
+  sliced strings retain their parent storage, including after the guest pool
+  is restored. `GuestValueSnapshot` now constructs its own budgeted UTF-16
+  string from reusable numeric scratch, also when the entire visible string
+  fits. It preserves NUL, BOM and unpaired surrogate units; there is no
+  encoding roundtrip, concatenation/flattening trick or global intern cache.
+  The existing source-layout owner uses the same direct code-unit construction
+  while also collecting its line index; neither owner needs a wrapper around
+  `String.fromCharCode` or a general-purpose string-builder framework.
+  References studied: [V8 sliced-string allocation](https://github.com/v8/v8/blob/main/src/codegen/code-stub-assembler.cc)
+  and [String.fromCharCode construction](https://github.com/v8/v8/blob/main/src/builtins/builtins-string-gen.cc).
+- Details took focus but exposed no clipboard target. Browser Ctrl+C left the
+  previous OS clipboard unchanged. The **shared property inspector** now
+  exports its selected stored value through the existing read-only
+  `ClipboardTarget`. OS access, admission and error reporting remain with the
+  platform clipboard owner. No guest evaluation, pane-specific keyboard hook,
+  new permanent button or copy-through to a hidden editor was added. This
+  follows [VS Code's focused-variable Copy Value routing](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/variablesView.ts),
+  without its live evaluation because this inspector already owns the text.
+
+Validation separates retention, CPU cost and visible UI:
+
+- 32 real cartlib emissions with 1.1-1.2 MB strings, restoring the CPU/string
+  pool between emissions, retained only **130688 visible payload code units**.
+  Before the fix their V8 heap graph contained **32 oversized substring
+  parents totalling 37,400,512 bytes**. Afterward it contained **none**.
+  Whole-process retained-heap delta after forced GC changed from **38.21 MB
+  to 0.95 MB**; that includes fixture/runtime overhead, not only payload text.
+- Alternating old/new observation, 31 rounds with 8 warmups: 1000 ordinary
+  nested emissions measured **70.57 / 70.77 ms** (+0.30%). All event snapshots
+  and complete CPU state matched, with **272015 cycles** in both variants.
+  This small difference is within timing variation, not a zero-cost claim.
+- String-heavy runs deliberately expose copying cost: 1000 otherwise minimal
+  emissions of 32-unit payloads measured **11.10 / 11.47 ms**; 4096-unit
+  payloads **11.34 / 21.56 ms**; 131072-unit payloads **11.12 / 20.57 ms**.
+  The latter two copy only the shared emission budget, not the full source.
+  Approximately 10 microseconds extra per large-text emission is necessary
+  bounded host work here, **not** negligible percentage overhead for an
+  otherwise empty emission loop. Guest state/cycles remain equal.
+- The actual Browser Studio was operated with keyboard, pointer and native
+  clipboard gestures. Details copied 0, a full-precision number, historical
+  health 9 after mutation, and all 4080 retained units of a long payload.
+  Cut in the read-only inspector and Copy in an empty event list left the
+  clipboard unchanged. Back returned Copy to the event list. Screenshots of
+  selected values, wrapped long text and the truncation warning were inspected;
+  no browser warnings/errors were reported.
+- 24 focused event/tool/property-inspector tests, 21 live actor/behavior
+  inspection regressions and 4 browser clipboard/image tests pass. IDE/tests
+  typechecks and the zero-issue boundary audit pass; Browser Studio is rebuilt.
+  The earlier 61-test storage-scan bundle had not actually included the
+  property-inspector file; that historical description is corrected above.
+  This review does not change cartlib, CPU execution, the native trace ABI or
+  either core's save-state representation; no new C++ behavior is introduced.
+
+Heap snapshots, A/B scripts, raw samples and browser evidence are retained in
+`.bmsx/authoring/event-history-lifetime-review/` (ignored authoring evidence).
