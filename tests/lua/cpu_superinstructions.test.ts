@@ -18,7 +18,7 @@ import {
 	type TestBlua32Image,
 } from '../helpers/blua32';
 
-function makePairImage(): TestBlua32Image {
+function makePairImage(loop = false): TestBlua32Image {
 	const code = new Uint8Array(10 * INSTRUCTION_BYTES);
 	writeInstruction(code, 0, OpCode.K1, 0, 0, 0, 0);
 	writeInstruction(code, 1, OpCode.K1, 1, 0, 0, 0);
@@ -28,7 +28,9 @@ function makePairImage(): TestBlua32Image {
 	writeInstruction(code, 5, OpCode.SHL, 5, 4, 1, 0);
 	writeInstruction(code, 6, OpCode.SHR, 6, 5, 1, 0);
 	writeInstruction(code, 7, OpCode.BXOR, 7, 6, 1, 0);
-	writeInstruction(code, 8, OpCode.HALT, 0, 0, 0, 0);
+	// JMP -9 repeats physical PCs for cache reconfiguration checks.
+	if (loop) writeInstruction(code, 8, OpCode.JMP, 0, 63, 55, 255);
+	else writeInstruction(code, 8, OpCode.HALT, 0, 0, 0, 0);
 	writeInstruction(code, 9, OpCode.RFE, 0, 0, 0, 0);
 	return linkRawTestSystemBlua32({
 		text: code,
@@ -99,4 +101,32 @@ test('instrumented dispatch observes the second instruction of a normally fused 
 	]);
 	assert.equal(cpu.readFrameRegister(0, 2), 2);
 	assert.equal(cpu.readFramePc(0), secondPc);
+});
+
+for (const instrumented of [false, true]) test(`sparse observation respects fusion, source stops and cached removal (source hook: ${instrumented})`, () => {
+	const image = makePairImage(true), { cpu } = createTestSystemCpu(image);
+	const pc = image.image.functions[0].codeAddress + 3 * INSTRUCTION_BYTES;
+	assert.equal(cpu.runUntilDepth(0, 9), RunResult.Yielded);
+	const observations: number[] = [];
+	cpu.setInstructionObserver({
+		points: [new Set([pc]), new Set(), new Set()],
+		observe(domain, at, registers) {
+			assert.equal(domain, -1);
+			assert.equal(registers.getNumber(2), 2);
+			observations.push(at);
+		},
+	});
+	if (instrumented) {
+		cpu.setExecutionHook((_domain, at) => at === pc, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+		assert.equal(cpu.runUntilDepth(0, 100), RunResult.ExecutionStopped);
+		assert.deepEqual(observations, []);
+		cpu.setExecutionHook(() => false, SYSTEM_EXECUTION_DOMAIN_MASK, 0);
+	}
+	assert.equal(cpu.runUntilDepth(0, instrumented ? 1 : 4), RunResult.Yielded);
+	assert.equal(cpu.instructionBudgetRemaining, 0);
+	assert.equal(cpu.readFrameRegister(0, 3), 3);
+	assert.deepEqual(observations, [pc]);
+	cpu.setInstructionObserver(null);
+	cpu.runUntilDepth(0, 9);
+	assert.deepEqual(observations, [pc]);
 });

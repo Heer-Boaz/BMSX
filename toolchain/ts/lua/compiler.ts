@@ -1,4 +1,3 @@
-import { BuiltinFunctionId, LUA_BOOT_PRIMITIVES } from '../../../machine/ts/spec/blua32/builtin';
 // start repeated-sequence-acceptable -- Program codegen keeps opcode/slot emission direct; helper extraction would add dispatch in compile hot paths.
 // start normalized-body-acceptable -- Resolver/emitter specializations share shapes but preserve distinct compiler ownership.
 import { LexicalDeclarationKind } from './compiler/declaration_kind';
@@ -274,7 +273,6 @@ type CompileOptionsBase = {
 	/** Authored entry location when a build composes an executable wrapper around it. */
 	entryOrigin?: LuaSourceRange;
 	traceStatements?: TraceStatementSelection;
-	hostTraceChannels?: readonly string[];
 	/** Initialize these source modules and their dependencies before entry dependencies. */
 	preloadModules?: readonly string[];
 	captureLayout?: LuaCaptureLayout;
@@ -518,7 +516,6 @@ class ProgramBuilder {
 		optLevel: OptimizationLevel,
 		programDomain: ProgramCompileDomain,
 		public readonly traceStatements: TraceStatementSelection,
-		public readonly hostTraceChannels: readonly string[],
 		public readonly preloadModules: readonly string[],
 		public readonly types: StructTypes,
 		public readonly captureLayout?: LuaCaptureLayout,
@@ -1090,7 +1087,6 @@ class ProgramBuilder {
 					outerBindingsByProto: this.protoOuterBindings, lexicalDeclarations: this.lexicalDeclarations }, this.protoSemantics,
 				this.bssBindingsBySymbolHandle, this.dataBindingsBySymbolHandle, this.rodataBindingsBySymbolHandle),
 			traceStatements: this.traceStatements,
-			hostTraceChannels: this.hostTraceChannels,
 			preloadModules: this.preloadModules,
 			functionDefinitionsByProto: this.functionDefinitions,
 			debugRanges: fullRanges,
@@ -4349,18 +4345,6 @@ class FunctionBuilder {
 			throw new Error(`${callee.member.name} channel must be a string literal.`);
 		}
 		const channel = (channelExpression as LuaStringLiteralExpression).value;
-		if (this.program.hostTraceChannels.includes(channel)) {
-			// A channel has one destination. Host selection supersedes guest sinks.
-			if (!trace) return true;
-			const count = expression.arguments.length;
-			const base = this.allocTempBlock(count + 1);
-			this.emitABx(OpCode.GETSYS, base, this.program.resolveSystemGlobalSlot(LUA_BOOT_PRIMITIVES[BuiltinFunctionId.Trace].name));
-			for (let index = 0; index < count; index++) {
-				this.compileExpressionInto(expression.arguments[index], base + 1 + index, 1);
-			}
-			this.emitABC(OpCode.CALL, base, encodeFixedCallArgCount(count), 1);
-			return true;
-		}
 		const selection = this.program.traceStatements;
 		if (selection === 'erase' || (selection !== 'emit' && !this.program.traceChannels!.has(channel))) {
 			return true;
@@ -6235,7 +6219,6 @@ export function compileLuaChunkToProgram(
 		optLevel,
 		programDomain,
 		options.traceStatements ?? 'erase',
-		options.hostTraceChannels ?? [],
 		options.preloadModules ?? [],
 		new StructTypes(frontend, moduleCompileContext),
 		options.captureLayout,

@@ -1531,50 +1531,55 @@ void testProtectedCallMicrocodePreemptsSavesAndHandlesLuaErrors() {
 	require(bmsx::asNumber(machine.cpu.readCompletionValues()[2]) == 3.0 && bmsx::asNumber(machine.cpu.readCompletionValues()[3]) == 4.0, "nested pcall should preserve child results");
 }
 
-void testNativeTraceUsesBorrowedValuesInBothExecutionLoops() {
-	bmsx::test::Blua32TestImage image;
-	image.text.resize(7u * bmsx::INSTRUCTION_BYTES);
-	for (const auto& primitive : bmsx::LUA_BOOT_PRIMITIVES) image.systemGlobalNames.emplace_back(primitive.name);
-	image.constants = {std::string("fixture"), 42.0};
-	std::span<bmsx::u8> code(image.text);
-	bmsx::writeInstruction(code, 0, static_cast<bmsx::u8>(bmsx::OpCode::GETSYS), 0, 0, static_cast<bmsx::u8>(bmsx::BuiltinFunctionId::Trace));
-	bmsx::writeInstruction(code, 1, static_cast<bmsx::u8>(bmsx::OpCode::KNIL), 1, 0, 0);
-	bmsx::writeInstruction(code, 2, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 2, 0, 0);
-	bmsx::writeInstruction(code, 3, static_cast<bmsx::u8>(bmsx::OpCode::LOADK), 3, 0, 1);
-	bmsx::writeInstruction(code, 4, static_cast<bmsx::u8>(bmsx::OpCode::CALL), 0, 4, 1);
-	bmsx::writeInstruction(code, 5, static_cast<bmsx::u8>(bmsx::OpCode::RET), 0, 1, 0);
-	bmsx::writeInstruction(code, 6, static_cast<bmsx::u8>(bmsx::OpCode::RFE), 0, 0, 0);
-	image.functions = {{.firstWord = 0u, .wordCount = 6u, .maxStack = 4u}, {.firstWord = 6u, .wordCount = 1u}};
-	image.startupFunctionIndex = 0u;
-	image.irqFunctionIndex = image.exceptionFunctionIndex = 1u;
-	int cost = 0;
-	for (int variant = 0; variant < 3; ++variant) {
+void testSparseInstructionObservation() {
+	for (const bool instrumented : {false, true}) {
+		auto image = makeDecodedPairSystemImage();
+		// JMP -9: repeat the same physical PCs so cached install/removal are exercised.
+		bmsx::writeInstruction(image.text, 8, static_cast<bmsx::u8>(bmsx::OpCode::JMP), 0, 63, 55, 255);
 		CpuTestMachine machine(image);
-		machine.cpu.installBootPrimitives();
+		auto pc = machine.systemRom.textAddress + 3u * bmsx::INSTRUCTION_BYTES;
+		// Warm the predecessor's fused dispatch before installing observation.
+		require(machine.cpu.runUntilDepth(0, 9) == bmsx::RunResult::Yielded, "warm decoded pairs");
 		int seen = 0;
-		if (variant != 0) machine.cpu.setTraceHook([](void* context, bmsx::ExecutionDomainId domain, bmsx::BuiltinArgsView args) {
+		bmsx::InstructionObserverBinding observer;
+		observer.points[0].insert(pc);
+		observer.context = &seen;
+		observer.observe = [](void* context, bmsx::ExecutionDomainId domain, bmsx::u32, const bmsx::Value* registers) {
 			++*static_cast<int*>(context);
-			require(domain == bmsx::SYSTEM_EXECUTION_DOMAIN_ID, "trace carries its native call domain");
-			require(args.size() == 3u && bmsx::isNil(args[0]), "trace receives subject and exact borrowed argument span");
-			require(bmsx::valueIsString(args[1]) && bmsx::asNumber(args[2]) == 42.0, "trace preserves tagged channel and payload");
-		}, &seen);
-		if (variant == 2) machine.cpu.setExecutionHook({
-			.hook = [](void*, bmsx::ExecutionDomainId, bmsx::u32) { return false; },
-			.context = nullptr,
-			.domainMask = bmsx::executionDomainBit(bmsx::SYSTEM_EXECUTION_DOMAIN_ID),
+			require(domain == bmsx::SYSTEM_EXECUTION_DOMAIN_ID, "observer receives physical execution domain");
+			require(bmsx::asNumber(registers[2]) == 2.0, "observation precedes original instruction");
+		};
+		machine.cpu.setInstructionObserver(std::move(observer));
+		if (instrumented) machine.cpu.setExecutionHook({
+			.hook = [](void* context, bmsx::ExecutionDomainId, bmsx::u32 at) { return at == *static_cast<bmsx::u32*>(context); },
+			.context = &pc,
+			.domainMask = bmsx::SYSTEM_EXECUTION_DOMAIN_MASK,
 			.preMaskableInterruptDomainMask = 0u,
 		});
-		require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "native trace returns normally");
-		require(seen == (variant == 0 ? 0 : 1), "trace emits once and needs no instruction hook");
-		if (variant == 0) cost = 100 - machine.cpu.instructionBudgetRemaining;
-		else require(cost == 100 - machine.cpu.instructionBudgetRemaining, "observer does not alter native instruction costs");
+		if (instrumented) {
+			require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::ExecutionStopped, "source stop precedes observation");
+			require(seen == 0, "source stops produce no events");
+			machine.cpu.setExecutionHook({
+				.hook = [](void*, bmsx::ExecutionDomainId, bmsx::u32) { return false; },
+				.context = nullptr,
+				.domainMask = bmsx::SYSTEM_EXECUTION_DOMAIN_MASK,
+				.preMaskableInterruptDomainMask = 0u,
+			});
+		}
+		const int budget = instrumented ? 1 : 4;
+		require(machine.cpu.runUntilDepth(0, budget) == bmsx::RunResult::Yielded, "original costs preserved");
+		require(machine.cpu.instructionBudgetRemaining == 0, "observer costs no guest cycles");
+		require(seen == 1 && bmsx::asNumber(machine.cpu.readFrameRegister(0, 3)) == 3.0, "original op executes once");
+		machine.cpu.setInstructionObserver({});
+		machine.cpu.runUntilDepth(0, 9);
+		require(seen == 1, "removal invalidates cached observer");
 	}
 }
 
 } // namespace
 
 int main() {
-	testNativeTraceUsesBorrowedValuesInBothExecutionLoops();
+	testSparseInstructionObservation();
 	testManualNmiAndSaveStateReturn();
 	testPrivilegeVectorRoutingAndCp0Fault();
 	testSystemAndOrdinaryGlobalRegisterfilesStayDistinct();

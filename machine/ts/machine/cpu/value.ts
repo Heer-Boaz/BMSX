@@ -140,7 +140,6 @@ export const BUILTIN_FUNCTIONS: readonly BuiltinFunction[] = [
 	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.GetFrameUpvalue, cost: BUILTIN_COST_TIER1 },
 	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.SetFrameUpvalue, cost: BUILTIN_COST_TIER1 },
 	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.FrameHeader, cost: BUILTIN_COST_TIER1 },
-	{ [VALUE_TAG]: BUILTIN_FUNCTION_VALUE_TAG, id: BuiltinFunctionId.Trace, cost: BUILTIN_COST_TIER1 },
 ];
 
 export function createBuiltinFunction(id: BuiltinFunctionId): BuiltinFunction {

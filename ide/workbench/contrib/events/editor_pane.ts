@@ -141,7 +141,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 		api.pushClipRect(viewport.bounds.left, viewport.bounds.top, viewport.bounds.right, viewport.bounds.bottom);
 		const rows = input.projection.rows;
 		if (rows.length === 0) api.blit_text_inline_with_font(input.filter !== '' ? 'No matching events'
-			: input.history.status === 'uninstrumented' ? 'Rebuild the cart with debug instrumentation' : 'No events yet', viewport.bounds.left, viewport.bounds.top + 4, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
+			: input.history.status !== 'live' ? EVENT_HISTORY_LABEL[input.history.status] : 'No events yet', viewport.bounds.left, viewport.bounds.top + 4, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font);
 		for (let i = Math.trunc(viewport.scrollTop / layout.rowHeight), top = viewport.offsetTop + i * layout.rowHeight;
 			i < rows.length && top < viewport.bounds.bottom; i++, top += layout.rowHeight) {
 			const event = rows[i], selected = i === input.selected;

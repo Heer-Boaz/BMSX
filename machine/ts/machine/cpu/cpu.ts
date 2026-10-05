@@ -236,8 +236,11 @@ export const enum RunResult {
 	ExecutionStopped,
 }
 
-/** Read-only native trace span. The observer must not retain it or execute guest code. */
-export type TraceHook = (domain: ExecutionDomainId, args: BuiltinArgsView) => void;
+/** Host-only configuration. Borrowed registers are read-only; never retain them or execute guest code. */
+export type InstructionObserverBinding = {
+	readonly points: readonly [ReadonlySet<number>, ReadonlySet<number>, ReadonlySet<number>];
+	readonly observe: (domain: ExecutionDomainId, pc: number, registers: ValueSlots) => void;
+};
 
 export type ExecutionHook = (
 	executionDomainId: ExecutionDomainId,
@@ -288,7 +291,7 @@ export class CPU implements MappedPageInvalidator {
 	private yieldRequested = false;
 	private threadSwitchRequested = false;
 	private executionHook: ExecutionHook | null = null;
-	private traceHook: TraceHook | null = null;
+	private instructionObserver: InstructionObserverBinding | null = null;
 	private executionHookDomainMask: ExecutionDomainMask = 0;
 	private preMaskableInterruptExecutionHookDomainMask: ExecutionDomainMask = 0;
 	private runUntilDepthEntry = this.runUntilDepthNormal;
@@ -1369,6 +1372,11 @@ export class CPU implements MappedPageInvalidator {
 		if (instructionCacheable && bodyPage !== null && bodyPage.writeWatches !== null) {
 			bodyPage.writeWatches[bodyPage.writeWatchIndex] = 1;
 		}
+		const observed = this.instructionObserver?.points[frame.executionImage.executionDomainId + 1];
+		if (observed?.has(pc)) {
+			page.dispatchOps[pageOffset] = DecodedDispatchOp.Observe;
+			return true;
+		}
 		const fusionCandidate = op === OpCode.SHL || op === OpCode.ADD || op === OpCode.SHR;
 		if (!allowFusion) {
 			if (fusionCandidate && instructionCacheable) {
@@ -1380,6 +1388,7 @@ export class CPU implements MappedPageInvalidator {
 			return true;
 		}
 		const nextPc = pc + width * INSTRUCTION_BYTES;
+		if (observed?.has(nextPc)) return true;
 		const nextPage = this.decodedPageForFrame(frame, nextPc);
 		if (!nextPage.cacheable) {
 			return true;
@@ -1576,7 +1585,14 @@ export class CPU implements MappedPageInvalidator {
 		this.yieldRequested = true;
 	}
 
-	public setTraceHook(hook: TraceHook | null): void { this.traceHook = hook; }
+	public setInstructionObserver(binding: InstructionObserverBinding | null): void {
+		this.instructionObserver = binding;
+		// Also invalidate predecessors: an old fused dispatch may cross a newly observed PC.
+		for (const image of this.executionImagesByDomain) {
+			if (image === null) continue;
+			for (const page of image.decodedPages.values()) page.refreshState.fill(DECODED_REFRESH_DECODE);
+		}
+	}
 
 	public setExecutionHook(
 		hook: ExecutionHook | null,
@@ -1846,7 +1862,7 @@ export class CPU implements MappedPageInvalidator {
 	private runUntilDepthInstrumented(targetDepth: number, instructionBudget: number): RunResult {
 		this.instructionBudgetRemaining = instructionBudget;
 		const frames = this.activeThread.frames;
-		const baseCycles = BASE_CYCLES;
+		const baseCycles = DECODED_DISPATCH_BASE_CYCLES;
 		const executionHook = this.executionHook!;
 		const executionDomainMask = this.executionHookDomainMask;
 		const preMaskableInterruptExecutionDomainMask =
@@ -1901,7 +1917,8 @@ export class CPU implements MappedPageInvalidator {
 						continue;
 					}
 					const width = page.widths[pageOffset];
-					const op = page.ops[pageOffset];
+					const op = page.dispatchOps[pageOffset] === DecodedDispatchOp.Observe
+						? DecodedDispatchOp.Observe : page.ops[pageOffset];
 					this.currentInstructionPc = pc;
 					frame.pc = pc + (width * INSTRUCTION_BYTES);
 					this.lastExecutionDomainId = image.executionDomainId;
@@ -2274,6 +2291,12 @@ export class CPU implements MappedPageInvalidator {
 		const image = frame.executionImage;
 		const a = page.a[pageOffset];
 		switch (op) {
+				case DecodedDispatchOp.Observe:
+					this.instructionObserver!.observe(image.executionDomainId, this.currentInstructionPc, registers);
+					// Observe has zero base cost; execute and charge the original instruction once.
+					this.instructionBudgetRemaining -= BASE_CYCLES[page.ops[pageOffset]];
+					this.executeInstruction(frame, page, pageOffset, page.ops[pageOffset]);
+					return;
 				case DecodedDispatchOp.FusedShlBxor:
 				case DecodedDispatchOp.FusedShrBxor:
 				case DecodedDispatchOp.FusedAddShl:
@@ -3574,9 +3597,6 @@ export class CPU implements MappedPageInvalidator {
 
 	private callBuiltinFunction(id: BuiltinFunctionId, args: BuiltinArgsView, out: BuiltinResults): void {
 		switch (id) {
-			case BuiltinFunctionId.Trace:
-				this.traceHook?.(this.lastExecutionDomainId, args);
-				break;
 			case BuiltinFunctionId.Next:
 				this.runBuiltinNextValue(args, out);
 				break;

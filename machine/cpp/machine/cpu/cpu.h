@@ -8,6 +8,7 @@
 #include <span>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -60,8 +61,12 @@ enum class RunResult {
 	ExecutionStopped,
 };
 
-// Read-only native span; the observer must not retain it or execute guest code.
-using TraceHook = void (*)(void*, ExecutionDomainId, BuiltinArgsView);
+// Host-only configuration. Registers are borrowed; never retain them or execute guest code.
+struct InstructionObserverBinding {
+	std::array<std::unordered_set<u32>, EXECUTION_DOMAIN_COUNT> points;
+	void (*observe)(void*, ExecutionDomainId, u32, const Value*) = nullptr;
+	void* context = nullptr;
+};
 
 using ExecutionHook = bool (*)(void*, ExecutionDomainId, u32);
 
@@ -284,7 +289,7 @@ public:
 	bool canAcceptMaskableInterruptLine() const;
 	AcceptedInterruptKind peekPendingInterrupt() const;
 	bool enterPendingInterrupt();
-	void setTraceHook(TraceHook hook, void* context) { m_traceHook = hook; m_traceContext = context; }
+	void setInstructionObserver(InstructionObserverBinding binding);
 
 	void setExecutionHook(ExecutionHookBinding binding);
 	RunResult runUntilDepth(int targetDepth, int instructionBudget, const Thread* target = nullptr);
@@ -517,8 +522,7 @@ private:
 	void closeThread(Thread& thread);
 
 	ExecutionHookBinding m_executionHookBinding{nullptr, nullptr, 0u, 0u};
-	TraceHook m_traceHook = nullptr;
-	void* m_traceContext = nullptr;
+	InstructionObserverBinding m_instructionObserver;
 	RunUntilDepthEntry m_runUntilDepthEntry = &CPU::runUntilDepthNormal;
 	Memory& m_memory;
 	IrqController& m_irqController;

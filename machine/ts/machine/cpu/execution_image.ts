@@ -12,9 +12,10 @@ export const enum DecodedDispatchOp {
 	FusedShlBxor = OPCODE_COUNT,
 	FusedAddShl = OPCODE_COUNT + 1,
 	FusedShrBxor = OPCODE_COUNT + 2,
+	Observe = OPCODE_COUNT + 3,
 }
 
-export const DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 3;
+export const DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 4;
 
 export const DECODED_DISPATCH_BASE_CYCLES = new Uint8Array(DECODED_DISPATCH_OP_COUNT);
 DECODED_DISPATCH_BASE_CYCLES.set(BASE_CYCLES);

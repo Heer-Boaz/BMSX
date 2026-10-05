@@ -59,354 +59,145 @@ for the explicit `'-0'`, `'nan'`, `'inf'` and `'-inf'` representations which JSO
 numbers cannot preserve. Finite numbers are not rounded to display precision.
 Identities are evidence inside the emission, never live inspection handles.
 
-## Ownership and source instrumentation
+## Ownership and executable equivalence
 
-The previous instruction-hook/function-symbol probe is **removed**, not hidden
-behind automatic recording. It made the entire interpreter use instruction
-instrumentation while capturing a small number of event calls.
+Debug metadata describes execution; it must not change the emulated machine.
+Ordinary debug, release and Hot Resume builds erase **all** trace statements.
+The earlier debug-only native CALL transport was an architectural error: it added
+nine guest cycles per event. It has been removed, including `hostTraceChannels`,
+`BuiltinFunctionId.Trace` and its bootstrap-lifetime exception. Adding the same
+cost to release or weakening the machine contract is not an acceptable fix.
+Explicit Scenario sink selection remains available only in derived test images.
 
-Cartlib now marks its actual semantic emission boundary, before dispatch and
-including events with no subscribers:
+The current observation path is entirely host-side:
 
-```lua
-blua32.trace(self, 'event.emit', event_type, emitter_id, payload)
-```
+1. The IDE binds the entry of `cartlib/event_emitter.emit` using installed
+   function/source identities, inline call chains and argument liveness. This
+   runs once per media revision, not per frame/event. Physical argument slots
+   are compiler-owned; there are no hardcoded register numbers. Missing symbols,
+   missing/ambiguous function identity or optimized-out arguments are explicit
+   availability states. Optimizations are never disabled to satisfy a tool.
+2. The mirrored CPU accepts domain-indexed physical PCs and a read-only callback.
+   Decode marks only those cache entries with a **host-only** observation dispatch
+   and prevents fusion across them. Installing/removing points invalidates cached
+   dispatch, including predecessors. No instruction-stream patch, guest opcode,
+   per-instruction PC lookup or switch to the source-debugger loop is involved.
+3. At an observed instruction the CPU lends tagged registers synchronously,
+   then executes and charges the original instruction exactly once. Source
+   breakpoints, interrupt admission and fetch faults retain precedence. The
+   observer must not mutate guest state, run Lua, reconfigure execution or retain
+   that register view. The general hook observes instruction admission, not
+   completion; a blocked MMIO operation can be retried. Event-emitter entry is
+   not such a retrying MMIO operation.
+4. `RuntimeIdeState` owns `RuntimeEventHistory`, independently of debugger/pane/
+   conversation lifetime. Reset, admitted Hot Resume and actual live history
+   branches notify it at their owning lifecycle boundaries. Rebinding happens
+   before resumed guest execution. Shutdown detaches observation.
+5. History snapshots remain bounded, immutable host data. Capturing never calls
+   Lua/metatables, interns guest strings, formats values or retains guest objects.
+   The UI's filtered index updates incrementally and renders only visible rows.
 
-This reuses the statement intrinsic already used for FSM/BT/ActionEffect
-tracing. Existing guest scenario sinks remain independently selectable.
-Ordinary live FSM/BT inspectors largely read existing state; they are not
-justification for unlimited additional tracing cost.
+Release packages normally omit source symbols, so cannot bind source observation
+without tooling metadata. This affects tool availability, not executable
+semantics. Packed metadata can relocate an executable image; fixed-address image
+comparison distinguishes that placement from added guest work.
 
-- The compiler's `hostTraceChannels` selects native observation. Debug cart
-  builds select `event.emit`; release cart builds erase the entire unselected
-  statement, including argument evaluation and constants. Host selection takes
-  precedence over a guest sink for the **same** channel; there is one destination
-  and one argument evaluation, not two notifications.
-- Selected statements lower to a normal native CALL with a borrowed
-  `(subject, channel, ...values)` register span. `BuiltinFunctionId.Trace` is a
-  runtime primitive retained in the system namespace after BIOS bootstrap.
-  Other bootstrap primitives keep their existing removal lifetime.
-- Only that native call invokes the optional read-only observer. Neither CPU
-  instruction loop gains trace polling; attaching the observer does not switch
-  to the instrumented interpreter. No emulated event device, event opcode,
-  cartlib-aware CPU code, injected listener or guest snapshot allocation exists.
-- `RuntimeIdeState` owns one `RuntimeEventHistory`, independent of source
-  debugger creation/reset, and injects it into the viewer and runtime tools.
-  Physical restore, rewind resume and Hot Resume notify it at their actual
-  lifecycle boundaries; debugger invalidation is not a substitute for those
-  notifications. Workbench shutdown detaches the CPU observer.
-- The IDE-owned `RuntimeEventHistory` makes bounded immutable host copies at
-  emission. It never invokes Lua or metatables and retains no guest objects or
-  borrowed register views. It consumes tagged slots directly and copies typed
-  values without invoking number formatting or JSON string quoting. Table
-  traversal uses the owner's constant-work stored-slot reader, not Lua `next`
-  (which can search arbitrarily many vacant slots). UI
-  filtering and payload inspection format those copies on demand, not the
-  machine. The filtered index updates incrementally; rendering
-  visits only visible rows and retains measured labels. Expiration preserves
-  the scrolled position unless following the live end.
-- Linker/tooling metadata preserves host channels through source rebuild and
-  Hot Resume. Rebuild BIOS and debug carts together after this primitive change;
-  stale images are not patched by guessing register slots or source positions.
+The pre-edit TS/C++ representation table and hot callsites are recorded in
+[event observation parity](event_observation_parity.md). Native players expose
+the same CPU mechanism but allocate no Studio event history.
 
-Unobserved **debug** code still executes its selected trace CALL and pays its
-actual guest cycles. Removing an observer does not magically erase installed
-instructions. Release builds erase the source instrumentation; both builds
-retain the native runtime service's fixed bootstrap presence.
+## Bounded snapshot and clipboard ownership
+
+Table preview uses the table owner's constant-work `storedSlotCount` and
+`loadStoredEntry`, mirrored in TS/C++. Positions are borrowed storage indices,
+not handles which survive mutation. The 1024-position budget includes holes and
+dead nodes and is shared across event name, emitter and payload. It is a fixed
+work budget, not a wall-clock cutoff. A sparse table can exhaust it without
+finding a value; `omitted` then records incomplete evidence. Guest writes, GC,
+normal Lua iteration and save-state layouts maintain no extra preview indexes.
+
+Strings are copied as budgeted UTF-16 code units using reusable scratch. A
+substring can retain its entire parent allocation and is therefore unsuitable.
+NUL, BOM and unpaired surrogate code units survive; no encoding roundtrip is
+used. Large strings are explicitly truncated within the shared budget.
+
+Details exposes the shared property inspector's read-only clipboard target.
+Copy exports its selected **stored** value. Platform admission/error reporting
+remain with the platform clipboard owner. No guest evaluation, pane-specific
+shortcut, hidden editor or permanent Copy button is involved.
 
 ## Production references studied
 
-- [Unreal Trace](https://dev.epicgames.com/documentation/en-us/unreal-engine/developer-guide-to-tracing-in-unreal-engine):
-  explicit source channels and payloads, capture separate from analysis.
-- [BehaviorTree.CPP semantic state notifications](https://github.com/BehaviorTree/BehaviorTree.CPP/blob/master/src/tree_node.cpp)
-  and [logger lifetime](https://github.com/BehaviorTree/BehaviorTree.CPP/blob/master/include/behaviortree_cpp/loggers/abstract_logger.h):
-  observe a semantic transition, not every interpreter instruction.
-- [VS Code REPL model](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/replModel.ts):
-  stored values and their requested text/children are separate responsibilities.
-  BMSX detaches mutable guest values at emission rather than retaining live
-  JavaScript objects, because replay replaces heaps and evidence must not change.
-- [Godot EngineDebugger](https://github.com/godotengine/godot/blob/master/core/debugger/engine_debugger.cpp):
-  producer/debugger ownership independent of editor presentation.
+- [MAME instruction hooks](https://github.com/mamedev/mame/blob/master/src/emu/debug/debugcpu.cpp):
+  host-side observation before execution, distinct from guest code.
+- [QEMU translated-code observation](https://github.com/qemu/qemu/blob/master/accel/tcg/plugin-gen.c):
+  host callbacks attached to execution sites, not instructions added to the guest.
+- [V8 inspector previews](https://github.com/v8/v8/blob/main/src/inspector/value-mirror.cc):
+  explicit preview budgets and overflow. BMSX additionally bounds physical scans.
+- [VS Code REPL model](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/replModel.ts)
+  and [variable Copy Value](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/variablesView.ts):
+  stored values, presentation and focus-routed copy are separate responsibilities.
 
-These are architectural references, not evidence that a particular BMSX cost is
-acceptable. The local measurements below determine that.
+These references establish ownership patterns, not BMSX performance guarantees.
+Measurements of the retired native CALL transport in commits `217278bf0` through
+`2a3792476` do **not** validate the current transport or debug/release equivalence.
 
-## Representation gate (recorded before mirrored edits)
+## Reproduction
 
-| Value | TypeScript | C++ | Owner |
-| --- | --- | --- | --- |
-| Native primitive | `BuiltinFunctionId.Trace` | same ID | VM primitive specification |
-| Bootstrap lifetime | descriptor `retainAfterBoot` | same flag | primitive specification/compiler |
-| Trace arguments | borrowed `BuiltinArgsView` / tagged `ValueSlots` | borrowed `BuiltinArgsView` / tagged `Value` | CPU native dispatch |
-| Execution domain | raw `ExecutionDomainId` | same enum | execution-domain specification |
-| Host channels | `readonly string[]` | `vector<string>` | compiler/linker tooling metadata |
-| Snapshot / sequence | immutable host history | no native Studio | IDE, not machine save-state |
-| Resume notification (review follow-up) | `branched: boolean` | `bool branched` | `RuntimeHistory::resumeRecording`, before truncating future input |
+- `tests/rompacker/debug_release_execution.test.ts` exercises actual packer debug
+  selection at O0/O3: erased argument side effects/constants, return values,
+  executable size, cycles and guest heap. At a fixed link address, symbol inclusion
+  also compares the entire executable payload byte-for-byte.
+- `tests/lua/event_history.test.ts`, `function_probe.test.ts` and
+  `cpu_superinstructions.test.ts` cover actual cartlib snapshots, complete CPU
+  equivalence, inline source bindings/unavailable arguments, source-stop ordering,
+  warm-cache observer installation/removal and fusion boundaries. Native CPU
+  supervisor tests exercise the mirrored dispatch.
+- `tests/conformance/runtime_replay/profile_event_history.ts` alternates automatic
+  history and no observer on the **same erased-code image**, with identical input
+  and checkpoints. It compares complete runtime state separately from host timing:
 
-The review follow-up changes only the existing resume notification payload in
-the mirrored runtimes. `RuntimeHistory` already decides whether resumption
-rejoins the recorded end; it publishes that decision rather than making the
-Event Viewer reconstruct it. Callsites: TS/C++ `resumeRecording`, the Studio
-composition root, and scheduler/navigation conformance tests. This runs on
-explicit resume, not on instructions, frames or event emissions. Guest state,
-checkpoint representation and native trace costs remain unchanged.
+  ```sh
+  npx tsx --tsconfig tsconfig.base.json tests/conformance/runtime_replay/profile_event_history.ts \
+    dist/system/bmsx-bios.debug.rom dist/nemesis_s.debug.rom
+  ```
 
-Hot callsites: compiler-lowered CALL in `cartlib/event_emitter.lua:emit`, TS
-`CPU.callBuiltinFunction`, C++ `CPU::callBuiltinFunction`. The observer cannot
-execute guest code or retain the borrowed span. Costs and primitive IDs are
-mirrored. The old observation-only `ExecutionHookPhase` extension is removed;
-source breakpoints and interrupt fences keep their original control contract.
+The profiler measures CPU/devices/audio/GPU command work, not browser rendering
+or an open viewer. Results are workload-specific. Event-heavy gameplay and large
+payloads require their own measurements; this is not a universal FPS claim.
 
-### Storage-scan review gate (2026-10-05)
+Coverage is common cartlib **emission**, not arbitrary callbacks, interrupts,
+listener completion or duration. Full unbounded capture, persistent trace export
+and reconstruction of expired events are not implemented.
 
-The snapshot's entry limit did not bound observation work: Lua `next` searches
-through empty array/hash storage. A table with one entry in 65536 array slots
-took about 400 ms for 1000 snapshots in an isolated warm run, versus 0.24 ms
-for one slot. Neither the retained-entry limit nor the depth limit stops that
-search. The existing `forEachStoredEntry` also scans the entire storage, so it
-cannot provide bounded observation either.
+## Validation of the host-only correction (2026-10-05)
 
-| Value / operation | TypeScript | C++ | Owner |
-| --- | --- | --- | --- |
-| Physical entry positions | array slots, then hash nodes | same order | `Table` |
-| Scan extent | `storedSlotCount: number` | `storedSlotCount(): size_t` | `Table` |
-| One-position read | `loadStoredEntry(slot, ValueWriteTarget, offset)` | `loadStoredEntry(slot, Value&, Value&)` | `Table`, constant work, false for a vacant/dead position |
-| Stored key/value | numeric `ValueTag`, scalar, reference columns | tagged `Value` | existing runtime representation |
-| Snapshot work budget | 1024 visited positions shared across one emission | no native Studio snapshotter | `GuestValueSnapshot` |
+- 81 focused CPU/event/binding/tool checks and 82 compiler/packer/boot/Hot Resume/
+  Scenario-debugger regressions pass. IDE, tests and scripts typechecks pass;
+  boundary audit reports zero violations. Core-parity checks structure only.
+- Native CPU supervisor (including observation), CPU save-state and ROM tooling
+  suites pass. Newly built Nemesis debug media has equal complete TS/C++ state
+  after all three replay windows and after history seeking/live branching.
+- Actual Browser Studio was operated via keyboard, pointer and Terminal clipboard:
+  startup history, close/reopen, immutable nested/cyclic payloads, details/filter/
+  copy, 2052-event overflow, frame stepping, playback, rewind/rejoin, live branch
+  and Hot Resume. Copied events retain timeline 1 on rejoin, use 2 after a branch
+  and 3 after installation. Inspected screenshots show health 9 after mutation,
+  fresh post-install events and the sparse-payload truncation warning. Browser
+  logs contain no warnings/errors. This is separate evidence from harness tests.
+- An isolated 31-round alternating fixture (8 warmups) executes 1000 emissions
+  with 32 arithmetic iterations between each. No observer / automatic history
+  medians are **67.49 / 68.63 ms**, about **1.69%** additional host time. Both use
+  **263015 guest cycles**, equal heap usage and equal complete CPU state. The
+  removed transport used 272015 cycles for this fixture; those 9000 extra guest
+  cycles are gone, not charged elsewhere.
+- The three real Nemesis windows (120 frames after ticks 400/1200/2400) capture
+  5/6/8 events. Observed/unobserved host-time differences are **+0.25%, +0.34%,
+  -0.32%**; the small negative sample is noise, not a speedup claim. Complete
+  runtime state remains equal. These low-event windows are not a worst-case bound.
+- BIOS/Nemesis debug and release media, Browser Studio and Node headless tooling
+  were rebuilt. Browser WebGPU/WebGL pixel parity is a separate outstanding gate;
+  these event/CPU checks do not establish accelerated-renderer correctness.
 
-Positions are borrowed during a synchronous read, not handles that survive table
-mutation. Reads perform no allocation, metatable lookup or guest execution.
-The observer uses a bounded physical scan instead of key-based Lua iteration;
-unvisited storage is explicitly marked `omitted`. Normal Lua `next`, table
-mutation, GC and save-state paths remain unchanged, with no extra maintained
-indexes or hot-path counters. Hot callsites affected: `GuestValueSnapshot.read`
-from `RuntimeEventHistory.observe`, and its direct `Table.loadStoredEntry`
-reads. The C++ primitive is mirrored and checked independently; it adds no calls
-to native gameplay. Preview limits with explicit overflow follow the
-[V8 inspector's preview accumulator](https://github.com/v8/v8/blob/main/src/inspector/value-mirror.cc);
-the physical scan budget is BMSX-specific and must be measured, not inferred
-from that reference.
-
-The 1024-position budget permits sixteen storage probes per retained entry at
-the 64-entry limit. It is a fixed observation-work limit, not an elapsed-time
-cutoff: the same table representation yields the same snapshot regardless of
-host speed. Sparse storage can exhaust it before any entries are captured.
-
-## Initial implementation validation (2026-10-05)
-
-- Compiler/cartlib/CPU coverage: O0/O3, nested and unhandled emission, nil/false,
-  immutable snapshots after mutation, cyclic tables, snapshot budgets, selected
-  host/guest channels across BIOS/cart/module boundaries, breakpoint admission,
-  buffer wrap, reset/install/replay and generation/expiration-aware tool reads.
-- Actual browser Studio: startup events were visible on first opening. Closing
-  the tab, emitting through the Terminal, and reopening retained those events.
-  List/details/filter/copy were operated and visually inspected; `health=9`
-  remained readable after mutation to 0. A 2052-event burst retained payloads
-  5 through 2052, with four earlier records reported expired. Central transport
-  performed forward stepping, play/pause and rewind; after confirming the
-  reviewed point a new Terminal emission appeared in timeline 2, with payload 42.
-- The C++ primitive works in normal and instruction-debug loops with identical
-  guest costs. Supervisor/IRQ, CPU save-state/replay and ROM tooling tests pass.
-  The real newly instrumented Nemesis ROM also boots, executes, saves/restores
-  and replays in the native runtime conformance runner. Full saved TS/C++ state
-  matches after all three checkpoint windows and after history seeks/live branch,
-  including active BADP playback and non-empty game VRAM.
-- The focused runtime/editor/tool bundle passes 147 tests; the additional
-  behavior/trace/preload bundle passes. IDE, tests and scripts typechecks pass;
-  architecture-boundary audit reports zero issues and core-parity audit passes.
-  Browser Studio, headless tooling, BIOS and Nemesis debug products are rebuilt.
-
-Performance distinguishes erased source, selected/unobserved source and active
-host history. Run the emission-heavy fixture alone (not during a parallel build):
-
-```sh
-node --import tsx --import ./tests/lua/test_setup.ts --test \
-  --test-name-pattern='observer adds no guest work' tests/lua/event_history.test.ts
-```
-
-The fixture has 1000 emissions with 32 arithmetic iterations between each. Both
-selected variants use 272015 cycles versus 263015 erased: **9 extra guest cycles
-per emission**. Both selected variants use the same guest heap space. Host timing
-is reported separately; it is not inferred from these guest-cycle counts.
-
-The real-cart profiler alternates unobserved-debug and automatic-history runs
-from identical checkpoints with identical input. Restore/setup/state comparisons
-are outside timing. It compares the complete machine/CPU state and reports raw
-samples plus medians for 120 frames after ticks 400, 1200 and 2400:
-
-```sh
-node --import tsx tests/conformance/runtime_replay/profile_event_history.ts \
-  dist/system/bmsx-bios.debug.rom dist/nemesis_s.debug.rom
-```
-
-Local isolated measurements (11 alternating rounds, first 4 discarded):
-
-| Workload | Unobserved / erased | Automatic history | Interpretation |
-| --- | ---: | ---: | --- |
-| 1000-emission fixture, erased source | 66.14 ms | 68.87 ms | +4.12% host time, including selected guest work |
-| Same fixture, selected/unobserved | 68.35 ms | 68.87 ms | +0.76% for observation; source work already present |
-| Nemesis, 120 frames after tick 400; 5 events | 1223.80 ms | 1221.86 ms | -0.16%; sampling noise, not a speedup |
-| Nemesis, after tick 1200; 6 events | 532.22 ms | 533.27 ms | +0.20%; within sample variation |
-| Nemesis, after tick 2400; 8 events | 543.80 ms | 546.34 ms | +0.47%; within sample variation |
-
-An earlier isolated fixture run was 67.58 / 69.40 / 71.22 ms for erased,
-unobserved and observed variants (+5.38% total). The replacement lowers the
-previous 12-16% fixture overhead, not to zero. These real-cart windows have
-few events; event-heavy gameplay or large payloads require their own measurement.
-
-These headless measurements include real CPU/devices/audio/GPU command work,
-not browser presentation or an open viewer. They isolate observation cost over
-selected debug code, not the source trace's already-accounted guest cost.
-Results are workload-specific, not a universal overhead bound or FPS claim.
-
-Coverage is common cartlib event **emission**, not arbitrary private callbacks,
-interrupts, listener completion or duration. Full unbounded payload capture and
-persistent trace-file export are not implemented.
-
-
-## Ownership review follow-up (2026-10-05)
-
-Two actual defects were corrected rather than adding compatibility layers:
-
-1. Constructing/resetting a source debugger implicitly installed/relabelled the
-   event observer. In particular, ordinary history seeks created fictitious
-   timelines. The Studio session now owns history independently; physical
-   restore, admitted Hot Resume and the runtime's explicit branch notification
-   are the lifecycle boundaries. A seek/rejoin is not a new branch.
-2. The emission path stored only display strings, including six-digit runtime
-   number formatting. Tools lost the original types and numeric precision,
-   while every emission paid for quoting/formatting, even with the pane closed.
-   Snapshots now consume tagged slots into detached typed data; presentation is
-   on demand. Cycles, aliases, truncation and JSON-inexpressible IEEE values
-   remain explicit. No guest code or new per-instruction work was introduced.
-
-Validation after the fixes:
-
-- Browser Studio operated through keyboard, pointer and Terminal clipboard
-  input: startup capture, close/reopen, immutable nested/cyclic payloads,
-  details/filter/copy, 2052-event overflow, central stepping and playback.
-  The copied evidence stayed in timeline **1** after Back/return-to-present,
-  moved to **2** after resuming an earlier point, then **3** after Hot Resume.
-  The UI was visually inspected; these are not assertions about required prose.
-- 44 focused event/history/navigation tests and 165 broader debugger,
-  inspection, Terminal, assistant and Hot Resume tests passed. IDE/tests
-  typechecks and boundary/core-parity audits passed. Browser Studio and Node
-  headless tooling products were rebuilt.
-- Native frame-scheduler tests exercise both branch and rejoin notifications.
-  Full Nemesis TS/C++ save-state comparisons passed at the three checkpoint
-  windows and after history seeks/live branching, including GPU/audio state.
-- An isolated alternating A/B run compared the previous commit's observer with
-  typed snapshots: 31 rounds, 8 warmups, 1000 emissions per round. Medians were
-  **71.84 ms / 71.08 ms** (-1.05%). Both used **272015 guest cycles**, with equal
-  complete CPU state. This small timing difference is not a general speedup
-  claim; moving formatting also fixes the data representation independently.
-- Repeating erased / unobserved-debug / observed-debug measured
-  **66.53 / 67.93 / 69.17 ms**: about **4.0%** total source-plus-observation
-  overhead for this emission-heavy fixture, about **1.8%** for observation over
-  already instrumented debug code. The source still costs 9 guest cycles/event.
-- The three 120-frame Nemesis windows measured **+0.29%, -0.51%, -0.35%**
-  observed versus unobserved debug code (5/6/8 emissions). These differences are
-  within sample variation, not evidence of zero overhead in all workloads.
-
-Local logs, copied event values, screenshots and the A/B harness are under
-`.bmsx/authoring/event-history-review/` (ignored authoring evidence).
-
-## Storage-scan review validation (2026-10-05)
-
-- 20 event/tool/table tests and 61 history/navigation/table
-  editing regressions pass. Cases include sparse nested storage, a budget shared
-  across arguments, dead hash slots, the exact entry-limit boundary, iteration
-  order, IEEE values and absence of guest mutations.
-- The mirrored C++ stored-slot reader, CPU save-state and frame-scheduler suites
-  pass. Actual Nemesis TS/C++ complete-state replay/history comparisons pass,
-  including GPU and audio. IDE/tests typechecks and architecture/core-parity
-  audits pass; Browser Studio and Node headless tooling were rebuilt.
-- Real Browser Studio was driven through keyboard/pointer/clipboard: normal
-  nested payload inspection and copy, filtered history, overflow/scrolling,
-  central frame-step/playback, return-to-present, live branch and Hot Resume.
-  Copied timeline labels remain **1 / 2 / 3** respectively. A Lua Terminal
-  emission of a sparse 8192-slot table shows a yellow incomplete payload and
-  an explicit warning in Details; its copied snapshot also marks truncation.
-  Screenshots were viewed, not asserted against exact UI prose. No browser
-  warnings/errors were reported.
-- The isolated sparse microbenchmark (1000 snapshots, 15 alternating rounds,
-  first 5 discarded) changed from **400.51 ms to 7.87 ms**. A one-slot table
-  remained **0.24 ms**. The sparse result is now explicitly incomplete: this is
-  bounded work, not a claim of faster equivalent full capture.
-- An alternating old/new observer comparison (31 rounds, 8 warmups, 1000
-  ordinary nested emissions per round) measured **67.68 / 67.57 ms** (-0.17%).
-  All captured events and the complete CPU state are equal; both use **272015
-  guest cycles**. The timing difference is sample variation, not a claimed
-  general speedup.
-- Isolated erased / unobserved / observed source measured **64.94 / 67.83 /
-  67.42 ms**. The selected source still costs **9 guest cycles/emission**;
-  observation changes neither guest cycles nor heap allocation. Real Nemesis
-  windows after ticks 400/1200/2400 measured **+0.50% / +0.34% / -0.68%**
-  observation overhead. These low-event windows do not establish an upper
-  bound for event-heavy carts.
-
-Reproduction scripts, raw timings, screenshots, copied payloads and logs are in
-`.bmsx/authoring/event-history-storage-review/`. This review changes only the
-read-side inspection boundary. It adds no per-write accounting, instruction
-hooks, guest listener or UI-specific behavior to the table implementation.
-
-## Snapshot lifetime and focused-copy review (2026-10-05)
-
-Two further defects were reproduced before changing their owners:
-
-- A 4096-code-unit substring was not necessarily a bounded allocation. V8
-  sliced strings retain their parent storage, including after the guest pool
-  is restored. `GuestValueSnapshot` now constructs its own budgeted UTF-16
-  string from reusable numeric scratch, also when the entire visible string
-  fits. It preserves NUL, BOM and unpaired surrogate units; there is no
-  encoding roundtrip, concatenation/flattening trick or global intern cache.
-  The existing source-layout owner uses the same direct code-unit construction
-  while also collecting its line index; neither owner needs a wrapper around
-  `String.fromCharCode` or a general-purpose string-builder framework.
-  References studied: [V8 sliced-string allocation](https://github.com/v8/v8/blob/main/src/codegen/code-stub-assembler.cc)
-  and [String.fromCharCode construction](https://github.com/v8/v8/blob/main/src/builtins/builtins-string-gen.cc).
-- Details took focus but exposed no clipboard target. Browser Ctrl+C left the
-  previous OS clipboard unchanged. The **shared property inspector** now
-  exports its selected stored value through the existing read-only
-  `ClipboardTarget`. OS access, admission and error reporting remain with the
-  platform clipboard owner. No guest evaluation, pane-specific keyboard hook,
-  new permanent button or copy-through to a hidden editor was added. This
-  follows [VS Code's focused-variable Copy Value routing](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/variablesView.ts),
-  without its live evaluation because this inspector already owns the text.
-
-Validation separates retention, CPU cost and visible UI:
-
-- 32 real cartlib emissions with 1.1-1.2 MB strings, restoring the CPU/string
-  pool between emissions, retained only **130688 visible payload code units**.
-  Before the fix their V8 heap graph contained **32 oversized substring
-  parents totalling 37,400,512 bytes**. Afterward it contained **none**.
-  Whole-process retained-heap delta after forced GC changed from **38.21 MB
-  to 0.95 MB**; that includes fixture/runtime overhead, not only payload text.
-- Alternating old/new observation, 31 rounds with 8 warmups: 1000 ordinary
-  nested emissions measured **70.57 / 70.77 ms** (+0.30%). All event snapshots
-  and complete CPU state matched, with **272015 cycles** in both variants.
-  This small difference is within timing variation, not a zero-cost claim.
-- String-heavy runs deliberately expose copying cost: 1000 otherwise minimal
-  emissions of 32-unit payloads measured **11.10 / 11.47 ms**; 4096-unit
-  payloads **11.34 / 21.56 ms**; 131072-unit payloads **11.12 / 20.57 ms**.
-  The latter two copy only the shared emission budget, not the full source.
-  Approximately 10 microseconds extra per large-text emission is necessary
-  bounded host work here, **not** negligible percentage overhead for an
-  otherwise empty emission loop. Guest state/cycles remain equal.
-- The actual Browser Studio was operated with keyboard, pointer and native
-  clipboard gestures. Details copied 0, a full-precision number, historical
-  health 9 after mutation, and all 4080 retained units of a long payload.
-  Cut in the read-only inspector and Copy in an empty event list left the
-  clipboard unchanged. Back returned Copy to the event list. Screenshots of
-  selected values, wrapped long text and the truncation warning were inspected;
-  no browser warnings/errors were reported.
-- 24 focused event/tool/property-inspector tests, 21 live actor/behavior
-  inspection regressions and 4 browser clipboard/image tests pass. IDE/tests
-  typechecks and the zero-issue boundary audit pass; Browser Studio is rebuilt.
-  The earlier 61-test storage-scan bundle had not actually included the
-  property-inspector file; that historical description is corrected above.
-  This review does not change cartlib, CPU execution, the native trace ABI or
-  either core's save-state representation; no new C++ behavior is introduced.
-
-Heap snapshots, A/B scripts, raw samples and browser evidence are retained in
-`.bmsx/authoring/event-history-lifetime-review/` (ignored authoring evidence).
+Raw samples, complete replay states, UI screenshots and copied values are kept
+in `.bmsx/authoring/event-observation-parity/` (ignored local evidence).

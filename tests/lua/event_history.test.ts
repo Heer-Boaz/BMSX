@@ -10,13 +10,10 @@ import { RuntimeEventHistory } from '../../ide/runtime/event_history';
 import { ValueSlots } from '../../machine/ts/machine/cpu/value_slots';
 import { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';
 import { GuestValueSnapshot, VALUE_SNAPSHOT_ENTRIES, VALUE_SNAPSHOT_CHARACTERS, VALUE_SNAPSHOT_SLOTS } from '../../ide/runtime/value_snapshot';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import { parseLuaChunk, materializeCpuCompletionValues } from './cpu_test_harness';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 
 const BUDGET = 10_000_000;
 
-for (const optLevel of [0, 3] as const) test(`source trace captures real nested/unhandled events before mutation without instruction hooks (O${optLevel})`, () => {
+for (const optLevel of [0, 3] as const) test(`source-bound observer captures real nested/unhandled events before mutation without source-debug stepping (O${optLevel})`, () => {
 	const { images } = createCartlibProgramHarness(`
 local events<const> = require('cartlib/event_emitter')
 local port<const> = events.events_of({ id = 'player' })
@@ -28,7 +25,7 @@ events:on({ event = 'outer', subscriber = {}, handler = function(_, _, _, payloa
 end })
 port:emit('outer', data)
 port:emit('unhandled', nil)
-return data.health`, { optLevel, hostTraceChannels: ['event.emit'] });
+return data.health`, { optLevel });
 	const { cpu, runtime, sources } = eventHistoryRuntime(images);
 	const events = new RuntimeEventHistory(runtime, sources);
 	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
@@ -101,89 +98,38 @@ test('a source breakpoint stops before trace execution and continuing emits exac
 	assert.equal(events.count, 1);
 });
 
-test('native trace route evaluates once and supersedes the selected guest sink for its channel', () => {
-	const source = `local subject = {}
-local count = 0
-local function value() count = count + 1; return count end
-blua32.trace_sink(subject, 'sample', { record = function() count = 100 end })
-blua32.trace(subject, 'sample', value())
-return count`;
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'host_trace.lua'), [], {
-		programDomain: 'system', entrySource: source, traceStatements: 'emit', hostTraceChannels: ['sample'],
-	});
-	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
-	cpu.installBootPrimitives();
-	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [1]);
-});
-
-for (const optLevel of [0, 3] as const) test(`host trace arguments retain captured lexical bindings (O${optLevel})`, () => {
-	const source = `local subject = {}
-local value = 1
-local function emit()
-  blua32.trace(subject, 'sample', value)
-  value = value + 1
-end
-emit()
-emit()
-return value`;
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'host_trace_closure.lua'), [], {
-		programDomain: 'system', entrySource: source, optLevel, hostTraceChannels: ['sample'],
-	});
-	const { cpu } = createTestSystemCpu(linkTestSystemBlua32(compiled));
-	cpu.installBootPrimitives();
-	const values: number[] = [];
-	cpu.setTraceHook((_domain, args) => values.push(args.registers.getScalar(args.base + 2)));
-	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
-	assert.deepEqual(values, [1, 2]);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [3]);
-});
-
 test('snapshot budgets mark omission without invoking guest metatables', () => {
-	const { cpu } = createCartlibProgramHarness(`local e<const> = require('cartlib/event_emitter')
+	const { images } = createCartlibProgramHarness(`local e<const> = require('cartlib/event_emitter')
 local payload<const> = setmetatable({}, { __index = function() error('must not execute') end })
 for i=1,100 do payload[i] = string.rep('x', 5000) end
-e:emit('large', nil, payload, 'fixture')`, { hostTraceChannels: ['event.emit'] });
-	const snapshots = new GuestValueSnapshot(cpu.stringPool);
-	let snapshot: ReturnType<GuestValueSnapshot['read']>;
-	cpu.setTraceHook((_domain, args) => { snapshots.begin(); snapshot = snapshots.read(args.registers, args.base + 4); });
+e:emit('large', nil, payload, 'fixture')`);
+	const { cpu, runtime, sources } = eventHistoryRuntime(images);
+	const history = new RuntimeEventHistory(runtime, sources);
 	assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
-	assert.ok(snapshot!.kind === 'table');
+	const snapshot = history.at(0).payload;
+	assert.ok(snapshot.kind === 'table');
 	assert.equal(snapshot.entries.length, VALUE_SNAPSHOT_ENTRIES);
 	assert.equal(snapshot.omitted, true);
 	const value = snapshot.entries[0].value;
 	assert.ok(value.kind === 'string');
-	assert.equal(value.value.length, VALUE_SNAPSHOT_CHARACTERS);
+	assert.equal(value.value.length, VALUE_SNAPSHOT_CHARACTERS - 'large'.length - 'fixture'.length);
 	assert.equal(value.omitted, true);
 });
 
-test('observer adds no guest work; selected source instrumentation cost is measured separately', t => {
-	const enabled = compileEventHistoryFixture(), erased = compileEventHistoryFixture([]);
-	const variants = [eventHistoryRuntime(erased), eventHistoryRuntime(enabled), eventHistoryRuntime(enabled)]
-		.map(f => ({ ...f, events: new RuntimeEventHistory(f.runtime, f.sources) }));
-	variants[1].cpu.setTraceHook(null);
-	const elapsed: number[][] = [[], [], []], costs: number[] = [], heapBytes: number[] = [];
-	const functions = variants.map(({cpu}) => {
-		cpu.runUntilDepth(0, BUDGET);
-		return cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!) as Closure;
-	});
-	for (let repeat = 0; repeat < 11; repeat++) for (let offset = 0; offset < variants.length; offset++) {
-		const index = (repeat + offset) % variants.length;
-		const { cpu, runtime, events } = variants[index];
-		events.clear();
-		cpu.beginCompletionCall(functions[index], [1000]);
-		const start = performance.now();
-		assert.equal(runtime.machine.scheduler.runCpuSlice(0, BUDGET), RunResult.Halted);
-		elapsed[index].push(performance.now() - start);
-		costs[index] = BUDGET - cpu.instructionBudgetRemaining;
-		heapBytes[index] = cpu.luaHeap.usedBytes();
-		assert.equal(events.count, index === 2 ? 1000 : 0);
+test('observation preserves guest cycles, heap and complete CPU state', () => {
+	const images = compileEventHistoryFixture();
+	const baseline = eventHistoryRuntime(images), observed = eventHistoryRuntime(images);
+	const events = new RuntimeEventHistory(observed.runtime, observed.sources);
+	for (const { cpu } of [baseline, observed]) {
+		assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
+		const fn = cpu.getGlobalByKey(cpu.stringPool.find('emit_for_viewer')!) as Closure;
+		cpu.beginCompletionCall(fn, [1000]);
+		assert.equal(cpu.runUntilDepth(0, BUDGET), RunResult.Halted);
 	}
-	assert.equal(costs[1], costs[2]);
-	assert.equal(heapBytes[1], heapBytes[2]);
-	assert.ok(costs[1] > costs[0], 'source instrumentation has an honest, nonzero guest cost');
-	const medians = elapsed.map(samples => samples.slice(4).sort((a, b) => a - b)[3]);
-	t.diagnostic(JSON.stringify({ variants: ['erased', 'trace-unobserved', 'history'], cycles: costs, heapBytes, medianMs: medians }));
+	assert.equal(events.count, 1000);
+	assert.equal(observed.cpu.instructionBudgetRemaining, baseline.cpu.instructionBudgetRemaining);
+	assert.equal(observed.cpu.luaHeap.usedBytes(), baseline.cpu.luaHeap.usedBytes());
+	assert.deepEqual(observed.cpu.captureRuntimeState(), baseline.cpu.captureRuntimeState());
 });
 
 test('numeric snapshots preserve full precision and IEEE special values across JSON', () => {

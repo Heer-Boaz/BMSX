@@ -962,6 +962,11 @@ bool CPU::decodeInstruction(
 	if (instructionCacheable && bodyPage && bodyPage->writeWatch) {
 		*bodyPage->writeWatch = 1u;
 	}
+	const auto& observed = m_instructionObserver.points[static_cast<size_t>(frame.executionImage->executionDomainId + 1)];
+	if (observed.contains(pc)) {
+		decoded.dispatchOp = static_cast<u8>(DecodedDispatchOp::Observe);
+		return true;
+	}
 	const bool fusionCandidate = static_cast<OpCode>(op) == OpCode::SHL
 		|| static_cast<OpCode>(op) == OpCode::ADD
 		|| static_cast<OpCode>(op) == OpCode::SHR;
@@ -975,6 +980,7 @@ bool CPU::decodeInstruction(
 		return true;
 	}
 	const u32 nextPc = pc + static_cast<u32>(width) * INSTRUCTION_BYTES;
+	if (observed.contains(nextPc)) return true;
 	DecodedInstructionPage& nextPage = decodedPageForFrame(frame, nextPc);
 	if (!nextPage.cacheable) {
 		return true;
@@ -1653,9 +1659,6 @@ void CPU::hardHalt() {
 
 void CPU::callBuiltinFunction(BuiltinFunction& fn, BuiltinArgsView args, BuiltinResults& out) {
 	switch (fn.id) {
-		case BuiltinFunctionId::Trace:
-			if (m_traceHook) m_traceHook(m_traceContext, m_lastExecutionDomainId, args);
-			break;
 		case BuiltinFunctionId::Next:
 			runBuiltinNextValue(args[0], args[1], out);
 			break;
@@ -2465,8 +2468,9 @@ RunResult CPU::runLoop(
 			lastPc = pc + ((static_cast<u32>(decoded->width) - 1u) * INSTRUCTION_BYTES);
 			uint8_t dispatchOp;
 			if constexpr (Instrumented) {
-				dispatchOp = decoded->op;
-				instructionBudgetRemaining -= static_cast<int>(BASE_CYCLES[dispatchOp]);
+				dispatchOp = decoded->dispatchOp == static_cast<u8>(DecodedDispatchOp::Observe)
+					? decoded->dispatchOp : decoded->op;
+				instructionBudgetRemaining -= static_cast<int>(DECODED_DISPATCH_BASE_CYCLES[dispatchOp]);
 			} else {
 				dispatchOp = decoded->dispatchOp;
 				instructionBudgetRemaining -= static_cast<int>(
@@ -2501,12 +2505,17 @@ RunResult CPU::runLoop(
 #define DISPATCH_CONTINUE() do { goto dispatch_continue; } while (0)
 #define DISPATCH_BLOCKED() do { return RunResult::Halted; } while (0)
 
+dispatch_instruction:
 			if constexpr (Instrumented) {
 				switch (dispatchOp) {
+				case static_cast<u8>(DecodedDispatchOp::Observe):
+					goto dispatch_observe;
 #include "machine/cpu/cpu_dispatch.inl"
 				}
 			} else {
 				switch (dispatchOp) {
+				case static_cast<u8>(DecodedDispatchOp::Observe):
+					goto dispatch_observe;
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedShlBxor):
 				case static_cast<uint8_t>(DecodedDispatchOp::FusedShrBxor): {
 					const Value& shiftLeftValue = readRK(IMAGE, registers, rkB);
@@ -2609,6 +2618,15 @@ RunResult CPU::runLoop(
 				}
 			}
 
+			goto dispatch_continue;
+
+dispatch_observe:
+			m_instructionObserver.observe(m_instructionObserver.context, image->executionDomainId, pc, registers);
+			// Observe has zero base cost; execute and charge the original instruction once.
+			dispatchOp = decoded->op;
+			instructionBudgetRemaining -= static_cast<int>(BASE_CYCLES[dispatchOp]);
+			goto dispatch_instruction;
+
 dispatch_continue:
 #undef DISPATCH_BLOCKED
 #undef DISPATCH_CONTINUE
@@ -2665,6 +2683,15 @@ RunResult CPU::runUntilDepthInstrumented(CPU& cpu, int targetDepth, int instruct
 		return cpu.runLoop<true, true>(targetDepth, instructionBudget);
 	}
 	return cpu.runLoop<false, true>(targetDepth, instructionBudget);
+}
+
+void CPU::setInstructionObserver(InstructionObserverBinding binding) {
+	m_instructionObserver = std::move(binding);
+	// Predecessors may have fused across a newly observed PC.
+	for (auto& image : m_executionImagesByDomain) {
+		if (!image) continue;
+		for (auto& [key, page] : image->decodedPages) page.refreshState.fill(DECODED_REFRESH_DECODE);
+	}
 }
 
 void CPU::setExecutionHook(ExecutionHookBinding binding) {

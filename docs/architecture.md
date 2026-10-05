@@ -5424,31 +5424,41 @@ inlined frame does not own a separate closure/upvalue scope. Retained fault
 diagnostics are labelled separately from this live stack. See
 [stack inspection](studio_stack_inspection.md).
 The [Event Viewer](studio_event_viewer.md) automatically retains immutable,
-bounded emission snapshots in an IDE-owned sequence ring. A source
-`blua32.trace` at cartlib's emission boundary selects the compiler's native trace
-transport in debug carts and is erased in release carts. The generic TS/C++
-Trace primitive borrows tagged call arguments; only the IDE interprets
-`event.emit` and snapshots its values. No instruction polling, symbol-name
-probe, guest listener or guest snapshot allocation is involved. Linker metadata
-preserves channel selection through source rebuild/Hot Resume. Pane and
-conversation lifetime do not control collection. Full buffers expire oldest
-entries and clear invalidates tool generations. `RuntimeIdeState` owns the
-history, not `RuntimeDebuggerState`. Reset, external load, admitted installation
-and actual live history branches label subsequent events with a new timeline;
-seeking or returning to the recorded end does not. The mirrored history owner
-publishes its branch decision before truncating input. Replaying does not
-duplicate retained events. Snapshot values remain typed, detached data; UI
-formatting is deferred to reads instead of running on the event-emission path.
-The table owner exposes constant-work reads of individual stored positions in
-both cores. Snapshots budget visited storage (including holes/dead nodes) as
-well as retained entries; they do not use Lua `next` for a supposedly bounded
-preview. Exhaustion is explicit incomplete evidence, never a fabricated empty
-table. No extra iteration index or counter is maintained on guest table writes.
-Snapshot strings own their budgeted UTF-16 code units; substring views must not
-keep arbitrarily large backing strings alive across runtime/pool restoration.
-This copying belongs to the IDE snapshot boundary, not normal guest string
-interning, table mutation or the native trace primitive.
-Native players share primitive semantics/costs, not the Studio UI.
+bounded emission snapshots in an IDE-owned sequence ring. Ordinary debug,
+release and Hot Resume images erase `blua32.trace` identically at the same
+optimization level. Debug symbols must not add guest instructions, constants,
+allocations or cycles. There is no native trace primitive or debug-only channel
+selection. Explicit Scenario sinks remain confined to derived test cartridges.
+
+The IDE binds cartlib's semantic emission entry using installed source/function
+identity, inline call chains and live argument-slot metadata. Absent symbols or
+optimized-out arguments make observation explicitly unavailable; tools never
+guess registers or constrain optimization to preserve them. The generic TS/C++
+CPU accepts domain-indexed physical PCs with a synchronous, read-only observer.
+Cold decode installs host-only observation dispatch at those PCs and forbids
+fusion across them. Rebinding invalidates cached dispatch including predecessors.
+Observation precedes the original instruction, which is executed and charged
+once; source stops, fetch faults and interrupt admission retain precedence.
+Ordinary dispatch gains no per-instruction PC lookup or debugger-loop switch.
+This does not patch guest memory, enter Lua or retain borrowed registers. See
+[the representation gate](event_observation_parity.md).
+
+`RuntimeIdeState` owns history, not `RuntimeDebuggerState`. Pane and conversation
+lifetime do not control collection. Full buffers expire oldest entries; clear
+invalidates tool generations. Reset, external load, admitted installation and
+actual live history branches label subsequent events with a new timeline;
+seeking or returning to the recorded end does not. The history owner publishes
+its branch decision before truncating input. Replay does not duplicate events.
+Installed-media replacement rebinds observation before guest execution resumes.
+Snapshot values remain typed, detached data; formatting is deferred to reads.
+The mirrored table owner exposes constant-work reads of individual stored
+positions. Snapshots budget visited storage (including holes/dead nodes), not
+only retained entries; Lua `next` is not a bounded preview primitive.
+Exhaustion is explicit incomplete evidence. No extra index/counter is maintained
+on guest writes. Snapshot strings own their budgeted UTF-16 code units rather
+than retaining arbitrarily large parent strings across pool restoration.
+Native players share CPU observation semantics, not Studio UI or automatic
+snapshot allocation. Host observation work never consumes guest cycles.
 Cartlib-specific [Actor inspection](studio_actor_tools.md) attaches to that same
 suspended lifetime and value-reference registry, without teaching the generic
 runtime owner about cartlib or workbench panes. Actor Lab's `ActorRuntimeTree`

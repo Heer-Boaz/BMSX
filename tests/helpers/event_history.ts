@@ -6,7 +6,7 @@ import { createCartlibProgramHarness } from './cartlib_cpu';
 import { createTestRuntimeSourceState } from './runtime_sources';
 import { cartridgeSlots } from './cartridge';
 
-export function compileEventHistoryFixture(hostTraceChannels: readonly string[] = ['event.emit'], optLevel: 0 | 3 = 3) {
+export function compileEventHistoryFixture(optLevel: 0 | 3 = 3) {
 	return createCartlibProgramHarness(`
 local events<const> = require('cartlib/event_emitter')
 local port<const> = events.events_of({ id = 'fixture' })
@@ -18,7 +18,7 @@ function emit_for_viewer(count)
     for work = 1, 32 do payload.value = payload.value + work end
   end
 end
-return true`, { hostTraceChannels, optLevel }).images;
+return true`, { optLevel }).images;
 }
 
 /** Actual runtime and compiler media; observers are explicitly owned by each test. */

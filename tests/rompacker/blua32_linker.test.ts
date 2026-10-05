@@ -102,7 +102,6 @@ function makeMetadata(
 ): ProgramMetadata {
 	return {
 		traceStatements: 'erase',
-		hostTraceChannels: [],
 		preloadModules: [],
 		debugRanges: new Array(instructionCount).fill(null),
 		debugInlineCallSites: new Array(instructionCount).fill([]),

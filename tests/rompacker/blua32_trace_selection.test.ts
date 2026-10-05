@@ -17,7 +17,6 @@ blua32.trace_sink(sink, 'boot', sink)
 blua32.trace_sink(sink, 'compile', sink)
 blua32.trace(sink, 'boot', 3)
 blua32.trace(sink, 'compile', 100)
-blua32.trace(sink, 'host.boot', 5)
 system_observed = sink.count
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;
@@ -28,7 +27,6 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 		optLevel: 3,
 		traceStatements: ['boot'],
-		hostTraceChannels: ['host.boot'],
 		domain: 'system',
 		biosExports: [],
 	});
@@ -46,7 +44,6 @@ local producer<const> = {}
 function producer.run()
 	blua32.trace(producer, 'boot', 100)
 	blua32.trace(producer, 'compile', 7)
-	blua32.trace(producer, 'host.cart', 11)
 end
 return producer
 `;
@@ -60,7 +57,6 @@ return producer
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 		optLevel: 3,
 		traceStatements: ['compile'],
-		hostTraceChannels: ['host.cart'],
 		domain: 'cart',
 		biosImports: system.linked.biosImports,
 	});
@@ -73,11 +69,7 @@ return producer
 		cartRomBytes: writeTestBlua32Rom(cart.linked),
 	});
 	cpu.installBootPrimitives();
-	const hostEvents: [number, string, number][] = [];
-	cpu.setTraceHook((domain, args) => hostEvents.push([domain,
-		cpu.stringPool.toString(args.registers.getScalar(args.base + 1)), args.registers.getScalar(args.base + 2)]));
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.Halted);
-	assert.deepEqual(hostEvents, [[-1, 'host.boot', 5], [0, 'host.cart', 11]]);
 	assert.equal(cpu.getGlobalByKey(cpu.stringPool.find('system_observed')!), 3);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [7]);
 });

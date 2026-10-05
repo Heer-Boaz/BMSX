@@ -3,7 +3,11 @@ import { formatValueSnapshot, type ValueSnapshot } from '../../../runtime/value_
 import type { InspectedProperty } from '../../ui/property_inspector/model';
 
 export const EVENT_HISTORY_LABEL: Record<EventHistoryStatus, string> = {
-	live: 'Live', replay: 'History review', uninstrumented: 'Debug build required for event history',
+	live: 'Live', replay: 'History review',
+	'symbols-unavailable': 'Debug symbols required',
+	'function-unavailable': 'No event emitter in this image',
+	'ambiguous-function': 'Ambiguous event emitter',
+	'arguments-unavailable': 'Event arguments unavailable',
 };
 
 /** Incremental filtered index. Rendering visits only visible entries, never the guest. */

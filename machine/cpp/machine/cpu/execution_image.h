@@ -19,9 +19,10 @@ enum class DecodedDispatchOp : uint8_t {
 	FusedShlBxor = OPCODE_COUNT,
 	FusedAddShl,
 	FusedShrBxor,
+	Observe,
 };
 
-inline constexpr size_t DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 3u;
+inline constexpr size_t DECODED_DISPATCH_OP_COUNT = OPCODE_COUNT + 4u;
 extern const std::array<uint8_t, DECODED_DISPATCH_OP_COUNT> DECODED_DISPATCH_BASE_CYCLES;
 
 inline constexpr uint8_t decodedDispatchOp(uint8_t first, uint8_t second) {

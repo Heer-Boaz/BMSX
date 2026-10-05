@@ -57,7 +57,6 @@ type Blua32ImageBuildOptionsBase = {
 	ramByteCount: number;
 	optLevel: 0 | 1 | 2 | 3;
 	traceStatements: TraceStatementSelection;
-	hostTraceChannels?: readonly string[];
 	preloadModules?: readonly string[];
 };
 
@@ -212,7 +211,6 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 			biosFunctions: options.biosImports.functions,
 			programDomain: 'cart',
 			traceStatements: options.traceStatements,
-			hostTraceChannels: options.hostTraceChannels,
 			preloadModules: options.preloadModules,
 		});
 		const object = encodeCompiledProgramObject(compiled);
@@ -237,7 +235,6 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		entrySourceMap: entry.sourceMap,
 		programDomain: 'system',
 		traceStatements: options.traceStatements,
-		hostTraceChannels: options.hostTraceChannels,
 		preloadModules: options.preloadModules,
 	});
 	const object = encodeCompiledProgramObject(compiled);
