@@ -85,7 +85,6 @@ export type RuntimeSourceState = {
 	resources: RuntimeResource[];
 	systemProjectRootPath: string;
 	activeCartridgeSlot: ResourceDomain;
-	realtimeCompileOptLevel: 0 | 1 | 2 | 3;
 	systemBlua32MediaDirty: boolean;
 	cartridgeBlua32MediaDirty: [boolean, boolean];
 	systemInstalledBlua32Sources: ReadonlyMap<string, string>;
@@ -206,7 +205,6 @@ export function createRuntimeSourceState(
 		resources: [],
 		systemProjectRootPath: systemLuaSources.projectRootPath,
 		activeCartridgeSlot: SYSTEM_RESOURCE_DOMAIN,
-		realtimeCompileOptLevel: 3,
 		systemBlua32MediaDirty: false,
 		cartridgeBlua32MediaDirty: [false, false],
 		systemInstalledBlua32Sources: indexInstalledBlua32Sources(systemLuaSources),
@@ -331,7 +329,6 @@ export function forkRuntimeSourceState(source: RuntimeSourceState): RuntimeSourc
 		target.can_boot_from_source = registry.can_boot_from_source;
 		target.revision = registry.revision;
 	}
-	fork.realtimeCompileOptLevel = source.realtimeCompileOptLevel;
 	fork.systemBlua32MediaDirty = source.systemBlua32MediaDirty;
 	fork.cartridgeBlua32MediaDirty = [...source.cartridgeBlua32MediaDirty];
 	rebuildRuntimeSourceResources(fork);

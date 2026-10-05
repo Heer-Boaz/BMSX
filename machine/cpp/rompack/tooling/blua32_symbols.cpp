@@ -269,6 +269,7 @@ auto decodeMetadata(const BinValue& value) -> Blua32DebugMetadata {
 			});
 		}
 	}
+	metadata.optLevel = static_cast<u32>(value.require("optLevel").toNumber());
 	const BinValue& traceStatements = value.require("traceStatements");
 	if (traceStatements.isString()) {
 		metadata.traceStatements = traceStatements.asString();
@@ -403,6 +404,7 @@ auto encodeMetadata(const Blua32DebugMetadata& metadata) -> BinValue {
 	}
 	statics["bindingsByFunction"] = BinValue(std::move(staticBindings));
 	value["staticScopes"] = BinValue(std::move(statics));
+	value["optLevel"] = BinValue(static_cast<double>(metadata.optLevel));
 	if (const auto* mode = std::get_if<std::string>(&metadata.traceStatements)) {
 		value["traceStatements"] = BinValue(*mode);
 	} else {

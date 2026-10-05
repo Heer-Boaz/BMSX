@@ -225,6 +225,7 @@ function createRawTestBlua32Object(
 	const globalNames = source.globalNames ? Array.from(source.globalNames) : [];
 	const systemGlobalNames = source.systemGlobalNames ? Array.from(source.systemGlobalNames) : [];
 	const metadata: ProgramMetadata = {
+		optLevel: 0,
 		traceStatements: 'erase',
 		preloadModules: [],
 		protoIds: functionIds,

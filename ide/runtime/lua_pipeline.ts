@@ -239,7 +239,7 @@ export function buildBlua32Media(
 			programSources.entry.chunk,
 			programSources.modules,
 			{
-				optLevel: sources.realtimeCompileOptLevel,
+				optLevel: installedSystem.symbols!.metadata.optLevel,
 				entrySource: programSources.entry.source,
 				programDomain: 'system',
 				traceStatements: installedSystem.symbols!.metadata.traceStatements,
@@ -303,7 +303,7 @@ export function buildBlua32Media(
 			programSources.entry.chunk,
 			programSources.modules,
 			{
-				optLevel: sources.realtimeCompileOptLevel,
+				optLevel: installed.symbols!.metadata.optLevel,
 				entrySource: programSources.entry.source,
 				biosFunctions: biosImports.functions,
 				programDomain: 'cart',

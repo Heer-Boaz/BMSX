@@ -113,3 +113,26 @@ Validation: 149 source/semantic/completion/save tests and 90 boot, Hot Resume,
 Scenario Lab and assistant/workspace runtime tests pass. IDE, scripts and test
 projects typecheck; architecture boundary audit reports zero violations. These
 are source/runtime-path checks, not a claim of a new visual UI audit.
+
+## Per-image compilation recipe
+
+Reference: [Clang AST serialization](https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/clang/lib/Serialization/ASTWriter.cpp)
+retains language/target options with the compiled artifact, not in a mutable
+editor preference. BMSX's compiler emits its effective `optLevel` into
+`ProgramMetadata`; the linker preserves it beside `traceStatements` and
+`preloadModules` in each image's symbol metadata. BIOS, cart0 and cart1 consume
+their own installed recipe when rebuilding. Scenario Lab takes the selected
+cartridge's level instead of a workbench-global default.
+
+Representation before mirrored edits: TS `OptimizationLevel` (0..3), C++ `u32`
+in `Blua32DebugMetadata`, encoded as a number in the existing binary symbol
+object. Call sites are compiler completion, symbol linking/encoding/decoding,
+Studio source builds and test-media builds; none is a machine hot path.
+New debug images must be rebuilt to carry this required metadata; readers do
+not guess a recipe for an older image.
+
+Validation: 70 recipe/symbol/linker/boot/Hot Resume/Scenario debugger tests pass.
+The recipe test builds mixed BIOS/cart0/cart1 combinations, rebuilds in both
+boot and live modes, republishes ROMs and reloads them before comparing levels.
+Native `bmsx_rompack_format_tests` verifies C++ symbol round-tripping, including
+nonzero optimization levels. Typecheck and boundary audit are clean.

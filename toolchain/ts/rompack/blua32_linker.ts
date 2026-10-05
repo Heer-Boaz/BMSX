@@ -1027,6 +1027,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 				}
 			}),
 		},
+		optLevel: input.metadata.optLevel,
 		traceStatements: input.metadata.traceStatements,
 		preloadModules: input.metadata.preloadModules,
 		functionIds: functionLayout.functionIds,

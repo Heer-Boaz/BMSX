@@ -87,6 +87,7 @@ struct Blua32StatementPoint {
 };
 
 struct Blua32DebugMetadata {
+	u32 optLevel = 0;
 	Blua32StaticScopes staticScopes;
 	TraceStatementSelection traceStatements = std::string("erase");
 	std::vector<std::string> preloadModules;

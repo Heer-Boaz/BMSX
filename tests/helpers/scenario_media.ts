@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { CartManifest } from '../../machine/ts/rompack/manifest';
 import { SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
-import { decodeBlua32BiosImports } from '../../toolchain/ts/rompack/blua32_bios_imports';
+import { decodeBlua32BiosImports, type Blua32BiosFunctionExport } from '../../toolchain/ts/rompack/blua32_bios_imports';
 import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import {
@@ -50,7 +50,7 @@ function luaEntry(source: string): RomAsset {
 export async function buildScenarioMediaFixture(
 	outputDirectory: string,
 	testSources: readonly ScenarioMediaTestSource[],
-	options?: { systemSource: string; systemModules: readonly { path: string; source: string }[]; cartSource: string; cartModules?: readonly { path: string; source: string }[] },
+	options?: { biosExports?: readonly Blua32BiosFunctionExport[]; systemOptLevel?: 0 | 1 | 2 | 3; cartOptLevel?: 0 | 1 | 2 | 3; systemSource: string; systemModules: readonly { path: string; source: string }[]; cartSource: string; cartModules?: readonly { path: string; source: string }[] },
 ): Promise<ScenarioMediaFixture> {
 	const systemAssets = [luaEntry(options === undefined ? 'module<entry>\nreturn true' : options.systemSource)];
 	if (options !== undefined) for (const module of options.systemModules) {
@@ -65,11 +65,11 @@ export async function buildScenarioMediaFixture(
 	const systemBlua32 = buildRomBlua32Tail(systemAssets, {
 		generatedLuaModules: [],
 		includeSymbols: true,
-		optLevel: 0,
+		optLevel: options?.systemOptLevel ?? 0,
 		ramByteCount: 0x00400000,
 		domain: 'system',
 		systemAssetEndOffset: systemLayout.nextOffset,
-		biosExports: [],
+		biosExports: options?.biosExports ?? [],
 	});
 	await finalizeRompack('system', {
 		debug: true,
@@ -121,7 +121,7 @@ export async function buildScenarioMediaFixture(
 	const cartBlua32 = buildRomBlua32Tail(cartAssets, {
 		generatedLuaModules: [],
 		includeSymbols: true,
-		optLevel: 0,
+		optLevel: options?.cartOptLevel ?? 0,
 		ramByteCount: 0x00400000,
 		domain: 'cart',
 		imageOffset: cartLayout.nextOffset,

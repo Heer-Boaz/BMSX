@@ -35,6 +35,7 @@ int main() {
 		{"inner", innerCallRange},
 	};
 	bmsx::Blua32SymbolsImage symbols;
+	symbols.metadata.optLevel = 2;
 	symbols.metadata.functionIds = {"entry"};
 	symbols.metadata.traceStatements = std::vector<std::string>{"fixture.compile", "fixture.bind"};
 	symbols.metadata.preloadModules = {"fixture/observer"};
@@ -103,7 +104,8 @@ int main() {
 		|| decodedSymbols.metadata.resumePointsByFunction[0][1].resumeId != "startup.entry.return") {
 		throw std::runtime_error("BLua32 generated continuation identity did not round-trip");
 	}
-	if (decodedSymbols.metadata.traceStatements != symbols.metadata.traceStatements
+	if (decodedSymbols.metadata.optLevel != 2
+		|| decodedSymbols.metadata.traceStatements != symbols.metadata.traceStatements
 		|| decodedSymbols.metadata.preloadModules != symbols.metadata.preloadModules) {
 		throw std::runtime_error("BLua32 compilation configuration did not round-trip");
 	}

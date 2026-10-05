@@ -38,7 +38,7 @@ export async function buildTestRunMedia(
 			.filter(record => !record.program_module && !record.generated)
 			.map(record => ({ sourcePath: record.source_path,
 				source: readWorkspaceLuaSourceText(sources.cartridgeSlots[slot]!.luaSources, record) }));
-		return { systemRom, cartridgeSlots, sourceOnlyModules, machineModel, optLevel: sources.realtimeCompileOptLevel };
+		return { systemRom, cartridgeSlots, sourceOnlyModules, machineModel, optLevel: sources.currentBlua32Media.cartridgeSlots[slot]!.symbols!.metadata.optLevel };
 	} finally {
 		releaseWorkspaceSourceOverrides(sources.systemLuaSources);
 		for (const cartridge of sources.cartridgeSlots) {

@@ -35,6 +35,7 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 		initParticipants: [],
 		staticLayoutToken: { lo: 0, hi: 0 },
 		metadata: {
+			optLevel: 2,
 			traceStatements: ['fixture.compile', 'fixture.bind'],
 			preloadModules: ['fixture/observer'],
 			functionIds: ['module:cart/module/anon:4:2:4:14'],
@@ -87,6 +88,7 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 
 	const decoded = decodeBlua32SymbolsImage(encodeBlua32SymbolsImage(symbols));
 	assert.equal(Object.hasOwn(decoded, 'version'), false, 'symbols carry the current structure without a schema version');
+	assert.equal(decoded.metadata.optLevel, 2);
 	assert.deepEqual(decoded.metadata.traceStatements, ['fixture.compile', 'fixture.bind']);
 	assert.deepEqual(decoded.metadata.preloadModules, ['fixture/observer']);
 	for (const traceStatements of ['erase', 'emit', []] as const) {

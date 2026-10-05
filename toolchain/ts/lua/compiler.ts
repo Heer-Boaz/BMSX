@@ -1082,6 +1082,7 @@ class ProgramBuilder {
 			appendOffsetBytes += chunk.length;
 		}
 		const metadata: ProgramMetadata = {
+			optLevel: this.optLevel,
 			staticScopes: buildStaticDebugScopes(protos, fullRanges, fullInlineCallSites, frontend,
 				{ protoIds: this.protoIds, localSlotsByProto: this.protoLocalSlots,
 					outerBindingsByProto: this.protoOuterBindings, lexicalDeclarations: this.lexicalDeclarations }, this.protoSemantics,

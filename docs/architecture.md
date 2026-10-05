@@ -2530,6 +2530,11 @@ rompacker, TOC and host do not maintain a second module-name or attribute list.
 
 Studio source compilation calls the toolchain parser directly. It does not
 construct a second Lua execution engine, JS interop adapter or handler cache.
+Each debug image carries its effective `optLevel`, `traceStatements` and
+`preloadModules` in symbol metadata. Hot Resume and source boot use the BIOS
+and each cartridge's own installed recipe; there is no workbench-wide
+optimization default. Rebuild debug images when this metadata contract changes.
+
 Source analysis consumes `RuntimeSourceState` and its semantic snapshots;
 values and calls consume the workbench-owned `SuspendedGuestSession` against
 the real machine. Their lifetimes are independent: reset/restore invalidates

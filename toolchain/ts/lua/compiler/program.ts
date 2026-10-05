@@ -1,3 +1,4 @@
+import type { OptimizationLevel } from './optimizer';
 import type { LexicalDeclarationKind } from './declaration_kind';
 import type { ProgramWordRange } from './word_range';
 import type { SourceRange } from '../source_range';
@@ -81,6 +82,7 @@ export type LocatedOuterBindingDebug = OuterBindingDebug & {
 };
 
 export type ProgramMetadata = ProgramRuntimeSymbols & {
+	optLevel: OptimizationLevel;
 	staticScopes: ProgramStaticScopes;
 	traceStatements: TraceStatementSelection;
 	preloadModules: readonly string[];

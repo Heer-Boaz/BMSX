@@ -47,11 +47,12 @@ async function fixture(t: TestContext, slot: 0 | 1 = 0, optLevel: 0 | 3 = 0) {
 		systemSource: "module<entry>\nrequire('base')\ncoroutine = require('coroutine')\ncop0.exec = mem[0x10000028]",
 		systemModules: [{ path: 'base', source: 'local raise<const> = __bmsx_error\nassert = function(value, message) if not value then raise(message) end return value end\nerror = raise\nsetmetatable = __bmsx_setmetatable' },
 			...COROUTINE_FIRMWARE_MODULES],
+		cartOptLevel: optLevel,
 		cartSource: 'module<entry>\nwhile true do halt_until_irq end',
 	});
 	const loaded = await loadRomToolingMedia(media.systemRom, [media.cartRom, media.cartRom]);
 	const sources = createRuntimeSourceState(loaded.system, loaded.cartridgeSlots), models = new EditorTextModelService();
-	enterCartridgeSources(sources, slot); sources.realtimeCompileOptLevel = optLevel;
+	enterCartridgeSources(sources, slot);
 	const authoring = new OffscreenMachine(media.systemRom, [media.cartRom, media.cartRom], PSX_MACHINE_SPEC, new TestInput());
 	const initial = captureRuntimeMachineState(authoring.runtime), installed = sources.currentBlua32Media;
 	const service = new ScenarioRunService(models, sources, new Map(), PSX_MACHINE_SPEC, (bios, carts, model, input) => new OffscreenMachine(bios, carts, model, input));

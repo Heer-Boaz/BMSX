@@ -50,7 +50,7 @@ return { kind = 'unit',
 	});
 	const loaded = await loadRomToolingMedia(media.systemRom, [media.cartRom, media.cartRom]);
 	const sources = createRuntimeSourceState(loaded.system, loaded.cartridgeSlots), models = new EditorTextModelService();
-	enterCartridgeSources(sources, slot); sources.realtimeCompileOptLevel = 0;
+	enterCartridgeSources(sources, slot);
 	const authoring = new OffscreenMachine(media.systemRom, [media.cartRom, media.cartRom], PSX_MACHINE_SPEC, new TestInput());
 	const initial = captureRuntimeMachineState(authoring.runtime), installed = sources.currentBlua32Media;
 	const service = new ScenarioRunService(models, sources, new Map(), PSX_MACHINE_SPEC, (bios, carts, model, input) => new OffscreenMachine(bios, carts, model, input));

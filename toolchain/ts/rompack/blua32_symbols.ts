@@ -1,3 +1,4 @@
+import type { OptimizationLevel } from '../lua/compiler/optimizer';
 import type { Blua32UpvalueRecord } from './blua32_image';
 import type { ProgramWordRange } from '../lua/compiler/word_range';
 import type { LexicalDeclarationKind, StaticDeclarationKind } from '../lua/compiler/declaration_kind';
@@ -86,6 +87,7 @@ export type Blua32StaticScopes = {
 };
 
 export type Blua32DebugMetadata = {
+	optLevel: OptimizationLevel;
 	staticScopes: Blua32StaticScopes;
 	traceStatements: TraceStatementSelection;
 	preloadModules: readonly string[];
