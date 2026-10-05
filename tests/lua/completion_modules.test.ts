@@ -1,3 +1,4 @@
+import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { getLuaTextContext, LuaTextContext } from '../../ide/common/text';
@@ -6,7 +7,6 @@ import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/sem
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { activeCodeEditor, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
-import type { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { CompletionController } from '../../ide/workbench/contrib/code_editor/suggest/completion_controller';
 import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/frontend';
 
@@ -66,17 +66,12 @@ test('completion sees a newly created module without editing the importer or reb
 	const view = createCodeEditorViewState();
 	view.cursorColumn = importer.buffer.getText().indexOf("')");
 	activeCodeEditor.attach(importer, view);
-	const bridge = {
-		luaInterpreter: { globalEnvironment: new Map() },
-		sources: {
-			systemLuaSources: { records: [], revision: 0 },
-			cartridgeSlots: [null, null],
-		},
-	} as unknown as RuntimeLuaTooling;
+	const sources = createScenarioTestSourceState([]);
+
 	class ReadyCompletionController extends CompletionController {
 		protected override isCompletionReady() { return true; }
 	}
-	const controller = new ReadyCompletionController(bridge, null, null);
+	const controller = new ReadyCompletionController(sources, null, null, null);
 	const version = importer.version;
 	assert.deepEqual(controller.listCompletionCandidates()!.filteredItems, []);
 	editorTextModelService.retain(resource('carts/example/authoring/palette.lua'), 'lua', 'return {}');

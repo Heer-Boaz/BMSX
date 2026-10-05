@@ -1,10 +1,10 @@
+import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { HostClock, TimerHandle } from '../../../../hosts/common/clock';
 import { enqueueBackgroundTask, type BackgroundTask } from '../../../common/background_tasks';
 import type { EditorDiagnostic } from '../../../common/models';
 import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceIdentity, type ResourceDomain } from '../../../common/resource';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import { runtimeLuaSourceRegistry } from '../../../runtime/sources';
 import { onDidChangeLuaSourceRegistry } from '../../../runtime/source_registry';
 import { computeResourceDiagnostics } from './lua';
@@ -42,7 +42,7 @@ export class ResourceDiagnosticsService {
 
 	public constructor(
 		private readonly models: EditorTextModelService,
-		private readonly tooling: RuntimeLuaTooling,
+		private readonly sources: RuntimeSourceState,
 		private readonly clock: HostClock,
 	) {
 		this.subscriptions = [
@@ -59,7 +59,7 @@ export class ResourceDiagnosticsService {
 			}),
 		];
 		for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
-			const registry = runtimeLuaSourceRegistry(tooling.sources, domain);
+			const registry = runtimeLuaSourceRegistry(sources, domain);
 			if (registry === undefined) continue; // Empty cartridge socket.
 			this.subscriptions.push(onDidChangeLuaSourceRegistry(registry, path => {
 				// A retained working copy, not its saved/installed base, owns the newer source.
@@ -139,7 +139,7 @@ export class ResourceDiagnosticsService {
 		const batch = [...this.dirty];
 		this.dirty.clear();
 		try {
-			const diagnostics = computeResourceDiagnostics(this.models, this.tooling, batch);
+			const diagnostics = computeResourceDiagnostics(this.models, this.sources, batch);
 			const byModel = new Map<EditorTextModel, EditorDiagnostic[]>();
 			for (const diagnostic of diagnostics) {
 				let bucket = byModel.get(diagnostic.model);

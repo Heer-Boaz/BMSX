@@ -1,5 +1,5 @@
+import type { RuntimeSourceState } from '../../../../runtime/sources';
 import type { CartEditor } from '../../../../cart_editor';
-import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 import { queryDefinitionsAt, type LuaDefinitionTarget } from '../../../../editor/contrib/definitions/query';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { COLOR_STATUS_WARNING } from '../../../../common/constants';
@@ -22,10 +22,10 @@ export function buildDefinitionQuickPickItems(definitions: readonly LuaDefinitio
 	}));
 }
 
-export function openDefinitionSearch(bridge: RuntimeLuaTooling, editor: CartEditor, row: number, column: number): boolean {
+export function openDefinitionSearch(sources: RuntimeSourceState, editor: CartEditor, row: number, column: number): boolean {
 	const context = getActiveCodeTabContext();
 	const resource = context.model.resource;
-	const query = queryDefinitionsAt(bridge, context, row, column);
+	const query = queryDefinitionsAt(sources, context, row, column);
 	if (!query) {
 		showEditorMessage('Definition not found', COLOR_STATUS_WARNING, 1.6);
 		return false;

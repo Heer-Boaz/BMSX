@@ -126,7 +126,6 @@ export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> 
 ];
 
 const DEFAULT_LUA_BUILTIN_IDENTIFIER_EXTRAS = [
-	'package',
 	'math.pi',
 ];
 

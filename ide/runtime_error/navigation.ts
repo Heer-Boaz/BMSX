@@ -26,7 +26,7 @@ import {
 } from '../editor/contrib/runtime_error/navigation';
 import { LuaError } from '../../toolchain/ts/lua/errors';
 import type { SourceStackTraceFrame } from '../runtime/stack_trace';
-import { extractErrorMessage } from '../language/lua/interpreter/value';
+import { extractErrorMessage } from '../common/errors';
 import { clamp } from '../../machine/ts/common/clamp';
 import type { CartEditor } from '../cart_editor';
 import type { EditorPanes } from '../workbench/services/editor/editor_panes';

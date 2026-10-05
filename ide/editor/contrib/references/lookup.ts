@@ -1,9 +1,9 @@
+import type { RuntimeSourceState } from '../../../runtime/sources';
 import { buildEditorSemanticFrontend } from '../intellisense/frontend';
 import type { ReferenceMatchInfo } from './state';
 import type { TextBuffer } from '../../text/text_buffer';
 import type { SearchMatch } from '../../../common/models';
 import type { ResourceIdentity } from '../../../common/resource';
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import { searchMatchFromSourceRange } from '../../navigation/source_range';
 
 export type ReferenceLookupOptions = {
@@ -17,9 +17,9 @@ export type ReferenceLookupResult =
 	| { kind: 'success'; info: ReferenceMatchInfo; initialIndex: number; }
 	| { kind: 'error'; message: string; duration: number; };
 
-export function resolveReferenceLookup(bridge: RuntimeLuaTooling, options: ReferenceLookupOptions): ReferenceLookupResult {
+export function resolveReferenceLookup(sources: RuntimeSourceState, options: ReferenceLookupOptions): ReferenceLookupResult {
 	const path = options.identity.path;
-	const frontend = buildEditorSemanticFrontend(bridge, options.identity, options.buffer);
+	const frontend = buildEditorSemanticFrontend(sources, options.identity, options.buffer);
 	const resolution = frontend.findReferencesByPosition(path, options.cursorRow + 1, options.cursorColumn + 1);
 	if (!resolution) {
 		return { kind: 'error', message: 'No symbol at cursor', duration: 1.6 };

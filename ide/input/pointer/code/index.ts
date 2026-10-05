@@ -1,3 +1,5 @@
+import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
@@ -12,13 +14,13 @@ import { updateCodeAreaPointerFeedback } from './feedback';
 import { handleCodeAreaSelectionPointer } from './selection';
 import { editorPointerState } from '../state';
 import type { CartEditor } from '../../../cart_editor';
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { Clipboard } from '../../../../hosts/common/clipboard';
 
 export function handleCodeAreaPointerInput(
 	editor: CartEditor,
-	bridge: RuntimeLuaTooling,
+	sources: RuntimeSourceState,
+	guest: SuspendedGuestSession,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
 	snapshot: PointerSnapshot,
@@ -61,7 +63,7 @@ export function handleCodeAreaPointerInput(
 	}
 	if (handleCodeAreaPrimaryPressPointer(
 		editor,
-		bridge,
+		sources,
 		snapshot,
 		justPressed,
 		insideCodeArea,
@@ -74,7 +76,8 @@ export function handleCodeAreaPointerInput(
 	handleCodeAreaSelectionPointer(snapshot, bounds);
 	updateCodeAreaPointerFeedback(
 		playerInput,
-		bridge,
+		sources,
+		guest,
 		fault,
 		runtime,
 		snapshot,

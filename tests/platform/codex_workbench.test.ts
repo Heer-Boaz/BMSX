@@ -13,7 +13,6 @@ import { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_revie
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createCodexModelFixture, CODEX_FIXTURE_DONE } from '../helpers/codex_model_fixture.mjs';
 import { ResourceDiagnosticsService } from '../../ide/workbench/services/diagnostics/resource_diagnostics';
-import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
@@ -29,10 +28,10 @@ test('real Codex tool exchange reads unsaved models and hands off a shared revie
 	main.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- UNSAVED COMMENT\n' }]);
 	const before = main.buffer.getText();
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
-	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
-	const { tasks, presenter } = createRuntimeInspectionFixture(runtime, sources, tooling.suspendedGuest);
-	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
-	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources, tooling, runtime, tasks);
+	const guest = new SuspendedGuestSession(runtime);
+	const { tasks, presenter } = createRuntimeInspectionFixture(runtime, sources, guest);
+	const diagnostics = new ResourceDiagnosticsService(models, sources, new VirtualHeadlessClock());
+	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources, guest, runtime, tasks);
 	const sourceTools = new WorkspaceSourceTools(models, sources, diagnostics, connection.signal, new BehaviorSourceDocuments(models, sources), saves, new VirtualHeadlessClock());
 	const proposals: WorkspaceEditProposal[] = [];
 	let completed!: () => void;

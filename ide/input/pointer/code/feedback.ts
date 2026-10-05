@@ -1,3 +1,5 @@
+import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 import { pointerHover, type PointerHoverTarget } from '../hover';
 import { PointerButton } from '../buttons';
 import { isCodeTabActive } from '../../../workbench/ui/tabs';
@@ -9,7 +11,6 @@ import type { PointerSnapshot } from '../../../common/models';
 import type { CodeEditorContext } from '../../../editor/ui/code_editor_state';
 import { isAltDown } from '../../keyboard/key_input';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 
@@ -19,7 +20,8 @@ export const codeAreaHover: PointerHoverTarget = {
 
 export function updateCodeAreaPointerFeedback(
 	playerInput: PlayerInput,
-	bridge: RuntimeLuaTooling,
+	sources: RuntimeSourceState,
+	guest: SuspendedGuestSession,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
 	snapshot: PointerSnapshot,
@@ -33,7 +35,7 @@ export function updateCodeAreaPointerFeedback(
 	else pointerHover.release(codeAreaHover);
 	if (isCodeTabActive() && (snapshot.pressedButtons & PointerButton.Primary) === 0 && !pointerSelecting && insideCodeArea && gotoModifierActive) {
 		const hover = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
-			refreshGotoHoverHighlight(bridge, hover.row, hover.column, activeContext);
+			refreshGotoHoverHighlight(sources, hover.row, hover.column, activeContext);
 	} else if (!gotoModifierActive || !insideCodeArea || ((snapshot.pressedButtons & PointerButton.Primary) !== 0) || pointerSelecting || !isCodeTabActive()) {
 		clearGotoHoverHighlight();
 	}
@@ -41,7 +43,7 @@ export function updateCodeAreaPointerFeedback(
 		const altDown = isAltDown(playerInput);
 		if ((snapshot.pressedButtons & PointerButton.Primary) === 0 && !pointerSelecting && insideCodeArea && altDown) {
 			const hover = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
-			updateHoverTooltip(bridge, fault, runtime, activeContext, hover.row, hover.column);
+			updateHoverTooltip(sources, guest, fault, runtime, activeContext, hover.row, hover.column);
 		} else {
 			clearHoverTooltip();
 		}

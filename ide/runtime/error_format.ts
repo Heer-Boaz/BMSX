@@ -1,10 +1,4 @@
-import type { LuaCallFrame } from '../language/lua/interpreter/interpreter';
-import {
-	createLuaSourceStackTraceFrame,
-	type StackTraceFrame,
-} from './stack_trace';
-import type { ResourceDomain } from '../common/resource';
-import type { RuntimeSourceState } from './sources';
+import type { StackTraceFrame } from './stack_trace';
 
 function ensureWorkspaceRelativePath(source: string): string {
 	if (!source || source.startsWith('./') || source.startsWith('../') || source.startsWith('/')) {
@@ -14,26 +8,6 @@ function ensureWorkspaceRelativePath(source: string): string {
 		return source;
 	}
 	return `./${source}`;
-}
-
-export function convertLuaCallFrames(
-	callFrames: ReadonlyArray<LuaCallFrame>,
-	sources: RuntimeSourceState,
-	domain: ResourceDomain,
-): StackTraceFrame[] {
-	const frames: StackTraceFrame[] = [];
-	for (let index = callFrames.length - 1; index >= 0; index -= 1) {
-		const frame = callFrames[index];
-		frames.push(createLuaSourceStackTraceFrame(
-			sources,
-			domain,
-			frame.source,
-			frame.line,
-			frame.column,
-			frame.functionName,
-		));
-	}
-	return frames;
 }
 
 export function sanitizeLuaErrorMessage(message: string): string {

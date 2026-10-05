@@ -10,7 +10,6 @@ import type { EditorCommandId, EditorSearchCommandId } from '../common/commands'
 import type { RenameController } from '../workbench/contrib/code_editor/rename/controller';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
-import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 
 export function isEditorSearchCommand(command: EditorCommandId): command is EditorSearchCommandId {
 	switch (command) {
@@ -34,7 +33,6 @@ export function isEditorSearchCommand(command: EditorCommandId): command is Edit
 export function executeEditorSearchCommand(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
-	luaTooling: RuntimeLuaTooling,
 	rename: RenameController,
 	command: EditorSearchCommandId,
 ): void {
@@ -43,10 +41,10 @@ export function executeEditorSearchCommand(
 			showCommandPalette(editor.quickInput, editor.commands);
 			return;
 		case 'symbolSearch':
-			openSymbolSearch(editor, luaTooling, 'file');
+			openSymbolSearch(editor, sources, 'file');
 			return;
 		case 'symbolSearchGlobal':
-			openSymbolSearch(editor, luaTooling, 'workspace');
+			openSymbolSearch(editor, sources, 'workspace');
 			return;
 		case 'resourceSearch':
 			editor.quickInput.pick('GO TO FILE', 'Type a file name or path', () => new FileQuickPickProvider(buildResourceQuickPickItems(sources.resources)),
@@ -65,13 +63,13 @@ export function executeEditorSearchCommand(
 			openLineJump(editor.search);
 			return;
 		case 'referenceSearch':
-			openReferenceSearch(editor, luaTooling);
+			openReferenceSearch(editor, sources);
 			return;
 		case 'rename':
-			openRenamePrompt(luaTooling, rename, editor.search);
+			openRenamePrompt(sources, rename, editor.search);
 			return;
 		case 'renamePreview':
-			openRenamePrompt(luaTooling, rename, editor.search, editor.editorPanes);
+			openRenamePrompt(sources, rename, editor.search, editor.editorPanes);
 			return;
 	}
 }

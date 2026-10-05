@@ -1,10 +1,10 @@
+import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { HostClock } from '../../../../hosts/common/clock';
 import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
 import type { EditorTextModel, EditorTextModelSnapshot } from '../../../editor/model/text_model';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import { applyAemSourceRevision, type AemSourceApplyResult } from '../../../runtime/aem';
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import { runtimeSourceProjectRootPath, type RuntimeSourceState } from '../../../runtime/sources';
 import { workspaceCanonicalSourceCache } from '../../../workspace/cache';
 import { persistWorkspaceSourceFile } from '../../../workspace/files';
@@ -36,7 +36,7 @@ export class TextFileSaveService {
 		private readonly models: EditorTextModelService,
 		private readonly clock: HostClock,
 		private readonly sources: RuntimeSourceState,
-		private readonly luaTooling: RuntimeLuaTooling,
+		private readonly guest: SuspendedGuestSession,
 		private readonly runtime: Runtime,
 		private readonly runtimeTasks: RuntimeTaskQueue,
 	) {}
@@ -94,7 +94,7 @@ export class TextFileSaveService {
 		}
 		model.completeSave(snapshot);
 		const application = model.mode === 'aem'
-			? await applyAemSourceRevision(this.sources, this.luaTooling, this.runtime, this.runtimeTasks, resource, snapshot.source)
+			? await applyAemSourceRevision(this.sources, this.guest, this.runtime, this.runtimeTasks, resource, snapshot.source)
 			: { status: 'not-requested' } as const;
 		return { status: 'saved', snapshot, persistence, application };
 	}

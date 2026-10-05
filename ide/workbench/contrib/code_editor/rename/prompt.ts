@@ -1,3 +1,4 @@
+import type { RuntimeSourceState } from '../../../../runtime/sources';
 import type { RenameController } from './controller';
 import type { EditorSearchController } from '../find/search';
 import { getActiveCodeTabContext, isEditableCodeTab } from '../../../ui/code_tab/contexts';
@@ -7,10 +8,9 @@ import { resetBlink } from '../../../../editor/render/caret';
 import { revealCursor } from '../../../../editor/ui/view/caret/caret';
 import { editorCaretState } from '../../../../editor/ui/view/caret/state';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
-import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 import type { EditorPanes } from '../../../services/editor/editor_panes';
 
-export function openRenamePrompt(bridge: RuntimeLuaTooling, rename: RenameController, search: EditorSearchController, reviewPanes?: EditorPanes): void {
+export function openRenamePrompt(sources: RuntimeSourceState, rename: RenameController, search: EditorSearchController, reviewPanes?: EditorPanes): void {
 	if (!isEditableCodeTab()) {
 		notifyReadOnlyEdit();
 		return;
@@ -25,7 +25,7 @@ export function openRenamePrompt(bridge: RuntimeLuaTooling, rename: RenameContro
 		case 'aem':
 			return;
 	}
-	const started = rename.begin(bridge, {
+	const started = rename.begin(sources, {
 		buffer: activeCodeEditor.model.buffer,
 		cursorRow: activeCodeEditor.view.cursorRow,
 		cursorColumn: activeCodeEditor.view.cursorColumn,

@@ -1,8 +1,9 @@
+import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 import { editorTextModelService } from '../../model/model_service';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import * as constants from '../../../common/constants';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaHover } from '../../../../toolchain/ts/lua/semantic/hover';
 import type { CodeEditorContext } from '../../ui/code_editor_state';
@@ -56,7 +57,8 @@ const queryState: HoverQueryState = {
 };
 
 export function updateHoverTooltip(
-	bridge: RuntimeLuaTooling,
+	sources: RuntimeSourceState,
+	guest: SuspendedGuestSession,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
 	context: CodeEditorContext,
@@ -77,13 +79,13 @@ export function updateHoverTooltip(
 	);
 	const cpu = runtime.machine.cpu;
 	const executionCycles = runtime.machine.scheduler.currentNowCycles();
-	const media = bridge.sources.currentBlua32Media;
+	const media = sources.currentBlua32Media;
 	const executionPc = fault.faultSnapshot === null ? cpu.lastPc : fault.lastCpuFaultPc;
 	const executionFrameDepth = fault.faultSnapshot === null
 		? cpu.getFrameDepth()
 		: fault.lastCpuFaultSnapshot.length;
 	const semanticProject = getOrCreateSemanticProject(editorTextModelService, context.model.resource.domain);
-	semanticProject.synchronizeRuntimeSources(bridge.sources);
+	semanticProject.synchronizeRuntimeSources(sources);
 	const semanticSnapshot = semanticProject.getSnapshot();
 	if (queryState.valid
 		&& queryState.path === path
@@ -103,17 +105,18 @@ export function updateHoverTooltip(
 	}
 
 	const snapshot = buildEditorSemanticSnapshot(
-		bridge,
+		sources,
 		context.model.resource,
 		context.model.buffer,
 	);
-	const frontend = createEditorSemanticFrontend(bridge, snapshot);
+	const frontend = createEditorSemanticFrontend(snapshot);
 	const semanticHover = frontend.provideHover(path, row + 1, column + 1);
 	const evaluatableExpression = frontend.provideEvaluatableExpression(path, row + 1, column + 1);
 	const runtimeInspection = evaluatableExpression === null
 		? null
 		: inspectLuaRuntimeExpression(
-			bridge,
+			sources,
+			guest,
 			fault,
 			runtime,
 			evaluatableExpression.expression,

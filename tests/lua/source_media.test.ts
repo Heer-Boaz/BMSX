@@ -1,8 +1,8 @@
+import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { encodeLuaChunk } from '../../toolchain/ts/lua/syntax/serialization';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
-import { LuaInterpreter } from '../../ide/language/lua/interpreter/interpreter';
 import { buildLuaSourceAssetChanges } from '../../ide/runtime/source_media';
 import { collectProgramSources } from '../../ide/runtime/program_sources';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
@@ -13,10 +13,6 @@ import { writeCartRomHeader } from '../../toolchain/ts/rompack/header_encode';
 import type { RomSourceLayer } from '../../toolchain/ts/rompack/source';
 import { createTestRuntimeRomPayload } from '../helpers/runtime_sources';
 
-const interpreter = new LuaInterpreter({
-	convertFromLua() { throw new Error('Source compilation must not execute Lua.'); },
-	toLua() { throw new Error('Source compilation must not execute Lua.'); },
-});
 const encoder = new TextEncoder();
 const originalSource = 'module<entry>\nreturn 1';
 const changedSource = 'module<entry>\nreturn 2';
@@ -41,7 +37,7 @@ function sourceLayer(includeLua: boolean): RomSourceLayer<'cart'> {
 		assets.push({
 			resid: 'entry', type: 'lua', source_path: 'entry.lua',
 			buffer: encoder.encode(originalSource),
-			compiled_buffer: encodeLuaChunk(interpreter.compileChunk(originalSource, 'entry')),
+			compiled_buffer: encodeLuaChunk(parseLuaChunk(originalSource, 'entry').chunk),
 		});
 	}
 	const layout = layoutRomAssetPayloads(assets, true);
@@ -58,7 +54,7 @@ for (const includeLua of [true, false]) {
 	test(`${includeLua ? 'editing' : 'adding'} Lua preserves a texture with the same asset name`, () => {
 		const layer = sourceLayer(includeLua);
 		const registry = sourceRegistry();
-		const selected = collectProgramSources(registry, interpreter, registry.entrySourcePath, []);
+		const selected = collectProgramSources(registry, registry.entrySourcePath, []);
 		const changes = buildLuaSourceAssetChanges(
 			layer, registry, new Map(includeLua ? [['entry', originalSource]] : []), selected.parsed, undefined,
 		);
@@ -75,6 +71,6 @@ for (const includeLua of [true, false]) {
 		assert.deepEqual(bytes.subarray(texture.start!, texture.end!), textureBytes);
 		assert.equal(new TextDecoder().decode(bytes.subarray(lua.start!, lua.end!)), changedSource);
 		assert.deepEqual(bytes.subarray(lua.compiled_start!, lua.compiled_end!),
-			encodeLuaChunk(interpreter.compileChunk(changedSource, 'entry')));
+			encodeLuaChunk(parseLuaChunk(changedSource, 'entry').chunk));
 	});
 }

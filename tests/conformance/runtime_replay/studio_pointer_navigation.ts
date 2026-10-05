@@ -63,7 +63,7 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 	check(declarationOffset >= 0, `${cart}: fixture declaration exists in the authored source`);
 	const declaration = { row: 0, column: 0 };
 	model.buffer.positionAt(declarationOffset, declaration);
-	const definition = queryDefinitionsAt(ide.luaTooling, activeCodeEditor, useRow, useColumn)!;
+	const definition = queryDefinitionsAt(ide.sources, activeCodeEditor, useRow, useColumn)!;
 	check(definition.definitions.length === 1 && definition.definitions[0].location.path === spec.path
 		&& definition.definitions[0].location.range.startLine === (declaration.row + 1)
 		&& definition.definitions[0].location.range.startColumn === (declaration.column + 1),

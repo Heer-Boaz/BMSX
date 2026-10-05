@@ -3,11 +3,10 @@ import type { EditorTextModelService } from '../../../editor/model/model_service
 import type { HostAudioOutput } from '../../../../hosts/common/audio_output';
 import { HostPauseReason, type HostExecutionControl } from '../../../../hosts/common/execution_control';
 import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import { enterSystemSources, type RuntimeSourceState } from '../../../runtime/sources';
 import { blua32MediaRequiresRebuild, bootInstalledBlua32Media, installBlua32Media,
-	prepareBlua32MediaBoot, type Blua32CartridgeEntry, type PreparedBlua32Boot } from '../../../runtime/lua_pipeline';
+	prepareBlua32MediaBoot, type Blua32CartridgeEntry, type Blua32MediaInstallation } from '../../../runtime/lua_pipeline';
 import type { WorkspaceRecord } from '../../../workspace/records';
 import { applyAllWorkspaceSourceOverrides, applyLuaTextModelSources } from '../../../workspace/workspace';
 import { captureLuaTextModelSources, type LuaTextModelSourceSnapshot } from '../working_copy/lua_sources';
@@ -74,7 +73,6 @@ export class BootService {
 	public constructor(
 		private readonly models: EditorTextModelService,
 		private readonly sources: RuntimeSourceState,
-		private readonly tooling: RuntimeLuaTooling,
 		private readonly fault: RuntimeFaultState,
 		private readonly runtime: Runtime,
 		private readonly tasks: RuntimeTaskQueue,
@@ -95,16 +93,16 @@ export class BootService {
 		try {
 			if (source === 'installed') {
 				// Opening a published bundle must not rebuild it from recovered or newer workspace text.
-				this.installAndReset(operation, { installation: null, interpreter: this.tooling.luaInterpreter });
+				this.installAndReset(operation, null);
 				return operation;
 			}
-			let prepared: PreparedBlua32Boot;
+			let prepared: Blua32MediaInstallation | null;
 			try {
 				prepared = this.prepare(operation);
 			} catch (error) {
 				// Initialize packed hardware for inspection only. The launch hold stays
 				// set: rejected authored source must not silently run the packed program.
-				this.reset(operation, this.tooling.luaInterpreter);
+				this.reset(operation);
 				operation.finish({ status: 'rejected', installed: false, reset: true, error });
 				return operation;
 			}
@@ -123,7 +121,7 @@ export class BootService {
 			operation.phase = 'reading-sources';
 			await applyAllWorkspaceSourceOverrides(this.sources, this.dirtyRecords);
 			if (operation.result !== null) return;
-			let prepared: PreparedBlua32Boot;
+			let prepared: Blua32MediaInstallation | null;
 			try {
 				prepared = this.prepare(operation);
 			} catch (error) {
@@ -144,7 +142,7 @@ export class BootService {
 		return operation;
 	}
 
-	private prepare(operation: PendingBoot): PreparedBlua32Boot {
+	private prepare(operation: PendingBoot): Blua32MediaInstallation | null {
 		operation.phase = 'building';
 		if (operation.entry?.domain === 1) {
 			const first = this.sources.cartridgeSlots[0];
@@ -154,18 +152,18 @@ export class BootService {
 			}
 		}
 		applyLuaTextModelSources(this.sources, operation.sourceSnapshots);
-		return prepareBlua32MediaBoot(this.sources, this.tooling, this.runtime,
+		return prepareBlua32MediaBoot(this.sources, this.runtime,
 			blua32MediaRequiresRebuild(this.sources), operation.entry);
 	}
 
-	private installAndReset(operation: PendingBoot, prepared: PreparedBlua32Boot): void {
+	private installAndReset(operation: PendingBoot, prepared: Blua32MediaInstallation | null): void {
 		operation.phase = 'installing';
 		this.execution.setPauseReason(HostPauseReason.AwaitingLaunch, true);
-		if (prepared.installation !== null) {
-			installBlua32Media(this.sources, this.runtime, prepared.installation);
+		if (prepared !== null) {
+			installBlua32Media(this.sources, this.runtime, prepared);
 			operation.installed = true;
 		}
-		this.reset(operation, prepared.interpreter);
+		this.reset(operation);
 		if (operation.kind === 'reboot') {
 			this.audioOutput.muteSystem(false);
 			this.audioOutput.restart(this.runtime.timing.ufpsScaled);
@@ -174,10 +172,10 @@ export class BootService {
 		operation.finish({ status: 'reset', installed: operation.installed, reset: true });
 	}
 
-	private reset(operation: PendingBoot, interpreter: PreparedBlua32Boot['interpreter']): void {
+	private reset(operation: PendingBoot): void {
 		operation.phase = 'resetting';
 		enterSystemSources(this.sources);
-		bootInstalledBlua32Media(this.fault, this.tooling, this.runtime, interpreter);
+		bootInstalledBlua32Media(this.fault, this.runtime);
 		operation.reset = true;
 	}
 

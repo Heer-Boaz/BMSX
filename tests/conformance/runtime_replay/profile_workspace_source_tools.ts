@@ -5,7 +5,6 @@ import { EditorTextModelService } from '../../../ide/editor/model/model_service'
 import { WorkspaceSourceTools } from '../../../ide/workbench/services/assistant/source_tools';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../../helpers/scenario_sources';
 import { ResourceDiagnosticsService } from '../../../ide/workbench/services/diagnostics/resource_diagnostics';
-import { RuntimeLuaTooling } from '../../../ide/runtime/lua_tooling';
 import { SuspendedGuestSession } from '../../../ide/runtime/suspended_guest';
 import { VirtualHeadlessClock } from '../../../hosts/node/headless/clock';
 import { createTestRuntime, createTestRuntimeRomPayload } from '../../helpers/runtime_sources';
@@ -19,10 +18,10 @@ async function main(): Promise<void> {
 		const source = createScenarioTestSourceRecord('review.lua', 1, 'return old\n'.repeat(count));
 		const sources = createScenarioTestSourceState([source]);
 		const runtime = createTestRuntime(createTestRuntimeRomPayload());
-		const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
-		const { tasks, presenter } = createRuntimeInspectionFixture(runtime, sources, tooling.suspendedGuest);
-		const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources, tooling, runtime, tasks);
-		const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
+		const guest = new SuspendedGuestSession(runtime);
+		const { tasks, presenter } = createRuntimeInspectionFixture(runtime, sources, guest);
+		const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources, guest, runtime, tasks);
+		const diagnostics = new ResourceDiagnosticsService(models, sources, new VirtualHeadlessClock());
 		const model = models.retain(sources.luaResources[0], 'lua', source.src);
 		let reads = 0;
 		const getText = model.buffer.getText.bind(model.buffer);

@@ -1,5 +1,5 @@
+import type { RuntimeSourceState } from '../../../../runtime/sources';
 import type { CartEditor } from '../../../../cart_editor';
-import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 import type { LuaSymbolEntry } from '../../../../../toolchain/ts/lua/semantic_contracts';
 import { symbolKindLabel } from '../../../../../toolchain/ts/lua/semantic/model';
 import { clearReferenceHighlights, listGlobalLuaSymbols, listLuaSymbols } from '../../../../editor/contrib/intellisense/engine';
@@ -21,14 +21,14 @@ export function buildSymbolQuickPickItems(symbols: readonly LuaSymbolEntry[], sc
 	});
 }
 
-export function openSymbolSearch(editor: CartEditor, bridge: RuntimeLuaTooling, scope: 'file' | 'workspace'): void {
+export function openSymbolSearch(editor: CartEditor, sources: RuntimeSourceState, scope: 'file' | 'workspace'): void {
 	const resource = getActiveCodeTabContext().model.resource;
 	clearReferenceHighlights();
 	editor.quickInput.pick(scope === 'file' ? `SYMBOLS: ${resource.path}` : 'GO TO WORKSPACE SYMBOL',
 		scope === 'file' ? 'Type a symbol name' : 'Symbol name, then source path', (_origin, lifetime) => {
 			const symbols = scope === 'file'
-				? listLuaSymbols(bridge, resource.domain, resource.path)
-				: listGlobalLuaSymbols(bridge, resource.domain);
+				? listLuaSymbols(sources, resource.domain, resource.path)
+				: listGlobalLuaSymbols(sources, resource.domain);
 			lifetime.add(subscribeToLuaModelChanges(editorTextModelService, resource.domain, () => editor.quickInput.hide()));
 			return new SymbolQuickPickProvider(buildSymbolQuickPickItems(symbols, scope), scope);
 		}, item => navigateToLuaDefinition(editor, resource.domain, item.symbol.location));

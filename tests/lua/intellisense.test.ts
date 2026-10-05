@@ -29,13 +29,11 @@ import {
 } from '../../ide/runtime/source_registry';
 import { createRuntimeFaultState, recordLuaError } from '../../ide/runtime/fault_state';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
-import { LuaInterpreter } from '../../ide/language/lua/interpreter/interpreter';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import {
 	SYSTEM_RESOURCE_DOMAIN,
 	type RuntimeResource,
 } from '../../ide/common/resource';
-import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { readRuntimeLuaValue, readRuntimeLuaModuleExport, readRuntimeLuaModuleCapture, runtimeLuaFunctionSource, RuntimeLuaFunctionSourceCache } from '../../ide/runtime/lua_inspection';
 import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
 import { SuspendedGuestSession, SuspendedGuestValueKind } from '../../ide/runtime/suspended_guest';
@@ -60,7 +58,6 @@ const intellisenseEngineModulePromise = import('../../ide/editor/contrib/intelli
 const editorDiagnosticsModulePromise = import('../../ide/workbench/services/diagnostics/lua');
 
 const EMPTY_ROM_PAYLOAD = createTestRuntimeRomPayload();
-const EMPTY_TOOLING_RUNTIME = createTestRuntime(EMPTY_ROM_PAYLOAD);
 
 function createSourceState(files: Record<string, string>, systemRom: Uint8Array): RuntimeSourceState {
 	const systemLuaSources: LuaSourceRegistry = {
@@ -93,13 +90,8 @@ function createSourceState(files: Record<string, string>, systemRom: Uint8Array)
 	return createTestSystemImageRuntimeSourceState(systemRom, systemLuaSources);
 }
 
-function createIntellisenseBridge(files: Record<string, string> = {}): RuntimeLuaTooling {
-	const bridge = new RuntimeLuaTooling(
-		createSourceState(files, EMPTY_ROM_PAYLOAD),
-		new SuspendedGuestSession(EMPTY_TOOLING_RUNTIME),
-	);
-	bridge.luaInterpreter = new LuaInterpreter(bridge.luaJsBridge);
-	return bridge;
+function createIntellisenseSources(files: Record<string, string> = {}) {
+	return createSourceState(files, EMPTY_ROM_PAYLOAD);
 }
 
 function testLuaResource(path: string): RuntimeResource {
@@ -172,8 +164,8 @@ function createIntellisenseRuntime(source: string, optLevel: 0 | 3 = 0, modules:
 		system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports),
 		cartridgeSlots: [null, null],
 	};
-	const bridge = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
-	bridge.luaInterpreter = new LuaInterpreter(bridge.luaJsBridge);
+	const bridge = { sources, suspendedGuest: new SuspendedGuestSession(runtime) };
+
 	return {
 		bridge,
 		image,
@@ -375,7 +367,7 @@ test('editor diagnostics share one retained project snapshot across open documen
 	const { getOrCreateSemanticProject, resetSemanticProject } = await workspaceStateModulePromise;
 	const readerSource = 'return shared.value';
 	const declarationSource = 'shared = { value = 1 }';
-	const bridge = createIntellisenseBridge({
+	const bridge = createIntellisenseSources({
 		'reader.lua': readerSource,
 		'declaration.lua': declarationSource,
 	});
@@ -407,7 +399,7 @@ test('diagnostics over more than 24 documents parse each generation once, includ
 		files[path] = source;
 		contexts.push(new EditorTextModel({ domain: SYSTEM_RESOURCE_DOMAIN, path, source: { resid: path, type: 'lua' } }, 'lua', source));
 	}
-	const bridge = createIntellisenseBridge(files);
+	const bridge = createIntellisenseSources(files);
 	const project = resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
 	const parse = t.mock.method(LuaParser.prototype, 'parseChunkWithRecovery');
 	assert.deepEqual(computeResourceDiagnostics(editorTextModelService, bridge, contexts), []);
@@ -446,7 +438,7 @@ test('static definition lookup preserves one-based source coordinates at an iden
 	resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
 
 	const location = findStaticDefinitionLocation(
-		createIntellisenseBridge({ 'main.lua': source }),
+		createIntellisenseSources({ 'main.lua': source }),
 		2,
 		usageColumn,
 		'main.lua',
@@ -902,14 +894,14 @@ return dormant
 		assert.deepEqual(result, { kind: 'unavailable', reason: 'not_in_scope' });
 	});
 
-	test(`suspended inspection distinguishes a nil local from interpreter state at O${optLevel}`, () => {
+	test(`suspended inspection preserves a nil local at O${optLevel}`, () => {
 		const source = `input_value = nil
 local table = input_value
 halt_until_irq
 return table
 `;
 		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
-		bridge.luaInterpreter.globalEnvironment.set('table', 99);
+
 		runtime.machine.cpu.reset();
 		assert.equal(runtime.machine.cpu.runUntilDepth(0, 1000), RunResult.Halted);
 		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
@@ -1001,7 +993,7 @@ test('suspended inspection requires installed source correspondence, and regains
 	assert.equal(result.kind, 'value');
 	if (result.kind === 'value') assert.equal(result.value, 42);
 	const { inspectLuaRuntimeExpression } = await intellisenseEngineModulePromise;
-	assert.equal(inspectLuaRuntimeExpression(bridge, fault, runtime, 'target()', SYSTEM_RESOURCE_DOMAIN, analysis, 3, 8), null,
+	assert.equal(inspectLuaRuntimeExpression(bridge.sources, bridge.suspendedGuest, fault, runtime, 'target()', SYSTEM_RESOURCE_DOMAIN, analysis, 3, 8), null,
 		'only read-only identifier paths enter runtime inspection');
 });
 
@@ -1211,7 +1203,7 @@ test('reference lookup resolves global definition across paths', async () => {
 	const stateColumn = usageLines[stateRow]!.indexOf('state');
 	assert.ok(stateColumn >= 0);
 
-	const result = resolveReferenceLookup(createIntellisenseBridge({ 'global.lua': globalSource }), {
+	const result = resolveReferenceLookup(createIntellisenseSources({ 'global.lua': globalSource }), {
 		buffer: new PieceTreeBuffer(usageSource),
 		cursorRow: stateRow,
 		cursorColumn: stateColumn,
@@ -1251,7 +1243,7 @@ test('reference lookup retains all definitions of a value alternative', async ()
 	const cursorColumn = lines[cursorRow]!.indexOf('run');
 	resetSemanticProject(editorTextModelService, SYSTEM_RESOURCE_DOMAIN);
 
-	const result = resolveReferenceLookup(createIntellisenseBridge(), {
+	const result = resolveReferenceLookup(createIntellisenseSources(), {
 		buffer: new PieceTreeBuffer(source),
 		cursorRow,
 		cursorColumn,
@@ -1294,7 +1286,7 @@ test('reference lookup prefers local parameter over global', async () => {
 	assert.ok(helperLineIndex >= 0);
 	const parameterColumn = usageLines[helperLineIndex]!.indexOf('state');
 
-	const parameterResult = resolveReferenceLookup(createIntellisenseBridge({ 'global.lua': globalSource }), {
+	const parameterResult = resolveReferenceLookup(createIntellisenseSources({ 'global.lua': globalSource }), {
 		buffer: new PieceTreeBuffer(usageSource),
 		cursorRow: helperLineIndex,
 		cursorColumn: parameterColumn,

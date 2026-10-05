@@ -1,7 +1,5 @@
 import { readWorkspaceLuaSourceText } from '../../../workspace/files';
 import { releaseWorkspaceSourceOverrides } from '../../../workspace/cache';
-import { LuaInterpreter } from '../../../language/lua/interpreter/interpreter';
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import { forkRuntimeSourceState, type RuntimeSourceState } from '../../../runtime/sources';
 import { blua32MediaRequiresRebuild, buildBlua32Media, layoutBlua32MediaInstallation } from '../../../runtime/lua_pipeline';
 import { applyAllWorkspaceSourceOverrides, applyLuaTextModelSources } from '../../../workspace/workspace';
@@ -13,7 +11,6 @@ import type { MachineModelSpec } from '../../../../machine/ts/spec/bmsx/model';
 /** Editable records belong to this build, never to the authoring machine or its debugger. */
 export async function buildTestRunMedia(
 	authoring: RuntimeSourceState,
-	tooling: RuntimeLuaTooling,
 	dirtyRecords: ReadonlyMap<string, WorkspaceRecord>,
 	programSources: readonly LuaTextModelSourceSnapshot[],
 	slot: 0 | 1,
@@ -30,7 +27,7 @@ export async function buildTestRunMedia(
 		];
 		if (blua32MediaRequiresRebuild(sources)) {
 			const media = layoutBlua32MediaInstallation(sources, buildBlua32Media(sources,
-				new LuaInterpreter(tooling.luaJsBridge), machineModel.ramBytes,
+				machineModel.ramBytes,
 				sources.systemBlua32MediaDirty, sources.cartridgeBlua32MediaDirty, 'boot'));
 			if (media.systemLayer !== null) systemRom = media.systemLayer.bytes;
 			for (const index of [0, 1] as const) {

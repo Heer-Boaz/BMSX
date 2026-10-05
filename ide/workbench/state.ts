@@ -21,7 +21,6 @@ import type { MicrotaskQueue } from '../common/microtask_queue';
 import { RuntimeCartEditor, type CartEditor } from '../cart_editor';
 import { createRuntimeDebuggerState, resetRuntimeDebuggerExecution, type RuntimeDebuggerState } from '../runtime/debugger_state';
 import { clearFaultSnapshot, createRuntimeFaultState, type RuntimeFaultState } from '../runtime/fault_state';
-import { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import { SuspendedGuestSession, type GuestInvalidationReason } from '../runtime/suspended_guest';
 import { OverlayRenderer } from '../runtime/overlay_renderer';
 import type { RuntimeSourceState } from '../runtime/sources';
@@ -52,7 +51,7 @@ export class RuntimeIdeState {
 	public readonly debugger: RuntimeDebuggerState;
 	public readonly events: RuntimeEventHistory;
 	public shortcutDisposers: Array<() => void> = [];
-	public readonly luaTooling: RuntimeLuaTooling;
+	public readonly guest: SuspendedGuestSession;
 	public readonly scenarioRuns: ScenarioRunService;
 	public readonly textFileSaves: TextFileSaveService;
 	public readonly hotResumes: HotResumeService;
@@ -92,24 +91,21 @@ export class RuntimeIdeState {
 		this.events = new RuntimeEventHistory(runtime, sources);
 		this.debugger = createRuntimeDebuggerState(runtime, sources);
 		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue);
-		this.luaTooling = new RuntimeLuaTooling(
-			sources,
-			new SuspendedGuestSession(runtime),
-		);
-		this.scenarioRuns = new ScenarioRunService(editorTextModelService, sources, this.luaTooling, workspaceDirtyRecords, runtime.model, createTestTarget);
-		this.textFileSaves = new TextFileSaveService(editorTextModelService, clock, sources, this.luaTooling, runtime, runtimeTasks);
-		this.hotResumes = new HotResumeService(editorTextModelService, sources, this.luaTooling, this.fault, this.debugger,
+		this.guest = new SuspendedGuestSession(runtime);
+		this.scenarioRuns = new ScenarioRunService(editorTextModelService, sources, workspaceDirtyRecords, runtime.model, createTestTarget);
+		this.textFileSaves = new TextFileSaveService(editorTextModelService, clock, sources, this.guest, runtime, runtimeTasks);
+		this.hotResumes = new HotResumeService(editorTextModelService, sources, this.guest, this.fault, this.debugger,
 			input, runtime, runtimeTasks, execution, workspaceDirtyRecords);
 		this.hotResumes.onDidApply = () => this.events.beginTimeline();
-		this.boots = new BootService(editorTextModelService, sources, this.luaTooling, this.fault, runtime, runtimeTasks,
+		this.boots = new BootService(editorTextModelService, sources, this.fault, runtime, runtimeTasks,
 			execution, audioOutput, workspaceDirtyRecords);
-		this.diagnostics = new ResourceDiagnosticsService(editorTextModelService, this.luaTooling, clock);
-		this.terminal = new LuaTerminalSession(runtime, sources, this.luaTooling.suspendedGuest, this.debugger,
+		this.diagnostics = new ResourceDiagnosticsService(editorTextModelService, sources, clock);
+		this.terminal = new LuaTerminalSession(runtime, sources, this.guest, this.debugger,
 			this.fault, runtimeTasks, execution, rewind);
-		this.actorExecution = new ActorExecutionService(runtime, sources, this.luaTooling.suspendedGuest, this.debugger, this.fault, runtimeTasks, execution, rewind);
-		this.frameNavigation = new RuntimeFrameNavigation(runtime, execution, rewind, runtimeTasks, this.debugger, this.fault, this.luaTooling.suspendedGuest);
-		this.debuggerExecution = new RuntimeDebuggerExecution(runtime, this.debugger, execution, rewind, runtimeTasks, this.fault, this.luaTooling.suspendedGuest, this.frameNavigation);
-		this.inspection = new RuntimeInspectionService(runtime, sources, this.luaTooling.suspendedGuest, this.debugger,
+		this.actorExecution = new ActorExecutionService(runtime, sources, this.guest, this.debugger, this.fault, runtimeTasks, execution, rewind);
+		this.frameNavigation = new RuntimeFrameNavigation(runtime, execution, rewind, runtimeTasks, this.debugger, this.fault, this.guest);
+		this.debuggerExecution = new RuntimeDebuggerExecution(runtime, this.debugger, execution, rewind, runtimeTasks, this.fault, this.guest, this.frameNavigation);
+		this.inspection = new RuntimeInspectionService(runtime, sources, this.guest, this.debugger,
 			execution, runtimeTasks, rewind, this.fault, this.frameNavigation, this.debuggerExecution);
 		this.editor = new RuntimeCartEditor(
 			runtime,
@@ -125,7 +121,7 @@ export class RuntimeIdeState {
 			DEFAULT_IDE_FONT_VARIANT,
 			sources,
 			this.fault,
-			this.luaTooling,
+			this.guest,
 			this.debugger,
 			this.events,
 			this.runtimeTasks,
@@ -157,11 +153,10 @@ export class RuntimeIdeState {
 			this.hotResumes.cancelPending('machine-reset');
 			this.boots.didReplaceMachine();
 			// A restored heap is a new inspection context, not the previous stop.
-			this.luaTooling.suspendedGuest.invalidate(reason);
+			this.guest.invalidate(reason);
 			resetRuntimeDebuggerExecution(this.debugger);
 			clearFaultSnapshot(this.fault);
 			this.fault.supervisorFaultSequence = runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE);
-			this.luaTooling.luaInterpreter.clearLastFaultEnvironment();
 			clearAllRuntimeErrorOverlays();
 			clearHoverTooltip();
 			syncRuntimeSourceActivity(this.sources, runtime.machine.cpu.activeCartridgeSlot());
@@ -173,7 +168,7 @@ export class RuntimeIdeState {
 		};
 		runtime.history.onWillResumeRecording = branched => {
 			if (branched) this.events.beginTimeline();
-			this.luaTooling.suspendedGuest.willResumeHistory();
+			this.guest.willResumeHistory();
 		};
 		runtime.onStateReset = () => {
 			this.events.beginTimeline();

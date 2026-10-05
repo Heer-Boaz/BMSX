@@ -1,4 +1,4 @@
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { CodeEditorContext } from '../../ui/code_editor_state';
 import { buildEditorSemanticFrontend } from '../intellisense/frontend';
 import { definitionLocationFromSourceRange } from '../../navigation/source_range';
@@ -20,7 +20,7 @@ export type LuaDefinitionQuery = {
 };
 
 export function queryDefinitionsAt(
-	bridge: RuntimeLuaTooling,
+	sources: RuntimeSourceState,
 	context: CodeEditorContext,
 	row: number,
 	column: number,
@@ -29,7 +29,7 @@ export function queryDefinitionsAt(
 		return null;
 	}
 	const frontend = buildEditorSemanticFrontend(
-		bridge,
+		sources,
 		context.model.resource,
 		context.model.buffer,
 	);

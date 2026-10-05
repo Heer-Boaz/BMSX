@@ -202,7 +202,7 @@ export function surfaceHostFrameError(
 		state.fault,
 		state.sources,
 		runtime,
-		state.luaTooling.suspendedGuest,
+		state.guest,
 		error,
 	);
 }

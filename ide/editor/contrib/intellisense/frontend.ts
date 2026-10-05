@@ -1,56 +1,38 @@
 import { editorTextModelService } from '../../model/model_service';
-import {
-	createLuaSemanticFrontendFromSnapshot,
-	type LuaSemanticFrontendEnvironment,
-} from './semantic/workspace/index';
+import { createLuaSemanticFrontendFromSnapshot, type LuaSemanticFrontendEnvironment } from './semantic/workspace/index';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import { getOrCreateSemanticProject } from './semantic/workspace/state';
 import type { TextBuffer } from '../../text/text_buffer';
 import type { ResourceIdentity } from '../../../common/resource';
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
-import type { LuaInterpreter } from '../../../language/lua/interpreter/interpreter';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 import { listLuaBuiltinDescriptors } from '../../../runtime/lua_builtins';
-import type { LuaBuiltinDescriptor } from '../../../../toolchain/ts/lua/semantic_contracts';
-
-type RetainedSemanticEnvironment = {
-	readonly builtinDescriptors: readonly LuaBuiltinDescriptor[];
-	readonly environment: LuaSemanticFrontendEnvironment;
-};
-
-const semanticEnvironmentByInterpreter = new WeakMap<LuaInterpreter, RetainedSemanticEnvironment>();
+import { SYSTEM_ROM_BOOT_SYMBOL_NAMES } from '../../../../toolchain/ts/lua/compiler/system_boot_symbols';
 
 export function buildEditorSemanticSnapshot(
-	bridge: RuntimeLuaTooling,
+	sources: RuntimeSourceState,
 	identity: ResourceIdentity,
 	buffer: TextBuffer,
 ): LuaSemanticWorkspaceSnapshot {
 	const project = getOrCreateSemanticProject(editorTextModelService, identity.domain);
-	project.synchronizeRuntimeSources(bridge.sources);
+	project.synchronizeRuntimeSources(sources);
 	project.analyzeDocument(identity.path, buffer);
 	return project.getSnapshot();
 }
 
-export function createEditorSemanticFrontend(bridge: RuntimeLuaTooling, snapshot: LuaSemanticWorkspaceSnapshot): ReturnType<typeof createLuaSemanticFrontendFromSnapshot> {
+let semanticEnvironment: LuaSemanticFrontendEnvironment;
+
+export function createEditorSemanticFrontend(snapshot: LuaSemanticWorkspaceSnapshot): ReturnType<typeof createLuaSemanticFrontendFromSnapshot> {
 	const builtinDescriptors = listLuaBuiltinDescriptors();
-	const interpreter = bridge.luaInterpreter;
-	let environment = semanticEnvironmentByInterpreter.get(interpreter);
-	if (!environment || environment.builtinDescriptors !== builtinDescriptors) {
-		environment = {
-			builtinDescriptors,
-			environment: {
-				builtinDescriptors,
-				extraGlobalNames: Array.from(interpreter.globalEnvironment.keys()),
-			},
-		};
-		semanticEnvironmentByInterpreter.set(interpreter, environment);
+	if (semanticEnvironment === undefined || semanticEnvironment.builtinDescriptors !== builtinDescriptors) {
+		semanticEnvironment = { builtinDescriptors, extraGlobalNames: SYSTEM_ROM_BOOT_SYMBOL_NAMES };
 	}
-	return createLuaSemanticFrontendFromSnapshot(snapshot, environment.environment);
+	return createLuaSemanticFrontendFromSnapshot(snapshot, semanticEnvironment);
 }
 
 export function buildEditorSemanticFrontend(
-	bridge: RuntimeLuaTooling,
+	sources: RuntimeSourceState,
 	identity: ResourceIdentity,
 	buffer: TextBuffer,
 ): ReturnType<typeof createLuaSemanticFrontendFromSnapshot> {
-	return createEditorSemanticFrontend(bridge, buildEditorSemanticSnapshot(bridge, identity, buffer));
+	return createEditorSemanticFrontend(buildEditorSemanticSnapshot(sources, identity, buffer));
 }

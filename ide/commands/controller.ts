@@ -38,7 +38,6 @@ import type { EditorTextModel } from '../editor/model/text_model';
 import { resolveRuntimeLuaSource, type RuntimeSourceState } from '../runtime/sources';
 import type { ScenarioRunService } from '../workbench/services/testing/scenario_runs';
 import type { RuntimeFaultState } from '../runtime/fault_state';
-import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import {
@@ -75,7 +74,6 @@ export class IdeCommandController {
 		private readonly editor: CartEditor,
 		private readonly sources: RuntimeSourceState,
 		private readonly fault: RuntimeFaultState,
-		private readonly luaTooling: RuntimeLuaTooling,
 		private readonly debuggerState: RuntimeDebuggerState,
 		private readonly hotResumes: HotResumeService,
 		private readonly boots: BootService,
@@ -306,13 +304,13 @@ export class IdeCommandController {
 		if (isEditorSymbolNavigationCommand(command)) {
 			executeEditorSymbolNavigationCommand(
 				this.editor,
-				this.luaTooling,
+				this.sources,
 				command,
 			);
 			return;
 		}
 		if (isEditorSearchCommand(command)) {
-			executeEditorSearchCommand(this.editor, this.sources, this.luaTooling, renameController, command);
+			executeEditorSearchCommand(this.editor, this.sources, renameController, command);
 			return;
 		}
 		if (isEditorViewCommand(command)) {

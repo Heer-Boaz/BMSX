@@ -453,14 +453,14 @@ test('actual editor frontend and context token queries consume queued model edit
 	const model = editorTextModelService.retain(resource(0, path), 'lua', source);
 	const project = resetSemanticProject(editorTextModelService, 0);
 	const sources = runtimeSources(sourceRegistry([['system.lua', 'return 0']]), sourceRegistry([[path, source]]));
-	const bridge = { sources } as import('../../ide/runtime/lua_tooling').RuntimeLuaTooling;
+
 	t.after(() => { activeCodeEditor.detach(); resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
-	const initial = buildEditorSemanticSnapshot(bridge, model.resource, model.buffer);
+	const initial = buildEditorSemanticSnapshot(sources, model.resource, model.buffer);
 	const retained = initial.getFileData(path)!.chunk.tokens.get(initial.getFileData(path)!.chunk.tokens.length - 2);
 	const explicit = t.mock.method(project, 'updateDocument');
 	activeCodeEditor.attach(model, createCodeEditorViewState());
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- frontend\n' }]);
-	const next = buildEditorSemanticSnapshot(bridge, model.resource, model.buffer);
+	const next = buildEditorSemanticSnapshot(sources, model.resource, model.buffer);
 	assert.ok(Array.from(next.getFileData(path)!.chunk.tokens).includes(retained));
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- context\n' }]);
 	assert.equal(resolveContextMenuToken(2, 7, path)?.text, 'value_0');
@@ -494,25 +494,25 @@ test('diagnostics consume model deltas without replacing incremental baselines w
 	const { editorTextModelService } = await import('../../ide/editor/model/model_service');
 	const { resetSemanticProject, resetSemanticProjects } = await import('../../ide/editor/contrib/intellisense/semantic/workspace/state');
 	const { computeResourceDiagnostics } = await import('../../ide/workbench/services/diagnostics/lua');
-	const { RuntimeLuaTooling } = await import('../../ide/runtime/lua_tooling');
-	const { SuspendedGuestSession } = await import('../../ide/runtime/suspended_guest');
-	const { createTestRuntime, createTestRuntimeRomPayload } = await import('../helpers/runtime_sources');
+
+
+
 	const path = 'diagnostics_incremental.lua';
 	const source = Array.from({ length: 90 }, (_, index) => `local value_${index} = ${index}\n`).join('') + 'return value_89';
 	const model = editorTextModelService.retain(resource(0, path), 'lua', source);
 	const project = resetSemanticProject(editorTextModelService, 0);
 	const sources = runtimeSources(sourceRegistry([['system.lua', 'return 0']]), sourceRegistry([[path, source]]));
-	const bridge = new RuntimeLuaTooling(sources, new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload())));
+
 	t.after(() => { resetSemanticProjects(editorTextModelService); editorTextModelService.clear(); });
 	project.synchronizeRuntimeSources(sources);
 	const before = project.getFileData(path)!;
 	const retained = before.chunk.tokens.get(before.chunk.tokens.length - 2);
 	const explicit = t.mock.method(project, 'updateDocuments');
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- diagnostics\n' }]);
-	computeResourceDiagnostics(editorTextModelService, bridge, [model]);
+	computeResourceDiagnostics(editorTextModelService, sources, [model]);
 	assert.equal(explicit.mock.callCount(), 0);
 	assert.ok(Array.from(project.getFileData(path)!.chunk.tokens).includes(retained));
-	computeResourceDiagnostics(editorTextModelService, bridge, [model]);
+	computeResourceDiagnostics(editorTextModelService, sources, [model]);
 	assert.equal(explicit.mock.callCount(), 0, 'repeated diagnostics preserve the model-owned baseline');
 });
 

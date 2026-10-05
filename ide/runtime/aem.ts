@@ -1,3 +1,4 @@
+import type { SuspendedGuestSession } from './suspended_guest';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
@@ -17,7 +18,6 @@ import {
 	type RuntimeResource,
 } from '../common/resource';
 import type { RuntimeSourceState } from './sources';
-import type { RuntimeLuaTooling } from './lua_tooling';
 import {
 	buildBlua32Revision,
 	installBlua32Revision,
@@ -41,7 +41,7 @@ export type AemSourceApplyResult =
 /** Apply one accepted source snapshot; rejected authoring never enters machine mutation. */
 export async function applyAemSourceRevision(
 	sources: RuntimeSourceState,
-	luaTooling: RuntimeLuaTooling,
+	guest: SuspendedGuestSession,
 	runtime: Runtime,
 	runtimeTasks: RuntimeTaskQueue,
 	resource: RuntimeResource,
@@ -58,13 +58,13 @@ export async function applyAemSourceRevision(
 		}
 		let built: BuiltAemSourceRevision;
 		try {
-			built = buildAemSourceRevision(sources, luaTooling, runtime, resource, source);
+			built = buildAemSourceRevision(sources, runtime, resource, source);
 		} catch (error) {
 			recordAemSourceApplyFailure(sources, resource);
 			result = { status: 'failed', phase: 'build', error };
 			return;
 		}
-		installAemSourceRevision(sources, luaTooling, runtime, built);
+		installAemSourceRevision(sources, guest, runtime, built);
 		result = { status: 'applied' };
 	}, error => {
 		recordAemSourceApplyFailure(sources, resource);
@@ -89,7 +89,6 @@ function buildRuntimeAemValidationLookup(sources: RuntimeSourceState, domain: Re
 
 export function buildAemSourceRevision(
 	sources: RuntimeSourceState,
-	luaTooling: RuntimeLuaTooling,
 	runtime: Runtime,
 	resource: RuntimeResource,
 	source: string,
@@ -103,7 +102,6 @@ export function buildAemSourceRevision(
 	assetEdits[resource.domain + 1].push(['aem', assetId, encodeBinary(eventMap)]);
 	const revision = buildBlua32Revision(
 		sources,
-		luaTooling,
 		runtime,
 		resource.domain === SYSTEM_RESOURCE_DOMAIN,
 		[resource.domain === 0, resource.domain === 1],
@@ -119,13 +117,13 @@ export function buildAemSourceRevision(
 
 export function installAemSourceRevision(
 	sources: RuntimeSourceState,
-	luaTooling: RuntimeLuaTooling,
+	guest: SuspendedGuestSession,
 	runtime: Runtime,
 	built: BuiltAemSourceRevision,
 ): void {
 	const { resource, source, eventMap } = built;
 	const assetId = resource.source.resid;
-	installBlua32Revision(sources, runtime, luaTooling.suspendedGuest, built.revision, built.relocation);
+	installBlua32Revision(sources, runtime, guest, built.revision, built.relocation);
 	const runtimePackage = resource.domain === SYSTEM_RESOURCE_DOMAIN
 		? sources.systemPackage
 		: sources.cartridgeSlots[resource.domain]!.package;
@@ -134,12 +132,11 @@ export function installAemSourceRevision(
 		installedSource: source,
 		failed: false,
 	});
-	const suspendedGuest = luaTooling.suspendedGuest;
-	const aemResource = suspendedGuest.global(
+	const aemResource = guest.global(
 		buildModuleExportSlotName('cartlib/aem', []),
 	);
-	suspendedGuest.callClosure(
-		suspendedGuest.readStringMember(aemResource, 'reload_from_rom'),
+	guest.callClosure(
+		guest.readStringMember(aemResource, 'reload_from_rom'),
 	);
 }
 

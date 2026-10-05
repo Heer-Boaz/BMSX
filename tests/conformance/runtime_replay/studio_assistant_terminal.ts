@@ -33,7 +33,7 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	check(terminal.active!.result === undefined, 'breakpoint retains the actual call');
 	ide.debugger.breakpoints.toggle(repl, line);
 	await until(() => conversation.state === 'ready', 'terminal tools: model receives pause, continues and finishes');
-	const guest = ide.luaTooling.suspendedGuest;
+	const guest = ide.guest;
 	check(guest.global('terminal_probe') === 43 && guest.global('counter') === 105
 		&& guest.readStringMember(guest.global('cartlib__world__world'), 'terminal_probe') === 89,
 		'conversation Lua writes the real global register and the existing cart world object');

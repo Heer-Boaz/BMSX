@@ -3,15 +3,13 @@ import { test, type TestContext } from 'node:test';
 import { EditorTextModelService, editorTextModelService as models } from '../../ide/editor/model/model_service';
 import { getOrCreateSemanticProject, resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { ResourceDiagnosticsService } from '../../ide/workbench/services/diagnostics/resource_diagnostics';
-import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
-import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { setWorkspaceLuaSourceOverride, deleteWorkspaceLuaSourceOverride } from '../../ide/workspace/cache';
 import type { ResourceDomain } from '../../ide/common/resource';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { clearBackgroundTasks, runBackgroundTasks } from '../../ide/common/background_tasks';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
-import { createTestRuntime, createTestRuntimeRomPayload, createTestRuntimeSourceState } from '../helpers/runtime_sources';
+import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 function fixture(t: TestContext) {
@@ -19,9 +17,9 @@ function fixture(t: TestContext) {
 	const registries: LuaSourceRegistry[] = [-1, 0, 1].map(() => ({ records: [], path2lua: {}, module2lua: {},
 		entrySourcePath: 'entry.lua', projectRootPath: '', can_boot_from_source: true, revision: 0 }));
 	const sources = createTestRuntimeSourceState(registries[0], [registries[1], registries[2]], 0);
-	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload())));
+
 	const clock = new VirtualHeadlessClock();
-	const service = new ResourceDiagnosticsService(models, tooling, clock);
+	const service = new ResourceDiagnosticsService(models, sources, clock);
 	t.after(() => { service.dispose(); resetSemanticProjects(models); models.clear(); clearBackgroundTasks(); });
 	const retain = (domain: ResourceDomain, path: string, source: string) => models.retain({ domain, path,
 		source: { type: 'lua', resid: path } }, 'lua', source);
@@ -48,8 +46,8 @@ test('resource diagnostics never import matching working copies from another mod
 	const ownedModels = new EditorTextModelService();
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('provider.lua', 1, 'owned_global = 1'),
 		createScenarioTestSourceRecord('reader.lua', 1, 'return owned_global')]);
-	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload())));
-	const service = new ResourceDiagnosticsService(ownedModels, tooling, new VirtualHeadlessClock());
+
+	const service = new ResourceDiagnosticsService(ownedModels, sources, new VirtualHeadlessClock());
 	t.after(() => { service.dispose(); ownedModels.clear(); });
 	const reader = ownedModels.retain(sources.luaResources.find(resource => resource.path === 'reader.lua')!, 'lua', 'return owned_global');
 	service.computePending();

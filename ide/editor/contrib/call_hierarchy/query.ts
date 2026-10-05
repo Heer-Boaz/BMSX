@@ -1,23 +1,23 @@
+import type { RuntimeSourceState } from '../../../runtime/sources';
 import { buildEditorSemanticSnapshot, createEditorSemanticFrontend } from '../intellisense/frontend';
 import { CallHierarchyModel } from './model';
 import { activeCodeEditor } from '../../ui/code_editor_state';
 import { SYSTEM_RESOURCE_DOMAIN } from '../../../common/resource';
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 
 export type CallHierarchyQueryResult =
 	| { kind: 'success'; model: CallHierarchyModel; }
 	| { kind: 'missing_definition'; };
 
-export function resolveCallHierarchyAt(bridge: RuntimeLuaTooling, row: number, column: number): CallHierarchyQueryResult {
+export function resolveCallHierarchyAt(sources: RuntimeSourceState, row: number, column: number): CallHierarchyQueryResult {
 	const resource = activeCodeEditor.model.resource;
 	const path = resource.path;
-	const snapshot = buildEditorSemanticSnapshot(bridge, resource, activeCodeEditor.model.buffer);
-	const frontend = createEditorSemanticFrontend(bridge, snapshot);
+	const snapshot = buildEditorSemanticSnapshot(sources, resource, activeCodeEditor.model.buffer);
+	const frontend = createEditorSemanticFrontend(snapshot);
 	const symbols = frontend.findSymbolsByPosition(path, row + 1, column + 1);
 	if (!symbols) {
 		return { kind: 'missing_definition' };
 	}
-	const resources = bridge.sources.luaResources;
+	const resources = sources.luaResources;
 	let rootReadOnly = false;
 	for (let index = 0; index < resources.length; index += 1) {
 		const resource = resources[index];

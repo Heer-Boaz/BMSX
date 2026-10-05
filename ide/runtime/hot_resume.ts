@@ -1,6 +1,5 @@
 import { retireRuntimeFrameScopes } from './frame_scopes';
 import type { SuspendedGuestSession } from './suspended_guest';
-import { convertToError } from '../language/lua/interpreter/value';
 import type { Input } from '../../hosts/common/input/manager';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import {
@@ -29,7 +28,6 @@ import {
 } from '../../machine/ts/spec/bmsx/io';
 import type { RuntimeSourceState } from './sources';
 import type { Blua32SourceMedia } from './sources';
-import type { RuntimeLuaTooling } from './lua_tooling';
 import {
 	applyRuntimeDebuggerHotResume,
 	discardRuntimeDebuggerFramesFrom,
@@ -176,7 +174,6 @@ class HotResumeSupervisorPlan implements RuntimeDebuggerControlPlan {
 
 export function buildBlua32Revision(
 	sources: RuntimeSourceState,
-	luaTooling: RuntimeLuaTooling,
 	runtime: Runtime,
 	rebuildSystem: boolean,
 	rebuildCartridgeSlots: readonly [boolean, boolean],
@@ -184,7 +181,6 @@ export function buildBlua32Revision(
 ): BuiltBlua32Revision {
 	const rebuilt = buildBlua32Media(
 		sources,
-		luaTooling.luaInterpreter,
 		runtime.machine.memory.ramByteCount(),
 		rebuildSystem,
 		rebuildCartridgeSlots,
@@ -270,7 +266,7 @@ export function installBlua32Revision(
 /** Admit installation or a supervisor-return plan; init completion is reported by its physical roots. */
 export function admitHotResume(
 	sources: RuntimeSourceState,
-	luaTooling: RuntimeLuaTooling,
+	guest: SuspendedGuestSession,
 	fault: RuntimeFaultState,
 	debuggerState: RuntimeDebuggerState,
 	input: Input,
@@ -281,159 +277,155 @@ export function admitHotResume(
 	report: (event: HotResumeEvent) => void,
 	context: RuntimeDebuggerExecutionContext = 'game',
 ): HotResumeAdmission {
-	try {
-		const sourceEditDomains = built === null ? 0 : built.sourceEditDomains;
-		const rebuildSystem = (sourceEditDomains & executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID)) !== 0;
-		const rebuildCartridgeSlot0 = (sourceEditDomains & executionDomainBit(0)) !== 0;
-		const rebuildCartridgeSlot1 = (sourceEditDomains & executionDomainBit(1)) !== 0;
-		const rebuildMedia = built !== null;
-		const freshMedia = built === null
-			? sources.currentBlua32Media
-			: built.mediaInstallation.sourceMedia;
-		const cpu = runtime.machine.cpu;
-		const activeCartridgeSlot = cpu.activeCartridgeSlot();
-		let stageCartridgeInit = activeCartridgeSlot === 0
-			? rebuildCartridgeSlot0 || !rebuildMedia
-			: rebuildCartridgeSlot1 || !rebuildMedia;
-		let cartridgeInitExecutionDomain = activeCartridgeSlot;
-		let stageSystemInit = rebuildSystem;
-		const supervisorActive = (
-			runtime.machine.memory.readMappedU32LE(IO_SYS_STATUS)
-			& SYS_STATUS_SUPERVISOR_ACTIVE
-		) !== 0;
-		const deferUntilUserExecution = supervisorActive || !cpu.isUserMode();
-		debuggerState.plans.pruneCompletedCompletionBatches();
-		let userFrameDepth = cpu.getFrameDepth();
-		let failedCompletionFrameIndex = -1;
-		if (deferUntilUserExecution) {
-			userFrameDepth = cpu.readExceptionReturnFrameDepth();
-			if (supervisorActive) {
-				const exceptionFunctionAddress = sources.systemRom.header.blua32ExceptionFunctionAddress;
-				let supervisorExceptionFrameIndex = cpu.getFrameDepth() - 1;
-				while (!cpu.isExceptionFrame(supervisorExceptionFrameIndex)
-					|| cpu.readFrameFunctionAddress(supervisorExceptionFrameIndex)
-						!== exceptionFunctionAddress) {
-					supervisorExceptionFrameIndex -= 1;
+	const sourceEditDomains = built === null ? 0 : built.sourceEditDomains;
+	const rebuildSystem = (sourceEditDomains & executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID)) !== 0;
+	const rebuildCartridgeSlot0 = (sourceEditDomains & executionDomainBit(0)) !== 0;
+	const rebuildCartridgeSlot1 = (sourceEditDomains & executionDomainBit(1)) !== 0;
+	const rebuildMedia = built !== null;
+	const freshMedia = built === null
+		? sources.currentBlua32Media
+		: built.mediaInstallation.sourceMedia;
+	const cpu = runtime.machine.cpu;
+	const activeCartridgeSlot = cpu.activeCartridgeSlot();
+	let stageCartridgeInit = activeCartridgeSlot === 0
+		? rebuildCartridgeSlot0 || !rebuildMedia
+		: rebuildCartridgeSlot1 || !rebuildMedia;
+	let cartridgeInitExecutionDomain = activeCartridgeSlot;
+	let stageSystemInit = rebuildSystem;
+	const supervisorActive = (
+		runtime.machine.memory.readMappedU32LE(IO_SYS_STATUS)
+		& SYS_STATUS_SUPERVISOR_ACTIVE
+	) !== 0;
+	const deferUntilUserExecution = supervisorActive || !cpu.isUserMode();
+	debuggerState.plans.pruneCompletedCompletionBatches();
+	let userFrameDepth = cpu.getFrameDepth();
+	let failedCompletionFrameIndex = -1;
+	if (deferUntilUserExecution) {
+		userFrameDepth = cpu.readExceptionReturnFrameDepth();
+		if (supervisorActive) {
+			const exceptionFunctionAddress = sources.systemRom.header.blua32ExceptionFunctionAddress;
+			let supervisorExceptionFrameIndex = cpu.getFrameDepth() - 1;
+			while (!cpu.isExceptionFrame(supervisorExceptionFrameIndex)
+				|| cpu.readFrameFunctionAddress(supervisorExceptionFrameIndex)
+					!== exceptionFunctionAddress) {
+				supervisorExceptionFrameIndex -= 1;
+			}
+			if (!cpu.isNonMaskableExceptionFrame(supervisorExceptionFrameIndex)) {
+				let completionFrameIndex = supervisorExceptionFrameIndex - 1;
+				while (completionFrameIndex >= 0
+					&& !cpu.readFrameReturnsToCompletionLatch(completionFrameIndex)) {
+					completionFrameIndex -= 1;
 				}
-				if (!cpu.isNonMaskableExceptionFrame(supervisorExceptionFrameIndex)) {
-					let completionFrameIndex = supervisorExceptionFrameIndex - 1;
-					while (completionFrameIndex >= 0
-						&& !cpu.readFrameReturnsToCompletionLatch(completionFrameIndex)) {
-						completionFrameIndex -= 1;
-					}
-					const failedBatch = debuggerState.plans.completionBatchAtFrame(
-						cpu.activeThread,
-						completionFrameIndex,
-					);
-					if (failedBatch === null) {
-						failedCompletionFrameIndex = completionFrameIndex;
-					} else {
-						failedCompletionFrameIndex = failedBatch.firstFrameIndex;
-						const uncompletedCallCount = completionFrameIndex
-							- failedBatch.firstFrameIndex
-							+ 1;
-						for (let callIndex = 0; callIndex < uncompletedCallCount; callIndex += 1) {
-							const domain = failedBatch.executionDomains[callIndex];
-							if (domain === SYSTEM_EXECUTION_DOMAIN_ID) {
-								stageSystemInit = true;
-							} else {
-								stageCartridgeInit = true;
-								cartridgeInitExecutionDomain = domain;
-							}
+				const failedBatch = debuggerState.plans.completionBatchAtFrame(
+					cpu.activeThread,
+					completionFrameIndex,
+				);
+				if (failedBatch === null) {
+					failedCompletionFrameIndex = completionFrameIndex;
+				} else {
+					failedCompletionFrameIndex = failedBatch.firstFrameIndex;
+					const uncompletedCallCount = completionFrameIndex
+						- failedBatch.firstFrameIndex
+						+ 1;
+					for (let callIndex = 0; callIndex < uncompletedCallCount; callIndex += 1) {
+						const domain = failedBatch.executionDomains[callIndex];
+						if (domain === SYSTEM_EXECUTION_DOMAIN_ID) {
+							stageSystemInit = true;
+						} else {
+							stageCartridgeInit = true;
+							cartridgeInitExecutionDomain = domain;
 						}
 					}
 				}
 			}
 		}
-		const initCalls: PreparedHotResumeInitCall[] = [];
-		if (stageCartridgeInit) {
-			const address = blua32ToolingImageForDomain(
-				freshMedia,
-				cartridgeInitExecutionDomain,
-			)!.symbols!.initFunctionAddress;
-			if (address !== 0) {
-				initCalls.push({
-					executionDomain: cartridgeInitExecutionDomain,
-					functionAddress: address,
-				});
-			}
-		}
-		if (stageSystemInit) {
-			const address = freshMedia.system!.symbols!.initFunctionAddress;
-			if (address !== 0) {
-				initCalls.push({
-					executionDomain: SYSTEM_EXECUTION_DOMAIN_ID,
-					functionAddress: address,
-				});
-			}
-		}
-		const prepared: PreparedHotResume = {
-			built,
-			media: freshMedia,
-			initCalls,
-			failedCompletionFrameIndex,
-		};
-		const installation = (): HotResumeAdmission => {
-			const retainedFrameCount = prepared.failedCompletionFrameIndex >= 0
-				? prepared.failedCompletionFrameIndex
-				: cpu.getFrameDepth();
-			let relocation: Uint32Array | null;
-			try {
-				relocation = prepared.built === null
-					? null
-					: buildHotResumeRelocation(cpu, prepared.built.revisions, retainedFrameCount);
-			} catch (error) {
-				// Unsupported live edits reject before any media/CPU write. They
-				// must not fault the mutation queue or stop the installed program.
-				report({ kind: 'rejected', error });
-				return 'rejected';
-			}
-			applyPreparedHotResume(
-				sources,
-				luaTooling,
-				fault,
-				debuggerState,
-				runtime,
-				prepared,
-				relocation,
-				report,
-				context,
-			);
-			report({ kind: prepared.initCalls.length === 0 ? 'completed' : 'initializing' });
-			return 'applied';
-		};
-		if (deferUntilUserExecution) {
-			const targetFrameIndex = userFrameDepth - 1;
-			// The accepted supervisor-return plan executes against the retained
-			// machine, not against recorded historical input.
-			runtime.history.stop();
-			pushRuntimeDebuggerControlPlan(
-				debuggerState,
-				new HotResumeSupervisorPlan(
-					input,
-					runtime,
-					runtimeTasks,
-					userFrameDepth,
-					cpu.readFrameExecutionDomain(targetFrameIndex),
-					cpu.readFramePc(targetFrameIndex),
-					supervisorActive,
-					installation,
-					isCurrent,
-					report,
-				),
-				context,
-			);
-			return 'deferred';
-		}
-		return installation();
-	} catch (error) {
-		throw convertToError(error);
 	}
+	const initCalls: PreparedHotResumeInitCall[] = [];
+	if (stageCartridgeInit) {
+		const address = blua32ToolingImageForDomain(
+			freshMedia,
+			cartridgeInitExecutionDomain,
+		)!.symbols!.initFunctionAddress;
+		if (address !== 0) {
+			initCalls.push({
+				executionDomain: cartridgeInitExecutionDomain,
+				functionAddress: address,
+			});
+		}
+	}
+	if (stageSystemInit) {
+		const address = freshMedia.system!.symbols!.initFunctionAddress;
+		if (address !== 0) {
+			initCalls.push({
+				executionDomain: SYSTEM_EXECUTION_DOMAIN_ID,
+				functionAddress: address,
+			});
+		}
+	}
+	const prepared: PreparedHotResume = {
+		built,
+		media: freshMedia,
+		initCalls,
+		failedCompletionFrameIndex,
+	};
+	const installation = (): HotResumeAdmission => {
+		const retainedFrameCount = prepared.failedCompletionFrameIndex >= 0
+			? prepared.failedCompletionFrameIndex
+			: cpu.getFrameDepth();
+		let relocation: Uint32Array | null;
+		try {
+			relocation = prepared.built === null
+				? null
+				: buildHotResumeRelocation(cpu, prepared.built.revisions, retainedFrameCount);
+		} catch (error) {
+			// Unsupported live edits reject before any media/CPU write. They
+			// must not fault the mutation queue or stop the installed program.
+			report({ kind: 'rejected', error });
+			return 'rejected';
+		}
+		applyPreparedHotResume(
+			sources,
+			guest,
+			fault,
+			debuggerState,
+			runtime,
+			prepared,
+			relocation,
+			report,
+			context,
+		);
+		report({ kind: prepared.initCalls.length === 0 ? 'completed' : 'initializing' });
+		return 'applied';
+	};
+	if (deferUntilUserExecution) {
+		const targetFrameIndex = userFrameDepth - 1;
+		// The accepted supervisor-return plan executes against the retained
+		// machine, not against recorded historical input.
+		runtime.history.stop();
+		pushRuntimeDebuggerControlPlan(
+			debuggerState,
+			new HotResumeSupervisorPlan(
+				input,
+				runtime,
+				runtimeTasks,
+				userFrameDepth,
+				cpu.readFrameExecutionDomain(targetFrameIndex),
+				cpu.readFramePc(targetFrameIndex),
+				supervisorActive,
+				installation,
+				isCurrent,
+				report,
+			),
+			context,
+		);
+		return 'deferred';
+	}
+	return installation();
 }
 
 function applyPreparedHotResume(
 	sources: RuntimeSourceState,
-	luaTooling: RuntimeLuaTooling,
+	guest: SuspendedGuestSession,
 	fault: RuntimeFaultState,
 	debuggerState: RuntimeDebuggerState,
 	runtime: Runtime,
@@ -447,7 +439,7 @@ function applyPreparedHotResume(
 	// A no-source-change resume still mutates the heap through its init calls.
 	if (prepared.built === null) runtime.history.stop();
 	if (prepared.failedCompletionFrameIndex >= 0) {
-		retireRuntimeFrameScopes(runtime, sources, luaTooling.suspendedGuest, cpu.activeThread, prepared.failedCompletionFrameIndex);
+		retireRuntimeFrameScopes(runtime, sources, guest, cpu.activeThread, prepared.failedCompletionFrameIndex);
 		cpu.abortCompletionCall(prepared.failedCompletionFrameIndex);
 		debuggerState.plans.discardCompletionBatchesFrom(
 			cpu.activeThread,
@@ -462,13 +454,12 @@ function applyPreparedHotResume(
 		installBlua32Revision(
 			sources,
 			runtime,
-			luaTooling.suspendedGuest,
+			guest,
 			prepared.built,
 			relocation!,
 		);
 	}
 	report({ kind: 'applied' });
-	luaTooling.luaInterpreter.clearLastFaultEnvironment();
 	clearFaultSnapshot(fault);
 	resetHandledLuaErrors(fault);
 	clearAllRuntimeErrorOverlays();

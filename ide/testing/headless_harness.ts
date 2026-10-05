@@ -97,7 +97,8 @@ export function createHeadlessIdeHarness(
 		getWorkbenchTabs: () => getTabs(),
 		getHover: (row, column) => {
 			updateHoverTooltip(
-				ide.luaTooling,
+				ide.sources,
+				ide.guest,
 				ide.fault,
 				runtime,
 				getActiveCodeTabContext(),

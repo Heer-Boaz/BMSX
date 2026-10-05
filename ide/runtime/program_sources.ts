@@ -2,7 +2,7 @@ import { collectLuaModuleDependencyClosure } from '../../toolchain/ts/lua/compil
 import { resolveLuaEntryModuleIndex } from '../../toolchain/ts/lua/entry_module';
 import { isCartLibrarySource } from '../../toolchain/ts/lua/source_paths';
 import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
-import type { LuaInterpreter } from '../language/lua/interpreter/interpreter';
+import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { readWorkspaceLuaSourceText } from '../workspace/files';
 import type { LuaSourceRegistry } from './source_registry';
 
@@ -23,7 +23,7 @@ export type ProgramSources = {
 
 /** Workspace membership is not executable membership. Libraries are parsed only on demand. */
 export function collectProgramSources(
-	registry: LuaSourceRegistry, interpreter: LuaInterpreter,
+	registry: LuaSourceRegistry,
 	entrySourcePath: string | undefined, moduleRoots: readonly string[],
 ): ProgramSources {
 	const available = new Map(registry.records.filter(record => record.program_module).map(record => [record.module_path, record]));
@@ -34,7 +34,7 @@ export function collectProgramSources(
 		const record = available.get(path);
 		if (record === undefined) throw new Error(`Program module '${path}' is not available in this workspace.`);
 		const source = readWorkspaceLuaSourceText(registry, record);
-		module = { path, sourcePath: record.source_path, source, chunk: interpreter.compileChunk(source, path) };
+		module = { path, sourcePath: record.source_path, source, chunk: parseLuaChunk(source, path).chunk };
 		parsed.set(path, module);
 		return module;
 	};

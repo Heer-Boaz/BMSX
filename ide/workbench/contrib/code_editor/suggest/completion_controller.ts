@@ -1,3 +1,5 @@
+import type { SuspendedGuestSession } from '../../../../runtime/suspended_guest';
+import type { RuntimeSourceState } from '../../../../runtime/sources';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { create_rect_bounds } from '../../../../../machine/ts/common/rect';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
@@ -40,7 +42,6 @@ import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSel
 import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
 import type { PlayerInput } from '../../../../../hosts/common/input/player';
 import { editorRuntimeState } from '../../../../editor/common/runtime_state';
-import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../../runtime/fault_state';
 
 type LocalCompletionCacheEntry = {
@@ -55,7 +56,8 @@ const KEYWORD_COMPLETION_ITEMS: LuaCompletionItem[] = getKeywordCompletions();
 
 export class CompletionController {
 	public constructor(
-		protected readonly bridge: RuntimeLuaTooling,
+		protected readonly sources: RuntimeSourceState,
+		protected readonly guest: SuspendedGuestSession,
 		protected readonly fault: RuntimeFaultState,
 		protected readonly runtime: Runtime,
 	) {}
@@ -536,7 +538,8 @@ export class CompletionController {
 				return semanticItems;
 			}
 			const runtimeItems = buildMemberCompletionItems(
-				this.bridge,
+				this.sources,
+				this.guest,
 				this.fault,
 				this.runtime,
 				namePath,
@@ -605,7 +608,7 @@ export class CompletionController {
 		const key = resourceIdentityKey(activeCodeEditor.model.resource);
 		const path = this.getActivePath();
 		const frontend = buildEditorSemanticFrontend(
-			this.bridge,
+			this.sources,
 			activeCodeEditor.model.resource,
 			this.getBuffer(),
 		);
@@ -626,7 +629,7 @@ export class CompletionController {
 	}
 
 	private getGlobalCompletionItems(): LuaCompletionItem[] {
-		const entries = listGlobalLuaSymbols(this.bridge, this.getActiveDomain());
+		const entries = listGlobalLuaSymbols(this.sources, this.getActiveDomain());
 		if (this.cachedGlobalCompletionItems && this.cachedGlobalSymbolEntries === entries) {
 			return this.cachedGlobalCompletionItems;
 		}
@@ -1048,7 +1051,7 @@ export class CompletionController {
 		if (!this.isCompletionReady()) return null;
 		const cursor = this.getCursorPosition();
 		const frontend = buildEditorSemanticFrontend(
-			this.bridge,
+			this.sources,
 			activeCodeEditor.model.resource,
 			this.getBuffer(),
 		);
@@ -1064,8 +1067,8 @@ export class EditorCompletionController extends CompletionController {
 	private readonly unsubscribeCursorMoved: () => void;
 	private readonly unsubscribeTextMutated: () => void;
 
-	public constructor(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime) {
-		super(bridge, fault, runtime);
+	public constructor(sources: RuntimeSourceState, guest: SuspendedGuestSession, fault: RuntimeFaultState, runtime: Runtime) {
+		super(sources, guest, fault, runtime);
 		this.unsubscribeCursorMoved = activeCodeEditor.onDidMoveCursor(() => this.onCursorMoved());
 		this.unsubscribeTextMutated = editorTextModelService.onDidChangeContent((model, event) => {
 			if (model === activeCodeEditor.model) {

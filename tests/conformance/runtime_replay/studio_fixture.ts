@@ -220,7 +220,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		await click({ left: viewport.bounds.left, right: viewport.bounds.right, top, bottom }, heldFrames);
 	};
 	const settle = () => until(() => tasks.ready && !rewind.seeking, 'seek/queue must settle');
-	const guest = ide.luaTooling.suspendedGuest;
+	const guest = ide.guest;
 	// Diagnostic reads use the same raw guest representation as the inspector.
 	// No cart probe, Lua call, alternate world or replacement ROM is installed.
 	const world = () => guest.global(buildModuleExportSlotName('cartlib/world/world', []));

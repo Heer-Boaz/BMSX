@@ -8,7 +8,6 @@ import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import type { EditorTextModel } from '../../ide/editor/model/text_model';
-import type { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { TextFileSaveService } from '../../ide/workbench/services/working_copy/text_file_save';
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import type { WorkspaceRecord, WorkspaceRecordProvider } from '../../ide/workspace/record_provider';
@@ -56,9 +55,9 @@ async function fixture(t: TestContext) {
 	const tasks = new RuntimeTaskQueue({ muteRuntimeTask() {} } as unknown as HostAudioOutput,
 		{ backend: { async finishGxGpuReadbacks() { if (readbackFailure) throw readbackFailure; } } } as VideoPresenter);
 	// AEM tests admit a domain then reject input before compilation. Other source
-	// Saves must not depend on the machine or compiler.
+	// Saves must not depend on the machine or compiler; no guest session is supplied.
 	const runtime = { machine: { cpu: { activeCartridgeSlot: () => sources.activeCartridgeSlot } } } as Runtime;
-	const saves = new TextFileSaveService(models, clock, sources, {} as RuntimeLuaTooling, runtime, tasks);
+	const saves = new TextFileSaveService(models, clock, sources, null, runtime, tasks);
 	await openWorkspaceRecords(files);
 	t.after(async () => {
 		await saves.shutdown();

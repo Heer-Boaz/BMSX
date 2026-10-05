@@ -46,7 +46,7 @@ export async function runStudioTerminal(test: StudioFixture) {
 	};
 	let result = await evaluate('terminal_counter = 20; return terminal_counter, type(new_game), type(cartlib__world__world)');
 	check(result.text === '20\tfunction\ttable' && session.lastResult!.context === 'cart', 'implicit names reach real cart globals');
-	check(ide.luaTooling.suspendedGuest.global('terminal_counter') === 20, 'cart assignment is immediate, not a writeback');
+	check(ide.guest.global('terminal_counter') === 20, 'cart assignment is immediate, not a writeback');
 	result = await evaluate('load("return terminal_counter + 1")()');
 	check(result.text === '21', 'default BIOS load resolves globals when called from a cart-context RAM function');
 	await test.capture?.('lua-cart-context');
@@ -62,10 +62,10 @@ export async function runStudioTerminal(test: StudioFixture) {
 	check(session.transcript.entry(result.id - 1).text === 'hello from Lua', 'ordinary debug TX arrives before the completion result');
 	result = await evaluate('counter = counter + 2; return counter');
 	check(result.text === '42', 'firmware session environment survives separate submissions');
-	check(ide.luaTooling.suspendedGuest.global('counter') === null, 'session assignments do not masquerade as CPU global writes');
+	check(ide.guest.global('counter') === null, 'session assignments do not masquerade as CPU global writes');
 	result = await evaluate('local world = getglobal("cartlib__world__world"); world.terminal_probe = 70; setglobal("terminal_probe", 60); return world.terminal_probe, getglobal("terminal_probe"), type(getglobal("new_game"))');
 	check(result.text === '70\t60\tfunction', 'manual input reads existing cart bindings and mutates the real world');
-	const guest = ide.luaTooling.suspendedGuest;
+	const guest = ide.guest;
 	check(guest.global('terminal_probe') === 60 && guest.readStringMember(guest.global('cartlib__world__world'), 'terminal_probe') === 70,
 		'no copied global table or writeback is involved');
 	result = await evaluate('local captured = 7; fn = function(x) return captured + x end');

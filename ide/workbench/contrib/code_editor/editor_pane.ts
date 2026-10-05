@@ -1,3 +1,4 @@
+import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { getClipboardText, cutClipboardText, pasteText } from '../../../editor/editing/text_editing_and_selection';
 import { runtimeErrorOverlayPointer } from '../../../editor/contrib/runtime_error/pointer';
@@ -39,7 +40,6 @@ import {
 import type { CodeEditorInput } from '../../ui/tab/model';
 import { EditorPane } from '../../services/editor/editor_pane';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { RuntimeDebuggerState } from '../../../runtime/debugger_state';
 import { buildStatusLeftInfo } from '../../render/status_bar_info';
@@ -73,7 +73,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		private readonly editor: CartEditor,
 		private readonly clipboard: Clipboard,
 		private readonly sources: RuntimeSourceState,
-		private readonly luaTooling: RuntimeLuaTooling,
+		private readonly guest: SuspendedGuestSession,
 		private readonly fault: RuntimeFaultState,
 		private readonly runtime: Runtime,
 		private readonly debuggerState: RuntimeDebuggerState,
@@ -202,7 +202,8 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		if (handleEditorScrollbarPointer(snapshot, CODE_SCROLLBARS)) return;
 		handleCodeAreaPointerInput(
 			this.editor,
-			this.luaTooling,
+			this.sources,
+			this.guest,
 			this.fault,
 			this.runtime,
 			snapshot,

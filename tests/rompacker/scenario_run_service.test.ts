@@ -14,8 +14,6 @@ import { test } from 'node:test';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH } from '../helpers/scenario_media';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { createRuntimeSourceState, enterCartridgeSources } from '../../ide/runtime/sources';
-import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
-import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { EditorTextModelService, editorTextModelService } from '../../ide/editor/model/model_service';
 import { ScenarioRunService } from '../../ide/workbench/services/testing/scenario_runs';
 import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
@@ -46,12 +44,12 @@ return { kind = 'unit', tests = {
 		const media = await loadRomToolingMedia(fixture.systemRom, [fixture.cartRom, null]);
 		const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
 		const authoring = new OffscreenMachine(fixture.systemRom, [fixture.cartRom, null], PSX_MACHINE_SPEC, new TestInput());
-		const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(authoring.runtime));
+
 		const targets: OffscreenMachine<TestInput>[] = [];
 		const disposed = new Set<OffscreenMachine<TestInput>>();
 		let constructionFailure: Error | undefined;
 		const models = new EditorTextModelService();
-		const runs = new ScenarioRunService(models, sources, tooling, new Map(), PSX_MACHINE_SPEC,
+		const runs = new ScenarioRunService(models, sources, new Map(), PSX_MACHINE_SPEC,
 			(systemRom, cartridges, model, input) => {
 				if (constructionFailure) throw constructionFailure;
 				const target = new OffscreenMachine(systemRom, cartridges, model, input);
@@ -177,9 +175,9 @@ test('both authoring domains retain companion ROM data and source identity; runn
 		const media = await loadRomToolingMedia(fixture.systemRom, [fixture.cartRom, fixture.cartRom]);
 		const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
 		const authoring = new OffscreenMachine(fixture.systemRom, [fixture.cartRom, null], PSX_MACHINE_SPEC, new TestInput());
-		const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(authoring.runtime));
+
 		const models = new EditorTextModelService();
-		const runs = new ScenarioRunService(models, sources, tooling, new Map(), PSX_MACHINE_SPEC,
+		const runs = new ScenarioRunService(models, sources, new Map(), PSX_MACHINE_SPEC,
 			(systemRom, cartridges, model, input) => new OffscreenMachine(systemRom, cartridges, model, input));
 		const collection = runs.collection;
 		for (const slot of [0, 1] as const) {

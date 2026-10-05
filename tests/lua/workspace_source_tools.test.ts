@@ -14,7 +14,6 @@ import { resolveTextFileModel } from '../../ide/workbench/services/working_copy/
 import { workspaceCanonicalSourceCache } from '../../ide/workspace/cache';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { ResourceDiagnosticsService } from '../../ide/workbench/services/diagnostics/resource_diagnostics';
-import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
@@ -34,10 +33,10 @@ function fixture(t: TestContext) {
 	const yamlSource = '# exact 🐉\r\nvalue: old\r\n';
 	workspaceCanonicalSourceCache.set(yamlPath, yamlSource);
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
-	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
-	const { tasks, presenter } = createRuntimeInspectionFixture(runtime, sources, tooling.suspendedGuest);
-	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
-	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources, tooling, runtime, tasks);
+	const guest = new SuspendedGuestSession(runtime);
+	const { tasks, presenter } = createRuntimeInspectionFixture(runtime, sources, guest);
+	const diagnostics = new ResourceDiagnosticsService(models, sources, new VirtualHeadlessClock());
+	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources, guest, runtime, tasks);
 	const tools = new WorkspaceSourceTools(models, sources, diagnostics, connection.signal, new BehaviorSourceDocuments(models, sources), saves, new VirtualHeadlessClock());
 	t.after(async () => { tools.dispose(); connection.abort(); await saves.shutdown(); presenter.dispose(); diagnostics.dispose(); models.clear(); workspaceCanonicalSourceCache.delete(yamlPath); });
 	const list = async () => {

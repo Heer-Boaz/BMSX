@@ -4,7 +4,6 @@ import { setImmediate } from 'node:timers/promises';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { resourceIdentityKey, type RuntimeResource } from '../../ide/common/resource';
-import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { BehaviorSourceDocuments } from '../../ide/workbench/contrib/behavior_lens/source_documents';
 import { ResourceDiagnosticsService } from '../../ide/workbench/services/diagnostics/resource_diagnostics';
 import { TextFileSaveService } from '../../ide/workbench/services/working_copy/text_file_save';
@@ -24,8 +23,8 @@ async function fixture(t: TestContext) {
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('cart.lua', 1, 'return 1\n')]);
 	const models = new EditorTextModelService(), storage = new MemoryStorage(), clock = new VirtualHeadlessClock();
 	const f = createRuntimeInspectionFixture(createTestRuntime(createTestRuntimeRomPayload()), sources);
-	const tooling = new RuntimeLuaTooling(sources, f.guest), diagnostics = new ResourceDiagnosticsService(models, tooling, clock);
-	const saves = new TextFileSaveService(models, clock, sources, tooling, f.runtime, f.tasks);
+	const guest = f.guest, diagnostics = new ResourceDiagnosticsService(models, sources, clock);
+	const saves = new TextFileSaveService(models, clock, sources, guest, f.runtime, f.tasks);
 	const model = models.retain(sources.luaResources[0], 'lua', 'return 1\n');
 	const yaml: RuntimeResource = { domain: 0, path: 'res/data/probe.yaml', source: { type: 'data', resid: 'probe' } };
 	sources.resourceByIdentity.set(resourceIdentityKey(yaml), yaml);

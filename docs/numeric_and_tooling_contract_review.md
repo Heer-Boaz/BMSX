@@ -91,3 +91,25 @@ The original Sun notice and V8 license are retained.
   algorithm, not extra guest cycles or an end-to-end cart performance claim.
   Integer shortcuts and square roots remain in the algorithm; no cache or
   guest lookup tables change its semantics.
+
+## Source tooling slice
+
+Reference: [TypeScript's parser entrypoint](https://github.com/microsoft/TypeScript/blob/v5.9.3/src/compiler/parser.ts)
+creates syntax through the parser independently of execution; [VS Code's host
+error presentation](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/base/common/errorMessage.ts)
+is owned by common host code, not a language VM. BMSX reuses its existing strict
+`parseLuaChunk` entrypoint and retains only the needed common error-message
+conversion, without copying VS Code's broad shape heuristics or fallbacks.
+
+Removed the dead tree-walking interpreter, JS bridge and handler cache. The
+workbench owns its suspended guest session directly; pure source queries,
+parsing, diagnostics, boot preparation and Scenario Lab compilation no longer
+require an interpreter or a guest inspection context. Runtime completion and
+hover receive source and inspection owners explicitly. Semantic frontend
+caching remains keyed by immutable snapshots and the retained builtin-descriptor
+environment, not per-call objects or a never-executed global environment.
+
+Validation: 149 source/semantic/completion/save tests and 90 boot, Hot Resume,
+Scenario Lab and assistant/workspace runtime tests pass. IDE, scripts and test
+projects typecheck; architecture boundary audit reports zero violations. These
+are source/runtime-path checks, not a claim of a new visual UI audit.

@@ -2526,6 +2526,20 @@ packer modules emit the same declaration at their producer. Packed builds and
 debug source recompilation therefore consume one source-owned contract; the
 rompacker, TOC and host do not maintain a second module-name or attribute list.
 
+## Studio Lua tooling ownership
+
+Studio source compilation calls the toolchain parser directly. It does not
+construct a second Lua execution engine, JS interop adapter or handler cache.
+Source analysis consumes `RuntimeSourceState` and its semantic snapshots;
+values and calls consume the workbench-owned `SuspendedGuestSession` against
+the real machine. Their lifetimes are independent: reset/restore invalidates
+inspection without inventing a new interpreter environment for completion.
+
+IntelliSense uses language builtin descriptors, BIOS boot primitive names and
+source declarations in the semantic project. Compile-time forms such as
+`require` remain described as language forms, not guest globals. There is no
+`array` or `package` global inherited from an unused host Lua interpreter.
+
 ## Memory, CPU, and scheduler
 
 - `Memory` owns RAM, ROM windows, IO slots, and MMIO callback dispatch.

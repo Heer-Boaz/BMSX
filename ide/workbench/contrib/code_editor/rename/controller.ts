@@ -1,3 +1,4 @@
+import type { RuntimeSourceState } from '../../../../runtime/sources';
 import { resolveReferenceLookup, type ReferenceLookupOptions } from '../../../../editor/contrib/references/lookup';
 import { type ReferenceMatchInfo } from '../../../../editor/contrib/references/state';
 import type { SearchMatch } from '../../../../common/models';
@@ -14,7 +15,6 @@ import { editorTextModelService } from '../../../../editor/model/model_service';
 import { EditorWorkspaceEditConflict } from '../../../../editor/model/undo_redo_service';
 import { handleRenameControllerInput } from './input';
 import { validateRenameIdentifier } from './validation';
-import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 import type { CrossFileRenameManager } from './operations';
 import type { PlayerInput } from '../../../../../hosts/common/input/player';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
@@ -50,8 +50,8 @@ export class RenameController {
 		});
 	}
 
-	public begin(bridge: RuntimeLuaTooling, options: RenameStartOptions, reviewPanes?: EditorPanes): boolean {
-		const lookup = resolveReferenceLookup(bridge, options);
+	public begin(sources: RuntimeSourceState, options: RenameStartOptions, reviewPanes?: EditorPanes): boolean {
+		const lookup = resolveReferenceLookup(sources, options);
 		if (lookup.kind === 'error') {
 			showEditorMessage(lookup.message, constants.COLOR_STATUS_WARNING, lookup.duration);
 			return false;
@@ -69,7 +69,7 @@ export class RenameController {
 			return false;
 		}
 		this.matches = info.matches;
-		this.context = new WorkspaceSourceContext(editorTextModelService, bridge.sources);
+		this.context = new WorkspaceSourceContext(editorTextModelService, sources);
 		this.reviewPanes = reviewPanes;
 		this.info = info;
 		this.originalName = currentName;

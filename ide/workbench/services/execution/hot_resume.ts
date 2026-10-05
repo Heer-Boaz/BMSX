@@ -1,10 +1,10 @@
+import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { Input } from '../../../../hosts/common/input/manager';
 import { HostPauseReason, type HostExecutionControl } from '../../../../hosts/common/execution_control';
 import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { RuntimeDebuggerState } from '../../../runtime/debugger_state';
 import type { RuntimeDebuggerExecutionContext } from '../../../runtime/debugger_plans';
@@ -94,7 +94,7 @@ export class HotResumeService {
 	public constructor(
 		private readonly models: EditorTextModelService,
 		private readonly sources: RuntimeSourceState,
-		private readonly tooling: RuntimeLuaTooling,
+		private readonly guest: SuspendedGuestSession,
 		private readonly fault: RuntimeFaultState,
 		private readonly debuggerState: RuntimeDebuggerState,
 		private readonly input: Input,
@@ -130,14 +130,14 @@ export class HotResumeService {
 				if (!operation.isCurrent()) return;
 				applyLuaTextModelSources(this.sources, operation.sourceSnapshots);
 				built = blua32MediaRequiresRebuild(this.sources)
-					? buildBlua32Revision(this.sources, this.tooling, this.runtime,
+					? buildBlua32Revision(this.sources, this.runtime,
 						this.sources.systemBlua32MediaDirty, this.sources.cartridgeBlua32MediaDirty)
 					: null;
 			} catch (error) {
 				operation.finish({ status: 'rejected', phase: 'build', applied: false, error });
 				return;
 			}
-			const admission = admitHotResume(this.sources, this.tooling, this.fault, this.debuggerState,
+			const admission = admitHotResume(this.sources, this.guest, this.fault, this.debuggerState,
 				this.input, this.tasks, this.runtime, built, operation.isCurrent, event => {
 					if (event.kind === 'applied') this.onDidApply?.();
 					operation.report(event);

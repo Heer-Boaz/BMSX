@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import { extractErrorMessage } from '../../../../ide/language/lua/interpreter/value';
+import { extractErrorMessage } from '../../../../ide/common/errors';
 import type { HeadlessIdeHarness } from '../../../../ide/testing/headless_harness';
 import { ValueTag } from '../../../../machine/ts/machine/cpu/value';
 import type { HostClock } from '../../../../hosts/common/clock';

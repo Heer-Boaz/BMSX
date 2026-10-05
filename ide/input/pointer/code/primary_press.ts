@@ -1,3 +1,4 @@
+import type { RuntimeSourceState } from '../../../runtime/sources';
 import { PointerButton } from '../buttons';
 import { setCursorPosition } from '../../../editor/ui/view/caret/caret';
 import { setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/state';
@@ -11,11 +12,10 @@ import * as constants from '../../../common/constants';
 import { editorPointerState, clearEditorPointerSelectionState } from '../state';
 import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import type { CartEditor } from '../../../cart_editor';
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 
 export function handleCodeAreaPrimaryPressPointer(
 	editor: CartEditor,
-	bridge: RuntimeLuaTooling,
+	sources: RuntimeSourceState,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	insideCodeArea: boolean,
@@ -31,7 +31,7 @@ export function handleCodeAreaPrimaryPressPointer(
 	const targetRow = target.row;
 	const targetColumn = target.column;
 	if (gotoModifierActive && openDefinitionSearch(
-		bridge,
+		sources,
 		editor,
 		targetRow,
 		targetColumn,

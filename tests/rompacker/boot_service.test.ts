@@ -18,8 +18,6 @@ import { HostExecutionControl, HostPauseReason } from '../../hosts/common/execut
 import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { createRuntimeSourceState, forkRuntimeSourceState } from '../../ide/runtime/sources';
-import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
-import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { BootService } from '../../ide/workbench/services/execution/boot';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
@@ -41,9 +39,9 @@ async function fixture(t: TestContext) {
 	const audio = { muteRuntimeTask() {}, mutePause() {}, muteSystem() {}, restart() {} } as unknown as HostAudioOutput;
 	const execution = new HostExecutionControl(audio);
 	const tasks = new RuntimeTaskQueue(audio, target.presenter);
-	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
+
 	const models = new EditorTextModelService();
-	const service = new BootService(models, sources, tooling, createRuntimeFaultState(), runtime,
+	const service = new BootService(models, sources, createRuntimeFaultState(), runtime,
 		tasks, execution, audio, new Map());
 	let resets = 0;
 	runtime.onStateReset = () => { resets++; service.didReplaceMachine(); };

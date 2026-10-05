@@ -20,7 +20,7 @@ import { invalidateLineRange, markTextMutated } from '../common/text/runtime';
 import { resetBlink } from '../render/caret';
 import * as constants from '../../common/constants';
 import { formatLuaDocument } from '../../language/lua/formatter';
-import { extractErrorMessage } from '../../language/lua/interpreter/value';
+import { extractErrorMessage } from '../../common/errors';
 import { getLinesSnapshot, getTextSnapshot } from '../text/source_text';
 import { extractIndentation, countLeadingIndent } from '../text/indentation';
 import type { MutableTextPosition, TextBuffer } from '../text/text_buffer';

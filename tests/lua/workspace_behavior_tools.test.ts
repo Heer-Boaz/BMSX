@@ -8,7 +8,6 @@ import { indexActionEffectWrites } from '../../ide/workbench/contrib/behavior_le
 import { WorkspaceSourceTools } from '../../ide/workbench/services/assistant/source_tools';
 import { ResourceDiagnosticsService } from '../../ide/workbench/services/diagnostics/resource_diagnostics';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
-import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
@@ -23,10 +22,10 @@ function fixture(t: TestContext, files: Record<string, string>, generated: strin
 	const sources = createScenarioTestSourceState(records), models = new EditorTextModelService();
 	const documents = new BehaviorSourceDocuments(models, sources), connection = new AbortController();
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
-	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
-	const diagnostics = new ResourceDiagnosticsService(models, tooling, new VirtualHeadlessClock());
-	const { tasks, presenter } = createRuntimeInspectionFixture(runtime, sources, tooling.suspendedGuest);
-	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources, tooling, runtime, tasks);
+	const guest = new SuspendedGuestSession(runtime);
+	const diagnostics = new ResourceDiagnosticsService(models, sources, new VirtualHeadlessClock());
+	const { tasks, presenter } = createRuntimeInspectionFixture(runtime, sources, guest);
+	const saves = new TextFileSaveService(models, new VirtualHeadlessClock(), sources, guest, runtime, tasks);
 	t.after(async () => { await saves.shutdown(); presenter.dispose(); });
 	const tools = () => {
 		const result = new WorkspaceSourceTools(models, sources, diagnostics, connection.signal, documents, saves, new VirtualHeadlessClock());

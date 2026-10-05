@@ -12,9 +12,7 @@ import { setImmediate } from 'node:timers/promises';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH as PATH } from '../helpers/scenario_media';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { createRuntimeSourceState, enterCartridgeSources } from '../../ide/runtime/sources';
-import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { RuntimeDebuggerResumeMode as Mode } from '../../ide/runtime/source_debugger';
-import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { ScenarioRunService } from '../../ide/workbench/services/testing/scenario_runs';
 import { WorkspaceTestTools } from '../../ide/workbench/services/assistant/test_tools';
@@ -56,8 +54,7 @@ async function fixture(t: TestContext, slot: 0 | 1 = 0, optLevel: 0 | 3 = 0) {
 	enterCartridgeSources(sources, slot); sources.realtimeCompileOptLevel = optLevel;
 	const authoring = new OffscreenMachine(media.systemRom, [media.cartRom, media.cartRom], PSX_MACHINE_SPEC, new TestInput());
 	const initial = captureRuntimeMachineState(authoring.runtime), installed = sources.currentBlua32Media;
-	const service = new ScenarioRunService(models, sources, new RuntimeLuaTooling(sources, new SuspendedGuestSession(authoring.runtime)),
-		new Map(), PSX_MACHINE_SPEC, (bios, carts, model, input) => new OffscreenMachine(bios, carts, model, input));
+	const service = new ScenarioRunService(models, sources, new Map(), PSX_MACHINE_SPEC, (bios, carts, model, input) => new OffscreenMachine(bios, carts, model, input));
 	const connection = new AbortController(), tools = new WorkspaceTestTools(service, connection.signal);
 	t.after(() => { tools.dispose(); service.dispose(); models.clear(); authoring.dispose(); });
 	async function settle<T>(work: T | Promise<T>): Promise<T> {

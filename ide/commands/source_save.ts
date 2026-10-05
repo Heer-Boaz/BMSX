@@ -2,7 +2,7 @@ import type { CartEditor } from '../cart_editor';
 import * as constants from '../common/constants';
 import { showEditorMessage, showEditorWarningBanner } from '../common/feedback_state';
 import type { EditorTextModel } from '../editor/model/text_model';
-import { extractErrorMessage } from '../language/lua/interpreter/value';
+import { extractErrorMessage } from '../common/errors';
 import type { RuntimeSourceState } from '../runtime/sources';
 import { showLuaErrorOverlay } from '../runtime_error/navigation';
 import { getTextFileRuntimeSourceStatus } from '../workbench/services/working_copy/runtime_source_status';

@@ -8,8 +8,6 @@ import { initializeMachineRuntime } from '../../hosts/common/machine_runtime';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
-import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { createRuntimeSourceState } from '../../ide/runtime/sources';
 import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { installBlua32Media, prepareBlua32MediaBoot } from '../../ide/runtime/lua_pipeline';
@@ -25,7 +23,7 @@ test('program entry selection is prepared without mutation, survives admission, 
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	t.after(() => input.dispose());
 	const runtime = initializeMachineRuntime(fixture.systemRom, [fixture.cartRom, fixture.cartRom], PSX_MACHINE_SPEC, input);
-	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
+
 	for (const domain of [0, 1] as const) {
 		const cartridge = sources.cartridgeSlots[domain]!;
 		const other = sources.cartridgeSlots[1 - domain]!;
@@ -38,13 +36,13 @@ test('program entry selection is prepared without mutation, survives admission, 
 			generated: false, program_module: true,
 		});
 		const originalRom = cartridge.rom;
-		const prepared = prepareBlua32MediaBoot(sources, tooling, runtime, false,
+		const prepared = prepareBlua32MediaBoot(sources, runtime, false,
 			{ domain, sourcePath: 'experiments/actor.lua' });
 		assert.equal(cartridge.rom, originalRom, 'preparation does not install');
 		assert.equal(registry.entrySourcePath, 'entry.lua');
-		assert.equal(prepared.installation!.rebuilt.cartridgeSlots[domain]!.entrySourcePath, 'experiments/actor.lua');
-		assert.equal(prepared.installation!.cartridgeLayers[1 - domain], null);
-		installBlua32Media(sources, runtime, prepared.installation!);
+		assert.equal(prepared!.rebuilt.cartridgeSlots[domain]!.entrySourcePath, 'experiments/actor.lua');
+		assert.equal(prepared!.cartridgeLayers[1 - domain], null);
+		installBlua32Media(sources, runtime, prepared!);
 		assert.equal(registry.entrySourcePath, 'experiments/actor.lua');
 		assert.equal(other.rom, otherRom);
 
@@ -58,16 +56,16 @@ test('program entry selection is prepared without mutation, survives admission, 
 		assert.equal(registry.path2lua['entry.lua'].src.startsWith('module<entry>'), true);
 
 		sources.cartridgeBlua32MediaDirty[domain] = true;
-		const rebuild = prepareBlua32MediaBoot(sources, tooling, runtime, true);
-		assert.equal(rebuild.installation!.rebuilt.cartridgeSlots[domain]!.entrySourcePath, 'experiments/actor.lua');
+		const rebuild = prepareBlua32MediaBoot(sources, runtime, true);
+		assert.equal(rebuild!.rebuilt.cartridgeSlots[domain]!.entrySourcePath, 'experiments/actor.lua');
 		const installedRom = cartridge.rom;
 		registry.path2lua['experiments/actor.lua'].src = '@';
-		assert.throws(() => prepareBlua32MediaBoot(sources, tooling, runtime, true));
+		assert.throws(() => prepareBlua32MediaBoot(sources, runtime, true));
 		assert.equal(cartridge.rom, installedRom);
 		assert.equal(registry.entrySourcePath, 'experiments/actor.lua');
 		registry.path2lua['experiments/actor.lua'].src = 'return 43';
-		const project = prepareBlua32MediaBoot(sources, tooling, runtime, true, { domain });
-		installBlua32Media(sources, runtime, project.installation!);
+		const project = prepareBlua32MediaBoot(sources, runtime, true, { domain });
+		installBlua32Media(sources, runtime, project!);
 		assert.equal(registry.entrySourcePath, 'entry.lua');
 	}
 });

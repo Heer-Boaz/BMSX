@@ -19,7 +19,6 @@ import { HostExecutionControl } from '../../hosts/common/execution_control';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createRuntimeSourceState } from '../../ide/runtime/sources';
-import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { createRuntimeDebuggerState, discardRuntimeDebuggerPlans, willExecuteRuntimeDebuggerPlan, didExecuteRuntimeDebuggerPlan } from '../../ide/runtime/debugger_state';
@@ -41,12 +40,12 @@ async function fixture(t: TestContext, init = '') {
 	for (let tick = 0; tick < 100 && !cpu.isCartridgeExecutionActive(); tick++) target.advanceGame(10000);
 	assert.equal(cpu.isCartridgeExecutionActive(), true);
 	assert.equal(cpu.isUserMode(), true);
-	const tooling = new RuntimeLuaTooling(sources, new SuspendedGuestSession(runtime));
+	const guest = new SuspendedGuestSession(runtime);
 	const debuggerState = createRuntimeDebuggerState(runtime, sources);
 	const audio = { muteRuntimeTask() {}, mutePause() {} } as unknown as HostAudioOutput;
 	const tasks = new RuntimeTaskQueue(audio, target.presenter), execution = new HostExecutionControl(audio);
 	const models = new EditorTextModelService();
-	const service = new HotResumeService(models, sources, tooling, createRuntimeFaultState(), debuggerState,
+	const service = new HotResumeService(models, sources, guest, createRuntimeFaultState(), debuggerState,
 		input, runtime, tasks, execution, new Map());
 	const model = models.retain({ domain: 0, path: 'entry.lua', source: { resid: 'entry', type: 'lua' } }, 'lua', source);
 	// Same resource/version in a different document owner must not enter this build.

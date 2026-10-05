@@ -69,7 +69,7 @@ function fixture(t: TestContext) {
 	const behavior = new BehaviorLensController(sources, null, panes, null, new BehaviorSourceDocuments(editorTextModelService, sources), () => assert.fail('metadata must not start an FSM layout worker'), null, null);
 	const scene = new SceneEditorController(sources, panes, null);
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
-	const runs = new ScenarioRunService(editorTextModelService, sources, null, new Map(), runtime.model, () => assert.fail('session recovery must not create test machines'));
+	const runs = new ScenarioRunService(editorTextModelService, sources, new Map(), runtime.model, () => assert.fail('session recovery must not create test machines'));
 	const scenario = new ScenarioLabController(null, null, panes, null, runs);
 	const unused = { serialize: () => assert.fail('unexpected serialization'), deserialize: () => assert.fail('unexpected reconstruction') };
 	const serializers: EditorInputSerializers = {
@@ -242,7 +242,7 @@ test('Scenario Lab persists only test identity and scope expansion, not run/resu
 	const value = f.serializers.scenario_lab.serialize(input);
 	assert.deepEqual(JSON.parse(value), captureScenarioLabTestView(input.view));
 	assert.doesNotMatch(value, /results|runActive|focus|previous/);
-	const runs = new ScenarioRunService(editorTextModelService, f.sources, null, new Map(), f.runtime.model, () => assert.fail('session recovery must not create test machines'));
+	const runs = new ScenarioRunService(editorTextModelService, f.sources, new Map(), f.runtime.model, () => assert.fail('session recovery must not create test machines'));
 	const next = new ScenarioLabController(null, null, f.panes, null, runs);
 	const fresh = new ScenarioLabInputSerializer(next).deserialize(value);
 	assert.deepEqual(captureScenarioLabTestView(fresh.view), captureScenarioLabTestView(input.view));

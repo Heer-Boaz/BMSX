@@ -1,5 +1,5 @@
+import type { RuntimeSourceState } from '../../../../runtime/sources';
 import type { CartEditor } from '../../../../cart_editor';
-import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { COLOR_STATUS_WARNING } from '../../../../common/constants';
 import { referenceState } from '../../../../editor/contrib/references/state';
@@ -30,17 +30,17 @@ export function createReferenceQuickPickProvider(
 	return new TextQuickPickProvider(items, initialItemIndex);
 }
 
-export function openReferenceSearch(editor: CartEditor, bridge: RuntimeLuaTooling): void {
+export function openReferenceSearch(editor: CartEditor, sources: RuntimeSourceState): void {
 	const { model, view } = getActiveCodeTabContext();
 	const { resource } = model;
 	const row = view.cursorRow, column = view.cursorColumn;
-	const result = resolveReferenceLookup(bridge, { buffer: model.buffer, cursorRow: row, cursorColumn: column, identity: resource });
+	const result = resolveReferenceLookup(sources, { buffer: model.buffer, cursorRow: row, cursorColumn: column, identity: resource });
 	if (result.kind === 'error') {
 		showEditorMessage(result.message, COLOR_STATUS_WARNING, result.duration);
 		return;
 	}
-	const sources = buildReferenceSources(result.info);
-	if (sources.length === 0) {
+	const references = buildReferenceSources(result.info);
+	if (references.length === 0) {
 		showEditorMessage('No references found', COLOR_STATUS_WARNING, 1.6);
 		return;
 	}
@@ -49,6 +49,6 @@ export function openReferenceSearch(editor: CartEditor, bridge: RuntimeLuaToolin
 		referenceState.apply(result.info, result.initialIndex);
 		lifetime.add({ dispose: () => referenceState.clear() });
 		lifetime.add(subscribeToLuaModelChanges(editorTextModelService, resource.domain, () => editor.quickInput.hide()));
-		return createReferenceQuickPickProvider(sources, resource.path, row + 1, column + 1);
+		return createReferenceQuickPickProvider(references, resource.path, row + 1, column + 1);
 	}, item => navigateToLuaDefinition(editor, resource.domain, definitionLocationFromSourceRange(item.source.range)));
 }

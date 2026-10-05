@@ -1,6 +1,7 @@
+import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
+import type { RuntimeSourceState } from '../../../runtime/sources';
 import { editorTextModelService } from '../../model/model_service';
 import type { LuaChunk } from '../../../../toolchain/ts/lua/syntax/ast';
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import { LuaLexer } from '../../../../toolchain/ts/lua/syntax/lexer';
 import { clamp } from '../../../../machine/ts/common/clamp';
@@ -44,7 +45,8 @@ export const PREVIEW_MAX_DEPTH = 2;
 const globalSymbolsCache = new WeakMap<LuaSemanticWorkspaceSnapshot, LuaSymbolEntry[]>();
 
 export function buildMemberCompletionItems(
-	bridge: RuntimeLuaTooling,
+	sources: RuntimeSourceState,
+	guest: SuspendedGuestSession,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
 	chain: readonly string[],
@@ -54,9 +56,9 @@ export function buildMemberCompletionItems(
 	line: number,
 	column: number,
 ): LuaCompletionItem[] {
-	const resolved = readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis, domain, chain, line, column);
-	if (resolved.kind !== 'value' || bridge.suspendedGuest.kind(resolved.value) !== SuspendedGuestValueKind.Table) return [];
-	const response = buildSuspendedGuestTableMemberCompletionEntries(bridge, resolved.value, operator);
+	const resolved = readRuntimeLuaValue(runtime, sources, fault, guest, analysis, domain, chain, line, column);
+	if (resolved.kind !== 'value' || guest.kind(resolved.value) !== SuspendedGuestValueKind.Table) return [];
+	const response = buildSuspendedGuestTableMemberCompletionEntries(guest, resolved.value, operator);
 	if (response.length === 0) {
 		return [];
 	}
@@ -411,7 +413,7 @@ export function resolveContextMenuToken(row: number, column: number, path: strin
 }
 
 export function refreshGotoHoverHighlight(
-	bridge: RuntimeLuaTooling,
+	sources: RuntimeSourceState,
 	row: number,
 	column: number,
 	context: CodeEditorContext,
@@ -424,7 +426,7 @@ export function refreshGotoHoverHighlight(
 			clearGotoHoverHighlight();
 			return;
 	}
-	const query = queryDefinitionsAt(bridge, context, row, column);
+	const query = queryDefinitionsAt(sources, context, row, column);
 	if (!query) {
 		clearGotoHoverHighlight();
 		return;
@@ -463,7 +465,8 @@ export type LuaRuntimeInspection = {
 };
 
 export function inspectLuaRuntimeExpression(
-	bridge: RuntimeLuaTooling,
+	sources: RuntimeSourceState,
+	guest: SuspendedGuestSession,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
 	expression: string,
@@ -474,11 +477,11 @@ export function inspectLuaRuntimeExpression(
 ): LuaRuntimeInspection | null {
 	const chain = parseLuaIdentifierChain(expression);
 	if (chain === null) return null;
-	const resolved = readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis, domain, chain, line, column);
+	const resolved = readRuntimeLuaValue(runtime, sources, fault, guest, analysis, domain, chain, line, column);
 	if (resolved.kind === 'unavailable') {
 		return { expression, lines: [RUNTIME_UNAVAILABLE_LABELS[resolved.reason]], valueType: 'unknown', state: 'unavailable' };
 	}
-	const formatted = describeSuspendedGuestValueForInspector(bridge, resolved.value);
+	const formatted = describeSuspendedGuestValueForInspector(guest, resolved.value);
 	return { expression, lines: formatted.lines, valueType: formatted.valueType, state: 'value' };
 }
 
@@ -490,13 +493,13 @@ const RUNTIME_UNAVAILABLE_LABELS = {
 	not_a_table: 'unavailable: member parent is not a table',
 } as const;
 
-export function listLuaSymbols(bridge: RuntimeLuaTooling, domain: ResourceDomain, path: string): LuaSymbolEntry[] {
-	const source = resolveRuntimeLuaSourceForContext(bridge.sources, domain, path);
+export function listLuaSymbols(sources: RuntimeSourceState, domain: ResourceDomain, path: string): LuaSymbolEntry[] {
+	const source = resolveRuntimeLuaSourceForContext(sources, domain, path);
 	if (!source) {
 		return [];
 	}
 	const project = getOrCreateSemanticProject(editorTextModelService, domain);
-	project.synchronizeRuntimeSources(bridge.sources);
+	project.synchronizeRuntimeSources(sources);
 	const analysis = project.getFileData(source.record.source_path);
 	if (!analysis) {
 		return [];
@@ -526,9 +529,9 @@ export function listLuaSymbols(bridge: RuntimeLuaTooling, domain: ResourceDomain
 	return symbols;
 }
 
-export function listGlobalLuaSymbols(bridge: RuntimeLuaTooling, domain: ResourceDomain): LuaSymbolEntry[] {
+export function listGlobalLuaSymbols(sources: RuntimeSourceState, domain: ResourceDomain): LuaSymbolEntry[] {
 	const project = getOrCreateSemanticProject(editorTextModelService, domain);
-	project.synchronizeRuntimeSources(bridge.sources);
+	project.synchronizeRuntimeSources(sources);
 	const snapshot = project.getSnapshot();
 	const cached = globalSymbolsCache.get(snapshot);
 	if (cached) {
@@ -564,14 +567,14 @@ export function listGlobalLuaSymbols(bridge: RuntimeLuaTooling, domain: Resource
 }
 
 export function findStaticDefinitionLocation(
-	bridge: RuntimeLuaTooling,
+	sources: RuntimeSourceState,
 	usageRow: number,
 	usageColumn: number,
 	path: string,
 	activeContext: CodeEditorContext,
 ): LuaDefinitionLocation {
 	const source = resolveRuntimeLuaSourceForContext(
-		bridge.sources,
+		sources,
 		activeContext.model.resource.domain,
 		path,
 	);
@@ -580,11 +583,11 @@ export function findStaticDefinitionLocation(
 	}
 	const sourcePath = source.record.source_path;
 	const project = getOrCreateSemanticProject(editorTextModelService, activeContext.model.resource.domain);
-	project.synchronizeRuntimeSources(bridge.sources);
+	project.synchronizeRuntimeSources(sources);
 	if (activeContext.model.resource.path === sourcePath) {
 		project.analyzeDocument(sourcePath, activeContext.model.buffer);
 	}
-	const frontend = createEditorSemanticFrontend(bridge, project.getSnapshot());
+	const frontend = createEditorSemanticFrontend(project.getSnapshot());
 	const symbols = frontend.findSymbolsByPosition(sourcePath, usageRow, usageColumn);
 	return symbols && symbols.targets.length === 1
 		? definitionLocationFromSourceRange(symbols.targets[0].range)
@@ -592,10 +595,10 @@ export function findStaticDefinitionLocation(
 }
 
 function describeSuspendedGuestValueForInspector(
-	bridge: RuntimeLuaTooling,
+	guest: SuspendedGuestSession,
 	value: SuspendedGuestValue,
 ): { lines: string[]; valueType: string } {
-	const inspection = bridge.suspendedGuest;
+	const inspection = guest;
 	switch (inspection.kind(value)) {
 		case SuspendedGuestValueKind.Nil:
 			return { lines: ['Nil'], valueType: 'nil' };
@@ -618,7 +621,7 @@ function describeSuspendedGuestValueForInspector(
 			return {
 				lines: [
 					'<table>',
-					bridge.suspendedGuest.previewValue(
+					guest.previewValue(
 						value,
 						PREVIEW_MAX_DEPTH,
 						PREVIEW_MAX_ENTRIES,
@@ -660,18 +663,18 @@ function sortedTableMemberCompletions(
 }
 
 function buildSuspendedGuestTableMemberCompletionEntries(
-	bridge: RuntimeLuaTooling,
+	guest: SuspendedGuestSession,
 	table: SuspendedGuestValue,
 	operator: '.' | ':',
 ): LuaMemberCompletion[] {
 	const registry = new Map<string, LuaMemberCompletion>();
-	bridge.suspendedGuest.visitTableStringMembers(
+	guest.visitTableStringMembers(
 		table,
 		(key, entryValue) => {
 			registerTableMemberCompletion(
 				registry,
 				key,
-				bridge.suspendedGuest.kind(entryValue) === SuspendedGuestValueKind.Function,
+				guest.kind(entryValue) === SuspendedGuestValueKind.Function,
 				operator,
 			);
 		},

@@ -1,3 +1,4 @@
+import type { SuspendedGuestSession } from './runtime/suspended_guest';
 import type { RuntimeEventHistory } from './runtime/event_history';
 import { EventViewerInput } from './workbench/contrib/events/editor_input';
 import { EventViewerPane } from './workbench/contrib/events/editor_pane';
@@ -67,7 +68,6 @@ import { api } from './runtime/overlay_api';
 import * as constants from './common/constants';
 import type { FaultSnapshot, RuntimeErrorDetails, RuntimeFaultState } from './runtime/fault_state';
 import type { ResourceIdentity } from './common/resource';
-import type { RuntimeLuaTooling } from './runtime/lua_tooling';
 import { discardRuntimeDebuggerPlans, type RuntimeDebuggerState } from './runtime/debugger_state';
 import type { OverlayRenderer } from './runtime/overlay_renderer';
 import type { RuntimeTaskQueue } from '../hosts/common/runtime_task_queue';
@@ -288,7 +288,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly clipboard: Clipboard;
 	private readonly sources: RuntimeSourceState;
 	private readonly fault: RuntimeFaultState;
-	private readonly luaTooling: RuntimeLuaTooling;
+	private readonly guest: SuspendedGuestSession;
 	private readonly debuggerState: RuntimeDebuggerState;
 	private readonly overlayRenderer: OverlayRenderer;
 	private readonly unsubscribeWorkspaceCursorMoved: () => void;
@@ -335,7 +335,7 @@ export class RuntimeCartEditor implements CartEditor {
 		fontVariant: Parameters<typeof setFontVariant>[1],
 		sources: RuntimeSourceState,
 		fault: RuntimeFaultState,
-		luaTooling: RuntimeLuaTooling,
+		guest: SuspendedGuestSession,
 		debuggerState: RuntimeDebuggerState,
 		public readonly events: RuntimeEventHistory,
 		runtimeTasks: RuntimeTaskQueue,
@@ -370,7 +370,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.clipboard = clipboard;
 		this.sources = sources;
 		this.fault = fault;
-		this.luaTooling = luaTooling;
+		this.guest = guest;
 		this.debuggerState = debuggerState;
 		this.overlayRenderer = overlayRenderer;
 		this.isAvailable = runtimeSourcesSupportIde(this.sources);
@@ -378,7 +378,6 @@ export class RuntimeCartEditor implements CartEditor {
 			this,
 			sources,
 			fault,
-			luaTooling,
 			debuggerState,
 			hotResumes,
 			boots,
@@ -395,7 +394,7 @@ export class RuntimeCartEditor implements CartEditor {
 			frameNavigation,
 			debuggerExecution,
 		);
-		this.completion = new EditorCompletionController(luaTooling, fault, runtime);
+		this.completion = new EditorCompletionController(sources, guest, fault, runtime);
 		this.tabBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this.commands, null);
 		this.tabBar.setInput(editorChromeState.tabActions, this.tabBar.focusTarget);
 		this.runtimeTimeline = new RuntimeTimelineControl(this.commands, runtime, rewind, frameNavigation);
@@ -427,7 +426,7 @@ export class RuntimeCartEditor implements CartEditor {
 				this,
 				this.clipboard,
 				this.sources,
-				this.luaTooling,
+				this.guest,
 				this.fault,
 				this.runtime,
 				this.debuggerState,
@@ -456,7 +455,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.search,
 		);
 		this.sceneEditor = new SceneEditorController(this.sources, this.editorPanes, this.navigation);
-		this.actorLab = new ActorLabController(sources, luaTooling.suspendedGuest, runtime.machine.cpu,
+		this.actorLab = new ActorLabController(sources, guest, runtime.machine.cpu,
 			this.quickInput, this.editorPanes, this.navigation, actorExecution, rewind);
 
 		const behaviorRegistrations = behaviorSources.registrations;
@@ -467,7 +466,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.quickInput,
 			behaviorSources,
 			createGraphLayoutEngine,
-			luaTooling.suspendedGuest,
+			guest,
 			rewind,
 		);
 		this.scenarioLab = new ScenarioLabController(
@@ -478,7 +477,7 @@ export class RuntimeCartEditor implements CartEditor {
 			scenarioRuns,
 		);
 		this.aemEditor = new AemEditorController(sources, this.editorPanes, this.quickInput);
-		this.luaPrograms = new LuaProgramController(sources, luaTooling.suspendedGuest, this.editorPanes, this.navigation, this.quickInput, rewind);
+		this.luaPrograms = new LuaProgramController(sources, guest, this.editorPanes, this.navigation, this.quickInput, rewind);
 		this.actionStrings = new ActionStringTester(sources, clock, this.quickInput, scenarioRuns, this.scenarioLab);
 		this.editorInputSerializers = {
 			aem_editor: new AemEditorInputSerializer(sources),
@@ -598,7 +597,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public deactivate(): void {
-		this.luaTooling.suspendedGuest.invalidate();
+		this.guest.invalidate();
 		pointerHover.clear();
 		const wasActive = this.isActive;
 		this.editorPanes.clearEditor();

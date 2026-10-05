@@ -1,12 +1,9 @@
 import { LuaError, LuaSyntaxError } from '../../toolchain/ts/lua/errors';
-import type { LuaCallFrame } from '../language/lua/interpreter/interpreter';
 import {
-	convertToError,
 	extractErrorMessage,
-} from '../language/lua/interpreter/value';
+} from '../common/errors';
 import {
 	buildErrorStackString,
-	convertLuaCallFrames,
 	sanitizeLuaErrorMessage,
 } from './error_format';
 import {
@@ -93,7 +90,6 @@ export type RuntimeFaultState = {
 	hostFrameFailed: boolean;
 };
 
-const EMPTY_LUA_CALL_FRAMES: ReadonlyArray<LuaCallFrame> = [];
 const EMPTY_STACK_TRACE_FRAMES: ReadonlyArray<StackTraceFrame> = [];
 
 export function createRuntimeFaultState(): RuntimeFaultState {
@@ -173,10 +169,7 @@ function resolveRuntimeErrorLocation(
 	};
 }
 
-function errorStackFunctionName(callFrames: ReadonlyArray<LuaCallFrame>, luaFrames: ReadonlyArray<StackTraceFrame>): string {
-	if (callFrames.length > 0) {
-		return callFrames[callFrames.length - 1].functionName;
-	}
+function errorStackFunctionName(luaFrames: ReadonlyArray<StackTraceFrame>): string {
 	if (luaFrames.length > 0) {
 		return luaFrames[0].functionName;
 	}
@@ -265,7 +258,7 @@ export function recordLuaError(
 	runtime: Runtime,
 	whatever: unknown,
 ): RecordedRuntimeLuaError | null {
-	const error = convertToError(whatever);
+	const error = whatever instanceof Error ? whatever : new Error(String(whatever));
 	if (fault.handledLuaErrors.has(error)) {
 		return null;
 	}
@@ -399,24 +392,11 @@ function buildRuntimeErrorDetails(
 	fault: RuntimeFaultState,
 	sources: RuntimeSourceState,
 	error?: unknown,
-	callStack?: ReadonlyArray<LuaCallFrame>,
 ): RuntimeErrorDetails {
 	if (error instanceof LuaSyntaxError) {
 		return null;
 	}
-	let callFrames: ReadonlyArray<LuaCallFrame>;
-	let luaFrames: StackTraceFrame[] = [];
-	if (callStack) {
-		callFrames = callStack;
-		luaFrames = callFrames.length > 0
-			? convertLuaCallFrames(callFrames, sources, sources.activeCartridgeSlot)
-			: [];
-	} else {
-		callFrames = EMPTY_LUA_CALL_FRAMES;
-		if (fault.lastLuaCallStack.length > 0) {
-			luaFrames = fault.lastLuaCallStack.slice();
-		}
-	}
+	const luaFrames = fault.lastLuaCallStack.slice();
 	if (error instanceof LuaError) {
 		const sourceFrame = firstSourceStackFrame(luaFrames);
 		luaFrames[0] = createLuaSourceStackTraceFrame(
@@ -425,7 +405,7 @@ function buildRuntimeErrorDetails(
 			luaErrorSourcePath(error),
 			error.line,
 			error.column,
-			errorStackFunctionName(callFrames, luaFrames),
+			errorStackFunctionName(luaFrames),
 		);
 	}
 	if (luaFrames.length === 0) {

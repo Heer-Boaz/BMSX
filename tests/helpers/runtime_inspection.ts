@@ -24,7 +24,6 @@ import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { BootService } from '../../ide/workbench/services/execution/boot';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
-import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import type { KeyValueStorage } from '../../ide/workspace/key_value_storage';
 
@@ -48,12 +47,11 @@ export function createRuntimeInspectionFixture(runtime: Runtime, sources: Runtim
 	const gameCapture = new GameCaptureService(presenter, presentation, tasks, encodePngImage);
 	const terminal = new LuaTerminalSession(runtime, sources, guest, debuggerState, fault, tasks, execution, rewind);
 	const actorExecution = new ActorExecutionService(runtime, sources, guest, debuggerState, fault, tasks, execution, rewind);
-	const tooling = new RuntimeLuaTooling(sources, guest);
-	const boots = new BootService(models, sources, tooling, fault, runtime, tasks, execution, audio, new Map());
-	const hotResumes = new HotResumeService(models, sources, tooling, fault, debuggerState,
+		const boots = new BootService(models, sources, fault, runtime, tasks, execution, audio, new Map());
+	const hotResumes = new HotResumeService(models, sources, guest, fault, debuggerState,
 		new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1), runtime, tasks, execution, new Map());
 	hotResumes.onDidApply = () => events.beginTimeline();
 	// This fixture attaches inspection to an already reset runtime, not cold startup.
 	boots.didReplaceMachine();
-	return { events, hotResumes, boots, tooling, models, storage, actorExecution, debuggerExecution, terminal, audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
+	return { events, hotResumes, boots, models, storage, actorExecution, debuggerExecution, terminal, audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
 }
