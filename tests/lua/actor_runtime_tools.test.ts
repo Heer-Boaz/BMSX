@@ -8,6 +8,7 @@ import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import type { LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor_input';
+import { ActorLabController } from '../../ide/workbench/contrib/actor_lab/controller';
 import { ActorProjection, readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
 import { ActorRuntimeInspection } from '../../ide/workbench/contrib/actor_lab/runtime_inspection';
 import { captureActorTarget, resolveActorPath, resolveActorTarget } from '../../ide/workbench/contrib/actor_lab/target';
@@ -57,6 +58,80 @@ function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE) {
 	const inspection = f.inspection.open(), actors = inspection.lifetime.add(new ActorRuntimeInspection(inspection));
 	return { ...f, stop: inspection, actors };
 }
+
+test('Actor Lab history restores the typed member and Details after choosing another actor without guest execution', t => {
+	const f = fixture(); t.after(() => f.stop.dispose());
+	const controller = new ActorLabController(f.sources, f.guest, f.runtime.machine.cpu, undefined!, undefined!, undefined!, f.actorExecution, f.rewind);
+	const input = controller.resolveInput(); t.after(() => input.dispose());
+	const choices = readActorChoices(f.sources, f.guest, -1), font = new Font({ variant: 'tiny' });
+	input.domain = -1; input.actorHashId = choices[0].hashId; controller.refresh(input);
+	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state');
+	input.rememberSelection(); input.detailsOpen = true; input.detailsSelection = 'CURRENT CHILD'; input.detailsScroll = 37;
+	input.split.resize(0.55); input.detailsSplit.resize(0.6);
+	const saved = controller.captureSelection(input), heap = f.runtime.machine.cpu.luaHeap.usedBytes();
+	input.actorHashId = choices[1].hashId; input.selectionPath = undefined; input.dirty = true; controller.refresh(input);
+	const second = controller.captureSelection(input);
+	assert.equal(saved.matches(second), false, 'equal displayed actor IDs do not substitute for physical typed membership');
+	input.detailsSelection = 'id'; input.detailsScroll = 0; input.detailsOpen = false;
+	controller.restoreSelection(input, saved, font);
+	assert.equal(input.actorHashId, choices[0].hashId);
+	assert.deepEqual(input.selectionPath, saved.target!.path);
+	assert.equal(controller.selected(input)!.kind, 'state');
+	assert.equal(input.detailsOpen, true); assert.equal(input.detailsSelection, 'CURRENT CHILD'); assert.equal(input.detailsScroll, 37);
+	assert.equal(input.split.ratio, 0.55); assert.equal(input.detailsSplit.ratio, 0.6);
+	assert.equal(f.runtime.machine.cpu.luaHeap.usedBytes(), heap);
+	assert.equal(input.running, false);
+	saved.dispose(); second.dispose();
+});
+
+test('Actor Lab navigation keeps graph edge identity and retires bookmarks at heap replacement or history resume', t => {
+	for (const retirement of ['heap-replaced', 'history-resume'] as const) {
+		const f = fixture(); t.after(() => f.stop.dispose());
+		const controller = new ActorLabController(f.sources, f.guest, f.runtime.machine.cpu, undefined!, undefined!, undefined!, f.actorExecution, f.rewind);
+		const input = controller.resolveInput(); t.after(() => input.dispose());
+		const font = new Font({ variant: 'tiny' });
+		input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId; controller.refresh(input);
+		input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
+		controller.openStateGraph(input, font);
+		const graph = input.stateGraph!, target = graph.selectedTarget!;
+		graph.selectTarget(target, 'edge'); graph.viewport.layout(0, 0, 120, 100);
+		graph.viewport.setZoom(2); graph.viewport.pan(15, 20);
+		const saved = controller.captureSelection(input), scroll = [graph.viewport.scrollX, graph.viewport.scrollY];
+		controller.openOutline(input);
+		controller.restoreSelection(input, saved, font); saved.restoreViewport(input);
+		assert.equal(input.stateGraph, graph, 'common Source and Back reuses the same graph and its layout');
+		assert.equal(graph.viewport.selection!.kind, 'edge'); assert.deepEqual(graph.selectedTarget, target);
+		assert.deepEqual([graph.viewport.scrollX, graph.viewport.scrollY], scroll); assert.equal(graph.viewport.zoom, 2);
+		if (retirement === 'heap-replaced') f.guest.invalidate('heap-replaced'); else f.guest.willResumeHistory();
+		controller.restoreSelection(input, saved, font);
+		assert.equal(input.actorHashId, 0); assert.equal(controller.selected(input), undefined);
+		assert.equal(input.stateGraph, undefined); assert.equal(input.follow.target, undefined);
+		saved.dispose();
+	}
+});
+
+test('Actor Lab navigation retains an absent member without selecting a different receiver', t => {
+	for (const presentation of ['outline', 'graph'] as const) {
+		const f = fixture(ENTRY.replace('return world', "function remove_state() probe._components[1]._machines[1].state_ids = { 'concurrent' } end\nreturn world"));
+		t.after(() => f.stop.dispose());
+		const controller = new ActorLabController(f.sources, f.guest, f.runtime.machine.cpu, undefined!, undefined!, undefined!, f.actorExecution, f.rewind);
+		const input = controller.resolveInput(); t.after(() => input.dispose());
+		const font = new Font({ variant: 'tiny' }), cpu = f.runtime.machine.cpu;
+		input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId; controller.refresh(input);
+		input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.name === 'idle'); input.rememberSelection();
+		if (presentation === 'graph') controller.openStateGraph(input, font);
+		const saved = controller.captureSelection(input), alive = cpu.captureRuntimeState();
+		f.guest.invalidate(); runCompletionClosure(cpu, f.guest.global('remove_state') as Closure, []);
+		controller.restoreSelection(input, saved, font);
+		assert.equal(controller.selected(input), undefined);
+		assert.deepEqual(presentation === 'outline' ? input.selectionPath : input.stateGraph!.selectionBookmark!.path, saved.target!.path);
+		const absent = controller.captureSelection(input);
+		assert.deepEqual(absent.target!.path, saved.target!.path, 'capturing an unavailable view keeps the requested typed membership');
+		f.guest.invalidate('history-restored'); cpu.restoreRuntimeState(alive); controller.refresh(input); input.stateGraph?.layout(font);
+		assert.equal(controller.selected(input)!.name, 'idle', 'the original historical member becomes actionable only after reacquisition');
+		saved.dispose(); absent.dispose();
+	}
+});
 
 test('FSM graph consumes actual activity and typed membership, retains geometry through restore, and retires renamed instances', t => {
 	const f = fixture(ENTRY.replace('return world', `function move() probe._components[1]._machines_by_id.same.current_id = nil end

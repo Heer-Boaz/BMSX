@@ -6,6 +6,7 @@ import { inputFocus } from '../../../ide/input/focus';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
+import type { ActorLabEditorPane } from '../../../ide/workbench/contrib/actor_lab/editor_pane';
 import { check, type StudioFixture } from './studio_fixture';
 import { nemesisTitleState, reachNemesisTitle } from './studio_nemesis_navigation';
 
@@ -126,12 +127,61 @@ export async function runStudioGameInput(test: StudioFixture) {
 	await frame(); await frame();
 	check(cycles() === actorHeld && ide.editor.capturesGuestInput, 'leaving Actor Lab game focus restores its authoring hold');
 	await runPaletteCommand('Actor Lab: Inspect Instance');
-	check(!ide.editor.editorPanes.activePane!.showsGameFrame, 'instance inspection replaces the embedded preview');
+	const actorPane = ide.editor.editorPanes.activePane as ActorLabEditorPane;
+	const inspector = actorPane.inspector, details = actor.details;
+	check(actorPane.showsGameFrame && inspector.visible && actor.detailsOpen,
+		'instance Details remain beside the embedded game preview');
+	await press('ArrowDown');
+	const selectedProperty = inspector.model.rows[inspector.model.selectionIndex].element.label;
+	const selectedActorPath = JSON.stringify(actor.selectionPath);
+	check(actor.previewBounds.bottom < actor.detailsBounds.top, 'game and Details occupy separate visible surfaces');
+	await test.capture?.('actor-details-adjacent');
 	await click(actor.previewBounds);
-	check(inputFocus.target?.guestInputBounds === undefined && ide.editor.capturesGuestInput,
-		'a hidden Actor Lab preview cannot take input through the inspector');
+	check(inputFocus.target?.guestInputBounds === actor.previewBounds && !ide.editor.capturesGuestInput
+		&& inspector.visible && actor.details === details && JSON.stringify(actor.selectionPath) === selectedActorPath,
+		'visible Actor Lab preview takes game input without replacing Details or actor selection');
+	setKey('KeyZ', true);
+	await until(() => (runtime.machine.memory.readIoU32(keyAddress) & keyMask) !== 0,
+		'Actor Lab game input still reaches the ICU beside open Details');
+	await test.releaseGuestKey('KeyZ');
+	await press('ShiftLeft', 'F1');
+	const detailsHeld = cycles();
+	await frame(); await frame();
+	check(cycles() === detailsHeld && inspector.visible
+		&& inspector.model.rows[inspector.model.selectionIndex].element.label === selectedProperty,
+		'releasing game focus holds execution and preserves the selected Details property');
+	await runPaletteCommand('Run: Next Frame');
+	await until(() => ide.frameNavigation.active === undefined && cycles() > detailsHeld, 'Actor Lab Details advance one guest frame');
+	const detailsForward = cycles();
+	check(inspector.visible && actor.details === details && JSON.stringify(actor.selectionPath) === selectedActorPath
+		&& inspector.model.rows[inspector.model.selectionIndex].element.label === selectedProperty,
+		'frame advance refreshes the retained Details without replacing view selection');
+	await runPaletteCommand('Run: Previous Frame');
+	await until(() => ide.frameNavigation.active === undefined && cycles() < detailsForward, 'Actor Lab Details return to the previous guest frame');
+	check(inspector.visible && actor.details === details && JSON.stringify(actor.selectionPath) === selectedActorPath
+		&& inspector.model.rows[inspector.model.selectionIndex].element.label === selectedProperty,
+		'rewind refreshes Details and preserves actor and property selection');
+	await test.capture?.('actor-details-rewound');
+	await click({ left: actor.detailsSplit.bounds.left + 1, right: actor.detailsSplit.bounds.left + 2,
+		top: actor.detailsSplit.position, bottom: actor.detailsSplit.position + 1 });
+	const sashFocus = inputFocus.target, initialRatio = actor.detailsSplit.ratio;
+	await press('ArrowDown');
+	check(actor.detailsSplit.ratio > initialRatio, 'visible Details sash owns its focused resize keys');
+	const hiddenRatio = actor.detailsSplit.ratio;
+	await click(inspector.actionBar.items.find(item => item.command === 'propertyInspector.close')!.bounds);
+	check(!inspector.visible && !actor.detailsOpen && inputFocus.target !== sashFocus,
+		'pointer Hide releases the focused Details sash instead of parking focus on an invisible control');
+	await press('ArrowDown');
+	check(actor.detailsSplit.ratio === hiddenRatio, 'the hidden Details sash cannot consume resize keys');
+	await runPaletteCommand('Actor Lab: Inspect Instance');
+	await click({ left: actor.detailsSplit.bounds.left + 1, right: actor.detailsSplit.bounds.left + 2,
+		top: actor.detailsSplit.position, bottom: actor.detailsSplit.position + 1 });
+	await press('ArrowUp');
+	check(actor.detailsSplit.ratio < hiddenRatio, 'reopening Details reattaches the same sash input owner');
+	await runPaletteCommand('Actor Lab: Inspect Instance');
 	await press('Escape');
-	check(ide.editor.editorPanes.activePane!.showsGameFrame, 'closing inspection restores the preview');
+	check(actorPane.showsGameFrame && !inspector.visible && !actor.detailsOpen,
+		'explicitly closing Details leaves the preview visible');
 	await press('ShiftLeft', 'Tab');
 	check(inputFocus.target?.guestInputBounds === actor.previewBounds, 'Actor Lab keyboard navigation includes its viewport');
 

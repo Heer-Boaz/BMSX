@@ -17,7 +17,7 @@ import type { WorkbenchPropertyInspector } from '../../ui/property_inspector/con
 import type { EditorNavigationController } from '../resources/navigation';
 import type { BehaviorInspectionProperty } from '../behavior_lens/inspection';
 import { canOpenBehaviorInspectionSource } from '../behavior_lens/inspection_source';
-import { inspectActorNode } from './inspection';
+import { ActorDetails } from './details';
 import { readActorMethods } from './methods';
 import { ActorLabInput } from './editor_input';
 import { runtimeWorld, type ActorNode } from './runtime';
@@ -27,11 +27,13 @@ import { ActorProjection, readActorChoices } from './projection';
 import { actorActions } from './operations';
 import { actorTargetsEqual, captureActorTarget, resolveActorTarget, type ActorTarget } from './target';
 import type { ActorExecutionService, ActorExecutionResult, ActorInvocation } from './execution';
+import { ActorLabNavigationSelection } from './navigation_selection';
 
 /** Actor Lab interaction and presentation; the shared domain service owns execution. */
 export class ActorLabController {
 	private current: ActorLabInput | undefined;
 	private projection: ActorProjection;
+	private navigationGeneration = 0;
 	public readonly canInteract = (domain?: ResourceDomain) => domain === undefined ? this.execution.canExecute : this.execution.canExecuteIn(domain);
 	public constructor(
 		private readonly sources: RuntimeSourceState,
@@ -44,11 +46,13 @@ export class ActorLabController {
 		private readonly rewind: HostRewind,
 	) {
 		guest.onDidInvalidate(reason => {
+			if (reason === 'heap-replaced') this.navigationGeneration++;
 			const input = this.current;
 			if (input === undefined) return;
 			input.invalidate(reason);
 		});
 		guest.onWillResumeHistory(() => {
+			this.navigationGeneration++;
 			const input = this.current;
 			if (input !== undefined) {
 				// Admission observes the physical position even after an interrupted seek.
@@ -61,6 +65,7 @@ export class ActorLabController {
 	public resolveInput(): ActorLabInput {
 		if (this.current === undefined) {
 			const input = new ActorLabInput();
+			input.details = new ActorDetails(this.sources, this.guest);
 			this.projection = new ActorProjection(input, this.sources, this.guest);
 			input.onWillDispose(() => { this.current = undefined; });
 			this.current = input;
@@ -122,6 +127,44 @@ export class ActorLabController {
 			input.stateGraph!.revealActive(input.follow.pending);
 			input.follow.pending = undefined;
 		}
+	}
+
+	public captureSelection(input: ActorLabInput): ActorLabNavigationSelection {
+		const world = input.actorHashId === 0 ? undefined : runtimeWorld(this.sources, this.guest, input.domain);
+		return new ActorLabNavigationSelection(input, world?.hashId, this.navigationGeneration);
+	}
+
+	public restoreSelection(input: ActorLabInput, selection: ActorLabNavigationSelection, font: BFont): void {
+		input.running = false;
+		input.timeline.clear();
+		input.follow.stop();
+		const previousGraph = input.stateGraph;
+		input.stateGraph = undefined;
+		input.presentation = 'outline';
+		input.selectionPath = undefined;
+		input.outline.selectionIndex = -1;
+		const target = selection.target;
+		const world = target === undefined || selection.generation !== this.navigationGeneration ? undefined : runtimeWorld(this.sources, this.guest, target.domain);
+		const available = world !== undefined && world.hashId === target!.worldHashId;
+		input.actorHashId = available ? target!.actorHashId : 0;
+		if (target !== undefined) input.domain = target.domain;
+		input.dirty = true;
+		this.refresh(input);
+		if (available && input.actorPresent) {
+			const node = resolveActorTarget(input.runtime.roots, target!, this.guest);
+			if (node !== undefined) this.projection.reveal(node);
+			else { input.outline.selectionIndex = -1; input.selectionPath = target!.path.length === 0 ? undefined : target!.path; }
+			if (selection.graph !== undefined) {
+				const graph = previousGraph?.matchesTarget(selection.graph.target) ? previousGraph : new ActorStateGraph(selection.graph.target, font);
+				graph.refresh(input.runtime.roots, this.guest);
+				graph.layout(font);
+				graph.restoreSelection(target!.path.length === 0 ? undefined : target, selection.graph.kind);
+				input.stateGraph = graph;
+				input.presentation = 'graph';
+			}
+			if (selection.follow !== undefined) input.follow.start(selection.follow);
+		}
+		selection.restoreDetails(input);
 	}
 
 	public activityScope(input: ActorLabInput): ActorTarget | undefined {
@@ -198,11 +241,16 @@ export class ActorLabController {
 		input.follow.pending = input.follow.target;
 	}
 
-	public inspect(input: ActorLabInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
-		const selected = this.selected(input)!;
-		input.running = false;
-		const items = inspectActorNode(this.sources, this.guest, selected);
-		const lifetime = inspector.show({ title: `${selected.label} / LIVE INSTANCE`, items,
+	public refreshDetails(input: ActorLabInput): readonly BehaviorInspectionProperty[] | undefined {
+		if (input.dirty || this.rewind.seeking) return;
+		return input.details!.refresh(this.selected(input), input.presentation === 'outline'
+			? input.selectionPath : input.stateGraph!.selectionBookmark?.path);
+	}
+
+	public inspect(input: ActorLabInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>, focus = true): void {
+		this.refreshDetails(input);
+		input.detailsOpen = true;
+		const lifetime = inspector.show({ title: 'DETAILS', items: input.details!.items,
 			canOpenSource: item => canOpenBehaviorInspectionSource(this.sources, item),
 			openSource: item => {
 				const source = item.source!;
@@ -210,8 +258,14 @@ export class ActorLabController {
 					row: source.range.start.line - 1, startColumn: source.range.start.column - 1, endColumn: source.range.start.column - 1,
 				});
 			},
-		});
-		lifetime.add({ dispose: this.guest.onDidInvalidate(() => inspector.hide()) });
+			onDidClose: () => { input.detailsOpen = false; },
+		}, focus);
+		const selection = inspector.model.rows.findIndex(row => row.element.label === input.detailsSelection);
+		if (selection >= 0) inspector.model.selectionIndex = selection;
+		lifetime.add({ dispose: () => {
+			input.detailsSelection = inspector.model.rows[inspector.model.selectionIndex]?.element.label;
+			input.detailsScroll = inspector.model.viewport.scrollTop;
+		} });
 	}
 
 	public actions(input: ActorLabInput): void {

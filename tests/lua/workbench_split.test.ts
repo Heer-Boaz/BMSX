@@ -49,3 +49,29 @@ test('shared pane sash captures drag, releases on blur/replacement and consumes 
 	view.resize(view.defaultRatio);
 	assert.equal(view.position, 200);
 });
+
+test('vertical split uses its height for drag, limits and focused keyboard resizing', t => {
+	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
+	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
+	const parent = focus.createTarget(), control = new WorkbenchSplitControl(focus, capture, hover, parent);
+	const view = new WorkbenchSplitView(0.4, 'vertical');
+	t.after(() => { control.dispose(); input.dispose(); });
+	view.layout(150, 100, 300, 1100);
+	control.setInput(view);
+	const pointer: PointerSnapshot = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary,
+		justPressedButtons: PointerButton.Primary, justReleasedButtons: 0, viewportX: 200, viewportY: view.position + 2 };
+	assert.equal(control.handlePointer({ ...pointer, viewportX: 301 }), false);
+	assert.equal(control.handlePointer(pointer), true);
+	capture.dispatch({ ...pointer, justPressedButtons: 0, viewportY: 802 }, false, 1);
+	assert.equal(view.position, 800);
+	parent.focus();
+	assert.equal(capture.active, false);
+	control.focusTarget.focus();
+	input.inputButton('keyboard:0', 'ArrowUp', true, 1, 1, 1);
+	input.pollInput();
+	focus.handleKeyboard(input.getPlayerInput(1));
+	assert.ok(Math.abs(view.position - 750) <= 1);
+	assert.equal(input.getPlayerInput(1).getRawButtonState('ArrowUp', 'keyboard').consumed, true);
+	view.resize(view.defaultRatio);
+	assert.equal(view.position, 500);
+});

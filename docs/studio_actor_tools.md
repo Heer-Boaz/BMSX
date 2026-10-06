@@ -72,8 +72,8 @@ These interaction patterns inform the view; they do not require guest tracing.
   in stable tree order. It never oscillates between endpoints or auto-zooms.
   Inactive siblings are not reordered behind active ones.
 - Manual navigation/scroll/pan stops following. Merely interacting with the game
-  preview does not. Opening Details stops playback, not the selected-instance
-  correspondence. The compact title contains Actor/Back, Follow, and More; instance
+  preview does not. Details stays beside the preview and selected hierarchy while playback,
+  frame stepping and history review update the inspected values. The compact title contains Actor/Back, Follow, and More; instance
   mutation commands remain in More, the context menu, and the palette.
 - Switching tree/graph carries the explicit selected instance. The graph model,
   zoom and viewport survive returning to the tree and reopening that same machine.
@@ -84,6 +84,66 @@ These interaction patterns inform the view; they do not require guest tracing.
   instances are visibly unavailable and cannot receive actions; live-branch
   admission and heap replacement retire invalid bookmarks. Timeline **Scrub**
   remains an explicit guest operation, not machine-history rewind.
+
+## Persistent instance Details
+
+Actor Lab composes its existing outline/graph, game preview and property inspector
+instead of replacing the preview with a modal property document. Details occupies
+the resizable lower part of the preview column; closing it restores the preview's
+space. The shared split control supports both axes, including pointer capture and
+focused keyboard resizing. This is local pane composition, not a second docking
+or game-rendering framework.
+
+The implementation follows [VS Code's Variables view](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/variablesView.ts)
+(stable selection identity, retained view state, refresh at model/visibility
+boundaries) and [Godot's remote inspector](https://github.com/godotengine/godot/blob/master/editor/debugger/editor_debugger_inspector.cpp)
+(retained object/property identity and value updates). UE's
+[Rewind track interface](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Editor/RewindDebuggerInterface/FRewindDebuggerTrack)
+keeps track selection and Details in one investigation context; this does not
+imply importing UE recording or adding guest instrumentation.
+
+- Details follows the explicit selected member; activity-follow still moves only
+  the viewport. It does not choose a different receiver or execute Lua.
+- `ActorDetails` formats through `BehaviorRuntimeProperties`, the same retained
+  property owner used by Behavior Lens. Dirty invalidation coalesces until the
+  visible pane updates. Unchanged paints reuse property rows and measured text.
+- Execution ends guest borrows. History restoration invalidates value caches;
+  Details reads the reconciled member in the restored heap, never an intermediate
+  seek checkpoint. Missing selections show unavailability instead of another actor.
+- The property reader is embedded, not modal: its focus order joins the tree,
+  graph, preview and sashes. Game focus and the central transport remain usable.
+  Scroll and selected property survive source navigation; explicit Hide dismisses
+  Details, whereas detaching an editor does not.
+- Source and workbench Back/Forward retain the selected cart, World, actor and
+  typed member, graph presentation/viewport and Details property. Navigation uses
+  the existing pane-selection/history owner, following [VS Code's editor history](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/services/history/browser/historyService.ts),
+  and never seeks machine history or executes guest code. Unavailable members
+  stay unselected rather than selecting another instance. Navigation bookmarks
+  retire on heap replacement or resuming recorded history; the currently open
+  Actor Lab selection continues through its ordinary membership reconciliation.
+
+### Details/navigation validation (2026-10-07)
+
+The real browser workflows pass on software, WebGL2 and WebGPU: actor inspection
+and execution (six gates), plus game input (three gates). They keep Details open
+while delivering keyboard input to Nemesis, advancing and rewinding a physical
+frame, and invoking the fixture actor's ordinary `set_pos` method. Captures show
+the retained selected `x` row changing from `4` to `12`, with `y` changing from
+`8` to `34`; Source opens the actual callback and Back/Forward retains the member,
+property and scroll position. The fixture setup remains automated authoring and
+the assistant provider is local/deterministic, not a live-model reasoning test.
+
+The browser checks exposed two lifecycle defects and now cover their fixes:
+restoring scroll against the departing source editor's bounds, and leaving a
+hidden Details sash focused. Activation no longer performs layout with stale
+geometry; the normal host layout precedes viewport restoration. The sash is
+attached only while its pane is visible.
+
+The Actor/Behavior/workbench unit bundle passes 343 tests. Clean Details refreshes
+perform no guest reads; dirty unchanged values retain rows without reformatting.
+This is not a zero-allocation or total-frame performance claim. IDE/tests
+typechecks, the browser Studio build, architecture audit and diff checks pass.
+Pinned properties and semantic event/time navigation are separate follow-up work.
 
 ## Lifetimes and representation
 

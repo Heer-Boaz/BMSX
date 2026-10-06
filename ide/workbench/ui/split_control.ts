@@ -28,25 +28,34 @@ export class WorkbenchSplitControl implements PointerCaptureTarget, PointerHover
 	public cancelPointer(): void { this.capture.release(this); }
 	public handlePointer(snapshot: PointerSnapshot): boolean {
 		const input = this.input;
-		if (input === undefined || !snapshot.valid || !snapshot.insideViewport || Math.abs(snapshot.viewportX - input.position) > 4
-			|| snapshot.viewportY < input.bounds.top || snapshot.viewportY >= input.bounds.bottom) return false;
+		if (input === undefined || !snapshot.valid || !snapshot.insideViewport) return false;
+		const horizontal = input.orientation === 'horizontal';
+		const position = horizontal ? snapshot.viewportX : snapshot.viewportY;
+		const cross = horizontal ? snapshot.viewportY : snapshot.viewportX;
+		if (Math.abs(position - input.position) > 4 || cross < (horizontal ? input.bounds.top : input.bounds.left)
+			|| cross >= (horizontal ? input.bounds.bottom : input.bounds.right)) return false;
 		this.hover.visit(this); this.hovered = true;
 		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0) {
-			this.focusTarget.focus(); this.pointerOffset = snapshot.viewportX - input.position;
+			this.focusTarget.focus(); this.pointerOffset = position - input.position;
 			this.capture.capture(this);
 		}
 		return true;
 	}
-	public handleCapturedPointer(snapshot: PointerSnapshot): void { this.input!.moveTo(snapshot.viewportX - this.pointerOffset); }
+	public handleCapturedPointer(snapshot: PointerSnapshot): void {
+		const input = this.input!;
+		input.moveTo((input.orientation === 'horizontal' ? snapshot.viewportX : snapshot.viewportY) - this.pointerOffset);
+	}
 	public releaseCapturedPointer(snapshot: PointerSnapshot): void { this.handleCapturedPointer(snapshot); this.capture.release(this); }
 	private handleKeyboard(player: PlayerInput): void {
-		for (const key of KEYS) {
+		const input = this.input!;
+		const keys = input.orientation === 'horizontal' ? HORIZONTAL_KEYS : VERTICAL_KEYS;
+		for (const key of keys) {
 			if (!shouldRepeatKeyFromPlayer(key, player)) continue;
 			consumeIdeKey(key, player);
-			const input = this.input!;
-			input.resize(key === 'Home' ? input.defaultRatio : input.ratio + (key === 'ArrowLeft' ? -0.05 : 0.05));
+			input.resize(key === 'Home' ? input.defaultRatio : input.ratio + (key === keys[0] ? -0.05 : 0.05));
 			return;
 		}
 	}
 }
-const KEYS = ['ArrowLeft', 'ArrowRight', 'Home'] as const;
+const HORIZONTAL_KEYS = ['ArrowLeft', 'ArrowRight', 'Home'] as const;
+const VERTICAL_KEYS = ['ArrowUp', 'ArrowDown', 'Home'] as const;

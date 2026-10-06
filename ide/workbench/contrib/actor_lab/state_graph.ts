@@ -128,6 +128,18 @@ export class ActorStateGraph {
 		return this.target !== undefined && actorTargetsEqual(this.target, target);
 	}
 
+	public get machineTarget(): ActorTarget | undefined { return this.target; }
+	public get selectionBookmark(): ActorTarget | undefined { return this.selectionTarget; }
+	public get selectionType(): 'node' | 'edge' { return this.selectionKind; }
+
+	/** Navigation may retain an absent membership, but it never becomes an actionable selection. */
+	public restoreSelection(target: ActorTarget | undefined, kind: 'node' | 'edge'): void {
+		this.selectionTarget = target;
+		this.selectionKind = kind;
+		this.viewport.selection = null;
+		if (target !== undefined) this.selectTarget(target, kind);
+	}
+
 	/** Explicit input replaces any temporarily unavailable selection bookmark. */
 	public rememberSelection(): void {
 		const selected = this.viewport.selection;
@@ -135,8 +147,17 @@ export class ActorStateGraph {
 		if (selected !== null) this.selectionKind = selected.kind;
 	}
 
-	public selectTarget(target: ActorTarget): boolean {
+	public selectTarget(target: ActorTarget, kind: 'node' | 'edge' = 'node'): boolean {
 		if (this.status !== 'available') return false;
+		if (kind === 'edge') {
+			for (const edge of this.viewport.model.edges) {
+				if (!actorTargetsEqual(edge.child.target, target)) continue;
+				this.viewport.selection = edge;
+				this.rememberSelection();
+				return true;
+			}
+			return false;
+		}
 		for (const node of this.viewport.model.nodes) {
 			if (!actorTargetsEqual(node.target, target)) continue;
 			this.viewport.selection = node;

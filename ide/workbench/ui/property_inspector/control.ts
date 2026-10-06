@@ -20,6 +20,7 @@ export type PropertyInspection<Element> = {
 	readonly items: readonly Element[];
 	canOpenSource(item: Element): boolean;
 	openSource(item: Element): void;
+	onDidClose?(): void;
 };
 
 /** A local read-only inspector session; the contribution retains source identity/lifetime. */
@@ -56,15 +57,15 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		this.focusTarget.registerCommand('propertyInspector.source', {
 			isEnabled: () => this.isEnabled('propertyInspector.source'), run: () => this.openSource(),
 		});
-		this.focusTarget.registerCommand('propertyInspector.close', { isEnabled: () => this.visible, run: () => this.hide() });
+		this.focusTarget.registerCommand('propertyInspector.close', { isEnabled: () => this.visible, run: () => this.close() });
 	}
 
 	public get visible(): boolean { return this.input !== undefined; }
 
-	public show(input: PropertyInspection<Element>): DisposableStore {
+	public show(input: PropertyInspection<Element>, focus = true): DisposableStore {
 		this.hide();
 		this.capture.cancel();
-		this.returnFocus = this.focus.target;
+		this.returnFocus = focus ? this.focus.target : this.focusTarget.parent;
 		this.input = input;
 		this.actionBar.items[0].visible = input.items.some(item => input.canOpenSource(item));
 		this.lifetime = new DisposableStore();
@@ -72,8 +73,22 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		this.scroll.setInput(this.model.viewport);
 		this.actions.setInput(this.actionBar, this.focusTarget);
 		this.layoutDirty = true;
-		this.focusTarget.focus();
+		if (focus) this.focusTarget.focus();
 		return this.lifetime;
+	}
+
+	/** Embedded inspectors participate in their containing pane's tab order. */
+	public setFocusOrder(previous: InputFocusTarget, next: InputFocusTarget): void {
+		this.focusTarget.previous = previous;
+		this.actions.focusTarget.next = next;
+		previous.next = this.focusTarget;
+		next.previous = this.actions.focusTarget;
+	}
+
+	private close(): void {
+		const input = this.input;
+		this.hide();
+		input?.onDidClose?.();
 	}
 
 	public hide(): void {
@@ -129,7 +144,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	}
 
 	public execute(command: EditorCommandId): void {
-		if (command === 'propertyInspector.close') this.hide();
+		if (command === 'propertyInspector.close') this.close();
 		else if (command === 'propertyInspector.source') this.openSource();
 		else throw new Error(`Not a property inspector command: ${command}`);
 	}
@@ -163,7 +178,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 
 	private handleKeyboard(input: PlayerInput): boolean {
 		if (input.getModifiers() !== KeyModifier.none) { this.triggerKey = undefined; return false; }
-		if (isKeyJustPressed('Escape', input)) { consumeIdeKey('Escape', input); this.hide(); return true; }
+		if (isKeyJustPressed('Escape', input)) { consumeIdeKey('Escape', input); this.close(); return true; }
 		for (const key of NAVIGATION_KEYS) if (shouldRepeatKeyFromPlayer(key, input)) {
 			consumeIdeKey(key, input);
 			this.triggerKey = undefined;
@@ -189,7 +204,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		const gamepad = input.inputHandlers.gamepad;
 		if (gamepad === null) return false;
 		const back = gamepad.getButtonState('b');
-		if (back.justpressed && !back.consumed) { gamepad.consumeButton('b'); this.hide(); return true; }
+		if (back.justpressed && !back.consumed) { gamepad.consumeButton('b'); this.close(); return true; }
 		for (const button of PAD_NAVIGATION) if (input.controlButtonRepeatEdge(button, 'gamepad')) {
 			gamepad.consumeButton(button);
 			this.triggerKey = undefined;

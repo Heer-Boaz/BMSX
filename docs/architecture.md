@@ -5548,6 +5548,15 @@ Ordinary replay still invalidates borrows without admitting a live branch.
 Reset/external state loading
 clears selection outright. This UI bookmark grants no persistent tool handle or
 mutation authority and changes no guest identity or TS/C++ snapshot representation.
+Actor Lab's instance Details is an embedded retained property document beside
+its game preview, not a modal replacement for the selected hierarchy. It consumes
+the reconciled typed selection through `BehaviorRuntimeProperties`; dirty reads
+coalesce at visible-pane updates and unchanged paints reuse rows and wrapping.
+Execution never retains borrowed values, history restore invalidates formatted
+value/source caches, and no property inspection executes guest Lua. The existing
+split owner supplies both-axis layout/input; no second inspection or docking
+framework is introduced. Source navigation retains the instance/view context in
+the ordinary editor navigation history without changing the emulation position.
 Actor Lab's live FSM graph projects that same selected instance hierarchy into
 the shared graph viewport. It retains scalar typed membership and display nodes,
 not guest tables or source-registration matches. Activity updates keep measured

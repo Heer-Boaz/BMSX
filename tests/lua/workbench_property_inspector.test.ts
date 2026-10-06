@@ -194,3 +194,29 @@ test('read-only evidence without source destinations hides the unused Source act
 	f.inspector.hide();
 	f.show(); assert.equal(f.inspector.actionBar.items[0].visible, true);
 });
+
+test('embedded inspector joins pane focus order and distinguishes dismissal from detaching', t => {
+	const f = fixture(t);
+	f.inspector.hide(); f.parent.focus();
+	let closed = 0;
+	const document = { title: 'Details', items: f.items, canOpenSource: () => false, openSource() {}, onDidClose() { closed++; } };
+	const departingEditor = f.focus.createTarget();
+	departingEditor.focus();
+	f.inspector.show(document, false);
+	assert.equal(f.focus.target, departingEditor, 'restoring a visible document must not steal focus');
+	const before = f.focus.createTarget(f.parent), after = f.focus.createTarget(f.parent);
+	f.inspector.setFocusOrder(before, after);
+	before.focus(); f.focus.moveFocus(false);
+	assert.equal(f.focus.target, f.inspector.focusTarget);
+	f.focus.moveFocus(false); f.focus.moveFocus(false);
+	assert.equal(f.focus.target, after);
+	f.focus.moveFocus(true); f.focus.moveFocus(true);
+	assert.equal(f.focus.target, f.inspector.focusTarget);
+	f.inspector.hide();
+	assert.equal(f.focus.target, f.parent, 'an embedded document returns to its pane, not the departed editor');
+	assert.equal(closed, 0, 'switching editors does not dismiss the retained Details pane');
+	f.inspector.show(document);
+	f.press('Escape');
+	assert.equal(closed, 1);
+	assert.equal(f.inspector.visible, false);
+});

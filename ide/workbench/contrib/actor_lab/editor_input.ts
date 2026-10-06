@@ -13,6 +13,7 @@ import type { GuestInvalidationReason } from '../../../runtime/suspended_guest';
 import type { ActorStateGraph } from './state_graph';
 import { ActorActivityFollow } from './activity_follow';
 import type { ActorNodeIdentity } from './target';
+import type { ActorDetails } from './details';
 
 /** View state only. Borrowed rows are released before guest execution. */
 export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'> {
@@ -23,6 +24,10 @@ export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'>
 	public historical = false;
 	public running = false;
 	public selectionPath: readonly ActorNodeIdentity[] | undefined;
+	public details: ActorDetails | undefined;
+	public detailsOpen = false;
+	public detailsSelection: string | undefined;
+	public detailsScroll = 0;
 	public dirty = true;
 	public status = 'CHOOSE A RUNNING ACTOR';
 	public readonly runtime = new ActorRuntimeTree();
@@ -33,6 +38,8 @@ export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'>
 	public readonly timeline = new ActorTimelineTransport();
 	public readonly timelineLayout = new ActorTimelineLayout();
 	public readonly split = new WorkbenchSplitView(0.4);
+	public readonly detailsSplit = new WorkbenchSplitView(0.42, 'vertical');
+	public readonly detailsBounds = create_rect_bounds();
 	public readonly previewBounds = create_rect_bounds();
 	public readonly actionBar = createWorkbenchActionBar('actorLab.title');
 	public readonly stateGraphActions = createWorkbenchActionBar('actorLab.stateGraph.title');
@@ -45,6 +52,7 @@ export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'>
 	}
 	public invalidate(reason: GuestInvalidationReason = 'execution'): void {
 		this.runtime.release();
+		this.details?.invalidate(reason);
 		if (reason !== 'execution') {
 			this.timeline.clear();
 			this.running = false;
