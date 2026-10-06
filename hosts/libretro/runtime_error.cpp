@@ -127,7 +127,7 @@ void reportLibretroRuntimeError(
 	}
 
 	if (frameDepth == 0) {
-		std::optional<SourceRange> range;
+		Blua32SourceRange range;
 		if (toolingImage.symbols) {
 			range = blua32SourceRangeAtPc(
 				*toolingImage.symbols,
@@ -166,7 +166,7 @@ void reportLibretroRuntimeError(
 		if (frameToolingImage.symbols) {
 			const Blua32SymbolsImage& frameSymbols = *frameToolingImage.symbols;
 			frame << "  at " << frameSymbols.metadata.functionIds[functionIndex];
-			const std::optional<SourceRange> range = blua32SourceRangeAtPc(
+			const Blua32SourceRange& range = blua32SourceRangeAtPc(
 				frameSymbols,
 				frameImage.header.textAddress,
 				pc

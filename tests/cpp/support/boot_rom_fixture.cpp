@@ -71,12 +71,12 @@ std::vector<u8> makeMinimalDiagnosticBootRom(RomImageDomain domain) {
 	symbols.metadata.functionIds.emplace_back("test.boot");
 	symbols.metadata.globalNames = image.globalNames;
 	symbols.metadata.systemGlobalNames = image.systemGlobalNames;
-	symbols.metadata.debugRanges.emplace_back(SourceRange{
+	symbols.metadata.debugRanges.push_back(std::make_shared<const SourceRange>(SourceRange{
 		"test/boot.lua",
 		SourcePosition{3, 5},
 		SourcePosition{3, 9},
-	});
-	symbols.metadata.debugInlineCallSiteChains.emplace_back();
+	}));
+	symbols.metadata.debugInlineCallSiteChains.push_back(std::make_shared<const std::vector<Blua32InlineCallSite>>());
 	symbols.metadata.debugInlineCallSiteChainIds.push_back(0u);
 	symbols.metadata.resumePointsByFunction.resize(image.functions.size());
 	symbols.metadata.localSlotsByFunction.resize(image.functions.size());

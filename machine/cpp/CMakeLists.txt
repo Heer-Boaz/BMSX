@@ -418,6 +418,7 @@ if(BMSX_BUILD_LIBRETRO OR BMSX_BUILD_TESTS)
 	add_library(bmsx_blua32_tooling STATIC
 		rompack/tooling/blua32_image.cpp
 		rompack/tooling/blua32_symbols.cpp
+		rompack/tooling/blua32_symbols_codec.cpp
 		rompack/tooling/blua32_media.cpp
 		rompack/tooling/opcode_metadata.cpp
 		rompack/tooling/source_text.cpp
@@ -727,6 +728,11 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_rompack_format_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_rompack_format_tests COMMAND bmsx_rompack_format_tests)
+
+	add_executable(bmsx_symbols_conformance_runner
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/symbols_conformance_runner.cpp
+	)
+	target_link_libraries(bmsx_symbols_conformance_runner PRIVATE bmsx_blua32_tooling)
 
 	add_executable(bmsx_imgdec_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/imgdec_test.cpp

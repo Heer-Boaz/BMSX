@@ -28,36 +28,47 @@ int main() {
 		throw std::runtime_error("BLua32 instruction word did not round-trip");
 	}
 
-	const bmsx::SourceRange outerCallRange{"cart.lua", {4, 2}, {4, 14}};
-	const bmsx::SourceRange innerCallRange{"cart.lua", {11, 3}, {11, 18}};
-	const std::vector<bmsx::Blua32InlineCallSite> inlineCallSites{
+	const auto outerCallRange = std::make_shared<const bmsx::SourceRange>(bmsx::SourceRange{"cart.lua", {4, 2}, {4, 14}});
+	const auto innerCallRange = std::make_shared<const bmsx::SourceRange>(bmsx::SourceRange{"cart.lua", {11, 3}, {11, 18}});
+	const auto inlineCallSites = std::make_shared<const std::vector<bmsx::Blua32InlineCallSite>>(std::initializer_list<bmsx::Blua32InlineCallSite>{
 		{"outer", outerCallRange},
 		{"inner", innerCallRange},
-	};
+	});
+	const auto ranges24 = std::make_shared<const std::vector<bmsx::ProgramWordRange>>(std::initializer_list<bmsx::ProgramWordRange>{{2, 4}});
+	const auto ranges2468 = std::make_shared<const std::vector<bmsx::ProgramWordRange>>(std::initializer_list<bmsx::ProgramWordRange>{{2, 4}, {6, 8}});
+	const auto ranges08 = std::make_shared<const std::vector<bmsx::ProgramWordRange>>(std::initializer_list<bmsx::ProgramWordRange>{{0, 8}});
+	const auto noInlineCalls = std::make_shared<const std::vector<bmsx::Blua32InlineCallSite>>();
+	const auto noWordRanges = std::make_shared<const std::vector<bmsx::ProgramWordRange>>();
+	const auto noRegisters = std::make_shared<const std::vector<bmsx::i32>>();
+	const auto registers01 = std::make_shared<const std::vector<bmsx::i32>>(std::initializer_list<bmsx::i32>{0, 1});
+	const auto registers0 = std::make_shared<const std::vector<bmsx::i32>>(std::initializer_list<bmsx::i32>{0});
+	const auto registers1 = std::make_shared<const std::vector<bmsx::i32>>(std::initializer_list<bmsx::i32>{1});
 	bmsx::Blua32SymbolsImage symbols;
 	symbols.metadata.optLevel = 2;
 	symbols.metadata.functionIds = {"entry"};
 	symbols.metadata.traceStatements = std::vector<std::string>{"fixture.compile", "fixture.bind"};
 	symbols.metadata.preloadModules = {"fixture/observer"};
 	symbols.metadata.functionDisplayNames = {"entryDisplay"};
-	symbols.metadata.debugRanges = {outerCallRange, std::nullopt};
-	symbols.metadata.debugInlineCallSiteChains = {{}, inlineCallSites};
+	symbols.metadata.debugRanges = {outerCallRange, nullptr};
+	symbols.metadata.debugInlineCallSiteChains = {noInlineCalls, inlineCallSites};
 	symbols.metadata.debugInlineCallSiteChainIds = {1, 0};
 	symbols.metadata.statementPointsByFunction = {{
-		{2, innerCallRange, inlineCallSites},
+		{2, std::make_shared<const bmsx::SourceRange>(*innerCallRange),
+			std::make_shared<const std::vector<bmsx::Blua32InlineCallSite>>(*inlineCallSites)},
 	}};
 	symbols.metadata.resumePointsByFunction = {{
-		{3, innerCallRange, bmsx::OpCode::MOV, {0, 1}, {0}, {1}, inlineCallSites, std::nullopt},
-		{4, innerCallRange, bmsx::OpCode::RET, {0}, {0}, {}, {}, "startup.entry.return"},
+		{3, innerCallRange, bmsx::OpCode::MOV, registers01, registers0, registers1, inlineCallSites, std::nullopt},
+		{4, innerCallRange, bmsx::OpCode::RET, std::make_shared<const std::vector<bmsx::i32>>(*registers0),
+			registers0, noRegisters, noInlineCalls, "startup.entry.return"},
 	}};
 	symbols.metadata.localSlotsByFunction = {{
-		{2, "value", true, 1, innerCallRange, outerCallRange, inlineCallSites, {{2, 4}, {6, 8}}},
+		{2, "value", true, 1, innerCallRange, outerCallRange, inlineCallSites, ranges2468},
 	}};
 	symbols.metadata.outerBindingsByFunction = {{
-		{0, bmsx::Blua32UpvalueRecord{true, 17}, inlineCallSites, {{2, 4}}},
-		{0, bmsx::Blua32UpvalueRecord{false, 0}, {}, {{0, 8}}},
-		{0, std::nullopt, inlineCallSites, {}},
-		{1, std::nullopt, {}, {}},
+		{0, bmsx::Blua32UpvalueRecord{true, 17}, inlineCallSites, ranges24},
+		{0, bmsx::Blua32UpvalueRecord{false, 0}, noInlineCalls, ranges08},
+		{0, std::nullopt, inlineCallSites, noWordRanges},
+		{1, std::nullopt, noInlineCalls, noWordRanges},
 	}};
 	symbols.metadata.functionDefinitions = {innerCallRange};
 	symbols.metadata.lexicalDeclarations = {
@@ -73,7 +84,7 @@ int main() {
 			{"frozen", innerCallRange, bmsx::StaticDeclarationKind::Rodata, 0x1fc00100u},
 		},
 		{0, 2},
-		{{{1, 2, {{2, 4}, {6, 8}}}, {3, 0, {{0, 8}}}}},
+		{{{1, 2, std::make_shared<const std::vector<bmsx::ProgramWordRange>>(*ranges2468)}, {3, 0, ranges08}}},
 	};
 
 	const std::vector<bmsx::u8> encodedSymbols = bmsx::encodeBlua32SymbolsImage(symbols);
@@ -82,6 +93,25 @@ int main() {
 		throw std::runtime_error("BLua32 symbols must not carry a schema version");
 	}
 	const bmsx::Blua32SymbolsImage decodedSymbols = bmsx::decodeBlua32SymbolsImage(encodedSymbols);
+	const auto& metadata = decodedSymbols.metadata;
+	if (metadata.statementPointsByFunction[0][0].range != metadata.functionDefinitions[0]
+		|| metadata.localSlotsByFunction[0][0].definition != metadata.functionDefinitions[0]
+		|| metadata.statementPointsByFunction[0][0].inlineCallSites != metadata.debugInlineCallSiteChains[1]
+		|| metadata.resumePointsByFunction[0][0].inlineCallSites != metadata.debugInlineCallSiteChains[1]
+		|| metadata.localSlotsByFunction[0][0].liveWordRanges != metadata.staticScopes.bindingsByFunction[0][0].visibleWordRanges
+		|| metadata.resumePointsByFunction[0][0].uses != metadata.resumePointsByFunction[0][1].liveRegisters) {
+		throw std::runtime_error("BLua32 symbols expanded shared nodes during decoding");
+	}
+	bmsx::Blua32SourceRange retainedRange;
+	bmsx::Blua32InlineCallSites retainedChain;
+	{
+		const auto temporary = bmsx::decodeBlua32SymbolsImage(encodedSymbols);
+		retainedRange = temporary.metadata.functionDefinitions[0];
+		retainedChain = temporary.metadata.statementPointsByFunction[0][0].inlineCallSites;
+	}
+	if (retainedRange->start.line != 11 || (*retainedChain)[1].callRange != retainedRange) {
+		throw std::runtime_error("BLua32 shared nodes lost ownership when their decoded image was released");
+	}
 	const auto& statics = decodedSymbols.metadata.staticScopes;
 	if (statics.declarations.size() != 4 || statics.declarations[0].name != "shape"
 		|| statics.declarations[0].kind != bmsx::StaticDeclarationKind::Type
@@ -89,16 +119,13 @@ int main() {
 		|| statics.declarations[1].kind != bmsx::StaticDeclarationKind::Bss || statics.declarations[1].address != 0x00400010u
 		|| statics.declarations[2].kind != bmsx::StaticDeclarationKind::Data || statics.declarations[2].address != 0x00400020u
 		|| statics.declarations[3].kind != bmsx::StaticDeclarationKind::Rodata || statics.declarations[3].address != 0x1fc00100u
-		|| statics.declarations[1].definition.start.line != 11 || statics.globals != std::vector<bmsx::u32>{0, 2}
+		|| statics.declarations[1].definition->start.line != 11 || statics.globals != std::vector<bmsx::u32>{0, 2}
 		|| statics.bindingsByFunction.size() != 1 || statics.bindingsByFunction[0].size() != 2
 		|| statics.bindingsByFunction[0][0].declarationIndex != 1 || statics.bindingsByFunction[0][0].inlineDepth != 2
-		|| statics.bindingsByFunction[0][0].visibleWordRanges.size() != 2
-		|| statics.bindingsByFunction[0][0].visibleWordRanges[0].start != 2
-		|| statics.bindingsByFunction[0][0].visibleWordRanges[1].end != 8) {
+		|| statics.bindingsByFunction[0][0].visibleWordRanges->size() != 2
+		|| (*statics.bindingsByFunction[0][0].visibleWordRanges)[0].start != 2
+		|| (*statics.bindingsByFunction[0][0].visibleWordRanges)[1].end != 8) {
 		throw std::runtime_error("BLua32 static declarations, linked addresses and inline visibility did not round-trip");
-	}
-	if (symbolsPayload.require("metadata").require("staticScopes").require("declarations").asArray()[0].asObject().contains("address")) {
-		throw std::runtime_error("A struct declaration is not a storage address");
 	}
 	if (decodedSymbols.metadata.resumePointsByFunction[0][0].resumeId.has_value()
 		|| decodedSymbols.metadata.resumePointsByFunction[0][1].resumeId != "startup.entry.return") {
@@ -120,20 +147,20 @@ int main() {
 	const auto& captures = decodedSymbols.metadata.outerBindingsByFunction[0];
 	if (captures.size() != 4 || captures[0].declarationIndex != 0
 		|| !captures[0].location->inStack || captures[0].location->index != 17
-		|| captures[0].inlineCallSites.size() != 2 || captures[0].inlineCallSites[1].calleeFunctionId != "inner"
-		|| captures[0].liveWordRanges.size() != 1 || captures[0].liveWordRanges[0].start != 2 || captures[0].liveWordRanges[0].end != 4
-		|| captures[1].location->inStack || captures[1].location->index != 0 || !captures[1].inlineCallSites.empty()
-		|| captures[1].liveWordRanges[0].end != 8
-		|| captures[2].location.has_value() || !captures[2].liveWordRanges.empty()) {
+		|| captures[0].inlineCallSites->size() != 2 || (*captures[0].inlineCallSites)[1].calleeFunctionId != "inner"
+		|| captures[0].liveWordRanges->size() != 1 || (*captures[0].liveWordRanges)[0].start != 2 || (*captures[0].liveWordRanges)[0].end != 4
+		|| captures[1].location->inStack || captures[1].location->index != 0 || !captures[1].inlineCallSites->empty()
+		|| (*captures[1].liveWordRanges)[0].end != 8
+		|| captures[2].location.has_value() || !captures[2].liveWordRanges->empty()) {
 		throw std::runtime_error("BLua32 capture origins, inline chains and physical locations did not round-trip");
 	}
-	if (captures[3].declarationIndex != 1 || captures[3].location.has_value() || !captures[3].liveWordRanges.empty()
+	if (captures[3].declarationIndex != 1 || captures[3].location.has_value() || !captures[3].liveWordRanges->empty()
 		|| decodedSymbols.metadata.lexicalDeclarations[1].name != "unused") {
 		throw std::runtime_error("BLua32 uncaptured lexical declaration did not round-trip");
 	}
 	for (bmsx::u32 word = 0; word <= 9; ++word) {
-		if (bmsx::blua32SlotLiveAtPc(captures[0].liveWordRanges, 0x2000, 0x2000 + word * bmsx::INSTRUCTION_BYTES) != (word >= 2 && word < 4)
-			|| bmsx::blua32SlotLiveAtPc(captures[2].liveWordRanges, 0x2000, 0x2000 + word * bmsx::INSTRUCTION_BYTES)) {
+		if (bmsx::blua32SlotLiveAtPc(*captures[0].liveWordRanges, 0x2000, 0x2000 + word * bmsx::INSTRUCTION_BYTES) != (word >= 2 && word < 4)
+			|| bmsx::blua32SlotLiveAtPc(*captures[2].liveWordRanges, 0x2000, 0x2000 + word * bmsx::INSTRUCTION_BYTES)) {
 			throw std::runtime_error("BLua32 capture locations use the same half-open ranges as locals");
 		}
 	}
@@ -156,17 +183,18 @@ int main() {
 			throw std::runtime_error("BLua32 declaration immutability did not round-trip");
 		}
 	}
-	if (slot.liveWordRanges.size() != 2 || slot.liveWordRanges[0].start != 2 || slot.liveWordRanges[1].end != 8) {
+	if (slot.liveWordRanges->size() != 2 || (*slot.liveWordRanges)[0].start != 2 || (*slot.liveWordRanges)[1].end != 8) {
 		throw std::runtime_error("BLua32 local word locations did not round-trip");
 	}
 	for (bmsx::u32 word = 0; word <= 9; ++word) {
 		const bool expected = (word >= 2 && word < 4) || (word >= 6 && word < 8);
-		if (bmsx::blua32SlotLiveAtPc(slot.liveWordRanges, 0x2000, 0x2000 + word * bmsx::INSTRUCTION_BYTES) != expected) {
+		if (bmsx::blua32SlotLiveAtPc(*slot.liveWordRanges, 0x2000, 0x2000 + word * bmsx::INSTRUCTION_BYTES) != expected) {
 			throw std::runtime_error("BLua32 local word locations must be half-open with explicit gaps");
 		}
 	}
 	bmsx::Blua32LocalSlotDebug foldedSlot{};
-	if (bmsx::blua32SlotLiveAtPc(foldedSlot.liveWordRanges, 0x2000, 0x2000)) {
+	foldedSlot.liveWordRanges = noWordRanges;
+	if (bmsx::blua32SlotLiveAtPc(*foldedSlot.liveWordRanges, 0x2000, 0x2000)) {
 		throw std::runtime_error("BLua32 folded local must not invent a debug location");
 	}
 	if (decodedSymbols.metadata.functionDefinitions.size() != 1u
@@ -183,19 +211,19 @@ int main() {
 	if (bmsx::blua32FunctionDisplayNameById(decodedSymbols, "entry") != "entryDisplay"
 		|| decodedSymbols.metadata.debugRanges.size() != 2u
 		|| decodedSymbols.metadata.debugInlineCallSiteChains.size() != 2u
-		|| !decodedSymbols.metadata.debugInlineCallSiteChains[0].empty()
-		|| decodedSymbols.metadata.debugInlineCallSiteChains[1].size() != 2u
-		|| decodedSymbols.metadata.debugInlineCallSiteChains[1][0].calleeFunctionId != "outer"
-		|| decodedSymbols.metadata.debugInlineCallSiteChains[1][0].callRange.start.column != 2
-		|| decodedSymbols.metadata.debugInlineCallSiteChains[1][1].calleeFunctionId != "inner"
-		|| decodedSymbols.metadata.debugInlineCallSiteChains[1][1].callRange.end.column != 18
+		|| !decodedSymbols.metadata.debugInlineCallSiteChains[0]->empty()
+		|| decodedSymbols.metadata.debugInlineCallSiteChains[1]->size() != 2u
+		|| (*decodedSymbols.metadata.debugInlineCallSiteChains[1])[0].calleeFunctionId != "outer"
+		|| (*decodedSymbols.metadata.debugInlineCallSiteChains[1])[0].callRange->start.column != 2
+		|| (*decodedSymbols.metadata.debugInlineCallSiteChains[1])[1].calleeFunctionId != "inner"
+		|| (*decodedSymbols.metadata.debugInlineCallSiteChains[1])[1].callRange->end.column != 18
 		|| decodedSymbols.metadata.debugInlineCallSiteChainIds
 			!= std::vector<bmsx::u32>{1u, 0u}
-		|| decodedSymbols.metadata.statementPointsByFunction[0][0].inlineCallSites[1].calleeFunctionId
+		|| (*decodedSymbols.metadata.statementPointsByFunction[0][0].inlineCallSites)[1].calleeFunctionId
 			!= "inner"
-		|| decodedSymbols.metadata.resumePointsByFunction[0][0].inlineCallSites[0].calleeFunctionId
+		|| (*decodedSymbols.metadata.resumePointsByFunction[0][0].inlineCallSites)[0].calleeFunctionId
 			!= "outer"
-		|| decodedSymbols.metadata.localSlotsByFunction[0][0].inlineCallSites[1].callRange.path
+		|| (*decodedSymbols.metadata.localSlotsByFunction[0][0].inlineCallSites)[1].callRange->path
 			!= "cart.lua") {
 		throw std::runtime_error("BLua32 inline call-site symbols did not round-trip");
 	}
@@ -204,8 +232,8 @@ int main() {
 	symbols.metadata.lexicalDeclarations[0].definition.reset();
 	symbols.metadata.lexicalDeclarations[0].kind = bmsx::LexicalDeclarationKind::Receiver;
 	const auto removedSymbols = bmsx::decodeBlua32SymbolsImage(bmsx::encodeBlua32SymbolsImage(symbols));
-	if (removedSymbols.metadata.functionDefinitions[0].has_value()
-		|| removedSymbols.metadata.lexicalDeclarations[0].definition.has_value()
+	if (removedSymbols.metadata.functionDefinitions[0]
+		|| removedSymbols.metadata.lexicalDeclarations[0].definition
 		|| removedSymbols.metadata.lexicalDeclarations[0].kind != bmsx::LexicalDeclarationKind::Receiver) {
 		throw std::runtime_error("BLua32 removed declaration did not round-trip");
 	}

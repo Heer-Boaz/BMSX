@@ -93,12 +93,15 @@ function compareSymbol(
 	switch (tsSymbol.kind) {
 		case 'type': {
 			if (cppSymbol.kind !== 'type') return;
-			if (tsSymbol.shape !== cppSymbol.shape) {
+			if (!sharedShapeMatches(tsSymbol.shape, cppSymbol.shape)) {
 				errors.push(`${label}: TS type ${describe(tsSymbol.shape)} differs from C++ ${describe(cppSymbol.shape)}`);
 				return;
 			}
 			if (tsSymbol.shape === 'record') {
-				compareShape(label, 'fields', fieldShape(tsSymbol.fields), fieldShape(cppSymbol.fields), errors);
+				const cppFields = cppSymbol.fields.map(field => field.type.startsWith('shared(')
+					? { ...field, optional: tsSymbol.fields.find(candidate => candidate.name === field.name)?.optional ?? field.optional }
+					: field);
+				compareShape(label, 'fields', fieldShape(tsSymbol.fields), fieldShape(cppFields), errors);
 				compareMethods(label, tsSymbol.methods, cppSymbol.methods, errors);
 			}
 			return;
@@ -133,7 +136,7 @@ function compareSymbol(
 			if (tsSymbol.readonly !== cppSymbol.readonly) {
 				errors.push(`${label}: TS readonly=${tsSymbol.readonly} differs from C++ readonly=${cppSymbol.readonly}`);
 			}
-			if (tsSymbol.type !== cppSymbol.type) {
+			if (!sharedShapeMatches(tsSymbol.type, cppSymbol.type)) {
 				errors.push(`${label}: TS value type ${describe(tsSymbol.type)} differs from C++ ${describe(cppSymbol.type)}`);
 			}
 			if (
@@ -160,9 +163,40 @@ function compareShape(
 	cppShape: string,
 	errors: string[],
 ): void {
-	if (tsShape !== cppShape) {
+	if (!sharedShapeMatches(tsShape, cppShape)) {
 		errors.push(`${label}: TS ${kind} (${describe(tsShape)}) differ from C++ (${describe(cppShape)})`);
 	}
+}
+
+/** Shared ownership is not an absence contract. A C++ shared_ptr can back a
+ * required JS object or a nullable one; its pointee/element shape still matches
+ * exactly. Do not erase optionality for value types or ordinary pointers.
+ */
+function sharedShapeMatches(tsShape: string, cppShape: string): boolean {
+	if (tsShape === cppShape) return true;
+	if (!cppShape.includes('shared(')) return false;
+	const pattern = (shape: string): string => {
+		let result = '';
+		for (let index = 0; index < shape.length;) {
+			if (shape.startsWith('shared(', index)) {
+				const start = index + 7;
+				let end = start, depth = 1;
+				while (depth !== 0) {
+					if (shape[end] === '(') depth++;
+					else if (shape[end] === ')') depth--;
+					end++;
+				}
+				const inner = pattern(shape.slice(start, end - 1));
+				result += `(?:${inner}|optional\\(${inner}\\))`;
+				index = end;
+			} else {
+				const character = shape[index++];
+				result += /[.*+?^${}()|[\]\\]/.test(character) ? `\\${character}` : character;
+			}
+		}
+		return result;
+	};
+	return new RegExp(`^${pattern(cppShape)}$`).test(tsShape);
 }
 
 function fieldShape(fields: readonly PublicField[]): string {

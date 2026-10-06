@@ -38,6 +38,16 @@ export function collectTypescriptPublicSymbols(
 function collectSourceSymbols(source: ts.SourceFile, context: TypescriptContext): PublicSymbols {
 	const symbols: PublicSymbols = new Map();
 	for (const statement of source.statements) {
+		if (ts.isExportDeclaration(statement) && statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+			for (const element of statement.exportClause.elements) {
+				const symbol = context.checker.getSymbolAtLocation(element.name)!;
+				const target = context.checker.getAliasedSymbol(symbol).valueDeclaration;
+				if (target && ts.isFunctionDeclaration(target)) {
+					appendFunction(symbols, element.name.text, signatureFromDeclaration(target, context));
+				}
+			}
+			continue;
+		}
 		if (!hasExportModifier(statement)) {
 			continue;
 		}
@@ -336,11 +346,13 @@ function typeNodeIncludesAbsence(node: ts.TypeNode | undefined): boolean {
 	if (!node || !ts.isUnionTypeNode(node)) {
 		return false;
 	}
-	return node.types.some((member) =>
-		member.kind === ts.SyntaxKind.UndefinedKeyword
-		|| member.kind === ts.SyntaxKind.NullKeyword
-		|| (ts.isLiteralTypeNode(member) && member.literal.kind === ts.SyntaxKind.NullKeyword)
-	);
+	return node.types.some(isAbsenceType);
+}
+
+function isAbsenceType(node: ts.TypeNode): boolean {
+	return node.kind === ts.SyntaxKind.UndefinedKeyword
+		|| node.kind === ts.SyntaxKind.NullKeyword
+		|| (ts.isLiteralTypeNode(node) && node.literal.kind === ts.SyntaxKind.NullKeyword);
 }
 
 function signatureTypeShape(node: ts.TypeNode, context: TypescriptContext): string {
@@ -522,6 +534,8 @@ function aliasKeepsSemanticName(node: ts.TypeNode): boolean {
 	if (ts.isParenthesizedTypeNode(node)) return aliasKeepsSemanticName(node.type);
 	if (ts.isTypeLiteralNode(node) || ts.isIntersectionTypeNode(node)) return true;
 	if (!ts.isUnionTypeNode(node)) return false;
+	// Nullable references are transparent; real variant aliases retain identity.
+	if (typeNodeIncludesAbsence(node) && node.types.filter(member => !isAbsenceType(member)).length === 1) return false;
 	return node.types.some((member) =>
 		ts.isTypeLiteralNode(member)
 		|| (

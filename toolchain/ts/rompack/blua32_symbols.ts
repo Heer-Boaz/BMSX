@@ -2,7 +2,6 @@ import type { OptimizationLevel } from '../lua/compiler/optimizer';
 import type { Blua32UpvalueRecord } from './blua32_image';
 import type { ProgramWordRange } from '../lua/compiler/word_range';
 import type { LexicalDeclarationKind, StaticDeclarationKind } from '../lua/compiler/declaration_kind';
-import { decodeBinary, encodeBinary } from '../../../machine/ts/common/serializer/binencoder';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import type { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../lua/source_range';
@@ -26,6 +25,11 @@ export type Blua32InitParticipant = {
 	system: boolean;
 };
 
+export type Blua32SourceRange = SourceRange | null;
+export type Blua32WordRanges = readonly ProgramWordRange[];
+export type Blua32RegisterList = readonly number[];
+export type Blua32InlineCallSites = ReadonlyArray<Blua32InlineCallSite>;
+
 export type Blua32InlineCallSite = {
 	calleeFunctionId: string;
 	callRange: SourceRange;
@@ -34,20 +38,20 @@ export type Blua32InlineCallSite = {
 export type Blua32LocalSlotDebug = {
 	/** Zero-based formal argument, including an implicit receiver; -1 for a local. */
 	argumentIndex: number;
-	readonly liveWordRanges: readonly ProgramWordRange[];
+	readonly liveWordRanges: Blua32WordRanges;
 	name: string;
 	isConst: boolean;
 	registerIndex: number;
 	definition: SourceRange;
 	scope: SourceRange;
-	inlineCallSites: ReadonlyArray<Blua32InlineCallSite>;
+	inlineCallSites: Blua32InlineCallSites;
 };
 
 export type Blua32OuterBindingDebug = {
 	declarationIndex: number;
 	location: Blua32UpvalueRecord | null;
-	inlineCallSites: ReadonlyArray<Blua32InlineCallSite>;
-	readonly liveWordRanges: readonly ProgramWordRange[];
+	inlineCallSites: Blua32InlineCallSites;
+	readonly liveWordRanges: Blua32WordRanges;
 };
 
 export type Blua32LexicalDeclarationDebug = {
@@ -56,7 +60,7 @@ export type Blua32LexicalDeclarationDebug = {
 	kind: LexicalDeclarationKind;
 	isConst: boolean;
 	/** Current defining syntax, or null after that declaration was removed. */
-	definition: SourceRange | null;
+	definition: Blua32SourceRange;
 };
 
 export type Blua32ResumePoint = {
@@ -64,22 +68,22 @@ export type Blua32ResumePoint = {
 	wordOffset: number;
 	range: SourceRange;
 	op: OpCode;
-	liveRegisters: number[];
-	uses: number[];
-	defs: number[];
-	inlineCallSites: ReadonlyArray<Blua32InlineCallSite>;
+	liveRegisters: Blua32RegisterList;
+	uses: Blua32RegisterList;
+	defs: Blua32RegisterList;
+	inlineCallSites: Blua32InlineCallSites;
 };
 
 export type Blua32StatementPoint = {
 	wordOffset: number;
 	range: SourceRange;
-	inlineCallSites: ReadonlyArray<Blua32InlineCallSite>;
+	inlineCallSites: Blua32InlineCallSites;
 };
 
 export type Blua32StaticBindingDebug = {
 	declarationIndex: number;
 	inlineDepth: number;
-	visibleWordRanges: readonly ProgramWordRange[];
+	visibleWordRanges: Blua32WordRanges;
 };
 
 export type Blua32StaticScopes = {
@@ -95,12 +99,12 @@ export type Blua32DebugMetadata = {
 	preloadModules: readonly string[];
 	functionIds: string[];
 	functionDisplayNames: string[];
-	functionDefinitions: ReadonlyArray<SourceRange | null>;
+	functionDefinitions: ReadonlyArray<Blua32SourceRange>;
 	globalNames: string[];
 	systemGlobalNames: string[];
 	staticFunctionIdBySlot: { [slotName: string]: string };
-	debugRanges: ReadonlyArray<SourceRange | null>;
-	debugInlineCallSiteChains: ReadonlyArray<ReadonlyArray<Blua32InlineCallSite>>;
+	debugRanges: ReadonlyArray<Blua32SourceRange>;
+	debugInlineCallSiteChains: ReadonlyArray<Blua32InlineCallSites>;
 	debugInlineCallSiteChainIds: ReadonlyArray<number>;
 	statementPointsByFunction: ReadonlyArray<ReadonlyArray<Blua32StatementPoint>>;
 	resumePointsByFunction: ReadonlyArray<ReadonlyArray<Blua32ResumePoint>>;
@@ -128,13 +132,7 @@ export type Blua32SymbolsImage = {
 	metadata: Blua32DebugMetadata;
 };
 
-export function encodeBlua32SymbolsImage(symbols: Blua32SymbolsImage): Uint8Array {
-	return encodeBinary(symbols);
-}
-
-export function decodeBlua32SymbolsImage(bytes: Uint8Array): Blua32SymbolsImage {
-	return decodeBinary(bytes) as Blua32SymbolsImage;
-}
+export { encodeBlua32SymbolsImage, decodeBlua32SymbolsImage } from './blua32_symbols_codec';
 
 export function blua32SourceRangeAtPc(
 	symbols: Blua32SymbolsImage,

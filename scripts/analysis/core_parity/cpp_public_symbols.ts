@@ -356,6 +356,8 @@ function canonicalCppType(
 	if (template) {
 		const args = splitTopLevel(template.arguments);
 		switch (template.name) {
+			case 'std::shared_ptr':
+				return `shared(${canonicalCppType(args[0], catalog, seen, false)})`;
 			case 'std::optional':
 				return stripOptional
 					? canonicalCppType(args[0], catalog, seen, false)

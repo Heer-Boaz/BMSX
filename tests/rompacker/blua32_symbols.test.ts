@@ -40,14 +40,14 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 			preloadModules: ['fixture/observer'],
 			functionIds: ['module:cart/module/anon:4:2:4:14'],
 			functionDisplayNames: ['invoke'],
-			functionDefinitions: [innerCallRange],
+			functionDefinitions: [structuredClone(innerCallRange)],
 			globalNames: [],
 			systemGlobalNames: [],
 			staticFunctionIdBySlot: {},
 			debugRanges: [innerCallRange, null],
 			debugInlineCallSiteChains: [[], inlineCallSites],
 			debugInlineCallSiteChainIds: [1, 0],
-			statementPointsByFunction: [],
+			statementPointsByFunction: [[{ wordOffset: 2, range: structuredClone(innerCallRange), inlineCallSites: structuredClone(inlineCallSites) }]],
 			resumePointsByFunction: [[
 				{ wordOffset: 3, range: innerCallRange, op: OpCode.MOV, liveRegisters: [0, 1], uses: [0], defs: [1], inlineCallSites },
 				{ wordOffset: 4, range: innerCallRange, op: OpCode.RET, liveRegisters: [0], uses: [0], defs: [], inlineCallSites: [], resumeId: 'startup.entry.return' },
@@ -87,6 +87,15 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 	};
 
 	const decoded = decodeBlua32SymbolsImage(encodeBlua32SymbolsImage(symbols));
+	assert.deepEqual(decoded, symbols);
+	const metadata = decoded.metadata;
+	assert.equal(metadata.functionDefinitions[0], metadata.debugRanges[0]);
+	assert.equal(metadata.statementPointsByFunction[0][0].range, metadata.debugRanges[0]);
+	assert.equal(metadata.localSlotsByFunction[0][0].definition, metadata.debugRanges[0]);
+	assert.equal(metadata.statementPointsByFunction[0][0].inlineCallSites, metadata.debugInlineCallSiteChains[1]);
+	assert.equal(metadata.resumePointsByFunction[0][0].inlineCallSites, metadata.debugInlineCallSiteChains[1]);
+	assert.equal(metadata.localSlotsByFunction[0][0].liveWordRanges, metadata.staticScopes.bindingsByFunction[0][0].visibleWordRanges);
+	assert.equal(metadata.resumePointsByFunction[0][0].uses, metadata.resumePointsByFunction[0][1].liveRegisters);
 	assert.equal(Object.hasOwn(decoded, 'version'), false, 'symbols carry the current structure without a schema version');
 	assert.equal(decoded.metadata.optLevel, 2);
 	assert.deepEqual(decoded.metadata.traceStatements, ['fixture.compile', 'fixture.bind']);

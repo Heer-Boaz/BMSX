@@ -23,7 +23,7 @@ struct InstructionDebugInfo {
 	std::string opName;
 	std::string instructionText;
 	std::vector<InstructionOperandDebugInfo> operands;
-	std::optional<SourceRange> sourceRange;
+	Blua32SourceRange sourceRange;
 };
 
 auto describeBlua32InstructionAtPc(

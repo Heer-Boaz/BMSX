@@ -1584,6 +1584,13 @@ system build publishes the encoded private/debug symbols beside its ROM as
 and Hot Resume and embed the separate BIOS-readable directory. Cartridge
 linking does not consume either representation.
 
+Private symbols use a pooled graph representation: each string, source range,
+inline-call chain, word-interval list and register list is stored once and
+referenced by index. TS and C++ decoders preserve shared immutable nodes instead
+of expanding a repeated object tree. PC lookup remains directly indexed; no
+symbol decoding or interning enters CPU dispatch. The paired wire layout and
+ownership are specified in [blua32_symbols.md](blua32_symbols.md).
+
 The public BIOS link library is the separate `__blua32_bios_imports__` asset
 and `<system-rom>.blua32-imports` sidecar. It contains the cartridge static-RAM
 base plus author-facing module paths, export paths, and their physical

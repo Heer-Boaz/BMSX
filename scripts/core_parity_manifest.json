@@ -1296,6 +1296,11 @@
 			"reason": "compiler_finalized_word_locations_tooling_filename_parity"
 		},
 		{
+			"ts": "toolchain/ts/rompack/blua32_symbols_codec.ts",
+			"cpp": ["machine/cpp/rompack/tooling/blua32_symbols_codec.cpp"],
+			"reason": "pooled_tooling_symbols_wire_format"
+		},
+		{
 			"ts": "toolchain/ts/rompack/blua32_symbols.ts",
 			"cpp": [
 				"machine/cpp/rompack/tooling/blua32_symbols.h",

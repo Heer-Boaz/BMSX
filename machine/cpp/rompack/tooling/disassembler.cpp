@@ -523,7 +523,7 @@ auto describeBlua32InstructionAtPc(
 ) -> InstructionDebugInfo {
 	const int pcWidth = hexWidth(image.header.textAddress + image.header.textByteCount - INSTRUCTION_BYTES);
 	const DecodedDebugInstruction decoded = decodeInstructionAtPcInternal(image, pc);
-	std::optional<SourceRange> sourceRange = std::nullopt;
+	Blua32SourceRange sourceRange;
 	if (symbols) {
 		sourceRange = blua32SourceRangeAtPc(*symbols, image.header.textAddress, decoded.pc);
 	}
