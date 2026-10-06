@@ -37,7 +37,7 @@ test('debug scenario discovery packages each authored assertion as one source-on
 	assert.equal(asset.resid, scenarioTestAssetId(NEMESIS_SCENARIO_PATH));
 	assert.equal(asset.type, 'lua');
 	assert.equal(asset.normalized_source_path, NEMESIS_SCENARIO_PATH);
-	assert.equal(asset.compiled_buffer, undefined);
+	assert.equal(asset.program_module, false);
 	assert.match(Buffer.from(asset.buffer!).toString('utf8'), /input_pause_retains_simulation_and_music = function\(t\)/);
 });
 
@@ -59,7 +59,7 @@ test('a debug cart with no packed tests can execute its first workspace-created 
 	const cartridge = await readFile(join(output, 'fresh.debug.rom'));
 	const index = await parseCartridgeIndex(cartridge);
 	assert.equal(index.entries.some(entry => entry.source_path?.endsWith('_assert.lua')), false);
-	assert.equal(index.entries.find(entry => entry.source_path === 'testlib/execution.lua')!.compiled_start, undefined);
+	assert.equal(index.entries.find(entry => entry.source_path === 'testlib/execution.lua')!.program_module, false);
 	const media = await loadRomToolingMedia(system, [cartridge, null]);
 	const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
 	const authoring = new OffscreenMachine(system, [cartridge, null], PSX_MACHINE_SPEC, new TestInput());
@@ -82,7 +82,7 @@ test('a debug cart with no packed tests can execute its first workspace-created 
 		const rebuilt = await parseCartridgeIndex(await readFile(join(output, debug ? 'fresh.debug.rom' : 'fresh.rom')));
 		for (const path of ['first_assert.lua', 'res/second_assert.lua']) {
 			const suite = rebuilt.entries.find(entry => entry.source_path === path);
-			if (debug) { assert.ok(suite, path); assert.equal(suite.resid, scenarioTestAssetId(path)); assert.equal(suite.compiled_start, undefined); }
+			if (debug) { assert.ok(suite, path); assert.equal(suite.resid, scenarioTestAssetId(path)); assert.equal(suite.program_module, false); }
 			else assert.equal(suite, undefined, 'release media omits test sources');
 		}
 	}

@@ -5,6 +5,8 @@
 #include "spec/bmsx/memory_map.h"
 #include "rompack/format.h"
 #include "rompack/image.h"
+#include "rompack/tokens.h"
+#include "rompack/tooling/toc_encode.h"
 #include "rompack/tooling/blua32_image.h"
 #include "rompack/tooling/blua32_symbols.h"
 #include "support/blua32_test_rom.h"
@@ -15,6 +17,36 @@
 #include <stdexcept>
 
 int main() {
+	for (const bool programModule : {false, true}) {
+		bmsx::RomTocEntry source;
+		source.resid = "source";
+		source.type = bmsx::AssetType::Lua;
+		const auto token = bmsx::hashAssetId(source.resid);
+		source.id_token_lo = token.lo;
+		source.id_token_hi = token.hi;
+		source.program_module = programModule;
+		source.start = 0x100;
+		source.end = 0x120;
+		source.source_path = "entry.lua";
+		source.metabuffer_start = 0x200;
+		source.metabuffer_end = 0x208;
+		source.collision_bin_start = 0x300;
+		source.collision_bin_end = 0x304;
+		source.update_timestamp = 0x100000003;
+		bmsx::RomTocPayload directory;
+		directory.entries.push_back(source);
+		const auto bytes = bmsx::encodeRomToc(directory);
+		const auto decoded = bmsx::decodeRomToc(bytes);
+		const auto& entry = decoded.entries[0];
+		if (entry.program_module != programModule || entry.start != source.start || entry.end != source.end
+			|| entry.source_path != source.source_path || entry.update_timestamp != source.update_timestamp
+			|| entry.metabuffer_start != source.metabuffer_start || entry.metabuffer_end != source.metabuffer_end
+			|| entry.collision_bin_start != source.collision_bin_start || entry.collision_bin_end != source.collision_bin_end
+			|| bmsx::encodeRomToc(decoded) != bytes) {
+			throw std::runtime_error("ROM source membership and physical ranges did not round-trip");
+		}
+	}
+
 	const bmsx::u32 instructionWord = bmsx::packInstructionWord(0x3fu, 0x3fu, 0x3fu, 0x3fu, 0xffu);
 	if (instructionWord != 0xffffffffu) {
 		throw std::runtime_error("BLua32 instruction fields did not pack to one raw word");

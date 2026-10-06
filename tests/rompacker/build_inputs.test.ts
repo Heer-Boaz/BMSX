@@ -22,7 +22,7 @@ test('discovery, lint and packaged source consume captured bytes after disk chan
 	await lintCartSources({ sources: [inputs.files.get(path)!], profile: 'cart' });
 	assert.equal(assets[0].buffer!.toString(), source);
 	assert.equal(assets[0].update_timestamp, inputs.files.get(path)!.modifiedMs);
-	assert.ok(assets[0].compiled_buffer);
+	assert.equal(assets[0].program_module, true);
 	assert.notEqual((await prepareRomInputs([root], [])).identity, inputs.identity);
 });
 

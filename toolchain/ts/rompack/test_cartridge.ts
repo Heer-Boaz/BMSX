@@ -17,7 +17,7 @@ import {
 import { BLUA32_IMAGE_ID } from './blua32_image';
 import {
 	buildBlua32Image,
-	decodeBlua32SourceModules,
+	parseBlua32SourceModules,
 	type Blua32SourceModule,
 } from './blua32_image_builder';
 import {
@@ -101,9 +101,6 @@ function collectLuaSourceAssets(payload: Uint8Array, entries: ReadonlyArray<RomA
 			...entry,
 			buffer: payload.subarray(entry.start!, entry.end!),
 		};
-		if (entry.compiled_start !== undefined) {
-			asset.compiled_buffer = payload.subarray(entry.compiled_start, entry.compiled_end!);
-		}
 		assets.push(asset);
 	}
 	return assets;
@@ -137,7 +134,7 @@ export async function buildTestCartridge(
 		luaSourceAssets[index] = asset;
 		sourceReplacements.set(asset.resid, asset);
 	}
-	const programModules = decodeBlua32SourceModules(luaSourceAssets);
+	const programModules = parseBlua32SourceModules(luaSourceAssets);
 	const entryCandidate = programModules[resolveLuaEntryModuleIndex(programModules)];
 	const sourceAssetByModulePath = new Map<string, RomAsset>();
 	for (let index = 0; index < luaSourceAssets.length; index += 1) {
@@ -177,7 +174,7 @@ export async function buildTestCartridge(
 	const derivedProgramModules = programModules.slice();
 	for (const modulePath of testDependencyPaths) {
 		const asset = sourceAssetByModulePath.get(modulePath)!;
-		if (asset.compiled_buffer !== undefined) {
+		if (asset.program_module) {
 			continue;
 		}
 		derivedProgramModules.push(loadSourceModule(modulePath));

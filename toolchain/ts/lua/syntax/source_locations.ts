@@ -67,7 +67,7 @@ export class LuaSourceLocations {
 		return backing.layout;
 	}
 
-	/** Source-ordered occurrences, including skipped recovery units, at the storage boundary. */
+	/** Source-ordered occurrences, including skipped recovery units. */
 	public *unitPlacements(): Iterable<LuaSourceUnitPlacement> {
 		if (this.backing.kind === 'source') {
 			yield* this.backing.units;

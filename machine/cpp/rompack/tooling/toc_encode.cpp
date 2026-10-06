@@ -180,12 +180,8 @@ auto encodeRomToc(const RomTocPayload& payload) -> std::vector<u8> {
 			tocFieldValue(source.end)
 		);
 		writeLE32(
-			entry + ROM_TOC_ENTRY_COMPILED_START_OFFSET,
-			tocFieldValue(source.compiled_start)
-		);
-		writeLE32(
-			entry + ROM_TOC_ENTRY_COMPILED_END_OFFSET,
-			tocFieldValue(source.compiled_end)
+			entry + ROM_TOC_ENTRY_FLAGS_OFFSET,
+			source.program_module ? ROM_TOC_FLAG_PROGRAM_MODULE : 0u
 		);
 		writeLE32(
 			entry + ROM_TOC_ENTRY_METADATA_START_OFFSET,

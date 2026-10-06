@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { buildRomBlua32Tail, compileLuaChunkBuffer } from '../../scripts/rompacker/rombuilder';
+import { buildRomBlua32Tail } from '../../scripts/rompacker/rombuilder';
 import { compileCart } from '../../scripts/rompacker/compile';
 import { prepareRomInputs } from '../../scripts/rompacker/build_inputs';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -55,7 +55,7 @@ local function emit(n)
 end
 for i = 1, 10 do emit(i) end
 return value`;
-	const assets = [{ resid: 'entry', type: 'lua' as const, buffer: Buffer.from(source), compiled_buffer: compileLuaChunkBuffer(source, 'entry.lua'), source_path: 'entry.lua' }];
+	const assets = [{ resid: 'entry', type: 'lua' as const, buffer: Buffer.from(source), program_module: true, source_path: 'entry.lua' }];
 	const images = [false, true].map(includeSymbols => buildRomBlua32Tail(assets, {
 		domain: 'system', generatedLuaModules: [], biosExports: [], ramByteCount: 0x00400000,
 		optLevel, includeSymbols, systemAssetEndOffset: 0x100,

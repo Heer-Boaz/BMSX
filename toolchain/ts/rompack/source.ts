@@ -13,7 +13,6 @@ export interface RawRomSource {
 	getEntryByPath(path: string): RomAsset | null;
 	getBytes(entry: RomAsset): Uint8Array;
 	getBytesView(entry: RomAsset): Uint8Array;
-	getCompiledBytesView(entry: RomAsset): Uint8Array;
 	list(type?: AssetType): RomAsset[];
 }
 
@@ -90,11 +89,6 @@ export class RomSourceStack implements RawRomSource {
 	public getBytesView(entry: RomAsset): Uint8Array {
 		const bytes = this.bytesByDomain[entry.payload_id];
 		return bytes.subarray(entry.start, entry.end);
-	}
-
-	public getCompiledBytesView(entry: RomAsset): Uint8Array {
-		const bytes = this.bytesByDomain[entry.payload_id];
-		return bytes.subarray(entry.compiled_start, entry.compiled_end);
 	}
 
 	private findEntry(key: string, maps: Map<string, number>[]): RomAsset | null {

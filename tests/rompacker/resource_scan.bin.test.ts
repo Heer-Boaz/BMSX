@@ -19,7 +19,6 @@ import { prepareRomInputs } from '../../scripts/rompacker/build_inputs';
 import { collectCartSourceFiles } from '../../scripts/rompacker/cart_source_files';
 import {
 	buildRomBlua32Tail,
-	compileLuaChunkBuffer,
 	finalizeRompack,
 	generateRomAssets,
 	getResMetaList,
@@ -111,9 +110,9 @@ test('source-only scenario roots retain library source without base compilation'
 		]);
 		const assets = await generateRomAssets(await getResourcesList(metadata));
 		const luaAssets = assets.filter(asset => asset.type === 'lua');
-		assert.equal(luaAssets[0].compiled_buffer, undefined);
-		assert.equal(luaAssets[1].compiled_buffer, undefined);
-		assert.notEqual(luaAssets[2].compiled_buffer, undefined);
+		assert.equal(luaAssets[0].program_module, false);
+		assert.equal(luaAssets[1].program_module, false);
+		assert.equal(luaAssets[2].program_module, true);
 	} finally {
 		await rm(ROOT, { recursive: true, force: true });
 	}
@@ -121,7 +120,7 @@ test('source-only scenario roots retain library source without base compilation'
 
 test('ROM asset symbols expose concrete memory addresses without runtime lookup', () => {
 	const assets: RomAsset[] = [
-		{ type: 'lua', resid: 'cart', compiled_buffer: Buffer.from([0xaa, 0xbb]) },
+		{ type: 'lua', resid: 'cart', program_module: true, buffer: Buffer.from('--') },
 		{ type: 'data', resid: 'stage-1', buffer: Buffer.from([1, 2, 3]) },
 		{ type: 'romlabel', resid: 'label', buffer: Buffer.from([9, 9, 9, 9]) },
 	];
@@ -143,18 +142,17 @@ test('ROM asset symbols expose concrete memory addresses without runtime lookup'
 
 test('ROM asset layout produces the final TOC entries consumed by symbols', () => {
 	const assets: RomAsset[] = [
-		{ type: 'lua', resid: 'cart', compiled_buffer: Buffer.from([0xaa, 0xbb]) },
-		{ type: 'data', resid: 'stage-1', buffer: Buffer.from([1, 2, 3]), compiled_buffer: Buffer.from([4]) },
+		{ type: 'lua', resid: 'cart', program_module: true, buffer: Buffer.from('--') },
+		{ type: 'data', resid: 'stage-1', buffer: Buffer.from([1, 2, 3]) },
 	];
 	const layout = layoutRomAssetPayloads(assets, true);
 	assert.deepEqual(layout.ranges.map(range => [range.start, range.end]), [
 		[CART_ROM_HEADER_SIZE, CART_ROM_HEADER_SIZE + 2],
 		[CART_ROM_HEADER_SIZE + 4, CART_ROM_HEADER_SIZE + 7],
-		[CART_ROM_HEADER_SIZE + 8, CART_ROM_HEADER_SIZE + 9],
 	]);
 	assert.deepEqual(layout.entries, [
-		{ type: 'lua', resid: 'cart', compiled_start: CART_ROM_HEADER_SIZE, compiled_end: CART_ROM_HEADER_SIZE + 2 },
-		{ type: 'data', resid: 'stage-1', start: CART_ROM_HEADER_SIZE + 4, end: CART_ROM_HEADER_SIZE + 7, compiled_start: CART_ROM_HEADER_SIZE + 8, compiled_end: CART_ROM_HEADER_SIZE + 9 },
+		{ type: 'lua', resid: 'cart', program_module: true, start: CART_ROM_HEADER_SIZE, end: CART_ROM_HEADER_SIZE + 2 },
+		{ type: 'data', resid: 'stage-1', start: CART_ROM_HEADER_SIZE + 4, end: CART_ROM_HEADER_SIZE + 7 },
 	]);
 	assert.deepEqual(collectRomAssetSymbols(layout.entries, 'cart').map(symbol => symbol.address), [
 		CART_ROM_BASE + CART_ROM_HEADER_SIZE + 4,
@@ -178,7 +176,7 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 			type: 'lua',
 			resid: 'entry',
 			buffer: Buffer.from(entrySource),
-			compiled_buffer: compileLuaChunkBuffer(entrySource, 'entry.lua'),
+			program_module: true,
 			source_path: 'entry.lua',
 		}], {
 			generatedLuaModules: [],

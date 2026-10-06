@@ -5,8 +5,7 @@ import {
 	ROM_TOC_ENTRY_ASSET_TYPE_OFFSET,
 	ROM_TOC_ENTRY_COLLISION_BIN_END_OFFSET,
 	ROM_TOC_ENTRY_COLLISION_BIN_START_OFFSET,
-	ROM_TOC_ENTRY_COMPILED_END_OFFSET,
-	ROM_TOC_ENTRY_COMPILED_START_OFFSET,
+	ROM_TOC_ENTRY_FLAGS_OFFSET,
 	ROM_TOC_ENTRY_DATA_END_OFFSET,
 	ROM_TOC_ENTRY_DATA_START_OFFSET,
 	ROM_TOC_ENTRY_SIZE,
@@ -40,6 +39,7 @@ import {
 	ROM_TOC_HEADER_STRING_TABLE_OFFSET,
 	ROM_TOC_INVALID_U32,
 	ROM_TOC_MAGIC,
+	ROM_TOC_FLAG_PROGRAM_MODULE,
 	ROM_TOC_OP_DELETE,
 	ROM_TOC_OP_NONE,
 } from '../../../machine/ts/spec/bmsx/rom_toc';
@@ -123,8 +123,7 @@ export function encodeRomToc(params: { entries: RomAsset[]; projectRootPath?: st
 		writeU32(entryView, base + ROM_TOC_ENTRY_NORMALIZED_SOURCE_PATH_LENGTH_OFFSET, normalizedRef.length);
 		writeU32(entryView, base + ROM_TOC_ENTRY_DATA_START_OFFSET, asU32(entry.start));
 		writeU32(entryView, base + ROM_TOC_ENTRY_DATA_END_OFFSET, asU32(entry.end));
-		writeU32(entryView, base + ROM_TOC_ENTRY_COMPILED_START_OFFSET, asU32(entry.compiled_start));
-		writeU32(entryView, base + ROM_TOC_ENTRY_COMPILED_END_OFFSET, asU32(entry.compiled_end));
+		writeU32(entryView, base + ROM_TOC_ENTRY_FLAGS_OFFSET, entry.program_module ? ROM_TOC_FLAG_PROGRAM_MODULE : 0);
 		writeU32(entryView, base + ROM_TOC_ENTRY_METADATA_START_OFFSET, asU32(entry.metabuffer_start));
 		writeU32(entryView, base + ROM_TOC_ENTRY_METADATA_END_OFFSET, asU32(entry.metabuffer_end));
 		writeU32(entryView, base + ROM_TOC_ENTRY_MODEL_TEXTURE_START_OFFSET, asU32(entry.model_texture_start));

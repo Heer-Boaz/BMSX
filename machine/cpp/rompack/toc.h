@@ -37,8 +37,7 @@ struct RomTocEntry {
 	std::optional<RomAssetOp> op;
 	std::optional<u32> start;
 	std::optional<u32> end;
-	std::optional<u32> compiled_start;
-	std::optional<u32> compiled_end;
+	bool program_module = false;
 	std::optional<u32> metabuffer_start;
 	std::optional<u32> metabuffer_end;
 	std::optional<u32> model_texture_start;

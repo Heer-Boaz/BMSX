@@ -1101,8 +1101,9 @@ cleanup after a fault.
   `tests/helpers/coroutine.ts` now has the firmware dependency and ownership test; the existing
   embedded-source indentation findings are outside its changed lines.
 - Parsed syntax storage was the ROM-capacity obstruction, not a reason to remove
-  debug coverage. The owning codec now avoids intermediate per-span records;
-  see [storage representation and measurements](lua_syntax_storage.md).
+  debug coverage. The initial codec optimization avoided intermediate per-span records.
+  That storage has since been removed entirely: parser caches belong to tooling,
+  not ROM media. See [ROM source packaging](rom_source_packaging.md).
 
 **Still gated:** public frame selection/evaluation and explicit host call/source
 retirement. Stop is a suspension, not permission to unwind or revoke all guest

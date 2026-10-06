@@ -57,17 +57,13 @@ export function layoutRomAssetPayloads(
 		if (source.source_path !== undefined) entry.source_path = source.source_path;
 		if (source.normalized_source_path !== undefined) entry.normalized_source_path = source.normalized_source_path;
 		if (source.update_timestamp !== undefined) entry.update_timestamp = source.update_timestamp;
+		if (source.program_module !== undefined) entry.program_module = source.program_module;
 		entries.push(entry);
 
 		if (source.buffer && source.buffer.length !== 0) {
 			const range = appendPayload(source.buffer);
 			entry.start = range.start;
 			entry.end = range.end;
-		}
-		if (source.compiled_buffer && source.compiled_buffer.length !== 0) {
-			const range = appendPayload(source.compiled_buffer);
-			entry.compiled_start = range.start;
-			entry.compiled_end = range.end;
 		}
 		if (source.model_texture_buffer && source.model_texture_buffer.length !== 0) {
 			const range = appendPayload(source.model_texture_buffer);

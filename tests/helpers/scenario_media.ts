@@ -9,7 +9,6 @@ import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import {
 	buildRomBlua32Tail,
-	compileLuaChunkBuffer,
 	finalizeRompack,
 } from '../../scripts/rompacker/rombuilder';
 
@@ -40,7 +39,7 @@ function luaEntry(source: string): RomAsset {
 		resid: 'entry',
 		type: 'lua',
 		buffer: Buffer.from(source),
-		compiled_buffer: compileLuaChunkBuffer(source, 'entry'),
+		program_module: true,
 		source_path: 'entry.lua',
 		normalized_source_path: 'carts/example/entry.lua',
 	};
@@ -54,7 +53,7 @@ export async function buildScenarioMediaFixture(
 ): Promise<ScenarioMediaFixture> {
 	const systemAssets = [luaEntry(options === undefined ? 'module<entry>\nreturn true' : options.systemSource)];
 	if (options !== undefined) for (const module of options.systemModules) {
-		systemAssets.push({ resid: module.path, type: 'lua', buffer: Buffer.from(module.source), compiled_buffer: compileLuaChunkBuffer(module.source, module.path), source_path: `${module.path}.lua`, normalized_source_path: `${module.path}.lua` });
+		systemAssets.push({ resid: module.path, type: 'lua', buffer: Buffer.from(module.source), program_module: true, source_path: `${module.path}.lua`, normalized_source_path: `${module.path}.lua` });
 	}
 	const systemLayout = layoutRomPrefix(
 		systemAssets,
@@ -114,7 +113,7 @@ export async function buildScenarioMediaFixture(
 		});
 	}
 	if (options?.cartModules !== undefined) for (const module of options.cartModules) {
-		cartAssets.push({ resid: module.path, type: 'lua', buffer: Buffer.from(module.source), compiled_buffer: compileLuaChunkBuffer(module.source, module.path), source_path: `${module.path}.lua`, normalized_source_path: `${module.path}.lua` });
+		cartAssets.push({ resid: module.path, type: 'lua', buffer: Buffer.from(module.source), program_module: true, source_path: `${module.path}.lua`, normalized_source_path: `${module.path}.lua` });
 	}
 
 	const cartLayout = layoutRomPrefix(cartAssets, true, MANIFEST);

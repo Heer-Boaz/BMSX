@@ -7,7 +7,6 @@ import { walkLuaAst } from '../../toolchain/ts/lua/syntax/ast/traversal';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { LuaSourceLayoutBuilder } from '../../toolchain/ts/lua/syntax/source_layout';
 import { LuaTokenSequence } from '../../toolchain/ts/lua/syntax/token_sequence';
-import { decodeLuaChunk, encodeLuaChunk } from '../../toolchain/ts/lua/syntax/serialization';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { luaSyntaxSnapshot } from '../helpers/lua_syntax_snapshot';
 
@@ -76,14 +75,6 @@ test('failed reparsed parents own discarded reused children without dropping the
 	assert.deepEqual(units, updated.skippedSyntax[0].units);
 	assert.equal(new Set(units).size, units.length);
 	edit(updated, updated.source.length, 0, 'end');
-});
-
-test('decoded syntax supports real reuse and re-encodes with complete metadata', () => {
-	const original = parseLuaChunkWithRecovery(LINES, 'stored_edit.lua').chunk;
-	const previous = decodeLuaChunk(encodeLuaChunk(original));
-	const changed = edit(previous, previous.source.indexOf('value_100'), 9, 'renamed_value');
-	assert.equal(changed.body.get(190), previous.body.get(190));
-	assert.deepEqual(luaSyntaxSnapshot(decodeLuaChunk(encodeLuaChunk(changed))), luaSyntaxSnapshot(changed));
 });
 
 test('composed disjoint edits retain middle syntax and agree with cold analysis', () => {

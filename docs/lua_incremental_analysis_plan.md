@@ -508,15 +508,12 @@ not TypeScript's mutable incremental AST. First-edit materialization cost still
 needs to be measured alongside subsequent edits: deferral alone is not a speedup
 of the full incremental route.
 
-The schema-owned syntax storage boundary is now explicit. ROM `compiled_start`
-still identifies program modules; its Lua payload is consumed only by TS tooling,
-not a TS/C++ VM datapath. `syntax/serialization.ts` persists plain syntax/tokens,
-source/path, source-ordered unit offsets and a shared span table. Storage-local
-ordinals are not runtime unit identities. Import allocates fresh occurrences,
-preserves shared span identity and constructs the source owner without reparsing.
-Locations, lazy indexes, cursors and query caches are never serialized. Existing
-ROM artifacts must be rebuilt; there is no old-shape revival or compatibility
-fallback.
+ROM syntax storage was removed in the subsequent
+[ROM source packaging redesign](rom_source_packaging.md). Program membership is
+now an explicit directory flag; canonical source is parsed by its compilation
+owner, not imported from persisted tokens/ASTs. The native generation, relative
+spans and incremental document-owned syntax remain unchanged. No parser cache
+or source query cache lives in a machine image.
 
 Consumer ownership is explicit across imported tables and callbacks. Behavior
 Lens retains the actual `FileSemanticData` for written fields, resolved tables,
@@ -530,8 +527,9 @@ identity through the generic binary serializer. A far cursor projection over
 10,000 markers now uses tree summaries (42 HAMT lookups, height 16), covered by a
 height-bounded regression test. Independent probes checked 437 tracked Lua files
 plus 238 prefixes and 1,500 recovery token mixes; the workspace parser oracle
-compares 1,566 sources. Syntax storage roundtrips 1,098 whole/truncated workspace
-sources, and direct versus stored O0/O3 output/debug metadata are tested.
+compares 1,566 sources. The historical syntax-storage gate covered 1,098 whole/truncated workspace
+sources; that codec and its storage-only tests have since been removed. Current
+source-package tests compare direct and ROM-source O0/O3 compiler/debug output.
 
 **Cold performance gate remains open.** Same isolated pietious edit harness,
 Node 22.23.1, 20 warmups/50 samples; function-body edit, p50 / p95 milliseconds:

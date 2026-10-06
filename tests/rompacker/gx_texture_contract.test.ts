@@ -38,7 +38,6 @@ import { resolveTextureAtlasName } from '../../scripts/rompacker/atlasbuilder';
 import { decodeImgDecStream, encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 import {
 	buildRomBlua32Tail,
-	compileLuaChunkBuffer,
 	createTextureAtlases,
 	finalizeRompack,
 	generateRomAssets,
@@ -248,7 +247,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 			type: 'lua',
 			resid: 'entry',
 			buffer: Buffer.from(systemEntrySource),
-			compiled_buffer: compileLuaChunkBuffer(systemEntrySource, 'entry.lua'),
+			program_module: true,
 			source_path: 'entry.lua',
 		}];
 		for (let index = 0; index < systemModuleSources.length; index += 1) {
@@ -257,7 +256,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 				type: 'lua',
 				resid: path,
 				buffer: Buffer.from(source),
-				compiled_buffer: compileLuaChunkBuffer(source, `${path}.lua`),
+				program_module: true,
 				source_path: `${path}.lua`,
 			});
 		}
@@ -351,7 +350,7 @@ return imgdec
 			type: 'lua',
 			resid: 'cart',
 			buffer: Buffer.from(cartEntrySource),
-			compiled_buffer: compileLuaChunkBuffer(cartEntrySource, 'cart.lua'),
+			program_module: true,
 			source_path: 'cart.lua',
 		}];
 		for (let index = 0; index < cartModuleSources.length; index += 1) {
@@ -360,7 +359,7 @@ return imgdec
 				type: 'lua',
 				resid: path,
 				buffer: Buffer.from(source),
-				compiled_buffer: compileLuaChunkBuffer(source, `${path}.lua`),
+				program_module: true,
 				source_path: `${path}.lua`,
 			});
 		}

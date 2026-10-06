@@ -89,7 +89,6 @@ export function layoutBlua32PublicAssets(
 		const movePayloads = isEdited || replacement !== undefined
 			|| (layer.id === 'cart' && (
 				(entry.start != null && entry.start >= imageOffset)
-				|| (entry.compiled_start != null && entry.compiled_start >= imageOffset)
 				|| (entry.model_texture_start != null && entry.model_texture_start >= imageOffset)
 				|| (entry.collision_bin_start != null && entry.collision_bin_start >= imageOffset)
 			));
@@ -98,9 +97,6 @@ export function layoutBlua32PublicAssets(
 			if (layer.id === 'system') {
 				if (entry.end != null && entry.end > tailOffset) {
 					tailOffset = entry.end;
-				}
-				if (entry.compiled_end != null && entry.compiled_end > tailOffset) {
-					tailOffset = entry.compiled_end;
 				}
 				if (entry.model_texture_end != null && entry.model_texture_end > tailOffset) {
 					tailOffset = entry.model_texture_end;
@@ -116,9 +112,6 @@ export function layoutBlua32PublicAssets(
 			buffer: entry.start == null
 				? undefined
 				: layer.bytes.subarray(entry.start, entry.end!),
-			compiled_buffer: entry.compiled_start == null
-				? undefined
-				: layer.bytes.subarray(entry.compiled_start, entry.compiled_end!),
 			model_texture_buffer: entry.model_texture_start == null
 				? undefined
 				: layer.bytes.subarray(entry.model_texture_start, entry.model_texture_end!),

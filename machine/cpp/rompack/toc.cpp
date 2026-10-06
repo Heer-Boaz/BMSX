@@ -142,8 +142,7 @@ RomTocPayload decodeRomToc(std::span<const u8> bytes) {
 		}
 		decoded.start = optionalU32(readLE32(entry + ROM_TOC_ENTRY_DATA_START_OFFSET));
 		decoded.end = optionalU32(readLE32(entry + ROM_TOC_ENTRY_DATA_END_OFFSET));
-		decoded.compiled_start = optionalU32(readLE32(entry + ROM_TOC_ENTRY_COMPILED_START_OFFSET));
-		decoded.compiled_end = optionalU32(readLE32(entry + ROM_TOC_ENTRY_COMPILED_END_OFFSET));
+		decoded.program_module = (readLE32(entry + ROM_TOC_ENTRY_FLAGS_OFFSET) & ROM_TOC_FLAG_PROGRAM_MODULE) != 0;
 		decoded.metabuffer_start = optionalU32(readLE32(entry + ROM_TOC_ENTRY_METADATA_START_OFFSET));
 		decoded.metabuffer_end = optionalU32(readLE32(entry + ROM_TOC_ENTRY_METADATA_END_OFFSET));
 		decoded.model_texture_start = optionalU32(readLE32(entry + ROM_TOC_ENTRY_MODEL_TEXTURE_START_OFFSET));
@@ -151,7 +150,6 @@ RomTocPayload decodeRomToc(std::span<const u8> bytes) {
 		decoded.collision_bin_start = optionalU32(readLE32(entry + ROM_TOC_ENTRY_COLLISION_BIN_START_OFFSET));
 		decoded.collision_bin_end = optionalU32(readLE32(entry + ROM_TOC_ENTRY_COLLISION_BIN_END_OFFSET));
 		if (decoded.start.has_value() != decoded.end.has_value()
-			|| decoded.compiled_start.has_value() != decoded.compiled_end.has_value()
 			|| decoded.metabuffer_start.has_value() != decoded.metabuffer_end.has_value()
 			|| decoded.model_texture_start.has_value() != decoded.model_texture_end.has_value()
 			|| decoded.collision_bin_start.has_value() != decoded.collision_bin_end.has_value()) {

@@ -72,11 +72,11 @@ export interface SourceMeta {
 	readonly text: string;
 }
 
-export type RomAsset = Omit<RomTocEntry, 'id_token_lo' | 'id_token_hi'> & {
+export type RomAsset = Omit<RomTocEntry, 'id_token_lo' | 'id_token_hi' | 'program_module'> & {
 	id_token_lo?: number;
 	id_token_hi?: number;
+	program_module?: boolean;
 	buffer?: Uint8Array;
-	compiled_buffer?: Uint8Array;
 	model_texture_buffer?: Uint8Array;
 	collision_bin_buffer?: Uint8Array;
 	imgmeta?: ImgMeta;

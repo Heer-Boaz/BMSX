@@ -1,7 +1,5 @@
-import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { encodeLuaChunk } from '../../toolchain/ts/lua/syntax/serialization';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { buildLuaSourceAssetChanges } from '../../ide/runtime/source_media';
 import { collectProgramSources } from '../../ide/runtime/program_sources';
@@ -37,7 +35,7 @@ function sourceLayer(includeLua: boolean): RomSourceLayer<'cart'> {
 		assets.push({
 			resid: 'entry', type: 'lua', source_path: 'entry.lua',
 			buffer: encoder.encode(originalSource),
-			compiled_buffer: encodeLuaChunk(parseLuaChunk(originalSource, 'entry').chunk),
+			program_module: true,
 		});
 	}
 	const layout = layoutRomAssetPayloads(assets, true);
@@ -70,7 +68,6 @@ for (const includeLua of [true, false]) {
 		assert.deepEqual(texture, layer.index.entries[0]);
 		assert.deepEqual(bytes.subarray(texture.start!, texture.end!), textureBytes);
 		assert.equal(new TextDecoder().decode(bytes.subarray(lua.start!, lua.end!)), changedSource);
-		assert.deepEqual(bytes.subarray(lua.compiled_start!, lua.compiled_end!),
-			encodeLuaChunk(parseLuaChunk(changedSource, 'entry').chunk));
+		assert.equal(lua.program_module, true);
 	});
 }

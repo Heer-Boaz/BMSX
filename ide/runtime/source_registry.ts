@@ -126,7 +126,7 @@ export function buildLuaSources(
 		luaRecord.base_update_timestamp = entry.update_timestamp ?? 0;
 		luaRecord.module_path = toLuaModulePath(entry.source_path);
 		luaRecord.generated = ROM_GENERATED_MODULE_PATHS.includes(luaRecord.module_path);
-		luaRecord.program_module = entry.compiled_start !== undefined;
+		luaRecord.program_module = entry.program_module!;
 		registerLuaSourceRecord(registry, luaRecord);
 		if (luaRecord.program_module) {
 			programSourceCount += 1;

@@ -1,4 +1,3 @@
-import { encodeLuaChunk } from '../../toolchain/ts/lua/syntax/serialization';
 import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { assetIdFromSourceName } from '../../toolchain/ts/rompack/assets';
 import { SCENARIO_TEST_SOURCE_SUFFIX } from '../../toolchain/ts/rompack/scenario_test';
@@ -49,7 +48,7 @@ import {
 import { encodeAudioAssetToAdpcm } from './adpcm';
 import {
 	buildBlua32Image,
-	decodeBlua32SourceModules,
+	parseBlua32SourceModules,
 	type GeneratedLuaModule,
 } from '../../toolchain/ts/rompack/blua32_image_builder';
 import type { TraceStatementSelection } from '../../toolchain/ts/lua/compiler/trace_statement';
@@ -112,10 +111,7 @@ const { LuaLexer } = require('../../toolchain/ts/lua/syntax/lexer');
 // @ts-ignore
 const { LuaParser } = require('../../toolchain/ts/lua/syntax/parser');
 // @ts-ignore
-// @ts-ignore
 const { collectLuaModuleDependencyClosure } = require('../../toolchain/ts/lua/compiler/module_graph');
-// @ts-ignore
-const { isLuaCompileError } = require('../../toolchain/ts/lua/compiler');
 // @ts-ignore
 const {
 	toLuaModulePath,
@@ -390,24 +386,6 @@ function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageColl
 		imgmeta.gx_page_tiles = res.gxPageTiles;
 	}
 	return imgmeta;
-}
-
-function formatLuaCompileError(error: { path: string; message: string; line: number; column: number }, source: string): string {
-	// disable-next-line newline_normalization_pattern -- compiler diagnostics map a source location to one logical source line.
-	const lines = source.split(/\r\n|\r|\n/);
-	const sourceLine = lines[error.line - 1];
-	const gutter = `${error.line} | `;
-	const caret = Math.max(0, error.column - 1);
-	return `${error.path}:${error.line}:${error.column}: ${error.message}\n${gutter}${sourceLine}\n${' '.repeat(gutter.length + caret)}^`;
-}
-
-export function compileLuaChunkBuffer(source: string, path: string): Buffer {
-	const lexer = new LuaLexer(source, path);
-	const tokens = lexer.scanTokens();
-	const parser = new LuaParser(tokens, path, source);
-	const chunk = parser.parseChunk();
-	const encoded = encodeLuaChunk(chunk);
-	return Buffer.from(encoded);
 }
 
 /**
@@ -839,7 +817,6 @@ export async function generateRomAssets(
 	report?: BuildReporter,
 ) {
 	const romAssets: RomAsset[] = [];
-	const compileErrors: string[] = [];
 	const systemAtlas = resources.find((resource): resource is TextureAtlasResource =>
 		resource.type === 'atlas' && resource.name === GX_SYSTEM_TEXTURE_ATLAS_NAME);
 	if (systemAtlas) {
@@ -900,8 +877,6 @@ export async function generateRomAssets(
 				const luaSourcePath = sourcePath || toWorkspaceRelativePath(res.filepath);
 				const normalizedPath = normalizeWorkspacePath(luaSourcePath);
 				const workspacePath = normalizeWorkspacePath(toWorkspaceRelativePath(res.filepath));
-				const modulePath = toLuaModulePath(normalizedPath);
-				const source = buffer.toString('utf8');
 				const asset: RomAsset = {
 					resid,
 					type,
@@ -909,18 +884,8 @@ export async function generateRomAssets(
 					source_path: normalizedPath,
 					normalized_source_path: workspacePath,
 					update_timestamp: res.update_timestamp,
+					program_module: res.programModule,
 				};
-				if (res.programModule) {
-					try {
-						asset.compiled_buffer = compileLuaChunkBuffer(source, modulePath);
-					} catch (error) {
-						if (isLuaCompileError(error)) {
-							compileErrors.push(formatLuaCompileError(error, source));
-							continue;
-						}
-						throw error;
-					}
-				}
 				romAssets.push(asset);
 				break;
 			}
@@ -1035,9 +1000,7 @@ export async function generateRomAssets(
 				break;
 		}
 	}
-	if (compileErrors.length > 0) {
-		throw new Error(`Compilation failed with ${compileErrors.length} Lua error(s):\n${compileErrors.join('\n')}`);
-	}
+
 	return romAssets;
 }
 
@@ -1101,7 +1064,7 @@ export function buildRomBlua32Tail(
 	assetList: ReadonlyArray<RomAsset>,
 	options: BuildRomBlua32TailOptions,
 ): RomBlua32Tail {
-	const luaModules = decodeBlua32SourceModules(assetList);
+	const luaModules = parseBlua32SourceModules(assetList);
 	if (options.domain === 'system') {
 		const imageOffset = SYSTEM_BLUA32_IMAGE_OFFSET;
 		const built = buildBlua32Image({

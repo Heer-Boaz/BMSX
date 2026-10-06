@@ -1,5 +1,4 @@
 import { utf8FatalDecoder } from '../../machine/ts/common/serializer/binencoder';
-import { encodeLuaChunk } from '../../toolchain/ts/lua/syntax/serialization';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import type { Blua32PublicAssetChanges, RomAssetEdit } from '../../toolchain/ts/rompack/blua32_tail';
 import type { RomSourceLayer } from '../../toolchain/ts/rompack/source';
@@ -10,7 +9,7 @@ import type { LuaSourceRegistry } from './source_registry';
 
 const sourceEncoder = new TextEncoder();
 
-/** A source revision publishes text and parsed module together, not just new instructions. */
+/** Publish canonical text and module membership alongside the executable revision. */
 export function buildLuaSourceAssetChanges(
 	layer: RomSourceLayer,
 	registry: LuaSourceRegistry,
@@ -37,7 +36,7 @@ export function buildLuaSourceAssetChanges(
 			source_path: record.source_path, normalized_source_path: record.normalized_source_path,
 			update_timestamp: record.update_timestamp,
 			buffer: sourceEncoder.encode(source),
-			compiled_buffer: record.program_module ? encodeLuaChunk(parsed.get(record.module_path)!.chunk) : undefined,
+			program_module: record.program_module,
 		};
 		if (packed !== undefined) luaReplacements.set(record.resid, asset);
 		else assetAdditions.push(asset);

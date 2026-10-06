@@ -29,6 +29,7 @@ export function buildScenarioTestSourceAssets(sources: readonly RomInputFile[], 
 		assets[index] = {
 			resid: scenarioTestAssetId(sourcePath),
 			type: 'lua',
+			program_module: false,
 			buffer: file.bytes,
 			source_path: sourcePath,
 			normalized_source_path: workspacePath,

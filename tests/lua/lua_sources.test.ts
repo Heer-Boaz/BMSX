@@ -68,12 +68,6 @@ class TestRomSource implements RawRomSource {
 		return textEncoder.encode(source);
 	}
 
-	public getCompiledBytesView(entry: RomAsset): Uint8Array {
-		const source = this.sources[entry.resid];
-		assert.notEqual(source, undefined);
-		return textEncoder.encode(source);
-	}
-
 	public list(type?: string): RomAsset[] {
 		if (type === undefined) {
 			return this.entries;
@@ -98,8 +92,7 @@ function luaEntry(resid: string, sourcePath: string, payloadId: RomImageDomain, 
 		normalized_source_path: sourcePath,
 		payload_id: payloadId,
 		update_timestamp: updateTimestamp,
-		compiled_start: 1,
-		compiled_end: 2,
+		program_module: true,
 	};
 }
 
@@ -148,6 +141,7 @@ test('buildLuaSources retains source-only Lua without admitting it to the progra
 	const testSource: RomAsset = {
 		resid: '__test_source__',
 		type: 'lua',
+		program_module: false,
 		source_path: 'tests/carts/test/cart_assert.lua',
 		normalized_source_path: 'tests/carts/test/cart_assert.lua',
 		payload_id: 'cart',

@@ -313,11 +313,6 @@ function assetRanges(asset: RomAsset): Array<[number, number]> {
 	if (typeof asset.metabuffer_start === 'number' && typeof asset.metabuffer_end === 'number' && asset.metabuffer_end > asset.metabuffer_start) {
 		ranges.push([asset.metabuffer_start, asset.metabuffer_end]);
 	}
-	const compiledStart = asset.compiled_start;
-	const compiledEnd = asset.compiled_end;
-	if (typeof compiledStart === 'number' && typeof compiledEnd === 'number' && compiledEnd > compiledStart) {
-		ranges.push([compiledStart, compiledEnd]);
-	}
 	const textureStart = asset.model_texture_start;
 	const textureEnd = asset.model_texture_end;
 	if (typeof textureStart === 'number' && typeof textureEnd === 'number' && textureEnd > textureStart) {
@@ -739,7 +734,6 @@ function buildSummaryMetrics(ctx: NativeUiContext): SummaryMetrics {
 		}
 		const label = makeRegionLabel(asset);
 		pushSummaryRegion(metrics.regions, asset.start, asset.end, label);
-		pushSummaryRegion(metrics.regions, asset.compiled_start, asset.compiled_end, label);
 		pushSummaryRegion(metrics.regions, asset.metabuffer_start, asset.metabuffer_end, label);
 		if (asset.model_texture_start) {
 			metrics.textureSize += asset.model_texture_end! - asset.model_texture_start;

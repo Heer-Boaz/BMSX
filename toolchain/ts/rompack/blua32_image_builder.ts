@@ -1,4 +1,3 @@
-import { decodeLuaChunk } from '../lua/syntax/serialization';
 import {
 	utf8FatalDecoder,
 } from '../../../machine/ts/common/serializer/binencoder';
@@ -82,19 +81,28 @@ export type BuiltBlua32Image<TLinked extends LinkedBlua32Image = LinkedBlua32Ima
 	diagnosticSources: Blua32DiagnosticSourceMap;
 };
 
-/** Decodes packed Lua program payloads once at the ROM-to-compiler boundary. */
-export function decodeBlua32SourceModules(assets: ReadonlyArray<RomAsset>): Blua32SourceModule[] {
+/** Parse canonical program sources once for this compilation; syntax never lives in ROM. */
+export function parseBlua32SourceModules(assets: ReadonlyArray<RomAsset>): Blua32SourceModule[] {
 	const modules: Blua32SourceModule[] = [];
 	for (let index = 0; index < assets.length; index += 1) {
 		const asset = assets[index];
-		if (asset.type !== 'lua' || asset.compiled_buffer === undefined) {
+		if (asset.type !== 'lua' || !asset.program_module) {
 			continue;
 		}
+		const path = toLuaModulePath(asset.source_path);
+		const source = utf8FatalDecoder.decode(asset.buffer!);
+		let chunk: LuaChunk;
+		try {
+			chunk = parseLuaChunk(source, path).chunk;
+		} catch (error) {
+			if (!(error instanceof LuaSyntaxError)) throw error;
+			throw new LuaSyntaxError(error.message, asset.source_path!, error.line, error.column);
+		}
 		modules.push({
-			path: toLuaModulePath(asset.source_path),
+			path,
 			displayPath: asset.source_path!,
-			chunk: decodeLuaChunk(asset.compiled_buffer),
-			source: utf8FatalDecoder.decode(asset.buffer!),
+			chunk,
+			source,
 		});
 	}
 	return modules;

@@ -13,7 +13,7 @@ import { GX_DISPLAY_PRESET_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_d
 import { GX_REGISTER_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_register_module';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import { SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
-import { buildRomBlua32Tail, compileLuaChunkBuffer } from '../../scripts/rompacker/rombuilder';
+import { buildRomBlua32Tail } from '../../scripts/rompacker/rombuilder';
 import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
@@ -77,14 +77,14 @@ test('BLua32 image rejects a cart Lua module that collides with generated asset 
 			resid: 'cart',
 			type: 'lua',
 			buffer: Buffer.from(entrySource),
-			compiled_buffer: compileLuaChunkBuffer(entrySource, 'cart'),
+			program_module: true,
 			source_path: 'cart.lua',
 		},
 		{
 			resid: 'cart_assets',
 			type: 'lua',
 			buffer: Buffer.from(cartAssetSource),
-			compiled_buffer: compileLuaChunkBuffer(cartAssetSource, ROM_ASSET_SYMBOL_MODULE_PATH),
+			program_module: true,
 			source_path: ROM_ASSET_SYMBOL_SOURCE_PATH,
 		},
 	];
@@ -125,14 +125,14 @@ for (const generated of [
 				resid: 'cart',
 				type: 'lua',
 				buffer: Buffer.from(entrySource),
-				compiled_buffer: compileLuaChunkBuffer(entrySource, 'cart'),
+				program_module: true,
 				source_path: 'cart.lua',
 			},
 			{
 				resid: 'cart_generated_gx_contract',
 				type: 'lua',
 				buffer: Buffer.from(cartGeneratedSource),
-				compiled_buffer: compileLuaChunkBuffer(cartGeneratedSource, generated.path),
+				program_module: true,
 				source_path: generated.sourcePath,
 			},
 		];

@@ -21,7 +21,6 @@ import { parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import {
 	buildRomBlua32Tail,
-	compileLuaChunkBuffer,
 	finalizeRompack,
 } from '../../scripts/rompacker/rombuilder';
 
@@ -266,7 +265,7 @@ test('package producer rejects BLua32 program metadata without a ROM device', as
 			type: 'lua',
 			resid: 'entry',
 			buffer: Buffer.from(source),
-			compiled_buffer: compileLuaChunkBuffer(source, 'entry.lua'),
+			program_module: true,
 			source_path: 'entry.lua',
 		}];
 		const layout = layoutRomPrefix(assets, false, MANIFEST);
@@ -303,7 +302,7 @@ test('a cart with Lua source still requires a module entry', () => {
 			type: 'lua',
 			resid: 'module',
 			buffer: Buffer.from(source),
-			compiled_buffer: compileLuaChunkBuffer(source, 'module.lua'),
+			program_module: true,
 			source_path: 'module.lua',
 		}], {
 			generatedLuaModules: [],

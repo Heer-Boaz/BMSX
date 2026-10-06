@@ -3,7 +3,6 @@ import { test } from 'node:test';
 import { parseLuaChunk, parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { walkLuaAst } from '../../toolchain/ts/lua/syntax/ast/traversal';
-import { decodeLuaChunk, encodeLuaChunk } from '../../toolchain/ts/lua/syntax/serialization';
 
 const SOURCES = [
 	'', '\n; -- gap\n; ', '--[[unterminated', 'local value = 1\n--[[unterminated', 'local value = "bad\nremainder', 'module<const>\nlocal value = 1;\nreturn value',
@@ -14,33 +13,30 @@ const SOURCES = [
 	'local value = { [1] = function() broken. end }\nreturn value',
 ];
 
-for (const source of SOURCES) test(`statement parts cover consumed source and survive storage: ${source.slice(0, 45)}`, () => {
-	const parsed = parseLuaChunkWithRecovery(source, 'parts.lua').chunk;
-	for (const chunk of [parsed, decodeLuaChunk(encodeLuaChunk(parsed))]) {
-		const owned = new Set<number>();
-		walkLuaAst(chunk, node => {
-			if (node.kind !== LuaSyntaxKind.Block && node.kind !== LuaSyntaxKind.Chunk) return;
-			const body = node.body;
-			assert.deepEqual(Array.from(body), [...body.parts()].flatMap(part => part.statement === null ? [] : [part.statement]));
-			if (node.kind === LuaSyntaxKind.Block) assert.equal(body.width, node.endExclusive - node.startInclusive);
-			assert.equal(body.hasRecovery, [...body.parts()].some(part => part.recovery));
-			for (const part of body.parts()) {
-				assert.ok(part.width >= 0);
-				assert.ok(part.readWidth >= part.width);
-				for (const unit of part.units) {
-					assert.equal(owned.has(unit), false, 'child statements own their units independently');
-					owned.add(unit);
-					assert.ok(chunk.locations.offset(unit, 0) >= 0);
-				}
+for (const source of SOURCES) test(`statement parts cover consumed source: ${source.slice(0, 45)}`, () => {
+	const chunk = parseLuaChunkWithRecovery(source, 'parts.lua').chunk;
+	const owned = new Set<number>();
+	walkLuaAst(chunk, node => {
+		if (node.kind !== LuaSyntaxKind.Block && node.kind !== LuaSyntaxKind.Chunk) return;
+		const body = node.body;
+		assert.deepEqual(Array.from(body), [...body.parts()].flatMap(part => part.statement === null ? [] : [part.statement]));
+		if (node.kind === LuaSyntaxKind.Block) assert.equal(body.width, node.endExclusive - node.startInclusive);
+		assert.equal(body.hasRecovery, [...body.parts()].some(part => part.recovery));
+		for (const part of body.parts()) {
+			assert.ok(part.width >= 0);
+			assert.ok(part.readWidth >= part.width);
+			for (const unit of part.units) {
+				assert.equal(owned.has(unit), false, 'child statements own their units independently');
+				owned.add(unit);
+				assert.ok(chunk.locations.offset(unit, 0) >= 0);
 			}
-		});
-		const lexicalUnits = new Set([...chunk.tokens.blocks()].map(({ block }) => block.unit));
-		for (const { unit } of chunk.locations.unitPlacements()) {
-			if (unit === chunk.span.unit || lexicalUnits.has(unit)) continue;
-			assert.ok(owned.has(unit), 'every syntax occurrence belongs to a part, including discarded recovery trees');
 		}
+	});
+	const lexicalUnits = new Set([...chunk.tokens.blocks()].map(({ block }) => block.unit));
+	for (const { unit } of chunk.locations.unitPlacements()) {
+		if (unit === chunk.span.unit || lexicalUnits.has(unit)) continue;
+		assert.ok(owned.has(unit), 'every syntax occurrence belongs to a part, including discarded recovery trees');
 	}
-	assert.deepEqual(encodeLuaChunk(decodeLuaChunk(encodeLuaChunk(parsed))), encodeLuaChunk(parsed));
 });
 
 test('every recovery contributes locally even after the first diagnostic is latched', () => {
@@ -103,11 +99,9 @@ test('parts retain parser newline exit state across comments, semicolons and CRL
 		'break --[[gap\n]] local value = 1',
 		'break --[[gap]] local value = 1',
 	]) {
-		const original = parseLuaChunkWithRecovery(source, 'newlines.lua').chunk;
-		for (const chunk of [original, decodeLuaChunk(encodeLuaChunk(original))]) {
-			const parts = [...chunk.body.parts()];
-			assert.equal(parts[parts.length - 2].endsNewLine, source.includes('\n'));
-			assert.equal(parts[parts.length - 1].endsNewLine, false);
-		}
+		const chunk = parseLuaChunkWithRecovery(source, 'newlines.lua').chunk;
+		const parts = [...chunk.body.parts()];
+		assert.equal(parts[parts.length - 2].endsNewLine, source.includes('\n'));
+		assert.equal(parts[parts.length - 1].endsNewLine, false);
 	}
 });

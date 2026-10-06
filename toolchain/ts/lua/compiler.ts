@@ -248,21 +248,11 @@ export function encodeCompiledProgramObject(compiled: CompiledProgram): ProgramO
 	};
 }
 
-export type LuaCompileError = {
-	path: string;
-	message: string;
-	line: number;
-	column: number;
-};
-
 type CompileError = {
 	path: string;
 	stage: 'entry' | 'module';
 	message: string;
 };
-
-export const isLuaCompileError = (value: unknown): value is LuaCompileError =>
-	value instanceof LuaSyntaxError;
 
 type CompileOptionsBase = {
 	optLevel?: OptimizationLevel;

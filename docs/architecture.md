@@ -695,7 +695,7 @@ than firmware or emulator-owned runtime state.
 `testlib` is the guest-side companion for explicitly packaged Scenario tests,
 not a cart runtime dependency. A debug package retains only the source payloads
 of `testlib` modules reachable from its source-only scenario resources; their
-TOC entries have no compiled range and the ordinary debug BLua image contains
+TOC entries have `program_module = false` and the ordinary debug BLua image contains
 no testlib code. Release dependency discovery does not include that root. The
 derived Scenario cartridge recompiles the selected test's dependency closure
 and may execute those modules, while ordinary cart and cartlib sources never
@@ -921,19 +921,18 @@ A public `lua` TOC entry owns a source resource. `source_path` is its stable
 domain-local identity and `normalized_source_path` is its canonical
 workspace-relative file location; the producer writes both rather than asking
 navigation or persistence consumers to guess whether a module came from the
-project root or a shared library root. Its physical compiled-payload
-range separately determines whether that source participates as a BLua program
-module. Source-only Lua entries therefore remain ordinary retained IDE
-resources, semantic-project inputs and navigation targets, but are not entry
-candidates and never enter ordinary or Hot Resume executable rebuilds. The
-explicit Scenario-derived producer may compile only the dependency closure of
-its selected source root. Packed program ASTs are decoded once at the
-ROM-to-compiler boundary; newly parsed source-only modules enter that same
-immutable compiler representation directly instead of taking an encode/decode
-round trip. The one
-`LuaSourceRegistry` records that distinction as `program_module`; tooling does
+project root or a shared library root. The ROM TOC explicitly records whether a
+Lua source is a program module (`program_module`) or source-only tooling input. A program module
+participates in ordinary ROM/Hot Resume dependency selection; a source-only
+module enters only an explicitly derived Scenario compilation. No token/AST
+cache is persisted in either ROM. The ROM-to-compiler boundary parses canonical
+UTF-8 source once per compilation and passes the resulting immutable chunk
+directly to the compiler. Scenario dependency discovery reuses those same
+chunks; additional source-only dependencies are parsed on demand. Studio's
+existing document/program-source owners retain their syntax independently of
+ROM storage. The one `LuaSourceRegistry` records module membership; tooling does
 not create a second test-source registry or infer execution from a filename.
-Their edits advance the semantic source revision without dirtying BLua media
+Source-only edits advance the semantic source revision without dirtying BLua media
 or entering Hot Resume. Newly authored gameplay modules explicitly enter the program. The workspace
 creation owner marks conventional assertion modules as source-only test assets;
 their role is retained in the registry, not inferred by runtime consumers.
@@ -1269,7 +1268,7 @@ generic Lua coroutines, not a test framework or Studio protocol.
 linking, and hot-resume relocation. It is not part of the runtime execution
 address space or either CPU implementation.
 
-Every top-level ROM section and every independently stored main, compiled,
+Every top-level ROM section and every independently stored main,
 texture, and collision payload begins on a four-byte boundary. The producer inserts zero padding
 between top-level sections and between aligned asset ranges. Inter-section
 padding falls outside section lengths; inter-asset padding occupies data-section
@@ -1342,8 +1341,9 @@ retires preparation before installation; completed physical effects are not
 rolled back. Operation IDs and captured document versions describe the accepted
 request, not subsequent guest readiness. Existing debugger/Terminal execution
 and isolated test outcomes establish that separately. See [program tools](studio_program_tools.md).
-Source revisions publish matching text and parsed Lua assets in the same ROM
-as their executable and diagnostics, including newly authored files.
+Source revisions publish canonical Lua text and explicit module membership in
+the same ROM as their executable and diagnostics, including newly authored files.
+Parsed syntax remains with the compilation/document owner, never in machine media.
 Derived tooling source layers publish their domain on every in-memory asset
 entry, including relocated/replaced sources and tooling payloads. Generic asset
 layout alone does not provide ROM-layer provenance. A source-build fork owns
@@ -1351,13 +1351,14 @@ its layer containers, so another authoring installation can replace the latter's
 bytes/index/header without retargeting the fork. Backing ROM bytes and indexes
 are shared immutably; no duplicate ROM payload or reparative consumer validation
 is needed.
-The shared tooling syntax codec persists local span ordinals into one packed
-numeric directory of `(unit ordinal, relative start, relative end)` triples;
-it does not serialize intermediate per-span objects. Source text, tokens,
-recovery data and shared-span identity remain intact. Only the TypeScript
-source build/load owners consume that schema; neither machine runtime decodes
-it. This [storage representation](lua_syntax_storage.md) does not expand the
-physical ROM window or discard debugger coverage.
+Debug ROMs retain authored source, private tooling symbols and the guest-readable
+BIOS diagnostic directory. They do not retain parser caches or duplicate source
+inside serialized ASTs. The 84-byte TOC entry uses a flags word at byte 48;
+`ROM_TOC_FLAG_PROGRAM_MODULE` identifies program sources. TS, C++ and the firmware
+directory consume the same revised layout. See [ROM source packaging](rom_source_packaging.md)
+for ownership, native implications and measured package sizes. Physical ROM
+windows and debugger coverage are unchanged; media must be rebuilt with their
+owning toolchain and firmware, without a legacy layout reader.
 
 The packer emits one immutable prefix: ordinary asset payload spans, per-entry
 metadata, and the manifest. It derives final TOC records from that layout

@@ -13,8 +13,7 @@ import {
 	ROM_TOC_ENTRY_ASSET_TYPE_OFFSET,
 	ROM_TOC_ENTRY_COLLISION_BIN_END_OFFSET,
 	ROM_TOC_ENTRY_COLLISION_BIN_START_OFFSET,
-	ROM_TOC_ENTRY_COMPILED_END_OFFSET,
-	ROM_TOC_ENTRY_COMPILED_START_OFFSET,
+	ROM_TOC_ENTRY_FLAGS_OFFSET,
 	ROM_TOC_ENTRY_DATA_END_OFFSET,
 	ROM_TOC_ENTRY_DATA_START_OFFSET,
 	ROM_TOC_ENTRY_METADATA_END_OFFSET,
@@ -45,6 +44,7 @@ import {
 	ROM_TOC_HEADER_STRING_TABLE_OFFSET,
 	ROM_TOC_INVALID_U32,
 	ROM_TOC_MAGIC,
+	ROM_TOC_FLAG_PROGRAM_MODULE,
 	ROM_TOC_OP_DELETE,
 } from '../spec/bmsx/rom_toc';
 import { hashAssetId } from './tokens';
@@ -62,8 +62,8 @@ export type RomTocEntry = {
 	op?: RomAssetOp;
 	start?: number;
 	end?: number;
-	compiled_start?: number;
-	compiled_end?: number;
+	/** Lua source participates in the ordinary program, rather than source-only tooling. */
+	program_module: boolean;
 	metabuffer_start?: number;
 	metabuffer_end?: number;
 	model_texture_start?: number;
@@ -187,8 +187,7 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 
 		const start = view.getUint32(base + ROM_TOC_ENTRY_DATA_START_OFFSET, true);
 		const end = view.getUint32(base + ROM_TOC_ENTRY_DATA_END_OFFSET, true);
-		const compiledStart = view.getUint32(base + ROM_TOC_ENTRY_COMPILED_START_OFFSET, true);
-		const compiledEnd = view.getUint32(base + ROM_TOC_ENTRY_COMPILED_END_OFFSET, true);
+		const flags = view.getUint32(base + ROM_TOC_ENTRY_FLAGS_OFFSET, true);
 		const metaStart = view.getUint32(base + ROM_TOC_ENTRY_METADATA_START_OFFSET, true);
 		const metaEnd = view.getUint32(base + ROM_TOC_ENTRY_METADATA_END_OFFSET, true);
 		const modelTextureStart = view.getUint32(base + ROM_TOC_ENTRY_MODEL_TEXTURE_START_OFFSET, true);
@@ -198,7 +197,6 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 		const updateLo = view.getUint32(base + ROM_TOC_ENTRY_UPDATE_TIMESTAMP_LO_OFFSET, true);
 		const updateHi = view.getUint32(base + ROM_TOC_ENTRY_UPDATE_TIMESTAMP_HI_OFFSET, true);
 		if ((start === ROM_TOC_INVALID_U32) !== (end === ROM_TOC_INVALID_U32)
-			|| (compiledStart === ROM_TOC_INVALID_U32) !== (compiledEnd === ROM_TOC_INVALID_U32)
 			|| (metaStart === ROM_TOC_INVALID_U32) !== (metaEnd === ROM_TOC_INVALID_U32)
 			|| (modelTextureStart === ROM_TOC_INVALID_U32) !== (modelTextureEnd === ROM_TOC_INVALID_U32)
 			|| (collisionBinStart === ROM_TOC_INVALID_U32) !== (collisionBinEnd === ROM_TOC_INVALID_U32)) {
@@ -218,6 +216,7 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 			type: assetTypeFromId(typeId),
 			id_token_lo: tokenLo,
 			id_token_hi: tokenHi,
+			program_module: (flags & ROM_TOC_FLAG_PROGRAM_MODULE) !== 0,
 		};
 		if (opId === ROM_TOC_OP_DELETE) {
 			entry.op = 'delete';
@@ -230,10 +229,6 @@ export function decodeRomToc(buffer: Uint8Array): RomTocPayload {
 		if (start !== ROM_TOC_INVALID_U32) {
 			entry.start = start;
 			entry.end = end;
-		}
-		if (compiledStart !== ROM_TOC_INVALID_U32) {
-			entry.compiled_start = compiledStart;
-			entry.compiled_end = compiledEnd;
 		}
 		if (metaStart !== ROM_TOC_INVALID_U32) {
 			entry.metabuffer_start = metaStart;

@@ -77,9 +77,6 @@ function romSource(entries: RomAsset[]): RawRomSource {
 		getBytesView() {
 			return new Uint8Array();
 		},
-		getCompiledBytesView() {
-			return new Uint8Array();
-		},
 		list(type) {
 			return type ? entries.filter(entry => entry.type === type) : entries;
 		},
