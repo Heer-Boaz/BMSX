@@ -25,7 +25,7 @@ import { ActorStateGraph } from './state_graph';
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import { ActorProjection, readActorChoices } from './projection';
 import { actorActions } from './operations';
-import { captureActorTarget, resolveActorTarget } from './target';
+import { actorTargetsEqual, captureActorTarget, resolveActorTarget, type ActorTarget } from './target';
 import type { ActorExecutionService, ActorExecutionResult, ActorInvocation } from './execution';
 
 /** Actor Lab interaction and presentation; the shared domain service owns execution. */
@@ -50,9 +50,9 @@ export class ActorLabController {
 		});
 		guest.onWillResumeHistory(() => {
 			const input = this.current;
-			if (input !== undefined && input.dirty) {
+			if (input !== undefined) {
 				// Admission observes the physical position even after an interrupted seek.
-				this.projection.update();
+				this.projection.resumeHistory();
 				input.dirty = false;
 			}
 		});
@@ -86,32 +86,66 @@ export class ActorLabController {
 			return new TextQuickPickProvider(readActionEffectInstances(this.sources, this.guest, domain).items);
 		}, choice => {
 			const actorHashId = (this.guest.readStringMember(choice.component, 'parent') as import('../../../../machine/ts/machine/cpu/table').Table).hashId;
-			const effectHashId = choice.effect.hashId;
+			const effectHashId = choice.effect.hashId, componentHashId = choice.component.hashId, key = this.guest.identity(choice.key);
 			const input = this.resolveInput();
 			input.domain = domain;
+			input.follow.stop(); input.stateGraph = undefined; input.presentation = 'outline'; input.historical = false;
 			input.actorHashId = actorHashId;
-			input.selectionHashId = actorHashId;
+			input.selectionPath = undefined;
 			input.running = false; input.dirty = true;
 			openEditorTab(this.panes, input);
 			this.refresh(input);
-			if (!this.projection.reveal(effectHashId)) { showEditorMessage('Effect owner is not a mounted world actor.', COLOR_STATUS_TEXT, 4); return; }
+			const effect = input.runtime.roots[0]?.children.find(node => node.hashId === componentHashId)?.children
+				.find(node => node.hashId === effectHashId && this.guest.matchesIdentity(node.key, key));
+			if (effect === undefined) { showEditorMessage('Effect owner is not a mounted world actor.', COLOR_STATUS_TEXT, 4); return; }
+			this.projection.reveal(effect);
 			this.actions(input);
 		});
 	}
 	public refresh(input: ActorLabInput): boolean {
 		// Read the requested history position, not an intermediate replay checkpoint.
-		if (!input.dirty || this.rewind.seeking) return false;
-		const changed = this.projection.update();
-		input.dirty = false;
+		if (this.rewind.seeking) return false;
+		let changed = false;
+		if (input.dirty) { changed = this.projection.update(); input.dirty = false; }
+		if (input.presentation === 'outline' && input.actorPresent && input.follow.pending !== undefined) {
+			const scope = resolveActorTarget(input.runtime.roots, input.follow.pending, this.guest);
+			if (scope !== undefined) changed = this.projection.revealActive(scope) || changed;
+			input.follow.pending = undefined;
+		}
 		return changed;
 	}
+
+	public layoutNavigation(input: ActorLabInput): void {
+		if (input.dirty || !input.actorPresent) return;
+		if (input.presentation === 'outline') this.projection.layout();
+		else if (input.follow.pending !== undefined) {
+			input.stateGraph!.revealActive(input.follow.pending);
+			input.follow.pending = undefined;
+		}
+	}
+
+	public activityScope(input: ActorLabInput): ActorTarget | undefined {
+		const selected = this.selected(input);
+		if (selected === undefined) return;
+		const target = captureActorTarget(input.domain, runtimeWorld(this.sources, this.guest, input.domain)!.hashId, input.runtime.roots, selected, this.guest);
+		let length = target.path.length;
+		if (selected.kind === 'state') while (target.path[length - 1].kind !== 'machine') length--;
+		else if (selected.kind === 'timeline' || selected.kind === 'effect') length--;
+		return length === target.path.length ? target : { ...target, path: target.path.slice(0, length) };
+	}
+
 	public selectActor(input: ActorLabInput, accepted?: () => void, domain = this.cpu.activeCartridgeSlot()): void {
 		input.running = false;
 		this.quickInput.pick('RUNNING ACTORS', 'Choose the actual instance to experiment with',
 			(_origin, lifetime) => {
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 				return new TextQuickPickProvider(readActorChoices(this.sources, this.guest, domain));
-			}, choice => { input.stateGraph = undefined; input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = choice.hashId; input.dirty = true; accepted?.(); });
+			}, choice => {
+				input.stateGraph = undefined; input.presentation = 'outline'; input.follow.stop(); input.historical = false;
+				input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionPath = undefined; input.dirty = true;
+				this.refresh(input); this.projection.reveal(input.runtime.roots[0]);
+				accepted?.();
+			});
 	}
 	private run(input: ActorLabInput, request: ActorInvocation, observer?: (result: ActorExecutionResult) => void, current: () => boolean = () => true): void {
 		const generation = this.panes.openGeneration, domain = input.domain, actor = input.actorHashId;
@@ -129,19 +163,39 @@ export class ActorLabController {
 	}
 
 	public selected(input: ActorLabInput): ActorNode | undefined {
-		if (input.dirty) return undefined;
-		if (input.stateGraph === undefined) return input.outline.rows[input.outline.selectionIndex]?.element.node;
-		const target = input.stateGraph.selectedTarget;
+		if (input.dirty || !input.actorPresent) return undefined;
+		if (input.presentation === 'outline') return input.outline.rows[input.outline.selectionIndex]?.element.node;
+		const target = input.stateGraph!.selectedTarget;
 		return target === undefined ? undefined : resolveActorTarget(input.runtime.roots, target, this.guest);
 	}
 
-	public openStateGraph(input: ActorLabInput, font: BFont): void {
+	public openStateGraph(input: ActorLabInput, font: BFont): boolean {
 		const selected = this.selected(input)!;
 		const target = captureActorTarget(input.domain, runtimeWorld(this.sources, this.guest, input.domain)!.hashId, input.runtime.roots, selected, this.guest);
 		let length = target.path.length;
 		while (target.path[length - 1].kind !== 'machine') length--;
-		input.stateGraph = new ActorStateGraph({ ...target, path: target.path.slice(0, length) }, font);
+		const machineTarget = { ...target, path: target.path.slice(0, length) };
+		if (input.stateGraph === undefined || !input.stateGraph.matchesTarget(machineTarget)) input.stateGraph = new ActorStateGraph(machineTarget, font);
 		input.stateGraph.refresh(input.runtime.roots, this.guest);
+		input.stateGraph.layout(font);
+		const previous = input.stateGraph.selectedTarget;
+		input.stateGraph.selectTarget(target);
+		input.presentation = 'graph';
+		input.follow.pending = input.follow.target;
+		return previous === undefined || !actorTargetsEqual(previous, target);
+	}
+
+	public openOutline(input: ActorLabInput): void {
+		const target = input.stateGraph!.selectedTarget;
+		input.presentation = 'outline';
+		if (target !== undefined) {
+			const selected = resolveActorTarget(input.runtime.roots, target, this.guest);
+			if (selected !== undefined) this.projection.reveal(selected);
+		} else if (input.stateGraph!.status === 'available') {
+			input.outline.selectionIndex = -1;
+			input.rememberSelection();
+		}
+		input.follow.pending = input.follow.target;
 	}
 
 	public inspect(input: ActorLabInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
@@ -234,9 +288,11 @@ export class ActorLabController {
 					worldHashId: runtimeWorld(this.sources, this.guest, input.domain)!.hashId,
 					definitionId: choice.id, definition: choice.definition, options }, result => {
 					if (result.status !== 'completed') return;
+					input.stateGraph = undefined; input.presentation = 'outline'; input.follow.stop(); input.historical = false;
 					input.actorHashId = result.spawnedActorHashId!;
-					input.selectionHashId = input.actorHashId;
+					input.selectionPath = undefined;
 					input.dirty = true;
+					this.refresh(input); this.projection.reveal(input.runtime.roots[0]);
 				}));
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 			});

@@ -45,6 +45,46 @@ suspension, cache its flattened paging index and format a node's properties once
 World pages read the dense membership array directly rather than rebuilding an
 all-world tree per page. No model polling is introduced.
 
+## Debug navigation
+
+Actor Lab separates the **inspection selection** (including action targets),
+**activity decorations**, and **viewport follow**. These are not three ways of
+setting one selected row. VS Code's [tree reveal](https://github.com/microsoft/vscode/blob/main/src/vs/base/browser/ui/tree/abstractTree.ts)
+expands/reveals independently of selection; its [call stack view](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/callStackView.ts)
+refreshes at model/visibility boundaries. [Unreal's StateTree debugger](https://dev.epicgames.com/documentation/en-us/unreal-engine/statetree-debugger-quick-start-guide)
+likewise distinguishes the chosen instance, active states, and inspected time.
+These interaction patterns inform the view; they do not require guest tracing.
+
+- Components and machines retain their owner's explicit list order. State maps,
+  timeline maps and effect maps use stable name order for presentation only.
+  The guest's `state_ids`, initial state and concurrent traversal are untouched.
+- Runtime storage traversal and display order are retained separately. Membership
+  changes reconcile by identity and sort affected sibling lists; ordinary
+  activity changes update decorations/revisions, not rows, labels or geometry.
+  Row expansion and the scroll anchor survive sibling insertions and reordering.
+- **Follow / Unfollow** tracks the selected machine (when started on a state),
+  timeline/effect component (when started on an entry), or selected actor/component.
+  **Reveal Active Behavior**, in More or the command palette, does this once.
+  Neither changes the selection, keyboard focus, nor the target of an action.
+  Parallel active branches share one reveal range, not a fabricated single current
+  state. An oversized range keeps an already visible active endpoint; if the
+  viewport only contains the gap between branches, it reveals the first endpoint
+  in stable tree order. It never oscillates between endpoints or auto-zooms.
+  Inactive siblings are not reordered behind active ones.
+- Manual navigation/scroll/pan stops following. Merely interacting with the game
+  preview does not. Opening Details stops playback, not the selected-instance
+  correspondence. The compact title contains Actor/Back, Follow, and More; instance
+  mutation commands remain in More, the context menu, and the palette.
+- Switching tree/graph carries the explicit selected instance. The graph model,
+  zoom and viewport survive returning to the tree and reopening that same machine.
+  Long tree identifiers elide the middle, retaining distinguishing suffixes; the
+  selected full identifier remains in the status bar. This uses the common text
+  layout owner, following [VS Code's middle truncation](https://github.com/microsoft/vscode/blob/main/src/vs/base/common/strings.ts).
+- Follow observes only the completed history position. Missing historical
+  instances are visibly unavailable and cannot receive actions; live-branch
+  admission and heap replacement retire invalid bookmarks. Timeline **Scrub**
+  remains an explicit guest operation, not machine-history rewind.
+
 ## Lifetimes and representation
 
 * `ActorRuntimeTree` owns borrowed nodes, without widget rows, layout or source
@@ -52,11 +92,14 @@ all-world tree per page. No model polling is introduced.
   A key/classification change refreshes the domain branch rather than leaving a
   stale label/path on a reused hash ID. UI collapse survives label-only changes.
 * History restore is distinct from reset/external state loading. Actor Lab keeps
-  its scalar selection and existing row/collapse state through history seeks,
+  its typed membership selection and existing row/collapse state through history seeks,
   then reacquires actual World membership and child tables at the requested
-  position. It does not inspect intermediate seek checkpoints. An absent actor
-  clears the selection; an absent child clears only the child selection. Neither
-  another row nor a later allocation replaces the missing selection.
+  position. Aliases of one guest table remain distinct action/selection paths.
+  It does not inspect intermediate seek checkpoints. An absent actor
+  or child has no actionable selection at that historical position. Scalar
+  bookmarks can reacquire the same membership when seeking back; admission of a
+  new live branch retires unavailable bookmarks before allocation identities can
+  be reused. Neither another row nor a later allocation replaces the selection.
   A hidden pane resolves this pending selection before live execution can branch
   from the reviewed state and reuse identities from the discarded future.
   Reset/external load still clears the entire selection. Pending timeline actions

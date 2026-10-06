@@ -99,18 +99,24 @@ that a callback has completed or a future transition guard will pass.
 The graph bookmark uses the existing typed Actor target path. After execution
 or history restore, Actor Lab reacquires membership before copying scalar
 identities, labels and activity. No table, closure or borrowed Actor node enters
-the retained graph. Missing/renamed membership and heap replacement explicitly
-retire it; the user selects again through the Actor tree. Hidden-pane branch
-reconciliation uses the suspended guest's explicit history-resume boundary.
+the retained graph. Missing historical membership disables actions/activity but
+keeps its typed bookmark and display geometry. Live-branch admission retires
+unavailable bookmarks before identities can be reused; heap replacement retires
+them outright. Hidden-pane branch reconciliation uses the suspended guest's
+explicit history-resume boundary.
 
 Geometry, edge routes, viewport, pan and zoom use the shared workbench graph
 controls, including Ctrl-wheel anchored zoom and Shift-wheel horizontal pan.
 Activity-only updates change booleans, not measurements or layout.
 Topology/font changes relayout and rematch the selected node or relationship by
 physical identity. Details and method/action commands resolve through the same
-fresh Actor tree, without adding a second inspector or execution service. Back
-and Details are the primary actions; graph opening and zoom stay in the command
-palette/context menu. The graph, title actions, sash and guest timeline slider
+fresh Actor tree, without adding a second inspector or execution service. Back,
+Follow and More are the primary actions; Details, graph opening and zoom remain
+available through menus and the command palette. Follow reveals active endpoints
+without changing inspection selection or zoom. The retained viewport survives
+tree/graph switching; explicit new selection reveals its own target when follow
+is off. See [Actor navigation](studio_actor_tools.md#debug-navigation).
+The graph, title actions, sash and guest timeline slider
 use an explicit command context without replacing their keyboard handlers.
 Toolbar enablement and invocation both carry that context independently of
 keyboard focus, as in the

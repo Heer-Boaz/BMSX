@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { truncateMeasuredText } from '../../ide/common/text';
+
+const measure = (text: string, start: number, end: number) => Array.from(text.slice(start, end)).length;
+
+test('middle truncation fits measured width and preserves both identifying ends', () => {
+	const value = 'namespace.component.distinguishing_suffix';
+	for (let width = 0; width < value.length + 5; width++) {
+		const truncated = truncateMeasuredText(value, width, measure, '...', 'middle');
+		assert.ok(measure(truncated, 0, truncated.length) <= width);
+		if (width >= value.length) assert.equal(truncated, value);
+		else if (width >= 5) {
+			assert.equal(truncated[0], value[0]);
+			assert.equal(truncated.at(-1), value.at(-1));
+		}
+	}
+});
+
+test('middle truncation does not split surrogate pairs at either retained boundary', () => {
+	const value = '😀😀😀name😀😀😀';
+	for (let width = 3; width < 11; width++) {
+		const truncated = truncateMeasuredText(value, width, measure, '...', 'middle');
+		assert.equal(truncated.isWellFormed(), true);
+		assert.ok(measure(truncated, 0, truncated.length) <= width);
+	}
+});

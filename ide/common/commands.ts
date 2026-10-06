@@ -94,7 +94,7 @@ export type EditorCommandId =
 	| 'gameView.playback'
 	| 'gameView.togglePanel' | 'gameView.closePanel'
 	| 'actorLab.playback' | 'actorLab.select' | 'actorLab.spawn' | 'actorLab.emit' | 'actorLab.actions' | 'actorLab.call' | 'actorLab.details'
-	| 'actorLab.stateGraph' | 'actorLab.outline'
+	| 'actorLab.stateGraph' | 'actorLab.outline' | 'actorLab.follow' | 'actorLab.revealActive' | 'actorLab.more'
 	| 'scenarioLab.details'
 	| 'scenarioLab.inspectTarget'
 	| 'scenarioLab.inspectStop'

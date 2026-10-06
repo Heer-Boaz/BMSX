@@ -5,11 +5,12 @@ import { createFsmStatePath } from '../../../../toolchain/ts/cartlib/fsm/state_p
 import type { ResourceDomain } from '../../../common/resource';
 import { readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
+import type { SuspendedGuestSession, SuspendedValueIdentity } from '../../../runtime/suspended_guest';
 
 export type ActorNode = {
 	readonly kind: 'actor' | 'component' | 'machine' | 'state' | 'tree' | 'timeline' | 'effect';
 	readonly hashId: number;
+	readonly keyIdentity: SuspendedValueIdentity;
 	readonly name: string;
 	readonly prefix: string;
 	readonly label: string;
@@ -53,14 +54,28 @@ const COMPONENT_TYPES = [
 ] as const;
 const NO_KEYS: readonly string[] = [];
 
+/** Runtime enumeration and human-facing sibling order have distinct owners. */
+type RetainedActorNode = ActorNode & { readonly members: RetainedActorNode[]; childrenDirty: boolean };
+
+function compareActorNames(left: ActorNode, right: ActorNode): number {
+	return left.name < right.name ? -1 : left.name > right.name ? 1
+		: left.keyIdentity.tag - right.keyIdentity.tag || left.keyIdentity.scalar - right.keyIdentity.scalar;
+}
+
 /** Reconcile one actor by guest identity. Ordinary state changes retain nodes, labels and rows. */
 export class ActorRuntimeTree {
 	public readonly roots: ActorNode[] = [];
+	public topologyRevision = 0;
+	public activityRevision = 0;
+	private readonly members: RetainedActorNode[] = [];
+	private rootsDirty = false;
 	private changed = false;
+	private activityChanged = false;
 	private borrowed = false;
 	private readonly kinds: number[] = [];
 	public update(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, actor: Table | undefined): boolean {
 		this.changed = false;
+		this.activityChanged = false;
 		this.borrowed = actor !== undefined;
 		if (actor === undefined) {
 			this.finishChildren(null, 0);
@@ -89,51 +104,70 @@ export class ActorRuntimeTree {
 					type === -1 ? 'COMPONENT' : COMPONENT_TYPES[type][1]);
 				let count = 0;
 				if (type === 0) {
-					guest.visitTableEntries(guest.readStringMember(component, '_machines_by_id'), (key, machine) => {
-						const node = this.node(guest, branch, count++, 'machine', machine as Table, machine as Table, component, key,
+					const machines = guest.readStringMember(component, '_machines') as Table;
+					for (let index = 1; index <= machines.arrayLength; index++) {
+						const machine = machines.getInteger(index) as Table;
+						const node = this.node(guest, branch, count++, 'machine', machine, machine, component, guest.readStringMember(machine, 'localdef_id'),
 							branch.active && guest.isTruthy(guest.readStringMember(component, '_started')));
-						this.states(guest, node, machine as Table, component);
-					});
+						this.states(guest, node, machine, component);
+					}
 				} else if (type === 2 || type === 3) {
 					guest.visitTableEntries(guest.readStringMember(component, type === 2 ? '_entries_by_id' : 'effects'), (key, value) => {
 						this.node(guest, branch, count++, type === 2 ? 'timeline' : 'effect', value as Table, component, component, key,
 							type === 2 ? guest.isTruthy(guest.readStringMember(value, 'playing')) : (guest.readStringMember(value, 'active_count') as number) > 0);
 					});
 				}
-				this.finishChildren(branch, count);
+				this.finishChildren(branch, count, type === 2 || type === 3);
 			}
 			this.finishChildren(root, components.arrayLength);
 			this.finishChildren(null, 1);
 		}
+		if (this.changed) this.topologyRevision++;
+		if (this.activityChanged || this.changed) this.activityRevision++;
 		return this.changed;
 	}
 
-	private node(guest: SuspendedGuestSession, parent: ActorNode | null, index: number, kind: ActorNode['kind'], value: Table, receiver: Table,
-		component: Table | null, key: Value, active: boolean, prefix = ''): ActorNode {
-		const siblings = parent === null ? this.roots : parent.children;
+	private node(guest: SuspendedGuestSession, parent: RetainedActorNode | null, index: number, kind: ActorNode['kind'], value: Table, receiver: Table,
+		component: Table | null, key: Value, active: boolean, prefix = ''): RetainedActorNode {
+		const siblings = parent === null ? this.members : parent.members;
 		let node = siblings[index];
-		const name = guest.formatValue(key);
-		if (node === undefined || node.hashId !== value.hashId || node.kind !== kind || node.name !== name || node.prefix !== prefix) {
-			// Changed membership, classification or key retires the old branch, including captured operations.
-			releaseActorBorrows(siblings, index);
-			siblings.length = index;
-			const stateKeys = kind === 'state' ? [...parent!.stateKeys, name] : NO_KEYS;
-			const label = prefix === '' ? name : `${prefix} ${name}`;
-			node = { kind, hashId: value.hashId, name, prefix, label, children: [], value, receiver, component, key, active, stateKeys,
-				path: kind === 'state' ? createFsmStatePath(true, 0, stateKeys)?.text : undefined };
-			siblings.push(node);
-			this.changed = true;
-		} else {
-			node.value = value; node.receiver = receiver; node.component = component; node.key = key; node.active = active;
+		if (node === undefined || node.hashId !== value.hashId || node.kind !== kind || node.prefix !== prefix || !guest.matchesIdentity(key, node.keyIdentity)) {
+			let previous = index + 1;
+			for (; previous < siblings.length; previous++) {
+				const candidate = siblings[previous];
+				if (candidate.hashId === value.hashId && candidate.kind === kind && candidate.prefix === prefix && guest.matchesIdentity(key, candidate.keyIdentity)) break;
+			}
+			if (previous < siblings.length) node = siblings[previous];
+			else {
+				const name = guest.formatValue(key);
+				const stateKeys = kind === 'state' ? [...parent!.stateKeys, name] : NO_KEYS;
+				const label = prefix === '' ? name : `${prefix} ${name}`;
+				node = { kind, hashId: value.hashId, keyIdentity: guest.identity(key), name, prefix, label, children: [], members: [], childrenDirty: false,
+					value, receiver, component, key, active, stateKeys, path: kind === 'state' ? createFsmStatePath(true, 0, stateKeys)?.text : undefined };
+				previous = siblings.length;
+			}
+			for (let position = previous; position > index; position--) siblings[position] = siblings[position - 1];
+			siblings[index] = node;
+			if (parent === null) this.rootsDirty = true; else parent.childrenDirty = true;
 		}
+		if (node.active !== active) this.activityChanged = true;
+		node.value = value; node.receiver = receiver; node.component = component; node.key = key; node.active = active;
 		return node;
 	}
 
-	private finishChildren(parent: ActorNode | null, count: number): void {
+	private finishChildren(parent: RetainedActorNode | null, count: number, sortNames = false): void {
+		const members = parent === null ? this.members : parent.members;
 		const children = parent === null ? this.roots : parent.children;
-		if (children.length === count) return;
-		releaseActorBorrows(children, count);
+		if (members.length !== count) {
+			releaseActorBorrows(members, count);
+			members.length = count;
+			if (parent === null) this.rootsDirty = true; else parent.childrenDirty = true;
+		}
+		if (!(parent === null ? this.rootsDirty : parent.childrenDirty)) return;
+		for (let index = 0; index < count; index++) children[index] = members[index];
 		children.length = count;
+		if (sortNames) children.sort(compareActorNames);
+		if (parent === null) this.rootsDirty = false; else parent.childrenDirty = false;
 		this.changed = true;
 	}
 
@@ -142,9 +176,13 @@ export class ActorRuntimeTree {
 		releaseActorBorrows(this.roots, 0);
 		this.borrowed = false;
 	}
-	public dispose(): void { this.release(); this.roots.length = 0; }
+	public dispose(): void {
+		this.release();
+		if (this.roots.length !== 0) { this.topologyRevision++; this.activityRevision++; }
+		this.roots.length = 0; this.members.length = 0;
+	}
 
-	private states(guest: SuspendedGuestSession, parent: ActorNode, machine: Table, component: Table): void {
+	private states(guest: SuspendedGuestSession, parent: RetainedActorNode, machine: Table, component: Table): void {
 		const state = parent.value!;
 		const children = guest.readStringMember(state, 'states') as Table;
 		const ids = guest.readStringMember(state, 'state_ids') as Table;
@@ -156,7 +194,7 @@ export class ActorRuntimeTree {
 			const node = this.node(guest, parent, i - 1, 'state', child, machine, component, id, active);
 			this.states(guest, node, machine, component);
 		}
-		this.finishChildren(parent, ids.arrayLength);
+		this.finishChildren(parent, ids.arrayLength, true);
 	}
 }
 

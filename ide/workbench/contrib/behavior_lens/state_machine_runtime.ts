@@ -20,13 +20,15 @@ export function findStateMachineState(
 	const component = findRuntimeComponent(sources, guest, domain, 'cartlib/fsm/fsm_component', componentHashId);
 	if (component === undefined) return undefined;
 	let result: { machine: StateMachineInstance; state: Table } | undefined;
-	guest.visitTableEntries(guest.readStringMember(component, '_machines_by_id'), (_key, value) => {
-		const machine = value as Table;
-		if (machine.hashId !== machineHashId) return;
+	const machines = guest.readStringMember(component, '_machines') as Table;
+	for (let index = 1; index <= machines.arrayLength; index++) {
+		const machine = machines.getInteger(index) as Table;
+		if (machine.hashId !== machineHashId) continue;
 		visitStateMachineHierarchy(guest, machine, state => {
 			if (state.hashId === stateHashId) result = { machine: { component, machine }, state };
 		});
-	});
+		break;
+	}
 	return result;
 }
 
@@ -44,9 +46,11 @@ function stateMachineStateChoice(guest: SuspendedGuestSession, state: Table): St
 export function readStateMachineInstances(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain) {
 	const items: StateMachineInstanceChoice[] = [];
 	const available = visitRuntimeComponents(sources, guest, domain, 'cartlib/fsm/fsm_component', component => {
-		guest.visitTableEntries(guest.readStringMember(component, '_machines_by_id'), (key, machine) => {
-			items.push(stateMachineInstanceChoice(guest, component, key, machine as Table));
-		});
+		const machines = guest.readStringMember(component, '_machines') as Table;
+		for (let index = 1; index <= machines.arrayLength; index++) {
+			const machine = machines.getInteger(index) as Table;
+			items.push(stateMachineInstanceChoice(guest, component, guest.readStringMember(machine, 'localdef_id'), machine));
+		}
 	});
 	return { available, items };
 }

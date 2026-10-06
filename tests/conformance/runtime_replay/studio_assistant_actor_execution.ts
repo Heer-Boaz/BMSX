@@ -71,14 +71,14 @@ export async function runAssistantActorExecution(kind: StudioRendererKind, canva
 	check(operation.result!.status === 'completed' && guest.global('actor_tool_progress') === 10000000,
 		'continuation completes the original bounded loop');
 	await test.clickTab(lab.id); await frame();
-	await test.click(lab.actionBar.items.find(item => item.command === 'actorLab.spawn')!.bounds); await press('Enter');
+	await runPaletteCommand('Actor Lab: Spawn Registered Prefab'); await press('Enter');
 	await press('ControlLeft', 'KeyA'); await test.clipboard.writeText("{ id = 'manual', pos = { x = 123, y = 456 } }");
 	await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => service.active === undefined && test.tasks.ready && !ide.debugger.plans.mutationActive, 'Actor execution: ordinary spawn finishes');
 	await frame();
 	check(lab.runtime.roots[0].label === 'manual' && guest.readStringMember(lab.runtime.roots[0].value, 'x') === 123,
 		'ordinary spawn uses the selected definition and returns the actual World member');
-	await test.click(lab.actionBar.items.find(item => item.command === 'actorLab.actions')!.bounds); await press('Enter');
+	await runPaletteCommand('Actor Lab: Instance Actions'); await press('Enter');
 	await press('ControlLeft', 'KeyA'); await test.clipboard.writeText('124, 457, 0'); await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => service.active === undefined && test.tasks.ready && !ide.debugger.plans.mutationActive, 'Actor execution: ordinary action returns');
 	await frame();
@@ -86,7 +86,7 @@ export async function runAssistantActorExecution(kind: StudioRendererKind, canva
 		&& guest.readStringMember(guest.global('actor_tool_first'), 'x') === 17, 'ordinary action picker executes the shared catalog on its own target');
 	const eventLine = ACTOR_EXECUTION_SOURCE.split('\n').findIndex(line => line.includes('on_probe = function')) + 1;
 	ide.debugger.breakpoints.set({ domain: 0, path: 'cart.lua' }, [eventLine]);
-	await test.click(lab.actionBar.items.find(item => item.command === 'actorLab.emit')!.bounds);
+	await runPaletteCommand('Actor Lab: Emit Event');
 	await test.clipboard.writeText('probe_event'); await press('ControlLeft', 'KeyV'); await press('Enter');
 	await press('ControlLeft', 'KeyA'); await test.clipboard.writeText('{ value = 77 }'); await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => service.paused && ide.debugger.source.stop !== undefined, 'Actor execution: ordinary event reaches its breakpoint');

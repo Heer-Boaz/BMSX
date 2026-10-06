@@ -173,7 +173,7 @@ export function findMeasuredPrefixEnd(text: string, maxWidth: number, measureRan
 	return best;
 }
 
-export function truncateMeasuredText(text: string, maxWidth: number, measureRange: TextRangeMeasure, marker = '...'): string {
+export function truncateMeasuredText(text: string, maxWidth: number, measureRange: TextRangeMeasure, marker = '...', placement: 'end' | 'middle' = 'end'): string {
 	if (maxWidth <= 0) {
 		return '';
 	}
@@ -185,7 +185,19 @@ export function truncateMeasuredText(text: string, maxWidth: number, measureRang
 		return '';
 	}
 	const bodyWidth = maxWidth - markerWidth;
-	return text.slice(0, findMeasuredPrefixEnd(text, bodyWidth, measureRange)) + marker;
+	if (placement === 'end') return text.slice(0, findMeasuredPrefixEnd(text, bodyWidth, measureRange)) + marker;
+	// Identifiers need their distinguishing suffix as well as their namespace.
+	let prefix = findMeasuredPrefixEnd(text, bodyWidth / 2, measureRange);
+	if (prefix > 0 && text.codePointAt(prefix - 1)! > 0xffff) prefix--;
+	const suffixWidth = bodyWidth - measureRange(text, 0, prefix);
+	let low = prefix, high = text.length;
+	while (low < high) {
+		const mid = (low + high) >>> 1;
+		if (measureRange(text, mid, text.length) <= suffixWidth) high = mid;
+		else low = mid + 1;
+	}
+	if (low > 0 && text.codePointAt(low - 1)! > 0xffff) low++;
+	return text.slice(0, prefix) + marker + text.slice(low);
 }
 
 export function appendMeasuredTruncationMarker(text: string, maxWidth: number, measureRange: TextRangeMeasure, marker = '...'): string {

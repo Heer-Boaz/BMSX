@@ -11,18 +11,24 @@ import { ActorTimelineLayout } from './timeline_layout';
 import { create_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { GuestInvalidationReason } from '../../../runtime/suspended_guest';
 import type { ActorStateGraph } from './state_graph';
+import { ActorActivityFollow } from './activity_follow';
+import type { ActorNodeIdentity } from './target';
 
 /** View state only. Borrowed rows are released before guest execution. */
 export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'> {
 	public get resource(): undefined { return undefined; }
 	public domain: ResourceDomain = 0;
 	public actorHashId = 0;
+	public actorPresent = false;
+	public historical = false;
 	public running = false;
-	public selectionHashId = 0;
+	public selectionPath: readonly ActorNodeIdentity[] | undefined;
 	public dirty = true;
 	public status = 'CHOOSE A RUNNING ACTOR';
 	public readonly runtime = new ActorRuntimeTree();
 	public stateGraph: ActorStateGraph | undefined;
+	public presentation: 'outline' | 'graph' = 'outline';
+	public readonly follow = new ActorActivityFollow();
 	public readonly outline = new ScrollableWorkbenchTree<ActorRow>();
 	public readonly timeline = new ActorTimelineTransport();
 	public readonly timelineLayout = new ActorTimelineLayout();
@@ -38,19 +44,33 @@ export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'>
 		this.onWillDispose(() => this.runtime.dispose());
 	}
 	public invalidate(reason: GuestInvalidationReason = 'execution'): void {
-		const selected = this.outline.rows[this.outline.selectionIndex];
-		if (selected !== undefined) this.selectionHashId = selected.element.node.hashId;
 		this.runtime.release();
 		if (reason !== 'execution') {
 			this.timeline.clear();
 			this.running = false;
+			this.follow.pending = undefined;
 		}
+		if (reason === 'history-restored') this.historical = true;
 		if (reason === 'heap-replaced') {
 			this.stateGraph?.retire(reason);
-			this.runtime.roots.length = 0;
-			this.actorHashId = 0; this.selectionHashId = 0;
+			this.runtime.dispose();
+			this.follow.stop(); this.actorPresent = false; this.historical = false;
+			this.actorHashId = 0; this.selectionPath = undefined;
 			this.outline.roots.length = 0; this.outline.rows.length = 0; this.outline.selectionIndex = -1;
 		}
 		this.dirty = true;
+	}
+	/** Explicit view navigation records membership once, never on each CPU slice. */
+	public rememberSelection(): void {
+		let row = this.outline.rows[this.outline.selectionIndex];
+		if (row === undefined) { this.selectionPath = undefined; return; }
+		const path: ActorNodeIdentity[] = [];
+		for (;;) {
+			const node = row.element.node;
+			path.push({ hashId: node.hashId, kind: node.kind, key: node.keyIdentity });
+			if (row.parent === null) break;
+			row = row.parent;
+		}
+		this.selectionPath = path.reverse();
 	}
 }

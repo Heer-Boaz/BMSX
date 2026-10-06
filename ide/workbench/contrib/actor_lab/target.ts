@@ -34,8 +34,12 @@ export function captureActorTarget(domain: ResourceDomain, worldHashId: number, 
 
 /** Reordering is allowed; replacing membership, role or a typed key is not. */
 export function resolveActorTarget(roots: readonly ActorNode[], target: ActorTarget, guest: SuspendedGuestSession): ActorNode | undefined {
+	return resolveActorPath(roots, target.path, guest);
+}
+
+export function resolveActorPath(roots: readonly ActorNode[], path: readonly ActorNodeIdentity[], guest: SuspendedGuestSession): ActorNode | undefined {
 	let nodes = roots, found: ActorNode | undefined;
-	for (const identity of target.path) {
+	for (const identity of path) {
 		found = undefined;
 		for (const node of nodes) {
 			if (node.hashId !== identity.hashId || node.kind !== identity.kind || !guest.matchesIdentity(node.key, identity.key)) continue;

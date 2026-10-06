@@ -10,7 +10,7 @@ import type { LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor_input';
 import { ActorProjection, readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
 import { ActorRuntimeInspection } from '../../ide/workbench/contrib/actor_lab/runtime_inspection';
-import { captureActorTarget, resolveActorTarget } from '../../ide/workbench/contrib/actor_lab/target';
+import { captureActorTarget, resolveActorPath, resolveActorTarget } from '../../ide/workbench/contrib/actor_lab/target';
 import { WorkspaceRuntimeTools } from '../../ide/workbench/services/assistant/runtime_tools';
 import { decodeActorToolRequest } from '../../ide/workbench/services/assistant/actor_tool_protocol';
 import { parseLuaChunk, runCompletionClosure } from './cpu_test_harness';
@@ -18,15 +18,16 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
 import { ActorStateGraph } from '../../ide/workbench/contrib/actor_lab/state_graph';
-import { runtimeWorld } from '../../ide/workbench/contrib/actor_lab/runtime';
+import { ActorRuntimeTree, runtimeWorld } from '../../ide/workbench/contrib/actor_lab/runtime';
+import type { Table } from '../../machine/ts/machine/cpu/table';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 
 /** Compiled guest representations, not JS table mocks. Actual cartlib construction is tested in the browser workflow. */
 const WORLD_SOURCE = `local fsm<const> = require('cartlib/fsm/fsm_component')
 local state<const> = { definition = { on = {} }, states = {}, state_ids = {}, data = { answer = 42 } }
 local concurrent<const> = { definition = { on = {}, is_concurrent = true }, states = {}, state_ids = {} }
-local machine<const> = { definition = { on = {} }, states = { idle = state, concurrent = concurrent }, state_ids = { 'idle', 'concurrent' }, current_id = 'idle' }
-local component<const> = { id = 'states', enabled = true, _parent_component_index = 1, _started = true, _machines_by_id = { same = machine } }
+local machine<const> = { localdef_id = 'same', definition = { on = {} }, states = { idle = state, concurrent = concurrent }, state_ids = { 'idle', 'concurrent' }, current_id = 'idle' }
+local component<const> = { id = 'states', enabled = true, _parent_component_index = 1, _started = true, _machines = { machine }, _machines_by_id = { same = machine } }
 local impostor<const> = { id = 'FSM states', enabled = true, _parent_component_index = 2, _machines_by_id = {} }
 local actor<const> = { id = 1, definition_id = 'same', active = true, _components = { component, impostor }, _components_by_class = { [fsm] = { component } } }
 local second<const> = { id = '1', definition_id = 'same', active = false, _components = {}, _components_by_class = {} }
@@ -39,8 +40,9 @@ function rename() probe.id = 'renamed' end
 function remove() probe._components[2] = nil end
 return world`;
 
-function fixture(entry = ENTRY, run = true) {
-	const modules = [{ path: 'cartlib/world/world', source: WORLD_SOURCE }, { path: 'cartlib/fsm/fsm_component', source: 'return {}' }]
+function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE) {
+	const modules = [{ path: 'cartlib/world/world', source: worldSource }, { path: 'cartlib/fsm/fsm_component', source: 'return {}' },
+		{ path: 'cartlib/timeline/timeline_component', source: 'return {}' }, { path: 'cartlib/actioneffects/actioneffect_component', source: 'return {}' }]
 		.map(module => ({ ...module, chunk: parseLuaChunk(module.source, `${module.path}.lua`) }));
 	const chunk = parseLuaChunk(entry, 'entry.lua');
 	const compiled = compileLuaChunkToProgram(chunk, selectLuaProgramModules(chunk, modules, []), { entrySource: entry, programDomain: 'system', optLevel: 0 });
@@ -62,12 +64,13 @@ function disable() probe._components[1].enabled = false end
 function rename_machine()
 	local machines = probe._components[1]._machines_by_id
 	machines.renamed = machines.same
+	machines.renamed.localdef_id = 'renamed'
 	machines.same = nil
 end
 return world`));
 	t.after(() => f.stop.dispose());
 	const input = new ActorLabInput(), choice = readActorChoices(f.sources, f.guest, -1)[0];
-	input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = choice.hashId;
+	input.domain = choice.domain; input.actorHashId = choice.hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest); projection.update();
 	const machine = input.runtime.roots[0].children[0].children[0], font = new Font({ variant: 'tiny' });
 	const target = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, input.runtime.roots, machine, f.guest);
@@ -85,7 +88,7 @@ return world`));
 	runCompletionClosure(cpu, f.guest.global('move') as Closure, []); projection.update(); graph.layout(font);
 	assert.strictEqual(graph.viewport.model, model); assert.equal(measurements, 0);
 	assert.strictEqual(graph.viewport.selection, nodes[1]);
-	assert.equal(nodes[1].active, false); assert.equal(nodes[2].active, true);
+	assert.equal(nodes.find(node => node.name === 'idle')!.active, false); assert.equal(nodes.find(node => node.name === 'concurrent')!.active, true);
 	const scroll = [graph.viewport.scrollX, graph.viewport.scrollY];
 	input.invalidate(); f.guest.invalidate();
 	runCompletionClosure(cpu, f.guest.global('disable') as Closure, []); projection.update(); graph.layout(font);
@@ -101,10 +104,14 @@ return world`));
 		'font relayout preserves the selected physical relationship');
 	input.invalidate(); f.guest.invalidate();
 	runCompletionClosure(cpu, f.guest.global('rename_machine') as Closure, []); projection.update(); graph.layout(font);
-	assert.equal(graph.status, 'missing'); assert.equal(graph.viewport.selection, null);
-	assert.equal(graph.viewport.model.nodes.length, 0, 'another key cannot take over the same physical table');
+	assert.equal(graph.status, 'missing'); assert.equal(graph.selectedTarget, undefined);
+	assert.equal(graph.viewport.model.nodes.length, 3, 'missing membership retains only display geometry');
+	assert.ok(graph.viewport.model.nodes.every(node => !node.active), 'missing membership cannot retain live activity');
 	input.invalidate('history-restored'); cpu.restoreRuntimeState(alive); projection.update(); graph.layout(font);
-	assert.equal(graph.status, 'missing', 'retired membership needs an explicit new selection');
+	assert.equal(graph.status, 'available', 'history restores the original typed membership');
+	graph.retire('missing'); graph.layout(font);
+	input.invalidate('history-restored'); cpu.restoreRuntimeState(alive); projection.update(); graph.layout(font);
+	assert.equal(graph.status, 'missing', 'a retired live-branch membership needs an explicit new selection');
 	input.dispose();
 });
 
@@ -115,21 +122,53 @@ machine.state_ids[3] = 'alias'
 return world`));
 	t.after(() => f.stop.dispose());
 	const input = new ActorLabInput(), choice = readActorChoices(f.sources, f.guest, -1)[0];
-	input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = choice.hashId;
+	input.domain = choice.domain; input.actorHashId = choice.hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest); projection.update();
 	const machine = input.runtime.roots[0].children[0].children[0], font = new Font({ variant: 'tiny' });
 	const target = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, input.runtime.roots, machine, f.guest);
 	const graph = input.stateGraph = new ActorStateGraph(target, font);
 	graph.refresh(input.runtime.roots, f.guest); graph.layout(font);
 	const nodes = graph.viewport.model.nodes;
-	assert.equal(nodes[1].hashId, nodes[3].hashId);
-	assert.equal(nodes[1].active, true); assert.equal(nodes[3].active, false);
-	graph.viewport.selection = nodes[3];
+	const idle = nodes.find(node => node.name === 'idle')!, alias = nodes.find(node => node.name === 'alias')!;
+	assert.equal(idle.hashId, alias.hashId);
+	assert.equal(idle.active, true); assert.equal(alias.active, false);
+	graph.viewport.selection = alias;
 	const selected = graph.selectedTarget!;
-	assert.strictEqual(resolveActorTarget(input.runtime.roots, selected, f.guest), machine.children[2]);
+	assert.strictEqual(resolveActorTarget(input.runtime.roots, selected, f.guest), machine.children.find(node => node.name === 'alias'));
 	graph.layout(new Font({ variant: 'msx' }));
 	assert.strictEqual(graph.selectedTarget, selected);
 	input.dispose();
+});
+
+test('outline selection follows typed membership across graph return, topology changes and history gaps', t => {
+	const f = fixture(ENTRY.replace('return world', `local machine = probe._components[1]._machines[1]
+machine.states.alias = machine.states.idle
+machine.state_ids[3] = 'alias'
+function add_alias() machine.states.earlier = machine.states.idle; machine.state_ids[4] = 'earlier' end
+function remove_idle() machine.states.idle = nil; machine.state_ids = { 'concurrent', 'alias' } end
+return world`));
+	t.after(() => f.stop.dispose());
+	const input = new ActorLabInput(); t.after(() => input.dispose());
+	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
+	const projection = new ActorProjection(input, f.sources, f.guest); projection.update();
+	const machine = input.runtime.roots[0].children[0].children[0], cpu = f.runtime.machine.cpu;
+	const target = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, input.runtime.roots, machine, f.guest);
+	const graph = input.stateGraph = new ActorStateGraph(target, new Font({ variant: 'tiny' }));
+	graph.refresh(input.runtime.roots, f.guest); graph.layout(new Font({ variant: 'tiny' }));
+	graph.viewport.selection = graph.viewport.model.nodes.find(node => node.name === 'idle')!;
+	const selected = resolveActorTarget(input.runtime.roots, graph.selectedTarget!, f.guest)!;
+	assert.equal(machine.children.filter(node => node.hashId === selected.hashId).length, 2);
+	projection.reveal(selected);
+	const row = input.outline.rows[input.outline.selectionIndex];
+	assert.strictEqual(row.element.node, selected, 'return from graph selects the actual membership, not its first table alias');
+	input.invalidate(); runCompletionClosure(cpu, f.guest.global('add_alias') as Closure, []); projection.update();
+	assert.strictEqual(input.outline.rows[input.outline.selectionIndex], row);
+	const alive = cpu.captureRuntimeState();
+	input.invalidate('history-restored'); runCompletionClosure(cpu, f.guest.global('remove_idle') as Closure, []); projection.update();
+	assert.equal(input.outline.selectionIndex, -1, 'a surviving alias is not a replacement selection');
+	assert.notEqual(input.selectionPath, undefined);
+	input.invalidate('history-restored'); cpu.restoreRuntimeState(alive); projection.update();
+	assert.equal(input.outline.rows[input.outline.selectionIndex].element.node.path, selected.path);
 });
 
 test('World pages retain typed identities; Actor Lab and tool trees consume real class indices, not names', t => {
@@ -149,7 +188,7 @@ test('World pages retain typed identities; Actor Lab and tool trees consume real
 	assert.equal(tree.nodes.at(-1)!.children, 0, 'a class-shaped/named table is still a generic component');
 	assert.equal(tree.nodes.find(node => node.label === 'concurrent')!.activity.value, true);
 	const choices = readActorChoices(f.sources, f.guest, f.stop.state.activeCartridge), input = new ActorLabInput();
-	input.domain = choices[0].domain; input.actorHashId = choices[0].hashId; input.selectionHashId = input.actorHashId;
+	input.domain = choices[0].domain; input.actorHashId = choices[0].hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest);
 	assert.equal(projection.update(), true);
 	assert.deepEqual(input.outline.rows.map(row => row.element.node.kind), tree.nodes.map(node => node.kind));
@@ -167,7 +206,7 @@ test('tree paging and repeated detail reads do not repeat semantic traversal or 
 	const first = f.actors.tree(actor, 0, 3), visited = visits, rest = f.actors.tree(actor, 3, 10);
 	assert.equal(visits, visited); assert.equal(first.total, first.nodes.length + rest.nodes.length);
 	assert.equal(first.nodes[2].parent, first.nodes[1].reference);
-	const state = f.actors.read(rest.nodes.find(node => node.kind === 'state')!.reference), detailed = visits;
+	const state = f.actors.read(rest.nodes.find(node => node.label === 'idle')!.reference), detailed = visits;
 	assert.strictEqual(f.actors.read(state.reference).properties, state.properties);
 	assert.equal(visits, detailed);
 	const fields = f.stop.read(state.object.reference!, 0, 100).entries;
@@ -185,7 +224,7 @@ test('operation identities preserve guest tags and typed membership without reta
 		assert.equal(guest.matchesIdentity(candidates[i], identities[j]), i === j);
 	}
 	const choices = readActorChoices(f.sources, guest, -1), input = new ActorLabInput();
-	input.domain = -1; input.actorHashId = choices[0].hashId; input.selectionHashId = input.actorHashId;
+	input.domain = -1; input.actorHashId = choices[0].hashId;
 	const projection = new ActorProjection(input, f.sources, guest); projection.update();
 	const selected = input.runtime.roots[0].children[0].children[0].children[0];
 	const target = captureActorTarget(-1, 123, input.runtime.roots, selected, guest);
@@ -249,7 +288,7 @@ for (const reason of ['execution', 'history-restored', 'heap-replaced'] as const
 
 test('ordinary pane retains stable rows, refreshes changed labels, releases detached branches and clears identities after machine replacement', () => {
 	const f = fixture(), choice = readActorChoices(f.sources, f.guest, f.stop.state.activeCartridge)[0], input = new ActorLabInput();
-	input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = input.actorHashId;
+	input.domain = choice.domain; input.actorHashId = choice.hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest);
 	projection.update();
 	const rows = input.outline.rows.slice();
@@ -298,22 +337,22 @@ test('hidden Actor Lab releases borrows once, without revisiting an already rele
 test('explicit Actor Lab navigation reveals a retained child through collapsed ancestors', t => {
 	const f = fixture(); t.after(() => f.stop.dispose());
 	const choice = readActorChoices(f.sources, f.guest, -1)[0], input = new ActorLabInput();
-	input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = input.actorHashId;
+	input.domain = choice.domain; input.actorHashId = choice.hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest);
 	projection.update();
 	const root = input.outline.roots[0], selected = root.children[0].children[0].children[0];
 	root.collapsed = true; root.children[0].collapsed = true;
 	assert.equal(projection.update(), false, 'changing selection is independent of guest topology');
-	assert.equal(projection.reveal(selected.element.node.hashId), true);
+	assert.equal(projection.reveal(selected.element.node), true);
 	assert.strictEqual(input.outline.rows[input.outline.selectionIndex], selected);
 	assert.equal(root.collapsed, false); assert.equal(root.children[0].collapsed, false);
-	assert.equal(input.selectionHashId, selected.element.node.hashId);
+	assert.strictEqual(resolveActorPath(input.runtime.roots, input.selectionPath!, f.guest), selected.element.node);
 	input.invalidate(); f.guest.invalidate('execution'); projection.update();
 	assert.strictEqual(input.outline.rows[input.outline.selectionIndex], selected);
 	input.dispose();
 });
 
-test('history selection borrows restored objects and ends when its actor or child is absent', () => {
+test('history selection borrows restored objects and retires unavailable bookmarks before branching', () => {
 	const f = fixture(ENTRY.replace('return world', `function add()
 	probe._components[3] = { id = 'late', enabled = true, _parent_component_index = 3 }
 end
@@ -321,10 +360,10 @@ return world`), false), cpu = f.runtime.machine.cpu;
 	const beforeBirth = cpu.captureRuntimeState();
 	cpu.runUntilDepth(0, 100_000);
 	const input = new ActorLabInput(), choice = readActorChoices(f.sources, f.guest, -1)[0];
-	input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionHashId = input.actorHashId;
+	input.domain = choice.domain; input.actorHashId = choice.hashId;
 	const projection = new ActorProjection(input, f.sources, f.guest);
 	projection.update();
-	input.outline.selectionIndex = 3;
+	input.outline.selectionIndex = 3; input.rememberSelection();
 	const selected = input.outline.rows[3], original = selected.element.node.value;
 	const alive = cpu.captureRuntimeState();
 	input.invalidate('history-restored');
@@ -337,13 +376,14 @@ return world`), false), cpu = f.runtime.machine.cpu;
 	input.invalidate();
 	runCompletionClosure(cpu, f.guest.global('add') as Closure, []);
 	projection.update();
-	input.outline.selectionIndex = input.outline.rows.length - 1;
+	input.outline.selectionIndex = input.outline.rows.length - 1; input.rememberSelection();
 	const futureHash = input.outline.rows[input.outline.selectionIndex].element.node.hashId;
 	input.invalidate('history-restored');
 	cpu.restoreRuntimeState(alive);
 	projection.update();
 	assert.equal(input.actorHashId, choice.hashId);
 	assert.equal(input.outline.selectionIndex, -1, 'the actor survives, but its missing child has no replacement selection');
+	projection.resumeHistory();
 	input.invalidate();
 	runCompletionClosure(cpu, f.guest.global('add') as Closure, []);
 	projection.update();
@@ -352,6 +392,9 @@ return world`), false), cpu = f.runtime.machine.cpu;
 	input.invalidate('history-restored');
 	cpu.restoreRuntimeState(beforeBirth);
 	projection.update();
+	assert.equal(input.actorPresent, false);
+	assert.equal(input.actorHashId, choice.hashId, 'history retains the pinned identity, not actionable stale data');
+	projection.resumeHistory();
 	assert.equal(input.actorHashId, 0);
 	assert.equal(input.outline.rows.length, 0);
 	cpu.runUntilDepth(0, 100_000);
@@ -400,4 +443,179 @@ return world`));
 	const actorFields = f.stop.read(actor.object.reference!, 0, 100).entries;
 	assert.deepEqual(actorFields.find(entry => entry.key.display === 'active')!.value, { kind: 'number', display: '0' });
 	f.stop.dispose();
+});
+
+test('actor runtime retains source membership separately from stable human-facing order', t => {
+	const source = WORLD_SOURCE.replace('local fsm<const>', `local timelines<const> = require('cartlib/timeline/timeline_component')
+local effects<const> = require('cartlib/actioneffects/actioneffect_component')
+local fsm<const>`).replace('actor.self = actor', `actor.self = actor
+local other<const> = { localdef_id = 'alpha', definition = { on = {} }, states = {}, state_ids = {} }
+machine.localdef_id = 'zulu'
+component._machines = { machine, other }
+component._machines_by_id = { zulu = machine, alpha = other }
+local timeline<const> = { id = 'times', enabled = true, _parent_component_index = 3, _entries_by_id = {
+	zulu = { playing = false }, alpha = { playing = true }, [1] = { playing = false }, ['1'] = { playing = false },
+} }
+local effect<const> = { id = 'effects', enabled = true, _parent_component_index = 4, effects = {
+	zulu = { active_count = 0 }, alpha = { active_count = 1 },
+} }
+actor._components[3] = timeline
+actor._components[4] = effect
+actor._components_by_class[timelines] = { timeline }
+actor._components_by_class[effects] = { effect }`);
+	const entry = ENTRY.replace('return world', `function activity()
+	probe._components[1]._machines[1].current_id = nil
+	probe._components[3]._entries_by_id.zulu.playing = true
+end
+function reorder()
+	local component = probe._components[1]
+	component._machines[1], component._machines[2] = component._machines[2], component._machines[1]
+	local machine = component._machines[2]
+	machine.state_ids[1], machine.state_ids[2] = machine.state_ids[2], machine.state_ids[1]
+end
+function insert()
+	probe._components[3]._entries_by_id.earlier = { playing = false }
+end
+function remove_timeline()
+	probe._components[3]._entries_by_id.earlier = nil
+end
+function change_key_type()
+	local entries = probe._components[3]._entries_by_id
+	entries[1], entries['1'] = entries['1'], entries[1]
+end
+return world`);
+	const f = fixture(entry, true, source); t.after(() => f.stop.dispose());
+	const tree = new ActorRuntimeTree(); t.after(() => tree.dispose());
+	const update = () => tree.update(f.sources, f.guest, -1, f.guest.global('probe') as Table);
+	const call = (name: string) => {
+		tree.release(); f.guest.invalidate();
+		runCompletionClosure(f.runtime.machine.cpu, f.guest.global(name) as Closure, []);
+		return update();
+	};
+	assert.equal(update(), true);
+	const root = tree.roots[0], component = root.children[0], machine = component.children[0], timeline = root.children[2], effects = root.children[3];
+	assert.deepEqual(component.children.map(node => node.name), ['zulu', 'alpha'], 'machine factories own machine order');
+	assert.deepEqual(machine.children.map(node => node.name), ['concurrent', 'idle']);
+	const ids = f.guest.readStringMember(machine.value, 'state_ids') as Table;
+	assert.deepEqual([ids.getInteger(1), ids.getInteger(2)].map(value => f.guest.formatValue(value)), ['idle', 'concurrent'], 'display order does not rewrite runtime traversal');
+	assert.deepEqual(timeline.children.map(node => node.name), ['1', '1', 'alpha', 'zulu']);
+	assert.notDeepEqual(timeline.children[0].keyIdentity, timeline.children[1].keyIdentity, 'equal labels retain distinct guest keys');
+	assert.deepEqual(effects.children.map(node => node.name), ['alpha', 'zulu']);
+	const stateNodes = machine.children.slice(), timelineNodes = timeline.children.slice(), revisions = [tree.topologyRevision, tree.activityRevision];
+	let sorts = 0;
+	const originalSort = machine.children.sort, format = t.mock.method(f.guest, 'formatValue');
+	Object.defineProperty(machine.children, 'sort', { configurable: true, value: (compare: Parameters<typeof originalSort>[0]) => {
+		sorts++; return originalSort.call(machine.children, compare);
+	} });
+	t.after(() => Reflect.deleteProperty(machine.children, 'sort'));
+	assert.equal(update(), false);
+	assert.equal(call('activity'), false);
+	assert.equal(tree.topologyRevision, revisions[0]); assert.equal(tree.activityRevision, revisions[1] + 1);
+	assert.equal(sorts, 0); assert.equal(format.mock.callCount(), 0, 'activity-only refresh does not reformat keys');
+	assert.equal(call('reorder'), true);
+	assert.strictEqual(component.children[1], machine);
+	assert.ok(stateNodes.every((node, index) => node === machine.children[index]), 'runtime ordering changes retain physical nodes');
+	assert.equal(call('insert'), true);
+	assert.deepEqual(timeline.children.map(node => node.name), ['1', '1', 'alpha', 'earlier', 'zulu']);
+	assert.ok(timelineNodes.every(node => timeline.children.includes(node)), 'inserting a sibling cannot replace retained instances');
+	const removed = timeline.children[3];
+	assert.equal(call('remove_timeline'), true);
+	assert.equal(removed.value, null); assert.equal(removed.key, null);
+	assert.ok(timelineNodes.every((node, index) => node === timeline.children[index]));
+	assert.equal(call('change_key_type'), true);
+	assert.ok(!timeline.children.includes(timelineNodes[0]) && !timeline.children.includes(timelineNodes[1]), 'typed membership changes retire nodes even when labels match');
+	assert.ok(timeline.children.includes(timelineNodes[2]) && timeline.children.includes(timelineNodes[3]));
+});
+
+
+test('active reveal expands all parallel paths without replacing inspection selection or rebuilding unchanged activity', t => {
+	const f = fixture(ENTRY.replace('return world', `function move() probe._components[1]._machines[1].current_id = nil end
+return world`));
+	t.after(() => f.stop.dispose());
+	const input = new ActorLabInput(); t.after(() => input.dispose());
+	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
+	const projection = new ActorProjection(input, f.sources, f.guest);
+	projection.update();
+	const outline = input.outline;
+	outline.updateLayout(0, 0, 160, 30, 10, 8);
+	const machine = input.runtime.roots[0].children[0].children[0];
+	const inspected = outline.rows.find(row => row.element.node.kind === 'component' && row.element.node.prefix === 'COMPONENT')!;
+	outline.selectionIndex = outline.rows.indexOf(inspected);
+	input.rememberSelection();
+	const machineRow = outline.rows.find(row => row.element.node === machine)!;
+	machineRow.collapsed = true;
+	const target = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, input.runtime.roots, machine, f.guest);
+	input.follow.start(target);
+	projection.update();
+	assert.equal(projection.revealActive(machine), true);
+	outline.updateLayout(0, 0, 160, 30, 10, 8); projection.layout();
+	assert.equal(machineRow.collapsed, false);
+	assert.strictEqual(outline.rows[outline.selectionIndex], inspected);
+	const active = outline.rows.filter(row => row.element.node.kind === 'state' && row.element.node.active);
+	assert.equal(active.length, 2);
+	assert.ok(active.every(row => outline.rows.indexOf(row) >= outline.scroll && outline.rows.indexOf(row) < outline.scroll + outline.layout.visibleRowCount));
+	const rows = outline.rows.slice(); input.follow.pending = undefined;
+	projection.update();
+	assert.equal(input.follow.pending, undefined);
+	assert.ok(rows.every((row, index) => row === outline.rows[index]));
+	input.invalidate();
+	runCompletionClosure(f.runtime.machine.cpu, f.guest.global('move') as Closure, []);
+	assert.equal(projection.update(), false, 'activity alone does not rebuild topology');
+	assert.strictEqual(input.follow.pending, target);
+	assert.strictEqual(outline.rows[outline.selectionIndex], inspected);
+	input.follow.stop(); projection.update();
+	assert.equal(input.follow.target, undefined); assert.equal(input.follow.pending, undefined);
+});
+
+test('parallel tree follow reveals an active row rather than the inactive gap between them', t => {
+	const f = fixture(ENTRY.replace('return world', `local machine = probe._components[1]._machines[1]
+local first = machine.states.concurrent
+local last = machine.states.idle
+machine.states = { aaa = first, zzz = last }; machine.state_ids = { 'aaa', 'zzz' }; machine.current_id = 'zzz'
+for i = 1, 20 do
+	local key = 'middle_' .. i
+	machine.states[key] = { definition = {}, states = {}, state_ids = {} }
+	machine.state_ids[i + 2] = key
+end
+return world`));
+	t.after(() => f.stop.dispose());
+	const input = new ActorLabInput(); t.after(() => input.dispose());
+	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
+	const projection = new ActorProjection(input, f.sources, f.guest); projection.update();
+	const outline = input.outline;
+	outline.updateLayout(0, 0, 160, 30, 10, 8); projection.layout();
+	projection.reveal(input.runtime.roots[0]); projection.layout();
+	outline.scroll = 8;
+	const selected = outline.rows[outline.selectionIndex];
+	assert.ok(outline.rows.slice(outline.scroll, outline.scroll + 3).every(row => !row.element.node.active));
+	projection.revealActive(input.runtime.roots[0].children[0].children[0]); projection.layout();
+	assert.ok(outline.rows.slice(outline.scroll, outline.scroll + 3).some(row => row.element.node.active));
+	const scroll = outline.scroll;
+	projection.revealActive(input.runtime.roots[0].children[0].children[0]); projection.layout();
+	assert.equal(outline.scroll, scroll); assert.strictEqual(outline.rows[outline.selectionIndex], selected);
+});
+
+test('historical actor absence keeps collapse and follow bookmarks but heap replacement retires them', t => {
+	const f = fixture(ENTRY, false), cpu = f.runtime.machine.cpu;
+	t.after(() => f.stop.dispose());
+	const beforeBirth = cpu.captureRuntimeState(); cpu.runUntilDepth(0, 100_000);
+	const input = new ActorLabInput(); t.after(() => input.dispose());
+	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
+	const projection = new ActorProjection(input, f.sources, f.guest); projection.update();
+	const machine = input.runtime.roots[0].children[0].children[0];
+	const row = input.outline.rows.find(row => row.element.node === machine)!;
+	row.collapsed = true;
+	input.outline.selectionIndex = input.outline.rows.indexOf(row); input.rememberSelection();
+	const target = captureActorTarget(-1, runtimeWorld(f.sources, f.guest, -1)!.hashId, input.runtime.roots, machine, f.guest);
+	input.follow.start(target);
+	const alive = cpu.captureRuntimeState();
+	input.invalidate('history-restored'); cpu.restoreRuntimeState(beforeBirth); projection.update();
+	assert.equal(input.actorPresent, false); assert.strictEqual(input.follow.target, target);
+	assert.equal(row.element.node.value, null);
+	input.invalidate('history-restored'); cpu.restoreRuntimeState(alive); projection.update();
+	assert.equal(input.actorPresent, true); assert.equal(row.collapsed, true);
+	assert.strictEqual(input.outline.rows[input.outline.selectionIndex], row);
+	assert.strictEqual(input.follow.pending, target);
+	input.invalidate('heap-replaced');
+	assert.equal(input.follow.target, undefined); assert.equal(input.actorHashId, 0);
 });

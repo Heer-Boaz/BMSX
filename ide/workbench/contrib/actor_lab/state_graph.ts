@@ -1,4 +1,5 @@
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
+import { create_rect_bounds, write_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { createWorkbenchGraphModel, createWorkbenchGraphNode, createWorkbenchTreeEdge, type WorkbenchGraphEdge, type WorkbenchGraphModel } from '../../ui/graph/model';
 import { layoutWorkbenchTree } from '../../ui/graph/tree_layout';
@@ -37,6 +38,9 @@ export class ActorStateGraph {
 	private root: StateNode | undefined;
 	private dirty = true;
 	private target: ActorTarget | undefined;
+	private selectionTarget: ActorTarget | undefined;
+	private selectionKind: 'node' | 'edge' = 'node';
+	private readonly activeBounds = create_rect_bounds();
 	public constructor(target: ActorTarget, font: BFont) {
 		this.target = target;
 		this.viewport = new WorkbenchGraphViewport(createWorkbenchGraphModel<StateNode, StateEdge>(font, [], []));
@@ -46,7 +50,12 @@ export class ActorStateGraph {
 	public refresh(roots: readonly ActorNode[], guest: SuspendedGuestSession): void {
 		if (this.target === undefined) return;
 		const machine = resolveActorTarget(roots, this.target, guest);
-		if (machine === undefined) { this.retire('missing'); return; }
+		if (machine === undefined) {
+			if (this.status !== 'missing') for (const node of this.viewport.model.nodes) node.active = false;
+			this.status = 'missing';
+			return;
+		}
+		this.status = 'available';
 		if (this.root === undefined || this.root.name !== machine.name) this.title = `LIVE FSM / ${machine.name}`;
 		this.root = this.reconcile(machine, this.root, undefined, guest);
 	}
@@ -54,7 +63,14 @@ export class ActorStateGraph {
 	public retire(status: 'missing' | 'heap-replaced'): void {
 		this.target = undefined; this.status = status; this.root = undefined;
 		this.viewport.selection = null;
+		this.selectionTarget = undefined;
 		this.dirty = true;
+	}
+
+	/** A new live branch keeps current membership, not selections from discarded future frames. */
+	public resumeHistory(): void {
+		if (this.status === 'missing') this.retire('missing');
+		else if (this.viewport.selection === null) this.selectionTarget = undefined;
 	}
 
 	private reconcile(source: ActorNode, previous: StateNode | undefined, parent: StateNode | undefined, guest: SuspendedGuestSession): StateNode {
@@ -79,11 +95,13 @@ export class ActorStateGraph {
 		const viewport = this.viewport;
 		const fontChanged = viewport.model.font !== font;
 		if (!this.dirty && !fontChanged) return;
-		const selected = this.selectedTarget;
-		const selectedKind = viewport.selection?.kind;
+		if (viewport.selection !== null) this.rememberSelection();
+		const selected = this.selectionTarget;
+		const selectedKind = this.selectionKind;
 		const nodes: StateNode[] = [], edges: StateEdge[] = [];
 		const visit = (node: StateNode): void => {
 			if (fontChanged) node.measure(font);
+			if (this.status !== 'available') node.active = false;
 			nodes.push(node);
 			for (const child of node.children) visit(child);
 		};
@@ -101,7 +119,69 @@ export class ActorStateGraph {
 	}
 
 	public get selectedTarget(): ActorTarget | undefined {
+		if (this.status !== 'available') return;
 		const selected = this.viewport.selection;
 		return selected?.kind === 'node' ? selected.target : selected?.child.target;
+	}
+
+	public matchesTarget(target: ActorTarget): boolean {
+		return this.target !== undefined && actorTargetsEqual(this.target, target);
+	}
+
+	/** Explicit input replaces any temporarily unavailable selection bookmark. */
+	public rememberSelection(): void {
+		const selected = this.viewport.selection;
+		this.selectionTarget = selected?.kind === 'node' ? selected.target : selected?.child.target;
+		if (selected !== null) this.selectionKind = selected.kind;
+	}
+
+	public selectTarget(target: ActorTarget): boolean {
+		if (this.status !== 'available') return false;
+		for (const node of this.viewport.model.nodes) {
+			if (!actorTargetsEqual(node.target, target)) continue;
+			this.viewport.selection = node;
+			this.rememberSelection();
+			return true;
+		}
+		return false;
+	}
+
+	/** Follow active path endpoints, not wide ancestors; concurrent endpoints share one reveal region. */
+	public revealActive(scope: ActorTarget): void {
+		if (this.status !== 'available') return;
+		const nodes = this.viewport.model.nodes;
+		let first = 0;
+		while (first < nodes.length && !actorTargetsEqual(nodes[first].target, scope)) first++;
+		if (first === nodes.length) return;
+		let firstActive: StateNode | undefined;
+		let visibleActive = false;
+		const visible = this.viewport.visibleBounds;
+		const bounds = this.activeBounds;
+		for (let index = first; index < nodes.length; index++) {
+			const node = nodes[index];
+			if (index !== first && node.target.path.length <= scope.path.length) break;
+			if (!node.active) continue;
+			let hasActiveChild = false;
+			for (const child of node.children) if (child.active) { hasActiveChild = true; break; }
+			if (hasActiveChild) continue;
+			const nodeBounds = node.bounds;
+			if (nodeBounds.right > visible.left && nodeBounds.left < visible.right
+				&& nodeBounds.top + node.headerHeight > visible.top && nodeBounds.top < visible.bottom) visibleActive = true;
+			if (firstActive === undefined) {
+				write_rect_bounds(bounds, nodeBounds.left, nodeBounds.top, nodeBounds.right, nodeBounds.top + node.headerHeight);
+				firstActive = node;
+			} else {
+				bounds.left = Math.min(bounds.left, nodeBounds.left);
+				bounds.top = Math.min(bounds.top, nodeBounds.top);
+				bounds.right = Math.max(bounds.right, nodeBounds.right);
+				bounds.bottom = Math.max(bounds.bottom, nodeBounds.top + node.headerHeight);
+			}
+		}
+		if (firstActive === undefined) return;
+		this.viewport.revealBounds(bounds);
+		// A large union can overlap only the empty space between concurrent branches.
+		// Keep a visible active branch; otherwise reveal the first endpoint in stable tree order.
+		if (!visibleActive && (bounds.right - bounds.left > visible.right - visible.left
+			|| bounds.bottom - bounds.top > visible.bottom - visible.top)) this.viewport.reveal(firstActive);
 	}
 }

@@ -13,7 +13,7 @@ export function drawActorLab(input: ActorLabInput, playbackState: string, slider
 	const color = colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
 	api.pushClipRect(layout.left, layout.top, layout.right, layout.bottom);
 	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
-	const graph = input.stateGraph;
+	const graph = input.presentation === 'graph' ? input.stateGraph : undefined;
 	renderWorkbenchActionBar(graph === undefined ? input.actionBar : input.stateGraphActions, font);
 	api.blit_text_inline_with_font(graph === undefined ? playbackState : graph.titleLabel, 4, layout.top + 2, 0, color, font);
 	const tree = outline.layout;
@@ -23,14 +23,14 @@ export function drawActorLab(input: ActorLabInput, playbackState: string, slider
 		api.blit_text_inline_with_font('ACTIVE PATH', 12, tree.contentTop + 2, 0, color, font);
 		drawWorkbenchGraph(graph.viewport, graphHover, graphFocused);
 		if (graph.status !== 'available') {
-			api.blit_text_inline_with_font(graph.status === 'missing' ? 'FSM INSTANCE RETIRED' : 'GUEST HEAP REPLACED',
+			api.blit_text_inline_with_font(graph.status === 'missing' ? 'FSM NOT PRESENT AT THIS FRAME' : 'GUEST HEAP REPLACED',
 				8, graph.viewport.bounds.top + 8, 0, color, font);
-			api.blit_text_inline_with_font('SELECT AGAIN IN ACTOR TREE', 8, graph.viewport.bounds.top + 8 + font.lineHeight, 0, color, font);
+			if (graph.status === 'heap-replaced') api.blit_text_inline_with_font('SELECT AGAIN IN ACTOR TREE', 8, graph.viewport.bounds.top + 8 + font.lineHeight, 0, color, font);
 		}
 		api.popClipRect();
 	} else {
 		api.pushClipRect(tree.contentLeft, tree.contentTop, tree.contentRight, tree.contentBottom);
-		for (let visible = 0; visible < tree.visibleRowCount && outline.scroll + visible < outline.rows.length; visible += 1) {
+		for (let visible = 0; input.actorPresent && visible < tree.visibleRowCount && outline.scroll + visible < outline.rows.length; visible += 1) {
 			const index = outline.scroll + visible;
 			const row = outline.rows[index];
 			const top = tree.contentTop + visible * tree.rowHeight;
@@ -40,7 +40,7 @@ export function drawActorLab(input: ActorLabInput, playbackState: string, slider
 			if (row.element.node.active) api.fill_rect(left + tree.indentWidth, top + 3, left + tree.indentWidth + 3, top + 6, 0, colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_STRING);
 			api.blit_text_inline_with_font(row.element.displayLabel, left + tree.indentWidth * 2, top + 2, 0, color, font);
 		}
-		if (outline.rows.length === 0) api.blit_text_inline_with_font(input.status, 4, tree.contentTop + 3, 0, color, font);
+		if (!input.actorPresent || outline.rows.length === 0) api.blit_text_inline_with_font(input.status, 4, tree.contentTop + 3, 0, color, font);
 		api.popClipRect();
 		outline.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
 	}

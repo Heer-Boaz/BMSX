@@ -29,6 +29,8 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	check(picker.visible && picker.model.list.rows.map(row => row.item.label).join(',') === 'first,second', 'ordinary Actor Lab lists actual World membership');
 	await press('Enter'); await frame();
 	const lab = getActiveTab(); if (lab.kind !== 'actor_lab') throw new Error('Actor Lab required');
+	check(lab.outline.rows.length > 0 && lab.outline.rows.every(row => row.element.displayLabel.length > 0),
+		'opening an actor publishes measured, nonempty outline rows');
 	const topology = lab.outline.rows.map(row => ({ label: row.element.node.label, kind: row.element.node.kind, active: row.element.node.active }));
 	const position = cycles(), heap = runtime.machine.cpu.luaHeap.usedBytes(), media = ide.sources.currentBlua32Media, version = source.version;
 	await renderer.capture!('ordinary-tree');
@@ -48,7 +50,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	await press('Enter'); await frame(); await renderer.capture!('ordinary-state-properties'); await press('Escape');
 	// The inspection refactor must preserve ordinary World-bound method execution.
 	await press('Home');
-	await test.click(lab.actionBar.items.find(item => item.command === 'actorLab.call')!.bounds);
+	await runPaletteCommand('Actor Lab: Call Lua Method');
 	await test.clipboard.writeText('set_pos'); await press('ControlLeft', 'KeyV'); await press('Enter');
 	await test.clipboard.writeText('12, 34, 0'); await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => test.tasks.ready && !runtime.completionCallPending() && !ide.debugger.plans.mutationActive,
@@ -86,7 +88,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	historical.dispose();
 	await runPaletteCommand('Actor Lab: Open');
 	check(!picker.visible, 'opening a selected historical actor needs no replacement selection');
-	await test.click(lab.actionBar.items.find(item => item.command === 'actorLab.select')!.bounds);
+	await runPaletteCommand('Actor Lab: Select Running Actor');
 	check(picker.visible && picker.model.list.rows.length === 2, 'ordinary Actor picker also selects the physical restored domain');
 	await press('ArrowDown'); await press('Enter'); await frame();
 	check(lab.outline.rows[0].element.node.label === 'second' && lab.outline.rows.find(row => row.element.node.label === 'nest')!.element.node.active,

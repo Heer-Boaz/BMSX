@@ -24,8 +24,8 @@ export function measureText(text: string): number {
 	return measureTextRange(text, 0, text.length);
 }
 
-export function truncateTextToWidth(text: string, maxWidth: number): string {
-	return truncateMeasuredText(text, maxWidth, measureTextRange);
+export function truncateTextToWidth(text: string, maxWidth: number, placement: 'end' | 'middle' = 'end'): string {
+	return truncateMeasuredText(text, maxWidth, measureTextRange, '...', placement);
 }
 
 export function assertMonospace(): void { // TODO: WTF IS THIS SHIT?!?!?!?!?!?!?!?!! WHY HAS THIS EVER BEEN IMPLEMENTED?!?!?!?!?!?!?!

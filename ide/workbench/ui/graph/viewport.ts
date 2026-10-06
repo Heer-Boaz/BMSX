@@ -145,6 +145,12 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 			(item.kind === 'node' ? bounds.top + item.headerHeight : bounds.bottom) * this.zoomValue, REVEAL_MARGIN);
 	}
 
+	/** Reveal a region without zooming or choosing an item. Oversized ranges keep existing overlap. */
+	public revealBounds(bounds: RectBounds): void {
+		this.horizontalScrollbar.revealRange(bounds.left * this.zoomValue, bounds.right * this.zoomValue, REVEAL_MARGIN);
+		this.verticalScrollbar.revealRange(bounds.top * this.zoomValue, bounds.bottom * this.zoomValue, REVEAL_MARGIN);
+	}
+
 	public hitTest(viewportX: number, viewportY: number): GraphItem<Model> | null {
 		if (!point_in_rect(viewportX, viewportY, this.bounds)) return null;
 		const x = this.viewportToGraphX(viewportX);

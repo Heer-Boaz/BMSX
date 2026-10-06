@@ -45,7 +45,7 @@ export async function testPietiousRoomReload(test: StudioFixture, castle: () => 
 	if (lab.kind !== 'actor_lab') throw new Error('Actor Lab did not open');
 	await until(() => lab.outline.rows.length > 0 && lab.outline.rows[0].element.node.label === 'd', 'inspect the actual director');
 	const reload = async () => {
-		await test.click(lab.actionBar.items.find(action => action.command === 'actorLab.call')!.bounds);
+		await test.runPaletteCommand('Actor Lab: Call Lua Method');
 		check(picker.visible, `call picker opens: visible=${picker.visible} title=${picker.title} ready=${test.tasks.ready} dirty=${lab.dirty} status=${lab.status}`);
 		await typeSourceText(test, 'reload_room');
 		check(picker.visible && picker.model.list.rows[0]?.item.label === 'reload_room',

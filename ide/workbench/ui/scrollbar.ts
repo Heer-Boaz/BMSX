@@ -89,6 +89,13 @@ export class Scrollbar {
 		else if (end > this.scrollValue + this.viewportSize - margin) this.setScroll(end - this.viewportSize + margin);
 	}
 
+	/** Reveal a range of items; if it cannot fit, preserve any existing viewport overlap. */
+	public revealRange(start: number, end: number, margin = 0): void {
+		if (end - start <= this.viewportSize - margin * 2) this.reveal(start, end, margin);
+		else if (end <= this.scrollValue + margin) this.setScroll(end - this.viewportSize + margin);
+		else if (start >= this.scrollValue + this.viewportSize - margin) this.setScroll(start - margin);
+	}
+
 	/** The control has hit a visible track. Track clicks center the thumb before capture. */
 	public beginDrag(pointer: number): ScrollbarDragStart {
 		const start = this.orientation === 'vertical' ? this.thumb.top : this.thumb.left;

@@ -5530,10 +5530,15 @@ suspended lifetime and value-reference registry, without teaching the generic
 runtime owner about cartlib or workbench panes. Actor Lab's `ActorRuntimeTree`
 reads actual World/component class-index membership and retained instance state;
 `ActorProjection` owns widget topology, collapse, selection and measured labels.
-History restore retires guest borrows while preserving Actor Lab's scalar view
+Display ordering follows explicit component/machine lists and stable name order
+for map-owned states, timelines and effects; guest traversal order is untouched.
+Topology/activity revisions separate reconciliation, viewport follow and label
+measurement. A pane consumes those revisions independently of command-triggered
+refreshes. History restore retires guest borrows while preserving Actor Lab's typed view
 selection until fresh World membership is read at the requested history position.
-Missing membership clears that selection; a hidden pane resolves it before live
-execution can reuse discarded-future identities. `RuntimeHistory` publishes
+Missing historical membership disables that selection without replacing its
+bookmark. Live-branch admission retires unavailable bookmarks, including those
+of hidden panes, before execution can reuse discarded-future identities. `RuntimeHistory` publishes
 `onWillResumeRecording` before truncating future input or admitting live
 execution, mirrored in TS/C++. Studio composition forwards that boundary to
 `SuspendedGuestSession`; Actor Lab, live behavior inspection and retained Lua
@@ -5546,8 +5551,12 @@ mutation authority and changes no guest identity or TS/C++ snapshot representati
 Actor Lab's live FSM graph projects that same selected instance hierarchy into
 the shared graph viewport. It retains scalar typed membership and display nodes,
 not guest tables or source-registration matches. Activity updates keep measured
-geometry, selection, pan and zoom; missing membership retires the graph rather
-than retargeting it. State activation is distinct from UI selection. Source
+geometry, selection, pan and zoom; missing historical membership retains only
+inactive display geometry, never actionable guest values. Live-branch admission
+and heap replacement retire invalid membership rather than retargeting it.
+State activation, inspection selection and optional viewport follow are separate.
+Following reveals active path endpoints (including concurrent branches) without
+changing focus, zoom or action targets; manual navigation stops tracking. Source
 transition diagrams and compiled BT execution slots remain separate;
 [runtime graph navigation](studio_runtime_timeline.md#live-fsm-instance-graph)
 does not manufacture source-node provenance.

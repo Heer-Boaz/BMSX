@@ -44,6 +44,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.controller.scrub(this.input, node, time, program, current, finished);
 	private timelineVisible = false;
 	private splitRevision = -1;
+	private renderedTopology = -1;
 	private readonly split = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);
 	private readonly inspector = new WorkbenchPropertyInspector<BehaviorInspectionProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
@@ -75,31 +76,52 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 				isEnabled: () => this.frameNavigation.canStep(direction),
 				run: () => { this.input.running = false; this.frameNavigation.step(direction); },
 			});
+			target.registerCommand('actorLab.follow', {
+				isEnabled: () => !this.inspector.visible && (this.input.follow.target !== undefined || controller.selected(this.input) !== undefined),
+				run: () => {
+					if (this.input.follow.target !== undefined) this.input.follow.stop();
+					else this.input.follow.start(controller.activityScope(this.input)!);
+					this.update();
+				},
+			});
+			target.registerCommand('actorLab.revealActive', {
+				isEnabled: () => !this.inspector.visible && controller.selected(this.input) !== undefined,
+				run: () => { this.input.follow.pending = controller.activityScope(this.input); this.update(); },
+			});
+			target.registerCommand('actorLab.more', {
+				isEnabled: () => !this.inspector.visible,
+				run: () => {
+					const bar = this.input.presentation === 'outline' ? this.input.actionBar : this.input.stateGraphActions;
+					const bounds = bar.items.find(item => item.command === 'actorLab.more')!.bounds;
+					const lifetime = this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['actorLab.context'], this.commands, true);
+					lifetime.add({ dispose: this.controller.guest.onDidInvalidate(() => this.contextMenu.hide()) });
+				},
+			});
 			target.registerCommand('actorLab.select', { isEnabled: () => true, run: () => controller.selectActor(this.input) });
 			target.registerCommand('actorLab.spawn', { isEnabled: controller.canInteract, run: () => controller.spawn(this.input) });
-			target.registerCommand('actorLab.emit', { isEnabled: () => controller.canInteract() && this.input.actorHashId !== 0, run: () => controller.emitEvent(this.input) });
+			target.registerCommand('actorLab.emit', { isEnabled: () => controller.canInteract() && this.input.actorPresent && !this.input.dirty, run: () => controller.emitEvent(this.input) });
 			target.registerCommand('actorLab.actions', { isEnabled: () => controller.canInteract() && controller.hasActions(this.input), run: () => controller.actions(this.input) });
 			target.registerCommand('actorLab.call', { isEnabled: () => controller.canInteract() && controller.selected(this.input) !== undefined, run: () => controller.callMethod(this.input) });
 			target.registerCommand('actorLab.details', { isEnabled: () => controller.selected(this.input) !== undefined, run: () => controller.inspect(this.input, this.inspector) });
 			target.registerCommand('actorLab.stateGraph', {
-				isEnabled: () => { const kind = controller.selected(this.input)?.kind; return this.input.stateGraph === undefined && !this.inspector.visible && (kind === 'machine' || kind === 'state'); },
+				isEnabled: () => { const kind = controller.selected(this.input)?.kind; return this.input.presentation === 'outline' && !this.inspector.visible && (kind === 'machine' || kind === 'state'); },
 				run: () => {
-					controller.openStateGraph(this.input, editorViewState.font.renderFont()); this.update();
+					const selectionChanged = controller.openStateGraph(this.input, editorViewState.font.renderFont()); this.update();
 					const view = this.input.stateGraph!.viewport;
-					view.selection = view.model.nodes[0];
-					view.scrollX = -Math.round((view.bounds.right - view.bounds.left) / 2); view.scrollY = -8;
+					if (selectionChanged && this.input.follow.target === undefined && view.selection !== null) view.reveal(view.selection);
 					this.graph.focusTarget.focus();
 				},
 			});
-			target.registerCommand('actorLab.outline', { isEnabled: () => this.input.stateGraph !== undefined && !this.inspector.visible,
-				run: () => { this.input.stateGraph = undefined; this.update(); this.focus(); } });
+			target.registerCommand('actorLab.outline', { isEnabled: () => this.input.presentation === 'graph' && !this.inspector.visible,
+				run: () => { controller.openOutline(this.input); this.update(); this.focus(); } });
 		}
 	}
 	public override get suspendsRuntime(): boolean { return !this.input.running; }
 	public override get showsGameFrame(): boolean { return !this.inspector.visible; }
-	public override get runtimeControlContext() { return this.input.stateGraph === undefined ? this.focusTarget : this.graph.focusTarget; }
+	public override get runtimeControlContext() { return this.input.presentation === 'outline' ? this.focusTarget : this.graph.focusTarget; }
 	protected override activate(): void {
 		super.activate();
+		this.renderedTopology = -1;
 		this.actions.setInput(this.input.actionBar, this.focusTarget);
 		this.split.setInput(this.input.split);
 		this.timelineSlider.setInput(this.input.timeline.slider);
@@ -118,41 +140,53 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	public override update(): void {
 		const input = this.input;
 		const readback = input.dirty;
-		const contentsChanged = this.controller.refresh(input);
-		const graphChanged = this.boundGraph !== input.stateGraph;
+		const revealed = this.controller.refresh(input);
+		// Controller commands can reconcile before paint; the pane consumes the revision independently.
+		const contentsChanged = revealed || this.renderedTopology !== input.runtime.topologyRevision;
+		this.renderedTopology = input.runtime.topologyRevision;
+		const visibleGraph = input.presentation === 'graph' ? input.stateGraph : undefined;
+		const graphChanged = this.boundGraph !== visibleGraph;
 		if (graphChanged) {
-			this.boundGraph = input.stateGraph;
+			this.boundGraph = visibleGraph;
 			if (this.boundGraph === undefined) this.graph.clearInput(); else this.graph.setInput(this.boundGraph.viewport);
 			const context = this.boundGraph === undefined ? this.focusTarget : this.graph.focusTarget;
 			this.focusTarget.commandContext = context;
 			this.split.focusTarget.commandContext = context;
 			this.timelineSlider.focusTarget.commandContext = context;
-			this.actions.setInput(input.stateGraph === undefined ? input.actionBar : input.stateGraphActions, context);
+			this.actions.setInput(input.presentation === 'outline' ? input.actionBar : input.stateGraphActions, context);
 		}
-		input.stateGraph?.layout(editorViewState.font.renderFont());
+		this.boundGraph?.layout(editorViewState.font.renderFont());
 		const layoutChanged = updateFullWidthWorkbenchLayout(input.layout, this.contentBounds);
 		if (!this.timelineSlider.focusTarget.hasFocus) input.timeline.cancelPending();
 		input.timeline.refresh(this.controller.selected(input), input.running, this.controller.guest, readback, this.controller.canInteract());
 		const timelineChanged = this.timelineVisible !== input.timeline.visible;
 		this.timelineVisible = input.timeline.visible;
 		const { layout, outline } = input;
+		const bar = input.presentation === 'outline' ? input.actionBar : input.stateGraphActions;
+		const follow = bar.items.find(item => item.command === 'actorLab.follow')!;
+		const followLabel = input.follow.target === undefined ? 'Follow' : 'Unfollow';
+		const followChanged = follow.label !== followLabel;
+		follow.label = followLabel;
 		if (this.timelineVisible) input.timelineLayout.update(input.timeline, layout);
-		if (contentsChanged || layoutChanged || timelineChanged || graphChanged || this.splitRevision !== input.split.revision) {
+		const viewportChanged = layoutChanged || timelineChanged || graphChanged || this.splitRevision !== input.split.revision;
+		if (viewportChanged && input.follow.target !== undefined) input.follow.pending = input.follow.target;
+		if (followChanged || contentsChanged || viewportChanged) {
 			this.updateContentLayout();
-			layoutWorkbenchActionBar(input.stateGraph === undefined ? input.actionBar : input.stateGraphActions, layout.right - 4, layout.top, layout.top + layout.rowHeight + 4, measureText, editorViewState.font.renderFont());
-			if (input.stateGraph !== undefined) input.stateGraph.titleLabel = truncateTextToWidth(input.stateGraph.title, input.stateGraphActions.items[0].bounds.left - 8);
+			layoutWorkbenchActionBar(input.presentation === 'outline' ? input.actionBar : input.stateGraphActions, layout.right - 4, layout.top, layout.top + layout.rowHeight + 4, measureText, editorViewState.font.renderFont());
+			if (input.presentation === 'graph') input.stateGraph!.titleLabel = truncateTextToWidth(input.stateGraph!.title, input.stateGraphActions.items[0].bounds.left - 8);
 			for (const row of outline.rows) row.element.displayLabel = truncateTextToWidth(row.element.node.label,
-				outline.layout.contentRight - outline.layout.contentLeft - (row.depth + 2) * outline.layout.indentWidth - 4);
+				outline.layout.contentRight - outline.layout.contentLeft - (row.depth + 2) * outline.layout.indentWidth - 4, 'middle');
 		}
+		this.controller.layoutNavigation(input);
 		this.timelineSlider.update();
-		if (input.stateGraph !== undefined) this.graph.update();
+		if (input.presentation === 'graph') this.graph.update();
 		this.actions.focusTarget.next = input.timeline.slider.interactive ? this.timelineSlider.focusTarget : this.split.focusTarget;
 		this.timelineSlider.focusTarget.next = this.split.focusTarget;
 		this.split.focusTarget.previous = input.timeline.slider.interactive ? this.timelineSlider.focusTarget : this.actions.focusTarget;
-		this.split.focusTarget.next = input.stateGraph === undefined ? this.gameInput.focusTarget : this.graph.focusTarget;
+		this.split.focusTarget.next = input.presentation === 'outline' ? this.gameInput.focusTarget : this.graph.focusTarget;
 		this.split.focusTarget.next.previous = this.split.focusTarget;
 		this.graph.focusTarget.next = this.gameInput.focusTarget;
-		this.gameInput.focusTarget.previous = input.stateGraph === undefined ? this.split.focusTarget : this.graph.focusTarget;
+		this.gameInput.focusTarget.previous = input.presentation === 'outline' ? this.split.focusTarget : this.graph.focusTarget;
 		this.gameInput.focusTarget.next = this.focusTarget;
 		this.focusTarget.previous = this.gameInput.focusTarget;
 		input.timeline.executePending(this.controller.selected(input), this.controller.canInteract(), this.scrub);
@@ -174,11 +208,14 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		}
 	}
 	public handleKeyboard(input: PlayerInput): void {
-		if (this.input.stateGraph !== undefined) { this.handleGraphKeyboard(input); return; }
+		if (!this.input.actorPresent) return;
+		if (this.input.presentation === 'graph') { this.handleGraphKeyboard(input); return; }
 		for (const [key, command] of NAVIGATION) {
 			if (!shouldRepeatKeyFromPlayer(key, input)) continue;
 			consumeIdeKey(key, input);
+			this.input.follow.stop();
 			navigateWorkbenchTree(this.input.outline, command);
+			this.input.rememberSelection();
 			this.updateContentLayout();
 			return;
 		}
@@ -196,15 +233,21 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		layoutGameFrame(this.input.previewBounds, previewLeft, previewTop, layout.right - 4, bottom - 4);
 		this.input.outline.updateLayout(4, top, divider, bottom,
 			layout.rowHeight + 4, editorViewState.font.advance(' ') * 2);
-		this.input.stateGraph?.viewport.layout(4, top + layout.rowHeight + 4, divider, bottom);
+		this.boundGraph?.viewport.layout(4, top + layout.rowHeight + 4, divider, bottom);
 	}
 	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean, now: number): boolean {
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
 		if (this.gameInput.handlePointer(snapshot)) return false;
-		if (this.split.handlePointer(snapshot) || this.actions.handlePointer(snapshot) || this.input.timeline.visible && this.timelineSlider.handlePointer(snapshot)
-			|| this.input.stateGraph === undefined && this.scrollbar.handlePointer(snapshot, this.input.outline.scrollbar)) return true;
-		if (this.input.stateGraph !== undefined) {
+		if (this.split.handlePointer(snapshot) || this.actions.handlePointer(snapshot) || this.input.timeline.visible && this.timelineSlider.handlePointer(snapshot)) return true;
+		if (!this.input.actorPresent) return false;
+		if (this.input.presentation === 'outline' && this.scrollbar.handlePointer(snapshot, this.input.outline.scrollbar)) {
+			if (justPressed) this.input.follow.stop();
+			return true;
+		}
+		if (this.input.presentation === 'graph') {
 			const result = this.graph.handlePointer(snapshot, now);
+			if (snapshot.justPressedButtons !== 0 && result !== WorkbenchGraphPointerResult.Outside) this.input.follow.stop();
+			if (result === WorkbenchGraphPointerResult.Selection || result === WorkbenchGraphPointerResult.Activate || result === WorkbenchGraphPointerResult.ContextMenu) this.input.stateGraph!.rememberSelection();
 			if (result === WorkbenchGraphPointerResult.Activate) this.commands.execute('actorLab.details');
 			else if (result === WorkbenchGraphPointerResult.ContextMenu) {
 				this.input.running = false;
@@ -218,7 +261,9 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		if (index < 0) return false;
 		if (justPressed || (snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
 			this.focus();
+			this.input.follow.stop();
 			this.input.outline.selectionIndex = index;
+			this.input.rememberSelection();
 			if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
 				this.input.running = false;
 				const lifetime = this.contextMenu.show(snapshot.viewportX, snapshot.viewportY, WORKBENCH_MENUS['actorLab.context'], this.commands, false);
@@ -234,7 +279,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null, input: PlayerInput): void {
 		if (this.inspector.visible) {
 			if (pointer === null || !this.inspector.handleWheel(pointer, direction * steps * editorViewState.lineHeight * 3)) return;
-		} else if (this.input.stateGraph !== undefined) {
+		} else if (this.input.presentation === 'graph') {
 			const distance = direction * steps * 16, horizontal = isShiftDown(input);
 			if (pointer === null || !this.graph.handleWheel(pointer, horizontal ? distance : 0, horizontal ? 0 : distance,
 				isCtrlDown(input) ? -direction * steps : 0)) return;
@@ -242,6 +287,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			if (pointer === null || !workbenchListContainsPosition(this.input.outline, pointer.viewportX, pointer.viewportY)) return;
 			scrollWorkbenchList(this.input.outline, direction * steps * 3);
 		}
+		if (!this.inspector.visible) this.input.follow.stop();
 		input.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	}
 
@@ -251,14 +297,15 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		if (isKeyJustPressed('Enter', player)) { consumeIdeKey('Enter', player); this.commands.execute('actorLab.details'); return; }
 		for (const [key, direction] of GRAPH_SELECTION_KEYS) {
 			if (!shouldRepeatKeyFromPlayer(key, player)) continue;
-			consumeIdeKey(key, player); view.selectRelative(direction);
+			consumeIdeKey(key, player); this.input.follow.stop(); view.selectRelative(direction);
+			this.input.stateGraph!.rememberSelection();
 			if (view.selection !== null) view.reveal(view.selection);
 			return;
 		}
 		for (const [key, x, y] of GRAPH_PAN_KEYS) {
-			if (shouldRepeatKeyFromPlayer(key, player)) { consumeIdeKey(key, player); view.pan(x, y); return; }
+			if (shouldRepeatKeyFromPlayer(key, player)) { consumeIdeKey(key, player); this.input.follow.stop(); view.pan(x, y); return; }
 		}
-		if (shouldRepeatKeyFromPlayer('Home', player) && view.selection !== null) { consumeIdeKey('Home', player); view.reveal(view.selection); }
+		if (shouldRepeatKeyFromPlayer('Home', player) && view.selection !== null) { consumeIdeKey('Home', player); this.input.follow.stop(); view.reveal(view.selection); }
 	}
 }
 
