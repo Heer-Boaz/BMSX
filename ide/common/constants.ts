@@ -115,6 +115,7 @@ type ThemeDefinition = {
 		position: number;
 	};
 	graph: { active: number };
+	inspection: { changedValue: number };
 	focusBorder: number;
 	connection: {
 		connected: number;
@@ -197,6 +198,7 @@ type ThemeOverlays = {
 
 const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 	dark: {
+		inspection: { changedValue: THEME_TOKEN_LIGHT_PURPLE },
 		markdown: {
 			codeBackground: THEME_TOKEN_DEEP_TEAL,
 			codeText: THEME_TOKEN_LIGHT_TEAL,
@@ -324,6 +326,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 		},
 	},
 	light: {
+		inspection: { changedValue: THEME_TOKEN_DARK_PURPLE },
 		markdown: {
 			codeBackground: THEME_TOKEN_PALE_TEAL,
 			codeText: THEME_TOKEN_DARK_TEAL,
@@ -557,6 +560,7 @@ export let COLOR_STATUS_ALERT: number;
 export let COLOR_TIMELINE_TRACK: number;
 export let COLOR_TIMELINE_POSITION: number;
 export let COLOR_GRAPH_ACTIVE: number;
+export let COLOR_INSPECTOR_VALUE_CHANGED: number;
 export let COLOR_SERVER_CONNECTED: number;
 export let COLOR_SERVER_DISCONNECTED: number;
 export let COLOR_SERVER_CONNECTING: number;
@@ -728,6 +732,7 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_TIMELINE_TRACK = theme.timeline.track;
 	COLOR_TIMELINE_POSITION = theme.timeline.position;
 	COLOR_GRAPH_ACTIVE = theme.graph.active;
+	COLOR_INSPECTOR_VALUE_CHANGED = theme.inspection.changedValue;
 	COLOR_SERVER_CONNECTED = theme.connection.connected;
 	COLOR_SERVER_DISCONNECTED = theme.connection.disconnected;
 	COLOR_SERVER_CONNECTING = theme.connection.connecting;

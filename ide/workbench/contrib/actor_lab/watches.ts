@@ -12,7 +12,7 @@ export type ActorDetailsProperty = RuntimeInspectionProperty & { readonly watch?
 /** A pin owns only typed membership and presentation, not the mutable row it was pinned from. */
 export class ActorPropertyWatch {
 	public readonly item: {
-		label: string; value: string; description: string; warning: boolean;
+		label: string; value: string; description: string; warning: boolean; valueChanged: boolean;
 		source?: RuntimeInspectionProperty['source']; readonly watch: ActorPropertyWatch;
 	};
 	public available = true;
@@ -23,23 +23,25 @@ export class ActorPropertyWatch {
 	public constructor(public readonly id: number, public readonly target: ActorTarget,
 		public readonly property: RuntimePropertyIdentity, private readonly context: string, initial: RuntimeInspectionProperty) {
 		this.label = initial.label;
-		this.item = { label: `PIN / ${initial.label}`, value: '', description: context, warning: false, watch: this };
+		this.item = { label: `PIN / ${initial.label}`, value: '', description: context, warning: false, valueChanged: false, watch: this };
 		this.publish(initial);
 	}
 
-	public publish(property: RuntimeInspectionProperty | undefined): boolean {
+	/** A pin compares its own last observation, independent of the selected-node projection. */
+	public publish(property: RuntimeInspectionProperty | undefined, compareChanges = false): boolean {
 		const available = property !== undefined && !this.retired;
 		const label = available ? property.label : this.label;
 		const value = available ? property.value : this.retired ? 'INSTANCE RETIRED' : 'UNAVAILABLE AT THIS FRAME';
 		const source = available ? property.source : undefined;
 		const description = available ? property.description : '';
 		const warning = available ? property.warning : true;
+		const valueChanged = available && this.available && !warning && (compareChanges ? this.item.value !== value : this.item.valueChanged);
 		const changed = this.available !== available || this.label !== label || this.item.value !== value || this.item.source !== source
-			|| this.description !== description || this.item.warning !== warning;
+			|| this.description !== description || this.item.warning !== warning || this.item.valueChanged !== valueChanged;
 		if (!changed) return false;
 		this.available = available;
 		if (this.label !== label) { this.label = label; this.item.label = `PIN / ${label}`; }
-		this.item.value = value; this.item.source = source; this.item.warning = warning;
+		this.item.value = value; this.item.source = source; this.item.warning = warning; this.item.valueChanged = valueChanged;
 		this.description = description;
 		this.item.description = description === '' ? this.context : `${this.context}\n${description}`;
 		return true;
@@ -60,6 +62,7 @@ export class ActorWatches {
 	private readonly actors: WatchedActor[] = [];
 	private nextId = 0;
 	private dirty = true;
+	private observationPending = false;
 	private membershipChanged = false;
 	public constructor(private readonly sources: RuntimeSourceState, private readonly guest: SuspendedGuestSession) {}
 
@@ -104,6 +107,7 @@ export class ActorWatches {
 	}
 
 	public invalidate(reason: GuestInvalidationReason): void {
+		this.observationPending = reason !== 'heap-replaced';
 		for (const actor of this.actors) {
 			if (reason === 'heap-replaced') actor.tree.dispose(); else actor.tree.release();
 			for (const node of actor.nodes) {
@@ -143,6 +147,8 @@ export class ActorWatches {
 		selectedProperties: readonly RuntimeInspectionProperty[]): boolean {
 		if (!this.dirty) return false;
 		this.dirty = false;
+		const compareChanges = this.observationPending;
+		this.observationPending = false;
 		let changed = this.membershipChanged;
 		this.membershipChanged = false;
 		for (const actor of this.actors) {
@@ -160,7 +166,7 @@ export class ActorWatches {
 					const pin = property.identity === undefined ? undefined : group.index.get(property.identity);
 					if (pin === undefined) continue;
 					pin.observed = true;
-					changed = pin.publish(property) || changed;
+					changed = pin.publish(property, compareChanges) || changed;
 				}
 				for (const pin of group.pins) {
 					if (!pin.retired && node === undefined && !historical) { pin.retired = true; group.index.delete(pin.property); }

@@ -7,7 +7,10 @@ import type { WorkbenchPropertyElement } from '../property_tree';
 import { WorkbenchScrollViewport } from '../scroll_viewport';
 
 /** Same property display contract as the compact tree, without its truncated columns. */
-export type InspectedProperty = Pick<WorkbenchPropertyElement, 'label' | 'value' | 'description' | 'warning'>;
+export type InspectedProperty = Pick<WorkbenchPropertyElement, 'label' | 'value' | 'description' | 'warning'> & {
+	/** The inspecting owner compares observations; painting never advances that baseline. */
+	readonly valueChanged?: boolean;
+};
 export type InspectedPropertyRow<Element> = {
 	element: Element;
 	readonly label: string[];

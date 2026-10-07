@@ -76,9 +76,10 @@ export class RuntimePropertyIndex<T> {
 	}
 }
 
-type Property = { label: string; value: string; description: string; warning: boolean; source?: RuntimeLuaFunctionSource; readonly identity?: RuntimePropertyIdentity };
+type Property = { label: string; value: string; description: string; warning: boolean; valueChanged: boolean; source?: RuntimeLuaFunctionSource; readonly identity?: RuntimePropertyIdentity };
 type PropertyRow = {
 	readonly element: Property;
+	initialized: boolean;
 	labelKey?: SuspendedValueIdentity;
 	presentation?: RuntimePropertyEntryPresentation;
 	value?: SuspendedValuePresentation;
@@ -94,9 +95,11 @@ export class BehaviorRuntimeProperties {
 	public changed = false;
 	private readonly rows: PropertyRow[] = [];
 	private cursor = 0;
+	private compareChanges = false;
 
 	public constructor(private readonly sources: RuntimeSourceState, private readonly guest: SuspendedGuestSession, private readonly filter?: RuntimePropertyFilter) {}
-	public begin(): void { this.cursor = 0; this.changed = false; }
+	/** Compare only an owner's completed observation of the same runtime binding. */
+	public begin(compareChanges = false): void { this.cursor = 0; this.changed = false; this.compareChanges = compareChanges; }
 	public invalidate(): void {
 		for (const row of this.rows) { row.labelKey = undefined; row.value?.invalidate(); row.source?.invalidate(); row.description?.invalidate(); }
 	}
@@ -105,7 +108,7 @@ export class BehaviorRuntimeProperties {
 		if (this.filter !== undefined) return;
 		const row = this.row(label);
 		row.descriptionPrefix = undefined;
-		this.publish(row.element, value, description, warning, undefined);
+		this.publish(row, value, description, warning, undefined);
 	}
 
 	public field(section: string, field: string, label: string, value: SuspendedGuestValue, description = '', descriptionValue?: SuspendedGuestValue): void {
@@ -139,7 +142,7 @@ export class BehaviorRuntimeProperties {
 				description += preview;
 			} else description = row.element.description;
 		} else row.descriptionPrefix = undefined;
-		this.publish(row.element, text, description, false, source);
+		this.publish(row, text, description, false, source);
 	}
 
 	public finish(): RuntimeInspectionProperty[] {
@@ -154,7 +157,7 @@ export class BehaviorRuntimeProperties {
 		if (row === undefined || (section === undefined ? identity !== undefined || row.element.label !== label
 			: identity === undefined || identity.section !== section || identity.field !== field
 				|| (key === undefined ? identity.key !== undefined : identity.key === undefined || !this.guest.matchesIdentity(key, identity.key)))) {
-			row = { element: { label: label === undefined ? '' : label, value: '', description: '', warning: false,
+			row = { initialized: false, element: { label: label === undefined ? '' : label, value: '', description: '', warning: false, valueChanged: false,
 				identity: section === undefined ? undefined : { section, field, key: key === undefined ? undefined : this.guest.identity(key) } } };
 			this.rows[index] = row; this.items[index] = row.element; this.changed = true;
 		}
@@ -162,9 +165,13 @@ export class BehaviorRuntimeProperties {
 		return row;
 	}
 
-	private publish(row: Property, value: string, description: string, warning: boolean, source: RuntimeLuaFunctionSource | undefined): void {
-		if (row.value === value && row.description === description && row.warning === warning && row.source === source) return;
-		row.value = value; row.description = description; row.warning = warning; row.source = source;
+	private publish(row: PropertyRow, value: string, description: string, warning: boolean, source: RuntimeLuaFunctionSource | undefined): void {
+		const element = row.element;
+		const valueChanged = this.compareChanges && row.initialized && element.identity !== undefined && !warning && element.value !== value;
+		row.initialized = true;
+		if (element.value === value && element.description === description && element.warning === warning && element.source === source
+			&& element.valueChanged === valueChanged) return;
+		element.value = value; element.description = description; element.warning = warning; element.source = source; element.valueChanged = valueChanged;
 		this.changed = true;
 	}
 }

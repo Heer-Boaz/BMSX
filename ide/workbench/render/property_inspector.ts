@@ -26,12 +26,16 @@ export function drawWorkbenchPropertyInspector<Element extends InspectedProperty
 		if (selected || index === model.hoverIndex) api.fill_rect(view.bounds.left, top, view.bounds.right, labelBottom, 0,
 			selected ? colors.SELECTION_OVERLAY : colors.HIGHLIGHT_OVERLAY);
 		let y = top + INSPECTOR_PADDING;
+		const changed = row.element.valueChanged === true && !row.element.warning;
 		for (const field of FIELDS) {
 			const lines = row[field];
 			if (lines.length === 0) continue;
 			const color = field === 'label' ? selected ? colors.COLOR_SELECTION_TEXT : colors.COLOR_PROBLEMS_PANEL_HEADER_TEXT
 				: field === 'description' ? colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM
-					: row.element.warning ? colors.COLOR_STATUS_WARNING : colors.COLOR_RESOURCE_VIEWER_TEXT;
+					: row.element.warning ? colors.COLOR_STATUS_WARNING
+						: changed ? colors.COLOR_INSPECTOR_VALUE_CHANGED : colors.COLOR_RESOURCE_VIEWER_TEXT;
+			if (field === 'value' && changed) api.fill_rect(view.bounds.left + 1, y, view.bounds.left + 3, y + font.lineHeight, 0,
+				colors.COLOR_INSPECTOR_VALUE_CHANGED);
 			const first = Math.max(0, Math.trunc((view.bounds.top - y) / font.lineHeight));
 			const end = Math.min(lines.length, Math.trunc((view.bounds.bottom - y + font.lineHeight - 1) / font.lineHeight));
 			for (let line = first; line < end; line += 1)

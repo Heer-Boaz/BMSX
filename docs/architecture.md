@@ -5582,6 +5582,12 @@ validates retained pins even when the pane is hidden. Historical absence is
 reversible; heap replacement and live-branch admission retire invalid membership
 before discarded-future identities can be reused. Retired pins remain explicit,
 removable entries rather than silently following a replacement.
+Changed-value decoration compares displayed values at completed observations of
+the same typed binding. Selected Details and individual pins own their respective
+baselines; selection changes, unavailable membership and heap replacement do not
+masquerade as value changes. History navigation may compare the restored value
+with the preceding observation. Rendering consumes the retained flag without
+advancing or clearing it, and neither adds guest reads nor an event/trace stream.
 Actor Lab's live FSM graph projects that same selected instance hierarchy into
 the shared graph viewport. It retains scalar typed membership and display nodes,
 not guest tables or source-registration matches. Activity updates keep measured

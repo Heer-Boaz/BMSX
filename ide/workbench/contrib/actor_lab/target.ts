@@ -7,9 +7,15 @@ export type ActorTarget = { readonly domain: ResourceDomain; readonly worldHashI
 
 /** A view correspondence uses the full typed membership, never a table id or display label alone. */
 export function actorTargetsEqual(left: ActorTarget, right: ActorTarget): boolean {
-	if (left.domain !== right.domain || left.worldHashId !== right.worldHashId || left.actorHashId !== right.actorHashId || left.path.length !== right.path.length) return false;
-	for (let index = 0; index < left.path.length; index++) {
-		const a = left.path[index], b = right.path[index];
+	return left.domain === right.domain && left.worldHashId === right.worldHashId && left.actorHashId === right.actorHashId
+		&& actorPathsEqual(left.path, right.path);
+}
+
+export function actorPathsEqual(left: readonly ActorNodeIdentity[], right: readonly ActorNodeIdentity[]): boolean {
+	if (left === right) return true;
+	if (left.length !== right.length) return false;
+	for (let index = 0; index < left.length; index++) {
+		const a = left[index], b = right[index];
 		if (a.hashId !== b.hashId || a.kind !== b.kind || a.key.tag !== b.key.tag || a.key.scalar !== b.key.scalar) return false;
 	}
 	return true;

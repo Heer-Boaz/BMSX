@@ -188,7 +188,8 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.detailsSplit.focusTarget.commandContext = this.focusTarget;
 		this.timelineSlider.focusTarget.commandContext = this.focusTarget;
 		this.split.clearInput(); this.detailsSplit.clearInput(); this.detailsVisible = false;
-		this.timelineSlider.clearInput(); this.input.timeline.clear(); this.input.running = false; this.input.invalidate(); this.scrollbar.cancelPointer(); super.clearInput();
+		// Detaching is not execution; the controller still observes guest invalidation while hidden.
+		this.timelineSlider.clearInput(); this.input.timeline.clear(); this.input.running = false; this.scrollbar.cancelPointer(); super.clearInput();
 	}
 	public override dispose(): void { this.inspector.dispose(); this.gameInput.dispose(); this.actions.dispose(); this.graph.dispose(); this.split.dispose(); this.detailsSplit.dispose(); this.timelineSlider.dispose(); this.scrollbar.cancelPointer(); super.dispose(); }
 	public override update(): void {

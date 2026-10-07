@@ -258,7 +258,7 @@ export class ActorLabController {
 	public refreshDetails(input: ActorLabInput): readonly ActorDetailsProperty[] | undefined {
 		if (input.dirty || this.rewind.seeking) return;
 		return input.details!.refresh(this.selected(input), input.presentation === 'outline'
-			? input.selectionPath : input.stateGraph!.selectionBookmark?.path, input.runtime, input.domain, input.historical);
+			? input.selectionPath : input.stateGraph!.selectionBookmark?.path, input.runtime, input.domain, input.worldHashId, input.historical);
 	}
 
 	public inspect(input: ActorLabInput, inspector: WorkbenchPropertyInspector<ActorDetailsProperty>, focus = true): void {

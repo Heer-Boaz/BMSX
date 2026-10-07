@@ -3,7 +3,7 @@ import type { GuestInvalidationReason, SuspendedGuestSession } from '../../../ru
 import { BehaviorRuntimeProperties, runtimePropertyIdentitiesEqual, runtimeInspectionPropertiesEqual, type RuntimePropertyIdentity } from '../behavior_lens/runtime_properties';
 import { inspectActorNode } from './inspection';
 import type { ActorNode, ActorRuntimeTree } from './runtime';
-import type { ActorNodeIdentity } from './target';
+import { actorPathsEqual, type ActorNodeIdentity } from './target';
 import type { ResourceDomain } from '../../../common/resource';
 import { ActorWatches, type ActorDetailsProperty } from './watches';
 export type { ActorDetailsProperty } from './watches';
@@ -43,6 +43,8 @@ export class ActorDetails {
 	public readonly items: ActorDetailsProperty[] = [];
 	private readonly properties: BehaviorRuntimeProperties;
 	private selection: readonly ActorNodeIdentity[] | undefined;
+	private domain: ResourceDomain | undefined;
+	private worldHashId: number | undefined;
 	private dirty = true;
 
 	public constructor(private readonly sources: RuntimeSourceState, private readonly guest: SuspendedGuestSession) {
@@ -54,19 +56,23 @@ export class ActorDetails {
 
 	public invalidate(reason: GuestInvalidationReason = 'execution'): void {
 		if (reason !== 'execution') this.properties.invalidate();
+		if (reason === 'heap-replaced') { this.selection = undefined; this.domain = undefined; this.worldHashId = undefined; }
 		this.watches.invalidate(reason);
 		this.dirty = true;
 	}
 
 	/** Consume the current tree's resolved selection, never enumerate a second copy of the runtime. */
 	public refresh(node: ActorNode | undefined, selection: readonly ActorNodeIdentity[] | undefined,
-		tree: ActorRuntimeTree, domain: ResourceDomain, historical: boolean): readonly ActorDetailsProperty[] | undefined {
+		tree: ActorRuntimeTree, domain: ResourceDomain, worldHashId: number | undefined, historical: boolean): readonly ActorDetailsProperty[] | undefined {
 		const properties = this.properties;
 		let changed = false;
-		if (this.dirty || this.selection !== selection) {
+		const sameSelection = this.domain === domain && this.worldHashId === worldHashId && (this.selection === selection
+			|| this.selection !== undefined && selection !== undefined && actorPathsEqual(this.selection, selection));
+		this.selection = selection;
+		if (this.dirty || !sameSelection) {
+			properties.begin(this.dirty && sameSelection && node !== undefined);
 			this.dirty = false;
-			this.selection = selection;
-			properties.begin();
+			this.domain = domain; this.worldHashId = worldHashId;
 			if (node === undefined) {
 				if (selection === undefined) properties.text('SELECT AN INSTANCE', 'SELECT AN ACTOR NODE TO VIEW ITS LIVE DETAILS.');
 				else properties.text('INSTANCE UNAVAILABLE', 'THE SELECTED INSTANCE IS NOT PRESENT AT THIS FRAME.', '', true);

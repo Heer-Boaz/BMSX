@@ -201,6 +201,62 @@ This validation predates property pins. [Event-to-frame navigation](studio_event
 now shares the physical rewind owner; selected event payloads are not live Actor
 Lab handles and do not automatically select actors by emitter display text.
 
+## Observed value changes
+
+Actor Details and pins mark a changed displayed value with a theme accent and
+a small stroke beside the value. Selection, active-behavior indicators and
+unavailable-instance warnings remain separate. This follows the separation in
+VS Code's [debug model](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/debugModel.ts)
+and [expression renderer](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/debugExpressionRenderer.ts):
+the observation owner compares values; the renderer only consumes presentation.
+Unlike a DOM animation, BMSX's immediate-mode repaint does not clear the marker.
+
+- Comparison is against the same binding's preceding completed observation.
+  Forward execution and history navigation both qualify. It is not a log of
+  every guest write, nor a comparison of unshown descendants of a table preview.
+- First observation, switching to another actor/member, and reacquiring a
+  previously unavailable binding establish a neutral baseline. A same-named
+  property on another actor is not a continuation of the previous property.
+  Newly admitted Details rows also start neutral when dynamic property
+  membership changes the row order; pins retain their independent baseline.
+- Pins own their comparison independently of the current selection. Switching
+  between the selected-member projection and a separate pinned projection does
+  not reset or fabricate a value change.
+- A marker survives paused repaint, scrolling, layout and tab navigation. The
+  next completed unchanged observation clears it; timers, paint calls and
+  pin-list edits do not. Detaching the pane is not guest execution; its
+  controller continues to observe actual guest invalidations while hidden.
+- Existing suspension invalidation and completed-history-position admission own
+  observations. There is no new recording mode, polling, guest instrumentation,
+  guest execution or CPU/C++ change. Existing value presentation supplies the
+  compared text; rendering performs no additional inspection.
+
+### Change indication validation (2026-10-07)
+
+`browser.mjs --studio-actor-changes` passes on software, WebGL2 and WebGPU.
+The fixture uses automated source setup through the real editor model, then
+ordinary game-preview input changes an actor's `x` from **9 to 10**. Actual
+Previous/Next Frame commands revisit **9 → 10 → 9 → 10**. Details and pins mark
+the changed values, leave unchanged fields neutral and clear on the next
+unchanged observation. Paused paints, source-tab navigation and the ordinary
+theme shortcut preserve markers without advancing guest cycles, heap or
+callbacks. Actor switching resets Details comparison but retains the pin's.
+
+Captures in `.bmsx/authoring/actor-changes/` were visually reviewed in both
+themes, including the selected property, the pin beside another selected actor,
+rewind and the cleared indication. The live game preview stays visible. This
+is automated browser/runtime evidence, not exclusively manual authoring, physical
+GPU hardware or mobile validation. Existing row/cache tests cover clean-refresh
+guest reads, row reuse and unchanged guest heap; this slice does not claim zero
+host cost.
+
+The existing Find in Actor and pinned-property browser workflows also pass on
+software after the detach-lifecycle correction. The Actor/Behavior/workbench/
+input/theme bundle passes **393 tests**; IDE/tests typechecks, the Studio debug
+build and strict architecture audit (zero issues) pass. The structural core-parity
+audit and diff check are clean. No native runtime behavior was changed or claimed
+as newly verified by those structural checks.
+
 ## Pinned runtime properties
 
 A property's context menu offers **Pin Property**, **Unpin Property**, and (for

@@ -104,17 +104,17 @@ test('actor inspection shares one retained property sink across every runtime no
 
 test('actor details reads only dirty suspensions and retains warmed property rows and formatting', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
-	const document = f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false)!, rows = document.slice();
+	const document = f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false)!, rows = document.slice();
 	let formatted = 0, reads = 0;
 	const format = f.guest.formatStoredEntries.bind(f.guest), read = f.guest.readStringMember.bind(f.guest);
 	t.mock.method(f.guest, 'formatStoredEntries', (value: Parameters<typeof format>[0]) => { formatted++; return format(value); });
 	t.mock.method(f.guest, 'readStringMember', (...args: Parameters<typeof read>) => { reads++; return read(...args); });
-	for (let frame = 0; frame < 1000; frame++) assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false), undefined);
+	for (let frame = 0; frame < 1000; frame++) assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false), undefined);
 	assert.equal(reads, 0);
 	const before = [f.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
 	for (let frame = 0; frame < 1000; frame++) {
 		f.invalidate(); f.update();
-		assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false), undefined);
+		assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false), undefined);
 	}
 	assert.equal(formatted, 0);
 	assert.ok(reads > 1000);
@@ -122,21 +122,21 @@ test('actor details reads only dirty suspensions and retains warmed property row
 	assert.deepEqual([f.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()], before);
 	const previous = document.map(row => row.value);
 	f.execute('change_data');
-	assert.strictEqual(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false), document);
+	assert.strictEqual(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false), document);
 	assert.equal(document.filter((row, index) => row.value !== previous[index]).length, 1);
 	assert.equal(formatted, 1);
 });
 
 test('explicit selection changes refresh details without execution and mutable members remain authoritative', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
-	const document = f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false)!;
+	const document = f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false)!;
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component, f.guest);
-	assert.strictEqual(f.details.refresh(component, target.path, f.tree, -1, false), document);
+	assert.strictEqual(f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false), document);
 	assert.deepEqual(document, inspectActorNode(f.sources, f.guest, component));
 	const length = document.length;
 	f.execute('grow_component');
-	assert.strictEqual(f.details.refresh(resolveActorTarget(f.tree.roots, target, f.guest), target.path, f.tree, -1, false), document);
+	assert.strictEqual(f.details.refresh(resolveActorTarget(f.tree.roots, target, f.guest), target.path, f.tree, -1, f.target.worldHashId, false), document);
 	assert.equal(document.length, length + 1);
 	assert.deepEqual(document, inspectActorNode(f.sources, f.guest, resolveActorTarget(f.tree.roots, target, f.guest)!));
 });
@@ -145,44 +145,115 @@ test('details clears missing typed membership instead of borrowing an alias and 
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const state = f.tree.roots[0].children[0].children[0].children.find(node => node.key === 1)!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, state, f.guest);
-	const document = f.details.refresh(state, target.path, f.tree, -1, false)!, before = structuredClone(document), alive = f.cpu.captureRuntimeState();
+	const document = f.details.refresh(state, target.path, f.tree, -1, f.target.worldHashId, false)!, before = structuredClone(document), alive = f.cpu.captureRuntimeState();
 	const originalValue = state.value;
 	f.execute('remove_numeric');
 	assert.equal(resolveActorTarget(f.tree.roots, target, f.guest), undefined);
-	assert.strictEqual(f.details.refresh(undefined, target.path, f.tree, -1, false), document);
+	assert.strictEqual(f.details.refresh(undefined, target.path, f.tree, -1, f.target.worldHashId, false), document);
 	assert.ok(document.every(property => property.warning));
-	assert.equal(f.details.refresh(undefined, target.path, f.tree, -1, false), undefined);
+	assert.ok(document.every(property => property.valueChanged === false));
+	assert.equal(f.details.refresh(undefined, target.path, f.tree, -1, f.target.worldHashId, false), undefined);
 	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(alive); f.update();
 	const restored = resolveActorTarget(f.tree.roots, target, f.guest)!;
 	assert.notStrictEqual(restored.value, originalValue);
-	assert.strictEqual(f.details.refresh(restored, target.path, f.tree, -1, false), document);
+	assert.strictEqual(f.details.refresh(restored, target.path, f.tree, -1, f.target.worldHashId, false), document);
 	assert.deepEqual(document, before);
 	f.invalidate('heap-replaced');
-	assert.strictEqual(f.details.refresh(undefined, undefined, f.tree, -1, false), document);
+	assert.strictEqual(f.details.refresh(undefined, undefined, f.tree, -1, f.target.worldHashId, false), document);
 	assert.ok(document.every(property => property.source === undefined));
-	assert.equal(f.details.refresh(undefined, undefined, f.tree, -1, false), undefined);
+	assert.equal(f.details.refresh(undefined, undefined, f.tree, -1, f.target.worldHashId, false), undefined);
 });
 
 test('history and heap replacement invalidate warmed value presentations even when raw identities match', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
-	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	let formatted = 0;
 	const format = f.guest.formatStoredEntries.bind(f.guest);
 	t.mock.method(f.guest, 'formatStoredEntries', (value: Parameters<typeof format>[0]) => { formatted++; return format(value); });
 	f.details.invalidate();
-	assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false), undefined);
+	assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false), undefined);
 	assert.equal(formatted, 0);
 	f.details.invalidate('history-restored');
-	assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false), undefined);
+	assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false), undefined);
 	assert.equal(formatted, f.details.items.length);
 	f.details.invalidate('heap-replaced');
-	assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false), undefined);
+	assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false), undefined);
 	assert.equal(formatted, 2 * f.details.items.length);
+});
+
+test('details marks changed displayed values across completed observations and rewind, not repaint or reselection', t => {
+	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const document = f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false)!;
+	const x = document.find(item => item.label === 'x')!, z = document.find(item => item.label === 'z')!;
+	assert.ok(document.every(item => item.valueChanged === false));
+	const initial = f.cpu.captureRuntimeState();
+	f.execute('change_positions');
+	const samePath = structuredClone(f.target.path);
+	f.details.refresh(f.tree.roots[0], samePath, f.tree, -1, f.target.worldHashId, false);
+	assert.equal(x.value, '1'); assert.equal(x.valueChanged, true); assert.equal(z.valueChanged, false);
+	assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false), undefined);
+	assert.equal(x.valueChanged, true, 'a recreated equal navigation path does not clear the observation');
+	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(initial); f.update();
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, true);
+	assert.equal(x.value, '0'); assert.equal(x.valueChanged, true);
+	f.invalidate(); f.update();
+	assert.strictEqual(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false), document);
+	assert.equal(x.valueChanged, false, 'an unchanged observation publishes removal of the marker');
+	f.execute('change_positions');
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
+	assert.equal(x.valueChanged, true);
+	f.update(f.otherHashId);
+	const other = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, f.tree.roots[0], f.guest);
+	f.details.refresh(f.tree.roots[0], other.path, f.tree, -1, f.target.worldHashId, false);
+	assert.equal(x.value, '23'); assert.ok(document.every(item => item.valueChanged === false));
+	f.execute('change_positions'); f.update(f.otherHashId);
+	f.details.refresh(f.tree.roots[0], other.path, f.tree, -1, f.target.worldHashId, false);
+	assert.equal(x.valueChanged, true);
+	f.invalidate('heap-replaced'); f.update(f.otherHashId);
+	f.details.refresh(f.tree.roots[0], other.path, f.tree, -1, f.target.worldHashId, false);
+	assert.equal(x.valueChanged, false, 'even matching replacement-heap IDs begin a new baseline');
+});
+
+test('details change comparison belongs to the full domain and world binding', t => {
+	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
+	f.execute('change_positions');
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, 0, f.target.worldHashId, false);
+	assert.ok(f.details.items.every(item => item.valueChanged === false));
+	f.execute('change_positions');
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, 0, f.target.worldHashId + 1, false);
+	assert.ok(f.details.items.every(item => item.valueChanged === false));
+});
+
+test('pins own their change baseline across selection, membership edits and history observations', t => {
+	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
+	const pin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.label === 'x')!);
+	const initial = f.cpu.captureRuntimeState();
+	f.execute('change_positions');
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
+	assert.equal(pin.item.valueChanged, true);
+	const extra = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.watch === undefined && item.label === 'y')!);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
+	assert.equal(pin.item.valueChanged, true); assert.equal(extra.item.valueChanged, false, 'new pins start neutral');
+	f.details.watches.remove(extra);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
+	assert.equal(pin.item.valueChanged, true, 'pin membership edits are not runtime observations');
+	f.update(f.otherHashId);
+	const other = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, f.tree.roots[0], f.guest);
+	f.details.refresh(f.tree.roots[0], other.path, f.tree, -1, f.target.worldHashId, false);
+	assert.equal(pin.item.valueChanged, true);
+	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(initial); f.update(f.otherHashId);
+	f.details.refresh(f.tree.roots[0], other.path, f.tree, -1, f.target.worldHashId, true);
+	assert.equal(pin.item.value, '0'); assert.equal(pin.item.valueChanged, true);
+	f.invalidate(); f.update(f.otherHashId);
+	f.details.refresh(f.tree.roots[0], other.path, f.tree, -1, f.target.worldHashId, false);
+	assert.equal(pin.item.valueChanged, false);
 });
 
 test('pins retain independent row identities and filter a shared projection of another selected node', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
-	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const x = f.details.items.find(item => item.label === 'x')!, y = f.details.items.find(item => item.label === 'y')!;
 	const xPin = f.details.watches.add(f.target, 'actor', x), yPin = f.details.watches.add(f.target, 'actor', y);
 	assert.notStrictEqual(xPin.item, x);
@@ -199,7 +270,7 @@ test('pins retain independent row identities and filter a shared projection of a
 		if (value === actorData) unpinnedFormats++;
 		return format(value);
 	});
-	f.details.refresh(component, componentTarget.path, f.tree, -1, false);
+	f.details.refresh(component, componentTarget.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(unpinnedFormats, 0, 'a watched node does not format its unpinned data table');
 	assert.deepEqual(f.details.items.slice(0, 2), [xPin.item, yPin.item]);
 	const read = f.guest.readStringMember.bind(f.guest);
@@ -210,32 +281,32 @@ test('pins retain independent row identities and filter a shared projection of a
 		return read(...args);
 	});
 	f.execute('change_positions');
-	f.details.refresh(resolveActorTarget(f.tree.roots, componentTarget, f.guest), componentTarget.path, f.tree, -1, false);
+	f.details.refresh(resolveActorTarget(f.tree.roots, componentTarget, f.guest), componentTarget.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(xPin.item.value, '1'); assert.equal(yPin.item.value, '2');
 	assert.equal(xReads, 1); assert.equal(yReads, 1, 'two same-node pins share one property projection');
 	f.details.watches.remove(xPin);
-	f.details.refresh(resolveActorTarget(f.tree.roots, componentTarget, f.guest), componentTarget.path, f.tree, -1, false);
+	f.details.refresh(resolveActorTarget(f.tree.roots, componentTarget, f.guest), componentTarget.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(f.details.watches.find(f.target, x.identity!), undefined);
 	assert.strictEqual(f.details.items[0], yPin.item);
 });
 
 test('watch readback is idle while dirty but unrefreshed, clean reads do no work, and warmed reads do not execute the guest', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
-	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.label === 'x')!);
-	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	let reads = 0, formats = 0;
 	const read = f.guest.readStringMember.bind(f.guest), format = f.guest.formatStoredEntries.bind(f.guest);
 	t.mock.method(f.guest, 'readStringMember', (...args: Parameters<typeof read>) => { reads++; return read(...args); });
 	t.mock.method(f.guest, 'formatStoredEntries', (value: Parameters<typeof format>[0]) => { formats++; return format(value); });
 	const before = [f.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
-	for (let frame = 0; frame < 1000; frame++) assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false), undefined);
+	for (let frame = 0; frame < 1000; frame++) assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false), undefined);
 	assert.equal(reads, 0); assert.equal(formats, 0);
 	f.invalidate();
 	assert.equal(reads, 0, 'invalidation does not enumerate or format a hidden document');
 	for (let frame = 0; frame < 100; frame++) {
 		f.update();
-		assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false), undefined);
+		assert.equal(f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false), undefined);
 		f.invalidate();
 	}
 	assert.ok(reads > 0); assert.equal(formats, 0);
@@ -244,12 +315,12 @@ test('watch readback is idle while dirty but unrefreshed, clean reads do no work
 
 test('cross-actor pins keep their actor membership and reconcile one tree per watched actor, not per pin', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
-	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const xPin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.label === 'x')!);
 	const yPin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.label === 'y')!);
 	f.update(f.otherHashId);
 	const otherTarget = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, f.tree.roots[0], f.guest);
-	f.details.refresh(f.tree.roots[0], otherTarget.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], otherTarget.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(xPin.item.value, '0'); assert.equal(yPin.item.value, '0');
 	assert.equal(f.details.items.find(item => item.watch === undefined && item.label === 'x')!.value, '20');
 	f.execute('change_positions'); f.update(f.otherHashId);
@@ -259,30 +330,30 @@ test('cross-actor pins keep their actor membership and reconcile one tree per wa
 		if (args[3]?.hashId === f.actorHashId) watchedUpdates++;
 		return update.apply(this, args);
 	});
-	f.details.refresh(f.tree.roots[0], otherTarget.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], otherTarget.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(watchedUpdates, 1);
 	assert.equal(xPin.item.value, '1'); assert.equal(yPin.item.value, '2');
 	assert.equal(f.details.items.find(item => item.watch === undefined && item.label === 'x')!.value, '23');
-	assert.equal(f.details.refresh(f.tree.roots[0], otherTarget.path, f.tree, -1, false), undefined);
+	assert.equal(f.details.refresh(f.tree.roots[0], otherTarget.path, f.tree, -1, f.target.worldHashId, false), undefined);
 	assert.equal(watchedUpdates, 1);
 });
 
 test('cross-actor pinned tables reread mutable entries and format only after their contents change', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
-	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.label === 'data')!);
 	f.update(f.otherHashId);
 	const otherTarget = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, f.tree.roots[0], f.guest);
-	f.details.refresh(f.tree.roots[0], otherTarget.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], otherTarget.path, f.tree, -1, f.target.worldHashId, false);
 	const original = pin.item.value;
 	let formats = 0;
 	const format = f.guest.formatStoredEntries.bind(f.guest);
 	t.mock.method(f.guest, 'formatStoredEntries', (value: Parameters<typeof format>[0]) => { formats++; return format(value); });
 	f.invalidate(); f.update(f.otherHashId);
-	assert.equal(f.details.refresh(f.tree.roots[0], otherTarget.path, f.tree, -1, false), undefined);
+	assert.equal(f.details.refresh(f.tree.roots[0], otherTarget.path, f.tree, -1, f.target.worldHashId, false), undefined);
 	assert.equal(formats, 0);
 	f.execute('change_data'); f.update(f.otherHashId);
-	f.details.refresh(f.tree.roots[0], otherTarget.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], otherTarget.path, f.tree, -1, f.target.worldHashId, false);
 	assert.notEqual(pin.item.value, original);
 	assert.equal(formats, 1);
 	const actor = findRuntimeActor(f.sources, f.guest, -1, f.actorHashId)!;
@@ -293,18 +364,20 @@ test('pinned property identities distinguish numeric and string keys with identi
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component, f.guest);
-	f.details.refresh(component, target.path, f.tree, -1, false);
+	f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false);
 	const numeric = f.details.items.find(item => item.value === 'numeric')!, string = f.details.items.find(item => item.value === 'string')!;
 	assert.equal(numeric.label, string.label);
 	assert.equal(runtimePropertyIdentitiesEqual(numeric.identity!, string.identity!), false);
 	assert.equal(actorDetailsPropertiesEqual(numeric, string), false);
 	const numericPin = f.details.watches.add(target, 'ordinary', numeric), stringPin = f.details.watches.add(target, 'ordinary', string);
 	f.execute('change_keys');
-	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(numericPin.item.value, 'numeric changed'); assert.equal(stringPin.item.value, 'string changed');
+	assert.equal(numericPin.item.valueChanged, true); assert.equal(stringPin.item.valueChanged, true);
 	f.execute('remove_numeric_field');
-	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(numericPin.available, false); assert.equal(numericPin.item.source, undefined);
+	assert.equal(numericPin.item.valueChanged, false);
 	assert.equal(stringPin.available, true); assert.equal(stringPin.item.value, 'string changed');
 });
 
@@ -312,48 +385,50 @@ test('typed node pins survive history absence and recover without borrowing a sa
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const state = f.tree.roots[0].children[0].children[0].children.find(node => node.key === 1)!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, state, f.guest);
-	f.details.refresh(state, target.path, f.tree, -1, false);
+	f.details.refresh(state, target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(target, 'state', f.details.items.find(item => item.label === 'INSTANCE DATA')!);
 	const original = pin.item.value, alive = f.cpu.captureRuntimeState();
 	f.execute('remove_numeric'); const missing = f.cpu.captureRuntimeState();
 	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(missing); f.update();
-	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, true);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, true);
 	assert.equal(pin.available, false); assert.equal(pin.retired, false);
+	assert.equal(pin.item.valueChanged, false);
 	assert.ok(f.tree.roots[0].children[0].children[0].children.some(node => node.hashId === target.path[target.path.length - 1].hashId));
 	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(alive); f.update();
-	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, true);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, true);
 	assert.equal(pin.available, true); assert.equal(pin.item.value, original);
+	assert.equal(pin.item.valueChanged, false, 'an unavailable pin recovers with a new baseline');
 });
 
 test('live actor removal retires its watches and later invalidations do not read retired memberships', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
-	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.label === 'x')!);
 	f.execute('remove_actor');
-	f.details.refresh(undefined, f.target.path, f.tree, -1, false);
+	f.details.refresh(undefined, f.target.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(pin.retired, true); assert.equal(pin.available, false);
 	let reads = 0;
 	const read = f.guest.readStringMember.bind(f.guest);
 	t.mock.method(f.guest, 'readStringMember', (...args: Parameters<typeof read>) => { reads++; return read(...args); });
 	for (let frame = 0; frame < 100; frame++) {
 		f.invalidate();
-		assert.equal(f.details.refresh(undefined, f.target.path, f.tree, -1, false), undefined);
+		assert.equal(f.details.refresh(undefined, f.target.path, f.tree, -1, f.target.worldHashId, false), undefined);
 	}
 	assert.equal(reads, 0);
 });
 
 test('live branch admission retires an absent actor before discarded-future allocation ids are reused', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
-	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(f.target, 'actor', f.details.items.find(item => item.label === 'x')!);
 	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(f.beforeBirth); f.update();
-	f.details.refresh(undefined, f.target.path, f.tree, -1, true);
+	f.details.refresh(undefined, f.target.path, f.tree, -1, f.target.worldHashId, true);
 	assert.equal(pin.available, false); assert.equal(pin.retired, false);
 	f.details.watches.resumeHistory(f.tree, -1);
 	assert.equal(pin.retired, true);
 	f.invalidate(); f.cpu.runUntilDepth(0, 100_000); f.update();
 	assert.equal(f.tree.roots[0].hashId, f.target.actorHashId);
-	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(pin.available, false);
 	assert.equal(f.details.watches.find(f.target, pin.property), undefined);
 });
@@ -364,22 +439,22 @@ test('live branch admission also retires absent dynamic property memberships on 
 	f.execute('add_future_field');
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component, f.guest);
-	f.details.refresh(component, target.path, f.tree, -1, false);
+	f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(target, 'ordinary', f.details.items.find(item => item.value === '91')!);
 	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(beforeField); f.update();
-	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, true);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, true);
 	assert.equal(pin.available, false); assert.equal(pin.retired, false);
 	f.details.watches.resumeHistory(f.tree, -1);
 	assert.equal(pin.retired, true);
 	f.execute('add_future_field');
 	const restored = resolveActorTarget(f.tree.roots, target, f.guest)!;
-	f.details.refresh(restored, target.path, f.tree, -1, false);
+	f.details.refresh(restored, target.path, f.tree, -1, f.target.worldHashId, false);
 	const reused = f.details.items.find(item => item.watch === undefined && item.value === '91')!;
 	assert.equal(runtimePropertyIdentitiesEqual(reused.identity!, pin.property), true, 'the guest reused the discarded-future string id');
 	assert.equal(pin.available, false);
 	const repinned = f.details.watches.add(target, 'ordinary', reused);
 	f.details.watches.remove(pin);
-	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	assert.strictEqual(f.details.watches.find(target, reused.identity!), repinned);
 	assert.equal(repinned.available, true); assert.equal(repinned.item.value, '91');
 });
@@ -388,15 +463,15 @@ test('heap replacement retires pins, clears loaded source actions, and keeps eac
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component, f.guest);
-	f.details.refresh(component, target.path, f.tree, -1, false);
+	f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(target, 'ordinary', f.details.items.find(item => item.label === 'callback')!);
 	assert.ok(pin.item.source !== undefined);
 	f.invalidate('heap-replaced'); f.tree.dispose();
-	f.details.refresh(undefined, undefined, f.tree, -1, false);
+	f.details.refresh(undefined, undefined, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(pin.retired, true); assert.equal(pin.available, false); assert.equal(pin.item.source, undefined);
 	assert.strictEqual(f.details.items[0], pin.item);
 	f.details.watches.remove(pin);
-	f.details.refresh(undefined, undefined, f.tree, -1, false);
+	f.details.refresh(undefined, undefined, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(f.details.items.some(item => item.watch !== undefined), false);
 });
 
@@ -404,17 +479,17 @@ test('pinned callbacks reuse current loaded source mappings and clear them when 
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component, f.guest);
-	f.details.refresh(component, target.path, f.tree, -1, false);
+	f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false);
 	const pin = f.details.watches.add(target, 'ordinary', f.details.items.find(item => item.label === 'callback')!);
-	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	const source = pin.item.source;
 	assert.ok(source !== undefined); assert.equal(source.resource.domain, -1);
 	for (let frame = 0; frame < 100; frame++) {
-		f.invalidate(); f.update(); f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false);
+		f.invalidate(); f.update(); f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 		assert.strictEqual(pin.item.source, source);
 	}
 	f.execute('replace_callback');
-	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(pin.available, true); assert.equal(pin.item.source, undefined); assert.equal(pin.item.value, '99');
 });
 
@@ -422,11 +497,12 @@ test('watch labels update independently of a stable indexed runtime property ide
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const state = f.tree.roots[0].children[0].children[0].children.find(node => node.key === 1)!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, state, f.guest);
-	f.details.refresh(state, target.path, f.tree, -1, false);
+	f.details.refresh(state, target.path, f.tree, -1, f.target.worldHashId, false);
 	const property = f.details.items.find(item => item.identity?.section === 'input')!;
 	const pin = f.details.watches.add(target, 'state', property), label = pin.item.label, value = pin.item.value;
 	f.execute('change_input_pattern');
-	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, false);
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
 	assert.notEqual(pin.item.label, label); assert.equal(pin.item.value, value);
+	assert.equal(pin.item.valueChanged, false, 'a label change is not a displayed-value change');
 	assert.strictEqual(f.details.watches.find(target, property.identity!), pin);
 });
