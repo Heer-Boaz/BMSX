@@ -24,6 +24,8 @@ export type EventHistoryStatus = 'live' | 'replay' | Exclude<FunctionProbeBindin
 /** Workspace-owned recent history. Retention is independent of viewer/tool lifetime. */
 export class RuntimeEventHistory {
 	private readonly buffer: HistoricalEvent[];
+	/** Host recording provenance, not part of the detached event payload/tool protocol. */
+	private readonly checkpoints: number[];
 	private readonly snapshot: GuestValueSnapshot;
 	public revision = 0;
 	public generation = 0;
@@ -41,6 +43,7 @@ export class RuntimeEventHistory {
 		public readonly capacity = 2048,
 	) {
 		this.buffer = new Array(capacity);
+		this.checkpoints = new Array(capacity);
 		this.snapshot = new GuestValueSnapshot(runtime.machine.cpu.stringPool);
 		this.bindSources();
 	}
@@ -56,8 +59,15 @@ export class RuntimeEventHistory {
 	/** Sequence must be in the advertised retained window. External cursors are admitted by tools. */
 	public at(sequence: number): HistoricalEvent { return this.buffer[sequence % this.capacity]; }
 
+	/** Historical evidence can outlive the physical recording which produced it. */
+	public canSeek(event: HistoricalEvent): boolean {
+		return event.sequence >= this.firstSequence && event.sequence < this.endSequence
+			&& this.runtime.history.canSeekFrom(this.checkpoints[event.sequence % this.capacity], event.cycles);
+	}
+
 	public clear(): void {
 		this.buffer.length = 0;
+		this.checkpoints.length = 0;
 		this.firstSequence = this.endSequence;
 		this.expired = 0;
 		this.generation++;
@@ -107,6 +117,7 @@ export class RuntimeEventHistory {
 		const emitter = this.snapshot.read(values, locations[1]);
 		const payload = this.snapshot.read(values, locations[2]);
 		const sequence = this.endSequence++;
+		this.checkpoints[sequence % this.capacity] = this.runtime.history.recordingCheckpoint;
 		this.buffer[sequence % this.capacity] = {
 			sequence, timeline: this.timeline, domain,
 			cycles: this.runtime.machine.scheduler.currentNowCycles(),

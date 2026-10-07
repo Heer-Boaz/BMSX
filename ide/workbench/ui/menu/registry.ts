@@ -6,7 +6,7 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.run'
 	| 'menubar.view';
 
-export type WorkbenchContextMenuId = 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
+export type WorkbenchContextMenuId = 'events.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
 export type WorkbenchActionMenuId = 'events.title' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'terminal.input' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
@@ -177,9 +177,18 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'sourceEditReview.discard' },
 	],
 	'events.title': [
-		{ type: 'command', command: 'events.clear' },
 		{ type: 'command', command: 'events.filter' },
+		{ type: 'command', command: 'events.goToFrame' },
+		{ type: 'command', command: 'events.more' },
+	],
+	'events.context': [
 		{ type: 'command', command: 'events.details' },
+		{ type: 'command', command: 'events.goToFrame' },
+		{ type: 'command', command: 'events.previousFrame' },
+		{ type: 'command', command: 'events.nextFrame' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'events.filter' },
+		{ type: 'command', command: 'events.clear' },
 	],
 	'terminal.input': [
 		{ type: 'command', command: 'terminal.context' },

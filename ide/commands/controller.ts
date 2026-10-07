@@ -212,6 +212,7 @@ export class IdeCommandController {
 			case 'sourceEditReview.apply':
 			case 'conversations.older':
 			case 'events.clear': case 'events.filter': case 'events.details':
+			case 'events.goToFrame': case 'events.previousFrame': case 'events.nextFrame': case 'events.more':
 			case 'terminal.evaluate':
 			case 'terminal.context':
 			case 'terminal.pause':
@@ -453,6 +454,7 @@ export class IdeCommandController {
 			case 'sourceEditReview.apply':
 			case 'conversations.older':
 			case 'events.clear': case 'events.filter': case 'events.details':
+			case 'events.goToFrame': case 'events.previousFrame': case 'events.nextFrame': case 'events.more':
 			case 'terminal.evaluate':
 			case 'terminal.context':
 			case 'terminal.pause':

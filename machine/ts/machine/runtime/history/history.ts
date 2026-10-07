@@ -15,7 +15,10 @@ export type HistoryOptions = {
 };
 
 type Checkpoint = {
+	id: number;
 	cycles: number;
+	/** Exclusive end of the original continuation after a live branch. */
+	seekUntilCycles: number;
 	inputSequence: number;
 	state: RuntimeSaveState;
 };
@@ -31,6 +34,7 @@ export class RuntimeHistory {
 	private checkpoints: (Checkpoint | null)[] = [];
 	private firstCheckpoint = 0;
 	private count = 0;
+	private nextCheckpointId = 0;
 	private intervalCycles = 0;
 	private nextCheckpointCycles = 0;
 	private latestCheckpointInputSequence = 0;
@@ -46,6 +50,24 @@ export class RuntimeHistory {
 	public checkpointCycles(index: number): number { return this.checkpoints[(this.firstCheckpoint + index) % this.checkpoints.length]!.cycles; }
 	public get earliestCycles(): number { return this.count === 0 ? 0 : this.checkpoints[this.firstCheckpoint]!.cycles; }
 	public get latestCycles(): number { return this.endCycles; }
+	/** Provenance for host observations, not a save-state or guest identity. */
+	public get recordingCheckpoint(): number {
+		return this.mode === HistoryMode.Recording && this.count !== 0
+			? this.checkpoints[(this.firstCheckpoint + this.count - 1) % this.checkpoints.length]!.id : -1;
+	}
+	/** The originating checkpoint and its continuation must still be retained. */
+	public canSeekFrom(checkpoint: number, cycles: number): boolean {
+		if (cycles < this.earliestCycles || cycles > this.endCycles) return false;
+		let first = 0, end = this.count;
+		while (first < end) {
+			const middle = first + Math.trunc((end - first) / 2);
+			const candidate = this.checkpoints[(this.firstCheckpoint + middle) % this.checkpoints.length]!;
+			if (candidate.id < checkpoint) first = middle + 1;
+			else if (candidate.id > checkpoint) end = middle;
+			else return cycles >= candidate.cycles && cycles < candidate.seekUntilCycles;
+		}
+		return false;
+	}
 	public get executionPaused(): boolean { return this.checkpointPending || this.mode === HistoryMode.Reviewing; }
 
 	/** Requests the initial checkpoint. Execution waits for host GPU synchronization. */
@@ -85,7 +107,8 @@ export class RuntimeHistory {
 		const previous = this.checkpoints[index];
 		// Only the evicted/inactive slot owns storage that may be overwritten.
 		const state = captureRuntimeSaveState(this.runtime, previous === null ? undefined : previous.state);
-		const checkpoint = { cycles, inputSequence: this.inputJournal.endSequence, state };
+		const checkpoint = { id: this.nextCheckpointId++, cycles, seekUntilCycles: Infinity,
+			inputSequence: this.inputJournal.endSequence, state };
 		this.checkpoints[index] = checkpoint;
 		if (this.count === this.checkpoints.length) {
 			this.firstCheckpoint = (this.firstCheckpoint + 1) % this.checkpoints.length;
@@ -181,6 +204,10 @@ export class RuntimeHistory {
 			if (this.checkpoints[index]!.cycles <= cycles) break;
 			// Discard the future logically; retain slot storage for the new branch.
 			this.count -= 1;
+		}
+		if (!rejoiningLatest) for (let index = 0; index < this.count; index++) {
+			const checkpoint = this.checkpoints[(this.firstCheckpoint + index) % this.checkpoints.length]!;
+			checkpoint.seekUntilCycles = Math.min(checkpoint.seekUntilCycles, cycles);
 		}
 		this.inputJournal.branch();
 		this.runtime.frameScheduler.reset();

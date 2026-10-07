@@ -32,14 +32,24 @@ export class WorkspaceRuntimeTools {
 		const request = decodeRuntimeToolRequest(name, input);
 		switch (request.name) {
 			case 'studio_event_history':
-			case 'studio_read_events': {
+			case 'studio_read_events':
+			case 'studio_seek_event': {
 				if (request.target !== this.owner.target) throw new StudioToolInputError('Event history requires this authoring target.');
 				requestSignal?.throwIfAborted();
 				const history = this.events;
-				if (request.name === 'studio_read_events') {
+				if (request.name !== 'studio_event_history') {
 					if (request.generation !== history.generation) throw new StudioToolInputError('Event history was cleared; read the current generation.');
 					if (request.sequence < history.firstSequence) throw new StudioToolInputError('Event sequence expired; read the retained sequence window.');
 					if (request.sequence > history.endSequence) throw new StudioToolInputError('Event sequence is beyond the published history.');
+					if (request.name === 'studio_seek_event') {
+						if (request.sequence === history.endSequence) throw new StudioToolInputError('Event sequence is beyond the published history.');
+						const event = history.at(request.sequence);
+						if (!history.canSeek(event)) throw new StudioToolInputError('The event has no reachable frame in the retained physical recording.');
+						const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
+						const operation = this.navigation.seek(event.cycles, signal);
+						return operation.completion.then(result => ({ kind: 'runtime' as const, data: { target: this.owner.target,
+							generation: request.generation, sequence: event.sequence, ...result } }));
+					}
 					const end = Math.min(history.endSequence, request.sequence + request.count);
 					const events = [];
 					for (let sequence = request.sequence; sequence < end; sequence++) events.push(history.at(sequence));

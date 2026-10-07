@@ -69,7 +69,7 @@ export type EditorScenarioLabCommandId =
 	| 'scenarioLab.cancel';
 
 export type EditorCommandId =
-	| 'events.clear' | 'events.filter' | 'events.details'
+	| 'events.clear' | 'events.filter' | 'events.details' | 'events.goToFrame' | 'events.previousFrame' | 'events.nextFrame' | 'events.more'
 	| 'resources.import'
 	| 'projects.createCartridge'
 	| 'conversations.history' | 'conversations.older'

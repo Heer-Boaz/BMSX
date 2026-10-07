@@ -8,11 +8,26 @@ no Record/Stop step. Collection never resumes a paused game. Run, frame-step
 and rewind with the existing central transport; the optional Game panel can
 show the live image alongside it.
 
-Select an event and press Enter / **Details** for its wrapped, scrollable
+Select an event and press Enter / **Inspect Selected Event** for its wrapped, scrollable
 payload. Ctrl+C in the event list copies that historical snapshot; in Details
 it copies the selected stored property value. **Filter** searches event and
 emitter text. **Clear** deletes retained evidence without disabling collection.
 The viewer works without a server or assistant.
+
+**Go to Frame** seeks through the existing central rewind owner and leaves the
+game paused. It selects the retained video boundary **at or before** emission,
+not the emitting instruction or the state after its listeners ran. The selected
+immutable payload and the current physical machine remain distinct: ordinary
+clicks/arrows only select evidence. The central timeline shows the actual
+machine position, and completion reports the reached frame.
+
+Right-click or Shift+F10 opens the same actions as **…**. **Previous Event** and
+**Next Event** explicitly select and seek the adjacent reachable event in the
+filtered sequence; ordinary arrow keys do not seek. Multiple emissions can map
+to the same video boundary. Inspect and Clear live in this menu rather than
+adding another permanent transport row. Timeline labels distinguish retained
+evidence from different executions. Unreachable evidence remains inspectable,
+with **Frame unavailable** rather than a jump to unrelated state.
 
 The circular buffer retains the latest **2048 emissions**. It expires the oldest
 rather than stopping at capacity; the footer reports the expired count. Each
@@ -45,6 +60,12 @@ Codex and external Studio/MCP clients read the **same workspace-owned buffer**:
   advertised retained window, and count. A cleared generation or expired
   sequence is rejected explicitly; it is never silently changed to another
   position. A sequence equal to endSequence yields an empty page.
+- `studio_seek_event`: pass the generation and sequence of a read event. The
+  event's original recording must still be reachable; the tool awaits ordinary
+  frame navigation and returns its actual completion/stop/interruption and
+  before/after positions. Cancellation uses the existing finite-operation owner.
+  Do not copy an old event's cycles into `studio_seek_history`: a timestamp alone
+  does not establish recording provenance after a reset or branch.
 
 Read on demand around ordinary Terminal operations, Actor operations or frame
 steps. No polling, additional capture session or live guest handle is required.
@@ -106,6 +127,43 @@ The pre-edit TS/C++ representation table and hot callsites are recorded in
 [event observation parity](event_observation_parity.md). Native players expose
 the same CPU mechanism but allocate no Studio event history.
 
+## Physical recording provenance
+
+Event evidence and replay retention are different owners. `RuntimeHistory`
+assigns monotonically increasing IDs to its existing bounded checkpoint ring;
+IDs do not reset on start/stop. At observation, `RuntimeEventHistory` stores the
+current recording checkpoint ID in a parallel bounded host array. No checkpoint
+or guest object is retained by an event. Emissions while physical history is
+disabled remain inspectable evidence but have no replay anchor.
+
+The history owner admits a position only if that checkpoint remains retained,
+the cycles are inside the recorded range, and its continuation was not cut by
+a live branch. Branching clips the old checkpoints at the branch cycle,
+exclusively: an instruction observed at that admission cycle has not yet run in
+the restored boundary state. Earlier surviving evidence remains navigable;
+discarded futures never become reachable when new execution crosses the same
+cycle number. Nested branches preserve earlier cuts. Stop/start, reset, external
+load and injected guest execution retire the old physical recording at their
+existing history lifecycle boundary. No feature-maintained lineage graph or
+inference from timeline labels is involved.
+
+Pre-edit representation/callsite review for the mirrored history extension:
+
+| Value | TypeScript | C++ |
+| --- | --- | --- |
+| Monotonic checkpoint ID; absent recording | integer `number`; `-1` | `i64`; `-1` |
+| Branch cutoff cycles | integer `number` | `i64` |
+| Uncut continuation sentinel | `Infinity` | `numeric_limits<i64>::max()` |
+| Storage | existing checkpoint ring | existing checkpoint ring |
+
+These are host-history fields, excluded from the machine/save-state format.
+`captureCheckpoint` assigns two fields per existing capture; `resumeRecording`
+clips the bounded retained checkpoints only on a branch. `recordInputBoundary`,
+CPU dispatch, guest bytecode and normal playback gain no work. Observation reads
+one scalar anchor; navigation admission binary-searches retained checkpoint IDs.
+The observer still charges no guest cycles or allocations. Native players keep
+the same provenance semantics without allocating any Studio event snapshots.
+
 ## Bounded snapshot and clipboard ownership
 
 Table preview uses the table owner's constant-work `storedSlotCount` and
@@ -127,6 +185,21 @@ remain with the platform clipboard owner. No guest evaluation, pane-specific
 shortcut, hidden editor or permanent Copy button is involved.
 
 ## Production references studied
+
+- [RenderDoc event selection](https://github.com/baldurk/renderdoc/blob/v1.x/qrenderdoc/Windows/EventBrowser.cpp)
+  and [capture context](https://github.com/baldurk/renderdoc/blob/v1.x/qrenderdoc/Code/CaptureContext.cpp):
+  selected evidence and effective replay position are distinct; one replay owner
+  publishes physical state. BMSX retains asynchronous finite navigation rather
+  than copying RenderDoc's blocking wait.
+- [Perfetto selection](https://github.com/google/perfetto/blob/main/ui/src/core/selection_manager.ts)
+  and [search navigation](https://github.com/google/perfetto/blob/main/ui/src/core/search_manager.ts):
+  selection, reveal and details are separate, and navigation uses retained results.
+- [UE Rewind Debugger](https://dev.epicgames.com/documentation/en-us/unreal-engine/animation-rewind-debugger-in-unreal-engine)
+  and [Visual Logger](https://dev.epicgames.com/documentation/en-us/unreal-engine/visual-logger-in-unreal-engine):
+  timeline-linked inspection. BMSX reuses its automatic physical history, not an
+  additional recording session or inferred live actor from a detached payload.
+- [MAME rewinder](https://github.com/mamedev/mame/blob/master/src/emu/save.cpp):
+  the physical history owner controls bounded retention and future invalidation.
 
 - [MAME instruction hooks](https://github.com/mamedev/mame/blob/master/src/emu/debug/debugcpu.cpp):
   host-side observation before execution, distinct from guest code.
@@ -201,3 +274,46 @@ and reconstruction of expired events are not implemented.
 
 Raw samples, complete replay states, UI screenshots and copied values are kept
 in `.bmsx/authoring/event-observation-parity/` (ignored local evidence).
+
+## Event-to-frame navigation validation (2026-10-07)
+
+- The real Browser Studio workflow passes on software, WebGL2 and WebGPU. The
+  harness installs a small authored cartlib-emitter fixture through the source
+  model and Reboot; subsequent selection, filter, Details, copy, Go to Frame,
+  Previous/Next, Continue from Here and Clear use keyboard/pointer controls.
+  Inspected screenshots show aligned columns, frame 57 before event #17, and
+  disabled navigation for discarded timeline-2 evidence alongside timeline 3.
+  Reactivating the Events tab with Details open retains property keyboard focus.
+- A separate public `studio_seek_event` invocation completes real physical replay
+  while selection/filter/Clear are changed through the UI. An ordinary queued
+  host-work fence holds the admitted operation while these interactions occur;
+  the result retains its original event identity and reaches its requested
+  frame. This distinguishes tool-lifetime coverage from the pointer-only checks.
+- The focused event, frame-navigation/scheduler, Actor and inspection regressions
+  pass (162 tests). Event tests compare stored payloads and unchanged guest state;
+  navigation tests exercise lifecycle and recording identity, not presentation
+  string contracts. Both TS and native scheduler suites cover rejoining, nested
+  branch cutoffs, overlapping cycles after reset, ring reuse and input expiration.
+- Actual Nemesis media passes complete TS/C++ replay and retained-history state
+  comparison. The native host rewind and libretro rewind/menu-pause ABI runners
+  also pass. The two added checkpoint fields do not enter save-state data.
+- Six platform regressions cover the real Codex app-server, browser runtime tools
+  and finite navigation on software, WebGL2 and WebGPU. Their deterministic local
+  Responses provider checks tool exposure, including `studio_seek_event`; this
+  is not a claim about a personal account's authentication or live-model quality.
+- Browser Studio builds, IDE/tests typechecks and architecture/core-parity audits
+  pass. Structural parity and these interaction checks do not establish general
+  accelerated-renderer pixel parity or a universal host-time overhead bound.
+
+Reproduce the browser interaction checks with:
+
+```sh
+node tests/conformance/runtime_replay/browser.mjs --studio-event-navigation \
+  dist/system/bmsx-bios.debug.rom dist/nemesis_s.debug.rom \
+  .bmsx/authoring/event-navigation/viewer.png
+```
+
+Screenshots and logs are retained in `.bmsx/authoring/event-navigation/` (ignored
+local evidence). Browser logs include a resource 404 and Chromium ReadPixels
+performance warnings; there were no uncaught browser exceptions. The interaction
+checks are not a claim of a warning-free browser environment.

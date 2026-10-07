@@ -143,7 +143,9 @@ The Actor/Behavior/workbench unit bundle passes 343 tests. Clean Details refresh
 perform no guest reads; dirty unchanged values retain rows without reformatting.
 This is not a zero-allocation or total-frame performance claim. IDE/tests
 typechecks, the browser Studio build, architecture audit and diff checks pass.
-This validation predates property pins; semantic event/time navigation remains separate follow-up work.
+This validation predates property pins. [Event-to-frame navigation](studio_event_viewer.md)
+now shares the physical rewind owner; selected event payloads are not live Actor
+Lab handles and do not automatically select actors by emitter display text.
 
 ## Pinned runtime properties
 

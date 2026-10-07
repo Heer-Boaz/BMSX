@@ -5515,6 +5515,14 @@ invalidates tool generations. Reset, external load, admitted installation and
 actual live history branches label subsequent events with a new timeline;
 seeking or returning to the recorded end does not. The history owner publishes
 its branch decision before truncating input. Replay does not duplicate events.
+Event-to-frame navigation uses the physical history owner's monotonic checkpoint
+identity and exclusive branch cutoff, not only a timestamp or event timeline
+label. Valid retained prefixes survive branching; discarded/replaced recordings
+remain inspectable evidence but cannot navigate to unrelated same-cycle state.
+Selection never moves execution implicitly. Explicit UI/tool navigation shares
+`RuntimeFrameNavigation` and reports the reached frame boundary at/before the
+emission, not an exact instruction stop. Provenance extends only host checkpoint
+metadata in TS/C++; guest/save-state representation and normal dispatch are unchanged.
 Installed-media replacement rebinds observation before guest execution resumes.
 Snapshot values remain typed, detached data; formatting is deferred to reads.
 The mirrored table owner exposes constant-work reads of individual stored

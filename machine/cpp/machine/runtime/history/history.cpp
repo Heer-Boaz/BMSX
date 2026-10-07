@@ -1,8 +1,22 @@
 #include "machine/runtime/history/history.h"
 #include "machine/runtime/runtime.h"
 #include <algorithm>
+#include <limits>
 
 namespace bmsx {
+
+bool RuntimeHistory::canSeekFrom(i64 checkpoint, i64 cycles) const {
+	if (cycles < earliestCycles() || cycles > endCycles) return false;
+	size_t first = 0, end = count;
+	while (first < end) {
+		const size_t middle = first + (end - first) / 2;
+		const auto& candidate = *checkpoints[(firstCheckpoint + middle) % checkpoints.size()];
+		if (candidate.id < checkpoint) first = middle + 1;
+		else if (candidate.id > checkpoint) end = middle;
+		else return cycles >= candidate.cycles && cycles < candidate.seekUntilCycles;
+	}
+	return false;
+}
 
 void RuntimeHistory::start(const HistoryOptions& options) {
 	checkpoints = std::vector<std::optional<Checkpoint>>(options.checkpointCapacity);
@@ -39,7 +53,8 @@ void RuntimeHistory::captureCheckpoint() {
 	auto& slot = checkpoints[index];
 	// Only the evicted/inactive slot owns storage that may be overwritten.
 	RuntimeSaveState storage = slot ? std::move(slot->state) : RuntimeSaveState{};
-	slot = Checkpoint{cycles, inputJournal.endSequence, captureRuntimeSaveState(runtime, std::move(storage))};
+	slot = Checkpoint{nextCheckpointId++, cycles, std::numeric_limits<i64>::max(), inputJournal.endSequence,
+		captureRuntimeSaveState(runtime, std::move(storage))};
 	if (count == checkpoints.size()) {
 		firstCheckpoint = (firstCheckpoint + 1) % checkpoints.size();
 	} else {
@@ -123,6 +138,10 @@ void RuntimeHistory::resumeRecording() {
 		if (checkpoints[index]->cycles <= cycles) break;
 		// Discard the future logically; retain slot storage for the new branch.
 		--count;
+	}
+	if (!rejoiningLatest) for (size_t index = 0; index < count; ++index) {
+		auto& checkpoint = *checkpoints[(firstCheckpoint + index) % checkpoints.size()];
+		checkpoint.seekUntilCycles = std::min(checkpoint.seekUntilCycles, cycles);
 	}
 	inputJournal.branch();
 	runtime.frameScheduler.reset();

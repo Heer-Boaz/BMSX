@@ -244,6 +244,93 @@ test('history rejoining the recorded end preserves checkpoints and pending captu
 	}
 });
 
+test('history observation provenance follows retained checkpoints across review, branches and reset', () => {
+	const { runtime } = createTickRuntime(), history = runtime.history;
+	assert.equal(history.recordingCheckpoint, -1);
+	assert.equal(history.canSeekFrom(-1, 0), false);
+	history.start({ checkpointCapacity: 4, inputCapacity: 16, checkpointIntervalCycles: 0x100000000 });
+	assert.equal(history.recordingCheckpoint, -1, 'the initial capture has not completed');
+	history.captureCheckpoint();
+	const original = history.recordingCheckpoint;
+	for (let tick = 0; tick < 4; tick++) assert.equal(runtime.frameScheduler.runToNextLogicalTick(), true);
+	const first = history.inputJournal.cycleAt(0), second = history.inputJournal.cycleAt(1), third = history.inputJournal.cycleAt(2);
+	const end = history.latestCycles;
+	assert.equal(history.canSeekFrom(original, first + 1), true);
+	assert.equal(history.canSeekFrom(original, end + 1), false, 'an unfinished live frame is outside physical history');
+	history.beginSeek(end);
+	assert.equal(history.recordingCheckpoint, -1, 'replay cannot originate a live observation');
+	for (let step = 0; !history.executionPaused && step < 1000; step++) history.advanceSeek(16384);
+	assert.equal(history.mode, HistoryMode.Reviewing);
+	assert.equal(history.canSeekFrom(original, end), true, 'review retains evidence reachability');
+	history.resumeRecording();
+	assert.equal(history.recordingCheckpoint, original, 'rejoin preserves the checkpoint identity');
+	assert.equal(history.canSeekFrom(original, end), true);
+
+	history.beginSeek(second);
+	for (let step = 0; !history.executionPaused && step < 1000; step++) history.advanceSeek(16384);
+	assert.equal(history.mode, HistoryMode.Reviewing);
+	history.resumeRecording();
+	history.captureCheckpoint();
+	const branch = history.recordingCheckpoint;
+	assert.ok(branch > original);
+	assert.equal(history.canSeekFrom(original, second - 1), true, 'the shared past remains reachable');
+	assert.equal(history.canSeekFrom(original, second), false, 'an admission at the branch cycle belongs to the discarded future');
+	for (let tick = 0; tick < 2; tick++) runtime.frameScheduler.runToNextLogicalTick();
+	assert.equal(history.latestCycles, end);
+	assert.equal(history.canSeekFrom(original, second + 1), false, 'overlapping new cycles cannot revive discarded evidence');
+	assert.equal(history.canSeekFrom(branch, second + 1), true);
+	history.beginSeek(third);
+	for (let step = 0; !history.executionPaused && step < 1000; step++) history.advanceSeek(16384);
+	assert.equal(history.mode, HistoryMode.Reviewing);
+	history.resumeRecording();
+	history.captureCheckpoint();
+	const laterBranch = history.recordingCheckpoint;
+	assert.equal(history.canSeekFrom(original, second), false, 'a later branch cannot reopen an earlier cutoff');
+	assert.equal(history.canSeekFrom(branch, third - 1), true);
+	assert.equal(history.canSeekFrom(branch, third), false);
+
+	history.beginSeek(first);
+	for (let step = 0; !history.executionPaused && step < 1000; step++) history.advanceSeek(16384);
+	assert.equal(history.mode, HistoryMode.Reviewing);
+	history.resumeRecording();
+	history.captureCheckpoint();
+	assert.ok(history.recordingCheckpoint > laterBranch);
+	for (let tick = 0; tick < 3; tick++) runtime.frameScheduler.runToNextLogicalTick();
+	assert.equal(history.canSeekFrom(original, first - 1), true);
+	assert.equal(history.canSeekFrom(original, first), false);
+	assert.equal(history.canSeekFrom(branch, second + 1), false, 'discarded checkpoint storage is not a retained anchor');
+	assert.equal(history.canSeekFrom(laterBranch, third + 1), false);
+	const beforeReset = history.recordingCheckpoint;
+	runtime.rebootSystem();
+	assert.equal(history.recordingCheckpoint, -1);
+	history.start({ checkpointCapacity: 4, inputCapacity: 16, checkpointIntervalCycles: 0x100000000 });
+	history.captureCheckpoint();
+	assert.ok(history.recordingCheckpoint > beforeReset, 'checkpoint identities never restart with machine cycles');
+	assert.equal(history.canSeekFrom(original, 0), false);
+	assert.equal(history.canSeekFrom(history.recordingCheckpoint, 0), true);
+});
+
+test('history observation anchors expire with checkpoint ring and input retention', () => {
+	const { runtime } = createTickRuntime(), history = runtime.history;
+	history.start({ checkpointCapacity: 2, inputCapacity: 4, checkpointIntervalCycles: 0x100000000 });
+	history.captureCheckpoint();
+	const initial = history.recordingCheckpoint;
+	runtime.frameScheduler.runToNextLogicalTick();
+	const first = history.latestCycles;
+	history.captureCheckpoint();
+	const retained = history.recordingCheckpoint;
+	runtime.frameScheduler.runToNextLogicalTick();
+	history.captureCheckpoint();
+	const newest = history.recordingCheckpoint;
+	assert.equal(history.canSeekFrom(initial, first), false, 'reused ring slots have new identities');
+	assert.equal(history.canSeekFrom(retained, first), true);
+	for (let tick = 0; tick < 4; tick++) runtime.frameScheduler.runToNextLogicalTick();
+	assert.equal(history.canSeekFrom(retained, first), false, 'input pressure removes the old anchor');
+	assert.equal(history.canSeekFrom(newest, history.latestCycles), true);
+	history.stop();
+	assert.equal(history.canSeekFrom(newest, history.latestCycles), false);
+});
+
 test('history replays an unarmed supervisor edge through the actual ICU without reading live input', () => {
 	const { runtime, input } = createTickRuntime();
 	const gpu = runtime.machine.gxGpu;

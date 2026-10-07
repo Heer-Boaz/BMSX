@@ -33,6 +33,12 @@ public:
 	i64 checkpointCycles(size_t index) const { return checkpoints[(firstCheckpoint + index) % checkpoints.size()]->cycles; }
 	i64 earliestCycles() const { return count == 0 ? 0 : checkpoints[firstCheckpoint]->cycles; }
 	i64 latestCycles() const { return endCycles; }
+	// Provenance for host observations, not a save-state or guest identity.
+	i64 recordingCheckpoint() const {
+		return mode == HistoryMode::Recording && count != 0
+			? checkpoints[(firstCheckpoint + count - 1) % checkpoints.size()]->id : -1;
+	}
+	bool canSeekFrom(i64 checkpoint, i64 cycles) const;
 	bool executionPaused() const { return checkpointPending || mode == HistoryMode::Reviewing; }
 	void start(const HistoryOptions& options);
 	void stop();
@@ -47,7 +53,10 @@ public:
 	void resumeRecording();
 private:
 	struct Checkpoint {
+		i64 id;
 		i64 cycles;
+		// Exclusive end of the original continuation after a live branch.
+		i64 seekUntilCycles;
 		i64 inputSequence;
 		RuntimeSaveState state;
 	};
@@ -55,6 +64,7 @@ private:
 	std::vector<std::optional<Checkpoint>> checkpoints;
 	size_t firstCheckpoint = 0;
 	size_t count = 0;
+	i64 nextCheckpointId = 0;
 	i64 intervalCycles = 0;
 	i64 nextCheckpointCycles = 0;
 	i64 latestCheckpointInputSequence = 0;

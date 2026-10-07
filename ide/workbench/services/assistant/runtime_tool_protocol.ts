@@ -53,7 +53,7 @@ export const STUDIO_RUNTIME_TOOLS = [
 
 export function decodeRuntimeToolRequest(name: string, input: unknown): RuntimeToolRequest {
 	switch (name) {
-		case 'studio_event_history': case 'studio_read_events': return decodeEventToolRequest(name, input);
+		case 'studio_event_history': case 'studio_read_events': case 'studio_seek_event': return decodeEventToolRequest(name, input);
 		case 'studio_list_actors': case 'studio_read_actor_tree': case 'studio_read_actor_node': case 'studio_list_actor_operations':
 		case 'studio_actor_action': case 'studio_call_actor_method': case 'studio_actor_execution_status': case 'studio_control_actor': return decodeActorToolRequest(name, input);
 		case 'studio_runtime_status': toolArguments(input, NO_FIELDS); return { name };

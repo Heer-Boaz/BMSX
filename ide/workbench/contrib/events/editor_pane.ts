@@ -1,6 +1,7 @@
 import { KeyModifier, type PlayerInput } from '../../../../hosts/common/input/player';
 import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { EditorCommandId } from '../../../common/commands';
+import { showEditorMessage } from '../../../common/feedback_state';
 import type { IdeCommandController } from '../../../commands/controller';
 import * as colors from '../../../common/constants';
 import type { PointerSnapshot } from '../../../common/models';
@@ -10,6 +11,7 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
 import { pointerCapture } from '../../../input/pointer/capture';
+import { PointerButton } from '../../../input/pointer/buttons';
 import { pointerHover } from '../../../input/pointer/hover';
 import { api } from '../../../runtime/overlay_api';
 import { formatValueSnapshot } from '../../../runtime/value_snapshot';
@@ -18,32 +20,39 @@ import { STATUS_BAR_CONNECTION_WIDTH, updateFullWidthWorkbenchLayout } from '../
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
 import type { QuickInputController } from '../../services/quick_input/controller';
+import type { ContextMenuController } from '../../services/context_menu/controller';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
+import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { EventViewerInput } from './editor_input';
 import { EVENT_HISTORY_LABEL, eventClipboardText, eventProperties } from './presentation';
 
-const COMMANDS = ['events.clear', 'events.filter', 'events.details'] as const;
+const COMMANDS = ['events.clear', 'events.filter', 'events.details', 'events.goToFrame', 'events.previousFrame', 'events.nextFrame', 'events.more'] as const;
 const NAVIGATION = ['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'] as const;
 
 export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInput> {
 	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget);
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, input => this.navigate(input));
 	private readonly inspector = new WorkbenchPropertyInspector(inputFocus, pointerCapture, pointerHover, this.focusTarget);
-	private readonly labels = new Map<number, string>();
+	private readonly labels = new Map<number, { timeline: string; tick: string; event: string }>();
+	private timelineWidth = 0;
+	private tickWidth = 0;
+	private digitWidth = 0;
 	private generation = -1;
 	private firstSequence = 0;
 	private status = '';
 	private historyRevision = -1;
 	private historyStatus = '';
 	private filter = '';
+	private selectedSequence = -1;
+	private selectedReachable = false;
 	private running = false;
 	public constructor(resources: ResourcePanelController, private readonly quickInput: QuickInputController,
-		commands: IdeCommandController, navigation: RuntimeFrameNavigation) {
+		commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation, private readonly contextMenu: ContextMenuController) {
 		super(resources);
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.isEnabled('gameView.playback'),
 			run: () => { this.running = commands.toggleGamePlayback(); } });
@@ -57,6 +66,12 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 		}
 		this.scroll.focusTarget.commandContext = this.focusTarget;
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
+		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => !this.inspector.visible, run: () => {
+			const input = this.input, viewport = input.viewport;
+			const top = viewport.offsetTop + input.selected * input.layout.rowHeight;
+			this.contextMenu.show(viewport.bounds.left + 4, Math.max(viewport.bounds.top, Math.min(viewport.bounds.bottom, top)),
+				WORKBENCH_MENUS['events.context'], this, true);
+		} });
 		this.scroll.focusTarget.clipboard = { copy: () => {
 			const record = this.input.projection.rows[this.input.selected];
 			return record === undefined ? null : eventClipboardText(record);
@@ -67,20 +82,34 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 	}
 	public override get suspendsRuntime(): boolean { return !this.running; }
 	public override get runtimeControlContext() { return this.focusTarget; }
-	public override focus(): void { this.scroll.focusTarget.focus(); }
+	public override focus(): void { (this.inspector.visible ? this.inspector : this.scroll).focusTarget.focus(); }
 	protected override activate(): void {
 		super.activate(); this.labels.clear(); this.historyRevision = -1;
-		this.actions.setInput(this.input.actions, this.focusTarget); this.scroll.setInput(this.input.viewport); this.update();
+		this.actions.setInput(this.input.actions, this.focusTarget); this.scroll.setInput(this.input.viewport);
 	}
 	public override clearInput(): void {
 		this.running = false;
+		this.contextMenu.hide();
 		this.inspector.hide(); this.actions.clearInput(); this.scroll.clearInput(); this.labels.clear(); super.clearInput();
 	}
 	public override dispose(): void { this.clearInput(); this.inspector.dispose(); this.actions.dispose(); this.scroll.dispose(); super.dispose(); }
 	public isEnabled(command: EditorCommandId): boolean {
-		if (command === 'events.details') return this.input.selected >= 0 && this.input.selected < this.input.projection.rows.length;
+		if (this.inspector.visible) return false;
+		const record = this.input.projection.rows[this.input.selected];
+		if (command === 'events.details') return record !== undefined;
+		if (command === 'events.goToFrame') return record !== undefined && this.navigation.available && this.input.history.canSeek(record);
+		if (command === 'events.previousFrame' || command === 'events.nextFrame') return this.navigation.available
+			&& this.adjacentEvent(command === 'events.previousFrame' ? -1 : 1) >= 0;
 		if (command === 'events.clear') return this.input.history.count !== 0;
-		return command === 'events.filter';
+		return command === 'events.filter' || command === 'events.more';
+	}
+	private adjacentEvent(direction: -1 | 1): number {
+		const input = this.input;
+		if (input.selected < 0) return -1;
+		for (let index = input.selected + direction; index >= 0 && index < input.projection.rows.length; index += direction) {
+			if (input.history.canSeek(input.projection.rows[index])) return index;
+		}
+		return -1;
 	}
 	public execute(command: EditorCommandId): void {
 		if (!this.isEnabled(command)) return;
@@ -93,6 +122,23 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 				const record = input.projection.rows[input.selected];
 				this.inspector.show({ title: `Event #${record.sequence}`, items: eventProperties(record), canOpenSource: () => false, openSource: () => {} }); break;
 			}
+			case 'events.more': {
+				const bounds = input.actions.items.find(item => item.command === 'events.more')!.bounds;
+				this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['events.context'], this, true); break;
+			}
+			case 'events.goToFrame': case 'events.previousFrame': case 'events.nextFrame': {
+				if (command !== 'events.goToFrame') {
+					input.selected = this.adjacentEvent(command === 'events.previousFrame' ? -1 : 1);
+					input.viewport.scrollbar.reveal(input.selected * input.layout.rowHeight, (input.selected + 1) * input.layout.rowHeight, 0);
+				}
+				const record = input.projection.rows[input.selected];
+				this.running = false;
+				const operation = this.navigation.seek(record.cycles);
+				void operation.completion.then(result => showEditorMessage(result.status === 'completed'
+					? `Frame ${result.after.videoTick} at/before event #${record.sequence} (timeline ${record.timeline}).`
+					: `Event #${record.sequence}: ${result.status}${result.reason === undefined ? '' : ` (${result.reason})`}.`, colors.COLOR_STATUS_TEXT, 4));
+				break;
+			}
 		}
 	}
 	public override update(): void {
@@ -102,6 +148,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 			this.generation = history.generation;
 			input.selected = -1;
 			this.inspector.hide();
+			this.contextMenu.hide();
 			this.labels.clear();
 		}
 		if (changed || this.filter !== input.filter) this.labels.clear();
@@ -112,6 +159,16 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 		const atEnd = viewport.scrollTop + viewport.height >= viewport.contentHeight;
 		const scrollTop = viewport.scrollTop;
 		const projected = input.projection.update(history, input.filter);
+		if (changed) {
+			this.digitWidth = 0;
+			for (const digit of '0123456789') this.digitWidth = Math.max(this.digitWidth, measureText(digit));
+		}
+		if (changed || projected) {
+			const timelineWidth = Math.max(measureText('Timeline'), measureText('T') + String(input.projection.maxTimeline).length * this.digitWidth) + 8;
+			const tickWidth = Math.max(measureText('Tick'), String(input.projection.maxCompletedTick).length * this.digitWidth) + 8;
+			if (this.timelineWidth !== timelineWidth || this.tickWidth !== tickWidth) this.labels.clear();
+			this.timelineWidth = timelineWidth; this.tickWidth = tickWidth;
+		}
 		if (input.projection.removed > 0) {
 			input.selected = Math.max(-1, input.selected - input.projection.removed);
 		}
@@ -124,11 +181,16 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 		layoutWorkbenchActionBar(input.actions, layout.right - 4, layout.top + 2, layout.top + row + 6, measureText, layout.font!.renderFont());
 		this.actions.update();
 		const historyStatus = history.status;
-		if (changed || this.historyRevision !== history.revision || this.historyStatus !== historyStatus || this.filter !== input.filter) {
+		const selected = input.projection.rows[input.selected], selectedSequence = selected === undefined ? -1 : selected.sequence;
+		const selectedReachable = selected !== undefined && history.canSeek(selected);
+		if (changed || this.historyRevision !== history.revision || this.historyStatus !== historyStatus || this.filter !== input.filter
+			|| this.selectedSequence !== selectedSequence || this.selectedReachable !== selectedReachable) {
 			this.historyRevision = history.revision; this.historyStatus = historyStatus; this.filter = input.filter;
+			this.selectedSequence = selectedSequence; this.selectedReachable = selectedReachable;
 			const filter = input.filter === '' ? '' : ` | filter: ${input.filter}`;
 			const status = EVENT_HISTORY_LABEL[historyStatus];
-			this.status = truncateMeasuredText(`${status} | ${input.projection.rows.length}/${history.count} events${history.expired === 0 ? '' : ` | ${history.expired} older expired`}${filter}`, layout.right - STATUS_BAR_CONNECTION_WIDTH - 8, measureTextRange);
+			const selection = selected === undefined ? '' : `#${selected.sequence} T${selected.timeline}${selectedReachable ? '' : ' | Frame unavailable'} | `;
+			this.status = truncateMeasuredText(`${selection}${status} | ${input.projection.rows.length}/${history.count} events${history.expired === 0 ? '' : ` | ${history.expired} older expired`}${filter}`, layout.right - STATUS_BAR_CONNECTION_WIDTH - 8, measureTextRange);
 		}
 		if (this.inspector.visible) { this.inspector.layout(layout.font!.renderFont(), measureTextRange, measureText, this.contentBounds); this.inspector.update(); }
 	}
@@ -137,7 +199,11 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 		const input = this.input, { layout, viewport } = input, font = layout.font!.renderFont();
 		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 		renderWorkbenchActionBar(input.actions, font);
-		api.blit_text_inline_with_font('Tick  Event / Emitter', layout.left + 4, layout.top + layout.rowHeight + 10, 0, colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM, font);
+		const timelineLeft = viewport.bounds.left, tickLeft = timelineLeft + this.timelineWidth, eventLeft = tickLeft + this.tickWidth;
+		const headerTop = layout.top + layout.rowHeight + 10, headerColor = colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM;
+		api.blit_text_inline_with_font('Timeline', timelineLeft, headerTop, 0, headerColor, font);
+		api.blit_text_inline_with_font('Tick', tickLeft, headerTop, 0, headerColor, font);
+		api.blit_text_inline_with_font('Event / Emitter', eventLeft, headerTop, 0, headerColor, font);
 		api.pushClipRect(viewport.bounds.left, viewport.bounds.top, viewport.bounds.right, viewport.bounds.bottom);
 		const rows = input.projection.rows;
 		if (rows.length === 0) api.blit_text_inline_with_font(input.filter !== '' ? 'No matching events'
@@ -147,11 +213,15 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 			const event = rows[i], selected = i === input.selected;
 			let label = this.labels.get(event.sequence);
 			if (label === undefined) {
-				label = truncateMeasuredText(`${event.completedTick}  ${formatValueSnapshot(event.event)} / ${formatValueSnapshot(event.emitter)}`, viewport.bounds.right - viewport.bounds.left - 4, measureTextRange);
+				label = { timeline: `T${event.timeline}`, tick: String(event.completedTick),
+					event: truncateMeasuredText(`${formatValueSnapshot(event.event)} / ${formatValueSnapshot(event.emitter)}`, viewport.bounds.right - eventLeft - 4, measureTextRange) };
 				this.labels.set(event.sequence, label);
 			}
 			if (selected) api.fill_rect(viewport.bounds.left, top, viewport.bounds.right, top + layout.rowHeight, 0, colors.SELECTION_OVERLAY);
-			api.blit_text_inline_with_font(label, viewport.bounds.left, top, 0, selected ? colors.COLOR_SELECTION_TEXT : colors.COLOR_RESOURCE_VIEWER_TEXT, font);
+			const color = selected ? colors.COLOR_SELECTION_TEXT : colors.COLOR_RESOURCE_VIEWER_TEXT;
+			api.blit_text_inline_with_font(label.timeline, timelineLeft, top, 0, color, font);
+			api.blit_text_inline_with_font(label.tick, tickLeft, top, 0, color, font);
+			api.blit_text_inline_with_font(label.event, eventLeft, top, 0, color, font);
 		}
 		api.popClipRect(); viewport.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
 	}
@@ -162,9 +232,15 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
 		if (this.actions.handlePointer(snapshot)) return true;
 		const input = this.input;
-		if (justPressed && snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, input.viewport.bounds)) {
+		const secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
+		if ((justPressed || secondary) && snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, input.viewport.bounds)) {
 			const index = Math.trunc((snapshot.viewportY - input.viewport.offsetTop) / input.layout.rowHeight);
 			input.selected = index < input.projection.rows.length ? index : -1;
+			if (secondary) {
+				this.focus();
+				this.contextMenu.show(snapshot.viewportX, snapshot.viewportY, WORKBENCH_MENUS['events.context'], this);
+				return true;
+			}
 		}
 		return this.scroll.handlePointer(snapshot);
 	}

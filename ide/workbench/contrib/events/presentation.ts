@@ -14,6 +14,8 @@ export const EVENT_HISTORY_LABEL: Record<EventHistoryStatus, string> = {
 export class EventProjection {
 	public readonly rows: HistoricalEvent[] = [];
 	public removed = 0;
+	public maxTimeline = 0;
+	public maxCompletedTick = 0;
 	private generation = -1;
 	private scanned = 0;
 	private query = '';
@@ -28,6 +30,8 @@ export class EventProjection {
 			this.query = query;
 			this.scanned = history.firstSequence;
 			this.rows.length = 0;
+			this.maxTimeline = 0;
+			this.maxCompletedTick = 0;
 			changed = true;
 		}
 		while (this.removed < this.rows.length && this.rows[this.removed].sequence < history.firstSequence) this.removed++;
@@ -37,6 +41,8 @@ export class EventProjection {
 			const record = history.at(this.scanned);
 			if (query !== '' && !formatValueSnapshot(record.event).toLowerCase().includes(query) && !formatValueSnapshot(record.emitter).toLowerCase().includes(query)) continue;
 			this.rows.push(record);
+			this.maxTimeline = Math.max(this.maxTimeline, record.timeline);
+			this.maxCompletedTick = Math.max(this.maxCompletedTick, record.completedTick);
 			changed = true;
 		}
 		return changed;
@@ -47,7 +53,7 @@ export class EventProjection {
 export function eventProperties(event: HistoricalEvent): InspectedProperty[] {
 	const properties: InspectedProperty[] = [{ label: 'Emission',
 		value: `#${event.sequence} | timeline ${event.timeline} | slot ${event.domain} | tick ${event.completedTick} | cycle ${event.cycles}`,
-		description: 'Tick is the last completed tick at emission. Values are captured before listener dispatch.', warning: false }];
+		description: 'Tick is the last completed tick at emission. Go to Frame reviews the boundary at or before emission; values were captured before listener dispatch.', warning: false }];
 	appendSnapshot(properties, 'Event', event.event);
 	appendSnapshot(properties, 'Emitter', event.emitter);
 	appendSnapshot(properties, 'Payload', event.payload);

@@ -602,6 +602,88 @@ void testInputJournalRawWordsAndWrap() {
 	require(journal.replayLine(), "new branch replaces the old future");
 }
 
+void testHistoryObservationProvenance() {
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& history = runtime.history;
+	require(history.recordingCheckpoint() == -1 && !history.canSeekFrom(-1, 0), "disabled history has no observation anchor");
+	history.start({4, 16, 0x100000000LL});
+	require(history.recordingCheckpoint() == -1, "the initial capture has not completed");
+	history.captureCheckpoint();
+	const auto original = history.recordingCheckpoint();
+	for (int tick = 0; tick < 4; ++tick) require(runtime.frameScheduler.runToNextLogicalTick(runtime), "recorded provenance boundary");
+	const auto first = history.inputJournal.cycleAt(0), second = history.inputJournal.cycleAt(1), third = history.inputJournal.cycleAt(2);
+	const auto end = history.latestCycles();
+	require(history.canSeekFrom(original, first + 1), "recorded event cycles have provenance");
+	require(!history.canSeekFrom(original, end + 1), "an unfinished live frame is outside physical history");
+	history.beginSeek(end);
+	require(history.recordingCheckpoint() == -1, "replay cannot originate a live observation");
+	for (int step = 0; history.mode == bmsx::HistoryMode::Replaying && step < 1000; ++step) history.advanceSeek(16384);
+	require(history.mode == bmsx::HistoryMode::Reviewing && history.canSeekFrom(original, end), "review retains evidence reachability");
+	history.resumeRecording();
+	require(history.recordingCheckpoint() == original && history.canSeekFrom(original, end), "rejoin preserves checkpoint identity and continuation");
+
+	history.beginSeek(second);
+	for (int step = 0; history.mode == bmsx::HistoryMode::Replaying && step < 1000; ++step) history.advanceSeek(16384);
+	require(history.mode == bmsx::HistoryMode::Reviewing, "first branch point reached");
+	history.resumeRecording();
+	history.captureCheckpoint();
+	const auto branch = history.recordingCheckpoint();
+	require(branch > original, "a branch has a new checkpoint identity");
+	require(history.canSeekFrom(original, second - 1), "the shared past remains reachable");
+	require(!history.canSeekFrom(original, second), "an admission at the branch cycle belongs to the discarded future");
+	for (int tick = 0; tick < 2; ++tick) runtime.frameScheduler.runToNextLogicalTick(runtime);
+	require(history.latestCycles() == end, "new branch reaches overlapping cycles");
+	require(!history.canSeekFrom(original, second + 1) && history.canSeekFrom(branch, second + 1), "overlapping cycles cannot revive discarded evidence");
+	history.beginSeek(third);
+	for (int step = 0; history.mode == bmsx::HistoryMode::Replaying && step < 1000; ++step) history.advanceSeek(16384);
+	require(history.mode == bmsx::HistoryMode::Reviewing, "later branch point reached");
+	history.resumeRecording();
+	history.captureCheckpoint();
+	const auto laterBranch = history.recordingCheckpoint();
+	require(!history.canSeekFrom(original, second), "a later branch cannot reopen an earlier cutoff");
+	require(history.canSeekFrom(branch, third - 1) && !history.canSeekFrom(branch, third), "the second branch clips its own continuation");
+
+	history.beginSeek(first);
+	for (int step = 0; history.mode == bmsx::HistoryMode::Replaying && step < 1000; ++step) history.advanceSeek(16384);
+	require(history.mode == bmsx::HistoryMode::Reviewing, "earlier branch point reached");
+	history.resumeRecording();
+	history.captureCheckpoint();
+	require(history.recordingCheckpoint() > laterBranch, "discarded checkpoint storage gets a fresh identity");
+	for (int tick = 0; tick < 3; ++tick) runtime.frameScheduler.runToNextLogicalTick(runtime);
+	require(history.canSeekFrom(original, first - 1) && !history.canSeekFrom(original, first), "earlier branch clips the surviving prefix");
+	require(!history.canSeekFrom(branch, second + 1) && !history.canSeekFrom(laterBranch, third + 1), "discarded checkpoint storage is not a retained anchor");
+	const auto beforeReset = history.recordingCheckpoint();
+	runtime.rebootSystem();
+	require(history.recordingCheckpoint() == -1, "reset has no observation anchor");
+	history.start({4, 16, 0x100000000LL});
+	history.captureCheckpoint();
+	require(history.recordingCheckpoint() > beforeReset, "checkpoint identities never restart with machine cycles");
+	require(!history.canSeekFrom(original, 0) && history.canSeekFrom(history.recordingCheckpoint(), 0), "reset cycles cannot alias old provenance");
+}
+
+void testHistoryObservationEviction() {
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& history = runtime.history;
+	history.start({2, 4, 0x100000000LL});
+	history.captureCheckpoint();
+	const auto initial = history.recordingCheckpoint();
+	runtime.frameScheduler.runToNextLogicalTick(runtime);
+	const auto first = history.latestCycles();
+	history.captureCheckpoint();
+	const auto retained = history.recordingCheckpoint();
+	runtime.frameScheduler.runToNextLogicalTick(runtime);
+	history.captureCheckpoint();
+	const auto newest = history.recordingCheckpoint();
+	require(!history.canSeekFrom(initial, first) && history.canSeekFrom(retained, first), "reused ring slots have new identities");
+	for (int tick = 0; tick < 4; ++tick) runtime.frameScheduler.runToNextLogicalTick(runtime);
+	require(!history.canSeekFrom(retained, first), "input pressure removes the old anchor");
+	require(history.canSeekFrom(newest, history.latestCycles()), "the newest anchor still has retained input");
+	history.stop();
+	require(!history.canSeekFrom(newest, history.latestCycles()), "stopped history has no retained anchors");
+}
+
 void testHistoryUnarmedSupervisorEdge() {
 	TickRuntimeFixture fixture;
 	auto& runtime = fixture.runtime;
@@ -790,6 +872,8 @@ int main() {
 	testRuntimeCheckpointStorage();
 	testHistoryPressureAndBranch();
 	testHistoryRejoin();
+	testHistoryObservationProvenance();
+	testHistoryObservationEviction();
 	testInputJournalRawWordsAndWrap();
 	testHistoryUnarmedSupervisorEdge();
 	testPacedHistoryPlayback();
