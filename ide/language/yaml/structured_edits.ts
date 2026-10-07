@@ -25,13 +25,20 @@ export function createStructuredValueEdit(source: string, format: StructuredText
 	return edit;
 }
 
+/** Block key properties can precede both the collection node and CST offsets. */
+function collectionTokenStart(token: CST.BlockMap | CST.BlockSequence | CST.FlowCollection): number {
+	if (token.type === 'flow-collection') return token.start.offset;
+	const start = token.items[0].start;
+	return start.length === 0 ? token.offset : start[0].offset;
+}
+
 /** One collection patch keeps all unaffected CST tokens, including their original trivia. */
 function collectionEdit(collection: StructuredCollection, items: CST.CollectionItem[]): EditorTextEdit {
 	const original = collection.srcToken as CST.BlockMap | CST.BlockSequence | CST.FlowCollection;
 	const next = { ...original, items } as typeof original;
 	const before = CST.stringify(original), after = CST.stringify(next);
 	const change = changedTextRange(before, after)!;
-	return { offset: collection.range![0] + change.start, deleteLength: change.previousEnd - change.start, text: after.slice(change.start, change.nextEnd) };
+	return { offset: collectionTokenStart(original) + change.start, deleteLength: change.previousEnd - change.start, text: after.slice(change.start, change.nextEnd) };
 }
 
 export function createStructuredInsertionEdit(source: string, format: StructuredTextDocumentFormat,
@@ -50,7 +57,7 @@ export function createStructuredInsertionEdit(source: string, format: Structured
 	nextCollection.flow = original.type === 'flow-collection';
 	const indentation = ' '.repeat(original.indent);
 	const newline = source.includes('\r\n') ? '\r\n' : '\n';
-	const text = fragment.toString(format === 'json' ? { defaultKeyType: 'QUOTE_DOUBLE', defaultStringType: 'QUOTE_DOUBLE' } : {})
+	const text = fragment.toString(format === 'json' ? { defaultKeyType: 'QUOTE_DOUBLE', defaultStringType: 'QUOTE_DOUBLE', doubleQuotedAsJSON: true } : {})
 		.trimEnd().split('\n').map(line => indentation + line).join(newline) + newline;
 	const emitted = parseDocument(text, { keepSourceTokens: true });
 	const item = (emitted.contents!.srcToken as CST.BlockMap | CST.BlockSequence | CST.FlowCollection).items[0];
@@ -80,9 +87,22 @@ export function createStructuredRemovalEdit(source: string, collection: Structur
 	if (original.type === 'flow-collection' && index === 0 && items.length > 0) {
 		items[0] = { ...items[0], start: items[0].start.filter(entry => entry.type !== 'comma') };
 	}
+	if (original.type !== 'flow-collection' && index === 0 && items.length > 0) {
+		// The parent owns the first line's indentation; later items own theirs.
+		// Remove the first whole line when it has no compact parent indicator.
+		const start = collectionTokenStart(original), lineStart = start - original.indent;
+		if (source.slice(lineStart, start) === ' '.repeat(original.indent)) {
+			return { offset: lineStart, deleteLength: original.indent + CST.stringify(original.items[0]).length, text: '' };
+		}
+		// In `- first: value`, retain `- ` and let the next item occupy that slot.
+		const leading = items[0].start[0];
+		if (leading?.type === 'space') items[0] = { ...items[0], start: [
+			{ ...leading, source: leading.source.slice(original.indent) }, ...items[0].start.slice(1),
+		] };
+	}
 	if (original.type !== 'flow-collection' && collection.items.length === 1) {
 		// An empty block has no YAML syntax: express the empty collection at its own value boundary.
-		const [start, end] = collection.range!;
+		const start = collectionTokenStart(original), end = collection.range![1];
 		const text = isMap(collection) ? '{}' : '[]';
 		const removed = source.slice(start, end);
 		const newline = removed.endsWith('\r\n') ? '\r\n' : removed.endsWith('\n') ? '\n' : '';

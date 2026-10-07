@@ -62,6 +62,61 @@ test('sequence additions and empty removal work for block and flow source', () =
 	}
 });
 
+test('first block-member removal retains remaining indentation, nested values and trivia', () => {
+	for (const newline of ['\n', '\r\n']) for (const count of [2, 3]) {
+		for (const between of ['', '  # next member\n', '\n  # next member\n', '# next member\n']) {
+			for (const members of [
+				['  first:\n    rules: []\n', '  second:\n    rules: []\n', '  third:\n    rules: []\n'],
+				['  - go:\n      audio_id: first\n', '  - go:\n      audio_id: second\n', '  - go:\n      audio_id: third\n'],
+			]) {
+				const rest = between + members.slice(1, count).join('') + 'retained: "unchanged" # sibling\n';
+				const source = ('members:\n' + members[0] + rest).replaceAll('\n', newline);
+				const next = apply(source, createStructuredRemovalEdit(source, collection(source, ['members']), 0));
+				assert.equal(next, ('members:\n' + rest).replaceAll('\n', newline));
+				assert.deepEqual(parseStructuredSource(next, 'yaml').toJS(), parseStructuredTextDocument(next, 'yaml', 'events.aem.yaml'));
+			}
+		}
+	}
+});
+
+test('first compact block-member removal retains its containing sequence indicator', () => {
+	for (const newline of ['\n', '\r\n']) for (const count of [2, 3]) {
+		for (const members of [
+			['first: 1\n', '  second:\n    value: 2\n', '  third: 3\n'],
+			['- first\n', '  - second\n', '  - third\n'],
+		]) {
+			const rest = members.slice(1, count).join('');
+			const source = ('- ' + members[0] + rest).replaceAll('\n', newline);
+			const next = apply(source, createStructuredRemovalEdit(source, collection(source, [0]), 0));
+			assert.equal(next, ('- ' + rest.slice(2)).replaceAll('\n', newline));
+			assert.deepEqual(parseStructuredSource(next, 'yaml').toJS(), parseStructuredTextDocument(next, 'yaml', 'events.aem.yaml'));
+		}
+	}
+});
+
+test('collection edits use token origins before first-key properties rather than AST value ranges', () => {
+	for (const newline of ['\n', '\r\n']) for (const prefix of ['&key ', '!!str ']) {
+		for (const header of ['root:\n  ', 'root:\n  - ']) for (const count of [1, 2, 3]) {
+			const indent = header.endsWith('- ') ? '    ' : '  ';
+			const members = [prefix + 'first: 1\n', indent + 'second: 2\n', indent + 'third: 3\n'].slice(0, count);
+			const tail = 'retained: "unchanged" # sibling\n';
+			const source = (header + members.join('') + tail).replaceAll('\n', newline);
+			const path = header.endsWith('- ') ? ['root', 0] : ['root'];
+			const target = collection(source, path);
+			const added = apply(source, createStructuredInsertionEdit(source, 'yaml', target, '4', 'fourth'));
+			assert.equal(added, (header + members.join('') + indent + 'fourth: 4\n' + tail).replaceAll('\n', newline));
+			assert.deepEqual(parseStructuredSource(added, 'yaml').toJS(), parseStructuredTextDocument(added, 'yaml', 'events.aem.yaml'));
+			for (let index = 0; index < count; index++) {
+				const remaining = members.filter((_member, memberIndex) => memberIndex !== index).join('');
+				const body = remaining === '' ? '{}\n' : index === 0 ? remaining.slice(indent.length) : remaining;
+				const removed = apply(source, createStructuredRemovalEdit(source, target, index));
+				assert.equal(removed, (header + body + tail).replaceAll('\n', newline));
+				assert.deepEqual(parseStructuredSource(removed, 'yaml').toJS(), parseStructuredTextDocument(removed, 'yaml', 'events.aem.yaml'));
+			}
+		}
+	}
+});
+
 test('new authored fragments retain their quotes and comments; JSON stays JSON', () => {
 	const source = 'events: {}\n';
 	const added = apply(source, createStructuredInsertionEdit(source, 'yaml', collection(source, ['events']), '{channel: \'sfx\', rules: []} # new event', 'game.effect'));
@@ -71,6 +126,24 @@ test('new authored fragments retain their quotes and comments; JSON stays JSON',
 	const json = '{"events": {}}';
 	const jsonAdded = apply(json, createStructuredInsertionEdit(json, 'json', collection(json, ['events'], 'json'), '{"channel":"sfx","rules":[]}', 'game.effect'));
 	assert.deepEqual(JSON.parse(jsonAdded), { events: { 'game.effect': { channel: 'sfx', rules: [] } } });
+});
+
+test('JSON insertion emits JSON string escapes for keys and nested values without folding', () => {
+	const value = '\u0000\u0001\u0007\u000b\u001b' + 'long string '.repeat(12) + '\nnext line';
+	const name = 'game.\u001beffect';
+	for (const newline of ['\n', '\r\n']) {
+		const source = ['{', '  "events": {},', '  "retained": "\\u0061"', '}'].join(newline);
+		const fragment = { nested: [{ [name]: value }], value };
+		const added = apply(source, createStructuredInsertionEdit(source, 'json', collection(source, ['events'], 'json'), JSON.stringify(fragment), name));
+		const expected = { events: { [name]: fragment }, retained: 'a' };
+		assert.deepEqual(JSON.parse(added), expected);
+		assert.deepEqual(parseStructuredTextDocument(added, 'json', 'events.aem.json'), expected);
+		assert.ok(added.endsWith(source.slice(source.indexOf('},') + 1)));
+		if (newline === '\r\n') assert.equal(added.replaceAll('\r\n', '').includes('\n'), false);
+	}
+	const source = '{"values": ["retained"]}';
+	const added = apply(source, createStructuredInsertionEdit(source, 'json', collection(source, ['values'], 'json'), JSON.stringify(value)));
+	assert.deepEqual(parseStructuredTextDocument(added, 'json', 'events.aem.json'), { values: ['retained', value] });
 });
 
 test('value replacement rejects invalid lexical boundaries without modifying source', () => {

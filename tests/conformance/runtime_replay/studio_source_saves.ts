@@ -4,6 +4,7 @@ import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/
 import { workspaceRecords } from '../../../ide/workspace/records';
 import { resolveWorkspacePath } from '../../../ide/workspace/path';
 import { runtimeSourceProjectRootPath } from '../../../ide/runtime/sources';
+import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 
@@ -59,7 +60,23 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 			? resource.source.type === 'aem'
 			: resource.source.type === 'data' && resource.path.endsWith('nemesis_s_stage.yaml')))!;
 		await ide.editor.navigation.openResource(resource);
-		if (kind === 'aem') await test.runPaletteCommand('Audio Events: Open Source');
+		if (kind === 'aem') {
+			await frame();
+			const input = getActiveTab();
+			if (input.kind !== 'aem_editor') throw new Error('source saves: actual audio event editor required');
+			const original = input.workingCopy.buffer.getText();
+			const index = input.tree.rows.findIndex(row => row.element.path.length === 2 && row.element.path[0] === 'events');
+			const event = input.tree.rows[index].element;
+			const layout = input.tree.layout, top = layout.contentTop + (index - input.tree.scroll) * layout.rowHeight;
+			await test.click({ left: layout.contentLeft, right: layout.contentRight, top, bottom: top + layout.rowHeight });
+			await press('Delete');
+			check(input.document !== undefined && !input.document.hasIn(event.path),
+				'source saves: deleting the first authored audio event leaves a valid document without that event');
+			await test.capture?.('aem-first-event-removed');
+			await press('ControlLeft', 'KeyZ');
+			check(input.workingCopy.buffer.getText() === original, 'source saves: audio event Undo restores every authored byte');
+			await test.runPaletteCommand('Audio Events: Open Source');
+		}
 		const document = harness.getActiveEditorDocument().model;
 		check(document.mode === kind, `source saves: actual ${kind} source is editable`);
 		const resourcePath = resolveWorkspacePath(resource.path, root);

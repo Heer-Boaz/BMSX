@@ -95,6 +95,14 @@ authored `%YAML 1.1` directive is present. That directive must not make the edit
 interpret `012` as octal or `y` as a boolean key while the cooker does not.
 Unsupported explicit tags fail at this source boundary; they are not silently
 interpreted as strings. Comments, directives and token spelling remain authored.
+Shared structured insertion emits JSON keys and strings with the YAML library's
+JSON quoting mode for `.aem.json`, including control characters and long strings;
+it never introduces YAML-only escapes or folded JSON strings. Existing document
+tokens remain untouched. Removing the first block entry accounts for its
+parent-owned indentation, keeping later entries, comments and nested values at
+their authored columns; compact sequence indicators stay with their parent.
+Collection edit offsets start at the first source token, including any first-key
+properties before the AST range, rather than shifting edits past anchors or tags.
 
 The current boundary is existing-object/marker placement, not room creation,
 tile painting, a sprite preview or a generalized plugin SDK. The directly
