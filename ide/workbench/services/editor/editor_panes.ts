@@ -47,7 +47,12 @@ export class EditorPanes {
 		this.openGenerationValue += 1;
 		const activePane = this.activePaneValue;
 		if (activePane !== null && activePane.input === input) {
-			activePane.setOptions(selection, navigationSelection);
+			// Finish the focused control's draft against its current selection.
+			// Reselecting a tab is focus, not another activation of its input.
+			if (selection !== undefined || navigationSelection !== undefined) {
+				inputFocus.setTarget(null);
+				activePane.setOptions(selection, navigationSelection);
+			}
 			activePane.focus();
 			return;
 		}

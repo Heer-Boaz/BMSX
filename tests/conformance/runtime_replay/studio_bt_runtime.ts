@@ -22,6 +22,9 @@ export async function openRuntimeTreePicker(test: StudioFixture, expectedCount =
 	await test.press('Enter');
 	const input = getActiveTab();
 	if (input.kind !== 'behavior_lens' || input.view.presentation.kind !== 'graph') throw new Error('runtime BT: source graph required');
+	const inspector = (test.ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+	if (inspector.visible) await test.press('Escape');
+	check(!inspector.visible, 'runtime BT: explicit close returns from a retained inspection to its source graph');
 	await test.click(input.view.presentation.actionBar.items.find(item => item.command === 'behaviorLens.inspectRuntimeTree')!.bounds);
 	check(picker.visible, 'runtime BT: graph Live opens the shared instance picker');
 	check(readBehaviorTreeInstances(test.ide.sources, test.guest, 0).available, 'runtime BT: an initialized type index with no components is available, not a missing module');

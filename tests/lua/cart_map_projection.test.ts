@@ -4,8 +4,15 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
+import { CartMapPane } from '../../ide/workbench/contrib/cart_maps/editor_pane';
 import { projectCartMap, selectCartMapRow, createCartMapMove } from '../../ide/workbench/contrib/cart_maps/source_projection';
 import { captureCartMapView, restoreCartMapView, CartMapNavigationSelection } from '../../ide/workbench/contrib/cart_maps/view_snapshot';
+import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
+import { inputFocus } from '../../ide/input/focus';
+import { ScrollbarController } from '../../ide/editor/ui/scrollbar_controller';
+import { pointerCapture } from '../../ide/input/pointer/capture';
+import { setFieldText } from '../../ide/editor/ui/inline/text_field';
+import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 
 const SOURCE = [
 	'2:', "  map: ['....', '....']",
@@ -166,4 +173,41 @@ test('map viewport can reveal signed object positions outside the authored tile 
 	selectCartMapRow(input, -1);
 	assert.equal(model.buffer.getText(), before);
 	assert.equal(grid.content!.markers[0].x, -3);
+});
+
+test('accepted map moves and focused history reveal the restored member in both views', t => {
+	const cells = Array<string>(501).fill(' ');
+	cells[1] = 'm';
+	for (let column = 10; column < 400; column += 10) cells[column] = 'm';
+	const { model, input } = fixture(`map_rows: ["${cells.join('')}"]\n`, 'nemesis');
+	const previousScrollbarController = editorViewState.scrollbarController;
+	editorViewState.scrollbarController = new ScrollbarController({
+		codeVertical: input.grid.vertical, codeHorizontal: input.grid.horizontal, viewerVertical: input.grid.vertical,
+		resourceVertical: input.tree.scrollbar, resourceHorizontal: input.grid.horizontal,
+	}, () => {}, pointerCapture);
+	const pane = new CartMapPane({ hide() {} } as ResourcePanelController, null!,
+		{ isEnabled: () => false, execute: () => assert.fail('unexpected action bar command') }, createScenarioTestSourceState([]));
+	t.after(() => {
+		inputFocus.setTarget(null);
+		pane.clearInput(); pane.dispose(); input.dispose(); model.dispose();
+		editorViewState.scrollbarController = previousScrollbarController;
+	});
+	pane.setInput(input, { left: 0, top: 0, right: 320, bottom: 200 });
+	selectCartMapRow(input, 1); pane.update();
+	setFieldText(pane.controls[0].field, '400', false);
+	assert.equal(pane.controls[0].commit(), true);
+	pane.focus();
+	for (const [command, x] of [[undefined, 400], ['undo', 1], ['redo', 400]] as const) {
+		if (command !== undefined) inputFocus.executeCommand(command);
+		assert.equal(input.selected!.x, x);
+		const { grid, tree } = input;
+		const left = grid.bounds.left + x * grid.cellSize - grid.horizontal.getScroll();
+		assert.ok(left >= grid.bounds.left && left + grid.cellSize <= grid.bounds.right);
+		assert.ok(tree.selectionIndex >= tree.scroll && tree.selectionIndex < tree.scroll + tree.layout.visibleRowCount);
+	}
+	input.grid.horizontal.setScroll(0);
+	input.tree.scroll = 0;
+	pane.update();
+	assert.equal(input.grid.horizontal.getScroll(), 0, 'ordinary updates preserve user panning');
+	assert.equal(input.tree.scroll, 0, 'ordinary updates preserve outline scrolling');
 });

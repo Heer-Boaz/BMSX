@@ -24,13 +24,13 @@ for (const type of ['data', 'aem'] as const) {
 		assert.equal(first, second);
 		assert.equal(first.buffer.getText(), original);
 		assert.equal(first.dirty, false);
-		if (type === 'aem') assert.equal(getTextFileRuntimeSourceStatus(sources, first), 'applied');
+		assert.equal(getTextFileRuntimeSourceStatus(sources, first), 'applied');
 		assert.equal(files.records.size, 0, 'opening a bundled source is not an implicit file write');
 		first.pushEditOperations([{ offset: 0, deleteLength: 0, text: '# unsaved\r\n' }]);
 		assert.equal(await resolveTextFileModel(models, sources, resource), first);
-		if (type === 'aem') assert.equal(getTextFileRuntimeSourceStatus(sources, first), 'pending');
+		assert.equal(getTextFileRuntimeSourceStatus(sources, first), 'pending');
 		first.undo(); assert.equal(first.buffer.getText(), original);
-		if (type === 'aem') assert.equal(getTextFileRuntimeSourceStatus(sources, first), 'applied');
+		assert.equal(getTextFileRuntimeSourceStatus(sources, first), 'applied');
 		models.clear();
 		// Empty is an authored source too, not a reason to replace it with the packaged base.
 		files.records.set('carts/nemesis_s/res/stage.yaml', { contents: '', updatedAt: 1 });
@@ -45,3 +45,47 @@ for (const type of ['data', 'aem'] as const) {
 		assert.equal(models.get(resource), undefined);
 	});
 }
+
+test('YAML installed-source equality is independent of saved identity and cached until text or installed metadata changes', t => {
+	const sources = createScenarioTestSourceState([]), models = new EditorTextModelService();
+	t.after(() => models.clear());
+	const source = '# exact authored bytes\r\nvalue: "01"\r\n';
+	const resource: RuntimeResource = { domain: 0, path: 'res/stage.yaml',
+		source: { type: 'data', resid: 'stage', sourcemeta: { text: source } } };
+	const model = models.retain(resource, 'yaml', source);
+	const reads = t.mock.method(model.buffer, 'getText');
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'applied');
+	for (let frame = 0; frame < 100; frame++) assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'applied');
+	assert.equal(reads.mock.callCount(), 1, 'stationary status consumes the retained source equality');
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '# new comment\r\n' }]);
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending', 'source identity is not cooked-value equivalence');
+	model.completeSave(model.createSnapshot());
+	assert.equal(model.dirty, false);
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending', 'Save does not replace the installed asset');
+	model.undo();
+	assert.equal(model.dirty, true);
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'applied', 'Undo can restore installed source while differing from saved source');
+	model.redo();
+	assert.equal(model.dirty, false);
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending');
+	resource.source = { ...resource.source, sourcemeta: { text: model.buffer.getText() } };
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'applied', 'rebinding installed metadata invalidates status without a document edit');
+	resource.source = { type: 'data', resid: 'stage' };
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'untracked', 'media without authored input proves no source equality');
+});
+
+test('YAML source provenance stays resource-domain specific and an empty packaged source is known', t => {
+	const sources = createScenarioTestSourceState([]), models = new EditorTextModelService();
+	t.after(() => models.clear());
+	const domains = [-1, 0, 1] as const;
+	for (const domain of domains) {
+		const source = domain === -1 ? '' : `value: ${domain}\n`;
+		const model = models.retain({ domain, path: 'res/stage.yaml',
+			source: { type: 'data', resid: 'stage', sourcemeta: { text: source } } }, 'yaml', source);
+		assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'applied');
+	}
+	const cart = models.get({ domain: 0, path: 'res/stage.yaml' })!;
+	cart.pushEditOperations([{ offset: 0, deleteLength: cart.buffer.length, text: 'value: 1\n' }]);
+	assert.equal(getTextFileRuntimeSourceStatus(sources, cart), 'pending', 'matching another domain is not installed equality');
+	assert.equal(getTextFileRuntimeSourceStatus(sources, models.get({ domain: 1, path: 'res/stage.yaml' })!), 'applied');
+});

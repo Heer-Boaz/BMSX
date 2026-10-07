@@ -1,5 +1,6 @@
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
+import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { readBehaviorDefinitions } from '../../../ide/workbench/contrib/behavior_lens/runtime_definitions';
 import { readActionEffectInstances } from '../../../ide/workbench/contrib/behavior_lens/action_effect_runtime';
@@ -67,6 +68,9 @@ export async function testActorlessDefinitionCatalog(test: StudioFixture): Promi
 		'catalog: this stop is before any component/actor was created');
 	const empty = await openRegisteredDefinition(test, 'effect', 'empty');
 	check(empty.model.rows.length === 1, 'catalog: a registered empty definition is real, not unavailable');
+	const retainedRow = empty.model.rows[0];
+	await test.clickTab(getActiveTab().id);
+	check(empty.visible && empty.model.rows[0] === retainedRow, 'catalog: focusing the active tab retains its inspector session');
 	const unused = await openRegisteredDefinition(test, 'effect', 'ungranted');
 	check(unused.model.rows.find(row => row.element.label === 'PERIOD')!.element.value === '777', 'catalog: loaded unused scalar');
 	await test.capture?.('registered-actioneffect');

@@ -23,6 +23,10 @@ export async function openRuntimeEffectLens(test: StudioFixture) {
 	await press('Enter');
 	const input = getActiveTab();
 	if (input.kind !== 'behavior_lens' || input.view.presentation.kind !== 'properties') throw new Error('runtime effect: actual ActionEffect lens required');
+	// Reopening the same input retains its inspector; dismiss it explicitly to use the source lens.
+	const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+	if (inspector.visible) await press('Escape');
+	check(!inspector.visible, 'runtime effect: source navigation dismisses the previous inspection through its close gesture');
 	return input;
 }
 

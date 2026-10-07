@@ -30,8 +30,10 @@ other data formats retain the ordinary resource preview.
   YAML versus JSON. YAML Tab inserts spaces, Ctrl+/ uses `#`.
 - Save writes the authored text, not a serialization of cooked data. Missing source
   fails to open; there is no reverse conversion from loaded ROM data.
-- Save reports **asset rebuild required**. No data hot-reload or installed-source
-  equality is claimed. YAML formatting is explicitly unavailable rather than
+- Save reports persistence separately from asset status. Packaged source metadata
+  establishes the installed asset baseline; differing text needs a rebuild and
+  absent metadata is unknown. This is not data hot-reload or live-object equality.
+  YAML formatting is explicitly unavailable rather than
   rewriting comments, scalar spelling, ordering or map layout.
 
 The production references examined before implementation are Tiled's
@@ -66,7 +68,10 @@ projections; no schema is inferred from a runtime actor.
   range before/after the edit, so Undo/Redo retains the moved member. Unrelated
   source replacement/deletion clears selection rather than attaching it to a
   same-name object. Collapsing the outline does not hide grid hit targets;
-  selecting a grid marker reveals its outline row.
+  selecting a grid marker reveals its outline row. Accepted moves and focused
+  Undo/Redo reveal the member in both outline and map, while ordinary updates
+  preserve manual scrolling. Reselecting the active tab finishes the focused
+coordinate draft without reactivating the document.
 - Parse and projection work happens on source revisions, not stationary frames.
   Painting visits visible grid cells and retained markers. It neither reads
   nor executes the guest. No machine/runtime representation changes are involved.
@@ -87,11 +92,17 @@ decoder, or generated scene source is replaced for the editor's convenience.
 
 ### Build/application boundary
 
-**Save persists source and reports asset rebuild required.** It does not
+**Save persists source; changed asset source needs a rebuild.** It does not
 rebuild, publish or install a cart, reload a room, or mutate loaded game data.
 The existing build/media owners remain responsible for those operations.
-An asset build/install action is separate work, not an implicit part of moving
-a marker.
+Studio's existing **Build Cartridge** command builds saved files; completed
+Build Jobs can open the published artifact in a new Studio session. Building
+does not install it into the current session. Neither action is implicit in
+moving a marker or saving source.
+
+The map footer shows a short asset-source status; Save feedback is a brief
+result, not a tutorial. Source equality is cached by model revision and installed
+source identity, so stationary frames do not snapshot or compare the document.
 
 References reviewed for this follow-up: Tiled's
 [object selection tool](https://github.com/mapeditor/tiled/blob/master/src/tiled/objectselectiontool.cpp)
@@ -120,7 +131,26 @@ host-input dispatch, not native browser/OS input or mobile interaction. Captures
 of the actual panes are inspected separately; test assertions do not prescribe
 their labels or prose.
 Retained screenshots show the edited [Pietious room](evidence/cart_map_editor_2026-10-07/pietious.png)
-and [Nemesis stage](evidence/cart_map_editor_2026-10-07/nemesis_s.png).
+and [Nemesis stage](evidence/cart_map_editor_2026-10-07/nemesis_s.png), including the
+short rebuild status, and [Save feedback](evidence/cart_map_editor_2026-10-07/nemesis_s_saved.png).
+
+The follow-up checks active-tab reselection with an unsubmitted coordinate draft
+and installed-source status before editing, after Undo, and after Save. The
+actual map-pane unit case moves a marker beyond both viewports, then verifies
+Undo/Redo reveal it without overriding later manual scrolling. This follows
+VS Code's [focused history-selection reveal](https://github.com/microsoft/vscode/blob/main/src/vs/editor/common/cursor/cursor.ts),
+not per-frame auto-centering.
+`tests/rompacker/aem_source_scope.test.ts` additionally installs actual BIOS/two-cart
+media and proves YAML bytes/provenance survive AEM relinking and subsequent
+program-only installation. Those operations cannot mark a map edit installed.
+Superseded asynchronous source openings dispose only an unadmitted candidate,
+never a source tab already owned by the editor group. The controller regression
+exercises both cases through the real input resolver.
+
+The shared focus change is also exercised by the three-backend navigation and
+runtime-inspection workflows. Reopening an existing definition retains its
+inspector, like reselecting its tab; repeated independent inspection steps now
+use the actual Escape close gesture instead of relying on implicit reactivation.
 
 The separate `studio_cart_map_assets.ts` build consumes the saved YAML through
 the actual data cooker and ROM builder, and checks the complete packed value
@@ -128,8 +158,10 @@ and debug-source bytes. This is **not** a boot of a complete modified cart or
 proof of live asset installation. The editor flow additionally checks that
 editing/Save does not execute guest cycles or replace installed media.
 
-Validation: six cart/backend workflows passed; Lua tests **2,994 passed, one
-existing skip**; rompacker tests **208 passed**; IDE/tests typechecks, browser
+Validation after the follow-up: six cart/backend workflows, three assistant
+source-save workflows, and six navigation/runtime-inspection workflows passed;
+Lua tests **3,008 passed, one existing skip**;
+rompacker tests **209 passed**; IDE/tests typechecks, browser
 Studio product build, architecture audit (**0 issues**) and diff check passed.
 The projection tests also exercise stationary source reuse, source identity,
 escaped-marker selection through history and negative authored coordinates.

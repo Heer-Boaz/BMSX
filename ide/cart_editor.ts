@@ -431,7 +431,7 @@ export class RuntimeCartEditor implements CartEditor {
 			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu, frameNavigation),
 			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.actorLab, this.commands, frameNavigation, this.contextMenu),
 			game_view: () => new GameViewEditorPane(this.resourcePanel, this.commands, runtime),
-			cart_map: () => new CartMapPane(this.resourcePanel, this.cartMaps, this.commands),
+			cart_map: () => new CartMapPane(this.resourcePanel, this.cartMaps, this.commands, this.sources),
 			scene_editor: () => new SceneEditorPane(this.resourcePanel, this.sceneEditor, this.commands, this.sources),
 			scenario_lab: () => new ScenarioLabEditorPane(
 				this.resourcePanel,

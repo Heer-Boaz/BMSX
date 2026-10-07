@@ -266,6 +266,45 @@ test('input blur completes against the old attached resource before the next pan
 	assert.equal(inputFocus.target, null);
 });
 
+test('same-input navigation blurs the old control before changing selection, while tab focus does not reactivate it', t => {
+	const harness = createEditorPanes();
+	const input = codeInput('code:0\0a.lua');
+	t.after(() => { harness.editorPanes.dispose(); input.dispose(); input.context.model.dispose(); });
+	const selection = { row: 2, startColumn: 1, endColumn: 3 };
+	harness.editorPanes.openEditor(input, selection);
+	const pane = harness.codePane();
+	const field = inputFocus.createTarget(pane.focusTarget);
+	let blurs = 0;
+	const unbind = field.onDidBlur(() => {
+		assert.equal(pane.input, input);
+		assert.equal(pane.selection, selection);
+		assert.equal(pane.setOptionsCount, 0);
+		blurs += 1;
+	});
+	t.after(unbind);
+	field.focus();
+	harness.editorPanes.openEditor(input);
+	assert.equal(blurs, 1);
+	assert.equal(pane.setOptionsCount, 0);
+	assert.equal(pane.selection, selection);
+	field.focus();
+	const next = { row: 7, startColumn: 0, endColumn: 1 };
+	const destination = inputFocus.createTarget(pane.focusTarget);
+	const setOptions = pane.setOptions.bind(pane);
+	t.mock.method(pane, 'setOptions', (selection: EditorTextSelection) => {
+		assert.equal(inputFocus.target, null, 'navigation applies only after the old control has blurred');
+		setOptions(selection);
+		// A navigation location may switch which concrete control receives focus.
+		t.mock.method(pane, 'focus', () => destination.focus());
+	});
+	harness.editorPanes.openEditor(input, next);
+	assert.equal(blurs, 2);
+	assert.equal(pane.selection, next);
+	assert.equal(pane.setOptionsCount, 1);
+	assert.equal(pane.setInputCount, 1);
+	assert.equal(inputFocus.target, destination);
+});
+
 test('editor pane hot paths dispatch directly to the retained active pane', () => {
 	const harness = createEditorPanes();
 	const playerInput = {} as PlayerInput;

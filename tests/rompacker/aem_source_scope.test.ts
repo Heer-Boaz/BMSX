@@ -16,7 +16,9 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { createRuntimeSourceState } from '../../ide/runtime/sources';
 import { buildAemSourceRevision } from '../../ide/runtime/aem';
 import { installBlua32Revision } from '../../ide/runtime/hot_resume';
-import { buildBlua32Media } from '../../ide/runtime/lua_pipeline';
+import { buildBlua32Media, installBlua32Media, prepareBlua32MediaBoot } from '../../ide/runtime/lua_pipeline';
+import { EditorTextModelService } from '../../ide/editor/model/model_service';
+import { getTextFileRuntimeSourceStatus } from '../../ide/workbench/services/working_copy/runtime_source_status';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
 import { saveLuaResourceSource } from '../../ide/workspace/workspace';
@@ -28,15 +30,27 @@ for (const domain of [-1, 0] as const) test(`AEM domain ${domain} relinks instal
 	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); await rm(directory, { recursive: true, force: true }); });
 	const aemSource = 'events: {}\n';
 	const asset = { resid: 'events', type: 'aem' as const, buffer: encodeBinary({}), source_path: 'events.aem.yaml', sourcemeta: { text: aemSource } };
+	const mapSource = '# authored map\r\nx: 3\r\n', mapBytes = encodeBinary({ x: 3 });
+	const mapAsset = { resid: 'map', type: 'data' as const, buffer: mapBytes, source_path: 'map.yaml', sourcemeta: { text: mapSource } };
 	const systemSource = 'module<entry>\ncop0.exec = mem[0x10000028]';
 	const cartSource = 'module<entry>\nwhile true do halt_until_irq end';
 	const media = await buildScenarioMediaFixture(directory, [], {
 		biosExports: BIOS_FUNCTION_EXPORTS, systemSource,
 		systemModules: BIOS_FUNCTION_EXPORTS.map(exported => ({ path: exported.path, source: 'module<const>\nreturn function(value) return value end' })),
-		cartSource, systemAssets: [asset], cartAssets: [asset],
+		cartSource, systemAssets: [asset, mapAsset], cartAssets: [asset, mapAsset],
 	});
 	const loaded = await loadRomToolingMedia(media.systemRom, [media.cartRom, media.cartRom]);
 	const sources = createRuntimeSourceState(loaded.system, loaded.cartridgeSlots);
+	const models = new EditorTextModelService();
+	t.after(() => models.clear());
+	const maps = [-1, 0, 1].map(domain => {
+		const resource = sources.resources.find(resource => resource.domain === domain && resource.path === 'map.yaml')!;
+		const model = models.retain(resource, 'yaml', resource.source.sourcemeta!.text);
+		assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'applied');
+		model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '# pending authored edit\r\n' }]);
+		assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending');
+		return model;
+	});
 	const clock = new VirtualHeadlessClock();
 	const target = new OffscreenMachine(media.systemRom, [media.cartRom, media.cartRom], PSX_MACHINE_SPEC,
 		new Input(clock, new HeadlessInputHub(), -1));
@@ -81,7 +95,26 @@ for (const domain of [-1, 0] as const) test(`AEM domain ${domain} relinks instal
 	const installedAsset = installedLayer.index.entries.find(entry => entry.type === 'aem' && entry.resid === asset.resid)!;
 	assert.deepEqual(installedLayer.bytes.subarray(installedAsset.start, installedAsset.end), encodeBinary(built.eventMap),
 		'the requested cooked asset is actually published alongside the retained executable sources');
+	for (const model of maps) {
+		assert.equal(model.resource.source.sourcemeta!.text, mapSource);
+		assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending', 'AEM relinking cannot acknowledge an authored map edit');
+	}
 	// A later explicit source installation still sees the pending errors; AEM has not consumed them.
 	assert.throws(() => buildBlua32Media(sources, PSX_MACHINE_SPEC.ramBytes,
 		{ system: null, cartridgeSlots: ['workspace', null] }, 'live'));
+	for (const domain of [-1, 0, 1] as const) {
+		await saveLuaResourceSource(clock, sources, { domain, path: 'entry.lua' }, `${domain === -1 ? systemSource : cartSource}\n-- accepted source revision`);
+	}
+	const program = prepareBlua32MediaBoot(sources, runtime, true)!;
+	installBlua32Media(sources, runtime, program);
+	for (const model of maps) {
+		const resource = sources.resources.find(resource => resource.domain === model.identity.domain && resource.path === model.identity.path)!;
+		assert.equal(model.resource, resource, 'program installation rebinds the existing resource to its installed asset');
+		assert.equal(resource.source.sourcemeta!.text, mapSource);
+		const layer = resource.domain === -1 ? sources.systemRom : sources.cartridgeSlots[resource.domain]!.rom;
+		assert.deepEqual(layer.bytes.subarray(resource.source.start, resource.source.end), mapBytes);
+		assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending', 'program-only installation preserves the original map provenance');
+		model.undo();
+		assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'applied');
+	}
 });

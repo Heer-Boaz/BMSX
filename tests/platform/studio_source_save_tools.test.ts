@@ -53,9 +53,11 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	const body = model.requests.at(-1);
 	assert.equal(output(body, 'status-before-0').runtime, 'applied'); assert.equal(output(body, 'status-before-0').dirty, false);
 	assert.equal(output(body, 'status-applied-0').runtime, 'pending'); assert.equal(output(body, 'status-applied-0').dirty, true);
+	assert.equal(output(body, 'status-before-1').runtime, 'applied'); assert.equal(output(body, 'status-before-1').dirty, false);
+	assert.equal(output(body, 'status-applied-1').runtime, 'pending'); assert.equal(output(body, 'status-applied-1').dirty, true);
 	assert.equal(output(body, 'save-yaml').status, 'saved'); assert.deepEqual(output(body, 'save-yaml').persistence, { status: 'workspace' });
 	assert.deepEqual(output(body, 'save-yaml').application, { status: 'not-requested' });
-	assert.equal(output(body, 'status-yaml-saved').dirty, false); assert.equal(output(body, 'status-yaml-saved').runtime, 'untracked');
+	assert.equal(output(body, 'status-yaml-saved').dirty, false); assert.equal(output(body, 'status-yaml-saved').runtime, 'pending');
 	const retired = output(body, 'status-retired-0'), manual = output(body, 'status-manual-0');
 	assert.equal(retired.dirty, true); assert.equal(retired.latestSave.matchesCurrentSource, false);
 	assert.equal(retired.latestSave.result.status, 'saved'); assert.deepEqual(retired.latestSave.result.persistence, { status: 'workspace' });

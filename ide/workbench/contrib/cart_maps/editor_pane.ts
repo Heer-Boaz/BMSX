@@ -1,7 +1,7 @@
 import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
-import type { IdeCommandController } from '../../../commands/controller';
+import type { EditorCommandRunner } from '../../../common/commands';
 import { COLOR_STATUS_WARNING } from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { executeTextHistoryCommand } from '../../../editor/editing/history_commands';
@@ -16,6 +16,8 @@ import { PointerButton } from '../../../input/pointer/buttons';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { api } from '../../../runtime/overlay_api';
+import type { RuntimeSourceState } from '../../../runtime/sources';
+import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
@@ -39,14 +41,19 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 	private readonly gridFocus = inputFocus.createTarget(this.focusTarget);
 	private readonly unbindGrid = this.gridFocus.bindKeyboard(input => this.handleGridKeyboard(input));
 	private boundRevision = -1;
-	public constructor(resources: ResourcePanelController, controller: CartMapController, commands: IdeCommandController) {
+	public constructor(resources: ResourcePanelController, controller: CartMapController, commands: EditorCommandRunner, private readonly sources: RuntimeSourceState) {
 		super(resources);
 		this.gridFocus.commandContext = this.focusTarget;
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		this.focusTarget.registerCommand('cartMap.source', { isEnabled: () => true, run: () => controller.openSource(this.input) });
 		for (const direction of ['undo', 'redo'] as const) this.focusTarget.registerCommand(direction, {
 			isEnabled: () => !this.input.workingCopy.readOnly && (direction === 'undo' ? this.input.workingCopy.canUndo : this.input.workingCopy.canRedo),
-			run: () => executeTextHistoryCommand(this.input.workingCopy, direction),
+			run: () => {
+				if (!executeTextHistoryCommand(this.input.workingCopy, direction)) return;
+				this.update();
+				if (this.input.tree.selectionIndex >= 0) revealWorkbenchListSelection(this.input.tree);
+				if (this.input.selected !== undefined) this.input.grid.reveal(this.input.selected);
+			},
 		});
 		this.controls = [0, 1].map(axis => new ValueInput<CartMapCoordinateEdit>(this.focusTarget, {
 			options: INTEGER_INPUT_FORMAT.options, invalidBlurMessage: 'Map edit cancelled; source unchanged.',
@@ -100,6 +107,7 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 		const input = this.input;
 		input.workingCopy.history.applyEdits(new Map([[input.workingCopy, edit]]));
 		this.update();
+		revealWorkbenchListSelection(input.tree);
 		if (input.selected !== undefined) input.grid.reveal(input.selected);
 	}
 	private select(index: number, grid = false): void {
@@ -178,7 +186,7 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 	public draw(): void { drawCartMap(this.input, this.controls, this.gridFocus.hasFocus); }
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
 		const input = this.input, selected = input.tree.rows[input.tree.selectionIndex]?.element;
-		const text = input.diagnostic ?? selected?.diagnostic ?? 'TILE COORDINATES / SAVE SOURCE, THEN REBUILD ASSETS';
+		const text = input.diagnostic ?? selected?.diagnostic ?? ASSET_STATUS[getTextFileRuntimeSourceStatus(this.sources, input.workingCopy)];
 		api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
 		api.blit_text_inline_with_font(text, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
 		api.popClipRect();
@@ -196,3 +204,7 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 }
 const NAVIGATION = [['ArrowUp', 'up'], ['ArrowDown', 'down'], ['ArrowLeft', 'left'], ['ArrowRight', 'right'], ['PageUp', 'page-up'], ['PageDown', 'page-down'], ['Home', 'home'], ['End', 'end']] as const;
 const MOVES = [['ArrowLeft', -1, 0], ['ArrowRight', 1, 0], ['ArrowUp', 0, -1], ['ArrowDown', 0, 1]] as const;
+const ASSET_STATUS = {
+	applied: 'ASSET SOURCE CURRENT', pending: 'REBUILD NEEDED', failed: 'APPLY FAILED',
+	untracked: 'ASSET SOURCE UNKNOWN', source_only: 'SOURCE ONLY',
+};

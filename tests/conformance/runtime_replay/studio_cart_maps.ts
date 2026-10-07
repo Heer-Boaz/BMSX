@@ -1,8 +1,10 @@
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
+import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { runtimeSourceProjectRootPath } from '../../../ide/runtime/sources';
 import { workspaceRecords } from '../../../ide/workspace/records';
 import { resolveWorkspacePath } from '../../../ide/workspace/path';
 import { CartMapPane } from '../../../ide/workbench/contrib/cart_maps/editor_pane';
+import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 import type { CartMapInput } from '../../../ide/workbench/contrib/cart_maps/editor_input';
 import type { SerializedEditorGroup } from '../../../ide/workbench/services/editor/editor_serialization';
 import { editorTabGroup } from '../../../ide/workbench/ui/tab/group_model';
@@ -75,6 +77,7 @@ export async function runStudioCartMaps(test: StudioFixture, cart: 'pietious' | 
 	let input = await openMap(test, name);
 	await selectMapItem(test, input, cart);
 	const model = input.workingCopy, source = model.buffer.getText();
+	check(getTextFileRuntimeSourceStatus(test.ide.sources, model) === 'applied', 'map: the packaged source is the installed asset baseline');
 	const x = cart === 'pietious' ? 13 : 257, y = cart === 'pietious' ? 13 : 1;
 	check(input.selected!.x === x && input.selected!.y === y, 'map: actual shipped member coordinates are exposed');
 	const offset = cart === 'pietious' ? source.indexOf('    x: 13\n    y: 13') + '    x: '.length
@@ -101,12 +104,14 @@ export async function runStudioCartMaps(test: StudioFixture, cart: 'pietious' | 
 	await test.press('ControlLeft', 'KeyA');
 	await typeSourceText(test, String(x + 1));
 	check(pane.controls[0].pending && model.buffer.getText() === source, 'map: coordinate typing remains a local draft until acceptance');
-	await test.press('Enter');
+	await test.clickTab(input.id);
 	check(model.buffer.getText() === expected && input.selected?.x === x + 1,
-		'map: one accepted property edit changes only its source tokens and follows the same member');
+		'map: reselecting the active tab accepts the focused draft before any view rebind');
+	check(getTextFileRuntimeSourceStatus(test.ide.sources, model) === 'pending', 'map: edited asset source needs rebuilding');
 	await test.press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === source && input.selected?.x === x && input.selected.y === y,
 		'map: document Undo restores all original bytes and the same member selection');
+	check(getTextFileRuntimeSourceStatus(test.ide.sources, model) === 'applied', 'map: Undo returns to the installed source independently of persistence');
 	await test.press('ControlLeft', 'KeyY');
 	check(model.buffer.getText() === expected && input.selected?.x === x + 1 && input.selected.y === y,
 		'map: document Redo restores exactly one accepted move and follows its member');
@@ -141,10 +146,13 @@ export async function runStudioCartMaps(test: StudioFixture, cart: 'pietious' | 
 	check(model.buffer.getText() === expected, 'map: source-view Redo restores the same minimal token edit');
 	check((await workspaceRecords.provider.read(path))!.contents === savedBefore, 'map: accepted edits do not implicitly Save');
 	await test.press('ControlLeft', 'KeyS');
-	await test.until(() => !model.dirty, 'map: explicit Save persists the authored YAML');
+	await test.until(() => test.ide.textFileSaves.latestOperation(model)?.result?.status === 'saved', 'map: explicit Save persists the authored YAML');
+	check(!model.dirty, 'map: acknowledged snapshot is clean');
+	check(getTextFileRuntimeSourceStatus(test.ide.sources, model) === 'pending', 'map: saved source is not installed asset source');
 	check((await workspaceRecords.provider.read(path))!.contents === expected, 'map: physical workspace file contains all exact accepted source bytes');
 	check(test.ide.sources.currentBlua32Media === media && test.ide.sources.cartridgeSlots[0]!.rom.bytes === rom && test.cycles() === cycles,
 		'map: editing and saving neither cook assets nor install media nor execute the guest');
+	await test.frame();
 	await test.capture?.('source-saved');
 	await test.press('ControlLeft', 'KeyW');
 	await test.press('ControlLeft', 'KeyW');
@@ -152,6 +160,7 @@ export async function runStudioCartMaps(test: StudioFixture, cart: 'pietious' | 
 	await selectMapItem(test, input, cart);
 	check(input.workingCopy.buffer.getText() === expected && input.selected!.x === x + 1 && input.selected!.y === y,
 		'map: closing and reopening reads the saved authored position');
+	await test.until(() => !editorFeedbackState.message.visible, 'map: transient save feedback yields to the asset status');
 	await test.capture?.('reopened');
 	const map: CartMapExpectation = { sourcePath: model.resource.path, source: expected,
 		group: editorTabGroup.serialize(test.ide.editor.editorInputSerializers), x: x + 1, y };

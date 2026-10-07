@@ -8,6 +8,7 @@ import type { QuickInputController } from '../../services/quick_input/controller
 import { FileQuickPickProvider } from '../../services/quick_input/file_provider';
 import { resolveTextFileModel } from '../../services/working_copy/text_file_model';
 import { resolveTextCodeEditorInput } from '../../ui/code_tab/io';
+import { editorTabGroup } from '../../ui/tab/group_model';
 import { getActiveTab, openEditorTab } from '../../ui/tabs';
 import { buildResourceQuickPickItems } from '../resources/quick_access';
 import { CartMapInput, type CartMapKind } from './editor_input';
@@ -56,7 +57,7 @@ export class CartMapController {
 		void resolveTextCodeEditorInput(this.sources, input.workingCopy.resource).then(code => {
 			if (this.panes.openGeneration === generation) openEditorTab(this.panes, code,
 				{ selection: { row: position.row, startColumn: position.column, endColumn: position.column } });
-			else code.dispose();
+			else if (editorTabGroup.findById(code.id) !== code) code.dispose();
 		}, error => showEditorWarningBanner(`Cannot open map source: ${String(error)}`));
 	}
 }

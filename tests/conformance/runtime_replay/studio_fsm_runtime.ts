@@ -23,6 +23,9 @@ export async function openRuntimeStateMachineLens(test: StudioFixture) {
 	await press('Enter');
 	const input = getActiveTab();
 	if (input.kind !== 'behavior_lens' || input.view.presentation.kind !== 'state-graph') throw new Error('runtime FSM: real source graph required');
+	const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+	if (inspector.visible) await press('Escape');
+	check(!inspector.visible, 'runtime FSM: explicit close returns from a retained inspection to its source graph');
 	return input;
 }
 

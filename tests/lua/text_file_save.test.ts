@@ -17,7 +17,8 @@ import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '.
 import { saveTextFileFromCommand } from '../../ide/commands/source_save';
 import type { CartEditor } from '../../ide/cart_editor';
 import { editorFeedbackState } from '../../ide/common/feedback_state';
-import { COLOR_STATUS_ERROR } from '../../ide/common/constants';
+import { COLOR_STATUS_ERROR, COLOR_STATUS_SUCCESS, COLOR_STATUS_WARNING } from '../../ide/common/constants';
+import { getTextFileRuntimeSourceStatus } from '../../ide/workbench/services/working_copy/runtime_source_status';
 
 class SaveStorage extends MemoryStorage {
 	public failure: Error | undefined;
@@ -234,6 +235,41 @@ test('Save command reports a write failure as an error, with the unsaved source 
 	const result = await saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources);
 	assert.equal(result.status, 'failed'); assert.equal(model.dirty, true);
 	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_ERROR);
+});
+
+test('YAML Save feedback distinguishes installed equality, a pending asset build and unavailable source provenance', async t => {
+	const f = await fixture(t), model = f.yaml();
+	const original = model.buffer.getText(), media = f.sources.currentBlua32Media;
+	model.resource.source.sourcemeta = { text: original };
+	assert.equal((await saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources)).status, 'saved');
+	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_SUCCESS);
+	setSource(model, 'value: 2\n');
+	await saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources);
+	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_WARNING);
+	assert.equal(model.dirty, false);
+	assert.equal(getTextFileRuntimeSourceStatus(f.sources, model), 'pending');
+	assert.equal(model.resource.source.sourcemeta.text, original);
+	assert.equal(f.sources.currentBlua32Media, media, 'Save and its presentation cannot install data');
+	model.resource.source = { type: 'data', resid: model.resource.source.resid };
+	await saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources);
+	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_WARNING);
+	assert.equal(getTextFileRuntimeSourceStatus(f.sources, model), 'untracked');
+});
+
+test('YAML Save retains the captured write and current source status when typing overtakes it', async t => {
+	const f = await fixture(t), model = f.yaml(), original = model.buffer.getText();
+	model.resource.source.sourcemeta = { text: original };
+	setSource(model, 'value: 2\n'); f.files.delayed = true;
+	const saving = saveTextFileFromCommand(f.saves, model, {} as CartEditor, f.sources);
+	await setImmediate();
+	model.undo();
+	f.files.writes[0].complete();
+	const result = await saving;
+	assert.equal(result.snapshot.source, 'value: 2\n');
+	assert.equal(model.buffer.getText(), original); assert.equal(model.dirty, true);
+	assert.equal(getTextFileRuntimeSourceStatus(f.sources, model), 'applied');
+	assert.equal(editorFeedbackState.message.color, COLOR_STATUS_SUCCESS);
+	assert.equal(f.files.records.get(`${f.root}/${model.resource.path}`)!.contents, 'value: 2\n');
 });
 
 test('recovery storage cannot turn an acknowledged canonical write into a failed Save', async t => {

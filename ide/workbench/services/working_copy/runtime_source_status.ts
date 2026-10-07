@@ -22,8 +22,6 @@ const statusByModel = new WeakMap<EditorTextModel, SourceStatusCache>();
 
 /** Compares authored text with the actual installation, never an editor acknowledgement. */
 export function getTextFileRuntimeSourceStatus(sources: RuntimeSourceState, model: EditorTextModel): RuntimeSourceStatus {
-	// YAML assets are cooked by the asset build, not installed by Lua Hot Resume.
-	if (model.mode === 'yaml') return 'untracked';
 	let cache = statusByModel.get(model);
 	if (cache === undefined || cache.sources !== sources || cache.resource !== model.resource || cache.resourceSource !== model.resource.source) {
 		cache = {
@@ -50,6 +48,14 @@ export function getTextFileRuntimeSourceStatus(sources: RuntimeSourceState, mode
 				? sources.systemInstalledBlua32Sources
 				: sources.cartridgeSlots[model.resource.domain]!.installedBlua32Sources;
 			installedSource = installedSources.get(cache.programSource.module_path);
+			break;
+		}
+		case 'yaml': {
+			// This is the producer input of the installed cooked asset, not the
+			// workspace file or a claim about live guest objects derived from it.
+			const packagedSource = model.resource.source.sourcemeta;
+			if (packagedSource === undefined) return 'untracked';
+			installedSource = packagedSource.text;
 			break;
 		}
 		case 'aem': {

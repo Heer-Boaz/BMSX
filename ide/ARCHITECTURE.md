@@ -538,9 +538,11 @@ source build records an outcome without blocking the installed execution; failur
 installation retain the ordinary operational error boundary. No acknowledgement
 is rolled back.
 Source-only Lua documents do not claim executable-code apply status.
-Ordinary YAML data documents are also untracked: saving their source does not
-replace a cooked ROM asset. Save explicitly reports that an asset rebuild is
-required; neither Lua Hot Resume nor a text-model version proves data installation.
+YAML data documents compare their authored text with the installed asset's
+packaged source metadata through the same revision cache. Missing metadata is
+untracked. This is source equality, not a claim about live guest objects derived
+from an asset. Save does not replace cooked ROM data; differing source still
+requires a rebuild. Neither Lua Hot Resume nor persistence proves data installation.
 
 The production references and the combined text/lens/save/apply proof are in
 [`docs/studio_development_workflows.md`](../docs/studio_development_workflows.md#w04-authored-document-versus-geïnstalleerde-bron).
@@ -1750,6 +1752,13 @@ same focus owner.
 A focus transition first detaches the departing target, emits its blur event,
 then installs and notifies the new target. The editor group releases the old
 control **before** replacing the active resource or clearing its pane input.
+Reselecting the active tab only focuses its retained pane. When same-input
+navigation supplies a selection, the departing control blurs against the old
+selection before options are applied, then the resulting control receives focus;
+navigation must not erase an unsubmitted draft or focus the previous destination.
+Opening the same input without a new location also retains its inspector;
+Escape/Close ends that inspection explicitly rather than tab activation doing so.
+VS Code similarly separates [input attachment from options on an existing pane](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/editor/editorPanes.ts).
 `EditorPane` owns only view/input lifecycle (`focus`, `clearInput`, `dispose`),
 not history inferred from its input class. Concrete owners bind at construction
 or workbench composition and unbind at disposal; dispatch does not build a
