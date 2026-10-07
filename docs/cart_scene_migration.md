@@ -1,8 +1,11 @@
 # Authored cart compositions
 
-The composition migration is complete for `nemesis_s`, `2025` and `pietious`.
-Scenes contain placed objects. FSMs and timelines continue to own sequence,
-animation and gameplay. Lua remains the authored source that Studio edits.
+The Lua presentation-composition migration covers `nemesis_s`, `2025` and
+`pietious`. FSMs and timelines continue to own sequence, animation and gameplay.
+**Current source correction (2026-10-07):** Pietious room placements and Nemesis
+stage glyphs remain canonical YAML. Their earlier extraction into Lua was
+reverted. The migration measurements below are historical, not evidence of a
+current YAML visual editor; see [YAML-backed Studio editing](studio_yaml_authoring.md).
 
 ## References and ownership
 
@@ -68,13 +71,11 @@ constructs the initial room after World update. The `init_epoch` /
 registers definitions; it does not decide the next game's presentation mode.
 The cinematic-flow and death/restart scenarios both pass after this cleanup.
 
-The 24 room compositions now author all 122 placed actors in
-`scenes/rooms/room_*.lua`. Terrain, links and region topology remain in the map
-resource. The YAML object lists and their placement decoder have been removed.
-Cold category/dependency indices reference scene members directly; they do not
-copy positions into a second representation. Compiled progression filters live
-in castle's program, never on authored scene members. Retained enemy defeat is
-checked once by admission, instead of also duplicating it in the conditions.
+Rooms author their object lists, terrain, links and topology in
+`res/data/castle_map.yaml`. `castle/map.lua` derives templates and scene members;
+there are no `scenes/rooms/room_*.lua` sources. The earlier 24-room/122-actor Lua
+extraction described by the historical measurements below was reverted.
+Compiled progression filters live in castle's program, not the visual editor.
 
 The lifetime follow-up replaces the persistent room object with one live room
 per scene entry. `session.lua` owns durable progress independently of castle,
@@ -91,8 +92,8 @@ The 24 room scanouts plus the final image match the pre-migration ROM exactly.
 Several older scenarios bound state paths or spawned probes before their
 requested restart committed; they now wait for the incoming director identity.
 
-Pietious now has 34 scene sources: the 24 room compositions plus these ten
-compositions with 33 independently placed members:
+Pietious retains these ten directly authored Lua compositions, independently of
+its YAML-backed room placements:
 
 | Source | Authored members |
 | --- | --- |
@@ -123,7 +124,8 @@ and Enter/halo use that anchor even after replacing the actor. The duplicate sta
 screen-position and effect-depth constants are gone. Runtime player/castle/room
 bindings are applied to copies of authored options during world construction.
 
-Composition-migration validation (before the lifetime follow-up):
+Historical composition-migration validation (before the lifetime follow-up and
+the subsequent restoration of canonical YAML placements):
 
 - All 31 Pietious headless scenarios pass. The final effect change also passes
   the complete cinematic and death/restart paths.

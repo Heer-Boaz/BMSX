@@ -3,28 +3,19 @@ import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/top_bar/menu';
-import { openScene, editPosition, typeSourceText } from './studio_scene_authoring';
+import { typeSourceText } from './studio_scene_authoring';
 import { check, type StudioFixture } from './studio_fixture';
 
-/** Real source properties, Hot Resume, then the ordinary Actor Lab method UI.
- * No source replacement, clipboard, injected Lua or direct guest mutation. */
+/** Recreate the currently loaded YAML-derived room through the Actor Lab method UI.
+ * This proves runtime lifetime, not YAML editing or asset application.
+ * No source replacement, injected Lua or direct guest mutation. */
 export async function testPietiousRoomReload(test: StudioFixture, castle: () => Value, member: (key: string) => Value) {
-	const { guest, press, until, ide, runtime } = test;
+	const { guest, press, until, ide } = test;
 	await press('ControlRight', 'ShiftRight');
 	await test.runMenuCommand('pause');
 	const originalRoom = guest.readStringMember(castle(), 'room');
 	const originalLevel = guest.readStringMember(castle(), 'level');
-	const scene = await openScene(test, 'rooms/room_002', 5);
-	await editPosition(test, scene, 3, 0, 120);
-	await press('ControlLeft', 'ShiftLeft', 'KeyS');
-	await until(() => test.tasks.ready && !runtime.completionCallPending() && !ide.debugger.plans.mutationActive
-		&& !ide.editor.isActive, 'Hot Resume installs the edited scene registration');
-	await press('ControlRight', 'ShiftRight');
-	await test.runMenuCommand('pause');
-	check(guest.readStringMember(castle(), 'level') === originalLevel
-		&& guest.readStringMember(castle(), 'room') === originalRoom
-		&& guest.readStringMember(member('rock_002_01'), 'x') === 112,
-		'Hot Resume preserves a coherent live room until explicit recreation');
+	const originalRockX = guest.readStringMember(member('rock_002_01'), 'x');
 	const session = guest.readStringMember(castle(), 'session');
 	const player = guest.readStringMember(castle(), 'player');
 	const status = guest.readStringMember(player, 'status');
@@ -45,6 +36,7 @@ export async function testPietiousRoomReload(test: StudioFixture, castle: () => 
 	if (lab.kind !== 'actor_lab') throw new Error('Actor Lab did not open');
 	await until(() => lab.outline.rows.length > 0 && lab.outline.rows[0].element.node.label === 'd', 'inspect the actual director');
 	const reload = async () => {
+		const previous = ide.actorExecution.lastResult;
 		await test.runPaletteCommand('Actor Lab: Call Lua Method');
 		check(picker.visible, `call picker opens: visible=${picker.visible} title=${picker.title} ready=${test.tasks.ready} dirty=${lab.dirty} status=${lab.status}`);
 		await typeSourceText(test, 'reload_room');
@@ -54,17 +46,18 @@ export async function testPietiousRoomReload(test: StudioFixture, castle: () => 
 		await press('Enter');
 		await until(() => {
 			check(!editorFeedbackState.message.text.startsWith('Actor operation failed:'), editorFeedbackState.message.text);
-			return test.tasks.ready && !runtime.completionCallPending() && !ide.debugger.plans.mutationActive;
+			return ide.actorExecution.active === undefined && ide.actorExecution.lastResult !== previous;
 		},
-			'room reload completes through the scheduled guest call');
+			'room reload settles its guest call, GPU work and recording checkpoint');
+		check(ide.actorExecution.lastResult!.result!.status === 'completed', 'the actual Actor operation completed');
 	};
 	await reload();
 	const rebuiltRoom = guest.readStringMember(castle(), 'room');
 	check(rebuiltRoom !== originalRoom && guest.readStringMember(originalRoom, 'world') === null
 		&& guest.readStringMember(guest.readStringMember(originalRoom, 'scene'), 'closed') === true,
 		'room recreation tears down the outgoing scene');
-	check(guest.readStringMember(castle(), 'level') !== originalLevel && guest.readStringMember(member('rock_002_01'), 'x') === 120,
-		'explicit reload applies the current definition and edited placement');
+	check(guest.readStringMember(castle(), 'level') === originalLevel && guest.readStringMember(member('rock_002_01'), 'x') === originalRockX,
+		'explicit reload reuses the loaded level and its unchanged YAML placement');
 	check(member('enemy_002_01') !== enemy && guest.readStringMember(enemy, 'world') === null,
 		'transient enemies are recreated, not carried over');
 	check(guest.readStringMember(castle(), 'session') === session && guest.readStringMember(castle(), 'player') === player
@@ -76,6 +69,8 @@ export async function testPietiousRoomReload(test: StudioFixture, castle: () => 
 	check(guest.readStringMember(rebuiltRoom, 'world') === null, 'a second UI reload also releases its previous room');
 	await test.capture?.('reloaded-room');
 	await test.runMenuCommand('pause');
-	check(!ide.editor.isActive, 'Run Resume returns to the running game');
-	console.info('STUDIO: Pietious source edit, Hot Resume, explicit room recreation and retained session PASS');
+	check(lab.running && !test.execution.userPaused, 'Run Resume resumes the live Actor Lab preview');
+	await press('ControlRight', 'ShiftRight');
+	check(!ide.editor.isActive, 'the ordinary Studio toggle returns to the running game');
+	console.info('STUDIO: Pietious Actor Lab room recreation from loaded YAML and retained session PASS');
 }

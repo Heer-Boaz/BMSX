@@ -6,6 +6,13 @@ also used the `rs` tag and global Registry lookups to find objects to discard.
 That was an incomplete lifetime model. Room exit now destroys the room and its
 objects. Reentry constructs a fresh scene from authored data and game state.
 
+**Current authoring scope (2026-10-07):** presentation compositions remain Lua
+Scene Editor sources. Pietious room placements are canonical
+`res/data/castle_map.yaml`, and Nemesis stage placements are glyphs in
+`res/data/nemesis_s_stage.yaml`. Their visual placement editors are not built.
+The historical room-Lua editing results below do not establish current YAML
+editing or application; see [the current follow-up](studio_yaml_authoring.md).
+
 ## Production references
 
 Reviewed source, pinned for this change:
@@ -151,25 +158,42 @@ An intervening source change rebinds/revokes the old draft before it can commit
 through an obsolete offset. Unchanged view frames retain the projected fields,
 controls and measured layout; scrolling only projects their retained rectangles.
 
-Saved definitions affect newly constructed instances. The existing source-status
+Installed definition revisions affect newly constructed instances; Save alone
+does not install them. The existing source-status
 indicator and Save/Reboot workflow distinguish that from a changed live world.
 Conformance tests read explicit instance/member/session owners; authoring does
 not manufacture a scene database by scanning guest objects.
 
-## Recreate a Pietious room without restarting the game
+## Recreate a loaded Pietious room without restarting the game
 
-Hot Resume publishes a new definition revision. Each active castle retains its
-complete map, progression program and filters until explicitly replaced. Its
+Each active castle retains its complete loaded map, progression program and
+filters until explicitly replaced. Its
 room uses that same revision's scene definition, so active actors cannot begin
 reading a freshly compiled schema with yesterday's numeric state slots.
 
 During room gameplay:
 
-1. Open the Scene Editor, change an authored member and Save.
-2. Use Hot Resume to install the source change; the existing room remains intact.
-3. In Actor Lab, choose the running director `d`, choose **Call**, select
+1. Pause and open Actor Lab.
+2. Choose the running director `d`, choose **Call**, select
    `reload_room` and submit without arguments.
-4. Use **Run > Resume** to play the reconstructed room.
+3. Use **Run > Resume** to play the reconstructed room in Actor Lab; toggle
+   Studio off to return to the full game view.
+
+This uses the currently loaded map. Saving `castle_map.yaml` does not rebuild
+its asset; Lua Hot Resume and `reload_room` do not install those saved YAML
+bytes. The removed `scenes/rooms/room_*.lua` sources are not an alternate authoring
+route. The current browser scenario edits real Lua presentation compositions
+and separately calls `reload_room` twice with unchanged loaded placements; it
+does not claim a YAML edit/apply workflow.
+
+The corrected `browser.mjs --studio-cart-scenes pietious` workflow passed on
+WebGL2 on 2026-10-07 (1,254 host frames): Lua property edits, shared undo/redo,
+Save/Reboot, walking, two explicit room recreations, retained session/player
+state, inventory/halo and reopening the saved Lua source. The room-2 rock
+remained at its canonical YAML-derived x=104. It awaits the Actor execution
+owner's completed result, including GPU/checkpoint settling, before the next
+call. This rerun does not establish software/WebGPU or YAML visual-authoring
+coverage.
 
 The cart disposes the outgoing room group before replacing its definition and
 subscriptions. It recreates transient actors, retains the actual player and
@@ -293,6 +317,9 @@ Evidence is under `.bmsx/authoring/scene-authoring-next/`.
   same **70 diagnostics** as before this follow-up; it is not a clean check.
 
 ### Retained-session room recreation (2026-09-17)
+
+Historical evidence from the since-reverted room-placement Lua migration.
+Its source-edit/Hot Resume claims are not current YAML acceptance.
 
 Evidence is under `.bmsx/authoring/scene-refresh/`.
 

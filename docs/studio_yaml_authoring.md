@@ -2,7 +2,7 @@
 
 ## Source ownership
 
-Status: 2026-09-20. This contract supersedes the old actor-to-Lua migration
+Status: 2026-10-07. This contract supersedes the old actor-to-Lua migration
 direction. No cart source format changes are required for Studio editing.
 
 | Cart | Authored representation | Runtime consumer |
@@ -43,11 +43,11 @@ specialized views, not adoption of Tiled's map format or a second scene database
 
 ## Next implementation boundary
 
-1. **Source-preserving structured access.** The existing YAML tokenizer supports
-   highlighting, not a lossless syntax tree. Before adding visual edits, establish
-   source ranges for mappings, sequences and scalars at the YAML language owner.
-   Reuse a production source-preserving parser if compatible with the shipped
-   host bundle; do not grow regex extraction inside a cart editor. Keep incomplete
+1. **Source-preserving structured access.** `ide/language/yaml/structured_edits.ts`
+   now uses the `yaml` parser's source tokens and ranges for scalar/collection
+   edits; the AEM editor already consumes it. Reuse this language owner rather
+   than introducing another parser or regex extraction inside a cart editor. A
+   decoded string-cell edit still needs a language-owned source mapping. Keep incomplete
    authored text editable and show unsupported syntax as non-editable projection,
    never normalize it to a convenient schema.
 2. **One end-to-end room editor.** Start with a Pietious room/object selection and
@@ -66,6 +66,50 @@ These are ordered architectural gates, not permission to implement a generic
 plugin SDK, duplicate the runtime decoder, or expand cartlib for editor convenience.
 Derive projections on source changes, never per frame. Generic UI components
 know selection/geometry/property interaction, not castle, enemy or stage semantics.
+
+### Smallest useful visual-authoring follow-up
+
+**Not implemented.** The current Scene Editor recognizes directly authored Lua
+`scene_library.register` compositions. It cannot visually edit either canonical
+YAML placement source. The old `scenes/rooms/room_002.lua` and
+`scenes/stage_actors.lua` migrations are not acceptance fixtures to resurrect.
+
+- **Pietious:** choose a numbered room and an existing object, see its authored
+  map and tile position, and edit the exact `objects[].x` / `y` scalar ranges.
+  Labels use the written `type`; conditions, item data and source order remain
+  untouched. Coordinates are authored tile coordinates, not generated scene
+  member world positions. No room decoder or progression logic moves into Studio.
+- **Nemesis S:** show a scrollable `map_rows` glyph grid and move an existing
+  marker to an empty cell with one document-history operation. Selection is a
+  source cell, not an expanded actor: `p`/`P` can create a formation. Start with
+  the independent `m`/`M`/`p`/`P` markers; terrain-coupled glyphs remain visible,
+  not silently interpreted as independently movable objects. The language owner
+  maps decoded cells through quoting and escapes; changing two cells must not
+  reserialize a row or the document. Unsupported scalar syntax stays editable
+  as source and visibly unavailable for that visual operation.
+
+Both views retain the resource's existing `EditorTextModel`. Share only the
+needed grid/selection/property controls, not an authored schema or new plugin
+framework. Save persists source and reports asset rebuild required. An asset
+build/install action is a separate owner change, not an implicit part of moving
+a marker or calling `reload_room`.
+
+Acceptance must cover both real files independently: visible selection/edit;
+exact unrelated-byte preservation (including row escapes and comments);
+source/visual shared undo and redo; invalid source and intervening edits;
+Save, close/reopen and fresh workspace reload. Build the saved asset through
+the existing rompacker and boot it separately to verify the cart's actual room
+coordinate or spawn column, without claiming live data application. Retain the
+existing Lua presentation-scene workflow as separate coverage. Stationary paint
+must neither reparse YAML nor read/execute the guest.
+
+References reviewed for this follow-up: Tiled's
+[object selection tool](https://github.com/mapeditor/tiled/blob/master/src/tiled/objectselectiontool.cpp)
+sends transforms through document history; VS Code's
+[custom text editor model](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/customEditor/browser/customTextEditorModel.ts)
+shares the text-file working copy; `yaml`'s
+[CST stringifier](https://github.com/eemeli/yaml/blob/main/src/parse/cst-stringify.ts)
+retains token text rather than normalizing the authored document.
 
 ## Evidence and limits
 

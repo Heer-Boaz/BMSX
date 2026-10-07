@@ -4,7 +4,8 @@ import { selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
 import { testPietiousRoomReload } from './studio_pietious_room_reload';
 
-/** Visible editing, Save/Reboot and Hot Resume with explicit room recreation.
+/** Visible Lua composition editing and Save/Reboot, then ordinary room recreation.
+ * Room placements stay in castle_map.yaml; this does not test YAML visual authoring.
  * Registry reads observe the resulting objects without mutating them. */
 export async function runStudioPietiousScenes(test: StudioFixture) {
 	const { guest, runtime, press, until, runMenuCommand } = test;
@@ -53,7 +54,6 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	check(gameplay.outline.roots[0].children[0].element.label === "'hud'", 'Studio moved HUD before the player');
 	await press('ControlLeft', 'KeyS');
 	await until(() => !gameplay.workingCopy.dirty, 'persist the reordered gameplay members');
-	await editPosition(test, await openScene(test, 'rooms/room_002', 5), 3, 0, 112);
 	const effects = await openScene(test, 'effects', 4);
 	await editPosition(test, effects, 3, 0, 16);
 	await editOption(test, effects, 3, 'text', "'Scene victory!'");
@@ -91,10 +91,10 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	check(guest.readStringMember(registered('pietolon'), 'x') === 168, 'in-game restart retains the authored starting point');
 	test.setKey('ArrowRight', true);
 	await until(() => guest.readStringMember(registered('c'), 'current_room_number') === 2,
-		'walk from the initial room into the edited room');
+		'walk from the initial room into the YAML-authored room');
 	test.setKey('ArrowRight', false);
 	await until(() => playing() && roomMember('rock_002_01') !== null, 'room admission publishes its placed actors');
-	check(guest.readStringMember(roomMember('rock_002_01'), 'x') === 112, 'room admission uses the saved rock placement');
+	check(guest.readStringMember(roomMember('rock_002_01'), 'x') === 104, 'room admission keeps the canonical YAML rock placement');
 	// State admission precedes draw submission. Advance one complete two-VBlank
 	// update/render pair and its scanout before capturing the game view.
 	for (let frame = 0; frame < 4; frame += 1) await test.frame();
@@ -112,9 +112,9 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	check(roomMember('rock_002_01') === null, 'room departure disposes the outgoing scene actor');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
-	const reopened = await openScene(test, 'rooms/room_002', 5);
-	await selectMember(test, reopened, 3);
-	check(reopened.properties[0].value === 120, 'refreshed room placement survives gameplay and reopening');
+	const reopened = await openScene(test, 'intro', 2);
+	await selectMember(test, reopened, 1);
+	check(reopened.properties[0].value === 48, 'authored Lua logo placement survives gameplay and reopening');
 	console.info('STUDIO: Pietious named-member reorder, option/position authoring, save, reboot, walking and Enter/halo PASS');
-	return { hostFrames: test.observations.hostFrames, logoX: 48, rockX: 120, playerX: 168, haloX: 136 };
+	return { hostFrames: test.observations.hostFrames, logoX: 48, rockX: 104, playerX: 168, haloX: 136 };
 }

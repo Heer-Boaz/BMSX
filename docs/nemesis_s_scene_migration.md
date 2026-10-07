@@ -1,5 +1,12 @@
 # Nemesis S: authored scenes
 
+**Current source correction (2026-10-07):** the stage-actor Lua extraction was
+reverted. `res/data/nemesis_s_stage.yaml` remains canonical for terrain and actor
+glyphs, decoded by `stage.lua`; `scenes/stage_actors.lua` does not exist. Direct
+Lua presentation/gameplay compositions below remain supported. Migration counts,
+parity and performance results are historical, not current YAML visual-editor
+acceptance. See [YAML-backed Studio editing](studio_yaml_authoring.md).
+
 Nemesis S uses authored compositions for its presentation and gameplay. The
 controllers own input, progression and animation; the scene sources own placed
 objects. A scene is a useful group of objects, not a new name for every state
@@ -13,7 +20,7 @@ in the existing game sequence.
 | `scenes/title.lua` | Background, selector and selection cover |
 | `scenes/hangar.lua` | Background, ship and foreground lip |
 | `scenes/gameplay.lua` | Starfield, terrain, HUD, two player starts and game-over curtain |
-| `scenes/stage_actors.lua` | 179 individual enemies/scenery members and formation membership |
+| `res/data/nemesis_s_stage.yaml` | Terrain and actor glyphs; some markers expand into formations |
 | `scenes/end_demo.lua` | Picture, caption and curtain; panel content |
 
 ## Ownership and production references
@@ -58,13 +65,11 @@ draws sprites and text relative to its placement. The director admits selected
 players at the authored start points; respawn uses those same points. Terrain
 collision queries convert world coordinates through the terrain object's origin.
 
-The actor scene contains actual level coordinates. Each `column` is a scroll
-admission gate; `formation_id` groups actors that share progress in this run.
-Stage builds its retained admission queue once, converting level x to screen x
-at that gate and binding the current stage and formation state. It spawns members
-through the existing World boundary as scrolling reaches them. The terrain YAML
-now contains terrain only. `.` denotes empty terrain without generated snow;
-enemy, chimney-controller and scenery marker decoding has been removed.
+`stage.lua` decodes the YAML glyph rows into terrain/collision and a retained
+scroll-admission queue. A marker's column selects its admission gate; the cart
+derives actor options and formation membership. Scrolling spawns those actors
+through the current scene. These runtime records are not separately authored
+Lua members and cannot replace the glyph source for editing.
 
 FSM entry installs completion bindings, runs `entering_state`, then starts
 autoplay before entering child states. Title and hangar use that ordinary
