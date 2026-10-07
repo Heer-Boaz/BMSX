@@ -14,8 +14,13 @@ export type CartMapViewSnapshot = {
 };
 
 export function captureCartMapView(input: CartMapInput): CartMapViewSnapshot {
+	// Hidden views still receive source/history changes before their next layout.
+	projectCartMap(input);
+	const scroll = input.restoredScroll;
 	return { activeSheet: input.activeSheet, selection: { ...input.selectionRange }, collapsed: input.tree.roots.filter(node => node.collapsed).map(node => node.element.sheet.key),
-		treeScroll: input.tree.scroll, xScroll: input.grid.horizontal.getScroll(), yScroll: input.grid.vertical.getScroll() };
+		treeScroll: scroll === undefined ? input.tree.scroll : scroll.tree,
+		xScroll: scroll === undefined ? input.grid.horizontal.getScroll() : scroll.x,
+		yScroll: scroll === undefined ? input.grid.vertical.getScroll() : scroll.y };
 }
 
 export function restoreCartMapView(input: CartMapInput, view: CartMapViewSnapshot): void {

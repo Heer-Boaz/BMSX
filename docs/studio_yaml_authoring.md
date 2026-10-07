@@ -71,7 +71,9 @@ projections; no schema is inferred from a runtime actor.
   selecting a grid marker reveals its outline row. Accepted moves and focused
   Undo/Redo reveal the member in both outline and map, while ordinary updates
   preserve manual scrolling. Reselecting the active tab finishes the focused
-coordinate draft without reactivating the document.
+  coordinate draft without reactivating the document. Session snapshots project
+  pending source changes before capturing selection and collapse state; inactive
+  restored tabs retain their saved viewport until their first layout.
 - Parse and projection work happens on source revisions, not stationary frames.
   Painting visits visible grid cells and retained markers. It neither reads
   nor executes the guest. No machine/runtime representation changes are involved.
@@ -146,6 +148,10 @@ program-only installation. Those operations cannot mark a map edit installed.
 Superseded asynchronous source openings dispose only an unadmitted candidate,
 never a source tab already owned by the editor group. The controller regression
 exercises both cases through the real input resolver.
+Serializer regressions also cover repeated recovery of an inactive map and
+background source Undo before capture. Pending viewport and current tracked
+selection belong to the retained view, not its last rendered controls, following
+VS Code's [view-state lifecycle](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/editor/editorWithViewState.ts).
 
 The shared focus change is also exercised by the three-backend navigation and
 runtime-inspection workflows. Reopening an existing definition retains its
