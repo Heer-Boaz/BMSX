@@ -5588,6 +5588,10 @@ baselines; selection changes, unavailable membership and heap replacement do not
 masquerade as value changes. History navigation may compare the restored value
 with the preceding observation. Rendering consumes the retained flag without
 advancing or clearing it, and neither adds guest reads nor an event/trace stream.
+The property document reconciles semantic fields and typed guest keys separately
+from display order. Surviving rows retain formatting and comparison state across
+sibling membership changes; removed rows release that state when the observation
+finishes. A subsequent admission starts a new baseline.
 Actor Lab's live FSM graph projects that same selected instance hierarchy into
 the shared graph viewport. It retains scalar typed membership and display nodes,
 not guest tables or source-registration matches. Activity updates keep measured

@@ -49,6 +49,14 @@ function remove_actor() world._objects = { other } end
 function add_future_field() ordinary['future' .. actor.x] = 91 end
 function replace_callback() ordinary.callback = 99 end
 function change_input_pattern() state.definition.input_patterns[1] = 'second' end
+function duplicate_blackboard_slots()
+ bt_component.blackboard._layout = { keys = { 'answer', 'answer' }, initial_values = { 0, 1 } }
+ bt_component.blackboard._values = { 42, 43 }
+end
+function relabel_blackboard_slots()
+ bt_component.blackboard._layout = { keys = { 'second', 'first' }, initial_values = { 10, 20 } }
+end
+function change_blackboard_slot() bt_component.blackboard._values[1] = 44 end
 return world`;
 
 function fixture() {
@@ -505,4 +513,56 @@ test('watch labels update independently of a stable indexed runtime property ide
 	assert.notEqual(pin.item.label, label); assert.equal(pin.item.value, value);
 	assert.equal(pin.item.valueChanged, false, 'a label change is not a displayed-value change');
 	assert.strictEqual(f.details.watches.find(target, property.identity!), pin);
+});
+
+test('blackboard details and pins identify stored slots independently of duplicate and rebound names', t => {
+	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	f.execute('duplicate_blackboard_slots');
+	const node = f.tree.roots[0].children.find(node => node.kind === 'tree')!;
+	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, node, f.guest);
+	f.details.refresh(node, target.path, f.tree, -1, f.target.worldHashId, false);
+	const slots = f.details.items.filter(item => item.identity?.section === 'blackboard');
+	assert.equal(slots.length, 2); assert.equal(slots[0].label, slots[1].label);
+	assert.deepEqual(slots.map(item => item.value), ['42', '43']);
+	assert.deepEqual(slots.map(item => item.identity!.key!.scalar), [1, 2]);
+	assert.equal(runtimePropertyIdentitiesEqual(slots[0].identity!, slots[1].identity!), false);
+	const first = f.details.watches.add(target, 'tree', slots[0]), second = f.details.watches.add(target, 'tree', slots[1]);
+	const previousLabels = slots.map(item => item.label), previousPinLabels = [first.item.label, second.item.label];
+	const previousDescriptions = [first.item.description, second.item.description];
+	assert.strictEqual(f.details.watches.find(target, slots[0].identity!), first);
+	assert.strictEqual(f.details.watches.find(target, slots[1].identity!), second);
+	f.execute('relabel_blackboard_slots');
+	f.details.refresh(resolveActorTarget(f.tree.roots, target, f.guest), target.path, f.tree, -1, f.target.worldHashId, false);
+	const rebound = f.details.items.filter(item => item.identity?.section === 'blackboard');
+	assert.strictEqual(rebound[0], slots[0]); assert.strictEqual(rebound[1], slots[1]);
+	assert.ok(rebound.every((item, index) => item.label !== previousLabels[index]));
+	assert.notEqual(rebound[0].label, rebound[1].label);
+	assert.deepEqual(rebound.map(item => item.value), ['42', '43']);
+	assert.ok(rebound.every(item => item.valueChanged === false));
+	assert.notEqual(first.item.label, previousPinLabels[0]); assert.notEqual(second.item.label, previousPinLabels[1]);
+	assert.notEqual(first.item.label, second.item.label);
+	assert.equal(first.item.valueChanged, false); assert.equal(second.item.valueChanged, false);
+	assert.notEqual(first.item.description, previousDescriptions[0]); assert.notEqual(second.item.description, previousDescriptions[1]);
+	f.execute('change_blackboard_slot');
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
+	assert.equal(first.item.value, '44'); assert.equal(second.item.value, '43');
+	assert.equal(first.item.valueChanged, true); assert.equal(second.item.valueChanged, false);
+	f.details.watches.remove(first);
+	assert.equal(f.details.watches.find(target, slots[0].identity!), undefined);
+	assert.strictEqual(f.details.watches.find(target, slots[1].identity!), second);
+});
+
+test('surviving callback rows retain loaded source caches when an earlier component field disappears', t => {
+	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	const component = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
+	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, component, f.guest);
+	f.details.refresh(component, target.path, f.tree, -1, f.target.worldHashId, false);
+	const callback = f.details.items.find(item => item.label === 'callback')!, source = callback.source;
+	assert.ok(source !== undefined);
+	const location = t.mock.method(f.guest, 'linkedFunctionLocation');
+	f.execute('remove_numeric_field');
+	f.details.refresh(resolveActorTarget(f.tree.roots, target, f.guest), target.path, f.tree, -1, f.target.worldHashId, false);
+	assert.strictEqual(f.details.items.find(item => item.label === 'callback'), callback);
+	assert.strictEqual(callback.source, source); assert.equal(callback.valueChanged, false);
+	assert.equal(location.mock.callCount(), 0, 'a shifted surviving callback does not rebuild its loaded source mapping');
 });

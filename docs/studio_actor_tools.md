@@ -217,8 +217,11 @@ Unlike a DOM animation, BMSX's immediate-mode repaint does not clear the marker.
 - First observation, switching to another actor/member, and reacquiring a
   previously unavailable binding establish a neutral baseline. A same-named
   property on another actor is not a continuation of the previous property.
-  Newly admitted Details rows also start neutral when dynamic property
-  membership changes the row order; pins retain their independent baseline.
+- Details retains values and formatting by semantic field or typed guest key,
+  independently of display position. Inserting, removing or reordering siblings
+  therefore does not erase a surviving property's comparison baseline. A
+  property actually absent from a completed observation is released; admitting
+  it again starts neutral, rather than reviving stale cached state.
 - Pins own their comparison independently of the current selection. Switching
   between the selected-member projection and a separate pinned projection does
   not reset or fabricate a value change.
@@ -230,6 +233,13 @@ Unlike a DOM animation, BMSX's immediate-mode repaint does not clear the marker.
   observations. There is no new recording mode, polling, guest instrumentation,
   guest execution or CPU/C++ change. Existing value presentation supplies the
   compared text; rendering performs no additional inspection.
+
+The distinction between a property's identity and its displayed position also
+appears in [Godot's remote inspector](https://github.com/godotengine/godot/blob/master/editor/debugger/editor_debugger_inspector.cpp):
+the property list and keyed property values are separate. BMSX uses its existing
+typed `RuntimePropertyIndex`, not display labels or serialized Lua paths. This
+preserves guest key kinds and object identity without changing guest iteration
+order.
 
 ### Change indication validation (2026-10-07)
 
@@ -257,6 +267,47 @@ build and strict architecture audit (zero issues) pass. The structural core-pari
 audit and diff check are clean. No native runtime behavior was changed or claimed
 as newly verified by those structural checks.
 
+### Property membership reconciliation validation (2026-10-07)
+
+The same browser workflow now changes a real Inventory component through ordinary
+game-preview input: its first numeric entry disappears/reappears while `health`
+changes **90 → 89 → 88**. Previous/Next Frame revisits both transitions. The
+surviving property keeps its value-comparison baseline, selection and visible
+scroll anchor. Unchanged siblings stay neutral; the genuinely removed/re-admitted
+entry starts neutral. Software, WebGL2 and WebGPU pass, and the rendered light/dark
+captures in `.bmsx/authoring/property-identity/` were reviewed. Six paused paints
+perform zero member reads/entry traversals and advance neither guest cycles nor
+guest heap. Source setup remains automated, not a claim of manual-only authoring.
+
+The unchanged browser workflow fails with the previous property-document owner
+in an isolated bundle override, at retained semantic-property identity after
+rewind. Three focused identity/cache tests also failed against that owner before
+the implementation. Additional owner-level checks cover typed keys, actual
+removal/re-admission, shifted closure source caches and independently pinnable
+blackboard slots with duplicate or rebound labels. The broader Actor/Behavior/
+workbench/input/theme bundle passes **401 tests**. IDE/tests typechecks, the Studio
+debug build, strict architecture audit and structural core-parity audit pass.
+
+An isolated Node/V8 projector probe compares the previous and current owners
+using real suspended guest values, after warmup (seven paired runs, five samples
+of 3,000 observations each; median of run medians, microseconds per observation):
+
+| Properties / emission order | Previous | Retained identity |
+| --- | ---: | ---: |
+| 12 / unchanged | 0.53 | 0.55 |
+| 12 / rotating | 4.06 | 0.81 |
+| 128 / unchanged | 5.50 | 6.31 |
+| 128 / rotating | 41.18 | 9.16 |
+
+Rotating 128 entries previously rebuilt 1,920,000 value presentations and captured
+as many identities per run; the retained owner does neither after warmup. The
+unchanged-order route keeps its positional fast path, but this measurement still
+shows a small absolute slowdown, not zero overhead. The typed index and one row
+position are retained host memory proportional to the live document; removals
+release their entries. These numbers measure projection only, not total Studio
+frame time or host GC. Guest cycles/heap remain unchanged. No C++ or guest-runtime
+behavior changed in this slice.
+
 ## Pinned runtime properties
 
 A property's context menu offers **Pin Property**, **Unpin Property**, and (for
@@ -278,6 +329,11 @@ Godot's serialization **Pin Value** feature is not the debugger model used here.
 - Property producers own semantic sections/fields and typed dynamic keys. A
   numeric key and a string with the same displayed text are different properties.
   Status messages are not properties and cannot be pinned.
+- BT blackboard properties identify the component's actual storage slot, as FSM
+  input properties do. Duplicate declared names remain separately inspectable
+  and pinnable. A pin watches that slot across program rebind, not a semantic
+  name: the displayed name and loaded default follow the current layout. A
+  label-only change does not mark the stored value as changed.
 - Pins retain scalar membership and presentation, not guest tables, actor nodes,
   source-inferred instances or the mutable original property row. Editor history
   restores the selected property but never resurrects a removed pin.

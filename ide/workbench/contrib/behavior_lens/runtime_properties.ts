@@ -34,7 +34,7 @@ export function runtimeInspectionPropertiesEqual(left: RuntimeInspectionProperty
 
 type PropertyIndexField<T> = { value?: T; readonly keys: Map<ValueTag, Map<number, T>> };
 
-/** Typed semantic lookup shared by pin admission and projector filtering. */
+/** Typed semantic lookup shared by retained rows, pin admission and projector filtering. */
 export class RuntimePropertyIndex<T> {
 	private readonly sections = new Map<string, Map<string, PropertyIndexField<T>>>();
 
@@ -79,6 +79,7 @@ export class RuntimePropertyIndex<T> {
 type Property = { label: string; value: string; description: string; warning: boolean; valueChanged: boolean; source?: RuntimeLuaFunctionSource; readonly identity?: RuntimePropertyIdentity };
 type PropertyRow = {
 	readonly element: Property;
+	position: number;
 	initialized: boolean;
 	labelKey?: SuspendedValueIdentity;
 	presentation?: RuntimePropertyEntryPresentation;
@@ -94,6 +95,7 @@ export class BehaviorRuntimeProperties {
 	public readonly items: RuntimeInspectionProperty[] = [];
 	public changed = false;
 	private readonly rows: PropertyRow[] = [];
+	private readonly index = new RuntimePropertyIndex<PropertyRow>();
 	private cursor = 0;
 	private compareChanges = false;
 
@@ -146,7 +148,15 @@ export class BehaviorRuntimeProperties {
 	}
 
 	public finish(): RuntimeInspectionProperty[] {
-		if (this.items.length !== this.cursor) { this.items.length = this.cursor; this.rows.length = this.cursor; this.changed = true; }
+		// Emission moves retained rows into the prefix; only the unobserved tail is retired.
+		if (this.rows.length !== this.cursor) {
+			for (let position = this.cursor; position < this.rows.length; position++) {
+				const identity = this.rows[position].element.identity;
+				if (identity !== undefined) this.index.delete(identity);
+			}
+			this.rows.length = this.cursor;
+		}
+		if (this.items.length !== this.cursor) { this.items.length = this.cursor; this.changed = true; }
 		return this.items;
 	}
 
@@ -157,11 +167,29 @@ export class BehaviorRuntimeProperties {
 		if (row === undefined || (section === undefined ? identity !== undefined || row.element.label !== label
 			: identity === undefined || identity.section !== section || identity.field !== field
 				|| (key === undefined ? identity.key !== undefined : identity.key === undefined || !this.guest.matchesIdentity(key, identity.key)))) {
-			row = { initialized: false, element: { label: label === undefined ? '' : label, value: '', description: '', warning: false, valueChanged: false,
-				identity: section === undefined ? undefined : { section, field, key: key === undefined ? undefined : this.guest.identity(key) } } };
-			this.rows[index] = row; this.items[index] = row.element; this.changed = true;
+			row = this.reconcileRow(index, label, section, field, key);
 		}
 		if (label !== undefined && row.element.label !== label) { row.element.label = label; this.changed = true; }
+		return row;
+	}
+
+	/** Keep structural edits off the warmed positional read path. */
+	private reconcileRow(index: number, label: string | undefined, section: string | undefined, field: string, key: SuspendedGuestValue | undefined): PropertyRow {
+		const displaced = this.rows[index];
+		let row = section === undefined ? undefined : this.index.find(section, field, key, this.guest);
+		const position = row === undefined ? this.rows.length : row.position;
+		if (row === undefined) {
+			row = { position: index, initialized: false, element: { label: label === undefined ? '' : label, value: '', description: '', warning: false, valueChanged: false,
+				identity: section === undefined ? undefined : { section, field, key: key === undefined ? undefined : this.guest.identity(key) } } };
+			if (row.element.identity !== undefined) this.index.set(row.element.identity, row);
+		} else row.position = index;
+		// Projectors emit each semantic identity once. Keep displaced rows available
+		// for later emissions without scanning ahead or rebuilding an observation map.
+		if (displaced !== undefined) {
+			displaced.position = position;
+			this.rows[position] = displaced; this.items[position] = displaced.element;
+		}
+		this.rows[index] = row; this.items[index] = row.element; this.changed = true;
 		return row;
 	}
 
