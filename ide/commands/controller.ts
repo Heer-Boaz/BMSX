@@ -64,6 +64,7 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'luaProgram.edit', 'luaProgram.add', 'luaProgram.remove', 'luaProgram.source', 'progression', 'inputBindings',
 	'luaProgram.live', 'luaProgram.authoring', 'luaProgram.testInput', 'input.testActionString',
 	'behaviorLens.addProperty', 'behaviorLens.removeProperty',
+	'cartMap', 'cartMap.source',
 	'sceneEditor', 'behaviorLens', 'sceneEditor.source', 'behaviorLens.source', 'behaviorLens.details',
 	'behaviorLens.preview',
 	'behaviorLens.actionEffects', 'behaviorLens.stateMachines', 'behaviorLens.behaviorTrees',
@@ -197,6 +198,7 @@ export class IdeCommandController {
 			case 'behaviorLens.inspectRuntimeStateMachine':
 			case 'behaviorLens.inspectRuntimeTree':
 			case 'behaviorLens.inspectRegisteredDefinitions':
+			case 'cartMap.source':
 			case 'aem.edit': case 'aem.add': case 'aem.remove': case 'aem.source':
 			case 'luaProgram.edit': case 'luaProgram.add': case 'luaProgram.remove': case 'luaProgram.source':
 			case 'luaProgram.live': case 'luaProgram.authoring': case 'luaProgram.selectInstance': case 'luaProgram.more': case 'luaProgram.testInput':
@@ -439,6 +441,7 @@ export class IdeCommandController {
 			case 'behaviorLens.inspectRuntimeStateMachine':
 			case 'behaviorLens.inspectRuntimeTree':
 			case 'behaviorLens.inspectRegisteredDefinitions':
+			case 'cartMap.source':
 			case 'aem.edit': case 'aem.add': case 'aem.remove': case 'aem.source':
 			case 'luaProgram.edit': case 'luaProgram.add': case 'luaProgram.remove': case 'luaProgram.source':
 			case 'luaProgram.live': case 'luaProgram.authoring': case 'luaProgram.selectInstance': case 'luaProgram.more': case 'luaProgram.testInput':
@@ -550,6 +553,7 @@ export class IdeCommandController {
 			case 'behaviorLens.actionEffects':
 			case 'behaviorLens.stateMachines':
 			case 'behaviorLens.behaviorTrees':
+			case 'cartMap':
 			case 'sceneEditor':
 			case 'gameView':
 				return true;

@@ -1,3 +1,4 @@
+import type { CartMapInput } from '../../contrib/cart_maps/editor_input';
 import type { EventViewerInput } from '../../contrib/events/editor_input';
 import type { AemEditorInput } from '../../contrib/aem/editor_input';
 import type { LuaProgramInput } from '../../contrib/lua_program/editor_input';
@@ -27,6 +28,7 @@ export type EditorInput =
 	| AssistantInput
 	| WorkspaceEditReviewInput
 	| SceneEditorInput
+	| CartMapInput
 	| LuaProgramInput
 	| AemEditorInput;
 

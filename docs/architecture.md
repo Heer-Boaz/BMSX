@@ -2050,6 +2050,18 @@ machine fields or cartlib validation. The visible definition/new-instance
 distinction is intentional: applying a definition does not move or dispose existing actors.
 The focus, source and UI contracts live in `ide/ARCHITECTURE.md`.
 
+This Lua view does not prescribe the source format of cart placement data.
+Pietious's `castle_map.yaml` and Nemesis's `nemesis_s_stage.yaml` remain their
+canonical authored maps. The host-side Map Editor projects these two distinct
+schemas from the resource-owned text model: room objects for Pietious, glyph
+markers for Nemesis. Coordinate/marker edits replace only their source tokens
+through shared document history; there is no cooked-data reconstruction, second
+scene database, guest evaluator or editor-driven Lua migration. Explicit moves
+carry source selection in the existing edit-history metadata. Save persists
+YAML; building and installing assets remains a separate operation.
+The source, performance and evidence boundaries are in
+[studio_yaml_authoring.md](studio_yaml_authoring.md).
+
 Any future guest tooling binding may not guess the compiler's sanitized hidden
 global for a dynamic Lua module. Before a feature relies on live module
 commands, the compiler/linker tooling

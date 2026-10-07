@@ -1,3 +1,5 @@
+import { CART_MAP_SOURCES, resolveCartMapInput } from '../cart_maps/controller';
+import { WORKBENCH_CART_MAP_EDITOR_ID } from '../cart_maps/editor_input';
 import { resolveAemEditorInput } from '../aem/controller';
 import { WORKBENCH_AEM_EDITOR_ID } from '../aem/editor_input';
 import type { RuntimeSourceState } from '../../../runtime/sources';
@@ -35,6 +37,11 @@ export function createResourceEditorResolver(
 			id: WORKBENCH_TEXT_EDITOR_ID,
 			selector: { kind: 'filename_suffix' as const, suffix, assetType: 'data' as const },
 			createEditorInput: resource => resolveTextCodeEditorInput(sources, resource),
+		} satisfies ResourceEditorRegistration)),
+		...CART_MAP_SOURCES.map(({ suffix, kind }) => ({
+			id: WORKBENCH_CART_MAP_EDITOR_ID,
+			selector: { kind: 'filename_suffix' as const, suffix, assetType: 'data' as const },
+			createEditorInput: resource => resolveCartMapInput(sources, resource, kind),
 		} satisfies ResourceEditorRegistration)),
 		{
 			id: WORKBENCH_RESOURCE_VIEWER_ID,

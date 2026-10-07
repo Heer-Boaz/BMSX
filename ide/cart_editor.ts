@@ -1,3 +1,6 @@
+import { CartMapController } from './workbench/contrib/cart_maps/controller';
+import { CartMapPane } from './workbench/contrib/cart_maps/editor_pane';
+import { CartMapInputSerializer } from './workbench/contrib/cart_maps/editor_serializer';
 import type { SuspendedGuestSession } from './runtime/suspended_guest';
 import type { RuntimeEventHistory } from './runtime/event_history';
 import { EventViewerInput } from './workbench/contrib/events/editor_input';
@@ -209,6 +212,7 @@ export type CartEditor = {
 	readonly editorPanes: EditorPanes;
 	readonly editorInputSerializers: EditorInputSerializers;
 	readonly navigation: EditorNavigationController;
+	readonly cartMaps: CartMapController;
 	readonly sceneEditor: SceneEditorController;
 	readonly actorLab: ActorLabController;
 	readonly actionPrompt: ActionPrompt;
@@ -264,6 +268,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly resourceEditors: ResourceEditorResolver;
 	public readonly editorPanes: EditorPanes;
 	public readonly navigation: EditorNavigationController;
+	public readonly cartMaps: CartMapController;
 	public readonly sceneEditor: SceneEditorController;
 	public readonly actorLab: ActorLabController;
 	public readonly actionPrompt = new ActionPrompt(inputFocus, pointerCapture);
@@ -426,6 +431,7 @@ export class RuntimeCartEditor implements CartEditor {
 			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu, frameNavigation),
 			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.actorLab, this.commands, frameNavigation, this.contextMenu),
 			game_view: () => new GameViewEditorPane(this.resourcePanel, this.commands, runtime),
+			cart_map: () => new CartMapPane(this.resourcePanel, this.cartMaps, this.commands),
 			scene_editor: () => new SceneEditorPane(this.resourcePanel, this.sceneEditor, this.commands, this.sources),
 			scenario_lab: () => new ScenarioLabEditorPane(
 				this.resourcePanel,
@@ -443,6 +449,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.editorPanes,
 			this.search,
 		);
+		this.cartMaps = new CartMapController(this.sources, this.editorPanes, this.quickInput);
 		this.sceneEditor = new SceneEditorController(this.sources, this.editorPanes, this.navigation);
 		this.actorLab = new ActorLabController(sources, guest, runtime.machine.cpu,
 			this.quickInput, this.editorPanes, this.navigation, actorExecution, rewind);
@@ -477,6 +484,7 @@ export class RuntimeCartEditor implements CartEditor {
 			game_view: { serialize: () => '', deserialize: () => new GameViewInput() },
 			code_editor: new CodeEditorInputSerializer(sources),
 			behavior_lens: new BehaviorLensInputSerializer(sources, this.behaviorLens),
+			cart_map: new CartMapInputSerializer(sources),
 			scene_editor: new SceneEditorInputSerializer(sources, this.sceneEditor),
 			scenario_lab: new ScenarioLabInputSerializer(this.scenarioLab),
 			resource_view: new ResourceViewerInputSerializer(sources),

@@ -41,77 +41,111 @@ and VS Code's [text-file model tests](https://github.com/microsoft/vscode/blob/m
 The applicable principle is document-owned change history and persistence with
 specialized views, not adoption of Tiled's map format or a second scene database.
 
-## Next implementation boundary
+## Canonical map views
 
-1. **Source-preserving structured access.** `ide/language/yaml/structured_edits.ts`
-   now uses the `yaml` parser's source tokens and ranges for scalar/collection
-   edits; the AEM editor already consumes it. Reuse this language owner rather
-   than introducing another parser or regex extraction inside a cart editor. A
-   decoded string-cell edit still needs a language-owned source mapping. Keep incomplete
-   authored text editable and show unsupported syntax as non-editable projection,
-   never normalize it to a convenient schema.
-2. **One end-to-end room editor.** Start with a Pietious room/object selection and
-   a tile-position edit of the exact `x`/`y` scalar ranges. Share text/history/save
-   with the source view. Reuse retained tree, controls and viewport owners; prove
-   source/visual undo and that unrelated YAML bytes survive. No runtime heap scan.
-3. **Stage-specific composition.** Nemesis needs a tile/marker view, not Pietious's
-   object-list schema. A decoded cell must map back through the YAML scalar's
-   quoting/escape representation; decoded indices are not source offsets. Marker
-   semantics stay explicit and cart-owned, not inferred from runtime instances.
-4. **Build/apply workflow.** Define data-asset rebuilding and publication at the
-   existing build/media boundary before offering an apply button. Saving a file
-   and rebuilding or replacing game state are distinct operations.
+The **Map Editor: Open** command opens a second view of the existing YAML
+working copy. Ordinary YAML resource opening stays a text editor. Map resource
+associations are explicit: castle-map and Nemesis-stage sources have different
+projections; no schema is inferred from a runtime actor.
 
-These are ordered architectural gates, not permission to implement a generic
-plugin SDK, duplicate the runtime decoder, or expand cartlib for editor convenience.
-Derive projections on source changes, never per frame. Generic UI components
-know selection/geometry/property interaction, not castle, enemy or stage semantics.
+- **Pietious:** choose a numbered room and an existing object, inspect its map
+  and authored tile coordinates, and move it with the X/Y controls or grid
+  arrow keys. Only the corresponding numeric source scalars change. Object
+  types, conditions, item data, comments and authored order stay in the YAML.
+- **Nemesis S:** the scrollable map shows the authored glyph rows. Existing
+  independent `m`/`M`/`p`/`P` markers can move to empty cells. A formation
+  marker remains one authored marker, not its expanded runtime actors.
+  Terrain-coupled glyphs are visible but are not independently movable.
+- Select in the outline or grid; clicking empty grid space or pressing Escape
+  in the grid clears selection without losing the active map or viewport.
+  The outline supports tree keyboard navigation and a scrollbar. Source opens
+  the same document at the selected source range.
+- One visual move is one versioned document-history operation. Source and map
+  views share undo/redo, dirty state, Save and workspace recovery. Stale proposals
+  are rejected by the history owner. Explicit moves carry the selected source
+  range before/after the edit, so Undo/Redo retains the moved member. Unrelated
+  source replacement/deletion clears selection rather than attaching it to a
+  same-name object. Collapsing the outline does not hide grid hit targets;
+  selecting a grid marker reveals its outline row.
+- Parse and projection work happens on source revisions, not stationary frames.
+  Painting visits visible grid cells and retained markers. It neither reads
+  nor executes the guest. No machine/runtime representation changes are involved.
 
-### Smallest useful visual-authoring follow-up
+`ide/workbench/contrib/cart_maps/` owns the two domain projections and their
+map presentation. `ide/language/yaml/` owns source-token edits and decoded
+string-to-source mapping. Single-line plain, single-quoted and double-quoted
+row scalars retain their quoting and unrelated escape spelling. Unsupported
+source forms remain text-editable, with their visual operation unavailable;
+the editor never falls back to serializing a row or document.
+Grid columns count Unicode code points, like the guest string reader. Source
+edits use the YAML owner's UTF-16 token boundaries, not display columns.
 
-**Not implemented.** The current Scene Editor recognizes directly authored Lua
-`scene_library.register` compositions. It cannot visually edit either canonical
-YAML placement source. The old `scenes/rooms/room_002.lua` and
-`scenes/stage_actors.lua` migrations are not acceptance fixtures to resurrect.
+The current boundary is existing-object/marker placement, not room creation,
+tile painting, a sprite preview or a generalized plugin SDK. The directly
+authored Lua Scene Editor remains independent. No cart source format, gameplay
+decoder, or generated scene source is replaced for the editor's convenience.
 
-- **Pietious:** choose a numbered room and an existing object, see its authored
-  map and tile position, and edit the exact `objects[].x` / `y` scalar ranges.
-  Labels use the written `type`; conditions, item data and source order remain
-  untouched. Coordinates are authored tile coordinates, not generated scene
-  member world positions. No room decoder or progression logic moves into Studio.
-- **Nemesis S:** show a scrollable `map_rows` glyph grid and move an existing
-  marker to an empty cell with one document-history operation. Selection is a
-  source cell, not an expanded actor: `p`/`P` can create a formation. Start with
-  the independent `m`/`M`/`p`/`P` markers; terrain-coupled glyphs remain visible,
-  not silently interpreted as independently movable objects. The language owner
-  maps decoded cells through quoting and escapes; changing two cells must not
-  reserialize a row or the document. Unsupported scalar syntax stays editable
-  as source and visibly unavailable for that visual operation.
+### Build/application boundary
 
-Both views retain the resource's existing `EditorTextModel`. Share only the
-needed grid/selection/property controls, not an authored schema or new plugin
-framework. Save persists source and reports asset rebuild required. An asset
-build/install action is a separate owner change, not an implicit part of moving
-a marker or calling `reload_room`.
-
-Acceptance must cover both real files independently: visible selection/edit;
-exact unrelated-byte preservation (including row escapes and comments);
-source/visual shared undo and redo; invalid source and intervening edits;
-Save, close/reopen and fresh workspace reload. Build the saved asset through
-the existing rompacker and boot it separately to verify the cart's actual room
-coordinate or spawn column, without claiming live data application. Retain the
-existing Lua presentation-scene workflow as separate coverage. Stationary paint
-must neither reparse YAML nor read/execute the guest.
+**Save persists source and reports asset rebuild required.** It does not
+rebuild, publish or install a cart, reload a room, or mutate loaded game data.
+The existing build/media owners remain responsible for those operations.
+An asset build/install action is separate work, not an implicit part of moving
+a marker.
 
 References reviewed for this follow-up: Tiled's
 [object selection tool](https://github.com/mapeditor/tiled/blob/master/src/tiled/objectselectiontool.cpp)
 sends transforms through document history; VS Code's
-[custom text editor model](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/customEditor/browser/customTextEditorModel.ts)
-shares the text-file working copy; `yaml`'s
+[custom text editor model](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/customEditor/common/customTextEditorModel.ts)
+shares the text-file working copy, and its
+[edit stack](https://github.com/microsoft/vscode/blob/main/src/vs/editor/common/model/editStack.ts)
+retains before/after selection with document edits; `yaml`'s
 [CST stringifier](https://github.com/eemeli/yaml/blob/main/src/parse/cst-stringify.ts)
 retains token text rather than normalizing the authored document.
 
 ## Evidence and limits
+
+### Map Editor: 2026-10-07
+
+`tests/conformance/runtime_replay/studio_cart_maps.ts` exercises both real cart
+sources through the normal host-input dispatcher in a real Chromium page, on
+software, WebGL2 and WebGPU. It opens the source and Map Editor, selects in the
+outline/grid, edits coordinates, moves with arrow keys, deselects, shares Undo/Redo
+with the source view, saves through the product workspace API, closes/reopens,
+and reloads the actual browser page to check session recovery. Every unrelated
+source byte is compared. Test sources live in isolated workspace copies.
+
+The input fixture uses `HeadlessInputHub`; this proves browser rendering and
+host-input dispatch, not native browser/OS input or mobile interaction. Captures
+of the actual panes are inspected separately; test assertions do not prescribe
+their labels or prose.
+Retained screenshots show the edited [Pietious room](evidence/cart_map_editor_2026-10-07/pietious.png)
+and [Nemesis stage](evidence/cart_map_editor_2026-10-07/nemesis_s.png).
+
+The separate `studio_cart_map_assets.ts` build consumes the saved YAML through
+the actual data cooker and ROM builder, and checks the complete packed value
+and debug-source bytes. This is **not** a boot of a complete modified cart or
+proof of live asset installation. The editor flow additionally checks that
+editing/Save does not execute guest cycles or replace installed media.
+
+Validation: six cart/backend workflows passed; Lua tests **2,994 passed, one
+existing skip**; rompacker tests **208 passed**; IDE/tests typechecks, browser
+Studio product build, architecture audit (**0 issues**) and diff check passed.
+The projection tests also exercise stationary source reuse, source identity,
+escaped-marker selection through history and negative authored coordinates.
+Independent review found and fixed collapsed-outline grid selection, repeated
+label measurement on selection, and room identity in navigation history.
+
+Repeatable browser commands, after building the debug BIOS and both carts:
+
+```sh
+node tests/conformance/runtime_replay/browser.mjs --studio-cart-maps pietious \
+  dist/system/bmsx-bios.debug.rom dist/pietious.debug.rom
+node tests/conformance/runtime_replay/browser.mjs --studio-cart-maps nemesis_s \
+  dist/system/bmsx-bios.debug.rom dist/nemesis_s.debug.rom
+```
+
+### YAML text-editor foundation: 2026-09-20
 
 `tests/ide/yaml_source_editing.mjs` runs both carts in the headless tooling host,
 with isolated workspace copies of their real YAML. It uses keyboard events and
@@ -129,7 +163,7 @@ no cooked-data reconstruction, shared history, YAML exclusion from Lua source
 capture/semantic updates, and dirty-session recovery. Language configuration and
 resource selector tests cover language syntax and asset-type/suffix conjunction.
 
-Validation: both user-I/O scenarios pass, as do the IDE typecheck and headless
+Historical validation: both user-I/O scenarios passed, as did the IDE typecheck and headless
 tooling build. The full Lua suite reports 2,233 passes, one skip and the known
 `named workbench menu materializes one retained generic action bar` failure.
 Independent review found the inherited hardcoded Lua comment prefix before

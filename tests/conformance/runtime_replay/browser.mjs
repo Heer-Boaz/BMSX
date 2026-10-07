@@ -29,12 +29,13 @@ const inspection = process.argv[2] === '--studio-runtime-inspection';
 const reparent = process.argv[2] === '--studio-bt-reparent';
 const session = process.argv[2] === '--studio-session';
 const sceneCart = process.argv[2] === '--studio-cart-scenes' ? process.argv[3] : null;
+const mapCart = process.argv[2] === '--studio-cart-maps' ? process.argv[3] : null;
 const nemesisScenes = process.argv[2] === '--studio-nemesis-scenes';
-const scenario = actorChanges ? { kind: 'actor-changes' } : actorFind ? { kind: 'actor-find' } : eventNavigation ? { kind: 'event-navigation' } : actorPins ? { kind: 'actor-pins' } : gameInput ? { kind: 'game-input' } : frameRecovery ? { kind: 'frame-recovery' } : terminal ? { kind: 'terminal' } : editReview ? { kind: 'edit-review' } : resourceContext ? { kind: 'resource-context' } : bootOperations ? { kind: 'boot-operations' } : sourceSaves ? { kind: 'source-saves' } : executionOperations ? { kind: 'execution-operations' } : testRunner ? { kind: 'test-runner' } : sceneViewport ? { kind: 'scene-viewport' } : sceneCart !== null ? { kind: 'cart-scenes', cart: sceneCart } : nemesisScenes ? { kind: 'nemesis-scenes' } : preload ? { kind: 'preload' } : inspection ? { kind: 'runtime-inspection' } : navigation !== null ? { kind: 'navigation', cart: navigation } : fsm !== null ? { kind: `fsm-${fsm}` } : reparent ? { kind: 'bt-reparent' } : { kind: 'workflows' };
-const studio = actorChanges || actorFind || eventNavigation || actorPins || gameInput || frameRecovery || terminal || editReview || resourceContext || bootOperations || sourceSaves || executionOperations || testRunner || sceneViewport || sceneCart !== null || nemesisScenes || preload || inspection || session || process.argv[2] === '--studio' || navigation !== null || fsm !== null || reparent;
-const studioLabel = actorChanges ? 'STUDIO-ACTOR-CHANGES' : actorFind ? 'STUDIO-ACTOR-FIND' : eventNavigation ? 'STUDIO-EVENT-NAVIGATION' : actorPins ? 'STUDIO-ACTOR-PINS' : gameInput ? 'STUDIO-GAME-INPUT' : frameRecovery ? 'STUDIO-FRAME-RECOVERY' : terminal ? 'STUDIO-TERMINAL' : editReview ? 'STUDIO-EDIT-REVIEW' : resourceContext ? 'STUDIO-RESOURCE-CONTEXT' : bootOperations ? 'STUDIO-BOOT-OPERATIONS' : sourceSaves ? 'STUDIO-SOURCE-SAVES' : executionOperations ? 'STUDIO-EXECUTION-OPERATIONS' : sceneViewport ? 'STUDIO-SCENE-VIEWPORT' : sceneCart !== null ? `STUDIO-${sceneCart}-SCENES` : nemesisScenes ? 'STUDIO-NEMESIS-SCENES' : preload ? 'STUDIO-PRELOAD' : inspection ? 'STUDIO-RUNTIME-INSPECTION' : session ? 'STUDIO-SESSION' : reparent ? 'STUDIO-BT-REPARENT' : fsm !== null ? `STUDIO-FSM-${fsm.toUpperCase()}` : navigation === null ? 'STUDIO-WORKFLOWS' : 'STUDIO-NAVIGATION';
-const [bios, cart, screenshot] = process.argv.slice(navigation !== null || sceneCart !== null ? 4 : studio ? 3 : 2);
-if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio-actor-changes | --studio-actor-find | --studio-event-navigation | --studio-actor-pins | --studio-game-input | --studio-frame-recovery | --studio-terminal | --studio-edit-review | --studio-resource-context | --studio-boot-operations | --studio-source-saves | --studio-cart-scenes CART_FOLDER | --studio-execution-operations | --studio-test-runner | --studio-scene-viewport | --studio | --studio-nemesis-scenes | --studio-preload | --studio-runtime-inspection | --studio-session | --studio-fsm-initial | --studio-fsm-retarget | --studio-fsm-retarget-imported | --studio-bt-reparent | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
+const scenario = mapCart !== null ? { kind: 'cart-maps', cart: mapCart } : actorChanges ? { kind: 'actor-changes' } : actorFind ? { kind: 'actor-find' } : eventNavigation ? { kind: 'event-navigation' } : actorPins ? { kind: 'actor-pins' } : gameInput ? { kind: 'game-input' } : frameRecovery ? { kind: 'frame-recovery' } : terminal ? { kind: 'terminal' } : editReview ? { kind: 'edit-review' } : resourceContext ? { kind: 'resource-context' } : bootOperations ? { kind: 'boot-operations' } : sourceSaves ? { kind: 'source-saves' } : executionOperations ? { kind: 'execution-operations' } : testRunner ? { kind: 'test-runner' } : sceneViewport ? { kind: 'scene-viewport' } : sceneCart !== null ? { kind: 'cart-scenes', cart: sceneCart } : nemesisScenes ? { kind: 'nemesis-scenes' } : preload ? { kind: 'preload' } : inspection ? { kind: 'runtime-inspection' } : navigation !== null ? { kind: 'navigation', cart: navigation } : fsm !== null ? { kind: `fsm-${fsm}` } : reparent ? { kind: 'bt-reparent' } : { kind: 'workflows' };
+const studio = mapCart !== null || actorChanges || actorFind || eventNavigation || actorPins || gameInput || frameRecovery || terminal || editReview || resourceContext || bootOperations || sourceSaves || executionOperations || testRunner || sceneViewport || sceneCart !== null || nemesisScenes || preload || inspection || session || process.argv[2] === '--studio' || navigation !== null || fsm !== null || reparent;
+const studioLabel = mapCart !== null ? `STUDIO-${mapCart}-MAPS` : actorChanges ? 'STUDIO-ACTOR-CHANGES' : actorFind ? 'STUDIO-ACTOR-FIND' : eventNavigation ? 'STUDIO-EVENT-NAVIGATION' : actorPins ? 'STUDIO-ACTOR-PINS' : gameInput ? 'STUDIO-GAME-INPUT' : frameRecovery ? 'STUDIO-FRAME-RECOVERY' : terminal ? 'STUDIO-TERMINAL' : editReview ? 'STUDIO-EDIT-REVIEW' : resourceContext ? 'STUDIO-RESOURCE-CONTEXT' : bootOperations ? 'STUDIO-BOOT-OPERATIONS' : sourceSaves ? 'STUDIO-SOURCE-SAVES' : executionOperations ? 'STUDIO-EXECUTION-OPERATIONS' : sceneViewport ? 'STUDIO-SCENE-VIEWPORT' : sceneCart !== null ? `STUDIO-${sceneCart}-SCENES` : nemesisScenes ? 'STUDIO-NEMESIS-SCENES' : preload ? 'STUDIO-PRELOAD' : inspection ? 'STUDIO-RUNTIME-INSPECTION' : session ? 'STUDIO-SESSION' : reparent ? 'STUDIO-BT-REPARENT' : fsm !== null ? `STUDIO-FSM-${fsm.toUpperCase()}` : navigation === null ? 'STUDIO-WORKFLOWS' : 'STUDIO-NAVIGATION';
+const [bios, cart, screenshot] = process.argv.slice(navigation !== null || sceneCart !== null || mapCart !== null ? 4 : studio ? 3 : 2);
+if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio-actor-changes | --studio-actor-find | --studio-event-navigation | --studio-actor-pins | --studio-game-input | --studio-frame-recovery | --studio-terminal | --studio-edit-review | --studio-resource-context | --studio-boot-operations | --studio-source-saves | --studio-cart-scenes CART_FOLDER | --studio-cart-maps CART_FOLDER | --studio-execution-operations | --studio-test-runner | --studio-scene-viewport | --studio | --studio-nemesis-scenes | --studio-preload | --studio-runtime-inspection | --studio-session | --studio-fsm-initial | --studio-fsm-retarget | --studio-fsm-retarget-imported | --studio-bt-reparent | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
 let inspectionPixels;
 const backends = studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu'];
 const requestedBackend = process.env.BMSX_TEST_BACKEND;
@@ -58,7 +59,7 @@ for (const backend of requestedBackend === undefined ? backends : [requestedBack
 		}
 		if (studio) {
 			await copyFile('dist/graph-layout.worker.js', join(directory, 'graph-layout.worker.js'));
-			const cartFolder = sceneCart !== null ? sceneCart : navigation === null ? 'nemesis_s' : navigation;
+			const cartFolder = mapCart !== null ? mapCart : sceneCart !== null ? sceneCart : navigation === null ? 'nemesis_s' : navigation;
 			const sourceRoots = preload ? ['cartlib', 'testlib', 'machine/bios']
 				: [`carts/${cartFolder}`, `tests/carts/${cartFolder}`, 'cartlib', 'testlib', 'machine/bios'];
 			for (const root of sourceRoots) {
@@ -117,6 +118,15 @@ for (const backend of requestedBackend === undefined ? backends : [requestedBack
 				return test.studioSessionBackends[backend](document.querySelector('canvas'), expected);
 			}, { backend, expected: result });
 		}
+		if (mapCart !== null) {
+			await page.reload();
+			const reopened = await page.evaluate(async ({ backend, scenario, expected, capture }) => {
+				const test = await import('/test.js');
+				return test.runStudio(backend, document.querySelector('canvas'), { ...scenario, restored: expected },
+					capture ? globalThis.captureStudioCheckpoint : undefined);
+			}, { backend, scenario, expected: result.map, capture: screenshot !== undefined });
+			result = { ...result, reload: reopened.restored };
+		}
 		if (pageErrors.length !== 0) throw new AggregateError(pageErrors, 'Uncaught browser workflow errors');
 		if (inspection) {
 			const pixels = PNG.sync.read(await page.locator('canvas').screenshot());
@@ -171,7 +181,17 @@ for (const backend of requestedBackend === undefined ? backends : [requestedBack
 			assert.ok(title.includes('pos = { x = 88, y = 136, z = 1 }'), 'workspace persisted the selector edit');
 			assert.ok(hangar.includes('pos = { x = 56, y = 125, z = 3 }'), 'workspace persisted both ship edits');
 		}
-		console.log(JSON.stringify({ backend, ...result }));
+		if (mapCart !== null) {
+			const sourcePath = join(directory, `carts/${mapCart}/${result.map.sourcePath}`);
+			assert.equal(await readFile(sourcePath, 'utf8'), result.map.source, 'map Save persists exactly the accepted working-copy bytes');
+			const rebuilt = spawnSync(process.execPath, ['--import', 'tsx', resolve(import.meta.dirname, 'studio_cart_map_assets.ts'),
+				mapCart, sourcePath, resolve(cart), directory], { stdio: 'inherit' });
+			if (rebuilt.error) throw rebuilt.error;
+			assert.equal(rebuilt.status, 0, 'separate map asset build consumes the saved YAML');
+		}
+		const summary = mapCart === null ? result : { ...result, map: { sourcePath: result.map.sourcePath,
+			sourceLength: result.map.source.length, x: result.map.x, y: result.map.y } };
+		console.log(JSON.stringify({ backend, ...summary }));
 		console.log(studio ? `${studioLabel}:${backend}:PASS` : 'RUNTIME-WEBGPU-REWIND:PASS');
 	} finally {
 		if (browser) await browser.close();

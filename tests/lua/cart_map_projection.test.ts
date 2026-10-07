@@ -1,0 +1,169 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { EditorTextModel } from '../../ide/editor/model/text_model';
+import { EditorFont } from '../../ide/editor/ui/view/font';
+import { editorViewState } from '../../ide/editor/ui/view/state';
+import { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
+import { projectCartMap, selectCartMapRow, createCartMapMove } from '../../ide/workbench/contrib/cart_maps/source_projection';
+import { captureCartMapView, restoreCartMapView, CartMapNavigationSelection } from '../../ide/workbench/contrib/cart_maps/view_snapshot';
+
+const SOURCE = [
+	'2:', "  map: ['....', '....']",
+	'  objects:', '  - { type: rock, x: 1, y: 0 } # selected object',
+	'  - { type: rock, x: 2, y: 1 } # same name, distinct source',
+	'7:', "  map: ['..']", '',
+].join('\n');
+
+function fixture(source = SOURCE, kind: 'pietious' | 'nemesis' = 'pietious') {
+	editorViewState.font = new EditorFont('tiny');
+	editorViewState.lineHeight = 6;
+	const path = kind === 'pietious' ? 'res/data/castle_map.yaml' : 'res/data/nemesis_s_stage.yaml';
+	const model = new EditorTextModel({ domain: 0, path, source: { resid: 'map', type: 'data' } }, 'yaml', source);
+	const input = new CartMapInput(model, kind);
+	projectCartMap(input);
+	return { model, input };
+}
+
+test('map projection retains source identity, not object ordinal or type', t => {
+	const { model, input } = fixture();
+	t.after(() => { input.dispose(); model.dispose(); });
+	selectCartMapRow(input, 1);
+	const original = input.selectionRange.start;
+	const prefix = '  - { type: rock, x: 0, y: 1 } # new object\n';
+	model.pushEditOperations([{ offset: SOURCE.indexOf('  -'), deleteLength: 0, text: prefix }]);
+	projectCartMap(input);
+	assert.equal(input.selectionRange.start, original + prefix.length);
+	assert.equal(input.selected!.x, 1);
+	assert.ok(input.selected?.kind === 'object');
+	assert.equal(input.selected.source.index, 1);
+	const range = input.selectionRange;
+	model.pushEditOperations([{ offset: range.start, deleteLength: range.end - range.start, text: '{ type: rock, x: 3, y: 1 }' }]);
+	projectCartMap(input);
+	assert.equal(input.selected, undefined);
+	model.undo();
+	projectCartMap(input);
+	assert.equal(input.selected, undefined, 'undo must not attach a removed source selection to newly inserted text');
+});
+
+test('map coordinates use the same source history and reject stale proposals', t => {
+	const { model, input } = fixture();
+	t.after(() => { input.dispose(); model.dispose(); });
+	selectCartMapRow(input, 1);
+	const edit = createCartMapMove(input.selected!, 3, 1);
+	model.history.applyEdits(new Map([[model, edit]]));
+	projectCartMap(input);
+	assert.equal(model.buffer.getText(), SOURCE.replace('x: 1, y: 0', 'x: 3, y: 1'));
+	assert.deepEqual([input.selected!.x, input.selected!.y], [3, 1]);
+	model.undo(); projectCartMap(input);
+	assert.equal(model.buffer.getText(), SOURCE);
+	assert.deepEqual([input.selected!.x, input.selected!.y], [1, 0]);
+	model.redo(); projectCartMap(input);
+	assert.deepEqual([input.selected!.x, input.selected!.y], [3, 1]);
+	const current = model.buffer.getText();
+	assert.throws(() => model.history.applyEdits(new Map([[model, edit]])));
+	assert.equal(model.buffer.getText(), current);
+});
+
+test('marker moves restore source selection through shared undo/redo, including escaped cells', t => {
+	for (const source of ['map_rows: ["\\x6d \\x20 "]\n', 'map_rows: [" \\x20 \\x6d"]\n']) {
+		const { model, input } = fixture(source, 'nemesis');
+		t.after(() => { input.dispose(); model.dispose(); });
+		selectCartMapRow(input, 1);
+		const before = { ...input.selectionRange }, x = input.selected!.x;
+		const destination = x === 0 ? 2 : 1;
+		model.history.applyEdits(new Map([[model, createCartMapMove(input.selected!, destination, 0)]]));
+		projectCartMap(input);
+		assert.equal(input.selected!.x, destination);
+		const after = { ...input.selectionRange };
+		assert.equal(model.buffer.getText().slice(after.start, after.end), 'm');
+		selectCartMapRow(input, -1);
+		model.undo(); projectCartMap(input);
+		assert.equal(model.buffer.getText(), source);
+		assert.equal(input.selected!.x, x);
+		assert.deepEqual(input.selectionRange, before);
+		model.redo(); projectCartMap(input);
+		assert.equal(input.selected!.x, destination);
+		assert.deepEqual(input.selectionRange, after);
+		// Unrelated text replacement is not a move and must not reattach by glyph.
+		model.pushEditOperations([{ offset: after.start, deleteLength: after.end - after.start, text: 'M' }]);
+		projectCartMap(input);
+		assert.equal(input.selected, undefined);
+		model.undo(); projectCartMap(input);
+		assert.equal(input.selected, undefined);
+	}
+});
+
+test('stationary map projection retains parsed nodes without rereading the source', t => {
+	const { model, input } = fixture();
+	t.after(() => { input.dispose(); model.dispose(); });
+	const roots = input.tree.roots.slice(), rows = input.tree.rows.slice(), grid = input.grid.content;
+	t.mock.method(model.buffer, 'getText', () => assert.fail('unchanged projection read the source'));
+	for (let iteration = 0; iteration < 100; iteration++) projectCartMap(input);
+	assert.deepEqual(input.tree.roots, roots);
+	assert.ok(input.tree.roots.every((root, index) => root === roots[index]));
+	assert.ok(input.tree.rows.every((row, index) => row === rows[index]));
+	assert.equal(input.grid.content, grid);
+});
+
+test('clearing map selection retains the sheet and its scroll in view recovery', t => {
+	const { model, input } = fixture();
+	t.after(() => { input.dispose(); model.dispose(); });
+	selectCartMapRow(input, 1);
+	input.grid.layout(0, 0, 20, 20);
+	input.grid.horizontal.setScroll(8);
+	input.grid.vertical.setScroll(4);
+	const content = input.grid.content;
+	selectCartMapRow(input, -1);
+	assert.equal(input.grid.content, content);
+	assert.equal(input.grid.selected, undefined);
+	const snapshot = captureCartMapView(input);
+	const other = new CartMapInput(model, 'pietious');
+	t.after(() => other.dispose());
+	restoreCartMapView(other, snapshot);
+	assert.equal(other.activeSheet, input.activeSheet);
+	assert.equal(other.selected, undefined);
+	assert.deepEqual(other.grid.content!.rows, content!.rows);
+	assert.deepEqual(other.restoredScroll, { x: snapshot.xScroll, y: snapshot.yScroll, tree: snapshot.treeScroll });
+	const firstRoom = new CartMapNavigationSelection(input);
+	selectCartMapRow(other, other.tree.rows.indexOf(other.tree.roots[1]));
+	selectCartMapRow(other, -1);
+	const secondRoom = new CartMapNavigationSelection(other);
+	t.after(() => { firstRoom.dispose(); secondRoom.dispose(); });
+	assert.equal(firstRoom.matches(secondRoom), false, 'navigation retains distinct rooms even without a selected object');
+});
+
+test('invalid source revokes the map projection and recovers from ordinary text undo', t => {
+	const { model, input } = fixture();
+	t.after(() => { input.dispose(); model.dispose(); });
+	selectCartMapRow(input, 1);
+	model.pushEditOperations([{ offset: 0, deleteLength: SOURCE.length, text: '2: [broken\n' }]);
+	projectCartMap(input);
+	assert.equal(input.selected, undefined);
+	assert.notEqual(input.diagnostic, null);
+	assert.equal(input.grid.content, undefined);
+	model.undo(); projectCartMap(input);
+	assert.equal(input.diagnostic, null);
+	assert.equal(input.selected, undefined);
+	assert.equal(input.tree.roots.length, 2);
+});
+
+test('map viewport can reveal signed object positions outside the authored tile rectangle', t => {
+	const { model, input } = fixture();
+	t.after(() => { input.dispose(); model.dispose(); });
+	selectCartMapRow(input, 1);
+	model.history.applyEdits(new Map([[model, createCartMapMove(input.selected!, -3, -2)]]));
+	projectCartMap(input);
+	const grid = input.grid;
+	grid.layout(40, 20, 80, 60);
+	grid.reveal(input.selected!);
+	const x = grid.bounds.left - 3 * grid.cellSize - grid.horizontal.getScroll() + 1;
+	const y = grid.bounds.top - 2 * grid.cellSize - grid.vertical.getScroll() + 1;
+	assert.ok(x >= grid.bounds.left && x < grid.bounds.right);
+	assert.ok(y >= grid.bounds.top && y < grid.bounds.bottom);
+	assert.equal(grid.columnAt(x), -3);
+	assert.equal(grid.rowAt(y), -2);
+	const before = model.buffer.getText();
+	selectCartMapRow(input, -1);
+	assert.equal(model.buffer.getText(), before);
+	assert.equal(grid.content!.markers[0].x, -3);
+});

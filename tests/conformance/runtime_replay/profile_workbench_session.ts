@@ -1,3 +1,4 @@
+import { CartMapInputSerializer } from '../../../ide/workbench/contrib/cart_maps/editor_serializer';
 import { LuaProgramInputSerializer } from '../../../ide/workbench/contrib/lua_program/editor_serializer';
 import { AemEditorInputSerializer } from '../../../ide/workbench/contrib/aem/editor_serializer';
 import { semanticSnapshot } from '../../lua/semantic_test_harness';
@@ -29,6 +30,7 @@ import { GameViewInput } from '../../../ide/workbench/contrib/game_view/editor_i
 // Run with node --expose-gc --import tsx --import ./tests/lua/test_setup.ts <this file>.
 const serializers: EditorInputSerializers = {
 	aem_editor: new AemEditorInputSerializer(null),
+	cart_map: new CartMapInputSerializer(null),
 	lua_program: new LuaProgramInputSerializer(null, null),
 	event_viewer: { serialize: () => '', deserialize: () => { throw new Error('Capture-only probe'); } },
 	terminal: { serialize: () => '', deserialize: () => { throw new Error('Capture-only probe'); } },

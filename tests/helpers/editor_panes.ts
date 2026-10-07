@@ -1,3 +1,4 @@
+import type { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
 import type { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';
 import type { ConversationObserverInput } from '../../ide/workbench/contrib/conversations/editor_input';
 import type { RectBounds } from '../../machine/ts/common/rect';
@@ -102,5 +103,6 @@ export function createTestEditorPanes(): EditorPanes {
 		behavior_lens: () => new TestEditorPane<BehaviorLensInput>(activateViewInput),
 		scenario_lab: () => new TestEditorPane<ScenarioLabInput>(activateViewInput),
 		scene_editor: () => new TestEditorPane<SceneEditorInput>(activateViewInput),
+		cart_map: () => new TestEditorPane<CartMapInput>(activateViewInput),
 	});
 }

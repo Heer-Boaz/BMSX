@@ -113,6 +113,8 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'behaviorLens.stateMachines': { category: 'Behavior Lens', title: 'Open State Machine (FSM)' },
 	'behaviorLens.behaviorTrees': { category: 'Behavior Lens', title: 'Open Behavior Tree (BT)' },
 	scenarioLab: { category: 'Scenario Lab', title: 'Open', shortTitle: 'Scenario Lab' },
+	cartMap: { category: 'Map Editor', title: 'Open', shortTitle: 'Map Editor' },
+	'cartMap.source': { category: 'Map Editor', title: 'Open Source', shortTitle: 'Source' },
 	sceneEditor: { category: 'Scene Editor', title: 'Open', shortTitle: 'Scene Editor' },
 	actorLab: { category: 'Actor Lab', title: 'Open', shortTitle: 'Actor Lab' },
 	gameView: { category: 'View', title: 'Game' },

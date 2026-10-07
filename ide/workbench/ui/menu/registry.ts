@@ -8,7 +8,7 @@ export type WorkbenchDropdownMenuId =
 
 export type WorkbenchContextMenuId = 'events.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'events.title' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'terminal.input' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'cartMap.title' | 'events.title' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'terminal.input' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -45,6 +45,7 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'gamePanel.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'runtime.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'editorTabs.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'cartMap.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'sceneEditor.title': readonly WorkbenchMenuCommandItem[];
 };
 
@@ -250,6 +251,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'gameView.togglePanel' },
 		{ type: 'command', command: 'actorLab' },
 		{ type: 'command', command: 'sceneEditor' },
+		{ type: 'command', command: 'cartMap' },
 		{ type: 'command', command: 'behaviorLens' },
 		{ type: 'command', command: 'scenarioLab' },
 		{ type: 'command', command: 'problems' },
@@ -338,6 +340,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.inspectRuntimeEffect' },
 		{ type: 'command', command: 'behaviorLens.more' },
 	],
+	'cartMap.title': [{ type: 'command', command: 'cartMap.source' }],
 	'sceneEditor.title': [
 		{ type: 'command', command: 'sceneEditor.source' },
 		{ type: 'command', command: 'sceneEditor.moveMemberUp' },

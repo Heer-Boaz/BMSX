@@ -12,6 +12,7 @@ import { runStudioResourceContext } from './studio_resource_context';
 import { runStudioEditReview } from './studio_edit_review';
 import { runStudio2025Scenes } from './studio_2025_scenes';
 import { runStudioPietiousScenes } from './studio_pietious_scenes';
+import { runStudioCartMaps, type CartMapExpectation } from './studio_cart_maps';
 import { runStudioRuntimeInspection } from './studio_runtime_inspection';
 import { runStudioPreload } from './studio_preload';
 import { runStudioNemesisScenes } from './studio_nemesis_scenes';
@@ -34,6 +35,7 @@ import type { StudioFixture } from './studio_fixture';
 
 export type StudioScenario = { kind: 'frame-recovery' | 'game-input' | 'actor-pins' | 'actor-changes' | 'actor-find' | 'event-navigation' | 'terminal' | 'workflows' | 'edit-review' | 'resource-context' | 'boot-operations' | 'source-saves' | 'execution-operations' | 'test-runner' | 'scene-viewport' | 'fsm-initial' | 'fsm-retarget' | 'fsm-retarget-imported' | 'bt-reparent' | 'runtime-inspection' | 'preload' | 'nemesis-scenes' }
 	| { kind: 'cart-scenes'; cart: '2025' | 'pietious' }
+	| { kind: 'cart-maps'; cart: 'pietious' | 'nemesis_s'; restored?: CartMapExpectation }
 	| { kind: 'navigation'; cart: NavigationCart };
 
 /** One scenario composition for every renderer project; backend checks remain in their project. */
@@ -54,6 +56,7 @@ export function runStudioScenario(test: StudioFixture, scenario: StudioScenario)
 		case 'scene-viewport': return runStudioSceneViewport(test);
 		case 'test-runner': return runStudioTestRunner(test);
 		case 'cart-scenes': return scenario.cart === '2025' ? runStudio2025Scenes(test) : runStudioPietiousScenes(test);
+		case 'cart-maps': return runStudioCartMaps(test, scenario.cart, scenario.restored);
 		case 'nemesis-scenes': return runStudioNemesisScenes(test);
 		case 'workflows': return runStudioWorkflows(test);
 		case 'runtime-inspection': return runStudioRuntimeInspection(test);

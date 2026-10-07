@@ -1,3 +1,4 @@
+import type { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
 import type { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';
 import type { LuaProgramInput } from '../../ide/workbench/contrib/lua_program/editor_input';
 import type { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
@@ -163,6 +164,7 @@ function createEditorPanes() {
 		behavior_lens: () => new RecordingEditorPane<BehaviorLensInput>(),
 		scenario_lab: () => new RecordingEditorPane<ScenarioLabInput>(),
 		scene_editor: () => new RecordingEditorPane<SceneEditorInput>(),
+		cart_map: () => new RecordingEditorPane<CartMapInput>(),
 	});
 	return {
 		editorPanes,
