@@ -189,7 +189,7 @@ export class IdeCommandController {
 			case 'actorLab.call':
 			case 'actorLab.details':
 			case 'actorLab.stateGraph': case 'actorLab.outline':
-			case 'actorLab.follow': case 'actorLab.revealActive': case 'actorLab.more':
+			case 'actorLab.follow': case 'actorLab.revealActive': case 'actorLab.more': case 'actorLab.find':
 			case 'actorLab.pinProperty': case 'actorLab.unpinProperty': case 'actorLab.revealPinnedProperty':
 			case 'behaviorLens.details':
 			case 'behaviorLens.more':
@@ -431,7 +431,7 @@ export class IdeCommandController {
 			case 'actorLab.call':
 			case 'actorLab.details':
 			case 'actorLab.stateGraph': case 'actorLab.outline':
-			case 'actorLab.follow': case 'actorLab.revealActive': case 'actorLab.more':
+			case 'actorLab.follow': case 'actorLab.revealActive': case 'actorLab.more': case 'actorLab.find':
 			case 'actorLab.pinProperty': case 'actorLab.unpinProperty': case 'actorLab.revealPinnedProperty':
 			case 'behaviorLens.details':
 			case 'behaviorLens.more':

@@ -88,6 +88,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.inspectRegisteredDefinitions' },
 	],
 	'actorLab.context': [
+		{ type: 'command', command: 'actorLab.find' },
 		{ type: 'command', command: 'actorLab.revealActive' },
 		{ type: 'command', command: 'actorLab.follow' },
 		{ type: 'command', command: 'actorLab.stateGraph' },

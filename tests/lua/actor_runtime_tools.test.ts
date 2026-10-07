@@ -11,6 +11,7 @@ import { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor_inpu
 import { ActorLabController } from '../../ide/workbench/contrib/actor_lab/controller';
 import { captureActorDetailsSelection } from '../../ide/workbench/contrib/actor_lab/details';
 import { ActorProjection, readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
+import { createActorMemberChoices } from '../../ide/workbench/contrib/actor_lab/member_choices';
 import { ActorRuntimeInspection } from '../../ide/workbench/contrib/actor_lab/runtime_inspection';
 import { captureActorTarget, resolveActorPath, resolveActorTarget } from '../../ide/workbench/contrib/actor_lab/target';
 import { WorkspaceRuntimeTools } from '../../ide/workbench/services/assistant/runtime_tools';
@@ -580,6 +581,31 @@ return world`));
 	const actorFields = f.stop.read(actor.object.reference!, 0, 100).entries;
 	assert.deepEqual(actorFields.find(entry => entry.key.display === 'active')!.value, { kind: 'number', display: '0' });
 	f.stop.dispose();
+});
+
+test('Find in Actor preserves and distinguishes same-value aliases under table and function keys', t => {
+	const source = WORLD_SOURCE.replace('local fsm<const>', `local effects<const> = require('cartlib/actioneffects/actioneffect_component')
+local fsm<const>`).replace('actor.self = actor', `actor.self = actor
+local effect<const> = { active_count = 0 }
+local first_key<const>, second_key<const> = {}, {}
+local first_fn<const>, second_fn<const> = function() return 1 end, function() return 2 end
+local component<const> = { id = 'effects', enabled = true, _parent_component_index = 3,
+	effects = { [first_key] = effect, [second_key] = effect, [first_fn] = effect, [second_fn] = effect } }
+actor._components[3] = component
+actor._components_by_class[effects] = { component }`);
+	const f = fixture(ENTRY, true, source); t.after(() => f.stop.dispose());
+	const tree = new ActorRuntimeTree(); t.after(() => tree.dispose());
+	tree.update(f.sources, f.guest, -1, f.guest.global('probe') as Table);
+	const aliases = tree.roots[0].children[2].children;
+	assert.equal(aliases.length, 4);
+	assert.equal(new Set(aliases.map(node => node.hashId)).size, 1);
+	const selected = aliases[1], provider = createActorMemberChoices(tree.roots, selected);
+	const initial = provider.getPicks('');
+	assert.equal(provider.items[initial.matches[initial.selectionIndex].itemIndex].node, selected);
+	const choices = provider.items.filter(item => item.node.kind === 'effect');
+	assert.deepEqual(choices.map(item => item.node), aliases);
+	assert.equal(new Set(choices.map(item => item.description)).size, 4, 'aliases are distinguishable without prescribing presentation text');
+	assert.equal(new Set(choices.map(item => item.detail)).size, 4, 'each membership has its own visible breadcrumb');
 });
 
 test('actor runtime retains source membership separately from stable human-facing order', t => {

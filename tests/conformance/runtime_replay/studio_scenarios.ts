@@ -1,6 +1,7 @@
 import { runStudioTerminal } from './studio_terminal';
 import { runStudioGameInput } from './studio_game_input';
 import { runStudioActorPins } from './studio_actor_pins';
+import { runStudioActorFind } from './studio_actor_find';
 import { runStudioEventNavigation } from './studio_event_navigation';
 import { runStudioFrameRecovery } from './studio_frame_recovery';
 import { runStudioExecutionOperations } from './studio_execution_operations';
@@ -30,7 +31,7 @@ import { testStudioPointerCapture } from './studio_pointer_capture';
 import { runStudioSceneViewport, testStudioSceneViewport } from './studio_scene_viewport';
 import type { StudioFixture } from './studio_fixture';
 
-export type StudioScenario = { kind: 'frame-recovery' | 'game-input' | 'actor-pins' | 'event-navigation' | 'terminal' | 'workflows' | 'edit-review' | 'resource-context' | 'boot-operations' | 'source-saves' | 'execution-operations' | 'test-runner' | 'scene-viewport' | 'fsm-initial' | 'fsm-retarget' | 'fsm-retarget-imported' | 'bt-reparent' | 'runtime-inspection' | 'preload' | 'nemesis-scenes' }
+export type StudioScenario = { kind: 'frame-recovery' | 'game-input' | 'actor-pins' | 'actor-find' | 'event-navigation' | 'terminal' | 'workflows' | 'edit-review' | 'resource-context' | 'boot-operations' | 'source-saves' | 'execution-operations' | 'test-runner' | 'scene-viewport' | 'fsm-initial' | 'fsm-retarget' | 'fsm-retarget-imported' | 'bt-reparent' | 'runtime-inspection' | 'preload' | 'nemesis-scenes' }
 	| { kind: 'cart-scenes'; cart: '2025' | 'pietious' }
 	| { kind: 'navigation'; cart: NavigationCart };
 
@@ -39,6 +40,7 @@ export function runStudioScenario(test: StudioFixture, scenario: StudioScenario)
 	switch (scenario.kind) {
 		case 'game-input': return runStudioGameInput(test);
 		case 'actor-pins': return runStudioActorPins(test);
+		case 'actor-find': return runStudioActorFind(test);
 		case 'event-navigation': return runStudioEventNavigation(test);
 		case 'frame-recovery': return runStudioFrameRecovery(test);
 		case 'terminal': return runStudioTerminal(test);

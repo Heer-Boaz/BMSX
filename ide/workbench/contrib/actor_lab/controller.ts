@@ -29,6 +29,7 @@ import { actorActions } from './operations';
 import { actorTargetsEqual, captureActorTarget, resolveActorTarget, type ActorTarget } from './target';
 import type { ActorExecutionService, ActorExecutionResult, ActorInvocation } from './execution';
 import { ActorLabNavigationSelection } from './navigation_selection';
+import { createActorMemberChoices } from './member_choices';
 
 /** Actor Lab interaction and presentation; the shared domain service owns execution. */
 export class ActorLabController {
@@ -191,6 +192,17 @@ export class ActorLabController {
 				this.refresh(input); this.projection.reveal(input.runtime.roots[0]);
 				accepted?.();
 			});
+	}
+	public findMember(input: ActorLabInput, accepted: () => void): void {
+		input.running = false;
+		this.quickInput.pick('FIND IN ACTOR', 'Find a member by name, kind or owner path', (_origin, lifetime) => {
+			lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+			return createActorMemberChoices(input.runtime.roots, this.selected(input));
+		}, choice => {
+			input.follow.stop();
+			this.projection.reveal(choice.node);
+			accepted();
+		});
 	}
 	private run(input: ActorLabInput, request: ActorInvocation, observer?: (result: ActorExecutionResult) => void, current: () => boolean = () => true): void {
 		const generation = this.panes.openGeneration, domain = input.domain, actor = input.actorHashId;

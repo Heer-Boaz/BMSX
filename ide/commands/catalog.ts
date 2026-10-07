@@ -124,6 +124,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'gameView.playback': { category: 'Game', title: 'Play / Pause', shortTitle: 'Play/Pause' },
 	'actorLab.playback': { category: 'Actor Lab', title: 'Play / Pause', shortTitle: 'Play/Pause' },
 	'actorLab.select': { category: 'Actor Lab', title: 'Select Running Actor', shortTitle: 'Actor' },
+	'actorLab.find': { category: 'Actor Lab', title: 'Find in Actor', shortTitle: 'Find in Actor' },
 	'actorLab.spawn': { category: 'Actor Lab', title: 'Spawn Registered Prefab', shortTitle: 'Spawn' },
 	'actorLab.emit': { category: 'Actor Lab', title: 'Emit Event', shortTitle: 'Event' },
 	'actorLab.actions': { category: 'Actor Lab', title: 'Instance Actions', shortTitle: 'Actions' },

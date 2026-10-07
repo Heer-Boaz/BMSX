@@ -85,6 +85,60 @@ These interaction patterns inform the view; they do not require guest tracing.
   admission and heap replacement retire invalid bookmarks. Timeline **Scrub**
   remains an explicit guest operation, not machine-history rewind.
 
+## Find in Actor
+
+**Find in Actor** searches the selected actor's actual runtime hierarchy,
+including collapsed descendants. It uses the existing transient Quick Input
+surface, available from More, the context menu and the command palette, rather
+than adding a permanent filter bar. Ctrl/Cmd+F invokes it in Actor Lab controls;
+the focused game preview continues to receive its own input. Names, member kinds
+and ancestor context are searchable; the chosen item retains its actual
+membership, not a lookup by display text. Matching does not execute Lua or
+inspect all actors in the World.
+
+This follows [VS Code's outline quick access](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/codeEditor/browser/quickaccess/gotoSymbolQuickAccess.ts):
+an outline supplies entries and acceptance reveals the corresponding element.
+[Unreal's Outliner](https://dev.epicgames.com/documentation/en-us/unreal-engine/outliner-in-unreal-engine)
+also separates finding objects by name/type from framing selection. BMSX keeps
+its existing selection, follow and runtime-inspection owners; it does not add
+another outline, tree-filter engine or preview/rollback transaction.
+
+Opening the picker pauses Actor Lab playback. Typing, browsing results and
+cancelling do not change the selected member, expansion, scroll or follow
+target. Acceptance stops activity-follow, expands the selected member's
+ancestors and reveals it through `ActorProjection`. Details and the game
+preview stay open. A result chosen from the graph returns to the outline with
+keyboard focus on the visible hierarchy.
+
+The catalog walks the retained runtime tree once, only on explicit invocation.
+Quick Input owns text matching and rendering. The admitted catalog is retired
+on guest invalidation, so it cannot select a same-named replacement after
+execution, reset or history restoration. No source-model reconstruction,
+per-frame search index, guest instrumentation, C++ or machine change is involved.
+BT entries here represent the existing runtime tree component; this does not
+invent authored-node identities for its internal execution slots.
+
+### Find validation (2026-10-07)
+
+`browser.mjs --studio-actor-find SYSTEM_ROM CART_ROM SCREENSHOT_PNG` exercises
+ordinary menu, pointer and keyboard navigation on software, WebGL2 and WebGPU.
+It covers collapsed members, duplicate machine instances, mixed-case multi-term
+search, cancellation without selection/follow/Details movement, and graph-to-outline
+focus. Actual guest ICU readback verifies that Ctrl+F in the focused game preview
+is not intercepted by Find. Opening and accepting the catalog leave guest cycles,
+heap use and callback counts unchanged.
+
+The fixture is authored through the source model and Reboot, not by manually
+typing the cart. A separate host-triggered physical frame step tests invalidation
+while the picker owns keyboard focus; reopening selects the restored instance.
+Captures under `.bmsx/authoring/actor-find/` show duplicate-result context,
+the revealed member and retained Details/game preview. These are automated
+browser interaction and rendered-UI evidence, not UI-only fixture authorship.
+The focused Actor/behavior/workbench/Quick Input/input-routing bundle passes
+389 tests, including compiled-guest table/function-key aliases. IDE/tests
+typechecks, the Browser Studio debug build, strict architecture-boundary audit
+(zero issues), core-parity and diff checks also pass.
+
 ## Persistent instance Details
 
 Actor Lab composes its existing outline/graph, game preview and property inspector

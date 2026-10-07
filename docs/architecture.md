@@ -5542,7 +5542,12 @@ Display ordering follows explicit component/machine lists and stable name order
 for map-owned states, timelines and effects; guest traversal order is untouched.
 Topology/activity revisions separate reconciliation, viewport follow and label
 measurement. A pane consumes those revisions independently of command-triggered
-refreshes. History restore retires guest borrows while preserving Actor Lab's typed view
+refreshes. Find in Actor builds an explicit, suspension-scoped catalog from that
+same retained hierarchy, including collapsed descendants. Quick Input owns
+matching; accepting an exact member reveals through `ActorProjection`. Searching
+or cancelling does not change selection or follow. Guest invalidation retires
+the catalog rather than rebinding a display name to a replacement instance.
+History restore retires guest borrows while preserving Actor Lab's typed view
 selection until fresh World membership is read at the requested history position.
 Missing historical membership disables that selection without replacing its
 bookmark. Live-branch admission retires unavailable bookmarks, including those

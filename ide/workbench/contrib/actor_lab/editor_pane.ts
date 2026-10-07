@@ -112,6 +112,10 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 				},
 			});
 			target.registerCommand('actorLab.select', { isEnabled: () => true, run: () => controller.selectActor(this.input) });
+			target.registerCommand('actorLab.find', {
+				isEnabled: () => this.input.actorPresent && !this.input.dirty,
+				run: () => controller.findMember(this.input, () => { this.update(); this.focus(); }),
+			});
 			target.registerCommand('actorLab.spawn', { isEnabled: controller.canInteract, run: () => controller.spawn(this.input) });
 			target.registerCommand('actorLab.emit', { isEnabled: () => controller.canInteract() && this.input.actorPresent && !this.input.dirty, run: () => controller.emitEvent(this.input) });
 			target.registerCommand('actorLab.actions', { isEnabled: () => controller.canInteract() && controller.hasActions(this.input), run: () => controller.actions(this.input) });
