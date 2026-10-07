@@ -84,14 +84,24 @@ This follows the value/model versus renderer split in
 [VS Code's debug model](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/debugModel.ts),
 without adding another change detector, timer, polling loop or guest read path.
 
-Heap replacement or an instance missing from a completed inspection retires the
-selection. Live-branch admission also checks membership before discarded identities
-can be reused; replay seeking itself is not a branch or a completed inspection.
-The inspector reports retirement explicitly rather
+An instance missing from a completed historical inspection is temporarily
+unavailable: the typed selection survives, but its borrowed values and changed-value
+baseline do not. Returning to a retained frame reacquires the same instance without
+reopening. Missing live membership and heap replacement retire the selection.
+Live-branch admission checks membership even for hidden inspectors before discarded
+identities can be reused; replay execution and seeking do not admit a live branch.
+The inspector distinguishes historical absence from retirement rather
 than silently selecting another actor. Closing or switching away disposes the
 live session and restores the ordinary authoring pause hold. Transport commands
 are available only within live inspection, and use existing finite frame
 navigation and host rewind.
+
+This follows the independent retained identity and observation availability in
+[VS Code's debug expressions](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/debugModel.ts).
+Compiled-guest lifecycle checks cover pre-birth/retained-future navigation,
+replay invalidation, hidden and observed absence at live admission, actual table-id
+reuse on a new branch, live membership removal and heap replacement. These are
+runtime-model checks, not visible timeline interaction evidence.
 
 References: [Blender timeline controls](https://github.com/blender/blender/blob/main/scripts/startup/bl_ui/space_time.py),
 [VS Code debug toolbar](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/debugToolBar.ts),

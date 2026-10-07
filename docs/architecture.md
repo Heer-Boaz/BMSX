@@ -5618,9 +5618,13 @@ Inspection grants no mutation authority; conversational Actor calls still need
 an operation-owned World mutation-boundary rendezvous.
 Live Behavior Lens inspections likewise retain component/machine/state/effect
 table identities, never borrowed guest objects. Invalidation reacquires actual
-cartlib membership before formatting refreshed property documents; missing or
-replaced instances are explicitly retired. The property control retains focus,
-selection and its scroll anchor, and remeasures only changed fields.
+cartlib membership before formatting refreshed property documents; missing live
+membership or heap replacement explicitly retires the selection. Historical absence
+instead retains the typed selection without guest values or a changed-value baseline, so returning
+to an existing frame can reacquire it. Live admission retires absent selections
+before allocation identities can be reused, including hidden inspectors.
+The property control retains focus, selection and its scroll anchor, and remeasures
+only changed fields.
 Game capture reads the presenter's retained committed history texture, after
 device quantization and before CRT/host overlays. The TS and C++ backends emit
 owned top-down RGBA8 display/signal pixels, without a second gamma conversion;

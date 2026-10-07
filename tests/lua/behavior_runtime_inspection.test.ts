@@ -15,7 +15,7 @@ import type { HostRewind } from '../../hosts/common/rewind';
 import { SuspendedValuePresentation } from '../../ide/runtime/value_presentation';
 
 /** Real guest tables/type bucket. Browser validation separately executes actual cartlib constructors. */
-function fixture() {
+function fixture(historical = false) {
 	const modules = [
 		{ path: 'cartlib/fsm/fsm_component', source: 'return {}' },
 		{ path: 'cartlib/registry', source: `local type<const> = require('cartlib/fsm/fsm_component')
@@ -33,6 +33,8 @@ function change() state.current_id = 'b' end
 function change_data() state.data.answer = 43; state.data.nested.value = 8; state.data.nested[2] = 11 end
 function trim_nested() state.data.nested[9] = nil; state.data.nested[10] = nil; state.data.nested.value = nil end
 function grow_definition() state.definition.initial = 'a' end
+function remove_component() registry._entries_by_key[type].items[1] = nil end
+function restore_component() registry._entries_by_key[type].items[1] = component end
 return component`;
 	const chunk = parseLuaChunk(source, 'entry.lua');
 	const compiled = compileLuaChunkToProgram(chunk, selectLuaProgramModules(chunk, modules, []), { entrySource: source, programDomain: 'system', optLevel: 0 });
@@ -44,7 +46,7 @@ return component`;
 	const beforeBirth = cpu.captureRuntimeState();
 	cpu.runUntilDepth(0, 100_000);
 	const guest = new SuspendedGuestSession(runtime);
-	const rewind = { seeking: false, playing: false };
+	const rewind = { active: historical, seeking: false, playing: false };
 	const choice = readStateMachineInstances(sources, guest, -1).items[0];
 	const inspection = new BehaviorRuntimeInspection(sources, guest, rewind as HostRewind, -1,
 		{ kind: 'state_machine', componentHashId: choice.component.hashId, machineHashId: choice.machine.hashId, stateHashId: choice.machine.hashId });
@@ -136,17 +138,95 @@ test('retained value presentation compares mutable entries, preserves preview se
 	assert.equal(retained.update(data), original);
 });
 
-test('restored absence retires a visible bookmark before a branch reuses table ids, not during replay seeking', t => {
+test('an inspector opened during history review retains absent membership through forward replay', t => {
+	const f = fixture(true); t.after(() => f.inspection.dispose());
+	const document = f.inspection.refresh()!, before = document.map(row => row.value);
+	f.guest.invalidate(); runCompletionClosure(f.cpu, f.guest.global('remove_component') as Closure, []);
+	assert.strictEqual(f.inspection.refresh(), document);
+	assert.ok(document.every(row => row.warning && row.valueChanged === false));
+	f.guest.invalidate(); runCompletionClosure(f.cpu, f.guest.global('restore_component') as Closure, []);
+	assert.strictEqual(f.inspection.refresh(), document);
+	assert.deepEqual(document.map(row => row.value), before);
+	assert.ok(document.every(row => row.valueChanged === false));
+});
+
+test('historical absence preserves a behavior bookmark across replay and repeated retained-frame navigation', t => {
 	const f = fixture(); t.after(() => f.inspection.dispose());
-	f.inspection.refresh();
+	const document = f.inspection.refresh()!, before = document.map(row => row.value), alive = f.cpu.captureRuntimeState();
+	for (let visit = 0; visit < 2; visit++) {
+		f.cpu.restoreRuntimeState(f.beforeBirth); f.guest.invalidate('history-restored');
+		f.rewind.seeking = true;
+		assert.equal(f.inspection.refresh(), undefined);
+		f.rewind.seeking = false;
+		assert.strictEqual(f.inspection.refresh(), document);
+		assert.ok(document.every(row => row.warning && row.valueChanged === false));
+		f.guest.invalidate();
+		assert.equal(f.inspection.refresh(), undefined, 'replay execution does not admit a live branch');
+		f.cpu.restoreRuntimeState(alive); f.guest.invalidate('history-restored');
+		const restored = readStateMachineInstances(f.sources, f.guest, -1).items[0];
+		assert.equal(restored.component.hashId, f.choice.component.hashId);
+		assert.equal(restored.machine.hashId, f.choice.machine.hashId);
+		assert.notStrictEqual(restored.machine, f.choice.machine);
+		assert.strictEqual(f.inspection.refresh(), document);
+		assert.deepEqual(document.map(row => row.value), before);
+		assert.ok(document.every(row => row.valueChanged === false), 'unavailable membership ends the previous comparison baseline');
+	}
+});
+
+for (const observed of [false, true]) test(`live admission retires ${observed ? 'observed' : 'hidden'} historical absence before reused table ids`, t => {
+	const f = fixture(); t.after(() => f.inspection.dispose());
+	const document = f.inspection.refresh()!;
 	f.cpu.restoreRuntimeState(f.beforeBirth); f.guest.invalidate('history-restored');
 	f.rewind.seeking = true;
 	assert.equal(f.inspection.refresh(), undefined);
 	f.rewind.seeking = false;
+	if (observed) assert.ok(f.inspection.refresh()!.every(row => row.warning && row.valueChanged === false));
+	f.inspection.running = true;
 	f.guest.willResumeHistory();
+	assert.equal(f.inspection.running, false);
+	assert.strictEqual(f.inspection.refresh(), document, 'admission publishes retirement before another execution invalidation');
+	assert.ok(document.every(row => row.warning && row.valueChanged === false));
 	f.guest.invalidate();
 	f.cpu.runUntilDepth(0, 100_000);
 	const newChoice = readStateMachineInstances(f.sources, f.guest, -1).items[0];
 	assert.equal(newChoice.component.hashId, f.choice.component.hashId);
-	assert.ok(f.inspection.refresh()!.every(row => row.warning && row.valueChanged === false));
+	assert.equal(newChoice.machine.hashId, f.choice.machine.hashId);
+	assert.equal(f.inspection.refresh(), undefined, 'new allocation identities cannot reactivate the retired selection');
+});
+
+test('live admission keeps a restored behavior instance and later live removal retires it', t => {
+	const f = fixture(); t.after(() => f.inspection.dispose());
+	const document = f.inspection.refresh()!, before = document.map(row => row.value), alive = f.cpu.captureRuntimeState();
+	f.cpu.restoreRuntimeState(f.beforeBirth); f.guest.invalidate('history-restored');
+	f.inspection.refresh();
+	f.cpu.restoreRuntimeState(alive); f.guest.invalidate('history-restored');
+	f.inspection.running = true;
+	f.guest.willResumeHistory();
+	assert.equal(f.inspection.running, true, 'admission resolves current membership even before the pane observes it');
+	assert.strictEqual(f.inspection.refresh(), document);
+	assert.deepEqual(document.map(row => row.value), before);
+	f.guest.invalidate(); runCompletionClosure(f.cpu, f.guest.global('remove_component') as Closure, []);
+	assert.equal(readStateMachineInstances(f.sources, f.guest, -1).items.length, 0);
+	assert.strictEqual(f.inspection.refresh(), document);
+	assert.equal(f.inspection.running, false);
+	assert.ok(document.every(row => row.warning && row.valueChanged === false));
+	f.guest.invalidate(); runCompletionClosure(f.cpu, f.guest.global('restore_component') as Closure, []);
+	assert.equal(readStateMachineInstances(f.sources, f.guest, -1).items[0].component.hashId, f.choice.component.hashId);
+	let reads = 0;
+	const read = f.guest.readStringMember.bind(f.guest);
+	t.mock.method(f.guest, 'readStringMember', (...args: Parameters<typeof read>) => { reads++; return read(...args); });
+	assert.equal(f.inspection.refresh(), undefined);
+	assert.equal(reads, 0, 'a retired live instance does not silently reattach');
+});
+
+test('heap replacement remains terminal across historical navigation and live admission', t => {
+	const f = fixture(); t.after(() => f.inspection.dispose());
+	f.inspection.refresh();
+	const alive = f.cpu.captureRuntimeState();
+	f.guest.invalidate('heap-replaced');
+	const document = f.inspection.refresh()!, retired = document.map(row => row.value);
+	f.cpu.restoreRuntimeState(alive); f.guest.invalidate('history-restored');
+	f.guest.willResumeHistory();
+	assert.equal(f.inspection.refresh(), undefined);
+	assert.deepEqual(document.map(row => row.value), retired, 'history admission does not replace the retirement reason');
 });

@@ -25,6 +25,7 @@ type ResolvedBehavior = { kind: 'action_effect'; choice: ActionEffectInstance }
 export class BehaviorRuntimeInspection {
 	public running = false;
 	private dirty = true;
+	private historical: boolean;
 	private retired: 'missing' | 'heap-replaced' | undefined;
 	private readonly unbindInvalidation: () => void;
 	private readonly unbindHistoryResume: () => void;
@@ -32,14 +33,18 @@ export class BehaviorRuntimeInspection {
 
 	public constructor(private readonly sources: RuntimeSourceState, private readonly guest: SuspendedGuestSession,
 		private readonly rewind: HostRewind, private readonly domain: ResourceDomain, private selection: BehaviorRuntimeSelection | undefined) {
+		this.historical = rewind.active;
 		this.properties = new BehaviorRuntimeProperties(sources, guest);
 		this.unbindInvalidation = guest.onDidInvalidate(reason => {
+			if (reason === 'history-restored') this.historical = true;
 			if (reason === 'heap-replaced') this.retire(reason);
 			if (reason !== 'execution') this.properties.invalidate();
 			this.dirty = true;
 		});
 		this.unbindHistoryResume = guest.onWillResumeHistory(() => {
-			if (this.resolve() === undefined) this.retire('missing');
+			this.historical = false;
+			if (this.selection !== undefined && this.resolve() === undefined) this.retire('missing');
+			this.dirty = true;
 		});
 	}
 
@@ -53,9 +58,10 @@ export class BehaviorRuntimeInspection {
 		properties.begin(true);
 		const resolved = this.resolve();
 		if (resolved === undefined) {
-			if (this.retired === undefined) this.retire('missing');
+			if (this.retired === undefined && !this.historical) this.retire('missing');
 			properties.text('INSTANCE UNAVAILABLE', this.retired === 'heap-replaced' ? 'THE GUEST HEAP WAS REPLACED.' : 'THE SELECTED INSTANCE IS NOT IN THIS FRAME.',
-				'SELECT A RUNTIME INSTANCE AGAIN. NO OTHER INSTANCE WAS SUBSTITUTED.', true);
+				this.retired === undefined ? 'SELECTION RETAINED WHILE REVIEWING HISTORY.'
+					: 'SELECT A RUNTIME INSTANCE AGAIN. NO OTHER INSTANCE WAS SUBSTITUTED.', true);
 		} else switch (resolved.kind) {
 			case 'action_effect': inspectActionEffectInstance(this.sources, this.guest, resolved.choice, properties); break;
 			case 'state_machine': inspectStateMachineState(this.sources, this.guest, resolved.machine, resolved.state, properties); break;
