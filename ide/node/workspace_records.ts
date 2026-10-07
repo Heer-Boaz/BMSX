@@ -1,5 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { publishWorkspaceRecord, WORKSPACE_SAVE_DIRECTORY } from '../../hosts/node/workspace/files.mjs';
 import type { WorkspaceDirectoryEntry, WorkspaceRecord, WorkspaceRecordProvider } from '../workspace/record_provider';
 
 /** The root is the directory against which packaged source paths are resolved. */
@@ -38,13 +39,11 @@ export class DiskWorkspaceRecordProvider implements WorkspaceRecordProvider {
 		const filePath = path.resolve(this.root, relativePath);
 		await fs.mkdir(path.dirname(filePath), { recursive: true });
 		try {
-			await fs.writeFile(filePath, record.contents, { encoding: 'utf8', flag: overwrite ? 'w' : 'wx' });
+			await publishWorkspaceRecord(filePath, path.join(path.dirname(filePath), WORKSPACE_SAVE_DIRECTORY), record, overwrite);
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error(`File already exists: ${relativePath}`);
 			throw error;
 		}
-		const modifiedSeconds = record.updatedAt / 1000;
-		await fs.utimes(filePath, modifiedSeconds, modifiedSeconds);
 	}
 
 	public async delete(relativePath: string): Promise<void> {

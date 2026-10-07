@@ -60,6 +60,31 @@ and MAME's explicit
 [image load/reset boundary](https://github.com/mamedev/mame/blob/master/src/emu/diimage.cpp),
 not an automatic reset whenever a producer publishes new bytes.
 
+## Saved-input publication
+
+`hosts/node/workspace/files.mjs` owns complete-file publication for both the
+workspace HTTP API and `DiskWorkspaceRecordProvider`. Save writes source bytes,
+timestamp and existing permission bits to a staged inode on the destination
+filesystem before replacing the destination. Exclusive creation publishes with
+a no-clobber hard link. Existing write permissions still apply; staging under
+`.bmsx/saves` is excluded from ROM inputs and source discovery.
+
+A concurrent build therefore reads the previous complete file or the newly
+published complete file, not a truncated or partially written Save. An already
+opened descriptor retains its original bytes. A failure before publication
+removes the staging file without replacing the previous source. Exclusive
+publication subsequently removes its staging alias; a failure of that cleanup
+does not undo publication.
+
+This is a per-file guarantee, not a simultaneous snapshot of independently
+edited files, automatic Save-before-Build, or a power-loss durability guarantee.
+The existing build input capture and immutable artifact publication remain
+separate owners. The implementation follows VS Code's
+[atomic disk-write boundary](https://github.com/microsoft/vscode/blob/main/src/vs/platform/files/node/diskFileSystemProvider.ts),
+without its non-atomic compatibility fallback. The publication regressions pause
+actual filesystem writes/timestamp updates while the real ROM input collector
+reads, and cover exclusive creation, write failure, permissions and both callers.
+
 ## Build output
 
 The producer reports typed phases, item/detail updates and diagnostics through

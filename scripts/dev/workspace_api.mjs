@@ -1,5 +1,7 @@
 import { constants } from 'node:fs';
 import { open, readdir, unlink } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { publishWorkspaceRecord, WORKSPACE_SAVE_DIRECTORY } from '../../hosts/node/workspace/files.mjs';
 import { HttpError } from './http_security.mjs';
 import { resolveRootedPath } from './rooted_path.mjs';
 
@@ -30,19 +32,12 @@ export async function handleWorkspaceRequest(root, req, res, url) {
 		for await (const chunk of req) chunks.push(chunk);
 		const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
 		const path = await resolveRootedPath(root, payload.path, true);
-		const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW
-			| (req.headers['if-none-match'] === '*' ? constants.O_EXCL : constants.O_TRUNC);
-		let file;
-		try { file = await open(path, flags); }
+		const staging = await resolveRootedPath(root, join(dirname(payload.path), WORKSPACE_SAVE_DIRECTORY), true);
+		try { await publishWorkspaceRecord(path, staging, payload, req.headers['if-none-match'] !== '*'); }
 		catch (error) {
 			if (error.code === 'EEXIST') throw new HttpError(412, 'File already exists.');
 			throw error;
 		}
-		try {
-			await file.writeFile(payload.contents, 'utf8');
-			const seconds = payload.updatedAt / 1000;
-			await file.utimes(seconds, seconds);
-		} finally { await file.close(); }
 		res.writeHead(204).end();
 		return;
 	}

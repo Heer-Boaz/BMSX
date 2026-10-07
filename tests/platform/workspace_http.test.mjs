@@ -70,7 +70,7 @@ test('authorized source CRUD preserves timestamps and exclusive creation', async
 	assert.equal(response.headers.get('access-control-allow-origin'), null);
 	assert.deepEqual(await response.json(), { path: 'new/nested/source.lua', contents: 'return 3', updatedAt: 1234567890000 });
 	const entries = await request('/__bmsx__/lua?directory=new/nested', { headers });
-	assert.deepEqual(await entries.json(), [{ name: 'source.lua', type: 'file' }]);
+	assert.deepEqual(await entries.json(), [{ name: '.bmsx', type: 'directory' }, { name: 'source.lua', type: 'file' }]);
 	assert.equal((await request('/__bmsx__/lua?path=new/nested/source.lua', { method: 'DELETE', headers })).status, 204);
 	assert.equal((await request('/__bmsx__/lua?path=new/nested/source.lua', { headers })).status, 404);
 });
