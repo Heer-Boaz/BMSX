@@ -27,7 +27,7 @@ for (const [system, first, second] of [[2, 0, 3], [1, 3, 0]] as const) {
 		const loaded = await loadRomToolingMedia(a.systemRom, [a.cartRom, b.cartRom]);
 		const sources = createRuntimeSourceState(loaded.system, loaded.cartridgeSlots);
 		for (const mode of ['boot', 'live'] as const) {
-			const rebuilt = buildBlua32Media(sources, 0x00400000, true, [true, true], mode);
+			const rebuilt = buildBlua32Media(sources, 0x00400000, { system: 'workspace', cartridgeSlots: ['workspace', 'workspace'] }, mode);
 			assert.deepEqual([rebuilt.system!, ...rebuilt.cartridgeSlots].map(image => image!.linked.symbols.metadata.optLevel), [system, first, second]);
 			const published = layoutBlua32MediaInstallation(sources, rebuilt);
 			const reloaded = await loadRomToolingMedia(published.systemLayer!.bytes, [published.cartridgeLayers[0]!.bytes, published.cartridgeLayers[1]!.bytes]);

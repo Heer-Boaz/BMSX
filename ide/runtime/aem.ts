@@ -103,8 +103,10 @@ export function buildAemSourceRevision(
 	const revision = buildBlua32Revision(
 		sources,
 		runtime,
-		resource.domain === SYSTEM_RESOURCE_DOMAIN,
-		[resource.domain === 0, resource.domain === 1],
+		{
+			system: resource.domain === SYSTEM_RESOURCE_DOMAIN ? 'installed' : null,
+			cartridgeSlots: [resource.domain === 0 ? 'installed' : null, resource.domain === 1 ? 'installed' : null],
+		},
 		assetEdits,
 	);
 	const relocation = buildHotResumeRelocation(

@@ -64,6 +64,6 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	for (const [path, text] of [['cart.lua', result.main], ['res/data/nemesis_s_stage.yaml', result.yaml]]) {
 		assert.equal(await readFile(join(f.root, 'carts/nemesis_s', path), 'utf8'), text, 'actual project file contains acknowledged source bytes');
 	}
-	assert.equal(result.main, '-- later typing\n-- unsaved follow-up\n-- reviewed Lua save\n' + await readFile('carts/nemesis_s/cart.lua', 'utf8'));
+	assert.equal(result.main, '-- later typing\n-- reviewed Lua save\n' + await readFile('carts/nemesis_s/cart.lua', 'utf8'));
 	assert.equal(result.yaml, '# reviewed canonical save 🐉\r\n' + await readFile('carts/nemesis_s/res/data/nemesis_s_stage.yaml', 'utf8'));
 });

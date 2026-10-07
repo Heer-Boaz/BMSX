@@ -52,7 +52,7 @@ for (const includeLua of [true, false]) {
 	test(`${includeLua ? 'editing' : 'adding'} Lua preserves a texture with the same asset name`, () => {
 		const layer = sourceLayer(includeLua);
 		const registry = sourceRegistry();
-		const selected = collectProgramSources(registry, registry.entrySourcePath, []);
+		const selected = collectProgramSources(registry, registry.entrySourcePath, [], { kind: 'workspace' });
 		const changes = buildLuaSourceAssetChanges(
 			layer, registry, new Map(includeLua ? [['entry', originalSource]] : []), selected.parsed, undefined,
 		);

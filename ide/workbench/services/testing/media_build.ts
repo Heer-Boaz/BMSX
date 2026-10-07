@@ -28,7 +28,8 @@ export async function buildTestRunMedia(
 		if (blua32MediaRequiresRebuild(sources)) {
 			const media = layoutBlua32MediaInstallation(sources, buildBlua32Media(sources,
 				machineModel.ramBytes,
-				sources.systemBlua32MediaDirty, sources.cartridgeBlua32MediaDirty, 'boot'));
+				{ system: sources.systemBlua32MediaDirty ? 'workspace' : null,
+					cartridgeSlots: [sources.cartridgeBlua32MediaDirty[0] ? 'workspace' : null, sources.cartridgeBlua32MediaDirty[1] ? 'workspace' : null] }, 'boot'));
 			if (media.systemLayer !== null) systemRom = media.systemLayer.bytes;
 			for (const index of [0, 1] as const) {
 				if (media.cartridgeLayers[index] !== null) cartridgeSlots[index] = media.cartridgeLayers[index]!.bytes;

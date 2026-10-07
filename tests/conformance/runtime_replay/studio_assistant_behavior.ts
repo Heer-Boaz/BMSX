@@ -68,9 +68,8 @@ export async function runAssistantBehavior(kind: StudioRendererKind, canvas: HTM
 		check(document.buffer.getText() === before, 'one ordinary Undo restores the semantic edit exactly');
 		await press('ControlLeft', 'KeyY'); check(document.buffer.getText() === changed, 'ordinary Redo reuses model history');
 		await test.clickTab(builder.id); await frame();
-		await until(() => !review.saving && review.saveFailure !== undefined, 'review Save settled');
 		check(cycles() === position && ide.sources.currentBlua32Media === media, 'review never executes or installs the authoring game');
-		check(review.saveFailure === '' && document.lastSavedSource === changed, 'approved review persisted its exact source');
+		check(document.dirty && ide.textFileSaves.latestOperation(document) === undefined, 'review leaves semantic edits in the shared working copy without saving');
 	}
 	await runPaletteCommand('View: Codex Assistant'); await frame(); await renderer.capture!('conversation');
 	const source = document.buffer.getText();

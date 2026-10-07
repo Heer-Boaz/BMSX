@@ -11,6 +11,7 @@ import {
 	installBlua32Media,
 	layoutBlua32MediaInstallation,
 	type Blua32MediaInstallation,
+	type Blua32BuildRequest,
 	type RuntimeRomAssetEditBatch,
 } from './lua_pipeline';
 import { CARTRIDGE_RESOURCE_DOMAINS } from '../common/resource';
@@ -175,15 +176,13 @@ class HotResumeSupervisorPlan implements RuntimeDebuggerControlPlan {
 export function buildBlua32Revision(
 	sources: RuntimeSourceState,
 	runtime: Runtime,
-	rebuildSystem: boolean,
-	rebuildCartridgeSlots: readonly [boolean, boolean],
+	request: Blua32BuildRequest,
 	assetEdits?: RuntimeRomAssetEditBatch,
 ): BuiltBlua32Revision {
 	const rebuilt = buildBlua32Media(
 		sources,
 		runtime.machine.memory.ramByteCount(),
-		rebuildSystem,
-		rebuildCartridgeSlots,
+		request,
 		'live',
 		assetEdits,
 	);
@@ -227,9 +226,9 @@ export function buildBlua32Revision(
 	return {
 		// Linker closure can rebuild an unchanged cart after a BIOS edit. Only
 		// the explicitly edited source domains request another init call.
-		sourceEditDomains: (rebuildSystem ? executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID) : 0)
-			| (rebuildCartridgeSlots[0] ? executionDomainBit(0) : 0)
-			| (rebuildCartridgeSlots[1] ? executionDomainBit(1) : 0),
+		sourceEditDomains: (request.system === 'workspace' ? executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID) : 0)
+			| (request.cartridgeSlots[0] === 'workspace' ? executionDomainBit(0) : 0)
+			| (request.cartridgeSlots[1] === 'workspace' ? executionDomainBit(1) : 0),
 		mediaInstallation: layoutBlua32MediaInstallation(sources, rebuilt),
 		revisions,
 	};

@@ -187,8 +187,9 @@ All 12 failing cases were reproduced in an isolated checkout of the unmodified
 Each group runs on software, WebGL2 and WebGPU. The baseline WebGPU login had a
 reconnect timeout in the combined run; its isolated rerun reproduced the quota
 assertion. These existing failures were not removed or relaxed to make the MCP
-slice appear green. The MCP product test independently checks actual persisted
-source after visible Apply and the original source after visible Undo.
+slice appear green. The current MCP product test checks that visible Apply leaves the file unchanged,
+then checks the independently acknowledged Ctrl+S and working-copy Undo. The
+historical implicit-Save behavior was corrected; see [source lifecycle](studio_source_lifecycle.md#source-admission-versus-relinking).
 
 ## Production references
 

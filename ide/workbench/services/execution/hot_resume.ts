@@ -131,7 +131,10 @@ export class HotResumeService {
 				applyLuaTextModelSources(this.sources, operation.sourceSnapshots);
 				built = blua32MediaRequiresRebuild(this.sources)
 					? buildBlua32Revision(this.sources, this.runtime,
-						this.sources.systemBlua32MediaDirty, this.sources.cartridgeBlua32MediaDirty)
+						{
+							system: this.sources.systemBlua32MediaDirty ? 'workspace' : null,
+							cartridgeSlots: [this.sources.cartridgeBlua32MediaDirty[0] ? 'workspace' : null, this.sources.cartridgeBlua32MediaDirty[1] ? 'workspace' : null],
+						})
 					: null;
 			} catch (error) {
 				operation.finish({ status: 'rejected', phase: 'build', applied: false, error });

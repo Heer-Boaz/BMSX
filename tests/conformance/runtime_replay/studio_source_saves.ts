@@ -59,6 +59,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 			? resource.source.type === 'aem'
 			: resource.source.type === 'data' && resource.path.endsWith('nemesis_s_stage.yaml')))!;
 		await ide.editor.navigation.openResource(resource);
+		if (kind === 'aem') await test.runPaletteCommand('Audio Events: Open Source');
 		const document = harness.getActiveEditorDocument().model;
 		check(document.mode === kind, `source saves: actual ${kind} source is editable`);
 		const resourcePath = resolveWorkspacePath(resource.path, root);
@@ -76,7 +77,12 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 		await press('ControlLeft', 'KeyS');
 		await until(() => ide.textFileSaves.latestOperation(document)?.result?.status === 'saved', `source saves: ${kind} retry is acknowledged`);
 		check((await files.read(resourcePath))!.contents === document.buffer.getText(), `source saves: ${kind} explicit retry persists exact authored source`);
-		if (kind === 'aem') check(getTextFileRuntimeSourceStatus(ide.sources, document) === 'applied', 'source saves: AEM applies after successful persistence');
+		if (kind === 'aem') {
+			check(getTextFileRuntimeSourceStatus(ide.sources, document) === 'applied', 'source saves: AEM applies after successful persistence');
+			check(ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('title_screen') === source
+				&& ide.sources.cartridgeBlua32MediaDirty[0] && getTextFileRuntimeSourceStatus(ide.sources, model) === 'pending',
+				'AEM Save relinks the installed Lua; independently saved code stays pending');
+		}
 		await frame(); await test.capture?.(`${kind}-project-saved`);
 	}
 	// AEM deliberately calls its real reload_from_rom function; that is guest

@@ -21,20 +21,11 @@ import type { ResourcePanelController } from '../resources/panel/controller';
 import type { WorkspaceEditReviewInput } from './editor_input';
 import { layoutEditReviewRows } from './projection';
 
-/**
- * Revealing and saving belong to the editor composition, which owns the tab group and the
- * ordinary Save service; the review pane owns the proposal and asks for them.
- */
-export type WorkspaceEditApplyHost = {
-	reveal(models: readonly EditorTextModel[]): void;
-	save(models: readonly EditorTextModel[]): Promise<string | undefined>;
-};
-
 /** Source review shares the ordinary authoring pause, without borrowing guest state. */
 export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<WorkspaceEditReviewInput> {
 	private readonly actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focusTarget);
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
-	public constructor(resourcePanel: ResourcePanelController, private readonly host: WorkspaceEditApplyHost) {
+	public constructor(resourcePanel: ResourcePanelController, private readonly reveal: (models: readonly EditorTextModel[]) => void) {
 		super(resourcePanel);
 		this.scroll.focusTarget.commandContext = this.focusTarget;
 		this.scroll.focusTarget.next = this.actions.focusTarget;
@@ -60,24 +51,18 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 	public execute(command: EditorCommandId): void {
 		if (!this.isEnabled(command)) return;
 		if (command === 'workspaceEditReview.discard') { this.input.proposal.dispose(); return; }
-		// Reveal before applying, so the edit and its undo land in a visible editor rather than
-		// in a buffer with no view. Saving follows, because an applied edit nobody wrote to disk
-		// is the half-state this review is meant to resolve.
+		// Reveal the shared working copies; Apply and Save are separate user operations.
 		void this.apply(this.input);
 	}
 	private async apply(input: WorkspaceEditReviewInput): Promise<void> {
-		if (input.proposal.kind === 'edit') this.host.reveal(input.proposal.files.flatMap(file => file.kind === 'edit' ? [file.model] : []));
+		if (input.proposal.kind === 'edit') this.reveal(input.proposal.files.flatMap(file => file.kind === 'edit' ? [file.model] : []));
 		try {
 			const models = await input.proposal.apply();
-			// Creation already persisted its exact bytes before catalog admission.
-			if (input.proposal.kind === 'create') { this.host.reveal(models); input.saveFailure = ''; return; }
-			input.saving = true; input.renderedState = undefined;
-			const failure = await this.host.save(models);
-			input.saveFailure = failure ?? '';
-			if (failure !== undefined) showEditorMessage(failure, colors.COLOR_STATUS_WARNING, 4);
+			// Creating a file is an explicit filesystem edit; editing an existing file is not.
+			if (input.proposal.kind === 'create') this.reveal(models);
 		} catch (error) {
 			showEditorMessage(error instanceof Error ? error.message : String(error), colors.COLOR_STATUS_WARNING, 4);
-		} finally { input.saving = false; input.renderedState = undefined; }
+		}
 	}
 	public override update(): void {
 		const { layout, actionBar, viewport } = this.input;
@@ -85,12 +70,9 @@ export class WorkspaceEditReviewPane extends FullWidthWorkbenchEditorPane<Worksp
 		const proposal = this.input.proposal;
 		if (changed || this.input.renderedState !== proposal.state) {
 			this.input.renderedState = proposal.state;
-			this.input.status = truncateMeasuredText(`${proposal.files.length} ${proposal.files.length === 1 ? 'file' : 'files'} | ${proposal.state === 'pending' ? 'Pending - Apply opens, applies and saves; it does not install'
+			this.input.status = truncateMeasuredText(`${proposal.files.length} ${proposal.files.length === 1 ? 'file' : 'files'} | ${proposal.state === 'pending' ? proposal.kind === 'create' ? 'Pending - Apply creates the source file' : 'Pending - Apply edits working copies; Save is separate'
 				: proposal.state === 'applied' ? proposal.kind === 'create' ? 'New source created and saved - not installed'
-					: this.input.saving ? 'Applied - saving'
-					: this.input.saveFailure === undefined ? 'Applied - Undo in either source view'
-						: this.input.saveFailure === '' ? 'Applied and saved - not installed; assets need a rebuild. Undo in either source view'
-							: `Applied but NOT saved: ${this.input.saveFailure}`
+					: 'Applied to working copies - Undo in either source view'
 				: proposal.state === 'stale' || proposal.state === 'failed' ? `${proposal.state}: ${proposal.reason}` : 'Discarded - no source changes'}`, layout.right - 8, measureTextRange);
 		}
 		if (changed) {

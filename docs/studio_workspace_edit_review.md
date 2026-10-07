@@ -47,11 +47,15 @@ route.
   serialize canonical YAML, or run a quadratic full-file diff. Shared text layout
   preserves whitespace across wrapping and never splits surrogate pairs.
 - `workbench/contrib/edit_review` owns the transient input, scroll/action focus
-  and rendered hunk rows. Apply uses shared history; Save/build/install remain
+  and rendered hunk rows. Apply reveals the edited working copies and uses shared history; Save/build/install remain
   separate explicit operations. Source Undo/Redo works from either edited file.
   The pane uses the ordinary workbench game pause, even though it does not borrow
   guest state. Review/Apply remain host operations and work while the guest and
   audio are paused. Independent user/debugger pauses retain their existing owners.
+
+The review pane has no Save callback or independent Save-result state. In
+particular, reviewing AEM edits cannot trigger its Save-time runtime application.
+Explicit Save reports that application through the ordinary Save owner.
 
 The review input is not a persistence format. The group producer excludes it and
 maps active/preview indices into the actual persisted sequence. When review was

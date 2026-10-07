@@ -62,13 +62,13 @@ The additional run used the existing actor-inspection, behavior-source, program
 lifecycle, test-execution, test-debugger and test-inspection browser suites on
 software, WebGL2 and WebGPU: **15 passed, 3 failed**.
 
-All three failures are the behavior-source workflow's old combined invariant
-that applying a review never saves (`studio_assistant_behavior.ts:71-72`). The
-current ordinary review owner explicitly saves after Apply
-(`contrib/edit_review/editor_pane.ts`), as do its UI text and tool contract. The
-same obsolete expectation was already recorded in [MCP validation](studio_mcp.md#validation).
-It was not removed or relaxed to report green results. Because those cases stop
-at this check, this run does not certify their later BT/effect edit sequences.
+At that historical run, all three failures were the behavior-source workflow's
+invariant that applying a review never saves. The pane then saved implicitly
+and its UI/tool descriptions claimed that this could not install anything.
+The subsequent ownership review found that assumption wrong for AEM: Save has
+an asset-application phase. Apply now edits working copies only; explicit Save
+reports persistence/application separately. The earlier failed run did not
+certify its later BT/effect sequences, and is not retroactively a passing run.
 
 The separate program-lifecycle workflow passed on all three backends: failing
 scenario, reviewed source correction, persistence, installed-source inspection,
@@ -465,7 +465,7 @@ three cases repeated across the renderer fixtures, not nine new gameplay bugs:
   HTTP publishes retained usage instead. The same trace now has 1+1 reads, with
   the weekly value preserved. This is an owner fix, not a timer/debounce or a
   relaxed request-count assertion.
-- The source-Save fixture still expected review Apply to leave both documents
+- Historical repair (superseded by the source-admission correction below): the source-Save fixture still expected review Apply to leave both documents
   unsaved. It held the review's write and then mistook that for a subsequent tool
   Save. It now awaits actual review Save acknowledgements, makes a later ordinary
   editor change and explicitly holds that next write. Stop must still retire
@@ -548,3 +548,11 @@ receipts, scalar comparison and inspected captures. This still does **not**
 claim semantic active-BT-node highlighting, graphical from-scratch definition
 creation, a graphical AEM designer or Studio audio-output inspection. Those
 remain separate owner/design work rather than hidden additions to this repair.
+
+### Source-admission correction (2026-10-07)
+
+The earlier automatic-Save interpretation was the wrong ownership decision,
+not a reason to weaken review isolation. Review Apply now leaves existing
+working copies unsaved; the source-Save workflow holds only the separately
+admitted tool Save. AEM applies only its asset against installed Lua and leaves
+pending Lua sources pending. See [source lifecycle](studio_source_lifecycle.md#source-admission-versus-relinking).

@@ -32,19 +32,13 @@ export async function runAssistantSourceSave(kind: StudioRendererKind, canvas: H
 	const review = getActiveTab(); if (review.kind !== 'workspace_edit_review') throw new Error('Shared review required');
 	await frame(); await renderer.capture!('review');
 	await test.click(review.actionBar.items.find(item => item.command === 'workspaceEditReview.apply')!.bounds);
-	await until(() => ide.textFileSaves.latestOperation(main)?.result?.status === 'saved'
-		&& ide.textFileSaves.latestOperation(yaml)?.result?.status === 'saved', 'source Save: approved review finishes its ordinary Saves');
-	check(proposal.state === 'applied' && !main.dirty && !yaml.dirty && main.lastSavedSource !== original && yaml.lastSavedSource !== originalYaml
-		&& ide.sources.currentBlua32Media === media, 'review saves authored source but does not install it');
-	const reviewSave = ide.textFileSaves.latestOperation(main)!;
-	// A later working-copy edit is the explicit tool Save under test. Do not hold
-	// the review's own write and mistake it for the next conversation's operation.
-	await test.clickTab(mainTab.id); await press('ControlLeft', 'Home');
-	await test.clipboard.writeText('-- unsaved follow-up\n'); await press('ControlLeft', 'KeyV');
+	check(proposal.state === 'applied' && main.dirty && yaml.dirty && main.lastSavedSource === original && yaml.lastSavedSource === originalYaml
+		&& ide.sources.currentBlua32Media === media && ide.textFileSaves.latestOperation(main) === undefined
+		&& ide.textFileSaves.latestOperation(yaml) === undefined, 'Apply changes working copies without saving or installing');
 	await armSave();
 	await test.clickTab(view.id);
 	await submitAssistantText(test, 'Read fresh receipts and status. Save YAML, then Save my edited Lua. Do not install code.');
-	await until(() => ide.textFileSaves.latestOperation(main) !== reviewSave, 'source Save: conversation admits the actual Lua write');
+	await until(() => ide.textFileSaves.latestOperation(main) !== undefined, 'source Save: conversation admits the actual Lua write');
 	await waitForHeldSave();
 	const operation = ide.textFileSaves.latestOperation(main)!;
 	check(operation.result === undefined && !yaml.dirty && main.dirty, 'Save is pending until its project acknowledgement arrives');

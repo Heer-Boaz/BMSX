@@ -5336,7 +5336,12 @@ coalesces concurrent saves of that revision and sequences later saves of the
 same resource without blocking unrelated resources. Its result separates source
 persistence from AEM build/runtime application. Completing a snapshot cannot
 clear newer authored edits; Lua saves do not acknowledge installed executable
-code and YAML saves do not acknowledge cooked assets. AEM application requires
+code and YAML saves do not acknowledge cooked assets. Review Apply only edits
+working copies; it never admits Save as an incidental side effect. AEM application
+relinks installed Lua, rather than admitting pending workspace Lua. Per-image
+build requests distinguish source admission from dependent-image relinking;
+only workspace-source installation consumes that image's pending Lua flag.
+AEM application requires
 its resource domain to be executing at runtime-task admission. An inactive domain
 leaves the acknowledged source saved but not applied, with no media mutation or
 automatic retry. Command UI consumes the result and recovery listens to

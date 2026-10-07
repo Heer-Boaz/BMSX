@@ -49,12 +49,23 @@ function luaEntry(source: string): RomAsset {
 export async function buildScenarioMediaFixture(
 	outputDirectory: string,
 	testSources: readonly ScenarioMediaTestSource[],
-	options?: { biosExports?: readonly Blua32BiosFunctionExport[]; systemOptLevel?: 0 | 1 | 2 | 3; cartOptLevel?: 0 | 1 | 2 | 3; systemSource: string; systemModules: readonly { path: string; source: string }[]; cartSource: string; cartModules?: readonly { path: string; source: string }[] },
+	options?: {
+		biosExports?: readonly Blua32BiosFunctionExport[];
+		systemOptLevel?: 0 | 1 | 2 | 3;
+		cartOptLevel?: 0 | 1 | 2 | 3;
+		systemSource: string;
+		systemModules: readonly { path: string; source: string }[];
+		cartSource: string;
+		cartModules?: readonly { path: string; source: string }[];
+		systemAssets?: readonly RomAsset[];
+		cartAssets?: readonly RomAsset[];
+	},
 ): Promise<ScenarioMediaFixture> {
 	const systemAssets = [luaEntry(options === undefined ? 'module<entry>\nreturn true' : options.systemSource)];
 	if (options !== undefined) for (const module of options.systemModules) {
 		systemAssets.push({ resid: module.path, type: 'lua', buffer: Buffer.from(module.source), program_module: true, source_path: `${module.path}.lua`, normalized_source_path: `${module.path}.lua` });
 	}
+	if (options?.systemAssets !== undefined) systemAssets.push(...options.systemAssets);
 	const systemLayout = layoutRomPrefix(
 		systemAssets,
 		true,
@@ -116,6 +127,7 @@ export async function buildScenarioMediaFixture(
 		cartAssets.push({ resid: module.path, type: 'lua', buffer: Buffer.from(module.source), program_module: true, source_path: `${module.path}.lua`, normalized_source_path: `${module.path}.lua` });
 	}
 
+	if (options?.cartAssets !== undefined) cartAssets.push(...options.cartAssets);
 	const cartLayout = layoutRomPrefix(cartAssets, true, MANIFEST);
 	const cartBlua32 = buildRomBlua32Tail(cartAssets, {
 		generatedLuaModules: [],

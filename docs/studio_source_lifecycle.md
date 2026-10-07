@@ -87,6 +87,34 @@ guest-call hook changes. New result retention/allocation occurs only on explicit
 Save; source-status formatting only on explicit inspection. Canonical authored
 bytes flow unchanged through existing source persistence.
 
+## Source admission versus relinking
+
+Review **Apply** edits existing working copies through shared history; it never
+implicitly calls Save. File creation remains an explicit filesystem operation.
+Save is separately admitted by Ctrl+S or `studio_save_source`, whose result keeps
+persistence and AEM application distinct. This also applies to non-assistant
+Rename previews.
+
+AEM application relinks from the **installed Lua sources**, not the current
+workspace. The build request names source admission per image (`workspace`,
+`installed`, or no request); dependent carts rebuilt after a BIOS change use
+installed sources unless explicitly selected for source installation. Generated
+asset addresses still come from the linker. Asset-only installation does not
+publish pending Lua/source-only files, clear their pending flags, or request Lua
+initializers. Invalid saved Lua therefore cannot block an independent AEM save.
+No temporary registry overwrite/restore or alternate compiler is involved.
+
+This follows the separation in [VS Code's bulk edit service](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/bulkEdit/browser/bulkEditService.ts)
+between applying edits and explicitly configured Save, and [Godot's file system](https://github.com/godotengine/godot/blob/master/editor/file_system/editor_file_system.cpp)
+between resource reimport/reload and script-editor ownership. These are ownership
+references, not claims that their runtime formats match BMSX.
+
+`aem_source_scope.test.ts` builds real BIOS/two-cart media and installs the asset
+revision while invalid saved Lua remains pending in all domains. The ordinary
+browser source-save workflow additionally uses real cartlib AEM reload and checks
+that previously saved Lua is still uninstalled. The source-Save conversation
+workflow admits its write only in the explicit Save prompt after visible Apply.
+
 ## Evidence
 
 `source_save_tools.test.ts` covers exact source authority, current/foreign/stale

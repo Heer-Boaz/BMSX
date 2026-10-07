@@ -138,7 +138,6 @@ import { ActionPrompt } from './workbench/contrib/modal/action_prompt';
 import { drawProblemsPanel, problemsPanel } from './workbench/contrib/problems/panel/controller';
 import { ResourcePanelController } from './workbench/contrib/resources/panel/controller';
 import { IdeCommandController } from './commands/controller';
-import { saveTextFileFromCommand } from './commands/source_save';
 import { initializeNavigationState } from './navigation/navigation_history';
 import { EditorNavigationController } from './workbench/contrib/resources/navigation';
 import { BehaviorLensController } from './workbench/contrib/behavior_lens/controller';
@@ -409,18 +408,8 @@ export class RuntimeCartEditor implements CartEditor {
 			terminal: () => new TerminalPane(this.resourcePanel, this.clipboard, this.quickInput),
 			conversation_observer: () => new ConversationObserverPane(this.resourcePanel, decodeImage),
 			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.assistantCommands, decodeImage),
-			workspace_edit_review: () => new WorkspaceEditReviewPane(this.resourcePanel, {
-				// The editor owns the tab group and the ordinary Save service; the review pane asks.
-				reveal: models => {
-					for (const model of models) openEditorTab(this.editorPanes, resolveCodeEditorInput(retainModelCodeTabContext(model)));
-				},
-				save: async models => {
-					for (const model of models) {
-						const result = await saveTextFileFromCommand(this.textFileSaves, model, this, this.sources);
-						if (result.status === 'failed' || model.dirty) return `${model.resource.path} was not saved`;
-					}
-					return undefined;
-				},
+			workspace_edit_review: () => new WorkspaceEditReviewPane(this.resourcePanel, models => {
+				for (const model of models) openEditorTab(this.editorPanes, resolveCodeEditorInput(retainModelCodeTabContext(model)));
 			}),
 			code_editor: () => new CodeEditorPane(
 				this,
