@@ -51,20 +51,44 @@ return component`;
 	return { runtime, cpu, guest, sources, rewind, inspection, beforeBirth, choice };
 }
 
-test('visible behavior inspection refreshes only after invalidation and reacquires restored guest identities', t => {
+test('visible behavior inspection compares completed observations, not paused refreshes, and reacquires history values', t => {
 	const f = fixture(); t.after(() => f.inspection.dispose());
-	const before = structuredClone(f.inspection.refresh()), alive = f.cpu.captureRuntimeState();
-	assert.equal(f.inspection.refresh(), undefined);
+	const document = f.inspection.refresh()!, before = document.map(row => row.value), alive = f.cpu.captureRuntimeState();
+	const current = document.find(row => row.value === 'a')!;
+	assert.ok(document.every(row => row.valueChanged === false));
+	let reads = 0;
+	const read = f.guest.readStringMember.bind(f.guest), visit = f.guest.visitTableEntries.bind(f.guest);
+	t.mock.method(f.guest, 'readStringMember', (...args: Parameters<typeof read>) => { reads++; return read(...args); });
+	t.mock.method(f.guest, 'visitTableEntries', (...args: Parameters<typeof visit>) => { reads++; return visit(...args); });
+	for (let paint = 0; paint < 1000; paint++) assert.equal(f.inspection.refresh(), undefined);
+	assert.equal(reads, 0);
 	f.guest.invalidate();
 	runCompletionClosure(f.cpu, f.guest.global('change') as Closure, []);
-	assert.notDeepEqual(f.inspection.refresh(), before);
-	assert.equal(f.inspection.refresh(), undefined);
+	assert.strictEqual(f.inspection.refresh(), document);
+	assert.equal(current.value, 'b'); assert.equal(current.valueChanged, true);
+	assert.ok(document.every(row => row.valueChanged === (row === current)));
+	const observedReads = reads;
+	assert.ok(observedReads > 0);
+	for (let paint = 0; paint < 1000; paint++) assert.equal(f.inspection.refresh(), undefined);
+	assert.equal(reads, observedReads); assert.equal(current.valueChanged, true);
+	f.guest.invalidate();
+	assert.strictEqual(f.inspection.refresh(), document);
+	assert.equal(current.value, 'b'); assert.ok(document.every(row => row.valueChanged === false));
+	assert.ok(reads > observedReads);
 	f.cpu.restoreRuntimeState(alive); f.guest.invalidate('history-restored');
 	assert.notStrictEqual(readStateMachineInstances(f.sources, f.guest, -1).items[0].machine, f.choice.machine);
-	assert.deepEqual(f.inspection.refresh(), before);
+	assert.strictEqual(f.inspection.refresh(), document);
+	assert.deepEqual(document.map(row => row.value), before);
+	assert.equal(current.valueChanged, true, 'restoring a previous value is a change from the last completed observation');
+	assert.ok(document.every(row => row.valueChanged === (row === current)));
 	f.inspection.running = true; f.guest.invalidate('heap-replaced');
 	assert.equal(f.inspection.running, false);
-	assert.ok(f.inspection.refresh()![0].warning);
+	const retired = f.inspection.refresh()!;
+	assert.ok(retired.every(row => row.warning && row.valueChanged === false));
+	const retiredReads = reads;
+	f.guest.invalidate();
+	assert.equal(f.inspection.refresh(), undefined);
+	assert.equal(reads, retiredReads, 'a retired inspection does not reacquire guest members');
 });
 
 test('live readback retains rows and skips warmed formatting while still reading authoritative mutable state', t => {
@@ -124,5 +148,5 @@ test('restored absence retires a visible bookmark before a branch reuses table i
 	f.cpu.runUntilDepth(0, 100_000);
 	const newChoice = readStateMachineInstances(f.sources, f.guest, -1).items[0];
 	assert.equal(newChoice.component.hashId, f.choice.component.hashId);
-	assert.ok(f.inspection.refresh()![0].warning);
+	assert.ok(f.inspection.refresh()!.every(row => row.warning && row.valueChanged === false));
 });

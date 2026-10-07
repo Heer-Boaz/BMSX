@@ -5,6 +5,7 @@ import type { ActorLabEditorPane } from '../../../ide/workbench/contrib/actor_la
 import type { ActorMemberChoice } from '../../../ide/workbench/contrib/actor_lab/member_choices';
 import { ACTOR_TOOLS_SOURCE } from '../../helpers/actor_tools_fixture';
 import { check, type StudioFixture } from './studio_fixture';
+import { testBehaviorValueChanges } from './studio_behavior_changes';
 
 /** Automated authored-source setup; gameplay, actor selection and history use ordinary UI input. */
 export async function runStudioActorChanges(test: StudioFixture) {
@@ -39,6 +40,8 @@ actor_tool_ready = true`)
 	if move() then actor_tool_first.x = actor_tool_first.x + 1 end
 	if change_members() then
 		actor_tool_inventory.health = actor_tool_inventory.health - 1
+		actor_tool_first:get_component(tree_component).blackboard:set(count, actor_tool_inventory.health)
+		actor_tool_first.state_machines:get_machine('walker').states.nest.data.revision = actor_tool_inventory.health
 		if actor_tool_inventory[1] == nil then actor_tool_inventory[1] = 101 else actor_tool_inventory[1] = nil end
 		actor_tool_membership_actions = actor_tool_membership_actions + 1
 	end`)
@@ -218,7 +221,8 @@ actor_tool_ready = true`)
 	check(pausedReads.members === 0 && pausedReads.entries === 0 && cycles() === membershipCycles
 		&& runtime.machine.cpu.luaHeap.usedBytes() === membershipHeap && guest.global('actor_tool_callbacks') === membershipCallbacks
 		&& health.valueChanged, 'paused membership-shift repaints retain decoration without guest reads, execution or allocation');
+	const pausedCyclesDelta = cycles() - membershipCycles, pausedHeapBytes = runtime.machine.cpu.luaHeap.usedBytes() - membershipHeap;
+	const behaviorChanges = await testBehaviorValueChanges(test);
 	return { changes: 'pass', values: [9, 10, 9, 10], previousFrames, firstActor, sourceVersion: source.version,
-		membership: 'pass', health: [90, 89, 88], membershipFrames, pausedReads, pausedCycles: cycles() - membershipCycles,
-		pausedHeapBytes: runtime.machine.cpu.luaHeap.usedBytes() - membershipHeap };
+		membership: 'pass', health: [90, 89, 88], membershipFrames, pausedReads, pausedCycles: pausedCyclesDelta, pausedHeapBytes, behaviorChanges };
 }

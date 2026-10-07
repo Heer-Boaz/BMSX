@@ -5583,8 +5583,9 @@ reversible; heap replacement and live-branch admission retire invalid membership
 before discarded-future identities can be reused. Retired pins remain explicit,
 removable entries rather than silently following a replacement.
 Changed-value decoration compares displayed values at completed observations of
-the same typed binding. Selected Details and individual pins own their respective
-baselines; selection changes, unavailable membership and heap replacement do not
+the same typed binding. Selected Details, individual pins and live behavior
+inspector lifetimes own their respective baselines; selection changes,
+unavailable membership and heap replacement do not
 masquerade as value changes. History navigation may compare the restored value
 with the preceding observation. Rendering consumes the retained flag without
 advancing or clearing it, and neither adds guest reads nor an event/trace stream.

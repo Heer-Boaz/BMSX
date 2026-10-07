@@ -49,7 +49,8 @@ export class BehaviorRuntimeInspection {
 		if (!this.dirty || this.rewind.seeking) return undefined;
 		this.dirty = false;
 		const properties = this.properties;
-		properties.begin();
+		// One binding per inspection lifetime; reopening establishes a new baseline.
+		properties.begin(true);
 		const resolved = this.resolve();
 		if (resolved === undefined) {
 			if (this.retired === undefined) this.retire('missing');

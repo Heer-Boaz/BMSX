@@ -207,6 +207,8 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	const installedCatalog = await openRegisteredDefinition(test, 'effect', 'pulse');
 	check(installedCatalog.model.rows.find(row => row.element.label === 'PERIOD')!.element.value === '48', 'catalog: new code installation reads its live registry capture');
 
+	// A registered-definition snapshot is not a runtime-control session.
+	harness.openLuaSource(model.resource.path); await frame();
 	await runMenuCommand('pause');
 	await until(() => history.latestCycles > history.earliestCycles + runtime.timing.cpuHz * 2 && tasks.ready, 'inspection: continuous history contains multiple checkpoints');
 	await press('ControlRight', 'ShiftRight');
@@ -214,9 +216,11 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	const latestTick = guest.global('inspection_tick') as number;
 	inspect('inspection_tick');
 	const rewindInspector = await openRuntimeEffectInspector(test, 'second', 48);
+	const retainedEffect = rewindInspector.model.rows[0].element;
 	rewind.seekTo(history.earliestCycles);
 	await settle();
-	check(!rewindInspector.visible, 'inspection: restore ends the previous instance projection');
+	check(rewindInspector.visible && rewindInspector.model.rows[0].element === retainedEffect,
+		'inspection: history refreshes the retained instance document');
 	check(hoverState.tooltip === null, 'inspection: restore ends the old hover lifetime');
 	const restoredTick = guest.global('inspection_tick') as number;
 	check(restoredTick < latestTick, 'inspection: rewind selected an older heap');
@@ -231,8 +235,10 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	rewind.seekTo(history.earliestCycles); await settle();
 	check(!ide.editor.quickInput.visible, 'inspection: restore also invalidates the borrowed FSM state scope');
 	const restoredFsm = await openRuntimeStateInspector(test, 'first', 30);
+	const retainedState = restoredFsm.model.rows[0].element;
 	rewind.seekTo(history.latestCycles); await settle();
-	check(!restoredFsm.visible, 'inspection: restore invalidates the FSM property projection');
+	check(restoredFsm.visible && restoredFsm.model.rows[0].element === retainedState,
+		'inspection: restore refreshes the retained FSM document, unlike borrowed picker choices');
 	await openRegisteredDefinitionPicker(test, 'fsm');
 	rewind.seekTo(history.earliestCycles); await settle();
 	check(!ide.editor.quickInput.visible, 'catalog: restore releases the borrowed registry choices');
@@ -241,8 +247,10 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	rewind.seekTo(history.latestCycles); await settle();
 	check(!restoredCatalog.visible, 'catalog: restore releases the retained property projection');
 	const btBeforeRestore = await inspectRuntimeTreeBlackboard(test, 'first');
+	const retainedTree = btBeforeRestore.model.rows[0].element;
 	rewind.seekTo(history.earliestCycles); await settle();
-	check(!btBeforeRestore.visible, 'runtime BT: restore releases the retained property projection');
+	check(btBeforeRestore.visible && btBeforeRestore.model.rows[0].element === retainedTree,
+		'runtime BT: history refreshes the retained instance document');
 	await inspectRuntimeTreeBlackboard(test, 'second');
 	await openRuntimeTreePicker(test);
 	rewind.seekTo(history.latestCycles); await settle();

@@ -3,6 +3,8 @@ import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import type { BehaviorQuickPickItem } from '../../../ide/workbench/contrib/behavior_lens/quick_access';
+import type { RuntimeInspectionProperty } from '../../../ide/workbench/contrib/behavior_lens/runtime_properties';
+import type { InspectedPropertyRow } from '../../../ide/workbench/ui/property_inspector/model';
 import { check, type StudioFixture } from './studio_fixture';
 
 /** Deliberately open the never-executed same-id registration, not the actual definition producer. */
@@ -48,11 +50,12 @@ export async function openRuntimeEffectInspector(test: StudioFixture, component:
 	await press('Enter');
 	const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
 	check(inspector.visible && !picker.visible, 'runtime effect: selected instance opens the existing inspector');
-	const rows = inspector.model.rows;
+	const rows: InspectedPropertyRow<RuntimeInspectionProperty>[] = inspector.model.rows;
 	check(rows.find(row => row.element.label === 'PERIOD')!.element.value === String(period), 'runtime effect: actual loaded period, not the source literal 999');
-	const state = rows[0].element.value;
-	check(state.includes(`ACTIVE COUNT: ${component === 'first' ? 1 : 0}`)
-		&& state.includes(`COOLDOWN UNTIL (MS): ${component === 'first' ? 107 : 207}`), 'runtime effect: per-instance state is separate from its definition');
+	const active = rows.find(row => row.element.identity?.section === 'instance' && row.element.identity.field === 'active_count')!.element;
+	const cooldown = rows.find(row => row.element.identity?.section === 'instance' && row.element.identity.field === 'cooldown_until_ms')!.element;
+	check(active.value === (component === 'first' ? '1' : '0') && cooldown.value === (component === 'first' ? '107' : '207'),
+		'runtime effect: per-instance state is separate from its definition');
 	const first = rows[0], wrapped = first.value;
 	for (let n = 0; n < 20; n += 1) await frame();
 	check(inspector.model.rows[0] === first && first.value === wrapped, 'runtime effect: stationary frames retain projected and measured rows');

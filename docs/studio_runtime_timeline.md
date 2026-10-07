@@ -70,9 +70,24 @@ or scroll, or remeasuring unchanged text. No guest tables or closures survive in
 the retained selection. Registered-definition/source inspection remains a
 snapshot, not a pretend live instance.
 
-Heap replacement retires a selection. A restore that no longer contains the
-instance retires it before a new branch can reuse discarded identities; replay
-seeking itself is not a branch. The inspector reports this explicitly rather
+Live FSM, BT and ActionEffect inspectors use the same changed-value decoration as
+[Actor Details](studio_actor_tools.md#observed-value-changes): the observation
+owner compares each displayed property with its preceding completed observation;
+the renderer only draws its accent/stroke. Opening an instance establishes a
+neutral baseline. Execution and completed frame navigation may mark changes;
+paused paint, selection, scrolling and theme changes do not clear them. The next
+completed unchanged observation clears the mark. Seeking does not publish an
+intermediate comparison. Each inspector lifetime owns its baseline; choosing
+another instance or reopening an inspector does not borrow the previous one's
+values. Registered-definition snapshots and authored properties are unchanged.
+This follows the value/model versus renderer split in
+[VS Code's debug model](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/debugModel.ts),
+without adding another change detector, timer, polling loop or guest read path.
+
+Heap replacement or an instance missing from a completed inspection retires the
+selection. Live-branch admission also checks membership before discarded identities
+can be reused; replay seeking itself is not a branch or a completed inspection.
+The inspector reports retirement explicitly rather
 than silently selecting another actor. Closing or switching away disposes the
 live session and restores the ordinary authoring pause hold. Transport commands
 are available only within live inspection, and use existing finite frame
@@ -85,6 +100,37 @@ Timeline track/position colors belong to the central theme definition, following
 the semantic component-color ownership in the
 [VS Code color registry](https://github.com/microsoft/vscode/blob/main/src/vs/platform/theme/common/colors/baseColors.ts),
 not a borrowed tab foreground that can equal the timeline background.
+
+### Changed-value validation (2026-10-07)
+
+The extended `browser.mjs --studio-actor-changes` workflow opens actual standalone
+BT, FSM and ActionEffect inspectors through their normal source/instance pickers.
+Two writes in the fixture's existing guest-input action update the BT blackboard
+and FSM instance data alongside its Inventory health. Previous/Next Frame shows
+**88 → 89 → 88** in each selected property; the ActionEffect inspector follows
+the World's actual gameplay clock. Unchanged BT/FSM observations clear their
+marks, and selecting the second actor starts neutral. Six stationary paints per
+inspector perform zero member/entry reads and change neither guest cycles nor
+heap. No special execution path, polling or runtime instrumentation was added.
+
+The workflow passes on software, WebGL2 and WebGPU. Light/dark captures were
+visually reviewed; artifacts are in `.bmsx/authoring/behavior-value-observation/`.
+This is automated source setup and browser input against the real product owners,
+not manual-only authoring or physical/mobile GPU validation. Substituting the
+previous inspection owner into an isolated browser bundle fails on the first BT
+rewind change marker. The lifecycle unit regression also failed before the fix;
+the Actor/Behavior/workbench/input/theme bundle passes **401 tests**. IDE/tests
+typechecks, the Studio debug build and strict architecture audit pass. The
+production change only enables comparison on the existing fixed-binding lifetime;
+it adds no allocation or guest read path and changes no TS/C++ machine behavior.
+
+The older `--studio-runtime-inspection` workflow also passes on software after
+correcting stale expectations: ActionEffect state is read by semantic fields,
+not a composite display string; transport resumes from its actual command owner,
+not a registered-definition snapshot; history retains live instance documents
+while invalidating borrowed pickers and static snapshots. It covers imported
+callbacks, partial rebind, source installation, compile rejection and rewind.
+These corrections change the browser fixture, not production admission/lifetimes.
 
 ## Live FSM instance graph
 
