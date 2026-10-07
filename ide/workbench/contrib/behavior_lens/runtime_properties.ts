@@ -15,9 +15,13 @@ export function inspectBehaviorRuntimeValue(
 		description, warning: false, source };
 }
 
-/** Semantic field identity is separate from presentation and from the current guest value. */
+/** Row identity is separate from presentation, logical watch admission and the current guest value. */
 export type RuntimePropertyIdentity = { readonly section: string; readonly field: string; readonly key?: SuspendedValueIdentity };
-export type RuntimeInspectionProperty = BehaviorInspectionProperty & { readonly identity?: RuntimePropertyIdentity };
+export type RuntimeInspectionProperty = BehaviorInspectionProperty & {
+	readonly identity?: RuntimePropertyIdentity;
+	/** Only the owning runtime mapping can admit a display occurrence as a logical watch target. */
+	readonly watchIdentity?: RuntimePropertyIdentity;
+};
 export type RuntimePropertyEntryPresentation = { readonly label?: string; readonly prefix?: string; readonly suffix?: string; readonly description?: string };
 export type RuntimePropertyFilter = (section: string, field: string, key: SuspendedGuestValue | undefined) => boolean;
 
@@ -76,7 +80,7 @@ export class RuntimePropertyIndex<T> {
 	}
 }
 
-type Property = { label: string; value: string; description: string; warning: boolean; valueChanged: boolean; source?: RuntimeLuaFunctionSource; readonly identity?: RuntimePropertyIdentity };
+type Property = { label: string; value: string; description: string; warning: boolean; valueChanged: boolean; source?: RuntimeLuaFunctionSource; readonly identity?: RuntimePropertyIdentity; watchIdentity?: RuntimePropertyIdentity };
 type PropertyRow = {
 	readonly element: Property;
 	position: number;
@@ -119,9 +123,11 @@ export class BehaviorRuntimeProperties {
 	}
 
 	public entry(section: string, key: SuspendedGuestValue, value: SuspendedGuestValue, presentation?: RuntimePropertyEntryPresentation,
-		description = '', descriptionValue?: SuspendedGuestValue, labelKey = key): void {
-		if (this.filter !== undefined && !this.filter(section, '', key)) return;
+		description = '', descriptionValue?: SuspendedGuestValue, labelKey = key, watchable = true): void {
+		if (this.filter !== undefined && (!watchable || !this.filter(section, '', key))) return;
 		const row = this.row(undefined, section, '', key);
+		const watchIdentity = watchable ? row.element.identity : undefined;
+		if (row.element.watchIdentity !== watchIdentity) { row.element.watchIdentity = watchIdentity; this.changed = true; }
 		if (row.presentation !== presentation || row.labelKey === undefined || !this.guest.matchesIdentity(labelKey, row.labelKey)) {
 			const label = presentation?.label ?? `${presentation?.prefix ?? ''}${this.guest.formatValue(labelKey)}${presentation?.suffix ?? ''}`;
 			if (row.element.label !== label) { row.element.label = label; this.changed = true; }
@@ -181,6 +187,7 @@ export class BehaviorRuntimeProperties {
 		if (row === undefined) {
 			row = { position: index, initialized: false, element: { label: label === undefined ? '' : label, value: '', description: '', warning: false, valueChanged: false,
 				identity: section === undefined ? undefined : { section, field, key: key === undefined ? undefined : this.guest.identity(key) } } };
+			row.element.watchIdentity = row.element.identity;
 			if (row.element.identity !== undefined) this.index.set(row.element.identity, row);
 		} else row.position = index;
 		// Projectors emit each semantic identity once. Keep displaced rows available

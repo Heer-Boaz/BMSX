@@ -52,10 +52,16 @@ export function inspectBehaviorTreeInstance(
 		} else {
 			const keys = guest.readStringMember(layout, 'keys') as Table;
 			const defaults = guest.readStringMember(layout, 'initial_values') as Table;
+			const slotsByKey = guest.readStringMember(layout, 'slots_by_key') as Table;
 			if (keys.arrayLength === 0) properties.text('BLACKBOARD', '{}', 'NO DECLARED KEYS.');
 			for (let slot = 1; slot <= keys.arrayLength; slot += 1) {
-				properties.entry('blackboard', slot, values.getInteger(slot), BLACKBOARD_PRESENTATION, `STORED SLOT ${slot}\nLOADED DEFAULT: `,
-					defaults.getInteger(slot), keys.getInteger(slot));
+				const key = keys.getInteger(slot);
+				// compile/rebind resolve semantic keys through slots_by_key. Earlier
+				// duplicate declarations remain visible, but are not independent watches.
+				const watchable = slotsByKey.get(key) === slot;
+				properties.entry(watchable ? 'blackboard' : 'blackboard-slot', watchable ? key : slot,
+					values.getInteger(slot), BLACKBOARD_PRESENTATION, `STORED SLOT ${slot}\nLOADED DEFAULT: `,
+					defaults.getInteger(slot), key, watchable);
 			}
 		}
 	}

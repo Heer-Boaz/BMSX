@@ -71,7 +71,7 @@ export class ActorWatches {
 	}
 
 	public add(target: ActorTarget, context: string, property: RuntimeInspectionProperty): ActorPropertyWatch {
-		const watch = new ActorPropertyWatch(this.nextId++, target, property.identity!, context, property);
+		const watch = new ActorPropertyWatch(this.nextId++, target, property.watchIdentity!, context, property);
 		let actor = this.actors.find(actor => actor.target.domain === target.domain && actor.target.worldHashId === target.worldHashId
 			&& actor.target.actorHashId === target.actorHashId);
 		if (actor === undefined) {
@@ -131,7 +131,7 @@ export class ActorWatches {
 				if (node !== undefined) {
 					group.properties.begin();
 					for (const property of inspectActorNode(this.sources, this.guest, node, group.properties)) {
-						const pin = property.identity === undefined ? undefined : group.index.get(property.identity);
+						const pin = property.watchIdentity === undefined ? undefined : group.index.get(property.watchIdentity);
 						if (pin !== undefined) pin.observed = true;
 					}
 				}
@@ -163,7 +163,7 @@ export class ActorWatches {
 				}
 				for (const pin of group.pins) pin.observed = false;
 				if (properties !== undefined) for (const property of properties) {
-					const pin = property.identity === undefined ? undefined : group.index.get(property.identity);
+					const pin = property.watchIdentity === undefined ? undefined : group.index.get(property.watchIdentity);
 					if (pin === undefined) continue;
 					pin.observed = true;
 					changed = pin.publish(property, compareChanges) || changed;

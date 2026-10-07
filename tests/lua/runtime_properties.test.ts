@@ -196,3 +196,29 @@ test('completed observations release omitted rows and returning identities start
 	properties.begin(true); properties.entry('member', 3, 32); properties.finish();
 	assert.notStrictEqual(document[0], survivor); assert.equal(document[0].valueChanged, false);
 });
+
+test('display-only occurrences retain unique rows but never enter a logical-watch projection', t => {
+	const { sources, guest } = fixture(), key = guest.global('string');
+	const properties = new BehaviorRuntimeProperties(sources, guest);
+	const presentation = { prefix: 'KEY ' };
+	const refresh = () => {
+		properties.begin();
+		properties.entry('shadowed-slot', 1, 10, presentation, '', undefined, key, false);
+		properties.entry('member', key, 20, presentation);
+		return properties.finish();
+	};
+	const document = refresh(), shadowed = document[0], canonical = document[1];
+	assert.equal(shadowed.label, canonical.label); assert.equal(shadowed.watchIdentity, undefined);
+	assert.strictEqual(canonical.watchIdentity, canonical.identity);
+	assert.equal(runtimeInspectionPropertiesEqual(shadowed, canonical), false);
+	const identities = t.mock.method(guest, 'identity'), formats = t.mock.method(guest, 'formatStoredEntries');
+	for (let observation = 0; observation < 1000; observation++) {
+		refresh(); assert.strictEqual(document[0], shadowed); assert.strictEqual(document[1], canonical);
+		assert.equal(properties.changed, false);
+	}
+	assert.equal(identities.mock.callCount(), 0); assert.equal(formats.mock.callCount(), 0);
+	const filtered = new BehaviorRuntimeProperties(sources, guest, () => true);
+	filtered.begin(); filtered.entry('shadowed-slot', 1, 10, presentation, '', undefined, key, false);
+	assert.equal(filtered.finish().length, 0);
+	assert.equal(identities.mock.callCount(), 0); assert.equal(formats.mock.callCount(), 0);
+});

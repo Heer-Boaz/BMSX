@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import type { Table } from '../../machine/ts/machine/cpu/table';
+import { valueString } from '../../machine/ts/machine/cpu/value';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_graph';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
@@ -16,7 +18,13 @@ import { parseLuaChunk, runCompletionClosure } from './cpu_test_harness';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 
-const WORLD = `local fsm<const> = require('cartlib/fsm/fsm_component')
+const WORLD = `setmetatable = __bmsx_setmetatable
+local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
+local answer<const> = blackboard.key('answer', 0)
+local board<const> = blackboard.new()
+board:rebind(blackboard.compile({ answer, blackboard.key('unset') }), {})
+board:set(answer, 42)
+local fsm<const> = require('cartlib/fsm/fsm_component')
 local bt<const> = require('cartlib/behaviour_tree/bt_component')
 local timelines<const> = require('cartlib/timeline/timeline_component')
 local effects<const> = require('cartlib/actioneffects/actioneffect_component')
@@ -24,7 +32,7 @@ local state<const> = { id = 'shared', definition = { on = {}, input_patterns = {
 local machine<const> = { localdef_id = 'main', definition = { on = {} }, states = { [1] = state, ['1'] = state }, state_ids = { 1, '1' }, current_id = 1 }
 local fsm_component<const> = { id = 'fsm', enabled = true, _parent_component_index = 1, _started = true, _machines = { machine } }
 local bt_component<const> = { id = 'bt', tree_id = 'tree', enabled = true, _parent_component_index = 2,
-blackboard = { _layout = { keys = { 'answer', 'unset' }, initial_values = { 0 } }, _values = { 42 } } }
+blackboard = board }
 local timeline_component<const> = { id = 'timeline', enabled = true, _parent_component_index = 3,
 _entries_by_id = { intro = { position_ms = 0, playing = true, program = { duration = 1000 } } } }
 local effect_component<const> = { id = 'effects', enabled = true, _parent_component_index = 4,
@@ -50,18 +58,31 @@ function add_future_field() ordinary['future' .. actor.x] = 91 end
 function replace_callback() ordinary.callback = 99 end
 function change_input_pattern() state.definition.input_patterns[1] = 'second' end
 function duplicate_blackboard_slots()
- bt_component.blackboard._layout = { keys = { 'answer', 'answer' }, initial_values = { 0, 1 } }
- bt_component.blackboard._values = { 42, 43 }
+ local duplicate<const> = blackboard.key('answer', 1)
+ board:rebind(blackboard.compile({ answer, duplicate }), {})
+ board:set(duplicate, 43)
 end
-function relabel_blackboard_slots()
- bt_component.blackboard._layout = { keys = { 'second', 'first' }, initial_values = { 10, 20 } }
+function reorder_duplicate_keys()
+ board:rebind(blackboard.compile({ blackboard.key('speed', 10), answer, blackboard.key('answer', 1) }), {})
 end
-function change_blackboard_slot() bt_component.blackboard._values[1] = 44 end
+function bind_health_speed()
+ board:rebind(blackboard.compile({ blackboard.key('health', 100), blackboard.key('speed', 10), blackboard.key('unset') }), {})
+end
+function reorder_blackboard_keys()
+ board:rebind(blackboard.compile({ blackboard.key('speed', 20), blackboard.key('health', 200), blackboard.key('unset', 500) }), {})
+end
+function remove_health()
+ board:rebind(blackboard.compile({ blackboard.key('speed', 20) }), {})
+end
+function readd_health()
+ board:rebind(blackboard.compile({ blackboard.key('speed', 20), blackboard.key('health', 300) }), {})
+end
 return world`;
 
 function fixture() {
 	const entry = "return require('cartlib/world/world')";
 	const modules = [{ path: 'cartlib/world/world', source: WORLD },
+		{ path: 'cartlib/behaviour_tree/blackboard', source: readFileSync('cartlib/behaviour_tree/blackboard.lua', 'utf8') },
 		...['cartlib/fsm/fsm_component', 'cartlib/behaviour_tree/bt_component', 'cartlib/timeline/timeline_component', 'cartlib/actioneffects/actioneffect_component']
 			.map(path => ({ path, source: 'return {}' }))]
 		.map(module => ({ ...module, chunk: parseLuaChunk(module.source, `${module.path}.lua`) }));
@@ -76,7 +97,7 @@ function fixture() {
 	});
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports), cartridgeSlots: [null, null] };
-	cpu.reset(); const beforeBirth = cpu.captureRuntimeState(); cpu.runUntilDepth(0, 100_000);
+	cpu.reset(); cpu.installBootPrimitives(); const beforeBirth = cpu.captureRuntimeState(); cpu.runUntilDepth(0, 100_000);
 	const guest = new SuspendedGuestSession(runtime), tree = new ActorRuntimeTree(), details = new ActorDetails(sources, guest);
 	const world = runtimeWorld(sources, guest, -1)!;
 	const objects = guest.readStringMember(world, '_objects') as Table;
@@ -515,41 +536,69 @@ test('watch labels update independently of a stable indexed runtime property ide
 	assert.strictEqual(f.details.watches.find(target, property.identity!), pin);
 });
 
-test('blackboard details and pins identify stored slots independently of duplicate and rebound names', t => {
+test('blackboard pins follow real semantic rebinds, not the previous value slot or loaded default', t => {
+	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
+	f.execute('bind_health_speed');
+	const node = f.tree.roots[0].children.find(node => node.kind === 'tree')!;
+	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, node, f.guest);
+	f.details.refresh(node, target.path, f.tree, -1, f.target.worldHashId, false);
+	const healthIdentity = { section: 'blackboard', field: '', key: f.guest.identity(valueString(f.cpu.stringPool.intern('health'))) };
+	const unsetIdentity = { section: 'blackboard', field: '', key: f.guest.identity(valueString(f.cpu.stringPool.intern('unset'))) };
+	const health = f.details.items.find(item => item.watchIdentity !== undefined && runtimePropertyIdentitiesEqual(item.watchIdentity, healthIdentity))!;
+	const unset = f.details.items.find(item => item.watchIdentity !== undefined && runtimePropertyIdentitiesEqual(item.watchIdentity, unsetIdentity))!;
+	const pin = f.details.watches.add(target, 'tree', health), nilPin = f.details.watches.add(target, 'tree', unset);
+	const initial = f.cpu.captureRuntimeState();
+	f.execute('reorder_blackboard_keys');
+	f.details.refresh(resolveActorTarget(f.tree.roots, target, f.guest), target.path, f.tree, -1, f.target.worldHashId, false);
+	assert.strictEqual(f.details.items.find(item => item.watchIdentity !== undefined && runtimePropertyIdentitiesEqual(item.watchIdentity, healthIdentity)), health);
+	assert.ok(runtimePropertyIdentitiesEqual(pin.property, healthIdentity)); assert.equal(pin.item.value, '100');
+	assert.equal(pin.item.valueChanged, false); assert.equal(pin.available, true);
+	assert.equal(nilPin.item.value, 'nil'); assert.equal(nilPin.available, true);
+	assert.ok(runtimePropertyIdentitiesEqual(nilPin.property, unsetIdentity));
+	f.execute('remove_health');
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
+	assert.equal(pin.available, false); assert.equal(pin.retired, false);
+	assert.ok(runtimePropertyIdentitiesEqual(pin.property, healthIdentity));
+	f.execute('readd_health');
+	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
+	assert.equal(pin.item.value, '300'); assert.equal(pin.available, true);
+	assert.equal(pin.item.valueChanged, false, 'returning availability starts a neutral baseline');
+	f.invalidate('history-restored'); f.cpu.restoreRuntimeState(initial); f.update();
+	f.details.refresh(resolveActorTarget(f.tree.roots, target, f.guest), target.path, f.tree, -1, f.target.worldHashId, true);
+	assert.equal(pin.item.value, '100'); assert.ok(runtimePropertyIdentitiesEqual(pin.property, healthIdentity));
+	assert.equal(nilPin.item.value, 'nil'); assert.equal(nilPin.available, true);
+});
+
+test('duplicate blackboard occurrences stay distinct while only the owner-resolved key admits a pin', t => {
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	f.execute('duplicate_blackboard_slots');
 	const node = f.tree.roots[0].children.find(node => node.kind === 'tree')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, node, f.guest);
 	f.details.refresh(node, target.path, f.tree, -1, f.target.worldHashId, false);
-	const slots = f.details.items.filter(item => item.identity?.section === 'blackboard');
-	assert.equal(slots.length, 2); assert.equal(slots[0].label, slots[1].label);
-	assert.deepEqual(slots.map(item => item.value), ['42', '43']);
-	assert.deepEqual(slots.map(item => item.identity!.key!.scalar), [1, 2]);
+	const answerIdentity = { section: 'blackboard', field: '', key: f.guest.identity(valueString(f.cpu.stringPool.intern('answer'))) };
+	const slots = f.details.items.filter(item => item.identity?.section === 'blackboard-slot'
+		|| item.watchIdentity !== undefined && runtimePropertyIdentitiesEqual(item.watchIdentity, answerIdentity));
+	assert.equal(slots.length, 2); assert.deepEqual(slots.map(item => item.value), ['42', '43']);
 	assert.equal(runtimePropertyIdentitiesEqual(slots[0].identity!, slots[1].identity!), false);
-	const first = f.details.watches.add(target, 'tree', slots[0]), second = f.details.watches.add(target, 'tree', slots[1]);
-	const previousLabels = slots.map(item => item.label), previousPinLabels = [first.item.label, second.item.label];
-	const previousDescriptions = [first.item.description, second.item.description];
-	assert.strictEqual(f.details.watches.find(target, slots[0].identity!), first);
-	assert.strictEqual(f.details.watches.find(target, slots[1].identity!), second);
-	f.execute('relabel_blackboard_slots');
+	assert.equal(actorDetailsPropertiesEqual(slots[0], slots[1]), false);
+	assert.equal(actorDetailsPropertyMatchesSelection(slots[1], captureActorDetailsSelection(slots[0])), false);
+	assert.equal(slots[0].watchIdentity, undefined); assert.strictEqual(slots[1].watchIdentity, slots[1].identity);
+	const pin = f.details.watches.add(target, 'tree', slots[1]);
+	f.execute('reorder_duplicate_keys');
 	f.details.refresh(resolveActorTarget(f.tree.roots, target, f.guest), target.path, f.tree, -1, f.target.worldHashId, false);
-	const rebound = f.details.items.filter(item => item.identity?.section === 'blackboard');
-	assert.strictEqual(rebound[0], slots[0]); assert.strictEqual(rebound[1], slots[1]);
-	assert.ok(rebound.every((item, index) => item.label !== previousLabels[index]));
-	assert.notEqual(rebound[0].label, rebound[1].label);
-	assert.deepEqual(rebound.map(item => item.value), ['42', '43']);
-	assert.ok(rebound.every(item => item.valueChanged === false));
-	assert.notEqual(first.item.label, previousPinLabels[0]); assert.notEqual(second.item.label, previousPinLabels[1]);
-	assert.notEqual(first.item.label, second.item.label);
-	assert.equal(first.item.valueChanged, false); assert.equal(second.item.valueChanged, false);
-	assert.notEqual(first.item.description, previousDescriptions[0]); assert.notEqual(second.item.description, previousDescriptions[1]);
-	f.execute('change_blackboard_slot');
+	const rebound = f.details.items.filter(item => item.identity?.section === 'blackboard-slot'
+		|| item.watchIdentity !== undefined && runtimePropertyIdentitiesEqual(item.watchIdentity, answerIdentity));
+	assert.equal(rebound.length, 2); assert.deepEqual(rebound.map(item => item.value), ['43', '43']);
+	assert.strictEqual(rebound[1], slots[1]);
+	assert.equal(rebound[0].watchIdentity, undefined);
+	assert.equal(pin.item.value, '43'); assert.equal(pin.item.valueChanged, false);
+	assert.ok(runtimePropertyIdentitiesEqual(pin.property, answerIdentity));
+	f.invalidate(); f.update();
 	f.details.refresh(f.tree.roots[0], f.target.path, f.tree, -1, f.target.worldHashId, false);
-	assert.equal(first.item.value, '44'); assert.equal(second.item.value, '43');
-	assert.equal(first.item.valueChanged, true); assert.equal(second.item.valueChanged, false);
-	f.details.watches.remove(first);
-	assert.equal(f.details.watches.find(target, slots[0].identity!), undefined);
-	assert.strictEqual(f.details.watches.find(target, slots[1].identity!), second);
+	assert.equal(pin.item.value, '43'); assert.equal(pin.available, true);
+	assert.ok(runtimePropertyIdentitiesEqual(pin.property, answerIdentity), 'filtered watches use the same owner mapping as selected Details');
+	f.details.watches.remove(pin);
+	assert.equal(f.details.watches.find(target, slots[1].watchIdentity!), undefined);
 });
 
 test('surviving callback rows retain loaded source caches when an earlier component field disappears', t => {

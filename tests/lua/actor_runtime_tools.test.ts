@@ -98,10 +98,13 @@ test('Actor Lab pin action enablement uses retained membership without guest rea
 	const pinned = input.details!.items.find(item => item.label === 'id')!, unpinned = input.details!.items.find(item => item.label === 'active')!;
 	controller.pinProperty(input, pinned); controller.refreshDetails(input);
 	const pin = input.details!.watches.pins[0];
+	const displayOnly = { ...unpinned, watchIdentity: undefined };
 	const read = t.mock.method(f.guest, 'readStringMember'), globals = t.mock.method(f.guest, 'global'), systemGlobals = t.mock.method(f.guest, 'systemGlobal');
 	const entries = t.mock.method(f.guest, 'visitTableEntries'), identities = t.mock.method(f.guest, 'identity');
 	const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()];
 	for (let frame = 0; frame < 1000; frame++) {
+		assert.equal(controller.canPinProperty(input, displayOnly), false);
+		assert.equal(controller.canUnpinProperty(input, displayOnly), false);
 		assert.equal(controller.canPinProperty(input, pinned), false);
 		assert.equal(controller.canUnpinProperty(input, pinned), true);
 		assert.equal(controller.canPinProperty(input, unpinned), true);

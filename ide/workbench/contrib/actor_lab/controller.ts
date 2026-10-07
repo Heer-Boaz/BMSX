@@ -286,18 +286,18 @@ export class ActorLabController {
 	/** Resolve either a pinned row or its original property without display-label matching. */
 	private selectedPropertyWatch(input: ActorLabInput, item: ActorDetailsProperty): ActorPropertyWatch | undefined {
 		if (item.watch !== undefined) return item.watch;
-		if (item.identity === undefined) return;
+		if (item.watchIdentity === undefined) return;
 		const selected = this.selected(input);
 		if (selected === undefined) return;
 		for (const pin of input.details!.watches.pins) {
 			if (!pin.retired && pin.target.domain === input.domain && pin.target.worldHashId === input.worldHashId
-				&& pin.target.actorHashId === input.actorHashId && runtimePropertyIdentitiesEqual(pin.property, item.identity)
+				&& pin.target.actorHashId === input.actorHashId && runtimePropertyIdentitiesEqual(pin.property, item.watchIdentity)
 				&& resolveActorTarget(input.runtime.roots, pin.target, this.guest) === selected) return pin;
 		}
 	}
 
 	public canPinProperty(input: ActorLabInput, item: ActorDetailsProperty): boolean {
-		return !this.rewind.seeking && item.watch === undefined && item.identity !== undefined
+		return !this.rewind.seeking && item.watch === undefined && item.watchIdentity !== undefined
 			&& this.selected(input) !== undefined && this.selectedPropertyWatch(input, item) === undefined;
 	}
 	public pinProperty(input: ActorLabInput, item: ActorDetailsProperty): void {

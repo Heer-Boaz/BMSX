@@ -19,6 +19,12 @@ Niet overgenomen: taskboomklonen, runtime-signalen/serialisatie per update,
 reflectie-getters, guards of een nieuwe debuggerregistry in cartlib. BMSX heeft
 al een type-index, een stilgezette guest en een retained property inspector.
 
+Voor het onderscheid tussen rij-identiteit en watch-target is ook
+[VS Code `debugModel.ts`][watch-identity] gelezen: dubbele variabelen krijgen een
+unieke display-identiteit, terwijl `evaluateName`/de watch-expressie de logische
+locatie aanwijst. BMSX neemt geen expressie-evaluatie over; de cartlib-layout
+levert de bestaande semantische sleutel zonder gastcode uit te voeren.
+
 ## Live owners en contract
 
 - `cartlib/behaviour_tree/library.lua` compileert en publiceert programma's.
@@ -29,7 +35,10 @@ al een type-index, een stilgezette guest en een retained property inspector.
   `tree_id` bewijst niet dat een component al aan de nieuwste registratie hangt.
 - `blackboard.lua` bewaart op de instance de eigen `_layout` en `_values`.
   `keys` geeft de namen, ook van slots met `nil`; herregistratie remapt waarden
-  op naam. Niet indexeren via de nieuwste programmacatalogus of via de bron.
+  op naam. Pins volgen die semantische sleutel via de eigen `slots_by_key`,
+  niet het vorige slotnummer. Bij dubbele namen wint daar de laatste declaratie;
+  eerdere slots blijven afzonderlijke inspectierijen zonder pinactie. Niet
+  indexeren via de nieuwste programmacatalogus of via de bron.
 - Een debugger mag midden in rebind stoppen. Inspectie leest dan de werkelijk
   opgeslagen velden, niet een veronderstelde atomische toestand na de call.
   `nil` layout/storage tijdens eerste binding is zichtbaar als zodanig; geen
@@ -132,3 +141,5 @@ echte loweringgrens blijft een afzonderlijke kosten-/lifetimeproef. Geen
 [blackboard]: https://github.com/limbonaut/limboai/blob/3f14ea4c26911e8b8e30c6bcdb575fc589a59deb/blackboard/blackboard.cpp#L52-L115
 [topology]: https://github.com/limbonaut/limboai/blob/3f14ea4c26911e8b8e30c6bcdb575fc589a59deb/editor/debugger/behavior_tree_data.cpp#L20-L54
 [fold]: https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/llvm/lib/Transforms/InstCombine/InstCombinePHI.cpp#L1430-L1434
+
+[watch-identity]: https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/debugModel.ts#L335-L359
