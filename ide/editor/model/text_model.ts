@@ -92,14 +92,18 @@ export class EditorTextModel {
 	/** Stable source identity for markers/history, without ROM asset metadata. */
 	public readonly identity: ResourceIdentity;
 
-	public constructor(resource: RuntimeResource, mode: EditorDocumentMode, source: string, public readonly history = new EditorUndoRedoService()) {
+	public constructor(resource: RuntimeResource, mode: EditorDocumentMode, source: string, public readonly history = new EditorUndoRedoService(), savedSource = source) {
 		this.history.register(this);
 		this.resourceValue = resource;
 		this.identity = { domain: resource.domain, path: resource.path };
 		this.mode = mode;
 		this.language = textLanguageConfiguration(mode, resource.path);
 		this.pieceTree = new PieceTreeBuffer(source);
-		this.lastSavedSourceValue = source;
+		this.lastSavedSourceValue = savedSource;
+		if (source !== savedSource) {
+			this.currentStateId = this.nextStateId;
+			this.nextStateId += 1;
+		}
 	}
 
 	public get resource(): RuntimeResource {

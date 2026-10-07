@@ -44,7 +44,7 @@ local vblank<const> = require('cartlib/gx/vblank')
 while true do vblank.wait() end
 `;
 
-type SessionExpectation = { group: SerializedEditorGroup; source: string; scene: ReturnType<typeof captureSceneEditorView>; fsm: ReturnType<typeof captureBehaviorLensView> };
+type SessionExpectation = { group: SerializedEditorGroup; source: string; savedSource: string; scene: ReturnType<typeof captureSceneEditorView>; fsm: ReturnType<typeof captureBehaviorLensView> };
 
 async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	const { ide } = test;
@@ -54,6 +54,11 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	ide.editor.setFontVariant('tiny');
 	test.harness.openLuaSource('cart.lua');
 	const model = activeCodeEditor.model!;
+	// Persist a baseline distinct from both the ROM and the later recovery draft.
+	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n-- canonical session save\n' }]);
+	await test.press('ControlLeft', 'KeyS');
+	await test.until(() => !model.dirty, 'session: project acknowledges the canonical Lua baseline');
+	const savedSource = model.lastSavedSource;
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: SOURCE }]);
 	activeCodeEditor.view!.cursorRow = 2; activeCodeEditor.view!.cursorColumn = 9;
 	activeCodeEditor.view!.selectionAnchor = { row: 1, column: 4 };
@@ -99,7 +104,7 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	check(!code.workingCopy.dirty && editorTabGroup.previewTab === code, 'session: clean preview is independent of dirty source backup');
 	check(JSON.stringify(captureCodeEditorView(sourceInput)) === JSON.stringify(sourceSelection), 'session: opening visual panes preserves code cursor and selection');
 	check(model.buffer.getText() === SOURCE, 'session: creating views never changes the canonical source');
-	return { group: editorTabGroup.serialize(ide.editor.editorInputSerializers), source: SOURCE,
+	return { group: editorTabGroup.serialize(ide.editor.editorInputSerializers), source: SOURCE, savedSource,
 		scene: captureSceneEditorView(scene), fsm: captureBehaviorLensView(fsm) };
 }
 
@@ -112,6 +117,7 @@ async function restore(test: StudioFixture, expected: SessionExpectation): Promi
 	if (active?.kind !== 'behavior_lens' || active.view.presentation.kind !== 'state-graph') throw new Error('session: active visual input did not survive reload');
 	const model = active.workingCopy;
 	check(model.buffer.getText() === expected.source && model.dirty && !model.canUndo, 'session: exact dirty bytes, fresh working copy, no fabricated Undo history');
+	check(model.lastSavedSource === expected.savedSource, 'session: dirty recovery retains the actual saved Lua baseline, not its draft or packaged ROM source');
 	const siblings = editorTabGroup.tabs.filter(tab => tab.kind === 'behavior_lens' || tab.kind === 'scene_editor' || (tab.kind === 'code_editor' && tab.workingCopy.resource.path === model.resource.path));
 	check(siblings.every(tab => (tab.kind === 'behavior_lens' || tab.kind === 'scene_editor' || tab.kind === 'code_editor')
 		&& tab.workingCopy === model), 'session: views share one resource-owned working copy');

@@ -31,7 +31,7 @@ function fixture(t: TestContext) {
 	sources.resourceByIdentity.set(resourceIdentityKey(yaml), yaml); sources.resourceByIdentity.set(resourceIdentityKey(binary), binary);
 	const yamlPath = 'carts/nemesis_s/res/data/stage.yaml';
 	const yamlSource = '# exact 🐉\r\nvalue: old\r\n';
-	workspaceCanonicalSourceCache.set(yamlPath, yamlSource);
+	workspaceCanonicalSourceCache.set(yamlPath, { contents: yamlSource, updatedAt: 1 });
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
 	const guest = new SuspendedGuestSession(runtime);
 	const { tasks, presenter } = createRuntimeInspectionFixture(runtime, sources, guest);

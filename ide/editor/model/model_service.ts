@@ -47,11 +47,11 @@ export class EditorTextModelService {
 		return this.modelsByResource.get(resourceIdentityKey(identity));
 	}
 
-	public retain(resource: RuntimeResource, mode: EditorDocumentMode, source: string): EditorTextModel {
+	public retain(resource: RuntimeResource, mode: EditorDocumentMode, source: string, savedSource = source): EditorTextModel {
 		const key = resourceIdentityKey(resource);
 		let model = this.modelsByResource.get(key);
 		if (model === undefined) {
-			model = new EditorTextModel(resource, mode, source, this.history);
+			model = new EditorTextModel(resource, mode, source, this.history, savedSource);
 			this.register(model);
 		} else {
 			model.refreshResource(resource);

@@ -52,6 +52,7 @@ const testLogOutput = new RecordingLogOutput(new ConsoleLogOutput());
 import {
 	buildCodeTabId,
 	createCodeEditorInput,
+	createLuaCodeTabContext,
 	findCodeTabContext,
 	registerCodeTabContext,
 } from '../../ide/workbench/ui/code_tab/contexts';
@@ -569,7 +570,7 @@ test('workspace restore preserves explicit tab order and an active dirty system 
 
 test('canonical source cache keys identical resource paths by physical project path', async (t) => {
 	assert.equal(resolveWorkspacePath('src/entry.lua', 'cart0'), 'cart0/src/entry.lua');
-	workspaceCanonicalSourceCache.set('cart0/entry.lua', 'return "slot 0"');
+	workspaceCanonicalSourceCache.set('cart0/entry.lua', { contents: 'return "slot 0"', updatedAt: 1 });
 	const requestedPaths: string[] = [];
 	globalThis.fetch = async (input: RequestInfo | URL) => {
 		if (String(input) === '/__bmsx__/session') return Response.json({ workspaceToken: 'workspace-storage-test' });
@@ -588,7 +589,7 @@ test('canonical source cache keys identical resource paths by physical project p
 	});
 	workspaceEnvironment = createWorkspaceEnvironment(new MockStorage());
 
-	assert.equal(await loadWorkspaceSourceFile('cart1/entry.lua'), 'return "slot 1"');
+	assert.equal((await loadWorkspaceSourceFile('cart1/entry.lua'))!.contents, 'return "slot 1"');
 	assert.deepEqual(requestedPaths, ['cart1/entry.lua']);
 });
 
@@ -816,8 +817,11 @@ test('cold boot uses one manifest-indexed dirty snapshot for source arbitration 
 	);
 
 	const restored = await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', sources, workspaceFiles, testLogOutput);
+	await workspaceRecords.write('offline-cart/entry.lua', { contents: '-- saved source', updatedAt: 50 });
 	const rejected = await applyAllWorkspaceSourceOverrides(sources, workspaceDirtyRecords);
 	assert.equal(registry.records[0].src, '-- dirty edit');
+	assert.equal(registry.records[0].base_src, '-- saved source');
+	assert.equal(registry.records[0].base_update_timestamp, 50);
 	assert.equal(rejected.size, 0);
 
 	installWorkspaceRestoreView();
@@ -830,8 +834,34 @@ test('cold boot uses one manifest-indexed dirty snapshot for source arbitration 
 	);
 	const model = editorTextModelService.get({ domain: TEST_DOMAIN, path: 'entry.lua' })!;
 	assert.equal(getTextSnapshot(model.buffer), '-- dirty edit');
+	assert.equal(model.lastSavedSource, '-- saved source');
 	assert.equal(model.dirty, true);
 	assert.equal(editorTabGroup.tabs.length, 0);
+	model.revert();
+	assert.equal(model.buffer.getText(), '-- saved source');
+	assert.equal(model.dirty, false);
+	assert.equal((await workspaceRecords.read('offline-cart/entry.lua'))!.contents, '-- saved source');
+});
+
+test('Lua model and code-view admission preserve effective overrides without making them saved', async t => {
+	const storage = new MockStorage();
+	installBrowserWorkspace(t, storage);
+	const registry = sourceRegistry('-- saved source');
+	const sources = createTestRuntimeSourceState(sourceRegistry('-- system source'), [registry, null], TEST_DOMAIN);
+	const resource = resolveRuntimeResource(sources, { domain: TEST_DOMAIN, path: 'entry.lua' })!;
+	setWorkspaceLuaSourceOverride(registry, resource.path, '-- effective unsaved source');
+	const model = await resolveTextFileModel(editorTextModelService, sources, resource);
+	assert.equal(model.buffer.getText(), '-- effective unsaved source');
+	assert.equal(model.lastSavedSource, '-- saved source');
+	assert.equal(model.dirty, true);
+	editorTextModelService.clear();
+	const context = createLuaCodeTabContext(sources, resource);
+	assert.equal(context.model.buffer.getText(), '-- effective unsaved source');
+	assert.equal(context.model.lastSavedSource, '-- saved source');
+	assert.equal(context.model.dirty, true);
+	context.model.revert();
+	assert.equal(context.model.buffer.getText(), '-- saved source');
+	assert.equal(context.model.dirty, false);
 });
 
 test('an uncommitted record cannot satisfy a different manifest version', async (t) => {
@@ -1500,7 +1530,7 @@ test('workspace recovery hydrates a dirty working copy without creating an edito
 	sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', resource.domain, resource.path);
 	workspaceDirtyRecords.set(dirtyPath, { contents: '{ "version": 1 }', updatedAt: 1 });
-	workspaceCanonicalSourceCache.set('offline-cart/res/test_scene.aem', '{ "events": {} }');
+	workspaceCanonicalSourceCache.set('offline-cart/res/test_scene.aem', { contents: '{ "events": {} }', updatedAt: 0 });
 	installWorkspaceRestoreView();
 	await applyWorkspaceAutosavePayload(
 		editorStub(sources) as any,
@@ -1565,6 +1595,40 @@ test('YAML dirty session recovery restores exact unsaved source into a fresh wor
 	assert.equal(getTextFileRuntimeSourceStatus(sources, restored), 'untracked');
 	assert.deepEqual(captureLuaTextModelSources(editorTextModelService, sources), []);
 });
+
+for (const type of ['data', 'aem'] as const) for (const savedAt of [10, 20, 30, null]) {
+	test(`${type} recovery compares its checkpoint with the saved source (${savedAt})`, async t => {
+		const storage = new MockStorage();
+		installBrowserWorkspace(t, storage);
+		const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [sourceRegistry('-- cart'), null], TEST_DOMAIN);
+		const resource = testResource(type === 'data' ? 'res/stage.yaml' : 'res/events.aem.yaml', TEST_DOMAIN, type);
+		resource.source.sourcemeta = { text: 'value: packaged\n' };
+		sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
+		const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', resource.domain, resource.path);
+		const draft = 'value: recovered\n', saved = 'value: saved\n';
+		const checkpoint = payload([{ domain: resource.domain, path: resource.path, updatedAt: 20 }]);
+		writeRecord(storage, 'offline-cart', buildWorkspaceDirtyRecordPath(dirtyPath, 20), draft, 20);
+		writeRecord(storage, 'offline-cart', workspaceStatePath('offline-cart'), JSON.stringify(checkpoint), 21);
+		const canonicalPath = resolveWorkspacePath(resource.path, 'offline-cart');
+		if (savedAt !== null) await workspaceFiles.write(canonicalPath, { contents: saved, updatedAt: savedAt }, true);
+		const restoredPayload = await initializeWorkspaceStorage(storage, workspaceEnvironment.clock, 'offline-cart', sources, workspaceFiles, testLogOutput);
+		installWorkspaceRestoreView();
+		await restoreWorkspaceStorageSession(editorStub(sources) as any, sources,
+			{ breakpoints: new RuntimeBreakpoints(sources, () => {}) }, restoredPayload, new Set());
+		const restored = await resolveTextFileModel(editorTextModelService, sources, resource);
+		const keepDraft = savedAt === null || savedAt <= 20;
+		assert.equal(restored.buffer.getText(), keepDraft ? draft : saved);
+		assert.equal(restored.dirty, keepDraft);
+		assert.equal(restored.lastSavedSource, savedAt === null ? 'value: packaged\n' : saved);
+		// Recovery must also retire superseded backup references, not merely skip a buffer write.
+		persistWorkspaceSessionLocally();
+		assert.equal(workspaceState.localGeneration!.payload.dirtyFiles.length, keepDraft ? 1 : 0);
+		assert.deepEqual(await workspaceRecords.read(canonicalPath), savedAt === null ? null : { contents: saved, updatedAt: savedAt });
+		restored.revert();
+		assert.equal(restored.buffer.getText(), savedAt === null ? 'value: packaged\n' : saved);
+		assert.equal(restored.dirty, false);
+	});
+}
 
 test('workspace override arbitration keeps dirty and canonical namespaces separate', async (t) => {
 	const storage = new MockStorage();
@@ -1836,7 +1900,7 @@ test('built-in resolution admits source without opening tabs or stealing the pre
 	initializeTabs(retainEntryTabContext(sources), panes);
 	const entry = editorTabGroup.activeTab;
 	const aem = testResource('res/cue.aem.yaml', 0, 'aem');
-	workspaceCanonicalSourceCache.set('offline-cart/res/cue.aem.yaml', 'events: {}');
+	workspaceCanonicalSourceCache.set('offline-cart/res/cue.aem.yaml', { contents: 'events: {}', updatedAt: 0 });
 	const resolver = createResourceEditorResolver(sources);
 	const revision = editorTabGroup.revision;
 	const [first, second] = await Promise.all([resolver.resolveEditorInput(aem), resolver.resolveEditorInput(aem)]);

@@ -5895,6 +5895,17 @@ blind retry; later mutations and explicit checkpoints can retry. Missing version
 or unreadable recovery are surfaced rather than deleting records or silently
 substituting an older generation.
 
+Cold recovery keeps effective document text separate from its saved baseline.
+Lua source arbitration advances the canonical baseline even when a newer dirty
+record supplies the compilation source. Model admission preserves both values,
+so Revert returns to the saved file, not the recovered draft or older ROM text.
+The canonical source cache retains complete file records; acknowledged source
+writes update it at the persistence owner. Before hydrating any dirty document,
+recovery compares its checkpoint with that same canonical record. A completed
+Save supersedes an older checkpoint even if recovery cleanup was interrupted;
+the next checkpoint retires that obsolete reference. Equal timestamps retain
+the dirty record, and absent canonical files do not discard recovered work.
+
 Execution debugging is opt-in tooling policy over the scheduler's CPU executor.
 With no hook installed, the existing bulk interpreter loop remains the normal
 path and contains no per-instruction debugger branch or callback. An installed

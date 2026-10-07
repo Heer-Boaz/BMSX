@@ -1,6 +1,7 @@
 import { advanceLuaSourceRevision, type LuaSourceRegistry } from '../runtime/source_registry';
+import type { WorkspaceRecord } from './record_provider';
 
-export const workspaceCanonicalSourceCache = new Map<string, string>();
+export const workspaceCanonicalSourceCache = new Map<string, WorkspaceRecord>();
 
 const luaSourceOverrides = new Map<LuaSourceRegistry, Map<string, string>>();
 

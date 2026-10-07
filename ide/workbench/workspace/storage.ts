@@ -7,6 +7,7 @@ import { clearWorkspaceSourceCaches } from '../../workspace/cache';
 import {
 	buildWorkspaceDirtyEntryPath,
 	buildWorkspaceDirtyRecordPath,
+	loadWorkspaceSourceFile,
 } from '../../workspace/files';
 import {
 	WORKSPACE_METADATA_DIR,
@@ -21,7 +22,7 @@ import {
 	writeLocalWorkspaceRecord,
 	type WorkspaceRecord,
 } from '../../workspace/records';
-import { joinWorkspacePaths } from '../../workspace/path';
+import { joinWorkspacePaths, resolveWorkspacePath } from '../../workspace/path';
 import {
 	workspaceDirtyRecords,
 	workspaceState,
@@ -33,6 +34,7 @@ import {
 } from './autosave';
 import type { CartEditor } from '../../cart_editor';
 import {
+	resolveRuntimeLuaSource,
 	runtimeSourceProjectRootPath,
 	type RuntimeSourceState,
 } from '../../runtime/sources';
@@ -232,7 +234,7 @@ export async function restoreWorkspaceStorageSession(
 	rejectedDirtyPaths: ReadonlySet<string>,
 ): Promise<void> {
 	let restorePayload = payload;
-	if (payload && rejectedDirtyPaths.size !== 0) {
+	if (payload && payload.dirtyFiles.length !== 0) {
 		const dirtyFiles = [];
 		for (const entry of payload.dirtyFiles) {
 			const root = runtimeSourceProjectRootPath(runtimeSources, entry.domain);
@@ -242,16 +244,19 @@ export async function restoreWorkspaceStorageSession(
 				entry.path,
 			);
 			if (!rejectedDirtyPaths.has(dirtyPath)) {
-				dirtyFiles.push(entry);
+				// Lua already chose ROM/file/draft before compilation; reuse that decision.
+				if (resolveRuntimeLuaSource(runtimeSources, entry) !== null) {
+					dirtyFiles.push(entry);
+					continue;
+				}
+				// Save can complete before recovery cleanup. Admit the checkpoint only
+				// against the same canonical record used to initialize its working copy.
+				const canonical = await loadWorkspaceSourceFile(resolveWorkspacePath(entry.path, root));
+				if (canonical === null || entry.updatedAt >= canonical.updatedAt) dirtyFiles.push(entry);
 			}
 		}
 
-		restorePayload = {
-			dirtyFiles,
-			editorGroup: payload.editorGroup,
-			breakpoints: payload.breakpoints,
-			fontVariant: payload.fontVariant,
-		};
+		if (dirtyFiles.length !== payload.dirtyFiles.length) restorePayload = { ...payload, dirtyFiles };
 	}
 	if (restorePayload) {
 		await applyWorkspaceAutosavePayload(

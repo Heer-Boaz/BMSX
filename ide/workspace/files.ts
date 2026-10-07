@@ -65,22 +65,20 @@ export async function persistWorkspaceSourceFile(
 ): Promise<WorkspaceSourceSaveResult> {
 	const record = createWorkspaceRecord(clock, source);
 	const persistence = await workspaceRecords.write(workspacePath, record);
+	workspaceCanonicalSourceCache.set(workspacePath, record);
 	return { record, persistence };
 }
 
 export async function loadWorkspaceSourceFile(
 	workspacePath: string,
-): Promise<string | null> {
+): Promise<WorkspaceRecord | null> {
 	const cached = workspaceCanonicalSourceCache.get(workspacePath);
 	if (cached !== undefined) {
 		return cached;
 	}
 	const record = await workspaceRecords.read(workspacePath);
-	if (!record) {
-		return null;
-	}
-	workspaceCanonicalSourceCache.set(workspacePath, record.contents);
-	return record.contents;
+	if (record !== null) workspaceCanonicalSourceCache.set(workspacePath, record);
+	return record;
 }
 
 export async function applyWorkspaceSourceOverrides(params: {
@@ -129,11 +127,8 @@ export async function applyWorkspaceSourceOverrides(params: {
 		const dirtyRecord = params.dirtyRecords.get(dirtyPath);
 		const canonicalPath = canonicalPaths[index];
 		const canonicalRecord = canonicalRecords[index];
-		if (canonicalRecord) {
-			workspaceCanonicalSourceCache.set(canonicalPath, canonicalRecord.contents);
-		} else {
-			workspaceCanonicalSourceCache.delete(canonicalPath);
-		}
+		if (canonicalRecord !== null) workspaceCanonicalSourceCache.set(canonicalPath, canonicalRecord);
+		else workspaceCanonicalSourceCache.delete(canonicalPath);
 
 		let winnerKind: WorkspaceWinnerKind = 'rom';
 		let winnerSource = asset.base_src;
@@ -142,6 +137,8 @@ export async function applyWorkspaceSourceOverrides(params: {
 			winnerKind = 'canonical';
 			winnerSource = canonicalRecord.contents;
 			winnerUpdatedAt = canonicalRecord.updatedAt;
+			asset.base_src = winnerSource;
+			asset.base_update_timestamp = winnerUpdatedAt;
 		}
 		if (dirtyRecord && dirtyRecord.updatedAt >= winnerUpdatedAt) {
 			winnerKind = 'dirty';
@@ -167,10 +164,6 @@ export async function applyWorkspaceSourceOverrides(params: {
 		}
 
 		deleteWorkspaceLuaSourceOverride(registry, filePath);
-		if (winnerKind === 'canonical') {
-			asset.base_src = winnerSource;
-			asset.base_update_timestamp = winnerUpdatedAt;
-		}
 	}
 
 	if (changed) advanceLuaSourceRevision(registry);

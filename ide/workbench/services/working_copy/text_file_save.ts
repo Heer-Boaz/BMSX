@@ -6,7 +6,6 @@ import type { EditorTextModel, EditorTextModelSnapshot } from '../../../editor/m
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import { applyAemSourceRevision, type AemSourceApplyResult } from '../../../runtime/aem';
 import { runtimeSourceProjectRootPath, type RuntimeSourceState } from '../../../runtime/sources';
-import { workspaceCanonicalSourceCache } from '../../../workspace/cache';
 import { persistWorkspaceSourceFile } from '../../../workspace/files';
 import { resolveWorkspacePath } from '../../../workspace/path';
 import { saveLuaResourceSource } from '../../../workspace/workspace';
@@ -85,7 +84,6 @@ export class TextFileSaveService {
 					const root = runtimeSourceProjectRootPath(this.sources, resource.domain);
 					const path = resolveWorkspacePath(resource.path, root);
 					({ persistence } = await persistWorkspaceSourceFile(this.clock, path, snapshot.source));
-					workspaceCanonicalSourceCache.set(path, snapshot.source);
 					break;
 				}
 			}

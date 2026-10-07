@@ -7,7 +7,7 @@ import type { CodeEditorTabId } from '../tab/id';
 import { CodeEditorInput } from '../../contrib/code_editor/editor_input';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { CodeEditorInputId } from '../../../common/editor_context';
-import * as luaPipeline from '../../../runtime/lua_pipeline';
+import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
 import { computeResourceTabTitle } from '../tab/titles';
 import { editorTabGroup } from '../tab/group_model';
 import {
@@ -71,7 +71,7 @@ function entryTabResource(sources: RuntimeSourceState): RuntimeResource {
 }
 
 export function createLuaCodeTabContext(sources: RuntimeSourceState, resource: RuntimeResource): CodeTabContext {
-	return createModelCodeTabContext(editorTextModelService.retain(resource, 'lua', luaPipeline.resourceSourceForChunk(sources, resource)));
+	return createModelCodeTabContext(resolveLuaTextFileModel(editorTextModelService, sources, resource));
 }
 
 export function retainLuaCodeTabContext(

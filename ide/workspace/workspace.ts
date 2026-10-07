@@ -22,7 +22,6 @@ import {
 import {
 	deleteWorkspaceLuaSourceOverride,
 	setWorkspaceLuaSourceOverride,
-	workspaceCanonicalSourceCache,
 } from './cache';
 import { createWorkspaceRecord, workspaceRecords, type WorkspaceRecord } from './records';
 import { joinWorkspacePaths, normalizeRelativeWorkspacePath, stripProjectRootPrefix } from './path';
@@ -106,7 +105,6 @@ export async function saveLuaResourceSource(
 	if (asset.program_module) {
 		markLuaSourceRegistryChanged(sources, registry);
 	}
-	workspaceCanonicalSourceCache.set(workspacePath, source);
 	deleteWorkspaceLuaSourceOverride(registry, sourcePath);
 	return result;
 }

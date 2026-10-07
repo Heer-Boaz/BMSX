@@ -1,9 +1,8 @@
 import type { ResourceIdentity, RuntimeResource } from '../../../common/resource';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { EditorDocumentMode, EditorTextModel } from '../../../editor/model/text_model';
-import { resourceSourceForChunk } from '../../../runtime/lua_pipeline';
-import { resolveRuntimeResource, runtimeSourceProjectRootPath, type RuntimeSourceState } from '../../../runtime/sources';
-import { loadWorkspaceSourceFile } from '../../../workspace/files';
+import { resolveRuntimeLuaSource, resolveRuntimeResource, runtimeSourceProjectRootPath, type RuntimeSourceState } from '../../../runtime/sources';
+import { loadWorkspaceSourceFile, readWorkspaceLuaSourceText } from '../../../workspace/files';
 import { resolveWorkspacePath } from '../../../workspace/path';
 import { getTextSnapshotFingerprint, type TextSnapshotFingerprint } from '../../../editor/text/source_text';
 
@@ -39,6 +38,17 @@ export function textFileMode(resource: RuntimeResource): EditorDocumentMode | un
 	}
 }
 
+/** Lua's effective compilation source and persisted baseline remain distinct in its working copy. */
+export function resolveLuaTextFileModel(
+	models: EditorTextModelService,
+	sources: RuntimeSourceState,
+	resource: RuntimeResource,
+): EditorTextModel {
+	const source = resolveRuntimeLuaSource(sources, resource);
+	if (!source) throw new Error(`Missing Lua source for '${resource.path}'.`);
+	return models.retain(resource, 'lua', readWorkspaceLuaSourceText(source.registry, source.record), source.record.base_src);
+}
+
 /** Source admission for editable source formats; no view/group side effects. */
 export function resolveTextFileModel(
 	models: EditorTextModelService,
@@ -48,7 +58,7 @@ export function resolveTextFileModel(
 	const mode = textFileMode(resource);
 	switch (mode) {
 		case 'lua':
-			return models.retain(resource, 'lua', resourceSourceForChunk(sources, resource));
+			return resolveLuaTextFileModel(models, sources, resource);
 		case 'yaml':
 		case 'aem': {
 			// Data stays in its authored YAML; never reconstruct it from cooked assets.
@@ -57,7 +67,7 @@ export function resolveTextFileModel(
 				const source = await loadWorkspaceSourceFile(resolveWorkspacePath(resource.path, root));
 				// A workspace file overlays the packaged authored base, just as for Lua.
 				// IO errors propagate; they never select another source authority.
-				if (source !== null) return source;
+				if (source !== null) return source.contents;
 				if (resource.source.sourcemeta !== undefined) return resource.source.sourcemeta.text;
 				throw new Error(`Source for '${resource.path}' is unavailable.`);
 			});

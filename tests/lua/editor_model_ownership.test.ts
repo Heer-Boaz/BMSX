@@ -76,6 +76,34 @@ test('model service publishes one addition per lifetime and removal after releas
 	assert.deepEqual(added, [model]); assert.deepEqual(removed, [model]);
 });
 
+test('initial dirty source has a distinct saved baseline and unique edit history states', () => {
+	const service = new EditorTextModelService();
+	const resource = luaResource('recovered.lua');
+	const model = service.retain(resource, 'lua', 'draft', 'saved');
+	assert.equal(model.buffer.getText(), 'draft');
+	assert.equal(model.lastSavedSource, 'saved');
+	assert.equal(model.dirty, true);
+	assert.equal(model.canUndo, false);
+	model.pushEditOperations([{ offset: 5, deleteLength: 0, text: ' edited' }]);
+	model.undo();
+	assert.equal(model.buffer.getText(), 'draft');
+	assert.equal(model.dirty, true);
+	model.redo();
+	const snapshot = model.createSnapshot();
+	model.completeSave(snapshot);
+	assert.equal(model.dirty, false);
+	model.undo();
+	assert.equal(model.dirty, true);
+	assert.equal(model.lastSavedSource, 'draft edited');
+	assert.equal(service.retain(resource, 'lua', 'different effective', 'different saved'), model);
+	assert.equal(model.buffer.getText(), 'draft');
+	assert.equal(model.lastSavedSource, 'draft edited');
+	model.revert();
+	assert.equal(model.buffer.getText(), 'draft edited');
+	assert.equal(model.dirty, false);
+	service.clear();
+});
+
 function viewSnapshot(view: CodeEditorViewState) {
 	return codeEditorEditState.of({
 		cursorRow: view.cursorRow,
