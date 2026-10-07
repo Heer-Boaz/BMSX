@@ -8,8 +8,10 @@ export type StructuredCollection = YAMLMap<unknown, Node | null> | YAMLSeq<Node 
 /** Source tokens, not a cooked value map, own every edited byte. Shared by structured text views. */
 export function parseStructuredSource(source: string, format: StructuredTextDocumentFormat) {
 	if (format === 'json') JSON.parse(source);
-	const document = parseDocument(source, { keepSourceTokens: true, uniqueKeys: true });
+	// The ROM cooker uses the core schema, independently of a %YAML directive.
+	const document = parseDocument(source, { keepSourceTokens: true, uniqueKeys: true, schema: 'core', resolveKnownTags: false });
 	if (document.errors.length > 0) throw document.errors[0];
+	for (const warning of document.warnings) if (warning.code === 'TAG_RESOLVE_FAILED') throw warning;
 	return document;
 }
 

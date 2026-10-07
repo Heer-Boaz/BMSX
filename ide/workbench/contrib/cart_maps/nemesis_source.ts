@@ -28,6 +28,8 @@ export type NemesisSource = {
 	readonly version: number;
 	readonly rows: readonly NemesisRow[];
 	readonly width: number;
+	/** stage:build_tape scans only the first row's codepoint width. */
+	readonly tapeWidth: number;
 	readonly markers: readonly NemesisMarker[];
 	readonly diagnostic: string | null;
 };
@@ -43,7 +45,7 @@ export function buildNemesisSource(source: string, version: number): NemesisSour
 		if (sequence.anchor !== undefined || sequence.tag !== undefined) throw new Error('Shared or tagged stage row sequences are source-only.');
 		const rows: NemesisRow[] = [];
 		const markers: NemesisMarker[] = [];
-		let width = 0;
+		let width = 0, tapeWidth = 0;
 		for (let y = 0; y < sequence.items.length; y += 1) {
 			const node = sequence.items[y];
 			if (!isScalar<string>(node) || typeof node.value !== 'string') {
@@ -55,25 +57,28 @@ export function buildNemesisSource(source: string, version: number): NemesisSour
 			for (const glyph of node.value) {
 				const x = glyphs.length;
 				glyphs.push(glyph);
-				if (cells !== undefined && (glyph === 'm' || glyph === 'M' || glyph === 'p' || glyph === 'P')) {
+				if ((y === 0 || x < tapeWidth) && cells !== undefined && (glyph === 'm' || glyph === 'M' || glyph === 'p' || glyph === 'P')) {
 					markers.push({ x, y, glyph, range: { start: cells.offsets[decodedOffset]!, end: cells.offsets[decodedOffset + glyph.length]! } });
 				}
 				decodedOffset += glyph.length;
 				columns.push(decodedOffset);
 			}
+			if (y === 0) tapeWidth = glyphs.length;
 			rows.push({ index: y, text: node.value, glyphs, columns, node, cells,
-				diagnostic: cells === undefined ? `Stage row ${y}: this scalar syntax is source-only.` : null });
+				diagnostic: cells === undefined ? `Stage row ${y}: this scalar syntax is source-only.`
+					: glyphs.length > tapeWidth ? `Row ${y}: cells beyond stage width.` : null });
 			width = Math.max(width, glyphs.length);
 		}
-		return { kind: 'nemesis', source, version, rows, width, markers, diagnostic: null };
+		return { kind: 'nemesis', source, version, rows, width, tapeWidth, markers, diagnostic: null };
 	} catch (error) {
-		return { kind: 'nemesis', source, version, rows: [], width: 0, markers: [], diagnostic: String(error) };
+		return { kind: 'nemesis', source, version, rows: [], width: 0, tapeWidth: 0, markers: [], diagnostic: String(error) };
 	}
 }
 
 /** Move a source marker, including a whole p/P formation, without decoding gameplay. */
 export function createNemesisMarkerMoveEdit(document: NemesisSource, marker: NemesisMarker, toRow: number, toColumn: number): EditorModelEdit {
 	if (toRow === marker.y && toColumn === marker.x) return { version: document.version, edits: [] };
+	if (toColumn >= document.tapeWidth) throw new Error('Outside stage width.');
 	const destination = document.rows[toRow];
 	if (destination === undefined || destination.glyphs[toColumn] !== ' ') {
 		throw new Error('Move a marker to an existing empty space cell.');

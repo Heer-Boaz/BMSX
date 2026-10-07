@@ -58,6 +58,10 @@ projections; no schema is inferred from a runtime actor.
   independent `m`/`M`/`p`/`P` markers can move to empty cells. A formation
   marker remains one authored marker, not its expanded runtime actors.
   Terrain-coupled glyphs are visible but are not independently movable.
+  The first row defines the game's tape width. Longer rows retain their source
+  glyphs, but cells beyond that width are source-only, not spawn markers or move
+  destinations. A short diagnostic identifies such rows; shorter rows are never
+  padded by the editor.
 - Select in the outline or grid; clicking empty grid space or pressing Escape
   in the grid clears selection without losing the active map or viewport.
   The outline supports tree keyboard navigation and a scrollbar. Source opens
@@ -86,6 +90,11 @@ source forms remain text-editable, with their visual operation unavailable;
 the editor never falls back to serializing a row or document.
 Grid columns count Unicode code points, like the guest string reader. Source
 edits use the YAML owner's UTF-16 token boundaries, not display columns.
+The structured-source parser uses the cooker's YAML core schema even when an
+authored `%YAML 1.1` directive is present. That directive must not make the editor
+interpret `012` as octal or `y` as a boolean key while the cooker does not.
+Unsupported explicit tags fail at this source boundary; they are not silently
+interpreted as strings. Comments, directives and token spelling remain authored.
 
 The current boundary is existing-object/marker placement, not room creation,
 tile painting, a sprite preview or a generalized plugin SDK. The directly
@@ -152,6 +161,11 @@ Serializer regressions also cover repeated recovery of an inactive map and
 background source Undo before capture. Pending viewport and current tracked
 selection belong to the retained view, not its last rendered controls, following
 VS Code's [view-state lifecycle](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/editor/editorWithViewState.ts).
+Source regressions cover unequal Nemesis row lengths and compare version-directed
+scalar meanings against the actual cooker, including the cooked result of a
+Pietious coordinate move. Schema handling follows the YAML library's explicit
+[document schema owner](https://github.com/eemeli/yaml/blob/main/src/doc/Document.ts),
+not cart-specific reparsing or numeric conversion.
 
 The shared focus change is also exercised by the three-backend navigation and
 runtime-inspection workflows. Reopening an existing definition retains its

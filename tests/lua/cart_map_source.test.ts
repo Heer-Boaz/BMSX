@@ -7,6 +7,7 @@ import { EditorWorkspaceEditConflict } from '../../ide/editor/model/undo_redo_se
 import { buildPietiousSource, createPietiousPositionEdit } from '../../ide/workbench/contrib/cart_maps/pietious_source';
 import { buildNemesisSource, createNemesisMarkerMoveEdit } from '../../ide/workbench/contrib/cart_maps/nemesis_source';
 import { parseStructuredSource } from '../../ide/language/yaml/structured_edits';
+import { parseStructuredTextDocument } from '../../toolchain/ts/rompack/aem';
 
 const castleSource = readFileSync('carts/pietious/res/data/castle_map.yaml', 'utf8');
 const stageSource = readFileSync('carts/nemesis_s/res/data/nemesis_s_stage.yaml', 'utf8');
@@ -55,6 +56,19 @@ test('Pietious flow tokens, reversed x/y fields, comments and CRLF remain author
 	assert.deepEqual(createPietiousPositionEdit(document, object, -2, 13).edits, []);
 	const xOnly = apply(source, createPietiousPositionEdit(document, object, 3, 13).edits);
 	assert.ok(xOnly.includes('y: 0x0d'));
+});
+
+test('Pietious coordinates retain the cooker meaning under an authored YAML version directive', () => {
+	const source = '%YAML 1.1\n---\n1: {map: [], objects: [{type: rock, x: 012, y: 0}]} # keep\n';
+	const document = buildPietiousSource(source, 1), object = document.rooms[0].objects[0];
+	const cooked = parseStructuredTextDocument(source, 'yaml', 'castle') as Record<string, { objects: { x: number; y: number }[] }>;
+	assert.equal(object.editable, true);
+	assert.deepEqual([object.x, object.y], [cooked['1'].objects[0].x, cooked['1'].objects[0].y]);
+	assert.equal(object.x, 12);
+	const next = apply(source, createPietiousPositionEdit(document, object, object.x! + 1, object.y!).edits);
+	assert.equal(next, source.replace('x: 012', 'x: 13'));
+	const updated = parseStructuredTextDocument(next, 'yaml', 'castle') as typeof cooked;
+	assert.equal(updated['1'].objects[0].x, cooked['1'].objects[0].x + 1);
 });
 
 test('Pietious unsupported and incomplete authoring is explicitly source-only, including empty objects', () => {
@@ -109,6 +123,22 @@ test('Nemesis escaped codepoints are mapped to logical guest columns and exact s
 	assert.deepEqual(buildNemesisSource(next, 2).rows[0].glyphs, ['🙂', ' ', 'm', '\\']);
 	const acrossRows = apply(source, createNemesisMarkerMoveEdit(document, marker, 1, 1).edits);
 	assert.equal(acrossRows, source.replace('\\x6d', ' ').replace("'P '", "'Pm'"));
+});
+
+test('Nemesis tape extent comes from the first row without trimming or padding authored rows', () => {
+	const source = 'map_rows: ["🙂 m ", " m  P ", " "] # retained\n';
+	const document = buildNemesisSource(source, 1);
+	assert.equal(document.tapeWidth, 4);
+	assert.equal(document.width, 6);
+	assert.deepEqual(document.rows.map(row => row.glyphs.length), [4, 6, 1]);
+	assert.deepEqual(document.markers.map(marker => [marker.x, marker.y]), [[2, 0], [1, 1]]);
+	assert.notEqual(document.rows[1].diagnostic, null);
+	const marker = document.markers[1];
+	assert.throws(() => createNemesisMarkerMoveEdit(document, marker, 1, 5));
+	assert.throws(() => createNemesisMarkerMoveEdit(document, marker, 2, 2));
+	const next = apply(source, createNemesisMarkerMoveEdit(document, marker, 1, 3).edits);
+	assert.equal(next, source.replace('" m  P "', '"   mP "'));
+	assert.equal(document.source, source);
 });
 
 test('Nemesis source forms preserve quote style and refuse occupied or unsupported destinations', () => {

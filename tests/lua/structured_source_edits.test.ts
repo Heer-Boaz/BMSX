@@ -3,6 +3,18 @@ import { test } from 'node:test';
 import { isMap, isSeq, type Node } from 'yaml';
 import { parseStructuredSource, createStructuredInsertionEdit, createStructuredRemovalEdit, createStructuredValueEdit, type StructuredCollection } from '../../ide/language/yaml/structured_edits';
 import type { EditorTextEdit } from '../../ide/editor/model/text_model';
+import { parseStructuredTextDocument } from '../../toolchain/ts/rompack/aem';
+
+test('structured source uses the cooker core schema instead of directive-selected scalar semantics', () => {
+	for (const directive of ['', '%YAML 1.1\n---\n', '%YAML 1.2\n---\n']) {
+		const source = directive + 'x: 012\ny: yes\non: off\ndate: 2020-01-01\nvalues: [0x10, 0o10, .inf, .NaN, true, null]\nbase: &base {x: 1}\nobject: {<<: *base}\n';
+		assert.deepEqual(parseStructuredSource(source, 'yaml').toJS(), parseStructuredTextDocument(source, 'yaml', 'fixture'));
+	}
+	for (const source of ['x: !!timestamp 2020-01-01', 'x: !!binary YQ==', 'x: !!set {one: null}']) {
+		assert.throws(() => parseStructuredTextDocument(source, 'yaml', 'fixture'));
+		assert.throws(() => parseStructuredSource(source, 'yaml'));
+	}
+});
 
 function apply(source: string, edit: EditorTextEdit): string { return source.slice(0, edit.offset) + edit.text + source.slice(edit.offset + edit.deleteLength); }
 function collection(source: string, path: readonly (string | number)[] = [], format: 'yaml' | 'json' = 'yaml'): StructuredCollection {
