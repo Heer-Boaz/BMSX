@@ -28,7 +28,7 @@ export class BehaviorRuntimeInspection {
 	private historical: boolean;
 	private retired: 'missing' | 'heap-replaced' | undefined;
 	private readonly unbindInvalidation: () => void;
-	private readonly unbindHistoryResume: () => void;
+	private readonly unbindHistoryReviewEnd: () => void;
 	private readonly properties: BehaviorRuntimeProperties;
 
 	public constructor(private readonly sources: RuntimeSourceState, private readonly guest: SuspendedGuestSession,
@@ -41,14 +41,14 @@ export class BehaviorRuntimeInspection {
 			if (reason !== 'execution') this.properties.invalidate();
 			this.dirty = true;
 		});
-		this.unbindHistoryResume = guest.onWillResumeHistory(() => {
+		this.unbindHistoryReviewEnd = guest.onWillEndHistoryReview(() => {
 			this.historical = false;
 			if (this.selection !== undefined && this.resolve() === undefined) this.retire('missing');
 			this.dirty = true;
 		});
 	}
 
-	public dispose(): void { this.running = false; this.selection = undefined; this.unbindInvalidation(); this.unbindHistoryResume(); }
+	public dispose(): void { this.running = false; this.selection = undefined; this.unbindInvalidation(); this.unbindHistoryReviewEnd(); }
 
 	public refresh(): readonly BehaviorInspectionProperty[] | undefined {
 		if (!this.dirty || this.rewind.seeking) return undefined;

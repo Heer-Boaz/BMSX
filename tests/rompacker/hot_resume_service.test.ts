@@ -18,6 +18,7 @@ import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { HostExecutionControl } from '../../hosts/common/execution_control';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 import { createRuntimeSourceState } from '../../ide/runtime/sources';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
@@ -99,6 +100,26 @@ test('build rejection has a result without poisoning execution; repair can use t
 	assert.equal(f.sources.currentBlua32Media, media);
 	f.model.undo();
 	assert.deepEqual(await f.service.resume().completion, { status: 'completed', applied: true });
+});
+
+test('Hot Resume ends review only after the build is accepted, without recording admission', async t => {
+	const f = await fixture(t);
+	const history = f.runtime.history;
+	history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 1000000 });
+	history.captureCheckpoint();
+	history.beginSeek(history.latestCycles);
+	let ended = 0, resumed = 0;
+	history.onWillEndReview = () => { assert.equal(history.mode, HistoryMode.Reviewing); ended++; };
+	history.onWillResumeRecording = () => resumed++;
+	f.model.pushEditOperations([{ offset: f.model.buffer.length, deleteLength: 0, text: '\nend end\n' }]);
+	assert.equal((await f.service.resume().completion).status, 'rejected');
+	assert.equal(history.mode, HistoryMode.Reviewing);
+	assert.equal(ended, 0, 'rejected source does not end historical review');
+	f.model.undo();
+	assert.equal((await f.service.resume().completion).status, 'completed');
+	assert.equal(history.mode, HistoryMode.Disabled);
+	assert.equal(ended, 1, 'accepted installation ends review before stopping history');
+	assert.equal(resumed, 0, 'installation is not recording admission');
 });
 
 test('admission releases the exclusive queue while nested physical init roots remain pending', async t => {

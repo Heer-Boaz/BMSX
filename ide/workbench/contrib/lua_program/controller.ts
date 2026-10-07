@@ -74,7 +74,7 @@ export class LuaProgramController {
 		if (projection === undefined) {
 			const retained = new LuaProgramRuntimeProjection(this.sources, this.guest);
 			this.projections.set(input, retained);
-			input.onWillDispose(this.guest.onWillResumeHistory(() => retained.refresh(input, true)));
+			input.onWillDispose(this.guest.onWillEndHistoryReview(() => retained.refresh(input, true)));
 			projection = retained;
 		}
 		projection.refresh(input);

@@ -168,8 +168,8 @@ export class RuntimeIdeState {
 		};
 		runtime.history.onWillResumeRecording = branched => {
 			if (branched) this.events.beginTimeline();
-			this.guest.willResumeHistory();
 		};
+		runtime.history.onWillEndReview = () => this.guest.willEndHistoryReview();
 		runtime.onStateReset = () => {
 			this.events.beginTimeline();
 			this.frameNavigation.didReset();

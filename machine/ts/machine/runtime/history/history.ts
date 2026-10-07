@@ -25,8 +25,10 @@ type Checkpoint = {
 
 /** Runtime timeline; deliberately excluded from machine/save-state capture. */
 export class RuntimeHistory {
-	/** Host bookmarks reconcile the reviewed heap before live execution can reuse future identities. */
+	/** Recording admission reports whether it branches, independently of review lifetime. */
 	public onWillResumeRecording: ((branched: boolean) => void) | undefined;
+	/** Reconcile host bookmarks before the reviewed heap can be mutated or replaced. */
+	public onWillEndReview: (() => void) | undefined;
 	public mode = HistoryMode.Disabled;
 	public checkpointPending = false;
 	public readonly inputJournal = new InputJournal();
@@ -87,6 +89,7 @@ export class RuntimeHistory {
 	public stop(): void {
 		if (this.mode === HistoryMode.Disabled) return;
 		if (this.mode === HistoryMode.Replaying || this.mode === HistoryMode.Reviewing) {
+			this.onWillEndReview?.();
 			this.runtime.frameScheduler.reset();
 			this.runtime.frameLoop.abandonFrameState();
 		}
@@ -198,6 +201,7 @@ export class RuntimeHistory {
 	public resumeRecording(): void {
 		const cycles = this.runtime.machine.scheduler.currentNowCycles();
 		const rejoiningLatest = cycles === this.endCycles;
+		this.onWillEndReview?.();
 		this.onWillResumeRecording?.(!rejoiningLatest);
 		while (this.count > 0) {
 			const index = (this.firstCheckpoint + this.count - 1) % this.checkpoints.length;

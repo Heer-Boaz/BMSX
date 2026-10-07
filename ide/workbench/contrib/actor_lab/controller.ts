@@ -53,7 +53,7 @@ export class ActorLabController {
 			if (input === undefined) return;
 			input.invalidate(reason);
 		});
-		guest.onWillResumeHistory(() => {
+		guest.onWillEndHistoryReview(() => {
 			this.navigationGeneration++;
 			const input = this.current;
 			if (input !== undefined) {

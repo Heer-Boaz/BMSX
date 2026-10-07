@@ -100,9 +100,10 @@ void Runtime::suspendExecution() {
 void Runtime::resetForSystemBoot() {
 	frameLoop.resetFrameState(*this);
 	m_pendingCall = PendingCall::None;
-	machine.cpu.clearExecutionEnvironment();
 	machine.memory.clearIoSlots();
 	resetHardwareState();
+	// History observers reconcile the reviewed heap before its registers are cleared.
+	machine.cpu.clearExecutionEnvironment();
 }
 
 void Runtime::resetHardwareState() {

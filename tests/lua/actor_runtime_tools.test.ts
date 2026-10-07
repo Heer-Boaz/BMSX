@@ -168,7 +168,7 @@ test('Actor Lab navigation keeps graph edge identity and retires bookmarks at he
 		assert.equal(input.stateGraph, graph, 'common Source and Back reuses the same graph and its layout');
 		assert.equal(graph.viewport.selection!.kind, 'edge'); assert.deepEqual(graph.selectedTarget, target);
 		assert.deepEqual([graph.viewport.scrollX, graph.viewport.scrollY], scroll); assert.equal(graph.viewport.zoom, 2);
-		if (retirement === 'heap-replaced') f.guest.invalidate('heap-replaced'); else f.guest.willResumeHistory();
+		if (retirement === 'heap-replaced') f.guest.invalidate('heap-replaced'); else f.guest.willEndHistoryReview();
 		controller.restoreSelection(input, saved, font);
 		assert.equal(input.actorHashId, 0); assert.equal(controller.selected(input), undefined);
 		assert.equal(input.stateGraph, undefined); assert.equal(input.follow.target, undefined);

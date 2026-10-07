@@ -205,7 +205,8 @@ BT compilation or claim that mapping exists.
 | Finite forward replay | Step request + target video tick | Step request + i64 target video tick | HostRewind |
 | Labels, rectangles, hit regions | retained submissions/rectangles | fixed arrays/submissions | passive timeline view |
 | Glyph metrics | BFont reference | BitmapFont pointer | host font |
-| Before recording resumes | optional () => void | optional std::function<void()> | RuntimeHistory, host observer |
+| Before recording resumes | optional (branched: boolean) => void | optional std::function<void(bool)> | RuntimeHistory, timeline observer |
+| Before review ends | optional () => void | optional std::function<void()> | RuntimeHistory, bookmark observers |
 
 Steady-state callers: TS/C++ HostOverlayMenu input/render; TS Studio chrome
 update/input/render; TS/C++ HostRewind.service replay loop and frame-boundary
@@ -213,13 +214,15 @@ lookups. No guest values, machine save format or second playback clock are
 introduced. Labels are remeasured only on text/font changes. Native stepping
 must consume recorded video boundaries, not seconds or nominal frame time.
 
-The history-resume observer runs once in `resumeRecording`, before truncation
-and new live execution, not in instruction, render or input-sampling hot paths.
+The recording-admission observer runs once in `resumeRecording`, reporting
+whether this admission branches. The independent review-end observer runs before
+both `resumeRecording` truncation and `stop` discarding a Replaying/Reviewing
+timeline, not in instruction, render or input-sampling hot paths.
 Production callers are `hosts/common/rewind.ts` and `hosts/libretro/rewind.cpp`'s
 Resume service. Matching callers in TS/C++ frame-scheduler tests and the two
 runtime-replay conformance runners exercise pressure, rejoin and takeover.
-No save-state field or VM identity changes. Studio composition forwards this
-physical boundary to `SuspendedGuestSession`; hidden domain views reconcile
+No save-state field or VM identity changes. Studio composition forwards review
+end to `SuspendedGuestSession`; hidden domain views reconcile
 their own bookmarks before discarded identities can be reused. Replay/seek
 invalidations alone do not admit a branch. Listeners on retained program inputs
 end at input disposal; branch admission does not scan the tab group.
@@ -476,3 +479,42 @@ Interaction validation:
 - There are no machine, native runtime, ICU representation, replay-engine or
   save-state changes. One retained control per viewport and one focus-change
   listener replace visibility-only admission; sampling uses existing buffers.
+
+### Review discard lifecycle correction (2026-10-07)
+
+History review can end without `resumeRecording`: accepted Hot Resume, AEM
+installation and guest calls discard recording through `RuntimeHistory.stop`.
+The runtime now publishes `onWillEndReview` before discarding a reviewed heap's
+history. Missing bookmarks retire before guest allocations can reuse discarded
+future identities; present bookmarks return to ordinary live membership rules.
+The existing recording-admission callback still reports only recording/branch
+admission. A stopped or failed seek remains review, not live admission. Stopping
+ordinary recording or already-disabled history emits no review-end event.
+
+`resetForSystemBoot` retains CPU globals and frames until the hardware-reset
+history stop has notified reviewers. External save-state load already stops
+before replacing the heap. Their subsequent reset/restore notifications remain
+terminal heap replacement, not a surviving live binding. Rejected source builds
+and relocation do not stop history or end review.
+
+The audited mirrored representation is only an optional zero-argument callback
+in TypeScript/C++; HistoryMode, integer cycle counters (number/i64), checkpoint
+storage, input journals and serialized state are unchanged. Lifecycle callers:
+
+- TS/C++ `HostRewind` Resume calls `resumeRecording`; its no-collection service
+  calls `stop`.
+- TS/C++ `Runtime.resetHardwareState`, `Runtime.callClosure` and external
+  `applyRuntimeSaveState` call `stop`.
+- Studio `guest_call` admission, `lua_pipeline.installBlua32Media` and Hot Resume
+  deferred/no-source-change admission call the same `stop` owner.
+
+No notification was added to CPU instructions, ICU sampling, rendering,
+`recordInputBoundary`, seek replay or paced playback. The owner split follows
+[openMSX ReverseManager's distinct stop and stopReplay lifetimes](https://github.com/openMSX/openMSX/blob/master/src/ReverseManager.cc),
+not a per-command inspector reset.
+
+Focused tests exercise TS/C++ stop/reset/load from both replay and review,
+notification-before-discard ordering, recording rejoin, disabled/recording
+silence, real compiled-guest removal after a history-ending call, and hidden or
+observed pre-birth identities followed by actual table-id reuse. These are
+runtime-model checks, not visible UI evidence.

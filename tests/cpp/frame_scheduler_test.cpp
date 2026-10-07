@@ -540,6 +540,41 @@ void testHistoryPressureAndBranch() {
 	require(history.mode == bmsx::HistoryMode::Disabled && history.checkpointCount() == 0 && history.inputJournal.storageBytes() == 0, "reset ends history");
 }
 
+void testHistoryReviewEnd() {
+	for (const bool replaying : {false, true}) for (int operation = 0; operation < 3; ++operation) {
+		TickRuntimeFixture fixture;
+		auto& runtime = fixture.runtime;
+		auto& history = runtime.history;
+		int ended = 0, resumed = 0;
+		history.onWillResumeRecording = [&](bool) { ++resumed; };
+		history.start({2, 8, 0x100000000LL});
+		history.captureCheckpoint();
+		for (int tick = 0; tick < 3; ++tick) runtime.frameScheduler.runToNextLogicalTick(runtime);
+		const auto replacement = bmsx::captureRuntimeSaveState(runtime);
+		history.beginSeek(replaying ? history.latestCycles() : history.earliestCycles());
+		const auto reviewedMode = replaying ? bmsx::HistoryMode::Replaying : bmsx::HistoryMode::Reviewing;
+		require(history.mode == reviewedMode, "stop fixture is reviewing or replaying");
+		const auto cycles = runtime.machine.scheduler.nowCycles();
+		history.onWillEndReview = [&]() {
+			++ended;
+			require(history.mode == reviewedMode && runtime.machine.scheduler.nowCycles() == cycles,
+				"review ends before its position is changed");
+			require(history.checkpointCount() == 1 && history.inputJournal.endSequence == 3,
+				"reviewers reconcile before retained history is discarded");
+		};
+		if (operation == 0) history.stop();
+		else if (operation == 1) runtime.rebootSystem();
+		else bmsx::applyRuntimeSaveState(runtime, replacement);
+		require(ended == 1 && resumed == 0, "discard ends review once without recording admission");
+		require(history.mode == bmsx::HistoryMode::Disabled, "discard disables history");
+		history.stop();
+		history.start({2, 8, 0x100000000LL});
+		history.captureCheckpoint();
+		history.stop();
+		require(ended == 1, "disabled and ordinary recording stops do not end a review");
+	}
+}
+
 void testHistoryRejoin() {
 	struct Case { size_t inputCapacity; bmsx::i64 intervalCycles; bool pending; };
 	for (const auto test : {Case{8, 0x100000000LL, false}, Case{2, 0x100000000LL, true}, Case{8, 1, true}}) {
@@ -558,7 +593,13 @@ void testHistoryRejoin() {
 		}
 		require(history.mode == bmsx::HistoryMode::Reviewing, "rejoin reaches recorded end");
 		bool resumed = false;
+		bool reviewEnded = false;
+		history.onWillEndReview = [&]() {
+			require(history.mode == bmsx::HistoryMode::Reviewing, "review end precedes recording admission");
+			reviewEnded = true;
+		};
 		history.onWillResumeRecording = [&](bool branched) {
+			require(reviewEnded, "bookmarks reconcile before recording admission");
 			require(!branched, "returning to the recorded end does not begin a new timeline");
 			resumed = true;
 		};
@@ -871,6 +912,7 @@ int main() {
 	testNormalHostExecutionKeepsExistingSchedulerContract();
 	testRuntimeCheckpointStorage();
 	testHistoryPressureAndBranch();
+	testHistoryReviewEnd();
 	testHistoryRejoin();
 	testHistoryObservationProvenance();
 	testHistoryObservationEviction();

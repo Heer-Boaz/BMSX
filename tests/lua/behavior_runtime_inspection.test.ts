@@ -13,6 +13,8 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import type { HostRewind } from '../../hosts/common/rewind';
 import { SuspendedValuePresentation } from '../../ide/runtime/value_presentation';
+import { applyRuntimeSaveState, captureRuntimeSaveState, RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_state';
+import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 
 /** Real guest tables/type bucket. Browser validation separately executes actual cartlib constructors. */
 function fixture(historical = false) {
@@ -46,6 +48,9 @@ return component`;
 	const beforeBirth = cpu.captureRuntimeState();
 	cpu.runUntilDepth(0, 100_000);
 	const guest = new SuspendedGuestSession(runtime);
+	runtime.history.onWillEndReview = () => guest.willEndHistoryReview();
+	runtime.onStateRestored = origin => guest.invalidate(origin === RuntimeRestoreOrigin.HistorySeek ? 'history-restored' : 'heap-replaced');
+	runtime.onStateReset = () => guest.invalidate('heap-replaced');
 	const rewind = { active: historical, seeking: false, playing: false };
 	const choice = readStateMachineInstances(sources, guest, -1).items[0];
 	const inspection = new BehaviorRuntimeInspection(sources, guest, rewind as HostRewind, -1,
@@ -182,7 +187,7 @@ for (const observed of [false, true]) test(`live admission retires ${observed ? 
 	f.rewind.seeking = false;
 	if (observed) assert.ok(f.inspection.refresh()!.every(row => row.warning && row.valueChanged === false));
 	f.inspection.running = true;
-	f.guest.willResumeHistory();
+	f.guest.willEndHistoryReview();
 	assert.equal(f.inspection.running, false);
 	assert.strictEqual(f.inspection.refresh(), document, 'admission publishes retirement before another execution invalidation');
 	assert.ok(document.every(row => row.warning && row.valueChanged === false));
@@ -201,7 +206,7 @@ test('live admission keeps a restored behavior instance and later live removal r
 	f.inspection.refresh();
 	f.cpu.restoreRuntimeState(alive); f.guest.invalidate('history-restored');
 	f.inspection.running = true;
-	f.guest.willResumeHistory();
+	f.guest.willEndHistoryReview();
 	assert.equal(f.inspection.running, true, 'admission resolves current membership even before the pane observes it');
 	assert.strictEqual(f.inspection.refresh(), document);
 	assert.deepEqual(document.map(row => row.value), before);
@@ -219,6 +224,59 @@ test('live admission keeps a restored behavior instance and later live removal r
 	assert.equal(reads, 0, 'a retired live instance does not silently reattach');
 });
 
+test('a live guest call ending review retires subsequently missing membership', t => {
+	const f = fixture(); t.after(() => f.inspection.dispose());
+	const document = f.inspection.refresh()!;
+	const history = f.runtime.history;
+	history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 1000000 });
+	history.captureCheckpoint();
+	history.beginSeek(history.latestCycles);
+	assert.equal(history.mode, HistoryMode.Reviewing);
+	f.inspection.running = true;
+	f.guest.callClosure(f.guest.global('remove_component'));
+	assert.equal(history.mode, HistoryMode.Disabled);
+	assert.strictEqual(f.inspection.refresh(), document);
+	assert.equal(f.inspection.running, false);
+	assert.ok(document.every(row => row.warning && row.description.includes('SELECT A RUNTIME INSTANCE AGAIN')));
+	f.guest.callClosure(f.guest.global('restore_component'));
+	assert.equal(f.inspection.refresh(), undefined, 'ending recording must not leave the inspector in historical mode');
+});
+
+for (const observed of [false, true]) test(`discarding review retires ${observed ? 'observed' : 'hidden'} missing identities before reuse`, t => {
+	const f = fixture(); t.after(() => f.inspection.dispose());
+	const document = f.inspection.refresh()!;
+	const history = f.runtime.history;
+	f.cpu.restoreRuntimeState(f.beforeBirth);
+	history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 1000000 });
+	history.captureCheckpoint();
+	f.cpu.runUntilDepth(0, 100_000);
+	history.beginSeek(history.earliestCycles);
+	if (observed) assert.ok(f.inspection.refresh()!.every(row => row.warning));
+	f.inspection.running = true;
+	history.stop();
+	assert.equal(f.inspection.running, false, 'discard reconciles before another guest allocation');
+	f.guest.invalidate(); f.cpu.runUntilDepth(0, 100_000);
+	const replacement = readStateMachineInstances(f.sources, f.guest, -1).items[0];
+	assert.equal(replacement.component.hashId, f.choice.component.hashId);
+	assert.equal(replacement.machine.hashId, f.choice.machine.hashId);
+	assert.strictEqual(f.inspection.refresh(), document);
+	assert.ok(document.every(row => row.warning && row.description.includes('SELECT A RUNTIME INSTANCE AGAIN')));
+});
+
+for (const operation of ['reset', 'load'] as const) test(`${operation} ending review still retires the replaced guest heap`, t => {
+	const f = fixture(); t.after(() => f.inspection.dispose());
+	f.inspection.refresh();
+	const replacement = captureRuntimeSaveState(f.runtime);
+	const history = f.runtime.history;
+	history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 1000000 });
+	history.captureCheckpoint();
+	history.beginSeek(history.latestCycles);
+	if (operation === 'reset') f.runtime.rebootSystem();
+	else applyRuntimeSaveState(f.runtime, replacement);
+	const document = f.inspection.refresh()!;
+	assert.ok(document.every(row => row.warning && row.value === 'THE GUEST HEAP WAS REPLACED.'));
+});
+
 test('heap replacement remains terminal across historical navigation and live admission', t => {
 	const f = fixture(); t.after(() => f.inspection.dispose());
 	f.inspection.refresh();
@@ -226,7 +284,7 @@ test('heap replacement remains terminal across historical navigation and live ad
 	f.guest.invalidate('heap-replaced');
 	const document = f.inspection.refresh()!, retired = document.map(row => row.value);
 	f.cpu.restoreRuntimeState(alive); f.guest.invalidate('history-restored');
-	f.guest.willResumeHistory();
+	f.guest.willEndHistoryReview();
 	assert.equal(f.inspection.refresh(), undefined);
 	assert.deepEqual(document.map(row => row.value), retired, 'history admission does not replace the retirement reason');
 });

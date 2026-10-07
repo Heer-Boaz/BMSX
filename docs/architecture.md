@@ -5569,8 +5569,11 @@ selection until fresh World membership is read at the requested history position
 Missing historical membership disables that selection without replacing its
 bookmark. Live-branch admission retires unavailable bookmarks, including those
 of hidden panes, before execution can reuse discarded-future identities. `RuntimeHistory` publishes
-`onWillResumeRecording` before truncating future input or admitting live
-execution, mirrored in TS/C++. Studio composition forwards that boundary to
+`onWillEndReview` before `resumeRecording` truncates future input and before
+`stop` discards a Replaying/Reviewing timeline, mirrored in TS/C++.
+Recording/branch admission remains the separate `onWillResumeRecording` event;
+ordinary recording stop, cancelled seeks and replay do not end a review.
+Studio composition forwards the review-end boundary to
 `SuspendedGuestSession`; Actor Lab, live behavior inspection and retained Lua
 program inputs reconcile their own bookmarks there. They do not infer a branch
 from execution invalidation, rewind flags or per-editor restore-pending booleans.

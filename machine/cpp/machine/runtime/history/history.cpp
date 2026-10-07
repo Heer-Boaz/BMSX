@@ -34,6 +34,7 @@ void RuntimeHistory::start(const HistoryOptions& options) {
 void RuntimeHistory::stop() {
 	if (mode == HistoryMode::Disabled) return;
 	if (mode == HistoryMode::Replaying || mode == HistoryMode::Reviewing) {
+		if (onWillEndReview) onWillEndReview();
 		runtime.frameScheduler.reset();
 		runtime.frameLoop.abandonFrameState(runtime);
 	}
@@ -132,6 +133,7 @@ void RuntimeHistory::advancePlayback(f64 hostDeltaMs) {
 void RuntimeHistory::resumeRecording() {
 	const i64 cycles = runtime.machine.scheduler.currentNowCycles();
 	const bool rejoiningLatest = cycles == endCycles;
+	if (onWillEndReview) onWillEndReview();
 	if (onWillResumeRecording) onWillResumeRecording(!rejoiningLatest);
 	while (count > 0) {
 		const size_t index = (firstCheckpoint + count - 1) % checkpoints.size();

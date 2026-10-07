@@ -217,6 +217,41 @@ test('history checkpoint pressure suspends machine time before required input ca
 	assert.equal(history.inputJournal.storageBytes, 0);
 });
 
+test('ending history review notifies before stop, reset or external load without reporting recording admission', () => {
+	for (const replaying of [false, true]) for (const operation of ['stop', 'reset', 'load'] as const) {
+		const { runtime } = createTickRuntime();
+		const history = runtime.history;
+		let ended = 0, resumed = 0;
+		history.onWillResumeRecording = () => resumed++;
+		history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 0x100000000 });
+		history.captureCheckpoint();
+		for (let tick = 0; tick < 3; tick++) runtime.frameScheduler.runToNextLogicalTick();
+		const replacement = captureRuntimeSaveState(runtime);
+		history.beginSeek(replaying ? history.latestCycles : history.earliestCycles);
+		const reviewedMode = replaying ? HistoryMode.Replaying : HistoryMode.Reviewing;
+		assert.equal(history.mode, reviewedMode);
+		const cycles = runtime.machine.scheduler.nowCycles;
+		history.onWillEndReview = () => {
+			ended++;
+			assert.equal(history.mode, reviewedMode);
+			assert.equal(runtime.machine.scheduler.nowCycles, cycles);
+			assert.equal(history.checkpointCount, 1);
+			assert.equal(history.inputJournal.endSequence, 3, 'reviewers reconcile before retained history is discarded');
+		};
+		if (operation === 'stop') history.stop();
+		else if (operation === 'reset') runtime.rebootSystem();
+		else applyRuntimeSaveState(runtime, replacement);
+		assert.equal(ended, 1, `${operation} ends ${replaying ? 'replay' : 'review'} once`);
+		assert.equal(resumed, 0, 'discard is not recording admission');
+		assert.equal(history.mode, HistoryMode.Disabled);
+		history.stop();
+		history.start({ checkpointCapacity: 2, inputCapacity: 8, checkpointIntervalCycles: 0x100000000 });
+		history.captureCheckpoint();
+		history.stop();
+		assert.equal(ended, 1, 'disabled and ordinary recording stops do not end a review');
+	}
+});
+
 test('history rejoining the recorded end preserves checkpoints and pending capture pressure', () => {
 	for (const [inputCapacity, intervalCycles, pending] of [[8, 0x100000000, false], [2, 0x100000000, true], [8, 1, true]] as const) {
 		const { runtime } = createTickRuntime();
@@ -233,7 +268,9 @@ test('history rejoining the recorded end preserves checkpoints and pending captu
 		}
 		assert.equal(history.mode, HistoryMode.Reviewing);
 		let resumed = false;
-		history.onWillResumeRecording = branched => { assert.equal(branched, false); resumed = true; };
+		let reviewEnded = false;
+		history.onWillEndReview = () => { assert.equal(history.mode, HistoryMode.Reviewing); reviewEnded = true; };
+		history.onWillResumeRecording = branched => { assert.equal(reviewEnded, true); assert.equal(branched, false); resumed = true; };
 		history.resumeRecording();
 		assert.equal(resumed, true);
 		assert.equal(history.checkpointPending, pending, 'rejoin preserves interval and input-pressure capture requests');
