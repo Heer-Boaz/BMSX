@@ -13,20 +13,21 @@ import type { GuestInvalidationReason } from '../../../runtime/suspended_guest';
 import type { ActorStateGraph } from './state_graph';
 import { ActorActivityFollow } from './activity_follow';
 import type { ActorNodeIdentity } from './target';
-import type { ActorDetails } from './details';
+import type { ActorDetails, ActorDetailsSelection } from './details';
 
 /** View state only. Borrowed rows are released before guest execution. */
 export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'> {
 	public get resource(): undefined { return undefined; }
 	public domain: ResourceDomain = 0;
 	public actorHashId = 0;
+	public worldHashId: number | undefined;
 	public actorPresent = false;
 	public historical = false;
 	public running = false;
 	public selectionPath: readonly ActorNodeIdentity[] | undefined;
 	public details: ActorDetails | undefined;
 	public detailsOpen = false;
-	public detailsSelection: string | undefined;
+	public detailsSelection: ActorDetailsSelection | undefined;
 	public detailsScroll = 0;
 	public dirty = true;
 	public status = 'CHOOSE A RUNNING ACTOR';
@@ -48,7 +49,7 @@ export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'>
 	};
 	public constructor() {
 		super('actor-lab', 'actor_lab', 'ACTOR LAB', true);
-		this.onWillDispose(() => this.runtime.dispose());
+		this.onWillDispose(() => { this.runtime.dispose(); this.details?.dispose(); });
 	}
 	public invalidate(reason: GuestInvalidationReason = 'execution'): void {
 		this.runtime.release();
@@ -63,7 +64,7 @@ export class ActorLabInput extends ReadonlyEditorInput<'actor-lab', 'actor_lab'>
 			this.stateGraph?.retire(reason);
 			this.runtime.dispose();
 			this.follow.stop(); this.actorPresent = false; this.historical = false;
-			this.actorHashId = 0; this.selectionPath = undefined;
+			this.actorHashId = 0; this.worldHashId = undefined; this.selectionPath = undefined;
 			this.outline.roots.length = 0; this.outline.rows.length = 0; this.outline.selectionIndex = -1;
 		}
 		this.dirty = true;

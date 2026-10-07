@@ -43,7 +43,8 @@ import { WorkbenchSourceEditReview } from '../../ui/source_edit_review/control';
 import type { WorkbenchGraphDragSource } from '../../ui/graph/drag';
 import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
-import { buildBehaviorInspection, type BehaviorInspectionProperty } from './inspection';
+import { buildBehaviorInspection } from './inspection';
+import { runtimeInspectionPropertiesEqual, type RuntimeInspectionProperty } from './runtime_properties';
 import { ActionEffectPropertyEdit, selectedActionEffectProperty } from './action_effect_edit';
 import { addActionEffectProperty, editableActionEffect, removeActionEffectProperty } from './action_effect_authoring';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
@@ -60,7 +61,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	private readonly properties = new WorkbenchPropertyTreePointer(pointerHover);
 	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover, input => this.handleKeyboard(input), this.focusTarget);
 	public readonly sourceEditReview = new WorkbenchSourceEditReview(inputFocus, pointerCapture, pointerHover, this.graph.focusTarget);
-	public readonly inspector = new WorkbenchPropertyInspector<BehaviorInspectionProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
+	public readonly inspector = new WorkbenchPropertyInspector<RuntimeInspectionProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly actionBar: WorkbenchActionBarControl;
 	public readonly propertyEdit: ActionEffectPropertyEdit;
 	private readonly stateMachineDrop: StateMachineRetargetDrop = (selection, target) => {
@@ -242,7 +243,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	public override update(): void {
 		this.controller.updateView(this.input);
 		const items = this.input.runtimeInspection?.refresh();
-		if (items !== undefined) this.inspector.updateItems(items, inspectionPropertyIdentity);
+		if (items !== undefined) this.inspector.updateItems(items, runtimeInspectionPropertiesEqual);
 		this.propertyEdit.update();
 		this.sourceEditReview.update();
 		this.inspector.update();
@@ -433,9 +434,6 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		}
 	}
 }
-
-/** Runtime property labels name stored fields/slots/events, not rendered row positions. */
-function inspectionPropertyIdentity(property: BehaviorInspectionProperty): string { return property.label; }
 
 const BEHAVIOR_ACTION_MENUS = {
 	outline: 'behaviorLens.canvas.context', graph: 'behaviorLens.graph.actions',

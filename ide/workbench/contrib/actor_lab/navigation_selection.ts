@@ -1,6 +1,7 @@
 import { EditorPaneSelection } from '../../services/editor/editor_selection';
 import type { ActorLabInput } from './editor_input';
 import { actorTargetsEqual, type ActorTarget } from './target';
+import { actorDetailsSelectionsEqual, type ActorDetailsSelection } from './details';
 
 /** History retains machine identities and view coordinates, never a borrowed actor or a rewind position. */
 export class ActorLabNavigationSelection extends EditorPaneSelection {
@@ -15,7 +16,7 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 	} | undefined;
 	public readonly follow: ActorTarget | undefined;
 	public readonly detailsOpen: boolean;
-	public readonly detailsSelection: string | undefined;
+	public readonly detailsSelection: ActorDetailsSelection | undefined;
 	public readonly detailsScroll: number;
 	private readonly outlineScroll: number;
 	private readonly splitRatio: number;
@@ -46,7 +47,7 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 			&& (this.target === undefined ? other.target === undefined : other.target !== undefined && actorTargetsEqual(this.target, other.target))
 			&& (this.graph === undefined ? other.graph === undefined : other.graph !== undefined
 				&& this.graph.kind === other.graph.kind && actorTargetsEqual(this.graph.target, other.graph.target))
-			&& this.detailsOpen === other.detailsOpen && this.detailsSelection === other.detailsSelection;
+			&& this.detailsOpen === other.detailsOpen && actorDetailsSelectionsEqual(this.detailsSelection, other.detailsSelection);
 	}
 
 	public restoreDetails(input: ActorLabInput): void {

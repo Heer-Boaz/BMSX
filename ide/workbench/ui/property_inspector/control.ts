@@ -30,6 +30,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	public readonly bounds = create_rect_bounds();
 	public readonly focusTarget: InputFocusTarget;
 	public title = '';
+	public onContextMenu: ((x: number, y: number, keyboard: boolean) => void) | undefined;
 	private readonly content = create_rect_bounds();
 	private readonly scroll: WorkbenchScrollControl;
 	private readonly actions: WorkbenchActionBarControl;
@@ -58,6 +59,15 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 			isEnabled: () => this.isEnabled('propertyInspector.source'), run: () => this.openSource(),
 		});
 		this.focusTarget.registerCommand('propertyInspector.close', { isEnabled: () => this.visible, run: () => this.close() });
+		this.focusTarget.registerCommand('contextMenu', {
+			isEnabled: () => this.visible && this.onContextMenu !== undefined && this.model.selectionIndex >= 0,
+			run: () => {
+				this.model.select(this.model.selectionIndex);
+				const view = this.model.viewport, row = this.model.rows[this.model.selectionIndex];
+				this.onContextMenu!(view.bounds.left + 4, Math.max(view.bounds.top,
+					Math.min(view.bounds.bottom, view.offsetTop + row.top + this.model.font!.lineHeight)), true);
+			},
+		});
 	}
 
 	public get visible(): boolean { return this.input !== undefined; }
@@ -106,8 +116,8 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		this.padPressed = false;
 	}
 
-	public updateItems(items: readonly Element[], identity: (element: Element) => string): void {
-		this.model.updateItems(items, identity);
+	public updateItems(items: readonly Element[], equals: (left: Element, right: Element) => boolean): void {
+		this.model.updateItems(items, equals);
 		const canOpenSource = items.some(item => this.input!.canOpenSource(item));
 		if (this.actionBar.items[0].visible !== canOpenSource) {
 			this.actionBar.items[0].visible = canOpenSource;
@@ -165,10 +175,15 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 			this.hover.visit(this);
 			const row = this.model.rowAt(snapshot.viewportY);
 			this.model.hoverIndex = row;
-			if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && row >= 0) {
+			if ((snapshot.justPressedButtons & (PointerButton.Primary | PointerButton.Secondary)) !== 0 && row >= 0) {
 				this.model.selectionIndex = row;
 				this.triggerKey = undefined;
 				this.padPressed = false;
+				if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0 && this.onContextMenu !== undefined) {
+					this.focusTarget.focus();
+					this.onContextMenu(snapshot.viewportX, snapshot.viewportY, false);
+					return true;
+				}
 			}
 		} else this.hover.release(this);
 		return this.scroll.handlePointer(snapshot);

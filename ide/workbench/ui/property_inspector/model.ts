@@ -42,21 +42,18 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 	}
 
 	/** Refresh a property document by owner-supplied identity, without reopening its control. */
-	public updateItems(items: readonly Element[], identity: (element: Element) => string): void {
-		const selected = this.rows[this.selectionIndex];
-		const selectedId = selected === undefined ? undefined : identity(selected.element);
+	public updateItems(items: readonly Element[], equals: (left: Element, right: Element) => boolean): void {
+		const selected = this.rows[this.selectionIndex]?.element;
 		this.captureScrollAnchor();
-		const anchor = this.rows[this.anchorIndex];
-		const anchorId = anchor === undefined ? undefined : identity(anchor.element);
+		const anchor = this.rows[this.anchorIndex]?.element;
 		let selection = -1;
 		this.anchorIndex = -1;
 		for (let index = 0; index < items.length; index++) {
 			const element = items[index], row = this.rows[index];
 			if (row === undefined) this.rows.push(this.createRow(element));
 			else row.element = element;
-			const id = identity(element);
-			if (id === selectedId) selection = index;
-			if (id === anchorId) this.anchorIndex = index;
+			if (selected !== undefined && equals(element, selected)) selection = index;
+			if (anchor !== undefined && equals(element, anchor)) this.anchorIndex = index;
 		}
 		this.rows.length = items.length;
 		this.selectionIndex = selection >= 0 ? selection : items.length === 0 ? -1 : 0;

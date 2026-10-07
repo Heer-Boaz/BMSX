@@ -9,7 +9,7 @@ import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerButton } from '../../ide/input/pointer/buttons';
 import { WorkbenchPropertyInspector } from '../../ide/workbench/ui/property_inspector/control';
-import type { InspectedProperty } from '../../ide/workbench/ui/property_inspector/model';
+import { WorkbenchPropertyInspectorModel, type InspectedProperty } from '../../ide/workbench/ui/property_inspector/model';
 import { drawWorkbenchPropertyInspector } from '../../ide/workbench/render/property_inspector';
 import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
@@ -75,7 +75,7 @@ test('live property updates retain focus, selection and scroll anchor and measur
 	f.press('ArrowDown');
 	const focus = f.focus.target, scroll = model.viewport.scrollTop, measured = f.measured();
 	const items = f.items.map(item => ({ ...item }));
-	f.inspector.updateItems(items, item => item.label);
+	f.inspector.updateItems(items, (left, right) => left.label === right.label);
 	f.layout();
 	assert.equal(f.focus.target, focus);
 	assert.equal(f.disposed(), 0);
@@ -84,16 +84,16 @@ test('live property updates retain focus, selection and scroll anchor and measur
 	assert.equal(f.measured(), measured);
 
 	items[0] = { ...items[0], value: `${items[0].value}\nnew_line()` };
-	f.inspector.updateItems(items, item => item.label);
+	f.inspector.updateItems(items, (left, right) => left.label === right.label);
 	f.layout();
 	assert.equal(model.rows[model.selectionIndex].element, items[1]);
 	assert.equal(model.viewport.scrollTop, scroll, 'the first visible property retains its within-property offset');
 	assert.ok(f.measured() > measured);
 	const after = f.measured();
-	f.inspector.updateItems(items, item => item.label); f.layout();
+	f.inspector.updateItems(items, (left, right) => left.label === right.label); f.layout();
 	assert.equal(f.measured(), after);
 	const inserted = [{ ...items[2], label: 'NEW PROPERTY' }, ...items];
-	f.inspector.updateItems(inserted, item => item.label); f.layout();
+	f.inspector.updateItems(inserted, (left, right) => left.label === right.label); f.layout();
 	assert.equal(model.rows[model.selectionIndex].element, items[1]);
 	assert.equal(model.viewport.scrollTop - scroll, model.rows[0].bottom);
 });
@@ -106,15 +106,54 @@ test('focused inspector copies the complete selected value, including live updat
 	f.press('ArrowDown');
 	assert.equal(clipboard.copy!(), f.items[1].value);
 	const items = f.items.map(item => ({ ...item, value: `${item.value}\nupdated` }));
-	f.inspector.updateItems(items, item => item.label); f.layout();
+	f.inspector.updateItems(items, (left, right) => left.label === right.label); f.layout();
 	assert.equal(clipboard.copy!(), items[1].value);
 	f.show(); f.layout(); f.press('End');
 	assert.equal(clipboard.copy!(), '');
-	f.inspector.updateItems([], item => item.label); f.layout();
+	f.inspector.updateItems([], (left, right) => left.label === right.label); f.layout();
 	assert.equal(clipboard.copy!(), null, 'no selection must not replace the system clipboard');
 	f.inspector.hide();
 	assert.equal(f.focus.target, f.parent);
 	assert.equal(f.focus.target!.clipboard, undefined, 'copy does not leak into the enclosing editor');
+});
+
+test('property document compares owner identities rather than labels or mutable row positions', () => {
+	type Property = InspectedProperty & { identity: { kind: 'field' | 'slot'; index: number } };
+	const model = new WorkbenchPropertyInspectorModel<Property>();
+	const field: Property = { label: 'same label', value: 'field value', description: '', warning: false, identity: { kind: 'field', index: 7 } };
+	const slot: Property = { label: 'same label', value: 'slot value', description: '', warning: false, identity: { kind: 'slot', index: 7 } };
+	model.setItems([field, slot]);
+	const equals = (left: Property, right: Property) => left.identity.kind === right.identity.kind && left.identity.index === right.identity.index;
+	model.updateItems([slot, { ...field, label: 'renamed field' }], equals);
+	assert.equal(model.selectionIndex, 1, 'overwriting the first row does not overwrite the captured selected element');
+	assert.equal(model.rows[model.selectionIndex].element.label, 'renamed field', 'owner identity survives a presentation rename');
+});
+
+test('property context actions share selected-row focus for secondary pointer and keyboard anchors', t => {
+	const f = fixture(t), model = f.inspector.model, view = model.viewport;
+	const context = f.inspector.focusTarget.getCommand('contextMenu')!;
+	assert.equal(context.isEnabled(), false, 'ordinary inspectors do not offer contribution actions');
+	const anchors: { x: number; y: number; keyboard: boolean; selection: number }[] = [];
+	f.inspector.onContextMenu = (x, y, keyboard) => {
+		assert.equal(f.focus.target, f.inspector.focusTarget);
+		anchors.push({ x, y, keyboard, selection: model.selectionIndex });
+	};
+	model.select(1);
+	const row = model.rows[1], x = view.bounds.left + 4, y = view.offsetTop + row.top + 3;
+	model.selectionIndex = 0;
+	f.parent.focus();
+	assert.equal(f.inspector.handlePointer({ valid: true, insideViewport: true, viewportX: x, viewportY: y,
+		pressedButtons: PointerButton.Secondary, justPressedButtons: PointerButton.Secondary, justReleasedButtons: 0 }), true);
+	assert.deepEqual(anchors[0], { x, y, keyboard: false, selection: 1 });
+	assert.equal(f.opened(), -1, 'context opening never activates Source');
+	assert.equal(context.isEnabled(), true);
+	view.scrollbar.setScroll(0);
+	f.focus.executeCommand('contextMenu');
+	assert.equal(anchors[1].keyboard, true);
+	assert.equal(anchors[1].selection, 1);
+	assert.ok(anchors[1].y >= view.bounds.top && anchors[1].y <= view.bounds.bottom, 'keyboard reveals an offscreen property before anchoring its menu');
+	f.inspector.hide();
+	assert.equal(context.isEnabled(), false, 'detaching the inspector retires its contextual commands');
 });
 
 test('inspector controller selection, page scrolling, release Source and Back use its focused control', t => {

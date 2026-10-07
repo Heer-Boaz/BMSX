@@ -5557,6 +5557,18 @@ value/source caches, and no property inspection executes guest Lua. The existing
 split owner supplies both-axis layout/input; no second inspection or docking
 framework is introduced. Source navigation retains the instance/view context in
 the ordinary editor navigation history without changing the emulation position.
+Actor Lab property pins belong to the retained Details model, not the selected
+row, editor-navigation snapshot or guest. A pin captures World/actor/typed member
+membership plus the property producer's semantic section/field or typed stored
+key. Display labels never identify a property. Pins remain visible ahead of the
+current selection's properties and can reveal their original instance without
+executing Lua or seeking history. Inspection groups pins by actor and member,
+reuses the selected runtime tree/document, and filters unselected property
+formatting. Clean/hidden panes do not poll guest state; live-branch admission
+validates retained pins even when the pane is hidden. Historical absence is
+reversible; heap replacement and live-branch admission retire invalid membership
+before discarded-future identities can be reused. Retired pins remain explicit,
+removable entries rather than silently following a replacement.
 Actor Lab's live FSM graph projects that same selected instance hierarchy into
 the shared graph viewport. It retains scalar typed membership and display nodes,
 not guest tables or source-registration matches. Activity updates keep measured

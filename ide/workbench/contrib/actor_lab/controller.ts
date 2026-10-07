@@ -15,9 +15,10 @@ import type { QuickPickItem } from '../../services/quick_input/provider';
 import { openEditorTab } from '../../ui/tabs';
 import type { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import type { EditorNavigationController } from '../resources/navigation';
-import type { BehaviorInspectionProperty } from '../behavior_lens/inspection';
 import { canOpenBehaviorInspectionSource } from '../behavior_lens/inspection_source';
-import { ActorDetails } from './details';
+import { ActorDetails, actorDetailsPropertyMatchesSelection, captureActorDetailsSelection, type ActorDetailsProperty } from './details';
+import { runtimePropertyIdentitiesEqual } from '../behavior_lens/runtime_properties';
+import type { ActorPropertyWatch } from './watches';
 import { readActorMethods } from './methods';
 import { ActorLabInput } from './editor_input';
 import { runtimeWorld, type ActorNode } from './runtime';
@@ -57,6 +58,7 @@ export class ActorLabController {
 			if (input !== undefined) {
 				// Admission observes the physical position even after an interrupted seek.
 				this.projection.resumeHistory();
+				input.details!.watches.resumeHistory(input.runtime, input.domain);
 				input.dirty = false;
 			}
 		});
@@ -241,13 +243,13 @@ export class ActorLabController {
 		input.follow.pending = input.follow.target;
 	}
 
-	public refreshDetails(input: ActorLabInput): readonly BehaviorInspectionProperty[] | undefined {
+	public refreshDetails(input: ActorLabInput): readonly ActorDetailsProperty[] | undefined {
 		if (input.dirty || this.rewind.seeking) return;
 		return input.details!.refresh(this.selected(input), input.presentation === 'outline'
-			? input.selectionPath : input.stateGraph!.selectionBookmark?.path);
+			? input.selectionPath : input.stateGraph!.selectionBookmark?.path, input.runtime, input.domain, input.historical);
 	}
 
-	public inspect(input: ActorLabInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>, focus = true): void {
+	public inspect(input: ActorLabInput, inspector: WorkbenchPropertyInspector<ActorDetailsProperty>, focus = true): void {
 		this.refreshDetails(input);
 		input.detailsOpen = true;
 		const lifetime = inspector.show({ title: 'DETAILS', items: input.details!.items,
@@ -260,12 +262,64 @@ export class ActorLabController {
 			},
 			onDidClose: () => { input.detailsOpen = false; },
 		}, focus);
-		const selection = inspector.model.rows.findIndex(row => row.element.label === input.detailsSelection);
+		const selection = inspector.model.rows.findIndex(row => actorDetailsPropertyMatchesSelection(row.element, input.detailsSelection));
 		if (selection >= 0) inspector.model.selectionIndex = selection;
 		lifetime.add({ dispose: () => {
-			input.detailsSelection = inspector.model.rows[inspector.model.selectionIndex]?.element.label;
+			const selected = inspector.model.rows[inspector.model.selectionIndex]?.element;
+			input.detailsSelection = selected === undefined ? undefined : captureActorDetailsSelection(selected);
 			input.detailsScroll = inspector.model.viewport.scrollTop;
 		} });
+	}
+
+	/** Resolve either a pinned row or its original property without display-label matching. */
+	private selectedPropertyWatch(input: ActorLabInput, item: ActorDetailsProperty): ActorPropertyWatch | undefined {
+		if (item.watch !== undefined) return item.watch;
+		if (item.identity === undefined) return;
+		const selected = this.selected(input);
+		if (selected === undefined) return;
+		for (const pin of input.details!.watches.pins) {
+			if (!pin.retired && pin.target.domain === input.domain && pin.target.worldHashId === input.worldHashId
+				&& pin.target.actorHashId === input.actorHashId && runtimePropertyIdentitiesEqual(pin.property, item.identity)
+				&& resolveActorTarget(input.runtime.roots, pin.target, this.guest) === selected) return pin;
+		}
+	}
+
+	public canPinProperty(input: ActorLabInput, item: ActorDetailsProperty): boolean {
+		return !this.rewind.seeking && item.watch === undefined && item.identity !== undefined
+			&& this.selected(input) !== undefined && this.selectedPropertyWatch(input, item) === undefined;
+	}
+	public pinProperty(input: ActorLabInput, item: ActorDetailsProperty): void {
+		const node = this.selected(input)!;
+		const target = captureActorTarget(input.domain, input.worldHashId!, input.runtime.roots, node, this.guest);
+		const labels: string[] = [];
+		let children = input.runtime.roots;
+		for (const identity of target.path) {
+			const member = children.find(member => member.hashId === identity.hashId && member.kind === identity.kind
+				&& this.guest.matchesIdentity(member.key, identity.key))!;
+			labels.push(member.label); children = member.children;
+		}
+		const watch = input.details!.watches.add(target, `${input.domain === -1 ? 'SYSTEM' : `CART ${input.domain}`} / ${labels.join(' / ')}`, item);
+		input.detailsSelection = { kind: 'watch', id: watch.id };
+	}
+	public canUnpinProperty(input: ActorLabInput, item: ActorDetailsProperty): boolean {
+		return this.selectedPropertyWatch(input, item) !== undefined;
+	}
+	public unpinProperty(input: ActorLabInput, item: ActorDetailsProperty): void {
+		input.details!.watches.remove(this.selectedPropertyWatch(input, item)!);
+		input.detailsSelection = item.watch === undefined ? captureActorDetailsSelection(item) : undefined;
+	}
+	public canRevealPinnedProperty(input: ActorLabInput, item: ActorDetailsProperty): boolean {
+		return !input.dirty && !this.rewind.seeking && item.watch !== undefined && item.watch.available && !item.watch.retired;
+	}
+	public revealPinnedProperty(input: ActorLabInput, item: ActorDetailsProperty): void {
+		const target = item.watch!.target;
+		input.running = false;
+		input.follow.stop(); input.stateGraph = undefined; input.presentation = 'outline';
+		input.domain = target.domain; input.actorHashId = target.actorHashId;
+		input.selectionPath = undefined; input.dirty = true;
+		this.refresh(input);
+		this.projection.reveal(resolveActorTarget(input.runtime.roots, target, this.guest)!);
+		input.detailsSelection = { kind: 'property', identity: item.watch!.property };
 	}
 
 	public actions(input: ActorLabInput): void {

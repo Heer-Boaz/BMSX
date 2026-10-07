@@ -95,6 +95,7 @@ export type EditorCommandId =
 	| 'gameView.togglePanel' | 'gameView.closePanel'
 	| 'actorLab.playback' | 'actorLab.select' | 'actorLab.spawn' | 'actorLab.emit' | 'actorLab.actions' | 'actorLab.call' | 'actorLab.details'
 	| 'actorLab.stateGraph' | 'actorLab.outline' | 'actorLab.follow' | 'actorLab.revealActive' | 'actorLab.more'
+	| 'actorLab.pinProperty' | 'actorLab.unpinProperty' | 'actorLab.revealPinnedProperty'
 	| 'scenarioLab.details'
 	| 'scenarioLab.inspectTarget'
 	| 'scenarioLab.inspectStop'

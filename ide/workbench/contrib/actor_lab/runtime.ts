@@ -39,7 +39,11 @@ export function readRuntimeActors(sources: RuntimeSourceState, guest: SuspendedG
 }
 
 export function findRuntimeActor(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain, hashId: number): Table | undefined {
-	const world = runtimeWorld(sources, guest, domain);
+	return findWorldActor(guest, runtimeWorld(sources, guest, domain), hashId);
+}
+
+/** Lookup from an already resolved World; callers can retain its scalar identity separately. */
+export function findWorldActor(guest: SuspendedGuestSession, world: Table | undefined, hashId: number): Table | undefined {
 	if (world === undefined) return;
 	const objects = guest.readStringMember(world, '_objects') as Table;
 	for (let i = 1; i <= objects.arrayLength; i += 1) {

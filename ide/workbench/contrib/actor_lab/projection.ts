@@ -5,7 +5,7 @@ import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { QuickPickItem } from '../../services/quick_input/provider';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
 import type { ActorLabInput } from './editor_input';
-import { findRuntimeActor, readRuntimeActors, type ActorNode } from './runtime';
+import { findWorldActor, runtimeWorld, readRuntimeActors, type ActorNode } from './runtime';
 import { resolveActorPath } from './target';
 
 export type ActorRow = { node: ActorNode; displayLabel: string };
@@ -35,7 +35,9 @@ export class ActorProjection {
 	public constructor(private readonly input: ActorLabInput, private readonly sources: RuntimeSourceState, private readonly guest: SuspendedGuestSession) {}
 	public update(): boolean {
 		const { input, guest } = this;
-		const actor = findRuntimeActor(this.sources, guest, input.domain, input.actorHashId);
+		const world = runtimeWorld(this.sources, guest, input.domain);
+		input.worldHashId = world?.hashId;
+		const actor = findWorldActor(guest, world, input.actorHashId);
 		const wasPresent = input.actorPresent;
 		input.actorPresent = actor !== undefined;
 		const changed = input.runtime.update(this.sources, guest, input.domain, actor);

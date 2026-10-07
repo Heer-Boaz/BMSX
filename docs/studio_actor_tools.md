@@ -143,7 +143,69 @@ The Actor/Behavior/workbench unit bundle passes 343 tests. Clean Details refresh
 perform no guest reads; dirty unchanged values retain rows without reformatting.
 This is not a zero-allocation or total-frame performance claim. IDE/tests
 typechecks, the browser Studio build, architecture audit and diff checks pass.
-Pinned properties and semantic event/time navigation are separate follow-up work.
+This validation predates property pins; semantic event/time navigation remains separate follow-up work.
+
+## Pinned runtime properties
+
+A property's context menu offers **Pin Property**, **Unpin Property**, and (for
+an available pin) **Reveal Instance**. The same context menu works with the
+keyboard. Pins appear first in the existing Details document; their owner
+context stays visible while selecting another hierarchy member or another actor.
+No additional toolbar, expression evaluator or guest instrumentation is added.
+Source still opens only a closure mapped in the loaded image.
+
+The references are [VS Code's watch view](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/watchExpressionsView.ts)
+(model-owned entries with independent identity, refresh on invalidation/visibility),
+[Godot's remote inspector](https://github.com/godotengine/godot/blob/master/editor/debugger/editor_debugger_inspector.cpp)
+(remote instance identity and separate value/topology updates), and UE's
+[Blueprint watches](https://dev.epicgames.com/documentation/en-us/unreal-engine/blueprint-debugger-in-unreal-engine#watches)
+(contextual Watch/Stop Watching and explicit unavailable values). BMSX watches
+stored properties only: unlike expression watches they never evaluate guest code.
+Godot's serialization **Pin Value** feature is not the debugger model used here.
+
+- Property producers own semantic sections/fields and typed dynamic keys. A
+  numeric key and a string with the same displayed text are different properties.
+  Status messages are not properties and cannot be pinned.
+- Pins retain scalar membership and presentation, not guest tables, actor nodes,
+  source-inferred instances or the mutable original property row. Editor history
+  restores the selected property but never resurrects a removed pin.
+- Dirty invalidations coalesce until Details is visible. The selected actor's
+  runtime tree and selected member's property document are reused. Other pins
+  share one retained tree per actor and one filtered projection per member.
+  This still enumerates runtime membership; it is not a claim of constant-time
+  inspection or zero overhead. Multiple pins do not each traverse a whole tree.
+- Rewind can temporarily make a pinned member unavailable and then restore it.
+  Reset/external heap replacement retires the binding. Resuming live history
+  validates node and dynamic-property membership before discarded-future IDs can
+  alias new objects. This lifecycle check also runs while Details is hidden;
+  it is distinct from visible value refresh. Retired pins stay visible until
+  explicitly removed.
+
+### Pin validation (2026-10-07)
+
+The browser pin workflow passes on software, WebGL2 and WebGPU. It uses the
+ordinary keyboard/right-click property context menu, chooses another real World
+actor, advances a physical frame, rewinds, navigates to source and back, reveals
+the original instance and unpins without closing Details. Captures were visually
+reviewed: the first actor's pinned `x` changes **9 → 10 → 9** while the second
+actor stays selected, with the pin owner visible beside its value. Source setup
+is automated through the real editor model; this is a browser/runtime workflow,
+not a claim of exclusively manual authoring. The fixture intentionally has no
+game graphics; the separate Nemesis game-input workflow verifies the actual live
+game preview and input beside Details.
+
+Together with the three Nemesis input gates and six existing assistant Actor
+inspection/execution gates, **12 browser gates** pass across all three backends.
+The assistant gates use a deterministic local provider, not paid inference.
+**362 Actor/Behavior/workbench/property tests** pass. Focused counters establish
+no guest reads or identity captures across 1,000 clean action-enablement checks;
+filtered warmed property emissions do not reformat values or keys. Read-only pins
+preserve guest heap/cycles, including typed key collisions, history absence,
+discarded-future ID reuse and mutable table contents. These measurements do not
+claim zero total host cost: watched nodes are still enumerated, and FSM event
+descriptions/ActionEffect metadata lookups still do work on dirty readback.
+IDE/tests typechecks, the Studio product build, boundary audit and diff checks
+pass. No machine, cartlib or mirrored C++ runtime representation changed.
 
 ## Lifetimes and representation
 

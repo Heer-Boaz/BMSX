@@ -5,9 +5,8 @@ import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession, SuspendedGuestValue } from '../../../runtime/suspended_guest';
 import type { QuickPickItem } from '../../services/quick_input/provider';
 import { ACTION_EFFECT_FIELDS } from './action_effect_fields';
-import type { BehaviorInspectionProperty } from './inspection';
 import { findRuntimeComponent, visitRuntimeComponents } from './runtime_components';
-import { BehaviorRuntimeProperties } from './runtime_properties';
+import { BehaviorRuntimeProperties, type RuntimeInspectionProperty } from './runtime_properties';
 
 /** Borrowed within one suspended read. Never saved in an editor input. */
 export type ActionEffectInstance = {
@@ -54,16 +53,16 @@ const INSTANCE_FIELDS = [
 export function inspectActionEffectInstance(
 	sources: RuntimeSourceState, guest: SuspendedGuestSession, choice: ActionEffectInstance,
 	properties = new BehaviorRuntimeProperties(sources, guest),
-): BehaviorInspectionProperty[] {
+): RuntimeInspectionProperty[] {
 	const parent = guest.readStringMember(choice.component, 'parent');
 	const world = guest.readStringMember(parent, 'world');
 	// Values remain independently refreshable; the definition follows in the same document.
-	properties.value('COMPONENT', guest.readStringMember(choice.component, 'id'));
-	properties.value('OWNER', guest.readStringMember(parent, 'id'));
-	properties.value('GAMEPLAY TIME (MS)', guest.readStringMember(world, 'gameplay_time_ms'));
+	properties.field('component', 'id', 'COMPONENT', guest.readStringMember(choice.component, 'id'));
+	properties.field('owner', 'id', 'OWNER', guest.readStringMember(parent, 'id'));
+	properties.field('world', 'gameplay_time_ms', 'GAMEPLAY TIME (MS)', guest.readStringMember(world, 'gameplay_time_ms'));
 	for (const [field, label] of INSTANCE_FIELDS) {
 		const value = guest.readStringMember(choice.effect, field);
-		if (value !== null) properties.value(label, value);
+		if (value !== null) properties.field('instance', field, label, value);
 	}
 	return inspectActionEffectDefinition(sources, guest, guest.readStringMember(choice.effect, 'definition') as Table, guest.formatValue(choice.key), properties);
 }
@@ -71,14 +70,12 @@ export function inspectActionEffectInstance(
 /** Shared property projection for a registry entry or an instance's own retained definition. */
 export function inspectActionEffectDefinition(
 	sources: RuntimeSourceState, guest: SuspendedGuestSession, definition: Table, id: string, properties = new BehaviorRuntimeProperties(sources, guest),
-): BehaviorInspectionProperty[] {
+): RuntimeInspectionProperty[] {
 	properties.text('LOADED DEFINITION', id,
 		'THE SELECTED RETAINED DEFINITION. NOT A MATCH TO THE OPEN AUTHORED REGISTRATION.');
 	guest.visitTableEntries(definition, (key, value) => {
-		const name = guest.formatValue(key);
-		const metadata = valueIsString(key) ? ACTION_EFFECT_FIELDS.get(name) : undefined;
-		properties.value(metadata === undefined ? name : metadata.label, value,
-			metadata === undefined ? '' : metadata.description);
+		const metadata = valueIsString(key) ? ACTION_EFFECT_FIELDS.get(guest.formatValue(key)) : undefined;
+		properties.entry('definition', key, value, metadata);
 	});
 	return properties.finish();
 }

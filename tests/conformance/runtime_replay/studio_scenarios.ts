@@ -1,5 +1,6 @@
 import { runStudioTerminal } from './studio_terminal';
 import { runStudioGameInput } from './studio_game_input';
+import { runStudioActorPins } from './studio_actor_pins';
 import { runStudioFrameRecovery } from './studio_frame_recovery';
 import { runStudioExecutionOperations } from './studio_execution_operations';
 import { runStudioSourceSaves } from './studio_source_saves';
@@ -28,7 +29,7 @@ import { testStudioPointerCapture } from './studio_pointer_capture';
 import { runStudioSceneViewport, testStudioSceneViewport } from './studio_scene_viewport';
 import type { StudioFixture } from './studio_fixture';
 
-export type StudioScenario = { kind: 'frame-recovery' | 'game-input' | 'terminal' | 'workflows' | 'edit-review' | 'resource-context' | 'boot-operations' | 'source-saves' | 'execution-operations' | 'test-runner' | 'scene-viewport' | 'fsm-initial' | 'fsm-retarget' | 'fsm-retarget-imported' | 'bt-reparent' | 'runtime-inspection' | 'preload' | 'nemesis-scenes' }
+export type StudioScenario = { kind: 'frame-recovery' | 'game-input' | 'actor-pins' | 'terminal' | 'workflows' | 'edit-review' | 'resource-context' | 'boot-operations' | 'source-saves' | 'execution-operations' | 'test-runner' | 'scene-viewport' | 'fsm-initial' | 'fsm-retarget' | 'fsm-retarget-imported' | 'bt-reparent' | 'runtime-inspection' | 'preload' | 'nemesis-scenes' }
 	| { kind: 'cart-scenes'; cart: '2025' | 'pietious' }
 	| { kind: 'navigation'; cart: NavigationCart };
 
@@ -36,6 +37,7 @@ export type StudioScenario = { kind: 'frame-recovery' | 'game-input' | 'terminal
 export function runStudioScenario(test: StudioFixture, scenario: StudioScenario) {
 	switch (scenario.kind) {
 		case 'game-input': return runStudioGameInput(test);
+		case 'actor-pins': return runStudioActorPins(test);
 		case 'frame-recovery': return runStudioFrameRecovery(test);
 		case 'terminal': return runStudioTerminal(test);
 		case 'resource-context': return runStudioResourceContext(test);

@@ -9,6 +9,7 @@ import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import type { LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { ActorLabInput } from '../../ide/workbench/contrib/actor_lab/editor_input';
 import { ActorLabController } from '../../ide/workbench/contrib/actor_lab/controller';
+import { captureActorDetailsSelection } from '../../ide/workbench/contrib/actor_lab/details';
 import { ActorProjection, readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
 import { ActorRuntimeInspection } from '../../ide/workbench/contrib/actor_lab/runtime_inspection';
 import { captureActorTarget, resolveActorPath, resolveActorTarget } from '../../ide/workbench/contrib/actor_lab/target';
@@ -66,22 +67,83 @@ test('Actor Lab history restores the typed member and Details after choosing ano
 	const choices = readActorChoices(f.sources, f.guest, -1), font = new Font({ variant: 'tiny' });
 	input.domain = -1; input.actorHashId = choices[0].hashId; controller.refresh(input);
 	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state');
-	input.rememberSelection(); input.detailsOpen = true; input.detailsSelection = 'CURRENT CHILD'; input.detailsScroll = 37;
+	input.rememberSelection(); input.detailsOpen = true;
+	controller.refreshDetails(input);
+	const selectedProperty = captureActorDetailsSelection(input.details!.items.find(item => item.identity !== undefined)!);
+	input.detailsSelection = selectedProperty; input.detailsScroll = 37;
 	input.split.resize(0.55); input.detailsSplit.resize(0.6);
 	const saved = controller.captureSelection(input), heap = f.runtime.machine.cpu.luaHeap.usedBytes();
 	input.actorHashId = choices[1].hashId; input.selectionPath = undefined; input.dirty = true; controller.refresh(input);
 	const second = controller.captureSelection(input);
 	assert.equal(saved.matches(second), false, 'equal displayed actor IDs do not substitute for physical typed membership');
-	input.detailsSelection = 'id'; input.detailsScroll = 0; input.detailsOpen = false;
+	input.detailsSelection = undefined; input.detailsScroll = 0; input.detailsOpen = false;
 	controller.restoreSelection(input, saved, font);
 	assert.equal(input.actorHashId, choices[0].hashId);
 	assert.deepEqual(input.selectionPath, saved.target!.path);
 	assert.equal(controller.selected(input)!.kind, 'state');
-	assert.equal(input.detailsOpen, true); assert.equal(input.detailsSelection, 'CURRENT CHILD'); assert.equal(input.detailsScroll, 37);
+	assert.equal(input.detailsOpen, true); assert.deepEqual(input.detailsSelection, selectedProperty); assert.equal(input.detailsScroll, 37);
 	assert.equal(input.split.ratio, 0.55); assert.equal(input.detailsSplit.ratio, 0.6);
 	assert.equal(f.runtime.machine.cpu.luaHeap.usedBytes(), heap);
 	assert.equal(input.running, false);
 	saved.dispose(); second.dispose();
+});
+
+test('Actor Lab pin action enablement uses retained membership without guest reads or identity capture churn', t => {
+	const f = fixture(); t.after(() => f.stop.dispose());
+	const controller = new ActorLabController(f.sources, f.guest, f.runtime.machine.cpu, undefined!, undefined!, undefined!, f.actorExecution, f.rewind);
+	const input = controller.resolveInput(); t.after(() => input.dispose());
+	input.domain = -1; input.actorHashId = readActorChoices(f.sources, f.guest, -1)[0].hashId;
+	controller.refresh(input); input.outline.selectionIndex = 0; input.rememberSelection(); controller.refreshDetails(input);
+	const pinned = input.details!.items.find(item => item.label === 'id')!, unpinned = input.details!.items.find(item => item.label === 'active')!;
+	controller.pinProperty(input, pinned); controller.refreshDetails(input);
+	const pin = input.details!.watches.pins[0];
+	const read = t.mock.method(f.guest, 'readStringMember'), globals = t.mock.method(f.guest, 'global'), systemGlobals = t.mock.method(f.guest, 'systemGlobal');
+	const entries = t.mock.method(f.guest, 'visitTableEntries'), identities = t.mock.method(f.guest, 'identity');
+	const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()];
+	for (let frame = 0; frame < 1000; frame++) {
+		assert.equal(controller.canPinProperty(input, pinned), false);
+		assert.equal(controller.canUnpinProperty(input, pinned), true);
+		assert.equal(controller.canPinProperty(input, unpinned), true);
+		assert.equal(controller.canUnpinProperty(input, unpinned), false);
+		assert.equal(controller.canPinProperty(input, pin.item), false);
+		assert.equal(controller.canUnpinProperty(input, pin.item), true);
+		assert.equal(controller.canRevealPinnedProperty(input, pin.item), true);
+	}
+	assert.equal(read.mock.callCount(), 0); assert.equal(globals.mock.callCount(), 0); assert.equal(systemGlobals.mock.callCount(), 0);
+	assert.equal(entries.mock.callCount(), 0); assert.equal(identities.mock.callCount(), 0);
+	assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()], before);
+});
+
+test('Actor Lab pin and reveal commands keep watch selection separate and return to the exact cross-actor member', t => {
+	const f = fixture(); t.after(() => f.stop.dispose());
+	const controller = new ActorLabController(f.sources, f.guest, f.runtime.machine.cpu, undefined!, undefined!, undefined!, f.actorExecution, f.rewind);
+	const input = controller.resolveInput(); t.after(() => input.dispose());
+	const choices = readActorChoices(f.sources, f.guest, -1);
+	const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()];
+	input.domain = -1; input.actorHashId = choices[0].hashId; controller.refresh(input);
+	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.name === 'idle'); input.rememberSelection();
+	controller.refreshDetails(input);
+	const property = input.details!.items.find(item => item.label === 'INSTANCE DATA')!;
+	assert.equal(controller.canPinProperty(input, property), true);
+	controller.pinProperty(input, property);
+	const pin = input.details!.watches.pins[0];
+	assert.deepEqual(input.detailsSelection, { kind: 'watch', id: pin.id });
+	controller.refreshDetails(input);
+	input.actorHashId = choices[1].hashId; input.selectionPath = undefined; input.dirty = true;
+	controller.refresh(input); input.outline.selectionIndex = 0; input.rememberSelection(); controller.refreshDetails(input);
+	assert.equal(controller.selected(input)!.hashId, choices[1].hashId);
+	assert.equal(pin.available, true); assert.equal(controller.canRevealPinnedProperty(input, pin.item), true);
+	input.running = true;
+	controller.revealPinnedProperty(input, pin.item); controller.refreshDetails(input);
+	assert.equal(input.running, false); assert.equal(input.presentation, 'outline'); assert.equal(input.actorHashId, choices[0].hashId);
+	assert.strictEqual(controller.selected(input), resolveActorTarget(input.runtime.roots, pin.target, f.guest));
+	assert.deepEqual(input.selectionPath, pin.target.path);
+	assert.deepEqual(input.detailsSelection, { kind: 'property', identity: pin.property });
+	const revealed = input.details!.items.find(item => item.watch === undefined && item.label === 'INSTANCE DATA')!;
+	assert.equal(controller.canPinProperty(input, revealed), false); assert.equal(controller.canUnpinProperty(input, revealed), true);
+	controller.unpinProperty(input, revealed); controller.refreshDetails(input);
+	assert.equal(input.details!.watches.pins.length, 0); assert.equal(controller.canPinProperty(input, revealed), true);
+	assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()], before);
 });
 
 test('Actor Lab navigation keeps graph edge identity and retires bookmarks at heap replacement or history resume', t => {

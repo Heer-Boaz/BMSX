@@ -3,9 +3,8 @@ import type { ResourceDomain } from '../../../common/resource';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { SuspendedGuestSession, SuspendedGuestValue } from '../../../runtime/suspended_guest';
 import type { QuickPickItem } from '../../services/quick_input/provider';
-import type { BehaviorInspectionProperty } from './inspection';
 import { findRuntimeComponent, visitRuntimeComponents } from './runtime_components';
-import { BehaviorRuntimeProperties } from './runtime_properties';
+import { BehaviorRuntimeProperties, type RuntimeInspectionProperty } from './runtime_properties';
 import type { BehaviorDefinitionChoice } from './runtime_definitions';
 
 /** Both choices borrow actual instances, never inferred source/definition ids. */
@@ -78,6 +77,8 @@ function visitStateMachineHierarchy(guest: SuspendedGuestSession, state: Table, 
 	for (let i = 1; i <= ids.arrayLength; i += 1) visitStateMachineHierarchy(guest, states.get(ids.getInteger(i)) as Table, visit);
 }
 
+const EVENT_PRESENTATION = { prefix: 'EVENT ', suffix: ' / EXECUTION TARGET' };
+const INPUT_PRESENTATION = { prefix: 'INPUT ', suffix: ' / EXECUTION TARGET' };
 const DEFINITION_FIELDS = [
 	['clock_source', 'CLOCK MASK'],
 	['initial', 'INITIAL CHILD'], ['is_concurrent', 'CONCURRENT'], ['state_ids', 'LOADED CHILDREN'],
@@ -91,39 +92,38 @@ const DEFINITION_FIELDS = [
 export function inspectStateMachineState(
 	sources: RuntimeSourceState, guest: SuspendedGuestSession, machine: StateMachineInstance, state: Table,
 	properties = new BehaviorRuntimeProperties(sources, guest),
-): BehaviorInspectionProperty[] {
-	properties.value('STATE INSTANCE', guest.readStringMember(state, 'id'));
-	properties.value('COMPONENT', guest.readStringMember(machine.component, 'id'));
-	properties.value('OWNER', guest.readStringMember(guest.readStringMember(machine.component, 'parent'), 'id'));
-	properties.value('COMPONENT STARTED', guest.readStringMember(machine.component, '_started'));
-	properties.value('COMPONENT ENABLED', guest.readStringMember(machine.component, 'enabled'));
-	properties.value('CURRENT CHILD', guest.readStringMember(state, 'current_id'),
+): RuntimeInspectionProperty[] {
+	properties.field('instance', 'id', 'STATE INSTANCE', guest.readStringMember(state, 'id'));
+	properties.field('component', 'id', 'COMPONENT', guest.readStringMember(machine.component, 'id'));
+	properties.field('owner', 'id', 'OWNER', guest.readStringMember(guest.readStringMember(machine.component, 'parent'), 'id'));
+	properties.field('component', '_started', 'COMPONENT STARTED', guest.readStringMember(machine.component, '_started'));
+	properties.field('component', 'enabled', 'COMPONENT ENABLED', guest.readStringMember(machine.component, 'enabled'));
+	properties.field('instance', 'current_id', 'CURRENT CHILD', guest.readStringMember(state, 'current_id'),
 		'THE STORED SELECTION, NOT A CLAIM THAT ITS ANCESTORS OR OWNER ARE RUNNING.');
-	properties.value('INSTANCE DATA', guest.readStringMember(state, 'data'));
-	properties.value('CHILD INSTANCES', guest.readStringMember(state, 'state_ids'));
+	properties.field('instance', 'data', 'INSTANCE DATA', guest.readStringMember(state, 'data'));
+	properties.field('instance', 'state_ids', 'CHILD INSTANCES', guest.readStringMember(state, 'state_ids'));
 	// Rebind can be stopped between two nodes. Read this node's definition, not the root's replacement tree.
 	return inspectStateMachineDefinition(sources, guest, guest.readStringMember(state, 'definition') as Table, properties);
 }
 
 export function inspectStateMachineDefinition(
 	sources: RuntimeSourceState, guest: SuspendedGuestSession, definition: Table, properties = new BehaviorRuntimeProperties(sources, guest),
-): BehaviorInspectionProperty[] {
-	properties.value('LOADED DEFINITION', guest.readStringMember(definition, 'def_id'),
+): RuntimeInspectionProperty[] {
+	properties.field('definition', 'def_id', 'LOADED DEFINITION', guest.readStringMember(definition, 'def_id'),
 		'THE SELECTED RETAINED DEFINITION. NOT A MATCH TO THE OPEN AUTHORED REGISTRATION.');
 	for (const [field, label] of DEFINITION_FIELDS) {
 		const value = guest.readStringMember(definition, field);
-		if (value !== null) properties.value(label, value);
+		if (value !== null) properties.field('definition', field, label, value);
 	}
 	guest.visitTableEntries(guest.readStringMember(definition, 'on'), (name, handler) => {
-		properties.value(`EVENT ${guest.formatValue(name)} / EXECUTION TARGET`,
-			guest.readStringMember(handler, 'transition'), `COMPILED TRANSITION. NOT AN AUTHORED PATH OR PREDICTED DESTINATION.\nEMITTER: ${guest.formatValue(guest.readStringMember(handler, 'emitter'))}\nUNFILTERED: ${guest.formatValue(guest.readStringMember(handler, 'unfiltered'))}`);
+		properties.entry('event', name, guest.readStringMember(handler, 'transition'), EVENT_PRESENTATION, `COMPILED TRANSITION. NOT AN AUTHORED PATH OR PREDICTED DESTINATION.\nEMITTER: ${guest.formatValue(guest.readStringMember(handler, 'emitter'))}\nUNFILTERED: ${guest.formatValue(guest.readStringMember(handler, 'unfiltered'))}`);
 	});
 	const patterns = guest.readStringMember(definition, 'input_patterns') as Table | null;
 	if (patterns !== null) {
 		const transitions = guest.readStringMember(definition, 'input_transitions') as Table;
 		for (let i = 1; i <= patterns.arrayLength; i += 1) {
-			properties.value(`INPUT ${guest.formatValue(patterns.getInteger(i))} / EXECUTION TARGET`,
-				transitions.getInteger(i), 'COMPILED TRANSITION. THE ORIGINAL HANDLER TABLE IS NO LONGER RETAINED.');
+			properties.entry('input', i, transitions.getInteger(i), INPUT_PRESENTATION,
+				'COMPILED TRANSITION. THE ORIGINAL HANDLER TABLE IS NO LONGER RETAINED.', undefined, patterns.getInteger(i));
 		}
 	}
 	return properties.finish();

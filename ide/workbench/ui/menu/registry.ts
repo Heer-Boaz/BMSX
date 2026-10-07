@@ -6,7 +6,7 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.run'
 	| 'menubar.view';
 
-export type WorkbenchContextMenuId = 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
+export type WorkbenchContextMenuId = 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
 export type WorkbenchActionMenuId = 'events.title' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'terminal.input' | 'assistant.turn' | 'workspaceEditReview.title' | 'actorLab.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
@@ -110,6 +110,13 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'actorLab.select' },
 		{ type: 'command', command: 'actorLab.follow' },
 		{ type: 'command', command: 'actorLab.more' },
+	],
+	'actorLab.property.context': [
+		{ type: 'command', command: 'actorLab.pinProperty' },
+		{ type: 'command', command: 'actorLab.unpinProperty' },
+		{ type: 'command', command: 'actorLab.revealPinnedProperty' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'propertyInspector.source' },
 	],
 	'propertyInspector.title': [{ type: 'command', command: 'propertyInspector.source' }, { type: 'command', command: 'propertyInspector.close' }],
 	'code.context': [

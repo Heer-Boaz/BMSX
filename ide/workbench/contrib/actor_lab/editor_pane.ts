@@ -27,7 +27,7 @@ import { WorkbenchSliderControl } from '../../ui/slider_control';
 import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { ContextMenuController } from '../../services/context_menu/controller';
-import type { BehaviorInspectionProperty } from '../behavior_lens/inspection';
+import { actorDetailsPropertiesEqual, actorDetailsPropertyMatchesSelection, captureActorDetailsSelection, type ActorDetailsProperty } from './details';
 import type { ActorLabController } from './controller';
 import type { ActorLabInput } from './editor_input';
 import type { ActorNode } from './runtime';
@@ -54,7 +54,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	private readonly split = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly detailsSplit = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);
-	public readonly inspector = new WorkbenchPropertyInspector<BehaviorInspectionProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
+	public readonly inspector = new WorkbenchPropertyInspector<ActorDetailsProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover, player => this.handleGraphKeyboard(player), this.focusTarget);
 	private boundGraph: ActorStateGraph | undefined;
 	public constructor(resourcePanel: ResourcePanelController, private readonly controller: ActorLabController,
@@ -64,6 +64,11 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.timelineSlider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.focusTarget,
 			value => this.input.timeline.request(value), () => this.input.timeline.cancelPending());
 		this.inspector.actionBar.items.find(item => item.command === 'propertyInspector.close')!.label = 'Hide';
+		this.inspector.onContextMenu = (x, y, keyboard) => {
+			this.input.running = false;
+			const lifetime = this.contextMenu.show(x, y, WORKBENCH_MENUS['actorLab.property.context'], this.commands, keyboard);
+			lifetime.add({ dispose: this.controller.guest.onDidInvalidate(() => this.contextMenu.hide()) });
+		};
 		this.focusTarget.next = this.actions.focusTarget;
 		this.actions.focusTarget.previous = this.focusTarget;
 		this.timelineSlider.focusTarget.previous = this.actions.focusTarget;
@@ -115,6 +120,24 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 				if (!this.inspector.visible) this.showDetails(true);
 				else this.inspector.focusTarget.focus();
 			} });
+			for (const [command, enabled, execute] of [
+				['actorLab.pinProperty', controller.canPinProperty, controller.pinProperty],
+				['actorLab.unpinProperty', controller.canUnpinProperty, controller.unpinProperty],
+				['actorLab.revealPinnedProperty', controller.canRevealPinnedProperty, controller.revealPinnedProperty],
+			] as const) target.registerCommand(command, {
+				isEnabled: () => {
+					const item = this.inspector.model.rows[this.inspector.model.selectionIndex]?.element;
+					return this.inspector.visible && item !== undefined && enabled.call(controller, this.input, item);
+				},
+				run: () => {
+					const item = this.inspector.model.rows[this.inspector.model.selectionIndex].element;
+					execute.call(controller, this.input, item);
+					this.update();
+					const selection = this.inspector.model.rows.findIndex(row => actorDetailsPropertyMatchesSelection(row.element, this.input.detailsSelection));
+					if (selection >= 0) this.inspector.model.select(selection);
+					this.inspector.focusTarget.focus();
+				},
+			});
 			target.registerCommand('actorLab.stateGraph', {
 				isEnabled: () => { const kind = controller.selected(this.input)?.kind; return this.input.presentation === 'outline' && (kind === 'machine' || kind === 'state'); },
 				run: () => {
@@ -133,7 +156,8 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	public override get runtimeControlContext() { return this.input.presentation === 'outline' ? this.focusTarget : this.graph.focusTarget; }
 	public override getSelection(): ActorLabNavigationSelection {
 		if (this.inspector.visible) {
-			this.input.detailsSelection = this.inspector.model.rows[this.inspector.model.selectionIndex]?.element.label;
+			const selected = this.inspector.model.rows[this.inspector.model.selectionIndex]?.element;
+			this.input.detailsSelection = selected === undefined ? undefined : captureActorDetailsSelection(selected);
 			this.input.detailsScroll = this.inspector.model.viewport.scrollTop;
 		}
 		return this.controller.captureSelection(this.input);
@@ -187,7 +211,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			if (!this.inspector.visible) this.showDetails(false);
 			else {
 				const items = this.controller.refreshDetails(input);
-				if (items !== undefined) this.inspector.updateItems(items, propertyIdentity);
+				if (items !== undefined) this.inspector.updateItems(items, actorDetailsPropertiesEqual);
 			}
 		}
 		const detailsChanged = this.detailsVisible !== this.inspector.visible;
@@ -378,5 +402,3 @@ const NAVIGATION = [['ArrowUp', 'up'], ['ArrowDown', 'down'], ['ArrowLeft', 'lef
 	['PageUp', 'page-up'], ['PageDown', 'page-down'], ['Home', 'home'], ['End', 'end']] as const;
 const GRAPH_SELECTION_KEYS = [['ArrowUp', -1], ['ArrowDown', 1]] as const;
 const GRAPH_PAN_KEYS = [['ArrowLeft', -16, 0], ['ArrowRight', 16, 0], ['PageUp', 0, -64], ['PageDown', 0, 64]] as const;
-
-const propertyIdentity = (item: BehaviorInspectionProperty): string => item.label;
