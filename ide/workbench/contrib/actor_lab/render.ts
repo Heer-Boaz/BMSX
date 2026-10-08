@@ -7,7 +7,7 @@ import { drawWorkbenchSlider } from '../../render/slider';
 import { drawWorkbenchGraph } from '../../render/graph';
 import type { WorkbenchGraphItem } from '../../ui/graph/model';
 
-export function drawActorLab(input: ActorLabInput, playbackState: string, sliderFocused: boolean, graphHover: WorkbenchGraphItem | null, graphFocused: boolean): void {
+export function drawActorLab(input: ActorLabInput, playbackState: string, sliderFocused: boolean, graphHover: WorkbenchGraphItem | null, graphFocused: boolean, previewLabel: string): void {
 	const { layout, outline } = input;
 	const font = editorViewState.font.renderFont();
 	const color = colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
@@ -45,7 +45,7 @@ export function drawActorLab(input: ActorLabInput, playbackState: string, slider
 		outline.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
 	}
 	const preview = input.previewBounds;
-	api.blit_text_inline_with_font('GAME FRAME', preview.left, tree.contentTop + 2, 0, color, font);
+	api.blit_text_inline_with_font(previewLabel, preview.left, tree.contentTop + 2, 0, color, font);
 	api.drawFrame(preview.left, preview.top, preview.right, preview.bottom);
 	const timeline = input.timeline;
 	if (timeline.visible) {

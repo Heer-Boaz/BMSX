@@ -1,5 +1,5 @@
 import { hidKeyUsageForCode } from '../../../hosts/common/input/hid_keys';
-import { createInputControllerSnapshot, InputControllerGamepadButtonBit, InputControllerSampleContext } from '../../../machine/ts/machine/devices/input/contracts';
+import { createInputControllerSnapshot, INP_POINTER_BUTTON_SECONDARY, InputControllerGamepadButtonBit, InputControllerSampleContext } from '../../../machine/ts/machine/devices/input/contracts';
 import { IO_INP_KEYS, IO_INP_PADS, IO_INP_POINTER_BUTTONS } from '../../../machine/ts/spec/bmsx/io';
 import { IO_WORD_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { inputFocus } from '../../../ide/input/focus';
@@ -7,6 +7,9 @@ import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import type { ActorLabEditorPane } from '../../../ide/workbench/contrib/actor_lab/editor_pane';
+import { runtimeWorld } from '../../../ide/workbench/contrib/actor_lab/runtime';
+import { readRuntimeLuaModuleExport } from '../../../ide/runtime/lua_inspection';
+import type { Table } from '../../../machine/ts/machine/cpu/table';
 import { check, type StudioFixture } from './studio_fixture';
 import { nemesisTitleState, reachNemesisTitle } from './studio_nemesis_navigation';
 
@@ -126,6 +129,65 @@ export async function runStudioGameInput(test: StudioFixture) {
 	const actorHeld = cycles();
 	await frame(); await frame();
 	check(cycles() === actorHeld && ide.editor.capturesGuestInput, 'leaving Actor Lab game focus restores its authoring hold');
+	// A real rendered sprite, not a source fixture or a guessed collider rectangle.
+	const sprite = readRuntimeLuaModuleExport(ide.sources, guest, actor.domain, 'cartlib/component/sprite_component');
+	if (sprite.kind !== 'value') throw new Error('sprite datapath unavailable');
+	const full = guest.identity(guest.readStringMember(sprite.value, 'draw_visual'));
+	const region = guest.identity(guest.readStringMember(sprite.value, 'draw_region_visual'));
+	const world = runtimeWorld(ide.sources, guest, actor.domain)!;
+	const lane = guest.readStringMember(world, '_render_visuals') as Table;
+	let pickX = -1, pickY = -1, pickHashId = 0;
+	for (let index = guest.readStringMember(world, '_render_visual_count') as number; index > 0; index--) {
+		const visual = lane.getInteger(index), parent = guest.readStringMember(visual, 'parent') as Table;
+		const draw = guest.readStringMember(visual, 'draw'), cropped = guest.matchesIdentity(draw, region);
+		if (!cropped && !guest.matchesIdentity(draw, full) || !guest.isTruthy(guest.readStringMember(visual, 'visible'))
+			|| !guest.isTruthy(guest.readStringMember(parent, 'visible'))) continue;
+		const width = (guest.readStringMember(visual, cropped ? 'region_width' : 'source_width') as number)
+			* (guest.readStringMember(visual, 'scale_x') as number) * (guest.readStringMember(visual, 'draw_scale_x') as number);
+		const height = (guest.readStringMember(visual, cropped ? 'region_height' : 'source_height') as number)
+			* (guest.readStringMember(visual, 'scale_y') as number) * (guest.readStringMember(visual, 'draw_scale_y') as number);
+		const x = (guest.readStringMember(parent, 'x') as number) + (guest.readStringMember(visual, 'offset_x') as number)
+			+ (guest.readStringMember(visual, 'draw_offset_x') as number) + width / 2;
+		const y = (guest.readStringMember(parent, 'y') as number) + (guest.readStringMember(visual, 'offset_y') as number)
+			+ (guest.readStringMember(visual, 'draw_offset_y') as number) + height / 2;
+		if (width === 0 || height === 0 || x < 0 || y < 0 || x >= test.presenter.offscreenCanvasSize.x || y >= test.presenter.offscreenCanvasSize.y) continue;
+		pickX = x; pickY = y; pickHashId = parent.hashId; break;
+	}
+	check(pickHashId !== 0, 'real title presentation contains a visible sprite to pick');
+	const point = { left: actor.previewBounds.left + pickX * (actor.previewBounds.right - actor.previewBounds.left) / test.presenter.offscreenCanvasSize.x,
+		top: actor.previewBounds.top + pickY * (actor.previewBounds.bottom - actor.previewBounds.top) / test.presenter.offscreenCanvasSize.y, right: 0, bottom: 0 };
+	point.right = point.left; point.bottom = point.top;
+	const pickHeap = runtime.machine.cpu.luaHeap.usedBytes();
+	test.movePointer(point);
+	for (let index = 0; index < 5; index++) await frame();
+	check(ide.editor.actorLab.viewportPicker.hit.hashId === pickHashId && cycles() === actorHeld && runtime.machine.cpu.luaHeap.usedBytes() === pickHeap,
+		'hover resolves the actual frontmost sprite owner without guest execution or allocation');
+	await test.capture?.('actor-hover');
+	await click(point, 1, 'pointer_secondary');
+	check(actor.actorHashId === pickHashId && actor.outline.rows[actor.outline.selectionIndex].element.node.hashId === pickHashId
+		&& !actor.running && ide.editor.capturesGuestInput && cycles() === actorHeld && runtime.machine.cpu.luaHeap.usedBytes() === pickHeap,
+		'inspection click reveals the same live actor through the existing tree without injecting game input');
+	await test.capture?.('actor-picked');
+	await runPaletteCommand('Actor Lab: Play / Pause');
+	test.movePointer(point);
+	for (let index = 0; index < 6; index++) await frame();
+	check(actor.running && cycles() > actorHeld && actor.actorHashId === pickHashId && inputFocus.target?.guestInputBounds === undefined,
+		'hover while playing neither pauses the cart nor moves selection or game focus');
+	await test.capture?.('actor-hover-playing');
+	await click(point);
+	const focusedActor = actor.actorHashId;
+	test.setPointerButton('pointer_secondary', true);
+	await until(() => (runtime.machine.memory.readIoU32(IO_INP_POINTER_BUTTONS) & (1 << INP_POINTER_BUTTON_SECONDARY)) !== 0,
+		'hovered Actor Lab game focus still delivers its secondary button to HID');
+	check(actor.running && actor.actorHashId === focusedActor && inputFocus.target?.guestInputBounds === actor.previewBounds,
+		'hover over a focused game does not intercept buttons or select an actor');
+	await test.capture?.('actor-hover-game-focused');
+	test.setPointerButton('pointer_secondary', false); await frame();
+	await press('ShiftLeft', 'F1');
+	test.setPointerButton('pointer_secondary', true); await frame();
+	test.setPointerButton('pointer_secondary', false); await frame();
+	check(!actor.running && actor.actorHashId === ide.editor.actorLab.viewportPicker.hit.hashId && actor.actorHashId !== 0,
+		'inspecting the hovered live actor is the explicit pause and selection action');
 	await runPaletteCommand('Actor Lab: Inspect Instance');
 	const actorPane = ide.editor.editorPanes.activePane as ActorLabEditorPane;
 	const inspector = actorPane.inspector, details = actor.details;

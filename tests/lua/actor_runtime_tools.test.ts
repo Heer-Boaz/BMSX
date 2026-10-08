@@ -43,9 +43,9 @@ function rename() probe.id = 'renamed' end
 function remove() probe._components[2] = nil end
 return world`;
 
-function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE) {
+function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE, extraModules: readonly { path: string; source: string }[] = []) {
 	const modules = [{ path: 'cartlib/world/world', source: worldSource }, { path: 'cartlib/fsm/fsm_component', source: 'return {}' },
-		{ path: 'cartlib/timeline/timeline_component', source: 'return {}' }, { path: 'cartlib/actioneffects/actioneffect_component', source: 'return {}' }]
+		{ path: 'cartlib/timeline/timeline_component', source: 'return {}' }, { path: 'cartlib/actioneffects/actioneffect_component', source: 'return {}' }, ...extraModules]
 		.map(module => ({ ...module, chunk: parseLuaChunk(module.source, `${module.path}.lua`) }));
 	const chunk = parseLuaChunk(entry, 'entry.lua');
 	const compiled = compileLuaChunkToProgram(chunk, selectLuaProgramModules(chunk, modules, []), { entrySource: entry, programDomain: 'system', optLevel: 0 });
@@ -60,6 +60,52 @@ function fixture(entry = ENTRY, run = true, worldSource = WORLD_SOURCE) {
 	const inspection = f.inspection.open(), actors = inspection.lifetime.add(new ActorRuntimeInspection(inspection));
 	return { ...f, stop: inspection, actors };
 }
+
+test('viewport picking follows render order and cropped negative scale, using cached typed guest identities', t => {
+	const f = fixture(`local world<const> = require('cartlib/world/world')
+function rename_pick() world._objects[1].id = 'renamed' end
+function hide_pick() world._render_visuals[2].visible = false end`, true, `
+local sprite<const> = require('cartlib/component/sprite_component')
+local front<const> = { id = 1, definition_id = 'front', visible = true, x = 20, y = 10 }
+local back<const> = { id = '1', visible = 0, x = 0, y = 0 }
+local background<const> = { parent = back, draw = sprite.draw_visual, visible = true,
+ offset_x = 0, offset_y = 0, draw_offset_x = 0, draw_offset_y = 0,
+ source_width = 32, source_height = 24, scale_x = 1, scale_y = 1, draw_scale_x = 1, draw_scale_y = 1 }
+local foreground<const> = { parent = front, draw = sprite.draw_region_visual, visible = true,
+ offset_x = -4, offset_y = -2, draw_offset_x = 0, draw_offset_y = 0,
+ source_width = 99, source_height = 99, region_width = 6, region_height = 8,
+ scale_x = -2, scale_y = 0.75, draw_scale_x = 1, draw_scale_y = 0.5 }
+local custom<const> = { parent = front, draw = sprite.custom, visible = true }
+return { _objects = { front, back }, _render_visuals = { background, foreground, custom }, _render_visual_count = 3 }`, [{
+		path: 'cartlib/component/sprite_component', source: `local sprite<const> = {}
+function sprite.draw_visual() end
+function sprite.draw_region_visual() end
+function sprite.custom() end
+return sprite`,
+	}]);
+	t.after(() => f.stop.dispose());
+	const controller = new ActorLabController(f.sources, f.guest, f.runtime.machine.cpu, undefined!, undefined!, undefined!, f.actorExecution, f.rewind);
+	const picker = controller.viewportPicker, cpu = f.runtime.machine.cpu;
+	const world = runtimeWorld(f.sources, f.guest, -1)!, objects = f.guest.readStringMember(world, '_objects') as Table;
+	const front = (objects.getInteger(1) as Table).hashId, back = (objects.getInteger(2) as Table).hashId;
+	const before = [f.runtime.machine.scheduler.currentNowCycles(), cpu.luaHeap.usedBytes()];
+	const hit = picker.pick(-1, 8, 9)!;
+	assert.equal(hit.hashId, front);
+	assert.deepEqual([hit.left, hit.top, hit.right, hit.bottom], [4, 8, 16, 11]);
+	const read = t.mock.method(f.guest, 'readStringMember'), format = t.mock.method(f.guest, 'formatValue');
+	for (let frame = 0; frame < 1000; frame++) assert.equal(picker.pick(-1, 8, 9), hit);
+	assert.equal(read.mock.callCount(), 0);
+	assert.equal(picker.pick(-1, 128, 128), undefined);
+	assert.equal(picker.pick(-1, 8, 9)!.hashId, front);
+	assert.equal(format.mock.callCount(), 0, 'crossing empty space does not allocate the same label again');
+	assert.equal(picker.pick(-1, 0, 9)!.hashId, back, 'cropping, not full-source extent; numeric zero remains guest-truthy');
+	assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), cpu.luaHeap.usedBytes()], before);
+	const original = picker.pick(-1, 8, 9)!.label;
+	f.guest.invalidate(); runCompletionClosure(cpu, f.guest.global('rename_pick') as Closure, []);
+	assert.notEqual(picker.pick(-1, 8, 9)!.label, original, 'renaming retains identity but refreshes presentation');
+	f.guest.invalidate(); runCompletionClosure(cpu, f.guest.global('hide_pick') as Closure, []);
+	assert.equal(picker.pick(-1, 8, 9)!.hashId, back);
+});
 
 test('Actor Lab history restores the typed member and Details after choosing another actor without guest execution', t => {
 	const f = fixture(); t.after(() => f.stop.dispose());

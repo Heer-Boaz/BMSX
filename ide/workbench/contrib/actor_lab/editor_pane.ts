@@ -1,6 +1,9 @@
 import { WorkbenchSplitControl } from '../../ui/split_control';
 import { drawWorkbenchSplit } from '../../render/split_view';
-import { write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
+import { point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
+import type { VideoPresenter } from '../../../../machine/ts/render/video_presenter';
+import { COLOR_TAB_BORDER } from '../../../common/constants';
+import { api } from '../../../runtime/overlay_api';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { layoutGameFrame } from '../../common/game_frame';
 import { drawEditorText } from '../../../editor/render/text_renderer';
@@ -37,6 +40,7 @@ import { WorkbenchGraphControl, WorkbenchGraphPointerResult } from '../../ui/gra
 import type { ActorStateGraph } from './state_graph';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { ActorLabNavigationSelection } from './navigation_selection';
+import type { ActorViewportHit } from './viewport_pick';
 
 export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInput> {
 	private readonly gameInput = new GameInputControl(this.focusTarget);
@@ -51,6 +55,13 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	private restoreDetailsScroll = false;
 	private navigationSelection: ActorLabNavigationSelection | undefined;
 	private renderedTopology = -1;
+	private viewportHover = false;
+	private pointerX = 0;
+	private pointerY = 0;
+	private viewportHit: ActorViewportHit | undefined;
+	private previewLabel = 'GAME FRAME';
+	private previewLabelSource = '';
+	private previewLabelWidth = -1;
 	private readonly split = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly detailsSplit = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);
@@ -58,7 +69,8 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover, player => this.handleGraphKeyboard(player), this.focusTarget);
 	private boundGraph: ActorStateGraph | undefined;
 	public constructor(resourcePanel: ResourcePanelController, private readonly controller: ActorLabController,
-		private readonly commands: IdeCommandController, private readonly frameNavigation: RuntimeFrameNavigation, private readonly contextMenu: ContextMenuController) {
+		private readonly commands: IdeCommandController, private readonly frameNavigation: RuntimeFrameNavigation,
+		private readonly contextMenu: ContextMenuController, private readonly presenter: VideoPresenter) {
 		super(resourcePanel);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		this.timelineSlider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.focusTarget,
@@ -180,6 +192,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.gameInput.setInput(this.input.previewBounds);
 	}
 	public override clearInput(): void {
+		pointerHover.release(this);
 		this.navigationSelection = undefined;
 		this.inspector.hide(); this.gameInput.clearInput(); this.actions.clearInput();
 		this.graph.clearInput(); this.boundGraph = undefined;
@@ -191,7 +204,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		// Detaching is not execution; the controller still observes guest invalidation while hidden.
 		this.timelineSlider.clearInput(); this.input.timeline.clear(); this.input.running = false; this.scrollbar.cancelPointer(); super.clearInput();
 	}
-	public override dispose(): void { this.inspector.dispose(); this.gameInput.dispose(); this.actions.dispose(); this.graph.dispose(); this.split.dispose(); this.detailsSplit.dispose(); this.timelineSlider.dispose(); this.scrollbar.cancelPointer(); super.dispose(); }
+	public override dispose(): void { pointerHover.release(this); this.inspector.dispose(); this.gameInput.dispose(); this.actions.dispose(); this.graph.dispose(); this.split.dispose(); this.detailsSplit.dispose(); this.timelineSlider.dispose(); this.scrollbar.cancelPointer(); super.dispose(); }
 	public override update(): void {
 		const input = this.input;
 		const readback = input.dirty;
@@ -247,6 +260,8 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			for (const row of outline.rows) row.element.displayLabel = truncateTextToWidth(row.element.node.label,
 				outline.layout.contentRight - outline.layout.contentLeft - (row.depth + 2) * outline.layout.indentWidth - 4, 'middle');
 		}
+		if (layoutChanged) this.previewLabelWidth = -1;
+		this.updateViewportHit();
 		this.controller.layoutNavigation(input);
 		this.timelineSlider.update();
 		if (input.presentation === 'graph') this.graph.update();
@@ -279,10 +294,20 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
 		drawEditorText(editorViewState.font, this.detailsSplit.focusTarget.hasFocus ? 'RESIZE PANES: UP/DOWN | HOME: RESET'
 			: this.split.focusTarget.hasFocus ? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET'
+			: this.viewportHit !== undefined ? this.gameInput.focusTarget.hasFocus ? 'SHIFT+F1: INSPECT' : 'RIGHT CLICK: INSPECT'
 			: this.controller.selected(this.input)?.label ?? this.input.status, bounds.left + 4, bounds.top + 2, 0, color);
 	}
 	public draw(): void {
-		drawActorLab(this.input, this.commands.gamePlaybackState, this.timelineSlider.focusTarget.hasFocus, this.graph.hover, this.graph.focusTarget.hasFocus);
+		drawActorLab(this.input, this.commands.gamePlaybackState, this.timelineSlider.focusTarget.hasFocus, this.graph.hover, this.graph.focusTarget.hasFocus, this.previewLabel);
+		const hit = this.viewportHit;
+		if (hit !== undefined) {
+			const bounds = this.input.previewBounds, size = this.presenter.offscreenCanvasSize;
+			const scaleX = (bounds.right - bounds.left) / size.x, scaleY = (bounds.bottom - bounds.top) / size.y;
+			api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
+			api.blit_rect(bounds.left + hit.left * scaleX, bounds.top + hit.top * scaleY,
+				bounds.left + hit.right * scaleX, bounds.top + hit.bottom * scaleY, 0, COLOR_TAB_BORDER);
+			api.popClipRect();
+		}
 		this.gameInput.draw();
 		drawWorkbenchSplit(this.input.split, this.split.hovered || this.split.focusTarget.hasFocus);
 		if (this.inspector.visible) {
@@ -293,6 +318,23 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	private showDetails(focus: boolean): void {
 		this.controller.inspect(this.input, this.inspector, focus);
 		this.restoreDetailsScroll = true;
+	}
+	public onPointerLeave(): void {
+		this.viewportHover = false; this.viewportHit = undefined; this.previewLabel = 'GAME FRAME'; this.previewLabelSource = '';
+	}
+	private updateViewportHit(): void {
+		if (!this.viewportHover) return;
+		const bounds = this.input.previewBounds;
+		if (this.controller.rewind.seeking || this.presenter.gameFrameSequence === undefined
+			|| !point_in_rect(this.pointerX, this.pointerY, bounds)) { pointerHover.release(this); return; }
+		const size = this.presenter.offscreenCanvasSize;
+		this.viewportHit = this.controller.viewportPicker.pick(this.input.domain,
+			(this.pointerX - bounds.left) * size.x / (bounds.right - bounds.left),
+			(this.pointerY - bounds.top) * size.y / (bounds.bottom - bounds.top));
+		const source = this.viewportHit?.label ?? 'GAME FRAME', width = bounds.right - bounds.left;
+		if (source !== this.previewLabelSource || width !== this.previewLabelWidth) {
+			this.previewLabel = truncateTextToWidth(source, width, 'middle'); this.previewLabelSource = source; this.previewLabelWidth = width;
+		}
 	}
 
 	public handleKeyboard(input: PlayerInput): void {
@@ -329,7 +371,19 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	}
 	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean, now: number): boolean {
 		if (this.inspector.visible && (this.detailsSplit.handlePointer(snapshot) || this.inspector.handlePointer(snapshot))) return true;
-		if (this.gameInput.handlePointer(snapshot)) return false;
+		if (snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.previewBounds)) {
+			if (!this.controller.rewind.seeking) {
+				this.viewportHover = true; this.pointerX = snapshot.viewportX; this.pointerY = snapshot.viewportY; pointerHover.visit(this);
+				if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0 && !this.gameInput.focusTarget.hasFocus) {
+					this.updateViewportHit();
+					if (this.viewportHit !== undefined) {
+						this.controller.inspectActor(this.input, this.viewportHit.domain, this.viewportHit.hashId); this.update(); this.focus(); return true;
+					}
+				}
+			}
+			this.gameInput.handlePointer(snapshot);
+			return false;
+		}
 		if (this.split.handlePointer(snapshot) || this.actions.handlePointer(snapshot) || this.input.timeline.visible && this.timelineSlider.handlePointer(snapshot)) return true;
 		if (!this.input.actorPresent) return false;
 		if (this.input.presentation === 'outline' && this.scrollbar.handlePointer(snapshot, this.input.outline.scrollbar)) {

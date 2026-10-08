@@ -85,6 +85,37 @@ These interaction patterns inform the view; they do not require guest tracing.
   admission and heap replacement retire invalid bookmarks. Timeline **Scrub**
   remains an explicit guest operation, not machine-history rewind.
 
+## Pick in the live preview
+
+Hovering a standard sprite outlines its visible rectangle and shows its actual
+instance identifier (and prefab definition when present), also while the game
+has input focus. Hover alone neither pauses nor changes selection. With Studio
+input focus, right-click inspects that actor through the ordinary Actor Lab
+selection path and pauses the view. Primary click still focuses the game and
+reaches HID; while game focus is active, **all** pointer buttons belong to the
+game. Shift+F1 releases that focus before an inspection click.
+The hover rectangle uses the ordinary neutral border; the accent frame still
+means game input focus. There is no new permanent toolbar, selection mode, or
+guest shortcut.
+
+This follows [Godot's CanvasItem picking](https://github.com/godotengine/godot/blob/4.4/editor/plugins/canvas_item_editor_plugin.cpp):
+map the pointer into actual view coordinates, use visible draw geometry and pick
+front-to-back. BMSX walks World's retained render lane in reverse and matches
+actual sprite draw-function identities. Crop dimensions, component/draw offsets,
+negative scales and parent/component visibility follow the stored sprite
+datapath. The presenter supplies native PCRTC dimensions; Studio's canvas
+resolution is not the game's coordinate space.
+
+The rectangle is geometric, not texture-alpha or pixel picking. Arbitrary custom
+draw callbacks have no invented bounds and are not selected by this path. Reads
+use the existing suspended guest boundary, not a captured image or collider
+query. No GPU readback, Lua call, CPU observer or cartlib field is added. Seeks
+suppress picking until the requested history state is reached; normal live
+playback refreshes the hit after each existing invalidation. The hit stores only
+scalar identity/geometry. Unchanged suspended pointer queries reuse it; labels
+reformat only when their typed values change. Outside the preview (or under a
+modal) no world lane is scanned.
+
 ## Find in Actor
 
 **Find in Actor** searches the selected actor's actual runtime hierarchy,

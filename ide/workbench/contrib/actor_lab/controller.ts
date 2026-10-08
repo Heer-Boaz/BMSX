@@ -30,12 +30,14 @@ import { actorTargetsEqual, captureActorTarget, resolveActorTarget, type ActorTa
 import type { ActorExecutionService, ActorExecutionResult, ActorInvocation } from './execution';
 import { ActorLabNavigationSelection } from './navigation_selection';
 import { createActorMemberChoices } from './member_choices';
+import { ActorViewportPicker } from './viewport_pick';
 
 /** Actor Lab interaction and presentation; the shared domain service owns execution. */
 export class ActorLabController {
 	private current: ActorLabInput | undefined;
 	private projection: ActorProjection;
 	private navigationGeneration = 0;
+	public readonly viewportPicker: ActorViewportPicker;
 	public readonly canInteract = (domain?: ResourceDomain) => domain === undefined ? this.execution.canExecute : this.execution.canExecuteIn(domain);
 	public constructor(
 		private readonly sources: RuntimeSourceState,
@@ -45,9 +47,11 @@ export class ActorLabController {
 		private readonly panes: EditorPanes,
 		private readonly navigation: EditorNavigationController,
 		private readonly execution: ActorExecutionService,
-		private readonly rewind: HostRewind,
+		public readonly rewind: HostRewind,
 	) {
+		this.viewportPicker = new ActorViewportPicker(sources, guest);
 		guest.onDidInvalidate(reason => {
+			this.viewportPicker.invalidate(reason);
 			if (reason === 'heap-replaced') this.navigationGeneration++;
 			const input = this.current;
 			if (input === undefined) return;
@@ -187,11 +191,15 @@ export class ActorLabController {
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
 				return new TextQuickPickProvider(readActorChoices(this.sources, this.guest, domain));
 			}, choice => {
-				input.stateGraph = undefined; input.presentation = 'outline'; input.follow.stop(); input.historical = false;
-				input.domain = choice.domain; input.actorHashId = choice.hashId; input.selectionPath = undefined; input.dirty = true;
-				this.refresh(input); this.projection.reveal(input.runtime.roots[0]);
+				this.inspectActor(input, choice.domain, choice.hashId);
 				accepted?.();
 			});
+	}
+	public inspectActor(input: ActorLabInput, domain: ResourceDomain, hashId: number): void {
+		input.running = false; input.timeline.clear();
+		input.stateGraph = undefined; input.presentation = 'outline'; input.follow.stop(); input.historical = this.rewind.active;
+		input.domain = domain; input.actorHashId = hashId; input.selectionPath = undefined; input.dirty = true;
+		this.refresh(input); this.projection.reveal(input.runtime.roots[0]);
 	}
 	public findMember(input: ActorLabInput, accepted: () => void): void {
 		input.running = false;

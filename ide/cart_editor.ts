@@ -434,7 +434,7 @@ export class RuntimeCartEditor implements CartEditor {
 			aem_editor: () => new AemEditorPane(this.resourcePanel, this.aemEditor, this.commands, this.contextMenu),
 			lua_program: () => new LuaProgramEditorPane(this.resourcePanel, this.luaPrograms, this.commands, this.actionStrings, frameNavigation, this.contextMenu),
 			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu, frameNavigation),
-			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.actorLab, this.commands, frameNavigation, this.contextMenu),
+			actor_lab: () => new ActorLabEditorPane(this.resourcePanel, this.actorLab, this.commands, frameNavigation, this.contextMenu, presenter),
 			game_view: () => new GameViewEditorPane(this.resourcePanel, this.commands, runtime),
 			cart_map: () => new CartMapPane(this.resourcePanel, this.cartMaps, this.commands, this.sources),
 			scene_editor: () => new SceneEditorPane(this.resourcePanel, this.sceneEditor, this.commands, this.sources),
