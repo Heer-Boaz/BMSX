@@ -102,10 +102,12 @@ int main(int argc, char** argv) {
 		size_t audioFrames = 0;
 		bool audible = false;
 		const auto frame = [&]() {
+			const auto publishedSequence = presenter.gameFrameSequence();
 			const f64 delta = runtime.timing.frameDurationMs / 1000.0;
 			input.setFrameDurationMs(runtime.timing.frameDurationMs);
 			input.poll(static_cast<i32>(presenter.viewportSize.x), static_cast<i32>(presenter.viewportSize.y), (totalTime + delta) * 1000.0);
 			runLibretroFrame(runtime, input, menu, rewind, presentation, presenter, totalTime, delta);
+			if (rewind.seeking() && !rewind.playing()) require(presenter.gameFrameSequence() == publishedSequence, "seek reconstruction must retain the published game image");
 			audio.setEmulationFrameTimeSec(delta);
 			const auto menuExecution = menu.executionMode();
 			audio.setMuted(runtime.machine.audioController,

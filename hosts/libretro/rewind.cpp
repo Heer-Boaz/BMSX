@@ -106,7 +106,7 @@ void HostRewind::restore() {
 	if (request == RewindRequest::Seek) {
 		request = RewindRequest::None;
 		runtime.history.beginSeek(requestedCycles);
-		presentationPending = true;
+		presentationPending = runtime.history.mode == HistoryMode::Reviewing;
 	}
 }
 
@@ -188,7 +188,6 @@ void HostRewind::service(bool collect) {
 	}
 	if (!active || playbackActive) return;
 	if (history.mode == HistoryMode::Replaying) {
-		const i64 previousTick = runtime.frameScheduler.lastTickSequence;
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(REPLAY_WORK_MS);
 		while (history.mode == HistoryMode::Replaying) {
 			auto result = history.advanceSeek(REPLAY_CYCLE_GRANT);
@@ -213,7 +212,8 @@ void HostRewind::service(bool collect) {
 		}
 		runtime.machine.audioController.synchronizeOutput().clear();
 		runtime.machine.systemDebugTransmit.clearOutput();
-		presentation.syncAfterRuntimeUpdate(runtime, previousTick);
+		// Reconstruction updates machine VRAM, never the displayed game image.
+		runtime.frameScheduler.clearPendingTickCompletion();
 	}
 	if (presentationPending && !gpu.backendServiceBlocksMachine()) {
 		presentation.requestRestoredPresentation();

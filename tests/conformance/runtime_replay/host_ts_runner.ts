@@ -74,9 +74,11 @@ async function main(): Promise<void> {
 	const history = runtime.history;
 	const { Host2DKind } = await import('../../../machine/ts/render/host_overlay/commands');
 	const frame = async () => {
+		const publishedSequence = presenter.gameFrameSequence;
 		clock.advance(runtime.timing.frameDurationMs);
 		runHostFrame(session, runtime, presenter, input, audioOutput, output, log, presentation, menu, clock.now());
 		await new Promise<void>(resolve => setImmediate(resolve));
+		if (rewind.seeking && !rewind.playing) assert.equal(presenter.gameFrameSequence, publishedSequence, 'seek reconstruction must retain the published game image');
 		assert.equal(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE), 0, 'real cart fault');
 		assert.equal(errors.length, 0, errors.join('\n'));
 	};

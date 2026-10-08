@@ -147,7 +147,7 @@ export class HostRewind {
 		if (this.request === RewindRequest.Seek) {
 			this.request = RewindRequest.None;
 			this.runtime.history.beginSeek(this.requestedCycles);
-			this.presentationPending = true;
+			this.presentationPending = this.runtime.history.mode === HistoryMode.Reviewing;
 		}
 	};
 
@@ -237,7 +237,6 @@ export class HostRewind {
 		}
 		if (!this.active || this.playbackActive) return;
 		if (history.mode === HistoryMode.Replaying) {
-			const previousTick = runtime.frameScheduler.lastTickSequence;
 			const deadline = performance.now() + REPLAY_WORK_MS;
 			while (history.mode === HistoryMode.Replaying) {
 				let result = history.advanceSeek(REPLAY_CYCLE_GRANT);
@@ -264,7 +263,8 @@ export class HostRewind {
 			}
 			runtime.machine.audioController.synchronizeOutput().clear();
 			runtime.machine.systemDebugTransmit.clearOutput();
-			this.presentation.syncAfterRuntimeUpdate(runtime, previousTick);
+			// Reconstruction updates machine VRAM, never the displayed game image.
+			runtime.frameScheduler.clearPendingTickCompletion();
 		}
 		if (this.presentationPending && !gpu.backendServiceBlocksMachine()) {
 			this.presentation.requestRestoredPresentation();

@@ -59,10 +59,12 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	const history = runtime.history;
 	let hostFrames = 0;
 	const frame = async () => {
+		const publishedSequence = presenter.gameFrameSequence;
 		clock.advance(runtime.timing.frameDurationMs);
 		runHostFrame(session, runtime, presenter, input, audioOutput, output, log, presentation, menu, clock.now());
 		hostFrames += 1;
 		await new Promise<void>(resolve => setTimeout(resolve, 0));
+		if (rewind.seeking && !rewind.playing) require(presenter.gameFrameSequence === publishedSequence, 'seek reconstruction must retain the published game image');
 		require(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) === 0, 'real cart fault');
 		require(errors.length === 0, errors.join('\n'));
 	};

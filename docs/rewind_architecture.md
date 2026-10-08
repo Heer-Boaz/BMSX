@@ -53,7 +53,7 @@ see [current timeline ownership](studio_runtime_timeline.md).
    serialization, object graph traversal, or allocation per input sample.
    External disk serialization/validation is not the internal journal format.
 5. Seeking is wall-clock independent and services every GPU backend fence.
-   Intermediate host presentation, audio delivery and diagnostic output may be
+   Intermediate host presentation, audio delivery and diagnostic output are
    suppressed; emulated work may not be skipped. Async GPU capture suspends
    machine execution until the checkpoint is complete.
 6. Moving through retained history preserves its future. Resuming live control
@@ -66,6 +66,30 @@ see [current timeline ownership](studio_runtime_timeline.md).
 7. Host/quickmenu is the initial control surface. No new keyboard/gamepad
    shortcut is reserved. Collection/seek state and retained range must be
    visible; a seek must not freeze host event processing.
+
+## Seek presentation boundary
+
+Representation/callsite inventory established before the mirrored host edits:
+
+| Representation | TypeScript | C++ |
+| --- | --- | --- |
+| Seek/record/playback position | Existing scheduler cycle `number` and `HistoryMode` | Existing `i64` and `HistoryMode` |
+| Unpublished tick receipt | `FrameSchedulerState.clearPendingTickCompletion` | Same scheduler operation |
+| Final image admission | `HostRewind.presentationPending` boolean | Same boolean |
+| Previously displayed game image | Existing renderer-owned completed texture | Same renderer-owned texture |
+
+`HostRewind.service` / `HostRewind::service` consume tick receipts during fast
+reconstruction without passing them to live presentation. Checkpoint restoration
+does not publish an image if forward reconstruction is still required. Completion,
+explicit interruption or a physical stop requests the single resolved image after
+backend fences finish. UI redraws continue to use the previously published image.
+`runPlayback` retains normal paced publication. CPU/device execution, cycle grants,
+checkpoint/input formats and guest rendering are unchanged. No image copies,
+second replay loop or gameplay hot-path work are added.
+
+This separates reconstruction from playback, as
+[openMSX's reverse manager](https://github.com/openMSX/openMSX/blob/master/src/ReverseManager.cc)
+separates fast-forward reconstruction from normal replay and output.
 
 ## CPU execution grants are not checkpoint state
 
