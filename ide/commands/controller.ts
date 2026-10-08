@@ -213,7 +213,7 @@ export class IdeCommandController {
 			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
 			case 'conversations.older':
-			case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source':
+			case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source': case 'romInspector.content': case 'romInspector.zoom': case 'romInspector.collision':
 			case 'events.clear': case 'events.filter': case 'events.details':
 			case 'events.goToFrame': case 'events.previousFrame': case 'events.nextFrame': case 'events.more':
 			case 'terminal.evaluate':
@@ -457,7 +457,7 @@ export class IdeCommandController {
 			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
 			case 'conversations.older':
-			case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source':
+			case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source': case 'romInspector.content': case 'romInspector.zoom': case 'romInspector.collision':
 			case 'events.clear': case 'events.filter': case 'events.details':
 			case 'events.goToFrame': case 'events.previousFrame': case 'events.nextFrame': case 'events.more':
 			case 'terminal.evaluate':
@@ -581,6 +581,10 @@ export class IdeCommandController {
 
 	public isActive(command: EditorCommandId): boolean {
 		switch (command) {
+			case 'romInspector.collision': {
+				const input = getActiveTab();
+				return input?.kind === 'rom_inspector' && input.showCollision;
+			}
 			case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': {
 				const input = getActiveTab();
 				return input?.kind === 'rom_inspector' && command === `romInspector.${input.model.mode}`;

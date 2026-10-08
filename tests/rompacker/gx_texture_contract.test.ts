@@ -404,6 +404,11 @@ return imgdec
 		const secondView = await buildAssetModalView(loadedSecond, modalContext);
 		assert.deepEqual(Array.from(firstView.previewSections[0].rgba.subarray(0, 4)), [255, 0, 0, 255]);
 		assert.deepEqual(Array.from(secondView.previewSections[0].rgba.subarray(0, 4)), [0, 255, 0, 255]);
+		assert.ok(loadedFirst.collision_bin_start !== undefined);
+		assert.equal(loadedFirst.imgmeta.hitpolygons, undefined);
+		assert.ok(firstView.previewSections[1].rgba.some(channel => channel !== 0));
+		const removedView = await buildAssetModalView({ resid: first.name, type: 'image', op: 'delete' }, modalContext);
+		assert.equal(removedView.previewSections.length, 0);
 
 		const memory = new Memory({ systemRom, cartridgeSlots: cartridgeSlots(rom) }, PSX_MACHINE_SPEC.ramBytes);
 		const executionAddressSpace = new ExecutionAddressSpace(memory);

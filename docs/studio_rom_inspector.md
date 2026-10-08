@@ -46,8 +46,29 @@ The Assets view filters and sorts TOC entries, previews images/textures, and
 shows typed metadata and file ranges. Layout shows the disjoint physical
 sections; clicking the size map selects its section. Code browses one function
 at a time. Source opens the existing editor for a resolvable authored resource;
-it does not edit packed bytes. Audio playback and collision-overlay preview
-remain terminal-inspector features, not duplicated Studio controls.
+it does not edit packed bytes. The content picker keeps the selected asset while
+switching between its preview and each actual buffer (data, metadata, model
+texture, collision). A TOC deletion record is an operation, not an empty image:
+it has no preview or stored byte range.
+
+Image inspection uses a shared bitmap viewport/control, not the graph editor's
+node-selection model. Fit contains the image without enlarging it; explicit zoom
+preserves original pixels and the pixel beneath the zoom anchor. Drag pans;
+Ctrl/Command-wheel zooms, wheel scrolls vertically, Shift-wheel horizontally.
+Arrow/Page/Home/End and plus/minus operate only with image focus. Both scrollbars
+own the scaled pixel extents. Shape toggles the stored bounding box and collision
+pieces from the packed G2D2 buffer, decoded by the shared
+`toolchain/ts/rompack/collision_shape_codec.ts` owner, also used by the terminal
+inspector. It does not reconstruct shapes from pixels or depend on authoring-only
+polygon metadata. Shape paths are prepared once per selected bitmap; pan/zoom
+never decodes it again. Preview/bytes changes retain the bitmap; changing assets
+releases it. The packed collision format and encoder output are unchanged.
+
+Audio playback remains a follow-up. The terminal's heuristic BADP preview must
+not be moved into the shared layer: the machine's BADP decoder already owns the
+format. A Studio player needs an explicit host preview lifetime, independent of
+the paused guest's audio sink. It must not take over or resume guest audio merely
+to preview a packed asset.
 
 ROM byte counts are file/package costs, not RAM/VRAM use. Static opcode costs are
 not runtime profiling. No guest instructions, devices or C++ runtime behavior
@@ -61,3 +82,5 @@ change for this view.
   derive section accounting from the object representation, separately from reporting.
 - [VS Code binary editor](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/files/browser/editors/binaryFileEditor.ts):
   editor contributions route resource opening through the shared resolver.
+- [VS Code image preview](https://github.com/microsoft/vscode/blob/main/extensions/media-preview/media/imagePreview.js):
+  distinct Fit and explicit scales, anchored zoom and retained scroll state.

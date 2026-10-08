@@ -1,4 +1,3 @@
-import { drawImagePreview } from '../../ui/image_preview';
 import { formatByteSize, formatHexDumpRow, formatNumberAsHex } from '../../../../machine/ts/common/byte_hex_string';
 import { describeBlua32InstructionAtPc } from '../../../../toolchain/ts/rompack/disassembler';
 import * as colors from '../../../common/constants';
@@ -23,14 +22,16 @@ export class RomInspectorPresentation {
 	public contentTitle = '';
 	public selectedSpan: { left: number; right: number } | undefined;
 	private revision = -1;
+	private contentRevision = -1;
 	private listFirst = -1;
 	private listEnd = -1;
 	private contentFirst = -1;
 	private contentEnd = -1;
-	public update(input: RomInspectorInput, layoutChanged: boolean): void {
+	public update(input: RomInspectorInput, layoutChanged: boolean, contentLayoutChanged = false): void {
 		const { model, layout, list, bytes } = input;
 		const changed = this.revision !== model.revision || layoutChanged;
-		if (changed) this.contentWidth = 0;
+		const contentChanged = changed || this.contentRevision !== input.contentRevision;
+		if (contentChanged) this.contentWidth = 0;
 		const rowHeight = layout.rowHeight * 2 + 4;
 		const first = Math.max(0, Math.trunc(list.scrollTop / rowHeight));
 		const end = Math.min(model.rows.length, Math.trunc((list.scrollTop + list.height + rowHeight - 1) / rowHeight));
@@ -46,11 +47,11 @@ export class RomInspectorPresentation {
 		}
 		const contentFirst = Math.max(0, Math.trunc(bytes.scrollTop / layout.rowHeight));
 		const contentEnd = Math.trunc((bytes.scrollTop + bytes.height + layout.rowHeight - 1) / layout.rowHeight);
-		if (changed || contentFirst !== this.contentFirst || contentEnd !== this.contentEnd) {
+		if (contentChanged || contentFirst !== this.contentFirst || contentEnd !== this.contentEnd) {
 			this.lines.length = 0;
 			this.firstLine = contentFirst;
-			const row = model.selection;
-			if (input.preview === undefined && row !== undefined && row.start !== undefined) {
+			const range = model.selectedRange;
+			if (!input.showingImage && range !== undefined) {
 				if (model.mode === 'code') {
 					const image = model.code!;
 					for (let index = contentFirst; index < Math.min(contentEnd, model.instructions.length); index++) {
@@ -59,9 +60,9 @@ export class RomInspectorPresentation {
 					}
 				} else {
 					for (let index = contentFirst; index < contentEnd; index++) {
-						const offset = row.start + index * this.byteColumns;
-						if (offset >= row.end!) break;
-						this.lines.push(formatHexDumpRow(input.snapshot.rom, offset, row.end, this.byteColumns));
+						const offset = range.start + index * this.byteColumns;
+						if (offset >= range.end) break;
+						this.lines.push(formatHexDumpRow(input.snapshot.rom, offset, range.end, this.byteColumns));
 					}
 				}
 			}
@@ -69,13 +70,18 @@ export class RomInspectorPresentation {
 			this.contentFirst = contentFirst; this.contentEnd = contentEnd;
 		}
 		if (changed) {
-			const titleRight = input.actions.items[0].bounds.left;
+			const titleRight = input.actions.items.find(item => item.visible)?.bounds.left ?? layout.right;
 			this.title = truncateMeasuredText(input.snapshot.label, titleRight - layout.left - 8, measureTextRange);
 			this.status = `${formatByteSize(input.snapshot.rom.byteLength)} | ${model.rows.length} ${model.mode === 'code' ? 'functions' : model.mode} | ROM snapshot`;
-			const row = model.selection;
+			const range = model.selectedRange;
 			const map = input.mapBounds, scale = (map.right - map.left) / input.snapshot.rom.byteLength;
-			this.selectedSpan = row?.start === undefined ? undefined : { left: map.left + row.start * scale, right: map.left + row.end * scale };
-			this.contentTitle = input.preview !== undefined ? `IMAGE  ${input.preview.image.width} x ${input.preview.image.height}` : model.mode === 'code' ? 'DISASSEMBLY / PACKED PC' : row?.start === undefined ? 'NO STORED BYTE RANGE' : 'RAW BYTES / FILE OFFSET';
+			this.selectedSpan = range === undefined ? undefined : { left: map.left + range.start * scale, right: map.left + range.end * scale };
+		}
+		if (contentChanged || contentLayoutChanged) {
+			const titleRight = input.contentActions.items.find(item => item.visible)?.bounds.left ?? bytes.bounds.right;
+			const title = input.showingImage ? `IMAGE ${input.preview!.image.width}x${input.preview!.image.height}`
+				: model.selectedRange === undefined ? 'NO STORED BYTES' : model.mode === 'code' ? 'DISASSEMBLY' : 'BYTES';
+			this.contentTitle = truncateMeasuredText(title, titleRight - bytes.bounds.left - 8, measureTextRange);
 		}
 		if (layoutChanged) {
 			this.map.length = 0;
@@ -87,8 +93,9 @@ export class RomInspectorPresentation {
 			}
 		}
 		this.revision = model.revision;
+		this.contentRevision = input.contentRevision;
 	}
-	public reset(): void { this.revision = -1; this.listFirst = -1; this.contentFirst = -1; }
+	public reset(): void { this.revision = -1; this.contentRevision = -1; this.listFirst = -1; this.contentFirst = -1; }
 }
 
 export function drawRomInspector(input: RomInspectorInput, view: RomInspectorPresentation, filter: ValueInput<string>): void {
@@ -116,14 +123,31 @@ export function drawRomInspector(input: RomInspectorInput, view: RomInspectorPre
 	api.popClipRect();
 	list.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
 	api.blit_text_inline_with_font(view.contentTitle, bytes.bounds.left + 4, bytes.bounds.top - layout.rowHeight - 3, 0, color, font);
-	api.pushClipRect(bytes.bounds.left, bytes.bounds.top, bytes.bounds.right, bytes.bounds.bottom);
-	if (input.preview !== undefined) drawImagePreview(input.preview, bytes.bounds.left + 4, bytes.bounds.top + 4, bytes.bounds.right - 4, bytes.bounds.bottom - 4);
-	const textLeft = bytes.bounds.left + 4 - Math.round(input.horizontal.getScroll());
-	for (let index = 0; index < view.lines.length; index++) api.blit_text_inline_with_font(view.lines[index], textLeft,
-		bytes.offsetTop + (view.firstLine + index) * layout.rowHeight, 0, color, font);
-	api.popClipRect();
-	bytes.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
-	input.horizontal.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
+	renderWorkbenchActionBar(input.contentActions, font);
+	if (input.showingImage) {
+		const imageView = input.imageView, bounds = imageView.bounds, bitmap = input.preview!;
+		api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
+		api.pushTransform(imageView.transform);
+		api.drawBitmap(bitmap, 0, 0, bitmap.image.width, bitmap.image.height);
+		if (input.showCollision) {
+			const boundingbox = input.collision?.bounds;
+			if (boundingbox !== undefined) api.blit_rect(boundingbox.left, boundingbox.top, boundingbox.right, boundingbox.bottom,
+				0, colors.COLOR_INSPECTOR_VALUE_CHANGED);
+			for (const path of input.collisionPaths) api.polyline(path, 0, 0, 0, 1, colors.COLOR_STATUS_WARNING);
+		}
+		api.popTransform();
+		api.popClipRect();
+		imageView.vertical.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
+		imageView.horizontal.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
+	} else {
+		api.pushClipRect(bytes.bounds.left, bytes.bounds.top, bytes.bounds.right, bytes.bounds.bottom);
+		const textLeft = bytes.bounds.left + 4 - Math.round(input.horizontal.getScroll());
+		for (let index = 0; index < view.lines.length; index++) api.blit_text_inline_with_font(view.lines[index], textLeft,
+			bytes.offsetTop + (view.firstLine + index) * layout.rowHeight, 0, color, font);
+		api.popClipRect();
+		bytes.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
+		input.horizontal.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
+	}
 	api.popClipRect();
 }
 

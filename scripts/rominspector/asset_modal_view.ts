@@ -11,6 +11,7 @@ import {
 } from '../../toolchain/ts/rompack/blua32_symbols';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, renderBufferBar } from './asciiart';
 import { decodeAudioPreviewToPcm } from './audio_preview';
+import { decodeCollisionShapeVariant, type CollisionShapeVariant } from '../../toolchain/ts/rompack/collision_shape_codec';
 import { decodeRomAssetImage, type RomTextureDecodeCache } from '../../toolchain/ts/rompack/asset_image';
 export type { RomTextureDecodeCache as TextureDecodeCache } from '../../toolchain/ts/rompack/asset_image';
 import {
@@ -72,7 +73,7 @@ function renderHexDumpSectionPreview(title: string, start: number, end: number, 
 	return `${title}: [${start} - ${end}] (${formatByteSize(buf.byteLength)})\n${asciiHexDump(buf)}`;
 }
 
-function buildOverlayBuffer(imgW: number, imgH: number, polys: number[][]): Uint8Array {
+function buildOverlayBuffer(imgW: number, imgH: number, shape: CollisionShapeVariant): Uint8Array {
 	const buf = new Uint8Array(imgW * imgH * 4);
 	const put = (x: number, y: number) => {
 		if (x < 0 || y < 0 || x >= imgW || y >= imgH) return;
@@ -91,10 +92,22 @@ function buildOverlayBuffer(imgW: number, imgH: number, polys: number[][]): Uint
 			if (e2 <= dx) { err += dx; y0 += sy; }
 		}
 	};
-	for (const p of polys || []) {
-		for (let i = 0; i < p.length; i += 2) {
-			const j = (i + 2 === p.length) ? 0 : i + 2;
-			line(p[i], p[i + 1], p[j], p[j + 1]);
+	const bounds = shape.bounds;
+	line(bounds.left, bounds.top, bounds.right, bounds.top);
+	line(bounds.right, bounds.top, bounds.right, bounds.bottom);
+	line(bounds.right, bounds.bottom, bounds.left, bounds.bottom);
+	line(bounds.left, bounds.bottom, bounds.left, bounds.top);
+	if (shape.pieces !== undefined) for (const piece of shape.pieces) {
+		if (piece.kind === 'aabb') {
+			const b = piece.bounds;
+			line(b.left, b.top, b.right, b.top); line(b.right, b.top, b.right, b.bottom);
+			line(b.right, b.bottom, b.left, b.bottom); line(b.left, b.bottom, b.left, b.top);
+		} else {
+			const p = piece.vertices;
+			for (let i = 0; i < p.length; i += 2) {
+				const j = (i + 2 === p.length) ? 0 : i + 2;
+				line(p[i], p[i + 1], p[j], p[j + 1]);
+			}
 		}
 	}
 	return buf;
@@ -240,13 +253,15 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 	const modalWidth = Math.max(20, ctx.modalWidth);
 	const modalHeight = Math.max(8, ctx.modalHeight);
 
-	switch (selected.type) {
-	case 'image': {
+	switch (selected.op === 'delete' ? 'delete' : selected.type) {
+		case 'delete': metadataLines.push('TOC operation: delete'); break;
+		case 'image': {
 			const imagePreview = decodeRomAssetImage(ctx.rombin, ctx.assetList, selected, ctx.decodedTexture);
 			previewSections.push(buildPreviewSection('', imagePreview.rgba, imagePreview.width, imagePreview.height, ctx.previewZoom));
 			previewFixedLines.push(previewFixedLine(imagePreview.width, imagePreview.height, ctx.previewZoom));
-			if (imgmeta.hitpolygons?.original && imgmeta.width && imgmeta.height) {
-				previewSections.push(buildPreviewSection('HitPolygons (convex pieces) overlay:', buildOverlayBuffer(imgmeta.width, imgmeta.height, imgmeta.hitpolygons.original), imgmeta.width, imgmeta.height, ctx.previewZoom));
+			if (selected.collision_bin_start !== undefined) {
+				const shape = decodeCollisionShapeVariant(ctx.rombin.subarray(selected.collision_bin_start, selected.collision_bin_end));
+				previewSections.push(buildPreviewSection('Collision shapes:', buildOverlayBuffer(imgmeta.width, imgmeta.height, shape), imgmeta.width, imgmeta.height, ctx.previewZoom));
 			}
 			for (const [key, value] of Object.entries(imgmeta)) metadataLines.push(`${key}: ${JSON.stringify(value)}`);
 			break;

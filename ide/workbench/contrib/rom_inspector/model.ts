@@ -5,7 +5,7 @@ import type { RomAsset } from '../../../../toolchain/ts/rompack/assets';
 import { loadBlua32ToolingImage, type Blua32ToolingImage } from '../../../../toolchain/ts/rompack/blua32_media';
 import { blua32SourceRangeAtPc } from '../../../../toolchain/ts/rompack/blua32_symbols';
 import { indexBlua32FunctionInstructions } from '../../../../toolchain/ts/rompack/disassembler';
-import { inspectRom, romAssetByteLength, romAssetRanges, type RomInspectionSection } from '../../../../toolchain/ts/rompack/inspection';
+import { inspectRom, romAssetByteLength, romAssetRanges, type RomAssetRangeKind, type RomInspectionSection } from '../../../../toolchain/ts/rompack/inspection';
 import type { ResourceDomain } from '../../../common/resource';
 import type { InspectedProperty } from '../../ui/property_inspector/model';
 
@@ -17,15 +17,23 @@ export type RomInspectorSnapshot = {
 	readonly assets: readonly RomAsset[];
 };
 const ENTRY_ORDER = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+const NO_RANGES: readonly RomInspectorByteRange[] = [];
+const NO_INSTRUCTIONS = new Uint32Array(0);
 
 export type RomInspectorMode = 'assets' | 'structure' | 'code';
 export type RomInspectorSort = 'name' | 'type' | 'size' | 'offset';
+export type RomInspectorByteRange = {
+	readonly kind: RomAssetRangeKind | RomInspectionSection['kind'] | 'instructions';
+	readonly start: number;
+	readonly end: number;
+};
 export type RomInspectorRow = {
 	readonly label: string;
 	readonly type: string;
 	readonly byteLength: number;
 	readonly start: number | undefined;
 	readonly end: number | undefined;
+	readonly ranges: readonly RomInspectorByteRange[];
 	readonly asset?: RomAsset;
 	readonly functionIndex?: number;
 	readonly sourcePath?: string;
@@ -47,16 +55,18 @@ export class RomInspectorModel {
 	public revision = 0;
 	public code: Blua32ToolingImage | null | undefined;
 	public functions: readonly RomInspectorRow[] = [];
-	public instructions: Uint32Array<ArrayBufferLike> = new Uint32Array(0);
+	public instructions: Uint32Array<ArrayBufferLike> = NO_INSTRUCTIONS;
 	public readonly properties: InspectedProperty[] = [];
 	private indexedFunction = -1;
+	private selectedRow: RomInspectorRow | undefined;
+	private rangeIndex = 0;
 
 	public constructor(public readonly snapshot: RomInspectorSnapshot) {
 		this.inspection = inspectRom(snapshot.rom, snapshot.header, snapshot.assets);
 		this.assets = snapshot.assets.map(asset => {
-			const ranges = romAssetRanges(asset), first = ranges[0];
+			const ranges = asset.op === 'delete' ? NO_RANGES : romAssetRanges(asset), first = ranges[0];
 			const byteLength = romAssetByteLength(asset), sourcePath = asset.source_path;
-			return { label: asset.resid, type: asset.type, byteLength, start: first?.start, end: first?.end, asset, sourcePath,
+			return { label: asset.resid, type: asset.type, byteLength, start: first?.start, end: first?.end, ranges, asset, sourcePath,
 				searchText: `${asset.resid} ${asset.type} ${sourcePath ?? ''}`.toLowerCase(), sizeText: formatByteSize(byteLength) };
 		});
 		this.sections = this.inspection.sections.map(section => this.sectionRow(section));
@@ -65,15 +75,28 @@ export class RomInspectorModel {
 	private sectionRow(section: RomInspectionSection): RomInspectorRow {
 		const label = section.asset === undefined ? section.kind : `${section.asset.resid} / ${section.buffer}`;
 		const byteLength = section.end - section.start;
-		return { label, type: section.kind, byteLength, start: section.start, end: section.end, asset: section.asset,
+		return { label, type: section.kind, byteLength, start: section.start, end: section.end,
+			ranges: [{ kind: section.buffer ?? section.kind, start: section.start, end: section.end }], asset: section.asset,
 			sourcePath: section.asset?.source_path, searchText: `${label} ${section.kind}`.toLowerCase(), sizeText: formatByteSize(byteLength) };
 	}
-	public get selection(): RomInspectorRow | undefined { return this.rows[this.selected]; }
+	public get selection(): RomInspectorRow | undefined { return this.selectedRow; }
+	public get ranges(): readonly RomInspectorByteRange[] { return this.selectedRow?.ranges ?? NO_RANGES; }
+	public get selectedRange(): RomInspectorByteRange | undefined { return this.ranges[this.rangeIndex]; }
+	public get canPreviewImage(): boolean {
+		const asset = this.selectedRow?.asset;
+		return this.mode === 'assets' && asset !== undefined && asset.op !== 'delete' && (asset.type === 'image' || asset.type === 'texture');
+	}
+	public selectRange(index: number): void {
+		if (this.rangeIndex === index) return;
+		this.rangeIndex = index;
+		this.select(this.selected);
+	}
 	public setMode(mode: RomInspectorMode): void {
 		if (this.mode === mode) return;
 		this.mode = mode;
 		if (mode === 'code' && this.code === undefined) this.loadCode();
 		this.selected = -1;
+		this.selectedRow = undefined;
 		this.project();
 	}
 	private loadCode(): void {
@@ -82,10 +105,11 @@ export class RomInspectorModel {
 		if (this.code === null) return;
 		const code = this.code;
 		const base = snapshot.domain === -1 ? SYSTEM_ROM_BASE : CART_ROM_BASE;
-		this.functions = code.layout.functions.map((fn, functionIndex) => {
+		this.functions = code.layout.functions.map<RomInspectorRow>((fn, functionIndex) => {
 			const label = code.symbols === null ? formatNumberAsHex(fn.address, 8) : code.symbols.metadata.functionIds[functionIndex];
 			const sourcePath = code.symbols === null ? undefined : blua32SourceRangeAtPc(code.symbols, code.layout.header.textAddress, fn.codeAddress)?.path;
 			return { label, type: 'function', byteLength: fn.codeByteCount, start: fn.codeAddress - base, end: fn.codeAddress + fn.codeByteCount - base,
+				ranges: [{ kind: 'instructions', start: fn.codeAddress - base, end: fn.codeAddress + fn.codeByteCount - base }],
 				functionIndex, sourcePath, searchText: `${label} ${sourcePath ?? ''}`.toLowerCase(), sizeText: formatByteSize(fn.codeByteCount) };
 		});
 	}
@@ -107,13 +131,20 @@ export class RomInspectorModel {
 	}
 	public select(index: number): void {
 		this.selected = index;
+		const row = this.rows[index];
+		if (row !== this.selectedRow) this.rangeIndex = 0;
+		this.selectedRow = row;
 		this.revision += 1;
 		this.properties.length = 0;
-		const row = this.selection;
+		if (row?.functionIndex === undefined) {
+			this.instructions = NO_INSTRUCTIONS;
+			this.indexedFunction = -1;
+		}
 		if (row === undefined) return;
 		this.properties.push({ warning: false, label: 'Name', value: row.label, description: row.type },
 			{ warning: false, label: 'Stored bytes', value: `${row.byteLength} (${row.sizeText})`, description: this.mode === 'assets' ? 'Includes metadata' : '' });
-		if (row.start !== undefined) this.properties.push({ warning: false, label: 'File range', value: `${formatNumberAsHex(row.start, 8)} .. ${formatNumberAsHex(row.end!, 8)}`, description: 'End exclusive' });
+		const range = this.selectedRange;
+		if (range !== undefined) this.properties.push({ warning: false, label: `Selected ${range.kind} range`, value: `${formatNumberAsHex(range.start, 8)} .. ${formatNumberAsHex(range.end, 8)}`, description: 'File offsets; end exclusive' });
 		if (row.sourcePath !== undefined) this.properties.push({ warning: false, label: 'Authored source', value: row.sourcePath, description: 'Current source may differ' });
 		if (row.type === 'header') {
 			const header = this.snapshot.header;
@@ -156,7 +187,7 @@ export class RomInspectorModel {
 				if (meta.loopEnd !== undefined) this.properties.push({ warning: false, label: 'Loop end', value: String(meta.loopEnd), description: '' });
 			}
 			if (asset.program_module !== undefined) this.properties.push({ warning: false, label: 'Program module', value: String(asset.program_module), description: '' });
-			for (const range of romAssetRanges(row.asset)) this.properties.push({ warning: false, label: range.kind, value: `${formatNumberAsHex(range.start, 8)} .. ${formatNumberAsHex(range.end, 8)}`, description: `${range.end - range.start} bytes` });
+			if (this.mode === 'assets') for (const range of row.ranges) this.properties.push({ warning: false, label: range.kind, value: `${formatNumberAsHex(range.start, 8)} .. ${formatNumberAsHex(range.end, 8)}`, description: `${range.end - range.start} bytes` });
 			if (row.asset.op !== undefined) this.properties.push({ warning: false, label: 'TOC operation', value: row.asset.op, description: '' });
 		}
 		if (row.functionIndex !== undefined) {

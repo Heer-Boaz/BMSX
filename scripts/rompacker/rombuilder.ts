@@ -93,7 +93,7 @@ import {
 import {
 	convexCollisionPiece,
 	encodeCollisionShapeVariants,
-} from '../../toolchain/ts/rompack/collision_shape_encode';
+} from '../../toolchain/ts/rompack/collision_shape_codec';
 import { compileCollisionMap } from './collision_map_compiler';
 // @ts-ignore
 const { join, parse, relative, resolve, sep } = require('path');

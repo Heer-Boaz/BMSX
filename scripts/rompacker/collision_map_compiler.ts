@@ -3,7 +3,7 @@ import {
 	aabbCollisionPiece,
 	encodeCollisionShapeVariants,
 	type AabbCollisionShapePiece,
-} from '../../toolchain/ts/rompack/collision_shape_encode';
+} from '../../toolchain/ts/rompack/collision_shape_codec';
 
 export type CompiledCollisionMapLayer = {
 	name: string;

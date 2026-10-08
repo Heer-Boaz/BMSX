@@ -1,4 +1,5 @@
 import { KeyModifier, type PlayerInput } from '../../../../hosts/common/input/player';
+import { formatByteSize, formatNumberAsHex } from '../../../../machine/ts/common/byte_hex_string';
 import { point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { SCROLLBAR_WIDTH } from '../../../common/constants';
 import type { EditorCommandId, EditorCommandRunner } from '../../../common/commands';
@@ -22,14 +23,15 @@ import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import { ScrollbarPointerControl } from '../../ui/scrollbar_pointer';
+import { WorkbenchImageControl } from '../../ui/image_control';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import type { EditorNavigationController } from '../resources/navigation';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { RomInspectorInput } from './editor_input';
-import type { RomInspectorSort } from './model';
+import type { RomInspectorByteRange, RomInspectorSort } from './model';
 import { drawRomInspector, RomInspectorPresentation } from './presentation';
 
-const COMMANDS = ['romInspector.assets', 'romInspector.structure', 'romInspector.code', 'romInspector.sort', 'romInspector.source'] as const;
+const COMMANDS = ['romInspector.assets', 'romInspector.structure', 'romInspector.code', 'romInspector.sort', 'romInspector.source', 'romInspector.content', 'romInspector.zoom', 'romInspector.collision'] as const;
 const HORIZONTAL_NAVIGATION = ['ArrowLeft', 'ArrowRight'] as const;
 const NAVIGATION = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'] as const;
 const SORTS: { label: string; description: string; detail: string; sort: RomInspectorSort; descending: boolean }[] = [
@@ -40,9 +42,20 @@ const SORTS: { label: string; description: string; detail: string; sort: RomInsp
 	{ label: 'File offset', description: 'Physical order', detail: '', sort: 'offset', descending: false },
 ];
 
+const ZOOM_OPTIONS = [
+	{ label: 'Fit', description: '', detail: '', scale: 'fit' as const },
+	...[1, 2, 4, 8, 16, 0.5, 0.25, 0.125].map(scale => ({ label: `${scale * 100}%`, description: scale === 1 ? 'Original pixels' : '', detail: '', scale })),
+];
+const RANGE_LABELS: Record<RomInspectorByteRange['kind'], string> = {
+	data: 'Data', metadata: 'Metadata', 'model-texture': 'Texture', collision: 'Collision',
+	header: 'Header', manifest: 'Manifest', toc: 'TOC', blua32: 'BLua32', asset: 'Asset', unreferenced: 'Unreferenced', instructions: 'Instructions',
+};
+
 /** Native workbench controls over one immutable packed-image input. */
 export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorInput> {
 	private readonly actions: WorkbenchActionBarControl;
+	private readonly contentActions: WorkbenchActionBarControl;
+	private readonly image = new WorkbenchImageControl(inputFocus, pointerCapture, this.focusTarget);
 	private readonly list = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, input => this.navigate(input));
 	private readonly bytes = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, input => this.navigateBytes(input));
 	private readonly horizontal = new ScrollbarPointerControl(pointerCapture);
@@ -52,16 +65,21 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		options: { allowSpace: true, singleLine: true }, invalidBlurMessage: '', format: value => value, parse: value => ({ value }),
 	}, value => { this.input.model.filter = value; this.input.model.project(); this.input.list.scrollbar.setScroll(0); });
 	private boundRevision = -1;
+	private boundContentRevision = -1;
+	private imageActive = false;
+	private zoomMode: 'fit' | number | undefined;
 	private freshLayout = true;
 	public constructor(resources: ResourcePanelController, commands: EditorCommandRunner,
 		private readonly sources: RuntimeSourceState, private readonly navigation: EditorNavigationController,
 		private readonly quickInput: QuickInputController) {
 		super(resources);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
+		this.contentActions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		for (const target of [this.focusTarget, this.inspector.focusTarget]) for (const command of COMMANDS)
 			target.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 		this.list.focusTarget.commandContext = this.focusTarget;
 		this.bytes.focusTarget.commandContext = this.focusTarget;
+		this.image.focusTarget.commandContext = this.focusTarget;
 		this.filter.field.focusTarget.commandContext = this.focusTarget;
 		this.actions.focusTarget.next = this.filter.field.focusTarget;
 		this.filter.field.focusTarget.previous = this.actions.focusTarget;
@@ -74,8 +92,10 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 	public override focus(): void { this.list.focusTarget.focus(); }
 	protected override activate(): void {
 		super.activate();
-		this.boundRevision = -1; this.freshLayout = true; this.presentation.reset();
+		this.boundRevision = -1; this.boundContentRevision = -1; this.zoomMode = undefined; this.freshLayout = true; this.presentation.reset();
 		this.actions.setInput(this.input.actions, this.focusTarget);
+		this.contentActions.setInput(this.input.contentActions, this.focusTarget);
+		this.image.setInput(this.input.imageView);
 		this.list.setInput(this.input.list); this.bytes.setInput(this.input.bytes);
 		this.filter.setValue(this.input.model.filter);
 		this.update();
@@ -88,6 +108,9 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		return resource?.domain === domain ? resource : undefined;
 	}
 	public isEnabled(command: EditorCommandId): boolean {
+		if (command === 'romInspector.content') return this.input.model.canPreviewImage || this.input.model.ranges.length > 1;
+		if (command === 'romInspector.zoom') return this.input.showingImage;
+		if (command === 'romInspector.collision') return this.input.showingImage && this.input.hasCollision;
 		if (command === 'romInspector.source') return this.source() !== undefined;
 		if (command === 'romInspector.sort') return this.input.model.mode !== 'structure';
 		if (command === 'romInspector.code') return this.input.snapshot.header.blua32ImageByteCount !== 0;
@@ -103,8 +126,32 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 			case 'romInspector.sort': this.quickInput.pick('SORT ROM ENTRIES', 'Choose order', () => new TextQuickPickProvider(SORTS), item => {
 				input.model.sort = item.sort; input.model.descending = item.descending; input.model.project(); input.list.scrollbar.setScroll(0);
 			}); break;
+			case 'romInspector.content': this.chooseContent(); break;
+			case 'romInspector.zoom': this.quickInput.pick('IMAGE ZOOM', 'Scale', () => new TextQuickPickProvider(ZOOM_OPTIONS,
+				ZOOM_OPTIONS.findIndex(option => option.scale === input.imageView.mode)), item => input.imageView.setScale(item.scale)); break;
+			case 'romInspector.collision': input.showCollision = !input.showCollision; break;
 			case 'romInspector.source': void this.navigation.openResource(this.source()!); break;
 		}
+	}
+	private chooseContent(): void {
+		const input = this.input;
+		// Build after the invoking field commits on blur, just like other quick picks.
+		this.quickInput.pick('ASSET CONTENT', 'Preview or byte range', () => {
+			this.update();
+			const choices: { label: string; description: string; detail: string; range: number | undefined }[] = [];
+			if (input.model.canPreviewImage) choices.push({ label: 'Preview', description: 'Image', detail: '', range: undefined });
+			const firstRange = choices.length;
+			for (let index = 0; index < input.model.ranges.length; index++) {
+				const range = input.model.ranges[index];
+				choices.push({ label: RANGE_LABELS[range.kind], description: formatByteSize(range.end - range.start),
+					detail: `${formatNumberAsHex(range.start, 8)} .. ${formatNumberAsHex(range.end, 8)}`, range: index });
+			}
+			return new TextQuickPickProvider(choices, input.showingImage ? 0 : firstRange + input.model.ranges.indexOf(input.model.selectedRange!));
+		}, item => {
+			input.contentMode = item.range === undefined ? 'preview' : 'bytes';
+			if (item.range !== undefined) input.model.selectRange(item.range);
+			input.contentRevision++;
+		});
 	}
 	public override update(): void {
 		const input = this.input, { model, layout } = input;
@@ -114,13 +161,38 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		if (changed) {
 			input.updatePreview();
 			for (const item of input.actions.items) item.checked = item.command === `romInspector.${model.mode}`;
-			input.bytes.scrollbar.setScroll(0); input.horizontal.setScroll(0);
 			this.inspector.show({ title: 'DETAILS', dismissible: false, items: model.properties, canOpenSource: () => this.source() !== undefined,
 				openSource: () => { void this.navigation.openResource(this.source()!); } }, false);
 			this.boundRevision = model.revision;
 		}
+		const contentChanged = this.boundContentRevision !== input.contentRevision;
+		if (changed || contentChanged) {
+			this.image.cancelPointer(); this.bytes.cancelPointer(); this.horizontal.cancelPointer();
+			input.bytes.scrollbar.setScroll(0); input.horizontal.setScroll(0);
+			this.boundContentRevision = input.contentRevision;
+		}
+		const contentActionsChanged = changed || contentChanged || this.zoomMode !== input.imageView.mode;
+		if (contentActionsChanged) {
+			for (const item of input.contentActions.items) {
+				item.visible = this.isEnabled(item.command);
+				if (item.command === 'romInspector.content') item.label = input.showingImage ? 'Preview' : model.selectedRange === undefined ? 'View' : RANGE_LABELS[model.selectedRange.kind];
+				if (item.command === 'romInspector.zoom') item.label = input.imageView.mode === 'fit' ? 'Fit' : `${input.imageView.mode * 100}%`;
+			}
+			this.zoomMode = input.imageView.mode;
+			const contentFocus = input.showingImage ? this.image.focusTarget : this.bytes.focusTarget;
+			const oldContentFocus = this.imageActive ? this.image.focusTarget : this.bytes.focusTarget;
+			if (oldContentFocus.hasFocus && contentFocus !== oldContentFocus) contentFocus.focus();
+			const hasActions = input.contentActions.items.some(item => item.visible);
+			if (!hasActions && this.contentActions.focusTarget.hasFocus) contentFocus.focus();
+			this.inspector.setFocusOrder(this.list.focusTarget, hasActions ? this.contentActions.focusTarget : contentFocus);
+			if (hasActions) { this.contentActions.focusTarget.next = contentFocus; contentFocus.previous = this.contentActions.focusTarget; }
+			contentFocus.next = this.actions.focusTarget;
+			this.actions.focusTarget.previous = contentFocus;
+			this.imageActive = input.showingImage;
+		}
+		for (const item of input.contentActions.items) if (item.command === 'romInspector.collision') item.checked = input.showCollision;
 		const row = layout.rowHeight, left = layout.left, right = layout.right;
-		if (layoutChanged || changed) {
+		if (layoutChanged || changed || contentChanged) {
 			layoutWorkbenchActionBar(input.actions, right - 4, layout.top + 2, layout.top + row + 6, measureText, layout.font!.renderFont());
 			write_rect_bounds(input.filterBounds, left + measureText('Filter') + 10, layout.top + row + 10, right - 4, layout.top + row * 2 + 16);
 			write_rect_bounds(input.mapBounds, left + 4, input.filterBounds.bottom + 4, right - 4, input.filterBounds.bottom + 10);
@@ -130,17 +202,20 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 			write_rect_bounds(input.detailsBounds, split + 4, top, right - 2, detailBottom);
 			const available = right - split - 18;
 			this.presentation.byteColumns = measureText('00000000  ' + '00 '.repeat(16) + '  ' + '.'.repeat(16)) <= available ? 16 : 8;
-			const selected = model.selection;
-			const count = input.preview !== undefined || selected === undefined ? 0 : model.mode === 'code' ? model.instructions.length : selected.start === undefined ? 0
-				: Math.trunc((selected.end! - selected.start + this.presentation.byteColumns - 1) / this.presentation.byteColumns);
+			const range = model.selectedRange;
+			const count = input.showingImage || range === undefined ? 0 : model.mode === 'code' ? model.instructions.length
+				: Math.trunc((range.end - range.start + this.presentation.byteColumns - 1) / this.presentation.byteColumns);
 			input.bytes.layout(split + 4, detailBottom + row + 8, right - 2, layout.bottom - SCROLLBAR_WIDTH, count * row);
+			if (input.preview !== undefined) input.imageView.layout(split + 4, detailBottom + row + 8, right - 2, layout.bottom);
 			write_rect_bounds(input.horizontalTrack, input.bytes.bounds.left, input.bytes.bounds.bottom, input.bytes.bounds.right, layout.bottom);
 			this.list.lineStep = row * 2 + 4; this.bytes.lineStep = row;
 		}
+		if (layoutChanged || contentActionsChanged) layoutWorkbenchActionBar(input.contentActions, right - 4,
+			input.detailsBounds.bottom + 2, input.detailsBounds.bottom + row + 6, measureText, layout.font!.renderFont());
 		this.inspector.layout(layout.font!.renderFont(), measureTextRange, measureText, input.detailsBounds);
 		this.inspector.update();
-		this.actions.update();
-		this.presentation.update(input, layoutChanged);
+		this.actions.update(); this.contentActions.update();
+		this.presentation.update(input, layoutChanged, contentActionsChanged);
 		input.horizontal.layout(input.horizontalTrack, this.presentation.contentWidth, input.bytes.bounds.right - input.bytes.bounds.left, input.horizontal.getScroll());
 	}
 	private navigateBytes(player: PlayerInput): boolean {
@@ -175,7 +250,7 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 	}
 	public handleKeyboard(player: PlayerInput): void { this.navigate(player); }
 	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
-		if (this.actions.handlePointer(snapshot)) return true;
+		if (this.actions.handlePointer(snapshot) || this.contentActions.handlePointer(snapshot)) return true;
 		const map = this.input.mapBounds;
 		if (justPressed && snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, map)) {
 			const input = this.input, model = input.model;
@@ -195,8 +270,9 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 			this.filter.handlePointer(bounds.left + 3, snapshot.viewportX, justPressed, (snapshot.pressedButtons & PointerButton.Primary) !== 0); return true;
 		}
 		if (this.inspector.handlePointer(snapshot)) return true;
-		if (this.horizontal.handlePointer(snapshot, this.input.horizontal)) return true;
-		if (this.bytes.handlePointer(snapshot)) return true;
+		if (this.input.showingImage) {
+			if (this.image.handlePointer(snapshot)) return true;
+		} else if (this.horizontal.handlePointer(snapshot, this.input.horizontal) || this.bytes.handlePointer(snapshot)) return true;
 		if (!this.list.handlePointer(snapshot)) return false;
 		const input = this.input;
 		if (justPressed && point_in_rect(snapshot.viewportX, snapshot.viewportY, input.list.bounds)) {
@@ -208,14 +284,17 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null, input: PlayerInput): void {
 		if (pointer === null) return;
 		const delta = direction * steps * this.input.layout.rowHeight * 3;
-		if ((input.getModifiers() & KeyModifier.shift) !== 0 && pointer.valid && pointer.insideViewport
+		if (this.input.showingImage && this.image.handleWheel(pointer, delta, -direction * steps, input.getModifiers())) {
+			input.inputHandlers.pointer?.consumeButton('pointer_wheel'); return;
+		}
+		if (!this.input.showingImage && (input.getModifiers() & KeyModifier.shift) !== 0 && pointer.valid && pointer.insideViewport
 			&& (point_in_rect(pointer.viewportX, pointer.viewportY, this.input.bytes.bounds) || point_in_rect(pointer.viewportX, pointer.viewportY, this.input.horizontalTrack))) {
 			this.horizontal.cancelPointer();
 			this.input.horizontal.setScroll(this.input.horizontal.getScroll() + delta);
 			input.inputHandlers.pointer?.consumeButton('pointer_wheel'); return;
 		}
 		if (this.inspector.handleWheel(pointer, delta)
-			|| this.list.handleWheel(pointer, delta) || this.bytes.handleWheel(pointer, delta)) input.inputHandlers.pointer?.consumeButton('pointer_wheel');
+			|| this.list.handleWheel(pointer, delta) || !this.input.showingImage && this.bytes.handleWheel(pointer, delta)) input.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	}
 	public draw(): void {
 		drawRomInspector(this.input, this.presentation, this.filter);
@@ -229,12 +308,12 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 	public override clearInput(): void {
 		this.horizontal.cancelPointer();
 		this.filter.cancel(); this.filter.field.focusTarget.release();
-		this.inspector.hide(); this.actions.clearInput(); this.list.clearInput(); this.bytes.clearInput();
+		this.inspector.hide(); this.contentActions.clearInput(); this.image.clearInput(); this.actions.clearInput(); this.list.clearInput(); this.bytes.clearInput();
 		super.clearInput();
 	}
 	public override dispose(): void {
 		this.horizontal.cancelPointer();
-		this.inspector.dispose(); this.actions.dispose(); this.list.dispose(); this.bytes.dispose(); this.filter.dispose();
+		this.inspector.dispose(); this.contentActions.dispose(); this.image.dispose(); this.actions.dispose(); this.list.dispose(); this.bytes.dispose(); this.filter.dispose();
 		super.dispose();
 	}
 }
