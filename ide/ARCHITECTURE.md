@@ -27,6 +27,9 @@ Rules:
 scanout and routes focused input through HID. `runtime/bios_terminal.ts` admits
 NMI through the existing physical request line and scheduler. Firmware owns
 commands, line editing, paging and history. Leaving the view suspends that shell;
+tab activation resumes its existing plan. The Terminal command admits a new
+visit; focus only selects a control. Shared pane background clicks focus the
+hit container rather than its primary-control redirect.
 CONT holds the actual NMI caller, without resurrecting a previous source stop.
 There is no Studio line editor or duplicate terminal transcript.
 

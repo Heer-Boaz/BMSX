@@ -1,4 +1,5 @@
 import type { RectBounds } from '../../../../machine/ts/common/rect';
+import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { PointerSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
@@ -57,10 +58,9 @@ export class GameViewEditorPane extends FullWidthWorkbenchEditorPane<GameViewInp
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
 		api.blit_text_inline_with_font(this.frameLabel, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
 	}
-	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
+	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean, now: number, player: PlayerInput): boolean {
 		if (this.gameInput.handlePointer(snapshot)) return false;
-		if (justPressed) this.focus();
-		return false;
+		return super.handleViewPointer(snapshot, justPressed, now, player);
 	}
 	public handleKeyboard(): void {}
 	public handleWheel(): void {}

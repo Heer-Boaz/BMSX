@@ -54,7 +54,7 @@ export abstract class WorkbenchViewEditorPane<
 		_now: number,
 		_playerInput: PlayerInput,
 	): boolean {
-		if (justPressed) this.focus();
+		if (justPressed) this.focusTarget.focus();
 		return false;
 	}
 }

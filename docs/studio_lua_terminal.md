@@ -15,15 +15,18 @@ TypeScript and native C++.
   scheduler even while Studio holds ordinary gameplay.
 - Keyboard focus is the same embedded-game focus used by Game View. Shift+F1
   or clicking outside the scanout releases it to Studio; clicking the scanout
-  focuses firmware again. Opening the terminal command/tab also focuses the
-  shell. No ordinary guest key becomes a global IDE shortcut.
+  focuses firmware again. Focus only selects an input control: it cannot admit
+  or resume BIOS execution. No ordinary guest key becomes a global IDE shortcut.
 - Changing tabs suspends the monitor without CONT, stack unwind or state restore.
-  Reopening resumes that same physical shell and its guest-owned history.
+  Tab activation resumes that same physical shell and its guest-owned history.
 - CONT leaves the BIOS through the real exception return. Studio holds
   the actual NMI caller before its next instruction or maskable IRQ, including
   returns into BIOS/IRQ code, and retains independent host pause. A physical BIOS visit retires an old source stop;
   hardware quiescence may finish a pending IRQ before NMI admission. It does not
-  have the pinned-frame semantics of programmatic evaluation. Clicking/reopening Terminal admits a new entry.
+  have the pinned-frame semantics of programmatic evaluation. After CONT the
+  view is closed; only the existing `View > BIOS Terminal` command admits a new
+  entry. Restoring focus, clicking the background or reselecting a tab cannot
+  start another monitor visit.
 - Workspace persistence records only the tab. The shell/environment are guest
   machine state, not another serialized host session.
 
@@ -79,5 +82,9 @@ existing system-output flush, not another decoder or collector.
 Production reference: [VS Code TerminalInstance](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/terminal/browser/terminalInstance.ts)
 connects its view to the real process input/output owner instead of implementing
 another shell. BMSX's real shell is firmware and its existing transport is HID
-plus scanout, not an OS PTY. [Frame-binding history](studio_terminal_contexts.md)
+plus scanout, not an OS PTY. [TerminalEditor](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/terminal/browser/terminalEditor.ts)
+separates attachment/visibility from focusing the existing input control. BMSX's
+shared pane background focuses its own control rather than calling the pane's
+primary-control focus redirect, matching [Godot's hit-control/ancestor focus routing](https://github.com/godotengine/godot/blob/master/scene/main/viewport.cpp).
+[Frame-binding history](studio_terminal_contexts.md)
 records the previous evaluator work independently of the removed Lua-only UI.

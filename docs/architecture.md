@@ -234,8 +234,10 @@ The BIOS `shell/repl` module uses this same loader for persistent Lua evaluation
 Its namespace and captured closures are ordinary guest state. Studio's
 [Terminal](studio_lua_terminal.md) displays and operates the actual BIOS monitor:
 firmware owns command parsing, HID editing, history, paging and rendered output.
-The pane admits physical supervisor entry through the existing input line and
-runs on the ordinary debugger/scheduler control plane. Leaving the pane suspends
+The Terminal command admits physical supervisor entry through the existing input
+line and ordinary debugger/scheduler control plane. Pane activation resumes only
+an existing suspended monitor plan; keyboard focus and background clicks cannot
+start or resume execution. Leaving the pane suspends
 that shell; it never synthesizes CONT or unwinds firmware. CONT returns to a held
 cartridge without clearing an independent host pause. Physical entry retires
 the previous source stop: hardware quiescence may finish its IRQ before NMI,

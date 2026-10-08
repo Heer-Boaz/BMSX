@@ -36,8 +36,7 @@ export class BiosTerminal implements RuntimeDebuggerControlPlan {
 	}
 	public open(): void {
 		if (this.active) {
-			this.debuggerState.plans.setControlSuspended(false);
-			this.execution.requestExecution(false);
+			this.resume();
 			return;
 		}
 		if (!this.canOpen) return;
@@ -55,6 +54,13 @@ export class BiosTerminal implements RuntimeDebuggerControlPlan {
 			if (this.phase === TerminalPhase.Entering && (status & SYS_STATUS_SUPERVISOR_ACTIVE) === 0) this.input.setProgrammaticSupervisorRequestLine(true);
 			this.execution.requestExecution(false);
 		}, error => { this.discard(); showEditorWarningBanner(extractErrorMessage(error), 5); });
+	}
+	/** Reattaching the view resumes its existing plan; it cannot admit another BIOS visit. */
+	public resume(): void {
+		const plans = this.debuggerState.plans;
+		if (plans.activeControlPlan !== this || !plans.controlSuspended) return;
+		plans.setControlSuspended(false);
+		this.execution.requestExecution(false);
 	}
 	/** Leaving the view suspends the shell; it never synthesizes CONT or unwinds firmware. */
 	public suspend(): void {

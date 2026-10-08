@@ -1,4 +1,5 @@
 import type { RectBounds } from '../../../../machine/ts/common/rect';
+import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
 import * as colors from '../../../common/constants';
 import { measureText } from '../../../editor/common/text/layout';
@@ -18,12 +19,10 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 	public constructor(resources: ResourcePanelController, private readonly terminal: BiosTerminal) { super(resources); }
 	public override get showsGameFrame(): boolean { return true; }
 	public override focus(): void {
-		this.terminal.open();
-		this.update();
 		if (this.terminal.active) this.gameInput.focusTarget.focus();
 		else super.focus();
 	}
-	protected override activate(): void { super.activate(); this.update(); }
+	protected override activate(): void { super.activate(); this.terminal.resume(); this.update(); }
 	public override clearInput(): void {
 		this.gameInput.clearInput(); this.terminal.suspend(); super.clearInput();
 	}
@@ -43,7 +42,7 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 			api.drawFrame(frameBounds.left, frameBounds.top, frameBounds.right, frameBounds.bottom);
 			this.gameInput.draw();
 		} else {
-			const label = this.terminal.canOpen ? 'Click to open' : 'Busy';
+			const label = this.terminal.canOpen ? 'Closed' : 'Busy';
 			api.blit_text_inline_with_font(label, (layout.left + layout.right - measureText(label)) / 2,
 				(layout.top + layout.bottom - layout.rowHeight) / 2, 0, colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT, editorViewState.font.renderFont());
 		}
@@ -51,12 +50,8 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
 		api.blit_text_inline_with_font('BIOS', bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
 	}
-	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
+	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean, now: number, player: PlayerInput): boolean {
 		if (this.gameInput.handlePointer(snapshot)) return false;
-		if (justPressed) {
-			if (this.terminal.active) super.focus();
-			else this.focus();
-		}
-		return justPressed;
+		return super.handleViewPointer(snapshot, justPressed, now, player);
 	}
 }

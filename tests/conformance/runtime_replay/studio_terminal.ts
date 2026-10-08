@@ -69,8 +69,21 @@ export async function runStudioTerminal(test: StudioFixture) {
 		&& !ide.debugger.plans.controlActive && test.execution.userPaused,
 		'CONT leaves the physical supervisor without clearing independent host pause (the caller may still be an IRQ)');
 	const held = cycles();
+	ide.editor.editorPanes.activePane!.focus();
+	await test.click({ left: terminal.layout.left + 1, right: terminal.layout.left + 2,
+		top: terminal.layout.top + 1, bottom: terminal.layout.top + 2 });
+	await test.clickTab(terminal.id);
 	for (let index = 0; index < 6; index++) await frame();
-	check(cycles() === held, 'the terminal does not leak execution into gameplay after CONT');
+	check(cycles() === held && !ide.editor.terminal.active && !ide.debugger.plans.controlActive,
+		'focus restoration, background clicks and tab reselection admit no CPU work after CONT');
+	await test.capture?.('bios-closed');
+	await test.runPaletteCommand('View: BIOS Terminal');
+	await until(() => (runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_RESUMABLE) !== 0,
+		'BIOS terminal: explicit command reopens the closed view');
+	for (let index = 0; index < 20; index++) await frame();
+	await command('lua bios_terminal_probe');
+	await command('cont');
+	await until(() => !ide.editor.terminal.active && test.tasks.ready, 'BIOS terminal: second CONT returns to held cartridge');
 	await test.runPaletteCommand('View: Game');
 	await testStudioPinnedFrameEvaluation(test, async () => {
 		const stop = ide.debugger.source.stop!, cpu = runtime.machine.cpu;
