@@ -482,6 +482,19 @@ renderers. Dit sluit B03/B04, propertyauthoring of A08 niet.
 
 ### Aanvullende behavior-review na A04
 
+De [bredere view-lifetime-review](studio_view_lifetime_review.md) legt twee
+aanvullende owner-slices vast. De gedeelde scheiding tussen input-attachment en
+navigatieopties sluit deze punten niet:
+
+- Automatische Workbench-executionadmission krijgt een samenhangende policy,
+  apart van inputrouting. Beoordeel `RuntimeCartEditor.executionSuspended`,
+  live-inspector-`running` en Game panel samen. Expliciete pause blijft al bij
+  `HostExecutionControl`; dit is geen bewijs dat Pause genegeerd wordt en geen
+  reden om pause/debugger/evaluation/rewind in een nieuwe service samen te drukken.
+- Inspector-layout hoort vóór paint bij de concrete view-update. Behavior Lens,
+  Scenario Lab en ScenarioTargetInspection mogen hun pointergeometrie niet
+  afhankelijk maken van een eerdere `draw`.
+
 De [nieuwe gebruikersreview](behavior_authoring_ux_review.md) onderscheidt
 ontbrekende functionaliteit van presentatieproblemen. Deze contracten zijn
 **nog niet afgerond**. De review bepaalt hun bouwvolgorde en afhankelijkheden;

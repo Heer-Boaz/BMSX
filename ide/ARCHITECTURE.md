@@ -21,6 +21,16 @@ Rules:
 - If a new module is mainly owned by one surface, place it with that surface even if other modules import it.
 - Prefer moving code to the real owner over adding wrapper layers or generic host/facade abstractions.
 
+## Editor-pane lifetime
+
+Editor attachment, navigation options and focus are separate operations.
+`EditorPane.setInput` binds an input once, then applies any supplied selection
+through the concrete pane's `setOptions`. Same-input navigation applies options
+without repeating `activate`, rebinding controls or invoking runtime admission.
+Views without selection options perform no attachment work from `setOptions`.
+This follows VS Code's separate
+[`EditorPane` input/options/visibility operations](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/editor/editorPane.ts).
+
 ## BIOS Terminal and debugger evaluation
 
 `workbench/contrib/terminal` displays the physical BIOS monitor's completed

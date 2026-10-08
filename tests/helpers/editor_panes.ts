@@ -16,7 +16,7 @@ import type { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_
 import type { PlayerInput } from '../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../ide/common/models';
 import type { EditorTextSelection } from '../../ide/editor/navigation/text_selection';
-import { activateCodeEditorTab } from '../../ide/workbench/ui/code_tab/activation';
+import { activateCodeEditorTab, applyActiveCodeTabSelection } from '../../ide/workbench/ui/code_tab/activation';
 import type {
 	BehaviorLensInput,
 	CodeEditorInput,
@@ -32,11 +32,7 @@ class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 	private readonly focusTarget = inputFocus.createTarget();
 	private readonly unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 	public constructor(
-		private readonly activateInput: (
-			input: TInput,
-			selection?: EditorTextSelection,
-			navigationSelection?: EditorPaneSelection,
-		) => void,
+		private readonly activateInput: (input: TInput) => void,
 		captureSelection?: (input: TInput) => EditorPaneSelection,
 	) {
 		super();
@@ -44,8 +40,8 @@ class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 	}
 
 	// disable-next-line single_line_method_pattern -- Test panes exercise the production input lifecycle through the supplied activation contract.
-	protected activate(selection?: EditorTextSelection, navigationSelection?: EditorPaneSelection): void {
-		this.activateInput(this.input, selection, navigationSelection);
+	protected activate(): void {
+		this.activateInput(this.input);
 	}
 
 	public focus(): void {
@@ -84,6 +80,14 @@ class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 	}
 }
 
+class TestCodeEditorPane extends TestEditorPane<CodeEditorInput> {
+	public constructor() { super(activateCodeEditorTab, input => new CodeEditorNavigationSelection(input)); }
+	public override setOptions(selection?: EditorTextSelection, navigationSelection?: CodeEditorNavigationSelection): void {
+		if (selection !== undefined) applyActiveCodeTabSelection(selection);
+		navigationSelection?.restore(this.input);
+	}
+}
+
 function activateViewInput(_input: EditorInput): void {
 }
 
@@ -98,7 +102,7 @@ export function createTestEditorPanes(): EditorPanes {
 		conversation_observer: () => new TestEditorPane<ConversationObserverInput>(activateViewInput),
 		assistant: () => new TestEditorPane<AssistantInput>(activateViewInput),
 		workspace_edit_review: () => new TestEditorPane<WorkspaceEditReviewInput>(activateViewInput),
-		code_editor: () => new TestEditorPane<CodeEditorInput>(activateCodeEditorTab, input => new CodeEditorNavigationSelection(input)),
+		code_editor: () => new TestCodeEditorPane(),
 		resource_view: () => new TestEditorPane<ResourceViewerInput>(activateViewInput),
 		aem_editor: () => new TestEditorPane<AemEditorInput>(activateViewInput),
 		lua_program: () => new TestEditorPane<LuaProgramInput>(activateViewInput),

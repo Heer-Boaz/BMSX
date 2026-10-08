@@ -178,18 +178,20 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		}
 		return this.controller.captureSelection(this.input);
 	}
-	protected override activate(_selection?: EditorTextSelection, navigationSelection?: ActorLabNavigationSelection): void {
+	protected override activate(): void {
 		super.activate();
-		this.navigationSelection = navigationSelection;
-		if (navigationSelection !== undefined) {
-			this.inspector.hide();
-			this.controller.restoreSelection(this.input, navigationSelection, editorViewState.font.renderFont());
-		}
 		this.renderedTopology = -1;
 		this.actions.setInput(this.input.actionBar, this.focusTarget);
 		this.split.setInput(this.input.split);
 		this.timelineSlider.setInput(this.input.timeline.slider);
 		this.gameInput.setInput(this.input.previewBounds);
+	}
+	public override setOptions(_selection?: EditorTextSelection, navigationSelection?: ActorLabNavigationSelection): void {
+		if (navigationSelection === undefined) return;
+		this.inspector.hide();
+		this.controller.restoreSelection(this.input, navigationSelection, editorViewState.font.renderFont());
+		this.navigationSelection = navigationSelection;
+		this.renderedTopology = -1;
 	}
 	public override clearInput(): void {
 		pointerHover.release(this);

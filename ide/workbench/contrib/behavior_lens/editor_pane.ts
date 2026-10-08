@@ -200,15 +200,8 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		});
 	}
 
-	protected override activate(_selection?: EditorTextSelection, navigationSelection?: BehaviorLensNavigationSelection): void {
+	protected override activate(): void {
 		super.activate();
-		this.propertyEdit.close();
-		this.pointer.clear();
-		this.properties.clear();
-		this.sourceEditReview.clear();
-		this.inspector.hide();
-		this.graph.clearInput();
-		this.controller.updateView(this.input, navigationSelection);
 		const presentation = this.input.view.presentation;
 		if (presentation.kind === 'graph') this.graph.setInput(presentation.viewport, this.graphDragSource);
 		else if (presentation.kind === 'state-graph') this.graph.setInput(presentation.viewport, this.stateMachineDragSource);
@@ -218,6 +211,15 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		content.previous = this.actionBar.focusTarget;
 		this.actionBar.focusTarget.next = content;
 		this.actionBar.focusTarget.previous = content;
+	}
+	public override setOptions(_selection?: EditorTextSelection, navigationSelection?: BehaviorLensNavigationSelection): void {
+		if (navigationSelection === undefined) return;
+		this.propertyEdit.close();
+		this.pointer.clear();
+		this.properties.clear();
+		this.sourceEditReview.clear();
+		this.inspector.hide();
+		this.controller.updateView(this.input, navigationSelection);
 	}
 
 	public override focus(): void {

@@ -10,7 +10,6 @@ import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText } from '../../../editor/common/text/layout';
-import { getWorkbenchEditorBounds } from '../../common/layout';
 import { drawResourceViewer } from '../../render/resource_panel';
 import type { ResourceViewerInput } from '../../ui/tab/model';
 import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
@@ -27,16 +26,20 @@ export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceVi
 		return new ResourceViewerNavigationSelection(this.input.view.scroll);
 	}
 
-	protected activate(_selection?: EditorTextSelection, navigationSelection?: ResourceViewerNavigationSelection): void {
+	protected activate(): void {
 		editorCaretState.cursorRevealSuspended = false;
 		clearRuntimeErrorOverlay();
 		runtimeErrorState.executionStopRow = null;
-		navigationSelection?.restore(this.input.view);
 		clampResourceViewerScroll(
 			this.input.view,
-			getWorkbenchEditorBounds(),
+			this.contentBounds,
 			editorViewState.lineHeight,
 		);
+	}
+	public override setOptions(_selection?: EditorTextSelection, navigationSelection?: ResourceViewerNavigationSelection): void {
+		if (navigationSelection === undefined) return;
+		navigationSelection.restore(this.input.view);
+		clampResourceViewerScroll(this.input.view, this.contentBounds, editorViewState.lineHeight);
 	}
 
 	public override clearInput(): void {

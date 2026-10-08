@@ -102,10 +102,10 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		this.unbindBlur();
 	}
 
-	protected activate(selection?: EditorTextSelection, navigationSelection?: CodeEditorNavigationSelection): void {
+	protected activate(): void {
 		this.editor.resourcePanel.hide();
 		editorChromeState.resourcePanelResizing = false;
-		activateCodeEditorTab(this.input, selection, navigationSelection);
+		activateCodeEditorTab(this.input);
 		setActiveDiagnostics(this.input.context.model, this.editor.diagnostics.diagnostics);
 		this.unsubscribeContentChange = this.input.context.model.onDidChangeContent(event => {
 			editorViewState.layout.onDidChangeContent(this.input.context.model.buffer, event);

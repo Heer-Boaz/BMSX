@@ -27,19 +27,19 @@ export abstract class EditorPane<TInput extends EditorInput> {
 	public setInput(input: TInput, bounds: Readonly<RectBounds>, selection?: EditorTextSelection, navigationSelection?: EditorPaneSelection): void {
 		this.inputValue = input;
 		this.contentBounds = bounds;
-		this.activate(selection, navigationSelection);
+		this.activate();
+		if (selection !== undefined || navigationSelection !== undefined) this.setOptions(selection, navigationSelection);
 	}
 
-	// disable-next-line single_line_method_pattern -- Same-input activation applies pane-specific options without reattaching the retained input.
-	public setOptions(selection?: EditorTextSelection, navigationSelection?: EditorPaneSelection): void {
-		this.activate(selection, navigationSelection);
+	/** Selection options belong to the concrete view, never to input attachment. */
+	public setOptions(_selection?: EditorTextSelection, _navigationSelection?: EditorPaneSelection): void {
 	}
 
 	public clearInput(): void {
 		this.inputValue = null;
 	}
 
-	protected abstract activate(selection?: EditorTextSelection, navigationSelection?: EditorPaneSelection): void;
+	protected abstract activate(): void;
 
 	public abstract focus(): void;
 

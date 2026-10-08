@@ -38,6 +38,7 @@ class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput>
 	public readonly focusTarget = inputFocus.createTarget();
 	private readonly unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 	public setInputCount = 0;
+	public activationCount = 0;
 	public setOptionsCount = 0;
 	public clearInputCount = 0;
 	public updateCount = 0;
@@ -64,6 +65,7 @@ class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput>
 	public override setOptions(selection?: EditorTextSelection): void {
 		this.setOptionsCount += 1;
 		super.setOptions(selection);
+		this.selection = selection;
 	}
 
 	public override clearInput(): void {
@@ -71,8 +73,8 @@ class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput>
 		super.clearInput();
 	}
 
-	protected activate(selection?: EditorTextSelection): void {
-		this.selection = selection;
+	protected activate(): void {
+		this.activationCount += 1;
 	}
 
 	public override update(): void {
@@ -221,6 +223,7 @@ test('editor panes retain one lazy pane per input kind and apply the input lifec
 	harness.editorPanes.openEditor(first, selection);
 	assert.equal(codePane.setOptionsCount, 1);
 	assert.strictEqual(codePane.selection, selection);
+	assert.equal(codePane.activationCount, 1, 'options do not repeat input attachment');
 
 	harness.editorPanes.openEditor(second);
 	assert.equal(harness.codeFactoryCount(), 1);
@@ -280,14 +283,14 @@ test('same-input navigation blurs the old control before changing selection, whi
 	const unbind = field.onDidBlur(() => {
 		assert.equal(pane.input, input);
 		assert.equal(pane.selection, selection);
-		assert.equal(pane.setOptionsCount, 0);
+		assert.equal(pane.setOptionsCount, 1);
 		blurs += 1;
 	});
 	t.after(unbind);
 	field.focus();
 	harness.editorPanes.openEditor(input);
 	assert.equal(blurs, 1);
-	assert.equal(pane.setOptionsCount, 0);
+	assert.equal(pane.setOptionsCount, 1);
 	assert.equal(pane.selection, selection);
 	field.focus();
 	const next = { row: 7, startColumn: 0, endColumn: 1 };
@@ -302,8 +305,9 @@ test('same-input navigation blurs the old control before changing selection, whi
 	harness.editorPanes.openEditor(input, next);
 	assert.equal(blurs, 2);
 	assert.equal(pane.selection, next);
-	assert.equal(pane.setOptionsCount, 1);
+	assert.equal(pane.setOptionsCount, 2);
 	assert.equal(pane.setInputCount, 1);
+	assert.equal(pane.activationCount, 1);
 	assert.equal(inputFocus.target, destination);
 });
 

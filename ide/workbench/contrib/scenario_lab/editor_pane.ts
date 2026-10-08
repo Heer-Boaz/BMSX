@@ -100,14 +100,17 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		this.focusTarget.previous = this.actionBar.focusTarget;
 	}
 
-	protected override activate(_selection?: EditorTextSelection, navigationSelection?: ScenarioLabNavigationSelection): void {
-		this.inspector.hide();
-		this.targetInspection.hide();
+	protected override activate(): void {
 		super.activate();
-		navigationSelection?.restore(this.input.view);
-		this.controller.updateView(this.input.view);
 		this.actionBar.setInput(this.input.view.actionBar, this.resultsFocus);
 		this.split.setInput(this.input.view.split);
+	}
+	public override setOptions(_selection?: EditorTextSelection, navigationSelection?: ScenarioLabNavigationSelection): void {
+		if (navigationSelection === undefined) return;
+		this.inspector.hide();
+		this.targetInspection.hide();
+		navigationSelection.restore(this.input.view);
+		this.controller.updateView(this.input.view);
 	}
 
 	public override focus(): void {

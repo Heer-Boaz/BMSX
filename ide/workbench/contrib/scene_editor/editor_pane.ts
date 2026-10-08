@@ -71,15 +71,17 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		});
 	}
 
-	protected override activate(_selection?: EditorTextSelection, navigationSelection?: SceneEditorNavigationSelection): void {
+	protected override activate(): void {
 		super.activate();
 		this.actionBar.setInput(this.input.actionBar, this.focusTarget);
 		this.details.setInput(this.input.details);
+		this.boundVersion = -1;
+	}
+	public override setOptions(_selection?: EditorTextSelection, navigationSelection?: SceneEditorNavigationSelection): void {
+		if (navigationSelection === undefined) return;
 		this.controller.refresh(this.input);
-		navigationSelection?.restore(this.input);
-		this.bindProperties();
-		layoutSceneEditor(this.input, true, false, this.contentBounds);
-		this.details.lineStep = this.input.outline.layout.rowHeight;
+		navigationSelection.restore(this.input);
+		this.update();
 	}
 
 	public override update(): void {

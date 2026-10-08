@@ -1,4 +1,3 @@
-import type { CodeEditorNavigationSelection } from '../../contrib/code_editor/navigation_selection';
 import type { ResourceDomain } from '../../../common/resource';
 import type { CartEditor } from '../../../cart_editor';
 import type { CodeTabContext } from './model';
@@ -30,7 +29,7 @@ export function applyActiveCodeTabSelection(selection: EditorTextSelection): voi
 	activeCodeEditor.emitCursorMoved();
 }
 
-export function activateCodeEditorTab(tab: CodeEditorInput, selection?: EditorTextSelection, navigationSelection?: CodeEditorNavigationSelection): void {
+export function activateCodeEditorTab(tab: CodeEditorInput): void {
 	const context = tab.context;
 	activeCodeEditor.attach(context.model, context.view);
 	editorViewState.maxLineLengthDirty = true;
@@ -42,10 +41,6 @@ export function activateCodeEditorTab(tab: CodeEditorInput, selection?: EditorTe
 	updateDesiredColumn();
 	resetBlink();
 	clearEditorPointerSelectionState();
-	if (selection) {
-		applyActiveCodeTabSelection(selection);
-	}
-	navigationSelection?.restore(tab);
 }
 
 export function navigateToLuaDefinition(

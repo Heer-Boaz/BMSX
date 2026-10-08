@@ -6130,6 +6130,13 @@ menus, tabs and status stay unchanged. Existing Game View/Actor Lab previews
 suppress the extra frame without discarding the session layout choice. This
 adds no capture path, second runtime, editor group or playback clock.
 
+Editor input attachment, navigation options and focus are separate lifetimes.
+The group attaches an input once, then applies its supplied selection through
+the concrete pane's options owner. Same-input navigation never repeats pane
+activation or runtime admission. Panes without navigation options do not
+reattach their controls when options are supplied. See
+[view-lifetime review and remaining ownership slices](studio_view_lifetime_review.md).
+
 Game View, the Game panel and Actor Lab bind the shared `GameInputControl` to their
 retained scanout rectangle. Its concrete `InputFocusTarget.guestInputBounds`
 capability admits physical guest input; neither the active tab kind nor the

@@ -69,12 +69,14 @@ export class CartMapPane extends FullWidthWorkbenchEditorPane<CartMapInput> {
 		}, value => this.applyMove(value.edit!), () => this.update()));
 	}
 	public override getSelection(): CartMapNavigationSelection { return new CartMapNavigationSelection(this.input); }
-	protected override activate(_selection?: EditorTextSelection, navigation?: CartMapNavigationSelection): void {
+	protected override activate(): void {
 		super.activate();
 		this.boundRevision = -1;
 		this.actions.setInput(this.input.actionBar, this.focusTarget);
-		projectCartMap(this.input);
-		if (navigation !== undefined) restoreCartMapView(this.input, navigation.view);
+	}
+	public override setOptions(_selection?: EditorTextSelection, navigation?: CartMapNavigationSelection): void {
+		if (navigation === undefined) return;
+		restoreCartMapView(this.input, navigation.view);
 		this.update();
 	}
 	public override update(): void {
