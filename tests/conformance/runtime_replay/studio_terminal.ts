@@ -1,4 +1,5 @@
 import { editorTabGroup } from '../../../ide/workbench/ui/tab/group_model';
+import { inputFocus } from '../../../ide/input/focus';
 import { IO_SYS_STATUS, SYS_STATUS_SUPERVISOR_ACTIVE, SYS_STATUS_SUPERVISOR_RESUMABLE } from '../../../machine/ts/spec/bmsx/io';
 import { check, type StudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
@@ -14,10 +15,22 @@ export async function runStudioTerminal(test: StudioFixture) {
 	const media = ide.sources.currentBlua32Media;
 	await test.runPaletteCommand('View: BIOS Terminal');
 	const terminal = editorTabGroup.activeTab;
-	check(terminal.kind === 'terminal', 'registered view opens the BIOS terminal');
+	if (terminal.kind !== 'terminal') throw new Error('registered view opens the BIOS terminal');
 	await until(() => (runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_RESUMABLE) !== 0,
 		'BIOS terminal: physical supervisor entry');
 	for (let index = 0; index < 20; index++) await frame();
+	await test.click({ left: terminal.layout.left + 1, right: terminal.layout.left + 2,
+		top: terminal.layout.top + 1, bottom: terminal.layout.top + 2 });
+	check(inputFocus.target?.guestInputBounds === undefined && ide.editor.capturesGuestInput && ide.editor.terminal.active,
+		'clicking terminal chrome releases guest input without closing the physical shell');
+	await test.capture?.('bios-chrome-focused');
+	await test.runPaletteCommand('View: BIOS Terminal');
+	check(inputFocus.target?.guestInputBounds === terminal.frameBounds,
+		'reopening the terminal focuses its existing shell through the registered command');
+	await test.press('ShiftLeft', 'F1');
+	await test.click(terminal.frameBounds);
+	check(inputFocus.target?.guestInputBounds === terminal.frameBounds && !ide.editor.capturesGuestInput,
+		'clicking the actual terminal scanout restores guest keyboard input');
 	const command = async (text: string) => {
 		// Hold both edges across guest samples, just like the native HID conformance runner.
 		for (const char of text) {

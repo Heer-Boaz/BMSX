@@ -53,7 +53,10 @@ export class TerminalPane extends FullWidthWorkbenchEditorPane<TerminalInput> {
 	}
 	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
 		if (this.gameInput.handlePointer(snapshot)) return false;
-		if (justPressed) this.focus();
+		if (justPressed) {
+			if (this.terminal.active) super.focus();
+			else this.focus();
+		}
 		return justPressed;
 	}
 }

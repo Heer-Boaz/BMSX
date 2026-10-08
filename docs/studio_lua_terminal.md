@@ -14,8 +14,9 @@ TypeScript and native C++.
   line, after outstanding GPU work settles. It runs on the normal host frame
   scheduler even while Studio holds ordinary gameplay.
 - Keyboard focus is the same embedded-game focus used by Game View. Shift+F1
-  releases it to Studio; clicking the scanout focuses firmware again. No ordinary
-  guest key becomes a global IDE shortcut.
+  or clicking outside the scanout releases it to Studio; clicking the scanout
+  focuses firmware again. Opening the terminal command/tab also focuses the
+  shell. No ordinary guest key becomes a global IDE shortcut.
 - Changing tabs suspends the monitor without CONT, stack unwind or state restore.
   Reopening resumes that same physical shell and its guest-owned history.
 - CONT leaves the BIOS through the real exception return. Studio holds
