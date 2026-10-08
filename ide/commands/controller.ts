@@ -216,12 +216,6 @@ export class IdeCommandController {
 			case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source': case 'romInspector.content': case 'romInspector.zoom': case 'romInspector.collision':
 			case 'events.clear': case 'events.filter': case 'events.details':
 			case 'events.goToFrame': case 'events.previousFrame': case 'events.nextFrame': case 'events.more':
-			case 'terminal.evaluate':
-			case 'terminal.context':
-			case 'terminal.pause':
-			case 'terminal.continue':
-			case 'terminal.clear':
-			case 'terminal.copy':
 			case 'assistant.send':
 			case 'assistant.queue':
 			case 'assistant.direct':
@@ -371,6 +365,7 @@ export class IdeCommandController {
 		const context = focus?.commandContext;
 		switch (command) {
 			case 'assistant': return this.editor.assistant.available;
+			case 'terminal': return this.editor.terminal.canOpen;
 			case 'conversations': return this.editor.observedConversation.available;
 			case 'copy': case 'cut': case 'paste':
 				return focus?.clipboard?.[command] !== undefined && (command === 'copy' || !focus.clipboard.readOnly)
@@ -460,12 +455,6 @@ export class IdeCommandController {
 			case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source': case 'romInspector.content': case 'romInspector.zoom': case 'romInspector.collision':
 			case 'events.clear': case 'events.filter': case 'events.details':
 			case 'events.goToFrame': case 'events.previousFrame': case 'events.nextFrame': case 'events.more':
-			case 'terminal.evaluate':
-			case 'terminal.context':
-			case 'terminal.pause':
-			case 'terminal.continue':
-			case 'terminal.clear':
-			case 'terminal.copy':
 			case 'assistant.send':
 			case 'assistant.queue':
 			case 'assistant.direct':

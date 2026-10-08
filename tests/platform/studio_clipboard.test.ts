@@ -98,7 +98,7 @@ test('Studio clipboard: native actions, actual denied writes, focused controls a
 	await page.context().clearPermissions();
 	await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
 
-	for (const name of ['findLocal', 'commandPalette', 'lineJump', 'terminal', 'assistant']) {
+	for (const name of ['findLocal', 'commandPalette', 'lineJump', 'assistant']) {
 		await page.evaluate(() => (globalThis as any).clipboardUI.source());
 		await command(name);
 		const payload = name === 'lineJump' ? '123456' : `native_${name}`;

@@ -230,18 +230,25 @@ instruction words into system `.bss`; the CPU has no source parser, compiler
 callback, runtime-image installer or `load` branch. `loadstring` is not
 currently published.
 
-The BIOS `shell/repl` module uses this same loader for a persistent interactive
-Lua environment. Its namespace and captured closures are ordinary guest state,
-not a projection of cart global registers or debugger locals. Studio's
-[Lua Terminal](studio_lua_terminal.md) schedules its explicit calls through the
-existing guest-call/debugger boundary and observes physical debug-transmit
-output. It does not parse/execute Lua in the host, run gameplay merely because
-the pane is open, or replace the BIOS monitor. The monitor's `LUA <source>`
-command invokes the same firmware session on TypeScript and native C++.
-Codex's explicit Terminal tools use Studio's existing admission/completion
-owner, not a server evaluator or source-edit authority. They await a real return
-or pause; cancellation revokes queued admission or suspends the actual call,
-without unwinding guest frames or rolling back mutations.
+The BIOS `shell/repl` module uses this same loader for persistent Lua evaluation.
+Its namespace and captured closures are ordinary guest state. Studio's
+[Terminal](studio_lua_terminal.md) displays and operates the actual BIOS monitor:
+firmware owns command parsing, HID editing, history, paging and rendered output.
+The pane admits physical supervisor entry through the existing input line and
+runs on the ordinary debugger/scheduler control plane. Leaving the pane suspends
+that shell; it never synthesizes CONT or unwinds firmware. CONT returns to a held
+cartridge without clearing an independent host pause. Physical entry retires
+the previous source stop: hardware quiescence may finish its IRQ before NMI,
+so republishing that old stop would describe a stale stack.
+
+Debugger/agent expression evaluation is a separate **operation**, not a second
+terminal. `ide/runtime/lua_evaluation.ts` schedules explicit BIOS `shell/repl`
+calls through the existing guest-call boundary, with cart, session or a current
+source-frame context. It owns only pending/completed operation receipts and
+bounded output for that operation: no host namespace, input draft, command
+history or scrollback. Cancellation revokes queued admission or suspends the
+actual call without unwinding frames or rolling back mutations. The native C++
+monitor uses the identical firmware; neither frontend adds another interpreter.
 
 `math.sin`, `math.cos`, and `math.tan` use the same firmware quarter-wave LUT
 and Q16.16 turn helper as direct fixed-point firmware code. Their precision is

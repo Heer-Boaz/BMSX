@@ -5,7 +5,7 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { ActorExecutionService } from '../../ide/workbench/contrib/actor_lab/execution';
 import { RuntimeDebuggerExecution } from '../../ide/runtime/debugger_execution';
-import { LuaTerminalSession } from '../../ide/workbench/services/terminal/session';
+import { RuntimeLuaEvaluation } from '../../ide/runtime/lua_evaluation';
 import { RuntimeFrameNavigation } from '../../ide/runtime/frame_navigation';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import { HostExecutionControl } from '../../hosts/common/execution_control';
@@ -45,7 +45,7 @@ export function createRuntimeInspectionFixture(runtime: Runtime, sources: Runtim
 	const debuggerExecution = new RuntimeDebuggerExecution(runtime, debuggerState, execution, rewind, tasks, fault, guest, frameNavigation);
 	const inspection = new RuntimeInspectionService(runtime, sources, guest, debuggerState, execution, tasks, rewind, fault, frameNavigation, debuggerExecution);
 	const gameCapture = new GameCaptureService(presenter, presentation, tasks, encodePngImage);
-	const terminal = new LuaTerminalSession(runtime, sources, guest, debuggerState, fault, tasks, execution, rewind);
+	const luaEvaluation = new RuntimeLuaEvaluation(runtime, sources, guest, debuggerState, fault, tasks, execution, rewind);
 	const actorExecution = new ActorExecutionService(runtime, sources, guest, debuggerState, fault, tasks, execution, rewind);
 		const boots = new BootService(models, sources, fault, runtime, tasks, execution, audio, new Map());
 	const hotResumes = new HotResumeService(models, sources, guest, fault, debuggerState,
@@ -53,5 +53,5 @@ export function createRuntimeInspectionFixture(runtime: Runtime, sources: Runtim
 	hotResumes.onDidApply = () => events.beginTimeline();
 	// This fixture attaches inspection to an already reset runtime, not cold startup.
 	boots.didReplaceMachine();
-	return { events, hotResumes, boots, models, storage, actorExecution, debuggerExecution, terminal, audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
+	return { events, hotResumes, boots, models, storage, actorExecution, debuggerExecution, luaEvaluation, audio, frameNavigation, gameCapture, presenter, presentation, backend, inspection, runtime, sources, guest, debuggerState, execution, tasks, rewind, fault };
 }

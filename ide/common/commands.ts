@@ -76,7 +76,6 @@ export type EditorCommandId =
 	| 'resources.import'
 	| 'projects.createCartridge'
 	| 'conversations.history' | 'conversations.older'
-	| 'terminal.evaluate' | 'terminal.context' | 'terminal.pause' | 'terminal.continue' | 'terminal.clear' | 'terminal.copy'
 	| 'assistant.signIn'
 	| 'assistant.cancelLogin'
 	| 'assistant.signOut'

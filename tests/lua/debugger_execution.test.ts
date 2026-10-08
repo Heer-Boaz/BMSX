@@ -67,7 +67,7 @@ for (const level of [0, 3] as const) test(`O${level}: shared source operations a
 	assert.equal(f.owner.canResume('into'), false);
 	f.state.breakpoints.set(RESOURCE, [8]);
 	let op = f.owner.resume('continue', 'workbench');
-	assert.equal(op.result, undefined); assert.equal(f.inspection.canInspect, false); assert.equal(f.terminal.canEvaluate, false);
+	assert.equal(op.result, undefined); assert.equal(f.inspection.canInspect, false); assert.equal(f.luaEvaluation.canEvaluate, false);
 	assert.throws(() => f.owner.resume('continue', 'workbench'), /unavailable/);
 	f.execute();
 	assert.equal((await op.completion).reason, 'breakpoint'); assert.equal(f.line(), 8); assert.equal(f.execution.userPaused, true);
@@ -193,7 +193,7 @@ test('fault, physical reset and target shutdown each settle pending operations h
 
 test('conversation lifecycle cancels its own execution and keeps persistent breakpoints', async t => {
 	const f = fixture(t), lifetime = new AbortController();
-	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.owner, f.actorExecution, f.boots, f.hotResumes, f.events, lifetime.signal);
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.owner, f.actorExecution, f.boots, f.hotResumes, f.events, lifetime.signal);
 	const catalog = await tools.execute('studio_list_debug_sources', { target: f.inspection.target });
 	const source = (catalog.data as { source: string }[])[0].source;
 	await tools.execute('studio_set_breakpoints', { source, lines: [8] });

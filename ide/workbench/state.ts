@@ -37,7 +37,7 @@ import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../machine/ts/spec/bmsx/io'
 import { syncRuntimeSourceActivity } from '../runtime/sources';
 import { clearAllRuntimeErrorOverlays } from '../runtime_error/navigation';
 import { clearHoverTooltip } from '../editor/contrib/hover/controller';
-import { LuaTerminalSession } from './services/terminal/session';
+import { RuntimeLuaEvaluation } from '../runtime/lua_evaluation';
 import { RuntimeInspectionService } from '../runtime/inspection';
 import { RuntimeEventHistory } from '../runtime/event_history';
 
@@ -57,7 +57,7 @@ export class RuntimeIdeState {
 	public readonly hotResumes: HotResumeService;
 	public readonly boots: BootService;
 	public readonly diagnostics: ResourceDiagnosticsService;
-	public readonly terminal: LuaTerminalSession;
+	public readonly luaEvaluation: RuntimeLuaEvaluation;
 	public readonly actorExecution: ActorExecutionService;
 	public readonly inspection: RuntimeInspectionService;
 	public readonly frameNavigation: RuntimeFrameNavigation;
@@ -100,7 +100,7 @@ export class RuntimeIdeState {
 		this.boots = new BootService(editorTextModelService, sources, this.fault, runtime, runtimeTasks,
 			execution, audioOutput, workspaceDirtyRecords);
 		this.diagnostics = new ResourceDiagnosticsService(editorTextModelService, sources, clock);
-		this.terminal = new LuaTerminalSession(runtime, sources, this.guest, this.debugger,
+		this.luaEvaluation = new RuntimeLuaEvaluation(runtime, sources, this.guest, this.debugger,
 			this.fault, runtimeTasks, execution, rewind);
 		this.actorExecution = new ActorExecutionService(runtime, sources, this.guest, this.debugger, this.fault, runtimeTasks, execution, rewind);
 		this.frameNavigation = new RuntimeFrameNavigation(runtime, execution, rewind, runtimeTasks, this.debugger, this.fault, this.guest);
@@ -133,7 +133,7 @@ export class RuntimeIdeState {
 			this.hotResumes,
 			this.boots,
 			this.diagnostics,
-			this.terminal,
+			this.luaEvaluation,
 			this.actorExecution,
 			this.inspection,
 			this.frameNavigation,
@@ -148,7 +148,8 @@ export class RuntimeIdeState {
 		this.editor.updateViewport(viewport);
 		const invalidateToolingState = (reason: GuestInvalidationReason) => {
 			this.debuggerExecution.didReset();
-			this.terminal.didReplaceMachine();
+			this.luaEvaluation.didReplaceMachine();
+			this.editor.terminal.discard();
 			this.actorExecution.didReplaceMachine();
 			this.hotResumes.cancelPending('machine-reset');
 			this.boots.didReplaceMachine();

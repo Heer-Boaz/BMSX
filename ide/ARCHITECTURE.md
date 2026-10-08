@@ -21,23 +21,22 @@ Rules:
 - If a new module is mainly owned by one surface, place it with that surface even if other modules import it.
 - Prefer moving code to the real owner over adding wrapper layers or generic host/facade abstractions.
 
-## Lua Terminal
+## BIOS Terminal and debugger evaluation
 
-`workbench/services/terminal` owns admitted evaluations, input history and bounded
-scrollback; `workbench/contrib/terminal` owns the retained input and visible
-controls. They call the existing scheduled guest-call service. BIOS
-`shell/repl` owns protected invocation through its captured compiler/primitive
-functions. Cart context uses ordinary global registers; the isolated session
-owns a persistent guest environment. The host has no evaluator or copied globals. The
-Terminal follows workbench pause except during an explicit call, keeps user
-pause across completion and pause/continue, and keeps text history independent
-of guest save/restore. Closing the view does not destroy the firmware session.
-The native BIOS monitor executes the same firmware. Conversation tools call the
-ordinary Terminal service without opening a pane or adding a Codex-only control.
-The physical frame-binding compiler core also exists on both machines, but
-selected-stop admission is not yet a public Terminal context. See
-[Lua Terminal](../docs/studio_lua_terminal.md) and its
-[binding contract](../docs/studio_terminal_contexts.md).
+`workbench/contrib/terminal` displays the physical BIOS monitor's completed
+scanout and routes focused input through HID. `runtime/bios_terminal.ts` admits
+NMI through the existing physical request line and scheduler. Firmware owns
+commands, line editing, paging and history. Leaving the view suspends that shell;
+CONT holds the actual NMI caller, without resurrecting a previous source stop.
+There is no Studio line editor or duplicate terminal transcript.
+
+`runtime/lua_evaluation.ts` owns explicit debugger/agent operations, not another
+terminal. It schedules BIOS `shell/repl` through the existing guest-call boundary
+and retains only operation results and bounded print output. Cart globals,
+isolated environments, selected-frame bindings and compilation belong to the
+BIOS and physical CPU. A broken emulator cannot be replaced by this evaluator.
+The same firmware executes on native C++. See [Terminal](../docs/studio_lua_terminal.md)
+and its [binding contract](../docs/studio_terminal_contexts.md).
 
 ## Resource diagnostics and document lifetime
 

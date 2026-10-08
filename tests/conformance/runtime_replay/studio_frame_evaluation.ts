@@ -1,9 +1,8 @@
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { resolveRuntimeLuaSource } from '../../../ide/runtime/sources';
 import { check, type StudioFixture } from './studio_fixture';
 
-/** Ordinary Terminal context picker and shared evaluator at a real retained IRQ stop. */
-export async function testStudioPinnedFrameEvaluation(test: StudioFixture): Promise<void> {
+/** Shared BIOS evaluator at a real retained IRQ stop, without a second terminal. */
+export async function testStudioPinnedFrameEvaluation(test: StudioFixture, whileStopped?: () => Promise<void>): Promise<void> {
 	const { ide, runtime, until, frame, cycles } = test;
 	const resource = { domain: 0 as const, path: 'cartlib/irq.lua' };
 	const source = resolveRuntimeLuaSource(ide.sources, resource)!.record.src;
@@ -19,6 +18,7 @@ export async function testStudioPinnedFrameEvaluation(test: StudioFixture): Prom
 	const pcs = cpu.activeThread.frames.map(entry => entry.pc);
 	const stopPc = ide.debugger.source.stop!.pc, stopInlineDepth = ide.debugger.source.stop!.inlineDepth;
 	const media = ide.sources.currentBlua32Media;
+	let selectedContext: import('../../../ide/runtime/lua_evaluation').LuaFrameContext;
 	for (const target of ['irq', 'cart'] as const) {
 		const stop = ide.debugger.source.stop;
 		const inspection = ide.inspection.open(), frames = inspection.readStack(0, 100).frames;
@@ -32,25 +32,13 @@ export async function testStudioPinnedFrameEvaluation(test: StudioFixture): Prom
 		const expected = target === 'irq' ? binding.value.display : 'true';
 		const expression = binding.value.kind === 'address' ? `return cartlib_render_commands == ${binding.value.address}, nil, false`
 			: 'flags = flags; return flags, nil, false';
-		await test.runPaletteCommand('View: Lua Terminal');
-		const input = getActiveTab();
-		if (input.kind !== 'terminal') throw new Error('Terminal pane required');
-		if (target === 'irq') {
-			await test.click(input.actions.items.find(item => item.command === 'terminal.context')!.bounds);
-			await test.capture?.('frame-context-picker');
-			await test.press('ArrowDown'); await test.press('ArrowDown'); await test.press('Enter');
-			const context = ide.terminal.inputContext;
-			check(context !== 'cart' && context !== 'session' && context.stopId === stop!.id
-				&& context.frame.physicalFrameIndex === selected.physicalFrameIndex, 'manual picker selects the installed IRQ frame');
-			await test.capture?.('frame-context-selected');
-		} else ide.terminal.inputContext = ide.terminal.frameContext(selected);
-		await test.click(input.composerBounds); await test.clipboard.writeText(expression);
-		await test.press('ControlLeft', 'KeyV'); await test.press('Enter');
-		await until(() => ide.terminal.active === undefined && test.tasks.ready, `frame admission: ${target} named evaluation returns`);
-		const result = ide.terminal.lastResult!.result!;
+		selectedContext = ide.luaEvaluation.frameContext(selected);
+		ide.luaEvaluation.evaluate(expression, selectedContext);
+		await until(() => ide.luaEvaluation.active === undefined && test.tasks.ready, `frame admission: ${target} named evaluation returns`);
+		const result = ide.luaEvaluation.lastResult!.result!;
 		check(result.status === 'completed' && result.values[0] === expected && result.values[1] === 'nil' && result.values[2] === 'false',
 			`frame admission: firmware and inspection agree: ${JSON.stringify(result)}`);
-		check(ide.debugger.source.stop === stop && ide.terminal.contextAvailable(ide.terminal.inputContext),
+		check(ide.debugger.source.stop === stop && ide.luaEvaluation.contextAvailable(selectedContext!),
 			'frame completion republishes the same owned stop, preserving the manual selection');
 		check(cpu.getFrameDepth() === depth && cpu.readExceptionReturnFrameDepth() === exceptionDepth
 			&& cpu.activeThread.frames.every((entry, index) => entry.pc === pcs[index]),
@@ -59,16 +47,15 @@ export async function testStudioPinnedFrameEvaluation(test: StudioFixture): Prom
 			&& !ide.debugger.plans.controlActive && ide.sources.currentBlua32Media === media && inspection.lifetime.isDisposed,
 			'frame admission: same source stop, new inspection lifetime, no source install');
 	}
+	await whileStopped?.();
 	const held = cycles();
 	await frame(); await frame();
 	check(cycles() === held, 'frame admission: completion does not continue the IRQ or game');
 	await test.capture?.('pinned-irq-stop');
-	const selectedContext = ide.terminal.inputContext;
 	ide.debugger.breakpoints.toggle(resource, line);
 	const resumed = ide.debuggerExecution.resume('continue', 'workbench');
 	await frame();
 	ide.debuggerExecution.cancel(resumed);
 	await until(() => resumed.result !== undefined, 'frame admission: explicit Continue releases the retained stop');
-	check(!ide.terminal.contextAvailable(selectedContext), 'Continue expires a manual frame selection instead of rebinding its physical index');
-	ide.terminal.inputContext = 'cart';
+	check(!ide.luaEvaluation.contextAvailable(selectedContext!), 'Continue expires a manual frame selection instead of rebinding its physical index');
 }

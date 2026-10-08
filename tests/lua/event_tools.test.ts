@@ -11,7 +11,7 @@ test('Studio tools share automatic history with the viewer, page snapshots and r
 	const { cpu, runtime, sources } = eventHistoryRuntime(compileEventHistoryFixture());
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	const f = createRuntimeInspectionFixture(runtime, sources), lifetime = new AbortController();
-	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal,
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation,
 		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, lifetime.signal);
 	const events = f.events, target = f.inspection.target;
 	t.after(() => { lifetime.abort(); events.dispose(); });
@@ -67,7 +67,7 @@ test('event navigation is admitted by recording provenance and cancelled by the 
 	const { runtime, cpu, sources } = eventHistoryRuntime(compileEventHistoryFixture());
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	const f = createRuntimeInspectionFixture(runtime, sources), lifetime = new AbortController();
-	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal,
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation,
 		f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, lifetime.signal);
 	t.after(() => { lifetime.abort(); f.events.dispose(); f.presenter.dispose(); });
 	const history = runtime.history;

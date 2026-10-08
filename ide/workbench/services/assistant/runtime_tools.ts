@@ -7,7 +7,7 @@ import { clearExecutionStopHighlights } from '../../../runtime_error/navigation'
 import type { RuntimeInspection, RuntimeInspectionService } from '../../../runtime/inspection';
 import type { GameImageCapture } from '../../../../hosts/common/image';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
-import type { LuaTerminalSession } from '../terminal/session';
+import type { RuntimeLuaEvaluation } from '../../../runtime/lua_evaluation';
 import { decodeRuntimeToolRequest, encodeHotResumeOperation, encodeBootOperation } from './runtime_tool_protocol';
 import type { BootService } from '../execution/boot';
 import { StudioToolInputError } from './tool_input';
@@ -22,7 +22,7 @@ export class WorkspaceRuntimeTools {
 	private readonly lifetime = new AbortController();
 	private readonly onDisconnect = () => this.dispose();
 	public constructor(private readonly owner: RuntimeInspectionService, private readonly navigation: RuntimeFrameNavigation,
-		private readonly gameCapture: GameImageCapture, private readonly terminal: LuaTerminalSession, private readonly debuggerExecution: RuntimeDebuggerExecution, private readonly actorExecution: ActorExecutionService, private readonly boots: BootService, private readonly hotResumes: HotResumeService, private readonly events: RuntimeEventHistory, private readonly connection: AbortSignal) {
+		private readonly gameCapture: GameImageCapture, private readonly luaEvaluation: RuntimeLuaEvaluation, private readonly debuggerExecution: RuntimeDebuggerExecution, private readonly actorExecution: ActorExecutionService, private readonly boots: BootService, private readonly hotResumes: HotResumeService, private readonly events: RuntimeEventHistory, private readonly connection: AbortSignal) {
 		connection.throwIfAborted();
 		this.debugSources = new DebuggerSourceContext(debuggerExecution.state);
 		connection.addEventListener('abort', this.onDisconnect, { once: true });
@@ -116,24 +116,24 @@ export class WorkspaceRuntimeTools {
 			case 'studio_control_lua': {
 				if (request.target !== this.owner.target) throw new StudioToolInputError('Target is not this Studio authoring runtime');
 				if (request.name === 'studio_terminal_status') return { kind: 'runtime' as const, data: {
-					target: this.owner.target, canEvaluate: this.terminal.canEvaluate, canControl: this.terminal.canToggleExecution,
-					active: this.terminal.active === undefined ? undefined : this.terminal.observe(this.terminal.active),
-					lastResult: this.terminal.lastResult === undefined ? undefined : this.terminal.observe(this.terminal.lastResult),
+					target: this.owner.target, canEvaluate: this.luaEvaluation.canEvaluate, canControl: this.luaEvaluation.canToggleExecution,
+					active: this.luaEvaluation.active === undefined ? undefined : this.luaEvaluation.observe(this.luaEvaluation.active),
+					lastResult: this.luaEvaluation.lastResult === undefined ? undefined : this.luaEvaluation.observe(this.luaEvaluation.lastResult),
 				} };
 				const signal = requestSignal === undefined ? this.lifetime.signal : AbortSignal.any([this.lifetime.signal, requestSignal]);
 				signal.throwIfAborted();
 				let operation;
-				if (request.name === 'studio_evaluate_lua') operation = this.terminal.evaluate(request.source, request.context);
+				if (request.name === 'studio_evaluate_lua') operation = this.luaEvaluation.evaluate(request.source, request.context);
 				else if (request.name === 'studio_evaluate_frame') {
 					if (this.inspection === undefined) throw new StudioToolInputError('Open a suspended inspection before evaluating a frame');
 					const frame = this.inspection.stackFrame(request.frame);
-					operation = this.terminal.evaluate(request.source, this.terminal.frameContext(frame));
+					operation = this.luaEvaluation.evaluate(request.source, this.luaEvaluation.frameContext(frame));
 				} else {
-					operation = this.terminal.active;
+					operation = this.luaEvaluation.active;
 					if (operation === undefined || operation.id !== request.evaluation) throw new StudioToolInputError('Lua evaluation is no longer active');
-					this.terminal.setPaused(operation, request.action === 'pause');
+					this.luaEvaluation.setPaused(operation, request.action === 'pause');
 				}
-				return this.terminal.waitForStop(operation, signal).then(result => ({ kind: 'runtime' as const,
+				return this.luaEvaluation.waitForStop(operation, signal).then(result => ({ kind: 'runtime' as const,
 					data: { target: this.owner.target, ...result } }));
 			}
 			case 'studio_runtime_status': return { kind: 'runtime' as const, data: { ...this.owner.status(),

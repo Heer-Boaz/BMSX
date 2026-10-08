@@ -30,8 +30,8 @@ export async function runAssistantFrame(kind: StudioRendererKind, canvas: HTMLCa
 		&& cpu.activeThread.frames.length === pcs.length && cpu.activeThread.frames.every((frame, index) => frame.pc === pcs[index]),
 		'frame tools: no ancestor or IRQ has executed while evaluating the selected frame');
 	const held = cycles(); await frame(); await frame();
-	check(cycles() === held && ide.terminal.active === undefined, 'frame tools: the conversation leaves the game stopped');
-	await test.runPaletteCommand('View: Lua Terminal'); await frame(); await renderer.capture!('frame-terminal');
+	check(cycles() === held && ide.luaEvaluation.active === undefined, 'frame tools: the conversation leaves the game stopped');
+	await test.runPaletteCommand('View: Game'); await frame(); await renderer.capture!('frame-terminal');
 	await renderer.finish(); await ide.editor.shutdown();
 	return { frame: 'pass', held };
 }

@@ -26,7 +26,7 @@ export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (na
 		frame: test.frame,
 		menu() { return { header: editorChromeState.menuEntryBounds.edit, items: TOP_BAR_MENUS.edit.items }; },
 		async capture(name: string) { await test.frame(); await renderer.capture!(name); },
-		async command(command: 'copy' | 'cut' | 'paste' | 'findLocal' | 'lineJump' | 'commandPalette' | 'rename' | 'terminal' | 'assistant') {
+		async command(command: 'copy' | 'cut' | 'paste' | 'findLocal' | 'lineJump' | 'commandPalette' | 'rename' | 'assistant') {
 			test.ide.editor.commands.execute(command); await test.frame();
 		},
 		async source() {
@@ -61,13 +61,15 @@ export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (na
 			await test.click(view.properties[0].bounds);
 		},
 		async transcript() {
-			test.ide.editor.commands.execute('terminal'); await test.frame();
-			const view = getActiveTab(); if (view.kind !== 'terminal') throw new Error('Terminal expected');
-			view.session.transcript.append('output', 'Clipboard: **literal** output'); await test.frame();
-			const row = view.transcript.rows.findIndex(row => row.entry === view.session.transcript.next - 1);
-			const top = view.viewport.offsetTop + row * view.layout.rowHeight;
-			await test.click({ left: view.viewport.bounds.left + 4, right: view.viewport.bounds.right - 4, top, bottom: top + view.layout.rowHeight });
-			return view.session.transcript.entry(view.session.transcript.next - 1).text;
+			test.ide.editor.commands.execute('assistant'); await test.frame();
+			const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant expected');
+			const text = 'Clipboard: **literal** output';
+			view.conversation.notice(text); await test.frame();
+			const index = view.conversation.entries.length - 1;
+			const row = view.transcript.rows.findIndex(row => row.entry === index && !row.heading);
+			const top = view.viewport.offsetTop + (view.transcript.firstRow + row) * view.layout.rowHeight;
+			await test.click({ left: view.viewport.bounds.left + 4, right: view.viewport.bounds.left + 16, top, bottom: top + view.layout.rowHeight });
+			return text;
 		},
 	};
 }

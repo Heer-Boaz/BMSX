@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { TerminalEvaluation } from '../../ide/workbench/services/terminal/session';
+import { LuaEvaluation } from '../../ide/runtime/lua_evaluation';
 import { RuntimeGuestCallPlan } from '../../ide/runtime/guest_call';
 import { applyRuntimeDebuggerHotResume } from '../../ide/runtime/debugger_state';
 import { createRuntimeInspectionFixture } from '../helpers/runtime_inspection';
@@ -12,42 +12,42 @@ import { RuntimeTaskKind } from '../../hosts/common/runtime_task_queue';
 /** Lifecycle tests use a real plan manager; actual guest evaluation is covered in browser/native conformance. */
 function fixture(t: TestContext, running = true) {
 	const f = createRuntimeInspectionFixture(createFrameRuntime(), createScenarioTestSourceState([]));
-	const operation = new TerminalEvaluation('return 42', 'session', 1, f.terminal.transcript.next, f.execution.revision);
-	f.terminal.active = operation;
+	const operation = new LuaEvaluation('return 42', 'session', 1, f.execution.revision);
+	f.luaEvaluation.active = operation;
 	if (running) {
 		operation.status = 'running';
 		f.debuggerState.plans.pushControlPlan(new RuntimeGuestCallPlan(f.runtime, 0, 'completion', true, () => {}), 'workbench');
 	}
-	t.after(() => { f.terminal.didReplaceMachine(); f.presenter.dispose(); });
+	t.after(() => { f.luaEvaluation.didReplaceMachine(); f.presenter.dispose(); });
 	return { ...f, operation };
 }
 
 test('a real plan pause settles tool observation, not the physical completion', async t => {
 	const f = fixture(t), controller = new AbortController();
-	const waiting = f.terminal.waitForStop(f.operation, controller.signal);
-	f.terminal.receiveOutput('before the stop');
+	const waiting = f.luaEvaluation.waitForStop(f.operation, controller.signal);
+	f.luaEvaluation.receiveOutput('before the stop');
 	f.debuggerState.plans.setControlSuspended(true);
-	f.terminal.afterHostFrame();
+	f.luaEvaluation.afterHostFrame();
 	const result = await waiting;
 	assert.equal(result.status, 'paused'); assert.equal(result.context, 'session');
-	assert.equal(result.output[0].text, 'before the stop'); assert.equal(result.outputTruncated, false);
+	assert.equal(result.output[0], 'before the stop'); assert.equal(result.outputTruncated, false);
 	assert.equal(f.operation.result, undefined); assert.equal(f.operation.listeners.size, 0);
-	f.terminal.setPaused(f.operation, false);
+	f.luaEvaluation.setPaused(f.operation, false);
 	controller.abort();
-	assert.equal(f.terminal.paused, false, 'settled observers detach cancellation authority');
+	assert.equal(f.luaEvaluation.paused, false, 'settled observers detach cancellation authority');
 });
 
 test('Stop suspends admitted execution and releases its waiter without discarding frames', async t => {
 	const f = fixture(t), controller = new AbortController();
-	const waiting = f.terminal.waitForStop(f.operation, controller.signal);
+	const waiting = f.luaEvaluation.waitForStop(f.operation, controller.signal);
 	controller.abort(); await assert.rejects(waiting, { name: 'AbortError' });
-	assert.equal(f.terminal.paused, true); assert.equal(f.operation.result, undefined);
+	assert.equal(f.luaEvaluation.paused, true); assert.equal(f.operation.result, undefined);
 	assert.equal(f.debuggerState.plans.mutationActive, true); assert.equal(f.operation.listeners.size, 0);
 });
 
 test('accepted Hot Resume resumes a paused physical evaluation without discarding its observer', t => {
 	const f = fixture(t);
-	f.terminal.setPaused(f.operation, true);
+	f.luaEvaluation.setPaused(f.operation, true);
 	const plan = f.debuggerState.plans.activeControlPlan;
 	applyRuntimeDebuggerHotResume(f.debuggerState, f.debuggerState.breakpoints.bindings);
 	assert.equal(f.debuggerState.plans.activeControlPlan, plan);
@@ -57,69 +57,69 @@ test('accepted Hot Resume resumes a paused physical evaluation without discardin
 
 test('Stop before admission retires the call instead of leaving queued work', async t => {
 	const f = fixture(t, false), controller = new AbortController();
-	const waiting = f.terminal.waitForStop(f.operation, controller.signal);
+	const waiting = f.luaEvaluation.waitForStop(f.operation, controller.signal);
 	controller.abort(); await assert.rejects(waiting, { name: 'AbortError' });
-	assert.equal(f.terminal.active, undefined); assert.equal(f.operation.result!.status, 'interrupted');
+	assert.equal(f.luaEvaluation.active, undefined); assert.equal(f.operation.result!.status, 'interrupted');
 });
 
 for (const status of ['completed', 'lua-error'] as const) test(`Terminal ${status} waits for the post-call checkpoint`, async t => {
 	const f = fixture(t), hold = Promise.withResolvers<void>();
-	const waiting = f.terminal.waitForStop(f.operation, new AbortController().signal);
+	const waiting = f.luaEvaluation.waitForStop(f.operation, new AbortController().signal);
 	f.operation.outcome = { status, values: ['42'] };
 	f.debuggerState.plans.didExecute();
 	const checkpoint = f.tasks.schedule(() => hold.promise, assert.fail, RuntimeTaskKind.History);
-	f.terminal.afterHostFrame();
+	f.luaEvaluation.afterHostFrame();
 	assert.equal(f.operation.result, undefined);
-	assert.equal(f.terminal.active, f.operation);
-	assert.equal(f.terminal.canEvaluate, false);
+	assert.equal(f.luaEvaluation.active, f.operation);
+	assert.equal(f.luaEvaluation.canEvaluate, false);
 	hold.resolve(); await checkpoint;
-	f.terminal.afterHostFrame();
+	f.luaEvaluation.afterHostFrame();
 	assert.equal((await waiting).status, status);
-	assert.equal(f.terminal.active, undefined);
+	assert.equal(f.luaEvaluation.active, undefined);
 	assert.equal(f.tasks.ready, true);
 });
 
 test('cancelling the Terminal waiter after return does not discard the completed result', async t => {
 	const f = fixture(t), controller = new AbortController(), hold = Promise.withResolvers<void>();
-	const waiting = f.terminal.waitForStop(f.operation, controller.signal);
+	const waiting = f.luaEvaluation.waitForStop(f.operation, controller.signal);
 	f.operation.outcome = { status: 'completed', values: ['42'] };
 	f.debuggerState.plans.didExecute();
 	const checkpoint = f.tasks.schedule(() => hold.promise, assert.fail, RuntimeTaskKind.History);
 	controller.abort(); await assert.rejects(waiting, { name: 'AbortError' });
-	assert.equal(f.terminal.active, f.operation);
+	assert.equal(f.luaEvaluation.active, f.operation);
 	hold.resolve(); await checkpoint;
-	f.terminal.afterHostFrame();
+	f.luaEvaluation.afterHostFrame();
 	assert.deepEqual(await f.operation.completion, { status: 'completed', values: ['42'] });
 });
 
 test('failed post-call history work settles Terminal observers as host-error', async t => {
-	const f = fixture(t), waiting = f.terminal.waitForStop(f.operation, new AbortController().signal);
+	const f = fixture(t), waiting = f.luaEvaluation.waitForStop(f.operation, new AbortController().signal);
 	f.operation.outcome = { status: 'completed', values: ['42'] };
 	f.debuggerState.plans.didExecute();
 	await f.tasks.schedule(() => { throw new Error('capture failed'); }, () => {}, RuntimeTaskKind.History);
-	f.terminal.afterHostFrame();
+	f.luaEvaluation.afterHostFrame();
 	assert.equal((await waiting).status, 'host-error');
-	assert.equal(f.terminal.active, undefined);
+	assert.equal(f.luaEvaluation.active, undefined);
 });
 
 for (const intent of ['terminal-continue', 'debugger-continue'] as const) test(`late cancellation preserves newer ${intent} intent`, async t => {
 	const f = fixture(t), controller = new AbortController();
-	const waiting = f.terminal.waitForStop(f.operation, controller.signal);
-	if (intent === 'terminal-continue') f.terminal.setPaused(f.operation, false);
+	const waiting = f.luaEvaluation.waitForStop(f.operation, controller.signal);
+	if (intent === 'terminal-continue') f.luaEvaluation.setPaused(f.operation, false);
 	else f.execution.requestExecution(false);
 	controller.abort(); await assert.rejects(waiting, { name: 'AbortError' });
-	assert.equal(f.terminal.paused, false); assert.equal(f.operation.result, undefined);
+	assert.equal(f.luaEvaluation.paused, false); assert.equal(f.operation.result, undefined);
 });
 
 test('machine replacement settles observers, reports bounded output loss and invalidates controls', async t => {
 	const f = fixture(t), controller = new AbortController();
-	const waiting = f.terminal.waitForStop(f.operation, controller.signal);
-	for (let i = 0; i < 2100; i++) f.terminal.receiveOutput(String(i));
-	f.terminal.didReplaceMachine();
+	const waiting = f.luaEvaluation.waitForStop(f.operation, controller.signal);
+	for (let i = 0; i < 2100; i++) f.luaEvaluation.receiveOutput(String(i));
+	f.luaEvaluation.didReplaceMachine();
 	const result = await waiting;
 	assert.equal(result.status, 'interrupted'); assert.equal(result.outputTruncated, true);
 	assert.equal(result.output.length, 2048); assert.equal(f.operation.listeners.size, 0);
-	assert.throws(() => f.terminal.setPaused(f.operation, false), /no longer active/);
+	assert.throws(() => f.luaEvaluation.setPaused(f.operation, false), /no longer active/);
 });
 
 test('Terminal tool boundary requires explicit supported context and exact evaluation identities', () => {

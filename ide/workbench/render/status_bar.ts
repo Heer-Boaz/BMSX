@@ -11,7 +11,7 @@ import type { RuntimeFaultState } from '../../runtime/fault_state';
 import type { EditorPane } from '../services/editor/editor_pane';
 import type { EditorInput } from '../ui/tab/model';
 import { buildStatusLeftInfo } from './status_bar_info';
-import type { RuntimeDebuggerPlanManager } from '../../runtime/debugger_plans';
+import type { RuntimeLuaEvaluation } from '../../runtime/lua_evaluation';
 import type { StudioServerConnectionState } from '../common/server_connection';
 import { renderServerConnection } from './server_connection';
 
@@ -19,7 +19,7 @@ export function renderStatusBar(
 	resourcePanel: ResourcePanelController,
 	fault: RuntimeFaultState,
 	editorPane: EditorPane<EditorInput> | null,
-	plans: RuntimeDebuggerPlanManager,
+	evaluation: RuntimeLuaEvaluation,
 	connection: StudioServerConnectionState,
 ): void {
 	const runtimeFaulted = !!fault.faultSnapshot;
@@ -36,8 +36,8 @@ export function renderStatusBar(
 	}
 	const statusTextColor = runtimeFaulted ? constants.COLOR_STATUS_ALERT : constants.COLOR_STATUS_TEXT;
 	api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
-	if (!runtimeFaulted && plans.workbenchControlActive) {
-		drawEditorText(editorViewState.font, plans.controlSuspended ? 'LUA CALL PAUSED' : 'LUA CALL RUNNING', bounds.left + 4, statusTop + 2, 0, statusTextColor);
+	if (!runtimeFaulted && evaluation.active !== undefined) {
+		drawEditorText(editorViewState.font, evaluation.paused ? 'LUA CALL PAUSED' : 'LUA CALL RUNNING', bounds.left + 4, statusTop + 2, 0, statusTextColor);
 	} else if (editorFeedbackState.message.visible) {
 		const lines = getStatusMessageLines();
 		let textY = statusTop + 2;

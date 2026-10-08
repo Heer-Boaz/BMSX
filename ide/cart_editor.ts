@@ -28,7 +28,8 @@ import type { RuntimeDebuggerExecution } from './runtime/debugger_execution';
 import type { RuntimeFrameNavigation } from './runtime/frame_navigation';
 import type { GameImageCapture, ImageDecoder } from '../hosts/common/image';
 import { AssistantConversation } from './workbench/services/assistant/conversation';
-import type { LuaTerminalSession } from './workbench/services/terminal/session';
+import { BiosTerminal } from './runtime/bios_terminal';
+import type { RuntimeLuaEvaluation } from './runtime/lua_evaluation';
 import { TerminalPane } from './workbench/contrib/terminal/editor_pane';
 import { TerminalInput } from './workbench/contrib/terminal/editor_input';
 import { AssistantPane } from './workbench/contrib/assistant/editor_pane';
@@ -192,7 +193,7 @@ export type CartEditor = {
 	retryServerConnection: (() => void) | undefined;
 	readonly clipboard: Clipboard;
 	readonly clipboardTarget: ClipboardTarget | undefined;
-	readonly terminal: LuaTerminalSession;
+	readonly terminal: BiosTerminal;
 	readonly assistant: AssistantConversation;
 	readonly assistantCommands: AssistantChatCommands;
 	readonly observedConversation: ObservedConversation;
@@ -246,6 +247,7 @@ export type CartEditor = {
 };
 
 export class RuntimeCartEditor implements CartEditor {
+	public readonly terminal: BiosTerminal;
 	public readonly tabBar: WorkbenchActionBarControl;
 	public readonly runtimeTimeline: RuntimeTimelineControl;
 	public readonly gamePanel: GamePanel;
@@ -352,7 +354,7 @@ export class RuntimeCartEditor implements CartEditor {
 		private readonly hotResumes: HotResumeService,
 		private readonly boots: BootService,
 		public readonly diagnostics: ResourceDiagnosticsService,
-		public readonly terminal: LuaTerminalSession,
+		private readonly luaEvaluation: RuntimeLuaEvaluation,
 		private readonly actorExecution: ActorExecutionService,
 		runtimeInspection: RuntimeInspectionService,
 		private readonly frameNavigation: RuntimeFrameNavigation,
@@ -364,7 +366,8 @@ export class RuntimeCartEditor implements CartEditor {
 		observeConversation?: ConversationObserverFactory,
 	) {
 		const behaviorSources = new BehaviorSourceDocuments(editorTextModelService, sources);
-		this.tools = new WorkspaceToolService(editorTextModelService, sources, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, terminal, debuggerExecution, actorExecution, behaviorSources, textFileSaves, boots, hotResumes, events, clock, run => this.scenarioLab.revealRun(run));
+		this.terminal = new BiosTerminal(runtime, input, guest, debuggerState, runtimeTasks, execution, rewind, fault);
+		this.tools = new WorkspaceToolService(editorTextModelService, sources, diagnostics, scenarioRuns, runtimeInspection, frameNavigation, gameCapture, luaEvaluation, debuggerExecution, actorExecution, behaviorSources, textFileSaves, boots, hotResumes, events, clock, run => this.scenarioLab.revealRun(run));
 		this.assistant = new AssistantConversation(editorTextModelService, sources, this.tools, connectAssistant);
 		this.observedConversation = new ObservedConversation(observeConversation);
 		this.runtime = runtime;
@@ -412,7 +415,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.editorPanes = new EditorPanes({
 			rom_inspector: () => new RomInspectorPane(this.resourcePanel, this.commands, this.sources, this.navigation, this.quickInput),
 			event_viewer: () => new EventViewerPane(this.resourcePanel, this.quickInput, this.commands, this.frameNavigation, this.contextMenu),
-			terminal: () => new TerminalPane(this.resourcePanel, this.clipboard, this.quickInput),
+			terminal: () => new TerminalPane(this.resourcePanel, this.terminal),
 			conversation_observer: () => new ConversationObserverPane(this.resourcePanel, decodeImage),
 			assistant: () => new AssistantPane(this.resourcePanel, this.clipboard, this.editorPanes, this.assistantCommands, decodeImage),
 			workspace_edit_review: () => new WorkspaceEditReviewPane(this.resourcePanel, models => {
@@ -481,7 +484,7 @@ export class RuntimeCartEditor implements CartEditor {
 			aem_editor: new AemEditorInputSerializer(sources),
 			lua_program: new LuaProgramInputSerializer(sources, this.luaPrograms),
 			event_viewer: { serialize: () => '', deserialize: () => new EventViewerInput(this.events) },
-			terminal: { serialize: () => '', deserialize: () => new TerminalInput(this.terminal) },
+			terminal: { serialize: () => '', deserialize: () => new TerminalInput() },
 			actor_lab: { serialize: () => '', deserialize: () => this.actorLab.resolveInput() },
 			game_view: { serialize: () => '', deserialize: () => new GameViewInput() },
 			code_editor: new CodeEditorInputSerializer(sources),
@@ -700,7 +703,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.gamePanel.draw();
 		this.runtimeTimeline.draw(this.overlayRenderer);
 		drawProblemsPanel();
-		renderStatusBar(this.resourcePanel, this.fault, activePane, this.debuggerState.plans, this.serverConnectionState);
+		renderStatusBar(this.resourcePanel, this.fault, activePane, this.luaEvaluation, this.serverConnectionState);
 		renderTopBarDropdown(this.chromeRenderContext);
 		drawContextMenu(this.contextMenu);
 		this.quickInput.draw();
@@ -716,7 +719,8 @@ export class RuntimeCartEditor implements CartEditor {
 		this.debuggerExecution.dispose();
 		this.unbindBreakpoints();
 		this.actionPrompt.dispose();
-		const terminalDrained = this.terminal.shutdown();
+		this.terminal.discard();
+		const evaluationDrained = this.luaEvaluation.shutdown();
 		const actorsDrained = this.actorExecution.shutdown();
 		this.scenarioRuns.dispose();
 		this.diagnostics.dispose();
@@ -727,7 +731,7 @@ export class RuntimeCartEditor implements CartEditor {
 		await this.textFileSaves.shutdown();
 		await executionDrained;
 		await bootsDrained;
-		await terminalDrained;
+		await evaluationDrained;
 		await actorsDrained;
 		pointerHover.clear();
 		pointerCapture.cancel();

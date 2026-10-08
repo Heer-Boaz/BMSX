@@ -22,12 +22,12 @@ export async function runAssistantDebugger(kind: StudioRendererKind, canvas: HTM
 	const version = model.version, media = ide.sources.currentBlua32Media;
 	await test.runPaletteCommand('View: Codex Assistant'); await test.runMenuCommand('pause');
 	await submitAssistantText(test, 'Use installed source to set a real cart breakpoint, call active_definition_view, inspect and source-step into/over/out, then complete the call and clear the breakpoint. Keep my dirty source uninstalled.');
-	await until(() => ide.debugger.source.stop !== undefined && ide.terminal.active !== undefined, 'debugger tools: model-set breakpoint hits actual cart method');
-	const evaluation = ide.terminal.active!, stoppedAt = cycles();
+	await until(() => ide.debugger.source.stop !== undefined && ide.luaEvaluation.active !== undefined, 'debugger tools: model-set breakpoint hits actual cart method');
+	const evaluation = ide.luaEvaluation.active!, stoppedAt = cycles();
 	check(ide.debugger.breakpoints.get(resource).size === 2, 'tools and gutter share the actual breakpoint owner');
 	await renderer.capture!('model-breakpoint');
 	await until(() => ide.editor.assistant.state === 'ready', 'debugger tools: model source stepping and return finish');
-	check(ide.terminal.lastResult === evaluation && evaluation.result?.status === 'completed', 'debugger source controls complete the SAME Terminal call');
+	check(ide.luaEvaluation.lastResult === evaluation && evaluation.result?.status === 'completed', 'debugger source controls complete the SAME Terminal call');
 	check(ide.debugger.breakpoints.get(resource).size === 0, 'model clears only the requested source breakpoints');
 	check(model.version === version && model.dirty && media === ide.sources.currentBlua32Media && test.execution.userPaused,
 		'source debugging preserves dirty source, installed code and independent pause');

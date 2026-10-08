@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createCodexModelFixture, CODEX_FIXTURE_DONE } from '../helpers/codex_model_fixture.mjs';
 import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixture';
 
-for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: Codex executes, continues and stops the real Lua Terminal`, { timeout: 180000 }, async t => {
+for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: Codex executes, continues and stops BIOS Lua evaluation`, { timeout: 180000 }, async t => {
 	const call = (id: string, name: string, args: unknown) => [{ type: 'function_call', call_id: id, name, arguments: JSON.stringify(args) }];
 	type Body = { input: { call_id: string; type: string; output: string | { type: string; text?: string }[] }[] };
 	const text = (body: Body, id: string) => {
@@ -44,8 +44,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	const completed = value(model.requests[4], 'continue');
 	assert.equal(completed.status, 'completed'); assert.deepEqual(completed.values, ['40', 'nil', 'false', 'true', '42', 'nil', 'false']);
 	assert.equal(completed.outputTruncated, false);
-	assert.deepEqual(completed.output.map(entry => entry.kind), ['input', 'output', 'result']);
-	assert.equal(completed.output[1].text, 'from Codex');
+	assert.deepEqual(completed.output, ['from Codex']);
 	assert.equal(value(model.requests[5], 'error').status, 'lua-error');
 	assert.deepEqual(value(model.requests[6], 'read').values, ['43', '43', '88', 'function']);
 	assert.equal(value(model.requests[7], 'syntax').status, 'lua-error');

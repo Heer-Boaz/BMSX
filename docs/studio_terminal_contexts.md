@@ -2,30 +2,25 @@
 
 ## Current public route
 
-The ordinary Terminal context picker now offers installed source frames at a
-source-debugger stop, alongside Cart globals and Isolated session. The same
-session accepts `studio_evaluate_frame(target, frame, source)` from a conversation;
-`frame` is an opaque handle from its current `studio_read_runtime_stack` result.
-No Codex button, copied namespace, second interpreter or separate server is involved.
+Studio Terminal is the full physical BIOS monitor, as on native C++.
+`FRAMES` shows physical frame indices/function addresses/PCs; `LUA --FRAME INDEX
+DEPTH SOURCE` evaluates that retained scope. Prefix hex indices with `0x`.
+Firmware owns command history and the cart/session/frame selection in each
+command. There is no Studio context picker or Lua-only console.
 
-The BIOS monitor offers `FRAMES` (physical indices/function addresses/PCs in hex)
-and `LUA --FRAME INDEX DEPTH SOURCE`; prefix hex indices with `0x`. Inline depth
-0 means the physical function's scope. The monitor bounds indices to the actual
-retained exception-entry stack, excluding its own command/evaluation frames.
-Names and locations come from the same installed diagnostic directory on TS/C++.
-Release ROMs without that directory report missing symbols; they do not substitute
-globals. The limited loader still does not implement full typed-pointer syntax.
+Programmatic debugger/agent evaluation remains at `RuntimeLuaEvaluation` and
+uses the same BIOS loader. `studio_evaluate_frame(target, frame, source)` consumes
+an opaque handle from the current `studio_read_runtime_stack` result. Its
+context records a source-stop ID and installed location, never a guest Thread,
+copied namespace or tooling image. Source install, Hot Resume and reset retire
+that stop. Returning evaluation cannot resurrect it. A host pause or rewind
+position is not a source-frame stop.
 
-A manual selection stores only a source-stop ID and an installed source location,
-not a guest Thread or tooling image. IDs are never recycled by reset. The debugger
-owns the complete stop record and retires older IDs at source install, Hot Resume
-(including unchanged-source init) and reset. A returning call cannot resurrect
-one of those retired stops. Frame evaluation at an ordinary host pause or rewind
-position is not admitted: use a current source-debugger stop.
-
-The sections below record successive prerequisite slices; statements that a
-former slice alone did not expose frame context describe that historical slice.
-Current admission and remaining validation limits are recorded at the end.
+The records below describe successive prerequisite slices, including the
+**removed** Lua-only frontend and its context picker. Their firmware, frame
+binding and completion-boundary findings remain applicable; their old UI and
+host transcript claims are historical. The current frontend and ownership
+contract is [Studio Terminal](studio_lua_terminal.md).
 
 ## Implementation gate
 

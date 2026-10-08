@@ -52,7 +52,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 	switch (command) {
 		case 'romInspector': openRomInspector(editor.editorPanes, editor.quickInput, sources); return;
 		case 'events': openEventViewer(editor.editorPanes, editor.events); return;
-		case 'terminal': openTerminal(editor.editorPanes, editor.terminal); return;
+		case 'terminal': openTerminal(editor.editorPanes); return;
 		case 'actorLab': editor.actorLab.open(); return;
 		case 'gameView': openGameView(editor.editorPanes); return;
 		case 'conversations': openObservedConversation(editor.editorPanes, editor.observedConversation, editor.quickInput); return;

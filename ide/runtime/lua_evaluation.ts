@@ -1,58 +1,59 @@
-import { buildLuaStackFrames, createLuaSourceStackTraceFrame, readRuntimeStackFrames, type RuntimeStackTraceFrame } from '../../../runtime/stack_trace';
-import type { HostExecutionControl } from '../../../../hosts/common/execution_control';
-import type { HostRewind } from '../../../../hosts/common/rewind';
-import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
-import type { Closure } from '../../../../machine/ts/machine/cpu/closure';
-import { valueString, type Value } from '../../../../machine/ts/machine/cpu/value';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import { IO_SYS_STATUS, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../../../machine/ts/spec/bmsx/io';
-import { resumeRuntimeDebugger, RuntimeDebuggerResumeMode, type RuntimeDebuggerState } from '../../../runtime/debugger_state';
-import type { RuntimeFaultState } from '../../../runtime/fault_state';
-import { scheduleRuntimeGuestCall } from '../../../runtime/guest_call';
-import { readRuntimeLuaModuleExport } from '../../../runtime/lua_inspection';
-import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
-import { clearExecutionStopHighlights } from '../../../runtime_error/navigation';
-import { TerminalTranscript, type TerminalEntry } from './transcript';
+import { type RuntimeStackTraceFrame } from './stack_trace';
+import type { HostExecutionControl } from '../../hosts/common/execution_control';
+import type { HostRewind } from '../../hosts/common/rewind';
+import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
+import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import { valueString, type Value } from '../../machine/ts/machine/cpu/value';
+import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { IO_SYS_STATUS, SYS_STATUS_SUPERVISOR_ACTIVE } from '../../machine/ts/spec/bmsx/io';
+import { resumeRuntimeDebugger, RuntimeDebuggerResumeMode, type RuntimeDebuggerState } from './debugger_state';
+import type { RuntimeFaultState } from './fault_state';
+import { scheduleRuntimeGuestCall } from './guest_call';
+import { readRuntimeLuaModuleExport } from './lua_inspection';
+import type { RuntimeSourceState } from './sources';
+import type { SuspendedGuestSession } from './suspended_guest';
+import { clearExecutionStopHighlights } from '../runtime_error/navigation';
 
-export type TerminalContext = 'cart' | 'session';
-export type TerminalFrameContext = { readonly kind: 'frame'; readonly stopId: number; readonly frame: RuntimeStackTraceFrame };
-export type TerminalInputContext = TerminalContext | TerminalFrameContext;
-export type TerminalResult = { readonly status: 'completed' | 'lua-error' | 'interrupted' | 'host-error'; readonly values: readonly string[] };
-export type TerminalObservation = {
+export type LuaGlobalContext = 'cart' | 'session';
+export type LuaFrameContext = { readonly kind: 'frame'; readonly stopId: number; readonly frame: RuntimeStackTraceFrame };
+export type LuaEvaluationContext = LuaGlobalContext | LuaFrameContext;
+export type LuaEvaluationResult = { readonly status: 'completed' | 'lua-error' | 'interrupted' | 'host-error'; readonly values: readonly string[] };
+export type LuaEvaluationObservation = {
 	readonly id: number;
-	readonly context: TerminalContext | 'frame';
-	readonly status: 'queued' | 'running' | 'paused' | TerminalResult['status'];
+	readonly context: LuaGlobalContext | 'frame';
+	readonly status: 'queued' | 'running' | 'paused' | LuaEvaluationResult['status'];
 	readonly values: readonly string[];
-	readonly output: readonly TerminalEntry[];
+	readonly output: readonly string[];
 	readonly outputTruncated: boolean;
 };
-export class TerminalEvaluation {
-	private readonly settled = Promise.withResolvers<TerminalResult>();
+const EVALUATION_OUTPUT_CAPACITY = 2048;
+
+export class LuaEvaluation {
+	public readonly output: string[] = [];
+	public outputCount = 0;
+	private readonly settled = Promise.withResolvers<LuaEvaluationResult>();
 	public readonly completion = this.settled.promise;
-	public result: TerminalResult | undefined;
-	public outcome: TerminalResult | undefined;
+	public result: LuaEvaluationResult | undefined;
+	public outcome: LuaEvaluationResult | undefined;
 	public status: 'queued' | 'running' | 'paused' = 'queued';
-	public outputEnd: number | undefined;
 	public controlVersion = 0;
 	public readonly listeners = new Set<() => void>();
-	public constructor(public readonly source: string, public readonly context: TerminalContext | 'frame', public readonly id: number, public readonly outputStart: number,
-		public executionRevision: number) {}
-	public finish(result: TerminalResult): void { this.result = result; this.settled.resolve(result); }
+	public constructor(public readonly source: string, public readonly context: LuaGlobalContext | 'frame', public readonly id: number, public executionRevision: number) {}
+	public finish(result: LuaEvaluationResult): void { this.result = result; this.settled.resolve(result); }
 }
 
-/** One execution owner for manual input and conversation tools, never an interpreter. */
-export class LuaTerminalSession {
-	public readonly transcript = new TerminalTranscript();
-	public readonly history: string[] = [];
-	public inputContext: TerminalInputContext = 'cart';
-	public active: TerminalEvaluation | undefined;
-	public lastResult: TerminalEvaluation | undefined;
+/** Programmatic BIOS evaluation through the debugger scheduler. No terminal UI or host namespace. */
+export class RuntimeLuaEvaluation {
+	public active: LuaEvaluation | undefined;
+	public lastResult: LuaEvaluation | undefined;
 	private serial = 0;
 	private generation = 0;
 	private closed = false;
 	private readonly values: Value[] = [];
-	public readonly receiveOutput = (text: string): void => { this.transcript.append('output', text); };
+	public readonly receiveOutput = (text: string): void => {
+		const operation = this.active;
+		if (operation !== undefined) operation.output[operation.outputCount++ % EVALUATION_OUTPUT_CAPACITY] = text;
+	};
 	public constructor(
 		private readonly runtime: Runtime,
 		private readonly sources: RuntimeSourceState,
@@ -71,19 +72,12 @@ export class LuaTerminalSession {
 			&& this.runtime.machine.cpu.activeCartridgeSlot() !== -1
 			&& (this.runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_ACTIVE) === 0;
 	}
-	/** Frame choices are resolved only when requested, never in the pane's frame loop. */
-	public frameContexts(): TerminalFrameContext[] {
-		if (this.debuggerState.source.stop === undefined || this.debuggerState.source.stop.media !== this.sources.currentBlua32Media || !this.canEvaluate) return [];
-		return buildLuaStackFrames(readRuntimeStackFrames(this.runtime.machine.cpu, this.sources),
-			(domain, path, line, column, name) => createLuaSourceStackTraceFrame(this.sources, domain, path, line, column, name))
-			.filter(frame => frame.kind === 'source').map(frame => this.frameContext(frame));
-	}
-	public frameContext(frame: RuntimeStackTraceFrame): TerminalFrameContext {
+	public frameContext(frame: RuntimeStackTraceFrame): LuaFrameContext {
 		const stop = this.debuggerState.source.stop;
 		if (stop === undefined || stop.media !== this.sources.currentBlua32Media || frame.kind !== 'source') throw new Error('Frame evaluation requires an installed source frame at the current debugger stop.');
 		return { kind: 'frame', stopId: stop.id, frame };
 	}
-	public contextAvailable(context: TerminalInputContext): boolean {
+	public contextAvailable(context: LuaEvaluationContext): boolean {
 		const stop = this.debuggerState.source.stop;
 		return context === 'cart' || context === 'session' || stop !== undefined && context.stopId === stop.id && stop.media === this.sources.currentBlua32Media;
 	}
@@ -92,19 +86,15 @@ export class LuaTerminalSession {
 		return this.active !== undefined && this.tasks.ready && this.debuggerState.plans.workbenchControlActive
 			&& this.fault.faultSnapshot === null;
 	}
-	public toggleExecution(): void {
-		if (!this.canToggleExecution) return;
-		this.setPaused(this.active!, !this.paused);
-	}
-	public setPaused(operation: TerminalEvaluation, paused: boolean): void {
-		if (this.active !== operation) throw new Error('Terminal evaluation is no longer active.');
-		if (operation.outcome !== undefined) throw new Error('Terminal evaluation has returned and is settling machine work.');
+	public setPaused(operation: LuaEvaluation, paused: boolean): void {
+		if (this.active !== operation) throw new Error('Lua evaluation is no longer active.');
+		if (operation.outcome !== undefined) throw new Error('Lua evaluation has returned and is settling machine work.');
 		if (!this.debuggerState.plans.workbenchControlActive) {
-			if (!paused) throw new Error('Terminal evaluation has not entered the CPU yet.');
+			if (!paused) throw new Error('Lua evaluation has not entered the CPU yet.');
 			this.finish(operation, { status: 'interrupted', values: ['Lua admission cancelled before execution.'] });
 			return;
 		}
-		if (!paused && !this.canToggleExecution) throw new Error('Terminal control is unavailable during machine recovery.');
+		if (!paused && !this.canToggleExecution) throw new Error('Lua control is unavailable during machine recovery.');
 		operation.controlVersion++;
 		const plans = this.debuggerState.plans;
 		if (!paused && this.debuggerState.source.stop !== undefined) {
@@ -139,15 +129,17 @@ export class LuaTerminalSession {
 		for (const listener of operation.listeners) listener();
 	}
 
-	public observe(operation: TerminalEvaluation): TerminalObservation {
-		const output: TerminalEntry[] = [];
-		for (let id = Math.max(operation.outputStart, this.transcript.start); id < (operation.outputEnd ?? this.transcript.next); id++) output.push(this.transcript.entry(id));
+	public observe(operation: LuaEvaluation): LuaEvaluationObservation {
+		const output: string[] = [];
+		for (let index = Math.max(0, operation.outputCount - EVALUATION_OUTPUT_CAPACITY); index < operation.outputCount; index++) {
+			output.push(operation.output[index % EVALUATION_OUTPUT_CAPACITY]);
+		}
 		return { id: operation.id, context: operation.context, status: operation.result?.status ?? operation.status,
-			values: operation.result?.values ?? [], output, outputTruncated: this.transcript.start > operation.outputStart };
+			values: operation.result?.values ?? [], output, outputTruncated: operation.outputCount > EVALUATION_OUTPUT_CAPACITY };
 	}
 
 	/** A tool waits for a real return or stop. Abort suspends its own work, never unwinds guest frames. */
-	public waitForStop(operation: TerminalEvaluation, signal: AbortSignal): Promise<TerminalObservation> {
+	public waitForStop(operation: LuaEvaluation, signal: AbortSignal): Promise<LuaEvaluationObservation> {
 		const version = operation.controlVersion;
 		return new Promise((resolve, reject) => {
 			const dispose = () => { signal.removeEventListener('abort', abort); operation.listeners.delete(changed); };
@@ -169,18 +161,13 @@ export class LuaTerminalSession {
 		});
 	}
 
-	public evaluate(source: string, context: TerminalInputContext): TerminalEvaluation {
+	public evaluate(source: string, context: LuaEvaluationContext): LuaEvaluation {
 		if (!this.canEvaluate) throw new Error('Lua execution is unavailable while another machine operation or the BIOS monitor is active.');
 		if (!this.contextAvailable(context)) throw new Error('Selected frame expired. Select a frame at the current debugger stop.');
 		const selected = context === 'cart' || context === 'session' ? undefined : context;
-		const name = selected === undefined ? context as TerminalContext : 'frame';
-		const operation = new TerminalEvaluation(source, name, ++this.serial, this.transcript.next, this.execution.revision), generation = this.generation;
+		const name = selected === undefined ? context as LuaGlobalContext : 'frame';
+		const operation = new LuaEvaluation(source, name, ++this.serial, this.execution.revision), generation = this.generation;
 		this.active = operation;
-		if (this.history[this.history.length - 1] !== source) {
-			this.history.push(source);
-			if (this.history.length > 100) this.history.shift();
-		}
-		this.transcript.append('input', `[${name}${selected === undefined ? '' : ` ${selected.frame.functionName} #${selected.frame.physicalFrameIndex}:${selected.frame.inlineDepth}`}] ${source}`);
 		void scheduleRuntimeGuestCall(this.runtime, this.guest, this.debuggerState, this.tasks, {
 			admission: selected === undefined ? 'quiescent' : 'at-stop', honorUserStops: true,
 			isCurrent: () => generation === this.generation && operation.result === undefined && this.contextAvailable(context),
@@ -190,7 +177,7 @@ export class LuaTerminalSession {
 				return { domain: -1, closure: this.guest.readStringMember(module.value, selected === undefined ? 'evaluate' : 'evaluate_frame') as Closure,
 					args: () => {
 						const pool = this.runtime.machine.cpu.stringPool;
-						const args: Value[] = [valueString(pool.intern(source)), valueString(pool.intern(`=terminal:${operation.id}`))];
+						const args: Value[] = [valueString(pool.intern(source)), valueString(pool.intern(`=evaluation:${operation.id}`))];
 						if (selected === undefined) args.push(valueString(pool.intern(name)));
 						else args.push(selected.frame.physicalFrameIndex, selected.frame.inlineDepth);
 						return args;
@@ -212,23 +199,20 @@ export class LuaTerminalSession {
 		}, error => { if (operation.result === undefined) this.finish(operation, { status: 'host-error', values: [String(error)] }); });
 		return operation;
 	}
-	private finish(operation: TerminalEvaluation, result: TerminalResult): void {
+	private finish(operation: LuaEvaluation, result: LuaEvaluationResult): void {
 		operation.finish(result);
 		this.lastResult = operation;
 		this.active = undefined;
-		if (result.values.length > 0) this.transcript.append(result.status === 'completed' ? 'result' : 'error', result.values.join('\t'));
-		operation.outputEnd = this.transcript.next;
 		for (const listener of operation.listeners) listener();
 	}
 	public didReplaceMachine(): void {
 		this.generation++;
 		if (this.active !== undefined) this.finish(this.active, { status: 'interrupted', values: ['Machine state replaced; pending Lua call ended.'] });
-		this.transcript.append('notice', 'Machine state replaced. Lua session follows the guest state; scrollback is historical.');
 	}
 	public shutdown(): Promise<void> {
 		this.closed = true;
 		this.generation++;
-		if (this.active !== undefined) this.finish(this.active, { status: 'interrupted', values: ['Terminal session closed.'] });
+		if (this.active !== undefined) this.finish(this.active, { status: 'interrupted', values: ['Lua evaluation closed.'] });
 		return this.tasks.join();
 	}
 }

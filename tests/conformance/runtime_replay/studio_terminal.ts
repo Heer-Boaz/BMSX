@@ -1,186 +1,80 @@
 import { editorTabGroup } from '../../../ide/workbench/ui/tab/group_model';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
-import { resolveRuntimeLuaSource } from '../../../ide/runtime/sources';
-import { captureRuntimeSaveState, applyRuntimeSaveState, type RuntimeSaveState } from '../../../machine/ts/machine/runtime/save_state';
-import { HistoryMode } from '../../../machine/ts/machine/runtime/history/history';
-import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
-import type { TerminalInput } from '../../../ide/workbench/contrib/terminal/editor_input';
+import { IO_SYS_STATUS, SYS_STATUS_SUPERVISOR_ACTIVE, SYS_STATUS_SUPERVISOR_RESUMABLE } from '../../../machine/ts/spec/bmsx/io';
 import { check, type StudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { testStudioPinnedFrameEvaluation } from './studio_frame_evaluation';
 
-/** Real input, BIOS compiler and ordinary scheduler, on all three renderers. */
+/** Physical BIOS shell, real HID input and the ordinary scheduler on all renderers. */
 export async function runStudioTerminal(test: StudioFixture) {
-	const { ide, runtime, frame, until, press, cycles, clipboard } = test;
-	await until(() => cycles() > runtime.timing.cpuHz * 13, 'terminal: boot real cartridge');
-	await reachNemesisTitle(test);
-	test.harness.openLuaSource('title_screen.lua');
-	await frame();
-	await test.runPaletteCommand('View: Lua Terminal');
-	let input = editorTabGroup.activeTab as TerminalInput;
-	check(input.kind === 'terminal', 'terminal opens through the registered View command');
-	const session = ide.terminal;
-	check(session.inputContext === 'cart', 'manual input starts with explicit cart globals');
-	const position = cycles();
-	for (let index = 0; index < 5; index++) await frame();
-	check(cycles() === position, 'opening the terminal does not run the game');
-	await test.runMenuCommand('pause');
-	await testStudioPinnedFrameEvaluation(test);
-	await test.runPaletteCommand('View: Lua Terminal');
-	const paste = async (text: string) => {
-		await test.click(input.composerBounds);
-		await clipboard.writeText(text);
-		await press('ControlLeft', 'KeyA'); await press('ControlLeft', 'KeyV');
-		check(input.draft.text === text, 'terminal paste reaches the real multiline control');
-	};
-	const evaluate = async (source: string) => {
-		await paste(source); await press('Enter');
-		check(input.draft.text === '', 'accepted input clears the composer');
-		await until(() => session.active === undefined && test.tasks.ready, `terminal: ${source}`);
-		check(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) === 0, 'Lua errors are protected, not monitor faults');
-		check(test.execution.userPaused && ide.editor.isActive, 'evaluation retains independent user pause and workbench');
-		const stopped = cycles();
-		for (let index = 0; index < 3; index++) await frame();
-		check(cycles() === stopped && !ide.debugger.plans.mutationActive, 'only the explicit Lua call runs, then the machine is held');
-		return session.transcript.entry(session.transcript.next - 1);
-	};
-	let result = await evaluate('terminal_counter = 20; return terminal_counter, type(new_game), type(cartlib__world__world)');
-	check(result.text === '20\tfunction\ttable' && session.lastResult!.context === 'cart', 'implicit names reach real cart globals');
-	check(ide.guest.global('terminal_counter') === 20, 'cart assignment is immediate, not a writeback');
-	result = await evaluate('load("return terminal_counter + 1")()');
-	check(result.text === '21', 'default BIOS load resolves globals when called from a cart-context RAM function');
-	await test.capture?.('lua-cart-context');
-	await test.runPaletteCommand('Terminal: Select Lua Context');
-	await press('ArrowDown'); await press('Enter');
-	check(session.inputContext === 'session', 'ordinary context picker selects isolated session');
-	result = await evaluate('terminal_counter');
-	check(result.text === 'nil', 'isolated session does not implicitly see cart variables');
-	result = await evaluate('1 + 2');
-	check(result.kind === 'result' && result.text === '3', 'expression result comes from BIOS load and guest execution');
-	result = await evaluate('counter = 40; print("hello from Lua"); return counter, nil, false');
-	check(result.kind === 'result' && result.text === '40\tnil\tfalse', 'multiple return values retain nil and false');
-	check(session.transcript.entry(result.id - 1).text === 'hello from Lua', 'ordinary debug TX arrives before the completion result');
-	result = await evaluate('counter = counter + 2; return counter');
-	check(result.text === '42', 'firmware session environment survives separate submissions');
-	check(ide.guest.global('counter') === null, 'session assignments do not masquerade as CPU global writes');
-	result = await evaluate('local world = getglobal("cartlib__world__world"); world.terminal_probe = 70; setglobal("terminal_probe", 60); return world.terminal_probe, getglobal("terminal_probe"), type(getglobal("new_game"))');
-	check(result.text === '70\t60\tfunction', 'manual input reads existing cart bindings and mutates the real world');
-	const guest = ide.guest;
-	check(guest.global('terminal_probe') === 60 && guest.readStringMember(guest.global('cartlib__world__world'), 'terminal_probe') === 70,
-		'no copied global table or writeback is involved');
-	result = await evaluate('local captured = 7; fn = function(x) return captured + x end');
-	result = await evaluate('fn(5)');
-	check(result.text === '12', 'RAM closures and their captures remain rooted by guest state');
-	await evaluate('tuple = function() return 7, nil, false, 9, nil end');
-	result = await evaluate('tuple()');
-	check(result.text === '7\tnil\tfalse\t9\tnil', 'an expression tail forwards the complete guest tuple');
-	result = await evaluate('local x = table.pack(1, tuple()); return x.n, x[1], x[2], x[3], x[6]');
-	check(result.text === '6\t1\t7\tnil\tnil', 'argument tails retain their arity, including nil values');
-	result = await evaluate('return (tuple())');
-	check(result.text === '7', 'parenthesized calls deliberately return one value');
-	result = await evaluate('return pcall(tuple)');
-	check(result.text === 'true\t7\tnil\tfalse\t9\tnil', 'protected calls retain all results');
-	result = await evaluate('string.find("abcd", "bc")');
-	check(result.text === '2\t3', 'the Terminal receives both match positions');
-	await test.capture?.('lua-tuples');
-	result = await evaluate('local x = ;');
-	check(result.kind === 'error' && result.text.includes('[load:'), 'syntax errors appear in the terminal');
-	result = await evaluate('counter = 43; error("terminal error")');
-	check(result.kind === 'error' && result.text === 'terminal error', 'protected runtime errors appear in the terminal');
-	result = await evaluate('counter');
-	check(result.text === '43', 'errors do not roll back earlier mutations');
-	result = await evaluate('local transient = 9; return transient');
-	check(result.text === '9', 'locals work within one submission');
-	result = await evaluate('transient'); check(result.text === 'nil', 'locals are not promoted to session globals');
-	result = await evaluate('load("return counter + 1")()');
-	check(result.text === '44', 'session load inherits the firmware-owned environment');
-	await evaluate('counter');
-	await paste('return'); await press('ShiftLeft', 'Enter');
-	check(input.draft.text === 'return\n', 'Shift+Enter inserts a newline without running input');
-	await paste('draft kept');
-	await press('ArrowUp'); check(input.draft.text === 'counter', 'Up recalls input history');
-	await press('ArrowDown'); check(input.draft.text === 'draft kept', 'Down restores the unsubmitted draft');
-	await test.capture?.('lua-results');
-
-	await paste('local sum = 0; for i = 1, 2000000 do sum = sum + 1 end; return sum');
-	await press('Enter');
-	await until(() => session.active !== undefined && session.canToggleExecution, 'terminal: scheduled long-running Lua call');
-	check(test.history.mode === HistoryMode.Disabled, 'tool-directed execution is not ordinary rewind history');
-	await test.click(input.actions.items.find(item => item.command === 'terminal.pause')!.bounds);
-	check(session.paused, `visible Pause stops the guest call: active=${session.active?.id} control=${ide.debugger.plans.controlActive} suspended=${ide.debugger.plans.controlSuspended}`);
-	const held = cycles(), operation = session.active!;
-	for (let index = 0; index < 5; index++) await frame();
-	check(cycles() === held && operation.result === undefined, 'pause retains physical frames without pretending completion');
-	await paste('counter = 999'); await press('Enter');
-	check(input.draft.text === 'counter = 999' && session.active === operation, 'busy execution does not admit or drop another input');
-	await test.capture?.('lua-paused');
-	await test.click(input.actions.items.find(item => item.command === 'terminal.continue')!.bounds);
-	await until(() => operation.result !== undefined, 'terminal: continue the same physical call');
-	check(operation.result!.status === 'completed' && operation.result!.values[0] === '2e+06', `long-running call completes through ordinary scheduled slices: ${JSON.stringify(operation.result)}`);
-	result = await evaluate('counter'); check(result.text === '43', 'busy draft was not queued or executed implicitly');
-	const replResource = { domain: -1 as const, path: 'shell/repl.lua' };
-	const replSource = resolveRuntimeLuaSource(ide.sources, replResource)!.record.src;
-	const line = replSource.split('\n').findIndex(line => line.includes('return protect(chunk)')) + 1;
-	check(line > 0, 'installed firmware has the protected invocation breakpoint');
-	ide.debugger.breakpoints.toggle(replResource, line);
-	await paste('counter + 10'); await press('Enter');
-	await until(() => ide.debugger.source.stop !== undefined && ide.editor.isActive, 'terminal: normal BIOS source breakpoint');
-	const breakpointCall = session.active!;
-	await until(() => editorTabGroup.activeTab?.kind === 'code_editor', 'terminal: debugger opens the actual BIOS source');
-	await test.runPaletteCommand('View: Lua Terminal');
-	await test.click(input.actions.items.find(item => item.command === 'terminal.continue')!.bounds);
-	await until(() => breakpointCall.result !== undefined, 'terminal: continue from a breakpoint without continuing gameplay');
-	ide.debugger.breakpoints.toggle(replResource, line);
-	check(breakpointCall.result!.values[0] === '53' && test.execution.userPaused && ide.editor.isActive,
-		'terminal continuation retains user pause and Studio rather than using game Continue');
-	await test.runPaletteCommand('View: Codex Assistant');
-	await test.runPaletteCommand('View: Lua Terminal');
-	check(editorTabGroup.activeTab === input, 'pane replacement retains the session and input');
-	result = await evaluate('fn(8)'); check(result.text === '15', 'switching views does not discard firmware session state');
-	await test.clickTab(input.id);
-	test.movePointer(input.composerBounds); await frame();
-	test.movePointer(editorChromeState.tabButtonBounds.get(input.id)!); await frame();
-	check(editorChromeState.tabCloseButtonBounds.get(input.id)!.right > editorChromeState.tabCloseButtonBounds.get(input.id)!.left,
-		'hover exposes the existing tab Close action');
-	await test.click(editorChromeState.tabCloseButtonBounds.get(input.id)!);
-	check(!editorTabGroup.tabs.includes(input), 'close releases the Terminal input, not the Lua session');
-	await test.runPaletteCommand('View: Lua Terminal');
-	input = editorTabGroup.activeTab as TerminalInput;
-	result = await evaluate('fn(8)'); check(result.text === '15', 'closing and reopening retains the guest session');
-	let saved!: RuntimeSaveState;
-	await test.tasks.schedule(async () => {
-		await test.presenter.backend.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
-		saved = captureRuntimeSaveState(runtime);
-	}, error => { throw error; });
-	await evaluate('counter = 99; fn = nil; setglobal("terminal_probe", 999)');
-	await test.tasks.schedule(() => { applyRuntimeSaveState(runtime, saved); }, error => { throw error; });
-	result = await evaluate('counter, fn(8)');
-	check(result.text === '43\t15', 'restore uses the restored guest environment and RAM closures, not stale host references');
-	result = await evaluate('local world = getglobal("cartlib__world__world"); return getglobal("terminal_probe"), world.terminal_probe');
-	check(result.text === '60\t70', 'state restore retains dynamically registered globals and the real cart object');
-	await press('ControlLeft', 'KeyL');
-	check(session.transcript.start === session.transcript.next, 'Ctrl+L clears only scrollback');
-	result = await evaluate('counter'); check(result.text === '43', 'clearing output does not reset the guest namespace');
-	const lastRow = input.transcript.rows.findLastIndex(row => row.entry === result.id);
-	const rowTop = input.viewport.offsetTop + lastRow * input.layout.rowHeight;
-	await test.click({ left: 8, right: 9, top: rowTop + 1, bottom: rowTop + 2 });
-	await clipboard.writeText(''); await press('ControlLeft', 'KeyC');
-	check((await clipboard.readText()) === '43', 'transcript pointer selection and Copy use the retained entry text');
-	await test.capture?.('lua-terminal');
-	await paste('while true do end'); await press('Enter');
-	await until(() => session.canToggleExecution, 'terminal: infinite input remains schedulable');
-	await test.click(input.actions.items.find(item => item.command === 'terminal.pause')!.bounds);
-	const interrupted = session.active!;
-	await test.runMenuCommand('reboot');
-	await until(() => interrupted.result !== undefined && test.tasks.ready, 'terminal: explicit reboot retires the call');
-	check(interrupted.result!.status === 'interrupted' && !ide.debugger.plans.mutationActive, 'reset clears the real frames and retires the observer once');
-	await until(() => cycles() > runtime.timing.cpuHz * 13, 'terminal: cartridge restarts through BIOS');
+	const { ide, runtime, frame, until, cycles } = test;
+	await until(() => cycles() > runtime.timing.cpuHz * 13, 'BIOS terminal: boot real cartridge');
 	await reachNemesisTitle(test);
 	test.harness.openLuaSource('title_screen.lua'); await frame();
-	await test.runMenuCommand('pause'); await test.runPaletteCommand('View: Lua Terminal');
-	input = editorTabGroup.activeTab as TerminalInput;
-	result = await evaluate('counter, fn');
-	check(result.text === 'nil\tnil', 'reboot starts a fresh guest namespace while retaining historical scrollback');
-	await test.capture?.('lua-reboot');
-	return { renderer: 'shared', terminal: true, calls: session.history.length };
+	await test.runMenuCommand('pause');
+	const media = ide.sources.currentBlua32Media;
+	await test.runPaletteCommand('View: BIOS Terminal');
+	const terminal = editorTabGroup.activeTab;
+	check(terminal.kind === 'terminal', 'registered view opens the BIOS terminal');
+	await until(() => (runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_RESUMABLE) !== 0,
+		'BIOS terminal: physical supervisor entry');
+	for (let index = 0; index < 20; index++) await frame();
+	const command = async (text: string) => {
+		// Hold both edges across guest samples, just like the native HID conformance runner.
+		for (const char of text) {
+			const code = char === ' ' ? 'Space' : char === '=' ? 'Equal' : char === '_' ? 'Minus'
+				: /[0-9]/.test(char) ? `Digit${char}` : `Key${char.toUpperCase()}`;
+			if (char === '_') test.setKey('ShiftLeft', true);
+			test.setKey(code, true); await frame(); await frame();
+			test.setKey(code, false); test.setKey('ShiftLeft', false); await frame(); await frame();
+		}
+		test.setKey('Enter', true); await frame(); await frame();
+		test.setKey('Enter', false);
+		for (let index = 0; index < 20; index++) await frame();
+	};
+	await command('help'); await test.capture?.('bios-help');
+	await command('q');
+	await command('regs'); await test.capture?.('bios-registers');
+	await command('q');
+	await command('lua bios_terminal_probe=42');
+	check(ide.guest.global('bios_terminal_probe') === 42, 'physical LUA command writes the live cartridge registerfile');
+	check(ide.sources.currentBlua32Media === media && ide.luaEvaluation.active === undefined && ide.luaEvaluation.lastResult === undefined,
+		'BIOS commands install no source and create no host evaluation or transcript');
+	await test.capture?.('bios-lua');
+	await test.press('ShiftLeft', 'F1');
+	await test.runPaletteCommand('View: Game');
+	const suspended = cycles();
+	for (let index = 0; index < 6; index++) await frame();
+	check(cycles() === suspended && (runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_ACTIVE) !== 0,
+		'leaving the terminal suspends, rather than unwinds, the physical shell');
+	await test.clickTab(terminal.id);
+	for (let index = 0; index < 5; index++) await frame();
+	await command('lua bios_terminal_probe'); await test.capture?.('bios-reopened');
+	await command('cont');
+	await until(() => !ide.editor.terminal.active && test.tasks.ready, 'BIOS terminal: CONT returns to held cartridge');
+	check((runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_ACTIVE) === 0
+		&& !runtime.machine.cpu.activeThread.frames.some(frame => frame.isNonMaskableExceptionFrame)
+		&& !ide.debugger.plans.controlActive && test.execution.userPaused,
+		'CONT leaves the physical supervisor without clearing independent host pause (the caller may still be an IRQ)');
+	const held = cycles();
+	for (let index = 0; index < 6; index++) await frame();
+	check(cycles() === held, 'the terminal does not leak execution into gameplay after CONT');
+	await test.runPaletteCommand('View: Game');
+	await testStudioPinnedFrameEvaluation(test, async () => {
+		const stop = ide.debugger.source.stop!, cpu = runtime.machine.cpu;
+		const oldContext = ide.luaEvaluation.frameContext(ide.inspection.open().readStack(0, 100).frames[0]);
+		await test.runPaletteCommand('View: BIOS Terminal');
+		await until(() => (runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_RESUMABLE) !== 0,
+			'BIOS terminal: supervisor entry from a source stop');
+		for (let index = 0; index < 20; index++) await frame();
+		const nmi = cpu.activeThread.frames.findIndex((_frame, index) => cpu.isNonMaskableExceptionFrame(index));
+		check(nmi > 0 && ide.debugger.source.stop === undefined && !ide.luaEvaluation.contextAvailable(oldContext),
+			'physical admission retires the old source/frame context, rather than promising pinned evaluation semantics');
+		const pcs = cpu.activeThread.frames.slice(0, nmi).map(frame => frame.pc);
+		await command('cont');
+		await until(() => !ide.editor.terminal.active && test.tasks.ready, 'BIOS terminal: hold the physical NMI return');
+		check(cpu.getFrameDepth() === nmi && cpu.activeThread.frames.every((frame, index) => frame.pc === pcs[index])
+			&& ide.debugger.source.stop !== stop && !ide.luaEvaluation.contextAvailable(oldContext),
+			`CONT holds the real NMI caller before execution, without resurrecting the retired breakpoint: expected=${JSON.stringify(pcs)}, actual=${JSON.stringify(cpu.activeThread.frames.map(frame => frame.pc))}, depth=${nmi}/${cpu.getFrameDepth()}`);
+	});
+	return { renderer: 'shared', terminal: true };
 }

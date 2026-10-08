@@ -34,7 +34,7 @@ export async function runAssistantProgram(kind: StudioRendererKind, canvas: HTML
 	await until(() => conversation.state === 'ready', 'program: Save, actual install/reset, execution, image and independent rerun finish');
 	check(!main.dirty && ide.sources.currentBlua32Media !== oldMedia && ide.editor.isActive,
 		'Reboot installs without closing the conversation');
-	check(ide.terminal.lastResult?.result?.status === 'completed' && ide.scenarioRuns.results.runs[0].state === 'passed',
+	check(ide.luaEvaluation.lastResult?.result?.status === 'completed' && ide.scenarioRuns.results.runs[0].state === 'passed',
 		'actual Terminal completion and scenario result belong to their separate owners');
 	await test.clickTab(view.id); await frame(); await renderer.capture!('installed-and-retested');
 	const media = ide.sources.currentBlua32Media, position = cycles(), latest = ide.boots.latestOperation;

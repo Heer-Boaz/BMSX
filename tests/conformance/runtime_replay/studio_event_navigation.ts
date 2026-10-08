@@ -124,7 +124,7 @@ export async function runStudioEventNavigation(test: StudioFixture) {
 	// A queued host-work fence keeps this admitted operation in flight while the
 	// ordinary UI changes its projection. No fake replay or backend is installed.
 	const lifetime = new AbortController();
-	const tools = new WorkspaceRuntimeTools(ide.inspection, ide.frameNavigation, ide.gameCapture, ide.terminal,
+	const tools = new WorkspaceRuntimeTools(ide.inspection, ide.frameNavigation, ide.gameCapture, ide.luaEvaluation,
 		ide.debuggerExecution, ide.actorExecution, ide.boots, ide.hotResumes, ide.events, lifetime.signal);
 	const generation = ide.events.generation;
 	const reply = tools.execute('studio_seek_event', { target: ide.inspection.target, generation, sequence: previous.sequence });

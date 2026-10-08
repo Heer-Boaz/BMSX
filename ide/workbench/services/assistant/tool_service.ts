@@ -11,7 +11,7 @@ import type { ScenarioRunService } from '../testing/scenario_runs';
 import type { RuntimeInspectionService } from '../../../runtime/inspection';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 import type { GameImageCapture } from '../../../../hosts/common/image';
-import type { LuaTerminalSession } from '../terminal/session';
+import type { RuntimeLuaEvaluation } from '../../../runtime/lua_evaluation';
 import type { RuntimeDebuggerExecution } from '../../../runtime/debugger_execution';
 import type { ActorExecutionService } from '../../contrib/actor_lab/execution';
 import type { BehaviorSourceDocuments } from '../../contrib/behavior_lens/source_documents';
@@ -32,7 +32,7 @@ export class WorkspaceToolService {
 		private readonly diagnostics: ResourceDiagnosticsService,
 		private readonly testRuns: ScenarioRunService, private readonly inspection: RuntimeInspectionService,
 		private readonly navigation: RuntimeFrameNavigation, private readonly capture: GameImageCapture,
-		private readonly terminal: LuaTerminalSession, private readonly debuggerExecution: RuntimeDebuggerExecution,
+		private readonly luaEvaluation: RuntimeLuaEvaluation, private readonly debuggerExecution: RuntimeDebuggerExecution,
 		private readonly actors: ActorExecutionService, private readonly behaviors: BehaviorSourceDocuments,
 		private readonly saves: TextFileSaveService, private readonly boots: BootService, private readonly hotResumes: HotResumeService,
 		private readonly events: RuntimeEventHistory, private readonly clock: HostClock, private readonly revealTestRun?: (run: ScenarioRun) => void) {
@@ -45,7 +45,7 @@ export class WorkspaceToolService {
 		const context = new WorkspaceToolContext(
 			new WorkspaceSourceTools(this.models, this.sources, this.diagnostics, connection, this.behaviors, this.saves, this.clock),
 			new WorkspaceTestTools(this.testRuns, connection, this.revealTestRun),
-			new WorkspaceRuntimeTools(this.inspection, this.navigation, this.capture, this.terminal, this.debuggerExecution, this.actors, this.boots, this.hotResumes, this.events, connection),
+			new WorkspaceRuntimeTools(this.inspection, this.navigation, this.capture, this.luaEvaluation, this.debuggerExecution, this.actors, this.boots, this.hotResumes, this.events, connection),
 			connection, () => this.contexts.delete(context), this.openBuild);
 		this.contexts.add(context);
 		return context;

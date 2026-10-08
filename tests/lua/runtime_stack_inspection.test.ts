@@ -72,7 +72,7 @@ return run(7)`;
 		assert.equal(Number(entry.value.display), declaration.address, 'display preserves every address bit');
 	}
 	const lifetime = new AbortController();
-	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, lifetime.signal);
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, lifetime.signal);
 	t.after(() => tools.dispose());
 	const opened = await tools.execute('studio_inspect_runtime', { target: f.inspection.target });
 	assert.ok('inspection' in opened.data);
@@ -314,7 +314,7 @@ test('missing symbols are explicit and execution invalidates frame, scope and va
 
 test('tool stack/frame handles are prompt-local and external paging arguments are decoded only at the tool boundary', async t => {
 	const f = fixture('local x = 42\nhalt_until_irq\nreturn x', 0);
-	const lifetime = new AbortController(), tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, lifetime.signal);
+	const lifetime = new AbortController(), tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, lifetime.signal);
 	t.after(() => tools.dispose());
 	const opened = await tools.execute('studio_inspect_runtime', { target: f.inspection.target });
 	assert.ok('inspection' in opened.data);
@@ -413,7 +413,7 @@ local run = function(seed, ...)
 end
 return run(1)`, 3, 4);
 	const lifetime = new AbortController();
-	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.terminal, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, lifetime.signal);
+	const tools = new WorkspaceRuntimeTools(f.inspection, f.frameNavigation, f.gameCapture, f.luaEvaluation, f.debuggerExecution, f.actorExecution, f.boots, f.hotResumes, f.events, lifetime.signal);
 	t.after(() => tools.dispose());
 	const before = [f.runtime.machine.cpu.luaHeap.usedBytes(), f.runtime.machine.scheduler.currentNowCycles()];
 	const opened = await tools.execute('studio_inspect_runtime', { target: f.inspection.target });
@@ -444,23 +444,23 @@ test('manual frame contexts retain only installed source identity and expire acr
 	const f = fixture('local x = 42\nreturn x', 0, 2), source = f.debuggerState.source, cpu = f.runtime.machine.cpu;
 	t.after(() => f.presenter.dispose());
 	const inspection = f.inspection.open();
-	const frame = inspection.readStack(0, 1).frames[0], context = f.terminal.frameContext(frame);
+	const frame = inspection.readStack(0, 1).frames[0], context = f.luaEvaluation.frameContext(frame);
 	assert.deepEqual(Object.keys(context).sort(), ['frame', 'kind', 'stopId'], 'manual selection must not root an old guest heap or tooling image');
-	assert.equal(f.terminal.contextAvailable(context), true);
+	assert.equal(f.luaEvaluation.contextAvailable(context), true);
 	const stop = source.suspendStopForCall();
-	assert.equal(f.terminal.contextAvailable(context), false);
+	assert.equal(f.luaEvaluation.contextAvailable(context), false);
 	source.returnToStop(stop);
-	assert.equal(f.terminal.contextAvailable(context), true, 'return to the same source stop retains the selection');
+	assert.equal(f.luaEvaluation.contextAvailable(context), true, 'return to the same source stop retains the selection');
 	f.sources.currentBlua32Media = { ...f.sources.currentBlua32Media };
-	assert.equal(f.terminal.contextAvailable(context), false, 'a source installation expires selection even before breakpoint rebinding');
-	assert.throws(() => f.terminal.frameContext(frame), /current debugger stop/);
+	assert.equal(f.luaEvaluation.contextAvailable(context), false, 'a source installation expires selection even before breakpoint rebinding');
+	assert.throws(() => f.luaEvaluation.frameContext(frame), /current debugger stop/);
 	source.install(f.sources.currentBlua32Media, f.debuggerState.breakpoints.bindings.pcs);
 	assert.equal(source.stop, undefined);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped);
 	assert.notEqual(source.stop!.id, context.stopId);
-	const next = f.terminal.frameContext(frame);
+	const next = f.luaEvaluation.frameContext(frame);
 	source.reset();
-	assert.equal(f.terminal.contextAvailable(next), false);
+	assert.equal(f.luaEvaluation.contextAvailable(next), false);
 	assert.equal(cpu.runUntilDepth(0, 100_000), RunResult.ExecutionStopped);
 	assert.notEqual(source.stop!.id, next.stopId, 'reset cannot recycle source-stop identities');
 	inspection.dispose();

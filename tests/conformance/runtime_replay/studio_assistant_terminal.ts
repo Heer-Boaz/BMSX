@@ -9,7 +9,7 @@ import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 import { submitAssistantText } from './studio_assistant_navigation';
 
-/** Real app-server dynamic tools drive the shared Terminal; no direct evaluation shortcut. */
+/** Real app-server dynamic tools drive BIOS evaluation; no direct evaluation shortcut. */
 export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTMLCanvasElement, capture: (name: string) => Promise<void>) {
 	const renderer = await createStudioRenderer(kind, canvas, capture), http = new StudioHttpSession();
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
@@ -22,7 +22,7 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	const version = source.version, media = ide.sources.currentBlua32Media;
 	await test.runPaletteCommand('View: Codex Assistant');
 	const view = getActiveTab(); if (view.kind !== 'assistant') throw new Error('Assistant pane required');
-	const conversation = ide.editor.assistant, terminal = ide.terminal;
+	const conversation = ide.editor.assistant, terminal = ide.luaEvaluation;
 	await test.runMenuCommand('pause');
 	const repl = { domain: -1 as const, path: 'shell/repl.lua' };
 	const line = resolveRuntimeLuaSource(ide.sources, repl)!.record.src.split('\n').findIndex(text => text.includes('return protect(chunk)')) + 1;
@@ -50,30 +50,6 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	});
 	await test.tasks.join();
 	check(queued.result!.status === 'interrupted' && cycles() === stopped, 'cancellation revokes actual queued CPU admission');
-	await test.runPaletteCommand('View: Lua Terminal');
-	const input = getActiveTab(); if (input.kind !== 'terminal') throw new Error('Terminal pane required');
-	check(terminal.inputContext === 'cart', 'conversation context does not change the manual context selection');
-	await renderer.capture!('conversation-results');
-	await test.click(input.composerBounds); await test.clipboard.writeText('counter');
-	await press('ControlLeft', 'KeyV'); await press('Enter');
-	await until(() => terminal.active === undefined && test.tasks.ready, 'terminal tools: ordinary manual evaluation');
-	check(terminal.transcript.entry(terminal.transcript.next - 1).text === '105', 'manual cart context sees the real implicit global mutation');
-	// Expire feedback in the last hover frame. Parent and child geometry must
-	// publish together, not move the action one update later during the click.
-	showEditorMessage('Select Lua context', COLOR_STATUS_TEXT, 1);
-	await frame(); await frame();
-	const contextTop = input.actions.items.find(item => item.command === 'terminal.context')!.bounds.top;
-	showEditorMessage('Select Lua context', COLOR_STATUS_TEXT, runtime.timing.frameDurationMs * 1.5 / 1000);
-	await test.click(input.actions.items.find(item => item.command === 'terminal.context')!.bounds);
-	check(input.actions.items.find(item => item.command === 'terminal.context')!.bounds.top > contextTop, 'expired status row publishes the new Terminal bounds');
-	check(ide.editor.quickInput.visible, 'manual Lua context picker opens after status expiry');
-	await renderer.capture!('context-picker');
-	await press('ArrowDown'); await press('Enter');
-	check(terminal.inputContext === 'session', 'manual Lua context selection uses the ordinary picker');
-	await test.click(input.composerBounds); await test.clipboard.writeText('counter');
-	await press('ControlLeft', 'KeyV'); await press('Enter');
-	await until(() => terminal.active === undefined && test.tasks.ready, 'terminal tools: ordinary isolated context');
-	check(terminal.transcript.entry(terminal.transcript.next - 1).text === '43', 'manual isolated context sees the same session without changing cart globals');
 	await test.runPaletteCommand('View: Codex Assistant');
 	await submitAssistantText(test, 'Run until I press Stop.');
 	await until(() => terminal.active !== undefined && terminal.canToggleExecution && cycles() > stopped,
@@ -99,7 +75,7 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	await submitAssistantText(test, 'Read the suspended Terminal and try a stale evaluation handle.');
 	await until(() => conversation.state === 'ready', 'terminal tools: new conversation turn observes retained execution');
 	check(terminal.active === operation && terminal.paused, 'new prompt cannot implicitly discard the suspended call');
-	await test.runPaletteCommand('View: Lua Terminal'); await frame();
+	await test.runPaletteCommand('View: Game'); await frame();
 	await renderer.capture!('stopped-stack');
 	await test.runMenuCommand('reboot');
 	await press('Enter'); // Explicitly accept the ordinary dirty-source Save and Reboot prompt.

@@ -10,7 +10,7 @@ import { reachNemesisTitle } from './studio_nemesis_navigation';
  * this is an automated recovery workflow, not UI-only or live-model evidence. */
 export async function runStudioFrameRecovery(test: StudioFixture) {
 	const { ide, runtime, tasks, guest, harness, frame, until, cycles } = test;
-	const terminal = ide.terminal, cpu = runtime.machine.cpu;
+	const terminal = ide.luaEvaluation, cpu = runtime.machine.cpu;
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'frame recovery: boot real cartridge');
 	await reachNemesisTitle(test);
 	harness.openLuaSource('title_screen.lua'); await frame();
@@ -28,7 +28,6 @@ export async function runStudioFrameRecovery(test: StudioFixture) {
 			`frame recovery: selected stop is in user execution: ${JSON.stringify(continued.result)}`);
 		const inspection = ide.inspection.open();
 		const context = terminal.frameContext(inspection.readStack(0, 100).frames[0]);
-		terminal.inputContext = context;
 		return { inspection, context, stop: ide.debugger.source.stop! };
 	};
 	const scopes = (): Table[] => {
@@ -51,7 +50,7 @@ export async function runStudioFrameRecovery(test: StudioFixture) {
 		'frame recovery: scope borrows the physical suspended thread');
 	const held = cycles(); await frame(); await frame();
 	check(cycles() === held, 'frame recovery: a paused frame evaluation does not run gameplay');
-	await test.runPaletteCommand('View: Lua Terminal');
+	await test.runPaletteCommand('View: Game');
 	await test.capture?.('evaluation-paused');
 	let saved!: RuntimeSaveState;
 	await tasks.schedule(async () => {
@@ -79,7 +78,7 @@ export async function runStudioFrameRecovery(test: StudioFixture) {
 	check(readback.result!.status === 'completed' && readback.result!.values[1] === 'false'
 		&& readback.result!.values[2] === 'Selected frame evaluation has ended.',
 		`frame recovery: restored accessor expires on actual return: ${JSON.stringify(readback.result)}`);
-	await test.runPaletteCommand('View: Lua Terminal');
+	await test.runPaletteCommand('View: Game');
 	await test.capture?.('restored-reevaluation');
 
 	// Install canonical source while a user-mode call still borrows its frame.
@@ -133,7 +132,7 @@ export async function runStudioFrameRecovery(test: StudioFixture) {
 	check(afterFault.result!.status === 'completed' && afterFault.result!.values[1] === '73'
 		&& afterFault.result!.values[2] === 'false' && afterFault.result!.values[3] === 'Selected frame evaluation has ended.',
 		`frame recovery: fresh scopes work; failed-call accessors do not: ${JSON.stringify(afterFault.result)}`);
-	await test.runPaletteCommand('View: Lua Terminal');
+	await test.runPaletteCommand('View: Game');
 	await test.capture?.('fault-recovered');
 	ide.debugger.breakpoints.toggle(resource, line);
 
@@ -167,10 +166,10 @@ export async function runStudioFrameRecovery(test: StudioFixture) {
 	await until(() => afterHistory.result !== undefined && tasks.ready, 'frame recovery: fresh evaluation after history branch');
 	check(afterHistory.result!.status === 'completed' && afterHistory.result!.values[1] === '73',
 		`frame recovery: current frame and retained writes after rewind: ${JSON.stringify(afterHistory.result)}`);
-	await test.runPaletteCommand('View: Lua Terminal');
+	await test.runPaletteCommand('View: Game');
 	await test.capture?.('history-reevaluated');
 	ide.debugger.breakpoints.toggle(resource, line);
 	return { frameRecovery: true, restored: original.result!.status, installed: changing.result!.status,
-		faultSequence: runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE), calls: terminal.history.length,
+		faultSequence: runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE),
 		rewind: seek.result!.status, recordedFrames: step.result!.completedFrames };
 }
