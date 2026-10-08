@@ -18,6 +18,7 @@ import {
 	ROM_MANIFEST_ASSET_ID,
 	sortAssetsById,
 } from './shared';
+import { inspectRom, romAssetByteLength } from '../../toolchain/ts/rompack/inspection';
 import { runNativeInspectorUI } from './native_ui';
 import { generateCycleCostReport } from './cycle_cost_analysis';
 
@@ -132,7 +133,7 @@ function printAssetList(assets: RomAsset[], romByteLength: number): void {
 		const path = sourcePath === undefined ? '<none>' : sourcePath;
 		const hasBufferRange = asset.start !== undefined && asset.end !== undefined;
 		const hasMetaRange = asset.metabuffer_start !== undefined && asset.metabuffer_end !== undefined;
-		const size = (hasBufferRange ? asset.end - asset.start : 0) + (hasMetaRange ? asset.metabuffer_end - asset.metabuffer_start : 0);
+		const size = romAssetByteLength(asset);
 		const bufferStart = asset.start !== undefined ? formatNumberAsHex(asset.start, offsetHexWidth) : '';
 		const bufferEnd = asset.end !== undefined ? formatNumberAsHex(asset.end, offsetHexWidth) : '';
 		const metaStart = asset.metabuffer_start !== undefined ? formatNumberAsHex(asset.metabuffer_start, offsetHexWidth) : '';
@@ -141,7 +142,7 @@ function printAssetList(assets: RomAsset[], romByteLength: number): void {
 			String(asset.resid),
 			String(asset.type),
 			path,
-			(hasBufferRange || hasMetaRange) ? formatByteSize(size) : '',
+			(hasBufferRange || hasMetaRange || asset.model_texture_start !== undefined || asset.collision_bin_start !== undefined) ? formatByteSize(size) : '',
 			bufferStart,
 			bufferEnd,
 			metaStart,
@@ -241,6 +242,7 @@ async function main() {
 
 	getTocBuffer(rombin, header);
 	({ assets: assetList, manifest: romManifest, projectRootPath: romProjectRootPath } = await loadAssets(rombin, header));
+	const inspection = inspectRom(rombin, header, assetList);
 	if (header.manifestLength > 0 && !assetList.some(asset => asset.resid === ROM_MANIFEST_ASSET_ID)) {
 		assetList.unshift(buildManifestAsset(header));
 	}
@@ -284,6 +286,7 @@ async function main() {
 			romfile,
 			rombin,
 			assets: assetList,
+			inspection,
 			manifest: romManifest,
 			projectRootPath: romProjectRootPath,
 			formatByteSize,

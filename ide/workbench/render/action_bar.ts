@@ -15,7 +15,7 @@ export function renderWorkbenchActionBar(
 		if (!item.visible) continue;
 		const enabled = item.enabled;
 		const hovered = state.hoveredCommand === item.command;
-		const pressed = state.pressedCommand === item.command;
+		const pressed = state.pressedCommand === item.command || item.checked;
 		const focused = state.hasFocus && state.focusedIndex === index;
 		const background = !enabled
 			? constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND

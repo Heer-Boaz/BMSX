@@ -1,3 +1,4 @@
+import { RomInspectorPane } from './workbench/contrib/rom_inspector/editor_pane';
 import { CartMapController } from './workbench/contrib/cart_maps/controller';
 import { CartMapPane } from './workbench/contrib/cart_maps/editor_pane';
 import { CartMapInputSerializer } from './workbench/contrib/cart_maps/editor_serializer';
@@ -409,6 +410,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources,
 		);
 		this.editorPanes = new EditorPanes({
+			rom_inspector: () => new RomInspectorPane(this.resourcePanel, this.commands, this.sources, this.navigation, this.quickInput),
 			event_viewer: () => new EventViewerPane(this.resourcePanel, this.quickInput, this.commands, this.frameNavigation, this.contextMenu),
 			terminal: () => new TerminalPane(this.resourcePanel, this.clipboard, this.quickInput),
 			conversation_observer: () => new ConversationObserverPane(this.resourcePanel, decodeImage),

@@ -75,6 +75,14 @@ admits membership of every target before any pre-edit notification or mutation;
 matching resource paths and resettable version numbers cannot revive an edit
 proposal from a disposed workspace. See [resource context](../docs/studio_resource_context.md).
 
+## Packed ROM inspection
+
+`workbench/contrib/rom_inspector` presents captured installed ROM bytes, separate
+from current authored resources. Portable physical-section and asset accounting
+lives in `toolchain/ts/rompack/inspection.ts` and is shared with the standalone
+CLI/TUI. Source navigation uses the existing resource resolver; no second catalog
+or source writer is introduced. See [ROM Inspector](../docs/studio_rom_inspector.md).
+
 ## Captured source operations and edit review
 
 `WorkspaceSourceContext` owns immutable model/version/source reads from the start

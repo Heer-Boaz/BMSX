@@ -18,6 +18,8 @@ import { WorkbenchPropertyInspectorModel, type InspectedProperty } from './model
 export type PropertyInspection<Element> = {
 	readonly title: string;
 	readonly items: readonly Element[];
+	/** Embedded details remain visible when focus returns to their owner. */
+	readonly dismissible?: boolean;
 	canOpenSource(item: Element): boolean;
 	openSource(item: Element): void;
 	onDidClose?(): void;
@@ -41,6 +43,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 	private triggerKey: string | undefined;
 	private padPressed = false;
 	private returnFocus: InputFocusTarget | null = null;
+	private focusOrder: { previous: InputFocusTarget; next: InputFocusTarget } | undefined;
 
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService, private readonly hover: PointerHoverService, parent: InputFocusTarget) {
 		this.scroll = new WorkbenchScrollControl(focus, capture, parent, input => this.handleKeyboard(input) || this.handleGamepad(input));
@@ -58,7 +61,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		this.focusTarget.registerCommand('propertyInspector.source', {
 			isEnabled: () => this.isEnabled('propertyInspector.source'), run: () => this.openSource(),
 		});
-		this.focusTarget.registerCommand('propertyInspector.close', { isEnabled: () => this.visible, run: () => this.close() });
+		this.focusTarget.registerCommand('propertyInspector.close', { isEnabled: () => this.isEnabled('propertyInspector.close'), run: () => this.close() });
 		this.focusTarget.registerCommand('contextMenu', {
 			isEnabled: () => this.visible && this.onContextMenu !== undefined && this.model.selectionIndex >= 0,
 			run: () => {
@@ -78,6 +81,8 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		this.returnFocus = focus ? this.focus.target : this.focusTarget.parent;
 		this.input = input;
 		this.actionBar.items[0].visible = input.items.some(item => input.canOpenSource(item));
+		this.actionBar.items[1].visible = input.dismissible !== false;
+		this.updateFocusOrder();
 		this.lifetime = new DisposableStore();
 		this.model.setItems(input.items);
 		this.scroll.setInput(this.model.viewport);
@@ -89,14 +94,26 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 
 	/** Embedded inspectors participate in their containing pane's tab order. */
 	public setFocusOrder(previous: InputFocusTarget, next: InputFocusTarget): void {
-		this.focusTarget.previous = previous;
-		this.actions.focusTarget.next = next;
+		this.focusOrder = { previous, next };
+		this.updateFocusOrder();
+	}
+
+	private updateFocusOrder(): void {
+		const hasActions = this.actionBar.items.some(item => item.visible);
+		const previous = this.focusOrder?.previous ?? this.focusTarget;
+		const next = this.focusOrder?.next ?? this.focusTarget;
 		previous.next = this.focusTarget;
-		next.previous = this.actions.focusTarget;
+		this.focusTarget.previous = previous;
+		this.focusTarget.next = hasActions ? this.actions.focusTarget : next;
+		this.actions.focusTarget.previous = this.focusTarget;
+		this.actions.focusTarget.next = next;
+		next.previous = hasActions ? this.actions.focusTarget : this.focusTarget;
+		if (!hasActions && this.actions.focusTarget.hasFocus) this.focusTarget.focus();
 	}
 
 	private close(): void {
 		const input = this.input;
+		if (input?.dismissible === false) { this.focus.setTarget(this.returnFocus); return; }
 		this.hide();
 		input?.onDidClose?.();
 	}
@@ -121,6 +138,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		const canOpenSource = items.some(item => this.input!.canOpenSource(item));
 		if (this.actionBar.items[0].visible !== canOpenSource) {
 			this.actionBar.items[0].visible = canOpenSource;
+			this.updateFocusOrder();
 			this.layoutDirty = true;
 		}
 	}
@@ -138,7 +156,8 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 			write_rect_bounds(this.bounds, bounds.left, bounds.top, bounds.right, bounds.bottom);
 			const headerBottom = bounds.top + font.lineHeight + 8;
 			layoutWorkbenchActionBar(this.actionBar, bounds.right - 4, bounds.top + 2, headerBottom - 2, measureText, font);
-			this.title = truncateMeasuredText(this.input!.title, this.actionBar.items.find(item => item.visible)!.bounds.left - bounds.left - 8, measure);
+			const firstAction = this.actionBar.items.find(item => item.visible);
+			this.title = truncateMeasuredText(this.input!.title, (firstAction === undefined ? bounds.right : firstAction.bounds.left) - bounds.left - 8, measure);
 			write_rect_bounds(this.content, bounds.left, headerBottom, bounds.right, bounds.bottom);
 			this.scroll.lineStep = font.lineHeight;
 			this.layoutDirty = false;
@@ -148,7 +167,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 
 	public isEnabled(command: EditorCommandId): boolean {
 		if (this.input === undefined) return false;
-		if (command === 'propertyInspector.close') return true;
+		if (command === 'propertyInspector.close') return this.input.dismissible !== false;
 		return command === 'propertyInspector.source' && this.model.selectionIndex >= 0
 			&& this.input.canOpenSource(this.model.rows[this.model.selectionIndex].element);
 	}
@@ -163,7 +182,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		if (!this.isEnabled('propertyInspector.source')) return;
 		const input = this.input!;
 		const item = this.model.rows[this.model.selectionIndex].element;
-		this.hide();
+		if (input.dismissible !== false) this.hide();
 		input.openSource(item);
 	}
 

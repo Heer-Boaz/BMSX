@@ -1,3 +1,4 @@
+import { openRomInspector } from '../workbench/contrib/rom_inspector/quick_access';
 import { openEventViewer } from '../workbench/contrib/events/editor_input';
 import { openObservedConversation } from '../workbench/contrib/conversations/quick_access';
 import { openAssistant } from '../workbench/contrib/assistant/editor_input';
@@ -15,6 +16,7 @@ import { showOpenEditors } from '../workbench/services/editor/open_editors';
 
 export function isEditorViewCommand(command: EditorCommandId): command is EditorViewCommandId {
 	switch (command) {
+		case 'romInspector':
 		case 'events':
 		case 'terminal':
 		case 'assistant':
@@ -48,6 +50,7 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 
 export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSourceState, command: EditorViewCommandId): void {
 	switch (command) {
+		case 'romInspector': openRomInspector(editor.editorPanes, editor.quickInput, sources); return;
 		case 'events': openEventViewer(editor.editorPanes, editor.events); return;
 		case 'terminal': openTerminal(editor.editorPanes, editor.terminal); return;
 		case 'actorLab': editor.actorLab.open(); return;

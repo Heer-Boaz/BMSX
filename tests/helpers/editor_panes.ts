@@ -1,3 +1,4 @@
+import type { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/editor_input';
 import type { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
 import type { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';
 import type { ConversationObserverInput } from '../../ide/workbench/contrib/conversations/editor_input';
@@ -89,6 +90,7 @@ function activateViewInput(_input: EditorInput): void {
 /** Editor-group lifecycle used by tests that exercise workspace and navigation owners. */
 export function createTestEditorPanes(): EditorPanes {
 	return new EditorPanes({
+		rom_inspector: () => new TestEditorPane<RomInspectorInput>(activateViewInput),
 		event_viewer: () => new TestEditorPane<EventViewerInput>(activateViewInput),
 		terminal: () => new TestEditorPane<TerminalInput>(activateViewInput),
 		actor_lab: () => new TestEditorPane<ActorLabInput>(activateViewInput),

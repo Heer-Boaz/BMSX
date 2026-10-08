@@ -259,3 +259,26 @@ test('embedded inspector joins pane focus order and distinguishes dismissal from
 	assert.equal(closed, 1);
 	assert.equal(f.inspector.visible, false);
 });
+
+test('persistent details return focus without dismissal and skip an empty action bar', t => {
+	const f = fixture(t), before = f.focus.createTarget(f.parent), after = f.focus.createTarget(f.parent);
+	f.inspector.setFocusOrder(before, after);
+	let opened = 0;
+	const document = { title: 'Details', items: f.items, dismissible: false,
+		canOpenSource: () => false, openSource() { opened++; } };
+	f.inspector.show(document, false); f.layout();
+	before.focus(); f.focus.moveFocus(false);
+	assert.equal(f.focus.target, f.inspector.focusTarget);
+	f.focus.moveFocus(false); assert.equal(f.focus.target, after);
+	f.focus.moveFocus(true); assert.equal(f.focus.target, f.inspector.focusTarget);
+	f.press('Escape');
+	assert.equal(f.focus.target, f.parent);
+	assert.equal(f.inspector.visible, true);
+	f.inspector.focusTarget.focus(); f.pad('b', true); f.pad('b', false);
+	assert.equal(f.focus.target, f.parent);
+	assert.equal(f.inspector.visible, true);
+	f.inspector.show({ ...document, canOpenSource: () => true }, false); f.layout();
+	f.inspector.execute('propertyInspector.source');
+	assert.equal(opened, 1);
+	assert.equal(f.inspector.visible, true);
+});

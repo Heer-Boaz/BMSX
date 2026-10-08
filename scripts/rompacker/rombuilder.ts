@@ -68,7 +68,7 @@ import {
 	GX_SYSTEM_TEXTURE_WIDTH,
 	GX_SYSTEM_TEXTURE_X,
 	GX_SYSTEM_TEXTURE_Y,
-} from './system_texture';
+} from '../../toolchain/ts/rompack/system_texture';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
 import { reportBuildDiagnostics, type BuildReporter } from '../lib/build_reporter';

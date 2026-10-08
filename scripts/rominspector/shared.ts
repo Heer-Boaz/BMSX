@@ -1,12 +1,13 @@
+import { loadBlua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
+import { formatNumberAsHex } from '../../machine/ts/common/byte_hex_string';
+export { formatNumberAsHex, formatByteSize } from '../../machine/ts/common/byte_hex_string';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import {
 	BLUA32_IMAGE_ID,
-	decodeBlua32Image,
 	type Blua32ImageLayout,
 } from '../../toolchain/ts/rompack/blua32_image';
 import {
 	BLUA32_SYMBOLS_IMAGE_ID,
-	decodeBlua32SymbolsImage,
 	type Blua32SymbolsImage,
 } from '../../toolchain/ts/rompack/blua32_symbols';
 import {
@@ -32,23 +33,6 @@ export const ROM_MANIFEST_ASSET_ID = '__rom_manifest__';
 export const ROM_MANIFEST_SOURCE_PATH = 'manifest.rommanifest';
 
 const ASSET_ID_COLLATOR = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
-
-export function formatNumberAsHex(n: number, width?: number): string {
-	const hex = n.toString(16).toUpperCase();
-	const padded = width === undefined ? hex : hex.padStart(width, '0');
-	return `${padded}h`;
-}
-
-export function formatByteSize(size: number): string {
-	const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-	let i = 0;
-	let n = size;
-	while (n >= 1024 && i < units.length - 1) {
-		n /= 1024;
-		i++;
-	}
-	return i === 0 ? `${size} ${units[0]}` : `${n.toFixed(2)} ${units[i]}`;
-}
 
 export function buildManifestAsset(header: CartRomHeader): RomAsset {
 	const start = header.manifestOffset;
@@ -103,18 +87,7 @@ export function loadBlua32ImageFromAssets(rombin: Uint8Array, assets: RomAsset[]
 	const romBaseAddress = header.blua32StartupFunctionAddress < CART_ROM_BASE
 		? SYSTEM_ROM_BASE
 		: CART_ROM_BASE;
-	const imageAddress = romBaseAddress + header.blua32ImageOffset;
-	const image = decodeBlua32Image(
-		rombin.subarray(
-			header.blua32ImageOffset,
-			header.blua32ImageOffset + header.blua32ImageByteCount,
-		),
-		imageAddress,
-	);
-	const symbolsAsset = assets.find(asset => asset.resid === BLUA32_SYMBOLS_IMAGE_ID);
-	const symbols = symbolsAsset
-		? decodeBlua32SymbolsImage(rombin.subarray(symbolsAsset.start, symbolsAsset.end))
-		: null;
+	const { layout: image, symbols } = loadBlua32ToolingImage({ bytes: rombin, header }, romBaseAddress, assets);
 	const sourceMap = symbols ? buildLuaSourceLookup(rombin, assets) : null;
 	const missingSourcePaths = new Set<string>();
 	if (symbols && sourceMap && sourceMap.size > 0) {

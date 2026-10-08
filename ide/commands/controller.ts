@@ -213,6 +213,7 @@ export class IdeCommandController {
 			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
 			case 'conversations.older':
+			case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source':
 			case 'events.clear': case 'events.filter': case 'events.details':
 			case 'events.goToFrame': case 'events.previousFrame': case 'events.nextFrame': case 'events.more':
 			case 'terminal.evaluate':
@@ -456,6 +457,7 @@ export class IdeCommandController {
 			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
 			case 'conversations.older':
+			case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': case 'romInspector.sort': case 'romInspector.source':
 			case 'events.clear': case 'events.filter': case 'events.details':
 			case 'events.goToFrame': case 'events.previousFrame': case 'events.nextFrame': case 'events.more':
 			case 'terminal.evaluate':
@@ -579,6 +581,11 @@ export class IdeCommandController {
 
 	public isActive(command: EditorCommandId): boolean {
 		switch (command) {
+			case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': {
+				const input = getActiveTab();
+				return input?.kind === 'rom_inspector' && command === `romInspector.${input.model.mode}`;
+			}
+
 			case 'debugEvaluation':
 				return this.debuggerState.plans.controlSuspended;
 			case 'pause':

@@ -14,6 +14,7 @@ export type WorkbenchActionBarItem = {
 	readonly bounds: RectBounds;
 	visible: boolean;
 	enabled: boolean;
+	checked: boolean;
 	width: number;
 	measuredLabel: string;
 };
@@ -40,6 +41,7 @@ export function createWorkbenchActionBar(menuId: WorkbenchActionMenuId): Workben
 			bounds: create_rect_bounds(),
 			visible: true,
 			enabled: false,
+			checked: false,
 			width: 0,
 			measuredLabel: '',
 		};

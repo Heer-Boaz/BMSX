@@ -1,4 +1,4 @@
-import { GX_GPU_VRAM_Y_ADDRESS_PERIOD, GX_GPU_VRAM_X_ADDRESS_PERIOD } from '../../machine/ts/spec/gx/vram';
+import { GX_GPU_VRAM_Y_ADDRESS_PERIOD, GX_GPU_VRAM_X_ADDRESS_PERIOD } from '../../../machine/ts/spec/gx/vram';
 
 export const GX_SYSTEM_TEXTURE_ASSET_ID = 'gx_system_texture';
 export const GX_SYSTEM_TEXTURE_WIDTH = 256;

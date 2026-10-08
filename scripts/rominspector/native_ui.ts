@@ -1,8 +1,7 @@
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import { BLUA32_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_image';
 import { BLUA32_SYMBOLS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_symbols';
-import { parseCartHeader } from '../../machine/ts/rompack/format';
-import { parseRomMetadataSection } from '../../toolchain/ts/rompack/metadata';
+import { romAssetByteLength, romAssetIntersectsRange, type RomInspection } from '../../toolchain/ts/rompack/inspection';
 import { clamp } from '../../machine/ts/common/clamp';
 import { bufferSegmentGlyph, buildBufferBarModel, type BufferBarCell, type BufferBarModel, type BufferHitRegion, type BufferLegendEntry, type BufferRegion } from './asciiart';
 import {
@@ -49,25 +48,11 @@ type NativeUiContext = {
 	romfile: string;
 	rombin: Uint8Array;
 	assets: RomAsset[];
+	inspection: RomInspection;
 	manifest: any;
 	projectRootPath: string | null;
 	formatByteSize(size: number): string;
 	formatNumberAsHex(n: number, width?: number): string;
-};
-
-type SummaryMetrics = {
-	totalSize: number;
-	imageCount: number;
-	audioCount: number;
-	dataCount: number;
-	modelCount: number;
-	imageSize: number;
-	textureSize: number;
-	audioSize: number;
-	dataSize: number;
-	modelSize: number;
-	metadataSize: number;
-	regions: BufferRegion[];
 };
 
 type SummaryView = {
@@ -158,7 +143,7 @@ function compareAssets(left: RomAsset, right: RomAsset, sortKey: AssetSortKey): 
 		return typeCompare !== 0 ? typeCompare : ASSET_TEXT_COLLATOR.compare(left.resid, right.resid);
 	}
 	if (sortKey === 'size') {
-		const sizeCompare = assetSize(left) - assetSize(right);
+		const sizeCompare = romAssetByteLength(left) - romAssetByteLength(right);
 		return sizeCompare !== 0 ? sizeCompare : ASSET_TEXT_COLLATOR.compare(left.resid, right.resid);
 	}
 	const leftOffset = assetLocation(left);
@@ -196,7 +181,7 @@ function getFilteredAssets(
 	const lowered = filter.toLowerCase();
 	return sortAssets(assetList.filter(asset => {
 		if (bufferFilter) {
-			if (bufferFilter.kind === 'region' && !assetIntersectsRegion(asset, bufferFilter.region)) {
+			if (bufferFilter.kind === 'region' && !romAssetIntersectsRange(asset, bufferFilter.region.start, bufferFilter.region.end)) {
 				return false;
 			}
 			if (bufferFilter.kind === 'label') {
@@ -206,7 +191,7 @@ function getFilteredAssets(
 				}
 				let matchesLabel = false;
 				for (const region of labelRegions) {
-					if (assetIntersectsRegion(asset, region)) {
+					if (romAssetIntersectsRange(asset, region.start, region.end)) {
 						matchesLabel = true;
 						break;
 					}
@@ -292,42 +277,6 @@ function regionAtCellFraction(cell: BufferBarCell, subX: number): BufferRegion |
 		}
 	}
 	return closest.region;
-}
-
-function assetSize(asset: RomAsset): number {
-	let size = 0;
-	if (typeof asset.start === 'number' && typeof asset.end === 'number') {
-		size += asset.end - asset.start;
-	}
-	if (typeof asset.metabuffer_start === 'number' && typeof asset.metabuffer_end === 'number') {
-		size += asset.metabuffer_end - asset.metabuffer_start;
-	}
-	return size;
-}
-
-function assetRanges(asset: RomAsset): Array<[number, number]> {
-	const ranges: Array<[number, number]> = [];
-	if (typeof asset.start === 'number' && typeof asset.end === 'number' && asset.end > asset.start) {
-		ranges.push([asset.start, asset.end]);
-	}
-	if (typeof asset.metabuffer_start === 'number' && typeof asset.metabuffer_end === 'number' && asset.metabuffer_end > asset.metabuffer_start) {
-		ranges.push([asset.metabuffer_start, asset.metabuffer_end]);
-	}
-	const textureStart = asset.model_texture_start;
-	const textureEnd = asset.model_texture_end;
-	if (typeof textureStart === 'number' && typeof textureEnd === 'number' && textureEnd > textureStart) {
-		ranges.push([textureStart, textureEnd]);
-	}
-	return ranges;
-}
-
-function assetIntersectsRegion(asset: RomAsset, region: BufferRegion): boolean {
-	for (const [start, end] of assetRanges(asset)) {
-		if (start < region.end && end > region.start) {
-			return true;
-		}
-	}
-	return false;
 }
 
 function sameBufferRegion(left: BufferRegion | null, right: BufferRegion | null): boolean {
@@ -674,80 +623,13 @@ function makeRegionColorTag(label: string): string {
 	}
 }
 
-function totalSummarySegments(ctx: NativeUiContext, metrics: SummaryMetrics): string[] {
-	const pct = (value: number) => ((value / metrics.totalSize) * 100).toFixed(1);
+function totalSummarySegments(ctx: NativeUiContext): string[] {
 	return [
-		`Total: ${ctx.formatByteSize(metrics.totalSize)}`,
-		`Images: ${ctx.formatByteSize(metrics.imageSize)} (${pct(metrics.imageSize)}%)`,
-		`Audio: ${ctx.formatByteSize(metrics.audioSize)} (${pct(metrics.audioSize)}%)`,
-		`Data: ${ctx.formatByteSize(metrics.dataSize)} (${pct(metrics.dataSize)}%)`,
-		`Models: ${ctx.formatByteSize(metrics.modelSize)} (${pct(metrics.modelSize)}%)`,
-		`Textures: ${ctx.formatByteSize(metrics.textureSize)} (${pct(metrics.textureSize)}%)`,
-		`Metadata: ${ctx.formatByteSize(metrics.metadataSize)} (${pct(metrics.metadataSize)}%)`,
+		`Total: ${ctx.formatByteSize(ctx.inspection.byteLength)}`,
+		...ctx.inspection.assetTypes.map(summary =>
+			`${summary.type}: ${summary.count} / ${ctx.formatByteSize(summary.byteLength)}`),
+		'Asset sizes include their nested metadata; buffer bar shows physical sections.',
 	];
-}
-
-function pushSummaryRegion(regions: BufferRegion[], start: number | undefined, end: number | undefined, label: string): void {
-	if (start === undefined || end === undefined) {
-		return;
-	}
-	regions.push({ start, end, colorTag: makeRegionColorTag(label), label });
-}
-
-function buildSummaryMetrics(ctx: NativeUiContext): SummaryMetrics {
-	const header = parseCartHeader(ctx.rombin);
-	let metadataHeaderSize = 0;
-	if (header.metadataLength > 0) {
-		const metadataSection = parseRomMetadataSection(ctx.rombin.subarray(header.metadataOffset, header.metadataOffset + header.metadataLength));
-		metadataHeaderSize = metadataSection.payloadOffset;
-	}
-	const metrics: SummaryMetrics = {
-		totalSize: ctx.rombin.byteLength,
-		imageCount: 0,
-		audioCount: 0,
-		dataCount: 0,
-		modelCount: 0,
-		imageSize: 0,
-		textureSize: 0,
-		audioSize: 0,
-		dataSize: 0,
-		modelSize: 0,
-		metadataSize: header.tocLength + header.manifestLength + metadataHeaderSize,
-		regions: [],
-	};
-	for (const asset of ctx.assets) {
-		const size = assetSize(asset);
-		if (asset.type === 'image') {
-			metrics.imageCount += 1;
-			metrics.imageSize += size;
-		} else if (asset.type === 'audio') {
-			metrics.audioCount += 1;
-			metrics.audioSize += size;
-		} else if (asset.type === 'data') {
-			metrics.dataCount += 1;
-			metrics.dataSize += size;
-		} else if (asset.type === 'model') {
-			metrics.modelCount += 1;
-			metrics.modelSize += size;
-		} else if (asset.type === 'texture') {
-			metrics.textureSize += size;
-		}
-		const label = makeRegionLabel(asset);
-		pushSummaryRegion(metrics.regions, asset.start, asset.end, label);
-		pushSummaryRegion(metrics.regions, asset.metabuffer_start, asset.metabuffer_end, label);
-		if (asset.model_texture_start) {
-			metrics.textureSize += asset.model_texture_end! - asset.model_texture_start;
-			pushSummaryRegion(metrics.regions, asset.model_texture_start, asset.model_texture_end!, 'model texture');
-		}
-	}
-	if (header.manifestLength > 0) {
-		pushSummaryRegion(metrics.regions, header.manifestOffset, header.manifestOffset + header.manifestLength, 'manifest');
-	}
-	if (metadataHeaderSize > 0) {
-		pushSummaryRegion(metrics.regions, header.metadataOffset, header.metadataOffset + metadataHeaderSize, 'metadata');
-	}
-	pushSummaryRegion(metrics.regions, header.tocOffset, header.tocOffset + header.tocLength, 'toc');
-	return metrics;
 }
 
 function writeLine(screen: TuiScreen, x: number, y: number, width: number, text: string, style: TuiStyle): void {
@@ -1198,8 +1080,13 @@ function updateHorizontalScrollbarFromMouse(
 export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> {
 	const screen = new TuiScreen();
 	const input = new TuiInput();
-	const summaryMetrics = buildSummaryMetrics(ctx);
-	const regionsByLabel = buildRegionsByLabel(summaryMetrics.regions);
+	const regions: BufferRegion[] = ctx.inspection.sections.map(section => {
+		const label = section.kind === 'asset'
+			? section.buffer === 'data' ? makeRegionLabel(section.asset) : section.buffer
+			: section.kind;
+		return { start: section.start, end: section.end, label, colorTag: makeRegionColorTag(label) };
+	});
+	const regionsByLabel = buildRegionsByLabel(regions);
 	const offsetHexWidth = Math.max(1, Math.max(0, ctx.rombin.byteLength - 1).toString(16).length);
 	let filterMode = false;
 	let filterValue = '';
@@ -1234,14 +1121,14 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 	let tableRowCache = new Map<string, [string, string, string, string]>();
 
 	const regionAssetCounts = new Map<string, number>();
-	for (const region of summaryMetrics.regions) {
+	for (const region of regions) {
 		const key = bufferRegionKey(region);
 		if (regionAssetCounts.has(key)) {
 			continue;
 		}
 		let count = 0;
 		for (const asset of ctx.assets) {
-			if (assetIntersectsRegion(asset, region)) {
+			if (romAssetIntersectsRange(asset, region.start, region.end)) {
 				count += 1;
 			}
 		}
@@ -1253,7 +1140,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		let count = 0;
 		for (const asset of ctx.assets) {
 			for (const region of labelRegions) {
-				if (assetIntersectsRegion(asset, region)) {
+				if (romAssetIntersectsRange(asset, region.start, region.end)) {
 					count += 1;
 					break;
 				}
@@ -1267,12 +1154,12 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 			return summaryViewCache;
 		}
 		const barWidth = Math.max(1, width - BUFFER_LINE_PREFIX.length - 2);
-		const barModel = buildBufferBarModel(summaryMetrics.regions, summaryMetrics.totalSize, barWidth, width);
+		const barModel = buildBufferBarModel(regions, ctx.inspection.byteLength, barWidth, width);
 		const legendHits = buildLegendHits(barModel.legendRows, 2);
-		const totalLines = wrapSummarySegments(totalSummarySegments(ctx, summaryMetrics), width);
+		const totalLines = wrapSummarySegments(totalSummarySegments(ctx), width);
 		summaryViewWidth = width;
 		summaryViewCache = {
-			titleLine: `${ctx.romfile} | assets: ${ctx.assets.length} | image: ${summaryMetrics.imageCount} | audio: ${summaryMetrics.audioCount} | data: ${summaryMetrics.dataCount} | model: ${summaryMetrics.modelCount}`,
+			titleLine: `${ctx.romfile} | assets: ${ctx.assets.length}`,
 			barModel,
 			totalLines,
 			lineCount: 1 + 1 + barModel.legendRows.length + totalLines.length,
@@ -1367,7 +1254,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 		if (cached) {
 			return cached;
 		}
-		const size = ctx.formatByteSize(assetSize(asset));
+		const size = ctx.formatByteSize(romAssetByteLength(asset));
 		const location = assetLocation(asset);
 		const offset = location === undefined ? '' : ctx.formatNumberAsHex(location, offsetHexWidth);
 		const row: [string, string, string, string] = [

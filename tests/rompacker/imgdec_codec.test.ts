@@ -32,7 +32,7 @@ test('IMGDEC word stream round-trips literal, repeat, zero, and overlapping back
 	const decoded = decodeImgDecStream(encoded);
 	assert.equal(decoded.textureWordCount, textureWordCount);
 	assert.equal(decoded.clutWordCount, clutWordCount);
-	assert.deepEqual(decoded.payload, payload);
+	assert.deepEqual(decoded.payload, new Uint8Array(payload));
 	assert.ok(encoded.byteLength < payload.byteLength / 3);
 });
 

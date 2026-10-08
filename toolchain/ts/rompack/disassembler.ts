@@ -476,20 +476,32 @@ const describeInstructionAtPc = (
 	};
 };
 
+/** Index a selected function without formatting it or scanning other functions.
+ * WIDE and its following word form one navigable instruction at the prefix PC.
+ */
+export function indexBlua32FunctionInstructions(image: Blua32ImageLayout, functionIndex: number): Uint32Array<ArrayBuffer> {
+	const fn = image.functions[functionIndex];
+	const addresses = new Uint32Array(fn.codeByteCount / INSTRUCTION_BYTES);
+	const end = fn.codeAddress + fn.codeByteCount;
+	let count = 0;
+	for (let pc = fn.codeAddress; pc < end;) {
+		addresses[count++] = pc;
+		const word = readInstructionWord(image.textBytes, (pc - image.header.textAddress) / INSTRUCTION_BYTES);
+		pc += ((word >>> 18) & 0x3f) === OpCode.WIDE ? INSTRUCTION_BYTES * 2 : INSTRUCTION_BYTES;
+	}
+	return addresses.subarray(0, count);
+}
+
 export const describeBlua32InstructionAtPc = (
 	image: Blua32ImageLayout,
 	symbols: Blua32SymbolsImage | null,
 	pc: number,
 	options: DisassemblyOptions = {},
 ): InstructionDebugInfo => {
-	const code = image.bytes.subarray(
-		image.header.textAddress - image.address,
-		image.header.textAddress - image.address + image.header.textByteCount,
-	);
 	return describeInstructionAtPc({
 		image,
 		symbols,
-		code,
+		code: image.textBytes,
 		codeAddress: image.header.textAddress,
 	}, pc, options);
 };

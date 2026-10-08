@@ -28,7 +28,7 @@ export type Palette4GxTexture = GxTextureShape & {
 export type NativeGxTexture = Direct16GxTexture | Palette4GxTexture;
 
 export type GxDecodedImage = {
-	rgba: Uint8Array;
+	rgba: Uint8Array<ArrayBuffer>;
 	width: number;
 	height: number;
 };
@@ -173,11 +173,13 @@ export function encodePalette4GxTexture(
 	};
 }
 
-export function decodeGxTextureImage(payload: Uint8Array, texture: GxTextureShape, image: GxTextureImageRegion): GxDecodedImage {
-	const width = image.width;
-	const height = image.height;
-	const textureU = image.textureU;
-	const textureV = image.textureV;
+export function decodeGxTextureImage(payload: Uint8Array, texture: GxTextureShape, image?: GxTextureImageRegion): GxDecodedImage {
+	const width = image === undefined
+		? texture.wordWidth * (texture.mode === GX_GPU_TEXTURE_MODE_DIRECT16 ? 1 : GX_PALETTE4_PIXELS_PER_WORD)
+		: image.width;
+	const height = image === undefined ? texture.height : image.height;
+	const textureU = image === undefined ? 0 : image.textureU;
+	const textureV = image === undefined ? 0 : image.textureV;
 	const textureWordWidth = texture.wordWidth;
 	const textureMode = texture.mode;
 	if (textureMode !== GX_GPU_TEXTURE_MODE_DIRECT16 && textureMode !== GX_GPU_TEXTURE_MODE_PALETTE4) {

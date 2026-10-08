@@ -15,7 +15,7 @@ import {
 } from '../../../machine/ts/spec/imgdec/stream';
 
 export type DecodedImgDecStream = {
-	payload: Buffer;
+	payload: Uint8Array;
 	textureWordCount: number;
 	clutWordCount: number;
 };
@@ -200,7 +200,8 @@ export function decodeImgDecStream(
 	const clutWordCount = view.getUint32((inputWord + 2) << 2, true);
 	inputWord += IMGDEC_STREAM_HEADER_WORDS;
 	const outputWordCount = textureWordCount + clutWordCount;
-	const payload = Buffer.alloc(outputWordCount << 2);
+	const payload = new Uint8Array(outputWordCount << 2);
+	const output = new DataView(payload.buffer);
 	let outputWord = 0;
 
 	while (outputWord < outputWordCount) {
@@ -217,7 +218,7 @@ export function decodeImgDecStream(
 		switch (tokenKind) {
 			case IMGDEC_TOKEN_KIND_LITERAL: {
 				for (let index = 0; index < runLength; index += 1) {
-					payload.writeUInt32LE(view.getUint32(inputWord << 2, true), outputWord << 2);
+					output.setUint32(outputWord << 2, view.getUint32(inputWord << 2, true), true);
 					inputWord += 1;
 					outputWord += 1;
 				}
@@ -227,7 +228,7 @@ export function decodeImgDecStream(
 				const word = view.getUint32(inputWord << 2, true);
 				inputWord += 1;
 				for (let index = 0; index < runLength; index += 1) {
-					payload.writeUInt32LE(word, outputWord << 2);
+					output.setUint32(outputWord << 2, word, true);
 					outputWord += 1;
 				}
 				break;
@@ -238,8 +239,8 @@ export function decodeImgDecStream(
 					throw new Error('Compressed image stream references unavailable history.');
 				}
 				for (let index = 0; index < runLength; index += 1) {
-					const word = payload.readUInt32LE((outputWord - distance) << 2);
-					payload.writeUInt32LE(word, outputWord << 2);
+					const word = output.getUint32((outputWord - distance) << 2, true);
+					output.setUint32(outputWord << 2, word, true);
 					outputWord += 1;
 				}
 				break;

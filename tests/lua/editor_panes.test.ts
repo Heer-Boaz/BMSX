@@ -1,3 +1,4 @@
+import type { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/editor_input';
 import type { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
 import type { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';
 import type { LuaProgramInput } from '../../ide/workbench/contrib/lua_program/editor_input';
@@ -142,6 +143,7 @@ function createEditorPanes() {
 	let codeFactoryCount = 0;
 	let resourceFactoryCount = 0;
 	const editorPanes = new EditorPanes({
+		rom_inspector: () => new RecordingEditorPane<RomInspectorInput>(),
 		event_viewer: () => new RecordingEditorPane<EventViewerInput>(),
 		terminal: () => new RecordingEditorPane<TerminalInput>(),
 		actor_lab: () => new RecordingEditorPane<ActorLabInput>(),

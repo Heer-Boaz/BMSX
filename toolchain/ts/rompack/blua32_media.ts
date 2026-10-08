@@ -1,3 +1,4 @@
+import type { RomAsset } from './assets';
 import {
 	decodeBlua32RomImage,
 	blua32FunctionIndexAtAddress,
@@ -29,18 +30,19 @@ export type Blua32ToolingMedia = {
 export function loadBlua32ToolingImage(
 	rom: RomImage,
 	romBaseAddress: number,
+	assets?: readonly RomAsset[],
 ): Blua32ToolingImage | null {
 	const layout = decodeBlua32RomImage(rom.bytes, romBaseAddress);
 	if (!layout) {
 		return null;
 	}
-	const toc = decodeRomToc(rom.bytes.subarray(
+	const entries = assets === undefined ? decodeRomToc(rom.bytes.subarray(
 		rom.header.tocOffset,
 		rom.header.tocOffset + rom.header.tocLength,
-	));
+	)).entries : assets;
 	let symbols: Blua32SymbolsImage | null = null;
-	for (let index = 0; index < toc.entries.length; index += 1) {
-		const entry = toc.entries[index];
+	for (let index = 0; index < entries.length; index += 1) {
+		const entry = entries[index];
 		if (entry.resid === BLUA32_SYMBOLS_IMAGE_ID) {
 			symbols = decodeBlua32SymbolsImage(rom.bytes.subarray(entry.start!, entry.end!));
 			break;

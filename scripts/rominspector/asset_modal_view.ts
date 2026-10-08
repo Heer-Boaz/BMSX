@@ -1,3 +1,4 @@
+import { formatHexDumpRow } from '../../machine/ts/common/byte_hex_string';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
 import type { CartManifest } from '../../machine/ts/rompack/manifest';
@@ -10,14 +11,8 @@ import {
 } from '../../toolchain/ts/rompack/blua32_symbols';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, renderBufferBar } from './asciiart';
 import { decodeAudioPreviewToPcm } from './audio_preview';
-import {
-	decodeGxTextureImage,
-	type GxDecodedImage,
-} from '../../toolchain/ts/rompack/gx_texture_codec';
-import { GX_GPU_CPU_TO_VRAM_HEADER_BYTES } from '../../toolchain/ts/rompack/gp0_encode';
-import { GX_GPU_TEXTURE_MODE_DIRECT16 } from '../../machine/ts/spec/gx/gp0';
-import { decodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
-import { GX_SYSTEM_TEXTURE_ASSET_ID } from '../rompacker/system_texture';
+import { decodeRomAssetImage, type RomTextureDecodeCache } from '../../toolchain/ts/rompack/asset_image';
+export type { RomTextureDecodeCache as TextureDecodeCache } from '../../toolchain/ts/rompack/asset_image';
 import {
 	disassembleBlua32Image,
 	loadBlua32ImageFromAssets,
@@ -49,17 +44,10 @@ export type AssetModalView = {
 	hex: string;
 };
 
-export type TextureDecodeCache = {
-	current?: {
-		resid: string;
-		payload: Buffer;
-	};
-};
-
 type BuildAssetModalViewContext = {
 	rombin: Uint8Array;
 	assetList: RomAsset[];
-	decodedTexture: TextureDecodeCache;
+	decodedTexture: RomTextureDecodeCache;
 	manifest: CartManifest | null;
 	projectRootPath: string | null;
 	formatByteSize(size: number): string;
@@ -68,20 +56,11 @@ type BuildAssetModalViewContext = {
 	previewZoom: number;
 };
 
-function formatHexDumpLine(buf: Uint8Array, byteOffset: number): string {
-	const slice = buf.subarray(byteOffset, byteOffset + HEX_BYTES_PER_LINE);
-	let line = byteOffset.toString(16).padStart(8, '0') + '  ';
-	line += Array.from(slice).map(b => b.toString(16).padStart(2, '0')).join(' ').padEnd(HEX_BYTES_PER_LINE * 3 - 1, ' ');
-	line += '  ';
-	line += Array.from(slice).map(b => (b >= 32 && b <= 126 ? String.fromCharCode(b) : '.')).join('');
-	return line;
-}
-
 function asciiHexDump(buf: Uint8Array, maxBytes = HEX_PREVIEW_MAX_BYTES): string {
 	let result = '';
 	const length = Math.min(buf.byteLength, maxBytes);
 	for (let i = 0; i < length; i += HEX_BYTES_PER_LINE) {
-		result += formatHexDumpLine(buf, i) + '\n';
+		result += formatHexDumpRow(buf, i, length, HEX_BYTES_PER_LINE) + '\n';
 	}
 	if (buf.byteLength > maxBytes) {
 		result += `... truncated: showing first ${maxBytes} bytes of ${buf.byteLength}\n`;
@@ -263,62 +242,20 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 
 	switch (selected.type) {
 	case 'image': {
-			let imagePreview: GxDecodedImage;
-			if (imgmeta.gx_atlas_id) {
-				const textureAsset = ctx.assetList.find(asset =>
-					asset.type === 'texture' && asset.resid === imgmeta.gx_atlas_id)!;
-				let decodedTexture = ctx.decodedTexture.current;
-				if (!decodedTexture || decodedTexture.resid !== textureAsset.resid) {
-					decodedTexture = {
-						resid: textureAsset.resid,
-						payload: decodeImgDecStream(
-							ctx.rombin,
-							textureAsset.start!,
-							textureAsset.end! - textureAsset.start!,
-						).payload,
-					};
-					ctx.decodedTexture.current = decodedTexture;
-				}
-				const texturemeta = textureAsset.texturemeta!;
-				imagePreview = decodeGxTextureImage(decodedTexture.payload, {
-					mode: texturemeta.mode,
-					wordWidth: texturemeta.word_width,
-					height: texturemeta.height,
-				}, {
-					width: imgmeta.width,
-					height: imgmeta.height,
-					textureU: imgmeta.texture_u,
-					textureV: imgmeta.texture_v,
-				});
-			} else {
-				const systemTexture = ctx.assetList.find(asset => asset.resid === GX_SYSTEM_TEXTURE_ASSET_ID)!;
-				const uploadStart = systemTexture.start!;
-				const uploadSize = new DataView(
-					ctx.rombin.buffer,
-					ctx.rombin.byteOffset + uploadStart + 8,
-					4,
-				).getUint32(0, true);
-				imagePreview = decodeGxTextureImage(
-					ctx.rombin.subarray(uploadStart + GX_GPU_CPU_TO_VRAM_HEADER_BYTES, systemTexture.end),
-					{
-						mode: GX_GPU_TEXTURE_MODE_DIRECT16,
-						wordWidth: uploadSize & 0xffff,
-						height: uploadSize >>> 16,
-					},
-					{
-						width: imgmeta.width,
-						height: imgmeta.height,
-						textureU: imgmeta.texture_u,
-						textureV: imgmeta.texture_v,
-					},
-				);
-			}
+			const imagePreview = decodeRomAssetImage(ctx.rombin, ctx.assetList, selected, ctx.decodedTexture);
 			previewSections.push(buildPreviewSection('', imagePreview.rgba, imagePreview.width, imagePreview.height, ctx.previewZoom));
 			previewFixedLines.push(previewFixedLine(imagePreview.width, imagePreview.height, ctx.previewZoom));
 			if (imgmeta.hitpolygons?.original && imgmeta.width && imgmeta.height) {
 				previewSections.push(buildPreviewSection('HitPolygons (convex pieces) overlay:', buildOverlayBuffer(imgmeta.width, imgmeta.height, imgmeta.hitpolygons.original), imgmeta.width, imgmeta.height, ctx.previewZoom));
 			}
 			for (const [key, value] of Object.entries(imgmeta)) metadataLines.push(`${key}: ${JSON.stringify(value)}`);
+			break;
+		}
+		case 'texture': {
+			const imagePreview = decodeRomAssetImage(ctx.rombin, ctx.assetList, selected, ctx.decodedTexture);
+			previewSections.push(buildPreviewSection('', imagePreview.rgba, imagePreview.width, imagePreview.height, ctx.previewZoom));
+			previewFixedLines.push(previewFixedLine(imagePreview.width, imagePreview.height, ctx.previewZoom));
+			for (const [key, value] of Object.entries(selected.texturemeta)) metadataLines.push(`${key}: ${JSON.stringify(value)}`);
 			break;
 		}
 		case 'audio':
