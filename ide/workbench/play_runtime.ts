@@ -10,7 +10,14 @@ import { SystemOutputLog } from '../../hosts/common/system_output_log';
 import { RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_state';
 import type { BuiltTestCartridge } from '../../toolchain/ts/rompack/test_cartridge';
 import type { ResourceDomain } from '../common/resource';
-import { readSupervisorFaultReport } from '../runtime/fault_state';
+import { createRuntimeFaultState, readSupervisorFaultReport } from '../runtime/fault_state';
+import { createSourceExecutionState, runtimeDebuggerExecutionRequested, type SourceExecutionState } from '../runtime/debugger_state';
+import { RuntimeDebuggerExecution } from '../runtime/debugger_execution';
+import { RuntimeFrameNavigation } from '../runtime/frame_navigation';
+import { TestDebuggerSources } from '../testing/debugger_sources';
+import type { Blua32ToolingMedia } from '../../toolchain/ts/rompack/blua32_media';
+import { generateUuid } from '../common/uuid';
+import { RuntimeTransport } from '../runtime/transport';
 import { SuspendedGuestSession } from '../runtime/suspended_guest';
 import type { FixtureOutput } from '../testing/fixture_operations';
 import { PlayFixture, type PlayFixtureBudgets } from '../testing/play_fixture';
@@ -28,6 +35,13 @@ export class PlayRuntimeSession implements PlaySession {
 	public readonly rewind: HostRewind;
 	public readonly frameSession: HostFrameSession;
 	public readonly frames;
+	public readonly debugger: SourceExecutionState;
+	public readonly debugSources: TestDebuggerSources;
+	public readonly navigation: RuntimeFrameNavigation;
+	public readonly transport: RuntimeTransport;
+	public readonly debuggerExecution: RuntimeDebuggerExecution<SourceExecutionState>;
+	private readonly media: Blua32ToolingMedia;
+	private readonly fault = createRuntimeFaultState();
 	public failure: PlaySessionFailure | undefined;
 	private readonly systemOutput = new SystemOutputLog();
 	private stopRequested = false;
@@ -46,8 +60,24 @@ export class PlayRuntimeSession implements PlaySession {
 		this.tasks = new RuntimeTaskQueue(this.audio, target.presenter);
 		this.rewind = new HostRewind(runtime, target.presenter, target.presentation, this.tasks, this.audio, log);
 		this.frameSession = new HostFrameSession(runtime.timing.ufpsScaled, 0, this.rewind, this.execution);
+		this.media = { system: program.debugImages[0].image, cartridgeSlots: [program.debugImages[1].image,
+			program.debugImages[2] === null ? null : program.debugImages[2].image] };
+		this.debugSources = new TestDebuggerSources(generateUuid(), program, sourceDomain, () => {
+			if (this.ready) this.debugger.source.install(this.media, this.debugSources.pcs);
+		});
+		this.debugger = createSourceExecutionState(runtime, this.media, this.debugSources.pcs);
+		this.navigation = new RuntimeFrameNavigation(runtime, this.execution, this.rewind, this.tasks, this.debugger, this.fault, this.guest);
+		this.debuggerExecution = new RuntimeDebuggerExecution(runtime, this.debugger, this.execution, this.rewind,
+			this.tasks, this.fault, this.guest, this.navigation);
+		this.transport = new RuntimeTransport(runtime, this.execution, this.rewind, this.navigation, () => this.ready && this.tasks.ready
+			&& !this.execution.frameStepPending && this.debugger.source.stop === undefined && !this.debugger.plans.controlActive);
 		this.fixture = new PlayFixture(target, target.input.fixture, program, sourceDomain, output, budgets);
-		runtime.onStateRestored = origin => this.guest.invalidate(origin === RuntimeRestoreOrigin.HistorySeek ? 'history-restored' : 'heap-replaced');
+		runtime.onStateRestored = origin => {
+			this.debuggerExecution.didReset();
+			this.navigation.didRestore(origin);
+			this.guest.invalidate(origin === RuntimeRestoreOrigin.HistorySeek ? 'history-restored' : 'heap-replaced');
+			this.debugger.source.reset();
+		};
 		runtime.history.onWillEndReview = () => this.guest.willEndHistoryReview();
 	}
 	public get input(): PlayInput { return this.target.input; }
@@ -66,6 +96,10 @@ export class PlayRuntimeSession implements PlaySession {
 				this.stopRequested = false;
 				this.guest.invalidate();
 				this.rewind.service(false);
+				this.navigation.dispose();
+				this.debuggerExecution.dispose();
+				this.debugger.source.reset();
+				this.target.runtime.machine.cpu.setExecutionHook(null, 0, 0);
 				this.fixture.stop();
 			}
 			if (this.fixture.admitting) {
@@ -76,9 +110,12 @@ export class PlayRuntimeSession implements PlaySession {
 					this.target.runtime.frameScheduler.clearQueuedTime();
 					this.execution.setPauseReason(HostPauseReason.AwaitingLaunch, false);
 					this.audio.restart(this.target.runtime.timing.ufpsScaled);
+					this.debugger.source.install(this.media, this.debugSources.pcs);
 				}
 			} else if (this.fixture.state === 'ready') this.advancePlay(hostDeltaMs);
 			this.systemOutput.flush(this.target.runtime, this.log);
+			this.navigation.afterHostFrame();
+			this.debuggerExecution.afterHostFrame();
 		} catch (error) {
 			this.quarantine({ kind: 'host', error });
 		}
@@ -86,6 +123,7 @@ export class PlayRuntimeSession implements PlaySession {
 
 	private advancePlay(hostDeltaMs: number): void {
 		const runtime = this.target.runtime, presentation = this.target.presentation;
+		this.debuggerExecution.beforeHostFrame();
 		const existingFault = readSupervisorFaultReport(runtime);
 		if (existingFault !== undefined) {
 			this.quarantine({ kind: 'machine', message: existingFault, cycles: runtime.machine.scheduler.currentNowCycles(), videoTick: runtime.frameScheduler.lastTickSequence });
@@ -98,9 +136,11 @@ export class PlayRuntimeSession implements PlaySession {
 			this.rewind.runPlayback(this.execution.consumeElapsedTime(hostDeltaMs));
 			this.frameSession.syncMachineOutput(runtime, this.audio);
 		}
-		if (this.tasks.ready && !this.rewind.active && !this.execution.executionBlocked()) {
+		if (this.tasks.ready && !this.rewind.active && !this.execution.executionBlocked(runtimeDebuggerExecutionRequested(this.debugger))
+			&& this.debugger.source.stop === undefined) {
 			this.guest.invalidate();
 			executeHostUpdate(this.frameSession, runtime, this.target.presenter, this.audio, presentation, hostDeltaMs);
+			this.debugger.source.didExecute();
 		} else runtime.frameScheduler.clearQueuedTime();
 		const fault = readSupervisorFaultReport(runtime);
 		if (fault !== undefined) {
@@ -111,6 +151,8 @@ export class PlayRuntimeSession implements PlaySession {
 	}
 	private quarantine(failure: PlaySessionFailure): void {
 		this.failure = failure;
+		this.navigation.didFault(failure.kind === 'host' ? 'host' : 'guest', failure.kind === 'host' ? String(failure.error) : failure.message);
+		this.debuggerExecution.didFault(failure.kind === 'host' ? 'host' : 'guest', failure.kind === 'host' ? String(failure.error) : failure.message);
 		this.execution.finishFrameStep();
 		this.execution.setPauseReason(HostPauseReason.AwaitingLaunch, true);
 		this.target.input.interactive = false;
@@ -134,6 +176,8 @@ export class PlayRuntimeSession implements PlaySession {
 		this.target.input.dispose();
 		this.audio.dispose();
 		this.guest.invalidate('heap-replaced');
+		this.navigation.dispose();
+		this.debuggerExecution.dispose();
 		this.closeOperation = this.close();
 		return this.closeOperation;
 	}
@@ -143,6 +187,7 @@ export class PlayRuntimeSession implements PlaySession {
 		this.target.runtime.history.stop();
 		this.target.runtime.onStateRestored = undefined;
 		this.target.runtime.history.onWillEndReview = undefined;
+		this.debugSources.dispose();
 		this.fixture.dispose();
 	}
 }

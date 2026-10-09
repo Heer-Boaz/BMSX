@@ -52,10 +52,10 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 	private selectedReachable = false;
 	private running = false;
 	public constructor(resources: ResourcePanelController, private readonly quickInput: QuickInputController,
-		commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation, private readonly contextMenu: ContextMenuController) {
+		private readonly commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation, private readonly contextMenu: ContextMenuController) {
 		super(resources);
-		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.isEnabled('gameView.playback'),
-			run: () => { this.running = commands.toggleGamePlayback(); } });
+		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled,
+			run: () => { this.running = commands.transport.togglePlayback(); } });
 		this.focusTarget.registerCommand('runtime.pause', { isEnabled: () => true, run: () => { this.running = false; } });
 		this.focusTarget.registerCommand('runtime.resume', { isEnabled: () => true, run: () => { this.running = true; } });
 		for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) {
@@ -81,6 +81,7 @@ export class EventViewerPane extends FullWidthWorkbenchEditorPane<EventViewerInp
 		this.scroll.focusTarget.next = this.actions.focusTarget; this.scroll.focusTarget.previous = this.actions.focusTarget;
 	}
 	public override get suspendsRuntime(): boolean { return !this.running; }
+	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.commands.transport; }
 	public override get runtimeControlContext() { return this.focusTarget; }
 	public override focus(): void { (this.inspector.visible ? this.inspector : this.scroll).focusTarget.focus(); }
 	protected override activate(): void {

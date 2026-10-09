@@ -4,7 +4,7 @@ import type { HostRewind } from '../../hosts/common/rewind';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
-import { interruptRuntimeDebuggerExecution, resumeRuntimeDebugger, RuntimeDebuggerStopReason, type RuntimeDebuggerState } from './debugger_state';
+import { interruptRuntimeDebuggerExecution, resumeRuntimeDebugger, RuntimeDebuggerStopReason, type SourceExecutionState, type RuntimeDebuggerState } from './debugger_state';
 import type { RuntimeDebuggerControlPlan, RuntimeDebuggerExecutionContext } from './debugger_plans';
 import type { RuntimeFaultState } from './fault_state';
 import type { RuntimeFrameNavigation } from './frame_navigation';
@@ -36,12 +36,12 @@ export class SourceExecutionOperation {
 }
 
 /** Source execution on the existing physical target. No private interpreter/scheduler or control plan. */
-export class RuntimeDebuggerExecution {
+export class RuntimeDebuggerExecution<TState extends SourceExecutionState = RuntimeDebuggerState> {
 	public active: SourceExecutionOperation | undefined;
 	private closing = false;
 	public constructor(
 		private readonly runtime: Runtime,
-		public readonly state: RuntimeDebuggerState,
+		public readonly state: TState,
 		private readonly execution: HostExecutionControl,
 		private readonly rewind: HostRewind,
 		private readonly tasks: RuntimeTaskQueue,
@@ -159,6 +159,14 @@ export class RuntimeDebuggerExecution {
 		if (operation === undefined) return;
 		this.active = undefined;
 		operation.finish({ mode: operation.mode, status: 'replaced', reason: 'machine-replaced', before: operation.before, after: this.position() });
+	}
+	/** Composition reports physical failure without inventing an authoring fault snapshot. */
+	public didFault(kind: 'host' | 'guest', reason: string): void {
+		const operation = this.active;
+		if (operation === undefined) return;
+		this.suspend(operation);
+		this.stopped(operation, kind === 'host' ? 'failed' : 'stopped', reason);
+		this.finish(operation);
 	}
 	public dispose(): void {
 		this.closing = true;

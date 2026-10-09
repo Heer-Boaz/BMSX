@@ -415,7 +415,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.completion = new EditorCompletionController(sources, guest, fault, runtime);
 		this.tabBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this.commands, null);
 		this.tabBar.setInput(editorChromeState.tabActions, this.tabBar.focusTarget);
-		this.runtimeTimeline = new RuntimeTimelineControl(this.commands, runtime, rewind, frameNavigation);
+		this.runtimeTimeline = new RuntimeTimelineControl(this.commands);
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
 		this.contextMenu = new ContextMenuController(inputFocus, pointerCapture);
 		this.quickInput = new QuickInputController(this.contextMenu);
@@ -679,7 +679,7 @@ export class RuntimeCartEditor implements CartEditor {
 		updateEditorMessage(deltaSeconds);
 		layoutTabBar(this.chromeRenderContext);
 		this.tabBar.update();
-		this.runtimeTimeline.setContext(this.editorPanes.activePane?.runtimeControlContext);
+		this.runtimeTimeline.setContext(this.editorPanes.activePane?.runtimeControlContext, this.editorPanes.activePane?.runtimeTransport);
 		editorChromeState.runtimeTimelineHeight = this.runtimeTimeline.height;
 		refreshWorkbenchLayout();
 		if (this.gamePanel.update()) {

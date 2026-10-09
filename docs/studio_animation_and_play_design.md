@@ -353,3 +353,35 @@ the next grant. The latter check stimulates the producer-side read-only fault
 latch, not a guest write or a claimed end-to-end firmware crash.
 These remain development checks: persistent Play UI and final `2025` authoring
 are not yet validated.
+
+### Physical transport and source execution
+
+`SourceExecutionState` composes the existing source debugger and execution plans
+without authoring working copies or fabricated test results. The authoring state
+adds its actual breakpoint/source owners to that same object; the Play state uses
+the immutable compiled fixture source catalog. Fixture admission owns the CPU
+hook until Ready; gameplay then hands it to source execution, and cleanup takes
+it back. Restore invalidates borrowed guest objects and resets source execution
+against the same admitted compiled media.
+
+The finite frame-navigation owner accepts this execution state for either physical
+target. A real host/machine failure settles its outstanding navigation operation;
+it cannot leave a waiter attached to a quarantined runtime. Tests stop at an
+actual compiled-source breakpoint, verify that host frames and frame-step cannot
+bypass it, source-step on the shared finite execution owner, then continue and
+video-step that target only. Source stepping UI for Play is not yet claimed by
+this slice. Original physical faults also settle pending source operations.
+
+`RuntimeTransport` owns playback intent and the matching navigation/history
+target. Live editor panes expose their physical transport alongside their command
+scope, and the shared rewind bar binds both. Ordinary authoring tabs deliberately
+select the primary machine for global Run commands; they do not disable Pause
+or borrow a secondary session. Switching the bar cancels its owned seek against
+the previous target, not the newly selected one.
+
+Reference: VS Code's [debug session lifecycle](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/debugSession.ts)
+and [focused-session toolbar](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/debugToolBar.ts).
+The real browser Game/Actor input workflow passes on software, WebGL2 and WebGPU,
+including the source editor's separate game panel and its explicit Pause. This
+is regression evidence for current primary views, not the final Play viewport or
+visible `2025` redesign.

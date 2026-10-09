@@ -1,6 +1,4 @@
 import { HostRewindTimeline, TimelineAction, type TimelineState, type TimelineStyle } from '../../../hosts/common/rewind_timeline';
-import type { HostRewind } from '../../../hosts/common/rewind';
-import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { write_rect_bounds } from '../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../common/models';
 import type { IdeCommandController } from '../../commands/controller';
@@ -8,7 +6,8 @@ import { editorViewState } from '../../editor/ui/view/state';
 import { inputFocus, type InputFocusTarget } from '../../input/focus';
 import { pointerCapture } from '../../input/pointer/capture';
 import { pointerHover } from '../../input/pointer/hover';
-import type { FrameNavigationOperation, RuntimeFrameNavigation } from '../../runtime/frame_navigation';
+import type { FrameNavigationOperation } from '../../runtime/frame_navigation';
+import type { RuntimeTransport } from '../../runtime/transport';
 import type { OverlayRenderer } from '../../runtime/overlay_renderer';
 import { resolveThemeTokenColor } from '../../theme/tokens';
 import * as colors from '../../common/constants';
@@ -32,10 +31,10 @@ export class RuntimeTimelineControl {
 	private readonly range = new WorkbenchSlider();
 	private readonly slider: WorkbenchSliderControl;
 	private context: InputFocusTarget | undefined;
+	private transport: RuntimeTransport | undefined;
 	private requestedCycles: number | undefined;
 	private seekOperation: FrameNavigationOperation | undefined;
-	public constructor(private readonly commands: IdeCommandController, private readonly runtime: Runtime,
-		private readonly rewind: HostRewind, private readonly navigation: RuntimeFrameNavigation) {
+	public constructor(private readonly commands: IdeCommandController) {
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, null);
 		this.slider = new WorkbenchSliderControl(inputFocus, pointerCapture, this.actions.focusTarget,
 			value => this.requestSeek(value), () => { this.requestedCycles = undefined; });
@@ -43,11 +42,11 @@ export class RuntimeTimelineControl {
 		this.slider.focusTarget.previous = this.actions.focusTarget;
 	}
 	public get height(): number { return this.context === undefined ? 0 : HostRewindTimeline.height(editorViewState.font.renderFont()); }
-	public setContext(context: InputFocusTarget | undefined): void {
-		if (context === this.context) return;
+	public setContext(context: InputFocusTarget | undefined, transport: RuntimeTransport | undefined): void {
+		if (context === this.context && transport === this.transport) return;
 		this.slider.clearInput(); this.actions.clearInput(); this.requestedCycles = undefined;
-		if (this.seekOperation !== undefined) this.navigation.cancel(this.seekOperation);
-		this.seekOperation = undefined; this.context = context;
+		if (this.seekOperation !== undefined) this.transport!.navigation.cancel(this.seekOperation);
+		this.seekOperation = undefined; this.context = context; this.transport = transport;
 		if (context !== undefined) {
 			this.actions.setInput(this.actionState, context);
 			this.actions.focusTarget.previous = context;
@@ -61,30 +60,31 @@ export class RuntimeTimelineControl {
 	}
 	public update(): void {
 		if (this.context === undefined) return;
+		const { runtime, rewind, navigation } = this.transport!;
 		if (this.seekOperation?.result !== undefined) {
 			if (this.seekOperation.result.status !== 'completed') {
 				this.slider.cancelPointer(); this.requestedCycles = undefined;
 			}
 			this.seekOperation = undefined;
 		}
-		if (this.seekOperation !== undefined && this.navigation.active !== this.seekOperation) {
+		if (this.seekOperation !== undefined && navigation.active !== this.seekOperation) {
 			this.requestedCycles = undefined; this.seekOperation = undefined;
 		}
-		const history = this.runtime.history, state = this.state;
-		if (this.requestedCycles !== undefined && this.navigation.available) {
+		const history = runtime.history, state = this.state;
+		if (this.requestedCycles !== undefined && navigation.available) {
 			const cycles = this.requestedCycles; this.requestedCycles = undefined;
-			if (cycles !== this.rewind.positionCycles) {
-				this.seekOperation = this.navigation.seek(cycles);
+			if (cycles !== rewind.positionCycles) {
+				this.seekOperation = navigation.seek(cycles);
 			}
 		}
 		state.earliestCycles = history.earliestCycles; state.latestCycles = history.latestCycles;
-		state.positionCycles = this.rewind.positionCycles; state.cpuHz = this.runtime.timing.cpuHz;
-		state.status = this.rewind.stopped ? 'STOPPED' : this.commands.gamePlaybackState;
-		state.enabledActions = this.rewind.available && (this.navigation.available || this.navigation.active === this.seekOperation && this.seekOperation !== undefined)
+		state.positionCycles = rewind.positionCycles; state.cpuHz = runtime.timing.cpuHz;
+		state.status = rewind.stopped ? 'STOPPED' : this.transport!.state;
+		state.enabledActions = rewind.available && (navigation.available || navigation.active === this.seekOperation && this.seekOperation !== undefined)
 			? 1 << TimelineAction.Seek : 0;
 		state.hoveredAction = TimelineAction.None;
-		for (let index = 0; index < ACTIONS.length; index++) this.actionState.items[index].visible = index < 3 || this.rewind.active;
-		this.style.visibleActions = this.rewind.active ? 0x6f : 0x0f;
+		for (let index = 0; index < ACTIONS.length; index++) this.actionState.items[index].visible = index < 3 || rewind.active;
+		this.style.visibleActions = rewind.active ? 0x6f : 0x0f;
 		this.actions.update();
 		for (let index = 0; index < ACTIONS.length; index++) {
 			const item = this.actionState.items[index];
@@ -116,5 +116,5 @@ export class RuntimeTimelineControl {
 		return this.context !== undefined && (this.slider.handlePointer(snapshot) || this.actions.handlePointer(snapshot));
 	}
 	public draw(renderer: OverlayRenderer): void { if (this.context !== undefined) renderer.appendFrame(this.view.frame); }
-	public dispose(): void { this.setContext(undefined); this.slider.dispose(); this.actions.dispose(); }
+	public dispose(): void { this.setContext(undefined, undefined); this.slider.dispose(); this.actions.dispose(); }
 }

@@ -19,16 +19,17 @@ export class GameViewEditorPane extends FullWidthWorkbenchEditorPane<GameViewInp
 	private readonly gameInput: GameInputControl;
 	private shownFrame = -1;
 	private frameLabel = '';
-	public constructor(resourcePanel: ResourcePanelController, commands: IdeCommandController,
+	public constructor(resourcePanel: ResourcePanelController, private readonly commands: IdeCommandController,
 		private readonly runtime: Runtime, recipient: InputRecipient) {
 		super(resourcePanel);
 		this.gameInput = new GameInputControl(this.focusTarget, recipient);
-		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.isEnabled('gameView.playback'), run: () => { commands.toggleGamePlayback(); } });
+		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.transport.playbackEnabled, run: () => { commands.transport.togglePlayback(); } });
 		this.focusTarget.next = this.gameInput.focusTarget;
 		this.focusTarget.previous = this.gameInput.focusTarget;
 	}
 	public override get suspendsRuntime(): boolean { return false; }
 	public override get showsGameFrame(): boolean { return true; }
+	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.commands.transport; }
 	public override get runtimeControlContext() { return this.focusTarget; }
 	protected override activate(): void {
 		super.activate();

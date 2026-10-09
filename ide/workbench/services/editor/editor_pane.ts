@@ -5,6 +5,7 @@ import type { EditorTextSelection } from '../../../editor/navigation/text_select
 import type { EditorPaneSelection } from './editor_selection';
 import type { EditorInput } from '../../ui/tab/model';
 import type { InputFocusTarget } from '../../../input/focus';
+import type { RuntimeTransport } from '../../../runtime/transport';
 
 /** Retained workbench control for one editor-input kind. */
 export abstract class EditorPane<TInput extends EditorInput> {
@@ -13,6 +14,8 @@ export abstract class EditorPane<TInput extends EditorInput> {
 	public get suspendsRuntime(): boolean { return true; }
 	/** A live inspector supplies the command scope for the shared runtime transport. */
 	public get runtimeControlContext(): InputFocusTarget | undefined { return undefined; }
+	/** The displayed timeline and commands must name the same physical target. */
+	public get runtimeTransport(): RuntimeTransport | undefined { return undefined; }
 	/** Avoid a second scanout panel when this editor already presents the game. */
 	public get showsGameFrame(): boolean { return false; }
 

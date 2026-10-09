@@ -51,6 +51,7 @@ import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 
 export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<BehaviorLensInput> {
 	public override get suspendsRuntime(): boolean { return this.input.runtimeInspection?.running !== true; }
+	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.commands.transport; }
 	public override get runtimeControlContext() { return this.input.runtimeInspection === undefined ? undefined : this.inspector.focusTarget; }
 	public override getSelection(): BehaviorLensNavigationSelection {
 		this.controller.updateView(this.input);
@@ -125,8 +126,8 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 				run: () => { this.input.runtimeInspection!.running = false; } });
 			target.registerCommand('runtime.resume', { isEnabled: () => this.input.runtimeInspection !== undefined,
 				run: () => { this.input.runtimeInspection!.running = true; } });
-			target.registerCommand('pause', { isEnabled: () => this.input.runtimeInspection !== undefined && this.commands.isEnabled('gameView.playback'),
-				run: () => { this.input.runtimeInspection!.running = this.commands.toggleGamePlayback(); } });
+			target.registerCommand('pause', { isEnabled: () => this.input.runtimeInspection !== undefined && this.commands.transport.playbackEnabled,
+				run: () => { this.input.runtimeInspection!.running = this.commands.transport.togglePlayback(); } });
 			for (const [command, direction] of [['stepFrameBack', -1], ['stepFrame', 1]] as const) target.registerCommand(command, {
 				isEnabled: () => this.input.runtimeInspection !== undefined && this.frameNavigation.canStep(direction),
 				run: () => { this.input.runtimeInspection!.running = false; this.frameNavigation.step(direction); },

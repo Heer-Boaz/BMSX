@@ -91,12 +91,12 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 		this.timelineSlider.focusTarget.commandContext = this.focusTarget;
 		for (const target of [this.focusTarget, this.graph.focusTarget, this.inspector.focusTarget]) {
 			target.registerCommand('actorLab.playback', {
-				isEnabled: () => commands.isEnabled('gameView.playback'),
-				run: () => { this.input.running = commands.toggleGamePlayback(); },
+				isEnabled: () => commands.transport.playbackEnabled,
+				run: () => { this.input.running = commands.transport.togglePlayback(); },
 			});
 			target.registerCommand('pause', {
-				isEnabled: () => commands.isEnabled('gameView.playback'),
-				run: () => { this.input.running = commands.toggleGamePlayback(); },
+				isEnabled: () => commands.transport.playbackEnabled,
+				run: () => { this.input.running = commands.transport.togglePlayback(); },
 			});
 			target.registerCommand('runtime.pause', { isEnabled: () => true, run: () => { this.input.running = false; } });
 			target.registerCommand('runtime.resume', { isEnabled: () => true, run: () => { this.input.running = true; } });
@@ -171,6 +171,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 	}
 	public override get suspendsRuntime(): boolean { return !this.input.running; }
 	public override get showsGameFrame(): boolean { return true; }
+	public override get runtimeTransport() { return this.runtimeControlContext === undefined ? undefined : this.commands.transport; }
 	public override get runtimeControlContext() { return this.input.presentation === 'outline' ? this.focusTarget : this.graph.focusTarget; }
 	public override getSelection(): ActorLabNavigationSelection {
 		if (this.inspector.visible) {
@@ -302,7 +303,7 @@ export class ActorLabEditorPane extends FullWidthWorkbenchEditorPane<ActorLabInp
 			: this.controller.selected(this.input)?.label ?? this.input.status, bounds.left + 4, bounds.top + 2, 0, color);
 	}
 	public draw(): void {
-		drawActorLab(this.input, this.commands.gamePlaybackState, this.timelineSlider.focusTarget.hasFocus, this.graph.hover, this.graph.focusTarget.hasFocus, this.previewLabel);
+		drawActorLab(this.input, this.commands.transport.state, this.timelineSlider.focusTarget.hasFocus, this.graph.hover, this.graph.focusTarget.hasFocus, this.previewLabel);
 		const hit = this.viewportHit;
 		if (hit !== undefined) {
 			const bounds = this.input.previewBounds, size = this.presenter.offscreenCanvasSize;

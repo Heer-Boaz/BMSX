@@ -5,6 +5,7 @@ import { importCartridgeFiles } from '../workbench/contrib/resources/import';
 import type { RuntimeDebuggerExecution } from '../runtime/debugger_execution';
 import { executeClipboardAction } from '../input/clipboard';
 import type { RuntimeFrameNavigation } from '../runtime/frame_navigation';
+import { RuntimeTransport } from '../runtime/transport';
 import { navigationState } from '../navigation/navigation_history';
 import { openGameView } from '../workbench/contrib/game_view/editor_input';
 import { editorTabGroup } from '../workbench/ui/tab/group_model';
@@ -72,6 +73,7 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 ]);
 
 export class IdeCommandController {
+	public readonly transport: RuntimeTransport;
 	public constructor(
 		private readonly editor: CartEditor,
 		private readonly sources: RuntimeSourceState,
@@ -83,37 +85,23 @@ export class IdeCommandController {
 		private readonly execution: HostExecutionControl,
 		private readonly rewind: HostRewind,
 		private readonly overlayRenderer: OverlayRenderer,
-		private readonly runtime: Runtime,
+		runtime: Runtime,
 		private readonly audioOutput: HostAudioOutput,
 		private readonly clock: HostClock,
 		private readonly logOutput: LogOutput,
-		private readonly scenarioRuns: ScenarioRunService,
+		scenarioRuns: ScenarioRunService,
 		private readonly textFileSaves: TextFileSaveService,
 		private readonly frameNavigation: RuntimeFrameNavigation,
 		private readonly debuggerExecution: RuntimeDebuggerExecution,
 	) {
+		this.transport = new RuntimeTransport(runtime, execution, rewind, frameNavigation, () => runtimeTasks.ready
+			&& !execution.frameStepPending && fault.hostFrameFailure === undefined && fault.faultSnapshot === null
+			&& debuggerState.source.stop === undefined && !debuggerState.plans.controlActive && !scenarioRuns.active);
 	}
 
-	public get gamePlaybackState(): 'SEEKING' | 'PAUSED' | 'REPLAY' | 'LIVE' {
-		if (this.rewind.seeking) return 'SEEKING';
-		if (this.execution.paused || this.rewind.active && !this.rewind.playing) return 'PAUSED';
-		return this.rewind.active ? 'REPLAY' : 'LIVE';
-	}
-
-	/** Shared transport for game previews; reviewing keeps the recorded future. */
-	public toggleGamePlayback(): boolean {
-		const playing = this.gamePlaybackState === 'PAUSED';
-		if (!playing) {
-			if (this.rewind.active) this.rewind.pauseSeek();
-			this.execution.setPauseReason(HostPauseReason.Requested, true);
-		} else if (this.rewind.active && this.rewind.positionCycles < this.runtime.history.latestCycles) {
-			if (!this.rewind.playing) this.rewind.togglePlayback();
-			this.execution.setPauseReason(HostPauseReason.Requested, false);
-		} else {
-			if (this.rewind.active) this.rewind.resumeHere();
-			this.execution.requestExecution(true);
-		}
-		return playing;
+	/** Ordinary authoring selects the main machine; a live editor explicitly selects its physical session. */
+	private get selectedTransport(): RuntimeTransport {
+		return this.editor.editorPanes.activePane?.runtimeTransport ?? this.transport;
 	}
 
 	public execute(command: EditorCommandId, target: InputFocusTarget | null = inputFocus.target): void {
@@ -262,20 +250,19 @@ export class IdeCommandController {
 				return;
 			case 'runtime.pause':
 				inputFocus.executeCommand(command, target);
-				if (this.rewind.active) this.rewind.pauseSeek();
-				this.execution.setPauseReason(HostPauseReason.Requested, true);
+				this.selectedTransport.pause();
 				return;
 			case 'runtime.present':
 				this.execute('runtime.pause', target);
-				this.rewind.returnToPresent();
+				this.selectedTransport.rewind.returnToPresent();
 				return;
 			case 'runtime.resume':
-				inputFocus.executeCommand(command, this.editor.editorPanes.activePane!.runtimeControlContext!);
-				this.rewind.resumeHere();
-				this.execution.requestExecution(true);
+				inputFocus.executeCommand(command, this.editor.editorPanes.activePane?.runtimeControlContext);
+				this.selectedTransport.resumeHere();
 				return;
 			case 'gameView.playback':
-				this.toggleGamePlayback();
+				if (inputFocus.getCommand(command, target) !== undefined) inputFocus.executeCommand(command, target);
+				else inputFocus.executeCommand('pause', target);
 				return;
 			case 'gameView.togglePanel': this.editor.gamePanel.toggle(); return;
 			case 'gameView.closePanel': this.editor.gamePanel.close(); return;
@@ -490,18 +477,15 @@ export class IdeCommandController {
 			case 'stepFrameBack':
 				if (context?.getCommand(command) !== undefined) return context.getCommand(command)!.isEnabled();
 				return this.frameNavigation.canStep(command === 'stepFrameBack' ? -1 : 1);
-			case 'runtime.pause': return this.runtimeTasks.ready;
+			case 'runtime.pause': return this.selectedTransport.playbackEnabled;
 			case 'runtime.present':
 			case 'runtime.resume':
-				return this.editor.editorPanes.activePane?.runtimeControlContext !== undefined && this.rewind.active
-					&& this.frameNavigation.active === undefined && this.isEnabled('gameView.playback', focus);
+				return this.selectedTransport.rewind.active && this.selectedTransport.navigation.active === undefined
+					&& this.selectedTransport.playbackEnabled;
 			case 'gameView.togglePanel': return this.editor.isActive;
 			case 'gameView.closePanel': return this.editor.gamePanel.visible;
 			case 'gameView.playback':
-				return this.runtimeTasks.ready && !this.execution.frameStepPending
-					&& this.fault.hostFrameFailure === undefined && this.fault.faultSnapshot === null
-					&& this.debuggerState.source.stop === undefined && !this.debuggerState.plans.controlActive
-					&& !this.scenarioRuns.active && !this.rewind.seeking;
+				return (context?.getCommand(command) ?? context?.getCommand('pause'))?.isEnabled() === true;
 			case 'scenarioLab.debug':
 			case 'scenarioLab.continue': case 'scenarioLab.stepInto': case 'scenarioLab.stepOver':
 			case 'scenarioLab.stepOut': case 'scenarioLab.pause': case 'scenarioLab.breakpoints':

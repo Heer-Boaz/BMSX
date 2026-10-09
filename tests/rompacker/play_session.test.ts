@@ -143,11 +143,13 @@ test('Play history reconstructs privately, publishes the selected boundary and t
 
 test('Play quarantines original host failures and physical faults without fabricating cleanup', async t => {
 	const f = await fixture(t), original = new Error('physical backend fence failed');
+	const step = f.session.navigation.step(1, 5);
 	await f.session.tasks.schedule(() => { throw original; }, () => {});
 	const before = captureRuntimeMachineState(f.target.runtime);
 	f.session.advance(1000);
 	assert.deepEqual(f.session.failure, { kind: 'host', error: original });
 	assert.equal(f.session.failure!.kind, 'host');
+	assert.equal((await step.completion).status, 'failed', 'finite target operations cannot hang behind a host fault');
 	f.session.stop(); f.session.advance(1000);
 	assert.deepEqual(captureRuntimeMachineState(f.target.runtime), before);
 	assert.equal(f.field('closed'), null); assert.equal(f.logs.length, 0);
@@ -159,6 +161,33 @@ test('Play quarantines original host failures and physical faults without fabric
 	assert.equal(second.session.failure!.kind, 'machine');
 	assert.equal(second.target.runtime.machine.scheduler.currentNowCycles(), cycles, 'a latched physical fault blocks the next CPU grant');
 	assert.equal(second.field('closed'), null);
+});
+
+test('Play source stops bind to its immutable compiled image, never the authoring debugger or a synthetic test case', async t => {
+	const f = await fixture(t), runtime = f.target.runtime;
+	const source = f.session.debugSources.catalog.find(entry => entry.domain === 0 && entry.path.endsWith('entry.lua'))!;
+	assert.equal(f.session.debugSources.setBreakpoints(source.source, [11])[0].status, 'bound');
+	const primary = captureRuntimeMachineState(f.authoring.runtime);
+	await f.settle(() => f.session.debugger.source.stop !== undefined);
+	const held = captureRuntimeMachineState(runtime);
+	for (let frame = 0; frame < 5; frame++) await f.frame();
+	assert.deepEqual(captureRuntimeMachineState(runtime), held);
+	assert.equal(f.session.navigation.canStep(1), false, 'a video step cannot bypass an actual source stop');
+	const sourceStep = f.session.debuggerExecution.resume('over', 'game');
+	await f.settle(() => sourceStep.result !== undefined);
+	assert.equal(sourceStep.result!.status, 'stopped');
+	assert.equal(sourceStep.result!.reason, 'step');
+	f.session.debugSources.setBreakpoints(source.source, []);
+	f.session.debuggerExecution.resume('continue', 'game');
+	await f.frame();
+	f.session.debuggerExecution.cancel(f.session.debuggerExecution.active!);
+	await f.frame();
+	const frames = f.session.navigation.step(1, 3);
+	await f.settle(() => frames.result !== undefined);
+	assert.equal(frames.result!.status, 'completed'); assert.equal(frames.result!.completedFrames, 3);
+	assert.deepEqual(captureRuntimeMachineState(f.authoring.runtime), primary);
+	f.session.stop(); await f.settle(() => f.session.state === 'stopped');
+	assert.equal(f.field('closed'), true);
 });
 
 test('closing Play releases input/audio immediately but joins owned callbacks before disposing the target', async t => {

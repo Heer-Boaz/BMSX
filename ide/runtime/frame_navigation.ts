@@ -3,7 +3,7 @@ import type { HostRewind } from '../../hosts/common/rewind';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { RuntimeRestoreOrigin } from '../../machine/ts/machine/runtime/save_state';
-import { runtimeDebuggerExecutionRequested, type RuntimeDebuggerState } from './debugger_state';
+import { runtimeDebuggerExecutionRequested, type SourceExecutionState } from './debugger_state';
 import type { RuntimeFaultState } from './fault_state';
 import type { SuspendedGuestSession } from './suspended_guest';
 
@@ -46,7 +46,7 @@ export class RuntimeFrameNavigation {
 		private readonly execution: HostExecutionControl,
 		private readonly rewind: HostRewind,
 		private readonly tasks: RuntimeTaskQueue,
-		private readonly debuggerState: RuntimeDebuggerState,
+		private readonly debuggerState: SourceExecutionState,
 		private readonly fault: RuntimeFaultState,
 		private readonly guest: SuspendedGuestSession,
 	) {}
@@ -182,6 +182,13 @@ export class RuntimeFrameNavigation {
 		if (operation === undefined) return;
 		this.stopOwnedCommands(operation);
 		this.finish('replaced', 'machine-replaced');
+	}
+	/** Composition reports a physical stop even when no authoring source stack can be captured. */
+	public didFault(kind: 'host' | 'guest', reason: string): void {
+		const operation = this.active;
+		if (operation === undefined) return;
+		this.stopOwnedCommands(operation);
+		this.finish(kind === 'host' ? 'failed' : 'stopped', reason);
 	}
 	private finish(status: FrameNavigationResult['status'], reason?: string): void {
 		const operation = this.active!;
