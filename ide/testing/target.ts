@@ -4,16 +4,20 @@ import type { HeadlessGPUBackend } from '../../machine/ts/render/headless/backen
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { TestInput } from './input';
 
-/** A case leases one physical machine from product composition, not the author's runtime. */
-export interface TestTarget {
+/** Compiled fixture operations use a physical machine, not an authoring runtime or an input facade. */
+export interface FixtureTarget {
 	readonly runtime: Runtime;
-	readonly input: TestInput;
 	readonly backend: HeadlessGPUBackend;
 	readonly presenter: VideoPresenter;
 	serviceBackend(): void;
 	advanceGame(cycles: number): boolean;
 	present(): boolean;
 	dispose(): void;
+}
+
+/** An automatic case owns only scripted input. Play admits the same fixture with a separate input port. */
+export interface TestTarget extends FixtureTarget {
+	readonly input: TestInput;
 }
 
 /** Construction is outside testing; input injection and case policy remain here. */

@@ -73,6 +73,15 @@ not a no-draw tick relabelled as an image. A Node 22 copy-only measurement
 Those are local host-copy timings, not GPU upload cost or whole-game performance.
 This resource does not yet constitute a persistent Play session or its viewport.
 
+The fixture operation port is now independent of the physical target's input
+source. Automatic cases still own a `TestInput`; Play's input owner selects that
+scripted port during setup/cleanup and its explicit physical channel during play.
+There is no blended snapshot, forwarding test-target facade or change to the
+primary input source. Compiled O0/O3 checks keep a physical key held throughout
+admission, exercise human input through the actual ICU/IRQ, then verify bounded
+teardown cannot consume that held key. This is session-boundary evidence, not
+an interactive viewport or completed `2025` authoring claim.
+
 ## Reference owners
 
 - [Godot's animation track editor](https://github.com/godotengine/godot/blob/master/editor/animation/animation_track_editor.cpp)
@@ -192,6 +201,7 @@ rectangle as the primary scene. BMSX retains ICU sampling, not Godot's event API
 | ICU sample | fixed snapshot arrays and raw words | mirrored `InputControllerSnapshot` | Unchanged |
 | Supervisor input/request | primary host/supervisor policy | libretro supervisor policy | Unchanged; no request leakage into secondary sessions |
 | Recorded input | Runtime-owned journal | mirrored Runtime journal | Unchanged; replay bypasses physical routing at the existing device observer |
+| Fixture/play handoff | session `PlayInput` selects `TestInput` or `InputChannel` | no native Studio fixture | Host admission/cleanup policy, not a hardware input format |
 
 Hot-path callsites are `InputController.onVblankEdge` ->
 `Input.sampleInputControllerSnapshot` (primary) or

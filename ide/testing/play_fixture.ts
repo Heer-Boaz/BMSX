@@ -9,7 +9,8 @@ import { TestFailureContext } from './failure_context';
 import { DEFAULT_FIXTURE_BUDGETS, type FixtureBudgets } from './fixture_budgets';
 import { FixtureOperations, type FixtureOutput } from './fixture_operations';
 import { GuestFixture } from './guest_fixture';
-import type { TestTarget } from './target';
+import type { FixtureTarget } from './target';
+import type { TestInput } from './input';
 
 export type PlayFixtureState = 'initializing' | 'setup' | 'ready' | 'cleanup' | 'stopped' | 'failed' | 'closed';
 export type PlayFixtureBudgets = FixtureBudgets & { readonly setupTicks: number; readonly setupCycles: number };
@@ -38,12 +39,12 @@ export class PlayFixture {
 	private readonly hook: ExecutionHook = (domain, pc) => !this.fixture.initialized
 		? this.fixture.observeInitialization(domain, pc) : this.operations.shouldStopAtPublication();
 
-	public constructor(public readonly target: TestTarget, public readonly program: BuiltTestCartridge,
+	public constructor(public readonly target: FixtureTarget, private readonly input: TestInput, public readonly program: BuiltTestCartridge,
 		private readonly sourceDomain: ResourceDomain, output: FixtureOutput,
 		private readonly budgets: PlayFixtureBudgets = DEFAULT_PLAY_FIXTURE_BUDGETS) {
 		if (program.suite.kind !== 'integration') throw new Error('Play requires an integration fixture.');
 		this.fixture = new GuestFixture(target.runtime, program);
-		this.operations = new FixtureOperations(target, output, () => this.bindHook());
+		this.operations = new FixtureOperations(target, input, output, () => this.bindHook());
 		this.bindHook();
 	}
 	public get admitting(): boolean { return this.state === 'initializing' || this.state === 'setup' || this.state === 'cleanup'; }
@@ -112,17 +113,17 @@ export class PlayFixture {
 		this.args.length = 1; this.args[0] = valueString(this.target.runtime.machine.cpu.stringPool.intern(phase));
 	}
 	private ready(): void {
-		this.target.input.reset(); this.state = 'ready'; this.bindHook();
+		this.input.reset(); this.state = 'ready'; this.bindHook();
 	}
 	private beginCleanup(): void {
-		this.target.input.reset(); this.operations.cancel();
+		this.input.reset(); this.operations.cancel();
 		if (this.state !== 'cleanup') this.cleanupCycles = this.target.runtime.machine.scheduler.nowCycles;
 		this.state = 'cleanup';
 		if (this.program.suite.teardown) this.nextPhase('teardown');
 		else this.finish();
 	}
 	private finish(): void {
-		this.target.input.reset(); this.operations.cancel();
+		this.input.reset(); this.operations.cancel();
 		this.state = this.failures.length === 0 ? 'stopped' : 'failed'; this.bindHook();
 	}
 	private recordFailure(thread: Thread, message: string, origin: TestFailureContext['origin']): void {
@@ -142,7 +143,7 @@ export class PlayFixture {
 		if (!this.fixture.initialized || this.fixture.callPending || cpu.readExceptionReturnFrameDepth() !== -1) {
 			this.quarantine('Cleanup incomplete: stopped outside a cooperative fixture boundary.'); return;
 		}
-		this.target.input.reset(); this.operations.cancel();
+		this.input.reset(); this.operations.cancel();
 		const phase = this.phase;
 		this.state = 'cleanup'; this.cleanupCycles = this.target.runtime.machine.scheduler.nowCycles;
 		this.nextPhase('cancel'); this.fixture.cancelPhase(phase); this.bindHook();

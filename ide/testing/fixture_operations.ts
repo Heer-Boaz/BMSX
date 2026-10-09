@@ -1,6 +1,7 @@
 import type { Table } from '../../machine/ts/machine/cpu/table';
 import { asStringId, type StringValue, type Value } from '../../machine/ts/machine/cpu/value';
-import type { TestTarget } from './target';
+import type { FixtureTarget } from './target';
+import type { TestInput } from './input';
 
 export interface FixtureOutput {
 	log(tick: number, value: Value): void;
@@ -20,7 +21,7 @@ type FixtureWait =
 export class FixtureOperations {
 	private wait: FixtureWait | null = null;
 	private readonly reachedKey;
-	public constructor(private readonly target: TestTarget, private readonly output: FixtureOutput,
+	public constructor(private readonly target: FixtureTarget, private readonly input: TestInput, private readonly output: FixtureOutput,
 		private readonly bindingChanged: () => void) {
 		this.reachedKey = target.runtime.machine.cpu.stringPool.intern('reached');
 	}
@@ -40,8 +41,8 @@ export class FixtureOperations {
 			case 'actioneffects': this.output.observeActionEffects(values[2] as Table); break;
 			case 'log': this.output.log(tick, values[2]); break;
 			case 'ticks': this.wait = { kind: 'ticks', target: tick + (values[2] as number) }; break;
-			case 'key': this.wait = { kind: 'input', target: this.target.input.key(pool.toString(asStringId(values[2] as StringValue)), values[3] as boolean, values[4] as number | null) }; break;
-			case 'press': this.wait = { kind: 'input', target: this.target.input.press(pool.toString(asStringId(values[2] as StringValue)), values[3] as number, values[4] as number | null) }; break;
+			case 'key': this.wait = { kind: 'input', target: this.input.key(pool.toString(asStringId(values[2] as StringValue)), values[3] as boolean, values[4] as number | null) }; break;
+			case 'press': this.wait = { kind: 'input', target: this.input.press(pool.toString(asStringId(values[2] as StringValue)), values[3] as number, values[4] as number | null) }; break;
 			case 'boundary':
 				this.wait = { kind: 'boundary', receipt: values[2] as Table, deadline: tick + (values[3] as number) };
 				this.bindingChanged();
@@ -63,7 +64,7 @@ export class FixtureOperations {
 		let ready: boolean;
 		switch (wait.kind) {
 			case 'ticks': ready = runtime.frameScheduler.lastTickSequence >= wait.target; break;
-			case 'input': ready = this.target.input.samples >= wait.target; break;
+			case 'input': ready = this.input.samples >= wait.target; break;
 			case 'boundary':
 				ready = wait.receipt.getStringKey(this.reachedKey) === true || runtime.frameScheduler.lastTickSequence >= wait.deadline;
 				if (ready) args[1] = wait.receipt.getStringKey(this.reachedKey);

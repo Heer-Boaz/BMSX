@@ -63,7 +63,7 @@ export class TestExecution implements FixtureOutput {
 		mode: TestExecutionMode = 'run',
 	) {
 		this.fixture = new GuestFixture(target.runtime, program);
-		this.operations = new FixtureOperations(target, this, () => this.bindExecutionHook());
+		this.operations = new FixtureOperations(target, target.input, this, () => this.bindExecutionHook());
 		if (mode === 'debug') this.debugger = new TestDebugger(target.runtime, program, result.test.resource.domain, () => this.bindExecutionHook());
 		this.bindExecutionHook();
 	}

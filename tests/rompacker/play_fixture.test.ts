@@ -21,6 +21,7 @@ import { InputChannel } from '../../hosts/common/input/channel';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import { GX_GPU_PCRTC_BGCOLOR_LOW, gxGpuPcrtcRegisterAddress } from '../../machine/ts/spec/gx/pcrtc';
+import { PlayInput } from '../../ide/workbench/services/play/input';
 
 const GAME = `module<entry>
 local game<const> = require('game')
@@ -63,13 +64,13 @@ async function fixture(t: TestContext, source: string, optLevel: 0 | 3,
 		observeFsm() { assert.fail('This fixture does not request an FSM observer'); },
 		observeActionEffects() { assert.fail('This fixture does not request an ActionEffect observer'); },
 	};
-	const play = new PlayFixture(target, program, 0, output, budgets);
+	const play = new PlayFixture(target, target.input, program, 0, output, budgets);
 	t.after(() => play.dispose());
 	const drain = () => {
 		for (let grant = 0; play.admitting && grant < 10000; grant++) play.advance();
 		assert.equal(play.admitting, false, 'bounded fixture admission/cleanup terminates');
 	};
-	return { play, target, media, logs, captures, drain };
+	return { play, target, media, program, logs, captures, drain };
 }
 
 test('physical viewport routing reaches only the selected independent machine through its real ICU', async t => {
@@ -103,6 +104,48 @@ test('physical viewport routing reaches only the selected independent machine th
 });
 
 for (const optLevel of [0, 3] as const) {
+	test(`O${optLevel}: scripted setup and cleanup cannot consume held physical play input`, async t => {
+		const source = `local game<const> = require('game')
+return {kind='integration',
+ setup=function(t) t:press('KeyA',2); assert(game.down_samples==2) end,
+ teardown=function(t)
+  local baseline=game.down_samples
+  t:wait_ticks(3)
+  assert(game.down_samples==baseline, 'Physical input leaked into cleanup')
+  t:log('closed')
+ end,
+ tests={never=function() error('No interactive case body') end},
+}`;
+		const f = await fixture(t, source, optLevel);
+		const physical = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
+		const input = new PlayInput(new InputChannel(physical));
+		const target = new OffscreenMachine(f.media.systemRom, [f.program.layer.bytes, null], PSX_MACHINE_SPEC, input);
+		const logs: string[] = [];
+		const play = new PlayFixture(target, input.fixture, f.program, 0, {
+			log(_tick, value) { logs.push(valueToString(value, target.runtime.machine.cpu.stringPool)); },
+			captureRequested: assert.fail, captured: assert.fail, observeFsm: assert.fail, observeActionEffects: assert.fail,
+		});
+		t.after(() => { play.dispose(); input.dispose(); physical.dispose(); });
+		physical.guestInputRecipient = input.physical;
+		physical.inputButton('keyboard:0', 'KeyA', true, 1, 0, 1); physical.pollInput();
+		for (let grant = 0; play.admitting && grant < 10000; grant++) play.advance();
+		assert.equal(play.state, 'ready'); assert.equal(input.fixture.samples, 3);
+		const cpu = target.runtime.machine.cpu, pool = cpu.stringPool;
+		const game = cpu.getGlobalByKey(pool.intern(buildModuleExportSlotName('game', []))) as Table;
+		const down = pool.intern('down_samples'), scriptedSamples = input.fixture.samples;
+		input.interactive = true;
+		const until = target.runtime.frameScheduler.lastTickSequence + 4;
+		for (let grant = 0; target.runtime.frameScheduler.lastTickSequence < until && grant < 1000; grant++) target.advanceGame(65536);
+		assert.equal(target.runtime.frameScheduler.lastTickSequence, until);
+		assert.ok((game.getStringKey(down) as number) > 2, 'human samples reach normal gameplay IRQ');
+		assert.equal(input.fixture.samples, scriptedSamples, 'the fixture port does not run during human play');
+		input.interactive = false; play.stop();
+		for (let grant = 0; play.admitting && grant < 10000; grant++) play.advance();
+		assert.equal(play.state, 'stopped', JSON.stringify(play.failures.map(item => item.failure)));
+		assert.deepEqual(logs, ['closed']);
+		input.dispose(); assert.equal(physical.guestInputRecipient, null);
+	});
+
 	test(`O${optLevel}: Play admits only the shared fixture, persists independently and tears down on explicit Stop`, async t => {
 		const source = `local game<const> = require('game')
 return {kind='integration',
