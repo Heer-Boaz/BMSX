@@ -1,11 +1,14 @@
 import { KeyModifier, type PlayerInput } from '../../../../hosts/common/input/player';
 import { formatByteSize, formatNumberAsHex } from '../../../../machine/ts/common/byte_hex_string';
 import { point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
-import { SCROLLBAR_WIDTH } from '../../../common/constants';
+import { DOUBLE_CLICK_MAX_INTERVAL_MS, SCROLLBAR_WIDTH } from '../../../common/constants';
 import type { EditorCommandId, EditorCommandRunner } from '../../../common/commands';
 import type { PointerSnapshot } from '../../../common/models';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
-import { ValueInput } from '../../../editor/ui/inline/value_input';
+import { applyInlineFieldEditing, applyInlineFieldPointer, setFieldText } from '../../../editor/ui/inline/text_field';
+import { TextField } from '../../../editor/ui/inline/text_field_model';
+import { SingleLineFieldViewport } from '../../../editor/ui/inline/single_line_viewport';
+import { resetBlink } from '../../../editor/render/caret';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
@@ -61,9 +64,19 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 	private readonly horizontal = new ScrollbarPointerControl(pointerCapture);
 	private readonly inspector = new WorkbenchPropertyInspector(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly presentation = new RomInspectorPresentation();
-	private readonly filter = new ValueInput<string>(this.focusTarget, {
-		options: { allowSpace: true, singleLine: true }, invalidBlurMessage: '', format: value => value, parse: value => ({ value }),
-	}, value => { this.input.model.filter = value; this.input.model.project(); this.input.list.scrollbar.setScroll(0); });
+	private readonly filter = new TextField(this.focusTarget, { allowSpace: true, singleLine: true });
+	private readonly filterViewport = new SingleLineFieldViewport();
+	private readonly filterPointer = {
+		metrics: editorViewState.inlineFieldMetricsRef, textLeft: 0, pointerX: 0,
+		justPressed: false, pointerPressed: false, doubleClickInterval: DOUBLE_CLICK_MAX_INTERVAL_MS,
+	};
+	private readonly unbindFilterKeyboard = this.filter.focusTarget.bindKeyboard(input => {
+		if (isKeyJustPressed('Enter', input) || isKeyJustPressed('NumpadEnter', input) || isKeyJustPressed('Escape', input)) {
+			consumeIdeKey('Enter', input); consumeIdeKey('NumpadEnter', input); consumeIdeKey('Escape', input);
+			this.list.focusTarget.focus();
+		} else applyInlineFieldEditing(input, this.filter);
+	});
+	private unbindFilterChange!: () => void;
 	private boundRevision = -1;
 	private boundContentRevision = -1;
 	private imageActive = false;
@@ -75,16 +88,15 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		super(resources);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		this.contentActions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
-		for (const target of [this.focusTarget, this.inspector.focusTarget]) for (const command of COMMANDS)
+		for (const target of [this.focusTarget, this.inspector.focusTarget, this.filter.focusTarget]) for (const command of COMMANDS)
 			target.registerCommand(command, { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) });
 		this.list.focusTarget.commandContext = this.focusTarget;
 		this.bytes.focusTarget.commandContext = this.focusTarget;
 		this.image.focusTarget.commandContext = this.focusTarget;
-		this.filter.field.focusTarget.commandContext = this.focusTarget;
-		this.actions.focusTarget.next = this.filter.field.focusTarget;
-		this.filter.field.focusTarget.previous = this.actions.focusTarget;
-		this.filter.field.focusTarget.next = this.list.focusTarget;
-		this.list.focusTarget.previous = this.filter.field.focusTarget;
+		this.actions.focusTarget.next = this.filter.focusTarget;
+		this.filter.focusTarget.previous = this.actions.focusTarget;
+		this.filter.focusTarget.next = this.list.focusTarget;
+		this.list.focusTarget.previous = this.filter.focusTarget;
 		this.inspector.setFocusOrder(this.list.focusTarget, this.bytes.focusTarget);
 		this.bytes.focusTarget.next = this.actions.focusTarget;
 		this.actions.focusTarget.previous = this.bytes.focusTarget;
@@ -97,7 +109,15 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		this.contentActions.setInput(this.input.contentActions, this.focusTarget);
 		this.image.setInput(this.input.imageView);
 		this.list.setInput(this.input.list); this.bytes.setInput(this.input.bytes);
-		this.filter.setValue(this.input.model.filter);
+		setFieldText(this.filter, this.input.model.filter, true);
+		this.unbindFilterChange = this.filter.onDidChangeText(() => {
+			const input = this.input;
+			if (input.model.filter === this.filter.text) return;
+			input.model.filter = this.filter.text;
+			input.model.project();
+			input.list.scrollbar.setScroll(0);
+			resetBlink();
+		});
 		this.update();
 	}
 	private source() {
@@ -135,7 +155,7 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 	}
 	private chooseContent(): void {
 		const input = this.input;
-		// Build after the invoking field commits on blur, just like other quick picks.
+		// Resolve the current selection's preview and physical ranges before building choices.
 		this.quickInput.pick('ASSET CONTENT', 'Preview or byte range', () => {
 			this.update();
 			const choices: { label: string; description: string; detail: string; range: number | undefined }[] = [];
@@ -212,7 +232,8 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		}
 		if (layoutChanged || contentActionsChanged) layoutWorkbenchActionBar(input.contentActions, right - 4,
 			input.detailsBounds.bottom + 2, input.detailsBounds.bottom + row + 6, measureText, layout.font!.renderFont());
-		this.filter.layout(input.filterBounds.right - input.filterBounds.left);
+		this.filterViewport.update(this.filter, input.filterBounds.right - input.filterBounds.left - 6,
+			editorViewState.inlineFieldMetricsRef, layout.font!.renderFont());
 		this.inspector.layout(layout.font!.renderFont(), measureTextRange, measureText, input.detailsBounds);
 		this.inspector.update();
 		this.actions.update(); this.contentActions.update();
@@ -256,7 +277,7 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		if (justPressed && snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, map)) {
 			const input = this.input, model = input.model;
 			const offset = (snapshot.viewportX - map.left) / (map.right - map.left) * input.snapshot.rom.byteLength;
-			model.filter = ''; this.filter.setValue('');
+			model.filter = ''; setFieldText(this.filter, '', true);
 			if (model.mode === 'structure') model.project(); else model.setMode('structure');
 			model.select(model.rows.findIndex(row => row.start <= offset && row.end > offset));
 			const top = model.selected * (input.layout.rowHeight * 2 + 4);
@@ -267,8 +288,14 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 		}
 
 		const bounds = this.input.filterBounds;
-		if (this.filter.field.pointerSelecting || snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds)) {
-			this.filter.handlePointer(bounds.left + 3, snapshot.viewportX, justPressed, (snapshot.pressedButtons & PointerButton.Primary) !== 0); return true;
+		if (this.filter.pointerSelecting || snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds)) {
+			if (justPressed) this.filter.focusTarget.focus();
+			this.filterPointer.textLeft = bounds.left + 3 - this.filterViewport.offset;
+			this.filterPointer.pointerX = snapshot.viewportX;
+			this.filterPointer.justPressed = justPressed;
+			this.filterPointer.pointerPressed = (snapshot.pressedButtons & PointerButton.Primary) !== 0;
+			if (applyInlineFieldPointer(this.filter, this.filterPointer).requestBlinkReset) resetBlink();
+			return true;
 		}
 		if (this.inspector.handlePointer(snapshot)) return true;
 		if (this.input.showingImage) {
@@ -298,7 +325,7 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 			|| this.list.handleWheel(pointer, delta) || !this.input.showingImage && this.bytes.handleWheel(pointer, delta)) input.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	}
 	public draw(): void {
-		drawRomInspector(this.input, this.presentation, this.filter);
+		drawRomInspector(this.input, this.presentation, this.filter, this.filterViewport);
 		drawWorkbenchPropertyInspector(this.inspector);
 	}
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
@@ -308,13 +335,15 @@ export class RomInspectorPane extends FullWidthWorkbenchEditorPane<RomInspectorI
 	}
 	public override clearInput(): void {
 		this.horizontal.cancelPointer();
-		this.filter.cancel(); this.filter.field.focusTarget.release();
+		this.unbindFilterChange();
+		this.filter.focusTarget.release();
 		this.inspector.hide(); this.contentActions.clearInput(); this.image.clearInput(); this.actions.clearInput(); this.list.clearInput(); this.bytes.clearInput();
 		super.clearInput();
 	}
 	public override dispose(): void {
 		this.horizontal.cancelPointer();
-		this.inspector.dispose(); this.contentActions.dispose(); this.image.dispose(); this.actions.dispose(); this.list.dispose(); this.bytes.dispose(); this.filter.dispose();
+		this.inspector.dispose(); this.contentActions.dispose(); this.image.dispose(); this.actions.dispose(); this.list.dispose(); this.bytes.dispose();
+		this.unbindFilterKeyboard();
 		super.dispose();
 	}
 }

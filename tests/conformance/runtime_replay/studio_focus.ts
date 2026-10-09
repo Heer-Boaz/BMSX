@@ -172,6 +172,42 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 		'focus: closing Resources restores the actual non-code pane, not the old code editor');
 	await test.clickTab(titleTab.id);
 	check(activeCodeEditor.focusTarget.hasFocus && cycles() === position, 'focus: input tests leave the paused machine unchanged');
+
+	await test.runPaletteCommand('View: ROM Inspector');
+	await press('ArrowDown'); await press('Enter');
+	const rom = getActiveTab();
+	if (rom.kind !== 'rom_inspector') throw new Error('focus: ROM Inspector did not open');
+	await click(rom.filterBounds);
+	const filterTarget = inputFocus.target!;
+	check(inputFocus.getCommand('undo') !== undefined && filterTarget.edit === undefined,
+		'focus: ROM query has its own text history, not a pending source/property draft');
+	for (const key of ['KeyS', 'KeyT', 'KeyA', 'KeyG', 'KeyE']) await press(key);
+	check(rom.model.filter === 'stage' && rom.model.rows.length > 0 && rom.model.rows.length < rom.model.assets.length
+		&& rom.model.rows.every(row => row.searchText.includes('stage')), 'focus: ROM results follow typing before Enter or blur');
+	await test.capture?.('rom-filter-typing');
+	await press('ControlLeft', 'KeyZ');
+	check(rom.model.filter === 'stag' && model.buffer.getText() === original && !model.dirty,
+		'focus: ROM filter Undo updates results without touching source');
+	await historyMenu(test, 'undo');
+	check(rom.model.filter === 'sta' && inputFocus.target === filterTarget, 'focus: Edit-menu Undo retains the ROM query owner');
+	await historyMenu(test, 'redo'); await press('ControlLeft', 'KeyY');
+	check(rom.model.filter === 'stage', 'focus: menu and keyboard share ROM filter history');
+	await press('ControlLeft', 'KeyA'); await press('ControlLeft', 'KeyC'); await press('ControlLeft', 'KeyX');
+	check(rom.model.filter === '' && rom.model.rows.length === rom.model.assets.length, 'focus: Cut immediately clears ROM filtering');
+	await press('ControlLeft', 'KeyV'); await press('ControlLeft', 'KeyZ');
+	check(rom.model.filter === '', 'focus: one Undo removes a complete pasted query');
+	await press('ControlLeft', 'KeyY'); await press('Enter');
+	check(rom.model.filter === 'stage' && inputFocus.target !== filterTarget, 'focus: Enter transfers to results, not a delayed commit');
+	const revision = rom.model.revision;
+	for (let index = 0; index < 20; index++) await frame();
+	check(rom.model.revision === revision, 'focus: unchanged frames do not reproject immutable ROM facts');
+	await test.clickTab(titleTab.id); await test.clickTab(rom.id);
+	check(rom.model.filter === 'stage' && rom.model.revision === revision && !model.dirty, 'focus: reattachment retains the query without replaying its edit');
+	await click(rom.mapBounds);
+	check(rom.model.filter === '' && rom.model.mode === 'structure', 'focus: ROM map navigation clears the query once and opens the actual structure');
+	await test.clickTab(titleTab.id);
+	check(activeCodeEditor.focusTarget.hasFocus && model.buffer.getText() === original && cycles() === position,
+		'focus: ROM inspection leaves source and paused guest execution unchanged');
 }
 
 /** Final fault-gated screenshot shows the real tiny-font field and its Edit menu. */

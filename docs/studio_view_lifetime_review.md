@@ -82,6 +82,18 @@ This follows VS Code's [prepare/render scheduling](https://github.com/microsoft/
 [variable-view layout](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/variablesView.ts)
 and [split-view child layout](https://github.com/microsoft/vscode/blob/main/src/vs/base/browser/ui/splitview/splitview.ts).
 
+## Corrected: ROM filtering was a property draft
+
+The ROM filter used `ValueInput`, so visible query text did not filter results
+until Enter/blur. Its command context also replaced the text field's own Undo
+and Redo owner with the pane. The query is now an ordinary retained `TextField`,
+using the existing editing, history, clipboard, viewport and paint primitives.
+ROM actions are explicitly registered without replacing that local history.
+Query observation belongs to input attachment and ends at detachment; Enter
+only transfers focus to results. No property transaction, generic control
+facade, timer or new per-frame projection was introduced. VS Code likewise
+separates [filter changes from result acceptance](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/views/viewFilter.ts).
+
 ## Boundaries that must remain
 
 - Assistant and observed-conversation sessions outlive pane detachment; their
@@ -134,3 +146,16 @@ captures were viewed, not merely generated. There were no uncaught page errors
 or Studio API requests. Debug/release Studio builds, strict architecture-boundary
 audit (zero issues) and diff checks pass. This closes these scoped view-owner
 findings, not a native-runtime parity or whole-engine performance audit.
+
+The ROM follow-up passes the existing focus/history workflow on software,
+WebGL2 and WebGPU: typing, keyboard/menu Undo/Redo, Cut/Paste, reattachment,
+map navigation, unchanged-frame projection and source/guest isolation. The
+same workflow fails at ROM field-history ownership with the previous pane
+injected only into a scratch test bundle. Rebuilt standalone UI captures were
+also viewed before and after the correction; no uncaught errors or Studio API
+requests occurred. The focused existing suites pass (42 cases).
+
+Local batched projection measurements over the real BIOS, Nemesis and Pietious
+asset, section and function lists range from 0.002 to 0.315 ms/query (largest
+function list: 2,132 entries). This measures query projection, not a complete
+host frame or native performance. Unchanged frames do not project again.

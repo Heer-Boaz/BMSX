@@ -3,8 +3,9 @@ import { describeBlua32InstructionAtPc } from '../../../../toolchain/ts/rompack/
 import * as colors from '../../../common/constants';
 import { truncateMeasuredText } from '../../../common/text';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
-import type { ValueInput } from '../../../editor/ui/inline/value_input';
-import { drawValueInput } from '../../../editor/ui/inline/value_input_render';
+import type { TextField } from '../../../editor/ui/inline/text_field_model';
+import type { SingleLineFieldViewport } from '../../../editor/ui/inline/single_line_viewport';
+import { drawSingleLineField } from '../../../editor/ui/inline/single_line_render';
 import { api } from '../../../runtime/overlay_api';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import type { RomInspectorInput } from './editor_input';
@@ -98,14 +99,16 @@ export class RomInspectorPresentation {
 	public reset(): void { this.revision = -1; this.contentRevision = -1; this.listFirst = -1; this.contentFirst = -1; }
 }
 
-export function drawRomInspector(input: RomInspectorInput, view: RomInspectorPresentation, filter: ValueInput<string>): void {
+export function drawRomInspector(input: RomInspectorInput, view: RomInspectorPresentation, filter: TextField, filterViewport: SingleLineFieldViewport): void {
 	const { layout, list, bytes, model } = input, font = layout.font!.renderFont(), color = colors.COLOR_RESOURCE_VIEWER_TEXT;
 	api.pushClipRect(layout.left, layout.top, layout.right, layout.bottom);
 	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 	api.blit_text_inline_with_font(view.title, layout.left + 4, layout.top + 3, 0, color, font);
 	renderWorkbenchActionBar(input.actions, font);
 	api.blit_text_inline_with_font('Filter', layout.left + 4, input.filterBounds.top + 2, 0, color, font);
-	drawValueInput(filter, input.filterBounds);
+	api.blit_rect(input.filterBounds.left, input.filterBounds.top, input.filterBounds.right, input.filterBounds.bottom, 0,
+		filter.focusTarget.hasFocus ? colors.COLOR_HEADER_BUTTON_ACTIVE_TEXT : colors.COLOR_HEADER_BUTTON_BORDER);
+	drawSingleLineField(filter, filterViewport, input.filterBounds, colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT);
 	for (const segment of view.map) api.fill_rect(segment.left, input.mapBounds.top, segment.right, input.mapBounds.bottom, 0, segment.color);
 	if (view.selectedSpan !== undefined) api.blit_rect(view.selectedSpan.left, input.mapBounds.top - 1,
 		Math.max(view.selectedSpan.left + 2, view.selectedSpan.right), input.mapBounds.bottom + 1, 0, colors.COLOR_STATUS_WARNING);
