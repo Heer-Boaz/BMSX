@@ -113,6 +113,14 @@ per-frame eligibility scan, parser guard or new source/application path. This
 follows VS Code's [visible-ancestor focus restoration](https://github.com/microsoft/vscode/blob/main/src/vs/platform/quickinput/browser/quickInputController.ts)
 at the canvas focus owner rather than checking DOM state in feature files.
 
+The follow-up reproduced the same lifetime gap in the source editor's Rename
+widget: blur disposes its `WorkspaceSourceContext`, but palette cancellation
+could refocus its retained field and invoke `onDidInvalidate` on that absent
+context. Rename now exposes focus eligibility from its existing source context,
+not a new visibility flag. Cancellation returns to the source and a new explicit
+Rename starts a new reference operation. VS Code likewise ties its
+[Rename widget to a cancellable refactor operation](https://github.com/microsoft/vscode/blob/main/src/vs/editor/contrib/rename/browser/renameWidget.ts).
+
 ## Boundaries that must remain
 
 - Assistant and observed-conversation sessions outlive pane detachment; their
@@ -215,3 +223,31 @@ pass, including offline canonical-source edits, Save/reload and real browser
 quota failure/retry. IDE/test typechecks, debug/release Studio builds, strict
 boundary audit (zero issues) and diff checks pass. This is an IDE focus-owner
 correction, not a native-runtime parity or whole-engine performance claim.
+
+For the Rename follow-up, keyboard/pointer interaction in the rebuilt standalone
+product reproduced the expired-context crash before the correction. Afterward,
+palette cancellation returns to source input, source Undo works and explicit
+Rename opens a fresh reference context. Those product captures were viewed;
+there were no console exceptions, uncaught page errors or Studio API requests
+in the corrected interaction. The existing focused suites pass (36 cases), as
+do the full Studio workflows on software, WebGL2 and WebGPU, both typechecks,
+debug/release Studio builds and the strict boundary audit. Injecting only the
+previous Rename owner into a scratch workflow bundle fails at palette Escape
+with the original `onDidInvalidate` error. Focus eligibility reads the retained
+context only on focus transitions; no per-frame work or runtime change was added.
+
+## Separate finding: host exceptions acquire a guest fault stack
+
+The two independently reproduced focus crashes also expose an existing diagnostic
+ownership problem. `surfaceHostFrameError` forwards every host exception to
+`handleLuaError`/`recordLuaError`, replacing its JavaScript stack with the guest's
+current frames. A Rename `TypeError` therefore appeared at `vblank.wait` with
+`HALT_UNTIL_IRQ`, even though the cartridge caused no exception. Physical guest
+faults already enter through the separate supervisor fault-sequence owner.
+
+This finding is not corrected by changing a focus control. The follow-up must
+separate host failure presentation from physical guest fault snapshots while
+preserving host-frame failure admission and pending-operation settlement.
+Tests that manufacture a guest diagnostic from a plain host `Error` also need
+to follow the actual guest-fault or suspended-stack owner. No runtime/fault-policy
+change is included in the focus corrections above.

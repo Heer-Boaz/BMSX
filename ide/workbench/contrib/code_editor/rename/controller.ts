@@ -40,6 +40,7 @@ export class RenameController {
 	private expressionLabel: string = null;
 
 	public constructor() {
+		this.field.focusTarget.canFocus = () => this.context !== undefined;
 		this.field.focusTarget.onDidFocus(() => {
 			setSingleCursorSelectionAnchor(this.field, 0, 0);
 			this.unbindSourceChanges = this.context!.onDidInvalidate(() => this.field.focusTarget.release());

@@ -128,6 +128,17 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	check(renameField.text === originalName && model.buffer.getText() === original, 'focus: Rename Undo is draft history, not source history');
 	await press('ControlLeft', 'KeyY');
 	check(renameField.text === 'a' && model.buffer.getText() === original, 'focus: Rename Redo does not implicitly accept the refactor');
+	await press('ControlLeft', 'ShiftLeft', 'KeyP');
+	check(!renameController.isVisible() && model.buffer.getText() === original,
+		'focus: opening the palette dismisses the refactor context without accepting its draft');
+	await press('Escape');
+	check(activeCodeEditor.focusTarget.hasFocus && !renameController.isActive(),
+		'focus: cancelling the palette restores source focus, not the expired refactor');
+	await press('KeyX'); await press('ControlLeft', 'KeyZ');
+	check(model.buffer.getText() === original, 'focus: input and Undo after the refactor detour belong to the source');
+	await test.runPaletteCommand('Edit: Rename Symbol');
+	check(renameController.isActive() && renameField.text === originalName,
+		'focus: an explicit new Rename binds a fresh reference context');
 	let blurOnOldInput = false;
 	const unbind = renameField.focusTarget.onDidBlur(() => {
 		blurOnOldInput = getActiveTab() === titleTab && activeCodeEditor.model === model;
